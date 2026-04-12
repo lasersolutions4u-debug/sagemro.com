@@ -8,7 +8,7 @@ on:
 
 jobs:
   deploy-frontend:
-    name: Deploy Frontend to Cloudflare Pages
+    name: Deploy Frontend to Cloudflare
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -27,13 +27,12 @@ jobs:
         working-directory: frontend
         run: npm run build
 
-      - name: Deploy to Cloudflare Pages
-        uses: cloudflare/pages-action@v1
+      - name: Deploy to Cloudflare
+        uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          projectName: sagemro
-          directory: frontend/dist
+          command: pages deploy frontend/dist --project-name=sagemro
 
   deploy-worker:
     name: Deploy Worker to Cloudflare Workers
