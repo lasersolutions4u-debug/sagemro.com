@@ -1,0 +1,40 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Build outputs
+dist/
+build/
+
+# Environment files (contain API keys)
+.env
+.env.local
+.env.*.local
+
+# Sensitive files
+*key*.md
+*secret*.md
+*.pem
+*.key
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Cloudflare
+.wrangler/
+.dev.vars
+
+# Misc
+*.bak
