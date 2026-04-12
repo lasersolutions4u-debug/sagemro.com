@@ -1,0 +1,14 @@
+name = "sagemro-api"
+main = "src/index.js"
+compatibility_date = "2024-01-01"
+
+[site]
+bucket = "./dist"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "sagemro-db"
+database_id = "your-database-id-here"
+
+[vars]]
+OPENAI_API_KEY = "sk-your-api-key-here"
