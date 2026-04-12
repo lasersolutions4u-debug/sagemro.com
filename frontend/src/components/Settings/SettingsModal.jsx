@@ -29,7 +29,7 @@ export function SettingsModal({ isOpen, onClose }) {
   ];
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="设置">
+    <Modal isOpen={isOpen} onClose={onClose} title="设置" size="lg">
       <div className="space-y-4">
         {/* 用户昵称 */}
         <div>
@@ -41,7 +41,7 @@ export function SettingsModal({ isOpen, onClose }) {
             value={settings.nickname}
             onChange={(e) => setSettings({ ...settings, nickname: e.target.value })}
             placeholder="张工"
-            className="w-full px-3 py-2 border border-[#e5e4e7] dark:border-[#3a3a4c] rounded-xl bg-white dark:bg-[#2a2a3c] text-[#08060d] dark:text-[#f3f4f6] focus:outline-none focus:ring-2 focus:ring-[#1677ff]"
+            className="w-full px-3 py-2 border border-[#e5e4e7] dark:border-[#3a3a4c] rounded-xl bg-white dark:bg-[#2a2a3c] text-[#08060d] dark:text-[#f3f4f6] focus:outline-none focus:ring-2 focus:ring-[#f59e0b]"
           />
         </div>
 
@@ -55,7 +55,7 @@ export function SettingsModal({ isOpen, onClose }) {
             value={settings.company}
             onChange={(e) => setSettings({ ...settings, company: e.target.value })}
             placeholder="XX金属制品有限公司"
-            className="w-full px-3 py-2 border border-[#e5e4e7] dark:border-[#3a3a4c] rounded-xl bg-white dark:bg-[#2a2a3c] text-[#08060d] dark:text-[#f3f4f6] focus:outline-none focus:ring-2 focus:ring-[#1677ff]"
+            className="w-full px-3 py-2 border border-[#e5e4e7] dark:border-[#3a3a4c] rounded-xl bg-white dark:bg-[#2a2a3c] text-[#08060d] dark:text-[#f3f4f6] focus:outline-none focus:ring-2 focus:ring-[#f59e0b]"
           />
         </div>
 
@@ -69,7 +69,7 @@ export function SettingsModal({ isOpen, onClose }) {
             value={settings.device_model}
             onChange={(e) => setSettings({ ...settings, device_model: e.target.value })}
             placeholder="3000W光纤激光切割机"
-            className="w-full px-3 py-2 border border-[#e5e4e7] dark:border-[#3a3a4c] rounded-xl bg-white dark:bg-[#2a2a3c] text-[#08060d] dark:text-[#f3f4f6] focus:outline-none focus:ring-2 focus:ring-[#1677ff]"
+            className="w-full px-3 py-2 border border-[#e5e4e7] dark:border-[#3a3a4c] rounded-xl bg-white dark:bg-[#2a2a3c] text-[#08060d] dark:text-[#f3f4f6] focus:outline-none focus:ring-2 focus:ring-[#f59e0b]"
           />
         </div>
 
@@ -84,7 +84,7 @@ export function SettingsModal({ isOpen, onClose }) {
                 key={opt.value}
                 className={`flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-xl border cursor-pointer transition-colors ${
                   settings.theme === opt.value
-                    ? 'border-[#1677ff] bg-[#1677ff]/10 text-[#1677ff]'
+                    ? 'border-[#f59e0b] bg-[#f59e0b]/10 text-[#f59e0b]'
                     : 'border-[#e5e4e7] dark:border-[#3a3a4c] text-[#6b6375]'
                 }`}
               >
@@ -105,7 +105,7 @@ export function SettingsModal({ isOpen, onClose }) {
         {/* 保存按钮 */}
         <button
           onClick={handleSave}
-          className="w-full py-3 bg-[#1677ff] hover:bg-[#4096ff] text-white rounded-xl font-medium transition-colors"
+          className="w-full py-3 bg-[#f59e0b] hover:bg-[#fbbf24] text-white rounded-xl font-medium transition-colors"
         >
           保存设置
         </button>

@@ -1,13 +1,17 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { Sidebar } from './components/Sidebar/Sidebar';
 import { ChatArea } from './components/Chat/ChatArea';
 import { WorkOrderModal } from './components/Sidebar/WorkOrderModal';
 import { MyWorkOrdersModal } from './components/Sidebar/MyWorkOrdersModal';
 import { SettingsModal } from './components/Settings/SettingsModal';
 import { AboutModal } from './components/common/AboutModal';
+import { LoginModal } from './components/Auth/LoginModal';
+import { EngineerDashboard } from './components/Engineer/EngineerDashboard';
+import { EngineerProfileModal } from './components/Engineer/EngineerProfileModal';
 import { useChat } from './hooks/useChat';
 import { useConversations } from './hooks/useConversations';
 import { generateId } from './utils/helpers';
+import { submitWorkOrder as submitWorkOrderApi } from './services/api';
 
 function App() {
   // 侧边栏状态
@@ -18,6 +22,23 @@ function App() {
   const [myWorkOrdersModalOpen, setMyWorkOrdersModalOpen] = useState(false);
   const [settingsModalOpen, setSettingsModalOpen] = useState(false);
   const [aboutModalOpen, setAboutModalOpen] = useState(false);
+  const [loginModalOpen, setLoginModalOpen] = useState(false);
+  const [engineerDashboardOpen, setEngineerDashboardOpen] = useState(false);
+  const [engineerProfileOpen, setEngineerProfileOpen] = useState(false);
+  const [currentUser, setCurrentUser] = useState(null);
+  const [userType, setUserType] = useState(null);
+
+  // 初始化用户状态
+  useEffect(() => {
+    const storedUser = localStorage.getItem('sagemro_user');
+    const storedType = localStorage.getItem('sagemro_user_type');
+    if (storedUser) {
+      setCurrentUser(JSON.parse(storedUser));
+    }
+    if (storedType) {
+      setUserType(storedType);
+    }
+  }, []);
 
   // 对话管理
   const {
@@ -97,19 +118,18 @@ function App() {
 
   // 提交工单
   const handleSubmitWorkOrder = useCallback(async (data) => {
-    const order = {
-      id: `WO-${Date.now()}`,
-      ...data,
-      status: 'pending',
-      created_at: new Date().toISOString(),
-    };
+    // TODO: 后续从登录状态获取 customer_id
+    const customer_id = localStorage.getItem('sagemro_customer_id') || 'guest';
 
-    const stored = localStorage.getItem('sagemro_workorders');
-    const orders = stored ? JSON.parse(stored) : [];
-    orders.unshift(order);
-    localStorage.setItem('sagemro_workorders', JSON.stringify(orders));
+    const result = await submitWorkOrderApi({
+      customer_id,
+      type: data.type,
+      description: data.description,
+      urgency: data.urgency,
+      device_id: data.device_id,
+    });
 
-    return order;
+    return result.work_order;
   }, []);
 
   // 删除对话
@@ -120,6 +140,23 @@ function App() {
     }
     localStorage.removeItem(`sagemro_messages_${id}`);
   }, [deleteConversation, conversationId, clearMessages]);
+
+  // 登录成功
+  const handleLoginSuccess = useCallback((userData) => {
+    setCurrentUser(userData.user);
+    setUserType(userData.userType);
+  }, []);
+
+  // 登出
+  const handleLogout = useCallback(() => {
+    localStorage.removeItem('sagemro_token');
+    localStorage.removeItem('sagemro_user');
+    localStorage.removeItem('sagemro_user_type');
+    localStorage.removeItem('sagemro_customer_id');
+    localStorage.removeItem('sagemro_engineer_id');
+    setCurrentUser(null);
+    setUserType(null);
+  }, []);
 
   return (
     <div className="flex h-screen">
@@ -134,6 +171,11 @@ function App() {
         onOpenMyWorkOrders={() => setMyWorkOrdersModalOpen(true)}
         onOpenSettings={() => setSettingsModalOpen(true)}
         onOpenAbout={() => setAboutModalOpen(true)}
+        onOpenLogin={() => setLoginModalOpen(true)}
+        onLogout={handleLogout}
+        onOpenEngineerDashboard={() => setEngineerDashboardOpen(true)}
+        currentUser={currentUser}
+        userType={userType}
         isOpen={sidebarOpen}
         onClose={() => setSidebarOpen(false)}
       />
@@ -168,6 +210,22 @@ function App() {
       <AboutModal
         isOpen={aboutModalOpen}
         onClose={() => setAboutModalOpen(false)}
+      />
+      <LoginModal
+        isOpen={loginModalOpen}
+        onClose={() => setLoginModalOpen(false)}
+        onLoginSuccess={handleLoginSuccess}
+      />
+      <EngineerDashboard
+        isOpen={engineerDashboardOpen}
+        onClose={() => setEngineerDashboardOpen(false)}
+        engineerId={localStorage.getItem('sagemro_engineer_id')}
+        onViewProfile={() => setEngineerProfileOpen(true)}
+      />
+      <EngineerProfileModal
+        isOpen={engineerProfileOpen}
+        onClose={() => setEngineerProfileOpen(false)}
+        engineerId={localStorage.getItem('sagemro_engineer_id')}
       />
     </div>
   );

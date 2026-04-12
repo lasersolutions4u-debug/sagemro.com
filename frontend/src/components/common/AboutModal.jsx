@@ -6,7 +6,7 @@ export function AboutModal({ isOpen, onClose }) {
     <Modal isOpen={isOpen} onClose={onClose} title="关于小智">
       <div className="text-center py-4">
         {/* Logo */}
-        <div className="w-16 h-16 rounded-2xl bg-[#1677ff] flex items-center justify-center mx-auto mb-4">
+        <div className="w-16 h-16 rounded-2xl bg-[#f59e0b] flex items-center justify-center mx-auto mb-4">
           <Bot size={32} className="text-white" />
         </div>
 

@@ -8,11 +8,13 @@ export const WorkOrderStatus = {
 
 // 工单类型
 export const WorkOrderType = {
-  MALFUNCTION: 'malfunction',   // 设备故障
+  FAULT: 'fault',             // 设备故障
+  MAINTENANCE: 'maintenance', // 维护保养
+  PARAMETER: 'parameter',     // 参数调试
   CONSULT: 'consult',         // 技术咨询
-  PARTS: 'parts',             // 配件采购
-  AFTERSALES: 'aftersales',   // 售后服务
-  OTHER: 'other'              // 其他
+  PARTS: 'parts',            // 配件采购
+  AFTERSALES: 'aftersales', // 售后服务
+  OTHER: 'other'             // 其他
 };
 
 // 紧急程度

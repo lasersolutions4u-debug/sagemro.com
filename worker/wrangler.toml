@@ -10,5 +10,9 @@ binding = "DB"
 database_name = "sagemro-db"
 database_id = "your-database-id-here"
 
-[vars]]
+[[kv_namespaces]]
+binding = "KV"
+id = "your-kv-namespace-id"
+
+[vars]
 OPENAI_API_KEY = "sk-your-api-key-here"

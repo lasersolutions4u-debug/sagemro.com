@@ -18,7 +18,7 @@ export function MessageBubble({ message }) {
       {/* 头像 */}
       <div
         className={`w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 ${
-          isUser ? 'bg-[#1677ff]' : 'bg-[#f4f3f4] dark:bg-[#2a2a3c]'
+          isUser ? 'bg-[#f59e0b]' : 'bg-[#f4f3f4] dark:bg-[#2a2a3c]'
         }`}
       >
         {isUser ? (
@@ -31,13 +31,13 @@ export function MessageBubble({ message }) {
       {/* 消息内容 */}
       <div className={`max-w-[75%] ${isUser ? 'items-end' : 'items-start'}`}>
         <div
-          className={`px-5 py-3.5 rounded-2xl ${
+          className={`px-5 py-3.5 ${
             isUser
-              ? 'bg-[#1677ff] text-white rounded-br-md'
-              : 'bg-white dark:bg-[#2a2a3c] text-[#08060d] dark:text-[#e0e0e0] rounded-bl-md shadow-sm'
+              ? 'bg-[#f59e0b] text-white rounded-2xl shadow-sm'
+              : 'bg-white dark:bg-[#2a2a3c] text-[#08060d] dark:text-[#e0e0e0] rounded-2xl shadow-md'
           }`}
         >
-          <div className="prose prose-base max-w-none dark:prose-invert text-[16px] leading-relaxed">
+          <div className="prose prose-base max-w-none dark:prose-invert text-[15px] leading-relaxed font-light tracking-tight">
             <ReactMarkdown>{message.content}</ReactMarkdown>
           </div>
         </div>

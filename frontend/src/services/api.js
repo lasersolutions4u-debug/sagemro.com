@@ -1,17 +1,75 @@
 // API 服务层
 const API_BASE = import.meta.env.VITE_API_BASE || 'https://api.lasersolutions4u.workers.dev';
 
+// ============ 认证相关 ============
+
+/**
+ * 发送验证码
+ */
+export async function sendVerifyCode(phone) {
+  const response = await fetch(`${API_BASE}/api/auth/send-code`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ phone }),
+  });
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  return response.json();
+}
+
+/**
+ * 客户注册
+ */
+export async function registerCustomer({ name, phone, password, code }) {
+  const response = await fetch(`${API_BASE}/api/auth/register/customer`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, phone, password, code }),
+  });
+  if (!response.ok) {
+    const data = await response.json();
+    throw new Error(data.error || `HTTP ${response.status}`);
+  }
+  return response.json();
+}
+
+/**
+ * 工程师注册
+ */
+export async function registerEngineer({ name, phone, password, code, specialties, brands, services, service_region, bio }) {
+  const response = await fetch(`${API_BASE}/api/auth/register/engineer`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, phone, password, code, specialties, brands, services, service_region, bio }),
+  });
+  if (!response.ok) {
+    const data = await response.json();
+    throw new Error(data.error || `HTTP ${response.status}`);
+  }
+  return response.json();
+}
+
+/**
+ * 登录
+ */
+export async function login({ phone, password }) {
+  const response = await fetch(`${API_BASE}/api/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ phone, password }),
+  });
+  if (!response.ok) {
+    const data = await response.json();
+    throw new Error(data.error || `HTTP ${response.status}`);
+  }
+  return response.json();
+}
+
+// ============ 聊天相关 ============
+
 /**
  * 发送消息并获取流式响应
- * @param {Object} params
- * @param {string|null} params.conversationId - 对话 ID，新对话时为 null
- * @param {string} params.message - 用户消息
- * @param {Function} params.onChunk - 接收到数据块时的回调
- * @param {Function} params.onDone - 流结束时的回调
- * @param {Function} params.onError - 错误时的回调
- * @param {AbortSignal} params.signal - AbortController.signal，用于中断请求
  */
-export async function streamChat({ conversationId, message, onChunk, onDone, onError, signal }) {
+export async function streamChat({ conversationId, message, onChunk, onDone, onError, signal, customerId }) {
   try {
     const response = await fetch(`${API_BASE}/api/chat`, {
       method: 'POST',
@@ -19,6 +77,7 @@ export async function streamChat({ conversationId, message, onChunk, onDone, onE
       body: JSON.stringify({
         conversation_id: conversationId,
         message: message,
+        customer_id: customerId || localStorage.getItem('sagemro_customer_id'),
       }),
       signal,
     });
@@ -95,6 +154,8 @@ export async function deleteConversation(id) {
   return response.json();
 }
 
+// ============ 工单相关 ============
+
 /**
  * 提交工单
  */
@@ -104,15 +165,117 @@ export async function submitWorkOrder(data) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
   });
-  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  if (!response.ok) {
+    const data = await response.json();
+    throw new Error(data.error || `HTTP ${response.status}`);
+  }
   return response.json();
 }
 
 /**
  * 获取工单列表
  */
-export async function getWorkOrders() {
-  const response = await fetch(`${API_BASE}/api/workorders`);
+export async function getWorkOrders(customerId) {
+  const url = customerId
+    ? `${API_BASE}/api/workorders?customer_id=${customerId}`
+    : `${API_BASE}/api/workorders`;
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  return response.json();
+}
+
+/**
+ * 获取工单详情
+ */
+export async function getWorkOrder(id) {
+  const response = await fetch(`${API_BASE}/api/workorders/${id}`);
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  return response.json();
+}
+
+/**
+ * 提交评价
+ */
+export async function submitRating(data) {
+  const response = await fetch(`${API_BASE}/api/workorders/rating`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  if (!response.ok) {
+    const data = await response.json();
+    throw new Error(data.error || `HTTP ${response.status}`);
+  }
+  return response.json();
+}
+
+// ============ 工程师相关 ============
+
+/**
+ * 获取工程师的工单列表
+ */
+export async function getEngineerTickets(engineerId) {
+  const url = engineerId
+    ? `${API_BASE}/api/engineers/tickets?engineer_id=${engineerId}`
+    : `${API_BASE}/api/engineers/tickets`;
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  return response.json();
+}
+
+/**
+ * 工程师接单
+ */
+export async function acceptTicket({ work_order_id, engineer_id }) {
+  const response = await fetch(`${API_BASE}/api/engineers/tickets/accept`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ work_order_id, engineer_id }),
+  });
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  return response.json();
+}
+
+/**
+ * 工程师拒单
+ */
+export async function rejectTicket({ work_order_id, engineer_id }) {
+  const response = await fetch(`${API_BASE}/api/engineers/tickets/reject`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ work_order_id, engineer_id }),
+  });
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  return response.json();
+}
+
+/**
+ * 获取工单推荐的工程师列表
+ */
+export async function getRecommendedEngineers(workOrderId) {
+  const response = await fetch(`${API_BASE}/api/engineers/recommend?work_order_id=${workOrderId}`);
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  return response.json();
+}
+
+/**
+ * 更新工程师接单状态
+ */
+export async function updateEngineerStatus({ engineer_id, status }) {
+  const response = await fetch(`${API_BASE}/api/engineers/status`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ engineer_id, status }),
+  });
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  return response.json();
+}
+
+/**
+ * 获取工程师档案
+ */
+export async function getEngineerProfile(engineerId) {
+  const response = await fetch(`${API_BASE}/api/engineers/profile?engineer_id=${engineerId}`);
   if (!response.ok) throw new Error(`HTTP ${response.status}`);
   return response.json();
 }

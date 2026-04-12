@@ -1,7 +1,16 @@
 import { X } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
-export function Modal({ isOpen, onClose, title, children }) {
+const sizeClasses = {
+  sm: 'max-w-sm',
+  md: 'max-w-md',
+  lg: 'max-w-lg',
+  xl: 'max-w-xl',
+  '2xl': 'max-w-2xl',
+  full: 'max-w-full mx-4',
+};
+
+export function Modal({ isOpen, onClose, title, children, size = 'md' }) {
   return (
     <AnimatePresence>
       {isOpen && (
@@ -20,7 +29,7 @@ export function Modal({ isOpen, onClose, title, children }) {
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.95, y: 20 }}
             transition={{ duration: 0.2 }}
-            className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-md max-h-[90vh] overflow-auto bg-white dark:bg-[#1e1e2e] rounded-2xl shadow-2xl z-50"
+            className={`fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full ${sizeClasses[size] || sizeClasses.md} max-h-[90vh] overflow-auto bg-white dark:bg-[#1e1e2e] rounded-2xl shadow-2xl z-50`}
           >
             {/* 头部 */}
             <div className="flex items-center justify-between p-4 border-b border-[#e5e4e7] dark:border-[#3a3a4c]">

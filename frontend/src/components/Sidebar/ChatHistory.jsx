@@ -20,8 +20,8 @@ export function ChatHistory({ conversations, currentId, onSelect, onDelete }) {
         if (!items || items.length === 0) return null;
 
         return (
-          <div key={date} className="mb-3">
-            <div className="px-4 py-1 text-[13px] text-[#6b6375] font-medium">
+          <div key={date} className="mb-2">
+            <div className="px-4 py-2 text-[12px] text-[#666666] font-medium uppercase tracking-wide">
               {date}
             </div>
             {items.map((conv) => (
@@ -61,7 +61,7 @@ function ConversationItem({ conversation, isActive, onSelect, onDelete }) {
       onMouseLeave={() => setShowActions(false)}
     >
       <div className="flex items-center gap-2.5">
-        <div className={`w-2 h-2 rounded-full ${isActive ? 'bg-[#1677ff]' : 'bg-[#6b6375]'}`} />
+        <div className={`w-2 h-2 rounded-full ${isActive ? 'bg-[#f59e0b]' : 'bg-[#6b6375]'}`} />
         <span className="flex-1 text-[15px] text-[#cdd6f4] truncate">
           {conversation.title || '新对话'}
         </span>

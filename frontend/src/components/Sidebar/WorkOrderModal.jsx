@@ -38,7 +38,9 @@ export function WorkOrderModal({ isOpen, onClose, onSubmit }) {
   };
 
   const typeOptions = [
-    { value: WorkOrderType.MALFUNCTION, label: '设备故障' },
+    { value: WorkOrderType.FAULT, label: '设备故障' },
+    { value: WorkOrderType.MAINTENANCE, label: '维护保养' },
+    { value: WorkOrderType.PARAMETER, label: '参数调试' },
     { value: WorkOrderType.CONSULT, label: '技术咨询' },
     { value: WorkOrderType.PARTS, label: '配件采购' },
     { value: WorkOrderType.AFTERSALES, label: '售后服务' },
@@ -52,7 +54,7 @@ export function WorkOrderModal({ isOpen, onClose, onSubmit }) {
   ];
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="提交工单">
+    <Modal isOpen={isOpen} onClose={onClose} title="提交工单" size="lg">
       <div className="space-y-4">
         {/* 问题类型 */}
         <div>
@@ -62,7 +64,7 @@ export function WorkOrderModal({ isOpen, onClose, onSubmit }) {
           <select
             value={form.type}
             onChange={(e) => setForm({ ...form, type: e.target.value })}
-            className="w-full px-3 py-2 border border-[#e5e4e7] dark:border-[#3a3a4c] rounded-xl bg-white dark:bg-[#2a2a3c] text-[#08060d] dark:text-[#f3f4f6] focus:outline-none focus:ring-2 focus:ring-[#1677ff]"
+            className="w-full px-3 py-2 border border-[#e5e4e7] dark:border-[#3a3a4c] rounded-xl bg-white dark:bg-[#2a2a3c] text-[#08060d] dark:text-[#f3f4f6] focus:outline-none focus:ring-2 focus:ring-[#f59e0b]"
           >
             <option value="">请选择问题类型</option>
             {typeOptions.map((opt) => (
@@ -83,7 +85,7 @@ export function WorkOrderModal({ isOpen, onClose, onSubmit }) {
             value={form.device_model}
             onChange={(e) => setForm({ ...form, device_model: e.target.value })}
             placeholder="例如：3000W光纤激光切割机"
-            className="w-full px-3 py-2 border border-[#e5e4e7] dark:border-[#3a3a4c] rounded-xl bg-white dark:bg-[#2a2a3c] text-[#08060d] dark:text-[#f3f4f6] focus:outline-none focus:ring-2 focus:ring-[#1677ff]"
+            className="w-full px-3 py-2 border border-[#e5e4e7] dark:border-[#3a3a4c] rounded-xl bg-white dark:bg-[#2a2a3c] text-[#08060d] dark:text-[#f3f4f6] focus:outline-none focus:ring-2 focus:ring-[#f59e0b]"
           />
         </div>
 
@@ -97,7 +99,7 @@ export function WorkOrderModal({ isOpen, onClose, onSubmit }) {
             onChange={(e) => setForm({ ...form, description: e.target.value })}
             placeholder="请详细描述您遇到的问题..."
             rows={4}
-            className="w-full px-3 py-2 border border-[#e5e4e7] dark:border-[#3a3a4c] rounded-xl bg-white dark:bg-[#2a2a3c] text-[#08060d] dark:text-[#f3f4f6] focus:outline-none focus:ring-2 focus:ring-[#1677ff] resize-none"
+            className="w-full px-3 py-2 border border-[#e5e4e7] dark:border-[#3a3a4c] rounded-xl bg-white dark:bg-[#2a2a3c] text-[#08060d] dark:text-[#f3f4f6] focus:outline-none focus:ring-2 focus:ring-[#f59e0b] resize-none"
           />
         </div>
 
@@ -111,7 +113,7 @@ export function WorkOrderModal({ isOpen, onClose, onSubmit }) {
             value={form.contact}
             onChange={(e) => setForm({ ...form, contact: e.target.value })}
             placeholder="手机号码"
-            className="w-full px-3 py-2 border border-[#e5e4e7] dark:border-[#3a3a4c] rounded-xl bg-white dark:bg-[#2a2a3c] text-[#08060d] dark:text-[#f3f4f6] focus:outline-none focus:ring-2 focus:ring-[#1677ff]"
+            className="w-full px-3 py-2 border border-[#e5e4e7] dark:border-[#3a3a4c] rounded-xl bg-white dark:bg-[#2a2a3c] text-[#08060d] dark:text-[#f3f4f6] focus:outline-none focus:ring-2 focus:ring-[#f59e0b]"
           />
         </div>
 
@@ -126,7 +128,7 @@ export function WorkOrderModal({ isOpen, onClose, onSubmit }) {
                 key={opt.value}
                 className={`flex items-center gap-2 px-4 py-2 rounded-xl border cursor-pointer transition-colors ${
                   form.urgency === opt.value
-                    ? 'border-[#1677ff] bg-[#1677ff]/10 text-[#1677ff]'
+                    ? 'border-[#f59e0b] bg-[#f59e0b]/10 text-[#f59e0b]'
                     : 'border-[#e5e4e7] dark:border-[#3a3a4c] text-[#6b6375]'
                 }`}
               >
@@ -148,7 +150,7 @@ export function WorkOrderModal({ isOpen, onClose, onSubmit }) {
         <button
           onClick={handleSubmit}
           disabled={submitting}
-          className="w-full py-3 bg-[#1677ff] hover:bg-[#4096ff] disabled:bg-[#6b6375] text-white rounded-xl font-medium transition-colors"
+          className="w-full py-3 bg-[#f59e0b] hover:bg-[#fbbf24] disabled:bg-[#6b6375] text-white rounded-xl font-medium transition-colors"
         >
           {submitting ? '提交中...' : '提交工单'}
         </button>

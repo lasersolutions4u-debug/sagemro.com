@@ -1,4 +1,4 @@
-import { Plus, Bot } from 'lucide-react';
+import { Plus, Bot, User, LogOut } from 'lucide-react';
 import { ChatHistory } from './ChatHistory';
 import { ToolBar } from './ToolBar';
 
@@ -12,6 +12,11 @@ export function Sidebar({
   onOpenMyWorkOrders,
   onOpenSettings,
   onOpenAbout,
+  onOpenLogin,
+  onLogout,
+  onOpenEngineerDashboard,
+  currentUser,
+  userType,
   isOpen,
   onClose,
 }) {
@@ -27,23 +32,23 @@ export function Sidebar({
 
       {/* 侧边栏 */}
       <aside
-        className={`fixed lg:static inset-y-0 left-0 z-40 w-[300px] bg-[#1e1e2e] flex flex-col transform transition-transform duration-300 lg:translate-x-0 ${
+        className={`fixed lg:static inset-y-0 left-0 z-40 w-[300px] bg-[#1a1a1a] flex flex-col transform transition-transform duration-300 lg:translate-x-0 ${
           isOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
       >
         {/* 顶部 */}
-        <div className="p-4 border-b border-[#2a2a3c]">
-          <div className="flex items-center gap-3 mb-4">
-            <div className="w-10 h-10 rounded-xl bg-[#1677ff] flex items-center justify-center">
-              <Bot size={24} className="text-white" />
+        <div className="p-4 border-b border-[#2a2a2a]">
+          <div className="flex items-center gap-3 mb-3">
+            <div className="w-9 h-9 rounded-xl bg-[#f59e0b] flex items-center justify-center shadow-sm">
+              <Bot size={22} className="text-white" />
             </div>
-            <span className="text-lg font-medium text-[#cdd6f4]">小智</span>
+            <span className="text-[15px] font-medium text-[#f5f5f5]">小智</span>
           </div>
 
           {/* 新建对话按钮 */}
           <button
             onClick={onNewChat}
-            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-[#1677ff] hover:bg-[#4096ff] text-white rounded-xl transition-colors font-medium"
+            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-[#f59e0b] hover:bg-[#fbbf24] text-white rounded-xl transition-colors font-medium text-[13px] shadow-sm"
           >
             <Plus size={18} />
             <span>新建对话</span>
@@ -65,6 +70,11 @@ export function Sidebar({
             onOpenMyWorkOrders={onOpenMyWorkOrders}
             onOpenSettings={onOpenSettings}
             onOpenAbout={onOpenAbout}
+            onOpenLogin={onOpenLogin}
+            onLogout={onLogout}
+            onOpenEngineerDashboard={onOpenEngineerDashboard}
+            currentUser={currentUser}
+            userType={userType}
           />
         </div>
       </aside>
