@@ -1,0 +1,233 @@
+{
+  "main": {
+    "id": "ce429a7ef343fb23",
+    "type": "split",
+    "children": [
+      {
+        "id": "fc666bb2fd70d779",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "63f179da21a8584d",
+            "type": "leaf",
+            "state": {
+              "type": "markdown",
+              "state": {
+                "file": "CLAUDE.md",
+                "mode": "source",
+                "source": false
+              },
+              "icon": "lucide-file",
+              "title": "CLAUDE"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "vertical"
+  },
+  "left": {
+    "id": "e94264e11e5bd320",
+    "type": "split",
+    "children": [
+      {
+        "id": "2620248a261d8cd0",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "d90f05af0e845f72",
+            "type": "leaf",
+            "state": {
+              "type": "file-explorer",
+              "state": {
+                "sortOrder": "alphabetical",
+                "autoReveal": false
+              },
+              "icon": "lucide-folder-closed",
+              "title": "文件列表"
+            }
+          },
+          {
+            "id": "c599856be49ec1b1",
+            "type": "leaf",
+            "state": {
+              "type": "search",
+              "state": {
+                "query": "",
+                "matchingCase": false,
+                "explainSearch": false,
+                "collapseAll": false,
+                "extraContext": false,
+                "sortOrder": "alphabetical"
+              },
+              "icon": "lucide-search",
+              "title": "搜索"
+            }
+          },
+          {
+            "id": "dae8a4d7ea037ee4",
+            "type": "leaf",
+            "state": {
+              "type": "bookmarks",
+              "state": {},
+              "icon": "lucide-bookmark",
+              "title": "书签"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "horizontal",
+    "width": 300,
+    "collapsed": true
+  },
+  "right": {
+    "id": "fe916279c598ea46",
+    "type": "split",
+    "children": [
+      {
+        "id": "60402e8bf113e465",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "b2041393325e3686",
+            "type": "leaf",
+            "state": {
+              "type": "backlink",
+              "state": {
+                "file": "CLAUDE.md",
+                "collapseAll": false,
+                "extraContext": false,
+                "sortOrder": "alphabetical",
+                "showSearch": false,
+                "searchQuery": "",
+                "backlinkCollapsed": false,
+                "unlinkedCollapsed": true
+              },
+              "icon": "links-coming-in",
+              "title": "CLAUDE 的反向链接列表"
+            }
+          },
+          {
+            "id": "15f9eaaf3d1e8de3",
+            "type": "leaf",
+            "state": {
+              "type": "outgoing-link",
+              "state": {
+                "file": "CLAUDE.md",
+                "linksCollapsed": false,
+                "unlinkedCollapsed": true
+              },
+              "icon": "links-going-out",
+              "title": "CLAUDE 的出链列表"
+            }
+          },
+          {
+            "id": "a3c3a3cf5029e0e7",
+            "type": "leaf",
+            "state": {
+              "type": "tag",
+              "state": {
+                "sortOrder": "frequency",
+                "useHierarchy": true,
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-tags",
+              "title": "标签"
+            }
+          },
+          {
+            "id": "14813d0fe0a1a827",
+            "type": "leaf",
+            "state": {
+              "type": "all-properties",
+              "state": {
+                "sortOrder": "frequency",
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-archive",
+              "title": "添加笔记属性"
+            }
+          },
+          {
+            "id": "f99cb7c428381682",
+            "type": "leaf",
+            "state": {
+              "type": "outline",
+              "state": {
+                "file": "CLAUDE.md",
+                "followCursor": false,
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-list",
+              "title": "CLAUDE 的大纲"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "horizontal",
+    "width": 300,
+    "collapsed": true
+  },
+  "left-ribbon": {
+    "hiddenItems": {
+      "switcher:打开快速切换": false,
+      "graph:查看关系图谱": false,
+      "canvas:新建白板": false,
+      "daily-notes:打开/创建今天的日记": false,
+      "templates:插入模板": false,
+      "command-palette:打开命令面板": false,
+      "bases:新建数据库": false
+    }
+  },
+  "active": "63f179da21a8584d",
+  "lastOpenFiles": [
+    "frontend/dist/assets/index-Bvg5bS-S.css",
+    "frontend/dist/assets/index-CghUxmz9.js",
+    "worker/wrangler.toml",
+    "worker/src/index.js",
+    "worker/schema.sql",
+    "worker/src",
+    "worker",
+    "frontend/dist/assets/index-BwatPk9I.js",
+    "frontend/dist/assets/index-Blv-3yNm.css",
+    "frontend/dist/index.html",
+    "frontend/dist/icons.svg",
+    "frontend/dist/favicon.svg",
+    "frontend/dist/assets",
+    "frontend/node_modules/lucide-react/README.md",
+    "frontend/node_modules/motion-dom/LICENSE.md",
+    "frontend/node_modules/framer-motion/README.md",
+    "frontend/node_modules/framer-motion/dom/README.md",
+    "frontend/node_modules/framer-motion/client/README.md",
+    "frontend/node_modules/framer-motion/LICENSE.md",
+    "frontend/node_modules/tailwindcss/README.md",
+    "frontend/node_modules/devlop/readme.md",
+    "frontend/node_modules/unist-util-visit/readme.md",
+    "frontend/node_modules/react-markdown/readme.md",
+    "frontend/node_modules/@types/mdast/README.md",
+    "frontend/node_modules/tapable/README.md",
+    "frontend/node_modules/react-router-dom/LICENSE.md",
+    "frontend/node_modules/react-router-dom/README.md",
+    "frontend/node_modules/@types/unist/README.md",
+    "frontend/node_modules/graceful-fs/README.md",
+    "frontend/node_modules/hast-util-to-jsx-runtime/readme.md",
+    "frontend/node_modules/remark-rehype/readme.md",
+    "frontend/node_modules/dequal/readme.md",
+    "frontend/node_modules/html-url-attributes/readme.md",
+    "frontend/node_modules/property-information/readme.md",
+    "frontend/node_modules/mdast-util-to-markdown/readme.md",
+    "frontend/node_modules/remark-parse/readme.md",
+    "frontend/node_modules/micromark-util-decode-numeric-character-reference/readme.md",
+    "frontend/node_modules/decode-named-character-reference/readme.md",
+    "frontend/src/assets/vite.svg",
+    "frontend/src/assets/react.svg",
+    "frontend/src/assets/hero.png",
+    "frontend/public/icons.svg",
+    "frontend/public/favicon.svg"
+  ]
+}

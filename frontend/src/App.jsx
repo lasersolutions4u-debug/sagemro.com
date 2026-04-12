@@ -139,15 +139,17 @@ function App() {
       />
 
       {/* 主聊天区域 */}
-      <ChatArea
-        messages={messages}
-        isStreaming={isStreaming}
-        onSendMessage={handleSendMessage}
-        onStopGeneration={stopGeneration}
-        onNewChat={handleNewChat}
-        currentTitle={currentTitle}
-        onToggleSidebar={() => setSidebarOpen(true)}
-      />
+      <div className="flex-1 flex flex-col min-w-0">
+        <ChatArea
+          messages={messages}
+          isStreaming={isStreaming}
+          onSendMessage={handleSendMessage}
+          onStopGeneration={stopGeneration}
+          onNewChat={handleNewChat}
+          currentTitle={currentTitle}
+          onToggleSidebar={() => setSidebarOpen(true)}
+        />
+      </div>
 
       {/* Modals */}
       <WorkOrderModal
