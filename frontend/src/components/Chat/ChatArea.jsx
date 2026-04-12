@@ -28,14 +28,14 @@ export function ChatArea({
   return (
     <div className="flex flex-col h-full bg-[#f9fafb] dark:bg-[#181825]">
       {/* 顶部栏 */}
-      <header className="flex items-center gap-3 px-4 py-3 border-b border-[#e5e4e7] dark:border-[#3a3a4c] bg-white dark:bg-[#181825]">
+      <header className="flex items-center gap-3 px-5 py-4 border-b border-[#e5e4e7] dark:border-[#3a3a4c] bg-white dark:bg-[#181825]">
         <button
           onClick={onToggleSidebar}
           className="lg:hidden p-2 rounded-lg hover:bg-[#f4f3f4] dark:hover:bg-[#2a2a3c] transition-colors"
         >
           <Menu size={20} className="text-[#6b6375]" />
         </button>
-        <h1 className="flex-1 text-lg font-medium text-[#08060d] dark:text-[#f3f4f6] truncate">
+        <h1 className="flex-1 text-base font-medium text-[#08060d] dark:text-[#f3f4f6] truncate">
           {currentTitle || '新对话'}
         </h1>
       </header>

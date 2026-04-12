@@ -27,7 +27,7 @@ export function Sidebar({
 
       {/* 侧边栏 */}
       <aside
-        className={`fixed lg:static inset-y-0 left-0 z-40 w-[280px] bg-[#1e1e2e] flex flex-col transform transition-transform duration-300 lg:translate-x-0 ${
+        className={`fixed lg:static inset-y-0 left-0 z-40 w-[300px] bg-[#1e1e2e] flex flex-col transform transition-transform duration-300 lg:translate-x-0 ${
           isOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
       >

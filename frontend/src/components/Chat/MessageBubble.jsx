@@ -14,36 +14,36 @@ export function MessageBubble({ message }) {
   };
 
   return (
-    <div className={`flex gap-3 ${isUser ? 'flex-row-reverse' : 'flex-row'}`}>
+    <div className={`flex gap-4 ${isUser ? 'flex-row-reverse' : 'flex-row'}`}>
       {/* 头像 */}
       <div
-        className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${
+        className={`w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 ${
           isUser ? 'bg-[#1677ff]' : 'bg-[#f4f3f4] dark:bg-[#2a2a3c]'
         }`}
       >
         {isUser ? (
-          <User size={16} className="text-white" />
+          <User size={18} className="text-white" />
         ) : (
-          <Bot size={16} className="text-[#6b6375]" />
+          <Bot size={18} className="text-[#6b6375]" />
         )}
       </div>
 
       {/* 消息内容 */}
       <div className={`max-w-[75%] ${isUser ? 'items-end' : 'items-start'}`}>
         <div
-          className={`px-4 py-3 rounded-2xl ${
+          className={`px-5 py-3.5 rounded-2xl ${
             isUser
               ? 'bg-[#1677ff] text-white rounded-br-md'
               : 'bg-white dark:bg-[#2a2a3c] text-[#08060d] dark:text-[#e0e0e0] rounded-bl-md shadow-sm'
           }`}
         >
-          <div className="prose prose-sm max-w-none dark:prose-invert">
+          <div className="prose prose-base max-w-none dark:prose-invert text-[15px] leading-relaxed">
             <ReactMarkdown>{message.content}</ReactMarkdown>
           </div>
         </div>
 
         {/* 底部信息 */}
-        <div className={`flex items-center gap-2 mt-1 ${isUser ? 'justify-end' : 'justify-start'}`}>
+        <div className={`flex items-center gap-2 mt-1.5 ${isUser ? 'justify-end' : 'justify-start'}`}>
           <span className="text-xs text-[#6b6375]">{formatTime(message.created_at)}</span>
           {!isUser && message.content && (
             <button

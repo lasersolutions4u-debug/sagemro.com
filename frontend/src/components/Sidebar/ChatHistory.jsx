@@ -51,7 +51,7 @@ function ConversationItem({ conversation, isActive, onSelect, onDelete }) {
 
   return (
     <div
-      className={`group relative px-4 py-2 mx-1 rounded-lg cursor-pointer transition-colors ${
+      className={`group relative px-4 py-2.5 mx-1 rounded-lg cursor-pointer transition-colors ${
         isActive
           ? 'bg-[#2a2a3c]'
           : 'hover:bg-[#2a2a3c]/50'
@@ -60,14 +60,14 @@ function ConversationItem({ conversation, isActive, onSelect, onDelete }) {
       onMouseEnter={() => setShowActions(true)}
       onMouseLeave={() => setShowActions(false)}
     >
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2.5">
         <div className={`w-2 h-2 rounded-full ${isActive ? 'bg-[#1677ff]' : 'bg-[#6b6375]'}`} />
-        <span className="flex-1 text-sm text-[#cdd6f4] truncate">
+        <span className="flex-1 text-[14px] text-[#cdd6f4] truncate">
           {conversation.title || '新对话'}
         </span>
       </div>
       {conversation.last_message && (
-        <p className="mt-0.5 pl-4 text-xs text-[#6b6375] truncate">
+        <p className="mt-0.5 pl-[18px] text-xs text-[#6b6375] truncate">
           {conversation.last_message}
         </p>
       )}
