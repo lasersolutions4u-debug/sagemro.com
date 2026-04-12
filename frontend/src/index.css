@@ -9,11 +9,6 @@
   --color-ai-bubble: #ffffff;
   --color-input-bg: #ffffff;
   --color-border: #e5e4e7;
-
-  /* 字号 - 参考 ChatGPT */
-  --text-sm: 0.875rem;
-  --text-base: 1rem;
-  --text-lg: 1.125rem;
 }
 
 .dark {
@@ -29,7 +24,7 @@
 }
 
 html {
-  font-size: 16px;
+  font-size: 17px;
 }
 
 body {
@@ -37,8 +32,8 @@ body {
   font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  font-size: var(--text-base);
-  line-height: 1.6;
+  font-size: 1rem;
+  line-height: 1.5;
 }
 
 html, body, #root {

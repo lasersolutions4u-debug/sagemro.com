@@ -21,7 +21,7 @@ export function ChatHistory({ conversations, currentId, onSelect, onDelete }) {
 
         return (
           <div key={date} className="mb-3">
-            <div className="px-4 py-1 text-xs text-[#6b6375] font-medium">
+            <div className="px-4 py-1 text-[13px] text-[#6b6375] font-medium">
               {date}
             </div>
             {items.map((conv) => (
@@ -62,12 +62,12 @@ function ConversationItem({ conversation, isActive, onSelect, onDelete }) {
     >
       <div className="flex items-center gap-2.5">
         <div className={`w-2 h-2 rounded-full ${isActive ? 'bg-[#1677ff]' : 'bg-[#6b6375]'}`} />
-        <span className="flex-1 text-[14px] text-[#cdd6f4] truncate">
+        <span className="flex-1 text-[15px] text-[#cdd6f4] truncate">
           {conversation.title || '新对话'}
         </span>
       </div>
       {conversation.last_message && (
-        <p className="mt-0.5 pl-[18px] text-xs text-[#6b6375] truncate">
+        <p className="mt-0.5 pl-[18px] text-[13px] text-[#6b6375] truncate">
           {conversation.last_message}
         </p>
       )}

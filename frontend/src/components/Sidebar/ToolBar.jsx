@@ -14,7 +14,7 @@ export function ToolBar({ onOpenWorkOrder, onOpenMyWorkOrders, onOpenSettings, o
         <button
           key={tool.label}
           onClick={tool.onClick}
-          className="w-full flex items-center gap-3 px-4 py-3 text-[14px] text-[#cdd6f4] hover:bg-[#2a2a3c] rounded-lg mx-1 transition-colors"
+          className="w-full flex items-center gap-3 px-4 py-3 text-[15px] text-[#cdd6f4] hover:bg-[#2a2a3c] rounded-lg mx-1 transition-colors"
         >
           <tool.icon size={18} />
           <span>{tool.label}</span>

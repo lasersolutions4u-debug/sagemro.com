@@ -37,14 +37,14 @@ export function MessageBubble({ message }) {
               : 'bg-white dark:bg-[#2a2a3c] text-[#08060d] dark:text-[#e0e0e0] rounded-bl-md shadow-sm'
           }`}
         >
-          <div className="prose prose-base max-w-none dark:prose-invert text-[15px] leading-relaxed">
+          <div className="prose prose-base max-w-none dark:prose-invert text-[16px] leading-relaxed">
             <ReactMarkdown>{message.content}</ReactMarkdown>
           </div>
         </div>
 
         {/* 底部信息 */}
         <div className={`flex items-center gap-2 mt-1.5 ${isUser ? 'justify-end' : 'justify-start'}`}>
-          <span className="text-xs text-[#6b6375]">{formatTime(message.created_at)}</span>
+          <span className="text-[12px] text-[#6b6375]">{formatTime(message.created_at)}</span>
           {!isUser && message.content && (
             <button
               onClick={handleCopy}

@@ -35,7 +35,7 @@ export function ChatArea({
         >
           <Menu size={20} className="text-[#6b6375]" />
         </button>
-        <h1 className="flex-1 text-base font-medium text-[#08060d] dark:text-[#f3f4f6] truncate">
+        <h1 className="flex-1 text-[17px] font-medium text-[#08060d] dark:text-[#f3f4f6] truncate">
           {currentTitle || '新对话'}
         </h1>
       </header>

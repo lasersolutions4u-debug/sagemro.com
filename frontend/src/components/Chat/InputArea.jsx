@@ -40,7 +40,7 @@ export function InputArea({ onSend, onStop, disabled, isStreaming }) {
               placeholder="输入消息..."
               disabled={disabled}
               rows={1}
-              className="w-full px-5 py-4 pr-14 bg-[#f4f3f4] dark:bg-[#2a2a3c] border border-[#e5e4e7] dark:border-[#3a3a4c] rounded-2xl resize-none focus:outline-none focus:ring-2 focus:ring-[#1677ff] text-[#08060d] dark:text-[#f3f4f6] placeholder-[#6b6375] disabled:opacity-50 text-[15px]"
+              className="w-full px-5 py-4 pr-14 bg-[#f4f3f4] dark:bg-[#2a2a3c] border border-[#e5e4e7] dark:border-[#3a3a4c] rounded-2xl resize-none focus:outline-none focus:ring-2 focus:ring-[#1677ff] text-[#08060d] dark:text-[#f3f4f6] placeholder-[#6b6375] disabled:opacity-50 text-[16px]"
               style={{ minHeight: '56px', maxHeight: '200px' }}
             />
           </div>
