@@ -36,8 +36,6 @@ jobs:
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           projectName: sagemro
           directory: frontend/dist
-          gitSource:
-            deploymentEnabled: true
 
   deploy-worker:
     name: Deploy Worker to Cloudflare Workers
