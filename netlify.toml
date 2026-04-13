@@ -1,8 +1,6 @@
 [build]
+  command = "cd frontend && npm install && npm run build"
   publish = "frontend/dist"
 
 [build.environment]
   NODE_VERSION = "20"
-
-[context.production]
-  force_remote = "true"
