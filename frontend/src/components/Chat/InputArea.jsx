@@ -27,11 +27,16 @@ export function InputArea({ onSend, onStop, disabled, isStreaming }) {
   };
 
   return (
-    <div className="border-t border-[var(--color-primary)] bg-[var(--color-chat-bg)] px-3 sm:px-6 py-3 sm:py-4">
+    <div className="border-t border-[var(--color-border)] bg-[var(--color-chat-bg)] px-3 sm:px-6 py-3 sm:py-4">
       <div className="max-w-4xl mx-auto">
-        <div className="flex items-end gap-2 sm:gap-4">
-          {/* 输入框 */}
-          <div className="flex-1 relative">
+        <div className="flex items-start gap-3">
+          {/* 输入框 - 外层容器实现圆角和边框 */}
+          <div
+            className={`input-wrapper flex-1 rounded-2xl transition-colors ${disabled ? 'opacity-50' : ''}`}
+            style={{
+              backgroundColor: 'var(--color-input-bg)',
+            }}
+          >
             <textarea
               ref={textareaRef}
               value={input}
@@ -40,32 +45,37 @@ export function InputArea({ onSend, onStop, disabled, isStreaming }) {
               placeholder="输入消息..."
               disabled={disabled}
               rows={1}
-              className="w-full px-4 sm:px-5 py-3 sm:py-4 pr-12 sm:pr-14 bg-[var(--color-input-bg)] border-2 border-[var(--color-primary)] rounded-2xl resize-none focus:outline-none focus:ring-2 focus:ring-[var(--color-input-focus)] text-[var(--color-text-primary)] placeholder-[var(--color-text-muted)] disabled:opacity-50 text-[15px]"
-              style={{ minHeight: '48px', maxHeight: '200px' }}
+              className="w-full px-4 py-3 bg-transparent resize-none focus:outline-none text-[var(--color-text-primary)] placeholder-[var(--color-text-muted)] disabled:opacity-50 text-[15px]"
+              style={{
+                minHeight: '48px',
+                maxHeight: '200px',
+              }}
             />
           </div>
 
-          {/* 发送/停止按钮 */}
-          {isStreaming ? (
-            <button
-              onClick={onStop}
-              className="w-11 h-11 sm:w-12 sm:h-12 flex items-center justify-center bg-red-500 hover:bg-red-600 text-white rounded-xl transition-colors flex-shrink-0"
-              title="停止生成"
-            >
-              <StopCircle size={20} />
-            </button>
-          ) : (
-            <button
-              onClick={handleSend}
-              disabled={!input.trim() || disabled}
-              className="w-11 h-11 sm:w-12 sm:h-12 flex items-center justify-center bg-[#f59e0b] hover:bg-[#fbbf24] disabled:bg-[#cccccc] disabled:opacity-50 text-white rounded-xl transition-colors flex-shrink-0 shadow-sm"
-            >
-              <Send size={20} />
-            </button>
-          )}
+          {/* 发送/停止按钮 - 与输入框顶部对齐 */}
+          <div className="flex items-start">
+            {isStreaming ? (
+              <button
+                onClick={onStop}
+                className="w-12 h-12 flex items-center justify-center bg-red-500 hover:bg-red-600 text-white rounded-2xl transition-colors flex-shrink-0 active:scale-95"
+                title="停止生成"
+              >
+                <StopCircle size={22} />
+              </button>
+            ) : (
+              <button
+                onClick={handleSend}
+                disabled={!input.trim() || disabled}
+                className="w-12 h-12 flex items-center justify-center bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] disabled:bg-[var(--color-border)] disabled:opacity-50 text-white rounded-2xl transition-colors flex-shrink-0 active:scale-95"
+              >
+                <Send size={20} />
+              </button>
+            )}
+          </div>
         </div>
 
-        <p className="mt-2 text-[11px] text-center text-[#999999] hidden sm:block">
+        <p className="mt-2 text-[11px] text-center text-[var(--color-text-muted)] hidden sm:block">
           Enter 发送消息 · Shift + Enter 换行
         </p>
       </div>
