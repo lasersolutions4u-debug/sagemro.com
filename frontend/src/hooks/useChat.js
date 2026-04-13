@@ -15,6 +15,17 @@ export function useChat() {
 
   // 发送消息
   const sendMessage = useCallback(async (content) => {
+    // C类用户（未登录）限制10次对话
+    const isLoggedIn = localStorage.getItem('sagemro_customer_id') || localStorage.getItem('sagemro_engineer_id');
+    if (!isLoggedIn) {
+      const count = parseInt(localStorage.getItem('guest_conversation_count') || '0', 10);
+      if (count >= 10) {
+        setError('您的好奇心已用完，请注册账号继续体验。');
+        return;
+      }
+      localStorage.setItem('guest_conversation_count', String(count + 1));
+    }
+
     // 创建用户消息
     const userMessage = {
       id: generateId(),

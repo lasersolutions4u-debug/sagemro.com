@@ -230,7 +230,7 @@ async function handleSendCode(request, env) {
     }
 
     // 临时方案：固定验证码用于开发测试
-    const code = '1234';
+    const code = String(Math.floor(1000 + Math.random() * 9000));
 
     // 存储验证码（有效期5分钟）
     await env.KV.put(`verify_code_${phone}`, code, { expirationTtl: 300 });

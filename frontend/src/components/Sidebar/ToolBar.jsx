@@ -12,9 +12,8 @@ export function ToolBar({
   userType,
 }) {
   const tools = [
-    { icon: FileText, label: '提交工单', onClick: onOpenWorkOrder },
+    { icon: FileText, label: '新建工单', onClick: onOpenWorkOrder },
     { icon: ClipboardList, label: '我的工单', onClick: onOpenMyWorkOrders },
-    { icon: Settings, label: '设置', onClick: onOpenSettings },
     { icon: Info, label: '关于小智', onClick: onOpenAbout },
   ];
 
@@ -52,7 +51,10 @@ export function ToolBar({
       <div className="border-t border-[#333333] mt-3 pt-3">
         {currentUser ? (
           <>
-            <div className="flex items-center gap-3 px-4 py-2.5 text-[14px] text-[#d4d4d4]">
+            <button
+              onClick={onOpenSettings}
+              className="w-full flex items-center gap-3 px-4 py-2.5 text-[14px] text-[#d4d4d4] hover:bg-[#252525] hover:text-[#f5f5f5] rounded-lg mx-1 transition-colors"
+            >
               <div className="w-6 h-6 rounded-full bg-[#f59e0b] flex items-center justify-center">
                 <span className="text-white text-xs font-medium">
                   {currentUser.name?.charAt(0) || 'U'}
@@ -62,7 +64,7 @@ export function ToolBar({
               {userType === 'engineer' && (
                 <span className="text-[10px] px-1.5 py-0.5 bg-[#f59e0b]/20 text-[#f59e0b] rounded">工程师</span>
               )}
-            </div>
+            </button>
             <button
               onClick={onLogout}
               className="w-full flex items-center gap-3 px-4 py-2.5 text-[14px] text-[#d4d4d4] hover:bg-[#252525] hover:text-[#f5f5f5] rounded-lg mx-1 transition-colors"
