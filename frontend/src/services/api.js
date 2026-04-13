@@ -1,5 +1,5 @@
 // API 服务层
-const API_BASE = import.meta.env.VITE_API_BASE || 'https://api.lasersolutions4u.workers.dev';
+const API_BASE = import.meta.env.VITE_API_BASE || 'https://sagemro-api.lasersolutions4u.workers.dev';
 
 // ============ 认证相关 ============
 

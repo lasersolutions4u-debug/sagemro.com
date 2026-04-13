@@ -2,9 +2,6 @@ name = "sagemro-api"
 main = "src/index.js"
 compatibility_date = "2024-01-01"
 
-[site]
-bucket = "./dist"
-
 [[d1_databases]]
 binding = "DB"
 database_name = "sagemro-db"
