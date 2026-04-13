@@ -159,7 +159,7 @@ function App() {
   }, []);
 
   return (
-    <div className="flex h-screen">
+    <div className="flex h-dvh">
       {/* 侧边栏 */}
       <Sidebar
         conversations={conversations}
