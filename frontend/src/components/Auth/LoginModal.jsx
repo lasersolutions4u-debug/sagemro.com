@@ -591,12 +591,8 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess }) {
         {/* ========== 登录页 ========== */}
         {step === 'login' && (
           <div className="space-y-3">
-            <div className="flex items-center gap-2 mb-2">
-              <button onClick={() => setStep('choice')} className="text-sm text-[#6b6375] hover:text-[#f59e0b]">← 返回</button>
-            </div>
-
             <div className="text-center mb-4">
-              <p className="text-sm text-[#6b6375]">登录后可提交工单，获取工程师支持</p>
+              <p className="text-sm text-[#6b6375]">有任何钣金加工设备的问题，随时问AI小智</p>
             </div>
 
             {error && (
@@ -627,6 +623,17 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess }) {
             >
               {submitting ? '登录中...' : '登录'}
             </button>
+
+            {/* 注册链接 */}
+            <div className="text-center text-sm text-[#6b6375] pt-1">
+              还没有账户？{' '}
+              <button
+                onClick={() => goToRegisterCustomer()}
+                className="text-[#f59e0b] hover:underline font-medium"
+              >
+                点击注册
+              </button>
+            </div>
           </div>
         )}
       </div>
