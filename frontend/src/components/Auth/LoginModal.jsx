@@ -42,8 +42,8 @@ function generateRandomName() {
 
 // ============ 组件 ============
 export function LoginModal({ isOpen, onClose, onLoginSuccess }) {
-  // step flow: choice | register-customer | register-engineer-1 | register-engineer-2
-  const [step, setStep] = useState('choice');
+  // step flow: login | register-customer | register-engineer-1 | register-engineer-2
+  const [step, setStep] = useState('login');
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -192,7 +192,7 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess }) {
     setServices([]);
     setServiceRegion([]);
     setBio('');
-    setStep('choice');
+    setStep('login');
     onClose();
   };
 
@@ -273,11 +273,11 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess }) {
         {step === 'register-customer' && (
           <div className="space-y-3">
             <div className="flex items-center gap-2 mb-2">
-              <button onClick={() => setStep('choice')} className="text-sm text-[#6b6375] hover:text-[#f59e0b]">← 返回</button>
+              <button onClick={() => setStep('login')} className="text-sm text-[#6b6375] hover:text-[#f59e0b]">← 返回登录</button>
             </div>
 
             <div className="text-center mb-4">
-              <p className="text-sm text-[#6b6375]">创建您的账户</p>
+              <p className="text-sm text-[#6b6375]">注册成为客户</p>
             </div>
 
             {error && (
@@ -383,11 +383,11 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess }) {
         {step === 'register-engineer-1' && (
           <div className="space-y-3">
             <div className="flex items-center gap-2 mb-2">
-              <button onClick={() => setStep('choice')} className="text-sm text-[#6b6375] hover:text-[#f59e0b]">← 返回</button>
+              <button onClick={() => setStep('login')} className="text-sm text-[#6b6375] hover:text-[#f59e0b]">← 返回登录</button>
             </div>
 
             <div className="text-center mb-4">
-              <p className="text-sm text-[#6b6375]">创建工程师账户</p>
+              <p className="text-sm text-[#6b6375]">注册成为工程师</p>
             </div>
 
             {error && (
