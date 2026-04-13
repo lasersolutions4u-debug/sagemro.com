@@ -8,11 +8,8 @@ bucket = "./dist"
 [[d1_databases]]
 binding = "DB"
 database_name = "sagemro-db"
-database_id = "your-database-id-here"
+database_id = "eb84471f-ed33-47ae-827f-1419f5a9428f"
 
 [[kv_namespaces]]
 binding = "KV"
-id = "your-kv-namespace-id"
-
-[vars]
-OPENAI_API_KEY = "sk-your-api-key-here"
+id = "2d34230fd0e74b0fa83fdd4ee0c934f1"
