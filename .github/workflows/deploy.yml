@@ -8,7 +8,7 @@ on:
 
 jobs:
   deploy-frontend:
-    name: Deploy Frontend to Cloudflare
+    name: Deploy Frontend to Netlify
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -27,12 +27,15 @@ jobs:
         working-directory: frontend
         run: npm run build
 
-      - name: Deploy to Cloudflare
-        uses: cloudflare/wrangler-action@v3
+      - name: Deploy to Netlify
+        uses: nwtgck/actions-netlify@v1.2
         with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: pages deploy frontend/dist --project-name=sagemro
+          publish-dir: ./frontend/dist
+          production-deploy: true
+          deploy-message: "Deploy from GitHub Actions"
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          netlify-site-id: ${{ secrets.NETLIFY_SITE_ID }}
+          netlify-auth-token: ${{ secrets.NETLIFY_AUTH_TOKEN }}
 
   deploy-worker:
     name: Deploy Worker to Cloudflare Workers
