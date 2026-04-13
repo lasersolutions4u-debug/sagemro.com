@@ -4,8 +4,8 @@
  */
 
 // ============ 配置 ============
-const API_ENDPOINT = 'https://api.jiekou.ai/v1/chat/completions';
-const API_KEY = 'REDACTED_BY_SECURITY_ROTATION_2026_04_22';
+const API_ENDPOINT = 'https://api.jiekou.ai/openai/v1/chat/completions';
+const API_KEY = 'sk_a7uVsDWKwsOQ1zUovIytP2f0N-dGpKGh6r5ZxG3pfNw';
 
 // ============ System Prompt ============
 const SYSTEM_PROMPT = `你是"小智"，智维钣金平台的 AI 助手，服务于钣金加工行业的设备维修服务。

@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import { Modal } from '../common/Modal';
-import { X } from 'lucide-react';
 import { login, sendVerifyCode, registerCustomer, registerEngineer } from '../../services/api';
 
 // 设备类型选项
@@ -30,7 +29,8 @@ const commonServices = [
 ];
 
 export function LoginModal({ isOpen, onClose, onLoginSuccess }) {
-  const [activeTab, setActiveTab] = useState('login'); // 'login' | 'register-customer' | 'register-engineer'
+  // step: 'choice' | 'login' | 'register-customer' | 'register-engineer'
+  const [step, setStep] = useState('choice');
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
@@ -41,13 +41,12 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess }) {
   const [error, setError] = useState('');
 
   // 工程师背景调查
-  const [specialties, setSpecialties] = useState([]); // 设备类型
-  const [brands, setBrands] = useState({}); // 品牌 { '激光切割机': ['大族', '通快'] }
-  const [services, setServices] = useState([]); // 维修项目
+  const [specialties, setSpecialties] = useState([]);
+  const [brands, setBrands] = useState({});
+  const [services, setServices] = useState([]);
   const [serviceRegion, setServiceRegion] = useState('');
   const [bio, setBio] = useState('');
 
-  // 发送验证码
   const handleSendCode = async () => {
     if (!phone) { setError('请输入手机号'); return; }
     if (phone.length !== 11) { setError('请输入正确的手机号'); return; }
@@ -70,7 +69,6 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess }) {
     }
   };
 
-  // 登录
   const handleLogin = async () => {
     if (!phone || !password) { setError('请输入手机号和密码'); return; }
 
@@ -95,7 +93,6 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess }) {
     }
   };
 
-  // 客户注册
   const handleRegisterCustomer = async () => {
     if (!name || !phone || !password || !code) { setError('请填写所有必填项'); return; }
 
@@ -117,7 +114,6 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess }) {
     }
   };
 
-  // 工程师注册
   const handleRegisterEngineer = async () => {
     if (!name || !phone || !password || !code) { setError('请填写所有必填项'); return; }
     if (specialties.length === 0) { setError('请选择擅长的设备类型'); return; }
@@ -148,14 +144,12 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess }) {
     }
   };
 
-  // 切换设备类型
   const toggleSpecialty = (type) => {
     setSpecialties(prev =>
       prev.includes(type) ? prev.filter(t => t !== type) : [...prev, type]
     );
   };
 
-  // 切换品牌
   const toggleBrand = (deviceType, brand) => {
     setBrands(prev => {
       const current = prev[deviceType] || [];
@@ -166,7 +160,6 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess }) {
     });
   };
 
-  // 切换服务项目
   const toggleService = (service) => {
     setServices(prev =>
       prev.includes(service) ? prev.filter(s => s !== service) : [...prev, service]
@@ -184,57 +177,87 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess }) {
     setServices([]);
     setServiceRegion('');
     setBio('');
-    setActiveTab('login');
+    setStep('choice');
     onClose();
   };
 
   return (
     <Modal isOpen={isOpen} onClose={handleClose} title="登录/注册" size="lg">
       <div className="space-y-4">
-        {/* Tab 切换 */}
-        <div className="flex border-b border-[#e5e4e7] dark:border-[#3a3a4c]">
-          <button
-            onClick={() => setActiveTab('login')}
-            className={`flex-1 py-2 text-sm font-medium border-b-2 transition-colors ${
-              activeTab === 'login'
-                ? 'border-[#f59e0b] text-[#f59e0b]'
-                : 'border-transparent text-[#6b6375]'
-            }`}
-          >
-            登录
-          </button>
-          <button
-            onClick={() => setActiveTab('register-customer')}
-            className={`flex-1 py-2 text-sm font-medium border-b-2 transition-colors ${
-              activeTab === 'register-customer'
-                ? 'border-[#f59e0b] text-[#f59e0b]'
-                : 'border-transparent text-[#6b6375]'
-            }`}
-          >
-            我是客户
-          </button>
-          <button
-            onClick={() => setActiveTab('register-engineer')}
-            className={`flex-1 py-2 text-sm font-medium border-b-2 transition-colors ${
-              activeTab === 'register-engineer'
-                ? 'border-[#f59e0b] text-[#f59e0b]'
-                : 'border-transparent text-[#6b6375]'
-            }`}
-          >
-            我是工程师
-          </button>
-        </div>
+
+        {/* ========== 问题分流页 ========== */}
+        {step === 'choice' && (
+          <div className="space-y-4">
+            <div className="text-center mb-6">
+              <h3 className="text-base font-medium">下面哪一项比较符合我的情况？</h3>
+            </div>
+
+            <div className="space-y-2.5">
+              {/* A. 我需要服务 */}
+              <button
+                onClick={() => setStep('login')}
+                className="w-full p-4 text-left rounded-xl border-2 border-[#f4f3f4] dark:border-[#3a3a4c] hover:border-[#f59e0b] transition-colors group"
+              >
+                <div className="flex items-start gap-3">
+                  <span className="flex-shrink-0 w-7 h-7 rounded-full bg-[#f59e0b] text-white text-sm flex items-center justify-center font-medium">A</span>
+                  <div>
+                    <p className="font-medium text-sm group-hover:text-[#f59e0b] transition-colors">我需要或将来可能需要设备维修保养服务</p>
+                    <p className="text-xs text-[#6b6375] mt-0.5">提交工单，获取工程师支持</p>
+                  </div>
+                </div>
+              </button>
+
+              {/* B. 我提供服务 */}
+              <button
+                onClick={() => setStep('register-engineer')}
+                className="w-full p-4 text-left rounded-xl border-2 border-[#f4f3f4] dark:border-[#3a3a4c] hover:border-[#f59e0b] transition-colors group"
+              >
+                <div className="flex items-start gap-3">
+                  <span className="flex-shrink-0 w-7 h-7 rounded-full bg-[#f59e0b] text-white text-sm flex items-center justify-center font-medium">B</span>
+                  <div>
+                    <p className="font-medium text-sm group-hover:text-[#f59e0b] transition-colors">我可以提供维修保养服务</p>
+                    <p className="text-xs text-[#6b6375] mt-0.5">注册成为平台工程师，接单服务</p>
+                  </div>
+                </div>
+              </button>
+
+              {/* C. 只是了解 */}
+              <button
+                onClick={() => {
+                  handleClose();
+                }}
+                className="w-full p-4 text-left rounded-xl border-2 border-[#f4f3f4] dark:border-[#3a3a4c] hover:border-[#6b6375] transition-colors group"
+              >
+                <div className="flex items-start gap-3">
+                  <span className="flex-shrink-0 w-7 h-7 rounded-full bg-[#6b6375] text-white text-sm flex items-center justify-center font-medium">C</span>
+                  <div>
+                    <p className="font-medium text-sm text-[#6b6375] group-hover:text-[#9b92a0] transition-colors">我只是了解一下</p>
+                    <p className="text-xs text-[#6b6375] mt-0.5">先看看，不急着注册</p>
+                  </div>
+                </div>
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* 错误提示 */}
-        {error && (
+        {error && step !== 'choice' && (
           <div className="p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl text-red-600 dark:text-red-400 text-sm">
             {error}
           </div>
         )}
 
-        {/* 登录表单 */}
-        {activeTab === 'login' && (
+        {/* ========== 客户登录/注册页 ========== */}
+        {step === 'login' && (
           <div className="space-y-3">
+            <div className="flex items-center gap-2 mb-2">
+              <button onClick={() => setStep('choice')} className="text-sm text-[#6b6375] hover:text-[#f59e0b]">← 返回</button>
+            </div>
+
+            <div className="text-center mb-4">
+              <p className="text-sm text-[#6b6375]">登录后可提交工单，获取工程师支持</p>
+            </div>
+
             <div>
               <label className="block text-sm font-medium mb-1">手机号</label>
               <input
@@ -257,12 +280,30 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess }) {
             >
               {submitting ? '登录中...' : '登录'}
             </button>
+
+            <div className="text-center text-sm text-[#6b6375]">
+              没有账号？{' '}
+              <button
+                onClick={() => { setName(''); setCode(''); setPassword(''); setStep('register-customer'); }}
+                className="text-[#f59e0b] hover:underline font-medium"
+              >
+                立即注册
+              </button>
+            </div>
           </div>
         )}
 
-        {/* 客户注册表单 */}
-        {activeTab === 'register-customer' && (
+        {/* ========== 客户注册页 ========== */}
+        {step === 'register-customer' && (
           <div className="space-y-3">
+            <div className="flex items-center gap-2 mb-2">
+              <button onClick={() => setStep('choice')} className="text-sm text-[#6b6375] hover:text-[#f59e0b]">← 返回</button>
+            </div>
+
+            <div className="text-center mb-4">
+              <p className="text-sm text-[#6b6375]">注册后即可提交工单，获取专业工程师支持</p>
+            </div>
+
             <div>
               <label className="block text-sm font-medium mb-1">姓名</label>
               <input
@@ -309,12 +350,30 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess }) {
             >
               {submitting ? '注册中...' : '注册'}
             </button>
+
+            <div className="text-center text-sm text-[#6b6375]">
+              已有账号？{' '}
+              <button
+                onClick={() => { setStep('login'); setName(''); setCode(''); }}
+                className="text-[#f59e0b] hover:underline font-medium"
+              >
+                立即登录
+              </button>
+            </div>
           </div>
         )}
 
-        {/* 工程师注册表单 */}
-        {activeTab === 'register-engineer' && (
+        {/* ========== 工程师注册页 ========== */}
+        {step === 'register-engineer' && (
           <div className="space-y-3 max-h-[65vh] overflow-y-auto pr-1">
+            <div className="flex items-center gap-2 mb-2">
+              <button onClick={() => setStep('choice')} className="text-sm text-[#6b6375] hover:text-[#f59e0b]">← 返回</button>
+            </div>
+
+            <div className="text-center mb-4">
+              <p className="text-sm text-[#6b6375]">注册成为平台工程师，接收精准工单推荐</p>
+            </div>
+
             {/* 基础信息 */}
             <div>
               <label className="block text-sm font-medium mb-1">姓名 *</label>
@@ -383,7 +442,7 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess }) {
               </div>
             </div>
 
-            {/* 品牌（根据选择的设备类型显示） */}
+            {/* 品牌 */}
             {specialties.length > 0 && (
               <div>
                 <label className="block text-xs font-medium mb-2">熟悉的品牌</label>
@@ -398,7 +457,7 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess }) {
                           className={`px-2 py-0.5 rounded text-xs transition-colors ${
                             (brands[type] || []).includes(brand)
                               ? 'bg-[#fbbf24] text-white'
-                              : 'bg-[#f4f3f4] dark:bg-[#2a2a3c] text-[#6b6375]'
+                              : 'bg-[#f4f3f4] dark:bg-[#2a3a4c] text-[#6b6375]'
                           }`}
                         >
                           {brand}
