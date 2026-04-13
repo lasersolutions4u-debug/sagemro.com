@@ -163,7 +163,8 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess }) {
       onLoginSuccess?.(result);
       handleClose();
     } catch (e) {
-      setError(e.message);
+      setError(e.message || '注册失败，请重试');
+      setSubmitting(false);
     } finally {
       setSubmitting(false);
     }
