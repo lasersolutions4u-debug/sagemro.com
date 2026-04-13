@@ -52,3 +52,10 @@ html, body, #root {
   padding: 0;
   overflow: hidden;
 }
+
+/* 输入框 placeholder 字号统一调小 */
+input::placeholder,
+textarea::placeholder {
+  font-size: 0.875rem;
+  color: #9b92a0;
+}

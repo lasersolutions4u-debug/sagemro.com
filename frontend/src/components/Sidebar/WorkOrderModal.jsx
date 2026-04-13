@@ -1,10 +1,20 @@
 import { useState } from 'react';
 import { Modal } from '../common/Modal';
+import { TagInput } from '../common/TagInput';
 import { WorkOrderType, UrgencyLevel } from '../../types';
+
+// 设备类型选项
+const deviceTypeOptions = [
+  '激光切割机', '折弯机', '冲床', '焊接机', '激光焊接',
+  '卷板机', '等离子切割', '水刀切割', '剪板机', '其他'
+];
 
 export function WorkOrderModal({ isOpen, onClose, onSubmit }) {
   const [form, setForm] = useState({
     type: '',
+    device_type: [],
+    device_brand: [],
+    region: [],
     device_model: '',
     description: '',
     contact: '',
@@ -24,6 +34,9 @@ export function WorkOrderModal({ isOpen, onClose, onSubmit }) {
       // 重置表单
       setForm({
         type: '',
+        device_type: [],
+        device_brand: [],
+        region: [],
         device_model: '',
         description: '',
         contact: '',
@@ -75,6 +88,31 @@ export function WorkOrderModal({ isOpen, onClose, onSubmit }) {
           </select>
         </div>
 
+        {/* 设备类型 */}
+        <TagInput
+          label="设备类型"
+          options={deviceTypeOptions}
+          value={form.device_type}
+          onChange={(val) => setForm({ ...form, device_type: val })}
+          placeholder="选择或输入设备类型..."
+        />
+
+        {/* 设备品牌 */}
+        <TagInput
+          label="设备品牌"
+          value={form.device_brand}
+          onChange={(val) => setForm({ ...form, device_brand: val })}
+          placeholder="输入设备品牌，回车添加..."
+        />
+
+        {/* 所在地区 */}
+        <TagInput
+          label="所在地区"
+          value={form.region}
+          onChange={(val) => setForm({ ...form, region: val })}
+          placeholder="输入所在地区，回车添加..."
+        />
+
         {/* 设备型号 */}
         <div>
           <label className="block text-sm font-medium text-[#08060d] dark:text-[#f3f4f6] mb-1">
@@ -84,7 +122,7 @@ export function WorkOrderModal({ isOpen, onClose, onSubmit }) {
             type="text"
             value={form.device_model}
             onChange={(e) => setForm({ ...form, device_model: e.target.value })}
-            placeholder="例如：3000W光纤激光切割机"
+            placeholder="如：3000W光纤激光切割机"
             className="w-full px-3 py-2 border border-[#e5e4e7] dark:border-[#3a3a4c] rounded-xl bg-white dark:bg-[#2a2a3c] text-[#08060d] dark:text-[#f3f4f6] focus:outline-none focus:ring-2 focus:ring-[#f59e0b]"
           />
         </div>
@@ -144,6 +182,13 @@ export function WorkOrderModal({ isOpen, onClose, onSubmit }) {
               </label>
             ))}
           </div>
+        </div>
+
+        {/* 费用提示 */}
+        <div className="bg-[#fffbeb] dark:bg-[#2a2a1a] border border-[#fde68a] dark:border-[#92400e] rounded-xl p-3">
+          <p className="text-xs text-[#92400e] dark:text-[#fde68a]">
+            费用由工程师在接单前私下与您讨论确认。
+          </p>
         </div>
 
         {/* 提交按钮 */}

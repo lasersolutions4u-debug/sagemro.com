@@ -229,16 +229,13 @@ async function handleSendCode(request, env) {
       return errorResponse('手机号不能为空');
     }
 
-    // 模拟发送验证码（4位数字）
-    const code = Math.floor(1000 + Math.random() * 9000).toString();
+    // 临时方案：固定验证码用于开发测试
+    const code = '1234';
 
     // 存储验证码（有效期5分钟）
     await env.KV.put(`verify_code_${phone}`, code, { expirationTtl: 300 });
 
-    // 实际生产环境应调用短信网关
-    console.log(`[模拟] 发送验证码 ${code} 到 ${phone}`);
-
-    return jsonResponse({ success: true, message: '验证码已发送' });
+    return jsonResponse({ success: true, message: '验证码已发送（测试模式）', code });
   } catch (error) {
     return errorResponse(error.message, 500);
   }
