@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Modal } from '../common/Modal';
 import { TagInput } from '../common/TagInput';
+import { RegionInput } from '../common/RegionInput';
 import { login, sendVerifyCode, registerCustomer, registerEngineer } from '../../services/api';
 
 // ============ 预设选项 ============
@@ -559,11 +560,11 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess }) {
             />
 
             {/* 服务地区 */}
-            <TagInput
+            <RegionInput
               label="服务覆盖地区"
               value={serviceRegion}
               onChange={setServiceRegion}
-              placeholder="输入服务地区，回车添加..."
+              placeholder="输入省、市、区名称搜索..."
             />
 
             {/* 个人简介 */}
