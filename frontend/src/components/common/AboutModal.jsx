@@ -17,7 +17,7 @@ export function AboutModal({ isOpen, onClose }) {
           钣金加工行业智能服务平台
         </p>
 
-        <div className="text-left space-y-4 text-sm text-[#08060d] dark:text-[#e4e4e7] leading-relaxed">
+        <div className="text-left space-y-4 text-xs text-[#08060d] dark:text-[#e4e4e7] leading-relaxed">
           <p>
             小智是智维钣金平台的 AI 助手，服务于钣金加工行业的后服务市场。它面向的不是单一设备品类，而是钣金加工全链条——激光切割机、折弯机、焊接设备、自动化产线及其周边耗材与备件——为设备使用方和售后工程师提供 7×24 小时的智能技术支持。
           </p>

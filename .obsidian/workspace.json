@@ -186,6 +186,8 @@
   },
   "active": "63f179da21a8584d",
   "lastOpenFiles": [
+    "frontend/dist/assets/index-CDkm7Akx.css",
+    "frontend/dist/assets/index-BrvzZ9El.js",
     "frontend/dist/assets/index-Oayv8BQS.css",
     "frontend/dist/assets/index-Burxvi3p.js",
     "frontend/dist/assets/index-C0eZsKde.js",
@@ -195,8 +197,6 @@
     "wrangler.toml",
     "frontend/dist/assets/index-Dkc7zKba.js",
     "frontend/dist/assets/index-BWzx0X_G.js",
-    "frontend/dist/assets/index-63iCveWt.js",
-    "frontend/dist/assets/index-BNsGQZJt.js",
     "DEPLOY.md",
     "frontend/node_modules/mdast-util-to-hast/readme.md",
     "frontend/dist/icons.svg",
