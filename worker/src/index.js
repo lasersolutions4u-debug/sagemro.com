@@ -324,7 +324,7 @@ async function handleRegisterEngineer(request, env) {
       JSON.stringify(specialties || []),
       JSON.stringify(brands || {}),
       JSON.stringify(services || []),
-      service_region || '',
+      JSON.stringify(service_region || []),
       bio || ''
     ).run();
 
