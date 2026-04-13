@@ -26,9 +26,9 @@ export function ChatArea({
   const hasMessages = messages.length > 0;
 
   return (
-    <div className="flex flex-col h-full bg-white dark:bg-white">
+    <div className="flex flex-col h-full bg-[var(--color-chat-bg)]">
       {/* 顶部栏 */}
-      <header className="flex items-center gap-2 sm:gap-3 px-3 sm:px-5 py-3 sm:py-4 border-b border-[#e5e4e7] dark:border-[#e5e4e7] bg-white dark:bg-white">
+      <header className="flex items-center gap-2 sm:gap-3 px-3 sm:px-5 py-3 sm:py-4 border-b border-[var(--color-border)] bg-[var(--color-chat-bg)]">
         <button
           onClick={onToggleSidebar}
           className="lg:hidden p-2 rounded-lg hover:bg-[#f4f3f4] dark:hover:bg-[#2a2a3c] transition-colors"

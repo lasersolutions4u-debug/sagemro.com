@@ -17,10 +17,10 @@ export function WelcomePage({ onSendMessage }) {
         </div>
 
         {/* 标题 */}
-        <h1 className="text-[28px] font-medium text-[#08060d] dark:text-[#f3f4f6] mb-2">
+        <h1 className="text-[28px] font-medium text-[var(--color-text-primary)] mb-2">
           你好，我是小智
         </h1>
-        <p className="text-[15px] text-[#6b6375] mb-8 leading-relaxed">
+        <p className="text-[15px] text-[var(--color-text-secondary)] mb-8 leading-relaxed">
           激光切割与焊接设备技术顾问<br />
           有什么可以帮你的？
         </p>
@@ -31,7 +31,7 @@ export function WelcomePage({ onSendMessage }) {
             <button
               key={i}
               onClick={() => onSendMessage(question)}
-              className="px-4 py-3 text-[14px] text-left bg-[#f4f3f4] dark:bg-[#2a2a3c] text-[#08060d] dark:text-[#e0e0e0] rounded-xl hover:bg-[#e5e4e7] dark:hover:bg-[#3a3a4c] transition-colors leading-relaxed"
+              className="px-4 py-3 text-[14px] text-left bg-[var(--color-surface-elevated)] text-[var(--color-text-primary)] rounded-xl hover:bg-[var(--color-hover)] transition-colors leading-relaxed"
             >
               {question}
             </button>

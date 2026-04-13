@@ -27,7 +27,7 @@ export function InputArea({ onSend, onStop, disabled, isStreaming }) {
   };
 
   return (
-    <div className="border-t border-[#f59e0b] dark:border-[#f59e0b] bg-white dark:bg-white px-3 sm:px-6 py-3 sm:py-4">
+    <div className="border-t border-[var(--color-primary)] bg-[var(--color-chat-bg)] px-3 sm:px-6 py-3 sm:py-4">
       <div className="max-w-4xl mx-auto">
         <div className="flex items-end gap-2 sm:gap-4">
           {/* 输入框 */}
@@ -40,7 +40,7 @@ export function InputArea({ onSend, onStop, disabled, isStreaming }) {
               placeholder="输入消息..."
               disabled={disabled}
               rows={1}
-              className="w-full px-4 sm:px-5 py-3 sm:py-4 pr-12 sm:pr-14 bg-[#f4f3f4] dark:bg-[#f4f3f4] border-2 border-[#f59e0b] dark:border-[#f59e0b] rounded-2xl resize-none focus:outline-none focus:ring-2 focus:ring-[#f59e0b] text-[#08060d] dark:text-[#08060d] placeholder-[#999999] disabled:opacity-50 text-[15px]"
+              className="w-full px-4 sm:px-5 py-3 sm:py-4 pr-12 sm:pr-14 bg-[var(--color-input-bg)] border-2 border-[var(--color-primary)] rounded-2xl resize-none focus:outline-none focus:ring-2 focus:ring-[var(--color-input-focus)] text-[var(--color-text-primary)] placeholder-[var(--color-text-muted)] disabled:opacity-50 text-[15px]"
               style={{ minHeight: '48px', maxHeight: '200px' }}
             />
           </div>
