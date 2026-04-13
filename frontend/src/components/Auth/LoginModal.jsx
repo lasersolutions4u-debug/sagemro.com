@@ -163,9 +163,9 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess }) {
       onLoginSuccess?.(result);
       handleClose();
     } catch (e) {
-      setError(e.message || '注册失败，请重试');
-      setSubmitting(false);
-    } finally {
+      console.error('注册工程师失败:', e);
+      const errorMsg = e.message || String(e) || '注册失败，请重试';
+      setError(errorMsg);
       setSubmitting(false);
     }
   };
