@@ -1,10 +1,10 @@
 import { Bot } from 'lucide-react';
 
 const quickQuestions = [
-  '激光切割机切出来毛刺多怎么办？',
-  '折弯机角度有偏差怎么调整？',
-  '冲床模具间隙怎么调整？',
-  'MIG焊机送丝不稳怎么解决？',
+  '光纤激光切割机切6mm碳钢，断面有纹路怎么调整参数？',
+  '折弯机折出来角度不稳定，回弹怎么补偿？',
+  'MIG焊接不锈钢，焊缝出现气孔怎么排查？',
+  '我们想提高产线自动化程度，从哪些设备入手比较合适？',
 ];
 
 export function WelcomePage({ onSendMessage }) {

@@ -741,7 +741,7 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess }) {
             <div className="text-center text-sm text-[#6b6375] pt-1">
               还没有账户？{' '}
               <button
-                onClick={() => goToRegisterCustomer()}
+                onClick={() => { setStep('choice'); setError(''); }}
                 className="text-[#f59e0b] hover:underline font-medium"
               >
                 点击注册

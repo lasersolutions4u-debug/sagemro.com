@@ -24,23 +24,24 @@ export function ToolBar({
 
   return (
     <div className="border-t border-[#3a3a4c] pt-3 mt-auto">
-      {/* 工程师工作台入口 */}
-      {engineerTools.map((tool) => (
+      {/* 通用工具入口 */}
+      {tools.map((tool) => (
         <button
           key={tool.label}
           onClick={tool.onClick}
-          className="w-full flex items-center gap-3 px-4 py-2.5 text-[14px] text-[var(--color-primary)] hover:bg-[var(--color-sidebar-surface)] rounded-lg mx-1 transition-colors font-medium"
+          className="w-full flex items-center gap-3 px-4 py-2.5 text-[14px] text-[var(--color-sidebar-muted)] hover:bg-[var(--color-sidebar-surface)] hover:text-[var(--color-sidebar-text)] rounded-lg mx-1 transition-colors"
         >
           <tool.icon size={17} />
           <span>{tool.label}</span>
         </button>
       ))}
 
-      {tools.map((tool) => (
+      {/* 工程师工作台入口（在"我的工单"下面） */}
+      {engineerTools.map((tool) => (
         <button
           key={tool.label}
           onClick={tool.onClick}
-          className="w-full flex items-center gap-3 px-4 py-2.5 text-[14px] text-[var(--color-sidebar-muted)] hover:bg-[var(--color-sidebar-surface)] hover:text-[var(--color-sidebar-text)] rounded-lg mx-1 transition-colors"
+          className="w-full flex items-center gap-3 px-4 py-2.5 text-[14px] text-[var(--color-primary)] hover:bg-[var(--color-sidebar-surface)] rounded-lg mx-1 transition-colors font-medium"
         >
           <tool.icon size={17} />
           <span>{tool.label}</span>
@@ -53,7 +54,7 @@ export function ToolBar({
           <>
             <button
               onClick={onOpenSettings}
-              className="w-full flex items-center gap-2 px-4 py-2.5 text-[14px] text-[var(--color-sidebar-muted)] hover:bg-[var(--color-sidebar-surface)] hover:text-[var(--color-sidebar-text)] rounded-lg mx-1 transition-colors"
+              className="w-full flex items-center gap-1.5 px-4 py-2.5 text-[14px] text-[var(--color-sidebar-muted)] hover:bg-[var(--color-sidebar-surface)] hover:text-[var(--color-sidebar-text)] rounded-lg mx-1 transition-colors"
             >
               <div className="w-6 h-6 rounded-full bg-[var(--color-primary)] flex items-center justify-center">
                 <span className="text-white text-xs font-medium">
