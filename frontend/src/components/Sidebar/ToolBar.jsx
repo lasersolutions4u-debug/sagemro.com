@@ -54,14 +54,14 @@ export function ToolBar({
           <>
             <button
               onClick={onOpenSettings}
-              className="w-full flex items-center gap-1.5 px-4 py-2.5 text-[14px] text-[var(--color-sidebar-muted)] hover:bg-[var(--color-sidebar-surface)] hover:text-[var(--color-sidebar-text)] rounded-lg mx-1 transition-colors"
+              className="w-full flex items-center gap-1 px-2 py-2.5 text-[14px] text-[var(--color-sidebar-muted)] hover:bg-[var(--color-sidebar-surface)] hover:text-[var(--color-sidebar-text)] rounded-lg mx-1 transition-colors"
             >
-              <div className="w-6 h-6 rounded-full bg-[var(--color-primary)] flex items-center justify-center">
+              <div className="w-7 h-7 rounded-full bg-[var(--color-primary)] flex items-center justify-center flex-shrink-0">
                 <span className="text-white text-xs font-medium">
                   {currentUser.name?.charAt(0) || 'U'}
                 </span>
               </div>
-              <span className="flex-1 truncate">{currentUser.name}</span>
+              <span className="truncate">{currentUser.name}</span>
               {userType === 'engineer' && (
                 <span className="text-[10px] px-1.5 py-0.5 bg-[var(--color-primary)]/20 text-[var(--color-primary)] rounded">工程师</span>
               )}

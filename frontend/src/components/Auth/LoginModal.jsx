@@ -63,6 +63,12 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess }) {
   const [serviceRegion, setServiceRegion] = useState([]);
   const [bio, setBio] = useState('');
 
+  // 客户信息调查
+  const [companyName, setCompanyName] = useState('');
+  const [customerRegion, setCustomerRegion] = useState('');
+  const [customerDevices, setCustomerDevices] = useState([]);
+  const [pendingLoginResult, setPendingLoginResult] = useState(null);
+
   // 发送验证码
   const handleSendCode = async () => {
     if (!phone) { setError('请输入手机号'); return; }
@@ -167,8 +173,9 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess }) {
       localStorage.setItem('sagemro_user', JSON.stringify(result.user));
       localStorage.setItem('sagemro_user_type', result.userType);
       localStorage.setItem('sagemro_customer_id', result.user.id);
-      onLoginSuccess?.(result);
-      handleClose();
+      // 进入信息调查页，而不是直接关闭
+      setPendingLoginResult(result);
+      setStep('register-customer-info');
     } catch (e) {
       setError(e.message);
     } finally {
@@ -232,6 +239,10 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess }) {
     setServices([]);
     setServiceRegion([]);
     setBio('');
+    setCompanyName('');
+    setCustomerRegion('');
+    setCustomerDevices([]);
+    setPendingLoginResult(null);
     setStep('login');
     onClose();
   };
@@ -256,6 +267,7 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess }) {
   const getModalSize = () => {
     if (step === 'register-engineer-2') return 'xl';
     if (step === 'choice') return 'md';
+    if (step === 'register-customer-info') return 'lg';
     return 'lg';
   };
 
@@ -632,6 +644,74 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess }) {
             >
               {submitting ? '注册中...' : '注册成为工程师'}
             </button>
+          </div>
+        )}
+
+        {/* ========== 客户信息调查页 ========== */}
+        {step === 'register-customer-info' && (
+          <div className="space-y-3">
+            <div className="text-center mb-4">
+              <p className="text-lg font-medium mb-1">注册成功！</p>
+              <p className="text-sm text-[#6b6375]">花10秒告诉我们您的设备情况，小智能为您提供更精准的服务</p>
+            </div>
+
+            {error && (
+              <div className="p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl text-red-600 dark:text-red-400 text-sm">
+                {error}
+              </div>
+            )}
+
+            {/* 公司名称 */}
+            <div>
+              <label className="block text-sm font-medium mb-1">公司名称（选填）</label>
+              <input
+                type="text" value={companyName} onChange={(e) => setCompanyName(e.target.value)}
+                placeholder="例如：XX金属制品有限公司"
+                className="w-full px-3 py-2 border border-[#e5e4e7] dark:border-[#3a3a4c] rounded-xl bg-white dark:bg-[#2a2a3c] text-[#08060d] dark:text-[#f3f4f6] focus:outline-none focus:ring-2 focus:ring-[#f59e0b]"
+              />
+            </div>
+
+            {/* 所在地区 */}
+            <div>
+              <label className="block text-sm font-medium mb-1">所在地区（选填）</label>
+              <RegionInput
+                value={customerRegion ? [customerRegion] : []}
+                onChange={(val) => setCustomerRegion(val[0] || '')}
+                placeholder="输入省、市名称搜索..."
+              />
+            </div>
+
+            {/* 常用设备 */}
+            <div>
+              <TagInput
+                label="常用设备类型（选填）"
+                options={['激光切割机', '折弯机', '冲床', '焊接机', '激光焊接', '卷板机', '等离子切割', '剪板机', '自动化产线']}
+                value={customerDevices}
+                onChange={setCustomerDevices}
+                placeholder="输入设备类型，回车添加..."
+              />
+            </div>
+
+            <div className="flex gap-3 pt-2">
+              <button
+                onClick={() => {
+                  onLoginSuccess?.(pendingLoginResult);
+                  handleClose();
+                }}
+                className="flex-1 py-3 bg-[#f4f3f4] dark:bg-[#2a2a3c] text-[#6b6375] rounded-xl font-medium transition-colors hover:bg-[#e5e4e7] dark:hover-[#3a3a4c]"
+              >
+                跳过
+              </button>
+              <button
+                onClick={() => {
+                  onLoginSuccess?.(pendingLoginResult);
+                  handleClose();
+                }}
+                className="flex-1 py-3 bg-[#f59e0b] hover:bg-[#fbbf24] text-white rounded-xl font-medium transition-colors"
+              >
+                开始使用
+              </button>
+            </div>
           </div>
         )}
 
