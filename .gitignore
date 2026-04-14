@@ -17,6 +17,8 @@ build/
 *secret*.md
 *.pem
 *.key
+接口AI.md
+问题反馈文档
 
 # Logs
 *.log
