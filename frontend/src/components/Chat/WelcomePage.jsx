@@ -2,9 +2,9 @@ import { Bot } from 'lucide-react';
 
 const quickQuestions = [
   '激光切割机切出来毛刺多怎么办？',
-  '光纤激光器和CO2激光器怎么选？',
-  '切割头需要多久保养一次？',
-  '激光焊接的参数怎么调？',
+  '折弯机角度有偏差怎么调整？',
+  '冲床模具间隙怎么调整？',
+  'MIG焊机送丝不稳怎么解决？',
 ];
 
 export function WelcomePage({ onSendMessage }) {
@@ -12,7 +12,7 @@ export function WelcomePage({ onSendMessage }) {
     <div className="flex flex-col items-center justify-center h-full px-6">
       <div className="text-center max-w-lg">
         {/* Logo */}
-        <div className="w-[80px] h-[80px] rounded-2xl bg-[#f59e0b] flex items-center justify-center mx-auto mb-6">
+        <div className="w-[80px] h-[80px] rounded-2xl bg-[var(--color-primary)] flex items-center justify-center mx-auto mb-6">
           <Bot size={40} className="text-white" />
         </div>
 

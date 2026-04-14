@@ -168,6 +168,23 @@ function generateId() {
   return Date.now().toString(36) + Math.random().toString(36).substr(2);
 }
 
+// 生成用户编号（U/E + 6位数字）
+async function generateUserNo(env, prefix) {
+  // 获取当前最大编号
+  const table = prefix === 'U' ? 'customers' : 'engineers';
+  const result = await env.DB.prepare(
+    `SELECT user_no FROM ${table} WHERE user_no LIKE ? ORDER BY user_no DESC LIMIT 1`
+  ).bind(`${prefix}%`).first();
+
+  let nextNum = 1;
+  if (result && result.user_no) {
+    const lastNo = result.user_no;
+    const numPart = parseInt(lastNo.slice(1), 10);
+    nextNum = numPart + 1;
+  }
+  return `${prefix}${nextNum.toString().padStart(6, '0')}`;
+}
+
 // 简单密码哈希（生产环境应使用更安全的方式）
 async function hashPassword(password) {
   const encoder = new TextEncoder();
@@ -267,18 +284,19 @@ async function handleRegisterCustomer(request, env) {
 
     // 创建客户
     const id = generateId();
+    const userNo = await generateUserNo(env, 'U');
     const passwordHash = await hashPassword(password);
 
     await env.DB.prepare(
-      'INSERT INTO customers (id, name, phone, password_hash) VALUES (?, ?, ?, ?)'
-    ).bind(id, name, phone, passwordHash).run();
+      'INSERT INTO customers (id, user_no, name, phone, password_hash) VALUES (?, ?, ?, ?, ?)'
+    ).bind(id, userNo, name, phone, passwordHash).run();
 
     // 删除已使用的验证码
     await env.KV.delete(`verify_code_${phone}`);
 
     return jsonResponse({
       success: true,
-      customer: { id, name, phone }
+      customer: { id, user_no: userNo, name, phone }
     });
   } catch (error) {
     return errorResponse(error.message, 500);
@@ -314,13 +332,14 @@ async function handleRegisterEngineer(request, env) {
 
     // 创建工程师
     const id = generateId();
+    const userNo = await generateUserNo(env, 'E');
     const passwordHash = await hashPassword(password);
 
     await env.DB.prepare(`
-      INSERT INTO engineers (id, name, phone, password_hash, specialties, brands, services, service_region, bio)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO engineers (id, user_no, name, phone, password_hash, specialties, brands, services, service_region, bio)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).bind(
-      id, name, phone, passwordHash,
+      id, userNo, name, phone, passwordHash,
       JSON.stringify(specialties || []),
       JSON.stringify(brands || {}),
       JSON.stringify(services || []),
@@ -333,7 +352,7 @@ async function handleRegisterEngineer(request, env) {
 
     return jsonResponse({
       success: true,
-      engineer: { id, name, phone }
+      engineer: { id, user_no: userNo, name, phone }
     });
   } catch (error) {
     return errorResponse(error.message, 500);
@@ -383,10 +402,90 @@ async function handleLogin(request, env) {
       userType,
       user: {
         id: user.id,
+        user_no: user.user_no,
         name: user.name,
         phone: user.phone
       }
     });
+} catch (error) {
+    return errorResponse(error.message, 500);
+  }
+}
+
+// 发送重置密码验证码
+async function handleSendResetCode(request, env) {
+  try {
+    const { phone } = await request.json();
+
+    if (!phone) {
+      return errorResponse('手机号不能为空');
+    }
+
+    // 检查手机号是否已注册（客户或工程师）
+    const customer = await env.DB.prepare(
+      'SELECT id FROM customers WHERE phone = ?'
+    ).bind(phone).first();
+
+    const engineer = await env.DB.prepare(
+      'SELECT id FROM engineers WHERE phone = ?'
+    ).bind(phone).first();
+
+    if (!customer && !engineer) {
+      return errorResponse('该手机号未注册');
+    }
+
+    // 生成验证码
+    const code = String(Math.floor(1000 + Math.random() * 9000));
+
+    // 存储验证码（有效期5分钟）
+    await env.KV.put(`reset_code_${phone}`, code, { expirationTtl: 300 });
+
+    return jsonResponse({ success: true, message: '验证码已发送', code }); // 测试模式下返回 code
+  } catch (error) {
+    return errorResponse(error.message, 500);
+  }
+}
+
+// 重置密码
+async function handleResetPassword(request, env) {
+  try {
+    const { phone, code, newPassword } = await request.json();
+
+    if (!phone || !code || !newPassword) {
+      return errorResponse('手机号、验证码、新密码不能为空');
+    }
+
+    if (newPassword.length < 6) {
+      return errorResponse('密码至少6位');
+    }
+
+    // 验证验证码
+    const storedCode = await env.KV.get(`reset_code_${phone}`);
+    if (!storedCode || storedCode !== code) {
+      return errorResponse('验证码错误或已过期');
+    }
+
+    // 哈希新密码
+    const passwordHash = await hashPassword(newPassword);
+
+    // 更新客户密码
+    const customerUpdated = await env.DB.prepare(
+      'UPDATE customers SET password_hash = ? WHERE phone = ?'
+    ).bind(passwordHash, phone).run();
+
+    // 更新工程师密码
+    const engineerUpdated = await env.DB.prepare(
+      'UPDATE engineers SET password_hash = ? WHERE phone = ?'
+    ).bind(passwordHash, phone).run();
+
+    if (!customerUpdated.success && !engineerUpdated.success) {
+      return errorResponse('密码更新失败');
+    }
+
+    // 删除已使用的验证码
+    await env.KV.delete(`reset_code_${phone}`);
+
+    return jsonResponse({ success: true, message: '密码重置成功' });
   } catch (error) {
     return errorResponse(error.message, 500);
   }
@@ -1177,6 +1276,12 @@ export default {
     }
     if (path === '/api/auth/login' && request.method === 'POST') {
       return handleLogin(request, env);
+    }
+    if (path === '/api/auth/reset-password' && request.method === 'POST') {
+      return handleResetPassword(request, env);
+    }
+    if (path === '/api/auth/send-reset-code' && request.method === 'POST') {
+      return handleSendResetCode(request, env);
     }
 
     // 聊天相关

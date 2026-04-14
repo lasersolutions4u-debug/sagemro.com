@@ -559,19 +559,19 @@ export function RegionInput({ label, value = [], onChange, placeholder = '输入
           onChange={handleInputChange}
           onFocus={() => inputValue.length >= 1 && setShowDropdown(true)}
           placeholder={placeholder}
-          className="w-full px-3 py-1.5 text-sm border border-[#e5e4e7] dark:border-[#3a3a4c] rounded-lg bg-white dark:bg-[#2a2a3c] focus:outline-none focus:ring-2 focus:ring-[#f59e0b] placeholder:text-xs"
+          className="w-full px-3 py-1.5 text-sm border border-[var(--color-border)] dark:border-[var(--color-border-strong)] rounded-lg bg-[var(--color-surface)] dark:bg-[var(--color-surface-elevated)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)] placeholder:text-xs"
         />
       </div>
 
       {/* 下拉建议 */}
       {showDropdown && suggestions.length > 0 && (
-        <div className="absolute z-50 w-full mt-1 bg-white dark:bg-[#2a2a3c] border border-[#e5e4e7] dark:border-[#3a3a4c] rounded-lg shadow-lg max-h-60 overflow-y-auto">
+        <div className="absolute z-50 w-full mt-1 bg-[var(--color-surface)] dark:bg-[var(--color-surface-elevated)] border border-[var(--color-border)] dark:border-[var(--color-border-strong)] rounded-lg shadow-lg max-h-60 overflow-y-auto">
           {suggestions.map((item, idx) => (
             <button
               key={`${item.level}-${item.name}-${idx}`}
               type="button"
               onClick={() => addRegion(item)}
-              className="w-full px-3 py-2 text-left text-sm hover:bg-[#f59e0b]/10 dark:hover:bg-[#f59e0b]/20 flex items-center gap-2"
+              className="w-full px-3 py-2 text-left text-sm hover:bg-[var(--color-primary)]/10 dark:hover:bg-[var(--color-primary)]/20 flex items-center gap-2"
             >
               <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-medium ${
                 item.level === 'province' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' :
@@ -591,7 +591,7 @@ export function RegionInput({ label, value = [], onChange, placeholder = '输入
 
       {/* 提示文字 */}
       {showDropdown && suggestions.length === 0 && inputValue.length >= 1 && (
-        <div className="absolute z-50 w-full mt-1 bg-white dark:bg-[#2a2a3c] border border-[#e5e4e7] dark:border-[#3a3a4c] rounded-lg shadow-lg p-3 text-sm text-[#6b6375]">
+        <div className="absolute z-50 w-full mt-1 bg-[var(--color-surface)] dark:bg-[var(--color-surface-elevated)] border border-[var(--color-border)] dark:border-[var(--color-border-strong)] rounded-lg shadow-lg p-3 text-sm text-[var(--color-text-secondary)]">
           未找到匹配的地区，请尝试其他关键词
         </div>
       )}

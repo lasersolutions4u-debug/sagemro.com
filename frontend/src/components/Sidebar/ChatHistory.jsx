@@ -21,7 +21,7 @@ export function ChatHistory({ conversations, currentId, onSelect, onDelete }) {
 
         return (
           <div key={date} className="mb-2">
-            <div className="px-4 py-2 text-[12px] text-[#666666] font-medium uppercase tracking-wide">
+            <div className="px-4 py-2 text-[12px] text-[var(--color-sidebar-muted)] font-medium uppercase tracking-wide">
               {date}
             </div>
             {items.map((conv) => (
@@ -38,7 +38,7 @@ export function ChatHistory({ conversations, currentId, onSelect, onDelete }) {
       })}
 
       {conversations.length === 0 && (
-        <div className="px-4 py-8 text-center text-sm text-[#6b6375]">
+        <div className="px-4 py-8 text-center text-sm text-[var(--color-text-muted)]">
           暂无对话记录
         </div>
       )}
@@ -49,25 +49,25 @@ export function ChatHistory({ conversations, currentId, onSelect, onDelete }) {
 function ConversationItem({ conversation, isActive, onSelect, onDelete }) {
   const [showActions, setShowActions] = useState(false);
 
-  return (
+    return (
     <div
       className={`group relative px-4 py-2.5 mx-1 rounded-lg cursor-pointer transition-colors ${
         isActive
-          ? 'bg-[#2a2a3c]'
-          : 'hover:bg-[#2a2a3c]/50'
+          ? 'bg-[var(--color-ai-bubble)]'
+          : 'hover:bg-[var(--color-hover)]'
       }`}
       onClick={onSelect}
       onMouseEnter={() => setShowActions(true)}
       onMouseLeave={() => setShowActions(false)}
     >
       <div className="flex items-center gap-2.5">
-        <div className={`w-2 h-2 rounded-full ${isActive ? 'bg-[#f59e0b]' : 'bg-[#6b6375]'}`} />
-        <span className="flex-1 text-[15px] text-[#cdd6f4] truncate">
+        <div className={`w-2 h-2 rounded-full ${isActive ? 'bg-[var(--color-primary)]' : 'bg-[var(--color-text-muted)]'}`} />
+        <span className="flex-1 text-[15px] text-[var(--color-sidebar-text)] truncate">
           {conversation.title || '新对话'}
         </span>
       </div>
       {conversation.last_message && (
-        <p className="mt-0.5 pl-[18px] text-[13px] text-[#6b6375] truncate">
+        <p className="mt-0.5 pl-[18px] text-[13px] text-[var(--color-text-muted)] truncate">
           {conversation.last_message}
         </p>
       )}
@@ -80,7 +80,7 @@ function ConversationItem({ conversation, isActive, onSelect, onDelete }) {
               e.stopPropagation();
               // TODO: 实现重命名
             }}
-            className="p-1 rounded hover:bg-[#3a3a4c] text-[#6b6375] hover:text-[#cdd6f4]"
+            className="p-1 rounded hover:bg-[var(--color-hover)] text-[var(--color-text-muted)] hover:text-[var(--color-sidebar-text)]"
           >
             <Pencil size={14} />
           </button>
@@ -91,7 +91,7 @@ function ConversationItem({ conversation, isActive, onSelect, onDelete }) {
                 onDelete();
               }
             }}
-            className="p-1 rounded hover:bg-[#3a3a4c] text-[#6b6375] hover:text-red-400"
+            className="p-1 rounded hover:bg-[var(--color-hover)] text-[var(--color-text-muted)] hover:text-red-400"
           >
             <Trash2 size={14} />
           </button>

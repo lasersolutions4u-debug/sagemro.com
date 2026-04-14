@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Modal } from '../common/Modal';
 import { TagInput } from '../common/TagInput';
 import { RegionInput } from '../common/RegionInput';
-import { login, sendVerifyCode, registerCustomer, registerEngineer } from '../../services/api';
+import { login, sendVerifyCode, sendResetCode, resetPassword, registerCustomer, registerEngineer } from '../../services/api';
 
 // ============ 预设选项 ============
 const deviceTypes = [
@@ -53,6 +53,8 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess }) {
   const [codeCooldown, setCodeCooldown] = useState(0);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
+  const [rememberMe, setRememberMe] = useState(false);
+  const [forgotStep, setForgotStep] = useState('phone'); // 'phone' | 'code-sent'
 
   // 工程师背景调查
   const [specialties, setSpecialties] = useState([]);
@@ -84,6 +86,44 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess }) {
       setError('发送失败: ' + e.message);
     } finally {
       setCodeSending(false);
+    }
+  };
+
+  // 发送重置密码验证码
+  const handleSendResetCode = async () => {
+    if (!phone) { setError('请输入手机号'); return; }
+
+    setSubmitting(true);
+    setError('');
+    try {
+      await sendResetCode(phone);
+      setForgotStep('code-sent');
+      setError('');
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  // 重置密码
+  const handleResetPassword = async () => {
+    if (!password || password.length < 6) { setError('密码至少6位'); return; }
+    if (!code) { setError('请输入验证码'); return; }
+
+    setSubmitting(true);
+    setError('');
+    try {
+      await resetPassword({ phone, code, newPassword: password });
+      // 重置成功后跳转登录
+      setForgotStep('phone');
+      setStep('login');
+      setError('');
+      alert('密码重置成功，请使用新密码登录');
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -200,20 +240,27 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess }) {
     setName(generateRandomName());
   };
 
-  // 打开客户注册页（生成随机昵称）
+  // 打开客户注册页（生成随机用户名）
   const goToRegisterCustomer = () => {
     setName(generateRandomName());
     setStep('register-customer');
   };
 
-  // 打开工程师注册第1步（生成随机昵称）
+  // 打开工程师注册第1步（生成随机用户名）
   const goToRegisterEngineer1 = () => {
     setName(generateRandomName());
     setStep('register-engineer-1');
   };
 
+  // 根据步骤动态计算 Modal 尺寸
+  const getModalSize = () => {
+    if (step === 'register-engineer-2') return 'xl';
+    if (step === 'choice') return 'md';
+    return 'lg';
+  };
+
   return (
-    <Modal isOpen={isOpen} onClose={handleClose} title="登录/注册" size="lg">
+    <Modal isOpen={isOpen} onClose={handleClose} title="登录/注册" size={getModalSize()}>
       <div className="space-y-4">
 
         {/* ========== Step 1: 问题分流页 ========== */}
@@ -286,13 +333,13 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess }) {
               </div>
             )}
 
-            {/* 昵称 */}
+            {/* 用户名 */}
             <div>
-              <label className="block text-sm font-medium mb-1">昵称</label>
+              <label className="block text-sm font-medium mb-1">用户名</label>
               <div className="flex gap-2">
                 <input
                   type="text" value={name} onChange={(e) => setName(e.target.value)}
-                  placeholder="给自己起个昵称"
+                  placeholder="给自己起个用户名"
                   className="flex-1 px-3 py-2 border border-[#e5e4e7] dark:border-[#3a3a4c] rounded-xl bg-white dark:bg-[#2a2a3c] text-[#08060d] dark:text-[#f3f4f6] focus:outline-none focus:ring-2 focus:ring-[#f59e0b]"
                 />
                 <button
@@ -396,13 +443,13 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess }) {
               </div>
             )}
 
-            {/* 昵称 */}
+            {/* 用户名 */}
             <div>
-              <label className="block text-sm font-medium mb-1">昵称</label>
+              <label className="block text-sm font-medium mb-1">用户名</label>
               <div className="flex gap-2">
                 <input
                   type="text" value={name} onChange={(e) => setName(e.target.value)}
-                  placeholder="给自己起个昵称"
+                  placeholder="给自己起个用户名"
                   className="flex-1 px-3 py-2 border border-[#e5e4e7] dark:border-[#3a3a4c] rounded-xl bg-white dark:bg-[#2a2a3c] text-[#08060d] dark:text-[#f3f4f6] focus:outline-none focus:ring-2 focus:ring-[#f59e0b]"
                 />
                 <button
@@ -588,6 +635,63 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess }) {
           </div>
         )}
 
+        {/* ========== 忘记密码页 ========== */}
+        {step === 'forgot-password' && (
+          <div className="space-y-3">
+            <div className="flex items-center gap-2 mb-2">
+              <button onClick={() => setStep('login')} className="text-sm text-[#6b6375] hover:text-[#f59e0b]">← 返回登录</button>
+            </div>
+            <div className="text-center mb-4">
+              <p className="text-sm text-[#6b6375]">输入手机号，我们将发送验证码重置密码</p>
+            </div>
+
+            {error && (
+              <div className="p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl text-red-600 dark:text-red-400 text-sm">
+                {error}
+              </div>
+            )}
+
+            <div>
+              <label className="block text-sm font-medium mb-1">手机号</label>
+              <input
+                type="tel" value={phone} onChange={(e) => setPhone(e.target.value)}
+                placeholder="请输入注册的手机号" maxLength={11}
+                className="w-full px-3 py-2 border border-[#e5e4e7] dark:border-[#3a3a4c] rounded-xl bg-white dark:bg-[#2a2a3c] text-[#08060d] dark:text-[#f3f4f6] focus:outline-none focus:ring-2 focus:ring-[#f59e0b]"
+              />
+            </div>
+
+            {forgotStep === 'code-sent' && (
+              <div>
+                <label className="block text-sm font-medium mb-1">验证码</label>
+                <input
+                  type="text" value={code} onChange={(e) => setCode(e.target.value)}
+                  placeholder="请输入验证码" maxLength={6}
+                  className="w-full px-3 py-2 border border-[#e5e4e7] dark:border-[#3a3a4c] rounded-xl bg-white dark:bg-[#2a2a3c] text-[#08060d] dark:text-[#f3f4f6] focus:outline-none focus:ring-2 focus:ring-[#f59e0b]"
+                />
+              </div>
+            )}
+
+            {forgotStep === 'code-sent' && (
+              <div>
+                <label className="block text-sm font-medium mb-1">设置新密码</label>
+                <input
+                  type="password" value={password} onChange={(e) => setPassword(e.target.value)}
+                  placeholder="设置新密码（至少6位）"
+                  className="w-full px-3 py-2 border border-[#e5e4e7] dark:border-[#3a3a4c] rounded-xl bg-white dark:bg-[#2a2a3c] text-[#08060d] dark:text-[#f3f4f6] focus:outline-none focus:ring-2 focus:ring-[#f59e0b]"
+                />
+              </div>
+            )}
+
+            <button
+              onClick={forgotStep === 'code-sent' ? handleResetPassword : handleSendResetCode}
+              disabled={submitting}
+              className="w-full py-3 bg-[#f59e0b] hover:bg-[#fbbf24] disabled:bg-[#6b6375] text-white rounded-xl font-medium transition-colors"
+            >
+              {submitting ? '处理中...' : forgotStep === 'code-sent' ? '重置密码' : '发送验证码'}
+            </button>
+          </div>
+        )}
+
         {/* ========== 登录页 ========== */}
         {step === 'login' && (
           <div className="space-y-3">
@@ -617,6 +721,18 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess }) {
                 className="w-full px-3 py-2 border border-[#e5e4e7] dark:border-[#3a3a4c] rounded-xl bg-white dark:bg-[#2a2a3c] text-[#08060d] dark:text-[#f3f4f6] focus:outline-none focus:ring-2 focus:ring-[#f59e0b]"
               />
             </div>
+            {/* 记住登录状态 */}
+            <div className="flex items-center text-sm">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={rememberMe}
+                  onChange={(e) => setRememberMe(e.target.checked)}
+                  className="w-4 h-4 rounded border-[#e5e4e7] dark:border-[#3a3a4c] text-[#f59e0b] focus:ring-[#f59e0b]"
+                />
+                <span className="text-[#6b6375]">保持登录状态</span>
+              </label>
+            </div>
             <button
               onClick={handleLogin} disabled={submitting}
               className="w-full py-3 bg-[#f59e0b] hover:bg-[#fbbf24] disabled:bg-[#6b6375] text-white rounded-xl font-medium transition-colors"
@@ -632,6 +748,13 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess }) {
                 className="text-[#f59e0b] hover:underline font-medium"
               >
                 点击注册
+              </button>
+              {' 或 '}
+              <button
+                onClick={() => setStep('forgot-password')}
+                className="text-[#f59e0b] hover:underline font-medium"
+              >
+                忘记密码
               </button>
             </div>
           </div>

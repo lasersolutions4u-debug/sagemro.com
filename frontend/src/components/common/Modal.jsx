@@ -29,18 +29,18 @@ export function Modal({ isOpen, onClose, title, children, size = 'md' }) {
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.95, y: 20 }}
             transition={{ duration: 0.2 }}
-            className={`fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full ${sizeClasses[size] || sizeClasses.md} max-h-[90vh] overflow-auto bg-white dark:bg-[#1e1e2e] rounded-2xl shadow-2xl z-50`}
+            className={`fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-[calc(100vw-32px)] sm:${sizeClasses[size] || sizeClasses.md} max-h-[85vh] sm:max-h-[90vh] overflow-auto bg-[var(--color-surface)] rounded-2xl shadow-2xl z-50`}
           >
             {/* 头部 */}
-            <div className="flex items-center justify-between p-4 border-b border-[#e5e4e7] dark:border-[#3a3a4c]">
-              <h2 className="text-lg font-medium text-[#08060d] dark:text-[#f3f4f6]">
+            <div className="flex items-center justify-between p-4 border-b border-[var(--color-border)]">
+              <h2 className="text-lg font-medium text-[var(--color-text-primary)]">
                 {title}
               </h2>
               <button
                 onClick={onClose}
-                className="p-1 rounded-lg hover:bg-[#f4f3f4] dark:hover:bg-[#2a2a3c] transition-colors"
+                className="p-2 rounded-lg hover:bg-[var(--color-hover)] transition-colors"
               >
-                <X size={20} className="text-[#6b6375]" />
+                <X size={20} className="text-[var(--color-text-secondary)]" />
               </button>
             </div>
             {/* 内容 */}

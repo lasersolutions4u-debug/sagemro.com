@@ -118,8 +118,12 @@ function App() {
 
   // 提交工单
   const handleSubmitWorkOrder = useCallback(async (data) => {
-    // TODO: 后续从登录状态获取 customer_id
-    const customer_id = localStorage.getItem('sagemro_customer_id') || 'guest';
+    const customer_id = localStorage.getItem('sagemro_customer_id');
+
+    // 检查是否登录
+    if (!customer_id) {
+      throw new Error('请先登录后再提交工单');
+    }
 
     const result = await submitWorkOrderApi({
       customer_id,
@@ -159,7 +163,7 @@ function App() {
   }, []);
 
   return (
-    <div className="flex h-dvh">
+    <div className="flex h-screen overflow-hidden">
       {/* 侧边栏 */}
       <Sidebar
         conversations={conversations}

@@ -64,6 +64,38 @@ export async function login({ phone, password }) {
   return response.json();
 }
 
+/**
+ * 发送重置密码验证码
+ */
+export async function sendResetCode(phone) {
+  const response = await fetch(`${API_BASE}/api/auth/send-reset-code`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ phone }),
+  });
+  if (!response.ok) {
+    const data = await response.json();
+    throw new Error(data.error || `HTTP ${response.status}`);
+  }
+  return response.json();
+}
+
+/**
+ * 重置密码
+ */
+export async function resetPassword({ phone, code, newPassword }) {
+  const response = await fetch(`${API_BASE}/api/auth/reset-password`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ phone, code, newPassword }),
+  });
+  if (!response.ok) {
+    const data = await response.json();
+    throw new Error(data.error || `HTTP ${response.status}`);
+  }
+  return response.json();
+}
+
 // ============ 聊天相关 ============
 
 /**

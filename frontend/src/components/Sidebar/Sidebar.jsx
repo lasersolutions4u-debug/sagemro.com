@@ -37,23 +37,26 @@ export function Sidebar({
         }`}
       >
         {/* 顶部 */}
-        <div className="p-4 border-b border-[#2a2a2a]">
+        <div className="p-4">
           <div className="flex items-center gap-3 mb-3">
-            <div className="w-9 h-9 rounded-xl bg-[#f59e0b] flex items-center justify-center shadow-sm">
+            <div className="w-9 h-9 rounded-xl bg-[var(--color-primary)] flex items-center justify-center shadow-sm">
               <Bot size={22} className="text-white" />
             </div>
-            <span className="text-[15px] font-medium text-[#f5f5f5]">小智</span>
+            <span className="text-[15px] font-medium text-[var(--color-sidebar-text)]">小智</span>
           </div>
 
           {/* 新建对话按钮 */}
           <button
             onClick={onNewChat}
-            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-[#f59e0b] hover:bg-[#fbbf24] text-white rounded-xl transition-colors font-medium text-[13px] shadow-sm"
+            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white rounded-xl transition-colors font-medium text-[13px] shadow-sm"
           >
             <Plus size={18} />
             <span>新建对话</span>
           </button>
         </div>
+
+        {/* 分隔线1: 新建对话 与 对话历史之间 */}
+        <div className="border-t border-[#3a3a4c] mx-4" />
 
         {/* 聊天历史 */}
         <ChatHistory

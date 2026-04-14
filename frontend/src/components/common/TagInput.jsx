@@ -43,7 +43,7 @@ export function TagInput({ label, options = [], value = [], onChange, placeholde
           {value.map((tag) => (
             <span
               key={tag}
-              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs bg-[#f59e0b] text-white"
+              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs bg-[var(--color-primary)] text-white"
             >
               {tag}
               <button
@@ -66,7 +66,7 @@ export function TagInput({ label, options = [], value = [], onChange, placeholde
           onChange={(e) => setInputValue(e.target.value)}
           onKeyDown={handleKeyDown}
           placeholder={placeholder}
-          className="w-full px-3 py-1.5 text-sm border border-[#e5e4e7] dark:border-[#3a3a4c] rounded-lg bg-white dark:bg-[#2a2a3c] focus:outline-none focus:ring-2 focus:ring-[#f59e0b] placeholder:text-xs"
+          className="w-full px-3 py-1.5 text-sm border border-[var(--color-border)] dark:border-[var(--color-border-strong)] rounded-lg bg-[var(--color-surface)] dark:bg-[var(--color-surface-elevated)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)] placeholder:text-xs"
         />
       </div>
 
@@ -80,8 +80,8 @@ export function TagInput({ label, options = [], value = [], onChange, placeholde
               onClick={() => togglePreset(option)}
               className={`px-2.5 py-1 rounded-lg text-xs transition-colors ${
                 value.includes(option)
-                  ? 'bg-[#f59e0b] text-white'
-                  : 'bg-[#f4f3f4] dark:bg-[#2a2a3c] text-[#6b6375] hover:border-[#f59e0b] border border-transparent hover:text-[#f59e0b]'
+                  ? 'bg-[var(--color-primary)] text-white'
+                  : 'bg-[var(--color-hover)] dark:bg-[var(--color-surface-elevated)] text-[var(--color-text-secondary)] hover:border-[var(--color-primary)] border border-transparent hover:text-[var(--color-primary)]'
               }`}
             >
               {option}

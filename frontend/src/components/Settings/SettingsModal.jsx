@@ -31,10 +31,10 @@ export function SettingsModal({ isOpen, onClose }) {
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="设置" size="lg">
       <div className="space-y-4">
-        {/* 用户昵称 */}
+        {/* 用户名 */}
         <div>
           <label className="block text-sm font-medium text-[#08060d] dark:text-[#f3f4f6] mb-1">
-            用户昵称
+            用户名
           </label>
           <input
             type="text"

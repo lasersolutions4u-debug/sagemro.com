@@ -23,13 +23,13 @@ export function ToolBar({
   ] : [];
 
   return (
-    <div className="border-t border-[#333333] pt-3 mt-auto">
+    <div className="border-t border-[#3a3a4c] pt-3 mt-auto">
       {/* 工程师工作台入口 */}
       {engineerTools.map((tool) => (
         <button
           key={tool.label}
           onClick={tool.onClick}
-          className="w-full flex items-center gap-3 px-4 py-2.5 text-[14px] text-[#f59e0b] hover:bg-[#252525] rounded-lg mx-1 transition-colors font-medium"
+          className="w-full flex items-center gap-3 px-4 py-2.5 text-[14px] text-[var(--color-primary)] hover:bg-[var(--color-sidebar-surface)] rounded-lg mx-1 transition-colors font-medium"
         >
           <tool.icon size={17} />
           <span>{tool.label}</span>
@@ -40,7 +40,7 @@ export function ToolBar({
         <button
           key={tool.label}
           onClick={tool.onClick}
-          className="w-full flex items-center gap-3 px-4 py-2.5 text-[14px] text-[#d4d4d4] hover:bg-[#252525] hover:text-[#f5f5f5] rounded-lg mx-1 transition-colors"
+          className="w-full flex items-center gap-3 px-4 py-2.5 text-[14px] text-[var(--color-sidebar-muted)] hover:bg-[var(--color-sidebar-surface)] hover:text-[var(--color-sidebar-text)] rounded-lg mx-1 transition-colors"
         >
           <tool.icon size={17} />
           <span>{tool.label}</span>
@@ -48,26 +48,26 @@ export function ToolBar({
       ))}
 
       {/* 登录/用户区域 */}
-      <div className="border-t border-[#333333] mt-3 pt-3">
+      <div className="border-t border-[#3a3a4c] mt-3 pt-3">
         {currentUser ? (
           <>
             <button
               onClick={onOpenSettings}
-              className="w-full flex items-center gap-3 px-4 py-2.5 text-[14px] text-[#d4d4d4] hover:bg-[#252525] hover:text-[#f5f5f5] rounded-lg mx-1 transition-colors"
+              className="w-full flex items-center gap-2 px-4 py-2.5 text-[14px] text-[var(--color-sidebar-muted)] hover:bg-[var(--color-sidebar-surface)] hover:text-[var(--color-sidebar-text)] rounded-lg mx-1 transition-colors"
             >
-              <div className="w-6 h-6 rounded-full bg-[#f59e0b] flex items-center justify-center">
+              <div className="w-6 h-6 rounded-full bg-[var(--color-primary)] flex items-center justify-center">
                 <span className="text-white text-xs font-medium">
                   {currentUser.name?.charAt(0) || 'U'}
                 </span>
               </div>
               <span className="flex-1 truncate">{currentUser.name}</span>
               {userType === 'engineer' && (
-                <span className="text-[10px] px-1.5 py-0.5 bg-[#f59e0b]/20 text-[#f59e0b] rounded">工程师</span>
+                <span className="text-[10px] px-1.5 py-0.5 bg-[var(--color-primary)]/20 text-[var(--color-primary)] rounded">工程师</span>
               )}
             </button>
             <button
               onClick={onLogout}
-              className="w-full flex items-center gap-3 px-4 py-2.5 text-[14px] text-[#d4d4d4] hover:bg-[#252525] hover:text-[#f5f5f5] rounded-lg mx-1 transition-colors"
+              className="w-full flex items-center gap-3 px-4 py-2.5 text-[14px] text-[var(--color-sidebar-muted)] hover:bg-[var(--color-sidebar-surface)] hover:text-[var(--color-sidebar-text)] rounded-lg mx-1 transition-colors"
             >
               <LogOut size={17} />
               <span>退出登录</span>
@@ -76,7 +76,7 @@ export function ToolBar({
         ) : (
           <button
             onClick={onOpenLogin}
-            className="w-full flex items-center gap-3 px-4 py-2.5 text-[14px] text-[#d4d4d4] hover:bg-[#252525] hover:text-[#f5f5f5] rounded-lg mx-1 transition-colors"
+            className="w-full flex items-center gap-3 px-4 py-2.5 text-[14px] text-[var(--color-sidebar-muted)] hover:bg-[var(--color-sidebar-surface)] hover:text-[var(--color-sidebar-text)] rounded-lg mx-1 transition-colors"
           >
             <LogIn size={17} />
             <span>登录/注册</span>

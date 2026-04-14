@@ -20,6 +20,7 @@ CREATE TABLE IF NOT EXISTS messages (
 -- 客户用户表
 CREATE TABLE IF NOT EXISTS customers (
     id TEXT PRIMARY KEY,
+    user_no TEXT UNIQUE NOT NULL,  -- 用户编号：U + 6位数字，如 U000001
     name TEXT NOT NULL,
     phone TEXT NOT NULL UNIQUE,
     password_hash TEXT NOT NULL,
@@ -30,6 +31,7 @@ CREATE TABLE IF NOT EXISTS customers (
 -- 工程师表
 CREATE TABLE IF NOT EXISTS engineers (
     id TEXT PRIMARY KEY,
+    user_no TEXT UNIQUE NOT NULL,  -- 用户编号：E + 6位数字，如 E000001
     name TEXT NOT NULL,
     phone TEXT NOT NULL UNIQUE,
     password_hash TEXT NOT NULL,
