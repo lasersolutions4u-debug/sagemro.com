@@ -10,3 +10,8 @@ database_id = "eb84471f-ed33-47ae-827f-1419f5a9428f"
 [[kv_namespaces]]
 binding = "KV"
 id = "2d34230fd0e74b0fa83fdd4ee0c934f1"
+
+[vars]
+# 注意：OPENAI_API_KEY 不要写在文件中，通过 wrangler secret 设置
+# wrangler secret put OPENAI_API_KEY
+# wrangler secret put OPENAI_API_ENDPOINT

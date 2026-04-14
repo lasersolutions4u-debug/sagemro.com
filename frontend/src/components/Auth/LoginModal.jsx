@@ -72,9 +72,6 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess }) {
     setError('');
     try {
       const data = await sendVerifyCode(phone);
-      if (data.code) {
-        setError('测试模式：验证码为 ' + data.code);
-      }
       setCodeCooldown(60);
       const timer = setInterval(() => {
         setCodeCooldown((prev) => {

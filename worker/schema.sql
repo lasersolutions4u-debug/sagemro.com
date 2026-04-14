@@ -24,6 +24,7 @@ CREATE TABLE IF NOT EXISTS customers (
     name TEXT NOT NULL,
     phone TEXT NOT NULL UNIQUE,
     password_hash TEXT NOT NULL,
+    salt TEXT NOT NULL DEFAULT '',  -- 密码盐值
     region TEXT,
     created_at TEXT DEFAULT (datetime('now'))
 );
@@ -35,6 +36,7 @@ CREATE TABLE IF NOT EXISTS engineers (
     name TEXT NOT NULL,
     phone TEXT NOT NULL UNIQUE,
     password_hash TEXT NOT NULL,
+    salt TEXT NOT NULL DEFAULT '',  -- 密码盐值
 
     -- 背景调查信息
     specialties TEXT NOT NULL DEFAULT '[]',       -- JSON数组：设备类型标签

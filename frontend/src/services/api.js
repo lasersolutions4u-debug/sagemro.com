@@ -1,6 +1,16 @@
 // API 服务层
 const API_BASE = import.meta.env.VITE_API_BASE || 'https://sagemro-api.lasersolutions4u.workers.dev';
 
+// 获取认证请求头（自动附带 JWT token）
+function authHeaders() {
+  const token = localStorage.getItem('sagemro_token');
+  const headers = { 'Content-Type': 'application/json' };
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+  return headers;
+}
+
 // ============ 认证相关 ============
 
 /**
@@ -161,7 +171,9 @@ export async function streamChat({ conversationId, message, onChunk, onDone, onE
  * 获取对话列表
  */
 export async function getConversations() {
-  const response = await fetch(`${API_BASE}/api/conversations`);
+  const response = await fetch(`${API_BASE}/api/conversations`, {
+    headers: authHeaders(),
+  });
   if (!response.ok) throw new Error(`HTTP ${response.status}`);
   return response.json();
 }
@@ -170,7 +182,9 @@ export async function getConversations() {
  * 获取对话详情
  */
 export async function getConversation(id) {
-  const response = await fetch(`${API_BASE}/api/conversations/${id}`);
+  const response = await fetch(`${API_BASE}/api/conversations/${id}`, {
+    headers: authHeaders(),
+  });
   if (!response.ok) throw new Error(`HTTP ${response.status}`);
   return response.json();
 }
@@ -181,6 +195,7 @@ export async function getConversation(id) {
 export async function deleteConversation(id) {
   const response = await fetch(`${API_BASE}/api/conversations/${id}`, {
     method: 'DELETE',
+    headers: authHeaders(),
   });
   if (!response.ok) throw new Error(`HTTP ${response.status}`);
   return response.json();
@@ -194,7 +209,7 @@ export async function deleteConversation(id) {
 export async function submitWorkOrder(data) {
   const response = await fetch(`${API_BASE}/api/workorders`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: authHeaders(),
     body: JSON.stringify(data),
   });
   if (!response.ok) {
@@ -211,7 +226,9 @@ export async function getWorkOrders(customerId) {
   const url = customerId
     ? `${API_BASE}/api/workorders?customer_id=${customerId}`
     : `${API_BASE}/api/workorders`;
-  const response = await fetch(url);
+  const response = await fetch(url, {
+    headers: authHeaders(),
+  });
   if (!response.ok) throw new Error(`HTTP ${response.status}`);
   return response.json();
 }
@@ -220,7 +237,9 @@ export async function getWorkOrders(customerId) {
  * 获取工单详情
  */
 export async function getWorkOrder(id) {
-  const response = await fetch(`${API_BASE}/api/workorders/${id}`);
+  const response = await fetch(`${API_BASE}/api/workorders/${id}`, {
+    headers: authHeaders(),
+  });
   if (!response.ok) throw new Error(`HTTP ${response.status}`);
   return response.json();
 }
@@ -231,7 +250,7 @@ export async function getWorkOrder(id) {
 export async function submitRating(data) {
   const response = await fetch(`${API_BASE}/api/workorders/rating`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: authHeaders(),
     body: JSON.stringify(data),
   });
   if (!response.ok) {
@@ -250,7 +269,9 @@ export async function getEngineerTickets(engineerId) {
   const url = engineerId
     ? `${API_BASE}/api/engineers/tickets?engineer_id=${engineerId}`
     : `${API_BASE}/api/engineers/tickets`;
-  const response = await fetch(url);
+  const response = await fetch(url, {
+    headers: authHeaders(),
+  });
   if (!response.ok) throw new Error(`HTTP ${response.status}`);
   return response.json();
 }
@@ -261,7 +282,7 @@ export async function getEngineerTickets(engineerId) {
 export async function acceptTicket({ work_order_id, engineer_id }) {
   const response = await fetch(`${API_BASE}/api/engineers/tickets/accept`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: authHeaders(),
     body: JSON.stringify({ work_order_id, engineer_id }),
   });
   if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -274,7 +295,7 @@ export async function acceptTicket({ work_order_id, engineer_id }) {
 export async function rejectTicket({ work_order_id, engineer_id }) {
   const response = await fetch(`${API_BASE}/api/engineers/tickets/reject`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: authHeaders(),
     body: JSON.stringify({ work_order_id, engineer_id }),
   });
   if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -285,7 +306,9 @@ export async function rejectTicket({ work_order_id, engineer_id }) {
  * 获取工单推荐的工程师列表
  */
 export async function getRecommendedEngineers(workOrderId) {
-  const response = await fetch(`${API_BASE}/api/engineers/recommend?work_order_id=${workOrderId}`);
+  const response = await fetch(`${API_BASE}/api/engineers/recommend?work_order_id=${workOrderId}`, {
+    headers: authHeaders(),
+  });
   if (!response.ok) throw new Error(`HTTP ${response.status}`);
   return response.json();
 }
@@ -296,7 +319,7 @@ export async function getRecommendedEngineers(workOrderId) {
 export async function updateEngineerStatus({ engineer_id, status }) {
   const response = await fetch(`${API_BASE}/api/engineers/status`, {
     method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
+    headers: authHeaders(),
     body: JSON.stringify({ engineer_id, status }),
   });
   if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -307,7 +330,9 @@ export async function updateEngineerStatus({ engineer_id, status }) {
  * 获取工程师档案
  */
 export async function getEngineerProfile(engineerId) {
-  const response = await fetch(`${API_BASE}/api/engineers/profile?engineer_id=${engineerId}`);
+  const response = await fetch(`${API_BASE}/api/engineers/profile?engineer_id=${engineerId}`, {
+    headers: authHeaders(),
+  });
   if (!response.ok) throw new Error(`HTTP ${response.status}`);
   return response.json();
 }

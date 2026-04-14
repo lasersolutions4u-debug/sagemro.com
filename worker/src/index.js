@@ -4,8 +4,9 @@
  */
 
 // ============ 配置 ============
-const API_ENDPOINT = 'https://api.jiekou.ai/openai/v1/chat/completions';
-const API_KEY = 'sk_a7uVsDWKwsOQ1zUovIytP2f0N-dGpKGh6r5ZxG3pfNw';
+// API_KEY 和 API_ENDPOINT 通过 Cloudflare Worker Secrets 注入
+// 设置命令：wrangler secret put OPENAI_API_KEY / OPENAI_API_ENDPOINT
+// JWT_SECRET 也通过 Secrets 注入：wrangler secret put JWT_SECRET
 
 // ============ System Prompt ============
 const SYSTEM_PROMPT = `你是"小智"，智维钣金平台的 AI 助手，服务于钣金加工行业的设备维修服务。
@@ -185,8 +186,29 @@ async function generateUserNo(env, prefix) {
   return `${prefix}${nextNum.toString().padStart(6, '0')}`;
 }
 
-// 简单密码哈希（生产环境应使用更安全的方式）
-async function hashPassword(password) {
+// 生成随机盐值（16字节，转为hex字符串）
+function generateSalt() {
+  const bytes = new Uint8Array(16);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+// 使用 PBKDF2 生成密码哈希（新算法，每个用户独立盐值）
+async function hashPasswordNew(password, salt) {
+  const encoder = new TextEncoder();
+  const keyMaterial = await crypto.subtle.importKey(
+    'raw', encoder.encode(password), 'PBKDF2', false, ['deriveBits']
+  );
+  const derivedBits = await crypto.subtle.deriveBits(
+    { name: 'PBKDF2', salt: encoder.encode(salt), iterations: 100000, hash: 'SHA-256' },
+    keyMaterial, 256
+  );
+  const hashArray = Array.from(new Uint8Array(derivedBits));
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+// 旧算法兼容（SHA-256 + 固定盐），用于已有用户的密码验证
+async function hashPasswordLegacy(password) {
   const encoder = new TextEncoder();
   const data = encoder.encode(password + 'sagemro_salt_2024');
   const hashBuffer = await crypto.subtle.digest('SHA-256', data);
@@ -194,9 +216,15 @@ async function hashPassword(password) {
   return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
-// 验证密码
-async function verifyPassword(password, hash) {
-  const inputHash = await hashPassword(password);
+// 验证密码（兼容新旧算法）
+// 如果用户有 salt 字段且非空，用新算法；否则用旧算法
+async function verifyPassword(password, hash, salt) {
+  if (salt) {
+    const inputHash = await hashPasswordNew(password, salt);
+    return inputHash === hash;
+  }
+  // 兼容旧用户（无 salt）
+  const inputHash = await hashPasswordLegacy(password);
   return inputHash === hash;
 }
 
@@ -206,6 +234,89 @@ function generateOrderNo() {
   const dateStr = now.toISOString().slice(0, 10).replace(/-/g, '');
   const random = Math.floor(Math.random() * 1000).toString().padStart(3, '0');
   return `WO-${dateStr}-${random}`;
+}
+
+// ============ JWT 认证（基于 Web Crypto API）===========
+
+// Base64URL 编码
+function base64UrlEncode(data) {
+  let str;
+  if (typeof data === 'string') {
+    str = btoa(unescape(encodeURIComponent(data)));
+  } else {
+    str = btoa(String.fromCharCode(...new Uint8Array(data)));
+  }
+  return str.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+// Base64URL 解码
+function base64UrlDecode(str) {
+  str = str.replace(/-/g, '+').replace(/_/g, '/');
+  while (str.length % 4) str += '=';
+  return decodeURIComponent(escape(atob(str)));
+}
+
+// 签发 JWT token
+async function signJwt(payload, secret) {
+  const header = { alg: 'HS256', typ: 'JWT' };
+  const headerB64 = base64UrlEncode(JSON.stringify(header));
+  const payloadB64 = base64UrlEncode(JSON.stringify(payload));
+  const data = `${headerB64}.${payloadB64}`;
+
+  const encoder = new TextEncoder();
+  const key = await crypto.subtle.importKey(
+    'raw', encoder.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']
+  );
+  const signature = await crypto.subtle.sign('HMAC', key, encoder.encode(data));
+  const signatureB64 = base64UrlEncode(signature);
+
+  return `${data}.${signatureB64}`;
+}
+
+// 验证 JWT token
+async function verifyJwt(token, secret) {
+  try {
+    const parts = token.split('.');
+    if (parts.length !== 3) return null;
+
+    const [headerB64, payloadB64, signatureB64] = parts;
+    const data = `${headerB64}.${payloadB64}`;
+
+    const encoder = new TextEncoder();
+    const key = await crypto.subtle.importKey(
+      'raw', encoder.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['verify']
+    );
+
+    // 将 Base64URL 签名转回 ArrayBuffer
+    const sigStr = base64UrlDecode(signatureB64);
+    const sigBytes = new Uint8Array(sigStr.length);
+    for (let i = 0; i < sigStr.length; i++) sigBytes[i] = sigStr.charCodeAt(i);
+
+    const valid = await crypto.subtle.verify('HMAC', key, sigBytes, encoder.encode(data));
+    if (!valid) return null;
+
+    const payload = JSON.parse(base64UrlDecode(payloadB64));
+
+    // 检查过期时间
+    if (payload.exp && payload.exp < Math.floor(Date.now() / 1000)) {
+      return null;
+    }
+
+    return payload;
+  } catch (e) {
+    return null;
+  }
+}
+
+// 从请求头中提取并验证 token
+async function authenticateRequest(request, env) {
+  const authHeader = request.headers.get('Authorization');
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return null;
+  }
+  const token = authHeader.slice(7);
+  const payload = await verifyJwt(token, env.JWT_SECRET);
+  return payload; // { userId, userType, iat, exp }
 }
 
 // CORS 响应头
@@ -252,7 +363,7 @@ async function handleSendCode(request, env) {
     // 存储验证码（有效期5分钟）
     await env.KV.put(`verify_code_${phone}`, code, { expirationTtl: 300 });
 
-    return jsonResponse({ success: true, message: '验证码已发送（测试模式）', code });
+    return jsonResponse({ success: true, message: '验证码已发送' });
   } catch (error) {
     return errorResponse(error.message, 500);
   }
@@ -285,11 +396,12 @@ async function handleRegisterCustomer(request, env) {
     // 创建客户
     const id = generateId();
     const userNo = await generateUserNo(env, 'U');
-    const passwordHash = await hashPassword(password);
+    const salt = generateSalt();
+    const passwordHash = await hashPasswordNew(password, salt);
 
     await env.DB.prepare(
-      'INSERT INTO customers (id, user_no, name, phone, password_hash) VALUES (?, ?, ?, ?, ?)'
-    ).bind(id, userNo, name, phone, passwordHash).run();
+      'INSERT INTO customers (id, user_no, name, phone, password_hash, salt) VALUES (?, ?, ?, ?, ?, ?)'
+    ).bind(id, userNo, name, phone, passwordHash, salt).run();
 
     // 删除已使用的验证码
     await env.KV.delete(`verify_code_${phone}`);
@@ -333,13 +445,14 @@ async function handleRegisterEngineer(request, env) {
     // 创建工程师
     const id = generateId();
     const userNo = await generateUserNo(env, 'E');
-    const passwordHash = await hashPassword(password);
+    const salt = generateSalt();
+    const passwordHash = await hashPasswordNew(password, salt);
 
     await env.DB.prepare(`
-      INSERT INTO engineers (id, user_no, name, phone, password_hash, specialties, brands, services, service_region, bio)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO engineers (id, user_no, name, phone, password_hash, salt, specialties, brands, services, service_region, bio)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).bind(
-      id, userNo, name, phone, passwordHash,
+      id, userNo, name, phone, passwordHash, salt,
       JSON.stringify(specialties || []),
       JSON.stringify(brands || {}),
       JSON.stringify(services || []),
@@ -387,14 +500,20 @@ async function handleLogin(request, env) {
       return errorResponse('手机号或密码错误');
     }
 
-    // 验证密码
-    const passwordValid = await verifyPassword(password, user.password_hash);
+    // 验证密码（兼容新旧算法）
+    const passwordValid = await verifyPassword(password, user.password_hash, user.salt);
     if (!passwordValid) {
       return errorResponse('手机号或密码错误');
     }
 
-    // 生成简单 token（生产环境应使用 JWT）
-    const token = generateId();
+    // 签发 JWT token（有效期 7 天）
+    const token = await signJwt({
+      userId: user.id,
+      userType,
+      phone: user.phone,
+      iat: Math.floor(Date.now() / 1000),
+      exp: Math.floor(Date.now() / 1000) + 7 * 24 * 60 * 60,
+    }, env.JWT_SECRET);
 
     return jsonResponse({
       success: true,
@@ -440,7 +559,7 @@ async function handleSendResetCode(request, env) {
     // 存储验证码（有效期5分钟）
     await env.KV.put(`reset_code_${phone}`, code, { expirationTtl: 300 });
 
-    return jsonResponse({ success: true, message: '验证码已发送', code }); // 测试模式下返回 code
+    return jsonResponse({ success: true, message: '验证码已发送' });
   } catch (error) {
     return errorResponse(error.message, 500);
   }
@@ -465,18 +584,19 @@ async function handleResetPassword(request, env) {
       return errorResponse('验证码错误或已过期');
     }
 
-    // 哈希新密码
-    const passwordHash = await hashPassword(newPassword);
+    // 哈希新密码（使用新算法 + 随机盐）
+    const salt = generateSalt();
+    const passwordHash = await hashPasswordNew(newPassword, salt);
 
     // 更新客户密码
     const customerUpdated = await env.DB.prepare(
-      'UPDATE customers SET password_hash = ? WHERE phone = ?'
-    ).bind(passwordHash, phone).run();
+      'UPDATE customers SET password_hash = ?, salt = ? WHERE phone = ?'
+    ).bind(passwordHash, salt, phone).run();
 
     // 更新工程师密码
     const engineerUpdated = await env.DB.prepare(
-      'UPDATE engineers SET password_hash = ? WHERE phone = ?'
-    ).bind(passwordHash, phone).run();
+      'UPDATE engineers SET password_hash = ?, salt = ? WHERE phone = ?'
+    ).bind(passwordHash, salt, phone).run();
 
     if (!customerUpdated.success && !engineerUpdated.success) {
       return errorResponse('密码更新失败');
@@ -570,11 +690,11 @@ async function handleChat(request, env) {
     const systemWithContext = SYSTEM_PROMPT + customerContext;
 
     // 构建请求到 API
-    const apiResponse = await fetch(API_ENDPOINT, {
+    const apiResponse = await fetch(env.OPENAI_API_ENDPOINT, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${API_KEY}`,
+        'Authorization': `Bearer ${env.OPENAI_API_KEY}`,
       },
       body: JSON.stringify({
         model: 'gpt-4o-mini',
@@ -749,7 +869,7 @@ const WORK_ORDER_TYPE_LABELS = {
 };
 
 // 生成工单 AI 摘要
-async function generateWorkOrderSummary(type, description, urgency) {
+async function generateWorkOrderSummary(type, description, urgency, env) {
   const typeLabel = WORK_ORDER_TYPE_LABELS[type] || type;
 
   const prompt = `你是工单分析助手。当客户提交一个维修工单时，你需要生成一个简洁的摘要，帮助工程师快速了解工单情况。
@@ -770,11 +890,11 @@ async function generateWorkOrderSummary(type, description, urgency) {
 只返回 JSON，不要有其他内容。`;
 
   try {
-    const apiResponse = await fetch(API_ENDPOINT, {
+    const apiResponse = await fetch(env.OPENAI_API_ENDPOINT, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${API_KEY}`,
+        'Authorization': `Bearer ${env.OPENAI_API_KEY}`,
       },
       body: JSON.stringify({
         model: 'gpt-4o-mini',
@@ -829,7 +949,7 @@ async function handleCreateWorkOrder(request, env) {
     `).bind(id, order_no, customer_id, type, description, urgency || 'normal', device_id || null).run();
 
     // 生成 AI 摘要（异步，不阻塞工单创建）
-    const aiSummary = await generateWorkOrderSummary(type, description, urgency);
+    const aiSummary = await generateWorkOrderSummary(type, description, urgency, env);
     if (aiSummary) {
       await env.DB.prepare(`
         UPDATE work_orders SET ai_summary = ? WHERE id = ?
@@ -1022,7 +1142,8 @@ async function handleRecommendEngineers(request, env) {
 
 // 获取客户的工单列表
 async function handleGetWorkOrders(request, env) {
-  const customerId = new URL(request.url).searchParams.get('customer_id');
+  // 优先使用认证信息中的 userId，其次使用查询参数
+  const customerId = request._auth?.userId || new URL(request.url).searchParams.get('customer_id');
 
   try {
     let query = 'SELECT * FROM work_orders';
@@ -1122,7 +1243,7 @@ async function handleSubmitRating(request, env) {
 
 // 获取待接工单（工程师）
 async function handleGetEngineerTickets(request, env) {
-  const engineerId = new URL(request.url).searchParams.get('engineer_id');
+  const engineerId = request._auth?.userId || new URL(request.url).searchParams.get('engineer_id');
 
   try {
     let query = `SELECT * FROM work_orders WHERE status IN ('pending', 'assigned')`;
@@ -1225,7 +1346,7 @@ async function handleUpdateEngineerStatus(request, env) {
 // 获取工程师档案
 async function handleGetEngineerProfile(request, env) {
   try {
-    const engineerId = new URL(request.url).searchParams.get('engineer_id');
+    const engineerId = request._auth?.userId || new URL(request.url).searchParams.get('engineer_id');
 
     if (!engineerId) {
       return errorResponse('缺少工程师ID');
@@ -1264,7 +1385,7 @@ export default {
       return handleOptions(request);
     }
 
-    // 认证相关
+    // 认证相关（无需 token）
     if (path === '/api/auth/send-code' && request.method === 'POST') {
       return handleSendCode(request, env);
     }
@@ -1284,10 +1405,26 @@ export default {
       return handleSendResetCode(request, env);
     }
 
-    // 聊天相关
+    // 聊天相关（允许未登录用户使用 AI 对话）
     if (path === '/api/chat' && request.method === 'POST') {
       return handleChat(request, env);
     }
+
+    // 健康检查（无需 token）
+    if (path === '/health') {
+      return jsonResponse({ status: 'ok' });
+    }
+
+    // ====== 以下接口需要 JWT 认证 ======
+    const auth = await authenticateRequest(request, env);
+    if (!auth) {
+      return errorResponse('请先登录', 401);
+    }
+
+    // 将认证信息挂到 request 上，供 handler 使用
+    request._auth = auth;
+
+    // 对话管理
     if (path === '/api/conversations' && request.method === 'GET') {
       return handleGetConversations(request, env);
     }
@@ -1330,11 +1467,6 @@ export default {
     }
     if (path === '/api/engineers/profile' && request.method === 'GET') {
       return handleGetEngineerProfile(request, env);
-    }
-
-    // 健康检查
-    if (path === '/health') {
-      return jsonResponse({ status: 'ok' });
     }
 
     // 默认返回 404
