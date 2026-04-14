@@ -363,7 +363,8 @@ async function handleSendCode(request, env) {
     // 存储验证码（有效期5分钟）
     await env.KV.put(`verify_code_${phone}`, code, { expirationTtl: 300 });
 
-    return jsonResponse({ success: true, message: '验证码已发送' });
+    // 测试模式：返回验证码（上线前需移除）
+    return jsonResponse({ success: true, message: '验证码已发送', code });
   } catch (error) {
     return errorResponse(error.message, 500);
   }
@@ -559,7 +560,8 @@ async function handleSendResetCode(request, env) {
     // 存储验证码（有效期5分钟）
     await env.KV.put(`reset_code_${phone}`, code, { expirationTtl: 300 });
 
-    return jsonResponse({ success: true, message: '验证码已发送' });
+    // 测试模式：返回验证码（上线前需移除）
+    return jsonResponse({ success: true, message: '验证码已发送', code });
   } catch (error) {
     return errorResponse(error.message, 500);
   }
