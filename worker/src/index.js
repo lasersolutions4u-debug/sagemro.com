@@ -8,9 +8,10 @@
 // 设置命令：wrangler secret put OPENAI_API_KEY / OPENAI_API_ENDPOINT
 // JWT_SECRET 也通过 Secrets 注入：wrangler secret put JWT_SECRET
 
-// 管理员账号（硬编码）
-const ADMIN_PHONE = '13800000000';
-const ADMIN_PASSWORD = 'sagemro2026';
+// 管理员账号（通过环境变量注入，wrangler secret put ADMIN_PHONE / ADMIN_PASSWORD）
+// 本地开发回退值仅用于提示，生产环境必须设置 secret
+const ADMIN_PHONE = '13800000000';  // 仅回退默认值
+// ADMIN_PASSWORD 从 env 读取，不再硬编码
 
 // ============ System Prompt ============
 const SYSTEM_PROMPT = `你是"小智"，智维钣金平台的 AI 助手，服务于钣金加工行业的设备维修服务。
@@ -597,6 +598,18 @@ function generateId() {
   return Date.now().toString(36) + Math.random().toString(36).substr(2);
 }
 
+// 创建通知记录
+async function createNotification(env, { user_id, user_type, type, title, body, data }) {
+  try {
+    const id = generateId();
+    await env.DB.prepare(
+      'INSERT INTO notifications (id, user_id, user_type, type, title, body, data) VALUES (?, ?, ?, ?, ?, ?, ?)'
+    ).bind(id, user_id, user_type, type, title, body, data ? JSON.stringify(data) : null).run();
+  } catch (e) {
+    console.error('[Notification] Failed to create:', e.message);
+  }
+}
+
 // 安全截断字符串（按字符数，而非字节数），支持中文
 function truncateStr(str, maxChars) {
   if (!str) return '';
@@ -823,10 +836,10 @@ async function handleSendCode(request, env) {
 // 客户注册
 async function handleRegisterCustomer(request, env) {
   try {
-    const { name, phone, password, code } = await request.json();
+    const { name, phone, password, code, company, identity } = await request.json();
 
-    if (!name || !phone || !password) {
-      return errorResponse('姓名、手机号、密码不能为空');
+    if (!name || !phone || !password || !company) {
+      return errorResponse('姓名、手机号、公司名称、密码不能为空');
     }
 
     // 验证验证码
@@ -844,6 +857,12 @@ async function handleRegisterCustomer(request, env) {
       return errorResponse('该手机号已注册');
     }
 
+    // 根据身份设置认证状态
+    let authStatus = 'guest';
+    if (identity === 'customer') {
+      authStatus = 'authenticated';
+    }
+
     // 创建客户
     const id = generateId();
     const userNo = await generateUserNo(env, 'U');
@@ -851,8 +870,8 @@ async function handleRegisterCustomer(request, env) {
     const passwordHash = await hashPasswordNew(password, salt);
 
     await env.DB.prepare(
-      'INSERT INTO customers (id, user_no, name, phone, password_hash, salt) VALUES (?, ?, ?, ?, ?, ?)'
-    ).bind(id, userNo, name, phone, passwordHash, salt).run();
+      'INSERT INTO customers (id, user_no, name, phone, password_hash, salt, company, auth_status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+    ).bind(id, userNo, name, phone, passwordHash, salt, company, authStatus).run();
 
     // 删除已使用的验证码
     await env.KV.delete(`verify_code_${phone}`);
@@ -871,11 +890,12 @@ async function handleRegisterEngineer(request, env) {
   try {
     const {
       name, phone, password, code,
-      specialties, brands, services, service_region, bio
+      specialties, brands, services, service_region, bio,
+      company
     } = await request.json();
 
-    if (!name || !phone || !password) {
-      return errorResponse('姓名、手机号、密码不能为空');
+    if (!name || !phone || !password || !company) {
+      return errorResponse('姓名、手机号、公司名称、密码不能为空');
     }
 
     // 验证验证码
@@ -900,8 +920,8 @@ async function handleRegisterEngineer(request, env) {
     const passwordHash = await hashPasswordNew(password, salt);
 
     await env.DB.prepare(`
-      INSERT INTO engineers (id, user_no, name, phone, password_hash, salt, specialties, brands, services, service_region, bio, level, commission_rate, credit_score, wallet_balance, deposit_balance)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO engineers (id, user_no, name, phone, password_hash, salt, specialties, brands, services, service_region, bio, level, commission_rate, credit_score, wallet_balance, deposit_balance, company, auth_status)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).bind(
       id, userNo, name, phone, passwordHash, salt,
       JSON.stringify(specialties || []),
@@ -913,7 +933,9 @@ async function handleRegisterEngineer(request, env) {
       0.80,       // 默认提成80%
       100,        // 初始信用分100
       0,          // 初始钱包余额0
-      0           // 初始保证金余额0
+      0,          // 初始保证金余额0
+      company || '',
+      'authenticated'  // 合伙人注册时已完成认证
     ).run();
 
     // 删除已使用的验证码
@@ -1712,6 +1734,18 @@ async function handleCreateWorkOrder(request, env) {
       }
     }
 
+    // 创建通知 — 通知匹配到的合伙人
+    for (const engineer of matchingEngineers) {
+      await createNotification(env, {
+        user_id: engineer.id,
+        user_type: 'engineer',
+        type: 'new_ticket',
+        title: '新工单待接单',
+        body: `工单号：${order_no} | 类型：${typeLabels[type] || type} | 紧急程度：${urgencyLabels[urgency] || urgency}`,
+        data: { work_order_id: id, order_no },
+      });
+    }
+
     return jsonResponse({
       success: true,
       work_order: { id, order_no, status: 'pending', ai_summary: aiSummary }
@@ -2228,6 +2262,18 @@ async function handleSubmitRating(request, env) {
       'UPDATE work_orders SET status = ?, completed_at = datetime("now") WHERE id = ?'
     ).bind('completed', work_order_id).run();
 
+    // 通知合伙人：收到新评价
+    const avgAll = ((rating_timeliness + rating_technical + rating_communication + rating_professional) / 4).toFixed(1);
+    const woRating = await env.DB.prepare('SELECT order_no FROM work_orders WHERE id = ?').bind(work_order_id).first();
+    await createNotification(env, {
+      user_id: engineer_id,
+      user_type: 'engineer',
+      type: 'rating_received',
+      title: '收到新评价',
+      body: `工单 ${woRating?.order_no || ''} 的客户给您评分 ${avgAll} 分${comment ? '："' + comment.slice(0, 30) + '"' : ''}`,
+      data: { work_order_id },
+    });
+
     return jsonResponse({ success: true });
   } catch (error) {
     return errorResponse(error.message, 500);
@@ -2302,6 +2348,20 @@ async function handleAcceptTicket(request, env) {
       INSERT INTO work_order_logs (id, work_order_id, action, actor_type, actor_id, content)
       VALUES (?, ?, ?, ?, ?, ?)
     `).bind(generateId(), work_order_id, 'accepted', 'engineer', engineer_id, '工程师已接单').run();
+
+    // 通知客户：合伙人已接单
+    const wo = await env.DB.prepare('SELECT customer_id, order_no FROM work_orders WHERE id = ?').bind(work_order_id).first();
+    const eng = await env.DB.prepare('SELECT name FROM engineers WHERE id = ?').bind(engineer_id).first();
+    if (wo?.customer_id) {
+      await createNotification(env, {
+        user_id: wo.customer_id,
+        user_type: 'customer',
+        type: 'ticket_accepted',
+        title: '工单已被接单',
+        body: `工单 ${wo.order_no} 已被合伙人${eng?.name || ''}接单，即将为您服务。`,
+        data: { work_order_id },
+      });
+    }
 
     return jsonResponse({ success: true });
   } catch (error) {
@@ -2399,19 +2459,26 @@ async function handleUpdateCustomerProfile(request, env) {
     if (!customerId) return errorResponse('未登录', 401);
 
     const body = await request.json();
-    const { name, region } = body;
+    const { name, region, company, address, city, phone, company_description, business_scope, logo_url } = body;
 
     const updates = [];
     const values = [];
     if (name !== undefined) { updates.push('name = ?'); values.push(name); }
     if (region !== undefined) { updates.push('region = ?'); values.push(region); }
+    if (company !== undefined) { updates.push('company = ?'); values.push(company); }
+    if (address !== undefined) { updates.push('address = ?'); values.push(address); }
+    if (city !== undefined) { updates.push('city = ?'); values.push(city); }
+    if (phone !== undefined) { updates.push('phone = ?'); values.push(phone); }
+    if (company_description !== undefined) { updates.push('company_description = ?'); values.push(company_description); }
+    if (business_scope !== undefined) { updates.push('business_scope = ?'); values.push(business_scope); }
+    if (logo_url !== undefined) { updates.push('logo_url = ?'); values.push(logo_url); }
 
     if (updates.length === 0) return errorResponse('没有要更新的字段');
 
     values.push(customerId);
     await env.DB.prepare(`UPDATE customers SET ${updates.join(', ')} WHERE id = ?`).bind(...values).run();
 
-    const updated = await env.DB.prepare('SELECT id, user_no, name, phone, region, created_at FROM customers WHERE id = ?').bind(customerId).first();
+    const updated = await env.DB.prepare('SELECT id, user_no, name, phone, region, company, address, city, company_description, business_scope, logo_url, auth_status, created_at FROM customers WHERE id = ?').bind(customerId).first();
     return jsonResponse({ customer: updated });
   } catch (error) {
     return errorResponse(error.message, 500);
@@ -2796,7 +2863,11 @@ async function handleAdminLogin(request, env) {
     const body = await request.json();
     const { phone, password } = body;
 
-    if (phone !== ADMIN_PHONE || password !== ADMIN_PASSWORD) {
+    const adminPassword = env.ADMIN_PASSWORD;
+    if (!adminPassword) {
+      return errorResponse('管理员密码未配置，请联系管理员', 500);
+    }
+    if (phone !== ADMIN_PHONE || password !== adminPassword) {
       return errorResponse('手机号或密码错误', 401);
     }
 
@@ -3652,6 +3723,19 @@ async function handleResolveWorkOrder(request, env) {
         INSERT INTO work_order_messages (id, work_order_id, sender_type, sender_id, sender_name, content, message_type)
         VALUES (?, ?, 'system', '', '系统', '服务已完成，请客户确认并评价。', 'system')
       `).bind(generateId(), workOrderId).run();
+
+      // 通知客户：服务已完成
+      const woResolve = await env.DB.prepare('SELECT customer_id, order_no FROM work_orders WHERE id = ?').bind(workOrderId).first();
+      if (woResolve?.customer_id) {
+        await createNotification(env, {
+          user_id: woResolve.customer_id,
+          user_type: 'customer',
+          type: 'ticket_resolved',
+          title: '服务已完成',
+          body: `工单 ${woResolve.order_no} 的服务已完成，请确认并评价。`,
+          data: { work_order_id: workOrderId },
+        });
+      }
     }
 
     return jsonResponse({ success: true });
@@ -3873,6 +3957,19 @@ async function handleSubmitWorkOrderPricing(request, env) {
       "INSERT INTO work_order_messages (id, work_order_id, sender_type, sender_id, sender_name, content, message_type) VALUES (?, ?, 'system', '', '系统', '工程师已提交报价，请查看报价明细并确认。', 'pricing_update')"
     ).bind(msgId, workOrderId).run();
 
+    // 通知客户：有新报价
+    const woForNotif = await env.DB.prepare('SELECT customer_id, order_no FROM work_orders WHERE id = ?').bind(workOrderId).first();
+    if (woForNotif?.customer_id) {
+      await createNotification(env, {
+        user_id: woForNotif.customer_id,
+        user_type: 'customer',
+        type: 'pricing_submitted',
+        title: '收到新报价',
+        body: `工单 ${woForNotif.order_no} 的合伙人已提交报价 ¥${subtotal}，请查看确认。`,
+        data: { work_order_id: workOrderId },
+      });
+    }
+
     return jsonResponse({
       success: true,
       ai_check: aiCheck,
@@ -3915,6 +4012,19 @@ async function handleConfirmWorkOrderPricing(request, env) {
       "INSERT INTO work_order_messages (id, work_order_id, sender_type, sender_id, sender_name, content, message_type) VALUES (?, ?, 'system', '', '系统', '客户已确认报价，工程师可以开始上门服务。', 'system')"
     ).bind(msgId, workOrderId).run();
 
+    // 通知合伙人：报价已确认
+    const woConfirm = await env.DB.prepare('SELECT engineer_id, order_no FROM work_orders WHERE id = ?').bind(workOrderId).first();
+    if (woConfirm?.engineer_id) {
+      await createNotification(env, {
+        user_id: woConfirm.engineer_id,
+        user_type: 'engineer',
+        type: 'pricing_confirmed',
+        title: '报价已确认',
+        body: `工单 ${woConfirm.order_no} 的客户已确认报价，可以开始上门服务。`,
+        data: { work_order_id: workOrderId },
+      });
+    }
+
     return jsonResponse({ success: true });
   } catch (error) {
     return errorResponse(error.message, 500);
@@ -3940,6 +4050,67 @@ async function handleRejectWorkOrderPricing(request, env) {
     await env.DB.prepare(
       "INSERT INTO work_order_messages (id, work_order_id, sender_type, sender_id, sender_name, content, message_type) VALUES (?, ?, 'customer', ?, '客户', ?, 'text')"
     ).bind(msgId, workOrderId, customer_id || '', reason || '希望重新报价').run();
+
+    return jsonResponse({ success: true });
+  } catch (error) {
+    return errorResponse(error.message, 500);
+  }
+}
+
+// ============ 通知相关 API ============
+
+async function handleGetNotifications(request, env) {
+  try {
+    const auth = request._auth;
+    const url = new URL(request.url);
+    const limit = parseInt(url.searchParams.get('limit')) || 50;
+    const offset = parseInt(url.searchParams.get('offset')) || 0;
+
+    const { results } = await env.DB.prepare(
+      'SELECT * FROM notifications WHERE user_id = ? AND user_type = ? ORDER BY created_at DESC LIMIT ? OFFSET ?'
+    ).bind(auth.userId, auth.userType, limit, offset).all();
+
+    return jsonResponse({ notifications: results });
+  } catch (error) {
+    return errorResponse(error.message, 500);
+  }
+}
+
+async function handleGetUnreadNotificationCount(request, env) {
+  try {
+    const auth = request._auth;
+    const row = await env.DB.prepare(
+      'SELECT COUNT(*) as count FROM notifications WHERE user_id = ? AND user_type = ? AND is_read = 0'
+    ).bind(auth.userId, auth.userType).first();
+
+    return jsonResponse({ count: row?.count || 0 });
+  } catch (error) {
+    return errorResponse(error.message, 500);
+  }
+}
+
+async function handleMarkNotificationRead(request, env) {
+  try {
+    const auth = request._auth;
+    const notificationId = new URL(request.url).pathname.split('/')[3];
+
+    await env.DB.prepare(
+      'UPDATE notifications SET is_read = 1 WHERE id = ? AND user_id = ? AND user_type = ?'
+    ).bind(notificationId, auth.userId, auth.userType).run();
+
+    return jsonResponse({ success: true });
+  } catch (error) {
+    return errorResponse(error.message, 500);
+  }
+}
+
+async function handleMarkAllNotificationsRead(request, env) {
+  try {
+    const auth = request._auth;
+
+    await env.DB.prepare(
+      'UPDATE notifications SET is_read = 1 WHERE user_id = ? AND user_type = ? AND is_read = 0'
+    ).bind(auth.userId, auth.userType).run();
 
     return jsonResponse({ success: true });
   } catch (error) {
@@ -4253,6 +4424,20 @@ export default {
     }
     if (path.startsWith('/api/devices/') && request.method === 'DELETE') {
       return handleDeleteDevice(request, env);
+    }
+
+    // 通知相关
+    if (path === '/api/notifications' && request.method === 'GET') {
+      return handleGetNotifications(request, env);
+    }
+    if (path === '/api/notifications/unread-count' && request.method === 'GET') {
+      return handleGetUnreadNotificationCount(request, env);
+    }
+    if (path.match(/^\/api\/notifications\/[^/]+\/read$/) && request.method === 'PATCH') {
+      return handleMarkNotificationRead(request, env);
+    }
+    if (path === '/api/notifications/read-all' && request.method === 'POST') {
+      return handleMarkAllNotificationsRead(request, env);
     }
 
     // 工程师相关

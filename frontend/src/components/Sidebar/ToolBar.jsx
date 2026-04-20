@@ -1,4 +1,4 @@
-import { FileText, ClipboardList, Settings, Info, LogIn, LogOut, Briefcase, Package } from 'lucide-react';
+import { FileText, ClipboardList, Settings, Info, LogIn, LogOut, Briefcase, Package, Bell } from 'lucide-react';
 
 export function ToolBar({
   onOpenWorkOrder,
@@ -9,6 +9,8 @@ export function ToolBar({
   onLogout,
   onOpenEngineerDashboard,
   onOpenMyDevices,
+  onOpenNotifications,
+  unreadCount,
   currentUser,
   userType,
 }) {
@@ -47,6 +49,27 @@ export function ToolBar({
           <span>{tool.label}</span>
         </button>
       ))}
+
+      {/* 消息通知（登录用户可见） */}
+      {currentUser && (
+        <button
+          onClick={onOpenNotifications}
+          className="w-full flex items-center gap-3 px-4 py-2.5 text-[14px] text-[var(--color-sidebar-muted)] hover:bg-[var(--color-sidebar-surface)] hover:text-[var(--color-sidebar-text)] rounded-lg mx-1 transition-colors"
+        >
+          <div className="relative">
+            <Bell size={17} />
+            {unreadCount > 0 && (
+              <span className="absolute -top-1.5 -right-1.5 min-w-[16px] h-4 flex items-center justify-center bg-red-500 text-white text-[10px] font-medium rounded-full px-1">
+                {unreadCount > 99 ? '99+' : unreadCount}
+              </span>
+            )}
+          </div>
+          <span>消息通知</span>
+          {unreadCount > 0 && (
+            <span className="ml-auto text-[11px] text-red-400 font-medium">{unreadCount}</span>
+          )}
+        </button>
+      )}
 
       {/* 通用工具入口（所有人可见） */}
       {commonTools.map((tool) => (
