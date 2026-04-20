@@ -8,8 +8,11 @@ import { AboutModal } from './components/common/AboutModal';
 import { LoginModal } from './components/Auth/LoginModal';
 import { EngineerDashboard } from './components/Engineer/EngineerDashboard';
 import { EngineerProfileModal } from './components/Engineer/EngineerProfileModal';
+import { MyDevicesModal } from './components/Device/MyDevicesModal';
 import { useChat } from './hooks/useChat';
 import { useConversations } from './hooks/useConversations';
+import { usePushNotification } from './hooks/usePushNotification';
+import { PushNotificationBanner } from './components/PushNotification/PushNotificationBanner';
 import { generateId } from './utils/helpers';
 import { submitWorkOrder as submitWorkOrderApi } from './services/api';
 
@@ -25,6 +28,7 @@ function App() {
   const [loginModalOpen, setLoginModalOpen] = useState(false);
   const [engineerDashboardOpen, setEngineerDashboardOpen] = useState(false);
   const [engineerProfileOpen, setEngineerProfileOpen] = useState(false);
+  const [myDevicesOpen, setMyDevicesOpen] = useState(false);
   const [currentUser, setCurrentUser] = useState(null);
   const [userType, setUserType] = useState(null);
 
@@ -48,6 +52,13 @@ function App() {
     deleteConversation,
     getConversation,
   } = useConversations();
+
+  // 推送通知（仅工程师）
+  const engineerId = localStorage.getItem('sagemro_engineer_id');
+  const { inAppNotification, dismissNotification } = usePushNotification(
+    engineerId,
+    userType === 'engineer'
+  );
 
   const {
     messages,
@@ -125,10 +136,22 @@ function App() {
       throw new Error('请先登录后再提交工单');
     }
 
+    // 将设备信息组合进描述，供 AI 分析
+    const deviceInfo = [
+      data.device_type?.length > 0 ? `设备类型：${data.device_type.join('、')}` : null,
+      data.device_brand?.length > 0 ? `品牌：${data.device_brand.join('、')}` : null,
+      data.device_model ? `型号：${data.device_model}` : null,
+      data.region?.length > 0 ? `所在地区：${data.region.join('、')}` : null,
+    ].filter(Boolean).join('；');
+
+    const fullDescription = deviceInfo
+      ? `${deviceInfo}。${data.description}`
+      : data.description;
+
     const result = await submitWorkOrderApi({
       customer_id,
       type: data.type,
-      description: data.description,
+      description: fullDescription,
       urgency: data.urgency,
       device_id: data.device_id,
     });
@@ -149,7 +172,9 @@ function App() {
   const handleLoginSuccess = useCallback((userData) => {
     setCurrentUser(userData.user);
     setUserType(userData.userType);
-  }, []);
+    // 登录后清空对话，确保用新账号的正确身份上下文开始对话
+    clearMessages();
+  }, [clearMessages]);
 
   // 登出
   const handleLogout = useCallback(() => {
@@ -178,6 +203,7 @@ function App() {
         onOpenLogin={() => setLoginModalOpen(true)}
         onLogout={handleLogout}
         onOpenEngineerDashboard={() => setEngineerDashboardOpen(true)}
+        onOpenMyDevices={() => setMyDevicesOpen(true)}
         currentUser={currentUser}
         userType={userType}
         isOpen={sidebarOpen}
@@ -231,6 +257,19 @@ function App() {
         onClose={() => setEngineerProfileOpen(false)}
         engineerId={localStorage.getItem('sagemro_engineer_id')}
       />
+      <MyDevicesModal
+        isOpen={myDevicesOpen}
+        onClose={() => setMyDevicesOpen(false)}
+        currentUser={currentUser}
+      />
+
+      {/* 推送通知 Banner（工程师在线时收到推送） */}
+      {userType === 'engineer' && (
+        <PushNotificationBanner
+          notification={inAppNotification}
+          onDismiss={dismissNotification}
+        />
+      )}
     </div>
   );
 }

@@ -43,7 +43,7 @@ export async function registerCustomer({ name, phone, password, code }) {
 }
 
 /**
- * 工程师注册
+ * 合伙人入驻
  */
 export async function registerEngineer({ name, phone, password, code, specialties, brands, services, service_region, bio }) {
   const response = await fetch(`${API_BASE}/api/auth/register/engineer`, {
@@ -113,6 +113,9 @@ export async function resetPassword({ phone, code, newPassword }) {
  */
 export async function streamChat({ conversationId, message, onChunk, onDone, onError, signal, customerId }) {
   try {
+    const userType = localStorage.getItem('sagemro_user_type') || 'guest';
+    const engineerId = localStorage.getItem('sagemro_engineer_id');
+
     const response = await fetch(`${API_BASE}/api/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -120,6 +123,8 @@ export async function streamChat({ conversationId, message, onChunk, onDone, onE
         conversation_id: conversationId,
         message: message,
         customer_id: customerId || localStorage.getItem('sagemro_customer_id'),
+        engineer_id: engineerId,
+        user_type: userType,
       }),
       signal,
     });
@@ -260,10 +265,89 @@ export async function submitRating(data) {
   return response.json();
 }
 
-// ============ 工程师相关 ============
+// ============ 工单消息与核价 ============
 
 /**
- * 获取工程师的工单列表
+ * 获取工单消息列表
+ */
+export async function getWorkOrderMessages(workOrderId) {
+  const response = await fetch(`${API_BASE}/api/workorders/${workOrderId}/messages`, {
+    headers: authHeaders(),
+  });
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  return response.json();
+}
+
+/**
+ * 发送工单消息
+ */
+export async function postWorkOrderMessage(workOrderId, data) {
+  const response = await fetch(`${API_BASE}/api/workorders/${workOrderId}/messages`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify(data),
+  });
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  return response.json();
+}
+
+/**
+ * 获取工单核价信息
+ */
+export async function getWorkOrderPricing(workOrderId) {
+  const response = await fetch(`${API_BASE}/api/workorders/${workOrderId}/pricing`, {
+    headers: authHeaders(),
+  });
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  return response.json();
+}
+
+/**
+ * 合伙人提交/更新核价
+ */
+export async function submitWorkOrderPricing(workOrderId, data) {
+  const response = await fetch(`${API_BASE}/api/workorders/${workOrderId}/pricing`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify(data),
+  });
+  if (!response.ok) {
+    const d = await response.json();
+    throw new Error(d.error || `HTTP ${response.status}`);
+  }
+  return response.json();
+}
+
+/**
+ * 客户确认报价
+ */
+export async function confirmWorkOrderPricing(workOrderId, customerId) {
+  const response = await fetch(`${API_BASE}/api/workorders/${workOrderId}/pricing/confirm`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({ customer_id: customerId }),
+  });
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  return response.json();
+}
+
+/**
+ * 客户拒绝/议价
+ */
+export async function rejectWorkOrderPricing(workOrderId, customerId, reason) {
+  const response = await fetch(`${API_BASE}/api/workorders/${workOrderId}/pricing/reject`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({ customer_id: customerId, reason }),
+  });
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  return response.json();
+}
+
+// ============ 合伙人相关 ============
+
+/**
+ * 获取合伙人的工单列表
  */
 export async function getEngineerTickets(engineerId) {
   const url = engineerId
@@ -277,7 +361,7 @@ export async function getEngineerTickets(engineerId) {
 }
 
 /**
- * 工程师接单
+ * 合伙人接单
  */
 export async function acceptTicket({ work_order_id, engineer_id }) {
   const response = await fetch(`${API_BASE}/api/engineers/tickets/accept`, {
@@ -290,7 +374,7 @@ export async function acceptTicket({ work_order_id, engineer_id }) {
 }
 
 /**
- * 工程师拒单
+ * 合伙人拒单
  */
 export async function rejectTicket({ work_order_id, engineer_id }) {
   const response = await fetch(`${API_BASE}/api/engineers/tickets/reject`, {
@@ -303,7 +387,7 @@ export async function rejectTicket({ work_order_id, engineer_id }) {
 }
 
 /**
- * 获取工单推荐的工程师列表
+ * 获取工单推荐的合伙人列表
  */
 export async function getRecommendedEngineers(workOrderId) {
   const response = await fetch(`${API_BASE}/api/engineers/recommend?work_order_id=${workOrderId}`, {
@@ -314,7 +398,7 @@ export async function getRecommendedEngineers(workOrderId) {
 }
 
 /**
- * 更新工程师接单状态
+ * 更新合伙人接单状态
  */
 export async function updateEngineerStatus({ engineer_id, status }) {
   const response = await fetch(`${API_BASE}/api/engineers/status`, {
@@ -327,10 +411,140 @@ export async function updateEngineerStatus({ engineer_id, status }) {
 }
 
 /**
- * 获取工程师档案
+ * 获取合伙人档案
  */
 export async function getEngineerProfile(engineerId) {
   const response = await fetch(`${API_BASE}/api/engineers/profile?engineer_id=${engineerId}`, {
+    headers: authHeaders(),
+  });
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  return response.json();
+}
+
+/**
+ * 合伙人标记服务完成
+ */
+export async function resolveWorkOrder(workOrderId, engineerId) {
+  const response = await fetch(`${API_BASE}/api/workorders/${workOrderId}/resolve`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({ engineer_id: engineerId }),
+  });
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  return response.json();
+}
+
+// ============ 合伙人钱包与保证金 ============
+
+/**
+ * 获取合伙人钱包信息
+ */
+export async function getEngineerWallet(engineerId) {
+  const url = engineerId
+    ? `${API_BASE}/api/engineers/wallet?engineer_id=${engineerId}`
+    : `${API_BASE}/api/engineers/wallet`;
+  const response = await fetch(url, {
+    headers: authHeaders(),
+  });
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  return response.json();
+}
+
+/**
+ * 申请提现
+ */
+export async function applyWithdraw(amount) {
+  const response = await fetch(`${API_BASE}/api/engineers/wallet/withdraw`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({ amount }),
+  });
+  if (!response.ok) {
+    const d = await response.json();
+    throw new Error(d.error || `HTTP ${response.status}`);
+  }
+  return response.json();
+}
+
+// 保存推送订阅（OneSignal Player ID）
+export async function savePushSubscription(engineerId, { onesignal_player_id }) {
+  const response = await fetch(`${API_BASE}/api/engineers/push-subscription`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({
+      engineer_id: engineerId,
+      onesignal_player_id,
+    }),
+  });
+  if (!response.ok) {
+    const d = await response.json();
+    throw new Error(d.error || `HTTP ${response.status}`);
+  }
+  return response.json();
+}
+
+// ============ 设备管理 ============
+
+/**
+ * 获取客户的所有设备
+ */
+export async function getDevices() {
+  const response = await fetch(`${API_BASE}/api/devices`, {
+    headers: authHeaders(),
+  });
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  return response.json();
+}
+
+/**
+ * 获取单个设备详情（含维修记录）
+ */
+export async function getDevice(deviceId) {
+  const response = await fetch(`${API_BASE}/api/devices/${deviceId}`, {
+    headers: authHeaders(),
+  });
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  return response.json();
+}
+
+/**
+ * 添加新设备
+ */
+export async function createDevice({ name, type, brand, model, power }) {
+  const response = await fetch(`${API_BASE}/api/devices`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({ name, type, brand, model, power }),
+  });
+  if (!response.ok) {
+    const d = await response.json();
+    throw new Error(d.error || `HTTP ${response.status}`);
+  }
+  return response.json();
+}
+
+/**
+ * 更新设备
+ */
+export async function updateDevice(deviceId, { name, type, brand, model, power, status, photo_url, notes }) {
+  const response = await fetch(`${API_BASE}/api/devices/${deviceId}`, {
+    method: 'PATCH',
+    headers: authHeaders(),
+    body: JSON.stringify({ name, type, brand, model, power, status, photo_url, notes }),
+  });
+  if (!response.ok) {
+    const d = await response.json();
+    throw new Error(d.error || `HTTP ${response.status}`);
+  }
+  return response.json();
+}
+
+/**
+ * 删除设备
+ */
+export async function deleteDevice(deviceId) {
+  const response = await fetch(`${API_BASE}/api/devices/${deviceId}`, {
+    method: 'DELETE',
     headers: authHeaders(),
   });
   if (!response.ok) throw new Error(`HTTP ${response.status}`);

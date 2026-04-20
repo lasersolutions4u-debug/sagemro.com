@@ -1,4 +1,4 @@
-import { FileText, ClipboardList, Settings, Info, LogIn, LogOut, Briefcase } from 'lucide-react';
+import { FileText, ClipboardList, Settings, Info, LogIn, LogOut, Briefcase, Package } from 'lucide-react';
 
 export function ToolBar({
   onOpenWorkOrder,
@@ -8,24 +8,36 @@ export function ToolBar({
   onOpenLogin,
   onLogout,
   onOpenEngineerDashboard,
+  onOpenMyDevices,
   currentUser,
   userType,
 }) {
-  const tools = [
+  // 仅登录客户可见的工具
+  const customerTools = [
     { icon: FileText, label: '新建工单', onClick: onOpenWorkOrder },
     { icon: ClipboardList, label: '我的工单', onClick: onOpenMyWorkOrders },
+    { icon: Package, label: '我的设备', onClick: onOpenMyDevices },
+  ];
+
+  // 所有人都能看到的工具
+  const commonTools = [
     { icon: Info, label: '关于小智', onClick: onOpenAbout },
   ];
 
-  // 工程师额外工具
+  // 合伙人额外工具
   const engineerTools = userType === 'engineer' ? [
-    { icon: Briefcase, label: '工程师工作台', onClick: onOpenEngineerDashboard },
+    { icon: Briefcase, label: '合伙人管理台', onClick: onOpenEngineerDashboard },
   ] : [];
+
+  // 筛选工具：客户看 customerTools，合伙人看前两个
+  const visibleTools = userType === 'engineer'
+    ? customerTools.slice(0, 2) // 合伙人只显示：新建工单、我的工单
+    : customerTools;
 
   return (
     <div className="border-t border-[#3a3a4c] pt-3 mt-auto">
-      {/* 通用工具入口 */}
-      {tools.map((tool) => (
+      {/* 会员工具入口（需登录） */}
+      {currentUser && visibleTools.map((tool) => (
         <button
           key={tool.label}
           onClick={tool.onClick}
@@ -36,7 +48,19 @@ export function ToolBar({
         </button>
       ))}
 
-      {/* 工程师工作台入口（在"我的工单"下面） */}
+      {/* 通用工具入口（所有人可见） */}
+      {commonTools.map((tool) => (
+        <button
+          key={tool.label}
+          onClick={tool.onClick}
+          className="w-full flex items-center gap-3 px-4 py-2.5 text-[14px] text-[var(--color-sidebar-muted)] hover:bg-[var(--color-sidebar-surface)] hover:text-[var(--color-sidebar-text)] rounded-lg mx-1 transition-colors"
+        >
+          <tool.icon size={17} />
+          <span>{tool.label}</span>
+        </button>
+      ))}
+
+      {/* 合伙人管理台入口（在"我的工单"下面） */}
       {engineerTools.map((tool) => (
         <button
           key={tool.label}
@@ -63,7 +87,7 @@ export function ToolBar({
               </div>
               <span className="truncate">{currentUser.name}</span>
               {userType === 'engineer' && (
-                <span className="text-[10px] px-1.5 py-0.5 bg-[var(--color-primary)]/20 text-[var(--color-primary)] rounded">工程师</span>
+                <span className="text-[10px] px-1.5 py-0.5 bg-[var(--color-primary)]/20 text-[var(--color-primary)] rounded">合伙人</span>
               )}
             </button>
             <button

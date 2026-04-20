@@ -15,6 +15,7 @@ export function Sidebar({
   onOpenLogin,
   onLogout,
   onOpenEngineerDashboard,
+  onOpenMyDevices,
   currentUser,
   userType,
   isOpen,
@@ -76,6 +77,7 @@ export function Sidebar({
             onOpenLogin={onOpenLogin}
             onLogout={onLogout}
             onOpenEngineerDashboard={onOpenEngineerDashboard}
+            onOpenMyDevices={onOpenMyDevices}
             currentUser={currentUser}
             userType={userType}
           />
