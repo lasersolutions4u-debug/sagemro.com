@@ -1,9 +1,43 @@
+// 合伙人等级
+export const PartnerLevel = {
+  JUNIOR: 'junior',       // 初级：提成80%
+  SENIOR: 'senior',       // 中级：提成85%
+  EXPERT: 'expert',       // 核心专家：提成88%
+};
+
+// 合伙人等级对应的提成比例
+export const CommissionRates = {
+  [PartnerLevel.JUNIOR]: 0.80,  // 合伙人拿80%，平台收20%
+  [PartnerLevel.SENIOR]: 0.85,  // 合伙人拿85%，平台收15%
+  [PartnerLevel.EXPERT]: 0.88,  // 合伙人拿88%，平台收12%
+};
+
+// 合伙人等级标签
+export const PartnerLevelLabels = {
+  [PartnerLevel.JUNIOR]: { label: '初级', color: 'bg-blue-500', textColor: 'text-white' },
+  [PartnerLevel.SENIOR]: { label: '中级', color: 'bg-amber-500', textColor: 'text-white' },
+  [PartnerLevel.EXPERT]: { label: '核心专家', color: 'bg-red-500', textColor: 'text-white' },
+};
+
 // 工单状态
 export const WorkOrderStatus = {
   PENDING: 'pending',       // 待处理
-  PROCESSING: 'processing', // 处理中
+  ASSIGNED: 'assigned',     // 已分配
+  IN_PROGRESS: 'in_progress', // 处理中
+  PRICING: 'pricing',      // 等待报价确认
+  IN_SERVICE: 'in_service', // 服务中
   RESOLVED: 'resolved',    // 已解决
-  CLOSED: 'closed'         // 已关闭
+  PENDING_REVIEW: 'pending_review', // 待评价
+  COMPLETED: 'completed',  // 已完成
+  REJECTED: 'rejected',   // 已拒绝
+  CANCELLED: 'cancelled', // 已取消
+};
+
+// 核价状态
+export const PricingStatus = {
+  DRAFT: 'draft',       // 草稿/议价中
+  SUBMITTED: 'submitted', // 已提交等待确认
+  CONFIRMED: 'confirmed', // 已确认
 };
 
 // 工单类型

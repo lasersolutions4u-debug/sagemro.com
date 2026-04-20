@@ -71,7 +71,7 @@ export function RatingModal({ isOpen, onClose, workOrder, onSuccess }) {
   };
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="服务评价" size="md">
+    <Modal isOpen={isOpen} onClose={onClose} title="服务评价" size="sm">
       <div className="space-y-4">
         {/* 工单信息 */}
         <div className="p-3 bg-[#f4f3f4] dark:bg-[#2a2a3c] rounded-xl">

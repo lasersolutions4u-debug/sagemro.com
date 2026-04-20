@@ -29,7 +29,7 @@ export function SettingsModal({ isOpen, onClose }) {
   ];
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="设置" size="lg">
+    <Modal isOpen={isOpen} onClose={onClose} title="设置" size="sm">
       <div className="space-y-4">
         {/* 用户名 */}
         <div>

@@ -1,11 +1,14 @@
 import { useState, useEffect } from 'react';
 import { Modal } from '../common/Modal';
-import { Star, MapPin, Phone, Briefcase, Wrench, Award } from 'lucide-react';
+import { Star, MapPin, Phone, Briefcase, Wrench, Award, Bell, BellOff } from 'lucide-react';
 import { getEngineerProfile } from '../../services/api';
+import { usePushNotification } from '../../hooks/usePushNotification';
 
 export function EngineerProfileModal({ isOpen, onClose, engineerId }) {
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(false);
+  const { pushEnabled, pushPermission, enablePush, disablePush, isReady, isConfigured } =
+    usePushNotification(engineerId, !!engineerId);
 
   useEffect(() => {
     if (!isOpen || !engineerId) return;
@@ -18,9 +21,17 @@ export function EngineerProfileModal({ isOpen, onClose, engineerId }) {
       const data = await getEngineerProfile(engineerId);
       setProfile(data.engineer);
     } catch (e) {
-      console.error('加载工程师档案失败:', e);
+      console.error('加载合伙人档案失败:', e);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handlePushToggle = async () => {
+    if (pushEnabled) {
+      await disablePush();
+    } else {
+      await enablePush();
     }
   };
 
@@ -39,7 +50,7 @@ export function EngineerProfileModal({ isOpen, onClose, engineerId }) {
     : 0;
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="工程师档案" size="lg">
+    <Modal isOpen={isOpen} onClose={onClose} title="合伙人档案" size="md">
       <div className="space-y-5">
         {loading && (
           <div className="text-center py-8 text-[#6b6375]">加载中...</div>
@@ -199,6 +210,44 @@ export function EngineerProfileModal({ isOpen, onClose, engineerId }) {
                 </h3>
                 <div className="p-3 bg-[#f4f3f4] dark:bg-[#2a2a3c] rounded-xl text-sm text-[#6b6375]">
                   {profile.bio}
+                </div>
+              </div>
+            )}
+
+            {/* 推送通知设置 */}
+            {isConfigured && (
+              <div className="p-4 bg-[#f4f3f4] dark:bg-[#2a2a3c] rounded-xl">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    {pushEnabled ? (
+                      <Bell size={20} className="text-[#f59e0b]" />
+                    ) : (
+                      <BellOff size={20} className="text-[#6b6375]" />
+                    )}
+                    <div>
+                      <div className="text-sm font-medium text-[#08060d] dark:text-[#f3f4f6]">
+                        推送通知
+                      </div>
+                      <div className="text-xs text-[#6b6375]">
+                        {pushEnabled
+                          ? '已开启，新工单和钱包变动时会推送'
+                          : pushPermission === 'denied'
+                          ? '已被浏览器拒绝'
+                          : '未开启'}
+                      </div>
+                    </div>
+                  </div>
+                  <button
+                    onClick={handlePushToggle}
+                    disabled={pushPermission === 'denied'}
+                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                      pushEnabled
+                        ? 'bg-[#ef4444] hover:bg-[#dc2626] text-white'
+                        : 'bg-[#f59e0b] hover:bg-[#d97706] text-white'
+                    } disabled:bg-gray-300 disabled:cursor-not-allowed`}
+                  >
+                    {pushEnabled ? '关闭' : '开启'}
+                  </button>
                 </div>
               </div>
             )}

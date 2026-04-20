@@ -36,6 +36,7 @@ export function WorkOrderModal({ isOpen, onClose, onSubmit }) {
     urgency: 'normal',
   });
   const [submitting, setSubmitting] = useState(false);
+  const [submitted, setSubmitted] = useState(null); // 提交成功后显示的工单信息
   const [brandOptions, setBrandOptions] = useState([]);
 
   // 监听设备类型变化，更新品牌预设选项
@@ -58,24 +59,30 @@ export function WorkOrderModal({ isOpen, onClose, onSubmit }) {
 
     setSubmitting(true);
     try {
-      await onSubmit(form);
-      // 重置表单
-      setForm({
-        type: '',
-        device_type: [],
-        device_brand: [],
-        region: [],
-        device_model: '',
-        description: '',
-        contact: '',
-        urgency: 'normal',
-      });
-      onClose();
+      const result = await onSubmit(form);
+      // 显示成功提示
+      setSubmitted(result);
     } catch (e) {
       alert('提交失败：' + e.message);
     } finally {
       setSubmitting(false);
     }
+  };
+
+  const handleClose = () => {
+    // 关闭时重置表单和成功状态
+    setForm({
+      type: '',
+      device_type: [],
+      device_brand: [],
+      region: [],
+      device_model: '',
+      description: '',
+      contact: '',
+      urgency: 'normal',
+    });
+    setSubmitted(null);
+    onClose();
   };
 
   const typeOptions = [
@@ -95,8 +102,32 @@ export function WorkOrderModal({ isOpen, onClose, onSubmit }) {
   ];
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="提交工单" size="lg">
-      <div className="space-y-4">
+    <Modal isOpen={isOpen} onClose={handleClose} title={submitted ? '工单已提交' : '提交工单'} size="md">
+      {/* 提交成功提示 */}
+      {submitted && (
+        <div className="space-y-4">
+          <div className="p-4 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-xl text-center">
+            <div className="text-3xl mb-2">✅</div>
+            <p className="text-sm font-medium text-green-700 dark:text-green-400 mb-1">工单提交成功！</p>
+            <p className="text-xs text-green-600 dark:text-green-500">
+              工单号：{submitted.order_no || submitted.id}
+            </p>
+          </div>
+          <p className="text-xs text-[var(--color-text-secondary)] text-center">
+            合伙人接单后，小智会通知您。
+            您也可以在「我的工单」中随时查看进度。
+          </p>
+          <button
+            onClick={handleClose}
+            className="w-full py-2.5 bg-[var(--color-primary)] hover:opacity-90 text-white rounded-xl font-medium transition-opacity"
+          >
+            知道了
+          </button>
+        </div>
+      )}
+
+      {!submitted && (
+        <div className="space-y-4">
         {/* 问题类型 */}
         <div>
           <label className="block text-sm font-medium text-[var(--color-text-primary)] mb-1">
@@ -214,13 +245,6 @@ export function WorkOrderModal({ isOpen, onClose, onSubmit }) {
           </div>
         </div>
 
-        {/* 费用提示 */}
-        <div className="bg-[var(--color-surface)] dark:bg-[var(--color-surface-elevated)] border border-[var(--color-border)] rounded-xl p-3">
-          <p className="text-xs text-[var(--color-text-secondary)]">
-            费用由工程师在接单前私下与您讨论确认。
-          </p>
-        </div>
-
         {/* 提交按钮 */}
         <button
           onClick={handleSubmit}
@@ -229,7 +253,8 @@ export function WorkOrderModal({ isOpen, onClose, onSubmit }) {
         >
           {submitting ? '提交中...' : '提交工单'}
         </button>
-      </div>
+        </div>
+      )}
     </Modal>
   );
 }

@@ -5,11 +5,28 @@ import { WorkOrderStatus } from '../../types';
 import { getWorkOrders } from '../../services/api';
 import { WorkOrderDetailModal } from '../WorkOrder/WorkOrderDetailModal';
 
+// 客户侧需要关注的状态
+const customerStatuses = [
+  WorkOrderStatus.PENDING,
+  WorkOrderStatus.IN_PROGRESS,
+  WorkOrderStatus.PRICING,
+  WorkOrderStatus.IN_SERVICE,
+  WorkOrderStatus.RESOLVED,
+  WorkOrderStatus.PENDING_REVIEW,
+  WorkOrderStatus.COMPLETED,
+];
+
 const statusLabels = {
   [WorkOrderStatus.PENDING]: { text: '待处理', color: 'bg-blue-500' },
-  [WorkOrderStatus.PROCESSING]: { text: '处理中', color: 'bg-yellow-500' },
+  [WorkOrderStatus.ASSIGNED]: { text: '已分配', color: 'bg-blue-400' },
+  [WorkOrderStatus.IN_PROGRESS]: { text: '处理中', color: 'bg-yellow-500' },
+  [WorkOrderStatus.PRICING]: { text: '等待报价', color: 'bg-orange-500' },
+  [WorkOrderStatus.IN_SERVICE]: { text: '服务中', color: 'bg-purple-500' },
   [WorkOrderStatus.RESOLVED]: { text: '已解决', color: 'bg-green-500' },
+  [WorkOrderStatus.PENDING_REVIEW]: { text: '待评价', color: 'bg-teal-500' },
   [WorkOrderStatus.COMPLETED]: { text: '已完成', color: 'bg-gray-500' },
+  [WorkOrderStatus.REJECTED]: { text: '已拒绝', color: 'bg-red-500' },
+  [WorkOrderStatus.CANCELLED]: { text: '已取消', color: 'bg-gray-400' },
 };
 
 export function MyWorkOrdersModal({ isOpen, onClose }) {
@@ -65,7 +82,7 @@ export function MyWorkOrdersModal({ isOpen, onClose }) {
 
   return (
     <>
-      <Modal isOpen={isOpen} onClose={onClose} title="我的工单" size="lg">
+      <Modal isOpen={isOpen} onClose={onClose} title="我的工单" size="md">
         <div className="space-y-3">
           {loading && (
             <div className="text-center py-8 text-[#6b6375]">
@@ -104,6 +121,11 @@ export function MyWorkOrdersModal({ isOpen, onClose }) {
                     <ChevronRight size={16} className="text-[#6b6375]" />
                   </div>
                 </div>
+                {order.engineer_name && (
+                  <p className="text-xs text-[#f59e0b] mb-1">
+                    合伙人：{order.engineer_name}
+                  </p>
+                )}
                 <p className="text-sm text-[#6b6375] mb-1">
                   {order.type} | {order.device_id || '未指定设备'}
                 </p>
@@ -117,16 +139,19 @@ export function MyWorkOrdersModal({ isOpen, onClose }) {
             );
           })}
 
-          {/* 图例 */}
+          {/* 图例（只显示客户相关状态） */}
           <div className="pt-4 border-t border-[#e5e4e7] dark:border-[#3a3a4c]">
-            <p className="text-xs text-[#6b6375] mb-2">工单状态图例：</p>
+            <p className="text-xs text-[#6b6375] mb-2">工单状态：</p>
             <div className="flex flex-wrap gap-3">
-              {Object.entries(statusLabels).map(([key, val]) => (
-                <div key={key} className="flex items-center gap-1">
-                  <span className={`w-2 h-2 rounded-full ${val.color}`} />
-                  <span className="text-xs text-[#6b6375]">{val.text}</span>
-                </div>
-              ))}
+              {customerStatuses.map((key) => {
+                const val = statusLabels[key];
+                return (
+                  <div key={key} className="flex items-center gap-1">
+                    <span className={`w-2 h-2 rounded-full ${val.color}`} />
+                    <span className="text-xs text-[#6b6375]">{val.text}</span>
+                  </div>
+                );
+              })}
             </div>
           </div>
         </div>
@@ -138,6 +163,9 @@ export function MyWorkOrdersModal({ isOpen, onClose }) {
         onClose={() => setDetailModalOpen(false)}
         workOrder={selectedOrder}
         onRateSuccess={handleRateSuccess}
+        onConfirmed={handleRateSuccess}
+        userType="customer"
+        userId={localStorage.getItem('sagemro_customer_id')}
       />
     </>
   );

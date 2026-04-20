@@ -56,7 +56,7 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess }) {
   const [rememberMe, setRememberMe] = useState(false);
   const [forgotStep, setForgotStep] = useState('phone'); // 'phone' | 'code-sent'
 
-  // 工程师背景调查
+  // 合伙人背景调查
   const [specialties, setSpecialties] = useState([]);
   const [brands, setBrands] = useState({});
   const [services, setServices] = useState([]);
@@ -183,7 +183,7 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess }) {
     }
   };
 
-  // 工程师注册
+  // 合伙人入驻
   const handleRegisterEngineer = async () => {
     if (!name || !password || !confirmPassword) { setError('请填写所有必填项'); return; }
     if (password !== confirmPassword) { setError('两次密码输入不一致'); return; }
@@ -210,7 +210,7 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess }) {
       onLoginSuccess?.(result);
       handleClose();
     } catch (e) {
-      console.error('注册工程师失败:', e);
+      console.error('注册合伙人失败:', e);
       const errorMsg = e.message || String(e) || '注册失败，请重试';
       setError(errorMsg);
       setSubmitting(false);
@@ -257,7 +257,7 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess }) {
     setStep('register-customer');
   };
 
-  // 打开工程师注册第1步（生成随机用户名）
+  // 打开合伙人入驻第1步（生成随机用户名）
   const goToRegisterEngineer1 = () => {
     setName(generateRandomName());
     setStep('register-engineer-1');
@@ -268,7 +268,7 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess }) {
     if (step === 'register-engineer-2') return 'xl';
     if (step === 'choice') return 'md';
     if (step === 'register-customer-info') return 'lg';
-    return 'lg';
+    return 'md';
   };
 
   return (
@@ -292,7 +292,7 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess }) {
                   <span className="flex-shrink-0 w-7 h-7 rounded-full bg-[#f59e0b] text-white text-sm flex items-center justify-center font-medium">A</span>
                   <div>
                     <p className="font-medium text-sm group-hover:text-[#f59e0b] transition-colors">我需要或将来可能需要设备维修保养服务</p>
-                    <p className="text-xs text-[#6b6375] mt-0.5">有任何问题就跟小智说，小智帮您提交工单，精准获取专业工程师支持。</p>
+                    <p className="text-xs text-[#6b6375] mt-0.5">有任何问题就跟小智说，小智帮您提交工单，精准获取专业合伙人支持。</p>
                   </div>
                 </div>
               </button>
@@ -306,7 +306,7 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess }) {
                   <span className="flex-shrink-0 w-7 h-7 rounded-full bg-[#f59e0b] text-white text-sm flex items-center justify-center font-medium">B</span>
                   <div>
                     <p className="font-medium text-sm group-hover:text-[#f59e0b] transition-colors">我可以提供维修保养服务</p>
-                    <p className="text-xs text-[#6b6375] mt-0.5">有任何问题就跟小智说，并且如果您注册成为平台工程师，小智会给您分配工单，获取额外收入。</p>
+                    <p className="text-xs text-[#6b6375] mt-0.5">有任何问题就跟小智说，并且如果您注册成为平台合伙人，小智会给您分配工单，获取额外收入。</p>
                   </div>
                 </div>
               </button>
@@ -438,7 +438,7 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess }) {
           </div>
         )}
 
-        {/* ========== 工程师注册第1步：账户信息 ========== */}
+        {/* ========== 合伙人入驻第1步：账户信息 ========== */}
         {step === 'register-engineer-1' && (
           <div className="space-y-3">
             <div className="flex items-center gap-2 mb-2">
@@ -446,7 +446,7 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess }) {
             </div>
 
             <div className="text-center mb-4">
-              <p className="text-sm text-[#6b6375]">注册成为工程师</p>
+              <p className="text-sm text-[#6b6375]">注册成为合伙人</p>
             </div>
 
             {error && (
@@ -549,7 +549,7 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess }) {
           </div>
         )}
 
-        {/* ========== 工程师注册第2步：背景调查 ========== */}
+        {/* ========== 合伙人入驻第2步：背景调查 ========== */}
         {step === 'register-engineer-2' && (
           <div className="space-y-3 max-h-[65vh] overflow-y-auto pr-1">
             <div className="flex items-center gap-2 mb-2">
@@ -642,7 +642,7 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess }) {
               onClick={handleRegisterEngineer} disabled={submitting}
               className="w-full py-3 bg-[#f59e0b] hover:bg-[#fbbf24] disabled:bg-[#6b6375] text-white rounded-xl font-medium transition-colors"
             >
-              {submitting ? '注册中...' : '注册成为工程师'}
+              {submitting ? '入驻中...' : '注册成为合伙人'}
             </button>
           </div>
         )}
