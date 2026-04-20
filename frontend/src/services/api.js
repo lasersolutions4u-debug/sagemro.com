@@ -29,11 +29,11 @@ export async function sendVerifyCode(phone) {
 /**
  * 客户注册
  */
-export async function registerCustomer({ name, phone, password, code }) {
+export async function registerCustomer({ name, phone, password, code, company, identity }) {
   const response = await fetch(`${API_BASE}/api/auth/register/customer`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name, phone, password, code }),
+    body: JSON.stringify({ name, phone, password, code, company, identity }),
   });
   if (!response.ok) {
     const data = await response.json();
@@ -45,11 +45,11 @@ export async function registerCustomer({ name, phone, password, code }) {
 /**
  * 合伙人入驻
  */
-export async function registerEngineer({ name, phone, password, code, specialties, brands, services, service_region, bio }) {
+export async function registerEngineer({ name, phone, password, code, specialties, brands, services, service_region, bio, company }) {
   const response = await fetch(`${API_BASE}/api/auth/register/engineer`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name, phone, password, code, specialties, brands, services, service_region, bio }),
+    body: JSON.stringify({ name, phone, password, code, specialties, brands, services, service_region, bio, company }),
   });
   if (!response.ok) {
     const data = await response.json();
@@ -545,6 +545,54 @@ export async function updateDevice(deviceId, { name, type, brand, model, power, 
 export async function deleteDevice(deviceId) {
   const response = await fetch(`${API_BASE}/api/devices/${deviceId}`, {
     method: 'DELETE',
+    headers: authHeaders(),
+  });
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  return response.json();
+}
+
+// ============ 通知相关 ============
+
+/**
+ * 获取当前用户的通知列表
+ */
+export async function getNotifications(limit = 50, offset = 0) {
+  const response = await fetch(`${API_BASE}/api/notifications?limit=${limit}&offset=${offset}`, {
+    headers: authHeaders(),
+  });
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  return response.json();
+}
+
+/**
+ * 获取未读通知数量
+ */
+export async function getUnreadNotificationCount() {
+  const response = await fetch(`${API_BASE}/api/notifications/unread-count`, {
+    headers: authHeaders(),
+  });
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  return response.json();
+}
+
+/**
+ * 标记单条通知为已读
+ */
+export async function markNotificationRead(notificationId) {
+  const response = await fetch(`${API_BASE}/api/notifications/${notificationId}/read`, {
+    method: 'PATCH',
+    headers: authHeaders(),
+  });
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  return response.json();
+}
+
+/**
+ * 标记所有通知为已读
+ */
+export async function markAllNotificationsRead() {
+  const response = await fetch(`${API_BASE}/api/notifications/read-all`, {
+    method: 'POST',
     headers: authHeaders(),
   });
   if (!response.ok) throw new Error(`HTTP ${response.status}`);

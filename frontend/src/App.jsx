@@ -1,20 +1,21 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { Sidebar } from './components/Sidebar/Sidebar';
 import { ChatArea } from './components/Chat/ChatArea';
 import { WorkOrderModal } from './components/Sidebar/WorkOrderModal';
 import { MyWorkOrdersModal } from './components/Sidebar/MyWorkOrdersModal';
-import { SettingsModal } from './components/Settings/SettingsModal';
+import { CustomerHomeModal } from './components/Settings/CustomerHomeModal';
 import { AboutModal } from './components/common/AboutModal';
 import { LoginModal } from './components/Auth/LoginModal';
 import { EngineerDashboard } from './components/Engineer/EngineerDashboard';
 import { EngineerProfileModal } from './components/Engineer/EngineerProfileModal';
 import { MyDevicesModal } from './components/Device/MyDevicesModal';
+import { NotificationModal } from './components/Notification/NotificationModal';
 import { useChat } from './hooks/useChat';
 import { useConversations } from './hooks/useConversations';
 import { usePushNotification } from './hooks/usePushNotification';
 import { PushNotificationBanner } from './components/PushNotification/PushNotificationBanner';
 import { generateId } from './utils/helpers';
-import { submitWorkOrder as submitWorkOrderApi } from './services/api';
+import { submitWorkOrder as submitWorkOrderApi, getUnreadNotificationCount } from './services/api';
 
 function App() {
   // 侧边栏状态
@@ -23,14 +24,19 @@ function App() {
   // Modal 状态
   const [workOrderModalOpen, setWorkOrderModalOpen] = useState(false);
   const [myWorkOrdersModalOpen, setMyWorkOrdersModalOpen] = useState(false);
-  const [settingsModalOpen, setSettingsModalOpen] = useState(false);
+  const [customerHomeModalOpen, setCustomerHomeModalOpen] = useState(false);
   const [aboutModalOpen, setAboutModalOpen] = useState(false);
   const [loginModalOpen, setLoginModalOpen] = useState(false);
   const [engineerDashboardOpen, setEngineerDashboardOpen] = useState(false);
   const [engineerProfileOpen, setEngineerProfileOpen] = useState(false);
   const [myDevicesOpen, setMyDevicesOpen] = useState(false);
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [currentUser, setCurrentUser] = useState(null);
   const [userType, setUserType] = useState(null);
+
+  // 通知未读数
+  const [unreadCount, setUnreadCount] = useState(0);
+  const pollRef = useRef(null);
 
   // 初始化用户状态
   useEffect(() => {
@@ -43,6 +49,35 @@ function App() {
       setUserType(storedType);
     }
   }, []);
+
+  // 轮询未读通知数
+  useEffect(() => {
+    if (pollRef.current) {
+      clearInterval(pollRef.current);
+      pollRef.current = null;
+    }
+
+    if (!currentUser) {
+      setUnreadCount(0);
+      return;
+    }
+
+    const fetchCount = async () => {
+      try {
+        const data = await getUnreadNotificationCount();
+        setUnreadCount(data.count || 0);
+      } catch (e) {
+        // silently fail
+      }
+    };
+
+    fetchCount();
+    pollRef.current = setInterval(fetchCount, 30000);
+
+    return () => {
+      if (pollRef.current) clearInterval(pollRef.current);
+    };
+  }, [currentUser]);
 
   // 对话管理
   const {
@@ -185,6 +220,18 @@ function App() {
     localStorage.removeItem('sagemro_engineer_id');
     setCurrentUser(null);
     setUserType(null);
+    setUnreadCount(0);
+  }, []);
+
+  // 通知未读数变化回调
+  const handleUnreadCountChange = useCallback((delta) => {
+    setUnreadCount(prev => Math.max(0, prev + delta));
+  }, []);
+
+  // 从通知跳转到工单详情
+  const handleOpenWorkOrderDetail = useCallback((workOrderId) => {
+    // 打开我的工单列表（目前没有单独详情页入口，通过列表查看）
+    setMyWorkOrdersModalOpen(true);
   }, []);
 
   return (
@@ -198,12 +245,20 @@ function App() {
         onDeleteConversation={handleDeleteConversation}
         onOpenWorkOrder={() => setWorkOrderModalOpen(true)}
         onOpenMyWorkOrders={() => setMyWorkOrdersModalOpen(true)}
-        onOpenSettings={() => setSettingsModalOpen(true)}
+        onOpenSettings={() => {
+          if (userType === 'engineer') {
+            setEngineerDashboardOpen(true);
+          } else {
+            setCustomerHomeModalOpen(true);
+          }
+        }}
         onOpenAbout={() => setAboutModalOpen(true)}
         onOpenLogin={() => setLoginModalOpen(true)}
         onLogout={handleLogout}
         onOpenEngineerDashboard={() => setEngineerDashboardOpen(true)}
         onOpenMyDevices={() => setMyDevicesOpen(true)}
+        onOpenNotifications={() => setNotificationsOpen(true)}
+        unreadCount={unreadCount}
         currentUser={currentUser}
         userType={userType}
         isOpen={sidebarOpen}
@@ -233,12 +288,11 @@ function App() {
         isOpen={myWorkOrdersModalOpen}
         onClose={() => setMyWorkOrdersModalOpen(false)}
       />
-      <SettingsModal
-        isOpen={settingsModalOpen}
-        onClose={() => setSettingsModalOpen(false)}
+      <CustomerHomeModal
+        isOpen={customerHomeModalOpen}
+        onClose={() => setCustomerHomeModalOpen(false)}
         currentUser={currentUser}
         userType={userType}
-        onOpenMyDevices={() => setMyDevicesOpen(true)}
       />
       <AboutModal
         isOpen={aboutModalOpen}
@@ -264,6 +318,12 @@ function App() {
         isOpen={myDevicesOpen}
         onClose={() => setMyDevicesOpen(false)}
         currentUser={currentUser}
+      />
+      <NotificationModal
+        isOpen={notificationsOpen}
+        onClose={() => setNotificationsOpen(false)}
+        onUnreadCountChange={handleUnreadCountChange}
+        onOpenWorkOrderDetail={handleOpenWorkOrderDetail}
       />
 
       {/* 推送通知 Banner（工程师在线时收到推送） */}
