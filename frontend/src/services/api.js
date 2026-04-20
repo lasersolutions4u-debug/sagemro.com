@@ -550,3 +550,44 @@ export async function deleteDevice(deviceId) {
   if (!response.ok) throw new Error(`HTTP ${response.status}`);
   return response.json();
 }
+
+// ============ 个人中心 ============
+
+/**
+ * 更新客户档案
+ */
+export async function updateCustomerProfile({ name, region }) {
+  const response = await fetch(`${API_BASE}/api/customers/profile`, {
+    method: 'PATCH',
+    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, region }),
+  });
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  return response.json();
+}
+
+/**
+ * 更新合伙人档案
+ */
+export async function updateEngineerProfile({ name, bio, service_region }) {
+  const response = await fetch(`${API_BASE}/api/engineers/profile`, {
+    method: 'PATCH',
+    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, bio, service_region }),
+  });
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  return response.json();
+}
+
+/**
+ * 修改密码
+ */
+export async function changePassword({ oldPassword, newPassword }) {
+  const response = await fetch(`${API_BASE}/api/auth/change-password`, {
+    method: 'POST',
+    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ oldPassword, newPassword }),
+  });
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  return response.json();
+}

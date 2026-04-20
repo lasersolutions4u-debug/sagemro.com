@@ -2391,6 +2391,102 @@ async function handleGetEngineerProfile(request, env) {
   }
 }
 
+// ============ 客户档案更新 ============
+
+async function handleUpdateCustomerProfile(request, env) {
+  try {
+    const customerId = request._auth?.userId;
+    if (!customerId) return errorResponse('未登录', 401);
+
+    const body = await request.json();
+    const { name, region } = body;
+
+    const updates = [];
+    const values = [];
+    if (name !== undefined) { updates.push('name = ?'); values.push(name); }
+    if (region !== undefined) { updates.push('region = ?'); values.push(region); }
+
+    if (updates.length === 0) return errorResponse('没有要更新的字段');
+
+    values.push(customerId);
+    await env.DB.prepare(`UPDATE customers SET ${updates.join(', ')} WHERE id = ?`).bind(...values).run();
+
+    const updated = await env.DB.prepare('SELECT id, user_no, name, phone, region, created_at FROM customers WHERE id = ?').bind(customerId).first();
+    return jsonResponse({ customer: updated });
+  } catch (error) {
+    return errorResponse(error.message, 500);
+  }
+}
+
+// ============ 合伙人档案更新 ============
+
+async function handleUpdateEngineerProfile(request, env) {
+  try {
+    const engineerId = request._auth?.userId;
+    if (!engineerId) return errorResponse('未登录', 401);
+
+    const body = await request.json();
+    const { name, bio, service_region } = body;
+
+    const updates = [];
+    const values = [];
+    if (name !== undefined) { updates.push('name = ?'); values.push(name); }
+    if (bio !== undefined) { updates.push('bio = ?'); values.push(bio); }
+    if (service_region !== undefined) { updates.push('service_region = ?'); values.push(service_region); }
+
+    if (updates.length === 0) return errorResponse('没有要更新的字段');
+
+    values.push(engineerId);
+    await env.DB.prepare(`UPDATE engineers SET ${updates.join(', ')} WHERE id = ?`).bind(...values).run();
+
+    const updated = await env.DB.prepare(
+      'SELECT id, user_no, name, phone, specialties, brands, services, service_region, bio, status, level, commission_rate, credit_score, rating_timeliness, rating_technical, rating_communication, rating_professional, rating_count FROM engineers WHERE id = ?'
+    ).bind(engineerId).first();
+
+    if (!updated) return errorResponse('工程师不存在', 404);
+
+    const profile = {
+      ...updated,
+      specialties: typeof updated.specialties === 'string' ? JSON.parse(updated.specialties) : (updated.specialties || []),
+      brands: typeof updated.brands === 'string' ? JSON.parse(updated.brands) : (updated.brands || {}),
+      services: typeof updated.services === 'string' ? JSON.parse(updated.services) : (updated.services || []),
+    };
+    return jsonResponse({ engineer: profile });
+  } catch (error) {
+    return errorResponse(error.message, 500);
+  }
+}
+
+// ============ 修改密码 ============
+
+async function handleChangePassword(request, env) {
+  try {
+    const auth = request._auth;
+    if (!auth) return errorResponse('未登录', 401);
+
+    const body = await request.json();
+    const { oldPassword, newPassword } = body;
+
+    if (!oldPassword || !newPassword) return errorResponse('旧密码和新密码不能为空');
+    if (newPassword.length < 6) return errorResponse('新密码至少6位');
+
+    const table = auth.userType === 'engineer' ? 'engineers' : 'customers';
+    const user = await env.DB.prepare(`SELECT id, password_hash, salt FROM ${table} WHERE id = ?`).bind(auth.userId).first();
+    if (!user) return errorResponse('用户不存在', 404);
+
+    const ok = await verifyPassword(oldPassword, user.password_hash, user.salt);
+    if (!ok) return errorResponse('旧密码错误');
+
+    const newSalt = generateSalt();
+    const newHash = await hashPasswordNew(newPassword, newSalt);
+    await env.DB.prepare(`UPDATE ${table} SET password_hash = ?, salt = ? WHERE id = ?`).bind(newHash, newSalt, auth.userId).run();
+
+    return jsonResponse({ success: true });
+  } catch (error) {
+    return errorResponse(error.message, 500);
+  }
+}
+
 // ============ 合伙人钱包与保证金 API ============
 
 // 获取合伙人钱包信息（余额 + 摘要）
@@ -4177,6 +4273,15 @@ export default {
     }
     if (path === '/api/engineers/profile' && request.method === 'GET') {
       return handleGetEngineerProfile(request, env);
+    }
+    if (path === '/api/engineers/profile' && request.method === 'PATCH') {
+      return handleUpdateEngineerProfile(request, env);
+    }
+    if (path === '/api/customers/profile' && request.method === 'PATCH') {
+      return handleUpdateCustomerProfile(request, env);
+    }
+    if (path === '/api/auth/change-password' && request.method === 'POST') {
+      return handleChangePassword(request, env);
     }
     // 合伙人钱包信息
     if (path === '/api/engineers/wallet' && request.method === 'GET') {

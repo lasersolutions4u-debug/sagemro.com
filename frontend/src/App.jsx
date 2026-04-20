@@ -236,6 +236,9 @@ function App() {
       <SettingsModal
         isOpen={settingsModalOpen}
         onClose={() => setSettingsModalOpen(false)}
+        currentUser={currentUser}
+        userType={userType}
+        onOpenMyDevices={() => setMyDevicesOpen(true)}
       />
       <AboutModal
         isOpen={aboutModalOpen}
