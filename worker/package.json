@@ -1,0 +1,13 @@
+{
+  "name": "sagemro-worker",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test tests/auth.test.mjs tests/guards.test.mjs tests/validators.test.mjs",
+    "test:unit": "node --test tests/auth.test.mjs tests/guards.test.mjs tests/validators.test.mjs",
+    "test:smoke": "node tests/smoke.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

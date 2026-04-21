@@ -1,6 +1,49 @@
 // API 服务层
 const API_BASE = import.meta.env.VITE_API_BASE || 'https://sagemro-api.lasersolutions4u.workers.dev';
 
+// 401 统一拦截：当任意认证接口返回 401 时，清理本地 token 并派发事件，
+// 由 App.jsx 订阅后自动登出并弹出登录框。避免用户在 token 过期后看到一堆
+// "HTTP 401" 红色弹窗但登录状态仍保持的混乱体验。
+//
+// 实现方式：猴子补丁 window.fetch，只对 API_BASE 开头的请求生效，
+// 其他外部资源（如 CDN / OneSignal）完全不受影响。已做幂等保护，
+// 避免 HMR 或重复加载时装多层。
+let __authFailureTriggered = false;
+function triggerAuthFailure() {
+  // 同一帧内多个并发请求同时返回 401 时只触发一次
+  if (__authFailureTriggered) return;
+  __authFailureTriggered = true;
+  // 下一帧重置，允许后续独立的 401 再次触发
+  setTimeout(() => { __authFailureTriggered = false; }, 500);
+
+  try {
+    localStorage.removeItem('sagemro_token');
+    localStorage.removeItem('sagemro_user');
+    localStorage.removeItem('sagemro_user_type');
+    localStorage.removeItem('sagemro_customer_id');
+    localStorage.removeItem('sagemro_engineer_id');
+  } catch { /* localStorage 不可用时忽略 */ }
+
+  if (typeof window !== 'undefined' && typeof window.CustomEvent === 'function') {
+    window.dispatchEvent(new CustomEvent('sagemro:auth-expired'));
+  }
+}
+
+if (typeof window !== 'undefined' && !window.__sagemroFetchPatched) {
+  window.__sagemroFetchPatched = true;
+  const nativeFetch = window.fetch.bind(window);
+  window.fetch = async (input, init) => {
+    const url = typeof input === 'string' ? input : input?.url || '';
+    const response = await nativeFetch(input, init);
+    // 只对本平台 API 的 401 触发：避免干扰第三方 SDK（OneSignal 等）
+    if (response.status === 401 && url.startsWith(API_BASE)) {
+      // 不 clone response 消费 body — 交给调用方处理错误文案
+      triggerAuthFailure();
+    }
+    return response;
+  };
+}
+
 // 获取认证请求头（自动附带 JWT token）
 function authHeaders() {
   const token = localStorage.getItem('sagemro_token');
@@ -203,6 +246,22 @@ export async function deleteConversation(id) {
     headers: authHeaders(),
   });
   if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  return response.json();
+}
+
+/**
+ * 重命名对话
+ */
+export async function renameConversation(id, title) {
+  const response = await fetch(`${API_BASE}/api/conversations/${id}`, {
+    method: 'PATCH',
+    headers: authHeaders(),
+    body: JSON.stringify({ title }),
+  });
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(data.error || `HTTP ${response.status}`);
+  }
   return response.json();
 }
 
@@ -467,12 +526,13 @@ export async function applyWithdraw(amount) {
 }
 
 // 保存推送订阅（OneSignal Player ID）
-export async function savePushSubscription(engineerId, { onesignal_player_id }) {
-  const response = await fetch(`${API_BASE}/api/engineers/push-subscription`, {
+// 后端按 JWT 里的 userType 自动路由到 customers / engineers 表
+export async function savePushSubscription(userId, { onesignal_player_id }) {
+  const response = await fetch(`${API_BASE}/api/push-subscription`, {
     method: 'POST',
     headers: authHeaders(),
     body: JSON.stringify({
-      engineer_id: engineerId,
+      user_id: userId,
       onesignal_player_id,
     }),
   });
@@ -635,6 +695,46 @@ export async function changePassword({ oldPassword, newPassword }) {
     method: 'POST',
     headers: { ...authHeaders(), 'Content-Type': 'application/json' },
     body: JSON.stringify({ oldPassword, newPassword }),
+  });
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  return response.json();
+}
+
+// ============ 工程师评价客户 ============
+
+/**
+ * 提交工程师对客户的评价
+ */
+export async function submitEngineerReview(workOrderId, data) {
+  const response = await fetch(`${API_BASE}/api/workorders/${workOrderId}/engineer-review`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify(data),
+  });
+  if (!response.ok) {
+    const d = await response.json();
+    throw new Error(d.error || `HTTP ${response.status}`);
+  }
+  return response.json();
+}
+
+/**
+ * 获取工单的工程师评价
+ */
+export async function getEngineerReview(workOrderId) {
+  const response = await fetch(`${API_BASE}/api/workorders/${workOrderId}/engineer-review`, {
+    headers: authHeaders(),
+  });
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  return response.json();
+}
+
+/**
+ * 获取客户的所有工程师评价（仅工程师/平台可见）
+ */
+export async function getCustomerReviews(customerId) {
+  const response = await fetch(`${API_BASE}/api/customers/${customerId}/reviews`, {
+    headers: authHeaders(),
   });
   if (!response.ok) throw new Error(`HTTP ${response.status}`);
   return response.json();

@@ -121,24 +121,24 @@ export function EngineerDashboard({ isOpen, onClose, engineerId, onViewProfile }
         {/* 查看档案入口 */}
         <button
           onClick={onViewProfile}
-          className="w-full py-2 px-4 bg-[#f4f3f4] dark:bg-[#2a2a3c] hover:bg-[#e5e4e7] dark:hover:bg-[#3a3a4c] text-[#08060d] dark:text-[#f3f4f6] rounded-xl text-sm transition-colors flex items-center justify-center gap-2"
+          className="w-full py-2 px-4 bg-[var(--color-surface-elevated)] hover:bg-[var(--color-hover)] text-[var(--color-text-primary)] rounded-xl text-sm transition-colors flex items-center justify-center gap-2"
         >
           <span>查看我的档案</span>
         </button>
 
         {/* 合伙人等级与钱包面板 */}
         {walletData && (
-          <div className="p-4 bg-gradient-to-br from-[#f59e0b]/10 to-[#f59e0b]/5 dark:from-[#f59e0b]/10 dark:to-transparent rounded-xl border border-[#f59e0b]/20 space-y-3">
+          <div className="p-4 bg-gradient-to-br from-[var(--color-primary)]/10 to-[var(--color-primary)]/5 rounded-xl border border-[var(--color-primary)]/20 space-y-3">
             {/* 等级 + 提成率 */}
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <span className={`px-2 py-0.5 text-xs text-white rounded ${PartnerLevelLabels[walletData.level]?.color || 'bg-blue-500'}`}>
                   {PartnerLevelLabels[walletData.level]?.label || '初级'}合伙人
                 </span>
-                <span className="text-xs text-[#6b6375]">提成 {(walletData.commission_rate * 100).toFixed(0)}%</span>
+                <span className="text-xs text-[var(--color-text-secondary)]">提成 {(walletData.commission_rate * 100).toFixed(0)}%</span>
               </div>
               <div className="flex items-center gap-1">
-                <span className="text-xs text-[#6b6375]">信用分</span>
+                <span className="text-xs text-[var(--color-text-secondary)]">信用分</span>
                 <span className={`text-sm font-bold ${walletData.credit_score >= 90 ? 'text-green-500' : walletData.credit_score >= 70 ? 'text-orange-500' : 'text-red-500'}`}>
                   {walletData.credit_score}
                 </span>
@@ -147,16 +147,16 @@ export function EngineerDashboard({ isOpen, onClose, engineerId, onViewProfile }
             {/* 余额卡片 */}
             <div className="grid grid-cols-2 gap-3">
               <div className="text-center">
-                <div className="text-2xl font-bold text-[#08060d] dark:text-[#f3f4f6]">
+                <div className="text-2xl font-bold text-[var(--color-text-primary)]">
                   {walletLoading ? '...' : walletData.wallet_balance.toLocaleString()}元
                 </div>
-                <div className="text-xs text-[#6b6375]">钱包余额</div>
+                <div className="text-xs text-[var(--color-text-secondary)]">钱包余额</div>
               </div>
               <div className="text-center">
-                <div className="text-2xl font-bold text-[#08060d] dark:text-[#f3f4f6]">
+                <div className="text-2xl font-bold text-[var(--color-text-primary)]">
                   {walletLoading ? '...' : walletData.deposit_balance.toLocaleString()}元
                 </div>
-                <div className="text-xs text-[#6b6375]">保证金</div>
+                <div className="text-xs text-[var(--color-text-secondary)]">保证金</div>
               </div>
             </div>
             {/* 提现 */}
@@ -170,18 +170,18 @@ export function EngineerDashboard({ isOpen, onClose, engineerId, onViewProfile }
                     placeholder="输入提现金额（元）"
                     min="100"
                     max={walletData.wallet_balance}
-                    className="flex-1 px-3 py-1.5 border border-[#e5e4e7] dark:border-[#3a3a4c] rounded-lg bg-white dark:bg-[#2a2a3c] text-[#08060d] dark:text-[#f3f4f6] text-sm focus:outline-none focus:ring-1 focus:ring-[#f59e0b]"
+                    className="flex-1 px-3 py-1.5 border border-[var(--color-input-border)] rounded-lg bg-[var(--color-input-bg)] text-[var(--color-text-primary)] text-sm focus:outline-none focus:ring-1 focus:ring-[var(--color-primary)]"
                   />
                   <button
                     onClick={handleWithdraw}
                     disabled={withdrawLoading}
-                    className="px-3 py-1.5 bg-[#f59e0b] hover:bg-[#fbbf24] disabled:opacity-50 text-white rounded-lg text-sm transition-colors"
+                    className="px-3 py-1.5 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] disabled:opacity-50 text-white rounded-lg text-sm transition-colors"
                   >
                     {withdrawLoading ? '提交中...' : '申请提现'}
                   </button>
                 </div>
                 {withdrawMsg && (
-                  <p className="text-xs text-center text-[#6b6375]">{withdrawMsg}</p>
+                  <p className="text-xs text-center text-[var(--color-text-secondary)]">{withdrawMsg}</p>
                 )}
               </div>
             )}
@@ -190,7 +190,7 @@ export function EngineerDashboard({ isOpen, onClose, engineerId, onViewProfile }
 
         {/* 状态切换 */}
         <div>
-          <label className="block text-sm font-medium text-[#08060d] dark:text-[#f3f4f6] mb-2">
+          <label className="block text-sm font-medium text-[var(--color-text-primary)] mb-2">
             接单状态
           </label>
           <div className="flex gap-2">
@@ -204,8 +204,8 @@ export function EngineerDashboard({ isOpen, onClose, engineerId, onViewProfile }
                 onClick={() => handleStatusChange(opt.value)}
                 className={`px-3 py-1.5 rounded-lg text-sm transition-colors ${
                   engineerStatus === opt.value
-                    ? 'bg-[#f59e0b] text-white'
-                    : 'bg-[#f4f3f4] dark:bg-[#2a2a3c] text-[#6b6375] hover:bg-[#e5e4e7]'
+                    ? 'bg-[var(--color-primary)] text-white'
+                    : 'bg-[var(--color-surface-elevated)] text-[var(--color-text-secondary)] hover:bg-[var(--color-hover)]'
                 }`}
               >
                 {opt.label}
@@ -216,30 +216,30 @@ export function EngineerDashboard({ isOpen, onClose, engineerId, onViewProfile }
 
         {/* 今日概览 */}
         <div className="grid grid-cols-2 gap-3">
-          <div className="p-3 bg-[#f4f3f4] dark:bg-[#2a2a3c] rounded-xl">
-            <div className="text-2xl font-bold text-[#f59e0b]">{pendingTickets.length}</div>
-            <div className="text-sm text-[#6b6375]">待接单</div>
+          <div className="p-3 bg-[var(--color-surface-elevated)] rounded-xl">
+            <div className="text-2xl font-bold text-[var(--color-primary)]">{pendingTickets.length}</div>
+            <div className="text-sm text-[var(--color-text-secondary)]">待接单</div>
           </div>
-          <div className="p-3 bg-[#f4f3f4] dark:bg-[#2a2a3c] rounded-xl">
+          <div className="p-3 bg-[var(--color-surface-elevated)] rounded-xl">
             <div className="text-2xl font-bold text-orange-500">{activeTickets.length}</div>
-            <div className="text-sm text-[#6b6375]">进行中</div>
+            <div className="text-sm text-[var(--color-text-secondary)]">进行中</div>
           </div>
         </div>
 
         {/* 进行中工单 */}
         {activeTickets.length > 0 && (
           <div>
-            <h3 className="text-sm font-medium text-[#08060d] dark:text-[#f3f4f6] mb-2">进行中</h3>
+            <h3 className="text-sm font-medium text-[var(--color-text-primary)] mb-2">进行中</h3>
             <div className="space-y-2">
               {activeTickets.map((ticket) => (
                 <div
                   key={ticket.id}
-                  className="p-3 bg-[#f4f3f4] dark:bg-[#2a2a3c] rounded-xl cursor-pointer hover:bg-[#e5e4e7] dark:hover:bg-[#3a3a4c] transition-colors"
+                  className="p-3 bg-[var(--color-surface-elevated)] rounded-xl cursor-pointer hover:bg-[var(--color-hover)] transition-colors"
                   onClick={() => { setSelectedTicket(ticket); setDetailModalOpen(true); }}
                 >
                   <div className="flex items-center justify-between mb-1">
                     <div className="flex items-center gap-2">
-                      <span className="font-medium text-[#08060d] dark:text-[#f3f4f6]">
+                      <span className="font-medium text-[var(--color-text-primary)]">
                         {ticket.order_no || ticket.id}
                       </span>
                       {ticket.urgency === 'urgent' && <span className="text-xs text-orange-500">⚡紧急</span>}
@@ -250,9 +250,9 @@ export function EngineerDashboard({ isOpen, onClose, engineerId, onViewProfile }
                     </span>
                   </div>
                   {ticket.customer_name && (
-                    <p className="text-xs text-[#f59e0b] mb-1">客户：{ticket.customer_name}{ticket.customer_region ? ` · ${ticket.customer_region}` : ''}</p>
+                    <p className="text-xs text-[var(--color-primary)] mb-1">客户：{ticket.customer_name}{ticket.customer_region ? ` · ${ticket.customer_region}` : ''}</p>
                   )}
-                  <p className="text-sm text-[#6b6375]">{ticket.description?.slice(0, 50)}...</p>
+                  <p className="text-sm text-[var(--color-text-secondary)]">{ticket.description?.slice(0, 50)}...</p>
                 </div>
               ))}
             </div>
@@ -262,13 +262,13 @@ export function EngineerDashboard({ isOpen, onClose, engineerId, onViewProfile }
         {/* 推荐工单 */}
         {pendingTickets.length > 0 && (
           <div>
-            <h3 className="text-sm font-medium text-[#08060d] dark:text-[#f3f4f6] mb-2">推荐工单</h3>
+            <h3 className="text-sm font-medium text-[var(--color-text-primary)] mb-2">推荐工单</h3>
             <div className="space-y-2">
               {pendingTickets.map((ticket) => (
-                <div key={ticket.id} className="p-3 bg-[#f4f3f4] dark:bg-[#2a2a3c] rounded-xl">
+                <div key={ticket.id} className="p-3 bg-[var(--color-surface-elevated)] rounded-xl">
                   <div className="flex items-center justify-between mb-1">
                     <div className="flex items-center gap-2">
-                      <span className="font-medium text-[#08060d] dark:text-[#f3f4f6]">
+                      <span className="font-medium text-[var(--color-text-primary)]">
                         {ticket.order_no || ticket.id}
                       </span>
                       {ticket.urgency === 'urgent' && <span className="text-xs text-orange-500">⚡紧急</span>}
@@ -279,21 +279,21 @@ export function EngineerDashboard({ isOpen, onClose, engineerId, onViewProfile }
                     </span>
                   </div>
                   {ticket.customer_name && (
-                    <p className="text-xs text-[#f59e0b] mb-1">客户：{ticket.customer_name}{ticket.customer_region ? ` · ${ticket.customer_region}` : ''}</p>
+                    <p className="text-xs text-[var(--color-primary)] mb-1">客户：{ticket.customer_name}{ticket.customer_region ? ` · ${ticket.customer_region}` : ''}</p>
                   )}
-                  <p className="text-xs text-[#6b6375] mb-1">{ticket.type} | {ticket.description?.slice(0, 60)}...</p>
+                  <p className="text-xs text-[var(--color-text-secondary)] mb-1">{ticket.type} | {ticket.description?.slice(0, 60)}...</p>
                   <div className="flex gap-2">
                     <button
                       onClick={() => handleAccept(ticket.id)}
                       disabled={actionLoading === ticket.id}
-                      className="flex-1 py-1.5 bg-[#f59e0b] hover:bg-[#fbbf24] text-white rounded-lg text-sm transition-colors disabled:opacity-50"
+                      className="flex-1 py-1.5 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white rounded-lg text-sm transition-colors disabled:opacity-50"
                     >
                       接单
                     </button>
                     <button
                       onClick={() => handleReject(ticket.id)}
                       disabled={actionLoading === ticket.id}
-                      className="flex-1 py-1.5 bg-[#f4f3f4] dark:bg-[#3a3a4c] text-[#6b6375] rounded-lg text-sm transition-colors disabled:opacity-50"
+                      className="flex-1 py-1.5 bg-[var(--color-surface-elevated)] hover:bg-[var(--color-hover)] text-[var(--color-text-secondary)] rounded-lg text-sm transition-colors disabled:opacity-50"
                     >
                       拒单
                     </button>
@@ -306,13 +306,13 @@ export function EngineerDashboard({ isOpen, onClose, engineerId, onViewProfile }
 
         {/* 空状态 */}
         {!loading && pendingTickets.length === 0 && activeTickets.length === 0 && (
-          <div className="text-center py-8 text-[#6b6375]">
+          <div className="text-center py-8 text-[var(--color-text-secondary)]">
             暂没有可处理的工单
           </div>
         )}
 
         {loading && (
-          <div className="text-center py-8 text-[#6b6375]">
+          <div className="text-center py-8 text-[var(--color-text-secondary)]">
             加载中...
           </div>
         )}

@@ -1,5 +1,8 @@
 name: Deploy to Cloudflare
 
+# 触发策略：
+#   - push 到 main：跑测试 → 通过后部署 frontend / worker / admin 到生产
+#   - PR：只跑测试和 build，绝不部署（用 jobs 层 if: 门禁兜底）
 on:
   push:
     branches: [main]
@@ -7,9 +10,63 @@ on:
     branches: [main]
 
 jobs:
-  deploy-frontend:
-    name: Deploy Frontend to Netlify
+  # ============ 测试门禁（所有 deploy job 的前置条件）============
+  test:
+    name: Test & Build Verify
     runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # Worker 单元测试（必须通过）
+      - name: Worker unit tests
+        working-directory: worker
+        run: |
+          if [ -f package.json ]; then
+            npm install --no-audit --no-fund
+            npm test
+          else
+            echo "worker/package.json missing — skipping"
+            exit 1
+          fi
+
+      # Frontend lint + build（编译失败直接挂）
+      - name: Frontend install
+        working-directory: frontend
+        run: npm ci
+
+      - name: Frontend lint
+        working-directory: frontend
+        run: npm run lint --if-present
+
+      - name: Frontend build
+        working-directory: frontend
+        run: npm run build
+
+      # Admin build（编译失败直接挂）
+      - name: Admin install
+        working-directory: admin
+        run: npm ci
+
+      - name: Admin build
+        working-directory: admin
+        run: npm run build
+
+  # ============ 部署 Frontend ============
+  deploy-frontend:
+    name: Deploy Frontend to Cloudflare Pages
+    needs: test
+    # 仅 main 分支 push 触发部署；PR 只跑 test job
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    # GitHub Environment 门禁：在仓库 Settings → Environments → production
+    # 里配置 required reviewers，进一步防误部署
+    environment: production
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -27,20 +84,20 @@ jobs:
         working-directory: frontend
         run: npm run build
 
-      - name: Deploy to Netlify
-        uses: nwtgck/actions-netlify@v1.2
+      - name: Deploy to Cloudflare Pages
+        uses: cloudflare/wrangler-action@v3
         with:
-          publish-dir: ./frontend/dist
-          production-deploy: true
-          deploy-message: "Deploy from GitHub Actions"
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-        env:
-          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
-          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy frontend/dist --project-name=sagemro-frontend --branch=${{ github.ref_name }}
 
+  # ============ 部署 Worker ============
   deploy-worker:
     name: Deploy Worker to Cloudflare Workers
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    environment: production
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -51,4 +108,35 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           workingDirectory: worker
-          command: deploy
+          command: deploy --env production
+
+  # ============ 部署 Admin ============
+  deploy-admin:
+    name: Deploy Admin Panel to Cloudflare Pages
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        working-directory: admin
+        run: npm ci
+
+      - name: Build
+        working-directory: admin
+        run: npm run build
+
+      - name: Deploy to Cloudflare Pages
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy admin/dist --project-name=sagemro-admin --branch=${{ github.ref_name }}

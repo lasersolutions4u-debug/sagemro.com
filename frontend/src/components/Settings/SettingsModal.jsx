@@ -177,19 +177,19 @@ export function SettingsModal({ isOpen, onClose, currentUser, userType, onOpenMy
         {/* 合伙人统计卡片 */}
         {userType === 'engineer' && engineerWallet && (
           <div className="grid grid-cols-3 gap-3">
-            <div className="bg-[#2a2a3c] rounded-xl p-3 text-center">
+            <div className="bg-[var(--color-surface-elevated)] rounded-xl p-3 text-center">
               <div className="text-[18px] font-semibold text-green-400">
                 ¥{engineerWallet.wallet?.wallet_balance ?? 0}
               </div>
               <div className="text-[11px] text-[var(--color-sidebar-text)] opacity-50 mt-0.5">钱包余额</div>
             </div>
-            <div className="bg-[#2a2a3c] rounded-xl p-3 text-center">
+            <div className="bg-[var(--color-surface-elevated)] rounded-xl p-3 text-center">
               <div className="text-[18px] font-semibold text-[var(--color-sidebar-text)]">
                 ¥{engineerWallet.wallet?.deposit_balance ?? 0}
               </div>
               <div className="text-[11px] text-[var(--color-sidebar-text)] opacity-50 mt-0.5">保证金</div>
             </div>
-            <div className="bg-[#2a2a3c] rounded-xl p-3 text-center">
+            <div className="bg-[var(--color-surface-elevated)] rounded-xl p-3 text-center">
               <div className="text-[18px] font-semibold text-yellow-400 flex items-center justify-center gap-1">
                 <Star size={14} className="fill-yellow-400" />
                 {engineerStats?.rating || '暂无'}
@@ -202,7 +202,7 @@ export function SettingsModal({ isOpen, onClose, currentUser, userType, onOpenMy
         )}
 
         {/* 标签页 */}
-        <div className="flex border-b border-[#3a3a4c]">
+        <div className="flex border-b border-[var(--color-border)]">
           <button
             onClick={() => setTab('profile')}
             className={`flex-1 py-2.5 text-[13px] font-medium border-b-2 transition-colors ${
@@ -251,7 +251,7 @@ export function SettingsModal({ isOpen, onClose, currentUser, userType, onOpenMy
                       type="text"
                       value={customerForm.name}
                       onChange={e => setCustomerForm({ ...customerForm, name: e.target.value })}
-                      className="w-full bg-[#2a2a3c] border border-[#3a3a4c] rounded-lg px-3 py-2.5 text-[14px] text-[var(--color-sidebar-text)]"
+                      className="w-full bg-[var(--color-input-bg)] border border-[var(--color-input-border)] rounded-lg px-3 py-2.5 text-[14px] text-[var(--color-sidebar-text)]"
                     />
                   </div>
                   <div>
@@ -260,7 +260,7 @@ export function SettingsModal({ isOpen, onClose, currentUser, userType, onOpenMy
                       type="text"
                       value={currentUser?.phone || ''}
                       readOnly
-                      className="w-full bg-[#2a2a3c]/50 border border-[#3a3a4c] rounded-lg px-3 py-2.5 text-[14px] text-[var(--color-sidebar-text)] opacity-50 cursor-not-allowed"
+                      className="w-full bg-[var(--color-input-bg)]/50 border border-[var(--color-input-border)] rounded-lg px-3 py-2.5 text-[14px] text-[var(--color-sidebar-text)] opacity-50 cursor-not-allowed"
                     />
                   </div>
                   <div>
@@ -270,7 +270,7 @@ export function SettingsModal({ isOpen, onClose, currentUser, userType, onOpenMy
                       value={customerForm.region}
                       onChange={e => setCustomerForm({ ...customerForm, region: e.target.value })}
                       placeholder="如：华东地区、苏州市"
-                      className="w-full bg-[#2a2a3c] border border-[#3a3a4c] rounded-lg px-3 py-2.5 text-[14px] text-[var(--color-sidebar-text)]"
+                      className="w-full bg-[var(--color-input-bg)] border border-[var(--color-input-border)] rounded-lg px-3 py-2.5 text-[14px] text-[var(--color-sidebar-text)]"
                     />
                   </div>
                 </>
@@ -282,7 +282,7 @@ export function SettingsModal({ isOpen, onClose, currentUser, userType, onOpenMy
                       type="text"
                       value={engineerForm.name}
                       onChange={e => setEngineerForm({ ...engineerForm, name: e.target.value })}
-                      className="w-full bg-[#2a2a3c] border border-[#3a3a4c] rounded-lg px-3 py-2.5 text-[14px] text-[var(--color-sidebar-text)]"
+                      className="w-full bg-[var(--color-input-bg)] border border-[var(--color-input-border)] rounded-lg px-3 py-2.5 text-[14px] text-[var(--color-sidebar-text)]"
                     />
                   </div>
                   <div>
@@ -291,7 +291,7 @@ export function SettingsModal({ isOpen, onClose, currentUser, userType, onOpenMy
                       type="text"
                       value={currentUser?.phone || ''}
                       readOnly
-                      className="w-full bg-[#2a2a3c]/50 border border-[#3a3a4c] rounded-lg px-3 py-2.5 text-[14px] text-[var(--color-sidebar-text)] opacity-50 cursor-not-allowed"
+                      className="w-full bg-[var(--color-input-bg)]/50 border border-[var(--color-input-border)] rounded-lg px-3 py-2.5 text-[14px] text-[var(--color-sidebar-text)] opacity-50 cursor-not-allowed"
                     />
                   </div>
                   <div>
@@ -301,7 +301,7 @@ export function SettingsModal({ isOpen, onClose, currentUser, userType, onOpenMy
                       value={engineerForm.service_region}
                       onChange={e => setEngineerForm({ ...engineerForm, service_region: e.target.value })}
                       placeholder="如：华东地区、苏州市"
-                      className="w-full bg-[#2a2a3c] border border-[#3a3a4c] rounded-lg px-3 py-2.5 text-[14px] text-[var(--color-sidebar-text)]"
+                      className="w-full bg-[var(--color-input-bg)] border border-[var(--color-input-border)] rounded-lg px-3 py-2.5 text-[14px] text-[var(--color-sidebar-text)]"
                     />
                   </div>
                   <div>
@@ -311,11 +311,11 @@ export function SettingsModal({ isOpen, onClose, currentUser, userType, onOpenMy
                       onChange={e => setEngineerForm({ ...engineerForm, bio: e.target.value })}
                       placeholder="向客户介绍一下自己..."
                       rows={3}
-                      className="w-full bg-[#2a2a3c] border border-[#3a3a4c] rounded-lg px-3 py-2.5 text-[14px] text-[var(--color-sidebar-text)] resize-none"
+                      className="w-full bg-[var(--color-input-bg)] border border-[var(--color-input-border)] rounded-lg px-3 py-2.5 text-[14px] text-[var(--color-sidebar-text)] resize-none"
                     />
                   </div>
                   {/* 合伙人等级信息 */}
-                  <div className="bg-[#2a2a3c] rounded-xl p-3 space-y-2">
+                  <div className="bg-[var(--color-surface-elevated)] rounded-xl p-3 space-y-2">
                     <div className="flex justify-between text-[13px]">
                       <span className="text-[var(--color-sidebar-text)] opacity-60">等级</span>
                       <span className="text-[var(--color-sidebar-text)]">{levelLabels[engineerStats?.level] || '初级'}</span>
@@ -357,7 +357,7 @@ export function SettingsModal({ isOpen, onClose, currentUser, userType, onOpenMy
               </p>
               <button
                 onClick={() => { onClose(); onOpenMyDevices(); }}
-                className="w-full flex items-center justify-between px-4 py-3 bg-[#2a2a3c] hover:bg-[#3a3a4c] rounded-xl transition-colors"
+                className="w-full flex items-center justify-between px-4 py-3 bg-[var(--color-surface-elevated)] hover:bg-[var(--color-hover)] rounded-xl transition-colors"
               >
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-lg bg-[var(--color-primary)]/20 flex items-center justify-center">
@@ -383,7 +383,7 @@ export function SettingsModal({ isOpen, onClose, currentUser, userType, onOpenMy
                   value={pwdForm.oldPassword}
                   onChange={e => setPwdForm({ ...pwdForm, oldPassword: e.target.value })}
                   placeholder="请输入旧密码"
-                  className="w-full bg-[#2a2a3c] border border-[#3a3a4c] rounded-lg px-3 py-2.5 text-[14px] text-[var(--color-sidebar-text)]"
+                  className="w-full bg-[var(--color-input-bg)] border border-[var(--color-input-border)] rounded-lg px-3 py-2.5 text-[14px] text-[var(--color-sidebar-text)]"
                 />
               </div>
               <div>
@@ -393,7 +393,7 @@ export function SettingsModal({ isOpen, onClose, currentUser, userType, onOpenMy
                   value={pwdForm.newPassword}
                   onChange={e => setPwdForm({ ...pwdForm, newPassword: e.target.value })}
                   placeholder="至少6位"
-                  className="w-full bg-[#2a2a3c] border border-[#3a3a4c] rounded-lg px-3 py-2.5 text-[14px] text-[var(--color-sidebar-text)]"
+                  className="w-full bg-[var(--color-input-bg)] border border-[var(--color-input-border)] rounded-lg px-3 py-2.5 text-[14px] text-[var(--color-sidebar-text)]"
                 />
               </div>
               <div>
@@ -403,7 +403,7 @@ export function SettingsModal({ isOpen, onClose, currentUser, userType, onOpenMy
                   value={pwdForm.confirmPassword}
                   onChange={e => setPwdForm({ ...pwdForm, confirmPassword: e.target.value })}
                   placeholder="再次输入新密码"
-                  className="w-full bg-[#2a2a3c] border border-[#3a3a4c] rounded-lg px-3 py-2.5 text-[14px] text-[var(--color-sidebar-text)]"
+                  className="w-full bg-[var(--color-input-bg)] border border-[var(--color-input-border)] rounded-lg px-3 py-2.5 text-[14px] text-[var(--color-sidebar-text)]"
                 />
               </div>
 

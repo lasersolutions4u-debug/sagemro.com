@@ -85,7 +85,7 @@ export function MyWorkOrdersModal({ isOpen, onClose }) {
       <Modal isOpen={isOpen} onClose={onClose} title="我的工单" size="md">
         <div className="space-y-3">
           {loading && (
-            <div className="text-center py-8 text-[#6b6375]">
+            <div className="text-center py-8 text-[var(--color-text-secondary)]">
               加载中...
             </div>
           )}
@@ -97,7 +97,7 @@ export function MyWorkOrdersModal({ isOpen, onClose }) {
           )}
 
           {!loading && workOrders.length === 0 && !error && (
-            <div className="text-center py-8 text-[#6b6375]">
+            <div className="text-center py-8 text-[var(--color-text-secondary)]">
               暂无工单记录
             </div>
           )}
@@ -107,32 +107,32 @@ export function MyWorkOrdersModal({ isOpen, onClose }) {
             return (
               <div
                 key={order.id}
-                className="p-4 bg-[#f4f3f4] dark:bg-[#2a2a3c] rounded-xl cursor-pointer hover:bg-[#e5e4e7] dark:hover:bg-[#3a3a4c] transition-colors"
+                className="p-4 bg-[var(--color-surface-elevated)] rounded-xl cursor-pointer hover:bg-[var(--color-hover)] transition-colors"
                 onClick={() => handleViewDetail(order)}
               >
                 <div className="flex items-center justify-between mb-2">
-                  <span className="font-medium text-[#08060d] dark:text-[#f3f4f6]">
+                  <span className="font-medium text-[var(--color-text-primary)]">
                     {order.order_no || order.id}
                   </span>
                   <div className="flex items-center gap-2">
                     <span className={`px-2 py-0.5 text-xs text-white rounded ${status.color}`}>
                       {status.text}
                     </span>
-                    <ChevronRight size={16} className="text-[#6b6375]" />
+                    <ChevronRight size={16} className="text-[var(--color-text-secondary)]" />
                   </div>
                 </div>
                 {order.engineer_name && (
-                  <p className="text-xs text-[#f59e0b] mb-1">
+                  <p className="text-xs text-[var(--color-primary)] mb-1">
                     合伙人：{order.engineer_name}
                   </p>
                 )}
-                <p className="text-sm text-[#6b6375] mb-1">
+                <p className="text-sm text-[var(--color-text-secondary)] mb-1">
                   {order.type} | {order.device_id || '未指定设备'}
                 </p>
-                <p className="text-sm text-[#08060d] dark:text-[#e0e0e0] line-clamp-2">
+                <p className="text-sm text-[var(--color-text-primary)] line-clamp-2">
                   {order.description}
                 </p>
-                <p className="mt-2 text-xs text-[#6b6375]">
+                <p className="mt-2 text-xs text-[var(--color-text-secondary)]">
                   提交时间：{new Date(order.created_at).toLocaleString('zh-CN')}
                 </p>
               </div>
@@ -140,15 +140,15 @@ export function MyWorkOrdersModal({ isOpen, onClose }) {
           })}
 
           {/* 图例（只显示客户相关状态） */}
-          <div className="pt-4 border-t border-[#e5e4e7] dark:border-[#3a3a4c]">
-            <p className="text-xs text-[#6b6375] mb-2">工单状态：</p>
+          <div className="pt-4 border-t border-[var(--color-border)]">
+            <p className="text-xs text-[var(--color-text-secondary)] mb-2">工单状态：</p>
             <div className="flex flex-wrap gap-3">
               {customerStatuses.map((key) => {
                 const val = statusLabels[key];
                 return (
                   <div key={key} className="flex items-center gap-1">
                     <span className={`w-2 h-2 rounded-full ${val.color}`} />
-                    <span className="text-xs text-[#6b6375]">{val.text}</span>
+                    <span className="text-xs text-[var(--color-text-secondary)]">{val.text}</span>
                   </div>
                 );
               })}

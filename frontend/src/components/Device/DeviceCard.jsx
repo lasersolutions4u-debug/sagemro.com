@@ -12,12 +12,12 @@ export function DeviceCard({ device, onClick, onDelete }) {
   return (
     <div
       onClick={onClick}
-      className="bg-[#2a2a3c] rounded-xl p-4 cursor-pointer hover:bg-[#323248] transition-colors"
+      className="bg-[var(--color-surface-elevated)] rounded-xl p-4 cursor-pointer hover:bg-[var(--color-hover)] transition-colors"
     >
       <div className="flex items-start justify-between">
         <div className="flex items-start gap-3">
-          <div className="w-10 h-10 rounded-lg bg-[#3a3a4c] flex items-center justify-center flex-shrink-0">
-            <Package size={20} className="text-[#1677ff]" />
+          <div className="w-10 h-10 rounded-lg bg-[var(--color-primary)]/15 flex items-center justify-center flex-shrink-0">
+            <Package size={20} className="text-[var(--color-primary)]" />
           </div>
           <div>
             <h3 className="text-[14px] font-medium text-[var(--color-sidebar-text)]">
@@ -37,7 +37,7 @@ export function DeviceCard({ device, onClick, onDelete }) {
         </div>
       </div>
 
-      <div className="flex items-center gap-4 mt-3 pt-3 border-t border-[#3a3a4c]">
+      <div className="flex items-center gap-4 mt-3 pt-3 border-t border-[var(--color-border)]">
         <div className="flex items-center gap-1.5 text-[12px] text-[var(--color-sidebar-text)] opacity-60">
           <Wrench size={12} />
           <span>{device.total_orders || 0}次维保</span>

@@ -5,6 +5,7 @@ import { WorkOrderModal } from './components/Sidebar/WorkOrderModal';
 import { MyWorkOrdersModal } from './components/Sidebar/MyWorkOrdersModal';
 import { CustomerHomeModal } from './components/Settings/CustomerHomeModal';
 import { AboutModal } from './components/common/AboutModal';
+import { FeedbackHost } from './components/common/FeedbackHost';
 import { LoginModal } from './components/Auth/LoginModal';
 import { EngineerDashboard } from './components/Engineer/EngineerDashboard';
 import { EngineerProfileModal } from './components/Engineer/EngineerProfileModal';
@@ -85,14 +86,19 @@ function App() {
     createConversation,
     updateConversation,
     deleteConversation,
+    renameConversation,
     getConversation,
   } = useConversations();
 
-  // 推送通知（仅工程师）
-  const engineerId = localStorage.getItem('sagemro_engineer_id');
+  // 推送通知（客户和工程师均可订阅）
+  const pushUserId = userType === 'engineer'
+    ? localStorage.getItem('sagemro_engineer_id')
+    : userType === 'customer'
+      ? localStorage.getItem('sagemro_customer_id')
+      : null;
   const { inAppNotification, dismissNotification } = usePushNotification(
-    engineerId,
-    userType === 'engineer'
+    pushUserId,
+    userType === 'engineer' || userType === 'customer'
   );
 
   const {
@@ -203,6 +209,11 @@ function App() {
     localStorage.removeItem(`sagemro_messages_${id}`);
   }, [deleteConversation, conversationId, clearMessages]);
 
+  // 重命名对话
+  const handleRenameConversation = useCallback(async (id, title) => {
+    await renameConversation(id, title);
+  }, [renameConversation]);
+
   // 登录成功
   const handleLoginSuccess = useCallback((userData) => {
     setCurrentUser(userData.user);
@@ -221,6 +232,19 @@ function App() {
     setCurrentUser(null);
     setUserType(null);
     setUnreadCount(0);
+  }, []);
+
+  // 监听 401 自动登出事件（由 services/api.js 的 fetch 拦截器触发）
+  // token 过期 / 被踢下线时，清掉本地状态并弹出登录框，避免后续操作继续命中 401
+  useEffect(() => {
+    const handler = () => {
+      setCurrentUser(null);
+      setUserType(null);
+      setUnreadCount(0);
+      setLoginModalOpen(true);
+    };
+    window.addEventListener('sagemro:auth-expired', handler);
+    return () => window.removeEventListener('sagemro:auth-expired', handler);
   }, []);
 
   // 通知未读数变化回调
@@ -243,6 +267,7 @@ function App() {
         onNewChat={handleNewChat}
         onSelectConversation={handleSelectConversation}
         onDeleteConversation={handleDeleteConversation}
+        onRenameConversation={handleRenameConversation}
         onOpenWorkOrder={() => setWorkOrderModalOpen(true)}
         onOpenMyWorkOrders={() => setMyWorkOrdersModalOpen(true)}
         onOpenSettings={() => {
@@ -333,6 +358,9 @@ function App() {
           onDismiss={dismissNotification}
         />
       )}
+
+      {/* 全局 toast / confirm 宿主 */}
+      <FeedbackHost />
     </div>
   );
 }

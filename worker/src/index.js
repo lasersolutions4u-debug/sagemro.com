@@ -3,15 +3,52 @@
  * 后端 API 服务，处理聊天、工单、认证等请求
  */
 
+// 认证与加密相关的纯函数均从 ./lib/auth.js 导入，保持单一实现来源（便于单元测试）
+import {
+  generateSalt,
+  hashPasswordNew,
+  hashPasswordLegacy,
+  verifyPassword,
+  generateOrderNo,
+  base64UrlEncode,
+  base64UrlDecode,
+  signJwt,
+  verifyJwt,
+} from './lib/auth.js';
+
+// 通用小工具（generateId / truncateStr）
+import { generateId, truncateStr } from './lib/util.js';
+
+// OneSignal 推送 + 站内通知 helpers
+import { createNotification, sendPushToUser, sendPushToEngineer } from './lib/push.js';
+
+// 读路径越权守卫（IDOR 防护，migration 010 之后生效）
+import {
+  GuardError,
+  assertWorkOrderAccess,
+  assertConversationAccess,
+  assertEngineerOrAdmin,
+} from './lib/guards.js';
+
+// 输入校验：文本长度上限 + 图片 URL 白名单
+import {
+  ValidationError,
+  LIMITS,
+  assertMaxLength,
+  assertFieldLimits,
+  validateImageUrl,
+  validationErrorToResponse,
+} from './lib/validators.js';
+
 // ============ 配置 ============
 // API_KEY 和 API_ENDPOINT 通过 Cloudflare Worker Secrets 注入
 // 设置命令：wrangler secret put OPENAI_API_KEY / OPENAI_API_ENDPOINT
 // JWT_SECRET 也通过 Secrets 注入：wrangler secret put JWT_SECRET
 
-// 管理员账号（通过环境变量注入，wrangler secret put ADMIN_PHONE / ADMIN_PASSWORD）
-// 本地开发回退值仅用于提示，生产环境必须设置 secret
-const ADMIN_PHONE = '13800000000';  // 仅回退默认值
-// ADMIN_PASSWORD 从 env 读取，不再硬编码
+// 管理员账号（必须通过 wrangler secret put 注入）：
+//   wrangler secret put ADMIN_PHONE --env production
+//   wrangler secret put ADMIN_PASSWORD --env production
+// 不再提供硬编码默认值；缺失 env 直接拒绝登录，避免同一默认账号被全网爆破。
 
 // ============ System Prompt ============
 const SYSTEM_PROMPT = `你是"小智"，智维钣金平台的 AI 助手，服务于钣金加工行业的设备维修服务。
@@ -593,29 +630,8 @@ function getTimeAgo(dateStr) {
   return `${days}天前`;
 }
 
-// 生成唯一 ID
-function generateId() {
-  return Date.now().toString(36) + Math.random().toString(36).substr(2);
-}
-
-// 创建通知记录
-async function createNotification(env, { user_id, user_type, type, title, body, data }) {
-  try {
-    const id = generateId();
-    await env.DB.prepare(
-      'INSERT INTO notifications (id, user_id, user_type, type, title, body, data) VALUES (?, ?, ?, ?, ?, ?, ?)'
-    ).bind(id, user_id, user_type, type, title, body, data ? JSON.stringify(data) : null).run();
-  } catch (e) {
-    console.error('[Notification] Failed to create:', e.message);
-  }
-}
-
-// 安全截断字符串（按字符数，而非字节数），支持中文
-function truncateStr(str, maxChars) {
-  if (!str) return '';
-  if (str.length <= maxChars) return str;
-  return str.slice(0, maxChars);
-}
+// generateId / truncateStr / createNotification / sendPushToUser / sendPushToEngineer
+// 已提取到 ./lib/util.js 和 ./lib/push.js，通过文件顶部的 import 导入使用。
 
 // 生成用户编号（U/E + 6位数字）
 async function generateUserNo(env, prefix) {
@@ -632,131 +648,6 @@ async function generateUserNo(env, prefix) {
     nextNum = numPart + 1;
   }
   return `${prefix}${nextNum.toString().padStart(6, '0')}`;
-}
-
-// 生成随机盐值（16字节，转为hex字符串）
-function generateSalt() {
-  const bytes = new Uint8Array(16);
-  crypto.getRandomValues(bytes);
-  return Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('');
-}
-
-// 使用 PBKDF2 生成密码哈希（新算法，每个用户独立盐值）
-async function hashPasswordNew(password, salt) {
-  const encoder = new TextEncoder();
-  const keyMaterial = await crypto.subtle.importKey(
-    'raw', encoder.encode(password), 'PBKDF2', false, ['deriveBits']
-  );
-  const derivedBits = await crypto.subtle.deriveBits(
-    { name: 'PBKDF2', salt: encoder.encode(salt), iterations: 100000, hash: 'SHA-256' },
-    keyMaterial, 256
-  );
-  const hashArray = Array.from(new Uint8Array(derivedBits));
-  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-}
-
-// 旧算法兼容（SHA-256 + 固定盐），用于已有用户的密码验证
-async function hashPasswordLegacy(password) {
-  const encoder = new TextEncoder();
-  const data = encoder.encode(password + 'sagemro_salt_2024');
-  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-}
-
-// 验证密码（兼容新旧算法）
-// 如果用户有 salt 字段且非空，用新算法；否则用旧算法
-async function verifyPassword(password, hash, salt) {
-  if (salt) {
-    const inputHash = await hashPasswordNew(password, salt);
-    return inputHash === hash;
-  }
-  // 兼容旧用户（无 salt）
-  const inputHash = await hashPasswordLegacy(password);
-  return inputHash === hash;
-}
-
-// 生成工单号
-function generateOrderNo() {
-  const now = new Date();
-  const dateStr = now.toISOString().slice(0, 10).replace(/-/g, '');
-  const random = Math.floor(Math.random() * 1000).toString().padStart(3, '0');
-  return `WO-${dateStr}-${random}`;
-}
-
-// ============ JWT 认证（基于 Web Crypto API）===========
-
-// Base64URL 编码
-function base64UrlEncode(data) {
-  let str;
-  if (typeof data === 'string') {
-    str = btoa(unescape(encodeURIComponent(data)));
-  } else {
-    str = btoa(String.fromCharCode(...new Uint8Array(data)));
-  }
-  return str.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-}
-
-// Base64URL 解码
-function base64UrlDecode(str) {
-  str = str.replace(/-/g, '+').replace(/_/g, '/');
-  while (str.length % 4) str += '=';
-  return decodeURIComponent(escape(atob(str)));
-}
-
-// 签发 JWT token
-async function signJwt(payload, secret) {
-  const header = { alg: 'HS256', typ: 'JWT' };
-  const headerB64 = base64UrlEncode(JSON.stringify(header));
-  const payloadB64 = base64UrlEncode(JSON.stringify(payload));
-  const data = `${headerB64}.${payloadB64}`;
-
-  const encoder = new TextEncoder();
-  const key = await crypto.subtle.importKey(
-    'raw', encoder.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']
-  );
-  const signature = await crypto.subtle.sign('HMAC', key, encoder.encode(data));
-  const signatureB64 = base64UrlEncode(signature);
-
-  return `${data}.${signatureB64}`;
-}
-
-// 验证 JWT token
-async function verifyJwt(token, secret) {
-  try {
-    const parts = token.split('.');
-    if (parts.length !== 3) return null;
-
-    const [headerB64, payloadB64, signatureB64] = parts;
-    const data = `${headerB64}.${payloadB64}`;
-
-    const encoder = new TextEncoder();
-    const key = await crypto.subtle.importKey(
-      'raw', encoder.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['verify']
-    );
-
-    // 将 Base64URL 签名转回字节数组（二进制数据，不做 UTF-8 解码）
-    const sigB64 = signatureB64.replace(/-/g, '+').replace(/_/g, '/');
-    const sigPadded = sigB64 + '='.repeat((4 - sigB64.length % 4) % 4);
-    const sigBinary = atob(sigPadded);
-    const sigBytes = new Uint8Array(sigBinary.length);
-    for (let i = 0; i < sigBinary.length; i++) sigBytes[i] = sigBinary.charCodeAt(i);
-
-    const valid = await crypto.subtle.verify('HMAC', key, sigBytes, encoder.encode(data));
-    if (!valid) return null;
-
-    // payload 用 base64UrlDecode 解码（文本数据）
-    const payload = JSON.parse(base64UrlDecode(payloadB64));
-
-    // 检查过期时间
-    if (payload.exp && payload.exp < Math.floor(Date.now() / 1000)) {
-      return null;
-    }
-
-    return payload;
-  } catch (e) {
-    return null;
-  }
 }
 
 // 从请求头中提取并验证 token
@@ -782,18 +673,52 @@ async function authenticateAdmin(request, env) {
   }
 }
 
-// CORS 响应头
+// CORS 白名单
+const ALLOWED_ORIGINS_PRODUCTION = [
+  'https://sagemro.com',
+  'https://www.sagemro.com',
+  'https://admin.sagemro.com',
+];
+const ALLOWED_ORIGINS_DEV = [
+  ...ALLOWED_ORIGINS_PRODUCTION,
+  'http://localhost:5173',
+  'http://localhost:5174',
+  'http://localhost:3000',
+  'http://localhost:4173',
+  'http://127.0.0.1:5173',
+  'http://127.0.0.1:5174',
+];
+
+function getAllowedOrigin(origin, env) {
+  const allowed = env.ENVIRONMENT === 'production' ? ALLOWED_ORIGINS_PRODUCTION : ALLOWED_ORIGINS_DEV;
+  if (origin && allowed.includes(origin)) return origin;
+  return allowed[0];
+}
+
+function getCorsHeaders(request, env) {
+  const origin = request.headers.get('Origin');
+  return {
+    'Access-Control-Allow-Origin': getAllowedOrigin(origin, env),
+    'Vary': 'Origin',
+    'Access-Control-Allow-Methods': 'GET, POST, PATCH, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+    'Access-Control-Allow-Credentials': 'true',
+  };
+}
+
+// 兼容旧代码：仅作兜底 Content-Type/Methods，动态 Origin 由 top-level 包装器覆盖。
 const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Origin': ALLOWED_ORIGINS_PRODUCTION[0],
+  'Vary': 'Origin',
   'Access-Control-Allow-Methods': 'GET, POST, PATCH, DELETE, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type, Authorization',
 };
 
 // 处理 OPTIONS 预检请求
-function handleOptions(request) {
+function handleOptions(request, env) {
   return new Response(null, {
     status: 204,
-    headers: corsHeaders,
+    headers: getCorsHeaders(request, env),
   });
 }
 
@@ -820,14 +745,41 @@ async function handleSendCode(request, env) {
       return errorResponse('手机号不能为空');
     }
 
-    // 临时方案：固定验证码用于开发测试
+    if (!/^1\d{10}$/.test(phone)) {
+      return errorResponse('手机号格式不正确');
+    }
+
+    // 频控：同一手机号 60 秒内只能请求一次
+    const rateKey = `verify_code_rate_${phone}`;
+    const recent = await env.KV.get(rateKey);
+    if (recent) {
+      return errorResponse('发送过于频繁，请 60 秒后再试', 429);
+    }
+
+    // IP 频控：同一 IP 60 秒内最多 5 次（避免刷号）
+    const ip = request.headers.get('CF-Connecting-IP') || request.headers.get('X-Forwarded-For') || 'unknown';
+    const ipKey = `verify_code_ip_${ip}`;
+    const ipCountStr = await env.KV.get(ipKey);
+    const ipCount = ipCountStr ? parseInt(ipCountStr, 10) : 0;
+    if (ipCount >= 5) {
+      return errorResponse('请求次数过多，请稍后再试', 429);
+    }
+
+    // 生成 4 位验证码
     const code = String(Math.floor(1000 + Math.random() * 9000));
 
     // 存储验证码（有效期5分钟）
     await env.KV.put(`verify_code_${phone}`, code, { expirationTtl: 300 });
+    // 记录频控标记
+    await env.KV.put(rateKey, '1', { expirationTtl: 60 });
+    await env.KV.put(ipKey, String(ipCount + 1), { expirationTtl: 60 });
 
-    // 测试模式：返回验证码（上线前需移除）
-    return jsonResponse({ success: true, message: '验证码已发送', code });
+    // 仅 development 环境回传验证码便于调试；默认拒绝（env 缺失/非预期值视为生产）
+    const response = { success: true, message: '验证码已发送' };
+    if (env.ENVIRONMENT === 'development') {
+      response.code = code;
+    }
+    return jsonResponse(response);
   } catch (error) {
     return errorResponse(error.message, 500);
   }
@@ -959,6 +911,14 @@ async function handleLogin(request, env) {
       return errorResponse('手机号、密码不能为空');
     }
 
+    // 登录失败计数（防暴力破解）：同一手机号 15 分钟内失败 5 次锁定
+    const failKey = `login_fail_${phone}`;
+    const failCountStr = await env.KV.get(failKey);
+    const failCount = failCountStr ? parseInt(failCountStr, 10) : 0;
+    if (failCount >= 5) {
+      return errorResponse('密码错误次数过多，请 15 分钟后再试', 429);
+    }
+
     // 查找客户
     let user = await env.DB.prepare(
       'SELECT * FROM customers WHERE phone = ?'
@@ -975,13 +935,32 @@ async function handleLogin(request, env) {
     }
 
     if (!user) {
+      await env.KV.put(failKey, String(failCount + 1), { expirationTtl: 900 });
       return errorResponse('手机号或密码错误');
     }
 
     // 验证密码（兼容新旧算法）
     const passwordValid = await verifyPassword(password, user.password_hash, user.salt);
     if (!passwordValid) {
+      await env.KV.put(failKey, String(failCount + 1), { expirationTtl: 900 });
       return errorResponse('手机号或密码错误');
+    }
+
+    // 登录成功：清除失败计数
+    await env.KV.delete(failKey);
+
+    // 旧算法用户：登录成功时静默升级为 PBKDF2 + 独立 salt
+    if (!user.salt) {
+      try {
+        const newSalt = generateSalt();
+        const newHash = await hashPasswordNew(password, newSalt);
+        const table = userType === 'engineer' ? 'engineers' : 'customers';
+        await env.DB.prepare(
+          `UPDATE ${table} SET password_hash = ?, salt = ? WHERE id = ?`
+        ).bind(newHash, newSalt, user.id).run();
+      } catch (e) {
+        console.error('[handleLogin] password upgrade failed:', e);
+      }
     }
 
     // 签发 JWT token（有效期 7 天）
@@ -1018,6 +997,26 @@ async function handleSendResetCode(request, env) {
       return errorResponse('手机号不能为空');
     }
 
+    if (!/^1\d{10}$/.test(phone)) {
+      return errorResponse('手机号格式不正确');
+    }
+
+    // 频控：同一手机号 60 秒内只能请求一次
+    const rateKey = `reset_code_rate_${phone}`;
+    const recent = await env.KV.get(rateKey);
+    if (recent) {
+      return errorResponse('发送过于频繁，请 60 秒后再试', 429);
+    }
+
+    // IP 频控：同一 IP 60 秒内最多 5 次
+    const ip = request.headers.get('CF-Connecting-IP') || request.headers.get('X-Forwarded-For') || 'unknown';
+    const ipKey = `reset_code_ip_${ip}`;
+    const ipCountStr = await env.KV.get(ipKey);
+    const ipCount = ipCountStr ? parseInt(ipCountStr, 10) : 0;
+    if (ipCount >= 5) {
+      return errorResponse('请求次数过多，请稍后再试', 429);
+    }
+
     // 检查手机号是否已注册（客户或工程师）
     const customer = await env.DB.prepare(
       'SELECT id FROM customers WHERE phone = ?'
@@ -1036,9 +1035,15 @@ async function handleSendResetCode(request, env) {
 
     // 存储验证码（有效期5分钟）
     await env.KV.put(`reset_code_${phone}`, code, { expirationTtl: 300 });
+    await env.KV.put(rateKey, '1', { expirationTtl: 60 });
+    await env.KV.put(ipKey, String(ipCount + 1), { expirationTtl: 60 });
 
-    // 测试模式：返回验证码（上线前需移除）
-    return jsonResponse({ success: true, message: '验证码已发送', code });
+    // 仅 development 环境回传验证码便于调试；默认拒绝（env 缺失/非预期值视为生产）
+    const response = { success: true, message: '验证码已发送' };
+    if (env.ENVIRONMENT === 'development') {
+      response.code = code;
+    }
+    return jsonResponse(response);
   } catch (error) {
     return errorResponse(error.message, 500);
   }
@@ -1251,16 +1256,94 @@ async function generateEngineerContext(engineerId, env) {
   }
 }
 
+// ============ OpenAI 成本保护 ============
+// 目的：防止单用户刷爆账单 + 全平台日总量硬上限，所有调用 OpenAI 的入口都应先过这道网关。
+// 实现：KV 计数器按 YYYYMMDD 分桶，TTL 25 小时自动清理前一天数据。
+//
+// 三个维度：
+//   1. Per-user:    每个 userId 每天 N 次（默认 200，可用 env.OPENAI_DAILY_PER_USER 覆盖）
+//   2. Per-guest-IP:每个未登录访客 IP 每天 N 次（默认 30，配合现有小时级限流）
+//   3. Platform:    全平台每天 N 次（默认 5000，用 env.OPENAI_DAILY_TOTAL 覆盖）
+//
+// 后台任务（如 generateWorkOrderSummary、generatePricingAINote）按 'system:<类型>' 计数，
+// 仍然计入全平台总量上限。
+class BudgetError extends Error {
+  constructor(message, status = 429) {
+    super(message);
+    this.name = 'BudgetError';
+    this.status = status;
+  }
+}
+
+function todayBucket() {
+  const d = new Date();
+  const y = d.getUTCFullYear();
+  const m = String(d.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(d.getUTCDate()).padStart(2, '0');
+  return `${y}${m}${day}`;
+}
+
+async function enforceOpenAIBudget(env, { userKey, tag = 'chat' }) {
+  const bucket = todayBucket();
+  const ttl = 25 * 3600; // 25 小时，覆盖 UTC 边界
+
+  const perUserLimit = parseInt(env.OPENAI_DAILY_PER_USER || '200', 10);
+  const platformLimit = parseInt(env.OPENAI_DAILY_TOTAL || '5000', 10);
+
+  const userBudgetKey = `openai_quota_user_${bucket}_${userKey}`;
+  const totalKey = `openai_quota_total_${bucket}`;
+
+  const [userStr, totalStr] = await Promise.all([
+    env.KV.get(userBudgetKey),
+    env.KV.get(totalKey),
+  ]);
+  const userCount = userStr ? parseInt(userStr, 10) : 0;
+  const totalCount = totalStr ? parseInt(totalStr, 10) : 0;
+
+  if (totalCount >= platformLimit) {
+    throw new BudgetError('平台 AI 服务今日已达使用上限，请明天再试', 429);
+  }
+  if (userCount >= perUserLimit) {
+    throw new BudgetError(`您今日 AI 对话已达 ${perUserLimit} 次上限，请明天再试`, 429);
+  }
+
+  // 提前占坑（先计数，再调用）：即使调用失败也计数，避免失败重试把配额打穿
+  await Promise.all([
+    env.KV.put(userBudgetKey, String(userCount + 1), { expirationTtl: ttl }),
+    env.KV.put(totalKey, String(totalCount + 1), { expirationTtl: ttl }),
+  ]);
+}
+
+// 默认 max_tokens，按用途分档：
+//   chat:    对话主流程，允许较长回复
+//   summary: 工单摘要，短 JSON
+//   note:    核价点评，一句话 + 2 条建议
+const MAX_TOKENS = {
+  chat: 2000,
+  chat_tool_followup: 2000,
+  summary: 500,
+  note: 400,
+};
+
 // 处理聊天请求
 async function handleChat(request, env) {
   try {
     const body = await request.json();
     const { conversation_id, message, customer_id, engineer_id, user_type } = body;
 
-    // ============ 访客 IP 限流保护 ============
+    // 聊天消息长度上限：防止客户端把巨型文本塞进 AI context
+    try {
+      assertMaxLength(message, 'message', LIMITS.content);
+    } catch (e) {
+      const resp = validationErrorToResponse(e, errorResponse);
+      if (resp) return resp;
+      throw e;
+    }
+
+    // ============ 访客 IP 小时级限流（短窗口防刷）============
     const effectiveUserType = user_type || 'guest';
+    const clientIP = request.headers.get('CF-Connecting-IP') || 'unknown';
     if (effectiveUserType === 'guest') {
-      const clientIP = request.headers.get('CF-Connecting-IP') || 'unknown';
       const rateLimitKey = `rate:${clientIP}`;
       const rateLimitWindow = 3600; // 1小时窗口
       const maxMessagesPerWindow = 30; // 最多30条消息/小时
@@ -1281,6 +1364,22 @@ async function handleChat(request, env) {
         // KV 错误不影响主流程，仅限流保护
         console.error('Rate limit KV error:', kvErr);
       }
+    }
+
+    // ============ OpenAI 日配额保护（登录用户也限）============
+    // 先取 JWT，拿不到就按 guest IP 计数
+    let preAuth = null;
+    try { preAuth = await authenticateRequest(request, env); } catch { preAuth = null; }
+    const userKey = preAuth?.userId
+      ? `${preAuth.userType}:${preAuth.userId}`
+      : `guest:${clientIP}`;
+    try {
+      await enforceOpenAIBudget(env, { userKey, tag: 'chat' });
+    } catch (e) {
+      if (e instanceof BudgetError) {
+        return jsonResponse({ error: e.message }, e.status);
+      }
+      throw e;
     }
 
     // 如果有 conversation_id，先获取历史消息
@@ -1339,6 +1438,7 @@ async function handleChat(request, env) {
         tool_choice: 'auto',
         stream: true,
         temperature: 0.7,
+        max_tokens: MAX_TOKENS.chat,
       }),
     });
 
@@ -1347,13 +1447,24 @@ async function handleChat(request, env) {
       return jsonResponse({ error: errorText }, apiResponse.status);
     }
 
-    // 创建新对话
+    // 创建新对话（IDOR 防护：优先使用 JWT 中的 userId 写入 customer_id，
+    // 忽略请求体里自报的 customer_id，避免伪造归属）
+    // 注意：/api/chat 路由位于全局认证中间件之前（允许访客使用），
+    // 因此 request._auth 不可用，需要单独解析 Authorization 头
+    let chatAuth = null;
+    try {
+      chatAuth = await authenticateRequest(request, env);
+    } catch {
+      chatAuth = null;
+    }
+    const ownerCustomerId =
+      chatAuth?.userType === 'customer' ? chatAuth.userId : null;
     let convId = conversation_id;
     if (!convId) {
       convId = generateId();
       await env.DB.prepare(
-        'INSERT INTO conversations (id, title, last_message) VALUES (?, ?, ?)'
-      ).bind(convId, truncateStr(message, 20), truncateStr(message, 50)).run();
+        'INSERT INTO conversations (id, title, last_message, customer_id) VALUES (?, ?, ?, ?)'
+      ).bind(convId, truncateStr(message, 20), truncateStr(message, 50), ownerCustomerId).run();
     } else {
       await env.DB.prepare(
         'UPDATE conversations SET last_message = ?, updated_at = datetime("now") WHERE id = ?'
@@ -1459,6 +1570,7 @@ async function handleChat(request, env) {
                 messages: secondMessages,
                 stream: true,
                 temperature: 0.7,
+                max_tokens: MAX_TOKENS.chat_tool_followup,
               }),
             });
 
@@ -1533,12 +1645,27 @@ async function handleChat(request, env) {
   }
 }
 
-// 获取对话列表
+// 获取对话列表（按当前登录用户归属过滤，admin 可查全部）
 async function handleGetConversations(request, env) {
   try {
-    const { results } = await env.DB.prepare(
-      'SELECT * FROM conversations ORDER BY updated_at DESC LIMIT 50'
-    ).all();
+    const auth = request._auth;
+    if (!auth) return errorResponse('请先登录', 401);
+
+    let results;
+    if (auth.userType === 'admin') {
+      const r = await env.DB.prepare(
+        'SELECT * FROM conversations ORDER BY updated_at DESC LIMIT 50'
+      ).all();
+      results = r.results;
+    } else if (auth.userType === 'customer') {
+      const r = await env.DB.prepare(
+        'SELECT * FROM conversations WHERE customer_id = ? ORDER BY updated_at DESC LIMIT 50'
+      ).bind(auth.userId).all();
+      results = r.results;
+    } else {
+      // engineer / 其他类型：暂不开放对话列表
+      results = [];
+    }
 
     return jsonResponse({ conversations: results });
   } catch (error) {
@@ -1555,9 +1682,7 @@ async function handleGetConversation(request, env) {
       'SELECT * FROM conversations WHERE id = ?'
     ).bind(id).first();
 
-    if (!conv) {
-      return errorResponse('Not found', 404);
-    }
+    assertConversationAccess(request._auth, conv);
 
     const messages = await env.DB.prepare(
       'SELECT * FROM messages WHERE conversation_id = ? ORDER BY created_at ASC'
@@ -1565,6 +1690,7 @@ async function handleGetConversation(request, env) {
 
     return jsonResponse({ ...conv, messages: messages.results });
   } catch (error) {
+    if (error instanceof GuardError) return errorResponse(error.message, error.status);
     return errorResponse(error.message, 500);
   }
 }
@@ -1574,11 +1700,54 @@ async function handleDeleteConversation(request, env) {
   const id = new URL(request.url).pathname.split('/').pop();
 
   try {
+    const conv = await env.DB.prepare(
+      'SELECT customer_id FROM conversations WHERE id = ?'
+    ).bind(id).first();
+
+    assertConversationAccess(request._auth, conv);
+
     await env.DB.prepare('DELETE FROM messages WHERE conversation_id = ?').bind(id).run();
     await env.DB.prepare('DELETE FROM conversations WHERE id = ?').bind(id).run();
 
     return jsonResponse({ success: true });
   } catch (error) {
+    if (error instanceof GuardError) return errorResponse(error.message, error.status);
+    return errorResponse(error.message, 500);
+  }
+}
+
+// 重命名对话
+async function handleRenameConversation(request, env) {
+  const id = new URL(request.url).pathname.split('/')[3]; // /api/conversations/:id
+  try {
+    const { title } = await request.json();
+    if (typeof title !== 'string' || !title.trim()) {
+      return errorResponse('title 不能为空', 400);
+    }
+    // 先上限检查，再 trim+slice。防止客户端先发 MB 级文本再靠 slice 兜底
+    // 导致 D1 / JSON parse 已经吃了无意义负载。
+    try {
+      assertMaxLength(title, 'title', LIMITS.title);
+    } catch (e) {
+      const resp = validationErrorToResponse(e, errorResponse);
+      if (resp) return resp;
+      throw e;
+    }
+    const trimmed = title.trim().slice(0, 50); // 最终入库仍限制 50 字（与历史行为一致）
+
+    const conv = await env.DB.prepare(
+      'SELECT customer_id FROM conversations WHERE id = ?'
+    ).bind(id).first();
+    assertConversationAccess(request._auth, conv);
+
+    const result = await env.DB.prepare(
+      'UPDATE conversations SET title = ?, updated_at = datetime("now") WHERE id = ?'
+    ).bind(trimmed, id).run();
+
+    if (!result.success) return errorResponse('重命名失败', 500);
+    return jsonResponse({ success: true, title: trimmed });
+  } catch (error) {
+    if (error instanceof GuardError) return errorResponse(error.message, error.status);
     return errorResponse(error.message, 500);
   }
 }
@@ -1598,6 +1767,16 @@ const WORK_ORDER_TYPE_LABELS = {
 
 // 生成工单 AI 摘要
 async function generateWorkOrderSummary(type, description, urgency, env) {
+  // 后台系统调用，计入全平台日配额（不占用任何用户个人配额）
+  try {
+    await enforceOpenAIBudget(env, { userKey: 'system:summary', tag: 'summary' });
+  } catch (e) {
+    if (e instanceof BudgetError) {
+      console.warn('[generateWorkOrderSummary] skipped by budget:', e.message);
+      return null;
+    }
+    throw e;
+  }
   const typeLabel = WORK_ORDER_TYPE_LABELS[type] || type;
 
   const prompt = `你是工单分析助手。当客户提交一个维修工单时，你需要生成一个简洁的摘要，帮助工程师快速了解工单情况。
@@ -1631,6 +1810,7 @@ async function generateWorkOrderSummary(type, description, urgency, env) {
         ],
         stream: false,
         temperature: 0.3,
+        max_tokens: MAX_TOKENS.summary,
       }),
     });
 
@@ -1668,6 +1848,16 @@ async function handleCreateWorkOrder(request, env) {
       return errorResponse('缺少必填字段');
     }
 
+    // 输入长度上限：防止客户端粘贴巨型文本打爆 D1 / AI 请求
+    try {
+      assertMaxLength(description, 'description', LIMITS.description);
+      assertMaxLength(type, 'type', LIMITS.type);
+    } catch (e) {
+      const resp = validationErrorToResponse(e, errorResponse);
+      if (resp) return resp;
+      throw e;
+    }
+
     const id = generateId();
     const order_no = generateOrderNo();
 
@@ -1676,28 +1866,37 @@ async function handleCreateWorkOrder(request, env) {
       VALUES (?, ?, ?, ?, ?, ?, ?, 'pending')
     `).bind(id, order_no, customer_id, type, description, urgency || 'normal', device_id || null).run();
 
-    // 生成 AI 摘要（异步，不阻塞工单创建）
-    const aiSummary = await generateWorkOrderSummary(type, description, urgency, env);
-    if (aiSummary) {
-      await env.DB.prepare(`
-        UPDATE work_orders SET ai_summary = ? WHERE id = ?
-      `).bind(JSON.stringify(aiSummary), id).run();
-    }
-
     // 记录日志
     await env.DB.prepare(`
       INSERT INTO work_order_logs (id, work_order_id, action, actor_type, actor_id, content)
       VALUES (?, ?, ?, ?, ?, ?)
     `).bind(generateId(), id, 'created', 'customer', customer_id, '创建工单').run();
 
-    // 获取完整工单数据用于匹配
+    // AI 摘要异步生成：不阻塞响应，生成完成后回写 ai_summary
+    // 使用 ctx.waitUntil 保证 Worker 在返回响应后仍会完成该任务
+    const ctx = request._ctx;
+    const aiSummaryPromise = generateWorkOrderSummary(type, description, urgency, env)
+      .then(async (summary) => {
+        if (summary) {
+          await env.DB.prepare('UPDATE work_orders SET ai_summary = ? WHERE id = ?')
+            .bind(JSON.stringify(summary), id)
+            .run();
+        }
+      })
+      .catch((err) => console.error('[handleCreateWorkOrder] AI summary failed:', err));
+    if (ctx?.waitUntil) {
+      ctx.waitUntil(aiSummaryPromise);
+    }
+
+    // 工程师匹配与推送先基于 type/description/urgency 规则侧，不等待 AI 摘要。
+    // （AI 摘要完成后，后续轮派单/工程师自主接单时已能读到。）
     const workOrderData = {
       id,
       order_no,
       type,
       description,
       urgency,
-      ai_summary: aiSummary
+      ai_summary: null,
     };
 
     // 查找匹配的工程师并发送推送通知
@@ -1718,7 +1917,6 @@ async function handleCreateWorkOrder(request, env) {
     const urgencyLabels = { normal: '普通', urgent: '紧急', critical: '非常紧急' };
 
     for (const engineer of matchingEngineers) {
-      console.log('[Push] Engineer loop:', engineer.id, engineer.name, 'playerId:', engineer.onesignal_player_id, 'type:', typeof engineer.onesignal_player_id);
       if (engineer.onesignal_player_id) {
         const pushTitle = '📋 New Work Order!';
         const pushTitleZh = '📋 您有新工单等待接单！';
@@ -1748,7 +1946,7 @@ async function handleCreateWorkOrder(request, env) {
 
     return jsonResponse({
       success: true,
-      work_order: { id, order_no, status: 'pending', ai_summary: aiSummary }
+      work_order: { id, order_no, status: 'pending', ai_summary: null, ai_summary_pending: true }
     });
   } catch (error) {
     return errorResponse(error.message, 500);
@@ -2045,6 +2243,20 @@ async function handleCreateDevice(request, env) {
       return errorResponse('设备类型不能为空', 400);
     }
 
+    try {
+      assertFieldLimits(body, {
+        name: LIMITS.name,
+        type: LIMITS.type,
+        brand: LIMITS.brand,
+        model: LIMITS.model,
+        power: LIMITS.power,
+      });
+    } catch (e) {
+      const resp = validationErrorToResponse(e, errorResponse);
+      if (resp) return resp;
+      throw e;
+    }
+
     const id = generateId();
     await env.DB.prepare(`
       INSERT INTO devices (id, customer_id, name, type, brand, model, power, status, created_at)
@@ -2079,7 +2291,27 @@ async function handleUpdateDevice(request, env) {
     }
 
     const body = await request.json();
-    const { name, type, brand, model, power, status, photo_url, notes } = body;
+    let { name, type, brand, model, power, status, photo_url, notes } = body;
+
+    try {
+      assertFieldLimits(body, {
+        name: LIMITS.name,
+        type: LIMITS.type,
+        brand: LIMITS.brand,
+        model: LIMITS.model,
+        power: LIMITS.power,
+        notes: LIMITS.notes,
+      });
+      // photo_url：未提供时（undefined）保持原值；提供空字符串时清空；
+      // 提供非空字符串时必须过 https + 白名单校验
+      if (photo_url !== undefined) {
+        photo_url = validateImageUrl(photo_url, 'photo_url');
+      }
+    } catch (e) {
+      const resp = validationErrorToResponse(e, errorResponse);
+      if (resp) return resp;
+      throw e;
+    }
 
     await env.DB.prepare(`
       UPDATE devices
@@ -2190,9 +2422,7 @@ async function handleGetWorkOrder(request, env) {
       WHERE w.id = ?
     `).bind(id).first();
 
-    if (!workOrder) {
-      return errorResponse('工单不存在', 404);
-    }
+    assertWorkOrderAccess(request._auth, workOrder);
 
     const logs = await env.DB.prepare(
       'SELECT * FROM work_order_logs WHERE work_order_id = ? ORDER BY created_at ASC'
@@ -2212,18 +2442,112 @@ async function handleGetWorkOrder(request, env) {
 
     return jsonResponse({ ...workOrder, logs: logs.results, rating: rating || null, admin_reply: adminReply || null });
   } catch (error) {
+    if (error instanceof GuardError) return errorResponse(error.message, error.status);
     return errorResponse(error.message, 500);
+  }
+}
+
+// ============ 合伙人钱包结算 ============
+// 工单完成（客户已评价）后触发：按合伙人等级提成，写入 engineer_wallets 流水，更新 engineers.wallet_balance。
+// 幂等：以 (work_order_id, engineer_id, type='order_payment') 为唯一标识，已结算则跳过。
+async function settleEngineerWallet(env, workOrderId, engineerId) {
+  try {
+    // 1. 已结算过则跳过（幂等）
+    const existing = await env.DB.prepare(
+      "SELECT id FROM engineer_wallets WHERE work_order_id = ? AND engineer_id = ? AND type = 'order_payment'"
+    ).bind(workOrderId, engineerId).first();
+    if (existing) return { settled: false, reason: 'already_settled' };
+
+    // 2. 读取已确认的报价
+    const pricing = await env.DB.prepare(
+      'SELECT id, subtotal, status FROM work_order_pricing WHERE work_order_id = ?'
+    ).bind(workOrderId).first();
+    if (!pricing || pricing.status !== 'confirmed' || !pricing.subtotal) {
+      return { settled: false, reason: 'no_confirmed_pricing' };
+    }
+
+    // 3. 读取合伙人提成比例与当前余额
+    const eng = await env.DB.prepare(
+      'SELECT commission_rate, wallet_balance FROM engineers WHERE id = ?'
+    ).bind(engineerId).first();
+    if (!eng) return { settled: false, reason: 'engineer_not_found' };
+
+    const commissionRate = eng.commission_rate || 0.80;
+    const subtotal = pricing.subtotal;
+    const engineerAmount = Math.round(subtotal * commissionRate);
+    const platformFee = subtotal - engineerAmount;
+    const newBalance = (eng.wallet_balance || 0) + engineerAmount;
+
+    // 4. 更新合伙人余额与完成单数
+    await env.DB.prepare(
+      'UPDATE engineers SET wallet_balance = ?, total_orders = COALESCE(total_orders, 0) + 1, success_orders = COALESCE(success_orders, 0) + 1 WHERE id = ?'
+    ).bind(newBalance, engineerId).run();
+
+    // 5. 写入钱包流水
+    await env.DB.prepare(`
+      INSERT INTO engineer_wallets (id, engineer_id, work_order_id, type, amount, balance_after, status, note)
+      VALUES (?, ?, ?, 'order_payment', ?, ?, 'completed', ?)
+    `).bind(
+      generateId(),
+      engineerId,
+      workOrderId,
+      engineerAmount,
+      newBalance,
+      `工单结算 subtotal=${subtotal} 提成率=${commissionRate} 平台服务费=${platformFee}`
+    ).run();
+
+    return {
+      settled: true,
+      subtotal,
+      commission_rate: commissionRate,
+      engineer_amount: engineerAmount,
+      platform_fee: platformFee,
+      wallet_balance: newBalance,
+    };
+  } catch (e) {
+    console.error('settleEngineerWallet error:', e);
+    return { settled: false, reason: 'exception', error: e.message };
   }
 }
 
 // 提交评价
 async function handleSubmitRating(request, env) {
   try {
-    const { work_order_id, engineer_id, customer_id, rating_timeliness, rating_technical, rating_communication, rating_professional, comment } = await request.json();
+    const body = await request.json();
+    const { work_order_id, rating_timeliness, rating_technical, rating_communication, rating_professional, comment } = body;
 
-    if (!work_order_id || !engineer_id || !customer_id) {
+    try {
+      assertMaxLength(comment, 'comment', LIMITS.comment);
+    } catch (e) {
+      const resp = validationErrorToResponse(e, errorResponse);
+      if (resp) return resp;
+      throw e;
+    }
+
+    // 认证：必须由登录客户发起，engineer_id 从工单查而非客户端传
+    const auth = request._auth;
+    if (!auth || auth.userType !== 'customer') {
+      return errorResponse('仅客户可提交评价', 403);
+    }
+    const customer_id = auth.userId;
+
+    if (!work_order_id) {
       return errorResponse('缺少必填字段');
     }
+
+    // 验证工单归属 + 查出真正的 engineer_id
+    const wo = await env.DB.prepare(
+      'SELECT id, engineer_id, customer_id, status FROM work_orders WHERE id = ?'
+    ).bind(work_order_id).first();
+
+    if (!wo) return errorResponse('工单不存在', 404);
+    if (wo.customer_id !== customer_id) {
+      return errorResponse('您无权评价该工单', 403);
+    }
+    if (!wo.engineer_id) {
+      return errorResponse('工单尚未分配工程师', 400);
+    }
+    const engineer_id = wo.engineer_id;
 
     // 检查是否已评价
     const existing = await env.DB.prepare(
@@ -2262,6 +2586,9 @@ async function handleSubmitRating(request, env) {
       'UPDATE work_orders SET status = ?, completed_at = datetime("now") WHERE id = ?'
     ).bind('completed', work_order_id).run();
 
+    // 钱包结算：按合伙人提成率将确认后的报价入账
+    const settlement = await settleEngineerWallet(env, work_order_id, engineer_id);
+
     // 通知合伙人：收到新评价
     const avgAll = ((rating_timeliness + rating_technical + rating_communication + rating_professional) / 4).toFixed(1);
     const woRating = await env.DB.prepare('SELECT order_no FROM work_orders WHERE id = ?').bind(work_order_id).first();
@@ -2274,8 +2601,134 @@ async function handleSubmitRating(request, env) {
       data: { work_order_id },
     });
 
-    return jsonResponse({ success: true });
+    // 结算到账通知（仅在本次真正结算成功时发送）
+    if (settlement?.settled) {
+      await createNotification(env, {
+        user_id: engineer_id,
+        user_type: 'engineer',
+        type: 'wallet_credited',
+        title: '工单收入已入账',
+        body: `工单 ${woRating?.order_no || ''} 已完成结算，入账 ¥${settlement.engineer_amount}，当前钱包余额 ¥${settlement.wallet_balance}。`,
+        data: { work_order_id, amount: settlement.engineer_amount },
+      });
+    }
+
+    return jsonResponse({ success: true, settlement });
   } catch (error) {
+    return errorResponse(error.message, 500);
+  }
+}
+
+// ============ 工程师评价客户 ============
+
+// 提交工程师对客户的评价
+async function handleSubmitEngineerReview(request, env) {
+  try {
+    const workOrderId = new URL(request.url).pathname.split('/')[3];
+    const { rating_cooperation, rating_communication, rating_payment, rating_environment, comment } = await request.json();
+
+    try {
+      assertMaxLength(comment, 'comment', LIMITS.comment);
+    } catch (e) {
+      const resp = validationErrorToResponse(e, errorResponse);
+      if (resp) return resp;
+      throw e;
+    }
+
+    // 认证：必须由登录工程师发起；customer_id 从工单查
+    const auth = request._auth;
+    if (!auth || auth.userType !== 'engineer') {
+      return errorResponse('仅工程师可评价客户', 403);
+    }
+    const engineer_id = auth.userId;
+
+    if (!workOrderId) {
+      return errorResponse('缺少工单 ID');
+    }
+
+    // 验证工单归属该工程师 + 查出 customer_id
+    const wo = await env.DB.prepare(
+      'SELECT id, customer_id, status FROM work_orders WHERE id = ? AND engineer_id = ?'
+    ).bind(workOrderId, engineer_id).first();
+
+    if (!wo) {
+      return errorResponse('工单不存在或非您的工单', 403);
+    }
+    if (!wo.customer_id) {
+      return errorResponse('工单缺少客户信息', 400);
+    }
+    const customer_id = wo.customer_id;
+
+    // 检查是否已评价
+    const existing = await env.DB.prepare(
+      'SELECT id FROM engineer_reviews WHERE work_order_id = ?'
+    ).bind(workOrderId).first();
+
+    if (existing) {
+      return errorResponse('该工单已评价');
+    }
+
+    const id = generateId();
+    await env.DB.prepare(`
+      INSERT INTO engineer_reviews (id, work_order_id, engineer_id, customer_id, rating_cooperation, rating_communication, rating_payment, rating_environment, comment)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).bind(id, workOrderId, engineer_id, customer_id, rating_cooperation, rating_communication, rating_payment, rating_environment, comment || '').run();
+
+    return jsonResponse({ success: true, review_id: id });
+  } catch (error) {
+    return errorResponse(error.message, 500);
+  }
+}
+
+// 获取工单的工程师评价（仅工程师/平台可见，客户不可见）
+async function handleGetEngineerReview(request, env) {
+  try {
+    assertEngineerOrAdmin(request._auth);
+
+    const workOrderId = new URL(request.url).pathname.split('/')[3];
+    const review = await env.DB.prepare(
+      'SELECT * FROM engineer_reviews WHERE work_order_id = ?'
+    ).bind(workOrderId).first();
+
+    return jsonResponse({ review: review || null });
+  } catch (error) {
+    if (error instanceof GuardError) return errorResponse(error.message, error.status);
+    return errorResponse(error.message, 500);
+  }
+}
+
+// 获取某客户的所有工程师评价（仅工程师/平台可见）
+async function handleGetCustomerReviews(request, env) {
+  try {
+    assertEngineerOrAdmin(request._auth);
+
+    const customerId = new URL(request.url).pathname.split('/')[3];
+    const reviews = await env.DB.prepare(`
+      SELECT er.*, e.name as engineer_name, w.order_no
+      FROM engineer_reviews er
+      LEFT JOIN engineers e ON er.engineer_id = e.id
+      LEFT JOIN work_orders w ON er.work_order_id = w.id
+      WHERE er.customer_id = ?
+      ORDER BY er.created_at DESC
+    `).bind(customerId).all();
+
+    // 计算平均分
+    const results = reviews.results || [];
+    const count = results.length;
+    let avgCooperation = 0, avgCommunication = 0, avgPayment = 0, avgEnvironment = 0;
+    if (count > 0) {
+      avgCooperation = results.reduce((s, r) => s + r.rating_cooperation, 0) / count;
+      avgCommunication = results.reduce((s, r) => s + r.rating_communication, 0) / count;
+      avgPayment = results.reduce((s, r) => s + r.rating_payment, 0) / count;
+      avgEnvironment = results.reduce((s, r) => s + r.rating_environment, 0) / count;
+    }
+
+    return jsonResponse({
+      reviews: results,
+      summary: { count, avgCooperation, avgCommunication, avgPayment, avgEnvironment }
+    });
+  } catch (error) {
+    if (error instanceof GuardError) return errorResponse(error.message, error.status);
     return errorResponse(error.message, 500);
   }
 }
@@ -2283,11 +2736,14 @@ async function handleSubmitRating(request, env) {
 // ============ 工程师相关 ============
 
 // 获取待接工单（工程师）
+// 过滤规则：
+//   1. status 为 pending/assigned 的推荐工单，且本工程师尚未拒绝过（work_orders.rejected_engineers 不含 engineerId）
+//   2. 或：engineer_id = 本工程师（即已分配给我的，不限状态）
+// 历史 bug：此处误从 engineers.rejected_engineers 读取过滤名单，已修为 work_orders.rejected_engineers。
 async function handleGetEngineerTickets(request, env) {
   const engineerId = request._auth?.userId || new URL(request.url).searchParams.get('engineer_id');
 
   try {
-    // 返回推荐工单(pending) + 本工程师的所有工单
     let query = `
       SELECT
         w.*,
@@ -2301,17 +2757,11 @@ async function handleGetEngineerTickets(request, env) {
     let params = [];
 
     if (engineerId) {
-      // pending 工单需排除已拒绝的
-      const engineer = await env.DB.prepare('SELECT rejected_engineers FROM engineers WHERE id = ?').bind(engineerId).first();
-      let rejected = [];
-      if (engineer?.rejected_engineers) {
-        try { rejected = JSON.parse(engineer.rejected_engineers); } catch (e) { rejected = []; }
-      }
-
-      if (rejected.length > 0) {
-        query += ` AND w.id NOT IN (${rejected.map(() => '?').join(',')})`;
-        params.push(...rejected);
-      }
+      // SQLite JSON：排除 rejected_engineers 数组中包含本工程师 id 的工单
+      query += ` AND NOT EXISTS (
+        SELECT 1 FROM json_each(COALESCE(w.rejected_engineers, '[]')) WHERE value = ?
+      )`;
+      params.push(engineerId);
 
       // 同时返回分配给该工程师的所有工单（不限状态）
       query += `) OR w.engineer_id = ?`;
@@ -2333,15 +2783,31 @@ async function handleGetEngineerTickets(request, env) {
 // 工程师接单
 async function handleAcceptTicket(request, env) {
   try {
-    const { work_order_id, engineer_id } = await request.json();
+    const { work_order_id } = await request.json();
 
-    if (!work_order_id || !engineer_id) {
-      return errorResponse('缺少必填字段');
+    // 认证：engineer_id 从 token 取
+    const auth = request._auth;
+    if (!auth || auth.userType !== 'engineer') {
+      return errorResponse('仅工程师可接单', 403);
+    }
+    const engineer_id = auth.userId;
+
+    if (!work_order_id) {
+      return errorResponse('缺少工单 ID');
+    }
+
+    // 校验工单处于 pending（防止重复接单 + 防止抢接已分配工单）
+    const wo = await env.DB.prepare(
+      'SELECT status, engineer_id, customer_id, order_no FROM work_orders WHERE id = ?'
+    ).bind(work_order_id).first();
+    if (!wo) return errorResponse('工单不存在', 404);
+    if (wo.status !== 'pending' || wo.engineer_id) {
+      return errorResponse('工单已被接单或状态不允许接单', 409);
     }
 
     await env.DB.prepare(`
       UPDATE work_orders SET status = 'in_progress', engineer_id = ?, assigned_at = datetime("now")
-      WHERE id = ?
+      WHERE id = ? AND status = 'pending' AND engineer_id IS NULL
     `).bind(engineer_id, work_order_id).run();
 
     await env.DB.prepare(`
@@ -2350,7 +2816,6 @@ async function handleAcceptTicket(request, env) {
     `).bind(generateId(), work_order_id, 'accepted', 'engineer', engineer_id, '工程师已接单').run();
 
     // 通知客户：合伙人已接单
-    const wo = await env.DB.prepare('SELECT customer_id, order_no FROM work_orders WHERE id = ?').bind(work_order_id).first();
     const eng = await env.DB.prepare('SELECT name FROM engineers WHERE id = ?').bind(engineer_id).first();
     if (wo?.customer_id) {
       await createNotification(env, {
@@ -2370,25 +2835,39 @@ async function handleAcceptTicket(request, env) {
 }
 
 // 工程师拒单
+// 注意：rejected_engineers 列定义在 work_orders 表上（每个工单记录哪些工程师拒过），
+// 不在 engineers 表上。历史实现写错表，此处修复。
 async function handleRejectTicket(request, env) {
   try {
-    const { work_order_id, engineer_id } = await request.json();
+    const { work_order_id } = await request.json();
 
-    if (!work_order_id || !engineer_id) {
-      return errorResponse('缺少必填字段');
+    // 认证：engineer_id 从 token 取
+    const auth = request._auth;
+    if (!auth || auth.userType !== 'engineer') {
+      return errorResponse('仅工程师可拒单', 403);
+    }
+    const engineer_id = auth.userId;
+
+    if (!work_order_id) {
+      return errorResponse('缺少工单 ID');
     }
 
-    // 获取工程师已拒绝的工单列表
-    const engineer = await env.DB.prepare('SELECT rejected_engineers FROM engineers WHERE id = ?').bind(engineer_id).first();
+    // 读工单当前的 rejected_engineers 列表（JSON 数组），并追加本工程师
+    const wo = await env.DB.prepare(
+      'SELECT rejected_engineers FROM work_orders WHERE id = ?'
+    ).bind(work_order_id).first();
+    if (!wo) return errorResponse('工单不存在', 404);
+
     let rejected = [];
-    if (engineer?.rejected_engineers) {
-      try { rejected = JSON.parse(engineer.rejected_engineers); } catch (e) { rejected = []; }
+    if (wo.rejected_engineers) {
+      try { rejected = JSON.parse(wo.rejected_engineers); } catch { rejected = []; }
     }
-    rejected.push(work_order_id);
+    if (!Array.isArray(rejected)) rejected = [];
+    if (!rejected.includes(engineer_id)) rejected.push(engineer_id);
 
     await env.DB.prepare(
-      'UPDATE engineers SET rejected_engineers = ? WHERE id = ?'
-    ).bind(JSON.stringify(rejected), engineer_id).run();
+      'UPDATE work_orders SET rejected_engineers = ? WHERE id = ?'
+    ).bind(JSON.stringify(rejected), work_order_id).run();
 
     await env.DB.prepare(`
       INSERT INTO work_order_logs (id, work_order_id, action, actor_type, actor_id, content)
@@ -2402,17 +2881,49 @@ async function handleRejectTicket(request, env) {
 }
 
 // 更新工程师接单状态
+// 安全要点：
+//   - engineer_id 只能来自 JWT（request._auth.userId），不接受 body 传入，避免任何客户端把他人切离线
+//   - 仅允许工程师本人或管理员调用
+//   - status 白名单校验（pending_approval 只能由 admin 设置）
+const ENGINEER_STATUS_SELF = new Set(['available', 'paused', 'offline']);
+const ENGINEER_STATUS_ADMIN = new Set(['available', 'paused', 'offline', 'pending_approval']);
+
 async function handleUpdateEngineerStatus(request, env) {
   try {
-    const { engineer_id, status } = await request.json();
+    const auth = request._auth;
+    if (!auth) return errorResponse('请先登录', 401);
 
-    if (!engineer_id || !status) {
-      return errorResponse('缺少必填字段');
+    const body = await request.json().catch(() => ({}));
+    const { status, engineer_id: bodyEngineerId } = body || {};
+    if (!status) return errorResponse('缺少 status');
+
+    // 确定目标工程师 id 和允许的 status 集合
+    let targetEngineerId;
+    let allowedStatuses;
+    if (auth.userType === 'engineer') {
+      // 工程师只能改自己的状态；忽略 body 里的 engineer_id
+      targetEngineerId = auth.userId;
+      allowedStatuses = ENGINEER_STATUS_SELF;
+    } else if (auth.userType === 'admin') {
+      // 管理员可以指定 engineer_id；未指定时返回参数错误
+      targetEngineerId = bodyEngineerId;
+      allowedStatuses = ENGINEER_STATUS_ADMIN;
+      if (!targetEngineerId) return errorResponse('管理员调用需提供 engineer_id');
+    } else {
+      return errorResponse('无权修改工程师状态', 403);
     }
 
-    await env.DB.prepare(
+    if (!allowedStatuses.has(status)) {
+      return errorResponse(`status 非法，允许值：${[...allowedStatuses].join(' / ')}`);
+    }
+
+    const result = await env.DB.prepare(
       'UPDATE engineers SET status = ? WHERE id = ?'
-    ).bind(status, engineer_id).run();
+    ).bind(status, targetEngineerId).run();
+
+    if (result.meta?.changes === 0) {
+      return errorResponse('工程师不存在', 404);
+    }
 
     return jsonResponse({ success: true });
   } catch (error) {
@@ -2459,7 +2970,27 @@ async function handleUpdateCustomerProfile(request, env) {
     if (!customerId) return errorResponse('未登录', 401);
 
     const body = await request.json();
-    const { name, region, company, address, city, phone, company_description, business_scope, logo_url } = body;
+    let { name, region, company, address, city, phone, company_description, business_scope, logo_url } = body;
+
+    try {
+      assertFieldLimits(body, {
+        name: LIMITS.name,
+        region: LIMITS.region,
+        company: LIMITS.company,
+        address: LIMITS.address,
+        city: LIMITS.city,
+        phone: LIMITS.phone,
+        company_description: LIMITS.company_description,
+        business_scope: LIMITS.business_scope,
+      });
+      if (logo_url !== undefined) {
+        logo_url = validateImageUrl(logo_url, 'logo_url');
+      }
+    } catch (e) {
+      const resp = validationErrorToResponse(e, errorResponse);
+      if (resp) return resp;
+      throw e;
+    }
 
     const updates = [];
     const values = [];
@@ -2494,6 +3025,18 @@ async function handleUpdateEngineerProfile(request, env) {
 
     const body = await request.json();
     const { name, bio, service_region } = body;
+
+    try {
+      assertFieldLimits(body, {
+        name: LIMITS.name,
+        bio: LIMITS.bio,
+        service_region: LIMITS.service_region,
+      });
+    } catch (e) {
+      const resp = validationErrorToResponse(e, errorResponse);
+      if (resp) return resp;
+      throw e;
+    }
 
     const updates = [];
     const values = [];
@@ -2622,14 +3165,33 @@ async function handleWithdrawRequest(request, env) {
     if (pending) return errorResponse('您有待处理的提现申请，请等待处理完成后再申请');
 
     const id = generateId();
+    // 事务性：先从钱包余额扣款冻结，再创建提现记录，再写入钱包流水（withdraw_pending）。
+    // 若提现被拒，运营侧需对应回写钱包余额 + 补冲流水。
+    const newBalance = (engineer.wallet_balance || 0) - amount;
+    await env.DB.prepare(
+      'UPDATE engineers SET wallet_balance = ? WHERE id = ?'
+    ).bind(newBalance, engineerId).run();
+
     await env.DB.prepare(`
       INSERT INTO engineer_withdrawals (id, engineer_id, amount, status)
       VALUES (?, ?, ?, 'pending')
     `).bind(id, engineerId, amount).run();
 
+    await env.DB.prepare(`
+      INSERT INTO engineer_wallets (id, engineer_id, work_order_id, type, amount, balance_after, status, note)
+      VALUES (?, ?, NULL, 'withdraw', ?, ?, 'pending', ?)
+    `).bind(
+      generateId(),
+      engineerId,
+      -amount,
+      newBalance,
+      `提现申请 ${id}`
+    ).run();
+
     return jsonResponse({
       success: true,
       withdrawal_id: id,
+      wallet_balance: newBalance,
       message: `提现申请已提交，预计 T+1 工作日到账至 ${engineer.bank_name}（${engineer.bank_account.slice(-4).padStart(engineer.bank_account.length, '*')}）`
     });
   } catch (error) {
@@ -2642,19 +3204,20 @@ async function handleWithdrawRequest(request, env) {
 // 保存推送订阅
 async function handleSavePushSubscription(request, env) {
   try {
-    const engineerId = request._auth?.userId;
-    if (!engineerId) return errorResponse('未登录或登录已过期', 401);
+    const auth = request._auth;
+    if (!auth?.userId) return errorResponse('未登录或登录已过期', 401);
 
     const { onesignal_player_id } = await request.json();
     if (!onesignal_player_id) return errorResponse('缺少 OneSignal Player ID');
 
-    // 更新工程师的推送订阅
-    // 注意：需要确保 engineers 表有 onesignal_player_id 字段
-    // 如果没有，需要先执行迁移：
-    // ALTER TABLE engineers ADD COLUMN onesignal_player_id TEXT;
-    await env.DB.prepare(`
-      UPDATE engineers SET onesignal_player_id = ? WHERE id = ?
-    `).bind(onesignal_player_id, engineerId).run();
+    // 按用户类型更新对应表
+    const table = auth.userType === 'engineer' ? 'engineers'
+                : auth.userType === 'customer' ? 'customers'
+                : null;
+    if (!table) return errorResponse('用户类型不支持推送订阅', 400);
+
+    await env.DB.prepare(`UPDATE ${table} SET onesignal_player_id = ? WHERE id = ?`)
+      .bind(onesignal_player_id, auth.userId).run();
 
     return jsonResponse({ success: true, message: '推送订阅已保存' });
   } catch (error) {
@@ -2662,61 +3225,7 @@ async function handleSavePushSubscription(request, env) {
   }
 }
 
-// 发送推送通知给工程师（供内部调用）
-async function sendPushToEngineer(engineerId, env, { title, titleZh, message, messageZh, data }) {
-  try {
-    const engineer = await env.DB.prepare(
-      'SELECT onesignal_player_id FROM engineers WHERE id = ?'
-    ).bind(engineerId).first();
-
-    if (!engineer?.onesignal_player_id) {
-      console.log(`Engineer ${engineerId} has no push subscription`);
-      return false;
-    }
-
-    // 调用 OneSignal API 发送推送
-    // ONESIGNAL_APP_ID 和 ONESIGNAL_REST_API_KEY 需要通过 wrangler secret 设置
-    const appId = env.ONESIGNAL_APP_ID;
-    const apiKey = env.ONESIGNAL_REST_API_KEY;
-
-    if (!appId || !apiKey) {
-      console.log('OneSignal credentials not configured');
-      return false;
-    }
-
-    const response = await fetch('https://onesignal.com/api/v1/notifications', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Basic ${apiKey}`,
-      },
-      body: JSON.stringify({
-        app_id: appId,
-        include_player_ids: [engineer.onesignal_player_id],
-        headings: {
-          en: title,
-          zh: titleZh || title,
-        },
-        contents: {
-          en: message,
-          zh: messageZh || message,
-        },
-        data: data || {},
-        android_group: 'sagemro',
-      }),
-    });
-
-    if (!response.ok) {
-      console.error('OneSignal API error:', await response.text());
-      return false;
-    }
-
-    return true;
-  } catch (error) {
-    console.error('Send push error:', error);
-    return false;
-  }
-}
+// sendPushToUser / sendPushToEngineer 已提取到 ./lib/push.js
 
 // ============ 管理后台 API ============
 
@@ -2789,6 +3298,10 @@ async function handleAdminCreateUser(request, env) {
 }
 
 // 管理员删除用户
+// Admin 删除用户
+// 原子性要求：所有级联 DELETE 必须打包进 env.DB.batch() 一次执行，
+// 避免 N 条独立 prepared.run() 中途失败导致用户被部分删除（例如工单删了但客户记录没删）。
+// D1.batch 在单个隐式事务内执行所有语句，任一失败整体回滚。
 async function handleAdminDeleteUser(request, env) {
   try {
     const url = new URL(request.url);
@@ -2801,28 +3314,33 @@ async function handleAdminDeleteUser(request, env) {
     }
 
     if (userType === 'customer') {
-      // 检查用户是否存在
       const user = await env.DB.prepare('SELECT id FROM customers WHERE id = ?').bind(userId).first();
       if (!user) {
         return errorResponse('客户不存在', 404);
       }
 
-      // 删除客户的工单相关数据
-      const workOrders = await env.DB.prepare(
-        'SELECT id FROM work_orders WHERE customer_id = ?'
-      ).bind(userId).all();
-      for (const wo of (workOrders.results || [])) {
-        await env.DB.prepare('DELETE FROM ratings WHERE work_order_id = ?').bind(wo.id).run();
-        await env.DB.prepare('DELETE FROM work_order_logs WHERE work_order_id = ?').bind(wo.id).run();
+      // 先把需要按 id 级联的子表 key 收集起来（batch 不支持子查询混合 bind）
+      const [workOrdersRes, conversationsRes] = await Promise.all([
+        env.DB.prepare('SELECT id FROM work_orders WHERE customer_id = ?').bind(userId).all(),
+        env.DB.prepare('SELECT id FROM conversations WHERE customer_id = ?').bind(userId).all(),
+      ]);
+      const woIds = (workOrdersRes.results || []).map(r => r.id);
+      const convIds = (conversationsRes.results || []).map(r => r.id);
+
+      const statements = [];
+      for (const woId of woIds) {
+        statements.push(env.DB.prepare('DELETE FROM ratings WHERE work_order_id = ?').bind(woId));
+        statements.push(env.DB.prepare('DELETE FROM work_order_logs WHERE work_order_id = ?').bind(woId));
       }
-      await env.DB.prepare('DELETE FROM work_orders WHERE customer_id = ?').bind(userId).run();
+      for (const cId of convIds) {
+        statements.push(env.DB.prepare('DELETE FROM messages WHERE conversation_id = ?').bind(cId));
+      }
+      statements.push(env.DB.prepare('DELETE FROM work_orders WHERE customer_id = ?').bind(userId));
+      statements.push(env.DB.prepare('DELETE FROM conversations WHERE customer_id = ?').bind(userId));
+      statements.push(env.DB.prepare('DELETE FROM devices WHERE customer_id = ?').bind(userId));
+      statements.push(env.DB.prepare('DELETE FROM customers WHERE id = ?').bind(userId));
 
-      // 删除设备
-      await env.DB.prepare('DELETE FROM devices WHERE customer_id = ?').bind(userId).run();
-
-      // 删除客户
-      await env.DB.prepare('DELETE FROM customers WHERE id = ?').bind(userId).run();
-
+      await env.DB.batch(statements);
       return jsonResponse({ success: true });
     } else if (userType === 'engineer') {
       const user = await env.DB.prepare('SELECT id FROM engineers WHERE id = ?').bind(userId).first();
@@ -2830,22 +3348,27 @@ async function handleAdminDeleteUser(request, env) {
         return errorResponse('工程师不存在', 404);
       }
 
-      // 删除工程师的工单相关数据
-      const workOrders = await env.DB.prepare(
-        'SELECT id FROM work_orders WHERE engineer_id = ?'
-      ).bind(userId).all();
-      for (const wo of (workOrders.results || [])) {
-        await env.DB.prepare('DELETE FROM ratings WHERE work_order_id = ?').bind(wo.id).run();
-        await env.DB.prepare('DELETE FROM work_order_logs WHERE work_order_id = ?').bind(wo.id).run();
+      const [workOrdersRes, conversationsRes] = await Promise.all([
+        env.DB.prepare('SELECT id FROM work_orders WHERE engineer_id = ?').bind(userId).all(),
+        env.DB.prepare('SELECT id FROM conversations WHERE engineer_id = ?').bind(userId).all(),
+      ]);
+      const woIds = (workOrdersRes.results || []).map(r => r.id);
+      const convIds = (conversationsRes.results || []).map(r => r.id);
+
+      const statements = [];
+      for (const woId of woIds) {
+        statements.push(env.DB.prepare('DELETE FROM ratings WHERE work_order_id = ?').bind(woId));
+        statements.push(env.DB.prepare('DELETE FROM work_order_logs WHERE work_order_id = ?').bind(woId));
       }
-      await env.DB.prepare('DELETE FROM work_orders WHERE engineer_id = ?').bind(userId).run();
+      for (const cId of convIds) {
+        statements.push(env.DB.prepare('DELETE FROM messages WHERE conversation_id = ?').bind(cId));
+      }
+      statements.push(env.DB.prepare('DELETE FROM work_orders WHERE engineer_id = ?').bind(userId));
+      statements.push(env.DB.prepare('DELETE FROM conversations WHERE engineer_id = ?').bind(userId));
+      statements.push(env.DB.prepare('DELETE FROM ratings WHERE engineer_id = ?').bind(userId));
+      statements.push(env.DB.prepare('DELETE FROM engineers WHERE id = ?').bind(userId));
 
-      // 删除评价
-      await env.DB.prepare('DELETE FROM ratings WHERE engineer_id = ?').bind(userId).run();
-
-      // 删除工程师
-      await env.DB.prepare('DELETE FROM engineers WHERE id = ?').bind(userId).run();
-
+      await env.DB.batch(statements);
       return jsonResponse({ success: true });
     } else {
       return errorResponse('不支持的用户类型');
@@ -2858,31 +3381,70 @@ async function handleAdminDeleteUser(request, env) {
 // 统计概览
 
 // 管理员登录
+// 安全要点：
+//   - ADMIN_PHONE / ADMIN_PASSWORD 必须来自 env（Cloudflare secret），缺失则直接 500，不降级到默认值
+//   - 失败计数：对 phone 和 client IP 分别限速，15 分钟内 5 次即锁定
+//     · phone counter 防爆破单账号
+//     · ip counter 防同一 IP 对多账号撒网 / DoS 管理员锁定
 async function handleAdminLogin(request, env) {
   try {
-    const body = await request.json();
-    const { phone, password } = body;
+    const body = await request.json().catch(() => ({}));
+    const { phone, password } = body || {};
 
+    const adminPhone = env.ADMIN_PHONE;
     const adminPassword = env.ADMIN_PASSWORD;
-    if (!adminPassword) {
-      return errorResponse('管理员密码未配置，请联系管理员', 500);
+    if (!adminPhone || !adminPassword) {
+      return errorResponse('管理员账号未配置，请联系系统管理员', 500);
     }
-    if (phone !== ADMIN_PHONE || password !== adminPassword) {
+    if (!phone || !password) {
+      return errorResponse('手机号、密码不能为空');
+    }
+
+    const ip = request.headers.get('cf-connecting-ip')
+      || request.headers.get('x-forwarded-for')
+      || 'unknown';
+
+    const phoneKey = `admin_login_fail_phone_${phone}`;
+    const ipKey = `admin_login_fail_ip_${ip}`;
+    const FAIL_LIMIT = 5;
+    const FAIL_TTL = 900; // 15 分钟
+
+    const [phoneFailStr, ipFailStr] = await Promise.all([
+      env.KV.get(phoneKey),
+      env.KV.get(ipKey),
+    ]);
+    const phoneFail = phoneFailStr ? parseInt(phoneFailStr, 10) : 0;
+    const ipFail = ipFailStr ? parseInt(ipFailStr, 10) : 0;
+    if (phoneFail >= FAIL_LIMIT || ipFail >= FAIL_LIMIT) {
+      return errorResponse('登录失败次数过多，请 15 分钟后再试', 429);
+    }
+
+    if (phone !== adminPhone || password !== adminPassword) {
+      await Promise.all([
+        env.KV.put(phoneKey, String(phoneFail + 1), { expirationTtl: FAIL_TTL }),
+        env.KV.put(ipKey, String(ipFail + 1), { expirationTtl: FAIL_TTL }),
+      ]);
       return errorResponse('手机号或密码错误', 401);
     }
+
+    // 登录成功：清零计数
+    await Promise.all([
+      env.KV.delete(phoneKey),
+      env.KV.delete(ipKey),
+    ]);
 
     const now = Math.floor(Date.now() / 1000);
     const token = await signJwt({
       userId: 'admin',
       userType: 'admin',
-      phone: ADMIN_PHONE,
+      phone: adminPhone,
       iat: now,
       exp: now + 86400 * 7,
     }, env.JWT_SECRET);
 
     return jsonResponse({
       token,
-      user: { id: 'admin', name: '超级管理员', phone: ADMIN_PHONE, type: 'admin' },
+      user: { id: 'admin', name: '超级管理员', phone: adminPhone, type: 'admin' },
     });
   } catch (error) {
     return errorResponse(error.message, 500);
@@ -3113,6 +3675,14 @@ async function handleAdminReplyRating(request, env) {
 
     if (!content) {
       return errorResponse('回复内容不能为空');
+    }
+
+    try {
+      assertMaxLength(content, 'content', LIMITS.admin_reply);
+    } catch (e) {
+      const resp = validationErrorToResponse(e, errorResponse);
+      if (resp) return resp;
+      throw e;
     }
 
     // 检查评价是否存在
@@ -3703,10 +4273,21 @@ async function handleTestFullPricingFlow(env) {
 // 工程师标记服务完成
 async function handleResolveWorkOrder(request, env) {
   try {
-    const { engineer_id } = await request.json();
+    // 认证：engineer_id 从 token 取
+    const auth = request._auth;
+    if (!auth || auth.userType !== 'engineer') {
+      return errorResponse('仅工程师可标记完成', 403);
+    }
+    const engineer_id = auth.userId;
+
     const workOrderId = new URL(request.url).pathname.split('/')[3];
-    const wo = await env.DB.prepare('SELECT status FROM work_orders WHERE id = ?').bind(workOrderId).first();
+    const wo = await env.DB.prepare(
+      'SELECT status, engineer_id FROM work_orders WHERE id = ?'
+    ).bind(workOrderId).first();
     if (!wo) return errorResponse('工单不存在', 404);
+    if (wo.engineer_id !== engineer_id) {
+      return errorResponse('您无权操作该工单', 403);
+    }
 
     // 仅允许 in_service 或 pricing 状态时标记完成
     if (['in_service', 'pricing'].includes(wo.status)) {
@@ -3749,9 +4330,25 @@ async function handleResolveWorkOrder(request, env) {
 // 客户提交平台评价
 async function handleSubmitPlatformRating(request, env) {
   try {
-    const { customer_id, rating, comment } = await request.json();
-    if (!customer_id || !rating) {
-      return errorResponse('缺少必填字段');
+    const { rating, comment } = await request.json();
+
+    try {
+      assertMaxLength(comment, 'comment', LIMITS.comment);
+    } catch (e) {
+      const resp = validationErrorToResponse(e, errorResponse);
+      if (resp) return resp;
+      throw e;
+    }
+
+    // 认证：customer_id 从 token 取
+    const auth = request._auth;
+    if (!auth || auth.userType !== 'customer') {
+      return errorResponse('仅客户可评价平台', 403);
+    }
+    const customer_id = auth.userId;
+
+    if (!rating) {
+      return errorResponse('请填写评分');
     }
     const id = generateId();
     await env.DB.prepare(
@@ -3766,10 +4363,34 @@ async function handleSubmitPlatformRating(request, env) {
 // 工程师评价客户
 async function handleSubmitCustomerRating(request, env) {
   try {
-    const { work_order_id, engineer_id, customer_id, rating, comment } = await request.json();
-    if (!work_order_id || !engineer_id || !customer_id || !rating) {
+    const { work_order_id, rating, comment } = await request.json();
+
+    try {
+      assertMaxLength(comment, 'comment', LIMITS.comment);
+    } catch (e) {
+      const resp = validationErrorToResponse(e, errorResponse);
+      if (resp) return resp;
+      throw e;
+    }
+
+    // 认证：仅工程师可评价客户，engineer_id 从 token 取
+    const auth = request._auth;
+    if (!auth || auth.userType !== 'engineer') {
+      return errorResponse('仅工程师可评价客户', 403);
+    }
+    const engineer_id = auth.userId;
+
+    if (!work_order_id || !rating) {
       return errorResponse('缺少必填字段');
     }
+
+    // 校验工单归属 + 拿 customer_id
+    const wo = await env.DB.prepare(
+      'SELECT customer_id FROM work_orders WHERE id = ? AND engineer_id = ?'
+    ).bind(work_order_id, engineer_id).first();
+    if (!wo) return errorResponse('工单不存在或非您的工单', 403);
+    const customer_id = wo.customer_id;
+
     // 检查是否已评价
     const existing = await env.DB.prepare(
       'SELECT id FROM customer_ratings WHERE work_order_id = ? AND engineer_id = ?'
@@ -3793,11 +4414,17 @@ async function handleSubmitCustomerRating(request, env) {
 async function handleGetWorkOrderMessages(request, env) {
   try {
     const workOrderId = new URL(request.url).pathname.split('/')[3];
+    const wo = await env.DB.prepare(
+      'SELECT id, customer_id, engineer_id FROM work_orders WHERE id = ?'
+    ).bind(workOrderId).first();
+    assertWorkOrderAccess(request._auth, wo);
+
     const messages = await env.DB.prepare(
       'SELECT * FROM work_order_messages WHERE work_order_id = ? ORDER BY created_at ASC'
     ).bind(workOrderId).all();
     return jsonResponse({ list: messages.results || [] });
   } catch (error) {
+    if (error instanceof GuardError) return errorResponse(error.message, error.status);
     return errorResponse(error.message, 500);
   }
 }
@@ -3806,20 +4433,52 @@ async function handleGetWorkOrderMessages(request, env) {
 async function handlePostWorkOrderMessage(request, env) {
   try {
     const workOrderId = new URL(request.url).pathname.split('/')[3];
-    const { sender_type, sender_id, sender_name, content, message_type } = await request.json();
+    const { content, message_type } = await request.json();
 
-    if (!sender_type || !sender_id || !content) {
-      return errorResponse('缺少必填字段');
+    // 认证：sender_type / sender_id / sender_name 从 token 和数据库查，不接受客户端传入
+    const auth = request._auth;
+    if (!auth) return errorResponse('请先登录', 401);
+    if (!content) return errorResponse('消息内容不能为空');
+
+    try {
+      assertMaxLength(content, 'content', LIMITS.content);
+    } catch (e) {
+      const resp = validationErrorToResponse(e, errorResponse);
+      if (resp) return resp;
+      throw e;
     }
 
-    // 验证工单存在
-    const wo = await env.DB.prepare('SELECT id FROM work_orders WHERE id = ?').bind(workOrderId).first();
+    // 验证工单存在 + 校验发送人确实参与了该工单
+    const wo = await env.DB.prepare(
+      'SELECT id, customer_id, engineer_id FROM work_orders WHERE id = ?'
+    ).bind(workOrderId).first();
     if (!wo) return errorResponse('工单不存在', 404);
+
+    let sender_type, sender_id, sender_name;
+    if (auth.userType === 'customer') {
+      if (wo.customer_id !== auth.userId) return errorResponse('您无权在该工单留言', 403);
+      sender_type = 'customer';
+      sender_id = auth.userId;
+      const row = await env.DB.prepare('SELECT name FROM customers WHERE id = ?').bind(sender_id).first();
+      sender_name = row?.name || '客户';
+    } else if (auth.userType === 'engineer') {
+      if (wo.engineer_id !== auth.userId) return errorResponse('您无权在该工单留言', 403);
+      sender_type = 'engineer';
+      sender_id = auth.userId;
+      const row = await env.DB.prepare('SELECT name FROM engineers WHERE id = ?').bind(sender_id).first();
+      sender_name = row?.name || '工程师';
+    } else if (auth.userType === 'admin') {
+      sender_type = 'admin';
+      sender_id = auth.userId;
+      sender_name = '管理员';
+    } else {
+      return errorResponse('不支持的发送人类型', 403);
+    }
 
     const id = generateId();
     await env.DB.prepare(
       'INSERT INTO work_order_messages (id, work_order_id, sender_type, sender_id, sender_name, content, message_type) VALUES (?, ?, ?, ?, ?, ?, ?)'
-    ).bind(id, workOrderId, sender_type, sender_id, sender_name || '', content, message_type || 'text').run();
+    ).bind(id, workOrderId, sender_type, sender_id, sender_name, content, message_type || 'text').run();
 
     return jsonResponse({ success: true, id });
   } catch (error) {
@@ -3831,30 +4490,44 @@ async function handlePostWorkOrderMessage(request, env) {
 async function handleGetWorkOrderPricing(request, env) {
   try {
     const workOrderId = new URL(request.url).pathname.split('/')[3];
+    const wo = await env.DB.prepare(
+      'SELECT id, customer_id, engineer_id FROM work_orders WHERE id = ?'
+    ).bind(workOrderId).first();
+    assertWorkOrderAccess(request._auth, wo);
+
     const pricing = await env.DB.prepare(
       'SELECT * FROM work_order_pricing WHERE work_order_id = ?'
     ).bind(workOrderId).first();
     return jsonResponse({ pricing: pricing || null });
   } catch (error) {
+    if (error instanceof GuardError) return errorResponse(error.message, error.status);
     return errorResponse(error.message, 500);
   }
 }
 
-// AI 报价审核
-async function checkPricing合理性(pricing, workOrderId, env) {
+// AI 报价审核：规则判断 + LLM 文字解读
+// 规则层保证确定性结果（high / reasonable / low），AI 层补充人类可读的解释与建议。
+async function checkPricingReasonableness(pricing, workOrderId, env) {
   try {
-    // 获取工单信息
+    // 获取工单 + 客户地区
     const wo = await env.DB.prepare(
       'SELECT w.*, c.region as customer_region FROM work_orders w LEFT JOIN customers c ON w.customer_id = c.id WHERE w.id = ?'
     ).bind(workOrderId).first();
 
-    // 获取该工程师的历史报价记录
-    const history = await env.DB.prepare(
-      `SELECT * FROM work_order_pricing WHERE engineer_id = ? AND status = 'confirmed' ORDER BY created_at DESC LIMIT 10`
-    ).bind(wo?.engineer_id).all();
+    // 获取该工程师的历史报价记录（最多 10 条已确认报价）
+    let history = { results: [] };
+    if (wo?.engineer_id) {
+      history = await env.DB.prepare(
+        `SELECT total_amount, labor_fee, parts_fee, travel_fee, other_fee
+           FROM work_order_pricing
+          WHERE engineer_id = ? AND status = 'confirmed'
+          ORDER BY created_at DESC LIMIT 10`
+      ).bind(wo.engineer_id).all();
+    }
 
     // 获取该地区同类工单的平均报价
     let regionalAvg = null;
+    let regionalCount = 0;
     if (wo?.customer_region && wo?.type) {
       const regional = await env.DB.prepare(`
         SELECT AVG(p.total_amount) as avg_amount, COUNT(*) as cnt
@@ -3864,25 +4537,148 @@ async function checkPricing合理性(pricing, workOrderId, env) {
         WHERE p.status = 'confirmed' AND c.region = ? AND w.type = ?
       `).bind(wo.customer_region, wo.type).first();
       regionalAvg = regional?.avg_amount || null;
+      regionalCount = regional?.cnt || 0;
     }
 
-    const subtotal = (pricing.labor_fee || 0) + (pricing.parts_fee || 0) + (pricing.travel_fee || 0) + (pricing.other_fee || 0);
-    const total = pricing.total_amount || 0;
+    // 工程师个人历史均价
+    const engineerAvg = history.results?.length
+      ? history.results.reduce((s, r) => s + (r.total_amount || 0), 0) / history.results.length
+      : null;
 
+    const subtotal = (pricing.labor_fee || 0) + (pricing.parts_fee || 0) + (pricing.travel_fee || 0) + (pricing.other_fee || 0);
+    const total = pricing.total_amount || subtotal;
+
+    // 规则层判断（确定性）
     let status = 'reasonable';
     let reason = '报价在合理区间内';
 
-    if (regionalAvg && total > regionalAvg * 1.3) {
-      status = 'high';
-      reason = `该报价高于同地区同类工单平均价约${Math.round((total / regionalAvg - 1) * 100)}%，请确认配件费用是否偏高`;
-    } else if (regionalAvg && total < regionalAvg * 0.7) {
-      status = 'low';
-      reason = `该报价低于同地区同类工单平均价约${Math.round((1 - total / regionalAvg) * 100)}%，请确认是否遗漏费用`;
+    if (regionalAvg && regionalCount >= 3) {
+      if (total > regionalAvg * 1.3) {
+        status = 'high';
+        reason = `报价高于同地区同类工单平均价约 ${Math.round((total / regionalAvg - 1) * 100)}%，请确认配件和人工费用是否偏高`;
+      } else if (total < regionalAvg * 0.7) {
+        status = 'low';
+        reason = `报价低于同地区同类工单平均价约 ${Math.round((1 - total / regionalAvg) * 100)}%，请确认是否遗漏费用`;
+      }
     }
 
-    return { status, reason, regional_avg: regionalAvg, engineer_avg: null, history_count: history.results?.length || 0 };
+    // AI 文字解读（附加信息，不改变 status）
+    let aiNote = null;
+    if (env.OPENAI_API_KEY && env.OPENAI_API_ENDPOINT) {
+      aiNote = await generatePricingAINote({
+        pricing,
+        subtotal,
+        total,
+        workOrder: wo,
+        regionalAvg,
+        regionalCount,
+        engineerAvg,
+        ruleStatus: status,
+      }, env);
+    }
+
+    return {
+      status,
+      reason,
+      regional_avg: regionalAvg,
+      regional_count: regionalCount,
+      engineer_avg: engineerAvg,
+      history_count: history.results?.length || 0,
+      ai_note: aiNote,
+    };
   } catch (error) {
-    return { status: 'reasonable', reason: '无法进行AI审核（数据不足）', regional_avg: null, engineer_avg: null, history_count: 0 };
+    console.error('[checkPricingReasonableness]', error);
+    return {
+      status: 'reasonable',
+      reason: '无法完成 AI 审核（数据不足或服务异常）',
+      regional_avg: null,
+      engineer_avg: null,
+      history_count: 0,
+      ai_note: null,
+    };
+  }
+}
+
+// 旧名兼容（其他调用处仍在用中文函数名，等 Task #12 统一重命名再去掉）
+const checkPricing合理性 = checkPricingReasonableness;
+
+// 调用 LLM 生成报价解读。失败返回 null，不影响主流程。
+async function generatePricingAINote(ctx, env) {
+  // 后台系统调用，计入全平台日配额
+  try {
+    await enforceOpenAIBudget(env, { userKey: 'system:pricing_note', tag: 'note' });
+  } catch (e) {
+    if (e instanceof BudgetError) {
+      console.warn('[generatePricingAINote] skipped by budget:', e.message);
+      return null;
+    }
+    throw e;
+  }
+  const { pricing, subtotal, total, workOrder, regionalAvg, regionalCount, engineerAvg, ruleStatus } = ctx;
+
+  const prompt = `你是钣金加工行业的维修报价审核顾问。下面是一张待审核的维修报价单，请你用一到两句中文点评它是否合理、有无遗漏，并给出具体改进建议。只返回 JSON，不要 markdown，不要额外说明。
+
+工单信息：
+- 类型：${workOrder?.type || '未知'}
+- 紧急程度：${workOrder?.urgency || '未知'}
+- 故障描述：${(workOrder?.description || '').slice(0, 200)}
+- 地区：${workOrder?.customer_region || '未知'}
+
+报价明细（单位：元）：
+- 人工费：${pricing.labor_fee || 0}
+- 配件费：${pricing.parts_fee || 0}
+- 差旅费：${pricing.travel_fee || 0}
+- 其他费用：${pricing.other_fee || 0}
+- 小计：${subtotal}
+- 客户应付：${total}
+
+参考数据：
+- 本地区同类工单平均价：${regionalAvg ? Math.round(regionalAvg) + ' 元（样本 ' + regionalCount + ' 单）' : '暂无足够样本'}
+- 该工程师历史均价：${engineerAvg ? Math.round(engineerAvg) + ' 元' : '暂无'}
+- 规则引擎判断：${ruleStatus === 'high' ? '偏高' : ruleStatus === 'low' ? '偏低' : '合理'}
+
+输出 JSON：
+{
+  "summary": "一句话整体点评（不超过 40 字）",
+  "suggestions": ["具体建议 1", "具体建议 2"]
+}`;
+
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 8000);
+    const resp = await fetch(env.OPENAI_API_ENDPOINT, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${env.OPENAI_API_KEY}`,
+      },
+      body: JSON.stringify({
+        model: 'gpt-4o-mini',
+        messages: [{ role: 'user', content: prompt }],
+        stream: false,
+        temperature: 0.2,
+        max_tokens: MAX_TOKENS.note,
+      }),
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+
+    if (!resp.ok) {
+      console.error('[generatePricingAINote] API error:', resp.status);
+      return null;
+    }
+    const data = await resp.json();
+    const content = data.choices?.[0]?.message?.content?.trim();
+    if (!content) return null;
+    const jsonStr = content.replace(/^```json\n?/i, '').replace(/\n?```$/, '').trim();
+    const parsed = JSON.parse(jsonStr);
+    return {
+      summary: parsed.summary || '',
+      suggestions: Array.isArray(parsed.suggestions) ? parsed.suggestions.slice(0, 3) : [],
+    };
+  } catch (error) {
+    console.error('[generatePricingAINote]', error?.message || error);
+    return null;
   }
 }
 
@@ -3890,13 +4686,29 @@ async function checkPricing合理性(pricing, workOrderId, env) {
 async function handleSubmitWorkOrderPricing(request, env) {
   try {
     const workOrderId = new URL(request.url).pathname.split('/')[3];
-    const { labor_fee, parts_fee, travel_fee, other_fee, parts_detail, engineer_id } = await request.json();
+    const { labor_fee, parts_fee, travel_fee, other_fee, parts_detail } = await request.json();
 
-    // 验证工单
+    try {
+      assertMaxLength(parts_detail, 'parts_detail', LIMITS.parts_detail);
+    } catch (e) {
+      const resp = validationErrorToResponse(e, errorResponse);
+      if (resp) return resp;
+      throw e;
+    }
+
+    // 认证：仅工程师可提交报价；engineer_id 从 token 取
+    const auth = request._auth;
+    if (!auth || auth.userType !== 'engineer') {
+      return errorResponse('仅工程师可提交报价', 403);
+    }
+    const targetEngineerId = auth.userId;
+
+    // 验证工单 + 校验工单归属该工程师
     const wo = await env.DB.prepare('SELECT * FROM work_orders WHERE id = ?').bind(workOrderId).first();
     if (!wo) return errorResponse('工单不存在', 404);
-
-    const targetEngineerId = engineer_id || wo.engineer_id;
+    if (wo.engineer_id !== targetEngineerId) {
+      return errorResponse('您无权对该工单报价', 403);
+    }
 
     // 读取工程师佣金比例（按等级：Junior 80% / Senior 85% / Expert 88%）
     const engineerRow = await env.DB.prepare(
@@ -3990,7 +4802,22 @@ async function handleSubmitWorkOrderPricing(request, env) {
 async function handleConfirmWorkOrderPricing(request, env) {
   try {
     const workOrderId = new URL(request.url).pathname.split('/')[3];
-    const { customer_id } = await request.json();
+
+    // 认证：仅客户可确认报价；customer_id 从 token 取
+    const auth = request._auth;
+    if (!auth || auth.userType !== 'customer') {
+      return errorResponse('仅客户可确认报价', 403);
+    }
+    const customer_id = auth.userId;
+
+    // 校验工单归属
+    const wo = await env.DB.prepare(
+      'SELECT customer_id FROM work_orders WHERE id = ?'
+    ).bind(workOrderId).first();
+    if (!wo) return errorResponse('工单不存在', 404);
+    if (wo.customer_id !== customer_id) {
+      return errorResponse('您无权确认该工单报价', 403);
+    }
 
     const pricing = await env.DB.prepare(
       'SELECT * FROM work_order_pricing WHERE work_order_id = ?'
@@ -4035,7 +4862,23 @@ async function handleConfirmWorkOrderPricing(request, env) {
 async function handleRejectWorkOrderPricing(request, env) {
   try {
     const workOrderId = new URL(request.url).pathname.split('/')[3];
-    const { customer_id, reason } = await request.json();
+    const { reason } = await request.json();
+
+    // 认证：仅客户可拒绝报价；customer_id 从 token 取
+    const auth = request._auth;
+    if (!auth || auth.userType !== 'customer') {
+      return errorResponse('仅客户可拒绝报价', 403);
+    }
+    const customer_id = auth.userId;
+
+    // 校验工单归属
+    const wo = await env.DB.prepare(
+      'SELECT customer_id FROM work_orders WHERE id = ?'
+    ).bind(workOrderId).first();
+    if (!wo) return errorResponse('工单不存在', 404);
+    if (wo.customer_id !== customer_id) {
+      return errorResponse('您无权操作该工单', 403);
+    }
 
     await env.DB.prepare(
       "UPDATE work_order_pricing SET status = 'draft' WHERE work_order_id = ?"
@@ -4049,7 +4892,7 @@ async function handleRejectWorkOrderPricing(request, env) {
     const msgId = generateId();
     await env.DB.prepare(
       "INSERT INTO work_order_messages (id, work_order_id, sender_type, sender_id, sender_name, content, message_type) VALUES (?, ?, 'customer', ?, '客户', ?, 'text')"
-    ).bind(msgId, workOrderId, customer_id || '', reason || '希望重新报价').run();
+    ).bind(msgId, workOrderId, customer_id, reason || '希望重新报价').run();
 
     return jsonResponse({ success: true });
   } catch (error) {
@@ -4119,14 +4962,16 @@ async function handleMarkAllNotificationsRead(request, env) {
 }
 
 // ============ 主处理函数 ============
-export default {
-  async fetch(request, env) {
+// 将路由分发抽成独立函数，由 fetch 包装以统一注入动态 CORS 头
+async function routeRequest(request, env, ctx) {
     const url = new URL(request.url);
     const path = url.pathname;
+    // 暂存 ctx 供需要 waitUntil 的处理函数使用（如 AI 摘要异步生成）
+    request._ctx = ctx;
 
     // 处理 CORS 预检
     if (request.method === 'OPTIONS') {
-      return handleOptions(request);
+      return handleOptions(request, env);
     }
 
     // 认证相关（无需 token）
@@ -4159,15 +5004,29 @@ export default {
       return jsonResponse({ status: 'ok' });
     }
 
-    // 临时测试数据初始化（需要管理员认证）
-    if (path === '/api/init-test-data' && request.method === 'GET') {
+    // ============ 测试/调试接口保护（默认拒绝）============
+    // 任何 /api/test-*, /api/debug-*, /api/init-*, /api/clear-test-data
+    // 只在 ENVIRONMENT === 'development' 且管理员认证通过时才开放，其他情况一律 404。
+    // 默认拒绝策略：env 缺失或值非预期时（例如 staging、空字符串）也视作生产锁定，避免误暴露。
+    const isTestRoute = (
+      path.startsWith('/api/test-') ||
+      path.startsWith('/api/debug-') ||
+      path === '/api/init-test-data' ||
+      path === '/api/init-db' ||
+      path === '/api/clear-test-data'
+    );
+    if (isTestRoute) {
+      if (env.ENVIRONMENT !== 'development') {
+        return errorResponse('Not found', 404);
+      }
       const admin = await authenticateAdmin(request, env);
       if (!admin) return errorResponse('需要管理员权限', 403);
+    }
+
+    if (path === '/api/init-test-data' && request.method === 'GET') {
       return handleInitTestData(env);
     }
     if (path === '/api/test-full-flow' && request.method === 'GET') {
-      const admin = await authenticateAdmin(request, env);
-      if (!admin) return errorResponse('需要管理员权限', 403);
       return handleTestFullPricingFlow(env);
     }
     if (path === '/api/debug-engineers' && request.method === 'GET') {
@@ -4177,7 +5036,6 @@ export default {
       ).bind('available').all();
       return jsonResponse({ count: engineers.results.length, engineers: engineers.results });
     }
-    // 完整的工单创建+推送测试（不需要认证）
     if (path === '/api/test-create-workorder' && request.method === 'POST') {
       const body = await request.json().catch(() => ({}));
       const customerId = body.customer_id || 'mnyj09v0pa0kfz0lenf'; // 张伟
@@ -4209,7 +5067,6 @@ export default {
       const urgencyLabels = { normal: '普通', urgent: '紧急', critical: '非常紧急' };
       let sent = 0;
       for (const engineer of matchingEngineers) {
-        console.log('[TEST] Engineer in loop:', JSON.stringify(engineer));
         if (engineer.onesignal_player_id) {
           await sendPushToEngineer(engineer.id, env, {
             title: '📋 New Work Order!',
@@ -4263,7 +5120,6 @@ export default {
       const urgencyLabels = { normal: '普通', urgent: '紧急', critical: '非常紧急' };
       let sent = 0;
       for (const engineer of matchingEngineers) {
-        console.log('[Push] Checking engineer:', engineer.id, engineer.name, 'playerId:', engineer.onesignal_player_id);
         if (engineer.onesignal_player_id) {
           await sendPushToEngineer(engineer.id, env, {
             title: '📋 New Work Order!',
@@ -4278,8 +5134,6 @@ export default {
       return jsonResponse({ matched: matchingEngineers.length, sent, engineers: matchingEngineers.map(e => ({ id: e.id, name: e.name, playerId: e.onesignal_player_id })) });
     }
     if (path === '/api/test-results' && request.method === 'GET') {
-      const admin = await authenticateAdmin(request, env);
-      if (!admin) return errorResponse('需要管理员权限', 403);
       try {
         const results = await env.DB.prepare('SELECT * FROM test_flow_results ORDER BY id ASC').all();
         return jsonResponse({ results: results.results });
@@ -4292,8 +5146,6 @@ export default {
       return handleResolveWorkOrder(request, env);
     }
     if (path === '/api/clear-test-data' && request.method === 'GET') {
-      const admin = await authenticateAdmin(request, env);
-      if (!admin) return errorResponse('需要管理员权限', 403);
       try {
         await env.DB.prepare('DELETE FROM test_flow_results').run();
         await env.DB.prepare('DELETE FROM work_orders WHERE order_no LIKE ?').bind('WO-TEST-%').run();
@@ -4303,10 +5155,8 @@ export default {
       }
     }
 
-    // 临时建表接口（需要管理员认证）
+    // 临时建表接口（生产 404；非生产需管理员）
     if (path === '/api/init-db' && request.method === 'GET') {
-      const admin = await authenticateAdmin(request, env);
-      if (!admin) return errorResponse('需要管理员权限', 403);
       return handleInitDb(env);
     }
 
@@ -4368,6 +5218,9 @@ export default {
     if (path.startsWith('/api/conversations/') && request.method === 'DELETE') {
       return handleDeleteConversation(request, env);
     }
+    if (path.match(/^\/api\/conversations\/[^/]+$/) && request.method === 'PATCH') {
+      return handleRenameConversation(request, env);
+    }
 
     // 工单相关
     if (path === '/api/workorders' && request.method === 'POST') {
@@ -4376,11 +5229,22 @@ export default {
     if (path === '/api/workorders' && request.method === 'GET') {
       return handleGetWorkOrders(request, env);
     }
-    if (path.startsWith('/api/workorders/') && request.method === 'GET') {
-      return handleGetWorkOrder(request, env);
+    // 工程师评价客户（必须在 catch-all GET 之前）
+    if (path.match(/^\/api\/workorders\/[^/]+\/engineer-review$/) && request.method === 'POST') {
+      return handleSubmitEngineerReview(request, env);
+    }
+    if (path.match(/^\/api\/workorders\/[^/]+\/engineer-review$/) && request.method === 'GET') {
+      return handleGetEngineerReview(request, env);
     }
     if (path === '/api/workorders/rating' && request.method === 'POST') {
       return handleSubmitRating(request, env);
+    }
+    // 工单详情 catch-all（必须在所有子路由之后）
+    if (path.match(/^\/api\/workorders\/[^/]+$/) && request.method === 'GET') {
+      return handleGetWorkOrder(request, env);
+    }
+    if (path.match(/^\/api\/customers\/[^/]+\/reviews$/) && request.method === 'GET') {
+      return handleGetCustomerReviews(request, env);
     }
     // 工单消息
     if (path.match(/^\/api\/workorders\/[^/]+\/messages$/) && request.method === 'GET') {
@@ -4476,12 +5340,49 @@ export default {
     if (path === '/api/engineers/wallet/withdraw' && request.method === 'POST') {
       return handleWithdrawRequest(request, env);
     }
-    // 合伙人推送订阅（OneSignal Player ID）
-    if (path === '/api/engineers/push-subscription' && request.method === 'POST') {
+    // 推送订阅（OneSignal Player ID）- 客户和合伙人共用同一处理器，按 auth.userType 分发
+    if (
+      (path === '/api/engineers/push-subscription' ||
+       path === '/api/customers/push-subscription' ||
+       path === '/api/push-subscription') &&
+      request.method === 'POST'
+    ) {
       return handleSavePushSubscription(request, env);
     }
 
     // 默认返回 404
     return new Response('Not found', { status: 404 });
+}
+
+// 将 routeRequest 的响应与动态 CORS 头合并
+function withCorsHeaders(response, request, env) {
+  const corsH = getCorsHeaders(request, env);
+  const newHeaders = new Headers(response.headers);
+  for (const [k, v] of Object.entries(corsH)) {
+    newHeaders.set(k, v);
+  }
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers: newHeaders,
+  });
+}
+
+export default {
+  async fetch(request, env, ctx) {
+    try {
+      const response = await routeRequest(request, env, ctx);
+      return withCorsHeaders(response, request, env);
+    } catch (error) {
+      console.error('[fetch] unhandled error:', error);
+      const corsH = getCorsHeaders(request, env);
+      return new Response(
+        JSON.stringify({ error: error?.message || 'Internal Server Error' }),
+        {
+          status: 500,
+          headers: { 'Content-Type': 'application/json', ...corsH },
+        }
+      );
+    }
   },
 };

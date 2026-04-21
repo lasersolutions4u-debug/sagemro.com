@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Modal } from '../common/Modal';
 import { TagInput } from '../common/TagInput';
 import { RegionInput } from '../common/RegionInput';
+import { toastError, toastWarning } from '../../utils/feedback';
 import { WorkOrderType, UrgencyLevel } from '../../types';
 
 // 设备类型选项
@@ -53,7 +54,7 @@ export function WorkOrderModal({ isOpen, onClose, onSubmit }) {
 
   const handleSubmit = async () => {
     if (!form.type || !form.description || !form.contact) {
-      alert('请填写必填项');
+      toastWarning('请填写必填项');
       return;
     }
 
@@ -63,7 +64,7 @@ export function WorkOrderModal({ isOpen, onClose, onSubmit }) {
       // 显示成功提示
       setSubmitted(result);
     } catch (e) {
-      alert('提交失败：' + e.message);
+      toastError('提交失败：' + e.message);
     } finally {
       setSubmitting(false);
     }

@@ -61,11 +61,11 @@ export function RatingModal({ isOpen, onClose, workOrder, onSuccess }) {
           >
             <Star
               size={24}
-              className={star <= value ? 'text-[#f59e0b] fill-[#f59e0b]' : 'text-gray-300'}
+              className={star <= value ? 'text-[var(--color-primary)] fill-[var(--color-primary)]' : 'text-gray-300'}
             />
           </button>
         ))}
-        <span className="ml-2 text-sm text-[#6b6375]">{value}分</span>
+        <span className="ml-2 text-sm text-[var(--color-text-secondary)]">{value}分</span>
       </div>
     );
   };
@@ -74,8 +74,8 @@ export function RatingModal({ isOpen, onClose, workOrder, onSuccess }) {
     <Modal isOpen={isOpen} onClose={onClose} title="服务评价" size="sm">
       <div className="space-y-4">
         {/* 工单信息 */}
-        <div className="p-3 bg-[#f4f3f4] dark:bg-[#2a2a3c] rounded-xl">
-          <div className="text-sm text-[#08060d] dark:text-[#f3f4f6]">
+        <div className="p-3 bg-[var(--color-surface-elevated)] rounded-xl">
+          <div className="text-sm text-[var(--color-text-primary)]">
             工单号：{workOrder?.order_no || workOrder?.id}
           </div>
         </div>
@@ -91,7 +91,7 @@ export function RatingModal({ isOpen, onClose, workOrder, onSuccess }) {
         <div className="space-y-3">
           {ratingDimensions.map((dim) => (
             <div key={dim.key} className="flex items-center justify-between">
-              <span className="text-sm text-[#08060d] dark:text-[#f3f4f6]">{dim.label}</span>
+              <span className="text-sm text-[var(--color-text-primary)]">{dim.label}</span>
               {renderStars(dim.key)}
             </div>
           ))}
@@ -99,7 +99,7 @@ export function RatingModal({ isOpen, onClose, workOrder, onSuccess }) {
 
         {/* 评价备注 */}
         <div>
-          <label className="block text-sm font-medium text-[#08060d] dark:text-[#f3f4f6] mb-1">
+          <label className="block text-sm font-medium text-[var(--color-text-primary)] mb-1">
             评价备注（选填）
           </label>
           <textarea
@@ -107,7 +107,7 @@ export function RatingModal({ isOpen, onClose, workOrder, onSuccess }) {
             onChange={(e) => setComment(e.target.value)}
             placeholder="分享您的服务体验..."
             rows={3}
-            className="w-full px-3 py-2 border border-[#e5e4e7] dark:border-[#3a3a4c] rounded-xl bg-white dark:bg-[#2a2a3c] text-[#08060d] dark:text-[#f3f4f6] focus:outline-none focus:ring-2 focus:ring-[#f59e0b] resize-none"
+            className="w-full px-3 py-2 border border-[var(--color-input-border)] rounded-xl bg-[var(--color-input-bg)] text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)] resize-none"
           />
         </div>
 
@@ -115,7 +115,7 @@ export function RatingModal({ isOpen, onClose, workOrder, onSuccess }) {
         <button
           onClick={handleSubmit}
           disabled={submitting}
-          className="w-full py-3 bg-[#f59e0b] hover:bg-[#fbbf24] disabled:bg-[#6b6375] text-white rounded-xl font-medium transition-colors"
+          className="w-full py-3 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] disabled:bg-[var(--color-text-muted)] text-white rounded-xl font-medium transition-colors"
         >
           {submitting ? '提交中...' : '提交评价'}
         </button>

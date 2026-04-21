@@ -37,7 +37,7 @@ export function ToolBar({
     : customerTools;
 
   return (
-    <div className="border-t border-[#3a3a4c] pt-3 mt-auto">
+    <div className="border-t border-[var(--color-border)] pt-3 mt-auto">
       {/* 会员工具入口（需登录） */}
       {currentUser && visibleTools.map((tool) => (
         <button
@@ -96,7 +96,7 @@ export function ToolBar({
       ))}
 
       {/* 登录/用户区域 */}
-      <div className="border-t border-[#3a3a4c] mt-3 pt-3">
+      <div className="border-t border-[var(--color-border)] mt-3 pt-3">
         {currentUser ? (
           <>
             <button

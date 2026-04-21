@@ -8,6 +8,7 @@ export function Sidebar({
   onNewChat,
   onSelectConversation,
   onDeleteConversation,
+  onRenameConversation,
   onOpenWorkOrder,
   onOpenMyWorkOrders,
   onOpenSettings,
@@ -59,7 +60,7 @@ export function Sidebar({
         </div>
 
         {/* 分隔线1: 新建对话 与 对话历史之间 */}
-        <div className="border-t border-[#3a3a4c] mx-4" />
+        <div className="border-t border-[var(--color-border)] mx-4" />
 
         {/* 聊天历史 */}
         <ChatHistory
@@ -67,6 +68,7 @@ export function Sidebar({
           currentId={currentConversationId}
           onSelect={onSelectConversation}
           onDelete={onDeleteConversation}
+          onRename={onRenameConversation}
         />
 
         {/* 底部工具 */}

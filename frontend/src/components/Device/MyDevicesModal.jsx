@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { X, Package, Plus, ChevronRight, Star, Calendar, Wrench } from 'lucide-react';
 import { getDevices, deleteDevice } from '../../services/api';
+import { toastError, confirmDialog } from '../../utils/feedback';
 import { DeviceCard } from './DeviceCard';
 import { DeviceDetailPanel } from './DeviceDetailPanel';
 import { DeviceForm } from './DeviceForm';
@@ -33,7 +34,7 @@ export function MyDevicesModal({ isOpen, onClose, currentUser }) {
   }
 
   async function handleDelete(deviceId) {
-    if (!confirm('确定删除这个设备吗？')) return;
+    if (!(await confirmDialog('确定删除这个设备吗？', { danger: true, confirmText: '删除' }))) return;
     try {
       await deleteDevice(deviceId);
       setDevices(devices.filter(d => d.id !== deviceId));
@@ -41,7 +42,7 @@ export function MyDevicesModal({ isOpen, onClose, currentUser }) {
         setSelectedDevice(null);
       }
     } catch (err) {
-      alert('删除失败');
+      toastError('删除失败');
     }
   }
 
@@ -58,9 +59,9 @@ export function MyDevicesModal({ isOpen, onClose, currentUser }) {
       <div className="relative bg-[var(--color-sidebar)] rounded-2xl shadow-2xl w-full max-w-2xl max-h-[85vh] overflow-hidden flex flex-col"
            style={{ maxWidth: '600px' }}>
         {/* 头部 */}
-        <div className="flex items-center justify-between p-4 border-b border-[#3a3a4c]">
+        <div className="flex items-center justify-between p-4 border-b border-[var(--color-border)]">
           <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-[#1677ff] flex items-center justify-center">
+            <div className="w-8 h-8 rounded-lg bg-[var(--color-primary)] flex items-center justify-center">
               <Package size={18} className="text-white" />
             </div>
             <h2 className="text-[16px] font-medium text-[var(--color-sidebar-text)]">我的设备</h2>
@@ -69,13 +70,13 @@ export function MyDevicesModal({ isOpen, onClose, currentUser }) {
             {currentUser?.userType === 'customer' && (
               <button
                 onClick={() => setShowForm(true)}
-                className="flex items-center gap-1 px-3 py-1.5 bg-[#1677ff] hover:bg-[#1668cc] text-white rounded-lg text-[13px] transition-colors"
+                className="flex items-center gap-1 px-3 py-1.5 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white rounded-lg text-[13px] transition-colors"
               >
                 <Plus size={14} />
                 添加设备
               </button>
             )}
-            <button onClick={onClose} className="p-1.5 hover:bg-[#3a3a4c] rounded-lg transition-colors">
+            <button onClick={onClose} className="p-1.5 hover:bg-[var(--color-hover)] rounded-lg transition-colors">
               <X size={18} className="text-[var(--color-sidebar-text)]" />
             </button>
           </div>
@@ -85,17 +86,17 @@ export function MyDevicesModal({ isOpen, onClose, currentUser }) {
         <div className="flex-1 overflow-y-auto p-4">
           {loading && (
             <div className="flex items-center justify-center py-12">
-              <div className="animate-spin w-6 h-6 border-2 border-[#1677ff] border-t-transparent rounded-full" />
+              <div className="animate-spin w-6 h-6 border-2 border-[var(--color-primary)] border-t-transparent rounded-full" />
             </div>
           )}
 
           {error && (
-            <div className="text-center py-8 text-[#ff6b6b] text-[14px]">{error}</div>
+            <div className="text-center py-8 text-red-500 text-[14px]">{error}</div>
           )}
 
           {!loading && !error && devices.length === 0 && (
             <div className="text-center py-12">
-              <div className="w-12 h-12 mx-auto mb-3 rounded-full bg-[#3a3a4c] flex items-center justify-center">
+              <div className="w-12 h-12 mx-auto mb-3 rounded-full bg-[var(--color-hover)] flex items-center justify-center">
                 <Package size={24} className="text-[var(--color-sidebar-text)] opacity-50" />
               </div>
               <p className="text-[14px] text-[var(--color-sidebar-text)] opacity-60">暂无设备</p>

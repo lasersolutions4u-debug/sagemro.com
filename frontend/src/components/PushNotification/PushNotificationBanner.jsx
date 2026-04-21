@@ -19,8 +19,8 @@ export function PushNotificationBanner({ notification, onDismiss }) {
 
   return (
     <div
-      className="fixed top-4 right-4 z-[9999] max-w-sm bg-[#2a2a3c] border border-[#3a3a4c] rounded-xl shadow-2xl
-                 flex items-start gap-3 p-4 cursor-pointer hover:bg-[#323248] transition-colors"
+      className="fixed top-4 right-4 z-[9999] max-w-sm bg-[var(--color-surface-elevated)] border border-[var(--color-border)] rounded-xl shadow-2xl
+                 flex items-start gap-3 p-4 cursor-pointer hover:bg-[var(--color-hover)] transition-colors"
       onClick={() => {
         if (notification.data?.work_order_id) {
           onDismiss();
@@ -28,23 +28,23 @@ export function PushNotificationBanner({ notification, onDismiss }) {
         }
       }}
     >
-      <div className="w-10 h-10 rounded-full bg-[#f59e0b]/20 flex items-center justify-center flex-shrink-0">
-        <Bell size={20} className="text-[#f59e0b]" />
+      <div className="w-10 h-10 rounded-full bg-[var(--color-primary)]/20 flex items-center justify-center flex-shrink-0">
+        <Bell size={20} className="text-[var(--color-primary)]" />
       </div>
       <div className="flex-1 min-w-0">
-        <div className="text-sm font-medium text-[#f3f4f6] mb-0.5">
+        <div className="text-sm font-medium text-[var(--color-text-primary)] mb-0.5">
           {notification.title}
         </div>
-        <div className="text-xs text-[#9a9aaf]">
+        <div className="text-xs text-[var(--color-text-secondary)]">
           {notification.body}
         </div>
-        <div className="text-xs text-[#f59e0b] mt-1">
+        <div className="text-xs text-[var(--color-primary)] mt-1">
           点击查看工单 →
         </div>
       </div>
       <button
         onClick={(e) => { e.stopPropagation(); onDismiss(); }}
-        className="text-[#6b6375] hover:text-[#9a9aaf] flex-shrink-0"
+        className="text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] flex-shrink-0"
       >
         <X size={16} />
       </button>

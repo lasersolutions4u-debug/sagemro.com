@@ -45,7 +45,7 @@ export function DeviceForm({ onClose, onSuccess }) {
            style={{ maxWidth: '420px' }}>
         <div className="flex items-center justify-between mb-5">
           <h3 className="text-[15px] font-medium text-[var(--color-sidebar-text)]">添加设备</h3>
-          <button onClick={onClose} className="p-1.5 hover:bg-[#3a3a4c] rounded-lg">
+          <button onClick={onClose} className="p-1.5 hover:bg-[var(--color-hover)] rounded-lg">
             <X size={18} className="text-[var(--color-sidebar-text)]" />
           </button>
         </div>
@@ -61,7 +61,7 @@ export function DeviceForm({ onClose, onSuccess }) {
               value={form.name}
               onChange={e => setForm({ ...form, name: e.target.value })}
               placeholder="例如：车间1号激光机"
-              className="w-full bg-[#2a2a3c] border border-[#3a3a4c] rounded-lg px-3 py-2.5 text-[14px] text-[var(--color-sidebar-text)] placeholder:text-white/20"
+              className="w-full bg-[var(--color-input-bg)] border border-[var(--color-input-border)] rounded-lg px-3 py-2.5 text-[14px] text-[var(--color-text-primary)] placeholder:text-[var(--color-text-muted)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
             />
           </div>
 
@@ -78,8 +78,8 @@ export function DeviceForm({ onClose, onSuccess }) {
                   onClick={() => setForm({ ...form, type: t })}
                   className={`px-3 py-1.5 rounded-lg text-[12px] transition-colors ${
                     form.type === t
-                      ? 'bg-[#1677ff] text-white'
-                      : 'bg-[#2a2a3c] text-[var(--color-sidebar-text)] opacity-70 hover:bg-[#3a3a4c]'
+                      ? 'bg-[var(--color-primary)] text-white'
+                      : 'bg-[var(--color-surface-elevated)] text-[var(--color-text-secondary)] hover:bg-[var(--color-hover)]'
                   }`}
                 >
                   {t}
@@ -91,7 +91,7 @@ export function DeviceForm({ onClose, onSuccess }) {
               value={form.type}
               onChange={e => setForm({ ...form, type: e.target.value })}
               placeholder="或输入其他类型"
-              className="w-full mt-2 bg-[#2a2a3c] border border-[#3a3a4c] rounded-lg px-3 py-2.5 text-[14px] text-[var(--color-sidebar-text)] placeholder:text-white/20"
+              className="w-full mt-2 bg-[var(--color-input-bg)] border border-[var(--color-input-border)] rounded-lg px-3 py-2.5 text-[14px] text-[var(--color-text-primary)] placeholder:text-[var(--color-text-muted)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
             />
           </div>
 
@@ -105,7 +105,7 @@ export function DeviceForm({ onClose, onSuccess }) {
               value={form.brand}
               onChange={e => setForm({ ...form, brand: e.target.value })}
               placeholder="例如：大族、通快、百超"
-              className="w-full bg-[#2a2a3c] border border-[#3a3a4c] rounded-lg px-3 py-2.5 text-[14px] text-[var(--color-sidebar-text)] placeholder:text-white/20"
+              className="w-full bg-[var(--color-input-bg)] border border-[var(--color-input-border)] rounded-lg px-3 py-2.5 text-[14px] text-[var(--color-text-primary)] placeholder:text-[var(--color-text-muted)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
             />
           </div>
 
@@ -119,7 +119,7 @@ export function DeviceForm({ onClose, onSuccess }) {
               value={form.model}
               onChange={e => setForm({ ...form, model: e.target.value })}
               placeholder="例如：G3015H"
-              className="w-full bg-[#2a2a3c] border border-[#3a3a4c] rounded-lg px-3 py-2.5 text-[14px] text-[var(--color-sidebar-text)] placeholder:text-white/20"
+              className="w-full bg-[var(--color-input-bg)] border border-[var(--color-input-border)] rounded-lg px-3 py-2.5 text-[14px] text-[var(--color-text-primary)] placeholder:text-[var(--color-text-muted)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
             />
           </div>
 
@@ -133,7 +133,7 @@ export function DeviceForm({ onClose, onSuccess }) {
               value={form.power}
               onChange={e => setForm({ ...form, power: e.target.value })}
               placeholder="例如：3000W"
-              className="w-full bg-[#2a2a3c] border border-[#3a3a4c] rounded-lg px-3 py-2.5 text-[14px] text-[var(--color-sidebar-text)] placeholder:text-white/20"
+              className="w-full bg-[var(--color-input-bg)] border border-[var(--color-input-border)] rounded-lg px-3 py-2.5 text-[14px] text-[var(--color-text-primary)] placeholder:text-[var(--color-text-muted)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
             />
           </div>
 
@@ -147,14 +147,14 @@ export function DeviceForm({ onClose, onSuccess }) {
             <button
               type="button"
               onClick={onClose}
-              className="flex-1 py-2.5 bg-[#2a2a3c] text-[var(--color-sidebar-text)] rounded-lg text-[14px] font-medium hover:bg-[#3a3a4c] transition-colors"
+              className="flex-1 py-2.5 bg-[var(--color-surface-elevated)] text-[var(--color-text-secondary)] rounded-lg text-[14px] font-medium hover:bg-[var(--color-hover)] transition-colors"
             >
               取消
             </button>
             <button
               type="submit"
               disabled={loading}
-              className="flex-1 py-2.5 bg-[#1677ff] text-white rounded-lg text-[14px] font-medium hover:bg-[#1668cc] transition-colors disabled:opacity-50"
+              className="flex-1 py-2.5 bg-[var(--color-primary)] text-white rounded-lg text-[14px] font-medium hover:bg-[var(--color-primary-hover)] transition-colors disabled:opacity-50"
             >
               {loading ? '添加中...' : '添加'}
             </button>

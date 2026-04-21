@@ -3,46 +3,12 @@ import { Modal } from '../common/Modal';
 import { TagInput } from '../common/TagInput';
 import { RegionInput } from '../common/RegionInput';
 import { login, sendVerifyCode, sendResetCode, resetPassword, registerCustomer, registerEngineer } from '../../services/api';
+import { toastSuccess } from '../../utils/feedback';
+import { deviceTypes, commonBrands, commonServices, generateRandomName } from '../../data/loginPresets.js';
 
-// ============ 预设选项 ============
-const deviceTypes = [
-  '激光切割机', '折弯机', '冲床', '焊接机', '激光焊接',
-  '卷板机', '等离子切割', '水刀切割', '剪板机', '其他'
-];
-
-const commonBrands = {
-  '激光切割机': ['大族', '通快', '百超', '迅镭', '邦德', '宏山', '奔腾', '华工'],
-  '折弯机': ['通快', '百超', 'Amada', '亚威', '普玛宝', '萨瓦尼尼', '爱克'],
-  '冲床': ['Amada', '村田', '金方圆', '扬力', '通快', '爱克'],
-  '焊接机': ['福尼斯', '林肯', '米勒', '松下', '伊萨', '麦格米特', '奥太'],
-  '激光焊接': ['大族', '通快', 'IPG', '创鑫', '锐科', '杰普特'],
-  '卷板机': ['德国通快', '日本AMADA', '扬州锻压', '华东锻压'],
-  '等离子切割': ['飞马特', '林德', '库卡', '小松', '海宝'],
-  '水刀切割': ['福禄', 'OMAX', '大族', '百超', '水刀坊'],
-  '剪板机': ['爱克', '通快', '百超', '金方圆', '扬力', 'AMADA'],
-};
-
-const commonServices = [
-  '激光器维修', '切割头维护', '导轨润滑', '参数调试',
-  '液压维修', '电气排查', '设备保养', '系统升级',
-  '年度维保', '应急抢修', '培训指导', '配件供应'
-];
-
-// ============ 随机用户名生成 ============
-const adjectives = ['热情', '敬业', '金牌', '资深', '靠谱', '专业', '极速', '全能'];
-const nouns = ['钢铁侠', '钣金侠', '机械师', '工匠', '技师', '大师', '精灵', '超人'];
-const suffixes = ['老张', '小李', '王师', '陈工', '刘师傅'];
-
-function generateRandomName() {
-  const adj = adjectives[Math.floor(Math.random() * adjectives.length)];
-  const noun = nouns[Math.floor(Math.random() * nouns.length)];
-  const useSuffix = Math.random() > 0.5;
-  return useSuffix ? adj + noun : adj + suffixes[Math.floor(Math.random() * suffixes.length)];
-}
-
-// ============ 组件 ============
 export function LoginModal({ isOpen, onClose, onLoginSuccess }) {
-  // step flow: login | register-customer | register-engineer-1 | register-engineer-2
+  // step flow:
+  // choice -> register-company -> register-auth -> register-customer-info / register-engineer-2 / login
   const [step, setStep] = useState('login');
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
@@ -53,8 +19,13 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess }) {
   const [codeCooldown, setCodeCooldown] = useState(0);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
-  const [rememberMe, setRememberMe] = useState(false);
-  const [forgotStep, setForgotStep] = useState('phone'); // 'phone' | 'code-sent'
+  const [forgotStep, setForgotStep] = useState('phone');
+
+  // 公司名（必填）
+  const [companyName, setCompanyName] = useState('');
+
+  // 身份选择
+  const [selectedIdentity, setSelectedIdentity] = useState(null); // 'customer' | 'engineer' | 'visitor'
 
   // 合伙人背景调查
   const [specialties, setSpecialties] = useState([]);
@@ -63,11 +34,15 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess }) {
   const [serviceRegion, setServiceRegion] = useState([]);
   const [bio, setBio] = useState('');
 
-  // 客户信息调查
-  const [companyName, setCompanyName] = useState('');
-  const [customerRegion, setCustomerRegion] = useState('');
-  const [customerDevices, setCustomerDevices] = useState([]);
-  const [pendingLoginResult, setPendingLoginResult] = useState(null);
+  const toggleBrand = (deviceType, brand) => {
+    setBrands(prev => {
+      const current = prev[deviceType] || [];
+      const updated = current.includes(brand)
+        ? current.filter(b => b !== brand)
+        : [...current, brand];
+      return { ...prev, [deviceType]: updated };
+    });
+  };
 
   // 发送验证码
   const handleSendCode = async () => {
@@ -78,8 +53,9 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess }) {
     setError('');
     try {
       const data = await sendVerifyCode(phone);
-      if (data.code) {
-        setError('测试模式：验证码为 ' + data.code);
+      // 纵深防御：仅在 Vite 开发构建下显示回传的验证码
+      if (import.meta.env.DEV && data.code) {
+        setError('[DEV] 验证码为 ' + data.code);
       }
       setCodeCooldown(60);
       const timer = setInterval(() => {
@@ -95,51 +71,19 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess }) {
     }
   };
 
-  // 发送重置密码验证码
-  const handleSendResetCode = async () => {
-    if (!phone) { setError('请输入手机号'); return; }
-
-    setSubmitting(true);
-    setError('');
-    try {
-      await sendResetCode(phone);
-      setForgotStep('code-sent');
-      setError('');
-    } catch (e) {
-      setError(e.message);
-    } finally {
-      setSubmitting(false);
+  // 客户注册（含公司名）
+  const handleRegisterCustomer = async () => {
+    if (!name || !password || !confirmPassword || !companyName) {
+      setError('请填写所有必填项'); return;
     }
-  };
-
-  // 重置密码
-  const handleResetPassword = async () => {
-    if (!password || password.length < 6) { setError('密码至少6位'); return; }
-    if (!code) { setError('请输入验证码'); return; }
+    if (password !== confirmPassword) { setError('两次密码输入不一致'); return; }
+    if (password.length < 6) { setError('密码至少6位'); return; }
 
     setSubmitting(true);
     setError('');
     try {
-      await resetPassword({ phone, code, newPassword: password });
-      // 重置成功后跳转登录
-      setForgotStep('phone');
-      setStep('login');
-      setError('');
-      alert('密码重置成功，请使用新密码登录');
-    } catch (e) {
-      setError(e.message);
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  // 登录
-  const handleLogin = async () => {
-    if (!phone || !password) { setError('请输入手机号和密码'); return; }
-
-    setSubmitting(true);
-    setError('');
-    try {
+      // 注册时传递 company 和 identity
+      await registerCustomer({ name, phone, password, code, company: companyName, identity: selectedIdentity });
       const result = await login({ phone, password });
       localStorage.setItem('sagemro_token', result.token);
       localStorage.setItem('sagemro_user', JSON.stringify(result.user));
@@ -158,34 +102,11 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess }) {
     }
   };
 
-  // 客户注册
-  const handleRegisterCustomer = async () => {
-    if (!name || !password || !confirmPassword) { setError('请填写所有必填项'); return; }
-    if (password !== confirmPassword) { setError('两次密码输入不一致'); return; }
-    if (password.length < 6) { setError('密码至少6位'); return; }
-
-    setSubmitting(true);
-    setError('');
-    try {
-      await registerCustomer({ name, phone, password, code });
-      const result = await login({ phone, password });
-      localStorage.setItem('sagemro_token', result.token);
-      localStorage.setItem('sagemro_user', JSON.stringify(result.user));
-      localStorage.setItem('sagemro_user_type', result.userType);
-      localStorage.setItem('sagemro_customer_id', result.user.id);
-      // 进入信息调查页，而不是直接关闭
-      setPendingLoginResult(result);
-      setStep('register-customer-info');
-    } catch (e) {
-      setError(e.message);
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  // 合伙人入驻
+  // 合伙人注册（含公司名+背景调查）
   const handleRegisterEngineer = async () => {
-    if (!name || !password || !confirmPassword) { setError('请填写所有必填项'); return; }
+    if (!name || !password || !confirmPassword || !companyName) {
+      setError('请填写所有必填项'); return;
+    }
     if (password !== confirmPassword) { setError('两次密码输入不一致'); return; }
     if (password.length < 6) { setError('密码至少6位'); return; }
     if (specialties.length === 0) { setError('请选择擅长的设备类型'); return; }
@@ -200,7 +121,8 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess }) {
         brands,
         services,
         service_region: serviceRegion,
-        bio
+        bio,
+        company: companyName,
       });
       const result = await login({ phone, password });
       localStorage.setItem('sagemro_token', result.token);
@@ -210,21 +132,10 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess }) {
       onLoginSuccess?.(result);
       handleClose();
     } catch (e) {
-      console.error('注册合伙人失败:', e);
-      const errorMsg = e.message || String(e) || '注册失败，请重试';
-      setError(errorMsg);
+      setError(e.message || '注册失败，请重试');
+    } finally {
       setSubmitting(false);
     }
-  };
-
-  const toggleBrand = (deviceType, brand) => {
-    setBrands(prev => {
-      const current = prev[deviceType] || [];
-      const updated = current.includes(brand)
-        ? current.filter(b => b !== brand)
-        : [...current, brand];
-      return { ...prev, [deviceType]: updated };
-    });
   };
 
   const handleClose = () => {
@@ -240,9 +151,7 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess }) {
     setServiceRegion([]);
     setBio('');
     setCompanyName('');
-    setCustomerRegion('');
-    setCustomerDevices([]);
-    setPendingLoginResult(null);
+    setSelectedIdentity(null);
     setStep('login');
     onClose();
   };
@@ -251,23 +160,74 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess }) {
     setName(generateRandomName());
   };
 
-  // 打开客户注册页（生成随机用户名）
-  const goToRegisterCustomer = () => {
+  // ===== 步骤导航 =====
+  const goToChoice = () => { setStep('choice'); setError(''); };
+  const goToRegisterCompany = () => {
     setName(generateRandomName());
-    setStep('register-customer');
+    setStep('register-company');
+    setError('');
+  };
+  const goToLogin = () => { setStep('login'); setError(''); };
+  const goToForgotPassword = () => { setStep('forgot-password'); setError(''); };
+
+  // 第1步：公司名 + 基本信息
+  const handleCompanySubmit = () => {
+    if (!companyName.trim()) { setError('请输入公司名称'); return; }
+    if (!phone || phone.length !== 11) { setError('请输入正确的手机号'); return; }
+    if (!password || password.length < 6) { setError('密码至少6位'); return; }
+    if (password !== confirmPassword) { setError('两次密码输入不一致'); return; }
+    setError('');
+    setStep('register-auth');
   };
 
-  // 打开合伙人入驻第1步（生成随机用户名）
-  const goToRegisterEngineer1 = () => {
-    setName(generateRandomName());
-    setStep('register-engineer-1');
+  // 第2步：身份选择
+  const handleIdentitySelect = (identity) => {
+    setSelectedIdentity(identity);
+    if (identity === 'visitor') {
+      // 访客直接完成注册（模拟认证）
+      setStep('register-visitor-complete');
+    } else {
+      // 客户或合伙人进入认证提示
+      setStep('register-auth-prompt');
+    }
   };
 
-  // 根据步骤动态计算 Modal 尺寸
+  // 认证提示后
+  const handleAuthConfirm = () => {
+    if (selectedIdentity === 'engineer') {
+      setStep('register-engineer-2');
+    } else {
+      // 客户 - 完成注册
+      handleRegisterCustomer();
+    }
+  };
+
+  // 访客完成
+  const handleVisitorComplete = async () => {
+    setSubmitting(true);
+    setError('');
+    try {
+      await registerCustomer({ name: name || generateRandomName(), phone, password, code, company: companyName, identity: 'visitor' });
+      const result = await login({ phone, password });
+      localStorage.setItem('sagemro_token', result.token);
+      localStorage.setItem('sagemro_user', JSON.stringify(result.user));
+      localStorage.setItem('sagemro_user_type', result.userType);
+      if (result.userType === 'customer') {
+        localStorage.setItem('sagemro_customer_id', result.user.id);
+      }
+      onLoginSuccess?.(result);
+      handleClose();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   const getModalSize = () => {
     if (step === 'register-engineer-2') return 'xl';
     if (step === 'choice') return 'md';
-    if (step === 'register-customer-info') return 'lg';
+    if (step === 'register-company') return 'lg';
     return 'md';
   };
 
@@ -275,7 +235,7 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess }) {
     <Modal isOpen={isOpen} onClose={handleClose} title="登录/注册" size={getModalSize()}>
       <div className="space-y-4">
 
-        {/* ========== Step 1: 问题分流页 ========== */}
+        {/* ========== Step choice: 身份分流 ========== */}
         {step === 'choice' && (
           <div className="space-y-4">
             <div className="text-center mb-6">
@@ -285,42 +245,42 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess }) {
             <div className="space-y-2.5">
               {/* A. 我需要服务 */}
               <button
-                onClick={goToRegisterCustomer}
-                className="w-full p-4 text-left rounded-xl border-2 border-[#f4f3f4] dark:border-[#3a3a4c] hover:border-[#f59e0b] transition-colors group"
+                onClick={goToRegisterCompany}
+                className="w-full p-4 text-left rounded-xl border-2 border-[var(--color-border)] hover:border-[var(--color-primary)] transition-colors group"
               >
                 <div className="flex items-start gap-3">
-                  <span className="flex-shrink-0 w-7 h-7 rounded-full bg-[#f59e0b] text-white text-sm flex items-center justify-center font-medium">A</span>
+                  <span className="flex-shrink-0 w-7 h-7 rounded-full bg-[var(--color-primary)] text-white text-sm flex items-center justify-center font-medium">A</span>
                   <div>
-                    <p className="font-medium text-sm group-hover:text-[#f59e0b] transition-colors">我需要或将来可能需要设备维修保养服务</p>
-                    <p className="text-xs text-[#6b6375] mt-0.5">有任何问题就跟小智说，小智帮您提交工单，精准获取专业合伙人支持。</p>
+                    <p className="font-medium text-sm group-hover:text-[var(--color-primary)] transition-colors">我需要或将来可能需要设备维修保养服务</p>
+                    <p className="text-xs text-[var(--color-text-secondary)] mt-0.5">有任何问题就跟小智说，小智帮您提交工单，精准获取专业合伙人支持。</p>
                   </div>
                 </div>
               </button>
 
               {/* B. 我提供服务 */}
               <button
-                onClick={goToRegisterEngineer1}
-                className="w-full p-4 text-left rounded-xl border-2 border-[#f4f3f4] dark:border-[#3a3a4c] hover:border-[#f59e0b] transition-colors group"
+                onClick={goToRegisterCompany}
+                className="w-full p-4 text-left rounded-xl border-2 border-[var(--color-border)] hover:border-[var(--color-primary)] transition-colors group"
               >
                 <div className="flex items-start gap-3">
-                  <span className="flex-shrink-0 w-7 h-7 rounded-full bg-[#f59e0b] text-white text-sm flex items-center justify-center font-medium">B</span>
+                  <span className="flex-shrink-0 w-7 h-7 rounded-full bg-[var(--color-primary)] text-white text-sm flex items-center justify-center font-medium">B</span>
                   <div>
-                    <p className="font-medium text-sm group-hover:text-[#f59e0b] transition-colors">我可以提供维修保养服务</p>
-                    <p className="text-xs text-[#6b6375] mt-0.5">有任何问题就跟小智说，并且如果您注册成为平台合伙人，小智会给您分配工单，获取额外收入。</p>
+                    <p className="font-medium text-sm group-hover:text-[var(--color-primary)] transition-colors">我可以提供维修保养服务</p>
+                    <p className="text-xs text-[var(--color-text-secondary)] mt-0.5">有任何问题就跟小智说，并且如果您注册成为平台合伙人，小智会给您分配工单，获取额外收入。</p>
                   </div>
                 </div>
               </button>
 
               {/* C. 只是了解 */}
               <button
-                onClick={handleClose}
-                className="w-full p-4 text-left rounded-xl border-2 border-[#f4f3f4] dark:border-[#3a3a4c] hover:border-[#6b6375] transition-colors group"
+                onClick={goToRegisterCompany}
+                className="w-full p-4 text-left rounded-xl border-2 border-[var(--color-border)] hover:border-[var(--color-text-muted)] transition-colors group"
               >
                 <div className="flex items-start gap-3">
-                  <span className="flex-shrink-0 w-7 h-7 rounded-full bg-[#6b6375] text-white text-sm flex items-center justify-center font-medium">C</span>
+                  <span className="flex-shrink-0 w-7 h-7 rounded-full bg-[var(--color-text-muted)] text-white text-sm flex items-center justify-center font-medium">C</span>
                   <div>
-                    <p className="font-medium text-sm text-[#6b6375] group-hover:text-[#9b92a0] transition-colors">我只是了解一下</p>
-                    <p className="text-xs text-[#6b6375] mt-0.5">有任何问题就跟小智说，先看看，不着急注册。</p>
+                    <p className="font-medium text-sm text-[var(--color-text-secondary)] group-hover:text-[var(--color-text-primary)] transition-colors">我只是了解一下</p>
+                    <p className="text-xs text-[var(--color-text-secondary)] mt-0.5">有任何问题就跟小智说，先看看，不着急注册。</p>
                   </div>
                 </div>
               </button>
@@ -328,15 +288,15 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess }) {
           </div>
         )}
 
-        {/* ========== 客户注册页 ========== */}
-        {step === 'register-customer' && (
+        {/* ========== Step register-company: 公司名 + 基本信息 ========== */}
+        {step === 'register-company' && (
           <div className="space-y-3">
             <div className="flex items-center gap-2 mb-2">
-              <button onClick={() => setStep('login')} className="text-sm text-[#6b6375] hover:text-[#f59e0b]">← 返回登录</button>
+              <button onClick={goToChoice} className="text-sm text-[var(--color-text-secondary)] hover:text-[var(--color-primary)]">← 返回</button>
             </div>
 
             <div className="text-center mb-4">
-              <p className="text-sm text-[#6b6375]">注册成为客户</p>
+              <p className="text-sm text-[var(--color-text-secondary)]">首先告诉我们您的公司信息</p>
             </div>
 
             {error && (
@@ -345,6 +305,16 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess }) {
               </div>
             )}
 
+            {/* 公司名称（必填） */}
+            <div>
+              <label className="block text-sm font-medium mb-1">公司名称 *</label>
+              <input
+                type="text" value={companyName} onChange={(e) => setCompanyName(e.target.value)}
+                placeholder="例如：XX金属制品有限公司"
+                className="w-full px-3 py-2 border border-[var(--color-input-border)] rounded-xl bg-[var(--color-input-bg)] text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
+              />
+            </div>
+
             {/* 用户名 */}
             <div>
               <label className="block text-sm font-medium mb-1">用户名</label>
@@ -352,12 +322,12 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess }) {
                 <input
                   type="text" value={name} onChange={(e) => setName(e.target.value)}
                   placeholder="给自己起个用户名"
-                  className="flex-1 px-3 py-2 border border-[#e5e4e7] dark:border-[#3a3a4c] rounded-xl bg-white dark:bg-[#2a2a3c] text-[#08060d] dark:text-[#f3f4f6] focus:outline-none focus:ring-2 focus:ring-[#f59e0b]"
+                  className="flex-1 px-3 py-2 border border-[var(--color-input-border)] rounded-xl bg-[var(--color-input-bg)] text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
                 />
                 <button
                   type="button"
                   onClick={handleRandomName}
-                  className="px-3 py-2 bg-[#f4f3f4] dark:bg-[#2a2a3c] rounded-xl text-xs text-[#6b6375] hover:text-[#f59e0b]"
+                  className="px-3 py-2 bg-[var(--color-surface-elevated)] rounded-xl text-xs text-[var(--color-text-secondary)] hover:text-[var(--color-primary)]"
                 >
                   随机
                 </button>
@@ -366,31 +336,31 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess }) {
 
             {/* 密码 */}
             <div>
-              <label className="block text-sm font-medium mb-1">设置密码</label>
+              <label className="block text-sm font-medium mb-1">设置密码 *</label>
               <input
                 type="password" value={password} onChange={(e) => setPassword(e.target.value)}
                 placeholder="设置密码（至少6位）"
-                className="w-full px-3 py-2 border border-[#e5e4e7] dark:border-[#3a3a4c] rounded-xl bg-white dark:bg-[#2a2a3c] text-[#08060d] dark:text-[#f3f4f6] focus:outline-none focus:ring-2 focus:ring-[#f59e0b]"
+                className="w-full px-3 py-2 border border-[var(--color-input-border)] rounded-xl bg-[var(--color-input-bg)] text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
               />
             </div>
 
             {/* 确认密码 */}
             <div>
-              <label className="block text-sm font-medium mb-1">确认密码</label>
+              <label className="block text-sm font-medium mb-1">确认密码 *</label>
               <input
                 type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)}
                 placeholder="再次输入密码"
-                className="w-full px-3 py-2 border border-[#e5e4e7] dark:border-[#3a3a4c] rounded-xl bg-white dark:bg-[#2a2a3c] text-[#08060d] dark:text-[#f3f4f6] focus:outline-none focus:ring-2 focus:ring-[#f59e0b]"
+                className="w-full px-3 py-2 border border-[var(--color-input-border)] rounded-xl bg-[var(--color-input-bg)] text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
               />
             </div>
 
             {/* 手机号 */}
             <div>
-              <label className="block text-sm font-medium mb-1">手机号</label>
+              <label className="block text-sm font-medium mb-1">手机号 *</label>
               <input
                 type="tel" value={phone} onChange={(e) => setPhone(e.target.value)}
                 placeholder="请输入手机号" maxLength={11}
-                className="w-full px-3 py-2 border border-[#e5e4e7] dark:border-[#3a3a4c] rounded-xl bg-white dark:bg-[#2a2a3c] text-[#08060d] dark:text-[#f3f4f6] focus:outline-none focus:ring-2 focus:ring-[#f59e0b]"
+                className="w-full px-3 py-2 border border-[var(--color-input-border)] rounded-xl bg-[var(--color-input-bg)] text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
               />
             </div>
 
@@ -401,11 +371,11 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess }) {
                 <input
                   type="text" value={code} onChange={(e) => setCode(e.target.value)}
                   placeholder="请输入验证码" maxLength={6}
-                  className="flex-1 px-3 py-2 border border-[#e5e4e7] dark:border-[#3a3a4c] rounded-xl bg-white dark:bg-[#2a2a3c] text-[#08060d] dark:text-[#f3f4f6] focus:outline-none focus:ring-2 focus:ring-[#f59e0b]"
+                  className="flex-1 px-3 py-2 border border-[var(--color-input-border)] rounded-xl bg-[var(--color-input-bg)] text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
                 />
                 <button
                   onClick={handleSendCode} disabled={codeSending || codeCooldown > 0}
-                  className="px-3 py-2 bg-[#f4f3f4] dark:bg-[#2a2a3c] rounded-xl text-sm disabled:opacity-50"
+                  className="px-3 py-2 bg-[var(--color-surface-elevated)] rounded-xl text-sm disabled:opacity-50"
                 >
                   {codeCooldown > 0 ? `${codeCooldown}s` : '获取验证码'}
                 </button>
@@ -419,34 +389,120 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess }) {
             )}
 
             <button
-              onClick={handleRegisterCustomer} disabled={submitting}
-              className="w-full py-3 bg-[#f59e0b] hover:bg-[#fbbf24] disabled:bg-[#6b6375] text-white rounded-xl font-medium transition-colors"
+              onClick={handleCompanySubmit}
+              className="w-full py-3 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white rounded-xl font-medium transition-colors"
             >
-              {submitting ? '注册中...' : '注册'}
+              下一步：选择身份
             </button>
 
-            {/* 已有账号？登录 */}
-            <div className="text-center text-sm text-[#6b6375] pt-1">
+            <div className="text-center text-sm text-[var(--color-text-secondary)] pt-1">
               已有账号？{' '}
+              <button onClick={goToLogin} className="text-[var(--color-primary)] hover:underline font-medium">立即登录</button>
+            </div>
+          </div>
+        )}
+
+        {/* ========== Step register-auth: 身份选择 ========== */}
+        {step === 'register-auth' && (
+          <div className="space-y-4">
+            <div className="flex items-center gap-2 mb-2">
+              <button onClick={() => setStep('register-company')} className="text-sm text-[var(--color-text-secondary)] hover:text-[var(--color-primary)]">← 返回</button>
+            </div>
+
+            <div className="text-center mb-4">
+              <p className="text-sm text-[var(--color-text-secondary)]">您希望以什么身份使用平台？</p>
+            </div>
+
+            <div className="space-y-2.5">
               <button
-                onClick={() => { setStep('login'); setError(''); }}
-                className="text-[#f59e0b] hover:underline font-medium"
+                onClick={() => handleIdentitySelect('customer')}
+                className="w-full p-4 text-left rounded-xl border-2 border-[var(--color-border)] hover:border-[var(--color-primary)] transition-colors group"
               >
-                立即登录
+                <div className="flex items-start gap-3">
+                  <span className="flex-shrink-0 w-7 h-7 rounded-full bg-[var(--color-primary)] text-white text-sm flex items-center justify-center font-medium">A</span>
+                  <div>
+                    <p className="font-medium text-sm group-hover:text-[var(--color-primary)] transition-colors">我是客户（需要设备维修保养服务）</p>
+                    <p className="text-xs text-[var(--color-text-secondary)] mt-0.5">认证后即可享受小智的精准服务推荐和工单管理。</p>
+                  </div>
+                </div>
+              </button>
+
+              <button
+                onClick={() => handleIdentitySelect('engineer')}
+                className="w-full p-4 text-left rounded-xl border-2 border-[var(--color-border)] hover:border-[var(--color-primary)] transition-colors group"
+              >
+                <div className="flex items-start gap-3">
+                  <span className="flex-shrink-0 w-7 h-7 rounded-full bg-[var(--color-primary)] text-white text-sm flex items-center justify-center font-medium">B</span>
+                  <div>
+                    <p className="font-medium text-sm group-hover:text-[var(--color-primary)] transition-colors">我是合伙人（提供维修保养服务）</p>
+                    <p className="text-xs text-[var(--color-text-secondary)] mt-0.5">认证后需要填写背景信息，小智会根据您的专长精准推荐工单。</p>
+                  </div>
+                </div>
+              </button>
+
+              <button
+                onClick={() => handleIdentitySelect('visitor')}
+                className="w-full p-4 text-left rounded-xl border-2 border-[var(--color-border)] hover:border-[var(--color-text-muted)] transition-colors group"
+              >
+                <div className="flex items-start gap-3">
+                  <span className="flex-shrink-0 w-7 h-7 rounded-full bg-[var(--color-text-muted)] text-white text-sm flex items-center justify-center font-medium">C</span>
+                  <div>
+                    <p className="font-medium text-sm text-[var(--color-text-secondary)] group-hover:text-[var(--color-text-primary)] transition-colors">我只是了解一下（访客身份）</p>
+                    <p className="text-xs text-[var(--color-text-secondary)] mt-0.5">浏览小智的功能，暂不认证。功能受限，但随时可以认证升级。</p>
+                  </div>
+                </div>
               </button>
             </div>
           </div>
         )}
 
-        {/* ========== 合伙人入驻第1步：账户信息 ========== */}
-        {step === 'register-engineer-1' && (
-          <div className="space-y-3">
+        {/* ========== Step register-auth-prompt: 认证提示 ========== */}
+        {step === 'register-auth-prompt' && (
+          <div className="space-y-4">
             <div className="flex items-center gap-2 mb-2">
-              <button onClick={() => setStep('login')} className="text-sm text-[#6b6375] hover:text-[#f59e0b]">← 返回登录</button>
+              <button onClick={() => setStep('register-auth')} className="text-sm text-[var(--color-text-secondary)] hover:text-[var(--color-primary)]">← 返回</button>
             </div>
 
             <div className="text-center mb-4">
-              <p className="text-sm text-[#6b6375]">注册成为合伙人</p>
+              <div className="w-14 h-14 mx-auto mb-3 rounded-full bg-[var(--color-primary)]/10 flex items-center justify-center">
+                <span className="text-2xl">✓</span>
+              </div>
+              <p className="text-base font-medium mb-1">身份认证</p>
+              <p className="text-sm text-[var(--color-text-secondary)]">
+                {selectedIdentity === 'customer' ? '您选择了"客户"身份。认证后即可享受完整服务。' : '您选择了"合伙人"身份。认证后需填写背景信息。'}
+              </p>
+            </div>
+
+            <div className="p-4 bg-[var(--color-surface-elevated)] rounded-xl text-[13px] text-[var(--color-text-secondary)]">
+              {selectedIdentity === 'customer' ? (
+                <p>完成认证后，您可以：提交工单、查看设备档案、获取小智的精准服务推荐。</p>
+              ) : (
+                <p>完成认证后，您需要填写擅长的设备类型、品牌和维修项目，以便小智精准为您推荐工单。</p>
+              )}
+            </div>
+
+            <button
+              onClick={handleAuthConfirm}
+              className="w-full py-3 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white rounded-xl font-medium transition-colors"
+            >
+              {selectedIdentity === 'customer' ? '完成认证，开始使用' : '下一步：填写背景信息'}
+            </button>
+          </div>
+        )}
+
+        {/* ========== Step register-visitor-complete: 访客完成 ========== */}
+        {step === 'register-visitor-complete' && (
+          <div className="space-y-4">
+            <div className="flex items-center gap-2 mb-2">
+              <button onClick={() => setStep('register-auth')} className="text-sm text-[var(--color-text-secondary)] hover:text-[var(--color-primary)]">← 返回</button>
+            </div>
+
+            <div className="text-center mb-4">
+              <div className="w-14 h-14 mx-auto mb-3 rounded-full bg-[var(--color-text-muted)]/10 flex items-center justify-center">
+                <span className="text-2xl">👁</span>
+              </div>
+              <p className="text-base font-medium mb-1">访客身份</p>
+              <p className="text-sm text-[var(--color-text-secondary)]">您可以浏览小智的功能，但功能受限。随时可以在设置中认证升级。</p>
             </div>
 
             {error && (
@@ -455,109 +511,25 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess }) {
               </div>
             )}
 
-            {/* 用户名 */}
-            <div>
-              <label className="block text-sm font-medium mb-1">用户名</label>
-              <div className="flex gap-2">
-                <input
-                  type="text" value={name} onChange={(e) => setName(e.target.value)}
-                  placeholder="给自己起个用户名"
-                  className="flex-1 px-3 py-2 border border-[#e5e4e7] dark:border-[#3a3a4c] rounded-xl bg-white dark:bg-[#2a2a3c] text-[#08060d] dark:text-[#f3f4f6] focus:outline-none focus:ring-2 focus:ring-[#f59e0b]"
-                />
-                <button
-                  type="button"
-                  onClick={handleRandomName}
-                  className="px-3 py-2 bg-[#f4f3f4] dark:bg-[#2a2a3c] rounded-xl text-xs text-[#6b6375] hover:text-[#f59e0b]"
-                >
-                  随机
-                </button>
-              </div>
-            </div>
-
-            {/* 密码 */}
-            <div>
-              <label className="block text-sm font-medium mb-1">设置密码</label>
-              <input
-                type="password" value={password} onChange={(e) => setPassword(e.target.value)}
-                placeholder="设置密码（至少6位）"
-                className="w-full px-3 py-2 border border-[#e5e4e7] dark:border-[#3a3a4c] rounded-xl bg-white dark:bg-[#2a2a3c] text-[#08060d] dark:text-[#f3f4f6] focus:outline-none focus:ring-2 focus:ring-[#f59e0b]"
-              />
-            </div>
-
-            {/* 确认密码 */}
-            <div>
-              <label className="block text-sm font-medium mb-1">确认密码</label>
-              <input
-                type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)}
-                placeholder="再次输入密码"
-                className="w-full px-3 py-2 border border-[#e5e4e7] dark:border-[#3a3a4c] rounded-xl bg-white dark:bg-[#2a2a3c] text-[#08060d] dark:text-[#f3f4f6] focus:outline-none focus:ring-2 focus:ring-[#f59e0b]"
-              />
-            </div>
-
-            {/* 手机号 */}
-            <div>
-              <label className="block text-sm font-medium mb-1">手机号</label>
-              <input
-                type="tel" value={phone} onChange={(e) => setPhone(e.target.value)}
-                placeholder="请输入手机号" maxLength={11}
-                className="w-full px-3 py-2 border border-[#e5e4e7] dark:border-[#3a3a4c] rounded-xl bg-white dark:bg-[#2a2a3c] text-[#08060d] dark:text-[#f3f4f6] focus:outline-none focus:ring-2 focus:ring-[#f59e0b]"
-              />
-            </div>
-
-            {/* 验证码 */}
-            <div>
-              <label className="block text-sm font-medium mb-1">验证码</label>
-              <div className="flex gap-2">
-                <input
-                  type="text" value={code} onChange={(e) => setCode(e.target.value)}
-                  placeholder="请输入验证码" maxLength={6}
-                  className="flex-1 px-3 py-2 border border-[#e5e4e7] dark:border-[#3a3a4c] rounded-xl bg-white dark:bg-[#2a2a3c] text-[#08060d] dark:text-[#f3f4f6] focus:outline-none focus:ring-2 focus:ring-[#f59e0b]"
-                />
-                <button
-                  onClick={handleSendCode} disabled={codeSending || codeCooldown > 0}
-                  className="px-3 py-2 bg-[#f4f3f4] dark:bg-[#2a2a3c] rounded-xl text-sm disabled:opacity-50"
-                >
-                  {codeCooldown > 0 ? `${codeCooldown}s` : '获取验证码'}
-                </button>
-              </div>
-            </div>
-
-            {error && error.includes('测试模式') && (
-              <div className="p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl text-amber-600 dark:text-amber-400 text-sm">
-                {error}
-              </div>
-            )}
-
             <button
-              onClick={() => { setError(''); setStep('register-engineer-2'); }}
-              disabled={!name || !password || !confirmPassword || phone.length !== 11}
-              className="w-full py-3 bg-[#f59e0b] hover:bg-[#fbbf24] disabled:bg-[#6b6375] text-white rounded-xl font-medium transition-colors"
+              onClick={handleVisitorComplete}
+              disabled={submitting}
+              className="w-full py-3 bg-[var(--color-text-muted)] hover:bg-[var(--color-text-secondary)] disabled:bg-[var(--color-text-muted)]/50 text-white rounded-xl font-medium transition-colors"
             >
-              下一步：填写背景信息
+              {submitting ? '注册中...' : '以访客身份开始'}
             </button>
-
-            {/* 已有账号？登录 */}
-            <div className="text-center text-sm text-[#6b6375] pt-1">
-              已有账号？{' '}
-              <button
-                onClick={() => { setStep('login'); setError(''); }}
-                className="text-[#f59e0b] hover:underline font-medium"
-              >
-                立即登录
-              </button>
-            </div>
           </div>
         )}
 
-        {/* ========== 合伙人入驻第2步：背景调查 ========== */}
+        {/* ========== Step register-engineer-2: 合伙人背景调查 ========== */}
         {step === 'register-engineer-2' && (
           <div className="space-y-3 max-h-[65vh] overflow-y-auto pr-1">
             <div className="flex items-center gap-2 mb-2">
-              <button onClick={() => setStep('register-engineer-1')} className="text-sm text-[#6b6375] hover:text-[#f59e0b]">← 返回上一步</button>
+              <button onClick={() => setStep('register-auth-prompt')} className="text-sm text-[var(--color-text-secondary)] hover:text-[var(--color-primary)]">← 返回</button>
             </div>
 
             <div className="text-center mb-4">
-              <p className="text-sm text-[#6b6375]">完成背景信息（用于精准接单）</p>
+              <p className="text-sm text-[var(--color-text-secondary)]">完成背景信息（用于精准接单）</p>
             </div>
 
             {error && (
@@ -581,8 +553,7 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess }) {
                 <label className="block text-xs font-medium mb-2">熟悉的品牌</label>
                 {specialties.map((type) => (
                   <div key={type} className="mb-3">
-                    <p className="text-xs text-[#6b6375] mb-1">{type}：</p>
-                    {/* 预设品牌按钮 */}
+                    <p className="text-xs text-[var(--color-text-secondary)] mb-1">{type}：</p>
                     <div className="flex flex-wrap gap-1 mb-1.5">
                       {(commonBrands[type] || []).map((brand) => (
                         <button
@@ -591,15 +562,14 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess }) {
                           onClick={() => toggleBrand(type, brand)}
                           className={`px-2 py-0.5 rounded text-xs transition-colors ${
                             (brands[type] || []).includes(brand)
-                              ? 'bg-[#fbbf24] text-white'
-                              : 'bg-[#f4f3f4] dark:bg-[#2a3a4c] text-[#6b6375]'
+                              ? 'bg-[var(--color-primary)] text-white'
+                              : 'bg-[var(--color-surface-elevated)] text-[var(--color-text-secondary)]'
                           }`}
                         >
                           {brand}
                         </button>
                       ))}
                     </div>
-                    {/* 品牌 TagInput（空白框） */}
                     <TagInput
                       placeholder="输入品牌，回车添加..."
                       value={brands[type] || []}
@@ -634,140 +604,15 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess }) {
                 value={bio} onChange={(e) => setBio(e.target.value)}
                 placeholder="向客户展示您的自我介绍"
                 rows={2}
-                className="w-full px-3 py-2 border border-[#e5e4e7] dark:border-[#3a3a4c] rounded-xl bg-white dark:bg-[#2a2a3c] text-[#08060d] dark:text-[#f3f4f6] focus:outline-none focus:ring-2 focus:ring-[#f59e0b] resize-none"
+                className="w-full px-3 py-2 border border-[var(--color-input-border)] rounded-xl bg-[var(--color-input-bg)] text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)] resize-none"
               />
             </div>
 
             <button
               onClick={handleRegisterEngineer} disabled={submitting}
-              className="w-full py-3 bg-[#f59e0b] hover:bg-[#fbbf24] disabled:bg-[#6b6375] text-white rounded-xl font-medium transition-colors"
+              className="w-full py-3 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] disabled:bg-[var(--color-text-muted)] text-white rounded-xl font-medium transition-colors"
             >
               {submitting ? '入驻中...' : '注册成为合伙人'}
-            </button>
-          </div>
-        )}
-
-        {/* ========== 客户信息调查页 ========== */}
-        {step === 'register-customer-info' && (
-          <div className="space-y-3">
-            <div className="text-center mb-4">
-              <p className="text-lg font-medium mb-1">注册成功！</p>
-              <p className="text-sm text-[#6b6375]">花10秒告诉我们您的设备情况，小智能为您提供更精准的服务</p>
-            </div>
-
-            {error && (
-              <div className="p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl text-red-600 dark:text-red-400 text-sm">
-                {error}
-              </div>
-            )}
-
-            {/* 公司名称 */}
-            <div>
-              <label className="block text-sm font-medium mb-1">公司名称（选填）</label>
-              <input
-                type="text" value={companyName} onChange={(e) => setCompanyName(e.target.value)}
-                placeholder="例如：XX金属制品有限公司"
-                className="w-full px-3 py-2 border border-[#e5e4e7] dark:border-[#3a3a4c] rounded-xl bg-white dark:bg-[#2a2a3c] text-[#08060d] dark:text-[#f3f4f6] focus:outline-none focus:ring-2 focus:ring-[#f59e0b]"
-              />
-            </div>
-
-            {/* 所在地区 */}
-            <div>
-              <label className="block text-sm font-medium mb-1">所在地区（选填）</label>
-              <RegionInput
-                value={customerRegion ? [customerRegion] : []}
-                onChange={(val) => setCustomerRegion(val[0] || '')}
-                placeholder="输入省、市名称搜索..."
-              />
-            </div>
-
-            {/* 常用设备 */}
-            <div>
-              <TagInput
-                label="常用设备类型（选填）"
-                options={['激光切割机', '折弯机', '冲床', '焊接机', '激光焊接', '卷板机', '等离子切割', '剪板机', '自动化产线']}
-                value={customerDevices}
-                onChange={setCustomerDevices}
-                placeholder="输入设备类型，回车添加..."
-              />
-            </div>
-
-            <div className="flex gap-3 pt-2">
-              <button
-                onClick={() => {
-                  onLoginSuccess?.(pendingLoginResult);
-                  handleClose();
-                }}
-                className="flex-1 py-3 bg-[#f4f3f4] dark:bg-[#2a2a3c] text-[#6b6375] rounded-xl font-medium transition-colors hover:bg-[#e5e4e7] dark:hover-[#3a3a4c]"
-              >
-                跳过
-              </button>
-              <button
-                onClick={() => {
-                  onLoginSuccess?.(pendingLoginResult);
-                  handleClose();
-                }}
-                className="flex-1 py-3 bg-[#f59e0b] hover:bg-[#fbbf24] text-white rounded-xl font-medium transition-colors"
-              >
-                开始使用
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* ========== 忘记密码页 ========== */}
-        {step === 'forgot-password' && (
-          <div className="space-y-3">
-            <div className="flex items-center gap-2 mb-2">
-              <button onClick={() => setStep('login')} className="text-sm text-[#6b6375] hover:text-[#f59e0b]">← 返回登录</button>
-            </div>
-            <div className="text-center mb-4">
-              <p className="text-sm text-[#6b6375]">输入手机号，我们将发送验证码重置密码</p>
-            </div>
-
-            {error && (
-              <div className="p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl text-red-600 dark:text-red-400 text-sm">
-                {error}
-              </div>
-            )}
-
-            <div>
-              <label className="block text-sm font-medium mb-1">手机号</label>
-              <input
-                type="tel" value={phone} onChange={(e) => setPhone(e.target.value)}
-                placeholder="请输入注册的手机号" maxLength={11}
-                className="w-full px-3 py-2 border border-[#e5e4e7] dark:border-[#3a3a4c] rounded-xl bg-white dark:bg-[#2a2a3c] text-[#08060d] dark:text-[#f3f4f6] focus:outline-none focus:ring-2 focus:ring-[#f59e0b]"
-              />
-            </div>
-
-            {forgotStep === 'code-sent' && (
-              <div>
-                <label className="block text-sm font-medium mb-1">验证码</label>
-                <input
-                  type="text" value={code} onChange={(e) => setCode(e.target.value)}
-                  placeholder="请输入验证码" maxLength={6}
-                  className="w-full px-3 py-2 border border-[#e5e4e7] dark:border-[#3a3a4c] rounded-xl bg-white dark:bg-[#2a2a3c] text-[#08060d] dark:text-[#f3f4f6] focus:outline-none focus:ring-2 focus:ring-[#f59e0b]"
-                />
-              </div>
-            )}
-
-            {forgotStep === 'code-sent' && (
-              <div>
-                <label className="block text-sm font-medium mb-1">设置新密码</label>
-                <input
-                  type="password" value={password} onChange={(e) => setPassword(e.target.value)}
-                  placeholder="设置新密码（至少6位）"
-                  className="w-full px-3 py-2 border border-[#e5e4e7] dark:border-[#3a3a4c] rounded-xl bg-white dark:bg-[#2a2a3c] text-[#08060d] dark:text-[#f3f4f6] focus:outline-none focus:ring-2 focus:ring-[#f59e0b]"
-                />
-              </div>
-            )}
-
-            <button
-              onClick={forgotStep === 'code-sent' ? handleResetPassword : handleSendResetCode}
-              disabled={submitting}
-              className="w-full py-3 bg-[#f59e0b] hover:bg-[#fbbf24] disabled:bg-[#6b6375] text-white rounded-xl font-medium transition-colors"
-            >
-              {submitting ? '处理中...' : forgotStep === 'code-sent' ? '重置密码' : '发送验证码'}
             </button>
           </div>
         )}
@@ -776,7 +621,7 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess }) {
         {step === 'login' && (
           <div className="space-y-3">
             <div className="text-center mb-4">
-              <p className="text-sm text-[#6b6375]">有任何钣金加工设备的问题，随时问AI小智</p>
+              <p className="text-sm text-[var(--color-text-secondary)]">有任何钣金加工设备的问题，随时问AI小智</p>
             </div>
 
             {error && (
@@ -790,7 +635,7 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess }) {
               <input
                 type="tel" value={phone} onChange={(e) => setPhone(e.target.value)}
                 placeholder="请输入手机号" maxLength={11}
-                className="w-full px-3 py-2 border border-[#e5e4e7] dark:border-[#3a3a4c] rounded-xl bg-white dark:bg-[#2a2a3c] text-[#08060d] dark:text-[#f3f4f6] focus:outline-none focus:ring-2 focus:ring-[#f59e0b]"
+                className="w-full px-3 py-2 border border-[var(--color-input-border)] rounded-xl bg-[var(--color-input-bg)] text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
               />
             </div>
             <div>
@@ -798,47 +643,129 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess }) {
               <input
                 type="password" value={password} onChange={(e) => setPassword(e.target.value)}
                 placeholder="请输入密码"
-                className="w-full px-3 py-2 border border-[#e5e4e7] dark:border-[#3a3a4c] rounded-xl bg-white dark:bg-[#2a2a3c] text-[#08060d] dark:text-[#f3f4f6] focus:outline-none focus:ring-2 focus:ring-[#f59e0b]"
+                className="w-full px-3 py-2 border border-[var(--color-input-border)] rounded-xl bg-[var(--color-input-bg)] text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
               />
             </div>
-            {/* 记住登录状态 */}
-            <div className="flex items-center text-sm">
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={rememberMe}
-                  onChange={(e) => setRememberMe(e.target.checked)}
-                  className="w-4 h-4 rounded border-[#e5e4e7] dark:border-[#3a3a4c] text-[#f59e0b] focus:ring-[#f59e0b]"
-                />
-                <span className="text-[#6b6375]">保持登录状态</span>
-              </label>
-            </div>
+
             <button
-              onClick={handleLogin} disabled={submitting}
-              className="w-full py-3 bg-[#f59e0b] hover:bg-[#fbbf24] disabled:bg-[#6b6375] text-white rounded-xl font-medium transition-colors"
+              onClick={async () => {
+                if (!phone || !password) { setError('请输入手机号和密码'); return; }
+                setSubmitting(true);
+                setError('');
+                try {
+                  const result = await login({ phone, password });
+                  localStorage.setItem('sagemro_token', result.token);
+                  localStorage.setItem('sagemro_user', JSON.stringify(result.user));
+                  localStorage.setItem('sagemro_user_type', result.userType);
+                  if (result.userType === 'customer') {
+                    localStorage.setItem('sagemro_customer_id', result.user.id);
+                  } else {
+                    localStorage.setItem('sagemro_engineer_id', result.user.id);
+                  }
+                  onLoginSuccess?.(result);
+                  handleClose();
+                } catch (e) {
+                  setError(e.message);
+                } finally {
+                  setSubmitting(false);
+                }
+              }} disabled={submitting}
+              className="w-full py-3 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] disabled:bg-[var(--color-text-muted)] text-white rounded-xl font-medium transition-colors"
             >
               {submitting ? '登录中...' : '登录'}
             </button>
 
-            {/* 注册链接 */}
-            <div className="text-center text-sm text-[#6b6375] pt-1">
+            <div className="text-center text-sm text-[var(--color-text-secondary)] pt-1">
               还没有账户？{' '}
-              <button
-                onClick={() => { setStep('choice'); setError(''); }}
-                className="text-[#f59e0b] hover:underline font-medium"
-              >
-                点击注册
-              </button>
+              <button onClick={goToRegisterCompany} className="text-[var(--color-primary)] hover:underline font-medium">点击注册</button>
               {' 或 '}
-              <button
-                onClick={() => setStep('forgot-password')}
-                className="text-[#f59e0b] hover:underline font-medium"
-              >
-                忘记密码
-              </button>
+              <button onClick={goToForgotPassword} className="text-[var(--color-primary)] hover:underline font-medium">忘记密码</button>
             </div>
           </div>
         )}
+
+        {/* ========== 忘记密码页 ========== */}
+        {step === 'forgot-password' && (
+          <div className="space-y-3">
+            <div className="flex items-center gap-2 mb-2">
+              <button onClick={goToLogin} className="text-sm text-[var(--color-text-secondary)] hover:text-[var(--color-primary)]">← 返回登录</button>
+            </div>
+            <div className="text-center mb-4">
+              <p className="text-sm text-[var(--color-text-secondary)]">输入手机号，我们将发送验证码重置密码</p>
+            </div>
+
+            {error && (
+              <div className="p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl text-red-600 dark:text-red-400 text-sm">
+                {error}
+              </div>
+            )}
+
+            <div>
+              <label className="block text-sm font-medium mb-1">手机号</label>
+              <input
+                type="tel" value={phone} onChange={(e) => setPhone(e.target.value)}
+                placeholder="请输入注册的手机号" maxLength={11}
+                className="w-full px-3 py-2 border border-[var(--color-input-border)] rounded-xl bg-[var(--color-input-bg)] text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
+              />
+            </div>
+
+            {forgotStep === 'code-sent' && (
+              <div>
+                <label className="block text-sm font-medium mb-1">验证码</label>
+                <input
+                  type="text" value={code} onChange={(e) => setCode(e.target.value)}
+                  placeholder="请输入验证码" maxLength={6}
+                  className="w-full px-3 py-2 border border-[var(--color-input-border)] rounded-xl bg-[var(--color-input-bg)] text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
+                />
+              </div>
+            )}
+
+            {forgotStep === 'code-sent' && (
+              <div>
+                <label className="block text-sm font-medium mb-1">设置新密码</label>
+                <input
+                  type="password" value={password} onChange={(e) => setPassword(e.target.value)}
+                  placeholder="设置新密码（至少6位）"
+                  className="w-full px-3 py-2 border border-[var(--color-input-border)] rounded-xl bg-[var(--color-input-bg)] text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
+                />
+              </div>
+            )}
+
+            <button
+              onClick={async () => {
+                if (forgotStep === 'phone') {
+                  if (!phone) { setError('请输入手机号'); return; }
+                  try {
+                    await sendResetCode(phone);
+                    setForgotStep('code-sent');
+                    setError('');
+                  } catch (e) {
+                    setError(e.message);
+                  }
+                } else {
+                  if (!password || password.length < 6) { setError('密码至少6位'); return; }
+                  if (!code) { setError('请输入验证码'); return; }
+                  setSubmitting(true);
+                  try {
+                    await resetPassword({ phone, code, newPassword: password });
+                    toastSuccess('密码重置成功，请使用新密码登录');
+                    setForgotStep('phone');
+                    setStep('login');
+                    setError('');
+                  } catch (e) {
+                    setError(e.message);
+                  } finally {
+                    setSubmitting(false);
+                  }
+                }
+              }} disabled={submitting}
+              className="w-full py-3 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] disabled:bg-[var(--color-text-muted)] text-white rounded-xl font-medium transition-colors"
+            >
+              {submitting ? '处理中...' : forgotStep === 'code-sent' ? '重置密码' : '发送验证码'}
+            </button>
+          </div>
+        )}
+
       </div>
     </Modal>
   );

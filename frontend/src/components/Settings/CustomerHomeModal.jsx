@@ -112,7 +112,7 @@ export function CustomerHomeModal({ isOpen, onClose, currentUser, userType }) {
 
         {/* 头部：公司 Logo + 名称 + 认证状态 */}
         <div className="flex items-center gap-4 p-4 bg-[var(--color-surface)] rounded-xl border border-[var(--color-border)] shadow-sm">
-          <div className="w-16 h-16 rounded-xl bg-blue-600 flex items-center justify-center flex-shrink-0 overflow-hidden">
+          <div className="w-16 h-16 rounded-xl bg-[var(--color-primary)] flex items-center justify-center flex-shrink-0 overflow-hidden">
             {form.logo_url ? (
               <img src={form.logo_url} alt="logo" className="w-full h-full object-cover" />
             ) : (
@@ -251,7 +251,7 @@ export function CustomerHomeModal({ isOpen, onClose, currentUser, userType }) {
               <button
                 onClick={handleSaveInfo}
                 disabled={loading}
-                className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-lg text-[14px] font-medium transition-colors"
+                className="w-full py-2.5 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] disabled:opacity-50 text-white rounded-lg text-[14px] font-medium transition-colors"
               >
                 {loading ? '保存中...' : '保存修改'}
               </button>
@@ -346,7 +346,7 @@ export function CustomerHomeModal({ isOpen, onClose, currentUser, userType }) {
               <button
                 onClick={handleChangePassword}
                 disabled={loading}
-                className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-lg text-[14px] font-medium transition-colors"
+                className="w-full py-2.5 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] disabled:opacity-50 text-white rounded-lg text-[14px] font-medium transition-colors"
               >
                 {loading ? '修改中...' : '修改密码'}
               </button>

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { ArrowLeft, Package, Edit2, Trash2, ExternalLink, Star } from 'lucide-react';
 import { getDevice, updateDevice } from '../../services/api';
+import { toastError } from '../../utils/feedback';
 
 export function DeviceDetailPanel({ deviceId, onBack, onDelete }) {
   const [device, setDevice] = useState(null);
@@ -35,7 +36,7 @@ export function DeviceDetailPanel({ deviceId, onBack, onDelete }) {
       setDevice(updated.device);
       setEditingNotes(false);
     } catch (err) {
-      alert('保存失败');
+      toastError('保存失败');
     } finally {
       setSaving(false);
     }
@@ -69,7 +70,7 @@ export function DeviceDetailPanel({ deviceId, onBack, onDelete }) {
   if (loading) {
     return (
       <div className="flex items-center justify-center py-8">
-        <div className="animate-spin w-6 h-6 border-2 border-[#1677ff] border-t-transparent rounded-full" />
+        <div className="animate-spin w-6 h-6 border-2 border-[var(--color-primary)] border-t-transparent rounded-full" />
       </div>
     );
   }
@@ -94,11 +95,11 @@ export function DeviceDetailPanel({ deviceId, onBack, onDelete }) {
       </button>
 
       {/* 设备信息卡 */}
-      <div className="bg-[#2a2a3c] rounded-xl p-4">
+      <div className="bg-[var(--color-surface-elevated)] rounded-xl p-4">
         <div className="flex items-start justify-between mb-4">
           <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-xl bg-[#1677ff]/20 flex items-center justify-center">
-              <Package size={24} className="text-[#1677ff]" />
+            <div className="w-12 h-12 rounded-xl bg-[var(--color-primary)]/15 flex items-center justify-center">
+              <Package size={24} className="text-[var(--color-primary)]" />
             </div>
             <div>
               <h3 className="text-[15px] font-medium text-[var(--color-sidebar-text)]">{device.name}</h3>
@@ -110,7 +111,7 @@ export function DeviceDetailPanel({ deviceId, onBack, onDelete }) {
           </div>
           <button
             onClick={onDelete}
-            className="p-2 hover:bg-[#3a3a4c] rounded-lg transition-colors text-red-400"
+            className="p-2 hover:bg-[var(--color-hover)] rounded-lg transition-colors text-red-400"
           >
             <Trash2 size={16} />
           </button>
@@ -137,13 +138,13 @@ export function DeviceDetailPanel({ deviceId, onBack, onDelete }) {
         </div>
 
         {/* 备注 */}
-        <div className="mt-4 pt-4 border-t border-[#3a3a4c]">
+        <div className="mt-4 pt-4 border-t border-[var(--color-border)]">
           <div className="flex items-center justify-between mb-2">
             <span className="text-[12px] text-[var(--color-sidebar-text)] opacity-50">备注</span>
             {!editingNotes && (
               <button
                 onClick={() => setEditingNotes(true)}
-                className="flex items-center gap-1 text-[12px] text-[#1677ff] opacity-70 hover:opacity-100"
+                className="flex items-center gap-1 text-[12px] text-[var(--color-primary)] opacity-70 hover:opacity-100"
               >
                 <Edit2 size={12} />
                 {notes ? '编辑' : '添加备注'}
@@ -156,14 +157,14 @@ export function DeviceDetailPanel({ deviceId, onBack, onDelete }) {
                 value={notes}
                 onChange={e => setNotes(e.target.value)}
                 placeholder="添加备注信息..."
-                className="w-full bg-[#1e1e2e] border border-[#3a3a4c] rounded-lg px-3 py-2 text-[13px] text-[var(--color-sidebar-text)] placeholder:text-white/20 resize-none"
+                className="w-full bg-[var(--color-input-bg)] border border-[var(--color-input-border)] rounded-lg px-3 py-2 text-[13px] text-[var(--color-text-primary)] placeholder:text-[var(--color-text-muted)] resize-none"
                 rows={3}
               />
               <div className="flex gap-2">
                 <button
                   onClick={handleSaveNotes}
                   disabled={saving}
-                  className="px-3 py-1 bg-[#1677ff] text-white rounded-lg text-[12px] disabled:opacity-50"
+                  className="px-3 py-1 bg-[var(--color-primary)] text-white rounded-lg text-[12px] disabled:opacity-50"
                 >
                   {saving ? '保存中...' : '保存'}
                 </button>
@@ -172,7 +173,7 @@ export function DeviceDetailPanel({ deviceId, onBack, onDelete }) {
                     setEditingNotes(false);
                     setNotes(device.notes || '');
                   }}
-                  className="px-3 py-1 bg-[#3a3a4c] text-[var(--color-sidebar-text)] rounded-lg text-[12px]"
+                  className="px-3 py-1 bg-[var(--color-hover)] text-[var(--color-sidebar-text)] rounded-lg text-[12px]"
                 >
                   取消
                 </button>
@@ -198,7 +199,7 @@ export function DeviceDetailPanel({ deviceId, onBack, onDelete }) {
         </h4>
 
         {workOrders.length === 0 && (
-          <div className="bg-[#2a2a3c] rounded-xl p-6 text-center">
+          <div className="bg-[var(--color-surface-elevated)] rounded-xl p-6 text-center">
             <p className="text-[13px] text-[var(--color-sidebar-text)] opacity-50">暂无维修记录</p>
           </div>
         )}
@@ -210,7 +211,7 @@ export function DeviceDetailPanel({ deviceId, onBack, onDelete }) {
               : null;
 
             return (
-              <div key={wo.id || wo.order_no} className="bg-[#2a2a3c] rounded-xl p-4">
+              <div key={wo.id || wo.order_no} className="bg-[var(--color-surface-elevated)] rounded-xl p-4">
                 <div className="flex items-start justify-between mb-2">
                   <div className="flex items-center gap-2">
                     <span className="text-[14px] font-medium text-[var(--color-sidebar-text)]">
@@ -250,7 +251,7 @@ export function DeviceDetailPanel({ deviceId, onBack, onDelete }) {
                 </div>
 
                 {wo.completed_at && (
-                  <div className="mt-2 pt-2 border-t border-[#3a3a4c] text-[11px] text-[var(--color-sidebar-text)] opacity-40">
+                  <div className="mt-2 pt-2 border-t border-[var(--color-border)] text-[11px] text-[var(--color-sidebar-text)] opacity-40">
                     完成时间：{wo.completed_at}
                   </div>
                 )}
