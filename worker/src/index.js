@@ -40,6 +40,9 @@ import {
   validationErrorToResponse,
 } from './lib/validators.js';
 
+// Sentry 错误上报（零依赖 envelope 客户端）
+import { captureException } from './lib/sentry.js';
+
 // ============ 配置 ============
 // API_KEY 和 API_ENDPOINT 通过 Cloudflare Worker Secrets 注入
 // 设置命令：wrangler secret put OPENAI_API_KEY / OPENAI_API_ENDPOINT
@@ -5375,6 +5378,7 @@ export default {
       return withCorsHeaders(response, request, env);
     } catch (error) {
       console.error('[fetch] unhandled error:', error);
+      captureException(error, env, { request, ctx });
       const corsH = getCorsHeaders(request, env);
       return new Response(
         JSON.stringify({ error: error?.message || 'Internal Server Error' }),
