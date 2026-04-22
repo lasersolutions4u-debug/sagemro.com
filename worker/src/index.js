@@ -5007,6 +5007,18 @@ async function routeRequest(request, env, ctx) {
       return jsonResponse({ status: 'ok' });
     }
 
+    // Sentry 端到端冒烟测试（必须 POST + 自定义 header + SENTRY_DSN 已配置）
+    // 匹配时故意抛错，让根 catch → captureException → Sentry envelope 走一遭。
+    // 日常运维不需要调这个，只在首次配置 Sentry 后手动触发一次验证整条链路。
+    if (
+      path === '/api/__sentry-test' &&
+      request.method === 'POST' &&
+      request.headers.get('X-Sentry-Test') === 'fire' &&
+      env?.SENTRY_DSN
+    ) {
+      throw new Error('[sentry-smoke-test] intentional error triggered at ' + new Date().toISOString());
+    }
+
     // ============ 测试/调试接口保护（默认拒绝）============
     // 任何 /api/test-*, /api/debug-*, /api/init-*, /api/clear-test-data
     // 只在 ENVIRONMENT === 'development' 且管理员认证通过时才开放，其他情况一律 404。
