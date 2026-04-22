@@ -5007,16 +5007,22 @@ async function routeRequest(request, env, ctx) {
       return jsonResponse({ status: 'ok' });
     }
 
-    // Sentry 端到端冒烟测试（必须 POST + 自定义 header + SENTRY_DSN 已配置）
-    // 匹配时故意抛错，让根 catch → captureException → Sentry envelope 走一遭。
-    // 日常运维不需要调这个，只在首次配置 Sentry 后手动触发一次验证整条链路。
-    if (
-      path === '/api/__sentry-test' &&
-      request.method === 'POST' &&
-      request.headers.get('X-Sentry-Test') === 'fire' &&
-      env?.SENTRY_DSN
-    ) {
-      throw new Error('[sentry-smoke-test] intentional error triggered at ' + new Date().toISOString());
+    // Sentry 端到端冒烟测试。匹配 path 就拦下——要么抛错触发 Sentry，要么返回诊断
+    // 响应说明为什么没触发，避免 fall through 到后面的认证守卫让人以为路由没生效。
+    if (path === '/api/__sentry-test') {
+      const method = request.method;
+      const header = request.headers.get('X-Sentry-Test');
+      const hasDsn = Boolean(env?.SENTRY_DSN);
+      if (method === 'POST' && header === 'fire' && hasDsn) {
+        throw new Error('[sentry-smoke-test] intentional error triggered at ' + new Date().toISOString());
+      }
+      return jsonResponse({
+        error: 'sentry smoke-test preconditions not met',
+        method,
+        headerPresent: header !== null,
+        headerValue: header,
+        sentryDsnConfigured: hasDsn,
+      }, 400);
     }
 
     // ============ 测试/调试接口保护（默认拒绝）============
