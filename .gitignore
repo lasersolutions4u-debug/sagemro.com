@@ -19,6 +19,8 @@ build/
 *.key
 接口AI.md
 问题反馈文档
+.secrets-to-scrub.txt
+*.bundle
 
 # Logs
 *.log
