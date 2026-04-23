@@ -5646,6 +5646,32 @@ async function routeRequest(request, env, ctx) {
     }
 
     // ====== 以下接口需要 JWT 认证 ======
+    // 先判断 path 是否匹配任一已知受保护路由。不匹配则直接 404，
+    // 避免未登录用户 GET /api/random-typo 拿到 401 泄露"此路径需要 token"。
+    // 白名单必须与下方已登录路由列表保持同步。
+    const isKnownProtectedRoute = (
+      path.startsWith('/api/admin/') ||
+      path === '/api/conversations' ||
+      path.startsWith('/api/conversations/') ||
+      path === '/api/workorders' ||
+      path.startsWith('/api/workorders/') ||
+      path === '/api/devices' ||
+      path.startsWith('/api/devices/') ||
+      path === '/api/notifications' ||
+      path.startsWith('/api/notifications/') ||
+      path.startsWith('/api/engineers/') ||
+      path === '/api/push-subscription' ||
+      path === '/api/platform-ratings' ||
+      path === '/api/customer-ratings' ||
+      path === '/api/customers/profile' ||
+      path === '/api/customers/push-subscription' ||
+      /^\/api\/customers\/[^/]+\/reviews$/.test(path) ||
+      path === '/api/auth/change-password'
+    );
+    if (!isKnownProtectedRoute) {
+      return errorResponse('Not found', 404);
+    }
+
     const auth = await authenticateRequest(request, env);
     if (!auth) {
       return errorResponse('请先登录', 401);
