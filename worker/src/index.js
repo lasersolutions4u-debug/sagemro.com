@@ -1887,13 +1887,13 @@ async function handleChat(request, env) {
     const trustedCustomerId =
       chatAuth?.userType === 'customer' ? chatAuth.userId : null;
 
-    // 创建或更新对话（customer_id 只接受 JWT 信任值）
+    // 创建或更新对话（customer_id / engineer_id 只接受 JWT 信任值）
     let convId = conversation_id;
     if (!convId) {
       convId = generateId();
       await env.DB.prepare(
-        'INSERT INTO conversations (id, title, last_message, customer_id) VALUES (?, ?, ?, ?)'
-      ).bind(convId, truncateStr(message, 20), truncateStr(message, 50), trustedCustomerId).run();
+        'INSERT INTO conversations (id, title, last_message, customer_id, engineer_id) VALUES (?, ?, ?, ?, ?)'
+      ).bind(convId, truncateStr(message, 20), truncateStr(message, 50), trustedCustomerId, trustedEngineerId).run();
     } else {
       await env.DB.prepare(
         'UPDATE conversations SET last_message = ?, updated_at = datetime("now") WHERE id = ?'
@@ -2111,8 +2111,12 @@ async function handleGetConversations(request, env) {
         'SELECT * FROM conversations WHERE customer_id = ? ORDER BY updated_at DESC LIMIT 50'
       ).bind(auth.userId).all();
       results = r.results;
+    } else if (auth.userType === 'engineer') {
+      const r = await env.DB.prepare(
+        'SELECT * FROM conversations WHERE engineer_id = ? ORDER BY updated_at DESC LIMIT 50'
+      ).bind(auth.userId).all();
+      results = r.results;
     } else {
-      // engineer / 其他类型：暂不开放对话列表
       results = [];
     }
 
@@ -2150,7 +2154,7 @@ async function handleDeleteConversation(request, env) {
 
   try {
     const conv = await env.DB.prepare(
-      'SELECT customer_id FROM conversations WHERE id = ?'
+      'SELECT customer_id, engineer_id FROM conversations WHERE id = ?'
     ).bind(id).first();
 
     assertConversationAccess(request._auth, conv);
@@ -2185,7 +2189,7 @@ async function handleRenameConversation(request, env) {
     const trimmed = title.trim().slice(0, 50); // 最终入库仍限制 50 字（与历史行为一致）
 
     const conv = await env.DB.prepare(
-      'SELECT customer_id FROM conversations WHERE id = ?'
+      'SELECT customer_id, engineer_id FROM conversations WHERE id = ?'
     ).bind(id).first();
     assertConversationAccess(request._auth, conv);
 

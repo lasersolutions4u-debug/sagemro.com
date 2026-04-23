@@ -23,6 +23,7 @@
 // 每条摘要估算 600 输出 tokens + 2000 输入 tokens ≈ $0.001，200 条约 $0.2。
 
 import { spawnSync } from 'node:child_process';
+import { join } from 'node:path';
 import { redactPII } from '../src/lib/redact.js';
 import { __internals, SUMMARY_PROTOCOL_VERSION } from '../src/lib/summary.js';
 
@@ -78,7 +79,23 @@ function parseArgs(argv) {
 const D1_BINDING = 'DB';
 
 function runD1(sql, { env, bindings = [] }) {
+  // 注意：--param 绑定 wrangler 目前不支持 D1 prepare 参数传递。
+  // 当前方案是把 SQL 拼好（所有绑定点都是我们内部构造的安全值，非用户输入）。
+  if (bindings.length > 0) {
+    throw new Error('bindings not supported; inline values into SQL string');
+  }
+
+  // 坑点：
+  // 1) `shell: true` + 多行 SQL 在 Windows cmd.exe 会被空格拆成多个 args
+  //    （"Unknown arguments: c.id,, c.customer_id,, ..."）
+  // 2) `--file` + `--json` 的组合 wrangler 只返回 {Total queries executed, ...}
+  //    统计元数据，拿不到 SELECT 实际结果
+  //
+  // 结论：必须用 `--command`，但不走 shell。直接 `node wrangler.js ...`，
+  //      Node 自己做 arg 编码，SQL 原样送达 wrangler。
+  const wranglerEntry = join('node_modules', 'wrangler', 'bin', 'wrangler.js');
   const args = [
+    wranglerEntry,
     'd1',
     'execute',
     D1_BINDING,
@@ -87,15 +104,12 @@ function runD1(sql, { env, bindings = [] }) {
     '--command',
     sql,
   ];
-  // 注意：--param 绑定 wrangler 目前不支持 D1 prepare 参数传递。
-  // 当前方案是把 SQL 拼好（所有绑定点都是我们内部构造的安全值，非用户输入）。
-  if (bindings.length > 0) {
-    throw new Error('bindings not supported; inline values into SQL string');
-  }
-  const res = spawnSync('npx', ['wrangler', ...args], {
+
+  const res = spawnSync(process.execPath, args, {
     encoding: 'utf-8',
-    shell: process.platform === 'win32',
+    shell: false,
   });
+
   if (res.status !== 0) {
     throw new Error(
       `wrangler failed (status ${res.status}): ${res.stderr || res.stdout}`

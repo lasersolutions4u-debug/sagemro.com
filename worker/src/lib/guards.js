@@ -34,22 +34,23 @@ export function assertWorkOrderAccess(auth, workOrder) {
 }
 
 /**
- * 对话访问权：admin / 会话客户
+ * 对话访问权：admin / 会话客户 / 会话合伙人
  *
- * 迁移 010 之后，conversations 表新增 customer_id 字段。
- * 历史遗留（customer_id IS NULL）的会话仅允许 admin 读，避免 IDOR。
+ * 迁移 010 为 conversations 加了 customer_id；迁移 015 补充了 engineer_id。
+ * 两者都为 NULL 的历史会话仅允许 admin 读，避免 IDOR。
  *
  * @param {{userId: string, userType: string}} auth
- * @param {{customer_id?: string}} conversation
+ * @param {{customer_id?: string, engineer_id?: string}} conversation
  */
 export function assertConversationAccess(auth, conversation) {
   if (!auth) throw new GuardError('请先登录', 401);
   if (!conversation) throw new GuardError('对话不存在', 404);
   if (auth.userType === 'admin') return;
-  if (!conversation.customer_id) {
+  if (!conversation.customer_id && !conversation.engineer_id) {
     throw new GuardError('历史会话不支持访问，请新建对话', 403);
   }
   if (auth.userType === 'customer' && conversation.customer_id === auth.userId) return;
+  if (auth.userType === 'engineer' && conversation.engineer_id === auth.userId) return;
   throw new GuardError('您无权访问该对话', 403);
 }
 
