@@ -102,8 +102,14 @@ export function WorkOrdersPage() {
                     return (
                       <tr key={wo.id} className="border-b border-[var(--color-border)]/50 hover:bg-[var(--color-surface-elevated)]/50">
                         <td className="py-3 px-2 font-mono text-[var(--color-primary)]">{wo.order_no}</td>
-                        <td className="py-3 px-2">{wo.customer_name || '-'}</td>
-                        <td className="py-3 px-2">{wo.engineer_name || '-'}</td>
+                        <td className="py-3 px-2">
+                          <div>{wo.customer_name || '-'}</div>
+                          {wo.customer_company && <div className="text-xs text-[var(--color-text-muted)]">{wo.customer_company}</div>}
+                        </td>
+                        <td className="py-3 px-2">
+                          <div>{wo.engineer_name || '-'}</div>
+                          {wo.engineer_company && <div className="text-xs text-[var(--color-text-muted)]">{wo.engineer_company}</div>}
+                        </td>
                         <td className="py-3 px-2 text-[var(--color-text-secondary)]">{TYPE_MAP[wo.type] || wo.type}</td>
                         <td className="py-3 px-2">
                           <span className={wo.urgency === 'critical' ? 'text-[var(--color-error)] font-medium' : wo.urgency === 'urgent' ? 'text-[var(--color-warning)]' : 'text-[var(--color-text-secondary)]'}>

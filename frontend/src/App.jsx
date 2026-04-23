@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
+import { Footer } from './components/common/Footer';
 import { Sidebar } from './components/Sidebar/Sidebar';
 import { ChatArea } from './components/Chat/ChatArea';
 import { WorkOrderModal } from './components/Sidebar/WorkOrderModal';
@@ -259,7 +260,7 @@ function App() {
   }, []);
 
   return (
-    <div className="flex h-screen overflow-hidden">
+    <div className="flex h-[100dvh] overflow-hidden">
       {/* 侧边栏 */}
       <Sidebar
         conversations={conversations}
@@ -291,7 +292,7 @@ function App() {
       />
 
       {/* 主聊天区域 */}
-      <div className="flex-1 flex flex-col min-w-0">
+      <div className="flex-1 flex flex-col min-w-0 min-h-0">
         <ChatArea
           messages={messages}
           isStreaming={isStreaming}

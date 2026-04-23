@@ -4,7 +4,7 @@ import { TagInput } from '../common/TagInput';
 import { RegionInput } from '../common/RegionInput';
 import { login, sendVerifyCode, sendResetCode, resetPassword, registerCustomer, registerEngineer } from '../../services/api';
 import { toastSuccess } from '../../utils/feedback';
-import { deviceTypes, commonBrands, commonServices, generateRandomName } from '../../data/loginPresets.js';
+import { deviceTypes, commonBrands, commonServices } from '../../data/loginPresets.js';
 
 export function LoginModal({ isOpen, onClose, onLoginSuccess }) {
   // step flow:
@@ -156,14 +156,9 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess }) {
     onClose();
   };
 
-  const handleRandomName = () => {
-    setName(generateRandomName());
-  };
-
-  // ===== 步骤导航 =====
+    // ===== 步骤导航 =====
   const goToChoice = () => { setStep('choice'); setError(''); };
   const goToRegisterCompany = () => {
-    setName(generateRandomName());
     setStep('register-company');
     setError('');
   };
@@ -207,7 +202,7 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess }) {
     setSubmitting(true);
     setError('');
     try {
-      await registerCustomer({ name: name || generateRandomName(), phone, password, code, company: companyName, identity: 'visitor' });
+      await registerCustomer({ name: name || '访客', phone, password, code, company: companyName, identity: 'visitor' });
       const result = await login({ phone, password });
       localStorage.setItem('sagemro_token', result.token);
       localStorage.setItem('sagemro_user', JSON.stringify(result.user));
@@ -315,23 +310,15 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess }) {
               />
             </div>
 
-            {/* 用户名 */}
+            {/* 真实姓名 */}
             <div>
-              <label className="block text-sm font-medium mb-1">用户名</label>
-              <div className="flex gap-2">
-                <input
-                  type="text" value={name} onChange={(e) => setName(e.target.value)}
-                  placeholder="给自己起个用户名"
-                  className="flex-1 px-3 py-2 border border-[var(--color-input-border)] rounded-xl bg-[var(--color-input-bg)] text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
-                />
-                <button
-                  type="button"
-                  onClick={handleRandomName}
-                  className="px-3 py-2 bg-[var(--color-surface-elevated)] rounded-xl text-xs text-[var(--color-text-secondary)] hover:text-[var(--color-primary)]"
-                >
-                  随机
-                </button>
-              </div>
+              <label className="block text-sm font-medium mb-1">真实姓名 *</label>
+              <input
+                type="text" value={name} onChange={(e) => setName(e.target.value)}
+                placeholder="请填写真实姓名（用于实名认证）"
+                maxLength={20}
+                className="w-full px-3 py-2 border border-[var(--color-input-border)] rounded-xl bg-[var(--color-input-bg)] text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
+              />
             </div>
 
             {/* 密码 */}

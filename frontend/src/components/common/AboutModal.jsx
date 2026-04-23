@@ -251,7 +251,11 @@ export function AboutModal({ isOpen, onClose }) {
             让天下没有难做的售后服务
           </p>
           <p className="text-xs text-[var(--color-text-secondary)]">
-            © 2026 SAGEMRO. All rights reserved.
+            © 2026 SageMRO. All rights reserved.
+          </p>
+          <p className="text-[10px] text-[var(--color-text-muted)]">
+            SageMRO 隶属于济南钰峭机械有限公司<br/>
+            Jinan Euchio Machinery Co., Ltd.
           </p>
         </div>
       </div>

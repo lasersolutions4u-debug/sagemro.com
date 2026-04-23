@@ -117,8 +117,14 @@ function WorkOrderRatings() {
                           }`}
                         >
                           <td className="py-3 px-2 font-mono text-[var(--color-primary)]">{r.order_no || '-'}</td>
-                          <td className="py-3 px-2">{r.customer_name || '-'}</td>
-                          <td className="py-3 px-2">{r.engineer_name || '-'}</td>
+<td className="py-3 px-2">
+                            <div>{r.customer_name || '-'}</div>
+                            {r.customer_company && <div className="text-xs text-[var(--color-text-muted)]">{r.customer_company}</div>}
+                          </td>
+                          <td className="py-3 px-2">
+                            <div>{r.engineer_name || '-'}</div>
+                            {r.engineer_company && <div className="text-xs text-[var(--color-text-muted)]">{r.engineer_company}</div>}
+                          </td>
                           <td className="py-3 px-2 text-center"><Stars value={r.rating_timeliness} /></td>
                           <td className="py-3 px-2 text-center"><Stars value={r.rating_technical} /></td>
                           <td className="py-3 px-2 text-center"><Stars value={r.rating_communication} /></td>
@@ -226,7 +232,10 @@ function PlatformRatings() {
                 ) : (
                   data.list.map((r) => (
                     <tr key={r.id} className="border-b border-[var(--color-border)]/50">
-                      <td className="py-3 px-2">{r.customer_name || '-'}</td>
+                      <td className="py-3 px-2">
+                        <div>{r.customer_name || '-'}</div>
+                        {r.customer_company && <div className="text-xs text-[var(--color-text-muted)]">{r.customer_company}</div>}
+                      </td>
                       <td className="py-3 px-2 text-center"><Stars value={r.rating} /></td>
                       <td className="py-3 px-2 text-[var(--color-text-secondary)]">{r.comment || '-'}</td>
                       <td className="py-3 px-2 text-[var(--color-text-secondary)] text-xs">{r.created_at?.slice(0, 16)?.replace('T', ' ')}</td>
@@ -289,8 +298,14 @@ function CustomerRatings() {
                   data.list.map((r) => (
                     <tr key={r.id} className="border-b border-[var(--color-border)]/50">
                       <td className="py-3 px-2 font-mono text-[var(--color-primary)]">{r.order_no || '-'}</td>
-                      <td className="py-3 px-2">{r.engineer_name || '-'}</td>
-                      <td className="py-3 px-2">{r.customer_name || '-'}</td>
+                      <td className="py-3 px-2">
+                        <div>{r.engineer_name || '-'}</div>
+                        {r.engineer_company && <div className="text-xs text-[var(--color-text-muted)]">{r.engineer_company}</div>}
+                      </td>
+                      <td className="py-3 px-2">
+                        <div>{r.customer_name || '-'}</div>
+                        {r.customer_company && <div className="text-xs text-[var(--color-text-muted)]">{r.customer_company}</div>}
+                      </td>
                       <td className="py-3 px-2 text-center"><Stars value={r.rating} /></td>
                       <td className="py-3 px-2 text-[var(--color-text-secondary)]">{r.comment || '-'}</td>
                       <td className="py-3 px-2 text-[var(--color-text-secondary)] text-xs">{r.created_at?.slice(0, 16)?.replace('T', ' ')}</td>

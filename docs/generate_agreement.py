@@ -301,6 +301,6 @@ for term, definition in items:
     p.paragraph_format.line_spacing = 1.5
 
 # Save
-output_path = 'E:/我的坚果云/Euchio/推广运营/静态网站加AI/docs/智维钣金平台服务协议.docx'
+output_path = 'E:/我的坚果云/Euchio/推广运营/静态网站加AI/docs/SAGEMRO用户服务协议.docx'
 doc.save(output_path)
 print('Document saved to: ' + output_path)

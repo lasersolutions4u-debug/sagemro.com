@@ -167,7 +167,7 @@ export function UsersPage() {
           <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--color-text-muted)]" />
           <input
             type="text"
-            placeholder="搜索姓名或手机号..."
+            placeholder="搜索姓名、公司名或手机号..."
             value={search}
             onChange={(e) => { setSearch(e.target.value); setPage(1); }}
             className="w-full pl-9 pr-3 py-2 rounded-lg bg-[var(--color-surface-elevated)] border border-[var(--color-border)] text-sm focus:outline-none focus:border-[var(--color-primary)]"
@@ -279,6 +279,7 @@ export function UsersPage() {
                 <tr className="border-b border-[var(--color-border)]">
                   <th className="text-left py-3 px-2 text-[var(--color-text-secondary)] font-medium">编号</th>
                   <th className="text-left py-3 px-2 text-[var(--color-text-secondary)] font-medium">姓名</th>
+                  <th className="text-left py-3 px-2 text-[var(--color-text-secondary)] font-medium">公司名</th>
                   <th className="text-left py-3 px-2 text-[var(--color-text-secondary)] font-medium">手机号</th>
                   {type === 'customer' ? (
                     <th className="text-left py-3 px-2 text-[var(--color-text-secondary)] font-medium">地区</th>
@@ -296,7 +297,7 @@ export function UsersPage() {
               <tbody>
                 {data.list.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="text-center py-8 text-[var(--color-text-muted)]">
+                    <td colSpan={9} className="text-center py-8 text-[var(--color-text-muted)]">
                       {hasActiveFilters ? '没有符合条件的用户' : '暂无数据'}
                     </td>
                   </tr>
@@ -305,6 +306,7 @@ export function UsersPage() {
                     <tr key={user.id} className="border-b border-[var(--color-border)]/50 hover:bg-[var(--color-surface-elevated)]/50">
                       <td className="py-3 px-2 font-mono text-[var(--color-text-secondary)]">{user.user_no}</td>
                       <td className="py-3 px-2">{user.name}</td>
+                      <td className="py-3 px-2 text-[var(--color-text-secondary)]">{user.company || '-'}</td>
                       <td className="py-3 px-2 font-mono">{user.phone}</td>
                       {type === 'customer' ? (
                         <td className="py-3 px-2 text-[var(--color-text-secondary)]">{user.region || '-'}</td>

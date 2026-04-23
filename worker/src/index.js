@@ -66,7 +66,7 @@ import {
 // 不再提供硬编码默认值；缺失 env 直接拒绝登录，避免同一默认账号被全网爆破。
 
 // ============ System Prompt ============
-const SYSTEM_PROMPT = `你是"小智"，智维钣金平台的 AI 助手，服务于钣金加工行业的设备维修服务。
+const SYSTEM_PROMPT = `你是"小智"，SAGEMRO 平台的 AI 助手，服务于钣金加工行业的设备维修服务。
 
 ## 你的身份
 
@@ -3984,7 +3984,7 @@ async function handleAdminUsers(request, env) {
 
       const total = await env.DB.prepare(`SELECT COUNT(*) as count FROM engineers ${where}`).bind(...params).first();
       const list = await env.DB.prepare(
-        `SELECT id, user_no, name, phone, specialties, service_region, status, rating_count, rating_technical, created_at FROM engineers ${where} ORDER BY created_at DESC LIMIT ? OFFSET ?`
+        `SELECT id, user_no, name, phone, company, specialties, service_region, status, rating_count, rating_technical, created_at FROM engineers ${where} ORDER BY created_at DESC LIMIT ? OFFSET ?`
       ).bind(...params, pageSize, offset).all();
 
       return jsonResponse({
@@ -4011,7 +4011,7 @@ async function handleAdminUsers(request, env) {
 
       const total = await env.DB.prepare(`SELECT COUNT(*) as count FROM customers ${where}`).bind(...params).first();
       const list = await env.DB.prepare(
-        `SELECT id, user_no, name, phone, region, created_at FROM customers ${where} ORDER BY created_at DESC LIMIT ? OFFSET ?`
+        `SELECT id, user_no, name, phone, company, region, created_at FROM customers ${where} ORDER BY created_at DESC LIMIT ? OFFSET ?`
       ).bind(...params, pageSize, offset).all();
 
       return jsonResponse({
@@ -4044,8 +4044,8 @@ async function handleAdminWorkOrders(request, env) {
 
     const list = await env.DB.prepare(`
       SELECT w.id, w.order_no, w.type, w.description, w.urgency, w.status, w.created_at,
-             c.name as customer_name, c.user_no as customer_no,
-             e.name as engineer_name, e.user_no as engineer_no
+             c.name as customer_name, c.company as customer_company, c.user_no as customer_no,
+             e.name as engineer_name, e.company as engineer_company, e.user_no as engineer_no
       FROM work_orders w
       LEFT JOIN customers c ON w.customer_id = c.id
       LEFT JOIN engineers e ON w.engineer_id = e.id
@@ -4091,8 +4091,8 @@ async function handleAdminRatings(request, env) {
     const total = await env.DB.prepare(`SELECT COUNT(*) as count FROM ratings r ${where}`).bind(...params).first();
     const list = await env.DB.prepare(`
       SELECT r.id, r.work_order_id, r.rating_timeliness, r.rating_technical, r.rating_communication, r.rating_professional, r.comment, r.created_at,
-             c.name as customer_name, c.user_no as customer_no,
-             e.name as engineer_name, e.user_no as engineer_no,
+             c.name as customer_name, c.company as customer_company, c.user_no as customer_no,
+             e.name as engineer_name, e.company as engineer_company, e.user_no as engineer_no,
              w.order_no
       FROM ratings r
       LEFT JOIN customers c ON r.customer_id = c.id

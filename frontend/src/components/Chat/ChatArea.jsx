@@ -3,6 +3,7 @@ import { Menu } from 'lucide-react';
 import { MessageBubble } from './MessageBubble';
 import { WelcomePage } from './WelcomePage';
 import { InputArea } from './InputArea';
+import { Footer } from '../common/Footer';
 
 export function ChatArea({
   messages,
@@ -64,6 +65,10 @@ export function ChatArea({
         disabled={false}
         isStreaming={isStreaming}
       />
+      {/* 页脚：桌面端显示 */}
+      <div className="hidden sm:block">
+        <Footer />
+      </div>
     </div>
   );
 }

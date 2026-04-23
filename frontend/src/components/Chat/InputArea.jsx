@@ -27,7 +27,7 @@ export function InputArea({ onSend, onStop, disabled, isStreaming }) {
   };
 
   return (
-    <div className="border-t border-[var(--color-border)] bg-[var(--color-chat-bg)] px-3 sm:px-6 py-3 sm:py-4">
+    <div className="border-t border-[var(--color-border)] bg-[var(--color-chat-bg)] px-3 sm:px-6 py-3 sm:py-4 pb-[env(safe-area-inset-bottom)]">
       <div className="max-w-4xl mx-auto">
         <div className="flex items-start gap-3">
           {/* 输入框 - 外层容器实现圆角和边框 */}
