@@ -29,24 +29,40 @@ export function ToolBar({
     return () => document.removeEventListener('mousedown', handler);
   }, []);
 
-  // "更多"菜单项
-  const moreTools = [
-    { icon: Package, label: '我的设备', onClick: () => { onOpenMyDevices?.(); setShowMore(false); } },
-    { icon: Bell, label: '消息通知', badge: unreadCount, onClick: () => { onOpenNotifications?.(); setShowMore(false); } },
-    { icon: Settings, label: '设置', onClick: () => { onOpenSettings?.(); setShowMore(false); } },
-    { icon: Info, label: '关于小智', onClick: () => { onOpenAbout?.(); setShowMore(false); } },
+  // 始终显示的工具
+  const alwaysTools = [
+    { icon: Info, label: '关于小智', onClick: onOpenAbout },
   ];
 
-  // 始终显示的工具
+  // 登录后显示的主要工具
   const primaryTools = [
     { icon: FileText, label: '新建工单', onClick: onOpenWorkOrder },
     { icon: ClipboardList, label: '我的工单', onClick: onOpenMyWorkOrders },
     ...(userType === 'engineer' ? [{ icon: Briefcase, label: '合伙人管理台', onClick: onOpenEngineerDashboard, primary: true }] : []),
   ];
 
+  // "更多"菜单项
+  const moreTools = [
+    { icon: Package, label: '我的设备', onClick: () => { onOpenMyDevices?.(); setShowMore(false); } },
+    { icon: Bell, label: '消息通知', badge: unreadCount, onClick: () => { onOpenNotifications?.(); setShowMore(false); } },
+    { icon: Settings, label: '设置', onClick: () => { onOpenSettings?.(); setShowMore(false); } },
+  ];
+
   return (
     <div className="border-t border-[var(--color-border)] pt-3 mt-auto">
-      {/* 主要工具入口（始终显示，最多3项） */}
+      {/* 始终可见的工具（关于小智，所有人可见） */}
+      {alwaysTools.map((tool) => (
+        <button
+          key={tool.label}
+          onClick={tool.onClick}
+          className="w-full flex items-center gap-3 px-4 py-2.5 text-[14px] text-[var(--color-sidebar-muted)] hover:bg-[var(--color-sidebar-surface)] hover:text-[var(--color-sidebar-text)] rounded-lg mx-1 transition-colors"
+        >
+          <tool.icon size={17} />
+          <span>{tool.label}</span>
+        </button>
+      ))}
+
+      {/* 登录后显示的主要工具入口 */}
       {currentUser && primaryTools.map((tool) => (
         <button
           key={tool.label}
