@@ -3,8 +3,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node --test tests/auth.test.mjs tests/guards.test.mjs tests/validators.test.mjs",
-    "test:unit": "node --test tests/auth.test.mjs tests/guards.test.mjs tests/validators.test.mjs",
+    "test": "node --test tests/auth.test.mjs tests/guards.test.mjs tests/validators.test.mjs tests/execute-tool.test.mjs tests/redact.test.mjs tests/summary.test.mjs && node tests/eval-harness.mjs",
+    "test:unit": "node --test tests/auth.test.mjs tests/guards.test.mjs tests/validators.test.mjs tests/execute-tool.test.mjs tests/redact.test.mjs tests/summary.test.mjs",
+    "test:golden": "node tests/eval-harness.mjs",
     "test:smoke": "node tests/smoke.mjs"
   },
   "engines": {

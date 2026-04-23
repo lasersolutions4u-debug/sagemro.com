@@ -43,6 +43,18 @@ import {
 // Sentry 错误上报（零依赖 envelope 客户端）
 import { captureException } from './lib/sentry.js';
 
+// AI 工具调用确定性日志（Phase 0.1）
+import { logToolCall, measureAndLogToolCall, PermissionError } from './lib/trace.js';
+
+// PII 脱敏（Phase 0.5，Phase 1 摘要生成前也复用）
+import { redactPII } from './lib/redact.js';
+
+// SummaryProtocol v1 — 跨会话摘要管线（Phase 1.2 / 1.3）
+import {
+  shouldTriggerSummary,
+  generateSummaryForConversation,
+} from './lib/summary.js';
+
 // ============ 配置 ============
 // API_KEY 和 API_ENDPOINT 通过 Cloudflare Worker Secrets 注入
 // 设置命令：wrangler secret put OPENAI_API_KEY / OPENAI_API_ENDPOINT
@@ -263,8 +275,19 @@ const ROLE_PROMPTS = {
 - 询问自己有哪些设备、有哪些设备档案 → 调用 get_customer_devices
 - 询问某个设备的详细信息、维修历史、工单记录 → 调用 get_device_detail（需提供 device_id）
 - 询问某个设备的状态（是否正常使用、是否在维保中）→ 调用 get_device_detail
+- 提到"上次""之前""我的那个单子""那台设备的问题" 等对过去对话的指涉，或新会话开头想确认是否有未闭环事项 → 调用 get_conversation_history
 
 调用工具后，将工具返回的数据自然地融入回答中。
+
+## 处理 get_conversation_history 返回的 pending_items（未闭环事项跟进指令）
+SummaryProtocol v1 的摘要里有 pending_items 字段，每条以方括号前缀标识类型。按以下方式处理：
+- [missing_info] — 上次对话缺的信息。这一轮主动追问，例如"上次没提到具体材料，这次能告诉我切什么材料吗？"
+- [awaiting_confirmation] — 上次 AI 给了建议但客户没确认执行。这一轮问"上次建议调整气压到 X 试过了吗？效果怎么样？"
+- [followup_due] — 上次推荐了工程师/方案但客户没回复。这一轮问"上次推荐的张师傅联系上了吗？需要我帮你重新匹配吗？"
+- [payment_pending] — 钱包/支付相关在途（通常只对合伙人出现）。客户侧一般忽略。
+- [rating_pending] — 有待评价的已解决工单。这一轮引导"上次 WO-XX 已经解决，方便花 30 秒评个价吗？"
+
+原则：每轮最多跟进 1-2 条 pending_items，不要一次倒一堆。跟进自然地融进对话，不要机械地复读条目。
 `,
 
   engineer: `
@@ -300,8 +323,24 @@ const ROLE_PROMPTS = {
 当合伙人询问以下类型问题时，必须先调用对应工具获取实时数据，再回答：
 - 询问自身状态（钱包余额、信用分、评分、等级、提现、本月收入、本月完成工单数等）→ 调用 get_engineer_profile
 - 询问有哪些新工单可接、当前平台有哪些待接单工单 → 调用 get_pending_tickets_for_engineer
+- 提到"上次""之前""那个客户""那个工单" 等对过去对话的指涉，或新会话开头想确认是否有未闭环事项 → 调用 get_conversation_history
 
 调用工具后，将工具返回的数据自然地融入回答中，不要机械地复述数据。
+
+关于 get_pending_tickets_for_engineer 的返回：
+- 该工具服务端已按合伙人的 specialties 自动过滤。当 filter_applied=true 时，要向合伙人简短说明过滤维度，例如"按你擅长的激光切割机筛出 N 单"，让他知道这不是全量。
+- 当 filter_applied=false（新合伙人还没设置专长）时，提示合伙人补充 specialties 以获得更精准的推荐，并说明当前看到的是全量待接单。
+- count=0 时不要编造工单，诚实告诉合伙人"暂时没有匹配你专长的待接单"，并可以建议他扩展 specialties 或稍后再看。
+
+## 处理 get_conversation_history 返回的 pending_items（未闭环事项跟进指令）
+SummaryProtocol v1 的摘要里有 pending_items 字段，每条以方括号前缀标识类型。按以下方式处理：
+- [missing_info] — 上次对话缺的信息（比如客户没告诉你设备型号）。这一轮可以主动提醒自己"上次那个单子还没摸清设备细节，得先问清"
+- [awaiting_confirmation] — 上次给客户建议过方案但没收到确认。这一轮若话题相关，顺势问一句"上次建议的方案客户落地了吗？"
+- [followup_due] — 需要跟进的事项（如被推荐了某工单但没回应）。若合伙人正在讨论接单策略，提醒他还有未决工单。
+- [payment_pending] — 合伙人本人的提现/结算在途。可以顺带确认"你的 XX 笔提现平台还在处理中。"
+- [rating_pending] — 该合伙人有已解决的工单等客户评价。这条属于客户侧事项，合伙人侧一般只做告知。
+
+原则：每轮最多跟进 1-2 条，跟进要自然融进对话，不要机械复读。
 `
 };
 
@@ -324,7 +363,7 @@ const TOOLS_SCHEMAS = [
     type: 'function',
     function: {
       name: 'get_pending_tickets_for_engineer',
-      description: '查询平台当前所有待接单的工单列表。返回工单编号、设备类型、故障描述、紧急程度、提交时间。当合伙人询问有哪些新工单可接时调用此工具。',
+      description: '查询平台当前待接单的工单列表，服务端会按当前合伙人的 specialties（设备类型标签）自动过滤——只返回匹配其专长的工单；若合伙人未设置 specialties（如新 junior），则降级返回全量待接单。返回字段包括工单编号、设备类型/品牌/型号、故障描述、紧急程度、客户、提交时间，以及 filter_applied（是否应用了过滤）和 engineer_specialties（生效的专长清单，便于向合伙人解释"按你擅长的 XX 设备筛出 N 单"）。',
       parameters: {
         type: 'object',
         properties: {
@@ -365,6 +404,41 @@ const TOOLS_SCHEMAS = [
         required: ['device_id']
       }
     }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'get_conversation_history',
+      description: '查询当前登录用户（客户或合伙人）最近若干次对话的结构化摘要（SummaryProtocol v1），每条摘要包含对话类型、一句话总结、涉及的设备、故障关键词、未闭环事项 pending_items、情绪、相关工单ID 等。用于跨会话识别用户历史、延续未完成事项、避免重复询问。当用户提到"上次""之前""我的那个单子"等时调用此工具。可选按对话类型或设备类型过滤。',
+      parameters: {
+        type: 'object',
+        properties: {
+          limit: {
+            type: 'integer',
+            description: '返回数量，默认 5 条，最多 10 条'
+          },
+          filter_conversation_type: {
+            type: 'string',
+            description: '按对话类型过滤：device_consult / repair_request / pricing / rating_complaint / wallet_query / post_sale_followup / onboarding / general',
+            enum: [
+              'device_consult',
+              'repair_request',
+              'pricing',
+              'rating_complaint',
+              'wallet_query',
+              'post_sale_followup',
+              'onboarding',
+              'general'
+            ]
+          },
+          filter_device_type: {
+            type: 'string',
+            description: '按设备类型过滤（精确匹配 summary.device.type），例如"激光切割机"'
+          }
+        },
+        required: []
+      }
+    }
   }
 ];
 
@@ -372,19 +446,135 @@ const TOOLS_SCHEMAS = [
 
 // ============ Function Calling 工具实现 ============
 
+// 服务端角色守卫：每个角色允许调用的工具白名单
+// 注意：prompt 层面的角色约束会被越狱绕过，这里是最终一道闸。
+// 游客调试用允许空集；admin 看全部；system 是服务端触发（内部流程），也全开。
+const ROLE_ALLOWED_TOOLS = {
+  guest: new Set([]),
+  customer: new Set([
+    'get_customer_devices',
+    'get_device_detail',
+    'get_conversation_history',
+  ]),
+  engineer: new Set([
+    'get_engineer_profile',
+    'get_pending_tickets_for_engineer',
+    'get_conversation_history',
+  ]),
+  admin: new Set([
+    'get_engineer_profile',
+    'get_pending_tickets_for_engineer',
+    'get_customer_devices',
+    'get_device_detail',
+    'get_conversation_history',
+  ]),
+  system: new Set([
+    'get_engineer_profile',
+    'get_pending_tickets_for_engineer',
+    'get_customer_devices',
+    'get_device_detail',
+    'get_conversation_history',
+  ]),
+};
+
+// 失败时给 AI 的 fallback_instruction：
+// 指导 AI 不要暴露系统错误给用户，改为自然地向用户索要信息或换话题。
+const FALLBACK_INSTRUCTIONS = {
+  permission_denied:
+    'Do not mention this tool or its error to the user. Respond using only information the user has provided in the current conversation. If you need more context, ask the user directly.',
+  tool_failed:
+    'The data source is temporarily unavailable. Do not mention the technical failure. Continue the conversation by asking the user directly for the specific information you need (device model, symptoms, timestamps, etc.).',
+  unknown_tool:
+    'Ignore this tool call and respond based on the conversation context. Ask the user to clarify their question if needed.',
+};
+
 // 执行工具调用（根据工具名路由到具体实现）
-async function executeTool(toolName, args, env, engineerId, customerId) {
-  switch(toolName) {
-    case 'get_engineer_profile':
-      return await toolGetEngineerProfile(engineerId, env);
-    case 'get_pending_tickets_for_engineer':
-      return await toolGetPendingTickets(args?.limit || 10, env);
-    case 'get_customer_devices':
-      return await toolGetCustomerDevices(customerId, env);
-    case 'get_device_detail':
-      return await toolGetDeviceDetail(customerId, args?.device_id, env);
-    default:
-      return { error: `Unknown tool: ${toolName}` };
+// 参数改为 context 对象，方便 Phase 0.3 多轮 tool call 传递 iteration。
+// 返回值永远是 JSON-safe 对象：正常结果 / { error, fallback_instruction }
+// 导出以供 worker/tests/test-execute-tool.mjs 单元测试直接调用。
+export async function executeTool(ctxObj) {
+  const {
+    toolName,
+    args = {},
+    env,
+    ctx,
+    userRole = 'guest',
+    engineerId = null,
+    customerId = null,
+    conversationId = null,
+    iteration = 0,
+  } = ctxObj;
+
+  const traceMeta = {
+    env,
+    ctx,
+    conversationId,
+    userId: engineerId || customerId || null,
+    userRole,
+    toolName,
+    args,
+    iteration,
+  };
+
+  // 1. 服务端角色守卫
+  const allowed = ROLE_ALLOWED_TOOLS[userRole] || ROLE_ALLOWED_TOOLS.guest;
+  if (!allowed.has(toolName)) {
+    // 直接写一条 denied trace（不用 measureAndLogToolCall，因为没有真正执行）
+    logToolCall({
+      ...traceMeta,
+      resultStatus: 'denied',
+      errorCode: 'permission_denied',
+      latencyMs: 0,
+    });
+    return {
+      error: 'permission_denied',
+      fallback_instruction: FALLBACK_INSTRUCTIONS.permission_denied,
+    };
+  }
+
+  // 2. 未知工具
+  const executor = {
+    get_engineer_profile: () => toolGetEngineerProfile(engineerId, env),
+    get_pending_tickets_for_engineer: () => toolGetPendingTickets({ limit: args?.limit || 10, engineerId, env }),
+    get_customer_devices: () => toolGetCustomerDevices(customerId, env),
+    get_device_detail: () => toolGetDeviceDetail(customerId, args?.device_id, env),
+    get_conversation_history: () =>
+      toolGetConversationHistory({
+        customerId,
+        engineerId,
+        env,
+        limit: args?.limit,
+        filterConversationType: args?.filter_conversation_type,
+        filterDeviceType: args?.filter_device_type,
+      }),
+  }[toolName];
+
+  if (!executor) {
+    logToolCall({
+      ...traceMeta,
+      resultStatus: 'error',
+      errorCode: 'unknown_tool',
+      latencyMs: 0,
+    });
+    return {
+      error: 'unknown_tool',
+      fallback_instruction: FALLBACK_INSTRUCTIONS.unknown_tool,
+    };
+  }
+
+  // 3. 正常执行 + tracing + 异常转 fallback
+  try {
+    return await measureAndLogToolCall(traceMeta, executor);
+  } catch (err) {
+    // measureAndLogToolCall 已写了 error trace + rethrow
+    // 这里转换为 fallback 形状供上游 AI 消费，不把原始错误暴露
+    const isDenied = err instanceof PermissionError || err?.code === 'permission_denied';
+    return {
+      error: isDenied ? 'permission_denied' : 'tool_failed',
+      fallback_instruction: isDenied
+        ? FALLBACK_INSTRUCTIONS.permission_denied
+        : FALLBACK_INSTRUCTIONS.tool_failed,
+    };
   }
 }
 
@@ -450,30 +640,85 @@ async function toolGetEngineerProfile(engineerId, env) {
   }
 }
 
-// 工具2：查询待接单工单
-async function toolGetPendingTickets(limit, env) {
+// 工具2：查询待接单工单（Phase 0.4：按当前工程师 specialties 过滤）
+//
+// 行为：
+//   - 有 engineerId 且该工程师 specialties 非空 → 仅返回 d.type 命中其中任一 specialty 的工单
+//   - engineerId 缺失或 specialties 空 → 降级返回全量（回退路径，避免新注册的 junior 看不到任何单子）
+//   - 返回体里多带 filter_applied + engineer_specialties，让 AI 知道这次结果是否被过滤过，
+//     从而在和合伙人对话时能说"根据你的专长筛选出 3 单"而不是盲目推
+//
+// 参数改为对象形式（{limit, engineerId, env}）避免后续扩展再次破坏签名
+async function toolGetPendingTickets({ limit, engineerId, env }) {
   try {
-    // 只查 pending 状态的工单（尚未分配工程师）
-    const tickets = await env.DB.prepare(`
-      SELECT wo.id, wo.order_no, wo.type, wo.description, wo.urgency, wo.created_at,
-             d.type as device_type, d.brand as device_brand, d.model as device_model,
-             c.name as customer_name
-      FROM work_orders wo
-      LEFT JOIN devices d ON d.id = wo.device_id
-      LEFT JOIN customers c ON c.id = wo.customer_id
-      WHERE wo.status = 'pending'
-      ORDER BY
-        CASE wo.urgency WHEN 'critical' THEN 0 WHEN 'urgent' THEN 1 ELSE 2 END,
-        wo.created_at DESC
-      LIMIT ?
-    `).bind(Math.min(limit || 10, 20)).all();
+    // 1. 取当前工程师的 specialties（JSON 数组）
+    let specialties = [];
+    if (engineerId) {
+      const row = await env.DB.prepare(
+        'SELECT specialties FROM engineers WHERE id = ?',
+      ).bind(engineerId).first();
+      if (row?.specialties) {
+        try {
+          const parsed = JSON.parse(row.specialties);
+          if (Array.isArray(parsed)) {
+            specialties = parsed.filter((s) => typeof s === 'string' && s.trim().length > 0);
+          }
+        } catch {
+          /* 脏数据容错：保持空数组 */
+        }
+      }
+    }
+
+    const clipLimit = Math.min(limit || 10, 20);
+    const filterApplied = specialties.length > 0;
+
+    // 2. 构造 SQL。有 specialties 就加 IN 过滤；没有就全量（降级路径）
+    let sql;
+    let params;
+    if (filterApplied) {
+      const placeholders = specialties.map(() => '?').join(',');
+      sql = `
+        SELECT wo.id, wo.order_no, wo.type, wo.description, wo.urgency, wo.created_at,
+               d.type as device_type, d.brand as device_brand, d.model as device_model,
+               c.name as customer_name
+        FROM work_orders wo
+        LEFT JOIN devices d ON d.id = wo.device_id
+        LEFT JOIN customers c ON c.id = wo.customer_id
+        WHERE wo.status = 'pending'
+          AND d.type IN (${placeholders})
+        ORDER BY
+          CASE wo.urgency WHEN 'critical' THEN 0 WHEN 'urgent' THEN 1 ELSE 2 END,
+          wo.created_at DESC
+        LIMIT ?
+      `;
+      params = [...specialties, clipLimit];
+    } else {
+      sql = `
+        SELECT wo.id, wo.order_no, wo.type, wo.description, wo.urgency, wo.created_at,
+               d.type as device_type, d.brand as device_brand, d.model as device_model,
+               c.name as customer_name
+        FROM work_orders wo
+        LEFT JOIN devices d ON d.id = wo.device_id
+        LEFT JOIN customers c ON c.id = wo.customer_id
+        WHERE wo.status = 'pending'
+        ORDER BY
+          CASE wo.urgency WHEN 'critical' THEN 0 WHEN 'urgent' THEN 1 ELSE 2 END,
+          wo.created_at DESC
+        LIMIT ?
+      `;
+      params = [clipLimit];
+    }
+
+    const tickets = await env.DB.prepare(sql).bind(...params).all();
 
     const typeText = { fault: '设备故障', maintenance: '维护保养', parameter: '参数调试', other: '其他' };
     const urgencyText = { normal: '普通', urgent: '紧急', critical: '非常紧急' };
 
     return {
       count: tickets.results?.length || 0,
-      tickets: (tickets.results || []).map(t => ({
+      filter_applied: filterApplied,
+      engineer_specialties: specialties,
+      tickets: (tickets.results || []).map((t) => ({
         order_no: t.order_no,
         device_type: t.device_type || '未知设备',
         device_brand: t.device_brand || '',
@@ -483,8 +728,8 @@ async function toolGetPendingTickets(limit, env) {
         type: typeText[t.type] || t.type,
         customer: t.customer_name || '匿名客户',
         created_at: t.created_at,
-        time_ago: getTimeAgo(t.created_at)
-      }))
+        time_ago: getTimeAgo(t.created_at),
+      })),
     };
   } catch (error) {
     return { error: error.message };
@@ -607,6 +852,129 @@ async function toolGetDeviceDetail(customerId, deviceId, env) {
         created_at: formatDate(device.created_at)
       },
       work_orders: workOrdersWithCost
+    };
+  } catch (error) {
+    return { error: error.message };
+  }
+}
+
+// 工具5：查询当前用户最近 N 次对话的结构化摘要（SummaryProtocol v1）
+// 支持按 conversation_type 或 device.type 过滤，用于跨会话检索。
+const CONVERSATION_TYPE_WHITELIST = new Set([
+  'device_consult',
+  'repair_request',
+  'pricing',
+  'rating_complaint',
+  'wallet_query',
+  'post_sale_followup',
+  'onboarding',
+  'general',
+]);
+
+async function toolGetConversationHistory({
+  customerId,
+  engineerId,
+  env,
+  limit,
+  filterConversationType,
+  filterDeviceType,
+}) {
+  if (!customerId && !engineerId) {
+    return { error: '未登录，无法查询历史对话' };
+  }
+
+  // 取值钳制：默认 5，最大 10
+  let n = Number(limit);
+  if (!Number.isFinite(n) || n <= 0) n = 5;
+  n = Math.min(n, 10);
+
+  // 参数校验：非白名单 conversation_type 直接忽略（不抛错，让 AI 继续）
+  const ctype =
+    typeof filterConversationType === 'string' &&
+    CONVERSATION_TYPE_WHITELIST.has(filterConversationType)
+      ? filterConversationType
+      : null;
+  const dtype =
+    typeof filterDeviceType === 'string' && filterDeviceType.trim()
+      ? filterDeviceType.trim().slice(0, 80)
+      : null;
+
+  try {
+    // 按 customerId 或 engineerId join conversations，拉最近摘要
+    // 每个 conversation 只取最新一条（generated_at DESC + LIMIT 1 per conversation 用窗口函数 D1 不一定兼容，
+    // 这里保守用 "先拿每个 conv 的 max(generated_at) 再连回"）
+    //
+    // 简化策略：直接按 generated_at DESC 拉 3*n 条，内存去重每对话保留最新，再截 n 条。
+    const fetchN = Math.max(n * 3, 15);
+
+    const ownerField = customerId ? 'customer_id' : 'engineer_id';
+    const ownerValue = customerId || engineerId;
+
+    const rows = await env.DB.prepare(
+      `SELECT cs.id, cs.conversation_id, cs.summary_json, cs.generated_at,
+              cs.source_message_count, c.created_at AS conversation_created_at
+         FROM conversation_summaries cs
+         JOIN conversations c ON c.id = cs.conversation_id
+        WHERE c.${ownerField} = ?
+        ORDER BY cs.generated_at DESC
+        LIMIT ?`
+    )
+      .bind(ownerValue, fetchN)
+      .all();
+
+    // 去重：每个 conversation_id 保留最新的
+    const seen = new Set();
+    const deduped = [];
+    for (const r of rows.results || []) {
+      if (seen.has(r.conversation_id)) continue;
+      seen.add(r.conversation_id);
+      deduped.push(r);
+    }
+
+    // 解析 JSON + 过滤
+    const parsed = deduped
+      .map((r) => {
+        let summary = null;
+        try {
+          summary = JSON.parse(r.summary_json);
+        } catch {
+          return null;
+        }
+        return {
+          conversation_id: r.conversation_id,
+          generated_at: r.generated_at,
+          conversation_created_at: r.conversation_created_at,
+          source_message_count: r.source_message_count,
+          summary,
+        };
+      })
+      .filter(Boolean);
+
+    let filtered = parsed;
+    if (ctype) {
+      filtered = filtered.filter((p) => p.summary?.conversation_type === ctype);
+    }
+    if (dtype) {
+      filtered = filtered.filter((p) => p.summary?.device?.type === dtype);
+    }
+
+    // 合并所有 pending_items，供 AI 跟进
+    const allPending = [];
+    for (const p of filtered) {
+      if (Array.isArray(p.summary?.pending_items)) {
+        for (const item of p.summary.pending_items) {
+          allPending.push({ conversation_id: p.conversation_id, item });
+        }
+      }
+    }
+
+    return {
+      count: Math.min(filtered.length, n),
+      filter_applied: Boolean(ctype || dtype),
+      filter_conversation_type: ctype,
+      filter_device_type: dtype,
+      summaries: filtered.slice(0, n),
+      open_pending_items: allPending.slice(0, 20),
     };
   } catch (error) {
     return { error: error.message };
@@ -1328,6 +1696,87 @@ const MAX_TOKENS = {
   note: 400,
 };
 
+// Phase 0.3：多轮 tool call 循环上限
+// 设计意图：每轮允许 AI 继续调工具（chain），最后一轮强制不给 tools，LLM 必须产出文本。
+// 4 轮足够复杂 Agent 场景（查客户 → 查设备 → 查历史报价 → 查同区域均价），生产可按需调。
+const MAX_TOOL_ITERATIONS = 4;
+
+/**
+ * 消费一次 LLM 的 SSE 流：
+ *   - delta.content 实时转发给客户端
+ *   - delta.tool_calls 按 index 累积成完整 tool_calls 数组（arguments 分片合并）
+ *   - 上游的 `data: [DONE]` 不转发，由外层循环结束后统一下发，避免客户端误以为流结束
+ *
+ * 导出以供 tests/execute-tool.test.mjs 直接覆盖 tool_calls 累积边界。
+ *
+ * @returns {Promise<{content: string, toolCalls: Array}>}
+ */
+export async function consumeLlmStream({ response, controller, encoder, convId, decoder }) {
+  const reader = response.body.getReader();
+  let buffer = '';
+  let content = '';
+  // 按 index 累积：OpenAI 流式规范 tool_calls[i] 的 id/name 首包到达，arguments 可分多包
+  const toolCallsByIndex = new Map();
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split('\n');
+    buffer = lines.pop() || '';
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      if (trimmed === 'data: [DONE]') continue; // 外层统一发 DONE
+      if (!trimmed.startsWith('data: ')) continue;
+
+      let data;
+      try {
+        data = JSON.parse(trimmed.slice(6));
+      } catch {
+        continue;
+      }
+
+      const delta = data.choices?.[0]?.delta;
+      if (!delta) continue;
+
+      if (delta.content) {
+        content += delta.content;
+        controller.enqueue(
+          encoder.encode(
+            `data: ${JSON.stringify({ content: delta.content, conversation_id: convId })}\n`,
+          ),
+        );
+      }
+
+      if (Array.isArray(delta.tool_calls)) {
+        for (const tc of delta.tool_calls) {
+          const idx = tc.index ?? 0;
+          let acc = toolCallsByIndex.get(idx);
+          if (!acc) {
+            acc = { id: '', type: 'function', function: { name: '', arguments: '' } };
+            toolCallsByIndex.set(idx, acc);
+          }
+          if (tc.id) acc.id = tc.id;
+          if (tc.type) acc.type = tc.type;
+          if (tc.function?.name) acc.function.name = tc.function.name;
+          if (tc.function?.arguments) acc.function.arguments += tc.function.arguments;
+        }
+      }
+    }
+  }
+
+  // 按 index 排序，过滤不完整的（没有 id 或 name 的不能发回 OpenAI）
+  const toolCalls = [...toolCallsByIndex.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([, v]) => v)
+    .filter((tc) => tc.id && tc.function.name);
+
+  return { content, toolCalls };
+}
+
 // 处理聊天请求
 async function handleChat(request, env) {
   try {
@@ -1421,53 +1870,30 @@ async function handleChat(request, env) {
     // 顺序：Base → Role → Context
     const fullSystemPrompt = SYSTEM_PROMPT + rolePrompt + dataContext;
 
-    // 构建请求到 API
-    const allMessages = [
-      { role: 'system', content: fullSystemPrompt },
-      ...messages,
-      { role: 'user', content: message }
-    ];
-
-    const apiResponse = await fetch(env.OPENAI_API_ENDPOINT, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${env.OPENAI_API_KEY}`,
-      },
-      body: JSON.stringify({
-        model: 'gpt-4o-mini',
-        messages: allMessages,
-        tools: TOOLS_SCHEMAS,
-        tool_choice: 'auto',
-        stream: true,
-        temperature: 0.7,
-        max_tokens: MAX_TOKENS.chat,
-      }),
-    });
-
-    if (!apiResponse.ok) {
-      const errorText = await apiResponse.text();
-      return jsonResponse({ error: errorText }, apiResponse.status);
-    }
-
-    // 创建新对话（IDOR 防护：优先使用 JWT 中的 userId 写入 customer_id，
-    // 忽略请求体里自报的 customer_id，避免伪造归属）
+    // 认证与身份信任根（先于 LLM 调用就绪，供工单归属 + tool 执行使用）
+    // IDOR 防护：userRole / engineerId / customerId 全部从 JWT 取真值，
+    // 忽略请求体自报的 user_type / engineer_id / customer_id，防止越权。
     // 注意：/api/chat 路由位于全局认证中间件之前（允许访客使用），
-    // 因此 request._auth 不可用，需要单独解析 Authorization 头
+    // 因此 request._auth 不可用，需要单独解析 Authorization 头。
     let chatAuth = null;
     try {
       chatAuth = await authenticateRequest(request, env);
     } catch {
       chatAuth = null;
     }
-    const ownerCustomerId =
+    const trustedRole = chatAuth?.userType || 'guest';
+    const trustedEngineerId =
+      chatAuth?.userType === 'engineer' ? chatAuth.userId : null;
+    const trustedCustomerId =
       chatAuth?.userType === 'customer' ? chatAuth.userId : null;
+
+    // 创建或更新对话（customer_id 只接受 JWT 信任值）
     let convId = conversation_id;
     if (!convId) {
       convId = generateId();
       await env.DB.prepare(
         'INSERT INTO conversations (id, title, last_message, customer_id) VALUES (?, ?, ?, ?)'
-      ).bind(convId, truncateStr(message, 20), truncateStr(message, 50), ownerCustomerId).run();
+      ).bind(convId, truncateStr(message, 20), truncateStr(message, 50), trustedCustomerId).run();
     } else {
       await env.DB.prepare(
         'UPDATE conversations SET last_message = ?, updated_at = datetime("now") WHERE id = ?'
@@ -1480,164 +1906,184 @@ async function handleChat(request, env) {
       'INSERT INTO messages (id, conversation_id, role, content) VALUES (?, ?, ?, ?)'
     ).bind(userMsgId, convId, 'user', message).run();
 
-    // 流式返回响应
+    // 流式返回响应（Phase 0.3：多轮 tool call while 循环）
+    // 每轮都带 tools 参数，允许 AI 链式调多个工具；最后一轮强制不带 tools，逼 LLM 产出文本。
     const encoder = new TextEncoder();
+    // 只累积发给客户端的 content（不含 tool_calls JSON），写入 messages 表
     let fullContent = '';
 
     const stream = new ReadableStream({
       async start(controller) {
-        const reader = apiResponse.body.getReader();
         const decoder = new TextDecoder();
-        let buffer = '';
-        let toolCalls = null;
+        let currentMessages = [
+          { role: 'system', content: fullSystemPrompt },
+          ...messages,
+          { role: 'user', content: message },
+        ];
+        let iteration = 0;
 
         try {
           while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-
-            buffer += decoder.decode(value, { stream: true });
-            const lines = buffer.split('\n');
-            buffer = lines.pop() || '';
-
-            for (const line of lines) {
-              const trimmed = line.trim();
-              if (!trimmed || trimmed === 'data: [DONE]') {
-                if (trimmed === 'data: [DONE]') {
-                  controller.enqueue(encoder.encode('data: [DONE]\n'));
-                }
-                continue;
-              }
-
-              if (trimmed.startsWith('data: ')) {
-                const dataStr = trimmed.slice(6);
-                try {
-                  const data = JSON.parse(dataStr);
-
-                  // 检测工具调用
-                  if (data.choices && data.choices[0].delta && data.choices[0].delta.tool_calls) {
-                    toolCalls = data.choices[0].delta.tool_calls;
-                  }
-
-                  if (data.choices && data.choices[0].delta && data.choices[0].delta.content) {
-                    const content = data.choices[0].delta.content;
-                    fullContent += content;
-                    const responseData = JSON.stringify({
-                      content,
-                      conversation_id: convId
-                    });
-                    controller.enqueue(encoder.encode(`data: ${responseData}\n`));
-                  }
-                } catch (e) {
-                  // 忽略解析错误
-                }
-              }
-            }
-          }
-        } catch (e) {
-          // 处理错误
-        } finally {
-          // 处理工具调用
-          if (toolCalls && toolCalls.length > 0) {
-            const toolCall = toolCalls[0];
-            const toolName = toolCall.function?.name;
-            const toolArgs = toolCall.function?.arguments
-              ? JSON.parse(toolCall.function.arguments)
-              : {};
-
-            // 执行工具
-            const toolResult = await executeTool(toolName, toolArgs, env, engineer_id, customer_id);
-
-            // 将工具结果作为消息注入
-            const toolResultMessage = {
-              role: 'tool',
-              tool_call_id: toolCall.id,
-              content: JSON.stringify(toolResult)
+            const canCallTools = iteration < MAX_TOOL_ITERATIONS;
+            const requestBody = {
+              model: 'gpt-4o-mini',
+              messages: currentMessages,
+              stream: true,
+              temperature: 0.7,
+              max_tokens:
+                iteration === 0 ? MAX_TOKENS.chat : MAX_TOKENS.chat_tool_followup,
             };
+            if (canCallTools) {
+              requestBody.tools = TOOLS_SCHEMAS;
+              requestBody.tool_choice = 'auto';
+            }
 
-            // 构建第二轮请求（不带 tools 参数，避免重复调用）
-            const secondMessages = [
-              ...allMessages,
-              { role: 'assistant', content: fullContent },
-              toolResultMessage
-            ];
-
-            const secondResponse = await fetch(env.OPENAI_API_ENDPOINT, {
+            const apiResponse = await fetch(env.OPENAI_API_ENDPOINT, {
               method: 'POST',
               headers: {
                 'Content-Type': 'application/json',
                 'Authorization': `Bearer ${env.OPENAI_API_KEY}`,
               },
-              body: JSON.stringify({
-                model: 'gpt-4o-mini',
-                messages: secondMessages,
-                stream: true,
-                temperature: 0.7,
-                max_tokens: MAX_TOKENS.chat_tool_followup,
-              }),
+              body: JSON.stringify(requestBody),
             });
 
-            // 流式返回第二轮结果
-            const secondReader = secondResponse.body.getReader();
-            let secondBuffer = '';
-            let finalContent = fullContent; // 保留第一轮内容
-
-            try {
-              while (true) {
-                const { done, value } = await secondReader.read();
-                if (done) break;
-
-                secondBuffer += decoder.decode(value, { stream: true });
-                const secondLines = secondBuffer.split('\n');
-                secondBuffer = secondLines.pop() || '';
-
-                for (const line of secondLines) {
-                  const trimmed = line.trim();
-                  if (!trimmed || trimmed === 'data: [DONE]') {
-                    if (trimmed === 'data: [DONE]') {
-                      controller.enqueue(encoder.encode('data: [DONE]\n'));
-                    }
-                    continue;
-                  }
-
-                  if (trimmed.startsWith('data: ')) {
-                    const dataStr = trimmed.slice(6);
-                    try {
-                      const data = JSON.parse(dataStr);
-                      if (data.choices && data.choices[0].delta && data.choices[0].delta.content) {
-                        const content = data.choices[0].delta.content;
-                        finalContent += content;
-                        const responseData = JSON.stringify({
-                          content,
-                          conversation_id: convId
-                        });
-                        controller.enqueue(encoder.encode(`data: ${responseData}\n`));
-                      }
-                    } catch (e) {
-                      // 忽略
-                    }
-                  }
-                }
+            if (!apiResponse.ok) {
+              // 上游失败：发系统兜底文本，Sentry 上报，退出循环
+              const errText = await apiResponse.text().catch(() => 'upstream error');
+              const fallback = '抱歉，服务暂时不可用，请稍后再试。';
+              fullContent += fallback;
+              controller.enqueue(
+                encoder.encode(
+                  `data: ${JSON.stringify({ content: fallback, conversation_id: convId })}\n`,
+                ),
+              );
+              try {
+                captureException(
+                  new Error(`LLM upstream ${apiResponse.status}: ${errText}`),
+                );
+              } catch {
+                /* Sentry 本身失败不影响主流程 */
               }
-              fullContent = finalContent;
-            } catch (e) {
-              // 处理错误
+              break;
             }
-          }
 
-          // 保存 AI 响应到数据库
+            const { content: roundContent, toolCalls } = await consumeLlmStream({
+              response: apiResponse,
+              controller,
+              encoder,
+              convId,
+              decoder,
+            });
+            fullContent += roundContent;
+
+            // 本轮无 tool_calls（或已达上限）→ 这就是最终答复，退出
+            if (!canCallTools || toolCalls.length === 0) {
+              break;
+            }
+
+            // 把本轮 assistant（带 tool_calls）追加进历史
+            // OpenAI 规范：assistant 的 content 允许为 null 当且仅当有 tool_calls
+            currentMessages = [
+              ...currentMessages,
+              {
+                role: 'assistant',
+                content: roundContent || null,
+                tool_calls: toolCalls,
+              },
+            ];
+
+            // 并行执行所有 tool_calls —— executeTool 内部已有 role guard + trace + fallback
+            const toolResults = await Promise.all(
+              toolCalls.map(async (tc) => {
+                let parsedArgs = {};
+                try {
+                  parsedArgs = JSON.parse(tc.function?.arguments || '{}');
+                } catch {
+                  parsedArgs = {};
+                }
+                const result = await executeTool({
+                  toolName: tc.function?.name,
+                  args: parsedArgs,
+                  env,
+                  ctx: request._ctx,
+                  userRole: trustedRole,
+                  engineerId: trustedEngineerId,
+                  customerId: trustedCustomerId,
+                  conversationId: convId,
+                  iteration,
+                });
+                return { tool_call_id: tc.id, result };
+              }),
+            );
+
+            // 把 tool 结果作为 tool 角色消息追加
+            for (const { tool_call_id, result } of toolResults) {
+              currentMessages.push({
+                role: 'tool',
+                tool_call_id,
+                content: JSON.stringify(result),
+              });
+            }
+
+            iteration++;
+          }
+        } catch (e) {
+          try {
+            captureException(e);
+          } catch {
+            /* 吃掉 */
+          }
+        } finally {
+          // 统一下发 [DONE] —— 外层控制，不被中间轮次提前触发
+          controller.enqueue(encoder.encode('data: [DONE]\n'));
+
+          // 保存 AI 最终响应到数据库
           if (fullContent) {
             try {
               await env.DB.prepare(
                 'INSERT INTO messages (id, conversation_id, role, content) VALUES (?, ?, ?, ?)'
               ).bind(generateId(), convId, 'assistant', fullContent).run();
-            } catch (e) {
-              // 忽略保存错误
+            } catch {
+              /* 保存失败不影响客户端已收到的流 */
+            }
+
+            // Phase 1.3：达到阈值（消息 ≥6 且距上次摘要 ≥3）后台生成 SummaryProtocol v1 摘要
+            // 失败静默 —— generateSummaryForConversation 内部已 try/catch + trace；此处再裹一层防御
+            try {
+              const countRow = await env.DB.prepare(
+                `SELECT COUNT(*) AS total,
+                        COALESCE(
+                          (SELECT summary_message_count FROM conversations WHERE id = ?),
+                          0
+                        ) AS summary_message_count
+                   FROM messages WHERE conversation_id = ?`
+              ).bind(convId, convId).first();
+
+              const total = Number(countRow?.total || 0);
+              const summaryMessageCount = Number(countRow?.summary_message_count || 0);
+
+              if (shouldTriggerSummary({ total, summaryMessageCount })) {
+                const summaryPromise = generateSummaryForConversation({
+                  conversationId: convId,
+                  env,
+                  ctx: request._ctx,
+                  userRole: trustedRole || 'system',
+                  userId: trustedEngineerId || trustedCustomerId || null,
+                });
+                if (request._ctx && typeof request._ctx.waitUntil === 'function') {
+                  request._ctx.waitUntil(summaryPromise.catch(() => {}));
+                } else {
+                  // 无 ctx（测试/本地直跑）时 fire-and-forget
+                  summaryPromise.catch(() => {});
+                }
+              }
+            } catch {
+              /* 阈值判断或调度失败一律静默，不影响 chat 主流程 */
             }
           }
           controller.close();
         }
-      }
+      },
     });
 
     return new Response(stream, {
@@ -1861,13 +2307,17 @@ async function handleCreateWorkOrder(request, env) {
       throw e;
     }
 
+    // PII 脱敏（Phase 0.5）：手机号/邮箱/身份证/银行卡/车牌等在入库前替换为占位符
+    // 注：device_id / type / urgency 是枚举/引用，不脱敏。只洗用户自由输入的 description
+    const safeDescription = redactPII(description);
+
     const id = generateId();
     const order_no = generateOrderNo();
 
     await env.DB.prepare(`
       INSERT INTO work_orders (id, order_no, customer_id, type, description, urgency, device_id, status)
       VALUES (?, ?, ?, ?, ?, ?, ?, 'pending')
-    `).bind(id, order_no, customer_id, type, description, urgency || 'normal', device_id || null).run();
+    `).bind(id, order_no, customer_id, type, safeDescription, urgency || 'normal', device_id || null).run();
 
     // 记录日志
     await env.DB.prepare(`
@@ -1878,7 +2328,7 @@ async function handleCreateWorkOrder(request, env) {
     // AI 摘要异步生成：不阻塞响应，生成完成后回写 ai_summary
     // 使用 ctx.waitUntil 保证 Worker 在返回响应后仍会完成该任务
     const ctx = request._ctx;
-    const aiSummaryPromise = generateWorkOrderSummary(type, description, urgency, env)
+    const aiSummaryPromise = generateWorkOrderSummary(type, safeDescription, urgency, env)
       .then(async (summary) => {
         if (summary) {
           await env.DB.prepare('UPDATE work_orders SET ai_summary = ? WHERE id = ?')
@@ -2316,6 +2766,10 @@ async function handleUpdateDevice(request, env) {
       throw e;
     }
 
+    // PII 脱敏（Phase 0.5）：notes 是用户自由输入，可能包含手机号/地址等
+    // name / type / brand / model / power 是设备元数据，不脱敏（型号/功率要保留给 RAG）
+    const safeNotes = typeof notes === 'string' ? redactPII(notes) : notes;
+
     await env.DB.prepare(`
       UPDATE devices
       SET name = ?, type = ?, brand = ?, model = ?, power = ?, status = ?, photo_url = ?, notes = ?
@@ -2328,7 +2782,7 @@ async function handleUpdateDevice(request, env) {
       power ?? device.power,
       status ?? device.status,
       photo_url ?? device.photo_url,
-      notes ?? device.notes,
+      safeNotes ?? device.notes,
       id
     ).run();
 
@@ -4478,10 +4932,15 @@ async function handlePostWorkOrderMessage(request, env) {
       return errorResponse('不支持的发送人类型', 403);
     }
 
+    // PII 脱敏（Phase 0.5）：工单消息是客户↔合伙人的自由输入，最容易泄露手机号
+    // 只清洗 text 类消息；pricing_update / system 是平台自生成的结构化消息，不需要清洗
+    const safeContent =
+      (message_type || 'text') === 'text' ? redactPII(content) : content;
+
     const id = generateId();
     await env.DB.prepare(
       'INSERT INTO work_order_messages (id, work_order_id, sender_type, sender_id, sender_name, content, message_type) VALUES (?, ?, ?, ?, ?, ?, ?)'
-    ).bind(id, workOrderId, sender_type, sender_id, sender_name, content, message_type || 'text').run();
+    ).bind(id, workOrderId, sender_type, sender_id, sender_name, safeContent, message_type || 'text').run();
 
     return jsonResponse({ success: true, id });
   } catch (error) {

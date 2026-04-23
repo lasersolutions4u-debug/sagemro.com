@@ -1,0 +1,370 @@
+{
+  "version": 2,
+  "description": "Golden set — 35 deterministic regression cases across role_guard (10), redact (10), specialties_filter (10), conversation_history (5). v2 adds SummaryProtocol v1 pending_items coverage across all 5 prefix tags (missing_info, awaiting_confirmation, followup_due, payment_pending, rating_pending).",
+  "cases": [
+    {
+      "id": "rg-001",
+      "category": "role_guard",
+      "description": "游客调任何工具 → permission_denied（guest 白名单为空）",
+      "input": { "tool": "get_engineer_profile", "args": {}, "user_role": "guest" },
+      "expect": { "error": "permission_denied", "fallback_contains": "Do not mention this tool" }
+    },
+    {
+      "id": "rg-002",
+      "category": "role_guard",
+      "description": "游客调客户工具（get_customer_devices）也被拒",
+      "input": { "tool": "get_customer_devices", "args": {}, "user_role": "guest" },
+      "expect": { "error": "permission_denied" }
+    },
+    {
+      "id": "rg-003",
+      "category": "role_guard",
+      "description": "客户越权调 get_engineer_profile → 拒",
+      "input": { "tool": "get_engineer_profile", "args": {}, "user_role": "customer", "customer_id": "cust-1" },
+      "expect": { "error": "permission_denied" }
+    },
+    {
+      "id": "rg-004",
+      "category": "role_guard",
+      "description": "客户越权调 get_pending_tickets_for_engineer → 拒",
+      "input": { "tool": "get_pending_tickets_for_engineer", "args": {}, "user_role": "customer", "customer_id": "cust-1" },
+      "expect": { "error": "permission_denied" }
+    },
+    {
+      "id": "rg-005",
+      "category": "role_guard",
+      "description": "工程师越权调客户设备工具 → 拒",
+      "input": { "tool": "get_customer_devices", "args": {}, "user_role": "engineer", "engineer_id": "eng-1" },
+      "expect": { "error": "permission_denied" }
+    },
+    {
+      "id": "rg-006",
+      "category": "role_guard",
+      "description": "工程师越权调客户设备详情 → 拒",
+      "input": { "tool": "get_device_detail", "args": { "device_id": "d1" }, "user_role": "engineer", "engineer_id": "eng-1" },
+      "expect": { "error": "permission_denied" }
+    },
+    {
+      "id": "rg-007",
+      "category": "role_guard",
+      "description": "客户调 get_customer_devices（允许）→ ok",
+      "input": { "tool": "get_customer_devices", "args": {}, "user_role": "customer", "customer_id": "cust-1" },
+      "expect": { "ok": true }
+    },
+    {
+      "id": "rg-008",
+      "category": "role_guard",
+      "description": "工程师调 get_engineer_profile（允许）→ ok",
+      "input": { "tool": "get_engineer_profile", "args": {}, "user_role": "engineer", "engineer_id": "eng-1" },
+      "expect": { "ok": true }
+    },
+    {
+      "id": "rg-009",
+      "category": "role_guard",
+      "description": "工程师调 get_pending_tickets_for_engineer（允许）→ ok",
+      "input": { "tool": "get_pending_tickets_for_engineer", "args": { "limit": 5 }, "user_role": "engineer", "engineer_id": "eng-1" },
+      "expect": { "ok": true }
+    },
+    {
+      "id": "rg-010",
+      "category": "role_guard",
+      "description": "未知角色名字符串 → 拒（ROLE_ALLOWED_TOOLS 无该键 → fallback guest 白名单）",
+      "input": { "tool": "get_customer_devices", "args": {}, "user_role": "random_role_xyz" },
+      "expect": { "error": "permission_denied" }
+    },
+
+    {
+      "id": "rd-001",
+      "category": "redact",
+      "description": "手机号脱敏",
+      "input": { "text": "我的电话 13812345678 有问题找我" },
+      "expect": { "output": "我的电话 [手机号] 有问题找我" }
+    },
+    {
+      "id": "rd-002",
+      "category": "redact",
+      "description": "身份证脱敏",
+      "input": { "text": "客户身份证 11010519900307234X" },
+      "expect": { "output": "客户身份证 [身份证]" }
+    },
+    {
+      "id": "rd-003",
+      "category": "redact",
+      "description": "邮箱脱敏",
+      "input": { "text": "收到请回 ops@sagemro.com" },
+      "expect": { "output": "收到请回 [邮箱]" }
+    },
+    {
+      "id": "rd-004",
+      "category": "redact",
+      "description": "车牌脱敏",
+      "input": { "text": "车牌号苏E12345 停在门口" },
+      "expect": { "output": "车牌号[车牌] 停在门口" }
+    },
+    {
+      "id": "rd-005",
+      "category": "redact",
+      "description": "带凭据的 URL 脱敏（email 不吃 @ 右侧）",
+      "input": { "text": "配置 https://admin:pass@db.example.com/api 用" },
+      "expect": { "output": "配置 [URL] 用" }
+    },
+    {
+      "id": "rd-006",
+      "category": "redact",
+      "description": "技术内容不误伤：设备型号",
+      "input": { "text": "大族 G3015H 激光切割机挂渣" },
+      "expect": { "output": "大族 G3015H 激光切割机挂渣" }
+    },
+    {
+      "id": "rd-007",
+      "category": "redact",
+      "description": "技术内容不误伤：功率与材料",
+      "input": { "text": "3000W 光纤切 6mm 碳钢，速度 2.5m/min" },
+      "expect": { "output": "3000W 光纤切 6mm 碳钢，速度 2.5m/min" }
+    },
+    {
+      "id": "rd-008",
+      "category": "redact",
+      "description": "技术内容不误伤：工单号",
+      "input": { "text": "工单 WO-20260422-001 已分配" },
+      "expect": { "output": "工单 WO-20260422-001 已分配" }
+    },
+    {
+      "id": "rd-009",
+      "category": "redact",
+      "description": "长条码（13位）不误伤为银行卡（无标签上下文）",
+      "input": { "text": "条码 1234567890123 扫描入库" },
+      "expect": { "output": "条码 1234567890123 扫描入库" }
+    },
+    {
+      "id": "rd-010",
+      "category": "redact",
+      "description": "混合 PII + 技术内容：PII 脱 + 技术保留",
+      "input": { "text": "张工 13812345678 说 3000W 激光机 G3015H 挂渣" },
+      "expect": { "output_contains": ["[手机号]", "3000W", "G3015H"], "output_not_contains": ["13812345678"] }
+    },
+
+    {
+      "id": "sf-001",
+      "category": "specialties_filter",
+      "description": "单专长（激光切割机）→ SQL 带 IN 单占位符 + 返回 filter_applied=true",
+      "input": { "engineer_specialties_json": "[\"激光切割机\"]", "available_types": ["激光切割机", "折弯机", "焊接机"] },
+      "expect": { "filter_applied": true, "engineer_specialties": ["激光切割机"], "matches_device_types": ["激光切割机"] }
+    },
+    {
+      "id": "sf-002",
+      "category": "specialties_filter",
+      "description": "多专长（激光+折弯）→ 两个占位符 + 两类都保留",
+      "input": { "engineer_specialties_json": "[\"激光切割机\",\"折弯机\"]", "available_types": ["激光切割机", "折弯机", "焊接机"] },
+      "expect": { "filter_applied": true, "engineer_specialties": ["激光切割机", "折弯机"], "matches_device_types": ["激光切割机", "折弯机"] }
+    },
+    {
+      "id": "sf-003",
+      "category": "specialties_filter",
+      "description": "空专长数组 → 降级全量（filter_applied=false）",
+      "input": { "engineer_specialties_json": "[]", "available_types": ["激光切割机", "折弯机"] },
+      "expect": { "filter_applied": false, "engineer_specialties": [], "matches_device_types": ["激光切割机", "折弯机"] }
+    },
+    {
+      "id": "sf-004",
+      "category": "specialties_filter",
+      "description": "specialties JSON 脏数据 → 降级 + 不抛错",
+      "input": { "engineer_specialties_json": "{not valid json", "available_types": ["激光切割机"] },
+      "expect": { "filter_applied": false, "engineer_specialties": [] }
+    },
+    {
+      "id": "sf-005",
+      "category": "specialties_filter",
+      "description": "specialties 含非字符串脏值 → 只保留字符串",
+      "input": { "engineer_specialties_json": "[\"激光切割机\", 123, null, \"\", \"折弯机\"]", "available_types": ["激光切割机", "折弯机"] },
+      "expect": { "filter_applied": true, "engineer_specialties": ["激光切割机", "折弯机"] }
+    },
+    {
+      "id": "sf-006",
+      "category": "specialties_filter",
+      "description": "limit 超过 20 → clip 到 20",
+      "input": { "engineer_specialties_json": "[\"激光切割机\"]", "available_types": ["激光切割机"], "limit": 999 },
+      "expect": { "bound_limit": 20 }
+    },
+    {
+      "id": "sf-007",
+      "category": "specialties_filter",
+      "description": "limit 未传 → 默认 10",
+      "input": { "engineer_specialties_json": "[\"激光切割机\"]", "available_types": ["激光切割机"], "limit": null },
+      "expect": { "bound_limit": 10 }
+    },
+    {
+      "id": "sf-008",
+      "category": "specialties_filter",
+      "description": "专长存在但工单里没这类设备 → count=0（诚实）",
+      "input": { "engineer_specialties_json": "[\"水刀切割机\"]", "available_types": ["激光切割机", "折弯机"] },
+      "expect": { "filter_applied": true, "count": 0 }
+    },
+    {
+      "id": "sf-009",
+      "category": "specialties_filter",
+      "description": "engineerId 缺失 → specialties 为空 → 降级全量",
+      "input": { "engineer_specialties_json": null, "available_types": ["激光切割机"], "no_engineer_id": true },
+      "expect": { "filter_applied": false, "engineer_specialties": [] }
+    },
+    {
+      "id": "sf-010",
+      "category": "specialties_filter",
+      "description": "engineer 记录不存在 → 降级全量（不崩）",
+      "input": { "engineer_specialties_json": "__NOT_FOUND__", "available_types": ["激光切割机"] },
+      "expect": { "filter_applied": false, "engineer_specialties": [] }
+    },
+
+    {
+      "id": "ch-001",
+      "category": "conversation_history",
+      "description": "[missing_info] 跟进：客户端拉到上次未提供材料牌号的对话 → open_pending_items 聚合出该项",
+      "input": {
+        "user_role": "customer",
+        "customer_id": "cust-golden-1",
+        "args": { "limit": 5 },
+        "summaries_mock": [
+          {
+            "conversation_id": "conv-mi-1",
+            "generated_at": "2026-04-21 14:00:00",
+            "source_message_count": 8,
+            "summary": {
+              "protocol_version": 1,
+              "conversation_type": "device_consult",
+              "summary_text": "客户咨询 3000W 光纤切碳钢挂渣，未提供材料牌号",
+              "pending_items": ["[missing_info] 客户未提供材料牌号（Q235 vs Q345）"]
+            }
+          }
+        ]
+      },
+      "expect": {
+        "count": 1,
+        "filter_applied": false,
+        "summaries_length": 1,
+        "pending_items_prefix": "[missing_info]",
+        "pending_items_min_count": 1
+      }
+    },
+    {
+      "id": "ch-002",
+      "category": "conversation_history",
+      "description": "[awaiting_confirmation] 跟进：客户端拉到上次 AI 给过参数建议未确认 → 聚合出待确认项",
+      "input": {
+        "user_role": "customer",
+        "customer_id": "cust-golden-2",
+        "args": { "limit": 5 },
+        "summaries_mock": [
+          {
+            "conversation_id": "conv-ac-1",
+            "generated_at": "2026-04-20 11:30:00",
+            "source_message_count": 12,
+            "summary": {
+              "protocol_version": 1,
+              "conversation_type": "device_consult",
+              "summary_text": "AI 建议将氧气压力从 0.6 上调到 0.8MPa 等待客户确认是否执行",
+              "pending_items": ["[awaiting_confirmation] AI 建议调整氧气压力至 0.8MPa 但未确认执行"]
+            }
+          }
+        ]
+      },
+      "expect": {
+        "count": 1,
+        "filter_applied": false,
+        "summaries_length": 1,
+        "pending_items_prefix": "[awaiting_confirmation]",
+        "pending_items_min_count": 1
+      }
+    },
+    {
+      "id": "ch-003",
+      "category": "conversation_history",
+      "description": "[followup_due] 跟进：合伙人端拉到上次推荐了工程师但客户未回复 → 聚合出 followup_due",
+      "input": {
+        "user_role": "engineer",
+        "engineer_id": "eng-golden-3",
+        "args": { "limit": 5 },
+        "summaries_mock": [
+          {
+            "conversation_id": "conv-fd-1",
+            "generated_at": "2026-04-19 09:15:00",
+            "source_message_count": 7,
+            "summary": {
+              "protocol_version": 1,
+              "conversation_type": "post_sale_followup",
+              "summary_text": "推荐了张工程师给苏州客户，客户未回复是否接受",
+              "pending_items": ["[followup_due] 推荐了张工程师但客户未回复"]
+            }
+          }
+        ]
+      },
+      "expect": {
+        "count": 1,
+        "filter_applied": false,
+        "summaries_length": 1,
+        "pending_items_prefix": "[followup_due]",
+        "pending_items_min_count": 1
+      }
+    },
+    {
+      "id": "ch-004",
+      "category": "conversation_history",
+      "description": "[payment_pending] 跟进：合伙人端拉到上次提现申请处理中 → 聚合出 payment_pending",
+      "input": {
+        "user_role": "engineer",
+        "engineer_id": "eng-golden-4",
+        "args": { "limit": 5 },
+        "summaries_mock": [
+          {
+            "conversation_id": "conv-pp-1",
+            "generated_at": "2026-04-18 16:40:00",
+            "source_message_count": 6,
+            "summary": {
+              "protocol_version": 1,
+              "conversation_type": "wallet_query",
+              "summary_text": "合伙人发起 1200 元提现申请，T+1 到账流程中",
+              "pending_items": ["[payment_pending] 合伙人提现申请 1200 元处理中"]
+            }
+          }
+        ]
+      },
+      "expect": {
+        "count": 1,
+        "filter_applied": false,
+        "summaries_length": 1,
+        "pending_items_prefix": "[payment_pending]",
+        "pending_items_min_count": 1
+      }
+    },
+    {
+      "id": "ch-005",
+      "category": "conversation_history",
+      "description": "[rating_pending] 跟进：客户端拉到有已解决待评价的工单 → 聚合出 rating_pending",
+      "input": {
+        "user_role": "customer",
+        "customer_id": "cust-golden-5",
+        "args": { "limit": 5 },
+        "summaries_mock": [
+          {
+            "conversation_id": "conv-rp-1",
+            "generated_at": "2026-04-17 20:05:00",
+            "source_message_count": 9,
+            "summary": {
+              "protocol_version": 1,
+              "conversation_type": "rating_complaint",
+              "summary_text": "WO-20260417-001 已由李工程师完成维修，待客户评价",
+              "pending_items": ["[rating_pending] WO-20260417-001 已解决待评价"],
+              "referenced_ids": { "work_order_ids": ["WO-20260417-001"] }
+            }
+          }
+        ]
+      },
+      "expect": {
+        "count": 1,
+        "filter_applied": false,
+        "summaries_length": 1,
+        "pending_items_prefix": "[rating_pending]",
+        "pending_items_min_count": 1
+      }
+    }
+  ]
+}
