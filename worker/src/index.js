@@ -1061,7 +1061,8 @@ const ALLOWED_ORIGINS_DEV = [
 ];
 
 function getAllowedOrigin(origin, env) {
-  const allowed = env.ENVIRONMENT === 'production' ? ALLOWED_ORIGINS_PRODUCTION : ALLOWED_ORIGINS_DEV;
+  // 默认拒绝策略：只有显式设置为 'development' 才放行开发域名，其他情况（含缺失/空/staging）均按生产处理
+  const allowed = env.ENVIRONMENT === 'development' ? ALLOWED_ORIGINS_DEV : ALLOWED_ORIGINS_PRODUCTION;
   if (origin && allowed.includes(origin)) return origin;
   return allowed[0];
 }

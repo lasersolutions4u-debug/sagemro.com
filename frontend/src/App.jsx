@@ -7,6 +7,7 @@ import { MyWorkOrdersModal } from './components/Sidebar/MyWorkOrdersModal';
 import { CustomerHomeModal } from './components/Settings/CustomerHomeModal';
 import { AboutModal } from './components/common/AboutModal';
 import { FeedbackHost } from './components/common/FeedbackHost';
+import { LegalModal } from './components/common/LegalModal';
 import { LoginModal } from './components/Auth/LoginModal';
 import { EngineerDashboard } from './components/Engineer/EngineerDashboard';
 import { EngineerProfileModal } from './components/Engineer/EngineerProfileModal';
@@ -33,6 +34,8 @@ function App() {
   const [engineerProfileOpen, setEngineerProfileOpen] = useState(false);
   const [myDevicesOpen, setMyDevicesOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [legalModalOpen, setLegalModalOpen] = useState(false);
+  const [legalInitialTab, setLegalInitialTab] = useState('agreement');
   const [currentUser, setCurrentUser] = useState(null);
   const [userType, setUserType] = useState(null);
 
@@ -259,6 +262,12 @@ function App() {
     setMyWorkOrdersModalOpen(true);
   }, []);
 
+  // 打开法律文档
+  const openLegal = useCallback((tab = 'agreement') => {
+    setLegalInitialTab(tab);
+    setLegalModalOpen(true);
+  }, []);
+
   return (
     <div className="flex h-[100dvh] overflow-hidden">
       {/* 侧边栏 */}
@@ -301,6 +310,7 @@ function App() {
           onNewChat={handleNewChat}
           currentTitle={currentTitle}
           onToggleSidebar={() => setSidebarOpen(true)}
+          onOpenLegal={openLegal}
         />
       </div>
 
@@ -328,6 +338,7 @@ function App() {
         isOpen={loginModalOpen}
         onClose={() => setLoginModalOpen(false)}
         onLoginSuccess={handleLoginSuccess}
+        onOpenLegal={openLegal}
       />
       <EngineerDashboard
         isOpen={engineerDashboardOpen}
@@ -350,6 +361,11 @@ function App() {
         onClose={() => setNotificationsOpen(false)}
         onUnreadCountChange={handleUnreadCountChange}
         onOpenWorkOrderDetail={handleOpenWorkOrderDetail}
+      />
+      <LegalModal
+        isOpen={legalModalOpen}
+        onClose={() => setLegalModalOpen(false)}
+        initialTab={legalInitialTab}
       />
 
       {/* 推送通知 Banner（工程师在线时收到推送） */}

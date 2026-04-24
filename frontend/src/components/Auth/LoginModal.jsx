@@ -6,7 +6,7 @@ import { login, sendVerifyCode, sendResetCode, resetPassword, registerCustomer, 
 import { toastSuccess } from '../../utils/feedback';
 import { deviceTypes, commonBrands, commonServices } from '../../data/loginPresets.js';
 
-export function LoginModal({ isOpen, onClose, onLoginSuccess }) {
+export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
   // step flow:
   // choice -> register-company -> register-auth -> register-customer-info / register-engineer-2 / login
   const [step, setStep] = useState('login');
@@ -33,6 +33,9 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess }) {
   const [services, setServices] = useState([]);
   const [serviceRegion, setServiceRegion] = useState([]);
   const [bio, setBio] = useState('');
+
+  // 协议勾选
+  const [agreedToTerms, setAgreedToTerms] = useState(false);
 
   const toggleBrand = (deviceType, brand) => {
     setBrands(prev => {
@@ -152,6 +155,7 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess }) {
     setBio('');
     setCompanyName('');
     setSelectedIdentity(null);
+    setAgreedToTerms(false);
     setStep('login');
     onClose();
   };
@@ -171,6 +175,7 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess }) {
     if (!phone || phone.length !== 11) { setError('请输入正确的手机号'); return; }
     if (!password || password.length < 6) { setError('密码至少6位'); return; }
     if (password !== confirmPassword) { setError('两次密码输入不一致'); return; }
+    if (!agreedToTerms) { setError('请阅读并同意用户服务协议、隐私政策和 AI 服务须知'); return; }
     setError('');
     setStep('register-auth');
   };
@@ -374,6 +379,24 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess }) {
                 {error}
               </div>
             )}
+
+            {/* 协议勾选 */}
+            <label className="flex items-start gap-2 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={agreedToTerms}
+                onChange={(e) => setAgreedToTerms(e.target.checked)}
+                className="mt-0.5 w-4 h-4 rounded border-[var(--color-input-border)] text-[var(--color-primary)] focus:ring-[var(--color-primary)] cursor-pointer"
+              />
+              <span className="text-xs text-[var(--color-text-secondary)] leading-relaxed">
+                我已阅读并同意{' '}
+                <button type="button" onClick={() => onOpenLegal?.('agreement')} className="text-[var(--color-primary)] hover:underline">用户服务协议</button>
+                、
+                <button type="button" onClick={() => onOpenLegal?.('privacy')} className="text-[var(--color-primary)] hover:underline">隐私政策</button>
+                {' '}和{' '}
+                <button type="button" onClick={() => onOpenLegal?.('ai')} className="text-[var(--color-primary)] hover:underline">AI服务须知</button>
+              </span>
+            </label>
 
             <button
               onClick={handleCompanySubmit}
