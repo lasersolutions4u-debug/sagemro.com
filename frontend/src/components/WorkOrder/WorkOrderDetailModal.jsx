@@ -111,7 +111,7 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
         <div className="text-sm text-[var(--color-text-secondary)]">提交时间：{workOrder.created_at ? new Date(workOrder.created_at).toLocaleString('zh-CN') : '-'}</div>
         {detail?.engineer_name && (
           <div className="text-sm text-[var(--color-text-secondary)]">
-            合伙人：<span className="text-[var(--color-primary)]">{detail.engineer_name}</span>
+            工程师：<span className="text-[var(--color-primary)]">{detail.engineer_name}</span>
             {detail.engineer_phone && <span className="ml-1 opacity-70">{detail.engineer_phone}</span>}
           </div>
         )}
@@ -261,7 +261,7 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
             {engineerReview.comment && (
               <div className="pt-2 border-t border-blue-500/20 text-sm text-[var(--color-text-primary)]">{engineerReview.comment}</div>
             )}
-            <div className="text-xs text-[var(--color-text-muted)]">此评价仅平台和合伙人可见</div>
+            <div className="text-xs text-[var(--color-text-muted)]">此评价仅平台和工程师可见</div>
           </div>
         </div>
       )}
@@ -275,7 +275,7 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
       {showEngineerReview && (
         <div className="space-y-3 p-4 bg-blue-500/10 border border-blue-500/30 rounded-xl">
           <h3 className="text-sm font-medium text-[var(--color-text-primary)]">评价客户</h3>
-          <div className="text-xs text-[var(--color-text-muted)]">此评价仅平台和合伙人可见，客户不可见</div>
+          <div className="text-xs text-[var(--color-text-muted)]">此评价仅平台和工程师可见，客户不可见</div>
           {[
             { key: 'cooperation', label: '配合度' },
             { key: 'communication', label: '沟通顺畅' },

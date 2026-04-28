@@ -6,7 +6,7 @@ import { DeviceCard } from './DeviceCard';
 import { DeviceDetailPanel } from './DeviceDetailPanel';
 import { DeviceForm } from './DeviceForm';
 
-export function MyDevicesModal({ isOpen, onClose, currentUser }) {
+export function MyDevicesModal({ isOpen, onClose, currentUser, userType }) {
   const [devices, setDevices] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedDevice, setSelectedDevice] = useState(null);
@@ -56,7 +56,7 @@ export function MyDevicesModal({ isOpen, onClose, currentUser }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="absolute inset-0 bg-black/50" onClick={onClose} />
-      <div className="relative bg-[var(--color-sidebar)] rounded-2xl shadow-2xl w-full max-w-2xl max-h-[85vh] overflow-hidden flex flex-col"
+      <div className="relative bg-[var(--color-surface)] rounded-2xl shadow-2xl w-full max-w-2xl max-h-[85vh] overflow-hidden flex flex-col"
            style={{ maxWidth: '600px' }}>
         {/* 头部 */}
         <div className="flex items-center justify-between p-4 border-b border-[var(--color-border)]">
@@ -64,10 +64,10 @@ export function MyDevicesModal({ isOpen, onClose, currentUser }) {
             <div className="w-8 h-8 rounded-lg bg-[var(--color-primary)] flex items-center justify-center">
               <Package size={18} className="text-white" />
             </div>
-            <h2 className="text-[16px] font-medium text-[var(--color-sidebar-text)]">我的设备</h2>
+            <h2 className="text-[16px] font-medium text-[var(--color-text-primary)]">我的设备</h2>
           </div>
           <div className="flex items-center gap-2">
-            {currentUser?.userType === 'customer' && (
+            {userType === 'customer' && (
               <button
                 onClick={() => setShowForm(true)}
                 className="flex items-center gap-1 px-3 py-1.5 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white rounded-lg text-[13px] transition-colors"
@@ -77,7 +77,7 @@ export function MyDevicesModal({ isOpen, onClose, currentUser }) {
               </button>
             )}
             <button onClick={onClose} className="p-1.5 hover:bg-[var(--color-hover)] rounded-lg transition-colors">
-              <X size={18} className="text-[var(--color-sidebar-text)]" />
+              <X size={18} className="text-[var(--color-text-secondary)]" />
             </button>
           </div>
         </div>
@@ -97,10 +97,19 @@ export function MyDevicesModal({ isOpen, onClose, currentUser }) {
           {!loading && !error && devices.length === 0 && (
             <div className="text-center py-12">
               <div className="w-12 h-12 mx-auto mb-3 rounded-full bg-[var(--color-hover)] flex items-center justify-center">
-                <Package size={24} className="text-[var(--color-sidebar-text)] opacity-50" />
+                <Package size={24} className="text-[var(--color-text-secondary)] opacity-50" />
               </div>
-              <p className="text-[14px] text-[var(--color-sidebar-text)] opacity-60">暂无设备</p>
-              <p className="text-[12px] text-[var(--color-sidebar-text)] opacity-40 mt-1">添加设备后，小智可以为您提供更精准的服务</p>
+              <p className="text-[14px] text-[var(--color-text-secondary)] opacity-60">暂无设备</p>
+              <p className="text-[12px] text-[var(--color-text-muted)] mt-1 mb-4">添加设备后，小智可以为您提供更精准的服务</p>
+              {userType === 'customer' && (
+                <button
+                  onClick={() => setShowForm(true)}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white rounded-xl text-[14px] font-medium transition-colors"
+                >
+                  <Plus size={16} />
+                  添加设备
+                </button>
+              )}
             </div>
           )}
 

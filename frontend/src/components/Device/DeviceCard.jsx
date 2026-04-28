@@ -20,10 +20,10 @@ export function DeviceCard({ device, onClick, onDelete }) {
             <Package size={20} className="text-[var(--color-primary)]" />
           </div>
           <div>
-            <h3 className="text-[14px] font-medium text-[var(--color-sidebar-text)]">
+            <h3 className="text-[14px] font-medium text-[var(--color-text-primary)]">
               {device.name || device.type}
             </h3>
-            <p className="text-[12px] text-[var(--color-sidebar-text)] opacity-60 mt-0.5">
+            <p className="text-[12px] text-[var(--color-text-secondary)] mt-0.5">
               {device.type}
               {device.brand ? ` | ${device.brand}` : ''}
               {device.power ? ` | ${device.power}` : ''}
@@ -32,18 +32,18 @@ export function DeviceCard({ device, onClick, onDelete }) {
         </div>
         <div className="flex items-center gap-2">
           <span className={`w-2 h-2 rounded-full ${statusColor}`} />
-          <span className="text-[12px] text-[var(--color-sidebar-text)] opacity-70">{device.status}</span>
-          <ChevronRight size={16} className="text-[var(--color-sidebar-text)] opacity-40" />
+          <span className="text-[12px] text-[var(--color-text-secondary)]">{device.status}</span>
+          <ChevronRight size={16} className="text-[var(--color-text-muted)]" />
         </div>
       </div>
 
       <div className="flex items-center gap-4 mt-3 pt-3 border-t border-[var(--color-border)]">
-        <div className="flex items-center gap-1.5 text-[12px] text-[var(--color-sidebar-text)] opacity-60">
+        <div className="flex items-center gap-1.5 text-[12px] text-[var(--color-text-muted)]">
           <Wrench size={12} />
           <span>{device.total_orders || 0}次维保</span>
         </div>
         {device.last_order_date && (
-          <div className="flex items-center gap-1.5 text-[12px] text-[var(--color-sidebar-text)] opacity-60">
+          <div className="flex items-center gap-1.5 text-[12px] text-[var(--color-text-muted)]">
             <span>最近：{device.last_order_date}</span>
           </div>
         )}

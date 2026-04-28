@@ -123,7 +123,7 @@ export function MyWorkOrdersModal({ isOpen, onClose }) {
                 </div>
                 {order.engineer_name && (
                   <p className="text-xs text-[var(--color-primary)] mb-1">
-                    合伙人：{order.engineer_name}
+                    工程师：{order.engineer_name}
                   </p>
                 )}
                 <p className="text-sm text-[var(--color-text-secondary)] mb-1">

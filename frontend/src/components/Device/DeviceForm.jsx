@@ -41,19 +41,19 @@ export function DeviceForm({ onClose, onSuccess }) {
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center">
       <div className="absolute inset-0 bg-black/50" onClick={onClose} />
-      <div className="relative bg-[var(--color-sidebar)] rounded-2xl shadow-2xl w-full max-w-md p-5"
+      <div className="relative bg-[var(--color-surface)] rounded-2xl shadow-2xl w-full max-w-md p-5"
            style={{ maxWidth: '420px' }}>
         <div className="flex items-center justify-between mb-5">
-          <h3 className="text-[15px] font-medium text-[var(--color-sidebar-text)]">添加设备</h3>
+          <h3 className="text-[15px] font-medium text-[var(--color-text-primary)]">添加设备</h3>
           <button onClick={onClose} className="p-1.5 hover:bg-[var(--color-hover)] rounded-lg">
-            <X size={18} className="text-[var(--color-sidebar-text)]" />
+            <X size={18} className="text-[var(--color-text-secondary)]" />
           </button>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           {/* 设备名称 */}
           <div>
-            <label className="block text-[12px] text-[var(--color-sidebar-text)] opacity-60 mb-1.5">
+            <label className="block text-[12px] text-[var(--color-text-secondary)] opacity-60 mb-1.5">
               设备名称（选填）
             </label>
             <input
@@ -67,7 +67,7 @@ export function DeviceForm({ onClose, onSuccess }) {
 
           {/* 设备类型 */}
           <div>
-            <label className="block text-[12px] text-[var(--color-sidebar-text)] opacity-60 mb-1.5">
+            <label className="block text-[12px] text-[var(--color-text-secondary)] opacity-60 mb-1.5">
               设备类型 <span className="text-red-400">*</span>
             </label>
             <div className="flex flex-wrap gap-2">
@@ -97,7 +97,7 @@ export function DeviceForm({ onClose, onSuccess }) {
 
           {/* 品牌 */}
           <div>
-            <label className="block text-[12px] text-[var(--color-sidebar-text)] opacity-60 mb-1.5">
+            <label className="block text-[12px] text-[var(--color-text-secondary)] opacity-60 mb-1.5">
               品牌（选填）
             </label>
             <input
@@ -111,7 +111,7 @@ export function DeviceForm({ onClose, onSuccess }) {
 
           {/* 型号 */}
           <div>
-            <label className="block text-[12px] text-[var(--color-sidebar-text)] opacity-60 mb-1.5">
+            <label className="block text-[12px] text-[var(--color-text-secondary)] opacity-60 mb-1.5">
               型号（选填）
             </label>
             <input
@@ -125,7 +125,7 @@ export function DeviceForm({ onClose, onSuccess }) {
 
           {/* 功率 */}
           <div>
-            <label className="block text-[12px] text-[var(--color-sidebar-text)] opacity-60 mb-1.5">
+            <label className="block text-[12px] text-[var(--color-text-secondary)] opacity-60 mb-1.5">
               功率（选填）
             </label>
             <input

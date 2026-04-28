@@ -1,4 +1,4 @@
-import { FileText, ClipboardList, Settings, Info, LogIn, LogOut, Briefcase, Package, Bell, MoreHorizontal, X } from 'lucide-react';
+import { FileText, ClipboardList, Info, LogIn, LogOut, Package, Bell, MoreHorizontal, X } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
 
 export function ToolBar({
@@ -16,9 +16,9 @@ export function ToolBar({
   userType,
 }) {
   const [showMore, setShowMore] = useState(false);
+  const [collapsed, setCollapsed] = useState(true);
   const moreMenuRef = useRef(null);
 
-  // 点击"更多"以外区域关闭菜单
   useEffect(() => {
     const handler = (e) => {
       if (moreMenuRef.current && !moreMenuRef.current.contains(e.target)) {
@@ -29,57 +29,68 @@ export function ToolBar({
     return () => document.removeEventListener('mousedown', handler);
   }, []);
 
-  // 始终显示的工具
-  const alwaysTools = [
-    { icon: Info, label: '关于小智', onClick: onOpenAbout },
-  ];
+  useEffect(() => {
+    const check = () => setCollapsed(window.innerHeight < 750);
+    check();
+    window.addEventListener('resize', check);
+    return () => window.removeEventListener('resize', check);
+  }, []);
 
-  // 登录后显示的主要工具
-  const primaryTools = [
-    { icon: FileText, label: '新建工单', onClick: onOpenWorkOrder },
-    { icon: ClipboardList, label: '我的工单', onClick: onOpenMyWorkOrders },
-    ...(userType === 'engineer' ? [{ icon: Briefcase, label: '合伙人管理台', onClick: onOpenEngineerDashboard, primary: true }] : []),
-  ];
+  const isEngineer = userType === 'engineer';
 
-  // "更多"菜单项
-  const moreTools = [
-    { icon: Package, label: '我的设备', onClick: () => { onOpenMyDevices?.(); setShowMore(false); } },
-    { icon: Bell, label: '消息通知', badge: unreadCount, onClick: () => { onOpenNotifications?.(); setShowMore(false); } },
-    { icon: Settings, label: '设置', onClick: () => { onOpenSettings?.(); setShowMore(false); } },
-  ];
+  const primaryTools = isEngineer
+    ? [
+        { icon: ClipboardList, label: '我的工单', onClick: onOpenMyWorkOrders },
+      ]
+    : [
+        { icon: FileText, label: '新建工单', onClick: onOpenWorkOrder },
+        { icon: ClipboardList, label: '我的工单', onClick: onOpenMyWorkOrders },
+      ];
+
+  const extraTools = isEngineer
+    ? [
+        { icon: Bell, label: '消息通知', badge: unreadCount, onClick: () => { onOpenNotifications?.(); setShowMore(false); } },
+      ]
+    : [
+        { icon: Package, label: '我的设备', onClick: () => { onOpenMyDevices?.(); setShowMore(false); } },
+        { icon: Bell, label: '消息通知', badge: unreadCount, onClick: () => { onOpenNotifications?.(); setShowMore(false); } },
+      ];
+
+  const showCollapsed = currentUser && collapsed && extraTools.length >= 2;
+
+  const avatarAction = isEngineer ? onOpenEngineerDashboard : onOpenSettings;
+
+  const toolBtn = (tool) => (
+    <button
+      key={tool.label}
+      onClick={tool.onClick}
+      className="w-full flex items-center gap-3 px-4 py-2.5 text-[14px] text-[var(--color-sidebar-muted)] hover:bg-[var(--color-sidebar-surface)] hover:text-[var(--color-sidebar-text)] rounded-lg mx-1 transition-colors"
+    >
+      <tool.icon size={17} />
+      <span>{tool.label}</span>
+      {tool.badge > 0 && (
+        <span className="ml-auto w-4 h-4 flex items-center justify-center bg-red-500 text-white text-[10px] font-medium rounded-full">
+          {tool.badge > 99 ? '99+' : tool.badge}
+        </span>
+      )}
+    </button>
+  );
 
   return (
     <div className="border-t border-[var(--color-border)] pt-3 mt-auto">
-      {/* 始终可见的工具（关于小智，所有人可见） */}
-      {alwaysTools.map((tool) => (
-        <button
-          key={tool.label}
-          onClick={tool.onClick}
-          className="w-full flex items-center gap-3 px-4 py-2.5 text-[14px] text-[var(--color-sidebar-muted)] hover:bg-[var(--color-sidebar-surface)] hover:text-[var(--color-sidebar-text)] rounded-lg mx-1 transition-colors"
-        >
-          <tool.icon size={17} />
-          <span>{tool.label}</span>
-        </button>
-      ))}
+      <button
+        onClick={onOpenAbout}
+        className="w-full flex items-center gap-3 px-4 py-2.5 text-[14px] text-[var(--color-sidebar-muted)] hover:bg-[var(--color-sidebar-surface)] hover:text-[var(--color-sidebar-text)] rounded-lg mx-1 transition-colors"
+      >
+        <Info size={17} />
+        <span>关于小智</span>
+      </button>
 
-      {/* 登录后显示的主要工具入口 */}
-      {currentUser && primaryTools.map((tool) => (
-        <button
-          key={tool.label}
-          onClick={tool.onClick}
-          className={`w-full flex items-center gap-3 px-4 py-2.5 text-[14px] rounded-lg mx-1 transition-colors ${
-            tool.primary
-              ? 'text-[var(--color-primary)] hover:bg-[var(--color-sidebar-surface)] font-medium'
-              : 'text-[var(--color-sidebar-muted)] hover:bg-[var(--color-sidebar-surface)] hover:text-[var(--color-sidebar-text)]'
-          }`}
-        >
-          <tool.icon size={17} />
-          <span>{tool.label}</span>
-        </button>
-      ))}
+      {currentUser && primaryTools.map((tool) => toolBtn(tool))}
 
-      {/* "更多"按钮（登录后显示） */}
-      {currentUser && (
+      {currentUser && !showCollapsed && extraTools.map((tool) => toolBtn(tool))}
+
+      {showCollapsed && (
         <div className="relative" ref={moreMenuRef}>
           <button
             onClick={() => setShowMore(!showMore)}
@@ -88,18 +99,15 @@ export function ToolBar({
             {showMore ? <X size={17} /> : <MoreHorizontal size={17} />}
             <span>更多</span>
             {unreadCount > 0 && (
-              <span className="ml-auto flex items-center gap-1">
-                <span className="w-4 h-4 flex items-center justify-center bg-red-500 text-white text-[10px] font-medium rounded-full">
-                  {unreadCount > 99 ? '99+' : unreadCount}
-                </span>
+              <span className="ml-auto w-4 h-4 flex items-center justify-center bg-red-500 text-white text-[10px] font-medium rounded-full">
+                {unreadCount > 99 ? '99+' : unreadCount}
               </span>
             )}
           </button>
 
-          {/* 下拉菜单 */}
           {showMore && (
             <div className="absolute bottom-full left-0 right-0 mb-1 mx-1 bg-[var(--color-sidebar-surface)] border border-[var(--color-border)] rounded-xl shadow-lg overflow-hidden z-50">
-              {moreTools.map((tool) => (
+              {extraTools.map((tool) => (
                 <button
                   key={tool.label}
                   onClick={tool.onClick}
@@ -117,12 +125,12 @@ export function ToolBar({
         </div>
       )}
 
-      {/* 登录/用户区域 */}
+      {/* User area */}
       <div className="border-t border-[var(--color-border)] mt-3 pt-3">
         {currentUser ? (
           <>
             <button
-              onClick={onOpenSettings}
+              onClick={avatarAction}
               className="w-full flex items-center gap-1 px-2 py-2.5 text-[14px] text-[var(--color-sidebar-muted)] hover:bg-[var(--color-sidebar-surface)] hover:text-[var(--color-sidebar-text)] rounded-lg mx-1 transition-colors"
             >
               <div className="w-7 h-7 rounded-full bg-[var(--color-primary)] flex items-center justify-center flex-shrink-0">
@@ -131,7 +139,7 @@ export function ToolBar({
                 </span>
               </div>
               <span className="truncate">{currentUser.name}</span>
-              {userType === 'engineer' && (
+              {isEngineer && (
                 <span className="text-[10px] px-1.5 py-0.5 bg-[var(--color-primary)]/20 text-[var(--color-primary)] rounded">合伙人</span>
               )}
             </button>

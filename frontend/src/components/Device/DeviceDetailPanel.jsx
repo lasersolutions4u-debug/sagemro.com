@@ -77,7 +77,7 @@ export function DeviceDetailPanel({ deviceId, onBack, onDelete }) {
 
   if (!device) {
     return (
-      <div className="text-center py-8 text-[var(--color-sidebar-text)] opacity-60">
+      <div className="text-center py-8 text-[var(--color-text-muted)]">
         设备不存在
       </div>
     );
@@ -88,7 +88,7 @@ export function DeviceDetailPanel({ deviceId, onBack, onDelete }) {
       {/* 返回按钮 */}
       <button
         onClick={onBack}
-        className="flex items-center gap-2 text-[13px] text-[var(--color-sidebar-text)] opacity-70 hover:opacity-100 transition-opacity"
+        className="flex items-center gap-2 text-[13px] text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] transition-colors"
       >
         <ArrowLeft size={14} />
         返回设备列表
@@ -102,10 +102,10 @@ export function DeviceDetailPanel({ deviceId, onBack, onDelete }) {
               <Package size={24} className="text-[var(--color-primary)]" />
             </div>
             <div>
-              <h3 className="text-[15px] font-medium text-[var(--color-sidebar-text)]">{device.name}</h3>
+              <h3 className="text-[15px] font-medium text-[var(--color-text-primary)]">{device.name}</h3>
               <div className="flex items-center gap-2 mt-1">
                 <span className={`w-2 h-2 rounded-full ${statusDots[device.status] || 'bg-gray-500'}`} />
-                <span className="text-[12px] text-[var(--color-sidebar-text)] opacity-60">{device.status}</span>
+                <span className="text-[12px] text-[var(--color-text-secondary)]">{device.status}</span>
               </div>
             </div>
           </div>
@@ -120,27 +120,27 @@ export function DeviceDetailPanel({ deviceId, onBack, onDelete }) {
         {/* 设备属性 */}
         <div className="grid grid-cols-2 gap-3 text-[13px]">
           <div>
-            <span className="text-[var(--color-sidebar-text)] opacity-50">类型</span>
-            <p className="text-[var(--color-sidebar-text)] mt-0.5">{device.type}</p>
+            <span className="text-[var(--color-text-muted)]">类型</span>
+            <p className="text-[var(--color-text-primary)] mt-0.5">{device.type}</p>
           </div>
           <div>
-            <span className="text-[var(--color-sidebar-text)] opacity-50">品牌</span>
-            <p className="text-[var(--color-sidebar-text)] mt-0.5">{device.brand || '-'}</p>
+            <span className="text-[var(--color-text-muted)]">品牌</span>
+            <p className="text-[var(--color-text-primary)] mt-0.5">{device.brand || '-'}</p>
           </div>
           <div>
-            <span className="text-[var(--color-sidebar-text)] opacity-50">型号</span>
-            <p className="text-[var(--color-sidebar-text)] mt-0.5">{device.model || '-'}</p>
+            <span className="text-[var(--color-text-muted)]">型号</span>
+            <p className="text-[var(--color-text-primary)] mt-0.5">{device.model || '-'}</p>
           </div>
           <div>
-            <span className="text-[var(--color-sidebar-text)] opacity-50">功率</span>
-            <p className="text-[var(--color-sidebar-text)] mt-0.5">{device.power || '-'}</p>
+            <span className="text-[var(--color-text-muted)]">功率</span>
+            <p className="text-[var(--color-text-primary)] mt-0.5">{device.power || '-'}</p>
           </div>
         </div>
 
         {/* 备注 */}
         <div className="mt-4 pt-4 border-t border-[var(--color-border)]">
           <div className="flex items-center justify-between mb-2">
-            <span className="text-[12px] text-[var(--color-sidebar-text)] opacity-50">备注</span>
+            <span className="text-[12px] text-[var(--color-text-muted)]">备注</span>
             {!editingNotes && (
               <button
                 onClick={() => setEditingNotes(true)}
@@ -173,34 +173,34 @@ export function DeviceDetailPanel({ deviceId, onBack, onDelete }) {
                     setEditingNotes(false);
                     setNotes(device.notes || '');
                   }}
-                  className="px-3 py-1 bg-[var(--color-hover)] text-[var(--color-sidebar-text)] rounded-lg text-[12px]"
+                  className="px-3 py-1 bg-[var(--color-hover)] text-[var(--color-text-secondary)] rounded-lg text-[12px]"
                 >
                   取消
                 </button>
               </div>
             </div>
           ) : (
-            <p className="text-[13px] text-[var(--color-sidebar-text)] opacity-70">
+            <p className="text-[13px] text-[var(--color-text-secondary)]">
               {notes || '暂无备注'}
             </p>
           )}
         </div>
 
         {/* 添加时间 */}
-        <div className="mt-3 text-[12px] text-[var(--color-sidebar-text)] opacity-40">
+        <div className="mt-3 text-[12px] text-[var(--color-text-muted)]">
           添加时间：{device.created_at}
         </div>
       </div>
 
       {/* 维修保养记录 */}
       <div>
-        <h4 className="text-[14px] font-medium text-[var(--color-sidebar-text)] mb-3">
+        <h4 className="text-[14px] font-medium text-[var(--color-text-primary)] mb-3">
           维修保养记录（{workOrders.length}条）
         </h4>
 
         {workOrders.length === 0 && (
           <div className="bg-[var(--color-surface-elevated)] rounded-xl p-6 text-center">
-            <p className="text-[13px] text-[var(--color-sidebar-text)] opacity-50">暂无维修记录</p>
+            <p className="text-[13px] text-[var(--color-text-muted)]">暂无维修记录</p>
           </div>
         )}
 
@@ -214,7 +214,7 @@ export function DeviceDetailPanel({ deviceId, onBack, onDelete }) {
               <div key={wo.id || wo.order_no} className="bg-[var(--color-surface-elevated)] rounded-xl p-4">
                 <div className="flex items-start justify-between mb-2">
                   <div className="flex items-center gap-2">
-                    <span className="text-[14px] font-medium text-[var(--color-sidebar-text)]">
+                    <span className="text-[14px] font-medium text-[var(--color-text-primary)]">
                       {typeText[wo.type] || '📋'} {wo.order_no}
                     </span>
                     <span className={`text-[11px] ${urgencyColors[wo.urgency] || 'text-gray-400'}`}>
@@ -224,17 +224,17 @@ export function DeviceDetailPanel({ deviceId, onBack, onDelete }) {
                   <span className={`text-[12px] ${
                     wo.status === '已完成' ? 'text-green-500' :
                     wo.status === '处理中' ? 'text-yellow-500' :
-                    'text-[var(--color-sidebar-text)] opacity-50'
+                    'text-[var(--color-text-muted)]'
                   }`}>
                     {wo.status}
                   </span>
                 </div>
 
-                <p className="text-[13px] text-[var(--color-sidebar-text)] opacity-70 mb-2">
+                <p className="text-[13px] text-[var(--color-text-secondary)] mb-2">
                   {wo.description}
                 </p>
 
-                <div className="flex items-center gap-4 text-[12px] text-[var(--color-sidebar-text)] opacity-60">
+                <div className="flex items-center gap-4 text-[12px] text-[var(--color-text-muted)]">
                   {wo.engineer_name && (
                     <span>工程师：{wo.engineer_name}</span>
                   )}
@@ -251,7 +251,7 @@ export function DeviceDetailPanel({ deviceId, onBack, onDelete }) {
                 </div>
 
                 {wo.completed_at && (
-                  <div className="mt-2 pt-2 border-t border-[var(--color-border)] text-[11px] text-[var(--color-sidebar-text)] opacity-40">
+                  <div className="mt-2 pt-2 border-t border-[var(--color-border)] text-[11px] text-[var(--color-text-muted)]">
                     完成时间：{wo.completed_at}
                   </div>
                 )}

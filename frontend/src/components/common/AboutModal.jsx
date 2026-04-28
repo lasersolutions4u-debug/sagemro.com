@@ -17,8 +17,8 @@ import {
 const painPoints = [
   {
     icon: Users,
-    title: '找合伙人难',
-    desc: '不知道去哪里找靠谱的合伙人，品牌代理商太贵，社会维修师傅不放心。',
+    title: '找工程师难',
+    desc: '不知道去哪里找靠谱的工程师，品牌代理商太贵，社会维修师傅不放心。',
   },
   {
     icon: Wallet,
@@ -34,9 +34,9 @@ const painPoints = [
 
 const comparisons = [
   {
-    dim: '找合伙人',
+    dim: '找工程师',
     legacy: '口碑推荐 / 代理商',
-    ours: 'AI 精准匹配最优合伙人',
+    ours: 'AI 精准匹配最优工程师',
   },
   {
     dim: '定价',
@@ -61,7 +61,7 @@ const comparisons = [
 ];
 
 const customerValue = [
-  '不再四处打听靠谱合伙人',
+  '不再四处打听靠谱工程师',
   '报价透明，心里有底',
   '平台记录，服务有保障',
 ];
@@ -85,7 +85,7 @@ export function AboutModal({ isOpen, onClose }) {
             SAGEMRO 小智
           </h2>
           <p className="text-sm text-[var(--color-text-secondary)]">
-            钣金加工行业智能服务平台 · 客户与合伙人之间的 AI 枢纽
+            钣金加工行业智能服务平台 · 客户与工程师之间的 AI 枢纽
           </p>
         </div>
 
@@ -127,7 +127,7 @@ export function AboutModal({ isOpen, onClose }) {
               <ArrowRight size={14} className="text-[var(--color-text-secondary)]" />
               <span className="px-2 py-1 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-md">平台匹配</span>
               <ArrowRight size={14} className="text-[var(--color-text-secondary)]" />
-              <span className="px-2 py-1 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-md">合伙人</span>
+              <span className="px-2 py-1 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-md">工程师</span>
               <ArrowRight size={14} className="text-[var(--color-text-secondary)]" />
               <span className="px-2 py-1 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-md">核价 / 议价</span>
               <ArrowRight size={14} className="text-[var(--color-text-secondary)]" />
@@ -231,7 +231,7 @@ export function AboutModal({ isOpen, onClose }) {
             <div className="p-3 bg-[var(--color-surface-elevated)] rounded-xl">
               <div className="flex items-center gap-2 mb-2">
                 <ClipboardCheck size={16} className="text-[var(--color-primary)]" />
-                <span className="text-[13px] font-medium text-[var(--color-text-primary)]">对合伙人</span>
+                <span className="text-[13px] font-medium text-[var(--color-text-primary)]">对工程师</span>
               </div>
               <ul className="space-y-1.5">
                 {engineerValue.map((item) => (

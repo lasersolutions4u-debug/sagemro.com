@@ -355,6 +355,7 @@ function App() {
         isOpen={myDevicesOpen}
         onClose={() => setMyDevicesOpen(false)}
         currentUser={currentUser}
+        userType={userType}
       />
       <NotificationModal
         isOpen={notificationsOpen}

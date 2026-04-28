@@ -46,7 +46,7 @@ export function ChatArea({
       <div className="px-3 sm:px-5 py-1.5 bg-amber-50 dark:bg-amber-900/15 border-b border-amber-200/50 dark:border-amber-800/30 flex items-center gap-2">
         <Info size={13} className="text-amber-600 dark:text-amber-400 flex-shrink-0" />
         <p className="text-[11px] text-amber-700 dark:text-amber-300 leading-tight">
-          AI 输出仅供参考，不构成维修承诺。线下服务以合伙人确认为准。
+          AI 输出仅供参考，不构成维修承诺。线下服务以工程师确认为准。
           {onOpenLegal && (
             <button
               onClick={() => onOpenLegal('ai')}

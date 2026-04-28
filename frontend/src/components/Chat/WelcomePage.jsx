@@ -1,10 +1,10 @@
 import { Bot, Receipt, Sparkles, ClipboardCheck } from 'lucide-react';
 
 const quickQuestions = [
-  '光纤激光切割机切6mm碳钢，断面有纹路怎么调整参数？',
-  '折弯机折出来角度不稳定，回弹怎么补偿？',
-  'MIG焊接不锈钢，焊缝出现气孔怎么排查？',
-  '我们想提高产线自动化程度，从哪些设备入手比较合适？',
+  '激光切割挂渣怎么解决？',
+  '切割断面有纹路怎么调？',
+  '折弯回弹怎么补偿？',
+  '切割头多久保养一次？',
 ];
 
 const valueProps = [
@@ -27,43 +27,46 @@ const valueProps = [
 
 export function WelcomePage({ onSendMessage }) {
   return (
-    <div className="flex flex-col items-center justify-center h-full px-6 py-8">
+    <div className="flex flex-col items-center justify-start sm:justify-center min-h-full px-4 sm:px-6 py-6 sm:py-8">
       <div className="text-center max-w-2xl w-full">
         {/* Logo */}
-        <div className="w-[80px] h-[80px] rounded-2xl bg-[var(--color-primary)] flex items-center justify-center mx-auto mb-6">
-          <Bot size={40} className="text-white" />
+        <div className="w-[64px] h-[64px] sm:w-[80px] sm:h-[80px] rounded-2xl bg-[var(--color-primary)] flex items-center justify-center mx-auto mb-4 sm:mb-6">
+          <Bot size={32} className="text-white sm:hidden" />
+          <Bot size={40} className="text-white hidden sm:block" />
         </div>
 
-        {/* 标题 */}
-        <h1 className="text-[28px] font-medium text-[var(--color-text-primary)] mb-2">
+        {/* Title */}
+        <h1 className="text-[22px] sm:text-[28px] font-medium text-[var(--color-text-primary)] mb-1.5 sm:mb-2">
           你好，我是小智
         </h1>
-        <p className="text-[15px] text-[var(--color-text-secondary)] mb-6 leading-relaxed">
+        <p className="text-[14px] sm:text-[15px] text-[var(--color-text-secondary)] mb-5 sm:mb-6 leading-relaxed">
           钣金加工行业智能服务平台
         </p>
 
-        {/* 平台价值卡片 */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-8">
+        {/* Value cards — mobile: vertical list, desktop: 3-column grid */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 sm:gap-3 mb-6 sm:mb-8">
           {valueProps.map(({ icon: Icon, title, desc }) => (
             <div
               key={title}
-              className="px-4 py-4 bg-[var(--color-surface-elevated)] rounded-xl text-left"
+              className="flex sm:block items-center gap-3 px-4 py-3 sm:py-4 bg-[var(--color-surface-elevated)] rounded-xl text-left"
             >
-              <div className="w-8 h-8 rounded-lg bg-[var(--color-primary)]/10 flex items-center justify-center mb-2">
+              <div className="w-8 h-8 rounded-lg bg-[var(--color-primary)]/10 flex items-center justify-center flex-shrink-0 sm:mb-2">
                 <Icon size={18} className="text-[var(--color-primary)]" />
               </div>
-              <div className="text-[14px] font-medium text-[var(--color-text-primary)] mb-1">
-                {title}
-              </div>
-              <div className="text-[12px] text-[var(--color-text-secondary)] leading-relaxed">
-                {desc}
+              <div>
+                <div className="text-[14px] font-medium text-[var(--color-text-primary)] sm:mb-1">
+                  {title}
+                </div>
+                <div className="text-[12px] text-[var(--color-text-secondary)] leading-relaxed">
+                  {desc}
+                </div>
               </div>
             </div>
           ))}
         </div>
 
-        {/* 快捷提问 */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        {/* Quick questions — desktop only */}
+        <div className="hidden sm:grid grid-cols-2 gap-3">
           {quickQuestions.map((question, i) => (
             <button
               key={i}

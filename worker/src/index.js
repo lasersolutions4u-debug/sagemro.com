@@ -2936,6 +2936,9 @@ async function settleEngineerWallet(env, workOrderId, engineerId) {
 
     const commissionRate = eng.commission_rate || 0.80;
     const subtotal = pricing.subtotal;
+    // 代收代付模式：subtotal = 客户支付总额（代收）
+    // engineerAmount = 维修服务费（代收代付，转付工程师）
+    // platformFee = 平台技术服务费（平台营收，按6%信息技术服务纳税）
     const engineerAmount = Math.round(subtotal * commissionRate);
     const platformFee = subtotal - engineerAmount;
     const newBalance = (eng.wallet_balance || 0) + engineerAmount;
@@ -2955,7 +2958,7 @@ async function settleEngineerWallet(env, workOrderId, engineerId) {
       workOrderId,
       engineerAmount,
       newBalance,
-      `工单结算 subtotal=${subtotal} 提成率=${commissionRate} 平台服务费=${platformFee}`
+      `代收代付结算 客户支付=${subtotal} 维修服务费(转付)=${engineerAmount} 平台技术服务费(营收)=${platformFee} 提成率=${commissionRate}`
     ).run();
 
     return {
@@ -3285,7 +3288,7 @@ async function handleAcceptTicket(request, env) {
         user_type: 'customer',
         type: 'ticket_accepted',
         title: '工单已被接单',
-        body: `工单 ${wo.order_no} 已被合伙人${eng?.name || ''}接单，即将为您服务。`,
+        body: `工单 ${wo.order_no} 已被工程师${eng?.name || ''}接单，即将为您服务。`,
         data: { work_order_id },
       });
     }
@@ -5185,10 +5188,12 @@ async function handleSubmitWorkOrderPricing(request, env) {
     const engineerLevel = engineerRow?.level || 'junior';
 
     const subtotal = (labor_fee || 0) + (parts_fee || 0) + (travel_fee || 0) + (other_fee || 0);
-    // V2佣金体系：客户支付 subtotal（合伙人报的全包价），平台从合伙人端抽佣
-    const platformFee = Math.round(subtotal * (1 - commissionRate));  // 平台服务费
-    const depositWithhold = Math.round(subtotal * 0.05);             // 动态保证金 5%
-    const engineerPayout = Math.round(subtotal * commissionRate);    // 合伙人实得
+    // 代收代付模式：subtotal = 客户支付总额（平台代收）
+    // platformFee = 平台技术服务费（平台营收，6%信息技术服务税率）
+    // engineerPayout = 维修服务费（代收代付，转付工程师）
+    const platformFee = Math.round(subtotal * (1 - commissionRate));
+    const depositWithhold = Math.round(subtotal * 0.05);
+    const engineerPayout = Math.round(subtotal * commissionRate);
 
     // AI 审核
     const aiCheck = await checkPricing合理性({ labor_fee, parts_fee, travel_fee, other_fee, total_amount: subtotal }, workOrderId, env);
@@ -5244,7 +5249,7 @@ async function handleSubmitWorkOrderPricing(request, env) {
         user_type: 'customer',
         type: 'pricing_submitted',
         title: '收到新报价',
-        body: `工单 ${woForNotif.order_no} 的合伙人已提交报价 ¥${subtotal}，请查看确认。`,
+        body: `工单 ${woForNotif.order_no} 的工程师已提交报价 ¥${subtotal}，请查看确认。`,
         data: { work_order_id: workOrderId },
       });
     }

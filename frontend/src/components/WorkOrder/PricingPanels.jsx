@@ -49,10 +49,10 @@ export function EngineerPricingPanel({ workOrderId, engineerId, onSubmitted, com
   const [submittingPrice, setSubmittingPrice] = useState(null);
 
   const subtotal = (parseInt(form.labor_fee) || 0) + (parseInt(form.parts_fee) || 0) + (parseInt(form.travel_fee) || 0) + (parseInt(form.other_fee) || 0);
-  // V2佣金体系：合伙人承担平台佣金（从实得中扣）
-  const platformFee = Math.round(subtotal * (1 - commissionRate)); // 平台服务费
+  // 代收代付模式：平台代收全款，扣除技术服务费后转付维修服务费给工程师
+  const platformFee = Math.round(subtotal * (1 - commissionRate)); // 平台技术服务费（平台营收）
+  const serviceFee = subtotal - platformFee;                        // 维修服务费（代收代付，转付工程师）
   const depositWithhold = Math.round(subtotal * 0.05);             // 动态保证金 5%
-  const engineerPayout = Math.round(subtotal * commissionRate);    // 合伙人实得
 
   const handleSubmit = async () => {
     setSubmitting(true);
@@ -94,7 +94,7 @@ export function EngineerPricingPanel({ workOrderId, engineerId, onSubmitted, com
 
   return (
     <div className="space-y-3">
-      <div className="text-xs text-[var(--color-text-muted)]">填写各项费用，系统将自动计算含佣金（5%）的最终报价。</div>
+      <div className="text-xs text-[var(--color-text-muted)]">填写各项费用，系统将自动计算平台技术服务费和工程师实得。</div>
       <div className="grid grid-cols-2 gap-3">
         {field('labor_fee', '人工费', '工时 × 单价')}
         {field('parts_fee', '配件费', '配件费用合计')}
@@ -119,13 +119,13 @@ export function EngineerPricingPanel({ workOrderId, engineerId, onSubmitted, com
         <div className="flex justify-between"><span className="text-[var(--color-text-secondary)]">配件费</span><span>{form.parts_fee || 0} 元</span></div>
         <div className="flex justify-between"><span className="text-[var(--color-text-secondary)]">差旅费</span><span>{form.travel_fee || 0} 元</span></div>
         <div className="flex justify-between"><span className="text-[var(--color-text-secondary)]">其他费用</span><span>{form.other_fee || 0} 元</span></div>
-        <div className="flex justify-between border-t border-[var(--color-border)] pt-1.5"><span className="text-[var(--color-text-secondary)]">小计</span><span className="font-medium">{subtotal} 元</span></div>
-        {/* V2佣金体系 */}
-        <div className="flex justify-between"><span className="text-[var(--color-text-secondary)]">平台服务费（{Math.round((1-commissionRate)*100)}%）</span><span className="text-orange-500">-{platformFee} 元</span></div>
+        <div className="flex justify-between border-t border-[var(--color-border)] pt-1.5"><span className="text-[var(--color-text-secondary)]">报价小计</span><span className="font-medium">{subtotal} 元</span></div>
+        {/* 代收代付模式费用拆分 */}
+        <div className="flex justify-between"><span className="text-[var(--color-text-secondary)]">平台技术服务费（{Math.round((1-commissionRate)*100)}%）</span><span className="text-orange-500">-{platformFee} 元</span></div>
         <div className="flex justify-between"><span className="text-[var(--color-text-secondary)]">动态保证金（5%）</span><span className="text-blue-500">-{depositWithhold} 元</span></div>
         <div className="flex justify-between border-t border-[var(--color-border)] pt-1.5 font-semibold">
-          <span className="text-[var(--color-text-primary)]">合伙人实得</span>
-          <span className="text-[var(--color-primary)]">{engineerPayout} 元</span>
+          <span className="text-[var(--color-text-primary)]">工程师实得（维修服务费）</span>
+          <span className="text-[var(--color-primary)]">{serviceFee} 元</span>
         </div>
       </div>
       <button
@@ -160,7 +160,7 @@ export function CustomerPricingPanel({ workOrderId, customerId, onConfirmed }) {
     setSubmitting(true);
     try {
       await confirmWorkOrderPricing(workOrderId, customerId);
-      toastSuccess('报价已确认，等待合伙人上门服务');
+      toastSuccess('报价已确认，等待工程师上门服务');
       onConfirmed?.();
       load();
     } catch (e) {
@@ -176,7 +176,7 @@ export function CustomerPricingPanel({ workOrderId, customerId, onConfirmed }) {
     setSubmitting(true);
     try {
       await rejectWorkOrderPricing(workOrderId, customerId, rejectReason);
-      toastSuccess('已发起议价，合伙人会重新报价');
+      toastSuccess('已发起议价，工程师会重新报价');
       onConfirmed?.();
       load();
     } catch (e) {
@@ -189,7 +189,7 @@ export function CustomerPricingPanel({ workOrderId, customerId, onConfirmed }) {
 
   if (loading) return <div className="text-center py-4 text-sm text-[var(--color-text-muted)]">加载中...</div>;
 
-  if (!pricing) return <div className="text-center py-4 text-sm text-[var(--color-text-muted)]">合伙人尚未提交报价</div>;
+  if (!pricing) return <div className="text-center py-4 text-sm text-[var(--color-text-muted)]">工程师尚未提交报价</div>;
 
   let aiCheck = null;
   try { aiCheck = pricing.ai_price_check ? JSON.parse(pricing.ai_price_check) : null; } catch {}
@@ -211,16 +211,23 @@ export function CustomerPricingPanel({ workOrderId, customerId, onConfirmed }) {
             配件明细：{(() => { try { return JSON.parse(pricing.parts_detail).map(p => `${p.name || '配件'} ${p.qty || 1}×${p.unit_price || 0}元`).join('；'); } catch { return pricing.parts_detail; } })()}
           </div>
         )}
-        <div className="flex justify-between border-t border-[var(--color-border)] pt-1.5"><span className="text-[var(--color-text-secondary)]">小计</span><span className="font-medium">{pricing.subtotal || 0} 元</span></div>
-        {/* V2佣金体系：客户支付全包价，合伙人承担平台服务费 */}
-        <div className="flex justify-between font-semibold text-base text-[var(--color-primary)]">
-          <span>合计（合伙人全包价）</span><span>{pricing.total_amount || pricing.subtotal || 0} 元</span>
-        </div>
+        <div className="flex justify-between border-t border-[var(--color-border)] pt-1.5"><span className="text-[var(--color-text-secondary)]">报价小计</span><span className="font-medium">{pricing.subtotal || 0} 元</span></div>
+        {/* 代收代付模式：分别展示维修服务费和平台技术服务费 */}
         {pricing.platform_fee > 0 && (
-          <div className="text-xs text-[var(--color-text-muted)] text-right]">
-            含平台服务费 {pricing.platform_fee} 元（由合伙人承担）
-          </div>
+          <>
+            <div className="flex justify-between">
+              <span className="text-[var(--color-text-secondary)]">维修服务费（支付给工程师）</span>
+              <span>{(pricing.subtotal || 0) - (pricing.platform_fee || 0)} 元</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-[var(--color-text-secondary)]">平台技术服务费</span>
+              <span>{pricing.platform_fee} 元</span>
+            </div>
+          </>
         )}
+        <div className="flex justify-between font-semibold text-base text-[var(--color-primary)]">
+          <span>合计应付</span><span>{pricing.total_amount || pricing.subtotal || 0} 元</span>
+        </div>
       </div>
 
       {/* AI 审核 */}
@@ -264,7 +271,7 @@ export function CustomerPricingPanel({ workOrderId, customerId, onConfirmed }) {
 
       {action === 'confirm' && (
         <div className="p-3 bg-green-500/10 border border-green-500/30 rounded-xl space-y-2">
-          <div className="text-sm text-[var(--color-text-primary)]">确认后合伙人将开始上门服务。</div>
+          <div className="text-sm text-[var(--color-text-primary)]">确认后工程师将开始上门服务。</div>
           <div className="flex gap-2">
             <button onClick={() => setAction(null)} className="flex-1 py-2 bg-[var(--color-surface-elevated)] text-[var(--color-text-secondary)] rounded-xl text-sm">取消</button>
             <button onClick={handleConfirm} disabled={submitting} className="flex-1 py-2 bg-green-500 hover:bg-green-600 disabled:opacity-50 text-white rounded-xl text-sm">
@@ -276,7 +283,7 @@ export function CustomerPricingPanel({ workOrderId, customerId, onConfirmed }) {
 
       {pricing.status === 'confirmed' && (
         <div className="p-3 bg-green-500/10 border border-green-500/30 rounded-xl text-center text-sm text-green-500">
-          ✓ 报价已确认，合伙人将上门服务
+          ✓ 报价已确认，工程师将上门服务
         </div>
       )}
     </div>
