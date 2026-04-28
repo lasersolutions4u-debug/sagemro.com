@@ -49,10 +49,7 @@ export function EngineerPricingPanel({ workOrderId, engineerId, onSubmitted, com
   const [submittingPrice, setSubmittingPrice] = useState(null);
 
   const subtotal = (parseInt(form.labor_fee) || 0) + (parseInt(form.parts_fee) || 0) + (parseInt(form.travel_fee) || 0) + (parseInt(form.other_fee) || 0);
-  // 代收代付模式：平台代收全款，扣除技术服务费后转付维修服务费给工程师
-  const platformFee = Math.round(subtotal * (1 - commissionRate)); // 平台技术服务费（平台营收）
-  const serviceFee = subtotal - platformFee;                        // 维修服务费（代收代付，转付工程师）
-  const depositWithhold = Math.round(subtotal * 0.05);             // 动态保证金 5%
+  const serviceFee = Math.round(subtotal * commissionRate); // 工程师实得（仅供提交前预览，最终以平台结算为准）
 
   const handleSubmit = async () => {
     setSubmitting(true);
@@ -94,7 +91,7 @@ export function EngineerPricingPanel({ workOrderId, engineerId, onSubmitted, com
 
   return (
     <div className="space-y-3">
-      <div className="text-xs text-[var(--color-text-muted)]">填写各项费用，系统将自动计算平台技术服务费和工程师实得。</div>
+      <div className="text-xs text-[var(--color-text-muted)]">填写各项费用后提交报价，客户确认后即可上门服务。</div>
       <div className="grid grid-cols-2 gap-3">
         {field('labor_fee', '人工费', '工时 × 单价')}
         {field('parts_fee', '配件费', '配件费用合计')}
@@ -119,13 +116,10 @@ export function EngineerPricingPanel({ workOrderId, engineerId, onSubmitted, com
         <div className="flex justify-between"><span className="text-[var(--color-text-secondary)]">配件费</span><span>{form.parts_fee || 0} 元</span></div>
         <div className="flex justify-between"><span className="text-[var(--color-text-secondary)]">差旅费</span><span>{form.travel_fee || 0} 元</span></div>
         <div className="flex justify-between"><span className="text-[var(--color-text-secondary)]">其他费用</span><span>{form.other_fee || 0} 元</span></div>
-        <div className="flex justify-between border-t border-[var(--color-border)] pt-1.5"><span className="text-[var(--color-text-secondary)]">报价小计</span><span className="font-medium">{subtotal} 元</span></div>
-        {/* 代收代付模式费用拆分 */}
-        <div className="flex justify-between"><span className="text-[var(--color-text-secondary)]">平台技术服务费（{Math.round((1-commissionRate)*100)}%）</span><span className="text-orange-500">-{platformFee} 元</span></div>
-        <div className="flex justify-between"><span className="text-[var(--color-text-secondary)]">动态保证金（5%）</span><span className="text-blue-500">-{depositWithhold} 元</span></div>
-        <div className="flex justify-between border-t border-[var(--color-border)] pt-1.5 font-semibold">
-          <span className="text-[var(--color-text-primary)]">工程师实得（维修服务费）</span>
-          <span className="text-[var(--color-primary)]">{serviceFee} 元</span>
+        <div className="flex justify-between border-t border-[var(--color-border)] pt-1.5"><span className="text-[var(--color-text-secondary)]">报价小计（客户应付）</span><span className="font-medium">{subtotal} 元</span></div>
+        <div className="flex justify-between font-semibold text-[var(--color-primary)]">
+          <span>你预计实得</span>
+          <span>{serviceFee} 元</span>
         </div>
       </div>
       <button
@@ -212,15 +206,15 @@ export function CustomerPricingPanel({ workOrderId, customerId, onConfirmed }) {
           </div>
         )}
         <div className="flex justify-between border-t border-[var(--color-border)] pt-1.5"><span className="text-[var(--color-text-secondary)]">报价小计</span><span className="font-medium">{pricing.subtotal || 0} 元</span></div>
-        {/* 代收代付模式：分别展示维修服务费和平台技术服务费 */}
+        {/* 代收代付：分别列明维修服务费和平台技术服务费 */}
         {pricing.platform_fee > 0 && (
           <>
             <div className="flex justify-between">
-              <span className="text-[var(--color-text-secondary)]">维修服务费（支付给工程师）</span>
+              <span className="text-[var(--color-text-secondary)]">其中：维修服务费（代收代付，转付工程师）</span>
               <span>{(pricing.subtotal || 0) - (pricing.platform_fee || 0)} 元</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-[var(--color-text-secondary)]">平台技术服务费</span>
+              <span className="text-[var(--color-text-secondary)]">其中：平台技术服务费</span>
               <span>{pricing.platform_fee} 元</span>
             </div>
           </>

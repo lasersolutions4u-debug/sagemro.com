@@ -321,10 +321,6 @@ export function SettingsModal({ isOpen, onClose, currentUser, userType, onOpenMy
                       <span className="text-[var(--color-sidebar-text)]">{levelLabels[engineerStats?.level] || '初级'}</span>
                     </div>
                     <div className="flex justify-between text-[13px]">
-                      <span className="text-[var(--color-sidebar-text)] opacity-60">提成比例</span>
-                      <span className="text-green-400">{((engineerStats?.commission_rate || 0.8) * 100).toFixed(0)}%</span>
-                    </div>
-                    <div className="flex justify-between text-[13px]">
                       <span className="text-[var(--color-sidebar-text)] opacity-60">信用分</span>
                       <span className="text-[var(--color-sidebar-text)]">{engineerStats?.credit_score ?? 100}</span>
                     </div>

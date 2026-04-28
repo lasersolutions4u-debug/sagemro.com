@@ -129,13 +129,12 @@ export function EngineerDashboard({ isOpen, onClose, engineerId, onViewProfile }
         {/* 工程师等级与钱包面板 */}
         {walletData && (
           <div className="p-4 bg-gradient-to-br from-[var(--color-primary)]/10 to-[var(--color-primary)]/5 rounded-xl border border-[var(--color-primary)]/20 space-y-3">
-            {/* 等级 + 提成率 */}
+            {/* 等级 */}
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <span className={`px-2 py-0.5 text-xs text-white rounded ${PartnerLevelLabels[walletData.level]?.color || 'bg-blue-500'}`}>
                   {PartnerLevelLabels[walletData.level]?.label || '初级'}工程师
                 </span>
-                <span className="text-xs text-[var(--color-text-secondary)]">提成 {(walletData.commission_rate * 100).toFixed(0)}%</span>
               </div>
               <div className="flex items-center gap-1">
                 <span className="text-xs text-[var(--color-text-secondary)]">信用分</span>
