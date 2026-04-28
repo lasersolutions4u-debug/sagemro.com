@@ -34,7 +34,7 @@ export function assertWorkOrderAccess(auth, workOrder) {
 }
 
 /**
- * 对话访问权：admin / 会话客户 / 会话合伙人
+ * 对话访问权：admin / 会话客户 / 会话工程师
  *
  * 迁移 010 为 conversations 加了 customer_id；迁移 015 补充了 engineer_id。
  * 两者都为 NULL 的历史会话仅允许 admin 读，避免 IDOR。

@@ -92,7 +92,7 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
     { key: 'messages', label: '消息对话' },
   ];
 
-  // 核价Tab：合伙人看表单，客户看报价确认
+  // 核价Tab：工程师看表单，客户看报价确认
   if (workOrder.status === 'in_progress' || workOrder.status === 'pricing' || workOrder.status === 'in_service') {
     tabs.push({ key: 'pricing', label: isEngineer ? '核价' : '报价确认' });
   }
@@ -151,7 +151,7 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
         );
       })()}
 
-      {/* 合伙人：标记服务完成 */}
+      {/* 工程师：标记服务完成 */}
       {isEngineer && (workOrder.status === 'in_service' || workOrder.status === 'pricing') && (
         <button
           onClick={async () => {

@@ -21,7 +21,7 @@ export function EngineerProfileModal({ isOpen, onClose, engineerId }) {
       const data = await getEngineerProfile(engineerId);
       setProfile(data.engineer);
     } catch (e) {
-      console.error('加载合伙人档案失败:', e);
+      console.error('加载工程师档案失败:', e);
     } finally {
       setLoading(false);
     }
@@ -50,7 +50,7 @@ export function EngineerProfileModal({ isOpen, onClose, engineerId }) {
     : 0;
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="合伙人档案" size="md">
+    <Modal isOpen={isOpen} onClose={onClose} title="工程师档案" size="md">
       <div className="space-y-5">
         {loading && (
           <div className="text-center py-8 text-[var(--color-text-secondary)]">加载中...</div>

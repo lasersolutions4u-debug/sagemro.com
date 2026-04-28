@@ -42,7 +42,7 @@ export function AIPriceCheck({ check }) {
   );
 }
 
-// ========== 核价区（合伙人填写） ==========
+// ========== 核价区（工程师填写） ==========
 export function EngineerPricingPanel({ workOrderId, engineerId, onSubmitted, commissionRate = 0.80, engineerLevel = 'junior' }) {
   const [form, setForm] = useState({ labor_fee: '', parts_fee: '', travel_fee: '', other_fee: '', parts_detail: '' });
   const [submitting, setSubmitting] = useState(false);

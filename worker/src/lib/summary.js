@@ -55,7 +55,7 @@ const PENDING_ITEM_PREFIXES = [
 // ============ 生成 prompt ============
 
 function buildSystemPrompt() {
-  return `你是 B2B 工业设备售后场景的对话摘要生成器。任务是把一段客户/合伙人与 AI 助手"小智"的对话，压缩成一份结构化 JSON，用于跨会话的 AI 上下文检索和业务流跟进。
+  return `你是 B2B 工业设备售后场景的对话摘要生成器。任务是把一段客户/工程师与 AI 助手"小智"的对话，压缩成一份结构化 JSON，用于跨会话的 AI 上下文检索和业务流跟进。
 
 必须严格按 SummaryProtocol v1 返回 JSON（不要 markdown，不要解释）：
 
@@ -76,7 +76,7 @@ function buildSystemPrompt() {
     "[missing_info] 客户未提供材料牌号",
     "[awaiting_confirmation] AI 建议调整气压但未确认执行",
     "[followup_due] 推荐了张工程师但客户未回复",
-    "[payment_pending] 合伙人提现申请处理中",
+    "[payment_pending] 工程师提现申请处理中",
     "[rating_pending] WO-... 已解决待评价"
   ],
   "sentiment": "neutral | satisfied | complaint | urgent",
@@ -325,7 +325,7 @@ export async function generateSummaryForConversation({
       return { ok: false, error: 'conversation_not_found' };
     }
 
-    const userRoleLabel = conv.engineer_id ? '合伙人' : conv.customer_id ? '客户' : '访客';
+    const userRoleLabel = conv.engineer_id ? '工程师' : conv.customer_id ? '客户' : '访客';
     convMeta = {
       id: conv.id,
       created_at: conv.created_at,

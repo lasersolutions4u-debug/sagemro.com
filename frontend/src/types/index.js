@@ -1,18 +1,18 @@
-// 合伙人等级
+// 工程师等级
 export const PartnerLevel = {
   JUNIOR: 'junior',       // 初级：提成80%
   SENIOR: 'senior',       // 中级：提成85%
   EXPERT: 'expert',       // 核心专家：提成88%
 };
 
-// 合伙人等级对应的提成比例
+// 工程师等级对应的提成比例
 export const CommissionRates = {
-  [PartnerLevel.JUNIOR]: 0.80,  // 合伙人拿80%，平台收20%
-  [PartnerLevel.SENIOR]: 0.85,  // 合伙人拿85%，平台收15%
-  [PartnerLevel.EXPERT]: 0.88,  // 合伙人拿88%，平台收12%
+  [PartnerLevel.JUNIOR]: 0.80,  // 工程师拿80%，平台收20%
+  [PartnerLevel.SENIOR]: 0.85,  // 工程师拿85%，平台收15%
+  [PartnerLevel.EXPERT]: 0.88,  // 工程师拿88%，平台收12%
 };
 
-// 合伙人等级标签
+// 工程师等级标签
 export const PartnerLevelLabels = {
   [PartnerLevel.JUNIOR]: { label: '初级', color: 'bg-blue-500', textColor: 'text-white' },
   [PartnerLevel.SENIOR]: { label: '中级', color: 'bg-amber-500', textColor: 'text-white' },

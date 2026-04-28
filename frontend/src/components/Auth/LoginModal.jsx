@@ -27,7 +27,7 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
   // 身份选择
   const [selectedIdentity, setSelectedIdentity] = useState(null); // 'customer' | 'engineer' | 'visitor'
 
-  // 合伙人背景调查
+  // 工程师背景调查
   const [specialties, setSpecialties] = useState([]);
   const [brands, setBrands] = useState({});
   const [services, setServices] = useState([]);
@@ -105,7 +105,7 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
     }
   };
 
-  // 合伙人注册（含公司名+背景调查）
+  // 工程师注册（含公司名+背景调查）
   const handleRegisterEngineer = async () => {
     if (!name || !password || !confirmPassword || !companyName) {
       setError('请填写所有必填项'); return;
@@ -187,7 +187,7 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
       // 访客直接完成注册（模拟认证）
       setStep('register-visitor-complete');
     } else {
-      // 客户或合伙人进入认证提示
+      // 客户或工程师进入认证提示
       setStep('register-auth-prompt');
     }
   };
@@ -531,7 +531,7 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
           </div>
         )}
 
-        {/* ========== Step register-engineer-2: 合伙人背景调查 ========== */}
+        {/* ========== Step register-engineer-2: 工程师背景调查 ========== */}
         {step === 'register-engineer-2' && (
           <div className="space-y-3 max-h-[65vh] overflow-y-auto pr-1">
             <div className="flex items-center gap-2 mb-2">

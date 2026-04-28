@@ -86,7 +86,7 @@ export async function registerCustomer({ name, phone, password, code, company, i
 }
 
 /**
- * 合伙人入驻
+ * 工程师入驻
  */
 export async function registerEngineer({ name, phone, password, code, specialties, brands, services, service_region, bio, company }) {
   const response = await fetch(`${API_BASE}/api/auth/register/engineer`, {
@@ -362,7 +362,7 @@ export async function getWorkOrderPricing(workOrderId) {
 }
 
 /**
- * 合伙人提交/更新核价
+ * 工程师提交/更新核价
  */
 export async function submitWorkOrderPricing(workOrderId, data) {
   const response = await fetch(`${API_BASE}/api/workorders/${workOrderId}/pricing`, {
@@ -403,10 +403,10 @@ export async function rejectWorkOrderPricing(workOrderId, customerId, reason) {
   return response.json();
 }
 
-// ============ 合伙人相关 ============
+// ============ 工程师相关 ============
 
 /**
- * 获取合伙人的工单列表
+ * 获取工程师的工单列表
  */
 export async function getEngineerTickets(engineerId) {
   const url = engineerId
@@ -420,7 +420,7 @@ export async function getEngineerTickets(engineerId) {
 }
 
 /**
- * 合伙人接单
+ * 工程师接单
  */
 export async function acceptTicket({ work_order_id, engineer_id }) {
   const response = await fetch(`${API_BASE}/api/engineers/tickets/accept`, {
@@ -433,7 +433,7 @@ export async function acceptTicket({ work_order_id, engineer_id }) {
 }
 
 /**
- * 合伙人拒单
+ * 工程师拒单
  */
 export async function rejectTicket({ work_order_id, engineer_id }) {
   const response = await fetch(`${API_BASE}/api/engineers/tickets/reject`, {
@@ -446,7 +446,7 @@ export async function rejectTicket({ work_order_id, engineer_id }) {
 }
 
 /**
- * 获取工单推荐的合伙人列表
+ * 获取工单推荐的工程师列表
  */
 export async function getRecommendedEngineers(workOrderId) {
   const response = await fetch(`${API_BASE}/api/engineers/recommend?work_order_id=${workOrderId}`, {
@@ -457,7 +457,7 @@ export async function getRecommendedEngineers(workOrderId) {
 }
 
 /**
- * 更新合伙人接单状态
+ * 更新工程师接单状态
  */
 export async function updateEngineerStatus({ engineer_id, status }) {
   const response = await fetch(`${API_BASE}/api/engineers/status`, {
@@ -470,7 +470,7 @@ export async function updateEngineerStatus({ engineer_id, status }) {
 }
 
 /**
- * 获取合伙人档案
+ * 获取工程师档案
  */
 export async function getEngineerProfile(engineerId) {
   const response = await fetch(`${API_BASE}/api/engineers/profile?engineer_id=${engineerId}`, {
@@ -481,7 +481,7 @@ export async function getEngineerProfile(engineerId) {
 }
 
 /**
- * 合伙人标记服务完成
+ * 工程师标记服务完成
  */
 export async function resolveWorkOrder(workOrderId, engineerId) {
   const response = await fetch(`${API_BASE}/api/workorders/${workOrderId}/resolve`, {
@@ -493,10 +493,10 @@ export async function resolveWorkOrder(workOrderId, engineerId) {
   return response.json();
 }
 
-// ============ 合伙人钱包与保证金 ============
+// ============ 工程师钱包与保证金 ============
 
 /**
- * 获取合伙人钱包信息
+ * 获取工程师钱包信息
  */
 export async function getEngineerWallet(engineerId) {
   const url = engineerId
@@ -675,7 +675,7 @@ export async function updateCustomerProfile({ name, region }) {
 }
 
 /**
- * 更新合伙人档案
+ * 更新工程师档案
  */
 export async function updateEngineerProfile({ name, bio, service_region }) {
   const response = await fetch(`${API_BASE}/api/engineers/profile`, {

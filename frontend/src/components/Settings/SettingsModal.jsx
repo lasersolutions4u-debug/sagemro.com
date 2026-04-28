@@ -12,7 +12,7 @@ export function SettingsModal({ isOpen, onClose, currentUser, userType, onOpenMy
   // 客户档案
   const [customerForm, setCustomerForm] = useState({ name: '', region: '' });
 
-  // 合伙人档案
+  // 工程师档案
   const [engineerForm, setEngineerForm] = useState({ name: '', bio: '', service_region: '' });
   const [engineerStats, setEngineerStats] = useState(null);
   const [engineerWallet, setEngineerWallet] = useState(null);
@@ -62,7 +62,7 @@ export function SettingsModal({ isOpen, onClose, currentUser, userType, onOpenMy
       });
       setEngineerWallet(walletRes);
     } catch (err) {
-      console.error('加载合伙人数据失败', err);
+      console.error('加载工程师数据失败', err);
     }
   }
 
@@ -150,7 +150,7 @@ export function SettingsModal({ isOpen, onClose, currentUser, userType, onOpenMy
             {userType === 'engineer' && (
               <div className="flex items-center gap-2 mt-0.5">
                 <span className="text-[11px] px-1.5 py-0.5 bg-[var(--color-primary)]/20 text-[var(--color-primary)] rounded">
-                  {levelLabels[engineerStats?.level] || '初级'}合伙人
+                  {levelLabels[engineerStats?.level] || '初级'}工程师
                 </span>
                 <span className={`text-[11px] ${statusColors[currentStatus]}`}>
                   {statusLabels[currentStatus]}
@@ -158,7 +158,7 @@ export function SettingsModal({ isOpen, onClose, currentUser, userType, onOpenMy
               </div>
             )}
           </div>
-          {/* 接单状态开关（合伙人） */}
+          {/* 接单状态开关（工程师） */}
           {userType === 'engineer' && (
             <button
               onClick={handleStatusToggle}
@@ -174,7 +174,7 @@ export function SettingsModal({ isOpen, onClose, currentUser, userType, onOpenMy
           )}
         </div>
 
-        {/* 合伙人统计卡片 */}
+        {/* 工程师统计卡片 */}
         {userType === 'engineer' && engineerWallet && (
           <div className="grid grid-cols-3 gap-3">
             <div className="bg-[var(--color-surface-elevated)] rounded-xl p-3 text-center">
@@ -314,7 +314,7 @@ export function SettingsModal({ isOpen, onClose, currentUser, userType, onOpenMy
                       className="w-full bg-[var(--color-input-bg)] border border-[var(--color-input-border)] rounded-lg px-3 py-2.5 text-[14px] text-[var(--color-sidebar-text)] resize-none"
                     />
                   </div>
-                  {/* 合伙人等级信息 */}
+                  {/* 工程师等级信息 */}
                   <div className="bg-[var(--color-surface-elevated)] rounded-xl p-3 space-y-2">
                     <div className="flex justify-between text-[13px]">
                       <span className="text-[var(--color-sidebar-text)] opacity-60">等级</span>

@@ -140,7 +140,7 @@ export function ToolBar({
               </div>
               <span className="truncate">{currentUser.name}</span>
               {isEngineer && (
-                <span className="text-[10px] px-1.5 py-0.5 bg-[var(--color-primary)]/20 text-[var(--color-primary)] rounded">合伙人</span>
+                <span className="text-[10px] px-1.5 py-0.5 bg-[var(--color-primary)]/20 text-[var(--color-primary)] rounded">工程师</span>
               )}
             </button>
             <button
