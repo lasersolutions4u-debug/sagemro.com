@@ -90,7 +90,7 @@ jobs:
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: pages deploy frontend/dist --project-name=sagemro-frontend --branch=${{ github.ref_name }}
+          command: pages deploy frontend/dist --project-name=sagemro-com --branch=${{ github.ref_name }}
 
   # ============ 部署 Worker ============
   deploy-worker:
