@@ -248,6 +248,7 @@ export function WorkOrderModal({ isOpen, onClose, onSubmit }) {
 
         {/* 提交按钮 */}
         <button
+          data-testid="submit-work-order-button"
           onClick={handleSubmit}
           disabled={submitting}
           className="w-full py-3 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] disabled:bg-[var(--color-text-muted)] text-white rounded-xl font-medium transition-colors"

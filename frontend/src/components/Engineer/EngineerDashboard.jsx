@@ -283,6 +283,7 @@ export function EngineerDashboard({ isOpen, onClose, engineerId, onViewProfile }
                   <p className="text-xs text-[var(--color-text-secondary)] mb-1">{ticket.type} | {ticket.description?.slice(0, 60)}...</p>
                   <div className="flex gap-2">
                     <button
+                      data-testid="accept-ticket-button"
                       onClick={() => handleAccept(ticket.id)}
                       disabled={actionLoading === ticket.id}
                       className="flex-1 py-1.5 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white rounded-lg text-sm transition-colors disabled:opacity-50"
@@ -290,6 +291,7 @@ export function EngineerDashboard({ isOpen, onClose, engineerId, onViewProfile }
                       接单
                     </button>
                     <button
+                      data-testid="reject-ticket-button"
                       onClick={() => handleReject(ticket.id)}
                       disabled={actionLoading === ticket.id}
                       className="flex-1 py-1.5 bg-[var(--color-surface-elevated)] hover:bg-[var(--color-hover)] text-[var(--color-text-secondary)] rounded-lg text-sm transition-colors disabled:opacity-50"

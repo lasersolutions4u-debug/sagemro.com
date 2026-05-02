@@ -1,24 +1,26 @@
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback, useEffect, useRef, lazy, Suspense } from 'react';
 import { Footer } from './components/common/Footer';
 import { Sidebar } from './components/Sidebar/Sidebar';
 import { ChatArea } from './components/Chat/ChatArea';
-import { WorkOrderModal } from './components/Sidebar/WorkOrderModal';
-import { MyWorkOrdersModal } from './components/Sidebar/MyWorkOrdersModal';
 import { CustomerHomeModal } from './components/Settings/CustomerHomeModal';
 import { AboutModal } from './components/common/AboutModal';
 import { FeedbackHost } from './components/common/FeedbackHost';
 import { LegalModal } from './components/common/LegalModal';
-import { LoginModal } from './components/Auth/LoginModal';
-import { EngineerDashboard } from './components/Engineer/EngineerDashboard';
-import { EngineerProfileModal } from './components/Engineer/EngineerProfileModal';
 import { MyDevicesModal } from './components/Device/MyDevicesModal';
 import { NotificationModal } from './components/Notification/NotificationModal';
+import { PushNotificationBanner } from './components/PushNotification/PushNotificationBanner';
 import { useChat } from './hooks/useChat';
 import { useConversations } from './hooks/useConversations';
 import { usePushNotification } from './hooks/usePushNotification';
-import { PushNotificationBanner } from './components/PushNotification/PushNotificationBanner';
 import { generateId } from './utils/helpers';
 import { submitWorkOrder as submitWorkOrderApi, getUnreadNotificationCount } from './services/api';
+
+// 重型 Modal 懒加载，减少首屏 bundle 体积
+const WorkOrderModal = lazy(() => import('./components/Sidebar/WorkOrderModal'));
+const MyWorkOrdersModal = lazy(() => import('./components/Sidebar/MyWorkOrdersModal'));
+const LoginModal = lazy(() => import('./components/Auth/LoginModal'));
+const EngineerDashboard = lazy(() => import('./components/Engineer/EngineerDashboard'));
+const EngineerProfileModal = lazy(() => import('./components/Engineer/EngineerProfileModal'));
 
 function App() {
   // 侧边栏状态
@@ -314,16 +316,24 @@ function App() {
         />
       </div>
 
-      {/* Modals */}
-      <WorkOrderModal
-        isOpen={workOrderModalOpen}
-        onClose={() => setWorkOrderModalOpen(false)}
-        onSubmit={handleSubmitWorkOrder}
-      />
-      <MyWorkOrdersModal
-        isOpen={myWorkOrdersModalOpen}
-        onClose={() => setMyWorkOrdersModalOpen(false)}
-      />
+      {/* Modals — 重型组件使用 Suspense 懒加载 */}
+      <Suspense fallback={null}>
+        {workOrderModalOpen && (
+          <WorkOrderModal
+            isOpen={workOrderModalOpen}
+            onClose={() => setWorkOrderModalOpen(false)}
+            onSubmit={handleSubmitWorkOrder}
+          />
+        )}
+      </Suspense>
+      <Suspense fallback={null}>
+        {myWorkOrdersModalOpen && (
+          <MyWorkOrdersModal
+            isOpen={myWorkOrdersModalOpen}
+            onClose={() => setMyWorkOrdersModalOpen(false)}
+          />
+        )}
+      </Suspense>
       <CustomerHomeModal
         isOpen={customerHomeModalOpen}
         onClose={() => setCustomerHomeModalOpen(false)}
@@ -334,23 +344,35 @@ function App() {
         isOpen={aboutModalOpen}
         onClose={() => setAboutModalOpen(false)}
       />
-      <LoginModal
-        isOpen={loginModalOpen}
-        onClose={() => setLoginModalOpen(false)}
-        onLoginSuccess={handleLoginSuccess}
-        onOpenLegal={openLegal}
-      />
-      <EngineerDashboard
-        isOpen={engineerDashboardOpen}
-        onClose={() => setEngineerDashboardOpen(false)}
-        engineerId={localStorage.getItem('sagemro_engineer_id')}
-        onViewProfile={() => setEngineerProfileOpen(true)}
-      />
-      <EngineerProfileModal
-        isOpen={engineerProfileOpen}
-        onClose={() => setEngineerProfileOpen(false)}
-        engineerId={localStorage.getItem('sagemro_engineer_id')}
-      />
+      <Suspense fallback={null}>
+        {loginModalOpen && (
+          <LoginModal
+            isOpen={loginModalOpen}
+            onClose={() => setLoginModalOpen(false)}
+            onLoginSuccess={handleLoginSuccess}
+            onOpenLegal={openLegal}
+          />
+        )}
+      </Suspense>
+      <Suspense fallback={null}>
+        {engineerDashboardOpen && (
+          <EngineerDashboard
+            isOpen={engineerDashboardOpen}
+            onClose={() => setEngineerDashboardOpen(false)}
+            engineerId={localStorage.getItem('sagemro_engineer_id')}
+            onViewProfile={() => setEngineerProfileOpen(true)}
+          />
+        )}
+      </Suspense>
+      <Suspense fallback={null}>
+        {engineerProfileOpen && (
+          <EngineerProfileModal
+            isOpen={engineerProfileOpen}
+            onClose={() => setEngineerProfileOpen(false)}
+            engineerId={localStorage.getItem('sagemro_engineer_id')}
+          />
+        )}
+      </Suspense>
       <MyDevicesModal
         isOpen={myDevicesOpen}
         onClose={() => setMyDevicesOpen(false)}

@@ -1,5 +1,27 @@
-import { FileText, ClipboardList, Info, LogIn, LogOut, Package, Bell, MoreHorizontal, X } from 'lucide-react';
+import { FileText, ClipboardList, Info, LogIn, LogOut, Package, Bell, MoreHorizontal, X, Sun, Moon } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
+
+function getCurrentTheme() {
+  const stored = localStorage.getItem('sagemro_theme');
+  if (stored === 'dark' || stored === 'light') return stored;
+  if (window.matchMedia('(prefers-color-scheme: dark)').matches) return 'dark';
+  return 'light';
+}
+
+function applyTheme(theme) {
+  localStorage.setItem('sagemro_theme', theme);
+  if (theme === 'dark') {
+    document.documentElement.classList.add('dark');
+  } else if (theme === 'light') {
+    document.documentElement.classList.remove('dark');
+  } else {
+    if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+  }
+}
 
 export function ToolBar({
   onOpenWorkOrder,
@@ -17,6 +39,7 @@ export function ToolBar({
 }) {
   const [showMore, setShowMore] = useState(false);
   const [collapsed, setCollapsed] = useState(true);
+  const [theme, setTheme] = useState(() => getCurrentTheme());
   const moreMenuRef = useRef(null);
 
   useEffect(() => {
@@ -40,20 +63,20 @@ export function ToolBar({
 
   const primaryTools = isEngineer
     ? [
-        { icon: ClipboardList, label: '我的工单', onClick: onOpenMyWorkOrders },
+        { icon: ClipboardList, label: '我的工单', onClick: onOpenMyWorkOrders, testid: 'tool-my-work-orders' },
       ]
     : [
-        { icon: FileText, label: '新建工单', onClick: onOpenWorkOrder },
-        { icon: ClipboardList, label: '我的工单', onClick: onOpenMyWorkOrders },
+        { icon: FileText, label: '新建工单', onClick: onOpenWorkOrder, testid: 'tool-create-work-order' },
+        { icon: ClipboardList, label: '我的工单', onClick: onOpenMyWorkOrders, testid: 'tool-my-work-orders' },
       ];
 
   const extraTools = isEngineer
     ? [
-        { icon: Bell, label: '消息通知', badge: unreadCount, onClick: () => { onOpenNotifications?.(); setShowMore(false); } },
+        { icon: Bell, label: '消息通知', badge: unreadCount, testid: 'tool-notifications', onClick: () => { onOpenNotifications?.(); setShowMore(false); } },
       ]
     : [
-        { icon: Package, label: '我的设备', onClick: () => { onOpenMyDevices?.(); setShowMore(false); } },
-        { icon: Bell, label: '消息通知', badge: unreadCount, onClick: () => { onOpenNotifications?.(); setShowMore(false); } },
+        { icon: Package, label: '我的设备', testid: 'tool-my-devices', onClick: () => { onOpenMyDevices?.(); setShowMore(false); } },
+        { icon: Bell, label: '消息通知', badge: unreadCount, testid: 'tool-notifications', onClick: () => { onOpenNotifications?.(); setShowMore(false); } },
       ];
 
   const showCollapsed = currentUser && collapsed && extraTools.length >= 2;
@@ -63,6 +86,7 @@ export function ToolBar({
   const toolBtn = (tool) => (
     <button
       key={tool.label}
+      data-testid={tool.testid || `tool-${tool.label}`}
       onClick={tool.onClick}
       className="w-full flex items-center gap-3 px-4 py-2.5 text-[14px] text-[var(--color-sidebar-muted)] hover:bg-[var(--color-sidebar-surface)] hover:text-[var(--color-sidebar-text)] rounded-lg mx-1 transition-colors"
     >
@@ -78,7 +102,22 @@ export function ToolBar({
 
   return (
     <div className="border-t border-[var(--color-border)] pt-3 mt-auto">
+      {/* 深色/浅色切换（所有用户可见） */}
       <button
+        data-testid="theme-toggle-button"
+        onClick={() => {
+          const next = theme === 'dark' ? 'light' : 'dark';
+          setTheme(next);
+          applyTheme(next);
+        }}
+        className="w-full flex items-center gap-3 px-4 py-2.5 text-[14px] text-[var(--color-sidebar-muted)] hover:bg-[var(--color-sidebar-surface)] hover:text-[var(--color-sidebar-text)] rounded-lg mx-1 transition-colors"
+      >
+        {theme === 'dark' ? <Sun size={17} /> : <Moon size={17} />}
+        <span>{theme === 'dark' ? '浅色模式' : '深色模式'}</span>
+      </button>
+
+      <button
+        data-testid="about-xiaozhi-button"
         onClick={onOpenAbout}
         className="w-full flex items-center gap-3 px-4 py-2.5 text-[14px] text-[var(--color-sidebar-muted)] hover:bg-[var(--color-sidebar-surface)] hover:text-[var(--color-sidebar-text)] rounded-lg mx-1 transition-colors"
       >
@@ -93,6 +132,7 @@ export function ToolBar({
       {showCollapsed && (
         <div className="relative" ref={moreMenuRef}>
           <button
+            data-testid="sidebar-more-button"
             onClick={() => setShowMore(!showMore)}
             className="w-full flex items-center gap-3 px-4 py-2.5 text-[14px] text-[var(--color-sidebar-muted)] hover:bg-[var(--color-sidebar-surface)] hover:text-[var(--color-sidebar-text)] rounded-lg mx-1 transition-colors"
           >
@@ -130,6 +170,7 @@ export function ToolBar({
         {currentUser ? (
           <>
             <button
+              data-testid="user-avatar-button"
               onClick={avatarAction}
               className="w-full flex items-center gap-1 px-2 py-2.5 text-[14px] text-[var(--color-sidebar-muted)] hover:bg-[var(--color-sidebar-surface)] hover:text-[var(--color-sidebar-text)] rounded-lg mx-1 transition-colors"
             >
@@ -144,6 +185,7 @@ export function ToolBar({
               )}
             </button>
             <button
+              data-testid="logout-button"
               onClick={onLogout}
               className="w-full flex items-center gap-3 px-4 py-2.5 text-[14px] text-[var(--color-sidebar-muted)] hover:bg-[var(--color-sidebar-surface)] hover:text-[var(--color-sidebar-text)] rounded-lg mx-1 transition-colors"
             >
@@ -153,6 +195,7 @@ export function ToolBar({
           </>
         ) : (
           <button
+            data-testid="sidebar-login-button"
             onClick={onOpenLogin}
             className="w-full flex items-center gap-3 px-4 py-2.5 text-[14px] text-[var(--color-sidebar-muted)] hover:bg-[var(--color-sidebar-surface)] hover:text-[var(--color-sidebar-text)] rounded-lg mx-1 transition-colors"
           >

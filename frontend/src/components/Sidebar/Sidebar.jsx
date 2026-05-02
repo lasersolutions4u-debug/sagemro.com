@@ -51,6 +51,7 @@ export function Sidebar({
 
           {/* 新建对话按钮 */}
           <button
+            data-testid="new-chat-button"
             onClick={onNewChat}
             className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white rounded-xl transition-colors font-medium text-[13px] shadow-sm"
           >

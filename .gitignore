@@ -40,5 +40,8 @@ Thumbs.db
 .wrangler/
 .dev.vars
 
+# Claude memory backup (synced via 坚果云, not for git)
+memory/
+
 # Misc
 *.bak

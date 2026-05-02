@@ -123,6 +123,7 @@ export function EngineerPricingPanel({ workOrderId, engineerId, onSubmitted, com
         </div>
       </div>
       <button
+        data-testid="submit-pricing-button"
         onClick={handleSubmit}
         disabled={submitting || subtotal === 0}
         className="w-full py-2.5 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] disabled:opacity-50 text-white rounded-xl font-medium"
@@ -256,7 +257,7 @@ export function CustomerPricingPanel({ workOrderId, customerId, onConfirmed }) {
           />
           <div className="flex gap-2">
             <button onClick={() => setAction(null)} className="flex-1 py-2 bg-[var(--color-border)] text-[var(--color-text-secondary)] rounded-xl text-sm">取消</button>
-            <button onClick={handleReject} disabled={submitting} className="flex-1 py-2 bg-orange-500 hover:bg-orange-600 disabled:opacity-50 text-white rounded-xl text-sm">
+            <button data-testid="reject-pricing-button" onClick={handleReject} disabled={submitting} className="flex-1 py-2 bg-orange-500 hover:bg-orange-600 disabled:opacity-50 text-white rounded-xl text-sm">
               {submitting ? '提交中...' : '发起议价'}
             </button>
           </div>
@@ -268,7 +269,7 @@ export function CustomerPricingPanel({ workOrderId, customerId, onConfirmed }) {
           <div className="text-sm text-[var(--color-text-primary)]">确认后工程师将开始上门服务。</div>
           <div className="flex gap-2">
             <button onClick={() => setAction(null)} className="flex-1 py-2 bg-[var(--color-surface-elevated)] text-[var(--color-text-secondary)] rounded-xl text-sm">取消</button>
-            <button onClick={handleConfirm} disabled={submitting} className="flex-1 py-2 bg-green-500 hover:bg-green-600 disabled:opacity-50 text-white rounded-xl text-sm">
+            <button data-testid="confirm-pricing-button" onClick={handleConfirm} disabled={submitting} className="flex-1 py-2 bg-green-500 hover:bg-green-600 disabled:opacity-50 text-white rounded-xl text-sm">
               {submitting ? '确认中...' : '确认报价'}
             </button>
           </div>

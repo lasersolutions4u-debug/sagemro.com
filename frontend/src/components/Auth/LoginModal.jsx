@@ -425,6 +425,7 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
 
             <div className="space-y-2.5">
               <button
+                data-testid="identity-select-customer"
                 onClick={() => handleIdentitySelect('customer')}
                 className="w-full p-4 text-left rounded-xl border-2 border-[var(--color-border)] hover:border-[var(--color-primary)] transition-colors group"
               >
@@ -438,6 +439,7 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
               </button>
 
               <button
+                data-testid="identity-select-engineer"
                 onClick={() => handleIdentitySelect('engineer')}
                 className="w-full p-4 text-left rounded-xl border-2 border-[var(--color-border)] hover:border-[var(--color-primary)] transition-colors group"
               >
@@ -451,6 +453,7 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
               </button>
 
               <button
+                data-testid="identity-select-visitor"
                 onClick={() => handleIdentitySelect('visitor')}
                 className="w-full p-4 text-left rounded-xl border-2 border-[var(--color-border)] hover:border-[var(--color-text-muted)] transition-colors group"
               >
@@ -492,6 +495,7 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
             </div>
 
             <button
+              data-testid="auth-confirm-button"
               onClick={handleAuthConfirm}
               className="w-full py-3 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white rounded-xl font-medium transition-colors"
             >
@@ -522,6 +526,7 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
             )}
 
             <button
+              data-testid="visitor-start-button"
               onClick={handleVisitorComplete}
               disabled={submitting}
               className="w-full py-3 bg-[var(--color-text-muted)] hover:bg-[var(--color-text-secondary)] disabled:bg-[var(--color-text-muted)]/50 text-white rounded-xl font-medium transition-colors"
@@ -619,6 +624,7 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
             </div>
 
             <button
+              data-testid="register-engineer-button"
               onClick={handleRegisterEngineer} disabled={submitting}
               className="w-full py-3 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] disabled:bg-[var(--color-text-muted)] text-white rounded-xl font-medium transition-colors"
             >
@@ -680,6 +686,7 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
                   setSubmitting(false);
                 }
               }} disabled={submitting}
+              data-testid="login-submit-button"
               className="w-full py-3 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] disabled:bg-[var(--color-text-muted)] text-white rounded-xl font-medium transition-colors"
             >
               {submitting ? '登录中...' : '登录'}

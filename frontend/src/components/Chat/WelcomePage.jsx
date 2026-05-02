@@ -65,13 +65,13 @@ export function WelcomePage({ onSendMessage }) {
           ))}
         </div>
 
-        {/* Quick questions — desktop only */}
-        <div className="hidden sm:grid grid-cols-2 gap-3">
+        {/* Quick questions */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 sm:gap-3">
           {quickQuestions.map((question, i) => (
             <button
               key={i}
               onClick={() => onSendMessage(question)}
-              className="px-4 py-3 text-[14px] text-left bg-[var(--color-surface-elevated)] text-[var(--color-text-primary)] rounded-xl hover:bg-[var(--color-hover)] transition-colors leading-relaxed"
+              className="px-4 py-3 text-[13px] sm:text-[14px] text-left bg-[var(--color-surface-elevated)] text-[var(--color-text-primary)] rounded-xl hover:bg-[var(--color-hover)] transition-colors leading-relaxed"
             >
               {question}
             </button>

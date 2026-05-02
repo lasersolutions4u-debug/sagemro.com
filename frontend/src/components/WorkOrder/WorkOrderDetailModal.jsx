@@ -154,6 +154,7 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
       {/* 工程师：标记服务完成 */}
       {isEngineer && (workOrder.status === 'in_service' || workOrder.status === 'pricing') && (
         <button
+          data-testid="mark-service-complete-button"
           onClick={async () => {
             if (!(await confirmDialog('确认服务已完成？'))) return;
             try {
@@ -212,7 +213,7 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
       )}
 
       {workOrder.status === 'resolved' && !showRating && !detail?.rating && (
-        <button onClick={() => setShowRating(true)} className="w-full py-3 bg-yellow-500 hover:bg-yellow-600 text-white rounded-xl font-medium">
+        <button data-testid="rate-work-order-button" onClick={() => setShowRating(true)} className="w-full py-3 bg-yellow-500 hover:bg-yellow-600 text-white rounded-xl font-medium">
           立即评价
         </button>
       )}
@@ -235,7 +236,7 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
             className="w-full px-3 py-2 text-sm border border-[var(--color-border)] rounded-xl bg-[var(--color-surface)] text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-yellow-500 resize-none" />
           <div className="flex gap-2">
             <button onClick={() => setShowRating(false)} className="flex-1 py-2 bg-[var(--color-border)] text-[var(--color-text-secondary)] rounded-xl text-sm">取消</button>
-            <button onClick={handleSubmitRating} disabled={submitting} className="flex-1 py-2 bg-yellow-500 hover:bg-yellow-600 disabled:opacity-50 text-white rounded-xl text-sm">
+            <button data-testid="submit-rating-button" onClick={handleSubmitRating} disabled={submitting} className="flex-1 py-2 bg-yellow-500 hover:bg-yellow-600 disabled:opacity-50 text-white rounded-xl text-sm">
               {submitting ? '提交中...' : '提交评价'}
             </button>
           </div>
