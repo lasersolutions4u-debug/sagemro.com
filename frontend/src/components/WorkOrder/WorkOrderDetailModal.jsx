@@ -82,7 +82,9 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
 
   if (!workOrder) return null;
 
-  const status = statusConfig[workOrder.status] || { text: workOrder.status, color: 'bg-gray-500' };
+  // 使用 detail 中的最新状态（loadDetail 刷新后），回退到 prop 中的初始状态
+  const effectiveStatus = detail?.status || workOrder.status;
+  const status = statusConfig[effectiveStatus] || { text: effectiveStatus, color: 'bg-gray-500' };
   const urgency = urgencyConfig[workOrder.urgency] || urgencyConfig.normal;
   const isEngineer = userType === 'engineer';
   const isCustomer = userType === 'customer';
@@ -93,7 +95,7 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
   ];
 
   // 核价Tab：工程师看表单，客户看报价确认
-  if (workOrder.status === 'in_progress' || workOrder.status === 'pricing' || workOrder.status === 'in_service') {
+  if (effectiveStatus === 'in_progress' || effectiveStatus === 'pricing' || effectiveStatus === 'in_service') {
     tabs.push({ key: 'pricing', label: isEngineer ? '核价' : '报价确认' });
   }
 
@@ -152,7 +154,7 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
       })()}
 
       {/* 工程师：标记服务完成 */}
-      {isEngineer && (workOrder.status === 'in_service' || workOrder.status === 'pricing') && (
+      {isEngineer && (effectiveStatus === 'in_service' || effectiveStatus === 'pricing') && (
         <button
           data-testid="mark-service-complete-button"
           onClick={async () => {
@@ -190,7 +192,7 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
       )}
 
       {/* 评价区（resolved状态） */}
-      {workOrder.status === 'resolved' && detail?.rating && (
+      {effectiveStatus === 'resolved' && detail?.rating && (
         <div>
           <h3 className="text-sm font-medium text-[var(--color-text-primary)] mb-2">您的评价</h3>
           <div className="p-3 bg-[var(--color-surface-elevated)] rounded-xl space-y-2">
@@ -212,7 +214,7 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
         </div>
       )}
 
-      {workOrder.status === 'resolved' && !showRating && !detail?.rating && (
+      {effectiveStatus === 'resolved' && !showRating && !detail?.rating && (
         <button data-testid="rate-work-order-button" onClick={() => setShowRating(true)} className="w-full py-3 bg-yellow-500 hover:bg-yellow-600 text-white rounded-xl font-medium">
           立即评价
         </button>
@@ -244,7 +246,7 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
       )}
 
       {/* 工程师评价客户（仅工程师可见） */}
-      {isEngineer && (workOrder.status === 'resolved' || workOrder.status === 'completed' || workOrder.status === 'pending_review') && engineerReview && (
+      {isEngineer && (effectiveStatus === 'resolved' || effectiveStatus === 'completed' || effectiveStatus === 'pending_review') && engineerReview && (
         <div>
           <h3 className="text-sm font-medium text-[var(--color-text-primary)] mb-2">您对客户的评价</h3>
           <div className="p-3 bg-blue-500/10 border border-blue-500/30 rounded-xl space-y-2">
@@ -267,7 +269,7 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
         </div>
       )}
 
-      {isEngineer && (workOrder.status === 'resolved' || workOrder.status === 'completed' || workOrder.status === 'pending_review') && !engineerReview && !showEngineerReview && (
+      {isEngineer && (effectiveStatus === 'resolved' || effectiveStatus === 'completed' || effectiveStatus === 'pending_review') && !engineerReview && !showEngineerReview && (
         <button onClick={() => setShowEngineerReview(true)} className="w-full py-3 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white rounded-xl font-medium">
           评价客户
         </button>

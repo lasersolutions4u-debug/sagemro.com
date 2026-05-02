@@ -254,8 +254,8 @@ const ROLE_PROMPTS = {
 ## 你的核心职责
 1. 当他咨询设备问题时，结合他的设备历史给出针对性建议，不是泛泛而谈
 2. 当发现设备有反复出现的故障模式时，主动提醒预防性保养
-3. 当他需要报修时，引导他提交工单
-4. 跟踪他的工单状态，在合适的时机提醒他确认服务完成
+3. 当他需要报修时，收集信息、汇总确认后调用 create_work_order 为他创建正式工单
+4. 跟踪他的工单状态，在合适的时机提醒他确认服务和评价
 
 ## 主动关怀指令
 - 如果他的某台设备上次保养时间超过 6 个月，主动提醒保养
@@ -276,8 +276,33 @@ const ROLE_PROMPTS = {
 - 询问某个设备的详细信息、维修历史、工单记录 → 调用 get_device_detail（需提供 device_id）
 - 询问某个设备的状态（是否正常使用、是否在维保中）→ 调用 get_device_detail
 - 提到"上次""之前""我的那个单子""那台设备的问题" 等对过去对话的指涉，或新会话开头想确认是否有未闭环事项 → 调用 get_conversation_history
+- 需要报修/上门服务/设备故障需人工处理，且已完成信息收集和客户确认 → 调用 create_work_order
 
 调用工具后，将工具返回的数据自然地融入回答中。
+
+## 创建工单指令（create_work_order）
+当客户明确表示需要报修、上门服务或人工处理时，按以下流程操作：
+
+1. **信息收集**：在调用 create_work_order 前，依次确认：
+   - 哪台设备出问题（如客户有设备档案，结合 get_customer_devices 确认）
+   - 故障现象和细节
+   - 紧急程度（普通/紧急/非常紧急）
+   - 若客户一次性说清楚了，不要重复追问
+
+2. **展示确认**：将工单信息汇总展示给客户确认，格式如下：
+   > 帮您汇总一下工单信息，确认无误后我就提交：
+   > - 设备：XX
+   > - 问题：XX
+   > - 紧急程度：XX
+   > 确认无误吗？
+
+3. **调用工具**：客户确认后调用 create_work_order
+
+4. **告知结果**：调用成功后告知客户工单号和建议：
+   > 工单已提交，工单号 WO-XXXXX。我们正在为您匹配最合适的工程师，请稍候。
+   > 您可以随时在侧边栏"我的工单"中查看进度。
+
+5. **重复创建防护**：如果客户在短期内又提同类报修，先查对话历史，告知已有工单号和状态，询问是否要追加信息。
 
 ## 处理 get_conversation_history 返回的 pending_items（未闭环事项跟进指令）
 SummaryProtocol v1 的摘要里有 pending_items 字段，每条以方括号前缀标识类型。按以下方式处理：
@@ -440,6 +465,41 @@ const TOOLS_SCHEMAS = [
         required: []
       }
     }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'create_work_order',
+      description: `为客户创建正式的维修工单。当客户明确表示需要报修、上门服务、设备故障需要人工处理时，在完成信息收集（设备类型、故障现象、紧急程度）后调用此工具。调用前必须向客户展示工单信息摘要并口头确认。客户确认后不可再次调用——一个故障只创建一个工单。
+
+调用前务必先打开"第0步：主动查询"的查重逻辑（不用函数工具）：先通过 get_conversation_history 看客户近期是否已有同类工单；如有，告知客户已有工单编号和状态，询问是否要追加信息而非重复创建。
+
+若缺少某条必填参数（如客户没说明 type），先向客户追问，直到信息齐全再调用。`,
+      parameters: {
+        type: 'object',
+        properties: {
+          type: {
+            type: 'string',
+            description: '工单类型：fault（设备故障）/ maintenance（维护保养）/ parameter（参数调试）/ consult（技术咨询）/ parts（配件采购）/ aftersales（售后服务）/ other（其他）',
+            enum: ['fault', 'maintenance', 'parameter', 'consult', 'parts', 'aftersales', 'other']
+          },
+          description: {
+            type: 'string',
+            description: '工单描述，必须包含：1) 故障现象或需求说明 2) 设备类型/品牌/型号（如客户已提供） 3) 客户的地区信息（如客户已提供）。把客户对话中所有相关细节汇总进一个自然语言段落，供工程师阅读。'
+          },
+          urgency: {
+            type: 'string',
+            description: '紧急程度：normal（普通，不影响生产）/ urgent（紧急，影响效率但不停产）/ critical（非常紧急，停产级别）',
+            enum: ['normal', 'urgent', 'critical']
+          },
+          device_id: {
+            type: 'string',
+            description: '客户设备的 ID。如果客户在对话中指定了具体设备且你知道其 device_id，则填入。否则留空。'
+          }
+        },
+        required: ['type', 'description', 'urgency']
+      }
+    }
   }
 ];
 
@@ -456,6 +516,7 @@ const ROLE_ALLOWED_TOOLS = {
     'get_customer_devices',
     'get_device_detail',
     'get_conversation_history',
+    'create_work_order',
   ]),
   engineer: new Set([
     'get_engineer_profile',
@@ -539,6 +600,7 @@ export async function executeTool(ctxObj) {
     get_pending_tickets_for_engineer: () => toolGetPendingTickets({ limit: args?.limit || 10, engineerId, env }),
     get_customer_devices: () => toolGetCustomerDevices(customerId, env),
     get_device_detail: () => toolGetDeviceDetail(customerId, args?.device_id, env),
+    create_work_order: () => toolCreateWorkOrder({ customerId, env, ctx, args }),
     get_conversation_history: () =>
       toolGetConversationHistory({
         customerId,
@@ -979,6 +1041,100 @@ async function toolGetConversationHistory({
     };
   } catch (error) {
     return { error: error.message };
+  }
+}
+
+// 工具：AI 创建工单（function calling）
+// 与 POST /api/workorders 共享核心逻辑，但不走 HTTP 层
+async function toolCreateWorkOrder({ customerId, env, ctx, args }) {
+  const { type, description, urgency, device_id } = args;
+
+  if (!customerId) return { error: 'not_authenticated', reason: '客户未登录，无法创建工单。请引导客户先登录。' };
+  if (!type || !description || !urgency) {
+    return {
+      error: 'missing_required_fields',
+      reason: `缺少必填字段：${[!type && 'type', !description && 'description', !urgency && 'urgency'].filter(Boolean).join('、')}。请向客户追问缺失信息后再调用。`,
+    };
+  }
+
+  // 输入长度检查
+  if (description.length > 10000) return { error: 'description_too_long', reason: '工单描述过长，请精简后重试。' };
+  if (type.length > 100) return { error: 'invalid_type', reason: '工单类型值不合法。' };
+
+  try {
+    // PII 脱敏
+    const safeDescription = redactPII(description);
+
+    const id = generateId();
+    const order_no = generateOrderNo();
+
+    await env.DB.prepare(`
+      INSERT INTO work_orders (id, order_no, customer_id, type, description, urgency, device_id, status)
+      VALUES (?, ?, ?, ?, ?, ?, ?, 'pending')
+    `).bind(id, order_no, customerId, type, safeDescription, urgency || 'normal', device_id || null).run();
+
+    // 记录日志
+    await env.DB.prepare(`
+      INSERT INTO work_order_logs (id, work_order_id, action, actor_type, actor_id, content)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).bind(generateId(), id, 'created', 'customer', customerId, 'AI 对话创建工单').run();
+
+    // AI 摘要异步生成
+    const aiSummaryPromise = generateWorkOrderSummary(type, safeDescription, urgency, env)
+      .then(async (summary) => {
+        if (summary) {
+          await env.DB.prepare('UPDATE work_orders SET ai_summary = ? WHERE id = ?')
+            .bind(JSON.stringify(summary), id)
+            .run();
+        }
+      })
+      .catch((err) => console.error('[toolCreateWorkOrder] AI summary failed:', err));
+    if (ctx?.waitUntil) {
+      ctx.waitUntil(aiSummaryPromise);
+    }
+
+    // 工程师匹配与推送
+    const workOrderData = { id, order_no, type, description: safeDescription, urgency, ai_summary: null };
+    const matchingEngineers = await findMatchingEngineers(workOrderData, env);
+
+    const typeLabels = {
+      fault: '设备故障', maintenance: '维护保养', parameter: '参数调试',
+      consult: '技术咨询', parts: '配件采购', aftersales: '售后服务', other: '其他'
+    };
+    const urgencyLabels = { normal: '普通', urgent: '紧急', critical: '非常紧急' };
+
+    for (const engineer of matchingEngineers) {
+      if (engineer.onesignal_player_id) {
+        await sendPushToEngineer(engineer.id, env, {
+          title: '📋 您有新工单等待接单！',
+          message: `工单号：${order_no} | 类型：${typeLabels[type] || type} | 紧急程度：${urgencyLabels[urgency] || urgency}`,
+          data: { work_order_id: id, type: 'new_ticket' }
+        });
+      }
+      await createNotification(env, {
+        user_id: engineer.id,
+        user_type: 'engineer',
+        type: 'new_ticket',
+        title: '新工单待接单',
+        body: `工单号：${order_no} | 类型：${typeLabels[type] || type} | 紧急程度：${urgencyLabels[urgency] || urgency}`,
+        data: { work_order_id: id, order_no },
+      });
+    }
+
+    return {
+      success: true,
+      work_order: {
+        id,
+        order_no,
+        status: 'pending',
+        type: typeLabels[type] || type,
+        urgency: urgencyLabels[urgency] || urgency,
+      },
+      matching_engineers_count: matchingEngineers.length,
+    };
+  } catch (error) {
+    console.error('[toolCreateWorkOrder] error:', error);
+    return { error: 'tool_failed', reason: `工单创建失败：${error.message}。请告知客户稍后重试或通过侧边栏手动提交。` };
   }
 }
 
