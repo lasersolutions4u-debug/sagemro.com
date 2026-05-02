@@ -18,7 +18,7 @@ import { submitWorkOrder as submitWorkOrderApi, getUnreadNotificationCount } fro
 
 // 重型 Modal 懒加载，减少首屏 bundle 体积
 // LoginModal 直接导入 — 关键的登录/注册入口，懒加载会导致 React #306（重复 React 实例）
-import LoginModal from './components/Auth/LoginModal';
+import { LoginModal } from './components/Auth/LoginModal';
 const WorkOrderModal = lazy(() => import('./components/Sidebar/WorkOrderModal'));
 const MyWorkOrdersModal = lazy(() => import('./components/Sidebar/MyWorkOrdersModal'));
 const EngineerDashboard = lazy(() => import('./components/Engineer/EngineerDashboard'));
