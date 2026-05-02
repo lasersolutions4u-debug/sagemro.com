@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect, useRef, lazy, Suspense } from 'react';
+import { ErrorBoundary } from './components/common/ErrorBoundary';
 import { Footer } from './components/common/Footer';
 import { Sidebar } from './components/Sidebar/Sidebar';
 import { ChatArea } from './components/Chat/ChatArea';
@@ -317,23 +318,27 @@ function App() {
       </div>
 
       {/* Modals — 重型组件使用 Suspense 懒加载 */}
-      <Suspense fallback={null}>
-        {workOrderModalOpen && (
-          <WorkOrderModal
-            isOpen={workOrderModalOpen}
-            onClose={() => setWorkOrderModalOpen(false)}
-            onSubmit={handleSubmitWorkOrder}
-          />
-        )}
-      </Suspense>
-      <Suspense fallback={null}>
-        {myWorkOrdersModalOpen && (
-          <MyWorkOrdersModal
-            isOpen={myWorkOrdersModalOpen}
-            onClose={() => setMyWorkOrdersModalOpen(false)}
-          />
-        )}
-      </Suspense>
+      <ErrorBoundary>
+        <Suspense fallback={null}>
+          {workOrderModalOpen && (
+            <WorkOrderModal
+              isOpen={workOrderModalOpen}
+              onClose={() => setWorkOrderModalOpen(false)}
+              onSubmit={handleSubmitWorkOrder}
+            />
+          )}
+        </Suspense>
+      </ErrorBoundary>
+      <ErrorBoundary>
+        <Suspense fallback={null}>
+          {myWorkOrdersModalOpen && (
+            <MyWorkOrdersModal
+              isOpen={myWorkOrdersModalOpen}
+              onClose={() => setMyWorkOrdersModalOpen(false)}
+            />
+          )}
+        </Suspense>
+      </ErrorBoundary>
       <CustomerHomeModal
         isOpen={customerHomeModalOpen}
         onClose={() => setCustomerHomeModalOpen(false)}
@@ -344,35 +349,41 @@ function App() {
         isOpen={aboutModalOpen}
         onClose={() => setAboutModalOpen(false)}
       />
-      <Suspense fallback={null}>
-        {loginModalOpen && (
-          <LoginModal
-            isOpen={loginModalOpen}
-            onClose={() => setLoginModalOpen(false)}
-            onLoginSuccess={handleLoginSuccess}
-            onOpenLegal={openLegal}
-          />
-        )}
-      </Suspense>
-      <Suspense fallback={null}>
-        {engineerDashboardOpen && (
-          <EngineerDashboard
-            isOpen={engineerDashboardOpen}
-            onClose={() => setEngineerDashboardOpen(false)}
-            engineerId={localStorage.getItem('sagemro_engineer_id')}
-            onViewProfile={() => setEngineerProfileOpen(true)}
-          />
-        )}
-      </Suspense>
-      <Suspense fallback={null}>
-        {engineerProfileOpen && (
-          <EngineerProfileModal
-            isOpen={engineerProfileOpen}
-            onClose={() => setEngineerProfileOpen(false)}
-            engineerId={localStorage.getItem('sagemro_engineer_id')}
-          />
-        )}
-      </Suspense>
+      <ErrorBoundary>
+        <Suspense fallback={null}>
+          {loginModalOpen && (
+            <LoginModal
+              isOpen={loginModalOpen}
+              onClose={() => setLoginModalOpen(false)}
+              onLoginSuccess={handleLoginSuccess}
+              onOpenLegal={openLegal}
+            />
+          )}
+        </Suspense>
+      </ErrorBoundary>
+      <ErrorBoundary>
+        <Suspense fallback={null}>
+          {engineerDashboardOpen && (
+            <EngineerDashboard
+              isOpen={engineerDashboardOpen}
+              onClose={() => setEngineerDashboardOpen(false)}
+              engineerId={localStorage.getItem('sagemro_engineer_id')}
+              onViewProfile={() => setEngineerProfileOpen(true)}
+            />
+          )}
+        </Suspense>
+      </ErrorBoundary>
+      <ErrorBoundary>
+        <Suspense fallback={null}>
+          {engineerProfileOpen && (
+            <EngineerProfileModal
+              isOpen={engineerProfileOpen}
+              onClose={() => setEngineerProfileOpen(false)}
+              engineerId={localStorage.getItem('sagemro_engineer_id')}
+            />
+          )}
+        </Suspense>
+      </ErrorBoundary>
       <MyDevicesModal
         isOpen={myDevicesOpen}
         onClose={() => setMyDevicesOpen(false)}
