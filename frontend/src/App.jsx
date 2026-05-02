@@ -17,9 +17,10 @@ import { generateId } from './utils/helpers';
 import { submitWorkOrder as submitWorkOrderApi, getUnreadNotificationCount } from './services/api';
 
 // 重型 Modal 懒加载，减少首屏 bundle 体积
+// LoginModal 直接导入 — 关键的登录/注册入口，懒加载会导致 React #306（重复 React 实例）
+import LoginModal from './components/Auth/LoginModal';
 const WorkOrderModal = lazy(() => import('./components/Sidebar/WorkOrderModal'));
 const MyWorkOrdersModal = lazy(() => import('./components/Sidebar/MyWorkOrdersModal'));
-const LoginModal = lazy(() => import('./components/Auth/LoginModal'));
 const EngineerDashboard = lazy(() => import('./components/Engineer/EngineerDashboard'));
 const EngineerProfileModal = lazy(() => import('./components/Engineer/EngineerProfileModal'));
 
@@ -349,18 +350,14 @@ function App() {
         isOpen={aboutModalOpen}
         onClose={() => setAboutModalOpen(false)}
       />
-      <ErrorBoundary>
-        <Suspense fallback={null}>
-          {loginModalOpen && (
-            <LoginModal
-              isOpen={loginModalOpen}
-              onClose={() => setLoginModalOpen(false)}
-              onLoginSuccess={handleLoginSuccess}
-              onOpenLegal={openLegal}
-            />
-          )}
-        </Suspense>
-      </ErrorBoundary>
+      {loginModalOpen && (
+        <LoginModal
+          isOpen={loginModalOpen}
+          onClose={() => setLoginModalOpen(false)}
+          onLoginSuccess={handleLoginSuccess}
+          onOpenLegal={openLegal}
+        />
+      )}
       <ErrorBoundary>
         <Suspense fallback={null}>
           {engineerDashboardOpen && (
