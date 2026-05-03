@@ -132,9 +132,20 @@ export function MyWorkOrdersModal({ isOpen, onClose }) {
                 <p className="text-sm text-[var(--color-text-primary)] line-clamp-2">
                   {order.description}
                 </p>
-                <p className="mt-2 text-xs text-[var(--color-text-secondary)]">
-                  提交时间：{new Date(order.created_at).toLocaleString('zh-CN')}
-                </p>
+                <div className="flex items-center justify-between mt-2">
+                  <p className="text-xs text-[var(--color-text-secondary)]">
+                    提交时间：{new Date(order.created_at).toLocaleString('zh-CN')}
+                  </p>
+                  {(order.status === WorkOrderStatus.PENDING_REVIEW || order.status === WorkOrderStatus.RESOLVED) && (
+                    <button
+                      data-testid="go-rate-button"
+                      onClick={(e) => { e.stopPropagation(); handleViewDetail(order); }}
+                      className="px-3 py-1.5 text-xs font-medium bg-yellow-500 hover:bg-yellow-600 text-white rounded-lg transition-colors"
+                    >
+                      去评价
+                    </button>
+                  )}
+                </div>
               </div>
             );
           })}

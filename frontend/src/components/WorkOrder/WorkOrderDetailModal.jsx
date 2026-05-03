@@ -32,7 +32,12 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
   useEffect(() => {
     if (isOpen && workOrder?.id) {
       loadDetail();
-      setTab('info');
+      // 客户侧：待评价/已解决状态自动跳转到评价 tab
+      const initialStatus = workOrder.status;
+      const autoTab = (userType === 'customer' &&
+        (initialStatus === 'pending_review' || initialStatus === 'resolved'))
+        ? 'rating' : 'info';
+      setTab(autoTab);
     }
   }, [isOpen, workOrder]);
 
