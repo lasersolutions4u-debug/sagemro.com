@@ -99,6 +99,13 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
     tabs.push({ key: 'pricing', label: isEngineer ? '核价' : '报价确认' });
   }
 
+  // 评价Tab：客户对服务进行评价（resolved/pending_review 可评价，completed 查看已有评价）
+  const canRate = effectiveStatus === 'resolved' || effectiveStatus === 'pending_review';
+  const hasRating = detail?.rating;
+  if (isCustomer && (canRate || (effectiveStatus === 'completed' && hasRating))) {
+    tabs.push({ key: 'rating', label: '评价' });
+  }
+
   const renderInfoTab = () => (
     <div className="space-y-4">
       <div className="p-4 bg-[var(--color-surface-elevated)] rounded-xl space-y-2">
@@ -191,58 +198,23 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
         </div>
       )}
 
-      {/* 评价区（resolved状态） */}
-      {effectiveStatus === 'resolved' && detail?.rating && (
-        <div>
-          <h3 className="text-sm font-medium text-[var(--color-text-primary)] mb-2">您的评价</h3>
-          <div className="p-3 bg-[var(--color-surface-elevated)] rounded-xl space-y-2">
-            {[
-              { key: 'timeliness', label: '时效性' },
-              { key: 'technical', label: '技术熟练' },
-              { key: 'communication', label: '沟通流畅' },
-              { key: 'professional', label: '专业性' },
-            ].map((dim) => (
-              <div key={dim.key} className="flex items-center justify-between">
-                <span className="text-sm text-[var(--color-text-secondary)]">{dim.label}</span>
-                <Stars value={detail.rating[`rating_${dim.key}`]} readonly />
-              </div>
-            ))}
-            {detail.rating.comment && (
-              <div className="pt-2 border-t border-[var(--color-border)] text-sm text-[var(--color-text-primary)]">{detail.rating.comment}</div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {effectiveStatus === 'resolved' && !showRating && !detail?.rating && (
-        <button data-testid="rate-work-order-button" onClick={() => setShowRating(true)} className="w-full py-3 bg-yellow-500 hover:bg-yellow-600 text-white rounded-xl font-medium">
+      {/* 评价入口（resolved/pending_review状态，客户可见） */}
+      {isCustomer && canRate && !hasRating && (
+        <button
+          data-testid="rate-work-order-button"
+          onClick={() => setTab('rating')}
+          className="w-full py-3 bg-yellow-500 hover:bg-yellow-600 text-white rounded-xl font-medium"
+        >
           立即评价
         </button>
       )}
-
-      {showRating && (
-        <div className="space-y-3 p-4 bg-[var(--color-surface-elevated)] rounded-xl">
-          <h3 className="text-sm font-medium text-[var(--color-text-primary)]">服务评价</h3>
-          {[
-            { key: 'timeliness', label: '时效性' },
-            { key: 'technical', label: '技术熟练' },
-            { key: 'communication', label: '沟通流畅' },
-            { key: 'professional', label: '专业性' },
-          ].map((dim) => (
-            <div key={dim.key} className="flex items-center justify-between">
-              <span className="text-sm text-[var(--color-text-secondary)]">{dim.label}</span>
-              <Stars value={ratings[dim.key]} onChange={(v) => setRatings({ ...ratings, [dim.key]: v })} />
-            </div>
-          ))}
-          <textarea value={comment} onChange={(e) => setComment(e.target.value)} placeholder="分享服务体验（选填）..." rows={2}
-            className="w-full px-3 py-2 text-sm border border-[var(--color-border)] rounded-xl bg-[var(--color-surface)] text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-yellow-500 resize-none" />
-          <div className="flex gap-2">
-            <button onClick={() => setShowRating(false)} className="flex-1 py-2 bg-[var(--color-border)] text-[var(--color-text-secondary)] rounded-xl text-sm">取消</button>
-            <button data-testid="submit-rating-button" onClick={handleSubmitRating} disabled={submitting} className="flex-1 py-2 bg-yellow-500 hover:bg-yellow-600 disabled:opacity-50 text-white rounded-xl text-sm">
-              {submitting ? '提交中...' : '提交评价'}
-            </button>
-          </div>
-        </div>
+      {isCustomer && hasRating && (
+        <button
+          onClick={() => setTab('rating')}
+          className="w-full py-2.5 text-sm text-[var(--color-primary)] hover:underline"
+        >
+          查看评价 →
+        </button>
       )}
 
       {/* 工程师评价客户（仅工程师可见） */}
@@ -328,6 +300,62 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
     </div>
   );
 
+  const renderRatingTab = () => (
+    <div className="space-y-4">
+      {hasRating ? (
+        <div>
+          <h3 className="text-sm font-medium text-[var(--color-text-primary)] mb-3">您的评价</h3>
+          <div className="p-4 bg-[var(--color-surface-elevated)] rounded-xl space-y-2">
+            {[
+              { key: 'timeliness', label: '时效性' },
+              { key: 'technical', label: '技术熟练' },
+              { key: 'communication', label: '沟通流畅' },
+              { key: 'professional', label: '专业性' },
+            ].map((dim) => (
+              <div key={dim.key} className="flex items-center justify-between">
+                <span className="text-sm text-[var(--color-text-secondary)]">{dim.label}</span>
+                <Stars value={detail.rating[`rating_${dim.key}`]} readonly />
+              </div>
+            ))}
+            {detail.rating.comment && (
+              <div className="pt-3 border-t border-[var(--color-border)] text-sm text-[var(--color-text-primary)]">{detail.rating.comment}</div>
+            )}
+            <div className="pt-1 text-xs text-[var(--color-text-muted)]">
+              评价时间：{detail.rating.created_at ? new Date(detail.rating.created_at).toLocaleString('zh-CN') : '-'}
+            </div>
+          </div>
+        </div>
+      ) : canRate ? (
+        <div className="space-y-3 p-4 bg-[var(--color-surface-elevated)] rounded-xl">
+          <h3 className="text-sm font-medium text-[var(--color-text-primary)]">服务评价</h3>
+          {[
+            { key: 'timeliness', label: '时效性' },
+            { key: 'technical', label: '技术熟练' },
+            { key: 'communication', label: '沟通流畅' },
+            { key: 'professional', label: '专业性' },
+          ].map((dim) => (
+            <div key={dim.key} className="flex items-center justify-between">
+              <span className="text-sm text-[var(--color-text-secondary)]">{dim.label}</span>
+              <Stars value={ratings[dim.key]} onChange={(v) => setRatings({ ...ratings, [dim.key]: v })} />
+            </div>
+          ))}
+          <textarea value={comment} onChange={(e) => setComment(e.target.value)} placeholder="分享服务体验（选填）..." rows={3}
+            className="w-full px-3 py-2 text-sm border border-[var(--color-border)] rounded-xl bg-[var(--color-surface)] text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-yellow-500 resize-none" />
+          <button
+            data-testid="submit-rating-button"
+            onClick={handleSubmitRating}
+            disabled={submitting}
+            className="w-full py-3 bg-yellow-500 hover:bg-yellow-600 disabled:opacity-50 text-white rounded-xl font-medium"
+          >
+            {submitting ? '提交中...' : '提交评价'}
+          </button>
+        </div>
+      ) : (
+        <div className="text-center py-8 text-[var(--color-text-muted)] text-sm">评价不可用</div>
+      )}
+    </div>
+  );
+
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="工单详情" size="md">
       <div>
@@ -368,6 +396,7 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
             {tab === 'pricing' && isCustomer && (
               <CustomerPricingPanel workOrderId={workOrder.id} customerId={userId} onConfirmed={() => { loadDetail(); onConfirmed?.(); }} />
             )}
+            {tab === 'rating' && renderRatingTab()}
           </>
         )}
       </div>
