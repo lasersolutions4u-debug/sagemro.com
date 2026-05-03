@@ -5855,10 +5855,6 @@ async function routeRequest(request, env, ctx) {
         return errorResponse('读取失败: ' + e.message, 500);
       }
     }
-    // 工程师标记服务完成
-    if (path.match(/^\/api\/workorders\/[^/]+\/resolve$/) && request.method === 'POST') {
-      return handleResolveWorkOrder(request, env);
-    }
     if (path === '/api/clear-test-data' && request.method === 'GET') {
       try {
         await env.DB.prepare('DELETE FROM test_flow_results').run();
@@ -6005,6 +6001,10 @@ async function routeRequest(request, env, ctx) {
     }
     if (path.match(/^\/api\/workorders\/[^/]+\/pricing$/) && request.method === 'POST') {
       return handleSubmitWorkOrderPricing(request, env);
+    }
+    // 工程师标记服务完成
+    if (path.match(/^\/api\/workorders\/[^/]+\/resolve$/) && request.method === 'POST') {
+      return handleResolveWorkOrder(request, env);
     }
     if (path === '/api/platform-ratings' && request.method === 'POST') {
       return handleSubmitPlatformRating(request, env);
