@@ -2123,7 +2123,7 @@ async function handleChat(request, env) {
           while (true) {
             const canCallTools = iteration < MAX_TOOL_ITERATIONS;
             const requestBody = {
-              model: 'gpt-4o-mini',
+              model: 'deepseek/deepseek-v3',
               messages: currentMessages,
               stream: true,
               temperature: 0.7,
