@@ -1912,6 +1912,7 @@ export async function consumeLlmStream({ response, controller, encoder, convId, 
   const reader = response.body.getReader();
   let buffer = '';
   let content = '';
+  let reasoningContent = '';
   // 按 index 累积：OpenAI 流式规范 tool_calls[i] 的 id/name 首包到达，arguments 可分多包
   const toolCallsByIndex = new Map();
 
@@ -1948,6 +1949,11 @@ export async function consumeLlmStream({ response, controller, encoder, convId, 
         );
       }
 
+      // DeepSeek V4 Pro thinking 模式：reasoning_content 必须在下一轮原样传回
+      if (delta.reasoning_content) {
+        reasoningContent += delta.reasoning_content;
+      }
+
       if (Array.isArray(delta.tool_calls)) {
         for (const tc of delta.tool_calls) {
           const idx = tc.index ?? 0;
@@ -1971,7 +1977,7 @@ export async function consumeLlmStream({ response, controller, encoder, convId, 
     .map(([, v]) => v)
     .filter((tc) => tc.id && tc.function.name);
 
-  return { content, toolCalls };
+  return { content, toolCalls, reasoningContent };
 }
 
 // 处理聊天请求
@@ -2164,7 +2170,11 @@ async function handleChat(request, env) {
               break;
             }
 
-            const { content: roundContent, toolCalls } = await consumeLlmStream({
+            const {
+              content: roundContent,
+              toolCalls,
+              reasoningContent: roundReasoning,
+            } = await consumeLlmStream({
               response: apiResponse,
               controller,
               encoder,
@@ -2179,15 +2189,16 @@ async function handleChat(request, env) {
             }
 
             // 把本轮 assistant（带 tool_calls）追加进历史
-            // OpenAI 规范：assistant 的 content 允许为 null 当且仅当有 tool_calls
-            currentMessages = [
-              ...currentMessages,
-              {
-                role: 'assistant',
-                content: roundContent || null,
-                tool_calls: toolCalls,
-              },
-            ];
+            // DeepSeek V4 Pro thinking 模式要求原样传回 reasoning_content
+            const assistantMsg = {
+              role: 'assistant',
+              content: roundContent || null,
+              tool_calls: toolCalls,
+            };
+            if (roundReasoning) {
+              assistantMsg.reasoning_content = roundReasoning;
+            }
+            currentMessages = [...currentMessages, assistantMsg];
 
             // 并行执行所有 tool_calls —— executeTool 内部已有 role guard + trace + fallback
             const toolResults = await Promise.all(
