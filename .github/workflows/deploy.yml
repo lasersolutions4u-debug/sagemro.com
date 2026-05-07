@@ -5,7 +5,7 @@ name: Deploy to Cloudflare
 #   - PR：只跑测试和 build，绝不部署（用 jobs 层 if: 门禁兜底）
 on:
   push:
-    branches: [main]
+    branches: [main, china-edition]
   pull_request:
     branches: [main]
 
@@ -62,8 +62,8 @@ jobs:
   deploy-frontend:
     name: Deploy Frontend to Cloudflare Pages
     needs: test
-    # 仅 main 分支 push 触发部署；PR 只跑 test job
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    # 仅 main / china-edition 分支 push 触发前端部署
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/china-edition')
     runs-on: ubuntu-latest
     # GitHub Environment 门禁：在仓库 Settings → Environments → production
     # 里配置 required reviewers，进一步防误部署
