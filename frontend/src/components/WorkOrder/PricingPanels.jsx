@@ -170,7 +170,7 @@ export function CustomerPricingPanel({ workOrderId, customerId, onConfirmed }) {
     if (!rejectReason.trim()) { toastWarning('请输入议价原因'); return; }
     setSubmitting(true);
     try {
-      await rejectWorkOrderPricing(workOrderId, customerId, rejectReason);
+      await rejectWorkOrderPricing(workOrderId, customerId, rejectReason, counterOffer ? parseInt(counterOffer) : null);
       toastSuccess('已发起议价，工程师会重新报价');
       onConfirmed?.();
       load();
@@ -254,6 +254,14 @@ export function CustomerPricingPanel({ workOrderId, customerId, onConfirmed }) {
             placeholder="请说明议价原因..."
             rows={2}
             className="w-full px-3 py-2 text-sm border border-[var(--color-border)] rounded-xl bg-[var(--color-surface)] text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)] resize-none"
+          />
+          <input
+            type="number"
+            value={counterOffer}
+            onChange={(e) => setCounterOffer(e.target.value)}
+            data-testid="counter-offer-input"
+            placeholder="您的期望价格（元，选填）"
+            className="w-full px-3 py-2 text-sm border border-[var(--color-border)] rounded-xl bg-[var(--color-surface)] text-[var(--color-text-primary)] placeholder:text-[var(--color-text-muted)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
           />
           <div className="flex gap-2">
             <button onClick={() => setAction(null)} className="flex-1 py-2 bg-[var(--color-border)] text-[var(--color-text-secondary)] rounded-xl text-sm">取消</button>

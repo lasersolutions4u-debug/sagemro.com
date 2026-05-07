@@ -1,5 +1,12 @@
 # CLAUDE.md — SAGEMRO 官网 + 小智 AI 助手
 
+> **集团背景**：本平台由 **Euchio Machinery（济南钰峭机械有限公司）** 团队孵化创建。SAGEMRO 是独立品牌，定位为全品牌钣金设备 AI 售后服务平台，不绑定 Euchio 设备。Euchio 旗下还有自有品牌 EUCHIO（euchio.com）和合作推广品牌 LISHI LASER（gasmixtech.com）。
+>
+> 跨项目统一认知框架见：`group-operating-manual.md`
+> 三品牌协同策略见：`cross-project-synergy.md`
+>
+> **平台定位**：全行业开放，不宣传为 Euchio 售后部门。保持品牌中立。
+
 ---
 
 ## 一、项目概述

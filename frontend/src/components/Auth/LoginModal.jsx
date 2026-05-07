@@ -3,7 +3,7 @@ import { Modal } from '../common/Modal';
 import { TagInput } from '../common/TagInput';
 import { RegionInput } from '../common/RegionInput';
 import { login, sendVerifyCode, sendResetCode, resetPassword, registerCustomer, registerEngineer } from '../../services/api';
-import { toastSuccess } from '../../utils/feedback';
+import { toastSuccess, toastError } from '../../utils/feedback';
 import { deviceTypes, commonBrands, commonServices } from '../../data/loginPresets.js';
 
 export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
@@ -99,7 +99,14 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
       onLoginSuccess?.(result);
       handleClose();
     } catch (e) {
-      setError(e.message);
+      if (e.status === 409) {
+        toastError('该手机号已注册，请直接登录');
+        setStep('login');
+        setError('');
+      } else {
+        setError(e.message);
+        toastError(e.message || '注册失败，请重试');
+      }
     } finally {
       setSubmitting(false);
     }
@@ -135,7 +142,14 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
       onLoginSuccess?.(result);
       handleClose();
     } catch (e) {
-      setError(e.message || '注册失败，请重试');
+      if (e.status === 409) {
+        toastError('该手机号已注册，请直接登录');
+        setStep('login');
+        setError('');
+      } else {
+        setError(e.message || '注册失败，请重试');
+        toastError(e.message || '注册失败，请重试');
+      }
     } finally {
       setSubmitting(false);
     }

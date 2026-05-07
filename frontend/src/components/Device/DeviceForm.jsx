@@ -58,6 +58,8 @@ export function DeviceForm({ onClose, onSuccess }) {
             </label>
             <input
               type="text"
+              name="device-name"
+              data-testid="device-name-input"
               value={form.name}
               onChange={e => setForm({ ...form, name: e.target.value })}
               placeholder="例如：车间1号激光机"
@@ -89,6 +91,8 @@ export function DeviceForm({ onClose, onSuccess }) {
             <input
               type="text"
               value={form.type}
+              name="device-type"
+              data-testid="device-type-input"
               onChange={e => setForm({ ...form, type: e.target.value })}
               placeholder="或输入其他类型"
               className="w-full mt-2 bg-[var(--color-input-bg)] border border-[var(--color-input-border)] rounded-lg px-3 py-2.5 text-[14px] text-[var(--color-text-primary)] placeholder:text-[var(--color-text-muted)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
@@ -105,6 +109,8 @@ export function DeviceForm({ onClose, onSuccess }) {
               value={form.brand}
               onChange={e => setForm({ ...form, brand: e.target.value })}
               placeholder="例如：大族、通快、百超"
+              name="device-brand"
+              data-testid="device-brand-input"
               className="w-full bg-[var(--color-input-bg)] border border-[var(--color-input-border)] rounded-lg px-3 py-2.5 text-[14px] text-[var(--color-text-primary)] placeholder:text-[var(--color-text-muted)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
             />
           </div>
@@ -119,6 +125,8 @@ export function DeviceForm({ onClose, onSuccess }) {
               value={form.model}
               onChange={e => setForm({ ...form, model: e.target.value })}
               placeholder="例如：G3015H"
+              name="device-model"
+              data-testid="device-model-input"
               className="w-full bg-[var(--color-input-bg)] border border-[var(--color-input-border)] rounded-lg px-3 py-2.5 text-[14px] text-[var(--color-text-primary)] placeholder:text-[var(--color-text-muted)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
             />
           </div>
@@ -133,6 +141,8 @@ export function DeviceForm({ onClose, onSuccess }) {
               value={form.power}
               onChange={e => setForm({ ...form, power: e.target.value })}
               placeholder="例如：3000W"
+              name="device-power"
+              data-testid="device-power-input"
               className="w-full bg-[var(--color-input-bg)] border border-[var(--color-input-border)] rounded-lg px-3 py-2.5 text-[14px] text-[var(--color-text-primary)] placeholder:text-[var(--color-text-muted)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
             />
           </div>
@@ -153,6 +163,7 @@ export function DeviceForm({ onClose, onSuccess }) {
             </button>
             <button
               type="submit"
+              data-testid="device-form-submit"
               disabled={loading}
               className="flex-1 py-2.5 bg-[var(--color-primary)] text-white rounded-lg text-[14px] font-medium hover:bg-[var(--color-primary-hover)] transition-colors disabled:opacity-50"
             >

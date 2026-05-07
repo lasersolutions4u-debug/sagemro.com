@@ -80,7 +80,9 @@ export async function registerCustomer({ name, phone, password, code, company, i
   });
   if (!response.ok) {
     const data = await response.json();
-    throw new Error(data.error || `HTTP ${response.status}`);
+    const err = new Error(data.error || `HTTP ${response.status}`);
+    err.status = response.status;
+    throw err;
   }
   return response.json();
 }
@@ -96,7 +98,9 @@ export async function registerEngineer({ name, phone, password, code, specialtie
   });
   if (!response.ok) {
     const data = await response.json();
-    throw new Error(data.error || `HTTP ${response.status}`);
+    const err = new Error(data.error || `HTTP ${response.status}`);
+    err.status = response.status;
+    throw err;
   }
   return response.json();
 }
@@ -393,11 +397,13 @@ export async function confirmWorkOrderPricing(workOrderId, customerId) {
 /**
  * 客户拒绝/议价
  */
-export async function rejectWorkOrderPricing(workOrderId, customerId, reason) {
+export async function rejectWorkOrderPricing(workOrderId, customerId, reason, counterOffer = null) {
+  const body = { customer_id: customerId, reason };
+  if (counterOffer) body.counter_offer = counterOffer;
   const response = await fetch(`${API_BASE}/api/workorders/${workOrderId}/pricing/reject`, {
     method: 'POST',
     headers: authHeaders(),
-    body: JSON.stringify({ customer_id: customerId, reason }),
+    body: JSON.stringify(body),
   });
   if (!response.ok) throw new Error(`HTTP ${response.status}`);
   return response.json();

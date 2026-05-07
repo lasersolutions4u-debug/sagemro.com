@@ -69,6 +69,7 @@ export function MyDevicesModal({ isOpen, onClose, currentUser, userType }) {
           <div className="flex items-center gap-2">
             {userType === 'customer' && (
               <button
+                data-testid="add-device-button"
                 onClick={() => setShowForm(true)}
                 className="flex items-center gap-1 px-3 py-1.5 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white rounded-lg text-[13px] transition-colors"
               >
