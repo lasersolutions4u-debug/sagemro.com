@@ -165,7 +165,7 @@ export async function streamChat({ conversationId, message, onChunk, onDone, onE
 
     const response = await fetch(`${API_BASE}/api/chat`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: authHeaders(),
       body: JSON.stringify({
         conversation_id: conversationId,
         message: message,
@@ -531,6 +531,35 @@ export async function applyWithdraw(amount) {
   return response.json();
 }
 
+// ============ 付款相关 ============
+
+/**
+ * 客户模拟付款
+ */
+export async function payWorkOrder(workOrderId, { payment_method }) {
+  const response = await fetch(`${API_BASE}/api/workorders/${workOrderId}/pay`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({ payment_method }),
+  });
+  if (!response.ok) {
+    const d = await response.json();
+    throw new Error(d.error || `HTTP ${response.status}`);
+  }
+  return response.json();
+}
+
+/**
+ * 获取工单付款记录
+ */
+export async function getWorkOrderPayment(workOrderId) {
+  const response = await fetch(`${API_BASE}/api/workorders/${workOrderId}/payment`, {
+    headers: authHeaders(),
+  });
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  return response.json();
+}
+
 // 保存推送订阅（OneSignal Player ID）
 // 后端按 JWT 里的 userType 自动路由到 customers / engineers 表
 export async function savePushSubscription(userId, { onesignal_player_id }) {
@@ -683,11 +712,11 @@ export async function updateCustomerProfile({ name, region }) {
 /**
  * 更新工程师档案
  */
-export async function updateEngineerProfile({ name, bio, service_region }) {
+export async function updateEngineerProfile({ name, bio, service_region, bank_name, bank_account, bank_branch, account_holder }) {
   const response = await fetch(`${API_BASE}/api/engineers/profile`, {
     method: 'PATCH',
     headers: { ...authHeaders(), 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name, bio, service_region }),
+    body: JSON.stringify({ name, bio, service_region, bank_name, bank_account, bank_branch, account_holder }),
   });
   if (!response.ok) throw new Error(`HTTP ${response.status}`);
   return response.json();
