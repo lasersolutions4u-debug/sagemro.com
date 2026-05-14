@@ -5,6 +5,7 @@ export const statusConfig = {
   assigned: { text: '已分配', color: 'bg-yellow-500' },
   in_progress: { text: '处理中', color: 'bg-orange-500' },
   pricing: { text: '等待报价确认', color: 'bg-purple-500' },
+  pending_payment: { text: '待付款', color: 'bg-pink-500' },
   in_service: { text: '服务中', color: 'bg-cyan-500' },
   resolved: { text: '已解决', color: 'bg-green-500' },
   pending_review: { text: '待评价', color: 'bg-teal-500' },

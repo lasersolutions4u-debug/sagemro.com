@@ -178,29 +178,14 @@ const ROLE_PROMPTS = {
 
 调用工具后，将工具返回的数据自然地融入回答中。
 
-## 创建工单指令（create_work_order）
-当客户明确表示需要报修、上门服务或人工处理时，按以下流程操作：
+## 创建工单指令（create_work_order）—— 极其重要
 
-1. **信息收集**：在调用 create_work_order 前，依次确认：
-   - 哪台设备出问题（如客户有设备档案，结合 get_customer_devices 确认）
-   - 故障现象和细节
-   - 紧急程度（普通/紧急/非常紧急）
-   - 若客户一次性说清楚了，不要重复追问
+当客户明确表示需要报修/上门服务时，按以下流程操作：
 
-2. **展示确认**：将工单信息汇总展示给客户确认，格式如下：
-   > 帮您汇总一下工单信息，确认无误后我就提交：
-   > - 设备：XX
-   > - 问题：XX
-   > - 紧急程度：XX
-   > 确认无误吗？
-
-3. **调用工具**：客户确认后调用 create_work_order
-
-4. **告知结果**：调用成功后告知客户工单号和建议：
-   > 工单已提交，工单号 WO-XXXXX。我们正在为您匹配最合适的工程师，请稍候。
-   > 您可以随时在侧边栏"我的工单"中查看进度。
-
-5. **重复创建防护**：如果客户在短期内又提同类报修，先查对话历史，告知已有工单号和状态，询问是否要追加信息。
+1. 若信息不全（设备、故障、紧急程度有缺失），先追问。
+2. 信息齐全后，向客户展示汇总确认。
+3. **客户确认后，你必须立即调用 create_work_order 工具，严禁用文字描述"已提交"或编造工单号。** 工单号由工具返回，你不能自己编。
+4. 调用后根据工具返回的真实结果告知客户。
 
 ## 处理 get_conversation_history 返回的 pending_items（未闭环事项跟进指令）
 SummaryProtocol v1 的摘要里有 pending_items 字段，每条以方括号前缀标识类型。按以下方式处理：
@@ -368,11 +353,7 @@ const TOOLS_SCHEMAS = [
     type: 'function',
     function: {
       name: 'create_work_order',
-      description: `为客户创建正式的维修工单。当客户明确表示需要报修、上门服务、设备故障需要人工处理时，在完成信息收集（设备类型、故障现象、紧急程度）后调用此工具。调用前必须向客户展示工单信息摘要并口头确认。客户确认后不可再次调用——一个故障只创建一个工单。
-
-调用前务必先打开"第0步：主动查询"的查重逻辑（不用函数工具）：先通过 get_conversation_history 看客户近期是否已有同类工单；如有，告知客户已有工单编号和状态，询问是否要追加信息而非重复创建。
-
-若缺少某条必填参数（如客户没说明 type），先向客户追问，直到信息齐全再调用。`,
+      description: `为客户创建维修工单。当客户已确认工单信息（设备、故障、紧急程度），你必须立即调用此工具，不得用文字描述或模拟调用结果。如果缺少必填参数，先向客户追问。`,
       parameters: {
         type: 'object',
         properties: {
@@ -2050,6 +2031,85 @@ async function handleChat(request, env) {
         ];
         let iteration = 0;
 
+        // 服务端直接创建工单：当 AI 展示了工单汇总且用户确认时，
+        // 绕过不可靠的 AI function calling，直接在服务端创建工单并注入结果。
+        let preInjectedWorkOrder = null;
+        if (effectiveUserType === 'customer' && trustedCustomerId && messages.length >= 2) {
+          const lastAssistant = [...messages].reverse().find((m) => m.role === 'assistant');
+          const lastUser = [...messages].reverse().find((m) => m.role === 'user');
+          if (lastAssistant && lastUser) {
+            const aiText = lastAssistant.content || '';
+            const userText = (message || '').trim() || lastUser.content || '';
+            const hasSummary =
+              aiText.includes('汇总') || aiText.includes('确认无误') ||
+              aiText.includes('工单信息') || aiText.includes('帮您确认') ||
+              aiText.includes('提交工单') || aiText.includes('确认一下') ||
+              aiText.includes('梳理') || aiText.includes('报修信息') ||
+              aiText.includes('创建工单') || aiText.includes('帮你提交') ||
+              aiText.includes('没问题的话') || aiText.includes('安排工程师');
+            const isConfirm =
+              /^(确认|是的|对的|没错|可以|行|好|嗯|对|提交吧|创建吧|马上提交|没问题|ok|yes|yep|yeah)[\s!！。.]*$/i.test(userText.trim()) ||
+              userText.includes('确认无误') || userText.includes('马上提交') ||
+              userText.includes('立即创建') || userText.includes('帮我提交') ||
+              userText.includes('确认，') || userText.includes('确认！');
+            if (hasSummary && isConfirm) {
+              // 从 AI 回复中提取工单参数
+              const urgencyMatch = aiText.match(/(非常紧急|很紧急|紧急|停产|critical|urgent|普通|normal)/i);
+              let urgency = 'normal';
+              if (urgencyMatch) {
+                const u = urgencyMatch[0].toLowerCase();
+                if (u === '非常紧急' || u === '很紧急' || u === '停产' || u === 'critical') urgency = 'critical';
+                else if (u === '紧急' || u === 'urgent') urgency = 'urgent';
+                else urgency = 'normal';
+              }
+              // 尝试从 AI 文本中提取设备类型
+              let woType = 'fault';
+              if (aiText.includes('设备故障') || aiText.includes('故障')) woType = 'fault';
+              else if (aiText.includes('维护') || aiText.includes('保养')) woType = 'maintenance';
+              else if (aiText.includes('参数')) woType = 'parameter';
+              else if (aiText.includes('咨询')) woType = 'consult';
+              else if (aiText.includes('配件')) woType = 'parts';
+
+              // 从对话历史中提取用户最初的问题描述
+              // 对话结构: [...历史, 用户问题消息, AI汇总回复], 当前消息=用户确认
+              // messages 数组不包含当前 message，所以最后一条用户消息就是问题描述
+              let problemDescription = aiText.slice(0, 2000);
+              const userMsgs = [...messages].filter(m => m.role === 'user');
+              if (userMsgs.length >= 1) {
+                problemDescription = (userMsgs[userMsgs.length - 1].content || '').slice(0, 2000);
+              }
+              const result = await toolCreateWorkOrder({
+                customerId: trustedCustomerId,
+                env,
+                ctx: request._ctx,
+                args: {
+                  type: woType,
+                  description: problemDescription,
+                  urgency,
+                },
+              });
+              preInjectedWorkOrder = result;
+              // 把创建结果注入到消息历史，让 AI 基于真实数据回复
+              if (result.success) {
+                currentMessages.push({
+                  role: 'assistant',
+                  content: null,
+                  tool_calls: [{
+                    id: 'svr_' + generateId(),
+                    type: 'function',
+                    function: { name: 'create_work_order', arguments: JSON.stringify({ type: woType, description: (message || aiText).slice(0, 2000), urgency }) }
+                  }]
+                });
+                currentMessages.push({
+                  role: 'tool',
+                  tool_call_id: currentMessages[currentMessages.length - 1].tool_calls[0].id,
+                  content: JSON.stringify(result),
+                });
+              }
+            }
+          }
+        }
+
         try {
           while (true) {
             const canCallTools = iteration < MAX_TOOL_ITERATIONS;
@@ -2061,7 +2121,7 @@ async function handleChat(request, env) {
               max_tokens:
                 iteration === 0 ? MAX_TOKENS.chat : MAX_TOKENS.chat_tool_followup,
             };
-            if (canCallTools) {
+            if (canCallTools && !preInjectedWorkOrder?.success) {
               requestBody.tools = TOOLS_SCHEMAS;
               requestBody.tool_choice = 'auto';
             }
@@ -3731,13 +3791,17 @@ async function handleUpdateEngineerProfile(request, env) {
     if (!engineerId) return errorResponse('未登录', 401);
 
     const body = await request.json();
-    const { name, bio, service_region } = body;
+    const { name, bio, service_region, bank_name, bank_account, bank_branch, account_holder } = body;
 
     try {
       assertFieldLimits(body, {
         name: LIMITS.name,
         bio: LIMITS.bio,
         service_region: LIMITS.service_region,
+        bank_name: { max: 50 },
+        bank_account: { max: 30 },
+        bank_branch: { max: 100 },
+        account_holder: { max: 20 },
       });
     } catch (e) {
       const resp = validationErrorToResponse(e, errorResponse);
@@ -3750,6 +3814,10 @@ async function handleUpdateEngineerProfile(request, env) {
     if (name !== undefined) { updates.push('name = ?'); values.push(name); }
     if (bio !== undefined) { updates.push('bio = ?'); values.push(bio); }
     if (service_region !== undefined) { updates.push('service_region = ?'); values.push(service_region); }
+    if (bank_name !== undefined) { updates.push('bank_name = ?'); values.push(bank_name); }
+    if (bank_account !== undefined) { updates.push('bank_account = ?'); values.push(bank_account); }
+    if (bank_branch !== undefined) { updates.push('bank_branch = ?'); values.push(bank_branch); }
+    if (account_holder !== undefined) { updates.push('account_holder = ?'); values.push(account_holder); }
 
     if (updates.length === 0) return errorResponse('没有要更新的字段');
 
@@ -3757,7 +3825,7 @@ async function handleUpdateEngineerProfile(request, env) {
     await env.DB.prepare(`UPDATE engineers SET ${updates.join(', ')} WHERE id = ?`).bind(...values).run();
 
     const updated = await env.DB.prepare(
-      'SELECT id, user_no, name, phone, specialties, brands, services, service_region, bio, status, level, commission_rate, credit_score, rating_timeliness, rating_technical, rating_communication, rating_professional, rating_count FROM engineers WHERE id = ?'
+      'SELECT id, user_no, name, phone, specialties, brands, services, service_region, bio, status, level, commission_rate, credit_score, rating_timeliness, rating_technical, rating_communication, rating_professional, rating_count, bank_name, bank_account, bank_branch, account_holder FROM engineers WHERE id = ?'
     ).bind(engineerId).first();
 
     if (!updated) return errorResponse('工程师不存在', 404);
@@ -5555,29 +5623,133 @@ async function handleConfirmWorkOrderPricing(request, env) {
     ).bind(workOrderId).run();
 
     await env.DB.prepare(
-      "UPDATE work_orders SET status = 'in_service' WHERE id = ?"
+      "UPDATE work_orders SET status = 'pending_payment' WHERE id = ?"
     ).bind(workOrderId).run();
 
     // 系统消息
     const msgId = generateId();
     await env.DB.prepare(
-      "INSERT INTO work_order_messages (id, work_order_id, sender_type, sender_id, sender_name, content, message_type) VALUES (?, ?, 'system', '', '系统', '客户已确认报价，工程师可以开始上门服务。', 'system')"
+      "INSERT INTO work_order_messages (id, work_order_id, sender_type, sender_id, sender_name, content, message_type) VALUES (?, ?, 'system', '', '系统', '客户已确认报价，等待客户付款。付款完成后工程师即可开始上门服务。', 'system')"
     ).bind(msgId, workOrderId).run();
 
-    // 通知工程师：报价已确认
+    // 通知工程师：报价已确认，等待付款
     const woConfirm = await env.DB.prepare('SELECT engineer_id, order_no FROM work_orders WHERE id = ?').bind(workOrderId).first();
     if (woConfirm?.engineer_id) {
       await createNotification(env, {
         user_id: woConfirm.engineer_id,
         user_type: 'engineer',
         type: 'pricing_confirmed',
-        title: '报价已确认',
-        body: `工单 ${woConfirm.order_no} 的客户已确认报价，可以开始上门服务。`,
+        title: '报价已确认，等待客户付款',
+        body: `工单 ${woConfirm.order_no} 的客户已确认报价，请等待客户完成付款。`,
         data: { work_order_id: workOrderId },
       });
     }
 
     return jsonResponse({ success: true });
+  } catch (error) {
+    return errorResponse(error.message, 500);
+  }
+}
+
+// 客户模拟付款（mock payment）
+async function handlePayWorkOrder(request, env) {
+  try {
+    const workOrderId = new URL(request.url).pathname.split('/')[3];
+
+    // 认证：仅客户可付款
+    const auth = request._auth;
+    if (!auth || auth.userType !== 'customer') {
+      return errorResponse('仅客户可付款', 403);
+    }
+    const customer_id = auth.userId;
+
+    // 校验工单归属
+    const wo = await env.DB.prepare(
+      'SELECT id, customer_id, status, order_no, engineer_id FROM work_orders WHERE id = ?'
+    ).bind(workOrderId).first();
+    if (!wo) return errorResponse('工单不存在', 404);
+    if (wo.customer_id !== customer_id) {
+      return errorResponse('您无权操作该工单', 403);
+    }
+    if (wo.status !== 'pending_payment') {
+      return errorResponse('工单状态不正确，无法付款', 400);
+    }
+
+    // 获取定价信息
+    const pricing = await env.DB.prepare(
+      'SELECT subtotal, total_amount FROM work_order_pricing WHERE work_order_id = ? AND status = ?'
+    ).bind(workOrderId, 'confirmed').first();
+    if (!pricing) return errorResponse('报价不存在或未确认', 404);
+
+    const amount = pricing.total_amount || pricing.subtotal || 0;
+    if (amount <= 0) return errorResponse('报价金额无效', 400);
+
+    const body = await request.json().catch(() => ({}));
+    const paymentMethod = body.payment_method || 'bank_transfer';
+
+    // 模拟付款成功
+    const paymentId = generateId();
+    const transactionId = 'TXN' + Date.now().toString(36).toUpperCase() + Math.random().toString(36).slice(2, 6).toUpperCase();
+
+    await env.DB.prepare(`
+      INSERT INTO work_order_payments (id, work_order_id, customer_id, amount, payment_method, transaction_id, status)
+      VALUES (?, ?, ?, ?, ?, ?, 'completed')
+    `).bind(paymentId, workOrderId, customer_id, amount, paymentMethod, transactionId).run();
+
+    // 更新工单状态
+    await env.DB.prepare(
+      "UPDATE work_orders SET status = 'in_service' WHERE id = ?"
+    ).bind(workOrderId).run();
+
+    // 系统消息
+    const msgId = generateId();
+    const methodLabels = { bank_transfer: '银行转账', alipay: '支付宝', wechat: '微信支付' };
+    const methodLabel = methodLabels[paymentMethod] || paymentMethod;
+    await env.DB.prepare(
+      "INSERT INTO work_order_messages (id, work_order_id, sender_type, sender_id, sender_name, content, message_type) VALUES (?, ?, 'system', '', '系统', ?, 'system')"
+    ).bind(msgId, workOrderId, `客户已通过${methodLabel}完成付款，金额 ${amount} 元。工程师可以开始上门服务。交易流水号：${transactionId}`).run();
+
+    // 通知工程师：客户已付款
+    if (wo.engineer_id) {
+      await createNotification(env, {
+        user_id: wo.engineer_id,
+        user_type: 'engineer',
+        type: 'payment_received',
+        title: '客户已付款',
+        body: `工单 ${wo.order_no} 客户已付款 ${amount} 元，请安排上门服务。`,
+        data: { work_order_id: workOrderId, amount, transaction_id: transactionId },
+      });
+    }
+
+    return jsonResponse({
+      success: true,
+      payment: {
+        id: paymentId,
+        transaction_id: transactionId,
+        amount,
+        payment_method: paymentMethod,
+        status: 'completed',
+        paid_at: new Date().toISOString(),
+      }
+    });
+  } catch (error) {
+    return errorResponse(error.message, 500);
+  }
+}
+
+// 获取工单付款记录
+async function handleGetWorkOrderPayment(request, env) {
+  try {
+    const workOrderId = new URL(request.url).pathname.split('/')[3];
+
+    const auth = request._auth;
+    if (!auth) return errorResponse('未登录', 401);
+
+    const payment = await env.DB.prepare(
+      'SELECT * FROM work_order_payments WHERE work_order_id = ? ORDER BY created_at DESC LIMIT 1'
+    ).bind(workOrderId).first();
+
+    return jsonResponse({ payment: payment || null });
   } catch (error) {
     return errorResponse(error.message, 500);
   }
@@ -6112,6 +6284,14 @@ async function routeRequest(request, env, ctx) {
     // 工程师提现申请
     if (path === '/api/engineers/wallet/withdraw' && request.method === 'POST') {
       return handleWithdrawRequest(request, env);
+    }
+    // 客户付款（模拟）
+    if (path.match(/^\/api\/workorders\/[^/]+\/pay$/) && request.method === 'POST') {
+      return handlePayWorkOrder(request, env);
+    }
+    // 获取付款记录
+    if (path.match(/^\/api\/workorders\/[^/]+\/payment$/) && request.method === 'GET') {
+      return handleGetWorkOrderPayment(request, env);
     }
     // 推送订阅（OneSignal Player ID）- 客户和工程师共用同一处理器，按 auth.userType 分发
     if (

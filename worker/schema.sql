@@ -94,6 +94,8 @@ CREATE TABLE IF NOT EXISTS engineers (
     legal_person TEXT,
     bank_account TEXT,
     bank_name TEXT,
+    bank_branch TEXT DEFAULT '',         -- 012
+    account_holder TEXT DEFAULT '',      -- 012
 
     -- 状态和评分
     status TEXT DEFAULT 'available',           -- available / paused / offline / pending_approval
@@ -298,6 +300,21 @@ CREATE TABLE IF NOT EXISTS work_order_pricing_history (
     FOREIGN KEY (pricing_id) REFERENCES work_order_pricing(id)
 );
 CREATE INDEX IF NOT EXISTS idx_work_order_pricing_history_pricing ON work_order_pricing_history(pricing_id);
+
+-- 工单支付记录表（012）
+CREATE TABLE IF NOT EXISTS work_order_payments (
+    id TEXT PRIMARY KEY,
+    work_order_id TEXT NOT NULL,
+    customer_id TEXT,
+    amount INTEGER NOT NULL,
+    payment_method TEXT DEFAULT 'bank_transfer',
+    transaction_id TEXT UNIQUE,
+    status TEXT DEFAULT 'completed',
+    paid_at TEXT DEFAULT (datetime('now')),
+    created_at TEXT DEFAULT (datetime('now')),
+    FOREIGN KEY (work_order_id) REFERENCES work_orders(id)
+);
+CREATE INDEX IF NOT EXISTS idx_work_order_payments_wo ON work_order_payments(work_order_id);
 
 -- 合伙人钱包流水（001/002）
 CREATE TABLE IF NOT EXISTS engineer_wallets (

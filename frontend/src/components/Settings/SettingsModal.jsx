@@ -13,7 +13,7 @@ export function SettingsModal({ isOpen, onClose, currentUser, userType, onOpenMy
   const [customerForm, setCustomerForm] = useState({ name: '', region: '' });
 
   // 工程师档案
-  const [engineerForm, setEngineerForm] = useState({ name: '', bio: '', service_region: '' });
+  const [engineerForm, setEngineerForm] = useState({ name: '', bio: '', service_region: '', bank_name: '', bank_account: '', bank_branch: '', account_holder: '' });
   const [engineerStats, setEngineerStats] = useState(null);
   const [engineerWallet, setEngineerWallet] = useState(null);
   const [currentStatus, setCurrentStatus] = useState('available');
@@ -33,6 +33,10 @@ export function SettingsModal({ isOpen, onClose, currentUser, userType, onOpenMy
           name: currentUser.name || '',
           bio: currentUser.bio || '',
           service_region: currentUser.service_region || '',
+          bank_name: currentUser.bank_name || '',
+          bank_account: currentUser.bank_account || '',
+          bank_branch: currentUser.bank_branch || '',
+          account_holder: currentUser.account_holder || '',
         });
         setCurrentStatus(currentUser.status || 'available');
         loadEngineerData();
@@ -51,15 +55,24 @@ export function SettingsModal({ isOpen, onClose, currentUser, userType, onOpenMy
         getEngineerProfile(engineerId),
         getEngineerWallet(engineerId),
       ]);
+      const profile = profileRes.engineer || {};
       setEngineerStats({
-        level: profileRes.engineer?.level,
-        commission_rate: profileRes.engineer?.commission_rate,
-        credit_score: profileRes.engineer?.credit_score,
-        rating: profileRes.engineer?.rating_count > 0
-          ? ((profileRes.engineer.rating_timeliness + profileRes.engineer.rating_technical + profileRes.engineer.rating_communication + profileRes.engineer.rating_professional) / 4).toFixed(1)
+        level: profile.level,
+        commission_rate: profile.commission_rate,
+        credit_score: profile.credit_score,
+        rating: profile.rating_count > 0
+          ? ((profile.rating_timeliness + profile.rating_technical + profile.rating_communication + profile.rating_professional) / 4).toFixed(1)
           : '暂无',
-        rating_count: profileRes.engineer?.rating_count || 0,
+        rating_count: profile.rating_count || 0,
       });
+      // 回填银行卡信息
+      setEngineerForm(prev => ({
+        ...prev,
+        bank_name: profile.bank_name || prev.bank_name || '',
+        bank_account: profile.bank_account || prev.bank_account || '',
+        bank_branch: profile.bank_branch || prev.bank_branch || '',
+        account_holder: profile.account_holder || prev.account_holder || '',
+      }));
       setEngineerWallet(walletRes);
     } catch (err) {
       console.error('加载工程师数据失败', err);
@@ -314,6 +327,53 @@ export function SettingsModal({ isOpen, onClose, currentUser, userType, onOpenMy
                       className="w-full bg-[var(--color-input-bg)] border border-[var(--color-input-border)] rounded-lg px-3 py-2.5 text-[14px] text-[var(--color-sidebar-text)] resize-none"
                     />
                   </div>
+                  {/* 银行卡信息（用于提现） */}
+                  <div className="border-t border-[var(--color-border)] pt-4 mt-2">
+                    <p className="text-[12px] text-[var(--color-sidebar-text)] opacity-60 mb-3">银行卡信息（用于提现）</p>
+                    <div className="space-y-3">
+                      <div>
+                        <label className="block text-[12px] text-[var(--color-sidebar-text)] opacity-60 mb-1.5">开户银行</label>
+                        <input
+                          type="text"
+                          value={engineerForm.bank_name}
+                          onChange={e => setEngineerForm({ ...engineerForm, bank_name: e.target.value })}
+                          placeholder="如：中国工商银行"
+                          className="w-full bg-[var(--color-input-bg)] border border-[var(--color-input-border)] rounded-lg px-3 py-2.5 text-[14px] text-[var(--color-sidebar-text)]"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[12px] text-[var(--color-sidebar-text)] opacity-60 mb-1.5">开户支行</label>
+                        <input
+                          type="text"
+                          value={engineerForm.bank_branch}
+                          onChange={e => setEngineerForm({ ...engineerForm, bank_branch: e.target.value })}
+                          placeholder="如：济南市历下支行"
+                          className="w-full bg-[var(--color-input-bg)] border border-[var(--color-input-border)] rounded-lg px-3 py-2.5 text-[14px] text-[var(--color-sidebar-text)]"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[12px] text-[var(--color-sidebar-text)] opacity-60 mb-1.5">开户人姓名</label>
+                        <input
+                          type="text"
+                          value={engineerForm.account_holder}
+                          onChange={e => setEngineerForm({ ...engineerForm, account_holder: e.target.value })}
+                          placeholder="需与银行卡开户名一致"
+                          className="w-full bg-[var(--color-input-bg)] border border-[var(--color-input-border)] rounded-lg px-3 py-2.5 text-[14px] text-[var(--color-sidebar-text)]"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[12px] text-[var(--color-sidebar-text)] opacity-60 mb-1.5">银行卡号</label>
+                        <input
+                          type="text"
+                          value={engineerForm.bank_account}
+                          onChange={e => setEngineerForm({ ...engineerForm, bank_account: e.target.value })}
+                          placeholder="请输入银行卡号"
+                          className="w-full bg-[var(--color-input-bg)] border border-[var(--color-input-border)] rounded-lg px-3 py-2.5 text-[14px] text-[var(--color-sidebar-text)]"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
                   {/* 工程师等级信息 */}
                   <div className="bg-[var(--color-surface-elevated)] rounded-xl p-3 space-y-2">
                     <div className="flex justify-between text-[13px]">

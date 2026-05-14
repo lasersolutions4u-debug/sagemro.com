@@ -1789,3 +1789,35 @@ Agent 行为：
 ---
 
 > ⚠️ **CLAUDE.md 修改说明**：本文件只增不减。任何删除或修改已有内容的需求，必须先与项目负责人确认后方可执行。新增内容请追加到对应章节或新建章节。
+
+---
+
+## 十九、记忆文件（Memory）同步
+
+### 19.1 存储位置
+
+全部记忆文件已从 `~/.claude/projects/` 集中迁移到项目目录：
+
+```
+.claude/memory/
+├── MEMORY.md              ← 总索引
+├── group/                 ← 集团通用记忆（7 个文件）
+├── sagemro/               ← SAGEMRO 项目记忆（4 个文件）
+├── lishi/                 ← LISHI LASER 项目记忆（11 个文件）
+└── crm/                   ← CRM 项目记忆（3 个文件）
+```
+
+此目录通过坚果云自动同步到所有电脑。
+
+### 19.2 换电脑后恢复
+
+在新电脑上，将此目录中的文件软链接或复制到 Claude Code 的记忆目录：
+
+```powershell
+# Windows — 将项目记忆目录链接到 Claude Code 记忆位置
+# 先找到该电脑上 SAGEMRO 项目的 hash 目录名，然后：
+mklink /D C:\Users\Admin\.claude\projects\<sagemro-hash>\memory ^
+       E:\我的坚果云\Euchio\推广运营\SAGEMRO AI\.claude\memory
+```
+
+如果不想用软链接，也可以直接复制整个 `memory/` 目录过去。

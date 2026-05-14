@@ -9,7 +9,7 @@ export function Footer({ onOpenLegal }) {
         <button onClick={() => onOpenLegal?.('ai')} className="hover:text-[var(--color-primary)] transition-colors">AI服务须知</button>
       </div>
       <p className="text-[10px] text-[var(--color-text-muted)]">
-        SageMRO 隶属于济南钰峭机械有限公司 (Jinan Euchio Machinery Co., Ltd.)
+        SAGEMRO 隶属于济南钰峭机械有限公司 (Jinan Euchio Machinery Co., Ltd.)
       </p>
     </footer>
   );

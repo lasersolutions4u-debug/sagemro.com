@@ -6,6 +6,7 @@ import {
   confirmWorkOrderPricing,
   rejectWorkOrderPricing,
 } from '../../services/api';
+import { PaymentModal } from '../Payment/PaymentModal';
 import { toastSuccess, toastError, toastWarning } from '../../utils/feedback';
 
 export function PricingStatusBadge({ status }) {
@@ -140,7 +141,9 @@ export function CustomerPricingPanel({ workOrderId, customerId, onConfirmed }) {
   const [loading, setLoading] = useState(true);
   const [action, setAction] = useState(null); // 'confirm' | 'reject'
   const [rejectReason, setRejectReason] = useState('');
+  const [counterOffer, setCounterOffer] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [paymentOpen, setPaymentOpen] = useState(false);
 
   const load = () => {
     setLoading(true);
@@ -285,10 +288,27 @@ export function CustomerPricingPanel({ workOrderId, customerId, onConfirmed }) {
       )}
 
       {pricing.status === 'confirmed' && (
-        <div className="p-3 bg-green-500/10 border border-green-500/30 rounded-xl text-center text-sm text-green-500">
-          ✓ 报价已确认，工程师将上门服务
+        <div className="space-y-3">
+          <div className="p-3 bg-green-500/10 border border-green-500/30 rounded-xl text-center text-sm text-green-500">
+            ✓ 报价已确认
+          </div>
+          <button
+            onClick={() => setPaymentOpen(true)}
+            className="w-full py-3 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white rounded-xl font-semibold text-sm transition-colors"
+          >
+            去付款（{(pricing.total_amount || pricing.subtotal || 0).toLocaleString()} 元）
+          </button>
         </div>
       )}
+
+      {/* 付款弹窗 */}
+      <PaymentModal
+        isOpen={paymentOpen}
+        onClose={() => setPaymentOpen(false)}
+        workOrderId={workOrderId}
+        customerId={customerId}
+        onPaid={() => { setPaymentOpen(false); onConfirmed?.(); load(); }}
+      />
     </div>
   );
 }

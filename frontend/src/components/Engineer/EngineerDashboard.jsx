@@ -159,29 +159,58 @@ export function EngineerDashboard({ isOpen, onClose, engineerId, onViewProfile }
               </div>
             </div>
             {/* 提现 */}
-            {walletData.wallet_balance > 0 && (
-              <div className="space-y-2">
-                <div className="flex gap-2">
-                  <input
-                    type="number"
-                    value={withdrawAmount}
-                    onChange={(e) => setWithdrawAmount(e.target.value)}
-                    placeholder="输入提现金额（元）"
-                    min="100"
-                    max={walletData.wallet_balance}
-                    className="flex-1 px-3 py-1.5 border border-[var(--color-input-border)] rounded-lg bg-[var(--color-input-bg)] text-[var(--color-text-primary)] text-sm focus:outline-none focus:ring-1 focus:ring-[var(--color-primary)]"
-                  />
-                  <button
-                    onClick={handleWithdraw}
-                    disabled={withdrawLoading}
-                    className="px-3 py-1.5 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] disabled:opacity-50 text-white rounded-lg text-sm transition-colors"
-                  >
-                    {withdrawLoading ? '提交中...' : '申请提现'}
-                  </button>
+            <div className="space-y-2">
+              {walletData.wallet_balance > 0 ? (
+                <>
+                  <div className="flex gap-2">
+                    <input
+                      type="number"
+                      value={withdrawAmount}
+                      onChange={(e) => setWithdrawAmount(e.target.value)}
+                      placeholder="输入提现金额（元）"
+                      min="100"
+                      max={walletData.wallet_balance}
+                      className="flex-1 px-3 py-1.5 border border-[var(--color-input-border)] rounded-lg bg-[var(--color-input-bg)] text-[var(--color-text-primary)] text-sm focus:outline-none focus:ring-1 focus:ring-[var(--color-primary)]"
+                    />
+                    <button
+                      onClick={handleWithdraw}
+                      disabled={withdrawLoading}
+                      className="px-3 py-1.5 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] disabled:opacity-50 text-white rounded-lg text-sm transition-colors"
+                    >
+                      {withdrawLoading ? '提交中...' : '申请提现'}
+                    </button>
+                  </div>
+                  {withdrawMsg && (
+                    <p className="text-xs text-center text-[var(--color-text-secondary)]">{withdrawMsg}</p>
+                  )}
+                </>
+              ) : (
+                <p className="text-xs text-center text-[var(--color-text-muted)]">当前钱包余额为 0，无可提现金额</p>
+              )}
+            </div>
+
+            {/* 钱包流水 */}
+            {walletData.wallet_history && walletData.wallet_history.length > 0 && (
+              <div className="pt-2 border-t border-[var(--color-border)]">
+                <h4 className="text-xs font-medium text-[var(--color-text-secondary)] mb-2">钱包流水</h4>
+                <div className="space-y-1.5 max-h-40 overflow-y-auto">
+                  {walletData.wallet_history.map((item) => (
+                    <div key={item.id} className="flex items-center justify-between text-xs">
+                      <div className="flex items-center gap-2">
+                        <span className={`w-1.5 h-1.5 rounded-full ${item.amount >= 0 ? 'bg-green-500' : 'bg-red-500'}`} />
+                        <span className="text-[var(--color-text-primary)]">
+                          {item.type === 'order_payment' ? '工单收入' : item.type === 'withdraw' ? '提现' : item.type}
+                        </span>
+                      </div>
+                      <div className="text-right">
+                        <span className={item.amount >= 0 ? 'text-green-500' : 'text-red-500'}>
+                          {item.amount >= 0 ? '+' : ''}{item.amount.toLocaleString()}元
+                        </span>
+                        <span className="text-[var(--color-text-muted)] ml-2">{item.created_at?.slice(0, 16)}</span>
+                      </div>
+                    </div>
+                  ))}
                 </div>
-                {withdrawMsg && (
-                  <p className="text-xs text-center text-[var(--color-text-secondary)]">{withdrawMsg}</p>
-                )}
               </div>
             )}
           </div>

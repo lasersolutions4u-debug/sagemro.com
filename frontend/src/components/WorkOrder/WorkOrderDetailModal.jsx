@@ -99,8 +99,8 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
     { key: 'messages', label: '消息对话' },
   ];
 
-  // 核价Tab：工程师看表单，客户看报价确认
-  if (effectiveStatus === 'in_progress' || effectiveStatus === 'pricing' || effectiveStatus === 'in_service') {
+  // 核价Tab：工程师看表单，客户看报价确认（含待付款状态）
+  if (effectiveStatus === 'in_progress' || effectiveStatus === 'pricing' || effectiveStatus === 'pending_payment' || effectiveStatus === 'in_service') {
     tabs.push({ key: 'pricing', label: isEngineer ? '核价' : '报价确认' });
   }
 
