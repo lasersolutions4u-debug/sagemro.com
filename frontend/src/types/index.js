@@ -1,15 +1,15 @@
 // 工程师等级
 export const PartnerLevel = {
-  JUNIOR: 'junior',       // 初级：提成80%
-  SENIOR: 'senior',       // 中级：提成85%
-  EXPERT: 'expert',       // 核心专家：提成88%
+  JUNIOR: 'junior',       // 初级：平台抽20%，工程师得80%
+  SENIOR: 'senior',       // 中级：平台抽15%，工程师得85%
+  EXPERT: 'expert',       // 核心专家：平台抽12%，工程师得88%
 };
 
-// 工程师等级对应的提成比例
+// 工程师等级对应的平台服务费率（平台抽成比例 = 1 - 工程师所得比例）
 export const CommissionRates = {
-  [PartnerLevel.JUNIOR]: 0.80,  // 工程师拿80%，平台收20%
-  [PartnerLevel.SENIOR]: 0.85,  // 工程师拿85%，平台收15%
-  [PartnerLevel.EXPERT]: 0.88,  // 工程师拿88%，平台收12%
+  [PartnerLevel.JUNIOR]: 0.80,  // 平台抽20%，工程师得80%
+  [PartnerLevel.SENIOR]: 0.85,  // 平台抽15%，工程师得85%
+  [PartnerLevel.EXPERT]: 0.88,  // 平台抽12%，工程师得88%
 };
 
 // 工程师等级标签

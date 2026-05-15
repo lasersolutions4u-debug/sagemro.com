@@ -1,16 +1,14 @@
 import { useState, useEffect } from 'react';
-import { X, Package, Plus, ChevronRight, Star, Calendar, Wrench } from 'lucide-react';
+import { X, Package, Sparkles } from 'lucide-react';
 import { getDevices, deleteDevice } from '../../services/api';
 import { toastError, confirmDialog } from '../../utils/feedback';
 import { DeviceCard } from './DeviceCard';
 import { DeviceDetailPanel } from './DeviceDetailPanel';
-import { DeviceForm } from './DeviceForm';
 
 export function MyDevicesModal({ isOpen, onClose, currentUser, userType }) {
   const [devices, setDevices] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedDevice, setSelectedDevice] = useState(null);
-  const [showForm, setShowForm] = useState(false);
   const [error, setError] = useState(null);
 
   useEffect(() => {
@@ -46,11 +44,6 @@ export function MyDevicesModal({ isOpen, onClose, currentUser, userType }) {
     }
   }
 
-  function handleDeviceAdded(newDevice) {
-    setDevices([newDevice, ...devices]);
-    setShowForm(false);
-  }
-
   if (!isOpen) return null;
 
   return (
@@ -66,21 +59,9 @@ export function MyDevicesModal({ isOpen, onClose, currentUser, userType }) {
             </div>
             <h2 className="text-[16px] font-medium text-[var(--color-text-primary)]">我的设备</h2>
           </div>
-          <div className="flex items-center gap-2">
-            {userType === 'customer' && (
-              <button
-                data-testid="add-device-button"
-                onClick={() => setShowForm(true)}
-                className="flex items-center gap-1 px-3 py-1.5 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white rounded-lg text-[13px] transition-colors"
-              >
-                <Plus size={14} />
-                添加设备
-              </button>
-            )}
-            <button onClick={onClose} className="p-1.5 hover:bg-[var(--color-hover)] rounded-lg transition-colors">
-              <X size={18} className="text-[var(--color-text-secondary)]" />
-            </button>
-          </div>
+          <button onClick={onClose} className="p-1.5 hover:bg-[var(--color-hover)] rounded-lg transition-colors">
+            <X size={18} className="text-[var(--color-text-secondary)]" />
+          </button>
         </div>
 
         {/* 内容区 */}
@@ -97,20 +78,14 @@ export function MyDevicesModal({ isOpen, onClose, currentUser, userType }) {
 
           {!loading && !error && devices.length === 0 && (
             <div className="text-center py-12">
-              <div className="w-12 h-12 mx-auto mb-3 rounded-full bg-[var(--color-hover)] flex items-center justify-center">
-                <Package size={24} className="text-[var(--color-text-secondary)] opacity-50" />
+              <div className="w-12 h-12 mx-auto mb-3 rounded-full bg-[var(--color-primary)]/10 flex items-center justify-center">
+                <Sparkles size={24} className="text-[var(--color-primary)] opacity-70" />
               </div>
-              <p className="text-[14px] text-[var(--color-text-secondary)] opacity-60">暂无设备</p>
-              <p className="text-[12px] text-[var(--color-text-muted)] mt-1 mb-4">添加设备后，小智可以为您提供更精准的服务</p>
-              {userType === 'customer' && (
-                <button
-                  onClick={() => setShowForm(true)}
-                  className="inline-flex items-center gap-1.5 px-4 py-2 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white rounded-xl text-[14px] font-medium transition-colors"
-                >
-                  <Plus size={16} />
-                  添加设备
-                </button>
-              )}
+              <p className="text-[14px] text-[var(--color-text-primary)] opacity-80">您的设备信息将自动整理</p>
+              <p className="text-[12px] text-[var(--color-text-muted)] mt-1.5 leading-relaxed max-w-[320px] mx-auto">
+                当您在与小智对话中提及设备品牌、型号等信息时，小智会自动识别并整理到这里。您无需手动填写。
+              </p>
+              <p className="text-[12px] text-[var(--color-text-muted)] mt-3 opacity-50">您的设备数据仅用于精准匹配工程师，不会公开展示。</p>
             </div>
           )}
 
@@ -138,12 +113,6 @@ export function MyDevicesModal({ isOpen, onClose, currentUser, userType }) {
             />
           )}
 
-          {showForm && (
-            <DeviceForm
-              onClose={() => setShowForm(false)}
-              onSuccess={handleDeviceAdded}
-            />
-          )}
         </div>
       </div>
     </div>
