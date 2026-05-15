@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { ArrowLeft, Package, Edit2, Trash2, ExternalLink, Star } from 'lucide-react';
+import { ArrowLeft, Package, Edit2, Trash2, ExternalLink, Star, Check, X } from 'lucide-react';
 import { getDevice, updateDevice } from '../../services/api';
 import { toastError } from '../../utils/feedback';
 
@@ -7,6 +7,8 @@ export function DeviceDetailPanel({ deviceId, onBack, onDelete }) {
   const [device, setDevice] = useState(null);
   const [workOrders, setWorkOrders] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [editing, setEditing] = useState(false);
+  const [form, setForm] = useState({});
   const [editingNotes, setEditingNotes] = useState(false);
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
@@ -27,6 +29,41 @@ export function DeviceDetailPanel({ deviceId, onBack, onDelete }) {
     } finally {
       setLoading(false);
     }
+  }
+
+  function startEditing() {
+    setForm({
+      name: device.name || '',
+      type: device.type || '',
+      brand: device.brand || '',
+      model: device.model || '',
+      power: device.power || '',
+      status: device.status || '正常',
+    });
+    setEditing(true);
+  }
+
+  function cancelEditing() {
+    setEditing(false);
+    setForm({});
+  }
+
+  async function handleSave() {
+    setSaving(true);
+    try {
+      const updated = await updateDevice(deviceId, form);
+      setDevice(updated.device);
+      setEditing(false);
+      setForm({});
+    } catch (err) {
+      toastError('保存失败');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function updateForm(key, value) {
+    setForm(prev => ({ ...prev, [key]: value }));
   }
 
   async function handleSaveNotes() {
@@ -97,43 +134,117 @@ export function DeviceDetailPanel({ deviceId, onBack, onDelete }) {
       {/* 设备信息卡 */}
       <div className="bg-[var(--color-surface-elevated)] rounded-xl p-4">
         <div className="flex items-start justify-between mb-4">
-          <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-xl bg-[var(--color-primary)]/15 flex items-center justify-center">
+          <div className="flex items-center gap-3 flex-1 min-w-0">
+            <div className="w-12 h-12 rounded-xl bg-[var(--color-primary)]/15 flex items-center justify-center flex-shrink-0">
               <Package size={24} className="text-[var(--color-primary)]" />
             </div>
-            <div>
-              <h3 className="text-[15px] font-medium text-[var(--color-text-primary)]">{device.name}</h3>
+            <div className="flex-1 min-w-0">
+              {editing ? (
+                <input
+                  value={form.name}
+                  onChange={e => updateForm('name', e.target.value)}
+                  className="w-full bg-[var(--color-input-bg)] border border-[var(--color-input-border)] rounded-lg px-2 py-1 text-[15px] font-medium text-[var(--color-text-primary)]"
+                  placeholder="设备名称"
+                />
+              ) : (
+                <h3 className="text-[15px] font-medium text-[var(--color-text-primary)] truncate">{device.name}</h3>
+              )}
               <div className="flex items-center gap-2 mt-1">
-                <span className={`w-2 h-2 rounded-full ${statusDots[device.status] || 'bg-gray-500'}`} />
-                <span className="text-[12px] text-[var(--color-text-secondary)]">{device.status}</span>
+                {editing ? (
+                  <select
+                    value={form.status}
+                    onChange={e => updateForm('status', e.target.value)}
+                    className="bg-[var(--color-input-bg)] border border-[var(--color-input-border)] rounded px-1.5 py-0.5 text-[12px] text-[var(--color-text-primary)]"
+                  >
+                    <option value="正常">正常</option>
+                    <option value="使用中">使用中</option>
+                    <option value="维保中">维保中</option>
+                  </select>
+                ) : (
+                  <>
+                    <span className={`w-2 h-2 rounded-full ${statusDots[device.status] || 'bg-gray-500'}`} />
+                    <span className="text-[12px] text-[var(--color-text-secondary)]">{device.status}</span>
+                  </>
+                )}
               </div>
             </div>
           </div>
-          <button
-            onClick={onDelete}
-            className="p-2 hover:bg-[var(--color-hover)] rounded-lg transition-colors text-red-400"
-          >
-            <Trash2 size={16} />
-          </button>
+          <div className="flex items-center gap-1 flex-shrink-0">
+            {editing ? (
+              <>
+                <button onClick={handleSave} disabled={saving} className="p-1.5 hover:bg-green-500/10 rounded-lg transition-colors text-green-500" title="保存">
+                  <Check size={16} />
+                </button>
+                <button onClick={cancelEditing} disabled={saving} className="p-1.5 hover:bg-[var(--color-hover)] rounded-lg transition-colors text-[var(--color-text-muted)]" title="取消">
+                  <X size={16} />
+                </button>
+              </>
+            ) : (
+              <>
+                <button onClick={startEditing} className="p-2 hover:bg-[var(--color-hover)] rounded-lg transition-colors text-[var(--color-text-muted)]" title="编辑设备">
+                  <Edit2 size={16} />
+                </button>
+                <button onClick={onDelete} className="p-2 hover:bg-[var(--color-hover)] rounded-lg transition-colors text-red-400" title="删除设备">
+                  <Trash2 size={16} />
+                </button>
+              </>
+            )}
+          </div>
         </div>
 
         {/* 设备属性 */}
         <div className="grid grid-cols-2 gap-3 text-[13px]">
           <div>
             <span className="text-[var(--color-text-muted)]">类型</span>
-            <p className="text-[var(--color-text-primary)] mt-0.5">{device.type}</p>
+            {editing ? (
+              <input
+                value={form.type}
+                onChange={e => updateForm('type', e.target.value)}
+                className="w-full bg-[var(--color-input-bg)] border border-[var(--color-input-border)] rounded-lg px-2 py-1.5 mt-0.5 text-[var(--color-text-primary)]"
+                placeholder="设备类型"
+              />
+            ) : (
+              <p className="text-[var(--color-text-primary)] mt-0.5">{device.type}</p>
+            )}
           </div>
           <div>
             <span className="text-[var(--color-text-muted)]">品牌</span>
-            <p className="text-[var(--color-text-primary)] mt-0.5">{device.brand || '-'}</p>
+            {editing ? (
+              <input
+                value={form.brand}
+                onChange={e => updateForm('brand', e.target.value)}
+                className="w-full bg-[var(--color-input-bg)] border border-[var(--color-input-border)] rounded-lg px-2 py-1.5 mt-0.5 text-[var(--color-text-primary)]"
+                placeholder="品牌"
+              />
+            ) : (
+              <p className="text-[var(--color-text-primary)] mt-0.5">{device.brand || '-'}</p>
+            )}
           </div>
           <div>
             <span className="text-[var(--color-text-muted)]">型号</span>
-            <p className="text-[var(--color-text-primary)] mt-0.5">{device.model || '-'}</p>
+            {editing ? (
+              <input
+                value={form.model}
+                onChange={e => updateForm('model', e.target.value)}
+                className="w-full bg-[var(--color-input-bg)] border border-[var(--color-input-border)] rounded-lg px-2 py-1.5 mt-0.5 text-[var(--color-text-primary)]"
+                placeholder="型号"
+              />
+            ) : (
+              <p className="text-[var(--color-text-primary)] mt-0.5">{device.model || '-'}</p>
+            )}
           </div>
           <div>
             <span className="text-[var(--color-text-muted)]">功率</span>
-            <p className="text-[var(--color-text-primary)] mt-0.5">{device.power || '-'}</p>
+            {editing ? (
+              <input
+                value={form.power}
+                onChange={e => updateForm('power', e.target.value)}
+                className="w-full bg-[var(--color-input-bg)] border border-[var(--color-input-border)] rounded-lg px-2 py-1.5 mt-0.5 text-[var(--color-text-primary)]"
+                placeholder="功率"
+              />
+            ) : (
+              <p className="text-[var(--color-text-primary)] mt-0.5">{device.power || '-'}</p>
+            )}
           </div>
         </div>
 
