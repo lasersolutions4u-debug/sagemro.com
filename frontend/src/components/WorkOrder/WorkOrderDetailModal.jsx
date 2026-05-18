@@ -7,11 +7,13 @@ import {
   submitEngineerReview,
   getEngineerReview,
 } from '../../services/api';
-import { statusConfig, urgencyConfig, typeLabels } from '../../data/workOrderConfig.js';
+import { statusConfig, urgencyConfig, typeLabels, categoryConfig, categoryL2Labels, formatSlaRemaining, slaHours } from '../../data/workOrderConfig.js';
 import { toastSuccess, toastError, toastWarning, confirmDialog } from '../../utils/feedback';
 import { Stars } from './Stars';
 import { MessagePanel } from './MessagePanel';
 import { EngineerPricingPanel, CustomerPricingPanel } from './PricingPanels';
+import { RepairRecordPanel } from './RepairRecordPanel';
+import { AttachmentsPanel } from './AttachmentsPanel';
 
 // ========== 主组件 ==========
 export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess, onConfirmed, userType, userId }) {
@@ -111,6 +113,18 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
     tabs.push({ key: 'rating', label: '评价' });
   }
 
+  // 维修记录Tab：工程师在服务中及之后可见，客户在有记录时可见
+  const hasRepairRecord = detail?.repair_record;
+  const repairStatuses = ['in_service', 'pricing', 'resolved', 'pending_review', 'completed'];
+  if ((isEngineer && repairStatuses.includes(effectiveStatus)) || (isCustomer && hasRepairRecord)) {
+    tabs.push({ key: 'repairRecord', label: '维修记录' });
+  }
+
+  // 附件Tab：工单已分配后所有人可见
+  if (effectiveStatus !== 'pending') {
+    tabs.push({ key: 'attachments', label: '附件' });
+  }
+
   const renderInfoTab = () => (
     <div className="space-y-4">
       <div className="p-4 bg-[var(--color-surface-elevated)] rounded-xl space-y-2">
@@ -122,7 +136,26 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
           </div>
         </div>
         <div className="text-sm text-[var(--color-text-secondary)]">问题类型：{typeLabels[workOrder.type] || workOrder.type}</div>
+        {(workOrder.category_l1 && workOrder.category_l1 !== 'other') && (
+          <div className="text-sm text-[var(--color-text-secondary)]">
+            设备分类：{categoryConfig[workOrder.category_l1]?.label || workOrder.category_l1}
+            {workOrder.category_l2 && workOrder.category_l2 !== 'other' && (
+              <span className="ml-1">· {categoryL2Labels[workOrder.category_l2] || workOrder.category_l2}</span>
+            )}
+          </div>
+        )}
         <div className="text-sm text-[var(--color-text-secondary)]">提交时间：{workOrder.created_at ? new Date(workOrder.created_at).toLocaleString('zh-CN') : '-'}</div>
+        {detail?.sla_deadline && (() => {
+          const sla = detail.sla_status || {};
+          const remaining = formatSlaRemaining(sla);
+          const slaColor = sla.status === 'breached' ? 'text-red-500' : sla.status === 'at_risk' ? 'text-yellow-500' : 'text-green-500';
+          return (
+            <div className="flex items-center gap-4 text-sm">
+              <span className="text-[var(--color-text-secondary)]">SLA 截止：{new Date(detail.sla_deadline).toLocaleString('zh-CN')}</span>
+              {remaining && <span className={slaColor}>{remaining}</span>}
+            </div>
+          );
+        })()}
         {detail?.engineer_name && (
           <div className="text-sm text-[var(--color-text-secondary)]">
             工程师：<span className="text-[var(--color-primary)]">{detail.engineer_name}</span>
@@ -402,6 +435,21 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
               <CustomerPricingPanel workOrderId={workOrder.id} customerId={userId} onConfirmed={() => { loadDetail(); onConfirmed?.(); }} />
             )}
             {tab === 'rating' && renderRatingTab()}
+            {tab === 'repairRecord' && (
+              <RepairRecordPanel
+                workOrderId={workOrder.id}
+                userType={userType}
+                repairRecord={detail?.repair_record || null}
+                onSaved={() => loadDetail()}
+              />
+            )}
+            {tab === 'attachments' && (
+              <AttachmentsPanel
+                workOrderId={workOrder.id}
+                userType={userType}
+                userId={userId}
+              />
+            )}
           </>
         )}
       </div>

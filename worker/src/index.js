@@ -38,6 +38,11 @@ import {
   assertFieldLimits,
   validateImageUrl,
   validationErrorToResponse,
+  ALLOWED_ATTACHMENT_TYPES,
+  MAX_ATTACHMENT_SIZE,
+  validateAttachmentType,
+  validateAttachmentSize,
+  sanitizeFilename,
 } from './lib/validators.js';
 
 // Sentry 错误上报（零依赖 envelope 客户端）
@@ -64,6 +69,32 @@ import {
 //   wrangler secret put ADMIN_PHONE --env production
 //   wrangler secret put ADMIN_PASSWORD --env production
 // 不再提供硬编码默认值；缺失 env 直接拒绝登录，避免同一默认账号被全网爆破。
+
+// ============ SLA 时效配置 ============
+const SLA_HOURS = { critical: 4, urgent: 24, normal: 72 };
+
+function computeSlaDeadline(urgency) {
+  const hours = SLA_HOURS[urgency] || SLA_HOURS.normal;
+  return new Date(Date.now() + hours * 3600000).toISOString();
+}
+
+function getSlaStatus(slaDeadline, urgency) {
+  if (!slaDeadline) return { status: 'on_track', remaining_seconds: null, label: '--' };
+  const now = Date.now();
+  const deadline = new Date(slaDeadline).getTime();
+  const remaining = Math.max(0, Math.round((deadline - now) / 1000));
+  if (now >= deadline) {
+    const overdue = Math.round((now - deadline) / 1000);
+    return { status: 'breached', remaining_seconds: -overdue, label: '已超时' };
+  }
+  const totalHours = SLA_HOURS[urgency] || SLA_HOURS.normal;
+  const totalSeconds = totalHours * 3600;
+  const ratio = remaining / totalSeconds;
+  if (ratio <= 0.25 || remaining <= 3600) {
+    return { status: 'at_risk', remaining_seconds: remaining, label: '即将超时' };
+  }
+  return { status: 'on_track', remaining_seconds: remaining, label: '正常' };
+}
 
 // ============ System Prompt ============
 const SYSTEM_PROMPT = `你是"小智"，SAGEMRO 平台的 AI 助手，服务于钣金加工行业的设备维修服务。
@@ -361,6 +392,16 @@ const TOOLS_SCHEMAS = [
             type: 'string',
             description: '工单类型：fault（设备故障）/ maintenance（维护保养）/ parameter（参数调试）/ consult（技术咨询）/ parts（配件采购）/ aftersales（售后服务）/ other（其他）',
             enum: ['fault', 'maintenance', 'parameter', 'consult', 'parts', 'aftersales', 'other']
+          },
+          category_l1: {
+            type: 'string',
+            description: '设备大类：laser_cutting（激光切割）/ bending（折弯）/ punching（冲压冲床）/ welding（焊接）/ surface_treatment（表面处理）/ auxiliary（辅助系统）/ cnc_automation（数控与自动化）/ inspection（检测品控）/ other（其他）',
+            enum: ['laser_cutting', 'bending', 'punching', 'welding', 'surface_treatment', 'auxiliary', 'cnc_automation', 'inspection', 'other']
+          },
+          category_l2: {
+            type: 'string',
+            description: '问题类型：mechanical_fault（机械故障）/ electrical_fault（电气故障）/ optical_fault（光路光学）/ hydraulic_fault（液压故障）/ arc_fault（电弧焊接质量）/ wire_feeder_fault（送丝故障）/ tooling_fault（模具刀具）/ compressor_fault（空压机）/ chiller_fault（冷水机）/ gas_generation（制氮制氧）/ power_supply（电源）/ cnc_system（数控系统）/ servo_drive（伺服驱动）/ robot_fault（机器人）/ plc_fault（PLC自动化）/ sensor_fault（传感器）/ cooling_fault（冷却系统）/ gas_fault（气路气体）/ control_system（控制系统）/ media_fault（磨料介质）/ dust_collection（除尘环保）/ calibration（精度校准）/ software_fault（软件系统）/ general_fault（通用故障）/ maintenance（保养维护）/ parameter_debug（参数调试）/ installation（安装调试）/ consultation（技术咨询）/ parts_replacement（配件更换）/ other（其他）',
+            enum: ['mechanical_fault', 'electrical_fault', 'optical_fault', 'hydraulic_fault', 'arc_fault', 'wire_feeder_fault', 'tooling_fault', 'compressor_fault', 'chiller_fault', 'gas_generation', 'power_supply', 'cnc_system', 'servo_drive', 'robot_fault', 'plc_fault', 'sensor_fault', 'cooling_fault', 'gas_fault', 'control_system', 'media_fault', 'dust_collection', 'calibration', 'software_fault', 'general_fault', 'maintenance', 'parameter_debug', 'installation', 'consultation', 'parts_replacement', 'other']
           },
           description: {
             type: 'string',
@@ -926,7 +967,7 @@ async function toolGetConversationHistory({
 // 工具：AI 创建工单（function calling）
 // 与 POST /api/workorders 共享核心逻辑，但不走 HTTP 层
 async function toolCreateWorkOrder({ customerId, env, ctx, args }) {
-  const { type, description, urgency, device_id } = args;
+  const { type, description, urgency, device_id, category_l1, category_l2 } = args;
 
   if (!customerId) return { error: 'not_authenticated', reason: '客户未登录，无法创建工单。请引导客户先登录。' };
   if (!type || !description || !urgency) {
@@ -935,6 +976,12 @@ async function toolCreateWorkOrder({ customerId, env, ctx, args }) {
       reason: `缺少必填字段：${[!type && 'type', !description && 'description', !urgency && 'urgency'].filter(Boolean).join('、')}。请向客户追问缺失信息后再调用。`,
     };
   }
+
+  const ALLOWED_CATEGORIES_L1 = [
+    'laser_cutting', 'bending', 'punching', 'welding',
+    'surface_treatment', 'auxiliary', 'cnc_automation', 'inspection', 'other',
+  ];
+  const catL1 = ALLOWED_CATEGORIES_L1.includes(category_l1) ? category_l1 : 'other';
 
   // 输入长度检查
   if (description.length > 10000) return { error: 'description_too_long', reason: '工单描述过长，请精简后重试。' };
@@ -947,10 +994,12 @@ async function toolCreateWorkOrder({ customerId, env, ctx, args }) {
     const id = generateId();
     const order_no = generateOrderNo();
 
+    const slaDeadline2 = computeSlaDeadline(urgency || 'normal');
+
     await env.DB.prepare(`
-      INSERT INTO work_orders (id, order_no, customer_id, type, description, urgency, device_id, status)
-      VALUES (?, ?, ?, ?, ?, ?, ?, 'pending')
-    `).bind(id, order_no, customerId, type, safeDescription, urgency || 'normal', device_id || null).run();
+      INSERT INTO work_orders (id, order_no, customer_id, type, description, urgency, device_id, status, sla_deadline, category_l1, category_l2)
+      VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)
+    `).bind(id, order_no, customerId, type, safeDescription, urgency || 'normal', device_id || null, slaDeadline2, catL1, category_l2 || 'other').run();
 
     // 记录日志
     await env.DB.prepare(`
@@ -2488,7 +2537,7 @@ async function generateWorkOrderSummary(type, description, urgency, env) {
 // 创建工单
 async function handleCreateWorkOrder(request, env) {
   try {
-    const { customer_id, type, description, urgency, device_id } = await request.json();
+    const { customer_id, type, description, urgency, device_id, category_l1, category_l2 } = await request.json();
 
     if (!customer_id || !type || !description) {
       return errorResponse('缺少必填字段');
@@ -2504,6 +2553,13 @@ async function handleCreateWorkOrder(request, env) {
       throw e;
     }
 
+    // 分类字段校验：必须是合法值
+    const ALLOWED_CATEGORIES_L1 = [
+      'laser_cutting', 'bending', 'punching', 'welding',
+      'surface_treatment', 'auxiliary', 'cnc_automation', 'inspection', 'other',
+    ];
+    const catL1 = ALLOWED_CATEGORIES_L1.includes(category_l1) ? category_l1 : 'other';
+
     // PII 脱敏（Phase 0.5）：手机号/邮箱/身份证/银行卡/车牌等在入库前替换为占位符
     // 注：device_id / type / urgency 是枚举/引用，不脱敏。只洗用户自由输入的 description
     const safeDescription = redactPII(description);
@@ -2511,11 +2567,12 @@ async function handleCreateWorkOrder(request, env) {
     const id = generateId();
     const order_no = generateOrderNo();
 
-    await env.DB.prepare(`
-      INSERT INTO work_orders (id, order_no, customer_id, type, description, urgency, device_id, status)
-      VALUES (?, ?, ?, ?, ?, ?, ?, 'pending')
-    `).bind(id, order_no, customer_id, type, safeDescription, urgency || 'normal', device_id || null).run();
+    const slaDeadline = computeSlaDeadline(urgency || 'normal');
 
+    await env.DB.prepare(`
+      INSERT INTO work_orders (id, order_no, customer_id, type, description, urgency, device_id, status, sla_deadline, category_l1, category_l2)
+      VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)
+    `).bind(id, order_no, customer_id, type, safeDescription, urgency || 'normal', device_id || null, slaDeadline, catL1, category_l2 || 'other').run();
     // 记录日志
     await env.DB.prepare(`
       INSERT INTO work_order_logs (id, work_order_id, action, actor_type, actor_id, content)
@@ -2758,12 +2815,24 @@ async function findMatchingEngineers(workOrder, env) {
         console.error('Failed to parse engineer data:', e);
       }
 
-      // 计算设备类型匹配分数（同义词感知）
-      requiredSpecialties.forEach(rs => {
-        if (engineerSpecialties.some(s => specialtiesMatch(s, rs))) {
-          specialtyScore += 12;
-        }
-      });
+      // 分类匹配加分：workOrder.category_l1 匹配工程师 specialties
+      if (workOrder.category_l1 && workOrder.category_l1 !== 'other') {
+        const categoryL1Map = {
+          laser_cutting: ['激光切割', 'laser cutting', 'laser_cutting', 'laser'],
+          bending: ['折弯', 'bending', 'bend'],
+          punching: ['冲床', '冲压', 'punching', 'punch', '转塔冲'],
+          welding: ['焊接', 'welding', 'weld', '焊'],
+          surface_treatment: ['表面处理', '喷涂', '抛丸', '喷砂', 'surface treatment'],
+          auxiliary: ['空压机', '冷水机', '冷却', '除尘', '制氮', '制氧', 'compressor', 'chiller'],
+          cnc_automation: ['数控', 'CNC', '伺服', 'PLC', '机器人', 'automation'],
+          inspection: ['检测', '测量', 'inspection', 'measurement'],
+        };
+        const catKeywords = categoryL1Map[workOrder.category_l1] || [];
+        const matched = catKeywords.some(kw =>
+          engineerSpecialties.some(s => s.toLowerCase().includes(kw.toLowerCase()))
+        );
+        if (matched) specialtyScore += 15; // 分类匹配高权重
+      }
 
       // 计算技能匹配分数
       requiredSkills.forEach(rs => {
@@ -3144,7 +3213,12 @@ async function handleGetWorkOrders(request, env) {
 
     const { results } = await env.DB.prepare(query).bind(...params).all();
 
-    return jsonResponse({ work_orders: results });
+    const workOrders = results.map(wo => ({
+      ...wo,
+      sla_status: getSlaStatus(wo.sla_deadline, wo.urgency),
+    }));
+
+    return jsonResponse({ work_orders: workOrders });
   } catch (error) {
     return errorResponse(error.message, 500);
   }
@@ -3189,7 +3263,262 @@ async function handleGetWorkOrder(request, env) {
       ).bind(rating.id).first();
     }
 
-    return jsonResponse({ ...workOrder, logs: logs.results, rating: rating || null, admin_reply: adminReply || null });
+    const repairRecord = await env.DB.prepare(
+      'SELECT * FROM work_order_repair_records WHERE work_order_id = ?'
+    ).bind(id).first();
+
+    const attachments = await env.DB.prepare(
+      'SELECT * FROM work_order_attachments WHERE work_order_id = ? ORDER BY created_at DESC'
+    ).bind(id).all();
+
+    return jsonResponse({
+      ...workOrder,
+      sla_status: getSlaStatus(workOrder.sla_deadline, workOrder.urgency),
+      logs: logs.results,
+      rating: rating || null,
+      admin_reply: adminReply || null,
+      repair_record: repairRecord || null,
+      attachments: attachments.results,
+    });
+  } catch (error) {
+    if (error instanceof GuardError) return errorResponse(error.message, error.status);
+    return errorResponse(error.message, 500);
+  }
+}
+
+// ============ 维修记录（结构化） ============
+
+// 获取工单维修记录
+async function handleGetRepairRecord(request, env) {
+  try {
+    const auth = request._auth;
+    const workOrderId = new URL(request.url).pathname.split('/')[3];
+
+    const workOrder = await env.DB.prepare(
+      'SELECT id, customer_id, engineer_id FROM work_orders WHERE id = ?'
+    ).bind(workOrderId).first();
+    assertWorkOrderAccess(auth, workOrder);
+
+    const record = await env.DB.prepare(
+      'SELECT * FROM work_order_repair_records WHERE work_order_id = ?'
+    ).bind(workOrderId).first();
+
+    return jsonResponse({ repair_record: record || null });
+  } catch (error) {
+    if (error instanceof GuardError) return errorResponse(error.message, error.status);
+    return errorResponse(error.message, 500);
+  }
+}
+
+// 保存/更新维修记录（工程师专用）
+async function handleSaveRepairRecord(request, env) {
+  try {
+    const auth = request._auth;
+    if (!auth || auth.userType !== 'engineer') {
+      return errorResponse('仅工程师可填写维修记录', 403);
+    }
+    const engineer_id = auth.userId;
+    const workOrderId = new URL(request.url).pathname.split('/')[3];
+
+    const wo = await env.DB.prepare(
+      'SELECT status, engineer_id FROM work_orders WHERE id = ?'
+    ).bind(workOrderId).first();
+    if (!wo) return errorResponse('工单不存在', 404);
+    if (wo.engineer_id !== engineer_id) {
+      return errorResponse('您无权操作该工单', 403);
+    }
+
+    const body = await request.json();
+    assertFieldLimits(body, {
+      symptom: LIMITS.symptom,
+      diagnosis: LIMITS.diagnosis,
+      solution: LIMITS.solution,
+    });
+
+    let partsUsed = '[]';
+    if (body.parts_used) {
+      const parsed = typeof body.parts_used === 'string'
+        ? JSON.parse(body.parts_used)
+        : body.parts_used;
+      if (!Array.isArray(parsed)) {
+        return errorResponse('parts_used 必须是数组', 400);
+      }
+      const serialized = JSON.stringify(parsed);
+      if (serialized.length > LIMITS.parts_used_json) {
+        return errorResponse(`parts_used 超过最大长度 ${LIMITS.parts_used_json}`, 400);
+      }
+      partsUsed = serialized;
+    }
+
+    const laborHours = typeof body.labor_hours === 'number' ? body.labor_hours : 0;
+
+    const recordId = generateId();
+    await env.DB.prepare(`
+      INSERT INTO work_order_repair_records (id, work_order_id, symptom, diagnosis, solution, parts_used, labor_hours, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
+      ON CONFLICT(work_order_id) DO UPDATE SET
+        symptom = excluded.symptom,
+        diagnosis = excluded.diagnosis,
+        solution = excluded.solution,
+        parts_used = excluded.parts_used,
+        labor_hours = excluded.labor_hours,
+        updated_at = datetime('now')
+    `).bind(
+      recordId, workOrderId,
+      body.symptom || null,
+      body.diagnosis || null,
+      body.solution || null,
+      partsUsed,
+      laborHours,
+    ).run();
+
+    await env.DB.prepare(`
+      INSERT INTO work_order_logs (id, work_order_id, action, actor_type, actor_id, content)
+      VALUES (?, ?, 'repair_record_saved', 'engineer', ?, '工程师填写了维修记录。')
+    `).bind(generateId(), workOrderId, engineer_id).run();
+
+    return jsonResponse({ success: true });
+  } catch (error) {
+    if (error instanceof ValidationError) {
+      const resp = validationErrorToResponse(error, errorResponse);
+      if (resp) return resp;
+    }
+    if (error instanceof SyntaxError) {
+      return errorResponse('parts_used JSON 格式错误', 400);
+    }
+    return errorResponse(error.message, 500);
+  }
+}
+
+// ============ 工单附件 ============
+
+async function handleUploadAttachment(request, env) {
+  try {
+    const auth = request._auth;
+    const segments = new URL(request.url).pathname.split('/');
+    const workOrderId = segments[3];
+
+    const workOrder = await env.DB.prepare(
+      'SELECT id, customer_id, engineer_id FROM work_orders WHERE id = ?'
+    ).bind(workOrderId).first();
+    assertWorkOrderAccess(auth, workOrder);
+
+    if (!env.ATTACHMENTS) {
+      return errorResponse('附件服务未配置', 503);
+    }
+
+    const formData = await request.formData();
+    const file = formData.get('file');
+
+    if (!file || typeof file === 'string') {
+      return errorResponse('请选择文件', 400);
+    }
+
+    validateAttachmentType(file.type);
+    validateAttachmentSize(file.size);
+
+    const safeName = sanitizeFilename(file.name);
+    const ext = safeName.split('.').pop().toLowerCase() || 'bin';
+    const attachmentId = generateId();
+    const r2Key = `attachments/${workOrderId}/${attachmentId}.${ext}`;
+
+    await env.ATTACHMENTS.put(r2Key, file.stream(), {
+      httpMetadata: { contentType: file.type },
+    });
+
+    const publicHost = env.R2_PUBLIC_HOST || 'pub-unknown.r2.dev';
+    const r2Url = `https://${publicHost}/${r2Key}`;
+
+    await env.DB.prepare(`
+      INSERT INTO work_order_attachments (id, work_order_id, uploader_type, uploader_id, file_name, file_type, file_size, r2_key, r2_url)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).bind(attachmentId, workOrderId, auth.userType, auth.userId, safeName, file.type, file.size, r2Key, r2Url).run();
+
+    await env.DB.prepare(`
+      INSERT INTO work_order_logs (id, work_order_id, action, actor_type, actor_id, content)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).bind(generateId(), workOrderId, 'attachment_uploaded', auth.userType, auth.userId, `上传附件: ${safeName}`).run();
+
+    const attachment = await env.DB.prepare(
+      'SELECT * FROM work_order_attachments WHERE id = ?'
+    ).bind(attachmentId).first();
+
+    return jsonResponse({ success: true, attachment }, 201);
+  } catch (error) {
+    if (error instanceof ValidationError) {
+      const resp = validationErrorToResponse(error, errorResponse);
+      if (resp) return resp;
+    }
+    if (error instanceof GuardError) return errorResponse(error.message, error.status);
+    return errorResponse(error.message, 500);
+  }
+}
+
+async function handleGetAttachments(request, env) {
+  try {
+    const auth = request._auth;
+    const workOrderId = new URL(request.url).pathname.split('/')[3];
+
+    const workOrder = await env.DB.prepare(
+      'SELECT id, customer_id, engineer_id FROM work_orders WHERE id = ?'
+    ).bind(workOrderId).first();
+    assertWorkOrderAccess(auth, workOrder);
+
+    const attachments = await env.DB.prepare(
+      'SELECT * FROM work_order_attachments WHERE work_order_id = ? ORDER BY created_at DESC'
+    ).bind(workOrderId).all();
+
+    return jsonResponse({ attachments: attachments.results, count: attachments.results.length });
+  } catch (error) {
+    if (error instanceof GuardError) return errorResponse(error.message, error.status);
+    return errorResponse(error.message, 500);
+  }
+}
+
+async function handleDeleteAttachment(request, env) {
+  try {
+    const auth = request._auth;
+    const segments = new URL(request.url).pathname.split('/');
+    const workOrderId = segments[3];
+    const attachmentId = segments[5];
+
+    // 工单存在性校验
+    const workOrder = await env.DB.prepare(
+      'SELECT id, customer_id, engineer_id FROM work_orders WHERE id = ?'
+    ).bind(workOrderId).first();
+    assertWorkOrderAccess(auth, workOrder);
+
+    const attachment = await env.DB.prepare(
+      'SELECT * FROM work_order_attachments WHERE id = ? AND work_order_id = ?'
+    ).bind(attachmentId, workOrderId).first();
+
+    if (!attachment) {
+      return errorResponse('附件不存在', 404);
+    }
+
+    // 仅上传者本人或 admin 可删除
+    if (auth.userType !== 'admin' && (auth.userType !== attachment.uploader_type || auth.userId !== attachment.uploader_id)) {
+      return errorResponse('无权删除此附件', 403);
+    }
+
+    if (env.ATTACHMENTS) {
+      try {
+        await env.ATTACHMENTS.delete(attachment.r2_key);
+      } catch (e) {
+        console.error('[handleDeleteAttachment] R2 delete failed:', e);
+      }
+    }
+
+    await env.DB.prepare(
+      'DELETE FROM work_order_attachments WHERE id = ?'
+    ).bind(attachmentId).run();
+
+    await env.DB.prepare(`
+      INSERT INTO work_order_logs (id, work_order_id, action, actor_type, actor_id, content)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).bind(generateId(), workOrderId, 'attachment_deleted', auth.userType, auth.userId, `删除附件: ${attachment.file_name}`).run();
+
+    return jsonResponse({ success: true });
   } catch (error) {
     if (error instanceof GuardError) return errorResponse(error.message, error.status);
     return errorResponse(error.message, 500);
@@ -3526,7 +3855,12 @@ async function handleGetEngineerTickets(request, env) {
 
     const { results } = await env.DB.prepare(query).bind(...params).all();
 
-    return jsonResponse({ work_orders: results });
+    const workOrders = results.map(wo => ({
+      ...wo,
+      sla_status: getSlaStatus(wo.sla_deadline, wo.urgency),
+    }));
+
+    return jsonResponse({ work_orders: workOrders });
   } catch (error) {
     return errorResponse(error.message, 500);
   }
@@ -4695,8 +5029,8 @@ async function handleInitTestData(env) {
         const orderNo = `WO-TEST-${(i + 1).toString().padStart(3, '0')}`;
         const assignedAt = eid ? `datetime('now', '-${Math.floor(Math.random() * 3)} days')` : null;
         await env.DB.prepare(
-          'INSERT INTO work_orders (id, order_no, customer_id, engineer_id, type, description, urgency, status, assigned_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
-        ).bind(id, orderNo, cid, eid, wo.type, wo.description, wo.urgency, wo.status, assignedAt).run();
+          'INSERT INTO work_orders (id, order_no, customer_id, engineer_id, type, description, urgency, status, assigned_at, sla_deadline, category_l1, category_l2) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+        ).bind(id, orderNo, cid, eid, wo.type, wo.description, wo.urgency, wo.status, assignedAt, computeSlaDeadline(wo.urgency), 'other', 'other').run();
 
         // 部分已完成工单添加日志
         if (wo.status === 'resolved' || wo.status === 'completed') {
@@ -4893,9 +5227,9 @@ async function handleTestFullPricingFlow(env) {
     const orderNo = 'WO-TEST-' + generateId().slice(0, 8).toUpperCase();
 
     await env.DB.prepare(`
-      INSERT INTO work_orders (id, order_no, customer_id, type, description, urgency, status)
-      VALUES (?, ?, ?, 'fault', '光纤激光切割机（3000W大族）切割时出现毛刺，切面不光洁，侧壁有挂渣。已经更换过辅助气体（氮气），问题仍然存在。设备使用3年，近期未做保养。', 'urgent', 'pending')
-    `).bind(workOrderId, orderNo, finalCustomerId).run();
+      INSERT INTO work_orders (id, order_no, customer_id, type, description, urgency, status, sla_deadline, category_l1, category_l2)
+      VALUES (?, ?, ?, 'fault', '光纤激光切割机（3000W大族）切割时出现毛刺，切面不光洁，侧壁有挂渣。已经更换过辅助气体（氮气），问题仍然存在。设备使用3年，近期未做保养。', 'urgent', 'pending', ?, 'laser_cutting', 'optical_fault')
+    `).bind(workOrderId, orderNo, finalCustomerId, computeSlaDeadline('urgent')).run();
 
     // 生成 AI 摘要
     const aiSummary = await generateWorkOrderSummary('fault', '光纤激光切割机（3000W大族）切割时出现毛刺，切面不光洁，侧壁有挂渣。已经更换过辅助气体（氮气），问题仍然存在。设备使用3年，近期未做保养。', 'urgent', env);
@@ -5969,9 +6303,9 @@ async function routeRequest(request, env, ctx) {
 
       // 创建工单
       await env.DB.prepare(`
-        INSERT INTO work_orders (id, order_no, customer_id, type, description, urgency, status)
-        VALUES (?, ?, ?, ?, ?, ?, 'pending')
-      `).bind(id, order_no, customerId, type, description, urgency).run();
+        INSERT INTO work_orders (id, order_no, customer_id, type, description, urgency, status, sla_deadline, category_l1, category_l2)
+        VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)
+      `).bind(id, order_no, customerId, type, description, urgency, computeSlaDeadline(urgency), 'other', 'other').run();
 
       // 生成AI摘要
       const aiSummary = await generateWorkOrderSummary(type, description, urgency, env);
@@ -6177,8 +6511,25 @@ async function routeRequest(request, env, ctx) {
     if (path.match(/^\/api\/workorders\/[^/]+\/engineer-review$/) && request.method === 'GET') {
       return handleGetEngineerReview(request, env);
     }
+    // 维修记录（必须在 catch-all GET 之前）
+    if (path.match(/^\/api\/workorders\/[^/]+\/repair-record$/) && request.method === 'GET') {
+      return handleGetRepairRecord(request, env);
+    }
+    if (path.match(/^\/api\/workorders\/[^/]+\/repair-record$/) && request.method === 'POST') {
+      return handleSaveRepairRecord(request, env);
+    }
     if (path === '/api/workorders/rating' && request.method === 'POST') {
       return handleSubmitRating(request, env);
+    }
+    // 工单附件（必须在 catch-all GET 之前）
+    if (path.match(/^\/api\/workorders\/[^/]+\/attachments\/[^/]+$/) && request.method === 'DELETE') {
+      return handleDeleteAttachment(request, env);
+    }
+    if (path.match(/^\/api\/workorders\/[^/]+\/attachments$/) && request.method === 'POST') {
+      return handleUploadAttachment(request, env);
+    }
+    if (path.match(/^\/api\/workorders\/[^/]+\/attachments$/) && request.method === 'GET') {
+      return handleGetAttachments(request, env);
     }
     // 工单详情 catch-all（必须在所有子路由之后）
     if (path.match(/^\/api\/workorders\/[^/]+$/) && request.method === 'GET') {

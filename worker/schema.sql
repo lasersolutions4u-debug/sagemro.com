@@ -170,6 +170,12 @@ CREATE TABLE IF NOT EXISTS work_orders (
     recommend_count INTEGER DEFAULT 0,
     rejected_engineers TEXT DEFAULT '[]',      -- JSON 数组
 
+    sla_deadline TEXT,                         -- 017: SLA 截止时间 (ISO 8601)
+    sla_breached_at TEXT,                      -- 017: SLA 超时标记时间
+
+    category_l1 TEXT DEFAULT 'other',          -- 018: 设备大类
+    category_l2 TEXT DEFAULT 'other',          -- 018: 问题类型
+
     FOREIGN KEY (customer_id) REFERENCES customers(id),
     FOREIGN KEY (engineer_id) REFERENCES engineers(id),
     FOREIGN KEY (device_id) REFERENCES devices(id)
@@ -316,6 +322,23 @@ CREATE TABLE IF NOT EXISTS work_order_payments (
 );
 CREATE INDEX IF NOT EXISTS idx_work_order_payments_wo ON work_order_payments(work_order_id);
 
+-- 工单附件表（019）
+CREATE TABLE IF NOT EXISTS work_order_attachments (
+    id TEXT PRIMARY KEY,
+    work_order_id TEXT NOT NULL,
+    uploader_type TEXT NOT NULL,
+    uploader_id TEXT NOT NULL,
+    file_name TEXT NOT NULL,
+    file_type TEXT NOT NULL,
+    file_size INTEGER NOT NULL,
+    r2_key TEXT NOT NULL,
+    r2_url TEXT NOT NULL,
+    created_at TEXT DEFAULT (datetime('now')),
+    FOREIGN KEY (work_order_id) REFERENCES work_orders(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_attachments_work_order ON work_order_attachments(work_order_id);
+CREATE INDEX IF NOT EXISTS idx_attachments_uploader ON work_order_attachments(uploader_id, uploader_type);
+
 -- 合伙人钱包流水（001/002）
 CREATE TABLE IF NOT EXISTS engineer_wallets (
     id TEXT PRIMARY KEY,
@@ -442,4 +465,12 @@ INSERT OR IGNORE INTO _migrations (version, note) VALUES
     ('008_sync_missing_tables',          '回补漂移表（work_order_pricing 等）'),
     ('009_add_customer_onesignal',       '客户端 OneSignal 推送'),
     ('010_add_conversation_owner',       'conversations 加 customer_id（IDOR 修复）'),
-    ('011_create_migrations_tracking',   'migrations 跟踪表');
+    ('011_create_migrations_tracking',   'migrations 跟踪表'),
+    ('012_create_ai_trace_logs',         'AI 工具调用 trace 日志表'),
+    ('012_add_payments',                 '工单支付记录表'),
+    ('014_conversation_summaries',       '对话摘要表'),
+    ('015_add_conversation_engineer_owner', 'conversations 加 engineer_id'),
+    ('016_add_repair_records',           '维修记录结构化表'),
+    ('017_add_sla_fields',               'SLA 时效管理：sla_deadline / sla_breached_at'),
+    ('018_add_work_order_categories',    '工单分类细化：category_l1 / category_l2'),
+    ('019_add_work_order_attachments',   '工单附件表：图片/视频上传至 R2');

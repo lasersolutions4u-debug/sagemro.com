@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react';
 import { Modal } from '../common/Modal';
-import { ChevronRight } from 'lucide-react';
+import { ChevronRight, Clock } from 'lucide-react';
 import { WorkOrderStatus } from '../../types';
 import { getWorkOrders } from '../../services/api';
 import { WorkOrderDetailModal } from '../WorkOrder/WorkOrderDetailModal';
+import { formatSlaRemaining, categoryConfig, categoryL2Labels } from '../../data/workOrderConfig';
 
 // 客户侧需要关注的状态
 const customerStatuses = [
@@ -104,6 +105,24 @@ export function MyWorkOrdersModal({ isOpen, onClose }) {
 
           {!loading && workOrders.map((order) => {
             const status = statusLabels[order.status] || statusLabels[WorkOrderStatus.PENDING];
+            const sla = order.sla_status;
+            const slaText = formatSlaRemaining(sla);
+            const slaColors = {
+              on_track: 'text-green-500',
+              at_risk: 'text-yellow-500',
+              breached: 'text-red-500',
+            };
+            const slaBg = {
+              on_track: 'bg-green-500/10',
+              at_risk: 'bg-yellow-500/10',
+              breached: 'bg-red-500/10',
+            };
+            const activeStatuses = [
+              WorkOrderStatus.PENDING, WorkOrderStatus.ASSIGNED,
+              WorkOrderStatus.IN_PROGRESS, WorkOrderStatus.PRICING,
+              WorkOrderStatus.IN_SERVICE, WorkOrderStatus.PENDING_PAYMENT,
+            ];
+            const showSla = sla && sla.remaining_seconds != null && activeStatuses.includes(order.status);
             return (
               <div
                 key={order.id}
@@ -115,6 +134,12 @@ export function MyWorkOrdersModal({ isOpen, onClose }) {
                     {order.order_no || order.id}
                   </span>
                   <div className="flex items-center gap-2">
+                    {showSla && (
+                      <span className={`flex items-center gap-1 px-1.5 py-0.5 text-xs rounded ${slaColors[sla.status]} ${slaBg[sla.status]}`}>
+                        <Clock size={10} />
+                        {slaText}
+                      </span>
+                    )}
                     <span className={`px-2 py-0.5 text-xs text-white rounded ${status.color}`}>
                       {status.text}
                     </span>
@@ -127,7 +152,9 @@ export function MyWorkOrdersModal({ isOpen, onClose }) {
                   </p>
                 )}
                 <p className="text-sm text-[var(--color-text-secondary)] mb-1">
-                  {order.type} | {order.device_id || '未指定设备'}
+                  {order.category_l1 && order.category_l1 !== 'other'
+                    ? `${categoryConfig[order.category_l1]?.label || order.category_l1}${order.category_l2 && order.category_l2 !== 'other' ? ' · ' + (categoryL2Labels[order.category_l2] || order.category_l2) : ''}`
+                    : order.type} | {order.device_id || '未指定设备'}
                 </p>
                 <p className="text-sm text-[var(--color-text-primary)] line-clamp-2">
                   {order.description}

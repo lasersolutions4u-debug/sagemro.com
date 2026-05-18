@@ -34,6 +34,10 @@ export const LIMITS = {
   comment: 1000,            // 评价留言
   parts_detail: 2000,       // 核价配件明细
   admin_reply: 2000,        // 管理员回复评价
+  symptom: 2000,            // 维修记录-故障现象
+  diagnosis: 2000,          // 维修记录-诊断结果
+  solution: 4000,           // 维修记录-维修方案
+  parts_used_json: 4000,    // 维修记录-配件清单JSON
 
   // 中等长度
   name: 50,                 // 姓名 / 设备名
@@ -43,7 +47,10 @@ export const LIMITS = {
   city: 100,
   region: 200,
   service_region: 500,
-  type: 100,                // 设备类型
+  type: 100,                // 设备类型 / 分类标签
+  category_l1: 50,           // 设备大类
+  category_l2: 50,           // 问题类型
+  attachment_filename: 255,  // 附件文件名
   brand: 100,
   model: 200,
   power: 50,
@@ -155,4 +162,42 @@ export function validationErrorToResponse(err, errorResponse) {
     return errorResponse(err.message, err.status);
   }
   return null;
+}
+
+// ========== 附件上传校验 ==========
+
+export const ALLOWED_ATTACHMENT_TYPES = [
+  'image/jpeg', 'image/png', 'image/gif', 'image/webp',
+  'video/mp4', 'video/webm',
+];
+
+export const MAX_ATTACHMENT_SIZE = 50 * 1024 * 1024; // 50 MB
+
+export function validateAttachmentType(mimeType) {
+  if (typeof mimeType !== 'string' || !ALLOWED_ATTACHMENT_TYPES.includes(mimeType)) {
+    throw new ValidationError(`不支持的文件类型: ${mimeType}`);
+  }
+}
+
+export function validateAttachmentSize(size) {
+  if (typeof size !== 'number' || size <= 0 || size > MAX_ATTACHMENT_SIZE) {
+    throw new ValidationError(`文件大小超过限制 (最大 50MB)`);
+  }
+}
+
+/**
+ * 文件名消毒：去除路径遍历字符、null 字节，限制长度 255
+ */
+export function sanitizeFilename(name) {
+  if (typeof name !== 'string' || name.trim().length === 0) return 'untitled';
+  let s = name.replace(/[/\\]/g, '_').replace(/\.\./g, '_').replace(/\x00/g, '');
+  if (s.length > 255) {
+    const dot = s.lastIndexOf('.');
+    if (dot > 0 && dot < 250) {
+      s = s.substring(0, 250 - (s.length - dot)) + s.substring(dot);
+    } else {
+      s = s.substring(0, 255);
+    }
+  }
+  return s || 'untitled';
 }

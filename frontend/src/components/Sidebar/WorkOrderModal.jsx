@@ -1,9 +1,12 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Modal } from '../common/Modal';
 import { TagInput } from '../common/TagInput';
 import { RegionInput } from '../common/RegionInput';
-import { toastError, toastWarning } from '../../utils/feedback';
+import { toastError, toastWarning, toastSuccess } from '../../utils/feedback';
+import { uploadWorkOrderAttachment } from '../../services/api';
 import { WorkOrderType, UrgencyLevel } from '../../types';
+import { categoryConfig } from '../../data/workOrderConfig';
+import { Paperclip, Loader2, X } from 'lucide-react';
 
 // 设备类型选项
 const deviceTypeOptions = [
@@ -28,6 +31,8 @@ const brandPresets = {
 export function WorkOrderModal({ isOpen, onClose, onSubmit }) {
   const [form, setForm] = useState({
     type: '',
+    category_l1: 'other',
+    category_l2: 'other',
     device_type: [],
     device_brand: [],
     region: [],
@@ -39,6 +44,9 @@ export function WorkOrderModal({ isOpen, onClose, onSubmit }) {
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(null); // 提交成功后显示的工单信息
   const [brandOptions, setBrandOptions] = useState([]);
+  const [files, setFiles] = useState([]); // 待上传附件
+  const [uploadPhase, setUploadPhase] = useState(null); // { current, total } | null
+  const fileInputRef = useRef(null);
 
   // 监听设备类型变化，更新品牌预设选项
   useEffect(() => {
@@ -61,12 +69,30 @@ export function WorkOrderModal({ isOpen, onClose, onSubmit }) {
     setSubmitting(true);
     try {
       const result = await onSubmit(form);
-      // 显示成功提示
+      if (result?.id && files.length > 0) {
+        // 阶段二：上传附件
+        let uploaded = 0;
+        for (const file of files) {
+          setUploadPhase({ current: uploaded + 1, total: files.length });
+          try {
+            await uploadWorkOrderAttachment(result.id, file);
+            uploaded++;
+          } catch (e) {
+            toastError(`附件 ${file.name} 上传失败: ${e.message}`);
+          }
+        }
+        setUploadPhase(null);
+        if (uploaded > 0) {
+          toastSuccess(`工单已提交，${uploaded} 个附件已上传`);
+        }
+      }
+      setFiles([]);
       setSubmitted(result);
     } catch (e) {
       toastError('提交失败：' + e.message);
     } finally {
       setSubmitting(false);
+      setUploadPhase(null);
     }
   };
 
@@ -74,6 +100,8 @@ export function WorkOrderModal({ isOpen, onClose, onSubmit }) {
     // 关闭时重置表单和成功状态
     setForm({
       type: '',
+      category_l1: 'other',
+      category_l2: 'other',
       device_type: [],
       device_brand: [],
       region: [],
@@ -82,6 +110,8 @@ export function WorkOrderModal({ isOpen, onClose, onSubmit }) {
       contact: '',
       urgency: 'normal',
     });
+    setFiles([]);
+    setUploadPhase(null);
     setSubmitted(null);
     onClose();
   };
@@ -144,6 +174,37 @@ export function WorkOrderModal({ isOpen, onClose, onSubmit }) {
               <option key={opt.value} value={opt.value}>
                 {opt.label}
               </option>
+            ))}
+          </select>
+        </div>
+
+        {/* 设备大类 + 问题类型（级联） */}
+        <div>
+          <label className="block text-sm font-medium text-[var(--color-text-primary)] mb-1">
+            设备大类
+          </label>
+          <select
+            value={form.category_l1}
+            onChange={(e) => setForm({ ...form, category_l1: e.target.value, category_l2: 'other' })}
+            className="w-full px-3 py-2 border border-[var(--color-border)] dark:border-[var(--color-border-strong)] rounded-xl bg-[var(--color-surface)] dark:bg-[var(--color-surface-elevated)] text-xs text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
+          >
+            {Object.entries(categoryConfig).map(([key, cfg]) => (
+              <option key={key} value={key}>{cfg.label}</option>
+            ))}
+          </select>
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-[var(--color-text-primary)] mb-1">
+            具体问题
+          </label>
+          <select
+            value={form.category_l2}
+            onChange={(e) => setForm({ ...form, category_l2: e.target.value })}
+            className="w-full px-3 py-2 border border-[var(--color-border)] dark:border-[var(--color-border-strong)] rounded-xl bg-[var(--color-surface)] dark:bg-[var(--color-surface-elevated)] text-xs text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
+          >
+            {Object.entries(categoryConfig[form.category_l1]?.l2 || {}).map(([key, label]) => (
+              <option key={key} value={key}>{label}</option>
             ))}
           </select>
         </div>
@@ -246,6 +307,55 @@ export function WorkOrderModal({ isOpen, onClose, onSubmit }) {
           </div>
         </div>
 
+        {/* 附件上传（可选） */}
+        <div>
+          <label className="block text-sm font-medium text-[var(--color-text-primary)] mb-1">
+            附件（可选）
+          </label>
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            accept="image/jpeg,image/png,image/gif,image/webp,video/mp4,video/webm"
+            onChange={(e) => {
+              if (e.target.files.length > 0) {
+                setFiles((prev) => [...prev, ...Array.from(e.target.files)]);
+                e.target.value = '';
+              }
+            }}
+            className="hidden"
+          />
+          <div
+            onClick={() => fileInputRef.current?.click()}
+            className="flex items-center gap-2 px-3 py-2 border border-dashed border-[var(--color-border)] rounded-xl cursor-pointer hover:border-[var(--color-text-muted)] transition-colors"
+          >
+            <Paperclip className="w-4 h-4 text-[var(--color-text-muted)]" />
+            <span className="text-xs text-[var(--color-text-muted)]">
+              {files.length > 0 ? `已选择 ${files.length} 个文件` : '上传图片/视频（可选）'}
+            </span>
+          </div>
+          {files.length > 0 && (
+            <div className="mt-2 space-y-1">
+              {files.map((f, i) => (
+                <div key={i} className="flex items-center gap-2 text-xs text-[var(--color-text-secondary)]">
+                  <Paperclip className="w-3 h-3 flex-shrink-0" />
+                  <span className="truncate flex-1">{f.name}</span>
+                  <span className="text-[var(--color-text-muted)] flex-shrink-0">
+                    {(f.size / 1024 / 1024).toFixed(1)} MB
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setFiles((prev) => prev.filter((_, j) => j !== i))}
+                    className="p-0.5 hover:text-red-500 transition-colors"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
         {/* 提交按钮 */}
         <button
           data-testid="submit-work-order-button"
@@ -253,7 +363,11 @@ export function WorkOrderModal({ isOpen, onClose, onSubmit }) {
           disabled={submitting}
           className="w-full py-3 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] disabled:bg-[var(--color-text-muted)] text-white rounded-xl font-medium transition-colors"
         >
-          {submitting ? '提交中...' : '提交工单'}
+          {submitting
+            ? uploadPhase
+              ? `正在上传附件 (${uploadPhase.current}/${uploadPhase.total})...`
+              : '提交中...'
+            : '提交工单'}
         </button>
         </div>
       )}

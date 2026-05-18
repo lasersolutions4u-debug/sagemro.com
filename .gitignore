@@ -42,6 +42,8 @@ Thumbs.db
 
 # Claude memory backup (synced via 坚果云, not for git)
 memory/
+.claude/memory/
+.claude/cache/
 
 # Python
 __pycache__/

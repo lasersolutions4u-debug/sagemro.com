@@ -774,3 +774,70 @@ export async function getCustomerReviews(customerId) {
   if (!response.ok) throw new Error(`HTTP ${response.status}`);
   return response.json();
 }
+
+// ============ 维修记录 ============
+
+export async function getRepairRecord(workOrderId) {
+  const response = await fetch(`${API_BASE}/api/workorders/${workOrderId}/repair-record`, {
+    headers: authHeaders(),
+  });
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  return response.json();
+}
+
+export async function saveRepairRecord(workOrderId, data) {
+  const response = await fetch(`${API_BASE}/api/workorders/${workOrderId}/repair-record`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify(data),
+  });
+  if (!response.ok) {
+    const d = await response.json();
+    throw new Error(d.error || `HTTP ${response.status}`);
+  }
+  return response.json();
+}
+
+// ============ 工单附件 ============
+
+function authHeadersNoContentType() {
+  const headers = {};
+  const token = localStorage.getItem('sagemro_token');
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+  return headers;
+}
+
+export async function uploadWorkOrderAttachment(workOrderId, file, onProgress) {
+  const formData = new FormData();
+  formData.append('file', file);
+
+  const response = await fetch(`${API_BASE}/api/workorders/${workOrderId}/attachments`, {
+    method: 'POST',
+    headers: authHeadersNoContentType(),
+    body: formData,
+  });
+  if (!response.ok) {
+    const d = await response.json().catch(() => ({}));
+    throw new Error(d.error || `HTTP ${response.status}`);
+  }
+  return response.json();
+}
+
+export async function getWorkOrderAttachments(workOrderId) {
+  const response = await fetch(`${API_BASE}/api/workorders/${workOrderId}/attachments`, {
+    headers: authHeaders(),
+  });
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  return response.json();
+}
+
+export async function deleteWorkOrderAttachment(workOrderId, attachmentId) {
+  const response = await fetch(`${API_BASE}/api/workorders/${workOrderId}/attachments/${attachmentId}`, {
+    method: 'DELETE',
+    headers: authHeaders(),
+  });
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  return response.json();
+}

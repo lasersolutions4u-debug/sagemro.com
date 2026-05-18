@@ -1,8 +1,10 @@
 import { useState, useEffect } from 'react';
 import { Modal } from '../common/Modal';
+import { Clock } from 'lucide-react';
 import { getEngineerTickets, acceptTicket, rejectTicket, updateEngineerStatus, getEngineerWallet, applyWithdraw } from '../../services/api';
 import { WorkOrderStatus, PartnerLevelLabels, CommissionRates } from '../../types';
 import { WorkOrderDetailModal } from '../WorkOrder/WorkOrderDetailModal';
+import { formatSlaRemaining, categoryConfig, categoryL2Labels } from '../../data/workOrderConfig';
 
 const statusConfig = {
   [WorkOrderStatus.PENDING]: { text: '待接单', color: 'bg-blue-500', textColor: 'text-blue-500' },
@@ -113,6 +115,23 @@ export function EngineerDashboard({ isOpen, onClose, engineerId, onViewProfile }
   const pendingTickets = tickets.filter(t => t.status === 'pending');
   const inProgressTickets = tickets.filter(t => t.status === 'in_progress');
   const activeTickets = tickets.filter(t => t.status !== 'pending');
+
+  const renderSlaBadge = (ticket) => {
+    const sla = ticket.sla_status;
+    if (!sla || sla.remaining_seconds == null) return null;
+    const text = formatSlaRemaining(sla);
+    const colors = {
+      on_track: 'text-green-500 bg-green-500/10',
+      at_risk: 'text-yellow-500 bg-yellow-500/10',
+      breached: 'text-red-500 bg-red-500/10',
+    };
+    return (
+      <span className={`flex items-center gap-0.5 px-1.5 py-0.5 text-xs rounded ${colors[sla.status] || ''}`}>
+        <Clock size={10} />
+        {text}
+      </span>
+    );
+  };
 
   return (
     <>
@@ -270,6 +289,7 @@ export function EngineerDashboard({ isOpen, onClose, engineerId, onViewProfile }
                       <span className="font-medium text-[var(--color-text-primary)]">
                         {ticket.order_no || ticket.id}
                       </span>
+                      {renderSlaBadge(ticket)}
                       {ticket.urgency === 'urgent' && <span className="text-xs text-orange-500">⚡紧急</span>}
                       {ticket.urgency === 'critical' && <span className="text-xs text-red-500">🔥非常紧急</span>}
                     </div>
@@ -280,7 +300,11 @@ export function EngineerDashboard({ isOpen, onClose, engineerId, onViewProfile }
                   {ticket.customer_name && (
                     <p className="text-xs text-[var(--color-primary)] mb-1">客户：{ticket.customer_name}{ticket.customer_region ? ` · ${ticket.customer_region}` : ''}</p>
                   )}
-                  <p className="text-sm text-[var(--color-text-secondary)]">{ticket.description?.slice(0, 50)}...</p>
+                  <p className="text-sm text-[var(--color-text-secondary)]">
+                    {ticket.category_l1 && ticket.category_l1 !== 'other'
+                      ? `${categoryConfig[ticket.category_l1]?.label || ticket.category_l1}${ticket.category_l2 && ticket.category_l2 !== 'other' ? ' · ' + (categoryL2Labels[ticket.category_l2] || ticket.category_l2) : ''}`
+                      : ticket.type} | {ticket.description?.slice(0, 50)}...
+                  </p>
                 </div>
               ))}
             </div>
@@ -299,6 +323,7 @@ export function EngineerDashboard({ isOpen, onClose, engineerId, onViewProfile }
                       <span className="font-medium text-[var(--color-text-primary)]">
                         {ticket.order_no || ticket.id}
                       </span>
+                      {renderSlaBadge(ticket)}
                       {ticket.urgency === 'urgent' && <span className="text-xs text-orange-500">⚡紧急</span>}
                       {ticket.urgency === 'critical' && <span className="text-xs text-red-500">🔥非常紧急</span>}
                     </div>
@@ -309,7 +334,11 @@ export function EngineerDashboard({ isOpen, onClose, engineerId, onViewProfile }
                   {ticket.customer_name && (
                     <p className="text-xs text-[var(--color-primary)] mb-1">客户：{ticket.customer_name}{ticket.customer_region ? ` · ${ticket.customer_region}` : ''}</p>
                   )}
-                  <p className="text-xs text-[var(--color-text-secondary)] mb-1">{ticket.type} | {ticket.description?.slice(0, 60)}...</p>
+                  <p className="text-xs text-[var(--color-text-secondary)] mb-1">
+                    {ticket.category_l1 && ticket.category_l1 !== 'other'
+                      ? `${categoryConfig[ticket.category_l1]?.label || ticket.category_l1}${ticket.category_l2 && ticket.category_l2 !== 'other' ? ' · ' + (categoryL2Labels[ticket.category_l2] || ticket.category_l2) : ''}`
+                      : ticket.type} | {ticket.description?.slice(0, 60)}...
+                  </p>
                   <div className="flex gap-2">
                     <button
                       data-testid="accept-ticket-button"

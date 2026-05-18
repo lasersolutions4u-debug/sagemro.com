@@ -203,6 +203,8 @@ function App() {
       description: fullDescription,
       urgency: data.urgency,
       device_id: data.device_id,
+      category_l1: data.category_l1 || 'other',
+      category_l2: data.category_l2 || 'other',
     });
 
     return result.work_order;
