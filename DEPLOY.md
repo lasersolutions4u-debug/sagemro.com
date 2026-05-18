@@ -183,16 +183,36 @@ CF 自动签发 SSL 证书。
 
 ## 3. 日常部署流程
 
-完成初始化后，日常部署只有一个动作：
+### 🔴 部署前必做：检查 migration 是否遗漏
 
-bash
+**每次 Worker 部署前（无论 CI 还是手动），必须确认所有新 migration 文件已在生产 D1 执行过。**
+
+CI 不会自动跑 D1 migration，Worker 部署成功后如果缺列/缺表，API 会直接 500。
+
+检查方法：
+```bash
+# 对比本地 migration 文件和生产 D1 已执行的记录
+cd worker
+npx wrangler d1 execute sagemro-db --env production --remote \
+  --command "SELECT version FROM _migrations ORDER BY version;"
+
+# 与 migrations/ 目录对比，找出缺失的
+ls migrations/*.sql
+```
+
+补跑缺失的 migration：
+```bash
+npx wrangler d1 execute sagemro-db --env production --remote --file migrations/0XX_xxx.sql
+```
+
+---
+
+完成初始化后，日常部署只有一个动作：
 
 ```bash
 git push origin main             # 部署 frontend (sagemro-com) + worker + admin
 git push origin china-edition    # 仅部署 frontend (sagemro-cn)
 ```
-
-
 
 GitHub Actions 自动：
 
@@ -206,7 +226,7 @@ GitHub Actions 自动：
 
 | 操作                               | 触发方式                                                     | 说明                                                         |
 | ---------------------------------- | ------------------------------------------------------------ | ------------------------------------------------------------ |
-| D1 schema 迁移                     | **手动**：`wrangler d1 migrations apply sagemro-db --remote --env production` | 加新 migration 文件后必须手动跑一次，否则 Worker 部署成功但运行时 `no such table` |
+| D1 schema 迁移                     | **手动**：逐个文件执行 `wrangler d1 execute sagemro-db --remote --env production --file migrations/0XX.sql` | ⚠️ **最易遗漏**。Worker 部署成功但运行时 `no such column` 或 `no such table`，就是迁移没跑 |
 | Worker secrets 轮换                | **手动**：`wrangler secret put XXX --env production`         | 见 2.5 节                                                    |
 | `wrangler.toml` 中的 D1/KV ID 变更 | **手动**：改文件后 commit & push                             | 这个会随 worker 部署生效，但要确认 CF 上对应资源真存在       |
 

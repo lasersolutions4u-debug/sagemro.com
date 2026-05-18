@@ -56,6 +56,9 @@ Claude Code（本地）
 - 修改 `wrangler.toml` / `deploy.yml` / Pages 项目名前，先在对话中确认
 - secrets 只在 GitHub Repo Settings 配置，绝不写入代码
 - API Token 是 **Custom Token**（见 TECH-SPEC.md），**不是** "Edit Cloudflare Workers" 模板
+- 🔴 **新增 migration 文件后，部署 Worker 前必须手动在生产 D1 执行。CI 不会自动跑 migration。遗漏会导致 API 500。**
+  - 检查命令：`wrangler d1 execute sagemro-db --env production --remote --command "SELECT version FROM _migrations ORDER BY version;"`
+  - 补跑命令：`wrangler d1 execute sagemro-db --env production --remote --file migrations/0XX_xxx.sql`
 
 ## 六、本文件修改规则
 1. 修改前在对话中说明动机
