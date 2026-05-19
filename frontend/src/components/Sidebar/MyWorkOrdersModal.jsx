@@ -2,7 +2,8 @@ import { useState, useEffect } from 'react';
 import { Modal } from '../common/Modal';
 import { ChevronRight, Clock } from 'lucide-react';
 import { WorkOrderStatus } from '../../types';
-import { getWorkOrders } from '../../services/api';
+import { getWorkOrders, cancelWorkOrder } from '../../services/api';
+import { toastSuccess, toastError, confirmDialog } from '../../utils/feedback';
 import { WorkOrderDetailModal } from '../WorkOrder/WorkOrderDetailModal';
 import { formatSlaRemaining, categoryConfig, categoryL2Labels } from '../../data/workOrderConfig';
 
@@ -163,15 +164,38 @@ export function MyWorkOrdersModal({ isOpen, onClose }) {
                   <p className="text-xs text-[var(--color-text-secondary)]">
                     提交时间：{new Date(order.created_at).toLocaleString('zh-CN')}
                   </p>
-                  {(order.status === WorkOrderStatus.PENDING_REVIEW || order.status === WorkOrderStatus.RESOLVED) && (
-                    <button
-                      data-testid="go-rate-button"
-                      onClick={(e) => { e.stopPropagation(); handleViewDetail(order); }}
-                      className="px-3 py-1.5 text-xs font-medium bg-yellow-500 hover:bg-yellow-600 text-white rounded-lg transition-colors"
-                    >
-                      去评价
-                    </button>
-                  )}
+                  <div className="flex items-center gap-2">
+                    {[WorkOrderStatus.PENDING, WorkOrderStatus.ASSIGNED, WorkOrderStatus.IN_PROGRESS, WorkOrderStatus.PRICING].includes(order.status) && (
+                      <button
+                        data-testid="cancel-work-order-list-button"
+                        onClick={async (e) => {
+                          e.stopPropagation();
+                          if (!(await confirmDialog('确定要取消该工单吗？取消后不可恢复。', { danger: true }))) return;
+                          try {
+                            await cancelWorkOrder(order.id);
+                            toastSuccess('工单已取消');
+                            setWorkOrders((prev) =>
+                              prev.map((wo) => wo.id === order.id ? { ...wo, status: WorkOrderStatus.CANCELLED } : wo)
+                            );
+                          } catch (err) {
+                            toastError('操作失败: ' + err.message);
+                          }
+                        }}
+                        className="px-3 py-1.5 text-xs font-medium bg-red-500 hover:bg-red-600 text-white rounded-lg transition-colors"
+                      >
+                        取消
+                      </button>
+                    )}
+                    {(order.status === WorkOrderStatus.PENDING_REVIEW || order.status === WorkOrderStatus.RESOLVED) && (
+                      <button
+                        data-testid="go-rate-button"
+                        onClick={(e) => { e.stopPropagation(); handleViewDetail(order); }}
+                        className="px-3 py-1.5 text-xs font-medium bg-yellow-500 hover:bg-yellow-600 text-white rounded-lg transition-colors"
+                      >
+                        去评价
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
             );

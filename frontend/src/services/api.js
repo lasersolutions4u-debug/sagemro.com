@@ -499,6 +499,21 @@ export async function resolveWorkOrder(workOrderId, engineerId) {
   return response.json();
 }
 
+/**
+ * 客户取消工单
+ */
+export async function cancelWorkOrder(workOrderId) {
+  const response = await fetch(`${API_BASE}/api/workorders/${workOrderId}/cancel`, {
+    method: 'POST',
+    headers: authHeaders(),
+  });
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(data.error || '取消失败');
+  }
+  return response.json();
+}
+
 // ============ 工程师钱包与保证金 ============
 
 /**

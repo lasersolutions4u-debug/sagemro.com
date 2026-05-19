@@ -5445,6 +5445,58 @@ async function handleResolveWorkOrder(request, env) {
   }
 }
 
+// 客户取消工单
+async function handleCancelWorkOrder(request, env) {
+  try {
+    const auth = request._auth;
+    if (!auth || (auth.userType !== 'customer' && auth.userType !== 'admin')) {
+      return errorResponse('仅客户可取消工单', 403);
+    }
+    const userId = auth.userId;
+
+    const workOrderId = new URL(request.url).pathname.split('/')[3];
+    const wo = await env.DB.prepare(
+      'SELECT id, status, customer_id, engineer_id, order_no FROM work_orders WHERE id = ?'
+    ).bind(workOrderId).first();
+    if (!wo) return errorResponse('工单不存在', 404);
+
+    if (auth.userType === 'customer' && wo.customer_id !== userId) {
+      return errorResponse('您无权操作该工单', 403);
+    }
+
+    const cancelableStatuses = ['pending', 'assigned', 'in_progress', 'pricing'];
+    if (!cancelableStatuses.includes(wo.status)) {
+      return errorResponse('当前状态不可取消', 400);
+    }
+
+    const now = new Date().toISOString();
+    await env.DB.prepare(
+      "UPDATE work_orders SET status = 'cancelled', completed_at = ? WHERE id = ?"
+    ).bind(now, workOrderId).run();
+
+    await env.DB.prepare(`
+      INSERT INTO work_order_logs (id, work_order_id, action, actor_type, actor_id, content)
+      VALUES (?, ?, 'cancelled', ?, ?, '客户取消工单')
+    `).bind(generateId(), workOrderId, auth.userType, userId).run();
+
+    // 通知工程师（如已分配）
+    if (wo.engineer_id) {
+      await createNotification(env, {
+        user_id: wo.engineer_id,
+        user_type: 'engineer',
+        type: 'ticket_cancelled',
+        title: '工单已取消',
+        body: `工单 ${wo.order_no} 已被客户取消。`,
+        data: { work_order_id: workOrderId },
+      });
+    }
+
+    return jsonResponse({ success: true });
+  } catch (error) {
+    return errorResponse(error.message, 500);
+  }
+}
+
 // ============ 前端评价 API ============
 
 // 客户提交平台评价
@@ -6561,6 +6613,10 @@ async function routeRequest(request, env, ctx) {
     // 工程师标记服务完成
     if (path.match(/^\/api\/workorders\/[^/]+\/resolve$/) && request.method === 'POST') {
       return handleResolveWorkOrder(request, env);
+    }
+    // 客户取消工单
+    if (path.match(/^\/api\/workorders\/[^/]+\/cancel$/) && request.method === 'POST') {
+      return handleCancelWorkOrder(request, env);
     }
     if (path === '/api/platform-ratings' && request.method === 'POST') {
       return handleSubmitPlatformRating(request, env);

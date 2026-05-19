@@ -4,6 +4,7 @@ import {
   getWorkOrder,
   submitRating,
   resolveWorkOrder,
+  cancelWorkOrder,
   submitEngineerReview,
   getEngineerReview,
 } from '../../services/api';
@@ -216,6 +217,27 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
           className="w-full py-3 bg-green-500 hover:bg-green-600 text-white rounded-xl font-medium"
         >
           标记服务完成
+        </button>
+      )}
+
+      {/* 客户：取消工单 */}
+      {isCustomer && ['pending', 'assigned', 'in_progress', 'pricing'].includes(effectiveStatus) && (
+        <button
+          data-testid="cancel-work-order-button"
+          onClick={async () => {
+            if (!(await confirmDialog('确定要取消该工单吗？取消后不可恢复。', { danger: true }))) return;
+            try {
+              await cancelWorkOrder(workOrder.id);
+              toastSuccess('工单已取消');
+              loadDetail();
+              onConfirmed?.();
+            } catch (e) {
+              toastError('操作失败: ' + e.message);
+            }
+          }}
+          className="w-full py-3 bg-red-500 hover:bg-red-600 text-white rounded-xl font-medium"
+        >
+          取消工单
         </button>
       )}
 
