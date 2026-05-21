@@ -177,3 +177,63 @@ input[type="search"]::-webkit-search-cancel-button {
     padding-bottom: env(safe-area-inset-bottom);
   }
 }
+
+/* ============ 表格样式（Excel 风格边框）============ */
+.prose table {
+  width: 100%;
+  border-collapse: collapse;
+  border: 2px solid var(--color-border-strong);
+  margin: 1em 0;
+  font-size: 0.95em;
+}
+
+.prose table thead {
+  border-bottom: 2px solid var(--color-border-strong);
+}
+
+.prose table thead th {
+  background: var(--color-primary-100);
+  color: var(--color-text-primary);
+  font-weight: 600;
+  padding: 10px 14px;
+  border: 1px solid var(--color-border-default);
+  text-align: center;
+  white-space: nowrap;
+}
+
+.prose table tbody td {
+  padding: 8px 14px;
+  border: 1px solid var(--color-border-default);
+  text-align: center;
+}
+
+.prose table tbody tr:nth-child(even) {
+  background: #fafafa;
+}
+
+.prose table tbody tr:nth-child(odd) {
+  background: #ffffff;
+}
+
+/* 深色模式表格 */
+.dark .prose table {
+  border-color: var(--color-border-strong);
+}
+
+.dark .prose table thead th {
+  background: #3d2e00;
+  color: var(--color-text-primary);
+  border-color: var(--color-border-strong);
+}
+
+.dark .prose table tbody td {
+  border-color: var(--color-border);
+}
+
+.dark .prose table tbody tr:nth-child(even) {
+  background: #1e1e2e;
+}
+
+.dark .prose table tbody tr:nth-child(odd) {
+  background: #252536;
+}
