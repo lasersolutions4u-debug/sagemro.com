@@ -38,7 +38,7 @@ jobs:
       # Frontend lint + build（编译失败直接挂）
       - name: Frontend install
         working-directory: frontend
-        run: npm ci
+        run: npm install --no-audit --no-fund
 
       - name: Frontend lint
         continue-on-error: true
@@ -52,7 +52,7 @@ jobs:
       # Admin build（编译失败直接挂）
       - name: Admin install
         working-directory: admin
-        run: npm ci
+        run: npm install --no-audit --no-fund
 
       - name: Admin build
         working-directory: admin
@@ -79,7 +79,7 @@ jobs:
 
       - name: Install dependencies
         working-directory: frontend
-        run: npm ci
+        run: npm install --no-audit --no-fund
 
       - name: Build
         working-directory: frontend
@@ -129,7 +129,7 @@ jobs:
 
       - name: Install dependencies
         working-directory: admin
-        run: npm ci
+        run: npm install --no-audit --no-fund
 
       - name: Build
         working-directory: admin
