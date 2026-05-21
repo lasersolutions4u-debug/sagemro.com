@@ -2,7 +2,7 @@ import { useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Bot, User, Copy, Check } from 'lucide-react';
-import { formatTime } from '../../utils/helpers';
+import { formatTime, normalizeMarkdownTable } from '../../utils/helpers';
 
 export function MessageBubble({ message }) {
   const [copied, setCopied] = useState(false);
@@ -39,7 +39,7 @@ export function MessageBubble({ message }) {
           }`}
         >
           <div className="prose prose-base max-w-none dark:prose-invert text-[15px] leading-relaxed font-light tracking-tight">
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown>
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>{normalizeMarkdownTable(message.content)}</ReactMarkdown>
           </div>
         </div>
 

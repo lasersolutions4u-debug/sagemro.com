@@ -38,3 +38,13 @@ export function getConversationTitle(firstMessage) {
   if (!firstMessage) return '新对话';
   return firstMessage.content.slice(0, 20) + (firstMessage.content.length > 20 ? '...' : '');
 }
+
+// 修复 AI 输出的 Markdown 表格：当所有行挤在同一行时拆分为独立行
+// AI 有时输出 "| A | B | |:---:|:---:| | 1 | 2 |" 而非每行独立
+// 规律：行内单元格间无 "| |"，行边界处才有 "| |"（前一行的尾 | + 空格 + 后一行的头 |）
+export function normalizeMarkdownTable(text) {
+  if (!text || !text.includes('|')) return text;
+  // 只在内容包含表格分隔符特征时才处理
+  if (!text.includes('---')) return text;
+  return text.replace(/\| \|/g, '|\n|');
+}
