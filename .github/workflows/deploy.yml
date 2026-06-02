@@ -141,3 +141,36 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           command: pages deploy admin/dist --project-name=sagemro-admin --branch=${{ github.ref_name }}
+
+  # ============ 部署 Admin CN ============
+  deploy-admin-cn:
+    name: Deploy Admin CN to Cloudflare Pages
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/china-edition'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        working-directory: admin
+        run: npm install --no-audit --no-fund
+
+      - name: Build (CN)
+        working-directory: admin
+        run: npm run build
+        env:
+          VITE_API_BASE: https://api.sagemro.cn
+
+      - name: Deploy to Cloudflare Pages
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy admin/dist --project-name=sagemro-admin-cn --branch=${{ github.ref_name }}
