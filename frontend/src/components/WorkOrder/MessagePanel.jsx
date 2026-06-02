@@ -38,7 +38,7 @@ export function MessagePanel({ workOrderId, userType, userId }) {
       setInput('');
       load();
     } catch (e) {
-      toastError('发送失败: ' + e.message);
+      toastError('Failed to send: ' + e.message);
     } finally {
       setSending(false);
     }
@@ -48,7 +48,7 @@ export function MessagePanel({ workOrderId, userType, userId }) {
     <div className="space-y-3">
       <div className="max-h-64 overflow-y-auto space-y-2 p-2 bg-[var(--color-surface-elevated)] rounded-xl">
         {messages.length === 0 ? (
-          <div className="text-center py-6 text-xs text-[var(--color-text-muted)]">暂无消息，开始对话吧</div>
+          <div className="text-center py-6 text-xs text-[var(--color-text-muted)]">No messages yet. Start the conversation!</div>
         ) : (
           messages.map((msg) => {
             const isMe = msg.sender_type === userType;
@@ -74,7 +74,7 @@ export function MessagePanel({ workOrderId, userType, userId }) {
                   )}
                   <div>{msg.content}</div>
                   <div className={`text-xs mt-1 ${isMe ? 'text-white/50 text-right' : 'text-[var(--color-text-muted)]'}`}>
-                    {new Date(msg.created_at).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}
+                    {new Date(msg.created_at).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
                   </div>
                 </div>
               </div>
@@ -88,7 +88,7 @@ export function MessagePanel({ workOrderId, userType, userId }) {
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && handleSend()}
-          placeholder="输入消息..."
+          placeholder="Type a message..."
           className="flex-1 px-3 py-2 text-sm border border-[var(--color-border)] rounded-xl bg-[var(--color-surface)] text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
         />
         <button

@@ -41,7 +41,7 @@ export function ChatArea({
           <Menu size={20} className="text-[var(--color-text-secondary)]" />
         </button>
         <h1 className="flex-1 text-[15px] sm:text-[17px] font-medium text-[var(--color-text-primary)] truncate">
-          {currentTitle || '新对话'}
+          {currentTitle || 'New Chat'}
         </h1>
       </header>
 
@@ -49,13 +49,13 @@ export function ChatArea({
       <div className="px-3 sm:px-5 py-1.5 bg-amber-50 dark:bg-amber-900/15 border-b border-amber-200/50 dark:border-amber-800/30 flex items-center gap-2">
         <Info size={13} className="text-amber-600 dark:text-amber-400 flex-shrink-0" />
         <p className="text-[11px] text-amber-700 dark:text-amber-300 leading-tight">
-          AI 输出仅供参考，不构成维修承诺。线下服务以工程师确认为准。
+          AI output is for reference only and does not constitute a repair commitment. On-site service is subject to engineer confirmation.
           {onOpenLegal && (
             <button
               onClick={() => onOpenLegal('ai')}
               className="ml-1 underline hover:text-amber-900 dark:hover:text-amber-100 transition-colors"
             >
-              详情
+              Details
             </button>
           )}
         </p>
@@ -97,8 +97,8 @@ export function ChatArea({
           className="fixed bottom-24 right-4 sm:right-6 z-50 flex items-center gap-1.5 px-3.5 py-2 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white rounded-full shadow-lg text-sm transition-colors active:scale-95"
         >
           <Gift size={16} />
-          <span className="hidden sm:inline">获取设备方案</span>
-          <span className="sm:hidden">咨询</span>
+          <span className="hidden sm:inline">Get a Quote</span>
+          <span className="sm:hidden">Quote</span>
         </button>
       )}
 

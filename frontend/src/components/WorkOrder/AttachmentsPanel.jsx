@@ -46,11 +46,11 @@ export function AttachmentsPanel({ workOrderId, userType, userId, readOnly }) {
 
   const validateFile = (file) => {
     if (!ALLOWED_TYPES.includes(file.type)) {
-      toastError(`不支持的文件类型: ${file.type || '未知'}`);
+      toastError(`Unsupported file type: ${file.type || 'unknown'}`);
       return false;
     }
     if (file.size > MAX_SIZE) {
-      toastError(`文件过大 (最大 50MB): ${file.name}`);
+      toastError(`File too large (max 50MB): ${file.name}`);
       return false;
     }
     return true;
@@ -68,13 +68,13 @@ export function AttachmentsPanel({ workOrderId, userType, userId, readOnly }) {
         await uploadWorkOrderAttachment(workOrderId, file);
         done++;
       } catch (e) {
-        toastError(`上传 ${file.name} 失败: ${e.message}`);
+        toastError(`Failed to upload ${file.name}: ${e.message}`);
       }
     }
     setUploading(false);
     setUploadProgress(null);
     if (done > 0) {
-      toastSuccess(`已上传 ${done} 个文件`);
+      toastSuccess(`${done} file(s) uploaded`);
       loadAttachments();
     }
   };
@@ -94,13 +94,13 @@ export function AttachmentsPanel({ workOrderId, userType, userId, readOnly }) {
   };
 
   const handleDelete = async (att) => {
-    if (!(await confirmDialog(`删除附件 "${att.file_name}"？此操作不可撤销。`))) return;
+    if (!(await confirmDialog(`Delete attachment "${att.file_name}"? This action cannot be undone.`))) return;
     try {
       await deleteWorkOrderAttachment(workOrderId, att.id);
-      toastSuccess('附件已删除');
+      toastSuccess('Attachment deleted');
       loadAttachments();
     } catch (e) {
-      toastError('删除失败: ' + e.message);
+      toastError('Delete failed: ' + e.message);
     }
   };
 
@@ -137,15 +137,15 @@ export function AttachmentsPanel({ workOrderId, userType, userId, readOnly }) {
               <Loader2 className="w-6 h-6 text-[var(--color-primary)] animate-spin" />
               {uploadProgress && (
                 <p className="text-sm text-[var(--color-text-secondary)]">
-                  正在上传 ({uploadProgress.current}/{uploadProgress.total})...
+                  Uploading ({uploadProgress.current}/{uploadProgress.total})...
                 </p>
               )}
             </div>
           ) : (
             <div className="flex flex-col items-center gap-1">
               <Upload className="w-6 h-6 text-[var(--color-text-muted)]" />
-              <p className="text-sm text-[var(--color-text-secondary)]">拖拽文件到此处上传，或点击选择</p>
-              <p className="text-xs text-[var(--color-text-muted)]">支持 JPG/PNG/GIF/WebP/MP4/WebM，单文件 ≤50MB</p>
+              <p className="text-sm text-[var(--color-text-secondary)]">Drag and drop files here, or click to select</p>
+              <p className="text-xs text-[var(--color-text-muted)]">Supports JPG/PNG/GIF/WebP/MP4/WebM, max 50MB per file</p>
             </div>
           )}
         </div>
@@ -153,11 +153,11 @@ export function AttachmentsPanel({ workOrderId, userType, userId, readOnly }) {
 
       {/* 附件列表 */}
       {loading ? (
-        <div className="text-center py-4 text-sm text-[var(--color-text-muted)]">加载中...</div>
+        <div className="text-center py-4 text-sm text-[var(--color-text-muted)]">Loading...</div>
       ) : attachments.length === 0 ? (
         <div className="text-center py-8 text-sm text-[var(--color-text-muted)]">
           <Paperclip className="w-8 h-8 mx-auto mb-2 opacity-30" />
-          暂无附件
+          No attachments yet
         </div>
       ) : (
         <div className="grid grid-cols-2 gap-2">

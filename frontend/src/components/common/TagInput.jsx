@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { X } from 'lucide-react';
 
-export function TagInput({ label, options = [], value = [], onChange, placeholder = '输入并按回车添加...' }) {
+export function TagInput({ label, options = [], value = [], onChange, placeholder = 'Type and press Enter to add...' }) {
   const [inputValue, setInputValue] = useState('');
 
   const addTag = (tag) => {

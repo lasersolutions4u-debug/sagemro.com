@@ -236,7 +236,7 @@ export async function uploadChatImage(file) {
 
   if (!response.ok) {
     const err = await response.json().catch(() => ({}));
-    throw new Error(err.error || `上传失败 (${response.status})`);
+    throw new Error(err.error || `Upload failed (${response.status})`);
   }
 
   return response.json();
@@ -532,7 +532,7 @@ export async function cancelWorkOrder(workOrderId) {
   });
   if (!response.ok) {
     const data = await response.json().catch(() => ({}));
-    throw new Error(data.error || '取消失败');
+    throw new Error(data.error || 'Cancellation failed');
   }
   return response.json();
 }

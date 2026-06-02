@@ -75,7 +75,7 @@ export function InputArea({ onSend, onStop, disabled, isStreaming }) {
     if ((!text && uploadedImages.length === 0) || disabled) return;
 
     const images = uploadedImages.map(img => ({ url: img.url }));
-    onSend(text || '请分析这张图片', images);
+    onSend(text || 'Please analyze this image', images);
     setInput('');
     setPendingImages([]);
   };
@@ -139,7 +139,7 @@ export function InputArea({ onSend, onStop, disabled, isStreaming }) {
               onClick={() => fileInputRef.current?.click()}
               disabled={disabled || isStreaming}
               className="w-12 h-12 flex items-center justify-center rounded-2xl hover:bg-[var(--color-hover)] transition-colors flex-shrink-0 disabled:opacity-50"
-              title="上传图片"
+              title="Upload image"
             >
               <ImagePlus size={22} className="text-[var(--color-text-muted)]" />
             </button>
@@ -155,7 +155,7 @@ export function InputArea({ onSend, onStop, disabled, isStreaming }) {
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder={pendingImages.length > 0 ? "描述故障现象..." : "输入消息..."}
+              placeholder={pendingImages.length > 0 ? "Describe the fault..." : "Type a message..."}
               disabled={disabled}
               rows={1}
               className="w-full px-4 py-3 bg-transparent resize-none focus:outline-none text-[var(--color-text-primary)] placeholder-[var(--color-text-muted)] disabled:opacity-50 text-[15px]"
@@ -169,7 +169,7 @@ export function InputArea({ onSend, onStop, disabled, isStreaming }) {
               <button
                 onClick={onStop}
                 className="w-12 h-12 flex items-center justify-center bg-red-500 hover:bg-red-600 text-white rounded-2xl transition-colors flex-shrink-0 active:scale-95"
-                title="停止生成"
+                title="Stop generation"
               >
                 <StopCircle size={22} />
               </button>
@@ -195,7 +195,7 @@ export function InputArea({ onSend, onStop, disabled, isStreaming }) {
         />
 
         <p className="mt-2 text-[11px] text-center text-[var(--color-text-muted)] hidden sm:block">
-          Enter 发送消息 · Shift + Enter 换行 · 支持上传图片辅助诊断
+          Enter to send · Shift + Enter for new line · Upload images for diagnosis
         </p>
       </div>
     </div>

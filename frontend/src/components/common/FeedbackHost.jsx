@@ -35,7 +35,7 @@ function ToastItem({ toast, onDismiss }) {
       <button
         onClick={() => onDismiss(toast.id)}
         className="p-1 -mr-1 -mt-1 rounded hover:bg-[var(--color-hover)] transition-colors flex-shrink-0"
-        aria-label="关闭"
+        aria-label="Close"
       >
         <X size={14} className="text-[var(--color-text-secondary)]" />
       </button>

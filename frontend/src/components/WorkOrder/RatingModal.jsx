@@ -4,10 +4,10 @@ import { Star } from 'lucide-react';
 import { submitRating } from '../../services/api';
 
 const ratingDimensions = [
-  { key: 'timeliness', label: '时效性' },
-  { key: 'technical', label: '技术熟练' },
-  { key: 'communication', label: '沟通流畅' },
-  { key: 'professional', label: '专业性' },
+  { key: 'timeliness', label: 'Timeliness' },
+  { key: 'technical', label: 'Technical Skill' },
+  { key: 'communication', label: 'Communication' },
+  { key: 'professional', label: 'Professionalism' },
 ];
 
 export function RatingModal({ isOpen, onClose, workOrder, onSuccess }) {
@@ -23,7 +23,7 @@ export function RatingModal({ isOpen, onClose, workOrder, onSuccess }) {
 
   const handleSubmit = async () => {
     if (!workOrder?.id || !workOrder?.engineer_id || !workOrder?.customer_id) {
-      setError('工单信息不完整');
+      setError('Work order information is incomplete');
       return;
     }
 
@@ -65,18 +65,18 @@ export function RatingModal({ isOpen, onClose, workOrder, onSuccess }) {
             />
           </button>
         ))}
-        <span className="ml-2 text-sm text-[var(--color-text-secondary)]">{value}分</span>
+        <span className="ml-2 text-sm text-[var(--color-text-secondary)]">{value}</span>
       </div>
     );
   };
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="服务评价" size="sm">
+    <Modal isOpen={isOpen} onClose={onClose} title="Service Review" size="sm">
       <div className="space-y-4">
         {/* 工单信息 */}
         <div className="p-3 bg-[var(--color-surface-elevated)] rounded-xl">
           <div className="text-sm text-[var(--color-text-primary)]">
-            工单号：{workOrder?.order_no || workOrder?.id}
+            Order No: {workOrder?.order_no || workOrder?.id}
           </div>
         </div>
 
@@ -100,12 +100,12 @@ export function RatingModal({ isOpen, onClose, workOrder, onSuccess }) {
         {/* 评价备注 */}
         <div>
           <label className="block text-sm font-medium text-[var(--color-text-primary)] mb-1">
-            评价备注（选填）
+            Review Comment (Optional)
           </label>
           <textarea
             value={comment}
             onChange={(e) => setComment(e.target.value)}
-            placeholder="分享您的服务体验..."
+            placeholder="Share your service experience..."
             rows={3}
             className="w-full px-3 py-2 border border-[var(--color-input-border)] rounded-xl bg-[var(--color-input-bg)] text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)] resize-none"
           />
@@ -117,7 +117,7 @@ export function RatingModal({ isOpen, onClose, workOrder, onSuccess }) {
           disabled={submitting}
           className="w-full py-3 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] disabled:bg-[var(--color-text-muted)] text-white rounded-xl font-medium transition-colors"
         >
-          {submitting ? '提交中...' : '提交评价'}
+          {submitting ? 'Submitting...' : 'Submit Review'}
         </button>
       </div>
     </Modal>

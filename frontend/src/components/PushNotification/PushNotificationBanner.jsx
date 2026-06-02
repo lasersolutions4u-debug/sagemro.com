@@ -39,7 +39,7 @@ export function PushNotificationBanner({ notification, onDismiss }) {
           {notification.body}
         </div>
         <div className="text-xs text-[var(--color-primary)] mt-1">
-          点击查看工单 →
+          Tap to view work order →
         </div>
       </div>
       <button

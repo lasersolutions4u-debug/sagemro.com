@@ -27,13 +27,13 @@ function formatTime(dateStr) {
   const now = new Date();
   const diffMs = now - date;
   const diffMin = Math.floor(diffMs / 60000);
-  if (diffMin < 1) return '刚刚';
-  if (diffMin < 60) return `${diffMin}分钟前`;
+  if (diffMin < 1) return 'Just now';
+  if (diffMin < 60) return `${diffMin}m ago`;
   const diffHour = Math.floor(diffMin / 60);
-  if (diffHour < 24) return `${diffHour}小时前`;
+  if (diffHour < 24) return `${diffHour}h ago`;
   const diffDay = Math.floor(diffHour / 24);
-  if (diffDay < 7) return `${diffDay}天前`;
-  return date.toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' });
+  if (diffDay < 7) return `${diffDay}d ago`;
+  return date.toLocaleDateString('en-US', { month: 'numeric', day: 'numeric' });
 }
 
 export function NotificationModal({ isOpen, onClose, onUnreadCountChange, onOpenWorkOrderDetail }) {
@@ -94,7 +94,7 @@ export function NotificationModal({ isOpen, onClose, onUnreadCountChange, onOpen
   const hasUnread = notifications.some(n => !n.is_read);
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="消息通知" size="md">
+    <Modal isOpen={isOpen} onClose={onClose} title="Notifications" size="md">
       <div className="flex flex-col gap-2">
         {/* 全部已读按钮 */}
         {hasUnread && (
@@ -104,7 +104,7 @@ export function NotificationModal({ isOpen, onClose, onUnreadCountChange, onOpen
               className="flex items-center gap-1.5 text-[12px] text-[var(--color-primary)] hover:underline"
             >
               <CheckCheck size={14} />
-              全部标为已读
+              Mark all as read
             </button>
           </div>
         )}
@@ -112,12 +112,12 @@ export function NotificationModal({ isOpen, onClose, onUnreadCountChange, onOpen
         {/* 通知列表 */}
         {loading ? (
           <div className="py-12 text-center text-[var(--color-text-secondary)] text-[14px]">
-            加载中...
+            Loading...
           </div>
         ) : notifications.length === 0 ? (
           <div className="py-12 text-center">
             <Bell size={36} className="mx-auto text-[var(--color-text-secondary)] opacity-30 mb-3" />
-            <div className="text-[14px] text-[var(--color-text-secondary)]">暂无通知</div>
+            <div className="text-[14px] text-[var(--color-text-secondary)]">No notifications</div>
           </div>
         ) : (
           <div className="max-h-[60vh] overflow-y-auto -mx-1 px-1 space-y-1">

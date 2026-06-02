@@ -2,9 +2,9 @@ import { Package, ChevronRight, Wrench } from 'lucide-react';
 
 export function DeviceCard({ device, onClick, onDelete }) {
   const statusColors = {
-    '正常': 'bg-green-500',
-    '使用中': 'bg-yellow-500',
-    '维保中': 'bg-orange-500'
+    'Normal': 'bg-green-500',
+    'Running': 'bg-yellow-500',
+    'Maintenance': 'bg-orange-500'
   };
 
   const statusColor = statusColors[device.status] || 'bg-gray-500';
@@ -40,16 +40,16 @@ export function DeviceCard({ device, onClick, onDelete }) {
       <div className="flex items-center gap-4 mt-3 pt-3 border-t border-[var(--color-border)]">
         <div className="flex items-center gap-1.5 text-[12px] text-[var(--color-text-muted)]">
           <Wrench size={12} />
-          <span>{device.total_orders || 0}次维保</span>
+          <span>{device.total_orders || 0} services</span>
         </div>
         {device.last_order_date && (
           <div className="flex items-center gap-1.5 text-[12px] text-[var(--color-text-muted)]">
-            <span>最近：{device.last_order_date}</span>
+            <span>Latest: {device.last_order_date}</span>
           </div>
         )}
         {device.completed_orders !== undefined && (
           <div className="text-[12px] text-green-500 opacity-80">
-            {device.completed_orders}次已完成
+            {device.completed_orders} completed
           </div>
         )}
       </div>

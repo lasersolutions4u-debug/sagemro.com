@@ -1,27 +1,27 @@
 import { Bot, Headphones, Globe2, Users } from 'lucide-react';
 
 const quickQuestions = [
-  '激光切割挂渣怎么解决？',
-  '切割断面有纹路怎么调？',
-  '折弯回弹怎么补偿？',
-  '切割头多久保养一次？',
+  'How to fix laser cutting dross?',
+  'How to adjust cutting surface lines?',
+  'How to compensate for bending springback?',
+  'How often should the cutting head be maintained?',
 ];
 
 const valueProps = [
   {
     icon: Headphones,
-    title: '免费咨询',
-    desc: 'AI 技术顾问 7×24 在线',
+    title: 'Free Consultation',
+    desc: 'AI technical advisor available 24/7',
   },
   {
     icon: Globe2,
-    title: '全品牌支持',
-    desc: '不限设备品牌和型号',
+    title: 'All Brands Supported',
+    desc: 'Any equipment brand and model',
   },
   {
     icon: Users,
-    title: '专家网络',
-    desc: '匹配专业工程师上门服务',
+    title: 'Expert Network',
+    desc: 'Matched professional engineers for on-site service',
   },
 ];
 
@@ -37,10 +37,10 @@ export function WelcomePage({ onSendMessage }) {
 
         {/* Title */}
         <h1 className="text-[22px] sm:text-[28px] font-medium text-[var(--color-text-primary)] mb-1.5 sm:mb-2">
-          免费 AI 设备诊断
+          Free AI Equipment Diagnostics
         </h1>
         <p className="text-[14px] sm:text-[15px] text-[var(--color-text-secondary)] mb-5 sm:mb-6 leading-relaxed">
-          拍照上传故障 · AI 即时分析 · 匹配专业工程师
+          Upload fault photos · Instant AI analysis · Matched professional engineers
         </p>
 
         {/* Value cards — mobile: vertical list, desktop: 3-column grid */}

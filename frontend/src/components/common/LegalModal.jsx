@@ -4,174 +4,174 @@ import { Modal } from './Modal';
 // ===== 法律文档内容 =====
 
 const USER_AGREEMENT = `
-> 本协议依据 **《SAGEMRO 平台服务协议》（V1.0，2026年5月13日生效）** 精简，完整版本请参阅平台公示文件。
-> 平台运营方：济南钰峭机械有限公司（Jinan Euchio Machinery Co., Ltd.）
+> This agreement is a summary based on the **SAGEMRO Platform Terms of Service (V1.0, effective May 13, 2026)**. For the full version, please refer to the official publication on the platform.
+> Platform Operator: Jinan Euchio Machinery Co., Ltd.
 
-## 一、平台定义
+## 1. Platform Definition
 
-1.1 SAGEMRO 是钣金加工设备售后服务的撮合平台，通过 AI 助手"小智"为设备使用者（客户）提供技术咨询，并将客户与设备维修服务提供者（工程师/合伙人）进行匹配。
+1.1 SAGEMRO is a matchmaking platform for sheet metal equipment after-sales services. Through the AI assistant "XiaoZhi," it provides technical consultation to equipment users (customers) and matches customers with equipment repair service providers (engineers/partners).
 
-1.2 平台作为信息撮合方，本身不直接提供设备维修服务。维修服务由入驻平台的工程师独立提供。平台对服务过程进行记录和监督。
+1.2 The platform acts as an information intermediary and does not directly provide equipment repair services. Repair services are independently provided by engineers registered on the platform. The platform records and supervises the service process.
 
-## 二、账户注册
+## 2. Account Registration
 
-2.1 客户注册需提供真实手机号码、用户昵称和登录密码。工程师入驻还需提供姓名，并可选择性填写设备类型、品牌、维修项目、服务地区等标签信息。
+2.1 Customers must provide a valid phone number, display name, and login password to register. Engineers must also provide their real name and may optionally fill in tags such as equipment type, brand, service items, and service region.
 
-2.2 注册需通过短信验证码验证手机号码。同一手机号仅可注册一个客户账号和一个工程师账号。
+2.2 Registration requires phone number verification via SMS code. Each phone number can register one customer account and one engineer account.
 
-2.3 用户应妥善保管账户和密码，不得将账户出借或转让给第三方。
+2.3 Users should keep their account and password secure. Accounts may not be lent or transferred to third parties.
 
-## 三、工单服务流程
+## 3. Work Order Service Process
 
-3.1 客户可通过 AI 对话或侧边栏入口创建工单，填写问题类型、描述和紧急程度。
+3.1 Customers can create work orders through AI chat or the sidebar entry, filling in the problem type, description, and urgency level.
 
-3.2 工单状态依次为：已提交 → 处理中 → 报价中 → 待付款 → 服务中 → 已解决 → 已完成。
+3.2 Work order statuses in order: Submitted > In Progress > Quoting > Pending Payment > Under Service > Resolved > Completed.
 
-3.3 客户与工程师可在工单内进行消息沟通，消息记录长期保存。
+3.3 Customers and engineers can communicate via messages within the work order. Message history is retained long-term.
 
-## 四、报价与费用
+## 4. Quotation and Fees
 
-4.1 工程师接单后可在工单内提交报价，包含人工费、配件费、差旅费和其他费用，合计为服务费小计。
+4.1 After accepting an order, engineers can submit a quotation within the work order, including labor fees, parts fees, travel expenses, and other costs, totaling the service fee subtotal.
 
-4.2 客户支付的费用由平台统一收取，平台按服务费小计的一定比例收取平台技术服务费，剩余部分归工程师所有。具体费率根据工程师等级确定。
+4.2 Fees paid by customers are collected by the platform. The platform charges a technical service fee based on a percentage of the service fee subtotal, with the remainder going to the engineer. Specific rates are determined by the engineer's tier.
 
-4.3 客户收到报价后可选择确认报价或拒绝报价（发起议价）。
+4.3 After receiving a quotation, the customer may choose to confirm or reject the quotation (initiate negotiation).
 
-## 五、工程师等级
+## 5. Engineer Tiers
 
-5.1 工程师注册后默认为 Junior（初级）级，信用分 100 分。等级及对应费率以平台公布的等级规则为准。
+5.1 Engineers are assigned the Junior tier by default upon registration, with a credit score of 100. Tiers and corresponding rates are subject to the platform's published tier rules.
 
-5.2 工程师可在工作台查看当前等级、平台服务费率、信用分和钱包余额。
+5.2 Engineers can view their current tier, platform service fee rate, credit score, and wallet balance on their dashboard.
 
-## 六、支付
+## 6. Payment
 
-6.1 平台支付功能目前处于**模拟环境**阶段。当前展示的支付方式（银行转账/支付宝/微信支付）为前端界面展示，交易为模拟交易，不涉及真实资金流动。
+6.1 The platform's payment functionality is currently in a **sandbox environment**. The displayed payment methods (bank transfer / Alipay / WeChat Pay) are for frontend interface demonstration only. Transactions are simulated and do not involve real funds.
 
-6.2 正式支付上线后，客户在线支付至平台托管账户，服务完成且客户确认后，平台将工程师应得款项结算至工程师钱包。正式支付上线前平台将通知所有用户。
+6.2 When official payment goes live, customer payments will be held in the platform's escrow account. After service completion and customer confirmation, the platform will settle the engineer's earnings to their wallet. The platform will notify all users before official payment launches.
 
-## 七、工程师钱包与提现
+## 7. Engineer Wallet and Withdrawal
 
-7.1 工程师完成工单并获得客户评价后，应得款项计入钱包余额。工程师可在工作台查看钱包余额和收入流水。
+7.1 After completing a work order and receiving a customer review, the engineer's earnings are credited to their wallet balance. Engineers can view their wallet balance and transaction history on their dashboard.
 
-7.2 工程师可申请提现，需已绑定银行卡信息，单次提现不低于 100 元、不高于 50,000 元。提现申请提交后由平台审核处理。
+7.2 Engineers may apply for withdrawal. A linked bank account is required. The minimum withdrawal amount is 100 CNY per transaction and the maximum is 50,000 CNY. Withdrawal requests are reviewed and processed by the platform.
 
-## 八、服务评价
+## 8. Service Reviews
 
-8.1 工单完成后，客户可从时效性、技术熟练程度、沟通流畅度、专业性四个维度（1-5分）对工程师进行评价。
+8.1 After a work order is completed, customers can rate the engineer across four dimensions (1-5 scale): timeliness, technical proficiency, communication quality, and professionalism.
 
-8.2 工程师可在工单完成后对客户进行内部评价，仅供平台内部参考。
+8.2 Engineers can submit an internal review of the customer after work order completion, for platform reference only.
 
-## 九、用户行为规范
+## 9. User Code of Conduct
 
-客户应提供真实的设备信息、配合工程师作业、按确认报价支付费用。工程师应按行业规范提供服务、接单后 24 小时内联系客户、如实报价、对客户信息保密、不绕过平台私下交易。所有用户不得利用平台从事违法活动或发布虚假信息。
+Customers should provide accurate equipment information, cooperate with engineers during service, and pay according to confirmed quotations. Engineers should provide services in accordance with industry standards, contact the customer within 24 hours of accepting an order, quote honestly, keep customer information confidential, and not bypass the platform for private transactions. All users must not use the platform for illegal activities or publish false information.
 
-## 十、个人信息保护
+## 10. Personal Information Protection
 
-平台收集的用户信息仅用于提供服务，不会向第三方出售或分享（法律法规要求或经用户同意除外）。密码经 PBKDF2 加密存储，平台不以明文形式保存。
+User information collected by the platform is used solely for service delivery and will not be sold or shared with third parties (except as required by law or with user consent). Passwords are stored with PBKDF2 encryption; the platform does not store plaintext passwords.
 
-## 十一、免责声明
+## 11. Disclaimer
 
-AI 小智的技术建议仅供参考，不构成专业维修承诺。维修服务由工程师独立提供，平台不对服务质量、时效做出保证。因不可抗力导致服务中断的，平台不承担责任但应在合理时间内恢复。
+AI XiaoZhi's technical suggestions are for reference only and do not constitute professional repair commitments. Repair services are independently provided by engineers; the platform does not guarantee service quality or timeliness. The platform shall not be liable for service interruptions caused by force majeure, but shall restore service within a reasonable time.
 
-## 十二、协议修订
+## 12. Agreement Amendments
 
-平台有权根据业务发展或法律法规变化修订本协议，修订后将在平台公示。用户继续使用即视为接受修订后的协议。本协议适用中华人民共和国法律，争议由济南钰峭机械有限公司所在地法院管辖。
+The platform reserves the right to amend this agreement based on business development or changes in laws and regulations. Amendments will be published on the platform. Continued use of the platform constitutes acceptance of the amended agreement. This agreement is governed by the laws of the People's Republic of China, and disputes shall be subject to the jurisdiction of the courts in the location of Jinan Euchio Machinery Co., Ltd.
 
-## 联系方式
+## Contact
 
-济南钰峭机械有限公司 | 邮箱：support@sagemro.com | https://sagemro.com
+Jinan Euchio Machinery Co., Ltd. | Email: support@sagemro.com | https://sagemro.com
 `.trim();
 
 const PRIVACY_POLICY = `
-## 一、我们收集的信息
+## 1. Information We Collect
 
-**您主动提供的信息：**
-- 注册信息：手机号码、真实姓名、公司名称、密码
-- 工程师背景信息：擅长的设备类型、品牌、维修项目、服务地区
-- 工单信息：设备类型、品牌型号、故障描述
-- 评价内容：服务评分和文字评价
+**Information you provide voluntarily:**
+- Registration information: phone number, real name, company name, password
+- Engineer background: equipment types, brands, service items, service regions
+- Work order information: equipment type, brand and model, fault description
+- Review content: service ratings and written reviews
 
-**我们自动收集的信息：**
-- 对话记录：用于提供连续性咨询服务
-- 工单消息：作为服务凭证保存
-- 使用日志：IP 地址用于安全防护，不与个人身份关联
+**Information we collect automatically:**
+- Chat history: used to provide continuous consultation services
+- Work order messages: retained as service records
+- Usage logs: IP addresses are used for security protection and are not linked to personal identity
 
-**我们不收集：** 身份证号码、银行卡信息、设备远程诊断数据。
+**Information we do not collect:** national ID numbers, bank card information, remote equipment diagnostic data.
 
-## 二、信息的使用目的
+## 2. Purposes of Information Use
 
-- 提供核心服务：AI 技术咨询、工单管理、工程师匹配
-- 个性化服务：基于设备档案提供针对性技术建议
-- AI 服务优化：匿名化后改善 AI 回答质量（不将个人身份信息用于模型训练）
-- 安全保障：IP 限流、异常行为检测
+- Providing core services: AI technical consultation, work order management, engineer matching
+- Personalized services: providing targeted technical advice based on equipment records
+- AI service improvement: anonymized data used to improve AI response quality (personal identity information is not used for model training)
+- Security: IP rate limiting, abnormal behavior detection
 
-## 三、信息的存储与安全
+## 3. Information Storage and Security
 
-- 数据存储在 Cloudflare 全球网络数据中心
-- 所有传输通过 HTTPS 加密
-- 密码经过加盐哈希处理，我们无法获取明文密码
-- 敏感信息自动脱敏处理
-- API 采用 JWT 身份验证，工单数据仅相关方可访问
+- Data is stored in Cloudflare's global network of data centers
+- All transmissions are encrypted via HTTPS
+- Passwords are salted and hashed; we cannot access plaintext passwords
+- Sensitive information is automatically desensitized
+- API uses JWT authentication; work order data is accessible only to relevant parties
 
-## 四、信息的共享
+## 4. Information Sharing
 
-- 我们不会将您的个人信息出售给任何第三方
-- 工单信息仅展示给匹配的工程师
-- 对话内容通过加密接口发送到 AI 服务商，不发送账户凭证
-- 应法律要求时可能共享信息
+- We do not sell your personal information to any third party
+- Work order information is displayed only to matched engineers
+- Chat content is sent to AI service providers through encrypted interfaces without account credentials
+- Information may be shared when required by law
 
-## 五、您的权利
+## 5. Your Rights
 
-- 查阅权：可在个人中心查看您的信息
-- 更正权：可随时修改个人信息和设备档案
-- 删除权：可联系我们删除账户和相关数据
-- 通知管理：可在设置中管理推送通知
+- Access: you can view your information in your personal center
+- Correction: you can modify personal information and equipment records at any time
+- Deletion: you can contact us to delete your account and related data
+- Notification management: you can manage push notifications in settings
 
-## 六、Cookie 和本地存储
+## 6. Cookies and Local Storage
 
-本平台使用浏览器 localStorage 存储登录状态和对话历史，不使用第三方跟踪 Cookie。
+This platform uses browser localStorage to store login state and chat history. We do not use third-party tracking cookies.
 
-## 七、联系我们
+## 7. Contact Us
 
-济南钰峭机械有限公司 | 邮箱：support@sagemro.com | https://sagemro.com
+Jinan Euchio Machinery Co., Ltd. | Email: support@sagemro.com | https://sagemro.com
 `.trim();
 
 const AI_DISCLAIMER = `
-## 一、AI 服务性质
+## 1. Nature of AI Services
 
-1.1 AI 小智是基于大语言模型技术的智能助手，其提供的所有技术咨询内容均为**参考建议**，不构成专业维修方案、维修承诺或质量保证。
+1.1 AI XiaoZhi is an intelligent assistant based on large language model technology. All technical consultation content it provides constitutes **reference suggestions only** and does not constitute professional repair solutions, repair commitments, or quality guarantees.
 
-1.2 AI 小智的知识来源于公开的行业资料和平台积累的服务数据，可能存在信息滞后或不完全匹配的情形。
+1.2 AI XiaoZhi's knowledge is derived from publicly available industry materials and service data accumulated by the platform. Information may be outdated or not fully applicable.
 
-1.3 AI 小智无法替代现场专业工程师的实际诊断和维修操作。
+1.3 AI XiaoZhi cannot replace on-site diagnosis and repair operations by professional engineers.
 
-## 二、使用建议
+## 2. Usage Recommendations
 
-- **技术咨询：** 故障分析和参数建议仅供初步参考。复杂故障请联系专业工程师现场诊断。
-- **安全提醒：** 涉及高压电气、激光光路、液压系统等高风险操作时，请严格遵守安全规范。AI 的安全提醒不能替代现场安全评估。
-- **报价参考：** AI 的报价分析基于历史数据，不构成定价指导。实际费用以双方确认为准。
-- **设备参数：** AI 建议的参数为通用参考值，应根据具体设备状况调整。
+- **Technical consultation:** Fault analysis and parameter suggestions are for preliminary reference only. For complex faults, please contact a professional engineer for on-site diagnosis.
+- **Safety reminders:** When dealing with high-risk operations such as high-voltage electrical systems, laser optical paths, and hydraulic systems, please strictly follow safety regulations. AI safety reminders cannot replace on-site safety assessments.
+- **Quotation reference:** AI quotation analysis is based on historical data and does not constitute pricing guidance. Actual costs are subject to mutual confirmation.
+- **Equipment parameters:** Parameters suggested by AI are general reference values and should be adjusted based on specific equipment conditions.
 
-## 三、数据说明
+## 3. Data Usage
 
-- 对话内容会被记录，用于提供连续性咨询和改善服务
-- 敏感个人信息自动脱敏处理
-- 对话内容不会分享给其他用户
+- Chat content is recorded to provide continuous consultation and improve services
+- Sensitive personal information is automatically desensitized
+- Chat content is not shared with other users
 
-## 四、服务限制
+## 4. Service Limitations
 
-- AI 可能偶尔产生不准确的回答，请注意甄别
-- 每位用户每日 AI 对话次数有上限
-- AI 不回答与设备维修无关的问题
-- AI 不提供具体的设备购买建议
+- AI may occasionally produce inaccurate responses; please verify independently
+- Each user has a daily limit on AI conversation sessions
+- AI does not answer questions unrelated to equipment repair
+- AI does not provide specific equipment purchasing recommendations
 
-## 五、责任限制
+## 5. Limitation of Liability
 
-因参考 AI 建议而导致的任何设备损坏、人身伤害、经济损失，济南钰峭机械有限公司不承担责任。如需专业维修服务，请通过平台提交工单。
+Jinan Euchio Machinery Co., Ltd. shall not be liable for any equipment damage, personal injury, or economic loss resulting from reliance on AI suggestions. For professional repair services, please submit a work order through the platform.
 
-## 六、联系方式
+## 6. Contact
 
-济南钰峭机械有限公司 | 邮箱：support@sagemro.com | https://sagemro.com
+Jinan Euchio Machinery Co., Ltd. | Email: support@sagemro.com | https://sagemro.com
 `.trim();
 
 // ===== 简易 Markdown 渲染 =====
@@ -239,9 +239,9 @@ export function LegalModal({ isOpen, onClose, initialTab = 'agreement' }) {
   const [activeTab, setActiveTab] = useState(initialTab);
 
   const tabs = [
-    { key: 'agreement', label: '用户服务协议' },
-    { key: 'privacy', label: '隐私政策' },
-    { key: 'ai', label: 'AI服务须知' },
+    { key: 'agreement', label: 'Terms of Service' },
+    { key: 'privacy', label: 'Privacy Policy' },
+    { key: 'ai', label: 'AI Service Notice' },
   ];
 
   const content = {
@@ -251,9 +251,9 @@ export function LegalModal({ isOpen, onClose, initialTab = 'agreement' }) {
   };
 
   const titles = {
-    agreement: 'SAGEMRO 用户服务协议',
-    privacy: 'SAGEMRO 隐私政策',
-    ai: 'SAGEMRO AI 服务须知',
+    agreement: 'SAGEMRO Terms of Service',
+    privacy: 'SAGEMRO Privacy Policy',
+    ai: 'SAGEMRO AI Service Notice',
   };
 
   // 当 initialTab 变化时同步
@@ -282,7 +282,7 @@ export function LegalModal({ isOpen, onClose, initialTab = 'agreement' }) {
 
       {/* 文档内容 */}
       <div className="max-h-[60vh] overflow-y-auto pr-1">
-        <p className="text-[11px] text-[var(--color-text-muted)] mb-3">用户服务协议：2026年5月13日 | 隐私政策·AI服务须知：2026年4月24日</p>
+        <p className="text-[11px] text-[var(--color-text-muted)] mb-3">Terms of Service: May 13, 2026 | Privacy Policy & AI Service Notice: April 24, 2026</p>
         <SimpleMarkdown content={content[activeTab]} />
       </div>
     </Modal>

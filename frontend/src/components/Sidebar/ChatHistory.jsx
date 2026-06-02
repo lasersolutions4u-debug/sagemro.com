@@ -12,7 +12,7 @@ export function ChatHistory({ conversations, currentId, onSelect, onDelete, onRe
     return acc;
   }, {});
 
-  const dateOrder = ['今天', '昨天', '近7天', '更早'];
+  const dateOrder = ['Today', 'Yesterday', 'Last 7 Days', 'Earlier'];
 
   return (
     <div className="flex-1 min-h-0 overflow-y-auto py-2">
@@ -41,7 +41,7 @@ export function ChatHistory({ conversations, currentId, onSelect, onDelete, onRe
 
       {conversations.length === 0 && (
         <div className="px-4 py-8 text-center text-sm text-[var(--color-text-muted)]">
-          暂无对话记录
+          No conversations yet
         </div>
       )}
     </div>
@@ -51,7 +51,7 @@ export function ChatHistory({ conversations, currentId, onSelect, onDelete, onRe
 function ConversationItem({ conversation, isActive, onSelect, onDelete, onRename }) {
   const [showActions, setShowActions] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
-  const [draftTitle, setDraftTitle] = useState(conversation.title || '新对话');
+  const [draftTitle, setDraftTitle] = useState(conversation.title || 'New Chat');
   const inputRef = useRef(null);
 
   useEffect(() => {
@@ -63,20 +63,20 @@ function ConversationItem({ conversation, isActive, onSelect, onDelete, onRename
 
   const startRename = (e) => {
     e.stopPropagation();
-    setDraftTitle(conversation.title || '新对话');
+    setDraftTitle(conversation.title || 'New Chat');
     setIsEditing(true);
   };
 
   const cancelRename = (e) => {
     if (e) e.stopPropagation();
     setIsEditing(false);
-    setDraftTitle(conversation.title || '新对话');
+    setDraftTitle(conversation.title || 'New Chat');
   };
 
   const commitRename = async (e) => {
     if (e) e.stopPropagation();
     const next = draftTitle.trim();
-    if (!next || next === (conversation.title || '新对话')) {
+    if (!next || next === (conversation.title || 'New Chat')) {
       cancelRename();
       return;
     }
@@ -84,7 +84,7 @@ function ConversationItem({ conversation, isActive, onSelect, onDelete, onRename
       if (onRename) await onRename(next);
       setIsEditing(false);
     } catch (err) {
-      toastError(`重命名失败：${err.message || err}`);
+      toastError(`Rename failed: ${err.message || err}`);
       cancelRename();
     }
   };
@@ -120,7 +120,7 @@ function ConversationItem({ conversation, isActive, onSelect, onDelete, onRename
           />
         ) : (
           <span className="flex-1 text-[15px] text-[var(--color-sidebar-text)] truncate">
-            {conversation.title || '新对话'}
+            {conversation.title || 'New Chat'}
           </span>
         )}
       </div>
@@ -136,7 +136,7 @@ function ConversationItem({ conversation, isActive, onSelect, onDelete, onRename
           {onRename && (
             <button
               onClick={startRename}
-              title="重命名"
+              title="Rename"
               className="p-1 rounded hover:bg-[var(--color-hover)] text-[var(--color-text-muted)] hover:text-[var(--color-sidebar-text)]"
             >
               <Pencil size={14} />
@@ -145,11 +145,11 @@ function ConversationItem({ conversation, isActive, onSelect, onDelete, onRename
           <button
             onClick={async (e) => {
               e.stopPropagation();
-              if (await confirmDialog('确定删除这个对话吗？', { danger: true, confirmText: '删除' })) {
+              if (await confirmDialog('Delete this conversation?', { danger: true, confirmText: 'Delete' })) {
                 onDelete();
               }
             }}
-            title="删除"
+            title="Delete"
             className="p-1 rounded hover:bg-[var(--color-hover)] text-[var(--color-text-muted)] hover:text-red-400"
           >
             <Trash2 size={14} />
@@ -161,7 +161,7 @@ function ConversationItem({ conversation, isActive, onSelect, onDelete, onRename
           <button
             onMouseDown={(e) => e.preventDefault()} // 防止 blur 先触发
             onClick={commitRename}
-            title="保存"
+            title="Save"
             className="p-1 rounded hover:bg-[var(--color-hover)] text-[var(--color-text-muted)] hover:text-green-400"
           >
             <Check size={14} />
@@ -169,7 +169,7 @@ function ConversationItem({ conversation, isActive, onSelect, onDelete, onRename
           <button
             onMouseDown={(e) => e.preventDefault()}
             onClick={cancelRename}
-            title="取消"
+            title="Cancel"
             className="p-1 rounded hover:bg-[var(--color-hover)] text-[var(--color-text-muted)] hover:text-red-400"
           >
             <X size={14} />

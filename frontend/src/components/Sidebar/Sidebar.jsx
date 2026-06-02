@@ -46,7 +46,7 @@ export function Sidebar({
             <div className="w-9 h-9 rounded-xl bg-[var(--color-primary)] flex items-center justify-center shadow-sm">
               <Bot size={22} className="text-white" />
             </div>
-            <span className="text-[15px] font-medium text-[var(--color-sidebar-text)]">小智</span>
+            <span className="text-[15px] font-medium text-[var(--color-sidebar-text)]">SAGEMRO</span>
           </div>
 
           {/* 新建对话按钮 */}
@@ -56,7 +56,7 @@ export function Sidebar({
             className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white rounded-xl transition-colors font-medium text-[13px] shadow-sm"
           >
             <Plus size={18} />
-            <span>新建对话</span>
+            <span>New Chat</span>
           </button>
         </div>
 

@@ -19,16 +19,16 @@ const customerStatuses = [
 ];
 
 const statusLabels = {
-  [WorkOrderStatus.PENDING]: { text: '待处理', color: 'bg-blue-500' },
-  [WorkOrderStatus.ASSIGNED]: { text: '已分配', color: 'bg-blue-400' },
-  [WorkOrderStatus.IN_PROGRESS]: { text: '处理中', color: 'bg-yellow-500' },
-  [WorkOrderStatus.PRICING]: { text: '等待报价', color: 'bg-orange-500' },
-  [WorkOrderStatus.IN_SERVICE]: { text: '服务中', color: 'bg-purple-500' },
-  [WorkOrderStatus.RESOLVED]: { text: '已解决', color: 'bg-green-500' },
-  [WorkOrderStatus.PENDING_REVIEW]: { text: '待评价', color: 'bg-teal-500' },
-  [WorkOrderStatus.COMPLETED]: { text: '已完成', color: 'bg-gray-500' },
-  [WorkOrderStatus.REJECTED]: { text: '已拒绝', color: 'bg-red-500' },
-  [WorkOrderStatus.CANCELLED]: { text: '已取消', color: 'bg-gray-400' },
+  [WorkOrderStatus.PENDING]: { text: 'Pending', color: 'bg-blue-500' },
+  [WorkOrderStatus.ASSIGNED]: { text: 'Assigned', color: 'bg-blue-400' },
+  [WorkOrderStatus.IN_PROGRESS]: { text: 'In Progress', color: 'bg-yellow-500' },
+  [WorkOrderStatus.PRICING]: { text: 'Awaiting Quote', color: 'bg-orange-500' },
+  [WorkOrderStatus.IN_SERVICE]: { text: 'In Service', color: 'bg-purple-500' },
+  [WorkOrderStatus.RESOLVED]: { text: 'Resolved', color: 'bg-green-500' },
+  [WorkOrderStatus.PENDING_REVIEW]: { text: 'Pending Review', color: 'bg-teal-500' },
+  [WorkOrderStatus.COMPLETED]: { text: 'Completed', color: 'bg-gray-500' },
+  [WorkOrderStatus.REJECTED]: { text: 'Rejected', color: 'bg-red-500' },
+  [WorkOrderStatus.CANCELLED]: { text: 'Cancelled', color: 'bg-gray-400' },
 };
 
 export function MyWorkOrdersModal({ isOpen, onClose }) {
@@ -84,23 +84,23 @@ export function MyWorkOrdersModal({ isOpen, onClose }) {
 
   return (
     <>
-      <Modal isOpen={isOpen} onClose={onClose} title="我的工单" size="md">
+      <Modal isOpen={isOpen} onClose={onClose} title="My Work Orders" size="md">
         <div className="space-y-3">
           {loading && (
             <div className="text-center py-8 text-[var(--color-text-secondary)]">
-              加载中...
+              Loading...
             </div>
           )}
 
           {error && (
             <div className="text-center py-4 text-red-500 text-sm">
-              加载失败: {error}
+              Failed to load: {error}
             </div>
           )}
 
           {!loading && workOrders.length === 0 && !error && (
             <div className="text-center py-8 text-[var(--color-text-secondary)]">
-              暂无工单记录
+              No work orders found
             </div>
           )}
 
@@ -149,20 +149,20 @@ export function MyWorkOrdersModal({ isOpen, onClose }) {
                 </div>
                 {order.engineer_name && (
                   <p className="text-xs text-[var(--color-primary)] mb-1">
-                    工程师：{order.engineer_name}
+                    Engineer: {order.engineer_name}
                   </p>
                 )}
                 <p className="text-sm text-[var(--color-text-secondary)] mb-1">
                   {order.category_l1 && order.category_l1 !== 'other'
                     ? `${categoryConfig[order.category_l1]?.label || order.category_l1}${order.category_l2 && order.category_l2 !== 'other' ? ' · ' + (categoryL2Labels[order.category_l2] || order.category_l2) : ''}`
-                    : order.type} | {order.device_id || '未指定设备'}
+                    : order.type} | {order.device_id || 'No device specified'}
                 </p>
                 <p className="text-sm text-[var(--color-text-primary)] line-clamp-2">
                   {order.description}
                 </p>
                 <div className="flex items-center justify-between mt-2">
                   <p className="text-xs text-[var(--color-text-secondary)]">
-                    提交时间：{new Date(order.created_at).toLocaleString('zh-CN')}
+                    Submitted: {new Date(order.created_at).toLocaleString('en-US')}
                   </p>
                   <div className="flex items-center gap-2">
                     {[WorkOrderStatus.PENDING, WorkOrderStatus.ASSIGNED, WorkOrderStatus.IN_PROGRESS, WorkOrderStatus.PRICING].includes(order.status) && (
@@ -170,20 +170,20 @@ export function MyWorkOrdersModal({ isOpen, onClose }) {
                         data-testid="cancel-work-order-list-button"
                         onClick={async (e) => {
                           e.stopPropagation();
-                          if (!(await confirmDialog('确定要取消该工单吗？取消后不可恢复。', { danger: true }))) return;
+                          if (!(await confirmDialog('Are you sure you want to cancel this work order? This action cannot be undone.', { danger: true }))) return;
                           try {
                             await cancelWorkOrder(order.id);
-                            toastSuccess('工单已取消');
+                            toastSuccess('Work order cancelled');
                             setWorkOrders((prev) =>
                               prev.map((wo) => wo.id === order.id ? { ...wo, status: WorkOrderStatus.CANCELLED } : wo)
                             );
                           } catch (err) {
-                            toastError('操作失败: ' + err.message);
+                            toastError('Operation failed: ' + err.message);
                           }
                         }}
                         className="px-3 py-1.5 text-xs font-medium bg-red-500 hover:bg-red-600 text-white rounded-lg transition-colors"
                       >
-                        取消
+                        Cancel
                       </button>
                     )}
                     {(order.status === WorkOrderStatus.PENDING_REVIEW || order.status === WorkOrderStatus.RESOLVED) && (
@@ -192,7 +192,7 @@ export function MyWorkOrdersModal({ isOpen, onClose }) {
                         onClick={(e) => { e.stopPropagation(); handleViewDetail(order); }}
                         className="px-3 py-1.5 text-xs font-medium bg-yellow-500 hover:bg-yellow-600 text-white rounded-lg transition-colors"
                       >
-                        去评价
+                        Rate
                       </button>
                     )}
                   </div>
@@ -203,7 +203,7 @@ export function MyWorkOrdersModal({ isOpen, onClose }) {
 
           {/* 图例（只显示客户相关状态） */}
           <div className="pt-4 border-t border-[var(--color-border)]">
-            <p className="text-xs text-[var(--color-text-secondary)] mb-2">工单状态：</p>
+            <p className="text-xs text-[var(--color-text-secondary)] mb-2">Order Status:</p>
             <div className="flex flex-wrap gap-3">
               {customerStatuses.map((key) => {
                 const val = statusLabels[key];

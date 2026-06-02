@@ -3,7 +3,7 @@ import { Plus, Trash2 } from 'lucide-react';
 import { saveRepairRecord } from '../../services/api';
 import { toastSuccess, toastError } from '../../utils/feedback';
 
-const emptyPart = { name: '', qty: 1, unit: '个', specs: '' };
+const emptyPart = { name: '', qty: 1, unit: 'pcs', specs: '' };
 
 export function RepairRecordPanel({ workOrderId, userType, repairRecord, onSaved }) {
   const isEngineer = userType === 'engineer';
@@ -43,11 +43,11 @@ export function RepairRecordPanel({ workOrderId, userType, repairRecord, onSaved
         parts_used: activeParts.length > 0 ? activeParts : [],
         labor_hours: laborHours ? parseFloat(laborHours) : 0,
       });
-      toastSuccess('维修记录已保存');
+      toastSuccess('Repair record saved');
       setIsEditing(false);
       onSaved?.();
     } catch (e) {
-      toastError('保存失败: ' + e.message);
+      toastError('Save failed: ' + e.message);
     } finally {
       setSubmitting(false);
     }
@@ -72,7 +72,7 @@ export function RepairRecordPanel({ workOrderId, userType, repairRecord, onSaved
   if (!isEditing) {
     const hasContent = symptom || diagnosis || solution || (repairRecord?.labor_hours > 0);
     if (!hasContent) {
-      return <div className="text-center py-8 text-sm text-[var(--color-text-muted)]">暂无维修记录</div>;
+      return <div className="text-center py-8 text-sm text-[var(--color-text-muted)]">No repair records yet</div>;
     }
     const parts = (() => { try { return JSON.parse(repairRecord?.parts_used || '[]'); } catch { return []; } })();
 
@@ -80,33 +80,33 @@ export function RepairRecordPanel({ workOrderId, userType, repairRecord, onSaved
       <div className="space-y-4">
         {symptom && (
           <div>
-            <h3 className="text-xs font-medium text-[var(--color-text-secondary)] mb-1">故障现象</h3>
+            <h3 className="text-xs font-medium text-[var(--color-text-secondary)] mb-1">Symptom</h3>
             <div className="p-3 bg-[var(--color-surface-elevated)] rounded-xl text-sm text-[var(--color-text-primary)]">{symptom}</div>
           </div>
         )}
         {diagnosis && (
           <div>
-            <h3 className="text-xs font-medium text-[var(--color-text-secondary)] mb-1">诊断结果</h3>
+            <h3 className="text-xs font-medium text-[var(--color-text-secondary)] mb-1">Diagnosis</h3>
             <div className="p-3 bg-[var(--color-surface-elevated)] rounded-xl text-sm text-[var(--color-text-primary)]">{diagnosis}</div>
           </div>
         )}
         {solution && (
           <div>
-            <h3 className="text-xs font-medium text-[var(--color-text-secondary)] mb-1">维修方案</h3>
+            <h3 className="text-xs font-medium text-[var(--color-text-secondary)] mb-1">Solution</h3>
             <div className="p-3 bg-[var(--color-surface-elevated)] rounded-xl text-sm text-[var(--color-text-primary)]">{solution}</div>
           </div>
         )}
         {parts.length > 0 && parts[0]?.name && (
           <div>
-            <h3 className="text-xs font-medium text-[var(--color-text-secondary)] mb-1">更换配件</h3>
+            <h3 className="text-xs font-medium text-[var(--color-text-secondary)] mb-1">Parts Replaced</h3>
             <div className="overflow-hidden rounded-xl border border-[var(--color-border)]">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="bg-[var(--color-surface-elevated)] text-xs text-[var(--color-text-secondary)]">
-                    <th className="py-2 px-3 text-left font-medium">配件名称</th>
-                    <th className="py-2 px-3 text-center font-medium w-16">数量</th>
-                    <th className="py-2 px-3 text-left font-medium w-16">单位</th>
-                    <th className="py-2 px-3 text-left font-medium">规格</th>
+                    <th className="py-2 px-3 text-left font-medium">Part Name</th>
+                    <th className="py-2 px-3 text-center font-medium w-16">Qty</th>
+                    <th className="py-2 px-3 text-left font-medium w-16">Unit</th>
+                    <th className="py-2 px-3 text-left font-medium">Specs</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -114,7 +114,7 @@ export function RepairRecordPanel({ workOrderId, userType, repairRecord, onSaved
                     <tr key={i} className="border-t border-[var(--color-border)]">
                       <td className="py-2 px-3 text-[var(--color-text-primary)]">{p.name}</td>
                       <td className="py-2 px-3 text-center text-[var(--color-text-primary)]">{p.qty || 1}</td>
-                      <td className="py-2 px-3 text-[var(--color-text-primary)]">{p.unit || '个'}</td>
+                      <td className="py-2 px-3 text-[var(--color-text-primary)]">{p.unit || 'pcs'}</td>
                       <td className="py-2 px-3 text-[var(--color-text-secondary)]">{p.specs || '-'}</td>
                     </tr>
                   ))}
@@ -125,13 +125,13 @@ export function RepairRecordPanel({ workOrderId, userType, repairRecord, onSaved
         )}
         {repairRecord?.labor_hours > 0 && (
           <div className="flex items-center gap-2 text-sm text-[var(--color-text-secondary)]">
-            <span>实际工时：</span>
-            <span className="text-[var(--color-text-primary)] font-medium">{repairRecord.labor_hours} 小时</span>
+            <span>Labor hours:</span>
+            <span className="text-[var(--color-text-primary)] font-medium">{repairRecord.labor_hours} hrs</span>
           </div>
         )}
         {repairRecord?.updated_at && repairRecord.symptom && (
           <div className="text-xs text-[var(--color-text-muted)]">
-            最后更新：{new Date(repairRecord.updated_at).toLocaleString('zh-CN')}
+            Last updated: {new Date(repairRecord.updated_at).toLocaleString()}
           </div>
         )}
         {/* 工程师可以继续编辑已有记录 */}
@@ -140,7 +140,7 @@ export function RepairRecordPanel({ workOrderId, userType, repairRecord, onSaved
             onClick={() => setIsEditing(true)}
             className="w-full py-2.5 text-sm bg-[var(--color-surface-elevated)] hover:bg-[var(--color-border)] text-[var(--color-text-primary)] rounded-xl"
           >
-            编辑维修记录
+            Edit Repair Record
           </button>
         )}
       </div>
@@ -150,36 +150,36 @@ export function RepairRecordPanel({ workOrderId, userType, repairRecord, onSaved
   // ====== 编辑模式 ======
   return (
     <div className="space-y-3">
-      <div className="text-xs text-[var(--color-text-muted)]">记录诊断结果和维修过程，方便以后追溯。</div>
+      <div className="text-xs text-[var(--color-text-muted)]">Record diagnosis and repair process for future reference.</div>
 
       <div>
-        <label className="block text-xs text-[var(--color-text-secondary)] mb-1">故障现象</label>
+        <label className="block text-xs text-[var(--color-text-secondary)] mb-1">Symptom</label>
         <textarea
           value={symptom}
           onChange={(e) => setSymptom(e.target.value)}
-          placeholder="设备出现的具体问题，如：激光切割机功率下降，切割 3mm 不锈钢时底部挂渣严重..."
+          placeholder="Describe the specific issue, e.g. Laser power dropped, severe dross on 3mm stainless steel cut..."
           rows={2}
           className={inputClass + ' resize-none'}
         />
       </div>
 
       <div>
-        <label className="block text-xs text-[var(--color-text-secondary)] mb-1">诊断结果</label>
+        <label className="block text-xs text-[var(--color-text-secondary)] mb-1">Diagnosis</label>
         <textarea
           value={diagnosis}
           onChange={(e) => setDiagnosis(e.target.value)}
-          placeholder="经过检测发现的问题，如：保护镜片污染、聚焦镜热透镜效应、辅助气压不足..."
+          placeholder="Issues found during inspection, e.g. Contaminated protective lens, thermal lensing on focus lens, low assist gas pressure..."
           rows={2}
           className={inputClass + ' resize-none'}
         />
       </div>
 
       <div>
-        <label className="block text-xs text-[var(--color-text-secondary)] mb-1">维修方案</label>
+        <label className="block text-xs text-[var(--color-text-secondary)] mb-1">Solution</label>
         <textarea
           value={solution}
           onChange={(e) => setSolution(e.target.value)}
-          placeholder="采取了哪些措施，如：更换保护镜片和聚焦镜、清洁光路、调整气压至 1.2MPa..."
+          placeholder="Actions taken, e.g. Replaced protective lens and focus lens, cleaned optical path, adjusted gas pressure to 1.2MPa..."
           rows={3}
           className={inputClass + ' resize-none'}
         />
@@ -187,34 +187,34 @@ export function RepairRecordPanel({ workOrderId, userType, repairRecord, onSaved
 
       {/* 配件清单 */}
       <div>
-        <label className="block text-xs text-[var(--color-text-secondary)] mb-2">更换配件</label>
+        <label className="block text-xs text-[var(--color-text-secondary)] mb-2">Parts Replaced</label>
         <div className="space-y-2">
           {partsUsed.map((part, i) => (
             <div key={i} className="flex gap-2 items-start">
               <input
                 value={part.name}
                 onChange={(e) => updatePart(i, 'name', e.target.value)}
-                placeholder="配件名称"
+                placeholder="Part name"
                 className={inputClass + ' flex-1 min-w-0'}
               />
               <input
                 type="number"
                 value={part.qty}
                 onChange={(e) => updatePart(i, 'qty', e.target.value)}
-                placeholder="数量"
+                placeholder="Qty"
                 min="1"
                 className={inputClass + ' w-16 text-center'}
               />
               <input
                 value={part.unit}
                 onChange={(e) => updatePart(i, 'unit', e.target.value)}
-                placeholder="单位"
+                placeholder="Unit"
                 className={inputClass + ' w-16'}
               />
               <input
                 value={part.specs}
                 onChange={(e) => updatePart(i, 'specs', e.target.value)}
-                placeholder="规格"
+                placeholder="Specs"
                 className={inputClass + ' w-28'}
               />
               <button
@@ -232,17 +232,17 @@ export function RepairRecordPanel({ workOrderId, userType, repairRecord, onSaved
           className="mt-2 flex items-center gap-1 text-xs text-[var(--color-primary)] hover:underline"
         >
           <Plus size={14} />
-          添加配件
+          Add Part
         </button>
       </div>
 
       <div>
-        <label className="block text-xs text-[var(--color-text-secondary)] mb-1">实际工时（小时）</label>
+        <label className="block text-xs text-[var(--color-text-secondary)] mb-1">Labor Hours</label>
         <input
           type="number"
           value={laborHours}
           onChange={(e) => setLaborHours(e.target.value)}
-          placeholder="如：2.5"
+          placeholder="e.g. 2.5"
           min="0"
           step="0.5"
           className={inputClass + ' w-32'}
@@ -254,14 +254,14 @@ export function RepairRecordPanel({ workOrderId, userType, repairRecord, onSaved
           onClick={() => setIsEditing(false)}
           className="flex-1 py-2.5 bg-[var(--color-border)] text-[var(--color-text-secondary)] rounded-xl font-medium text-sm"
         >
-          取消
+          Cancel
         </button>
         <button
           onClick={handleSave}
           disabled={submitting}
           className="flex-1 py-2.5 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] disabled:opacity-50 text-white rounded-xl font-medium text-sm"
         >
-          {submitting ? '保存中...' : '保存维修记录'}
+          {submitting ? 'Saving...' : 'Save Repair Record'}
         </button>
       </div>
     </div>

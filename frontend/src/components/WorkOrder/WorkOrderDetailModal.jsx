@@ -64,7 +64,7 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
   };
 
   const handleSubmitRating = async () => {
-    if (!detail?.engineer_id || !detail?.customer_id) { toastWarning('工单信息不完整'); return; }
+    if (!detail?.engineer_id || !detail?.customer_id) { toastWarning('Work order information is incomplete'); return; }
     setSubmitting(true);
     try {
       await submitRating({
@@ -78,11 +78,11 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
         comment,
       });
       setShowRating(false);
-      toastSuccess('评价已提交');
+      toastSuccess('Review submitted');
       onRateSuccess?.();
       loadDetail();
     } catch (e) {
-      toastError('评价提交失败: ' + e.message);
+      toastError('Review submission failed: ' + e.message);
     } finally {
       setSubmitting(false);
     }
@@ -98,32 +98,32 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
   const isCustomer = userType === 'customer';
 
   const tabs = [
-    { key: 'info', label: '工单信息' },
-    { key: 'messages', label: '消息对话' },
+    { key: 'info', label: 'Details' },
+    { key: 'messages', label: 'Messages' },
   ];
 
   // 核价Tab：工程师看表单，客户看报价确认（含待付款状态）
   if (effectiveStatus === 'in_progress' || effectiveStatus === 'pricing' || effectiveStatus === 'pending_payment' || effectiveStatus === 'in_service') {
-    tabs.push({ key: 'pricing', label: isEngineer ? '核价' : '报价确认' });
+    tabs.push({ key: 'pricing', label: isEngineer ? 'Submit Quote' : 'Confirm Quote' });
   }
 
   // 评价Tab：客户对服务进行评价（resolved/pending_review 可评价，completed 查看已有评价）
   const canRate = effectiveStatus === 'resolved' || effectiveStatus === 'pending_review';
   const hasRating = detail?.rating;
   if (isCustomer && (canRate || (effectiveStatus === 'completed' && hasRating))) {
-    tabs.push({ key: 'rating', label: '评价' });
+    tabs.push({ key: 'rating', label: 'Review' });
   }
 
   // 维修记录Tab：工程师在服务中及之后可见，客户在有记录时可见
   const hasRepairRecord = detail?.repair_record;
   const repairStatuses = ['in_service', 'pricing', 'resolved', 'pending_review', 'completed'];
   if ((isEngineer && repairStatuses.includes(effectiveStatus)) || (isCustomer && hasRepairRecord)) {
-    tabs.push({ key: 'repairRecord', label: '维修记录' });
+    tabs.push({ key: 'repairRecord', label: 'Repair Record' });
   }
 
   // 附件Tab：工单已分配后所有人可见
   if (effectiveStatus !== 'pending') {
-    tabs.push({ key: 'attachments', label: '附件' });
+    tabs.push({ key: 'attachments', label: 'Attachments' });
   }
 
   const renderInfoTab = () => (
@@ -136,43 +136,43 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
             <span className={`px-2 py-0.5 text-xs rounded ${urgency.color}`}>{urgency.text}</span>
           </div>
         </div>
-        <div className="text-sm text-[var(--color-text-secondary)]">问题类型：{typeLabels[workOrder.type] || workOrder.type}</div>
+        <div className="text-sm text-[var(--color-text-secondary)]">Issue Type: {typeLabels[workOrder.type] || workOrder.type}</div>
         {(workOrder.category_l1 && workOrder.category_l1 !== 'other') && (
           <div className="text-sm text-[var(--color-text-secondary)]">
-            设备分类：{categoryConfig[workOrder.category_l1]?.label || workOrder.category_l1}
+            Equipment Category: {categoryConfig[workOrder.category_l1]?.label || workOrder.category_l1}
             {workOrder.category_l2 && workOrder.category_l2 !== 'other' && (
               <span className="ml-1">· {categoryL2Labels[workOrder.category_l2] || workOrder.category_l2}</span>
             )}
           </div>
         )}
-        <div className="text-sm text-[var(--color-text-secondary)]">提交时间：{workOrder.created_at ? new Date(workOrder.created_at).toLocaleString('zh-CN') : '-'}</div>
+        <div className="text-sm text-[var(--color-text-secondary)]">Submitted: {workOrder.created_at ? new Date(workOrder.created_at).toLocaleString('en-US') : '-'}</div>
         {detail?.sla_deadline && (() => {
           const sla = detail.sla_status || {};
           const remaining = formatSlaRemaining(sla);
           const slaColor = sla.status === 'breached' ? 'text-red-500' : sla.status === 'at_risk' ? 'text-yellow-500' : 'text-green-500';
           return (
             <div className="flex items-center gap-4 text-sm">
-              <span className="text-[var(--color-text-secondary)]">SLA 截止：{new Date(detail.sla_deadline).toLocaleString('zh-CN')}</span>
+              <span className="text-[var(--color-text-secondary)]">SLA Deadline: {new Date(detail.sla_deadline).toLocaleString('en-US')}</span>
               {remaining && <span className={slaColor}>{remaining}</span>}
             </div>
           );
         })()}
         {detail?.engineer_name && (
           <div className="text-sm text-[var(--color-text-secondary)]">
-            工程师：<span className="text-[var(--color-primary)]">{detail.engineer_name}</span>
+            Engineer: <span className="text-[var(--color-primary)]">{detail.engineer_name}</span>
             {detail.engineer_phone && <span className="ml-1 opacity-70">{detail.engineer_phone}</span>}
           </div>
         )}
         {detail?.customer_name && (
           <div className="text-sm text-[var(--color-text-secondary)]">
-            客户：<span className="text-[var(--color-primary)]">{detail.customer_name}</span>
+            Customer: <span className="text-[var(--color-primary)]">{detail.customer_name}</span>
             {detail.customer_phone && <span className="ml-1 opacity-70">{detail.customer_phone}</span>}
           </div>
         )}
       </div>
 
       <div>
-        <h3 className="text-sm font-medium text-[var(--color-text-primary)] mb-1">问题描述</h3>
+        <h3 className="text-sm font-medium text-[var(--color-text-primary)] mb-1">Fault Description</h3>
         <div className="p-3 bg-[var(--color-surface-elevated)] rounded-xl text-sm text-[var(--color-text-primary)]">
           {workOrder.description}
         </div>
@@ -183,12 +183,12 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
         try { aiData = typeof detail.ai_summary === 'string' ? JSON.parse(detail.ai_summary) : detail.ai_summary; } catch { return null; }
         return (
           <div>
-            <h3 className="text-sm font-medium text-[var(--color-text-primary)] mb-1">AI 智能分析</h3>
+            <h3 className="text-sm font-medium text-[var(--color-text-primary)] mb-1">AI Analysis</h3>
             <div className="p-3 bg-yellow-500/10 border border-yellow-500/30 rounded-xl text-sm text-[var(--color-text-primary)] space-y-2">
               {aiData.summary && <p>{aiData.summary}</p>}
               {aiData.required_specialties?.length > 0 && (
                 <div className="flex flex-wrap gap-1">
-                  <span className="text-xs text-[var(--color-text-secondary)]">匹配设备：</span>
+                  <span className="text-xs text-[var(--color-text-secondary)]">Matched Equipment:</span>
                   {aiData.required_specialties.map((s, i) => (
                     <span key={i} className="px-2 py-0.5 text-xs bg-yellow-500/20 text-yellow-600 dark:text-yellow-400 rounded">{s}</span>
                   ))}
@@ -204,19 +204,19 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
         <button
           data-testid="mark-service-complete-button"
           onClick={async () => {
-            if (!(await confirmDialog('确认服务已完成？'))) return;
+            if (!(await confirmDialog('Confirm service is complete?'))) return;
             try {
               await resolveWorkOrder(workOrder.id, userId);
-              toastSuccess('已标记服务完成，等待客户确认。');
+              toastSuccess('Service marked complete. Awaiting customer confirmation.');
               loadDetail();
               onConfirmed?.();
             } catch (e) {
-              toastError('操作失败: ' + e.message);
+              toastError('Operation failed: ' + e.message);
             }
           }}
           className="w-full py-3 bg-green-500 hover:bg-green-600 text-white rounded-xl font-medium"
         >
-          标记服务完成
+          Mark Service Complete
         </button>
       )}
 
@@ -225,32 +225,32 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
         <button
           data-testid="cancel-work-order-button"
           onClick={async () => {
-            if (!(await confirmDialog('确定要取消该工单吗？取消后不可恢复。', { danger: true }))) return;
+            if (!(await confirmDialog('Are you sure you want to cancel this work order? This action cannot be undone.', { danger: true }))) return;
             try {
               await cancelWorkOrder(workOrder.id);
-              toastSuccess('工单已取消');
+              toastSuccess('Work order cancelled');
               loadDetail();
               onConfirmed?.();
             } catch (e) {
-              toastError('操作失败: ' + e.message);
+              toastError('Operation failed: ' + e.message);
             }
           }}
           className="w-full py-3 bg-red-500 hover:bg-red-600 text-white rounded-xl font-medium"
         >
-          取消工单
+          Cancel Work Order
         </button>
       )}
 
       {detail?.logs?.length > 0 && (
         <div>
-          <h3 className="text-sm font-medium text-[var(--color-text-primary)] mb-2">处理进度</h3>
+          <h3 className="text-sm font-medium text-[var(--color-text-primary)] mb-2">Progress</h3>
           <div className="space-y-2">
             {detail.logs.map((log) => (
               <div key={log.id} className="flex gap-3 text-sm">
                 <div className="w-2 h-2 mt-1.5 rounded-full bg-[var(--color-primary)] flex-shrink-0" />
                 <div>
                   <p className="text-[var(--color-text-primary)]">{log.content}</p>
-                  <p className="text-xs text-[var(--color-text-muted)]">{new Date(log.created_at).toLocaleString('zh-CN')}</p>
+                  <p className="text-xs text-[var(--color-text-muted)]">{new Date(log.created_at).toLocaleString('en-US')}</p>
                 </div>
               </div>
             ))}
@@ -265,7 +265,7 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
           onClick={() => setTab('rating')}
           className="w-full py-3 bg-yellow-500 hover:bg-yellow-600 text-white rounded-xl font-medium"
         >
-          立即评价
+          Rate Now
         </button>
       )}
       {isCustomer && hasRating && (
@@ -273,20 +273,20 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
           onClick={() => setTab('rating')}
           className="w-full py-2.5 text-sm text-[var(--color-primary)] hover:underline"
         >
-          查看评价 →
+          View Review →
         </button>
       )}
 
       {/* 工程师评价客户（仅工程师可见） */}
       {isEngineer && (effectiveStatus === 'resolved' || effectiveStatus === 'completed' || effectiveStatus === 'pending_review') && engineerReview && (
         <div>
-          <h3 className="text-sm font-medium text-[var(--color-text-primary)] mb-2">您对客户的评价</h3>
+          <h3 className="text-sm font-medium text-[var(--color-text-primary)] mb-2">Your Review of the Customer</h3>
           <div className="p-3 bg-blue-500/10 border border-blue-500/30 rounded-xl space-y-2">
             {[
-              { key: 'rating_cooperation', label: '配合度' },
-              { key: 'rating_communication', label: '沟通顺畅' },
-              { key: 'rating_payment', label: '付款及时' },
-              { key: 'rating_environment', label: '现场环境' },
+              { key: 'rating_cooperation', label: 'Cooperation' },
+              { key: 'rating_communication', label: 'Communication' },
+              { key: 'rating_payment', label: 'Payment Timeliness' },
+              { key: 'rating_environment', label: 'Site Conditions' },
             ].map((dim) => (
               <div key={dim.key} className="flex items-center justify-between">
                 <span className="text-sm text-[var(--color-text-secondary)]">{dim.label}</span>
@@ -296,39 +296,39 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
             {engineerReview.comment && (
               <div className="pt-2 border-t border-blue-500/20 text-sm text-[var(--color-text-primary)]">{engineerReview.comment}</div>
             )}
-            <div className="text-xs text-[var(--color-text-muted)]">此评价仅平台和工程师可见</div>
+            <div className="text-xs text-[var(--color-text-muted)]">This review is only visible to the platform and engineer</div>
           </div>
         </div>
       )}
 
       {isEngineer && (effectiveStatus === 'resolved' || effectiveStatus === 'completed' || effectiveStatus === 'pending_review') && !engineerReview && !showEngineerReview && (
         <button onClick={() => setShowEngineerReview(true)} className="w-full py-3 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white rounded-xl font-medium">
-          评价客户
+          Review Customer
         </button>
       )}
 
       {showEngineerReview && (
         <div className="space-y-3 p-4 bg-blue-500/10 border border-blue-500/30 rounded-xl">
-          <h3 className="text-sm font-medium text-[var(--color-text-primary)]">评价客户</h3>
-          <div className="text-xs text-[var(--color-text-muted)]">此评价仅平台和工程师可见，客户不可见</div>
+          <h3 className="text-sm font-medium text-[var(--color-text-primary)]">Review Customer</h3>
+          <div className="text-xs text-[var(--color-text-muted)]">This review is only visible to the platform and engineer, not to the customer</div>
           {[
-            { key: 'cooperation', label: '配合度' },
-            { key: 'communication', label: '沟通顺畅' },
-            { key: 'payment', label: '付款及时' },
-            { key: 'environment', label: '现场环境' },
+            { key: 'cooperation', label: 'Cooperation' },
+            { key: 'communication', label: 'Communication' },
+            { key: 'payment', label: 'Payment Timeliness' },
+            { key: 'environment', label: 'Site Conditions' },
           ].map((dim) => (
             <div key={dim.key} className="flex items-center justify-between">
               <span className="text-sm text-[var(--color-text-secondary)]">{dim.label}</span>
               <Stars value={engReviewRatings[dim.key]} onChange={(v) => setEngReviewRatings({ ...engReviewRatings, [dim.key]: v })} />
             </div>
           ))}
-          <textarea value={engReviewComment} onChange={(e) => setEngReviewComment(e.target.value)} placeholder="记录客户配合情况（选填）..." rows={2}
+          <textarea value={engReviewComment} onChange={(e) => setEngReviewComment(e.target.value)} placeholder="Note customer cooperation details (optional)..." rows={2}
             className="w-full px-3 py-2 text-sm border border-[var(--color-border)] rounded-xl bg-[var(--color-surface)] text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)] resize-none" />
           <div className="flex gap-2">
-            <button onClick={() => setShowEngineerReview(false)} className="flex-1 py-2 bg-[var(--color-border)] text-[var(--color-text-secondary)] rounded-xl text-sm">取消</button>
+            <button onClick={() => setShowEngineerReview(false)} className="flex-1 py-2 bg-[var(--color-border)] text-[var(--color-text-secondary)] rounded-xl text-sm">Cancel</button>
             <button
               onClick={async () => {
-                if (!detail?.engineer_id || !detail?.customer_id) { toastWarning('工单信息不完整'); return; }
+                if (!detail?.engineer_id || !detail?.customer_id) { toastWarning('Work order information is incomplete'); return; }
                 setEngReviewSubmitting(true);
                 try {
                   await submitEngineerReview(workOrder.id, {
@@ -341,10 +341,10 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
                     comment: engReviewComment,
                   });
                   setShowEngineerReview(false);
-                  toastSuccess('评价已提交');
+                  toastSuccess('Review submitted');
                   loadDetail();
                 } catch (e) {
-                  toastError('评价提交失败: ' + e.message);
+                  toastError('Review submission failed: ' + e.message);
                 } finally {
                   setEngReviewSubmitting(false);
                 }
@@ -352,7 +352,7 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
               disabled={engReviewSubmitting}
               className="flex-1 py-2 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] disabled:opacity-50 text-white rounded-xl text-sm"
             >
-              {engReviewSubmitting ? '提交中...' : '提交评价'}
+              {engReviewSubmitting ? 'Submitting...' : 'Submit Review'}
             </button>
           </div>
         </div>
@@ -364,13 +364,13 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
     <div className="space-y-4">
       {hasRating ? (
         <div>
-          <h3 className="text-sm font-medium text-[var(--color-text-primary)] mb-3">您的评价</h3>
+          <h3 className="text-sm font-medium text-[var(--color-text-primary)] mb-3">Your Review</h3>
           <div className="p-4 bg-[var(--color-surface-elevated)] rounded-xl space-y-2">
             {[
-              { key: 'timeliness', label: '时效性' },
-              { key: 'technical', label: '技术熟练' },
-              { key: 'communication', label: '沟通流畅' },
-              { key: 'professional', label: '专业性' },
+              { key: 'timeliness', label: 'Timeliness' },
+              { key: 'technical', label: 'Technical Skill' },
+              { key: 'communication', label: 'Communication' },
+              { key: 'professional', label: 'Professionalism' },
             ].map((dim) => (
               <div key={dim.key} className="flex items-center justify-between">
                 <span className="text-sm text-[var(--color-text-secondary)]">{dim.label}</span>
@@ -381,25 +381,25 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
               <div className="pt-3 border-t border-[var(--color-border)] text-sm text-[var(--color-text-primary)]">{detail.rating.comment}</div>
             )}
             <div className="pt-1 text-xs text-[var(--color-text-muted)]">
-              评价时间：{detail.rating.created_at ? new Date(detail.rating.created_at).toLocaleString('zh-CN') : '-'}
+              Reviewed: {detail.rating.created_at ? new Date(detail.rating.created_at).toLocaleString('en-US') : '-'}
             </div>
           </div>
         </div>
       ) : canRate ? (
         <div className="space-y-3 p-4 bg-[var(--color-surface-elevated)] rounded-xl">
-          <h3 className="text-sm font-medium text-[var(--color-text-primary)]">服务评价</h3>
+          <h3 className="text-sm font-medium text-[var(--color-text-primary)]">Service Review</h3>
           {[
-            { key: 'timeliness', label: '时效性' },
-            { key: 'technical', label: '技术熟练' },
-            { key: 'communication', label: '沟通流畅' },
-            { key: 'professional', label: '专业性' },
+            { key: 'timeliness', label: 'Timeliness' },
+            { key: 'technical', label: 'Technical Skill' },
+            { key: 'communication', label: 'Communication' },
+            { key: 'professional', label: 'Professionalism' },
           ].map((dim) => (
             <div key={dim.key} className="flex items-center justify-between">
               <span className="text-sm text-[var(--color-text-secondary)]">{dim.label}</span>
               <Stars value={ratings[dim.key]} onChange={(v) => setRatings({ ...ratings, [dim.key]: v })} />
             </div>
           ))}
-          <textarea value={comment} onChange={(e) => setComment(e.target.value)} placeholder="分享服务体验（选填）..." rows={3}
+          <textarea value={comment} onChange={(e) => setComment(e.target.value)} placeholder="Share your service experience (optional)..." rows={3}
             className="w-full px-3 py-2 text-sm border border-[var(--color-border)] rounded-xl bg-[var(--color-surface)] text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-yellow-500 resize-none" />
           <button
             data-testid="submit-rating-button"
@@ -407,17 +407,17 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
             disabled={submitting}
             className="w-full py-3 bg-yellow-500 hover:bg-yellow-600 disabled:opacity-50 text-white rounded-xl font-medium"
           >
-            {submitting ? '提交中...' : '提交评价'}
+            {submitting ? 'Submitting...' : 'Submit Review'}
           </button>
         </div>
       ) : (
-        <div className="text-center py-8 text-[var(--color-text-muted)] text-sm">评价不可用</div>
+        <div className="text-center py-8 text-[var(--color-text-muted)] text-sm">Review not available</div>
       )}
     </div>
   );
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="工单详情" size="md">
+    <Modal isOpen={isOpen} onClose={onClose} title="Work Order Details" size="md">
       <div>
         {/* Tab 切换 */}
         <div className="flex gap-1 mb-4 border-b border-[var(--color-border)] pb-0">
@@ -437,7 +437,7 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
         </div>
 
         {loading ? (
-          <div className="text-center py-8 text-[var(--color-text-muted)]">加载中...</div>
+          <div className="text-center py-8 text-[var(--color-text-muted)]">Loading...</div>
         ) : (
           <>
             {tab === 'info' && renderInfoTab()}

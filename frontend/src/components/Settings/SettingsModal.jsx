@@ -62,7 +62,7 @@ export function SettingsModal({ isOpen, onClose, currentUser, userType, onOpenMy
         credit_score: profile.credit_score,
         rating: profile.rating_count > 0
           ? ((profile.rating_timeliness + profile.rating_technical + profile.rating_communication + profile.rating_professional) / 4).toFixed(1)
-          : '暂无',
+          : 'N/A',
         rating_count: profile.rating_count || 0,
       });
       // 回填银行卡信息
@@ -75,7 +75,7 @@ export function SettingsModal({ isOpen, onClose, currentUser, userType, onOpenMy
       }));
       setEngineerWallet(walletRes);
     } catch (err) {
-      console.error('加载工程师数据失败', err);
+      console.error('Failed to load engineer data', err);
     }
   }
 
@@ -92,10 +92,10 @@ export function SettingsModal({ isOpen, onClose, currentUser, userType, onOpenMy
         const updated = { ...currentUser, ...engineerForm };
         localStorage.setItem('sagemro_user', JSON.stringify(updated));
       }
-      setSuccess('保存成功');
+      setSuccess('Saved successfully');
       setTimeout(() => setSuccess(''), 2000);
     } catch (err) {
-      setError(err.message || '保存失败');
+      setError(err.message || 'Save failed');
     } finally {
       setLoading(false);
     }
@@ -111,17 +111,17 @@ export function SettingsModal({ isOpen, onClose, currentUser, userType, onOpenMy
       const updated = { ...currentUser, status: newStatus };
       localStorage.setItem('sagemro_user', JSON.stringify(updated));
     } catch (err) {
-      setError('状态更新失败');
+      setError('Failed to update status');
     }
   }
 
   async function handleChangePassword() {
     if (pwdForm.newPassword !== pwdForm.confirmPassword) {
-      setError('两次输入的新密码不一致');
+      setError('New passwords do not match');
       return;
     }
     if (pwdForm.newPassword.length < 6) {
-      setError('新密码至少6位');
+      setError('New password must be at least 6 characters');
       return;
     }
     setLoading(true);
@@ -129,22 +129,22 @@ export function SettingsModal({ isOpen, onClose, currentUser, userType, onOpenMy
     try {
       await changePassword({ oldPassword: pwdForm.oldPassword, newPassword: pwdForm.newPassword });
       setPwdForm({ oldPassword: '', newPassword: '', confirmPassword: '' });
-      setSuccess('密码修改成功');
+      setSuccess('Password changed successfully');
       setTimeout(() => setSuccess(''), 2000);
     } catch (err) {
-      setError(err.message || '修改失败');
+      setError(err.message || 'Change failed');
     } finally {
       setLoading(false);
     }
   }
 
-  const statusLabels = { available: '接单中', paused: '暂停接单', offline: '离线' };
+  const statusLabels = { available: 'Available', paused: 'Paused', offline: 'Offline' };
   const statusColors = { available: 'text-green-500', paused: 'text-yellow-500', offline: 'text-gray-400' };
 
-  const levelLabels = { junior: '初级', senior: '中级', expert: '专家' };
+  const levelLabels = { junior: 'Junior', senior: 'Senior', expert: 'Expert' };
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="个人中心" size="md">
+    <Modal isOpen={isOpen} onClose={onClose} title="Account" size="md">
       <div className="flex flex-col gap-5">
         {/* 头像 + 名称区 */}
         <div className="flex items-center gap-3">
@@ -163,7 +163,7 @@ export function SettingsModal({ isOpen, onClose, currentUser, userType, onOpenMy
             {userType === 'engineer' && (
               <div className="flex items-center gap-2 mt-0.5">
                 <span className="text-[11px] px-1.5 py-0.5 bg-[var(--color-primary)]/20 text-[var(--color-primary)] rounded">
-                  {levelLabels[engineerStats?.level] || '初级'}工程师
+                  {levelLabels[engineerStats?.level] || 'Junior'} Engineer
                 </span>
                 <span className={`text-[11px] ${statusColors[currentStatus]}`}>
                   {statusLabels[currentStatus]}
@@ -194,21 +194,21 @@ export function SettingsModal({ isOpen, onClose, currentUser, userType, onOpenMy
               <div className="text-[18px] font-semibold text-green-400">
                 ¥{engineerWallet.wallet?.wallet_balance ?? 0}
               </div>
-              <div className="text-[11px] text-[var(--color-sidebar-text)] opacity-50 mt-0.5">钱包余额</div>
+              <div className="text-[11px] text-[var(--color-sidebar-text)] opacity-50 mt-0.5">Wallet Balance</div>
             </div>
             <div className="bg-[var(--color-surface-elevated)] rounded-xl p-3 text-center">
               <div className="text-[18px] font-semibold text-[var(--color-sidebar-text)]">
                 ¥{engineerWallet.wallet?.deposit_balance ?? 0}
               </div>
-              <div className="text-[11px] text-[var(--color-sidebar-text)] opacity-50 mt-0.5">保证金</div>
+              <div className="text-[11px] text-[var(--color-sidebar-text)] opacity-50 mt-0.5">Deposit</div>
             </div>
             <div className="bg-[var(--color-surface-elevated)] rounded-xl p-3 text-center">
               <div className="text-[18px] font-semibold text-yellow-400 flex items-center justify-center gap-1">
                 <Star size={14} className="fill-yellow-400" />
-                {engineerStats?.rating || '暂无'}
+                {engineerStats?.rating || 'N/A'}
               </div>
               <div className="text-[11px] text-[var(--color-sidebar-text)] opacity-50 mt-0.5">
-                {engineerStats?.rating_count || 0}次评价
+                {engineerStats?.rating_count || 0} reviews
               </div>
             </div>
           </div>
@@ -224,7 +224,7 @@ export function SettingsModal({ isOpen, onClose, currentUser, userType, onOpenMy
                 : 'border-transparent text-[var(--color-sidebar-text)] opacity-50 hover:opacity-80'
             }`}
           >
-            档案信息
+            Profile
           </button>
           {userType === 'customer' && (
             <button
@@ -235,7 +235,7 @@ export function SettingsModal({ isOpen, onClose, currentUser, userType, onOpenMy
                   : 'border-transparent text-[var(--color-sidebar-text)] opacity-50 hover:opacity-80'
               }`}
             >
-              我的设备
+              My Equipment
             </button>
           )}
           <button
@@ -246,7 +246,7 @@ export function SettingsModal({ isOpen, onClose, currentUser, userType, onOpenMy
                 : 'border-transparent text-[var(--color-sidebar-text)] opacity-50 hover:opacity-80'
             }`}
           >
-            修改密码
+            Change Password
           </button>
         </div>
 
@@ -259,7 +259,7 @@ export function SettingsModal({ isOpen, onClose, currentUser, userType, onOpenMy
               {userType === 'customer' ? (
                 <>
                   <div>
-                    <label className="block text-[12px] text-[var(--color-sidebar-text)] opacity-60 mb-1.5">姓名</label>
+                    <label className="block text-[12px] text-[var(--color-sidebar-text)] opacity-60 mb-1.5">Name</label>
                     <input
                       type="text"
                       value={customerForm.name}
@@ -268,7 +268,7 @@ export function SettingsModal({ isOpen, onClose, currentUser, userType, onOpenMy
                     />
                   </div>
                   <div>
-                    <label className="block text-[12px] text-[var(--color-sidebar-text)] opacity-60 mb-1.5">手机号</label>
+                    <label className="block text-[12px] text-[var(--color-sidebar-text)] opacity-60 mb-1.5">Phone</label>
                     <input
                       type="text"
                       value={currentUser?.phone || ''}
@@ -277,12 +277,12 @@ export function SettingsModal({ isOpen, onClose, currentUser, userType, onOpenMy
                     />
                   </div>
                   <div>
-                    <label className="block text-[12px] text-[var(--color-sidebar-text)] opacity-60 mb-1.5">所在地区</label>
+                    <label className="block text-[12px] text-[var(--color-sidebar-text)] opacity-60 mb-1.5">Region</label>
                     <input
                       type="text"
                       value={customerForm.region}
                       onChange={e => setCustomerForm({ ...customerForm, region: e.target.value })}
-                      placeholder="如：华东地区、苏州市"
+                      placeholder="e.g. East China, Suzhou"
                       className="w-full bg-[var(--color-input-bg)] border border-[var(--color-input-border)] rounded-lg px-3 py-2.5 text-[14px] text-[var(--color-sidebar-text)]"
                     />
                   </div>
@@ -290,7 +290,7 @@ export function SettingsModal({ isOpen, onClose, currentUser, userType, onOpenMy
               ) : (
                 <>
                   <div>
-                    <label className="block text-[12px] text-[var(--color-sidebar-text)] opacity-60 mb-1.5">姓名</label>
+                    <label className="block text-[12px] text-[var(--color-sidebar-text)] opacity-60 mb-1.5">Name</label>
                     <input
                       type="text"
                       value={engineerForm.name}
@@ -299,7 +299,7 @@ export function SettingsModal({ isOpen, onClose, currentUser, userType, onOpenMy
                     />
                   </div>
                   <div>
-                    <label className="block text-[12px] text-[var(--color-sidebar-text)] opacity-60 mb-1.5">手机号</label>
+                    <label className="block text-[12px] text-[var(--color-sidebar-text)] opacity-60 mb-1.5">Phone</label>
                     <input
                       type="text"
                       value={currentUser?.phone || ''}
@@ -308,66 +308,66 @@ export function SettingsModal({ isOpen, onClose, currentUser, userType, onOpenMy
                     />
                   </div>
                   <div>
-                    <label className="block text-[12px] text-[var(--color-sidebar-text)] opacity-60 mb-1.5">服务地区</label>
+                    <label className="block text-[12px] text-[var(--color-sidebar-text)] opacity-60 mb-1.5">Service Region</label>
                     <input
                       type="text"
                       value={engineerForm.service_region}
                       onChange={e => setEngineerForm({ ...engineerForm, service_region: e.target.value })}
-                      placeholder="如：华东地区、苏州市"
+                      placeholder="e.g. East China, Suzhou"
                       className="w-full bg-[var(--color-input-bg)] border border-[var(--color-input-border)] rounded-lg px-3 py-2.5 text-[14px] text-[var(--color-sidebar-text)]"
                     />
                   </div>
                   <div>
-                    <label className="block text-[12px] text-[var(--color-sidebar-text)] opacity-60 mb-1.5">个人简介</label>
+                    <label className="block text-[12px] text-[var(--color-sidebar-text)] opacity-60 mb-1.5">Bio</label>
                     <textarea
                       value={engineerForm.bio}
                       onChange={e => setEngineerForm({ ...engineerForm, bio: e.target.value })}
-                      placeholder="向客户介绍一下自己..."
+                      placeholder="Introduce yourself to customers..."
                       rows={3}
                       className="w-full bg-[var(--color-input-bg)] border border-[var(--color-input-border)] rounded-lg px-3 py-2.5 text-[14px] text-[var(--color-sidebar-text)] resize-none"
                     />
                   </div>
                   {/* 银行卡信息（用于提现） */}
                   <div className="border-t border-[var(--color-border)] pt-4 mt-2">
-                    <p className="text-[12px] text-[var(--color-sidebar-text)] opacity-60 mb-3">银行卡信息（用于提现）</p>
+                    <p className="text-[12px] text-[var(--color-sidebar-text)] opacity-60 mb-3">Bank Account (for withdrawals)</p>
                     <div className="space-y-3">
                       <div>
-                        <label className="block text-[12px] text-[var(--color-sidebar-text)] opacity-60 mb-1.5">开户银行</label>
+                        <label className="block text-[12px] text-[var(--color-sidebar-text)] opacity-60 mb-1.5">Bank Name</label>
                         <input
                           type="text"
                           value={engineerForm.bank_name}
                           onChange={e => setEngineerForm({ ...engineerForm, bank_name: e.target.value })}
-                          placeholder="如：中国工商银行"
+                          placeholder="e.g. ICBC, Construction Bank"
                           className="w-full bg-[var(--color-input-bg)] border border-[var(--color-input-border)] rounded-lg px-3 py-2.5 text-[14px] text-[var(--color-sidebar-text)]"
                         />
                       </div>
                       <div>
-                        <label className="block text-[12px] text-[var(--color-sidebar-text)] opacity-60 mb-1.5">开户支行</label>
+                        <label className="block text-[12px] text-[var(--color-sidebar-text)] opacity-60 mb-1.5">Branch</label>
                         <input
                           type="text"
                           value={engineerForm.bank_branch}
                           onChange={e => setEngineerForm({ ...engineerForm, bank_branch: e.target.value })}
-                          placeholder="如：济南市历下支行"
+                          placeholder="e.g. Jinan Lixia Branch"
                           className="w-full bg-[var(--color-input-bg)] border border-[var(--color-input-border)] rounded-lg px-3 py-2.5 text-[14px] text-[var(--color-sidebar-text)]"
                         />
                       </div>
                       <div>
-                        <label className="block text-[12px] text-[var(--color-sidebar-text)] opacity-60 mb-1.5">开户人姓名</label>
+                        <label className="block text-[12px] text-[var(--color-sidebar-text)] opacity-60 mb-1.5">Account Holder</label>
                         <input
                           type="text"
                           value={engineerForm.account_holder}
                           onChange={e => setEngineerForm({ ...engineerForm, account_holder: e.target.value })}
-                          placeholder="需与银行卡开户名一致"
+                          placeholder="Must match the bank account name"
                           className="w-full bg-[var(--color-input-bg)] border border-[var(--color-input-border)] rounded-lg px-3 py-2.5 text-[14px] text-[var(--color-sidebar-text)]"
                         />
                       </div>
                       <div>
-                        <label className="block text-[12px] text-[var(--color-sidebar-text)] opacity-60 mb-1.5">银行卡号</label>
+                        <label className="block text-[12px] text-[var(--color-sidebar-text)] opacity-60 mb-1.5">Account Number</label>
                         <input
                           type="text"
                           value={engineerForm.bank_account}
                           onChange={e => setEngineerForm({ ...engineerForm, bank_account: e.target.value })}
-                          placeholder="请输入银行卡号"
+                          placeholder="Enter bank account number"
                           className="w-full bg-[var(--color-input-bg)] border border-[var(--color-input-border)] rounded-lg px-3 py-2.5 text-[14px] text-[var(--color-sidebar-text)]"
                         />
                       </div>
@@ -377,11 +377,11 @@ export function SettingsModal({ isOpen, onClose, currentUser, userType, onOpenMy
                   {/* 工程师等级信息 */}
                   <div className="bg-[var(--color-surface-elevated)] rounded-xl p-3 space-y-2">
                     <div className="flex justify-between text-[13px]">
-                      <span className="text-[var(--color-sidebar-text)] opacity-60">等级</span>
-                      <span className="text-[var(--color-sidebar-text)]">{levelLabels[engineerStats?.level] || '初级'}</span>
+                      <span className="text-[var(--color-sidebar-text)] opacity-60">Level</span>
+                      <span className="text-[var(--color-sidebar-text)]">{levelLabels[engineerStats?.level] || 'Junior'}</span>
                     </div>
                     <div className="flex justify-between text-[13px]">
-                      <span className="text-[var(--color-sidebar-text)] opacity-60">信用分</span>
+                      <span className="text-[var(--color-sidebar-text)] opacity-60">Credit Score</span>
                       <span className="text-[var(--color-sidebar-text)]">{engineerStats?.credit_score ?? 100}</span>
                     </div>
                   </div>
@@ -400,7 +400,7 @@ export function SettingsModal({ isOpen, onClose, currentUser, userType, onOpenMy
                 disabled={loading}
                 className="w-full py-2.5 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white rounded-lg text-[14px] font-medium transition-colors disabled:opacity-50"
               >
-                {loading ? '保存中...' : '保存修改'}
+                {loading ? 'Saving...' : 'Save Changes'}
               </button>
             </div>
           )}
@@ -409,7 +409,7 @@ export function SettingsModal({ isOpen, onClose, currentUser, userType, onOpenMy
           {tab === 'devices' && userType === 'customer' && (
             <div className="space-y-3">
               <p className="text-[13px] text-[var(--color-sidebar-text)] opacity-60">
-                在这里管理您的设备档案，每个设备都有独立的维修记录。
+                Manage your equipment profiles here. Each equipment has its own repair records.
               </p>
               <button
                 onClick={() => { onClose(); onOpenMyDevices(); }}
@@ -420,8 +420,8 @@ export function SettingsModal({ isOpen, onClose, currentUser, userType, onOpenMy
                     <Package size={20} className="text-[var(--color-primary)]" />
                   </div>
                   <div className="text-left">
-                    <div className="text-[14px] font-medium text-[var(--color-sidebar-text)]">我的设备</div>
-                    <div className="text-[12px] text-[var(--color-sidebar-text)] opacity-50">查看全部设备档案</div>
+                    <div className="text-[14px] font-medium text-[var(--color-sidebar-text)]">My Equipment</div>
+                    <div className="text-[12px] text-[var(--color-sidebar-text)] opacity-50">View all equipment profiles</div>
                   </div>
                 </div>
                 <ChevronRight size={18} className="text-[var(--color-sidebar-text)] opacity-40" />
@@ -433,32 +433,32 @@ export function SettingsModal({ isOpen, onClose, currentUser, userType, onOpenMy
           {tab === 'password' && (
             <div className="space-y-4">
               <div>
-                <label className="block text-[12px] text-[var(--color-sidebar-text)] opacity-60 mb-1.5">旧密码</label>
+                <label className="block text-[12px] text-[var(--color-sidebar-text)] opacity-60 mb-1.5">Current Password</label>
                 <input
                   type="password"
                   value={pwdForm.oldPassword}
                   onChange={e => setPwdForm({ ...pwdForm, oldPassword: e.target.value })}
-                  placeholder="请输入旧密码"
+                  placeholder="Enter current password"
                   className="w-full bg-[var(--color-input-bg)] border border-[var(--color-input-border)] rounded-lg px-3 py-2.5 text-[14px] text-[var(--color-sidebar-text)]"
                 />
               </div>
               <div>
-                <label className="block text-[12px] text-[var(--color-sidebar-text)] opacity-60 mb-1.5">新密码</label>
+                <label className="block text-[12px] text-[var(--color-sidebar-text)] opacity-60 mb-1.5">New Password</label>
                 <input
                   type="password"
                   value={pwdForm.newPassword}
                   onChange={e => setPwdForm({ ...pwdForm, newPassword: e.target.value })}
-                  placeholder="至少6位"
+                  placeholder="At least 6 characters"
                   className="w-full bg-[var(--color-input-bg)] border border-[var(--color-input-border)] rounded-lg px-3 py-2.5 text-[14px] text-[var(--color-sidebar-text)]"
                 />
               </div>
               <div>
-                <label className="block text-[12px] text-[var(--color-sidebar-text)] opacity-60 mb-1.5">确认新密码</label>
+                <label className="block text-[12px] text-[var(--color-sidebar-text)] opacity-60 mb-1.5">Confirm New Password</label>
                 <input
                   type="password"
                   value={pwdForm.confirmPassword}
                   onChange={e => setPwdForm({ ...pwdForm, confirmPassword: e.target.value })}
-                  placeholder="再次输入新密码"
+                  placeholder="Re-enter new password"
                   className="w-full bg-[var(--color-input-bg)] border border-[var(--color-input-border)] rounded-lg px-3 py-2.5 text-[14px] text-[var(--color-sidebar-text)]"
                 />
               </div>
@@ -475,7 +475,7 @@ export function SettingsModal({ isOpen, onClose, currentUser, userType, onOpenMy
                 disabled={loading}
                 className="w-full py-2.5 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white rounded-lg text-[14px] font-medium transition-colors disabled:opacity-50"
               >
-                {loading ? '修改中...' : '修改密码'}
+                {loading ? 'Changing...' : 'Change Password'}
               </button>
             </div>
           )}

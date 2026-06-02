@@ -121,7 +121,7 @@ function App() {
 
   // 当前对话标题
   const currentConversation = conversationId ? getConversation(conversationId) : null;
-  const currentTitle = currentConversation?.title || '新对话';
+  const currentTitle = currentConversation?.title || 'New Chat';
 
   // 新建对话
   const handleNewChat = useCallback(() => {

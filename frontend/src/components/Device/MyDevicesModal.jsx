@@ -24,7 +24,7 @@ export function MyDevicesModal({ isOpen, onClose, currentUser, userType }) {
       const data = await getDevices();
       setDevices(data.devices || []);
     } catch (err) {
-      setError('加载设备失败');
+      setError('Failed to load devices');
       console.error(err);
     } finally {
       setLoading(false);
@@ -32,7 +32,7 @@ export function MyDevicesModal({ isOpen, onClose, currentUser, userType }) {
   }
 
   async function handleDelete(deviceId) {
-    if (!(await confirmDialog('确定删除这个设备吗？', { danger: true, confirmText: '删除' }))) return;
+    if (!(await confirmDialog('Are you sure you want to delete this device?', { danger: true, confirmText: 'Delete' }))) return;
     try {
       await deleteDevice(deviceId);
       setDevices(devices.filter(d => d.id !== deviceId));
@@ -40,7 +40,7 @@ export function MyDevicesModal({ isOpen, onClose, currentUser, userType }) {
         setSelectedDevice(null);
       }
     } catch (err) {
-      toastError('删除失败');
+      toastError('Delete failed');
     }
   }
 
@@ -57,7 +57,7 @@ export function MyDevicesModal({ isOpen, onClose, currentUser, userType }) {
             <div className="w-8 h-8 rounded-lg bg-[var(--color-primary)] flex items-center justify-center">
               <Package size={18} className="text-white" />
             </div>
-            <h2 className="text-[16px] font-medium text-[var(--color-text-primary)]">我的设备</h2>
+            <h2 className="text-[16px] font-medium text-[var(--color-text-primary)]">My Devices</h2>
           </div>
           <button onClick={onClose} className="p-1.5 hover:bg-[var(--color-hover)] rounded-lg transition-colors">
             <X size={18} className="text-[var(--color-text-secondary)]" />
@@ -81,11 +81,11 @@ export function MyDevicesModal({ isOpen, onClose, currentUser, userType }) {
               <div className="w-12 h-12 mx-auto mb-3 rounded-full bg-[var(--color-primary)]/10 flex items-center justify-center">
                 <Sparkles size={24} className="text-[var(--color-primary)] opacity-70" />
               </div>
-              <p className="text-[14px] text-[var(--color-text-primary)] opacity-80">您的设备信息将自动整理</p>
+              <p className="text-[14px] text-[var(--color-text-primary)] opacity-80">Your device info is automatically organized</p>
               <p className="text-[12px] text-[var(--color-text-muted)] mt-1.5 leading-relaxed max-w-[320px] mx-auto">
-                当您在与小智对话中提及设备品牌、型号等信息时，小智会自动识别并整理到这里。您无需手动填写。
+                When you mention device brands, models, or other details in your conversation with SAGEMRO, it will automatically recognize and organize them here. No manual entry needed.
               </p>
-              <p className="text-[12px] text-[var(--color-text-muted)] mt-3 opacity-50">您的设备数据仅用于精准匹配工程师，不会公开展示。</p>
+              <p className="text-[12px] text-[var(--color-text-muted)] mt-3 opacity-50">Your device data is only used for matching you with the right engineer and will not be publicly displayed.</p>
             </div>
           )}
 

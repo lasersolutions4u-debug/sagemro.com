@@ -135,8 +135,8 @@ export function usePushNotification(userId, shouldSubscribe) {
           const data = event.notification?.data;
           if (data?.work_order_id) {
             setInAppNotification({
-              title: event.notification?.heading || '📋 新工单通知',
-              body: event.notification?.body || '您有新的工单等待接单',
+              title: event.notification?.heading || '📋 New Work Order',
+              body: event.notification?.body || 'You have a new work order awaiting acceptance',
               data
             });
             // 5秒后自动消失
@@ -176,7 +176,7 @@ export function usePushNotification(userId, shouldSubscribe) {
       typeof window.OneSignal.getNotificationPermission !== 'function'
     ) {
       console.error('[Push] OneSignal SDK not available');
-      toastError('推送服务暂不可用，请刷新页面后重试');
+      toastError('Push service unavailable, please refresh and try again');
       return;
     }
 
@@ -185,7 +185,7 @@ export function usePushNotification(userId, shouldSubscribe) {
       debugLog('[Push] permission:', permission);
 
       if (permission === 'denied') {
-        toastError('推送通知已被浏览器拒绝，请在浏览器设置中允许通知');
+        toastError('Push notifications blocked by browser. Please allow notifications in browser settings.');
         return;
       }
 
