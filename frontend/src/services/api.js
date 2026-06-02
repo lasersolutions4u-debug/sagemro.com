@@ -158,7 +158,7 @@ export async function resetPassword({ phone, code, newPassword }) {
 /**
  * 发送消息并获取流式响应
  */
-export async function streamChat({ conversationId, message, onChunk, onDone, onError, signal, customerId }) {
+export async function streamChat({ conversationId, message, images, onChunk, onDone, onError, signal, customerId }) {
   try {
     const userType = localStorage.getItem('sagemro_user_type') || 'guest';
     const engineerId = localStorage.getItem('sagemro_engineer_id');
@@ -169,6 +169,7 @@ export async function streamChat({ conversationId, message, onChunk, onDone, onE
       body: JSON.stringify({
         conversation_id: conversationId,
         message: message,
+        images: images && images.length > 0 ? images : undefined,
         customer_id: customerId || localStorage.getItem('sagemro_customer_id'),
         engineer_id: engineerId,
         user_type: userType,
@@ -217,6 +218,28 @@ export async function streamChat({ conversationId, message, onChunk, onDone, onE
       onError?.(error);
     }
   }
+}
+
+/**
+ * 上传聊天图片
+ */
+export async function uploadChatImage(file) {
+  const token = localStorage.getItem('sagemro_token');
+  const formData = new FormData();
+  formData.append('image', file);
+
+  const response = await fetch(`${API_BASE}/api/chat/upload-image`, {
+    method: 'POST',
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    body: formData,
+  });
+
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.error || `上传失败 (${response.status})`);
+  }
+
+  return response.json();
 }
 
 /**

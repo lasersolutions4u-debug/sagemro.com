@@ -185,6 +185,27 @@ export function validateAttachmentSize(size) {
   }
 }
 
+// ========== 聊天图片上传校验 ==========
+
+export const ALLOWED_CHAT_IMAGE_TYPES = [
+  'image/jpeg', 'image/png', 'image/gif', 'image/webp',
+];
+
+export const MAX_CHAT_IMAGE_SIZE = 10 * 1024 * 1024; // 10 MB
+export const MAX_CHAT_IMAGES = 4; // 单条消息最多 4 张图
+
+export function validateChatImageType(mimeType) {
+  if (typeof mimeType !== 'string' || !ALLOWED_CHAT_IMAGE_TYPES.includes(mimeType)) {
+    throw new ValidationError(`不支持的图片类型: ${mimeType}，仅支持 JPG/PNG/GIF/WebP`);
+  }
+}
+
+export function validateChatImageSize(size) {
+  if (typeof size !== 'number' || size <= 0 || size > MAX_CHAT_IMAGE_SIZE) {
+    throw new ValidationError(`图片大小超过限制 (最大 10MB)`);
+  }
+}
+
 /**
  * 文件名消毒：去除路径遍历字符、null 字节，限制长度 255
  */

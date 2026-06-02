@@ -14,12 +14,13 @@ export function useChat() {
   const abortControllerRef = useRef(null);
 
   // 发送消息
-  const sendMessage = useCallback(async (content) => {
+  const sendMessage = useCallback(async (content, images) => {
     // 创建用户消息
     const userMessage = {
       id: generateId(),
       role: 'user',
       content,
+      images: images && images.length > 0 ? images : undefined,
       created_at: new Date().toISOString(),
     };
 
@@ -55,6 +56,7 @@ export function useChat() {
       streamChat({
         conversationId,
         message: content,
+        images,
         onChunk: (data) => {
           if (data.content) {
             aiContent += data.content;
@@ -98,10 +100,17 @@ export function useChat() {
 
   // 加载历史消息
   const loadMessages = useCallback((historyMessages, convId) => {
-    setMessages(historyMessages.map(m => ({
-      ...m,
-      id: m.id || generateId(),
-    })));
+    setMessages(historyMessages.map(m => {
+      let imgs = undefined;
+      if (m.image_urls) {
+        try { imgs = JSON.parse(m.image_urls); } catch { /* ignore */ }
+      }
+      return {
+        ...m,
+        id: m.id || generateId(),
+        images: imgs,
+      };
+    }));
     setConversationId(convId);
     setError(null);
   }, []);

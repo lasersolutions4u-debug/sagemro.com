@@ -148,7 +148,7 @@ function App() {
   }, [conversationId, clearMessages, loadMessages]);
 
   // 发送消息
-  const handleSendMessage = useCallback(async (content) => {
+  const handleSendMessage = useCallback(async (content, images) => {
     let convId = conversationId;
     if (!convId) {
       const newConv = createConversation();
@@ -158,13 +158,14 @@ function App() {
     const stored = localStorage.getItem(`sagemro_messages_${convId}`);
     const currentMessages = stored ? JSON.parse(stored) : [];
 
-    await sendMessage(content);
+    await sendMessage(content, images);
 
     setTimeout(() => {
       const updatedMessages = [...currentMessages, {
         id: generateId(),
         role: 'user',
         content,
+        images: images && images.length > 0 ? images : undefined,
         created_at: new Date().toISOString(),
       }];
       localStorage.setItem(`sagemro_messages_${convId}`, JSON.stringify(updatedMessages));
