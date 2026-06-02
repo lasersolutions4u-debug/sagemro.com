@@ -99,7 +99,7 @@ export function EngineerDashboard({ isOpen, onClose, engineerId, onViewProfile }
 
   return (
     <>
-    <Modal isOpen={isOpen} onClose={onClose} title="Engineer Dashboard" size="md">
+    <Modal isOpen={isOpen} onClose={onClose} title="Provider Dashboard" size="md">
       <div className="space-y-5">
         {/* 查看档案入口 */}
         <button

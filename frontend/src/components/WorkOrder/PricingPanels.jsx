@@ -187,7 +187,7 @@ export function CustomerPricingPanel({ workOrderId, customerId, onConfirmed }) {
 
   if (loading) return <div className="text-center py-4 text-sm text-[var(--color-text-muted)]">Loading...</div>;
 
-  if (!pricing) return <div className="text-center py-4 text-sm text-[var(--color-text-muted)]">Engineer has not submitted a quote yet</div>;
+  if (!pricing) return <div className="text-center py-4 text-sm text-[var(--color-text-muted)]">Service Provider has not submitted a quote yet</div>;
 
   let aiCheck = null;
   try { aiCheck = pricing.ai_price_check ? JSON.parse(pricing.ai_price_check) : null; } catch {}

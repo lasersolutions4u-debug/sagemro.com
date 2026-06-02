@@ -37,11 +37,11 @@ const USER_AGREEMENT = `
 
 4.3 After receiving a quotation, the customer may choose to confirm or reject the quotation (initiate negotiation).
 
-## 5. Engineer Tiers
+## 5. Service Provider Tiers
 
-5.1 Engineers are assigned the Junior tier by default upon registration, with a credit score of 100. Tiers and corresponding rates are subject to the platform's published tier rules.
+5.1 Service Providers are assigned the Junior tier by default upon registration, with a credit score of 100. Tiers and corresponding rates are subject to the platform's published tier rules.
 
-5.2 Engineers can view their current tier, platform service fee rate, credit score, and wallet balance on their dashboard.
+5.2 Service Providers can view their current tier, platform service fee rate, credit score, and wallet balance on their dashboard.
 
 ## 6. Payment
 
@@ -49,11 +49,11 @@ const USER_AGREEMENT = `
 
 6.2 When official payment goes live, customer payments will be held in the platform's escrow account. After service completion and customer confirmation, the platform will settle the engineer's earnings to their wallet. The platform will notify all users before official payment launches.
 
-## 7. Engineer Wallet and Withdrawal
+## 7. Service Provider Wallet and Withdrawal
 
-7.1 After completing a work order and receiving a customer review, the engineer's earnings are credited to their wallet balance. Engineers can view their wallet balance and transaction history on their dashboard.
+7.1 After completing a work order and receiving a customer review, the service provider's earnings are credited to their wallet balance. Service Providers can view their wallet balance and transaction history on their dashboard.
 
-7.2 Engineers may apply for withdrawal. A linked bank account is required. The minimum withdrawal amount is 100 CNY per transaction and the maximum is 50,000 CNY. Withdrawal requests are reviewed and processed by the platform.
+7.2 Service Providers may apply for withdrawal. A linked bank account is required. The minimum withdrawal amount is 100 CNY per transaction and the maximum is 50,000 CNY. Withdrawal requests are reviewed and processed by the platform.
 
 ## 8. Service Reviews
 
@@ -87,7 +87,7 @@ const PRIVACY_POLICY = `
 
 **Information you provide voluntarily:**
 - Registration information: phone number, real name, company name, password
-- Engineer background: equipment types, brands, service items, service regions
+- Service Provider background: equipment types, brands, service items, service regions
 - Work order information: equipment type, brand and model, fault description
 - Review content: service ratings and written reviews
 

@@ -460,7 +460,7 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
                 <div className="flex items-start gap-3">
                   <span className="flex-shrink-0 w-7 h-7 rounded-full bg-[var(--color-primary)] text-white text-sm flex items-center justify-center font-medium">B</span>
                   <div>
-                    <p className="font-medium text-sm group-hover:text-[var(--color-primary)] transition-colors">I'm an Engineer (provide equipment services)</p>
+                    <p className="font-medium text-sm group-hover:text-[var(--color-primary)] transition-colors">I'm a Service Provider</p>
                     <p className="text-xs text-[var(--color-text-secondary)] mt-0.5">After verification, complete your profile for tailored work order recommendations.</p>
                   </div>
                 </div>
@@ -496,7 +496,7 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
               </div>
               <p className="text-base font-medium mb-1">Identity Verification</p>
               <p className="text-sm text-[var(--color-text-secondary)]">
-                {selectedIdentity === 'customer' ? 'You selected "Customer". After verification, you\'ll have full access to all services.' : 'You selected "Engineer". After verification, you\'ll need to complete your background information.'}
+                {selectedIdentity === 'customer' ? 'You selected "Customer". After verification, you\'ll have full access to all services.' : 'You selected "Service Provider". After verification, you\'ll need to complete your background information.'}
               </p>
             </div>
 
@@ -642,7 +642,7 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
               onClick={handleRegisterEngineer} disabled={submitting}
               className="w-full py-3 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] disabled:bg-[var(--color-text-muted)] text-white rounded-xl font-medium transition-colors"
             >
-              {submitting ? 'Registering...' : 'Register as Engineer'}
+              {submitting ? 'Registering...' : 'Register as Service Provider'}
             </button>
           </div>
         )}
