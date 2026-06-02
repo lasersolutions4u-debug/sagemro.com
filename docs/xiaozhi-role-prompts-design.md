@@ -28,7 +28,9 @@
 
 ## 二、Layer 1：Base Prompt（基础不变）
 
-现有 `SYSTEM_PROMPT`，包含：
+详见 [xiaozhi-system-prompt.md](./xiaozhi-system-prompt.md)（完整 Base Prompt 全文）。
+
+包含：
 - 小智三重身份定位（技术顾问 + 客服总监 + 人事总监）
 - 钣金加工全工艺链设备知识（切割/成形/焊接/表面处理/辅助设备/数控系统/检测设备）
 - 常见品牌认知

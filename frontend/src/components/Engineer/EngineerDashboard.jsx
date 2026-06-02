@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
 import { Modal } from '../common/Modal';
 import { Clock } from 'lucide-react';
-import { getEngineerTickets, acceptTicket, rejectTicket, updateEngineerStatus, getEngineerWallet, applyWithdraw } from '../../services/api';
-import { WorkOrderStatus, PartnerLevelLabels, CommissionRates } from '../../types';
+import { getEngineerTickets, acceptTicket, rejectTicket, updateEngineerStatus } from '../../services/api';
+import { WorkOrderStatus } from '../../types';
 import { WorkOrderDetailModal } from '../WorkOrder/WorkOrderDetailModal';
 import { formatSlaRemaining, categoryConfig, categoryL2Labels } from '../../data/workOrderConfig';
 
@@ -24,16 +24,10 @@ export function EngineerDashboard({ isOpen, onClose, engineerId, onViewProfile }
   const [actionLoading, setActionLoading] = useState(null);
   const [detailModalOpen, setDetailModalOpen] = useState(false);
   const [selectedTicket, setSelectedTicket] = useState(null);
-  const [walletData, setWalletData] = useState(null);
-  const [walletLoading, setWalletLoading] = useState(false);
-  const [withdrawAmount, setWithdrawAmount] = useState('');
-  const [withdrawLoading, setWithdrawLoading] = useState(false);
-  const [withdrawMsg, setWithdrawMsg] = useState('');
 
   useEffect(() => {
     if (!isOpen || !engineerId) return;
     loadTickets();
-    loadWallet();
   }, [isOpen, engineerId]);
 
   const loadTickets = async () => {
@@ -45,36 +39,6 @@ export function EngineerDashboard({ isOpen, onClose, engineerId, onViewProfile }
       console.error('加载工单失败:', e);
     } finally {
       setLoading(false);
-    }
-  };
-
-  const loadWallet = async () => {
-    setWalletLoading(true);
-    try {
-      const data = await getEngineerWallet(engineerId);
-      setWalletData(data);
-    } catch (e) {
-      console.error('加载钱包失败:', e);
-    } finally {
-      setWalletLoading(false);
-    }
-  };
-
-  const handleWithdraw = async () => {
-    const amount = parseInt(withdrawAmount);
-    if (!amount || amount < 100) { setWithdrawMsg('提现金额不能低于100元'); return; }
-    if (amount > walletData.wallet_balance) { setWithdrawMsg('提现金额不能超过钱包余额'); return; }
-    setWithdrawLoading(true);
-    setWithdrawMsg('');
-    try {
-      const result = await applyWithdraw(amount);
-      setWithdrawMsg(result.message || '提现申请已提交');
-      setWithdrawAmount('');
-      loadWallet();
-    } catch (e) {
-      setWithdrawMsg(e.message || '提现失败');
-    } finally {
-      setWithdrawLoading(false);
     }
   };
 
@@ -145,95 +109,14 @@ export function EngineerDashboard({ isOpen, onClose, engineerId, onViewProfile }
           <span>查看我的档案</span>
         </button>
 
-        {/* 工程师等级与钱包面板 */}
-        {walletData && (
-          <div className="p-4 bg-gradient-to-br from-[var(--color-primary)]/10 to-[var(--color-primary)]/5 rounded-xl border border-[var(--color-primary)]/20 space-y-3">
-            {/* 等级 */}
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <span className={`px-2 py-0.5 text-xs text-white rounded ${PartnerLevelLabels[walletData.level]?.color || 'bg-blue-500'}`}>
-                  {PartnerLevelLabels[walletData.level]?.label || '初级'}工程师
-                </span>
-              </div>
-              <div className="flex items-center gap-1">
-                <span className="text-xs text-[var(--color-text-secondary)]">信用分</span>
-                <span className={`text-sm font-bold ${walletData.credit_score >= 90 ? 'text-green-500' : walletData.credit_score >= 70 ? 'text-orange-500' : 'text-red-500'}`}>
-                  {walletData.credit_score}
-                </span>
-              </div>
+        {/* 工程师等级与信用分（免费模式，无钱包） */}
+        <div className="p-4 bg-gradient-to-br from-[var(--color-primary)]/10 to-[var(--color-primary)]/5 rounded-xl border border-[var(--color-primary)]/20">
+          <div className="flex items-center justify-between">
+            <div className="text-sm text-[var(--color-text-secondary)]">
+              等级与信用信息请前往「我的档案」查看
             </div>
-            {/* 余额卡片 */}
-            <div className="grid grid-cols-2 gap-3">
-              <div className="text-center">
-                <div className="text-2xl font-bold text-[var(--color-text-primary)]">
-                  {walletLoading ? '...' : walletData.wallet_balance.toLocaleString()}元
-                </div>
-                <div className="text-xs text-[var(--color-text-secondary)]">钱包余额</div>
-              </div>
-              <div className="text-center">
-                <div className="text-2xl font-bold text-[var(--color-text-primary)]">
-                  {walletLoading ? '...' : walletData.deposit_balance.toLocaleString()}元
-                </div>
-                <div className="text-xs text-[var(--color-text-secondary)]">保证金</div>
-              </div>
-            </div>
-            {/* 提现 */}
-            <div className="space-y-2">
-              {walletData.wallet_balance > 0 ? (
-                <>
-                  <div className="flex gap-2">
-                    <input
-                      type="number"
-                      value={withdrawAmount}
-                      onChange={(e) => setWithdrawAmount(e.target.value)}
-                      placeholder="输入提现金额（元）"
-                      min="100"
-                      max={walletData.wallet_balance}
-                      className="flex-1 px-3 py-1.5 border border-[var(--color-input-border)] rounded-lg bg-[var(--color-input-bg)] text-[var(--color-text-primary)] text-sm focus:outline-none focus:ring-1 focus:ring-[var(--color-primary)]"
-                    />
-                    <button
-                      onClick={handleWithdraw}
-                      disabled={withdrawLoading}
-                      className="px-3 py-1.5 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] disabled:opacity-50 text-white rounded-lg text-sm transition-colors"
-                    >
-                      {withdrawLoading ? '提交中...' : '申请提现'}
-                    </button>
-                  </div>
-                  {withdrawMsg && (
-                    <p className="text-xs text-center text-[var(--color-text-secondary)]">{withdrawMsg}</p>
-                  )}
-                </>
-              ) : (
-                <p className="text-xs text-center text-[var(--color-text-muted)]">当前钱包余额为 0，无可提现金额</p>
-              )}
-            </div>
-
-            {/* 钱包流水 */}
-            {walletData.wallet_history && walletData.wallet_history.length > 0 && (
-              <div className="pt-2 border-t border-[var(--color-border)]">
-                <h4 className="text-xs font-medium text-[var(--color-text-secondary)] mb-2">钱包流水</h4>
-                <div className="space-y-1.5 max-h-40 overflow-y-auto">
-                  {walletData.wallet_history.map((item) => (
-                    <div key={item.id} className="flex items-center justify-between text-xs">
-                      <div className="flex items-center gap-2">
-                        <span className={`w-1.5 h-1.5 rounded-full ${item.amount >= 0 ? 'bg-green-500' : 'bg-red-500'}`} />
-                        <span className="text-[var(--color-text-primary)]">
-                          {item.type === 'order_payment' ? '工单收入' : item.type === 'withdraw' ? '提现' : item.type}
-                        </span>
-                      </div>
-                      <div className="text-right">
-                        <span className={item.amount >= 0 ? 'text-green-500' : 'text-red-500'}>
-                          {item.amount >= 0 ? '+' : ''}{item.amount.toLocaleString()}元
-                        </span>
-                        <span className="text-[var(--color-text-muted)] ml-2">{item.created_at?.slice(0, 16)}</span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
           </div>
-        )}
+        </div>
 
         {/* 状态切换 */}
         <div>

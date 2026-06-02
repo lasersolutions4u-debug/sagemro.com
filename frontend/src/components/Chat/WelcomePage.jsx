@@ -1,4 +1,4 @@
-import { Bot, Receipt, Sparkles, ClipboardCheck } from 'lucide-react';
+import { Bot, Headphones, Globe2, Users } from 'lucide-react';
 
 const quickQuestions = [
   '激光切割挂渣怎么解决？',
@@ -9,19 +9,19 @@ const quickQuestions = [
 
 const valueProps = [
   {
-    icon: Receipt,
-    title: '报价透明',
-    desc: '平台核价 · AI 对照地区均价审核',
+    icon: Headphones,
+    title: '免费咨询',
+    desc: 'AI 技术顾问 7×24 在线',
   },
   {
-    icon: Sparkles,
-    title: '精准匹配',
-    desc: '按设备品牌、专长、评分自动推荐',
+    icon: Globe2,
+    title: '全品牌支持',
+    desc: '不限设备品牌和型号',
   },
   {
-    icon: ClipboardCheck,
-    title: '全程记录',
-    desc: '工单对话与服务过程平台长期留存',
+    icon: Users,
+    title: '专家网络',
+    desc: '匹配专业工程师上门服务',
   },
 ];
 
@@ -37,10 +37,10 @@ export function WelcomePage({ onSendMessage }) {
 
         {/* Title */}
         <h1 className="text-[22px] sm:text-[28px] font-medium text-[var(--color-text-primary)] mb-1.5 sm:mb-2">
-          你好，我是小智
+          免费 AI 设备诊断
         </h1>
         <p className="text-[14px] sm:text-[15px] text-[var(--color-text-secondary)] mb-5 sm:mb-6 leading-relaxed">
-          钣金加工行业智能服务平台
+          拍照上传故障 · AI 即时分析 · 匹配专业工程师
         </p>
 
         {/* Value cards — mobile: vertical list, desktop: 3-column grid */}
