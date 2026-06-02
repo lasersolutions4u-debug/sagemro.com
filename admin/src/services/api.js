@@ -81,3 +81,14 @@ export async function getAdminPlatformRatings(page = 1, pageSize = 20) {
 export async function getAdminCustomerRatings(page = 1, pageSize = 20) {
   return request(`/api/admin/customer-ratings?page=${page}&pageSize=${pageSize}`);
 }
+
+export async function getAdminLeads(page = 1, pageSize = 20, status = 'all') {
+  return request(`/api/admin/leads?page=${page}&pageSize=${pageSize}&status=${status}`);
+}
+
+export async function updateAdminLead(leadId, status) {
+  return request(`/api/admin/leads/${leadId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ status }),
+  });
+}

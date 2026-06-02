@@ -1,16 +1,18 @@
 import { useState } from 'react';
-import { LayoutDashboard, Users, FileText, Star, LogOut } from 'lucide-react';
+import { LayoutDashboard, Users, FileText, Star, LogOut, Target } from 'lucide-react';
 import { LoginPage } from './pages/LoginPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { UsersPage } from './pages/UsersPage';
 import { WorkOrdersPage } from './pages/WorkOrdersPage';
 import { RatingsPage } from './pages/RatingsPage';
+import { LeadsPage } from './pages/LeadsPage';
 
 const NAV_ITEMS = [
   { key: 'dashboard', label: '数据概览', icon: LayoutDashboard },
   { key: 'users', label: '用户管理', icon: Users },
   { key: 'workorders', label: '工单管理', icon: FileText },
   { key: 'ratings', label: '评价管理', icon: Star },
+  { key: 'leads', label: '商机管理', icon: Target },
 ];
 
 export default function App() {
@@ -37,6 +39,7 @@ export default function App() {
       case 'users': return <UsersPage />;
       case 'workorders': return <WorkOrdersPage />;
       case 'ratings': return <RatingsPage />;
+      case 'leads': return <LeadsPage />;
       default: return <DashboardPage />;
     }
   };

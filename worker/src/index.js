@@ -4446,6 +4446,51 @@ async function handleSubmitLead(request, env) {
   }
 }
 
+// 管理后台 — 获取 Leads 列表
+async function handleAdminLeads(request, env) {
+  try {
+    const url = new URL(request.url);
+    const page = Math.max(1, parseInt(url.searchParams.get('page')) || 1);
+    const pageSize = Math.min(100, Math.max(1, parseInt(url.searchParams.get('pageSize')) || 20));
+    const status = url.searchParams.get('status') || '';
+    const offset = (page - 1) * pageSize;
+
+    let where = '';
+    const binds = [];
+    if (status && status !== 'all') {
+      where = 'WHERE l.status = ?';
+      binds.push(status);
+    }
+
+    const countRow = await env.DB.prepare(
+      `SELECT COUNT(*) as total FROM leads l ${where}`
+    ).bind(...binds).first();
+
+    const list = await env.DB.prepare(
+      `SELECT l.* FROM leads l ${where} ORDER BY l.created_at DESC LIMIT ? OFFSET ?`
+    ).bind(...binds, pageSize, offset).all();
+
+    return jsonResponse({ total: countRow?.total || 0, list: list.results || [] });
+  } catch (error) {
+    return errorResponse(error.message, 500);
+  }
+}
+
+// 管理后台 — 更新 Lead 状态
+async function handleAdminUpdateLead(request, env) {
+  try {
+    const leadId = new URL(request.url).pathname.split('/')[4];
+    const { status } = await request.json();
+    if (!['new', 'contacted', 'converted', 'lost'].includes(status)) {
+      return errorResponse('无效状态');
+    }
+    await env.DB.prepare('UPDATE leads SET status = ? WHERE id = ?').bind(status, leadId).run();
+    return jsonResponse({ success: true });
+  } catch (error) {
+    return errorResponse(error.message, 500);
+  }
+}
+
 // ============ 推送订阅 API（OneSignal）============
 
 // 保存推送订阅
@@ -6661,6 +6706,12 @@ async function routeRequest(request, env, ctx) {
       }
       if (path === '/api/admin/ratings' && request.method === 'GET') {
         return handleAdminRatings(request, env);
+      }
+      if (path === '/api/admin/leads' && request.method === 'GET') {
+        return handleAdminLeads(request, env);
+      }
+      if (path.startsWith('/api/admin/leads/') && request.method === 'PATCH') {
+        return handleAdminUpdateLead(request, env);
       }
       if (path.startsWith('/api/admin/ratings/') && path.endsWith('/reply') && request.method === 'POST') {
         return handleAdminReplyRating(request, env);
