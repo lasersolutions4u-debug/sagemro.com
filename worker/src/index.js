@@ -4410,6 +4410,41 @@ async function handleWithdrawRequest(request, env) {
   }
 }
 
+// ============ 商机线索 API ============
+
+async function handleSubmitLead(request, env) {
+  try {
+    const body = await request.json().catch(() => ({}));
+    const { name, email, phone, interest, message, conversation_id, source } = body;
+
+    if (!name || typeof name !== 'string' || name.trim().length === 0) {
+      return errorResponse('请提供姓名');
+    }
+    if (!email && !phone) {
+      return errorResponse('请提供邮箱或手机号');
+    }
+
+    const id = generateId();
+    await env.DB.prepare(
+      `INSERT INTO leads (id, name, email, phone, source, interest, message, conversation_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+    ).bind(
+      id,
+      name.trim(),
+      email?.trim() || null,
+      phone?.trim() || null,
+      source || 'chat',
+      interest?.trim() || null,
+      message?.trim() || null,
+      conversation_id || null
+    ).run();
+
+    return jsonResponse({ success: true, lead_id: id });
+  } catch (error) {
+    return errorResponse(error.message, 500);
+  }
+}
+
 // ============ 推送订阅 API（OneSignal）============
 
 // 保存推送订阅
@@ -6804,6 +6839,10 @@ async function routeRequest(request, env, ctx) {
     // 获取付款记录
     if (path.match(/^\/api\/workorders\/[^/]+\/payment$/) && request.method === 'GET') {
       return handleGetWorkOrderPayment(request, env);
+    }
+    // 商机线索提交（无需登录）
+    if (path === '/api/leads' && request.method === 'POST') {
+      return handleSubmitLead(request, env);
     }
     // 推送订阅（OneSignal Player ID）- 客户和工程师共用同一处理器，按 auth.userType 分发
     if (

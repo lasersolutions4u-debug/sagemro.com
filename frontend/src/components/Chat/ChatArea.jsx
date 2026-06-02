@@ -1,8 +1,9 @@
-import { useEffect, useRef } from 'react';
-import { Menu, Info } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { Menu, Info, Gift } from 'lucide-react';
 import { MessageBubble } from './MessageBubble';
 import { WelcomePage } from './WelcomePage';
 import { InputArea } from './InputArea';
+import { LeadForm } from './LeadForm';
 import { Footer } from '../common/Footer';
 
 export function ChatArea({
@@ -14,9 +15,11 @@ export function ChatArea({
   currentTitle,
   onToggleSidebar,
   onOpenLegal,
+  conversationId,
 }) {
   const messagesEndRef = useRef(null);
   const messagesContainerRef = useRef(null);
+  const [leadFormOpen, setLeadFormOpen] = useState(false);
 
   // 自动滚动到底部
   useEffect(() => {
@@ -86,6 +89,24 @@ export function ChatArea({
       <div className="hidden sm:block">
         <Footer onOpenLegal={onOpenLegal} />
       </div>
+
+      {/* 获取设备方案浮动按钮 */}
+      {hasMessages && (
+        <button
+          onClick={() => setLeadFormOpen(true)}
+          className="fixed bottom-24 right-4 sm:right-6 z-50 flex items-center gap-1.5 px-3.5 py-2 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white rounded-full shadow-lg text-sm transition-colors active:scale-95"
+        >
+          <Gift size={16} />
+          <span className="hidden sm:inline">获取设备方案</span>
+          <span className="sm:hidden">咨询</span>
+        </button>
+      )}
+
+      <LeadForm
+        isOpen={leadFormOpen}
+        onClose={() => setLeadFormOpen(false)}
+        conversationId={conversationId}
+      />
     </div>
   );
 }

@@ -452,6 +452,22 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_engineer_reviews_wo ON engineer_reviews(wo
 CREATE INDEX IF NOT EXISTS idx_engineer_reviews_customer ON engineer_reviews(customer_id);
 CREATE INDEX IF NOT EXISTS idx_engineer_reviews_engineer ON engineer_reviews(engineer_id);
 
+-- 商机线索表（021）
+CREATE TABLE IF NOT EXISTS leads (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    email TEXT,
+    phone TEXT,
+    source TEXT DEFAULT 'chat',              -- chat / landing / referral
+    interest TEXT,                            -- 感兴趣的产品/需求
+    message TEXT,                             -- 客户描述
+    conversation_id TEXT,                     -- 关联对话 ID（如有）
+    status TEXT DEFAULT 'new',                -- new / contacted / converted / lost
+    created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_leads_status ON leads(status);
+CREATE INDEX IF NOT EXISTS idx_leads_created_at ON leads(created_at);
+
 -- 回填已执行的迁移版本（011）
 INSERT OR IGNORE INTO _migrations (version, note) VALUES
     ('000_initial',                      '初始建表'),
@@ -474,4 +490,6 @@ INSERT OR IGNORE INTO _migrations (version, note) VALUES
     ('016_add_repair_records',           '维修记录结构化表'),
     ('017_add_sla_fields',               'SLA 时效管理：sla_deadline / sla_breached_at'),
     ('018_add_work_order_categories',    '工单分类细化：category_l1 / category_l2'),
-    ('019_add_work_order_attachments',   '工单附件表：图片/视频上传至 R2');
+    ('019_add_work_order_attachments',   '工单附件表：图片/视频上传至 R2'),
+    ('020_add_message_images',           '消息表新增 image_urls 列'),
+    ('021_create_leads',                 '商机线索表');

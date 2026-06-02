@@ -318,6 +318,7 @@ function App() {
           currentTitle={currentTitle}
           onToggleSidebar={() => setSidebarOpen(true)}
           onOpenLegal={openLegal}
+          conversationId={conversationId}
         />
       </div>
 

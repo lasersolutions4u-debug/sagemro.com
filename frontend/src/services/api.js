@@ -879,3 +879,16 @@ export async function deleteWorkOrderAttachment(workOrderId, attachmentId) {
   if (!response.ok) throw new Error(`HTTP ${response.status}`);
   return response.json();
 }
+
+export async function submitLead({ name, email, phone, interest, message, conversation_id, source }) {
+  const response = await fetch(`${API_BASE}/api/leads`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, email, phone, interest, message, conversation_id, source }),
+  });
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.error || `HTTP ${response.status}`);
+  }
+  return response.json();
+}
