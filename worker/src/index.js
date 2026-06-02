@@ -1175,6 +1175,7 @@ const ALLOWED_ORIGINS_PRODUCTION = [
   'https://admin.sagemro.com',
   'https://sagemro.cn',
   'https://www.sagemro.cn',
+  'https://admin.sagemro.cn',
 ];
 const ALLOWED_ORIGINS_DEV = [
   ...ALLOWED_ORIGINS_PRODUCTION,
