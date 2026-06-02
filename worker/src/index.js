@@ -6874,6 +6874,11 @@ function withCorsHeaders(response, request, env) {
 
 export default {
   async fetch(request, env, ctx) {
+    // 按域名路由数据库：.cn 请求走 CN 库，其他走 EN 库
+    const host = new URL(request.url).hostname;
+    if (host.endsWith('.cn') && env.DB_CN) {
+      env.DB = env.DB_CN;
+    }
     try {
       const response = await routeRequest(request, env, ctx);
       return withCorsHeaders(response, request, env);

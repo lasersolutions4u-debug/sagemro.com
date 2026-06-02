@@ -46,6 +46,12 @@ binding = "DB"
 database_name = "sagemro-db"
 database_id = "eb84471f-ed33-47ae-827f-1419f5a9428f"
 
+# CN 数据库（sagemro.cn 请求自动路由到此库）
+[[env.production.d1_databases]]
+binding = "DB_CN"
+database_name = "sagemro-db-cn"
+database_id = "d5f3a70f-6478-45d1-b73b-84d833afdcfa"
+
 [[env.production.r2_buckets]]
 binding = "ATTACHMENTS"
 bucket_name = "sagemro-attachments"
