@@ -99,7 +99,7 @@ export function EngineerDashboard({ isOpen, onClose, engineerId, onViewProfile }
 
   return (
     <>
-    <Modal isOpen={isOpen} onClose={onClose} title="工程师管理台" size="md">
+    <Modal isOpen={isOpen} onClose={onClose} title="服务商管理台" size="md">
       <div className="space-y-5">
         {/* 查看档案入口 */}
         <button

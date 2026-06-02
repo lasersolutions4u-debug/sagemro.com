@@ -266,7 +266,7 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
                   <span className="flex-shrink-0 w-7 h-7 rounded-full bg-[var(--color-primary)] text-white text-sm flex items-center justify-center font-medium">A</span>
                   <div>
                     <p className="font-medium text-sm group-hover:text-[var(--color-primary)] transition-colors">我需要或将来可能需要设备维修保养服务</p>
-                    <p className="text-xs text-[var(--color-text-secondary)] mt-0.5">有任何问题就跟小智说，小智帮您提交工单，精准获取专业工程师支持。</p>
+                    <p className="text-xs text-[var(--color-text-secondary)] mt-0.5">有任何问题就跟小智说，小智帮您提交工单，精准获取专业服务商支持。</p>
                   </div>
                 </div>
               </button>
@@ -280,7 +280,7 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
                   <span className="flex-shrink-0 w-7 h-7 rounded-full bg-[var(--color-primary)] text-white text-sm flex items-center justify-center font-medium">B</span>
                   <div>
                     <p className="font-medium text-sm group-hover:text-[var(--color-primary)] transition-colors">我可以提供维修保养服务</p>
-                    <p className="text-xs text-[var(--color-text-secondary)] mt-0.5">有任何问题就跟小智说，并且如果您注册成为平台工程师，小智会给您分配工单，获取额外收入。</p>
+                    <p className="text-xs text-[var(--color-text-secondary)] mt-0.5">有任何问题就跟小智说，并且如果您注册成为平台服务商，小智会给您分配工单，获取额外收入。</p>
                   </div>
                 </div>
               </button>
@@ -460,7 +460,7 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
                 <div className="flex items-start gap-3">
                   <span className="flex-shrink-0 w-7 h-7 rounded-full bg-[var(--color-primary)] text-white text-sm flex items-center justify-center font-medium">B</span>
                   <div>
-                    <p className="font-medium text-sm group-hover:text-[var(--color-primary)] transition-colors">我是工程师（提供维修保养服务）</p>
+                    <p className="font-medium text-sm group-hover:text-[var(--color-primary)] transition-colors">我是服务商（提供维修保养服务）</p>
                     <p className="text-xs text-[var(--color-text-secondary)] mt-0.5">认证后需要填写背景信息，小智会根据您的专长精准推荐工单。</p>
                   </div>
                 </div>
@@ -496,7 +496,7 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
               </div>
               <p className="text-base font-medium mb-1">身份认证</p>
               <p className="text-sm text-[var(--color-text-secondary)]">
-                {selectedIdentity === 'customer' ? '您选择了"客户"身份。认证后即可享受完整服务。' : '您选择了"工程师"身份。认证后需填写背景信息。'}
+                {selectedIdentity === 'customer' ? '您选择了"客户"身份。认证后即可享受完整服务。' : '您选择了"服务商"身份。认证后需填写背景信息。'}
               </p>
             </div>
 
@@ -642,7 +642,7 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
               onClick={handleRegisterEngineer} disabled={submitting}
               className="w-full py-3 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] disabled:bg-[var(--color-text-muted)] text-white rounded-xl font-medium transition-colors"
             >
-              {submitting ? '入驻中...' : '注册成为工程师'}
+              {submitting ? '入驻中...' : '注册成为服务商'}
             </button>
           </div>
         )}

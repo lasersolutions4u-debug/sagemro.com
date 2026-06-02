@@ -163,7 +163,7 @@ export function SettingsModal({ isOpen, onClose, currentUser, userType, onOpenMy
             {userType === 'engineer' && (
               <div className="flex items-center gap-2 mt-0.5">
                 <span className="text-[11px] px-1.5 py-0.5 bg-[var(--color-primary)]/20 text-[var(--color-primary)] rounded">
-                  {levelLabels[engineerStats?.level] || '初级'}工程师
+                  {levelLabels[engineerStats?.level] || '初级'}服务商
                 </span>
                 <span className={`text-[11px] ${statusColors[currentStatus]}`}>
                   {statusLabels[currentStatus]}

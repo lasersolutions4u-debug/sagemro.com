@@ -21,7 +21,7 @@ const valueProps = [
   {
     icon: Users,
     title: '专家网络',
-    desc: '匹配专业工程师上门服务',
+    desc: '匹配专业服务商上门服务',
   },
 ];
 
@@ -40,7 +40,7 @@ export function WelcomePage({ onSendMessage }) {
           免费 AI 设备诊断
         </h1>
         <p className="text-[14px] sm:text-[15px] text-[var(--color-text-secondary)] mb-5 sm:mb-6 leading-relaxed">
-          拍照上传故障 · AI 即时分析 · 匹配专业工程师
+          拍照上传故障 · AI 即时分析 · 匹配专业服务商
         </p>
 
         {/* Value cards — mobile: vertical list, desktop: 3-column grid */}

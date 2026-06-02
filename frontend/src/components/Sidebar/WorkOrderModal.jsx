@@ -145,7 +145,7 @@ export function WorkOrderModal({ isOpen, onClose, onSubmit }) {
             </p>
           </div>
           <p className="text-xs text-[var(--color-text-secondary)] text-center">
-            工程师接单后，小智会通知您。
+            服务商接单后，小智会通知您。
             您也可以在「我的工单」中随时查看进度。
           </p>
           <button

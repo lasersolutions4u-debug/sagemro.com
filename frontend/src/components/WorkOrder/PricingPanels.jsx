@@ -158,7 +158,7 @@ export function CustomerPricingPanel({ workOrderId, customerId, onConfirmed }) {
     setSubmitting(true);
     try {
       await confirmWorkOrderPricing(workOrderId, customerId);
-      toastSuccess('报价已确认，等待工程师上门服务');
+      toastSuccess('报价已确认，等待服务商上门服务');
       onConfirmed?.();
       load();
     } catch (e) {
@@ -174,7 +174,7 @@ export function CustomerPricingPanel({ workOrderId, customerId, onConfirmed }) {
     setSubmitting(true);
     try {
       await rejectWorkOrderPricing(workOrderId, customerId, rejectReason, counterOffer ? parseInt(counterOffer) : null);
-      toastSuccess('已发起议价，工程师会重新报价');
+      toastSuccess('已发起议价，服务商会重新报价');
       onConfirmed?.();
       load();
     } catch (e) {
@@ -187,7 +187,7 @@ export function CustomerPricingPanel({ workOrderId, customerId, onConfirmed }) {
 
   if (loading) return <div className="text-center py-4 text-sm text-[var(--color-text-muted)]">加载中...</div>;
 
-  if (!pricing) return <div className="text-center py-4 text-sm text-[var(--color-text-muted)]">工程师尚未提交报价</div>;
+  if (!pricing) return <div className="text-center py-4 text-sm text-[var(--color-text-muted)]">服务商尚未提交报价</div>;
 
   let aiCheck = null;
   try { aiCheck = pricing.ai_price_check ? JSON.parse(pricing.ai_price_check) : null; } catch {}
@@ -214,7 +214,7 @@ export function CustomerPricingPanel({ workOrderId, customerId, onConfirmed }) {
         {pricing.platform_fee > 0 && (
           <>
             <div className="flex justify-between">
-              <span className="text-[var(--color-text-secondary)]">其中：维修服务费（代收代付，转付工程师）</span>
+              <span className="text-[var(--color-text-secondary)]">其中：维修服务费（代收代付，转付服务商）</span>
               <span>{(pricing.subtotal || 0) - (pricing.platform_fee || 0)} 元</span>
             </div>
             <div className="flex justify-between">
@@ -277,7 +277,7 @@ export function CustomerPricingPanel({ workOrderId, customerId, onConfirmed }) {
 
       {action === 'confirm' && (
         <div className="p-3 bg-green-500/10 border border-green-500/30 rounded-xl space-y-2">
-          <div className="text-sm text-[var(--color-text-primary)]">确认后工程师将开始上门服务。</div>
+          <div className="text-sm text-[var(--color-text-primary)]">确认后服务商将开始上门服务。</div>
           <div className="flex gap-2">
             <button onClick={() => setAction(null)} className="flex-1 py-2 bg-[var(--color-surface-elevated)] text-[var(--color-text-secondary)] rounded-xl text-sm">取消</button>
             <button data-testid="confirm-pricing-button" onClick={handleConfirm} disabled={submitting} className="flex-1 py-2 bg-green-500 hover:bg-green-600 disabled:opacity-50 text-white rounded-xl text-sm">

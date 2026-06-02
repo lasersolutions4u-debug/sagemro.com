@@ -159,7 +159,7 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
         })()}
         {detail?.engineer_name && (
           <div className="text-sm text-[var(--color-text-secondary)]">
-            工程师：<span className="text-[var(--color-primary)]">{detail.engineer_name}</span>
+            服务商：<span className="text-[var(--color-primary)]">{detail.engineer_name}</span>
             {detail.engineer_phone && <span className="ml-1 opacity-70">{detail.engineer_phone}</span>}
           </div>
         )}
@@ -296,7 +296,7 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
             {engineerReview.comment && (
               <div className="pt-2 border-t border-blue-500/20 text-sm text-[var(--color-text-primary)]">{engineerReview.comment}</div>
             )}
-            <div className="text-xs text-[var(--color-text-muted)]">此评价仅平台和工程师可见</div>
+            <div className="text-xs text-[var(--color-text-muted)]">此评价仅平台和服务商可见</div>
           </div>
         </div>
       )}
