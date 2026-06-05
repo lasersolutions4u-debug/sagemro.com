@@ -1,5 +1,5 @@
 import { X } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion as Motion, AnimatePresence } from 'framer-motion';
 
 const sizeClasses = {
   sm: 'max-w-sm',
@@ -16,7 +16,7 @@ export function Modal({ isOpen, onClose, title, children, size = 'md' }) {
       {isOpen && (
         <>
           {/* 遮罩 */}
-          <motion.div
+          <Motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
@@ -24,7 +24,7 @@ export function Modal({ isOpen, onClose, title, children, size = 'md' }) {
             className="fixed inset-0 bg-black/50 z-40"
           />
           {/* 弹窗 */}
-          <motion.div
+          <Motion.div
             initial={{ opacity: 0, scale: 0.95, y: 20 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.95, y: 20 }}
@@ -47,7 +47,7 @@ export function Modal({ isOpen, onClose, title, children, size = 'md' }) {
             <div className="p-4">
               {children}
             </div>
-          </motion.div>
+          </Motion.div>
         </>
       )}
     </AnimatePresence>

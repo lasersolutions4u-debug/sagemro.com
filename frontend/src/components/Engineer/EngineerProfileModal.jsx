@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Modal } from '../common/Modal';
 import { Star, MapPin, Phone, Briefcase, Wrench, Award, Bell, BellOff } from 'lucide-react';
 import { getEngineerProfile } from '../../services/api';
@@ -7,15 +7,10 @@ import { usePushNotification } from '../../hooks/usePushNotification';
 export function EngineerProfileModal({ isOpen, onClose, engineerId }) {
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(false);
-  const { pushEnabled, pushPermission, enablePush, disablePush, isReady, isConfigured } =
+  const { pushEnabled, pushPermission, enablePush, disablePush, isConfigured } =
     usePushNotification(engineerId, !!engineerId);
 
-  useEffect(() => {
-    if (!isOpen || !engineerId) return;
-    loadProfile();
-  }, [isOpen, engineerId]);
-
-  const loadProfile = async () => {
+  const loadProfile = useCallback(async () => {
     setLoading(true);
     try {
       const data = await getEngineerProfile(engineerId);
@@ -25,7 +20,12 @@ export function EngineerProfileModal({ isOpen, onClose, engineerId }) {
     } finally {
       setLoading(false);
     }
-  };
+  }, [engineerId]);
+
+  useEffect(() => {
+    if (!isOpen || !engineerId) return;
+    loadProfile();
+  }, [isOpen, engineerId, loadProfile]);
 
   const handlePushToggle = async () => {
     if (pushEnabled) {
@@ -50,7 +50,7 @@ export function EngineerProfileModal({ isOpen, onClose, engineerId }) {
     : 0;
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Provider Profile" size="md">
+    <Modal isOpen={isOpen} onClose={onClose} title="Service Provider Profile" size="md">
       <div className="space-y-5">
         {loading && (
           <div className="text-center py-8 text-[var(--color-text-secondary)]">Loading...</div>

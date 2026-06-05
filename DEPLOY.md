@@ -13,7 +13,7 @@
 | 组件       | 域名                | CF 项目                     | 工作目录              |
 | ---------- | ------------------- | --------------------------- | --------------------- |
 | 国际版前端 | `sagemro.com`       | Pages: `sagemro-com`        | `frontend/`           |
-| 中国版前端 | （独立域名待定）    | Pages: `sagemro-cn`         | `frontend/`（同源码） |
+| 中国版前端 | `sagemro.cn`       | Pages: `sagemro-cn`         | `frontend/`（同源码） |
 | 管理后台   | `admin.sagemro.com` | Pages: `sagemro-admin`      | `admin/`              |
 | API 后端   | `api.sagemro.com`   | Workers: env=`production`   | `worker/`             |
 | 数据库     | —                   | D1: `sagemro-db`            | `worker/migrations/`  |
@@ -173,7 +173,7 @@ npx wrangler d1 migrations apply sagemro-db --remote --env production
 | 项目                   | 自定义域名                                                   |
 | ---------------------- | ------------------------------------------------------------ |
 | Pages: `sagemro-com`   | `sagemro.com`、`www.sagemro.com`                             |
-| Pages: `sagemro-cn`    | （中国版域名，按规划填）                                     |
+| Pages: `sagemro-cn`    | `sagemro.cn`、`www.sagemro.cn`                               |
 | Pages: `sagemro-admin` | `admin.sagemro.com`                                          |
 | Worker: `sagemro-api`  | `api.sagemro.com`（在 Worker → Triggers → Custom Domains 里加） |
 
@@ -245,18 +245,18 @@ npx wrangler deploy --env production
 
 # 部署国际版前端
 cd ../frontend
-npm ci && npm run build
+npm ci && VITE_API_BASE=https://api.sagemro.com npm run build
 cd ..
 npx wrangler pages deploy frontend/dist --project-name=sagemro-com --branch=main
 
 # 部署中国版前端（在 china-edition 分支上）
 git checkout china-edition
-cd frontend && npm run build && cd ..
+cd frontend && VITE_API_BASE=https://api.sagemro.com npm run build && cd ..
 npx wrangler pages deploy frontend/dist --project-name=sagemro-cn --branch=china-edition
 
 # 部署 Admin
 cd admin
-npm ci && npm run build
+npm ci && VITE_API_BASE=https://api.sagemro.com npm run build
 cd ..
 npx wrangler pages deploy admin/dist --project-name=sagemro-admin --branch=main
 ```
@@ -272,7 +272,7 @@ npx wrangler pages deploy admin/dist --project-name=sagemro-admin --branch=main
 | 检查项      | URL                                                       | 期望          |
 | ----------- | --------------------------------------------------------- | ------------- |
 | 国际版首页  | `https://sagemro.com`                                     | 200，正常加载 |
-| 中国版首页  | `https://<china-domain>`                                  | 200           |
+| 中国版首页  | `https://sagemro.cn`                                      | 200，正常加载 |
 | 管理后台    | `https://admin.sagemro.com`                               | 登录页        |
 | Worker 健康 | `https://api.sagemro.com/health`                          | 200 OK        |
 | API 烟测    | `https://api.sagemro.com/api/workorders?customer_id=test` | JSON 响应     |

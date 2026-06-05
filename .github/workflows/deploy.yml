@@ -2,6 +2,7 @@ name: Deploy to Cloudflare
 
 # 触发策略：
 #   - push 到 main：跑测试 → 通过后部署 frontend / worker / admin 到生产
+#   - push 到 china-edition：跑测试 → 通过后仅部署中国版 frontend 到 sagemro.cn
 #   - PR：只跑测试和 build，绝不部署（用 jobs 层 if: 门禁兜底）
 on:
   push:
@@ -41,13 +42,14 @@ jobs:
         run: npm install --no-audit --no-fund
 
       - name: Frontend lint
-        continue-on-error: true
         working-directory: frontend
         run: npm run lint --if-present
 
       - name: Frontend build
         working-directory: frontend
         run: npm run build
+        env:
+          VITE_API_BASE: https://api.sagemro.com
 
       # Admin build（编译失败直接挂）
       - name: Admin install
@@ -57,6 +59,8 @@ jobs:
       - name: Admin build
         working-directory: admin
         run: npm run build
+        env:
+          VITE_API_BASE: https://api.sagemro.com
 
   # ============ 部署 Frontend ============
   deploy-frontend:
@@ -84,6 +88,8 @@ jobs:
       - name: Build
         working-directory: frontend
         run: npm run build
+        env:
+          VITE_API_BASE: https://api.sagemro.com
 
       - name: Deploy to Cloudflare Pages
         uses: cloudflare/wrangler-action@v3
@@ -102,6 +108,52 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install wrangler
+        run: npm install -g wrangler
+
+      - name: Check D1 migrations are applied
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        working-directory: worker
+        run: |
+          echo "=== Checking D1 migration status ==="
+          APPLIED=$(wrangler d1 execute sagemro-db --env production --remote --command "SELECT version FROM _migrations ORDER BY version;" 2>/dev/null | grep -oP '\d+' | sort -n)
+          LOCAL_FILES=$(ls migrations/*.sql 2>/dev/null | grep -oP '\d+' | sort -n)
+
+          echo "Applied versions: $APPLIED"
+          echo "Local migration files: $LOCAL_FILES"
+
+          MISSING=""
+          for ver in $LOCAL_FILES; do
+            if ! echo "$APPLIED" | grep -q "^${ver}$"; then
+              MISSING="$MISSING $ver"
+            fi
+          done
+
+          if [ -n "$MISSING" ]; then
+            echo ""
+            echo "❌ UNAPPLIED MIGRATIONS FOUND:$MISSING"
+            echo ""
+            echo "These migration files exist locally but have NOT been applied to production D1."
+            echo "You must run them manually BEFORE deploying the Worker:"
+            echo ""
+            for ver in $MISSING; do
+              FILE=$(ls migrations/${ver}_*.sql 2>/dev/null | head -1)
+              echo "  wrangler d1 execute sagemro-db --env production --remote --file $FILE"
+            done
+            echo ""
+            echo "See DEPLOY.md for details."
+            exit 1
+          fi
+
+          echo "✅ All migrations are applied."
 
       - name: Deploy to Cloudflare Workers
         uses: cloudflare/wrangler-action@v3
@@ -134,6 +186,8 @@ jobs:
       - name: Build
         working-directory: admin
         run: npm run build
+        env:
+          VITE_API_BASE: https://api.sagemro.com
 
       - name: Deploy to Cloudflare Pages
         uses: cloudflare/wrangler-action@v3
@@ -141,36 +195,3 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           command: pages deploy admin/dist --project-name=sagemro-admin --branch=${{ github.ref_name }}
-
-  # ============ 部署 Admin CN ============
-  deploy-admin-cn:
-    name: Deploy Admin CN to Cloudflare Pages
-    needs: test
-    if: github.event_name == 'push' && github.ref == 'refs/heads/china-edition'
-    runs-on: ubuntu-latest
-    environment: production
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
-      - name: Install dependencies
-        working-directory: admin
-        run: npm install --no-audit --no-fund
-
-      - name: Build (CN)
-        working-directory: admin
-        run: npm run build
-        env:
-          VITE_API_BASE: https://api.sagemro.cn
-
-      - name: Deploy to Cloudflare Pages
-        uses: cloudflare/wrangler-action@v3
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: pages deploy admin/dist --project-name=sagemro-admin-cn --branch=${{ github.ref_name }}

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Modal } from '../common/Modal';
 import {
   getWorkOrder,
@@ -8,7 +8,7 @@ import {
   submitEngineerReview,
   getEngineerReview,
 } from '../../services/api';
-import { statusConfig, urgencyConfig, typeLabels, categoryConfig, categoryL2Labels, formatSlaRemaining, slaHours } from '../../data/workOrderConfig.js';
+import { statusConfig, urgencyConfig, typeLabels, categoryConfig, categoryL2Labels, formatSlaRemaining } from '../../data/workOrderConfig.js';
 import { toastSuccess, toastError, toastWarning, confirmDialog } from '../../utils/feedback';
 import { Stars } from './Stars';
 import { MessagePanel } from './MessagePanel';
@@ -21,7 +21,6 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
   const [detail, setDetail] = useState(null);
   const [loading, setLoading] = useState(false);
   const [tab, setTab] = useState('info');
-  const [showRating, setShowRating] = useState(false);
   const [ratings, setRatings] = useState({ timeliness: 5, technical: 5, communication: 5, professional: 5 });
   const [comment, setComment] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -31,9 +30,32 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
   const [engReviewRatings, setEngReviewRatings] = useState({ cooperation: 5, communication: 5, payment: 5, environment: 5 });
   const [engReviewComment, setEngReviewComment] = useState('');
   const [engReviewSubmitting, setEngReviewSubmitting] = useState(false);
+  const workOrderId = workOrder?.id;
+
+  const loadDetail = useCallback(async () => {
+    if (!workOrderId) return;
+    setLoading(true);
+    try {
+      const data = await getWorkOrder(workOrderId);
+      setDetail(data);
+      // 加载工程师评价
+      if (userType === 'engineer') {
+        try {
+          const revData = await getEngineerReview(workOrderId);
+          setEngineerReview(revData.review);
+        } catch {
+          // No prior engineer review is fine; keep the review section empty.
+        }
+      }
+    } catch (e) {
+      console.error('加载工单详情失败:', e);
+    } finally {
+      setLoading(false);
+    }
+  }, [workOrderId, userType]);
 
   useEffect(() => {
-    if (isOpen && workOrder?.id) {
+    if (isOpen && workOrderId) {
       loadDetail();
       // 客户侧：待评价/已解决状态自动跳转到评价 tab
       const initialStatus = workOrder.status;
@@ -42,26 +64,7 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
         ? 'rating' : 'info';
       setTab(autoTab);
     }
-  }, [isOpen, workOrder]);
-
-  const loadDetail = async () => {
-    setLoading(true);
-    try {
-      const data = await getWorkOrder(workOrder.id);
-      setDetail(data);
-      // 加载工程师评价
-      if (userType === 'engineer') {
-        try {
-          const revData = await getEngineerReview(workOrder.id);
-          setEngineerReview(revData.review);
-        } catch {}
-      }
-    } catch (e) {
-      console.error('加载工单详情失败:', e);
-    } finally {
-      setLoading(false);
-    }
-  };
+  }, [isOpen, workOrder, workOrderId, userType, loadDetail]);
 
   const handleSubmitRating = async () => {
     if (!detail?.engineer_id || !detail?.customer_id) { toastWarning('Work order information is incomplete'); return; }
@@ -77,7 +80,6 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
         rating_professional: ratings.professional,
         comment,
       });
-      setShowRating(false);
       toastSuccess('Review submitted');
       onRateSuccess?.();
       loadDetail();
@@ -159,7 +161,7 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
         })()}
         {detail?.engineer_name && (
           <div className="text-sm text-[var(--color-text-secondary)]">
-            Engineer: <span className="text-[var(--color-primary)]">{detail.engineer_name}</span>
+            Service Provider: <span className="text-[var(--color-primary)]">{detail.engineer_name}</span>
             {detail.engineer_phone && <span className="ml-1 opacity-70">{detail.engineer_phone}</span>}
           </div>
         )}
@@ -296,7 +298,7 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
             {engineerReview.comment && (
               <div className="pt-2 border-t border-blue-500/20 text-sm text-[var(--color-text-primary)]">{engineerReview.comment}</div>
             )}
-            <div className="text-xs text-[var(--color-text-muted)]">This review is only visible to the platform and engineer</div>
+            <div className="text-xs text-[var(--color-text-muted)]">This review is only visible to the platform and service provider</div>
           </div>
         </div>
       )}
@@ -310,7 +312,7 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
       {showEngineerReview && (
         <div className="space-y-3 p-4 bg-blue-500/10 border border-blue-500/30 rounded-xl">
           <h3 className="text-sm font-medium text-[var(--color-text-primary)]">Review Customer</h3>
-          <div className="text-xs text-[var(--color-text-muted)]">This review is only visible to the platform and engineer, not to the customer</div>
+          <div className="text-xs text-[var(--color-text-muted)]">This review is only visible to the platform and service provider, not to the customer</div>
           {[
             { key: 'cooperation', label: 'Cooperation' },
             { key: 'communication', label: 'Communication' },

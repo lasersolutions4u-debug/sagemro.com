@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Modal } from '../common/Modal';
 import { Clock } from 'lucide-react';
 import { getEngineerTickets, acceptTicket, rejectTicket, updateEngineerStatus } from '../../services/api';
@@ -25,12 +25,7 @@ export function EngineerDashboard({ isOpen, onClose, engineerId, onViewProfile }
   const [detailModalOpen, setDetailModalOpen] = useState(false);
   const [selectedTicket, setSelectedTicket] = useState(null);
 
-  useEffect(() => {
-    if (!isOpen || !engineerId) return;
-    loadTickets();
-  }, [isOpen, engineerId]);
-
-  const loadTickets = async () => {
+  const loadTickets = useCallback(async () => {
     setLoading(true);
     try {
       const data = await getEngineerTickets(engineerId);
@@ -40,7 +35,12 @@ export function EngineerDashboard({ isOpen, onClose, engineerId, onViewProfile }
     } finally {
       setLoading(false);
     }
-  };
+  }, [engineerId]);
+
+  useEffect(() => {
+    if (!isOpen || !engineerId) return;
+    loadTickets();
+  }, [isOpen, engineerId, loadTickets]);
 
   const handleAccept = async (ticketId) => {
     setActionLoading(ticketId);
@@ -77,7 +77,6 @@ export function EngineerDashboard({ isOpen, onClose, engineerId, onViewProfile }
 
   // 分类工单
   const pendingTickets = tickets.filter(t => t.status === 'pending');
-  const inProgressTickets = tickets.filter(t => t.status === 'in_progress');
   const activeTickets = tickets.filter(t => t.status !== 'pending');
 
   const renderSlaBadge = (ticket) => {
@@ -99,7 +98,7 @@ export function EngineerDashboard({ isOpen, onClose, engineerId, onViewProfile }
 
   return (
     <>
-    <Modal isOpen={isOpen} onClose={onClose} title="Provider Dashboard" size="md">
+    <Modal isOpen={isOpen} onClose={onClose} title="Service Provider Dashboard" size="md">
       <div className="space-y-5">
         {/* 查看档案入口 */}
         <button

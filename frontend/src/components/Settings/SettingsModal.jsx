@@ -21,9 +21,6 @@ export function SettingsModal({ isOpen, onClose, currentUser, userType, onOpenMy
   // 密码修改
   const [pwdForm, setPwdForm] = useState({ oldPassword: '', newPassword: '', confirmPassword: '' });
 
-  // 设备数量（从父组件传入或本地获取）
-  const [deviceCount] = useState(0);
-
   useEffect(() => {
     if (isOpen && currentUser) {
       if (userType === 'customer') {
@@ -163,7 +160,7 @@ export function SettingsModal({ isOpen, onClose, currentUser, userType, onOpenMy
             {userType === 'engineer' && (
               <div className="flex items-center gap-2 mt-0.5">
                 <span className="text-[11px] px-1.5 py-0.5 bg-[var(--color-primary)]/20 text-[var(--color-primary)] rounded">
-                  {levelLabels[engineerStats?.level] || 'Junior'} Engineer
+                  {levelLabels[engineerStats?.level] || 'Junior'} Service Provider
                 </span>
                 <span className={`text-[11px] ${statusColors[currentStatus]}`}>
                   {statusLabels[currentStatus]}

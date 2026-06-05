@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { Send } from 'lucide-react';
 import { getWorkOrderMessages, postWorkOrderMessage } from '../../services/api';
 import { toastError } from '../../utils/feedback';
@@ -9,17 +9,17 @@ export function MessagePanel({ workOrderId, userType, userId }) {
   const [sending, setSending] = useState(false);
   const bottomRef = useRef(null);
 
-  const load = () => {
+  const load = useCallback(() => {
     getWorkOrderMessages(workOrderId).then(d => {
       setMessages(d.list || []);
     }).catch(() => {});
-  };
+  }, [workOrderId]);
 
   useEffect(() => {
     load();
     const interval = setInterval(load, 5000);
     return () => clearInterval(interval);
-  }, [workOrderId]);
+  }, [load]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });

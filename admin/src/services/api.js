@@ -1,4 +1,5 @@
 const API_BASE = import.meta.env.VITE_API_BASE || 'https://sagemro-api.lasersolutions4u.workers.dev';
+const DEBUG_API = import.meta.env.DEV;
 
 function authHeaders() {
   const token = localStorage.getItem('admin_token');
@@ -11,7 +12,9 @@ function authHeaders() {
 
 async function request(path, options = {}) {
   const headers = { ...authHeaders(), ...options.headers };
-  console.log('[admin-api]', options.method || 'GET', path, 'hasToken:', !!headers['Authorization']);
+  if (DEBUG_API) {
+    console.debug('[admin-api]', options.method || 'GET', path, 'hasToken:', !!headers['Authorization']);
+  }
   const res = await fetch(`${API_BASE}${path}`, {
     ...options,
     headers,
@@ -22,7 +25,9 @@ async function request(path, options = {}) {
   } catch {
     throw new Error(`服务器返回非JSON响应 (${res.status})`);
   }
-  console.log('[admin-api] response:', res.status, data);
+  if (DEBUG_API) {
+    console.debug('[admin-api] response:', res.status);
+  }
   if (!res.ok) {
     throw new Error(data.error || `请求失败 (${res.status})`);
   }

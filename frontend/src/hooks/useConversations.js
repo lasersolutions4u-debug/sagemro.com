@@ -8,7 +8,7 @@ import { generateId } from '../utils/helpers';
 export function useConversations() {
   const [conversations, setConversations] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const error = null;
 
   // 从 localStorage 加载对话
   const loadFromStorage = useCallback(() => {

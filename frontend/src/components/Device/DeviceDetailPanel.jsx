@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { ArrowLeft, Package, Edit2, Trash2, ExternalLink, Star, Check, X } from 'lucide-react';
 import { getDevice, updateDevice } from '../../services/api';
 import { toastError } from '../../utils/feedback';
@@ -13,11 +13,7 @@ export function DeviceDetailPanel({ deviceId, onBack, onDelete }) {
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
 
-  useEffect(() => {
-    loadDevice();
-  }, [deviceId]);
-
-  async function loadDevice() {
+  const loadDevice = useCallback(async () => {
     try {
       setLoading(true);
       const data = await getDevice(deviceId);
@@ -29,7 +25,11 @@ export function DeviceDetailPanel({ deviceId, onBack, onDelete }) {
     } finally {
       setLoading(false);
     }
-  }
+  }, [deviceId]);
+
+  useEffect(() => {
+    loadDevice();
+  }, [loadDevice]);
 
   function startEditing() {
     setForm({
@@ -78,12 +78,6 @@ export function DeviceDetailPanel({ deviceId, onBack, onDelete }) {
       setSaving(false);
     }
   }
-
-  const statusColors = {
-    'Normal': 'text-green-500',
-    'Running': 'text-yellow-500',
-    'Maintenance': 'text-orange-500'
-  };
 
   const statusDots = {
     'Normal': 'bg-green-500',
@@ -347,7 +341,7 @@ export function DeviceDetailPanel({ deviceId, onBack, onDelete }) {
 
                 <div className="flex items-center gap-4 text-[12px] text-[var(--color-text-muted)]">
                   {wo.engineer_name && (
-                    <span>Engineer: {wo.engineer_name}</span>
+                    <span>Service Provider: {wo.engineer_name}</span>
                   )}
                   {wo.rating && (
                     <span className="flex items-center gap-1">

@@ -9,6 +9,7 @@ export function InputArea({ onSend, onStop, disabled, isStreaming }) {
   const [pendingImages, setPendingImages] = useState([]); // { file, previewUrl, uploading, url, error }
   const textareaRef = useRef(null);
   const fileInputRef = useRef(null);
+  const previewUrlsRef = useRef(new Set());
 
   // 自动调整高度
   useEffect(() => {
@@ -20,10 +21,10 @@ export function InputArea({ onSend, onStop, disabled, isStreaming }) {
 
   // 清理 previewUrl 防止内存泄漏
   useEffect(() => {
+    const previewUrls = previewUrlsRef.current;
     return () => {
-      pendingImages.forEach(img => {
-        if (img.previewUrl) URL.revokeObjectURL(img.previewUrl);
-      });
+      previewUrls.forEach(url => URL.revokeObjectURL(url));
+      previewUrls.clear();
     };
   }, []);
 
@@ -41,6 +42,7 @@ export function InputArea({ onSend, onStop, disabled, isStreaming }) {
       url: null,
       error: null,
     }));
+    newImages.forEach(img => previewUrlsRef.current.add(img.previewUrl));
 
     setPendingImages(prev => [...prev, ...newImages]);
     e.target.value = '';
@@ -64,7 +66,10 @@ export function InputArea({ onSend, onStop, disabled, isStreaming }) {
   const removeImage = (index) => {
     setPendingImages(prev => {
       const img = prev[index];
-      if (img.previewUrl) URL.revokeObjectURL(img.previewUrl);
+      if (img.previewUrl) {
+        URL.revokeObjectURL(img.previewUrl);
+        previewUrlsRef.current.delete(img.previewUrl);
+      }
       return prev.filter((_, i) => i !== index);
     });
   };
@@ -77,6 +82,12 @@ export function InputArea({ onSend, onStop, disabled, isStreaming }) {
     const images = uploadedImages.map(img => ({ url: img.url }));
     onSend(text || 'Please analyze this image', images);
     setInput('');
+    pendingImages.forEach(img => {
+      if (img.previewUrl) {
+        URL.revokeObjectURL(img.previewUrl);
+        previewUrlsRef.current.delete(img.previewUrl);
+      }
+    });
     setPendingImages([]);
   };
 

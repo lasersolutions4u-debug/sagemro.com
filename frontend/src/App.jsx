@@ -3,12 +3,7 @@ import { ErrorBoundary } from './components/common/ErrorBoundary';
 import { Footer } from './components/common/Footer';
 import { Sidebar } from './components/Sidebar/Sidebar';
 import { ChatArea } from './components/Chat/ChatArea';
-import { CustomerHomeModal } from './components/Settings/CustomerHomeModal';
-import { AboutModal } from './components/common/AboutModal';
 import { FeedbackHost } from './components/common/FeedbackHost';
-import { LegalModal } from './components/common/LegalModal';
-import { MyDevicesModal } from './components/Device/MyDevicesModal';
-import { NotificationModal } from './components/Notification/NotificationModal';
 import { PushNotificationBanner } from './components/PushNotification/PushNotificationBanner';
 import { useChat } from './hooks/useChat';
 import { useConversations } from './hooks/useConversations';
@@ -23,6 +18,11 @@ const WorkOrderModal = lazy(() => import('./components/Sidebar/WorkOrderModal').
 const MyWorkOrdersModal = lazy(() => import('./components/Sidebar/MyWorkOrdersModal').then(m => ({ default: m.MyWorkOrdersModal })));
 const EngineerDashboard = lazy(() => import('./components/Engineer/EngineerDashboard').then(m => ({ default: m.EngineerDashboard })));
 const EngineerProfileModal = lazy(() => import('./components/Engineer/EngineerProfileModal').then(m => ({ default: m.EngineerProfileModal })));
+const CustomerHomeModal = lazy(() => import('./components/Settings/CustomerHomeModal').then(m => ({ default: m.CustomerHomeModal })));
+const AboutModal = lazy(() => import('./components/common/AboutModal').then(m => ({ default: m.AboutModal })));
+const LegalModal = lazy(() => import('./components/common/LegalModal').then(m => ({ default: m.LegalModal })));
+const MyDevicesModal = lazy(() => import('./components/Device/MyDevicesModal').then(m => ({ default: m.MyDevicesModal })));
+const NotificationModal = lazy(() => import('./components/Notification/NotificationModal').then(m => ({ default: m.NotificationModal })));
 
 function App() {
   // 侧边栏状态
@@ -158,7 +158,7 @@ function App() {
     const stored = localStorage.getItem(`sagemro_messages_${convId}`);
     const currentMessages = stored ? JSON.parse(stored) : [];
 
-    await sendMessage(content, images);
+    await sendMessage(content, images, convId);
 
     setTimeout(() => {
       const updatedMessages = [...currentMessages, {

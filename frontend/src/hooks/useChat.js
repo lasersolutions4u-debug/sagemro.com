@@ -14,7 +14,7 @@ export function useChat() {
   const abortControllerRef = useRef(null);
 
   // 发送消息
-  const sendMessage = useCallback(async (content, images) => {
+  const sendMessage = useCallback(async (content, images, targetConversationId) => {
     // 创建用户消息
     const userMessage = {
       id: generateId(),
@@ -43,18 +43,12 @@ export function useChat() {
     // 创建 AbortController
     abortControllerRef.current = new AbortController();
 
-    // 构建历史消息（最近 10 轮）
-    const historyMessages = messages.slice(-10).map(m => ({
-      role: m.role,
-      content: m.content,
-    }));
-
     // 收集 AI 回复
     let aiContent = '';
 
     await new Promise((resolve) => {
       streamChat({
-        conversationId,
+        conversationId: targetConversationId || conversationId,
         message: content,
         images,
         onChunk: (data) => {
@@ -83,7 +77,7 @@ export function useChat() {
         signal: abortControllerRef.current.signal,
       });
     });
-  }, [conversationId, messages]);
+  }, [conversationId]);
 
   // 停止生成
   const stopGeneration = useCallback(() => {

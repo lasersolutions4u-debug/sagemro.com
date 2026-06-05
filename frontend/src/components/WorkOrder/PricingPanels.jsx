@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { CheckCircle, AlertCircle } from 'lucide-react';
 import {
   getWorkOrderPricing,
@@ -47,14 +47,12 @@ export function AIPriceCheck({ check }) {
 export function EngineerPricingPanel({ workOrderId, engineerId, onSubmitted, commissionRate = 0.80, engineerLevel = 'junior' }) {
   const [form, setForm] = useState({ labor_fee: '', parts_fee: '', travel_fee: '', other_fee: '', parts_detail: '' });
   const [submitting, setSubmitting] = useState(false);
-  const [submittingPrice, setSubmittingPrice] = useState(null);
 
   const subtotal = (parseInt(form.labor_fee) || 0) + (parseInt(form.parts_fee) || 0) + (parseInt(form.travel_fee) || 0) + (parseInt(form.other_fee) || 0);
   const serviceFee = Math.round(subtotal * commissionRate); // 工程师实得（仅供提交前预览，最终以平台结算为准）
 
   const handleSubmit = async () => {
     setSubmitting(true);
-    setSubmittingPrice(subtotal);
     try {
       await submitWorkOrderPricing(workOrderId, {
         labor_fee: parseInt(form.labor_fee) || 0,
@@ -70,7 +68,6 @@ export function EngineerPricingPanel({ workOrderId, engineerId, onSubmitted, com
       toastError('Submission failed: ' + e.message);
     } finally {
       setSubmitting(false);
-      setSubmittingPrice(null);
     }
   };
 
@@ -145,20 +142,20 @@ export function CustomerPricingPanel({ workOrderId, customerId, onConfirmed }) {
   const [submitting, setSubmitting] = useState(false);
   const [paymentOpen, setPaymentOpen] = useState(false);
 
-  const load = () => {
+  const load = useCallback(() => {
     setLoading(true);
     getWorkOrderPricing(workOrderId).then(d => {
       setPricing(d.pricing);
     }).catch(() => {}).finally(() => setLoading(false));
-  };
+  }, [workOrderId]);
 
-  useEffect(() => { load(); }, [workOrderId]);
+  useEffect(() => { load(); }, [load]);
 
   const handleConfirm = async () => {
     setSubmitting(true);
     try {
       await confirmWorkOrderPricing(workOrderId, customerId);
-      toastSuccess('Quote confirmed. The engineer will proceed with on-site service.');
+      toastSuccess('Quote confirmed. The service provider will proceed with on-site service.');
       onConfirmed?.();
       load();
     } catch (e) {
@@ -174,7 +171,7 @@ export function CustomerPricingPanel({ workOrderId, customerId, onConfirmed }) {
     setSubmitting(true);
     try {
       await rejectWorkOrderPricing(workOrderId, customerId, rejectReason, counterOffer ? parseInt(counterOffer) : null);
-      toastSuccess('Negotiation initiated. The engineer will submit a revised quote.');
+      toastSuccess('Negotiation initiated. The service provider will submit a revised quote.');
       onConfirmed?.();
       load();
     } catch (e) {
@@ -188,9 +185,6 @@ export function CustomerPricingPanel({ workOrderId, customerId, onConfirmed }) {
   if (loading) return <div className="text-center py-4 text-sm text-[var(--color-text-muted)]">Loading...</div>;
 
   if (!pricing) return <div className="text-center py-4 text-sm text-[var(--color-text-muted)]">Service Provider has not submitted a quote yet</div>;
-
-  let aiCheck = null;
-  try { aiCheck = pricing.ai_price_check ? JSON.parse(pricing.ai_price_check) : null; } catch {}
 
   return (
     <div className="space-y-3">
@@ -214,7 +208,7 @@ export function CustomerPricingPanel({ workOrderId, customerId, onConfirmed }) {
         {pricing.platform_fee > 0 && (
           <>
             <div className="flex justify-between">
-              <span className="text-[var(--color-text-secondary)]">Repair Service Fee (passed to engineer)</span>
+              <span className="text-[var(--color-text-secondary)]">Repair Service Fee (passed to service provider)</span>
               <span>{(pricing.subtotal || 0) - (pricing.platform_fee || 0)} CNY</span>
             </div>
             <div className="flex justify-between">
@@ -277,7 +271,7 @@ export function CustomerPricingPanel({ workOrderId, customerId, onConfirmed }) {
 
       {action === 'confirm' && (
         <div className="p-3 bg-green-500/10 border border-green-500/30 rounded-xl space-y-2">
-          <div className="text-sm text-[var(--color-text-primary)]">After confirmation, the engineer will begin on-site service.</div>
+          <div className="text-sm text-[var(--color-text-primary)]">After confirmation, the service provider will begin on-site service.</div>
           <div className="flex gap-2">
             <button onClick={() => setAction(null)} className="flex-1 py-2 bg-[var(--color-surface-elevated)] text-[var(--color-text-secondary)] rounded-xl text-sm">Cancel</button>
             <button data-testid="confirm-pricing-button" onClick={handleConfirm} disabled={submitting} className="flex-1 py-2 bg-green-500 hover:bg-green-600 disabled:opacity-50 text-white rounded-xl text-sm">
