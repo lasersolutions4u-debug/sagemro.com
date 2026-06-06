@@ -124,36 +124,44 @@ jobs:
         working-directory: worker
         run: |
           echo "=== Checking D1 migration status ==="
-          APPLIED=$(wrangler d1 execute sagemro-db --env production --remote --command "SELECT version FROM _migrations ORDER BY version;" 2>/dev/null | grep -oP '\d+' | sort -n)
-          LOCAL_FILES=$(ls migrations/*.sql 2>/dev/null | grep -oP '\d+' | sort -n)
+          wrangler d1 execute sagemro-db --env production --remote --json \
+            --command "SELECT version FROM _migrations ORDER BY version;" \
+            > /tmp/sagemro-d1-migrations.json
 
-          echo "Applied versions: $APPLIED"
-          echo "Local migration files: $LOCAL_FILES"
+          node <<'JS'
+          const fs = require('fs');
+          const path = require('path');
 
-          MISSING=""
-          for ver in $LOCAL_FILES; do
-            if ! echo "$APPLIED" | grep -q "^${ver}$"; then
-              MISSING="$MISSING $ver"
-            fi
-          done
+          const data = JSON.parse(fs.readFileSync('/tmp/sagemro-d1-migrations.json', 'utf8'));
+          const applied = new Set((data[0]?.results || []).map((row) => row.version));
+          const local = fs.readdirSync('migrations')
+            .filter((name) => name.endsWith('.sql'))
+            .map((name) => path.basename(name, '.sql'))
+            // 022 initializes an empty CN database and must not be applied to the EN production DB.
+            .filter((version) => version !== '022_cn_full_schema')
+            .sort();
 
-          if [ -n "$MISSING" ]; then
-            echo ""
-            echo "❌ UNAPPLIED MIGRATIONS FOUND:$MISSING"
-            echo ""
-            echo "These migration files exist locally but have NOT been applied to production D1."
-            echo "You must run them manually BEFORE deploying the Worker:"
-            echo ""
-            for ver in $MISSING; do
-              FILE=$(ls migrations/${ver}_*.sql 2>/dev/null | head -1)
-              echo "  wrangler d1 execute sagemro-db --env production --remote --file $FILE"
-            done
-            echo ""
-            echo "See DEPLOY.md for details."
-            exit 1
-          fi
+          const missing = local.filter((version) => !applied.has(version));
+          console.log('Applied versions:', [...applied].sort().join(', '));
+          console.log('Local migration files:', local.join(', '));
 
-          echo "✅ All migrations are applied."
+          if (missing.length > 0) {
+            console.log('');
+            console.log(`❌ UNAPPLIED MIGRATIONS FOUND: ${missing.join(', ')}`);
+            console.log('');
+            console.log('These migration files exist locally but have NOT been applied to production D1.');
+            console.log('You must run them manually BEFORE deploying the Worker:');
+            console.log('');
+            for (const version of missing) {
+              console.log(`  wrangler d1 execute sagemro-db --env production --remote --file migrations/${version}.sql`);
+            }
+            console.log('');
+            console.log('See DEPLOY.md for details.');
+            process.exit(1);
+          }
+
+          console.log('✅ All migrations are applied.');
+          JS
 
       - name: Deploy to Cloudflare Workers
         uses: cloudflare/wrangler-action@v3
