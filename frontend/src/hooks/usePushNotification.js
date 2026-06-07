@@ -4,11 +4,39 @@ import { toastError } from '../utils/feedback';
 
 // OneSignal App ID - 从环境变量读取
 const ONESIGNAL_APP_ID = import.meta.env.VITE_ONESIGNAL_APP_ID || '';
+const ONESIGNAL_SDK_URL = 'https://cdn.onesignal.com/sdks/OneSignalSDK.js';
 
 // 调试日志：仅在开发环境启用，避免污染生产控制台
 const debugLog = (...args) => {
   if (import.meta.env.DEV) console.log(...args);
 };
+
+function isChinaDomain() {
+  return typeof window !== 'undefined' && window.location.hostname.endsWith('.cn');
+}
+
+function loadOneSignalSdk() {
+  if (typeof window === 'undefined') return Promise.reject(new Error('浏览器环境不可用'));
+  if (window.OneSignal && !Array.isArray(window.OneSignal)) return Promise.resolve();
+
+  window.OneSignal = window.OneSignal || [];
+  const existing = document.querySelector(`script[src="${ONESIGNAL_SDK_URL}"]`);
+  if (existing) {
+    return new Promise((resolve, reject) => {
+      existing.addEventListener('load', () => resolve(), { once: true });
+      existing.addEventListener('error', () => reject(new Error('OneSignal SDK 加载失败')), { once: true });
+    });
+  }
+
+  return new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    script.src = ONESIGNAL_SDK_URL;
+    script.async = true;
+    script.onload = () => resolve();
+    script.onerror = () => reject(new Error('OneSignal SDK 加载失败'));
+    document.head.appendChild(script);
+  });
+}
 
 // 兼容旧签名：usePushNotification(engineerId, isEngineer)
 // 也可以显式传 userId，按当前登录身份自动订阅（客户/工程师都支持）
@@ -60,6 +88,11 @@ export function usePushNotification(userId, shouldSubscribe) {
       return;
     }
 
+    if (isChinaDomain()) {
+      debugLog('[Push] Skipping OneSignal on CN domain');
+      return;
+    }
+
     if (initAttempted.current) {
       debugLog('[Push] Already attempted, skipping');
       return;
@@ -67,6 +100,7 @@ export function usePushNotification(userId, shouldSubscribe) {
     initAttempted.current = true;
 
     try {
+      await loadOneSignalSdk();
       await waitForOneSignal();
     } catch (err) {
       console.warn('[Push]', err.message);
@@ -165,6 +199,11 @@ export function usePushNotification(userId, shouldSubscribe) {
   const enablePush = useCallback(async () => {
     debugLog('[Push] enablePush called, isReady:', isReady);
 
+    if (isChinaDomain()) {
+      toastError('国内版暂未启用浏览器推送通知');
+      return;
+    }
+
     if (!isReady) {
       debugLog('[Push] OneSignal not ready, initializing...');
       await initOneSignal();
@@ -257,7 +296,7 @@ export function usePushNotification(userId, shouldSubscribe) {
     enablePush,
     disablePush,
     isReady,
-    isConfigured: !!ONESIGNAL_APP_ID,
+    isConfigured: !!ONESIGNAL_APP_ID && !isChinaDomain(),
     inAppNotification,
     dismissNotification: () => setInAppNotification(null),
   };

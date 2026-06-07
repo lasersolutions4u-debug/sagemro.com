@@ -5,25 +5,9 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>SAGEMRO - 小智智能助手</title>
-    <!-- Google Fonts 异步加载，不阻塞首屏渲染 -->
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
-    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" media="print" onload="this.media='all'">
-    <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"></noscript>
-    <!-- OneSignal Push Notifications -->
-    <script src="https://cdn.onesignal.com/sdks/OneSignalSDK.js" async></script>
   </head>
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
-    <script>
-      // OneSignal 初始化（仅对已登录的工程师启用）
-      window.OneSignal = window.OneSignal || [];
-      OneSignal.push(function() {
-        // 不要在这里自动初始化，等待用户登录后再初始化
-        console.log('OneSignal SDK loaded');
-      });
-    </script>
   </body>
 </html>
