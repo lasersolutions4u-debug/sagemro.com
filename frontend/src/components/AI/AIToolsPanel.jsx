@@ -34,12 +34,13 @@ export function AIToolsPanel({ onSendMessage }) {
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3 mb-5">
-        {aiServiceTools.map(({ id, icon: Icon, shortTitle, description }) => {
-          const selected = id === activeTool.id;
+        {aiServiceTools.map((tool) => {
+          const ToolIcon = tool.icon;
+          const selected = tool.id === activeTool.id;
           return (
             <button
-              key={id}
-              onClick={() => setActiveToolId(id)}
+              key={tool.id}
+              onClick={() => setActiveToolId(tool.id)}
               className={`p-4 rounded-2xl border text-left transition-all ${
                 selected
                   ? 'border-[var(--color-primary)] bg-[var(--color-primary)]/10 shadow-sm'
@@ -48,14 +49,14 @@ export function AIToolsPanel({ onSendMessage }) {
             >
               <div className="flex items-start gap-3">
                 <div className="w-9 h-9 rounded-xl bg-[var(--color-primary)]/12 flex items-center justify-center flex-shrink-0">
-                  <Icon size={18} className="text-[var(--color-primary)]" />
+                  <ToolIcon size={18} className="text-[var(--color-primary)]" />
                 </div>
                 <div>
                   <div className="text-sm font-medium text-[var(--color-text-primary)] mb-1">
-                    {shortTitle}
+                    {tool.shortTitle}
                   </div>
                   <div className="text-xs text-[var(--color-text-secondary)] leading-relaxed">
-                    {description}
+                    {tool.description}
                   </div>
                 </div>
               </div>
