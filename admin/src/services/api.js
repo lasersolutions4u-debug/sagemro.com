@@ -15,18 +15,6 @@ function authHeaders() {
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;
   }
-  return 'https://api.sagemro.com';
-}
-
-const API_BASE = resolveApiBase();
-const DEBUG_API = import.meta.env.DEV;
-
-function authHeaders() {
-  const token = localStorage.getItem('admin_token');
-  const headers = { 'Content-Type': 'application/json' };
-  if (token) {
-    headers['Authorization'] = `Bearer ${token}`;
-  }
   return headers;
 }
 

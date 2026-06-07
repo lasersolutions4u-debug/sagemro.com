@@ -5,18 +5,18 @@ import {
 import { BrandMark } from '../common/BrandMark';
 
 const aiCapabilities = [
-  'Fault diagnosis',
-  'Cutting parameters',
-  'Parts identification',
-  'Repair estimate',
-  'Machine selection',
-  'Health report',
+  '故障诊断',
+  '切割参数',
+  '备件识别',
+  '维修预估',
+  '新机选型',
+  '健康报告',
 ];
 
 const trustPoints = [
-  'Understands alarms, photos, cut quality, parts, maintenance, and new-machine needs',
-  'Turns messy details into a service-ready summary you can confirm in chat',
-  'Connects AI speed with official SAGEMRO follow-through when it matters',
+  '理解报警、照片、切割质量、备件、维保和新机需求',
+  '把零散描述整理成可确认、可派工、可归档的服务摘要',
+  '用 AI 提升响应效率，由 SAGEMRO 官方服务承接关键确认',
 ];
 
 export function WelcomePage() {
@@ -31,10 +31,10 @@ export function WelcomePage() {
             SAGEMRO Service OS
           </div>
           <h1 className="text-[28px] font-semibold leading-tight tracking-tight text-[var(--color-text-primary)] sm:text-[42px]">
-            Turn machine trouble into a clear service path.
+            把设备问题，变成清晰可靠的服务路径。
           </h1>
           <p className="mx-auto mt-4 max-w-3xl text-sm leading-7 text-[var(--color-text-secondary)] sm:text-base">
-            Tell SAGEMRO what happened. AI captures the facts, reads images when needed, asks the right follow-up questions, and prepares your case for official service action.
+            直接告诉 SAGEMRO 现场发生了什么。AI 会读取关键信息和图片，追问必要细节，并把问题整理成可由官方服务继续跟进的清晰方案。
           </p>
         </div>
 
@@ -45,10 +45,10 @@ export function WelcomePage() {
             </div>
             <div>
               <h2 className="text-base font-semibold text-[var(--color-text-primary)]">
-                One conversation. Six service outcomes.
+                一次对话，推进六类服务结果。
               </h2>
               <p className="mt-1 text-xs leading-relaxed text-[var(--color-text-secondary)] sm:text-sm">
-                Simply explain the situation. SAGEMRO guides the conversation, captures the key details, and turns them into service-ready information.
+                你只需要像和工程师沟通一样说明情况。SAGEMRO 会引导对话、提取关键细节，并在聊天中让你确认结构化信息。
               </p>
             </div>
           </div>

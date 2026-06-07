@@ -28,6 +28,9 @@ const NotificationModal = lazy(() => import('./components/Notification/Notificat
 function App() {
   const isEngineerHost = typeof window !== 'undefined'
     && window.location.hostname.startsWith('engineer.');
+  const engineerPortalUrl = typeof window !== 'undefined' && window.location.hostname.endsWith('.cn')
+    ? 'https://engineer.sagemro.cn'
+    : 'https://engineer.sagemro.com';
 
   // 侧边栏状态
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -385,14 +388,14 @@ function App() {
           <div className="text-xs uppercase tracking-[0.24em] text-[var(--color-primary)]">SAGEMRO</div>
           <h1 className="mt-2 text-xl font-semibold">请进入工程师工作台</h1>
           <p className="mt-3 text-sm text-[var(--color-text-secondary)]">
-            工程师账号将使用独立入口 engineer.sagemro.com。主站仅保留客户登录和访客访问，避免现场作业入口与客户服务体验混在一起。
+            工程师账号将使用独立入口 {engineerPortalUrl.replace('https://', '')}。主站仅保留客户登录和访客访问，避免现场作业入口与客户服务体验混在一起。
           </p>
           <div className="mt-5 flex flex-col gap-2">
             <a
-              href="https://engineer.sagemro.com"
+              href={engineerPortalUrl}
               className="rounded-xl bg-[var(--color-primary)] px-4 py-2.5 text-sm font-medium text-white"
             >
-              前往 engineer.sagemro.com
+              前往 {engineerPortalUrl.replace('https://', '')}
             </a>
             <button
               onClick={handleLogout}
