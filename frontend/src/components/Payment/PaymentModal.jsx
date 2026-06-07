@@ -112,7 +112,7 @@ export function PaymentModal({ isOpen, onClose, workOrderId, customerId, onPaid 
                   <span className="text-[var(--color-text-primary)]">{order?.order_no || workOrderId?.slice(0, 14)}</span>
                 </div>
               </div>
-              <p className="text-xs text-[var(--color-text-muted)]">The engineer will schedule on-site service after receiving payment</p>
+              <p className="text-xs text-[var(--color-text-muted)]">SAGEMRO will schedule service after payment confirmation.</p>
               <button
                 onClick={onClose}
                 className="w-full py-2.5 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white rounded-xl font-medium text-sm"
@@ -191,8 +191,8 @@ export function PaymentModal({ isOpen, onClose, workOrderId, customerId, onPaid 
               <div className="flex items-start gap-2 p-2.5 bg-blue-500/5 border border-blue-500/10 rounded-xl">
                 <Shield size={16} className="text-blue-500 flex-shrink-0 mt-0.5" />
                 <div className="text-xs text-[var(--color-text-secondary)]">
-                  <p className="font-medium text-[var(--color-text-primary)] mb-0.5">Platform Escrow</p>
-                  <p>Payment is held by the platform and released to the engineer after service completion. This is a simulated payment environment for demonstrating the full transaction flow.</p>
+                  <p className="font-medium text-[var(--color-text-primary)] mb-0.5">Payment Notice</p>
+                  <p>This is a simulated payment environment for demonstrating the service flow. Formal payment terms are subject to SAGEMRO confirmation.</p>
                 </div>
               </div>
 

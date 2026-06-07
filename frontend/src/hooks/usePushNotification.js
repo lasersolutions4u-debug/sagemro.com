@@ -169,8 +169,8 @@ export function usePushNotification(userId, shouldSubscribe) {
           const data = event.notification?.data;
           if (data?.work_order_id) {
             setInAppNotification({
-              title: event.notification?.heading || '📋 New Work Order',
-              body: event.notification?.body || 'You have a new work order awaiting acceptance',
+              title: event.notification?.heading || 'New Service Assignment',
+              body: event.notification?.body || 'You have a SAGEMRO service assignment to review',
               data
             });
             // 5秒后自动消失

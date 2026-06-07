@@ -4,10 +4,10 @@ import { Star } from 'lucide-react';
 import { submitRating } from '../../services/api';
 
 const ratingDimensions = [
-  { key: 'timeliness', label: 'Timeliness' },
-  { key: 'technical', label: 'Technical Skill' },
+  { key: 'timeliness', label: 'Response & Timeliness' },
+  { key: 'technical', label: 'Problem Solving' },
   { key: 'communication', label: 'Communication' },
-  { key: 'professional', label: 'Professionalism' },
+  { key: 'professional', label: 'SAGEMRO Service Standard' },
 ];
 
 export function RatingModal({ isOpen, onClose, workOrder, onSuccess }) {
@@ -71,12 +71,12 @@ export function RatingModal({ isOpen, onClose, workOrder, onSuccess }) {
   };
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Service Review" size="sm">
+    <Modal isOpen={isOpen} onClose={onClose} title="Confirm Service & Review" size="sm">
       <div className="space-y-4">
         {/* 工单信息 */}
         <div className="p-3 bg-[var(--color-surface-elevated)] rounded-xl">
           <div className="text-sm text-[var(--color-text-primary)]">
-            Order No: {workOrder?.order_no || workOrder?.id}
+            Service No: {workOrder?.order_no || workOrder?.id}
           </div>
         </div>
 
@@ -100,12 +100,12 @@ export function RatingModal({ isOpen, onClose, workOrder, onSuccess }) {
         {/* 评价备注 */}
         <div>
           <label className="block text-sm font-medium text-[var(--color-text-primary)] mb-1">
-            Review Comment (Optional)
+            Acceptance Comment (Optional)
           </label>
           <textarea
             value={comment}
             onChange={(e) => setComment(e.target.value)}
-            placeholder="Share your service experience..."
+            placeholder="Confirm service result, remaining concerns, or follow-up needs..."
             rows={3}
             className="w-full px-3 py-2 border border-[var(--color-input-border)] rounded-xl bg-[var(--color-input-bg)] text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)] resize-none"
           />
@@ -117,7 +117,7 @@ export function RatingModal({ isOpen, onClose, workOrder, onSuccess }) {
           disabled={submitting}
           className="w-full py-3 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] disabled:bg-[var(--color-text-muted)] text-white rounded-xl font-medium transition-colors"
         >
-          {submitting ? 'Submitting...' : 'Submit Review'}
+          {submitting ? 'Submitting...' : 'Confirm Service & Submit Review'}
         </button>
       </div>
     </Modal>

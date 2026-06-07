@@ -84,7 +84,7 @@ export function MyWorkOrdersModal({ isOpen, onClose }) {
 
   return (
     <>
-      <Modal isOpen={isOpen} onClose={onClose} title="My Work Orders" size="md">
+      <Modal isOpen={isOpen} onClose={onClose} title="My Services" size="md">
         <div className="space-y-3">
           {loading && (
             <div className="text-center py-8 text-[var(--color-text-secondary)]">
@@ -100,7 +100,7 @@ export function MyWorkOrdersModal({ isOpen, onClose }) {
 
           {!loading && workOrders.length === 0 && !error && (
             <div className="text-center py-8 text-[var(--color-text-secondary)]">
-              No work orders found
+              No service requests found
             </div>
           )}
 
@@ -149,7 +149,7 @@ export function MyWorkOrdersModal({ isOpen, onClose }) {
                 </div>
                 {order.engineer_name && (
                   <p className="text-xs text-[var(--color-primary)] mb-1">
-                    Provider: {order.engineer_name}
+                    SAGEMRO Engineer: {order.engineer_name}
                   </p>
                 )}
                 <p className="text-sm text-[var(--color-text-secondary)] mb-1">
@@ -170,10 +170,10 @@ export function MyWorkOrdersModal({ isOpen, onClose }) {
                         data-testid="cancel-work-order-list-button"
                         onClick={async (e) => {
                           e.stopPropagation();
-                          if (!(await confirmDialog('Are you sure you want to cancel this work order? This action cannot be undone.', { danger: true }))) return;
+                          if (!(await confirmDialog('Are you sure you want to cancel this service request? This action cannot be undone.', { danger: true }))) return;
                           try {
                             await cancelWorkOrder(order.id);
-                            toastSuccess('Work order cancelled');
+                            toastSuccess('Service request cancelled');
                             setWorkOrders((prev) =>
                               prev.map((wo) => wo.id === order.id ? { ...wo, status: WorkOrderStatus.CANCELLED } : wo)
                             );
@@ -203,7 +203,7 @@ export function MyWorkOrdersModal({ isOpen, onClose }) {
 
           {/* 图例（只显示客户相关状态） */}
           <div className="pt-4 border-t border-[var(--color-border)]">
-            <p className="text-xs text-[var(--color-text-secondary)] mb-2">Order Status:</p>
+            <p className="text-xs text-[var(--color-text-secondary)] mb-2">Service Status:</p>
             <div className="flex flex-wrap gap-3">
               {customerStatuses.map((key) => {
                 const val = statusLabels[key];

@@ -10,6 +10,7 @@ const STATUS_MAP = {
 
 const SOURCE_MAP = {
   chat: 'AI 对话',
+  ai_tool: 'AI 工具',
   landing: '落地页',
   referral: '转介绍',
 };

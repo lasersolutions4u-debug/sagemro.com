@@ -96,24 +96,6 @@ export async function registerCustomer({ name, phone, password, code, company, i
 }
 
 /**
- * 工程师入驻
- */
-export async function registerEngineer({ name, phone, password, code, specialties, brands, services, service_region, bio, company }) {
-  const response = await fetch(`${API_BASE}/api/auth/register/engineer`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name, phone, password, code, specialties, brands, services, service_region, bio, company }),
-  });
-  if (!response.ok) {
-    const data = await response.json();
-    const err = new Error(data.error || `HTTP ${response.status}`);
-    err.status = response.status;
-    throw err;
-  }
-  return response.json();
-}
-
-/**
  * 登录
  */
 export async function login({ phone, password }) {
@@ -443,7 +425,8 @@ export async function rejectWorkOrderPricing(workOrderId, customerId, reason, co
 // ============ 工程师相关 ============
 
 /**
- * 获取工程师的工单列表
+ * 获取工程师的服务任务列表。
+ * Service OS 默认只返回后台已派给当前工程师的服务任务。
  */
 export async function getEngineerTickets(engineerId) {
   const url = engineerId
@@ -457,7 +440,8 @@ export async function getEngineerTickets(engineerId) {
 }
 
 /**
- * 工程师接单
+ * SERVICE_OS_LEGACY: 工程师确认派工兼容接口。
+ * 新 Service OS 主路径应使用后台管理员派工。
  */
 export async function acceptTicket({ work_order_id, engineer_id }) {
   const response = await fetch(`${API_BASE}/api/engineers/tickets/accept`, {
@@ -470,7 +454,7 @@ export async function acceptTicket({ work_order_id, engineer_id }) {
 }
 
 /**
- * 工程师拒单
+ * SERVICE_OS_LEGACY: 工程师退回调度兼容接口。
  */
 export async function rejectTicket({ work_order_id, engineer_id }) {
   const response = await fetch(`${API_BASE}/api/engineers/tickets/reject`, {
@@ -494,7 +478,7 @@ export async function getRecommendedEngineers(workOrderId) {
 }
 
 /**
- * 更新工程师接单状态
+ * 更新工程师派工状态
  */
 export async function updateEngineerStatus({ engineer_id, status }) {
   const response = await fetch(`${API_BASE}/api/engineers/status`, {
@@ -545,10 +529,10 @@ export async function cancelWorkOrder(workOrderId) {
   return response.json();
 }
 
-// ============ 工程师钱包与保证金 ============
+// ============ SERVICE_OS_LEGACY: 工程师钱包与保证金 ============
 
 /**
- * 获取工程师钱包信息
+ * 获取工程师钱包信息（已停用，服务端返回 410）
  */
 export async function getEngineerWallet(engineerId) {
   const url = engineerId
@@ -562,7 +546,7 @@ export async function getEngineerWallet(engineerId) {
 }
 
 /**
- * 申请提现
+ * 申请提现（已停用，服务端返回 410）
  */
 export async function applyWithdraw(amount) {
   const response = await fetch(`${API_BASE}/api/engineers/wallet/withdraw`, {

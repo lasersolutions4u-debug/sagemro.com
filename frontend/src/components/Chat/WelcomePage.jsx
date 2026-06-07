@@ -1,34 +1,35 @@
-import { Bot, Headphones, Globe2, Users } from 'lucide-react';
+import { Bot, ClipboardCheck, Globe2, Wrench } from 'lucide-react';
+import { AIToolsPanel } from '../AI/AIToolsPanel';
 
 const quickQuestions = [
   'How to fix laser cutting dross?',
   'How to adjust cutting surface lines?',
-  'How to compensate for bending springback?',
-  'How often should the cutting head be maintained?',
+  'Which spare parts should I keep for a fiber laser?',
+  'What laser power should I choose for 20mm carbon steel?',
 ];
 
 const valueProps = [
   {
-    icon: Headphones,
-    title: 'Free Consultation',
-    desc: 'AI technical advisor available 24/7',
+    icon: Wrench,
+    title: 'Official Service Team',
+    desc: 'SAGEMRO receives, diagnoses, and coordinates service under one standard',
   },
   {
     icon: Globe2,
-    title: 'All Brands Supported',
-    desc: 'Any equipment brand and model',
+    title: 'Laser & Sheet Metal Focus',
+    desc: 'Built for laser cutters, press brakes, welding, automation, and spare parts',
   },
   {
-    icon: Users,
-    title: 'Expert Network',
-    desc: 'Matched professional engineers for on-site service',
+    icon: ClipboardCheck,
+    title: 'Service Records',
+    desc: 'Every request becomes equipment history, repair records, and follow-up actions',
   },
 ];
 
 export function WelcomePage({ onSendMessage }) {
   return (
-    <div className="flex flex-col items-center justify-start sm:justify-center min-h-full px-4 sm:px-6 py-6 sm:py-8">
-      <div className="text-center max-w-2xl w-full">
+    <div className="flex flex-col items-center justify-start min-h-full px-4 sm:px-6 py-6 sm:py-8">
+      <div className="text-center max-w-5xl w-full">
         {/* Logo */}
         <div className="w-[64px] h-[64px] sm:w-[80px] sm:h-[80px] rounded-2xl bg-[var(--color-primary)] flex items-center justify-center mx-auto mb-4 sm:mb-6">
           <Bot size={32} className="text-white sm:hidden" />
@@ -37,10 +38,10 @@ export function WelcomePage({ onSendMessage }) {
 
         {/* Title */}
         <h1 className="text-[22px] sm:text-[28px] font-medium text-[var(--color-text-primary)] mb-1.5 sm:mb-2">
-          Free AI Equipment Diagnostics
+          SAGEMRO Service OS
         </h1>
-        <p className="text-[14px] sm:text-[15px] text-[var(--color-text-secondary)] mb-5 sm:mb-6 leading-relaxed">
-          Upload fault photos · Instant AI analysis · Matched professional engineers
+        <p className="text-[14px] sm:text-[16px] text-[var(--color-text-secondary)] mb-5 sm:mb-6 leading-relaxed max-w-3xl mx-auto">
+          AI-powered diagnostics, official SAGEMRO service requests, spare parts, maintenance plans, and Euchio new-machine selection in one operating system.
         </p>
 
         {/* Value cards — mobile: vertical list, desktop: 3-column grid */}
@@ -65,7 +66,12 @@ export function WelcomePage({ onSendMessage }) {
           ))}
         </div>
 
+        <AIToolsPanel onSendMessage={onSendMessage} />
+
         {/* Quick questions */}
+        <div className="mt-6 mb-3 text-xs uppercase tracking-[0.18em] text-[var(--color-text-secondary)]">
+          Quick AI Prompts
+        </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 sm:gap-3">
           {quickQuestions.map((question, i) => (
             <button

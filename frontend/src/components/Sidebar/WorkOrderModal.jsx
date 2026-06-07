@@ -83,7 +83,7 @@ export function WorkOrderModal({ isOpen, onClose, onSubmit }) {
         }
         setUploadPhase(null);
         if (uploaded > 0) {
-          toastSuccess(`Work order submitted, ${uploaded} attachment(s) uploaded`);
+          toastSuccess(`Service request submitted, ${uploaded} attachment(s) uploaded`);
         }
       }
       setFiles([]);
@@ -117,7 +117,7 @@ export function WorkOrderModal({ isOpen, onClose, onSubmit }) {
   };
 
   const typeOptions = [
-    { value: WorkOrderType.FAULT, label: 'Equipment Fault' },
+    { value: WorkOrderType.FAULT, label: 'Equipment Repair' },
     { value: WorkOrderType.MAINTENANCE, label: 'Maintenance' },
     { value: WorkOrderType.PARAMETER, label: 'Parameter Tuning' },
     { value: WorkOrderType.CONSULT, label: 'Technical Consultation' },
@@ -133,20 +133,20 @@ export function WorkOrderModal({ isOpen, onClose, onSubmit }) {
   ];
 
   return (
-    <Modal isOpen={isOpen} onClose={handleClose} title={submitted ? 'Work Order Submitted' : 'New Work Order'} size="md">
+    <Modal isOpen={isOpen} onClose={handleClose} title={submitted ? 'Service Request Submitted' : 'Request SAGEMRO Official Service'} size="md">
       {/* 提交成功提示 */}
       {submitted && (
         <div className="space-y-4">
           <div className="p-4 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-xl text-center">
             <div className="text-3xl mb-2">✅</div>
-            <p className="text-sm font-medium text-green-700 dark:text-green-400 mb-1">Work order submitted successfully!</p>
+            <p className="text-sm font-medium text-green-700 dark:text-green-400 mb-1">Service request submitted successfully!</p>
             <p className="text-xs text-green-600 dark:text-green-500">
-              Order No.: {submitted.order_no || submitted.id}
+              Service No.: {submitted.order_no || submitted.id}
             </p>
           </div>
           <p className="text-xs text-[var(--color-text-secondary)] text-center">
-            You will be notified once an engineer accepts your order.
-            You can also track progress in "My Work Orders" at any time.
+            SAGEMRO will review the request, confirm details, and arrange the right official engineer or service representative.
+            You can track progress in "My Services" at any time.
           </p>
           <button
             onClick={handleClose}
@@ -162,14 +162,14 @@ export function WorkOrderModal({ isOpen, onClose, onSubmit }) {
         {/* 问题类型 */}
         <div>
           <label className="block text-sm font-medium text-[var(--color-text-primary)] mb-1">
-            Issue Type <span className="text-red-500">*</span>
+            Service Type <span className="text-red-500">*</span>
           </label>
           <select
             value={form.type}
             onChange={(e) => setForm({ ...form, type: e.target.value })}
             className="w-full px-3 py-2 border border-[var(--color-border)] dark:border-[var(--color-border-strong)] rounded-xl bg-[var(--color-surface)] dark:bg-[var(--color-surface-elevated)] text-xs text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
           >
-            <option value="">Select issue type</option>
+            <option value="">Select service type</option>
             {typeOptions.map((opt) => (
               <option key={opt.value} value={opt.value}>
                 {opt.label}
@@ -253,12 +253,12 @@ export function WorkOrderModal({ isOpen, onClose, onSubmit }) {
         {/* 问题描述 */}
         <div>
           <label className="block text-sm font-medium text-[var(--color-text-primary)] mb-1">
-            Fault Description <span className="text-red-500">*</span>
+            Fault / Service Description <span className="text-red-500">*</span>
           </label>
           <textarea
             value={form.description}
             onChange={(e) => setForm({ ...form, description: e.target.value })}
-            placeholder="Please describe the issue in detail..."
+            placeholder="Describe the equipment issue, service need, alarm code, or production impact..."
             rows={4}
             className="w-full px-3 py-2 border border-[var(--color-border)] dark:border-[var(--color-border-strong)] rounded-xl bg-[var(--color-surface)] dark:bg-[var(--color-surface-elevated)] text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)] resize-none"
           />
@@ -367,7 +367,7 @@ export function WorkOrderModal({ isOpen, onClose, onSubmit }) {
             ? uploadPhase
               ? `Uploading attachments (${uploadPhase.current}/${uploadPhase.total})...`
               : 'Submitting...'
-            : 'Submit Work Order'}
+            : 'Submit Service Request'}
         </button>
         </div>
       )}

@@ -241,7 +241,7 @@ test('internals: CONVERSATION_TYPES 包含协议锁定的 8 个值', () => {
     'repair_request',
     'pricing',
     'rating_complaint',
-    'wallet_query',
+    'account_or_settlement',
     'post_sale_followup',
     'onboarding',
     'general',
@@ -254,7 +254,7 @@ test('internals: PENDING_ITEM_PREFIXES 包含协议锁定的 5 个前缀', () =>
     '[missing_info]',
     '[awaiting_confirmation]',
     '[followup_due]',
-    '[payment_pending]',
+    '[service_followup]',
     '[rating_pending]',
   ];
   assert.deepEqual(PENDING_ITEM_PREFIXES, expected);

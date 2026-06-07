@@ -1,12 +1,18 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { X, Send, Loader2, CheckCircle } from 'lucide-react';
 import { submitLead } from '../../services/api';
 
-export function LeadForm({ isOpen, onClose, conversationId, interest }) {
+export function LeadForm({ isOpen, onClose, conversationId, interest, source = 'chat', initialMessage = '' }) {
   const [form, setForm] = useState({ name: '', email: '', phone: '', message: '' });
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [done, setDone] = useState(false);
+
+  useEffect(() => {
+    if (isOpen && initialMessage) {
+      setForm((prev) => ({ ...prev, message: prev.message || initialMessage }));
+    }
+  }, [isOpen, initialMessage]);
 
   if (!isOpen) return null;
 
@@ -25,7 +31,7 @@ export function LeadForm({ isOpen, onClose, conversationId, interest }) {
         interest: interest || undefined,
         message: form.message || undefined,
         conversation_id: conversationId || undefined,
-        source: 'chat',
+        source,
       });
       setDone(true);
     } catch (err) {
@@ -50,7 +56,7 @@ export function LeadForm({ isOpen, onClose, conversationId, interest }) {
       >
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-[var(--color-border)]">
-          <h3 className="text-base font-medium text-[var(--color-text-primary)]">Get a Custom Solution</h3>
+          <h3 className="text-base font-medium text-[var(--color-text-primary)]">Request SAGEMRO Follow-up</h3>
           <button onClick={handleClose} className="p-1 rounded-lg hover:bg-[var(--color-hover)] text-[var(--color-text-muted)]">
             <X size={18} />
           </button>
@@ -71,7 +77,7 @@ export function LeadForm({ isOpen, onClose, conversationId, interest }) {
         ) : (
           <form onSubmit={handleSubmit} className="p-5 space-y-3">
             <p className="text-sm text-[var(--color-text-secondary)]">
-              Leave your contact info and our equipment advisor will provide a customized solution and quote.
+              Leave your contact info and SAGEMRO will review your AI intake, service need, spare parts request, or machine selection project.
             </p>
 
             <div>

@@ -85,7 +85,7 @@ export function MyDevicesModal({ isOpen, onClose, currentUser, userType }) {
               <p className="text-[12px] text-[var(--color-text-muted)] mt-1.5 leading-relaxed max-w-[320px] mx-auto">
                 When you mention device brands, models, or other details in your conversation with SAGEMRO, it will automatically recognize and organize them here. No manual entry needed.
               </p>
-              <p className="text-[12px] text-[var(--color-text-muted)] mt-3 opacity-50">Your device data is only used for matching you with the right engineer and will not be publicly displayed.</p>
+              <p className="text-[12px] text-[var(--color-text-muted)] mt-3 opacity-50">Your device data is only used for SAGEMRO diagnostics, service records, parts recommendations, and maintenance follow-up. It will not be publicly displayed.</p>
             </div>
           )}
 

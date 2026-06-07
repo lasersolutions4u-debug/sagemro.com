@@ -49,7 +49,7 @@ export function EngineerPricingPanel({ workOrderId, engineerId, onSubmitted, com
   const [submitting, setSubmitting] = useState(false);
 
   const subtotal = (parseInt(form.labor_fee) || 0) + (parseInt(form.parts_fee) || 0) + (parseInt(form.travel_fee) || 0) + (parseInt(form.other_fee) || 0);
-  const serviceFee = Math.round(subtotal * commissionRate); // 工程师实得（仅供提交前预览，最终以平台结算为准）
+  const internalEstimate = Math.round(subtotal * commissionRate); // Internal legacy estimate; customer-facing quote uses SAGEMRO official pricing.
 
   const handleSubmit = async () => {
     setSubmitting(true);
@@ -116,8 +116,8 @@ export function EngineerPricingPanel({ workOrderId, engineerId, onSubmitted, com
         <div className="flex justify-between"><span className="text-[var(--color-text-secondary)]">Other Fees</span><span>{form.other_fee || 0} CNY</span></div>
         <div className="flex justify-between border-t border-[var(--color-border)] pt-1.5"><span className="text-[var(--color-text-secondary)]">Quote Subtotal (Customer Pays)</span><span className="font-medium">{subtotal} CNY</span></div>
         <div className="flex justify-between font-semibold text-[var(--color-primary)]">
-          <span>Your Estimated Earnings</span>
-          <span>{serviceFee} CNY</span>
+          <span>Internal Settlement Estimate</span>
+          <span>{internalEstimate} CNY</span>
         </div>
       </div>
       <button
@@ -155,7 +155,7 @@ export function CustomerPricingPanel({ workOrderId, customerId, onConfirmed }) {
     setSubmitting(true);
     try {
       await confirmWorkOrderPricing(workOrderId, customerId);
-      toastSuccess('Quote confirmed. The service provider will proceed with on-site service.');
+      toastSuccess('Quote confirmed. SAGEMRO will proceed with service scheduling.');
       onConfirmed?.();
       load();
     } catch (e) {
@@ -171,7 +171,7 @@ export function CustomerPricingPanel({ workOrderId, customerId, onConfirmed }) {
     setSubmitting(true);
     try {
       await rejectWorkOrderPricing(workOrderId, customerId, rejectReason, counterOffer ? parseInt(counterOffer) : null);
-      toastSuccess('Negotiation initiated. The service provider will submit a revised quote.');
+      toastSuccess('Negotiation initiated. SAGEMRO will review and submit a revised quote.');
       onConfirmed?.();
       load();
     } catch (e) {
@@ -184,7 +184,7 @@ export function CustomerPricingPanel({ workOrderId, customerId, onConfirmed }) {
 
   if (loading) return <div className="text-center py-4 text-sm text-[var(--color-text-muted)]">Loading...</div>;
 
-  if (!pricing) return <div className="text-center py-4 text-sm text-[var(--color-text-muted)]">Service Provider has not submitted a quote yet</div>;
+  if (!pricing) return <div className="text-center py-4 text-sm text-[var(--color-text-muted)]">SAGEMRO has not submitted an official quote yet</div>;
 
   return (
     <div className="space-y-3">
@@ -204,15 +204,15 @@ export function CustomerPricingPanel({ workOrderId, customerId, onConfirmed }) {
           </div>
         )}
         <div className="flex justify-between border-t border-[var(--color-border)] pt-1.5"><span className="text-[var(--color-text-secondary)]">Quote Subtotal</span><span className="font-medium">{pricing.subtotal || 0} CNY</span></div>
-        {/* 代收代付：分别列明维修服务费和平台技术服务费 */}
+        {/* Legacy platform fee fields are not exposed as marketplace fees in Service OS. */}
         {pricing.platform_fee > 0 && (
           <>
             <div className="flex justify-between">
-              <span className="text-[var(--color-text-secondary)]">Repair Service Fee (passed to service provider)</span>
+              <span className="text-[var(--color-text-secondary)]">Service Fee</span>
               <span>{(pricing.subtotal || 0) - (pricing.platform_fee || 0)} CNY</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-[var(--color-text-secondary)]">Platform Service Fee</span>
+              <span className="text-[var(--color-text-secondary)]">SAGEMRO Service Management Fee</span>
               <span>{pricing.platform_fee} CNY</span>
             </div>
           </>
@@ -271,7 +271,7 @@ export function CustomerPricingPanel({ workOrderId, customerId, onConfirmed }) {
 
       {action === 'confirm' && (
         <div className="p-3 bg-green-500/10 border border-green-500/30 rounded-xl space-y-2">
-          <div className="text-sm text-[var(--color-text-primary)]">After confirmation, the service provider will begin on-site service.</div>
+          <div className="text-sm text-[var(--color-text-primary)]">After confirmation, SAGEMRO will begin service scheduling.</div>
           <div className="flex gap-2">
             <button onClick={() => setAction(null)} className="flex-1 py-2 bg-[var(--color-surface-elevated)] text-[var(--color-text-secondary)] rounded-xl text-sm">Cancel</button>
             <button data-testid="confirm-pricing-button" onClick={handleConfirm} disabled={submitting} className="flex-1 py-2 bg-green-500 hover:bg-green-600 disabled:opacity-50 text-white rounded-xl text-sm">

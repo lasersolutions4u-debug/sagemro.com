@@ -38,7 +38,7 @@ const CONVERSATION_TYPES = [
   'repair_request',
   'pricing',
   'rating_complaint',
-  'wallet_query',
+  'account_or_settlement',
   'post_sale_followup',
   'onboarding',
   'general',
@@ -48,7 +48,7 @@ const PENDING_ITEM_PREFIXES = [
   '[missing_info]',
   '[awaiting_confirmation]',
   '[followup_due]',
-  '[payment_pending]',
+  '[service_followup]',
   '[rating_pending]',
 ];
 
@@ -61,7 +61,7 @@ function buildSystemPrompt() {
 
 {
   "protocol_version": 1,
-  "conversation_type": "device_consult | repair_request | pricing | rating_complaint | wallet_query | post_sale_followup | onboarding | general",
+  "conversation_type": "device_consult | repair_request | pricing | rating_complaint | account_or_settlement | post_sale_followup | onboarding | general",
   "summary_text": "一句话总结（≤120 字，具体不空泛）",
   "device": {
     "type": "激光切割机 / 折弯机 / 焊接机 / ... 空串代表对话没提到具体设备",
@@ -75,8 +75,8 @@ function buildSystemPrompt() {
   "pending_items": [
     "[missing_info] 客户未提供材料牌号",
     "[awaiting_confirmation] AI 建议调整气压但未确认执行",
-    "[followup_due] 推荐了张工程师但客户未回复",
-    "[payment_pending] 工程师提现申请处理中",
+    "[followup_due] 推荐了服务方案但客户未回复",
+    "[service_followup] 服务申请需要 SAGEMRO 运营继续跟进",
     "[rating_pending] WO-... 已解决待评价"
   ],
   "sentiment": "neutral | satisfied | complaint | urgent",
@@ -88,8 +88,8 @@ function buildSystemPrompt() {
 }
 
 生成规则：
-1. 非设备/维修场景（钱包查询、闲聊）允许省略 device / fault_keywords / referenced_ids 字段或置空
-2. pending_items 每条必须以方括号前缀标签打头（missing_info / awaiting_confirmation / followup_due / payment_pending / rating_pending），只写真实未闭环的事项，宁缺毋滥
+1. 非设备/维修场景（账户、内部结算兼容查询、闲聊）允许省略 device / fault_keywords / referenced_ids 字段或置空
+2. pending_items 每条必须以方括号前缀标签打头（missing_info / awaiting_confirmation / followup_due / service_followup / rating_pending），只写真实未闭环的事项，宁缺毋滥
 3. 不要虚构信息；对话里没出现的字段宁可不填
 4. summary_text 要具体（型号、参数、症状三元组是黄金信号），不要写"客户咨询了设备问题"这种废话
 5. conversation_type 从 8 个枚举值里选最贴切的，全无法匹配选 general`;

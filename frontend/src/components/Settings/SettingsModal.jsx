@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Modal } from '../common/Modal';
-import { Package, User, Wallet, Star, ToggleLeft, ToggleRight, ChevronRight, Lock, X } from 'lucide-react';
-import { updateCustomerProfile, updateEngineerProfile, changePassword, getEngineerProfile, getEngineerWallet, updateEngineerStatus } from '../../services/api';
+import { Package, Star, ToggleLeft, ToggleRight, ChevronRight } from 'lucide-react';
+import { updateCustomerProfile, updateEngineerProfile, changePassword, getEngineerProfile, updateEngineerStatus } from '../../services/api';
 
 export function SettingsModal({ isOpen, onClose, currentUser, userType, onOpenMyDevices }) {
   const [tab, setTab] = useState('profile'); // 'profile' | 'devices' | 'password'
@@ -15,7 +15,6 @@ export function SettingsModal({ isOpen, onClose, currentUser, userType, onOpenMy
   // 工程师档案
   const [engineerForm, setEngineerForm] = useState({ name: '', bio: '', service_region: '', bank_name: '', bank_account: '', bank_branch: '', account_holder: '' });
   const [engineerStats, setEngineerStats] = useState(null);
-  const [engineerWallet, setEngineerWallet] = useState(null);
   const [currentStatus, setCurrentStatus] = useState('available');
 
   // 密码修改
@@ -48,14 +47,10 @@ export function SettingsModal({ isOpen, onClose, currentUser, userType, onOpenMy
     const engineerId = localStorage.getItem('sagemro_engineer_id');
     if (!engineerId) return;
     try {
-      const [profileRes, walletRes] = await Promise.all([
-        getEngineerProfile(engineerId),
-        getEngineerWallet(engineerId),
-      ]);
+      const profileRes = await getEngineerProfile(engineerId);
       const profile = profileRes.engineer || {};
       setEngineerStats({
         level: profile.level,
-        commission_rate: profile.commission_rate,
         credit_score: profile.credit_score,
         rating: profile.rating_count > 0
           ? ((profile.rating_timeliness + profile.rating_technical + profile.rating_communication + profile.rating_professional) / 4).toFixed(1)
@@ -70,7 +65,6 @@ export function SettingsModal({ isOpen, onClose, currentUser, userType, onOpenMy
         bank_branch: profile.bank_branch || prev.bank_branch || '',
         account_holder: profile.account_holder || prev.account_holder || '',
       }));
-      setEngineerWallet(walletRes);
     } catch (err) {
       console.error('Failed to load engineer data', err);
     }
@@ -160,7 +154,7 @@ export function SettingsModal({ isOpen, onClose, currentUser, userType, onOpenMy
             {userType === 'engineer' && (
               <div className="flex items-center gap-2 mt-0.5">
                 <span className="text-[11px] px-1.5 py-0.5 bg-[var(--color-primary)]/20 text-[var(--color-primary)] rounded">
-                  {levelLabels[engineerStats?.level] || 'Junior'} Service Provider
+                  {levelLabels[engineerStats?.level] || 'Junior'} SAGEMRO Engineer
                 </span>
                 <span className={`text-[11px] ${statusColors[currentStatus]}`}>
                   {statusLabels[currentStatus]}
@@ -168,7 +162,7 @@ export function SettingsModal({ isOpen, onClose, currentUser, userType, onOpenMy
               </div>
             )}
           </div>
-          {/* 接单状态开关（工程师） */}
+          {/* 派工状态开关（内部工程师） */}
           {userType === 'engineer' && (
             <button
               onClick={handleStatusToggle}
@@ -185,19 +179,13 @@ export function SettingsModal({ isOpen, onClose, currentUser, userType, onOpenMy
         </div>
 
         {/* 工程师统计卡片 */}
-        {userType === 'engineer' && engineerWallet && (
-          <div className="grid grid-cols-3 gap-3">
+        {userType === 'engineer' && engineerStats && (
+          <div className="grid grid-cols-2 gap-3">
             <div className="bg-[var(--color-surface-elevated)] rounded-xl p-3 text-center">
               <div className="text-[18px] font-semibold text-green-400">
-                ¥{engineerWallet.wallet?.wallet_balance ?? 0}
+                {engineerStats?.credit_score ?? 100}
               </div>
-              <div className="text-[11px] text-[var(--color-sidebar-text)] opacity-50 mt-0.5">Wallet Balance</div>
-            </div>
-            <div className="bg-[var(--color-surface-elevated)] rounded-xl p-3 text-center">
-              <div className="text-[18px] font-semibold text-[var(--color-sidebar-text)]">
-                ¥{engineerWallet.wallet?.deposit_balance ?? 0}
-              </div>
-              <div className="text-[11px] text-[var(--color-sidebar-text)] opacity-50 mt-0.5">Deposit</div>
+              <div className="text-[11px] text-[var(--color-sidebar-text)] opacity-50 mt-0.5">Service Score</div>
             </div>
             <div className="bg-[var(--color-surface-elevated)] rounded-xl p-3 text-center">
               <div className="text-[18px] font-semibold text-yellow-400 flex items-center justify-center gap-1">
@@ -324,9 +312,9 @@ export function SettingsModal({ isOpen, onClose, currentUser, userType, onOpenMy
                       className="w-full bg-[var(--color-input-bg)] border border-[var(--color-input-border)] rounded-lg px-3 py-2.5 text-[14px] text-[var(--color-sidebar-text)] resize-none"
                     />
                   </div>
-                  {/* 银行卡信息（用于提现） */}
+                  {/* SERVICE_OS_LEGACY: bank info is kept for internal settlement transition. */}
                   <div className="border-t border-[var(--color-border)] pt-4 mt-2">
-                    <p className="text-[12px] text-[var(--color-sidebar-text)] opacity-60 mb-3">Bank Account (for withdrawals)</p>
+                    <p className="text-[12px] text-[var(--color-sidebar-text)] opacity-60 mb-3">Bank Account (internal settlement)</p>
                     <div className="space-y-3">
                       <div>
                         <label className="block text-[12px] text-[var(--color-sidebar-text)] opacity-60 mb-1.5">Bank Name</label>

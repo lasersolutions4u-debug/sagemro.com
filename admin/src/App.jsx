@@ -10,9 +10,9 @@ import { LeadsPage } from './pages/LeadsPage';
 const NAV_ITEMS = [
   { key: 'dashboard', label: '数据概览', icon: LayoutDashboard },
   { key: 'users', label: '用户管理', icon: Users },
-  { key: 'workorders', label: '工单管理', icon: FileText },
+  { key: 'workorders', label: '服务运营', icon: FileText },
   { key: 'ratings', label: '评价管理', icon: Star },
-  { key: 'leads', label: '商机管理', icon: Target },
+  { key: 'leads', label: 'CRM 商机', icon: Target },
 ];
 
 export default function App() {

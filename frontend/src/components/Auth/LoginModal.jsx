@@ -1,14 +1,11 @@
 import { useState } from 'react';
 import { Modal } from '../common/Modal';
-import { TagInput } from '../common/TagInput';
-import { RegionInput } from '../common/RegionInput';
-import { login, sendVerifyCode, sendResetCode, resetPassword, registerCustomer, registerEngineer } from '../../services/api';
+import { login, sendVerifyCode, sendResetCode, resetPassword, registerCustomer } from '../../services/api';
 import { toastSuccess, toastError } from '../../utils/feedback';
-import { deviceTypes, commonBrands, commonServices } from '../../data/loginPresets.js';
 
 export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
   // step flow:
-  // choice -> register-company -> register-auth -> register-customer-info / register-engineer-2 / login
+  // choice -> register-company -> register-auth -> customer / visitor completion / login
   const [step, setStep] = useState('login');
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
@@ -27,25 +24,8 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
   // 身份选择
   const [selectedIdentity, setSelectedIdentity] = useState(null); // 'customer' | 'engineer' | 'visitor'
 
-  // 工程师背景调查
-  const [specialties, setSpecialties] = useState([]);
-  const [brands, setBrands] = useState({});
-  const [services, setServices] = useState([]);
-  const [serviceRegion, setServiceRegion] = useState([]);
-  const [bio, setBio] = useState('');
-
   // 协议勾选
   const [agreedToTerms, setAgreedToTerms] = useState(false);
-
-  const toggleBrand = (deviceType, brand) => {
-    setBrands(prev => {
-      const current = prev[deviceType] || [];
-      const updated = current.includes(brand)
-        ? current.filter(b => b !== brand)
-        : [...current, brand];
-      return { ...prev, [deviceType]: updated };
-    });
-  };
 
   // 发送验证码
   const handleSendCode = async () => {
@@ -112,49 +92,6 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
     }
   };
 
-  // 工程师注册（含公司名+背景调查）
-  const handleRegisterEngineer = async () => {
-    if (!name || !password || !confirmPassword || !companyName) {
-      setError('Please fill in all required fields'); return;
-    }
-    if (password !== confirmPassword) { setError('Passwords do not match'); return; }
-    if (password.length < 6) { setError('Password must be at least 6 characters'); return; }
-    if (specialties.length === 0) { setError('Please select your equipment specialties'); return; }
-    if (services.length === 0) { setError('Please select your service items'); return; }
-
-    setSubmitting(true);
-    setError('');
-    try {
-      await registerEngineer({
-        name, phone, password, code,
-        specialties,
-        brands,
-        services,
-        service_region: serviceRegion,
-        bio,
-        company: companyName,
-      });
-      const result = await login({ phone, password });
-      localStorage.setItem('sagemro_token', result.token);
-      localStorage.setItem('sagemro_user', JSON.stringify(result.user));
-      localStorage.setItem('sagemro_user_type', result.userType);
-      localStorage.setItem('sagemro_engineer_id', result.user.id);
-      onLoginSuccess?.(result);
-      handleClose();
-    } catch (e) {
-      if (e.status === 409) {
-        toastError('This phone number is already registered. Please sign in.');
-        setStep('login');
-        setError('');
-      } else {
-        setError(e.message || 'Registration failed. Please try again.');
-        toastError(e.message || 'Registration failed. Please try again.');
-      }
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
   const handleClose = () => {
     setPhone('');
     setPassword('');
@@ -162,11 +99,6 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
     setName('');
     setCode('');
     setError('');
-    setSpecialties([]);
-    setBrands({});
-    setServices([]);
-    setServiceRegion([]);
-    setBio('');
     setCompanyName('');
     setSelectedIdentity(null);
     setAgreedToTerms(false);
@@ -208,12 +140,7 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
 
   // 认证提示后
   const handleAuthConfirm = () => {
-    if (selectedIdentity === 'engineer') {
-      setStep('register-engineer-2');
-    } else {
-      // 客户 - 完成注册
-      handleRegisterCustomer();
-    }
+    handleRegisterCustomer();
   };
 
   // 访客完成
@@ -239,7 +166,6 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
   };
 
   const getModalSize = () => {
-    if (step === 'register-engineer-2') return 'xl';
     if (step === 'choice') return 'md';
     if (step === 'register-company') return 'lg';
     return 'md';
@@ -257,7 +183,6 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
             </div>
 
             <div className="space-y-2.5">
-              {/* A. 我需要服务 */}
               <button
                 onClick={goToRegisterCompany}
                 className="w-full p-4 text-left rounded-xl border-2 border-[var(--color-border)] hover:border-[var(--color-primary)] transition-colors group"
@@ -265,33 +190,18 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
                 <div className="flex items-start gap-3">
                   <span className="flex-shrink-0 w-7 h-7 rounded-full bg-[var(--color-primary)] text-white text-sm flex items-center justify-center font-medium">A</span>
                   <div>
-                    <p className="font-medium text-sm group-hover:text-[var(--color-primary)] transition-colors">I need or may need equipment repair and maintenance services</p>
-                    <p className="text-xs text-[var(--color-text-secondary)] mt-0.5">Tell SAGEMRO about any issues. SAGEMRO will create a work order and connect you with the right engineer.</p>
+                    <p className="font-medium text-sm group-hover:text-[var(--color-primary)] transition-colors">I need equipment service, spare parts, or machine selection help</p>
+                    <p className="text-xs text-[var(--color-text-secondary)] mt-0.5">Tell SAGEMRO about your equipment. Our official service team will review the request and follow up.</p>
                   </div>
                 </div>
               </button>
 
-              {/* B. 我提供服务 */}
-              <button
-                onClick={goToRegisterCompany}
-                className="w-full p-4 text-left rounded-xl border-2 border-[var(--color-border)] hover:border-[var(--color-primary)] transition-colors group"
-              >
-                <div className="flex items-start gap-3">
-                  <span className="flex-shrink-0 w-7 h-7 rounded-full bg-[var(--color-primary)] text-white text-sm flex items-center justify-center font-medium">B</span>
-                  <div>
-                    <p className="font-medium text-sm group-hover:text-[var(--color-primary)] transition-colors">I can provide repair and maintenance services</p>
-                    <p className="text-xs text-[var(--color-text-secondary)] mt-0.5">Register as a platform engineer and SAGEMRO will match you with work orders for additional income.</p>
-                  </div>
-                </div>
-              </button>
-
-              {/* C. 只是了解 */}
               <button
                 onClick={goToRegisterCompany}
                 className="w-full p-4 text-left rounded-xl border-2 border-[var(--color-border)] hover:border-[var(--color-text-muted)] transition-colors group"
               >
                 <div className="flex items-start gap-3">
-                  <span className="flex-shrink-0 w-7 h-7 rounded-full bg-[var(--color-text-muted)] text-white text-sm flex items-center justify-center font-medium">C</span>
+                  <span className="flex-shrink-0 w-7 h-7 rounded-full bg-[var(--color-text-muted)] text-white text-sm flex items-center justify-center font-medium">B</span>
                   <div>
                     <p className="font-medium text-sm text-[var(--color-text-secondary)] group-hover:text-[var(--color-text-primary)] transition-colors">I'm just exploring</p>
                     <p className="text-xs text-[var(--color-text-secondary)] mt-0.5">Browse SAGEMRO's features at your own pace. No registration required.</p>
@@ -434,7 +344,7 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
             </div>
 
             <div className="text-center mb-4">
-              <p className="text-sm text-[var(--color-text-secondary)]">How would you like to use the platform?</p>
+              <p className="text-sm text-[var(--color-text-secondary)]">How would you like to use SAGEMRO Service OS?</p>
             </div>
 
             <div className="space-y-2.5">
@@ -446,22 +356,8 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
                 <div className="flex items-start gap-3">
                   <span className="flex-shrink-0 w-7 h-7 rounded-full bg-[var(--color-primary)] text-white text-sm flex items-center justify-center font-medium">A</span>
                   <div>
-                    <p className="font-medium text-sm group-hover:text-[var(--color-primary)] transition-colors">I'm a Customer (need equipment services)</p>
-                    <p className="text-xs text-[var(--color-text-secondary)] mt-0.5">After verification, get personalized service recommendations and work order management.</p>
-                  </div>
-                </div>
-              </button>
-
-              <button
-                data-testid="identity-select-engineer"
-                onClick={() => handleIdentitySelect('engineer')}
-                className="w-full p-4 text-left rounded-xl border-2 border-[var(--color-border)] hover:border-[var(--color-primary)] transition-colors group"
-              >
-                <div className="flex items-start gap-3">
-                  <span className="flex-shrink-0 w-7 h-7 rounded-full bg-[var(--color-primary)] text-white text-sm flex items-center justify-center font-medium">B</span>
-                  <div>
-                    <p className="font-medium text-sm group-hover:text-[var(--color-primary)] transition-colors">I'm a Service Provider</p>
-                    <p className="text-xs text-[var(--color-text-secondary)] mt-0.5">After verification, complete your profile for tailored work order recommendations.</p>
+                    <p className="font-medium text-sm group-hover:text-[var(--color-primary)] transition-colors">I'm a Customer</p>
+                    <p className="text-xs text-[var(--color-text-secondary)] mt-0.5">Get AI diagnostics, official service requests, equipment records, spare parts, and maintenance follow-up.</p>
                   </div>
                 </div>
               </button>
@@ -472,7 +368,7 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
                 className="w-full p-4 text-left rounded-xl border-2 border-[var(--color-border)] hover:border-[var(--color-text-muted)] transition-colors group"
               >
                 <div className="flex items-start gap-3">
-                  <span className="flex-shrink-0 w-7 h-7 rounded-full bg-[var(--color-text-muted)] text-white text-sm flex items-center justify-center font-medium">C</span>
+                  <span className="flex-shrink-0 w-7 h-7 rounded-full bg-[var(--color-text-muted)] text-white text-sm flex items-center justify-center font-medium">B</span>
                   <div>
                     <p className="font-medium text-sm text-[var(--color-text-secondary)] group-hover:text-[var(--color-text-primary)] transition-colors">I'm just browsing (Guest)</p>
                     <p className="text-xs text-[var(--color-text-secondary)] mt-0.5">Explore SAGEMRO's features without verification. Limited functionality, upgrade anytime.</p>
@@ -496,16 +392,14 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
               </div>
               <p className="text-base font-medium mb-1">Identity Verification</p>
               <p className="text-sm text-[var(--color-text-secondary)]">
-                {selectedIdentity === 'customer' ? 'You selected "Customer". After verification, you\'ll have full access to all services.' : 'You selected "Service Provider". After verification, you\'ll need to complete your background information.'}
+                You selected "Customer". After verification, you'll have full access to AI diagnostics, official service requests, and equipment records.
               </p>
             </div>
 
             <div className="p-4 bg-[var(--color-surface-elevated)] rounded-xl text-[13px] text-[var(--color-text-secondary)]">
               {selectedIdentity === 'customer' ? (
-                <p>After verification, you can: submit work orders, view equipment records, and receive personalized service recommendations.</p>
-              ) : (
-                <p>After verification, complete your specialties, brands, and service items for tailored work order recommendations.</p>
-              )}
+                <p>After verification, you can: request SAGEMRO official service, view equipment records, track service progress, and receive personalized recommendations.</p>
+              ) : null}
             </div>
 
             <button
@@ -513,7 +407,7 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
               onClick={handleAuthConfirm}
               className="w-full py-3 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white rounded-xl font-medium transition-colors"
             >
-              {selectedIdentity === 'customer' ? 'Complete verification and start' : 'Next: Complete background information'}
+              Complete verification and start
             </button>
           </div>
         )}
@@ -546,103 +440,6 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
               className="w-full py-3 bg-[var(--color-text-muted)] hover:bg-[var(--color-text-secondary)] disabled:bg-[var(--color-text-muted)]/50 text-white rounded-xl font-medium transition-colors"
             >
               {submitting ? 'Registering...' : 'Continue as Guest'}
-            </button>
-          </div>
-        )}
-
-        {/* ========== Step register-engineer-2: 工程师背景调查 ========== */}
-        {step === 'register-engineer-2' && (
-          <div className="space-y-3 max-h-[65vh] overflow-y-auto pr-1">
-            <div className="flex items-center gap-2 mb-2">
-              <button onClick={() => setStep('register-auth-prompt')} className="text-sm text-[var(--color-text-secondary)] hover:text-[var(--color-primary)]">← Back</button>
-            </div>
-
-            <div className="text-center mb-4">
-              <p className="text-sm text-[var(--color-text-secondary)]">Complete your background information for better work order matching</p>
-            </div>
-
-            {error && (
-              <div className="p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl text-red-600 dark:text-red-400 text-sm">
-                {error}
-              </div>
-            )}
-
-            {/* 设备类型 */}
-            <TagInput
-              label="Equipment specialties *"
-              options={deviceTypes}
-              value={specialties}
-              onChange={setSpecialties}
-              placeholder="Type equipment type, press Enter to add..."
-            />
-
-            {/* 品牌（每个设备类型下有预设+空白框） */}
-            {specialties.length > 0 && (
-              <div>
-                <label className="block text-xs font-medium mb-2">Familiar brands</label>
-                {specialties.map((type) => (
-                  <div key={type} className="mb-3">
-                    <p className="text-xs text-[var(--color-text-secondary)] mb-1">{type}：</p>
-                    <div className="flex flex-wrap gap-1 mb-1.5">
-                      {(commonBrands[type] || []).map((brand) => (
-                        <button
-                          key={brand}
-                          type="button"
-                          onClick={() => toggleBrand(type, brand)}
-                          className={`px-2 py-0.5 rounded text-xs transition-colors ${
-                            (brands[type] || []).includes(brand)
-                              ? 'bg-[var(--color-primary)] text-white'
-                              : 'bg-[var(--color-surface-elevated)] text-[var(--color-text-secondary)]'
-                          }`}
-                        >
-                          {brand}
-                        </button>
-                      ))}
-                    </div>
-                    <TagInput
-                      placeholder="Type brand name, press Enter to add..."
-                      value={brands[type] || []}
-                      onChange={(val) => setBrands(prev => ({ ...prev, [type]: val }))}
-                    />
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {/* 维修项目 */}
-            <TagInput
-              label="Service specialties *"
-              options={commonServices}
-              value={services}
-              onChange={setServices}
-              placeholder="Type service item, press Enter to add..."
-            />
-
-            {/* 服务地区 */}
-            <RegionInput
-              label="Service area"
-              value={serviceRegion}
-              onChange={setServiceRegion}
-              placeholder="Search by province, city, or district..."
-            />
-
-            {/* 个人简介 */}
-            <div>
-              <label className="block text-xs font-medium mb-1">Bio (optional)</label>
-              <textarea
-                value={bio} onChange={(e) => setBio(e.target.value)}
-                placeholder="Introduce yourself to customers"
-                rows={2}
-                className="w-full px-3 py-2 border border-[var(--color-input-border)] rounded-xl bg-[var(--color-input-bg)] text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)] resize-none"
-              />
-            </div>
-
-            <button
-              data-testid="register-engineer-button"
-              onClick={handleRegisterEngineer} disabled={submitting}
-              className="w-full py-3 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] disabled:bg-[var(--color-text-muted)] text-white rounded-xl font-medium transition-colors"
-            >
-              {submitting ? 'Registering...' : 'Register as Service Provider'}
             </button>
           </div>
         )}

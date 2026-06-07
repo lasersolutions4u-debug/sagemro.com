@@ -49,7 +49,7 @@ export function ChatArea({
       <div className="px-3 sm:px-5 py-1.5 bg-amber-50 dark:bg-amber-900/15 border-b border-amber-200/50 dark:border-amber-800/30 flex items-center gap-2">
         <Info size={13} className="text-amber-600 dark:text-amber-400 flex-shrink-0" />
         <p className="text-[11px] text-amber-700 dark:text-amber-300 leading-tight">
-          AI output is for reference only and does not constitute a repair commitment. On-site service is subject to engineer confirmation.
+          AI output is preliminary guidance only. Diagnosis, quote, and on-site safety requirements are confirmed by SAGEMRO official service.
           {onOpenLegal && (
             <button
               onClick={() => onOpenLegal('ai')}

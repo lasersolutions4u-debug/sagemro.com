@@ -50,7 +50,7 @@ export function EngineerProfileModal({ isOpen, onClose, engineerId }) {
     : 0;
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Service Provider Profile" size="md">
+    <Modal isOpen={isOpen} onClose={onClose} title="SAGEMRO Engineer Profile" size="md">
       <div className="space-y-5">
         {loading && (
           <div className="text-center py-8 text-[var(--color-text-secondary)]">Loading...</div>
@@ -230,7 +230,7 @@ export function EngineerProfileModal({ isOpen, onClose, engineerId }) {
                       </div>
                       <div className="text-xs text-[var(--color-text-secondary)]">
                         {pushEnabled
-                          ? 'Enabled - notifications for new work orders and wallet changes'
+                          ? 'Enabled - notifications for service assignments and internal updates'
                           : pushPermission === 'denied'
                           ? 'Blocked by browser'
                           : 'Disabled'}

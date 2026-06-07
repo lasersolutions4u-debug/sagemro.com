@@ -54,23 +54,16 @@ function makeMockEnv() {
               service_region: '华东',
               status: 'available',
               level: 'junior',
-              commission_rate: 0.8,
               credit_score: 100,
-              wallet_balance: 0,
               rating_timeliness: 0,
               rating_technical: 0,
               rating_communication: 0,
               rating_professional: 0,
               rating_count: 0,
               total_orders: 0,
-              total_earnings: 0,
             };
           }
           // toolGetEngineerProfile: 本月统计
-          if (/COUNT\(\*\) as cnt.*SUM/s.test(sql)) {
-            return { cnt: 0, earnings: 0 };
-          }
-          // toolGetEngineerProfile: 处理中工单数
           if (/COUNT\(\*\) as cnt.*FROM work_orders/s.test(sql)) {
             return { cnt: 0 };
           }
@@ -233,7 +226,9 @@ test('engineer 调 get_engineer_profile → ok + ok trace', async () => {
   assert.equal(result.error, undefined, '不应有 error 字段');
   assert.equal(result.name, '测试工程师');
   assert.equal(result.level, '初级');
-  assert.equal(result.commission_rate, 80);
+  assert.equal(result.commission_rate, undefined, 'Service OS 不向 AI 暴露旧抽佣字段');
+  assert.equal(result.wallet_balance, undefined, 'Service OS 不向 AI 暴露旧钱包字段');
+  assert.equal(result.current_service_tasks, 0);
   assert.deepEqual(result.specialties, ['激光切割机']);
   assert.equal(traceRows.length, 1);
   assert.equal(traceRows[0].result_status, 'ok');
@@ -474,17 +469,13 @@ function makeMockEnvForPending({ specialtiesJson, allTickets }) {
         },
         async all() {
           if (/FROM work_orders wo/.test(sql)) {
-            // 有 IN 子句时按 type 过滤；没有就全量
-            const inMatch = sql.match(/d\.type IN \(([^)]+)\)/);
-            if (inMatch) {
-              // this._args 排列：[...specialties, limit]
-              const limit = this._args[this._args.length - 1];
-              const types = this._args.slice(0, -1);
-              const filtered = allTickets.filter((t) => types.includes(t.device_type));
-              return { results: filtered.slice(0, limit) };
-            }
-            const limit = this._args[0];
-            return { results: allTickets.slice(0, limit) };
+            const engineerId = this._args[0];
+            const limit = this._args[this._args.length - 1];
+            return {
+              results: allTickets
+                .filter((t) => !t.engineer_id || t.engineer_id === engineerId)
+                .slice(0, limit),
+            };
           }
           return { results: [] };
         },
@@ -539,6 +530,7 @@ const ALL_TICKETS = [
     device_brand: '大族',
     device_model: 'G3015',
     customer_name: '张老板',
+    engineer_id: 'eng-test-specialty',
   },
   {
     id: 'wo-2',
@@ -551,6 +543,7 @@ const ALL_TICKETS = [
     device_brand: '通快',
     device_model: 'TruBend',
     customer_name: '李厂长',
+    engineer_id: 'eng-other',
   },
   {
     id: 'wo-3',
@@ -563,10 +556,11 @@ const ALL_TICKETS = [
     device_brand: '迅镭',
     device_model: 'X3015',
     customer_name: '王总',
+    engineer_id: 'eng-test-specialty',
   },
 ];
 
-test('engineer 有 specialties → SQL 带 IN 过滤 + 只返回匹配工单', async () => {
+test('engineer 有 specialties → 返回已派给我的服务任务并保留专长元数据', async () => {
   const { env, sqlCalls } = makeMockEnvForPending({
     specialtiesJson: '["激光切割机"]',
     allTickets: ALL_TICKETS,
@@ -587,22 +581,21 @@ test('engineer 有 specialties → SQL 带 IN 过滤 + 只返回匹配工单', a
   await flush();
 
   assert.equal(result.error, undefined);
-  assert.equal(result.filter_applied, true, '有 specialties 时 filter_applied=true');
+  assert.equal(result.filter_applied, true, '有 specialties 时保留 filter_applied 元数据');
   assert.deepEqual(result.engineer_specialties, ['激光切割机']);
-  assert.equal(result.count, 2, '只保留 2 条激光切割机工单（过滤掉折弯机）');
+  assert.equal(result.count, 2, '只返回已派给当前工程师的 2 个服务任务');
   assert.ok(
-    result.tickets.every((t) => t.device_type === '激光切割机'),
-    '返回工单的 device_type 全部是激光切割机',
+    result.service_tasks.every((t) => t.device_type === '激光切割机'),
+    '当前 mock 数据中派给该工程师的任务都是激光切割机',
   );
 
-  // 验 SQL 真的带了 IN 子句
   const wocall = sqlCalls.find((c) => /FROM work_orders wo/.test(c.sql));
   assert.ok(wocall, '应该有 work_orders 查询');
-  assert.match(wocall.sql, /d\.type IN \(\?\)/, 'SQL 应包含 d.type IN (?)');
-  assert.deepEqual(wocall.args, ['激光切割机', 10], 'bind 参数 = [...specialties, limit]');
+  assert.match(wocall.sql, /wo\.engineer_id = \?/, 'SQL 应按已派工 engineer_id 查询');
+  assert.deepEqual(wocall.args, ['eng-test-specialty', 10], 'bind 参数 = [engineerId, limit]');
 });
 
-test('engineer 多个 specialties → IN 占位符数量对应', async () => {
+test('engineer 多个 specialties → 不再按专长过滤 pending，只返回我的服务任务', async () => {
   const { env, sqlCalls } = makeMockEnvForPending({
     specialtiesJson: '["激光切割机","折弯机"]',
     allTickets: ALL_TICKETS,
@@ -624,14 +617,14 @@ test('engineer 多个 specialties → IN 占位符数量对应', async () => {
 
   assert.equal(result.filter_applied, true);
   assert.deepEqual(result.engineer_specialties, ['激光切割机', '折弯机']);
-  assert.equal(result.count, 3, '3 条都匹配（2 激光 + 1 折弯）');
+  assert.equal(result.count, 0, 'mock 中没有派给 eng-multi 的服务任务');
 
   const wocall = sqlCalls.find((c) => /FROM work_orders wo/.test(c.sql));
-  assert.match(wocall.sql, /d\.type IN \(\?,\?\)/, '两个 specialties → 两个 ? 占位符');
-  assert.deepEqual(wocall.args, ['激光切割机', '折弯机', 10]);
+  assert.ok(!/d\.type IN/.test(wocall.sql), 'Service OS 不再用专长过滤全量 pending 队列');
+  assert.deepEqual(wocall.args, ['eng-multi', 10]);
 });
 
-test('engineer 无 specialties（新 junior） → 降级全量查询', async () => {
+test('engineer 无 specialties（新 junior） → 仍只返回已派给我的服务任务', async () => {
   const { env, sqlCalls } = makeMockEnvForPending({
     specialtiesJson: '[]',
     allTickets: ALL_TICKETS,
@@ -653,17 +646,17 @@ test('engineer 无 specialties（新 junior） → 降级全量查询', async ()
 
   assert.equal(result.filter_applied, false, '空 specialties 时 filter_applied=false');
   assert.deepEqual(result.engineer_specialties, []);
-  assert.equal(result.count, 3, '全量返回');
+  assert.equal(result.count, 0, '没有派给该工程师的服务任务');
 
   const wocall = sqlCalls.find((c) => /FROM work_orders wo/.test(c.sql));
   assert.ok(
     !/d\.type IN/.test(wocall.sql),
-    'SQL 不应包含 IN 子句（降级路径）',
+    'SQL 不应包含 IN 子句',
   );
-  assert.deepEqual(wocall.args, [10], 'bind 只有 limit');
+  assert.deepEqual(wocall.args, ['eng-new-junior', 10], 'bind = [engineerId, limit]');
 });
 
-test('engineer specialties JSON 脏数据 → 容错为空 filter', async () => {
+test('engineer specialties JSON 脏数据 → 容错为空 filter 且不返回全量 pending', async () => {
   const { env } = makeMockEnvForPending({
     specialtiesJson: '{not valid json',
     allTickets: ALL_TICKETS,
@@ -686,7 +679,7 @@ test('engineer specialties JSON 脏数据 → 容错为空 filter', async () => 
   assert.equal(result.error, undefined, '不应抛错');
   assert.equal(result.filter_applied, false, '脏数据 → filter_applied=false');
   assert.deepEqual(result.engineer_specialties, []);
-  assert.equal(result.count, 3, '降级全量');
+  assert.equal(result.count, 0, 'Service OS 不降级暴露全量 pending 队列');
 });
 
 test('engineer specialties 包含非字符串脏值 → 被过滤掉', async () => {

@@ -16,6 +16,20 @@ import { EngineerPricingPanel, CustomerPricingPanel } from './PricingPanels';
 import { RepairRecordPanel } from './RepairRecordPanel';
 import { AttachmentsPanel } from './AttachmentsPanel';
 
+function hasServiceReportContent(record) {
+  if (!record) return false;
+  const hasText = Boolean(record.symptom || record.diagnosis || record.solution);
+  const hasLabor = Number(record.labor_hours || 0) > 0;
+  let hasParts = false;
+  try {
+    const parts = JSON.parse(record.parts_used || '[]');
+    hasParts = Array.isArray(parts) && parts.some((part) => part?.name);
+  } catch {
+    hasParts = false;
+  }
+  return hasText || hasLabor || hasParts;
+}
+
 // ========== 主组件 ==========
 export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess, onConfirmed, userType, userId }) {
   const [detail, setDetail] = useState(null);
@@ -80,7 +94,7 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
         rating_professional: ratings.professional,
         comment,
       });
-      toastSuccess('Review submitted');
+      toastSuccess('Service confirmed. Thank you for the review.');
       onRateSuccess?.();
       loadDetail();
     } catch (e) {
@@ -120,7 +134,7 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
   const hasRepairRecord = detail?.repair_record;
   const repairStatuses = ['in_service', 'pricing', 'resolved', 'pending_review', 'completed'];
   if ((isEngineer && repairStatuses.includes(effectiveStatus)) || (isCustomer && hasRepairRecord)) {
-    tabs.push({ key: 'repairRecord', label: 'Repair Record' });
+    tabs.push({ key: 'repairRecord', label: 'Service Report' });
   }
 
   // 附件Tab：工单已分配后所有人可见
@@ -161,7 +175,7 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
         })()}
         {detail?.engineer_name && (
           <div className="text-sm text-[var(--color-text-secondary)]">
-            Service Provider: <span className="text-[var(--color-primary)]">{detail.engineer_name}</span>
+            SAGEMRO Engineer: <span className="text-[var(--color-primary)]">{detail.engineer_name}</span>
             {detail.engineer_phone && <span className="ml-1 opacity-70">{detail.engineer_phone}</span>}
           </div>
         )}
@@ -206,10 +220,15 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
         <button
           data-testid="mark-service-complete-button"
           onClick={async () => {
-            if (!(await confirmDialog('Confirm service is complete?'))) return;
+            if (!hasServiceReportContent(detail?.repair_record)) {
+              setTab('repairRecord');
+              toastWarning('Please save the service report before marking the service complete.');
+              return;
+            }
+            if (!(await confirmDialog('Confirm that the service report is complete and the on-site work is finished?'))) return;
             try {
               await resolveWorkOrder(workOrder.id, userId);
-              toastSuccess('Service marked complete. Awaiting customer confirmation.');
+              toastSuccess('Service report submitted for customer confirmation.');
               loadDetail();
               onConfirmed?.();
             } catch (e) {
@@ -227,10 +246,10 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
         <button
           data-testid="cancel-work-order-button"
           onClick={async () => {
-            if (!(await confirmDialog('Are you sure you want to cancel this work order? This action cannot be undone.', { danger: true }))) return;
+            if (!(await confirmDialog('Are you sure you want to cancel this service request? This action cannot be undone.', { danger: true }))) return;
             try {
               await cancelWorkOrder(workOrder.id);
-              toastSuccess('Work order cancelled');
+              toastSuccess('Service request cancelled');
               loadDetail();
               onConfirmed?.();
             } catch (e) {
@@ -239,7 +258,7 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
           }}
           className="w-full py-3 bg-red-500 hover:bg-red-600 text-white rounded-xl font-medium"
         >
-          Cancel Work Order
+          Cancel Service Request
         </button>
       )}
 
@@ -267,7 +286,7 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
           onClick={() => setTab('rating')}
           className="w-full py-3 bg-yellow-500 hover:bg-yellow-600 text-white rounded-xl font-medium"
         >
-          Rate Now
+          Confirm Service & Review
         </button>
       )}
       {isCustomer && hasRating && (
@@ -298,7 +317,7 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
             {engineerReview.comment && (
               <div className="pt-2 border-t border-blue-500/20 text-sm text-[var(--color-text-primary)]">{engineerReview.comment}</div>
             )}
-            <div className="text-xs text-[var(--color-text-muted)]">This review is only visible to the platform and service provider</div>
+            <div className="text-xs text-[var(--color-text-muted)]">This review is only visible to SAGEMRO internal operations</div>
           </div>
         </div>
       )}
@@ -312,7 +331,7 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
       {showEngineerReview && (
         <div className="space-y-3 p-4 bg-blue-500/10 border border-blue-500/30 rounded-xl">
           <h3 className="text-sm font-medium text-[var(--color-text-primary)]">Review Customer</h3>
-          <div className="text-xs text-[var(--color-text-muted)]">This review is only visible to the platform and service provider, not to the customer</div>
+          <div className="text-xs text-[var(--color-text-muted)]">This review is only visible to SAGEMRO internal operations, not to the customer</div>
           {[
             { key: 'cooperation', label: 'Cooperation' },
             { key: 'communication', label: 'Communication' },
@@ -343,7 +362,7 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
                     comment: engReviewComment,
                   });
                   setShowEngineerReview(false);
-                  toastSuccess('Review submitted');
+                  toastSuccess('Service confirmed. Thank you for the review.');
                   loadDetail();
                 } catch (e) {
                   toastError('Review submission failed: ' + e.message);

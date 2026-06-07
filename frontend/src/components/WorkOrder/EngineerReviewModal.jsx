@@ -77,7 +77,7 @@ export function EngineerReviewModal({ isOpen, onClose, workOrder, onSuccess }) {
             Order No: {workOrder?.order_no || workOrder?.id}
           </div>
           <div className="text-xs text-[var(--color-text-secondary)] mt-1">
-            This review is only visible to the platform and engineer, not to the customer
+            This review is only visible to SAGEMRO internal operations, not to the customer
           </div>
         </div>
 

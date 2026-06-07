@@ -7,7 +7,7 @@ import { WorkOrderDetailModal } from '../WorkOrder/WorkOrderDetailModal';
 import { formatSlaRemaining, categoryConfig, categoryL2Labels } from '../../data/workOrderConfig';
 
 const statusConfig = {
-  [WorkOrderStatus.PENDING]: { text: 'Pending', color: 'bg-blue-500', textColor: 'text-blue-500' },
+  [WorkOrderStatus.PENDING]: { text: 'Pending Dispatch', color: 'bg-blue-500', textColor: 'text-blue-500' },
   [WorkOrderStatus.ASSIGNED]: { text: 'Assigned', color: 'bg-yellow-500', textColor: 'text-yellow-500' },
   [WorkOrderStatus.IN_PROGRESS]: { text: 'In Progress', color: 'bg-orange-500', textColor: 'text-orange-500' },
   [WorkOrderStatus.PRICING]: { text: 'Awaiting Pricing', color: 'bg-purple-500', textColor: 'text-purple-500' },
@@ -48,7 +48,7 @@ export function EngineerDashboard({ isOpen, onClose, engineerId, onViewProfile }
       await acceptTicket({ work_order_id: ticketId, engineer_id: engineerId });
       await loadTickets();
     } catch (e) {
-      console.error('接单失败:', e);
+      console.error('确认派工失败:', e);
     } finally {
       setActionLoading(null);
     }
@@ -60,7 +60,7 @@ export function EngineerDashboard({ isOpen, onClose, engineerId, onViewProfile }
       await rejectTicket({ work_order_id: ticketId, engineer_id: engineerId });
       await loadTickets();
     } catch (e) {
-      console.error('拒单失败:', e);
+      console.error('退回派工失败:', e);
     } finally {
       setActionLoading(null);
     }
@@ -75,9 +75,9 @@ export function EngineerDashboard({ isOpen, onClose, engineerId, onViewProfile }
     }
   };
 
-  // 分类工单
-  const pendingTickets = tickets.filter(t => t.status === 'pending');
-  const activeTickets = tickets.filter(t => t.status !== 'pending');
+  // 分类服务任务
+  const pendingTickets = tickets.filter(t => ['pending', 'assigned'].includes(t.status));
+  const activeTickets = tickets.filter(t => !['pending', 'assigned'].includes(t.status));
 
   const renderSlaBadge = (ticket) => {
     const sla = ticket.sla_status;
@@ -98,7 +98,7 @@ export function EngineerDashboard({ isOpen, onClose, engineerId, onViewProfile }
 
   return (
     <>
-    <Modal isOpen={isOpen} onClose={onClose} title="Service Provider Dashboard" size="md">
+    <Modal isOpen={isOpen} onClose={onClose} title="SAGEMRO Internal Engineer Workspace" size="md">
       <div className="space-y-5">
         {/* 查看档案入口 */}
         <button
@@ -147,7 +147,7 @@ export function EngineerDashboard({ isOpen, onClose, engineerId, onViewProfile }
         <div className="grid grid-cols-2 gap-3">
           <div className="p-3 bg-[var(--color-surface-elevated)] rounded-xl">
             <div className="text-2xl font-bold text-[var(--color-primary)]">{pendingTickets.length}</div>
-            <div className="text-sm text-[var(--color-text-secondary)]">Pending</div>
+            <div className="text-sm text-[var(--color-text-secondary)]">Assigned</div>
           </div>
           <div className="p-3 bg-[var(--color-surface-elevated)] rounded-xl">
             <div className="text-2xl font-bold text-orange-500">{activeTickets.length}</div>
@@ -193,10 +193,10 @@ export function EngineerDashboard({ isOpen, onClose, engineerId, onViewProfile }
           </div>
         )}
 
-        {/* 推荐工单 */}
+        {/* 已派工服务任务：旧 accept/reject 接口暂作确认/退回兼容动作。 */}
         {pendingTickets.length > 0 && (
           <div>
-            <h3 className="text-sm font-medium text-[var(--color-text-primary)] mb-2">Recommended Work Orders</h3>
+            <h3 className="text-sm font-medium text-[var(--color-text-primary)] mb-2">Assigned Service Tasks</h3>
             <div className="space-y-2">
               {pendingTickets.map((ticket) => (
                 <div key={ticket.id} className="p-3 bg-[var(--color-surface-elevated)] rounded-xl">
@@ -228,7 +228,7 @@ export function EngineerDashboard({ isOpen, onClose, engineerId, onViewProfile }
                       disabled={actionLoading === ticket.id}
                       className="flex-1 py-1.5 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white rounded-lg text-sm transition-colors disabled:opacity-50"
                     >
-                      Accept
+                      Confirm Assignment
                     </button>
                     <button
                       data-testid="reject-ticket-button"
@@ -236,7 +236,7 @@ export function EngineerDashboard({ isOpen, onClose, engineerId, onViewProfile }
                       disabled={actionLoading === ticket.id}
                       className="flex-1 py-1.5 bg-[var(--color-surface-elevated)] hover:bg-[var(--color-hover)] text-[var(--color-text-secondary)] rounded-lg text-sm transition-colors disabled:opacity-50"
                     >
-                      Decline
+                      Return to Dispatch
                     </button>
                   </div>
                 </div>
@@ -248,7 +248,7 @@ export function EngineerDashboard({ isOpen, onClose, engineerId, onViewProfile }
         {/* 空状态 */}
         {!loading && pendingTickets.length === 0 && activeTickets.length === 0 && (
           <div className="text-center py-8 text-[var(--color-text-secondary)]">
-            No work orders to process
+            No service assignments to process
           </div>
         )}
 

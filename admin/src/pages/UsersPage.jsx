@@ -14,7 +14,7 @@ const COMMON_SERVICES = [
 ];
 
 const STATUS_MAP = {
-  available: { label: '可接单', color: 'var(--color-success)' },
+  available: { label: '可派工', color: 'var(--color-success)' },
   paused: { label: '暂停', color: 'var(--color-warning)' },
   offline: { label: '离线', color: 'var(--color-text-muted)' },
 };
@@ -189,10 +189,10 @@ export function UsersPage() {
       {/* 筛选面板 */}
       {showFilters && (
         <div className="flex flex-wrap gap-3 mb-4 p-3 rounded-xl bg-[var(--color-surface-elevated)] border border-[var(--color-border)]">
-          {/* 接单状态（仅工程师） */}
+          {/* 派工状态（仅内部工程师） */}
           {type === 'engineer' && (
             <div>
-              <label className="text-xs text-[var(--color-text-muted)] mb-1 block">接单状态</label>
+              <label className="text-xs text-[var(--color-text-muted)] mb-1 block">派工状态</label>
               <div className="flex gap-1">
                 {[{ value: '', label: '全部' }, ...Object.entries(STATUS_MAP).map(([k, v]) => ({ value: k, label: v.label }))].map((opt) => (
                   <button
@@ -285,7 +285,7 @@ export function UsersPage() {
                     <th className="text-left py-3 px-2 text-[var(--color-text-secondary)] font-medium">地区</th>
                   ) : (
                     <>
-                      <th className="text-left py-3 px-2 text-[var(--color-text-secondary)] font-medium">接单状态</th>
+                      <th className="text-left py-3 px-2 text-[var(--color-text-secondary)] font-medium">派工状态</th>
                       <th className="text-left py-3 px-2 text-[var(--color-text-secondary)] font-medium">专长</th>
                       <th className="text-left py-3 px-2 text-[var(--color-text-secondary)] font-medium">评分</th>
                     </>

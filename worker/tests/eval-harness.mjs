@@ -10,7 +10,7 @@
 //   - redact             → redactPII + 断言 output / contains / not_contains
 //   - specialties_filter → executeTool（带自定义 mock env）+ 断言
 //                          filter_applied / engineer_specialties /
-//                          matches_device_types / count / bound_limit
+//                          assigned_device_types / count / bound_limit
 //
 // 退出码：全通过 0，有失败 1，harness 本身崩溃 2（供 CI gate）
 
@@ -105,13 +105,13 @@ function makeGenericEnv() {
 /**
  * 专为 specialties_filter 类定制的 mock env：
  *   - engineers.specialties 返回 input 指定的 JSON 字符串
- *   - work_orders 查询根据 IN 子句过滤 available_types 构造出的 tickets
+ *   - Service OS 主路径按 engineer_id 返回已派给当前工程师的服务任务
  *   - 捕获所有 SQL 调用供 bound_limit 断言
  */
 function makeSpecialtiesEnv({ specialtiesJson, availableTypes, engineerNotFound }) {
   const sqlCalls = [];
 
-  // 基于 availableTypes 构造工单池（每种 type 一条工单）
+  // 基于 availableTypes 构造工单池（每种 type 一条工单），默认都派给 eng-golden。
   const tickets = availableTypes.map((type, i) => ({
     id: `wo-${i + 1}`,
     order_no: `WO-GOLDEN-${String(i + 1).padStart(3, '0')}`,
@@ -123,6 +123,7 @@ function makeSpecialtiesEnv({ specialtiesJson, availableTypes, engineerNotFound 
     device_brand: '测试品牌',
     device_model: 'TEST-001',
     customer_name: '测试客户',
+    engineer_id: 'eng-golden',
   }));
 
   const DB = {
@@ -143,18 +144,13 @@ function makeSpecialtiesEnv({ specialtiesJson, availableTypes, engineerNotFound 
         },
         async all() {
           if (/FROM work_orders wo/.test(sql)) {
-            const inMatch = sql.match(/d\.type IN \(([^)]+)\)/);
-            if (inMatch) {
-              const boundLimit = this._args[this._args.length - 1];
-              const types = this._args.slice(0, -1);
-              return {
-                results: tickets
-                  .filter((t) => types.includes(t.device_type))
-                  .slice(0, boundLimit),
-              };
-            }
-            const boundLimit = this._args[0];
-            return { results: tickets.slice(0, boundLimit) };
+            const engineerId = this._args[0];
+            const boundLimit = this._args[this._args.length - 1];
+            return {
+              results: tickets
+                .filter((t) => t.engineer_id === engineerId)
+                .slice(0, boundLimit),
+            };
           }
           return { results: [] };
         },
@@ -358,16 +354,16 @@ async function runSpecialtiesFilter(cas) {
     }
   }
 
-  if ('matches_device_types' in cas.expect) {
+  if ('assigned_device_types' in cas.expect) {
     const got = (result.tickets || []).map((t) => t.device_type);
-    const want = cas.expect.matches_device_types;
+    const want = cas.expect.assigned_device_types;
     const gotSet = new Set(got);
     const wantSet = new Set(want);
     const sameSize = gotSet.size === wantSet.size;
     const sameElements = [...wantSet].every((t) => gotSet.has(t));
     if (!sameSize || !sameElements) {
       failures.push(
-        `matches_device_types: want ${JSON.stringify(want)}, got ${JSON.stringify(got)}`,
+        `assigned_device_types: want ${JSON.stringify(want)}, got ${JSON.stringify(got)}`,
       );
     }
   }

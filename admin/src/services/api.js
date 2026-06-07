@@ -62,6 +62,13 @@ export async function getAdminWorkOrders(status = 'all', page = 1, pageSize = 20
   return request(`/api/admin/workorders?status=${status}&page=${page}&pageSize=${pageSize}`);
 }
 
+export async function assignAdminWorkOrder(workOrderId, engineerId) {
+  return request(`/api/admin/workorders/${workOrderId}/assign`, {
+    method: 'PATCH',
+    body: JSON.stringify({ engineer_id: engineerId }),
+  });
+}
+
 export async function createAdminUser(userData) {
   return request('/api/admin/users', {
     method: 'POST',

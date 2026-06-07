@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { getAdminWorkOrders } from '../services/api';
+import { assignAdminWorkOrder, getAdminUsers, getAdminWorkOrders } from '../services/api';
 
 const STATUS_MAP = {
   pending: { label: '待处理', color: 'var(--color-info)' },
@@ -27,6 +27,10 @@ const TYPE_MAP = {
 export function WorkOrdersPage() {
   const [status, setStatus] = useState('all');
   const [data, setData] = useState({ total: 0, list: [] });
+  const [engineers, setEngineers] = useState([]);
+  const [selectedEngineers, setSelectedEngineers] = useState({});
+  const [assigningId, setAssigningId] = useState('');
+  const [message, setMessage] = useState('');
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const pageSize = 20;
@@ -43,6 +47,12 @@ export function WorkOrdersPage() {
       .finally(() => setLoading(false));
   }, [status, page]);
 
+  useEffect(() => {
+    getAdminUsers('engineer', 1, 100, { status: 'available' })
+      .then((res) => setEngineers(res.list || []))
+      .catch(() => setEngineers([]));
+  }, []);
+
   const totalPages = Math.max(1, Math.ceil(data.total / pageSize));
 
   const statusTabs = [
@@ -52,9 +62,41 @@ export function WorkOrdersPage() {
     { key: 'completed', label: '已完成' },
   ];
 
+  async function handleAssign(wo) {
+    const engineerId = selectedEngineers[wo.id];
+    if (!engineerId) {
+      setMessage('请先选择内部工程师');
+      return;
+    }
+    setAssigningId(wo.id);
+    setMessage('');
+    try {
+      const res = await assignAdminWorkOrder(wo.id, engineerId);
+      const assigned = res.work_order || {};
+      setData((prev) => ({
+        ...prev,
+        list: prev.list.map((item) => (
+          item.id === wo.id
+            ? { ...item, status: assigned.status || 'assigned', engineer_name: assigned.engineer_name || item.engineer_name }
+            : item
+        )),
+      }));
+      setMessage(`已派工：${wo.order_no}`);
+    } catch (err) {
+      setMessage(err.message || '派工失败');
+    } finally {
+      setAssigningId('');
+    }
+  }
+
   return (
     <div>
-      <h2 className="text-lg font-semibold mb-6">工单管理</h2>
+      <h2 className="text-lg font-semibold mb-6">服务运营</h2>
+      {message && (
+        <div className="mb-4 rounded-lg bg-[var(--color-surface-elevated)] px-4 py-3 text-sm text-[var(--color-text-secondary)]">
+          {message}
+        </div>
+      )}
 
       <div className="flex gap-2 mb-6 flex-wrap">
         {statusTabs.map((tab) => (
@@ -80,19 +122,20 @@ export function WorkOrdersPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-[var(--color-border)]">
-                  <th className="text-left py-3 px-2 text-[var(--color-text-secondary)] font-medium">工单号</th>
+                  <th className="text-left py-3 px-2 text-[var(--color-text-secondary)] font-medium">服务编号</th>
                   <th className="text-left py-3 px-2 text-[var(--color-text-secondary)] font-medium">客户</th>
-                  <th className="text-left py-3 px-2 text-[var(--color-text-secondary)] font-medium">工程师</th>
+                  <th className="text-left py-3 px-2 text-[var(--color-text-secondary)] font-medium">内部工程师</th>
                   <th className="text-left py-3 px-2 text-[var(--color-text-secondary)] font-medium">类型</th>
                   <th className="text-left py-3 px-2 text-[var(--color-text-secondary)] font-medium">紧急</th>
                   <th className="text-left py-3 px-2 text-[var(--color-text-secondary)] font-medium">状态</th>
                   <th className="text-left py-3 px-2 text-[var(--color-text-secondary)] font-medium">创建时间</th>
+                  <th className="text-left py-3 px-2 text-[var(--color-text-secondary)] font-medium">派工</th>
                 </tr>
               </thead>
               <tbody>
                 {data.list.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="text-center py-8 text-[var(--color-text-muted)]">
+                    <td colSpan={8} className="text-center py-8 text-[var(--color-text-muted)]">
                       暂无数据
                     </td>
                   </tr>
@@ -124,6 +167,29 @@ export function WorkOrdersPage() {
                         </td>
                         <td className="py-3 px-2 text-[var(--color-text-secondary)]">
                           {wo.created_at?.slice(0, 16)?.replace('T', ' ')}
+                        </td>
+                        <td className="py-3 px-2">
+                          <div className="flex items-center gap-2 min-w-[220px]">
+                            <select
+                              value={selectedEngineers[wo.id] || wo.engineer_id || ''}
+                              onChange={(event) => setSelectedEngineers((prev) => ({ ...prev, [wo.id]: event.target.value }))}
+                              className="min-w-0 flex-1 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-2 py-1.5 text-xs text-[var(--color-text)]"
+                            >
+                              <option value="">选择工程师</option>
+                              {engineers.map((engineer) => (
+                                <option key={engineer.id} value={engineer.id}>
+                                  {engineer.name}{engineer.service_region ? ` · ${engineer.service_region}` : ''}
+                                </option>
+                              ))}
+                            </select>
+                            <button
+                              onClick={() => handleAssign(wo)}
+                              disabled={assigningId === wo.id}
+                              className="rounded-lg bg-[var(--color-primary)] px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50"
+                            >
+                              {assigningId === wo.id ? '派工中' : '派工'}
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     );

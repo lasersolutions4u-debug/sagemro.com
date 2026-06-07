@@ -5,6 +5,14 @@ import { toastSuccess, toastError } from '../../utils/feedback';
 
 const emptyPart = { name: '', qty: 1, unit: 'pcs', specs: '' };
 
+function parseParts(partsUsed) {
+  try {
+    return JSON.parse(partsUsed || '[]');
+  } catch {
+    return [];
+  }
+}
+
 export function RepairRecordPanel({ workOrderId, userType, repairRecord, onSaved }) {
   const isEngineer = userType === 'engineer';
   const [isEditing, setIsEditing] = useState(false);
@@ -22,10 +30,8 @@ export function RepairRecordPanel({ workOrderId, userType, repairRecord, onSaved
       setDiagnosis(repairRecord.diagnosis || '');
       setSolution(repairRecord.solution || '');
       setLaborHours(repairRecord.labor_hours ? String(repairRecord.labor_hours) : '');
-      try {
-        const parts = JSON.parse(repairRecord.parts_used || '[]');
-        setPartsUsed(parts.length > 0 ? parts : [{ ...emptyPart }]);
-      } catch { setPartsUsed([{ ...emptyPart }]); }
+      const parts = parseParts(repairRecord.parts_used);
+      setPartsUsed(parts.length > 0 ? parts : [{ ...emptyPart }]);
       setIsEditing(false);
     } else if (isEngineer) {
       setIsEditing(true);
@@ -43,7 +49,7 @@ export function RepairRecordPanel({ workOrderId, userType, repairRecord, onSaved
         parts_used: activeParts.length > 0 ? activeParts : [],
         labor_hours: laborHours ? parseFloat(laborHours) : 0,
       });
-      toastSuccess('Repair record saved');
+      toastSuccess('Service report saved');
       setIsEditing(false);
       onSaved?.();
     } catch (e) {
@@ -72,33 +78,36 @@ export function RepairRecordPanel({ workOrderId, userType, repairRecord, onSaved
   if (!isEditing) {
     const hasContent = symptom || diagnosis || solution || (repairRecord?.labor_hours > 0);
     if (!hasContent) {
-      return <div className="text-center py-8 text-sm text-[var(--color-text-muted)]">No repair records yet</div>;
+      return <div className="text-center py-8 text-sm text-[var(--color-text-muted)]">No service report yet</div>;
     }
-    const parts = (() => { try { return JSON.parse(repairRecord?.parts_used || '[]'); } catch { return []; } })();
+    const parts = parseParts(repairRecord?.parts_used);
 
     return (
       <div className="space-y-4">
+        <div className="p-3 bg-[var(--color-primary)]/10 border border-[var(--color-primary)]/20 rounded-xl text-sm text-[var(--color-text-primary)]">
+          SAGEMRO Service Report: diagnosis, actions, parts, labor time, and follow-up notes for customer acceptance and equipment history.
+        </div>
         {symptom && (
           <div>
-            <h3 className="text-xs font-medium text-[var(--color-text-secondary)] mb-1">Symptom</h3>
+            <h3 className="text-xs font-medium text-[var(--color-text-secondary)] mb-1">Customer Symptom</h3>
             <div className="p-3 bg-[var(--color-surface-elevated)] rounded-xl text-sm text-[var(--color-text-primary)]">{symptom}</div>
           </div>
         )}
         {diagnosis && (
           <div>
-            <h3 className="text-xs font-medium text-[var(--color-text-secondary)] mb-1">Diagnosis</h3>
+            <h3 className="text-xs font-medium text-[var(--color-text-secondary)] mb-1">Root Cause / Diagnosis</h3>
             <div className="p-3 bg-[var(--color-surface-elevated)] rounded-xl text-sm text-[var(--color-text-primary)]">{diagnosis}</div>
           </div>
         )}
         {solution && (
           <div>
-            <h3 className="text-xs font-medium text-[var(--color-text-secondary)] mb-1">Solution</h3>
+            <h3 className="text-xs font-medium text-[var(--color-text-secondary)] mb-1">Service Actions / Next Advice</h3>
             <div className="p-3 bg-[var(--color-surface-elevated)] rounded-xl text-sm text-[var(--color-text-primary)]">{solution}</div>
           </div>
         )}
         {parts.length > 0 && parts[0]?.name && (
           <div>
-            <h3 className="text-xs font-medium text-[var(--color-text-secondary)] mb-1">Parts Replaced</h3>
+            <h3 className="text-xs font-medium text-[var(--color-text-secondary)] mb-1">Parts Used</h3>
             <div className="overflow-hidden rounded-xl border border-[var(--color-border)]">
               <table className="w-full text-sm">
                 <thead>
@@ -131,7 +140,7 @@ export function RepairRecordPanel({ workOrderId, userType, repairRecord, onSaved
         )}
         {repairRecord?.updated_at && repairRecord.symptom && (
           <div className="text-xs text-[var(--color-text-muted)]">
-            Last updated: {new Date(repairRecord.updated_at).toLocaleString()}
+            Report updated: {new Date(repairRecord.updated_at).toLocaleString()}
           </div>
         )}
         {/* 工程师可以继续编辑已有记录 */}
@@ -140,7 +149,7 @@ export function RepairRecordPanel({ workOrderId, userType, repairRecord, onSaved
             onClick={() => setIsEditing(true)}
             className="w-full py-2.5 text-sm bg-[var(--color-surface-elevated)] hover:bg-[var(--color-border)] text-[var(--color-text-primary)] rounded-xl"
           >
-            Edit Repair Record
+            Edit Service Report
           </button>
         )}
       </div>
@@ -150,10 +159,16 @@ export function RepairRecordPanel({ workOrderId, userType, repairRecord, onSaved
   // ====== 编辑模式 ======
   return (
     <div className="space-y-3">
-      <div className="text-xs text-[var(--color-text-muted)]">Record diagnosis and repair process for future reference.</div>
+      <div className="p-3 bg-[var(--color-surface-elevated)] border border-[var(--color-border)] rounded-xl text-xs text-[var(--color-text-secondary)] space-y-1">
+        <div className="font-medium text-[var(--color-text-primary)]">SAGEMRO Service Report SOP</div>
+        <div>1. Record customer symptom and current machine condition.</div>
+        <div>2. Write root cause, on-site actions, parameters adjusted, parts used, and next maintenance advice.</div>
+        <div>3. Upload on-site photos or acceptance files in the Attachments tab when available.</div>
+        <div>4. Save this report before marking the service complete.</div>
+      </div>
 
       <div>
-        <label className="block text-xs text-[var(--color-text-secondary)] mb-1">Symptom</label>
+        <label className="block text-xs text-[var(--color-text-secondary)] mb-1">Customer Symptom</label>
         <textarea
           value={symptom}
           onChange={(e) => setSymptom(e.target.value)}
@@ -164,7 +179,7 @@ export function RepairRecordPanel({ workOrderId, userType, repairRecord, onSaved
       </div>
 
       <div>
-        <label className="block text-xs text-[var(--color-text-secondary)] mb-1">Diagnosis</label>
+        <label className="block text-xs text-[var(--color-text-secondary)] mb-1">Root Cause / Diagnosis</label>
         <textarea
           value={diagnosis}
           onChange={(e) => setDiagnosis(e.target.value)}
@@ -175,7 +190,7 @@ export function RepairRecordPanel({ workOrderId, userType, repairRecord, onSaved
       </div>
 
       <div>
-        <label className="block text-xs text-[var(--color-text-secondary)] mb-1">Solution</label>
+        <label className="block text-xs text-[var(--color-text-secondary)] mb-1">Service Actions / Next Advice</label>
         <textarea
           value={solution}
           onChange={(e) => setSolution(e.target.value)}
@@ -187,7 +202,7 @@ export function RepairRecordPanel({ workOrderId, userType, repairRecord, onSaved
 
       {/* 配件清单 */}
       <div>
-        <label className="block text-xs text-[var(--color-text-secondary)] mb-2">Parts Replaced</label>
+        <label className="block text-xs text-[var(--color-text-secondary)] mb-2">Parts Used</label>
         <div className="space-y-2">
           {partsUsed.map((part, i) => (
             <div key={i} className="flex gap-2 items-start">
@@ -261,7 +276,7 @@ export function RepairRecordPanel({ workOrderId, userType, repairRecord, onSaved
           disabled={submitting}
           className="flex-1 py-2.5 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] disabled:opacity-50 text-white rounded-xl font-medium text-sm"
         >
-          {submitting ? 'Saving...' : 'Save Repair Record'}
+          {submitting ? 'Saving...' : 'Save Service Report'}
         </button>
       </div>
     </div>
