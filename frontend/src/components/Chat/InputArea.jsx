@@ -9,6 +9,7 @@ export function InputArea({ onSend, onStop, disabled, isStreaming }) {
   const [pendingImages, setPendingImages] = useState([]); // { file, previewUrl, uploading, url, error }
   const textareaRef = useRef(null);
   const fileInputRef = useRef(null);
+  const previewUrlsRef = useRef(new Set());
 
   // 自动调整高度
   useEffect(() => {
@@ -20,10 +21,10 @@ export function InputArea({ onSend, onStop, disabled, isStreaming }) {
 
   // 清理 previewUrl 防止内存泄漏
   useEffect(() => {
+    const previewUrls = previewUrlsRef.current;
     return () => {
-      pendingImages.forEach(img => {
-        if (img.previewUrl) URL.revokeObjectURL(img.previewUrl);
-      });
+      previewUrls.forEach(url => URL.revokeObjectURL(url));
+      previewUrls.clear();
     };
   }, []);
 
@@ -41,6 +42,7 @@ export function InputArea({ onSend, onStop, disabled, isStreaming }) {
       url: null,
       error: null,
     }));
+    newImages.forEach(img => previewUrlsRef.current.add(img.previewUrl));
 
     setPendingImages(prev => [...prev, ...newImages]);
     e.target.value = '';
@@ -64,7 +66,10 @@ export function InputArea({ onSend, onStop, disabled, isStreaming }) {
   const removeImage = (index) => {
     setPendingImages(prev => {
       const img = prev[index];
-      if (img.previewUrl) URL.revokeObjectURL(img.previewUrl);
+      if (img.previewUrl) {
+        URL.revokeObjectURL(img.previewUrl);
+        previewUrlsRef.current.delete(img.previewUrl);
+      }
       return prev.filter((_, i) => i !== index);
     });
   };
@@ -75,8 +80,14 @@ export function InputArea({ onSend, onStop, disabled, isStreaming }) {
     if ((!text && uploadedImages.length === 0) || disabled) return;
 
     const images = uploadedImages.map(img => ({ url: img.url }));
-    onSend(text || '请分析这张图片', images);
+    onSend(text || 'Please analyze this image', images);
     setInput('');
+    pendingImages.forEach(img => {
+      if (img.previewUrl) {
+        URL.revokeObjectURL(img.previewUrl);
+        previewUrlsRef.current.delete(img.previewUrl);
+      }
+    });
     setPendingImages([]);
   };
 
@@ -139,7 +150,7 @@ export function InputArea({ onSend, onStop, disabled, isStreaming }) {
               onClick={() => fileInputRef.current?.click()}
               disabled={disabled || isStreaming}
               className="w-12 h-12 flex items-center justify-center rounded-2xl hover:bg-[var(--color-hover)] transition-colors flex-shrink-0 disabled:opacity-50"
-              title="上传图片"
+              title="Upload image"
             >
               <ImagePlus size={22} className="text-[var(--color-text-muted)]" />
             </button>
@@ -155,7 +166,7 @@ export function InputArea({ onSend, onStop, disabled, isStreaming }) {
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder={pendingImages.length > 0 ? "描述故障现象..." : "输入消息..."}
+              placeholder={pendingImages.length > 0 ? "Describe what happened. Press Enter to send, Shift + Enter for a new line." : "Describe the fault, part, maintenance need, or new-machine project. Upload images anytime."}
               disabled={disabled}
               rows={1}
               className="w-full px-4 py-3 bg-transparent resize-none focus:outline-none text-[var(--color-text-primary)] placeholder-[var(--color-text-muted)] disabled:opacity-50 text-[15px]"
@@ -169,7 +180,7 @@ export function InputArea({ onSend, onStop, disabled, isStreaming }) {
               <button
                 onClick={onStop}
                 className="w-12 h-12 flex items-center justify-center bg-red-500 hover:bg-red-600 text-white rounded-2xl transition-colors flex-shrink-0 active:scale-95"
-                title="停止生成"
+                title="Stop generation"
               >
                 <StopCircle size={22} />
               </button>
@@ -193,10 +204,6 @@ export function InputArea({ onSend, onStop, disabled, isStreaming }) {
           onChange={handleFileSelect}
           className="hidden"
         />
-
-        <p className="mt-2 text-[11px] text-center text-[var(--color-text-muted)] hidden sm:block">
-          Enter 发送消息 · Shift + Enter 换行 · 支持上传图片辅助诊断
-        </p>
       </div>
     </div>
   );

@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import { MapPin, X } from 'lucide-react';
 import { searchDivisions } from '../../data/administrativeDivisions.js';
 
-export function RegionInput({ label, value = [], onChange, placeholder = '输入地区名称搜索...' }) {
+export function RegionInput({ label, value = [], onChange, placeholder = 'Search by region name...' }) {
   const [inputValue, setInputValue] = useState('');
   const [showDropdown, setShowDropdown] = useState(false);
   const [suggestions, setSuggestions] = useState([]);
@@ -96,7 +96,7 @@ export function RegionInput({ label, value = [], onChange, placeholder = '输入
                 item.level === 'city' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' :
                 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300'
               }`}>
-                {item.level === 'province' ? '省' : item.level === 'city' ? '市' : '区'}
+                {item.level === 'province' ? 'Province' : item.level === 'city' ? 'City' : 'District'}
               </span>
               <span className="flex-1">{item.name}</span>
               {item.level === 'district' && (
@@ -109,7 +109,7 @@ export function RegionInput({ label, value = [], onChange, placeholder = '输入
 
       {showDropdown && suggestions.length === 0 && inputValue.length >= 1 && (
         <div className="absolute z-50 w-full mt-1 bg-[var(--color-surface)] dark:bg-[var(--color-surface-elevated)] border border-[var(--color-border)] dark:border-[var(--color-border-strong)] rounded-lg shadow-lg p-3 text-sm text-[var(--color-text-secondary)]">
-          未找到匹配的地区，请尝试其他关键词
+          No matching regions found. Please try different keywords.
         </div>
       )}
     </div>

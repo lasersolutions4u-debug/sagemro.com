@@ -42,7 +42,6 @@ jobs:
         run: npm install --no-audit --no-fund
 
       - name: Frontend lint
-        continue-on-error: ${{ github.ref == 'refs/heads/china-edition' }}
         working-directory: frontend
         run: npm run lint --if-present
 

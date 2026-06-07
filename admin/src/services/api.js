@@ -15,6 +15,18 @@ function authHeaders() {
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;
   }
+  return 'https://api.sagemro.com';
+}
+
+const API_BASE = resolveApiBase();
+const DEBUG_API = import.meta.env.DEV;
+
+function authHeaders() {
+  const token = localStorage.getItem('admin_token');
+  const headers = { 'Content-Type': 'application/json' };
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
   return headers;
 }
 
@@ -62,6 +74,56 @@ export async function getAdminWorkOrders(status = 'all', page = 1, pageSize = 20
   return request(`/api/admin/workorders?status=${status}&page=${page}&pageSize=${pageSize}`);
 }
 
+export async function getAdminWorkOrder(workOrderId) {
+  return request(`/api/workorders/${workOrderId}`);
+}
+
+export async function getAdminWorkOrderMessages(workOrderId) {
+  return request(`/api/workorders/${workOrderId}/messages`);
+}
+
+export async function postAdminWorkOrderMessage(workOrderId, content, isInternalNote = true) {
+  return request(`/api/workorders/${workOrderId}/messages`, {
+    method: 'POST',
+    body: JSON.stringify({ content, is_internal_note: isInternalNote }),
+  });
+}
+
+export async function assignAdminWorkOrder(workOrderId, engineerId) {
+  return request(`/api/admin/workorders/${workOrderId}/assign`, {
+    method: 'PATCH',
+    body: JSON.stringify({ engineer_id: engineerId }),
+  });
+}
+
+export async function assignAdminWorkOrderRegionalLead(workOrderId, regionalLeadId) {
+  return request(`/api/admin/workorders/${workOrderId}/assign-regional-lead`, {
+    method: 'PATCH',
+    body: JSON.stringify({ regional_lead_id: regionalLeadId }),
+  });
+}
+
+export async function approveAdminWorkOrderPricing(workOrderId) {
+  return request(`/api/admin/workorders/${workOrderId}/pricing/approve`, {
+    method: 'PATCH',
+    body: JSON.stringify({}),
+  });
+}
+
+export async function rejectAdminWorkOrderPricing(workOrderId, note = '') {
+  return request(`/api/admin/workorders/${workOrderId}/pricing/reject`, {
+    method: 'PATCH',
+    body: JSON.stringify({ note }),
+  });
+}
+
+export async function archiveAdminWorkOrder(workOrderId) {
+  return request(`/api/admin/workorders/${workOrderId}/archive`, {
+    method: 'PATCH',
+    body: JSON.stringify({}),
+  });
+}
+
 export async function createAdminUser(userData) {
   return request('/api/admin/users', {
     method: 'POST',
@@ -103,5 +165,12 @@ export async function updateAdminLead(leadId, status) {
   return request(`/api/admin/leads/${leadId}`, {
     method: 'PATCH',
     body: JSON.stringify({ status }),
+  });
+}
+
+export async function convertAdminLeadToWorkOrder(leadId) {
+  return request(`/api/admin/leads/${leadId}/convert-workorder`, {
+    method: 'POST',
+    body: JSON.stringify({}),
   });
 }

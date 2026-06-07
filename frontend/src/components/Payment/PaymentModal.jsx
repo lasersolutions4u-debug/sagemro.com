@@ -4,9 +4,9 @@ import { getWorkOrderPricing, getWorkOrderPayment, payWorkOrder, getWorkOrder } 
 import { toastSuccess, toastError } from '../../utils/feedback';
 
 const PAYMENT_METHODS = [
-  { id: 'bank_transfer', label: '银行转账', icon: Building2, desc: '模拟企业对公转账' },
-  { id: 'alipay', label: '支付宝', icon: CreditCard, desc: '模拟支付宝付款' },
-  { id: 'wechat', label: '微信支付', icon: Smartphone, desc: '模拟微信支付' },
+  { id: 'bank_transfer', label: 'Bank Transfer', icon: Building2, desc: 'Simulated corporate bank transfer' },
+  { id: 'alipay', label: 'Alipay', icon: CreditCard, desc: 'Simulated Alipay payment' },
+  { id: 'wechat', label: 'WeChat Pay', icon: Smartphone, desc: 'Simulated WeChat Pay' },
 ];
 
 export function PaymentModal({ isOpen, onClose, workOrderId, customerId, onPaid }) {
@@ -49,10 +49,10 @@ export function PaymentModal({ isOpen, onClose, workOrderId, customerId, onPaid 
       const res = await payWorkOrder(workOrderId, { payment_method: method });
       setResult(res.payment);
       setStep('success');
-      toastSuccess('付款成功');
+      toastSuccess('Payment successful');
       onPaid?.();
     } catch (e) {
-      toastError('付款失败: ' + e.message);
+      toastError('Payment failed: ' + e.message);
       setStep('pay');
     } finally {
       setSubmitting(false);
@@ -68,7 +68,7 @@ export function PaymentModal({ isOpen, onClose, workOrderId, customerId, onPaid 
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-[var(--color-border)]">
           <h2 className="text-lg font-semibold text-[var(--color-text-primary)]">
-            {step === 'processing' ? '处理中...' : step === 'success' ? '支付成功' : step === 'already_paid' ? '已付款' : '确认付款'}
+            {step === 'processing' ? 'Processing...' : step === 'success' ? 'Payment Successful' : step === 'already_paid' ? 'Already Paid' : 'Confirm Payment'}
           </h2>
           <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-[var(--color-hover)] text-[var(--color-text-muted)] transition-colors">
             <X size={20} />
@@ -80,44 +80,44 @@ export function PaymentModal({ isOpen, onClose, workOrderId, customerId, onPaid 
           {loading ? (
             <div className="text-center py-8 text-sm text-[var(--color-text-muted)]">
               <Loader2 size={24} className="animate-spin mx-auto mb-2" />
-              加载中...
+              Loading...
             </div>
           ) : step === 'processing' ? (
             <div className="text-center py-8 space-y-3">
               <Loader2 size={48} className="animate-spin mx-auto text-[var(--color-primary)]" />
-              <p className="text-sm text-[var(--color-text-secondary)]">正在处理付款，请稍候...</p>
-              <p className="text-xs text-[var(--color-text-muted)]">此为模拟支付环境，不会产生真实资金变动</p>
+              <p className="text-sm text-[var(--color-text-secondary)]">Processing payment, please wait...</p>
+              <p className="text-xs text-[var(--color-text-muted)]">This is a simulated payment environment. No real funds will be transferred.</p>
             </div>
           ) : step === 'success' ? (
             <div className="text-center py-6 space-y-3">
               <div className="w-16 h-16 rounded-full bg-green-500/10 flex items-center justify-center mx-auto">
                 <CheckCircle size={36} className="text-green-500" />
               </div>
-              <h3 className="text-lg font-semibold text-[var(--color-text-primary)]">付款成功</h3>
+              <h3 className="text-lg font-semibold text-[var(--color-text-primary)]">Payment Successful</h3>
               <div className="bg-[var(--color-surface-elevated)] rounded-xl p-3 space-y-1.5 text-sm">
                 <div className="flex justify-between">
-                  <span className="text-[var(--color-text-secondary)]">支付金额</span>
-                  <span className="font-semibold text-[var(--color-text-primary)]">{result?.amount?.toLocaleString() || amount.toLocaleString()} 元</span>
+                  <span className="text-[var(--color-text-secondary)]">Amount</span>
+                  <span className="font-semibold text-[var(--color-text-primary)]">{result?.amount?.toLocaleString() || amount.toLocaleString()} CNY</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-[var(--color-text-secondary)]">支付方式</span>
-                  <span className="text-[var(--color-text-primary)]">{PAYMENT_METHODS.find(m => m.id === result?.payment_method)?.label || '银行转账'}</span>
+                  <span className="text-[var(--color-text-secondary)]">Payment Method</span>
+                  <span className="text-[var(--color-text-primary)]">{PAYMENT_METHODS.find(m => m.id === result?.payment_method)?.label || 'Bank Transfer'}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-[var(--color-text-secondary)]">交易流水号</span>
+                  <span className="text-[var(--color-text-secondary)]">Transaction ID</span>
                   <span className="text-[var(--color-text-primary)] font-mono text-xs">{result?.transaction_id || '-'}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-[var(--color-text-secondary)]">工单编号</span>
+                  <span className="text-[var(--color-text-secondary)]">Order No</span>
                   <span className="text-[var(--color-text-primary)]">{order?.order_no || workOrderId?.slice(0, 14)}</span>
                 </div>
               </div>
-              <p className="text-xs text-[var(--color-text-muted)]">服务代表将在收到付款后安排上门服务</p>
+              <p className="text-xs text-[var(--color-text-muted)]">SAGEMRO will schedule service after payment confirmation.</p>
               <button
                 onClick={onClose}
                 className="w-full py-2.5 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white rounded-xl font-medium text-sm"
               >
-                完成
+                Done
               </button>
             </div>
           ) : step === 'already_paid' ? (
@@ -125,36 +125,36 @@ export function PaymentModal({ isOpen, onClose, workOrderId, customerId, onPaid 
               <div className="w-16 h-16 rounded-full bg-green-500/10 flex items-center justify-center mx-auto">
                 <CheckCircle size={36} className="text-green-500" />
               </div>
-              <h3 className="text-lg font-semibold text-[var(--color-text-primary)]">该工单已付款</h3>
+              <h3 className="text-lg font-semibold text-[var(--color-text-primary)]">This order has been paid</h3>
               <div className="bg-[var(--color-surface-elevated)] rounded-xl p-3 space-y-1.5 text-sm">
                 <div className="flex justify-between">
-                  <span className="text-[var(--color-text-secondary)]">支付金额</span>
-                  <span className="font-semibold text-[var(--color-text-primary)]">{result?.amount?.toLocaleString()} 元</span>
+                  <span className="text-[var(--color-text-secondary)]">Amount</span>
+                  <span className="font-semibold text-[var(--color-text-primary)]">{result?.amount?.toLocaleString()} CNY</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-[var(--color-text-secondary)]">交易流水号</span>
+                  <span className="text-[var(--color-text-secondary)]">Transaction ID</span>
                   <span className="text-[var(--color-text-primary)] font-mono text-xs">{result?.transaction_id}</span>
                 </div>
               </div>
-              <button onClick={onClose} className="w-full py-2.5 bg-[var(--color-surface-elevated)] text-[var(--color-text-primary)] rounded-xl font-medium text-sm">关闭</button>
+              <button onClick={onClose} className="w-full py-2.5 bg-[var(--color-surface-elevated)] text-[var(--color-text-primary)] rounded-xl font-medium text-sm">Close</button>
             </div>
           ) : (
             <>
               {/* 订单摘要 */}
               <div className="bg-[var(--color-surface-elevated)] rounded-xl p-3 space-y-1.5 text-sm">
                 <div className="flex justify-between">
-                  <span className="text-[var(--color-text-secondary)]">工单编号</span>
+                  <span className="text-[var(--color-text-secondary)]">Order No</span>
                   <span className="text-[var(--color-text-primary)]">{order?.order_no || workOrderId?.slice(0, 14)}</span>
                 </div>
                 <div className="border-t border-[var(--color-border)] pt-1.5 flex justify-between">
-                  <span className="text-[var(--color-text-secondary)]">付款金额</span>
-                  <span className="text-lg font-bold text-[var(--color-text-primary)]">{amount.toLocaleString()} 元</span>
+                  <span className="text-[var(--color-text-secondary)]">Amount</span>
+                  <span className="text-lg font-bold text-[var(--color-text-primary)]">{amount.toLocaleString()} CNY</span>
                 </div>
               </div>
 
               {/* 付款方式选择 */}
               <div>
-                <label className="block text-xs text-[var(--color-text-secondary)] mb-2">选择付款方式</label>
+                <label className="block text-xs text-[var(--color-text-secondary)] mb-2">Select Payment Method</label>
                 <div className="space-y-2">
                   {PAYMENT_METHODS.map((m) => {
                     const Icon = m.icon;
@@ -191,8 +191,8 @@ export function PaymentModal({ isOpen, onClose, workOrderId, customerId, onPaid 
               <div className="flex items-start gap-2 p-2.5 bg-blue-500/5 border border-blue-500/10 rounded-xl">
                 <Shield size={16} className="text-blue-500 flex-shrink-0 mt-0.5" />
                 <div className="text-xs text-[var(--color-text-secondary)]">
-                  <p className="font-medium text-[var(--color-text-primary)] mb-0.5">平台担保交易</p>
-                  <p>当前为模拟支付环境，用于演示服务流程。正式付款方式以 SAGEMRO 确认为准。</p>
+                  <p className="font-medium text-[var(--color-text-primary)] mb-0.5">Payment Notice</p>
+                  <p>This is a simulated payment environment for demonstrating the service flow. Formal payment terms are subject to SAGEMRO confirmation.</p>
                 </div>
               </div>
 
@@ -203,7 +203,7 @@ export function PaymentModal({ isOpen, onClose, workOrderId, customerId, onPaid 
                 className="w-full py-3 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] disabled:opacity-50 text-white rounded-xl font-semibold flex items-center justify-center gap-2 transition-colors"
               >
                 <MethodIcon size={20} />
-                {submitting ? '处理中...' : `确认支付 ${amount.toLocaleString()} 元`}
+                {submitting ? 'Processing...' : `Pay ${amount.toLocaleString()} CNY`}
               </button>
             </>
           )}

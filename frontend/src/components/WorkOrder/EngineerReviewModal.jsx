@@ -4,10 +4,10 @@ import { Star } from 'lucide-react';
 import { submitEngineerReview } from '../../services/api';
 
 const reviewDimensions = [
-  { key: 'cooperation', label: '配合度' },
-  { key: 'communication', label: '沟通顺畅' },
-  { key: 'payment', label: '付款及时' },
-  { key: 'environment', label: '现场环境' },
+  { key: 'cooperation', label: 'Cooperation' },
+  { key: 'communication', label: 'Communication' },
+  { key: 'payment', label: 'Payment Timeliness' },
+  { key: 'environment', label: 'Site Conditions' },
 ];
 
 export function EngineerReviewModal({ isOpen, onClose, workOrder, onSuccess }) {
@@ -23,7 +23,7 @@ export function EngineerReviewModal({ isOpen, onClose, workOrder, onSuccess }) {
 
   const handleSubmit = async () => {
     if (!workOrder?.id || !workOrder?.engineer_id || !workOrder?.customer_id) {
-      setError('工单信息不完整');
+      setError('Work order information is incomplete');
       return;
     }
 
@@ -64,20 +64,20 @@ export function EngineerReviewModal({ isOpen, onClose, workOrder, onSuccess }) {
             />
           </button>
         ))}
-        <span className="ml-2 text-sm text-[var(--color-text-secondary)]">{value}分</span>
+        <span className="ml-2 text-sm text-[var(--color-text-secondary)]">{value}</span>
       </div>
     );
   };
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="评价客户" size="sm">
+    <Modal isOpen={isOpen} onClose={onClose} title="Review Customer" size="sm">
       <div className="space-y-4">
         <div className="p-3 bg-[var(--color-surface-elevated)] rounded-xl">
           <div className="text-sm text-[var(--color-text-primary)]">
-            服务编号：{workOrder?.order_no || workOrder?.id}
+            Order No: {workOrder?.order_no || workOrder?.id}
           </div>
           <div className="text-xs text-[var(--color-text-secondary)] mt-1">
-            此评价仅平台和服务代表可见，客户不可见
+            This review is only visible to SAGEMRO internal operations, not to the customer
           </div>
         </div>
 
@@ -98,12 +98,12 @@ export function EngineerReviewModal({ isOpen, onClose, workOrder, onSuccess }) {
 
         <div>
           <label className="block text-sm font-medium text-[var(--color-text-primary)] mb-1">
-            备注（选填）
+            Comment (Optional)
           </label>
           <textarea
             value={comment}
             onChange={(e) => setComment(e.target.value)}
-            placeholder="记录客户配合情况、现场条件等..."
+            placeholder="Record customer cooperation, site conditions, etc..."
             rows={3}
             className="w-full px-3 py-2 border border-[var(--color-input-border)] rounded-xl bg-[var(--color-input-bg)] text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)] resize-none"
           />
@@ -114,7 +114,7 @@ export function EngineerReviewModal({ isOpen, onClose, workOrder, onSuccess }) {
           disabled={submitting}
           className="w-full py-3 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] disabled:bg-[var(--color-text-muted)] text-white rounded-xl font-medium transition-colors"
         >
-          {submitting ? '提交中...' : '提交评价'}
+          {submitting ? 'Submitting...' : 'Submit Review'}
         </button>
       </div>
     </Modal>

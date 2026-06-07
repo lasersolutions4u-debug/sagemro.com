@@ -10,22 +10,22 @@ import { Paperclip, Loader2, X } from 'lucide-react';
 
 // 设备类型选项
 const deviceTypeOptions = [
-  '激光切割机', '折弯机', '冲床', '焊接机', '激光焊接',
-  '卷板机', '等离子切割', '水刀切割', '剪板机', '其他'
+  'Laser Cutter', 'Press Brake', 'Punch Press', 'Welder', 'Laser Welder',
+  'Plate Rolling Machine', 'Plasma Cutter', 'Waterjet Cutter', 'Shearing Machine', 'Other'
 ];
 
 // 按设备类型分类的品牌预设
 const brandPresets = {
-  '激光切割机': ['大族', '通快', '百超', '迅镭', '邦德', '宏山', '奔腾', '华工', '亚威', '嘉泰'],
-  '折弯机': ['通快', '百超', 'Amada', '亚威', '普玛宝', '萨瓦尼尼', '爱克', '华工', '金方圆', '扬力'],
-  '冲床': ['通快', '村田', 'Amada', '金方圆', '扬力', '华工', '爱克', '普玛宝', '捷迈', '其他'],
-  '焊接机': ['福尼斯', '林肯', '米勒', '松下', '伊萨', '麦格米特', '时代', '瑞凌', '佳士', '其他'],
-  '激光焊接': ['大族', '通快', '百超', '华工', '逸激光', '其他'],
-  '卷板机': ['华工', '扬力', '黄石', '其他'],
-  '等离子切割': ['飞博', '华远', '瑞凌', '时代', '其他'],
-  '水刀切割': ['华臻', '其他'],
-  '剪板机': ['黄石', '上海冲', '扬力', '其他'],
-  '其他': []
+  'Laser Cutter': ['Han\'s Laser', 'TRUMPF', 'Bystronic', 'Xunlei', 'Bond', 'Hongshan', 'Bodor', 'HGTECH', 'Yawei', 'Jiatai'],
+  'Press Brake': ['TRUMPF', 'Bystronic', 'Amada', 'Yawei', 'Prima Power', 'Salvagnini', 'Eagle', 'HGTECH', 'Jinfangyuan', 'Yangli'],
+  'Punch Press': ['TRUMPF', 'Murata', 'Amada', 'Jinfangyuan', 'Yangli', 'HGTECH', 'Eagle', 'Prima Power', 'JFY', 'Other'],
+  'Welder': ['Fronius', 'Lincoln', 'Miller', 'Panasonic', 'ESAB', 'Megmeet', 'TIME', 'Riland', 'JASIC', 'Other'],
+  'Laser Welder': ['Han\'s Laser', 'TRUMPF', 'Bystronic', 'HGTECH', 'Yi Laser', 'Other'],
+  'Plate Rolling Machine': ['HGTECH', 'Yangli', 'Huangshi', 'Other'],
+  'Plasma Cutter': ['Hypertherm', 'Huayuan', 'Riland', 'TIME', 'Other'],
+  'Waterjet Cutter': ['Huazhen', 'Other'],
+  'Shearing Machine': ['Huangshi', 'Shanghai Punching', 'Yangli', 'Other'],
+  'Other': []
 };
 
 export function WorkOrderModal({ isOpen, onClose, onSubmit }) {
@@ -62,7 +62,7 @@ export function WorkOrderModal({ isOpen, onClose, onSubmit }) {
 
   const handleSubmit = async () => {
     if (!form.type || !form.description || !form.contact) {
-      toastWarning('请填写必填项');
+      toastWarning('Please fill in all required fields');
       return;
     }
 
@@ -78,18 +78,18 @@ export function WorkOrderModal({ isOpen, onClose, onSubmit }) {
             await uploadWorkOrderAttachment(result.id, file);
             uploaded++;
           } catch (e) {
-            toastError(`附件 ${file.name} 上传失败: ${e.message}`);
+            toastError(`Attachment ${file.name} upload failed: ${e.message}`);
           }
         }
         setUploadPhase(null);
         if (uploaded > 0) {
-          toastSuccess(`服务申请已提交，${uploaded} 个附件已上传`);
+          toastSuccess(`Service request submitted, ${uploaded} attachment(s) uploaded`);
         }
       }
       setFiles([]);
       setSubmitted(result);
     } catch (e) {
-      toastError('提交失败：' + e.message);
+      toastError('Submission failed: ' + e.message);
     } finally {
       setSubmitting(false);
       setUploadPhase(null);
@@ -117,42 +117,42 @@ export function WorkOrderModal({ isOpen, onClose, onSubmit }) {
   };
 
   const typeOptions = [
-    { value: WorkOrderType.FAULT, label: '设备故障' },
-    { value: WorkOrderType.MAINTENANCE, label: '维护保养' },
-    { value: WorkOrderType.PARAMETER, label: '参数调试' },
-    { value: WorkOrderType.CONSULT, label: '技术咨询' },
-    { value: WorkOrderType.PARTS, label: '配件采购' },
-    { value: WorkOrderType.AFTERSALES, label: '售后服务' },
-    { value: WorkOrderType.OTHER, label: '其他' },
+    { value: WorkOrderType.FAULT, label: 'Equipment Repair' },
+    { value: WorkOrderType.MAINTENANCE, label: 'Maintenance' },
+    { value: WorkOrderType.PARAMETER, label: 'Parameter Tuning' },
+    { value: WorkOrderType.CONSULT, label: 'Technical Consultation' },
+    { value: WorkOrderType.PARTS, label: 'Parts Purchase' },
+    { value: WorkOrderType.AFTERSALES, label: 'After-sales Service' },
+    { value: WorkOrderType.OTHER, label: 'Other' },
   ];
 
   const urgencyOptions = [
-    { value: UrgencyLevel.NORMAL, label: '普通' },
-    { value: UrgencyLevel.URGENT, label: '紧急' },
-    { value: UrgencyLevel.CRITICAL, label: '非常紧急' },
+    { value: UrgencyLevel.NORMAL, label: 'Normal' },
+    { value: UrgencyLevel.URGENT, label: 'Urgent' },
+    { value: UrgencyLevel.CRITICAL, label: 'Critical' },
   ];
 
   return (
-    <Modal isOpen={isOpen} onClose={handleClose} title={submitted ? '服务申请已提交' : '提交服务申请'} size="md">
+    <Modal isOpen={isOpen} onClose={handleClose} title={submitted ? 'Service Request Submitted' : 'Request SAGEMRO Official Service'} size="md">
       {/* 提交成功提示 */}
       {submitted && (
         <div className="space-y-4">
           <div className="p-4 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-xl text-center">
             <div className="text-3xl mb-2">✅</div>
-            <p className="text-sm font-medium text-green-700 dark:text-green-400 mb-1">服务申请提交成功！</p>
+            <p className="text-sm font-medium text-green-700 dark:text-green-400 mb-1">Service request submitted successfully!</p>
             <p className="text-xs text-green-600 dark:text-green-500">
-              服务编号：{submitted.order_no || submitted.id}
+              Service No.: {submitted.order_no || submitted.id}
             </p>
           </div>
           <p className="text-xs text-[var(--color-text-secondary)] text-center">
-            SAGEMRO 会审核申请并安排合适的官方工程师或认证服务代表。
-            您也可以在「我的服务」中随时查看进度。
+            SAGEMRO will review the request, confirm details, and arrange the right official engineer or service representative.
+            You can track progress in "My Services" at any time.
           </p>
           <button
             onClick={handleClose}
             className="w-full py-2.5 bg-[var(--color-primary)] hover:opacity-90 text-white rounded-xl font-medium transition-opacity"
           >
-            知道了
+            Got it
           </button>
         </div>
       )}
@@ -162,14 +162,14 @@ export function WorkOrderModal({ isOpen, onClose, onSubmit }) {
         {/* 服务类型 */}
         <div>
           <label className="block text-sm font-medium text-[var(--color-text-primary)] mb-1">
-            服务类型 <span className="text-red-500">*</span>
+            Service Type <span className="text-red-500">*</span>
           </label>
           <select
             value={form.type}
             onChange={(e) => setForm({ ...form, type: e.target.value })}
             className="w-full px-3 py-2 border border-[var(--color-border)] dark:border-[var(--color-border-strong)] rounded-xl bg-[var(--color-surface)] dark:bg-[var(--color-surface-elevated)] text-xs text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
           >
-            <option value="">请选择服务类型</option>
+            <option value="">Select service type</option>
             {typeOptions.map((opt) => (
               <option key={opt.value} value={opt.value}>
                 {opt.label}
@@ -181,7 +181,7 @@ export function WorkOrderModal({ isOpen, onClose, onSubmit }) {
         {/* 设备大类 + 服务类型（级联） */}
         <div>
           <label className="block text-sm font-medium text-[var(--color-text-primary)] mb-1">
-            设备大类
+            Equipment Category
           </label>
           <select
             value={form.category_l1}
@@ -196,7 +196,7 @@ export function WorkOrderModal({ isOpen, onClose, onSubmit }) {
 
         <div>
           <label className="block text-sm font-medium text-[var(--color-text-primary)] mb-1">
-            具体问题
+            Specific Issue
           </label>
           <select
             value={form.category_l2}
@@ -211,41 +211,41 @@ export function WorkOrderModal({ isOpen, onClose, onSubmit }) {
 
         {/* 设备类型 */}
         <TagInput
-          label="设备类型"
+          label="Equipment Type"
           options={deviceTypeOptions}
           value={form.device_type}
           onChange={(val) => setForm({ ...form, device_type: val })}
-          placeholder="选择或输入设备类型..."
+          placeholder="Select or enter equipment type..."
         />
 
         {/* 设备品牌 */}
         <TagInput
-          label="设备品牌"
+          label="Equipment Brand"
           options={brandOptions}
           value={form.device_brand}
           onChange={(val) => setForm({ ...form, device_brand: val })}
-          placeholder={brandOptions.length > 0 ? "选择或添加品牌..." : "先选择设备类型"}
+          placeholder={brandOptions.length > 0 ? "Select or add brand..." : "Select equipment type first"}
           disabled={brandOptions.length === 0}
         />
 
         {/* 所在地区 */}
         <RegionInput
-          label="所在地区"
+          label="Region"
           value={form.region}
           onChange={(val) => setForm({ ...form, region: val })}
-          placeholder="输入地区名称搜索..."
+          placeholder="Search by region name..."
         />
 
         {/* 设备规格型号 */}
         <div>
           <label className="block text-sm font-medium text-[var(--color-text-primary)] mb-1">
-            设备规格型号
+            Equipment Model / Spec
           </label>
           <input
             type="text"
             value={form.device_model}
             onChange={(e) => setForm({ ...form, device_model: e.target.value })}
-            placeholder="如：C3015 3000W"
+            placeholder="e.g. C3015 3000W"
             className="w-full px-3 py-2 border border-[var(--color-border)] dark:border-[var(--color-border-strong)] rounded-xl bg-[var(--color-surface)] dark:bg-[var(--color-surface-elevated)] text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
           />
         </div>
@@ -253,12 +253,12 @@ export function WorkOrderModal({ isOpen, onClose, onSubmit }) {
         {/* 问题描述 */}
         <div>
           <label className="block text-sm font-medium text-[var(--color-text-primary)] mb-1">
-            问题描述 <span className="text-red-500">*</span>
+            Fault / Service Description <span className="text-red-500">*</span>
           </label>
           <textarea
             value={form.description}
             onChange={(e) => setForm({ ...form, description: e.target.value })}
-            placeholder="请详细描述您遇到的问题..."
+            placeholder="Describe the equipment issue, service need, alarm code, or production impact..."
             rows={4}
             className="w-full px-3 py-2 border border-[var(--color-border)] dark:border-[var(--color-border-strong)] rounded-xl bg-[var(--color-surface)] dark:bg-[var(--color-surface-elevated)] text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)] resize-none"
           />
@@ -267,13 +267,13 @@ export function WorkOrderModal({ isOpen, onClose, onSubmit }) {
         {/* 联系方式 */}
         <div>
           <label className="block text-sm font-medium text-[var(--color-text-primary)] mb-1">
-            联系方式 <span className="text-red-500">*</span>
+            Contact Info <span className="text-red-500">*</span>
           </label>
           <input
             type="text"
             value={form.contact}
             onChange={(e) => setForm({ ...form, contact: e.target.value })}
-            placeholder="手机号码"
+            placeholder="Phone number"
             className="w-full px-3 py-2 border border-[var(--color-border)] dark:border-[var(--color-border-strong)] rounded-xl bg-[var(--color-surface)] dark:bg-[var(--color-surface-elevated)] text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
           />
         </div>
@@ -281,7 +281,7 @@ export function WorkOrderModal({ isOpen, onClose, onSubmit }) {
         {/* 紧急程度 */}
         <div>
           <label className="block text-sm font-medium text-[var(--color-text-primary)] mb-2">
-            紧急程度
+            Urgency
           </label>
           <div className="flex gap-3">
             {urgencyOptions.map((opt) => (
@@ -310,7 +310,7 @@ export function WorkOrderModal({ isOpen, onClose, onSubmit }) {
         {/* 附件上传（可选） */}
         <div>
           <label className="block text-sm font-medium text-[var(--color-text-primary)] mb-1">
-            附件（可选）
+            Attachments (Optional)
           </label>
           <input
             ref={fileInputRef}
@@ -331,7 +331,7 @@ export function WorkOrderModal({ isOpen, onClose, onSubmit }) {
           >
             <Paperclip className="w-4 h-4 text-[var(--color-text-muted)]" />
             <span className="text-xs text-[var(--color-text-muted)]">
-              {files.length > 0 ? `已选择 ${files.length} 个文件` : '上传图片/视频（可选）'}
+              {files.length > 0 ? `${files.length} file(s) selected` : 'Upload images/videos (optional)'}
             </span>
           </div>
           {files.length > 0 && (
@@ -365,9 +365,9 @@ export function WorkOrderModal({ isOpen, onClose, onSubmit }) {
         >
           {submitting
             ? uploadPhase
-              ? `正在上传附件 (${uploadPhase.current}/${uploadPhase.total})...`
-              : '提交中...'
-            : '提交服务申请'}
+              ? `Uploading attachments (${uploadPhase.current}/${uploadPhase.total})...`
+              : 'Submitting...'
+            : 'Submit Service Request'}
         </button>
         </div>
       )}

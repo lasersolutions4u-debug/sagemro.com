@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "description": "Golden set — 35 deterministic regression cases across role_guard (10), redact (10), specialties_filter (10), conversation_history (5). v2 adds SummaryProtocol v1 pending_items coverage across all 5 prefix tags (missing_info, awaiting_confirmation, followup_due, payment_pending, rating_pending).",
+  "description": "Golden set — 35 deterministic regression cases across role_guard (10), redact (10), assigned_service_tasks (10), conversation_history (5). v2 adds SummaryProtocol v1 pending_items coverage across all 5 prefix tags (missing_info, awaiting_confirmation, followup_due, service_followup, rating_pending).",
   "cases": [
     {
       "id": "rg-001",
@@ -147,28 +147,28 @@
     {
       "id": "sf-001",
       "category": "specialties_filter",
-      "description": "单专长（激光切割机）→ SQL 带 IN 单占位符 + 返回 filter_applied=true",
+      "description": "单专长（激光切割机）→ 返回已派给我的服务任务并保留 filter_applied=true",
       "input": { "engineer_specialties_json": "[\"激光切割机\"]", "available_types": ["激光切割机", "折弯机", "焊接机"] },
-      "expect": { "filter_applied": true, "engineer_specialties": ["激光切割机"], "matches_device_types": ["激光切割机"] }
+      "expect": { "filter_applied": true, "engineer_specialties": ["激光切割机"], "assigned_device_types": ["激光切割机", "折弯机", "焊接机"] }
     },
     {
       "id": "sf-002",
       "category": "specialties_filter",
-      "description": "多专长（激光+折弯）→ 两个占位符 + 两类都保留",
+      "description": "多专长（激光+折弯）→ 不再按专长过滤全量 pending，只返回已派任务",
       "input": { "engineer_specialties_json": "[\"激光切割机\",\"折弯机\"]", "available_types": ["激光切割机", "折弯机", "焊接机"] },
-      "expect": { "filter_applied": true, "engineer_specialties": ["激光切割机", "折弯机"], "matches_device_types": ["激光切割机", "折弯机"] }
+      "expect": { "filter_applied": true, "engineer_specialties": ["激光切割机", "折弯机"], "assigned_device_types": ["激光切割机", "折弯机", "焊接机"] }
     },
     {
       "id": "sf-003",
       "category": "specialties_filter",
-      "description": "空专长数组 → 降级全量（filter_applied=false）",
+      "description": "空专长数组 → filter_applied=false，但仍只返回已派服务任务",
       "input": { "engineer_specialties_json": "[]", "available_types": ["激光切割机", "折弯机"] },
-      "expect": { "filter_applied": false, "engineer_specialties": [], "matches_device_types": ["激光切割机", "折弯机"] }
+      "expect": { "filter_applied": false, "engineer_specialties": [], "assigned_device_types": ["激光切割机", "折弯机"] }
     },
     {
       "id": "sf-004",
       "category": "specialties_filter",
-      "description": "specialties JSON 脏数据 → 降级 + 不抛错",
+      "description": "specialties JSON 脏数据 → 容错为空专长 + 不抛错",
       "input": { "engineer_specialties_json": "{not valid json", "available_types": ["激光切割机"] },
       "expect": { "filter_applied": false, "engineer_specialties": [] }
     },
@@ -182,37 +182,37 @@
     {
       "id": "sf-006",
       "category": "specialties_filter",
-      "description": "limit 超过 20 → clip 到 20",
+      "description": "已派任务查询 limit 超过 20 → clip 到 20",
       "input": { "engineer_specialties_json": "[\"激光切割机\"]", "available_types": ["激光切割机"], "limit": 999 },
       "expect": { "bound_limit": 20 }
     },
     {
       "id": "sf-007",
       "category": "specialties_filter",
-      "description": "limit 未传 → 默认 10",
+      "description": "已派任务查询 limit 未传 → 默认 10",
       "input": { "engineer_specialties_json": "[\"激光切割机\"]", "available_types": ["激光切割机"], "limit": null },
       "expect": { "bound_limit": 10 }
     },
     {
       "id": "sf-008",
       "category": "specialties_filter",
-      "description": "专长存在但工单里没这类设备 → count=0（诚实）",
+      "description": "专长与设备类型不匹配 → 仍返回已派任务，不因专长过滤掉",
       "input": { "engineer_specialties_json": "[\"水刀切割机\"]", "available_types": ["激光切割机", "折弯机"] },
-      "expect": { "filter_applied": true, "count": 0 }
+      "expect": { "filter_applied": true, "count": 2 }
     },
     {
       "id": "sf-009",
       "category": "specialties_filter",
-      "description": "engineerId 缺失 → specialties 为空 → 降级全量",
+      "description": "engineerId 缺失 → specialties 为空，且不暴露全量 pending 队列",
       "input": { "engineer_specialties_json": null, "available_types": ["激光切割机"], "no_engineer_id": true },
-      "expect": { "filter_applied": false, "engineer_specialties": [] }
+      "expect": { "filter_applied": false, "engineer_specialties": [], "count": 0 }
     },
     {
       "id": "sf-010",
       "category": "specialties_filter",
-      "description": "engineer 记录不存在 → 降级全量（不崩）",
+      "description": "engineer 记录不存在 → 不崩，且不暴露全量 pending 队列",
       "input": { "engineer_specialties_json": "__NOT_FOUND__", "available_types": ["激光切割机"] },
-      "expect": { "filter_applied": false, "engineer_specialties": [] }
+      "expect": { "filter_applied": false, "engineer_specialties": [], "count": 1 }
     },
 
     {
@@ -308,7 +308,7 @@
     {
       "id": "ch-004",
       "category": "conversation_history",
-      "description": "[payment_pending] 跟进：合伙人端拉到上次提现申请处理中 → 聚合出 payment_pending",
+      "description": "[service_followup] 跟进：内部工程师端拉到服务运营待跟进事项 → 聚合出 service_followup",
       "input": {
         "user_role": "engineer",
         "engineer_id": "eng-golden-4",
@@ -320,9 +320,9 @@
             "source_message_count": 6,
             "summary": {
               "protocol_version": 1,
-              "conversation_type": "wallet_query",
-              "summary_text": "合伙人发起 1200 元提现申请，T+1 到账流程中",
-              "pending_items": ["[payment_pending] 合伙人提现申请 1200 元处理中"]
+              "conversation_type": "post_sale_followup",
+              "summary_text": "客户要求确认备件到货时间，SAGEMRO 运营需继续跟进",
+              "pending_items": ["[service_followup] 客户备件到货时间需 SAGEMRO 运营继续跟进"]
             }
           }
         ]
@@ -331,7 +331,7 @@
         "count": 1,
         "filter_applied": false,
         "summaries_length": 1,
-        "pending_items_prefix": "[payment_pending]",
+        "pending_items_prefix": "[service_followup]",
         "pending_items_min_count": 1
       }
     },

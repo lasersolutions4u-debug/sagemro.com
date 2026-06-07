@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { CheckCircle, AlertCircle } from 'lucide-react';
 import {
   getWorkOrderPricing,
@@ -11,9 +11,10 @@ import { toastSuccess, toastError, toastWarning } from '../../utils/feedback';
 
 export function PricingStatusBadge({ status }) {
   const map = {
-    draft: { text: '草稿/议价中', color: 'bg-gray-500', bg: 'bg-gray-500/10' },
-    submitted: { text: '已提交待确认', color: 'bg-purple-500', bg: 'bg-purple-500/10' },
-    confirmed: { text: '已确认', color: 'bg-green-500', bg: 'bg-green-500/10' },
+    draft: { text: 'Draft / Negotiating', color: 'bg-gray-500', bg: 'bg-gray-500/10' },
+    pending_review: { text: 'SAGEMRO Review', color: 'bg-amber-500', bg: 'bg-amber-500/10' },
+    submitted: { text: 'Submitted, Awaiting Confirmation', color: 'bg-purple-500', bg: 'bg-purple-500/10' },
+    confirmed: { text: 'Confirmed', color: 'bg-green-500', bg: 'bg-green-500/10' },
   };
   const c = map[status] || map.draft;
   return (
@@ -26,9 +27,9 @@ export function AIPriceCheck({ check }) {
   let data;
   try { data = typeof check === 'string' ? JSON.parse(check) : check; } catch { return null; }
   const map = {
-    reasonable: { text: '价格合理', icon: CheckCircle, color: 'text-green-500', bg: 'bg-green-500/10' },
-    high: { text: '价格偏高', icon: AlertCircle, color: 'text-orange-500', bg: 'bg-orange-500/10' },
-    low: { text: '价格偏低', icon: AlertCircle, color: 'text-blue-500', bg: 'bg-blue-500/10' },
+    reasonable: { text: 'Price is reasonable', icon: CheckCircle, color: 'text-green-500', bg: 'bg-green-500/10' },
+    high: { text: 'Price is on the high side', icon: AlertCircle, color: 'text-orange-500', bg: 'bg-orange-500/10' },
+    low: { text: 'Price is on the low side', icon: AlertCircle, color: 'text-blue-500', bg: 'bg-blue-500/10' },
   };
   const c = map[data.status] || map.reasonable;
   const Icon = c.icon;
@@ -47,14 +48,12 @@ export function AIPriceCheck({ check }) {
 export function EngineerPricingPanel({ workOrderId, engineerId, onSubmitted, commissionRate = 0.80, engineerLevel = 'junior' }) {
   const [form, setForm] = useState({ labor_fee: '', parts_fee: '', travel_fee: '', other_fee: '', parts_detail: '' });
   const [submitting, setSubmitting] = useState(false);
-  const [submittingPrice, setSubmittingPrice] = useState(null);
 
   const subtotal = (parseInt(form.labor_fee) || 0) + (parseInt(form.parts_fee) || 0) + (parseInt(form.travel_fee) || 0) + (parseInt(form.other_fee) || 0);
-  const serviceFee = Math.round(subtotal * commissionRate); // 工程师实得（仅供提交前预览，最终以平台结算为准）
+  const internalEstimate = Math.round(subtotal * commissionRate); // Internal legacy estimate; customer-facing quote uses SAGEMRO official pricing.
 
   const handleSubmit = async () => {
     setSubmitting(true);
-    setSubmittingPrice(subtotal);
     try {
       await submitWorkOrderPricing(workOrderId, {
         labor_fee: parseInt(form.labor_fee) || 0,
@@ -64,13 +63,12 @@ export function EngineerPricingPanel({ workOrderId, engineerId, onSubmitted, com
         parts_detail: form.parts_detail,
         engineer_id: engineerId,
       });
-      toastSuccess('报价已提交，等待客户确认');
+      toastSuccess('Quote submitted for SAGEMRO official review.');
       onSubmitted?.();
     } catch (e) {
-      toastError('提交失败: ' + e.message);
+      toastError('Submission failed: ' + e.message);
     } finally {
       setSubmitting(false);
-      setSubmittingPrice(null);
     }
   };
 
@@ -85,42 +83,42 @@ export function EngineerPricingPanel({ workOrderId, engineerId, onSubmitted, com
           placeholder={placeholder}
           className="w-full px-3 py-2 text-sm border border-[var(--color-border)] rounded-xl bg-[var(--color-surface)] text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
         />
-        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-[var(--color-text-muted)]">元</span>
+        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-[var(--color-text-muted)]">CNY</span>
       </div>
     </div>
   );
 
   return (
     <div className="space-y-3">
-      <div className="text-xs text-[var(--color-text-muted)]">填写各项费用后提交报价，客户确认后即可上门服务。</div>
+      <div className="text-xs text-[var(--color-text-muted)]">Fill in the fee details as an internal quote proposal. SAGEMRO operations will review it before the customer sees an official quote.</div>
       <div className="grid grid-cols-2 gap-3">
-        {field('labor_fee', '人工费', '工时 × 单价')}
-        {field('parts_fee', '配件费', '配件费用合计')}
+        {field('labor_fee', 'Labor Fee', 'Hours × Rate')}
+        {field('parts_fee', 'Parts Fee', 'Total parts cost')}
       </div>
       <div className="grid grid-cols-2 gap-3">
-        {field('travel_fee', '差旅费', '交通 + 住宿')}
-        {field('other_fee', '其他费用', '其他杂项')}
+        {field('travel_fee', 'Travel Fee', 'Transport + Accommodation')}
+        {field('other_fee', 'Other Fees', 'Miscellaneous')}
       </div>
       <div>
-        <label className="block text-xs text-[var(--color-text-secondary)] mb-1">配件明细说明（选填）</label>
+        <label className="block text-xs text-[var(--color-text-secondary)] mb-1">Parts Detail (Optional)</label>
         <textarea
           value={form.parts_detail}
           onChange={(e) => setForm({ ...form, parts_detail: e.target.value })}
-          placeholder="如：激光器镜片 × 1，单价800元"
+          placeholder="e.g. Laser lens × 1, unit price 800 CNY"
           rows={2}
           className="w-full px-3 py-2 text-sm border border-[var(--color-border)] rounded-xl bg-[var(--color-surface)] text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)] resize-none"
         />
       </div>
       {/* 费用汇总 */}
       <div className="p-3 bg-[var(--color-surface-elevated)] rounded-xl space-y-1.5 text-sm">
-        <div className="flex justify-between"><span className="text-[var(--color-text-secondary)]">人工费</span><span>{form.labor_fee || 0} 元</span></div>
-        <div className="flex justify-between"><span className="text-[var(--color-text-secondary)]">配件费</span><span>{form.parts_fee || 0} 元</span></div>
-        <div className="flex justify-between"><span className="text-[var(--color-text-secondary)]">差旅费</span><span>{form.travel_fee || 0} 元</span></div>
-        <div className="flex justify-between"><span className="text-[var(--color-text-secondary)]">其他费用</span><span>{form.other_fee || 0} 元</span></div>
-        <div className="flex justify-between border-t border-[var(--color-border)] pt-1.5"><span className="text-[var(--color-text-secondary)]">报价小计（客户应付）</span><span className="font-medium">{subtotal} 元</span></div>
+        <div className="flex justify-between"><span className="text-[var(--color-text-secondary)]">Labor Fee</span><span>{form.labor_fee || 0} CNY</span></div>
+        <div className="flex justify-between"><span className="text-[var(--color-text-secondary)]">Parts Fee</span><span>{form.parts_fee || 0} CNY</span></div>
+        <div className="flex justify-between"><span className="text-[var(--color-text-secondary)]">Travel Fee</span><span>{form.travel_fee || 0} CNY</span></div>
+        <div className="flex justify-between"><span className="text-[var(--color-text-secondary)]">Other Fees</span><span>{form.other_fee || 0} CNY</span></div>
+        <div className="flex justify-between border-t border-[var(--color-border)] pt-1.5"><span className="text-[var(--color-text-secondary)]">Quote Subtotal (Customer Pays)</span><span className="font-medium">{subtotal} CNY</span></div>
         <div className="flex justify-between font-semibold text-[var(--color-primary)]">
-          <span>你预计实得</span>
-          <span>{serviceFee} 元</span>
+          <span>Internal Settlement Estimate</span>
+          <span>{internalEstimate} CNY</span>
         </div>
       </div>
       <button
@@ -129,7 +127,7 @@ export function EngineerPricingPanel({ workOrderId, engineerId, onSubmitted, com
         disabled={submitting || subtotal === 0}
         className="w-full py-2.5 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] disabled:opacity-50 text-white rounded-xl font-medium"
       >
-        {submitting ? '提交中...' : '提交报价'}
+        {submitting ? 'Submitting...' : 'Submit for SAGEMRO Review'}
       </button>
     </div>
   );
@@ -145,24 +143,24 @@ export function CustomerPricingPanel({ workOrderId, customerId, onConfirmed }) {
   const [submitting, setSubmitting] = useState(false);
   const [paymentOpen, setPaymentOpen] = useState(false);
 
-  const load = () => {
+  const load = useCallback(() => {
     setLoading(true);
     getWorkOrderPricing(workOrderId).then(d => {
       setPricing(d.pricing);
     }).catch(() => {}).finally(() => setLoading(false));
-  };
+  }, [workOrderId]);
 
-  useEffect(() => { load(); }, [workOrderId]);
+  useEffect(() => { load(); }, [load]);
 
   const handleConfirm = async () => {
     setSubmitting(true);
     try {
       await confirmWorkOrderPricing(workOrderId, customerId);
-      toastSuccess('报价已确认，SAGEMRO 将继续安排服务');
+      toastSuccess('Quote confirmed. SAGEMRO will proceed with service scheduling.');
       onConfirmed?.();
       load();
     } catch (e) {
-      toastError('确认失败: ' + e.message);
+      toastError('Confirmation failed: ' + e.message);
     } finally {
       setSubmitting(false);
       setAction(null);
@@ -170,27 +168,30 @@ export function CustomerPricingPanel({ workOrderId, customerId, onConfirmed }) {
   };
 
   const handleReject = async () => {
-    if (!rejectReason.trim()) { toastWarning('请输入议价原因'); return; }
+    if (!rejectReason.trim()) { toastWarning('Please enter a reason for negotiation'); return; }
     setSubmitting(true);
     try {
       await rejectWorkOrderPricing(workOrderId, customerId, rejectReason, counterOffer ? parseInt(counterOffer) : null);
-      toastSuccess('已发起议价，SAGEMRO 将审核并更新报价');
+      toastSuccess('Negotiation initiated. SAGEMRO will review and submit a revised quote.');
       onConfirmed?.();
       load();
     } catch (e) {
-      toastError('操作失败: ' + e.message);
+      toastError('Operation failed: ' + e.message);
     } finally {
       setSubmitting(false);
       setAction(null);
     }
   };
 
-  if (loading) return <div className="text-center py-4 text-sm text-[var(--color-text-muted)]">加载中...</div>;
+  if (loading) return <div className="text-center py-4 text-sm text-[var(--color-text-muted)]">Loading...</div>;
 
-  if (!pricing) return <div className="text-center py-4 text-sm text-[var(--color-text-muted)]">SAGEMRO 尚未提交正式报价</div>;
-
-  let aiCheck = null;
-  try { aiCheck = pricing.ai_price_check ? JSON.parse(pricing.ai_price_check) : null; } catch {}
+  if (!pricing) {
+    return (
+      <div className="rounded-xl bg-[var(--color-surface-elevated)] p-4 text-center text-sm text-[var(--color-text-muted)]">
+        SAGEMRO is preparing the official quote. You will be notified once diagnosis, scope, and safety requirements are reviewed.
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-3">
@@ -200,31 +201,31 @@ export function CustomerPricingPanel({ workOrderId, customerId, onConfirmed }) {
 
       {/* 费用明细 */}
       <div className="p-3 bg-[var(--color-surface-elevated)] rounded-xl space-y-1.5 text-sm">
-        <div className="flex justify-between"><span className="text-[var(--color-text-secondary)]">人工费</span><span>{pricing.labor_fee || 0} 元</span></div>
-        <div className="flex justify-between"><span className="text-[var(--color-text-secondary)]">配件费</span><span>{pricing.parts_fee || 0} 元</span></div>
-        <div className="flex justify-between"><span className="text-[var(--color-text-secondary)]">差旅费</span><span>{pricing.travel_fee || 0} 元</span></div>
-        <div className="flex justify-between"><span className="text-[var(--color-text-secondary)]">其他费用</span><span>{pricing.other_fee || 0} 元</span></div>
+        <div className="flex justify-between"><span className="text-[var(--color-text-secondary)]">Labor Fee</span><span>{pricing.labor_fee || 0} CNY</span></div>
+        <div className="flex justify-between"><span className="text-[var(--color-text-secondary)]">Parts Fee</span><span>{pricing.parts_fee || 0} CNY</span></div>
+        <div className="flex justify-between"><span className="text-[var(--color-text-secondary)]">Travel Fee</span><span>{pricing.travel_fee || 0} CNY</span></div>
+        <div className="flex justify-between"><span className="text-[var(--color-text-secondary)]">Other Fees</span><span>{pricing.other_fee || 0} CNY</span></div>
         {pricing.parts_detail && pricing.parts_detail !== '[]' && pricing.parts_detail !== '' && (
           <div className="text-xs text-[var(--color-text-secondary)] pt-1 border-t border-[var(--color-border)]">
-            配件明细：{(() => { try { return JSON.parse(pricing.parts_detail).map(p => `${p.name || '配件'} ${p.qty || 1}×${p.unit_price || 0}元`).join('；'); } catch { return pricing.parts_detail; } })()}
+            Parts Detail: {(() => { try { return JSON.parse(pricing.parts_detail).map(p => `${p.name || 'Part'} ${p.qty || 1}×${p.unit_price || 0} CNY`).join('; '); } catch { return pricing.parts_detail; } })()}
           </div>
         )}
-        <div className="flex justify-between border-t border-[var(--color-border)] pt-1.5"><span className="text-[var(--color-text-secondary)]">报价小计</span><span className="font-medium">{pricing.subtotal || 0} 元</span></div>
-        {/* 代收代付：分别列明维修服务费和SAGEMRO 服务管理费 */}
+        <div className="flex justify-between border-t border-[var(--color-border)] pt-1.5"><span className="text-[var(--color-text-secondary)]">Quote Subtotal</span><span className="font-medium">{pricing.subtotal || 0} CNY</span></div>
+        {/* Legacy platform fee fields are not exposed as marketplace fees in Service OS. */}
         {pricing.platform_fee > 0 && (
           <>
             <div className="flex justify-between">
-              <span className="text-[var(--color-text-secondary)]">其中：服务费用</span>
-              <span>{(pricing.subtotal || 0) - (pricing.platform_fee || 0)} 元</span>
+              <span className="text-[var(--color-text-secondary)]">Service Fee</span>
+              <span>{(pricing.subtotal || 0) - (pricing.platform_fee || 0)} CNY</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-[var(--color-text-secondary)]">其中：SAGEMRO 服务管理费</span>
-              <span>{pricing.platform_fee} 元</span>
+              <span className="text-[var(--color-text-secondary)]">SAGEMRO Service Management Fee</span>
+              <span>{pricing.platform_fee} CNY</span>
             </div>
           </>
         )}
         <div className="flex justify-between font-semibold text-base text-[var(--color-primary)]">
-          <span>合计应付</span><span>{pricing.total_amount || pricing.subtotal || 0} 元</span>
+          <span>Total Payable</span><span>{pricing.total_amount || pricing.subtotal || 0} CNY</span>
         </div>
       </div>
 
@@ -238,13 +239,13 @@ export function CustomerPricingPanel({ workOrderId, customerId, onConfirmed }) {
             onClick={() => setAction('confirm')}
             className="flex-1 py-2.5 bg-green-500 hover:bg-green-600 text-white rounded-xl font-medium"
           >
-            确认报价
+            Confirm Quote
           </button>
           <button
             onClick={() => setAction('reject')}
             className="flex-1 py-2.5 bg-[var(--color-surface-elevated)] hover:bg-[var(--color-border)] text-[var(--color-text-secondary)] rounded-xl font-medium"
           >
-            议价
+            Negotiate
           </button>
         </div>
       )}
@@ -254,7 +255,7 @@ export function CustomerPricingPanel({ workOrderId, customerId, onConfirmed }) {
           <textarea
             value={rejectReason}
             onChange={(e) => setRejectReason(e.target.value)}
-            placeholder="请说明议价原因..."
+            placeholder="Please explain your reason for negotiation..."
             rows={2}
             className="w-full px-3 py-2 text-sm border border-[var(--color-border)] rounded-xl bg-[var(--color-surface)] text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)] resize-none"
           />
@@ -263,13 +264,13 @@ export function CustomerPricingPanel({ workOrderId, customerId, onConfirmed }) {
             value={counterOffer}
             onChange={(e) => setCounterOffer(e.target.value)}
             data-testid="counter-offer-input"
-            placeholder="您的期望价格（元，选填）"
+            placeholder="Your expected price (CNY, optional)"
             className="w-full px-3 py-2 text-sm border border-[var(--color-border)] rounded-xl bg-[var(--color-surface)] text-[var(--color-text-primary)] placeholder:text-[var(--color-text-muted)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
           />
           <div className="flex gap-2">
-            <button onClick={() => setAction(null)} className="flex-1 py-2 bg-[var(--color-border)] text-[var(--color-text-secondary)] rounded-xl text-sm">取消</button>
+            <button onClick={() => setAction(null)} className="flex-1 py-2 bg-[var(--color-border)] text-[var(--color-text-secondary)] rounded-xl text-sm">Cancel</button>
             <button data-testid="reject-pricing-button" onClick={handleReject} disabled={submitting} className="flex-1 py-2 bg-orange-500 hover:bg-orange-600 disabled:opacity-50 text-white rounded-xl text-sm">
-              {submitting ? '提交中...' : '发起议价'}
+              {submitting ? 'Submitting...' : 'Negotiate'}
             </button>
           </div>
         </div>
@@ -277,11 +278,11 @@ export function CustomerPricingPanel({ workOrderId, customerId, onConfirmed }) {
 
       {action === 'confirm' && (
         <div className="p-3 bg-green-500/10 border border-green-500/30 rounded-xl space-y-2">
-          <div className="text-sm text-[var(--color-text-primary)]">确认后 SAGEMRO 将开始服务安排。</div>
+          <div className="text-sm text-[var(--color-text-primary)]">After confirmation, SAGEMRO will begin service scheduling.</div>
           <div className="flex gap-2">
-            <button onClick={() => setAction(null)} className="flex-1 py-2 bg-[var(--color-surface-elevated)] text-[var(--color-text-secondary)] rounded-xl text-sm">取消</button>
+            <button onClick={() => setAction(null)} className="flex-1 py-2 bg-[var(--color-surface-elevated)] text-[var(--color-text-secondary)] rounded-xl text-sm">Cancel</button>
             <button data-testid="confirm-pricing-button" onClick={handleConfirm} disabled={submitting} className="flex-1 py-2 bg-green-500 hover:bg-green-600 disabled:opacity-50 text-white rounded-xl text-sm">
-              {submitting ? '确认中...' : '确认报价'}
+              {submitting ? 'Confirming...' : 'Confirm Quote'}
             </button>
           </div>
         </div>
@@ -290,13 +291,13 @@ export function CustomerPricingPanel({ workOrderId, customerId, onConfirmed }) {
       {pricing.status === 'confirmed' && (
         <div className="space-y-3">
           <div className="p-3 bg-green-500/10 border border-green-500/30 rounded-xl text-center text-sm text-green-500">
-            ✓ 报价已确认
+            ✓ Quote Confirmed
           </div>
           <button
             onClick={() => setPaymentOpen(true)}
             className="w-full py-3 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white rounded-xl font-semibold text-sm transition-colors"
           >
-            去付款（{(pricing.total_amount || pricing.subtotal || 0).toLocaleString()} 元）
+            Proceed to Payment ({(pricing.total_amount || pricing.subtotal || 0).toLocaleString()} CNY)
           </button>
         </div>
       )}

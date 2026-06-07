@@ -3,12 +3,7 @@ import { ErrorBoundary } from './components/common/ErrorBoundary';
 import { Footer } from './components/common/Footer';
 import { Sidebar } from './components/Sidebar/Sidebar';
 import { ChatArea } from './components/Chat/ChatArea';
-import { CustomerHomeModal } from './components/Settings/CustomerHomeModal';
-import { AboutModal } from './components/common/AboutModal';
 import { FeedbackHost } from './components/common/FeedbackHost';
-import { LegalModal } from './components/common/LegalModal';
-import { MyDevicesModal } from './components/Device/MyDevicesModal';
-import { NotificationModal } from './components/Notification/NotificationModal';
 import { PushNotificationBanner } from './components/PushNotification/PushNotificationBanner';
 import { useChat } from './hooks/useChat';
 import { useConversations } from './hooks/useConversations';
@@ -22,9 +17,18 @@ import { LoginModal } from './components/Auth/LoginModal';
 const WorkOrderModal = lazy(() => import('./components/Sidebar/WorkOrderModal').then(m => ({ default: m.WorkOrderModal })));
 const MyWorkOrdersModal = lazy(() => import('./components/Sidebar/MyWorkOrdersModal').then(m => ({ default: m.MyWorkOrdersModal })));
 const EngineerDashboard = lazy(() => import('./components/Engineer/EngineerDashboard').then(m => ({ default: m.EngineerDashboard })));
+const EngineerWorkspace = lazy(() => import('./components/Engineer/EngineerWorkspace').then(m => ({ default: m.EngineerWorkspace })));
 const EngineerProfileModal = lazy(() => import('./components/Engineer/EngineerProfileModal').then(m => ({ default: m.EngineerProfileModal })));
+const CustomerHomeModal = lazy(() => import('./components/Settings/CustomerHomeModal').then(m => ({ default: m.CustomerHomeModal })));
+const AboutModal = lazy(() => import('./components/common/AboutModal').then(m => ({ default: m.AboutModal })));
+const LegalModal = lazy(() => import('./components/common/LegalModal').then(m => ({ default: m.LegalModal })));
+const MyDevicesModal = lazy(() => import('./components/Device/MyDevicesModal').then(m => ({ default: m.MyDevicesModal })));
+const NotificationModal = lazy(() => import('./components/Notification/NotificationModal').then(m => ({ default: m.NotificationModal })));
 
 function App() {
+  const isEngineerHost = typeof window !== 'undefined'
+    && window.location.hostname.startsWith('engineer.');
+
   // 侧边栏状态
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
@@ -42,6 +46,7 @@ function App() {
   const [legalInitialTab, setLegalInitialTab] = useState('agreement');
   const [currentUser, setCurrentUser] = useState(null);
   const [userType, setUserType] = useState(null);
+  const [currentPath, setCurrentPath] = useState(() => window.location.pathname);
 
   // 通知未读数
   const [unreadCount, setUnreadCount] = useState(0);
@@ -57,6 +62,12 @@ function App() {
     if (storedType) {
       setUserType(storedType);
     }
+  }, []);
+
+  useEffect(() => {
+    const handlePopState = () => setCurrentPath(window.location.pathname);
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
   }, []);
 
   // 轮询未读通知数
@@ -121,7 +132,7 @@ function App() {
 
   // 当前对话标题
   const currentConversation = conversationId ? getConversation(conversationId) : null;
-  const currentTitle = currentConversation?.title || '新对话';
+  const currentTitle = currentConversation?.title || 'Service Chat';
 
   // 新建对话
   const handleNewChat = useCallback(() => {
@@ -158,7 +169,7 @@ function App() {
     const stored = localStorage.getItem(`sagemro_messages_${convId}`);
     const currentMessages = stored ? JSON.parse(stored) : [];
 
-    await sendMessage(content, images);
+    await sendMessage(content, images, convId);
 
     setTimeout(() => {
       const updatedMessages = [...currentMessages, {
@@ -229,6 +240,11 @@ function App() {
   const handleLoginSuccess = useCallback((userData) => {
     setCurrentUser(userData.user);
     setUserType(userData.userType);
+    if (userData.userType === 'engineer') {
+      // Engineer accounts belong in the independent engineer portal.
+      // The main site remains customer/visitor focused.
+      setLoginModalOpen(false);
+    }
     // 登录后清空对话，确保用新账号的正确身份上下文开始对话
     clearMessages();
   }, [clearMessages]);
@@ -243,7 +259,11 @@ function App() {
     setCurrentUser(null);
     setUserType(null);
     setUnreadCount(0);
-  }, []);
+    if (!isEngineerHost && currentPath === '/engineer') {
+      window.history.replaceState({}, '', '/');
+      setCurrentPath('/');
+    }
+  }, [currentPath, isEngineerHost]);
 
   // 监听 401 自动登出事件（由 services/api.js 的 fetch 拦截器触发）
   // token 过期 / 被踢下线时，清掉本地状态并弹出登录框，避免后续操作继续命中 401
@@ -275,6 +295,117 @@ function App() {
     setLegalModalOpen(true);
   }, []);
 
+  const showEngineerWorkspace = (isEngineerHost || currentPath === '/engineer') && userType === 'engineer';
+
+  if (showEngineerWorkspace) {
+    return (
+      <ErrorBoundary>
+        <Suspense fallback={null}>
+          <EngineerWorkspace
+            currentUser={currentUser}
+            onLogout={handleLogout}
+            onOpenProfile={() => setEngineerProfileOpen(true)}
+          />
+          {engineerProfileOpen && (
+            <EngineerProfileModal
+              isOpen={engineerProfileOpen}
+              onClose={() => setEngineerProfileOpen(false)}
+              engineerId={localStorage.getItem('sagemro_engineer_id')}
+            />
+          )}
+          {userType === 'engineer' && (
+            <PushNotificationBanner
+              notification={inAppNotification}
+              onDismiss={dismissNotification}
+            />
+          )}
+          <FeedbackHost />
+        </Suspense>
+      </ErrorBoundary>
+    );
+  }
+
+  if (isEngineerHost) {
+    return (
+      <ErrorBoundary>
+        <div className="flex min-h-[100dvh] items-center justify-center bg-[var(--color-bg)] px-5 text-[var(--color-text-primary)]">
+          <div className="max-w-md rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6 text-center shadow-xl">
+            <div className="text-xs uppercase tracking-[0.24em] text-[var(--color-primary)]">SAGEMRO</div>
+            <h1 className="mt-2 text-xl font-semibold">内部工程师工作台</h1>
+            <p className="mt-3 text-sm text-[var(--color-text-secondary)]">
+              工程师账号由 SAGEMRO 分配。请使用已分配的工程师或区域负责人账号登录，查看派工、客户沟通、服务报告和任务归档。
+            </p>
+            {userType && userType !== 'engineer' && (
+              <p className="mt-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-bg)] px-3 py-2 text-xs text-[var(--color-text-secondary)]">
+                当前登录的不是工程师账号，请先退出后使用工程师账号登录。
+              </p>
+            )}
+            <div className="mt-5 flex flex-col gap-2">
+              <button
+                onClick={() => setLoginModalOpen(true)}
+                className="rounded-xl bg-[var(--color-primary)] px-4 py-2.5 text-sm font-medium text-white"
+              >
+                登录工程师工作台
+              </button>
+              {currentUser && (
+                <button
+                  onClick={handleLogout}
+                  className="rounded-xl border border-[var(--color-border)] px-4 py-2.5 text-sm text-[var(--color-text-secondary)]"
+                >
+                  退出当前账号
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+        <Suspense fallback={null}>
+          <LoginModal
+            isOpen={loginModalOpen}
+            onClose={() => setLoginModalOpen(false)}
+            onLoginSuccess={handleLoginSuccess}
+            openLegal={openLegal}
+          />
+          {legalModalOpen && (
+            <LegalModal
+              isOpen={legalModalOpen}
+              onClose={() => setLegalModalOpen(false)}
+              initialTab={legalInitialTab}
+            />
+          )}
+        </Suspense>
+        <FeedbackHost />
+      </ErrorBoundary>
+    );
+  }
+
+  if (userType === 'engineer') {
+    return (
+      <div className="flex min-h-[100dvh] items-center justify-center bg-[var(--color-bg)] px-5 text-[var(--color-text-primary)]">
+        <div className="max-w-md rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6 text-center shadow-xl">
+          <div className="text-xs uppercase tracking-[0.24em] text-[var(--color-primary)]">SAGEMRO</div>
+          <h1 className="mt-2 text-xl font-semibold">请进入工程师工作台</h1>
+          <p className="mt-3 text-sm text-[var(--color-text-secondary)]">
+            工程师账号将使用独立入口 engineer.sagemro.com。主站仅保留客户登录和访客访问，避免现场作业入口与客户服务体验混在一起。
+          </p>
+          <div className="mt-5 flex flex-col gap-2">
+            <a
+              href="https://engineer.sagemro.com"
+              className="rounded-xl bg-[var(--color-primary)] px-4 py-2.5 text-sm font-medium text-white"
+            >
+              前往 engineer.sagemro.com
+            </a>
+            <button
+              onClick={handleLogout}
+              className="rounded-xl border border-[var(--color-border)] px-4 py-2.5 text-sm text-[var(--color-text-secondary)]"
+            >
+              退出当前账号
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex h-[100dvh] overflow-hidden">
       {/* 侧边栏 */}
@@ -294,7 +425,6 @@ function App() {
             setCustomerHomeModalOpen(true);
           }
         }}
-        onOpenAbout={() => setAboutModalOpen(true)}
         onOpenLogin={() => setLoginModalOpen(true)}
         onLogout={handleLogout}
         onOpenEngineerDashboard={() => setEngineerDashboardOpen(true)}
@@ -318,7 +448,7 @@ function App() {
           currentTitle={currentTitle}
           onToggleSidebar={() => setSidebarOpen(true)}
           onOpenLegal={openLegal}
-          conversationId={conversationId}
+          onOpenAbout={() => setAboutModalOpen(true)}
         />
       </div>
 

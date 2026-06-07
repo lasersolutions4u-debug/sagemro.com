@@ -1,15 +1,15 @@
 // 工程师等级
 export const PartnerLevel = {
-  JUNIOR: 'junior',       // 初级：平台抽20%，工程师得80%
-  SENIOR: 'senior',       // 中级：平台抽15%，工程师得85%
-  EXPERT: 'expert',       // 核心专家：平台抽12%，工程师得88%
+  JUNIOR: 'junior',       // 初级内部工程师/服务代表
+  SENIOR: 'senior',       // 资深内部工程师/服务代表
+  EXPERT: 'expert',       // 核心专家
 };
 
-// 工程师等级对应的平台服务费率（平台抽成比例 = 1 - 工程师所得比例）
+// SERVICE_OS_LEGACY: 旧抽佣模型的兼容字段。新 Service OS 不向用户展示平台抽成。
 export const CommissionRates = {
-  [PartnerLevel.JUNIOR]: 0.80,  // 平台抽20%，工程师得80%
-  [PartnerLevel.SENIOR]: 0.85,  // 平台抽15%，工程师得85%
-  [PartnerLevel.EXPERT]: 0.88,  // 平台抽12%，工程师得88%
+  [PartnerLevel.JUNIOR]: 0.80,
+  [PartnerLevel.SENIOR]: 0.85,
+  [PartnerLevel.EXPERT]: 0.88,
 };
 
 // 工程师等级标签

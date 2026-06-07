@@ -59,9 +59,9 @@ export function confirmDialog(message, opts = {}) {
       detail: {
         id,
         message: String(message ?? ''),
-        title: opts.title || '请确认',
-        confirmText: opts.confirmText || '确定',
-        cancelText: opts.cancelText || '取消',
+        title: opts.title || 'Confirm',
+        confirmText: opts.confirmText || 'OK',
+        cancelText: opts.cancelText || 'Cancel',
         danger: !!opts.danger,
       },
     }));

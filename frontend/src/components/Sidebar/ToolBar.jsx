@@ -1,33 +1,10 @@
-import { FileText, ClipboardList, Info, LogIn, LogOut, Package, Bell, MoreHorizontal, X, Sun, Moon } from 'lucide-react';
+import { FileText, ClipboardList, LogIn, LogOut, Package, Bell, MoreHorizontal, X } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
-
-function getCurrentTheme() {
-  const stored = localStorage.getItem('sagemro_theme');
-  if (stored === 'dark' || stored === 'light') return stored;
-  if (window.matchMedia('(prefers-color-scheme: dark)').matches) return 'dark';
-  return 'light';
-}
-
-function applyTheme(theme) {
-  localStorage.setItem('sagemro_theme', theme);
-  if (theme === 'dark') {
-    document.documentElement.classList.add('dark');
-  } else if (theme === 'light') {
-    document.documentElement.classList.remove('dark');
-  } else {
-    if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
-      document.documentElement.classList.add('dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-    }
-  }
-}
 
 export function ToolBar({
   onOpenWorkOrder,
   onOpenMyWorkOrders,
   onOpenSettings,
-  onOpenAbout,
   onOpenLogin,
   onLogout,
   onOpenEngineerDashboard,
@@ -39,7 +16,6 @@ export function ToolBar({
 }) {
   const [showMore, setShowMore] = useState(false);
   const [collapsed, setCollapsed] = useState(true);
-  const [theme, setTheme] = useState(() => getCurrentTheme());
   const moreMenuRef = useRef(null);
 
   useEffect(() => {
@@ -63,20 +39,20 @@ export function ToolBar({
 
   const primaryTools = isEngineer
     ? [
-        { icon: ClipboardList, label: '我的服务', onClick: onOpenMyWorkOrders, testid: 'tool-my-work-orders' },
+        { icon: ClipboardList, label: 'Assigned Services', onClick: onOpenMyWorkOrders, testid: 'tool-my-work-orders' },
       ]
     : [
-        { icon: FileText, label: '申请服务', onClick: onOpenWorkOrder, testid: 'tool-create-work-order' },
-        { icon: ClipboardList, label: '我的服务', onClick: onOpenMyWorkOrders, testid: 'tool-my-work-orders' },
+        { icon: FileText, label: 'Request Service', onClick: onOpenWorkOrder, testid: 'tool-create-work-order' },
+        { icon: ClipboardList, label: 'My Services', onClick: onOpenMyWorkOrders, testid: 'tool-my-work-orders' },
       ];
 
   const extraTools = isEngineer
     ? [
-        { icon: Bell, label: '消息通知', badge: unreadCount, testid: 'tool-notifications', onClick: () => { onOpenNotifications?.(); setShowMore(false); } },
+        { icon: Bell, label: 'Notifications', badge: unreadCount, testid: 'tool-notifications', onClick: () => { onOpenNotifications?.(); setShowMore(false); } },
       ]
     : [
-        { icon: Package, label: '我的设备', testid: 'tool-my-devices', onClick: () => { onOpenMyDevices?.(); setShowMore(false); } },
-        { icon: Bell, label: '消息通知', badge: unreadCount, testid: 'tool-notifications', onClick: () => { onOpenNotifications?.(); setShowMore(false); } },
+        { icon: Package, label: 'My Equipment', testid: 'tool-my-devices', onClick: () => { onOpenMyDevices?.(); setShowMore(false); } },
+        { icon: Bell, label: 'Notifications', badge: unreadCount, testid: 'tool-notifications', onClick: () => { onOpenNotifications?.(); setShowMore(false); } },
       ];
 
   const showCollapsed = currentUser && collapsed && extraTools.length >= 2;
@@ -102,29 +78,6 @@ export function ToolBar({
 
   return (
     <div className="border-t border-[var(--color-border)] pt-3 mt-auto">
-      {/* 深色/浅色切换（所有用户可见） */}
-      <button
-        data-testid="theme-toggle-button"
-        onClick={() => {
-          const next = theme === 'dark' ? 'light' : 'dark';
-          setTheme(next);
-          applyTheme(next);
-        }}
-        className="w-full flex items-center gap-3 px-4 py-2.5 text-[14px] text-[var(--color-sidebar-muted)] hover:bg-[var(--color-sidebar-surface)] hover:text-[var(--color-sidebar-text)] rounded-lg mx-1 transition-colors"
-      >
-        {theme === 'dark' ? <Sun size={17} /> : <Moon size={17} />}
-        <span>{theme === 'dark' ? '浅色模式' : '深色模式'}</span>
-      </button>
-
-      <button
-        data-testid="about-xiaozhi-button"
-        onClick={onOpenAbout}
-        className="w-full flex items-center gap-3 px-4 py-2.5 text-[14px] text-[var(--color-sidebar-muted)] hover:bg-[var(--color-sidebar-surface)] hover:text-[var(--color-sidebar-text)] rounded-lg mx-1 transition-colors"
-      >
-        <Info size={17} />
-        <span>关于小智</span>
-      </button>
-
       {currentUser && primaryTools.map((tool) => toolBtn(tool))}
 
       {currentUser && !showCollapsed && extraTools.map((tool) => toolBtn(tool))}
@@ -137,7 +90,7 @@ export function ToolBar({
             className="w-full flex items-center gap-3 px-4 py-2.5 text-[14px] text-[var(--color-sidebar-muted)] hover:bg-[var(--color-sidebar-surface)] hover:text-[var(--color-sidebar-text)] rounded-lg mx-1 transition-colors"
           >
             {showMore ? <X size={17} /> : <MoreHorizontal size={17} />}
-            <span>更多</span>
+            <span>More</span>
             {unreadCount > 0 && (
               <span className="ml-auto w-4 h-4 flex items-center justify-center bg-red-500 text-white text-[10px] font-medium rounded-full">
                 {unreadCount > 99 ? '99+' : unreadCount}
@@ -181,7 +134,7 @@ export function ToolBar({
               </div>
               <span className="truncate">{currentUser.name}</span>
               {isEngineer && (
-                <span className="text-[10px] px-1.5 py-0.5 bg-[var(--color-primary)]/20 text-[var(--color-primary)] rounded">服务代表</span>
+                <span className="text-[10px] px-1.5 py-0.5 bg-[var(--color-primary)]/20 text-[var(--color-primary)] rounded">SAGEMRO Engineer</span>
               )}
             </button>
             <button
@@ -190,7 +143,7 @@ export function ToolBar({
               className="w-full flex items-center gap-3 px-4 py-2.5 text-[14px] text-[var(--color-sidebar-muted)] hover:bg-[var(--color-sidebar-surface)] hover:text-[var(--color-sidebar-text)] rounded-lg mx-1 transition-colors"
             >
               <LogOut size={17} />
-              <span>退出登录</span>
+              <span>Log Out</span>
             </button>
           </>
         ) : (
@@ -200,7 +153,7 @@ export function ToolBar({
             className="w-full flex items-center gap-3 px-4 py-2.5 text-[14px] text-[var(--color-sidebar-muted)] hover:bg-[var(--color-sidebar-surface)] hover:text-[var(--color-sidebar-text)] rounded-lg mx-1 transition-colors"
           >
             <LogIn size={17} />
-            <span>登录/注册</span>
+            <span>Sign In / Register</span>
           </button>
         )}
       </div>

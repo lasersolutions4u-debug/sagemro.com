@@ -1,6 +1,7 @@
-import { Plus, Bot, User, LogOut } from 'lucide-react';
+import { Plus } from 'lucide-react';
 import { ChatHistory } from './ChatHistory';
 import { ToolBar } from './ToolBar';
+import { BrandMark } from '../common/BrandMark';
 
 export function Sidebar({
   conversations,
@@ -12,7 +13,6 @@ export function Sidebar({
   onOpenWorkOrder,
   onOpenMyWorkOrders,
   onOpenSettings,
-  onOpenAbout,
   onOpenLogin,
   onLogout,
   onOpenEngineerDashboard,
@@ -43,25 +43,20 @@ export function Sidebar({
         {/* 顶部 */}
         <div className="p-4">
           <div className="flex items-center gap-3 mb-3">
-            <div className="w-9 h-9 rounded-xl bg-[var(--color-primary)] flex items-center justify-center shadow-sm">
-              <Bot size={22} className="text-white" />
-            </div>
-            <span className="text-[15px] font-medium text-[var(--color-sidebar-text)]">小智</span>
+            <BrandMark className="h-9 w-9 shadow-sm" />
+            <span className="text-[15px] font-medium text-[var(--color-sidebar-text)]">SAGEMRO</span>
           </div>
 
-          {/* 新建对话按钮 */}
+          {/* 新建服务接待 */}
           <button
             data-testid="new-chat-button"
             onClick={onNewChat}
             className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white rounded-xl transition-colors font-medium text-[13px] shadow-sm"
           >
             <Plus size={18} />
-            <span>新建对话</span>
+            <span>New Service Chat</span>
           </button>
         </div>
-
-        {/* 分隔线1: 新建对话 与 对话历史之间 */}
-        <div className="border-t border-[var(--color-border)] mx-4" />
 
         {/* 聊天历史 */}
         <ChatHistory
@@ -78,7 +73,6 @@ export function Sidebar({
             onOpenWorkOrder={onOpenWorkOrder}
             onOpenMyWorkOrders={onOpenMyWorkOrders}
             onOpenSettings={onOpenSettings}
-            onOpenAbout={onOpenAbout}
             onOpenLogin={onOpenLogin}
             onLogout={onLogout}
             onOpenEngineerDashboard={onOpenEngineerDashboard}

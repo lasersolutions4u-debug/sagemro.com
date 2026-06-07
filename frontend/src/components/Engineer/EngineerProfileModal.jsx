@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Modal } from '../common/Modal';
 import { Star, MapPin, Phone, Briefcase, Wrench, Award, Bell, BellOff } from 'lucide-react';
 import { getEngineerProfile } from '../../services/api';
@@ -7,15 +7,10 @@ import { usePushNotification } from '../../hooks/usePushNotification';
 export function EngineerProfileModal({ isOpen, onClose, engineerId }) {
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(false);
-  const { pushEnabled, pushPermission, enablePush, disablePush, isReady, isConfigured } =
+  const { pushEnabled, pushPermission, enablePush, disablePush, isConfigured } =
     usePushNotification(engineerId, !!engineerId);
 
-  useEffect(() => {
-    if (!isOpen || !engineerId) return;
-    loadProfile();
-  }, [isOpen, engineerId]);
-
-  const loadProfile = async () => {
+  const loadProfile = useCallback(async () => {
     setLoading(true);
     try {
       const data = await getEngineerProfile(engineerId);
@@ -25,7 +20,12 @@ export function EngineerProfileModal({ isOpen, onClose, engineerId }) {
     } finally {
       setLoading(false);
     }
-  };
+  }, [engineerId]);
+
+  useEffect(() => {
+    if (!isOpen || !engineerId) return;
+    loadProfile();
+  }, [isOpen, engineerId, loadProfile]);
 
   const handlePushToggle = async () => {
     if (pushEnabled) {
@@ -50,10 +50,10 @@ export function EngineerProfileModal({ isOpen, onClose, engineerId }) {
     : 0;
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="服务代表档案" size="md">
+    <Modal isOpen={isOpen} onClose={onClose} title="SAGEMRO Engineer Profile" size="md">
       <div className="space-y-5">
         {loading && (
-          <div className="text-center py-8 text-[var(--color-text-secondary)]">加载中...</div>
+          <div className="text-center py-8 text-[var(--color-text-secondary)]">Loading...</div>
         )}
 
         {!loading && profile && (
@@ -62,7 +62,7 @@ export function EngineerProfileModal({ isOpen, onClose, engineerId }) {
             <div className="flex items-center gap-4">
               <div className="w-16 h-16 rounded-full bg-[var(--color-primary)] flex items-center justify-center">
                 <span className="text-white text-2xl font-bold">
-                  {profile.name?.charAt(0) || '工'}
+                  {profile.name?.charAt(0) || 'E'}
                 </span>
               </div>
               <div className="flex-1">
@@ -71,13 +71,13 @@ export function EngineerProfileModal({ isOpen, onClose, engineerId }) {
                 </h2>
                 <div className="flex items-center gap-2 mt-1">
                   {profile.status === 'available' && (
-                    <span className="px-2 py-0.5 text-xs bg-green-500 text-white rounded">可派工</span>
+                    <span className="px-2 py-0.5 text-xs bg-green-500 text-white rounded">Available</span>
                   )}
                   {profile.status === 'paused' && (
-                    <span className="px-2 py-0.5 text-xs bg-yellow-500 text-white rounded">暂停派工</span>
+                    <span className="px-2 py-0.5 text-xs bg-yellow-500 text-white rounded">Paused</span>
                   )}
                   {profile.status === 'offline' && (
-                    <span className="px-2 py-0.5 text-xs bg-gray-500 text-white rounded">离线</span>
+                    <span className="px-2 py-0.5 text-xs bg-gray-500 text-white rounded">Offline</span>
                   )}
                 </div>
               </div>
@@ -100,30 +100,30 @@ export function EngineerProfileModal({ isOpen, onClose, engineerId }) {
             {/* 评分 */}
             <div className="p-4 bg-[var(--color-surface-elevated)] rounded-xl">
               <div className="flex items-center justify-between mb-2">
-                <span className="text-sm text-[var(--color-text-secondary)]">综合评分</span>
+                <span className="text-sm text-[var(--color-text-secondary)]">Overall Rating</span>
                 <span className="text-xl font-bold text-[var(--color-primary)]">{avgRating.toFixed(1)}</span>
               </div>
               <div className="text-[var(--color-primary)] text-lg mb-3">
                 {renderStars(avgRating)}
               </div>
               <div className="text-xs text-[var(--color-text-secondary)]">
-                {profile.rating_count || 0} 次评价
+                {profile.rating_count || 0} reviews
               </div>
               <div className="grid grid-cols-2 gap-2 mt-3 pt-3 border-t border-[var(--color-border)]">
                 <div className="flex justify-between text-sm">
-                  <span className="text-[var(--color-text-secondary)]">时效性</span>
+                  <span className="text-[var(--color-text-secondary)]">Timeliness</span>
                   <span className="text-[var(--color-primary)]">{profile.rating_timeliness?.toFixed(1) || '0.0'}</span>
                 </div>
                 <div className="flex justify-between text-sm">
-                  <span className="text-[var(--color-text-secondary)]">技术熟练</span>
+                  <span className="text-[var(--color-text-secondary)]">Technical Skill</span>
                   <span className="text-[var(--color-primary)]">{profile.rating_technical?.toFixed(1) || '0.0'}</span>
                 </div>
                 <div className="flex justify-between text-sm">
-                  <span className="text-[var(--color-text-secondary)]">沟通流畅</span>
+                  <span className="text-[var(--color-text-secondary)]">Communication</span>
                   <span className="text-[var(--color-primary)]">{profile.rating_communication?.toFixed(1) || '0.0'}</span>
                 </div>
                 <div className="flex justify-between text-sm">
-                  <span className="text-[var(--color-text-secondary)]">专业性</span>
+                  <span className="text-[var(--color-text-secondary)]">Professionalism</span>
                   <span className="text-[var(--color-primary)]">{profile.rating_professional?.toFixed(1) || '0.0'}</span>
                 </div>
               </div>
@@ -135,7 +135,7 @@ export function EngineerProfileModal({ isOpen, onClose, engineerId }) {
                 <div className="flex items-center gap-2 mb-2">
                   <Briefcase size={16} className="text-[var(--color-primary)]" />
                   <h3 className="text-sm font-medium text-[var(--color-text-primary)]">
-                    擅长的设备类型
+                    Equipment Specialties
                   </h3>
                 </div>
                 <div className="flex flex-wrap gap-2">
@@ -157,7 +157,7 @@ export function EngineerProfileModal({ isOpen, onClose, engineerId }) {
                 <div className="flex items-center gap-2 mb-2">
                   <Award size={16} className="text-[var(--color-primary)]" />
                   <h3 className="text-sm font-medium text-[var(--color-text-primary)]">
-                    熟悉的品牌
+                    Familiar Brands
                   </h3>
                 </div>
                 <div className="space-y-2">
@@ -186,7 +186,7 @@ export function EngineerProfileModal({ isOpen, onClose, engineerId }) {
                 <div className="flex items-center gap-2 mb-2">
                   <Wrench size={16} className="text-[var(--color-primary)]" />
                   <h3 className="text-sm font-medium text-[var(--color-text-primary)]">
-                    维修保养项目
+                    Maintenance & Repair Services
                   </h3>
                 </div>
                 <div className="flex flex-wrap gap-2">
@@ -206,7 +206,7 @@ export function EngineerProfileModal({ isOpen, onClose, engineerId }) {
             {profile.bio && (
               <div>
                 <h3 className="text-sm font-medium text-[var(--color-text-primary)] mb-2">
-                  个人简介
+                  Bio
                 </h3>
                 <div className="p-3 bg-[var(--color-surface-elevated)] rounded-xl text-sm text-[var(--color-text-secondary)]">
                   {profile.bio}
@@ -226,14 +226,14 @@ export function EngineerProfileModal({ isOpen, onClose, engineerId }) {
                     )}
                     <div>
                       <div className="text-sm font-medium text-[var(--color-text-primary)]">
-                        推送通知
+                        Push Notifications
                       </div>
                       <div className="text-xs text-[var(--color-text-secondary)]">
                         {pushEnabled
-                          ? '已开启，新服务任务和内部更新时会推送'
+                          ? 'Enabled - notifications for service assignments and internal updates'
                           : pushPermission === 'denied'
-                          ? '已被浏览器拒绝'
-                          : '未开启'}
+                          ? 'Blocked by browser'
+                          : 'Disabled'}
                       </div>
                     </div>
                   </div>
@@ -246,7 +246,7 @@ export function EngineerProfileModal({ isOpen, onClose, engineerId }) {
                         : 'bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white'
                     } disabled:bg-gray-300 disabled:cursor-not-allowed`}
                   >
-                    {pushEnabled ? '关闭' : '开启'}
+                    {pushEnabled ? 'Disable' : 'Enable'}
                   </button>
                 </div>
               </div>
@@ -254,7 +254,7 @@ export function EngineerProfileModal({ isOpen, onClose, engineerId }) {
 
             {/* 注册时间 */}
             <div className="text-xs text-[var(--color-text-secondary)] text-center pt-2">
-              加入时间：{new Date(profile.created_at).toLocaleDateString('zh-CN')}
+              Member since: {new Date(profile.created_at).toLocaleDateString('en-US')}
             </div>
           </>
         )}

@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
-import { AnimatePresence, motion } from 'framer-motion';
+import { AnimatePresence, motion as Motion } from 'framer-motion';
 import { CheckCircle2, XCircle, Info, AlertTriangle, X } from 'lucide-react';
 
 const TOAST_ICON = {
@@ -20,7 +20,7 @@ function ToastItem({ toast, onDismiss }) {
   const Icon = TOAST_ICON[toast.type] || Info;
   const color = TOAST_COLOR[toast.type] || TOAST_COLOR.info;
   return (
-    <motion.div
+    <Motion.div
       layout
       initial={{ opacity: 0, y: 20, scale: 0.96 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
@@ -35,11 +35,11 @@ function ToastItem({ toast, onDismiss }) {
       <button
         onClick={() => onDismiss(toast.id)}
         className="p-1 -mr-1 -mt-1 rounded hover:bg-[var(--color-hover)] transition-colors flex-shrink-0"
-        aria-label="关闭"
+        aria-label="Close"
       >
         <X size={14} className="text-[var(--color-text-secondary)]" />
       </button>
-    </motion.div>
+    </Motion.div>
   );
 }
 
@@ -47,14 +47,14 @@ function ConfirmDialog({ dialog, onResolve }) {
   const { id, title, message, confirmText, cancelText, danger } = dialog;
   return (
     <>
-      <motion.div
+      <Motion.div
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
         onClick={() => onResolve(id, false)}
         className="fixed inset-0 bg-black/50 z-[60]"
       />
-      <motion.div
+      <Motion.div
         initial={{ opacity: 0, scale: 0.95, y: 20 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.95, y: 20, transition: { duration: 0.15 } }}
@@ -88,7 +88,7 @@ function ConfirmDialog({ dialog, onResolve }) {
             {confirmText}
           </button>
         </div>
-      </motion.div>
+      </Motion.div>
     </>
   );
 }

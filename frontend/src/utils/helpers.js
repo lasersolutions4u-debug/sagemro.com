@@ -6,7 +6,7 @@ export function generateId() {
 // 格式化时间
 export function formatTime(dateString) {
   const date = new Date(dateString);
-  return date.toLocaleTimeString('zh-CN', {
+  return date.toLocaleTimeString('en-US', {
     hour: '2-digit',
     minute: '2-digit',
   });
@@ -23,19 +23,19 @@ export function formatDate(dateString) {
   const targetDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
 
   if (targetDate.getTime() === today.getTime()) {
-    return '今天';
+    return 'Today';
   } else if (targetDate.getTime() === yesterday.getTime()) {
-    return '昨天';
+    return 'Yesterday';
   } else if (targetDate.getTime() > weekAgo.getTime()) {
-    return '近7天';
+    return 'Last 7 Days';
   } else {
-    return '更早';
+    return 'Earlier';
   }
 }
 
 // 获取对话标题（第一条用户消息的前20字）
 export function getConversationTitle(firstMessage) {
-  if (!firstMessage) return '新对话';
+  if (!firstMessage) return 'New Chat';
   return firstMessage.content.slice(0, 20) + (firstMessage.content.length > 20 ? '...' : '');
 }
 

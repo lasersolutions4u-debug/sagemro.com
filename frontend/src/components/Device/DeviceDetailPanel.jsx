@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { ArrowLeft, Package, Edit2, Trash2, ExternalLink, Star, Check, X } from 'lucide-react';
 import { getDevice, updateDevice } from '../../services/api';
 import { toastError } from '../../utils/feedback';
@@ -13,11 +13,7 @@ export function DeviceDetailPanel({ deviceId, onBack, onDelete }) {
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
 
-  useEffect(() => {
-    loadDevice();
-  }, [deviceId]);
-
-  async function loadDevice() {
+  const loadDevice = useCallback(async () => {
     try {
       setLoading(true);
       const data = await getDevice(deviceId);
@@ -29,7 +25,11 @@ export function DeviceDetailPanel({ deviceId, onBack, onDelete }) {
     } finally {
       setLoading(false);
     }
-  }
+  }, [deviceId]);
+
+  useEffect(() => {
+    loadDevice();
+  }, [loadDevice]);
 
   function startEditing() {
     setForm({
@@ -38,7 +38,7 @@ export function DeviceDetailPanel({ deviceId, onBack, onDelete }) {
       brand: device.brand || '',
       model: device.model || '',
       power: device.power || '',
-      status: device.status || '正常',
+      status: device.status || 'Normal',
     });
     setEditing(true);
   }
@@ -56,7 +56,7 @@ export function DeviceDetailPanel({ deviceId, onBack, onDelete }) {
       setEditing(false);
       setForm({});
     } catch (err) {
-      toastError('保存失败');
+      toastError('Save failed');
     } finally {
       setSaving(false);
     }
@@ -73,35 +73,29 @@ export function DeviceDetailPanel({ deviceId, onBack, onDelete }) {
       setDevice(updated.device);
       setEditingNotes(false);
     } catch (err) {
-      toastError('保存失败');
+      toastError('Save failed');
     } finally {
       setSaving(false);
     }
   }
 
-  const statusColors = {
-    '正常': 'text-green-500',
-    '使用中': 'text-yellow-500',
-    '维保中': 'text-orange-500'
-  };
-
   const statusDots = {
-    '正常': 'bg-green-500',
-    '使用中': 'bg-yellow-500',
-    '维保中': 'bg-orange-500'
+    'Normal': 'bg-green-500',
+    'Running': 'bg-yellow-500',
+    'Maintenance': 'bg-orange-500'
   };
 
   const urgencyColors = {
-    '普通': 'text-gray-400',
-    '紧急': 'text-orange-500',
-    '非常紧急': 'text-red-500'
+    'Normal': 'text-gray-400',
+    'Urgent': 'text-orange-500',
+    'Critical': 'text-red-500'
   };
 
   const typeText = {
-    '设备故障': '🔧',
-    '维护保养': '🛠️',
-    '参数调试': '⚙️',
-    '其他': '📋'
+    'Equipment Failure': '🔧',
+    'Maintenance': '🛠️',
+    'Parameter Tuning': '⚙️',
+    'Other': '📋'
   };
 
   if (loading) {
@@ -115,7 +109,7 @@ export function DeviceDetailPanel({ deviceId, onBack, onDelete }) {
   if (!device) {
     return (
       <div className="text-center py-8 text-[var(--color-text-muted)]">
-        设备不存在
+        Device not found
       </div>
     );
   }
@@ -128,7 +122,7 @@ export function DeviceDetailPanel({ deviceId, onBack, onDelete }) {
         className="flex items-center gap-2 text-[13px] text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] transition-colors"
       >
         <ArrowLeft size={14} />
-        返回设备列表
+        Back to device list
       </button>
 
       {/* 设备信息卡 */}
@@ -144,7 +138,7 @@ export function DeviceDetailPanel({ deviceId, onBack, onDelete }) {
                   value={form.name}
                   onChange={e => updateForm('name', e.target.value)}
                   className="w-full bg-[var(--color-input-bg)] border border-[var(--color-input-border)] rounded-lg px-2 py-1 text-[15px] font-medium text-[var(--color-text-primary)]"
-                  placeholder="设备名称"
+                  placeholder="Device name"
                 />
               ) : (
                 <h3 className="text-[15px] font-medium text-[var(--color-text-primary)] truncate">{device.name}</h3>
@@ -156,9 +150,9 @@ export function DeviceDetailPanel({ deviceId, onBack, onDelete }) {
                     onChange={e => updateForm('status', e.target.value)}
                     className="bg-[var(--color-input-bg)] border border-[var(--color-input-border)] rounded px-1.5 py-0.5 text-[12px] text-[var(--color-text-primary)]"
                   >
-                    <option value="正常">正常</option>
-                    <option value="使用中">使用中</option>
-                    <option value="维保中">维保中</option>
+                    <option value="Normal">Normal</option>
+                    <option value="Running">Running</option>
+                    <option value="Maintenance">Maintenance</option>
                   </select>
                 ) : (
                   <>
@@ -172,19 +166,19 @@ export function DeviceDetailPanel({ deviceId, onBack, onDelete }) {
           <div className="flex items-center gap-1 flex-shrink-0">
             {editing ? (
               <>
-                <button onClick={handleSave} disabled={saving} className="p-1.5 hover:bg-green-500/10 rounded-lg transition-colors text-green-500" title="保存">
+                <button onClick={handleSave} disabled={saving} className="p-1.5 hover:bg-green-500/10 rounded-lg transition-colors text-green-500" title="Save">
                   <Check size={16} />
                 </button>
-                <button onClick={cancelEditing} disabled={saving} className="p-1.5 hover:bg-[var(--color-hover)] rounded-lg transition-colors text-[var(--color-text-muted)]" title="取消">
+                <button onClick={cancelEditing} disabled={saving} className="p-1.5 hover:bg-[var(--color-hover)] rounded-lg transition-colors text-[var(--color-text-muted)]" title="Cancel">
                   <X size={16} />
                 </button>
               </>
             ) : (
               <>
-                <button onClick={startEditing} className="p-2 hover:bg-[var(--color-hover)] rounded-lg transition-colors text-[var(--color-text-muted)]" title="编辑设备">
+                <button onClick={startEditing} className="p-2 hover:bg-[var(--color-hover)] rounded-lg transition-colors text-[var(--color-text-muted)]" title="Edit device">
                   <Edit2 size={16} />
                 </button>
-                <button onClick={onDelete} className="p-2 hover:bg-[var(--color-hover)] rounded-lg transition-colors text-red-400" title="删除设备">
+                <button onClick={onDelete} className="p-2 hover:bg-[var(--color-hover)] rounded-lg transition-colors text-red-400" title="Delete device">
                   <Trash2 size={16} />
                 </button>
               </>
@@ -195,52 +189,52 @@ export function DeviceDetailPanel({ deviceId, onBack, onDelete }) {
         {/* 设备属性 */}
         <div className="grid grid-cols-2 gap-3 text-[13px]">
           <div>
-            <span className="text-[var(--color-text-muted)]">类型</span>
+            <span className="text-[var(--color-text-muted)]">Type</span>
             {editing ? (
               <input
                 value={form.type}
                 onChange={e => updateForm('type', e.target.value)}
                 className="w-full bg-[var(--color-input-bg)] border border-[var(--color-input-border)] rounded-lg px-2 py-1.5 mt-0.5 text-[var(--color-text-primary)]"
-                placeholder="设备类型"
+                placeholder="Device type"
               />
             ) : (
               <p className="text-[var(--color-text-primary)] mt-0.5">{device.type}</p>
             )}
           </div>
           <div>
-            <span className="text-[var(--color-text-muted)]">品牌</span>
+            <span className="text-[var(--color-text-muted)]">Brand</span>
             {editing ? (
               <input
                 value={form.brand}
                 onChange={e => updateForm('brand', e.target.value)}
                 className="w-full bg-[var(--color-input-bg)] border border-[var(--color-input-border)] rounded-lg px-2 py-1.5 mt-0.5 text-[var(--color-text-primary)]"
-                placeholder="品牌"
+                placeholder="Brand"
               />
             ) : (
               <p className="text-[var(--color-text-primary)] mt-0.5">{device.brand || '-'}</p>
             )}
           </div>
           <div>
-            <span className="text-[var(--color-text-muted)]">型号</span>
+            <span className="text-[var(--color-text-muted)]">Model</span>
             {editing ? (
               <input
                 value={form.model}
                 onChange={e => updateForm('model', e.target.value)}
                 className="w-full bg-[var(--color-input-bg)] border border-[var(--color-input-border)] rounded-lg px-2 py-1.5 mt-0.5 text-[var(--color-text-primary)]"
-                placeholder="型号"
+                placeholder="Model"
               />
             ) : (
               <p className="text-[var(--color-text-primary)] mt-0.5">{device.model || '-'}</p>
             )}
           </div>
           <div>
-            <span className="text-[var(--color-text-muted)]">功率</span>
+            <span className="text-[var(--color-text-muted)]">Power</span>
             {editing ? (
               <input
                 value={form.power}
                 onChange={e => updateForm('power', e.target.value)}
                 className="w-full bg-[var(--color-input-bg)] border border-[var(--color-input-border)] rounded-lg px-2 py-1.5 mt-0.5 text-[var(--color-text-primary)]"
-                placeholder="功率"
+                placeholder="Power"
               />
             ) : (
               <p className="text-[var(--color-text-primary)] mt-0.5">{device.power || '-'}</p>
@@ -251,14 +245,14 @@ export function DeviceDetailPanel({ deviceId, onBack, onDelete }) {
         {/* 备注 */}
         <div className="mt-4 pt-4 border-t border-[var(--color-border)]">
           <div className="flex items-center justify-between mb-2">
-            <span className="text-[12px] text-[var(--color-text-muted)]">备注</span>
+            <span className="text-[12px] text-[var(--color-text-muted)]">Notes</span>
             {!editingNotes && (
               <button
                 onClick={() => setEditingNotes(true)}
                 className="flex items-center gap-1 text-[12px] text-[var(--color-primary)] opacity-70 hover:opacity-100"
               >
                 <Edit2 size={12} />
-                {notes ? '编辑' : '添加备注'}
+                {notes ? 'Edit' : 'Add notes'}
               </button>
             )}
           </div>
@@ -267,7 +261,7 @@ export function DeviceDetailPanel({ deviceId, onBack, onDelete }) {
               <textarea
                 value={notes}
                 onChange={e => setNotes(e.target.value)}
-                placeholder="添加备注信息..."
+                placeholder="Add notes..."
                 className="w-full bg-[var(--color-input-bg)] border border-[var(--color-input-border)] rounded-lg px-3 py-2 text-[13px] text-[var(--color-text-primary)] placeholder:text-[var(--color-text-muted)] resize-none"
                 rows={3}
               />
@@ -277,7 +271,7 @@ export function DeviceDetailPanel({ deviceId, onBack, onDelete }) {
                   disabled={saving}
                   className="px-3 py-1 bg-[var(--color-primary)] text-white rounded-lg text-[12px] disabled:opacity-50"
                 >
-                  {saving ? '保存中...' : '保存'}
+                  {saving ? 'Saving...' : 'Save'}
                 </button>
                 <button
                   onClick={() => {
@@ -286,32 +280,32 @@ export function DeviceDetailPanel({ deviceId, onBack, onDelete }) {
                   }}
                   className="px-3 py-1 bg-[var(--color-hover)] text-[var(--color-text-secondary)] rounded-lg text-[12px]"
                 >
-                  取消
+                  Cancel
                 </button>
               </div>
             </div>
           ) : (
             <p className="text-[13px] text-[var(--color-text-secondary)]">
-              {notes || '暂无备注'}
+              {notes || 'No notes'}
             </p>
           )}
         </div>
 
         {/* 添加时间 */}
         <div className="mt-3 text-[12px] text-[var(--color-text-muted)]">
-          添加时间：{device.created_at}
+          Added: {device.created_at}
         </div>
       </div>
 
       {/* 维修保养记录 */}
       <div>
         <h4 className="text-[14px] font-medium text-[var(--color-text-primary)] mb-3">
-          维修保养记录（{workOrders.length}条）
+          Maintenance Records ({workOrders.length})
         </h4>
 
         {workOrders.length === 0 && (
           <div className="bg-[var(--color-surface-elevated)] rounded-xl p-6 text-center">
-            <p className="text-[13px] text-[var(--color-text-muted)]">暂无维修记录</p>
+            <p className="text-[13px] text-[var(--color-text-muted)]">No maintenance records yet</p>
           </div>
         )}
 
@@ -333,8 +327,8 @@ export function DeviceDetailPanel({ deviceId, onBack, onDelete }) {
                     </span>
                   </div>
                   <span className={`text-[12px] ${
-                    wo.status === '已完成' ? 'text-green-500' :
-                    wo.status === '处理中' ? 'text-yellow-500' :
+                    wo.status === 'Completed' ? 'text-green-500' :
+                    wo.status === 'In Progress' ? 'text-yellow-500' :
                     'text-[var(--color-text-muted)]'
                   }`}>
                     {wo.status}
@@ -347,7 +341,7 @@ export function DeviceDetailPanel({ deviceId, onBack, onDelete }) {
 
                 <div className="flex items-center gap-4 text-[12px] text-[var(--color-text-muted)]">
                   {wo.engineer_name && (
-                    <span>SAGEMRO 工程师：{wo.engineer_name}</span>
+                    <span>SAGEMRO Engineer: {wo.engineer_name}</span>
                   )}
                   {wo.rating && (
                     <span className="flex items-center gap-1">
@@ -363,7 +357,7 @@ export function DeviceDetailPanel({ deviceId, onBack, onDelete }) {
 
                 {wo.completed_at && (
                   <div className="mt-2 pt-2 border-t border-[var(--color-border)] text-[11px] text-[var(--color-text-muted)]">
-                    完成时间：{wo.completed_at}
+                    Completed: {wo.completed_at}
                   </div>
                 )}
               </div>

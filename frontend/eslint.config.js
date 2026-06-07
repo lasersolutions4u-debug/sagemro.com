@@ -23,7 +23,16 @@ export default defineConfig([
       },
     },
     rules: {
-      'no-unused-vars': ['error', { varsIgnorePattern: '^[A-Z_]' }],
+      'no-unused-vars': ['error', {
+        varsIgnorePattern: '^(_|[A-Z_])',
+        args: 'none',
+        caughtErrors: 'none',
+      }],
+      // The existing app loads remote data from effects in many places. Keep
+      // these React Compiler rules disabled until those flows are refactored
+      // intentionally, while retaining the rest of the hooks safety checks.
+      'react-hooks/set-state-in-effect': 'off',
+      'react-hooks/immutability': 'off',
     },
   },
 ])

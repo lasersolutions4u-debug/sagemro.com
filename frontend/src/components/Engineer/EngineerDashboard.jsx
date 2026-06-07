@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Modal } from '../common/Modal';
 import { Clock } from 'lucide-react';
 import { getEngineerTickets, acceptTicket, rejectTicket, updateEngineerStatus } from '../../services/api';
@@ -7,14 +7,14 @@ import { WorkOrderDetailModal } from '../WorkOrder/WorkOrderDetailModal';
 import { formatSlaRemaining, categoryConfig, categoryL2Labels } from '../../data/workOrderConfig';
 
 const statusConfig = {
-  [WorkOrderStatus.PENDING]: { text: '待处理', color: 'bg-blue-500', textColor: 'text-blue-500' },
-  [WorkOrderStatus.ASSIGNED]: { text: '已分配', color: 'bg-yellow-500', textColor: 'text-yellow-500' },
-  [WorkOrderStatus.IN_PROGRESS]: { text: '处理中', color: 'bg-orange-500', textColor: 'text-orange-500' },
-  [WorkOrderStatus.PRICING]: { text: '等待报价', color: 'bg-purple-500', textColor: 'text-purple-500' },
-  [WorkOrderStatus.IN_SERVICE]: { text: '服务中', color: 'bg-cyan-500', textColor: 'text-cyan-500' },
-  [WorkOrderStatus.RESOLVED]: { text: '已解决', color: 'bg-green-500', textColor: 'text-green-500' },
-  [WorkOrderStatus.PENDING_REVIEW]: { text: '待评价', color: 'bg-teal-500', textColor: 'text-teal-500' },
-  [WorkOrderStatus.COMPLETED]: { text: '已完成', color: 'bg-gray-500', textColor: 'text-gray-500' },
+  [WorkOrderStatus.PENDING]: { text: 'Pending Dispatch', color: 'bg-blue-500', textColor: 'text-blue-500' },
+  [WorkOrderStatus.ASSIGNED]: { text: 'Assigned', color: 'bg-yellow-500', textColor: 'text-yellow-500' },
+  [WorkOrderStatus.IN_PROGRESS]: { text: 'In Progress', color: 'bg-orange-500', textColor: 'text-orange-500' },
+  [WorkOrderStatus.PRICING]: { text: 'Awaiting Pricing', color: 'bg-purple-500', textColor: 'text-purple-500' },
+  [WorkOrderStatus.IN_SERVICE]: { text: 'In Service', color: 'bg-cyan-500', textColor: 'text-cyan-500' },
+  [WorkOrderStatus.RESOLVED]: { text: 'Resolved', color: 'bg-green-500', textColor: 'text-green-500' },
+  [WorkOrderStatus.PENDING_REVIEW]: { text: 'Pending Review', color: 'bg-teal-500', textColor: 'text-teal-500' },
+  [WorkOrderStatus.COMPLETED]: { text: 'Completed', color: 'bg-gray-500', textColor: 'text-gray-500' },
 };
 
 export function EngineerDashboard({ isOpen, onClose, engineerId, onViewProfile }) {
@@ -25,12 +25,7 @@ export function EngineerDashboard({ isOpen, onClose, engineerId, onViewProfile }
   const [detailModalOpen, setDetailModalOpen] = useState(false);
   const [selectedTicket, setSelectedTicket] = useState(null);
 
-  useEffect(() => {
-    if (!isOpen || !engineerId) return;
-    loadTickets();
-  }, [isOpen, engineerId]);
-
-  const loadTickets = async () => {
+  const loadTickets = useCallback(async () => {
     setLoading(true);
     try {
       const data = await getEngineerTickets(engineerId);
@@ -40,7 +35,12 @@ export function EngineerDashboard({ isOpen, onClose, engineerId, onViewProfile }
     } finally {
       setLoading(false);
     }
-  };
+  }, [engineerId]);
+
+  useEffect(() => {
+    if (!isOpen || !engineerId) return;
+    loadTickets();
+  }, [isOpen, engineerId, loadTickets]);
 
   const handleAccept = async (ticketId) => {
     setActionLoading(ticketId);
@@ -98,21 +98,21 @@ export function EngineerDashboard({ isOpen, onClose, engineerId, onViewProfile }
 
   return (
     <>
-    <Modal isOpen={isOpen} onClose={onClose} title="SAGEMRO 内部工程师工作台" size="md">
+    <Modal isOpen={isOpen} onClose={onClose} title="SAGEMRO Internal Engineer Workspace" size="md">
       <div className="space-y-5">
         {/* 查看档案入口 */}
         <button
           onClick={onViewProfile}
           className="w-full py-2 px-4 bg-[var(--color-surface-elevated)] hover:bg-[var(--color-hover)] text-[var(--color-text-primary)] rounded-xl text-sm transition-colors flex items-center justify-center gap-2"
         >
-          <span>查看我的档案</span>
+          <span>View My Profile</span>
         </button>
 
         {/* 工程师等级与信用分（免费模式，无钱包） */}
         <div className="p-4 bg-gradient-to-br from-[var(--color-primary)]/10 to-[var(--color-primary)]/5 rounded-xl border border-[var(--color-primary)]/20">
           <div className="flex items-center justify-between">
             <div className="text-sm text-[var(--color-text-secondary)]">
-              等级与信用信息请前往「我的档案」查看
+              View your level and credit info in "My Profile"
             </div>
           </div>
         </div>
@@ -120,13 +120,13 @@ export function EngineerDashboard({ isOpen, onClose, engineerId, onViewProfile }
         {/* 状态切换 */}
         <div>
           <label className="block text-sm font-medium text-[var(--color-text-primary)] mb-2">
-            派工状态
+            Availability Status
           </label>
           <div className="flex gap-2">
             {[
-              { value: 'available', label: '可派工' },
-              { value: 'paused', label: '暂停派工' },
-              { value: 'offline', label: '离线' },
+              { value: 'available', label: 'Available' },
+              { value: 'paused', label: 'Paused' },
+              { value: 'offline', label: 'Offline' },
             ].map((opt) => (
               <button
                 key={opt.value}
@@ -147,18 +147,18 @@ export function EngineerDashboard({ isOpen, onClose, engineerId, onViewProfile }
         <div className="grid grid-cols-2 gap-3">
           <div className="p-3 bg-[var(--color-surface-elevated)] rounded-xl">
             <div className="text-2xl font-bold text-[var(--color-primary)]">{pendingTickets.length}</div>
-            <div className="text-sm text-[var(--color-text-secondary)]">已派工</div>
+            <div className="text-sm text-[var(--color-text-secondary)]">Assigned</div>
           </div>
           <div className="p-3 bg-[var(--color-surface-elevated)] rounded-xl">
             <div className="text-2xl font-bold text-orange-500">{activeTickets.length}</div>
-            <div className="text-sm text-[var(--color-text-secondary)]">进行中</div>
+            <div className="text-sm text-[var(--color-text-secondary)]">In Progress</div>
           </div>
         </div>
 
         {/* 进行中工单 */}
         {activeTickets.length > 0 && (
           <div>
-            <h3 className="text-sm font-medium text-[var(--color-text-primary)] mb-2">进行中</h3>
+            <h3 className="text-sm font-medium text-[var(--color-text-primary)] mb-2">In Progress</h3>
             <div className="space-y-2">
               {activeTickets.map((ticket) => (
                 <div
@@ -172,15 +172,15 @@ export function EngineerDashboard({ isOpen, onClose, engineerId, onViewProfile }
                         {ticket.order_no || ticket.id}
                       </span>
                       {renderSlaBadge(ticket)}
-                      {ticket.urgency === 'urgent' && <span className="text-xs text-orange-500">⚡紧急</span>}
-                      {ticket.urgency === 'critical' && <span className="text-xs text-red-500">🔥非常紧急</span>}
+                      {ticket.urgency === 'urgent' && <span className="text-xs text-orange-500">⚡Urgent</span>}
+                      {ticket.urgency === 'critical' && <span className="text-xs text-red-500">🔥Critical</span>}
                     </div>
                     <span className={`px-2 py-0.5 text-xs text-white rounded ${statusConfig[ticket.status]?.color}`}>
                       {statusConfig[ticket.status]?.text}
                     </span>
                   </div>
                   {ticket.customer_name && (
-                    <p className="text-xs text-[var(--color-primary)] mb-1">客户：{ticket.customer_name}{ticket.customer_region ? ` · ${ticket.customer_region}` : ''}</p>
+                    <p className="text-xs text-[var(--color-primary)] mb-1">Customer:{ticket.customer_name}{ticket.customer_region ? ` · ${ticket.customer_region}` : ''}</p>
                   )}
                   <p className="text-sm text-[var(--color-text-secondary)]">
                     {ticket.category_l1 && ticket.category_l1 !== 'other'
@@ -196,7 +196,7 @@ export function EngineerDashboard({ isOpen, onClose, engineerId, onViewProfile }
         {/* 已派工服务任务：旧 accept/reject 接口暂作确认/退回兼容动作。 */}
         {pendingTickets.length > 0 && (
           <div>
-            <h3 className="text-sm font-medium text-[var(--color-text-primary)] mb-2">已派工服务任务</h3>
+            <h3 className="text-sm font-medium text-[var(--color-text-primary)] mb-2">Assigned Service Tasks</h3>
             <div className="space-y-2">
               {pendingTickets.map((ticket) => (
                 <div key={ticket.id} className="p-3 bg-[var(--color-surface-elevated)] rounded-xl">
@@ -206,15 +206,15 @@ export function EngineerDashboard({ isOpen, onClose, engineerId, onViewProfile }
                         {ticket.order_no || ticket.id}
                       </span>
                       {renderSlaBadge(ticket)}
-                      {ticket.urgency === 'urgent' && <span className="text-xs text-orange-500">⚡紧急</span>}
-                      {ticket.urgency === 'critical' && <span className="text-xs text-red-500">🔥非常紧急</span>}
+                      {ticket.urgency === 'urgent' && <span className="text-xs text-orange-500">⚡Urgent</span>}
+                      {ticket.urgency === 'critical' && <span className="text-xs text-red-500">🔥Critical</span>}
                     </div>
                     <span className={`px-2 py-0.5 text-xs text-white rounded ${statusConfig[ticket.status]?.color}`}>
                       {statusConfig[ticket.status]?.text}
                     </span>
                   </div>
                   {ticket.customer_name && (
-                    <p className="text-xs text-[var(--color-primary)] mb-1">客户：{ticket.customer_name}{ticket.customer_region ? ` · ${ticket.customer_region}` : ''}</p>
+                    <p className="text-xs text-[var(--color-primary)] mb-1">Customer:{ticket.customer_name}{ticket.customer_region ? ` · ${ticket.customer_region}` : ''}</p>
                   )}
                   <p className="text-xs text-[var(--color-text-secondary)] mb-1">
                     {ticket.category_l1 && ticket.category_l1 !== 'other'
@@ -228,7 +228,7 @@ export function EngineerDashboard({ isOpen, onClose, engineerId, onViewProfile }
                       disabled={actionLoading === ticket.id}
                       className="flex-1 py-1.5 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white rounded-lg text-sm transition-colors disabled:opacity-50"
                     >
-                      确认派工
+                      Confirm Assignment
                     </button>
                     <button
                       data-testid="reject-ticket-button"
@@ -236,7 +236,7 @@ export function EngineerDashboard({ isOpen, onClose, engineerId, onViewProfile }
                       disabled={actionLoading === ticket.id}
                       className="flex-1 py-1.5 bg-[var(--color-surface-elevated)] hover:bg-[var(--color-hover)] text-[var(--color-text-secondary)] rounded-lg text-sm transition-colors disabled:opacity-50"
                     >
-                      退回调度
+                      Return to Dispatch
                     </button>
                   </div>
                 </div>
@@ -248,13 +248,13 @@ export function EngineerDashboard({ isOpen, onClose, engineerId, onViewProfile }
         {/* 空状态 */}
         {!loading && pendingTickets.length === 0 && activeTickets.length === 0 && (
           <div className="text-center py-8 text-[var(--color-text-secondary)]">
-            暂没有可处理的服务任务
+            No service assignments to process
           </div>
         )}
 
         {loading && (
           <div className="text-center py-8 text-[var(--color-text-secondary)]">
-            加载中...
+            Loading...
           </div>
         )}
       </div>

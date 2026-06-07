@@ -4,10 +4,10 @@ import { Building2 } from 'lucide-react';
 import { updateCustomerProfile, changePassword } from '../../services/api';
 
 const authStatusLabels = {
-  authenticated: { label: '已认证', color: 'px-2 py-0.5 rounded-full bg-green-500/15 text-green-600 dark:text-green-400 text-[11px]' },
-  pending: { label: '待认证', color: 'px-2 py-0.5 rounded-full bg-yellow-500/15 text-yellow-600 dark:text-yellow-400 text-[11px]' },
-  rejected: { label: '认证被拒', color: 'px-2 py-0.5 rounded-full bg-red-500/15 text-red-600 dark:text-red-400 text-[11px]' },
-  guest: { label: '访客', color: 'px-2 py-0.5 rounded-full bg-[var(--color-input-bg)] text-[var(--color-text-secondary)] text-[11px]' },
+  authenticated: { label: 'Verified', color: 'px-2 py-0.5 rounded-full bg-green-500/15 text-green-600 dark:text-green-400 text-[11px]' },
+  pending: { label: 'Pending Verification', color: 'px-2 py-0.5 rounded-full bg-yellow-500/15 text-yellow-600 dark:text-yellow-400 text-[11px]' },
+  rejected: { label: 'Verification Rejected', color: 'px-2 py-0.5 rounded-full bg-red-500/15 text-red-600 dark:text-red-400 text-[11px]' },
+  guest: { label: 'Guest', color: 'px-2 py-0.5 rounded-full bg-[var(--color-input-bg)] text-[var(--color-text-secondary)] text-[11px]' },
 };
 
 export function CustomerHomeModal({ isOpen, onClose, currentUser, userType }) {
@@ -54,10 +54,10 @@ export function CustomerHomeModal({ isOpen, onClose, currentUser, userType }) {
       await updateCustomerProfile(form);
       const updated = { ...currentUser, ...form };
       localStorage.setItem('sagemro_user', JSON.stringify(updated));
-      setSuccess('保存成功');
+      setSuccess('Saved successfully');
       setTimeout(() => setSuccess(''), 2000);
     } catch (err) {
-      setError(err.message || '保存失败');
+      setError(err.message || 'Save failed');
     } finally {
       setLoading(false);
     }
@@ -81,11 +81,11 @@ export function CustomerHomeModal({ isOpen, onClose, currentUser, userType }) {
 
   const handleChangePassword = async () => {
     if (pwdForm.newPassword !== pwdForm.confirmPassword) {
-      setError('两次输入的新密码不一致');
+      setError('New passwords do not match');
       return;
     }
     if (pwdForm.newPassword.length < 6) {
-      setError('新密码至少6位');
+      setError('Password must be at least 6 characters');
       return;
     }
     setLoading(true);
@@ -93,10 +93,10 @@ export function CustomerHomeModal({ isOpen, onClose, currentUser, userType }) {
     try {
       await changePassword({ oldPassword: pwdForm.oldPassword, newPassword: pwdForm.newPassword });
       setPwdForm({ oldPassword: '', newPassword: '', confirmPassword: '' });
-      setSuccess('密码修改成功');
+      setSuccess('Password changed successfully');
       setTimeout(() => setSuccess(''), 2000);
     } catch (err) {
-      setError(err.message || '修改失败');
+      setError(err.message || 'Update failed');
     } finally {
       setLoading(false);
     }
@@ -107,7 +107,7 @@ export function CustomerHomeModal({ isOpen, onClose, currentUser, userType }) {
   const inputClass = "w-full bg-[var(--color-input-bg)] border border-[var(--color-border)] rounded-lg px-3 py-2.5 text-[14px] text-[var(--color-text-primary)] placeholder:text-[var(--color-text-secondary)] focus:outline-none focus:ring-2 focus:ring-blue-500";
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="公司主页" size="lg">
+    <Modal isOpen={isOpen} onClose={onClose} title="Company Profile" size="lg">
       <div className="flex flex-col gap-5">
 
         {/* 头部：公司 Logo + 名称 + 认证状态 */}
@@ -122,7 +122,7 @@ export function CustomerHomeModal({ isOpen, onClose, currentUser, userType }) {
 
           <div className="flex-1 min-w-0">
             <div className="text-[18px] font-semibold text-[var(--color-text-primary)] truncate">
-              {form.company || '未设置公司名称'}
+              {form.company || 'Company name not set'}
             </div>
             <div className="text-[13px] text-[var(--color-text-secondary)] truncate mt-0.5">
               {currentUser?.phone}
@@ -150,7 +150,7 @@ export function CustomerHomeModal({ isOpen, onClose, currentUser, userType }) {
                 : 'border-transparent text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]'
             }`}
           >
-            公司信息
+            Company Info
           </button>
           <button
             onClick={() => setTab('preferences')}
@@ -160,7 +160,7 @@ export function CustomerHomeModal({ isOpen, onClose, currentUser, userType }) {
                 : 'border-transparent text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]'
             }`}
           >
-            偏好设置
+            Preferences
           </button>
           <button
             onClick={() => setTab('security')}
@@ -170,7 +170,7 @@ export function CustomerHomeModal({ isOpen, onClose, currentUser, userType }) {
                 : 'border-transparent text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]'
             }`}
           >
-            账户安全
+            Security
           </button>
         </div>
 
@@ -181,62 +181,62 @@ export function CustomerHomeModal({ isOpen, onClose, currentUser, userType }) {
           {tab === 'info' && (
             <div className="space-y-4">
               <div>
-                <label className="block text-[12px] text-[var(--color-text-secondary)] mb-1.5">公司名称</label>
+                <label className="block text-[12px] text-[var(--color-text-secondary)] mb-1.5">Company Name</label>
                 <input
                   type="text"
                   value={form.company}
                   onChange={e => setForm({ ...form, company: e.target.value })}
-                  placeholder="例如：XX金属制品有限公司"
+                  placeholder="e.g. ABC Metal Products Co., Ltd."
                   className={inputClass}
                 />
               </div>
               <div>
-                <label className="block text-[12px] text-[var(--color-text-secondary)] mb-1.5">所在城市</label>
+                <label className="block text-[12px] text-[var(--color-text-secondary)] mb-1.5">City</label>
                 <input
                   type="text"
                   value={form.city}
                   onChange={e => setForm({ ...form, city: e.target.value })}
-                  placeholder="例如：苏州市"
+                  placeholder="e.g. Shanghai"
                   className={inputClass}
                 />
               </div>
               <div>
-                <label className="block text-[12px] text-[var(--color-text-secondary)] mb-1.5">详细地址</label>
+                <label className="block text-[12px] text-[var(--color-text-secondary)] mb-1.5">Address</label>
                 <input
                   type="text"
                   value={form.address}
                   onChange={e => setForm({ ...form, address: e.target.value })}
-                  placeholder="例如：苏州工业园区XX路XX号"
+                  placeholder="e.g. 123 Industrial Park Road"
                   className={inputClass}
                 />
               </div>
               <div>
-                <label className="block text-[12px] text-[var(--color-text-secondary)] mb-1.5">联系电话</label>
+                <label className="block text-[12px] text-[var(--color-text-secondary)] mb-1.5">Phone</label>
                 <input
                   type="text"
                   value={form.phone}
                   onChange={e => setForm({ ...form, phone: e.target.value })}
-                  placeholder="手机号或座机"
+                  placeholder="Mobile or landline"
                   className={inputClass}
                 />
               </div>
               <div>
-                <label className="block text-[12px] text-[var(--color-text-secondary)] mb-1.5">公司简介</label>
+                <label className="block text-[12px] text-[var(--color-text-secondary)] mb-1.5">Company Description</label>
                 <textarea
                   value={form.company_description}
                   onChange={e => setForm({ ...form, company_description: e.target.value })}
-                  placeholder="简单介绍一下您的公司..."
+                  placeholder="Briefly describe your company..."
                   rows={2}
                   className={`${inputClass} resize-none`}
                 />
               </div>
               <div>
-                <label className="block text-[12px] text-[var(--color-text-secondary)] mb-1.5">业务范围</label>
+                <label className="block text-[12px] text-[var(--color-text-secondary)] mb-1.5">Business Scope</label>
                 <input
                   type="text"
                   value={form.business_scope}
                   onChange={e => setForm({ ...form, business_scope: e.target.value })}
-                  placeholder="例如：钣金加工、激光切割、折弯焊接"
+                  placeholder="e.g. Sheet metal fabrication, laser cutting, bending"
                   className={inputClass}
                 />
               </div>
@@ -253,7 +253,7 @@ export function CustomerHomeModal({ isOpen, onClose, currentUser, userType }) {
                 disabled={loading}
                 className="w-full py-2.5 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] disabled:opacity-50 text-white rounded-lg text-[14px] font-medium transition-colors"
               >
-                {loading ? '保存中...' : '保存修改'}
+                {loading ? 'Saving...' : 'Save Changes'}
               </button>
             </div>
           )}
@@ -262,7 +262,7 @@ export function CustomerHomeModal({ isOpen, onClose, currentUser, userType }) {
           {tab === 'preferences' && (
             <div className="space-y-4">
               <div>
-                <label className="block text-[12px] text-[var(--color-text-secondary)] mb-3">外观模式</label>
+                <label className="block text-[12px] text-[var(--color-text-secondary)] mb-3">Appearance</label>
                 <div className="flex gap-3">
                   <button
                     onClick={() => handleThemeChange('light')}
@@ -273,7 +273,7 @@ export function CustomerHomeModal({ isOpen, onClose, currentUser, userType }) {
                     }`}
                   >
                     <span className="text-2xl">☀️</span>
-                    <span className="text-[13px] text-[var(--color-text-primary)]">浅色模式</span>
+                    <span className="text-[13px] text-[var(--color-text-primary)]">Light</span>
                   </button>
                   <button
                     onClick={() => handleThemeChange('dark')}
@@ -284,7 +284,7 @@ export function CustomerHomeModal({ isOpen, onClose, currentUser, userType }) {
                     }`}
                   >
                     <span className="text-2xl">🌙</span>
-                    <span className="text-[13px] text-[var(--color-text-primary)]">深色模式</span>
+                    <span className="text-[13px] text-[var(--color-text-primary)]">Dark</span>
                   </button>
                   <button
                     onClick={() => handleThemeChange('system')}
@@ -295,7 +295,7 @@ export function CustomerHomeModal({ isOpen, onClose, currentUser, userType }) {
                     }`}
                   >
                     <span className="text-2xl">💻</span>
-                    <span className="text-[13px] text-[var(--color-text-primary)]">跟随系统</span>
+                    <span className="text-[13px] text-[var(--color-text-primary)]">System</span>
                   </button>
                 </div>
               </div>
@@ -306,32 +306,32 @@ export function CustomerHomeModal({ isOpen, onClose, currentUser, userType }) {
           {tab === 'security' && (
             <div className="space-y-4">
               <div>
-                <label className="block text-[12px] text-[var(--color-text-secondary)] mb-1.5">当前密码</label>
+                <label className="block text-[12px] text-[var(--color-text-secondary)] mb-1.5">Current Password</label>
                 <input
                   type="password"
                   value={pwdForm.oldPassword}
                   onChange={e => setPwdForm({ ...pwdForm, oldPassword: e.target.value })}
-                  placeholder="请输入当前密码"
+                  placeholder="Enter your current password"
                   className={inputClass}
                 />
               </div>
               <div>
-                <label className="block text-[12px] text-[var(--color-text-secondary)] mb-1.5">新密码</label>
+                <label className="block text-[12px] text-[var(--color-text-secondary)] mb-1.5">New Password</label>
                 <input
                   type="password"
                   value={pwdForm.newPassword}
                   onChange={e => setPwdForm({ ...pwdForm, newPassword: e.target.value })}
-                  placeholder="至少6位"
+                  placeholder="At least 6 characters"
                   className={inputClass}
                 />
               </div>
               <div>
-                <label className="block text-[12px] text-[var(--color-text-secondary)] mb-1.5">确认新密码</label>
+                <label className="block text-[12px] text-[var(--color-text-secondary)] mb-1.5">Confirm New Password</label>
                 <input
                   type="password"
                   value={pwdForm.confirmPassword}
                   onChange={e => setPwdForm({ ...pwdForm, confirmPassword: e.target.value })}
-                  placeholder="再次输入新密码"
+                  placeholder="Re-enter your new password"
                   className={inputClass}
                 />
               </div>
@@ -348,7 +348,7 @@ export function CustomerHomeModal({ isOpen, onClose, currentUser, userType }) {
                 disabled={loading}
                 className="w-full py-2.5 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] disabled:opacity-50 text-white rounded-lg text-[14px] font-medium transition-colors"
               >
-                {loading ? '修改中...' : '修改密码'}
+                {loading ? 'Updating...' : 'Change Password'}
               </button>
             </div>
           )}

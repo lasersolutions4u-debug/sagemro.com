@@ -31,8 +31,8 @@ export function LoginPage({ onLogin }) {
           <div className="w-16 h-16 rounded-2xl bg-[var(--color-primary)] flex items-center justify-center mx-auto mb-4">
             <Shield size={32} className="text-white" />
           </div>
-          <h1 className="text-xl font-semibold text-[var(--color-text)]">SAGEMRO 管理后台</h1>
-          <p className="text-sm text-[var(--color-text-secondary)] mt-1">超级管理员登录</p>
+          <h1 className="text-xl font-semibold text-[var(--color-text)]">SAGEMRO Operations Console</h1>
+          <p className="text-sm text-[var(--color-text-secondary)] mt-1">运营管理员登录</p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">

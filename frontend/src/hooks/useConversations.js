@@ -8,7 +8,7 @@ import { generateId } from '../utils/helpers';
 export function useConversations() {
   const [conversations, setConversations] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const error = null;
 
   // 从 localStorage 加载对话
   const loadFromStorage = useCallback(() => {
@@ -36,7 +36,7 @@ export function useConversations() {
   const createConversation = useCallback(() => {
     const newConv = {
       id: generateId(),
-      title: '新对话',
+      title: 'New Chat',
       last_message: '',
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
@@ -81,7 +81,7 @@ export function useConversations() {
   // 重命名对话（本地乐观更新 + 后端同步）
   const renameConversation = useCallback(async (id, title) => {
     const trimmed = (title || '').trim().slice(0, 50);
-    if (!trimmed) throw new Error('标题不能为空');
+    if (!trimmed) throw new Error('Title cannot be empty');
 
     // 本地先更新（乐观）
     setConversations(prev => {
