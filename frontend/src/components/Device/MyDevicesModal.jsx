@@ -85,7 +85,7 @@ export function MyDevicesModal({ isOpen, onClose, currentUser, userType }) {
               <p className="text-[12px] text-[var(--color-text-muted)] mt-1.5 leading-relaxed max-w-[320px] mx-auto">
                 当您在与小智对话中提及设备品牌、型号等信息时，小智会自动识别并整理到这里。您无需手动填写。
               </p>
-              <p className="text-[12px] text-[var(--color-text-muted)] mt-3 opacity-50">您的设备数据仅用于精准匹配服务商，不会公开展示。</p>
+              <p className="text-[12px] text-[var(--color-text-muted)] mt-3 opacity-50">您的设备数据仅用于精准匹配服务代表，不会公开展示。</p>
             </div>
           )}
 

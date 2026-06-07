@@ -1,14 +1,11 @@
 import { useState } from 'react';
 import { Modal } from '../common/Modal';
-import { TagInput } from '../common/TagInput';
-import { RegionInput } from '../common/RegionInput';
-import { login, sendVerifyCode, sendResetCode, resetPassword, registerCustomer, registerEngineer } from '../../services/api';
+import { login, sendVerifyCode, sendResetCode, resetPassword, registerCustomer } from '../../services/api';
 import { toastSuccess, toastError } from '../../utils/feedback';
-import { deviceTypes, commonBrands, commonServices } from '../../data/loginPresets.js';
 
 export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
   // step flow:
-  // choice -> register-company -> register-auth -> register-customer-info / register-engineer-2 / login
+  // choice -> register-company -> register-auth -> customer / visitor completion / login
   const [step, setStep] = useState('login');
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
@@ -27,25 +24,8 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
   // 身份选择
   const [selectedIdentity, setSelectedIdentity] = useState(null); // 'customer' | 'engineer' | 'visitor'
 
-  // 工程师背景调查
-  const [specialties, setSpecialties] = useState([]);
-  const [brands, setBrands] = useState({});
-  const [services, setServices] = useState([]);
-  const [serviceRegion, setServiceRegion] = useState([]);
-  const [bio, setBio] = useState('');
-
   // 协议勾选
   const [agreedToTerms, setAgreedToTerms] = useState(false);
-
-  const toggleBrand = (deviceType, brand) => {
-    setBrands(prev => {
-      const current = prev[deviceType] || [];
-      const updated = current.includes(brand)
-        ? current.filter(b => b !== brand)
-        : [...current, brand];
-      return { ...prev, [deviceType]: updated };
-    });
-  };
 
   // 发送验证码
   const handleSendCode = async () => {
@@ -112,49 +92,6 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
     }
   };
 
-  // 工程师注册（含公司名+背景调查）
-  const handleRegisterEngineer = async () => {
-    if (!name || !password || !confirmPassword || !companyName) {
-      setError('请填写所有必填项'); return;
-    }
-    if (password !== confirmPassword) { setError('两次密码输入不一致'); return; }
-    if (password.length < 6) { setError('密码至少6位'); return; }
-    if (specialties.length === 0) { setError('请选择擅长的设备类型'); return; }
-    if (services.length === 0) { setError('请选择擅长的维修项目'); return; }
-
-    setSubmitting(true);
-    setError('');
-    try {
-      await registerEngineer({
-        name, phone, password, code,
-        specialties,
-        brands,
-        services,
-        service_region: serviceRegion,
-        bio,
-        company: companyName,
-      });
-      const result = await login({ phone, password });
-      localStorage.setItem('sagemro_token', result.token);
-      localStorage.setItem('sagemro_user', JSON.stringify(result.user));
-      localStorage.setItem('sagemro_user_type', result.userType);
-      localStorage.setItem('sagemro_engineer_id', result.user.id);
-      onLoginSuccess?.(result);
-      handleClose();
-    } catch (e) {
-      if (e.status === 409) {
-        toastError('该手机号已注册，请直接登录');
-        setStep('login');
-        setError('');
-      } else {
-        setError(e.message || '注册失败，请重试');
-        toastError(e.message || '注册失败，请重试');
-      }
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
   const handleClose = () => {
     setPhone('');
     setPassword('');
@@ -162,11 +99,6 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
     setName('');
     setCode('');
     setError('');
-    setSpecialties([]);
-    setBrands({});
-    setServices([]);
-    setServiceRegion([]);
-    setBio('');
     setCompanyName('');
     setSelectedIdentity(null);
     setAgreedToTerms(false);
@@ -208,12 +140,7 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
 
   // 认证提示后
   const handleAuthConfirm = () => {
-    if (selectedIdentity === 'engineer') {
-      setStep('register-engineer-2');
-    } else {
-      // 客户 - 完成注册
-      handleRegisterCustomer();
-    }
+    handleRegisterCustomer();
   };
 
   // 访客完成
@@ -239,7 +166,6 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
   };
 
   const getModalSize = () => {
-    if (step === 'register-engineer-2') return 'xl';
     if (step === 'choice') return 'md';
     if (step === 'register-company') return 'lg';
     return 'md';
@@ -257,7 +183,6 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
             </div>
 
             <div className="space-y-2.5">
-              {/* A. 我需要服务 */}
               <button
                 onClick={goToRegisterCompany}
                 className="w-full p-4 text-left rounded-xl border-2 border-[var(--color-border)] hover:border-[var(--color-primary)] transition-colors group"
@@ -265,33 +190,18 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
                 <div className="flex items-start gap-3">
                   <span className="flex-shrink-0 w-7 h-7 rounded-full bg-[var(--color-primary)] text-white text-sm flex items-center justify-center font-medium">A</span>
                   <div>
-                    <p className="font-medium text-sm group-hover:text-[var(--color-primary)] transition-colors">我需要或将来可能需要设备维修保养服务</p>
-                    <p className="text-xs text-[var(--color-text-secondary)] mt-0.5">有任何问题就跟小智说，小智帮您提交工单，精准获取专业服务商支持。</p>
+                    <p className="font-medium text-sm group-hover:text-[var(--color-primary)] transition-colors">我需要设备服务、备件或新机选型支持</p>
+                    <p className="text-xs text-[var(--color-text-secondary)] mt-0.5">有任何问题就跟小智说，SAGEMRO 官方服务团队会审核并跟进。</p>
                   </div>
                 </div>
               </button>
 
-              {/* B. 我提供服务 */}
-              <button
-                onClick={goToRegisterCompany}
-                className="w-full p-4 text-left rounded-xl border-2 border-[var(--color-border)] hover:border-[var(--color-primary)] transition-colors group"
-              >
-                <div className="flex items-start gap-3">
-                  <span className="flex-shrink-0 w-7 h-7 rounded-full bg-[var(--color-primary)] text-white text-sm flex items-center justify-center font-medium">B</span>
-                  <div>
-                    <p className="font-medium text-sm group-hover:text-[var(--color-primary)] transition-colors">我可以提供维修保养服务</p>
-                    <p className="text-xs text-[var(--color-text-secondary)] mt-0.5">有任何问题就跟小智说，并且如果您注册成为平台服务商，小智会给您分配工单，获取额外收入。</p>
-                  </div>
-                </div>
-              </button>
-
-              {/* C. 只是了解 */}
               <button
                 onClick={goToRegisterCompany}
                 className="w-full p-4 text-left rounded-xl border-2 border-[var(--color-border)] hover:border-[var(--color-text-muted)] transition-colors group"
               >
                 <div className="flex items-start gap-3">
-                  <span className="flex-shrink-0 w-7 h-7 rounded-full bg-[var(--color-text-muted)] text-white text-sm flex items-center justify-center font-medium">C</span>
+                  <span className="flex-shrink-0 w-7 h-7 rounded-full bg-[var(--color-text-muted)] text-white text-sm flex items-center justify-center font-medium">B</span>
                   <div>
                     <p className="font-medium text-sm text-[var(--color-text-secondary)] group-hover:text-[var(--color-text-primary)] transition-colors">我只是了解一下</p>
                     <p className="text-xs text-[var(--color-text-secondary)] mt-0.5">有任何问题就跟小智说，先看看，不着急注册。</p>
@@ -434,7 +344,7 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
             </div>
 
             <div className="text-center mb-4">
-              <p className="text-sm text-[var(--color-text-secondary)]">您希望以什么身份使用平台？</p>
+              <p className="text-sm text-[var(--color-text-secondary)]">您希望如何使用 SAGEMRO Service OS？</p>
             </div>
 
             <div className="space-y-2.5">
@@ -446,22 +356,8 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
                 <div className="flex items-start gap-3">
                   <span className="flex-shrink-0 w-7 h-7 rounded-full bg-[var(--color-primary)] text-white text-sm flex items-center justify-center font-medium">A</span>
                   <div>
-                    <p className="font-medium text-sm group-hover:text-[var(--color-primary)] transition-colors">我是客户（需要设备维修保养服务）</p>
-                    <p className="text-xs text-[var(--color-text-secondary)] mt-0.5">认证后即可享受小智的精准服务推荐和工单管理。</p>
-                  </div>
-                </div>
-              </button>
-
-              <button
-                data-testid="identity-select-engineer"
-                onClick={() => handleIdentitySelect('engineer')}
-                className="w-full p-4 text-left rounded-xl border-2 border-[var(--color-border)] hover:border-[var(--color-primary)] transition-colors group"
-              >
-                <div className="flex items-start gap-3">
-                  <span className="flex-shrink-0 w-7 h-7 rounded-full bg-[var(--color-primary)] text-white text-sm flex items-center justify-center font-medium">B</span>
-                  <div>
-                    <p className="font-medium text-sm group-hover:text-[var(--color-primary)] transition-colors">我是服务商（提供维修保养服务）</p>
-                    <p className="text-xs text-[var(--color-text-secondary)] mt-0.5">认证后需要填写背景信息，小智会根据您的专长精准推荐工单。</p>
+                    <p className="font-medium text-sm group-hover:text-[var(--color-primary)] transition-colors">我是客户</p>
+                    <p className="text-xs text-[var(--color-text-secondary)] mt-0.5">认证后可使用 AI 诊断、官方服务申请、设备档案和维保跟进。</p>
                   </div>
                 </div>
               </button>
@@ -472,7 +368,7 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
                 className="w-full p-4 text-left rounded-xl border-2 border-[var(--color-border)] hover:border-[var(--color-text-muted)] transition-colors group"
               >
                 <div className="flex items-start gap-3">
-                  <span className="flex-shrink-0 w-7 h-7 rounded-full bg-[var(--color-text-muted)] text-white text-sm flex items-center justify-center font-medium">C</span>
+                  <span className="flex-shrink-0 w-7 h-7 rounded-full bg-[var(--color-text-muted)] text-white text-sm flex items-center justify-center font-medium">B</span>
                   <div>
                     <p className="font-medium text-sm text-[var(--color-text-secondary)] group-hover:text-[var(--color-text-primary)] transition-colors">我只是了解一下（访客身份）</p>
                     <p className="text-xs text-[var(--color-text-secondary)] mt-0.5">浏览小智的功能，暂不认证。功能受限，但随时可以认证升级。</p>
@@ -496,16 +392,14 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
               </div>
               <p className="text-base font-medium mb-1">身份认证</p>
               <p className="text-sm text-[var(--color-text-secondary)]">
-                {selectedIdentity === 'customer' ? '您选择了"客户"身份。认证后即可享受完整服务。' : '您选择了"服务商"身份。认证后需填写背景信息。'}
+                您选择了“客户”身份。认证后即可使用 AI 诊断、官方服务申请和设备档案。
               </p>
             </div>
 
             <div className="p-4 bg-[var(--color-surface-elevated)] rounded-xl text-[13px] text-[var(--color-text-secondary)]">
               {selectedIdentity === 'customer' ? (
-                <p>完成认证后，您可以：提交工单、查看设备档案、获取小智的精准服务推荐。</p>
-              ) : (
-                <p>完成认证后，您需要填写擅长的设备类型、品牌和维修项目，以便小智精准为您推荐工单。</p>
-              )}
+                <p>完成认证后，您可以：提交 SAGEMRO 官方服务申请、查看设备档案、跟进服务进度和获取个性化建议。</p>
+              ) : null}
             </div>
 
             <button
@@ -513,7 +407,7 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
               onClick={handleAuthConfirm}
               className="w-full py-3 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white rounded-xl font-medium transition-colors"
             >
-              {selectedIdentity === 'customer' ? '完成认证，开始使用' : '下一步：填写背景信息'}
+              完成认证，开始使用
             </button>
           </div>
         )}
@@ -546,103 +440,6 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
               className="w-full py-3 bg-[var(--color-text-muted)] hover:bg-[var(--color-text-secondary)] disabled:bg-[var(--color-text-muted)]/50 text-white rounded-xl font-medium transition-colors"
             >
               {submitting ? '注册中...' : '以访客身份开始'}
-            </button>
-          </div>
-        )}
-
-        {/* ========== Step register-engineer-2: 工程师背景调查 ========== */}
-        {step === 'register-engineer-2' && (
-          <div className="space-y-3 max-h-[65vh] overflow-y-auto pr-1">
-            <div className="flex items-center gap-2 mb-2">
-              <button onClick={() => setStep('register-auth-prompt')} className="text-sm text-[var(--color-text-secondary)] hover:text-[var(--color-primary)]">← 返回</button>
-            </div>
-
-            <div className="text-center mb-4">
-              <p className="text-sm text-[var(--color-text-secondary)]">完成背景信息（用于精准接单）</p>
-            </div>
-
-            {error && (
-              <div className="p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl text-red-600 dark:text-red-400 text-sm">
-                {error}
-              </div>
-            )}
-
-            {/* 设备类型 */}
-            <TagInput
-              label="擅长的设备类型 *"
-              options={deviceTypes}
-              value={specialties}
-              onChange={setSpecialties}
-              placeholder="输入设备类型，回车添加..."
-            />
-
-            {/* 品牌（每个设备类型下有预设+空白框） */}
-            {specialties.length > 0 && (
-              <div>
-                <label className="block text-xs font-medium mb-2">熟悉的品牌</label>
-                {specialties.map((type) => (
-                  <div key={type} className="mb-3">
-                    <p className="text-xs text-[var(--color-text-secondary)] mb-1">{type}：</p>
-                    <div className="flex flex-wrap gap-1 mb-1.5">
-                      {(commonBrands[type] || []).map((brand) => (
-                        <button
-                          key={brand}
-                          type="button"
-                          onClick={() => toggleBrand(type, brand)}
-                          className={`px-2 py-0.5 rounded text-xs transition-colors ${
-                            (brands[type] || []).includes(brand)
-                              ? 'bg-[var(--color-primary)] text-white'
-                              : 'bg-[var(--color-surface-elevated)] text-[var(--color-text-secondary)]'
-                          }`}
-                        >
-                          {brand}
-                        </button>
-                      ))}
-                    </div>
-                    <TagInput
-                      placeholder="输入品牌，回车添加..."
-                      value={brands[type] || []}
-                      onChange={(val) => setBrands(prev => ({ ...prev, [type]: val }))}
-                    />
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {/* 维修项目 */}
-            <TagInput
-              label="擅长的维修项目 *"
-              options={commonServices}
-              value={services}
-              onChange={setServices}
-              placeholder="输入维修项目，回车添加..."
-            />
-
-            {/* 服务地区 */}
-            <RegionInput
-              label="服务覆盖地区"
-              value={serviceRegion}
-              onChange={setServiceRegion}
-              placeholder="输入省、市、区名称搜索..."
-            />
-
-            {/* 个人简介 */}
-            <div>
-              <label className="block text-xs font-medium mb-1">个人简介（选填）</label>
-              <textarea
-                value={bio} onChange={(e) => setBio(e.target.value)}
-                placeholder="向客户展示您的自我介绍"
-                rows={2}
-                className="w-full px-3 py-2 border border-[var(--color-input-border)] rounded-xl bg-[var(--color-input-bg)] text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)] resize-none"
-              />
-            </div>
-
-            <button
-              data-testid="register-engineer-button"
-              onClick={handleRegisterEngineer} disabled={submitting}
-              className="w-full py-3 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] disabled:bg-[var(--color-text-muted)] text-white rounded-xl font-medium transition-colors"
-            >
-              {submitting ? '入驻中...' : '注册成为服务商'}
             </button>
           </div>
         )}

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Modal } from '../common/Modal';
-import { Package, User, Wallet, Star, ToggleLeft, ToggleRight, ChevronRight, Lock, X } from 'lucide-react';
-import { updateCustomerProfile, updateEngineerProfile, changePassword, getEngineerProfile, getEngineerWallet, updateEngineerStatus } from '../../services/api';
+import { Package, Star, ToggleLeft, ToggleRight, ChevronRight, Lock } from 'lucide-react';
+import { updateCustomerProfile, updateEngineerProfile, changePassword, getEngineerProfile, updateEngineerStatus } from '../../services/api';
 
 export function SettingsModal({ isOpen, onClose, currentUser, userType, onOpenMyDevices }) {
   const [tab, setTab] = useState('profile'); // 'profile' | 'devices' | 'password'
@@ -13,9 +13,8 @@ export function SettingsModal({ isOpen, onClose, currentUser, userType, onOpenMy
   const [customerForm, setCustomerForm] = useState({ name: '', region: '' });
 
   // 工程师档案
-  const [engineerForm, setEngineerForm] = useState({ name: '', bio: '', service_region: '', bank_name: '', bank_account: '', bank_branch: '', account_holder: '' });
+  const [engineerForm, setEngineerForm] = useState({ name: '', bio: '', service_region: '' });
   const [engineerStats, setEngineerStats] = useState(null);
-  const [engineerWallet, setEngineerWallet] = useState(null);
   const [currentStatus, setCurrentStatus] = useState('available');
 
   // 密码修改
@@ -33,10 +32,6 @@ export function SettingsModal({ isOpen, onClose, currentUser, userType, onOpenMy
           name: currentUser.name || '',
           bio: currentUser.bio || '',
           service_region: currentUser.service_region || '',
-          bank_name: currentUser.bank_name || '',
-          bank_account: currentUser.bank_account || '',
-          bank_branch: currentUser.bank_branch || '',
-          account_holder: currentUser.account_holder || '',
         });
         setCurrentStatus(currentUser.status || 'available');
         loadEngineerData();
@@ -51,29 +46,16 @@ export function SettingsModal({ isOpen, onClose, currentUser, userType, onOpenMy
     const engineerId = localStorage.getItem('sagemro_engineer_id');
     if (!engineerId) return;
     try {
-      const [profileRes, walletRes] = await Promise.all([
-        getEngineerProfile(engineerId),
-        getEngineerWallet(engineerId),
-      ]);
+      const profileRes = await getEngineerProfile(engineerId);
       const profile = profileRes.engineer || {};
       setEngineerStats({
         level: profile.level,
-        commission_rate: profile.commission_rate,
         credit_score: profile.credit_score,
         rating: profile.rating_count > 0
           ? ((profile.rating_timeliness + profile.rating_technical + profile.rating_communication + profile.rating_professional) / 4).toFixed(1)
           : '暂无',
         rating_count: profile.rating_count || 0,
       });
-      // 回填银行卡信息
-      setEngineerForm(prev => ({
-        ...prev,
-        bank_name: profile.bank_name || prev.bank_name || '',
-        bank_account: profile.bank_account || prev.bank_account || '',
-        bank_branch: profile.bank_branch || prev.bank_branch || '',
-        account_holder: profile.account_holder || prev.account_holder || '',
-      }));
-      setEngineerWallet(walletRes);
     } catch (err) {
       console.error('加载工程师数据失败', err);
     }
@@ -138,7 +120,7 @@ export function SettingsModal({ isOpen, onClose, currentUser, userType, onOpenMy
     }
   }
 
-  const statusLabels = { available: '接单中', paused: '暂停接单', offline: '离线' };
+  const statusLabels = { available: '可派工', paused: '暂停派工', offline: '离线' };
   const statusColors = { available: 'text-green-500', paused: 'text-yellow-500', offline: 'text-gray-400' };
 
   const levelLabels = { junior: '初级', senior: '中级', expert: '专家' };
@@ -163,7 +145,7 @@ export function SettingsModal({ isOpen, onClose, currentUser, userType, onOpenMy
             {userType === 'engineer' && (
               <div className="flex items-center gap-2 mt-0.5">
                 <span className="text-[11px] px-1.5 py-0.5 bg-[var(--color-primary)]/20 text-[var(--color-primary)] rounded">
-                  {levelLabels[engineerStats?.level] || '初级'}服务商
+                  {levelLabels[engineerStats?.level] || '初级'}工程师
                 </span>
                 <span className={`text-[11px] ${statusColors[currentStatus]}`}>
                   {statusLabels[currentStatus]}
@@ -171,7 +153,7 @@ export function SettingsModal({ isOpen, onClose, currentUser, userType, onOpenMy
               </div>
             )}
           </div>
-          {/* 接单状态开关（工程师） */}
+          {/* 派工状态开关（工程师） */}
           {userType === 'engineer' && (
             <button
               onClick={handleStatusToggle}
@@ -188,20 +170,8 @@ export function SettingsModal({ isOpen, onClose, currentUser, userType, onOpenMy
         </div>
 
         {/* 工程师统计卡片 */}
-        {userType === 'engineer' && engineerWallet && (
-          <div className="grid grid-cols-3 gap-3">
-            <div className="bg-[var(--color-surface-elevated)] rounded-xl p-3 text-center">
-              <div className="text-[18px] font-semibold text-green-400">
-                ¥{engineerWallet.wallet?.wallet_balance ?? 0}
-              </div>
-              <div className="text-[11px] text-[var(--color-sidebar-text)] opacity-50 mt-0.5">钱包余额</div>
-            </div>
-            <div className="bg-[var(--color-surface-elevated)] rounded-xl p-3 text-center">
-              <div className="text-[18px] font-semibold text-[var(--color-sidebar-text)]">
-                ¥{engineerWallet.wallet?.deposit_balance ?? 0}
-              </div>
-              <div className="text-[11px] text-[var(--color-sidebar-text)] opacity-50 mt-0.5">保证金</div>
-            </div>
+        {userType === 'engineer' && engineerStats && (
+          <div className="grid grid-cols-2 gap-3">
             <div className="bg-[var(--color-surface-elevated)] rounded-xl p-3 text-center">
               <div className="text-[18px] font-semibold text-yellow-400 flex items-center justify-center gap-1">
                 <Star size={14} className="fill-yellow-400" />
@@ -210,6 +180,12 @@ export function SettingsModal({ isOpen, onClose, currentUser, userType, onOpenMy
               <div className="text-[11px] text-[var(--color-sidebar-text)] opacity-50 mt-0.5">
                 {engineerStats?.rating_count || 0}次评价
               </div>
+            </div>
+            <div className="bg-[var(--color-surface-elevated)] rounded-xl p-3 text-center">
+              <div className="text-[18px] font-semibold text-[var(--color-sidebar-text)]">
+                {engineerStats?.credit_score ?? 100}
+              </div>
+              <div className="text-[11px] text-[var(--color-sidebar-text)] opacity-50 mt-0.5">信用分</div>
             </div>
           </div>
         )}
@@ -327,53 +303,6 @@ export function SettingsModal({ isOpen, onClose, currentUser, userType, onOpenMy
                       className="w-full bg-[var(--color-input-bg)] border border-[var(--color-input-border)] rounded-lg px-3 py-2.5 text-[14px] text-[var(--color-sidebar-text)] resize-none"
                     />
                   </div>
-                  {/* 银行卡信息（用于提现） */}
-                  <div className="border-t border-[var(--color-border)] pt-4 mt-2">
-                    <p className="text-[12px] text-[var(--color-sidebar-text)] opacity-60 mb-3">银行卡信息（用于提现）</p>
-                    <div className="space-y-3">
-                      <div>
-                        <label className="block text-[12px] text-[var(--color-sidebar-text)] opacity-60 mb-1.5">开户银行</label>
-                        <input
-                          type="text"
-                          value={engineerForm.bank_name}
-                          onChange={e => setEngineerForm({ ...engineerForm, bank_name: e.target.value })}
-                          placeholder="如：中国工商银行"
-                          className="w-full bg-[var(--color-input-bg)] border border-[var(--color-input-border)] rounded-lg px-3 py-2.5 text-[14px] text-[var(--color-sidebar-text)]"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-[12px] text-[var(--color-sidebar-text)] opacity-60 mb-1.5">开户支行</label>
-                        <input
-                          type="text"
-                          value={engineerForm.bank_branch}
-                          onChange={e => setEngineerForm({ ...engineerForm, bank_branch: e.target.value })}
-                          placeholder="如：济南市历下支行"
-                          className="w-full bg-[var(--color-input-bg)] border border-[var(--color-input-border)] rounded-lg px-3 py-2.5 text-[14px] text-[var(--color-sidebar-text)]"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-[12px] text-[var(--color-sidebar-text)] opacity-60 mb-1.5">开户人姓名</label>
-                        <input
-                          type="text"
-                          value={engineerForm.account_holder}
-                          onChange={e => setEngineerForm({ ...engineerForm, account_holder: e.target.value })}
-                          placeholder="需与银行卡开户名一致"
-                          className="w-full bg-[var(--color-input-bg)] border border-[var(--color-input-border)] rounded-lg px-3 py-2.5 text-[14px] text-[var(--color-sidebar-text)]"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-[12px] text-[var(--color-sidebar-text)] opacity-60 mb-1.5">银行卡号</label>
-                        <input
-                          type="text"
-                          value={engineerForm.bank_account}
-                          onChange={e => setEngineerForm({ ...engineerForm, bank_account: e.target.value })}
-                          placeholder="请输入银行卡号"
-                          className="w-full bg-[var(--color-input-bg)] border border-[var(--color-input-border)] rounded-lg px-3 py-2.5 text-[14px] text-[var(--color-sidebar-text)]"
-                        />
-                      </div>
-                    </div>
-                  </div>
-
                   {/* 工程师等级信息 */}
                   <div className="bg-[var(--color-surface-elevated)] rounded-xl p-3 space-y-2">
                     <div className="flex justify-between text-[13px]">

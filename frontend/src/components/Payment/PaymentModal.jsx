@@ -112,7 +112,7 @@ export function PaymentModal({ isOpen, onClose, workOrderId, customerId, onPaid 
                   <span className="text-[var(--color-text-primary)]">{order?.order_no || workOrderId?.slice(0, 14)}</span>
                 </div>
               </div>
-              <p className="text-xs text-[var(--color-text-muted)]">服务商将在收到付款后安排上门服务</p>
+              <p className="text-xs text-[var(--color-text-muted)]">服务代表将在收到付款后安排上门服务</p>
               <button
                 onClick={onClose}
                 className="w-full py-2.5 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white rounded-xl font-medium text-sm"
@@ -192,7 +192,7 @@ export function PaymentModal({ isOpen, onClose, workOrderId, customerId, onPaid 
                 <Shield size={16} className="text-blue-500 flex-shrink-0 mt-0.5" />
                 <div className="text-xs text-[var(--color-text-secondary)]">
                   <p className="font-medium text-[var(--color-text-primary)] mb-0.5">平台担保交易</p>
-                  <p>付款由平台托管，服务完成后平台将款项结算给服务商。此为模拟支付环境，用于演示完整交易流程。</p>
+                  <p>当前为模拟支付环境，用于演示服务流程。正式付款方式以 SAGEMRO 确认为准。</p>
                 </div>
               </div>
 

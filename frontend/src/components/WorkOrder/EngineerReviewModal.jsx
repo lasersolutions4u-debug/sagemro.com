@@ -74,10 +74,10 @@ export function EngineerReviewModal({ isOpen, onClose, workOrder, onSuccess }) {
       <div className="space-y-4">
         <div className="p-3 bg-[var(--color-surface-elevated)] rounded-xl">
           <div className="text-sm text-[var(--color-text-primary)]">
-            工单号：{workOrder?.order_no || workOrder?.id}
+            服务编号：{workOrder?.order_no || workOrder?.id}
           </div>
           <div className="text-xs text-[var(--color-text-secondary)] mt-1">
-            此评价仅平台和服务商可见，客户不可见
+            此评价仅平台和服务代表可见，客户不可见
           </div>
         </div>
 

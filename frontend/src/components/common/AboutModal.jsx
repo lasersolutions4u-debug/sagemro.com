@@ -17,8 +17,8 @@ import {
 const painPoints = [
   {
     icon: Users,
-    title: '找服务商难',
-    desc: '不知道去哪里找靠谱的服务商，品牌代理商太贵，社会维修师傅不放心。',
+    title: '找服务代表难',
+    desc: '不知道去哪里找靠谱的服务代表，品牌代理商太贵，社会维修师傅不放心。',
   },
   {
     icon: Wallet,
@@ -34,9 +34,9 @@ const painPoints = [
 
 const comparisons = [
   {
-    dim: '找服务商',
+    dim: '找服务代表',
     legacy: '口碑推荐 / 代理商',
-    ours: 'AI 精准匹配最优服务商',
+    ours: 'AI 精准匹配最优服务代表',
   },
   {
     dim: '定价',
@@ -46,7 +46,7 @@ const comparisons = [
   {
     dim: '服务保障',
     legacy: '无记录，出了问题找不到人',
-    ours: '工单全程记录 · 平台托管',
+    ours: '工单全程记录 · SAGEMRO 服务跟进',
   },
   {
     dim: '知识积累',
@@ -61,7 +61,7 @@ const comparisons = [
 ];
 
 const customerValue = [
-  '不再四处打听靠谱服务商',
+  '不再四处打听靠谱服务代表',
   '报价透明，心里有底',
   '平台记录，服务有保障',
 ];
@@ -85,7 +85,7 @@ export function AboutModal({ isOpen, onClose }) {
             SAGEMRO 小智
           </h2>
           <p className="text-sm text-[var(--color-text-secondary)]">
-            钣金加工行业智能服务平台 · 客户与服务商之间的 AI 枢纽
+            钣金加工行业智能服务平台 · 客户与服务代表之间的 AI 枢纽
           </p>
         </div>
 
@@ -127,7 +127,7 @@ export function AboutModal({ isOpen, onClose }) {
               <ArrowRight size={14} className="text-[var(--color-text-secondary)]" />
               <span className="px-2 py-1 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-md">平台匹配</span>
               <ArrowRight size={14} className="text-[var(--color-text-secondary)]" />
-              <span className="px-2 py-1 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-md">服务商</span>
+              <span className="px-2 py-1 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-md">服务代表</span>
               <ArrowRight size={14} className="text-[var(--color-text-secondary)]" />
               <span className="px-2 py-1 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-md">核价 / 议价</span>
               <ArrowRight size={14} className="text-[var(--color-text-secondary)]" />
@@ -231,7 +231,7 @@ export function AboutModal({ isOpen, onClose }) {
             <div className="p-3 bg-[var(--color-surface-elevated)] rounded-xl">
               <div className="flex items-center gap-2 mb-2">
                 <ClipboardCheck size={16} className="text-[var(--color-primary)]" />
-                <span className="text-[13px] font-medium text-[var(--color-text-primary)]">对服务商</span>
+                <span className="text-[13px] font-medium text-[var(--color-text-primary)]">对服务代表</span>
               </div>
               <ul className="space-y-1.5">
                 {engineerValue.map((item) => (

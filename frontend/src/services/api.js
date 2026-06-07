@@ -96,7 +96,7 @@ export async function registerCustomer({ name, phone, password, code, company, i
 }
 
 /**
- * 工程师入驻
+ * 兼容旧版工程师注册接口；中国版前端不开放公众入驻入口。
  */
 export async function registerEngineer({ name, phone, password, code, specialties, brands, services, service_region, bio, company }) {
   const response = await fetch(`${API_BASE}/api/auth/register/engineer`, {
@@ -303,7 +303,7 @@ export async function renameConversation(id, title) {
 // ============ 工单相关 ============
 
 /**
- * 提交工单
+ * 提交服务申请
  */
 export async function submitWorkOrder(data) {
   const response = await fetch(`${API_BASE}/api/workorders`, {
@@ -457,7 +457,7 @@ export async function getEngineerTickets(engineerId) {
 }
 
 /**
- * 工程师接单
+ * 工程师确认派工
  */
 export async function acceptTicket({ work_order_id, engineer_id }) {
   const response = await fetch(`${API_BASE}/api/engineers/tickets/accept`, {
@@ -470,7 +470,7 @@ export async function acceptTicket({ work_order_id, engineer_id }) {
 }
 
 /**
- * 工程师拒单
+ * 工程师退回调度
  */
 export async function rejectTicket({ work_order_id, engineer_id }) {
   const response = await fetch(`${API_BASE}/api/engineers/tickets/reject`, {
@@ -494,7 +494,7 @@ export async function getRecommendedEngineers(workOrderId) {
 }
 
 /**
- * 更新工程师接单状态
+ * 更新工程师派工状态
  */
 export async function updateEngineerStatus({ engineer_id, status }) {
   const response = await fetch(`${API_BASE}/api/engineers/status`, {
@@ -545,10 +545,10 @@ export async function cancelWorkOrder(workOrderId) {
   return response.json();
 }
 
-// ============ 工程师钱包与保证金 ============
+// ============ 旧版结算接口（中国版前端不展示） ============
 
 /**
- * 获取工程师钱包信息
+ * 获取旧版结算信息
  */
 export async function getEngineerWallet(engineerId) {
   const url = engineerId
@@ -562,7 +562,7 @@ export async function getEngineerWallet(engineerId) {
 }
 
 /**
- * 申请提现
+ * 提交旧版结算申请
  */
 export async function applyWithdraw(amount) {
   const response = await fetch(`${API_BASE}/api/engineers/wallet/withdraw`, {

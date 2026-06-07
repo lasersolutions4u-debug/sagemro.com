@@ -83,7 +83,7 @@ export function WorkOrderModal({ isOpen, onClose, onSubmit }) {
         }
         setUploadPhase(null);
         if (uploaded > 0) {
-          toastSuccess(`工单已提交，${uploaded} 个附件已上传`);
+          toastSuccess(`服务申请已提交，${uploaded} 个附件已上传`);
         }
       }
       setFiles([]);
@@ -133,20 +133,20 @@ export function WorkOrderModal({ isOpen, onClose, onSubmit }) {
   ];
 
   return (
-    <Modal isOpen={isOpen} onClose={handleClose} title={submitted ? '工单已提交' : '提交工单'} size="md">
+    <Modal isOpen={isOpen} onClose={handleClose} title={submitted ? '服务申请已提交' : '提交服务申请'} size="md">
       {/* 提交成功提示 */}
       {submitted && (
         <div className="space-y-4">
           <div className="p-4 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-xl text-center">
             <div className="text-3xl mb-2">✅</div>
-            <p className="text-sm font-medium text-green-700 dark:text-green-400 mb-1">工单提交成功！</p>
+            <p className="text-sm font-medium text-green-700 dark:text-green-400 mb-1">服务申请提交成功！</p>
             <p className="text-xs text-green-600 dark:text-green-500">
-              工单号：{submitted.order_no || submitted.id}
+              服务编号：{submitted.order_no || submitted.id}
             </p>
           </div>
           <p className="text-xs text-[var(--color-text-secondary)] text-center">
-            服务商接单后，小智会通知您。
-            您也可以在「我的工单」中随时查看进度。
+            SAGEMRO 会审核申请并安排合适的官方工程师或认证服务代表。
+            您也可以在「我的服务」中随时查看进度。
           </p>
           <button
             onClick={handleClose}
@@ -159,17 +159,17 @@ export function WorkOrderModal({ isOpen, onClose, onSubmit }) {
 
       {!submitted && (
         <div className="space-y-4">
-        {/* 问题类型 */}
+        {/* 服务类型 */}
         <div>
           <label className="block text-sm font-medium text-[var(--color-text-primary)] mb-1">
-            问题类型 <span className="text-red-500">*</span>
+            服务类型 <span className="text-red-500">*</span>
           </label>
           <select
             value={form.type}
             onChange={(e) => setForm({ ...form, type: e.target.value })}
             className="w-full px-3 py-2 border border-[var(--color-border)] dark:border-[var(--color-border-strong)] rounded-xl bg-[var(--color-surface)] dark:bg-[var(--color-surface-elevated)] text-xs text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
           >
-            <option value="">请选择问题类型</option>
+            <option value="">请选择服务类型</option>
             {typeOptions.map((opt) => (
               <option key={opt.value} value={opt.value}>
                 {opt.label}
@@ -178,7 +178,7 @@ export function WorkOrderModal({ isOpen, onClose, onSubmit }) {
           </select>
         </div>
 
-        {/* 设备大类 + 问题类型（级联） */}
+        {/* 设备大类 + 服务类型（级联） */}
         <div>
           <label className="block text-sm font-medium text-[var(--color-text-primary)] mb-1">
             设备大类
@@ -367,7 +367,7 @@ export function WorkOrderModal({ isOpen, onClose, onSubmit }) {
             ? uploadPhase
               ? `正在上传附件 (${uploadPhase.current}/${uploadPhase.total})...`
               : '提交中...'
-            : '提交工单'}
+            : '提交服务申请'}
         </button>
         </div>
       )}

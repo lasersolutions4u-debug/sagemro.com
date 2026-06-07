@@ -69,14 +69,14 @@ export function MyWorkOrdersModal({ isOpen, onClose }) {
   };
 
   const handleRateSuccess = () => {
-    // 刷新工单列表
+    // 刷新服务任务列表
     const loadWorkOrders = async () => {
       try {
         const customerId = localStorage.getItem('sagemro_customer_id') || 'guest';
         const data = await getWorkOrders(customerId);
         setWorkOrders(data.work_orders || []);
       } catch (e) {
-        console.error('刷新工单失败:', e);
+        console.error('刷新服务任务失败:', e);
       }
     };
     loadWorkOrders();
@@ -84,7 +84,7 @@ export function MyWorkOrdersModal({ isOpen, onClose }) {
 
   return (
     <>
-      <Modal isOpen={isOpen} onClose={onClose} title="我的工单" size="md">
+      <Modal isOpen={isOpen} onClose={onClose} title="我的服务" size="md">
         <div className="space-y-3">
           {loading && (
             <div className="text-center py-8 text-[var(--color-text-secondary)]">
@@ -149,7 +149,7 @@ export function MyWorkOrdersModal({ isOpen, onClose }) {
                 </div>
                 {order.engineer_name && (
                   <p className="text-xs text-[var(--color-primary)] mb-1">
-                    服务商：{order.engineer_name}
+                    SAGEMRO 工程师：{order.engineer_name}
                   </p>
                 )}
                 <p className="text-sm text-[var(--color-text-secondary)] mb-1">

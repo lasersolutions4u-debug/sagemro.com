@@ -50,7 +50,7 @@ export function EngineerProfileModal({ isOpen, onClose, engineerId }) {
     : 0;
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="服务商档案" size="md">
+    <Modal isOpen={isOpen} onClose={onClose} title="服务代表档案" size="md">
       <div className="space-y-5">
         {loading && (
           <div className="text-center py-8 text-[var(--color-text-secondary)]">加载中...</div>
@@ -71,10 +71,10 @@ export function EngineerProfileModal({ isOpen, onClose, engineerId }) {
                 </h2>
                 <div className="flex items-center gap-2 mt-1">
                   {profile.status === 'available' && (
-                    <span className="px-2 py-0.5 text-xs bg-green-500 text-white rounded">可接单</span>
+                    <span className="px-2 py-0.5 text-xs bg-green-500 text-white rounded">可派工</span>
                   )}
                   {profile.status === 'paused' && (
-                    <span className="px-2 py-0.5 text-xs bg-yellow-500 text-white rounded">暂停接单</span>
+                    <span className="px-2 py-0.5 text-xs bg-yellow-500 text-white rounded">暂停派工</span>
                   )}
                   {profile.status === 'offline' && (
                     <span className="px-2 py-0.5 text-xs bg-gray-500 text-white rounded">离线</span>
@@ -230,7 +230,7 @@ export function EngineerProfileModal({ isOpen, onClose, engineerId }) {
                       </div>
                       <div className="text-xs text-[var(--color-text-secondary)]">
                         {pushEnabled
-                          ? '已开启，新工单和钱包变动时会推送'
+                          ? '已开启，新服务任务和内部更新时会推送'
                           : pushPermission === 'denied'
                           ? '已被浏览器拒绝'
                           : '未开启'}

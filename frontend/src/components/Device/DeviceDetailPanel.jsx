@@ -347,7 +347,7 @@ export function DeviceDetailPanel({ deviceId, onBack, onDelete }) {
 
                 <div className="flex items-center gap-4 text-[12px] text-[var(--color-text-muted)]">
                   {wo.engineer_name && (
-                    <span>服务商：{wo.engineer_name}</span>
+                    <span>SAGEMRO 工程师：{wo.engineer_name}</span>
                   )}
                   {wo.rating && (
                     <span className="flex items-center gap-1">

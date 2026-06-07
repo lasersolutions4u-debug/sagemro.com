@@ -1,0 +1,132 @@
+import {
+  Activity,
+  BadgeDollarSign,
+  Cog,
+  Gauge,
+  HeartPulse,
+  ScanSearch,
+} from 'lucide-react';
+
+export const aiServiceTools = [
+  {
+    id: 'diagnosis',
+    icon: ScanSearch,
+    title: '故障诊断 AI',
+    shortTitle: '故障诊断',
+    description: '把报警、照片和故障现象整理成可派工的官方服务申请。',
+    cta: '开始诊断',
+    leadType: '维修服务',
+    fields: [
+      { name: 'equipment', label: '设备类型', placeholder: '例如：光纤激光切割机' },
+      { name: 'brandModel', label: '品牌 / 型号', placeholder: '例如：3015 6kW，柏楚，锐科' },
+      { name: 'alarmCode', label: '报警代码', placeholder: '例如：Z 轴随动报警' },
+      { name: 'symptom', label: '故障现象', type: 'textarea', placeholder: '描述什么时候开始、是否停机、现场已经检查过什么。' },
+      { name: 'material', label: '材料 / 厚度 / 气体', placeholder: '例如：6mm 碳钢，氧气' },
+      { name: 'region', label: '所在地区', placeholder: '城市 / 省份' },
+      { name: 'urgency', label: '紧急程度', placeholder: '普通 / 紧急 / 已停产' },
+    ],
+    promptIntro: '请作为 SAGEMRO AI 设备诊断助手，给出安全的初步故障判断。',
+    outputGuide: '请输出可能原因、风险等级、是否建议停机、还需要补充的信息、可能涉及的备件，以及是否建议提交 SAGEMRO 官方服务申请。',
+  },
+  {
+    id: 'cutting-parameters',
+    icon: Gauge,
+    title: '切割参数 AI',
+    shortTitle: '切割参数',
+    description: '根据材料、厚度、功率、气体和切割质量问题给出保守参考范围。',
+    cta: '生成参数',
+    leadType: '工艺调试',
+    fields: [
+      { name: 'material', label: '材料', placeholder: '例如：不锈钢、碳钢、铝板' },
+      { name: 'thickness', label: '厚度', placeholder: '例如：3mm' },
+      { name: 'laserPower', label: '激光功率', placeholder: '例如：3000W' },
+      { name: 'gas', label: '辅助气体', placeholder: '例如：氮气 / 氧气 / 空气' },
+      { name: 'nozzle', label: '喷嘴 / 焦点', placeholder: '例如：1.5 单层喷嘴，焦点不确定' },
+      { name: 'qualityIssue', label: '当前问题', type: 'textarea', placeholder: '挂渣、切不透、烧边、断面粗糙、纹路明显等。' },
+    ],
+    promptIntro: '请作为 SAGEMRO 切割工艺 AI，给出保守的切割参数参考。',
+    outputGuide: '请输出参数范围、焦点/气压/速度建议、质量问题可能原因，以及何时需要 SAGEMRO 工艺调试服务。',
+  },
+  {
+    id: 'parts-identification',
+    icon: Cog,
+    title: '备件识别 AI',
+    shortTitle: '备件识别',
+    description: '识别易损件或备件类别，并收集人工确认兼容性所需信息。',
+    cta: '识别备件',
+    leadType: '备件耗材',
+    fields: [
+      { name: 'partPhoto', label: '照片 / 标识描述', type: 'textarea', placeholder: '描述照片、铭牌、刻字、编码或外观。' },
+      { name: 'machineInfo', label: '设备 / 切割头', placeholder: '例如：BM111、BLT、普雷茨特、瑞泰' },
+      { name: 'partUse', label: '使用位置', placeholder: '例如：保护镜片、陶瓷环、传感线' },
+      { name: 'quantity', label: '需求数量', placeholder: '例如：20 件' },
+      { name: 'shippingRegion', label: '收货地区', placeholder: '省市 / 国家' },
+    ],
+    promptIntro: '请作为 SAGEMRO 备件识别 AI，判断可能的备件类别。',
+    outputGuide: '请输出可能类别、可能型号、兼容风险、还需确认的信息，以及 SAGEMRO 备件确认下一步。',
+  },
+  {
+    id: 'repair-estimate',
+    icon: BadgeDollarSign,
+    title: '维修预估 AI',
+    shortTitle: '维修预估',
+    description: '评估维修复杂度和费用等级，不生成正式报价。',
+    cta: '预估维修',
+    leadType: '维修报价',
+    fields: [
+      { name: 'faultType', label: '故障类型', placeholder: '例如：激光功率下降、切割头撞机、冷水机报警' },
+      { name: 'machineAge', label: '设备年限', placeholder: '例如：使用 4 年' },
+      { name: 'downtime', label: '生产状态', placeholder: '可运行 / 不稳定 / 已停机' },
+      { name: 'history', label: '维修历史', type: 'textarea', placeholder: '之前修过什么、换过哪些件、是否反复出现。' },
+      { name: 'location', label: '所在地', placeholder: '城市 / 省份' },
+    ],
+    promptIntro: '请作为 SAGEMRO 维修预估 AI，给出非正式的费用等级评估。',
+    outputGuide: '请输出低/中/高费用等级、主要成本因素、可能备件或工时、正式报价所需信息和安全提示。',
+  },
+  {
+    id: 'machine-selection',
+    icon: Activity,
+    title: '新机选型 AI',
+    shortTitle: '新机选型',
+    description: '推荐激光功率、幅面、自动化配置，并把高质量新机线索转给 Euchio。',
+    cta: '开始选型',
+    leadType: '新机项目',
+    fields: [
+      { name: 'materials', label: '加工材料', placeholder: '例如：碳钢、不锈钢、铝板' },
+      { name: 'thicknessRange', label: '厚度范围', placeholder: '例如：1-20mm' },
+      { name: 'sheetSize', label: '板材幅面', placeholder: '例如：1500x3000mm' },
+      { name: 'capacity', label: '产能目标', placeholder: '日产/月产目标' },
+      { name: 'budget', label: '预算范围', placeholder: '选填' },
+      { name: 'automation', label: '自动化需求', placeholder: '手动 / 交换台 / 上下料系统' },
+      { name: 'country', label: '安装地区', placeholder: '国家 / 省市' },
+    ],
+    promptIntro: '请作为 SAGEMRO 新机选型 AI，生成初步激光切割机配置建议。',
+    outputGuide: '请输出推荐功率范围、幅面、自动化、辅助设备、维修/升级/换新哪种更合适，并说明 Euchio 可跟进正式项目报价。',
+  },
+  {
+    id: 'health-report',
+    icon: HeartPulse,
+    title: '设备健康报告 AI',
+    shortTitle: '健康报告',
+    description: '根据使用强度、故障频率和维保记录生成健康评分与维保计划。',
+    cta: '生成报告',
+    leadType: '维保计划',
+    fields: [
+      { name: 'machine', label: '设备信息', placeholder: '品牌、型号、功率、年份' },
+      { name: 'usage', label: '使用强度', placeholder: '例如：每天 10 小时，每周 6 天' },
+      { name: 'faultFrequency', label: '近期故障频率', placeholder: '例如：近一个月停机 3 次' },
+      { name: 'maintenance', label: '维保历史', type: 'textarea', placeholder: '清洁、镜片更换、冷水机保养、以往维修记录。' },
+      { name: 'qualityIssues', label: '质量问题', placeholder: '挂渣、功率不稳、精度差、反复报警' },
+    ],
+    promptIntro: '请作为 SAGEMRO 设备健康报告 AI，生成设备健康评分和维保建议。',
+    outputGuide: '请输出健康评分、主要风险、短期检查项、月度/季度维保建议、备件建议和是否建议 SAGEMRO 年度维保。',
+  },
+];
+
+export function buildAiToolPrompt(tool, values) {
+  const lines = tool.fields
+    .map((field) => `${field.label}: ${values[field.name] || '未提供'}`)
+    .join('\n');
+
+  return `${tool.promptIntro}\n\n用户填写信息：\n${lines}\n\n输出要求：${tool.outputGuide}\n\n请用中文回答，优先给安全、可执行、适合 SAGEMRO 官方服务跟进的建议。`;
+}

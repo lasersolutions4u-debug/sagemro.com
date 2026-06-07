@@ -169,8 +169,8 @@ export function usePushNotification(userId, shouldSubscribe) {
           const data = event.notification?.data;
           if (data?.work_order_id) {
             setInAppNotification({
-              title: event.notification?.heading || '📋 新工单通知',
-              body: event.notification?.body || '您有新的工单等待接单',
+              title: event.notification?.heading || '📋 新服务任务通知',
+              body: event.notification?.body || '您有新的工单等已派工',
               data
             });
             // 5秒后自动消失

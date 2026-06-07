@@ -63,11 +63,11 @@ export function ToolBar({
 
   const primaryTools = isEngineer
     ? [
-        { icon: ClipboardList, label: '我的工单', onClick: onOpenMyWorkOrders, testid: 'tool-my-work-orders' },
+        { icon: ClipboardList, label: '我的服务', onClick: onOpenMyWorkOrders, testid: 'tool-my-work-orders' },
       ]
     : [
-        { icon: FileText, label: '新建工单', onClick: onOpenWorkOrder, testid: 'tool-create-work-order' },
-        { icon: ClipboardList, label: '我的工单', onClick: onOpenMyWorkOrders, testid: 'tool-my-work-orders' },
+        { icon: FileText, label: '申请服务', onClick: onOpenWorkOrder, testid: 'tool-create-work-order' },
+        { icon: ClipboardList, label: '我的服务', onClick: onOpenMyWorkOrders, testid: 'tool-my-work-orders' },
       ];
 
   const extraTools = isEngineer
@@ -181,7 +181,7 @@ export function ToolBar({
               </div>
               <span className="truncate">{currentUser.name}</span>
               {isEngineer && (
-                <span className="text-[10px] px-1.5 py-0.5 bg-[var(--color-primary)]/20 text-[var(--color-primary)] rounded">服务商</span>
+                <span className="text-[10px] px-1.5 py-0.5 bg-[var(--color-primary)]/20 text-[var(--color-primary)] rounded">服务代表</span>
               )}
             </button>
             <button
