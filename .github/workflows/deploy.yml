@@ -1,8 +1,8 @@
 name: Deploy to Cloudflare
 
 # 触发策略：
-#   - push 到 main：跑测试 → 通过后部署 frontend / worker / admin 到生产
-#   - push 到 china-edition：跑测试 → 通过后仅部署中国版 frontend 到 sagemro.cn
+#   - push 到 main：跑测试 → 通过后部署 frontend / worker / admin 到国际版生产
+#   - push 到 china-edition：跑测试 → 通过后部署中国版 frontend / admin
 #   - PR：只跑测试和 build，绝不部署（用 jobs 层 if: 门禁兜底）
 on:
   push:
@@ -48,8 +48,6 @@ jobs:
       - name: Frontend build
         working-directory: frontend
         run: npm run build
-        env:
-          VITE_API_BASE: https://api.sagemro.com
 
       # Admin build（编译失败直接挂）
       - name: Admin install
@@ -59,8 +57,6 @@ jobs:
       - name: Admin build
         working-directory: admin
         run: npm run build
-        env:
-          VITE_API_BASE: https://api.sagemro.com
 
   # ============ 部署 Frontend ============
   deploy-frontend:
@@ -88,8 +84,6 @@ jobs:
       - name: Build
         working-directory: frontend
         run: npm run build
-        env:
-          VITE_API_BASE: https://api.sagemro.com
 
       - name: Deploy to Cloudflare Pages
         uses: cloudflare/wrangler-action@v3
@@ -173,7 +167,7 @@ jobs:
   deploy-admin:
     name: Deploy Admin Panel to Cloudflare Pages
     needs: test
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/china-edition')
     runs-on: ubuntu-latest
     environment: production
     steps:
@@ -192,12 +186,10 @@ jobs:
       - name: Build
         working-directory: admin
         run: npm run build
-        env:
-          VITE_API_BASE: https://api.sagemro.com
 
       - name: Deploy to Cloudflare Pages
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: pages deploy admin/dist --project-name=sagemro-admin --branch=${{ github.ref_name }}
+          command: pages deploy admin/dist --project-name=${{ github.ref == 'refs/heads/main' && 'sagemro-admin' || 'sagemro-admin-cn' }} --branch=${{ github.ref_name }}

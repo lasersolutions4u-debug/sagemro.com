@@ -1,4 +1,12 @@
-const API_BASE = import.meta.env.VITE_API_BASE || 'https://sagemro-api.lasersolutions4u.workers.dev';
+function resolveApiBase() {
+  if (import.meta.env.VITE_API_BASE) return import.meta.env.VITE_API_BASE;
+  if (typeof window !== 'undefined' && window.location.hostname.endsWith('.cn')) {
+    return 'https://api.sagemro.cn';
+  }
+  return 'https://api.sagemro.com';
+}
+
+const API_BASE = resolveApiBase();
 const DEBUG_API = import.meta.env.DEV;
 
 function authHeaders() {

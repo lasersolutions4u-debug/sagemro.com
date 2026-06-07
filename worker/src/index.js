@@ -6966,11 +6966,35 @@ function withCorsHeaders(response, request, env) {
   });
 }
 
+export function shouldUseCnDatabase(request) {
+  const url = new URL(request.url);
+  if (url.hostname.endsWith('.cn')) return true;
+
+  const origin = request.headers.get('Origin');
+  if (origin) {
+    try {
+      return new URL(origin).hostname.endsWith('.cn');
+    } catch {
+      return false;
+    }
+  }
+
+  const referer = request.headers.get('Referer');
+  if (referer) {
+    try {
+      return new URL(referer).hostname.endsWith('.cn');
+    } catch {
+      return false;
+    }
+  }
+
+  return false;
+}
+
 export default {
   async fetch(request, env, ctx) {
-    // 按域名路由数据库：.cn 请求走 CN 库，其他走 EN 库
-    const host = new URL(request.url).hostname;
-    if (host.endsWith('.cn') && env.DB_CN) {
+    // 按 API 域名或来源域名路由数据库：CN 站点走 CN 库，其他走 EN 库。
+    if (env.DB_CN && shouldUseCnDatabase(request)) {
       env.DB = env.DB_CN;
     }
     try {
