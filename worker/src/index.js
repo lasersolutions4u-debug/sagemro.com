@@ -7549,6 +7549,11 @@ async function routeRequest(request, env, ctx) {
       return handleChat(request, env);
     }
 
+    // 商机线索提交（无需登录）
+    if (path === '/api/leads' && request.method === 'POST') {
+      return handleSubmitLead(request, env);
+    }
+
     // 健康检查（无需 token）
     if (path === '/health') {
       return jsonResponse({ status: 'ok' });
@@ -7989,10 +7994,6 @@ async function routeRequest(request, env, ctx) {
     // 获取付款记录
     if (path.match(/^\/api\/workorders\/[^/]+\/payment$/) && request.method === 'GET') {
       return handleGetWorkOrderPayment(request, env);
-    }
-    // 商机线索提交（无需登录）
-    if (path === '/api/leads' && request.method === 'POST') {
-      return handleSubmitLead(request, env);
     }
     // 推送订阅（OneSignal Player ID）- 客户和工程师共用同一处理器，按 auth.userType 分发
     if (
