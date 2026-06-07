@@ -1,4 +1,13 @@
-const API_BASE = import.meta.env.VITE_API_BASE || 'https://sagemro-api.lasersolutions4u.workers.dev';
+function resolveApiBase() {
+  if (import.meta.env.VITE_API_BASE) return import.meta.env.VITE_API_BASE;
+  if (typeof window !== 'undefined' && window.location.hostname.endsWith('.cn')) {
+    return 'https://api.sagemro.cn';
+  }
+  return 'https://api.sagemro.com';
+}
+
+const API_BASE = resolveApiBase();
+const DEBUG_API = import.meta.env.DEV;
 
 function authHeaders() {
   const token = localStorage.getItem('admin_token');
@@ -11,7 +20,9 @@ function authHeaders() {
 
 async function request(path, options = {}) {
   const headers = { ...authHeaders(), ...options.headers };
-  console.log('[admin-api]', options.method || 'GET', path, 'hasToken:', !!headers['Authorization']);
+  if (DEBUG_API) {
+    console.debug('[admin-api]', options.method || 'GET', path, 'hasToken:', !!headers['Authorization']);
+  }
   const res = await fetch(`${API_BASE}${path}`, {
     ...options,
     headers,
@@ -22,7 +33,9 @@ async function request(path, options = {}) {
   } catch {
     throw new Error(`服务器返回非JSON响应 (${res.status})`);
   }
-  console.log('[admin-api] response:', res.status, data);
+  if (DEBUG_API) {
+    console.debug('[admin-api] response:', res.status);
+  }
   if (!res.ok) {
     throw new Error(data.error || `请求失败 (${res.status})`);
   }
@@ -80,4 +93,15 @@ export async function getAdminPlatformRatings(page = 1, pageSize = 20) {
 
 export async function getAdminCustomerRatings(page = 1, pageSize = 20) {
   return request(`/api/admin/customer-ratings?page=${page}&pageSize=${pageSize}`);
+}
+
+export async function getAdminLeads(page = 1, pageSize = 20, status = 'all') {
+  return request(`/api/admin/leads?page=${page}&pageSize=${pageSize}&status=${status}`);
+}
+
+export async function updateAdminLead(leadId, status) {
+  return request(`/api/admin/leads/${leadId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ status }),
+  });
 }

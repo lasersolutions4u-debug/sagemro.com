@@ -10,34 +10,29 @@
 
 ### 1.1 平台总览（统一为 Cloudflare 全家桶）
 
-| 组件       | 域名                | CF 项目                     | 工作目录              |
+| 组件       | 域名                | CF 项目 / 资源              | 工作目录              |
 | ---------- | ------------------- | --------------------------- | --------------------- |
 | 国际版前端 | `sagemro.com`       | Pages: `sagemro-com`        | `frontend/`           |
-| 中国版前端 | （独立域名待定）    | Pages: `sagemro-cn`         | `frontend/`（同源码） |
-| 管理后台   | `admin.sagemro.com` | Pages: `sagemro-admin`      | `admin/`              |
-| API 后端   | `api.sagemro.com`   | Workers: env=`production`   | `worker/`             |
-| 数据库     | —                   | D1: `sagemro-db`            | `worker/migrations/`  |
+| 中国版前端 | `sagemro.cn`        | Pages: `sagemro-cn`         | `frontend/`（同源码） |
+| 国际版后台 | `admin.sagemro.com` | Pages: `sagemro-admin`      | `admin/`              |
+| 中国版后台 | `admin.sagemro.cn`  | Pages: `sagemro-admin-cn`   | `admin/`（同源码）    |
+| 国际版 API | `api.sagemro.com`   | Workers: env=`production`   | `worker/`             |
+| 中国版 API | `api.sagemro.cn`    | Workers: env=`production`   | `worker/`（同 Worker）|
+| 国际版数据库 | —                 | D1: `sagemro-db`            | `worker/migrations/`  |
+| 中国版数据库 | —                 | D1: `sagemro-db-cn`         | `worker/migrations/`  |
 | 缓存       | —                   | KV namespace（绑定名 `KV`） | —                     |
+
+中国版前台/后台在 `.cn` 域名下会自动调用 `https://api.sagemro.cn`。Worker 会按 API 域名或请求来源域名识别中国版流量，并路由到 `DB_CN`（`sagemro-db-cn`）。
 
 > **历史说明**：前端曾同时配过 Netlify（`netlify.toml`）和 Cloudflare Pages，造成双重部署和流量分裂。现已统一到 Cloudflare Pages。原 `netlify.toml` 备份为 `netlify.toml.deprecated`，确认 Pages 稳定运行一段时间后可删除。
 
 ### 1.2 多分支部署矩阵
 
-push to main              push to china-edition       PR to main
- ↓                            ↓                         ↓
- test                         test                      test
- ↓                            ↓                       (不部署)
- ┌──┴──┬──────┐              frontend
- │     │      │              (sagemro-cn)
- front  worker admin
- (sagemro-com)
-
-ruby
-
-~~~ruby
 **关键事实**：
-- ⚠️ `china-edition` 分支**只部署前端**，不部署 Worker / Admin
-- 这意味着 `sagemro-com` 和 `sagemro-cn` **共用同一个 API**（`api.sagemro.com`）
+- `main` 分支部署国际版前台、国际版后台和 Worker
+- `china-edition` 分支部署中国版前台和中国版后台，不部署 Worker
+- `sagemro.com/admin.sagemro.com` 调用 `api.sagemro.com`，使用 D1 `sagemro-db`
+- `sagemro.cn/admin.sagemro.cn` 调用 `api.sagemro.cn`，使用 D1 `sagemro-db-cn`
 - API 字段变更必须：先 PR 到 main → main 部署 Worker → 再 PR 到 china-edition；反向操作会让中国版 5xx
 - PR 永远只跑测试，不部署（jobs 层用 `if: github.event_name == 'push'` 兜底）
 
@@ -46,8 +41,8 @@ ruby
 | 事件 | test | deploy-frontend | deploy-worker | deploy-admin |
 |------|:----:|:---------------:|:-------------:|:------------:|
 | PR → main | ✅ | ❌ | ❌ | ❌ |
-| push → main | ✅ | ✅ (sagemro-com) | ✅ | ✅ |
-| push → china-edition | ✅ | ✅ (sagemro-cn) | ❌ | ❌ |
+| push → main | ✅ | ✅ (sagemro-com) | ✅ | ✅ (sagemro-admin) |
+| push → china-edition | ✅ | ✅ (sagemro-cn) | ❌ | ✅ (sagemro-admin-cn) |
 
 所有 deploy job 都声明了 `environment: production`。可在 GitHub repo → Settings → Environments → `production` 里加 required reviewers，作为人工审批门禁。
 
@@ -147,13 +142,14 @@ npx wrangler secret put ONESIGNAL_REST_API_KEY --env production
 
 ### 2.6 创建 Pages 项目（空壳）
 
-由于不用 CF 原生 Git 集成，需要先在 CF 上**手动建三个空的 Pages 项目**：
+由于不用 CF 原生 Git 集成，需要先在 CF 上**手动建四个空的 Pages 项目**：
 
 CF Dashboard → Workers & Pages → Create application → Pages → **Direct Upload**，分别建：
 
 - `sagemro-com`
 - `sagemro-cn`
 - `sagemro-admin`
+- `sagemro-admin-cn`
 
 ⚠️ **项目名必须和 deploy.yml 里写的完全一致**。如果不一致，`wrangler pages deploy` 会自动创建一个新项目（名字对得上 yml），导致出现孤儿项目——部署成功了但访问的是另一个 URL。
 
@@ -173,9 +169,10 @@ npx wrangler d1 migrations apply sagemro-db --remote --env production
 | 项目                   | 自定义域名                                                   |
 | ---------------------- | ------------------------------------------------------------ |
 | Pages: `sagemro-com`   | `sagemro.com`、`www.sagemro.com`                             |
-| Pages: `sagemro-cn`    | （中国版域名，按规划填）                                     |
+| Pages: `sagemro-cn`    | `sagemro.cn`、`www.sagemro.cn`                               |
 | Pages: `sagemro-admin` | `admin.sagemro.com`                                          |
-| Worker: `sagemro-api`  | `api.sagemro.com`（在 Worker → Triggers → Custom Domains 里加） |
+| Pages: `sagemro-admin-cn` | `admin.sagemro.cn`                                       |
+| Worker: `sagemro-api`  | `api.sagemro.com`、`api.sagemro.cn`（在 Worker → Triggers → Custom Domains 里加） |
 
 CF 自动签发 SSL 证书。
 
@@ -210,8 +207,8 @@ npx wrangler d1 execute sagemro-db --env production --remote --file migrations/0
 完成初始化后，日常部署只有一个动作：
 
 ```bash
-git push origin main             # 部署 frontend (sagemro-com) + worker + admin
-git push origin china-edition    # 仅部署 frontend (sagemro-cn)
+git push origin main             # 部署 frontend (sagemro-com) + worker + admin (sagemro-admin)
+git push origin china-edition    # 部署 frontend (sagemro-cn) + admin (sagemro-admin-cn)
 ```
 
 GitHub Actions 自动：
@@ -251,14 +248,19 @@ npx wrangler pages deploy frontend/dist --project-name=sagemro-com --branch=main
 
 # 部署中国版前端（在 china-edition 分支上）
 git checkout china-edition
-cd frontend && npm run build && cd ..
+cd frontend && npm ci && npm run build && cd ..
 npx wrangler pages deploy frontend/dist --project-name=sagemro-cn --branch=china-edition
 
-# 部署 Admin
+# 部署国际版 Admin
 cd admin
 npm ci && npm run build
 cd ..
 npx wrangler pages deploy admin/dist --project-name=sagemro-admin --branch=main
+
+# 部署中国版 Admin（在 china-edition 分支上）
+git checkout china-edition
+cd admin && npm ci && npm run build && cd ..
+npx wrangler pages deploy admin/dist --project-name=sagemro-admin-cn --branch=china-edition
 ```
 
 
@@ -272,10 +274,13 @@ npx wrangler pages deploy admin/dist --project-name=sagemro-admin --branch=main
 | 检查项      | URL                                                       | 期望          |
 | ----------- | --------------------------------------------------------- | ------------- |
 | 国际版首页  | `https://sagemro.com`                                     | 200，正常加载 |
-| 中国版首页  | `https://<china-domain>`                                  | 200           |
-| 管理后台    | `https://admin.sagemro.com`                               | 登录页        |
-| Worker 健康 | `https://api.sagemro.com/health`                          | 200 OK        |
-| API 烟测    | `https://api.sagemro.com/api/workorders?customer_id=test` | JSON 响应     |
+| 中国版首页  | `https://sagemro.cn`                                      | 200，正常加载 |
+| 国际版后台  | `https://admin.sagemro.com`                               | 登录页        |
+| 中国版后台  | `https://admin.sagemro.cn`                                | 登录页        |
+| 国际版 Worker 健康 | `https://api.sagemro.com/health`                   | 200 OK        |
+| 中国版 Worker 健康 | `https://api.sagemro.cn/health`                    | 200 OK        |
+| 国际版 API 烟测 | `https://api.sagemro.com/api/workorders?customer_id=test` | JSON 响应 |
+| 中国版 API 烟测 | `https://api.sagemro.cn/api/workorders?customer_id=test` | JSON 响应 |
 
 ------
 
@@ -326,7 +331,7 @@ npx wrangler tail --env production    # 看生产实时日志
 
 ### 7.4 前端连不上 API
 
-- `frontend/src/services/api.js` 里的 `API_BASE` 指向是否正确
+- `frontend/src/services/api.js` / `admin/src/services/api.js` 是否按 `.cn` 域名自动选择 `api.sagemro.cn`
 - DevTools → Network 看请求是否被 CORS 拦截
 - Worker 端 `Access-Control-Allow-Origin` 是否设置正确
 
@@ -338,5 +343,5 @@ npx wrangler tail --env production    # 看生产实时日志
 
 ### 7.6 china-edition 部署后中国版报 5xx
 
-很可能是"china-edition 调用了 main 还没合并的 API"。
- 解决：先把 API 变更 PR 到 main → 等 worker 部署 → 再让 china-edition 上线。
+很可能是"china-edition 调用了 main 还没合并的 API"，或 `api.sagemro.cn` 未绑定到 Worker。
+解决：先把 API 变更 PR 到 main → 等 worker 部署 → 确认 Worker 自定义域名含 `api.sagemro.cn` → 再让 china-edition 上线。
