@@ -1404,9 +1404,11 @@ async function authenticateAdmin(request, env) {
 const ALLOWED_ORIGINS_PRODUCTION = [
   'https://sagemro.com',
   'https://www.sagemro.com',
+  'https://engineer.sagemro.com',
   'https://admin.sagemro.com',
   'https://sagemro.cn',
   'https://www.sagemro.cn',
+  'https://engineer.sagemro.cn',
   'https://admin.sagemro.cn',
 ];
 const ALLOWED_ORIGINS_DEV = [

@@ -331,13 +331,13 @@ function App() {
         <div className="flex min-h-[100dvh] items-center justify-center bg-[var(--color-bg)] px-5 text-[var(--color-text-primary)]">
           <div className="max-w-md rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6 text-center shadow-xl">
             <div className="text-xs uppercase tracking-[0.24em] text-[var(--color-primary)]">SAGEMRO</div>
-            <h1 className="mt-2 text-xl font-semibold">SAGEMRO 工程师工作台</h1>
+            <h1 className="mt-2 text-xl font-semibold">SAGEMRO Engineer Workspace</h1>
             <p className="mt-3 text-sm text-[var(--color-text-secondary)]">
-              此入口面向已完成合作确认并开通账号的服务团队成员。登录后可查看服务任务、客户沟通、现场记录和服务报告。
+              For confirmed service team members with an active SAGEMRO account. Sign in to review service tasks, customer communication, field notes, and service reports.
             </p>
             {userType && userType !== 'engineer' && (
               <p className="mt-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-bg)] px-3 py-2 text-xs text-[var(--color-text-secondary)]">
-                当前登录的不是工程师账号，请先退出后使用工程师账号登录。
+                The current account is not an engineer account. Please sign out and use your SAGEMRO engineer account.
               </p>
             )}
             <div className="mt-5 flex flex-col gap-2">
@@ -345,14 +345,14 @@ function App() {
                 onClick={() => setLoginModalOpen(true)}
                 className="rounded-xl bg-[var(--color-primary)] px-4 py-2.5 text-sm font-medium text-white"
               >
-                进入工程师工作台
+                Enter Engineer Workspace
               </button>
               {currentUser && (
                 <button
                   onClick={handleLogout}
                   className="rounded-xl border border-[var(--color-border)] px-4 py-2.5 text-sm text-[var(--color-text-secondary)]"
                 >
-                  退出当前账号
+                  Sign Out
                 </button>
               )}
             </div>
@@ -383,22 +383,22 @@ function App() {
       <div className="flex min-h-[100dvh] items-center justify-center bg-[var(--color-bg)] px-5 text-[var(--color-text-primary)]">
         <div className="max-w-md rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6 text-center shadow-xl">
           <div className="text-xs uppercase tracking-[0.24em] text-[var(--color-primary)]">SAGEMRO</div>
-          <h1 className="mt-2 text-xl font-semibold">请从专属工作台继续</h1>
+          <h1 className="mt-2 text-xl font-semibold">Continue in the Engineer Workspace</h1>
           <p className="mt-3 text-sm text-[var(--color-text-secondary)]">
-            当前账号适用于 SAGEMRO 工程师工作台。请前往专属入口查看服务任务、客户沟通和现场服务记录。
+            This account is intended for the SAGEMRO Engineer Workspace. Use the dedicated portal to review service tasks, customer communication, and field service records.
           </p>
           <div className="mt-5 flex flex-col gap-2">
             <a
               href="https://engineer.sagemro.com"
               className="rounded-xl bg-[var(--color-primary)] px-4 py-2.5 text-sm font-medium text-white"
             >
-              前往 engineer.sagemro.com
+              Go to engineer.sagemro.com
             </a>
             <button
               onClick={handleLogout}
               className="rounded-xl border border-[var(--color-border)] px-4 py-2.5 text-sm text-[var(--color-text-secondary)]"
             >
-              退出当前账号
+              Sign Out
             </button>
           </div>
         </div>

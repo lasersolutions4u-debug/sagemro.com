@@ -11,24 +11,24 @@ import {
 import { WorkOrderDetailModal } from '../WorkOrder/WorkOrderDetailModal';
 
 const STATUS_LABELS = {
-  pending: '待确认派工',
-  pending_dispatch: '待区域派工',
-  assigned: '待确认派工',
-  in_progress: '服务中',
-  pricing: '待报价',
-  in_service: '服务中',
-  resolved: '待客户确认',
-  pending_review: '待归档',
-  completed: '已完成',
+  pending: 'Pending Confirmation',
+  pending_dispatch: 'Pending Regional Dispatch',
+  assigned: 'Pending Confirmation',
+  in_progress: 'In Service',
+  pricing: 'Pending Quote',
+  in_service: 'In Service',
+  resolved: 'Awaiting Customer Confirmation',
+  pending_review: 'Pending Archive',
+  completed: 'Completed',
 };
 
 const CHECKLIST = [
-  '确认客户问题、设备型号、现场联系人和到场时间',
-  '阅读 SAGEMRO AI 初诊摘要，标记安全风险',
-  '核对备件、工具、耗材和防护用品',
-  '到场后拍照记录设备铭牌、报警界面和故障部位',
-  '完成处理动作、备件更换和后续建议记录',
-  '提交服务报告，等待客户确认',
+  'Confirm customer issue, machine model, site contact, and arrival window',
+  'Review the SAGEMRO AI intake summary and flag safety risks',
+  'Check spare parts, tools, consumables, and protective equipment',
+  'Record nameplate, alarm screen, and fault area photos on site',
+  'Document service actions, parts replacement, and follow-up recommendations',
+  'Submit the service report for customer confirmation',
 ];
 
 // This component is the first shared implementation slice for the future
@@ -66,7 +66,7 @@ export function EngineerWorkspace({ currentUser, onLogout, onOpenProfile }) {
       const data = await getEngineerTickets(engineerId);
       setTickets(data.work_orders || []);
     } catch (error) {
-      setMessage(error.message || '服务任务加载失败');
+      setMessage(error.message || 'Failed to load service tasks');
     } finally {
       setLoading(false);
     }
@@ -78,7 +78,7 @@ export function EngineerWorkspace({ currentUser, onLogout, onOpenProfile }) {
       const data = await getEngineerTeam();
       setTeam(data.engineers || []);
     } catch (error) {
-      setMessage(error.message || '团队工程师加载失败');
+      setMessage(error.message || 'Failed to load team engineers');
     }
   }, [isRegionalLead]);
 
@@ -95,14 +95,14 @@ export function EngineerWorkspace({ currentUser, onLogout, onOpenProfile }) {
     try {
       await updateEngineerStatus({ engineer_id: engineerId, status: nextStatus });
     } catch (error) {
-      setMessage(error.message || '派工状态更新失败');
+      setMessage(error.message || 'Failed to update availability');
     }
   };
 
   const assignToEngineer = async (ticket) => {
     const engineerIdToAssign = selectedEngineer[ticket.id];
     if (!engineerIdToAssign) {
-      setMessage('请先选择具体工程师');
+      setMessage('Please select a service engineer first');
       return;
     }
     setAssigningId(ticket.id);
@@ -125,9 +125,9 @@ export function EngineerWorkspace({ currentUser, onLogout, onOpenProfile }) {
             }
           : item
       )));
-      setMessage(`已分配：${ticket.order_no || ticket.id}`);
+      setMessage(`Assigned: ${ticket.order_no || ticket.id}`);
     } catch (error) {
-      setMessage(error.message || '分配工程师失败');
+      setMessage(error.message || 'Failed to assign engineer');
     } finally {
       setAssigningId('');
     }
@@ -138,10 +138,10 @@ export function EngineerWorkspace({ currentUser, onLogout, onOpenProfile }) {
     setMessage('');
     try {
       await acceptTicket({ work_order_id: ticket.id, engineer_id: engineerId });
-      setMessage(`已确认派工：${ticket.order_no || ticket.id}`);
+      setMessage(`Assignment confirmed: ${ticket.order_no || ticket.id}`);
       await loadTickets();
     } catch (error) {
-      setMessage(error.message || '确认派工失败');
+      setMessage(error.message || 'Failed to confirm assignment');
     } finally {
       setAssigningId('');
     }
@@ -152,10 +152,10 @@ export function EngineerWorkspace({ currentUser, onLogout, onOpenProfile }) {
     setMessage('');
     try {
       await rejectTicket({ work_order_id: ticket.id, engineer_id: engineerId });
-      setMessage(`已退回调度：${ticket.order_no || ticket.id}`);
+      setMessage(`Returned to dispatch: ${ticket.order_no || ticket.id}`);
       await loadTickets();
     } catch (error) {
-      setMessage(error.message || '退回调度失败');
+      setMessage(error.message || 'Failed to return assignment');
     } finally {
       setAssigningId('');
     }
@@ -163,12 +163,12 @@ export function EngineerWorkspace({ currentUser, onLogout, onOpenProfile }) {
 
   const grouped = groupTickets(tickets);
   const metrics = [
-    ...(isRegionalLead ? [{ icon: ClipboardCheck, label: '区域待分配', value: grouped.pending.length }] : []),
-    { icon: ClipboardCheck, label: '今日派工', value: grouped.today.length },
-    { icon: AlertTriangle, label: '待确认派工', value: grouped.pending.length },
-    { icon: Wrench, label: '服务中', value: grouped.active.length },
-    { icon: FileText, label: '待填写服务报告', value: grouped.reports.length },
-    { icon: Package, label: '备件需求', value: grouped.parts.length },
+    ...(isRegionalLead ? [{ icon: ClipboardCheck, label: 'Regional Queue', value: grouped.pending.length }] : []),
+    { icon: ClipboardCheck, label: "Today's Tasks", value: grouped.today.length },
+    { icon: AlertTriangle, label: 'Pending Confirmation', value: grouped.pending.length },
+    { icon: Wrench, label: 'In Service', value: grouped.active.length },
+    { icon: FileText, label: 'Reports Due', value: grouped.reports.length },
+    { icon: Package, label: 'Parts Needs', value: grouped.parts.length },
   ];
 
   return (
@@ -179,22 +179,22 @@ export function EngineerWorkspace({ currentUser, onLogout, onOpenProfile }) {
           <div>
             <div className="text-xs uppercase tracking-[0.24em] text-[var(--color-primary)]">SAGEMRO</div>
             <h1 className="text-xl font-semibold">
-              {isRegionalLead ? '区域负责人工作台' : '内部工程师工作台'}
+              {isRegionalLead ? 'Regional Lead Workspace' : 'Engineer Workspace'}
             </h1>
-            <p className="text-sm text-[var(--color-text-muted)]">Service Representative Console</p>
+            <p className="text-sm text-[var(--color-text-muted)]">SAGEMRO Service Console</p>
           </div>
           <div className="flex items-center gap-3">
             <button
               onClick={onOpenProfile}
               className="rounded-xl border border-[var(--color-border)] px-3 py-2 text-sm text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]"
             >
-              {currentUser?.name || '工程师档案'}
+              {currentUser?.name || 'Engineer Profile'}
             </button>
             <button
               onClick={onLogout}
               className="rounded-xl bg-[var(--color-primary)] px-3 py-2 text-sm font-medium text-white"
             >
-              退出
+              Sign Out
             </button>
           </div>
         </div>
@@ -211,14 +211,14 @@ export function EngineerWorkspace({ currentUser, onLogout, onOpenProfile }) {
           <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5">
             <div className="mb-4 flex items-center justify-between">
               <div>
-                <h2 className="font-semibold">任务概览</h2>
-                <p className="text-sm text-[var(--color-text-muted)]">只显示 SAGEMRO 已派发给你的服务任务。</p>
+                <h2 className="font-semibold">Task Overview</h2>
+                <p className="text-sm text-[var(--color-text-muted)]">Only service tasks assigned through SAGEMRO are shown here.</p>
               </div>
               <div className="flex gap-2">
                 {[
-                  { value: 'available', label: '可派工' },
-                  { value: 'paused', label: '暂停派工' },
-                  { value: 'offline', label: '离线' },
+                  { value: 'available', label: 'Available' },
+                  { value: 'paused', label: 'Paused' },
+                  { value: 'offline', label: 'Offline' },
                 ].map((item) => (
                   <button
                     key={item.value}
@@ -248,7 +248,7 @@ export function EngineerWorkspace({ currentUser, onLogout, onOpenProfile }) {
           <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5">
             <div className="mb-3 flex items-center gap-2">
               <ShieldCheck size={18} className="text-[var(--color-primary)]" />
-              <h2 className="font-semibold">服务标准检查清单</h2>
+              <h2 className="font-semibold">Service Standard Checklist</h2>
             </div>
             <div className="space-y-2">
               {CHECKLIST.map((item) => (
@@ -263,11 +263,11 @@ export function EngineerWorkspace({ currentUser, onLogout, onOpenProfile }) {
 
         <section className="grid gap-4 lg:grid-cols-[1.4fr_1fr]">
           <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5">
-            <h2 className="mb-4 font-semibold">服务任务</h2>
+            <h2 className="mb-4 font-semibold">Service Tasks</h2>
             {loading ? (
-              <div className="py-10 text-center text-sm text-[var(--color-text-muted)]">加载中...</div>
+              <div className="py-10 text-center text-sm text-[var(--color-text-muted)]">Loading...</div>
             ) : tickets.length === 0 ? (
-              <div className="py-10 text-center text-sm text-[var(--color-text-muted)]">当前没有已派服务任务</div>
+              <div className="py-10 text-center text-sm text-[var(--color-text-muted)]">No assigned service tasks yet</div>
             ) : (
               <div className="space-y-3">
                 {tickets.map((ticket) => (
@@ -276,25 +276,25 @@ export function EngineerWorkspace({ currentUser, onLogout, onOpenProfile }) {
                       <div>
                         <div className="font-medium">{ticket.order_no || ticket.id}</div>
                         <div className="text-sm text-[var(--color-text-muted)]">
-                          {ticket.customer_name || '客户'} · {ticket.customer_region || '地区待确认'}
+                          {ticket.customer_name || 'Customer'} · {ticket.customer_region || 'Region pending'}
                         </div>
                       </div>
                       <span className="rounded-lg bg-[var(--color-primary)]/10 px-2 py-1 text-xs text-[var(--color-primary)]">
                         {STATUS_LABELS[ticket.status] || ticket.status}
                       </span>
                     </div>
-                    <p className="text-sm text-[var(--color-text-secondary)]">{ticket.description || '暂无服务描述'}</p>
+                    <p className="text-sm text-[var(--color-text-secondary)]">{ticket.description || 'No service description yet'}</p>
                     <div className="mt-3 grid gap-2 text-xs text-[var(--color-text-muted)] sm:grid-cols-3">
-                      <div>客户问题：{ticket.type || '-'}</div>
-                      <div>安全风险：{ticket.urgency === 'critical' ? '高风险' : ticket.urgency === 'urgent' ? '需优先处理' : '常规'}</div>
-                      <div>当前工程师：{ticket.engineer_name || '待区域分配'}</div>
+                      <div>Customer issue: {ticket.type || '-'}</div>
+                      <div>Safety risk: {ticket.urgency === 'critical' ? 'High risk' : ticket.urgency === 'urgent' ? 'Priority' : 'Standard'}</div>
+                      <div>Current engineer: {ticket.engineer_name || 'Pending regional assignment'}</div>
                     </div>
                     <div className="mt-3 flex flex-wrap gap-2">
                       <button
                         onClick={() => setSelectedTicket(ticket)}
                         className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm font-medium text-[var(--color-text-primary)] hover:border-[var(--color-primary)]"
                       >
-                        查看/处理服务任务
+                        View / Handle Task
                       </button>
                       {!isRegionalLead && ticket.status === 'assigned' && (
                         <>
@@ -303,33 +303,33 @@ export function EngineerWorkspace({ currentUser, onLogout, onOpenProfile }) {
                             disabled={assigningId === `${ticket.id}:accept`}
                             className="rounded-lg bg-[var(--color-primary)] px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
                           >
-                            {assigningId === `${ticket.id}:accept` ? '确认中' : '确认派工'}
+                            {assigningId === `${ticket.id}:accept` ? 'Confirming' : 'Confirm Assignment'}
                           </button>
                           <button
                             onClick={() => returnAssignment(ticket)}
                             disabled={assigningId === `${ticket.id}:reject`}
                             className="rounded-lg border border-[var(--color-border)] px-3 py-2 text-sm font-medium text-[var(--color-text-secondary)] disabled:opacity-50"
                           >
-                            {assigningId === `${ticket.id}:reject` ? '退回中' : '退回调度'}
+                            {assigningId === `${ticket.id}:reject` ? 'Returning' : 'Return to Dispatch'}
                           </button>
                         </>
                       )}
                     </div>
                     {ticket.conflict_status === 'blocked' && (
                       <div className="mt-3 rounded-lg border border-[var(--color-error)]/30 bg-[var(--color-error)]/10 px-3 py-2 text-xs text-[var(--color-error)]">
-                        利益冲突：{ticket.conflict_reason || '该工程师不可接收此工单'}
+                        Conflict check: {ticket.conflict_reason || 'This engineer cannot receive this work order'}
                       </div>
                     )}
                     {isRegionalLead && (
                       <div className="mt-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
-                        <div className="text-xs font-medium text-[var(--color-text-primary)]">区域负责人分配</div>
+                        <div className="text-xs font-medium text-[var(--color-text-primary)]">Regional Lead Assignment</div>
                         <div className="mt-2 flex flex-col gap-2 sm:flex-row">
                           <select
                             value={selectedEngineer[ticket.id] || ticket.engineer_id || ''}
                             onChange={(event) => setSelectedEngineer((prev) => ({ ...prev, [ticket.id]: event.target.value }))}
                             className="min-w-0 flex-1 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-3 py-2 text-sm text-[var(--color-text-primary)]"
                           >
-                            <option value="">选择团队工程师</option>
+                            <option value="">Select team engineer</option>
                             {team.map((engineer) => (
                               <option key={engineer.id} value={engineer.id}>
                                 {engineer.name}{engineer.service_region ? ` · ${engineer.service_region}` : ''}{engineer.status ? ` · ${engineer.status}` : ''}
@@ -341,11 +341,11 @@ export function EngineerWorkspace({ currentUser, onLogout, onOpenProfile }) {
                             disabled={assigningId === ticket.id}
                             className="rounded-lg bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
                           >
-                            {assigningId === ticket.id ? '分配中' : '分配工程师'}
+                            {assigningId === ticket.id ? 'Assigning' : 'Assign Engineer'}
                           </button>
                         </div>
                         <p className="mt-2 text-xs text-[var(--color-text-muted)]">
-                          系统会阻止客户账号与工程师档案存在手机号、公司或地址冲突的派工。
+                          SAGEMRO blocks assignments when customer and engineer profiles show phone, company, or address conflicts.
                         </p>
                       </div>
                     )}
@@ -357,15 +357,15 @@ export function EngineerWorkspace({ currentUser, onLogout, onOpenProfile }) {
 
           <aside className="space-y-4">
             <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5">
-              <h2 className="mb-3 font-semibold">AI 诊断摘要</h2>
+              <h2 className="mb-3 font-semibold">AI Intake Summary</h2>
               <p className="text-sm text-[var(--color-text-secondary)]">
-                服务任务进入详情后，这里应显示客户对话整理出的故障现象、可能原因、安全风险、建议携带备件和现场检查重点。
+                When a task has intake details, this area should show symptoms, possible causes, safety risks, suggested spare parts, and on-site inspection priorities.
               </p>
             </div>
             <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5">
-              <h2 className="mb-3 font-semibold">客户设备档案</h2>
+              <h2 className="mb-3 font-semibold">Customer Equipment Record</h2>
               <p className="text-sm text-[var(--color-text-secondary)]">
-                后续接入设备型号、品牌、历史服务记录、照片和服务报告，帮助工程师到场前完成准备。
+                Machine model, brand, service history, photos, and service reports will support better preparation before the site visit.
               </p>
             </div>
           </aside>
