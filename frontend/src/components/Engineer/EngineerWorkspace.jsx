@@ -179,9 +179,9 @@ export function EngineerWorkspace({ currentUser, onLogout, onOpenProfile }) {
           <div>
             <div className="text-xs uppercase tracking-[0.24em] text-[var(--color-primary)]">SAGEMRO</div>
             <h1 className="text-xl font-semibold">
-              {isRegionalLead ? '区域负责人工作台' : '内部工程师工作台'}
+              {isRegionalLead ? '区域服务负责人工作台' : 'SAGEMRO 工程师工作台'}
             </h1>
-            <p className="text-sm text-[var(--color-text-muted)]">Service Representative Console</p>
+            <p className="text-sm text-[var(--color-text-muted)]">官方服务任务与现场记录中心</p>
           </div>
           <div className="flex items-center gap-3">
             <button
