@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import { Menu, Info, ShieldCheck, Home } from 'lucide-react';
 import { MessageBubble } from './MessageBubble';
 import { WelcomePage } from './WelcomePage';
