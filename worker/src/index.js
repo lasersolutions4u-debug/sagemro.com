@@ -2546,6 +2546,11 @@ export async function handleChat(request, env) {
             if (!apiResponse.ok) {
               // 上游失败：发系统兜底文本，Sentry 上报，退出循环
               const errText = await apiResponse.text().catch(() => 'upstream error');
+              console.error(
+                '[chat] LLM upstream failed:',
+                apiResponse.status,
+                redactPII(errText).slice(0, 800),
+              );
               const fallback = getAiFallbackMessage(env);
               fullContent += fallback;
               controller.enqueue(
@@ -2629,6 +2634,7 @@ export async function handleChat(request, env) {
             iteration++;
           }
         } catch (e) {
+          console.error('[chat] LLM stream failed:', e?.message || e);
           const fallback = getAiFallbackMessage(env, e);
           if (!fullContent) {
             fullContent += fallback;
