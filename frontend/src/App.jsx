@@ -26,6 +26,9 @@ const MyDevicesModal = lazy(() => import('./components/Device/MyDevicesModal').t
 const NotificationModal = lazy(() => import('./components/Notification/NotificationModal').then(m => ({ default: m.NotificationModal })));
 
 function App() {
+  const isEngineerHost = typeof window !== 'undefined'
+    && window.location.hostname.startsWith('engineer.');
+
   // 侧边栏状态
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
@@ -256,11 +259,11 @@ function App() {
     setCurrentUser(null);
     setUserType(null);
     setUnreadCount(0);
-    if (currentPath === '/engineer') {
+    if (!isEngineerHost && currentPath === '/engineer') {
       window.history.replaceState({}, '', '/');
       setCurrentPath('/');
     }
-  }, [currentPath]);
+  }, [currentPath, isEngineerHost]);
 
   // 监听 401 自动登出事件（由 services/api.js 的 fetch 拦截器触发）
   // token 过期 / 被踢下线时，清掉本地状态并弹出登录框，避免后续操作继续命中 401
@@ -292,7 +295,7 @@ function App() {
     setLegalModalOpen(true);
   }, []);
 
-  const showEngineerWorkspace = currentPath === '/engineer' && userType === 'engineer';
+  const showEngineerWorkspace = (isEngineerHost || currentPath === '/engineer') && userType === 'engineer';
 
   if (showEngineerWorkspace) {
     return (
@@ -318,6 +321,59 @@ function App() {
           )}
           <FeedbackHost />
         </Suspense>
+      </ErrorBoundary>
+    );
+  }
+
+  if (isEngineerHost) {
+    return (
+      <ErrorBoundary>
+        <div className="flex min-h-[100dvh] items-center justify-center bg-[var(--color-bg)] px-5 text-[var(--color-text-primary)]">
+          <div className="max-w-md rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6 text-center shadow-xl">
+            <div className="text-xs uppercase tracking-[0.24em] text-[var(--color-primary)]">SAGEMRO</div>
+            <h1 className="mt-2 text-xl font-semibold">内部工程师工作台</h1>
+            <p className="mt-3 text-sm text-[var(--color-text-secondary)]">
+              工程师账号由 SAGEMRO 分配。请使用已分配的工程师或区域负责人账号登录，查看派工、客户沟通、服务报告和任务归档。
+            </p>
+            {userType && userType !== 'engineer' && (
+              <p className="mt-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-bg)] px-3 py-2 text-xs text-[var(--color-text-secondary)]">
+                当前登录的不是工程师账号，请先退出后使用工程师账号登录。
+              </p>
+            )}
+            <div className="mt-5 flex flex-col gap-2">
+              <button
+                onClick={() => setLoginModalOpen(true)}
+                className="rounded-xl bg-[var(--color-primary)] px-4 py-2.5 text-sm font-medium text-white"
+              >
+                登录工程师工作台
+              </button>
+              {currentUser && (
+                <button
+                  onClick={handleLogout}
+                  className="rounded-xl border border-[var(--color-border)] px-4 py-2.5 text-sm text-[var(--color-text-secondary)]"
+                >
+                  退出当前账号
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+        <Suspense fallback={null}>
+          <LoginModal
+            isOpen={loginModalOpen}
+            onClose={() => setLoginModalOpen(false)}
+            onLoginSuccess={handleLoginSuccess}
+            openLegal={openLegal}
+          />
+          {legalModalOpen && (
+            <LegalModal
+              isOpen={legalModalOpen}
+              onClose={() => setLegalModalOpen(false)}
+              initialTab={legalInitialTab}
+            />
+          )}
+        </Suspense>
+        <FeedbackHost />
       </ErrorBoundary>
     );
   }
