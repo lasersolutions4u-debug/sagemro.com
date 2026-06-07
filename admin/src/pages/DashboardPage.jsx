@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Users, UserCog, FileText, Clock } from 'lucide-react';
+import { Archive, ClipboardCheck, FileText, Package, ShieldAlert, Timer, TrendingUp, UserCheck, Wrench } from 'lucide-react';
 import { getAdminStats } from '../services/api';
 
 export function DashboardPage() {
@@ -29,11 +29,17 @@ export function DashboardPage() {
     );
   }
 
+  const operations = stats.operations || {};
   const cards = [
-    { icon: Users, label: '客户数', value: stats.customers, color: 'var(--color-info)' },
-    { icon: UserCog, label: '工程师数', value: stats.engineers, color: 'var(--color-success)' },
-    { icon: FileText, label: '工单总数', value: stats.workOrders.total, color: 'var(--color-primary)' },
-    { icon: Clock, label: '近7天注册', value: stats.recentRegistrations, color: 'var(--color-warning)' },
+    { icon: TrendingUp, label: '今日新增 AI 线索', value: operations.aiLeadsToday ?? 0, color: 'var(--color-info)' },
+    { icon: ClipboardCheck, label: '待审核服务申请', value: operations.pendingReview ?? stats.workOrders.pending, color: 'var(--color-primary)' },
+    { icon: ShieldAlert, label: '高风险停机问题', value: operations.highRiskDowntime ?? 0, color: 'var(--color-error)' },
+    { icon: FileText, label: '待报价', value: operations.pendingQuotes ?? 0, color: 'var(--color-warning)' },
+    { icon: UserCheck, label: '待派工', value: operations.pendingDispatch ?? stats.workOrders.pending, color: 'var(--color-info)' },
+    { icon: Wrench, label: '服务中', value: operations.inService ?? stats.workOrders.in_progress, color: 'var(--color-success)' },
+    { icon: Archive, label: '待归档', value: operations.pendingArchive ?? 0, color: 'var(--color-text-muted)' },
+    { icon: Package, label: '备件线索', value: operations.partsLeads ?? 0, color: 'var(--color-warning)' },
+    { icon: Timer, label: 'Euchio 新机线索', value: operations.euchioMachineLeads ?? 0, color: 'var(--color-primary)' },
   ];
 
   const statusItems = [
@@ -44,9 +50,14 @@ export function DashboardPage() {
 
   return (
     <div>
-      <h2 className="text-lg font-semibold mb-6">数据概览</h2>
+      <div className="mb-6">
+        <h2 className="text-lg font-semibold">SAGEMRO Operations Console</h2>
+        <p className="text-sm text-[var(--color-text-muted)] mt-1">
+          线索分流、官方服务确认、派工管理、报价审核、服务质量和合规归档。
+        </p>
+      </div>
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+      <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
         {cards.map((card) => (
           <div
             key={card.label}

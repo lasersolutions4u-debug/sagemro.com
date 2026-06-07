@@ -38,6 +38,7 @@ export function UsersPage() {
   const [addType, setAddType] = useState('customer');
   const [addForm, setAddForm] = useState({
     name: '', phone: '', password: '', region: '',
+    engineerRole: 'engineer', regionalLeadId: '', responsibleRegion: '', teamName: '',
     specialties: [], services: [], serviceRegion: '', bio: '',
   });
   const [addError, setAddError] = useState('');
@@ -79,7 +80,11 @@ export function UsersPage() {
   const totalPages = Math.max(1, Math.ceil(data.total / pageSize));
 
   const resetAddForm = () => {
-    setAddForm({ name: '', phone: '', password: '', region: '', specialties: [], services: [], serviceRegion: '', bio: '' });
+    setAddForm({
+      name: '', phone: '', password: '', region: '',
+      engineerRole: 'engineer', regionalLeadId: '', responsibleRegion: '', teamName: '',
+      specialties: [], services: [], serviceRegion: '', bio: '',
+    });
     setAddError('');
     setAddType('customer');
   };
@@ -96,6 +101,10 @@ export function UsersPage() {
         payload.services = addForm.services;
         payload.serviceRegion = addForm.serviceRegion;
         payload.bio = addForm.bio;
+        payload.engineerRole = addForm.engineerRole;
+        payload.regionalLeadId = addForm.engineerRole === 'engineer' ? addForm.regionalLeadId : '';
+        payload.responsibleRegion = addForm.responsibleRegion;
+        payload.teamName = addForm.teamName;
       }
       await createAdminUser(payload);
       setShowAdd(false);
@@ -286,6 +295,7 @@ export function UsersPage() {
                   ) : (
                     <>
                       <th className="text-left py-3 px-2 text-[var(--color-text-secondary)] font-medium">派工状态</th>
+                      <th className="text-left py-3 px-2 text-[var(--color-text-secondary)] font-medium">角色/团队</th>
                       <th className="text-left py-3 px-2 text-[var(--color-text-secondary)] font-medium">专长</th>
                       <th className="text-left py-3 px-2 text-[var(--color-text-secondary)] font-medium">评分</th>
                     </>
@@ -322,6 +332,14 @@ export function UsersPage() {
                                 </span>
                               );
                             })()}
+                          </td>
+                          <td className="py-3 px-2">
+                            <div>{user.engineer_role === 'regional_lead' ? '区域负责人' : '工程师'}</div>
+                            <div className="text-xs text-[var(--color-text-muted)]">
+                              {user.engineer_role === 'regional_lead'
+                                ? (user.responsible_region || user.service_region || '-')
+                                : (user.regional_lead_name ? `上级：${user.regional_lead_name}` : '未分配上级')}
+                            </div>
                           </td>
                           <td className="py-3 px-2">
                             <div className="flex flex-wrap gap-1">
@@ -446,6 +464,62 @@ export function UsersPage() {
                 />
               ) : (
                 <>
+                  <div>
+                    <label className="text-xs text-[var(--color-text-secondary)] mb-1.5 block">工程师账号类型 *</label>
+                    <div className="flex gap-2">
+                      {[
+                        { value: 'engineer', label: '工程师' },
+                        { value: 'regional_lead', label: '区域负责人' },
+                      ].map((role) => (
+                        <button
+                          key={role.value}
+                          onClick={() => setAddForm({ ...addForm, engineerRole: role.value, regionalLeadId: role.value === 'regional_lead' ? '' : addForm.regionalLeadId })}
+                          className={`px-3 py-1.5 rounded-lg text-xs transition-colors ${
+                            addForm.engineerRole === role.value
+                              ? 'bg-[var(--color-primary)] text-white'
+                              : 'bg-[var(--color-surface-elevated)] text-[var(--color-text-secondary)] hover:text-[var(--color-text)]'
+                          }`}
+                        >
+                          {role.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {addForm.engineerRole === 'engineer' && (
+                    <select
+                      value={addForm.regionalLeadId}
+                      onChange={(e) => setAddForm({ ...addForm, regionalLeadId: e.target.value })}
+                      className="w-full px-3 py-2.5 rounded-xl bg-[var(--color-surface-elevated)] border border-[var(--color-border)] text-sm focus:outline-none focus:border-[var(--color-primary)]"
+                    >
+                      <option value="">上级区域负责人（可后续分配）</option>
+                      {(data.list || [])
+                        .filter((user) => user.engineer_role === 'regional_lead')
+                        .map((lead) => (
+                          <option key={lead.id} value={lead.id}>
+                            {lead.name}{lead.responsible_region || lead.service_region ? ` · ${lead.responsible_region || lead.service_region}` : ''}
+                          </option>
+                        ))}
+                    </select>
+                  )}
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <input
+                      type="text"
+                      placeholder="负责区域（选填）"
+                      value={addForm.responsibleRegion}
+                      onChange={(e) => setAddForm({ ...addForm, responsibleRegion: e.target.value })}
+                      className="w-full px-3 py-2.5 rounded-xl bg-[var(--color-surface-elevated)] border border-[var(--color-border)] text-sm focus:outline-none focus:border-[var(--color-primary)]"
+                    />
+                    <input
+                      type="text"
+                      placeholder="团队名（选填）"
+                      value={addForm.teamName}
+                      onChange={(e) => setAddForm({ ...addForm, teamName: e.target.value })}
+                      className="w-full px-3 py-2.5 rounded-xl bg-[var(--color-surface-elevated)] border border-[var(--color-border)] text-sm focus:outline-none focus:border-[var(--color-primary)]"
+                    />
+                  </div>
+
                   <div>
                     <label className="text-xs text-[var(--color-text-secondary)] mb-1.5 block">擅长设备类型 *</label>
                     <div className="flex flex-wrap gap-1.5">

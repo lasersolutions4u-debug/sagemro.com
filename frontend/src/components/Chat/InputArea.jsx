@@ -166,7 +166,7 @@ export function InputArea({ onSend, onStop, disabled, isStreaming }) {
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder={pendingImages.length > 0 ? "Describe the fault..." : "Type a message..."}
+              placeholder={pendingImages.length > 0 ? "Describe what happened. Press Enter to send, Shift + Enter for a new line." : "Describe the fault, part, maintenance need, or new-machine project. Upload images anytime."}
               disabled={disabled}
               rows={1}
               className="w-full px-4 py-3 bg-transparent resize-none focus:outline-none text-[var(--color-text-primary)] placeholder-[var(--color-text-muted)] disabled:opacity-50 text-[15px]"
@@ -204,10 +204,6 @@ export function InputArea({ onSend, onStop, disabled, isStreaming }) {
           onChange={handleFileSelect}
           className="hidden"
         />
-
-        <p className="mt-2 text-[11px] text-center text-[var(--color-text-muted)] hidden sm:block">
-          Enter to send · Shift + Enter for new line · Upload images for diagnosis
-        </p>
       </div>
     </div>
   );

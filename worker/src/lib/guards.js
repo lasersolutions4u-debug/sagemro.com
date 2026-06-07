@@ -19,7 +19,7 @@ export class GuardError extends Error {
 }
 
 /**
- * 工单访问权：admin / 工单客户 / 工单工程师
+ * 工单访问权：admin / 工单客户 / 工单工程师 / 被分配区域负责人
  *
  * @param {{userId: string, userType: string}} auth - request._auth
  * @param {{customer_id?: string, engineer_id?: string}} workOrder - 从 DB 查出的工单行
@@ -30,6 +30,7 @@ export function assertWorkOrderAccess(auth, workOrder) {
   if (auth.userType === 'admin') return;
   if (auth.userType === 'customer' && workOrder.customer_id === auth.userId) return;
   if (auth.userType === 'engineer' && workOrder.engineer_id === auth.userId) return;
+  if (auth.userType === 'engineer' && workOrder.assigned_regional_lead_id === auth.userId) return;
   throw new GuardError('您无权访问该工单', 403);
 }
 

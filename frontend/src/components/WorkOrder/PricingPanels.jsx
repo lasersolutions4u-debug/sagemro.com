@@ -12,6 +12,7 @@ import { toastSuccess, toastError, toastWarning } from '../../utils/feedback';
 export function PricingStatusBadge({ status }) {
   const map = {
     draft: { text: 'Draft / Negotiating', color: 'bg-gray-500', bg: 'bg-gray-500/10' },
+    pending_review: { text: 'SAGEMRO Review', color: 'bg-amber-500', bg: 'bg-amber-500/10' },
     submitted: { text: 'Submitted, Awaiting Confirmation', color: 'bg-purple-500', bg: 'bg-purple-500/10' },
     confirmed: { text: 'Confirmed', color: 'bg-green-500', bg: 'bg-green-500/10' },
   };
@@ -62,7 +63,7 @@ export function EngineerPricingPanel({ workOrderId, engineerId, onSubmitted, com
         parts_detail: form.parts_detail,
         engineer_id: engineerId,
       });
-      toastSuccess('Quote submitted. Awaiting customer confirmation.');
+      toastSuccess('Quote submitted for SAGEMRO official review.');
       onSubmitted?.();
     } catch (e) {
       toastError('Submission failed: ' + e.message);
@@ -89,7 +90,7 @@ export function EngineerPricingPanel({ workOrderId, engineerId, onSubmitted, com
 
   return (
     <div className="space-y-3">
-      <div className="text-xs text-[var(--color-text-muted)]">Fill in the fee details and submit. Once the customer confirms, you can proceed with on-site service.</div>
+      <div className="text-xs text-[var(--color-text-muted)]">Fill in the fee details as an internal quote proposal. SAGEMRO operations will review it before the customer sees an official quote.</div>
       <div className="grid grid-cols-2 gap-3">
         {field('labor_fee', 'Labor Fee', 'Hours × Rate')}
         {field('parts_fee', 'Parts Fee', 'Total parts cost')}
@@ -126,7 +127,7 @@ export function EngineerPricingPanel({ workOrderId, engineerId, onSubmitted, com
         disabled={submitting || subtotal === 0}
         className="w-full py-2.5 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] disabled:opacity-50 text-white rounded-xl font-medium"
       >
-        {submitting ? 'Submitting...' : 'Submit Quote'}
+        {submitting ? 'Submitting...' : 'Submit for SAGEMRO Review'}
       </button>
     </div>
   );
@@ -184,7 +185,13 @@ export function CustomerPricingPanel({ workOrderId, customerId, onConfirmed }) {
 
   if (loading) return <div className="text-center py-4 text-sm text-[var(--color-text-muted)]">Loading...</div>;
 
-  if (!pricing) return <div className="text-center py-4 text-sm text-[var(--color-text-muted)]">SAGEMRO has not submitted an official quote yet</div>;
+  if (!pricing) {
+    return (
+      <div className="rounded-xl bg-[var(--color-surface-elevated)] p-4 text-center text-sm text-[var(--color-text-muted)]">
+        SAGEMRO is preparing the official quote. You will be notified once diagnosis, scope, and safety requirements are reviewed.
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-3">

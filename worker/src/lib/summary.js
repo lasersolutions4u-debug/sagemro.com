@@ -55,7 +55,7 @@ const PENDING_ITEM_PREFIXES = [
 // ============ 生成 prompt ============
 
 function buildSystemPrompt() {
-  return `你是 B2B 工业设备售后场景的对话摘要生成器。任务是把一段客户/工程师与 AI 助手"小智"的对话，压缩成一份结构化 JSON，用于跨会话的 AI 上下文检索和业务流跟进。
+  return `你是 SAGEMRO Service OS 的对话摘要生成器。任务是把一段客户/工程师与 SAGEMRO AI 的对话，压缩成一份结构化 JSON，用于跨会话上下文检索、官方服务跟进和业务线索推进。
 
 必须严格按 SummaryProtocol v1 返回 JSON（不要 markdown，不要解释）：
 
@@ -71,7 +71,7 @@ function buildSystemPrompt() {
     "material": "如 6mm碳钢"
   },
   "fault_keywords": ["挂渣", "毛刺"],
-  "intent": "咨询 | 报修 | 议价 | 评价 | 投诉 | 其他",
+  "intent": "故障诊断 | 切割参数 | 备件识别 | 维修估算 | 新机选型 | 设备健康报告 | 报修 | 议价 | 评价 | 投诉 | 其他",
   "pending_items": [
     "[missing_info] 客户未提供材料牌号",
     "[awaiting_confirmation] AI 建议调整气压但未确认执行",
@@ -92,7 +92,8 @@ function buildSystemPrompt() {
 2. pending_items 每条必须以方括号前缀标签打头（missing_info / awaiting_confirmation / followup_due / service_followup / rating_pending），只写真实未闭环的事项，宁缺毋滥
 3. 不要虚构信息；对话里没出现的字段宁可不填
 4. summary_text 要具体（型号、参数、症状三元组是黄金信号），不要写"客户咨询了设备问题"这种废话
-5. conversation_type 从 8 个枚举值里选最贴切的，全无法匹配选 general`;
+5. intent 优先识别 SAGEMRO AI 的 6 类服务结果：故障诊断、切割参数、备件识别、维修估算、新机选型、设备健康报告
+6. conversation_type 从 8 个枚举值里选最贴切的，全无法匹配选 general`;
 }
 
 function buildUserPrompt({ convMeta, messages }) {
@@ -101,7 +102,7 @@ function buildUserPrompt({ convMeta, messages }) {
       m.role === 'user'
         ? convMeta.user_role_label
         : m.role === 'assistant'
-          ? '小智'
+          ? 'SAGEMRO AI'
           : m.role === 'system'
             ? '系统'
             : m.role;
@@ -243,6 +244,7 @@ async function callLlmJsonMode({ env, systemPrompt, userPrompt }) {
   if (!env?.OPENAI_API_ENDPOINT || !env?.OPENAI_API_KEY) {
     return { ok: false, error: 'missing_api_config' };
   }
+  const model = env.OPENAI_JSON_MODEL || env.OPENAI_MODEL || env.OPENAI_CHAT_MODEL || 'deepseek-chat';
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), LLM_TIMEOUT_MS);
@@ -255,7 +257,7 @@ async function callLlmJsonMode({ env, systemPrompt, userPrompt }) {
         Authorization: `Bearer ${env.OPENAI_API_KEY}`,
       },
       body: JSON.stringify({
-        model: 'gpt-4o-mini',
+        model,
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userPrompt },

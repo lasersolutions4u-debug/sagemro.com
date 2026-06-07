@@ -137,8 +137,8 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
     tabs.push({ key: 'repairRecord', label: 'Service Report' });
   }
 
-  // 附件Tab：工单已分配后所有人可见
-  if (effectiveStatus !== 'pending') {
+  // 附件Tab：工单已分配后可见；若 AI 对话图片已随工单带入，pending 阶段也要可查看。
+  if (effectiveStatus !== 'pending' || detail?.attachments?.length > 0) {
     tabs.push({ key: 'attachments', label: 'Attachments' });
   }
 

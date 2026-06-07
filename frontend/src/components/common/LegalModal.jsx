@@ -1,30 +1,28 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Modal } from './Modal';
 
 const USER_AGREEMENT = `
-> Summary based on SAGEMRO Service OS terms. Platform Operator: Jinan Euchio Machinery Co., Ltd.
+## 1. Service Scope
 
-## 1. Service Definition
+1.1 SAGEMRO Service OS provides AI-assisted equipment consultation, service request preparation, official service coordination, equipment records, spare parts consultation, maintenance follow-up, and new-machine selection support for laser cutting and sheet metal equipment.
 
-1.1 SAGEMRO provides AI-assisted equipment consultation, official service request management, equipment records, spare parts consultation, maintenance follow-up, and new-machine selection support for laser cutting and sheet metal equipment.
-
-1.2 SAGEMRO is not positioned as a loose marketplace for independent technicians. Customers submit requests to SAGEMRO, and SAGEMRO reviews the request and arranges an internal engineer or certified service representative when applicable.
+1.2 SAGEMRO is an official service workflow, not a public technician marketplace. Customers submit service needs to SAGEMRO, and SAGEMRO reviews the request and arranges internal engineers or SAGEMRO-designated service personnel when applicable.
 
 ## 2. Account Registration
 
 2.1 Customers provide a valid phone number, name, company name, and login password to register.
 
-2.2 Engineer accounts are internal operational accounts created or approved by SAGEMRO. Public engineer registration is not open.
+2.2 Engineer accounts are internal operational accounts created or approved by SAGEMRO. Public engineer self-registration is not open.
 
 2.3 Users should keep their account and password secure. Accounts may not be lent or transferred to third parties.
 
 ## 3. Service Request Process
 
-3.1 Customers can submit service requests through AI tools, AI chat, or the sidebar service request entry.
+3.1 Customers can start with the SAGEMRO AI chat or submit an official service request through available service entries.
 
 3.2 A service request may include equipment type, brand/model, alarm code, fault description, urgency, photos/videos, region, and contact information.
 
-3.3 SAGEMRO may use AI to create a preliminary summary and risk assessment. Final diagnosis, quotation, schedule, and safety requirements are subject to SAGEMRO confirmation.
+3.3 SAGEMRO may use AI to create a preliminary summary, risk reminder, and service-ready information. Final diagnosis, quotation, schedule, and safety requirements are subject to SAGEMRO confirmation.
 
 3.4 Service statuses may include pending confirmation, assigned, awaiting quote, dispatching, in service, awaiting customer confirmation, completed, or cancelled.
 
@@ -32,7 +30,7 @@ const USER_AGREEMENT = `
 
 4.1 AI-generated estimates are non-binding references only.
 
-4.2 Formal service scope, fees, spare parts, travel costs, and payment method are confirmed separately by SAGEMRO and the customer.
+4.2 Formal service scope, fees, spare parts, travel costs, and payment methods are confirmed separately by SAGEMRO and the customer.
 
 4.3 Current online payment screens, if shown, are sandbox or demonstration interfaces unless SAGEMRO clearly states otherwise in a formal quote or agreement.
 
@@ -46,7 +44,7 @@ const USER_AGREEMENT = `
 
 Customers should provide accurate equipment information, describe faults truthfully, follow safety reminders, and cooperate with SAGEMRO during diagnosis and service.
 
-Users must not use the system for illegal activities, false information, malicious testing, or activities unrelated to industrial equipment services.
+Users must not use the system for illegal activities, false information, malicious testing, infringement, or activities unrelated to industrial equipment services.
 
 ## 7. Safety Boundary
 
@@ -54,7 +52,7 @@ AI suggestions cannot replace qualified on-site assessment. For high-risk electr
 
 ## 8. Personal Information Protection
 
-User information is used for service delivery, account security, diagnostics, service records, and follow-up. SAGEMRO does not sell personal information.
+User information is used for service delivery, account security, diagnostics, service records, and follow-up. SAGEMRO does not sell users' personal information.
 
 ## 9. Agreement Amendments
 
@@ -71,22 +69,22 @@ const PRIVACY_POLICY = `
 **Information you provide voluntarily:**
 - Registration information: phone number, real name, company name, password
 - Service request information: equipment type, brand/model, fault description, region, urgency, contact details
-- AI tool inputs: alarm codes, cutting parameters, spare parts descriptions, machine selection needs, health-report inputs
+- AI chat inputs: alarm codes, cutting parameters, spare parts descriptions, machine selection needs, maintenance history, and equipment health information
 - Attachments: photos, screenshots, videos, or files uploaded for diagnosis and service records
 - Feedback: ratings, comments, acceptance records, and follow-up notes
 
 **Information we collect automatically:**
-- Chat history and AI tool usage records for continuous consultation and service follow-up
+- Chat history and AI usage records for continuous consultation and service follow-up
 - Usage logs for security, rate limiting, and troubleshooting
 - Browser localStorage data for login state and local chat continuity
 
-**Information we do not intentionally collect:** national ID numbers, bank card information, or remote-control data from your equipment unless separately agreed.
+**Information we do not intentionally collect:** national ID numbers, bank card information, biometric information, or remote-control data from your equipment unless separately agreed.
 
 ## 2. Purposes of Information Use
 
 - Providing AI preliminary diagnostics and technical consultation
 - Creating service requests, equipment records, and service reports
-- Arranging SAGEMRO engineers or certified service representatives
+- Arranging SAGEMRO internal engineers or SAGEMRO-designated service personnel
 - Recommending spare parts, maintenance plans, or new-machine selection support
 - Improving AI response quality with anonymized or desensitized data
 - Security protection, abuse prevention, and operational troubleshooting
@@ -102,7 +100,7 @@ const PRIVACY_POLICY = `
 ## 4. Information Sharing
 
 - We do not sell your personal information
-- Service request information may be shared with SAGEMRO internal engineers or certified service representatives only as needed for service delivery
+- Service request information may be shared with SAGEMRO internal engineers or SAGEMRO-designated service personnel only as needed for service delivery
 - AI conversation content may be sent through encrypted interfaces to AI service providers without account passwords
 - Information may be disclosed when required by law, regulation, or competent authorities
 
@@ -127,7 +125,7 @@ const AI_DISCLAIMER = `
 
 1.1 SAGEMRO AI is an equipment consultation and intake assistant based on large language model technology.
 
-1.2 AI outputs are preliminary references only. They do not constitute final diagnosis, professional repair commitment, safety approval, binding quotation, or quality guarantee.
+1.2 AI outputs are preliminary service guidance only. They do not constitute final diagnosis, repair commitment, safety approval, binding quotation, or quality guarantee.
 
 1.3 AI cannot replace on-site diagnosis, lockout/tagout procedures, electrical safety assessment, laser safety assessment, or qualified engineer judgment.
 
@@ -137,7 +135,7 @@ const AI_DISCLAIMER = `
 - **Cutting parameters:** AI parameters are reference ranges and must be adjusted according to machine condition, material, gas, nozzle, and safety rules.
 - **Spare parts:** AI identification is preliminary. Compatibility must be manually confirmed before purchase or replacement.
 - **Repair estimate:** AI may provide cost level or influencing factors, not a binding price.
-- **Machine selection:** AI selection is preliminary. Formal new-machine projects are confirmed by Euchio or authorized sales staff.
+- **Machine selection:** AI selection is preliminary. Formal new-machine projects are confirmed by Euchio or SAGEMRO-designated sales personnel.
 
 ## 3. Safety Restrictions
 
@@ -155,12 +153,12 @@ const AI_DISCLAIMER = `
 ## 5. Service Limitations
 
 - AI may occasionally produce inaccurate or incomplete responses
-- AI does not answer questions unrelated to industrial equipment service
+- AI is intended for industrial equipment service, parts, maintenance, and machine selection scenarios
 - AI should not be used as the sole basis for repair, purchasing, safety, or legal decisions
 
 ## 6. Limitation of Liability
 
-Jinan Euchio Machinery Co., Ltd. is not liable for equipment damage, personal injury, production loss, or other losses caused by relying solely on AI output. For professional service, submit a SAGEMRO official service request.
+To the extent permitted by applicable law, Jinan Euchio Machinery Co., Ltd. is not liable for equipment damage, personal injury, production loss, or other losses caused by relying solely on AI output. For professional service, submit a SAGEMRO official service request.
 
 ## 7. Contact
 
@@ -228,6 +226,12 @@ function SimpleMarkdown({ content }) {
 export function LegalModal({ isOpen, onClose, initialTab = 'agreement' }) {
   const [activeTab, setActiveTab] = useState(initialTab);
 
+  useEffect(() => {
+    if (isOpen) {
+      setActiveTab(initialTab);
+    }
+  }, [initialTab, isOpen]);
+
   const tabs = [
     { key: 'agreement', label: 'Terms of Service' },
     { key: 'privacy', label: 'Privacy Policy' },
@@ -246,18 +250,15 @@ export function LegalModal({ isOpen, onClose, initialTab = 'agreement' }) {
     ai: 'SAGEMRO AI Service Notice',
   };
 
-  if (isOpen && activeTab !== initialTab) {
-    setActiveTab(initialTab);
-  }
-
   return (
     <Modal isOpen={isOpen} onClose={onClose} title={titles[activeTab]} size="lg">
-      <div className="flex border-b border-[var(--color-border)] mb-4 -mt-1">
+      <div className="flex gap-1 border-b border-[var(--color-border)] mb-4 -mt-1 overflow-x-auto">
         {tabs.map((tab) => (
           <button
             key={tab.key}
             onClick={() => setActiveTab(tab.key)}
-            className={`px-3 py-2 text-xs font-medium transition-colors border-b-2 ${
+            type="button"
+            className={`px-3 py-2 text-xs font-medium transition-colors border-b-2 whitespace-nowrap outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/30 focus-visible:ring-offset-2 ${
               activeTab === tab.key
                 ? 'text-[var(--color-primary)] border-[var(--color-primary)]'
                 : 'text-[var(--color-text-secondary)] border-transparent hover:text-[var(--color-text-primary)]'
@@ -270,7 +271,7 @@ export function LegalModal({ isOpen, onClose, initialTab = 'agreement' }) {
 
       <div className="max-h-[60vh] overflow-y-auto pr-1">
         <p className="text-[11px] text-[var(--color-text-muted)] mb-3">
-          Service OS Terms, Privacy Policy, and AI Service Notice: June 7, 2026
+          Effective date: June 7, 2026. Platform operator: Jinan Euchio Machinery Co., Ltd.
         </p>
         <SimpleMarkdown content={content[activeTab]} />
       </div>

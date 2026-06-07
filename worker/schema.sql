@@ -100,6 +100,17 @@ CREATE TABLE IF NOT EXISTS engineers (
 
     -- 状态和评分
     status TEXT DEFAULT 'available',           -- available / paused / offline / pending_approval
+    engineer_role TEXT DEFAULT 'engineer',     -- 023: regional_lead / engineer
+    regional_lead_id TEXT,                     -- 023: 所属区域负责人
+    cooperation_status TEXT DEFAULT 'confirmed',
+    certification_status TEXT DEFAULT 'pending',
+    capability_tags TEXT DEFAULT '[]',
+    brand_coverage TEXT DEFAULT '[]',
+    workload_status TEXT DEFAULT 'available',
+    responsible_region TEXT,
+    team_name TEXT,
+    first_login_password_reset_required INTEGER DEFAULT 1,
+    service_policy_acknowledged_at TEXT,
     rating_timeliness REAL DEFAULT 0,
     rating_technical REAL DEFAULT 0,
     rating_communication REAL DEFAULT 0,
@@ -127,6 +138,8 @@ CREATE TABLE IF NOT EXISTS engineers (
 );
 CREATE INDEX IF NOT EXISTS idx_engineers_status ON engineers(status);
 CREATE INDEX IF NOT EXISTS idx_engineers_level ON engineers(level);
+CREATE INDEX IF NOT EXISTS idx_engineers_role ON engineers(engineer_role);
+CREATE INDEX IF NOT EXISTS idx_engineers_regional_lead ON engineers(regional_lead_id);
 
 -- 设备表（000 + 004）
 CREATE TABLE IF NOT EXISTS devices (
@@ -177,6 +190,12 @@ CREATE TABLE IF NOT EXISTS work_orders (
     category_l1 TEXT DEFAULT 'other',          -- 018: 设备大类
     category_l2 TEXT DEFAULT 'other',          -- 018: 问题类型
 
+    assigned_regional_lead_id TEXT,            -- 023: Admin 分配的区域负责人
+    conflict_status TEXT DEFAULT 'clear',      -- 023: clear / review_required / blocked
+    conflict_reason TEXT,
+    quote_review_status TEXT DEFAULT 'not_required',
+    customer_confirmation_method TEXT,
+
     FOREIGN KEY (customer_id) REFERENCES customers(id),
     FOREIGN KEY (engineer_id) REFERENCES engineers(id),
     FOREIGN KEY (device_id) REFERENCES devices(id)
@@ -184,6 +203,8 @@ CREATE TABLE IF NOT EXISTS work_orders (
 CREATE INDEX IF NOT EXISTS idx_work_orders_customer ON work_orders(customer_id);
 CREATE INDEX IF NOT EXISTS idx_work_orders_engineer ON work_orders(engineer_id);
 CREATE INDEX IF NOT EXISTS idx_work_orders_status ON work_orders(status);
+CREATE INDEX IF NOT EXISTS idx_work_orders_regional_lead ON work_orders(assigned_regional_lead_id);
+CREATE INDEX IF NOT EXISTS idx_work_orders_conflict_status ON work_orders(conflict_status);
 
 -- 工单进度日志（000）
 CREATE TABLE IF NOT EXISTS work_order_logs (
@@ -284,10 +305,14 @@ CREATE TABLE IF NOT EXISTS work_order_messages (
     sender_name TEXT DEFAULT '',
     content TEXT NOT NULL,
     message_type TEXT DEFAULT 'text',          -- text / pricing_update / system
+    attachment_urls TEXT,                      -- 023: JSON 数组
+    is_internal_note INTEGER DEFAULT 0,        -- 023: 内部备注
+    is_customer_visible INTEGER DEFAULT 1,     -- 023: 客户可见消息
     created_at TEXT DEFAULT (datetime('now')),
     FOREIGN KEY (work_order_id) REFERENCES work_orders(id)
 );
 CREATE INDEX IF NOT EXISTS idx_work_order_messages_wo ON work_order_messages(work_order_id);
+CREATE INDEX IF NOT EXISTS idx_work_order_messages_visibility ON work_order_messages(work_order_id, is_customer_visible, is_internal_note);
 
 -- 工单报价历史（008）
 CREATE TABLE IF NOT EXISTS work_order_pricing_history (
@@ -463,10 +488,38 @@ CREATE TABLE IF NOT EXISTS leads (
     message TEXT,                             -- 客户描述
     conversation_id TEXT,                     -- 关联对话 ID（如有）
     status TEXT DEFAULT 'new',                -- new / contacted / converted / lost
+    source_type TEXT,                         -- 023: Service OS AI 来源
+    risk_level TEXT,                          -- 023: low / medium / high / critical
+    ai_summary TEXT,
+    recommended_next_step TEXT,
+    assignment_status TEXT DEFAULT 'unassigned',
+    customer_id TEXT,
+    device_id TEXT,
+    work_order_id TEXT,
+    region TEXT,
     created_at TEXT DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_leads_status ON leads(status);
 CREATE INDEX IF NOT EXISTS idx_leads_created_at ON leads(created_at);
+CREATE INDEX IF NOT EXISTS idx_leads_source_type ON leads(source_type);
+CREATE INDEX IF NOT EXISTS idx_leads_assignment_status ON leads(assignment_status);
+
+-- 审计日志（023）
+CREATE TABLE IF NOT EXISTS audit_logs (
+    id TEXT PRIMARY KEY,
+    actor_type TEXT NOT NULL,
+    actor_id TEXT,
+    target_type TEXT NOT NULL,
+    target_id TEXT NOT NULL,
+    action TEXT NOT NULL,
+    before_state TEXT,
+    after_state TEXT,
+    ip TEXT,
+    device_info TEXT,
+    created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_target ON audit_logs(target_type, target_id);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_actor ON audit_logs(actor_type, actor_id);
 
 -- 回填已执行的迁移版本（011）
 INSERT OR IGNORE INTO _migrations (version, note) VALUES
@@ -492,4 +545,5 @@ INSERT OR IGNORE INTO _migrations (version, note) VALUES
     ('018_add_work_order_categories',    '工单分类细化：category_l1 / category_l2'),
     ('019_add_work_order_attachments',   '工单附件表：图片/视频上传至 R2'),
     ('020_add_message_images',           '消息表新增 image_urls 列'),
-    ('021_create_leads',                 '商机线索表');
+    ('021_create_leads',                 '商机线索表'),
+    ('023_service_os_dispatch_and_audit', 'Service OS 派工、工单会话和审计字段');

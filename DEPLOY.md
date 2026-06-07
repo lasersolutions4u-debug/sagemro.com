@@ -132,6 +132,8 @@ bash
 cd worker
 npx wrangler secret put OPENAI_API_KEY --env production
 npx wrangler secret put OPENAI_API_ENDPOINT --env production
+npx wrangler secret put OPENAI_CHAT_MODEL --env production   # 例如 deepseek-chat / gpt-4o-mini / 兼容端点支持的聊天模型
+npx wrangler secret put OPENAI_JSON_MODEL --env production   # 可选；摘要/报价点评等 JSON 任务模型，不设则回退聊天模型
 npx wrangler secret put JWT_SECRET --env production
 npx wrangler secret put ONESIGNAL_REST_API_KEY --env production
 ```

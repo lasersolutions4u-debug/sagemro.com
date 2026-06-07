@@ -41,7 +41,7 @@ export function ChatHistory({ conversations, currentId, onSelect, onDelete, onRe
 
       {conversations.length === 0 && (
         <div className="px-4 py-8 text-center text-sm text-[var(--color-text-muted)]">
-          No conversations yet
+          No service intakes yet
         </div>
       )}
     </div>
@@ -51,7 +51,7 @@ export function ChatHistory({ conversations, currentId, onSelect, onDelete, onRe
 function ConversationItem({ conversation, isActive, onSelect, onDelete, onRename }) {
   const [showActions, setShowActions] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
-  const [draftTitle, setDraftTitle] = useState(conversation.title || 'New Chat');
+  const [draftTitle, setDraftTitle] = useState(conversation.title || 'Service Chat');
   const inputRef = useRef(null);
 
   useEffect(() => {
@@ -63,20 +63,20 @@ function ConversationItem({ conversation, isActive, onSelect, onDelete, onRename
 
   const startRename = (e) => {
     e.stopPropagation();
-    setDraftTitle(conversation.title || 'New Chat');
+    setDraftTitle(conversation.title || 'Service Chat');
     setIsEditing(true);
   };
 
   const cancelRename = (e) => {
     if (e) e.stopPropagation();
     setIsEditing(false);
-    setDraftTitle(conversation.title || 'New Chat');
+    setDraftTitle(conversation.title || 'Service Chat');
   };
 
   const commitRename = async (e) => {
     if (e) e.stopPropagation();
     const next = draftTitle.trim();
-    if (!next || next === (conversation.title || 'New Chat')) {
+    if (!next || next === (conversation.title || 'Service Chat')) {
       cancelRename();
       return;
     }
@@ -120,7 +120,7 @@ function ConversationItem({ conversation, isActive, onSelect, onDelete, onRename
           />
         ) : (
           <span className="flex-1 text-[15px] text-[var(--color-sidebar-text)] truncate">
-            {conversation.title || 'New Chat'}
+            {conversation.title || 'Service Chat'}
           </span>
         )}
       </div>

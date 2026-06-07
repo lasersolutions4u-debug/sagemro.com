@@ -439,6 +439,27 @@ export async function getEngineerTickets(engineerId) {
   return response.json();
 }
 
+export async function getEngineerTeam() {
+  const response = await fetch(`${API_BASE}/api/engineers/team`, {
+    headers: authHeaders(),
+  });
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  return response.json();
+}
+
+export async function assignEngineerWorkOrder({ work_order_id, engineer_id }) {
+  const response = await fetch(`${API_BASE}/api/engineers/assign-engineer`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({ work_order_id, engineer_id }),
+  });
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(data.error || `HTTP ${response.status}`);
+  }
+  return response.json();
+}
+
 /**
  * SERVICE_OS_LEGACY: 工程师确认派工兼容接口。
  * 新 Service OS 主路径应使用后台管理员派工。

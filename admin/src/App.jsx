@@ -8,11 +8,11 @@ import { RatingsPage } from './pages/RatingsPage';
 import { LeadsPage } from './pages/LeadsPage';
 
 const NAV_ITEMS = [
-  { key: 'dashboard', label: '数据概览', icon: LayoutDashboard },
-  { key: 'users', label: '用户管理', icon: Users },
-  { key: 'workorders', label: '服务运营', icon: FileText },
+  { key: 'dashboard', label: '运营驾驶舱', icon: LayoutDashboard },
+  { key: 'leads', label: '线索池', icon: Target },
+  { key: 'workorders', label: '派工与服务质量', icon: FileText },
+  { key: 'users', label: '客户与工程师', icon: Users },
   { key: 'ratings', label: '评价管理', icon: Star },
-  { key: 'leads', label: 'CRM 商机', icon: Target },
 ];
 
 export default function App() {
@@ -60,7 +60,7 @@ export default function App() {
       `}>
         <div className="px-5 py-4 border-b border-[var(--color-border)]">
           <div className="text-base font-semibold text-[var(--color-primary)]">SAGEMRO</div>
-          <div className="text-xs text-[var(--color-text-muted)]">管理后台</div>
+          <div className="text-xs text-[var(--color-text-muted)]">Operations Console</div>
         </div>
 
         <nav className="flex-1 py-4 px-3 space-y-1">
@@ -108,7 +108,7 @@ export default function App() {
               <line x1="3" y1="18" x2="21" y2="18" />
             </svg>
           </button>
-          <span className="text-sm font-medium">SAGEMRO 管理后台</span>
+          <span className="text-sm font-medium">SAGEMRO Operations Console</span>
         </div>
 
         <div className="p-6 max-w-6xl mx-auto">

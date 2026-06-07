@@ -70,6 +70,15 @@ export function useChat() {
           resolve();
         },
         onError: (err) => {
+          const message = err.message || 'AI service unavailable';
+          setMessages(prev => prev.map(m =>
+            m.id === assistantMessageId
+              ? {
+                  ...m,
+                  content: `Sorry, SAGEMRO AI could not respond right now (${message}). Please try again, or leave your equipment details and SAGEMRO will follow up through the official service process.`,
+                }
+              : m
+          ));
           setError(err.message);
           setIsStreaming(false);
           resolve();

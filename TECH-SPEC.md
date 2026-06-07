@@ -17,7 +17,7 @@ Cloudflare Workers（AI API 代理 + 工单后端）
     ↓
 Cloudflare D1（国际版 / 中国版独立数据库）
     ↓
-DeepSeek API（deepseek-v4-pro）
+OpenAI-compatible LLM API（DeepSeek / OpenAI / compatible provider）
 ```
 
 生产环境按域名分为两套业务入口：
@@ -41,12 +41,12 @@ DeepSeek API（deepseek-v4-pro）
 | 部署 | Cloudflare Pages |
 | 后端 | Cloudflare Workers |
 | 数据库 | Cloudflare D1（SQLite） |
-| AI | DeepSeek API（deepseek-v4-pro） |
+| AI | OpenAI-compatible Chat Completions API（model configurable） |
 
 ### 1.2 项目信息
 
 - **品牌名**：SAGEMRO
-- **AI 助手名**：小智
+- **AI 助手名**：SAGEMRO AI（历史代码中仍可能出现“小智”作为内部旧名，需逐步清理）
 - **国际版域名**：`sagemro.com`
 - **中国版域名**：`sagemro.cn`
 - **国际版后台**：`admin.sagemro.com`
@@ -105,9 +105,10 @@ sagemro/
 
 | 配置项 | 值 |
 |--------|-----|
-| Provider | DeepSeek |
-| Endpoint | `https://api.deepseek.com/v1/chat/completions` |
-| Model | `deepseek-v4-pro` |
+| Provider | OpenAI-compatible provider（DeepSeek / OpenAI / compatible endpoint） |
+| Endpoint | `${OPENAI_API_ENDPOINT}` |
+| Chat model | `${OPENAI_CHAT_MODEL}`，未设置时回退 `${OPENAI_MODEL}`，再回退 `deepseek-chat` |
+| JSON model | `${OPENAI_JSON_MODEL}`，未设置时回退 `${OPENAI_MODEL}` / `${OPENAI_CHAT_MODEL}` / `deepseek-chat` |
 | API Key | `${OPENAI_API_KEY}` — 通过 `wrangler secret put` 注入，不在代码或文档中出现明文 |
 
 ### 3.2 Prompt 架构（三层叠加）
@@ -163,8 +164,10 @@ VITE_API_BASE=https://api.sagemro.com
 
 | Secret | 用途 |
 |--------|------|
-| `OPENAI_API_KEY` | DeepSeek API Key |
-| `OPENAI_API_ENDPOINT` | DeepSeek API Endpoint |
+| `OPENAI_API_KEY` | LLM provider API Key |
+| `OPENAI_API_ENDPOINT` | OpenAI-compatible Chat Completions Endpoint |
+| `OPENAI_CHAT_MODEL` | 主聊天模型名（可选但生产建议显式设置） |
+| `OPENAI_JSON_MODEL` | JSON/摘要/报价点评模型名（可选，不设置则回退聊天模型） |
 | `JWT_SECRET` | JWT 签名密钥 |
 | `ADMIN_PHONE` | 管理员手机号 |
 | `ADMIN_PASSWORD` | 管理员密码 |

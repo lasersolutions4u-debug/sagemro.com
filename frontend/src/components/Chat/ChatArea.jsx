@@ -1,9 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
-import { Menu, Info, Gift } from 'lucide-react';
+import { Menu, Info, ShieldCheck, Home } from 'lucide-react';
 import { MessageBubble } from './MessageBubble';
 import { WelcomePage } from './WelcomePage';
 import { InputArea } from './InputArea';
-import { LeadForm } from './LeadForm';
 import { Footer } from '../common/Footer';
 
 export function ChatArea({
@@ -15,11 +14,10 @@ export function ChatArea({
   currentTitle,
   onToggleSidebar,
   onOpenLegal,
-  conversationId,
+  onOpenAbout,
 }) {
   const messagesEndRef = useRef(null);
   const messagesContainerRef = useRef(null);
-  const [leadFormOpen, setLeadFormOpen] = useState(false);
 
   // 自动滚动到底部
   useEffect(() => {
@@ -29,6 +27,7 @@ export function ChatArea({
   }, [messages]);
 
   const hasMessages = messages.length > 0;
+  const pageTitle = hasMessages ? (currentTitle || 'Service conversation') : 'SAGEMRO Service OS';
 
   return (
     <div className="flex flex-col h-full bg-[var(--color-chat-bg)]">
@@ -40,26 +39,61 @@ export function ChatArea({
         >
           <Menu size={20} className="text-[var(--color-text-secondary)]" />
         </button>
-        <h1 className="flex-1 text-[15px] sm:text-[17px] font-medium text-[var(--color-text-primary)] truncate">
-          {currentTitle || 'New Chat'}
-        </h1>
+        <div className="flex-1 min-w-0">
+          <h1 className="text-[15px] sm:text-[17px] font-medium text-[var(--color-text-primary)] truncate">
+            {pageTitle}
+          </h1>
+          {!hasMessages && (
+            <p className="hidden sm:block text-[11px] text-[var(--color-text-secondary)]">
+              AI-powered service for laser cutting and sheet metal equipment
+            </p>
+          )}
+        </div>
+        {onOpenAbout && (
+          <button
+            onClick={onOpenAbout}
+            className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-[var(--color-border)] text-[11px] text-[var(--color-text-secondary)] hover:text-[var(--color-primary)] hover:border-[var(--color-primary)] transition-colors"
+          >
+            <Info size={13} />
+            About SAGEMRO
+          </button>
+        )}
+        {onOpenLegal && (
+          <button
+            onClick={() => onOpenLegal('agreement')}
+            className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-[var(--color-border)] text-[11px] text-[var(--color-text-secondary)] hover:text-[var(--color-primary)] hover:border-[var(--color-primary)] transition-colors"
+          >
+            <ShieldCheck size={13} />
+            Legal & AI notice
+          </button>
+        )}
+        {hasMessages && (
+          <button
+            onClick={onNewChat}
+            className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[var(--color-primary)]/10 text-[11px] text-[var(--color-primary)] hover:bg-[var(--color-primary)]/15 transition-colors"
+          >
+            <Home size={13} />
+            Service OS Home
+          </button>
+        )}
       </header>
 
-      {/* AI 免责提示栏 */}
-      <div className="px-3 sm:px-5 py-1.5 bg-amber-50 dark:bg-amber-900/15 border-b border-amber-200/50 dark:border-amber-800/30 flex items-center gap-2">
-        <Info size={13} className="text-amber-600 dark:text-amber-400 flex-shrink-0" />
-        <p className="text-[11px] text-amber-700 dark:text-amber-300 leading-tight">
-          AI output is preliminary guidance only. Diagnosis, quote, and on-site safety requirements are confirmed by SAGEMRO official service.
-          {onOpenLegal && (
-            <button
-              onClick={() => onOpenLegal('ai')}
-              className="ml-1 underline hover:text-amber-900 dark:hover:text-amber-100 transition-colors"
-            >
-              Details
-            </button>
-          )}
-        </p>
-      </div>
+      {hasMessages && (
+        <div className="px-3 sm:px-5 py-2 border-b border-[var(--color-border)] bg-[var(--color-surface)]/70 flex items-center justify-center gap-2">
+          <Info size={12} className="text-[var(--color-text-muted)] flex-shrink-0" />
+          <p className="text-[11px] text-[var(--color-text-secondary)] leading-tight">
+            AI guidance helps speed up service preparation. Final diagnosis, quote, and on-site safety requirements are confirmed by SAGEMRO official service.
+            {onOpenLegal && (
+              <button
+                onClick={() => onOpenLegal('ai')}
+                className="ml-1 underline decoration-dotted underline-offset-2 hover:text-[var(--color-primary)] transition-colors"
+              >
+                Details
+              </button>
+            )}
+          </p>
+        </div>
+      )}
 
       {/* 消息区域 */}
       <div
@@ -74,39 +108,19 @@ export function ChatArea({
             <div ref={messagesEndRef} />
           </div>
         ) : (
-          <WelcomePage onSendMessage={onSendMessage} />
+          <WelcomePage />
         )}
       </div>
 
-      {/* 输入区域 */}
       <InputArea
         onSend={onSendMessage}
         onStop={onStopGeneration}
         disabled={false}
         isStreaming={isStreaming}
       />
-      {/* 页脚：桌面端显示 */}
-      <div className="hidden sm:block">
-        <Footer onOpenLegal={onOpenLegal} />
+      <div className="hidden sm:block border-t border-[var(--color-border)] bg-white/80 px-4 py-2">
+        <Footer onOpenLegal={onOpenLegal} compact />
       </div>
-
-      {/* 获取设备方案浮动按钮 */}
-      {hasMessages && (
-        <button
-          onClick={() => setLeadFormOpen(true)}
-          className="fixed bottom-24 right-4 sm:right-6 z-50 flex items-center gap-1.5 px-3.5 py-2 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white rounded-full shadow-lg text-sm transition-colors active:scale-95"
-        >
-          <Gift size={16} />
-          <span className="hidden sm:inline">Get a Quote</span>
-          <span className="sm:hidden">Quote</span>
-        </button>
-      )}
-
-      <LeadForm
-        isOpen={leadFormOpen}
-        onClose={() => setLeadFormOpen(false)}
-        conversationId={conversationId}
-      />
     </div>
   );
 }
