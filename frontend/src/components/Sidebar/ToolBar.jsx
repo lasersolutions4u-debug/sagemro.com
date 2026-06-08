@@ -39,25 +39,26 @@ export function ToolBar({
 
   const primaryTools = isEngineer
     ? [
-        { icon: ClipboardList, label: 'Assigned Services', onClick: onOpenMyWorkOrders, testid: 'tool-my-work-orders' },
+        { icon: ClipboardList, label: '我的服务任务', onClick: onOpenMyWorkOrders, testid: 'tool-my-work-orders' },
       ]
     : [
-        { icon: FileText, label: 'Request Service', onClick: onOpenWorkOrder, testid: 'tool-create-work-order' },
-        { icon: ClipboardList, label: 'My Services', onClick: onOpenMyWorkOrders, testid: 'tool-my-work-orders' },
+        { icon: FileText, label: '提交服务需求', onClick: onOpenWorkOrder, testid: 'tool-create-work-order' },
+        { icon: ClipboardList, label: '我的服务记录', onClick: onOpenMyWorkOrders, testid: 'tool-my-work-orders' },
       ];
 
   const extraTools = isEngineer
     ? [
-        { icon: Bell, label: 'Notifications', badge: unreadCount, testid: 'tool-notifications', onClick: () => { onOpenNotifications?.(); setShowMore(false); } },
+        { icon: Bell, label: '通知', badge: unreadCount, testid: 'tool-notifications', onClick: () => { onOpenNotifications?.(); setShowMore(false); } },
       ]
     : [
-        { icon: Package, label: 'My Equipment', testid: 'tool-my-devices', onClick: () => { onOpenMyDevices?.(); setShowMore(false); } },
-        { icon: Bell, label: 'Notifications', badge: unreadCount, testid: 'tool-notifications', onClick: () => { onOpenNotifications?.(); setShowMore(false); } },
+        { icon: Package, label: '我的设备', testid: 'tool-my-devices', onClick: () => { onOpenMyDevices?.(); setShowMore(false); } },
+        { icon: Bell, label: '通知', badge: unreadCount, testid: 'tool-notifications', onClick: () => { onOpenNotifications?.(); setShowMore(false); } },
       ];
 
   const showCollapsed = currentUser && collapsed && extraTools.length >= 2;
 
   const avatarAction = isEngineer ? onOpenEngineerDashboard : onOpenSettings;
+  const hasTools = Boolean(currentUser);
 
   const toolBtn = (tool) => (
     <button
@@ -90,7 +91,7 @@ export function ToolBar({
             className="w-full flex items-center gap-3 px-4 py-2.5 text-[14px] text-[var(--color-sidebar-muted)] hover:bg-[var(--color-sidebar-surface)] hover:text-[var(--color-sidebar-text)] rounded-lg mx-1 transition-colors"
           >
             {showMore ? <X size={17} /> : <MoreHorizontal size={17} />}
-            <span>More</span>
+            <span>更多</span>
             {unreadCount > 0 && (
               <span className="ml-auto w-4 h-4 flex items-center justify-center bg-red-500 text-white text-[10px] font-medium rounded-full">
                 {unreadCount > 99 ? '99+' : unreadCount}
@@ -119,7 +120,7 @@ export function ToolBar({
       )}
 
       {/* User area */}
-      <div className="border-t border-[var(--color-border)] mt-3 pt-3">
+      <div className={hasTools ? 'border-t border-[var(--color-border)] mt-3 pt-3' : ''}>
         {currentUser ? (
           <>
             <button
@@ -134,7 +135,7 @@ export function ToolBar({
               </div>
               <span className="truncate">{currentUser.name}</span>
               {isEngineer && (
-                <span className="text-[10px] px-1.5 py-0.5 bg-[var(--color-primary)]/20 text-[var(--color-primary)] rounded">SAGEMRO Engineer</span>
+                <span className="text-[10px] px-1.5 py-0.5 bg-[var(--color-primary)]/20 text-[var(--color-primary)] rounded">SAGEMRO 工程师</span>
               )}
             </button>
             <button
@@ -143,7 +144,7 @@ export function ToolBar({
               className="w-full flex items-center gap-3 px-4 py-2.5 text-[14px] text-[var(--color-sidebar-muted)] hover:bg-[var(--color-sidebar-surface)] hover:text-[var(--color-sidebar-text)] rounded-lg mx-1 transition-colors"
             >
               <LogOut size={17} />
-              <span>Log Out</span>
+              <span>退出登录</span>
             </button>
           </>
         ) : (
@@ -153,7 +154,7 @@ export function ToolBar({
             className="w-full flex items-center gap-3 px-4 py-2.5 text-[14px] text-[var(--color-sidebar-muted)] hover:bg-[var(--color-sidebar-surface)] hover:text-[var(--color-sidebar-text)] rounded-lg mx-1 transition-colors"
           >
             <LogIn size={17} />
-            <span>Sign In / Register</span>
+            <span>登录 / 注册</span>
           </button>
         )}
       </div>

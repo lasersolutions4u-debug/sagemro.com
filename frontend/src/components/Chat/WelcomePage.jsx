@@ -14,9 +14,9 @@ const aiCapabilities = [
 ];
 
 const trustPoints = [
-  '理解报警、照片、切割质量、备件、维保和新机需求',
-  '把零散描述整理成可确认、可派工、可归档的服务摘要',
-  '用 AI 提升响应效率，由 SAGEMRO 官方服务承接关键确认',
+  '报警、照片、备件、维保和新机项目，都可以从一次对话开始',
+  '把现场零散信息沉淀成客户、工程师和 SAGEMRO 都能继续推进的服务线索',
+  'AI 提升响应速度，诊断、报价与现场安全要求由 SAGEMRO 官方服务确认',
 ];
 
 export function WelcomePage() {
@@ -31,10 +31,10 @@ export function WelcomePage() {
             SAGEMRO Service OS
           </div>
           <h1 className="text-[28px] font-semibold leading-tight tracking-tight text-[var(--color-text-primary)] sm:text-[42px]">
-            把设备问题，变成清晰可靠的服务路径。
+            设备不能等，下一步要清楚。
           </h1>
           <p className="mx-auto mt-4 max-w-3xl text-sm leading-7 text-[var(--color-text-secondary)] sm:text-base">
-            直接告诉 SAGEMRO 现场发生了什么。AI 会读取关键信息和图片，追问必要细节，并把问题整理成可由官方服务继续跟进的清晰方案。
+            报警、停机、切割质量异常或备件需求，不该在反复转述中被耽误。SAGEMRO 帮你把现场情况带向故障判断、备件支持、维保安排、官方服务或新机决策。
           </p>
         </div>
 
@@ -45,10 +45,10 @@ export function WelcomePage() {
             </div>
             <div>
               <h2 className="text-base font-semibold text-[var(--color-text-primary)]">
-                一次对话，推进六类服务结果。
+                从一句描述开始，得到一个可推进的服务方向。
               </h2>
               <p className="mt-1 text-xs leading-relaxed text-[var(--color-text-secondary)] sm:text-sm">
-                你只需要像和工程师沟通一样说明情况。SAGEMRO 会引导对话、提取关键细节，并在聊天中让你确认结构化信息。
+                你只需要像和工程师沟通一样说明情况。SAGEMRO 在后台梳理关键细节，再在聊天中请你确认，减少反复沟通和遗漏。
               </p>
             </div>
           </div>

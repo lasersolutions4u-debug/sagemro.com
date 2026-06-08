@@ -27,7 +27,7 @@ export function ChatArea({
   }, [messages]);
 
   const hasMessages = messages.length > 0;
-  const pageTitle = hasMessages ? (currentTitle || 'Service conversation') : 'SAGEMRO Service OS';
+  const pageTitle = hasMessages ? (currentTitle || '服务对话') : 'SAGEMRO Service OS';
 
   return (
     <div className="flex flex-col h-full bg-[var(--color-chat-bg)]">
@@ -45,7 +45,7 @@ export function ChatArea({
           </h1>
           {!hasMessages && (
             <p className="hidden sm:block text-[11px] text-[var(--color-text-secondary)]">
-              AI-powered service for laser cutting and sheet metal equipment
+              面向激光切割与钣金设备的官方服务智能入口
             </p>
           )}
         </div>
@@ -55,7 +55,7 @@ export function ChatArea({
             className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-[var(--color-border)] text-[11px] text-[var(--color-text-secondary)] hover:text-[var(--color-primary)] hover:border-[var(--color-primary)] transition-colors"
           >
             <Info size={13} />
-            About SAGEMRO
+            关于 SAGEMRO
           </button>
         )}
         {onOpenLegal && (
@@ -64,7 +64,7 @@ export function ChatArea({
             className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-[var(--color-border)] text-[11px] text-[var(--color-text-secondary)] hover:text-[var(--color-primary)] hover:border-[var(--color-primary)] transition-colors"
           >
             <ShieldCheck size={13} />
-            Legal & AI notice
+            法律与 AI 说明
           </button>
         )}
         {hasMessages && (
@@ -73,7 +73,7 @@ export function ChatArea({
             className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[var(--color-primary)]/10 text-[11px] text-[var(--color-primary)] hover:bg-[var(--color-primary)]/15 transition-colors"
           >
             <Home size={13} />
-            Service OS Home
+            返回首页
           </button>
         )}
       </header>
@@ -82,13 +82,13 @@ export function ChatArea({
         <div className="px-3 sm:px-5 py-2 border-b border-[var(--color-border)] bg-[var(--color-surface)]/70 flex items-center justify-center gap-2">
           <Info size={12} className="text-[var(--color-text-muted)] flex-shrink-0" />
           <p className="text-[11px] text-[var(--color-text-secondary)] leading-tight">
-            AI guidance helps speed up service preparation. Final diagnosis, quote, and on-site safety requirements are confirmed by SAGEMRO official service.
+            AI 帮助更快梳理服务路径。最终诊断、报价和现场安全要求由 SAGEMRO 官方服务确认。
             {onOpenLegal && (
               <button
                 onClick={() => onOpenLegal('ai')}
                 className="ml-1 underline decoration-dotted underline-offset-2 hover:text-[var(--color-primary)] transition-colors"
               >
-                Details
+                详情
               </button>
             )}
           </p>
