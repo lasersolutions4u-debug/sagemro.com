@@ -173,7 +173,7 @@ export function EngineerWorkspace({ currentUser, onLogout, onOpenProfile }) {
 
   return (
     <>
-    <div className="min-h-[100dvh] bg-[var(--color-bg)] text-[var(--color-text-primary)]">
+    <div className="h-[100dvh] overflow-y-auto bg-[var(--color-bg)] text-[var(--color-text-primary)]">
       <header className="border-b border-[var(--color-border)] bg-[var(--color-surface)]">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-5 py-4">
           <div>
