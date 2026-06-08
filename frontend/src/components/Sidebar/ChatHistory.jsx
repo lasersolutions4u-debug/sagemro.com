@@ -41,7 +41,7 @@ export function ChatHistory({ conversations, currentId, onSelect, onDelete, onRe
 
       {conversations.length === 0 && (
         <div className="px-4 py-8 text-center text-sm text-[var(--color-text-muted)]">
-          No service intakes yet
+          Your service conversations will appear here
         </div>
       )}
     </div>

@@ -166,7 +166,7 @@ export function InputArea({ onSend, onStop, disabled, isStreaming }) {
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder={pendingImages.length > 0 ? "Describe what happened. Press Enter to send, Shift + Enter for a new line." : "Describe the fault, part, maintenance need, or new-machine project. Upload images anytime."}
+              placeholder={pendingImages.length > 0 ? "Add site context. Enter to send, Shift + Enter for a new line." : "Tell us what is happening on site. Add photos anytime."}
               disabled={disabled}
               rows={1}
               className="w-full px-4 py-3 bg-transparent resize-none focus:outline-none text-[var(--color-text-primary)] placeholder-[var(--color-text-muted)] disabled:opacity-50 text-[15px]"

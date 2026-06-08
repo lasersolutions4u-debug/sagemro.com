@@ -14,9 +14,9 @@ const aiCapabilities = [
 ];
 
 const trustPoints = [
-  'Understands alarms, photos, cut quality, parts, maintenance, and new-machine needs',
-  'Turns messy details into a service-ready summary you can confirm in chat',
-  'Connects AI speed with official SAGEMRO follow-through when it matters',
+  'Bring alarms, photos, parts, maintenance, and machine projects into one service conversation',
+  'Move from scattered symptoms to a case your team and SAGEMRO can act on',
+  'Get AI speed with official SAGEMRO confirmation for diagnosis, quote, and site safety',
 ];
 
 export function WelcomePage() {
@@ -31,10 +31,10 @@ export function WelcomePage() {
             SAGEMRO Service OS
           </div>
           <h1 className="text-[28px] font-semibold leading-tight tracking-tight text-[var(--color-text-primary)] sm:text-[42px]">
-            Turn machine trouble into a clear service path.
+            When equipment stops, the next step should be clear.
           </h1>
           <p className="mx-auto mt-4 max-w-3xl text-sm leading-7 text-[var(--color-text-secondary)] sm:text-base">
-            Tell SAGEMRO what happened. AI captures the facts, reads images when needed, asks the right follow-up questions, and prepares your case for official service action.
+            Tell SAGEMRO what is happening on site. From the first message, we help shape the issue into a reliable path toward diagnosis, parts, maintenance, service, or a new-machine decision.
           </p>
         </div>
 
@@ -45,10 +45,10 @@ export function WelcomePage() {
             </div>
             <div>
               <h2 className="text-base font-semibold text-[var(--color-text-primary)]">
-                One conversation. Six service outcomes.
+                Start with a message. Leave with a service direction.
               </h2>
               <p className="mt-1 text-xs leading-relaxed text-[var(--color-text-secondary)] sm:text-sm">
-                Simply explain the situation. SAGEMRO guides the conversation, captures the key details, and turns them into service-ready information.
+                You speak naturally. SAGEMRO keeps the details organized in the background and brings the key points back for your confirmation in chat.
               </p>
             </div>
           </div>

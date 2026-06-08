@@ -45,7 +45,7 @@ export function ChatArea({
           </h1>
           {!hasMessages && (
             <p className="hidden sm:block text-[11px] text-[var(--color-text-secondary)]">
-              AI-powered service for laser cutting and sheet metal equipment
+              Official service intelligence for laser cutting and sheet metal equipment
             </p>
           )}
         </div>
@@ -82,7 +82,7 @@ export function ChatArea({
         <div className="px-3 sm:px-5 py-2 border-b border-[var(--color-border)] bg-[var(--color-surface)]/70 flex items-center justify-center gap-2">
           <Info size={12} className="text-[var(--color-text-muted)] flex-shrink-0" />
           <p className="text-[11px] text-[var(--color-text-secondary)] leading-tight">
-            AI guidance helps speed up service preparation. Final diagnosis, quote, and on-site safety requirements are confirmed by SAGEMRO official service.
+            AI helps prepare the service path faster. Final diagnosis, quote, and on-site safety requirements are confirmed by SAGEMRO official service.
             {onOpenLegal && (
               <button
                 onClick={() => onOpenLegal('ai')}

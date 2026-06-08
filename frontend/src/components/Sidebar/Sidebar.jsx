@@ -54,7 +54,7 @@ export function Sidebar({
             className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white rounded-xl transition-colors font-medium text-[13px] shadow-sm"
           >
             <Plus size={18} />
-            <span>New Service Chat</span>
+            <span>Start Service Chat</span>
           </button>
         </div>
 

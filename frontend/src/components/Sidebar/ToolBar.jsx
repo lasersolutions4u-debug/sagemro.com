@@ -58,6 +58,7 @@ export function ToolBar({
   const showCollapsed = currentUser && collapsed && extraTools.length >= 2;
 
   const avatarAction = isEngineer ? onOpenEngineerDashboard : onOpenSettings;
+  const hasTools = Boolean(currentUser);
 
   const toolBtn = (tool) => (
     <button
@@ -119,7 +120,7 @@ export function ToolBar({
       )}
 
       {/* User area */}
-      <div className="border-t border-[var(--color-border)] mt-3 pt-3">
+      <div className={hasTools ? 'border-t border-[var(--color-border)] mt-3 pt-3' : ''}>
         {currentUser ? (
           <>
             <button
