@@ -10,6 +10,30 @@ import { useConversations } from './hooks/useConversations';
 import { usePushNotification } from './hooks/usePushNotification';
 import { generateId } from './utils/helpers';
 import { submitWorkOrder as submitWorkOrderApi, getUnreadNotificationCount } from './services/api';
+import { getEngineerPortalUrl, runtimeConfig } from './config/runtime';
+
+const ENGINEER_ENTRY_TEXT = {
+  en: {
+    title: 'Internal Service Representative Console',
+    body: 'Engineer and regional lead accounts are assigned by SAGEMRO. Sign in with your assigned account to view dispatched service tasks, customer communication, service reports, and task archives.',
+    wrongAccount: 'The current account is not an engineer account. Please sign out and use an assigned engineer account.',
+    login: 'Sign in to engineer console',
+    logout: 'Sign out current account',
+    redirectTitle: 'Open the engineer console',
+    redirectBody: (host) => `Engineer accounts use the independent ${host} entrance. The main site remains focused on customer service requests and visitor access.`,
+    go: (host) => `Go to ${host}`,
+  },
+  'zh-CN': {
+    title: '内部工程师工作台',
+    body: '工程师账号由 SAGEMRO 分配。请使用已分配的工程师或区域负责人账号登录，查看派工、客户沟通、服务报告和任务归档。',
+    wrongAccount: '当前登录的不是工程师账号，请先退出后使用工程师账号登录。',
+    login: '登录工程师工作台',
+    logout: '退出当前账号',
+    redirectTitle: '请进入工程师工作台',
+    redirectBody: (host) => `工程师账号将使用独立入口 ${host}。主站仅保留客户登录和访客访问，避免现场作业入口与客户服务体验混在一起。`,
+    go: (host) => `前往 ${host}`,
+  },
+};
 
 // 重型 Modal 懒加载，减少首屏 bundle 体积
 // LoginModal 直接导入 — 关键的登录/注册入口，懒加载会导致 React #306（重复 React 实例）
@@ -26,9 +50,10 @@ const MyDevicesModal = lazy(() => import('./components/Device/MyDevicesModal').t
 const NotificationModal = lazy(() => import('./components/Notification/NotificationModal').then(m => ({ default: m.NotificationModal })));
 
 function App() {
-  const isEngineerHost = typeof window !== 'undefined'
-    && window.location.hostname.startsWith('engineer.');
-
+  const isEngineerHost = runtimeConfig.portal === 'engineer';
+  const engineerPortalUrl = getEngineerPortalUrl();
+  const engineerPortalHost = engineerPortalUrl.replace('https://', '');
+  const engineerEntryText = ENGINEER_ENTRY_TEXT[runtimeConfig.locale] || ENGINEER_ENTRY_TEXT.en;
   // 侧边栏状态
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
@@ -138,7 +163,7 @@ function App() {
   const handleNewChat = useCallback(() => {
     clearMessages();
     setSidebarOpen(false);
-  }, [clearMessages]);
+  }, [clearMessages, setSidebarOpen]);
 
   // 选择对话
   const handleSelectConversation = useCallback((conv) => {
@@ -156,7 +181,7 @@ function App() {
       loadMessages([], conv.id);
     }
     setSidebarOpen(false);
-  }, [conversationId, clearMessages, loadMessages]);
+  }, [conversationId, clearMessages, loadMessages, setSidebarOpen]);
 
   // 发送消息
   const handleSendMessage = useCallback(async (content, images) => {
@@ -247,7 +272,7 @@ function App() {
     }
     // 登录后清空对话，确保用新账号的正确身份上下文开始对话
     clearMessages();
-  }, [clearMessages]);
+  }, [clearMessages, setCurrentUser, setUserType, setLoginModalOpen]);
 
   // 登出
   const handleLogout = useCallback(() => {
@@ -287,13 +312,13 @@ function App() {
   const handleOpenWorkOrderDetail = useCallback((workOrderId) => {
     // 打开我的工单列表（目前没有单独详情页入口，通过列表查看）
     setMyWorkOrdersModalOpen(true);
-  }, []);
+  }, [setMyWorkOrdersModalOpen]);
 
   // 打开法律文档
   const openLegal = useCallback((tab = 'agreement') => {
     setLegalInitialTab(tab);
     setLegalModalOpen(true);
-  }, []);
+  }, [setLegalInitialTab, setLegalModalOpen]);
 
   const showEngineerWorkspace = (isEngineerHost || currentPath === '/engineer') && userType === 'engineer';
 
@@ -331,13 +356,13 @@ function App() {
         <div className="flex min-h-[100dvh] items-center justify-center bg-[var(--color-bg)] px-5 text-[var(--color-text-primary)]">
           <div className="max-w-md rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6 text-center shadow-xl">
             <div className="text-xs uppercase tracking-[0.24em] text-[var(--color-primary)]">SAGEMRO</div>
-            <h1 className="mt-2 text-xl font-semibold">SAGEMRO Engineer Workspace</h1>
+            <h1 className="mt-2 text-xl font-semibold">{engineerEntryText.title}</h1>
             <p className="mt-3 text-sm text-[var(--color-text-secondary)]">
-              For confirmed service team members with an active SAGEMRO account. Sign in to review service tasks, customer communication, field notes, and service reports.
+              {engineerEntryText.body}
             </p>
             {userType && userType !== 'engineer' && (
               <p className="mt-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-bg)] px-3 py-2 text-xs text-[var(--color-text-secondary)]">
-                The current account is not an engineer account. Please sign out and use your SAGEMRO engineer account.
+                {engineerEntryText.wrongAccount}
               </p>
             )}
             <div className="mt-5 flex flex-col gap-2">
@@ -345,14 +370,14 @@ function App() {
                 onClick={() => setLoginModalOpen(true)}
                 className="rounded-xl bg-[var(--color-primary)] px-4 py-2.5 text-sm font-medium text-white"
               >
-                Enter Engineer Workspace
+                {engineerEntryText.login}
               </button>
               {currentUser && (
                 <button
                   onClick={handleLogout}
                   className="rounded-xl border border-[var(--color-border)] px-4 py-2.5 text-sm text-[var(--color-text-secondary)]"
                 >
-                  Sign Out
+                  {engineerEntryText.logout}
                 </button>
               )}
             </div>
@@ -363,7 +388,7 @@ function App() {
             isOpen={loginModalOpen}
             onClose={() => setLoginModalOpen(false)}
             onLoginSuccess={handleLoginSuccess}
-            openLegal={openLegal}
+            onOpenLegal={openLegal}
           />
           {legalModalOpen && (
             <LegalModal
@@ -383,22 +408,22 @@ function App() {
       <div className="flex min-h-[100dvh] items-center justify-center bg-[var(--color-bg)] px-5 text-[var(--color-text-primary)]">
         <div className="max-w-md rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6 text-center shadow-xl">
           <div className="text-xs uppercase tracking-[0.24em] text-[var(--color-primary)]">SAGEMRO</div>
-          <h1 className="mt-2 text-xl font-semibold">Continue in the Engineer Workspace</h1>
+          <h1 className="mt-2 text-xl font-semibold">{engineerEntryText.redirectTitle}</h1>
           <p className="mt-3 text-sm text-[var(--color-text-secondary)]">
-            This account is intended for the SAGEMRO Engineer Workspace. Use the dedicated portal to review service tasks, customer communication, and field service records.
+            {engineerEntryText.redirectBody(engineerPortalHost)}
           </p>
           <div className="mt-5 flex flex-col gap-2">
             <a
-              href="https://engineer.sagemro.com"
+              href={engineerPortalUrl}
               className="rounded-xl bg-[var(--color-primary)] px-4 py-2.5 text-sm font-medium text-white"
             >
-              Go to engineer.sagemro.com
+              {engineerEntryText.go(engineerPortalHost)}
             </a>
             <button
               onClick={handleLogout}
               className="rounded-xl border border-[var(--color-border)] px-4 py-2.5 text-sm text-[var(--color-text-secondary)]"
             >
-              Sign Out
+              {engineerEntryText.logout}
             </button>
           </div>
         </div>

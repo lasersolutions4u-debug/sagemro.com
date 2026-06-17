@@ -1,13 +1,7 @@
 // API 服务层
-function resolveApiBase() {
-  if (import.meta.env.VITE_API_BASE) return import.meta.env.VITE_API_BASE;
-  if (typeof window !== 'undefined' && window.location.hostname.endsWith('.cn')) {
-    return 'https://api.sagemro.cn';
-  }
-  return 'https://api.sagemro.com';
-}
+import { runtimeConfig } from '../config/runtime';
 
-const API_BASE = resolveApiBase();
+const API_BASE = runtimeConfig.apiBase;
 
 // 401 统一拦截：当任意认证接口返回 401 时，清理本地 token 并派发事件，
 // 由 App.jsx 订阅后自动登出并弹出登录框。避免用户在 token 过期后看到一堆
