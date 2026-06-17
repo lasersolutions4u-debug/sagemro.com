@@ -5,12 +5,12 @@ import {
 import { BrandMark } from '../common/BrandMark';
 
 const aiCapabilities = [
-  'Fault diagnosis',
-  'Cutting parameters',
-  'Parts identification',
-  'Repair estimate',
+  'Fault intake',
+  'Parts request',
+  'Maintenance review',
+  'Service readiness',
   'Machine selection',
-  'Health report',
+  'Follow-up records',
 ];
 
 const trustPoints = [

@@ -6,13 +6,45 @@ import { UsersPage } from './pages/UsersPage';
 import { WorkOrdersPage } from './pages/WorkOrdersPage';
 import { RatingsPage } from './pages/RatingsPage';
 import { LeadsPage } from './pages/LeadsPage';
+import { runtimeConfig } from './config/runtime';
+
+const TEXT = {
+  en: {
+    subtitle: 'Operations Console',
+    mobileTitle: 'SAGEMRO Operations Console',
+    adminInitial: 'A',
+    logout: 'Sign out',
+    nav: {
+      dashboard: 'Operations Dashboard',
+      leads: 'Lead Inbox',
+      workorders: 'Service Orders',
+      users: 'Customers & Engineers',
+      ratings: 'Service Reviews',
+    },
+  },
+  'zh-CN': {
+    subtitle: '运营管理后台',
+    mobileTitle: 'SAGEMRO 运营管理后台',
+    adminInitial: '管',
+    logout: '退出登录',
+    nav: {
+      dashboard: '运营驾驶舱',
+      leads: '线索池',
+      workorders: '派工与服务质量',
+      users: '客户与工程师',
+      ratings: '评价管理',
+    },
+  },
+};
+
+const t = TEXT[runtimeConfig.locale] || TEXT.en;
 
 const NAV_ITEMS = [
-  { key: 'dashboard', label: '运营驾驶舱', icon: LayoutDashboard },
-  { key: 'leads', label: '线索池', icon: Target },
-  { key: 'workorders', label: '派工与服务质量', icon: FileText },
-  { key: 'users', label: '客户与工程师', icon: Users },
-  { key: 'ratings', label: '评价管理', icon: Star },
+  { key: 'dashboard', label: t.nav.dashboard, icon: LayoutDashboard },
+  { key: 'leads', label: t.nav.leads, icon: Target },
+  { key: 'workorders', label: t.nav.workorders, icon: FileText },
+  { key: 'users', label: t.nav.users, icon: Users },
+  { key: 'ratings', label: t.nav.ratings, icon: Star },
 ];
 
 export default function App() {
@@ -60,7 +92,7 @@ export default function App() {
       `}>
         <div className="px-5 py-4 border-b border-[var(--color-border)]">
           <div className="text-base font-semibold text-[var(--color-primary)]">SAGEMRO</div>
-          <div className="text-xs text-[var(--color-text-muted)]">Operations Console</div>
+          <div className="text-xs text-[var(--color-text-muted)]">{t.subtitle}</div>
         </div>
 
         <nav className="flex-1 py-4 px-3 space-y-1">
@@ -83,7 +115,7 @@ export default function App() {
         <div className="p-3 border-t border-[var(--color-border)]">
           <div className="flex items-center gap-2 px-3 py-2 text-sm text-[var(--color-text-secondary)]">
             <div className="w-7 h-7 rounded-full bg-[var(--color-primary)] flex items-center justify-center flex-shrink-0">
-              <span className="text-white text-xs font-medium">管</span>
+              <span className="text-white text-xs font-medium">{t.adminInitial}</span>
             </div>
             <span className="truncate">{user.name}</span>
           </div>
@@ -92,7 +124,7 @@ export default function App() {
             className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-[var(--color-text-muted)] hover:bg-[var(--color-surface-elevated)] hover:text-[var(--color-text)] transition-colors"
           >
             <LogOut size={16} />
-            <span>退出登录</span>
+            <span>{t.logout}</span>
           </button>
         </div>
       </aside>
@@ -108,7 +140,7 @@ export default function App() {
               <line x1="3" y1="18" x2="21" y2="18" />
             </svg>
           </button>
-          <span className="text-sm font-medium">SAGEMRO Operations Console</span>
+          <span className="text-sm font-medium">{t.mobileTitle}</span>
         </div>
 
         <div className="p-6 max-w-6xl mx-auto">

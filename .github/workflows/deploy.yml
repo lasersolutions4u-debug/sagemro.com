@@ -1,8 +1,8 @@
 name: Deploy to Cloudflare
 
 # 触发策略：
-#   - push 到 main：跑测试 → 通过后部署 frontend / worker / admin 到国际版生产
-#   - push 到 china-edition：跑测试 → 通过后部署中国版 frontend / admin
+#   - push 到 main：跑测试 → 通过后部署 frontend / engineer / worker / admin 到国际版生产
+#   - push 到 china-edition：跑测试 → 通过后部署中国版 frontend / engineer / admin
 #   - PR：只跑测试和 build，绝不部署（用 jobs 层 if: 门禁兜底）
 on:
   push:
@@ -41,6 +41,10 @@ jobs:
         working-directory: frontend
         run: npm install --no-audit --no-fund
 
+      - name: Frontend unit tests
+        working-directory: frontend
+        run: npm test --if-present
+
       - name: Frontend lint
         working-directory: frontend
         run: npm run lint --if-present
@@ -53,6 +57,10 @@ jobs:
       - name: Admin install
         working-directory: admin
         run: npm install --no-audit --no-fund
+
+      - name: Admin unit tests
+        working-directory: admin
+        run: npm test --if-present
 
       - name: Admin build
         working-directory: admin
@@ -92,6 +100,37 @@ jobs:
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           command: pages deploy frontend/dist --project-name=${{ github.ref == 'refs/heads/main' && 'sagemro-com' || 'sagemro-cn' }} --branch=${{ github.ref_name }}
 
+  # ============ 部署 Engineer Portal ============
+  deploy-engineer:
+    name: Deploy Engineer Portal to Cloudflare Pages
+    needs: test
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/china-edition')
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm install --no-audit --no-fund
+
+      - name: Build
+        working-directory: frontend
+        run: npm run build
+
+      - name: Deploy to Cloudflare Pages
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy frontend/dist --project-name=${{ github.ref == 'refs/heads/main' && 'sagemro-engineer' || 'sagemro-engineer-cn' }} --branch=${{ github.ref_name }}
+
   # ============ 部署 Worker ============
   deploy-worker:
     name: Deploy Worker to Cloudflare Workers
@@ -118,42 +157,53 @@ jobs:
         working-directory: worker
         run: |
           echo "=== Checking D1 migration status ==="
-          wrangler d1 execute sagemro-db --env production --remote \
-            --command "SELECT version FROM _migrations ORDER BY version;" \
-            > /tmp/sagemro-d1-migrations.txt
-
-          APPLIED=$(grep -Eo '[0-9]{3}[a-z]?_[A-Za-z0-9_]+' /tmp/sagemro-d1-migrations.txt | sort -u || true)
           LOCAL_FILES=$(find migrations -maxdepth 1 -type f -name '*.sql' -print \
             | sed 's#^migrations/##; s#\.sql$##' \
             | grep -v '^022_cn_full_schema$' \
             | sort -u)
 
-          echo "Applied versions: $APPLIED"
           echo "Local migration files: $LOCAL_FILES"
 
-          MISSING=""
-          for ver in $LOCAL_FILES; do
-            if ! echo "$APPLIED" | grep -q "^${ver}$"; then
-              MISSING="$MISSING $ver"
-            fi
-          done
+          check_db() {
+            DB_NAME="$1"
+            OUT_FILE="/tmp/${DB_NAME}-migrations.txt"
 
-          if [ -n "$MISSING" ]; then
             echo ""
-            echo "❌ UNAPPLIED MIGRATIONS FOUND:$MISSING"
-            echo ""
-            echo "These migration files exist locally but have NOT been applied to production D1."
-            echo "You must run them manually BEFORE deploying the Worker:"
-            echo ""
-            for ver in $MISSING; do
-              echo "  wrangler d1 execute sagemro-db --env production --remote --file migrations/${ver}.sql"
+            echo "Checking ${DB_NAME}..."
+            wrangler d1 execute "$DB_NAME" --env production --remote \
+              --command "SELECT version FROM _migrations ORDER BY version;" \
+              > "$OUT_FILE"
+
+            APPLIED=$(grep -Eo '[0-9]{3}[a-z]?_[A-Za-z0-9_]+' "$OUT_FILE" | sort -u || true)
+            echo "Applied versions for ${DB_NAME}: $APPLIED"
+
+            MISSING=""
+            for ver in $LOCAL_FILES; do
+              if ! echo "$APPLIED" | grep -q "^${ver}$"; then
+                MISSING="$MISSING $ver"
+              fi
             done
-            echo ""
-            echo "See DEPLOY.md for details."
-            exit 1
-          fi
 
-          echo "✅ All migrations are applied."
+            if [ -n "$MISSING" ]; then
+              echo ""
+              echo "❌ UNAPPLIED MIGRATIONS FOUND IN ${DB_NAME}:$MISSING"
+              echo ""
+              echo "These migration files exist locally but have NOT been applied to production D1."
+              echo "You must run them manually BEFORE deploying the Worker:"
+              echo ""
+              for ver in $MISSING; do
+                echo "  wrangler d1 execute ${DB_NAME} --env production --remote --file migrations/${ver}.sql"
+              done
+              echo ""
+              echo "See DEPLOY.md for details."
+              exit 1
+            fi
+
+            echo "✅ All migrations are applied for ${DB_NAME}."
+          }
+
+          check_db sagemro-db
+          check_db sagemro-db-cn
 
       - name: Deploy to Cloudflare Workers
         uses: cloudflare/wrangler-action@v3
