@@ -1405,9 +1405,11 @@ const ALLOWED_ORIGINS_PRODUCTION = [
   'https://sagemro.com',
   'https://www.sagemro.com',
   'https://admin.sagemro.com',
+  'https://engineer.sagemro.com',
   'https://sagemro.cn',
   'https://www.sagemro.cn',
   'https://admin.sagemro.cn',
+  'https://engineer.sagemro.cn',
 ];
 const ALLOWED_ORIGINS_DEV = [
   ...ALLOWED_ORIGINS_PRODUCTION,
@@ -1419,7 +1421,7 @@ const ALLOWED_ORIGINS_DEV = [
   'http://127.0.0.1:5174',
 ];
 
-function getAllowedOrigin(origin, env) {
+export function getAllowedOrigin(origin, env) {
   // 默认拒绝策略：只有显式设置为 'development' 才放行开发域名，其他情况（含缺失/空/staging）均按生产处理
   const allowed = env.ENVIRONMENT === 'development' ? ALLOWED_ORIGINS_DEV : ALLOWED_ORIGINS_PRODUCTION;
   if (origin && allowed.includes(origin)) return origin;

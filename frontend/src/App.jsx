@@ -10,6 +10,30 @@ import { useConversations } from './hooks/useConversations';
 import { usePushNotification } from './hooks/usePushNotification';
 import { generateId } from './utils/helpers';
 import { submitWorkOrder as submitWorkOrderApi, getUnreadNotificationCount } from './services/api';
+import { getEngineerPortalUrl, runtimeConfig } from './config/runtime';
+
+const ENGINEER_ENTRY_TEXT = {
+  en: {
+    title: 'Internal Service Representative Console',
+    body: 'Engineer and regional lead accounts are assigned by SAGEMRO. Sign in with your assigned account to view dispatched service tasks, customer communication, service reports, and task archives.',
+    wrongAccount: 'The current account is not an engineer account. Please sign out and use an assigned engineer account.',
+    login: 'Sign in to engineer console',
+    logout: 'Sign out current account',
+    redirectTitle: 'Open the engineer console',
+    redirectBody: (host) => `Engineer accounts use the independent ${host} entrance. The main site remains focused on customer service requests and visitor access.`,
+    go: (host) => `Go to ${host}`,
+  },
+  'zh-CN': {
+    title: '内部工程师工作台',
+    body: '工程师账号由 SAGEMRO 分配。请使用已分配的工程师或区域负责人账号登录，查看派工、客户沟通、服务报告和任务归档。',
+    wrongAccount: '当前登录的不是工程师账号，请先退出后使用工程师账号登录。',
+    login: '登录工程师工作台',
+    logout: '退出当前账号',
+    redirectTitle: '请进入工程师工作台',
+    redirectBody: (host) => `工程师账号将使用独立入口 ${host}。主站仅保留客户登录和访客访问，避免现场作业入口与客户服务体验混在一起。`,
+    go: (host) => `前往 ${host}`,
+  },
+};
 
 // 重型 Modal 懒加载，减少首屏 bundle 体积
 // LoginModal 直接导入 — 关键的登录/注册入口，懒加载会导致 React #306（重复 React 实例）
@@ -26,6 +50,11 @@ const MyDevicesModal = lazy(() => import('./components/Device/MyDevicesModal').t
 const NotificationModal = lazy(() => import('./components/Notification/NotificationModal').then(m => ({ default: m.NotificationModal })));
 
 function App() {
+  const isEngineerHost = runtimeConfig.portal === 'engineer';
+  const engineerPortalUrl = getEngineerPortalUrl();
+  const engineerPortalHost = engineerPortalUrl.replace('https://', '');
+  const engineerEntryText = ENGINEER_ENTRY_TEXT[runtimeConfig.locale] || ENGINEER_ENTRY_TEXT.en;
+
   // 侧边栏状态
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
@@ -135,7 +164,7 @@ function App() {
   const handleNewChat = useCallback(() => {
     clearMessages();
     setSidebarOpen(false);
-  }, [clearMessages]);
+  }, [clearMessages, setSidebarOpen]);
 
   // 选择对话
   const handleSelectConversation = useCallback((conv) => {
@@ -153,7 +182,7 @@ function App() {
       loadMessages([], conv.id);
     }
     setSidebarOpen(false);
-  }, [conversationId, clearMessages, loadMessages]);
+  }, [conversationId, clearMessages, loadMessages, setSidebarOpen]);
 
   // 发送消息
   const handleSendMessage = useCallback(async (content, images) => {
@@ -244,7 +273,7 @@ function App() {
     }
     // 登录后清空对话，确保用新账号的正确身份上下文开始对话
     clearMessages();
-  }, [clearMessages]);
+  }, [clearMessages, setCurrentUser, setUserType, setLoginModalOpen]);
 
   // 登出
   const handleLogout = useCallback(() => {
@@ -256,11 +285,11 @@ function App() {
     setCurrentUser(null);
     setUserType(null);
     setUnreadCount(0);
-    if (currentPath === '/engineer') {
+    if (!isEngineerHost && currentPath === '/engineer') {
       window.history.replaceState({}, '', '/');
       setCurrentPath('/');
     }
-  }, [currentPath]);
+  }, [currentPath, isEngineerHost]);
 
   // 监听 401 自动登出事件（由 services/api.js 的 fetch 拦截器触发）
   // token 过期 / 被踢下线时，清掉本地状态并弹出登录框，避免后续操作继续命中 401
@@ -284,15 +313,15 @@ function App() {
   const handleOpenWorkOrderDetail = useCallback((workOrderId) => {
     // 打开我的工单列表（目前没有单独详情页入口，通过列表查看）
     setMyWorkOrdersModalOpen(true);
-  }, []);
+  }, [setMyWorkOrdersModalOpen]);
 
   // 打开法律文档
   const openLegal = useCallback((tab = 'agreement') => {
     setLegalInitialTab(tab);
     setLegalModalOpen(true);
-  }, []);
+  }, [setLegalInitialTab, setLegalModalOpen]);
 
-  const showEngineerWorkspace = currentPath === '/engineer' && userType === 'engineer';
+  const showEngineerWorkspace = (isEngineerHost || currentPath === '/engineer') && userType === 'engineer';
 
   if (showEngineerWorkspace) {
     return (
@@ -322,27 +351,80 @@ function App() {
     );
   }
 
+  if (isEngineerHost) {
+    return (
+      <ErrorBoundary>
+        <div className="flex min-h-[100dvh] items-center justify-center bg-[var(--color-bg)] px-5 text-[var(--color-text-primary)]">
+          <div className="max-w-md rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6 text-center shadow-xl">
+            <div className="text-xs uppercase tracking-[0.24em] text-[var(--color-primary)]">SAGEMRO</div>
+            <h1 className="mt-2 text-xl font-semibold">{engineerEntryText.title}</h1>
+            <p className="mt-3 text-sm text-[var(--color-text-secondary)]">
+              {engineerEntryText.body}
+            </p>
+            {userType && userType !== 'engineer' && (
+              <p className="mt-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-bg)] px-3 py-2 text-xs text-[var(--color-text-secondary)]">
+                {engineerEntryText.wrongAccount}
+              </p>
+            )}
+            <div className="mt-5 flex flex-col gap-2">
+              <button
+                onClick={() => setLoginModalOpen(true)}
+                className="rounded-xl bg-[var(--color-primary)] px-4 py-2.5 text-sm font-medium text-white"
+              >
+                {engineerEntryText.login}
+              </button>
+              {currentUser && (
+                <button
+                  onClick={handleLogout}
+                  className="rounded-xl border border-[var(--color-border)] px-4 py-2.5 text-sm text-[var(--color-text-secondary)]"
+                >
+                  {engineerEntryText.logout}
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+        <Suspense fallback={null}>
+          <LoginModal
+            isOpen={loginModalOpen}
+            onClose={() => setLoginModalOpen(false)}
+            onLoginSuccess={handleLoginSuccess}
+            onOpenLegal={openLegal}
+          />
+          {legalModalOpen && (
+            <LegalModal
+              isOpen={legalModalOpen}
+              onClose={() => setLegalModalOpen(false)}
+              initialTab={legalInitialTab}
+            />
+          )}
+        </Suspense>
+        <FeedbackHost />
+      </ErrorBoundary>
+    );
+  }
+
   if (userType === 'engineer') {
     return (
       <div className="flex min-h-[100dvh] items-center justify-center bg-[var(--color-bg)] px-5 text-[var(--color-text-primary)]">
         <div className="max-w-md rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6 text-center shadow-xl">
           <div className="text-xs uppercase tracking-[0.24em] text-[var(--color-primary)]">SAGEMRO</div>
-          <h1 className="mt-2 text-xl font-semibold">请进入工程师工作台</h1>
+          <h1 className="mt-2 text-xl font-semibold">{engineerEntryText.redirectTitle}</h1>
           <p className="mt-3 text-sm text-[var(--color-text-secondary)]">
-            工程师账号将使用独立入口 engineer.sagemro.com。主站仅保留客户登录和访客访问，避免现场作业入口与客户服务体验混在一起。
+            {engineerEntryText.redirectBody(engineerPortalHost)}
           </p>
           <div className="mt-5 flex flex-col gap-2">
             <a
-              href="https://engineer.sagemro.com"
+              href={engineerPortalUrl}
               className="rounded-xl bg-[var(--color-primary)] px-4 py-2.5 text-sm font-medium text-white"
             >
-              前往 engineer.sagemro.com
+              {engineerEntryText.go(engineerPortalHost)}
             </a>
             <button
               onClick={handleLogout}
               className="rounded-xl border border-[var(--color-border)] px-4 py-2.5 text-sm text-[var(--color-text-secondary)]"
             >
-              退出当前账号
+              {engineerEntryText.logout}
             </button>
           </div>
         </div>

@@ -1,0 +1,32 @@
+function currentHostname() {
+  if (typeof window === 'undefined') return '';
+  return window.location.hostname || '';
+}
+
+function normalizeHostname(hostname = currentHostname()) {
+  return String(hostname || '').toLowerCase().split(':')[0];
+}
+
+export function resolveRuntimeConfig(hostname = currentHostname(), env = {}) {
+  const normalized = normalizeHostname(hostname);
+  const market = normalized.endsWith('.cn') ? 'cn' : 'com';
+  const portal = normalized.startsWith('admin.')
+    ? 'admin'
+    : normalized.startsWith('engineer.')
+      ? 'engineer'
+      : 'customer';
+
+  return {
+    market,
+    portal,
+    locale: market === 'cn' ? 'zh-CN' : 'en',
+    apiBase: env.VITE_API_BASE || (market === 'cn' ? 'https://api.sagemro.cn' : 'https://api.sagemro.com'),
+  };
+}
+
+export function getEngineerPortalUrl(hostname = currentHostname()) {
+  const { market } = resolveRuntimeConfig(hostname);
+  return market === 'cn' ? 'https://engineer.sagemro.cn' : 'https://engineer.sagemro.com';
+}
+
+export const runtimeConfig = resolveRuntimeConfig(currentHostname(), import.meta.env || {});

@@ -5,18 +5,18 @@ import {
 import { BrandMark } from '../common/BrandMark';
 
 const aiCapabilities = [
-  'Fault diagnosis',
-  'Cutting parameters',
-  'Parts identification',
-  'Repair estimate',
+  'Fault intake',
+  'Parts request',
+  'Maintenance review',
+  'Service readiness',
   'Machine selection',
-  'Health report',
+  'Follow-up records',
 ];
 
 const trustPoints = [
-  'Understands alarms, photos, cut quality, parts, maintenance, and new-machine needs',
-  'Turns messy details into a service-ready summary you can confirm in chat',
-  'Connects AI speed with official SAGEMRO follow-through when it matters',
+  'Collect alarms, photos, parts needs, maintenance history, and project context in one place',
+  'Turn scattered site information into a service case your team and SAGEMRO can review',
+  'Use AI for faster preparation while SAGEMRO confirms diagnosis, quotation, and safety requirements',
 ];
 
 export function WelcomePage() {
@@ -31,10 +31,10 @@ export function WelcomePage() {
             SAGEMRO Service OS
           </div>
           <h1 className="text-[28px] font-semibold leading-tight tracking-tight text-[var(--color-text-primary)] sm:text-[42px]">
-            Turn machine trouble into a clear service path.
+            Industrial equipment service should start with a clear case.
           </h1>
           <p className="mx-auto mt-4 max-w-3xl text-sm leading-7 text-[var(--color-text-secondary)] sm:text-base">
-            Tell SAGEMRO what happened. AI captures the facts, reads images when needed, asks the right follow-up questions, and prepares your case for official service action.
+            Tell SAGEMRO what is happening on site. We help organize the symptoms, equipment details, photos, parts needs, and service history into a request that can be reviewed and followed up by the official service team.
           </p>
         </div>
 
@@ -45,10 +45,10 @@ export function WelcomePage() {
             </div>
             <div>
               <h2 className="text-base font-semibold text-[var(--color-text-primary)]">
-                One conversation. Six service outcomes.
+                Start with a message. Build a service-ready request.
               </h2>
               <p className="mt-1 text-xs leading-relaxed text-[var(--color-text-secondary)] sm:text-sm">
-                Simply explain the situation. SAGEMRO guides the conversation, captures the key details, and turns them into service-ready information.
+                Describe the situation naturally. SAGEMRO keeps the details structured in the background and brings the key points back for your confirmation before service follow-up.
               </p>
             </div>
           </div>
