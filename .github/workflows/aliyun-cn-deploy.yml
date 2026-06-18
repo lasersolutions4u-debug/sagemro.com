@@ -1,0 +1,158 @@
+name: Deploy China Edition to Aliyun ECS
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: aliyun-cn-production
+  cancel-in-progress: false
+
+jobs:
+  deploy-cn:
+    name: Build and deploy China edition
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Validate Aliyun SSH secrets
+        env:
+          ALIYUN_ECS_HOST: ${{ secrets.ALIYUN_ECS_HOST }}
+          ALIYUN_ECS_PORT: ${{ secrets.ALIYUN_ECS_PORT }}
+          ALIYUN_ECS_USER: ${{ secrets.ALIYUN_ECS_USER }}
+          ALIYUN_ECS_SSH_KEY: ${{ secrets.ALIYUN_ECS_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          missing=0
+          for name in ALIYUN_ECS_HOST ALIYUN_ECS_PORT ALIYUN_ECS_USER ALIYUN_ECS_SSH_KEY; do
+            if [ -z "${!name}" ]; then
+              echo "::error::Missing required secret: ${name}"
+              missing=1
+            fi
+          done
+          exit "$missing"
+
+      - name: Build frontend
+        working-directory: frontend
+        run: |
+          set -euo pipefail
+          npm ci --no-audit --no-fund
+          npm test --if-present
+          npm run build
+
+      - name: Build admin
+        working-directory: admin
+        run: |
+          set -euo pipefail
+          npm ci --no-audit --no-fund
+          npm test --if-present
+          npm run build
+
+      - name: Package release
+        run: |
+          set -euo pipefail
+          RELEASE_ID="${GITHUB_SHA:0:12}-${GITHUB_RUN_NUMBER}"
+          PACKAGE_NAME="sagemro-cn-release-${RELEASE_ID}.tgz"
+
+          echo "RELEASE_ID=${RELEASE_ID}" >> "$GITHUB_ENV"
+          echo "PACKAGE_NAME=${PACKAGE_NAME}" >> "$GITHUB_ENV"
+
+          mkdir -p release/frontend release/admin
+          cp -a frontend/dist/. release/frontend/
+          cp -a admin/dist/. release/admin/
+          tar -czf "$PACKAGE_NAME" -C release .
+
+          test -f release/frontend/index.html
+          test -f release/admin/index.html
+
+      - name: Configure SSH
+        env:
+          ALIYUN_ECS_HOST: ${{ secrets.ALIYUN_ECS_HOST }}
+          ALIYUN_ECS_PORT: ${{ secrets.ALIYUN_ECS_PORT }}
+          ALIYUN_ECS_SSH_KEY: ${{ secrets.ALIYUN_ECS_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          printf '%s\n' "$ALIYUN_ECS_SSH_KEY" > ~/.ssh/aliyun_ecs
+          chmod 600 ~/.ssh/aliyun_ecs
+          ssh-keyscan -p "$ALIYUN_ECS_PORT" "$ALIYUN_ECS_HOST" >> ~/.ssh/known_hosts
+
+      - name: Upload release
+        env:
+          ALIYUN_ECS_HOST: ${{ secrets.ALIYUN_ECS_HOST }}
+          ALIYUN_ECS_PORT: ${{ secrets.ALIYUN_ECS_PORT }}
+          ALIYUN_ECS_USER: ${{ secrets.ALIYUN_ECS_USER }}
+        run: |
+          set -euo pipefail
+          scp -i ~/.ssh/aliyun_ecs -P "$ALIYUN_ECS_PORT" \
+            -o StrictHostKeyChecking=yes \
+            "$PACKAGE_NAME" \
+            "$ALIYUN_ECS_USER@$ALIYUN_ECS_HOST:/tmp/$PACKAGE_NAME"
+
+      - name: Activate release
+        env:
+          ALIYUN_ECS_HOST: ${{ secrets.ALIYUN_ECS_HOST }}
+          ALIYUN_ECS_PORT: ${{ secrets.ALIYUN_ECS_PORT }}
+          ALIYUN_ECS_USER: ${{ secrets.ALIYUN_ECS_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i ~/.ssh/aliyun_ecs -p "$ALIYUN_ECS_PORT" \
+            -o StrictHostKeyChecking=yes \
+            "$ALIYUN_ECS_USER@$ALIYUN_ECS_HOST" \
+            "RELEASE_ID='$RELEASE_ID' PACKAGE_NAME='$PACKAGE_NAME' bash -s" <<'REMOTE_SCRIPT'
+          set -euo pipefail
+
+          package="/tmp/${PACKAGE_NAME}"
+          release="/var/www/sagemro-cn/releases/${RELEASE_ID}"
+          current="/var/www/sagemro-cn/current"
+
+          SUDO=""
+          if [ "$(id -u)" -ne 0 ]; then
+            SUDO="sudo"
+          fi
+
+          $SUDO mkdir -p "$release" "$current"
+          $SUDO tar -xzf "$package" -C "$release"
+
+          test -f "$release/frontend/index.html"
+          test -f "$release/admin/index.html"
+
+          $SUDO ln -sfnT "$release/frontend" "$current/frontend"
+          $SUDO ln -sfnT "$release/frontend" "$current/engineer"
+          $SUDO ln -sfnT "$release/admin" "$current/admin"
+
+          $SUDO nginx -t
+          $SUDO systemctl reload nginx
+
+          echo "Activated release: $release"
+          REMOTE_SCRIPT
+
+      - name: Health checks
+        run: |
+          set -euo pipefail
+          curl -fsS --retry 3 --retry-delay 2 https://sagemro.cn/ >/dev/null
+          curl -fsS --retry 3 --retry-delay 2 https://admin.sagemro.cn/ >/dev/null
+          curl -fsS --retry 3 --retry-delay 2 https://engineer.sagemro.cn/ >/dev/null
+          curl -fsS --retry 3 --retry-delay 2 https://api.sagemro.cn/health >/dev/null
+
+      - name: Deployment summary
+        run: |
+          {
+            echo "### Aliyun China deploy"
+            echo ""
+            echo "- Release: \`$RELEASE_ID\`"
+            echo "- Frontend: https://sagemro.cn/"
+            echo "- Admin: https://admin.sagemro.cn/"
+            echo "- Engineer: https://engineer.sagemro.cn/"
+            echo "- API health: https://api.sagemro.cn/health"
+          } >> "$GITHUB_STEP_SUMMARY"
