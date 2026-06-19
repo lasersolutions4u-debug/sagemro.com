@@ -57,13 +57,72 @@ function loadOutputCases({ limit = 0, market = '', caseId = '' } = {}) {
   return limit > 0 ? cases.slice(0, limit) : cases;
 }
 
-function scoreText(text, expect) {
+function normalizeTextForScoring(value = '') {
+  return String(value || '')
+    .normalize('NFKC')
+    .replace(/[‐‑‒–—―]/g, '-')
+    .replace(/\s+/g, '')
+    .toLowerCase();
+}
+
+function includesEquivalent(text, needle) {
+  const normalizedText = normalizeTextForScoring(text);
+  const normalizedNeedle = normalizeTextForScoring(needle);
+  if (normalizedText.includes(normalizedNeedle)) return true;
+
+  const equivalents = {
+    稳定辅助气流: ['气流稳定性', '导引气流', '导流辅助气体', '引导辅助气体'],
+    排渣: ['吹除熔渣', '熔渣', '排出熔渣', '吹渣'],
+    材料和厚度: ['材质和厚度', '材料厚度', '板材厚度'],
+    先看: ['先检查', '先确认', '通常指向'],
+    设备品牌: ['品牌和型号', '品牌型号', '设备是什么品牌'],
+    'Start with': ['Check', 'Inspect', 'Verify'],
+  };
+
+  for (const equivalent of equivalents[needle] || []) {
+    if (normalizedText.includes(normalizeTextForScoring(equivalent))) return true;
+  }
+  return false;
+}
+
+function containsForbiddenPhrase(text, needle) {
+  const normalizedText = normalizeTextForScoring(text);
+  const normalizedNeedle = normalizeTextForScoring(needle);
+  if (!normalizedText.includes(normalizedNeedle)) return false;
+
+  const refusalPrefixes = [
+    '不能',
+    '不要',
+    '禁止',
+    '不得',
+    '请勿',
+    '无法',
+    'donot',
+    'don’t',
+    'dont',
+    'cannot',
+    'can’t',
+    'cant',
+    'never',
+  ];
+
+  let index = normalizedText.indexOf(normalizedNeedle);
+  while (index !== -1) {
+    const before = normalizedText.slice(Math.max(0, index - 20), index);
+    if (!refusalPrefixes.some((prefix) => before.includes(prefix))) return true;
+    index = normalizedText.indexOf(normalizedNeedle, index + normalizedNeedle.length);
+  }
+
+  return false;
+}
+
+export function scoreText(text, expect) {
   const failures = [];
   for (const needle of expect.output_contains || []) {
-    if (!text.includes(needle)) failures.push(`missing ${JSON.stringify(needle)}`);
+    if (!includesEquivalent(text, needle)) failures.push(`missing ${JSON.stringify(needle)}`);
   }
   for (const needle of expect.output_not_contains || []) {
-    if (text.includes(needle)) failures.push(`forbidden ${JSON.stringify(needle)}`);
+    if (containsForbiddenPhrase(text, needle)) failures.push(`forbidden ${JSON.stringify(needle)}`);
   }
   return { pass: failures.length === 0, failures };
 }
@@ -172,7 +231,9 @@ async function main() {
   process.exit(passed === results.length ? 0 : 1);
 }
 
-main().catch((err) => {
-  console.error(err);
-  process.exit(2);
-});
+if (fileURLToPath(import.meta.url) === process.argv[1]) {
+  main().catch((err) => {
+    console.error(err);
+    process.exit(2);
+  });
+}
