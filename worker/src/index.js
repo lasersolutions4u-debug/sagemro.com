@@ -243,9 +243,9 @@ SAGEMRO AI helps laser cutting and sheet metal equipment users turn messy equipm
 
 ## 语言策略
 
-- 对 sagemro.com 国际版：默认英文回复；如果用户使用中文或明确要求中文，则使用中文。
-- 对 sagemro.cn 中国版：默认简体中文回复；如果用户使用英文或明确要求英文，则使用英文。
-- 多轮对话中优先匹配用户当前使用的语言。
+- 对 sagemro.com 国际版：默认英文回复；只有当用户明确要求中文，或整段问题明显使用中文表达时，才使用中文。
+- 对 sagemro.cn 中国版：默认简体中文回复；只有当用户明确要求英文时，才使用英文。不要因为用户输入了英文报警代码、英文设备名或一两句英文，就切换成英文。
+- 多轮对话中优先遵守当前站点的默认语言；用户明确要求另一种语言时，再按用户要求切换。
 - 专业术语可以保留英文缩写，例如 CNC、PLC、servo、nozzle、assist gas。
 
 ## 行为准则
@@ -2107,8 +2107,8 @@ async function enforceOpenAIBudget(env, { userKey, tag = 'chat' }) {
 //   summary: 工单摘要，短 JSON
 //   note:    核价点评，一句话 + 2 条建议
 const MAX_TOKENS = {
-  chat: 2000,
-  chat_tool_followup: 2000,
+  chat: 1200,
+  chat_tool_followup: 1200,
   summary: 500,
   note: 400,
 };
@@ -2245,7 +2245,7 @@ async function handleChatUploadImage(request, env) {
 export async function handleChat(request, env) {
   try {
     const body = await request.json();
-    const { conversation_id, message, images } = body;
+    const { conversation_id, message, images, client_market, client_locale } = body;
 
     // 聊天消息长度上限：防止客户端把巨型文本塞进 AI context
     try {
@@ -2386,15 +2386,32 @@ export async function handleChat(request, env) {
     // 顺序：Base → Role → Context
     const requestHost = new URL(request.url).hostname;
     const originHost = request.headers.get('Origin') || '';
+    const isChinaMarket =
+      client_market === 'cn' ||
+      client_locale === 'zh-CN' ||
+      requestHost.endsWith('.cn') ||
+      originHost.includes('sagemro.cn');
+    const preferredLanguage = isChinaMarket ? 'Simplified Chinese' : 'English';
+    const languageDirective = `
+## Critical output language for this turn
+
+You MUST answer this turn in ${preferredLanguage}, unless the user's current message explicitly asks for another language.
+This instruction overrides examples, role prompts, previous conversation language, and the language used in the system prompt itself.
+For sagemro.cn, English alarm codes, brand names, CNC terms, or short English phrases do not count as a request to answer in English.
+Keep the first answer concise: usually 180-350 Chinese characters or 120-220 English words, unless the user asks for a detailed plan, table, report, or full checklist.
+`;
     const marketContext = `
 
 ## 当前请求上下文
 - API host: ${requestHost}
 - Origin: ${originHost || 'not provided'}
-- Market: ${(requestHost.endsWith('.cn') || originHost.includes('sagemro.cn')) ? 'China edition / sagemro.cn' : 'International edition / sagemro.com'}
+- Client market: ${client_market || 'not provided'}
+- Client locale: ${client_locale || 'not provided'}
+- Market: ${isChinaMarket ? 'China edition / sagemro.cn' : 'International edition / sagemro.com'}
+- Required default reply language: ${preferredLanguage}
 
-请严格遵守上方语言策略。`;
-    const fullSystemPrompt = SYSTEM_PROMPT + rolePrompt + marketContext + dataContext;
+Follow the language policy strictly. Unless the user's current message explicitly asks for another language, reply in the Required default reply language for this turn.`;
+    const fullSystemPrompt = languageDirective + SYSTEM_PROMPT + rolePrompt + marketContext + dataContext;
 
     // 创建或更新对话（customer_id / engineer_id 只接受 JWT 信任值）
     let convId = conversation_id;

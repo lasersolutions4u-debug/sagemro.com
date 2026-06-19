@@ -6,10 +6,10 @@ import { handleChat } from '../src/index.js';
 
 const JWT_SECRET = 'chat-access-test-secret-32-chars';
 
-function makeRequest(body, token) {
+function makeRequest(body, token, url = 'https://api.sagemro.com/api/chat') {
   const headers = { 'Content-Type': 'application/json', 'CF-Connecting-IP': '127.0.0.1' };
   if (token) headers.Authorization = `Bearer ${token}`;
-  return new Request('https://api.sagemro.com/api/chat', {
+  return new Request(url, {
     method: 'POST',
     headers,
     body: JSON.stringify(body),
@@ -66,6 +66,90 @@ function makeEnv({ conversation = null } = {}) {
     insertedConversations,
   };
 }
+
+test('handleChat passes international language context to the LLM', async () => {
+  const { env } = makeEnv();
+  const originalFetch = globalThis.fetch;
+  let capturedBody = null;
+
+  globalThis.fetch = async (_url, init) => {
+    capturedBody = JSON.parse(init.body);
+    return new Response([
+      'data: {"choices":[{"delta":{"content":"SAGEMRO AI is ready."}}]}',
+      '',
+      'data: [DONE]',
+      '',
+    ].join('\n'), {
+      status: 200,
+      headers: { 'Content-Type': 'text/event-stream' },
+    });
+  };
+
+  try {
+    const response = await handleChat(makeRequest({
+      conversation_id: 'local-conv-en',
+      message: 'What should I check first if my laser cutter has alarm E012?',
+      client_market: 'com',
+      client_locale: 'en',
+      user_type: 'guest',
+    }), env);
+
+    assert.equal(response.status, 200);
+    const reader = response.body.getReader();
+    while (!(await reader.read()).done) {}
+
+    const systemPrompt = capturedBody.messages[0].content;
+    assert.match(systemPrompt, /Critical output language for this turn/);
+    assert.match(systemPrompt, /You MUST answer this turn in English/);
+    assert.match(systemPrompt, /Market: International edition \/ sagemro\.com/);
+    assert.match(systemPrompt, /Required default reply language: English/);
+    assert.match(systemPrompt, /reply in the Required default reply language/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('handleChat passes China edition language context to the LLM', async () => {
+  const { env } = makeEnv();
+  const originalFetch = globalThis.fetch;
+  let capturedBody = null;
+
+  globalThis.fetch = async (_url, init) => {
+    capturedBody = JSON.parse(init.body);
+    return new Response([
+      'data: {"choices":[{"delta":{"content":"收到，我先按中文帮你判断。"}}]}',
+      '',
+      'data: [DONE]',
+      '',
+    ].join('\n'), {
+      status: 200,
+      headers: { 'Content-Type': 'text/event-stream' },
+    });
+  };
+
+  try {
+    const response = await handleChat(makeRequest({
+      conversation_id: 'local-conv-cn',
+      message: 'My fiber laser cutter shows alarm E012. What should I check first?',
+      client_market: 'cn',
+      client_locale: 'zh-CN',
+      user_type: 'guest',
+    }, undefined, 'https://api.sagemro.cn/api/chat'), env);
+
+    assert.equal(response.status, 200);
+    const reader = response.body.getReader();
+    while (!(await reader.read()).done) {}
+
+    const systemPrompt = capturedBody.messages[0].content;
+    assert.match(systemPrompt, /Critical output language for this turn/);
+    assert.match(systemPrompt, /You MUST answer this turn in Simplified Chinese/);
+    assert.match(systemPrompt, /Market: China edition \/ sagemro\.cn/);
+    assert.match(systemPrompt, /Required default reply language: Simplified Chinese/);
+    assert.match(systemPrompt, /English alarm codes, brand names, CNC terms, or short English phrases do not count as a request to answer in English/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
 
 test('handleChat rejects a customer reading another customer conversation', async () => {
   const token = await signJwt({

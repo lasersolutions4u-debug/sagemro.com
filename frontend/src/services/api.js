@@ -154,6 +154,8 @@ export async function streamChat({ conversationId, message, images, onChunk, onD
         conversation_id: conversationId,
         message: message,
         images: images && images.length > 0 ? images : undefined,
+        client_market: runtimeConfig.market,
+        client_locale: runtimeConfig.locale,
         customer_id: customerId || localStorage.getItem('sagemro_customer_id'),
         engineer_id: engineerId,
         user_type: userType,
