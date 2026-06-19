@@ -726,6 +726,39 @@ test('handleChat appends EUCHIO selection boundary to new machine answers when m
   }
 });
 
+test('handleChat appends device identity question to China fault diagnosis answers when missing', async () => {
+  const { env } = makeEnv();
+  const originalFetch = globalThis.fetch;
+
+  globalThis.fetch = async () => new Response([
+    'data: {"choices":[{"delta":{"content":"E012 通常指向伺服驱动过流、电机过载或编码器通讯异常。\\n先检查切割头运动是否有机械卡阻或撞机痕迹。\\n再检查伺服驱动器散热风扇和滤网。\\n断电后重插动力线和编码器线。\\n报警是在开机回零、空跑还是切割时出现的？"},"finish_reason":null}]}',
+    '',
+    'data: [DONE]',
+    '',
+  ].join('\n'), {
+    status: 200,
+    headers: { 'Content-Type': 'text/event-stream' },
+  });
+
+  try {
+    const response = await handleChat(makeRequest({
+      conversation_id: 'local-conv-cn-fault-device-identity',
+      message: 'My fiber laser cutter shows alarm E012. What should I check first?',
+      client_market: 'cn',
+      client_locale: 'zh-CN',
+      user_type: 'guest',
+    }, undefined, 'https://api.sagemro.cn/api/chat'), env);
+
+    assert.equal(response.status, 200);
+    const text = await response.text();
+    assert.match(text, /E012 通常指向/);
+    assert.match(text, /设备品牌和型号/);
+    assert.match(text, /data: \[DONE\]/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test('handleChat rejects a customer reading another customer conversation', async () => {
   const token = await signJwt({
     userId: 'customer-b',

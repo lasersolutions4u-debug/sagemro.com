@@ -255,6 +255,19 @@ function getSafetyBoundary(message = '', content = '', isChinaMarket = false) {
   return '\nDo not bypass the safety interlock. Stop the machine and keep all guards active. Have qualified personnel inspect the interlock circuit and alarm record.';
 }
 
+function getFaultDiagnosisIdentityBoundary(message = '', content = '', isChinaMarket = false) {
+  if (detectAiIntent(message) !== 'fault_diagnosis') return '';
+
+  const text = String(content || '');
+  if (isChinaMarket) {
+    if (/设备品牌和型号|品牌和型号|设备品牌|品牌型号/.test(text)) return '';
+    return '\n请补充设备品牌和型号，这会直接影响报警代码的判断。';
+  }
+
+  if (/brand and model|machine brand|equipment brand/i.test(text)) return '';
+  return '\nPlease share the machine brand and model; alarm codes vary by controller and equipment series.';
+}
+
 function getRepairEstimateBoundary(message = '', content = '', isChinaMarket = false) {
   if (detectAiIntent(message) !== 'repair_estimate') return '';
 
@@ -2936,6 +2949,15 @@ Follow the language policy strictly. Unless the user's current message explicitl
                 controller.enqueue(
                   encoder.encode(
                     `data: ${JSON.stringify({ content: safetyBoundary, conversation_id: convId })}\n`,
+                  ),
+                );
+              }
+              const faultIdentityBoundary = getFaultDiagnosisIdentityBoundary(message, fullContent, isChinaMarket);
+              if (faultIdentityBoundary) {
+                fullContent += faultIdentityBoundary;
+                controller.enqueue(
+                  encoder.encode(
+                    `data: ${JSON.stringify({ content: faultIdentityBoundary, conversation_id: convId })}\n`,
                   ),
                 );
               }
