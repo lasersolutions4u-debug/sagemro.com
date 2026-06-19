@@ -114,6 +114,27 @@ function looksLikeIncompleteAnswer(content = '') {
   return !/[。！？.!?)）]$/.test(text);
 }
 
+function shouldAppendTruncatedRecovery(content = '', finishReason = null) {
+  const text = String(content || '').trim();
+  if (!text) return false;
+  if (looksLikeIncompleteAnswer(text)) return true;
+
+  const openParens = (text.match(/[（(]/g) || []).length;
+  const closeParens = (text.match(/[）)]/g) || []).length;
+  if (openParens > closeParens) return true;
+
+  if (finishReason === 'length') {
+    const nonEmptyLines = text.split(/\n+/).map((line) => line.trim()).filter(Boolean);
+    const likelyCompleteQuickAnswer =
+      nonEmptyLines.length >= 5 &&
+      /[？?]/.test(nonEmptyLines[nonEmptyLines.length - 1]) &&
+      /SAGEMRO/i.test(nonEmptyLines[nonEmptyLines.length - 1]);
+    return !likelyCompleteQuickAnswer && text.length < 120;
+  }
+
+  return false;
+}
+
 function computeSlaDeadline(urgency) {
   const hours = SLA_HOURS[urgency] || SLA_HOURS.normal;
   return new Date(Date.now() + hours * 3600000).toISOString();
@@ -2698,10 +2719,7 @@ Follow the language policy strictly. Unless the user's current message explicitl
                       decoder,
                     });
                     fullContent += retryContent;
-                    if (
-                      fullContent &&
-                      (retryFinishReason === 'length' || looksLikeIncompleteAnswer(fullContent))
-                    ) {
+                    if (shouldAppendTruncatedRecovery(fullContent, retryFinishReason)) {
                       const recovery = getTruncatedAiResponseRecovery(isChinaMarket);
                       fullContent += recovery;
                       controller.enqueue(
@@ -2721,10 +2739,7 @@ Follow the language policy strictly. Unless the user's current message explicitl
                     `data: ${JSON.stringify({ content: fallback, conversation_id: convId })}\n`,
                   ),
                 );
-              } else if (
-                finishReason === 'length' ||
-                looksLikeIncompleteAnswer(fullContent)
-              ) {
+              } else if (shouldAppendTruncatedRecovery(fullContent, finishReason)) {
                 const recovery = getTruncatedAiResponseRecovery(isChinaMarket);
                 fullContent += recovery;
                 controller.enqueue(

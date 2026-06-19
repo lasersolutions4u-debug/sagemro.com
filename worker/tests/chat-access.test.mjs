@@ -356,6 +356,41 @@ test('handleChat appends localized recovery when upstream finishes mid-answer', 
   }
 });
 
+test('handleChat does not append recovery when length finish still has a complete quick answer', async () => {
+  const { env } = makeEnv();
+  const originalFetch = globalThis.fetch;
+
+  globalThis.fetch = async () => new Response([
+    'data: {"choices":[{"delta":{"content":"E012 通常指向伺服驱动异常。\\n检查伺服供电与指示灯。\\n检查编码器线缆是否松动。\\n确认急停与限位未触发。\\n设备具体型号是？SAGEMRO 官方可继续跟进。"},"finish_reason":null}]}',
+    '',
+    'data: {"choices":[{"delta":{},"finish_reason":"length"}]}',
+    '',
+    'data: [DONE]',
+    '',
+  ].join('\n'), {
+    status: 200,
+    headers: { 'Content-Type': 'text/event-stream' },
+  });
+
+  try {
+    const response = await handleChat(makeRequest({
+      conversation_id: 'local-conv-complete-length-cn',
+      message: '激光切割机报警 E012，先检查什么？',
+      client_market: 'cn',
+      client_locale: 'zh-CN',
+      user_type: 'guest',
+    }, undefined, 'https://api.sagemro.cn/api/chat'), env);
+
+    assert.equal(response.status, 200);
+    const text = await response.text();
+    assert.match(text, /E012 通常指向伺服驱动异常/);
+    assert.doesNotMatch(text, /刚才的 AI 回复可能不完整/);
+    assert.match(text, /data: \[DONE\]/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test('handleChat rejects a customer reading another customer conversation', async () => {
   const token = await signJwt({
     userId: 'customer-b',
