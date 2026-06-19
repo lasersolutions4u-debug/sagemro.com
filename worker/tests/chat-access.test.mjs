@@ -99,7 +99,7 @@ test('handleChat passes international language context to the LLM', async () => 
     while (!(await reader.read()).done) {}
 
     const systemPrompt = capturedBody.messages[0].content;
-    assert.equal(capturedBody.max_tokens, 500);
+    assert.equal(capturedBody.max_tokens, 700);
     assert.match(systemPrompt, /Critical output language for this turn/);
     assert.match(systemPrompt, /You MUST answer this turn in English/);
     assert.match(systemPrompt, /Market: International edition \/ sagemro\.com/);
@@ -109,6 +109,7 @@ test('handleChat passes international language context to the LLM', async () => 
     assert.match(systemPrompt, /exactly 3 practical checks/);
     assert.match(systemPrompt, /Ask only 1 follow-up question/);
     assert.match(systemPrompt, /Maximum 6 short lines/);
+    assert.match(systemPrompt, /This is the final response contract for the current turn/);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -146,7 +147,7 @@ test('handleChat passes China edition language context to the LLM', async () => 
     while (!(await reader.read()).done) {}
 
     const systemPrompt = capturedBody.messages[0].content;
-    assert.equal(capturedBody.max_tokens, 500);
+    assert.equal(capturedBody.max_tokens, 700);
     assert.match(systemPrompt, /Critical output language for this turn/);
     assert.match(systemPrompt, /You MUST answer this turn in Simplified Chinese/);
     assert.match(systemPrompt, /Market: China edition \/ sagemro\.cn/);
@@ -156,6 +157,7 @@ test('handleChat passes China edition language context to the LLM', async () => 
     assert.match(systemPrompt, /exactly 3 practical checks/);
     assert.match(systemPrompt, /Ask only 1 follow-up question/);
     assert.match(systemPrompt, /Maximum 6 short lines/);
+    assert.match(systemPrompt, /This is the final response contract for the current turn/);
   } finally {
     globalThis.fetch = originalFetch;
   }

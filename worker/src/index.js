@@ -2108,7 +2108,7 @@ async function enforceOpenAIBudget(env, { userKey, tag = 'chat' }) {
 //   summary: 工单摘要，短 JSON
 //   note:    核价点评，一句话 + 2 条建议
 const MAX_TOKENS = {
-  chat_quick: 500,
+  chat_quick: 700,
   chat: 1200,
   chat_tool_followup: 1200,
   summary: 500,
@@ -2422,7 +2422,19 @@ Maximum 6 short lines. Keep the first answer concise: usually 90-160 Chinese cha
 - Required default reply language: ${preferredLanguage}
 
 Follow the language policy strictly. Unless the user's current message explicitly asks for another language, reply in the Required default reply language for this turn.`;
-    const fullSystemPrompt = languageDirective + SYSTEM_PROMPT + rolePrompt + marketContext + dataContext;
+    const responseContract = `
+
+## This is the final response contract for the current turn
+- Reply in ${preferredLanguage}.
+- If the user did not explicitly request a detailed plan, table, report, or full checklist, write exactly 5 compact lines:
+  1. Most likely direction.
+  2. Check 1.
+  3. Check 2.
+  4. Check 3.
+  5. One follow-up question plus a short SAGEMRO official follow-up offer.
+- Do not add extra sections after line 5.
+- Do not let the answer end mid-sentence.`;
+    const fullSystemPrompt = languageDirective + SYSTEM_PROMPT + rolePrompt + marketContext + dataContext + responseContract;
 
     // 创建或更新对话（customer_id / engineer_id 只接受 JWT 信任值）
     let convId = conversation_id;
