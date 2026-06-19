@@ -173,6 +173,15 @@ function makePromptContractRequest(cas) {
   });
 }
 
+function llmStreamFromText(text) {
+  return [
+    `data: ${JSON.stringify({ choices: [{ delta: { content: text }, finish_reason: 'stop' }] })}`,
+    '',
+    'data: [DONE]',
+    '',
+  ].join('\n');
+}
+
 /**
  * 专为 specialties_filter 类定制的 mock env：
  *   - engineers.specialties 返回 input 指定的 JSON 字符串
@@ -616,6 +625,51 @@ async function runPromptContract(cas) {
   return { pass: true };
 }
 
+async function runOutputContract(cas) {
+  const { env, aiLogs } = makePromptContractEnv();
+  const originalFetch = globalThis.fetch;
+  const mockResponse = String(cas.input.mock_response || '');
+
+  globalThis.fetch = async () => new Response(llmStreamFromText(mockResponse), {
+    status: 200,
+    headers: { 'Content-Type': 'text/event-stream' },
+  });
+
+  let text = '';
+  try {
+    const response = await handleChat(makePromptContractRequest(cas), env);
+    if (response.status !== 200) {
+      return { pass: false, reason: `handleChat status ${response.status}` };
+    }
+    text = await response.text();
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+
+  const failures = [];
+
+  for (const needle of cas.expect.output_contains || []) {
+    if (!text.includes(needle)) {
+      failures.push(`output missing ${JSON.stringify(needle)}`);
+    }
+  }
+  for (const needle of cas.expect.output_not_contains || []) {
+    if (text.includes(needle)) {
+      failures.push(`output should not contain ${JSON.stringify(needle)}`);
+    }
+  }
+
+  const loggedResponse = aiLogs[aiLogs.length - 1]?.response || '';
+  for (const needle of cas.expect.logged_response_contains || []) {
+    if (!loggedResponse.includes(needle)) {
+      failures.push(`logged response missing ${JSON.stringify(needle)}`);
+    }
+  }
+
+  if (failures.length > 0) return { pass: false, reason: failures.join('; ') };
+  return { pass: true };
+}
+
 // ============ 主流程 ============
 
 async function main() {
@@ -630,6 +684,7 @@ async function main() {
       else if (cas.category === 'conversation_history')
         outcome = await runConversationHistory(cas);
       else if (cas.category === 'prompt_contract') outcome = await runPromptContract(cas);
+      else if (cas.category === 'output_contract') outcome = await runOutputContract(cas);
       else outcome = { pass: false, reason: `unknown category: ${cas.category}` };
     } catch (err) {
       outcome = {
