@@ -17,8 +17,9 @@ function makeRequest(body, token, url = 'https://api.sagemro.com/api/chat', orig
   });
 }
 
-function makeEnv({ conversation = null } = {}) {
+function makeEnv({ conversation = null, conversationInsertFailures = 0 } = {}) {
   const insertedConversations = [];
+  let conversationInsertAttempts = 0;
   const db = {
     prepare(sql) {
       return {
@@ -36,6 +37,10 @@ function makeEnv({ conversation = null } = {}) {
         },
         async run() {
           if (/INSERT INTO conversations/.test(sql)) {
+            conversationInsertAttempts++;
+            if (conversationInsertAttempts <= conversationInsertFailures) {
+              throw new Error('D1_ERROR: D1 DB storage operation exceeded timeout which caused object to be reset.');
+            }
             insertedConversations.push({
               id: this.args[0],
               customer_id: this.args[3],
@@ -65,6 +70,7 @@ function makeEnv({ conversation = null } = {}) {
       OPENAI_DAILY_TOTAL: '999',
     },
     insertedConversations,
+    getConversationInsertAttempts: () => conversationInsertAttempts,
   };
 }
 
@@ -142,6 +148,50 @@ test('handleChat creates a new conversation using caller-provided local id when 
   assert.equal(insertedConversations.length, 1);
   assert.equal(insertedConversations[0].id, 'local-conv-1');
   assert.equal(insertedConversations[0].customer_id, 'customer-a');
+});
+
+test('handleChat retries a transient D1 timeout while creating a guest conversation', async () => {
+  const { env, insertedConversations, getConversationInsertAttempts } = makeEnv({
+    conversationInsertFailures: 1,
+  });
+
+  const response = await handleChat(makeRequest({
+    conversation_id: 'retry-conv-1',
+    message: 'My fiber laser cutter shows alarm E012.',
+  }), env);
+
+  assert.equal(response.status, 200);
+  await response.body?.cancel();
+  assert.equal(getConversationInsertAttempts(), 2);
+  assert.equal(insertedConversations.length, 1);
+  assert.equal(insertedConversations[0].id, 'retry-conv-1');
+});
+
+test('handleChat returns a friendly 503 when transient D1 timeout persists before streaming starts', async () => {
+  const { env, getConversationInsertAttempts } = makeEnv({
+    conversationInsertFailures: 2,
+  });
+  const originalFetch = globalThis.fetch;
+  let fetchCalled = false;
+  globalThis.fetch = async () => {
+    fetchCalled = true;
+    return makeSseResponse();
+  };
+
+  try {
+    const response = await handleChat(makeRequest({
+      conversation_id: 'retry-conv-fail',
+      message: 'My fiber laser cutter shows alarm E012.',
+    }), env);
+
+    assert.equal(response.status, 503);
+    const body = await response.json();
+    assert.equal(body.error, 'SAGEMRO chat service is temporarily busy. Please try again shortly.');
+    assert.equal(getConversationInsertAttempts(), 2);
+    assert.equal(fetchCalled, false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
 
 test('handleChat tells CN site to answer Simplified Chinese even when alarm text is English', async () => {

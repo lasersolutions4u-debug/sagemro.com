@@ -94,6 +94,46 @@ function getAiFallbackMessage(env, error) {
   return 'SAGEMRO AI is temporarily unavailable. Please try again shortly, or leave the equipment details and SAGEMRO official service will follow up.';
 }
 
+class TransientD1Error extends Error {
+  constructor(message, cause) {
+    super(message);
+    this.name = 'TransientD1Error';
+    this.cause = cause;
+  }
+}
+
+function isTransientD1Error(error) {
+  const message = String(error?.message || error || '').toLowerCase();
+  return message.includes('d1_error') && (
+    message.includes('timeout') ||
+    message.includes('storage operation exceeded') ||
+    message.includes('object to be reset') ||
+    message.includes('database is locked')
+  );
+}
+
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function runD1WithTransientRetry(operation, { label, attempts = 2, delayMs = 80 } = {}) {
+  let lastError;
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    try {
+      return await operation();
+    } catch (error) {
+      if (!isTransientD1Error(error)) throw error;
+      lastError = error;
+      console.warn(`[d1] transient error during ${label || 'operation'} attempt ${attempt}/${attempts}:`, error?.message || error);
+      if (attempt < attempts) await delay(delayMs);
+    }
+  }
+  throw new TransientD1Error(
+    'SAGEMRO chat service is temporarily busy. Please try again shortly.',
+    lastError,
+  );
+}
+
 function computeSlaDeadline(urgency) {
   const hours = SLA_HOURS[urgency] || SLA_HOURS.normal;
   return new Date(Date.now() + hours * 3600000).toISOString();
@@ -2329,9 +2369,12 @@ export async function handleChat(request, env) {
 
     let existingConversation = null;
     if (conversation_id) {
-      existingConversation = await env.DB.prepare(
-        'SELECT customer_id, engineer_id FROM conversations WHERE id = ?'
-      ).bind(conversation_id).first();
+      existingConversation = await runD1WithTransientRetry(
+        () => env.DB.prepare(
+          'SELECT customer_id, engineer_id FROM conversations WHERE id = ?'
+        ).bind(conversation_id).first(),
+        { label: 'chat:load_conversation' },
+      );
       if (existingConversation) {
         if (trustedRole === 'guest') {
           if (existingConversation.customer_id || existingConversation.engineer_id) {
@@ -2346,9 +2389,12 @@ export async function handleChat(request, env) {
     // 如果有 conversation_id 且归属校验通过，先获取历史消息
     let messages = [];
     if (conversation_id && existingConversation) {
-      const history = await env.DB.prepare(
-        'SELECT role, content, image_urls FROM messages WHERE conversation_id = ? ORDER BY created_at ASC'
-      ).bind(conversation_id).all();
+      const history = await runD1WithTransientRetry(
+        () => env.DB.prepare(
+          'SELECT role, content, image_urls FROM messages WHERE conversation_id = ? ORDER BY created_at ASC'
+        ).bind(conversation_id).all(),
+        { label: 'chat:load_messages' },
+      );
 
       messages = history.results.map(m => {
         // 有图片的消息使用多模态格式
@@ -2416,21 +2462,30 @@ ${turnLanguageRule}
     let convId = conversation_id;
     if (!convId || !existingConversation) {
       convId = convId || generateId();
-      await env.DB.prepare(
-        'INSERT INTO conversations (id, title, last_message, customer_id, engineer_id) VALUES (?, ?, ?, ?, ?)'
-      ).bind(convId, truncateStr(message, 20), truncateStr(message, 50), trustedCustomerId, trustedEngineerId).run();
+      await runD1WithTransientRetry(
+        () => env.DB.prepare(
+          'INSERT INTO conversations (id, title, last_message, customer_id, engineer_id) VALUES (?, ?, ?, ?, ?)'
+        ).bind(convId, truncateStr(message, 20), truncateStr(message, 50), trustedCustomerId, trustedEngineerId).run(),
+        { label: 'chat:create_conversation' },
+      );
     } else {
-      await env.DB.prepare(
-        'UPDATE conversations SET last_message = ?, updated_at = datetime("now") WHERE id = ?'
-      ).bind(truncateStr(message, 50), convId).run();
+      await runD1WithTransientRetry(
+        () => env.DB.prepare(
+          'UPDATE conversations SET last_message = ?, updated_at = datetime("now") WHERE id = ?'
+        ).bind(truncateStr(message, 50), convId).run(),
+        { label: 'chat:update_conversation' },
+      );
     }
 
     // 保存用户消息（含图片 URL）
     const userMsgId = generateId();
     const imageUrlsJson = imageUrls.length > 0 ? JSON.stringify(imageUrls.map(i => i.url)) : null;
-    await env.DB.prepare(
-      'INSERT INTO messages (id, conversation_id, role, content, image_urls) VALUES (?, ?, ?, ?, ?)'
-    ).bind(userMsgId, convId, 'user', message, imageUrlsJson).run();
+    await runD1WithTransientRetry(
+      () => env.DB.prepare(
+        'INSERT INTO messages (id, conversation_id, role, content, image_urls) VALUES (?, ?, ?, ?, ?)'
+      ).bind(userMsgId, convId, 'user', message, imageUrlsJson).run(),
+      { label: 'chat:insert_user_message' },
+    );
 
     // 流式返回响应（Phase 0.3：多轮 tool call while 循环）
     // 每轮都带 tools 参数，允许 AI 链式调多个工具；最后一轮强制不带 tools，逼 LLM 产出文本。
@@ -2724,6 +2779,10 @@ ${turnLanguageRule}
       headers: { 'Content-Type': 'text/event-stream', ...corsHeaders },
     });
   } catch (error) {
+    if (error instanceof TransientD1Error) {
+      console.warn('[chat] transient D1 failure after retry:', error?.cause?.message || error.message);
+      return errorResponse(error.message, 503);
+    }
     if (error instanceof GuardError) {
       return errorResponse(error.message, error.status);
     }
