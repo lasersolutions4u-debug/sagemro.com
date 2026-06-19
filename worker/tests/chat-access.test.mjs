@@ -99,7 +99,7 @@ test('handleChat passes international language context to the LLM', async () => 
     while (!(await reader.read()).done) {}
 
     const systemPrompt = capturedBody.messages[0].content;
-    assert.equal(capturedBody.max_tokens, 420);
+    assert.equal(capturedBody.max_tokens, 800);
     assert.equal(capturedBody.tools, undefined);
     assert.equal(capturedBody.tool_choice, undefined);
     assert.match(systemPrompt, /Critical output language for this turn/);
@@ -149,7 +149,7 @@ test('handleChat passes China edition language context to the LLM', async () => 
     while (!(await reader.read()).done) {}
 
     const systemPrompt = capturedBody.messages[0].content;
-    assert.equal(capturedBody.max_tokens, 420);
+    assert.equal(capturedBody.max_tokens, 800);
     assert.equal(capturedBody.tools, undefined);
     assert.equal(capturedBody.tool_choice, undefined);
     assert.match(systemPrompt, /Critical output language for this turn/);
@@ -315,6 +315,45 @@ test('handleChat sends localized fallback when empty stream retry also returns e
     const text = await response.text();
     assert.equal(fetchCount, 2);
     assert.match(text, /SAGEMRO AI 暂时没有拿到有效回复/);
+    assert.match(text, /data: \[DONE\]/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('handleChat answers common cutting capacity questions when upstream returns empty twice', async () => {
+  const { env } = makeEnv();
+  const originalFetch = globalThis.fetch;
+  let fetchCount = 0;
+
+  globalThis.fetch = async () => {
+    fetchCount += 1;
+    return new Response([
+      'data: [DONE]',
+      '',
+    ].join('\n'), {
+      status: 200,
+      headers: { 'Content-Type': 'text/event-stream' },
+    });
+  };
+
+  try {
+    const response = await handleChat(makeRequest({
+      conversation_id: 'local-conv-cutting-capacity-cn',
+      message: '6000W 切管机切坡口的话，碳钢和不锈钢分别最后能切多厚？',
+      client_market: 'cn',
+      client_locale: 'zh-CN',
+      user_type: 'guest',
+    }, undefined, 'https://api.sagemro.cn/api/chat'), env);
+
+    assert.equal(response.status, 200);
+    const text = await response.text();
+    assert.equal(fetchCount, 2);
+    assert.match(text, /6000W/);
+    assert.match(text, /碳钢/);
+    assert.match(text, /不锈钢/);
+    assert.match(text, /坡口/);
+    assert.doesNotMatch(text, /暂时没有拿到有效回复/);
     assert.match(text, /data: \[DONE\]/);
   } finally {
     globalThis.fetch = originalFetch;

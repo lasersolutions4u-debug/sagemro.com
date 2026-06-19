@@ -101,6 +101,37 @@ function getEmptyAiResponseFallback(isChinaMarket) {
   return 'SAGEMRO AI did not receive a valid reply this time. Please share the machine brand, model, alarm code, and site photos, and I can still prepare a SAGEMRO official service follow-up summary.';
 }
 
+function getKnownTechnicalFallback(message = '', isChinaMarket = false) {
+  const text = String(message || '');
+  const normalized = text.replace(/\s+/g, '').toLowerCase();
+  const asksCuttingCapacity =
+    /6000w|6kw/.test(normalized) &&
+    /(切管|tube|pipe)/i.test(text) &&
+    /(坡口|bevel)/i.test(text) &&
+    /(碳钢|carbon|不锈钢|stainless)/i.test(text) &&
+    /(多厚|厚度|切厚|thick|thickness|capacity)/i.test(text);
+
+  if (!asksCuttingCapacity) return '';
+
+  if (isChinaMarket) {
+    return [
+      '6000W 切管坡口可先按保守范围判断。',
+      '碳钢实际多在 12-16mm 内更稳。',
+      '不锈钢实际多在 8-12mm 内更稳。',
+      '坡口角度越大，稳定厚度要下调。',
+      '管径壁厚和坡口角度是多少？SAGEMRO 可帮你核到具体工艺。',
+    ].join('\n');
+  }
+
+  return [
+    'For 6kW tube bevel cutting, use a conservative range first.',
+    'Carbon steel is usually steadier around 12-16 mm.',
+    'Stainless steel is usually steadier around 8-12 mm.',
+    'Larger bevel angles reduce stable thickness.',
+    'What tube size and bevel angle are you using? SAGEMRO can help verify the process.',
+  ].join('\n');
+}
+
 function getTruncatedAiResponseRecovery(isChinaMarket) {
   if (isChinaMarket) {
     return '\n刚才的 AI 回复可能不完整。请补充设备品牌、型号、报警页面照片或现场照片，SAGEMRO 官方服务可以继续帮你确认下一步。';
@@ -2149,7 +2180,7 @@ async function enforceOpenAIBudget(env, { userKey, tag = 'chat' }) {
 //   summary: 工单摘要，短 JSON
 //   note:    核价点评，一句话 + 2 条建议
 const MAX_TOKENS = {
-  chat_quick: 420,
+  chat_quick: 800,
   chat: 1200,
   chat_tool_followup: 1200,
   summary: 500,
@@ -2732,7 +2763,9 @@ Follow the language policy strictly. Unless the user's current message explicitl
                 }
               }
               if (!fullContent) {
-                const fallback = getEmptyAiResponseFallback(isChinaMarket);
+                const fallback =
+                  getKnownTechnicalFallback(message, isChinaMarket) ||
+                  getEmptyAiResponseFallback(isChinaMarket);
                 fullContent += fallback;
                 controller.enqueue(
                   encoder.encode(
