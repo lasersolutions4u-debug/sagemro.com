@@ -99,6 +99,7 @@ test('handleChat passes international language context to the LLM', async () => 
     while (!(await reader.read()).done) {}
 
     const systemPrompt = capturedBody.messages[0].content;
+    assert.equal(capturedBody.max_tokens, 500);
     assert.match(systemPrompt, /Critical output language for this turn/);
     assert.match(systemPrompt, /You MUST answer this turn in English/);
     assert.match(systemPrompt, /Market: International edition \/ sagemro\.com/);
@@ -107,6 +108,7 @@ test('handleChat passes international language context to the LLM', async () => 
     assert.match(systemPrompt, /Default first-turn structure/);
     assert.match(systemPrompt, /exactly 3 practical checks/);
     assert.match(systemPrompt, /Ask only 1 follow-up question/);
+    assert.match(systemPrompt, /Maximum 6 short lines/);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -144,6 +146,7 @@ test('handleChat passes China edition language context to the LLM', async () => 
     while (!(await reader.read()).done) {}
 
     const systemPrompt = capturedBody.messages[0].content;
+    assert.equal(capturedBody.max_tokens, 500);
     assert.match(systemPrompt, /Critical output language for this turn/);
     assert.match(systemPrompt, /You MUST answer this turn in Simplified Chinese/);
     assert.match(systemPrompt, /Market: China edition \/ sagemro\.cn/);
@@ -152,6 +155,44 @@ test('handleChat passes China edition language context to the LLM', async () => 
     assert.match(systemPrompt, /Default first-turn structure/);
     assert.match(systemPrompt, /exactly 3 practical checks/);
     assert.match(systemPrompt, /Ask only 1 follow-up question/);
+    assert.match(systemPrompt, /Maximum 6 short lines/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('handleChat keeps larger token budget when user asks for a detailed plan', async () => {
+  const { env } = makeEnv();
+  const originalFetch = globalThis.fetch;
+  let capturedBody = null;
+
+  globalThis.fetch = async (_url, init) => {
+    capturedBody = JSON.parse(init.body);
+    return new Response([
+      'data: {"choices":[{"delta":{"content":"Detailed plan ready."}}]}',
+      '',
+      'data: [DONE]',
+      '',
+    ].join('\n'), {
+      status: 200,
+      headers: { 'Content-Type': 'text/event-stream' },
+    });
+  };
+
+  try {
+    const response = await handleChat(makeRequest({
+      conversation_id: 'local-conv-detailed',
+      message: 'Please give me a detailed repair plan and checklist for alarm E012.',
+      client_market: 'com',
+      client_locale: 'en',
+      user_type: 'guest',
+    }), env);
+
+    assert.equal(response.status, 200);
+    const reader = response.body.getReader();
+    while (!(await reader.read()).done) {}
+
+    assert.equal(capturedBody.max_tokens, 1200);
   } finally {
     globalThis.fetch = originalFetch;
   }

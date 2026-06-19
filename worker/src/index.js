@@ -2103,15 +2103,21 @@ async function enforceOpenAIBudget(env, { userKey, tag = 'chat' }) {
 }
 
 // 默认 max_tokens，按用途分档：
+//   chat_quick: 首轮快速诊断，控制等待时间
 //   chat:    对话主流程，允许较长回复
 //   summary: 工单摘要，短 JSON
 //   note:    核价点评，一句话 + 2 条建议
 const MAX_TOKENS = {
+  chat_quick: 500,
   chat: 1200,
   chat_tool_followup: 1200,
   summary: 500,
   note: 400,
 };
+
+function wantsDetailedAnswer(message = '') {
+  return /详细|完整|全面|方案|报告|表格|清单|步骤|参数表|报价|维修方案|健康报告|detail|detailed|full|complete|comprehensive|table|report|checklist|plan|step-by-step|quote|estimate/i.test(message);
+}
 
 // Phase 0.3：多轮 tool call 循环上限
 // 设计意图：每轮允许 AI 继续调工具（chain），最后一轮强制不给 tools，LLM 必须产出文本。
@@ -2403,7 +2409,7 @@ Default first-turn structure:
 - Give exactly 3 practical checks.
 - Ask only 1 follow-up question.
 - Offer SAGEMRO official follow-up if needed.
-Keep the first answer concise: usually 120-220 Chinese characters or 80-140 English words, unless the user asks for a detailed plan, table, report, or full checklist.
+Maximum 6 short lines. Keep the first answer concise: usually 90-160 Chinese characters or 60-110 English words, unless the user asks for a detailed plan, table, report, or full checklist.
 `;
     const marketContext = `
 
@@ -2543,6 +2549,9 @@ Follow the language policy strictly. Unless the user's current message explicitl
         }
 
         try {
+          const firstTurnMaxTokens = wantsDetailedAnswer(message)
+            ? MAX_TOKENS.chat
+            : MAX_TOKENS.chat_quick;
           while (true) {
             const canCallTools = iteration < MAX_TOOL_ITERATIONS;
             const requestBody = {
@@ -2551,7 +2560,7 @@ Follow the language policy strictly. Unless the user's current message explicitl
               stream: true,
               temperature: 0.7,
               max_tokens:
-                iteration === 0 ? MAX_TOKENS.chat : MAX_TOKENS.chat_tool_followup,
+                iteration === 0 ? firstTurnMaxTokens : MAX_TOKENS.chat_tool_followup,
             };
             if (canCallTools && !preInjectedWorkOrder?.success) {
               requestBody.tools = TOOLS_SCHEMAS;
