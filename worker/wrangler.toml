@@ -40,6 +40,8 @@ name = "sagemro-api"
 [env.production.vars]
 ENVIRONMENT = "production"
 R2_PUBLIC_HOST = "pub-b468952d6e244e7d913c90a7ae6f81d6.r2.dev"
+# 生产环境必须显式置空，避免固定验证码绕过被误启用。
+DEV_BYPASS_CODE = ""
 
 [[env.production.d1_databases]]
 binding = "DB"

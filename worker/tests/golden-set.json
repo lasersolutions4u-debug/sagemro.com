@@ -1,6 +1,6 @@
 {
-  "version": 2,
-  "description": "Golden set — 35 deterministic regression cases across role_guard (10), redact (10), assigned_service_tasks (10), conversation_history (5). v2 adds SummaryProtocol v1 pending_items coverage across all 5 prefix tags (missing_info, awaiting_confirmation, followup_due, service_followup, rating_pending).",
+  "version": 3,
+  "description": "Golden set — 38 deterministic regression cases across role_guard (10), redact (10), assigned_service_tasks (10), conversation_history (5), prompt_contract (3). v3 adds AI prompt contract coverage for China language policy, simple-answer conversion gating, and conservative tube bevel capacity guidance.",
   "cases": [
     {
       "id": "rg-001",
@@ -364,6 +364,74 @@
         "summaries_length": 1,
         "pending_items_prefix": "[rating_pending]",
         "pending_items_min_count": 1
+      }
+    },
+    {
+      "id": "pc-001",
+      "category": "prompt_contract",
+      "description": "中国站即使用户混用英文报警代码，也必须默认简体中文",
+      "input": {
+        "url": "https://api.sagemro.cn/api/chat",
+        "origin": "https://sagemro.cn",
+        "client_market": "cn",
+        "client_locale": "zh-CN",
+        "message": "My fiber laser cutter shows alarm E012. What should I check first?"
+      },
+      "expect": {
+        "prompt_contains": [
+          "You MUST answer this turn in Simplified Chinese",
+          "Market: China edition / sagemro.cn",
+          "English alarm codes, brand names, CNC terms, or short English phrases do not count as a request to answer in English"
+        ],
+        "prompt_not_contains": [
+          "You MUST answer this turn in English"
+        ],
+        "max_tokens": 800,
+        "tools_enabled": false
+      }
+    },
+    {
+      "id": "pc-002",
+      "category": "prompt_contract",
+      "description": "简单知识/参数问题答清即可，不强推创建工单",
+      "input": {
+        "url": "https://api.sagemro.com/api/chat",
+        "origin": "https://sagemro.com",
+        "client_market": "com",
+        "client_locale": "en",
+        "message": "What does a laser cutting nozzle do?"
+      },
+      "expect": {
+        "prompt_contains": [
+          "Do not push a work order or service request after a simple question is already answered clearly",
+          "Add a short SAGEMRO official follow-up offer only when manual confirmation, quotation, parts, service scheduling, safety handling, or official parameter verification is clearly useful",
+          "If the user did not explicitly request a detailed plan, table, report, or full checklist, write exactly 5 compact lines"
+        ],
+        "max_tokens": 800,
+        "tools_enabled": false
+      }
+    },
+    {
+      "id": "pc-003",
+      "category": "prompt_contract",
+      "description": "6000W 切管坡口能力必须使用保守稳定范围，不能按直切最大厚度回答",
+      "input": {
+        "url": "https://api.sagemro.cn/api/chat",
+        "origin": "https://sagemro.cn",
+        "client_market": "cn",
+        "client_locale": "zh-CN",
+        "message": "6000W 切管机切坡口的话，碳钢和不锈钢分别最后能切多厚？"
+      },
+      "expect": {
+        "prompt_contains": [
+          "坡口切割不能按直切最大厚度回答",
+          "6000W 切管坡口",
+          "碳钢通常按 12-16mm 更稳",
+          "不锈钢通常按 8-12mm 更稳",
+          "不要回答 25mm/20mm"
+        ],
+        "max_tokens": 800,
+        "tools_enabled": false
       }
     }
   ]

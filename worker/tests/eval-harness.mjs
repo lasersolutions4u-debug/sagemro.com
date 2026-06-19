@@ -18,7 +18,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
-import { executeTool } from '../src/index.js';
+import { executeTool, handleChat } from '../src/index.js';
 import { redactPII } from '../src/lib/redact.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -100,6 +100,64 @@ function makeGenericEnv() {
     },
   };
   return { DB };
+}
+
+function makePromptContractEnv() {
+  const DB = {
+    prepare(sql) {
+      return {
+        _args: [],
+        bind(...args) {
+          this._args = args;
+          return this;
+        },
+        async first() {
+          if (/FROM conversations WHERE id = \?/.test(sql)) return null;
+          return null;
+        },
+        async all() {
+          return { results: [] };
+        },
+        async run() {
+          return { success: true, meta: { changes: 1 } };
+        },
+      };
+    },
+  };
+  const KV = {
+    async get() { return null; },
+    async put() {},
+    async delete() {},
+  };
+  return {
+    DB,
+    KV,
+    JWT_SECRET: 'golden-prompt-contract-secret-32',
+    OPENAI_API_ENDPOINT: 'https://llm.invalid',
+    OPENAI_API_KEY: 'golden-test-key',
+    OPENAI_DAILY_PER_USER: '999',
+    OPENAI_DAILY_TOTAL: '999',
+  };
+}
+
+function makePromptContractRequest(cas) {
+  const headers = {
+    'Content-Type': 'application/json',
+    'CF-Connecting-IP': `127.0.0.${String(cas.id || 'pc').replace(/\D/g, '').slice(-1) || '1'}`,
+  };
+  if (cas.input.origin) headers.Origin = cas.input.origin;
+
+  return new Request(cas.input.url || 'https://api.sagemro.com/api/chat', {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      conversation_id: `golden-${cas.id}`,
+      message: cas.input.message,
+      client_market: cas.input.client_market,
+      client_locale: cas.input.client_locale,
+      user_type: 'guest',
+    }),
+  });
 }
 
 /**
@@ -468,6 +526,65 @@ async function runConversationHistory(cas) {
   return { pass: true };
 }
 
+async function runPromptContract(cas) {
+  const env = makePromptContractEnv();
+  const originalFetch = globalThis.fetch;
+  let capturedBody = null;
+
+  globalThis.fetch = async (_url, init) => {
+    capturedBody = JSON.parse(init.body);
+    return new Response([
+      'data: {"choices":[{"delta":{"content":"Prompt contract captured."},"finish_reason":"stop"}]}',
+      '',
+      'data: [DONE]',
+      '',
+    ].join('\n'), {
+      status: 200,
+      headers: { 'Content-Type': 'text/event-stream' },
+    });
+  };
+
+  try {
+    const response = await handleChat(makePromptContractRequest(cas), env);
+    if (response.status !== 200) {
+      return { pass: false, reason: `handleChat status ${response.status}` };
+    }
+    await response.text();
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+
+  if (!capturedBody?.messages?.[0]?.content) {
+    return { pass: false, reason: 'LLM request body was not captured' };
+  }
+
+  const prompt = capturedBody.messages[0].content;
+  const failures = [];
+
+  for (const needle of cas.expect.prompt_contains || []) {
+    if (!prompt.includes(needle)) {
+      failures.push(`prompt missing ${JSON.stringify(needle)}`);
+    }
+  }
+  for (const needle of cas.expect.prompt_not_contains || []) {
+    if (prompt.includes(needle)) {
+      failures.push(`prompt should not contain ${JSON.stringify(needle)}`);
+    }
+  }
+  if ('max_tokens' in cas.expect && capturedBody.max_tokens !== cas.expect.max_tokens) {
+    failures.push(`max_tokens: want ${cas.expect.max_tokens}, got ${capturedBody.max_tokens}`);
+  }
+  if ('tools_enabled' in cas.expect) {
+    const enabled = Array.isArray(capturedBody.tools) || capturedBody.tool_choice !== undefined;
+    if (enabled !== cas.expect.tools_enabled) {
+      failures.push(`tools_enabled: want ${cas.expect.tools_enabled}, got ${enabled}`);
+    }
+  }
+
+  if (failures.length > 0) return { pass: false, reason: failures.join('; ') };
+  return { pass: true };
+}
+
 // ============ 主流程 ============
 
 async function main() {
@@ -481,6 +598,7 @@ async function main() {
         outcome = await runSpecialtiesFilter(cas);
       else if (cas.category === 'conversation_history')
         outcome = await runConversationHistory(cas);
+      else if (cas.category === 'prompt_contract') outcome = await runPromptContract(cas);
       else outcome = { pass: false, reason: `unknown category: ${cas.category}` };
     } catch (err) {
       outcome = {
