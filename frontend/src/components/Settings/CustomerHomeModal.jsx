@@ -2,15 +2,17 @@ import { useState, useEffect } from 'react';
 import { Modal } from '../common/Modal';
 import { Building2 } from 'lucide-react';
 import { updateCustomerProfile, changePassword } from '../../services/api';
+import { getCurrentUiText } from '../../i18n/uiText';
 
-const authStatusLabels = {
-  authenticated: { label: 'Verified', color: 'px-2 py-0.5 rounded-full bg-green-500/15 text-green-600 dark:text-green-400 text-[11px]' },
-  pending: { label: 'Pending Verification', color: 'px-2 py-0.5 rounded-full bg-yellow-500/15 text-yellow-600 dark:text-yellow-400 text-[11px]' },
-  rejected: { label: 'Verification Rejected', color: 'px-2 py-0.5 rounded-full bg-red-500/15 text-red-600 dark:text-red-400 text-[11px]' },
-  guest: { label: 'Guest', color: 'px-2 py-0.5 rounded-full bg-[var(--color-input-bg)] text-[var(--color-text-secondary)] text-[11px]' },
+const authStatusStyles = {
+  authenticated: 'px-2 py-0.5 rounded-full bg-green-500/15 text-green-600 dark:text-green-400 text-[11px]',
+  pending: 'px-2 py-0.5 rounded-full bg-yellow-500/15 text-yellow-600 dark:text-yellow-400 text-[11px]',
+  rejected: 'px-2 py-0.5 rounded-full bg-red-500/15 text-red-600 dark:text-red-400 text-[11px]',
+  guest: 'px-2 py-0.5 rounded-full bg-[var(--color-input-bg)] text-[var(--color-text-secondary)] text-[11px]',
 };
 
 export function CustomerHomeModal({ isOpen, onClose, currentUser, userType }) {
+  const t = getCurrentUiText().customerHome;
   const [tab, setTab] = useState('info');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -54,10 +56,10 @@ export function CustomerHomeModal({ isOpen, onClose, currentUser, userType }) {
       await updateCustomerProfile(form);
       const updated = { ...currentUser, ...form };
       localStorage.setItem('sagemro_user', JSON.stringify(updated));
-      setSuccess('Saved successfully');
+      setSuccess(t.saved);
       setTimeout(() => setSuccess(''), 2000);
     } catch (err) {
-      setError(err.message || 'Save failed');
+      setError(err.message || t.saveFailed);
     } finally {
       setLoading(false);
     }
@@ -81,11 +83,11 @@ export function CustomerHomeModal({ isOpen, onClose, currentUser, userType }) {
 
   const handleChangePassword = async () => {
     if (pwdForm.newPassword !== pwdForm.confirmPassword) {
-      setError('New passwords do not match');
+      setError(t.passwordMismatch);
       return;
     }
     if (pwdForm.newPassword.length < 6) {
-      setError('Password must be at least 6 characters');
+      setError(t.passwordShort);
       return;
     }
     setLoading(true);
@@ -93,21 +95,27 @@ export function CustomerHomeModal({ isOpen, onClose, currentUser, userType }) {
     try {
       await changePassword({ oldPassword: pwdForm.oldPassword, newPassword: pwdForm.newPassword });
       setPwdForm({ oldPassword: '', newPassword: '', confirmPassword: '' });
-      setSuccess('Password changed successfully');
+      setSuccess(t.passwordChanged);
       setTimeout(() => setSuccess(''), 2000);
     } catch (err) {
-      setError(err.message || 'Update failed');
+      setError(err.message || t.updateFailed);
     } finally {
       setLoading(false);
     }
   };
 
+  const authStatusLabels = {
+    authenticated: { label: t.verified, color: authStatusStyles.authenticated },
+    pending: { label: t.pending, color: authStatusStyles.pending },
+    rejected: { label: t.rejected, color: authStatusStyles.rejected },
+    guest: { label: t.guest, color: authStatusStyles.guest },
+  };
   const status = authStatusLabels[currentUser?.auth_status] || authStatusLabels.pending;
 
   const inputClass = "w-full bg-[var(--color-input-bg)] border border-[var(--color-border)] rounded-lg px-3 py-2.5 text-[14px] text-[var(--color-text-primary)] placeholder:text-[var(--color-text-secondary)] focus:outline-none focus:ring-2 focus:ring-blue-500";
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Company Profile" size="lg">
+    <Modal isOpen={isOpen} onClose={onClose} title={t.title} size="lg">
       <div className="flex flex-col gap-5">
 
         {/* 头部：公司 Logo + 名称 + 认证状态 */}
@@ -122,7 +130,7 @@ export function CustomerHomeModal({ isOpen, onClose, currentUser, userType }) {
 
           <div className="flex-1 min-w-0">
             <div className="text-[18px] font-semibold text-[var(--color-text-primary)] truncate">
-              {form.company || 'Company name not set'}
+              {form.company || t.notSet}
             </div>
             <div className="text-[13px] text-[var(--color-text-secondary)] truncate mt-0.5">
               {currentUser?.phone}
@@ -150,7 +158,7 @@ export function CustomerHomeModal({ isOpen, onClose, currentUser, userType }) {
                 : 'border-transparent text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]'
             }`}
           >
-            Company Info
+            {t.tabs.info}
           </button>
           <button
             onClick={() => setTab('preferences')}
@@ -160,7 +168,7 @@ export function CustomerHomeModal({ isOpen, onClose, currentUser, userType }) {
                 : 'border-transparent text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]'
             }`}
           >
-            Preferences
+            {t.tabs.preferences}
           </button>
           <button
             onClick={() => setTab('security')}
@@ -170,7 +178,7 @@ export function CustomerHomeModal({ isOpen, onClose, currentUser, userType }) {
                 : 'border-transparent text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]'
             }`}
           >
-            Security
+            {t.tabs.security}
           </button>
         </div>
 
@@ -181,62 +189,62 @@ export function CustomerHomeModal({ isOpen, onClose, currentUser, userType }) {
           {tab === 'info' && (
             <div className="space-y-4">
               <div>
-                <label className="block text-[12px] text-[var(--color-text-secondary)] mb-1.5">Company Name</label>
+                <label className="block text-[12px] text-[var(--color-text-secondary)] mb-1.5">{t.companyName}</label>
                 <input
                   type="text"
                   value={form.company}
                   onChange={e => setForm({ ...form, company: e.target.value })}
-                  placeholder="e.g. ABC Metal Products Co., Ltd."
+                  placeholder={t.companyPlaceholder}
                   className={inputClass}
                 />
               </div>
               <div>
-                <label className="block text-[12px] text-[var(--color-text-secondary)] mb-1.5">City</label>
+                <label className="block text-[12px] text-[var(--color-text-secondary)] mb-1.5">{t.city}</label>
                 <input
                   type="text"
                   value={form.city}
                   onChange={e => setForm({ ...form, city: e.target.value })}
-                  placeholder="e.g. Shanghai"
+                  placeholder={t.cityPlaceholder}
                   className={inputClass}
                 />
               </div>
               <div>
-                <label className="block text-[12px] text-[var(--color-text-secondary)] mb-1.5">Address</label>
+                <label className="block text-[12px] text-[var(--color-text-secondary)] mb-1.5">{t.address}</label>
                 <input
                   type="text"
                   value={form.address}
                   onChange={e => setForm({ ...form, address: e.target.value })}
-                  placeholder="e.g. 123 Industrial Park Road"
+                  placeholder={t.addressPlaceholder}
                   className={inputClass}
                 />
               </div>
               <div>
-                <label className="block text-[12px] text-[var(--color-text-secondary)] mb-1.5">Phone</label>
+                <label className="block text-[12px] text-[var(--color-text-secondary)] mb-1.5">{t.phone}</label>
                 <input
                   type="text"
                   value={form.phone}
                   onChange={e => setForm({ ...form, phone: e.target.value })}
-                  placeholder="Mobile or landline"
+                  placeholder={t.phonePlaceholder}
                   className={inputClass}
                 />
               </div>
               <div>
-                <label className="block text-[12px] text-[var(--color-text-secondary)] mb-1.5">Company Description</label>
+                <label className="block text-[12px] text-[var(--color-text-secondary)] mb-1.5">{t.description}</label>
                 <textarea
                   value={form.company_description}
                   onChange={e => setForm({ ...form, company_description: e.target.value })}
-                  placeholder="Briefly describe your company..."
+                  placeholder={t.descriptionPlaceholder}
                   rows={2}
                   className={`${inputClass} resize-none`}
                 />
               </div>
               <div>
-                <label className="block text-[12px] text-[var(--color-text-secondary)] mb-1.5">Business Scope</label>
+                <label className="block text-[12px] text-[var(--color-text-secondary)] mb-1.5">{t.scope}</label>
                 <input
                   type="text"
                   value={form.business_scope}
                   onChange={e => setForm({ ...form, business_scope: e.target.value })}
-                  placeholder="e.g. Sheet metal fabrication, laser cutting, bending"
+                  placeholder={t.scopePlaceholder}
                   className={inputClass}
                 />
               </div>
@@ -253,7 +261,7 @@ export function CustomerHomeModal({ isOpen, onClose, currentUser, userType }) {
                 disabled={loading}
                 className="w-full py-2.5 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] disabled:opacity-50 text-white rounded-lg text-[14px] font-medium transition-colors"
               >
-                {loading ? 'Saving...' : 'Save Changes'}
+                {loading ? t.saving : t.saveChanges}
               </button>
             </div>
           )}
@@ -262,7 +270,7 @@ export function CustomerHomeModal({ isOpen, onClose, currentUser, userType }) {
           {tab === 'preferences' && (
             <div className="space-y-4">
               <div>
-                <label className="block text-[12px] text-[var(--color-text-secondary)] mb-3">Appearance</label>
+                <label className="block text-[12px] text-[var(--color-text-secondary)] mb-3">{t.appearance}</label>
                 <div className="flex gap-3">
                   <button
                     onClick={() => handleThemeChange('light')}
@@ -273,7 +281,7 @@ export function CustomerHomeModal({ isOpen, onClose, currentUser, userType }) {
                     }`}
                   >
                     <span className="text-2xl">☀️</span>
-                    <span className="text-[13px] text-[var(--color-text-primary)]">Light</span>
+                    <span className="text-[13px] text-[var(--color-text-primary)]">{t.light}</span>
                   </button>
                   <button
                     onClick={() => handleThemeChange('dark')}
@@ -284,7 +292,7 @@ export function CustomerHomeModal({ isOpen, onClose, currentUser, userType }) {
                     }`}
                   >
                     <span className="text-2xl">🌙</span>
-                    <span className="text-[13px] text-[var(--color-text-primary)]">Dark</span>
+                    <span className="text-[13px] text-[var(--color-text-primary)]">{t.dark}</span>
                   </button>
                   <button
                     onClick={() => handleThemeChange('system')}
@@ -295,7 +303,7 @@ export function CustomerHomeModal({ isOpen, onClose, currentUser, userType }) {
                     }`}
                   >
                     <span className="text-2xl">💻</span>
-                    <span className="text-[13px] text-[var(--color-text-primary)]">System</span>
+                    <span className="text-[13px] text-[var(--color-text-primary)]">{t.system}</span>
                   </button>
                 </div>
               </div>
@@ -306,32 +314,32 @@ export function CustomerHomeModal({ isOpen, onClose, currentUser, userType }) {
           {tab === 'security' && (
             <div className="space-y-4">
               <div>
-                <label className="block text-[12px] text-[var(--color-text-secondary)] mb-1.5">Current Password</label>
+                <label className="block text-[12px] text-[var(--color-text-secondary)] mb-1.5">{t.currentPassword}</label>
                 <input
                   type="password"
                   value={pwdForm.oldPassword}
                   onChange={e => setPwdForm({ ...pwdForm, oldPassword: e.target.value })}
-                  placeholder="Enter your current password"
+                  placeholder={t.currentPasswordPlaceholder}
                   className={inputClass}
                 />
               </div>
               <div>
-                <label className="block text-[12px] text-[var(--color-text-secondary)] mb-1.5">New Password</label>
+                <label className="block text-[12px] text-[var(--color-text-secondary)] mb-1.5">{t.newPassword}</label>
                 <input
                   type="password"
                   value={pwdForm.newPassword}
                   onChange={e => setPwdForm({ ...pwdForm, newPassword: e.target.value })}
-                  placeholder="At least 6 characters"
+                  placeholder={t.newPasswordPlaceholder}
                   className={inputClass}
                 />
               </div>
               <div>
-                <label className="block text-[12px] text-[var(--color-text-secondary)] mb-1.5">Confirm New Password</label>
+                <label className="block text-[12px] text-[var(--color-text-secondary)] mb-1.5">{t.confirmPassword}</label>
                 <input
                   type="password"
                   value={pwdForm.confirmPassword}
                   onChange={e => setPwdForm({ ...pwdForm, confirmPassword: e.target.value })}
-                  placeholder="Re-enter your new password"
+                  placeholder={t.confirmPasswordPlaceholder}
                   className={inputClass}
                 />
               </div>
@@ -348,7 +356,7 @@ export function CustomerHomeModal({ isOpen, onClose, currentUser, userType }) {
                 disabled={loading}
                 className="w-full py-2.5 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] disabled:opacity-50 text-white rounded-lg text-[14px] font-medium transition-colors"
               >
-                {loading ? 'Updating...' : 'Change Password'}
+                {loading ? t.updating : t.changePassword}
               </button>
             </div>
           )}

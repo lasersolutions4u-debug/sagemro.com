@@ -4,6 +4,7 @@ import { MessageBubble } from './MessageBubble';
 import { WelcomePage } from './WelcomePage';
 import { InputArea } from './InputArea';
 import { Footer } from '../common/Footer';
+import { getCurrentUiText } from '../../i18n/uiText';
 
 export function ChatArea({
   messages,
@@ -16,6 +17,7 @@ export function ChatArea({
   onOpenLegal,
   onOpenAbout,
 }) {
+  const t = getCurrentUiText();
   const messagesEndRef = useRef(null);
   const messagesContainerRef = useRef(null);
 
@@ -27,7 +29,7 @@ export function ChatArea({
   }, [messages]);
 
   const hasMessages = messages.length > 0;
-  const pageTitle = hasMessages ? (currentTitle || 'Service conversation') : 'SAGEMRO Service OS';
+  const pageTitle = hasMessages ? (currentTitle || t.common.serviceConversation) : 'SAGEMRO Service OS';
 
   return (
     <div className="flex flex-col h-full bg-[var(--color-chat-bg)]">
@@ -45,7 +47,7 @@ export function ChatArea({
           </h1>
           {!hasMessages && (
             <p className="hidden sm:block text-[11px] text-[var(--color-text-secondary)]">
-              AI-powered service for laser cutting and sheet metal equipment
+              {t.chat.subtitle}
             </p>
           )}
         </div>
@@ -55,7 +57,7 @@ export function ChatArea({
             className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-[var(--color-border)] text-[11px] text-[var(--color-text-secondary)] hover:text-[var(--color-primary)] hover:border-[var(--color-primary)] transition-colors"
           >
             <Info size={13} />
-            About SAGEMRO
+            {t.chat.about}
           </button>
         )}
         {onOpenLegal && (
@@ -64,7 +66,7 @@ export function ChatArea({
             className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-[var(--color-border)] text-[11px] text-[var(--color-text-secondary)] hover:text-[var(--color-primary)] hover:border-[var(--color-primary)] transition-colors"
           >
             <ShieldCheck size={13} />
-            Legal & AI notice
+            {t.chat.legal}
           </button>
         )}
         {hasMessages && (
@@ -73,7 +75,7 @@ export function ChatArea({
             className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[var(--color-primary)]/10 text-[11px] text-[var(--color-primary)] hover:bg-[var(--color-primary)]/15 transition-colors"
           >
             <Home size={13} />
-            Service OS Home
+            {t.chat.home}
           </button>
         )}
       </header>
@@ -82,13 +84,13 @@ export function ChatArea({
         <div className="px-3 sm:px-5 py-2 border-b border-[var(--color-border)] bg-[var(--color-surface)]/70 flex items-center justify-center gap-2">
           <Info size={12} className="text-[var(--color-text-muted)] flex-shrink-0" />
           <p className="text-[11px] text-[var(--color-text-secondary)] leading-tight">
-            AI guidance helps speed up service preparation. Final diagnosis, quote, and on-site safety requirements are confirmed by SAGEMRO official service.
+            {t.chat.notice}
             {onOpenLegal && (
               <button
                 onClick={() => onOpenLegal('ai')}
                 className="ml-1 underline decoration-dotted underline-offset-2 hover:text-[var(--color-primary)] transition-colors"
               >
-                Details
+                {t.common.details}
               </button>
             )}
           </p>

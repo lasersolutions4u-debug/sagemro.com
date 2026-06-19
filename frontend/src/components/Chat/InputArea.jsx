@@ -1,10 +1,12 @@
 import { useState, useRef, useEffect } from 'react';
 import { Send, StopCircle, ImagePlus, X, Loader2 } from 'lucide-react';
 import { uploadChatImage } from '../../services/api';
+import { getCurrentUiText } from '../../i18n/uiText';
 
 const MAX_IMAGES = 4;
 
 export function InputArea({ onSend, onStop, disabled, isStreaming }) {
+  const t = getCurrentUiText().chat;
   const [input, setInput] = useState('');
   const [pendingImages, setPendingImages] = useState([]); // { file, previewUrl, uploading, url, error }
   const textareaRef = useRef(null);
@@ -80,7 +82,7 @@ export function InputArea({ onSend, onStop, disabled, isStreaming }) {
     if ((!text && uploadedImages.length === 0) || disabled) return;
 
     const images = uploadedImages.map(img => ({ url: img.url }));
-    onSend(text || 'Please analyze this image', images);
+    onSend(text || t.imageOnlyMessage, images);
     setInput('');
     pendingImages.forEach(img => {
       if (img.previewUrl) {
@@ -150,7 +152,7 @@ export function InputArea({ onSend, onStop, disabled, isStreaming }) {
               onClick={() => fileInputRef.current?.click()}
               disabled={disabled || isStreaming}
               className="w-12 h-12 flex items-center justify-center rounded-2xl hover:bg-[var(--color-hover)] transition-colors flex-shrink-0 disabled:opacity-50"
-              title="Upload image"
+              title={t.uploadImage}
             >
               <ImagePlus size={22} className="text-[var(--color-text-muted)]" />
             </button>
@@ -166,7 +168,7 @@ export function InputArea({ onSend, onStop, disabled, isStreaming }) {
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder={pendingImages.length > 0 ? "Describe what happened. Press Enter to send, Shift + Enter for a new line." : "Describe the fault, part, maintenance need, or new-machine project. Upload images anytime."}
+              placeholder={pendingImages.length > 0 ? t.imagePlaceholder : t.inputPlaceholder}
               disabled={disabled}
               rows={1}
               className="w-full px-4 py-3 bg-transparent resize-none focus:outline-none text-[var(--color-text-primary)] placeholder-[var(--color-text-muted)] disabled:opacity-50 text-[15px]"
@@ -180,7 +182,7 @@ export function InputArea({ onSend, onStop, disabled, isStreaming }) {
               <button
                 onClick={onStop}
                 className="w-12 h-12 flex items-center justify-center bg-red-500 hover:bg-red-600 text-white rounded-2xl transition-colors flex-shrink-0 active:scale-95"
-                title="Stop generation"
+                title={t.stopGeneration}
               >
                 <StopCircle size={22} />
               </button>

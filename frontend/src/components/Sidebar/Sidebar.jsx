@@ -2,6 +2,7 @@ import { Plus } from 'lucide-react';
 import { ChatHistory } from './ChatHistory';
 import { ToolBar } from './ToolBar';
 import { BrandMark } from '../common/BrandMark';
+import { getCurrentUiText } from '../../i18n/uiText';
 
 export function Sidebar({
   conversations,
@@ -24,6 +25,8 @@ export function Sidebar({
   isOpen,
   onClose,
 }) {
+  const t = getCurrentUiText().sidebar;
+
   return (
     <>
       {/* 移动端遮罩 */}
@@ -54,7 +57,7 @@ export function Sidebar({
             className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white rounded-xl transition-colors font-medium text-[13px] shadow-sm"
           >
             <Plus size={18} />
-            <span>New Service Chat</span>
+            <span>{t.newChat}</span>
           </button>
         </div>
 

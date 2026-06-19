@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { Modal } from '../common/Modal';
 import { Bell, CheckCheck, FileText, DollarSign, Star, Wrench, ClipboardCheck } from 'lucide-react';
 import { getNotifications, markNotificationRead, markAllNotificationsRead } from '../../services/api';
+import { getCurrentUiText } from '../../i18n/uiText';
 
 const typeIcons = {
   new_ticket: FileText,
@@ -21,22 +22,23 @@ const typeColors = {
   rating_received: 'text-yellow-500',
 };
 
-function formatTime(dateStr) {
+function formatTime(dateStr, t) {
   if (!dateStr) return '';
   const date = new Date(dateStr + 'Z');
   const now = new Date();
   const diffMs = now - date;
   const diffMin = Math.floor(diffMs / 60000);
-  if (diffMin < 1) return 'Just now';
-  if (diffMin < 60) return `${diffMin}m ago`;
+  if (diffMin < 1) return t.justNow;
+  if (diffMin < 60) return t.minutesAgo(diffMin);
   const diffHour = Math.floor(diffMin / 60);
-  if (diffHour < 24) return `${diffHour}h ago`;
+  if (diffHour < 24) return t.hoursAgo(diffHour);
   const diffDay = Math.floor(diffHour / 24);
-  if (diffDay < 7) return `${diffDay}d ago`;
-  return date.toLocaleDateString('en-US', { month: 'numeric', day: 'numeric' });
+  if (diffDay < 7) return t.daysAgo(diffDay);
+  return date.toLocaleDateString(t.dateLocale, { month: 'numeric', day: 'numeric' });
 }
 
 export function NotificationModal({ isOpen, onClose, onUnreadCountChange, onOpenWorkOrderDetail }) {
+  const t = getCurrentUiText().notifications;
   const [notifications, setNotifications] = useState([]);
   const [loading, setLoading] = useState(false);
 
@@ -94,7 +96,7 @@ export function NotificationModal({ isOpen, onClose, onUnreadCountChange, onOpen
   const hasUnread = notifications.some(n => !n.is_read);
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Notifications" size="md">
+    <Modal isOpen={isOpen} onClose={onClose} title={t.title} size="md">
       <div className="flex flex-col gap-2">
         {/* 全部已读按钮 */}
         {hasUnread && (
@@ -104,7 +106,7 @@ export function NotificationModal({ isOpen, onClose, onUnreadCountChange, onOpen
               className="flex items-center gap-1.5 text-[12px] text-[var(--color-primary)] hover:underline"
             >
               <CheckCheck size={14} />
-              Mark all as read
+              {t.markAllRead}
             </button>
           </div>
         )}
@@ -112,12 +114,12 @@ export function NotificationModal({ isOpen, onClose, onUnreadCountChange, onOpen
         {/* 通知列表 */}
         {loading ? (
           <div className="py-12 text-center text-[var(--color-text-secondary)] text-[14px]">
-            Loading...
+            {t.loading}
           </div>
         ) : notifications.length === 0 ? (
           <div className="py-12 text-center">
             <Bell size={36} className="mx-auto text-[var(--color-text-secondary)] opacity-30 mb-3" />
-            <div className="text-[14px] text-[var(--color-text-secondary)]">No notifications</div>
+            <div className="text-[14px] text-[var(--color-text-secondary)]">{t.empty}</div>
           </div>
         ) : (
           <div className="max-h-[60vh] overflow-y-auto -mx-1 px-1 space-y-1">
@@ -152,7 +154,7 @@ export function NotificationModal({ isOpen, onClose, onUnreadCountChange, onOpen
                       {notif.body}
                     </div>
                     <div className="text-[11px] text-[var(--color-text-secondary)] opacity-60 mt-1">
-                      {formatTime(notif.created_at)}
+                      {formatTime(notif.created_at, t)}
                     </div>
                   </div>
                 </button>

@@ -11,6 +11,7 @@ import { usePushNotification } from './hooks/usePushNotification';
 import { generateId } from './utils/helpers';
 import { submitWorkOrder as submitWorkOrderApi, getUnreadNotificationCount } from './services/api';
 import { getEngineerPortalUrl, runtimeConfig } from './config/runtime';
+import { getCurrentUiText } from './i18n/uiText';
 
 const ENGINEER_ENTRY_TEXT = {
   en: {
@@ -50,6 +51,7 @@ const MyDevicesModal = lazy(() => import('./components/Device/MyDevicesModal').t
 const NotificationModal = lazy(() => import('./components/Notification/NotificationModal').then(m => ({ default: m.NotificationModal })));
 
 function App() {
+  const t = getCurrentUiText();
   const isEngineerHost = runtimeConfig.portal === 'engineer';
   const engineerPortalUrl = getEngineerPortalUrl();
   const engineerPortalHost = engineerPortalUrl.replace('https://', '');
@@ -158,7 +160,7 @@ function App() {
 
   // 当前对话标题
   const currentConversation = conversationId ? getConversation(conversationId) : null;
-  const currentTitle = currentConversation?.title || 'Service Chat';
+  const currentTitle = currentConversation?.title || t.common.serviceChat;
 
   // 新建对话
   const handleNewChat = useCallback(() => {

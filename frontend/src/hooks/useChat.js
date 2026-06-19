@@ -1,5 +1,6 @@
 import { useState, useRef, useCallback } from 'react';
 import { streamChat } from '../services/api';
+import { getCurrentUiText } from '../i18n/uiText';
 
 // 生成唯一 ID
 function generateId() {
@@ -71,11 +72,12 @@ export function useChat() {
         },
         onError: (err) => {
           const message = err.message || 'AI service unavailable';
+          const t = getCurrentUiText().chat;
           setMessages(prev => prev.map(m =>
             m.id === assistantMessageId
               ? {
                   ...m,
-                  content: `Sorry, SAGEMRO AI could not respond right now (${message}). Please try again, or leave your equipment details and SAGEMRO will follow up through the official service process.`,
+                  content: t.errorFallback(message),
                 }
               : m
           ));

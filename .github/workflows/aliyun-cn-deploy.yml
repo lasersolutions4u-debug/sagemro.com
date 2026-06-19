@@ -52,7 +52,7 @@ jobs:
           set -euo pipefail
           npm ci --no-audit --no-fund
           npm test --if-present
-          npm run build
+          npm run build:cn
 
       - name: Build admin
         working-directory: admin

@@ -1,9 +1,13 @@
 import { useState } from 'react';
 import { ArrowRight, Bot, ClipboardList, Send, ShieldAlert, Sparkles, X } from 'lucide-react';
 import { LeadForm } from '../Chat/LeadForm';
-import { aiServiceTools, buildAiToolPrompt } from '../../data/aiServiceTools';
+import { buildAiToolPrompt, getLocalizedAiServiceTools } from '../../data/aiServiceTools';
+import { getCurrentUiText } from '../../i18n/uiText';
 
 export function AIToolsPanel({ onSendMessage }) {
+  const text = getCurrentUiText();
+  const t = text.aiTools;
+  const aiServiceTools = getLocalizedAiServiceTools(text.locale);
   const [activeToolId, setActiveToolId] = useState(aiServiceTools[0].id);
   const [values, setValues] = useState({});
   const [leadOpen, setLeadOpen] = useState(false);
@@ -23,12 +27,12 @@ export function AIToolsPanel({ onSendMessage }) {
   const currentValues = values[activeTool.id] || {};
 
   const handleSubmit = () => {
-    const prompt = buildAiToolPrompt(activeTool, currentValues);
+    const prompt = buildAiToolPrompt(activeTool, currentValues, t);
     onSendMessage(prompt);
   };
 
   const handleAgentStart = () => {
-    onSendMessage(`Start ${activeTool.title} as a SAGEMRO Service OS agent. First ask me to describe the problem naturally. Then auto-extract structured fields, identify missing information, provide safe preliminary feedback, and prepare the right SAGEMRO conversion action for ${activeTool.leadType}.`);
+    onSendMessage(t.startPrompt(activeTool));
   };
 
   const leadSummary = activeTool.fields
@@ -41,17 +45,17 @@ export function AIToolsPanel({ onSendMessage }) {
         <div>
           <div className="mb-2 inline-flex items-center gap-2 rounded-full bg-amber-500/10 px-3 py-1.5 text-[11px] uppercase tracking-[0.18em] text-amber-700">
             <Bot size={14} />
-            AI Service Agents
+            {t.eyebrow}
           </div>
           <h2 className="text-xl font-semibold text-[var(--color-text-primary)] sm:text-2xl">
-            Six agents, one natural-language intake
+            {t.title}
           </h2>
           <p className="mt-2 max-w-3xl text-sm leading-relaxed text-[var(--color-text-secondary)]">
-            Users can start from chat. These agents help the system route the request, extract fields, generate immediate feedback, and prepare a service, parts, maintenance, or Euchio lead.
+            {t.intro}
           </p>
         </div>
         <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs leading-relaxed text-slate-600">
-          Form fields are optional confirmation aids, not the primary user experience.
+          {t.optionalFields}
         </div>
       </div>
 
@@ -93,7 +97,7 @@ export function AIToolsPanel({ onSendMessage }) {
             <div className="mb-2 flex flex-wrap items-center gap-2">
               <span className="inline-flex items-center gap-1 rounded-full bg-[#12202a] px-2.5 py-1 text-[11px] font-medium text-white">
                 <Sparkles size={12} />
-                Auto-routed agent
+                {t.autoRouted}
               </span>
               <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/10 px-2.5 py-1 text-[11px] font-medium text-amber-700">
                 {activeTool.leadType}
@@ -103,7 +107,7 @@ export function AIToolsPanel({ onSendMessage }) {
               {activeTool.title}
             </h2>
             <p className="text-xs sm:text-sm text-[var(--color-text-secondary)] mt-1 leading-relaxed">
-              Start this agent directly, or let SAGEMRO detect it from a free-form chat message. The fields below show what AI will try to extract and confirm.
+              {t.activeIntro}
             </p>
           </div>
         </div>
@@ -112,26 +116,26 @@ export function AIToolsPanel({ onSendMessage }) {
           <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
             <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
               <ClipboardList size={14} />
-              Structured service card
+              {t.structuredCard}
             </div>
             <div className="space-y-2 text-xs text-slate-600">
               <div className="flex justify-between gap-3">
-                <span>Detected module</span>
+                <span>{t.detectedModule}</span>
                 <strong className="text-slate-900">{activeTool.shortTitle}</strong>
               </div>
               <div className="flex justify-between gap-3">
-                <span>Lead type</span>
+                <span>{t.leadType}</span>
                 <strong className="text-slate-900">{activeTool.leadType}</strong>
               </div>
               <div className="flex justify-between gap-3">
-                <span>Next action</span>
-                <strong className="text-slate-900">AI answer + official CTA</strong>
+                <span>{t.nextAction}</span>
+                <strong className="text-slate-900">{t.nextActionValue}</strong>
               </div>
             </div>
           </div>
           <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-xs leading-relaxed text-amber-900">
-            <strong className="block text-amber-950">How users should experience this:</strong>
-            They describe the problem naturally. AI replies with preliminary value, extracts known fields, highlights missing information, and offers the right conversion action.
+            <strong className="block text-amber-950">{t.experienceTitle}</strong>
+            {t.experienceBody}
           </div>
         </div>
 
@@ -168,7 +172,7 @@ export function AIToolsPanel({ onSendMessage }) {
           <div className="flex items-start gap-2 text-[11px] text-[var(--color-text-secondary)] leading-relaxed">
             <ShieldAlert size={14} className="text-amber-500 mt-0.5 flex-shrink-0" />
             <span>
-              AI provides preliminary guidance only. SAGEMRO official service confirms diagnosis, quote, and safety requirements.
+              {t.notice}
             </span>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -177,7 +181,7 @@ export function AIToolsPanel({ onSendMessage }) {
               onClick={handleAgentStart}
               className="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-[#12202a] text-white text-xs font-medium hover:bg-[#203342] transition-colors"
             >
-              Start agent chat
+              {t.startAgent}
               <Bot size={14} />
             </button>
             <button
@@ -186,14 +190,14 @@ export function AIToolsPanel({ onSendMessage }) {
               className="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl border border-[var(--color-border)] text-xs text-[var(--color-text-secondary)] hover:bg-[var(--color-hover)] transition-colors"
             >
               <X size={14} />
-              Clear
+              {t.clear}
             </button>
             <button
               type="button"
               onClick={handleSubmit}
               className="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl border border-[var(--color-primary)] text-[var(--color-primary)] text-xs font-medium hover:bg-[var(--color-primary)]/10 transition-colors"
             >
-              Use confirmed fields
+              {t.useFields}
               <ArrowRight size={14} />
             </button>
             <button
@@ -201,7 +205,7 @@ export function AIToolsPanel({ onSendMessage }) {
               onClick={() => setLeadOpen(true)}
               className="inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white text-xs font-medium transition-colors"
             >
-              Request Follow-up
+              {t.requestFollowUp}
               <Send size={14} />
             </button>
           </div>
