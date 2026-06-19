@@ -364,6 +364,48 @@ test('handleChat answers common cutting capacity questions when upstream returns
   }
 });
 
+test('handleChat instructs conservative bevel cutting capacity for 6kW tube questions', async () => {
+  const { env } = makeEnv();
+  const originalFetch = globalThis.fetch;
+  let capturedBody = null;
+
+  globalThis.fetch = async (_url, init) => {
+    capturedBody = JSON.parse(init.body);
+    return new Response([
+      'data: {"choices":[{"delta":{"content":"先按保守稳定范围判断。"}}]}',
+      '',
+      'data: [DONE]',
+      '',
+    ].join('\n'), {
+      status: 200,
+      headers: { 'Content-Type': 'text/event-stream' },
+    });
+  };
+
+  try {
+    const response = await handleChat(makeRequest({
+      conversation_id: 'local-conv-cutting-guardrail-cn',
+      message: '6000W 切管机切坡口的话，碳钢和不锈钢分别最后能切多厚？',
+      client_market: 'cn',
+      client_locale: 'zh-CN',
+      user_type: 'guest',
+    }, undefined, 'https://api.sagemro.cn/api/chat'), env);
+
+    assert.equal(response.status, 200);
+    const reader = response.body.getReader();
+    while (!(await reader.read()).done) {}
+
+    const systemPrompt = capturedBody.messages[0].content;
+    assert.match(systemPrompt, /坡口切割不能按直切最大厚度回答/);
+    assert.match(systemPrompt, /6000W 切管坡口/);
+    assert.match(systemPrompt, /碳钢.*12-16mm/s);
+    assert.match(systemPrompt, /不锈钢.*8-12mm/s);
+    assert.match(systemPrompt, /不要回答 25mm.*20mm/s);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test('handleChat appends localized recovery when upstream finishes mid-answer', async () => {
   const { env } = makeEnv();
   const originalFetch = globalThis.fetch;
@@ -427,6 +469,42 @@ test('handleChat does not append recovery when length finish still has a complet
     assert.equal(response.status, 200);
     const text = await response.text();
     assert.match(text, /E012 通常指向伺服驱动异常/);
+    assert.doesNotMatch(text, /刚才的 AI 回复可能不完整/);
+    assert.match(text, /data: \[DONE\]/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('handleChat does not append recovery to complete five-line technical answer without service CTA', async () => {
+  const { env } = makeEnv();
+  const originalFetch = globalThis.fetch;
+
+  globalThis.fetch = async () => new Response([
+    'data: {"choices":[{"delta":{"content":"6000W 切管坡口先按稳定范围判断。\\n碳钢建议按 12-16mm 更稳。\\n不锈钢建议按 8-12mm 更稳。\\n坡口角度越大厚度越要下调。\\n管径和坡口角度是多少？"},"finish_reason":null}]}',
+    '',
+    'data: {"choices":[{"delta":{},"finish_reason":"length"}]}',
+    '',
+    'data: [DONE]',
+    '',
+  ].join('\n'), {
+    status: 200,
+    headers: { 'Content-Type': 'text/event-stream' },
+  });
+
+  try {
+    const response = await handleChat(makeRequest({
+      conversation_id: 'local-conv-complete-cutting-length-cn',
+      message: '6000W 切管机切坡口的话，碳钢和不锈钢分别最后能切多厚？',
+      client_market: 'cn',
+      client_locale: 'zh-CN',
+      user_type: 'guest',
+    }, undefined, 'https://api.sagemro.cn/api/chat'), env);
+
+    assert.equal(response.status, 200);
+    const text = await response.text();
+    assert.match(text, /碳钢建议按 12-16mm/);
+    assert.match(text, /管径和坡口角度是多少？/);
     assert.doesNotMatch(text, /刚才的 AI 回复可能不完整/);
     assert.match(text, /data: \[DONE\]/);
   } finally {

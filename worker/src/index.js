@@ -209,10 +209,10 @@ function shouldAppendTruncatedRecovery(content = '', finishReason = null) {
 
   if (finishReason === 'length') {
     const nonEmptyLines = text.split(/\n+/).map((line) => line.trim()).filter(Boolean);
+    const lastLine = nonEmptyLines[nonEmptyLines.length - 1] || '';
     const likelyCompleteQuickAnswer =
       nonEmptyLines.length >= 5 &&
-      /[？?]/.test(nonEmptyLines[nonEmptyLines.length - 1]) &&
-      /SAGEMRO/i.test(nonEmptyLines[nonEmptyLines.length - 1]);
+      /[。.!！？?]$/.test(lastLine);
     return !likelyCompleteQuickAnswer && text.length < 120;
   }
 
@@ -425,6 +425,7 @@ SAGEMRO AI helps laser cutting and sheet metal equipment users turn messy equipm
 回答以下领域问题时，确保覆盖对应的关键维度：
 
 - **激光切割**：功率/气压/焦点/速度的关联参数、喷嘴选型、保护镜检查、光路校准
+- **激光切割坡口/切管坡口**：坡口切割不能按直切最大厚度回答。涉及 6000W 切管坡口时，先给保守稳定范围：碳钢通常按 12-16mm 更稳，不锈钢通常按 8-12mm 更稳；坡口角度、管径、夹持精度、气体和焦点会继续下调稳定厚度。不要回答 25mm/20mm 这类直切最大厚度作为坡口能力。
 - **折弯机**：模具选型（V 口宽度 vs 板厚）、回弹补偿角度、压力计算、滑块平行度
 - **焊接**：电流/电压/送丝速度匹配、气体流量、钨极/焊丝选型、层间温度控制
 - **空压机/气路**：压力露点、含油量标准、滤芯更换周期、管路压降计算
