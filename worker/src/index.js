@@ -193,7 +193,7 @@ function getRepairEstimateBoundary(message = '', content = '', isChinaMarket = f
     const hasQuoteBoundary = /不能直接给正式报价|无法直接给正式报价|不能给正式报价|非正式报价|不是正式报价/.test(text);
     const hasOfficialBoundary = /SAGEMRO\s*官方服务确认|SAGEMRO\s*确认正式诊断和报价|官方服务确认/.test(text);
     if (hasQuoteBoundary && hasOfficialBoundary) return '';
-    return '\n这不是正式报价，不能直接给正式报价；SAGEMRO 官方服务确认诊断后再给正式报价。';
+    return '\n正式报价取决于品牌、功率、故障模块和检测结果；不能直接给正式报价，需由 SAGEMRO 官方服务确认诊断后再给正式报价。';
   }
 
   const hasQuoteBoundary = /cannot give an official quote|can't give an official quote|not an official quote|no official quote/i.test(text);

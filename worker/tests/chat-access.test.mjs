@@ -539,6 +539,7 @@ test('handleChat appends official quote boundary to repair estimate answers when
     const text = await response.text();
     assert.match(text, /激光器维修报价取决于/);
     assert.match(text, /不能直接给正式报价/);
+    assert.match(text, /正式报价取决于/);
     assert.match(text, /SAGEMRO 官方服务确认/);
     assert.match(text, /data: \[DONE\]/);
   } finally {
