@@ -2598,6 +2598,7 @@ Follow the language policy strictly. Unless the user's current message explicitl
             : MAX_TOKENS.chat_quick;
           while (true) {
             const canCallTools = iteration < MAX_TOOL_ITERATIONS;
+            let retriedEmptyStream = false;
             const requestBody = {
               model: getChatModel(env),
               messages: currentMessages,
@@ -2661,6 +2662,57 @@ Follow the language policy strictly. Unless the user's current message explicitl
 
             // 本轮无 tool_calls（或已达上限）→ 这就是最终答复，退出
             if (!canCallTools || toolCalls.length === 0) {
+              if (!fullContent) {
+                if (!retriedEmptyStream && iteration === 0 && effectiveUserType === 'guest') {
+                  retriedEmptyStream = true;
+                  const retryMessages = [
+                    {
+                      role: 'system',
+                      content: `Reply in ${preferredLanguage}. Give exactly 5 short lines: likely direction, 3 checks, and 1 follow-up question with SAGEMRO official follow-up offer. Keep every line complete and concise.`,
+                    },
+                    { role: 'user', content: userMessageContent },
+                  ];
+                  const retryResponse = await fetch(env.OPENAI_API_ENDPOINT, {
+                    method: 'POST',
+                    headers: {
+                      'Content-Type': 'application/json',
+                      'Authorization': `Bearer ${env.OPENAI_API_KEY}`,
+                    },
+                    body: JSON.stringify({
+                      model: getChatModel(env),
+                      messages: retryMessages,
+                      stream: true,
+                      temperature: 0.3,
+                      max_tokens: MAX_TOKENS.chat_quick,
+                    }),
+                  });
+                  if (retryResponse.ok) {
+                    const {
+                      content: retryContent,
+                      finishReason: retryFinishReason,
+                    } = await consumeLlmStream({
+                      response: retryResponse,
+                      controller,
+                      encoder,
+                      convId,
+                      decoder,
+                    });
+                    fullContent += retryContent;
+                    if (
+                      fullContent &&
+                      (retryFinishReason === 'length' || looksLikeIncompleteAnswer(fullContent))
+                    ) {
+                      const recovery = getTruncatedAiResponseRecovery(isChinaMarket);
+                      fullContent += recovery;
+                      controller.enqueue(
+                        encoder.encode(
+                          `data: ${JSON.stringify({ content: recovery, conversation_id: convId })}\n`,
+                        ),
+                      );
+                    }
+                  }
+                }
+              }
               if (!fullContent) {
                 const fallback = getEmptyAiResponseFallback(isChinaMarket);
                 fullContent += fallback;

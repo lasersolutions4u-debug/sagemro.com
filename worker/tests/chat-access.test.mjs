@@ -249,14 +249,23 @@ test('handleChat keeps tools enabled for authenticated customers', async () => {
 test('handleChat sends localized fallback when upstream returns an empty stream', async () => {
   const { env } = makeEnv();
   const originalFetch = globalThis.fetch;
+  let fetchCount = 0;
 
-  globalThis.fetch = async () => new Response([
-    'data: [DONE]',
-    '',
-  ].join('\n'), {
+  globalThis.fetch = async () => {
+    fetchCount += 1;
+    const body = fetchCount === 1
+      ? ['data: [DONE]', ''].join('\n')
+      : [
+          'data: {"choices":[{"delta":{"content":"请先检查报警页面和设备型号。"},"finish_reason":"stop"}]}',
+          '',
+          'data: [DONE]',
+          '',
+        ].join('\n');
+    return new Response(body, {
     status: 200,
     headers: { 'Content-Type': 'text/event-stream' },
-  });
+    });
+  };
 
   try {
     const response = await handleChat(makeRequest({
@@ -269,6 +278,42 @@ test('handleChat sends localized fallback when upstream returns an empty stream'
 
     assert.equal(response.status, 200);
     const text = await response.text();
+    assert.equal(fetchCount, 2);
+    assert.match(text, /请先检查报警页面和设备型号/);
+    assert.match(text, /data: \[DONE\]/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('handleChat sends localized fallback when empty stream retry also returns empty', async () => {
+  const { env } = makeEnv();
+  const originalFetch = globalThis.fetch;
+  let fetchCount = 0;
+
+  globalThis.fetch = async () => {
+    fetchCount += 1;
+    return new Response([
+      'data: [DONE]',
+      '',
+    ].join('\n'), {
+      status: 200,
+      headers: { 'Content-Type': 'text/event-stream' },
+    });
+  };
+
+  try {
+    const response = await handleChat(makeRequest({
+      conversation_id: 'local-conv-empty-retry-cn',
+      message: 'My fiber laser cutter shows alarm E012. What should I check first?',
+      client_market: 'cn',
+      client_locale: 'zh-CN',
+      user_type: 'guest',
+    }, undefined, 'https://api.sagemro.cn/api/chat'), env);
+
+    assert.equal(response.status, 200);
+    const text = await response.text();
+    assert.equal(fetchCount, 2);
     assert.match(text, /SAGEMRO AI 暂时没有拿到有效回复/);
     assert.match(text, /data: \[DONE\]/);
   } finally {
