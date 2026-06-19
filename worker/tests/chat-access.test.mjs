@@ -99,7 +99,7 @@ test('handleChat passes international language context to the LLM', async () => 
     while (!(await reader.read()).done) {}
 
     const systemPrompt = capturedBody.messages[0].content;
-    assert.equal(capturedBody.max_tokens, 700);
+    assert.equal(capturedBody.max_tokens, 420);
     assert.equal(capturedBody.tools, undefined);
     assert.equal(capturedBody.tool_choice, undefined);
     assert.match(systemPrompt, /Critical output language for this turn/);
@@ -109,8 +109,8 @@ test('handleChat passes international language context to the LLM', async () => 
     assert.match(systemPrompt, /reply in the Required default reply language/);
     assert.match(systemPrompt, /Default first-turn structure/);
     assert.match(systemPrompt, /exactly 3 practical checks/);
-    assert.match(systemPrompt, /Ask only 1 follow-up question/);
-    assert.match(systemPrompt, /Maximum 6 short lines/);
+    assert.match(systemPrompt, /Ask exactly 1 follow-up question/);
+    assert.match(systemPrompt, /Exactly 5 short lines/);
     assert.match(systemPrompt, /This is the final response contract for the current turn/);
   } finally {
     globalThis.fetch = originalFetch;
@@ -149,7 +149,7 @@ test('handleChat passes China edition language context to the LLM', async () => 
     while (!(await reader.read()).done) {}
 
     const systemPrompt = capturedBody.messages[0].content;
-    assert.equal(capturedBody.max_tokens, 700);
+    assert.equal(capturedBody.max_tokens, 420);
     assert.equal(capturedBody.tools, undefined);
     assert.equal(capturedBody.tool_choice, undefined);
     assert.match(systemPrompt, /Critical output language for this turn/);
@@ -159,8 +159,8 @@ test('handleChat passes China edition language context to the LLM', async () => 
     assert.match(systemPrompt, /English alarm codes, brand names, CNC terms, or short English phrases do not count as a request to answer in English/);
     assert.match(systemPrompt, /Default first-turn structure/);
     assert.match(systemPrompt, /exactly 3 practical checks/);
-    assert.match(systemPrompt, /Ask only 1 follow-up question/);
-    assert.match(systemPrompt, /Maximum 6 short lines/);
+    assert.match(systemPrompt, /Ask exactly 1 follow-up question/);
+    assert.match(systemPrompt, /Exactly 5 short lines/);
     assert.match(systemPrompt, /This is the final response contract for the current turn/);
   } finally {
     globalThis.fetch = originalFetch;

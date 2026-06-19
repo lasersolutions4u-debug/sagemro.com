@@ -415,6 +415,25 @@ test('consumeLlmStream: chunk 跨网络包边界时 buffer 仍能正确解析', 
   assert.equal(emitted.length, 1);
 });
 
+test('consumeLlmStream: 流结束前最后一行没有换行也不会丢内容', async () => {
+  const chunks = [
+    'data: {"choices":[{"delta":{"content":"我可以把这整理"',
+    '}}]}',
+  ];
+  const { controller, emitted } = makeMockController();
+
+  const { content } = await consumeLlmStream({
+    response: makeMockLlmResponse(chunks),
+    controller,
+    encoder: new TextEncoder(),
+    convId: 'conv-final-buffer',
+    decoder: new TextDecoder(),
+  });
+
+  assert.equal(content, '我可以把这整理');
+  assert.equal(emitted.length, 1);
+});
+
 test('consumeLlmStream: 过滤缺 id/name 的残缺 tool_call', async () => {
   // 一个完整 call + 一个只有 index 没有 id 的脏数据
   const chunks = [

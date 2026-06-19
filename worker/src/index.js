@@ -2115,7 +2115,7 @@ async function enforceOpenAIBudget(env, { userKey, tag = 'chat' }) {
 //   summary: 工单摘要，短 JSON
 //   note:    核价点评，一句话 + 2 条建议
 const MAX_TOKENS = {
-  chat_quick: 700,
+  chat_quick: 420,
   chat: 1200,
   chat_tool_followup: 1200,
   summary: 500,
@@ -2149,6 +2149,52 @@ export async function consumeLlmStream({ response, controller, encoder, convId, 
   // 按 index 累积：OpenAI 流式规范 tool_calls[i] 的 id/name 首包到达，arguments 可分多包
   const toolCallsByIndex = new Map();
 
+  const processLine = (line) => {
+    const trimmed = line.trim();
+    if (!trimmed) return;
+    if (trimmed === 'data: [DONE]') return; // 外层统一发 DONE
+    if (!trimmed.startsWith('data: ')) return;
+
+    let data;
+    try {
+      data = JSON.parse(trimmed.slice(6));
+    } catch {
+      return;
+    }
+
+    const delta = data.choices?.[0]?.delta;
+    if (!delta) return;
+
+    if (delta.content) {
+      content += delta.content;
+      controller.enqueue(
+        encoder.encode(
+          `data: ${JSON.stringify({ content: delta.content, conversation_id: convId })}\n`,
+        ),
+      );
+    }
+
+    // DeepSeek V4 Pro thinking 模式：reasoning_content 必须在下一轮原样传回
+    if (delta.reasoning_content) {
+      reasoningContent += delta.reasoning_content;
+    }
+
+    if (Array.isArray(delta.tool_calls)) {
+      for (const tc of delta.tool_calls) {
+        const idx = tc.index ?? 0;
+        let acc = toolCallsByIndex.get(idx);
+        if (!acc) {
+          acc = { id: '', type: 'function', function: { name: '', arguments: '' } };
+          toolCallsByIndex.set(idx, acc);
+        }
+        if (tc.id) acc.id = tc.id;
+        if (tc.type) acc.type = tc.type;
+        if (tc.function?.name) acc.function.name = tc.function.name;
+        if (tc.function?.arguments) acc.function.arguments += tc.function.arguments;
+      }
+    }
+  };
+
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
@@ -2158,51 +2204,11 @@ export async function consumeLlmStream({ response, controller, encoder, convId, 
     buffer = lines.pop() || '';
 
     for (const line of lines) {
-      const trimmed = line.trim();
-      if (!trimmed) continue;
-      if (trimmed === 'data: [DONE]') continue; // 外层统一发 DONE
-      if (!trimmed.startsWith('data: ')) continue;
-
-      let data;
-      try {
-        data = JSON.parse(trimmed.slice(6));
-      } catch {
-        continue;
-      }
-
-      const delta = data.choices?.[0]?.delta;
-      if (!delta) continue;
-
-      if (delta.content) {
-        content += delta.content;
-        controller.enqueue(
-          encoder.encode(
-            `data: ${JSON.stringify({ content: delta.content, conversation_id: convId })}\n`,
-          ),
-        );
-      }
-
-      // DeepSeek V4 Pro thinking 模式：reasoning_content 必须在下一轮原样传回
-      if (delta.reasoning_content) {
-        reasoningContent += delta.reasoning_content;
-      }
-
-      if (Array.isArray(delta.tool_calls)) {
-        for (const tc of delta.tool_calls) {
-          const idx = tc.index ?? 0;
-          let acc = toolCallsByIndex.get(idx);
-          if (!acc) {
-            acc = { id: '', type: 'function', function: { name: '', arguments: '' } };
-            toolCallsByIndex.set(idx, acc);
-          }
-          if (tc.id) acc.id = tc.id;
-          if (tc.type) acc.type = tc.type;
-          if (tc.function?.name) acc.function.name = tc.function.name;
-          if (tc.function?.arguments) acc.function.arguments += tc.function.arguments;
-        }
-      }
+      processLine(line);
     }
   }
+  buffer += decoder.decode();
+  processLine(buffer);
 
   // 按 index 排序，过滤不完整的（没有 id 或 name 的不能发回 OpenAI）
   const toolCalls = [...toolCallsByIndex.entries()]
@@ -2413,10 +2419,9 @@ This instruction overrides examples, role prompts, previous conversation languag
 For sagemro.cn, English alarm codes, brand names, CNC terms, or short English phrases do not count as a request to answer in English.
 Default first-turn structure:
 - Give 1 likely direction.
-- Give exactly 3 practical checks.
-- Ask only 1 follow-up question.
-- Offer SAGEMRO official follow-up if needed.
-Maximum 6 short lines. Keep the first answer concise: usually 90-160 Chinese characters or 60-110 English words, unless the user asks for a detailed plan, table, report, or full checklist.
+- Give exactly 3 practical checks, one short sentence each.
+- Ask exactly 1 follow-up question, then offer SAGEMRO official follow-up in the same final line.
+Exactly 5 short lines. Keep the first answer concise: usually 80-140 Chinese characters or 50-90 English words, unless the user asks for a detailed plan, table, report, or full checklist.
 `;
     const marketContext = `
 
@@ -2435,10 +2440,10 @@ Follow the language policy strictly. Unless the user's current message explicitl
 - Reply in ${preferredLanguage}.
 - If the user did not explicitly request a detailed plan, table, report, or full checklist, write exactly 5 compact lines:
   1. Most likely direction.
-  2. Check 1.
-  3. Check 2.
-  4. Check 3.
-  5. One follow-up question plus a short SAGEMRO official follow-up offer.
+  2. Check 1 in one short sentence.
+  3. Check 2 in one short sentence.
+  4. Check 3 in one short sentence.
+  5. Exactly one follow-up question plus a short SAGEMRO official follow-up offer.
 - Do not add extra sections after line 5.
 - Do not let the answer end mid-sentence.`;
     const fullSystemPrompt = languageDirective + SYSTEM_PROMPT + rolePrompt + marketContext + dataContext + responseContract;
