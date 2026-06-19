@@ -121,7 +121,7 @@ export function ToolBar({
       )}
 
       {/* User area */}
-      <div className="border-t border-[var(--color-border)] mt-3 pt-3">
+      <div className={currentUser ? 'border-t border-[var(--color-border)] mt-3 pt-3' : ''}>
         {currentUser ? (
           <>
             <button

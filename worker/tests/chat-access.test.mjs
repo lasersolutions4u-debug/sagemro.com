@@ -110,6 +110,8 @@ test('handleChat passes international language context to the LLM', async () => 
     assert.match(systemPrompt, /Default first-turn structure/);
     assert.match(systemPrompt, /exactly 3 practical checks/);
     assert.match(systemPrompt, /Ask exactly 1 follow-up question/);
+    assert.match(systemPrompt, /Add a SAGEMRO official follow-up offer only when/);
+    assert.match(systemPrompt, /Do not push a work order or service request after a simple question is already answered clearly/);
     assert.match(systemPrompt, /Exactly 5 short lines/);
     assert.match(systemPrompt, /This is the final response contract for the current turn/);
   } finally {
@@ -160,6 +162,8 @@ test('handleChat passes China edition language context to the LLM', async () => 
     assert.match(systemPrompt, /Default first-turn structure/);
     assert.match(systemPrompt, /exactly 3 practical checks/);
     assert.match(systemPrompt, /Ask exactly 1 follow-up question/);
+    assert.match(systemPrompt, /Add a SAGEMRO official follow-up offer only when/);
+    assert.match(systemPrompt, /Do not push a work order or service request after a simple question is already answered clearly/);
     assert.match(systemPrompt, /Exactly 5 short lines/);
     assert.match(systemPrompt, /This is the final response contract for the current turn/);
   } finally {
