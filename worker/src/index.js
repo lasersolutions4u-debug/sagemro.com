@@ -94,6 +94,13 @@ function getAiFallbackMessage(env, error) {
   return 'SAGEMRO AI is temporarily unavailable. Please try again shortly, or leave the equipment details and SAGEMRO official service will follow up.';
 }
 
+function getEmptyAiResponseFallback(isChinaMarket) {
+  if (isChinaMarket) {
+    return 'SAGEMRO AI 暂时没有拿到有效回复。请把设备品牌、型号、报警代码和现场照片发给我，我会继续帮你整理成 SAGEMRO 官方服务跟进摘要。';
+  }
+  return 'SAGEMRO AI did not receive a valid reply this time. Please share the machine brand, model, alarm code, and site photos, and I can still prepare a SAGEMRO official service follow-up summary.';
+}
+
 function computeSlaDeadline(urgency) {
   const hours = SLA_HOURS[urgency] || SLA_HOURS.normal;
   return new Date(Date.now() + hours * 3600000).toISOString();
@@ -2628,6 +2635,15 @@ Follow the language policy strictly. Unless the user's current message explicitl
 
             // 本轮无 tool_calls（或已达上限）→ 这就是最终答复，退出
             if (!canCallTools || toolCalls.length === 0) {
+              if (!fullContent) {
+                const fallback = getEmptyAiResponseFallback(isChinaMarket);
+                fullContent += fallback;
+                controller.enqueue(
+                  encoder.encode(
+                    `data: ${JSON.stringify({ content: fallback, conversation_id: convId })}\n`,
+                  ),
+                );
+              }
               break;
             }
 

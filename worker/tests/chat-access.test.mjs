@@ -246,6 +246,36 @@ test('handleChat keeps tools enabled for authenticated customers', async () => {
   }
 });
 
+test('handleChat sends localized fallback when upstream returns an empty stream', async () => {
+  const { env } = makeEnv();
+  const originalFetch = globalThis.fetch;
+
+  globalThis.fetch = async () => new Response([
+    'data: [DONE]',
+    '',
+  ].join('\n'), {
+    status: 200,
+    headers: { 'Content-Type': 'text/event-stream' },
+  });
+
+  try {
+    const response = await handleChat(makeRequest({
+      conversation_id: 'local-conv-empty-cn',
+      message: 'My fiber laser cutter shows alarm E012. What should I check first?',
+      client_market: 'cn',
+      client_locale: 'zh-CN',
+      user_type: 'guest',
+    }, undefined, 'https://api.sagemro.cn/api/chat'), env);
+
+    assert.equal(response.status, 200);
+    const text = await response.text();
+    assert.match(text, /SAGEMRO AI 暂时没有拿到有效回复/);
+    assert.match(text, /data: \[DONE\]/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test('handleChat rejects a customer reading another customer conversation', async () => {
   const token = await signJwt({
     userId: 'customer-b',
