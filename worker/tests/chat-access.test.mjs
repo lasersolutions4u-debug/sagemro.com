@@ -100,6 +100,8 @@ test('handleChat passes international language context to the LLM', async () => 
 
     const systemPrompt = capturedBody.messages[0].content;
     assert.equal(capturedBody.max_tokens, 700);
+    assert.equal(capturedBody.tools, undefined);
+    assert.equal(capturedBody.tool_choice, undefined);
     assert.match(systemPrompt, /Critical output language for this turn/);
     assert.match(systemPrompt, /You MUST answer this turn in English/);
     assert.match(systemPrompt, /Market: International edition \/ sagemro\.com/);
@@ -148,6 +150,8 @@ test('handleChat passes China edition language context to the LLM', async () => 
 
     const systemPrompt = capturedBody.messages[0].content;
     assert.equal(capturedBody.max_tokens, 700);
+    assert.equal(capturedBody.tools, undefined);
+    assert.equal(capturedBody.tool_choice, undefined);
     assert.match(systemPrompt, /Critical output language for this turn/);
     assert.match(systemPrompt, /You MUST answer this turn in Simplified Chinese/);
     assert.match(systemPrompt, /Market: China edition \/ sagemro\.cn/);
@@ -195,6 +199,48 @@ test('handleChat keeps larger token budget when user asks for a detailed plan', 
     while (!(await reader.read()).done) {}
 
     assert.equal(capturedBody.max_tokens, 1200);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('handleChat keeps tools enabled for authenticated customers', async () => {
+  const token = await signJwt({
+    userId: 'cust-tools-1',
+    userType: 'customer',
+  }, JWT_SECRET);
+  const { env } = makeEnv();
+  const originalFetch = globalThis.fetch;
+  let capturedBody = null;
+
+  globalThis.fetch = async (_url, init) => {
+    capturedBody = JSON.parse(init.body);
+    return new Response([
+      'data: {"choices":[{"delta":{"content":"I can help."}}]}',
+      '',
+      'data: [DONE]',
+      '',
+    ].join('\n'), {
+      status: 200,
+      headers: { 'Content-Type': 'text/event-stream' },
+    });
+  };
+
+  try {
+    const response = await handleChat(makeRequest({
+      conversation_id: 'local-conv-customer-tools',
+      message: 'Please help me create a service case for alarm E012.',
+      client_market: 'com',
+      client_locale: 'en',
+      user_type: 'customer',
+    }, token), env);
+
+    assert.equal(response.status, 200);
+    const reader = response.body.getReader();
+    while (!(await reader.read()).done) {}
+
+    assert.ok(Array.isArray(capturedBody.tools));
+    assert.equal(capturedBody.tool_choice, 'auto');
   } finally {
     globalThis.fetch = originalFetch;
   }

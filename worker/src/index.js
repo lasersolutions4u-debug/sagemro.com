@@ -2574,7 +2574,7 @@ Follow the language policy strictly. Unless the user's current message explicitl
               max_tokens:
                 iteration === 0 ? firstTurnMaxTokens : MAX_TOKENS.chat_tool_followup,
             };
-            if (canCallTools && !preInjectedWorkOrder?.success) {
+            if (effectiveUserType !== 'guest' && canCallTools && !preInjectedWorkOrder?.success) {
               requestBody.tools = TOOLS_SCHEMAS;
               requestBody.tool_choice = 'auto';
             }
