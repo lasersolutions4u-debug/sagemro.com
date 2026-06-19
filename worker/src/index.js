@@ -101,6 +101,19 @@ function getEmptyAiResponseFallback(isChinaMarket) {
   return 'SAGEMRO AI did not receive a valid reply this time. Please share the machine brand, model, alarm code, and site photos, and I can still prepare a SAGEMRO official service follow-up summary.';
 }
 
+function getTruncatedAiResponseRecovery(isChinaMarket) {
+  if (isChinaMarket) {
+    return '\n刚才的 AI 回复可能不完整。请补充设备品牌、型号、报警页面照片或现场照片，SAGEMRO 官方服务可以继续帮你确认下一步。';
+  }
+  return '\nThe AI reply may be incomplete. Please share the machine brand, model, alarm screen, or site photos, and SAGEMRO official service can confirm the next step.';
+}
+
+function looksLikeIncompleteAnswer(content = '') {
+  const text = String(content || '').trim();
+  if (!text) return false;
+  return !/[。！？.!?)）]$/.test(text);
+}
+
 function computeSlaDeadline(urgency) {
   const hours = SLA_HOURS[urgency] || SLA_HOURS.normal;
   return new Date(Date.now() + hours * 3600000).toISOString();
@@ -2146,6 +2159,7 @@ export async function consumeLlmStream({ response, controller, encoder, convId, 
   let buffer = '';
   let content = '';
   let reasoningContent = '';
+  let finishReason = null;
   // 按 index 累积：OpenAI 流式规范 tool_calls[i] 的 id/name 首包到达，arguments 可分多包
   const toolCallsByIndex = new Map();
 
@@ -2162,7 +2176,11 @@ export async function consumeLlmStream({ response, controller, encoder, convId, 
       return;
     }
 
-    const delta = data.choices?.[0]?.delta;
+    const choice = data.choices?.[0];
+    if (choice?.finish_reason) {
+      finishReason = choice.finish_reason;
+    }
+    const delta = choice?.delta;
     if (!delta) return;
 
     if (delta.content) {
@@ -2216,7 +2234,7 @@ export async function consumeLlmStream({ response, controller, encoder, convId, 
     .map(([, v]) => v)
     .filter((tc) => tc.id && tc.function.name);
 
-  return { content, toolCalls, reasoningContent };
+  return { content, toolCalls, reasoningContent, finishReason };
 }
 
 // ============ 聊天图片上传 ============
@@ -2422,6 +2440,7 @@ Default first-turn structure:
 - Give exactly 3 practical checks, one short sentence each.
 - Ask exactly 1 follow-up question, then offer SAGEMRO official follow-up in the same final line.
 Exactly 5 short lines. Keep the first answer concise: usually 80-140 Chinese characters or 50-90 English words, unless the user asks for a detailed plan, table, report, or full checklist.
+Each line must be a complete sentence under 28 Chinese characters or 18 English words. Avoid parentheses, long explanations, and multiple causes in one line.
 `;
     const marketContext = `
 
@@ -2445,6 +2464,7 @@ Follow the language policy strictly. Unless the user's current message explicitl
   4. Check 3 in one short sentence.
   5. Exactly one follow-up question plus a short SAGEMRO official follow-up offer.
 - Do not add extra sections after line 5.
+- Avoid parentheses and long cause lists in quick answers.
 - Do not let the answer end mid-sentence.`;
     const fullSystemPrompt = languageDirective + SYSTEM_PROMPT + rolePrompt + marketContext + dataContext + responseContract;
 
@@ -2629,6 +2649,7 @@ Follow the language policy strictly. Unless the user's current message explicitl
               content: roundContent,
               toolCalls,
               reasoningContent: roundReasoning,
+              finishReason,
             } = await consumeLlmStream({
               response: apiResponse,
               controller,
@@ -2646,6 +2667,17 @@ Follow the language policy strictly. Unless the user's current message explicitl
                 controller.enqueue(
                   encoder.encode(
                     `data: ${JSON.stringify({ content: fallback, conversation_id: convId })}\n`,
+                  ),
+                );
+              } else if (
+                finishReason === 'length' ||
+                looksLikeIncompleteAnswer(fullContent)
+              ) {
+                const recovery = getTruncatedAiResponseRecovery(isChinaMarket);
+                fullContent += recovery;
+                controller.enqueue(
+                  encoder.encode(
+                    `data: ${JSON.stringify({ content: recovery, conversation_id: convId })}\n`,
                   ),
                 );
               }

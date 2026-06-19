@@ -434,6 +434,26 @@ test('consumeLlmStream: 流结束前最后一行没有换行也不会丢内容',
   assert.equal(emitted.length, 1);
 });
 
+test('consumeLlmStream: 捕获上游 finish_reason 供外层判断是否截断', async () => {
+  const chunks = [
+    'data: {"choices":[{"delta":{"content":"半句"},"finish_reason":null}]}\n',
+    'data: {"choices":[{"delta":{},"finish_reason":"length"}]}\n',
+    'data: [DONE]\n',
+  ];
+  const { controller } = makeMockController();
+
+  const { content, finishReason } = await consumeLlmStream({
+    response: makeMockLlmResponse(chunks),
+    controller,
+    encoder: new TextEncoder(),
+    convId: 'conv-finish-reason',
+    decoder: new TextDecoder(),
+  });
+
+  assert.equal(content, '半句');
+  assert.equal(finishReason, 'length');
+});
+
 test('consumeLlmStream: 过滤缺 id/name 的残缺 tool_call', async () => {
   // 一个完整 call + 一个只有 index 没有 id 的脏数据
   const chunks = [

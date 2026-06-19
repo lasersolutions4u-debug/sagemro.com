@@ -276,6 +276,41 @@ test('handleChat sends localized fallback when upstream returns an empty stream'
   }
 });
 
+test('handleChat appends localized recovery when upstream finishes mid-answer', async () => {
+  const { env } = makeEnv();
+  const originalFetch = globalThis.fetch;
+
+  globalThis.fetch = async () => new Response([
+    'data: {"choices":[{"delta":{"content":"E012 通常指向 Z 轴随动"},"finish_reason":null}]}',
+    '',
+    'data: {"choices":[{"delta":{},"finish_reason":"length"}]}',
+    '',
+    'data: [DONE]',
+    '',
+  ].join('\n'), {
+    status: 200,
+    headers: { 'Content-Type': 'text/event-stream' },
+  });
+
+  try {
+    const response = await handleChat(makeRequest({
+      conversation_id: 'local-conv-truncated-cn',
+      message: 'My fiber laser cutter shows alarm E012. What should I check first?',
+      client_market: 'cn',
+      client_locale: 'zh-CN',
+      user_type: 'guest',
+    }, undefined, 'https://api.sagemro.cn/api/chat'), env);
+
+    assert.equal(response.status, 200);
+    const text = await response.text();
+    assert.match(text, /E012 通常指向 Z 轴随动/);
+    assert.match(text, /刚才的 AI 回复可能不完整/);
+    assert.match(text, /data: \[DONE\]/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test('handleChat rejects a customer reading another customer conversation', async () => {
   const token = await signJwt({
     userId: 'customer-b',
