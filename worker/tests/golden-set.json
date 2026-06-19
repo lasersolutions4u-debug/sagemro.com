@@ -1,6 +1,6 @@
 {
-  "version": 2,
-  "description": "Golden set — 35 deterministic regression cases across role_guard (10), redact (10), assigned_service_tasks (10), conversation_history (5). v2 adds SummaryProtocol v1 pending_items coverage across all 5 prefix tags (missing_info, awaiting_confirmation, followup_due, service_followup, rating_pending).",
+  "version": 3,
+  "description": "Golden set — 38 deterministic regression cases across role_guard (10), redact (10), assigned_service_tasks (10), conversation_history (5), prompt_contract (3). v3 locks production-validated chat prompt rules for CN/COM language routing and simple-question conversion boundaries.",
   "cases": [
     {
       "id": "rg-001",
@@ -364,6 +364,60 @@
         "summaries_length": 1,
         "pending_items_prefix": "[rating_pending]",
         "pending_items_min_count": 1
+      }
+    },
+    {
+      "id": "pc-001",
+      "category": "prompt_contract",
+      "description": "中国站英文报警代码也必须默认简体中文",
+      "input": {
+        "url": "https://api.sagemro.cn/api/chat",
+        "origin": "https://sagemro.cn",
+        "message": "My fiber laser cutter shows alarm E012. What should I check first?"
+      },
+      "expect": {
+        "prompt_contains": [
+          "You MUST answer this turn in Simplified Chinese",
+          "Market: China edition / sagemro.cn",
+          "English alarm codes, brand names, CNC terms, or short English phrases do not count as a request to answer in English"
+        ],
+        "prompt_not_contains": [
+          "You MUST answer this turn in English"
+        ]
+      }
+    },
+    {
+      "id": "pc-002",
+      "category": "prompt_contract",
+      "description": "国际站英文报警问题默认英文",
+      "input": {
+        "url": "https://api.sagemro.com/api/chat",
+        "origin": "https://sagemro.com",
+        "message": "My fiber laser cutter shows alarm E012. What should I check first?"
+      },
+      "expect": {
+        "prompt_contains": [
+          "You MUST answer this turn in English",
+          "Market: International edition / sagemro.com",
+          "Reply in English"
+        ]
+      }
+    },
+    {
+      "id": "pc-003",
+      "category": "prompt_contract",
+      "description": "简单知识问题答清即可，不强推工单",
+      "input": {
+        "url": "https://api.sagemro.com/api/chat",
+        "origin": "https://sagemro.com",
+        "message": "What does a laser cutting nozzle do?"
+      },
+      "expect": {
+        "prompt_contains": [
+          "Do not push a work order or service request after a simple question is already answered clearly",
+          "Add a short SAGEMRO official follow-up offer only when manual confirmation, quotation, parts, service scheduling, safety handling, or official parameter verification is clearly useful",
+          "If the user did not explicitly request a detailed plan, table, report, or full checklist, write exactly 5 compact lines"
+        ]
       }
     }
   ]
