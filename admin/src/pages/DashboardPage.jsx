@@ -1,8 +1,59 @@
 import { useState, useEffect } from 'react';
 import { Archive, ClipboardCheck, FileText, Package, ShieldAlert, Timer, TrendingUp, UserCheck, Wrench } from 'lucide-react';
 import { getAdminStats } from '../services/api';
+import { runtimeConfig } from '../config/runtime';
+
+const TEXT = {
+  en: {
+    loading: 'Loading...',
+    loadFailed: 'Failed to load',
+    title: 'SAGEMRO Operations Console',
+    subtitle: 'Lead routing, official service confirmation, dispatch management, quote review, service quality, and compliant archiving.',
+    cards: {
+      aiLeadsToday: 'New AI leads today',
+      pendingReview: 'Service requests pending review',
+      highRiskDowntime: 'High-risk downtime issues',
+      pendingQuotes: 'Quotes pending review',
+      pendingDispatch: 'Pending dispatch',
+      inService: 'In service',
+      pendingArchive: 'Pending archive',
+      partsLeads: 'Parts leads',
+      euchioMachineLeads: 'Euchio machine leads',
+    },
+    status: {
+      pending: 'Pending',
+      inProgress: 'In progress',
+      completed: 'Completed',
+    },
+    statusDistribution: 'Service order status',
+  },
+  'zh-CN': {
+    loading: '加载中...',
+    loadFailed: '加载失败',
+    title: 'SAGEMRO Operations Console',
+    subtitle: '线索分流、官方服务确认、派工管理、报价审核、服务质量和合规归档。',
+    cards: {
+      aiLeadsToday: '今日新增 AI 线索',
+      pendingReview: '待审核服务申请',
+      highRiskDowntime: '高风险停机问题',
+      pendingQuotes: '待报价',
+      pendingDispatch: '待派工',
+      inService: '服务中',
+      pendingArchive: '待归档',
+      partsLeads: '备件线索',
+      euchioMachineLeads: 'Euchio 新机线索',
+    },
+    status: {
+      pending: '待处理',
+      inProgress: '处理中',
+      completed: '已完成',
+    },
+    statusDistribution: '工单状态分布',
+  },
+};
 
 export function DashboardPage() {
+  const t = TEXT[runtimeConfig.locale] || TEXT.en;
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -17,13 +68,13 @@ export function DashboardPage() {
   }, []);
 
   if (loading) {
-    return <div className="text-center py-12 text-[var(--color-text-muted)]">加载中...</div>;
+    return <div className="text-center py-12 text-[var(--color-text-muted)]">{t.loading}</div>;
   }
 
   if (error) {
     return (
       <div className="text-center py-12">
-        <div className="text-[var(--color-error)] mb-2">加载失败</div>
+        <div className="text-[var(--color-error)] mb-2">{t.loadFailed}</div>
         <div className="text-sm text-[var(--color-text-muted)]">{error}</div>
       </div>
     );
@@ -31,29 +82,29 @@ export function DashboardPage() {
 
   const operations = stats.operations || {};
   const cards = [
-    { icon: TrendingUp, label: '今日新增 AI 线索', value: operations.aiLeadsToday ?? 0, color: 'var(--color-info)' },
-    { icon: ClipboardCheck, label: '待审核服务申请', value: operations.pendingReview ?? stats.workOrders.pending, color: 'var(--color-primary)' },
-    { icon: ShieldAlert, label: '高风险停机问题', value: operations.highRiskDowntime ?? 0, color: 'var(--color-error)' },
-    { icon: FileText, label: '待报价', value: operations.pendingQuotes ?? 0, color: 'var(--color-warning)' },
-    { icon: UserCheck, label: '待派工', value: operations.pendingDispatch ?? stats.workOrders.pending, color: 'var(--color-info)' },
-    { icon: Wrench, label: '服务中', value: operations.inService ?? stats.workOrders.in_progress, color: 'var(--color-success)' },
-    { icon: Archive, label: '待归档', value: operations.pendingArchive ?? 0, color: 'var(--color-text-muted)' },
-    { icon: Package, label: '备件线索', value: operations.partsLeads ?? 0, color: 'var(--color-warning)' },
-    { icon: Timer, label: 'Euchio 新机线索', value: operations.euchioMachineLeads ?? 0, color: 'var(--color-primary)' },
+    { icon: TrendingUp, label: t.cards.aiLeadsToday, value: operations.aiLeadsToday ?? 0, color: 'var(--color-info)' },
+    { icon: ClipboardCheck, label: t.cards.pendingReview, value: operations.pendingReview ?? stats.workOrders.pending, color: 'var(--color-primary)' },
+    { icon: ShieldAlert, label: t.cards.highRiskDowntime, value: operations.highRiskDowntime ?? 0, color: 'var(--color-error)' },
+    { icon: FileText, label: t.cards.pendingQuotes, value: operations.pendingQuotes ?? 0, color: 'var(--color-warning)' },
+    { icon: UserCheck, label: t.cards.pendingDispatch, value: operations.pendingDispatch ?? stats.workOrders.pending, color: 'var(--color-info)' },
+    { icon: Wrench, label: t.cards.inService, value: operations.inService ?? stats.workOrders.in_progress, color: 'var(--color-success)' },
+    { icon: Archive, label: t.cards.pendingArchive, value: operations.pendingArchive ?? 0, color: 'var(--color-text-muted)' },
+    { icon: Package, label: t.cards.partsLeads, value: operations.partsLeads ?? 0, color: 'var(--color-warning)' },
+    { icon: Timer, label: t.cards.euchioMachineLeads, value: operations.euchioMachineLeads ?? 0, color: 'var(--color-primary)' },
   ];
 
   const statusItems = [
-    { label: '待处理', value: stats.workOrders.pending, color: 'var(--color-info)' },
-    { label: '处理中', value: stats.workOrders.in_progress, color: 'var(--color-warning)' },
-    { label: '已完成', value: stats.workOrders.completed, color: 'var(--color-success)' },
+    { label: t.status.pending, value: stats.workOrders.pending, color: 'var(--color-info)' },
+    { label: t.status.inProgress, value: stats.workOrders.in_progress, color: 'var(--color-warning)' },
+    { label: t.status.completed, value: stats.workOrders.completed, color: 'var(--color-success)' },
   ];
 
   return (
     <div>
       <div className="mb-6">
-        <h2 className="text-lg font-semibold">SAGEMRO Operations Console</h2>
+        <h2 className="text-lg font-semibold">{t.title}</h2>
         <p className="text-sm text-[var(--color-text-muted)] mt-1">
-          线索分流、官方服务确认、派工管理、报价审核、服务质量和合规归档。
+          {t.subtitle}
         </p>
       </div>
 
@@ -73,7 +124,7 @@ export function DashboardPage() {
       </div>
 
       <div className="rounded-xl bg-[var(--color-surface-elevated)] border border-[var(--color-border)] p-4">
-        <h3 className="text-sm font-medium mb-4">工单状态分布</h3>
+        <h3 className="text-sm font-medium mb-4">{t.statusDistribution}</h3>
         <div className="space-y-3">
           {statusItems.map((item) => {
             const total = stats.workOrders.total || 1;
