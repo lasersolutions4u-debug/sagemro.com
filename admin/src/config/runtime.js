@@ -15,6 +15,7 @@ export function resolveRuntimeConfig(hostname = currentHostname(), env = {}) {
     market,
     portal: 'admin',
     locale: market === 'cn' ? 'zh-CN' : 'en',
+    documentTitle: market === 'cn' ? 'SAGEMRO 管理后台' : 'SAGEMRO Operations Console',
     apiBase: env.VITE_API_BASE || (market === 'cn' ? 'https://api.sagemro.cn' : 'https://api.sagemro.com'),
   };
 }
