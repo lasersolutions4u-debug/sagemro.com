@@ -398,6 +398,7 @@ function App() {
               isOpen={legalModalOpen}
               onClose={() => setLegalModalOpen(false)}
               initialTab={legalInitialTab}
+              locale={runtimeConfig.locale}
             />
           )}
         </Suspense>
@@ -559,6 +560,7 @@ function App() {
         isOpen={legalModalOpen}
         onClose={() => setLegalModalOpen(false)}
         initialTab={legalInitialTab}
+        locale={runtimeConfig.locale}
       />
 
       {/* 推送通知 Banner（工程师在线时收到推送） */}

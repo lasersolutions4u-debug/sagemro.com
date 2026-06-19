@@ -8,7 +8,7 @@
     "build": "vite build && node scripts/set-build-market.mjs",
     "build:cn": "SAGEMRO_BUILD_MARKET=cn vite build && SAGEMRO_BUILD_MARKET=cn node scripts/set-build-market.mjs",
     "build:com": "SAGEMRO_BUILD_MARKET=com vite build && SAGEMRO_BUILD_MARKET=com node scripts/set-build-market.mjs",
-    "test": "node --test src/config/runtime.test.mjs src/i18n/uiText.test.mjs",
+    "test": "node --test src/config/runtime.test.mjs src/i18n/uiText.test.mjs src/components/common/legalContent.test.mjs",
     "lint": "eslint .",
     "preview": "vite preview"
   },
