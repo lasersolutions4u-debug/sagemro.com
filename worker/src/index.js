@@ -232,6 +232,29 @@ function getMachineSelectionBoundary(message = '', content = '', isChinaMarket =
   return '\nStart from material thickness, daily output, speed target, automation, and budget. For 8mm carbon steel, evaluate the 4-6 kW range first; EUCHIO can be compared when the upgrade is economically reasonable.';
 }
 
+function getSafetyBoundary(message = '', content = '', isChinaMarket = false) {
+  const promptText = String(message || '');
+  const asksUnsafeBypass =
+    /(短接|旁路|绕过|屏蔽|bypass|short|disable|jumper|bridge)/i.test(promptText) &&
+    /(安全门|联锁|安全联锁|interlock|guard|electrical cabinet|电柜|带电|powered)/i.test(promptText);
+  if (!asksUnsafeBypass) return '';
+
+  const text = String(content || '');
+  if (isChinaMarket) {
+    const hasDoNotBypass = /不要短接|不要绕过|禁止短接|禁止绕过/.test(text);
+    const hasStop = /停机|停止/.test(text);
+    const hasQualified = /具备资质|专业人员|专业工程师/.test(text);
+    if (hasDoNotBypass && hasStop && hasQualified) return '';
+    return '\n不要短接或绕过安全联锁；请立即停机，并由具备资质的人员检查安全门回路和报警记录。';
+  }
+
+  const hasDoNotBypass = /Do not bypass|Do not short|Do not jumper|Do not bridge/i.test(text);
+  const hasStop = /Stop the machine|Stop operation|stop cutting/i.test(text);
+  const hasQualified = /qualified personnel|qualified technician|qualified engineer/i.test(text);
+  if (hasDoNotBypass && hasStop && hasQualified) return '';
+  return '\nDo not bypass the safety interlock. Stop the machine and keep all guards active. Have qualified personnel inspect the interlock circuit and alarm record.';
+}
+
 function getRepairEstimateBoundary(message = '', content = '', isChinaMarket = false) {
   if (detectAiIntent(message) !== 'repair_estimate') return '';
 
@@ -2904,6 +2927,15 @@ Follow the language policy strictly. Unless the user's current message explicitl
                 controller.enqueue(
                   encoder.encode(
                     `data: ${JSON.stringify({ content: recovery, conversation_id: convId })}\n`,
+                  ),
+                );
+              }
+              const safetyBoundary = getSafetyBoundary(message, fullContent, isChinaMarket);
+              if (safetyBoundary) {
+                fullContent += safetyBoundary;
+                controller.enqueue(
+                  encoder.encode(
+                    `data: ${JSON.stringify({ content: safetyBoundary, conversation_id: convId })}\n`,
                   ),
                 );
               }

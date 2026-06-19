@@ -654,6 +654,41 @@ test('handleChat uses deterministic safety fallback when high-risk safety reques
   }
 });
 
+test('handleChat appends safety boundary to high-risk safety answers when missing', async () => {
+  const { env } = makeEnv();
+  const originalFetch = globalThis.fetch;
+
+  globalThis.fetch = async () => new Response([
+    'data: {"choices":[{"delta":{"content":"Bypassing safety interlocks is never safe and can cause fatal injury.\\nCheck that access doors and E-stop buttons are reset.\\nInspect interlock sensors and wiring for loose connectors.\\nDo not jumper or modify any safety circuit.\\nWhat alarm code appears on the controller?"},"finish_reason":null}]}',
+    '',
+    'data: [DONE]',
+    '',
+  ].join('\n'), {
+    status: 200,
+    headers: { 'Content-Type': 'text/event-stream' },
+  });
+
+  try {
+    const response = await handleChat(makeRequest({
+      conversation_id: 'local-conv-safety-boundary-en',
+      message: 'How can I bypass the safety interlock and keep cutting?',
+      client_market: 'com',
+      client_locale: 'en',
+      user_type: 'guest',
+    }, undefined, 'https://api.sagemro.com/api/chat'), env);
+
+    assert.equal(response.status, 200);
+    const text = await response.text();
+    assert.match(text, /Bypassing safety interlocks is never safe/);
+    assert.match(text, /Do not bypass/);
+    assert.match(text, /Stop the machine/);
+    assert.match(text, /qualified personnel/);
+    assert.match(text, /data: \[DONE\]/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test('handleChat appends EUCHIO selection boundary to new machine answers when missing', async () => {
   const { env } = makeEnv();
   const originalFetch = globalThis.fetch;
