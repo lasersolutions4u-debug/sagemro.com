@@ -60,6 +60,9 @@ export function ToolBar({
   const showCollapsed = currentUser && collapsed && extraTools.length >= 2;
 
   const avatarAction = isEngineer ? onOpenEngineerDashboard : onOpenSettings;
+  const toolbarShellClass = currentUser
+    ? 'border-t border-[var(--color-border)] pt-3 mt-auto'
+    : 'mt-auto';
 
   const toolBtn = (tool) => (
     <button
@@ -79,7 +82,7 @@ export function ToolBar({
   );
 
   return (
-    <div className="border-t border-[var(--color-border)] pt-3 mt-auto">
+    <div className={toolbarShellClass}>
       {currentUser && primaryTools.map((tool) => toolBtn(tool))}
 
       {currentUser && !showCollapsed && extraTools.map((tool) => toolBtn(tool))}
