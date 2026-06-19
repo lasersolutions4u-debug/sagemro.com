@@ -199,7 +199,7 @@ function getRepairEstimateBoundary(message = '', content = '', isChinaMarket = f
   const hasQuoteBoundary = /cannot give an official quote|can't give an official quote|not an official quote|no official quote/i.test(text);
   const hasOfficialBoundary = /SAGEMRO official service confirms|confirmed by SAGEMRO official service|official service confirms/i.test(text);
   if (hasQuoteBoundary && hasOfficialBoundary) return '';
-  return '\nThis is not an official quote; SAGEMRO official service confirms the final diagnosis and quote.';
+  return '\nI cannot give an official quote from this description alone; the final quote depends on brand, power, failed module, and inspection result. SAGEMRO official service confirms the final diagnosis and quote.';
 }
 
 function getTruncatedAiResponseRecovery(isChinaMarket) {

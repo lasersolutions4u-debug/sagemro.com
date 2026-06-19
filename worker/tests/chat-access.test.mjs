@@ -585,7 +585,7 @@ test('handleChat appends English official quote boundary to repair estimate answ
   const originalFetch = globalThis.fetch;
 
   globalThis.fetch = async () => new Response([
-    'data: {"choices":[{"delta":{"content":"Laser source repair cost depends on the failed module and inspection result.\\nCheck alarm history first.\\nConfirm laser output status.\\nReview prior repair records.\\nWhat brand and power is the laser source?"},"finish_reason":null}]}',
+    'data: {"choices":[{"delta":{"content":"Laser source repair cost needs the failed module and inspection result first.\\nCheck alarm history first.\\nConfirm laser output status.\\nReview prior repair records.\\nWhat brand and power is the laser source?"},"finish_reason":null}]}',
     '',
     'data: [DONE]',
     '',
@@ -605,8 +605,9 @@ test('handleChat appends English official quote boundary to repair estimate answ
 
     assert.equal(response.status, 200);
     const text = await response.text();
-    assert.match(text, /Laser source repair cost depends/);
-    assert.match(text, /not an official quote/);
+    assert.match(text, /Laser source repair cost needs/);
+    assert.match(text, /cannot give an official quote/);
+    assert.match(text, /depends on/);
     assert.match(text, /SAGEMRO official service confirms/);
     assert.match(text, /data: \[DONE\]/);
   } finally {
