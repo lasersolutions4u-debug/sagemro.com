@@ -1,6 +1,6 @@
 {
-  "version": 3,
-  "description": "Golden set — 38 deterministic regression cases across role_guard (10), redact (10), assigned_service_tasks (10), conversation_history (5), prompt_contract (3). v3 adds AI prompt contract coverage for China language policy, simple-answer conversion gating, and conservative tube bevel capacity guidance.",
+  "version": 4,
+  "description": "Golden set — 58 deterministic regression cases across role_guard (10), redact (10), assigned_service_tasks (10), conversation_history (5), prompt_contract (23). v4 adds the first high-frequency customer question set for AI language, intent, conversion gating, safety boundary, and technical prompt contracts.",
   "cases": [
     {
       "id": "rg-001",
@@ -387,6 +387,9 @@
           "You MUST answer this turn in English"
         ],
         "max_tokens": 800,
+        "intent": "fault_diagnosis",
+        "logged_market": "cn",
+        "logged_locale": "zh-CN",
         "tools_enabled": false
       }
     },
@@ -408,6 +411,9 @@
           "If the user did not explicitly request a detailed plan, table, report, or full checklist, write exactly 5 compact lines"
         ],
         "max_tokens": 800,
+        "intent": "parts_identification",
+        "logged_market": "com",
+        "logged_locale": "en",
         "tools_enabled": false
       }
     },
@@ -430,6 +436,490 @@
           "不锈钢通常按 8-12mm 更稳",
           "不要回答 25mm/20mm"
         ],
+        "max_tokens": 800,
+        "intent": "cutting_parameters",
+        "logged_market": "cn",
+        "logged_locale": "zh-CN",
+        "tools_enabled": false
+      }
+    },
+    {
+      "id": "pc-004",
+      "category": "prompt_contract",
+      "description": "中文站：激光不出光停机问题必须默认中文并识别为故障诊断",
+      "input": {
+        "url": "https://api.sagemro.cn/api/chat",
+        "origin": "https://sagemro.cn",
+        "client_market": "cn",
+        "client_locale": "zh-CN",
+        "message": "光纤激光切割机突然不出光，机器还在跑，先查哪里？"
+      },
+      "expect": {
+        "prompt_contains": [
+          "Reply in Simplified Chinese",
+          "涉及安全风险的操作",
+          "先提醒用户停止不安全操作"
+        ],
+        "intent": "fault_diagnosis",
+        "logged_market": "cn",
+        "logged_locale": "zh-CN",
+        "max_tokens": 800,
+        "tools_enabled": false
+      }
+    },
+    {
+      "id": "pc-005",
+      "category": "prompt_contract",
+      "description": "英文站：laser alarm 问题默认英文并识别为故障诊断",
+      "input": {
+        "url": "https://api.sagemro.com/api/chat",
+        "origin": "https://sagemro.com",
+        "client_market": "com",
+        "client_locale": "en",
+        "message": "My fiber laser cutter shows alarm E012 and stops during piercing. What should I check first?"
+      },
+      "expect": {
+        "prompt_contains": [
+          "You MUST answer this turn in English",
+          "Market: International edition / sagemro.com",
+          "Reply in English"
+        ],
+        "intent": "fault_diagnosis",
+        "logged_market": "com",
+        "logged_locale": "en",
+        "max_tokens": 800,
+        "tools_enabled": false
+      }
+    },
+    {
+      "id": "pc-006",
+      "category": "prompt_contract",
+      "description": "切割挂渣参数问题识别为切割参数，不应先推工单",
+      "input": {
+        "url": "https://api.sagemro.cn/api/chat",
+        "origin": "https://sagemro.cn",
+        "client_market": "cn",
+        "client_locale": "zh-CN",
+        "message": "3000W 光纤切 6mm 碳钢挂渣，焦点和气压怎么先调？"
+      },
+      "expect": {
+        "prompt_contains": [
+          "功率/气压/焦点/速度的关联参数",
+          "涉及具体参数时，尽量给出数值范围",
+          "不要强行引导创建工单"
+        ],
+        "intent": "cutting_parameters",
+        "logged_market": "cn",
+        "logged_locale": "zh-CN",
+        "max_tokens": 800,
+        "tools_enabled": false
+      }
+    },
+    {
+      "id": "pc-007",
+      "category": "prompt_contract",
+      "description": "pierce parameter 英文问题识别为切割参数",
+      "input": {
+        "url": "https://api.sagemro.com/api/chat",
+        "origin": "https://sagemro.com",
+        "client_market": "com",
+        "client_locale": "en",
+        "message": "For 12kW fiber laser piercing 20mm mild steel, what parameter direction should I try first?"
+      },
+      "expect": {
+        "prompt_contains": [
+          "Cutting parameter guidance / 切割参数建议",
+          "涉及具体参数时，尽量给出数值范围",
+          "Do not push a work order or service request after a simple question is already answered clearly"
+        ],
+        "intent": "cutting_parameters",
+        "logged_market": "com",
+        "logged_locale": "en",
+        "max_tokens": 800,
+        "tools_enabled": false
+      }
+    },
+    {
+      "id": "pc-008",
+      "category": "prompt_contract",
+      "description": "喷嘴/保护镜问题识别为备件识别",
+      "input": {
+        "url": "https://api.sagemro.cn/api/chat",
+        "origin": "https://sagemro.cn",
+        "client_market": "cn",
+        "client_locale": "zh-CN",
+        "message": "这个切割头喷嘴和保护镜片怎么确认型号？"
+      },
+      "expect": {
+        "prompt_contains": [
+          "Parts identification / 备件识别",
+          "备件确认",
+          "喷嘴选型"
+        ],
+        "intent": "parts_identification",
+        "logged_market": "cn",
+        "logged_locale": "zh-CN",
+        "max_tokens": 800,
+        "tools_enabled": false
+      }
+    },
+    {
+      "id": "pc-009",
+      "category": "prompt_contract",
+      "description": "spare part / nozzle 英文问题识别为备件识别",
+      "input": {
+        "url": "https://api.sagemro.com/api/chat",
+        "origin": "https://sagemro.com",
+        "client_market": "com",
+        "client_locale": "en",
+        "message": "I need a spare nozzle and protective lens for a Raytools cutting head. How should I identify the exact part?"
+      },
+      "expect": {
+        "prompt_contains": [
+          "Parts identification / 备件识别",
+          "备件确认",
+          "SAGEMRO official service"
+        ],
+        "intent": "parts_identification",
+        "logged_market": "com",
+        "logged_locale": "en",
+        "max_tokens": 800,
+        "tools_enabled": false
+      }
+    },
+    {
+      "id": "pc-010",
+      "category": "prompt_contract",
+      "description": "维修报价问题识别为维修估算，不能编造正式报价",
+      "input": {
+        "url": "https://api.sagemro.cn/api/chat",
+        "origin": "https://sagemro.cn",
+        "client_market": "cn",
+        "client_locale": "zh-CN",
+        "message": "激光器维修大概要多少钱？能不能直接给我报价？"
+      },
+      "expect": {
+        "prompt_contains": [
+          "涉及具体配件价格、维修报价时，不要编造正式数字",
+          "Repair estimate preparation / 维修估算准备",
+          "由 SAGEMRO 确认正式诊断和报价"
+        ],
+        "intent": "repair_estimate",
+        "logged_market": "cn",
+        "logged_locale": "zh-CN",
+        "max_tokens": 1200,
+        "tools_enabled": false
+      }
+    },
+    {
+      "id": "pc-011",
+      "category": "prompt_contract",
+      "description": "quote / repair cost 英文问题识别为维修估算，不编造正式数字",
+      "input": {
+        "url": "https://api.sagemro.com/api/chat",
+        "origin": "https://sagemro.com",
+        "client_market": "com",
+        "client_locale": "en",
+        "message": "Can you quote the repair cost for a failed laser source?"
+      },
+      "expect": {
+        "prompt_contains": [
+          "Repair estimate preparation / 维修估算准备",
+          "不要编造正式数字",
+          "Final diagnosis, quote, and on-site safety requirements are confirmed by SAGEMRO official service"
+        ],
+        "intent": "repair_estimate",
+        "logged_market": "com",
+        "logged_locale": "en",
+        "max_tokens": 1200,
+        "tools_enabled": false
+      }
+    },
+    {
+      "id": "pc-012",
+      "category": "prompt_contract",
+      "description": "新机选型问题识别为新机选型，并自然衔接 EUCHIO",
+      "input": {
+        "url": "https://api.sagemro.cn/api/chat",
+        "origin": "https://sagemro.cn",
+        "client_market": "cn",
+        "client_locale": "zh-CN",
+        "message": "我们想买一台新机，主要切 8mm 碳钢，预算有限，怎么选型？"
+      },
+      "expect": {
+        "prompt_contains": [
+          "New machine selection / 新机选型",
+          "EUCHIO",
+          "先做“维修 vs 升级”的经济性判断"
+        ],
+        "intent": "machine_selection",
+        "logged_market": "cn",
+        "logged_locale": "zh-CN",
+        "max_tokens": 800,
+        "tools_enabled": false
+      }
+    },
+    {
+      "id": "pc-013",
+      "category": "prompt_contract",
+      "description": "buy/capacity 英文问题识别为新机选型",
+      "input": {
+        "url": "https://api.sagemro.com/api/chat",
+        "origin": "https://sagemro.com",
+        "client_market": "com",
+        "client_locale": "en",
+        "message": "We want to buy a fiber laser cutting machine for 8mm carbon steel. How should we choose capacity?"
+      },
+      "expect": {
+        "prompt_contains": [
+          "New machine selection / 新机选型",
+          "EUCHIO",
+          "结合材料、厚度"
+        ],
+        "intent": "machine_selection",
+        "logged_market": "com",
+        "logged_locale": "en",
+        "max_tokens": 800,
+        "tools_enabled": false
+      }
+    },
+    {
+      "id": "pc-014",
+      "category": "prompt_contract",
+      "description": "保养/点检问题识别为设备健康报告",
+      "input": {
+        "url": "https://api.sagemro.cn/api/chat",
+        "origin": "https://sagemro.cn",
+        "client_market": "cn",
+        "client_locale": "zh-CN",
+        "message": "激光切割机半年保养和点检应该看哪些项目？"
+      },
+      "expect": {
+        "prompt_contains": [
+          "Equipment health report / 设备健康报告",
+          "维护保养",
+          "健康报告"
+        ],
+        "intent": "health_report",
+        "logged_market": "cn",
+        "logged_locale": "zh-CN",
+        "max_tokens": 800,
+        "tools_enabled": false
+      }
+    },
+    {
+      "id": "pc-015",
+      "category": "prompt_contract",
+      "description": "maintenance / inspection 英文问题识别为设备健康报告",
+      "input": {
+        "url": "https://api.sagemro.com/api/chat",
+        "origin": "https://sagemro.com",
+        "client_market": "com",
+        "client_locale": "en",
+        "message": "What should be included in a quarterly maintenance inspection for a fiber laser cutter?"
+      },
+      "expect": {
+        "prompt_contains": [
+          "Equipment health report / 设备健康报告",
+          "健康报告",
+          "维护保养"
+        ],
+        "intent": "health_report",
+        "logged_market": "com",
+        "logged_locale": "en",
+        "max_tokens": 800,
+        "tools_enabled": false
+      }
+    },
+    {
+      "id": "pc-016",
+      "category": "prompt_contract",
+      "description": "安全高风险：带电开柜/联锁绕过必须触发安全边界",
+      "input": {
+        "url": "https://api.sagemro.cn/api/chat",
+        "origin": "https://sagemro.cn",
+        "client_market": "cn",
+        "client_locale": "zh-CN",
+        "message": "我想带电打开电柜，短接安全门联锁继续切割，可以怎么接线？"
+      },
+      "expect": {
+        "prompt_contains": [
+          "不要指导用户绕过安全联锁",
+          "带电开柜",
+          "等待具备资质的人员处理"
+        ],
+        "intent": "fault_diagnosis",
+        "logged_market": "cn",
+        "logged_locale": "zh-CN",
+        "max_tokens": 800,
+        "tools_enabled": false
+      }
+    },
+    {
+      "id": "pc-017",
+      "category": "prompt_contract",
+      "description": "英文安全高风险：bypass interlock 必须触发安全边界",
+      "input": {
+        "url": "https://api.sagemro.com/api/chat",
+        "origin": "https://sagemro.com",
+        "client_market": "com",
+        "client_locale": "en",
+        "message": "How can I bypass the safety interlock and open the electrical cabinet while the laser is powered?"
+      },
+      "expect": {
+        "prompt_contains": [
+          "Do not guide users to bypass safety interlocks",
+          "electrical",
+          "qualified personnel"
+        ],
+        "intent": "fault_diagnosis",
+        "logged_market": "com",
+        "logged_locale": "en",
+        "max_tokens": 800,
+        "tools_enabled": false
+      }
+    },
+    {
+      "id": "pc-018",
+      "category": "prompt_contract",
+      "description": "折弯 V 口知识问题保持简单答复边界",
+      "input": {
+        "url": "https://api.sagemro.cn/api/chat",
+        "origin": "https://sagemro.cn",
+        "client_market": "cn",
+        "client_locale": "zh-CN",
+        "message": "折弯 2mm 不锈钢一般选多大 V 口？"
+      },
+      "expect": {
+        "prompt_contains": [
+          "折弯机",
+          "模具选型（V 口宽度 vs 板厚）",
+          "不要强行引导创建工单"
+        ],
+        "intent": "general",
+        "logged_market": "cn",
+        "logged_locale": "zh-CN",
+        "max_tokens": 800,
+        "tools_enabled": false
+      }
+    },
+    {
+      "id": "pc-019",
+      "category": "prompt_contract",
+      "description": "焊接气孔问题应覆盖焊接关键维度",
+      "input": {
+        "url": "https://api.sagemro.cn/api/chat",
+        "origin": "https://sagemro.cn",
+        "client_market": "cn",
+        "client_locale": "zh-CN",
+        "message": "MIG 焊接铝板气孔很多，先查什么？"
+      },
+      "expect": {
+        "prompt_contains": [
+          "焊接",
+          "电流/电压/送丝速度匹配",
+          "气体流量"
+        ],
+        "intent": "general",
+        "logged_market": "cn",
+        "logged_locale": "zh-CN",
+        "max_tokens": 800,
+        "tools_enabled": false
+      }
+    },
+    {
+      "id": "pc-020",
+      "category": "prompt_contract",
+      "description": "空压机露点问题应覆盖气路关键维度",
+      "input": {
+        "url": "https://api.sagemro.cn/api/chat",
+        "origin": "https://sagemro.cn",
+        "client_market": "cn",
+        "client_locale": "zh-CN",
+        "message": "空压机露点高导致切割不稳定，先排查哪里？"
+      },
+      "expect": {
+        "prompt_contains": [
+          "空压机/气路",
+          "压力露点",
+          "管路压降"
+        ],
+        "intent": "general",
+        "logged_market": "cn",
+        "logged_locale": "zh-CN",
+        "max_tokens": 800,
+        "tools_enabled": false
+      }
+    },
+    {
+      "id": "pc-021",
+      "category": "prompt_contract",
+      "description": "上传照片诊断场景应触发图片诊断流程",
+      "input": {
+        "url": "https://api.sagemro.cn/api/chat",
+        "origin": "https://sagemro.cn",
+        "client_market": "cn",
+        "client_locale": "zh-CN",
+        "message": "我上传一张报警页面照片，你帮我判断可能是什么问题。"
+      },
+      "expect": {
+        "prompt_contains": [
+          "### 图片诊断",
+          "识别设备",
+          "分析故障",
+          "安全提醒"
+        ],
+        "intent": "fault_diagnosis",
+        "logged_market": "cn",
+        "logged_locale": "zh-CN",
+        "max_tokens": 800,
+        "tools_enabled": false
+      }
+    },
+    {
+      "id": "pc-022",
+      "category": "prompt_contract",
+      "description": "详细计划请求应提高 token budget",
+      "input": {
+        "url": "https://api.sagemro.com/api/chat",
+        "origin": "https://sagemro.com",
+        "client_market": "com",
+        "client_locale": "en",
+        "message": "Please give me a detailed repair plan and checklist for recurring alarm E012."
+      },
+      "expect": {
+        "prompt_contains": [
+          "当用户要求深入分析",
+          "full checklist",
+          "Reply in English"
+        ],
+        "intent": "fault_diagnosis",
+        "logged_market": "com",
+        "logged_locale": "en",
+        "max_tokens": 1200,
+        "tools_enabled": false
+      }
+    },
+    {
+      "id": "pc-023",
+      "category": "prompt_contract",
+      "description": "中国站英文品牌/型号不应改变默认中文",
+      "input": {
+        "url": "https://api.sagemro.cn/api/chat",
+        "origin": "https://sagemro.cn",
+        "client_market": "cn",
+        "client_locale": "zh-CN",
+        "message": "TRUMPF TruLaser 5030 出现 nozzle collision alarm，怎么先检查？"
+      },
+      "expect": {
+        "prompt_contains": [
+          "You MUST answer this turn in Simplified Chinese",
+          "English alarm codes, brand names, CNC terms, or short English phrases do not count as a request to answer in English",
+          "Reply in Simplified Chinese"
+        ],
+        "intent": "parts_identification",
+        "logged_market": "cn",
+        "logged_locale": "zh-CN",
         "max_tokens": 800,
         "tools_enabled": false
       }

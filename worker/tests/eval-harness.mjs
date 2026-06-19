@@ -103,6 +103,7 @@ function makeGenericEnv() {
 }
 
 function makePromptContractEnv() {
+  const aiLogs = [];
   const DB = {
     prepare(sql) {
       return {
@@ -119,6 +120,15 @@ function makePromptContractEnv() {
           return { results: [] };
         },
         async run() {
+          if (/INSERT INTO ai_interactions/.test(sql)) {
+            aiLogs.push({
+              market: this._args[4],
+              locale: this._args[5],
+              intent: this._args[6],
+              message: this._args[7],
+              response: this._args[8],
+            });
+          }
           return { success: true, meta: { changes: 1 } };
         },
       };
@@ -130,13 +140,16 @@ function makePromptContractEnv() {
     async delete() {},
   };
   return {
-    DB,
-    KV,
-    JWT_SECRET: 'golden-prompt-contract-secret-32',
-    OPENAI_API_ENDPOINT: 'https://llm.invalid',
-    OPENAI_API_KEY: 'golden-test-key',
-    OPENAI_DAILY_PER_USER: '999',
-    OPENAI_DAILY_TOTAL: '999',
+    env: {
+      DB,
+      KV,
+      JWT_SECRET: 'golden-prompt-contract-secret-32',
+      OPENAI_API_ENDPOINT: 'https://llm.invalid',
+      OPENAI_API_KEY: 'golden-test-key',
+      OPENAI_DAILY_PER_USER: '999',
+      OPENAI_DAILY_TOTAL: '999',
+    },
+    aiLogs,
   };
 }
 
@@ -527,7 +540,7 @@ async function runConversationHistory(cas) {
 }
 
 async function runPromptContract(cas) {
-  const env = makePromptContractEnv();
+  const { env, aiLogs } = makePromptContractEnv();
   const originalFetch = globalThis.fetch;
   let capturedBody = null;
 
@@ -578,6 +591,24 @@ async function runPromptContract(cas) {
     const enabled = Array.isArray(capturedBody.tools) || capturedBody.tool_choice !== undefined;
     if (enabled !== cas.expect.tools_enabled) {
       failures.push(`tools_enabled: want ${cas.expect.tools_enabled}, got ${enabled}`);
+    }
+  }
+  if ('intent' in cas.expect) {
+    const got = aiLogs[aiLogs.length - 1]?.intent;
+    if (got !== cas.expect.intent) {
+      failures.push(`intent: want ${cas.expect.intent}, got ${got}`);
+    }
+  }
+  if ('logged_market' in cas.expect) {
+    const got = aiLogs[aiLogs.length - 1]?.market;
+    if (got !== cas.expect.logged_market) {
+      failures.push(`logged_market: want ${cas.expect.logged_market}, got ${got}`);
+    }
+  }
+  if ('logged_locale' in cas.expect) {
+    const got = aiLogs[aiLogs.length - 1]?.locale;
+    if (got !== cas.expect.logged_locale) {
+      failures.push(`logged_locale: want ${cas.expect.logged_locale}, got ${got}`);
     }
   }
 

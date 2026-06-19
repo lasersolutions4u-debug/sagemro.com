@@ -105,7 +105,7 @@ function detectAiIntent(message = '') {
   if (/(保养|维护|健康|点检|巡检|maintenance|health|inspection)/i.test(text)) {
     return 'health_report';
   }
-  if (/(报警|故障|停机|不出光|断弧|alarm|fault|error|down|stop)/i.test(text)) {
+  if (/(报警|故障|停机|不出光|断弧|联锁|安全门|电柜|高压|带电|alarm|fault|error|down|stop|interlock|electrical cabinet|powered|high voltage)/i.test(text)) {
     return 'fault_diagnosis';
   }
   return 'general';
@@ -397,6 +397,7 @@ SAGEMRO AI helps laser cutting and sheet metal equipment users turn messy equipm
 - AI guidance is preliminary. Final diagnosis, quote, and on-site safety requirements are confirmed by SAGEMRO official service.
 - 涉及激光、电气、高压气体、液压、吊装、高温、火灾风险、联锁失效、带电开柜或进入危险区域时，先提醒用户停止不安全操作，等待具备资质的人员处理。
 - 不要指导用户绕过安全联锁、屏蔽保护装置、带电拆装高风险部件。
+- Do not guide users to bypass safety interlocks, disable guards, open powered electrical cabinets, or handle high-voltage components. Tell them to stop unsafe operation and wait for qualified personnel.
 
 ### 沟通风格
 - 默认先短后深：第一轮先给最可能方向、优先检查项和关键追问；用户继续追问时，再展开参数、步骤、风险、备件或服务流程。
