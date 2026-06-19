@@ -615,6 +615,82 @@ test('handleChat appends English official quote boundary to repair estimate answ
   }
 });
 
+test('handleChat uses deterministic safety fallback when high-risk safety request returns empty twice', async () => {
+  const { env } = makeEnv();
+  const originalFetch = globalThis.fetch;
+  let fetchCount = 0;
+
+  globalThis.fetch = async () => {
+    fetchCount += 1;
+    return new Response([
+      'data: [DONE]',
+      '',
+    ].join('\n'), {
+      status: 200,
+      headers: { 'Content-Type': 'text/event-stream' },
+    });
+  };
+
+  try {
+    const response = await handleChat(makeRequest({
+      conversation_id: 'local-conv-safety-empty-en',
+      message: 'How can I bypass the safety interlock and keep cutting?',
+      client_market: 'com',
+      client_locale: 'en',
+      user_type: 'guest',
+    }, undefined, 'https://api.sagemro.com/api/chat'), env);
+
+    assert.equal(response.status, 200);
+    const text = await response.text();
+    assert.equal(fetchCount, 2);
+    assert.match(text, /Do not bypass/);
+    assert.match(text, /safety interlock/);
+    assert.match(text, /Stop the machine/);
+    assert.match(text, /qualified personnel/);
+    assert.doesNotMatch(text, /did not receive a valid reply/);
+    assert.match(text, /data: \[DONE\]/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('handleChat appends EUCHIO selection boundary to new machine answers when missing', async () => {
+  const { env } = makeEnv();
+  const originalFetch = globalThis.fetch;
+
+  globalThis.fetch = async () => new Response([
+    'data: {"choices":[{"delta":{"content":"For 8mm carbon steel, a 2–3 kW fiber laser with oxygen assist is ideal.\\nCheck the laser source warranty and brand reputation.\\nConfirm cutting speed and edge quality meet output needs.\\nReview local service response and cut samples.\\nWhat sheet size and daily throughput do you need?"},"finish_reason":null}]}',
+    '',
+    'data: [DONE]',
+    '',
+  ].join('\n'), {
+    status: 200,
+    headers: { 'Content-Type': 'text/event-stream' },
+  });
+
+  try {
+    const response = await handleChat(makeRequest({
+      conversation_id: 'local-conv-euchio-selection-en',
+      message: 'We want to buy a fiber laser for 8mm carbon steel. How should we choose?',
+      client_market: 'com',
+      client_locale: 'en',
+      user_type: 'guest',
+    }, undefined, 'https://api.sagemro.com/api/chat'), env);
+
+    assert.equal(response.status, 200);
+    const text = await response.text();
+    assert.match(text, /For 8mm carbon steel/);
+    assert.match(text, /material thickness/);
+    assert.match(text, /daily output/);
+    assert.match(text, /4-6 kW/);
+    assert.match(text, /EUCHIO/);
+    assert.match(text, /economically reasonable/);
+    assert.match(text, /data: \[DONE\]/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test('handleChat rejects a customer reading another customer conversation', async () => {
   const token = await signJwt({
     userId: 'customer-b',

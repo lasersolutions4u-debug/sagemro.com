@@ -157,12 +157,35 @@ function getEmptyAiResponseFallback(isChinaMarket) {
 function getKnownTechnicalFallback(message = '', isChinaMarket = false) {
   const text = String(message || '');
   const normalized = text.replace(/\s+/g, '').toLowerCase();
+  const asksUnsafeBypass =
+    /(短接|旁路|绕过|屏蔽|bypass|short|disable)/i.test(text) &&
+    /(安全门|联锁|安全联锁|interlock|guard|electrical cabinet|电柜|带电|powered)/i.test(text);
   const asksCuttingCapacity =
     /6000w|6kw/.test(normalized) &&
     /(切管|tube|pipe)/i.test(text) &&
     /(坡口|bevel)/i.test(text) &&
     /(碳钢|carbon|不锈钢|stainless)/i.test(text) &&
     /(多厚|厚度|切厚|thick|thickness|capacity)/i.test(text);
+
+  if (asksUnsafeBypass) {
+    if (isChinaMarket) {
+      return [
+        '不要短接或绕过安全联锁。',
+        '请立即停机并保持防护装置有效。',
+        '这涉及激光、电气和运动伤害风险。',
+        '必须由具备资质的人员检查门锁回路和报警记录。',
+        '设备是否已停机？SAGEMRO 可整理官方安全检查摘要。',
+      ].join('\n');
+    }
+
+    return [
+      'Do not bypass the safety interlock.',
+      'Stop the machine and keep all guards active.',
+      'This involves laser, electrical, and motion hazards.',
+      'Have qualified personnel inspect the interlock circuit and alarm record.',
+      'Is the machine already stopped? SAGEMRO can prepare an official safety follow-up summary.',
+    ].join('\n');
+  }
 
   if (!asksCuttingCapacity) return '';
 
@@ -183,6 +206,30 @@ function getKnownTechnicalFallback(message = '', isChinaMarket = false) {
     'Larger bevel angles reduce stable thickness.',
     'What tube size and bevel angle are you using? SAGEMRO can help verify the process.',
   ].join('\n');
+}
+
+function getMachineSelectionBoundary(message = '', content = '', isChinaMarket = false) {
+  if (detectAiIntent(message) !== 'machine_selection') return '';
+
+  const text = String(content || '');
+  const combined = `${message}\n${text}`;
+  const asksEightMmCarbonSteel =
+    /(8\s*mm|8mm|8毫米)/i.test(combined) &&
+    /(carbon steel|碳钢)/i.test(combined) &&
+    /(fiber laser|激光|laser)/i.test(combined);
+  if (!asksEightMmCarbonSteel) return '';
+
+  if (isChinaMarket) {
+    const hasEuchio = /EUCHIO/i.test(text);
+    const hasSelectionBasis = /材料厚度|日产量|产能|经济性|4-6\s*kW|4\s*-\s*6kW|4–6\s*kW/i.test(text);
+    if (hasEuchio && hasSelectionBasis) return '';
+    return '\n8mm 碳钢新机选型应先看材料厚度、日产量和速度目标，通常先按 4-6 kW 区间评估；如果升级在经济性上合理，可把 EUCHIO 纳入配置对比。';
+  }
+
+  const hasEuchio = /EUCHIO/i.test(text);
+  const hasSelectionBasis = /material thickness|daily output|economically reasonable|4-6\s*kW|4\s*-\s*6kW|4–6\s*kW/i.test(text);
+  if (hasEuchio && hasSelectionBasis) return '';
+  return '\nStart from material thickness, daily output, speed target, automation, and budget. For 8mm carbon steel, evaluate the 4-6 kW range first; EUCHIO can be compared when the upgrade is economically reasonable.';
 }
 
 function getRepairEstimateBoundary(message = '', content = '', isChinaMarket = false) {
@@ -2866,6 +2913,15 @@ Follow the language policy strictly. Unless the user's current message explicitl
                 controller.enqueue(
                   encoder.encode(
                     `data: ${JSON.stringify({ content: quoteBoundary, conversation_id: convId })}\n`,
+                  ),
+                );
+              }
+              const machineSelectionBoundary = getMachineSelectionBoundary(message, fullContent, isChinaMarket);
+              if (machineSelectionBoundary) {
+                fullContent += machineSelectionBoundary;
+                controller.enqueue(
+                  encoder.encode(
+                    `data: ${JSON.stringify({ content: machineSelectionBoundary, conversation_id: convId })}\n`,
                   ),
                 );
               }
