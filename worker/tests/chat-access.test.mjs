@@ -104,6 +104,9 @@ test('handleChat passes international language context to the LLM', async () => 
     assert.match(systemPrompt, /Market: International edition \/ sagemro\.com/);
     assert.match(systemPrompt, /Required default reply language: English/);
     assert.match(systemPrompt, /reply in the Required default reply language/);
+    assert.match(systemPrompt, /Default first-turn structure/);
+    assert.match(systemPrompt, /exactly 3 practical checks/);
+    assert.match(systemPrompt, /Ask only 1 follow-up question/);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -146,6 +149,9 @@ test('handleChat passes China edition language context to the LLM', async () => 
     assert.match(systemPrompt, /Market: China edition \/ sagemro\.cn/);
     assert.match(systemPrompt, /Required default reply language: Simplified Chinese/);
     assert.match(systemPrompt, /English alarm codes, brand names, CNC terms, or short English phrases do not count as a request to answer in English/);
+    assert.match(systemPrompt, /Default first-turn structure/);
+    assert.match(systemPrompt, /exactly 3 practical checks/);
+    assert.match(systemPrompt, /Ask only 1 follow-up question/);
   } finally {
     globalThis.fetch = originalFetch;
   }

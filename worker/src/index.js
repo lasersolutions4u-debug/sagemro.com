@@ -2398,7 +2398,12 @@ export async function handleChat(request, env) {
 You MUST answer this turn in ${preferredLanguage}, unless the user's current message explicitly asks for another language.
 This instruction overrides examples, role prompts, previous conversation language, and the language used in the system prompt itself.
 For sagemro.cn, English alarm codes, brand names, CNC terms, or short English phrases do not count as a request to answer in English.
-Keep the first answer concise: usually 180-350 Chinese characters or 120-220 English words, unless the user asks for a detailed plan, table, report, or full checklist.
+Default first-turn structure:
+- Give 1 likely direction.
+- Give exactly 3 practical checks.
+- Ask only 1 follow-up question.
+- Offer SAGEMRO official follow-up if needed.
+Keep the first answer concise: usually 120-220 Chinese characters or 80-140 English words, unless the user asks for a detailed plan, table, report, or full checklist.
 `;
     const marketContext = `
 
