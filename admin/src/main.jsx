@@ -3,6 +3,10 @@ import ReactDOM from 'react-dom/client';
 import * as Sentry from '@sentry/react';
 import App from './App';
 import './index.css';
+import { runtimeConfig } from './config/runtime';
+
+document.documentElement.lang = runtimeConfig.locale;
+document.title = runtimeConfig.documentTitle;
 
 const SENTRY_DSN = import.meta.env.VITE_SENTRY_DSN;
 if (SENTRY_DSN) {

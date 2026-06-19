@@ -11,36 +11,17 @@ import {
   postAdminWorkOrderMessage,
   rejectAdminWorkOrderPricing,
 } from '../services/api';
+import { runtimeConfig } from '../config/runtime';
 
 const STATUS_MAP = {
-  pending: { label: '待处理', color: 'var(--color-info)' },
-  pending_dispatch: { label: '待区域派工', color: 'var(--color-warning)' },
-  assigned: { label: '已分配', color: 'var(--color-warning)' },
-  in_progress: { label: '处理中', color: 'var(--color-warning)' },
-  resolved: { label: '已解决', color: 'var(--color-success)' },
-  completed: { label: '已完成', color: 'var(--color-success)' },
-  rejected: { label: '已拒绝', color: 'var(--color-error)' },
-  cancelled: { label: '已取消', color: 'var(--color-text-muted)' },
-};
-
-const URGENCY_MAP = {
-  normal: '普通',
-  urgent: '紧急',
-  critical: '非常紧急',
-};
-
-const TYPE_MAP = {
-  fault: '设备故障',
-  maintenance: '设备保养',
-  parameter: '参数调试',
-  other: '其他',
-};
-
-const PRICING_STATUS_MAP = {
-  pending_review: '待官方审核',
-  submitted: '已发客户确认',
-  confirmed: '客户已确认',
-  draft: '退回修改',
+  pending: { color: 'var(--color-info)' },
+  pending_dispatch: { color: 'var(--color-warning)' },
+  assigned: { color: 'var(--color-warning)' },
+  in_progress: { color: 'var(--color-warning)' },
+  resolved: { color: 'var(--color-success)' },
+  completed: { color: 'var(--color-success)' },
+  rejected: { color: 'var(--color-error)' },
+  cancelled: { color: 'var(--color-text-muted)' },
 };
 
 function formatScore(value) {
@@ -67,7 +48,261 @@ function isImageAttachment(attachment) {
   return attachment?.file_type?.startsWith('image/');
 }
 
+const TEXT = {
+  en: {
+    statuses: {
+      pending: 'Pending',
+      pending_dispatch: 'Regional dispatch pending',
+      assigned: 'Assigned',
+      in_progress: 'In progress',
+      resolved: 'Resolved',
+      completed: 'Completed',
+      rejected: 'Rejected',
+      cancelled: 'Cancelled',
+    },
+    urgency: {
+      normal: 'Normal',
+      urgent: 'Urgent',
+      critical: 'Critical',
+    },
+    types: {
+      fault: 'Equipment fault',
+      maintenance: 'Maintenance',
+      parameter: 'Parameter tuning',
+      other: 'Other',
+    },
+    pricing: {
+      pending_review: 'Official review pending',
+      submitted: 'Sent to customer',
+      confirmed: 'Customer confirmed',
+      draft: 'Returned for revision',
+    },
+    tabs: {
+      all: 'All',
+      pending: 'Pending',
+      pending_dispatch: 'Regional dispatch pending',
+      in_progress: 'In progress',
+      completed: 'Completed',
+    },
+    title: 'Service Orders',
+    subtitle: 'The main flow is Admin to regional lead, then regional lead to engineer. Direct engineer dispatch remains as a compatibility operation and is restricted by conflict checks.',
+    loading: 'Loading...',
+    empty: 'No data',
+    selectRegionalLead: 'Please select a regional lead first',
+    assignedRegionalLead: (orderNo) => `Regional lead assigned: ${orderNo}`,
+    assignRegionalLeadFailed: 'Failed to assign regional lead',
+    selectEngineer: 'Please select an internal engineer first',
+    assignedEngineer: (orderNo) => `Dispatched: ${orderNo}`,
+    assignEngineerFailed: 'Dispatch failed',
+    quoteSent: (orderNo) => `Official quote sent to customer: ${orderNo}`,
+    quoteReviewFailed: 'Quote review failed',
+    rejectPrompt: 'Reason for return (optional, visible to engineer as an internal note):',
+    quoteReturned: (orderNo) => `Quote returned for revision: ${orderNo}`,
+    quoteReturnFailed: 'Failed to return quote',
+    archived: (orderNo) => `Archived: ${orderNo}`,
+    archiveFailed: 'Archive failed',
+    detailLoadFailed: 'Failed to load service order detail',
+    noteSaveFailed: 'Failed to save internal note',
+    headers: {
+      orderNo: 'Service No.',
+      customer: 'Customer',
+      regionalLead: 'Regional lead',
+      engineer: 'Internal engineer',
+      type: 'Type',
+      urgency: 'Urgency',
+      status: 'Status',
+      quoteArchive: 'Quote / archive',
+      createdAt: 'Created',
+      dispatch: 'Dispatch',
+      detail: 'Detail',
+    },
+    conflictFallback: 'Conflict exists',
+    noQuote: 'No quote',
+    approve: 'Approve',
+    return: 'Return',
+    archive: 'Archive',
+    regionalLeadOption: 'Select regional lead',
+    assigning: 'Assigning',
+    assignRegion: 'Assign region',
+    engineerOption: 'Select engineer',
+    dispatching: 'Dispatching',
+    directDispatch: 'Direct dispatch',
+    view: 'View',
+    previous: 'Previous',
+    next: 'Next',
+    drawerTitle: 'Service Control View',
+    drawerSubtitle: 'Review customer communication, internal notes, AI summary, service report, and two-way reviews.',
+    close: 'Close',
+    customerLabel: 'Customer',
+    engineerLabel: 'Engineer',
+    quoteReviewLabel: 'Quote review',
+    riskControlLabel: 'Risk control',
+    aiSummaryTitle: 'AI Intake Summary',
+    noAiSummary: 'No AI summary',
+    attachmentsTitle: 'Diagnostic Images & Attachments',
+    attachmentCount: (count) => `${count} item(s)`,
+    openAttachment: 'Open attachment',
+    noAttachments: 'No diagnostic images or attachments',
+    reportTitle: 'Service Report',
+    reportFields: {
+      symptom: 'Symptom',
+      diagnosis: 'Diagnosis',
+      solution: 'Solution',
+      laborHours: 'Labor hours',
+    },
+    noReport: 'No service report',
+    customerReviewTitle: 'Customer Service Review',
+    average: 'Average',
+    scoreRows: {
+      timeliness: 'Timeliness',
+      technical: 'Technical ability',
+      communication: 'Communication',
+      professional: 'Professionalism',
+      cooperation: 'Cooperation',
+      payment: 'Payment cooperation',
+      environment: 'Site conditions',
+    },
+    noCustomerReview: 'Customer has not reviewed this service',
+    engineerReviewTitle: 'Engineer Internal Customer Review',
+    internalRiskNote: 'Internal risk-control material only. It is used for dispatch decisions, service preparation, and quality review, and is not visible to customers.',
+    noEngineerReview: 'Engineer has not submitted a customer cooperation review',
+    messagesTitle: 'Service Conversation & Internal Notes',
+    messageCount: (count) => `${count} message(s)`,
+    noMessages: 'No messages',
+    internalNote: 'Internal note',
+    notePlaceholder: 'Add an internal note. Visible only to Admin / regional lead / engineer, not to the customer.',
+    saveNote: 'Save internal note',
+    noDetail: 'No service order detail loaded',
+  },
+  'zh-CN': {
+    statuses: {
+      pending: '待处理',
+      pending_dispatch: '待区域派工',
+      assigned: '已分配',
+      in_progress: '处理中',
+      resolved: '已解决',
+      completed: '已完成',
+      rejected: '已拒绝',
+      cancelled: '已取消',
+    },
+    urgency: {
+      normal: '普通',
+      urgent: '紧急',
+      critical: '非常紧急',
+    },
+    types: {
+      fault: '设备故障',
+      maintenance: '设备保养',
+      parameter: '参数调试',
+      other: '其他',
+    },
+    pricing: {
+      pending_review: '待官方审核',
+      submitted: '已发客户确认',
+      confirmed: '客户已确认',
+      draft: '退回修改',
+    },
+    tabs: {
+      all: '全部',
+      pending: '待处理',
+      pending_dispatch: '待区域派工',
+      in_progress: '处理中',
+      completed: '已完成',
+    },
+    title: '派工与服务质量',
+    subtitle: '主流程为 Admin 分配给区域负责人，区域负责人再分给具体工程师；直接派工程师作为兼容操作保留，并受利益冲突风控限制。',
+    loading: '加载中...',
+    empty: '暂无数据',
+    selectRegionalLead: '请先选择区域负责人',
+    assignedRegionalLead: (orderNo) => `已分配区域负责人：${orderNo}`,
+    assignRegionalLeadFailed: '分配区域负责人失败',
+    selectEngineer: '请先选择内部工程师',
+    assignedEngineer: (orderNo) => `已派工：${orderNo}`,
+    assignEngineerFailed: '派工失败',
+    quoteSent: (orderNo) => `官方报价已发送给客户：${orderNo}`,
+    quoteReviewFailed: '报价审核失败',
+    rejectPrompt: '退回原因（可选，工程师端可见内部备注）：',
+    quoteReturned: (orderNo) => `已退回报价修改：${orderNo}`,
+    quoteReturnFailed: '报价退回失败',
+    archived: (orderNo) => `已归档：${orderNo}`,
+    archiveFailed: '归档失败',
+    detailLoadFailed: '工单详情加载失败',
+    noteSaveFailed: '内部备注保存失败',
+    headers: {
+      orderNo: '服务编号',
+      customer: '客户',
+      regionalLead: '区域负责人',
+      engineer: '内部工程师',
+      type: '类型',
+      urgency: '紧急',
+      status: '状态',
+      quoteArchive: '报价/归档',
+      createdAt: '创建时间',
+      dispatch: '派工',
+      detail: '详情',
+    },
+    conflictFallback: '存在利益冲突',
+    noQuote: '暂无报价',
+    approve: '通过',
+    return: '退回',
+    archive: '归档',
+    regionalLeadOption: '选择区域负责人',
+    assigning: '分配中',
+    assignRegion: '分配区域',
+    engineerOption: '选择工程师',
+    dispatching: '派工中',
+    directDispatch: '直接派工',
+    view: '查看',
+    previous: '上一页',
+    next: '下一页',
+    drawerTitle: '工单监管视图',
+    drawerSubtitle: '查看客户沟通、内部备注、AI 摘要、服务报告和双向评价。',
+    close: '关闭',
+    customerLabel: '客户',
+    engineerLabel: '工程师',
+    quoteReviewLabel: '报价审核',
+    riskControlLabel: '风控',
+    aiSummaryTitle: 'AI 初诊摘要',
+    noAiSummary: '暂无 AI 摘要',
+    attachmentsTitle: '诊断图片与附件',
+    attachmentCount: (count) => `${count} 个`,
+    openAttachment: '点击查看附件',
+    noAttachments: '暂无诊断图片或附件',
+    reportTitle: '服务报告',
+    reportFields: {
+      symptom: '症状',
+      diagnosis: '诊断',
+      solution: '处理',
+      laborHours: '工时',
+    },
+    noReport: '暂无服务报告',
+    customerReviewTitle: '客户服务评价',
+    average: '平均',
+    scoreRows: {
+      timeliness: '响应及时',
+      technical: '技术能力',
+      communication: '沟通体验',
+      professional: '专业形象',
+      cooperation: '配合程度',
+      payment: '付款配合',
+      environment: '现场条件',
+    },
+    noCustomerReview: '客户尚未评价本次服务',
+    engineerReviewTitle: '工程师内部客户评价',
+    internalRiskNote: '内部风控资料，仅用于派工判断、服务准备和质量复盘，客户不可见。',
+    noEngineerReview: '工程师尚未提交客户协作评价',
+    messagesTitle: '工单会话与内部备注',
+    messageCount: (count) => `${count} 条`,
+    noMessages: '暂无消息',
+    internalNote: '内部备注',
+    notePlaceholder: '添加内部备注，仅 Admin / 区域负责人 / 工程师可见，客户不可见。',
+    saveNote: '保存内部备注',
+    noDetail: '未加载到工单详情',
+  },
+};
+
 export function WorkOrdersPage() {
+  const t = TEXT[runtimeConfig.locale] || TEXT.en;
   const [status, setStatus] = useState('all');
   const [data, setData] = useState({ total: 0, list: [] });
   const [engineers, setEngineers] = useState([]);
@@ -113,17 +348,17 @@ export function WorkOrdersPage() {
   const totalPages = Math.max(1, Math.ceil(data.total / pageSize));
 
   const statusTabs = [
-    { key: 'all', label: '全部' },
-    { key: 'pending', label: '待处理' },
-    { key: 'pending_dispatch', label: '待区域派工' },
-    { key: 'in_progress', label: '处理中' },
-    { key: 'completed', label: '已完成' },
+    { key: 'all', label: t.tabs.all },
+    { key: 'pending', label: t.tabs.pending },
+    { key: 'pending_dispatch', label: t.tabs.pending_dispatch },
+    { key: 'in_progress', label: t.tabs.in_progress },
+    { key: 'completed', label: t.tabs.completed },
   ];
 
   async function handleAssignRegionalLead(wo) {
     const regionalLeadId = selectedRegionalLeads[wo.id];
     if (!regionalLeadId) {
-      setMessage('请先选择区域负责人');
+      setMessage(t.selectRegionalLead);
       return;
     }
     setAssigningId(`${wo.id}:lead`);
@@ -144,9 +379,9 @@ export function WorkOrdersPage() {
             : item
         )),
       }));
-      setMessage(`已分配区域负责人：${wo.order_no}`);
+      setMessage(t.assignedRegionalLead(wo.order_no));
     } catch (err) {
-      setMessage(err.message || '分配区域负责人失败');
+      setMessage(err.message || t.assignRegionalLeadFailed);
     } finally {
       setAssigningId('');
     }
@@ -155,7 +390,7 @@ export function WorkOrdersPage() {
   async function handleAssign(wo) {
     const engineerId = selectedEngineers[wo.id];
     if (!engineerId) {
-      setMessage('请先选择内部工程师');
+      setMessage(t.selectEngineer);
       return;
     }
     setAssigningId(`${wo.id}:engineer`);
@@ -178,9 +413,9 @@ export function WorkOrdersPage() {
             : item
         )),
       }));
-      setMessage(`已派工：${wo.order_no}`);
+      setMessage(t.assignedEngineer(wo.order_no));
     } catch (err) {
-      setMessage(err.message || '派工失败');
+      setMessage(err.message || t.assignEngineerFailed);
     } finally {
       setAssigningId('');
     }
@@ -199,16 +434,16 @@ export function WorkOrdersPage() {
             : item
         )),
       }));
-      setMessage(`官方报价已发送给客户：${wo.order_no}`);
+      setMessage(t.quoteSent(wo.order_no));
     } catch (err) {
-      setMessage(err.message || '报价审核失败');
+      setMessage(err.message || t.quoteReviewFailed);
     } finally {
       setAssigningId('');
     }
   }
 
   async function handleRejectPricing(wo) {
-    const note = window.prompt('退回原因（可选，工程师端可见内部备注）：') || '';
+    const note = window.prompt(t.rejectPrompt) || '';
     setAssigningId(`${wo.id}:reject`);
     setMessage('');
     try {
@@ -221,9 +456,9 @@ export function WorkOrdersPage() {
             : item
         )),
       }));
-      setMessage(`已退回报价修改：${wo.order_no}`);
+      setMessage(t.quoteReturned(wo.order_no));
     } catch (err) {
-      setMessage(err.message || '报价退回失败');
+      setMessage(err.message || t.quoteReturnFailed);
     } finally {
       setAssigningId('');
     }
@@ -240,9 +475,9 @@ export function WorkOrdersPage() {
           item.id === wo.id ? { ...item, status: 'completed' } : item
         )),
       }));
-      setMessage(`已归档：${wo.order_no}`);
+      setMessage(t.archived(wo.order_no));
     } catch (err) {
-      setMessage(err.message || '归档失败');
+      setMessage(err.message || t.archiveFailed);
     } finally {
       setAssigningId('');
     }
@@ -261,7 +496,7 @@ export function WorkOrdersPage() {
       setDetail(detailData);
       setDetailMessages(messagesData.list || []);
     } catch (err) {
-      setMessage(err.message || '工单详情加载失败');
+      setMessage(err.message || t.detailLoadFailed);
     } finally {
       setDetailLoading(false);
     }
@@ -275,16 +510,16 @@ export function WorkOrdersPage() {
       setDetailMessages(messagesData.list || []);
       setInternalNote('');
     } catch (err) {
-      setMessage(err.message || '内部备注保存失败');
+      setMessage(err.message || t.noteSaveFailed);
     }
   }
 
   return (
     <div>
       <div className="mb-6">
-          <h2 className="text-lg font-semibold">派工与服务质量</h2>
+          <h2 className="text-lg font-semibold">{t.title}</h2>
           <p className="text-sm text-[var(--color-text-muted)] mt-1">
-          主流程为 Admin 分配给区域负责人，区域负责人再分给具体工程师；直接派工程师作为兼容操作保留，并受利益冲突风控限制。
+          {t.subtitle}
         </p>
       </div>
       {message && (
@@ -310,36 +545,36 @@ export function WorkOrdersPage() {
       </div>
 
       {loading ? (
-        <div className="text-center py-12 text-[var(--color-text-muted)]">加载中...</div>
+        <div className="text-center py-12 text-[var(--color-text-muted)]">{t.loading}</div>
       ) : (
         <>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-[var(--color-border)]">
-                  <th className="text-left py-3 px-2 text-[var(--color-text-secondary)] font-medium">服务编号</th>
-                  <th className="text-left py-3 px-2 text-[var(--color-text-secondary)] font-medium">客户</th>
-                  <th className="text-left py-3 px-2 text-[var(--color-text-secondary)] font-medium">区域负责人</th>
-                  <th className="text-left py-3 px-2 text-[var(--color-text-secondary)] font-medium">内部工程师</th>
-                  <th className="text-left py-3 px-2 text-[var(--color-text-secondary)] font-medium">类型</th>
-                  <th className="text-left py-3 px-2 text-[var(--color-text-secondary)] font-medium">紧急</th>
-                  <th className="text-left py-3 px-2 text-[var(--color-text-secondary)] font-medium">状态</th>
-                  <th className="text-left py-3 px-2 text-[var(--color-text-secondary)] font-medium">报价/归档</th>
-                  <th className="text-left py-3 px-2 text-[var(--color-text-secondary)] font-medium">创建时间</th>
-                  <th className="text-left py-3 px-2 text-[var(--color-text-secondary)] font-medium">派工</th>
-                  <th className="text-left py-3 px-2 text-[var(--color-text-secondary)] font-medium">详情</th>
+                  <th className="text-left py-3 px-2 text-[var(--color-text-secondary)] font-medium">{t.headers.orderNo}</th>
+                  <th className="text-left py-3 px-2 text-[var(--color-text-secondary)] font-medium">{t.headers.customer}</th>
+                  <th className="text-left py-3 px-2 text-[var(--color-text-secondary)] font-medium">{t.headers.regionalLead}</th>
+                  <th className="text-left py-3 px-2 text-[var(--color-text-secondary)] font-medium">{t.headers.engineer}</th>
+                  <th className="text-left py-3 px-2 text-[var(--color-text-secondary)] font-medium">{t.headers.type}</th>
+                  <th className="text-left py-3 px-2 text-[var(--color-text-secondary)] font-medium">{t.headers.urgency}</th>
+                  <th className="text-left py-3 px-2 text-[var(--color-text-secondary)] font-medium">{t.headers.status}</th>
+                  <th className="text-left py-3 px-2 text-[var(--color-text-secondary)] font-medium">{t.headers.quoteArchive}</th>
+                  <th className="text-left py-3 px-2 text-[var(--color-text-secondary)] font-medium">{t.headers.createdAt}</th>
+                  <th className="text-left py-3 px-2 text-[var(--color-text-secondary)] font-medium">{t.headers.dispatch}</th>
+                  <th className="text-left py-3 px-2 text-[var(--color-text-secondary)] font-medium">{t.headers.detail}</th>
                 </tr>
               </thead>
               <tbody>
                 {data.list.length === 0 ? (
                   <tr>
                     <td colSpan={11} className="text-center py-8 text-[var(--color-text-muted)]">
-                      暂无数据
+                      {t.empty}
                     </td>
                   </tr>
                 ) : (
                   data.list.map((wo) => {
-                    const statusInfo = STATUS_MAP[wo.status] || { label: wo.status, color: 'var(--color-text-muted)' };
+                    const statusInfo = STATUS_MAP[wo.status] || { color: 'var(--color-text-muted)' };
                     return (
                       <tr key={wo.id} className="border-b border-[var(--color-border)]/50 hover:bg-[var(--color-surface-elevated)]/50">
                         <td className="py-3 px-2 font-mono text-[var(--color-primary)]">{wo.order_no}</td>
@@ -355,27 +590,27 @@ export function WorkOrdersPage() {
                           <div>{wo.engineer_name || '-'}</div>
                           {wo.engineer_company && <div className="text-xs text-[var(--color-text-muted)]">{wo.engineer_company}</div>}
                           {wo.conflict_status === 'blocked' && (
-                            <div className="mt-1 text-xs text-[var(--color-error)]">{wo.conflict_reason || '存在利益冲突'}</div>
+                            <div className="mt-1 text-xs text-[var(--color-error)]">{wo.conflict_reason || t.conflictFallback}</div>
                           )}
                         </td>
-                        <td className="py-3 px-2 text-[var(--color-text-secondary)]">{TYPE_MAP[wo.type] || wo.type}</td>
+                        <td className="py-3 px-2 text-[var(--color-text-secondary)]">{t.types[wo.type] || wo.type}</td>
                         <td className="py-3 px-2">
                           <span className={wo.urgency === 'critical' ? 'text-[var(--color-error)] font-medium' : wo.urgency === 'urgent' ? 'text-[var(--color-warning)]' : 'text-[var(--color-text-secondary)]'}>
-                            {URGENCY_MAP[wo.urgency] || wo.urgency}
+                            {t.urgency[wo.urgency] || wo.urgency}
                           </span>
                         </td>
                         <td className="py-3 px-2">
                           <span className="inline-flex items-center gap-1">
                             <span className="w-2 h-2 rounded-full" style={{ backgroundColor: statusInfo.color }} />
-                            {statusInfo.label}
+                            {t.statuses[wo.status] || wo.status}
                           </span>
                         </td>
                         <td className="py-3 px-2">
                           <div className="min-w-[170px] space-y-2">
                             <div className="text-xs text-[var(--color-text-secondary)]">
                               {wo.pricing_status
-                                ? `${PRICING_STATUS_MAP[wo.pricing_status] || wo.pricing_status}${wo.pricing_total_amount || wo.pricing_subtotal ? ` · ${wo.pricing_total_amount || wo.pricing_subtotal} CNY` : ''}`
-                                : '暂无报价'}
+                                ? `${t.pricing[wo.pricing_status] || wo.pricing_status}${wo.pricing_total_amount || wo.pricing_subtotal ? ` · ${wo.pricing_total_amount || wo.pricing_subtotal} CNY` : ''}`
+                                : t.noQuote}
                             </div>
                             {wo.pricing_status === 'pending_review' && (
                               <div className="flex gap-1">
@@ -384,14 +619,14 @@ export function WorkOrdersPage() {
                                   disabled={assigningId === `${wo.id}:approve`}
                                   className="rounded-lg bg-[var(--color-primary)] px-2 py-1 text-xs text-white disabled:opacity-50"
                                 >
-                                  通过
+                                  {t.approve}
                                 </button>
                                 <button
                                   onClick={() => handleRejectPricing(wo)}
                                   disabled={assigningId === `${wo.id}:reject`}
                                   className="rounded-lg border border-[var(--color-border)] px-2 py-1 text-xs text-[var(--color-text-secondary)] disabled:opacity-50"
                                 >
-                                  退回
+                                  {t.return}
                                 </button>
                               </div>
                             )}
@@ -401,7 +636,7 @@ export function WorkOrdersPage() {
                                 disabled={assigningId === `${wo.id}:archive`}
                                 className="rounded-lg border border-[var(--color-border)] px-2 py-1 text-xs text-[var(--color-text-secondary)] disabled:opacity-50"
                               >
-                                归档
+                                {t.archive}
                               </button>
                             )}
                           </div>
@@ -417,7 +652,7 @@ export function WorkOrdersPage() {
                                 onChange={(event) => setSelectedRegionalLeads((prev) => ({ ...prev, [wo.id]: event.target.value }))}
                                 className="min-w-0 flex-1 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-2 py-1.5 text-xs text-[var(--color-text)]"
                               >
-                                <option value="">选择区域负责人</option>
+                                <option value="">{t.regionalLeadOption}</option>
                                 {regionalLeads.map((lead) => (
                                   <option key={lead.id} value={lead.id}>
                                     {lead.name}{lead.responsible_region || lead.service_region ? ` · ${lead.responsible_region || lead.service_region}` : ''}
@@ -429,7 +664,7 @@ export function WorkOrdersPage() {
                                 disabled={assigningId === `${wo.id}:lead`}
                                 className="rounded-lg bg-[var(--color-primary)] px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50"
                               >
-                                {assigningId === `${wo.id}:lead` ? '分配中' : '分配区域'}
+                                {assigningId === `${wo.id}:lead` ? t.assigning : t.assignRegion}
                               </button>
                             </div>
                             <div className="flex items-center gap-2">
@@ -438,7 +673,7 @@ export function WorkOrdersPage() {
                               onChange={(event) => setSelectedEngineers((prev) => ({ ...prev, [wo.id]: event.target.value }))}
                               className="min-w-0 flex-1 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-2 py-1.5 text-xs text-[var(--color-text)]"
                             >
-                              <option value="">选择工程师</option>
+                              <option value="">{t.engineerOption}</option>
                               {engineers.map((engineer) => (
                                 <option key={engineer.id} value={engineer.id}>
                                   {engineer.name}{engineer.service_region ? ` · ${engineer.service_region}` : ''}
@@ -450,7 +685,7 @@ export function WorkOrdersPage() {
                               disabled={assigningId === `${wo.id}:engineer`}
                               className="rounded-lg bg-[var(--color-primary)] px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50"
                             >
-                              {assigningId === `${wo.id}:engineer` ? '派工中' : '直接派工'}
+                              {assigningId === `${wo.id}:engineer` ? t.dispatching : t.directDispatch}
                             </button>
                             </div>
                           </div>
@@ -460,7 +695,7 @@ export function WorkOrdersPage() {
                             onClick={() => openDetail(wo)}
                             className="rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-xs text-[var(--color-text-secondary)] hover:text-[var(--color-text)]"
                           >
-                            查看
+                            {t.view}
                           </button>
                         </td>
                       </tr>
@@ -478,7 +713,7 @@ export function WorkOrdersPage() {
                 disabled={page <= 1}
                 className="px-3 py-1.5 rounded-lg text-sm bg-[var(--color-surface-elevated)] disabled:opacity-30 hover:bg-[var(--color-border)] transition-colors"
               >
-                上一页
+                {t.previous}
               </button>
               <span className="text-sm text-[var(--color-text-secondary)]">
                 {page} / {totalPages}
@@ -488,7 +723,7 @@ export function WorkOrdersPage() {
                 disabled={page >= totalPages}
                 className="px-3 py-1.5 rounded-lg text-sm bg-[var(--color-surface-elevated)] disabled:opacity-30 hover:bg-[var(--color-border)] transition-colors"
               >
-                下一页
+                {t.next}
               </button>
             </div>
           )}
@@ -502,19 +737,19 @@ export function WorkOrdersPage() {
             <div className="mb-4 flex items-start justify-between gap-4">
               <div>
                 <div className="text-xs uppercase tracking-[0.18em] text-[var(--color-primary)]">Service Record</div>
-                <h3 className="text-lg font-semibold">工单监管视图</h3>
-                <p className="text-sm text-[var(--color-text-muted)]">查看客户沟通、内部备注、AI 摘要、服务报告和双向评价。</p>
+                <h3 className="text-lg font-semibold">{t.drawerTitle}</h3>
+                <p className="text-sm text-[var(--color-text-muted)]">{t.drawerSubtitle}</p>
               </div>
               <button
                 onClick={() => setDetailOpen(false)}
                 className="rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-sm"
               >
-                关闭
+                {t.close}
               </button>
             </div>
 
             {detailLoading ? (
-              <div className="py-12 text-center text-sm text-[var(--color-text-muted)]">加载中...</div>
+              <div className="py-12 text-center text-sm text-[var(--color-text-muted)]">{t.loading}</div>
             ) : detail ? (
               <div className="space-y-4">
                 <section className="rounded-xl bg-[var(--color-surface-elevated)] p-4">
@@ -524,24 +759,24 @@ export function WorkOrdersPage() {
                   </div>
                   <div className="text-sm text-[var(--color-text-secondary)]">{detail.description}</div>
                   <div className="mt-3 grid gap-2 text-xs text-[var(--color-text-muted)] sm:grid-cols-2">
-                    <div>客户：{detail.customer_name || '-'}</div>
-                    <div>工程师：{detail.engineer_name || '-'}</div>
-                    <div>报价审核：{detail.quote_review_status || '-'}</div>
-                    <div>风控：{detail.conflict_status || 'clear'}</div>
+                    <div>{t.customerLabel}: {detail.customer_name || '-'}</div>
+                    <div>{t.engineerLabel}: {detail.engineer_name || '-'}</div>
+                    <div>{t.quoteReviewLabel}: {detail.quote_review_status || '-'}</div>
+                    <div>{t.riskControlLabel}: {detail.conflict_status || 'clear'}</div>
                   </div>
                 </section>
 
                 <section className="rounded-xl border border-[var(--color-border)] p-4">
-                  <h4 className="mb-2 font-medium">AI 初诊摘要</h4>
+                  <h4 className="mb-2 font-medium">{t.aiSummaryTitle}</h4>
                   <pre className="whitespace-pre-wrap rounded-lg bg-[var(--color-surface-elevated)] p-3 text-xs text-[var(--color-text-secondary)]">
-                    {detail.ai_summary || '暂无 AI 摘要'}
+                    {detail.ai_summary || t.noAiSummary}
                   </pre>
                 </section>
 
                 <section className="rounded-xl border border-[var(--color-border)] p-4">
                   <div className="mb-3 flex items-center justify-between gap-3">
-                    <h4 className="font-medium">诊断图片与附件</h4>
-                    <span className="text-xs text-[var(--color-text-muted)]">{detail.attachments?.length || 0} 个</span>
+                    <h4 className="font-medium">{t.attachmentsTitle}</h4>
+                    <span className="text-xs text-[var(--color-text-muted)]">{t.attachmentCount(detail.attachments?.length || 0)}</span>
                   </div>
                   {detail.attachments?.length > 0 ? (
                     <div className="grid gap-3 sm:grid-cols-2">
@@ -562,7 +797,7 @@ export function WorkOrdersPage() {
                             />
                           ) : (
                             <div className="flex h-32 items-center justify-center text-xs text-[var(--color-text-muted)]">
-                              点击查看附件
+                              {t.openAttachment}
                             </div>
                           )}
                           <div className="p-2 text-xs text-[var(--color-text-secondary)]">
@@ -573,30 +808,30 @@ export function WorkOrdersPage() {
                       ))}
                     </div>
                   ) : (
-                    <div className="text-sm text-[var(--color-text-muted)]">暂无诊断图片或附件</div>
+                    <div className="text-sm text-[var(--color-text-muted)]">{t.noAttachments}</div>
                   )}
                 </section>
 
                 <section className="rounded-xl border border-[var(--color-border)] p-4">
-                  <h4 className="mb-2 font-medium">服务报告</h4>
+                  <h4 className="mb-2 font-medium">{t.reportTitle}</h4>
                   {detail.repair_record ? (
                     <div className="space-y-2 text-sm text-[var(--color-text-secondary)]">
-                      <div>症状：{detail.repair_record.symptom || '-'}</div>
-                      <div>诊断：{detail.repair_record.diagnosis || '-'}</div>
-                      <div>处理：{detail.repair_record.solution || '-'}</div>
-                      <div>工时：{detail.repair_record.labor_hours || 0}</div>
+                      <div>{t.reportFields.symptom}: {detail.repair_record.symptom || '-'}</div>
+                      <div>{t.reportFields.diagnosis}: {detail.repair_record.diagnosis || '-'}</div>
+                      <div>{t.reportFields.solution}: {detail.repair_record.solution || '-'}</div>
+                      <div>{t.reportFields.laborHours}: {detail.repair_record.labor_hours || 0}</div>
                     </div>
                   ) : (
-                    <div className="text-sm text-[var(--color-text-muted)]">暂无服务报告</div>
+                    <div className="text-sm text-[var(--color-text-muted)]">{t.noReport}</div>
                   )}
                 </section>
 
                 <section className="rounded-xl border border-[var(--color-border)] p-4">
                   <div className="mb-3 flex items-center justify-between gap-3">
-                    <h4 className="font-medium">客户服务评价</h4>
+                    <h4 className="font-medium">{t.customerReviewTitle}</h4>
                     {detail.rating && (
                       <span className="rounded-full bg-[var(--color-primary)]/10 px-2 py-1 text-xs font-semibold text-[var(--color-primary)]">
-                        平均 {formatScore(averageScore([
+                        {t.average} {formatScore(averageScore([
                           detail.rating.rating_timeliness,
                           detail.rating.rating_technical,
                           detail.rating.rating_communication,
@@ -608,10 +843,10 @@ export function WorkOrdersPage() {
                   {detail.rating ? (
                     <div className="space-y-3 text-sm text-[var(--color-text-secondary)]">
                       <div className="grid gap-2 sm:grid-cols-2">
-                        <ScoreRow label="响应及时" value={detail.rating.rating_timeliness} />
-                        <ScoreRow label="技术能力" value={detail.rating.rating_technical} />
-                        <ScoreRow label="沟通体验" value={detail.rating.rating_communication} />
-                        <ScoreRow label="专业形象" value={detail.rating.rating_professional} />
+                        <ScoreRow label={t.scoreRows.timeliness} value={detail.rating.rating_timeliness} />
+                        <ScoreRow label={t.scoreRows.technical} value={detail.rating.rating_technical} />
+                        <ScoreRow label={t.scoreRows.communication} value={detail.rating.rating_communication} />
+                        <ScoreRow label={t.scoreRows.professional} value={detail.rating.rating_professional} />
                       </div>
                       {detail.rating.comment && (
                         <div className="rounded-lg bg-[var(--color-surface-elevated)] p-3">
@@ -620,16 +855,16 @@ export function WorkOrdersPage() {
                       )}
                     </div>
                   ) : (
-                    <div className="text-sm text-[var(--color-text-muted)]">客户尚未评价本次服务</div>
+                    <div className="text-sm text-[var(--color-text-muted)]">{t.noCustomerReview}</div>
                   )}
                 </section>
 
                 <section className="rounded-xl border border-[var(--color-border)] p-4">
                   <div className="mb-3 flex items-center justify-between gap-3">
-                    <h4 className="font-medium">工程师内部客户评价</h4>
+                    <h4 className="font-medium">{t.engineerReviewTitle}</h4>
                     {detail.engineer_review && (
                       <span className="rounded-full bg-[var(--color-primary)]/10 px-2 py-1 text-xs font-semibold text-[var(--color-primary)]">
-                        平均 {formatScore(averageScore([
+                        {t.average} {formatScore(averageScore([
                           detail.engineer_review.rating_cooperation,
                           detail.engineer_review.rating_communication,
                           detail.engineer_review.rating_payment,
@@ -641,10 +876,10 @@ export function WorkOrdersPage() {
                   {detail.engineer_review ? (
                     <div className="space-y-3 text-sm text-[var(--color-text-secondary)]">
                       <div className="grid gap-2 sm:grid-cols-2">
-                        <ScoreRow label="配合程度" value={detail.engineer_review.rating_cooperation} />
-                        <ScoreRow label="沟通清晰" value={detail.engineer_review.rating_communication} />
-                        <ScoreRow label="付款配合" value={detail.engineer_review.rating_payment} />
-                        <ScoreRow label="现场条件" value={detail.engineer_review.rating_environment} />
+                        <ScoreRow label={t.scoreRows.cooperation} value={detail.engineer_review.rating_cooperation} />
+                        <ScoreRow label={t.scoreRows.communication} value={detail.engineer_review.rating_communication} />
+                        <ScoreRow label={t.scoreRows.payment} value={detail.engineer_review.rating_payment} />
+                        <ScoreRow label={t.scoreRows.environment} value={detail.engineer_review.rating_environment} />
                       </div>
                       {detail.engineer_review.comment && (
                         <div className="rounded-lg bg-[var(--color-surface-elevated)] p-3">
@@ -652,29 +887,29 @@ export function WorkOrdersPage() {
                         </div>
                       )}
                       <div className="text-xs text-[var(--color-text-muted)]">
-                        内部风控资料，仅用于派工判断、服务准备和质量复盘，客户不可见。
+                        {t.internalRiskNote}
                       </div>
                     </div>
                   ) : (
-                    <div className="text-sm text-[var(--color-text-muted)]">工程师尚未提交客户协作评价</div>
+                    <div className="text-sm text-[var(--color-text-muted)]">{t.noEngineerReview}</div>
                   )}
                 </section>
 
                 <section className="rounded-xl border border-[var(--color-border)] p-4">
                   <div className="mb-3 flex items-center justify-between">
-                    <h4 className="font-medium">工单会话与内部备注</h4>
-                    <span className="text-xs text-[var(--color-text-muted)]">{detailMessages.length} 条</span>
+                    <h4 className="font-medium">{t.messagesTitle}</h4>
+                    <span className="text-xs text-[var(--color-text-muted)]">{t.messageCount(detailMessages.length)}</span>
                   </div>
                   <div className="max-h-72 space-y-2 overflow-y-auto">
                     {detailMessages.length === 0 ? (
-                      <div className="py-6 text-center text-sm text-[var(--color-text-muted)]">暂无消息</div>
+                      <div className="py-6 text-center text-sm text-[var(--color-text-muted)]">{t.noMessages}</div>
                     ) : detailMessages.map((item) => (
                       <div
                         key={item.id}
                         className={`rounded-lg p-3 text-sm ${item.is_internal_note ? 'bg-amber-500/10 text-amber-700' : 'bg-[var(--color-surface-elevated)] text-[var(--color-text-secondary)]'}`}
                       >
                         <div className="mb-1 flex items-center justify-between gap-2 text-xs">
-                          <span>{item.sender_name || item.sender_type}{item.is_internal_note ? ' · 内部备注' : ''}</span>
+                          <span>{item.sender_name || item.sender_type}{item.is_internal_note ? ` · ${t.internalNote}` : ''}</span>
                           <span className="text-[var(--color-text-muted)]">{item.created_at?.slice(0, 16)?.replace('T', ' ')}</span>
                         </div>
                         <div>{item.content}</div>
@@ -685,7 +920,7 @@ export function WorkOrdersPage() {
                     <textarea
                       value={internalNote}
                       onChange={(event) => setInternalNote(event.target.value)}
-                      placeholder="添加内部备注，仅 Admin / 区域负责人 / 工程师可见，客户不可见。"
+                      placeholder={t.notePlaceholder}
                       rows={3}
                       className="w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-3 py-2 text-sm focus:outline-none"
                     />
@@ -694,13 +929,13 @@ export function WorkOrdersPage() {
                       disabled={!internalNote.trim()}
                       className="rounded-lg bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
                     >
-                      保存内部备注
+                      {t.saveNote}
                     </button>
                   </div>
                 </section>
               </div>
             ) : (
-              <div className="py-12 text-center text-sm text-[var(--color-text-muted)]">未加载到工单详情</div>
+              <div className="py-12 text-center text-sm text-[var(--color-text-muted)]">{t.noDetail}</div>
             )}
           </div>
         </div>
