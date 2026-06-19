@@ -146,6 +146,29 @@ sagemro/
 | `get_device_detail` | 设备详情（含服务报告/维修记录） | ⏳ |
 | `get_conversation_history` | 用户最近 N 条对话历史 | ⏳ |
 
+### 3.4 AI 进化架构
+
+SAGEMRO AI 的长期架构按三层叠加推进：
+
+```text
+Prompt OS + Knowledge OS + Agent OS
+```
+
+- **Prompt OS**：控制语言、角色、语气、安全边界、转化边界和回答结构。
+- **Knowledge OS**：沉淀报警码、参数表、备件库、维修 SOP、设备手册、历史工单和工程师修正。
+- **Agent OS**：在受控范围内生成线索、服务申请草稿、设备档案更新草稿、派工建议和跟进任务。
+
+正式蓝图见：[docs/SAGEMRO-AI-进化架构蓝图.md](./docs/SAGEMRO-AI-进化架构蓝图.md)
+
+实施计划见：[docs/SAGEMRO-AI-进化架构实施计划.md](./docs/SAGEMRO-AI-进化架构实施计划.md)
+
+当前已落地范围：
+
+- `024_ai_evolution_foundation.sql`：新增 AI 交互、反馈队列、知识库、评测和工具审计的基础表。
+- `ai_interactions`：`/api/chat` 在 AI 回复完成后写入交互日志，包括市场、语言、意图、模型、Prompt 版本、知识库版本和响应耗时。
+- AI 交互日志是观测性数据，写入失败不得影响聊天响应。
+- 当前知识库版本为 `none`，RAG 和 Agent 工作流将在后续任务中接入。
+
 ---
 
 ## 四、环境变量

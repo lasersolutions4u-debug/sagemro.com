@@ -77,6 +77,8 @@ import {
 
 // ============ SLA 时效配置 ============
 const SLA_HOURS = { critical: 4, urgent: 24, normal: 72 };
+const AI_PROMPT_VERSION = 'prompt-2026-06-19';
+const AI_KNOWLEDGE_VERSION = 'none';
 
 function getChatModel(env) {
   return env.OPENAI_CHAT_MODEL || env.OPENAI_MODEL || 'deepseek-chat';
@@ -84,6 +86,57 @@ function getChatModel(env) {
 
 function getJsonModel(env) {
   return env.OPENAI_JSON_MODEL || env.OPENAI_MODEL || env.OPENAI_CHAT_MODEL || 'deepseek-chat';
+}
+
+function detectAiIntent(message = '') {
+  const text = String(message || '').toLowerCase();
+  if (/(切割参数|工艺参数|坡口|焦点|气压|氧气|氮气|pierce|bevel|parameter|thickness|厚度|多厚)/i.test(text)) {
+    return 'cutting_parameters';
+  }
+  if (/(备件|配件|喷嘴|镜片|保护镜|切割头|part|spare|nozzle|lens)/i.test(text)) {
+    return 'parts_identification';
+  }
+  if (/(多少钱|报价|费用|成本|维修费|quote|price|cost|estimate)/i.test(text)) {
+    return 'repair_estimate';
+  }
+  if (/(新机|选型|产能|预算|采购|machine selection|buy|purchase|capacity)/i.test(text)) {
+    return 'machine_selection';
+  }
+  if (/(保养|维护|健康|点检|巡检|maintenance|health|inspection)/i.test(text)) {
+    return 'health_report';
+  }
+  if (/(报警|故障|停机|不出光|断弧|alarm|fault|error|down|stop)/i.test(text)) {
+    return 'fault_diagnosis';
+  }
+  return 'general';
+}
+
+export async function logAiInteraction(env, payload) {
+  if (!env?.DB || !payload?.message) return;
+  await env.DB.prepare(`
+    INSERT INTO ai_interactions (
+      id, conversation_id, user_id, user_type, market, locale, intent,
+      message, response, model, prompt_version, knowledge_version, response_time_ms,
+      created_work_order, created_lead, user_feedback
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).bind(
+    payload.id || generateId(),
+    payload.conversationId || null,
+    payload.userId || null,
+    payload.userType || 'guest',
+    payload.market || 'com',
+    payload.locale || 'en',
+    payload.intent || null,
+    payload.message,
+    payload.response || null,
+    payload.model || null,
+    payload.promptVersion || null,
+    payload.knowledgeVersion || null,
+    payload.responseTimeMs || null,
+    payload.createdWorkOrder ? 1 : 0,
+    payload.createdLead ? 1 : 0,
+    payload.userFeedback || null,
+  ).run();
 }
 
 function getAiFallbackMessage(env, error) {
@@ -2335,6 +2388,7 @@ async function handleChatUploadImage(request, env) {
 // 处理聊天请求
 export async function handleChat(request, env) {
   try {
+    const chatStartedAt = Date.now();
     const body = await request.json();
     const { conversation_id, message, images, client_market, client_locale } = body;
 
@@ -2482,6 +2536,9 @@ export async function handleChat(request, env) {
       client_locale === 'zh-CN' ||
       requestHost.endsWith('.cn') ||
       originHost.includes('sagemro.cn');
+    const marketCode = isChinaMarket ? 'cn' : 'com';
+    const localeCode = isChinaMarket ? 'zh-CN' : 'en';
+    const detectedIntent = detectAiIntent(message);
     const preferredLanguage = isChinaMarket ? 'Simplified Chinese' : 'English';
     const languageDirective = `
 ## Critical output language for this turn
@@ -2862,6 +2919,26 @@ Follow the language policy strictly. Unless the user's current message explicitl
               ).bind(generateId(), convId, 'assistant', fullContent).run();
             } catch {
               /* 保存失败不影响客户端已收到的流 */
+            }
+
+            try {
+              await logAiInteraction(env, {
+                conversationId: convId,
+                userId: trustedEngineerId || trustedCustomerId || null,
+                userType: trustedRole,
+                market: marketCode,
+                locale: localeCode,
+                intent: detectedIntent,
+                message,
+                response: fullContent,
+                model: getChatModel(env),
+                promptVersion: AI_PROMPT_VERSION,
+                knowledgeVersion: AI_KNOWLEDGE_VERSION,
+                responseTimeMs: Date.now() - chatStartedAt,
+                createdWorkOrder: !!preInjectedWorkOrder?.success,
+              });
+            } catch {
+              /* AI interaction logging is observational and must not affect chat delivery. */
             }
 
             // Phase 1.3：达到阈值（消息 ≥6 且距上次摘要 ≥3）后台生成 SummaryProtocol v1 摘要
