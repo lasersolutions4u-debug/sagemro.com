@@ -27,3 +27,33 @@ test('real output eval requires --run before calling API', async () => {
   assert.match(stdout, /mode: dry-run/);
   assert.match(stdout, /pass --run to call the API/);
 });
+
+test('real output eval can filter cases by market', async () => {
+  const { stdout } = await execFileAsync('node', [
+    'scripts/real-output-eval.mjs',
+    '--dry-run',
+    '--market=cn',
+    '--limit=3',
+  ], { cwd: new URL('..', import.meta.url) });
+
+  assert.match(stdout, /market: cn/);
+  assert.match(stdout, /cases: 3/);
+  assert.match(stdout, /oc-001/);
+  assert.match(stdout, /oc-003/);
+  assert.match(stdout, /oc-005/);
+  assert.doesNotMatch(stdout, /oc-002/);
+});
+
+test('real output eval can run a single case by id', async () => {
+  const { stdout } = await execFileAsync('node', [
+    'scripts/real-output-eval.mjs',
+    '--dry-run',
+    '--case=oc-003',
+  ], { cwd: new URL('..', import.meta.url) });
+
+  assert.match(stdout, /case: oc-003/);
+  assert.match(stdout, /cases: 1/);
+  assert.match(stdout, /oc-003/);
+  assert.doesNotMatch(stdout, /oc-001/);
+  assert.doesNotMatch(stdout, /oc-005/);
+});

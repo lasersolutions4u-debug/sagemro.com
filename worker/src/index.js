@@ -96,7 +96,7 @@ function detectAiIntent(message = '') {
   if (/(备件|配件|喷嘴|镜片|保护镜|切割头|part|spare|nozzle|lens)/i.test(text)) {
     return 'parts_identification';
   }
-  if (/(多少钱|报价|费用|成本|维修费|quote|price|cost|estimate)/i.test(text)) {
+  if (/(多少钱|报价|报个价|报一下价|出个价|估个价|费用|成本|维修费|quote|price|cost|estimate)/i.test(text)) {
     return 'repair_estimate';
   }
   if (/(新机|选型|产能|预算|采购|machine selection|buy|purchase|capacity)/i.test(text)) {
@@ -183,6 +183,23 @@ function getKnownTechnicalFallback(message = '', isChinaMarket = false) {
     'Larger bevel angles reduce stable thickness.',
     'What tube size and bevel angle are you using? SAGEMRO can help verify the process.',
   ].join('\n');
+}
+
+function getRepairEstimateBoundary(message = '', content = '', isChinaMarket = false) {
+  if (detectAiIntent(message) !== 'repair_estimate') return '';
+
+  const text = String(content || '');
+  if (isChinaMarket) {
+    const hasQuoteBoundary = /不能直接给正式报价|无法直接给正式报价|不能给正式报价|非正式报价|不是正式报价/.test(text);
+    const hasOfficialBoundary = /SAGEMRO\s*官方服务确认|SAGEMRO\s*确认正式诊断和报价|官方服务确认/.test(text);
+    if (hasQuoteBoundary && hasOfficialBoundary) return '';
+    return '\n这不是正式报价，不能直接给正式报价；SAGEMRO 官方服务确认诊断后再给正式报价。';
+  }
+
+  const hasQuoteBoundary = /cannot give an official quote|can't give an official quote|not an official quote|no official quote/i.test(text);
+  const hasOfficialBoundary = /SAGEMRO official service confirms|confirmed by SAGEMRO official service|official service confirms/i.test(text);
+  if (hasQuoteBoundary && hasOfficialBoundary) return '';
+  return '\nThis is not an official quote; SAGEMRO official service confirms the final diagnosis and quote.';
 }
 
 function getTruncatedAiResponseRecovery(isChinaMarket) {
@@ -2840,6 +2857,15 @@ Follow the language policy strictly. Unless the user's current message explicitl
                 controller.enqueue(
                   encoder.encode(
                     `data: ${JSON.stringify({ content: recovery, conversation_id: convId })}\n`,
+                  ),
+                );
+              }
+              const quoteBoundary = getRepairEstimateBoundary(message, fullContent, isChinaMarket);
+              if (quoteBoundary) {
+                fullContent += quoteBoundary;
+                controller.enqueue(
+                  encoder.encode(
+                    `data: ${JSON.stringify({ content: quoteBoundary, conversation_id: convId })}\n`,
                   ),
                 );
               }

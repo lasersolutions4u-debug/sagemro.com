@@ -512,6 +512,107 @@ test('handleChat does not append recovery to complete five-line technical answer
   }
 });
 
+test('handleChat appends official quote boundary to repair estimate answers when missing', async () => {
+  const { env } = makeEnv();
+  const originalFetch = globalThis.fetch;
+
+  globalThis.fetch = async () => new Response([
+    'data: {"choices":[{"delta":{"content":"激光器维修报价取决于故障类型和需更换的模块。\\n先确认报警记录和出光状态。\\n检查电源模块、泵浦源和光学模块。\\n维修历史会影响判断。\\n设备品牌和功率是多少？"},"finish_reason":null}]}',
+    '',
+    'data: [DONE]',
+    '',
+  ].join('\n'), {
+    status: 200,
+    headers: { 'Content-Type': 'text/event-stream' },
+  });
+
+  try {
+    const response = await handleChat(makeRequest({
+      conversation_id: 'local-conv-quote-boundary-cn',
+      message: '激光器维修直接报个价吧。',
+      client_market: 'cn',
+      client_locale: 'zh-CN',
+      user_type: 'guest',
+    }, undefined, 'https://api.sagemro.cn/api/chat'), env);
+
+    assert.equal(response.status, 200);
+    const text = await response.text();
+    assert.match(text, /激光器维修报价取决于/);
+    assert.match(text, /不能直接给正式报价/);
+    assert.match(text, /SAGEMRO 官方服务确认/);
+    assert.match(text, /data: \[DONE\]/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('handleChat does not duplicate official quote boundary when already present', async () => {
+  const { env } = makeEnv();
+  const originalFetch = globalThis.fetch;
+
+  globalThis.fetch = async () => new Response([
+    'data: {"choices":[{"delta":{"content":"现在不能直接给正式报价。\\n价格取决于激光器品牌、功率和检测结果。\\n先确认报警记录和出光状态。\\n不要按固定金额判断。\\nSAGEMRO 官方服务确认诊断后再给正式报价。"},"finish_reason":null}]}',
+    '',
+    'data: [DONE]',
+    '',
+  ].join('\n'), {
+    status: 200,
+    headers: { 'Content-Type': 'text/event-stream' },
+  });
+
+  try {
+    const response = await handleChat(makeRequest({
+      conversation_id: 'local-conv-quote-boundary-existing-cn',
+      message: '激光器维修直接报个价吧。',
+      client_market: 'cn',
+      client_locale: 'zh-CN',
+      user_type: 'guest',
+    }, undefined, 'https://api.sagemro.cn/api/chat'), env);
+
+    assert.equal(response.status, 200);
+    const text = await response.text();
+    assert.equal((text.match(/不能直接给正式报价/g) || []).length, 1);
+    assert.equal((text.match(/SAGEMRO 官方服务确认/g) || []).length, 1);
+    assert.match(text, /data: \[DONE\]/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('handleChat appends English official quote boundary to repair estimate answers when missing', async () => {
+  const { env } = makeEnv();
+  const originalFetch = globalThis.fetch;
+
+  globalThis.fetch = async () => new Response([
+    'data: {"choices":[{"delta":{"content":"Laser source repair cost depends on the failed module and inspection result.\\nCheck alarm history first.\\nConfirm laser output status.\\nReview prior repair records.\\nWhat brand and power is the laser source?"},"finish_reason":null}]}',
+    '',
+    'data: [DONE]',
+    '',
+  ].join('\n'), {
+    status: 200,
+    headers: { 'Content-Type': 'text/event-stream' },
+  });
+
+  try {
+    const response = await handleChat(makeRequest({
+      conversation_id: 'local-conv-quote-boundary-en',
+      message: 'Can you quote the repair cost now?',
+      client_market: 'com',
+      client_locale: 'en',
+      user_type: 'guest',
+    }, undefined, 'https://api.sagemro.com/api/chat'), env);
+
+    assert.equal(response.status, 200);
+    const text = await response.text();
+    assert.match(text, /Laser source repair cost depends/);
+    assert.match(text, /not an official quote/);
+    assert.match(text, /SAGEMRO official service confirms/);
+    assert.match(text, /data: \[DONE\]/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test('handleChat rejects a customer reading another customer conversation', async () => {
   const token = await signJwt({
     userId: 'customer-b',

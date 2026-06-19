@@ -15,6 +15,8 @@ function parseArgs(argv) {
     baseUrl: '',
     outDir: join(workerRoot, '.eval-runs'),
     limit: 0,
+    market: '',
+    caseId: '',
   };
 
   for (const arg of argv) {
@@ -23,6 +25,8 @@ function parseArgs(argv) {
     else if (arg.startsWith('--base-url=')) args.baseUrl = arg.slice('--base-url='.length).replace(/\/+$/, '');
     else if (arg.startsWith('--out-dir=')) args.outDir = resolve(workerRoot, arg.slice('--out-dir='.length));
     else if (arg.startsWith('--limit=')) args.limit = Number(arg.slice('--limit='.length)) || 0;
+    else if (arg.startsWith('--market=')) args.market = arg.slice('--market='.length);
+    else if (arg.startsWith('--case=')) args.caseId = arg.slice('--case='.length);
     else if (arg === '--help' || arg === '-h') args.help = true;
   }
 
@@ -38,14 +42,18 @@ Options:
   --dry-run              List output_contract cases without calling the API.
   --run                  Actually call the API. Required for network execution.
   --base-url=<url>       API origin, for example https://api.sagemro.cn.
+  --market=<cn|com>      Optional market filter for output_contract cases.
+  --case=<id>            Optional exact case id, for example oc-003.
   --out-dir=<path>       Result directory. Default: worker/.eval-runs
   --limit=<n>            Optional case limit for a quick manual sample.
 `);
 }
 
-function loadOutputCases(limit = 0) {
+function loadOutputCases({ limit = 0, market = '', caseId = '' } = {}) {
   const golden = JSON.parse(readFileSync(goldenPath, 'utf-8'));
-  const cases = golden.cases.filter((cas) => cas.category === 'output_contract');
+  let cases = golden.cases.filter((cas) => cas.category === 'output_contract');
+  if (market) cases = cases.filter((cas) => cas.input.client_market === market);
+  if (caseId) cases = cases.filter((cas) => cas.id === caseId);
   return limit > 0 ? cases.slice(0, limit) : cases;
 }
 
@@ -104,9 +112,11 @@ async function main() {
     return;
   }
 
-  const cases = loadOutputCases(args.limit);
+  const cases = loadOutputCases({ limit: args.limit, market: args.market, caseId: args.caseId });
   const mode = args.run ? 'run' : 'dry-run';
   console.log(`mode: ${mode}`);
+  if (args.market) console.log(`market: ${args.market}`);
+  if (args.caseId) console.log(`case: ${args.caseId}`);
   console.log(`cases: ${cases.length}`);
 
   for (const cas of cases) {
