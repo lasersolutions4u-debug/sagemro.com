@@ -1,6 +1,6 @@
 {
-  "version": 6,
-  "description": "Golden set — 43 deterministic regression cases across role_guard (10), redact (10), assigned_service_tasks (10), conversation_history (5), prompt_contract (7), output_contract (1). v6 locks production-validated chat prompt rules plus first Chinese professional expression quality contracts.",
+  "version": 7,
+  "description": "Golden set — 43 deterministic regression cases across role_guard (10), redact (10), assigned_service_tasks (10), conversation_history (5), prompt_contract (7), output_contract (1). v7 tightens routine-maintenance no-CTA behavior and Chinese professional expression quality contracts.",
   "cases": [
     {
       "id": "rg-001",
@@ -480,7 +480,8 @@
       "expect": {
         "prompt_contains": [
           "For routine maintenance frequency questions, answer in no more than 5 compact lines",
-          "Do not add a SAGEMRO service follow-up CTA for routine maintenance questions unless the user mentions abnormal wear, downtime, safety risk, quotation, parts purchase, or on-site support"
+          "Do not add a SAGEMRO service follow-up CTA for routine maintenance questions unless the user mentions abnormal wear, downtime, safety risk, quotation, parts purchase, or on-site support",
+          "Do not invent a possible abnormal follow-up scenario just to offer diagnosis or service"
         ]
       }
     },
@@ -497,7 +498,7 @@
       "expect": {
         "output_contains": ["每班", "检查", "清理"],
         "output_not_contains": ["工单", "服务跟进摘要", "安排上门", "注册", "报价"],
-        "output_absent": ["捅括", "直接报废"],
+        "output_absent": ["捅括", "直接报废", "顺便问一下", "进一步诊断", "官方进一步诊断"],
         "max_non_empty_lines": 5
       }
     }
