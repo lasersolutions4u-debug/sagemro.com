@@ -1,4 +1,4 @@
--- 024_engineer_applications_and_calendar.sql
+-- 025_engineer_applications_and_calendar.sql
 -- Engineer recruiting applications and engineer-owned availability calendar.
 
 CREATE TABLE IF NOT EXISTS engineer_applications (
@@ -63,4 +63,4 @@ CREATE INDEX IF NOT EXISTS idx_engineer_calendar_range ON engineer_calendar_even
 CREATE INDEX IF NOT EXISTS idx_engineer_calendar_type ON engineer_calendar_events(event_type);
 
 INSERT OR IGNORE INTO _migrations (version, note) VALUES
-  ('024_engineer_applications_and_calendar', '工程师申请与工程师本人维护的排单日历');
+  ('025_engineer_applications_and_calendar', '工程师申请与工程师本人维护的排单日历');

@@ -29,7 +29,7 @@ This plan explicitly does not implement:
 
 ## File Structure
 
-- `worker/migrations/024_engineer_applications_and_calendar.sql`
+- `worker/migrations/025_engineer_applications_and_calendar.sql`
   - Creates `engineer_applications` and `engineer_calendar_events`.
 - `worker/schema.sql`
   - Adds the new tables to local/full schema.
@@ -61,7 +61,7 @@ This plan explicitly does not implement:
 ## Task 1: Worker Data Model And API
 
 **Files:**
-- Create: `worker/migrations/024_engineer_applications_and_calendar.sql`
+- Create: `worker/migrations/025_engineer_applications_and_calendar.sql`
 - Modify: `worker/schema.sql`
 - Modify: `worker/src/index.js`
 - Create: `worker/tests/engineer-application-calendar.test.mjs`
@@ -210,7 +210,7 @@ Expected: fails because endpoints do not exist or package script does not includ
 
 - [ ] **Step 3: Add D1 migration and schema**
 
-Create `worker/migrations/024_engineer_applications_and_calendar.sql`:
+Create `worker/migrations/025_engineer_applications_and_calendar.sql`:
 
 ```sql
 CREATE TABLE IF NOT EXISTS engineer_applications (
@@ -339,7 +339,7 @@ Expected: all unit tests pass.
 - [ ] **Step 7: Commit Task 1**
 
 ```bash
-git add worker/migrations/024_engineer_applications_and_calendar.sql worker/schema.sql worker/src/index.js worker/tests/engineer-application-calendar.test.mjs worker/package.json
+git add worker/migrations/025_engineer_applications_and_calendar.sql worker/schema.sql worker/src/index.js worker/tests/engineer-application-calendar.test.mjs worker/package.json
 git commit -m "feat(worker): add engineer application and calendar APIs"
 ```
 
@@ -545,7 +545,7 @@ Expected: all pass.
 Run:
 
 ```bash
-ls worker/migrations/024_engineer_applications_and_calendar.sql
+ls worker/migrations/025_engineer_applications_and_calendar.sql
 ```
 
 Expected: file exists. Note in final that production D1 migration must be run manually before deploying Worker.
