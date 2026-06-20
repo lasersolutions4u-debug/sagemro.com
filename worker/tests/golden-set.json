@@ -1,6 +1,6 @@
 {
-  "version": 5,
-  "description": "Golden set — 43 deterministic regression cases across role_guard (10), redact (10), assigned_service_tasks (10), conversation_history (5), prompt_contract (7), output_contract (1). v5 locks production-validated chat prompt rules for CN/COM language routing, service conversion boundaries, and first real-output smoke contracts.",
+  "version": 6,
+  "description": "Golden set — 43 deterministic regression cases across role_guard (10), redact (10), assigned_service_tasks (10), conversation_history (5), prompt_contract (7), output_contract (1). v6 locks production-validated chat prompt rules plus first Chinese professional expression quality contracts.",
   "cases": [
     {
       "id": "rg-001",
@@ -496,7 +496,9 @@
       },
       "expect": {
         "output_contains": ["每班", "检查", "清理"],
-        "output_not_contains": ["工单", "服务跟进摘要", "安排上门", "注册", "报价"]
+        "output_not_contains": ["工单", "服务跟进摘要", "安排上门", "注册", "报价"],
+        "output_absent": ["捅括", "直接报废"],
+        "max_non_empty_lines": 5
       }
     }
   ]

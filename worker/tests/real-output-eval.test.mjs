@@ -86,3 +86,26 @@ test('real output eval accepts close Chinese technical synonyms', () => {
   assert.deepEqual(score.failures, []);
   assert.equal(score.pass, true);
 });
+
+test('real output eval flags absolute Chinese wording defects even inside a warning', () => {
+  const score = scoreText(
+    '清理时禁止用硬物捅括孔口内壁，否则喷嘴直接报废。',
+    { output_absent: ['捅括', '直接报废'] },
+  );
+
+  assert.deepEqual(score.failures, [
+    'absent violation "捅括"',
+    'absent violation "直接报废"',
+  ]);
+  assert.equal(score.pass, false);
+});
+
+test('real output eval checks compact non-empty line count', () => {
+  const score = scoreText(
+    ['第一行', '', '第二行', '第三行'].join('\n'),
+    { max_non_empty_lines: 2 },
+  );
+
+  assert.deepEqual(score.failures, ['too many non-empty lines: want <=2, got 3']);
+  assert.equal(score.pass, false);
+});

@@ -124,6 +124,19 @@ export function scoreText(text, expect) {
   for (const needle of expect.output_not_contains || []) {
     if (containsForbiddenPhrase(text, needle)) failures.push(`forbidden ${JSON.stringify(needle)}`);
   }
+  for (const needle of expect.output_absent || []) {
+    if (normalizeTextForScoring(text).includes(normalizeTextForScoring(needle))) {
+      failures.push(`absent violation ${JSON.stringify(needle)}`);
+    }
+  }
+  if (Number.isFinite(expect.max_non_empty_lines)) {
+    const nonEmptyLines = String(text || '').split(/\n/).filter((line) => line.trim()).length;
+    if (nonEmptyLines > expect.max_non_empty_lines) {
+      failures.push(
+        `too many non-empty lines: want <=${expect.max_non_empty_lines}, got ${nonEmptyLines}`,
+      );
+    }
+  }
   return { pass: failures.length === 0, failures };
 }
 
