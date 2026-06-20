@@ -157,6 +157,10 @@ function getSlaStatus(slaDeadline, urgency) {
   return { status: 'on_track', remaining_seconds: remaining, label: '正常' };
 }
 
+function getRequestMarket(request) {
+  return shouldUseCnDatabase(request) ? 'cn' : 'com';
+}
+
 function getRequestIp(request) {
   return request.headers.get('cf-connecting-ip')
     || request.headers.get('x-forwarded-for')
@@ -4997,6 +5001,293 @@ async function handleSubmitLead(request, env) {
   }
 }
 
+// ============ 工程师招募申请与排单日历 ============
+
+const ENGINEER_APPLICATION_STATUSES = new Set([
+  'submitted',
+  'reviewing',
+  'qualified',
+  'rejected',
+  'converted',
+  'archived',
+]);
+
+const ENGINEER_CALENDAR_EVENT_TYPES = new Set([
+  'engineer_available',
+  'engineer_unavailable',
+  'reserved_for_service',
+]);
+
+function cleanText(value, maxLength = 300) {
+  if (value === undefined || value === null) return '';
+  return String(value).trim().slice(0, maxLength);
+}
+
+function cleanTextArray(value, maxItems = 12, maxItemLength = 80) {
+  const raw = Array.isArray(value)
+    ? value
+    : (typeof value === 'string' ? value.split(/[,，\n]/) : []);
+  return raw
+    .map((item) => cleanText(item, maxItemLength))
+    .filter(Boolean)
+    .slice(0, maxItems);
+}
+
+function jsonArrayField(value) {
+  return JSON.stringify(cleanTextArray(value));
+}
+
+function parseJsonArray(value) {
+  if (Array.isArray(value)) return value;
+  if (!value) return [];
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function normalizeEngineerApplication(row) {
+  if (!row) return row;
+  return {
+    ...row,
+    service_regions: parseJsonArray(row.service_regions),
+    equipment_types: parseJsonArray(row.equipment_types),
+    brand_experience: parseJsonArray(row.brand_experience),
+    skill_tags: parseJsonArray(row.skill_tags),
+    languages: parseJsonArray(row.languages),
+    can_travel: Boolean(row.can_travel),
+    can_weekend: Boolean(row.can_weekend),
+    can_night: Boolean(row.can_night),
+    has_tools: Boolean(row.has_tools),
+  };
+}
+
+async function handleSubmitEngineerApplication(request, env) {
+  try {
+    const body = await request.json().catch(() => ({}));
+    const name = cleanText(body.name, 80);
+    const phone = cleanText(body.phone, 40);
+    const email = cleanText(body.email, 120);
+    const whatsapp = cleanText(body.whatsapp, 80);
+
+    if (!name) return errorResponse('请填写姓名');
+    if (!phone && !email && !whatsapp) return errorResponse('请至少提供一种联系方式');
+
+    const id = generateId();
+    await env.DB.prepare(`
+      INSERT INTO engineer_applications (
+        id, market, status, name, phone, email, whatsapp, country, province, city, base_region,
+        service_regions, years_experience, equipment_types, brand_experience, skill_tags,
+        languages, can_travel, can_weekend, can_night, has_tools, experience_summary
+      ) VALUES (?, ?, 'submitted', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).bind(
+      id,
+      getRequestMarket(request),
+      name,
+      phone || null,
+      email || null,
+      whatsapp || null,
+      cleanText(body.country, 80) || null,
+      cleanText(body.province, 80) || null,
+      cleanText(body.city, 80) || null,
+      cleanText(body.base_region, 120) || null,
+      jsonArrayField(body.service_regions),
+      cleanText(body.years_experience, 40) || null,
+      jsonArrayField(body.equipment_types),
+      jsonArrayField(body.brand_experience),
+      jsonArrayField(body.skill_tags),
+      jsonArrayField(body.languages),
+      body.can_travel ? 1 : 0,
+      body.can_weekend ? 1 : 0,
+      body.can_night ? 1 : 0,
+      body.has_tools ? 1 : 0,
+      cleanText(body.experience_summary, 1200) || null
+    ).run();
+
+    return jsonResponse({ success: true, application_id: id });
+  } catch (error) {
+    return errorResponse(error.message, 500);
+  }
+}
+
+async function handleAdminEngineerApplications(request, env) {
+  try {
+    const url = new URL(request.url);
+    const page = Math.max(1, parseInt(url.searchParams.get('page') || '1', 10));
+    const pageSize = Math.min(100, Math.max(1, parseInt(url.searchParams.get('pageSize') || '20', 10)));
+    const offset = (page - 1) * pageSize;
+    const status = url.searchParams.get('status') || '';
+    const market = url.searchParams.get('market') || '';
+
+    let where = 'WHERE 1=1';
+    const binds = [];
+    if (status && status !== 'all') {
+      where += ' AND status = ?';
+      binds.push(status);
+    }
+    if (market && market !== 'all') {
+      where += ' AND market = ?';
+      binds.push(market);
+    }
+
+    const total = await env.DB.prepare(
+      `SELECT COUNT(*) as count FROM engineer_applications ${where}`
+    ).bind(...binds).first();
+    const list = await env.DB.prepare(
+      `SELECT * FROM engineer_applications ${where} ORDER BY created_at DESC LIMIT ? OFFSET ?`
+    ).bind(...binds, pageSize, offset).all();
+
+    return jsonResponse({
+      total: total?.count || 0,
+      list: (list.results || []).map(normalizeEngineerApplication),
+    });
+  } catch (error) {
+    return errorResponse(error.message, 500);
+  }
+}
+
+async function handleAdminUpdateEngineerApplication(request, env) {
+  try {
+    const applicationId = new URL(request.url).pathname.split('/')[4];
+    const body = await request.json().catch(() => ({}));
+    const status = cleanText(body.status, 40);
+    if (!applicationId) return errorResponse('缺少申请 ID');
+    if (!ENGINEER_APPLICATION_STATUSES.has(status)) return errorResponse('无效申请状态');
+
+    const result = await env.DB.prepare(`
+      UPDATE engineer_applications
+      SET status = ?, review_notes = ?, converted_user_id = ?, reviewed_by = ?, reviewed_at = datetime('now'), updated_at = datetime('now')
+      WHERE id = ?
+    `).bind(
+      status,
+      cleanText(body.review_notes, 1200) || null,
+      cleanText(body.converted_user_id, 80) || null,
+      request._auth?.userId || 'admin',
+      applicationId
+    ).run();
+
+    if (result.meta?.changes === 0) return errorResponse('申请不存在', 404);
+    await writeAuditLog(env, request, {
+      targetType: 'engineer_application',
+      targetId: applicationId,
+      action: 'engineer_application_reviewed',
+      afterState: { status },
+    });
+    return jsonResponse({ success: true });
+  } catch (error) {
+    return errorResponse(error.message, 500);
+  }
+}
+
+async function assertCurrentEngineer(request, env) {
+  const auth = request._auth;
+  if (!auth || auth.userType !== 'engineer') {
+    throw new GuardError('需要工程师权限', 403);
+  }
+  const engineer = await env.DB.prepare(
+    'SELECT id, engineer_role FROM engineers WHERE id = ?'
+  ).bind(auth.userId).first();
+  if (!engineer) throw new GuardError('工程师不存在', 404);
+  return engineer;
+}
+
+async function handleGetEngineerCalendarEvents(request, env) {
+  try {
+    await assertCurrentEngineer(request, env);
+    const url = new URL(request.url);
+    const from = cleanText(url.searchParams.get('from'), 40);
+    const to = cleanText(url.searchParams.get('to'), 40);
+
+    let where = 'WHERE engineer_id = ?';
+    const binds = [request._auth.userId];
+    if (from) {
+      where += ' AND end_at >= ?';
+      binds.push(from);
+    }
+    if (to) {
+      where += ' AND start_at <= ?';
+      binds.push(to);
+    }
+
+    const events = await env.DB.prepare(`
+      SELECT * FROM engineer_calendar_events
+      ${where}
+      ORDER BY start_at ASC
+      LIMIT 200
+    `).bind(...binds).all();
+
+    return jsonResponse({ events: events.results || [] });
+  } catch (error) {
+    if (error instanceof GuardError) return errorResponse(error.message, error.status);
+    return errorResponse(error.message, 500);
+  }
+}
+
+async function handleCreateEngineerCalendarEvent(request, env) {
+  try {
+    await assertCurrentEngineer(request, env);
+    const body = await request.json().catch(() => ({}));
+    const eventType = cleanText(body.event_type, 60);
+    const title = cleanText(body.title, 160);
+    const startAt = cleanText(body.start_at, 40);
+    const endAt = cleanText(body.end_at, 40);
+
+    if (!ENGINEER_CALENDAR_EVENT_TYPES.has(eventType)) return errorResponse('无效日历类型');
+    if (!title || !startAt || !endAt) return errorResponse('请填写日历标题、开始时间和结束时间');
+    if (new Date(startAt).getTime() >= new Date(endAt).getTime()) {
+      return errorResponse('结束时间必须晚于开始时间');
+    }
+
+    const id = generateId();
+    await env.DB.prepare(`
+      INSERT INTO engineer_calendar_events (
+        id, engineer_id, market, event_type, title, start_at, end_at, timezone,
+        work_order_id, region, city, confirmation_status, engineer_response,
+        visibility, notes, created_by
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'confirmed', ?, 'admin_team', ?, ?)
+    `).bind(
+      id,
+      request._auth.userId,
+      getRequestMarket(request),
+      eventType,
+      title,
+      startAt,
+      endAt,
+      cleanText(body.timezone, 80) || 'UTC',
+      cleanText(body.work_order_id, 80) || null,
+      cleanText(body.region, 120) || null,
+      cleanText(body.city, 120) || null,
+      cleanText(body.engineer_response, 1200) || null,
+      cleanText(body.notes, 1200) || null,
+      request._auth.userId
+    ).run();
+
+    return jsonResponse({ success: true, event_id: id });
+  } catch (error) {
+    if (error instanceof GuardError) return errorResponse(error.message, error.status);
+    return errorResponse(error.message, 500);
+  }
+}
+
+async function handleDeleteEngineerCalendarEvent(request, env) {
+  try {
+    await assertCurrentEngineer(request, env);
+    const eventId = new URL(request.url).pathname.split('/')[4];
+    if (!eventId) return errorResponse('缺少日历事件 ID');
+
+    const result = await env.DB.prepare(
+      'DELETE FROM engineer_calendar_events WHERE id = ? AND engineer_id = ?'
+    ).bind(eventId, request._auth.userId).run();
+    if (result.meta?.changes === 0) return errorResponse('日历事件不存在', 404);
+    return jsonResponse({ success: true });
+  } catch (error) {
+    if (error instanceof GuardError) return errorResponse(error.message, error.status);
+    return errorResponse(error.message, 500);
+  }
+}
+
 // 管理后台 — 获取 Leads 列表
 async function handleAdminLeads(request, env) {
   try {
@@ -7648,6 +7939,9 @@ async function routeRequest(request, env, ctx) {
     if (path === '/api/leads' && request.method === 'POST') {
       return handleSubmitLead(request, env);
     }
+    if (path === '/api/engineer-applications' && request.method === 'POST') {
+      return handleSubmitEngineerApplication(request, env);
+    }
 
     // 健康检查（无需 token）
     if (path === '/health') {
@@ -7878,6 +8172,12 @@ async function routeRequest(request, env, ctx) {
       if (path === '/api/admin/users' && request.method === 'POST') {
         return handleAdminCreateUser(request, env);
       }
+      if (path === '/api/admin/engineer-applications' && request.method === 'GET') {
+        return handleAdminEngineerApplications(request, env);
+      }
+      if (path.startsWith('/api/admin/engineer-applications/') && request.method === 'PATCH') {
+        return handleAdminUpdateEngineerApplication(request, env);
+      }
       if (path.startsWith('/api/admin/users/') && request.method === 'DELETE') {
         return handleAdminDeleteUser(request, env);
       }
@@ -8043,6 +8343,15 @@ async function routeRequest(request, env, ctx) {
     // 工程师相关
     if (path === '/api/engineers/tickets' && request.method === 'GET') {
       return handleGetEngineerTickets(request, env);
+    }
+    if (path === '/api/engineers/calendar-events' && request.method === 'GET') {
+      return handleGetEngineerCalendarEvents(request, env);
+    }
+    if (path === '/api/engineers/calendar-events' && request.method === 'POST') {
+      return handleCreateEngineerCalendarEvent(request, env);
+    }
+    if (path.startsWith('/api/engineers/calendar-events/') && request.method === 'DELETE') {
+      return handleDeleteEngineerCalendarEvent(request, env);
     }
     if (path === '/api/engineers/team' && request.method === 'GET') {
       return handleGetEngineerTeam(request, env);

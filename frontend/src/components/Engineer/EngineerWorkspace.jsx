@@ -9,6 +9,7 @@ import {
   updateEngineerStatus,
 } from '../../services/api';
 import { WorkOrderDetailModal } from '../WorkOrder/WorkOrderDetailModal';
+import { EngineerAvailabilityCalendar } from './EngineerAvailabilityCalendar';
 
 const STATUS_LABELS = {
   pending: 'Pending Confirmation',
@@ -356,6 +357,7 @@ export function EngineerWorkspace({ currentUser, onLogout, onOpenProfile }) {
           </div>
 
           <aside className="space-y-4">
+            <EngineerAvailabilityCalendar />
             <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5">
               <h2 className="mb-3 font-semibold">AI Intake Summary</h2>
               <p className="text-sm text-[var(--color-text-secondary)]">

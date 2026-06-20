@@ -18,6 +18,7 @@ const WorkOrderModal = lazy(() => import('./components/Sidebar/WorkOrderModal').
 const MyWorkOrdersModal = lazy(() => import('./components/Sidebar/MyWorkOrdersModal').then(m => ({ default: m.MyWorkOrdersModal })));
 const EngineerDashboard = lazy(() => import('./components/Engineer/EngineerDashboard').then(m => ({ default: m.EngineerDashboard })));
 const EngineerWorkspace = lazy(() => import('./components/Engineer/EngineerWorkspace').then(m => ({ default: m.EngineerWorkspace })));
+const EngineerRecruitingPage = lazy(() => import('./components/Engineer/EngineerRecruitingPage').then(m => ({ default: m.EngineerRecruitingPage })));
 const EngineerProfileModal = lazy(() => import('./components/Engineer/EngineerProfileModal').then(m => ({ default: m.EngineerProfileModal })));
 const CustomerHomeModal = lazy(() => import('./components/Settings/CustomerHomeModal').then(m => ({ default: m.CustomerHomeModal })));
 const AboutModal = lazy(() => import('./components/common/AboutModal').then(m => ({ default: m.AboutModal })));
@@ -328,42 +329,13 @@ function App() {
   if (isEngineerHost) {
     return (
       <ErrorBoundary>
-        <div className="flex min-h-[100dvh] items-center justify-center bg-[var(--color-bg)] px-5 text-[var(--color-text-primary)]">
-          <div className="max-w-md rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6 text-center shadow-xl">
-            <div className="text-xs uppercase tracking-[0.24em] text-[var(--color-primary)]">SAGEMRO</div>
-            <h1 className="mt-2 text-xl font-semibold">SAGEMRO Engineer Workspace</h1>
-            <p className="mt-3 text-sm text-[var(--color-text-secondary)]">
-              For confirmed service team members with an active SAGEMRO account. Sign in to review service tasks, customer communication, field notes, and service reports.
-            </p>
-            {userType && userType !== 'engineer' && (
-              <p className="mt-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-bg)] px-3 py-2 text-xs text-[var(--color-text-secondary)]">
-                The current account is not an engineer account. Please sign out and use your SAGEMRO engineer account.
-              </p>
-            )}
-            <div className="mt-5 flex flex-col gap-2">
-              <button
-                onClick={() => setLoginModalOpen(true)}
-                className="rounded-xl bg-[var(--color-primary)] px-4 py-2.5 text-sm font-medium text-white"
-              >
-                Enter Engineer Workspace
-              </button>
-              {currentUser && (
-                <button
-                  onClick={handleLogout}
-                  className="rounded-xl border border-[var(--color-border)] px-4 py-2.5 text-sm text-[var(--color-text-secondary)]"
-                >
-                  Sign Out
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
         <Suspense fallback={null}>
+          <EngineerRecruitingPage onOpenLogin={() => setLoginModalOpen(true)} />
           <LoginModal
             isOpen={loginModalOpen}
             onClose={() => setLoginModalOpen(false)}
             onLoginSuccess={handleLoginSuccess}
-            openLegal={openLegal}
+            onOpenLegal={openLegal}
           />
           {legalModalOpen && (
             <LegalModal
