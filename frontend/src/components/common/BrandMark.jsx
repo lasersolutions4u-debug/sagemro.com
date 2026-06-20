@@ -1,7 +1,9 @@
 import { useId } from 'react';
 
 export function BrandMark({ className = '', title = 'SAGEMRO' }) {
-  const gradientId = `${useId().replace(/:/g, '')}-sagemro-mark-bg`;
+  const idBase = useId().replace(/:/g, '');
+  const gradientId = `${idBase}-sagemro-mark-bg`;
+  const beamId = `${idBase}-sagemro-mark-beam`;
 
   return (
     <svg
@@ -11,33 +13,26 @@ export function BrandMark({ className = '', title = 'SAGEMRO' }) {
       aria-label={title}
       xmlns="http://www.w3.org/2000/svg"
     >
-      <rect x="4" y="4" width="56" height="56" rx="17" fill={`url(#${gradientId})`} />
-      <g opacity="0.96">
-        <rect x="29" y="10" width="6" height="10" rx="2.2" fill="#fff7d6" transform="rotate(0 32 32)" />
-        <rect x="29" y="10" width="6" height="10" rx="2.2" fill="#fff7d6" transform="rotate(45 32 32)" />
-        <rect x="29" y="10" width="6" height="10" rx="2.2" fill="#fff7d6" transform="rotate(90 32 32)" />
-        <rect x="29" y="10" width="6" height="10" rx="2.2" fill="#fff7d6" transform="rotate(135 32 32)" />
-        <rect x="29" y="10" width="6" height="10" rx="2.2" fill="#fff7d6" transform="rotate(180 32 32)" />
-        <rect x="29" y="10" width="6" height="10" rx="2.2" fill="#fff7d6" transform="rotate(225 32 32)" />
-        <rect x="29" y="10" width="6" height="10" rx="2.2" fill="#fff7d6" transform="rotate(270 32 32)" />
-        <rect x="29" y="10" width="6" height="10" rx="2.2" fill="#fff7d6" transform="rotate(315 32 32)" />
-      </g>
-      <circle cx="32" cy="32" r="18.2" fill="rgba(255,255,255,0.16)" stroke="#ffffff" strokeWidth="3.2" />
-      <path
-        d="M32 21.5 41.1 26.7v10.6L32 42.5l-9.1-5.2V26.7L32 21.5Z"
-        fill="rgba(146,64,14,0.32)"
-        stroke="#fff7d6"
-        strokeWidth="2.8"
-        strokeLinejoin="round"
-      />
-      <circle cx="32" cy="32" r="4.6" fill="#fff7d6" />
-      <path d="M46 16.5v5.2M43.4 19.1h5.2" stroke="#fff7d6" strokeWidth="2.1" strokeLinecap="round" />
-      <circle cx="46.7" cy="27.2" r="1.9" fill="#ffffff" />
+      <rect x="4" y="4" width="56" height="56" rx="16" fill={`url(#${gradientId})`} />
+      <path d="M15 46.5h34l-5.4 7.5H20.4L15 46.5Z" fill="#fff7d6" opacity="0.96" />
+      <path d="M17.8 46.5h28.4" stroke="#2a1a0a" strokeWidth="2.4" strokeLinecap="round" opacity="0.42" />
+      <path d="M24 13h16l2.8 16.3-7.4 8.7h-6.8l-7.4-8.7L24 13Z" fill="#fff7d6" stroke="#ffffff" strokeWidth="1.2" />
+      <path d="M26.2 15.5h11.6l1.9 11.4-5.9 6.7h-3.6l-5.9-6.7 1.9-11.4Z" fill="#2a1a0a" opacity="0.18" />
+      <path d="M18 13h28" stroke="#fff7d6" strokeWidth="4.2" strokeLinecap="round" />
+      <path d="M19.5 13h25" stroke="#2a1a0a" strokeWidth="1.6" strokeLinecap="round" opacity="0.35" />
+      <path d="M29 38h6l2.2 6.8H26.8L29 38Z" fill="#2a1a0a" opacity="0.72" />
+      <path d="M32 40.5v9.5" stroke={`url(#${beamId})`} strokeWidth="2.8" strokeLinecap="round" />
+      <circle cx="32" cy="50" r="2.2" fill="#fff7d6" />
+      <path d="M45.5 23.5l4 4 4-6" fill="none" stroke="#ffffff" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" opacity="0.95" />
       <defs>
         <linearGradient id={gradientId} x1="12" y1="8" x2="52" y2="58" gradientUnits="userSpaceOnUse">
-          <stop stopColor="#FBBF24" />
-          <stop offset="0.52" stopColor="#F59E0B" />
+          <stop stopColor="#FCD34D" />
+          <stop offset="0.5" stopColor="#F59E0B" />
           <stop offset="1" stopColor="#92400E" />
+        </linearGradient>
+        <linearGradient id={beamId} x1="32" y1="40.5" x2="32" y2="50" gradientUnits="userSpaceOnUse">
+          <stop stopColor="#ffffff" />
+          <stop offset="1" stopColor="#fef3c7" />
         </linearGradient>
       </defs>
     </svg>

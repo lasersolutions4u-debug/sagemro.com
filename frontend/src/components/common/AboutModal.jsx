@@ -14,7 +14,7 @@ import {
 
 const serviceMoments = [
   { icon: MessageCircle, title: 'Start With A Conversation', desc: 'Describe the alarm, part, cut quality issue, maintenance need, or machine project in plain language.' },
-  { icon: ClipboardCheck, title: 'Get Service-Ready Clarity', desc: 'SAGEMRO AI asks for missing details, reads images when available, and organizes the case for confirmation.' },
+  { icon: ClipboardCheck, title: 'Get Service-Ready Clarity', desc: 'SAGEMRO AI asks for missing details and organizes the case for confirmation.' },
   { icon: Wrench, title: 'Move To Official Action', desc: 'When diagnosis, quotation, parts, scheduling, or site safety matters, SAGEMRO official service takes over.' },
 ];
 
@@ -29,7 +29,7 @@ const conversationCapabilities = [
 
 const serviceStandards = [
   'One SAGEMRO service standard across AI guidance, service review, engineer work, and follow-up records',
-  'Equipment records, photos, chat context, service history, and reports stay connected for future support',
+  'Equipment records, chat context, service history, and reports stay connected for future support',
   'AI guidance speeds up preparation; final diagnosis, quote, and safety requirements are confirmed by SAGEMRO',
   'Parts, maintenance, lifecycle advice, and Euchio new-machine projects can grow naturally from the same service record',
 ];

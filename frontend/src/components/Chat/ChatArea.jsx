@@ -5,6 +5,10 @@ import { WelcomePage } from './WelcomePage';
 import { InputArea } from './InputArea';
 import { Footer } from '../common/Footer';
 
+function isChinaSite() {
+  return typeof window !== 'undefined' && window.location.hostname.endsWith('.cn');
+}
+
 export function ChatArea({
   messages,
   isStreaming,
@@ -27,7 +31,14 @@ export function ChatArea({
   }, [messages]);
 
   const hasMessages = messages.length > 0;
-  const pageTitle = hasMessages ? (currentTitle || 'Service conversation') : 'SAGEMRO Service OS';
+  const isZh = isChinaSite();
+  const pageTitle = hasMessages
+    ? (currentTitle || (isZh ? '服务对话' : 'Service conversation'))
+    : 'SAGEMRO Service OS';
+  const subtitle = isZh
+    ? '面向激光切割与钣金设备的官方服务智能入口'
+    : 'Official service intelligence for laser cutting and sheet metal equipment';
+  const homeLabel = isZh ? '返回首页' : 'Service OS Home';
 
   return (
     <div className="flex flex-col h-full bg-[var(--color-chat-bg)]">
@@ -45,7 +56,7 @@ export function ChatArea({
           </h1>
           {!hasMessages && (
             <p className="hidden sm:block text-[11px] text-[var(--color-text-secondary)]">
-              Official service intelligence for laser cutting and sheet metal equipment
+              {subtitle}
             </p>
           )}
         </div>
@@ -73,7 +84,7 @@ export function ChatArea({
             className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[var(--color-primary)]/10 text-[11px] text-[var(--color-primary)] hover:bg-[var(--color-primary)]/15 transition-colors"
           >
             <Home size={13} />
-            Service OS Home
+            {homeLabel}
           </button>
         )}
       </header>
