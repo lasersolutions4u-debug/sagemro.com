@@ -1,0 +1,262 @@
+name: Deploy China Edition to Aliyun ECS
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: aliyun-cn-production
+  cancel-in-progress: false
+
+jobs:
+  deploy-cn:
+    name: Build and deploy China edition
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+
+      - name: Validate Aliyun deploy secrets
+        env:
+          ALIYUN_ECS_HOST: ${{ secrets.ALIYUN_ECS_HOST }}
+          ALIYUN_ECS_PORT: ${{ secrets.ALIYUN_ECS_PORT }}
+          ALIYUN_ECS_USER: ${{ secrets.ALIYUN_ECS_USER }}
+          ALIYUN_ECS_SSH_KEY: ${{ secrets.ALIYUN_ECS_SSH_KEY }}
+          ALIYUN_ACCESS_KEY_ID: ${{ secrets.ALIYUN_ACCESS_KEY_ID }}
+          ALIYUN_ACCESS_KEY_SECRET: ${{ secrets.ALIYUN_ACCESS_KEY_SECRET }}
+          ALIYUN_REGION_ID: ${{ secrets.ALIYUN_REGION_ID }}
+          ALIYUN_SECURITY_GROUP_ID: ${{ secrets.ALIYUN_SECURITY_GROUP_ID }}
+        run: |
+          set -euo pipefail
+          missing=0
+          for name in ALIYUN_ECS_HOST ALIYUN_ECS_PORT ALIYUN_ECS_USER ALIYUN_ECS_SSH_KEY ALIYUN_ACCESS_KEY_ID ALIYUN_ACCESS_KEY_SECRET ALIYUN_REGION_ID ALIYUN_SECURITY_GROUP_ID; do
+            if [ -z "${!name}" ]; then
+              echo "::error::Missing required secret: ${name}"
+              missing=1
+            fi
+          done
+          exit "$missing"
+
+      - name: Build frontend
+        working-directory: frontend
+        run: |
+          set -euo pipefail
+          npm ci --no-audit --no-fund
+          npm test --if-present
+          npm run build
+
+      - name: Build admin
+        working-directory: admin
+        run: |
+          set -euo pipefail
+          npm ci --no-audit --no-fund
+          npm test --if-present
+          npm run build
+
+      - name: Package release
+        run: |
+          set -euo pipefail
+          RELEASE_ID="${GITHUB_SHA:0:12}-${GITHUB_RUN_NUMBER}"
+          PACKAGE_NAME="sagemro-cn-release-${RELEASE_ID}.tgz"
+
+          echo "RELEASE_ID=${RELEASE_ID}" >> "$GITHUB_ENV"
+          echo "PACKAGE_NAME=${PACKAGE_NAME}" >> "$GITHUB_ENV"
+
+          mkdir -p release/frontend release/admin
+          cp -a frontend/dist/. release/frontend/
+          cp -a admin/dist/. release/admin/
+          tar -czf "$PACKAGE_NAME" -C release .
+
+          test -f release/frontend/index.html
+          test -f release/admin/index.html
+
+      - name: Setup Aliyun CLI
+        uses: aliyun/setup-aliyun-cli-action@v1
+
+      - name: Detect GitHub runner IP
+        run: |
+          set -euo pipefail
+          runner_ip="$(curl -fsS https://checkip.amazonaws.com | tr -d '[:space:]')"
+          if ! [[ "$runner_ip" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Unable to detect a valid IPv4 runner IP: ${runner_ip}"
+            exit 1
+          fi
+
+          echo "::add-mask::${runner_ip}"
+          echo "RUNNER_CIDR=${runner_ip}/32" >> "$GITHUB_ENV"
+
+      - name: Allow GitHub runner SSH
+        env:
+          ALIYUN_ACCESS_KEY_ID: ${{ secrets.ALIYUN_ACCESS_KEY_ID }}
+          ALIYUN_ACCESS_KEY_SECRET: ${{ secrets.ALIYUN_ACCESS_KEY_SECRET }}
+          ALIYUN_REGION_ID: ${{ secrets.ALIYUN_REGION_ID }}
+          ALIYUN_SECURITY_GROUP_ID: ${{ secrets.ALIYUN_SECURITY_GROUP_ID }}
+          ALIYUN_ECS_PORT: ${{ secrets.ALIYUN_ECS_PORT }}
+        run: |
+          set -euo pipefail
+          aliyun configure set \
+            --profile sagemro-ci \
+            --mode AK \
+            --region "$ALIYUN_REGION_ID" \
+            --access-key-id "$ALIYUN_ACCESS_KEY_ID" \
+            --access-key-secret "$ALIYUN_ACCESS_KEY_SECRET"
+
+          aliyun ecs RevokeSecurityGroup \
+            --profile sagemro-ci \
+            --RegionId "$ALIYUN_REGION_ID" \
+            --SecurityGroupId "$ALIYUN_SECURITY_GROUP_ID" \
+            --IpProtocol tcp \
+            --PortRange "$ALIYUN_ECS_PORT/$ALIYUN_ECS_PORT" \
+            --SourceCidrIp "$RUNNER_CIDR" >/dev/null 2>&1 || true
+
+          aliyun ecs AuthorizeSecurityGroup \
+            --profile sagemro-ci \
+            --RegionId "$ALIYUN_REGION_ID" \
+            --SecurityGroupId "$ALIYUN_SECURITY_GROUP_ID" \
+            --IpProtocol tcp \
+            --PortRange "$ALIYUN_ECS_PORT/$ALIYUN_ECS_PORT" \
+            --SourceCidrIp "$RUNNER_CIDR" \
+            --Policy accept \
+            --Priority 1
+
+          echo "RUNNER_SSH_RULE_ADDED=true" >> "$GITHUB_ENV"
+
+      - name: Configure SSH
+        env:
+          ALIYUN_ECS_HOST: ${{ secrets.ALIYUN_ECS_HOST }}
+          ALIYUN_ECS_PORT: ${{ secrets.ALIYUN_ECS_PORT }}
+          ALIYUN_ECS_USER: ${{ secrets.ALIYUN_ECS_USER }}
+          ALIYUN_ECS_SSH_KEY: ${{ secrets.ALIYUN_ECS_SSH_KEY }}
+          ALIYUN_ECS_HOST_KEY: ${{ secrets.ALIYUN_ECS_HOST_KEY }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          printf '%s\n' "$ALIYUN_ECS_SSH_KEY" > ~/.ssh/aliyun_ecs
+          chmod 600 ~/.ssh/aliyun_ecs
+          : > ~/.ssh/known_hosts
+          if [ -n "${ALIYUN_ECS_HOST_KEY:-}" ]; then
+            printf '%s\n' "$ALIYUN_ECS_HOST_KEY" >> ~/.ssh/known_hosts
+          else
+            set +e
+            ssh -p "$ALIYUN_ECS_PORT" \
+              -o BatchMode=yes \
+              -o PreferredAuthentications=none \
+              -o StrictHostKeyChecking=accept-new \
+              "$ALIYUN_ECS_USER@$ALIYUN_ECS_HOST" true
+            ssh_status=$?
+            set -e
+
+            if [ ! -s ~/.ssh/known_hosts ]; then
+              echo "::error::Unable to record Aliyun ECS host key. SSH exited with ${ssh_status}."
+              exit 1
+            fi
+          fi
+
+      - name: Upload release
+        env:
+          ALIYUN_ECS_HOST: ${{ secrets.ALIYUN_ECS_HOST }}
+          ALIYUN_ECS_PORT: ${{ secrets.ALIYUN_ECS_PORT }}
+          ALIYUN_ECS_USER: ${{ secrets.ALIYUN_ECS_USER }}
+        run: |
+          set -euo pipefail
+          scp -i ~/.ssh/aliyun_ecs -P "$ALIYUN_ECS_PORT" \
+            -o StrictHostKeyChecking=yes \
+            "$PACKAGE_NAME" \
+            "$ALIYUN_ECS_USER@$ALIYUN_ECS_HOST:/tmp/$PACKAGE_NAME"
+
+      - name: Activate release
+        env:
+          ALIYUN_ECS_HOST: ${{ secrets.ALIYUN_ECS_HOST }}
+          ALIYUN_ECS_PORT: ${{ secrets.ALIYUN_ECS_PORT }}
+          ALIYUN_ECS_USER: ${{ secrets.ALIYUN_ECS_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i ~/.ssh/aliyun_ecs -p "$ALIYUN_ECS_PORT" \
+            -o StrictHostKeyChecking=yes \
+            "$ALIYUN_ECS_USER@$ALIYUN_ECS_HOST" \
+            "RELEASE_ID='$RELEASE_ID' PACKAGE_NAME='$PACKAGE_NAME' bash -s" <<'REMOTE_SCRIPT'
+          set -euo pipefail
+
+          package="/tmp/${PACKAGE_NAME}"
+          release="/var/www/sagemro-cn/releases/${RELEASE_ID}"
+          current="/var/www/sagemro-cn/current"
+
+          SUDO=""
+          if [ "$(id -u)" -ne 0 ]; then
+            SUDO="sudo"
+          fi
+
+          $SUDO mkdir -p "$release" "$current"
+          $SUDO tar -xzf "$package" -C "$release"
+
+          test -f "$release/frontend/index.html"
+          test -f "$release/admin/index.html"
+
+          $SUDO ln -sfnT "$release/frontend" "$current/frontend"
+          $SUDO ln -sfnT "$release/frontend" "$current/engineer"
+          $SUDO ln -sfnT "$release/admin" "$current/admin"
+
+          $SUDO nginx -t
+          $SUDO systemctl reload nginx
+
+          echo "Activated release: $release"
+          REMOTE_SCRIPT
+
+      - name: Health checks
+        run: |
+          set -euo pipefail
+          curl -fsS --retry 3 --retry-delay 2 https://sagemro.cn/ >/dev/null
+          curl -fsS --retry 3 --retry-delay 2 https://admin.sagemro.cn/ >/dev/null
+          curl -fsS --retry 3 --retry-delay 2 https://engineer.sagemro.cn/ >/dev/null
+          curl -fsS --retry 3 --retry-delay 2 https://api.sagemro.cn/health >/dev/null
+
+      - name: Revoke GitHub runner SSH
+        if: always()
+        env:
+          ALIYUN_ACCESS_KEY_ID: ${{ secrets.ALIYUN_ACCESS_KEY_ID }}
+          ALIYUN_ACCESS_KEY_SECRET: ${{ secrets.ALIYUN_ACCESS_KEY_SECRET }}
+          ALIYUN_REGION_ID: ${{ secrets.ALIYUN_REGION_ID }}
+          ALIYUN_SECURITY_GROUP_ID: ${{ secrets.ALIYUN_SECURITY_GROUP_ID }}
+          ALIYUN_ECS_PORT: ${{ secrets.ALIYUN_ECS_PORT }}
+        run: |
+          set -euo pipefail
+          if [ "${RUNNER_SSH_RULE_ADDED:-}" != "true" ] || [ -z "${RUNNER_CIDR:-}" ]; then
+            echo "No temporary runner SSH rule was recorded; skipping cleanup."
+            exit 0
+          fi
+
+          aliyun configure set \
+            --profile sagemro-ci \
+            --mode AK \
+            --region "$ALIYUN_REGION_ID" \
+            --access-key-id "$ALIYUN_ACCESS_KEY_ID" \
+            --access-key-secret "$ALIYUN_ACCESS_KEY_SECRET"
+
+          aliyun ecs RevokeSecurityGroup \
+            --profile sagemro-ci \
+            --RegionId "$ALIYUN_REGION_ID" \
+            --SecurityGroupId "$ALIYUN_SECURITY_GROUP_ID" \
+            --IpProtocol tcp \
+            --PortRange "$ALIYUN_ECS_PORT/$ALIYUN_ECS_PORT" \
+            --SourceCidrIp "$RUNNER_CIDR"
+
+      - name: Deployment summary
+        run: |
+          {
+            echo "### Aliyun China deploy"
+            echo ""
+            echo "- Release: \`$RELEASE_ID\`"
+            echo "- Frontend: https://sagemro.cn/"
+            echo "- Admin: https://admin.sagemro.cn/"
+            echo "- Engineer: https://engineer.sagemro.cn/"
+            echo "- API health: https://api.sagemro.cn/health"
+          } >> "$GITHUB_STEP_SUMMARY"
