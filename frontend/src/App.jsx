@@ -29,9 +29,15 @@ const NotificationModal = lazy(() => import('./components/Notification/Notificat
 function App() {
   const isEngineerHost = typeof window !== 'undefined'
     && window.location.hostname.startsWith('engineer.');
+  const isCn = typeof window !== 'undefined'
+    && window.location.hostname.endsWith('.cn');
   const engineerPortalUrl = typeof window !== 'undefined' && window.location.hostname.endsWith('.cn')
     ? 'https://engineer.sagemro.cn'
     : 'https://engineer.sagemro.com';
+
+  useEffect(() => {
+    document.title = isCn ? 'SAGEMRO 智能服务系统' : 'SAGEMRO Service OS';
+  }, [isCn]);
 
   // 侧边栏状态
   const [sidebarOpen, setSidebarOpen] = useState(false);

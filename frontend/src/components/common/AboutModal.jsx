@@ -11,6 +11,7 @@ import {
   ShieldCheck,
   Wrench,
 } from 'lucide-react';
+import { isCnLocale } from '../../utils/locale';
 
 const serviceMoments = [
   { icon: MessageCircle, title: '从一次对话开始', desc: '用自然语言描述报警、备件、切割质量、维保需求或新机项目，不需要先填复杂表单。' },
@@ -35,13 +36,19 @@ const serviceStandards = [
 ];
 
 export function AboutModal({ isOpen, onClose }) {
+  const isCn = isCnLocale();
+  const serviceName = isCn ? 'SAGEMRO 智能服务系统' : 'SAGEMRO Service OS';
+  const operatorLine = isCn
+    ? '济南钰峭机械有限公司'
+    : 'A product of Jinan Euchio Machinery Co., Ltd.';
+
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="关于 SAGEMRO Service OS" size="md">
+    <Modal isOpen={isOpen} onClose={onClose} title={isCn ? `关于 ${serviceName}` : `About ${serviceName}`} size="md">
       <div className="space-y-6">
         <div className="text-center py-2">
           <BrandMark variant="logo" className="mx-auto mb-3 h-24 w-24 object-contain drop-shadow-[0_18px_36px_rgba(245,158,11,0.24)]" />
           <h2 className="text-xl font-medium text-[var(--color-text-primary)] mb-1">
-            SAGEMRO Service OS
+            {serviceName}
           </h2>
           <p className="text-sm text-[var(--color-text-secondary)] leading-relaxed">
             面向激光切割与钣金加工设备的 AI 辅助官方服务入口。你只需说明现场情况，SAGEMRO 会帮助梳理问题、确认关键信息，并把它推进到诊断、备件、维保、服务或新机评估。
@@ -139,7 +146,7 @@ export function AboutModal({ isOpen, onClose }) {
             © 2026 SAGEMRO. All rights reserved.
           </p>
           <p className="text-[10px] text-[var(--color-text-muted)]">
-            A product of Jinan Euchio Machinery Co., Ltd.
+            {operatorLine}
           </p>
         </div>
       </div>

@@ -2,8 +2,11 @@ import { useState } from 'react';
 import { Modal } from '../common/Modal';
 import { login, sendVerifyCode, sendResetCode, resetPassword, registerCustomer } from '../../services/api';
 import { toastSuccess, toastError } from '../../utils/feedback';
+import { isCnLocale } from '../../utils/locale';
 
 export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
+  const serviceName = isCnLocale() ? 'SAGEMRO 智能服务系统' : 'SAGEMRO Service OS';
+
   // step flow:
   // choice -> register-company -> register-auth -> customer / visitor completion / login
   const [step, setStep] = useState('login');
@@ -344,7 +347,7 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
             </div>
 
             <div className="text-center mb-4">
-              <p className="text-sm text-[var(--color-text-secondary)]">你希望如何使用 SAGEMRO Service OS？</p>
+              <p className="text-sm text-[var(--color-text-secondary)]">你希望如何使用 {serviceName}？</p>
             </div>
 
             <div className="space-y-2.5">
@@ -448,7 +451,7 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
         {step === 'login' && (
           <div className="space-y-3">
             <div className="text-center mb-4">
-              <p className="text-sm text-[var(--color-text-secondary)]">需要钣金设备服务支持？登录后继续使用 SAGEMRO Service OS</p>
+              <p className="text-sm text-[var(--color-text-secondary)]">需要钣金设备服务支持？登录后继续使用 {serviceName}</p>
             </div>
 
             {error && (

@@ -3,6 +3,7 @@ import {
   ShieldCheck,
 } from 'lucide-react';
 import { BrandMark } from '../common/BrandMark';
+import { isCnLocale } from '../../utils/locale';
 
 const aiCapabilities = [
   '故障诊断',
@@ -20,6 +21,9 @@ const trustPoints = [
 ];
 
 export function WelcomePage() {
+  const isCn = isCnLocale();
+  const serviceName = isCn ? 'SAGEMRO 智能服务系统' : 'SAGEMRO Service OS';
+
   return (
     <div className="flex min-h-full items-center justify-center px-4 py-8 sm:px-6">
       <div className="w-full max-w-4xl">
@@ -28,7 +32,7 @@ export function WelcomePage() {
         <div className="text-center">
           <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-3 py-1.5 text-[11px] uppercase tracking-[0.18em] text-[var(--color-text-secondary)]">
             <ShieldCheck size={13} className="text-[var(--color-primary)]" />
-            SAGEMRO Service OS
+            {serviceName}
           </div>
           <h1 className="text-[28px] font-semibold leading-tight tracking-tight text-[var(--color-text-primary)] sm:text-[42px]">
             设备不能等，下一步要清楚。

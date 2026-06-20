@@ -4,6 +4,7 @@ import { MessageBubble } from './MessageBubble';
 import { WelcomePage } from './WelcomePage';
 import { InputArea } from './InputArea';
 import { Footer } from '../common/Footer';
+import { isCnLocale } from '../../utils/locale';
 
 export function ChatArea({
   messages,
@@ -27,7 +28,9 @@ export function ChatArea({
   }, [messages]);
 
   const hasMessages = messages.length > 0;
-  const pageTitle = hasMessages ? (currentTitle || '服务对话') : 'SAGEMRO Service OS';
+  const isCn = isCnLocale();
+  const serviceName = isCn ? 'SAGEMRO 智能服务系统' : 'SAGEMRO Service OS';
+  const pageTitle = hasMessages ? (currentTitle || '服务对话') : serviceName;
 
   return (
     <div className="flex flex-col h-full bg-[var(--color-chat-bg)]">

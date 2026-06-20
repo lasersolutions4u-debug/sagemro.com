@@ -4,7 +4,7 @@
 
 **生效日期：2026年4月24日**
 
-在您使用 SAGEMRO Service OS 的 AI 助手"小智"之前，请仔细阅读以下须知。
+在您使用 SAGEMRO 智能服务系统的 AI 助手之前，请仔细阅读以下须知。
 
 ## 一、AI 服务性质
 
@@ -61,4 +61,4 @@
 
 邮箱：support@sagemro.com
 
-平台网址：https://sagemro.com
+平台网址：https://sagemro.cn

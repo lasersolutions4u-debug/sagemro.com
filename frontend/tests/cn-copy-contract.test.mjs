@@ -16,6 +16,13 @@ function extractCnCopyObject(source) {
   return source.slice(start, end);
 }
 
+function extractConstTemplate(source, name) {
+  const pattern = new RegExp(`const ${name} = \`([\\s\\S]*?)\`\\.trim\\(\\);`);
+  const match = source.match(pattern);
+  assert.ok(match, `expected ${name} template to be discoverable`);
+  return match[1];
+}
+
 test('CN engineer recruiting copy reads as native Chinese service positioning', () => {
   const source = extractCnCopyObject(read('frontend/src/components/Engineer/EngineerRecruitingPage.jsx'));
 
@@ -49,6 +56,43 @@ test('CN public service copy avoids stiff translated product wording', () => {
   assert.match(publicSources, /进入人工确认与服务安排/);
   assert.match(publicSources, /一次对话，理清六类服务方向/);
   assert.match(publicSources, /后续能推进的服务依据/);
+});
+
+test('CN public and legal copy uses localized operator and service system names', () => {
+  const publicSources = [
+    read('frontend/src/components/common/Footer.jsx'),
+    read('frontend/src/components/common/AboutModal.jsx'),
+    read('frontend/src/components/Chat/WelcomePage.jsx'),
+    read('frontend/src/components/Chat/ChatArea.jsx'),
+    read('frontend/src/components/Auth/LoginModal.jsx'),
+  ].join('\n');
+  const legalSource = read('frontend/src/components/common/LegalModal.jsx');
+  const legalCnCopy = [
+    extractConstTemplate(legalSource, 'ZH_USER_AGREEMENT'),
+    extractConstTemplate(legalSource, 'ZH_PRIVACY_POLICY'),
+    extractConstTemplate(legalSource, 'ZH_AI_DISCLAIMER'),
+  ].join('\n');
+  const legalDocs = [
+    read('docs/legal/privacy-policy.md'),
+    read('docs/legal/ai-disclaimer.md'),
+    read('docs/SAGEMRO-平台服务协议.md'),
+  ].join('\n');
+
+  assert.match(publicSources, /SAGEMRO 智能服务系统/);
+  assert.match(publicSources, /济南钰峭机械有限公司/);
+  assert.match(legalCnCopy, /SAGEMRO 智能服务系统/);
+  assert.match(legalCnCopy, /济南钰峭机械有限公司/);
+  assert.match(legalCnCopy, /https:\/\/sagemro\.cn/);
+  assert.match(legalSource, /平台运营方：济南钰峭机械有限公司/);
+  assert.match(legalDocs, /SAGEMRO 智能服务系统/);
+  assert.match(legalDocs, /济南钰峭机械有限公司/);
+  assert.match(legalDocs, /https:\/\/sagemro\.cn/);
+
+  assert.doesNotMatch(legalCnCopy, /Jinan Euchio Machinery Co\., Ltd\./);
+  assert.doesNotMatch(legalCnCopy, /SAGEMRO Service OS/);
+  assert.doesNotMatch(legalCnCopy, /https:\/\/sagemro\.com/);
+  assert.doesNotMatch(legalDocs, /Jinan Euchio Machinery Co\., Ltd\./);
+  assert.doesNotMatch(legalDocs, /SAGEMRO Service OS/);
 });
 
 test('CN operations copy avoids internal English role labels in visible text', () => {
