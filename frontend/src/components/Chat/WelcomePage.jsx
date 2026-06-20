@@ -23,7 +23,7 @@ export function WelcomePage() {
   return (
     <div className="flex min-h-full items-center justify-center px-4 py-8 sm:px-6">
       <div className="w-full max-w-4xl">
-        <BrandMark className="mx-auto mb-6 h-16 w-16 shadow-lg shadow-amber-500/20" />
+        <BrandMark variant="logo" className="mx-auto mb-6 h-24 w-24 object-contain drop-shadow-[0_18px_36px_rgba(245,158,11,0.24)]" />
 
         <div className="text-center">
           <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-3 py-1.5 text-[11px] uppercase tracking-[0.18em] text-[var(--color-text-secondary)]">

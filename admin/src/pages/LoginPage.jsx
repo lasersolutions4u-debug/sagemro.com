@@ -1,7 +1,7 @@
 import { useState } from 'react';
-import { Shield } from 'lucide-react';
 import { adminLogin } from '../services/api';
 import { runtimeConfig } from '../config/runtime';
+import { BrandMark } from '../components/BrandMark';
 
 const TEXT = {
   en: {
@@ -50,9 +50,7 @@ export function LoginPage({ onLogin }) {
     <div className="min-h-screen flex items-center justify-center px-4">
       <div className="w-full max-w-sm">
         <div className="text-center mb-8">
-          <div className="w-16 h-16 rounded-2xl bg-[var(--color-primary)] flex items-center justify-center mx-auto mb-4">
-            <Shield size={32} className="text-white" />
-          </div>
+          <BrandMark variant="logo" className="mx-auto mb-4 h-24 w-24 object-contain drop-shadow-[0_18px_36px_rgba(245,158,11,0.24)]" />
           <h1 className="text-xl font-semibold text-[var(--color-text)]">{t.title}</h1>
           <p className="text-sm text-[var(--color-text-secondary)] mt-1">{t.subtitle}</p>
         </div>

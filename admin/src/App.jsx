@@ -8,6 +8,7 @@ import { RatingsPage } from './pages/RatingsPage';
 import { LeadsPage } from './pages/LeadsPage';
 import { EngineerApplicationsPage } from './pages/EngineerApplicationsPage';
 import { runtimeConfig } from './config/runtime';
+import { BrandMark } from './components/BrandMark';
 
 const TEXT = {
   en: {
@@ -96,8 +97,13 @@ export default function App() {
         ${sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
       `}>
         <div className="px-5 py-4 border-b border-[var(--color-border)]">
-          <div className="text-base font-semibold text-[var(--color-primary)]">SAGEMRO</div>
-          <div className="text-xs text-[var(--color-text-muted)]">{t.subtitle}</div>
+          <div className="flex items-center gap-3">
+            <BrandMark className="h-10 w-10 shrink-0 rounded-full shadow-sm" />
+            <div>
+              <div className="text-base font-semibold text-[var(--color-primary)]">SAGEMRO</div>
+              <div className="text-xs text-[var(--color-text-muted)]">{t.subtitle}</div>
+            </div>
+          </div>
         </div>
 
         <nav className="flex-1 py-4 px-3 space-y-1">
@@ -145,6 +151,7 @@ export default function App() {
               <line x1="3" y1="18" x2="21" y2="18" />
             </svg>
           </button>
+          <BrandMark className="h-8 w-8 shrink-0 rounded-full" />
           <span className="text-sm font-medium">{t.mobileTitle}</span>
         </div>
 
