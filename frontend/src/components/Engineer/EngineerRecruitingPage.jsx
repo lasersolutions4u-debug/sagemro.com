@@ -158,7 +158,7 @@ export function EngineerRecruitingPage({ onOpenLogin }) {
   };
 
   return (
-    <div className="min-h-[100dvh] overflow-y-auto bg-[#fbfaf7] text-[#17120b]">
+    <div className="relative min-h-[100dvh] bg-[#fbfaf7] text-[#17120b]">
       <div className="absolute inset-x-0 top-0 h-[430px] overflow-hidden bg-[#14100b]">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_18%_15%,_rgba(245,158,11,0.36),_transparent_34%),radial-gradient(circle_at_80%_0%,_rgba(252,211,77,0.18),_transparent_32%),linear-gradient(135deg,_#14100b_0%,_#2b1b0d_58%,_#4a2a0e_100%)]" />
         <div className="absolute inset-0 opacity-[0.14] [background-image:linear-gradient(rgba(255,255,255,.2)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,.2)_1px,transparent_1px)] [background-size:44px_44px]" />
