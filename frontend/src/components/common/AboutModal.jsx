@@ -39,7 +39,7 @@ export function AboutModal({ isOpen, onClose }) {
     <Modal isOpen={isOpen} onClose={onClose} title="About SAGEMRO Service OS" size="md">
       <div className="space-y-6">
         <div className="text-center py-2">
-          <BrandMark className="mx-auto mb-3 h-16 w-16 shadow-lg shadow-amber-500/20" />
+          <BrandMark variant="logo" className="mx-auto mb-3 h-24 w-24 object-contain drop-shadow-[0_18px_36px_rgba(245,158,11,0.24)]" />
           <h2 className="text-xl font-medium text-[var(--color-text-primary)] mb-1">
             SAGEMRO Service OS
           </h2>

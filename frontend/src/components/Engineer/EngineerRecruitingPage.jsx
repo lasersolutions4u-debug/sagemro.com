@@ -167,7 +167,7 @@ export function EngineerRecruitingPage({ onOpenLogin }) {
       <div className="relative mx-auto max-w-7xl px-5 py-6">
         <header className="flex items-center justify-between gap-4">
           <div className="flex items-center gap-3">
-            <BrandMark className="h-11 w-11 drop-shadow-[0_12px_24px_rgba(245,158,11,0.22)]" />
+            <BrandMark variant="logo" className="h-14 w-14 object-contain drop-shadow-[0_12px_24px_rgba(245,158,11,0.22)]" />
             <div>
               <div className="text-sm font-semibold text-white">SAGEMRO</div>
               <div className="text-xs text-white/70">Service Representative Network</div>
