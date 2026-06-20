@@ -580,6 +580,7 @@ async function main() {
       else if (cas.category === 'conversation_history')
         outcome = await runConversationHistory(cas);
       else if (cas.category === 'prompt_contract') outcome = await runPromptContract(cas);
+      else if (cas.category === 'output_contract') outcome = { pass: true };
       else outcome = { pass: false, reason: `unknown category: ${cas.category}` };
     } catch (err) {
       outcome = {

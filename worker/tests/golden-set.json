@@ -1,6 +1,6 @@
 {
-  "version": 4,
-  "description": "Golden set — 41 deterministic regression cases across role_guard (10), redact (10), assigned_service_tasks (10), conversation_history (5), prompt_contract (6). v4 locks production-validated chat prompt rules for CN/COM language routing and service conversion boundaries.",
+  "version": 5,
+  "description": "Golden set — 43 deterministic regression cases across role_guard (10), redact (10), assigned_service_tasks (10), conversation_history (5), prompt_contract (7), output_contract (1). v5 locks production-validated chat prompt rules for CN/COM language routing, service conversion boundaries, and first real-output smoke contracts.",
   "cases": [
     {
       "id": "rg-001",
@@ -466,6 +466,37 @@
           "For price, parts, or on-site requests, do not invent final prices, availability, service dates, or engineer assignments",
           "When conversion is appropriate, present a concise service-ready case summary and ask the user to confirm the next step; do not claim a work order exists until it is actually created"
         ]
+      }
+    },
+    {
+      "id": "pc-007",
+      "category": "prompt_contract",
+      "description": "普通维护频率问题要短答且不主动加服务 CTA",
+      "input": {
+        "url": "https://api.sagemro.cn/api/chat",
+        "origin": "https://sagemro.cn",
+        "message": "激光切割机喷嘴多久清理一次？"
+      },
+      "expect": {
+        "prompt_contains": [
+          "For routine maintenance frequency questions, answer in no more than 5 compact lines",
+          "Do not add a SAGEMRO service follow-up CTA for routine maintenance questions unless the user mentions abnormal wear, downtime, safety risk, quotation, parts purchase, or on-site support"
+        ]
+      }
+    },
+    {
+      "id": "oc-001",
+      "category": "output_contract",
+      "description": "中国站喷嘴清理频率：中文短答、给频率、无工单推动",
+      "input": {
+        "origin": "https://sagemro.cn",
+        "client_market": "cn",
+        "client_locale": "zh-CN",
+        "message": "激光切割机喷嘴多久清理一次？"
+      },
+      "expect": {
+        "output_contains": ["每班", "检查", "清理"],
+        "output_not_contains": ["工单", "服务跟进摘要", "安排上门", "注册", "报价"]
       }
     }
   ]

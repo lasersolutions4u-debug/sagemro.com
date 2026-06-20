@@ -7,14 +7,15 @@ import { scoreText } from '../scripts/real-output-eval.mjs';
 
 const execFileAsync = promisify(execFile);
 
-test('real output eval dry-run is safe when no output contract cases exist yet', async () => {
+test('real output eval dry-run lists output contract cases without calling API', async () => {
   const { stdout } = await execFileAsync('node', [
     'scripts/real-output-eval.mjs',
     '--dry-run',
   ], { cwd: new URL('..', import.meta.url) });
 
   assert.match(stdout, /mode: dry-run/);
-  assert.match(stdout, /cases: 0/);
+  assert.match(stdout, /cases: 1/);
+  assert.match(stdout, /oc-001/);
   assert.match(stdout, /pass --run to call the API/);
   assert.doesNotMatch(stdout, /https:\/\/api\.sagemro/);
 });
@@ -29,7 +30,7 @@ test('real output eval requires --run before calling API', async () => {
   assert.match(stdout, /pass --run to call the API/);
 });
 
-test('real output eval accepts a market filter before output contract cases are added', async () => {
+test('real output eval accepts a market filter for output contract cases', async () => {
   const { stdout } = await execFileAsync('node', [
     'scripts/real-output-eval.mjs',
     '--dry-run',
@@ -38,7 +39,8 @@ test('real output eval accepts a market filter before output contract cases are 
   ], { cwd: new URL('..', import.meta.url) });
 
   assert.match(stdout, /market: cn/);
-  assert.match(stdout, /cases: 0/);
+  assert.match(stdout, /cases: 1/);
+  assert.match(stdout, /oc-001/);
 });
 
 test('real output eval accepts a case filter before output contract cases are added', async () => {
