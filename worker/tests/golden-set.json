@@ -1,6 +1,6 @@
 {
-  "version": 3,
-  "description": "Golden set — 38 deterministic regression cases across role_guard (10), redact (10), assigned_service_tasks (10), conversation_history (5), prompt_contract (3). v3 locks production-validated chat prompt rules for CN/COM language routing and simple-question conversion boundaries.",
+  "version": 4,
+  "description": "Golden set — 41 deterministic regression cases across role_guard (10), redact (10), assigned_service_tasks (10), conversation_history (5), prompt_contract (6). v4 locks production-validated chat prompt rules for CN/COM language routing and service conversion boundaries.",
   "cases": [
     {
       "id": "rg-001",
@@ -417,6 +417,54 @@
           "Do not push a work order or service request after a simple question is already answered clearly",
           "Add a short SAGEMRO official follow-up offer only when manual confirmation, quotation, parts, service scheduling, safety handling, or official parameter verification is clearly useful",
           "If the user did not explicitly request a detailed plan, table, report, or full checklist, write exactly 5 compact lines"
+        ]
+      }
+    },
+    {
+      "id": "pc-004",
+      "category": "prompt_contract",
+      "description": "普通维护知识问题先完整解答，不默认转工单",
+      "input": {
+        "url": "https://api.sagemro.com/api/chat",
+        "origin": "https://sagemro.com",
+        "message": "How often should I clean the protective lens on a fiber laser cutter?"
+      },
+      "expect": {
+        "prompt_contains": [
+          "Simple knowledge or routine maintenance questions: answer the question first, then stop unless the user signals service intent",
+          "Do not turn every useful answer into a ticket path"
+        ]
+      }
+    },
+    {
+      "id": "pc-005",
+      "category": "prompt_contract",
+      "description": "停机和安全风险需要推进官方服务跟进摘要",
+      "input": {
+        "url": "https://api.sagemro.com/api/chat",
+        "origin": "https://sagemro.com",
+        "message": "Our 6kW laser cutter is down, smells burnt in the electrical cabinet, and production has stopped. Can you send someone?"
+      },
+      "expect": {
+        "prompt_contains": [
+          "Service conversion triggers: production-stopping faults, safety risks, official quotation, parts confirmation, on-site service, remote diagnosis, new machine selection, or explicit service request",
+          "For urgent or unsafe equipment issues, prioritize stop-work safety guidance, risk level, missing facts, and a SAGEMRO official follow-up summary"
+        ]
+      }
+    },
+    {
+      "id": "pc-006",
+      "category": "prompt_contract",
+      "description": "报价和配件问题不编造价格，转为正式确认路径",
+      "input": {
+        "url": "https://api.sagemro.cn/api/chat",
+        "origin": "https://sagemro.cn",
+        "message": "帮我估一下这台激光机更换喷嘴和保护镜多少钱，能不能安排上门？"
+      },
+      "expect": {
+        "prompt_contains": [
+          "For price, parts, or on-site requests, do not invent final prices, availability, service dates, or engineer assignments",
+          "When conversion is appropriate, present a concise service-ready case summary and ask the user to confirm the next step; do not claim a work order exists until it is actually created"
         ]
       }
     }
