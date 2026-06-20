@@ -9,14 +9,14 @@ import {
 const COPY = {
   cn: {
     title: '我的排单日历',
-    subtitle: '请主动维护你的可服务时间、不可服务时间和已预留现场时间。Admin 与区域负责人派工时会把它作为重要参考。',
+    subtitle: '请主动维护可服务时间、暂不可服务时间和已预留现场时间。运营团队与区域负责人派工时，会把它作为重要参考。',
     type: '类型',
     titleLabel: '标题',
     start: '开始时间',
     end: '结束时间',
     region: '区域',
     notes: '备注',
-    add: '发布排单信号',
+    add: '保存排单安排',
     adding: '正在添加...',
     empty: '暂无日历记录',
     delete: '删除',
@@ -29,8 +29,8 @@ const COPY = {
       reserved_for_service: '已预留服务时间',
     },
     eventTypes: [
-      ['engineer_available', '可服务'],
-      ['engineer_unavailable', '不可服务'],
+      ['engineer_available', '可安排'],
+      ['engineer_unavailable', '暂不可安排'],
       ['reserved_for_service', '已预留'],
     ],
   },

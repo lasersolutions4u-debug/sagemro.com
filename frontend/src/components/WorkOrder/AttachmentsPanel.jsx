@@ -6,6 +6,7 @@ import {
   deleteWorkOrderAttachment,
 } from '../../services/api';
 import { toastSuccess, toastError, confirmDialog } from '../../utils/feedback';
+import { isCnLocale } from '../../utils/locale';
 
 const ALLOWED_TYPES = [
   'image/jpeg', 'image/png', 'image/gif', 'image/webp',
@@ -23,6 +24,7 @@ function isImage(type) { return type?.startsWith('image/'); }
 function isVideo(type) { return type?.startsWith('video/'); }
 
 export function AttachmentsPanel({ workOrderId, userType, userId, readOnly }) {
+  const isCn = isCnLocale();
   const [attachments, setAttachments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
@@ -46,11 +48,11 @@ export function AttachmentsPanel({ workOrderId, userType, userId, readOnly }) {
 
   const validateFile = (file) => {
     if (!ALLOWED_TYPES.includes(file.type)) {
-      toastError(`Unsupported file type: ${file.type || 'unknown'}`);
+      toastError(isCn ? `不支持的文件类型：${file.type || '未知'}` : `Unsupported file type: ${file.type || 'unknown'}`);
       return false;
     }
     if (file.size > MAX_SIZE) {
-      toastError(`File too large (max 50MB): ${file.name}`);
+      toastError(isCn ? `文件过大（单个文件最大 50MB）：${file.name}` : `File too large (max 50MB): ${file.name}`);
       return false;
     }
     return true;
@@ -68,13 +70,13 @@ export function AttachmentsPanel({ workOrderId, userType, userId, readOnly }) {
         await uploadWorkOrderAttachment(workOrderId, file);
         done++;
       } catch (e) {
-        toastError(`Failed to upload ${file.name}: ${e.message}`);
+        toastError(isCn ? `${file.name} 上传失败：${e.message}` : `Failed to upload ${file.name}: ${e.message}`);
       }
     }
     setUploading(false);
     setUploadProgress(null);
     if (done > 0) {
-      toastSuccess(`${done} file(s) uploaded`);
+      toastSuccess(isCn ? `已上传 ${done} 个文件` : `${done} file(s) uploaded`);
       loadAttachments();
     }
   };
@@ -94,13 +96,15 @@ export function AttachmentsPanel({ workOrderId, userType, userId, readOnly }) {
   };
 
   const handleDelete = async (att) => {
-    if (!(await confirmDialog(`Delete attachment "${att.file_name}"? This action cannot be undone.`))) return;
+    if (!(await confirmDialog(
+      isCn ? `删除附件“${att.file_name}”？此操作不可恢复。` : `Delete attachment "${att.file_name}"? This action cannot be undone.`
+    ))) return;
     try {
       await deleteWorkOrderAttachment(workOrderId, att.id);
-      toastSuccess('Attachment deleted');
+      toastSuccess(isCn ? '附件已删除' : 'Attachment deleted');
       loadAttachments();
     } catch (e) {
-      toastError('Delete failed: ' + e.message);
+      toastError((isCn ? '删除失败：' : 'Delete failed: ') + e.message);
     }
   };
 
@@ -137,15 +141,19 @@ export function AttachmentsPanel({ workOrderId, userType, userId, readOnly }) {
               <Loader2 className="w-6 h-6 text-[var(--color-primary)] animate-spin" />
               {uploadProgress && (
                 <p className="text-sm text-[var(--color-text-secondary)]">
-                  Uploading ({uploadProgress.current}/{uploadProgress.total})...
+                  {isCn ? `上传中（${uploadProgress.current}/${uploadProgress.total}）...` : `Uploading (${uploadProgress.current}/${uploadProgress.total})...`}
                 </p>
               )}
             </div>
           ) : (
             <div className="flex flex-col items-center gap-1">
               <Upload className="w-6 h-6 text-[var(--color-text-muted)]" />
-              <p className="text-sm text-[var(--color-text-secondary)]">Drag and drop files here, or click to select</p>
-              <p className="text-xs text-[var(--color-text-muted)]">Supports JPG/PNG/GIF/WebP/MP4/WebM, max 50MB per file</p>
+              <p className="text-sm text-[var(--color-text-secondary)]">
+                {isCn ? '拖拽文件到这里，或点击选择文件' : 'Drag and drop files here, or click to select'}
+              </p>
+              <p className="text-xs text-[var(--color-text-muted)]">
+                {isCn ? '支持 JPG/PNG/GIF/WebP/MP4/WebM，单个文件最大 50MB' : 'Supports JPG/PNG/GIF/WebP/MP4/WebM, max 50MB per file'}
+              </p>
             </div>
           )}
         </div>
@@ -153,11 +161,11 @@ export function AttachmentsPanel({ workOrderId, userType, userId, readOnly }) {
 
       {/* 附件列表 */}
       {loading ? (
-        <div className="text-center py-4 text-sm text-[var(--color-text-muted)]">Loading...</div>
+        <div className="text-center py-4 text-sm text-[var(--color-text-muted)]">{isCn ? '加载中...' : 'Loading...'}</div>
       ) : attachments.length === 0 ? (
         <div className="text-center py-8 text-sm text-[var(--color-text-muted)]">
           <Paperclip className="w-8 h-8 mx-auto mb-2 opacity-30" />
-          No attachments yet
+          {isCn ? '暂无附件' : 'No attachments yet'}
         </div>
       ) : (
         <div className="grid grid-cols-2 gap-2">

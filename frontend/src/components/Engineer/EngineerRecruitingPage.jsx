@@ -5,45 +5,46 @@ import { BrandMark } from '../common/BrandMark';
 
 const COPY = {
   cn: {
-    badge: 'SAGEMRO Service OS · 认证服务代表计划',
-    title: '让专业工程师被看见、被支持、被认真对待。',
-    subtitle: 'SAGEMRO 正在建设面向激光切割机与钣金加工设备的官方服务网络。我们寻找真正理解现场、设备和客户压力的工程师，由运营团队审核后分配账号，并在标准、派工、资料和成长上持续支持。',
-    primary: '申请成为认证服务代表',
+    badge: 'SAGEMRO 认证服务工程师计划',
+    title: '让真正懂现场的工程师，得到更稳定的机会和支持。',
+    subtitle: 'SAGEMRO 正在建设面向激光切割机与钣金加工设备的官方服务体系。我们寻找懂设备、懂现场、也愿意长期服务客户的工程师；确认合作后，由运营团队统一分配账号，并在派工协作、服务标准、资料沉淀和成长支持上持续陪伴。',
+    primary: '申请成为认证服务工程师',
     signIn: '已有工程师账号，进入工作台',
+    headerSubtitle: '认证服务工程师网络',
     pillars: [
-      { title: '官方审核，统一协作', text: '申请通过后由 SAGEMRO 分配账号，服务任务由 Admin 与区域负责人统一协调。' },
-      { title: '尊重现场专业', text: '平台重点沉淀设备档案、AI 初诊、备件准备和服务报告，让工程师少做无效沟通。' },
-      { title: '清晰排单协作', text: '工程师自己维护可服务时间，区域负责人和 Admin 派工时作为重要参考。' },
+      { title: '合作确认，统一协作', text: '申请通过并确认合作后，由 SAGEMRO 运营团队分配账号；服务任务由运营团队与区域负责人共同协调。' },
+      { title: '尊重现场专业', text: '系统会整理设备档案、AI 初诊、备件准备和服务报告，让工程师把更多精力放在真正解决问题上。' },
+      { title: '排单更有依据', text: '你可以维护可服务时间、暂不可服务时间和已预留现场时间，帮助区域负责人更合理地安排任务。' },
     ],
     valuesTitle: '我们相信：成就工程师，就是成就客户。',
-    valuesText: '从 Admin 到区域负责人，核心任务是关心工程师的成长、利益与安全。工程师被支持得越充分，客户现场就越容易得到稳定、可靠、有温度的服务。',
+    valuesText: 'SAGEMRO 的运营团队和区域负责人，不只是派工，更要关心工程师的成长、收益与现场安全。工程师被照顾得越好，就越能把客户现场照顾好。',
     fields: {
       name: '姓名',
-      phone: '手机 / 电话',
+      phone: '手机号 / 电话',
       email: '邮箱',
-      whatsapp: 'WhatsApp / 微信',
+      whatsapp: '微信 / WhatsApp',
       country: '国家',
       city: '常驻城市',
-      regions: '可服务区域',
-      skills: '擅长设备 / 技能',
-      experience: '现场服务经验',
+      regions: '常驻服务区域',
+      skills: '熟悉设备 / 技能',
+      experience: '现场服务经历',
     },
     placeholders: {
       name: '请输入姓名',
       phone: '便于运营团队联系',
       email: '可选',
-      whatsapp: '可选',
-      country: '中国 / 马来西亚 / 美国...',
-      city: '例如：苏州 / Chicago',
+      whatsapp: '方便后续联系，可选',
+      country: '中国',
+      city: '例如：苏州 / 济南',
       regions: '例如：江苏、浙江、上海',
       skills: '例如：激光器、切割头、总线报警、保养',
-      experience: '请简单说明服务年限、熟悉品牌、典型案例或希望加入的原因',
+      experience: '请简单说明从业年限、熟悉品牌、典型案例，以及你希望加入 SAGEMRO 的原因',
     },
-    checks: ['愿意跨城服务', '可周末服务', '可夜间紧急支持', '自备基础工具'],
+    checks: ['可跨城服务', '可周末支持', '可夜间应急', '自备基础工具'],
     submit: '提交申请',
     submitting: '正在提交...',
-    success: '申请已收到。SAGEMRO 运营团队会审核资料，并在匹配合适区域后联系你。',
-    note: '提交申请不会自动创建账号。工程师账号仅在确认合作关系后由 SAGEMRO 分配。',
+    success: '申请已收到。SAGEMRO 运营团队会结合区域和技能需求审核，合适时会主动联系你。',
+    note: '提交申请不会自动开通账号。确认合作关系后，SAGEMRO 会统一分配工程师账号。',
   },
   en: {
     badge: 'SAGEMRO Service OS · Certified Representative Program',
@@ -51,6 +52,7 @@ const COPY = {
     subtitle: 'SAGEMRO is building an official service network for laser cutting machines and sheet metal equipment. We review each application manually, then support approved representatives with dispatch coordination, service standards, equipment context, and growth resources.',
     primary: 'Apply as a Certified Service Representative',
     signIn: 'I already have an engineer account',
+    headerSubtitle: 'Service Representative Network',
     pillars: [
       { title: 'Reviewed access, coordinated service', text: 'Approved accounts are assigned by SAGEMRO. Admin and regional leads coordinate service tasks.' },
       { title: 'Field expertise respected', text: 'Equipment records, AI intake notes, parts preparation, and reports help reduce low-value back-and-forth.' },
@@ -170,7 +172,7 @@ export function EngineerRecruitingPage({ onOpenLogin }) {
             <BrandMark variant="logo" className="h-14 w-14 object-contain drop-shadow-[0_12px_24px_rgba(245,158,11,0.22)]" />
             <div>
               <div className="text-sm font-semibold text-white">SAGEMRO</div>
-              <div className="text-xs text-white/70">Service Representative Network</div>
+              <div className="text-xs text-white/70">{copy.headerSubtitle}</div>
             </div>
           </div>
           <button

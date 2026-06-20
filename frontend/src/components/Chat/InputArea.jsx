@@ -1,10 +1,12 @@
 import { useState, useRef, useEffect } from 'react';
 import { Send, StopCircle, ImagePlus, X, Loader2 } from 'lucide-react';
 import { uploadChatImage } from '../../services/api';
+import { isCnLocale } from '../../utils/locale';
 
 const MAX_IMAGES = 4;
 
 export function InputArea({ onSend, onStop, disabled, isStreaming }) {
+  const isCn = isCnLocale();
   const [input, setInput] = useState('');
   const [pendingImages, setPendingImages] = useState([]); // { file, previewUrl, uploading, url, error }
   const textareaRef = useRef(null);
@@ -80,7 +82,7 @@ export function InputArea({ onSend, onStop, disabled, isStreaming }) {
     if ((!text && uploadedImages.length === 0) || disabled) return;
 
     const images = uploadedImages.map(img => ({ url: img.url }));
-    onSend(text || '请帮我分析这张图片', images);
+    onSend(text || (isCn ? '发送图片，请帮我看一下现场情况' : 'Please review this image and help me understand the field situation'), images);
     setInput('');
     pendingImages.forEach(img => {
       if (img.previewUrl) {
@@ -150,7 +152,7 @@ export function InputArea({ onSend, onStop, disabled, isStreaming }) {
               onClick={() => fileInputRef.current?.click()}
               disabled={disabled || isStreaming}
               className="w-12 h-12 flex items-center justify-center rounded-2xl hover:bg-[var(--color-hover)] transition-colors flex-shrink-0 disabled:opacity-50"
-              title="上传图片"
+              title={isCn ? '补充现场图片' : 'Add field image'}
             >
               <ImagePlus size={22} className="text-[var(--color-text-muted)]" />
             </button>
@@ -166,7 +168,9 @@ export function InputArea({ onSend, onStop, disabled, isStreaming }) {
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder={pendingImages.length > 0 ? "补充设备、报警、材料或现场工况。Enter 发送，Shift + Enter 换行。" : "描述设备、报警、材料厚度或现场问题。"}
+              placeholder={pendingImages.length > 0
+                ? (isCn ? '补充设备、报警、材料或现场工况。Enter 发送，Shift + Enter 换行。' : 'Add device, alarm, material, or field context. Enter to send, Shift + Enter for a new line.')
+                : (isCn ? '描述设备、报警、材料厚度或现场问题。' : 'Describe the device, alarm code, material, thickness, or field issue.')}
               disabled={disabled}
               rows={1}
               className="w-full px-4 py-3 bg-transparent resize-none focus:outline-none text-[var(--color-text-primary)] placeholder-[var(--color-text-muted)] disabled:opacity-50 text-[15px]"
@@ -180,7 +184,7 @@ export function InputArea({ onSend, onStop, disabled, isStreaming }) {
               <button
                 onClick={onStop}
                 className="w-12 h-12 flex items-center justify-center bg-red-500 hover:bg-red-600 text-white rounded-2xl transition-colors flex-shrink-0 active:scale-95"
-                title="停止生成"
+                title={isCn ? '停止生成' : 'Stop generation'}
               >
                 <StopCircle size={22} />
               </button>

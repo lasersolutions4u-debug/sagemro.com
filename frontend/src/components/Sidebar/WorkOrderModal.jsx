@@ -5,8 +5,9 @@ import { RegionInput } from '../common/RegionInput';
 import { toastError, toastWarning, toastSuccess } from '../../utils/feedback';
 import { uploadWorkOrderAttachment } from '../../services/api';
 import { WorkOrderType, UrgencyLevel } from '../../types';
-import { categoryConfig } from '../../data/workOrderConfig';
+import { categoryConfig, categoryConfigCn } from '../../data/workOrderConfig';
 import { Paperclip, Loader2, X } from 'lucide-react';
+import { isCnLocale } from '../../utils/locale';
 
 // 设备类型选项
 const deviceTypeOptions = [
@@ -29,6 +30,7 @@ const brandPresets = {
 };
 
 export function WorkOrderModal({ isOpen, onClose, onSubmit }) {
+  const isCn = isCnLocale();
   const [form, setForm] = useState({
     type: '',
     category_l1: 'other',
@@ -62,7 +64,7 @@ export function WorkOrderModal({ isOpen, onClose, onSubmit }) {
 
   const handleSubmit = async () => {
     if (!form.type || !form.description || !form.contact) {
-      toastWarning('Please fill in all required fields');
+      toastWarning(isCn ? '请填写服务类型、问题描述和联系方式' : 'Please fill in all required fields');
       return;
     }
 
@@ -78,18 +80,18 @@ export function WorkOrderModal({ isOpen, onClose, onSubmit }) {
             await uploadWorkOrderAttachment(result.id, file);
             uploaded++;
           } catch (e) {
-            toastError(`Attachment ${file.name} upload failed: ${e.message}`);
+            toastError(isCn ? `附件 ${file.name} 上传失败：${e.message}` : `Attachment ${file.name} upload failed: ${e.message}`);
           }
         }
         setUploadPhase(null);
         if (uploaded > 0) {
-          toastSuccess(`Service request submitted, ${uploaded} attachment(s) uploaded`);
+          toastSuccess(isCn ? `服务申请已提交，已上传 ${uploaded} 个附件` : `Service request submitted, ${uploaded} attachment(s) uploaded`);
         }
       }
       setFiles([]);
       setSubmitted(result);
     } catch (e) {
-      toastError('Submission failed: ' + e.message);
+      toastError((isCn ? '提交失败：' : 'Submission failed: ') + e.message);
     } finally {
       setSubmitting(false);
       setUploadPhase(null);
@@ -117,42 +119,51 @@ export function WorkOrderModal({ isOpen, onClose, onSubmit }) {
   };
 
   const typeOptions = [
-    { value: WorkOrderType.FAULT, label: 'Equipment Repair' },
-    { value: WorkOrderType.MAINTENANCE, label: 'Maintenance' },
-    { value: WorkOrderType.PARAMETER, label: 'Parameter Tuning' },
-    { value: WorkOrderType.CONSULT, label: 'Technical Consultation' },
-    { value: WorkOrderType.PARTS, label: 'Parts Purchase' },
-    { value: WorkOrderType.AFTERSALES, label: 'After-sales Service' },
-    { value: WorkOrderType.OTHER, label: 'Other' },
+    { value: WorkOrderType.FAULT, label: isCn ? '设备维修' : 'Equipment Repair' },
+    { value: WorkOrderType.MAINTENANCE, label: isCn ? '维护保养' : 'Maintenance' },
+    { value: WorkOrderType.PARAMETER, label: isCn ? '参数调试' : 'Parameter Tuning' },
+    { value: WorkOrderType.CONSULT, label: isCn ? '技术咨询' : 'Technical Consultation' },
+    { value: WorkOrderType.PARTS, label: isCn ? '备件采购' : 'Parts Purchase' },
+    { value: WorkOrderType.AFTERSALES, label: isCn ? '售后服务' : 'After-sales Service' },
+    { value: WorkOrderType.OTHER, label: isCn ? '其他需求' : 'Other' },
   ];
 
   const urgencyOptions = [
-    { value: UrgencyLevel.NORMAL, label: 'Normal' },
-    { value: UrgencyLevel.URGENT, label: 'Urgent' },
-    { value: UrgencyLevel.CRITICAL, label: 'Critical' },
+    { value: UrgencyLevel.NORMAL, label: isCn ? '普通' : 'Normal' },
+    { value: UrgencyLevel.URGENT, label: isCn ? '紧急' : 'Urgent' },
+    { value: UrgencyLevel.CRITICAL, label: isCn ? '停机/高风险' : 'Critical' },
   ];
+  const localizedCategoryConfig = isCn ? categoryConfigCn : categoryConfig;
 
   return (
-    <Modal isOpen={isOpen} onClose={handleClose} title={submitted ? 'Service Request Submitted' : 'Request SAGEMRO Official Service'} size="md">
+    <Modal
+      isOpen={isOpen}
+      onClose={handleClose}
+      title={submitted ? (isCn ? '服务申请已提交' : 'Service Request Submitted') : (isCn ? '提交 SAGEMRO 官方服务申请' : 'Request SAGEMRO Official Service')}
+      size="md"
+    >
       {/* 提交成功提示 */}
       {submitted && (
         <div className="space-y-4">
           <div className="p-4 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-xl text-center">
             <div className="text-3xl mb-2">✅</div>
-            <p className="text-sm font-medium text-green-700 dark:text-green-400 mb-1">Service request submitted successfully!</p>
+            <p className="text-sm font-medium text-green-700 dark:text-green-400 mb-1">
+              {isCn ? '服务申请提交成功！' : 'Service request submitted successfully!'}
+            </p>
             <p className="text-xs text-green-600 dark:text-green-500">
-              Service No.: {submitted.order_no || submitted.id}
+              {isCn ? '服务编号：' : 'Service No.: '}{submitted.order_no || submitted.id}
             </p>
           </div>
           <p className="text-xs text-[var(--color-text-secondary)] text-center">
-            SAGEMRO will review the request, confirm details, and arrange the right official engineer or service representative.
-            You can track progress in "My Services" at any time.
+            {isCn
+              ? 'SAGEMRO 将审核你的服务需求，确认诊断、报价和现场安全要求后，再安排合适的官方服务人员。你可以在“我的服务”里随时查看进度。'
+              : 'SAGEMRO will review the request, confirm details, and arrange the right official engineer or service representative. You can track progress in "My Services" at any time.'}
           </p>
           <button
             onClick={handleClose}
             className="w-full py-2.5 bg-[var(--color-primary)] hover:opacity-90 text-white rounded-xl font-medium transition-opacity"
           >
-            Got it
+            {isCn ? '知道了' : 'Got it'}
           </button>
         </div>
       )}
@@ -162,14 +173,14 @@ export function WorkOrderModal({ isOpen, onClose, onSubmit }) {
         {/* 服务类型 */}
         <div>
           <label className="block text-sm font-medium text-[var(--color-text-primary)] mb-1">
-            Service Type <span className="text-red-500">*</span>
+            {isCn ? '服务类型' : 'Service Type'} <span className="text-red-500">*</span>
           </label>
           <select
             value={form.type}
             onChange={(e) => setForm({ ...form, type: e.target.value })}
             className="w-full px-3 py-2 border border-[var(--color-border)] dark:border-[var(--color-border-strong)] rounded-xl bg-[var(--color-surface)] dark:bg-[var(--color-surface-elevated)] text-xs text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
           >
-            <option value="">Select service type</option>
+            <option value="">{isCn ? '请选择服务类型' : 'Select service type'}</option>
             {typeOptions.map((opt) => (
               <option key={opt.value} value={opt.value}>
                 {opt.label}
@@ -181,14 +192,14 @@ export function WorkOrderModal({ isOpen, onClose, onSubmit }) {
         {/* 设备大类 + 服务类型（级联） */}
         <div>
           <label className="block text-sm font-medium text-[var(--color-text-primary)] mb-1">
-            Equipment Category
+            {isCn ? '设备类别' : 'Equipment Category'}
           </label>
           <select
             value={form.category_l1}
             onChange={(e) => setForm({ ...form, category_l1: e.target.value, category_l2: 'other' })}
             className="w-full px-3 py-2 border border-[var(--color-border)] dark:border-[var(--color-border-strong)] rounded-xl bg-[var(--color-surface)] dark:bg-[var(--color-surface-elevated)] text-xs text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
           >
-            {Object.entries(categoryConfig).map(([key, cfg]) => (
+            {Object.entries(localizedCategoryConfig).map(([key, cfg]) => (
               <option key={key} value={key}>{cfg.label}</option>
             ))}
           </select>
@@ -196,14 +207,14 @@ export function WorkOrderModal({ isOpen, onClose, onSubmit }) {
 
         <div>
           <label className="block text-sm font-medium text-[var(--color-text-primary)] mb-1">
-            Specific Issue
+            {isCn ? '具体问题' : 'Specific Issue'}
           </label>
           <select
             value={form.category_l2}
             onChange={(e) => setForm({ ...form, category_l2: e.target.value })}
             className="w-full px-3 py-2 border border-[var(--color-border)] dark:border-[var(--color-border-strong)] rounded-xl bg-[var(--color-surface)] dark:bg-[var(--color-surface-elevated)] text-xs text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
           >
-            {Object.entries(categoryConfig[form.category_l1]?.l2 || {}).map(([key, label]) => (
+            {Object.entries(localizedCategoryConfig[form.category_l1]?.l2 || {}).map(([key, label]) => (
               <option key={key} value={key}>{label}</option>
             ))}
           </select>
@@ -211,35 +222,37 @@ export function WorkOrderModal({ isOpen, onClose, onSubmit }) {
 
         {/* 设备类型 */}
         <TagInput
-          label="Equipment Type"
+          label={isCn ? '设备类型' : 'Equipment Type'}
           options={deviceTypeOptions}
           value={form.device_type}
           onChange={(val) => setForm({ ...form, device_type: val })}
-          placeholder="Select or enter equipment type..."
+          placeholder={isCn ? '选择或输入设备类型...' : 'Select or enter equipment type...'}
         />
 
         {/* 设备品牌 */}
         <TagInput
-          label="Equipment Brand"
+          label={isCn ? '设备品牌' : 'Equipment Brand'}
           options={brandOptions}
           value={form.device_brand}
           onChange={(val) => setForm({ ...form, device_brand: val })}
-          placeholder={brandOptions.length > 0 ? "Select or add brand..." : "Select equipment type first"}
+          placeholder={brandOptions.length > 0
+            ? (isCn ? '选择或补充品牌...' : 'Select or add brand...')
+            : (isCn ? '请先选择设备类型' : 'Select equipment type first')}
           disabled={brandOptions.length === 0}
         />
 
         {/* 所在地区 */}
         <RegionInput
-          label="Region"
+          label={isCn ? '所在地区' : 'Region'}
           value={form.region}
           onChange={(val) => setForm({ ...form, region: val })}
-          placeholder="Search by region name..."
+          placeholder={isCn ? '搜索或选择地区...' : 'Search by region name...'}
         />
 
         {/* 设备规格型号 */}
         <div>
           <label className="block text-sm font-medium text-[var(--color-text-primary)] mb-1">
-            Equipment Model / Spec
+            {isCn ? '设备型号 / 规格' : 'Equipment Model / Spec'}
           </label>
           <input
             type="text"
@@ -253,12 +266,12 @@ export function WorkOrderModal({ isOpen, onClose, onSubmit }) {
         {/* 问题描述 */}
         <div>
           <label className="block text-sm font-medium text-[var(--color-text-primary)] mb-1">
-            Fault / Service Description <span className="text-red-500">*</span>
+            {isCn ? '问题描述' : 'Fault / Service Description'} <span className="text-red-500">*</span>
           </label>
           <textarea
             value={form.description}
             onChange={(e) => setForm({ ...form, description: e.target.value })}
-            placeholder="Describe the equipment issue, service need, alarm code, or production impact..."
+            placeholder={isCn ? '请描述设备问题、报警代码、服务需求或对生产的影响...' : 'Describe the equipment issue, service need, alarm code, or production impact...'}
             rows={4}
             className="w-full px-3 py-2 border border-[var(--color-border)] dark:border-[var(--color-border-strong)] rounded-xl bg-[var(--color-surface)] dark:bg-[var(--color-surface-elevated)] text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)] resize-none"
           />
@@ -267,13 +280,13 @@ export function WorkOrderModal({ isOpen, onClose, onSubmit }) {
         {/* 联系方式 */}
         <div>
           <label className="block text-sm font-medium text-[var(--color-text-primary)] mb-1">
-            Contact Info <span className="text-red-500">*</span>
+            {isCn ? '联系方式' : 'Contact Info'} <span className="text-red-500">*</span>
           </label>
           <input
             type="text"
             value={form.contact}
             onChange={(e) => setForm({ ...form, contact: e.target.value })}
-            placeholder="Phone number"
+            placeholder={isCn ? '手机号或其他联系方式' : 'Phone number'}
             className="w-full px-3 py-2 border border-[var(--color-border)] dark:border-[var(--color-border-strong)] rounded-xl bg-[var(--color-surface)] dark:bg-[var(--color-surface-elevated)] text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
           />
         </div>
@@ -281,7 +294,7 @@ export function WorkOrderModal({ isOpen, onClose, onSubmit }) {
         {/* 紧急程度 */}
         <div>
           <label className="block text-sm font-medium text-[var(--color-text-primary)] mb-2">
-            Urgency
+            {isCn ? '紧急程度' : 'Urgency'}
           </label>
           <div className="flex gap-3">
             {urgencyOptions.map((opt) => (
@@ -310,7 +323,7 @@ export function WorkOrderModal({ isOpen, onClose, onSubmit }) {
         {/* 附件上传（可选） */}
         <div>
           <label className="block text-sm font-medium text-[var(--color-text-primary)] mb-1">
-            Attachments (Optional)
+            {isCn ? '附件（可选）' : 'Attachments (Optional)'}
           </label>
           <input
             ref={fileInputRef}
@@ -331,7 +344,9 @@ export function WorkOrderModal({ isOpen, onClose, onSubmit }) {
           >
             <Paperclip className="w-4 h-4 text-[var(--color-text-muted)]" />
             <span className="text-xs text-[var(--color-text-muted)]">
-              {files.length > 0 ? `${files.length} file(s) selected` : 'Upload images/videos (optional)'}
+              {files.length > 0
+                ? (isCn ? `已选择 ${files.length} 个文件` : `${files.length} file(s) selected`)
+                : (isCn ? '补充图片或视频（可选）' : 'Upload images/videos (optional)')}
             </span>
           </div>
           {files.length > 0 && (
@@ -365,9 +380,9 @@ export function WorkOrderModal({ isOpen, onClose, onSubmit }) {
         >
           {submitting
             ? uploadPhase
-              ? `Uploading attachments (${uploadPhase.current}/${uploadPhase.total})...`
-              : 'Submitting...'
-            : 'Submit Service Request'}
+              ? (isCn ? `正在上传附件（${uploadPhase.current}/${uploadPhase.total}）...` : `Uploading attachments (${uploadPhase.current}/${uploadPhase.total})...`)
+              : (isCn ? '正在提交...' : 'Submitting...')
+            : (isCn ? '提交服务申请' : 'Submit Service Request')}
         </button>
         </div>
       )}

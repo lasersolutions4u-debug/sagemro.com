@@ -1,6 +1,14 @@
 import { Package, ChevronRight, Wrench } from 'lucide-react';
+import { isCnLocale } from '../../utils/locale';
+
+const statusLabelsCn = {
+  Normal: '正常',
+  Running: '运行中',
+  Maintenance: '维护中',
+};
 
 export function DeviceCard({ device, onClick, onDelete }) {
+  const isCn = isCnLocale();
   const statusColors = {
     'Normal': 'bg-green-500',
     'Running': 'bg-yellow-500',
@@ -32,7 +40,9 @@ export function DeviceCard({ device, onClick, onDelete }) {
         </div>
         <div className="flex items-center gap-2">
           <span className={`w-2 h-2 rounded-full ${statusColor}`} />
-          <span className="text-[12px] text-[var(--color-text-secondary)]">{device.status}</span>
+          <span className="text-[12px] text-[var(--color-text-secondary)]">
+            {isCn ? statusLabelsCn[device.status] || device.status : device.status}
+          </span>
           <ChevronRight size={16} className="text-[var(--color-text-muted)]" />
         </div>
       </div>
@@ -40,16 +50,16 @@ export function DeviceCard({ device, onClick, onDelete }) {
       <div className="flex items-center gap-4 mt-3 pt-3 border-t border-[var(--color-border)]">
         <div className="flex items-center gap-1.5 text-[12px] text-[var(--color-text-muted)]">
           <Wrench size={12} />
-          <span>{device.total_orders || 0} services</span>
+          <span>{device.total_orders || 0} {isCn ? '次服务' : 'services'}</span>
         </div>
         {device.last_order_date && (
           <div className="flex items-center gap-1.5 text-[12px] text-[var(--color-text-muted)]">
-            <span>Latest: {device.last_order_date}</span>
+            <span>{isCn ? '最近一次：' : 'Latest: '}{device.last_order_date}</span>
           </div>
         )}
         {device.completed_orders !== undefined && (
           <div className="text-[12px] text-green-500 opacity-80">
-            {device.completed_orders} completed
+            {isCn ? `已完成 ${device.completed_orders} 次` : `${device.completed_orders} completed`}
           </div>
         )}
       </div>

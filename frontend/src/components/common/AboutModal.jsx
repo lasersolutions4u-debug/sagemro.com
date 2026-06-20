@@ -14,8 +14,8 @@ import {
 
 const serviceMoments = [
   { icon: MessageCircle, title: '从一次对话开始', desc: '用自然语言描述报警、备件、切割质量、维保需求或新机项目，不需要先填复杂表单。' },
-  { icon: ClipboardCheck, title: '获得可服务的清晰信息', desc: 'SAGEMRO AI 会追问缺失细节、读取图片，并把问题整理成可确认的服务摘要。' },
-  { icon: Wrench, title: '进入官方服务动作', desc: '涉及诊断、报价、备件、排期或现场安全时，由 SAGEMRO 官方服务继续确认。' },
+  { icon: ClipboardCheck, title: '把问题整理清楚', desc: 'SAGEMRO AI 会追问关键细节，把现场情况整理成便于确认和跟进的服务摘要。' },
+  { icon: Wrench, title: '进入人工确认与服务安排', desc: '涉及诊断、报价、备件、排期或现场安全时，由 SAGEMRO 官方服务继续确认。' },
 ];
 
 const conversationCapabilities = [
@@ -44,7 +44,7 @@ export function AboutModal({ isOpen, onClose }) {
             SAGEMRO Service OS
           </h2>
           <p className="text-sm text-[var(--color-text-secondary)] leading-relaxed">
-            面向激光切割与钣金加工设备的 AI 官方服务入口。你只需说明一次现场情况，SAGEMRO 会把它转化为诊断、备件、维保、服务或新机项目的清晰路径。
+            面向激光切割与钣金加工设备的 AI 辅助官方服务入口。你只需说明现场情况，SAGEMRO 会帮助梳理问题、确认关键信息，并把它推进到诊断、备件、维保、服务或新机评估。
           </p>
         </div>
 
@@ -73,7 +73,7 @@ export function AboutModal({ isOpen, onClose }) {
 
         <section>
           <h3 className="text-sm font-medium text-[var(--color-text-primary)] mb-3">
-            一个聊天入口，六类服务结果
+            一次对话，理清六类服务方向
           </h3>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             {conversationCapabilities.map((item) => (
@@ -84,7 +84,7 @@ export function AboutModal({ isOpen, onClose }) {
             ))}
           </div>
           <p className="mt-3 text-[12px] leading-relaxed text-[var(--color-text-secondary)]">
-            这些能力都在同一个聊天过程中完成。SAGEMRO 会识别场景、追问关键问题，并在聊天中让你确认结构化信息。
+            这些能力都在同一个聊天过程中完成。SAGEMRO 会识别场景、追问关键问题，并在聊天中请你确认关键信息。
           </p>
         </section>
 
@@ -125,7 +125,7 @@ export function AboutModal({ isOpen, onClose }) {
                 为设备长期价值而设计
               </h3>
               <p className="mt-1 text-[12px] leading-relaxed text-[var(--color-text-secondary)]">
-                每一次对话都可以沉淀为可复用的服务记录：让后续排故更快、备件判断更清晰、维保计划更主动，新机升级决策也更有依据。
+                每一次对话都可以整理为可复用的服务记录：让后续排故更快、备件判断更清晰、维保计划更主动，新机升级决策也更有依据。
               </p>
             </div>
           </div>
