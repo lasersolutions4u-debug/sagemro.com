@@ -16,7 +16,7 @@ const COPY = {
     end: '结束时间',
     region: '区域',
     notes: '备注',
-    add: '添加日历记录',
+    add: '发布排单信号',
     adding: '正在添加...',
     empty: '暂无日历记录',
     delete: '删除',
@@ -43,7 +43,7 @@ const COPY = {
     end: 'End',
     region: 'Region',
     notes: 'Notes',
-    add: 'Add Calendar Entry',
+    add: 'Publish Scheduling Signal',
     adding: 'Adding...',
     empty: 'No calendar entries yet',
     delete: 'Delete',
@@ -96,6 +96,12 @@ function eventTone(eventType) {
   if (eventType === 'engineer_available') return 'border-green-200 bg-green-50 text-green-700';
   if (eventType === 'engineer_unavailable') return 'border-neutral-200 bg-neutral-50 text-neutral-600';
   return 'border-amber-200 bg-amber-50 text-amber-700';
+}
+
+function eventAccent(eventType) {
+  if (eventType === 'engineer_available') return 'bg-green-500';
+  if (eventType === 'engineer_unavailable') return 'bg-neutral-400';
+  return 'bg-[var(--color-primary)]';
 }
 
 export function EngineerAvailabilityCalendar() {
@@ -173,9 +179,11 @@ export function EngineerAvailabilityCalendar() {
   };
 
   return (
-    <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5">
+    <div className="overflow-hidden rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] shadow-sm">
+      <div className="h-1 bg-gradient-to-r from-[var(--color-primary)] via-amber-300 to-transparent" />
+      <div className="p-5">
       <div className="mb-4 flex items-start gap-3">
-        <div className="rounded-xl bg-[var(--color-primary)]/10 p-2 text-[var(--color-primary)]">
+        <div className="rounded-xl border border-[var(--color-primary)]/20 bg-[var(--color-primary)]/10 p-2 text-[var(--color-primary)]">
           <CalendarDays size={20} />
         </div>
         <div>
@@ -184,14 +192,14 @@ export function EngineerAvailabilityCalendar() {
         </div>
       </div>
 
-      <form onSubmit={addEvent} className="space-y-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-elevated)] p-3">
+      <form onSubmit={addEvent} className="space-y-3 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface-elevated)] p-3 shadow-inner">
         <div className="grid gap-3 sm:grid-cols-2">
           <label className="text-xs font-medium text-[var(--color-text-secondary)]">
             {copy.type}
             <select
               value={form.event_type}
               onChange={(event) => updateField('event_type', event.target.value)}
-              className="mt-1 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text-primary)]"
+              className="mt-1 w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text-primary)] outline-none transition focus:border-[var(--color-primary)]"
             >
               {copy.eventTypes.map(([value, label]) => (
                 <option key={value} value={value}>{label}</option>
@@ -204,7 +212,7 @@ export function EngineerAvailabilityCalendar() {
               value={form.title}
               onChange={(event) => updateField('title', event.target.value)}
               placeholder={copy.defaultTitle[form.event_type]}
-              className="mt-1 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text-primary)]"
+              className="mt-1 w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text-primary)] outline-none transition focus:border-[var(--color-primary)]"
             />
           </label>
           <label className="text-xs font-medium text-[var(--color-text-secondary)]">
@@ -213,7 +221,7 @@ export function EngineerAvailabilityCalendar() {
               type="datetime-local"
               value={form.start_at}
               onChange={(event) => updateField('start_at', event.target.value)}
-              className="mt-1 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text-primary)]"
+              className="mt-1 w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text-primary)] outline-none transition focus:border-[var(--color-primary)]"
               required
             />
           </label>
@@ -223,7 +231,7 @@ export function EngineerAvailabilityCalendar() {
               type="datetime-local"
               value={form.end_at}
               onChange={(event) => updateField('end_at', event.target.value)}
-              className="mt-1 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text-primary)]"
+              className="mt-1 w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text-primary)] outline-none transition focus:border-[var(--color-primary)]"
               required
             />
           </label>
@@ -232,14 +240,14 @@ export function EngineerAvailabilityCalendar() {
           value={form.region}
           onChange={(event) => updateField('region', event.target.value)}
           placeholder={copy.region}
-          className="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text-primary)]"
+          className="w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text-primary)] outline-none transition focus:border-[var(--color-primary)]"
         />
         <textarea
           value={form.notes}
           onChange={(event) => updateField('notes', event.target.value)}
           placeholder={copy.notes}
           rows={2}
-          className="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text-primary)]"
+          className="w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text-primary)] outline-none transition focus:border-[var(--color-primary)]"
         />
         {message && (
           <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-xs text-[var(--color-text-secondary)]">
@@ -249,7 +257,7 @@ export function EngineerAvailabilityCalendar() {
         <button
           type="submit"
           disabled={submitting}
-          className="w-full rounded-lg bg-[var(--color-primary)] px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
+          className="w-full rounded-xl bg-[var(--color-primary)] px-3 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-[var(--color-primary-hover)] disabled:opacity-50"
         >
           {submitting ? copy.adding : copy.add}
         </button>
@@ -262,9 +270,11 @@ export function EngineerAvailabilityCalendar() {
           <div className="py-6 text-center text-sm text-[var(--color-text-muted)]">{copy.empty}</div>
         ) : (
           events.map((item) => (
-            <article key={item.id} className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-elevated)] p-3">
-              <div className="flex items-start justify-between gap-3">
-                <div>
+            <article key={item.id} className="overflow-hidden rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface-elevated)]">
+              <div className="flex">
+                <div className={`w-1.5 shrink-0 ${eventAccent(item.event_type)}`} />
+                <div className="flex min-w-0 flex-1 items-start justify-between gap-3 p-3">
+                <div className="min-w-0">
                   <span className={`inline-flex rounded-full border px-2 py-0.5 text-xs ${eventTone(item.event_type)}`}>
                     {copy.eventTypes.find(([value]) => value === item.event_type)?.[1] || item.event_type}
                   </span>
@@ -283,10 +293,12 @@ export function EngineerAvailabilityCalendar() {
                 >
                   <Trash2 size={15} />
                 </button>
+                </div>
               </div>
             </article>
           ))
         )}
+      </div>
       </div>
     </div>
   );

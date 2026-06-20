@@ -5,13 +5,13 @@ import { BrandMark } from '../common/BrandMark';
 
 const COPY = {
   cn: {
-    badge: 'SAGEMRO 认证服务代表计划',
+    badge: 'SAGEMRO Service OS · 认证服务代表计划',
     title: '让专业工程师被看见、被支持、被认真对待。',
     subtitle: 'SAGEMRO 正在建设面向激光切割机与钣金加工设备的官方服务网络。我们寻找真正理解现场、设备和客户压力的工程师，由运营团队审核后分配账号，并在标准、派工、资料和成长上持续支持。',
     primary: '申请成为认证服务代表',
     signIn: '已有工程师账号，进入工作台',
     pillars: [
-      { title: '官方审核，不开放抢单', text: '申请通过后由 SAGEMRO 分配账号，服务任务由 Admin 与区域负责人统一协调。' },
+      { title: '官方审核，统一协作', text: '申请通过后由 SAGEMRO 分配账号，服务任务由 Admin 与区域负责人统一协调。' },
       { title: '尊重现场专业', text: '平台重点沉淀设备档案、AI 初诊、备件准备和服务报告，让工程师少做无效沟通。' },
       { title: '清晰排单协作', text: '工程师自己维护可服务时间，区域负责人和 Admin 派工时作为重要参考。' },
     ],
@@ -46,13 +46,13 @@ const COPY = {
     note: '提交申请不会自动创建账号。工程师账号仅在确认合作关系后由 SAGEMRO 分配。',
   },
   en: {
-    badge: 'SAGEMRO Certified Service Representative Program',
+    badge: 'SAGEMRO Service OS · Certified Representative Program',
     title: 'A service network built for engineers who take field work seriously.',
     subtitle: 'SAGEMRO is building an official service network for laser cutting machines and sheet metal equipment. We review each application manually, then support approved representatives with dispatch coordination, service standards, equipment context, and growth resources.',
     primary: 'Apply as a Certified Service Representative',
     signIn: 'I already have an engineer account',
     pillars: [
-      { title: 'Reviewed access, not open gig work', text: 'Approved accounts are assigned by SAGEMRO. Admin and regional leads coordinate service tasks.' },
+      { title: 'Reviewed access, coordinated service', text: 'Approved accounts are assigned by SAGEMRO. Admin and regional leads coordinate service tasks.' },
       { title: 'Field expertise respected', text: 'Equipment records, AI intake notes, parts preparation, and reports help reduce low-value back-and-forth.' },
       { title: 'Clear scheduling signals', text: 'Engineers maintain their own availability so dispatch decisions can respect real field capacity.' },
     ],
@@ -158,12 +158,16 @@ export function EngineerRecruitingPage({ onOpenLogin }) {
   };
 
   return (
-    <div className="min-h-[100dvh] overflow-y-auto bg-[#f6f0e4] text-[#1d1710]">
-      <div className="absolute inset-x-0 top-0 h-80 bg-[radial-gradient(circle_at_top_left,_rgba(245,158,11,0.28),_transparent_34%),linear-gradient(135deg,_#1b130b_0%,_#3b2612_48%,_#f4b740_100%)]" />
+    <div className="min-h-[100dvh] overflow-y-auto bg-[#fbfaf7] text-[#17120b]">
+      <div className="absolute inset-x-0 top-0 h-[430px] overflow-hidden bg-[#14100b]">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_18%_15%,_rgba(245,158,11,0.36),_transparent_34%),radial-gradient(circle_at_80%_0%,_rgba(252,211,77,0.18),_transparent_32%),linear-gradient(135deg,_#14100b_0%,_#2b1b0d_58%,_#4a2a0e_100%)]" />
+        <div className="absolute inset-0 opacity-[0.14] [background-image:linear-gradient(rgba(255,255,255,.2)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,.2)_1px,transparent_1px)] [background-size:44px_44px]" />
+        <div className="absolute -bottom-32 left-1/2 h-64 w-[92%] -translate-x-1/2 rounded-[100%] bg-[#fbfaf7]" />
+      </div>
       <div className="relative mx-auto max-w-7xl px-5 py-6">
         <header className="flex items-center justify-between gap-4">
           <div className="flex items-center gap-3">
-            <BrandMark className="h-10 w-10" />
+            <BrandMark className="h-11 w-11 drop-shadow-[0_12px_24px_rgba(245,158,11,0.22)]" />
             <div>
               <div className="text-sm font-semibold text-white">SAGEMRO</div>
               <div className="text-xs text-white/70">Service Representative Network</div>
@@ -177,27 +181,30 @@ export function EngineerRecruitingPage({ onOpenLogin }) {
           </button>
         </header>
 
-        <main className="grid gap-6 py-10 lg:grid-cols-[1.05fr_0.95fr] lg:items-start">
-          <section className="rounded-[2rem] border border-white/20 bg-white/90 p-6 shadow-2xl shadow-amber-950/10 backdrop-blur lg:p-8">
-            <div className="inline-flex rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-amber-800">
+        <main className="grid gap-6 py-10 lg:grid-cols-[1.06fr_0.94fr] lg:items-start">
+          <section className="relative overflow-hidden rounded-[2rem] border border-white/50 bg-white/92 p-6 shadow-[0_24px_80px_rgba(48,31,12,0.14)] backdrop-blur-xl lg:p-8">
+            <div className="pointer-events-none absolute right-0 top-0 h-40 w-40 rounded-bl-[4rem] bg-amber-100/60 blur-2xl" />
+            <div className="relative inline-flex rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-amber-800">
               {copy.badge}
             </div>
-            <h1 className="mt-5 text-4xl font-semibold leading-tight tracking-tight text-[#20150b] md:text-5xl">
+            <h1 className="relative mt-5 max-w-3xl text-4xl font-semibold leading-tight tracking-tight text-[#17120b] md:text-[3.35rem]">
               {copy.title}
             </h1>
-            <p className="mt-5 max-w-2xl text-base leading-8 text-[#6a5844]">
+            <p className="relative mt-5 max-w-2xl text-base leading-8 text-[#6a5844]">
               {copy.subtitle}
             </p>
-            <div className="mt-7 grid gap-3 md:grid-cols-3">
+            <div className="relative mt-7 grid gap-3 md:grid-cols-3">
               {copy.pillars.map((item) => (
-                <div key={item.title} className="rounded-2xl border border-amber-200/70 bg-[#fffaf0] p-4">
-                  <CheckCircle2 size={18} className="mb-3 text-amber-600" />
+                <div key={item.title} className="rounded-2xl border border-[#efe6d8] bg-[#fffdf8] p-4 shadow-sm">
+                  <div className="mb-3 flex h-8 w-8 items-center justify-center rounded-xl bg-amber-100 text-amber-700">
+                    <CheckCircle2 size={17} />
+                  </div>
                   <h2 className="text-sm font-semibold text-[#24170b]">{item.title}</h2>
                   <p className="mt-2 text-xs leading-6 text-[#735f48]">{item.text}</p>
                 </div>
               ))}
             </div>
-            <div className="mt-6 rounded-2xl border border-[#2e2115]/10 bg-[#25180d] p-5 text-white">
+            <div className="relative mt-6 rounded-2xl border border-[#2e2115]/10 bg-[#1d160f] p-5 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]">
               <div className="flex items-center gap-2 text-sm font-semibold">
                 <ShieldCheck size={18} className="text-amber-300" />
                 {copy.valuesTitle}
@@ -206,13 +213,13 @@ export function EngineerRecruitingPage({ onOpenLogin }) {
             </div>
           </section>
 
-          <section id="apply" className="rounded-[2rem] border border-white/70 bg-white p-5 shadow-2xl shadow-amber-950/10 lg:p-6">
-            <div className="mb-5 flex items-start justify-between gap-3">
+          <section id="apply" className="rounded-[2rem] border border-[#ece3d6] bg-white p-5 shadow-[0_24px_80px_rgba(48,31,12,0.12)] lg:p-6">
+            <div className="mb-5 flex items-start justify-between gap-3 border-b border-[#f0e6d7] pb-5">
               <div>
                 <div className="text-xs uppercase tracking-[0.18em] text-amber-700">{copy.primary}</div>
-                <h2 className="mt-1 text-2xl font-semibold text-[#21160c]">{copy.primary}</h2>
+                <h2 className="mt-1 text-2xl font-semibold tracking-tight text-[#21160c]">{copy.primary}</h2>
               </div>
-              <div className="rounded-2xl bg-amber-100 p-3 text-amber-700">
+              <div className="rounded-2xl border border-amber-200 bg-amber-50 p-3 text-amber-700 shadow-sm">
                 <Wrench size={22} />
               </div>
             </div>
@@ -220,44 +227,44 @@ export function EngineerRecruitingPage({ onOpenLogin }) {
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="grid gap-3 sm:grid-cols-2">
                 {['name', 'phone', 'email', 'whatsapp', 'country', 'city'].map((field) => (
-                  <label key={field} className="block text-sm font-medium text-[#312317]">
+                  <label key={field} className="block text-[13px] font-semibold text-[#312317]">
                     {copy.fields[field]}
                     <input
                       value={form[field]}
                       onChange={(event) => updateField(field, event.target.value)}
                       placeholder={copy.placeholders[field]}
-                      className="mt-1 w-full rounded-xl border border-[#eadfce] bg-[#fffaf2] px-3 py-2.5 text-sm outline-none transition focus:border-amber-500 focus:bg-white"
+                      className="mt-1.5 w-full rounded-xl border border-[#eadfce] bg-[#fffdf8] px-3 py-2.5 text-sm outline-none transition focus:border-amber-500 focus:bg-white focus:shadow-[0_0_0_3px_rgba(245,158,11,0.12)]"
                       required={field === 'name'}
                     />
                   </label>
                 ))}
               </div>
-              <label className="block text-sm font-medium text-[#312317]">
+              <label className="block text-[13px] font-semibold text-[#312317]">
                 {copy.fields.regions}
                 <input
                   value={form.service_regions}
                   onChange={(event) => updateField('service_regions', event.target.value)}
                   placeholder={copy.placeholders.regions}
-                  className="mt-1 w-full rounded-xl border border-[#eadfce] bg-[#fffaf2] px-3 py-2.5 text-sm outline-none transition focus:border-amber-500 focus:bg-white"
+                  className="mt-1.5 w-full rounded-xl border border-[#eadfce] bg-[#fffdf8] px-3 py-2.5 text-sm outline-none transition focus:border-amber-500 focus:bg-white focus:shadow-[0_0_0_3px_rgba(245,158,11,0.12)]"
                 />
               </label>
-              <label className="block text-sm font-medium text-[#312317]">
+              <label className="block text-[13px] font-semibold text-[#312317]">
                 {copy.fields.skills}
                 <input
                   value={form.skill_tags}
                   onChange={(event) => updateField('skill_tags', event.target.value)}
                   placeholder={copy.placeholders.skills}
-                  className="mt-1 w-full rounded-xl border border-[#eadfce] bg-[#fffaf2] px-3 py-2.5 text-sm outline-none transition focus:border-amber-500 focus:bg-white"
+                  className="mt-1.5 w-full rounded-xl border border-[#eadfce] bg-[#fffdf8] px-3 py-2.5 text-sm outline-none transition focus:border-amber-500 focus:bg-white focus:shadow-[0_0_0_3px_rgba(245,158,11,0.12)]"
                 />
               </label>
-              <label className="block text-sm font-medium text-[#312317]">
+              <label className="block text-[13px] font-semibold text-[#312317]">
                 {copy.fields.experience}
                 <textarea
                   value={form.experience_summary}
                   onChange={(event) => updateField('experience_summary', event.target.value)}
                   placeholder={copy.placeholders.experience}
                   rows={5}
-                  className="mt-1 w-full rounded-xl border border-[#eadfce] bg-[#fffaf2] px-3 py-2.5 text-sm outline-none transition focus:border-amber-500 focus:bg-white"
+                  className="mt-1.5 w-full rounded-xl border border-[#eadfce] bg-[#fffdf8] px-3 py-2.5 text-sm outline-none transition focus:border-amber-500 focus:bg-white focus:shadow-[0_0_0_3px_rgba(245,158,11,0.12)]"
                 />
               </label>
 
@@ -268,7 +275,7 @@ export function EngineerRecruitingPage({ onOpenLogin }) {
                   ['can_night', copy.checks[2]],
                   ['has_tools', copy.checks[3]],
                 ].map(([field, label]) => (
-                  <label key={field} className="flex items-center gap-2 rounded-xl border border-[#eadfce] bg-[#fffaf2] px-3 py-2 text-sm text-[#5e4d3d]">
+                  <label key={field} className="flex items-center gap-2 rounded-xl border border-[#eadfce] bg-[#fffdf8] px-3 py-2 text-sm text-[#5e4d3d] transition hover:border-amber-300 hover:bg-amber-50/50">
                     <input
                       type="checkbox"
                       checked={form[field]}
@@ -288,7 +295,7 @@ export function EngineerRecruitingPage({ onOpenLogin }) {
               <button
                 type="submit"
                 disabled={submitting}
-                className="flex w-full items-center justify-center gap-2 rounded-2xl bg-[#21160c] px-4 py-3 text-sm font-semibold text-white transition hover:bg-[#3b2612] disabled:opacity-60"
+                className="flex w-full items-center justify-center gap-2 rounded-2xl bg-[#21160c] px-4 py-3 text-sm font-semibold text-white shadow-[0_14px_30px_rgba(33,22,12,0.22)] transition hover:bg-[#3b2612] disabled:opacity-60"
               >
                 {submitting ? copy.submitting : copy.submit}
                 {!submitting && <ArrowRight size={16} />}

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { CheckCircle2, ClipboardList, RefreshCw } from 'lucide-react';
+import { CheckCircle2, ClipboardList, MapPin, RefreshCw, ShieldCheck, UserRound, Wrench } from 'lucide-react';
 import { getAdminEngineerApplications, updateAdminEngineerApplication } from '../services/api';
 import { runtimeConfig } from '../config/runtime';
 
@@ -46,6 +46,7 @@ const TEXT = {
       has_tools: 'Tools',
     },
     notesPlaceholder: 'Review notes, next step, regional fit, account creation reminder...',
+    convertedUserPlaceholder: 'Engineer user ID after account creation',
     save: 'Save review',
     saving: 'Saving...',
     saved: 'Application review updated.',
@@ -87,6 +88,7 @@ const TEXT = {
       has_tools: '有工具',
     },
     notesPlaceholder: '审核备注、下一步、区域匹配、是否需要创建账号...',
+    convertedUserPlaceholder: '创建账号后的工程师 ID',
     save: '保存审核',
     saving: '保存中...',
     saved: '申请审核已更新。',
@@ -104,6 +106,10 @@ function joinList(value) {
 
 function contactLine(application) {
   return [application.phone, application.email, application.whatsapp].filter(Boolean).join(' / ') || '-';
+}
+
+function applicantInitial(name = '') {
+  return String(name || 'S').trim().slice(0, 1).toUpperCase();
 }
 
 export function EngineerApplicationsPage() {
@@ -168,24 +174,27 @@ export function EngineerApplicationsPage() {
 
   return (
     <div>
-      <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+      <div className="relative mb-6 overflow-hidden rounded-2xl border border-[var(--color-border)] bg-[linear-gradient(135deg,_rgba(245,158,11,0.14),_rgba(42,42,60,0.94)_38%,_rgba(30,30,46,1))] p-5 shadow-lg shadow-black/10">
+        <div className="pointer-events-none absolute right-0 top-0 h-32 w-32 rounded-bl-[4rem] bg-[var(--color-primary)]/15 blur-2xl" />
+        <div className="relative flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
-          <div className="mb-2 inline-flex items-center gap-2 rounded-full border border-[var(--color-primary)]/30 bg-[var(--color-primary)]/10 px-3 py-1 text-xs font-medium text-[var(--color-primary)]">
+          <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-[var(--color-primary)]/30 bg-[var(--color-primary)]/10 px-3 py-1 text-xs font-medium text-[var(--color-primary)]">
             <ClipboardList size={14} />
             SAGEMRO Service Representative Network
           </div>
-          <h2 className="text-lg font-semibold">{t.title}</h2>
-          <p className="mt-1 max-w-2xl text-sm text-[var(--color-text-muted)]">
+          <h2 className="text-2xl font-semibold tracking-tight text-[var(--color-text)]">{t.title}</h2>
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-[var(--color-text-secondary)]">
             {t.subtitle}
           </p>
         </div>
         <button
           onClick={load}
-          className="inline-flex items-center justify-center gap-2 rounded-lg border border-[var(--color-border)] px-3 py-2 text-sm text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-elevated)]"
+          className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-[var(--color-text-secondary)] transition hover:bg-white/10 hover:text-[var(--color-text)]"
         >
           <RefreshCw size={15} />
           {t.refresh}
         </button>
+        </div>
       </div>
 
       {message && (
@@ -194,12 +203,12 @@ export function EngineerApplicationsPage() {
         </div>
       )}
 
-      <div className="mb-4 flex flex-wrap items-center gap-2">
+      <div className="mb-4 flex flex-wrap items-center gap-2 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
         {['all', ...statusKeys].map((status) => (
           <button
             key={status}
             onClick={() => { setStatusFilter(status); setPage(1); }}
-            className={`rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors ${
+            className={`rounded-xl border px-3 py-1.5 text-xs font-medium transition-colors ${
               statusFilter === status
                 ? 'border-[var(--color-primary)]/40 bg-[var(--color-primary)]/15 text-[var(--color-primary)]'
                 : 'border-transparent bg-[var(--color-surface-elevated)] text-[var(--color-text-secondary)]'
@@ -211,7 +220,7 @@ export function EngineerApplicationsPage() {
         <select
           value={marketFilter}
           onChange={(event) => { setMarketFilter(event.target.value); setPage(1); }}
-          className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-3 py-1.5 text-xs text-[var(--color-text-secondary)]"
+          className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-3 py-1.5 text-xs text-[var(--color-text-secondary)]"
         >
           <option value="all">{t.marketAll}</option>
           <option value="com">sagemro.com</option>
@@ -231,9 +240,15 @@ export function EngineerApplicationsPage() {
           {data.list.map((application) => {
             const draft = drafts[application.id] || {};
             return (
-              <article key={application.id} className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+              <article key={application.id} className="overflow-hidden rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] shadow-sm">
+                <div className="h-1 bg-gradient-to-r from-[var(--color-primary)] via-amber-300 to-transparent" />
+                <div className="p-4">
                 <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                  <div>
+                  <div className="flex items-start gap-3">
+                    <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-[var(--color-primary)]/20 bg-[var(--color-primary)]/10 text-sm font-semibold text-[var(--color-primary)]">
+                      {applicantInitial(application.name)}
+                    </div>
+                    <div>
                     <div className="flex flex-wrap items-center gap-2">
                       <h3 className="font-semibold text-[var(--color-text)]">{application.name}</h3>
                       <span className={`rounded-full border px-2 py-0.5 text-xs ${STATUS_STYLE[application.status] || STATUS_STYLE.submitted}`}>
@@ -244,30 +259,40 @@ export function EngineerApplicationsPage() {
                       </span>
                     </div>
                     <p className="mt-1 text-sm text-[var(--color-text-secondary)]">{contactLine(application)}</p>
+                    </div>
                   </div>
                   <div className="text-xs text-[var(--color-text-muted)]">{application.created_at || '-'}</div>
                 </div>
 
                 <div className="grid gap-4 lg:grid-cols-[1fr_1fr_1.2fr]">
                   <div className="space-y-3 text-sm">
-                    <div>
-                      <div className="text-xs text-[var(--color-text-muted)]">{t.headers.location}</div>
+                    <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-elevated)] p-3">
+                      <div className="flex items-center gap-1.5 text-xs text-[var(--color-text-muted)]">
+                        <MapPin size={13} />
+                        {t.headers.location}
+                      </div>
                       <div className="mt-1 text-[var(--color-text-secondary)]">
                         {[application.country, application.province, application.city, application.base_region].filter(Boolean).join(' / ') || '-'}
                       </div>
                     </div>
-                    <div>
-                      <div className="text-xs text-[var(--color-text-muted)]">{t.headers.regions}</div>
+                    <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-elevated)] p-3">
+                      <div className="flex items-center gap-1.5 text-xs text-[var(--color-text-muted)]">
+                        <ShieldCheck size={13} />
+                        {t.headers.regions}
+                      </div>
                       <div className="mt-1 text-[var(--color-text-secondary)]">{joinList(application.service_regions)}</div>
                     </div>
-                    <div>
-                      <div className="text-xs text-[var(--color-text-muted)]">{t.headers.skills}</div>
+                    <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-elevated)] p-3">
+                      <div className="flex items-center gap-1.5 text-xs text-[var(--color-text-muted)]">
+                        <Wrench size={13} />
+                        {t.headers.skills}
+                      </div>
                       <div className="mt-1 text-[var(--color-text-secondary)]">{joinList(application.skill_tags)}</div>
                     </div>
                   </div>
 
                   <div className="space-y-3 text-sm">
-                    <div>
+                    <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-elevated)] p-3">
                       <div className="text-xs text-[var(--color-text-muted)]">{t.headers.capacity}</div>
                       <div className="mt-2 flex flex-wrap gap-2">
                         {Object.entries(t.capacity).map(([key, label]) => (
@@ -285,21 +310,27 @@ export function EngineerApplicationsPage() {
                         ))}
                       </div>
                     </div>
-                    <div>
-                      <div className="text-xs text-[var(--color-text-muted)]">{t.headers.experience}</div>
+                    <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-elevated)] p-3">
+                      <div className="flex items-center gap-1.5 text-xs text-[var(--color-text-muted)]">
+                        <UserRound size={13} />
+                        {t.headers.experience}
+                      </div>
                       <p className="mt-1 line-clamp-5 text-[var(--color-text-secondary)]">
                         {application.experience_summary || '-'}
                       </p>
                     </div>
                   </div>
 
-                  <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-elevated)] p-3">
-                    <div className="mb-2 text-xs font-medium text-[var(--color-text-muted)]">{t.headers.review}</div>
+                  <div className="rounded-2xl border border-[var(--color-primary)]/20 bg-[var(--color-primary)]/5 p-3">
+                    <div className="mb-3 flex items-center gap-2 text-xs font-medium text-[var(--color-primary)]">
+                      <ClipboardList size={13} />
+                      {t.headers.review}
+                    </div>
                     <div className="space-y-2">
                       <select
                         value={draft.status || application.status || 'submitted'}
                         onChange={(event) => updateDraft(application.id, 'status', event.target.value)}
-                        className="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)]"
+                        className="w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none transition focus:border-[var(--color-primary)]"
                       >
                         {statusKeys.map((status) => (
                           <option key={status} value={status}>{t.statuses[status]}</option>
@@ -308,26 +339,27 @@ export function EngineerApplicationsPage() {
                       <input
                         value={draft.converted_user_id || ''}
                         onChange={(event) => updateDraft(application.id, 'converted_user_id', event.target.value)}
-                        placeholder="Engineer user ID"
-                        className="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)]"
+                        placeholder={t.convertedUserPlaceholder}
+                        className="w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none transition focus:border-[var(--color-primary)]"
                       />
                       <textarea
                         value={draft.review_notes || ''}
                         onChange={(event) => updateDraft(application.id, 'review_notes', event.target.value)}
                         placeholder={t.notesPlaceholder}
                         rows={3}
-                        className="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)]"
+                        className="w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none transition focus:border-[var(--color-primary)]"
                       />
                       <button
                         onClick={() => saveReview(application)}
                         disabled={savingId === application.id}
-                        className="w-full rounded-lg bg-[var(--color-primary)] px-3 py-2 text-sm font-medium text-white disabled:opacity-60"
+                        className="w-full rounded-xl bg-[var(--color-primary)] px-3 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-[var(--color-primary-dark)] disabled:opacity-60"
                       >
                         {savingId === application.id ? t.saving : t.save}
                       </button>
                       <p className="text-xs leading-5 text-[var(--color-text-muted)]">{t.accountHint}</p>
                     </div>
                   </div>
+                </div>
                 </div>
               </article>
             );
