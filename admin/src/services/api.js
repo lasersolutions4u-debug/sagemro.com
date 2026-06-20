@@ -113,6 +113,18 @@ export async function createAdminUser(userData) {
   });
 }
 
+export async function getAdminEngineerApplications(page = 1, pageSize = 20, status = 'all', market = 'all') {
+  const params = new URLSearchParams({ page, pageSize, status, market });
+  return request(`/api/admin/engineer-applications?${params}`);
+}
+
+export async function updateAdminEngineerApplication(applicationId, data) {
+  return request(`/api/admin/engineer-applications/${applicationId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  });
+}
+
 export async function deleteAdminUser(userId, userType) {
   return request(`/api/admin/users/${userId}?type=${userType}`, {
     method: 'DELETE',

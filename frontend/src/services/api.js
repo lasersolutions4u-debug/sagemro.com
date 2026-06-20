@@ -447,6 +447,56 @@ export async function getEngineerTeam() {
   return response.json();
 }
 
+export async function submitEngineerApplication(data) {
+  const response = await fetch(`${API_BASE}/api/engineer-applications`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.error || `HTTP ${response.status}`);
+  }
+  return response.json();
+}
+
+export async function getEngineerCalendarEvents(params = {}) {
+  const search = new URLSearchParams();
+  if (params.from) search.set('from', params.from);
+  if (params.to) search.set('to', params.to);
+  const query = search.toString();
+  const response = await fetch(`${API_BASE}/api/engineers/calendar-events${query ? `?${query}` : ''}`, {
+    headers: authHeaders(),
+  });
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  return response.json();
+}
+
+export async function createEngineerCalendarEvent(data) {
+  const response = await fetch(`${API_BASE}/api/engineers/calendar-events`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify(data),
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.error || `HTTP ${response.status}`);
+  }
+  return response.json();
+}
+
+export async function deleteEngineerCalendarEvent(eventId) {
+  const response = await fetch(`${API_BASE}/api/engineers/calendar-events/${eventId}`, {
+    method: 'DELETE',
+    headers: authHeaders(),
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.error || `HTTP ${response.status}`);
+  }
+  return response.json();
+}
+
 export async function assignEngineerWorkOrder({ work_order_id, engineer_id }) {
   const response = await fetch(`${API_BASE}/api/engineers/assign-engineer`, {
     method: 'POST',
