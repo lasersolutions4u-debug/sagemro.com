@@ -166,7 +166,7 @@ export function InputArea({ onSend, onStop, disabled, isStreaming }) {
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder={pendingImages.length > 0 ? "补充现场情况。Enter 发送，Shift + Enter 换行。" : "说说现场发生了什么，也可以随时上传图片。"}
+              placeholder={pendingImages.length > 0 ? "补充设备、报警、材料或现场工况。Enter 发送，Shift + Enter 换行。" : "描述设备、报警、材料厚度或现场问题。"}
               disabled={disabled}
               rows={1}
               className="w-full px-4 py-3 bg-transparent resize-none focus:outline-none text-[var(--color-text-primary)] placeholder-[var(--color-text-muted)] disabled:opacity-50 text-[15px]"
