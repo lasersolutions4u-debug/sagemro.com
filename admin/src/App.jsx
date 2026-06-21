@@ -26,8 +26,8 @@ const TEXT = {
     },
   },
   'zh-CN': {
-    subtitle: '运营管理后台',
-    mobileTitle: 'SAGEMRO 运营管理后台',
+    subtitle: '运营中枢',
+    mobileTitle: 'SAGEMRO 运营中枢',
     adminInitial: '管',
     logout: '退出登录',
     nav: {

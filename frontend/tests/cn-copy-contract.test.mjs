@@ -51,6 +51,7 @@ test('CN public service copy avoids stiff translated product wording', () => {
   assert.doesNotMatch(publicSources, /一个聊天入口，六类服务结果/);
   assert.doesNotMatch(publicSources, /沉淀成客户、工程师和 SAGEMRO 都能继续推进的服务线索/);
   assert.doesNotMatch(publicSources, /报警、照片、备件/);
+  assert.doesNotMatch(publicSources, /现场照片/);
 
   assert.match(publicSources, /把问题整理清楚/);
   assert.match(publicSources, /进入人工确认与服务安排/);
@@ -120,6 +121,7 @@ test('CN public and legal copy uses localized operator and service system names'
 test('CN operations copy avoids internal English role labels in visible text', () => {
   const operationsSources = [
     read('frontend/src/components/Engineer/EngineerAvailabilityCalendar.jsx'),
+    read('admin/src/App.jsx'),
     read('admin/src/pages/WorkOrdersPage.jsx'),
     read('admin/src/pages/EngineerApplicationsPage.jsx'),
     read('admin/src/pages/DashboardPage.jsx'),
@@ -131,6 +133,7 @@ test('CN operations copy avoids internal English role labels in visible text', (
   assert.doesNotMatch(operationsSources, /主流程为 Admin 分配给区域负责人/);
   assert.doesNotMatch(operationsSources, /仅 Admin \/ 区域负责人 \/ 工程师可见/);
   assert.doesNotMatch(operationsSources, /审核认证服务代表申请/);
+  assert.doesNotMatch(operationsSources, /运营管理后台/);
 
   assert.match(operationsSources, /运营团队/);
   assert.match(operationsSources, /工程师申请审核/);
