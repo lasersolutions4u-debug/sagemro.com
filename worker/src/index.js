@@ -8474,16 +8474,16 @@ export function resolveAdminCredentials(request, env) {
 export default {
   async fetch(request, env, ctx) {
     // 按 API 域名或来源域名路由数据库：CN 站点走 CN 库，其他走 EN 库。
-    if (env.DB_CN && shouldUseCnDatabase(request)) {
-      env.DB = env.DB_CN;
-    }
+    const requestEnv = env.DB_CN && shouldUseCnDatabase(request)
+      ? { ...env, DB: env.DB_CN }
+      : env;
     try {
-      const response = await routeRequest(request, env, ctx);
-      return withCorsHeaders(response, request, env);
+      const response = await routeRequest(request, requestEnv, ctx);
+      return withCorsHeaders(response, request, requestEnv);
     } catch (error) {
       console.error('[fetch] unhandled error:', error);
-      captureException(error, env, { request, ctx });
-      const corsH = getCorsHeaders(request, env);
+      captureException(error, requestEnv, { request, ctx });
+      const corsH = getCorsHeaders(request, requestEnv);
       return new Response(
         JSON.stringify({ error: error?.message || 'Internal Server Error' }),
         {
