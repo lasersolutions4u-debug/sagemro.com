@@ -53,17 +53,17 @@ export function LoginPage({ onLogin }) {
   };
 
   return (
-    <div className="relative min-h-screen overflow-hidden bg-[radial-gradient(circle_at_20%_15%,rgba(245,158,11,0.16),transparent_32%),linear-gradient(135deg,#fffaf1_0%,#f7efe2_45%,#fdfbf7_100%)] px-4">
+    <div className="relative min-h-screen overflow-hidden bg-[radial-gradient(circle_at_20%_15%,rgba(245,158,11,0.18),transparent_32%),linear-gradient(135deg,#fff7e8_0%,#f5ead8_45%,#fcfaf6_100%)] px-4 text-[#21160c]">
       <div className="pointer-events-none absolute -right-20 top-16 h-72 w-72 rounded-full bg-amber-200/30 blur-3xl" />
       <div className="relative mx-auto grid min-h-screen w-full max-w-5xl items-center gap-8 py-8 lg:grid-cols-[1.05fr_0.95fr]">
         <section className="text-center lg:text-left">
           <BrandMark variant="logo" className="mx-auto mb-5 h-24 w-24 object-contain drop-shadow-[0_18px_36px_rgba(245,158,11,0.24)] lg:mx-0" />
-          <div className="text-xs font-semibold uppercase tracking-[0.24em] text-[var(--color-primary)]">{t.eyebrow}</div>
-          <h1 className="mt-3 text-3xl font-semibold tracking-tight text-[var(--color-text)] sm:text-4xl">{t.title}</h1>
-          <p className="mt-4 max-w-xl text-sm leading-7 text-[var(--color-text-secondary)] lg:text-base">{t.subtitle}</p>
+          <div className="text-xs font-semibold uppercase tracking-[0.24em] text-[#b66a05]">{t.eyebrow}</div>
+          <h1 className="mt-3 text-3xl font-semibold tracking-tight text-[#21160c] sm:text-4xl">{t.title}</h1>
+          <p className="mt-4 max-w-xl text-sm leading-7 text-[#6f5a40] lg:text-base">{t.subtitle}</p>
           <div className="mt-6 grid gap-2 sm:grid-cols-2">
             {t.points.map((point) => (
-              <div key={point} className="rounded-2xl border border-white/70 bg-white/70 px-4 py-3 text-sm font-medium text-[var(--color-text)] shadow-sm backdrop-blur">
+              <div key={point} className="rounded-2xl border border-white/75 bg-white/75 px-4 py-3 text-sm font-medium text-[#2f2114] shadow-sm backdrop-blur">
                 {point}
               </div>
             ))}
@@ -72,12 +72,12 @@ export function LoginPage({ onLogin }) {
 
         <form onSubmit={handleSubmit} className="space-y-4 rounded-[2rem] border border-white/80 bg-white/90 p-5 shadow-[0_24px_80px_rgba(48,31,12,0.16)] backdrop-blur-xl sm:p-7">
           <div>
-            <div className="text-xs uppercase tracking-[0.18em] text-[var(--color-text-muted)]">SAGEMRO</div>
-            <h2 className="mt-1 text-xl font-semibold text-[var(--color-text)]">{t.panelTitle}</h2>
+            <div className="text-xs uppercase tracking-[0.18em] text-[#9a7a52]">SAGEMRO</div>
+            <h2 className="mt-1 text-xl font-semibold text-[#21160c]">{t.panelTitle}</h2>
           </div>
 
           {error && (
-            <div className="px-3 py-2 rounded-lg bg-[var(--color-error)]/10 text-[var(--color-error)] text-sm">
+            <div className="px-3 py-2 rounded-lg bg-red-50 text-red-700 text-sm">
               {error}
             </div>
           )}
@@ -89,7 +89,7 @@ export function LoginPage({ onLogin }) {
               placeholder={t.phonePlaceholder}
               value={phone}
               onChange={(e) => setPhone(e.target.value)}
-              className="w-full px-4 py-3 rounded-xl bg-[var(--color-surface-elevated)] border border-[var(--color-border)] text-[var(--color-text)] placeholder:text-[var(--color-text-muted)] focus:outline-none focus:border-[var(--color-primary)]"
+              className="w-full px-4 py-3 rounded-xl bg-[#fffdf8] border border-[#eadfce] text-[#21160c] placeholder:text-[#9a7a52] focus:outline-none focus:border-[#d97706] focus:shadow-[0_0_0_3px_rgba(245,158,11,0.14)]"
               required
             />
           </div>
@@ -101,7 +101,7 @@ export function LoginPage({ onLogin }) {
               placeholder={t.passwordPlaceholder}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="w-full px-4 py-3 rounded-xl bg-[var(--color-surface-elevated)] border border-[var(--color-border)] text-[var(--color-text)] placeholder:text-[var(--color-text-muted)] focus:outline-none focus:border-[var(--color-primary)]"
+              className="w-full px-4 py-3 rounded-xl bg-[#fffdf8] border border-[#eadfce] text-[#21160c] placeholder:text-[#9a7a52] focus:outline-none focus:border-[#d97706] focus:shadow-[0_0_0_3px_rgba(245,158,11,0.14)]"
               required
             />
           </div>
@@ -109,7 +109,7 @@ export function LoginPage({ onLogin }) {
           <button
             type="submit"
             disabled={loading}
-            className="w-full py-3 rounded-xl bg-[var(--color-primary)] text-white font-medium hover:bg-[var(--color-primary-dark)] transition-colors disabled:opacity-50"
+            className="w-full py-3 rounded-xl bg-[#21160c] text-white font-medium shadow-[0_14px_30px_rgba(33,22,12,0.22)] transition-colors hover:bg-[#3b2612] disabled:opacity-50"
           >
             {loading ? t.loading : t.submit}
           </button>
