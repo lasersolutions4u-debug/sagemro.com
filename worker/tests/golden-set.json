@@ -1,6 +1,6 @@
 {
-  "version": 2,
-  "description": "Golden set — 35 deterministic regression cases across role_guard (10), redact (10), assigned_service_tasks (10), conversation_history (5). v2 adds SummaryProtocol v1 pending_items coverage across all 5 prefix tags (missing_info, awaiting_confirmation, followup_due, service_followup, rating_pending).",
+  "version": 8,
+  "description": "Golden set — 45 deterministic regression cases across role_guard (10), redact (10), assigned_service_tasks (10), conversation_history (5), prompt_contract (9), output_contract (1). v8 adds answer/check/service routing contracts for commercial intake quality.",
   "cases": [
     {
       "id": "rg-001",
@@ -364,6 +364,177 @@
         "summaries_length": 1,
         "pending_items_prefix": "[rating_pending]",
         "pending_items_min_count": 1
+      }
+    },
+    {
+      "id": "pc-001",
+      "category": "prompt_contract",
+      "description": "中国站英文报警代码也必须默认简体中文",
+      "input": {
+        "url": "https://api.sagemro.cn/api/chat",
+        "origin": "https://sagemro.cn",
+        "message": "My fiber laser cutter shows alarm E012. What should I check first?"
+      },
+      "expect": {
+        "prompt_contains": [
+          "You MUST answer this turn in Simplified Chinese",
+          "Market: China edition / sagemro.cn",
+          "English alarm codes, brand names, CNC terms, or short English phrases do not count as a request to answer in English"
+        ],
+        "prompt_not_contains": [
+          "You MUST answer this turn in English"
+        ]
+      }
+    },
+    {
+      "id": "pc-002",
+      "category": "prompt_contract",
+      "description": "国际站英文报警问题默认英文",
+      "input": {
+        "url": "https://api.sagemro.com/api/chat",
+        "origin": "https://sagemro.com",
+        "message": "My fiber laser cutter shows alarm E012. What should I check first?"
+      },
+      "expect": {
+        "prompt_contains": [
+          "You MUST answer this turn in English",
+          "Market: International edition / sagemro.com",
+          "Reply in English"
+        ]
+      }
+    },
+    {
+      "id": "pc-003",
+      "category": "prompt_contract",
+      "description": "简单知识问题答清即可，不强推工单",
+      "input": {
+        "url": "https://api.sagemro.com/api/chat",
+        "origin": "https://sagemro.com",
+        "message": "What does a laser cutting nozzle do?"
+      },
+      "expect": {
+        "prompt_contains": [
+          "Do not push a work order or service request after a simple question is already answered clearly",
+          "Add a short SAGEMRO official follow-up offer only when manual confirmation, quotation, parts, service scheduling, safety handling, or official parameter verification is clearly useful",
+          "If the user did not explicitly request a detailed plan, table, report, or full checklist, write exactly 5 compact lines"
+        ]
+      }
+    },
+    {
+      "id": "pc-004",
+      "category": "prompt_contract",
+      "description": "普通维护知识问题先完整解答，不默认转工单",
+      "input": {
+        "url": "https://api.sagemro.com/api/chat",
+        "origin": "https://sagemro.com",
+        "message": "How often should I clean the protective lens on a fiber laser cutter?"
+      },
+      "expect": {
+        "prompt_contains": [
+          "Simple knowledge or routine maintenance questions: answer the question first, then stop unless the user signals service intent",
+          "Do not turn every useful answer into a ticket path"
+        ]
+      }
+    },
+    {
+      "id": "pc-005",
+      "category": "prompt_contract",
+      "description": "停机和安全风险需要推进官方服务跟进摘要",
+      "input": {
+        "url": "https://api.sagemro.com/api/chat",
+        "origin": "https://sagemro.com",
+        "message": "Our 6kW laser cutter is down, smells burnt in the electrical cabinet, and production has stopped. Can you send someone?"
+      },
+      "expect": {
+        "prompt_contains": [
+          "Service conversion triggers: production-stopping faults, safety risks, official quotation, parts confirmation, on-site service, remote diagnosis, new machine selection, or explicit service request",
+          "For urgent or unsafe equipment issues, prioritize stop-work safety guidance, risk level, missing facts, and a SAGEMRO official follow-up summary"
+        ]
+      }
+    },
+    {
+      "id": "pc-006",
+      "category": "prompt_contract",
+      "description": "报价和配件问题不编造价格，转为正式确认路径",
+      "input": {
+        "url": "https://api.sagemro.cn/api/chat",
+        "origin": "https://sagemro.cn",
+        "message": "帮我估一下这台激光机更换喷嘴和保护镜多少钱，能不能安排上门？"
+      },
+      "expect": {
+        "prompt_contains": [
+          "For price, parts, or on-site requests, do not invent final prices, availability, service dates, or engineer assignments",
+          "When conversion is appropriate, present a concise service-ready case summary and ask the user to confirm the next step; do not claim a work order exists until it is actually created"
+        ]
+      }
+    },
+    {
+      "id": "pc-007",
+      "category": "prompt_contract",
+      "description": "普通维护频率问题要短答且不主动加服务 CTA",
+      "input": {
+        "url": "https://api.sagemro.cn/api/chat",
+        "origin": "https://sagemro.cn",
+        "message": "激光切割机喷嘴多久清理一次？"
+      },
+      "expect": {
+        "prompt_contains": [
+          "For routine maintenance frequency questions, answer in no more than 5 compact lines",
+          "Do not add a SAGEMRO service follow-up CTA for routine maintenance questions unless the user mentions abnormal wear, downtime, safety risk, quotation, parts purchase, or on-site support",
+          "Do not invent a possible abnormal follow-up scenario just to offer diagnosis or service"
+        ]
+      }
+    },
+    {
+      "id": "pc-008",
+      "category": "prompt_contract",
+      "description": "AI 必须按 answer_only / guided_check / service_recommended 三档判断下一步",
+      "input": {
+        "url": "https://api.sagemro.com/api/chat",
+        "origin": "https://sagemro.com",
+        "message": "My laser cutter leaves burrs on 2 mm stainless steel. What should I adjust first?"
+      },
+      "expect": {
+        "prompt_contains": [
+          "Classify the user's current need internally as one of: answer_only, guided_check, service_recommended",
+          "answer_only: answer clearly and stop without a work order CTA",
+          "guided_check: give 2-4 practical checks and ask for the result before recommending service",
+          "service_recommended: use only when there is downtime, safety risk, official quote, parts confirmation, on-site or remote service need, new machine selection, or an explicit service request"
+        ]
+      }
+    },
+    {
+      "id": "pc-009",
+      "category": "prompt_contract",
+      "description": "服务申请必须先摘要确认，不替用户做决定",
+      "input": {
+        "url": "https://api.sagemro.cn/api/chat",
+        "origin": "https://sagemro.cn",
+        "message": "设备停机了，需要安排工程师上门。"
+      },
+      "expect": {
+        "prompt_contains": [
+          "Before creating a service request, show a concise service-ready summary and ask the customer to confirm",
+          "Never create, claim, or imply a work order exists until the customer has confirmed and the create_work_order tool returns success",
+          "If key facts are missing, ask only the missing facts needed for triage: equipment, symptom, urgency, location/contact, and safety risk"
+        ]
+      }
+    },
+    {
+      "id": "oc-001",
+      "category": "output_contract",
+      "description": "中国站喷嘴清理频率：中文短答、给频率、无工单推动",
+      "input": {
+        "origin": "https://sagemro.cn",
+        "client_market": "cn",
+        "client_locale": "zh-CN",
+        "message": "激光切割机喷嘴多久清理一次？"
+      },
+      "expect": {
+        "output_contains": ["每班", "检查", "清理"],
+        "output_not_contains": ["工单", "服务跟进摘要", "安排上门", "注册", "报价"],
+        "output_absent": ["捅括", "直接报废", "顺便问一下", "进一步诊断", "官方进一步诊断"],
+        "max_non_empty_lines": 5
       }
     }
   ]

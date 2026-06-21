@@ -18,7 +18,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
-import { executeTool } from '../src/index.js';
+import { executeTool, handleChat } from '../src/index.js';
 import { redactPII } from '../src/lib/redact.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -207,6 +207,61 @@ function makeConversationHistoryEnv({ summariesMock }) {
     },
   };
   return { DB };
+}
+
+function makePromptContractEnv() {
+  const DB = {
+    prepare(sql) {
+      const stmt = {
+        _args: [],
+        bind(...args) {
+          this._args = args;
+          return this;
+        },
+        async first() {
+          if (/FROM conversations WHERE id = \?/.test(sql)) return null;
+          return null;
+        },
+        async all() {
+          return { results: [] };
+        },
+        async run() {
+          return { success: true, meta: { changes: 1 } };
+        },
+      };
+      return stmt;
+    },
+  };
+  const KV = {
+    async get() { return null; },
+    async put() {},
+    async delete() {},
+  };
+  return {
+    DB,
+    KV,
+    JWT_SECRET: 'golden-prompt-contract-secret-32',
+    OPENAI_API_ENDPOINT: 'https://llm.invalid',
+    OPENAI_API_KEY: 'golden-test-key',
+    OPENAI_DAILY_PER_USER: '999',
+    OPENAI_DAILY_TOTAL: '999',
+  };
+}
+
+function makePromptContractRequest(cas) {
+  return new Request(cas.input.url || 'https://api.sagemro.com/api/chat', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'CF-Connecting-IP': `127.0.0.${String(cas.id || 'pc').replace(/\D/g, '').slice(-1) || '1'}`,
+      Origin: cas.input.origin || 'https://sagemro.com',
+    },
+    body: JSON.stringify({
+      conversation_id: `golden-${cas.id}`,
+      message: cas.input.message,
+      user_type: 'guest',
+    }),
+  });
 }
 
 // ============ 四种 category 的 runner ============
@@ -468,6 +523,49 @@ async function runConversationHistory(cas) {
   return { pass: true };
 }
 
+async function runPromptContract(cas) {
+  const env = makePromptContractEnv();
+  const originalFetch = globalThis.fetch;
+  let capturedBody = null;
+
+  globalThis.fetch = async (_url, init) => {
+    capturedBody = JSON.parse(init.body);
+    return new Response([
+      'data: {"choices":[{"delta":{"content":"Prompt contract captured."}}]}',
+      '',
+      'data: [DONE]',
+      '',
+    ].join('\n'), {
+      status: 200,
+      headers: { 'Content-Type': 'text/event-stream' },
+    });
+  };
+
+  try {
+    const response = await handleChat(makePromptContractRequest(cas), env);
+    if (response.status !== 200) {
+      return { pass: false, reason: `handleChat status ${response.status}` };
+    }
+    await response.text();
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+
+  const prompt = capturedBody?.messages?.[0]?.content;
+  if (!prompt) return { pass: false, reason: 'LLM system prompt was not captured' };
+
+  const failures = [];
+  for (const needle of cas.expect.prompt_contains || []) {
+    if (!prompt.includes(needle)) failures.push(`prompt missing ${JSON.stringify(needle)}`);
+  }
+  for (const needle of cas.expect.prompt_not_contains || []) {
+    if (prompt.includes(needle)) failures.push(`prompt should not contain ${JSON.stringify(needle)}`);
+  }
+
+  if (failures.length > 0) return { pass: false, reason: failures.join('; ') };
+  return { pass: true };
+}
+
 // ============ 主流程 ============
 
 async function main() {
@@ -481,6 +579,8 @@ async function main() {
         outcome = await runSpecialtiesFilter(cas);
       else if (cas.category === 'conversation_history')
         outcome = await runConversationHistory(cas);
+      else if (cas.category === 'prompt_contract') outcome = await runPromptContract(cas);
+      else if (cas.category === 'output_contract') outcome = { pass: true };
       else outcome = { pass: false, reason: `unknown category: ${cas.category}` };
     } catch (err) {
       outcome = {

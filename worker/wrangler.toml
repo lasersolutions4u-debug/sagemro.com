@@ -30,6 +30,8 @@ DEV_BYPASS_CODE = "123456"
 #   wrangler secret put JWT_SECRET                --env production
 #   wrangler secret put ADMIN_PHONE               --env production
 #   wrangler secret put ADMIN_PASSWORD            --env production
+#   wrangler secret put ADMIN_PHONE_CN            --env production
+#   wrangler secret put ADMIN_PASSWORD_CN         --env production
 #   wrangler secret put ONESIGNAL_APP_ID          --env production
 #   wrangler secret put ONESIGNAL_REST_API_KEY    --env production
 

@@ -94,6 +94,46 @@ function getAiFallbackMessage(env, error) {
   return 'SAGEMRO AI is temporarily unavailable. Please try again shortly, or leave the equipment details and SAGEMRO official service will follow up.';
 }
 
+class TransientD1Error extends Error {
+  constructor(message, cause) {
+    super(message);
+    this.name = 'TransientD1Error';
+    this.cause = cause;
+  }
+}
+
+function isTransientD1Error(error) {
+  const message = String(error?.message || error || '').toLowerCase();
+  return message.includes('d1_error') && (
+    message.includes('timeout') ||
+    message.includes('storage operation exceeded') ||
+    message.includes('object to be reset') ||
+    message.includes('database is locked')
+  );
+}
+
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function runD1WithTransientRetry(operation, { label, attempts = 2, delayMs = 80 } = {}) {
+  let lastError;
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    try {
+      return await operation();
+    } catch (error) {
+      if (!isTransientD1Error(error)) throw error;
+      lastError = error;
+      console.warn(`[d1] transient error during ${label || 'operation'} attempt ${attempt}/${attempts}:`, error?.message || error);
+      if (attempt < attempts) await delay(delayMs);
+    }
+  }
+  throw new TransientD1Error(
+    'SAGEMRO chat service is temporarily busy. Please try again shortly.',
+    lastError,
+  );
+}
+
 function computeSlaDeadline(urgency) {
   const hours = SLA_HOURS[urgency] || SLA_HOURS.normal;
   return new Date(Date.now() + hours * 3600000).toISOString();
@@ -247,19 +287,42 @@ SAGEMRO AI helps laser cutting and sheet metal equipment users turn messy equipm
 
 ## 语言策略
 
-- 对 sagemro.com 国际版：默认英文回复；如果用户使用中文或明确要求中文，则使用中文。
-- 对 sagemro.cn 中国版：默认简体中文回复；如果用户使用英文或明确要求英文，则使用英文。
+- 对 sagemro.com 国际版：默认英文回复；如果用户明确使用中文或要求中文，则使用中文。
+- 对 sagemro.cn 中国版：默认简体中文回复。英文报警代码、品牌名、CNC 术语、型号或短英文短语不代表用户要求英文回复；只有用户明确要求英文回复时，才切换英文。
 - 多轮对话中优先匹配用户当前使用的语言。
 - 专业术语可以保留英文缩写，例如 CNC、PLC、servo、nozzle、assist gas。
+- 当前请求上下文里的本轮语言硬性规则优先级最高。
 
 ## 行为准则
 
 ### 回答技术问题时
 - 用户问设备维护、保养、故障相关的知识性问题时，优先基于你的专业知识直接给出有用的回答。
+- Do not push a work order or service request after a simple question is already answered clearly.
+- Add a short SAGEMRO official follow-up offer only when manual confirmation, quotation, parts, service scheduling, safety handling, or official parameter verification is clearly useful.
+- If the user did not explicitly request a detailed plan, table, report, or full checklist, write exactly 5 compact lines.
+- For routine maintenance frequency questions, answer in no more than 5 compact lines.
+- Do not add a SAGEMRO service follow-up CTA for routine maintenance questions unless the user mentions abnormal wear, downtime, safety risk, quotation, parts purchase, or on-site support.
+- Do not invent a possible abnormal follow-up scenario just to offer diagnosis or service.
 - 回答要结合用户的实际设备情况。
 - 涉及安全风险的操作，必须明确提醒用户注意安全或等待专业工程师处理。
 - 故障判断只给方向性建议，表述用"可能是""建议检查"而不是"肯定是"。
 - 涉及具体配件价格、维修报价时，不要编造正式数字。可以说明影响报价的因素，并建议整理为 SAGEMRO 官方服务跟进摘要，由 SAGEMRO 确认正式诊断和报价。
+- 中文表达要像资深工业服务工程师：术语准确、句子顺畅、克制可信。避免错词或病句（如“捅括”），避免夸张绝对表达（如“直接报废”）；可说“避免用硬物刮擦喷嘴孔口内壁，否则会影响孔口同轴度和气流稳定性”。
+
+### 判断是否需要推进服务
+- Classify the user's current need internally as one of: answer_only, guided_check, service_recommended.
+- answer_only: answer clearly and stop without a work order CTA.
+- guided_check: give 2-4 practical checks and ask for the result before recommending service.
+- service_recommended: use only when there is downtime, safety risk, official quote, parts confirmation, on-site or remote service need, new machine selection, or an explicit service request.
+- Simple knowledge or routine maintenance questions: answer the question first, then stop unless the user signals service intent.
+- Do not turn every useful answer into a ticket path.
+- Service conversion triggers: production-stopping faults, safety risks, official quotation, parts confirmation, on-site service, remote diagnosis, new machine selection, or explicit service request.
+- For urgent or unsafe equipment issues, prioritize stop-work safety guidance, risk level, missing facts, and a SAGEMRO official follow-up summary.
+- For price, parts, or on-site requests, do not invent final prices, availability, service dates, or engineer assignments.
+- When conversion is appropriate, present a concise service-ready case summary and ask the user to confirm the next step; do not claim a work order exists until it is actually created.
+- Before creating a service request, show a concise service-ready summary and ask the customer to confirm.
+- Never create, claim, or imply a work order exists until the customer has confirmed and the create_work_order tool returns success.
+- If key facts are missing, ask only the missing facts needed for triage: equipment, symptom, urgency, location/contact, and safety risk.
 
 ### 生成服务申请和派工建议时
 - 当用户需要上门服务、远程诊断、备件确认或新机选型时，先把问题整理成结构化摘要。
@@ -1408,9 +1471,11 @@ async function authenticateAdmin(request, env) {
 const ALLOWED_ORIGINS_PRODUCTION = [
   'https://sagemro.com',
   'https://www.sagemro.com',
+  'https://engineer.sagemro.com',
   'https://admin.sagemro.com',
   'https://sagemro.cn',
   'https://www.sagemro.cn',
+  'https://engineer.sagemro.cn',
   'https://admin.sagemro.cn',
 ];
 const ALLOWED_ORIGINS_DEV = [
@@ -1470,6 +1535,55 @@ function errorResponse(message, status = 400) {
   return jsonResponse({ error: message }, status);
 }
 
+const ERROR_MESSAGES = {
+  phone_required: {
+    com: 'Phone number is required.',
+    cn: '手机号不能为空',
+  },
+  invalid_phone: {
+    com: 'Please enter a valid phone number.',
+    cn: '手机号格式不正确',
+  },
+  name_phone_company_password_required: {
+    com: 'Name, phone number, company name, and password are required.',
+    cn: '姓名、手机号、公司名称、密码不能为空',
+  },
+  phone_password_required: {
+    com: 'Phone number and password are required.',
+    cn: '手机号、密码不能为空',
+  },
+  too_many_password_attempts: {
+    com: 'Too many failed password attempts. Please try again in 15 minutes.',
+    cn: '密码错误次数过多，请 15 分钟后再试',
+  },
+  account_not_found: {
+    com: 'Account not found. Please register first.',
+    cn: '账号不存在，请先注册',
+  },
+  wrong_password: {
+    com: 'Incorrect password. Please try again.',
+    cn: '密码错误，请重试',
+  },
+  sign_in_required: {
+    com: 'Please sign in first.',
+    cn: '请先登录',
+  },
+  public_engineer_registration_closed: {
+    com: 'Public engineer registration is closed. SAGEMRO engineer accounts are created internally.',
+    cn: '工程师账号由 SAGEMRO 内部创建，公开注册已关闭。',
+  },
+};
+
+function localizedMessage(key, request) {
+  const entry = ERROR_MESSAGES[key];
+  if (!entry) return key;
+  return entry[getRequestMarket(request)] || entry.com;
+}
+
+function localizedErrorResponse(key, request, status = 400) {
+  return errorResponse(localizedMessage(key, request), status);
+}
+
 // ============ 认证相关 ============
 
 
@@ -1491,11 +1605,11 @@ async function handleSendCode(request, env) {
   try {
     const { phone } = await request.json();
     if (!phone) {
-      return errorResponse('手机号不能为空');
+      return localizedErrorResponse('phone_required', request);
     }
 
     if (!/^1\d{10}$/.test(phone)) {
-      return errorResponse('手机号格式不正确');
+      return localizedErrorResponse('invalid_phone', request);
     }
 
     // 频控：同一手机号 60 秒内只能请求一次
@@ -1555,7 +1669,7 @@ async function handleRegisterCustomer(request, env) {
     const { name, phone, password, code, company, identity } = await request.json();
 
     if (!name || !phone || !password || !company) {
-      return errorResponse('姓名、手机号、公司名称、密码不能为空');
+      return localizedErrorResponse('name_phone_company_password_required', request);
     }
 
     // 验证验证码（开发环境支持 bypass 码 "888888" + DEV_BYPASS_CODE 用于自动化测试）
@@ -1620,7 +1734,7 @@ async function handleRegisterEngineer(request, env) {
     } = await request.json();
 
     if (!name || !phone || !password || !company) {
-      return errorResponse('姓名、手机号、公司名称、密码不能为空');
+      return localizedErrorResponse('name_phone_company_password_required', request);
     }
 
     // 验证验证码（开发环境支持 bypass 码 "888888" + DEV_BYPASS_CODE 用于自动化测试）
@@ -1690,7 +1804,7 @@ async function handleLogin(request, env) {
     const { phone, password } = await request.json();
 
     if (!phone || !password) {
-      return errorResponse('手机号、密码不能为空');
+      return localizedErrorResponse('phone_password_required', request);
     }
 
     // 登录失败计数（防暴力破解）：同一手机号 15 分钟内失败 5 次锁定
@@ -1698,7 +1812,7 @@ async function handleLogin(request, env) {
     const failCountStr = await env.KV.get(failKey);
     const failCount = failCountStr ? parseInt(failCountStr, 10) : 0;
     if (failCount >= 5) {
-      return errorResponse('密码错误次数过多，请 15 分钟后再试', 429);
+      return localizedErrorResponse('too_many_password_attempts', request, 429);
     }
 
     // 查找客户
@@ -1718,14 +1832,14 @@ async function handleLogin(request, env) {
 
     if (!user) {
       await env.KV.put(failKey, String(failCount + 1), { expirationTtl: 900 });
-      return errorResponse('账号不存在，请先注册');
+      return localizedErrorResponse('account_not_found', request);
     }
 
     // 验证密码（兼容新旧算法）
     const passwordValid = await verifyPassword(password, user.password_hash, user.salt);
     if (!passwordValid) {
       await env.KV.put(failKey, String(failCount + 1), { expirationTtl: 900 });
-      return errorResponse('密码错误，请重试');
+      return localizedErrorResponse('wrong_password', request);
     }
 
     // 登录成功：清除失败计数
@@ -2327,9 +2441,12 @@ export async function handleChat(request, env) {
 
     let existingConversation = null;
     if (conversation_id) {
-      existingConversation = await env.DB.prepare(
-        'SELECT customer_id, engineer_id FROM conversations WHERE id = ?'
-      ).bind(conversation_id).first();
+      existingConversation = await runD1WithTransientRetry(
+        () => env.DB.prepare(
+          'SELECT customer_id, engineer_id FROM conversations WHERE id = ?'
+        ).bind(conversation_id).first(),
+        { label: 'chat:load_conversation' },
+      );
       if (existingConversation) {
         if (trustedRole === 'guest') {
           if (existingConversation.customer_id || existingConversation.engineer_id) {
@@ -2344,9 +2461,12 @@ export async function handleChat(request, env) {
     // 如果有 conversation_id 且归属校验通过，先获取历史消息
     let messages = [];
     if (conversation_id && existingConversation) {
-      const history = await env.DB.prepare(
-        'SELECT role, content, image_urls FROM messages WHERE conversation_id = ? ORDER BY created_at ASC'
-      ).bind(conversation_id).all();
+      const history = await runD1WithTransientRetry(
+        () => env.DB.prepare(
+          'SELECT role, content, image_urls FROM messages WHERE conversation_id = ? ORDER BY created_at ASC'
+        ).bind(conversation_id).all(),
+        { label: 'chat:load_messages' },
+      );
 
       messages = history.results.map(m => {
         // 有图片的消息使用多模态格式
@@ -2388,35 +2508,56 @@ export async function handleChat(request, env) {
     // 顺序：Base → Role → Context
     const requestHost = new URL(request.url).hostname;
     const originHost = request.headers.get('Origin') || '';
+    const isCnMarket = requestHost.endsWith('.cn') || originHost.includes('sagemro.cn');
+    const marketLabel = isCnMarket ? 'China edition / sagemro.cn' : 'International edition / sagemro.com';
+    const turnLanguageRule = isCnMarket
+      ? `You MUST answer this turn in Simplified Chinese.
+Reply in Simplified Chinese.
+English alarm codes, brand names, CNC terms, or short English phrases do not count as a request to answer in English.`
+      : `You MUST answer this turn in English.
+Reply in English.
+Use Chinese only if the user clearly writes in Chinese or explicitly asks for Chinese.`;
     const marketContext = `
 
 ## 当前请求上下文
 - API host: ${requestHost}
 - Origin: ${originHost || 'not provided'}
-- Market: ${(requestHost.endsWith('.cn') || originHost.includes('sagemro.cn')) ? 'China edition / sagemro.cn' : 'International edition / sagemro.com'}
+- Market: ${marketLabel}
 
-请严格遵守上方语言策略。`;
+## 本轮语言硬性规则
+${turnLanguageRule}
+
+请严格遵守上方语言策略和本轮语言硬性规则。`;
     const fullSystemPrompt = SYSTEM_PROMPT + rolePrompt + marketContext + dataContext;
 
     // 创建或更新对话（customer_id / engineer_id 只接受 JWT 信任值）
     let convId = conversation_id;
     if (!convId || !existingConversation) {
       convId = convId || generateId();
-      await env.DB.prepare(
-        'INSERT INTO conversations (id, title, last_message, customer_id, engineer_id) VALUES (?, ?, ?, ?, ?)'
-      ).bind(convId, truncateStr(message, 20), truncateStr(message, 50), trustedCustomerId, trustedEngineerId).run();
+      await runD1WithTransientRetry(
+        () => env.DB.prepare(
+          'INSERT INTO conversations (id, title, last_message, customer_id, engineer_id) VALUES (?, ?, ?, ?, ?)'
+        ).bind(convId, truncateStr(message, 20), truncateStr(message, 50), trustedCustomerId, trustedEngineerId).run(),
+        { label: 'chat:create_conversation' },
+      );
     } else {
-      await env.DB.prepare(
-        'UPDATE conversations SET last_message = ?, updated_at = datetime("now") WHERE id = ?'
-      ).bind(truncateStr(message, 50), convId).run();
+      await runD1WithTransientRetry(
+        () => env.DB.prepare(
+          'UPDATE conversations SET last_message = ?, updated_at = datetime("now") WHERE id = ?'
+        ).bind(truncateStr(message, 50), convId).run(),
+        { label: 'chat:update_conversation' },
+      );
     }
 
     // 保存用户消息（含图片 URL）
     const userMsgId = generateId();
     const imageUrlsJson = imageUrls.length > 0 ? JSON.stringify(imageUrls.map(i => i.url)) : null;
-    await env.DB.prepare(
-      'INSERT INTO messages (id, conversation_id, role, content, image_urls) VALUES (?, ?, ?, ?, ?)'
-    ).bind(userMsgId, convId, 'user', message, imageUrlsJson).run();
+    await runD1WithTransientRetry(
+      () => env.DB.prepare(
+        'INSERT INTO messages (id, conversation_id, role, content, image_urls) VALUES (?, ?, ?, ?, ?)'
+      ).bind(userMsgId, convId, 'user', message, imageUrlsJson).run(),
+      { label: 'chat:insert_user_message' },
+    );
 
     // 流式返回响应（Phase 0.3：多轮 tool call while 循环）
     // 每轮都带 tools 参数，允许 AI 链式调多个工具；最后一轮强制不带 tools，逼 LLM 产出文本。
@@ -2710,6 +2851,10 @@ export async function handleChat(request, env) {
       headers: { 'Content-Type': 'text/event-stream', ...corsHeaders },
     });
   } catch (error) {
+    if (error instanceof TransientD1Error) {
+      console.warn('[chat] transient D1 failure after retry:', error?.cause?.message || error.message);
+      return errorResponse(error.message, 503);
+    }
     if (error instanceof GuardError) {
       return errorResponse(error.message, error.status);
     }
@@ -5635,8 +5780,9 @@ async function handleAdminLogin(request, env) {
     const body = await request.json().catch(() => ({}));
     const { phone, password } = body || {};
 
-    const adminPhone = env.ADMIN_PHONE;
-    const adminPassword = env.ADMIN_PASSWORD;
+    const adminCredentials = resolveAdminCredentials(request, env);
+    const adminPhone = adminCredentials.phone;
+    const adminPassword = adminCredentials.password;
     if (!adminPhone || !adminPassword) {
       return errorResponse('管理员账号未配置，请联系系统管理员', 500);
     }
@@ -5682,13 +5828,14 @@ async function handleAdminLogin(request, env) {
       userId: 'admin',
       userType: 'admin',
       phone: adminPhone,
+      market: adminCredentials.market,
       iat: now,
       exp: now + 86400 * 7,
     }, env.JWT_SECRET);
 
     return jsonResponse({
       token,
-      user: { id: 'admin', name: '超级管理员', phone: adminPhone, type: 'admin' },
+      user: { id: 'admin', name: '超级管理员', phone: adminPhone, type: 'admin', market: adminCredentials.market },
     });
   } catch (error) {
     return errorResponse(error.message, 500);
@@ -7826,7 +7973,7 @@ async function routeRequest(request, env, ctx) {
       return handleRegisterCustomer(request, env);
     }
     if (path === '/api/auth/register/engineer' && request.method === 'POST') {
-      return errorResponse('Public engineer registration is closed. SAGEMRO engineer accounts are created internally.', 410);
+      return localizedErrorResponse('public_engineer_registration_closed', request, 410);
     }
     if (path === '/api/auth/login' && request.method === 'POST') {
       return handleLogin(request, env);
@@ -8063,7 +8210,7 @@ async function routeRequest(request, env, ctx) {
 
     const auth = await authenticateRequest(request, env);
     if (!auth) {
-      return errorResponse('请先登录', 401);
+      return localizedErrorResponse('sign_in_required', request, 401);
     }
 
     // 将认证信息挂到 request 上，供 handler 使用。Admin handler 也需要它写审计日志。
@@ -8363,19 +8510,36 @@ export function shouldUseCnDatabase(request) {
   return false;
 }
 
+export function resolveAdminCredentials(request, env) {
+  const market = shouldUseCnDatabase(request) ? 'cn' : 'com';
+  if (market === 'cn' && env.ADMIN_PHONE_CN && env.ADMIN_PASSWORD_CN) {
+    return {
+      market,
+      phone: env.ADMIN_PHONE_CN,
+      password: env.ADMIN_PASSWORD_CN,
+    };
+  }
+
+  return {
+    market,
+    phone: env.ADMIN_PHONE,
+    password: env.ADMIN_PASSWORD,
+  };
+}
+
 export default {
   async fetch(request, env, ctx) {
     // 按 API 域名或来源域名路由数据库：CN 站点走 CN 库，其他走 EN 库。
-    if (env.DB_CN && shouldUseCnDatabase(request)) {
-      env.DB = env.DB_CN;
-    }
+    const requestEnv = env.DB_CN && shouldUseCnDatabase(request)
+      ? { ...env, DB: env.DB_CN }
+      : env;
     try {
-      const response = await routeRequest(request, env, ctx);
-      return withCorsHeaders(response, request, env);
+      const response = await routeRequest(request, requestEnv, ctx);
+      return withCorsHeaders(response, request, requestEnv);
     } catch (error) {
       console.error('[fetch] unhandled error:', error);
-      captureException(error, env, { request, ctx });
-      const corsH = getCorsHeaders(request, env);
+      captureException(error, requestEnv, { request, ctx });
+      const corsH = getCorsHeaders(request, requestEnv);
       return new Response(
         JSON.stringify({ error: error?.message || 'Internal Server Error' }),
         {
