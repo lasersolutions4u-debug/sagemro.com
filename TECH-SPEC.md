@@ -169,8 +169,10 @@ VITE_API_BASE=https://api.sagemro.com
 | `OPENAI_CHAT_MODEL` | 主聊天模型名（可选但生产建议显式设置） |
 | `OPENAI_JSON_MODEL` | JSON/摘要/报价点评模型名（可选，不设置则回退聊天模型） |
 | `JWT_SECRET` | JWT 签名密钥 |
-| `ADMIN_PHONE` | 管理员手机号 |
-| `ADMIN_PASSWORD` | 管理员密码 |
+| `ADMIN_PHONE` | 国际版后台管理员手机号（`admin.sagemro.com`） |
+| `ADMIN_PASSWORD` | 国际版后台管理员密码 |
+| `ADMIN_PHONE_CN` | 中国版后台管理员手机号（`admin.sagemro.cn`，未配置时临时回退国际版账号） |
+| `ADMIN_PASSWORD_CN` | 中国版后台管理员密码（需与 `ADMIN_PHONE_CN` 成对配置） |
 | `ONESIGNAL_APP_ID` | OneSignal 推送 App ID |
 | `ONESIGNAL_REST_API_KEY` | OneSignal REST API Key |
 

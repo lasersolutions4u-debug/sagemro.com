@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { shouldUseCnDatabase } from '../src/index.js';
+import { resolveAdminCredentials, shouldUseCnDatabase } from '../src/index.js';
 
 test('uses CN database for api.sagemro.cn requests', () => {
   const request = new Request('https://api.sagemro.cn/health');
@@ -23,4 +23,34 @@ test('keeps COM database for sagemro.com requests', () => {
   });
 
   assert.equal(shouldUseCnDatabase(request), false);
+});
+
+test('resolves market-specific admin credentials for CN admin requests', () => {
+  const request = new Request('https://api.sagemro.cn/api/admin/login');
+  const credentials = resolveAdminCredentials(request, {
+    ADMIN_PHONE: '13800000000',
+    ADMIN_PASSWORD: 'global-pass',
+    ADMIN_PHONE_CN: '13900000000',
+    ADMIN_PASSWORD_CN: 'cn-pass',
+  });
+
+  assert.deepEqual(credentials, {
+    market: 'cn',
+    phone: '13900000000',
+    password: 'cn-pass',
+  });
+});
+
+test('falls back to international admin credentials until CN secrets are configured', () => {
+  const request = new Request('https://api.sagemro.cn/api/admin/login');
+  const credentials = resolveAdminCredentials(request, {
+    ADMIN_PHONE: '13800000000',
+    ADMIN_PASSWORD: 'global-pass',
+  });
+
+  assert.deepEqual(credentials, {
+    market: 'cn',
+    phone: '13800000000',
+    password: 'global-pass',
+  });
 });

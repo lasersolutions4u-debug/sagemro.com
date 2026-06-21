@@ -5724,8 +5724,9 @@ async function handleAdminLogin(request, env) {
     const body = await request.json().catch(() => ({}));
     const { phone, password } = body || {};
 
-    const adminPhone = env.ADMIN_PHONE;
-    const adminPassword = env.ADMIN_PASSWORD;
+    const adminCredentials = resolveAdminCredentials(request, env);
+    const adminPhone = adminCredentials.phone;
+    const adminPassword = adminCredentials.password;
     if (!adminPhone || !adminPassword) {
       return errorResponse('管理员账号未配置，请联系系统管理员', 500);
     }
@@ -5771,13 +5772,14 @@ async function handleAdminLogin(request, env) {
       userId: 'admin',
       userType: 'admin',
       phone: adminPhone,
+      market: adminCredentials.market,
       iat: now,
       exp: now + 86400 * 7,
     }, env.JWT_SECRET);
 
     return jsonResponse({
       token,
-      user: { id: 'admin', name: '超级管理员', phone: adminPhone, type: 'admin' },
+      user: { id: 'admin', name: '超级管理员', phone: adminPhone, type: 'admin', market: adminCredentials.market },
     });
   } catch (error) {
     return errorResponse(error.message, 500);
@@ -8450,6 +8452,23 @@ export function shouldUseCnDatabase(request) {
   }
 
   return false;
+}
+
+export function resolveAdminCredentials(request, env) {
+  const market = shouldUseCnDatabase(request) ? 'cn' : 'com';
+  if (market === 'cn' && env.ADMIN_PHONE_CN && env.ADMIN_PASSWORD_CN) {
+    return {
+      market,
+      phone: env.ADMIN_PHONE_CN,
+      password: env.ADMIN_PASSWORD_CN,
+    };
+  }
+
+  return {
+    market,
+    phone: env.ADMIN_PHONE,
+    password: env.ADMIN_PASSWORD,
+  };
 }
 
 export default {

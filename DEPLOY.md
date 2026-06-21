@@ -151,12 +151,18 @@ npx wrangler secret put OPENAI_API_ENDPOINT --env production
 npx wrangler secret put OPENAI_CHAT_MODEL --env production   # 例如 deepseek-chat / gpt-4o-mini / 兼容端点支持的聊天模型
 npx wrangler secret put OPENAI_JSON_MODEL --env production   # 可选；摘要/报价点评等 JSON 任务模型，不设则回退聊天模型
 npx wrangler secret put JWT_SECRET --env production
+npx wrangler secret put ADMIN_PHONE --env production         # 国际版后台 admin.sagemro.com
+npx wrangler secret put ADMIN_PASSWORD --env production
+npx wrangler secret put ADMIN_PHONE_CN --env production      # 中国版后台 admin.sagemro.cn；不设置时暂回退国际版后台账号
+npx wrangler secret put ADMIN_PASSWORD_CN --env production
 npx wrangler secret put ONESIGNAL_REST_API_KEY --env production
 ```
 
 
 
 ⚠️ **GitHub Actions workflow 不会自动设置这些 secrets**。一次性手动配置后存活在 CF 上，除非你主动改。但**轮换密钥时**必须手动重跑这几条命令。
+
+中国版后台建议正式运营前单独设置 `ADMIN_PHONE_CN` / `ADMIN_PASSWORD_CN`。一旦两个值都配置完成，`admin.sagemro.cn` 将只接受中国版后台账号，`admin.sagemro.com` 仍使用 `ADMIN_PHONE` / `ADMIN_PASSWORD`。
 
 ### 2.6 创建 Pages 项目（空壳）
 
