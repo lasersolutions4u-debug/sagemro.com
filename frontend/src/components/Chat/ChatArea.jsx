@@ -4,10 +4,7 @@ import { MessageBubble } from './MessageBubble';
 import { WelcomePage } from './WelcomePage';
 import { InputArea } from './InputArea';
 import { Footer } from '../common/Footer';
-
-function isChinaSite() {
-  return typeof window !== 'undefined' && window.location.hostname.endsWith('.cn');
-}
+import { isCnLocale } from '../../utils/locale';
 
 export function ChatArea({
   messages,
@@ -31,14 +28,21 @@ export function ChatArea({
   }, [messages]);
 
   const hasMessages = messages.length > 0;
-  const isZh = isChinaSite();
+  const isCn = isCnLocale();
+  const serviceName = isCn ? 'SAGEMRO 智能服务系统' : 'SAGEMRO Service OS';
   const pageTitle = hasMessages
-    ? (currentTitle || (isZh ? '服务对话' : 'Service conversation'))
-    : 'SAGEMRO Service OS';
-  const subtitle = isZh
+    ? (currentTitle || (isCn ? '服务对话' : 'Service conversation'))
+    : serviceName;
+  const subtitle = isCn
     ? '面向激光切割与钣金设备的官方服务智能入口'
     : 'Official service intelligence for laser cutting and sheet metal equipment';
-  const homeLabel = isZh ? '返回首页' : 'Service OS Home';
+  const aboutLabel = isCn ? '关于 SAGEMRO' : 'About SAGEMRO';
+  const legalLabel = isCn ? '法律与 AI 说明' : 'Legal & AI notice';
+  const homeLabel = isCn ? '返回首页' : 'Service OS Home';
+  const aiNotice = isCn
+    ? 'AI 帮助更快梳理服务路径。最终诊断、报价和现场安全要求由 SAGEMRO 官方服务确认。'
+    : 'AI helps prepare the service path faster. Final diagnosis, quote, and on-site safety requirements are confirmed by SAGEMRO official service.';
+  const detailsLabel = isCn ? '详情' : 'Details';
 
   return (
     <div className="flex flex-col h-full bg-[var(--color-chat-bg)]">
@@ -66,7 +70,7 @@ export function ChatArea({
             className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-[var(--color-border)] text-[11px] text-[var(--color-text-secondary)] hover:text-[var(--color-primary)] hover:border-[var(--color-primary)] transition-colors"
           >
             <Info size={13} />
-            About SAGEMRO
+            {aboutLabel}
           </button>
         )}
         {onOpenLegal && (
@@ -75,7 +79,7 @@ export function ChatArea({
             className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-[var(--color-border)] text-[11px] text-[var(--color-text-secondary)] hover:text-[var(--color-primary)] hover:border-[var(--color-primary)] transition-colors"
           >
             <ShieldCheck size={13} />
-            Legal & AI notice
+            {legalLabel}
           </button>
         )}
         {hasMessages && (
@@ -93,13 +97,13 @@ export function ChatArea({
         <div className="px-3 sm:px-5 py-2 border-b border-[var(--color-border)] bg-[var(--color-surface)]/70 flex items-center justify-center gap-2">
           <Info size={12} className="text-[var(--color-text-muted)] flex-shrink-0" />
           <p className="text-[11px] text-[var(--color-text-secondary)] leading-tight">
-            AI helps prepare the service path faster. Final diagnosis, quote, and on-site safety requirements are confirmed by SAGEMRO official service.
+            {aiNotice}
             {onOpenLegal && (
               <button
                 onClick={() => onOpenLegal('ai')}
                 className="ml-1 underline decoration-dotted underline-offset-2 hover:text-[var(--color-primary)] transition-colors"
               >
-                Details
+                {detailsLabel}
               </button>
             )}
           </p>

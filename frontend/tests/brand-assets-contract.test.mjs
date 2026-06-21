@@ -41,3 +41,20 @@ test('CN chat input does not promote image upload in placeholder copy', () => {
   assert.doesNotMatch(placeholderExpression, /随时上传/);
   assert.match(placeholderExpression, /描述设备、报警、材料厚度或现场问题。/);
 });
+
+test('main site first-impression copy keeps CN and COM market language separate', () => {
+  const welcome = read('frontend/src/components/Chat/WelcomePage.jsx');
+  const about = read('frontend/src/components/common/AboutModal.jsx');
+  const footer = read('frontend/src/components/common/Footer.jsx');
+  const engineerRecruiting = read('frontend/src/components/Engineer/EngineerRecruitingPage.jsx');
+
+  assert.match(welcome, /Explain the machine issue once/);
+  assert.match(welcome, /设备问题先说清楚，服务推进少走弯路。/);
+  assert.match(about, /An AI-assisted official service entrance/);
+  assert.match(about, /面向激光切割与钣金加工设备的 AI 辅助官方服务入口。/);
+  assert.doesNotMatch(about, /field photos|现场照片/);
+  assert.match(footer, /SAGEMRO by Jinan Euchio Machinery Co\., Ltd\./);
+  assert.match(footer, /SAGEMRO by 济南钰峭机械有限公司/);
+  assert.match(engineerRecruiting, /SAGEMRO 智能服务系统 · 认证服务代表计划/);
+  assert.doesNotMatch(engineerRecruiting, /badge: 'SAGEMRO Service OS · 认证服务代表计划'/);
+});

@@ -1,13 +1,12 @@
 import { useState, useRef, useEffect } from 'react';
 import { Send, StopCircle, ImagePlus, X, Loader2 } from 'lucide-react';
 import { uploadChatImage } from '../../services/api';
+import { isCnLocale } from '../../utils/locale';
 
 const MAX_IMAGES = 4;
-function isChinaSite() {
-  return typeof window !== 'undefined' && window.location.hostname.endsWith('.cn');
-}
 
 export function InputArea({ onSend, onStop, disabled, isStreaming }) {
+  const isCn = isCnLocale();
   const [input, setInput] = useState('');
   const [pendingImages, setPendingImages] = useState([]); // { file, previewUrl, uploading, url, error }
   const textareaRef = useRef(null);
@@ -83,7 +82,7 @@ export function InputArea({ onSend, onStop, disabled, isStreaming }) {
     if ((!text && uploadedImages.length === 0) || disabled) return;
 
     const images = uploadedImages.map(img => ({ url: img.url }));
-    onSend(text || 'Please analyze this image', images);
+    onSend(text || (isCn ? '发送图片，请帮我看一下现场情况' : 'Please review this image and help me understand the field situation'), images);
     setInput('');
     pendingImages.forEach(img => {
       if (img.previewUrl) {
@@ -103,9 +102,9 @@ export function InputArea({ onSend, onStop, disabled, isStreaming }) {
 
   const hasUploading = pendingImages.some(img => img.uploading);
   const canSend = (input.trim() || pendingImages.some(img => img.url)) && !hasUploading;
-  const placeholder = isChinaSite()
-    ? (pendingImages.length > 0 ? '补充设备、报警、材料或现场工况。Enter 发送，Shift + Enter 换行。' : '描述设备、报警、材料厚度或现场问题。')
-    : (pendingImages.length > 0 ? 'Add machine, alarm, material, or site context. Enter to send, Shift + Enter for a new line.' : 'Describe the machine, alarm, material, or site problem.');
+  const placeholder = pendingImages.length > 0
+    ? (isCn ? '补充设备、报警、材料或现场工况。Enter 发送，Shift + Enter 换行。' : 'Add device, alarm, material, or field context. Enter to send, Shift + Enter for a new line.')
+    : (isCn ? '描述设备、报警、材料厚度或现场问题。' : 'Describe the device, alarm code, material, thickness, or field issue.');
 
   return (
     <div className="border-t border-[var(--color-border)] bg-[var(--color-chat-bg)] px-3 sm:px-6 py-3 sm:py-4 pb-[env(safe-area-inset-bottom)]">
@@ -156,7 +155,7 @@ export function InputArea({ onSend, onStop, disabled, isStreaming }) {
               onClick={() => fileInputRef.current?.click()}
               disabled={disabled || isStreaming}
               className="w-12 h-12 flex items-center justify-center rounded-2xl hover:bg-[var(--color-hover)] transition-colors flex-shrink-0 disabled:opacity-50"
-              title="Upload image"
+              title={isCn ? '补充现场图片' : 'Add field image'}
             >
               <ImagePlus size={22} className="text-[var(--color-text-muted)]" />
             </button>
@@ -186,7 +185,7 @@ export function InputArea({ onSend, onStop, disabled, isStreaming }) {
               <button
                 onClick={onStop}
                 className="w-12 h-12 flex items-center justify-center bg-red-500 hover:bg-red-600 text-white rounded-2xl transition-colors flex-shrink-0 active:scale-95"
-                title="Stop generation"
+                title={isCn ? '停止生成' : 'Stop generation'}
               >
                 <StopCircle size={22} />
               </button>

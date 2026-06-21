@@ -9,6 +9,7 @@ import { useChat } from './hooks/useChat';
 import { useConversations } from './hooks/useConversations';
 import { usePushNotification } from './hooks/usePushNotification';
 import { generateId } from './utils/helpers';
+import { isCnLocale } from './utils/locale';
 import { submitWorkOrder as submitWorkOrderApi, getUnreadNotificationCount } from './services/api';
 
 // 重型 Modal 懒加载，减少首屏 bundle 体积
@@ -29,6 +30,12 @@ const NotificationModal = lazy(() => import('./components/Notification/Notificat
 function App() {
   const isEngineerHost = typeof window !== 'undefined'
     && window.location.hostname.startsWith('engineer.');
+  const isCn = isCnLocale();
+  const engineerPortalUrl = isCn ? 'https://engineer.sagemro.cn' : 'https://engineer.sagemro.com';
+
+  useEffect(() => {
+    document.title = isCn ? 'SAGEMRO 智能服务系统' : 'SAGEMRO Service OS';
+  }, [isCn]);
 
   // 侧边栏状态
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -351,26 +358,40 @@ function App() {
   }
 
   if (userType === 'engineer') {
+    const engineerRedirectCopy = isCn
+      ? {
+          title: '请从专属工作台继续',
+          body: '当前账号适用于 SAGEMRO 工程师工作台。请前往专属入口查看服务任务、客户沟通和现场服务记录。',
+          cta: `前往 ${engineerPortalUrl.replace('https://', '')}`,
+          signOut: '退出当前账号',
+        }
+      : {
+          title: 'Continue in the Engineer Workspace',
+          body: 'This account is intended for the SAGEMRO Engineer Workspace. Use the dedicated portal to review service tasks, customer communication, and field service records.',
+          cta: `Go to ${engineerPortalUrl.replace('https://', '')}`,
+          signOut: 'Sign Out',
+        };
+
     return (
       <div className="flex min-h-[100dvh] items-center justify-center bg-[var(--color-bg)] px-5 text-[var(--color-text-primary)]">
         <div className="max-w-md rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6 text-center shadow-xl">
           <div className="text-xs uppercase tracking-[0.24em] text-[var(--color-primary)]">SAGEMRO</div>
-          <h1 className="mt-2 text-xl font-semibold">Continue in the Engineer Workspace</h1>
+          <h1 className="mt-2 text-xl font-semibold">{engineerRedirectCopy.title}</h1>
           <p className="mt-3 text-sm text-[var(--color-text-secondary)]">
-            This account is intended for the SAGEMRO Engineer Workspace. Use the dedicated portal to review service tasks, customer communication, and field service records.
+            {engineerRedirectCopy.body}
           </p>
           <div className="mt-5 flex flex-col gap-2">
             <a
-              href="https://engineer.sagemro.com"
+              href={engineerPortalUrl}
               className="rounded-xl bg-[var(--color-primary)] px-4 py-2.5 text-sm font-medium text-white"
             >
-              Go to engineer.sagemro.com
+              {engineerRedirectCopy.cta}
             </a>
             <button
               onClick={handleLogout}
               className="rounded-xl border border-[var(--color-border)] px-4 py-2.5 text-sm text-[var(--color-text-secondary)]"
             >
-              Sign Out
+              {engineerRedirectCopy.signOut}
             </button>
           </div>
         </div>

@@ -5,7 +5,7 @@ import { BrandMark } from '../common/BrandMark';
 
 const COPY = {
   cn: {
-    badge: 'SAGEMRO Service OS · 认证服务代表计划',
+    badge: 'SAGEMRO 智能服务系统 · 认证服务代表计划',
     title: '让专业工程师被看见、被支持、被认真对待。',
     subtitle: 'SAGEMRO 正在建设面向激光切割机与钣金加工设备的官方服务网络。我们寻找真正理解现场、设备和客户压力的工程师，由运营团队审核后分配账号，并在标准、派工、资料和成长上持续支持。',
     primary: '申请成为认证服务代表',
