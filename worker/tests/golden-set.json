@@ -1,6 +1,6 @@
 {
-  "version": 7,
-  "description": "Golden set — 43 deterministic regression cases across role_guard (10), redact (10), assigned_service_tasks (10), conversation_history (5), prompt_contract (7), output_contract (1). v7 tightens routine-maintenance no-CTA behavior and Chinese professional expression quality contracts.",
+  "version": 8,
+  "description": "Golden set — 45 deterministic regression cases across role_guard (10), redact (10), assigned_service_tasks (10), conversation_history (5), prompt_contract (9), output_contract (1). v8 adds answer/check/service routing contracts for commercial intake quality.",
   "cases": [
     {
       "id": "rg-001",
@@ -482,6 +482,41 @@
           "For routine maintenance frequency questions, answer in no more than 5 compact lines",
           "Do not add a SAGEMRO service follow-up CTA for routine maintenance questions unless the user mentions abnormal wear, downtime, safety risk, quotation, parts purchase, or on-site support",
           "Do not invent a possible abnormal follow-up scenario just to offer diagnosis or service"
+        ]
+      }
+    },
+    {
+      "id": "pc-008",
+      "category": "prompt_contract",
+      "description": "AI 必须按 answer_only / guided_check / service_recommended 三档判断下一步",
+      "input": {
+        "url": "https://api.sagemro.com/api/chat",
+        "origin": "https://sagemro.com",
+        "message": "My laser cutter leaves burrs on 2 mm stainless steel. What should I adjust first?"
+      },
+      "expect": {
+        "prompt_contains": [
+          "Classify the user's current need internally as one of: answer_only, guided_check, service_recommended",
+          "answer_only: answer clearly and stop without a work order CTA",
+          "guided_check: give 2-4 practical checks and ask for the result before recommending service",
+          "service_recommended: use only when there is downtime, safety risk, official quote, parts confirmation, on-site or remote service need, new machine selection, or an explicit service request"
+        ]
+      }
+    },
+    {
+      "id": "pc-009",
+      "category": "prompt_contract",
+      "description": "服务申请必须先摘要确认，不替用户做决定",
+      "input": {
+        "url": "https://api.sagemro.cn/api/chat",
+        "origin": "https://sagemro.cn",
+        "message": "设备停机了，需要安排工程师上门。"
+      },
+      "expect": {
+        "prompt_contains": [
+          "Before creating a service request, show a concise service-ready summary and ask the customer to confirm",
+          "Never create, claim, or imply a work order exists until the customer has confirmed and the create_work_order tool returns success",
+          "If key facts are missing, ask only the missing facts needed for triage: equipment, symptom, urgency, location/contact, and safety risk"
         ]
       }
     },

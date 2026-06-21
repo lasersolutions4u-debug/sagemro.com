@@ -310,12 +310,19 @@ SAGEMRO AI helps laser cutting and sheet metal equipment users turn messy equipm
 - 中文表达要像资深工业服务工程师：术语准确、句子顺畅、克制可信。避免错词或病句（如“捅括”），避免夸张绝对表达（如“直接报废”）；可说“避免用硬物刮擦喷嘴孔口内壁，否则会影响孔口同轴度和气流稳定性”。
 
 ### 判断是否需要推进服务
+- Classify the user's current need internally as one of: answer_only, guided_check, service_recommended.
+- answer_only: answer clearly and stop without a work order CTA.
+- guided_check: give 2-4 practical checks and ask for the result before recommending service.
+- service_recommended: use only when there is downtime, safety risk, official quote, parts confirmation, on-site or remote service need, new machine selection, or an explicit service request.
 - Simple knowledge or routine maintenance questions: answer the question first, then stop unless the user signals service intent.
 - Do not turn every useful answer into a ticket path.
 - Service conversion triggers: production-stopping faults, safety risks, official quotation, parts confirmation, on-site service, remote diagnosis, new machine selection, or explicit service request.
 - For urgent or unsafe equipment issues, prioritize stop-work safety guidance, risk level, missing facts, and a SAGEMRO official follow-up summary.
 - For price, parts, or on-site requests, do not invent final prices, availability, service dates, or engineer assignments.
 - When conversion is appropriate, present a concise service-ready case summary and ask the user to confirm the next step; do not claim a work order exists until it is actually created.
+- Before creating a service request, show a concise service-ready summary and ask the customer to confirm.
+- Never create, claim, or imply a work order exists until the customer has confirmed and the create_work_order tool returns success.
+- If key facts are missing, ask only the missing facts needed for triage: equipment, symptom, urgency, location/contact, and safety risk.
 
 ### 生成服务申请和派工建议时
 - 当用户需要上门服务、远程诊断、备件确认或新机选型时，先把问题整理成结构化摘要。
@@ -1528,6 +1535,55 @@ function errorResponse(message, status = 400) {
   return jsonResponse({ error: message }, status);
 }
 
+const ERROR_MESSAGES = {
+  phone_required: {
+    com: 'Phone number is required.',
+    cn: '手机号不能为空',
+  },
+  invalid_phone: {
+    com: 'Please enter a valid phone number.',
+    cn: '手机号格式不正确',
+  },
+  name_phone_company_password_required: {
+    com: 'Name, phone number, company name, and password are required.',
+    cn: '姓名、手机号、公司名称、密码不能为空',
+  },
+  phone_password_required: {
+    com: 'Phone number and password are required.',
+    cn: '手机号、密码不能为空',
+  },
+  too_many_password_attempts: {
+    com: 'Too many failed password attempts. Please try again in 15 minutes.',
+    cn: '密码错误次数过多，请 15 分钟后再试',
+  },
+  account_not_found: {
+    com: 'Account not found. Please register first.',
+    cn: '账号不存在，请先注册',
+  },
+  wrong_password: {
+    com: 'Incorrect password. Please try again.',
+    cn: '密码错误，请重试',
+  },
+  sign_in_required: {
+    com: 'Please sign in first.',
+    cn: '请先登录',
+  },
+  public_engineer_registration_closed: {
+    com: 'Public engineer registration is closed. SAGEMRO engineer accounts are created internally.',
+    cn: '工程师账号由 SAGEMRO 内部创建，公开注册已关闭。',
+  },
+};
+
+function localizedMessage(key, request) {
+  const entry = ERROR_MESSAGES[key];
+  if (!entry) return key;
+  return entry[getRequestMarket(request)] || entry.com;
+}
+
+function localizedErrorResponse(key, request, status = 400) {
+  return errorResponse(localizedMessage(key, request), status);
+}
+
 // ============ 认证相关 ============
 
 
@@ -1549,11 +1605,11 @@ async function handleSendCode(request, env) {
   try {
     const { phone } = await request.json();
     if (!phone) {
-      return errorResponse('手机号不能为空');
+      return localizedErrorResponse('phone_required', request);
     }
 
     if (!/^1\d{10}$/.test(phone)) {
-      return errorResponse('手机号格式不正确');
+      return localizedErrorResponse('invalid_phone', request);
     }
 
     // 频控：同一手机号 60 秒内只能请求一次
@@ -1613,7 +1669,7 @@ async function handleRegisterCustomer(request, env) {
     const { name, phone, password, code, company, identity } = await request.json();
 
     if (!name || !phone || !password || !company) {
-      return errorResponse('姓名、手机号、公司名称、密码不能为空');
+      return localizedErrorResponse('name_phone_company_password_required', request);
     }
 
     // 验证验证码（开发环境支持 bypass 码 "888888" + DEV_BYPASS_CODE 用于自动化测试）
@@ -1678,7 +1734,7 @@ async function handleRegisterEngineer(request, env) {
     } = await request.json();
 
     if (!name || !phone || !password || !company) {
-      return errorResponse('姓名、手机号、公司名称、密码不能为空');
+      return localizedErrorResponse('name_phone_company_password_required', request);
     }
 
     // 验证验证码（开发环境支持 bypass 码 "888888" + DEV_BYPASS_CODE 用于自动化测试）
@@ -1748,7 +1804,7 @@ async function handleLogin(request, env) {
     const { phone, password } = await request.json();
 
     if (!phone || !password) {
-      return errorResponse('手机号、密码不能为空');
+      return localizedErrorResponse('phone_password_required', request);
     }
 
     // 登录失败计数（防暴力破解）：同一手机号 15 分钟内失败 5 次锁定
@@ -1756,7 +1812,7 @@ async function handleLogin(request, env) {
     const failCountStr = await env.KV.get(failKey);
     const failCount = failCountStr ? parseInt(failCountStr, 10) : 0;
     if (failCount >= 5) {
-      return errorResponse('密码错误次数过多，请 15 分钟后再试', 429);
+      return localizedErrorResponse('too_many_password_attempts', request, 429);
     }
 
     // 查找客户
@@ -1776,14 +1832,14 @@ async function handleLogin(request, env) {
 
     if (!user) {
       await env.KV.put(failKey, String(failCount + 1), { expirationTtl: 900 });
-      return errorResponse('账号不存在，请先注册');
+      return localizedErrorResponse('account_not_found', request);
     }
 
     // 验证密码（兼容新旧算法）
     const passwordValid = await verifyPassword(password, user.password_hash, user.salt);
     if (!passwordValid) {
       await env.KV.put(failKey, String(failCount + 1), { expirationTtl: 900 });
-      return errorResponse('密码错误，请重试');
+      return localizedErrorResponse('wrong_password', request);
     }
 
     // 登录成功：清除失败计数
@@ -7917,7 +7973,7 @@ async function routeRequest(request, env, ctx) {
       return handleRegisterCustomer(request, env);
     }
     if (path === '/api/auth/register/engineer' && request.method === 'POST') {
-      return errorResponse('Public engineer registration is closed. SAGEMRO engineer accounts are created internally.', 410);
+      return localizedErrorResponse('public_engineer_registration_closed', request, 410);
     }
     if (path === '/api/auth/login' && request.method === 'POST') {
       return handleLogin(request, env);
@@ -8154,7 +8210,7 @@ async function routeRequest(request, env, ctx) {
 
     const auth = await authenticateRequest(request, env);
     if (!auth) {
-      return errorResponse('请先登录', 401);
+      return localizedErrorResponse('sign_in_required', request, 401);
     }
 
     // 将认证信息挂到 request 上，供 handler 使用。Admin handler 也需要它写审计日志。
