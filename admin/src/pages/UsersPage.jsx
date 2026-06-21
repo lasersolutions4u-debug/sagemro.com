@@ -2,6 +2,9 @@ import { useState, useEffect } from 'react';
 import { Plus, Trash2, X, Search, Filter } from 'lucide-react';
 import { getAdminUsers, createAdminUser, deleteAdminUser } from '../services/api';
 import { runtimeConfig } from '../config/runtime';
+import { isTimeoutError, withTimeout } from '../utils/asyncTimeout';
+
+const DELETE_TIMEOUT_MS = 12000;
 
 const STATUS_MAP = {
   available: { color: 'var(--color-success)' },
@@ -95,11 +98,14 @@ const TEXT = {
     creating: 'Creating...',
     createUser: 'Create user',
     deleteFailed: 'Delete failed: ',
+    deleteSlowNotice: 'Deletion is taking longer than expected. The list has been refreshed. Please check whether the user is still present before retrying.',
+    deleteSuccessNotice: 'User deleted. The list has been refreshed.',
     confirmDelete: 'Confirm delete user',
     deleteWarning: 'After deletion, this user data such as conversations, service orders, and reviews will be removed. This action cannot be undone.',
     cancel: 'Cancel',
     deleting: 'Deleting...',
     confirmDeleteButton: 'Confirm delete',
+    dismissNotice: 'Dismiss notice',
     previous: 'Previous',
     next: 'Next',
   },
@@ -160,11 +166,14 @@ const TEXT = {
     creating: '创建中...',
     createUser: '创建用户',
     deleteFailed: '删除失败: ',
+    deleteSlowNotice: '删除请求耗时较长，列表已刷新。请先确认该用户是否还在列表中，再决定是否重试。',
+    deleteSuccessNotice: '用户已删除，列表已刷新。',
     confirmDelete: '确认删除用户',
     deleteWarning: '删除后该用户的所有数据（对话、工单、评价等）将被清除，此操作不可恢复。',
     cancel: '取消',
     deleting: '删除中...',
     confirmDeleteButton: '确认删除',
+    dismissNotice: '关闭提示',
     previous: '上一页',
     next: '下一页',
   },
@@ -200,6 +209,7 @@ export function UsersPage() {
   // 删除确认
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
+  const [deleteNotice, setDeleteNotice] = useState('');
 
   useEffect(() => {
     setPage(1);
@@ -277,12 +287,24 @@ export function UsersPage() {
   const handleDelete = async () => {
     if (!deleteTarget) return;
     setDeleteLoading(true);
+    setDeleteNotice('');
     try {
-      await deleteAdminUser(deleteTarget.id, type);
+      await withTimeout(
+        deleteAdminUser(deleteTarget.id, type),
+        DELETE_TIMEOUT_MS,
+        t.deleteSlowNotice,
+      );
       setDeleteTarget(null);
+      setDeleteNotice(t.deleteSuccessNotice);
       loadUsers();
     } catch (err) {
-      alert(t.deleteFailed + err.message);
+      if (isTimeoutError(err)) {
+        setDeleteTarget(null);
+        setDeleteNotice(t.deleteSlowNotice);
+        loadUsers();
+      } else {
+        alert(t.deleteFailed + err.message);
+      }
     } finally {
       setDeleteLoading(false);
     }
@@ -434,6 +456,18 @@ export function UsersPage() {
         <div className="text-center py-12 text-[var(--color-text-muted)]">{t.loading}</div>
       ) : (
         <>
+          {deleteNotice && (
+            <div className="mb-3 flex items-start justify-between gap-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-3 py-2 text-sm text-[var(--color-text-secondary)]">
+              <span>{deleteNotice}</span>
+              <button
+                onClick={() => setDeleteNotice('')}
+                className="shrink-0 text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
+                aria-label={t.dismissNotice}
+              >
+                <X size={15} />
+              </button>
+            </div>
+          )}
           <div className="text-xs text-[var(--color-text-muted)] mb-2">{t.total(data.total)}</div>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -743,7 +777,7 @@ export function UsersPage() {
       {/* 删除确认弹窗 */}
       {deleteTarget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
-          <div className="fixed inset-0 bg-black/50" onClick={() => setDeleteTarget(null)} />
+          <div className="fixed inset-0 bg-black/50" onClick={() => { if (!deleteLoading) setDeleteTarget(null); }} />
           <div className="relative w-[calc(100vw-32px)] max-w-sm bg-[var(--color-surface)] rounded-2xl shadow-2xl p-6 text-center">
             <div className="w-12 h-12 rounded-full bg-[var(--color-error)]/15 flex items-center justify-center mx-auto mb-4">
               <Trash2 size={24} className="text-[var(--color-error)]" />
@@ -758,7 +792,8 @@ export function UsersPage() {
             <div className="flex gap-3">
               <button
                 onClick={() => setDeleteTarget(null)}
-                className="flex-1 py-2.5 rounded-xl text-sm bg-[var(--color-surface-elevated)] hover:bg-[var(--color-border)] transition-colors"
+                disabled={deleteLoading}
+                className="flex-1 py-2.5 rounded-xl text-sm bg-[var(--color-surface-elevated)] hover:bg-[var(--color-border)] transition-colors disabled:opacity-50"
               >
                 {t.cancel}
               </button>
