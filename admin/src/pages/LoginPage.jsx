@@ -85,6 +85,7 @@ export function LoginPage({ onLogin }) {
           <div>
             <input
               type="tel"
+              autoComplete="username"
               placeholder={t.phonePlaceholder}
               value={phone}
               onChange={(e) => setPhone(e.target.value)}
@@ -96,6 +97,7 @@ export function LoginPage({ onLogin }) {
           <div>
             <input
               type="password"
+              autoComplete="current-password"
               placeholder={t.passwordPlaceholder}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
