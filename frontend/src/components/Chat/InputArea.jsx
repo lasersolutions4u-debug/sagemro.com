@@ -152,7 +152,7 @@ export function InputArea({ onSend, onStop, disabled, isStreaming }) {
               onClick={() => fileInputRef.current?.click()}
               disabled={disabled || isStreaming}
               className="w-12 h-12 flex items-center justify-center rounded-2xl hover:bg-[var(--color-hover)] transition-colors flex-shrink-0 disabled:opacity-50"
-              title={isCn ? '补充现场图片' : 'Add field image'}
+              title={isCn ? '补充现场信息' : 'Add field context'}
             >
               <ImagePlus size={22} className="text-[var(--color-text-muted)]" />
             </button>
