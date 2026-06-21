@@ -58,6 +58,28 @@ test('CN public service copy avoids stiff translated product wording', () => {
   assert.match(publicSources, /后续能推进的服务依据/);
 });
 
+test('CN first impression copy builds market trust for customers, engineers, and operations', () => {
+  const homeSource = read('frontend/src/components/Chat/WelcomePage.jsx');
+  const engineerCnCopy = extractCnCopyObject(read('frontend/src/components/Engineer/EngineerRecruitingPage.jsx'));
+  const adminLoginSource = [
+    read('admin/src/pages/LoginPage.jsx'),
+    read('admin/src/config/runtime.js'),
+  ].join('\n');
+
+  assert.match(homeSource, /官方服务入口/);
+  assert.match(homeSource, /锁定下一步/);
+  assert.match(homeSource, /少走弯路/);
+
+  assert.match(engineerCnCopy, /长期合作/);
+  assert.match(engineerCnCopy, /排单日历/);
+  assert.match(engineerCnCopy, /区域协同/);
+
+  assert.match(adminLoginSource, /SAGEMRO 运营中枢/);
+  assert.match(adminLoginSource, /线索审核/);
+  assert.match(adminLoginSource, /派工、报价和服务归档/);
+  assert.doesNotMatch(adminLoginSource, /运营管理员登录/);
+});
+
 test('CN public and legal copy uses localized operator and service system names', () => {
   const publicSources = [
     read('frontend/src/components/common/Footer.jsx'),

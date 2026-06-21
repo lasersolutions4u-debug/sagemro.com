@@ -10,7 +10,7 @@ test('resolves CN admin portal to CN market and API', () => {
   assert.equal(config.portal, 'admin');
   assert.equal(config.locale, 'zh-CN');
   assert.equal(config.apiBase, 'https://api.sagemro.cn');
-  assert.equal(config.documentTitle, 'SAGEMRO 管理后台');
+  assert.equal(config.documentTitle, 'SAGEMRO 运营中枢');
 });
 
 test('resolves COM admin portal to international market and API', () => {
