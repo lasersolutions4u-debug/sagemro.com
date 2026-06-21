@@ -140,7 +140,7 @@ id = "你复制的 KV id"
 
 ### 2.5 设置 Worker secrets（敏感配置）
 
-`wrangler.toml` 里**不能**放敏感密钥。以下值必须用 `wrangler secret put` 单独设置：
+`wrangler.toml` 里**不能**放敏感密钥，也不要放本地开发固定验证码。以下值必须用 `wrangler secret put` 单独设置：
 
 bash
 
@@ -157,6 +157,8 @@ npx wrangler secret put ADMIN_PHONE_CN --env production      # 中国版后台 a
 npx wrangler secret put ADMIN_PASSWORD_CN --env production
 npx wrangler secret put ONESIGNAL_REST_API_KEY --env production
 ```
+
+本地调试如需固定验证码，可在未提交的 `worker/.dev.vars` 中设置 `DEV_BYPASS_CODE=xxxxxx`；不要提交到 `wrangler.toml`。
 
 
 

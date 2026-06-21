@@ -158,7 +158,8 @@ VITE_API_BASE=https://api.sagemro.com
 | 变量 | 说明 |
 |------|------|
 | `ENVIRONMENT` | `development` / `production` |
-| `DEV_BYPASS_CODE` | 开发环境固定验证码（仅 dev） |
+
+本地调试如需固定验证码，可在未提交的 `worker/.dev.vars` 中设置 `DEV_BYPASS_CODE`。不要把固定验证码写入 `wrangler.toml`。
 
 ### 4.3 Worker Secrets（`wrangler secret put`）
 
