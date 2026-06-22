@@ -149,8 +149,16 @@ async function smokeChat(market) {
   }
 }
 
+function normalizeCliPath(value) {
+  const normalized = String(value || '')
+    .replace(/\\/g, '/')
+    .replace(/^\/([A-Za-z]:\/)/, '$1');
+  return /^[A-Za-z]:\//.test(normalized) ? normalized.toLowerCase() : normalized;
+}
+
 export function isCliEntry(importMetaUrl, argvPath) {
-  return fileURLToPath(importMetaUrl) === argvPath;
+  if (!argvPath) return false;
+  return normalizeCliPath(fileURLToPath(importMetaUrl)) === normalizeCliPath(argvPath);
 }
 
 async function main() {
