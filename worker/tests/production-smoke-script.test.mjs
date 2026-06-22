@@ -5,6 +5,7 @@ import {
   buildChatSmokePayload,
   buildSmokeTargets,
   classifyMarket,
+  isCliEntry,
   parseSmokeArgs,
   summarizeResult,
 } from '../scripts/production-smoke.mjs';
@@ -64,4 +65,14 @@ test('summarizeResult marks slow targets as warnings, not failures', () => {
 
   assert.equal(result.ok, true);
   assert.equal(result.warning, 'slow: 4200ms > 3000ms');
+});
+
+test('isCliEntry supports Windows argv paths', () => {
+  assert.equal(
+    isCliEntry(
+      'file:///C:/repo/worker/scripts/production-smoke.mjs',
+      'C:\\repo\\worker\\scripts\\production-smoke.mjs',
+    ),
+    true,
+  );
 });

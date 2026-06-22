@@ -102,6 +102,8 @@ class TransientD1Error extends Error {
   }
 }
 
+const CHAT_CONVERSATION_CREATE_RETRY_DELAY_MS = 80;
+
 function isTransientD1Error(error) {
   const message = String(error?.message || error || '').toLowerCase();
   return message.includes('d1_error') && (
@@ -132,6 +134,96 @@ async function runD1WithTransientRetry(operation, { label, attempts = 2, delayMs
     'SAGEMRO chat service is temporarily busy. Please try again shortly.',
     lastError,
   );
+}
+
+function isConversationIdConflict(error) {
+  const message = String(error?.message || error || '').toLowerCase();
+  return message.includes('d1_error') &&
+    message.includes('conversations.id') &&
+    (message.includes('unique constraint') || message.includes('sqlite_constraint'));
+}
+
+async function loadChatConversation(env, conversationId, label = 'chat:load_conversation') {
+  return runD1WithTransientRetry(
+    () => env.DB.prepare(
+      'SELECT customer_id, engineer_id FROM conversations WHERE id = ?'
+    ).bind(conversationId).first(),
+    { label },
+  );
+}
+
+function assertChatConversationAccess(chatAuth, trustedRole, conversation) {
+  if (!conversation) return;
+  if (trustedRole === 'guest') {
+    if (conversation.customer_id || conversation.engineer_id) {
+      throw new GuardError('鎮ㄦ棤鏉冭闂瀵硅瘽', 403);
+    }
+    return;
+  }
+  assertConversationAccess(chatAuth, conversation);
+}
+
+async function loadCommittedConversationAfterCreateFailure(env, convId, chatAuth, trustedRole, originalError) {
+  const committedConversation = await loadChatConversation(
+    env,
+    convId,
+    'chat:load_conversation_after_create_failure',
+  );
+  if (!committedConversation) throw originalError;
+  assertChatConversationAccess(chatAuth, trustedRole, committedConversation);
+  return committedConversation;
+}
+
+async function createChatConversation(env, {
+  convId,
+  message,
+  chatAuth,
+  trustedRole,
+  trustedCustomerId,
+  trustedEngineerId,
+}) {
+  const insertConversation = () => env.DB.prepare(
+    'INSERT INTO conversations (id, title, last_message, customer_id, engineer_id) VALUES (?, ?, ?, ?, ?)'
+  ).bind(convId, truncateStr(message, 20), truncateStr(message, 50), trustedCustomerId, trustedEngineerId).run();
+
+  try {
+    await insertConversation();
+    return null;
+  } catch (error) {
+    if (isConversationIdConflict(error)) {
+      return loadCommittedConversationAfterCreateFailure(env, convId, chatAuth, trustedRole, error);
+    }
+    if (!isTransientD1Error(error)) throw error;
+
+    console.warn('[d1] transient error during chat:create_conversation attempt 1/2:', error?.message || error);
+    const committedConversation = await loadChatConversation(
+      env,
+      convId,
+      'chat:load_conversation_after_create_timeout',
+    );
+    if (committedConversation) {
+      assertChatConversationAccess(chatAuth, trustedRole, committedConversation);
+      return committedConversation;
+    }
+
+    await delay(CHAT_CONVERSATION_CREATE_RETRY_DELAY_MS);
+    try {
+      await insertConversation();
+      return null;
+    } catch (retryError) {
+      if (isConversationIdConflict(retryError)) {
+        return loadCommittedConversationAfterCreateFailure(env, convId, chatAuth, trustedRole, retryError);
+      }
+      if (isTransientD1Error(retryError)) {
+        console.warn('[d1] transient error during chat:create_conversation attempt 2/2:', retryError?.message || retryError);
+        throw new TransientD1Error(
+          'SAGEMRO chat service is temporarily busy. Please try again shortly.',
+          retryError,
+        );
+      }
+      throw retryError;
+    }
+  }
 }
 
 function computeSlaDeadline(urgency) {
@@ -2534,12 +2626,14 @@ ${turnLanguageRule}
     let convId = conversation_id;
     if (!convId || !existingConversation) {
       convId = convId || generateId();
-      await runD1WithTransientRetry(
-        () => env.DB.prepare(
-          'INSERT INTO conversations (id, title, last_message, customer_id, engineer_id) VALUES (?, ?, ?, ?, ?)'
-        ).bind(convId, truncateStr(message, 20), truncateStr(message, 50), trustedCustomerId, trustedEngineerId).run(),
-        { label: 'chat:create_conversation' },
-      );
+      existingConversation = await createChatConversation(env, {
+        convId,
+        message,
+        chatAuth,
+        trustedRole,
+        trustedCustomerId,
+        trustedEngineerId,
+      });
     } else {
       await runD1WithTransientRetry(
         () => env.DB.prepare(

@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { fileURLToPath } from 'node:url';
 
 const DEFAULT_TIMEOUT_MS = 20000;
 
@@ -148,6 +149,10 @@ async function smokeChat(market) {
   }
 }
 
+export function isCliEntry(importMetaUrl, argvPath) {
+  return fileURLToPath(importMetaUrl) === argvPath;
+}
+
 async function main() {
   const opts = parseSmokeArgs(process.argv.slice(2));
   const results = [];
@@ -185,7 +190,7 @@ async function main() {
   if (summary.failed > 0) process.exitCode = 1;
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (isCliEntry(import.meta.url, process.argv[1])) {
   main().catch((error) => {
     console.error(error);
     process.exit(1);

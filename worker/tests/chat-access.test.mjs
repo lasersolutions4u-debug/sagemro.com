@@ -17,9 +17,10 @@ function makeRequest(body, token, url = 'https://api.sagemro.com/api/chat', orig
   });
 }
 
-function makeEnv({ conversation = null, conversationInsertFailures = 0 } = {}) {
+function makeEnv({ conversation = null, conversationInsertFailures = 0, commitConversationBeforeFailure = false } = {}) {
   const insertedConversations = [];
   let conversationInsertAttempts = 0;
+  let loadedConversation = conversation;
   const db = {
     prepare(sql) {
       return {
@@ -29,7 +30,7 @@ function makeEnv({ conversation = null, conversationInsertFailures = 0 } = {}) {
           return this;
         },
         async first() {
-          if (/FROM conversations WHERE id = \?/.test(sql)) return conversation;
+          if (/FROM conversations WHERE id = \?/.test(sql)) return loadedConversation;
           return null;
         },
         async all() {
@@ -38,14 +39,29 @@ function makeEnv({ conversation = null, conversationInsertFailures = 0 } = {}) {
         async run() {
           if (/INSERT INTO conversations/.test(sql)) {
             conversationInsertAttempts++;
-            if (conversationInsertAttempts <= conversationInsertFailures) {
-              throw new Error('D1_ERROR: D1 DB storage operation exceeded timeout which caused object to be reset.');
-            }
-            insertedConversations.push({
+            const insertedConversation = {
               id: this.args[0],
               customer_id: this.args[3],
               engineer_id: this.args[4],
-            });
+            };
+            if (conversationInsertAttempts <= conversationInsertFailures) {
+              if (commitConversationBeforeFailure) {
+                insertedConversations.push(insertedConversation);
+                loadedConversation = {
+                  customer_id: insertedConversation.customer_id,
+                  engineer_id: insertedConversation.engineer_id,
+                };
+              }
+              throw new Error('D1_ERROR: D1 DB storage operation exceeded timeout which caused object to be reset.');
+            }
+            if (insertedConversations.some((row) => row.id === insertedConversation.id)) {
+              throw new Error('D1_ERROR: UNIQUE constraint failed: conversations.id: SQLITE_CONSTRAINT');
+            }
+            insertedConversations.push(insertedConversation);
+            loadedConversation = {
+              customer_id: insertedConversation.customer_id,
+              engineer_id: insertedConversation.engineer_id,
+            };
           }
           return { success: true };
         },
@@ -165,6 +181,24 @@ test('handleChat retries a transient D1 timeout while creating a guest conversat
   assert.equal(getConversationInsertAttempts(), 2);
   assert.equal(insertedConversations.length, 1);
   assert.equal(insertedConversations[0].id, 'retry-conv-1');
+});
+
+test('handleChat treats retried conversation create as idempotent when D1 committed before timing out', async () => {
+  const { env, insertedConversations, getConversationInsertAttempts } = makeEnv({
+    conversationInsertFailures: 1,
+    commitConversationBeforeFailure: true,
+  });
+
+  const response = await handleChat(makeRequest({
+    conversation_id: 'retry-conv-committed',
+    message: 'My fiber laser cutter shows alarm E012.',
+  }), env);
+
+  assert.equal(response.status, 200);
+  await response.body?.cancel();
+  assert.equal(getConversationInsertAttempts(), 1);
+  assert.equal(insertedConversations.length, 1);
+  assert.equal(insertedConversations[0].id, 'retry-conv-committed');
 });
 
 test('handleChat returns a friendly 503 when transient D1 timeout persists before streaming starts', async () => {
