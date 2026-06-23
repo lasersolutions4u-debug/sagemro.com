@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Modal } from './Modal';
+import { isCnLocale } from '../../utils/locale';
 
 const USER_AGREEMENT = `
 ## 1. Service Scope
@@ -169,6 +170,213 @@ To the extent permitted by applicable law, Jinan Euchio Machinery Co., Ltd. is n
 Jinan Euchio Machinery Co., Ltd. | Email: support@sagemro.com | https://sagemro.com
 `.trim();
 
+const CN_USER_AGREEMENT = `
+## 1. 服务范围
+
+1.1 SAGEMRO 智能服务系统为激光切割与钣金加工设备提供 AI 辅助咨询、服务需求整理、官方服务协调、设备档案、备件咨询、维护跟进和新机选型支持。
+
+1.2 SAGEMRO 是官方服务流程入口，不是公开工程师竞价平台。客户向 SAGEMRO 提交服务需求后，由 SAGEMRO 审核并根据实际情况安排内部工程师或 SAGEMRO 指定服务人员跟进。
+
+1.3 SAGEMRO 提供信息服务与服务协调，包括需求接收、技术咨询支持、工单整理、资源协调和数字化服务记录。SAGEMRO 不作为公开竞价平台、佣金抽成平台或资金托管结算平台运营。
+
+## 2. 账号注册
+
+2.1 客户注册时应提供有效手机号、姓名、公司名称和登录密码。
+
+2.2 工程师账号属于内部运营账号，由 SAGEMRO 创建或审核后分配。平台暂不开放公开工程师自由注册。
+
+2.3 用户应妥善保管账号和密码，不得将账号出借、转让给第三方使用。
+
+## 3. 服务请求流程
+
+3.1 客户可以通过 SAGEMRO AI 对话开始咨询，也可以通过可用入口提交正式服务请求。
+
+3.2 服务请求可能包含设备类型、品牌型号、报警代码、故障描述、紧急程度、图片或视频、所在地区和联系方式等信息。
+
+3.3 SAGEMRO 可使用 AI 生成初步摘要、风险提示和服务准备信息。最终诊断、报价、排期和现场安全要求以 SAGEMRO 人工确认为准。
+
+3.4 服务状态可能包括待确认、已分配、待报价、派工中、服务中、待客户确认、已完成或已取消等。
+
+## 4. 报价与费用
+
+4.1 AI 生成的费用估算仅作为非约束性参考。
+
+4.2 正式服务范围、费用、备件、差旅和付款方式由 SAGEMRO 与客户另行确认。
+
+4.3 在适用情况下，SAGEMRO 可就需求接收、技术咨询支持、工单整理、资源协调和服务记录管理收取信息服务费、服务协调费或技术咨询服务费。该等费用不属于工程师佣金、收益分成、资金托管或自动分账。
+
+4.4 当前如出现在线支付相关页面，除非 SAGEMRO 在正式报价或协议中明确说明，否则仅为沙盒或演示界面。
+
+## 5. 服务记录
+
+5.1 SAGEMRO 可为服务交付和售后跟进保存工单记录、消息、图片、维修动作、使用备件、服务报告和客户反馈。
+
+5.2 设备档案有助于 SAGEMRO 提供更准确的诊断、维护提醒、备件建议和升级建议。
+
+## 6. 用户责任
+
+客户应提供准确设备信息，如实描述故障，遵守安全提示，并配合 SAGEMRO 完成诊断和服务跟进。
+
+用户不得利用本系统从事违法活动、提交虚假信息、恶意测试、侵权行为或与工业设备服务无关的活动。
+
+## 7. 安全边界
+
+AI 建议不能替代合格人员的现场评估。涉及高风险电气、激光光路、液压、气动、燃气、吊装或动火作业时，客户应停止不安全操作并等待合格人员处理。
+
+## 8. 个人信息保护
+
+用户信息用于服务交付、账号安全、诊断、服务记录和后续跟进。SAGEMRO 不出售用户个人信息。
+
+## 9. 协议更新
+
+SAGEMRO 可根据业务发展或法律要求更新本协议。用户继续使用服务即视为接受更新后的条款。
+
+## 联系方式
+
+济南钰峭机械有限公司 | 邮箱：support@sagemro.com | https://sagemro.cn
+`.trim();
+
+const CN_PRIVACY_POLICY = `
+## 1. 我们收集的信息
+
+**你主动提供的信息：**
+- 注册信息：手机号、真实姓名、公司名称、密码
+- 服务请求信息：设备类型、品牌型号、故障描述、所在地区、紧急程度和联系方式
+- AI 对话输入：报警代码、切割参数、备件描述、选型需求、维护历史和设备健康信息
+- 附件：用于诊断和服务记录的照片、截图、视频或文件
+- 反馈：评分、评论、验收记录和后续跟进备注
+
+**我们自动收集的信息：**
+- 用于连续咨询和服务跟进的聊天记录与 AI 使用记录
+- 用于安全、防滥用和故障排查的使用日志
+- 用于登录状态和本地对话连续性的浏览器 localStorage 数据
+
+**我们不会主动收集的信息：**身份证号码、银行卡信息、生物识别信息或设备远程控制数据，除非双方另有明确约定。
+
+## 2. 信息使用目的
+
+- 提供 AI 初步诊断和技术咨询
+- 创建服务请求、设备档案和服务报告
+- 安排 SAGEMRO 内部工程师或 SAGEMRO 指定服务人员
+- 推荐备件、维护计划或新机选型支持
+- 使用匿名化或脱敏数据改善 AI 回复质量
+- 进行安全保护、防滥用和运营故障排查
+
+## 3. 信息存储与安全
+
+- 数据传输使用 HTTPS 加密
+- 密码经过加盐哈希处理，不保存明文密码
+- 敏感信息在进入 AI 处理或日志前可进行脱敏
+- API 访问采用身份认证控制
+- 服务数据仅授权用户和 SAGEMRO 运营人员可访问
+
+## 4. 信息共享
+
+- 我们不会出售你的个人信息
+- 为完成服务交付，服务请求信息可能按需提供给 SAGEMRO 内部工程师或 SAGEMRO 指定服务人员
+- AI 对话内容可能通过加密接口发送给 AI 服务提供方，但不包含账号密码
+- 法律法规或主管部门要求时，信息可能依法披露
+
+## 5. 你的权利
+
+- 访问：查看账号、服务请求和设备档案
+- 更正：在功能支持时更新个人信息和设备记录
+- 删除：在法律允许范围内联系我们删除账号或相关数据
+- 通知管理：在浏览器或应用内管理通知设置
+
+## 6. Cookies 与本地存储
+
+本平台使用浏览器 localStorage 保存登录状态和对话连续性。核心服务交付不依赖第三方跟踪 Cookie。
+
+## 7. 联系我们
+
+济南钰峭机械有限公司 | 邮箱：support@sagemro.com | https://sagemro.cn
+`.trim();
+
+const CN_AI_DISCLAIMER = `
+## 1. AI 服务性质
+
+1.1 SAGEMRO AI 是基于大语言模型技术的设备咨询与需求接收助手。
+
+1.2 AI 输出仅为初步服务参考，不构成最终诊断、维修承诺、安全许可、约束性报价或质量保证。
+
+1.3 AI 不能替代现场诊断、断电挂牌程序、电气安全评估、激光安全评估或合格工程师判断。
+
+## 2. 使用建议
+
+- **故障诊断：**AI 可以总结症状和可能原因，最终诊断需由 SAGEMRO 确认。
+- **切割参数：**AI 参数为参考范围，应结合设备状态、材料、气体、喷嘴和安全规则调整。
+- **备件识别：**AI 识别为初步判断，采购或更换前需人工确认兼容性。
+- **维修估算：**AI 可提供费用级别或影响因素，不构成绑定价格。
+- **新机选型：**AI 选型为初步建议，正式新机项目由 Euchio 或 SAGEMRO 指定销售人员确认。
+
+## 3. 安全限制
+
+- 不要仅凭 AI 输出进行带电维修
+- 未经合格人员确认，不要打开激光光路、高压气路、液压系统或安全防护罩
+- 出现烟雾、火灾风险、异味、裸露线路、严重碰撞或反复高风险报警时，应停止运行
+- 不确定的高风险情况，应提交 SAGEMRO 官方服务请求
+
+## 4. 数据使用
+
+- AI 对话和工具输入可能被保存，用于连续咨询和服务跟进
+- 敏感信息可进行脱敏处理
+- 聊天内容不会提供给其他普通用户
+
+## 5. 服务限制
+
+- AI 偶尔可能生成不准确或不完整的回复
+- AI 主要用于工业设备服务、备件、维护和选型场景
+- AI 不应作为维修、采购、安全或法律决策的唯一依据
+
+## 6. 责任限制
+
+在适用法律允许范围内，济南钰峭机械有限公司不对用户仅依赖 AI 输出造成的设备损坏、人身伤害、生产损失或其他损失承担责任。如需专业服务，请提交 SAGEMRO 官方服务请求。
+
+## 7. 联系方式
+
+济南钰峭机械有限公司 | 邮箱：support@sagemro.com | https://sagemro.cn
+`.trim();
+
+const LEGAL_COPY = {
+  en: {
+    tabs: [
+      { key: 'agreement', label: 'Terms of Service' },
+      { key: 'privacy', label: 'Privacy Policy' },
+      { key: 'ai', label: 'AI Service Notice' },
+    ],
+    titles: {
+      agreement: 'SAGEMRO Terms of Service',
+      privacy: 'SAGEMRO Privacy Policy',
+      ai: 'SAGEMRO AI Service Notice',
+    },
+    effective: 'Effective date: June 7, 2026. Platform operator: Jinan Euchio Machinery Co., Ltd.',
+    content: {
+      agreement: USER_AGREEMENT,
+      privacy: PRIVACY_POLICY,
+      ai: AI_DISCLAIMER,
+    },
+  },
+  cn: {
+    tabs: [
+      { key: 'agreement', label: '服务条款' },
+      { key: 'privacy', label: '隐私政策' },
+      { key: 'ai', label: 'AI 服务说明' },
+    ],
+    titles: {
+      agreement: 'SAGEMRO 服务条款',
+      privacy: 'SAGEMRO 隐私政策',
+      ai: 'SAGEMRO AI 服务说明',
+    },
+    effective: '生效日期：2026年6月7日。平台运营方：济南钰峭机械有限公司。',
+    content: {
+      agreement: CN_USER_AGREEMENT,
+      privacy: CN_PRIVACY_POLICY,
+      ai: CN_AI_DISCLAIMER,
+    },
+  },
+};
+
 function SimpleMarkdown({ content }) {
   const lines = content.split('\n');
   const elements = [];
@@ -229,6 +437,7 @@ function SimpleMarkdown({ content }) {
 
 export function LegalModal({ isOpen, onClose, initialTab = 'agreement' }) {
   const [activeTab, setActiveTab] = useState(initialTab);
+  const copy = isCnLocale() ? LEGAL_COPY.cn : LEGAL_COPY.en;
 
   useEffect(() => {
     if (isOpen) {
@@ -236,28 +445,10 @@ export function LegalModal({ isOpen, onClose, initialTab = 'agreement' }) {
     }
   }, [initialTab, isOpen]);
 
-  const tabs = [
-    { key: 'agreement', label: 'Terms of Service' },
-    { key: 'privacy', label: 'Privacy Policy' },
-    { key: 'ai', label: 'AI Service Notice' },
-  ];
-
-  const content = {
-    agreement: USER_AGREEMENT,
-    privacy: PRIVACY_POLICY,
-    ai: AI_DISCLAIMER,
-  };
-
-  const titles = {
-    agreement: 'SAGEMRO Terms of Service',
-    privacy: 'SAGEMRO Privacy Policy',
-    ai: 'SAGEMRO AI Service Notice',
-  };
-
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title={titles[activeTab]} size="lg">
+    <Modal isOpen={isOpen} onClose={onClose} title={copy.titles[activeTab]} size="lg">
       <div className="flex gap-1 border-b border-[var(--color-border)] mb-4 -mt-1 overflow-x-auto">
-        {tabs.map((tab) => (
+        {copy.tabs.map((tab) => (
           <button
             key={tab.key}
             onClick={() => setActiveTab(tab.key)}
@@ -275,9 +466,9 @@ export function LegalModal({ isOpen, onClose, initialTab = 'agreement' }) {
 
       <div className="max-h-[60vh] overflow-y-auto pr-1">
         <p className="text-[11px] text-[var(--color-text-muted)] mb-3">
-          Effective date: June 7, 2026. Platform operator: Jinan Euchio Machinery Co., Ltd.
+          {copy.effective}
         </p>
-        <SimpleMarkdown content={content[activeTab]} />
+        <SimpleMarkdown content={copy.content[activeTab]} />
       </div>
     </Modal>
   );

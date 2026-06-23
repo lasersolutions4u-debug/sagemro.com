@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { Menu, Info, ShieldCheck, Home } from 'lucide-react';
+import { Menu, Info, Home } from 'lucide-react';
 import { MessageBubble } from './MessageBubble';
 import { WelcomePage } from './WelcomePage';
 import { InputArea } from './InputArea';
@@ -37,7 +37,6 @@ export function ChatArea({
     ? '面向激光切割与钣金设备的官方服务智能入口'
     : 'Official service intelligence for laser cutting and sheet metal equipment';
   const aboutLabel = isCn ? '关于 SAGEMRO' : 'About SAGEMRO';
-  const legalLabel = isCn ? '法律与 AI 说明' : 'Legal & AI notice';
   const homeLabel = isCn ? '返回首页' : 'Service OS Home';
   const aiNotice = isCn
     ? 'AI 帮助更快梳理服务路径。最终诊断、报价和现场安全要求由 SAGEMRO 官方服务确认。'
@@ -71,15 +70,6 @@ export function ChatArea({
           >
             <Info size={13} />
             {aboutLabel}
-          </button>
-        )}
-        {onOpenLegal && (
-          <button
-            onClick={() => onOpenLegal('agreement')}
-            className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-[var(--color-border)] text-[11px] text-[var(--color-text-secondary)] hover:text-[var(--color-primary)] hover:border-[var(--color-primary)] transition-colors"
-          >
-            <ShieldCheck size={13} />
-            {legalLabel}
           </button>
         )}
         {hasMessages && (

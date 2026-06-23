@@ -6,6 +6,7 @@ import { BrandMark } from '../common/BrandMark';
 const COPY = {
   cn: {
     badge: 'SAGEMRO 智能服务系统 · 认证服务代表计划',
+    networkLabel: '认证服务代表网络',
     title: '让专业工程师被看见、被支持、被认真对待。',
     subtitle: 'SAGEMRO 正在建设面向激光切割机与钣金加工设备的官方服务网络。我们寻找真正理解现场、设备和客户压力的工程师，由运营团队审核后分配账号，并在标准、派工、资料和成长上持续支持。',
     primary: '申请成为认证服务代表',
@@ -47,6 +48,7 @@ const COPY = {
   },
   en: {
     badge: 'SAGEMRO Service OS · Certified Representative Program',
+    networkLabel: 'Service Representative Network',
     title: 'A service network built for engineers who take field work seriously.',
     subtitle: 'SAGEMRO is building an official service network for laser cutting machines and sheet metal equipment. We review each application manually, then support approved representatives with dispatch coordination, service standards, equipment context, and growth resources.',
     primary: 'Apply as a Certified Service Representative',
@@ -170,7 +172,7 @@ export function EngineerRecruitingPage({ onOpenLogin }) {
             <BrandMark variant="logo" className="h-14 w-14 object-contain drop-shadow-[0_12px_24px_rgba(245,158,11,0.22)]" />
             <div>
               <div className="text-sm font-semibold text-white">SAGEMRO</div>
-              <div className="text-xs text-white/70">Service Representative Network</div>
+              <div className="text-xs text-white/70">{copy.networkLabel}</div>
             </div>
           </div>
           <button
