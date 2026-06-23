@@ -1,5 +1,11 @@
 # SummaryProtocol v1 提案
 
+> **历史摘要协议提案 / 部分枚举已废弃**
+>
+> 本文件中的 `wallet_query`、`payment_pending`、合伙人钱包/提现等示例属于早期交易平台模型。当前 SAGEMRO 按信息服务与服务协调模式运营，不把工程师钱包、提现、佣金抽成或资金托管作为产品能力。
+>
+> 后续摘要协议应使用 `account_or_settlement`、`service_followup`、`service_request` 等中性枚举，并以 `docs/SERVICE_OS_LEGACY_CLEANUP.md` 和当前 Worker 实现为准。
+
 > 创建时间：2026-04-22
 > 最后更新：2026-04-22（决策点全部锁定）
 > 目的：为 Phase 1 跨会话记忆（`get_conversation_history` 工具）提供结构化摘要协议

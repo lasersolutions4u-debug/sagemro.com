@@ -8,6 +8,8 @@ const USER_AGREEMENT = `
 
 1.2 SAGEMRO is an official service workflow, not a public technician marketplace. Customers submit service needs to SAGEMRO, and SAGEMRO reviews the request and arranges internal engineers or SAGEMRO-designated service personnel when applicable.
 
+1.3 SAGEMRO provides information services and service coordination, including demand intake, technical consultation support, service request organization, resource coordination, and digital service records. SAGEMRO does not operate as an open bidding platform, commission-splitting marketplace, or escrow settlement system.
+
 ## 2. Account Registration
 
 2.1 Customers provide a valid phone number, name, company name, and login password to register.
@@ -32,7 +34,9 @@ const USER_AGREEMENT = `
 
 4.2 Formal service scope, fees, spare parts, travel costs, and payment methods are confirmed separately by SAGEMRO and the customer.
 
-4.3 Current online payment screens, if shown, are sandbox or demonstration interfaces unless SAGEMRO clearly states otherwise in a formal quote or agreement.
+4.3 When applicable, SAGEMRO may charge information service fees, service coordination fees, or technical consultation fees for demand intake, technical consultation support, service request organization, resource coordination, and service record management. These fees are not technician commission, revenue sharing, escrow settlement, or automatic payment splitting.
+
+4.4 Current online payment screens, if shown, are sandbox or demonstration interfaces unless SAGEMRO clearly states otherwise in a formal quote or agreement.
 
 ## 5. Service Records
 
