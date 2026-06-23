@@ -2,8 +2,161 @@ import { useState } from 'react';
 import { Modal } from '../common/Modal';
 import { login, sendVerifyCode, sendResetCode, resetPassword, registerCustomer } from '../../services/api';
 import { toastSuccess, toastError } from '../../utils/feedback';
+import { isCnLocale } from '../../utils/locale';
+
+const LOGIN_COPY = {
+  cn: {
+    modalTitle: '登录 / 注册',
+    phoneRequired: '请输入手机号',
+    phoneInvalid: '请输入有效手机号',
+    phonePasswordRequired: '请输入手机号和密码',
+    sendFailed: '发送失败',
+    requiredFields: '请填写所有必填项',
+    passwordMismatch: '两次输入的密码不一致',
+    passwordMin: '密码至少需要 6 位',
+    registeredPhone: '该手机号已注册，请直接登录。',
+    registerFailed: '注册失败，请稍后重试。',
+    companyRequired: '请输入公司名称',
+    termsRequired: '请阅读并同意服务协议、隐私政策和 AI 服务说明',
+    guestName: '访客',
+    resetSuccess: '密码已重置，请使用新密码登录。',
+    codeRequired: '请输入验证码',
+    choiceTitle: '请选择最符合你当前情况的一项',
+    needServiceTitle: '我需要设备服务、备件或设备选型帮助',
+    needServiceDesc: '告诉 SAGEMRO 你的设备情况，我们的官方服务团队会审核并跟进。',
+    exploringTitle: '我只是先了解一下',
+    exploringDesc: '可以先浏览 SAGEMRO 的功能，暂时不需要注册。',
+    back: '← 返回',
+    companyIntro: '请先填写你的公司和账号信息',
+    companyName: '公司名称 *',
+    companyPlaceholder: '例如：济南某某钣金制造有限公司',
+    fullName: '姓名 *',
+    fullNamePlaceholder: '请输入真实姓名，便于身份核验',
+    setPassword: '设置密码 *',
+    setPasswordPlaceholder: '设置密码（至少 6 位）',
+    confirmPassword: '确认密码 *',
+    confirmPasswordPlaceholder: '再次输入密码',
+    phoneNumber: '手机号 *',
+    phoneNumberLabel: '手机号',
+    phonePlaceholder: '请输入手机号',
+    registeredPhonePlaceholder: '请输入已注册手机号',
+    verificationCode: '验证码',
+    codePlaceholder: '请输入验证码',
+    sendCode: '发送验证码',
+    termsPrefix: '我已阅读并同意',
+    terms: '服务协议',
+    privacy: '隐私政策',
+    aiNotice: 'AI 服务说明',
+    termsAnd: '和',
+    nextRole: '下一步：选择角色',
+    alreadyAccount: '已有账号？',
+    signIn: '登录',
+    roleIntro: '你希望如何使用 SAGEMRO Service OS？',
+    customerTitle: '我是客户',
+    customerDesc: '获取 AI 初步诊断、官方服务请求、设备档案、备件和维护跟进。',
+    guestTitle: '我只是浏览（访客）',
+    guestDesc: '无需认证即可体验部分功能，可随时升级为完整访问权限。',
+    identityVerification: '身份认证',
+    customerSelectedDesc: '你选择了“客户”。完成认证后，可以使用 AI 诊断、官方服务请求和设备档案。',
+    customerBenefits: '完成认证后，你可以提交 SAGEMRO 官方服务请求、查看设备档案、跟踪服务进度，并获得个性化建议。',
+    completeVerification: '完成认证并开始使用',
+    guestAccess: '访客访问',
+    guestAccessDesc: '你可以先浏览 SAGEMRO 的部分功能，之后可在设置中升级为完整访问权限。',
+    registering: '正在注册...',
+    continueGuest: '以访客身份继续',
+    loginIntro: '有钣金设备相关问题？可以随时询问 SAGEMRO AI',
+    password: '密码',
+    passwordPlaceholder: '请输入密码',
+    signingIn: '正在登录...',
+    noAccount: '还没有账号？',
+    register: '注册',
+    or: ' 或 ',
+    forgotPassword: '忘记密码',
+    backToSignIn: '← 返回登录',
+    forgotIntro: '请输入手机号，我们会发送验证码用于重置密码',
+    newPassword: '设置新密码',
+    newPasswordPlaceholder: '设置新密码（至少 6 位）',
+    processing: '处理中...',
+    resetPassword: '重置密码',
+  },
+  en: {
+    modalTitle: 'Sign In / Register',
+    phoneRequired: 'Please enter your phone number',
+    phoneInvalid: 'Please enter a valid phone number',
+    phonePasswordRequired: 'Please enter your phone number and password',
+    sendFailed: 'Failed to send',
+    requiredFields: 'Please fill in all required fields',
+    passwordMismatch: 'Passwords do not match',
+    passwordMin: 'Password must be at least 6 characters',
+    registeredPhone: 'This phone number is already registered. Please sign in.',
+    registerFailed: 'Registration failed. Please try again.',
+    companyRequired: 'Please enter your company name',
+    termsRequired: 'Please read and agree to the Terms of Service, Privacy Policy, and AI Service Notice',
+    guestName: 'Guest',
+    resetSuccess: 'Password reset successfully. Please sign in with your new password.',
+    codeRequired: 'Please enter the verification code',
+    choiceTitle: 'Which best describes your situation?',
+    needServiceTitle: 'I need equipment service, spare parts, or machine selection help',
+    needServiceDesc: 'Tell SAGEMRO about your equipment. Our official service team will review the request and follow up.',
+    exploringTitle: "I'm just exploring",
+    exploringDesc: "Browse SAGEMRO's features at your own pace. No registration required.",
+    back: '← Back',
+    companyIntro: 'First, tell us about your company',
+    companyName: 'Company name *',
+    companyPlaceholder: 'e.g., ABC Metal Products Co., Ltd.',
+    fullName: 'Full name *',
+    fullNamePlaceholder: 'Enter your real name for identity verification',
+    setPassword: 'Set password *',
+    setPasswordPlaceholder: 'Set a password (min. 6 characters)',
+    confirmPassword: 'Confirm password *',
+    confirmPasswordPlaceholder: 'Re-enter your password',
+    phoneNumber: 'Phone number *',
+    phoneNumberLabel: 'Phone number',
+    phonePlaceholder: 'Enter your phone number',
+    registeredPhonePlaceholder: 'Enter your registered phone number',
+    verificationCode: 'Verification code',
+    codePlaceholder: 'Enter verification code',
+    sendCode: 'Send code',
+    termsPrefix: 'I have read and agree to the',
+    terms: 'Terms of Service',
+    privacy: 'Privacy Policy',
+    aiNotice: 'AI Service Notice',
+    termsAnd: 'and',
+    nextRole: 'Next: Choose your role',
+    alreadyAccount: 'Already have an account?',
+    signIn: 'Sign in',
+    roleIntro: 'How would you like to use SAGEMRO Service OS?',
+    customerTitle: "I'm a Customer",
+    customerDesc: 'Get AI diagnostics, official service requests, equipment records, spare parts, and maintenance follow-up.',
+    guestTitle: "I'm just browsing (Guest)",
+    guestDesc: "Explore SAGEMRO's features without verification. Limited functionality, upgrade anytime.",
+    identityVerification: 'Identity Verification',
+    customerSelectedDesc: 'You selected "Customer". After verification, you\'ll have full access to AI diagnostics, official service requests, and equipment records.',
+    customerBenefits: 'After verification, you can: request SAGEMRO official service, view equipment records, track service progress, and receive personalized recommendations.',
+    completeVerification: 'Complete verification and start',
+    guestAccess: 'Guest Access',
+    guestAccessDesc: "Browse SAGEMRO's features with limited access. Upgrade to full access anytime in settings.",
+    registering: 'Registering...',
+    continueGuest: 'Continue as Guest',
+    loginIntro: 'Have questions about sheet metal equipment? Ask SAGEMRO AI anytime',
+    password: 'Password',
+    passwordPlaceholder: 'Enter your password',
+    signingIn: 'Signing in...',
+    noAccount: "Don't have an account?",
+    register: 'Register',
+    or: ' or ',
+    forgotPassword: 'Forgot password',
+    backToSignIn: '← Back to sign in',
+    forgotIntro: "Enter your phone number and we'll send a verification code to reset your password",
+    newPassword: 'Set new password',
+    newPasswordPlaceholder: 'Set new password (min. 6 characters)',
+    processing: 'Processing...',
+    resetPassword: 'Reset Password',
+  },
+};
 
 export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
+  const copy = isCnLocale() ? LOGIN_COPY.cn : LOGIN_COPY.en;
   // step flow:
   // choice -> register-company -> register-auth -> customer / visitor completion / login
   const [step, setStep] = useState('login');
@@ -29,8 +182,8 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
 
   // 发送验证码
   const handleSendCode = async () => {
-    if (!phone) { setError('Please enter your phone number'); return; }
-    if (phone.length !== 11) { setError('Please enter a valid phone number'); return; }
+    if (!phone) { setError(copy.phoneRequired); return; }
+    if (phone.length !== 11) { setError(copy.phoneInvalid); return; }
 
     setCodeSending(true);
     setError('');
@@ -48,7 +201,7 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
         });
       }, 1000);
     } catch (e) {
-      setError('Failed to send: ' + e.message);
+      setError(`${copy.sendFailed}: ${e.message}`);
     } finally {
       setCodeSending(false);
     }
@@ -57,10 +210,10 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
   // 客户注册（含公司名）
   const handleRegisterCustomer = async () => {
     if (!name || !password || !confirmPassword || !companyName) {
-      setError('Please fill in all required fields'); return;
+      setError(copy.requiredFields); return;
     }
-    if (password !== confirmPassword) { setError('Passwords do not match'); return; }
-    if (password.length < 6) { setError('Password must be at least 6 characters'); return; }
+    if (password !== confirmPassword) { setError(copy.passwordMismatch); return; }
+    if (password.length < 6) { setError(copy.passwordMin); return; }
 
     setSubmitting(true);
     setError('');
@@ -80,12 +233,12 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
       handleClose();
     } catch (e) {
       if (e.status === 409) {
-        toastError('This phone number is already registered. Please sign in.');
+        toastError(copy.registeredPhone);
         setStep('login');
         setError('');
       } else {
         setError(e.message);
-        toastError(e.message || 'Registration failed. Please try again.');
+        toastError(e.message || copy.registerFailed);
       }
     } finally {
       setSubmitting(false);
@@ -117,11 +270,11 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
 
   // 第1步：公司名 + 基本信息
   const handleCompanySubmit = () => {
-    if (!companyName.trim()) { setError('Please enter your company name'); return; }
-    if (!phone || phone.length !== 11) { setError('Please enter a valid phone number'); return; }
-    if (!password || password.length < 6) { setError('Password must be at least 6 characters'); return; }
-    if (password !== confirmPassword) { setError('Passwords do not match'); return; }
-    if (!agreedToTerms) { setError('Please read and agree to the Terms of Service, Privacy Policy, and AI Service Notice'); return; }
+    if (!companyName.trim()) { setError(copy.companyRequired); return; }
+    if (!phone || phone.length !== 11) { setError(copy.phoneInvalid); return; }
+    if (!password || password.length < 6) { setError(copy.passwordMin); return; }
+    if (password !== confirmPassword) { setError(copy.passwordMismatch); return; }
+    if (!agreedToTerms) { setError(copy.termsRequired); return; }
     setError('');
     setStep('register-auth');
   };
@@ -148,7 +301,7 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
     setSubmitting(true);
     setError('');
     try {
-      await registerCustomer({ name: name || 'Guest', phone, password, code, company: companyName, identity: 'visitor' });
+      await registerCustomer({ name: name || copy.guestName, phone, password, code, company: companyName, identity: 'visitor' });
       const result = await login({ phone, password });
       localStorage.setItem('sagemro_token', result.token);
       localStorage.setItem('sagemro_user', JSON.stringify(result.user));
@@ -172,14 +325,14 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
   };
 
   return (
-    <Modal isOpen={isOpen} onClose={handleClose} title="Sign In / Register" size={getModalSize()}>
+    <Modal isOpen={isOpen} onClose={handleClose} title={copy.modalTitle} size={getModalSize()}>
       <div className="space-y-4">
 
         {/* ========== Step choice: 身份分流 ========== */}
         {step === 'choice' && (
           <div className="space-y-4">
             <div className="text-center mb-6">
-              <h3 className="text-base font-medium">Which best describes your situation?</h3>
+              <h3 className="text-base font-medium">{copy.choiceTitle}</h3>
             </div>
 
             <div className="space-y-2.5">
@@ -190,8 +343,8 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
                 <div className="flex items-start gap-3">
                   <span className="flex-shrink-0 w-7 h-7 rounded-full bg-[var(--color-primary)] text-white text-sm flex items-center justify-center font-medium">A</span>
                   <div>
-                    <p className="font-medium text-sm group-hover:text-[var(--color-primary)] transition-colors">I need equipment service, spare parts, or machine selection help</p>
-                    <p className="text-xs text-[var(--color-text-secondary)] mt-0.5">Tell SAGEMRO about your equipment. Our official service team will review the request and follow up.</p>
+                    <p className="font-medium text-sm group-hover:text-[var(--color-primary)] transition-colors">{copy.needServiceTitle}</p>
+                    <p className="text-xs text-[var(--color-text-secondary)] mt-0.5">{copy.needServiceDesc}</p>
                   </div>
                 </div>
               </button>
@@ -203,8 +356,8 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
                 <div className="flex items-start gap-3">
                   <span className="flex-shrink-0 w-7 h-7 rounded-full bg-[var(--color-text-muted)] text-white text-sm flex items-center justify-center font-medium">B</span>
                   <div>
-                    <p className="font-medium text-sm text-[var(--color-text-secondary)] group-hover:text-[var(--color-text-primary)] transition-colors">I'm just exploring</p>
-                    <p className="text-xs text-[var(--color-text-secondary)] mt-0.5">Browse SAGEMRO's features at your own pace. No registration required.</p>
+                    <p className="font-medium text-sm text-[var(--color-text-secondary)] group-hover:text-[var(--color-text-primary)] transition-colors">{copy.exploringTitle}</p>
+                    <p className="text-xs text-[var(--color-text-secondary)] mt-0.5">{copy.exploringDesc}</p>
                   </div>
                 </div>
               </button>
@@ -216,11 +369,11 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
         {step === 'register-company' && (
           <div className="space-y-3">
             <div className="flex items-center gap-2 mb-2">
-              <button onClick={goToChoice} className="text-sm text-[var(--color-text-secondary)] hover:text-[var(--color-primary)]">← Back</button>
+              <button onClick={goToChoice} className="text-sm text-[var(--color-text-secondary)] hover:text-[var(--color-primary)]">{copy.back}</button>
             </div>
 
             <div className="text-center mb-4">
-              <p className="text-sm text-[var(--color-text-secondary)]">First, tell us about your company</p>
+              <p className="text-sm text-[var(--color-text-secondary)]">{copy.companyIntro}</p>
             </div>
 
             {error && (
@@ -231,20 +384,20 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
 
             {/* 公司名称（必填） */}
             <div>
-              <label className="block text-sm font-medium mb-1">Company name *</label>
+              <label className="block text-sm font-medium mb-1">{copy.companyName}</label>
               <input
                 type="text" value={companyName} onChange={(e) => setCompanyName(e.target.value)}
-                placeholder="e.g., ABC Metal Products Co., Ltd."
+                placeholder={copy.companyPlaceholder}
                 className="w-full px-3 py-2 border border-[var(--color-input-border)] rounded-xl bg-[var(--color-input-bg)] text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
               />
             </div>
 
             {/* 真实姓名 */}
             <div>
-              <label className="block text-sm font-medium mb-1">Full name *</label>
+              <label className="block text-sm font-medium mb-1">{copy.fullName}</label>
               <input
                 type="text" value={name} onChange={(e) => setName(e.target.value)}
-                placeholder="Enter your real name for identity verification"
+                placeholder={copy.fullNamePlaceholder}
                 maxLength={20}
                 className="w-full px-3 py-2 border border-[var(--color-input-border)] rounded-xl bg-[var(--color-input-bg)] text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
               />
@@ -252,48 +405,48 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
 
             {/* 密码 */}
             <div>
-              <label className="block text-sm font-medium mb-1">Set password *</label>
+              <label className="block text-sm font-medium mb-1">{copy.setPassword}</label>
               <input
                 type="password" value={password} onChange={(e) => setPassword(e.target.value)}
-                placeholder="Set a password (min. 6 characters)"
+                placeholder={copy.setPasswordPlaceholder}
                 className="w-full px-3 py-2 border border-[var(--color-input-border)] rounded-xl bg-[var(--color-input-bg)] text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
               />
             </div>
 
             {/* 确认密码 */}
             <div>
-              <label className="block text-sm font-medium mb-1">Confirm password *</label>
+              <label className="block text-sm font-medium mb-1">{copy.confirmPassword}</label>
               <input
                 type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)}
-                placeholder="Re-enter your password"
+                placeholder={copy.confirmPasswordPlaceholder}
                 className="w-full px-3 py-2 border border-[var(--color-input-border)] rounded-xl bg-[var(--color-input-bg)] text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
               />
             </div>
 
             {/* 手机号 */}
             <div>
-              <label className="block text-sm font-medium mb-1">Phone number *</label>
+              <label className="block text-sm font-medium mb-1">{copy.phoneNumber}</label>
               <input
                 type="tel" value={phone} onChange={(e) => setPhone(e.target.value)}
-                placeholder="Enter your phone number" maxLength={11}
+                placeholder={copy.phonePlaceholder} maxLength={11}
                 className="w-full px-3 py-2 border border-[var(--color-input-border)] rounded-xl bg-[var(--color-input-bg)] text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
               />
             </div>
 
             {/* 验证码 */}
             <div>
-              <label className="block text-sm font-medium mb-1">Verification code</label>
+              <label className="block text-sm font-medium mb-1">{copy.verificationCode}</label>
               <div className="flex gap-2">
                 <input
                   type="text" value={code} onChange={(e) => setCode(e.target.value)}
-                  placeholder="Enter verification code" maxLength={6}
+                  placeholder={copy.codePlaceholder} maxLength={6}
                   className="flex-1 px-3 py-2 border border-[var(--color-input-border)] rounded-xl bg-[var(--color-input-bg)] text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
                 />
                 <button
                   onClick={handleSendCode} disabled={codeSending || codeCooldown > 0}
                   className="px-3 py-2 bg-[var(--color-surface-elevated)] rounded-xl text-sm disabled:opacity-50"
                 >
-                  {codeCooldown > 0 ? `${codeCooldown}s` : 'Send code'}
+                  {codeCooldown > 0 ? `${codeCooldown}s` : copy.sendCode}
                 </button>
               </div>
             </div>
@@ -313,12 +466,12 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
                 className="mt-0.5 w-4 h-4 rounded border-[var(--color-input-border)] text-[var(--color-primary)] focus:ring-[var(--color-primary)] cursor-pointer"
               />
               <span className="text-xs text-[var(--color-text-secondary)] leading-relaxed">
-                I have read and agree to the{' '}
-                <button type="button" onClick={() => onOpenLegal?.('agreement')} className="text-[var(--color-primary)] hover:underline">Terms of Service</button>
+                {copy.termsPrefix}{' '}
+                <button type="button" onClick={() => onOpenLegal?.('agreement')} className="text-[var(--color-primary)] hover:underline">{copy.terms}</button>
                 ,{' '}
-                <button type="button" onClick={() => onOpenLegal?.('privacy')} className="text-[var(--color-primary)] hover:underline">Privacy Policy</button>
-                {' '}and{' '}
-                <button type="button" onClick={() => onOpenLegal?.('ai')} className="text-[var(--color-primary)] hover:underline">AI Service Notice</button>
+                <button type="button" onClick={() => onOpenLegal?.('privacy')} className="text-[var(--color-primary)] hover:underline">{copy.privacy}</button>
+                {' '}{copy.termsAnd}{' '}
+                <button type="button" onClick={() => onOpenLegal?.('ai')} className="text-[var(--color-primary)] hover:underline">{copy.aiNotice}</button>
               </span>
             </label>
 
@@ -326,12 +479,12 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
               onClick={handleCompanySubmit}
               className="w-full py-3 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white rounded-xl font-medium transition-colors"
             >
-              Next: Choose your role
+              {copy.nextRole}
             </button>
 
             <div className="text-center text-sm text-[var(--color-text-secondary)] pt-1">
-              Already have an account?{' '}
-              <button onClick={goToLogin} className="text-[var(--color-primary)] hover:underline font-medium">Sign in</button>
+              {copy.alreadyAccount}{' '}
+              <button onClick={goToLogin} className="text-[var(--color-primary)] hover:underline font-medium">{copy.signIn}</button>
             </div>
           </div>
         )}
@@ -340,11 +493,11 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
         {step === 'register-auth' && (
           <div className="space-y-4">
             <div className="flex items-center gap-2 mb-2">
-              <button onClick={() => setStep('register-company')} className="text-sm text-[var(--color-text-secondary)] hover:text-[var(--color-primary)]">← Back</button>
+              <button onClick={() => setStep('register-company')} className="text-sm text-[var(--color-text-secondary)] hover:text-[var(--color-primary)]">{copy.back}</button>
             </div>
 
             <div className="text-center mb-4">
-              <p className="text-sm text-[var(--color-text-secondary)]">How would you like to use SAGEMRO Service OS?</p>
+              <p className="text-sm text-[var(--color-text-secondary)]">{copy.roleIntro}</p>
             </div>
 
             <div className="space-y-2.5">
@@ -356,8 +509,8 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
                 <div className="flex items-start gap-3">
                   <span className="flex-shrink-0 w-7 h-7 rounded-full bg-[var(--color-primary)] text-white text-sm flex items-center justify-center font-medium">A</span>
                   <div>
-                    <p className="font-medium text-sm group-hover:text-[var(--color-primary)] transition-colors">I'm a Customer</p>
-                    <p className="text-xs text-[var(--color-text-secondary)] mt-0.5">Get AI diagnostics, official service requests, equipment records, spare parts, and maintenance follow-up.</p>
+                    <p className="font-medium text-sm group-hover:text-[var(--color-primary)] transition-colors">{copy.customerTitle}</p>
+                    <p className="text-xs text-[var(--color-text-secondary)] mt-0.5">{copy.customerDesc}</p>
                   </div>
                 </div>
               </button>
@@ -370,8 +523,8 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
                 <div className="flex items-start gap-3">
                   <span className="flex-shrink-0 w-7 h-7 rounded-full bg-[var(--color-text-muted)] text-white text-sm flex items-center justify-center font-medium">B</span>
                   <div>
-                    <p className="font-medium text-sm text-[var(--color-text-secondary)] group-hover:text-[var(--color-text-primary)] transition-colors">I'm just browsing (Guest)</p>
-                    <p className="text-xs text-[var(--color-text-secondary)] mt-0.5">Explore SAGEMRO's features without verification. Limited functionality, upgrade anytime.</p>
+                    <p className="font-medium text-sm text-[var(--color-text-secondary)] group-hover:text-[var(--color-text-primary)] transition-colors">{copy.guestTitle}</p>
+                    <p className="text-xs text-[var(--color-text-secondary)] mt-0.5">{copy.guestDesc}</p>
                   </div>
                 </div>
               </button>
@@ -383,22 +536,22 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
         {step === 'register-auth-prompt' && (
           <div className="space-y-4">
             <div className="flex items-center gap-2 mb-2">
-              <button onClick={() => setStep('register-auth')} className="text-sm text-[var(--color-text-secondary)] hover:text-[var(--color-primary)]">← Back</button>
+              <button onClick={() => setStep('register-auth')} className="text-sm text-[var(--color-text-secondary)] hover:text-[var(--color-primary)]">{copy.back}</button>
             </div>
 
             <div className="text-center mb-4">
               <div className="w-14 h-14 mx-auto mb-3 rounded-full bg-[var(--color-primary)]/10 flex items-center justify-center">
                 <span className="text-2xl">✓</span>
               </div>
-              <p className="text-base font-medium mb-1">Identity Verification</p>
+              <p className="text-base font-medium mb-1">{copy.identityVerification}</p>
               <p className="text-sm text-[var(--color-text-secondary)]">
-                You selected "Customer". After verification, you'll have full access to AI diagnostics, official service requests, and equipment records.
+                {copy.customerSelectedDesc}
               </p>
             </div>
 
             <div className="p-4 bg-[var(--color-surface-elevated)] rounded-xl text-[13px] text-[var(--color-text-secondary)]">
               {selectedIdentity === 'customer' ? (
-                <p>After verification, you can: request SAGEMRO official service, view equipment records, track service progress, and receive personalized recommendations.</p>
+                <p>{copy.customerBenefits}</p>
               ) : null}
             </div>
 
@@ -407,7 +560,7 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
               onClick={handleAuthConfirm}
               className="w-full py-3 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white rounded-xl font-medium transition-colors"
             >
-              Complete verification and start
+              {copy.completeVerification}
             </button>
           </div>
         )}
@@ -416,15 +569,15 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
         {step === 'register-visitor-complete' && (
           <div className="space-y-4">
             <div className="flex items-center gap-2 mb-2">
-              <button onClick={() => setStep('register-auth')} className="text-sm text-[var(--color-text-secondary)] hover:text-[var(--color-primary)]">← Back</button>
+              <button onClick={() => setStep('register-auth')} className="text-sm text-[var(--color-text-secondary)] hover:text-[var(--color-primary)]">{copy.back}</button>
             </div>
 
             <div className="text-center mb-4">
               <div className="w-14 h-14 mx-auto mb-3 rounded-full bg-[var(--color-text-muted)]/10 flex items-center justify-center">
                 <span className="text-2xl">👁</span>
               </div>
-              <p className="text-base font-medium mb-1">Guest Access</p>
-              <p className="text-sm text-[var(--color-text-secondary)]">Browse SAGEMRO's features with limited access. Upgrade to full access anytime in settings.</p>
+              <p className="text-base font-medium mb-1">{copy.guestAccess}</p>
+              <p className="text-sm text-[var(--color-text-secondary)]">{copy.guestAccessDesc}</p>
             </div>
 
             {error && (
@@ -439,7 +592,7 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
               disabled={submitting}
               className="w-full py-3 bg-[var(--color-text-muted)] hover:bg-[var(--color-text-secondary)] disabled:bg-[var(--color-text-muted)]/50 text-white rounded-xl font-medium transition-colors"
             >
-              {submitting ? 'Registering...' : 'Continue as Guest'}
+              {submitting ? copy.registering : copy.continueGuest}
             </button>
           </div>
         )}
@@ -448,7 +601,7 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
         {step === 'login' && (
           <div className="space-y-3">
             <div className="text-center mb-4">
-              <p className="text-sm text-[var(--color-text-secondary)]">Have questions about sheet metal equipment? Ask SAGEMRO AI anytime</p>
+              <p className="text-sm text-[var(--color-text-secondary)]">{copy.loginIntro}</p>
             </div>
 
             {error && (
@@ -458,25 +611,25 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
             )}
 
             <div>
-              <label className="block text-sm font-medium mb-1">Phone number</label>
+              <label className="block text-sm font-medium mb-1">{copy.phoneNumberLabel}</label>
               <input
                 type="tel" value={phone} onChange={(e) => setPhone(e.target.value)}
-                placeholder="Enter your phone number" maxLength={11}
+                placeholder={copy.phonePlaceholder} maxLength={11}
                 className="w-full px-3 py-2 border border-[var(--color-input-border)] rounded-xl bg-[var(--color-input-bg)] text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
               />
             </div>
             <div>
-              <label className="block text-sm font-medium mb-1">Password</label>
+              <label className="block text-sm font-medium mb-1">{copy.password}</label>
               <input
                 type="password" value={password} onChange={(e) => setPassword(e.target.value)}
-                placeholder="Enter your password"
+                placeholder={copy.passwordPlaceholder}
                 className="w-full px-3 py-2 border border-[var(--color-input-border)] rounded-xl bg-[var(--color-input-bg)] text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
               />
             </div>
 
             <button
               onClick={async () => {
-                if (!phone || !password) { setError('Please enter your phone number and password'); return; }
+                if (!phone || !password) { setError(copy.phonePasswordRequired); return; }
                 setSubmitting(true);
                 setError('');
                 try {
@@ -500,14 +653,14 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
               data-testid="login-submit-button"
               className="w-full py-3 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] disabled:bg-[var(--color-text-muted)] text-white rounded-xl font-medium transition-colors"
             >
-              {submitting ? 'Signing in...' : 'Sign In'}
+              {submitting ? copy.signingIn : copy.signIn}
             </button>
 
             <div className="text-center text-sm text-[var(--color-text-secondary)] pt-1">
-              Don't have an account?{' '}
-              <button onClick={goToRegisterCompany} className="text-[var(--color-primary)] hover:underline font-medium">Register</button>
-              {' or '}
-              <button onClick={goToForgotPassword} className="text-[var(--color-primary)] hover:underline font-medium">Forgot password</button>
+              {copy.noAccount}{' '}
+              <button onClick={goToRegisterCompany} className="text-[var(--color-primary)] hover:underline font-medium">{copy.register}</button>
+              {copy.or}
+              <button onClick={goToForgotPassword} className="text-[var(--color-primary)] hover:underline font-medium">{copy.forgotPassword}</button>
             </div>
           </div>
         )}
@@ -516,10 +669,10 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
         {step === 'forgot-password' && (
           <div className="space-y-3">
             <div className="flex items-center gap-2 mb-2">
-              <button onClick={goToLogin} className="text-sm text-[var(--color-text-secondary)] hover:text-[var(--color-primary)]">← Back to sign in</button>
+              <button onClick={goToLogin} className="text-sm text-[var(--color-text-secondary)] hover:text-[var(--color-primary)]">{copy.backToSignIn}</button>
             </div>
             <div className="text-center mb-4">
-              <p className="text-sm text-[var(--color-text-secondary)]">Enter your phone number and we'll send a verification code to reset your password</p>
+              <p className="text-sm text-[var(--color-text-secondary)]">{copy.forgotIntro}</p>
             </div>
 
             {error && (
@@ -529,20 +682,20 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
             )}
 
             <div>
-              <label className="block text-sm font-medium mb-1">Phone number</label>
+              <label className="block text-sm font-medium mb-1">{copy.phoneNumberLabel}</label>
               <input
                 type="tel" value={phone} onChange={(e) => setPhone(e.target.value)}
-                placeholder="Enter your registered phone number" maxLength={11}
+                placeholder={copy.registeredPhonePlaceholder} maxLength={11}
                 className="w-full px-3 py-2 border border-[var(--color-input-border)] rounded-xl bg-[var(--color-input-bg)] text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
               />
             </div>
 
             {forgotStep === 'code-sent' && (
               <div>
-                <label className="block text-sm font-medium mb-1">Verification code</label>
+                <label className="block text-sm font-medium mb-1">{copy.verificationCode}</label>
                 <input
                   type="text" value={code} onChange={(e) => setCode(e.target.value)}
-                  placeholder="Enter verification code" maxLength={6}
+                  placeholder={copy.codePlaceholder} maxLength={6}
                   className="w-full px-3 py-2 border border-[var(--color-input-border)] rounded-xl bg-[var(--color-input-bg)] text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
                 />
               </div>
@@ -550,10 +703,10 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
 
             {forgotStep === 'code-sent' && (
               <div>
-                <label className="block text-sm font-medium mb-1">Set new password</label>
+                <label className="block text-sm font-medium mb-1">{copy.newPassword}</label>
                 <input
                   type="password" value={password} onChange={(e) => setPassword(e.target.value)}
-                  placeholder="Set new password (min. 6 characters)"
+                  placeholder={copy.newPasswordPlaceholder}
                   className="w-full px-3 py-2 border border-[var(--color-input-border)] rounded-xl bg-[var(--color-input-bg)] text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
                 />
               </div>
@@ -562,7 +715,7 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
             <button
               onClick={async () => {
                 if (forgotStep === 'phone') {
-                  if (!phone) { setError('Please enter your phone number'); return; }
+                  if (!phone) { setError(copy.phoneRequired); return; }
                   try {
                     await sendResetCode(phone);
                     setForgotStep('code-sent');
@@ -571,12 +724,12 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
                     setError(e.message);
                   }
                 } else {
-                  if (!password || password.length < 6) { setError('Password must be at least 6 characters'); return; }
-                  if (!code) { setError('Please enter the verification code'); return; }
+                  if (!password || password.length < 6) { setError(copy.passwordMin); return; }
+                  if (!code) { setError(copy.codeRequired); return; }
                   setSubmitting(true);
                   try {
                     await resetPassword({ phone, code, newPassword: password });
-                    toastSuccess('Password reset successfully. Please sign in with your new password.');
+                    toastSuccess(copy.resetSuccess);
                     setForgotStep('phone');
                     setStep('login');
                     setError('');
@@ -589,7 +742,7 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
               }} disabled={submitting}
               className="w-full py-3 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] disabled:bg-[var(--color-text-muted)] text-white rounded-xl font-medium transition-colors"
             >
-              {submitting ? 'Processing...' : forgotStep === 'code-sent' ? 'Reset Password' : 'Send Code'}
+              {submitting ? copy.processing : forgotStep === 'code-sent' ? copy.resetPassword : copy.sendCode}
             </button>
           </div>
         )}

@@ -5,6 +5,7 @@ import {
   deleteEngineerCalendarEvent,
   getEngineerCalendarEvents,
 } from '../../services/api';
+import { isCnLocale } from '../../utils/locale';
 
 const COPY = {
   cn: {
@@ -18,6 +19,7 @@ const COPY = {
     notes: '备注',
     add: '发布排单信号',
     adding: '正在添加...',
+    loading: '加载中...',
     empty: '暂无日历记录',
     delete: '删除',
     loadError: '日历加载失败',
@@ -45,6 +47,7 @@ const COPY = {
     notes: 'Notes',
     add: 'Publish Scheduling Signal',
     adding: 'Adding...',
+    loading: 'Loading...',
     empty: 'No calendar entries yet',
     delete: 'Delete',
     loadError: 'Failed to load calendar',
@@ -64,8 +67,7 @@ const COPY = {
 };
 
 function getLocale() {
-  if (typeof window !== 'undefined' && window.location.hostname.endsWith('.cn')) return 'cn';
-  return 'en';
+  return isCnLocale() ? 'cn' : 'en';
 }
 
 function defaultLocalDateTime(hoursFromNow) {
@@ -78,10 +80,10 @@ function localDateTimeToIso(value) {
   return value ? new Date(value).toISOString() : '';
 }
 
-function formatDateTime(value) {
+function formatDateTime(value, locale) {
   if (!value) return '-';
   try {
-    return new Intl.DateTimeFormat(undefined, {
+    return new Intl.DateTimeFormat(locale === 'cn' ? 'zh-CN' : 'en-US', {
       month: 'short',
       day: 'numeric',
       hour: '2-digit',
@@ -265,7 +267,7 @@ export function EngineerAvailabilityCalendar() {
 
       <div className="mt-4 space-y-2">
         {loading ? (
-          <div className="py-6 text-center text-sm text-[var(--color-text-muted)]">Loading...</div>
+          <div className="py-6 text-center text-sm text-[var(--color-text-muted)]">{copy.loading}</div>
         ) : events.length === 0 ? (
           <div className="py-6 text-center text-sm text-[var(--color-text-muted)]">{copy.empty}</div>
         ) : (
@@ -280,7 +282,7 @@ export function EngineerAvailabilityCalendar() {
                   </span>
                   <h3 className="mt-2 text-sm font-medium text-[var(--color-text-primary)]">{item.title}</h3>
                   <p className="mt-1 text-xs text-[var(--color-text-muted)]">
-                    {formatDateTime(item.start_at)} - {formatDateTime(item.end_at)}
+                    {formatDateTime(item.start_at, locale)} - {formatDateTime(item.end_at, locale)}
                     {item.region ? ` · ${item.region}` : ''}
                   </p>
                   {item.notes && <p className="mt-2 text-xs text-[var(--color-text-secondary)]">{item.notes}</p>}

@@ -7,6 +7,7 @@ import { uploadWorkOrderAttachment } from '../../services/api';
 import { WorkOrderType, UrgencyLevel } from '../../types';
 import { categoryConfig } from '../../data/workOrderConfig';
 import { Paperclip, Loader2, X } from 'lucide-react';
+import { isCnLocale } from '../../utils/locale';
 
 // 设备类型选项
 const deviceTypeOptions = [
@@ -28,7 +29,169 @@ const brandPresets = {
   'Other': []
 };
 
+const COPY = {
+  cn: {
+    titleSubmit: '提交 SAGEMRO 官方服务请求',
+    titleSubmitted: '服务请求已提交',
+    requiredWarning: '请填写所有必填项',
+    attachmentFailed: '附件上传失败',
+    submittedWithAttachments: (count) => `服务请求已提交，已上传 ${count} 个附件`,
+    submitFailed: '提交失败',
+    successTitle: '服务请求提交成功！',
+    serviceNo: '服务编号',
+    successDesc: 'SAGEMRO 会审核请求、确认细节，并安排合适的官方工程师或服务代表。你可以随时在“我的服务”中查看进度。',
+    gotIt: '知道了',
+    serviceType: '服务类型',
+    serviceTypePlaceholder: '选择服务类型',
+    equipmentCategory: '设备类别',
+    specificIssue: '具体问题',
+    equipmentType: '设备类型',
+    equipmentTypePlaceholder: '选择或输入设备类型...',
+    equipmentBrand: '设备品牌',
+    brandPlaceholder: '选择或添加品牌...',
+    brandDisabledPlaceholder: '请先选择设备类型',
+    region: '所在地区',
+    regionPlaceholder: '按地区名称搜索...',
+    equipmentModel: '设备型号 / 规格',
+    equipmentModelPlaceholder: '例如：C3015 3000W',
+    description: '故障 / 服务描述',
+    descriptionPlaceholder: '请描述设备问题、服务需求、报警代码或对生产的影响...',
+    contact: '联系方式',
+    contactPlaceholder: '手机号',
+    urgency: '紧急程度',
+    attachments: '附件（可选）',
+    filesSelected: (count) => `已选择 ${count} 个文件`,
+    uploadOptional: '上传图片 / 视频（可选）',
+    uploadingAttachments: (current, total) => `正在上传附件（${current}/${total}）...`,
+    submitting: '正在提交...',
+    submit: '提交服务请求',
+    typeOptions: {
+      [WorkOrderType.FAULT]: '设备维修',
+      [WorkOrderType.MAINTENANCE]: '维护保养',
+      [WorkOrderType.PARAMETER]: '参数调试',
+      [WorkOrderType.CONSULT]: '技术咨询',
+      [WorkOrderType.PARTS]: '备件采购',
+      [WorkOrderType.AFTERSALES]: '售后服务',
+      [WorkOrderType.OTHER]: '其他',
+    },
+    urgencyOptions: {
+      [UrgencyLevel.NORMAL]: '普通',
+      [UrgencyLevel.URGENT]: '紧急',
+      [UrgencyLevel.CRITICAL]: '非常紧急',
+    },
+    deviceTypes: {
+      'Laser Cutter': '激光切割机',
+      'Press Brake': '折弯机',
+      'Punch Press': '冲床',
+      'Welder': '焊机',
+      'Laser Welder': '激光焊机',
+      'Plate Rolling Machine': '卷板机',
+      'Plasma Cutter': '等离子切割机',
+      'Waterjet Cutter': '水刀切割机',
+      'Shearing Machine': '剪板机',
+      'Other': '其他',
+    },
+    categoryLabels: {
+      laser_cutting: '激光切割',
+      bending: '折弯',
+      punching: '冲压 / 冲床',
+      welding: '焊接',
+      surface_treatment: '表面处理',
+      auxiliary: '辅助系统',
+      cnc_automation: '数控与自动化',
+      inspection: '检测与质检',
+      other: '其他设备',
+    },
+    categoryL2Labels: {
+      mechanical_fault: '机械故障',
+      electrical_fault: '电气故障',
+      optical_fault: '光路 / 光束故障',
+      hydraulic_fault: '液压系统故障',
+      arc_fault: '电弧 / 焊接质量问题',
+      wire_feeder_fault: '送丝机构故障',
+      tooling_fault: '模具 / 刀具故障',
+      compressor_fault: '空压机故障',
+      chiller_fault: '冷水机 / 冷却故障',
+      gas_generation: '制氮 / 制氧系统故障',
+      power_supply: '电源 / 稳压系统故障',
+      cnc_system: '数控系统故障',
+      servo_drive: '伺服 / 驱动故障',
+      robot_fault: '机器人故障',
+      plc_fault: 'PLC / 自动化故障',
+      sensor_fault: '传感器 / 检测故障',
+      cooling_fault: '冷却系统故障',
+      gas_fault: '气路 / 辅助气体故障',
+      control_system: '控制系统故障',
+      media_fault: '磨料 / 介质故障',
+      dust_collection: '除尘 / 环保系统故障',
+      calibration: '精度校准',
+      software_fault: '软件 / 系统故障',
+      general_fault: '一般故障',
+      maintenance: '维护保养',
+      parameter_debug: '参数调试',
+      installation: '安装调试',
+      consultation: '技术咨询',
+      parts_replacement: '备件更换',
+      other: '其他',
+    },
+  },
+  en: {
+    titleSubmit: 'Request SAGEMRO Official Service',
+    titleSubmitted: 'Service Request Submitted',
+    requiredWarning: 'Please fill in all required fields',
+    attachmentFailed: 'Attachment upload failed',
+    submittedWithAttachments: (count) => `Service request submitted, ${count} attachment(s) uploaded`,
+    submitFailed: 'Submission failed',
+    successTitle: 'Service request submitted successfully!',
+    serviceNo: 'Service No.',
+    successDesc: 'SAGEMRO will review the request, confirm details, and arrange the right official engineer or service representative. You can track progress in "My Services" at any time.',
+    gotIt: 'Got it',
+    serviceType: 'Service Type',
+    serviceTypePlaceholder: 'Select service type',
+    equipmentCategory: 'Equipment Category',
+    specificIssue: 'Specific Issue',
+    equipmentType: 'Equipment Type',
+    equipmentTypePlaceholder: 'Select or enter equipment type...',
+    equipmentBrand: 'Equipment Brand',
+    brandPlaceholder: 'Select or add brand...',
+    brandDisabledPlaceholder: 'Select equipment type first',
+    region: 'Region',
+    regionPlaceholder: 'Search by region name...',
+    equipmentModel: 'Equipment Model / Spec',
+    equipmentModelPlaceholder: 'e.g. C3015 3000W',
+    description: 'Fault / Service Description',
+    descriptionPlaceholder: 'Describe the equipment issue, service need, alarm code, or production impact...',
+    contact: 'Contact Info',
+    contactPlaceholder: 'Phone number',
+    urgency: 'Urgency',
+    attachments: 'Attachments (Optional)',
+    filesSelected: (count) => `${count} file(s) selected`,
+    uploadOptional: 'Upload images/videos (optional)',
+    uploadingAttachments: (current, total) => `Uploading attachments (${current}/${total})...`,
+    submitting: 'Submitting...',
+    submit: 'Submit Service Request',
+    typeOptions: {
+      [WorkOrderType.FAULT]: 'Equipment Repair',
+      [WorkOrderType.MAINTENANCE]: 'Maintenance',
+      [WorkOrderType.PARAMETER]: 'Parameter Tuning',
+      [WorkOrderType.CONSULT]: 'Technical Consultation',
+      [WorkOrderType.PARTS]: 'Parts Purchase',
+      [WorkOrderType.AFTERSALES]: 'After-sales Service',
+      [WorkOrderType.OTHER]: 'Other',
+    },
+    urgencyOptions: {
+      [UrgencyLevel.NORMAL]: 'Normal',
+      [UrgencyLevel.URGENT]: 'Urgent',
+      [UrgencyLevel.CRITICAL]: 'Critical',
+    },
+    deviceTypes: {},
+    categoryLabels: {},
+    categoryL2Labels: {},
+  },
+};
+
 export function WorkOrderModal({ isOpen, onClose, onSubmit }) {
+  const copy = isCnLocale() ? COPY.cn : COPY.en;
   const [form, setForm] = useState({
     type: '',
     category_l1: 'other',
@@ -62,7 +225,7 @@ export function WorkOrderModal({ isOpen, onClose, onSubmit }) {
 
   const handleSubmit = async () => {
     if (!form.type || !form.description || !form.contact) {
-      toastWarning('Please fill in all required fields');
+      toastWarning(copy.requiredWarning);
       return;
     }
 
@@ -78,18 +241,18 @@ export function WorkOrderModal({ isOpen, onClose, onSubmit }) {
             await uploadWorkOrderAttachment(result.id, file);
             uploaded++;
           } catch (e) {
-            toastError(`Attachment ${file.name} upload failed: ${e.message}`);
+            toastError(`${file.name} ${copy.attachmentFailed}: ${e.message}`);
           }
         }
         setUploadPhase(null);
         if (uploaded > 0) {
-          toastSuccess(`Service request submitted, ${uploaded} attachment(s) uploaded`);
+          toastSuccess(copy.submittedWithAttachments(uploaded));
         }
       }
       setFiles([]);
       setSubmitted(result);
     } catch (e) {
-      toastError('Submission failed: ' + e.message);
+      toastError(`${copy.submitFailed}: ${e.message}`);
     } finally {
       setSubmitting(false);
       setUploadPhase(null);
@@ -117,42 +280,41 @@ export function WorkOrderModal({ isOpen, onClose, onSubmit }) {
   };
 
   const typeOptions = [
-    { value: WorkOrderType.FAULT, label: 'Equipment Repair' },
-    { value: WorkOrderType.MAINTENANCE, label: 'Maintenance' },
-    { value: WorkOrderType.PARAMETER, label: 'Parameter Tuning' },
-    { value: WorkOrderType.CONSULT, label: 'Technical Consultation' },
-    { value: WorkOrderType.PARTS, label: 'Parts Purchase' },
-    { value: WorkOrderType.AFTERSALES, label: 'After-sales Service' },
-    { value: WorkOrderType.OTHER, label: 'Other' },
+    { value: WorkOrderType.FAULT, label: copy.typeOptions[WorkOrderType.FAULT] },
+    { value: WorkOrderType.MAINTENANCE, label: copy.typeOptions[WorkOrderType.MAINTENANCE] },
+    { value: WorkOrderType.PARAMETER, label: copy.typeOptions[WorkOrderType.PARAMETER] },
+    { value: WorkOrderType.CONSULT, label: copy.typeOptions[WorkOrderType.CONSULT] },
+    { value: WorkOrderType.PARTS, label: copy.typeOptions[WorkOrderType.PARTS] },
+    { value: WorkOrderType.AFTERSALES, label: copy.typeOptions[WorkOrderType.AFTERSALES] },
+    { value: WorkOrderType.OTHER, label: copy.typeOptions[WorkOrderType.OTHER] },
   ];
 
   const urgencyOptions = [
-    { value: UrgencyLevel.NORMAL, label: 'Normal' },
-    { value: UrgencyLevel.URGENT, label: 'Urgent' },
-    { value: UrgencyLevel.CRITICAL, label: 'Critical' },
+    { value: UrgencyLevel.NORMAL, label: copy.urgencyOptions[UrgencyLevel.NORMAL] },
+    { value: UrgencyLevel.URGENT, label: copy.urgencyOptions[UrgencyLevel.URGENT] },
+    { value: UrgencyLevel.CRITICAL, label: copy.urgencyOptions[UrgencyLevel.CRITICAL] },
   ];
 
   return (
-    <Modal isOpen={isOpen} onClose={handleClose} title={submitted ? 'Service Request Submitted' : 'Request SAGEMRO Official Service'} size="md">
+    <Modal isOpen={isOpen} onClose={handleClose} title={submitted ? copy.titleSubmitted : copy.titleSubmit} size="md">
       {/* 提交成功提示 */}
       {submitted && (
         <div className="space-y-4">
           <div className="p-4 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-xl text-center">
             <div className="text-3xl mb-2">✅</div>
-            <p className="text-sm font-medium text-green-700 dark:text-green-400 mb-1">Service request submitted successfully!</p>
+            <p className="text-sm font-medium text-green-700 dark:text-green-400 mb-1">{copy.successTitle}</p>
             <p className="text-xs text-green-600 dark:text-green-500">
-              Service No.: {submitted.order_no || submitted.id}
+              {copy.serviceNo}: {submitted.order_no || submitted.id}
             </p>
           </div>
           <p className="text-xs text-[var(--color-text-secondary)] text-center">
-            SAGEMRO will review the request, confirm details, and arrange the right official engineer or service representative.
-            You can track progress in "My Services" at any time.
+            {copy.successDesc}
           </p>
           <button
             onClick={handleClose}
             className="w-full py-2.5 bg-[var(--color-primary)] hover:opacity-90 text-white rounded-xl font-medium transition-opacity"
           >
-            Got it
+            {copy.gotIt}
           </button>
         </div>
       )}
@@ -162,14 +324,14 @@ export function WorkOrderModal({ isOpen, onClose, onSubmit }) {
         {/* 问题类型 */}
         <div>
           <label className="block text-sm font-medium text-[var(--color-text-primary)] mb-1">
-            Service Type <span className="text-red-500">*</span>
+            {copy.serviceType} <span className="text-red-500">*</span>
           </label>
           <select
             value={form.type}
             onChange={(e) => setForm({ ...form, type: e.target.value })}
             className="w-full px-3 py-2 border border-[var(--color-border)] dark:border-[var(--color-border-strong)] rounded-xl bg-[var(--color-surface)] dark:bg-[var(--color-surface-elevated)] text-xs text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
           >
-            <option value="">Select service type</option>
+            <option value="">{copy.serviceTypePlaceholder}</option>
             {typeOptions.map((opt) => (
               <option key={opt.value} value={opt.value}>
                 {opt.label}
@@ -181,7 +343,7 @@ export function WorkOrderModal({ isOpen, onClose, onSubmit }) {
         {/* 设备大类 + 问题类型（级联） */}
         <div>
           <label className="block text-sm font-medium text-[var(--color-text-primary)] mb-1">
-            Equipment Category
+            {copy.equipmentCategory}
           </label>
           <select
             value={form.category_l1}
@@ -189,14 +351,14 @@ export function WorkOrderModal({ isOpen, onClose, onSubmit }) {
             className="w-full px-3 py-2 border border-[var(--color-border)] dark:border-[var(--color-border-strong)] rounded-xl bg-[var(--color-surface)] dark:bg-[var(--color-surface-elevated)] text-xs text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
           >
             {Object.entries(categoryConfig).map(([key, cfg]) => (
-              <option key={key} value={key}>{cfg.label}</option>
+              <option key={key} value={key}>{copy.categoryLabels[key] || cfg.label}</option>
             ))}
           </select>
         </div>
 
         <div>
           <label className="block text-sm font-medium text-[var(--color-text-primary)] mb-1">
-            Specific Issue
+            {copy.specificIssue}
           </label>
           <select
             value={form.category_l2}
@@ -204,48 +366,49 @@ export function WorkOrderModal({ isOpen, onClose, onSubmit }) {
             className="w-full px-3 py-2 border border-[var(--color-border)] dark:border-[var(--color-border-strong)] rounded-xl bg-[var(--color-surface)] dark:bg-[var(--color-surface-elevated)] text-xs text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
           >
             {Object.entries(categoryConfig[form.category_l1]?.l2 || {}).map(([key, label]) => (
-              <option key={key} value={key}>{label}</option>
+              <option key={key} value={key}>{copy.categoryL2Labels[key] || label}</option>
             ))}
           </select>
         </div>
 
         {/* 设备类型 */}
         <TagInput
-          label="Equipment Type"
+          label={copy.equipmentType}
           options={deviceTypeOptions}
+          optionLabels={copy.deviceTypes}
           value={form.device_type}
           onChange={(val) => setForm({ ...form, device_type: val })}
-          placeholder="Select or enter equipment type..."
+          placeholder={copy.equipmentTypePlaceholder}
         />
 
         {/* 设备品牌 */}
         <TagInput
-          label="Equipment Brand"
+          label={copy.equipmentBrand}
           options={brandOptions}
           value={form.device_brand}
           onChange={(val) => setForm({ ...form, device_brand: val })}
-          placeholder={brandOptions.length > 0 ? "Select or add brand..." : "Select equipment type first"}
+          placeholder={brandOptions.length > 0 ? copy.brandPlaceholder : copy.brandDisabledPlaceholder}
           disabled={brandOptions.length === 0}
         />
 
         {/* 所在地区 */}
         <RegionInput
-          label="Region"
+          label={copy.region}
           value={form.region}
           onChange={(val) => setForm({ ...form, region: val })}
-          placeholder="Search by region name..."
+          placeholder={copy.regionPlaceholder}
         />
 
         {/* 设备规格型号 */}
         <div>
           <label className="block text-sm font-medium text-[var(--color-text-primary)] mb-1">
-            Equipment Model / Spec
+            {copy.equipmentModel}
           </label>
           <input
             type="text"
             value={form.device_model}
             onChange={(e) => setForm({ ...form, device_model: e.target.value })}
-            placeholder="e.g. C3015 3000W"
+            placeholder={copy.equipmentModelPlaceholder}
             className="w-full px-3 py-2 border border-[var(--color-border)] dark:border-[var(--color-border-strong)] rounded-xl bg-[var(--color-surface)] dark:bg-[var(--color-surface-elevated)] text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
           />
         </div>
@@ -253,12 +416,12 @@ export function WorkOrderModal({ isOpen, onClose, onSubmit }) {
         {/* 问题描述 */}
         <div>
           <label className="block text-sm font-medium text-[var(--color-text-primary)] mb-1">
-            Fault / Service Description <span className="text-red-500">*</span>
+            {copy.description} <span className="text-red-500">*</span>
           </label>
           <textarea
             value={form.description}
             onChange={(e) => setForm({ ...form, description: e.target.value })}
-            placeholder="Describe the equipment issue, service need, alarm code, or production impact..."
+            placeholder={copy.descriptionPlaceholder}
             rows={4}
             className="w-full px-3 py-2 border border-[var(--color-border)] dark:border-[var(--color-border-strong)] rounded-xl bg-[var(--color-surface)] dark:bg-[var(--color-surface-elevated)] text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)] resize-none"
           />
@@ -267,13 +430,13 @@ export function WorkOrderModal({ isOpen, onClose, onSubmit }) {
         {/* 联系方式 */}
         <div>
           <label className="block text-sm font-medium text-[var(--color-text-primary)] mb-1">
-            Contact Info <span className="text-red-500">*</span>
+            {copy.contact} <span className="text-red-500">*</span>
           </label>
           <input
             type="text"
             value={form.contact}
             onChange={(e) => setForm({ ...form, contact: e.target.value })}
-            placeholder="Phone number"
+            placeholder={copy.contactPlaceholder}
             className="w-full px-3 py-2 border border-[var(--color-border)] dark:border-[var(--color-border-strong)] rounded-xl bg-[var(--color-surface)] dark:bg-[var(--color-surface-elevated)] text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
           />
         </div>
@@ -281,7 +444,7 @@ export function WorkOrderModal({ isOpen, onClose, onSubmit }) {
         {/* 紧急程度 */}
         <div>
           <label className="block text-sm font-medium text-[var(--color-text-primary)] mb-2">
-            Urgency
+            {copy.urgency}
           </label>
           <div className="flex gap-3">
             {urgencyOptions.map((opt) => (
@@ -310,7 +473,7 @@ export function WorkOrderModal({ isOpen, onClose, onSubmit }) {
         {/* 附件上传（可选） */}
         <div>
           <label className="block text-sm font-medium text-[var(--color-text-primary)] mb-1">
-            Attachments (Optional)
+            {copy.attachments}
           </label>
           <input
             ref={fileInputRef}
@@ -331,7 +494,7 @@ export function WorkOrderModal({ isOpen, onClose, onSubmit }) {
           >
             <Paperclip className="w-4 h-4 text-[var(--color-text-muted)]" />
             <span className="text-xs text-[var(--color-text-muted)]">
-              {files.length > 0 ? `${files.length} file(s) selected` : 'Upload images/videos (optional)'}
+              {files.length > 0 ? copy.filesSelected(files.length) : copy.uploadOptional}
             </span>
           </div>
           {files.length > 0 && (
@@ -365,9 +528,9 @@ export function WorkOrderModal({ isOpen, onClose, onSubmit }) {
         >
           {submitting
             ? uploadPhase
-              ? `Uploading attachments (${uploadPhase.current}/${uploadPhase.total})...`
-              : 'Submitting...'
-            : 'Submit Service Request'}
+              ? copy.uploadingAttachments(uploadPhase.current, uploadPhase.total)
+              : copy.submitting
+            : copy.submit}
         </button>
         </div>
       )}

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { X } from 'lucide-react';
 
-export function TagInput({ label, options = [], value = [], onChange, placeholder = 'Type and press Enter to add...' }) {
+export function TagInput({ label, options = [], optionLabels = {}, value = [], onChange, placeholder = 'Type and press Enter to add...' }) {
   const [inputValue, setInputValue] = useState('');
 
   const addTag = (tag) => {
@@ -45,7 +45,7 @@ export function TagInput({ label, options = [], value = [], onChange, placeholde
               key={tag}
               className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs bg-[var(--color-primary)] text-white"
             >
-              {tag}
+              {optionLabels[tag] || tag}
               <button
                 type="button"
                 onClick={() => removeTag(tag)}
@@ -84,7 +84,7 @@ export function TagInput({ label, options = [], value = [], onChange, placeholde
                   : 'bg-[var(--color-hover)] dark:bg-[var(--color-surface-elevated)] text-[var(--color-text-secondary)] hover:border-[var(--color-primary)] border border-transparent hover:text-[var(--color-primary)]'
               }`}
             >
-              {option}
+              {optionLabels[option] || option}
             </button>
           ))}
         </div>

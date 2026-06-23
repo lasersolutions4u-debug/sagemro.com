@@ -1,5 +1,31 @@
 import { FileText, ClipboardList, LogIn, LogOut, Package, Bell, MoreHorizontal, X } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
+import { isCnLocale } from '../../utils/locale';
+
+const COPY = {
+  cn: {
+    assignedServices: '已分配服务',
+    requestService: '提交服务请求',
+    myServices: '我的服务',
+    notifications: '通知',
+    myEquipment: '我的设备',
+    more: '更多',
+    engineerBadge: 'SAGEMRO 工程师',
+    logOut: '退出登录',
+    signInRegister: '登录 / 注册',
+  },
+  en: {
+    assignedServices: 'Assigned Services',
+    requestService: 'Request Service',
+    myServices: 'My Services',
+    notifications: 'Notifications',
+    myEquipment: 'My Equipment',
+    more: 'More',
+    engineerBadge: 'SAGEMRO Engineer',
+    logOut: 'Log Out',
+    signInRegister: 'Sign In / Register',
+  },
+};
 
 export function ToolBar({
   onOpenWorkOrder,
@@ -14,6 +40,7 @@ export function ToolBar({
   currentUser,
   userType,
 }) {
+  const copy = isCnLocale() ? COPY.cn : COPY.en;
   const [showMore, setShowMore] = useState(false);
   const [collapsed, setCollapsed] = useState(true);
   const moreMenuRef = useRef(null);
@@ -39,20 +66,20 @@ export function ToolBar({
 
   const primaryTools = isEngineer
     ? [
-        { icon: ClipboardList, label: 'Assigned Services', onClick: onOpenMyWorkOrders, testid: 'tool-my-work-orders' },
+        { icon: ClipboardList, label: copy.assignedServices, onClick: onOpenMyWorkOrders, testid: 'tool-my-work-orders' },
       ]
     : [
-        { icon: FileText, label: 'Request Service', onClick: onOpenWorkOrder, testid: 'tool-create-work-order' },
-        { icon: ClipboardList, label: 'My Services', onClick: onOpenMyWorkOrders, testid: 'tool-my-work-orders' },
+        { icon: FileText, label: copy.requestService, onClick: onOpenWorkOrder, testid: 'tool-create-work-order' },
+        { icon: ClipboardList, label: copy.myServices, onClick: onOpenMyWorkOrders, testid: 'tool-my-work-orders' },
       ];
 
   const extraTools = isEngineer
     ? [
-        { icon: Bell, label: 'Notifications', badge: unreadCount, testid: 'tool-notifications', onClick: () => { onOpenNotifications?.(); setShowMore(false); } },
+        { icon: Bell, label: copy.notifications, badge: unreadCount, testid: 'tool-notifications', onClick: () => { onOpenNotifications?.(); setShowMore(false); } },
       ]
     : [
-        { icon: Package, label: 'My Equipment', testid: 'tool-my-devices', onClick: () => { onOpenMyDevices?.(); setShowMore(false); } },
-        { icon: Bell, label: 'Notifications', badge: unreadCount, testid: 'tool-notifications', onClick: () => { onOpenNotifications?.(); setShowMore(false); } },
+        { icon: Package, label: copy.myEquipment, testid: 'tool-my-devices', onClick: () => { onOpenMyDevices?.(); setShowMore(false); } },
+        { icon: Bell, label: copy.notifications, badge: unreadCount, testid: 'tool-notifications', onClick: () => { onOpenNotifications?.(); setShowMore(false); } },
       ];
 
   const showCollapsed = currentUser && collapsed && extraTools.length >= 2;
@@ -91,7 +118,7 @@ export function ToolBar({
             className="w-full flex items-center gap-3 px-4 py-2.5 text-[14px] text-[var(--color-sidebar-muted)] hover:bg-[var(--color-sidebar-surface)] hover:text-[var(--color-sidebar-text)] rounded-lg mx-1 transition-colors"
           >
             {showMore ? <X size={17} /> : <MoreHorizontal size={17} />}
-            <span>More</span>
+            <span>{copy.more}</span>
             {unreadCount > 0 && (
               <span className="ml-auto w-4 h-4 flex items-center justify-center bg-red-500 text-white text-[10px] font-medium rounded-full">
                 {unreadCount > 99 ? '99+' : unreadCount}
@@ -104,6 +131,7 @@ export function ToolBar({
               {extraTools.map((tool) => (
                 <button
                   key={tool.label}
+                  data-testid={tool.testid || `tool-${tool.label}`}
                   onClick={tool.onClick}
                   className="w-full flex items-center gap-3 px-4 py-2.5 text-[14px] text-[var(--color-sidebar-muted)] hover:bg-[var(--color-sidebar)] hover:text-[var(--color-sidebar-text)] transition-colors"
                 >
@@ -135,7 +163,7 @@ export function ToolBar({
               </div>
               <span className="truncate">{currentUser.name}</span>
               {isEngineer && (
-                <span className="text-[10px] px-1.5 py-0.5 bg-[var(--color-primary)]/20 text-[var(--color-primary)] rounded">SAGEMRO Engineer</span>
+                <span className="text-[10px] px-1.5 py-0.5 bg-[var(--color-primary)]/20 text-[var(--color-primary)] rounded">{copy.engineerBadge}</span>
               )}
             </button>
             <button
@@ -144,7 +172,7 @@ export function ToolBar({
               className="w-full flex items-center gap-3 px-4 py-2.5 text-[14px] text-[var(--color-sidebar-muted)] hover:bg-[var(--color-sidebar-surface)] hover:text-[var(--color-sidebar-text)] rounded-lg mx-1 transition-colors"
             >
               <LogOut size={17} />
-              <span>Log Out</span>
+              <span>{copy.logOut}</span>
             </button>
           </>
         ) : (
@@ -154,7 +182,7 @@ export function ToolBar({
             className="w-full flex items-center gap-3 px-4 py-2.5 text-[14px] text-[var(--color-sidebar-muted)] hover:bg-[var(--color-sidebar-surface)] hover:text-[var(--color-sidebar-text)] rounded-lg mx-1 transition-colors"
           >
             <LogIn size={17} />
-            <span>Sign In / Register</span>
+            <span>{copy.signInRegister}</span>
           </button>
         )}
       </div>

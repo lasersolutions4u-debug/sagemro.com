@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { Modal } from '../common/Modal';
 import { Bell, CheckCheck, FileText, DollarSign, Star, Wrench, ClipboardCheck } from 'lucide-react';
 import { getNotifications, markNotificationRead, markAllNotificationsRead } from '../../services/api';
+import { isCnLocale } from '../../utils/locale';
 
 const typeIcons = {
   new_ticket: FileText,
@@ -21,22 +22,48 @@ const typeColors = {
   rating_received: 'text-yellow-500',
 };
 
-function formatTime(dateStr) {
+const COPY = {
+  cn: {
+    title: '通知',
+    markAllRead: '全部标记为已读',
+    loading: '加载中...',
+    empty: '暂无通知',
+    justNow: '刚刚',
+    minuteAgo: '分钟前',
+    hourAgo: '小时前',
+    dayAgo: '天前',
+  },
+  en: {
+    title: 'Notifications',
+    markAllRead: 'Mark all as read',
+    loading: 'Loading...',
+    empty: 'No notifications',
+    justNow: 'Just now',
+    minuteAgo: 'm ago',
+    hourAgo: 'h ago',
+    dayAgo: 'd ago',
+  },
+};
+
+function formatTime(dateStr, isCn) {
   if (!dateStr) return '';
   const date = new Date(dateStr + 'Z');
   const now = new Date();
   const diffMs = now - date;
   const diffMin = Math.floor(diffMs / 60000);
-  if (diffMin < 1) return 'Just now';
-  if (diffMin < 60) return `${diffMin}m ago`;
+  const copy = isCn ? COPY.cn : COPY.en;
+  if (diffMin < 1) return copy.justNow;
+  if (diffMin < 60) return isCn ? `${diffMin}${copy.minuteAgo}` : `${diffMin}${copy.minuteAgo}`;
   const diffHour = Math.floor(diffMin / 60);
-  if (diffHour < 24) return `${diffHour}h ago`;
+  if (diffHour < 24) return isCn ? `${diffHour}${copy.hourAgo}` : `${diffHour}${copy.hourAgo}`;
   const diffDay = Math.floor(diffHour / 24);
-  if (diffDay < 7) return `${diffDay}d ago`;
-  return date.toLocaleDateString('en-US', { month: 'numeric', day: 'numeric' });
+  if (diffDay < 7) return isCn ? `${diffDay}${copy.dayAgo}` : `${diffDay}${copy.dayAgo}`;
+  return date.toLocaleDateString(isCn ? 'zh-CN' : 'en-US', { month: 'numeric', day: 'numeric' });
 }
 
 export function NotificationModal({ isOpen, onClose, onUnreadCountChange, onOpenWorkOrderDetail }) {
+  const isCn = isCnLocale();
+  const copy = isCn ? COPY.cn : COPY.en;
   const [notifications, setNotifications] = useState([]);
   const [loading, setLoading] = useState(false);
 
@@ -94,7 +121,7 @@ export function NotificationModal({ isOpen, onClose, onUnreadCountChange, onOpen
   const hasUnread = notifications.some(n => !n.is_read);
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Notifications" size="md">
+    <Modal isOpen={isOpen} onClose={onClose} title={copy.title} size="md">
       <div className="flex flex-col gap-2">
         {/* 全部已读按钮 */}
         {hasUnread && (
@@ -104,7 +131,7 @@ export function NotificationModal({ isOpen, onClose, onUnreadCountChange, onOpen
               className="flex items-center gap-1.5 text-[12px] text-[var(--color-primary)] hover:underline"
             >
               <CheckCheck size={14} />
-              Mark all as read
+              {copy.markAllRead}
             </button>
           </div>
         )}
@@ -112,12 +139,12 @@ export function NotificationModal({ isOpen, onClose, onUnreadCountChange, onOpen
         {/* 通知列表 */}
         {loading ? (
           <div className="py-12 text-center text-[var(--color-text-secondary)] text-[14px]">
-            Loading...
+            {copy.loading}
           </div>
         ) : notifications.length === 0 ? (
           <div className="py-12 text-center">
             <Bell size={36} className="mx-auto text-[var(--color-text-secondary)] opacity-30 mb-3" />
-            <div className="text-[14px] text-[var(--color-text-secondary)]">No notifications</div>
+            <div className="text-[14px] text-[var(--color-text-secondary)]">{copy.empty}</div>
           </div>
         ) : (
           <div className="max-h-[60vh] overflow-y-auto -mx-1 px-1 space-y-1">
@@ -152,7 +179,7 @@ export function NotificationModal({ isOpen, onClose, onUnreadCountChange, onOpen
                       {notif.body}
                     </div>
                     <div className="text-[11px] text-[var(--color-text-secondary)] opacity-60 mt-1">
-                      {formatTime(notif.created_at)}
+                      {formatTime(notif.created_at, isCn)}
                     </div>
                   </div>
                 </button>

@@ -2,6 +2,7 @@ import { Plus } from 'lucide-react';
 import { ChatHistory } from './ChatHistory';
 import { ToolBar } from './ToolBar';
 import { BrandMark } from '../common/BrandMark';
+import { isCnLocale } from '../../utils/locale';
 
 export function Sidebar({
   conversations,
@@ -24,6 +25,9 @@ export function Sidebar({
   isOpen,
   onClose,
 }) {
+  const isCn = isCnLocale();
+  const newChatLabel = isCn ? '开始服务对话' : 'Start Service Chat';
+
   return (
     <>
       {/* 移动端遮罩 */}
@@ -54,7 +58,7 @@ export function Sidebar({
             className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white rounded-xl transition-colors font-medium text-[13px] shadow-sm"
           >
             <Plus size={18} />
-            <span>Start Service Chat</span>
+            <span>{newChatLabel}</span>
           </button>
         </div>
 

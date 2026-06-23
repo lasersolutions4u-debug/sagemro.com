@@ -6,6 +6,7 @@ import {
   deleteWorkOrderAttachment,
 } from '../../services/api';
 import { toastSuccess, toastError, confirmDialog } from '../../utils/feedback';
+import { isCnLocale } from '../../utils/locale';
 
 const ALLOWED_TYPES = [
   'image/jpeg', 'image/png', 'image/gif', 'image/webp',
@@ -22,7 +23,41 @@ function formatSize(bytes) {
 function isImage(type) { return type?.startsWith('image/'); }
 function isVideo(type) { return type?.startsWith('video/'); }
 
+const COPY = {
+  cn: {
+    unsupportedType: '不支持的文件类型',
+    unknown: '未知',
+    fileTooLarge: '文件过大（最大 50MB）',
+    uploadFailed: '上传失败',
+    uploaded: (count) => `已上传 ${count} 个文件`,
+    deleteConfirm: (name) => `删除附件“${name}”？此操作不可撤销。`,
+    deleted: '附件已删除',
+    deleteFailed: '删除失败',
+    uploading: (current, total) => `正在上传（${current}/${total}）...`,
+    dropHint: '将文件拖到这里，或点击选择',
+    supportHint: '支持 JPG/PNG/GIF/WebP/MP4/WebM，单个文件最大 50MB',
+    loading: '加载中...',
+    empty: '暂无附件',
+  },
+  en: {
+    unsupportedType: 'Unsupported file type',
+    unknown: 'unknown',
+    fileTooLarge: 'File too large (max 50MB)',
+    uploadFailed: 'Failed to upload',
+    uploaded: (count) => `${count} file(s) uploaded`,
+    deleteConfirm: (name) => `Delete attachment "${name}"? This action cannot be undone.`,
+    deleted: 'Attachment deleted',
+    deleteFailed: 'Delete failed',
+    uploading: (current, total) => `Uploading (${current}/${total})...`,
+    dropHint: 'Drag and drop files here, or click to select',
+    supportHint: 'Supports JPG/PNG/GIF/WebP/MP4/WebM, max 50MB per file',
+    loading: 'Loading...',
+    empty: 'No attachments yet',
+  },
+};
+
 export function AttachmentsPanel({ workOrderId, userType, userId, readOnly }) {
+  const copy = isCnLocale() ? COPY.cn : COPY.en;
   const [attachments, setAttachments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
@@ -46,11 +81,11 @@ export function AttachmentsPanel({ workOrderId, userType, userId, readOnly }) {
 
   const validateFile = (file) => {
     if (!ALLOWED_TYPES.includes(file.type)) {
-      toastError(`Unsupported file type: ${file.type || 'unknown'}`);
+      toastError(`${copy.unsupportedType}: ${file.type || copy.unknown}`);
       return false;
     }
     if (file.size > MAX_SIZE) {
-      toastError(`File too large (max 50MB): ${file.name}`);
+      toastError(`${copy.fileTooLarge}: ${file.name}`);
       return false;
     }
     return true;
@@ -68,13 +103,13 @@ export function AttachmentsPanel({ workOrderId, userType, userId, readOnly }) {
         await uploadWorkOrderAttachment(workOrderId, file);
         done++;
       } catch (e) {
-        toastError(`Failed to upload ${file.name}: ${e.message}`);
+        toastError(`${copy.uploadFailed} ${file.name}: ${e.message}`);
       }
     }
     setUploading(false);
     setUploadProgress(null);
     if (done > 0) {
-      toastSuccess(`${done} file(s) uploaded`);
+      toastSuccess(copy.uploaded(done));
       loadAttachments();
     }
   };
@@ -94,13 +129,13 @@ export function AttachmentsPanel({ workOrderId, userType, userId, readOnly }) {
   };
 
   const handleDelete = async (att) => {
-    if (!(await confirmDialog(`Delete attachment "${att.file_name}"? This action cannot be undone.`))) return;
+    if (!(await confirmDialog(copy.deleteConfirm(att.file_name)))) return;
     try {
       await deleteWorkOrderAttachment(workOrderId, att.id);
-      toastSuccess('Attachment deleted');
+      toastSuccess(copy.deleted);
       loadAttachments();
     } catch (e) {
-      toastError('Delete failed: ' + e.message);
+      toastError(`${copy.deleteFailed}: ${e.message}`);
     }
   };
 
@@ -137,15 +172,15 @@ export function AttachmentsPanel({ workOrderId, userType, userId, readOnly }) {
               <Loader2 className="w-6 h-6 text-[var(--color-primary)] animate-spin" />
               {uploadProgress && (
                 <p className="text-sm text-[var(--color-text-secondary)]">
-                  Uploading ({uploadProgress.current}/{uploadProgress.total})...
+                  {copy.uploading(uploadProgress.current, uploadProgress.total)}
                 </p>
               )}
             </div>
           ) : (
             <div className="flex flex-col items-center gap-1">
               <Upload className="w-6 h-6 text-[var(--color-text-muted)]" />
-              <p className="text-sm text-[var(--color-text-secondary)]">Drag and drop files here, or click to select</p>
-              <p className="text-xs text-[var(--color-text-muted)]">Supports JPG/PNG/GIF/WebP/MP4/WebM, max 50MB per file</p>
+              <p className="text-sm text-[var(--color-text-secondary)]">{copy.dropHint}</p>
+              <p className="text-xs text-[var(--color-text-muted)]">{copy.supportHint}</p>
             </div>
           )}
         </div>
@@ -153,11 +188,11 @@ export function AttachmentsPanel({ workOrderId, userType, userId, readOnly }) {
 
       {/* 附件列表 */}
       {loading ? (
-        <div className="text-center py-4 text-sm text-[var(--color-text-muted)]">Loading...</div>
+        <div className="text-center py-4 text-sm text-[var(--color-text-muted)]">{copy.loading}</div>
       ) : attachments.length === 0 ? (
         <div className="text-center py-8 text-sm text-[var(--color-text-muted)]">
           <Paperclip className="w-8 h-8 mx-auto mb-2 opacity-30" />
-          No attachments yet
+          {copy.empty}
         </div>
       ) : (
         <div className="grid grid-cols-2 gap-2">

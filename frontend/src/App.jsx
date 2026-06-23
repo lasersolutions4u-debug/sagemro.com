@@ -35,6 +35,7 @@ function App() {
 
   useEffect(() => {
     document.title = isCn ? 'SAGEMRO 智能服务系统' : 'SAGEMRO Service OS';
+    document.documentElement.lang = isCn ? 'zh-CN' : 'en';
   }, [isCn]);
 
   // 侧边栏状态
