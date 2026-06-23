@@ -1,5 +1,11 @@
 # 小智 AI 分层 Prompt 设计
 
+> **历史 Prompt 设计 / 部分内容已废弃**
+>
+> 本文件包含早期“合伙人、钱包、提成、待接单工单”等旧角色上下文。当前小智应按 SAGEMRO Service OS 口径工作：AI 负责初步咨询、需求受理、风险提示、服务申请整理和后续跟进，不向客户承诺工程师自由匹配、抽佣交易、钱包提现或资金托管能力。
+>
+> 后续 Prompt 应以 `docs/SAGEMRO-AI-Prompts-Review.md`、`docs/STRATEGY.md` 和 `docs/SERVICE_OS_LEGACY_CLEANUP.md` 为准。
+
 > 创建时间：2026-04-16
 > 目的：让 AI 小智针对不同用户角色（游客/客户/合伙人）提供差异化体验
 
