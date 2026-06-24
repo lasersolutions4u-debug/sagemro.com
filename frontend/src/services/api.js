@@ -67,11 +67,11 @@ function authHeaders() {
 /**
  * 发送验证码
  */
-export async function sendVerifyCode(phone) {
+export async function sendVerifyCode(email) {
   const response = await fetch(`${API_BASE}/api/auth/send-code`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ phone }),
+    body: JSON.stringify({ email }),
   });
   if (!response.ok) throw new Error(`HTTP ${response.status}`);
   return response.json();
@@ -80,11 +80,11 @@ export async function sendVerifyCode(phone) {
 /**
  * 客户注册
  */
-export async function registerCustomer({ name, phone, password, code, company, identity }) {
+export async function registerCustomer({ name, phone, email, password, code, company, identity }) {
   const response = await fetch(`${API_BASE}/api/auth/register/customer`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name, phone, password, code, company, identity }),
+    body: JSON.stringify({ name, phone, email, password, code, company, identity }),
   });
   if (!response.ok) {
     const data = await response.json();

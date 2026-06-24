@@ -11,6 +11,7 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
   // choice -> register-company -> register-auth -> customer / visitor completion / login
   const [step, setStep] = useState('login');
   const [phone, setPhone] = useState('');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [name, setName] = useState('');
@@ -32,13 +33,13 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
 
   // 发送验证码
   const handleSendCode = async () => {
-    if (!phone) { setError('请输入手机号'); return; }
-    if (phone.length !== 11) { setError('请输入有效的手机号'); return; }
+    if (!email) { setError('请输入邮箱'); return; }
+    if (!/^\S+@\S+\.\S+$/.test(email.trim())) { setError('请输入有效的邮箱'); return; }
 
     setCodeSending(true);
     setError('');
     try {
-      const data = await sendVerifyCode(phone);
+      const data = await sendVerifyCode(email);
       // 纵深防御：仅在 Vite 开发构建下显示回传的验证码
       if (import.meta.env.DEV && data.code) {
         setError('[DEV] 验证码：' + data.code);
@@ -59,7 +60,7 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
 
   // 客户注册（含公司名）
   const handleRegisterCustomer = async () => {
-    if (!name || !password || !confirmPassword || !companyName) {
+    if (!name || !password || !confirmPassword || !companyName || !email) {
       setError('请填写所有必填信息'); return;
     }
     if (password !== confirmPassword) { setError('两次输入的密码不一致'); return; }
@@ -69,7 +70,7 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
     setError('');
     try {
       // 注册时传递 company 和 identity
-      await registerCustomer({ name, phone, password, code, company: companyName, identity: selectedIdentity });
+      await registerCustomer({ name, phone, email, password, code, company: companyName, identity: selectedIdentity });
       const result = await login({ phone, password });
       localStorage.setItem('sagemro_token', result.token);
       localStorage.setItem('sagemro_user', JSON.stringify(result.user));
@@ -97,6 +98,7 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
 
   const handleClose = () => {
     setPhone('');
+    setEmail('');
     setPassword('');
     setConfirmPassword('');
     setName('');
@@ -122,6 +124,7 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
   const handleCompanySubmit = () => {
     if (!companyName.trim()) { setError('请输入公司名称'); return; }
     if (!phone || phone.length !== 11) { setError('请输入有效的手机号'); return; }
+    if (!email || !/^\S+@\S+\.\S+$/.test(email.trim())) { setError('请输入有效的邮箱'); return; }
     if (!password || password.length < 6) { setError('密码至少需要 6 位'); return; }
     if (password !== confirmPassword) { setError('两次输入的密码不一致'); return; }
     if (!agreedToTerms) { setError('请阅读并同意用户协议、隐私政策和 AI 服务说明'); return; }
@@ -151,7 +154,7 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
     setSubmitting(true);
     setError('');
     try {
-      await registerCustomer({ name: name || '访客', phone, password, code, company: companyName, identity: 'visitor' });
+      await registerCustomer({ name: name || '访客', phone, email, password, code, company: companyName, identity: 'visitor' });
       const result = await login({ phone, password });
       localStorage.setItem('sagemro_token', result.token);
       localStorage.setItem('sagemro_user', JSON.stringify(result.user));
@@ -242,12 +245,12 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
               />
             </div>
 
-            {/* 真实姓名 */}
+            {/* 姓名 */}
             <div>
-              <label className="block text-sm font-medium mb-1">真实姓名 *</label>
+              <label className="block text-sm font-medium mb-1">姓名 *</label>
               <input
                 type="text" value={name} onChange={(e) => setName(e.target.value)}
-                placeholder="请输入真实姓名，便于服务身份确认"
+                placeholder="请输入姓名"
                 maxLength={20}
                 className="w-full px-3 py-2 border border-[var(--color-input-border)] rounded-xl bg-[var(--color-input-bg)] text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
               />
@@ -283,9 +286,19 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
               />
             </div>
 
+            {/* 邮箱 */}
+            <div>
+              <label className="block text-sm font-medium mb-1">邮箱 *</label>
+              <input
+                type="email" value={email} onChange={(e) => setEmail(e.target.value)}
+                placeholder="请输入邮箱地址"
+                className="w-full px-3 py-2 border border-[var(--color-input-border)] rounded-xl bg-[var(--color-input-bg)] text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
+              />
+            </div>
+
             {/* 验证码 */}
             <div>
-              <label className="block text-sm font-medium mb-1">验证码</label>
+              <label className="block text-sm font-medium mb-1">邮箱验证码</label>
               <div className="flex gap-2">
                 <input
                   type="text" value={code} onChange={(e) => setCode(e.target.value)}

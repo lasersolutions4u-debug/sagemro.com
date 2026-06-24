@@ -42,3 +42,27 @@ test('CN chat input does not promote image upload in placeholder copy', () => {
   assert.doesNotMatch(placeholderExpression, /随时上传/);
   assert.match(placeholderExpression, /描述设备、报警、材料厚度或现场问题。/);
 });
+
+test('CN footer includes ICP record for the China site', () => {
+  const footer = read('frontend/src/components/common/Footer.jsx');
+
+  assert.match(footer, /SAGEMRO by 济南钰峭机械有限公司/);
+  assert.match(footer, /鲁ICP备2026032904号-1/);
+  assert.match(footer, /https:\/\/beian\.miit\.gov\.cn\//);
+});
+
+test('registration copy uses email verification and a neutral name field', () => {
+  const loginModal = read('frontend/src/components/Auth/LoginModal.jsx');
+  const api = read('frontend/src/services/api.js');
+
+  assert.match(loginModal, /请输入邮箱/);
+  assert.match(loginModal, /邮箱 \*/);
+  assert.match(loginModal, /请输入邮箱地址/);
+  assert.match(loginModal, /sendVerifyCode\(email\)/);
+  assert.match(loginModal, /姓名 \*/);
+  assert.match(loginModal, /请输入姓名/);
+  assert.doesNotMatch(loginModal, /真实姓名/);
+  assert.match(api, /sendVerifyCode\(email\)/);
+  assert.match(api, /JSON\.stringify\(\{ email \}\)/);
+  assert.match(api, /registerCustomer\(\{ name, phone, email, password, code, company, identity \}\)/);
+});
