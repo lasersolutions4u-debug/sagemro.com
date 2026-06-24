@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { Menu, Info, ShieldCheck, Home } from 'lucide-react';
+import { Menu, Info, Home } from 'lucide-react';
 import { MessageBubble } from './MessageBubble';
 import { WelcomePage } from './WelcomePage';
 import { InputArea } from './InputArea';
@@ -59,15 +59,6 @@ export function ChatArea({
           >
             <Info size={13} />
             关于 SAGEMRO
-          </button>
-        )}
-        {onOpenLegal && (
-          <button
-            onClick={() => onOpenLegal('agreement')}
-            className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-[var(--color-border)] text-[11px] text-[var(--color-text-secondary)] hover:text-[var(--color-primary)] hover:border-[var(--color-primary)] transition-colors"
-          >
-            <ShieldCheck size={13} />
-            法律与 AI 说明
           </button>
         )}
         {hasMessages && (

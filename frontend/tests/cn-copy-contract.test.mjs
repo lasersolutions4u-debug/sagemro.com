@@ -69,7 +69,8 @@ test('CN first impression copy builds market trust for customers, engineers, and
 
   assert.match(homeSource, /官方服务入口/);
   assert.match(homeSource, /锁定下一步/);
-  assert.match(homeSource, /少走弯路/);
+  assert.match(homeSource, /设备问题不用等/);
+  assert.match(homeSource, /一句现场描述/);
 
   assert.match(engineerCnCopy, /长期合作/);
   assert.match(engineerCnCopy, /排单日历/);
@@ -116,6 +117,17 @@ test('CN public and legal copy uses localized operator and service system names'
   assert.doesNotMatch(legalCnCopy, /https:\/\/sagemro\.com/);
   assert.doesNotMatch(legalDocs, /Jinan Euchio Machinery Co\., Ltd\./);
   assert.doesNotMatch(legalDocs, /SAGEMRO Service OS/);
+});
+
+test('CN chat header does not duplicate footer legal entry points', () => {
+  const chatAreaSource = read('frontend/src/components/Chat/ChatArea.jsx');
+  const footerSource = read('frontend/src/components/common/Footer.jsx');
+
+  assert.doesNotMatch(chatAreaSource, /法律与 AI 说明/);
+  assert.doesNotMatch(chatAreaSource, /onOpenLegal\('agreement'\)/);
+  assert.match(footerSource, /onOpenLegal\?\.\('agreement'\)/);
+  assert.match(footerSource, /onOpenLegal\?\.\('privacy'\)/);
+  assert.match(footerSource, /onOpenLegal\?\.\('ai'\)/);
 });
 
 test('CN operations copy avoids internal English role labels in visible text', () => {

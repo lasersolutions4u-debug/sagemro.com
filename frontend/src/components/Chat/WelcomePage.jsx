@@ -35,7 +35,7 @@ export function WelcomePage() {
             {serviceName}
           </div>
           <h1 className="text-[28px] font-semibold leading-tight tracking-tight text-[var(--color-text-primary)] sm:text-[42px]">
-            设备问题先说清楚，服务推进少走弯路。
+            设备问题不用等，从一句现场描述开始。
           </h1>
           <p className="mx-auto mt-4 max-w-3xl text-sm leading-7 text-[var(--color-text-secondary)] sm:text-base">
             SAGEMRO 是面向激光切割机与钣金加工设备的 AI 辅助官方服务入口。你只需要描述现场情况，系统会帮助整理关键信息，并把问题带向故障判断、备件确认、维保安排、官方服务或新机评估。
