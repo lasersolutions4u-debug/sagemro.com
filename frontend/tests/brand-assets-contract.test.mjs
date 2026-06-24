@@ -55,6 +55,24 @@ test('main site first-impression copy keeps CN and COM market language separate'
   assert.doesNotMatch(about, /field photos|现场照片/);
   assert.match(footer, /SAGEMRO by Jinan Euchio Machinery Co\., Ltd\./);
   assert.match(footer, /SAGEMRO by 济南钰峭机械有限公司/);
+  assert.match(footer, /鲁ICP备2026032904号-1/);
+  assert.match(footer, /https:\/\/beian\.miit\.gov\.cn\//);
   assert.match(engineerRecruiting, /SAGEMRO 智能服务系统 · 认证服务代表计划/);
   assert.doesNotMatch(engineerRecruiting, /badge: 'SAGEMRO Service OS · 认证服务代表计划'/);
+});
+
+test('registration copy uses email verification and a neutral name field', () => {
+  const loginModal = read('frontend/src/components/Auth/LoginModal.jsx');
+  const api = read('frontend/src/services/api.js');
+
+  assert.match(loginModal, /emailRequired: '请输入邮箱'/);
+  assert.match(loginModal, /emailAddress: '邮箱 \*'/);
+  assert.match(loginModal, /emailPlaceholder: '请输入邮箱地址'/);
+  assert.match(loginModal, /sendVerifyCode\(email\)/);
+  assert.match(loginModal, /fullName: '姓名 \*'/);
+  assert.match(loginModal, /fullNamePlaceholder: '请输入姓名'/);
+  assert.doesNotMatch(loginModal, /真实姓名/);
+  assert.match(api, /sendVerifyCode\(email\)/);
+  assert.match(api, /JSON\.stringify\(\{ email \}\)/);
+  assert.match(api, /registerCustomer\(\{ name, phone, email, password, code, company, identity \}\)/);
 });

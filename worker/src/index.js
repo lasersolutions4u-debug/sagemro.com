@@ -385,6 +385,18 @@ SAGEMRO AI helps laser cutting and sheet metal equipment users turn messy equipm
 - 专业术语可以保留英文缩写，例如 CNC、PLC、servo、nozzle、assist gas。
 - 当前请求上下文里的本轮语言硬性规则优先级最高。
 
+## 平台结构与操作说明
+
+你要像熟悉 SAGEMRO 平台细节的服务管家，而不是只会泛泛回答的 AI。
+
+- 中文客户入口：sagemro.cn。客户可以先用 AI 描述设备问题，也可以登录后整理正式服务申请、查看工单和设备信息。
+- 中文工程师入口：engineer.sagemro.cn。工程师账号由 SAGEMRO 内部创建或审核，不开放普通客户自助注册为工程师。
+- 中文后台入口：admin.sagemro.cn。后台只供 SAGEMRO 运营和管理团队使用，不向普通客户开放。
+- 中文站桌面端登录/注册入口在左侧工具栏底部。移动端需要先点左上角菜单，再进入左侧工具栏里的登录/注册入口。
+- 注册流程可以自然说明为：点击“登录 / 注册” → 选择注册 → 填写公司名称、姓名、密码、手机号、邮箱和邮箱验证码 → 勾选用户协议、隐私政策和 AI 服务说明 → 选择使用身份并完成。
+- 已登录客户可以要求你把对话整理为 SAGEMRO 官方服务跟进摘要；信息齐全并经客户确认后，才能创建正式服务申请。
+- 游客不能直接创建正式服务申请，但你可以先给初步判断，并在需要后续跟进时引导其登录、注册或留下联系方式。
+
 ## 行为准则
 
 ### 回答技术问题时
@@ -475,8 +487,8 @@ SAGEMRO AI helps laser cutting and sheet metal equipment users turn messy equipm
 
 分析时结合你的钣金设备专业知识，给出有针对性的诊断，不要泛泛而谈。如果图片模糊或看不清，如实告知用户并请其补充更清晰的照片。
 
-### 设备推荐（EUCHIO）
-当用户表达以下情况时，才自然引入 EUCHIO 新机或升级方案：
+### 设备推荐（EUCHIO / 济南钰峭机械有限公司）
+当用户表达以下情况时，才自然引入新机或升级方案：
 - 明确想买新设备、换设备、升级设备
 - 设备太旧、频繁故障、维修成本高或停机损失明显
 - 产能不够、精度/效率无法满足订单要求
@@ -485,7 +497,8 @@ SAGEMRO AI helps laser cutting and sheet metal equipment users turn messy equipm
 推荐方式：
 - 先做“维修 vs 升级”的经济性判断，不硬销
 - 结合材料、厚度、幅面、产能、精度、预算和现有设备状态给出方向
-- 如果升级更合理，再建议 EUCHIO 作为 SAGEMRO 可进一步评估的新机方案
+- 对 sagemro.cn 中国版：如果升级更合理，说“我可以先把材料、厚度、幅面、产能和预算整理成选型摘要，再由专注于钣金加工设备项目支持的济南钰峭机械有限公司（EUCHIO）进一步评估。”不要只说 EUCHIO，也不要使用“非常专业”这类自夸定语。
+- 对 sagemro.com 国际版：可以使用 EUCHIO / Jinan Euchio Machinery Co., Ltd. 承接新机选型或升级方案评估。
 - 引导用户访问 euchio.com，或让 SAGEMRO 整理一份选型/投资回报建议
 
 EUCHIO 主要产品线：
@@ -1636,9 +1649,17 @@ const ERROR_MESSAGES = {
     com: 'Please enter a valid phone number.',
     cn: '手机号格式不正确',
   },
+  email_required: {
+    com: 'Email address is required.',
+    cn: '邮箱不能为空',
+  },
+  invalid_email: {
+    com: 'Please enter a valid email address.',
+    cn: '邮箱格式不正确',
+  },
   name_phone_company_password_required: {
-    com: 'Name, phone number, company name, and password are required.',
-    cn: '姓名、手机号、公司名称、密码不能为空',
+    com: 'Name, phone number, email, company name, and password are required.',
+    cn: '姓名、手机号、邮箱、公司名称、密码不能为空',
   },
   phone_password_required: {
     com: 'Phone number and password are required.',
@@ -1692,20 +1713,118 @@ async function incrementApiCounter(env, counterName) {
   }
 }
 
-// 发送验证码（模拟，实际应对接短信网关）
+function normalizeEmail(email) {
+  return String(email || '').trim().toLowerCase();
+}
+
+function isValidEmail(email) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}
+
+function getVerificationTarget({ phone, email }) {
+  const normalizedEmail = normalizeEmail(email);
+  if (normalizedEmail) {
+    return {
+      type: 'email',
+      value: normalizedEmail,
+      key: `email_${normalizedEmail}`,
+    };
+  }
+  if (phone) {
+    return {
+      type: 'phone',
+      value: phone,
+      key: phone,
+    };
+  }
+  return null;
+}
+
+async function sendVerificationEmail(env, email, code, request) {
+  if (env.ENVIRONMENT === 'development' || env.DEV_BYPASS_CODE) {
+    return { skipped: true };
+  }
+  if (!env.RESEND_API_KEY || !env.VERIFICATION_EMAIL_FROM) {
+    return {
+      error: getRequestMarket(request) === 'cn'
+        ? '邮件验证码服务尚未配置，请稍后再试'
+        : 'Email verification service is not configured yet.',
+    };
+  }
+
+  const response = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${env.RESEND_API_KEY}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      from: env.VERIFICATION_EMAIL_FROM,
+      to: [email],
+      subject: 'SAGEMRO verification code',
+      text: `Your SAGEMRO verification code is ${code}. It is valid for 5 minutes. Do not share it with others.`,
+    }),
+  });
+  if (!response.ok) {
+    return {
+      error: getRequestMarket(request) === 'cn'
+        ? '邮件验证码发送失败，请稍后再试'
+        : 'Failed to send verification email. Please try again later.',
+    };
+  }
+  return { sent: true };
+}
+
+async function isVerificationCodeValid(env, { phone, email, code }) {
+  const target = getVerificationTarget({ phone, email });
+  if (!target) return false;
+  const storedCode = await env.KV.get(`verify_code_${target.key}`);
+  const bypassCode = await env.KV.get(`verify_code_${target.key}_bypass`);
+  const legacyStoredCode = target.type === 'email' && phone
+    ? await env.KV.get(`verify_code_${phone}`)
+    : null;
+  const legacyBypassCode = target.type === 'email' && phone
+    ? await env.KV.get(`verify_code_${phone}_bypass`)
+    : null;
+  const devBypass = env.DEV_BYPASS_CODE;
+  return (storedCode && storedCode === code)
+    || (bypassCode && bypassCode === code)
+    || (legacyStoredCode && legacyStoredCode === code)
+    || (legacyBypassCode && legacyBypassCode === code)
+    || (devBypass && devBypass === code);
+}
+
+async function deleteVerificationCode(env, { phone, email }) {
+  const target = getVerificationTarget({ phone, email });
+  if (target) {
+    await env.KV.delete(`verify_code_${target.key}`);
+    await env.KV.delete(`verify_code_${target.key}_bypass`);
+  }
+  if (phone) {
+    await env.KV.delete(`verify_code_${phone}`);
+    await env.KV.delete(`verify_code_${phone}_bypass`);
+  }
+}
+
+// 发送验证码：注册优先使用邮箱，兼容旧手机号验证码。
 async function handleSendCode(request, env) {
   try {
-    const { phone } = await request.json();
-    if (!phone) {
+    const { phone, email } = await request.json();
+    const target = getVerificationTarget({ phone, email });
+    if (!target) {
+      if (email !== undefined) return localizedErrorResponse('email_required', request);
       return localizedErrorResponse('phone_required', request);
     }
 
-    if (!/^1\d{10}$/.test(phone)) {
+    if (target.type === 'email' && !isValidEmail(target.value)) {
+      return localizedErrorResponse('invalid_email', request);
+    }
+    if (target.type === 'phone' && !/^1\d{10}$/.test(target.value)) {
       return localizedErrorResponse('invalid_phone', request);
     }
 
-    // 频控：同一手机号 60 秒内只能请求一次
-    const rateKey = `verify_code_rate_${phone}`;
+    // 频控：同一邮箱或手机号 60 秒内只能请求一次
+    const rateKey = `verify_code_rate_${target.key}`;
     const recent = await env.KV.get(rateKey);
     if (recent) {
       return errorResponse('发送过于频繁，请 60 秒后再试', 429);
@@ -1724,7 +1843,7 @@ async function handleSendCode(request, env) {
     const code = String(Math.floor(1000 + Math.random() * 9000));
 
     // 存储验证码（有效期5分钟）
-    await env.KV.put(`verify_code_${phone}`, code, { expirationTtl: 300 });
+    await env.KV.put(`verify_code_${target.key}`, code, { expirationTtl: 300 });
     // 记录频控标记
     await env.KV.put(rateKey, '1', { expirationTtl: 60 });
     await env.KV.put(ipKey, String(ipCount + 1), { expirationTtl: 60 });
@@ -1738,7 +1857,7 @@ async function handleSendCode(request, env) {
     const devBypass = env.DEV_BYPASS_CODE;
     const response = { success: true, message: '验证码已发送' };
     if (devBypass) {
-      await env.KV.put(`verify_code_${phone}_bypass`, devBypass, { expirationTtl: 300 });
+      await env.KV.put(`verify_code_${target.key}_bypass`, devBypass, { expirationTtl: 300 });
       if (env.ENVIRONMENT === 'development') {
         response.code = devBypass;
         response.note = 'DEV_BYPASS_CODE 已启用，验证码为固定值';
@@ -1747,7 +1866,15 @@ async function handleSendCode(request, env) {
       if (env.ENVIRONMENT === 'development') {
         response.code = code;
       }
-      await env.KV.put(`verify_code_${phone}_bypass`, '888888', { expirationTtl: 300 });
+      await env.KV.put(`verify_code_${target.key}_bypass`, '888888', { expirationTtl: 300 });
+    }
+
+    if (target.type === 'email') {
+      const emailResult = await sendVerificationEmail(env, target.value, devBypass || code, request);
+      if (emailResult.error) {
+        await deleteVerificationCode(env, { email: target.value });
+        return errorResponse(emailResult.error, 503);
+      }
     }
     return jsonResponse(response);
   } catch (error) {
@@ -1758,19 +1885,14 @@ async function handleSendCode(request, env) {
 // 客户注册
 async function handleRegisterCustomer(request, env) {
   try {
-    const { name, phone, password, code, company, identity } = await request.json();
+    const { name, phone, email, password, code, company, identity } = await request.json();
 
-    if (!name || !phone || !password || !company) {
+    if (!name || !phone || !email || !password || !company) {
       return localizedErrorResponse('name_phone_company_password_required', request);
     }
 
     // 验证验证码（开发环境支持 bypass 码 "888888" + DEV_BYPASS_CODE 用于自动化测试）
-    const storedCode = await env.KV.get(`verify_code_${phone}`);
-    const bypassCode = await env.KV.get(`verify_code_${phone}_bypass`);
-    const devBypass = env.DEV_BYPASS_CODE;
-    const isValid = (storedCode && storedCode === code)
-      || (bypassCode && bypassCode === code)
-      || (devBypass && devBypass === code);
+    const isValid = await isVerificationCodeValid(env, { phone, email, code });
     if (!isValid) {
       return errorResponse('验证码错误或已过期');
     }
@@ -1804,7 +1926,7 @@ async function handleRegisterCustomer(request, env) {
     ).bind(id, userNo, name, phone, passwordHash, salt, company, authStatus).run();
 
     // 删除已使用的验证码
-    await env.KV.delete(`verify_code_${phone}`);
+    await deleteVerificationCode(env, { phone, email });
     await incrementApiCounter(env, "register_customer");
 
     return jsonResponse({

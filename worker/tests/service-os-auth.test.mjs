@@ -5,6 +5,10 @@ import worker from '../src/index.js';
 
 function createTestEnv(overrides = {}) {
   const kv = new Map();
+  const dbState = {
+    customers: [],
+    engineers: [],
+  };
   return {
     JWT_SECRET: 'test-secret-with-enough-length',
     ADMIN_PHONE: '13800000000',
@@ -22,6 +26,45 @@ function createTestEnv(overrides = {}) {
         kv.delete(key);
       },
     },
+    DB: {
+      prepare(sql) {
+        return {
+          args: [],
+          bind(...args) {
+            this.args = args;
+            return this;
+          },
+          async first() {
+            if (/SELECT user_no FROM customers/i.test(sql)) {
+              const last = dbState.customers.at(-1);
+              return last ? { user_no: last.user_no } : null;
+            }
+            if (/SELECT user_no FROM engineers/i.test(sql)) {
+              const last = dbState.engineers.at(-1);
+              return last ? { user_no: last.user_no } : null;
+            }
+            if (/FROM customers WHERE phone = \?/i.test(sql)) {
+              const row = dbState.customers.find((customer) => customer.phone === this.args[0]);
+              return row ? { id: row.id } : null;
+            }
+            if (/FROM engineers WHERE phone = \?/i.test(sql)) {
+              const row = dbState.engineers.find((engineer) => engineer.phone === this.args[0]);
+              return row ? { id: row.id } : null;
+            }
+            return null;
+          },
+          async run() {
+            if (/INSERT INTO customers/i.test(sql)) {
+              const [id, user_no, name, phone, password_hash, salt, company, auth_status] = this.args;
+              dbState.customers.push({ id, user_no, name, phone, password_hash, salt, company, auth_status });
+            }
+            return { success: true };
+          },
+        };
+      },
+    },
+    __kv: kv,
+    __dbState: dbState,
     ...overrides,
   };
 }
@@ -165,4 +208,40 @@ test('CN auth validation errors stay in Simplified Chinese', async () => {
   });
   assert.equal(sendCode.response.status, 400);
   assert.equal(sendCode.json.error, '手机号格式不正确');
+});
+
+test('registration verification code can be sent to an email address', async () => {
+  const env = createTestEnv({ ENVIRONMENT: 'development' });
+
+  const { response, json } = await postJson('https://api.sagemro.cn/api/auth/send-code', {
+    email: 'joe@example.com',
+  }, env);
+
+  assert.equal(response.status, 200);
+  assert.equal(json.success, true);
+  assert.match(json.message, /验证码已发送/);
+  assert.match(json.code, /^\d{4}$/);
+  assert.equal(env.__kv.get('verify_code_email_joe@example.com'), json.code);
+  assert.equal(env.__kv.get('verify_code_rate_email_joe@example.com'), '1');
+});
+
+test('customer registration accepts an email verification code while keeping phone as login contact', async () => {
+  const env = createTestEnv();
+  await env.KV.put('verify_code_email_joe@example.com', '1357');
+
+  const { response, json } = await postJson('https://api.sagemro.cn/api/auth/register/customer', {
+    name: 'Joe',
+    phone: '13800000001',
+    email: 'joe@example.com',
+    password: 'secret123',
+    code: '1357',
+    company: '济南钰峭机械有限公司',
+    identity: 'customer',
+  }, env);
+
+  assert.equal(response.status, 200);
+  assert.equal(json.success, true);
+  assert.equal(json.customer.phone, '13800000001');
+  assert.equal(env.__dbState.customers[0].auth_status, 'authenticated');
+  assert.equal(await env.KV.get('verify_code_email_joe@example.com'), null);
 });

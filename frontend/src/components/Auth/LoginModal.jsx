@@ -9,6 +9,8 @@ const LOGIN_COPY = {
     modalTitle: '登录 / 注册',
     phoneRequired: '请输入手机号',
     phoneInvalid: '请输入有效手机号',
+    emailRequired: '请输入邮箱',
+    emailInvalid: '请输入有效邮箱',
     phonePasswordRequired: '请输入手机号和密码',
     sendFailed: '发送失败',
     requiredFields: '请填写所有必填项',
@@ -31,7 +33,7 @@ const LOGIN_COPY = {
     companyName: '公司名称 *',
     companyPlaceholder: '例如：济南某某钣金制造有限公司',
     fullName: '姓名 *',
-    fullNamePlaceholder: '请输入真实姓名，便于身份核验',
+    fullNamePlaceholder: '请输入姓名',
     setPassword: '设置密码 *',
     setPasswordPlaceholder: '设置密码（至少 6 位）',
     confirmPassword: '确认密码 *',
@@ -40,7 +42,9 @@ const LOGIN_COPY = {
     phoneNumberLabel: '手机号',
     phonePlaceholder: '请输入手机号',
     registeredPhonePlaceholder: '请输入已注册手机号',
-    verificationCode: '验证码',
+    emailAddress: '邮箱 *',
+    emailPlaceholder: '请输入邮箱地址',
+    verificationCode: '邮箱验证码',
     codePlaceholder: '请输入验证码',
     sendCode: '发送验证码',
     termsPrefix: '我已阅读并同意',
@@ -56,10 +60,10 @@ const LOGIN_COPY = {
     customerDesc: '获取 AI 初步诊断、官方服务请求、设备档案、备件和维护跟进。',
     guestTitle: '我只是浏览（访客）',
     guestDesc: '无需认证即可体验部分功能，可随时升级为完整访问权限。',
-    identityVerification: '身份认证',
-    customerSelectedDesc: '你选择了“客户”。完成认证后，可以使用 AI 诊断、官方服务请求和设备档案。',
-    customerBenefits: '完成认证后，你可以提交 SAGEMRO 官方服务请求、查看设备档案、跟踪服务进度，并获得个性化建议。',
-    completeVerification: '完成认证并开始使用',
+    identityVerification: '身份确认',
+    customerSelectedDesc: '你选择了“客户”。完成账号验证后，可以使用 AI 诊断、官方服务请求和设备档案。',
+    customerBenefits: '完成账号验证后，你可以提交 SAGEMRO 官方服务请求、查看设备档案、跟踪服务进度，并获得个性化建议。实名认证或企业资料审核会在后续资料完善、入驻或人工审核环节进行。',
+    completeVerification: '完成账号验证并开始使用',
     guestAccess: '访客访问',
     guestAccessDesc: '你可以先浏览 SAGEMRO 的部分功能，之后可在设置中升级为完整访问权限。',
     registering: '正在注册...',
@@ -83,6 +87,8 @@ const LOGIN_COPY = {
     modalTitle: 'Sign In / Register',
     phoneRequired: 'Please enter your phone number',
     phoneInvalid: 'Please enter a valid phone number',
+    emailRequired: 'Please enter your email address',
+    emailInvalid: 'Please enter a valid email address',
     phonePasswordRequired: 'Please enter your phone number and password',
     sendFailed: 'Failed to send',
     requiredFields: 'Please fill in all required fields',
@@ -105,7 +111,7 @@ const LOGIN_COPY = {
     companyName: 'Company name *',
     companyPlaceholder: 'e.g., ABC Metal Products Co., Ltd.',
     fullName: 'Full name *',
-    fullNamePlaceholder: 'Enter your real name for identity verification',
+    fullNamePlaceholder: 'Enter your name',
     setPassword: 'Set password *',
     setPasswordPlaceholder: 'Set a password (min. 6 characters)',
     confirmPassword: 'Confirm password *',
@@ -114,7 +120,9 @@ const LOGIN_COPY = {
     phoneNumberLabel: 'Phone number',
     phonePlaceholder: 'Enter your phone number',
     registeredPhonePlaceholder: 'Enter your registered phone number',
-    verificationCode: 'Verification code',
+    emailAddress: 'Email *',
+    emailPlaceholder: 'Enter your email address',
+    verificationCode: 'Email verification code',
     codePlaceholder: 'Enter verification code',
     sendCode: 'Send code',
     termsPrefix: 'I have read and agree to the',
@@ -130,10 +138,10 @@ const LOGIN_COPY = {
     customerDesc: 'Get AI diagnostics, official service requests, equipment records, spare parts, and maintenance follow-up.',
     guestTitle: "I'm just browsing (Guest)",
     guestDesc: "Explore SAGEMRO's features without verification. Limited functionality, upgrade anytime.",
-    identityVerification: 'Identity Verification',
-    customerSelectedDesc: 'You selected "Customer". After verification, you\'ll have full access to AI diagnostics, official service requests, and equipment records.',
-    customerBenefits: 'After verification, you can: request SAGEMRO official service, view equipment records, track service progress, and receive personalized recommendations.',
-    completeVerification: 'Complete verification and start',
+    identityVerification: 'Identity Confirmation',
+    customerSelectedDesc: 'You selected "Customer". After account verification, you\'ll have access to AI diagnostics, official service requests, and equipment records.',
+    customerBenefits: 'After account verification, you can request SAGEMRO official service, view equipment records, track service progress, and receive personalized recommendations. Real-name or company review can be handled later during profile completion, onboarding, or manual review.',
+    completeVerification: 'Complete account verification and start',
     guestAccess: 'Guest Access',
     guestAccessDesc: "Browse SAGEMRO's features with limited access. Upgrade to full access anytime in settings.",
     registering: 'Registering...',
@@ -161,6 +169,7 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
   // choice -> register-company -> register-auth -> customer / visitor completion / login
   const [step, setStep] = useState('login');
   const [phone, setPhone] = useState('');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [name, setName] = useState('');
@@ -182,13 +191,13 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
 
   // 发送验证码
   const handleSendCode = async () => {
-    if (!phone) { setError(copy.phoneRequired); return; }
-    if (phone.length !== 11) { setError(copy.phoneInvalid); return; }
+    if (!email) { setError(copy.emailRequired); return; }
+    if (!/^\S+@\S+\.\S+$/.test(email.trim())) { setError(copy.emailInvalid); return; }
 
     setCodeSending(true);
     setError('');
     try {
-      const data = await sendVerifyCode(phone);
+      const data = await sendVerifyCode(email);
       // 纵深防御：仅在 Vite 开发构建下显示回传的验证码
       if (import.meta.env.DEV && data.code) {
         setError('[DEV] Verification code: ' + data.code);
@@ -209,7 +218,7 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
 
   // 客户注册（含公司名）
   const handleRegisterCustomer = async () => {
-    if (!name || !password || !confirmPassword || !companyName) {
+    if (!name || !password || !confirmPassword || !companyName || !email) {
       setError(copy.requiredFields); return;
     }
     if (password !== confirmPassword) { setError(copy.passwordMismatch); return; }
@@ -219,7 +228,7 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
     setError('');
     try {
       // 注册时传递 company 和 identity
-      await registerCustomer({ name, phone, password, code, company: companyName, identity: selectedIdentity });
+      await registerCustomer({ name, phone, email, password, code, company: companyName, identity: selectedIdentity });
       const result = await login({ phone, password });
       localStorage.setItem('sagemro_token', result.token);
       localStorage.setItem('sagemro_user', JSON.stringify(result.user));
@@ -247,6 +256,7 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
 
   const handleClose = () => {
     setPhone('');
+    setEmail('');
     setPassword('');
     setConfirmPassword('');
     setName('');
@@ -272,6 +282,7 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
   const handleCompanySubmit = () => {
     if (!companyName.trim()) { setError(copy.companyRequired); return; }
     if (!phone || phone.length !== 11) { setError(copy.phoneInvalid); return; }
+    if (!email || !/^\S+@\S+\.\S+$/.test(email.trim())) { setError(copy.emailInvalid); return; }
     if (!password || password.length < 6) { setError(copy.passwordMin); return; }
     if (password !== confirmPassword) { setError(copy.passwordMismatch); return; }
     if (!agreedToTerms) { setError(copy.termsRequired); return; }
@@ -301,7 +312,7 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
     setSubmitting(true);
     setError('');
     try {
-      await registerCustomer({ name: name || copy.guestName, phone, password, code, company: companyName, identity: 'visitor' });
+      await registerCustomer({ name: name || copy.guestName, phone, email, password, code, company: companyName, identity: 'visitor' });
       const result = await login({ phone, password });
       localStorage.setItem('sagemro_token', result.token);
       localStorage.setItem('sagemro_user', JSON.stringify(result.user));
@@ -392,7 +403,7 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
               />
             </div>
 
-            {/* 真实姓名 */}
+            {/* 姓名 */}
             <div>
               <label className="block text-sm font-medium mb-1">{copy.fullName}</label>
               <input
@@ -429,6 +440,15 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
               <input
                 type="tel" value={phone} onChange={(e) => setPhone(e.target.value)}
                 placeholder={copy.phonePlaceholder} maxLength={11}
+                className="w-full px-3 py-2 border border-[var(--color-input-border)] rounded-xl bg-[var(--color-input-bg)] text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium mb-1">{copy.emailAddress}</label>
+              <input
+                type="email" value={email} onChange={(e) => setEmail(e.target.value)}
+                placeholder={copy.emailPlaceholder}
                 className="w-full px-3 py-2 border border-[var(--color-input-border)] rounded-xl bg-[var(--color-input-bg)] text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
               />
             </div>
