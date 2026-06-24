@@ -55,9 +55,11 @@ export function EngineerDashboard({ isOpen, onClose, engineerId, onViewProfile }
   };
 
   const handleReject = async (ticketId) => {
+    const reason = window.prompt('Please enter the reason for returning this dispatch. It will be recorded for SAGEMRO operations.', '')?.trim();
+    if (!reason) return;
     setActionLoading(ticketId);
     try {
-      await rejectTicket({ work_order_id: ticketId, engineer_id: engineerId });
+      await rejectTicket({ work_order_id: ticketId, engineer_id: engineerId, reason });
       await loadTickets();
     } catch (e) {
       console.error('退回派工失败:', e);

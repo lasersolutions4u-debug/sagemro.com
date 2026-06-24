@@ -43,7 +43,7 @@ export function AboutModal({ isOpen, onClose }) {
     : 'A product of Jinan Euchio Machinery Co., Ltd.';
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title={isCn ? `关于 ${serviceName}` : `About ${serviceName}`} size="md">
+    <Modal isOpen={isOpen} onClose={onClose} title={isCn ? `关于 ${serviceName}` : `About ${serviceName}`} size="lg">
       <div className="space-y-6">
         <div className="text-center py-2">
           <BrandMark variant="logo" className="mx-auto mb-3 h-24 w-24 object-contain drop-shadow-[0_18px_36px_rgba(245,158,11,0.24)]" />

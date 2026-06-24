@@ -149,10 +149,15 @@ export function EngineerWorkspace({ currentUser, onLogout, onOpenProfile }) {
   };
 
   const returnAssignment = async (ticket) => {
+    const reason = window.prompt('请填写退回调度的理由，该备注会记录给 SAGEMRO 运营团队查看。', '')?.trim();
+    if (!reason) {
+      setMessage('请先填写退回理由。');
+      return;
+    }
     setAssigningId(`${ticket.id}:reject`);
     setMessage('');
     try {
-      await rejectTicket({ work_order_id: ticket.id, engineer_id: engineerId });
+      await rejectTicket({ work_order_id: ticket.id, engineer_id: engineerId, reason });
       setMessage(`已退回调度：${ticket.order_no || ticket.id}`);
       await loadTickets();
     } catch (error) {
