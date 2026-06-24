@@ -241,6 +241,25 @@ test('handleChat tells CN site to answer Simplified Chinese even when alarm text
   assert.doesNotMatch(prompt, /You MUST answer this turn in English/);
 });
 
+test('handleChat prompt teaches CN users the correct portal and auth entry details', async () => {
+  const prompt = await captureChatPrompt({
+    request: makeRequest({
+      conversation_id: 'cn-platform-guide-1',
+      message: '怎么注册和登录？如果我要买新机呢？',
+    }, null, 'https://api.sagemro.cn/api/chat', 'https://sagemro.cn'),
+  });
+
+  assert.match(prompt, /sagemro\.cn/);
+  assert.match(prompt, /engineer\.sagemro\.cn/);
+  assert.match(prompt, /admin\.sagemro\.cn/);
+  assert.match(prompt, /左侧工具栏底部/);
+  assert.match(prompt, /移动端.*左上角菜单/s);
+  assert.match(prompt, /公司名称、姓名、密码、手机号、邮箱和邮箱验证码/);
+  assert.match(prompt, /济南钰峭机械有限公司（EUCHIO）/);
+  assert.doesNotMatch(prompt, /右上角.*登录/);
+  assert.doesNotMatch(prompt, /真实姓名/);
+});
+
 test('handleChat tells COM site to answer English by default', async () => {
   const prompt = await captureChatPrompt({
     request: makeRequest({
