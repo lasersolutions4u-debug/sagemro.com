@@ -4726,7 +4726,8 @@ async function handleAcceptTicket(request, env) {
 // 不在 engineers 表上。历史实现写错表，此处修复。
 async function handleRejectTicket(request, env) {
   try {
-    const { work_order_id } = await request.json();
+    const { work_order_id, reason } = await request.json();
+    const rejectReason = typeof reason === 'string' ? reason.trim() : '';
 
     // 认证：engineer_id 从 token 取
     const auth = request._auth;
@@ -4737,6 +4738,16 @@ async function handleRejectTicket(request, env) {
 
     if (!work_order_id) {
       return errorResponse('缺少工单 ID');
+    }
+    if (!rejectReason) {
+      return errorResponse('请填写退回理由');
+    }
+    try {
+      assertMaxLength(rejectReason, '退回理由', LIMITS.log_content);
+    } catch (e) {
+      const resp = validationErrorToResponse(e, errorResponse);
+      if (resp) return resp;
+      throw e;
     }
 
     const wo = await env.DB.prepare(
@@ -4765,6 +4776,11 @@ async function handleRejectTicket(request, env) {
       INSERT INTO work_order_logs (id, work_order_id, action, actor_type, actor_id, content)
       VALUES (?, ?, ?, ?, ?, ?)
     `).bind(generateId(), work_order_id, 'rejected', 'engineer', engineer_id, '工程师已退回派工').run();
+
+    await env.DB.prepare(`
+      INSERT INTO work_order_messages (id, work_order_id, sender_type, sender_id, sender_name, content, message_type, is_internal_note, is_customer_visible)
+      VALUES (?, ?, 'engineer', ?, '工程师', ?, 'internal_note', 1, 0)
+    `).bind(generateId(), work_order_id, engineer_id, `退回派工理由：${rejectReason}`).run();
 
     // 通知客户服务任务已退回调度
     const woForReject = await env.DB.prepare(

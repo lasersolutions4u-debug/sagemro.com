@@ -94,7 +94,7 @@ export function AboutModal({ isOpen, onClose }) {
   const t = isCnLocale() ? copy.zh : copy.en;
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title={t.title} size="md">
+    <Modal isOpen={isOpen} onClose={onClose} title={t.title} size="lg">
       <div className="space-y-6">
         <div className="text-center py-2">
           <BrandMark variant="logo" className="mx-auto mb-3 h-24 w-24 object-contain drop-shadow-[0_18px_36px_rgba(245,158,11,0.24)]" />

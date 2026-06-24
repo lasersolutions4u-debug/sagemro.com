@@ -149,10 +149,18 @@ export function EngineerWorkspace({ currentUser, onLogout, onOpenProfile }) {
   };
 
   const returnAssignment = async (ticket) => {
+    const reason = window.prompt(
+      'Please enter the reason for returning this dispatch. It will be recorded for SAGEMRO operations.',
+      '',
+    )?.trim();
+    if (!reason) {
+      setMessage('Please enter a return reason before submitting.');
+      return;
+    }
     setAssigningId(`${ticket.id}:reject`);
     setMessage('');
     try {
-      await rejectTicket({ work_order_id: ticket.id, engineer_id: engineerId });
+      await rejectTicket({ work_order_id: ticket.id, engineer_id: engineerId, reason });
       setMessage(`Returned to dispatch: ${ticket.order_no || ticket.id}`);
       await loadTickets();
     } catch (error) {

@@ -527,11 +527,11 @@ export async function acceptTicket({ work_order_id, engineer_id }) {
 /**
  * SERVICE_OS_LEGACY: 工程师退回调度兼容接口。
  */
-export async function rejectTicket({ work_order_id, engineer_id }) {
+export async function rejectTicket({ work_order_id, engineer_id, reason }) {
   const response = await fetch(`${API_BASE}/api/engineers/tickets/reject`, {
     method: 'POST',
     headers: authHeaders(),
-    body: JSON.stringify({ work_order_id, engineer_id }),
+    body: JSON.stringify({ work_order_id, engineer_id, reason }),
   });
   if (!response.ok) throw new Error(`HTTP ${response.status}`);
   return response.json();
