@@ -1756,7 +1756,7 @@ function getRegistrationVerificationTarget({ phone, email }, request) {
 }
 
 async function sendVerificationEmail(env, email, code, request) {
-  if (env.ENVIRONMENT === 'development' || env.DEV_BYPASS_CODE) {
+  if (env.ENVIRONMENT === 'development') {
     return { skipped: true };
   }
   if (!env.RESEND_API_KEY || !env.VERIFICATION_EMAIL_FROM) {
@@ -1879,7 +1879,7 @@ async function buildAliyunSmsRequest(env, phone, code) {
 }
 
 async function sendAliyunSmsVerification(env, phone, code) {
-  if (env.ENVIRONMENT === 'development' || env.DEV_BYPASS_CODE) {
+  if (env.ENVIRONMENT === 'development') {
     return { skipped: true };
   }
   if (
@@ -1911,18 +1911,12 @@ async function isVerificationCodeValid(env, { phone, email, code }) {
   const target = getVerificationTarget({ phone, email });
   if (!target) return false;
   const storedCode = await env.KV.get(`verify_code_${target.key}`);
-  const bypassCode = await env.KV.get(`verify_code_${target.key}_bypass`);
   const legacyStoredCode = target.type === 'email' && phone
     ? await env.KV.get(`verify_code_${phone}`)
     : null;
-  const legacyBypassCode = target.type === 'email' && phone
-    ? await env.KV.get(`verify_code_${phone}_bypass`)
-    : null;
-  const devBypass = env.DEV_BYPASS_CODE;
+  const devBypass = env.ENVIRONMENT === 'development' ? env.DEV_BYPASS_CODE : null;
   return (storedCode && storedCode === code)
-    || (bypassCode && bypassCode === code)
     || (legacyStoredCode && legacyStoredCode === code)
-    || (legacyBypassCode && legacyBypassCode === code)
     || (devBypass && devBypass === code);
 }
 
@@ -1930,11 +1924,9 @@ async function deleteVerificationCode(env, { phone, email }) {
   const target = getVerificationTarget({ phone, email });
   if (target) {
     await env.KV.delete(`verify_code_${target.key}`);
-    await env.KV.delete(`verify_code_${target.key}_bypass`);
   }
   if (phone) {
     await env.KV.delete(`verify_code_${phone}`);
-    await env.KV.delete(`verify_code_${phone}_bypass`);
   }
 }
 
@@ -1988,27 +1980,23 @@ async function handleSendCode(request, env) {
     // - DEV_BYPASS_CODE：如果配置了固定验证码，直接使用该码（跳过随机生成）
     const devBypass = env.DEV_BYPASS_CODE;
     const response = { success: true, message: '验证码已发送' };
-    if (devBypass) {
-      await env.KV.put(`verify_code_${target.key}_bypass`, devBypass, { expirationTtl: 300 });
-      if (env.ENVIRONMENT === 'development') {
+    if (env.ENVIRONMENT === 'development') {
+      if (devBypass) {
         response.code = devBypass;
         response.note = 'DEV_BYPASS_CODE 已启用，验证码为固定值';
-      }
-    } else {
-      if (env.ENVIRONMENT === 'development') {
+      } else {
         response.code = code;
       }
-      await env.KV.put(`verify_code_${target.key}_bypass`, '888888', { expirationTtl: 300 });
     }
 
     if (target.type === 'email') {
-      const emailResult = await sendVerificationEmail(env, target.value, devBypass || code, request);
+      const emailResult = await sendVerificationEmail(env, target.value, env.ENVIRONMENT === 'development' && devBypass ? devBypass : code, request);
       if (emailResult.error) {
         await deleteVerificationCode(env, { email: target.value });
         return errorResponse(emailResult.error, 503);
       }
     } else if (getRequestMarket(request) === 'cn') {
-      const smsResult = await sendAliyunSmsVerification(env, target.value, devBypass || code);
+      const smsResult = await sendAliyunSmsVerification(env, target.value, env.ENVIRONMENT === 'development' && devBypass ? devBypass : code);
       if (smsResult.error) {
         await deleteVerificationCode(env, { phone: target.value });
         return errorResponse(smsResult.error, 503);
@@ -2300,16 +2288,12 @@ async function handleSendResetCode(request, env) {
     // - DEV_BYPASS_CODE：如果配置了固定验证码，直接使用该码
     const devBypass = env.DEV_BYPASS_CODE;
     const response = { success: true, message: '验证码已发送' };
-    if (devBypass) {
-      await env.KV.put(`reset_code_${phone}_bypass`, devBypass, { expirationTtl: 300 });
-      if (env.ENVIRONMENT === 'development') {
+    if (env.ENVIRONMENT === 'development') {
+      if (devBypass) {
         response.code = devBypass;
-      }
-    } else {
-      if (env.ENVIRONMENT === 'development') {
+      } else {
         response.code = code;
       }
-      await env.KV.put(`reset_code_${phone}_bypass`, '888888', { expirationTtl: 300 });
     }
     return jsonResponse(response);
   } catch (error) {
@@ -2332,10 +2316,8 @@ async function handleResetPassword(request, env) {
 
     // 验证验证码（开发环境支持 bypass 码 "888888" + DEV_BYPASS_CODE 用于自动化测试）
     const storedCode = await env.KV.get(`reset_code_${phone}`);
-    const bypassCode = await env.KV.get(`reset_code_${phone}_bypass`);
-    const devBypass = env.DEV_BYPASS_CODE;
+    const devBypass = env.ENVIRONMENT === 'development' ? env.DEV_BYPASS_CODE : null;
     const isValid = (storedCode && storedCode === code)
-      || (bypassCode && bypassCode === code)
       || (devBypass && devBypass === code);
     if (!isValid) {
       return errorResponse('验证码错误或已过期');

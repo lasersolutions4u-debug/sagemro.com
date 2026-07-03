@@ -332,6 +332,52 @@ test('CN phone verification logs sanitized Aliyun SMS failure details', async ()
   }
 });
 
+test('production CN verification ignores DEV_BYPASS_CODE and sends the random SMS code', async () => {
+  const env = createTestEnv({
+    ENVIRONMENT: 'production',
+    DEV_BYPASS_CODE: '2468',
+    ALIYUN_SMS_ACCESS_KEY_ID: 'test-access-key-id',
+    ALIYUN_SMS_ACCESS_KEY_SECRET: 'test-access-key-secret',
+    ALIYUN_SMS_SIGN_NAME_CN: '济南钰峭机械',
+    ALIYUN_SMS_TEMPLATE_CODE_REGISTER_CN: 'SMS_508990106',
+  });
+  const originalFetch = globalThis.fetch;
+  let templateParam = null;
+  globalThis.fetch = async (url) => {
+    templateParam = JSON.parse(new URL(url).searchParams.get('TemplateParam'));
+    return new Response(JSON.stringify({ Code: 'OK', Message: 'OK' }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  };
+
+  try {
+    const { response, json } = await postJson('https://api.sagemro.cn/api/auth/send-code', {
+      phone: '13800000004',
+    }, env);
+
+    assert.equal(response.status, 200);
+    assert.equal(json.success, true);
+    assert.equal(json.code, undefined);
+    assert.match(templateParam.code, /^\d{4}$/);
+    assert.notEqual(templateParam.code, '2468');
+    assert.equal(env.__kv.get('verify_code_13800000004'), templateParam.code);
+    assert.equal(env.__kv.get('verify_code_13800000004_bypass'), undefined);
+
+    const invalidRegister = await postJson('https://api.sagemro.cn/api/auth/register/customer', {
+      name: 'Test Customer',
+      phone: '13800000004',
+      password: 'secret123',
+      company: 'Test Co',
+      code: '2468',
+    }, env);
+    assert.equal(invalidRegister.response.status, 400);
+    assert.match(invalidRegister.json.error, /验证码错误|Verification code/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test('COM customer registration accepts an email verification code while keeping phone as login contact', async () => {
   const env = createTestEnv();
   await env.KV.put('verify_code_email_joe@example.com', '1357');
