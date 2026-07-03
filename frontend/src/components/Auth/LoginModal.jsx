@@ -5,7 +5,8 @@ import { toastSuccess, toastError } from '../../utils/feedback';
 import { isCnLocale } from '../../utils/locale';
 
 export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
-  const serviceName = isCnLocale() ? 'SAGEMRO 智能服务系统' : 'SAGEMRO Service OS';
+  const isCn = isCnLocale();
+  const serviceName = isCn ? 'SAGEMRO 智能服务系统' : 'SAGEMRO Service OS';
 
   // step flow:
   // choice -> register-company -> register-auth -> customer / visitor completion / login
@@ -33,13 +34,20 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
 
   // 发送验证码
   const handleSendCode = async () => {
-    if (!email) { setError('请输入邮箱'); return; }
-    if (!/^\S+@\S+\.\S+$/.test(email.trim())) { setError('请输入有效的邮箱'); return; }
+    if (isCn) {
+      if (!phone) { setError('请输入手机号'); return; }
+      if (!/^1\d{10}$/.test(phone.trim())) { setError('请输入有效的手机号'); return; }
+    } else {
+      if (!email) { setError('请输入邮箱'); return; }
+      if (!/^\S+@\S+\.\S+$/.test(email.trim())) { setError('请输入有效的邮箱'); return; }
+    }
 
     setCodeSending(true);
     setError('');
     try {
-      const data = await sendVerifyCode(email);
+      const data = isCn
+        ? await sendVerifyCode({ phone })
+        : await sendVerifyCode({ email });
       // 纵深防御：仅在 Vite 开发构建下显示回传的验证码
       if (import.meta.env.DEV && data.code) {
         setError('[DEV] 验证码：' + data.code);
@@ -60,7 +68,7 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
 
   // 客户注册（含公司名）
   const handleRegisterCustomer = async () => {
-    if (!name || !password || !confirmPassword || !companyName || !email) {
+    if (!name || !phone || !password || !confirmPassword || !companyName || (!isCn && !email)) {
       setError('请填写所有必填信息'); return;
     }
     if (password !== confirmPassword) { setError('两次输入的密码不一致'); return; }
@@ -124,7 +132,8 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
   const handleCompanySubmit = () => {
     if (!companyName.trim()) { setError('请输入公司名称'); return; }
     if (!phone || phone.length !== 11) { setError('请输入有效的手机号'); return; }
-    if (!email || !/^\S+@\S+\.\S+$/.test(email.trim())) { setError('请输入有效的邮箱'); return; }
+    if (!isCn && (!email || !/^\S+@\S+\.\S+$/.test(email.trim()))) { setError('请输入有效的邮箱'); return; }
+    if (isCn && email && !/^\S+@\S+\.\S+$/.test(email.trim())) { setError('请输入有效的邮箱'); return; }
     if (!password || password.length < 6) { setError('密码至少需要 6 位'); return; }
     if (password !== confirmPassword) { setError('两次输入的密码不一致'); return; }
     if (!agreedToTerms) { setError('请阅读并同意用户协议、隐私政策和 AI 服务说明'); return; }
@@ -286,19 +295,20 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
               />
             </div>
 
-            {/* 邮箱 */}
-            <div>
-              <label className="block text-sm font-medium mb-1">邮箱 *</label>
-              <input
-                type="email" value={email} onChange={(e) => setEmail(e.target.value)}
-                placeholder="请输入邮箱地址"
-                className="w-full px-3 py-2 border border-[var(--color-input-border)] rounded-xl bg-[var(--color-input-bg)] text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
-              />
-            </div>
+            {!isCn && (
+              <div>
+                <label className="block text-sm font-medium mb-1">邮箱 *</label>
+                <input
+                  type="email" value={email} onChange={(e) => setEmail(e.target.value)}
+                  placeholder="请输入邮箱地址"
+                  className="w-full px-3 py-2 border border-[var(--color-input-border)] rounded-xl bg-[var(--color-input-bg)] text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
+                />
+              </div>
+            )}
 
             {/* 验证码 */}
             <div>
-              <label className="block text-sm font-medium mb-1">邮箱验证码</label>
+              <label className="block text-sm font-medium mb-1">{isCn ? '短信验证码' : '邮箱验证码'}</label>
               <div className="flex gap-2">
                 <input
                   type="text" value={code} onChange={(e) => setCode(e.target.value)}

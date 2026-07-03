@@ -51,18 +51,20 @@ test('CN footer includes ICP record for the China site', () => {
   assert.match(footer, /https:\/\/beian\.miit\.gov\.cn\//);
 });
 
-test('registration copy uses email verification and a neutral name field', () => {
+test('CN registration copy uses phone SMS verification and keeps email optional', () => {
   const loginModal = read('frontend/src/components/Auth/LoginModal.jsx');
   const api = read('frontend/src/services/api.js');
 
-  assert.match(loginModal, /请输入邮箱/);
-  assert.match(loginModal, /邮箱 \*/);
-  assert.match(loginModal, /请输入邮箱地址/);
-  assert.match(loginModal, /sendVerifyCode\(email\)/);
+  assert.match(loginModal, /const isCn = isCnLocale\(\)/);
+  assert.match(loginModal, /短信验证码/);
+  assert.match(loginModal, /\{!isCn && \(\s*<div>\s*<label className="block text-sm font-medium mb-1">邮箱 \*<\/label>/);
+  assert.match(loginModal, /\{isCn \? '短信验证码' : '邮箱验证码'\}/);
+  assert.match(loginModal, /sendVerifyCode\(\{ phone \}\)/);
+  assert.match(loginModal, /sendVerifyCode\(\{ email \}\)/);
   assert.match(loginModal, /姓名 \*/);
   assert.match(loginModal, /请输入姓名/);
   assert.doesNotMatch(loginModal, /真实姓名/);
-  assert.match(api, /sendVerifyCode\(email\)/);
-  assert.match(api, /JSON\.stringify\(\{ email \}\)/);
+  assert.match(api, /sendVerifyCode\(\{ phone, email \}\)/);
+  assert.match(api, /JSON\.stringify\(payload\)/);
   assert.match(api, /registerCustomer\(\{ name, phone, email, password, code, company, identity \}\)/);
 });
