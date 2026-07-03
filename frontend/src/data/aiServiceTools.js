@@ -26,7 +26,7 @@ export const aiServiceTools = [
       { name: 'urgency', label: 'Urgency', placeholder: 'Normal / urgent / stopped production' },
     ],
     promptIntro: 'Please act as SAGEMRO AI Equipment Diagnostic Assistant and create a safe preliminary diagnosis.',
-    outputGuide: 'Return likely causes, risk level, stop-work advice, information needed, possible parts, and whether SAGEMRO official service is recommended.',
+    outputGuide: 'Return likely causes, risk level, stop-work advice, information needed, possible parts, and whether SAGEMRO service follow-up is recommended.',
   },
   {
     id: 'cutting-parameters',
@@ -131,9 +131,9 @@ export function buildAiToolPrompt(tool, values) {
   return `${tool.promptIntro}
 
 Business context:
-- SAGEMRO is an official service team for laser cutting and sheet metal equipment, not a loose matchmaking platform.
+- SAGEMRO is an independent third-party service brand for laser cutting and sheet metal equipment, not a machine manufacturer after-sales desk or a loose matchmaking platform.
 - AI advice is preliminary and must avoid unsafe repair instructions, absolute diagnosis, or binding price commitments.
-- If on-site confirmation is needed, guide the user to request SAGEMRO official service.
+- If on-site confirmation is needed, guide the user to request SAGEMRO service coordination.
 
 User input:
 ${details}

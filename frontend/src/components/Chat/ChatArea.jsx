@@ -34,13 +34,13 @@ export function ChatArea({
     ? (currentTitle || (isCn ? '服务对话' : 'Service conversation'))
     : serviceName;
   const subtitle = isCn
-    ? '面向激光切割与钣金设备的官方服务智能入口'
-    : 'Official service intelligence for laser cutting and sheet metal equipment';
+    ? '面向激光切割与钣金设备的第三方智能服务入口'
+    : 'Independent service intelligence for laser cutting and sheet metal equipment';
   const aboutLabel = isCn ? '关于 SAGEMRO' : 'About SAGEMRO';
   const homeLabel = isCn ? '返回首页' : 'Service OS Home';
   const aiNotice = isCn
-    ? 'AI 帮助更快梳理服务路径。最终诊断、报价和现场安全要求由 SAGEMRO 官方服务确认。'
-    : 'AI helps prepare the service path faster. Final diagnosis, quote, and on-site safety requirements are confirmed by SAGEMRO official service.';
+    ? 'AI 用于快速梳理问题。最终诊断、报价和现场安全要求需经 SAGEMRO 服务流程确认。'
+    : 'AI helps organize the case faster. Final diagnosis, quote, and site safety requirements are confirmed through the SAGEMRO service process.';
   const detailsLabel = isCn ? '详情' : 'Details';
 
   return (

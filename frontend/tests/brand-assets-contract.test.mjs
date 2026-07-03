@@ -48,12 +48,12 @@ test('main site first-impression copy keeps CN and COM market language separate'
   const footer = read('frontend/src/components/common/Footer.jsx');
   const engineerRecruiting = read('frontend/src/components/Engineer/EngineerRecruitingPage.jsx');
 
-  assert.match(welcome, /Explain the machine issue once/);
-  assert.match(welcome, /设备问题先说清楚，服务推进少走弯路。/);
-  assert.match(about, /An AI-assisted official service entrance/);
-  assert.match(about, /面向激光切割与钣金加工设备的 AI 辅助官方服务入口。/);
+  assert.match(welcome, /Turn machine issues into a clear service path with AI-assisted support/);
+  assert.match(welcome, /让专业 AI 协助，设备问题解决得更高效。/);
+  assert.match(about, /An AI-assisted independent service platform/);
+  assert.match(about, /面向激光切割与钣金加工设备的第三方智能服务平台。/);
   assert.doesNotMatch(about, /field photos|现场照片/);
-  assert.match(footer, /SAGEMRO by Jinan Euchio Machinery Co\., Ltd\./);
+  assert.match(footer, /SAGEMRO operated by Jinan Euchio Machinery Co\., Ltd\./);
   assert.match(footer, /SAGEMRO 由济南钰峭机械有限公司运营/);
   assert.match(footer, /鲁ICP备2026032904号-1/);
   assert.match(footer, /https:\/\/beian\.miit\.gov\.cn\//);

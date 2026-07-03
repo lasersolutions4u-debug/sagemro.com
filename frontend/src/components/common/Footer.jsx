@@ -6,7 +6,7 @@ export function Footer({ onOpenLegal, compact = false }) {
   const isCn = isCnLocale();
   const companyLine = isCn
     ? 'SAGEMRO 由济南钰峭机械有限公司运营'
-    : 'SAGEMRO by Jinan Euchio Machinery Co., Ltd.';
+    : 'SAGEMRO operated by Jinan Euchio Machinery Co., Ltd.';
   const icpLink = isCn ? (
     <>
       <span className="text-[var(--color-border)]">|</span>

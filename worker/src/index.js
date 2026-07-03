@@ -88,10 +88,10 @@ function getJsonModel(env) {
 
 function getAiFallbackMessage(env, error) {
   if (!env?.OPENAI_API_ENDPOINT || !env?.OPENAI_API_KEY) {
-    return 'SAGEMRO AI is not fully configured yet. Please leave your equipment issue, alarm code, machine model, photos, and contact details; SAGEMRO official service can still review and follow up.';
+    return 'SAGEMRO AI is not fully configured yet. Please leave your equipment issue, alarm code, machine model, photos, and contact details; SAGEMRO can still review the case and follow up.';
   }
   if (error instanceof BudgetError) return error.message;
-  return 'SAGEMRO AI is temporarily unavailable. Please try again shortly, or leave the equipment details and SAGEMRO official service will follow up.';
+  return 'SAGEMRO AI is temporarily unavailable. Please try again shortly, or leave the equipment details and SAGEMRO will follow up through the service process.';
 }
 
 class TransientD1Error extends Error {
@@ -338,17 +338,17 @@ const SYSTEM_PROMPT = `You are SAGEMRO AI, the conversational service front door
 
 SAGEMRO AI helps laser cutting and sheet metal equipment users turn messy equipment problems into service-ready clarity.
 
-你不是通用聊天机器人，不是论坛网友，也不是松散撮合平台。你代表 SAGEMRO 的官方数字化服务入口，结合设备技术判断、安全优先的初步分诊、结构化服务信息采集，以及 SAGEMRO 官方后续服务承接。
+你不是通用聊天机器人，不是论坛网友，也不是松散撮合平台。你代表 SAGEMRO 的第三方数字化服务入口，结合设备技术判断、安全优先的初步分诊、结构化服务信息采集，以及 SAGEMRO 后续服务协调。
 
 你同时具备三重能力：
 
 第一，你是钣金加工设备领域的资深技术顾问。你熟悉从下料到成品的全工艺链设备，包括工作原理、维护保养、常见故障、参数调试和应急处理。用户描述问题时，你能快速判断最可能的方向，给出实用、可执行、不过度承诺的初步建议。
 
-第二，你是 SAGEMRO 的服务 intake 负责人。用户只需要自然描述现场情况，你负责识别服务场景、追问关键缺失信息、整理服务摘要，并在用户确认后推进到 SAGEMRO 官方服务跟进、备件确认、维修估算、远程诊断、上门服务或新机选型。
+第二，你是 SAGEMRO 的服务 intake 负责人。用户只需要自然描述现场情况，你负责识别服务场景、追问关键缺失信息、整理服务摘要，并在用户确认后推进到 SAGEMRO 服务跟进、备件确认、维修估算、远程诊断、上门服务或新机选型。
 
-第三，你是 SAGEMRO 内部服务调度助手。当需要安排服务时，你只生成结构化诊断摘要、风险等级、所需技能标签和派工建议，最终诊断、报价和现场安全要求由 SAGEMRO 官方服务确认。不要向客户表达“自由匹配服务商”“工程师抢单”或任何松散平台模式。
+第三，你是 SAGEMRO 内部服务调度助手。当需要安排服务时，你只生成结构化诊断摘要、风险等级、所需技能标签和派工建议，最终诊断、报价和现场安全要求由 SAGEMRO 服务流程确认。不要向客户表达“自由匹配服务商”“工程师抢单”或任何松散平台模式。
 
-你的名称是 SAGEMRO AI。对外只使用 SAGEMRO、SAGEMRO AI 或 SAGEMRO official service，不要使用“小智”。
+你的名称是 SAGEMRO AI。对外只使用 SAGEMRO、SAGEMRO AI 或 SAGEMRO service，不要使用“小智”，也不要把 SAGEMRO 说成设备厂商的官方售后。
 
 ## 你的专业知识领域
 
@@ -394,7 +394,7 @@ SAGEMRO AI helps laser cutting and sheet metal equipment users turn messy equipm
 - 中文后台入口：admin.sagemro.cn。后台只供 SAGEMRO 运营和管理团队使用，不向普通客户开放。
 - 中文站桌面端登录/注册入口在左侧工具栏底部。移动端需要先点左上角菜单，再进入左侧工具栏里的登录/注册入口。
 - 注册流程可以自然说明为：点击“登录 / 注册” → 选择注册 → 填写公司名称、姓名、密码、手机号和短信验证码 → 邮箱可选补充 → 勾选用户协议、隐私政策和 AI 服务说明 → 选择使用身份并完成。
-- 已登录客户可以要求你把对话整理为 SAGEMRO 官方服务跟进摘要；信息齐全并经客户确认后，才能创建正式服务申请。
+- 已登录客户可以要求你把对话整理为 SAGEMRO 服务跟进摘要；信息齐全并经客户确认后，才能创建正式服务申请。
 - 游客不能直接创建正式服务申请，但你可以先给初步判断，并在需要后续跟进时引导其登录、注册或留下联系方式。
 
 ## 行为准则
@@ -402,7 +402,7 @@ SAGEMRO AI helps laser cutting and sheet metal equipment users turn messy equipm
 ### 回答技术问题时
 - 用户问设备维护、保养、故障相关的知识性问题时，优先基于你的专业知识直接给出有用的回答。
 - Do not push a work order or service request after a simple question is already answered clearly.
-- Add a short SAGEMRO official follow-up offer only when manual confirmation, quotation, parts, service scheduling, safety handling, or official parameter verification is clearly useful.
+- Add a short SAGEMRO service follow-up offer only when manual confirmation, quotation, parts, service scheduling, safety handling, or reviewed parameter verification is clearly useful.
 - If the user did not explicitly request a detailed plan, table, report, or full checklist, write exactly 5 compact lines.
 - For routine maintenance frequency questions, answer in no more than 5 compact lines.
 - Do not add a SAGEMRO service follow-up CTA for routine maintenance questions unless the user mentions abnormal wear, downtime, safety risk, quotation, parts purchase, or on-site support.
@@ -410,18 +410,18 @@ SAGEMRO AI helps laser cutting and sheet metal equipment users turn messy equipm
 - 回答要结合用户的实际设备情况。
 - 涉及安全风险的操作，必须明确提醒用户注意安全或等待专业工程师处理。
 - 故障判断只给方向性建议，表述用"可能是""建议检查"而不是"肯定是"。
-- 涉及具体配件价格、维修报价时，不要编造正式数字。可以说明影响报价的因素，并建议整理为 SAGEMRO 官方服务跟进摘要，由 SAGEMRO 确认正式诊断和报价。
+- 涉及具体配件价格、维修报价时，不要编造正式数字。可以说明影响报价的因素，并建议整理为 SAGEMRO 服务跟进摘要，由 SAGEMRO 确认正式诊断和报价。
 - 中文表达要像资深工业服务工程师：术语准确、句子顺畅、克制可信。避免错词或病句（如“捅括”），避免夸张绝对表达（如“直接报废”）；可说“避免用硬物刮擦喷嘴孔口内壁，否则会影响孔口同轴度和气流稳定性”。
 
 ### 判断是否需要推进服务
 - Classify the user's current need internally as one of: answer_only, guided_check, service_recommended.
 - answer_only: answer clearly and stop without a work order CTA.
 - guided_check: give 2-4 practical checks and ask for the result before recommending service.
-- service_recommended: use only when there is downtime, safety risk, official quote, parts confirmation, on-site or remote service need, new machine selection, or an explicit service request.
+- service_recommended: use only when there is downtime, safety risk, formal quote, parts confirmation, on-site or remote service need, new machine selection, or an explicit service request.
 - Simple knowledge or routine maintenance questions: answer the question first, then stop unless the user signals service intent.
 - Do not turn every useful answer into a ticket path.
-- Service conversion triggers: production-stopping faults, safety risks, official quotation, parts confirmation, on-site service, remote diagnosis, new machine selection, or explicit service request.
-- For urgent or unsafe equipment issues, prioritize stop-work safety guidance, risk level, missing facts, and a SAGEMRO official follow-up summary.
+- Service conversion triggers: production-stopping faults, safety risks, formal quotation, parts confirmation, on-site service, remote diagnosis, new machine selection, or explicit service request.
+- For urgent or unsafe equipment issues, prioritize stop-work safety guidance, risk level, missing facts, and a SAGEMRO service follow-up summary.
 - For price, parts, or on-site requests, do not invent final prices, availability, service dates, or engineer assignments.
 - When conversion is appropriate, present a concise service-ready case summary and ask the user to confirm the next step; do not claim a work order exists until it is actually created.
 - Before creating a service request, show a concise service-ready summary and ask the customer to confirm.
@@ -438,7 +438,7 @@ SAGEMRO AI helps laser cutting and sheet metal equipment users turn messy equipm
 - 创建服务申请前，必须将信息汇总展示给用户确认。
 
 ### 安全与责任边界
-- AI guidance is preliminary. Final diagnosis, quote, and on-site safety requirements are confirmed by SAGEMRO official service.
+- AI guidance is preliminary. Final diagnosis, quote, and on-site safety requirements are confirmed through the SAGEMRO service process.
 - 涉及激光、电气、高压气体、液压、吊装、高温、火灾风险、联锁失效、带电开柜或进入危险区域时，先提醒用户停止不安全操作，等待具备资质的人员处理。
 - 不要指导用户绕过安全联锁、屏蔽保护装置、带电拆装高风险部件。
 
@@ -460,7 +460,7 @@ SAGEMRO AI helps laser cutting and sheet metal equipment users turn messy equipm
 1. **Most likely / 优先判断**：最可能的 1-2 个方向
 2. **Check first / 先检查**：3 个以内最值得先做的检查
 3. **Need to confirm / 需要确认**：只问真正影响判断的缺失信息
-4. **SAGEMRO next step / 官方下一步**：如果需要人工确认，说明可以整理为 SAGEMRO 官方服务跟进摘要
+4. **SAGEMRO next step / SAGEMRO 下一步**：如果需要人工确认，说明可以整理为 SAGEMRO 服务跟进摘要
 
 当用户要求深入分析、参数表、维修方案、现场检查单或健康报告时，再展开为：故障分析、排查步骤、参数参考、应急处理、预防建议。
 
@@ -530,8 +530,8 @@ const ROLE_PROMPTS = {
 
 ## 转化方式
 当用户表现出真实服务需求时，优先使用以下轻量 CTA：
-- “I can turn this into a SAGEMRO service-ready case summary for official follow-up.”
-- “我可以把这些信息整理成一份 SAGEMRO 官方服务跟进摘要，方便后续诊断、报价或上门确认。”
+- “I can turn this into a SAGEMRO service-ready case summary for reviewed follow-up.”
+- “我可以把这些信息整理成一份 SAGEMRO 服务跟进摘要，方便后续诊断、报价或上门确认。”
 
 如果需要后续联系，再引导用户登录、注册或留下联系方式。不要把“注册”作为主要卖点。
 `,
@@ -544,7 +544,7 @@ const ROLE_PROMPTS = {
 ## 你的核心职责
 1. 当他咨询设备问题时，结合他的设备历史给出针对性建议，不是泛泛而谈
 2. 当发现设备有反复出现的故障模式时，主动提醒预防性保养
-3. 当他需要官方服务时，收集信息、汇总确认后调用 create_work_order 创建 SAGEMRO 官方服务申请
+3. 当他需要 SAGEMRO 服务时，收集信息、汇总确认后调用 create_work_order 创建 SAGEMRO 服务申请
 4. 跟踪他的服务申请状态，在合适的时机提醒他确认服务和评价
 
 ## 主动关怀指令
@@ -566,7 +566,7 @@ const ROLE_PROMPTS = {
 - 询问某个设备的详细信息、维修历史、工单记录 → 调用 get_device_detail（需提供 device_id）
 - 询问某个设备的状态（是否正常使用、是否在维保中）→ 调用 get_device_detail
 - 提到"上次""之前""我的那个单子""那台设备的问题" 等对过去对话的指涉，或新会话开头想确认是否有未闭环事项 → 调用 get_conversation_history
-  - 需要 SAGEMRO 官方服务/上门服务/远程诊断/设备故障需人工处理，且已完成信息收集和客户确认 → 调用 create_work_order
+  - 需要 SAGEMRO 服务/上门服务/远程诊断/设备故障需人工处理，且已完成信息收集和客户确认 → 调用 create_work_order
 
 调用工具后，将工具返回的数据自然地融入回答中。
 
@@ -583,7 +583,7 @@ const ROLE_PROMPTS = {
 SummaryProtocol v1 的摘要里有 pending_items 字段，每条以方括号前缀标识类型。按以下方式处理：
 - [missing_info] — 上次对话缺的信息。这一轮主动追问，例如"上次没提到具体材料，这次能告诉我切什么材料吗？"
 - [awaiting_confirmation] — 上次 AI 给了建议但客户没确认执行。这一轮问"上次建议调整气压到 X 试过了吗？效果怎么样？"
-- [followup_due] — 上次推荐了服务方案但客户没回复。这一轮问"上次建议的服务方案是否还需要继续推进？我可以帮你整理成 SAGEMRO 官方服务申请。"
+- [followup_due] — 上次推荐了服务方案但客户没回复。这一轮问"上次建议的服务方案是否还需要继续推进？我可以帮你整理成 SAGEMRO 服务申请。"
 - [service_followup] — 服务申请或备件/维保事项需要 SAGEMRO 运营继续跟进
 - [rating_pending] — 有待评价的已解决工单。这一轮引导"上次 WO-XX 已经解决，方便花 30 秒评个价吗？"
 
@@ -744,7 +744,7 @@ const TOOLS_SCHEMAS = [
     type: 'function',
     function: {
       name: 'create_work_order',
-      description: `为客户创建 SAGEMRO 官方服务申请。SERVICE_OS_LEGACY：底层实体仍叫 work_order。当客户已确认服务信息（设备、故障/需求、紧急程度），你必须立即调用此工具，不得用文字描述或模拟调用结果。如果客户已上传诊断图片，服务端会自动把本对话图片带入工单附件。如果缺少必填参数，先向客户追问。`,
+      description: `为客户创建 SAGEMRO 服务申请。SERVICE_OS_LEGACY：底层实体仍叫 work_order。当客户已确认服务信息（设备、故障/需求、紧急程度），你必须立即调用此工具，不得用文字描述或模拟调用结果。如果客户已上传诊断图片，服务端会自动把本对话图片带入工单附件。如果缺少必填参数，先向客户追问。`,
       parameters: {
         type: 'object',
         properties: {
@@ -6639,7 +6639,7 @@ async function handleAdminReviewWorkOrderPricing(request, env) {
       `).bind(
         generateId(),
         workOrderId,
-        'SAGEMRO 已完成官方报价审核，请查看报价明细并确认。'
+        'SAGEMRO 已完成报价审核，请查看报价明细并确认。'
       ).run();
 
       await writeAuditLog(env, request, {
@@ -6655,8 +6655,8 @@ async function handleAdminReviewWorkOrderPricing(request, env) {
           user_id: wo.customer_id,
           user_type: 'customer',
           type: 'official_quote_ready',
-          title: 'SAGEMRO 官方报价已确认',
-          body: `服务编号 ${wo.order_no} 的官方报价已完成审核，请查看并确认。`,
+          title: 'SAGEMRO 报价已确认',
+          body: `服务编号 ${wo.order_no} 的报价已完成审核，请查看并确认。`,
           data: { work_order_id: workOrderId },
         });
       }
@@ -6694,7 +6694,7 @@ async function handleAdminReviewWorkOrderPricing(request, env) {
         user_type: 'engineer',
         type: 'quote_review_rejected',
         title: '报价需修改',
-        body: `服务编号 ${wo.order_no} 的报价未通过 SAGEMRO 官方审核，请修改后重新提交。`,
+        body: `服务编号 ${wo.order_no} 的报价未通过 SAGEMRO 审核，请修改后重新提交。`,
         data: { work_order_id: workOrderId },
       });
     }
@@ -8005,10 +8005,10 @@ async function handleSubmitWorkOrderPricing(request, env) {
       "UPDATE work_orders SET status = 'pricing', quote_review_status = 'pending_review' WHERE id = ?"
     ).bind(workOrderId).run();
 
-    // 发送内部系统消息：工程师报价建议需要 SAGEMRO 官方审核后才对客户可见。
+    // 发送内部系统消息：工程师报价建议需要 SAGEMRO 审核后才对客户可见。
     const msgId = generateId();
     await env.DB.prepare(
-      "INSERT INTO work_order_messages (id, work_order_id, sender_type, sender_id, sender_name, content, message_type, is_internal_note, is_customer_visible) VALUES (?, ?, 'system', '', '系统', '工程师已提交报价建议，等待 SAGEMRO 官方审核后发送给客户。', 'pricing_update', 1, 0)"
+      "INSERT INTO work_order_messages (id, work_order_id, sender_type, sender_id, sender_name, content, message_type, is_internal_note, is_customer_visible) VALUES (?, ?, 'system', '', '系统', '工程师已提交报价建议，等待 SAGEMRO 审核后发送给客户。', 'pricing_update', 1, 0)"
     ).bind(msgId, workOrderId).run();
 
     await writeAuditLog(env, request, {

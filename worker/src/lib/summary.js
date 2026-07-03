@@ -55,7 +55,7 @@ const PENDING_ITEM_PREFIXES = [
 // ============ 生成 prompt ============
 
 function buildSystemPrompt() {
-  return `你是 SAGEMRO Service OS 的对话摘要生成器。任务是把一段客户/工程师与 SAGEMRO AI 的对话，压缩成一份结构化 JSON，用于跨会话上下文检索、官方服务跟进和业务线索推进。
+  return `你是 SAGEMRO Service OS 的对话摘要生成器。任务是把一段客户/工程师与 SAGEMRO AI 的对话，压缩成一份结构化 JSON，用于跨会话上下文检索、SAGEMRO 服务跟进和业务线索推进。
 
 必须严格按 SummaryProtocol v1 返回 JSON（不要 markdown，不要解释）：
 

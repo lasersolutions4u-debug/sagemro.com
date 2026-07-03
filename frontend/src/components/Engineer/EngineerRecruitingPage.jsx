@@ -8,11 +8,11 @@ const COPY = {
     badge: 'SAGEMRO 智能服务系统 · 认证服务代表计划',
     networkLabel: '认证服务代表网络',
     title: '让专业工程师被看见、被支持、被认真对待。',
-    subtitle: 'SAGEMRO 正在建设面向激光切割机与钣金加工设备的官方服务网络。我们寻找真正理解现场、设备和客户压力的工程师，由运营团队审核后分配账号，并在标准、派工、资料和成长上持续支持。',
+    subtitle: 'SAGEMRO 正在建设面向激光切割机与钣金加工设备的第三方服务协作网络。我们寻找真正理解现场、设备和客户压力的工程师，由运营团队审核后分配账号，并在标准、派工、资料和成长上持续支持。',
     primary: '申请成为认证服务代表',
     signIn: '已有工程师账号，进入工作台',
     pillars: [
-      { title: '官方审核，统一协作', text: '申请通过后由 SAGEMRO 分配账号，服务任务由 Admin 与区域负责人统一协调。' },
+      { title: '人工审核，统一协作', text: '申请通过后由 SAGEMRO 分配账号，服务任务由 Admin 与区域负责人统一协调。' },
       { title: '尊重现场专业', text: '平台重点沉淀设备档案、AI 初诊、备件准备和服务报告，让工程师少做无效沟通。' },
       { title: '清晰排单协作', text: '工程师自己维护可服务时间，区域负责人和 Admin 派工时作为重要参考。' },
     ],
@@ -50,7 +50,7 @@ const COPY = {
     badge: 'SAGEMRO Service OS · Certified Representative Program',
     networkLabel: 'Service Representative Network',
     title: 'A service network built for engineers who take field work seriously.',
-    subtitle: 'SAGEMRO is building an official service network for laser cutting machines and sheet metal equipment. We review each application manually, then support approved representatives with dispatch coordination, service standards, equipment context, and growth resources.',
+    subtitle: 'SAGEMRO is building an independent service coordination network for laser cutting machines and sheet metal equipment. We review each application manually, then support approved representatives with dispatch coordination, service standards, equipment context, and growth resources.',
     primary: 'Apply as a Certified Service Representative',
     signIn: 'I already have an engineer account',
     pillars: [

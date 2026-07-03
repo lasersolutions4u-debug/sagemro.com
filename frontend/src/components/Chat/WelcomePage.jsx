@@ -8,14 +8,14 @@ import { isCnLocale } from '../../utils/locale';
 const copy = {
   en: {
     eyebrow: 'SAGEMRO Service OS',
-    headline: 'Explain the machine issue once. Move service forward with less back-and-forth.',
-    intro: 'SAGEMRO is the AI-assisted official service entrance for laser cutting and sheet metal equipment. Describe what is happening on site, and we organize the key details toward fault diagnosis, parts confirmation, maintenance planning, official service, or new-machine evaluation.',
-    cardTitle: 'Start with one field description. Lock onto the reliable next step.',
-    cardText: 'Speak as you would to a service engineer: alarm, symptom, machine, material, and production impact. SAGEMRO follows up in chat and asks you to confirm the details, reducing repeated explanations and missed context.',
+    headline: 'Turn machine issues into a clear service path with AI-assisted support.',
+    intro: 'SAGEMRO is an independent equipment service brand for laser cutting and sheet metal equipment. Describe what is happening on site, and SAGEMRO helps organize the details that matter for diagnosis, parts confirmation, maintenance planning, service coordination, or new-machine evaluation.',
+    cardTitle: 'Start with what happened on site. SAGEMRO organizes the rest.',
+    cardText: 'Share the alarm, symptom, machine, material, and production impact in your own words. SAGEMRO follows up in chat, asks for missing details, and helps turn scattered information into a service-ready case.',
     trustPoints: [
-      'Official service entrance for alarms, downtime, parts, maintenance, and new-machine projects',
-      'Turns field context into service-ready information for follow-up',
-      'AI clarifies the issue first; SAGEMRO official service confirms diagnosis, quotation, and site safety requirements',
+      'Independent third-party support for alarms, downtime, parts, maintenance, and machine-upgrade decisions',
+      'Turns field context into service-ready information for review and follow-up',
+      'AI helps prepare the case; diagnosis, quotation, and site safety requirements are confirmed through SAGEMRO service coordination',
     ],
     capabilities: [
       'Fault diagnosis',
@@ -28,14 +28,14 @@ const copy = {
   },
   zh: {
     eyebrow: 'SAGEMRO 智能服务系统',
-    headline: '设备问题先说清楚，服务推进少走弯路。',
-    intro: 'SAGEMRO 是面向激光切割机与钣金加工设备的 AI 辅助官方服务入口。你只需要描述现场情况，系统会帮助整理关键信息，并把问题带向故障判断、备件确认、维保安排、官方服务或新机评估。',
-    cardTitle: '从一句现场描述开始，锁定可靠的下一步。',
-    cardText: '像和工程师沟通一样说明报警、现象、设备和生产影响。SAGEMRO 会在聊天中追问并请你确认，减少反复沟通和信息遗漏。',
+    headline: '让专业 AI 协助，设备问题解决得更高效。',
+    intro: 'SAGEMRO 是面向激光切割机与钣金加工设备的第三方智能服务品牌。你只需要说清现场情况，系统会帮助整理关键信息，把问题推进到故障判断、备件确认、维保安排、服务协调或新机评估。',
+    cardTitle: '先把现场情况说清楚，SAGEMRO 帮你理出下一步。',
+    cardText: '报警、现象、设备型号、加工材料、生产影响，都可以直接在聊天里说明。SAGEMRO 会继续追问关键缺失信息，并请你确认，把零散描述整理成后续可推进的服务依据。',
     trustPoints: [
-      '官方服务入口：报警、停机、备件、维保和新机项目，都可以从一次对话开始',
-      '把现场信息整理成后续能推进的服务依据，帮助你锁定下一步',
-      'AI 先理清问题，SAGEMRO 官方服务再确认诊断、报价与现场安全要求',
+      '第三方设备服务：报警、停机、备件、维保和新机项目，都可以从一次对话开始',
+      '把现场信息整理成可审核、可跟进、可复用的服务依据',
+      'AI 先协助理清问题；诊断、报价与现场安全要求再由 SAGEMRO 服务流程确认',
     ],
     capabilities: [
       '故障诊断',

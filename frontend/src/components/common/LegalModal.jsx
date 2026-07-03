@@ -5,9 +5,9 @@ import { isCnLocale } from '../../utils/locale';
 const USER_AGREEMENT = `
 ## 1. Service Scope
 
-1.1 SAGEMRO Service OS provides AI-assisted equipment consultation, service request preparation, official service coordination, equipment records, spare parts consultation, maintenance follow-up, and new-machine selection support for laser cutting and sheet metal equipment.
+1.1 SAGEMRO Service OS provides AI-assisted equipment consultation, service request preparation, independent service coordination, equipment records, spare parts consultation, maintenance follow-up, and new-machine selection support for laser cutting and sheet metal equipment.
 
-1.2 SAGEMRO is an official service workflow, not a public technician marketplace. Customers submit service needs to SAGEMRO, and SAGEMRO reviews the request and arranges internal engineers or SAGEMRO-designated service personnel when applicable.
+1.2 SAGEMRO is an independent third-party equipment service workflow, not a public technician marketplace. Customers submit service needs to SAGEMRO, and SAGEMRO reviews the request and arranges internal engineers or SAGEMRO-designated service personnel when applicable.
 
 1.3 SAGEMRO provides information services and service coordination, including demand intake, technical consultation support, service request organization, resource coordination, and digital service records. SAGEMRO does not operate as an open bidding platform, commission-splitting marketplace, or escrow settlement system.
 
@@ -21,7 +21,7 @@ const USER_AGREEMENT = `
 
 ## 3. Service Request Process
 
-3.1 Customers can start with the SAGEMRO AI chat or submit an official service request through available service entries.
+3.1 Customers can start with the SAGEMRO AI chat or submit a SAGEMRO service request through available service entries.
 
 3.2 A service request may include equipment type, brand/model, alarm code, fault description, urgency, photos/videos, region, and contact information.
 
@@ -147,7 +147,7 @@ const AI_DISCLAIMER = `
 - Do not perform energized electrical repair based solely on AI output
 - Do not open laser optical paths, high-pressure gas lines, hydraulic systems, or safety covers without qualified personnel
 - Stop operation when there is smoke, fire risk, abnormal smell, exposed wiring, severe collision, or repeated high-risk alarms
-- For uncertain high-risk conditions, request SAGEMRO official service
+- For uncertain high-risk conditions, request SAGEMRO service support
 
 ## 4. Data Usage
 
@@ -163,7 +163,7 @@ const AI_DISCLAIMER = `
 
 ## 6. Limitation of Liability
 
-To the extent permitted by applicable law, Jinan Euchio Machinery Co., Ltd. is not liable for equipment damage, personal injury, production loss, or other losses caused by relying solely on AI output. For professional service, submit a SAGEMRO official service request.
+To the extent permitted by applicable law, Jinan Euchio Machinery Co., Ltd. is not liable for equipment damage, personal injury, production loss, or other losses caused by relying solely on AI output. For professional service, submit a SAGEMRO service request.
 
 ## 7. Contact
 
@@ -173,9 +173,9 @@ Jinan Euchio Machinery Co., Ltd. | Email: support@sagemro.com | https://sagemro.
 const CN_USER_AGREEMENT = `
 ## 1. 服务范围
 
-1.1 SAGEMRO 智能服务系统为激光切割与钣金加工设备提供 AI 辅助咨询、服务需求整理、官方服务协调、设备档案、备件咨询、维护跟进和新机选型支持。
+1.1 SAGEMRO 智能服务系统为激光切割与钣金加工设备提供 AI 辅助咨询、服务需求整理、第三方服务协调、设备档案、备件咨询、维护跟进和新机选型支持。
 
-1.2 SAGEMRO 是官方服务流程入口，不是公开工程师竞价平台。客户向 SAGEMRO 提交服务需求后，由 SAGEMRO 审核并根据实际情况安排内部工程师或 SAGEMRO 指定服务人员跟进。
+1.2 SAGEMRO 是独立第三方设备服务流程入口，不是公开工程师竞价平台。客户向 SAGEMRO 提交服务需求后，由 SAGEMRO 审核并根据实际情况安排内部工程师或 SAGEMRO 指定服务人员跟进。
 
 1.3 SAGEMRO 提供信息服务与服务协调，包括需求接收、技术咨询支持、工单整理、资源协调和数字化服务记录。SAGEMRO 不作为公开竞价平台、佣金抽成平台或资金托管结算平台运营。
 
@@ -308,14 +308,14 @@ const CN_AI_DISCLAIMER = `
 - **切割参数：**AI 参数为参考范围，应结合设备状态、材料、气体、喷嘴和安全规则调整。
 - **备件识别：**AI 识别为初步判断，采购或更换前需人工确认兼容性。
 - **维修估算：**AI 可提供费用级别或影响因素，不构成绑定价格。
-- **新机选型：**AI 选型为初步建议，正式新机项目由 Euchio 或 SAGEMRO 指定销售人员确认。
+- **新机选型：**AI 选型为初步建议，正式新机项目由济南钰峭机械有限公司（EUCHIO）或 SAGEMRO 指定销售人员确认。
 
 ## 3. 安全限制
 
 - 不要仅凭 AI 输出进行带电维修
 - 未经合格人员确认，不要打开激光光路、高压气路、液压系统或安全防护罩
 - 出现烟雾、火灾风险、异味、裸露线路、严重碰撞或反复高风险报警时，应停止运行
-- 不确定的高风险情况，应提交 SAGEMRO 官方服务请求
+- 不确定的高风险情况，应提交 SAGEMRO 服务请求
 
 ## 4. 数据使用
 
@@ -331,7 +331,7 @@ const CN_AI_DISCLAIMER = `
 
 ## 6. 责任限制
 
-在适用法律允许范围内，济南钰峭机械有限公司不对用户仅依赖 AI 输出造成的设备损坏、人身伤害、生产损失或其他损失承担责任。如需专业服务，请提交 SAGEMRO 官方服务请求。
+在适用法律允许范围内，济南钰峭机械有限公司不对用户仅依赖 AI 输出造成的设备损坏、人身伤害、生产损失或其他损失承担责任。如需专业服务，请提交 SAGEMRO 服务请求。
 
 ## 7. 联系方式
 

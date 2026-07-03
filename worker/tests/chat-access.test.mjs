@@ -282,6 +282,6 @@ test('handleChat prompt keeps simple questions useful without pushing a work ord
   });
 
   assert.match(prompt, /Do not push a work order or service request after a simple question is already answered clearly/);
-  assert.match(prompt, /Add a short SAGEMRO official follow-up offer only when manual confirmation, quotation, parts, service scheduling, safety handling, or official parameter verification is clearly useful/);
+  assert.match(prompt, /Add a short SAGEMRO service follow-up offer only when manual confirmation, quotation, parts, service scheduling, safety handling, or reviewed parameter verification is clearly useful/);
   assert.match(prompt, /If the user did not explicitly request a detailed plan, table, report, or full checklist, write exactly 5 compact lines/);
 });

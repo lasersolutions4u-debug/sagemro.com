@@ -17,12 +17,12 @@ const copy = {
   en: {
     title: 'About SAGEMRO Service OS',
     serviceName: 'SAGEMRO Service OS',
-    intro: 'An AI-assisted official service entrance for laser cutting and sheet metal equipment. Explain the field situation once, and SAGEMRO helps turn it into a clear path for diagnosis, parts, maintenance, service, or new-machine evaluation.',
+    intro: 'An AI-assisted independent service platform for laser cutting and sheet metal equipment. Explain the field situation once, and SAGEMRO helps turn it into a clear path for diagnosis, parts, maintenance, service coordination, or machine-upgrade evaluation.',
     howItWorks: 'How It Works',
     moments: [
       { icon: MessageCircle, title: 'Start With A Conversation', desc: 'Describe the alarm, part, cut quality issue, maintenance need, or machine project in plain language.' },
       { icon: ClipboardCheck, title: 'Clarify The Service Context', desc: 'SAGEMRO AI asks for missing details and organizes the case into a service-ready summary.' },
-      { icon: Wrench, title: 'Move To Official Action', desc: 'When diagnosis, quotation, parts, scheduling, or site safety matters, SAGEMRO official service continues the confirmation.' },
+      { icon: Wrench, title: 'Move To A Reviewed Next Step', desc: 'When diagnosis, quotation, parts, scheduling, or site safety matters, SAGEMRO coordinates the next confirmation step.' },
     ],
     outcomesTitle: 'One Chat, Six Service Outcomes',
     capabilities: [
@@ -38,7 +38,7 @@ const copy = {
     standards: [
       'One SAGEMRO service standard across AI guidance, service review, engineer work, and service archives',
       'Equipment records, service context, service history, and reports stay connected for future support',
-      'AI improves preparation speed; final diagnosis, quotation, and safety requirements are confirmed by SAGEMRO official service',
+      'AI improves preparation speed; final diagnosis, quotation, and safety requirements are confirmed through the SAGEMRO service process',
       'Parts, maintenance, lifecycle advice, and Euchio new-machine projects can grow naturally from the same service record',
     ],
     featureCards: [
@@ -49,17 +49,17 @@ const copy = {
     longTermTitle: 'Built For Long-Term Equipment Value',
     longTermText: 'Each conversation can become a reusable service record: faster future troubleshooting, clearer parts decisions, better maintenance planning, and more confident equipment upgrade decisions.',
     closing: 'You describe the machine. SAGEMRO turns it into a reliable next step.',
-    operatorLine: 'A product of Jinan Euchio Machinery Co., Ltd.',
+    operatorLine: 'Operated by Jinan Euchio Machinery Co., Ltd.',
   },
   zh: {
     title: '关于 SAGEMRO 智能服务系统',
     serviceName: 'SAGEMRO 智能服务系统',
-    intro: '面向激光切割与钣金加工设备的 AI 辅助官方服务入口。你只需说明现场情况，SAGEMRO 会帮助梳理问题、确认关键信息，并把它推进到诊断、备件、维保、服务或新机评估。',
+    intro: '面向激光切割与钣金加工设备的第三方智能服务平台。你只需说明现场情况，SAGEMRO 会帮助梳理问题、确认关键信息，并把它推进到诊断、备件、维保、服务协调或设备升级评估。',
     howItWorks: '如何工作',
     moments: [
       { icon: MessageCircle, title: '从一次对话开始', desc: '用自然语言描述报警、备件、切割质量、维保需求或新机项目，不需要先填复杂表单。' },
       { icon: ClipboardCheck, title: '把问题整理清楚', desc: 'SAGEMRO AI 会追问关键细节，把现场情况整理成便于确认和跟进的服务摘要。' },
-      { icon: Wrench, title: '进入人工确认与服务安排', desc: '涉及诊断、报价、备件、排期或现场安全时，由 SAGEMRO 官方服务继续确认。' },
+      { icon: Wrench, title: '进入人工确认与服务协调', desc: '涉及诊断、报价、备件、排期或现场安全时，由 SAGEMRO 继续协调确认。' },
     ],
     outcomesTitle: '一次对话，理清六类服务方向',
     capabilities: [
@@ -75,7 +75,7 @@ const copy = {
     standards: [
       'AI 初步指导、服务审核、工程师执行和服务归档统一遵循 SAGEMRO 服务标准',
       '设备档案、服务上下文、服务历史和报告持续关联，便于后续支持',
-      'AI 用于提升准备效率；最终诊断、报价和安全要求由 SAGEMRO 官方确认',
+      'AI 用于提升准备效率；最终诊断、报价和安全要求通过 SAGEMRO 服务流程确认',
       '备件、维保、生命周期建议和 Euchio 新机项目可以从同一服务记录自然延展',
     ],
     featureCards: [
@@ -86,7 +86,7 @@ const copy = {
     longTermTitle: '为设备长期价值而设计',
     longTermText: '每一次对话都可以整理为可复用的服务记录：让后续排故更快、备件判断更清晰、维保计划更主动，新机升级决策也更有依据。',
     closing: '你描述设备情况，SAGEMRO 把它变成可靠的下一步。',
-    operatorLine: '济南钰峭机械有限公司',
+    operatorLine: '由济南钰峭机械有限公司运营',
   },
 };
 
