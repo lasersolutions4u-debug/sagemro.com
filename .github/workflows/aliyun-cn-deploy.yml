@@ -17,6 +17,14 @@ jobs:
     environment: production
 
     steps:
+      - name: Validate deployment ref
+        run: |
+          set -euo pipefail
+          if [ "${GITHUB_REF_NAME}" != "china-edition" ]; then
+            echo "::error::Aliyun China production deploy must run from china-edition. Current ref: ${GITHUB_REF_NAME}"
+            exit 1
+          fi
+
       - name: Checkout
         uses: actions/checkout@v6
 

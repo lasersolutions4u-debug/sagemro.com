@@ -1,6 +1,19 @@
 #!/usr/bin/env node
+import { fileURLToPath } from 'node:url';
 
 const DEFAULT_TIMEOUT_MS = 20000;
+
+function normalizeCliPath(value) {
+  const normalized = String(value || '')
+    .replace(/\\/g, '/')
+    .replace(/^\/([A-Za-z]:\/)/, '$1');
+  return /^[A-Za-z]:\//.test(normalized) ? normalized.toLowerCase() : normalized;
+}
+
+export function isCliEntry(importMetaUrl, argvPath) {
+  if (!argvPath) return false;
+  return normalizeCliPath(fileURLToPath(importMetaUrl)) === normalizeCliPath(argvPath);
+}
 
 export function buildSmokeTargets() {
   return [
@@ -185,7 +198,7 @@ async function main() {
   if (summary.failed > 0) process.exitCode = 1;
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (isCliEntry(import.meta.url, process.argv[1])) {
   main().catch((error) => {
     console.error(error);
     process.exit(1);
