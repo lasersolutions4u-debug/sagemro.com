@@ -46,7 +46,7 @@ test('CN chat input does not promote image upload in placeholder copy', () => {
 test('CN footer includes ICP record for the China site', () => {
   const footer = read('frontend/src/components/common/Footer.jsx');
 
-  assert.match(footer, /SAGEMRO by 济南钰峭机械有限公司/);
+  assert.match(footer, /SAGEMRO 由济南钰峭机械有限公司运营/);
   assert.match(footer, /鲁ICP备2026032904号-1/);
   assert.match(footer, /https:\/\/beian\.miit\.gov\.cn\//);
 });

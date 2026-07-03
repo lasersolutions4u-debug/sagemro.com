@@ -5,7 +5,7 @@ const ICP_RECORD_NUMBER = '鲁ICP备2026032904号-1';
 export function Footer({ onOpenLegal, compact = false }) {
   const isCn = isCnLocale();
   const companyLine = isCn
-    ? 'SAGEMRO by 济南钰峭机械有限公司'
+    ? 'SAGEMRO 由济南钰峭机械有限公司运营'
     : 'SAGEMRO by Jinan Euchio Machinery Co., Ltd.';
   const icpLink = isCn ? (
     <>
