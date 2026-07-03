@@ -1895,6 +1895,13 @@ async function sendAliyunSmsVerification(env, phone, code) {
   const response = await fetch(smsRequest.url, smsRequest.init);
   const result = await response.json().catch(() => ({}));
   if (!response.ok || result.Code !== 'OK') {
+    console.warn('[aliyun-sms] send failed', {
+      status: response.status,
+      code: result.Code,
+      message: result.Message,
+      requestId: result.RequestId,
+      phoneSuffix: String(phone || '').slice(-4),
+    });
     return { error: '短信验证码发送失败，请稍后再试' };
   }
   return { sent: true };

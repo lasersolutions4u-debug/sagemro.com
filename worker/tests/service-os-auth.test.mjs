@@ -288,6 +288,50 @@ test('CN phone verification reports a clear service error when Aliyun SMS is not
   assert.equal(env.__kv.get('verify_code_13800000002'), undefined);
 });
 
+test('CN phone verification logs sanitized Aliyun SMS failure details', async () => {
+  const env = createTestEnv({
+    ENVIRONMENT: 'production',
+    ALIYUN_SMS_ACCESS_KEY_ID: 'test-access-key-id',
+    ALIYUN_SMS_ACCESS_KEY_SECRET: 'test-access-key-secret',
+    ALIYUN_SMS_SIGN_NAME_CN: '济南钰峭机械',
+    ALIYUN_SMS_TEMPLATE_CODE_REGISTER_CN: 'SMS_508990106',
+  });
+  const originalFetch = globalThis.fetch;
+  const originalWarn = console.warn;
+  const warnings = [];
+  globalThis.fetch = async () => new Response(JSON.stringify({
+    Code: 'isv.SMS_SIGNATURE_ILLEGAL',
+    Message: 'signature is invalid',
+    RequestId: 'req-test-1',
+  }), {
+    status: 200,
+    headers: { 'Content-Type': 'application/json' },
+  });
+  console.warn = (...args) => {
+    warnings.push(args);
+  };
+
+  try {
+    const { response, json } = await postJson('https://api.sagemro.cn/api/auth/send-code', {
+      phone: '13800000003',
+    }, env);
+
+    assert.equal(response.status, 503);
+    assert.equal(json.error, '短信验证码发送失败，请稍后再试');
+    assert.equal(env.__kv.get('verify_code_13800000003'), undefined);
+    assert.equal(warnings.length, 1);
+    assert.equal(warnings[0][0], '[aliyun-sms] send failed');
+    assert.equal(warnings[0][1].code, 'isv.SMS_SIGNATURE_ILLEGAL');
+    assert.equal(warnings[0][1].message, 'signature is invalid');
+    assert.equal(warnings[0][1].requestId, 'req-test-1');
+    assert.equal(warnings[0][1].phoneSuffix, '0003');
+    assert.equal(JSON.stringify(warnings), JSON.stringify(warnings).replace('13800000003', ''));
+  } finally {
+    globalThis.fetch = originalFetch;
+    console.warn = originalWarn;
+  }
+});
+
 test('COM customer registration accepts an email verification code while keeping phone as login contact', async () => {
   const env = createTestEnv();
   await env.KV.put('verify_code_email_joe@example.com', '1357');
