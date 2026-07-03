@@ -125,7 +125,7 @@ export function AIToolsPanel({ onSendMessage }) {
               </div>
               <div className="flex justify-between gap-3">
                 <span>Next action</span>
-                <strong className="text-slate-900">AI answer + official CTA</strong>
+                <strong className="text-slate-900">AI answer + service next step</strong>
               </div>
             </div>
           </div>

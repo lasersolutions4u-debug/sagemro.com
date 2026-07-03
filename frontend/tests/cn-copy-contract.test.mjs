@@ -152,6 +152,17 @@ test('CN operations copy avoids internal English role labels in visible text', (
   assert.match(operationsSources, /SAGEMRO 运营中枢/);
 });
 
+test('CN operational runtime copy avoids official-service positioning terms', () => {
+  const runtimeSources = [
+    read('frontend/src/components/AI/AIToolsPanel.jsx'),
+    read('worker/src/index.js'),
+  ].join('\n');
+
+  assert.doesNotMatch(runtimeSources, /SAGEMRO 官方审核/);
+  assert.doesNotMatch(runtimeSources, /official CTA/);
+  assert.doesNotMatch(runtimeSources, /官方服务体系/);
+});
+
 test('CN secondary customer flows include localized visible copy', () => {
   const expectedChineseCopy = [
     ['frontend/src/components/Sidebar/WorkOrderModal.jsx', /提交服务申请|服务类型|问题描述|SAGEMRO 将审核你的服务需求/],

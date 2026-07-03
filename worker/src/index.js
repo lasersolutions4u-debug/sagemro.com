@@ -6479,7 +6479,7 @@ async function handleAdminReviewWorkOrderPricing(request, env) {
         user_type: 'engineer',
         type: 'quote_review_rejected',
         title: '报价需修改',
-        body: `服务编号 ${wo.order_no} 的报价未通过 SAGEMRO 官方审核，请修改后重新提交。`,
+        body: `服务编号 ${wo.order_no} 的报价未通过 SAGEMRO 审核，请修改后重新提交。`,
         data: { work_order_id: workOrderId },
       });
     }
@@ -7790,10 +7790,10 @@ async function handleSubmitWorkOrderPricing(request, env) {
       "UPDATE work_orders SET status = 'pricing', quote_review_status = 'pending_review' WHERE id = ?"
     ).bind(workOrderId).run();
 
-    // 发送内部系统消息：工程师报价建议需要 SAGEMRO 官方审核后才对客户可见。
+    // 发送内部系统消息：工程师报价建议需要 SAGEMRO 审核后才对客户可见。
     const msgId = generateId();
     await env.DB.prepare(
-      "INSERT INTO work_order_messages (id, work_order_id, sender_type, sender_id, sender_name, content, message_type, is_internal_note, is_customer_visible) VALUES (?, ?, 'system', '', '系统', '工程师已提交报价建议，等待 SAGEMRO 官方审核后发送给客户。', 'pricing_update', 1, 0)"
+      "INSERT INTO work_order_messages (id, work_order_id, sender_type, sender_id, sender_name, content, message_type, is_internal_note, is_customer_visible) VALUES (?, ?, 'system', '', '系统', '工程师已提交报价建议，等待 SAGEMRO 审核后发送给客户。', 'pricing_update', 1, 0)"
     ).bind(msgId, workOrderId).run();
 
     await writeAuditLog(env, request, {
