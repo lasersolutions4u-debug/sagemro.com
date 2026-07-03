@@ -254,7 +254,8 @@ test('handleChat prompt teaches CN users the correct portal and auth entry detai
   assert.match(prompt, /admin\.sagemro\.cn/);
   assert.match(prompt, /左侧工具栏底部/);
   assert.match(prompt, /移动端.*左上角菜单/s);
-  assert.match(prompt, /公司名称、姓名、密码、手机号、邮箱和邮箱验证码/);
+  assert.match(prompt, /公司名称、姓名、密码、手机号和短信验证码/);
+  assert.doesNotMatch(prompt, /邮箱和邮箱验证码/);
   assert.match(prompt, /济南钰峭机械有限公司（EUCHIO）/);
   assert.doesNotMatch(prompt, /右上角.*登录/);
   assert.doesNotMatch(prompt, /真实姓名/);

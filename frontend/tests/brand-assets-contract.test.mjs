@@ -54,7 +54,7 @@ test('main site first-impression copy keeps CN and COM market language separate'
   assert.match(about, /面向激光切割与钣金加工设备的 AI 辅助官方服务入口。/);
   assert.doesNotMatch(about, /field photos|现场照片/);
   assert.match(footer, /SAGEMRO by Jinan Euchio Machinery Co\., Ltd\./);
-  assert.match(footer, /SAGEMRO by 济南钰峭机械有限公司/);
+  assert.match(footer, /SAGEMRO 由济南钰峭机械有限公司运营/);
   assert.match(footer, /鲁ICP备2026032904号-1/);
   assert.match(footer, /https:\/\/beian\.miit\.gov\.cn\//);
   assert.match(engineerRecruiting, /SAGEMRO 智能服务系统 · 认证服务代表计划/);
