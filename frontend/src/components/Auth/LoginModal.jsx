@@ -42,9 +42,8 @@ const LOGIN_COPY = {
     phoneNumberLabel: '手机号',
     phonePlaceholder: '请输入手机号',
     registeredPhonePlaceholder: '请输入已注册手机号',
-    emailAddress: '邮箱 *',
-    emailPlaceholder: '请输入邮箱地址',
-    verificationCode: '邮箱验证码',
+    verificationCode: '验证码',
+    smsVerificationCode: '短信验证码',
     codePlaceholder: '请输入验证码',
     sendCode: '发送验证码',
     termsPrefix: '我已阅读并同意',
@@ -122,7 +121,8 @@ const LOGIN_COPY = {
     registeredPhonePlaceholder: 'Enter your registered phone number',
     emailAddress: 'Email *',
     emailPlaceholder: 'Enter your email address',
-    verificationCode: 'Email verification code',
+    verificationCode: 'Verification code',
+    emailVerificationCode: 'Email verification code',
     codePlaceholder: 'Enter verification code',
     sendCode: 'Send code',
     termsPrefix: 'I have read and agree to the',
@@ -164,7 +164,8 @@ const LOGIN_COPY = {
 };
 
 export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
-  const copy = isCnLocale() ? LOGIN_COPY.cn : LOGIN_COPY.en;
+  const isCn = isCnLocale();
+  const copy = isCn ? LOGIN_COPY.cn : LOGIN_COPY.en;
   // step flow:
   // choice -> register-company -> register-auth -> customer / visitor completion / login
   const [step, setStep] = useState('login');
@@ -191,13 +192,20 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
 
   // 发送验证码
   const handleSendCode = async () => {
-    if (!email) { setError(copy.emailRequired); return; }
-    if (!/^\S+@\S+\.\S+$/.test(email.trim())) { setError(copy.emailInvalid); return; }
+    if (isCn) {
+      if (!phone) { setError(copy.phoneRequired); return; }
+      if (!/^1\d{10}$/.test(phone.trim())) { setError(copy.phoneInvalid); return; }
+    } else {
+      if (!email) { setError(copy.emailRequired); return; }
+      if (!/^\S+@\S+\.\S+$/.test(email.trim())) { setError(copy.emailInvalid); return; }
+    }
 
     setCodeSending(true);
     setError('');
     try {
-      const data = await sendVerifyCode(email);
+      const data = isCn
+        ? await sendVerifyCode({ phone })
+        : await sendVerifyCode({ email });
       // 纵深防御：仅在 Vite 开发构建下显示回传的验证码
       if (import.meta.env.DEV && data.code) {
         setError('[DEV] Verification code: ' + data.code);
@@ -218,7 +226,7 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
 
   // 客户注册（含公司名）
   const handleRegisterCustomer = async () => {
-    if (!name || !password || !confirmPassword || !companyName || !email) {
+    if (!name || !phone || !password || !confirmPassword || !companyName || (!isCn && !email)) {
       setError(copy.requiredFields); return;
     }
     if (password !== confirmPassword) { setError(copy.passwordMismatch); return; }
@@ -282,7 +290,8 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
   const handleCompanySubmit = () => {
     if (!companyName.trim()) { setError(copy.companyRequired); return; }
     if (!phone || phone.length !== 11) { setError(copy.phoneInvalid); return; }
-    if (!email || !/^\S+@\S+\.\S+$/.test(email.trim())) { setError(copy.emailInvalid); return; }
+    if (!isCn && (!email || !/^\S+@\S+\.\S+$/.test(email.trim()))) { setError(copy.emailInvalid); return; }
+    if (isCn && email && !/^\S+@\S+\.\S+$/.test(email.trim())) { setError(copy.emailInvalid); return; }
     if (!password || password.length < 6) { setError(copy.passwordMin); return; }
     if (password !== confirmPassword) { setError(copy.passwordMismatch); return; }
     if (!agreedToTerms) { setError(copy.termsRequired); return; }
@@ -444,18 +453,20 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
               />
             </div>
 
-            <div>
-              <label className="block text-sm font-medium mb-1">{copy.emailAddress}</label>
-              <input
-                type="email" value={email} onChange={(e) => setEmail(e.target.value)}
-                placeholder={copy.emailPlaceholder}
-                className="w-full px-3 py-2 border border-[var(--color-input-border)] rounded-xl bg-[var(--color-input-bg)] text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
-              />
-            </div>
+            {!isCn && (
+              <div>
+                <label className="block text-sm font-medium mb-1">{copy.emailAddress}</label>
+                <input
+                  type="email" value={email} onChange={(e) => setEmail(e.target.value)}
+                  placeholder={copy.emailPlaceholder}
+                  className="w-full px-3 py-2 border border-[var(--color-input-border)] rounded-xl bg-[var(--color-input-bg)] text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
+                />
+              </div>
+            )}
 
             {/* 验证码 */}
             <div>
-              <label className="block text-sm font-medium mb-1">{copy.verificationCode}</label>
+              <label className="block text-sm font-medium mb-1">{isCn ? copy.smsVerificationCode : copy.emailVerificationCode}</label>
               <div className="flex gap-2">
                 <input
                   type="text" value={code} onChange={(e) => setCode(e.target.value)}

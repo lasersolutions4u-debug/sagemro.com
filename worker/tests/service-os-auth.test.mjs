@@ -216,7 +216,7 @@ test('CN auth validation errors stay in Simplified Chinese', async () => {
 test('registration verification code can be sent to an email address', async () => {
   const env = createTestEnv({ ENVIRONMENT: 'development' });
 
-  const { response, json } = await postJson('https://api.sagemro.cn/api/auth/send-code', {
+  const { response, json } = await postJson('https://api.sagemro.com/api/auth/send-code', {
     email: 'joe@example.com',
   }, env);
 
@@ -228,11 +228,71 @@ test('registration verification code can be sent to an email address', async () 
   assert.equal(env.__kv.get('verify_code_rate_email_joe@example.com'), '1');
 });
 
-test('customer registration accepts an email verification code while keeping phone as login contact', async () => {
+test('CN registration verification code is sent through Aliyun SMS for a phone number', async () => {
+  const env = createTestEnv({
+    ENVIRONMENT: 'production',
+    ALIYUN_SMS_ACCESS_KEY_ID: 'test-access-key-id',
+    ALIYUN_SMS_ACCESS_KEY_SECRET: 'test-access-key-secret',
+    ALIYUN_SMS_SIGN_NAME_CN: '济南钰峭机械',
+    ALIYUN_SMS_TEMPLATE_CODE_REGISTER_CN: 'SMS_508990106',
+  });
+  const originalFetch = globalThis.fetch;
+  let capturedRequest = null;
+  globalThis.fetch = async (url, init) => {
+    capturedRequest = { url, init };
+    return new Response(JSON.stringify({ Code: 'OK', Message: 'OK' }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  };
+
+  try {
+    const { response, json } = await postJson('https://api.sagemro.cn/api/auth/send-code', {
+      phone: '13800000001',
+    }, env);
+
+    assert.equal(response.status, 200);
+    assert.equal(json.success, true);
+    assert.equal(json.code, undefined);
+    const smsUrl = new URL(capturedRequest.url);
+    assert.equal(smsUrl.origin, 'https://dysmsapi.aliyuncs.com');
+    assert.equal(smsUrl.pathname, '/');
+    assert.equal(capturedRequest.init.method, 'POST');
+    assert.match(capturedRequest.init.headers.Authorization, /^ACS3-HMAC-SHA256 /);
+    assert.equal(capturedRequest.init.headers['x-acs-action'], 'SendSms');
+    assert.equal(capturedRequest.init.headers['x-acs-version'], '2017-05-25');
+    assert.equal(capturedRequest.init.headers['x-acs-content-sha256'], 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855');
+    assert.equal(capturedRequest.init.body, undefined);
+
+    const params = smsUrl.searchParams;
+    assert.equal(params.get('PhoneNumbers'), '13800000001');
+    assert.equal(params.get('SignName'), '济南钰峭机械');
+    assert.equal(params.get('TemplateCode'), 'SMS_508990106');
+    const templateParam = JSON.parse(params.get('TemplateParam'));
+    assert.match(templateParam.code, /^\d{4}$/);
+    assert.equal(env.__kv.get('verify_code_13800000001'), templateParam.code);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('CN phone verification reports a clear service error when Aliyun SMS is not configured', async () => {
+  const env = createTestEnv({ ENVIRONMENT: 'production' });
+
+  const { response, json } = await postJson('https://api.sagemro.cn/api/auth/send-code', {
+    phone: '13800000002',
+  }, env);
+
+  assert.equal(response.status, 503);
+  assert.equal(json.error, '短信验证码服务尚未配置，请稍后再试');
+  assert.equal(env.__kv.get('verify_code_13800000002'), undefined);
+});
+
+test('COM customer registration accepts an email verification code while keeping phone as login contact', async () => {
   const env = createTestEnv();
   await env.KV.put('verify_code_email_joe@example.com', '1357');
 
-  const { response, json } = await postJson('https://api.sagemro.cn/api/auth/register/customer', {
+  const { response, json } = await postJson('https://api.sagemro.com/api/auth/register/customer', {
     name: 'Joe',
     phone: '13800000001',
     email: 'joe@example.com',
@@ -247,6 +307,46 @@ test('customer registration accepts an email verification code while keeping pho
   assert.equal(json.customer.phone, '13800000001');
   assert.equal(env.__dbState.customers[0].auth_status, 'authenticated');
   assert.equal(await env.KV.get('verify_code_email_joe@example.com'), null);
+});
+
+test('CN customer registration accepts a phone verification code without requiring email', async () => {
+  const env = createTestEnv();
+  await env.KV.put('verify_code_13800000003', '2468');
+
+  const { response, json } = await postJson('https://api.sagemro.cn/api/auth/register/customer', {
+    name: 'Joe',
+    phone: '13800000003',
+    password: 'secret123',
+    code: '2468',
+    company: '济南钰峭机械有限公司',
+    identity: 'customer',
+  }, env);
+
+  assert.equal(response.status, 200);
+  assert.equal(json.success, true);
+  assert.equal(json.customer.phone, '13800000003');
+  assert.equal(env.__dbState.customers[0].auth_status, 'authenticated');
+  assert.equal(await env.KV.get('verify_code_13800000003'), null);
+});
+
+test('CN customer registration still verifies the phone code when optional email is provided', async () => {
+  const env = createTestEnv();
+  await env.KV.put('verify_code_13800000004', '8642');
+
+  const { response, json } = await postJson('https://api.sagemro.cn/api/auth/register/customer', {
+    name: 'Joe',
+    phone: '13800000004',
+    email: 'joe@example.com',
+    password: 'secret123',
+    code: '8642',
+    company: '济南钰峭机械有限公司',
+    identity: 'customer',
+  }, env);
+
+  assert.equal(response.status, 200);
+  assert.equal(json.success, true);
+  assert.equal(json.customer.phone, '13800000004');
+  assert.equal(await env.KV.get('verify_code_13800000004'), null);
 });
 
 function makeEngineerRejectEnv() {

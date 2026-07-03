@@ -61,18 +61,22 @@ test('main site first-impression copy keeps CN and COM market language separate'
   assert.doesNotMatch(engineerRecruiting, /badge: 'SAGEMRO Service OS · 认证服务代表计划'/);
 });
 
-test('registration copy uses email verification and a neutral name field', () => {
+test('registration copy hides CN email input and routes verification through phone SMS', () => {
   const loginModal = read('frontend/src/components/Auth/LoginModal.jsx');
   const api = read('frontend/src/services/api.js');
 
   assert.match(loginModal, /emailRequired: '请输入邮箱'/);
-  assert.match(loginModal, /emailAddress: '邮箱 \*'/);
-  assert.match(loginModal, /emailPlaceholder: '请输入邮箱地址'/);
-  assert.match(loginModal, /sendVerifyCode\(email\)/);
+  assert.doesNotMatch(loginModal, /emailAddress: '邮箱/);
+  assert.doesNotMatch(loginModal, /emailPlaceholder: '请输入邮箱地址'/);
+  assert.match(loginModal, /smsVerificationCode: '短信验证码'/);
+  assert.match(loginModal, /emailVerificationCode: 'Email verification code'/);
+  assert.match(loginModal, /\{!isCn && \(\s*<div>\s*<label className="block text-sm font-medium mb-1">\{copy\.emailAddress\}<\/label>/);
+  assert.match(loginModal, /sendVerifyCode\(\{ phone \}\)/);
+  assert.match(loginModal, /sendVerifyCode\(\{ email \}\)/);
   assert.match(loginModal, /fullName: '姓名 \*'/);
   assert.match(loginModal, /fullNamePlaceholder: '请输入姓名'/);
   assert.doesNotMatch(loginModal, /真实姓名/);
-  assert.match(api, /sendVerifyCode\(email\)/);
-  assert.match(api, /JSON\.stringify\(\{ email \}\)/);
+  assert.match(api, /sendVerifyCode\(\{ phone, email \}\)/);
+  assert.match(api, /JSON\.stringify\(payload\)/);
   assert.match(api, /registerCustomer\(\{ name, phone, email, password, code, company, identity \}\)/);
 });

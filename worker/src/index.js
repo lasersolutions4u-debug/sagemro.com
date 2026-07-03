@@ -1659,7 +1659,7 @@ const ERROR_MESSAGES = {
   },
   name_phone_company_password_required: {
     com: 'Name, phone number, email, company name, and password are required.',
-    cn: '姓名、手机号、邮箱、公司名称、密码不能为空',
+    cn: '姓名、手机号、公司名称、密码不能为空',
   },
   phone_password_required: {
     com: 'Phone number and password are required.',
@@ -1721,6 +1721,10 @@ function isValidEmail(email) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
 
+function isCnPhoneNumber(phone) {
+  return /^1\d{10}$/.test(String(phone || ''));
+}
+
 function getVerificationTarget({ phone, email }) {
   const normalizedEmail = normalizeEmail(email);
   if (normalizedEmail) {
@@ -1738,6 +1742,17 @@ function getVerificationTarget({ phone, email }) {
     };
   }
   return null;
+}
+
+function getRegistrationVerificationTarget({ phone, email }, request) {
+  if (getRequestMarket(request) === 'cn' && phone) {
+    return {
+      type: 'phone',
+      value: phone,
+      key: phone,
+    };
+  }
+  return getVerificationTarget({ phone, email });
 }
 
 async function sendVerificationEmail(env, email, code, request) {
@@ -1771,6 +1786,116 @@ async function sendVerificationEmail(env, email, code, request) {
         ? '邮件验证码发送失败，请稍后再试'
         : 'Failed to send verification email. Please try again later.',
     };
+  }
+  return { sent: true };
+}
+
+function toHex(buffer) {
+  return Array.from(new Uint8Array(buffer))
+    .map((byte) => byte.toString(16).padStart(2, '0'))
+    .join('');
+}
+
+async function sha256Hex(value) {
+  const encoded = new TextEncoder().encode(value);
+  const digest = await crypto.subtle.digest('SHA-256', encoded);
+  return toHex(digest);
+}
+
+async function hmacSha256Hex(secret, value) {
+  const key = await crypto.subtle.importKey(
+    'raw',
+    new TextEncoder().encode(secret),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign'],
+  );
+  const signature = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(value));
+  return toHex(signature);
+}
+
+function createAliyunNonce() {
+  if (crypto.randomUUID) return crypto.randomUUID();
+  const bytes = new Uint8Array(16);
+  crypto.getRandomValues(bytes);
+  return toHex(bytes);
+}
+
+async function buildAliyunSmsRequest(env, phone, code) {
+  const endpoint = 'https://dysmsapi.aliyuncs.com';
+  const host = 'dysmsapi.aliyuncs.com';
+  const date = new Date().toISOString().replace(/\.\d{3}Z$/, 'Z');
+  const nonce = createAliyunNonce();
+  const queryParams = new URLSearchParams({
+    PhoneNumbers: phone,
+    SignName: env.ALIYUN_SMS_SIGN_NAME_CN,
+    TemplateCode: env.ALIYUN_SMS_TEMPLATE_CODE_REGISTER_CN,
+    TemplateParam: JSON.stringify({ code }),
+  });
+  queryParams.sort();
+  const canonicalQueryString = queryParams.toString();
+  const bodyHash = await sha256Hex('');
+  const headersToSign = {
+    host,
+    'x-acs-action': 'SendSms',
+    'x-acs-content-sha256': bodyHash,
+    'x-acs-date': date,
+    'x-acs-signature-nonce': nonce,
+    'x-acs-version': '2017-05-25',
+  };
+  const signedHeaders = Object.keys(headersToSign).sort().join(';');
+  const canonicalHeaders = Object.keys(headersToSign)
+    .sort()
+    .map((key) => `${key}:${headersToSign[key]}\n`)
+    .join('');
+  const canonicalRequest = [
+    'POST',
+    '/',
+    canonicalQueryString,
+    canonicalHeaders,
+    signedHeaders,
+    bodyHash,
+  ].join('\n');
+  const stringToSign = [
+    'ACS3-HMAC-SHA256',
+    await sha256Hex(canonicalRequest),
+  ].join('\n');
+  const signature = await hmacSha256Hex(env.ALIYUN_SMS_ACCESS_KEY_SECRET, stringToSign);
+
+  return {
+    url: `${endpoint}/?${canonicalQueryString}`,
+    init: {
+      method: 'POST',
+      headers: {
+        Authorization: `ACS3-HMAC-SHA256 Credential=${env.ALIYUN_SMS_ACCESS_KEY_ID},SignedHeaders=${signedHeaders},Signature=${signature}`,
+        'x-acs-action': headersToSign['x-acs-action'],
+        'x-acs-content-sha256': headersToSign['x-acs-content-sha256'],
+        'x-acs-date': headersToSign['x-acs-date'],
+        'x-acs-signature-nonce': headersToSign['x-acs-signature-nonce'],
+        'x-acs-version': headersToSign['x-acs-version'],
+      },
+    },
+  };
+}
+
+async function sendAliyunSmsVerification(env, phone, code) {
+  if (env.ENVIRONMENT === 'development' || env.DEV_BYPASS_CODE) {
+    return { skipped: true };
+  }
+  if (
+    !env.ALIYUN_SMS_ACCESS_KEY_ID
+    || !env.ALIYUN_SMS_ACCESS_KEY_SECRET
+    || !env.ALIYUN_SMS_SIGN_NAME_CN
+    || !env.ALIYUN_SMS_TEMPLATE_CODE_REGISTER_CN
+  ) {
+    return { error: '短信验证码服务尚未配置，请稍后再试' };
+  }
+
+  const smsRequest = await buildAliyunSmsRequest(env, phone, code);
+  const response = await fetch(smsRequest.url, smsRequest.init);
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok || result.Code !== 'OK') {
+    return { error: '短信验证码发送失败，请稍后再试' };
   }
   return { sent: true };
 }
@@ -1810,7 +1935,7 @@ async function deleteVerificationCode(env, { phone, email }) {
 async function handleSendCode(request, env) {
   try {
     const { phone, email } = await request.json();
-    const target = getVerificationTarget({ phone, email });
+    const target = getRegistrationVerificationTarget({ phone, email }, request);
     if (!target) {
       if (email !== undefined) return localizedErrorResponse('email_required', request);
       return localizedErrorResponse('phone_required', request);
@@ -1819,7 +1944,7 @@ async function handleSendCode(request, env) {
     if (target.type === 'email' && !isValidEmail(target.value)) {
       return localizedErrorResponse('invalid_email', request);
     }
-    if (target.type === 'phone' && !/^1\d{10}$/.test(target.value)) {
+    if (target.type === 'phone' && !isCnPhoneNumber(target.value)) {
       return localizedErrorResponse('invalid_phone', request);
     }
 
@@ -1875,6 +2000,12 @@ async function handleSendCode(request, env) {
         await deleteVerificationCode(env, { email: target.value });
         return errorResponse(emailResult.error, 503);
       }
+    } else if (getRequestMarket(request) === 'cn') {
+      const smsResult = await sendAliyunSmsVerification(env, target.value, devBypass || code);
+      if (smsResult.error) {
+        await deleteVerificationCode(env, { phone: target.value });
+        return errorResponse(smsResult.error, 503);
+      }
     }
     return jsonResponse(response);
   } catch (error) {
@@ -1886,8 +2017,9 @@ async function handleSendCode(request, env) {
 async function handleRegisterCustomer(request, env) {
   try {
     const { name, phone, email, password, code, company, identity } = await request.json();
+    const market = getRequestMarket(request);
 
-    if (!name || !phone || !email || !password || !company) {
+    if (!name || !phone || !password || !company || (market !== 'cn' && !email)) {
       return localizedErrorResponse('name_phone_company_password_required', request);
     }
 

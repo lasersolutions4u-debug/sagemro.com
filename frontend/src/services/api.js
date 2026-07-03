@@ -67,13 +67,17 @@ function authHeaders() {
 /**
  * 发送验证码
  */
-export async function sendVerifyCode(email) {
+export async function sendVerifyCode({ phone, email }) {
+  const payload = email ? { email } : { phone };
   const response = await fetch(`${API_BASE}/api/auth/send-code`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email }),
+    body: JSON.stringify(payload),
   });
-  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(data.error || `HTTP ${response.status}`);
+  }
   return response.json();
 }
 
