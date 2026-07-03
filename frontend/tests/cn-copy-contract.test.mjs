@@ -54,9 +54,9 @@ test('CN public service copy avoids stiff translated product wording', () => {
   assert.doesNotMatch(publicSources, /现场照片/);
 
   assert.match(publicSources, /把问题整理清楚/);
-  assert.match(publicSources, /进入人工确认与服务安排/);
+  assert.match(publicSources, /进入人工确认与服务协调/);
   assert.match(publicSources, /一次对话，理清六类服务方向/);
-  assert.match(publicSources, /后续能推进的服务依据/);
+  assert.match(publicSources, /后续可推进的服务依据/);
 });
 
 test('CN first impression copy builds market trust for customers, engineers, and operations', () => {
@@ -67,10 +67,10 @@ test('CN first impression copy builds market trust for customers, engineers, and
     read('admin/src/config/runtime.js'),
   ].join('\n');
 
-  assert.match(homeSource, /官方服务入口/);
-  assert.match(homeSource, /锁定下一步/);
-  assert.match(homeSource, /设备问题不用等/);
-  assert.match(homeSource, /一句现场描述/);
+  assert.match(homeSource, /第三方设备服务/);
+  assert.match(homeSource, /理出下一步/);
+  assert.match(homeSource, /让专业 AI 协助/);
+  assert.match(homeSource, /现场情况/);
 
   assert.match(engineerCnCopy, /长期合作/);
   assert.match(engineerCnCopy, /排单日历/);

@@ -15,9 +15,9 @@ const aiCapabilities = [
 ];
 
 const trustPoints = [
-  '官方服务入口：报警、停机、备件、维保和新机项目，都可以从一次对话开始',
-  '把现场信息整理成后续能推进的服务依据，帮助你锁定下一步',
-  'AI 先理清问题，SAGEMRO 官方服务再确认诊断、报价与现场安全要求',
+  '第三方设备服务：报警、停机、备件、维保和新机项目，都可以从一次对话开始',
+  '把现场信息整理成可审核、可跟进、可复用的服务依据',
+  'AI 先协助理清问题；诊断、报价与现场安全要求再由 SAGEMRO 服务流程确认',
 ];
 
 export function WelcomePage() {
@@ -35,10 +35,10 @@ export function WelcomePage() {
             {serviceName}
           </div>
           <h1 className="text-[28px] font-semibold leading-tight tracking-tight text-[var(--color-text-primary)] sm:text-[42px]">
-            设备问题不用等，从一句现场描述开始。
+            让专业 AI 协助，设备问题解决得更高效。
           </h1>
           <p className="mx-auto mt-4 max-w-3xl text-sm leading-7 text-[var(--color-text-secondary)] sm:text-base">
-            SAGEMRO 是面向激光切割机与钣金加工设备的 AI 辅助官方服务入口。你只需要描述现场情况，系统会帮助整理关键信息，并把问题带向故障判断、备件确认、维保安排、官方服务或新机评估。
+            SAGEMRO 是面向激光切割机与钣金加工设备的第三方智能服务品牌。你只需要说清现场情况，系统会帮助整理关键信息，把问题推进到故障判断、备件确认、维保安排、服务协调或新机评估。
           </p>
         </div>
 
@@ -49,10 +49,10 @@ export function WelcomePage() {
             </div>
             <div>
               <h2 className="text-base font-semibold text-[var(--color-text-primary)]">
-                从一句现场描述开始，锁定可靠的下一步。
+                先把现场情况说清楚，SAGEMRO 帮你理出下一步。
               </h2>
               <p className="mt-1 text-xs leading-relaxed text-[var(--color-text-secondary)] sm:text-sm">
-                像和工程师沟通一样说明报警、现象、设备和生产影响。SAGEMRO 会在聊天中追问并请你确认，减少反复沟通和信息遗漏。
+                报警、现象、设备型号、加工材料、生产影响，都可以直接在聊天里说明。SAGEMRO 会继续追问关键缺失信息，并请你确认，把零散描述整理成后续可推进的服务依据。
               </p>
             </div>
           </div>

@@ -75,7 +75,7 @@ export function useChat() {
             m.id === assistantMessageId
               ? {
                   ...m,
-                  content: `Sorry, SAGEMRO AI could not respond right now (${message}). Please try again, or leave your equipment details and SAGEMRO will follow up through the official service process.`,
+                  content: `Sorry, SAGEMRO AI could not respond right now (${message}). Please try again, or leave your equipment details and SAGEMRO will follow up through the service process.`,
                 }
               : m
           ));

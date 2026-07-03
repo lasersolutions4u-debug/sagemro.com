@@ -67,7 +67,7 @@ export function EngineerPricingPanel({ workOrderId, engineerId, onSubmitted, com
   const [submitting, setSubmitting] = useState(false);
 
   const subtotal = (parseInt(form.labor_fee) || 0) + (parseInt(form.parts_fee) || 0) + (parseInt(form.travel_fee) || 0) + (parseInt(form.other_fee) || 0);
-  const internalEstimate = Math.round(subtotal * commissionRate); // Internal legacy estimate; customer-facing quote uses SAGEMRO official pricing.
+  const internalEstimate = Math.round(subtotal * commissionRate); // Internal legacy estimate; customer-facing quote uses SAGEMRO-reviewed pricing.
 
   const handleSubmit = async () => {
     setSubmitting(true);
@@ -80,7 +80,7 @@ export function EngineerPricingPanel({ workOrderId, engineerId, onSubmitted, com
         parts_detail: form.parts_detail,
         engineer_id: engineerId,
       });
-      toastSuccess(isCn ? '报价建议已提交，等待 SAGEMRO 官方审核。' : 'Quote submitted for SAGEMRO official review.');
+      toastSuccess(isCn ? '报价建议已提交，等待 SAGEMRO 审核。' : 'Quote submitted for SAGEMRO review.');
       onSubmitted?.();
     } catch (e) {
       toastError((isCn ? '提交失败：' : 'Submission failed: ') + e.message);
@@ -109,8 +109,8 @@ export function EngineerPricingPanel({ workOrderId, engineerId, onSubmitted, com
     <div className="space-y-3">
       <div className="text-xs text-[var(--color-text-muted)]">
         {isCn
-          ? '请填写内部报价建议。客户看到正式报价前，SAGEMRO 运营团队会先审核服务范围、费用和安全要求。'
-          : 'Fill in the fee details as an internal quote proposal. SAGEMRO operations will review it before the customer sees an official quote.'}
+          ? '请填写内部报价建议。客户看到报价前，SAGEMRO 运营团队会先审核服务范围、费用和安全要求。'
+          : 'Fill in the fee details as an internal quote proposal. SAGEMRO operations will review it before the customer sees a formal quote.'}
       </div>
       <div className="grid grid-cols-2 gap-3">
         {field('labor_fee', isCn ? '人工费' : 'Labor Fee', isCn ? '工时 × 单价' : 'Hours × Rate')}
@@ -212,7 +212,7 @@ export function CustomerPricingPanel({ workOrderId, customerId, onConfirmed }) {
       <div className="rounded-xl bg-[var(--color-surface-elevated)] p-4 text-center text-sm text-[var(--color-text-muted)]">
         {isCn
           ? 'SAGEMRO 正在准备正式报价。诊断、服务范围和现场安全要求审核后，你会收到确认通知。'
-          : 'SAGEMRO is preparing the official quote. You will be notified once diagnosis, scope, and safety requirements are reviewed.'}
+          : 'SAGEMRO is preparing the formal quote. You will be notified once diagnosis, scope, and safety requirements are reviewed.'}
       </div>
     );
   }

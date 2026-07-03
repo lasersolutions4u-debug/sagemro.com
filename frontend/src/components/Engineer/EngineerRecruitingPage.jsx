@@ -7,7 +7,7 @@ const COPY = {
   cn: {
     badge: 'SAGEMRO 认证服务工程师计划',
     title: '让真正懂现场的工程师，被看见、被支持、被成就。',
-    subtitle: 'SAGEMRO 正在建设面向激光切割机与钣金加工设备的官方服务体系。我们寻找愿意长期合作、认真服务客户、持续提升专业能力的工程师；确认合作后，由运营团队统一分配账号，并在区域协同、排单日历、服务标准、资料沉淀和成长支持上持续陪伴。',
+    subtitle: 'SAGEMRO 正在建设面向激光切割机与钣金加工设备的第三方服务协作体系。我们寻找愿意长期合作、认真服务客户、持续提升专业能力的工程师；确认合作后，由运营团队统一分配账号，并在区域协同、排单日历、服务标准、资料沉淀和成长支持上持续陪伴。',
     primary: '申请成为认证服务工程师',
     signIn: '已有工程师账号，进入工作台',
     headerSubtitle: '认证服务工程师网络',
@@ -49,7 +49,7 @@ const COPY = {
   en: {
     badge: 'SAGEMRO Service OS · Certified Representative Program',
     title: 'A service network built for engineers who take field work seriously.',
-    subtitle: 'SAGEMRO is building an official service network for laser cutting machines and sheet metal equipment. We review each application manually, then support approved representatives with dispatch coordination, service standards, equipment context, and growth resources.',
+    subtitle: 'SAGEMRO is building an independent service coordination network for laser cutting machines and sheet metal equipment. We review each application manually, then support approved representatives with dispatch coordination, service standards, equipment context, and growth resources.',
     primary: 'Apply as a Certified Service Representative',
     signIn: 'I already have an engineer account',
     headerSubtitle: 'Service Representative Network',

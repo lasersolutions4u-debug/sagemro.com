@@ -8,7 +8,7 @@ const TEXT = {
     loading: 'Loading...',
     loadFailed: 'Failed to load',
     title: 'SAGEMRO Operations Console',
-    subtitle: 'Lead routing, official service confirmation, dispatch management, quote review, service quality, and compliant archiving.',
+    subtitle: 'Lead routing, service review, dispatch management, quote approval, service quality, and compliant archiving.',
     cards: {
       aiLeadsToday: 'New AI leads today',
       pendingReview: 'Service requests pending review',

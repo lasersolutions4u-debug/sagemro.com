@@ -415,7 +415,7 @@
       "expect": {
         "prompt_contains": [
           "Do not push a work order or service request after a simple question is already answered clearly",
-          "Add a short SAGEMRO official follow-up offer only when manual confirmation, quotation, parts, service scheduling, safety handling, or official parameter verification is clearly useful",
+          "Add a short SAGEMRO service follow-up offer only when manual confirmation, quotation, parts, service scheduling, safety handling, or reviewed parameter verification is clearly useful",
           "If the user did not explicitly request a detailed plan, table, report, or full checklist, write exactly 5 compact lines"
         ]
       }
@@ -439,7 +439,7 @@
     {
       "id": "pc-005",
       "category": "prompt_contract",
-      "description": "停机和安全风险需要推进官方服务跟进摘要",
+      "description": "停机和安全风险需要推进 SAGEMRO 服务跟进摘要",
       "input": {
         "url": "https://api.sagemro.com/api/chat",
         "origin": "https://sagemro.com",
@@ -447,8 +447,8 @@
       },
       "expect": {
         "prompt_contains": [
-          "Service conversion triggers: production-stopping faults, safety risks, official quotation, parts confirmation, on-site service, remote diagnosis, new machine selection, or explicit service request",
-          "For urgent or unsafe equipment issues, prioritize stop-work safety guidance, risk level, missing facts, and a SAGEMRO official follow-up summary"
+          "Service conversion triggers: production-stopping faults, safety risks, formal quotation, parts confirmation, on-site service, remote diagnosis, new machine selection, or explicit service request",
+          "For urgent or unsafe equipment issues, prioritize stop-work safety guidance, risk level, missing facts, and a SAGEMRO service follow-up summary"
         ]
       }
     },
@@ -499,7 +499,7 @@
           "Classify the user's current need internally as one of: answer_only, guided_check, service_recommended",
           "answer_only: answer clearly and stop without a work order CTA",
           "guided_check: give 2-4 practical checks and ask for the result before recommending service",
-          "service_recommended: use only when there is downtime, safety risk, official quote, parts confirmation, on-site or remote service need, new machine selection, or an explicit service request"
+          "service_recommended: use only when there is downtime, safety risk, formal quote, parts confirmation, on-site or remote service need, new machine selection, or an explicit service request"
         ]
       }
     },

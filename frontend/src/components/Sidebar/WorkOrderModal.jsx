@@ -139,7 +139,7 @@ export function WorkOrderModal({ isOpen, onClose, onSubmit }) {
     <Modal
       isOpen={isOpen}
       onClose={handleClose}
-      title={submitted ? (isCn ? '服务申请已提交' : 'Service Request Submitted') : (isCn ? '提交 SAGEMRO 官方服务申请' : 'Request SAGEMRO Official Service')}
+      title={submitted ? (isCn ? '服务申请已提交' : 'Service Request Submitted') : (isCn ? '提交 SAGEMRO 服务申请' : 'Request SAGEMRO Service Support')}
       size="md"
     >
       {/* 提交成功提示 */}
@@ -156,8 +156,8 @@ export function WorkOrderModal({ isOpen, onClose, onSubmit }) {
           </div>
           <p className="text-xs text-[var(--color-text-secondary)] text-center">
             {isCn
-              ? 'SAGEMRO 将审核你的服务需求，确认诊断、报价和现场安全要求后，再安排合适的官方服务人员。你可以在“我的服务”里随时查看进度。'
-              : 'SAGEMRO will review the request, confirm details, and arrange the right official engineer or service representative. You can track progress in "My Services" at any time.'}
+              ? 'SAGEMRO 将审核你的服务需求，确认诊断、报价和现场安全要求后，再协调合适的工程师或服务代表。你可以在“我的服务”里随时查看进度。'
+              : 'SAGEMRO will review the request, confirm details, and coordinate the right engineer or service representative. You can track progress in "My Services" at any time.'}
           </p>
           <button
             onClick={handleClose}

@@ -206,7 +206,7 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
                   <span className="flex-shrink-0 w-7 h-7 rounded-full bg-[var(--color-primary)] text-white text-sm flex items-center justify-center font-medium">A</span>
                   <div>
                     <p className="font-medium text-sm group-hover:text-[var(--color-primary)] transition-colors">我需要设备服务、备件支持或新机选型建议</p>
-                    <p className="text-xs text-[var(--color-text-secondary)] mt-0.5">向 SAGEMRO 说明设备情况，官方服务团队会审核需求并跟进。</p>
+                    <p className="text-xs text-[var(--color-text-secondary)] mt-0.5">向 SAGEMRO 说明设备情况，我们会帮助整理并推进后续服务确认。</p>
                   </div>
                 </div>
               </button>
@@ -383,7 +383,7 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
                   <span className="flex-shrink-0 w-7 h-7 rounded-full bg-[var(--color-primary)] text-white text-sm flex items-center justify-center font-medium">A</span>
                   <div>
                     <p className="font-medium text-sm group-hover:text-[var(--color-primary)] transition-colors">我是设备客户</p>
-                    <p className="text-xs text-[var(--color-text-secondary)] mt-0.5">获取 AI 初诊、官方服务申请、设备档案、备件支持和维护跟进。</p>
+                    <p className="text-xs text-[var(--color-text-secondary)] mt-0.5">获取 AI 初诊、服务申请、设备档案、备件支持和维护跟进。</p>
                   </div>
                 </div>
               </button>
@@ -418,13 +418,13 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
               </div>
               <p className="text-base font-medium mb-1">身份确认</p>
               <p className="text-sm text-[var(--color-text-secondary)]">
-                你选择了“设备客户”。完成确认后，可使用 AI 初诊、官方服务申请和设备档案等核心能力。
+                你选择了“设备客户”。完成确认后，可使用 AI 初诊、服务申请和设备档案等核心能力。
               </p>
             </div>
 
             <div className="p-4 bg-[var(--color-surface-elevated)] rounded-xl text-[13px] text-[var(--color-text-secondary)]">
               {selectedIdentity === 'customer' ? (
-                <p>完成确认后，你可以提交 SAGEMRO 官方服务申请、查看设备档案、跟踪服务进度，并获得更贴合设备情况的建议。</p>
+                <p>完成确认后，你可以提交 SAGEMRO 服务申请、查看设备档案、跟踪服务进度，并获得更贴合设备情况的建议。</p>
               ) : null}
             </div>
 

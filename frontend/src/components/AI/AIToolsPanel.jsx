@@ -168,7 +168,7 @@ export function AIToolsPanel({ onSendMessage }) {
           <div className="flex items-start gap-2 text-[11px] text-[var(--color-text-secondary)] leading-relaxed">
             <ShieldAlert size={14} className="text-amber-500 mt-0.5 flex-shrink-0" />
             <span>
-              AI provides preliminary guidance only. SAGEMRO official service confirms diagnosis, quote, and safety requirements.
+              AI provides preliminary guidance only. SAGEMRO service process confirms diagnosis, quote, and safety requirements.
             </span>
           </div>
           <div className="flex flex-wrap gap-2">

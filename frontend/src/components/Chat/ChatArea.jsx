@@ -48,7 +48,7 @@ export function ChatArea({
           </h1>
           {!hasMessages && (
             <p className="hidden sm:block text-[11px] text-[var(--color-text-secondary)]">
-              面向激光切割与钣金设备的官方服务智能入口
+              面向激光切割与钣金设备的第三方智能服务入口
             </p>
           )}
         </div>
@@ -76,7 +76,7 @@ export function ChatArea({
         <div className="px-3 sm:px-5 py-2 border-b border-[var(--color-border)] bg-[var(--color-surface)]/70 flex items-center justify-center gap-2">
           <Info size={12} className="text-[var(--color-text-muted)] flex-shrink-0" />
           <p className="text-[11px] text-[var(--color-text-secondary)] leading-tight">
-            AI 帮助更快梳理服务路径。最终诊断、报价和现场安全要求由 SAGEMRO 官方服务确认。
+            AI 用于快速梳理问题。最终诊断、报价和现场安全要求需经 SAGEMRO 服务流程确认。
             {onOpenLegal && (
               <button
                 onClick={() => onOpenLegal('ai')}

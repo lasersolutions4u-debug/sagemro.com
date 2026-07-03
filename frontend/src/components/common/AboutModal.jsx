@@ -16,7 +16,7 @@ import { isCnLocale } from '../../utils/locale';
 const serviceMoments = [
   { icon: MessageCircle, title: '从一次对话开始', desc: '用自然语言描述报警、备件、切割质量、维保需求或新机项目，不需要先填复杂表单。' },
   { icon: ClipboardCheck, title: '把问题整理清楚', desc: 'SAGEMRO AI 会追问关键细节，把现场情况整理成便于确认和跟进的服务摘要。' },
-  { icon: Wrench, title: '进入人工确认与服务安排', desc: '涉及诊断、报价、备件、排期或现场安全时，由 SAGEMRO 官方服务继续确认。' },
+  { icon: Wrench, title: '进入人工确认与服务协调', desc: '涉及诊断、报价、备件、排期或现场安全时，由 SAGEMRO 继续协调确认。' },
 ];
 
 const conversationCapabilities = [
@@ -31,7 +31,7 @@ const conversationCapabilities = [
 const serviceStandards = [
   'AI 初步指导、服务审核、工程师执行和服务归档统一遵循 SAGEMRO 服务标准',
   '设备档案、服务上下文、服务历史和报告持续关联，便于后续支持',
-  'AI 用于提升准备效率；最终诊断、报价和安全要求由 SAGEMRO 官方确认',
+  'AI 用于提升准备效率；最终诊断、报价和安全要求通过 SAGEMRO 服务流程确认',
   '备件、维保、生命周期建议和 Euchio 新机项目可以从同一服务记录自然延展',
 ];
 
@@ -39,8 +39,8 @@ export function AboutModal({ isOpen, onClose }) {
   const isCn = isCnLocale();
   const serviceName = isCn ? 'SAGEMRO 智能服务系统' : 'SAGEMRO Service OS';
   const operatorLine = isCn
-    ? '济南钰峭机械有限公司'
-    : 'A product of Jinan Euchio Machinery Co., Ltd.';
+    ? '由济南钰峭机械有限公司运营'
+    : 'Operated by Jinan Euchio Machinery Co., Ltd.';
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} title={isCn ? `关于 ${serviceName}` : `About ${serviceName}`} size="lg">
@@ -51,7 +51,7 @@ export function AboutModal({ isOpen, onClose }) {
             {serviceName}
           </h2>
           <p className="text-sm text-[var(--color-text-secondary)] leading-relaxed">
-            面向激光切割与钣金加工设备的 AI 辅助官方服务入口。你只需说明现场情况，SAGEMRO 会帮助梳理问题、确认关键信息，并把它推进到诊断、备件、维保、服务或新机评估。
+            面向激光切割与钣金加工设备的第三方智能服务平台。你只需说明现场情况，SAGEMRO 会帮助梳理问题、确认关键信息，并把它推进到诊断、备件、维保、服务协调或设备升级评估。
           </p>
         </div>
 

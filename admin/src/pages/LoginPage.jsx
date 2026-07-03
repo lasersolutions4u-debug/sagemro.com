@@ -6,7 +6,7 @@ import { BrandMark } from '../components/BrandMark';
 const TEXT = {
   en: {
     title: 'SAGEMRO Operations Console',
-    eyebrow: 'Official Service Operations',
+    eyebrow: 'Service Operations',
     subtitle: 'Lead review, dispatch, quoting, and service archive in one controlled workflow.',
     panelTitle: 'Sign in to continue',
     phonePlaceholder: 'Admin phone number',
@@ -17,7 +17,7 @@ const TEXT = {
   },
   'zh-CN': {
     title: 'SAGEMRO 运营中枢',
-    eyebrow: '官方服务运营控制台',
+    eyebrow: '服务运营控制台',
     subtitle: '用于线索审核、派工、报价和服务归档，帮助团队把客户问题推进到可靠结果。',
     panelTitle: '管理员登录',
     phonePlaceholder: '管理员手机号',
