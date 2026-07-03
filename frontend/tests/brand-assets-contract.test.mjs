@@ -64,6 +64,7 @@ test('main site first-impression copy keeps CN and COM market language separate'
 test('registration copy hides CN email input and routes verification through phone SMS', () => {
   const loginModal = read('frontend/src/components/Auth/LoginModal.jsx');
   const api = read('frontend/src/services/api.js');
+  const toolbar = read('frontend/src/components/Sidebar/ToolBar.jsx');
 
   assert.match(loginModal, /emailRequired: '请输入邮箱'/);
   assert.doesNotMatch(loginModal, /emailAddress: '邮箱/);
@@ -79,4 +80,7 @@ test('registration copy hides CN email input and routes verification through pho
   assert.match(api, /sendVerifyCode\(\{ phone, email \}\)/);
   assert.match(api, /JSON\.stringify\(payload\)/);
   assert.match(api, /registerCustomer\(\{ name, phone, email, password, code, company, identity \}\)/);
+  assert.match(toolbar, /loginLabel: '登录 \/ 注册'/);
+  assert.match(toolbar, /loginLabel: 'Sign In \/ Register'/);
+  assert.doesNotMatch(toolbar, /<span>Sign In \/ Register<\/span>/);
 });

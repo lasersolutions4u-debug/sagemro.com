@@ -1,5 +1,15 @@
 import { FileText, ClipboardList, LogIn, LogOut, Package, Bell, MoreHorizontal, X } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
+import { isCnLocale } from '../../utils/locale';
+
+const TOOLBAR_COPY = {
+  cn: {
+    loginLabel: '登录 / 注册',
+  },
+  en: {
+    loginLabel: 'Sign In / Register',
+  },
+};
 
 export function ToolBar({
   onOpenWorkOrder,
@@ -14,6 +24,7 @@ export function ToolBar({
   currentUser,
   userType,
 }) {
+  const copy = isCnLocale() ? TOOLBAR_COPY.cn : TOOLBAR_COPY.en;
   const [showMore, setShowMore] = useState(false);
   const [collapsed, setCollapsed] = useState(true);
   const moreMenuRef = useRef(null);
@@ -154,7 +165,7 @@ export function ToolBar({
             className="w-full flex items-center gap-3 px-4 py-2.5 text-[14px] text-[var(--color-sidebar-muted)] hover:bg-[var(--color-sidebar-surface)] hover:text-[var(--color-sidebar-text)] rounded-lg mx-1 transition-colors"
           >
             <LogIn size={17} />
-            <span>Sign In / Register</span>
+            <span>{copy.loginLabel}</span>
           </button>
         )}
       </div>
