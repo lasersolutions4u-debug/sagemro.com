@@ -1725,6 +1725,10 @@ function isCnPhoneNumber(phone) {
   return /^1\d{10}$/.test(String(phone || ''));
 }
 
+function getDevelopmentBypassCode(env) {
+  return env.ENVIRONMENT === 'development' ? env.DEV_BYPASS_CODE : null;
+}
+
 function getVerificationTarget({ phone, email }) {
   const normalizedEmail = normalizeEmail(email);
   if (normalizedEmail) {
@@ -1914,7 +1918,7 @@ async function isVerificationCodeValid(env, { phone, email, code }) {
   const legacyStoredCode = target.type === 'email' && phone
     ? await env.KV.get(`verify_code_${phone}`)
     : null;
-  const devBypass = env.ENVIRONMENT === 'development' ? env.DEV_BYPASS_CODE : null;
+  const devBypass = getDevelopmentBypassCode(env);
   return (storedCode && storedCode === code)
     || (legacyStoredCode && legacyStoredCode === code)
     || (devBypass && devBypass === code);
@@ -1978,7 +1982,7 @@ async function handleSendCode(request, env) {
     // - 真实验证码：仅 development 环境在响应中返回，production 通过短信发送
     // - bypass 码 "888888"：所有环境均写入 KV，供自动化测试使用（TTL 5 分钟）
     // - DEV_BYPASS_CODE：如果配置了固定验证码，直接使用该码（跳过随机生成）
-    const devBypass = env.DEV_BYPASS_CODE;
+    const devBypass = getDevelopmentBypassCode(env);
     const response = { success: true, message: '验证码已发送' };
     if (env.ENVIRONMENT === 'development') {
       if (devBypass) {
@@ -2081,7 +2085,7 @@ async function handleRegisterEngineer(request, env) {
     // 验证验证码（开发环境支持 bypass 码 "888888" + DEV_BYPASS_CODE 用于自动化测试）
     const storedCode = await env.KV.get(`verify_code_${phone}`);
     const bypassCode = await env.KV.get(`verify_code_${phone}_bypass`);
-    const devBypass = env.DEV_BYPASS_CODE;
+    const devBypass = getDevelopmentBypassCode(env);
     const isValid = (storedCode && storedCode === code)
       || (bypassCode && bypassCode === code)
       || (devBypass && devBypass === code);
@@ -2286,7 +2290,7 @@ async function handleSendResetCode(request, env) {
     // - 真实验证码：仅 development 环境在响应中返回，production 通过短信发送
     // - bypass 码 "888888"：所有环境均写入 KV，供自动化测试使用（TTL 5 分钟）
     // - DEV_BYPASS_CODE：如果配置了固定验证码，直接使用该码
-    const devBypass = env.DEV_BYPASS_CODE;
+    const devBypass = getDevelopmentBypassCode(env);
     const response = { success: true, message: '验证码已发送' };
     if (env.ENVIRONMENT === 'development') {
       if (devBypass) {
@@ -2316,7 +2320,7 @@ async function handleResetPassword(request, env) {
 
     // 验证验证码（开发环境支持 bypass 码 "888888" + DEV_BYPASS_CODE 用于自动化测试）
     const storedCode = await env.KV.get(`reset_code_${phone}`);
-    const devBypass = env.ENVIRONMENT === 'development' ? env.DEV_BYPASS_CODE : null;
+    const devBypass = getDevelopmentBypassCode(env);
     const isValid = (storedCode && storedCode === code)
       || (devBypass && devBypass === code);
     if (!isValid) {

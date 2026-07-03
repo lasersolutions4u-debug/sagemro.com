@@ -25,6 +25,7 @@ build/
 # Logs
 *.log
 npm-debug.log*
+.npm-cache/
 
 # OS files
 .DS_Store
@@ -54,3 +55,17 @@ __pycache__/
 
 # Misc
 *.bak
+.gstack/
+.worktrees/
+
+# Local browser and media-generation scratch output
+.playwright-cli/
+output/
+/query
+sample_config.json
+episode*_*.json
+wavespeed_make.py
+switch-model.ps1
+lock-file-associations.ps1
+docs/test_*.pdf
+docs/*流水*.pdf
