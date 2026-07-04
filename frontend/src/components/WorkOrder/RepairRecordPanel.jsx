@@ -264,7 +264,7 @@ export function RepairRecordPanel({ workOrderId, userType, repairRecord, onSaved
         </button>
       </div>
 
-      <MaterialPicker purpose="service_report" items={materialItems} onChange={setMaterialItems} />
+      <MaterialPicker purpose="service_report" workOrderId={workOrderId} items={materialItems} onChange={setMaterialItems} />
 
       <div>
         <label className="block text-xs text-[var(--color-text-secondary)] mb-1">Labor Hours</label>

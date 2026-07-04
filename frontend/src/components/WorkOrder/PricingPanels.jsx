@@ -15,7 +15,7 @@ const PRICING_COPY = {
   en: {
     status: {
       draft: 'Draft / Negotiating',
-      pending_review: 'SAGEMRO Review',
+      pending_review: 'Operations Review',
       submitted: 'Submitted, Awaiting Confirmation',
       confirmed: 'Confirmed',
     },
@@ -25,8 +25,8 @@ const PRICING_COPY = {
       low: 'Price is on the low side',
     },
     engineer: {
-      submitted: 'Quote submitted for SAGEMRO review.',
-      helper: 'Fill in the fee details as an internal quote proposal. SAGEMRO operations will review it before the customer sees a formal quote.',
+      submitted: 'Quote submitted for operations review.',
+      helper: 'Fill in the fee details as an internal quote proposal. The operations team will review scope, fees, and safety requirements before the customer sees a formal quote.',
       laborFee: 'Labor Fee',
       laborPlaceholder: 'Hours × Rate',
       partsFee: 'Parts Fee',
@@ -40,13 +40,13 @@ const PRICING_COPY = {
       quoteSubtotal: 'Quote Subtotal (Customer Pays)',
       internalSettlement: 'Internal Settlement Estimate',
       submitting: 'Submitting...',
-      submit: 'Submit for SAGEMRO Review',
+      submit: 'Submit for Operations Review',
     },
     customer: {
       confirmedToast: 'Quote confirmed. SAGEMRO will proceed with service scheduling.',
       negotiationRequired: 'Please enter a reason for negotiation',
-      negotiationToast: 'Negotiation initiated. SAGEMRO will review and submit a revised quote.',
-      preparingQuote: 'SAGEMRO is preparing a formal quote. You will be notified once diagnosis, scope, and safety requirements are reviewed.',
+      negotiationToast: 'Negotiation initiated. Operations will review and submit a revised quote.',
+      preparingQuote: 'SAGEMRO is preparing a formal quote. You will be notified after diagnosis, scope, and safety requirements are reviewed.',
       serviceFee: 'Service Fee',
       serviceManagementFee: 'SAGEMRO Service Management Fee',
       totalPayable: 'Total Payable',
@@ -65,7 +65,7 @@ const PRICING_COPY = {
   cn: {
     status: {
       draft: '草稿 / 协商中',
-      pending_review: 'SAGEMRO 审核',
+      pending_review: '运营复核中',
       submitted: '已提交，待客户确认',
       confirmed: '已确认',
     },
@@ -75,8 +75,8 @@ const PRICING_COPY = {
       low: '报价偏低',
     },
     engineer: {
-      submitted: '报价建议已提交，等待 SAGEMRO 审核。',
-      helper: '请填写费用明细作为内部报价建议。SAGEMRO 运营审核后，客户才能看到正式报价。',
+      submitted: '报价建议已提交，等待运营复核。',
+      helper: '请填写费用明细作为内部报价建议。客户看到正式报价前，运营团队会先复核服务范围、费用和安全要求。',
       laborFee: '人工费',
       laborPlaceholder: '工时 × 单价',
       partsFee: '备件费',
@@ -90,13 +90,13 @@ const PRICING_COPY = {
       quoteSubtotal: '报价小计（客户支付）',
       internalSettlement: '内部结算预估',
       submitting: '提交中...',
-      submit: '提交 SAGEMRO 审核',
+      submit: '提交运营复核',
     },
     customer: {
       confirmedToast: '报价已确认。SAGEMRO 将继续推进服务排期。',
       negotiationRequired: '请填写需要协商的原因',
-      negotiationToast: '已发起协商。SAGEMRO 将审核并提交调整后的报价。',
-      preparingQuote: 'SAGEMRO 正在准备正式报价。诊断方向、服务范围和安全要求审核后会通知你确认。',
+      negotiationToast: '已发起协商。运营团队将复核并提交调整后的报价。',
+      preparingQuote: 'SAGEMRO 正在准备正式报价。诊断方向、服务范围和安全要求复核后会通知你确认。',
       serviceFee: '服务费用',
       serviceManagementFee: 'SAGEMRO 服务管理费',
       totalPayable: '应付合计',
@@ -232,7 +232,7 @@ export function EngineerPricingPanel({ workOrderId, engineerId, onSubmitted, com
           className="w-full px-3 py-2 text-sm border border-[var(--color-border)] rounded-xl bg-[var(--color-surface)] text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)] resize-none"
         />
       </div>
-      <MaterialPicker purpose="quote" items={materialItems} onChange={setMaterialItems} />
+      <MaterialPicker purpose="quote" workOrderId={workOrderId} items={materialItems} onChange={setMaterialItems} />
       {/* 费用汇总 */}
       <div className="p-3 bg-[var(--color-surface-elevated)] rounded-xl space-y-1.5 text-sm">
         <div className="flex justify-between"><span className="text-[var(--color-text-secondary)]">{t.engineer.laborFee}</span><span>{form.labor_fee || 0} CNY</span></div>

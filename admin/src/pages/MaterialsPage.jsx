@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Boxes, Edit3, PackagePlus, RefreshCw, Save, SlidersHorizontal } from 'lucide-react';
+import { Boxes, CheckCircle2, Edit3, PackagePlus, RefreshCw, Save, SlidersHorizontal, XCircle } from 'lucide-react';
 import {
   adjustAdminMaterialInventory,
   createAdminMaterial,
+  getAdminMaterialRequests,
   getAdminMaterials,
+  reviewAdminMaterialRequest,
   updateAdminMaterial,
 } from '../services/api';
 import { runtimeConfig } from '../config/runtime';
@@ -61,6 +63,14 @@ const TEXT = {
     adjustTitle: 'Adjust inventory',
     adjust: 'Adjust',
     adjustmentSaved: 'Inventory updated.',
+    requestsTitle: 'Engineer requests',
+    requestsSubtitle: 'Review parts engineers could not find in the master data.',
+    noRequests: 'No pending material requests.',
+    approveCreate: 'Approve and create',
+    requestMoreInfo: 'Need more info',
+    rejectRequest: 'Reject',
+    requestUpdated: 'Request reviewed.',
+    sourceWorkOrder: 'Work order',
     categories: {
       laser_cutting: 'Laser cutting',
       bending: 'Bending',
@@ -74,6 +84,13 @@ const TEXT = {
       active: 'Active',
       inactive: 'Inactive',
       pending: 'Pending',
+    },
+    requestStatuses: {
+      submitted: 'Submitted',
+      needs_info: 'Needs info',
+      approved: 'Approved',
+      rejected: 'Rejected',
+      linked_existing: 'Linked existing',
     },
     adjustmentTypes: {
       manual_in: 'Manual in',
@@ -135,6 +152,14 @@ const TEXT = {
     adjustTitle: '调整库存',
     adjust: '调整',
     adjustmentSaved: '库存已更新。',
+    requestsTitle: '工程师物料申请',
+    requestsSubtitle: '工程师在工单里找不到合适配件时提交，Admin 核对后再进入物料库。',
+    noRequests: '暂无待处理物料申请。',
+    approveCreate: '批准并创建',
+    requestMoreInfo: '补充信息',
+    rejectRequest: '驳回',
+    requestUpdated: '申请已处理。',
+    sourceWorkOrder: '来源工单',
     categories: {
       laser_cutting: '激光切割',
       bending: '折弯',
@@ -148,6 +173,13 @@ const TEXT = {
       active: '启用',
       inactive: '停用',
       pending: '待确认',
+    },
+    requestStatuses: {
+      submitted: '待审核',
+      needs_info: '需补充',
+      approved: '已批准',
+      rejected: '已驳回',
+      linked_existing: '已关联已有物料',
     },
     adjustmentTypes: {
       manual_in: '手动入库',
@@ -213,8 +245,11 @@ export function MaterialsPage() {
   const [status, setStatus] = useState('all');
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState(EMPTY_FORM);
+  const [formSourceRequestId, setFormSourceRequestId] = useState('');
   const [adjusting, setAdjusting] = useState(null);
   const [adjustment, setAdjustment] = useState({ change_type: 'manual_in', delta: '', reason: '' });
+  const [requests, setRequests] = useState({ total: 0, list: [] });
+  const [requestsLoading, setRequestsLoading] = useState(true);
   const pageSize = 20;
 
   const filters = useMemo(() => ({
@@ -231,18 +266,32 @@ export function MaterialsPage() {
       .finally(() => setLoading(false));
   };
 
+  const loadRequests = () => {
+    setRequestsLoading(true);
+    getAdminMaterialRequests(1, 8, { status: 'submitted' })
+      .then(setRequests)
+      .catch((error) => setMessage(t.failed + error.message))
+      .finally(() => setRequestsLoading(false));
+  };
+
   useEffect(() => {
     load();
   }, [page, filters]);
 
+  useEffect(() => {
+    loadRequests();
+  }, []);
+
   const startCreate = () => {
     setEditing(null);
+    setFormSourceRequestId('');
     setForm(EMPTY_FORM);
     setMessage('');
   };
 
   const startEdit = (material) => {
     setEditing(material);
+    setFormSourceRequestId('');
     setForm({
       ...EMPTY_FORM,
       ...material,
@@ -309,6 +358,84 @@ export function MaterialsPage() {
     }
   };
 
+  const useRequestAsDraft = (request) => {
+    setEditing(null);
+    setFormSourceRequestId(request.id);
+    setForm({
+      ...EMPTY_FORM,
+      material_code: '',
+      category: request.category || 'other',
+      name: request.suggested_name || '',
+      name_en: request.suggested_name_en || '',
+      spec: request.spec || '',
+      brand: request.brand || '',
+      compatible_equipment: request.compatible_equipment || '',
+      supplier: request.supplier_suggestion || '',
+      unit: request.unit || 'pcs',
+      stock_quantity: Math.max(0, Math.round(Number(request.expected_quantity || 0))),
+      notes: request.usage_note || '',
+    });
+    setMessage('');
+  };
+
+  const reviewRequest = async (request, action) => {
+    setSaving(true);
+    setMessage('');
+    try {
+      if (action === 'approve_create') {
+        const draft = formSourceRequestId === request.id ? form : {
+          ...EMPTY_FORM,
+          category: request.category || 'other',
+          name: request.suggested_name || '',
+          name_en: request.suggested_name_en || '',
+          spec: request.spec || '',
+          brand: request.brand || '',
+          compatible_equipment: request.compatible_equipment || '',
+          supplier: request.supplier_suggestion || '',
+          unit: request.unit || 'pcs',
+          stock_quantity: Math.max(0, Math.round(Number(request.expected_quantity || 0))),
+          notes: request.usage_note || '',
+        };
+        const materialPayload = {
+          ...draft,
+          material_code: draft.material_code || `${(request.category || 'MAT').slice(0, 4).toUpperCase()}-${Date.now().toString().slice(-6)}`,
+          category: draft.category || request.category || 'other',
+          name: draft.name || request.suggested_name,
+          name_en: draft.name_en || request.suggested_name_en || '',
+          spec: draft.spec || request.spec || '',
+          brand: draft.brand || request.brand || '',
+          compatible_equipment: draft.compatible_equipment || request.compatible_equipment || '',
+          supplier: draft.supplier || request.supplier_suggestion || '',
+          unit: draft.unit || request.unit || 'pcs',
+          reference_cost: numberOrBlank(draft.reference_cost),
+          reference_price: numberOrBlank(draft.reference_price),
+          stock_quantity: parseInt(draft.stock_quantity || request.expected_quantity || 0, 10),
+          safety_stock: parseInt(draft.safety_stock || 0, 10),
+          status: draft.status || 'active',
+          notes: draft.notes || request.usage_note || '',
+        };
+        await reviewAdminMaterialRequest(request.id, {
+          action: 'approve_create',
+          review_notes: t.approveCreate,
+          material: materialPayload,
+        });
+      } else {
+        await reviewAdminMaterialRequest(request.id, {
+          status: action,
+          review_notes: action === 'rejected' ? t.rejectRequest : t.requestMoreInfo,
+        });
+      }
+      setMessage(t.requestUpdated);
+      startCreate();
+      loadRequests();
+      load();
+    } catch (error) {
+      setMessage(t.failed + error.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const totalPages = Math.max(1, Math.ceil(data.total / pageSize));
 
   return (
@@ -328,7 +455,7 @@ export function MaterialsPage() {
           </div>
           <button
             type="button"
-            onClick={load}
+            onClick={() => { load(); loadRequests(); }}
             className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-[var(--color-text-secondary)] transition hover:bg-white/10 hover:text-[var(--color-text)]"
           >
             <RefreshCw size={15} />
@@ -342,6 +469,92 @@ export function MaterialsPage() {
           {message}
         </div>
       )}
+
+      <div className="mb-5 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+        <div className="mb-4 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+          <div>
+            <h3 className="font-semibold text-[var(--color-text-primary)]">{t.requestsTitle}</h3>
+            <p className="mt-1 text-xs leading-5 text-[var(--color-text-secondary)]">{t.requestsSubtitle}</p>
+          </div>
+          <span className="rounded-full border border-[var(--color-border)] px-3 py-1 text-xs text-[var(--color-text-muted)]">
+            {requests.total}
+          </span>
+        </div>
+
+        {requestsLoading ? (
+          <div className="py-6 text-sm text-[var(--color-text-muted)]">{t.loading}</div>
+        ) : requests.list.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-[var(--color-border)] px-4 py-6 text-sm text-[var(--color-text-muted)]">
+            {t.noRequests}
+          </div>
+        ) : (
+          <div className="grid gap-3 xl:grid-cols-2">
+            {requests.list.map((request) => (
+              <div key={request.id} className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-elevated)] p-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="font-medium text-[var(--color-text-primary)]">{request.suggested_name}</div>
+                    <div className="mt-1 text-xs text-[var(--color-text-muted)]">
+                      {[request.spec, request.brand, request.unit].filter(Boolean).join(' · ') || '-'}
+                    </div>
+                    <div className="mt-1 text-xs text-[var(--color-primary)]">{t.categories[request.category] || request.category}</div>
+                  </div>
+                  <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-1 text-xs text-amber-300">
+                    {t.requestStatuses[request.status] || request.status}
+                  </span>
+                </div>
+                <div className="mt-3 grid gap-2 text-xs text-[var(--color-text-secondary)] sm:grid-cols-2">
+                  <div>{t.sourceWorkOrder}: {request.work_order_id || '-'}</div>
+                  <div>{t.fields.stock_quantity}: {request.expected_quantity || 1} {request.unit || 'pcs'}</div>
+                  <div>{t.fields.compatible_equipment}: {request.compatible_equipment || '-'}</div>
+                  <div>{t.fields.supplier}: {request.supplier_suggestion || '-'}</div>
+                </div>
+                {request.usage_note && (
+                  <div className="mt-2 rounded-lg bg-[var(--color-surface)] px-3 py-2 text-xs leading-5 text-[var(--color-text-secondary)]">
+                    {request.usage_note}
+                  </div>
+                )}
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => useRequestAsDraft(request)}
+                    className="inline-flex items-center gap-1 rounded-lg border border-[var(--color-border)] px-2 py-1 text-xs text-[var(--color-text-secondary)] hover:border-[var(--color-primary)] hover:text-[var(--color-primary)]"
+                  >
+                    <Edit3 size={13} />
+                    {editing ? t.editMaterial : t.newMaterial}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => reviewRequest(request, 'approve_create')}
+                    disabled={saving}
+                    className="inline-flex items-center gap-1 rounded-lg border border-emerald-500/30 px-2 py-1 text-xs text-emerald-300 hover:bg-emerald-500/10 disabled:opacity-60"
+                  >
+                    <CheckCircle2 size={13} />
+                    {t.approveCreate}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => reviewRequest(request, 'needs_info')}
+                    disabled={saving}
+                    className="rounded-lg border border-[var(--color-border)] px-2 py-1 text-xs text-[var(--color-text-secondary)] hover:bg-[var(--color-surface)] disabled:opacity-60"
+                  >
+                    {t.requestMoreInfo}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => reviewRequest(request, 'rejected')}
+                    disabled={saving}
+                    className="inline-flex items-center gap-1 rounded-lg border border-red-500/30 px-2 py-1 text-xs text-red-300 hover:bg-red-500/10 disabled:opacity-60"
+                  >
+                    <XCircle size={13} />
+                    {t.rejectRequest}
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
 
       <div className="mb-5 grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
         <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4">

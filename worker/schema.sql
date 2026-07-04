@@ -551,6 +551,41 @@ CREATE INDEX IF NOT EXISTS idx_work_order_material_items_material ON work_order_
 CREATE INDEX IF NOT EXISTS idx_work_order_material_items_purpose ON work_order_material_items(work_order_id, purpose);
 CREATE INDEX IF NOT EXISTS idx_work_order_material_items_status ON work_order_material_items(status);
 
+-- 工程师新增物料申请（028）
+CREATE TABLE IF NOT EXISTS material_requests (
+    id TEXT PRIMARY KEY,
+    market TEXT NOT NULL DEFAULT 'com',
+    status TEXT NOT NULL DEFAULT 'submitted',
+    work_order_id TEXT,
+    requested_by_type TEXT NOT NULL,
+    requested_by_id TEXT NOT NULL,
+    suggested_name TEXT NOT NULL,
+    suggested_name_en TEXT,
+    category TEXT DEFAULT 'other',
+    spec TEXT,
+    brand TEXT,
+    compatible_equipment TEXT,
+    supplier_suggestion TEXT,
+    expected_quantity REAL DEFAULT 1,
+    unit TEXT DEFAULT 'pcs',
+    usage_note TEXT,
+    urgency TEXT DEFAULT 'normal',
+    attachment_urls TEXT DEFAULT '[]',
+    linked_material_id TEXT,
+    review_notes TEXT,
+    reviewed_by TEXT,
+    reviewed_at TEXT,
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now')),
+    FOREIGN KEY (work_order_id) REFERENCES work_orders(id),
+    FOREIGN KEY (linked_material_id) REFERENCES materials(id)
+);
+CREATE INDEX IF NOT EXISTS idx_material_requests_market ON material_requests(market);
+CREATE INDEX IF NOT EXISTS idx_material_requests_status ON material_requests(status);
+CREATE INDEX IF NOT EXISTS idx_material_requests_work_order ON material_requests(work_order_id);
+CREATE INDEX IF NOT EXISTS idx_material_requests_requester ON material_requests(requested_by_type, requested_by_id);
+CREATE INDEX IF NOT EXISTS idx_material_requests_created_at ON material_requests(created_at);
+
 -- 商机线索表（021）
 CREATE TABLE IF NOT EXISTS leads (
     id TEXT PRIMARY KEY,
@@ -800,4 +835,5 @@ INSERT OR IGNORE INTO _migrations (version, note) VALUES
     ('024_ai_evolution_foundation',      'AI evolution foundation: interactions, feedback, knowledge, evals, tool traces'),
     ('025_engineer_applications_and_calendar', '工程师申请与工程师本人维护的排单日历'),
     ('026_material_master_data',        'Admin 物料主数据与库存手动调整记录'),
-    ('027_work_order_material_items',   '工单物料引用：报价、备件准备和服务报告');
+    ('027_work_order_material_items',   '工单物料引用：报价、备件准备和服务报告'),
+    ('028_material_requests',           '工程师新增物料申请与 Admin 审核入库');

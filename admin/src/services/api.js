@@ -174,6 +174,18 @@ export async function getAdminMaterials(page = 1, pageSize = 20, filters = {}) {
   return request(`/api/admin/materials?${params}`);
 }
 
+export async function getAdminMaterialRequests(page = 1, pageSize = 20, filters = {}) {
+  const params = new URLSearchParams({ page, pageSize, ...filters });
+  return request(`/api/admin/material-requests?${params}`);
+}
+
+export async function reviewAdminMaterialRequest(requestId, payload) {
+  return request(`/api/admin/material-requests/${requestId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  });
+}
+
 export async function createAdminMaterial(material) {
   return request('/api/admin/materials', {
     method: 'POST',

@@ -363,6 +363,19 @@ export async function addWorkOrderMaterialItem(workOrderId, data) {
   return response.json();
 }
 
+export async function createMaterialRequest(data) {
+  const response = await fetch(`${API_BASE}/api/material-requests`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify(data),
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.error || `HTTP ${response.status}`);
+  }
+  return response.json();
+}
+
 /**
  * 提交评价
  */
