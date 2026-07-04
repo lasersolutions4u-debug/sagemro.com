@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react';
 import { Plus, Trash2 } from 'lucide-react';
 import { saveRepairRecord } from '../../services/api';
 import { toastSuccess, toastError } from '../../utils/feedback';
+import { isCnLocale } from '../../utils/locale';
+import { MaterialPicker } from './MaterialPicker';
 
 const emptyPart = { name: '', qty: 1, unit: 'pcs', specs: '' };
 
@@ -14,6 +16,7 @@ function parseParts(partsUsed) {
 }
 
 export function RepairRecordPanel({ workOrderId, userType, repairRecord, onSaved }) {
+  const isCn = isCnLocale();
   const isEngineer = userType === 'engineer';
   const [isEditing, setIsEditing] = useState(false);
 
@@ -21,6 +24,7 @@ export function RepairRecordPanel({ workOrderId, userType, repairRecord, onSaved
   const [diagnosis, setDiagnosis] = useState('');
   const [solution, setSolution] = useState('');
   const [partsUsed, setPartsUsed] = useState([{ ...emptyPart }]);
+  const [materialItems, setMaterialItems] = useState([]);
   const [laborHours, setLaborHours] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
@@ -32,6 +36,7 @@ export function RepairRecordPanel({ workOrderId, userType, repairRecord, onSaved
       setLaborHours(repairRecord.labor_hours ? String(repairRecord.labor_hours) : '');
       const parts = parseParts(repairRecord.parts_used);
       setPartsUsed(parts.length > 0 ? parts : [{ ...emptyPart }]);
+      setMaterialItems(Array.isArray(repairRecord.material_items) ? repairRecord.material_items : []);
       setIsEditing(false);
     } else if (isEngineer) {
       setIsEditing(true);
@@ -47,13 +52,14 @@ export function RepairRecordPanel({ workOrderId, userType, repairRecord, onSaved
         diagnosis: diagnosis.trim() || null,
         solution: solution.trim() || null,
         parts_used: activeParts.length > 0 ? activeParts : [],
+        material_items: materialItems,
         labor_hours: laborHours ? parseFloat(laborHours) : 0,
       });
-      toastSuccess('Service report saved');
+      toastSuccess(isCn ? '服务报告已保存' : 'Service report saved');
       setIsEditing(false);
       onSaved?.();
     } catch (e) {
-      toastError('Save failed: ' + e.message);
+      toastError((isCn ? '保存失败：' : 'Save failed: ') + e.message);
     } finally {
       setSubmitting(false);
     }
@@ -81,6 +87,7 @@ export function RepairRecordPanel({ workOrderId, userType, repairRecord, onSaved
       return <div className="text-center py-8 text-sm text-[var(--color-text-muted)]">No service report yet</div>;
     }
     const parts = parseParts(repairRecord?.parts_used);
+    const structuredParts = Array.isArray(repairRecord?.material_items) ? repairRecord.material_items : [];
 
     return (
       <div className="space-y-4">
@@ -103,6 +110,12 @@ export function RepairRecordPanel({ workOrderId, userType, repairRecord, onSaved
           <div>
             <h3 className="text-xs font-medium text-[var(--color-text-secondary)] mb-1">Service Actions / Next Advice</h3>
             <div className="p-3 bg-[var(--color-surface-elevated)] rounded-xl text-sm text-[var(--color-text-primary)]">{solution}</div>
+          </div>
+        )}
+        {structuredParts.length > 0 && (
+          <div>
+            <h3 className="text-xs font-medium text-[var(--color-text-secondary)] mb-1">{isCn ? '配件引用清单' : 'Material Items'}</h3>
+            <MaterialPicker items={structuredParts} readonly />
           </div>
         )}
         {parts.length > 0 && parts[0]?.name && (
@@ -250,6 +263,8 @@ export function RepairRecordPanel({ workOrderId, userType, repairRecord, onSaved
           Add Part
         </button>
       </div>
+
+      <MaterialPicker purpose="service_report" items={materialItems} onChange={setMaterialItems} />
 
       <div>
         <label className="block text-xs text-[var(--color-text-secondary)] mb-1">Labor Hours</label>

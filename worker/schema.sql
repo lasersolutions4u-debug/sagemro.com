@@ -522,6 +522,35 @@ CREATE TABLE IF NOT EXISTS material_inventory_adjustments (
 CREATE INDEX IF NOT EXISTS idx_material_adjustments_material ON material_inventory_adjustments(material_id);
 CREATE INDEX IF NOT EXISTS idx_material_adjustments_created_at ON material_inventory_adjustments(created_at);
 
+-- 工单物料引用（027）
+CREATE TABLE IF NOT EXISTS work_order_material_items (
+    id TEXT PRIMARY KEY,
+    work_order_id TEXT NOT NULL,
+    material_id TEXT,
+    purpose TEXT NOT NULL DEFAULT 'quote',
+    material_code TEXT,
+    name TEXT NOT NULL,
+    name_en TEXT,
+    spec TEXT,
+    brand TEXT,
+    unit TEXT DEFAULT 'pcs',
+    quantity REAL DEFAULT 1,
+    unit_price REAL DEFAULT 0,
+    line_total REAL DEFAULT 0,
+    note TEXT,
+    status TEXT DEFAULT 'active',
+    created_by_type TEXT,
+    created_by_id TEXT,
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now')),
+    FOREIGN KEY (work_order_id) REFERENCES work_orders(id),
+    FOREIGN KEY (material_id) REFERENCES materials(id)
+);
+CREATE INDEX IF NOT EXISTS idx_work_order_material_items_wo ON work_order_material_items(work_order_id);
+CREATE INDEX IF NOT EXISTS idx_work_order_material_items_material ON work_order_material_items(material_id);
+CREATE INDEX IF NOT EXISTS idx_work_order_material_items_purpose ON work_order_material_items(work_order_id, purpose);
+CREATE INDEX IF NOT EXISTS idx_work_order_material_items_status ON work_order_material_items(status);
+
 -- 商机线索表（021）
 CREATE TABLE IF NOT EXISTS leads (
     id TEXT PRIMARY KEY,
@@ -769,4 +798,6 @@ INSERT OR IGNORE INTO _migrations (version, note) VALUES
     ('021_create_leads',                 '商机线索表'),
     ('023_service_os_dispatch_and_audit', 'Service OS 派工、工单会话和审计字段'),
     ('024_ai_evolution_foundation',      'AI evolution foundation: interactions, feedback, knowledge, evals, tool traces'),
-    ('025_engineer_applications_and_calendar', '工程师申请与工程师本人维护的排单日历');
+    ('025_engineer_applications_and_calendar', '工程师申请与工程师本人维护的排单日历'),
+    ('026_material_master_data',        'Admin 物料主数据与库存手动调整记录'),
+    ('027_work_order_material_items',   '工单物料引用：报价、备件准备和服务报告');

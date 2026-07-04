@@ -329,6 +329,40 @@ export async function getWorkOrder(id) {
   return response.json();
 }
 
+export async function searchMaterials({ search = '', category = 'all', pageSize = 20 } = {}) {
+  const params = new URLSearchParams({ search, category, pageSize });
+  const response = await fetch(`${API_BASE}/api/materials?${params}`, {
+    headers: authHeaders(),
+  });
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(data.error || `HTTP ${response.status}`);
+  }
+  return response.json();
+}
+
+export async function getWorkOrderMaterialItems(workOrderId, purpose = '') {
+  const params = purpose ? `?purpose=${encodeURIComponent(purpose)}` : '';
+  const response = await fetch(`${API_BASE}/api/workorders/${workOrderId}/material-items${params}`, {
+    headers: authHeaders(),
+  });
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  return response.json();
+}
+
+export async function addWorkOrderMaterialItem(workOrderId, data) {
+  const response = await fetch(`${API_BASE}/api/workorders/${workOrderId}/material-items`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify(data),
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.error || `HTTP ${response.status}`);
+  }
+  return response.json();
+}
+
 /**
  * 提交评价
  */
