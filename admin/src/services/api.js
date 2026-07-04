@@ -168,3 +168,29 @@ export async function convertAdminLeadToWorkOrder(leadId) {
     body: JSON.stringify({}),
   });
 }
+
+export async function getAdminMaterials(page = 1, pageSize = 20, filters = {}) {
+  const params = new URLSearchParams({ page, pageSize, ...filters });
+  return request(`/api/admin/materials?${params}`);
+}
+
+export async function createAdminMaterial(material) {
+  return request('/api/admin/materials', {
+    method: 'POST',
+    body: JSON.stringify(material),
+  });
+}
+
+export async function updateAdminMaterial(materialId, material) {
+  return request(`/api/admin/materials/${materialId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(material),
+  });
+}
+
+export async function adjustAdminMaterialInventory(materialId, adjustment) {
+  return request(`/api/admin/materials/${materialId}/inventory-adjustments`, {
+    method: 'POST',
+    body: JSON.stringify(adjustment),
+  });
+}

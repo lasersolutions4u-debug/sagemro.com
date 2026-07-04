@@ -5212,9 +5212,36 @@ const ENGINEER_CALENDAR_EVENT_TYPES = new Set([
   'reserved_for_service',
 ]);
 
+const MATERIAL_STATUSES = new Set(['active', 'inactive', 'pending']);
+const MATERIAL_CATEGORIES = new Set([
+  'laser_cutting',
+  'bending',
+  'welding',
+  'general_electrical',
+  'gas_system',
+  'consumables',
+  'other',
+]);
+const MATERIAL_ADJUSTMENT_TYPES = new Set([
+  'manual_in',
+  'manual_out',
+  'correction',
+  'reservation_release',
+]);
+
 function cleanText(value, maxLength = 300) {
   if (value === undefined || value === null) return '';
   return String(value).trim().slice(0, maxLength);
+}
+
+function toSafeNumber(value, fallback = 0) {
+  const num = Number(value);
+  return Number.isFinite(num) ? num : fallback;
+}
+
+function toSafeInteger(value, fallback = 0) {
+  const num = parseInt(value, 10);
+  return Number.isFinite(num) ? num : fallback;
 }
 
 function cleanTextArray(value, maxItems = 12, maxItemLength = 80) {
@@ -5255,6 +5282,48 @@ function normalizeEngineerApplication(row) {
     can_weekend: Boolean(row.can_weekend),
     can_night: Boolean(row.can_night),
     has_tools: Boolean(row.has_tools),
+  };
+}
+
+function normalizeMaterial(row) {
+  if (!row) return row;
+  return {
+    ...row,
+    reference_cost: Number(row.reference_cost || 0),
+    reference_price: Number(row.reference_price || 0),
+    stock_quantity: Number(row.stock_quantity || 0),
+    safety_stock: Number(row.safety_stock || 0),
+  };
+}
+
+function readMaterialPayload(body = {}, { existing } = {}) {
+  const materialCode = cleanText(body.material_code ?? existing?.material_code, 80);
+  const name = cleanText(body.name ?? existing?.name, 160);
+  const category = cleanText(body.category ?? existing?.category ?? 'other', 60) || 'other';
+  const status = cleanText(body.status ?? existing?.status ?? 'active', 40) || 'active';
+
+  if (!materialCode) return { error: '请填写物料编码' };
+  if (!name) return { error: '请填写物料名称' };
+  if (!MATERIAL_CATEGORIES.has(category)) return { error: '无效物料类别' };
+  if (!MATERIAL_STATUSES.has(status)) return { error: '无效物料状态' };
+
+  return {
+    material_code: materialCode,
+    category,
+    name,
+    name_en: cleanText(body.name_en ?? existing?.name_en, 160) || null,
+    spec: cleanText(body.spec ?? existing?.spec, 240) || null,
+    brand: cleanText(body.brand ?? existing?.brand, 120) || null,
+    compatible_equipment: cleanText(body.compatible_equipment ?? existing?.compatible_equipment, 300) || null,
+    supplier: cleanText(body.supplier ?? existing?.supplier, 160) || null,
+    production_code: cleanText(body.production_code ?? existing?.production_code, 160) || null,
+    unit: cleanText(body.unit ?? existing?.unit ?? 'pcs', 40) || 'pcs',
+    reference_cost: toSafeNumber(body.reference_cost ?? existing?.reference_cost, 0),
+    reference_price: toSafeNumber(body.reference_price ?? existing?.reference_price, 0),
+    stock_quantity: toSafeInteger(body.stock_quantity ?? existing?.stock_quantity, 0),
+    safety_stock: toSafeInteger(body.safety_stock ?? existing?.safety_stock, 0),
+    status,
+    notes: cleanText(body.notes ?? existing?.notes, 1200) || null,
   };
 }
 
@@ -5370,6 +5439,216 @@ async function handleAdminUpdateEngineerApplication(request, env) {
       afterState: { status },
     });
     return jsonResponse({ success: true });
+  } catch (error) {
+    return errorResponse(error.message, 500);
+  }
+}
+
+async function handleAdminMaterials(request, env) {
+  try {
+    const url = new URL(request.url);
+    const page = Math.max(1, parseInt(url.searchParams.get('page') || '1', 10));
+    const pageSize = Math.min(100, Math.max(1, parseInt(url.searchParams.get('pageSize') || '20', 10)));
+    const offset = (page - 1) * pageSize;
+    const category = cleanText(url.searchParams.get('category'), 60);
+    const status = cleanText(url.searchParams.get('status'), 40);
+    const search = cleanText(url.searchParams.get('search'), 120);
+    const market = cleanText(url.searchParams.get('market'), 20) || getRequestMarket(request);
+
+    let where = 'WHERE market = ?';
+    const binds = [market];
+    if (category && category !== 'all') {
+      where += ' AND category = ?';
+      binds.push(category);
+    }
+    if (status && status !== 'all') {
+      where += ' AND status = ?';
+      binds.push(status);
+    }
+    if (search) {
+      where += ' AND (material_code LIKE ? OR name LIKE ? OR name_en LIKE ? OR spec LIKE ? OR brand LIKE ? OR supplier LIKE ?)';
+      const like = `%${search}%`;
+      binds.push(like, like, like, like, like, like);
+    }
+
+    const total = await env.DB.prepare(
+      `SELECT COUNT(*) as count FROM materials ${where}`
+    ).bind(...binds).first();
+    const list = await env.DB.prepare(
+      `SELECT * FROM materials ${where} ORDER BY updated_at DESC, created_at DESC LIMIT ? OFFSET ?`
+    ).bind(...binds, pageSize, offset).all();
+
+    return jsonResponse({
+      total: total?.count || 0,
+      list: (list.results || []).map(normalizeMaterial),
+    });
+  } catch (error) {
+    return errorResponse(error.message, 500);
+  }
+}
+
+async function handleAdminCreateMaterial(request, env) {
+  try {
+    const body = await request.json().catch(() => ({}));
+    const payload = readMaterialPayload(body);
+    if (payload.error) return errorResponse(payload.error, 400);
+
+    const id = generateId();
+    const market = cleanText(body.market, 20) || getRequestMarket(request);
+    await env.DB.prepare(`
+      INSERT INTO materials (
+        id, market, material_code, category, name, name_en, spec, brand,
+        compatible_equipment, supplier, production_code, unit, reference_cost,
+        reference_price, stock_quantity, safety_stock, status, notes
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).bind(
+      id,
+      market,
+      payload.material_code,
+      payload.category,
+      payload.name,
+      payload.name_en,
+      payload.spec,
+      payload.brand,
+      payload.compatible_equipment,
+      payload.supplier,
+      payload.production_code,
+      payload.unit,
+      payload.reference_cost,
+      payload.reference_price,
+      payload.stock_quantity,
+      payload.safety_stock,
+      payload.status,
+      payload.notes
+    ).run();
+
+    const material = await env.DB.prepare('SELECT * FROM materials WHERE id = ?').bind(id).first();
+    await writeAuditLog(env, request, {
+      targetType: 'material',
+      targetId: id,
+      action: 'material_created',
+      afterState: normalizeMaterial(material || { id, market, ...payload }),
+    });
+
+    return jsonResponse({ success: true, material: normalizeMaterial(material || { id, market, ...payload }) }, 201);
+  } catch (error) {
+    if (/UNIQUE/i.test(String(error?.message || ''))) {
+      return errorResponse('物料编码已存在', 409);
+    }
+    return errorResponse(error.message, 500);
+  }
+}
+
+async function handleAdminUpdateMaterial(request, env) {
+  try {
+    const materialId = new URL(request.url).pathname.split('/')[4];
+    if (!materialId) return errorResponse('缺少物料 ID', 400);
+
+    const existing = await env.DB.prepare('SELECT * FROM materials WHERE id = ?').bind(materialId).first();
+    if (!existing) return errorResponse('物料不存在', 404);
+
+    const body = await request.json().catch(() => ({}));
+    const payload = readMaterialPayload(body, { existing });
+    if (payload.error) return errorResponse(payload.error, 400);
+
+    const result = await env.DB.prepare(`
+      UPDATE materials SET
+        material_code = ?, category = ?, name = ?, name_en = ?, spec = ?, brand = ?,
+        compatible_equipment = ?, supplier = ?, production_code = ?, unit = ?,
+        reference_cost = ?, reference_price = ?, safety_stock = ?, status = ?,
+        notes = ?, updated_at = datetime('now')
+      WHERE id = ?
+    `).bind(
+      payload.material_code,
+      payload.category,
+      payload.name,
+      payload.name_en,
+      payload.spec,
+      payload.brand,
+      payload.compatible_equipment,
+      payload.supplier,
+      payload.production_code,
+      payload.unit,
+      payload.reference_cost,
+      payload.reference_price,
+      payload.safety_stock,
+      payload.status,
+      payload.notes,
+      materialId
+    ).run();
+
+    if (result.meta?.changes === 0) return errorResponse('物料不存在', 404);
+    const updated = await env.DB.prepare('SELECT * FROM materials WHERE id = ?').bind(materialId).first();
+    await writeAuditLog(env, request, {
+      targetType: 'material',
+      targetId: materialId,
+      action: 'material_updated',
+      beforeState: normalizeMaterial(existing),
+      afterState: normalizeMaterial(updated || { ...existing, ...payload }),
+    });
+
+    return jsonResponse({ success: true, material: normalizeMaterial(updated || { ...existing, ...payload }) });
+  } catch (error) {
+    if (/UNIQUE/i.test(String(error?.message || ''))) {
+      return errorResponse('物料编码已存在', 409);
+    }
+    return errorResponse(error.message, 500);
+  }
+}
+
+async function handleAdminMaterialInventoryAdjustment(request, env) {
+  try {
+    const materialId = new URL(request.url).pathname.split('/')[4];
+    if (!materialId) return errorResponse('缺少物料 ID', 400);
+
+    const material = await env.DB.prepare('SELECT * FROM materials WHERE id = ?').bind(materialId).first();
+    if (!material) return errorResponse('物料不存在', 404);
+
+    const body = await request.json().catch(() => ({}));
+    const changeType = cleanText(body.change_type, 60) || 'correction';
+    const delta = toSafeInteger(body.delta, 0);
+    const reason = cleanText(body.reason, 600);
+    if (!MATERIAL_ADJUSTMENT_TYPES.has(changeType)) return errorResponse('无效库存调整类型', 400);
+    if (!delta) return errorResponse('库存调整数量不能为 0', 400);
+
+    const beforeQuantity = Number(material.stock_quantity || 0);
+    const afterQuantity = beforeQuantity + delta;
+    if (afterQuantity < 0) return errorResponse('库存不能调整为负数', 400);
+
+    await env.DB.prepare(
+      "UPDATE materials SET stock_quantity = stock_quantity + ?, updated_at = datetime('now') WHERE id = ?"
+    ).bind(delta, materialId).run();
+
+    const adjustmentId = generateId();
+    await env.DB.prepare(`
+      INSERT INTO material_inventory_adjustments (
+        id, material_id, change_type, delta, before_quantity, after_quantity, reason, created_by
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).bind(
+      adjustmentId,
+      materialId,
+      changeType,
+      delta,
+      beforeQuantity,
+      afterQuantity,
+      reason || null,
+      request._auth?.userId || 'admin'
+    ).run();
+
+    const updated = await env.DB.prepare('SELECT * FROM materials WHERE id = ?').bind(materialId).first();
+    await writeAuditLog(env, request, {
+      targetType: 'material',
+      targetId: materialId,
+      action: 'material_inventory_adjusted',
+      beforeState: { stock_quantity: beforeQuantity },
+      afterState: { stock_quantity: afterQuantity, delta, change_type: changeType, reason },
+    });
+
+    return jsonResponse({
+      success: true,
+      adjustment_id: adjustmentId,
+      material: normalizeMaterial(updated || { ...material, stock_quantity: afterQuantity }),
+    });
   } catch (error) {
     return errorResponse(error.message, 500);
   }
@@ -8373,6 +8652,18 @@ async function routeRequest(request, env, ctx) {
       }
       if (path.startsWith('/api/admin/engineer-applications/') && request.method === 'PATCH') {
         return handleAdminUpdateEngineerApplication(request, env);
+      }
+      if (path === '/api/admin/materials' && request.method === 'GET') {
+        return handleAdminMaterials(request, env);
+      }
+      if (path === '/api/admin/materials' && request.method === 'POST') {
+        return handleAdminCreateMaterial(request, env);
+      }
+      if (path.match(/^\/api\/admin\/materials\/[^/]+$/) && request.method === 'PATCH') {
+        return handleAdminUpdateMaterial(request, env);
+      }
+      if (path.match(/^\/api\/admin\/materials\/[^/]+\/inventory-adjustments$/) && request.method === 'POST') {
+        return handleAdminMaterialInventoryAdjustment(request, env);
       }
       if (path.startsWith('/api/admin/users/') && request.method === 'DELETE') {
         return handleAdminDeleteUser(request, env);
