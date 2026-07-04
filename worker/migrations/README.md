@@ -28,6 +28,7 @@
 | `011_create_migrations_tracking.sql` | 新增 `_migrations` 跟踪表并回填历史版本记录 |
 | `024_ai_evolution_foundation.sql` | AI 进化基础表：交互、反馈、知识库、评测和工具调用追踪 |
 | `025_engineer_applications_and_calendar.sql` | 工程师申请与工程师本人维护的排单日历 |
+| `026_material_master_data.sql` | Admin 物料主数据与库存手动调整记录 |
 
 > 约定：文件名格式 `NNN_*.sql`，按字典序顺序执行；历史命名中出现过 `001_partner_upgrade.sql`（已删除，是 `001_add_engineer_fields.sql + 002_pricing_and_new_tables.sql` 的合并版本，避免重复执行）。
 

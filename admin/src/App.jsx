@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ClipboardList, LayoutDashboard, Users, FileText, Star, LogOut, Target } from 'lucide-react';
+import { Boxes, ClipboardList, LayoutDashboard, Users, FileText, Star, LogOut, Target } from 'lucide-react';
 import { LoginPage } from './pages/LoginPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { UsersPage } from './pages/UsersPage';
@@ -7,6 +7,7 @@ import { WorkOrdersPage } from './pages/WorkOrdersPage';
 import { RatingsPage } from './pages/RatingsPage';
 import { LeadsPage } from './pages/LeadsPage';
 import { EngineerApplicationsPage } from './pages/EngineerApplicationsPage';
+import { MaterialsPage } from './pages/MaterialsPage';
 import { runtimeConfig } from './config/runtime';
 import { BrandMark } from './components/BrandMark';
 
@@ -21,6 +22,7 @@ const TEXT = {
       leads: 'Lead Inbox',
       workorders: 'Service Orders',
       engineerApplications: 'Engineer Applications',
+      materials: 'Material Master',
       users: 'Customers & Engineers',
       ratings: 'Service Reviews',
     },
@@ -35,6 +37,7 @@ const TEXT = {
       leads: '线索池',
       workorders: '派工与服务质量',
       engineerApplications: '工程师申请审核',
+      materials: '物料管理',
       users: '客户与工程师',
       ratings: '评价管理',
     },
@@ -47,6 +50,7 @@ const NAV_ITEMS = [
   { key: 'dashboard', label: t.nav.dashboard, icon: LayoutDashboard },
   { key: 'leads', label: t.nav.leads, icon: Target },
   { key: 'workorders', label: t.nav.workorders, icon: FileText },
+  { key: 'materials', label: t.nav.materials, icon: Boxes },
   { key: 'engineerApplications', label: t.nav.engineerApplications, icon: ClipboardList },
   { key: 'users', label: t.nav.users, icon: Users },
   { key: 'ratings', label: t.nav.ratings, icon: Star },
@@ -75,6 +79,7 @@ export default function App() {
       case 'dashboard': return <DashboardPage />;
       case 'users': return <UsersPage />;
       case 'workorders': return <WorkOrdersPage />;
+      case 'materials': return <MaterialsPage />;
       case 'engineerApplications': return <EngineerApplicationsPage />;
       case 'ratings': return <RatingsPage />;
       case 'leads': return <LeadsPage />;
