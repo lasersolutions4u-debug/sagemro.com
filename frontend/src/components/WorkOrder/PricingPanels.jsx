@@ -16,13 +16,13 @@ export function PricingStatusBadge({ status }) {
   const map = isCn
     ? {
         draft: { text: '草稿 / 协商中', color: 'bg-gray-500', bg: 'bg-gray-500/10' },
-        pending_review: { text: 'SAGEMRO 审核中', color: 'bg-amber-500', bg: 'bg-amber-500/10' },
+        pending_review: { text: '运营复核中', color: 'bg-amber-500', bg: 'bg-amber-500/10' },
         submitted: { text: '已提交，待客户确认', color: 'bg-purple-500', bg: 'bg-purple-500/10' },
         confirmed: { text: '已确认', color: 'bg-green-500', bg: 'bg-green-500/10' },
       }
     : {
         draft: { text: 'Draft / Negotiating', color: 'bg-gray-500', bg: 'bg-gray-500/10' },
-        pending_review: { text: 'SAGEMRO Review', color: 'bg-amber-500', bg: 'bg-amber-500/10' },
+        pending_review: { text: 'Operations Review', color: 'bg-amber-500', bg: 'bg-amber-500/10' },
         submitted: { text: 'Submitted, Awaiting Confirmation', color: 'bg-purple-500', bg: 'bg-purple-500/10' },
         confirmed: { text: 'Confirmed', color: 'bg-green-500', bg: 'bg-green-500/10' },
       };
@@ -85,7 +85,7 @@ export function EngineerPricingPanel({ workOrderId, engineerId, onSubmitted, com
         material_items: materialItems,
         engineer_id: engineerId,
       });
-      toastSuccess(isCn ? '报价建议已提交，等待 SAGEMRO 审核。' : 'Quote submitted for SAGEMRO review.');
+      toastSuccess(isCn ? '报价建议已提交，等待运营复核。' : 'Quote submitted for operations review.');
       onSubmitted?.();
     } catch (e) {
       toastError((isCn ? '提交失败：' : 'Submission failed: ') + e.message);
@@ -114,7 +114,7 @@ export function EngineerPricingPanel({ workOrderId, engineerId, onSubmitted, com
     <div className="space-y-3">
       <div className="text-xs text-[var(--color-text-muted)]">
         {isCn
-          ? '请填写内部报价建议。客户看到报价前，SAGEMRO 运营团队会先审核服务范围、费用和安全要求。'
+          ? '请填写内部报价建议。客户看到报价前，运营团队会先复核服务范围、费用和安全要求。'
           : 'Fill in the fee details as an internal quote proposal. SAGEMRO operations will review it before the customer sees a formal quote.'}
       </div>
       <div className="grid grid-cols-2 gap-3">
@@ -142,7 +142,7 @@ export function EngineerPricingPanel({ workOrderId, engineerId, onSubmitted, com
           className="w-full px-3 py-2 text-sm border border-[var(--color-border)] rounded-xl bg-[var(--color-surface)] text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)] resize-none"
         />
       </div>
-      <MaterialPicker purpose="quote" items={materialItems} onChange={setMaterialItems} />
+      <MaterialPicker purpose="quote" workOrderId={workOrderId} items={materialItems} onChange={setMaterialItems} />
       {/* 费用汇总 */}
       <div className="p-3 bg-[var(--color-surface-elevated)] rounded-xl space-y-1.5 text-sm">
         <div className="flex justify-between"><span className="text-[var(--color-text-secondary)]">{isCn ? '人工费' : 'Labor Fee'}</span><span>{form.labor_fee || 0} CNY</span></div>
@@ -161,7 +161,7 @@ export function EngineerPricingPanel({ workOrderId, engineerId, onSubmitted, com
         disabled={submitting || subtotal === 0}
         className="w-full py-2.5 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] disabled:opacity-50 text-white rounded-xl font-medium"
       >
-        {submitting ? (isCn ? '提交中...' : 'Submitting...') : (isCn ? '提交 SAGEMRO 审核' : 'Submit for SAGEMRO Review')}
+        {submitting ? (isCn ? '提交中...' : 'Submitting...') : (isCn ? '提交运营复核' : 'Submit for Operations Review')}
       </button>
     </div>
   );

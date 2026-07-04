@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Plus, Search, Trash2 } from 'lucide-react';
-import { searchMaterials } from '../../services/api';
-import { toastError } from '../../utils/feedback';
+import { PackagePlus, Plus, Search, Trash2, X } from 'lucide-react';
+import { createMaterialRequest, searchMaterials } from '../../services/api';
+import { toastError, toastSuccess } from '../../utils/feedback';
 import { isCnLocale } from '../../utils/locale';
 
 function money(value) {
@@ -12,11 +12,38 @@ function itemKey(item, index) {
   return item.id || item.material_id || `${item.material_code || item.name}-${index}`;
 }
 
-export function MaterialPicker({ purpose = 'quote', items = [], onChange, readonly = false }) {
+const CATEGORY_OPTIONS = [
+  ['laser_cutting', { cn: '激光切割', en: 'Laser cutting' }],
+  ['bending', { cn: '折弯', en: 'Bending' }],
+  ['welding', { cn: '焊接', en: 'Welding' }],
+  ['general_electrical', { cn: '通用电气', en: 'General electrical' }],
+  ['gas_system', { cn: '气路系统', en: 'Gas system' }],
+  ['consumables', { cn: '耗材', en: 'Consumables' }],
+  ['other', { cn: '其他', en: 'Other' }],
+];
+
+const EMPTY_REQUEST = {
+  suggested_name: '',
+  suggested_name_en: '',
+  category: 'laser_cutting',
+  spec: '',
+  brand: '',
+  compatible_equipment: '',
+  supplier_suggestion: '',
+  expected_quantity: 1,
+  unit: 'pcs',
+  usage_note: '',
+  urgency: 'normal',
+};
+
+export function MaterialPicker({ purpose = 'quote', workOrderId = '', items = [], onChange, readonly = false }) {
   const isCn = isCnLocale();
   const [query, setQuery] = useState('');
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [requestOpen, setRequestOpen] = useState(false);
+  const [requestForm, setRequestForm] = useState(EMPTY_REQUEST);
+  const [submittingRequest, setSubmittingRequest] = useState(false);
 
   const total = useMemo(
     () => items.reduce((sum, item) => sum + (Number(item.quantity || 0) * Number(item.unit_price || 0)), 0),
@@ -82,6 +109,44 @@ export function MaterialPicker({ purpose = 'quote', items = [], onChange, readon
 
   const removeItem = (index) => {
     onChange?.(items.filter((_, i) => i !== index));
+  };
+
+  const openMaterialRequest = () => {
+    setRequestForm((prev) => ({
+      ...EMPTY_REQUEST,
+      ...prev,
+      suggested_name: prev.suggested_name || query.trim(),
+      usage_note: prev.usage_note || (purpose === 'quote'
+        ? (isCn ? '用于当前工单报价配件清单' : 'Needed for the current work order quote')
+        : (isCn ? '用于当前工单服务报告或备件核对' : 'Needed for the current work order report or preparation')),
+    }));
+    setRequestOpen(true);
+  };
+
+  const updateRequestForm = (field, value) => {
+    setRequestForm((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const submitMaterialRequest = async () => {
+    if (!requestForm.suggested_name.trim()) {
+      toastError(isCn ? '请填写建议物料名称' : 'Please enter the suggested part name');
+      return;
+    }
+    setSubmittingRequest(true);
+    try {
+      await createMaterialRequest({
+        ...requestForm,
+        work_order_id: workOrderId || undefined,
+        expected_quantity: Number(requestForm.expected_quantity || 1),
+      });
+      toastSuccess(isCn ? '物料申请已提交，运营团队会审核后维护到物料库。' : 'Material request submitted. Operations will review it before adding it to the master data.');
+      setRequestOpen(false);
+      setRequestForm(EMPTY_REQUEST);
+    } catch (error) {
+      toastError((isCn ? '提交物料申请失败：' : 'Material request failed: ') + error.message);
+    } finally {
+      setSubmittingRequest(false);
+    }
   };
 
   if (readonly) {
@@ -161,6 +226,25 @@ export function MaterialPicker({ purpose = 'quote', items = [], onChange, readon
         </div>
       )}
 
+      {query.trim().length >= 2 && !loading && results.length === 0 && (
+        <div className="rounded-xl border border-dashed border-[var(--color-border)] bg-[var(--color-surface)] p-3 text-xs text-[var(--color-text-secondary)]">
+          <div className="font-medium text-[var(--color-text-primary)]">
+            {isCn ? '没有找到合适的物料？' : 'No matching part in the master data?'}
+          </div>
+          <div className="mt-1">
+            {isCn ? '提交一个新增申请，Admin 审核后再进入物料库。' : 'Submit a request. Admin reviews it before it becomes reusable master data.'}
+          </div>
+          <button
+            type="button"
+            onClick={openMaterialRequest}
+            className="mt-2 inline-flex items-center gap-1 rounded-lg border border-[var(--color-primary)]/30 px-2 py-1 text-[var(--color-primary)] hover:bg-[var(--color-primary)]/10"
+          >
+            <PackagePlus size={14} />
+            {isCn ? '申请新增物料' : 'Request new part'}
+          </button>
+        </div>
+      )}
+
       {items.length > 0 && (
         <div className="space-y-2">
           {items.map((item, index) => (
@@ -197,6 +281,136 @@ export function MaterialPicker({ purpose = 'quote', items = [], onChange, readon
           ))}
         </div>
       )}
+
+      {requestOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <div className="max-h-[90vh] w-full max-w-xl overflow-y-auto rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-2xl">
+            <div className="mb-4 flex items-start justify-between gap-3">
+              <div>
+                <h3 className="text-base font-semibold text-[var(--color-text-primary)]">
+                  {isCn ? '申请新增物料' : 'Request a new part'}
+                </h3>
+                <p className="mt-1 text-xs leading-5 text-[var(--color-text-secondary)]">
+                  {isCn
+                    ? '这不会直接改动物料库。Admin 会核对名称、规格、供应来源和价格后再维护。'
+                    : 'This does not change the material master directly. Admin will verify name, spec, supply, and pricing first.'}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setRequestOpen(false)}
+                className="rounded-lg p-1 text-[var(--color-text-muted)] hover:bg-[var(--color-surface-elevated)] hover:text-[var(--color-text-primary)]"
+                aria-label={isCn ? '关闭' : 'Close'}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="grid gap-3 md:grid-cols-2">
+              <RequestField
+                label={isCn ? '建议名称' : 'Suggested name'}
+                value={requestForm.suggested_name}
+                onChange={(value) => updateRequestForm('suggested_name', value)}
+                required
+              />
+              <RequestField
+                label={isCn ? '英文名称（可选）' : 'English name (optional)'}
+                value={requestForm.suggested_name_en}
+                onChange={(value) => updateRequestForm('suggested_name_en', value)}
+              />
+              <label className="block">
+                <span className="mb-1 block text-xs text-[var(--color-text-secondary)]">{isCn ? '类别' : 'Category'}</span>
+                <select
+                  value={requestForm.category}
+                  onChange={(event) => updateRequestForm('category', event.target.value)}
+                  className="w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-3 py-2 text-sm text-[var(--color-text-primary)] outline-none"
+                >
+                  {CATEGORY_OPTIONS.map(([key, label]) => (
+                    <option key={key} value={key}>{isCn ? label.cn : label.en}</option>
+                  ))}
+                </select>
+              </label>
+              <RequestField
+                label={isCn ? '规格' : 'Specification'}
+                value={requestForm.spec}
+                onChange={(value) => updateRequestForm('spec', value)}
+              />
+              <RequestField
+                label={isCn ? '品牌' : 'Brand'}
+                value={requestForm.brand}
+                onChange={(value) => updateRequestForm('brand', value)}
+              />
+              <RequestField
+                label={isCn ? '适配设备' : 'Compatible equipment'}
+                value={requestForm.compatible_equipment}
+                onChange={(value) => updateRequestForm('compatible_equipment', value)}
+              />
+              <RequestField
+                label={isCn ? '建议供应商（可选）' : 'Suggested supplier (optional)'}
+                value={requestForm.supplier_suggestion}
+                onChange={(value) => updateRequestForm('supplier_suggestion', value)}
+              />
+              <div className="grid grid-cols-[1fr_88px] gap-2">
+                <RequestField
+                  type="number"
+                  label={isCn ? '预计数量' : 'Expected qty'}
+                  value={requestForm.expected_quantity}
+                  onChange={(value) => updateRequestForm('expected_quantity', value)}
+                />
+                <RequestField
+                  label={isCn ? '单位' : 'Unit'}
+                  value={requestForm.unit}
+                  onChange={(value) => updateRequestForm('unit', value)}
+                />
+              </div>
+            </div>
+
+            <label className="mt-3 block">
+              <span className="mb-1 block text-xs text-[var(--color-text-secondary)]">{isCn ? '用途说明' : 'Usage note'}</span>
+              <textarea
+                value={requestForm.usage_note}
+                rows={3}
+                onChange={(event) => updateRequestForm('usage_note', event.target.value)}
+                className="w-full resize-none rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-3 py-2 text-sm text-[var(--color-text-primary)] outline-none"
+              />
+            </label>
+
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setRequestOpen(false)}
+                className="rounded-xl border border-[var(--color-border)] px-4 py-2 text-sm text-[var(--color-text-secondary)]"
+              >
+                {isCn ? '取消' : 'Cancel'}
+              </button>
+              <button
+                type="button"
+                onClick={submitMaterialRequest}
+                disabled={submittingRequest}
+                className="rounded-xl bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
+              >
+                {submittingRequest ? (isCn ? '提交中...' : 'Submitting...') : (isCn ? '提交申请' : 'Submit request')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
+  );
+}
+
+function RequestField({ label, value, onChange, type = 'text', required = false }) {
+  return (
+    <label className="block">
+      <span className="mb-1 block text-xs text-[var(--color-text-secondary)]">
+        {label}{required ? ' *' : ''}
+      </span>
+      <input
+        type={type}
+        value={value ?? ''}
+        onChange={(event) => onChange(event.target.value)}
+        className="w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-3 py-2 text-sm text-[var(--color-text-primary)] outline-none"
+      />
+    </label>
   );
 }

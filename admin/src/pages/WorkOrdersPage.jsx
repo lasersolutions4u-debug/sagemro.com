@@ -72,7 +72,7 @@ const TEXT = {
       other: 'Other',
     },
     pricing: {
-      pending_review: 'SAGEMRO review pending',
+      pending_review: 'Operations review pending',
       submitted: 'Sent to customer',
       confirmed: 'Customer confirmed',
       draft: 'Returned for revision',
@@ -197,7 +197,7 @@ const TEXT = {
       other: '其他',
     },
     pricing: {
-      pending_review: '待 SAGEMRO 审核',
+      pending_review: '待运营复核',
       submitted: '已发客户确认',
       confirmed: '客户已确认',
       draft: '退回修改',

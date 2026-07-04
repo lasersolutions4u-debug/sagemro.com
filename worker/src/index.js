@@ -5249,6 +5249,14 @@ const WORK_ORDER_MATERIAL_PURPOSES = new Set([
   'recommended_spare',
 ]);
 const WORK_ORDER_MATERIAL_STATUSES = new Set(['active', 'removed']);
+const MATERIAL_REQUEST_STATUSES = new Set([
+  'submitted',
+  'needs_info',
+  'approved',
+  'rejected',
+  'linked_existing',
+]);
+const MATERIAL_REQUEST_URGENCIES = new Set(['normal', 'urgent', 'critical']);
 
 function cleanText(value, maxLength = 300) {
   if (value === undefined || value === null) return '';
@@ -5359,6 +5367,15 @@ function normalizeWorkOrderMaterialItem(row) {
   };
 }
 
+function normalizeMaterialRequest(row) {
+  if (!row) return row;
+  return {
+    ...row,
+    expected_quantity: Number(row.expected_quantity || 0),
+    attachment_urls: parseJsonArray(row.attachment_urls),
+  };
+}
+
 function readWorkOrderMaterialItemPayload(body = {}) {
   const purpose = cleanText(body.purpose || 'quote', 40) || 'quote';
   const quantity = Math.max(0, toSafeNumber(body.quantity, 1));
@@ -5377,6 +5394,34 @@ function readWorkOrderMaterialItemPayload(body = {}) {
     line_total: Math.round(quantity * unitPrice * 100) / 100,
     note: cleanText(body.note, 600) || null,
     status,
+  };
+}
+
+function readMaterialRequestPayload(body = {}) {
+  const suggestedName = cleanText(body.suggested_name, 160);
+  const category = cleanText(body.category || 'other', 60) || 'other';
+  const urgency = cleanText(body.urgency || 'normal', 40) || 'normal';
+  const expectedQuantity = Math.max(0, toSafeNumber(body.expected_quantity, 1));
+
+  if (!suggestedName) return { error: '请填写建议物料名称' };
+  if (!MATERIAL_CATEGORIES.has(category)) return { error: '无效物料类别' };
+  if (!MATERIAL_REQUEST_URGENCIES.has(urgency)) return { error: '无效紧急程度' };
+  if (!expectedQuantity) return { error: '预计数量必须大于 0' };
+
+  return {
+    work_order_id: cleanText(body.work_order_id, 80) || null,
+    suggested_name: suggestedName,
+    suggested_name_en: cleanText(body.suggested_name_en, 160) || null,
+    category,
+    spec: cleanText(body.spec, 240) || null,
+    brand: cleanText(body.brand, 120) || null,
+    compatible_equipment: cleanText(body.compatible_equipment, 300) || null,
+    supplier_suggestion: cleanText(body.supplier_suggestion, 160) || null,
+    expected_quantity: expectedQuantity,
+    unit: cleanText(body.unit || 'pcs', 40) || 'pcs',
+    usage_note: cleanText(body.usage_note, 1200) || null,
+    urgency,
+    attachment_urls: JSON.stringify(cleanTextArray(body.attachment_urls, 8, 500)),
   };
 }
 
@@ -5775,6 +5820,222 @@ async function handleSearchMaterials(request, env) {
       list: (list.results || []).map(normalizePublicMaterial),
     });
   } catch (error) {
+    return errorResponse(error.message, 500);
+  }
+}
+
+async function handleCreateMaterialRequest(request, env) {
+  try {
+    if (!['admin', 'engineer'].includes(request._auth?.userType)) {
+      return errorResponse('需要工程师或管理员权限', 403);
+    }
+
+    const body = await request.json().catch(() => ({}));
+    const payload = readMaterialRequestPayload(body);
+    if (payload.error) return errorResponse(payload.error, 400);
+
+    if (payload.work_order_id) {
+      const workOrder = await getWorkOrderForMaterialAccess(env, payload.work_order_id);
+      assertWorkOrderAccess(request._auth, workOrder);
+    }
+
+    const id = generateId();
+    const market = cleanText(body.market, 20) || getRequestMarket(request);
+    await env.DB.prepare(`
+      INSERT INTO material_requests (
+        id, market, status, work_order_id, requested_by_type, requested_by_id,
+        suggested_name, suggested_name_en, category, spec, brand, compatible_equipment,
+        supplier_suggestion, expected_quantity, unit, usage_note, urgency, attachment_urls
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).bind(
+      id,
+      market,
+      'submitted',
+      payload.work_order_id,
+      request._auth.userType,
+      request._auth.userId,
+      payload.suggested_name,
+      payload.suggested_name_en,
+      payload.category,
+      payload.spec,
+      payload.brand,
+      payload.compatible_equipment,
+      payload.supplier_suggestion,
+      payload.expected_quantity,
+      payload.unit,
+      payload.usage_note,
+      payload.urgency,
+      payload.attachment_urls
+    ).run();
+
+    const row = await env.DB.prepare('SELECT * FROM material_requests WHERE id = ?').bind(id).first();
+    const materialRequest = normalizeMaterialRequest(row || {
+      id,
+      market,
+      status: 'submitted',
+      requested_by_type: request._auth.userType,
+      requested_by_id: request._auth.userId,
+      ...payload,
+    });
+    await writeAuditLog(env, request, {
+      targetType: 'material_request',
+      targetId: id,
+      action: 'material_request_created',
+      afterState: materialRequest,
+    });
+
+    return jsonResponse({ success: true, request: materialRequest }, 201);
+  } catch (error) {
+    if (error instanceof GuardError) return errorResponse(error.message, error.status);
+    return errorResponse(error.message, 500);
+  }
+}
+
+async function handleListMaterialRequests(request, env, { admin = false } = {}) {
+  try {
+    if (!admin && !['admin', 'engineer'].includes(request._auth?.userType)) {
+      return errorResponse('需要工程师或管理员权限', 403);
+    }
+
+    const url = new URL(request.url);
+    const page = Math.max(1, parseInt(url.searchParams.get('page') || '1', 10));
+    const pageSize = Math.min(100, Math.max(1, parseInt(url.searchParams.get('pageSize') || '20', 10)));
+    const offset = (page - 1) * pageSize;
+    const status = cleanText(url.searchParams.get('status'), 40);
+    const market = cleanText(url.searchParams.get('market'), 20) || getRequestMarket(request);
+
+    let where = 'WHERE market = ?';
+    const binds = [market];
+    if (status && status !== 'all') {
+      if (!MATERIAL_REQUEST_STATUSES.has(status)) return errorResponse('无效申请状态', 400);
+      where += ' AND status = ?';
+      binds.push(status);
+    }
+    if (!admin && request._auth.userType === 'engineer') {
+      where += ' AND requested_by_type = ? AND requested_by_id = ?';
+      binds.push('engineer', request._auth.userId);
+    }
+
+    const total = await env.DB.prepare(
+      `SELECT COUNT(*) as count FROM material_requests ${where}`
+    ).bind(...binds).first();
+    const list = await env.DB.prepare(
+      `SELECT * FROM material_requests ${where} ORDER BY created_at DESC LIMIT ? OFFSET ?`
+    ).bind(...binds, pageSize, offset).all();
+
+    return jsonResponse({
+      total: total?.count || 0,
+      list: (list.results || []).map(normalizeMaterialRequest),
+    });
+  } catch (error) {
+    return errorResponse(error.message, 500);
+  }
+}
+
+async function handleAdminReviewMaterialRequest(request, env) {
+  try {
+    const requestId = new URL(request.url).pathname.split('/')[4];
+    if (!requestId) return errorResponse('缺少申请 ID', 400);
+
+    const existing = await env.DB.prepare('SELECT * FROM material_requests WHERE id = ?').bind(requestId).first();
+    if (!existing) return errorResponse('物料申请不存在', 404);
+
+    const body = await request.json().catch(() => ({}));
+    const action = cleanText(body.action, 40);
+    let nextStatus = cleanText(body.status, 40);
+    let linkedMaterialId = cleanText(body.linked_material_id, 80) || existing.linked_material_id || null;
+    let material = null;
+
+    if (action === 'approve_create') {
+      const payload = readMaterialPayload({
+        category: existing.category,
+        name: existing.suggested_name,
+        name_en: existing.suggested_name_en,
+        spec: existing.spec,
+        brand: existing.brand,
+        compatible_equipment: existing.compatible_equipment,
+        supplier: existing.supplier_suggestion,
+        unit: existing.unit,
+        notes: existing.usage_note,
+        ...(body.material || {}),
+      });
+      if (payload.error) return errorResponse(payload.error, 400);
+      const materialId = generateId();
+      await env.DB.prepare(`
+        INSERT INTO materials (
+          id, market, material_code, category, name, name_en, spec, brand,
+          compatible_equipment, supplier, production_code, unit, reference_cost,
+          reference_price, stock_quantity, safety_stock, status, notes
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).bind(
+        materialId,
+        existing.market || getRequestMarket(request),
+        payload.material_code,
+        payload.category,
+        payload.name,
+        payload.name_en,
+        payload.spec,
+        payload.brand,
+        payload.compatible_equipment,
+        payload.supplier,
+        payload.production_code,
+        payload.unit,
+        payload.reference_cost,
+        payload.reference_price,
+        payload.stock_quantity,
+        payload.safety_stock,
+        payload.status,
+        payload.notes
+      ).run();
+      material = normalizeMaterial(
+        await env.DB.prepare('SELECT * FROM materials WHERE id = ?').bind(materialId).first()
+        || { id: materialId, market: existing.market || getRequestMarket(request), ...payload }
+      );
+      linkedMaterialId = material.id;
+      nextStatus = 'approved';
+    } else if (action === 'link_existing') {
+      if (!linkedMaterialId) return errorResponse('请选择已有物料', 400);
+      const linked = await env.DB.prepare('SELECT * FROM materials WHERE id = ?').bind(linkedMaterialId).first();
+      if (!linked) return errorResponse('物料不存在', 404);
+      material = normalizeMaterial(linked);
+      nextStatus = 'linked_existing';
+    } else {
+      if (!nextStatus) nextStatus = action || 'needs_info';
+      if (!MATERIAL_REQUEST_STATUSES.has(nextStatus)) return errorResponse('无效申请状态', 400);
+    }
+
+    const result = await env.DB.prepare(`
+      UPDATE material_requests SET
+        status = ?, review_notes = ?, linked_material_id = ?, reviewed_by = ?,
+        reviewed_at = datetime('now'), updated_at = datetime('now')
+      WHERE id = ?
+    `).bind(
+      nextStatus,
+      cleanText(body.review_notes, 1200) || null,
+      linkedMaterialId,
+      request._auth?.userId || 'admin',
+      requestId
+    ).run();
+
+    if (result.meta?.changes === 0) return errorResponse('物料申请不存在', 404);
+    const updated = normalizeMaterialRequest(
+      await env.DB.prepare('SELECT * FROM material_requests WHERE id = ?').bind(requestId).first()
+      || { ...existing, status: nextStatus, linked_material_id: linkedMaterialId, review_notes: cleanText(body.review_notes, 1200) || null }
+    );
+
+    await writeAuditLog(env, request, {
+      targetType: 'material_request',
+      targetId: requestId,
+      action: 'material_request_reviewed',
+      beforeState: normalizeMaterialRequest(existing),
+      afterState: updated,
+    });
+
+    return jsonResponse({ success: true, request: updated, material });
+  } catch (error) {
+    if (/UNIQUE/i.test(String(error?.message || ''))) {
+      return errorResponse('物料编码已存在', 409);
+    }
     return errorResponse(error.message, 500);
   }
 }
@@ -7085,7 +7346,7 @@ async function handleAdminReviewWorkOrderPricing(request, env) {
         user_type: 'engineer',
         type: 'quote_review_rejected',
         title: '报价需修改',
-        body: `服务编号 ${wo.order_no} 的报价未通过 SAGEMRO 审核，请修改后重新提交。`,
+        body: `服务编号 ${wo.order_no} 的报价未通过运营复核，请修改后重新提交。`,
         data: { work_order_id: workOrderId },
       });
     }
@@ -8416,10 +8677,10 @@ async function handleSubmitWorkOrderPricing(request, env) {
       "UPDATE work_orders SET status = 'pricing', quote_review_status = 'pending_review' WHERE id = ?"
     ).bind(workOrderId).run();
 
-    // 发送内部系统消息：工程师报价建议需要 SAGEMRO 审核后才对客户可见。
+    // 发送内部系统消息：工程师报价建议需要运营复核后才对客户可见。
     const msgId = generateId();
     await env.DB.prepare(
-      "INSERT INTO work_order_messages (id, work_order_id, sender_type, sender_id, sender_name, content, message_type, is_internal_note, is_customer_visible) VALUES (?, ?, 'system', '', '系统', '工程师已提交报价建议，等待 SAGEMRO 审核后发送给客户。', 'pricing_update', 1, 0)"
+      "INSERT INTO work_order_messages (id, work_order_id, sender_type, sender_id, sender_name, content, message_type, is_internal_note, is_customer_visible) VALUES (?, ?, 'system', '', '系统', '工程师已提交报价建议，等待运营复核后发送给客户。', 'pricing_update', 1, 0)"
     ).bind(msgId, workOrderId).run();
 
     await writeAuditLog(env, request, {
@@ -8951,6 +9212,7 @@ async function routeRequest(request, env, ctx) {
     // 白名单必须与下方已登录路由列表保持同步。
     const isKnownProtectedRoute = (
       path.startsWith('/api/admin/') ||
+      path === '/api/material-requests' ||
       path === '/api/conversations' ||
       path.startsWith('/api/conversations/') ||
       path === '/api/materials' ||
@@ -9000,6 +9262,12 @@ async function routeRequest(request, env, ctx) {
       }
       if (path.startsWith('/api/admin/engineer-applications/') && request.method === 'PATCH') {
         return handleAdminUpdateEngineerApplication(request, env);
+      }
+      if (path === '/api/admin/material-requests' && request.method === 'GET') {
+        return handleListMaterialRequests(request, env, { admin: true });
+      }
+      if (path.startsWith('/api/admin/material-requests/') && request.method === 'PATCH') {
+        return handleAdminReviewMaterialRequest(request, env);
       }
       if (path === '/api/admin/materials' && request.method === 'GET') {
         return handleAdminMaterials(request, env);
@@ -9071,6 +9339,12 @@ async function routeRequest(request, env, ctx) {
     // 物料搜索：工程师/Admin 可用，只返回协作所需字段
     if (path === '/api/materials' && request.method === 'GET') {
       return handleSearchMaterials(request, env);
+    }
+    if (path === '/api/material-requests' && request.method === 'GET') {
+      return handleListMaterialRequests(request, env);
+    }
+    if (path === '/api/material-requests' && request.method === 'POST') {
+      return handleCreateMaterialRequest(request, env);
     }
 
     // 工单相关
