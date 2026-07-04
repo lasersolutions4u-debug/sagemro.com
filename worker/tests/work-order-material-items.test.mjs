@@ -40,9 +40,25 @@ function createStatement(env, sql) {
       if (/FROM materials/i.test(normalized)) {
         const market = this.args[0];
         const search = this.args.find((arg) => typeof arg === 'string' && arg.startsWith('%'));
+        const literalSearch = /instr\(lower\(COALESCE\(material_code/i.test(normalized) && typeof this.args[1] === 'string'
+          ? this.args[1]
+          : null;
+        if (search && search.includes('SAGEMRO_SMOKE_MATERIAL_REQUEST')) {
+          throw new Error('LIKE or GLOB pattern too complex: SQLITE_ERROR');
+        }
         let results = env.__materials.filter((material) => material.market === market && material.status === 'active');
         if (search) {
           const needle = search.replaceAll('%', '').toLowerCase();
+          results = results.filter((material) => [
+            material.material_code,
+            material.name,
+            material.name_en,
+            material.spec,
+            material.brand,
+          ].some((value) => String(value || '').toLowerCase().includes(needle)));
+        }
+        if (literalSearch) {
+          const needle = literalSearch.toLowerCase();
           results = results.filter((material) => [
             material.material_code,
             material.name,
@@ -166,6 +182,25 @@ function createEnv() {
         safety_stock: 5,
         status: 'active',
       },
+      {
+        id: 'mat-smoke-request',
+        market: 'cn',
+        material_code: 'SAGEMRO_SMOKE_MATERIAL_REQUEST_cn_20260704190506_REQ_PART',
+        category: 'laser_cutting',
+        name: '生产测试保护镜片',
+        name_en: 'Production smoke protective lens',
+        spec: 'D30 F5.0 request smoke',
+        brand: 'SAGEMRO_SMOKE',
+        compatible_equipment: 'Fiber laser cutter',
+        supplier: 'Hidden Smoke Supplier',
+        production_code: 'BATCH-SMOKE',
+        unit: 'pcs',
+        reference_cost: 12,
+        reference_price: 186,
+        stock_quantity: 2,
+        safety_stock: 1,
+        status: 'active',
+      },
     ],
     __workOrders: [
       {
@@ -225,6 +260,19 @@ test('engineer can search active materials without supplier cost or inventory fi
   assert.equal(result.json.list.length, 1);
   assert.equal(result.json.list[0].material_code, 'LC-NOZZLE-1.5');
   assert.equal(result.json.list[0].reference_price, 35);
+  assert.equal('supplier' in result.json.list[0], false);
+  assert.equal('reference_cost' in result.json.list[0], false);
+  assert.equal('stock_quantity' in result.json.list[0], false);
+});
+
+test('engineer can search a long material code with underscores as literal text', async () => {
+  const env = createEnv();
+
+  const result = await api(env, '/api/materials?search=SAGEMRO_SMOKE_MATERIAL_REQUEST_cn_20260704190506_REQ_PART');
+
+  assert.equal(result.response.status, 200);
+  assert.equal(result.json.list.length, 1);
+  assert.equal(result.json.list[0].material_code, 'SAGEMRO_SMOKE_MATERIAL_REQUEST_cn_20260704190506_REQ_PART');
   assert.equal('supplier' in result.json.list[0], false);
   assert.equal('reference_cost' in result.json.list[0], false);
   assert.equal('stock_quantity' in result.json.list[0], false);
