@@ -21,9 +21,7 @@ ENVIRONMENT = "development"
 # R2 公开访问域名（创建 bucket 后从 Cloudflare Dashboard 获取）
 # 格式类似: pub-xxxxxxxxxxxxxxxx.r2.dev
 R2_PUBLIC_HOST = "pub-b468952d6e244e7d913c90a7ae6f81d6.r2.dev"
-# 开发环境固定验证码（不设置则每次随机生成 + bypass "888888"）
-# 自动化测试可设置此值为固定码（如 "123456"），注册时无需调 send-code 即可使用
-DEV_BYPASS_CODE = "123456"
+# 本地如需固定验证码，在未提交的 .dev.vars 中设置 DEV_BYPASS_CODE。
 # 敏感变量一律通过 wrangler secret put 注入（不在本文件出现）：
 #   wrangler secret put OPENAI_API_KEY            --env production
 #   wrangler secret put OPENAI_API_ENDPOINT       --env production
