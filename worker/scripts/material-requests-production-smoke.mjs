@@ -233,10 +233,26 @@ function assert(condition, message) {
   if (!condition) throw new Error(message);
 }
 
+export function buildWranglerD1Args({ context, sql, mode = 'file', file } = {}) {
+  const args = ['wrangler', 'd1', 'execute', context.dbName, '--env', 'production', '--remote'];
+  if (mode === 'command') return [...args, '--command', sql];
+  return [...args, '--file', file];
+}
+
 function runWranglerSql({ context, sql, label, workerDir, tempDir }) {
   const file = join(tempDir, `${label}.sql`);
   writeFileSync(file, sql);
-  return execFileSync('npx', ['wrangler', 'd1', 'execute', context.dbName, '--env', 'production', '--remote', '--file', file], {
+  const [, ...args] = buildWranglerD1Args({ context, mode: 'file', file });
+  return execFileSync('npx', args, {
+    cwd: workerDir,
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+}
+
+function runWranglerCommandSql({ context, sql, workerDir }) {
+  const [, ...args] = buildWranglerD1Args({ context, sql, mode: 'command' });
+  return execFileSync('npx', args, {
     cwd: workerDir,
     encoding: 'utf8',
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -534,7 +550,7 @@ UPDATE work_orders SET quote_review_status='approved', status='pricing' WHERE id
     }
 
     try {
-      const output = runWranglerSql({ context, sql: buildMaterialRequestResidueSql(context), label: 'residue', workerDir, tempDir });
+      const output = runWranglerCommandSql({ context, sql: buildMaterialRequestResidueSql(context), workerDir });
       const totalResidue = parseWranglerResidueCount(output);
       report.cleanup.push({ ok: totalResidue === 0, action: 'residue checked', totalResidue });
       if (totalResidue !== 0) report.passed = false;

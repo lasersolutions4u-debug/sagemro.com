@@ -6,7 +6,9 @@ import {
   buildMaterialRequestSmokeContext,
   buildMaterialRequestCleanupSql,
   buildMaterialRequestResidueSql,
+  buildWranglerD1Args,
   isCliEntry,
+  parseWranglerResidueCount,
   parseMaterialRequestSmokeArgs,
   sanitizeMaterialRequestStepResult,
 } from '../scripts/material-requests-production-smoke.mjs';
@@ -86,6 +88,48 @@ test('material request smoke report sanitization excludes secrets', () => {
   });
   assert.equal(JSON.stringify(sanitized).includes('admin-jwt-secret'), false);
   assert.equal(JSON.stringify(sanitized).includes('plain-secret'), false);
+});
+
+test('material request residue uses wrangler command mode so SELECT results are returned', () => {
+  const context = buildMaterialRequestSmokeContext({ market: 'com', stamp: '20260704190506', password: 'not-secret' });
+  const args = buildWranglerD1Args({ context, sql: buildMaterialRequestResidueSql(context), mode: 'command' });
+
+  assert.deepEqual(args.slice(0, 7), ['wrangler', 'd1', 'execute', 'sagemro-db', '--env', 'production', '--remote']);
+  assert.equal(args[7], '--command');
+  assert.match(args[8], /total_residue/);
+  assert.equal(args.includes('--file'), false);
+});
+
+test('material request residue parser treats wrangler import summary as unknown', () => {
+  const importSummary = `[
+    {
+      "results": [
+        {
+          "Total queries executed": 1,
+          "Rows read": 3,
+          "Rows written": 0
+        }
+      ],
+      "success": true
+    }
+  ]`;
+
+  assert.equal(parseWranglerResidueCount(importSummary), null);
+});
+
+test('material request residue parser reads command query output', () => {
+  const commandOutput = `[
+    {
+      "results": [
+        {
+          "total_residue": 0
+        }
+      ],
+      "success": true
+    }
+  ]`;
+
+  assert.equal(parseWranglerResidueCount(commandOutput), 0);
 });
 
 test('material request smoke isCliEntry handles unicode workspace paths', () => {
