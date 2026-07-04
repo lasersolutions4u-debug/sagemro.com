@@ -5595,9 +5595,15 @@ async function handleAdminMaterials(request, env) {
       binds.push(status);
     }
     if (search) {
-      where += ' AND (material_code LIKE ? OR name LIKE ? OR name_en LIKE ? OR spec LIKE ? OR brand LIKE ? OR supplier LIKE ?)';
-      const like = `%${search}%`;
-      binds.push(like, like, like, like, like, like);
+      where += ` AND (
+        instr(lower(COALESCE(material_code, '')), lower(?)) > 0 OR
+        instr(lower(COALESCE(name, '')), lower(?)) > 0 OR
+        instr(lower(COALESCE(name_en, '')), lower(?)) > 0 OR
+        instr(lower(COALESCE(spec, '')), lower(?)) > 0 OR
+        instr(lower(COALESCE(brand, '')), lower(?)) > 0 OR
+        instr(lower(COALESCE(supplier, '')), lower(?)) > 0
+      )`;
+      binds.push(search, search, search, search, search, search);
     }
 
     const total = await env.DB.prepare(
@@ -5805,9 +5811,14 @@ async function handleSearchMaterials(request, env) {
       binds.push(category);
     }
     if (search) {
-      where += ' AND (material_code LIKE ? OR name LIKE ? OR name_en LIKE ? OR spec LIKE ? OR brand LIKE ?)';
-      const like = `%${search}%`;
-      binds.push(like, like, like, like, like);
+      where += ` AND (
+        instr(lower(COALESCE(material_code, '')), lower(?)) > 0 OR
+        instr(lower(COALESCE(name, '')), lower(?)) > 0 OR
+        instr(lower(COALESCE(name_en, '')), lower(?)) > 0 OR
+        instr(lower(COALESCE(spec, '')), lower(?)) > 0 OR
+        instr(lower(COALESCE(brand, '')), lower(?)) > 0
+      )`;
+      binds.push(search, search, search, search, search);
     }
 
     const list = await env.DB.prepare(

@@ -111,7 +111,7 @@ export function buildMaterialRequestCleanupSql(context) {
   const matCode = quoteSql(context.requestedMaterialCode);
 
   return `
-DELETE FROM audit_logs WHERE target_id IN (${wo}, ${eng}, ${cust}) OR after_state LIKE '%' || ${runId} || '%' OR before_state LIKE '%' || ${runId} || '%';
+DELETE FROM audit_logs WHERE target_id IN (${wo}, ${eng}, ${cust}) OR instr(COALESCE(after_state, ''), ${runId}) > 0 OR instr(COALESCE(before_state, ''), ${runId}) > 0;
 DELETE FROM work_order_pricing_history WHERE pricing_id IN (SELECT id FROM work_order_pricing WHERE work_order_id=${wo});
 DELETE FROM work_order_material_items WHERE work_order_id=${wo} OR material_code=${matCode} OR material_id IN (SELECT id FROM materials WHERE material_code=${matCode});
 DELETE FROM work_order_repair_records WHERE work_order_id=${wo};
@@ -122,12 +122,12 @@ DELETE FROM ratings WHERE work_order_id=${wo};
 DELETE FROM customer_ratings WHERE work_order_id=${wo};
 DELETE FROM engineer_reviews WHERE work_order_id=${wo};
 DELETE FROM platform_ratings WHERE customer_id=${cust};
-DELETE FROM notifications WHERE data LIKE '%' || ${quoteSql(context.workOrderId)} || '%' OR user_id IN (${cust}, ${eng});
+DELETE FROM notifications WHERE instr(COALESCE(data, ''), ${quoteSql(context.workOrderId)}) > 0 OR user_id IN (${cust}, ${eng});
+DELETE FROM material_requests WHERE work_order_id=${wo} OR instr(COALESCE(suggested_name, ''), ${runId}) > 0 OR linked_material_id IN (SELECT id FROM materials WHERE material_code=${matCode});
 DELETE FROM work_order_pricing WHERE work_order_id=${wo};
 DELETE FROM work_order_attachments WHERE work_order_id=${wo};
 DELETE FROM work_orders WHERE id=${wo};
 DELETE FROM material_inventory_adjustments WHERE material_id IN (SELECT id FROM materials WHERE material_code=${matCode});
-DELETE FROM material_requests WHERE work_order_id=${wo} OR suggested_name LIKE '%' || ${runId} || '%' OR linked_material_id IN (SELECT id FROM materials WHERE material_code=${matCode});
 DELETE FROM materials WHERE material_code=${matCode};
 DELETE FROM devices WHERE customer_id=${cust};
 DELETE FROM engineer_calendar_events WHERE engineer_id=${eng} OR work_order_id=${wo};
@@ -138,8 +138,8 @@ DELETE FROM engineer_violations WHERE engineer_id=${eng} OR work_order_id=${wo};
 DELETE FROM engineer_withdrawals WHERE engineer_id=${eng};
 DELETE FROM push_subscriptions WHERE engineer_id=${eng};
 DELETE FROM engineers WHERE id=${eng};
-DELETE FROM messages WHERE conversation_id IN (SELECT id FROM conversations WHERE customer_id=${cust} OR engineer_id=${eng} OR id LIKE '%' || ${runId} || '%');
-DELETE FROM conversations WHERE customer_id=${cust} OR engineer_id=${eng} OR id LIKE '%' || ${runId} || '%';
+DELETE FROM messages WHERE conversation_id IN (SELECT id FROM conversations WHERE customer_id=${cust} OR engineer_id=${eng} OR instr(id, ${runId}) > 0);
+DELETE FROM conversations WHERE customer_id=${cust} OR engineer_id=${eng} OR instr(id, ${runId}) > 0;
 DELETE FROM customers WHERE id=${cust};
 `;
 }
@@ -153,14 +153,14 @@ export function buildMaterialRequestResidueSql(context) {
 
   return `
 SELECT
-  (SELECT COUNT(*) FROM material_requests WHERE work_order_id=${wo} OR suggested_name LIKE '%' || ${runId} || '%') +
+  (SELECT COUNT(*) FROM material_requests WHERE work_order_id=${wo} OR instr(COALESCE(suggested_name, ''), ${runId}) > 0) +
   (SELECT COUNT(*) FROM work_order_material_items WHERE work_order_id=${wo} OR material_code=${matCode}) +
   (SELECT COUNT(*) FROM work_order_repair_records WHERE work_order_id=${wo}) +
   (SELECT COUNT(*) FROM work_order_messages WHERE work_order_id=${wo}) +
   (SELECT COUNT(*) FROM work_order_logs WHERE work_order_id=${wo}) +
   (SELECT COUNT(*) FROM work_order_payments WHERE work_order_id=${wo}) +
   (SELECT COUNT(*) FROM work_order_pricing WHERE work_order_id=${wo}) +
-  (SELECT COUNT(*) FROM work_order_pricing_history WHERE pricing_id LIKE '%' || ${runId} || '%') +
+  (SELECT COUNT(*) FROM work_order_pricing_history WHERE instr(COALESCE(pricing_id, ''), ${runId}) > 0) +
   (SELECT COUNT(*) FROM work_orders WHERE id=${wo}) +
   (SELECT COUNT(*) FROM material_inventory_adjustments WHERE material_id IN (SELECT id FROM materials WHERE material_code=${matCode})) +
   (SELECT COUNT(*) FROM materials WHERE material_code=${matCode}) +
