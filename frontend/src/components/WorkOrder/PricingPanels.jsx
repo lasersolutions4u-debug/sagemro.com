@@ -9,6 +9,7 @@ import {
 import { PaymentModal } from '../Payment/PaymentModal';
 import { toastSuccess, toastError, toastWarning } from '../../utils/feedback';
 import { isCnLocale } from '../../utils/locale';
+import { MaterialPicker } from './MaterialPicker';
 
 const PRICING_COPY = {
   en: {
@@ -158,9 +159,12 @@ export function AIPriceCheck({ check }) {
 export function EngineerPricingPanel({ workOrderId, engineerId, onSubmitted, commissionRate = 0.80, engineerLevel = 'junior' }) {
   const t = getPricingCopy();
   const [form, setForm] = useState({ labor_fee: '', parts_fee: '', travel_fee: '', other_fee: '', parts_detail: '' });
+  const [materialItems, setMaterialItems] = useState([]);
   const [submitting, setSubmitting] = useState(false);
 
-  const subtotal = (parseInt(form.labor_fee) || 0) + (parseInt(form.parts_fee) || 0) + (parseInt(form.travel_fee) || 0) + (parseInt(form.other_fee) || 0);
+  const structuredPartsFee = materialItems.reduce((sum, item) => sum + (Number(item.quantity || 0) * Number(item.unit_price || 0)), 0);
+  const partsFee = materialItems.length > 0 ? Math.round(structuredPartsFee * 100) / 100 : (parseInt(form.parts_fee) || 0);
+  const subtotal = (parseInt(form.labor_fee) || 0) + partsFee + (parseInt(form.travel_fee) || 0) + (parseInt(form.other_fee) || 0);
   const internalEstimate = Math.round(subtotal * commissionRate); // Internal legacy estimate; customer-facing quote uses SAGEMRO-reviewed pricing.
 
   const handleSubmit = async () => {
@@ -168,10 +172,11 @@ export function EngineerPricingPanel({ workOrderId, engineerId, onSubmitted, com
     try {
       await submitWorkOrderPricing(workOrderId, {
         labor_fee: parseInt(form.labor_fee) || 0,
-        parts_fee: parseInt(form.parts_fee) || 0,
+        parts_fee: partsFee,
         travel_fee: parseInt(form.travel_fee) || 0,
         other_fee: parseInt(form.other_fee) || 0,
         parts_detail: form.parts_detail,
+        material_items: materialItems,
         engineer_id: engineerId,
       });
       toastSuccess(t.engineer.submitted);
@@ -204,7 +209,14 @@ export function EngineerPricingPanel({ workOrderId, engineerId, onSubmitted, com
       <div className="text-xs text-[var(--color-text-muted)]">{t.engineer.helper}</div>
       <div className="grid grid-cols-2 gap-3">
         {field('labor_fee', t.engineer.laborFee, t.engineer.laborPlaceholder)}
-        {field('parts_fee', t.engineer.partsFee, t.engineer.partsPlaceholder)}
+        {materialItems.length > 0 ? (
+          <div>
+            <label className="block text-xs text-[var(--color-text-secondary)] mb-1">{t.engineer.partsFee}</label>
+            <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-3 py-2 text-sm text-[var(--color-text-primary)]">
+              {partsFee} CNY
+            </div>
+          </div>
+        ) : field('parts_fee', t.engineer.partsFee, t.engineer.partsPlaceholder)}
       </div>
       <div className="grid grid-cols-2 gap-3">
         {field('travel_fee', t.engineer.travelFee, t.engineer.travelPlaceholder)}
@@ -220,10 +232,11 @@ export function EngineerPricingPanel({ workOrderId, engineerId, onSubmitted, com
           className="w-full px-3 py-2 text-sm border border-[var(--color-border)] rounded-xl bg-[var(--color-surface)] text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)] resize-none"
         />
       </div>
+      <MaterialPicker purpose="quote" items={materialItems} onChange={setMaterialItems} />
       {/* 费用汇总 */}
       <div className="p-3 bg-[var(--color-surface-elevated)] rounded-xl space-y-1.5 text-sm">
         <div className="flex justify-between"><span className="text-[var(--color-text-secondary)]">{t.engineer.laborFee}</span><span>{form.labor_fee || 0} CNY</span></div>
-        <div className="flex justify-between"><span className="text-[var(--color-text-secondary)]">{t.engineer.partsFee}</span><span>{form.parts_fee || 0} CNY</span></div>
+        <div className="flex justify-between"><span className="text-[var(--color-text-secondary)]">{t.engineer.partsFee}</span><span>{partsFee} CNY</span></div>
         <div className="flex justify-between"><span className="text-[var(--color-text-secondary)]">{t.engineer.travelFee}</span><span>{form.travel_fee || 0} CNY</span></div>
         <div className="flex justify-between"><span className="text-[var(--color-text-secondary)]">{t.engineer.otherFee}</span><span>{form.other_fee || 0} CNY</span></div>
         <div className="flex justify-between border-t border-[var(--color-border)] pt-1.5"><span className="text-[var(--color-text-secondary)]">{t.engineer.quoteSubtotal}</span><span className="font-medium">{subtotal} CNY</span></div>
@@ -317,9 +330,15 @@ export function CustomerPricingPanel({ workOrderId, customerId, onConfirmed }) {
         <div className="flex justify-between"><span className="text-[var(--color-text-secondary)]">{t.engineer.partsFee}</span><span>{pricing.parts_fee || 0} CNY</span></div>
         <div className="flex justify-between"><span className="text-[var(--color-text-secondary)]">{t.engineer.travelFee}</span><span>{pricing.travel_fee || 0} CNY</span></div>
         <div className="flex justify-between"><span className="text-[var(--color-text-secondary)]">{t.engineer.otherFee}</span><span>{pricing.other_fee || 0} CNY</span></div>
-        {pricing.parts_detail && pricing.parts_detail !== '[]' && pricing.parts_detail !== '' && (
+        {(!pricing.material_items?.length && pricing.parts_detail && pricing.parts_detail !== '[]' && pricing.parts_detail !== '') && (
           <div className="text-xs text-[var(--color-text-secondary)] pt-1 border-t border-[var(--color-border)]">
             Parts Detail: {(() => { try { return JSON.parse(pricing.parts_detail).map(p => `${p.name || 'Part'} ${p.qty || 1}×${p.unit_price || 0} CNY`).join('; '); } catch { return pricing.parts_detail; } })()}
+          </div>
+        )}
+        {pricing.material_items?.length > 0 && (
+          <div className="pt-2 border-t border-[var(--color-border)]">
+            <div className="mb-2 text-xs font-medium text-[var(--color-text-secondary)]">{isCnLocale() ? '配件清单' : 'Parts List'}</div>
+            <MaterialPicker items={pricing.material_items} readonly />
           </div>
         )}
         <div className="flex justify-between border-t border-[var(--color-border)] pt-1.5"><span className="text-[var(--color-text-secondary)]">{t.engineer.quoteSubtotal}</span><span className="font-medium">{pricing.subtotal || 0} CNY</span></div>

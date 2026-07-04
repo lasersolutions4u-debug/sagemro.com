@@ -4153,6 +4153,8 @@ async function handleGetWorkOrder(request, env) {
       'SELECT * FROM work_order_attachments WHERE work_order_id = ? ORDER BY created_at DESC'
     ).bind(id).all();
 
+    const materialItems = await listWorkOrderMaterialItems(env, id);
+
     return jsonResponse({
       ...workOrder,
       sla_status: getSlaStatus(workOrder.sla_deadline, workOrder.urgency),
@@ -4160,7 +4162,10 @@ async function handleGetWorkOrder(request, env) {
       rating: rating || null,
       admin_reply: adminReply || null,
       engineer_review: engineerReview || null,
-      repair_record: repairRecord || null,
+      repair_record: repairRecord
+        ? { ...repairRecord, material_items: materialItems.filter((item) => item.purpose === 'service_report') }
+        : null,
+      material_items: materialItems,
       attachments: attachments.results,
     });
   } catch (error) {
@@ -4186,7 +4191,12 @@ async function handleGetRepairRecord(request, env) {
       'SELECT * FROM work_order_repair_records WHERE work_order_id = ?'
     ).bind(workOrderId).first();
 
-    return jsonResponse({ repair_record: record || null });
+    const materialItems = await listWorkOrderMaterialItems(env, workOrderId, { purpose: 'service_report' });
+
+    return jsonResponse({
+      repair_record: record ? { ...record, material_items: materialItems } : null,
+      material_items: materialItems,
+    });
   } catch (error) {
     if (error instanceof GuardError) return errorResponse(error.message, error.status);
     return errorResponse(error.message, 500);
@@ -4259,6 +4269,10 @@ async function handleSaveRepairRecord(request, env) {
       INSERT INTO work_order_logs (id, work_order_id, action, actor_type, actor_id, content)
       VALUES (?, ?, 'repair_record_saved', 'engineer', ?, '工程师填写了维修记录。')
     `).bind(generateId(), workOrderId, engineer_id).run();
+
+    if (Array.isArray(body.material_items)) {
+      await replaceWorkOrderMaterialItems(env, request, workOrderId, 'service_report', body.material_items);
+    }
 
     return jsonResponse({ success: true });
   } catch (error) {
@@ -5443,6 +5457,13 @@ const MATERIAL_ADJUSTMENT_TYPES = new Set([
   'correction',
   'reservation_release',
 ]);
+const WORK_ORDER_MATERIAL_PURPOSES = new Set([
+  'quote',
+  'preparation',
+  'service_report',
+  'recommended_spare',
+]);
+const WORK_ORDER_MATERIAL_STATUSES = new Set(['active', 'removed']);
 
 function cleanText(value, maxLength = 300) {
   if (value === undefined || value === null) return '';
@@ -5508,6 +5529,69 @@ function normalizeMaterial(row) {
     reference_price: Number(row.reference_price || 0),
     stock_quantity: Number(row.stock_quantity || 0),
     safety_stock: Number(row.safety_stock || 0),
+  };
+}
+
+function normalizePublicMaterial(row) {
+  if (!row) return row;
+  return {
+    id: row.id,
+    material_code: row.material_code,
+    category: row.category,
+    name: row.name,
+    name_en: row.name_en,
+    spec: row.spec,
+    brand: row.brand,
+    compatible_equipment: row.compatible_equipment,
+    unit: row.unit || 'pcs',
+    reference_price: Number(row.reference_price || 0),
+    status: row.status,
+  };
+}
+
+function normalizeWorkOrderMaterialItem(row) {
+  if (!row) return row;
+  return {
+    id: row.id,
+    work_order_id: row.work_order_id,
+    material_id: row.material_id,
+    purpose: row.purpose || 'quote',
+    material_code: row.material_code,
+    name: row.name,
+    name_en: row.name_en,
+    spec: row.spec,
+    brand: row.brand,
+    unit: row.unit || 'pcs',
+    quantity: Number(row.quantity || 0),
+    unit_price: Number(row.unit_price || 0),
+    line_total: Number(row.line_total || 0),
+    note: row.note,
+    status: row.status || 'active',
+    created_by_type: row.created_by_type,
+    created_by_id: row.created_by_id,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+  };
+}
+
+function readWorkOrderMaterialItemPayload(body = {}) {
+  const purpose = cleanText(body.purpose || 'quote', 40) || 'quote';
+  const quantity = Math.max(0, toSafeNumber(body.quantity, 1));
+  const unitPrice = Math.max(0, toSafeNumber(body.unit_price, 0));
+  const status = cleanText(body.status || 'active', 40) || 'active';
+
+  if (!WORK_ORDER_MATERIAL_PURPOSES.has(purpose)) return { error: '无效物料用途' };
+  if (!WORK_ORDER_MATERIAL_STATUSES.has(status)) return { error: '无效物料状态' };
+  if (!quantity) return { error: '物料数量必须大于 0' };
+
+  return {
+    material_id: cleanText(body.material_id, 80) || null,
+    purpose,
+    quantity,
+    unit_price: unitPrice,
+    line_total: Math.round(quantity * unitPrice * 100) / 100,
+    note: cleanText(body.note, 600) || null,
+    status,
   };
 }
 
@@ -5865,6 +5949,249 @@ async function handleAdminMaterialInventoryAdjustment(request, env) {
       material: normalizeMaterial(updated || { ...material, stock_quantity: afterQuantity }),
     });
   } catch (error) {
+    return errorResponse(error.message, 500);
+  }
+}
+
+async function handleSearchMaterials(request, env) {
+  try {
+    const auth = request._auth;
+    if (!auth || !['admin', 'engineer'].includes(auth.userType)) {
+      return errorResponse('需要工程师或管理员权限', 403);
+    }
+
+    const url = new URL(request.url);
+    const page = Math.max(1, parseInt(url.searchParams.get('page') || '1', 10));
+    const pageSize = Math.min(50, Math.max(1, parseInt(url.searchParams.get('pageSize') || '20', 10)));
+    const offset = (page - 1) * pageSize;
+    const search = cleanText(url.searchParams.get('search'), 120);
+    const category = cleanText(url.searchParams.get('category'), 60);
+    const market = cleanText(url.searchParams.get('market'), 20) || getRequestMarket(request);
+
+    let where = "WHERE market = ? AND status = 'active'";
+    const binds = [market];
+    if (category && category !== 'all') {
+      where += ' AND category = ?';
+      binds.push(category);
+    }
+    if (search) {
+      where += ' AND (material_code LIKE ? OR name LIKE ? OR name_en LIKE ? OR spec LIKE ? OR brand LIKE ?)';
+      const like = `%${search}%`;
+      binds.push(like, like, like, like, like);
+    }
+
+    const list = await env.DB.prepare(
+      `SELECT id, material_code, category, name, name_en, spec, brand, compatible_equipment, unit, reference_price, status
+       FROM materials ${where}
+       ORDER BY updated_at DESC, created_at DESC LIMIT ? OFFSET ?`
+    ).bind(...binds, pageSize, offset).all();
+
+    return jsonResponse({
+      list: (list.results || []).map(normalizePublicMaterial),
+    });
+  } catch (error) {
+    return errorResponse(error.message, 500);
+  }
+}
+
+async function getWorkOrderForMaterialAccess(env, workOrderId) {
+  return env.DB.prepare(
+    'SELECT id, customer_id, engineer_id, assigned_regional_lead_id, status FROM work_orders WHERE id = ?'
+  ).bind(workOrderId).first();
+}
+
+async function listWorkOrderMaterialItems(env, workOrderId, { purpose } = {}) {
+  if (purpose) {
+    const list = await env.DB.prepare(`
+      SELECT * FROM work_order_material_items
+      WHERE work_order_id = ? AND purpose = ? AND COALESCE(status, 'active') != 'removed'
+      ORDER BY created_at ASC
+    `).bind(workOrderId, purpose).all();
+    return (list.results || []).map(normalizeWorkOrderMaterialItem);
+  }
+  const list = await env.DB.prepare(`
+    SELECT * FROM work_order_material_items
+    WHERE work_order_id = ? AND COALESCE(status, 'active') != 'removed'
+    ORDER BY created_at ASC
+  `).bind(workOrderId).all();
+  return (list.results || []).map(normalizeWorkOrderMaterialItem);
+}
+
+async function replaceWorkOrderMaterialItems(env, request, workOrderId, purpose, items = []) {
+  if (!WORK_ORDER_MATERIAL_PURPOSES.has(purpose)) throw new Error('无效物料用途');
+  await env.DB.prepare(
+    "UPDATE work_order_material_items SET status = 'removed', updated_at = datetime('now') WHERE work_order_id = ? AND purpose = ?"
+  ).bind(workOrderId, purpose).run();
+
+  for (const rawItem of Array.isArray(items) ? items : []) {
+    const payload = readWorkOrderMaterialItemPayload({ ...rawItem, purpose });
+    if (payload.error) throw new Error(payload.error);
+    await insertWorkOrderMaterialItem(env, request, workOrderId, payload);
+  }
+}
+
+async function insertWorkOrderMaterialItem(env, request, workOrderId, payload) {
+  const material = payload.material_id
+    ? await env.DB.prepare('SELECT * FROM materials WHERE id = ?').bind(payload.material_id).first()
+    : null;
+  if (payload.material_id && !material) throw new Error('物料不存在');
+  if (material?.status && material.status !== 'active') throw new Error('物料未启用');
+
+  const fallbackName = cleanText(payload.name, 160);
+  const name = material?.name || fallbackName;
+  if (!name) throw new Error('请填写物料名称');
+
+  const id = generateId();
+  await env.DB.prepare(`
+    INSERT INTO work_order_material_items (
+      id, work_order_id, material_id, purpose, material_code, name, name_en,
+      spec, brand, unit, quantity, unit_price, line_total, note, status,
+      created_by_type, created_by_id
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).bind(
+    id,
+    workOrderId,
+    payload.material_id,
+    payload.purpose,
+    material?.material_code || cleanText(payload.material_code, 80) || null,
+    name,
+    material?.name_en || cleanText(payload.name_en, 160) || null,
+    material?.spec || cleanText(payload.spec, 240) || null,
+    material?.brand || cleanText(payload.brand, 120) || null,
+    material?.unit || cleanText(payload.unit, 40) || 'pcs',
+    payload.quantity,
+    payload.unit_price,
+    payload.line_total,
+    payload.note,
+    payload.status,
+    request._auth?.userType || 'system',
+    request._auth?.userId || ''
+  ).run();
+
+  const row = await env.DB.prepare('SELECT * FROM work_order_material_items WHERE id = ?').bind(id).first();
+  return normalizeWorkOrderMaterialItem(row || {
+    id,
+    work_order_id: workOrderId,
+    material_id: payload.material_id,
+    purpose: payload.purpose,
+    material_code: material?.material_code || payload.material_code,
+    name,
+    name_en: material?.name_en || payload.name_en,
+    spec: material?.spec || payload.spec,
+    brand: material?.brand || payload.brand,
+    unit: material?.unit || payload.unit || 'pcs',
+    quantity: payload.quantity,
+    unit_price: payload.unit_price,
+    line_total: payload.line_total,
+    note: payload.note,
+    status: payload.status,
+    created_by_type: request._auth?.userType || 'system',
+    created_by_id: request._auth?.userId || '',
+  });
+}
+
+async function handleGetWorkOrderMaterialItems(request, env) {
+  try {
+    const url = new URL(request.url);
+    const workOrderId = url.pathname.split('/')[3];
+    const purpose = cleanText(url.searchParams.get('purpose'), 40);
+    const workOrder = await getWorkOrderForMaterialAccess(env, workOrderId);
+    assertWorkOrderAccess(request._auth, workOrder);
+
+    let list = await listWorkOrderMaterialItems(env, workOrderId, {
+      purpose: WORK_ORDER_MATERIAL_PURPOSES.has(purpose) ? purpose : undefined,
+    });
+    if (request._auth?.userType === 'customer') {
+      list = list.filter((item) => ['quote', 'service_report'].includes(item.purpose));
+    }
+    return jsonResponse({ list });
+  } catch (error) {
+    if (error instanceof GuardError) return errorResponse(error.message, error.status);
+    return errorResponse(error.message, 500);
+  }
+}
+
+async function handleCreateWorkOrderMaterialItem(request, env) {
+  try {
+    const workOrderId = new URL(request.url).pathname.split('/')[3];
+    const workOrder = await getWorkOrderForMaterialAccess(env, workOrderId);
+    assertWorkOrderAccess(request._auth, workOrder);
+    if (!['admin', 'engineer'].includes(request._auth?.userType)) {
+      return errorResponse('需要工程师或管理员权限', 403);
+    }
+
+    const body = await request.json().catch(() => ({}));
+    const payload = readWorkOrderMaterialItemPayload(body);
+    if (payload.error) return errorResponse(payload.error, 400);
+
+    const item = await insertWorkOrderMaterialItem(env, request, workOrderId, { ...payload, ...body });
+    await writeAuditLog(env, request, {
+      targetType: 'work_order',
+      targetId: workOrderId,
+      action: 'work_order_material_item_created',
+      afterState: item,
+    });
+
+    return jsonResponse({ success: true, item }, 201);
+  } catch (error) {
+    if (error instanceof GuardError) return errorResponse(error.message, error.status);
+    return errorResponse(error.message, 500);
+  }
+}
+
+async function handleUpdateWorkOrderMaterialItem(request, env) {
+  try {
+    const segments = new URL(request.url).pathname.split('/');
+    const workOrderId = segments[3];
+    const itemId = segments[5];
+    const workOrder = await getWorkOrderForMaterialAccess(env, workOrderId);
+    assertWorkOrderAccess(request._auth, workOrder);
+    if (!['admin', 'engineer'].includes(request._auth?.userType)) {
+      return errorResponse('需要工程师或管理员权限', 403);
+    }
+
+    const existing = await env.DB.prepare('SELECT * FROM work_order_material_items WHERE id = ?').bind(itemId).first();
+    if (!existing || existing.work_order_id !== workOrderId) return errorResponse('工单物料不存在', 404);
+
+    const body = await request.json().catch(() => ({}));
+    const payload = readWorkOrderMaterialItemPayload({
+      purpose: body.purpose ?? existing.purpose,
+      quantity: body.quantity ?? existing.quantity,
+      unit_price: body.unit_price ?? existing.unit_price,
+      note: body.note ?? existing.note,
+      status: body.status ?? existing.status,
+    });
+    if (payload.error) return errorResponse(payload.error, 400);
+
+    const result = await env.DB.prepare(`
+      UPDATE work_order_material_items SET
+        purpose = ?, quantity = ?, unit_price = ?, line_total = ?, note = ?, status = ?,
+        updated_at = datetime('now')
+      WHERE id = ?
+    `).bind(
+      payload.purpose,
+      payload.quantity,
+      payload.unit_price,
+      payload.line_total,
+      payload.note,
+      payload.status,
+      itemId
+    ).run();
+    if (result.meta?.changes === 0) return errorResponse('工单物料不存在', 404);
+
+    const updated = await env.DB.prepare('SELECT * FROM work_order_material_items WHERE id = ?').bind(itemId).first();
+    const item = normalizeWorkOrderMaterialItem(updated || { ...existing, ...payload });
+    await writeAuditLog(env, request, {
+      targetType: 'work_order',
+      targetId: workOrderId,
+      action: 'work_order_material_item_updated',
+      beforeState: normalizeWorkOrderMaterialItem(existing),
+      afterState: item,
+    });
+
+    return jsonResponse({ success: true, item });
+  } catch (error) {
+    if (error instanceof GuardError) return errorResponse(error.message, error.status);
     return errorResponse(error.message, 500);
   }
 }
@@ -8010,6 +8337,7 @@ async function handleGetWorkOrderPricing(request, env) {
     const pricing = await env.DB.prepare(
       'SELECT * FROM work_order_pricing WHERE work_order_id = ?'
     ).bind(workOrderId).first();
+    const materialItems = await listWorkOrderMaterialItems(env, workOrderId, { purpose: 'quote' });
     if (
       request._auth?.userType === 'customer' &&
       pricing &&
@@ -8017,7 +8345,10 @@ async function handleGetWorkOrderPricing(request, env) {
     ) {
       return jsonResponse({ pricing: null, quote_review_status: wo.quote_review_status || 'pending_review' });
     }
-    return jsonResponse({ pricing: pricing || null });
+    return jsonResponse({
+      pricing: pricing ? { ...pricing, material_items: materialItems } : null,
+      material_items: materialItems,
+    });
   } catch (error) {
     if (error instanceof GuardError) return errorResponse(error.message, error.status);
     return errorResponse(error.message, 500);
@@ -8205,7 +8536,19 @@ async function generatePricingAINote(ctx, env) {
 async function handleSubmitWorkOrderPricing(request, env) {
   try {
     const workOrderId = new URL(request.url).pathname.split('/')[3];
-    const { labor_fee, parts_fee, travel_fee, other_fee, parts_detail } = await request.json();
+    const body = await request.json();
+    const { labor_fee, travel_fee, other_fee, parts_detail } = body;
+    const materialItems = Array.isArray(body.material_items) ? body.material_items : null;
+    const structuredPartsFee = materialItems
+      ? materialItems.reduce((sum, item) => {
+          const quantity = Math.max(0, toSafeNumber(item.quantity, 0));
+          const unitPrice = Math.max(0, toSafeNumber(item.unit_price, 0));
+          return sum + quantity * unitPrice;
+        }, 0)
+      : null;
+    const parts_fee = structuredPartsFee !== null
+      ? Math.round(structuredPartsFee * 100) / 100
+      : (body.parts_fee || 0);
 
     try {
       assertMaxLength(parts_detail, 'parts_detail', LIMITS.parts_detail);
@@ -8277,6 +8620,10 @@ async function handleSubmitWorkOrderPricing(request, env) {
         INSERT INTO work_order_pricing (id, work_order_id, engineer_id, labor_fee, parts_fee, travel_fee, other_fee, parts_detail, subtotal, platform_fee, deposit_withhold, total_amount, ai_price_check, status, submitted_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending_review', datetime('now'))
       `).bind(id, workOrderId, targetEngineerId, labor_fee || 0, parts_fee || 0, travel_fee || 0, other_fee || 0, JSON.stringify(parts_detail || []), subtotal, platformFee, depositWithhold, subtotal, JSON.stringify(aiCheck)).run();
+    }
+
+    if (materialItems) {
+      await replaceWorkOrderMaterialItems(env, request, workOrderId, 'quote', materialItems);
     }
 
     // 更新工单状态为 pricing
@@ -8821,6 +9168,7 @@ async function routeRequest(request, env, ctx) {
       path.startsWith('/api/admin/') ||
       path === '/api/conversations' ||
       path.startsWith('/api/conversations/') ||
+      path === '/api/materials' ||
       path === '/api/workorders' ||
       path.startsWith('/api/workorders/') ||
       path === '/api/devices' ||
@@ -8935,6 +9283,11 @@ async function routeRequest(request, env, ctx) {
       return handleRenameConversation(request, env);
     }
 
+    // 物料搜索：工程师/Admin 可用，只返回协作所需字段
+    if (path === '/api/materials' && request.method === 'GET') {
+      return handleSearchMaterials(request, env);
+    }
+
     // 工单相关
     if (path === '/api/workorders' && request.method === 'POST') {
       return handleCreateWorkOrder(request, env);
@@ -8955,6 +9308,16 @@ async function routeRequest(request, env, ctx) {
     }
     if (path.match(/^\/api\/workorders\/[^/]+\/repair-record$/) && request.method === 'POST') {
       return handleSaveRepairRecord(request, env);
+    }
+    // 工单物料引用（必须在 catch-all GET 之前）
+    if (path.match(/^\/api\/workorders\/[^/]+\/material-items$/) && request.method === 'GET') {
+      return handleGetWorkOrderMaterialItems(request, env);
+    }
+    if (path.match(/^\/api\/workorders\/[^/]+\/material-items$/) && request.method === 'POST') {
+      return handleCreateWorkOrderMaterialItem(request, env);
+    }
+    if (path.match(/^\/api\/workorders\/[^/]+\/material-items\/[^/]+$/) && request.method === 'PATCH') {
+      return handleUpdateWorkOrderMaterialItem(request, env);
     }
     if (path === '/api/workorders/rating' && request.method === 'POST') {
       return handleSubmitRating(request, env);
