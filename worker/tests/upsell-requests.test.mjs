@@ -208,6 +208,24 @@ test('engineer can create a workspace upsell request', async () => {
   assert.equal(env.__upsellRequests.length, 1);
 });
 
+test('engineer create derives market from request context', async () => {
+  const env = createEnv();
+  const result = await api(env, '/api/upsell-requests', {
+    method: 'POST',
+    body: {
+      market: 'com',
+      source_type: 'engineer_workspace',
+      category: 'laser_peripheral',
+      title: '客户考虑增加除尘装置',
+      description: '现场粉尘较大，客户希望了解除尘方案。',
+    },
+  });
+
+  assert.equal(result.response.status, 201);
+  assert.equal(result.json.request.market, 'cn');
+  assert.equal(env.__upsellRequests[0].market, 'cn');
+});
+
 test('engineer can create a work-order-linked upsell request for assigned order', async () => {
   const env = createEnv();
   const result = await api(env, '/api/upsell-requests', {
@@ -309,4 +327,36 @@ test('admin can list and update upsell requests', async () => {
   assert.equal(updated.response.status, 200);
   assert.equal(updated.json.request.status, 'sales_following');
   assert.equal(updated.json.request.assigned_sales_owner, '李经理');
+});
+
+test('admin update rejects invalid upsell enum values', async () => {
+  const env = createEnv();
+  env.__upsellRequests.push({
+    id: 'up-1',
+    market: 'cn',
+    source_type: 'engineer_workspace',
+    engineer_id: 'engineer-1',
+    category: 'laser_peripheral',
+    title: '除尘装置',
+    description: '客户希望了解除尘方案',
+    status: 'pending_assignment',
+    assigned_sales_owner: '',
+    admin_note: '',
+    quote_status: 'not_started',
+    deal_result: 'undecided',
+    handover_note: '',
+  });
+
+  const result = await api(env, '/api/admin/upsell-requests/up-1', {
+    method: 'PATCH',
+    userType: 'admin',
+    userId: 'admin-1',
+    origin: 'https://admin.sagemro.cn',
+    body: {
+      status: 'not_a_status',
+    },
+  });
+
+  assert.equal(result.response.status, 400);
+  assert.equal(env.__upsellRequests[0].status, 'pending_assignment');
 });

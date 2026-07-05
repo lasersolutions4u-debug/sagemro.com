@@ -6134,7 +6134,7 @@ async function handleCreateUpsellRequest(request, env) {
     }
 
     const id = generateId();
-    const market = cleanText(body.market, 20) || getRequestMarket(request);
+    const market = getRequestMarket(request);
     await env.DB.prepare(`
       INSERT INTO upsell_requests (
         id, market, source_type, work_order_id, customer_id, engineer_id,
@@ -6271,6 +6271,13 @@ async function handleAdminUpdateUpsellRequest(request, env) {
     if (!existing) return errorResponse('增购与改造需求不存在', 404);
 
     const body = await request.json().catch(() => ({}));
+    const invalidChoice = (field, allowed) => (
+      body[field] !== undefined && !allowed.has(cleanText(body[field], 80))
+    );
+    if (invalidChoice('status', UPSELL_STATUSES)) return errorResponse('无效需求状态', 400);
+    if (invalidChoice('quote_status', UPSELL_QUOTE_STATUSES)) return errorResponse('无效报价状态', 400);
+    if (invalidChoice('deal_result', UPSELL_DEAL_RESULTS)) return errorResponse('无效成交结果', 400);
+
     const next = {
       status: cleanChoice(body.status ?? existing.status, UPSELL_STATUSES, existing.status || 'pending_assignment'),
       assigned_sales_owner: cleanText(body.assigned_sales_owner ?? existing.assigned_sales_owner, 120),
