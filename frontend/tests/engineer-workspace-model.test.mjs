@@ -37,7 +37,7 @@ test('groups engineer tickets into operational homepage metrics', () => {
 
 test('derives payment and action labels without wallet wording', () => {
   assert.deepEqual(derivePaymentBadge({ status: 'pending_payment' }), {
-    label: '待回款',
+    label: '待回款确认',
     tone: 'amber',
     visible: true,
   });
@@ -50,7 +50,7 @@ test('derives payment and action labels without wallet wording', () => {
   assert.equal(JSON.stringify(derivePaymentBadge({ status: 'pending_payment' })).includes('提现'), false);
 
   assert.deepEqual(deriveWorkOrderActionLabel({ status: 'pricing' }), {
-    label: '待报价',
+    label: '待提交报价',
     tone: 'purple',
   });
   assert.deepEqual(deriveWorkOrderActionLabel({ status: 'resolved' }), {
@@ -76,6 +76,6 @@ test('engineer homepage source keeps AI and customer device details out of globa
 
   assert.equal(source.includes('<h2 className="mb-3 font-semibold">AI 诊断摘要</h2>'), false);
   assert.equal(source.includes('<h2 className="mb-3 font-semibold">客户设备档案</h2>'), false);
-  assert.match(source, /待回款/);
+  assert.match(source, /待回款确认/);
   assert.match(source, /工程师工具箱/);
 });

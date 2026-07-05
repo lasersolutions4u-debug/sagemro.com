@@ -21,11 +21,11 @@ import {
 } from './engineerWorkspaceModel';
 
 const STATUS_LABELS = {
-  pending: '待确认派工',
+  pending: '待接单',
   pending_dispatch: '待区域派工',
-  assigned: '待确认派工',
+  assigned: '待接单',
   in_progress: '服务中',
-  pricing: '待报价',
+  pricing: '待提交报价',
   in_service: '服务中',
   resolved: '待客户确认',
   pending_review: '待归档',
@@ -33,12 +33,12 @@ const STATUS_LABELS = {
 };
 
 const CHECKLIST = [
-  '确认客户问题、设备型号、现场联系人和到场时间',
-  '阅读 SAGEMRO AI 初诊摘要，标记安全风险',
-  '核对备件、工具、耗材和防护用品',
-  '到场后拍照记录设备铭牌、报警界面和故障部位',
-  '完成处理动作、备件更换和后续建议记录',
-  '提交服务报告，等待客户确认',
+  '确认客户问题、设备型号、联系人和约定到场时间',
+  '查看 AI 初诊摘要，留意激光、高压、气路等安全风险',
+  '准备所需工具、备件、耗材和防护用品',
+  '到场后拍摄设备铭牌、报警界面和故障位置',
+  '记录处理过程、备件更换情况和后续建议',
+  '完成服务报告，提交后等待客户确认',
 ];
 
 function toneClass(tone) {
@@ -196,15 +196,15 @@ export function EngineerWorkspace({ currentUser, onLogout, onOpenProfile }) {
   const sortedTickets = sortEngineerWorkQueue(tickets);
   const metrics = [
     ...(isRegionalLead ? [{ icon: ClipboardCheck, label: '区域待分配', value: grouped.regionalPending.length }] : []),
-    { icon: ClipboardCheck, label: '今日派工', value: grouped.today.length },
-    { icon: AlertTriangle, label: '待确认派工', value: grouped.pending.length },
+    { icon: ClipboardCheck, label: '今日任务', value: grouped.today.length },
+    { icon: AlertTriangle, label: '待接单', value: grouped.pending.length },
     { icon: Wrench, label: '服务中', value: grouped.active.length },
-    { icon: FileText, label: '待报价', value: grouped.pricing.length },
-    { icon: FileText, label: '待报告', value: grouped.reports.length },
+    { icon: FileText, label: '待提交报价', value: grouped.pricing.length },
+    { icon: FileText, label: '待提交报告', value: grouped.reports.length },
     { icon: ShieldCheck, label: '待客户确认', value: grouped.customerConfirm.length },
-    { icon: Package, label: '待回款', value: grouped.payment.length },
+    { icon: Package, label: '待回款确认', value: grouped.payment.length },
     { icon: ClipboardCheck, label: '本月完成', value: grouped.completedThisMonth.length },
-    { icon: Package, label: '备件需求', value: grouped.parts.length },
+    { icon: Package, label: '涉及备件', value: grouped.parts.length },
   ];
 
   return (
@@ -215,9 +215,9 @@ export function EngineerWorkspace({ currentUser, onLogout, onOpenProfile }) {
           <div>
             <div className="text-xs uppercase tracking-[0.24em] text-[var(--color-primary)]">SAGEMRO</div>
             <h1 className="text-xl font-semibold">
-              {isRegionalLead ? '区域服务负责人工作台' : 'SAGEMRO 工程师工作台'}
+              {isRegionalLead ? '区域服务负责人工作台' : '工程师工作台'}
             </h1>
-            <p className="text-sm text-[var(--color-text-muted)]">服务任务与现场记录中心</p>
+            <p className="text-sm text-[var(--color-text-muted)]">现场服务任务与协作记录</p>
           </div>
           <div className="flex items-center gap-3">
             <button
@@ -252,8 +252,8 @@ export function EngineerWorkspace({ currentUser, onLogout, onOpenProfile }) {
           <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5">
             <div className="mb-4 flex items-center justify-between">
               <div>
-                <h2 className="font-semibold">任务概览</h2>
-                <p className="text-sm text-[var(--color-text-muted)]">只显示 SAGEMRO 已派发给你的服务任务。</p>
+                <h2 className="font-semibold">我的任务概览</h2>
+                <p className="text-sm text-[var(--color-text-muted)]">这里显示已经指派给你的现场服务任务。</p>
               </div>
               <div className="flex gap-2">
                 {[
@@ -289,7 +289,7 @@ export function EngineerWorkspace({ currentUser, onLogout, onOpenProfile }) {
           <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5">
             <div className="mb-3 flex items-center gap-2">
               <ShieldCheck size={18} className="text-[var(--color-primary)]" />
-              <h2 className="font-semibold">服务标准检查清单</h2>
+              <h2 className="font-semibold">到场前后检查</h2>
             </div>
             <div className="space-y-2">
               {CHECKLIST.map((item) => (
@@ -304,11 +304,11 @@ export function EngineerWorkspace({ currentUser, onLogout, onOpenProfile }) {
 
         <section className="grid gap-4 lg:grid-cols-[1.4fr_1fr]">
           <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5">
-            <h2 className="mb-4 font-semibold">服务任务</h2>
+            <h2 className="mb-4 font-semibold">我的服务任务</h2>
             {loading ? (
               <div className="py-10 text-center text-sm text-[var(--color-text-muted)]">加载中...</div>
             ) : tickets.length === 0 ? (
-              <div className="py-10 text-center text-sm text-[var(--color-text-muted)]">当前没有已派服务任务</div>
+              <div className="py-10 text-center text-sm text-[var(--color-text-muted)]">当前没有指派给你的服务任务</div>
             ) : (
               <div className="space-y-3">
                 {sortedTickets.map((ticket) => {
@@ -348,7 +348,7 @@ export function EngineerWorkspace({ currentUser, onLogout, onOpenProfile }) {
                         onClick={() => setSelectedTicket(ticket)}
                         className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm font-medium text-[var(--color-text-primary)] hover:border-[var(--color-primary)]"
                       >
-                        查看/处理服务任务
+                        查看并处理
                       </button>
                       {!isRegionalLead && ticket.status === 'assigned' && (
                         <>
@@ -357,7 +357,7 @@ export function EngineerWorkspace({ currentUser, onLogout, onOpenProfile }) {
                             disabled={assigningId === `${ticket.id}:accept`}
                             className="rounded-lg bg-[var(--color-primary)] px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
                           >
-                            {assigningId === `${ticket.id}:accept` ? '确认中' : '确认派工'}
+                            {assigningId === `${ticket.id}:accept` ? '确认中' : '确认接单'}
                           </button>
                           <button
                             onClick={() => returnAssignment(ticket)}
@@ -422,7 +422,7 @@ export function EngineerWorkspace({ currentUser, onLogout, onOpenProfile }) {
                   <Lightbulb size={18} className="text-[var(--color-primary)]" />
                   <span>
                     <span className="block font-medium text-[var(--color-text-primary)]">增购与改造需求</span>
-                    <span className="block text-xs text-[var(--color-text-muted)]">记录配件、易损件、周边设备和现场改造需求。</span>
+                    <span className="block text-xs text-[var(--color-text-muted)]">把客户现场提到的配件、易损件、周边设备或改造需求记录下来。</span>
                   </span>
                 </button>
                 {upsellRequests.length > 0 && (
@@ -441,13 +441,13 @@ export function EngineerWorkspace({ currentUser, onLogout, onOpenProfile }) {
                   </div>
                 )}
                 <div className="rounded-xl bg-[var(--color-surface-elevated)] px-3 py-2">
-                  服务报告规范：诊断、处理动作、配件更换和后续建议需完整记录。
+                  服务报告：把诊断结论、处理动作、配件更换和后续建议写清楚。
                 </div>
                 <div className="rounded-xl bg-[var(--color-surface-elevated)] px-3 py-2">
-                  物料申请：找不到合适配件时，在工单报价或服务报告中提交新增物料申请。
+                  物料申请：工单里找不到合适配件时，可提交新增物料申请。
                 </div>
                 <div className="rounded-xl bg-[var(--color-surface-elevated)] px-3 py-2">
-                  回款跟进：回款状态由运营维护，工程师端仅作为服务进度参考。
+                  回款进度：由运营维护，工程师端只作为服务闭环参考。
                 </div>
               </div>
             </div>

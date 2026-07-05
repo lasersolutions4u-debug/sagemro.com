@@ -34,7 +34,7 @@ export function groupEngineerTickets(tickets = [], isRegionalLead = false) {
 }
 
 export function derivePaymentBadge(ticket = {}) {
-  if (ticket.status === 'pending_payment') return { label: '待回款', tone: 'amber', visible: true };
+  if (ticket.status === 'pending_payment') return { label: '待回款确认', tone: 'amber', visible: true };
   if (ticket.status === 'completed') return { label: '已完成', tone: 'green', visible: true };
   if (ticket.status === 'in_service') return { label: '客户已确认报价', tone: 'blue', visible: true };
   return { label: '回款待运营记录', tone: 'slate', visible: false };
@@ -42,9 +42,9 @@ export function derivePaymentBadge(ticket = {}) {
 
 export function deriveWorkOrderActionLabel(ticket = {}) {
   const status = ticket.status;
-  if (status === 'assigned') return { label: '待确认派工', tone: 'amber' };
-  if (status === 'pricing') return { label: '待报价', tone: 'purple' };
-  if (status === 'pending_payment') return { label: '待回款', tone: 'amber' };
+  if (status === 'assigned') return { label: '待接单', tone: 'amber' };
+  if (status === 'pricing') return { label: '待提交报价', tone: 'purple' };
+  if (status === 'pending_payment') return { label: '待回款确认', tone: 'amber' };
   if (status === 'resolved' || status === 'pending_review') return { label: '待客户确认', tone: 'teal' };
   if (status === 'in_progress' || status === 'in_service') return { label: '服务中', tone: 'blue' };
   if (status === 'completed') return { label: '已完成', tone: 'green' };
