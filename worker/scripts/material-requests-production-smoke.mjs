@@ -239,10 +239,14 @@ export function buildWranglerD1Args({ context, sql, mode = 'file', file } = {}) 
   return [...args, '--file', file];
 }
 
+export function buildNpxWranglerD1Args(options) {
+  return buildWranglerD1Args(options);
+}
+
 function runWranglerSql({ context, sql, label, workerDir, tempDir }) {
   const file = join(tempDir, `${label}.sql`);
   writeFileSync(file, sql);
-  const [, ...args] = buildWranglerD1Args({ context, mode: 'file', file });
+  const args = buildNpxWranglerD1Args({ context, mode: 'file', file });
   return execFileSync('npx', args, {
     cwd: workerDir,
     encoding: 'utf8',
@@ -251,7 +255,7 @@ function runWranglerSql({ context, sql, label, workerDir, tempDir }) {
 }
 
 function runWranglerCommandSql({ context, sql, workerDir }) {
-  const [, ...args] = buildWranglerD1Args({ context, sql, mode: 'command' });
+  const args = buildNpxWranglerD1Args({ context, sql, mode: 'command' });
   return execFileSync('npx', args, {
     cwd: workerDir,
     encoding: 'utf8',

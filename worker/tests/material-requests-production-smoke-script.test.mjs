@@ -7,6 +7,7 @@ import {
   buildMaterialRequestCleanupSql,
   buildMaterialRequestResidueSql,
   buildWranglerD1Args,
+  buildNpxWranglerD1Args,
   isCliEntry,
   parseWranglerResidueCount,
   parseMaterialRequestSmokeArgs,
@@ -98,6 +99,20 @@ test('material request residue uses wrangler command mode so SELECT results are 
   assert.equal(args[7], '--command');
   assert.match(args[8], /total_residue/);
   assert.equal(args.includes('--file'), false);
+});
+
+test('material request smoke passes wrangler, not d1, as the npx executable target', () => {
+  const context = buildMaterialRequestSmokeContext({ market: 'com', stamp: '20260704190506', password: 'not-secret' });
+  const args = buildNpxWranglerD1Args({
+    context,
+    sql: buildMaterialRequestResidueSql(context),
+    mode: 'command',
+  });
+
+  assert.equal(args[0], 'wrangler');
+  assert.equal(args[1], 'd1');
+  assert.equal(args[2], 'execute');
+  assert.notEqual(args[0], 'd1');
 });
 
 test('material request residue parser treats wrangler import summary as unknown', () => {
