@@ -376,6 +376,30 @@ export async function createMaterialRequest(data) {
   return response.json();
 }
 
+export async function createUpsellRequest(payload) {
+  const response = await fetch(`${API_BASE}/api/upsell-requests`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.error || `HTTP ${response.status}`);
+  }
+  return response.json();
+}
+
+export async function getMyUpsellRequests() {
+  const response = await fetch(`${API_BASE}/api/upsell-requests/mine`, {
+    headers: authHeaders(),
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.error || `HTTP ${response.status}`);
+  }
+  return response.json();
+}
+
 /**
  * 提交评价
  */
