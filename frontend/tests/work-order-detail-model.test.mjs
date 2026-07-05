@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 
 import {
   derivePaymentSummary,
@@ -41,4 +42,14 @@ test('derives payment summary as service progress without wallet wording', () =>
   ]);
   assert.equal(JSON.stringify(summary).includes('钱包'), false);
   assert.equal(JSON.stringify(summary).includes('提现'), false);
+});
+
+test('work order detail source contains engineer operational sections', () => {
+  const source = readFileSync(new URL('../src/components/WorkOrder/WorkOrderDetailModal.jsx', import.meta.url), 'utf8');
+
+  assert.match(source, /客户问题|Customer Issue/);
+  assert.match(source, /设备信息|Device Information/);
+  assert.match(source, /安全风险|Safety Risk/);
+  assert.match(source, /配件准备|Parts Preparation/);
+  assert.match(source, /回款与确认|Payment & Confirmation/);
 });

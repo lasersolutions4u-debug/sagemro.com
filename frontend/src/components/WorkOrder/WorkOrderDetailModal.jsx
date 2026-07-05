@@ -29,6 +29,11 @@ import { EngineerPricingPanel, CustomerPricingPanel } from './PricingPanels';
 import { RepairRecordPanel } from './RepairRecordPanel';
 import { AttachmentsPanel } from './AttachmentsPanel';
 import { isCnLocale } from '../../utils/locale';
+import {
+  derivePaymentSummary,
+  deriveSafetyStage,
+  parseAiSummary,
+} from './workOrderDetailModel';
 
 function hasServiceReportContent(record) {
   if (!record) return false;
@@ -132,6 +137,9 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
   const urgency = localizedUrgencyConfig[workOrder.urgency] || localizedUrgencyConfig.normal;
   const isEngineer = userType === 'engineer';
   const isCustomer = userType === 'customer';
+  const parsedAiSummary = parseAiSummary(detail?.ai_summary);
+  const safetyStage = deriveSafetyStage(detail || workOrder, parsedAiSummary);
+  const paymentSummary = derivePaymentSummary(detail || workOrder, detail?.payment || null);
 
   const tabs = [
     { key: 'info', label: isCn ? '详情' : 'Details' },
@@ -162,27 +170,22 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
     tabs.push({ key: 'attachments', label: isCn ? '附件' : 'Attachments' });
   }
 
+  const renderSection = (title, children) => (
+    <section className="rounded-xl bg-[var(--color-surface-elevated)] p-4">
+      <h3 className="mb-2 text-sm font-semibold text-[var(--color-text-primary)]">{title}</h3>
+      {children}
+    </section>
+  );
+
   const renderInfoTab = () => (
     <div className="space-y-4">
-      <div className="p-4 bg-[var(--color-surface-elevated)] rounded-xl space-y-2">
+      <div className="rounded-xl bg-[var(--color-surface-elevated)] p-4 space-y-2">
         <div className="flex items-center justify-between">
           <span className="font-medium text-[var(--color-text-primary)]">{detail?.order_no || workOrder.id}</span>
           <div className="flex gap-2">
             <span className={`px-2 py-0.5 text-xs text-white rounded ${status.color}`}>{status.text}</span>
             <span className={`px-2 py-0.5 text-xs rounded ${urgency.color}`}>{urgency.text}</span>
           </div>
-        </div>
-        <div className="text-sm text-[var(--color-text-secondary)]">{isCn ? '问题类型：' : 'Issue Type: '}{localizedTypeLabels[workOrder.type] || workOrder.type}</div>
-        {(workOrder.category_l1 && workOrder.category_l1 !== 'other') && (
-          <div className="text-sm text-[var(--color-text-secondary)]">
-            {isCn ? '设备类别：' : 'Equipment Category: '}{localizedCategoryConfig[workOrder.category_l1]?.label || workOrder.category_l1}
-            {workOrder.category_l2 && workOrder.category_l2 !== 'other' && (
-              <span className="ml-1">· {localizedCategoryL2Labels[workOrder.category_l2] || workOrder.category_l2}</span>
-            )}
-          </div>
-        )}
-        <div className="text-sm text-[var(--color-text-secondary)]">
-          {isCn ? '提交时间：' : 'Submitted: '}{workOrder.created_at ? new Date(workOrder.created_at).toLocaleString(isCn ? 'zh-CN' : 'en-US') : '-'}
         </div>
         {detail?.sla_deadline && (() => {
           const sla = detail.sla_status || {};
@@ -197,47 +200,76 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
             </div>
           );
         })()}
-        {detail?.engineer_name && (
-          <div className="text-sm text-[var(--color-text-secondary)]">
-            {isCn ? 'SAGEMRO 工程师：' : 'SAGEMRO Engineer: '}<span className="text-[var(--color-primary)]">{detail.engineer_name}</span>
-            {detail.engineer_phone && <span className="ml-1 opacity-70">{detail.engineer_phone}</span>}
-          </div>
-        )}
-        {detail?.customer_name && (
-          <div className="text-sm text-[var(--color-text-secondary)]">
-            {isCn ? '客户：' : 'Customer: '}<span className="text-[var(--color-primary)]">{detail.customer_name}</span>
-            {detail.customer_phone && <span className="ml-1 opacity-70">{detail.customer_phone}</span>}
-          </div>
-        )}
       </div>
 
-      <div>
-        <h3 className="text-sm font-medium text-[var(--color-text-primary)] mb-1">{isCn ? '问题描述' : 'Fault Description'}</h3>
-        <div className="p-3 bg-[var(--color-surface-elevated)] rounded-xl text-sm text-[var(--color-text-primary)]">
-          {workOrder.description}
+      {renderSection(isCn ? '客户问题' : 'Customer Issue', (
+        <div className="space-y-2 text-sm text-[var(--color-text-secondary)]">
+          <div>{isCn ? '问题类型：' : 'Issue Type: '}{localizedTypeLabels[workOrder.type] || workOrder.type || '-'}</div>
+          <div className="rounded-lg bg-[var(--color-surface)] p-3 text-[var(--color-text-primary)]">
+            {workOrder.description || (isCn ? '暂无服务描述' : 'No service description yet')}
+          </div>
         </div>
-      </div>
+      ))}
 
-      {detail?.ai_summary && (() => {
-        let aiData;
-        try { aiData = typeof detail.ai_summary === 'string' ? JSON.parse(detail.ai_summary) : detail.ai_summary; } catch { return null; }
-        return (
+      {renderSection(isCn ? '设备信息' : 'Device Information', (
+        <div className="space-y-1 text-sm text-[var(--color-text-secondary)]">
           <div>
-            <h3 className="text-sm font-medium text-[var(--color-text-primary)] mb-1">{isCn ? 'AI 初诊摘要' : 'AI Analysis'}</h3>
-            <div className="p-3 bg-yellow-500/10 border border-yellow-500/30 rounded-xl text-sm text-[var(--color-text-primary)] space-y-2">
-              {aiData.summary && <p>{aiData.summary}</p>}
-              {aiData.required_specialties?.length > 0 && (
-                <div className="flex flex-wrap gap-1">
-                  <span className="text-xs text-[var(--color-text-secondary)]">{isCn ? '匹配能力：' : 'Matched Equipment:'}</span>
-                  {aiData.required_specialties.map((s, i) => (
-                    <span key={i} className="px-2 py-0.5 text-xs bg-yellow-500/20 text-yellow-600 dark:text-yellow-400 rounded">{s}</span>
-                  ))}
-                </div>
-              )}
-            </div>
+            {isCn ? '设备类别：' : 'Equipment Category: '}
+            {localizedCategoryConfig[workOrder.category_l1]?.label || workOrder.category_l1 || (isCn ? '待补充' : 'Pending')}
           </div>
-        );
-      })()}
+          <div>
+            {workOrder.category_l2 && workOrder.category_l2 !== 'other'
+              ? (localizedCategoryL2Labels[workOrder.category_l2] || workOrder.category_l2)
+              : (isCn ? '设备型号与历史记录待补充' : 'Model and service history pending')}
+          </div>
+        </div>
+      ))}
+
+      {parsedAiSummary && renderSection(isCn ? 'AI 初诊摘要' : 'AI Analysis', (
+        <div className="space-y-2 text-sm text-[var(--color-text-secondary)]">
+          {parsedAiSummary.summary && <p className="text-[var(--color-text-primary)]">{parsedAiSummary.summary}</p>}
+          {parsedAiSummary.required_specialties?.length > 0 && (
+            <div className="flex flex-wrap gap-1">
+              {parsedAiSummary.required_specialties.map((item, index) => (
+                <span key={`${item}-${index}`} className="rounded bg-yellow-500/20 px-2 py-0.5 text-xs text-yellow-600 dark:text-yellow-400">{item}</span>
+              ))}
+            </div>
+          )}
+        </div>
+      ))}
+
+      {renderSection(isCn ? '安全风险' : 'Safety Risk', (
+        <div className="space-y-1 text-sm text-[var(--color-text-secondary)]">
+          <div className="font-medium text-[var(--color-text-primary)]">{safetyStage.label}</div>
+          <div>{safetyStage.description}</div>
+        </div>
+      ))}
+
+      {renderSection(isCn ? '派工信息' : 'Dispatch Information', (
+        <div className="grid gap-2 text-sm text-[var(--color-text-secondary)] sm:grid-cols-2">
+          <div>{isCn ? '客户：' : 'Customer: '}{detail?.customer_name || '-'}</div>
+          <div>{isCn ? '工程师：' : 'Engineer: '}{detail?.engineer_name || '-'}</div>
+          <div>{isCn ? '提交时间：' : 'Submitted: '}{workOrder.created_at ? new Date(workOrder.created_at).toLocaleString(isCn ? 'zh-CN' : 'en-US') : '-'}</div>
+          <div>{isCn ? '地区：' : 'Region: '}{detail?.customer_region || '-'}</div>
+        </div>
+      ))}
+
+      {renderSection(isCn ? '配件准备' : 'Parts Preparation', (
+        <p className="text-sm text-[var(--color-text-secondary)]">
+          {isCn ? '报价或服务报告中可引用物料库；找不到合适物料时，工程师可提交新增物料申请。' : 'Use material references in quote or service report. If a part is missing, submit a material request from the work order.'}
+        </p>
+      ))}
+
+      {renderSection(isCn ? '回款与确认' : 'Payment & Confirmation', (
+        <div className="grid gap-2 sm:grid-cols-2">
+          {paymentSummary.map((item) => (
+            <div key={item.label} className="rounded-lg bg-[var(--color-surface)] px-3 py-2">
+              <div className="text-xs text-[var(--color-text-muted)]">{item.label}</div>
+              <div className="text-sm font-medium text-[var(--color-text-primary)]">{item.value}</div>
+            </div>
+          ))}
+        </div>
+      ))}
 
       {/* 工程师：标记服务完成 */}
       {isEngineer && (effectiveStatus === 'in_service' || effectiveStatus === 'pricing') && (
