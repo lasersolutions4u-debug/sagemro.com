@@ -1,11 +1,12 @@
 import { useState } from 'react';
-import { Boxes, ClipboardList, LayoutDashboard, Users, FileText, Star, LogOut, Target } from 'lucide-react';
+import { Boxes, ClipboardList, LayoutDashboard, Users, FileText, Star, LogOut, Target, Lightbulb } from 'lucide-react';
 import { LoginPage } from './pages/LoginPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { UsersPage } from './pages/UsersPage';
 import { WorkOrdersPage } from './pages/WorkOrdersPage';
 import { RatingsPage } from './pages/RatingsPage';
 import { LeadsPage } from './pages/LeadsPage';
+import { UpsellRequestsPage } from './pages/UpsellRequestsPage';
 import { EngineerApplicationsPage } from './pages/EngineerApplicationsPage';
 import { MaterialsPage } from './pages/MaterialsPage';
 import { runtimeConfig } from './config/runtime';
@@ -20,6 +21,7 @@ const TEXT = {
     nav: {
       dashboard: 'Operations Dashboard',
       leads: 'Lead Inbox',
+      upsellRequests: 'Upsell Requests',
       workorders: 'Service Orders',
       engineerApplications: 'Engineer Applications',
       materials: 'Material Master',
@@ -35,6 +37,7 @@ const TEXT = {
     nav: {
       dashboard: '运营驾驶舱',
       leads: '线索池',
+      upsellRequests: '增购需求池',
       workorders: '派工与服务质量',
       engineerApplications: '工程师申请审核',
       materials: '物料管理',
@@ -49,6 +52,7 @@ const t = TEXT[runtimeConfig.locale] || TEXT.en;
 const NAV_ITEMS = [
   { key: 'dashboard', label: t.nav.dashboard, icon: LayoutDashboard },
   { key: 'leads', label: t.nav.leads, icon: Target },
+  { key: 'upsellRequests', label: t.nav.upsellRequests, icon: Lightbulb },
   { key: 'workorders', label: t.nav.workorders, icon: FileText },
   { key: 'materials', label: t.nav.materials, icon: Boxes },
   { key: 'engineerApplications', label: t.nav.engineerApplications, icon: ClipboardList },
@@ -83,6 +87,7 @@ export default function App() {
       case 'engineerApplications': return <EngineerApplicationsPage />;
       case 'ratings': return <RatingsPage />;
       case 'leads': return <LeadsPage />;
+      case 'upsellRequests': return <UpsellRequestsPage />;
       default: return <DashboardPage />;
     }
   };

@@ -169,6 +169,22 @@ export async function convertAdminLeadToWorkOrder(leadId) {
   });
 }
 
+export async function getAdminUpsellRequests(page = 1, pageSize = 20, filters = {}) {
+  const params = new URLSearchParams({ page, pageSize, ...filters });
+  return request(`/api/admin/upsell-requests?${params}`);
+}
+
+export async function getAdminUpsellRequest(requestId) {
+  return request(`/api/admin/upsell-requests/${requestId}`);
+}
+
+export async function updateAdminUpsellRequest(requestId, payload) {
+  return request(`/api/admin/upsell-requests/${requestId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  });
+}
+
 export async function getAdminMaterials(page = 1, pageSize = 20, filters = {}) {
   const params = new URLSearchParams({ page, pageSize, ...filters });
   return request(`/api/admin/materials?${params}`);
