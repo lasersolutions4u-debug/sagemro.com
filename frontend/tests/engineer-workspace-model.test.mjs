@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 
 import {
   derivePaymentBadge,
@@ -68,4 +69,13 @@ test('sorts engineer work queue by operational urgency', () => {
   ]);
 
   assert.deepEqual(sorted.map((item) => item.id), ['critical', 'payment', 'pricing', 'progress', 'completed']);
+});
+
+test('engineer homepage source keeps AI and customer device details out of global sidebar', () => {
+  const source = readFileSync(new URL('../src/components/Engineer/EngineerWorkspace.jsx', import.meta.url), 'utf8');
+
+  assert.equal(source.includes('<h2 className="mb-3 font-semibold">AI 诊断摘要</h2>'), false);
+  assert.equal(source.includes('<h2 className="mb-3 font-semibold">客户设备档案</h2>'), false);
+  assert.match(source, /待回款/);
+  assert.match(source, /工程师工具箱/);
 });

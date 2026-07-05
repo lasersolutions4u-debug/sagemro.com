@@ -10,6 +10,12 @@ import {
 } from '../../services/api';
 import { WorkOrderDetailModal } from '../WorkOrder/WorkOrderDetailModal';
 import { EngineerAvailabilityCalendar } from './EngineerAvailabilityCalendar';
+import {
+  derivePaymentBadge,
+  deriveWorkOrderActionLabel,
+  groupEngineerTickets,
+  sortEngineerWorkQueue,
+} from './engineerWorkspaceModel';
 
 const STATUS_LABELS = {
   pending: '待确认派工',
@@ -32,17 +38,16 @@ const CHECKLIST = [
   '提交服务报告，等待客户确认',
 ];
 
-// This component is the first shared implementation slice for the future
-// engineer.sagemro.com portal. The customer main site should not remain the
-// long-term engineer entry.
-function groupTickets(tickets) {
-  return {
-    today: tickets.filter((ticket) => ['assigned', 'in_progress', 'in_service'].includes(ticket.status)),
-    pending: tickets.filter((ticket) => ['pending', 'pending_dispatch', 'assigned'].includes(ticket.status)),
-    active: tickets.filter((ticket) => ['in_progress', 'in_service', 'pricing'].includes(ticket.status)),
-    reports: tickets.filter((ticket) => ['resolved', 'pending_review'].includes(ticket.status)),
-    parts: tickets.filter((ticket) => /parts|备件|配件/i.test(`${ticket.type || ''} ${ticket.description || ''}`)),
+function toneClass(tone) {
+  const tones = {
+    amber: 'bg-amber-500/10 text-amber-600',
+    blue: 'bg-blue-500/10 text-blue-600',
+    green: 'bg-green-500/10 text-green-600',
+    purple: 'bg-purple-500/10 text-purple-600',
+    teal: 'bg-teal-500/10 text-teal-600',
+    slate: 'bg-[var(--color-surface)] text-[var(--color-text-muted)]',
   };
+  return tones[tone] || tones.slate;
 }
 
 export function EngineerWorkspace({ currentUser, onLogout, onOpenProfile }) {
@@ -167,13 +172,18 @@ export function EngineerWorkspace({ currentUser, onLogout, onOpenProfile }) {
     }
   };
 
-  const grouped = groupTickets(tickets);
+  const grouped = groupEngineerTickets(tickets, isRegionalLead);
+  const sortedTickets = sortEngineerWorkQueue(tickets);
   const metrics = [
-    ...(isRegionalLead ? [{ icon: ClipboardCheck, label: '区域待分配', value: grouped.pending.length }] : []),
+    ...(isRegionalLead ? [{ icon: ClipboardCheck, label: '区域待分配', value: grouped.regionalPending.length }] : []),
     { icon: ClipboardCheck, label: '今日派工', value: grouped.today.length },
     { icon: AlertTriangle, label: '待确认派工', value: grouped.pending.length },
     { icon: Wrench, label: '服务中', value: grouped.active.length },
-    { icon: FileText, label: '待填写服务报告', value: grouped.reports.length },
+    { icon: FileText, label: '待报价', value: grouped.pricing.length },
+    { icon: FileText, label: '待报告', value: grouped.reports.length },
+    { icon: ShieldCheck, label: '待客户确认', value: grouped.customerConfirm.length },
+    { icon: Package, label: '待回款', value: grouped.payment.length },
+    { icon: ClipboardCheck, label: '本月完成', value: grouped.completedThisMonth.length },
     { icon: Package, label: '备件需求', value: grouped.parts.length },
   ];
 
@@ -276,7 +286,10 @@ export function EngineerWorkspace({ currentUser, onLogout, onOpenProfile }) {
               <div className="py-10 text-center text-sm text-[var(--color-text-muted)]">当前没有已派服务任务</div>
             ) : (
               <div className="space-y-3">
-                {tickets.map((ticket) => (
+                {sortedTickets.map((ticket) => {
+                  const action = deriveWorkOrderActionLabel(ticket);
+                  const paymentBadge = derivePaymentBadge(ticket);
+                  return (
                   <article key={ticket.id} className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-elevated)] p-4">
                     <div className="mb-2 flex items-start justify-between gap-3">
                       <div>
@@ -294,6 +307,16 @@ export function EngineerWorkspace({ currentUser, onLogout, onOpenProfile }) {
                       <div>客户问题：{ticket.type || '-'}</div>
                       <div>安全风险：{ticket.urgency === 'critical' ? '高风险' : ticket.urgency === 'urgent' ? '需优先处理' : '常规'}</div>
                       <div>当前工程师：{ticket.engineer_name || '待区域分配'}</div>
+                    </div>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <span className={`rounded-lg px-2 py-1 text-xs font-medium ${toneClass(action.tone)}`}>
+                        {action.label}
+                      </span>
+                      {paymentBadge.visible && (
+                        <span className={`rounded-lg px-2 py-1 text-xs font-medium ${toneClass(paymentBadge.tone)}`}>
+                          {paymentBadge.label}
+                        </span>
+                      )}
                     </div>
                     <div className="mt-3 flex flex-wrap gap-2">
                       <button
@@ -356,7 +379,8 @@ export function EngineerWorkspace({ currentUser, onLogout, onOpenProfile }) {
                       </div>
                     )}
                   </article>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
@@ -364,16 +388,18 @@ export function EngineerWorkspace({ currentUser, onLogout, onOpenProfile }) {
           <aside className="space-y-4">
             <EngineerAvailabilityCalendar />
             <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5">
-              <h2 className="mb-3 font-semibold">AI 诊断摘要</h2>
-              <p className="text-sm text-[var(--color-text-secondary)]">
-                服务任务进入详情后，这里应显示客户对话整理出的故障现象、可能原因、安全风险、建议携带备件和现场检查重点。
-              </p>
-            </div>
-            <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5">
-              <h2 className="mb-3 font-semibold">客户设备档案</h2>
-              <p className="text-sm text-[var(--color-text-secondary)]">
-                后续接入设备型号、品牌、历史服务记录、照片和服务报告，帮助工程师到场前完成准备。
-              </p>
+              <h2 className="mb-3 font-semibold">工程师工具箱</h2>
+              <div className="space-y-2 text-sm text-[var(--color-text-secondary)]">
+                <div className="rounded-xl bg-[var(--color-surface-elevated)] px-3 py-2">
+                  服务报告规范：诊断、处理动作、配件更换和后续建议需完整记录。
+                </div>
+                <div className="rounded-xl bg-[var(--color-surface-elevated)] px-3 py-2">
+                  物料申请：找不到合适配件时，在工单报价或服务报告中提交新增物料申请。
+                </div>
+                <div className="rounded-xl bg-[var(--color-surface-elevated)] px-3 py-2">
+                  回款跟进：回款状态由运营维护，工程师端仅作为服务进度参考。
+                </div>
+              </div>
             </div>
           </aside>
         </section>
