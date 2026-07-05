@@ -1,13 +1,16 @@
 import { useCallback, useEffect, useState } from 'react';
-import { AlertTriangle, ClipboardCheck, FileText, Package, ShieldCheck, Wrench } from 'lucide-react';
+import { AlertTriangle, ClipboardCheck, FileText, Lightbulb, Package, ShieldCheck, Wrench } from 'lucide-react';
 import {
   assignEngineerWorkOrder,
   acceptTicket,
   getEngineerTeam,
   getEngineerTickets,
+  getMyUpsellRequests,
   rejectTicket,
   updateEngineerStatus,
 } from '../../services/api';
+import { UpsellRequestModal } from '../Upsell/UpsellRequestModal';
+import { getUpsellCategoryLabel, getUpsellStatusLabel } from '../Upsell/upsellRequestModel';
 import { WorkOrderDetailModal } from '../WorkOrder/WorkOrderDetailModal';
 import { EngineerAvailabilityCalendar } from './EngineerAvailabilityCalendar';
 import {
@@ -64,6 +67,9 @@ export function EngineerWorkspace({ currentUser, onLogout, onOpenProfile }) {
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState('');
   const [selectedTicket, setSelectedTicket] = useState(null);
+  const [upsellOpen, setUpsellOpen] = useState(false);
+  const [upsellMessage, setUpsellMessage] = useState('');
+  const [upsellRequests, setUpsellRequests] = useState([]);
 
   const loadTickets = useCallback(async () => {
     if (!engineerId) return;
@@ -88,6 +94,16 @@ export function EngineerWorkspace({ currentUser, onLogout, onOpenProfile }) {
     }
   }, [isRegionalLead]);
 
+  const loadUpsellRequests = useCallback(async () => {
+    if (!engineerId) return;
+    try {
+      const data = await getMyUpsellRequests();
+      setUpsellRequests(data.requests || []);
+    } catch {
+      setUpsellRequests([]);
+    }
+  }, [engineerId]);
+
   useEffect(() => {
     loadTickets();
   }, [loadTickets]);
@@ -95,6 +111,10 @@ export function EngineerWorkspace({ currentUser, onLogout, onOpenProfile }) {
   useEffect(() => {
     loadTeam();
   }, [loadTeam]);
+
+  useEffect(() => {
+    loadUpsellRequests();
+  }, [loadUpsellRequests]);
 
   const updateStatus = async (nextStatus) => {
     setStatus(nextStatus);
@@ -220,6 +240,11 @@ export function EngineerWorkspace({ currentUser, onLogout, onOpenProfile }) {
         {message && (
           <div className="mb-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3 text-sm text-[var(--color-text-secondary)]">
             {message}
+          </div>
+        )}
+        {upsellMessage && (
+          <div className="mb-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3 text-sm text-[var(--color-text-secondary)]">
+            {upsellMessage}
           </div>
         )}
 
@@ -390,6 +415,31 @@ export function EngineerWorkspace({ currentUser, onLogout, onOpenProfile }) {
             <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5">
               <h2 className="mb-3 font-semibold">工程师工具箱</h2>
               <div className="space-y-2 text-sm text-[var(--color-text-secondary)]">
+                <button
+                  onClick={() => setUpsellOpen(true)}
+                  className="flex w-full items-center gap-3 rounded-xl bg-[var(--color-surface-elevated)] px-4 py-3 text-left text-sm text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]"
+                >
+                  <Lightbulb size={18} className="text-[var(--color-primary)]" />
+                  <span>
+                    <span className="block font-medium text-[var(--color-text-primary)]">增购与改造需求</span>
+                    <span className="block text-xs text-[var(--color-text-muted)]">记录配件、易损件、周边设备和现场改造需求。</span>
+                  </span>
+                </button>
+                {upsellRequests.length > 0 && (
+                  <div className="mt-3 space-y-2">
+                    {upsellRequests.slice(0, 3).map((request) => (
+                      <div key={request.id} className="rounded-lg bg-[var(--color-surface-elevated)] px-3 py-2 text-xs">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="truncate font-medium text-[var(--color-text-primary)]">{request.title}</span>
+                          <span className="shrink-0 text-[var(--color-primary)]">{getUpsellStatusLabel(request.status, 'zh-CN')}</span>
+                        </div>
+                        <div className="mt-1 text-[var(--color-text-muted)]">
+                          {getUpsellCategoryLabel(request.category, 'zh-CN')}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
                 <div className="rounded-xl bg-[var(--color-surface-elevated)] px-3 py-2">
                   服务报告规范：诊断、处理动作、配件更换和后续建议需完整记录。
                 </div>
@@ -413,6 +463,15 @@ export function EngineerWorkspace({ currentUser, onLogout, onOpenProfile }) {
       userId={engineerId}
       onRateSuccess={loadTickets}
       onConfirmed={loadTickets}
+    />
+    <UpsellRequestModal
+      isOpen={upsellOpen}
+      onClose={() => setUpsellOpen(false)}
+      context={{ sourceType: 'engineer_workspace' }}
+      onSubmitted={() => {
+        setUpsellMessage('增购与改造需求已提交，Admin 会安排业务跟进。');
+        loadUpsellRequests();
+      }}
     />
     </>
   );

@@ -28,6 +28,7 @@ import { MessagePanel } from './MessagePanel';
 import { EngineerPricingPanel, CustomerPricingPanel } from './PricingPanels';
 import { RepairRecordPanel } from './RepairRecordPanel';
 import { AttachmentsPanel } from './AttachmentsPanel';
+import { UpsellRequestModal } from '../Upsell/UpsellRequestModal';
 import { isCnLocale } from '../../utils/locale';
 import {
   derivePaymentSummary,
@@ -64,6 +65,7 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
   const [engReviewRatings, setEngReviewRatings] = useState({ cooperation: 5, communication: 5, payment: 5, environment: 5 });
   const [engReviewComment, setEngReviewComment] = useState('');
   const [engReviewSubmitting, setEngReviewSubmitting] = useState(false);
+  const [upsellOpen, setUpsellOpen] = useState(false);
   const workOrderId = workOrder?.id;
 
   const loadDetail = useCallback(async () => {
@@ -258,6 +260,23 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
         <p className="text-sm text-[var(--color-text-secondary)]">
           {isCn ? '报价或服务报告中可引用物料库；找不到合适物料时，工程师可提交新增物料申请。' : 'Use material references in quote or service report. If a part is missing, submit a material request from the work order.'}
         </p>
+      ))}
+
+      {isEngineer && renderSection(isCn ? '增购与改造需求' : 'Upsell & Retrofit Need', (
+        <div className="space-y-3 text-sm text-[var(--color-text-secondary)]">
+          <p>
+            {isCn
+              ? '现场发现配件、易损件、周边设备、自动化改造或折弯模具需求时，可提交给 Admin 安排业务跟进。'
+              : 'Capture field needs for parts, consumables, peripheral equipment, automation retrofit, or bending tooling.'}
+          </p>
+          <button
+            type="button"
+            onClick={() => setUpsellOpen(true)}
+            className="rounded-lg bg-[var(--color-primary)] px-3 py-2 text-sm font-medium text-white"
+          >
+            {isCn ? '提交增购与改造需求' : 'Submit need'}
+          </button>
+        </div>
       ))}
 
       {renderSection(isCn ? '回款与确认' : 'Payment & Confirmation', (
@@ -497,6 +516,7 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
   );
 
   return (
+    <>
     <Modal isOpen={isOpen} onClose={onClose} title={isCn ? '工单详情' : 'Work Order Details'} size="md">
       <div>
         {/* Tab 切换 */}
@@ -556,5 +576,15 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
         )}
       </div>
     </Modal>
+    <UpsellRequestModal
+      isOpen={upsellOpen}
+      onClose={() => setUpsellOpen(false)}
+      context={{
+        sourceType: 'work_order',
+        workOrderId: workOrder.id,
+        workOrderNo: detail?.order_no || workOrder.order_no || workOrder.id,
+      }}
+    />
+    </>
   );
 }
