@@ -61,6 +61,8 @@ const TEXT = {
     timeline: 'Timeline',
     budget: 'Budget',
     createdAt: 'Created',
+    previous: 'Previous',
+    next: 'Next',
   },
   'zh-CN': {
     title: '增购需求池',
@@ -88,6 +90,8 @@ const TEXT = {
     timeline: '时间要求',
     budget: '预算信号',
     createdAt: '提交时间',
+    previous: '上一页',
+    next: '下一页',
   },
 };
 
@@ -105,6 +109,7 @@ export function UpsellRequestsPage() {
   const locale = runtimeConfig.locale;
   const t = TEXT[locale] || TEXT.en;
   const [data, setData] = useState({ total: 0, requests: [] });
+  const [page, setPage] = useState(1);
   const [status, setStatus] = useState('all');
   const [category, setCategory] = useState('all');
   const [loading, setLoading] = useState(true);
@@ -118,7 +123,7 @@ export function UpsellRequestsPage() {
     setLoading(true);
     setMessage('');
     try {
-      const result = await getAdminUpsellRequests(1, pageSize, filters);
+      const result = await getAdminUpsellRequests(page, pageSize, filters);
       setData({ total: result.total || 0, requests: result.requests || [] });
     } catch (error) {
       setMessage(t.failed + error.message);
@@ -129,7 +134,7 @@ export function UpsellRequestsPage() {
 
   useEffect(() => {
     load();
-  }, [filters]);
+  }, [filters, page]);
 
   const updateLocal = (id, key, value) => {
     setData((prev) => ({
@@ -137,6 +142,8 @@ export function UpsellRequestsPage() {
       requests: prev.requests.map((item) => (item.id === id ? { ...item, [key]: value } : item)),
     }));
   };
+
+  const totalPages = Math.max(1, Math.ceil(data.total / pageSize));
 
   const save = async (item) => {
     setSavingId(item.id);
@@ -194,7 +201,10 @@ export function UpsellRequestsPage() {
       <div className="mb-5 flex flex-col gap-3 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4 md:flex-row md:items-center">
         <select
           value={status}
-          onChange={(event) => setStatus(event.target.value)}
+          onChange={(event) => {
+            setStatus(event.target.value);
+            setPage(1);
+          }}
           className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-3 py-2 text-sm outline-none"
         >
           <option value="all">{t.allStatuses}</option>
@@ -204,7 +214,10 @@ export function UpsellRequestsPage() {
         </select>
         <select
           value={category}
-          onChange={(event) => setCategory(event.target.value)}
+          onChange={(event) => {
+            setCategory(event.target.value);
+            setPage(1);
+          }}
           className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-3 py-2 text-sm outline-none"
         >
           <option value="all">{t.allCategories}</option>
@@ -334,6 +347,26 @@ export function UpsellRequestsPage() {
           ))}
         </div>
       )}
+
+      <div className="mt-6 flex items-center justify-between">
+        <button
+          type="button"
+          onClick={() => setPage((prev) => Math.max(1, prev - 1))}
+          disabled={page === 1}
+          className="rounded-lg bg-[var(--color-surface-elevated)] px-4 py-2 text-sm disabled:opacity-50"
+        >
+          {t.previous}
+        </button>
+        <span className="text-sm text-[var(--color-text-muted)]">{page} / {totalPages}</span>
+        <button
+          type="button"
+          onClick={() => setPage((prev) => Math.min(totalPages, prev + 1))}
+          disabled={page >= totalPages}
+          className="rounded-lg bg-[var(--color-surface-elevated)] px-4 py-2 text-sm disabled:opacity-50"
+        >
+          {t.next}
+        </button>
+      </div>
     </div>
   );
 }
