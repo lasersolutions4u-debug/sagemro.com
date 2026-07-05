@@ -5257,10 +5257,36 @@ const MATERIAL_REQUEST_STATUSES = new Set([
   'linked_existing',
 ]);
 const MATERIAL_REQUEST_URGENCIES = new Set(['normal', 'urgent', 'critical']);
+const UPSELL_CATEGORIES = new Set([
+  'parts_consumables',
+  'laser_peripheral',
+  'post_processing',
+  'automation_retrofit',
+  'bending_tooling',
+  'other_retrofit',
+]);
+const UPSELL_STATUSES = new Set([
+  'pending_assignment',
+  'sales_following',
+  'quoted',
+  'won',
+  'lost',
+  'delivery_support',
+  'completed',
+]);
+const UPSELL_TIMELINES = new Set(['immediate', 'within_1_month', 'within_3_months', 'unclear']);
+const UPSELL_BUDGET_SIGNALS = new Set(['has_budget', 'comparing_quotes', 'unknown']);
+const UPSELL_QUOTE_STATUSES = new Set(['not_started', 'in_progress', 'quoted']);
+const UPSELL_DEAL_RESULTS = new Set(['undecided', 'won', 'lost']);
 
 function cleanText(value, maxLength = 300) {
   if (value === undefined || value === null) return '';
   return String(value).trim().slice(0, maxLength);
+}
+
+function cleanChoice(value, allowed, fallback) {
+  const text = cleanText(value, 80);
+  return allowed.has(text) ? text : fallback;
 }
 
 function toSafeNumber(value, fallback = 0) {
@@ -5376,6 +5402,21 @@ function normalizeMaterialRequest(row) {
   };
 }
 
+function normalizeUpsellRequest(row) {
+  if (!row) return row;
+  return {
+    ...row,
+    work_order_id: row.work_order_id || null,
+    customer_id: row.customer_id || null,
+    site_context: row.site_context || '',
+    contact_name: row.contact_name || '',
+    contact_phone: row.contact_phone || '',
+    assigned_sales_owner: row.assigned_sales_owner || '',
+    admin_note: row.admin_note || '',
+    handover_note: row.handover_note || '',
+  };
+}
+
 function readWorkOrderMaterialItemPayload(body = {}) {
   const purpose = cleanText(body.purpose || 'quote', 40) || 'quote';
   const quantity = Math.max(0, toSafeNumber(body.quantity, 1));
@@ -5422,6 +5463,27 @@ function readMaterialRequestPayload(body = {}) {
     usage_note: cleanText(body.usage_note, 1200) || null,
     urgency,
     attachment_urls: JSON.stringify(cleanTextArray(body.attachment_urls, 8, 500)),
+  };
+}
+
+function readUpsellRequestPayload(body = {}) {
+  const sourceType = body.source_type === 'work_order' ? 'work_order' : 'engineer_workspace';
+  const title = cleanText(body.title, 120);
+  const description = cleanText(body.description, 3000);
+
+  if (!title || !description) return { error: '请填写增购与改造需求标题和描述' };
+
+  return {
+    source_type: sourceType,
+    work_order_id: cleanText(body.work_order_id, 80) || null,
+    category: cleanChoice(body.category, UPSELL_CATEGORIES, 'other_retrofit'),
+    title,
+    description,
+    site_context: cleanText(body.site_context, 3000),
+    expected_timeline: cleanChoice(body.expected_timeline, UPSELL_TIMELINES, 'unclear'),
+    budget_signal: cleanChoice(body.budget_signal, UPSELL_BUDGET_SIGNALS, 'unknown'),
+    contact_name: cleanText(body.contact_name, 80),
+    contact_phone: cleanText(body.contact_phone, 40),
   };
 }
 
@@ -6047,6 +6109,207 @@ async function handleAdminReviewMaterialRequest(request, env) {
     if (/UNIQUE/i.test(String(error?.message || ''))) {
       return errorResponse('物料编码已存在', 409);
     }
+    return errorResponse(error.message, 500);
+  }
+}
+
+async function handleCreateUpsellRequest(request, env) {
+  try {
+    if (request._auth?.userType !== 'engineer') {
+      return errorResponse('需要工程师权限', 403);
+    }
+
+    const body = await request.json().catch(() => ({}));
+    const payload = readUpsellRequestPayload(body);
+    if (payload.error) return errorResponse(payload.error, 400);
+
+    let customerId = null;
+    if (payload.source_type === 'work_order') {
+      if (!payload.work_order_id) return errorResponse('请提供关联工单', 400);
+      const workOrder = await getWorkOrderForMaterialAccess(env, payload.work_order_id);
+      assertWorkOrderAccess(request._auth, workOrder);
+      customerId = workOrder.customer_id || null;
+    } else {
+      payload.work_order_id = null;
+    }
+
+    const id = generateId();
+    const market = cleanText(body.market, 20) || getRequestMarket(request);
+    await env.DB.prepare(`
+      INSERT INTO upsell_requests (
+        id, market, source_type, work_order_id, customer_id, engineer_id,
+        category, title, description, site_context, expected_timeline,
+        budget_signal, contact_name, contact_phone, status,
+        assigned_sales_owner, admin_note, quote_status, deal_result, handover_note
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).bind(
+      id,
+      market,
+      payload.source_type,
+      payload.work_order_id,
+      customerId,
+      request._auth.userId,
+      payload.category,
+      payload.title,
+      payload.description,
+      payload.site_context,
+      payload.expected_timeline,
+      payload.budget_signal,
+      payload.contact_name,
+      payload.contact_phone,
+      'pending_assignment',
+      '',
+      '',
+      'not_started',
+      'undecided',
+      ''
+    ).run();
+
+    const row = await env.DB.prepare('SELECT * FROM upsell_requests WHERE id = ?').bind(id).first();
+    const upsellRequest = normalizeUpsellRequest(row || {
+      id,
+      market,
+      customer_id: customerId,
+      engineer_id: request._auth.userId,
+      status: 'pending_assignment',
+      assigned_sales_owner: '',
+      admin_note: '',
+      quote_status: 'not_started',
+      deal_result: 'undecided',
+      handover_note: '',
+      ...payload,
+    });
+    await writeAuditLog(env, request, {
+      targetType: 'upsell_request',
+      targetId: id,
+      action: 'upsell_request_created',
+      afterState: upsellRequest,
+    });
+
+    return jsonResponse({ success: true, request: upsellRequest }, 201);
+  } catch (error) {
+    if (error instanceof GuardError) return errorResponse(error.message, error.status);
+    return errorResponse(error.message, 500);
+  }
+}
+
+async function handleListMyUpsellRequests(request, env) {
+  try {
+    if (request._auth?.userType !== 'engineer') {
+      return errorResponse('需要工程师权限', 403);
+    }
+
+    const rows = await env.DB.prepare(
+      'SELECT * FROM upsell_requests WHERE engineer_id = ? ORDER BY created_at DESC LIMIT 100'
+    ).bind(request._auth.userId).all();
+
+    return jsonResponse({ requests: (rows.results || []).map(normalizeUpsellRequest) });
+  } catch (error) {
+    return errorResponse(error.message, 500);
+  }
+}
+
+async function handleAdminListUpsellRequests(request, env) {
+  try {
+    const url = new URL(request.url);
+    const page = Math.max(1, parseInt(url.searchParams.get('page') || '1', 10));
+    const pageSize = Math.min(100, Math.max(1, parseInt(url.searchParams.get('pageSize') || '20', 10)));
+    const offset = (page - 1) * pageSize;
+    const status = cleanText(url.searchParams.get('status'), 40);
+    const category = cleanText(url.searchParams.get('category'), 60);
+
+    const where = [];
+    const binds = [];
+    if (status && status !== 'all') {
+      if (!UPSELL_STATUSES.has(status)) return errorResponse('无效需求状态', 400);
+      where.push('status = ?');
+      binds.push(status);
+    }
+    if (category && category !== 'all') {
+      if (!UPSELL_CATEGORIES.has(category)) return errorResponse('无效需求类别', 400);
+      where.push('category = ?');
+      binds.push(category);
+    }
+
+    const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
+    const total = await env.DB.prepare(
+      `SELECT COUNT(*) as count FROM upsell_requests ${whereSql}`
+    ).bind(...binds).first();
+    const list = await env.DB.prepare(
+      `SELECT * FROM upsell_requests ${whereSql} ORDER BY created_at DESC LIMIT ? OFFSET ?`
+    ).bind(...binds, pageSize, offset).all();
+
+    return jsonResponse({
+      total: total?.count || 0,
+      requests: (list.results || []).map(normalizeUpsellRequest),
+    });
+  } catch (error) {
+    return errorResponse(error.message, 500);
+  }
+}
+
+async function handleAdminGetUpsellRequest(request, env) {
+  try {
+    const requestId = new URL(request.url).pathname.split('/')[4];
+    if (!requestId) return errorResponse('缺少需求 ID', 400);
+
+    const row = await env.DB.prepare('SELECT * FROM upsell_requests WHERE id = ?').bind(requestId).first();
+    if (!row) return errorResponse('增购与改造需求不存在', 404);
+
+    return jsonResponse({ request: normalizeUpsellRequest(row) });
+  } catch (error) {
+    return errorResponse(error.message, 500);
+  }
+}
+
+async function handleAdminUpdateUpsellRequest(request, env) {
+  try {
+    const requestId = new URL(request.url).pathname.split('/')[4];
+    if (!requestId) return errorResponse('缺少需求 ID', 400);
+
+    const existing = await env.DB.prepare('SELECT * FROM upsell_requests WHERE id = ?').bind(requestId).first();
+    if (!existing) return errorResponse('增购与改造需求不存在', 404);
+
+    const body = await request.json().catch(() => ({}));
+    const next = {
+      status: cleanChoice(body.status ?? existing.status, UPSELL_STATUSES, existing.status || 'pending_assignment'),
+      assigned_sales_owner: cleanText(body.assigned_sales_owner ?? existing.assigned_sales_owner, 120),
+      admin_note: cleanText(body.admin_note ?? existing.admin_note, 3000),
+      quote_status: cleanChoice(body.quote_status ?? existing.quote_status, UPSELL_QUOTE_STATUSES, existing.quote_status || 'not_started'),
+      deal_result: cleanChoice(body.deal_result ?? existing.deal_result, UPSELL_DEAL_RESULTS, existing.deal_result || 'undecided'),
+      handover_note: cleanText(body.handover_note ?? existing.handover_note, 3000),
+    };
+
+    const result = await env.DB.prepare(`
+      UPDATE upsell_requests SET
+        status = ?, assigned_sales_owner = ?, admin_note = ?, quote_status = ?,
+        deal_result = ?, handover_note = ?, updated_at = datetime('now')
+      WHERE id = ?
+    `).bind(
+      next.status,
+      next.assigned_sales_owner,
+      next.admin_note,
+      next.quote_status,
+      next.deal_result,
+      next.handover_note,
+      requestId
+    ).run();
+
+    if (result.meta?.changes === 0) return errorResponse('增购与改造需求不存在', 404);
+    const updated = normalizeUpsellRequest(
+      await env.DB.prepare('SELECT * FROM upsell_requests WHERE id = ?').bind(requestId).first()
+      || { ...existing, ...next }
+    );
+    await writeAuditLog(env, request, {
+      targetType: 'upsell_request',
+      targetId: requestId,
+      action: 'upsell_request_updated',
+      beforeState: normalizeUpsellRequest(existing),
+      afterState: updated,
+    });
+
+    return jsonResponse({ success: true, request: updated });
+  } catch (error) {
     return errorResponse(error.message, 500);
   }
 }
@@ -9224,6 +9487,8 @@ async function routeRequest(request, env, ctx) {
     const isKnownProtectedRoute = (
       path.startsWith('/api/admin/') ||
       path === '/api/material-requests' ||
+      path === '/api/upsell-requests' ||
+      path === '/api/upsell-requests/mine' ||
       path === '/api/conversations' ||
       path.startsWith('/api/conversations/') ||
       path === '/api/materials' ||
@@ -9279,6 +9544,15 @@ async function routeRequest(request, env, ctx) {
       }
       if (path.startsWith('/api/admin/material-requests/') && request.method === 'PATCH') {
         return handleAdminReviewMaterialRequest(request, env);
+      }
+      if (path === '/api/admin/upsell-requests' && request.method === 'GET') {
+        return handleAdminListUpsellRequests(request, env);
+      }
+      if (path.match(/^\/api\/admin\/upsell-requests\/[^/]+$/) && request.method === 'GET') {
+        return handleAdminGetUpsellRequest(request, env);
+      }
+      if (path.match(/^\/api\/admin\/upsell-requests\/[^/]+$/) && request.method === 'PATCH') {
+        return handleAdminUpdateUpsellRequest(request, env);
       }
       if (path === '/api/admin/materials' && request.method === 'GET') {
         return handleAdminMaterials(request, env);
@@ -9356,6 +9630,12 @@ async function routeRequest(request, env, ctx) {
     }
     if (path === '/api/material-requests' && request.method === 'POST') {
       return handleCreateMaterialRequest(request, env);
+    }
+    if (path === '/api/upsell-requests' && request.method === 'POST') {
+      return handleCreateUpsellRequest(request, env);
+    }
+    if (path === '/api/upsell-requests/mine' && request.method === 'GET') {
+      return handleListMyUpsellRequests(request, env);
     }
 
     // 工单相关
