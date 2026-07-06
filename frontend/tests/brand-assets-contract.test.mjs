@@ -48,9 +48,14 @@ test('main site first-impression copy keeps CN and COM market language separate'
   const footer = read('frontend/src/components/common/Footer.jsx');
   const engineerRecruiting = read('frontend/src/components/Engineer/EngineerRecruitingPage.jsx');
 
-  assert.match(welcome, /Turn machine issues into a clear service path with AI-assisted support/);
+  assert.match(welcome, /Keep laser and sheet-metal equipment running with AI-assisted service intake/);
+  assert.match(welcome, /spare parts, consumables, laser peripherals, retrofit needs, automation accessories, and press brake tooling/);
+  assert.match(welcome, /Retrofit review/);
+  assert.doesNotMatch(welcome, /Machine selection|new-machine evaluation/);
   assert.match(welcome, /让专业 AI 协助，设备问题解决得更高效。/);
   assert.match(about, /An AI-assisted independent service platform/);
+  assert.match(about, /spare parts, consumables, maintenance, retrofit, automation accessories, laser peripherals, or press brake tooling/);
+  assert.doesNotMatch(about, /Machine selection|new-machine projects/);
   assert.match(about, /面向激光切割与钣金加工设备的第三方智能服务平台。/);
   assert.doesNotMatch(about, /field photos|现场照片/);
   assert.match(footer, /SAGEMRO operated by Jinan Euchio Machinery Co\., Ltd\./);

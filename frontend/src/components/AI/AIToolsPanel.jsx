@@ -47,7 +47,7 @@ export function AIToolsPanel({ onSendMessage }) {
             Six agents, one natural-language intake
           </h2>
           <p className="mt-2 max-w-3xl text-sm leading-relaxed text-[var(--color-text-secondary)]">
-            Users can start from chat. These agents help the system route the request, extract fields, generate immediate feedback, and prepare a service, parts, maintenance, or Euchio lead.
+            Users can start from chat. These agents help the system route the request, extract fields, generate immediate feedback, and prepare a service, parts, maintenance, retrofit, or accessory follow-up.
           </p>
         </div>
         <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs leading-relaxed text-slate-600">
