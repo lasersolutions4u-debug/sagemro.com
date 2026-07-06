@@ -8,21 +8,24 @@
 
 ## 1. 部署架构
 
-### 1.1 平台总览（统一为 Cloudflare 全家桶）
+### 1.1 平台总览
 
-| 组件       | 域名                | CF 项目 / 资源              | 工作目录              |
-| ---------- | ------------------- | --------------------------- | --------------------- |
-| 国际版前端 | `sagemro.com`       | Pages: `sagemro-com`        | `frontend/`           |
-| 中国版前端 | `sagemro.cn`        | Pages: `sagemro-cn`         | `frontend/`（同源码） |
-| 国际版后台 | `admin.sagemro.com` | Pages: `sagemro-admin`      | `admin/`              |
-| 中国版后台 | `admin.sagemro.cn`  | Pages: `sagemro-admin-cn`   | `admin/`（同源码）    |
-| 国际版 API | `api.sagemro.com`   | Workers: env=`production`   | `worker/`             |
-| 中国版 API | `api.sagemro.cn`    | Workers: env=`production`   | `worker/`（同 Worker）|
-| 国际版数据库 | —                 | D1: `sagemro-db`            | `worker/migrations/`  |
-| 中国版数据库 | —                 | D1: `sagemro-db-cn`         | `worker/migrations/`  |
-| 缓存       | —                   | KV namespace（绑定名 `KV`） | —                     |
+| 组件       | 域名                | 当前生产平台 / 资源          | 工作目录              |
+| ---------- | ------------------- | ---------------------------- | --------------------- |
+| 国际版前端 | `sagemro.com`       | Cloudflare Pages: `sagemro-com` | `frontend/`       |
+| 国际版后台 | `admin.sagemro.com` | Cloudflare Pages: `sagemro-admin` | `admin/`        |
+| 国际版 API | `api.sagemro.com`   | Cloudflare Workers: env=`production` | `worker/`     |
+| 中国版前端 | `sagemro.cn`        | 阿里云 ECS + nginx（Cloudflare Pages `sagemro-cn` 仅为辅助部署目标） | `frontend/` |
+| 中国版后台 | `admin.sagemro.cn`  | 阿里云 ECS + nginx（Cloudflare Pages `sagemro-admin-cn` 仅为辅助部署目标） | `admin/` |
+| 中国版工程师端 | `engineer.sagemro.cn` | 阿里云 ECS + nginx | `frontend/`（engineer host） |
+| 中国版 API | `api.sagemro.cn`    | Cloudflare Workers: env=`production` | `worker/`（同 Worker）|
+| 国际版数据库 | —                 | D1: `sagemro-db`             | `worker/migrations/`  |
+| 中国版数据库 | —                 | D1: `sagemro-db-cn`          | `worker/migrations/`  |
+| 缓存       | —                   | KV namespace（绑定名 `KV`）  | —                     |
 
-中国版前台/后台在 `.cn` 域名下会自动调用 `https://api.sagemro.cn`。Worker 会按 API 域名或请求来源域名识别中国版流量，并路由到 `DB_CN`（`sagemro-db-cn`）。
+中国版前台/后台/工程师端在 `.cn` 域名下会自动调用 `https://api.sagemro.cn`。Worker 会按 API 域名或请求来源域名识别中国版流量，并路由到 `DB_CN`（`sagemro-db-cn`）。
+
+> **当前中国版生产事实**：`sagemro.cn`、`admin.sagemro.cn`、`engineer.sagemro.cn` 实际由阿里云 ECS/nginx 对外服务。`git push origin china-edition` 只会更新 Cloudflare Pages 的辅助目标，不会自动更新 ECS 线上文件。中国版真实生产发布必须手动触发 `.github/workflows/aliyun-cn-deploy.yml`。
 
 > **历史说明**：前端曾同时配过 Netlify（`netlify.toml`）和 Cloudflare Pages，造成双重部署和流量分裂。现已统一到 Cloudflare Pages。原 `netlify.toml` 备份为 `netlify.toml.deprecated`，确认 Pages 稳定运行一段时间后可删除。
 
@@ -30,9 +33,10 @@
 
 **关键事实**：
 - `main` 分支部署国际版前台、国际版后台和 Worker
-- `china-edition` 分支部署中国版前台和中国版后台，不部署 Worker
+- `china-edition` 分支部署 Cloudflare Pages 的中国版前台和中国版后台，不部署 Worker
+- 中国版实际线上还需要手动触发 `Deploy China Edition to Aliyun ECS` workflow，发布到阿里云 ECS
 - `sagemro.com/admin.sagemro.com` 调用 `api.sagemro.com`，使用 D1 `sagemro-db`
-- `sagemro.cn/admin.sagemro.cn` 调用 `api.sagemro.cn`，使用 D1 `sagemro-db-cn`
+- `sagemro.cn/admin.sagemro.cn/engineer.sagemro.cn` 调用 `api.sagemro.cn`，使用 D1 `sagemro-db-cn`
 - API 字段变更必须：先 PR 到 main → main 部署 Worker → 再 PR 到 china-edition；反向操作会让中国版 5xx
 - PR 永远只跑测试，不部署（jobs 层用 `if: github.event_name == 'push'` 兜底）
 
@@ -42,7 +46,21 @@
 |------|:----:|:---------------:|:-------------:|:------------:|
 | PR → main | ✅ | ❌ | ❌ | ❌ |
 | push → main | ✅ | ✅ (sagemro-com) | ✅ | ✅ (sagemro-admin) |
-| push → china-edition | ✅ | ✅ (sagemro-cn) | ❌ | ✅ (sagemro-admin-cn) |
+| push → china-edition | ✅ | ✅ (sagemro-cn，辅助目标) | ❌ | ✅ (sagemro-admin-cn，辅助目标) |
+
+### 1.4 中国版 ECS 生产发布矩阵
+
+| 触发方式 | workflow | 来源分支 | 发布目标 |
+|----------|----------|----------|----------|
+| 手动触发 | `aliyun-cn-deploy.yml` | `china-edition` | 阿里云 ECS：`sagemro.cn`、`admin.sagemro.cn`、`engineer.sagemro.cn` |
+
+该 workflow 会构建 `frontend` 和 `admin`，打包上传到 ECS，并切换：
+
+- `/var/www/sagemro-cn/current/frontend`
+- `/var/www/sagemro-cn/current/engineer`
+- `/var/www/sagemro-cn/current/admin`
+
+然后执行 `nginx -t`、reload nginx，并检查 `sagemro.cn`、`admin.sagemro.cn`、`engineer.sagemro.cn` 和 `api.sagemro.cn/health`。
 
 所有 deploy job 都声明了 `environment: production`。可在 GitHub repo → Settings → Environments → `production` 里加 required reviewers，作为人工审批门禁。
 
@@ -155,6 +173,8 @@ CF Dashboard → Workers & Pages → Create application → Pages → **Direct U
 
 ⚠️ **项目名必须和 deploy.yml 里写的完全一致**。如果不一致，`wrangler pages deploy` 会自动创建一个新项目（名字对得上 yml），导致出现孤儿项目——部署成功了但访问的是另一个 URL。
 
+中国版 Pages 项目当前作为辅助目标保留，便于 CI 构建校验和历史回滚参考；`.cn` 生产入口仍以阿里云 ECS/nginx 为准。
+
 ### 2.7 跑首次数据库迁移
 
 bash
@@ -171,12 +191,12 @@ npx wrangler d1 migrations apply sagemro-db --remote --env production
 | 项目                   | 自定义域名                                                   |
 | ---------------------- | ------------------------------------------------------------ |
 | Pages: `sagemro-com`   | `sagemro.com`、`www.sagemro.com`                             |
-| Pages: `sagemro-cn`    | `sagemro.cn`、`www.sagemro.cn`                               |
+| Pages: `sagemro-cn`    | 辅助目标。当前不要把生产 `sagemro.cn`、`www.sagemro.cn` 指向 Pages |
 | Pages: `sagemro-admin` | `admin.sagemro.com`                                          |
-| Pages: `sagemro-admin-cn` | `admin.sagemro.cn`                                       |
+| Pages: `sagemro-admin-cn` | 辅助目标。当前不要把生产 `admin.sagemro.cn` 指向 Pages |
 | Worker: `sagemro-api`  | `api.sagemro.com`、`api.sagemro.cn`（在 Worker → Triggers → Custom Domains 里加） |
 
-CF 自动签发 SSL 证书。
+国际版 Cloudflare Pages 由 CF 自动签发 SSL 证书。中国版 `sagemro.cn`、`admin.sagemro.cn`、`engineer.sagemro.cn` 的证书由阿里云 ECS/nginx 当前配置负责。
 
 ------
 
@@ -206,11 +226,10 @@ npx wrangler d1 execute sagemro-db --env production --remote --file migrations/0
 
 ---
 
-完成初始化后，日常部署只有一个动作：
+完成初始化后，国际版日常部署只有一个动作：
 
 ```bash
 git push origin main             # 部署 frontend (sagemro-com) + worker + admin (sagemro-admin)
-git push origin china-edition    # 部署 frontend (sagemro-cn) + admin (sagemro-admin-cn)
 ```
 
 GitHub Actions 自动：
@@ -220,6 +239,15 @@ GitHub Actions 自动：
 3. 按上面的"部署矩阵"分发到对应目标
 
 进度查看：`https://github.com/lasersolutions4u-debug/sagemro.com/actions`
+
+中国版真实线上发布分两步：
+
+```bash
+git push origin china-edition
+gh workflow run aliyun-cn-deploy.yml --repo lasersolutions4u-debug/sagemro.com --ref china-edition
+```
+
+`git push origin china-edition` 只会更新 Cloudflare Pages 的中国版辅助目标；`sagemro.cn`、`admin.sagemro.cn`、`engineer.sagemro.cn` 的线上生产文件由阿里云 ECS workflow 更新。
 
 ### ⚠️ 不会自动做的事
 
@@ -265,6 +293,8 @@ cd admin && npm ci && npm run build && cd ..
 npx wrangler pages deploy admin/dist --project-name=sagemro-admin-cn --branch=china-edition
 ```
 
+中国版 ECS 应急部署不要直接手工覆盖线上目录。优先手动触发 `aliyun-cn-deploy.yml`，让 workflow 负责打包、上传、切换软链接、`nginx -t` 和健康检查。只有在 GitHub Actions 不可用且用户明确确认生产操作时，才按当前 ECS 发布结构手动处理。
+
 
 
 ⚠️ 应急部署**绕过了 test job**，事后必须把对应 commit 也走一次正常 CI 验证。
@@ -276,9 +306,10 @@ npx wrangler pages deploy admin/dist --project-name=sagemro-admin-cn --branch=ch
 | 检查项      | URL                                                       | 期望          |
 | ----------- | --------------------------------------------------------- | ------------- |
 | 国际版首页  | `https://sagemro.com`                                     | 200，正常加载 |
-| 中国版首页  | `https://sagemro.cn`                                      | 200，正常加载 |
+| 中国版首页  | `https://sagemro.cn`                                      | 200，正常加载，响应头通常为 `nginx/1.18.0 (Ubuntu)` |
 | 国际版后台  | `https://admin.sagemro.com`                               | 登录页        |
-| 中国版后台  | `https://admin.sagemro.cn`                                | 登录页        |
+| 中国版后台  | `https://admin.sagemro.cn`                                | 登录页，响应头通常为 `nginx/1.18.0 (Ubuntu)` |
+| 中国版工程师端 | `https://engineer.sagemro.cn`                          | 工程师入口，响应头通常为 `nginx/1.18.0 (Ubuntu)` |
 | 国际版 Worker 健康 | `https://api.sagemro.com/health`                   | 200 OK        |
 | 中国版 Worker 健康 | `https://api.sagemro.cn/health`                    | 200 OK        |
 | 国际版 API 烟测 | `https://api.sagemro.com/api/workorders?customer_id=test` | JSON 响应 |
@@ -292,6 +323,7 @@ npx wrangler pages deploy admin/dist --project-name=sagemro-admin-cn --branch=ch
 | ----------------------- | ------------------------------------------------------------ |
 | 前端（任一 Pages 项目） | CF Dashboard → 该项目 → Deployments → 选历史版本 → **Rollback** |
 | Admin                   | 同上                                                         |
+| 中国版 ECS 前端/Admin/工程师端 | 通过阿里云 ECS 上 `/var/www/sagemro-cn/current/*` 软链接切回上一 release，并在 `nginx -t` 通过后 reload。生产操作前必须确认目标 release 和回滚影响 |
 | Worker                  | CF Dashboard → Workers → `sagemro-api` → Deployments → 选历史版本 → Rollback；或 `git revert` 后 push（推荐，状态可追溯） |
 | D1 schema               | **没有自动回滚**。Migration 一旦应用就只能写反向 migration 修复。重要 schema 变更前先 `wrangler d1 export` 备份 |
 
@@ -347,3 +379,14 @@ npx wrangler tail --env production    # 看生产实时日志
 
 很可能是"china-edition 调用了 main 还没合并的 API"，或 `api.sagemro.cn` 未绑定到 Worker。
 解决：先把 API 变更 PR 到 main → 等 worker 部署 → 确认 Worker 自定义域名含 `api.sagemro.cn` → 再让 china-edition 上线。
+
+### 7.7 Cloudflare Pages 成功但 `.cn` 线上没变化
+
+这是当前架构下的正常排查点：`.cn` 真实生产流量走阿里云 ECS/nginx，不是 Cloudflare Pages 直出。
+
+解决：
+
+1. 确认当前分支是 `china-edition`。
+2. 确认代码已 push 到 `origin/china-edition`。
+3. 手动触发 `Deploy China Edition to Aliyun ECS` workflow。
+4. 等 workflow 的 ECS health checks 通过后，再访问 `https://sagemro.cn`、`https://admin.sagemro.cn`、`https://engineer.sagemro.cn`。

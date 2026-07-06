@@ -12,7 +12,8 @@
 ```
 GitHub 仓库（代码托管）
     ↓ push / merge
-Cloudflare Pages（官网部署）
+Cloudflare Pages（国际版前台/后台 + 中国版辅助目标）
+Aliyun ECS + nginx（中国版前台/后台/工程师端实际生产入口）
 Cloudflare Workers（AI API 代理 + 工单后端）
     ↓
 Cloudflare D1（国际版 / 中国版独立数据库）
@@ -22,12 +23,14 @@ OpenAI-compatible LLM API（DeepSeek / OpenAI / compatible provider）
 
 生产环境按域名分为两套业务入口：
 
-| 版本 | 前台 | 后台 | API | 数据库 |
-|------|------|------|-----|--------|
-| 国际版 | `sagemro.com` | `admin.sagemro.com` | `api.sagemro.com` | D1 `sagemro-db` |
-| 中国版 | `sagemro.cn` | `admin.sagemro.cn` | `api.sagemro.cn` | D1 `sagemro-db-cn` |
+| 版本 | 前台 | 后台 | 工程师端 | API | 数据库 |
+|------|------|------|----------|-----|--------|
+| 国际版 | `sagemro.com` | `admin.sagemro.com` | `engineer.sagemro.com`（同 frontend 构建逻辑） | `api.sagemro.com` | D1 `sagemro-db` |
+| 中国版 | `sagemro.cn` | `admin.sagemro.cn` | `engineer.sagemro.cn` | `api.sagemro.cn` | D1 `sagemro-db-cn` |
 
-前台和后台使用同一套 React 源码，但运行在 `.cn` 域名时默认调用 `https://api.sagemro.cn`。Worker 使用同一套代码部署，按 API 域名或请求来源域名把中国版请求路由到 `DB_CN`，避免中英文版本数据混用。
+前台和工程师端使用同一套 `frontend` React 源码，后台使用 `admin` 源码。运行在 `.cn` 域名时默认调用 `https://api.sagemro.cn`。Worker 使用同一套代码部署，按 API 域名或请求来源域名把中国版请求路由到 `DB_CN`，避免中英文版本数据混用。
+
+当前 `sagemro.cn`、`admin.sagemro.cn`、`engineer.sagemro.cn` 的实际生产流量由阿里云 ECS/nginx 承载；Cloudflare Pages 的中国版项目仅作为辅助部署目标和构建校验参考。详见 [DEPLOY.md](./DEPLOY.md)。
 
 ### 1.1 技术栈
 
@@ -38,7 +41,7 @@ OpenAI-compatible LLM API（DeepSeek / OpenAI / compatible provider）
 | 图标 | Lucide React |
 | 动画 | Framer Motion |
 | 路由 | React Router DOM |
-| 部署 | Cloudflare Pages |
+| 部署 | 国际版 Cloudflare Pages；中国版阿里云 ECS + nginx；API Cloudflare Workers |
 | 后端 | Cloudflare Workers |
 | 数据库 | Cloudflare D1（SQLite） |
 | AI | OpenAI-compatible Chat Completions API（model configurable） |
@@ -51,6 +54,7 @@ OpenAI-compatible LLM API（DeepSeek / OpenAI / compatible provider）
 - **中国版域名**：`sagemro.cn`
 - **国际版后台**：`admin.sagemro.com`
 - **中国版后台**：`admin.sagemro.cn`
+- **中国版工程师端**：`engineer.sagemro.cn`
 - **国际版 API**：`api.sagemro.com`
 - **中国版 API**：`api.sagemro.cn`
 - **GitHub 仓库**：`lasersolutions4u-debug/sagemro.com`
@@ -191,12 +195,14 @@ DEV_BYPASS_CODE=123456
 |------|--------------|
 | 网站主域名 | `sagemro.cn` |
 | 管理后台 | `admin.sagemro.cn` |
+| 工程师端 | `engineer.sagemro.cn` |
 | API 服务 | `api.sagemro.cn` |
+| 前台/后台/工程师端接入 | 当前由阿里云 ECS + nginx 对外服务 |
 | 数据库 | D1 `sagemro-db-cn`，与国际版 `sagemro-db` 隔离 |
 | 数据路由 | Worker 按 `.cn` API 域名或 `.cn` 来源域名进入 `DB_CN` |
 | 用户协议/隐私政策 | 中国版页面需展示适用于国内主体的协议、隐私政策和 AI 服务说明 |
 | 许可证展示 | 取得 ICP 经营许可证后，应在 `sagemro.cn` 页脚展示许可证编号 |
-| 备案/接入 | 如主管部门或接入商要求大陆接入，应将中国版前台、后台、API 迁移或接入到可备案的国内接入服务商 |
+| 备案/接入 | 中国版前台、后台、工程师端已接入阿里云 ECS。API 当前仍在 Cloudflare Workers，按后续资质或接入要求评估是否继续迁移 |
 
 ---
 
