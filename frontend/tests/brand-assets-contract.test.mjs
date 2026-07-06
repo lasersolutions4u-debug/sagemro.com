@@ -107,3 +107,17 @@ test('registration copy hides CN email input and routes verification through pho
   assert.match(toolbar, /loginLabel: 'Sign In \/ Register'/);
   assert.doesNotMatch(toolbar, /<span>Sign In \/ Register<\/span>/);
 });
+
+test('customer sidebar tools stay expanded without a More overflow menu', () => {
+  const toolbar = read('frontend/src/components/Sidebar/ToolBar.jsx');
+
+  assert.match(toolbar, /label: 'Request Service'/);
+  assert.match(toolbar, /label: 'My Services'/);
+  assert.match(toolbar, /label: 'Notifications'/);
+  assert.match(toolbar, /label: 'My Equipment'/);
+  assert.ok(
+    toolbar.indexOf("label: 'Notifications'") < toolbar.indexOf("label: 'My Equipment'"),
+    'Notifications should appear before My Equipment for logged-in customers'
+  );
+  assert.doesNotMatch(toolbar, /MoreHorizontal|sidebar-more-button|showCollapsed|setCollapsed|showMore|moreMenuRef/);
+});
