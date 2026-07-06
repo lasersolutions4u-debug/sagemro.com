@@ -66,6 +66,24 @@ test('main site first-impression copy keeps CN and COM market language separate'
   assert.doesNotMatch(engineerRecruiting, /badge: 'SAGEMRO Service OS · 认证服务代表计划'/);
 });
 
+test('COM inquiry path asks for service-ready international request details', () => {
+  const leadForm = read('frontend/src/components/Chat/LeadForm.jsx');
+  const workOrderModal = read('frontend/src/components/Sidebar/WorkOrderModal.jsx');
+
+  assert.match(leadForm, /machine brand\/model, part number, country, urgency, and photos available/);
+  assert.match(leadForm, /Country \/ region, equipment model, part number, urgency, and preferred contact channel/);
+  assert.doesNotMatch(leadForm, /Briefly describe your equipment needs/);
+
+  assert.match(workOrderModal, /Request Details/);
+  assert.match(workOrderModal, /Country \/ Region/);
+  assert.match(workOrderModal, /Equipment Model \/ Part No\./);
+  assert.match(workOrderModal, /alarm code, part number, photos\/nameplate availability, country, and production impact/);
+  assert.match(workOrderModal, /Email, WhatsApp, or phone/);
+  assert.match(workOrderModal, /Spare Parts \/ Consumables/);
+  assert.match(workOrderModal, /Retrofit \/ Peripheral Equipment/);
+  assert.doesNotMatch(workOrderModal, /Parts Purchase/);
+});
+
 test('registration copy hides CN email input and routes verification through phone SMS', () => {
   const loginModal = read('frontend/src/components/Auth/LoginModal.jsx');
   const api = read('frontend/src/services/api.js');
