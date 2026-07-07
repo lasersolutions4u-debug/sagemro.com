@@ -228,6 +228,69 @@ test('registration verification code can be sent to an email address', async () 
   assert.equal(env.__kv.get('verify_code_rate_email_joe@example.com'), '1');
 });
 
+test('COM production registration verification code uses Cloudflare Email binding', async () => {
+  const sentEmails = [];
+  const env = createTestEnv({
+    ENVIRONMENT: 'production',
+    VERIFICATION_EMAIL_FROM: 'SAGEMRO <verify@mail.sagemro.com>',
+    EMAIL: {
+      async send(message) {
+        sentEmails.push(message);
+      },
+    },
+  });
+
+  const { response, json } = await postJson('https://api.sagemro.com/api/auth/send-code', {
+    email: 'joe@example.com',
+  }, env);
+
+  assert.equal(response.status, 200);
+  assert.equal(json.success, true);
+  assert.equal(json.code, undefined);
+  assert.equal(sentEmails.length, 1);
+  assert.deepEqual(sentEmails[0], {
+    from: 'SAGEMRO <verify@mail.sagemro.com>',
+    to: 'joe@example.com',
+    subject: 'SAGEMRO verification code',
+    text: env.__kv.get('verify_code_email_joe@example.com')
+      ? `Your SAGEMRO verification code is ${env.__kv.get('verify_code_email_joe@example.com')}. It is valid for 5 minutes. Do not share it with others.`
+      : '',
+  });
+});
+
+test('COM production registration verification code falls back to Resend when Email binding is absent', async () => {
+  const env = createTestEnv({
+    ENVIRONMENT: 'production',
+    RESEND_API_KEY: 'test-resend-key',
+    VERIFICATION_EMAIL_FROM: 'SAGEMRO <verify@example.com>',
+  });
+  const originalFetch = globalThis.fetch;
+  let capturedRequest = null;
+  globalThis.fetch = async (url, init) => {
+    capturedRequest = { url, init };
+    return new Response(JSON.stringify({ id: 'email-test-id' }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  };
+
+  try {
+    const { response, json } = await postJson('https://api.sagemro.com/api/auth/send-code', {
+      email: 'joe@example.com',
+    }, env);
+
+    assert.equal(response.status, 200);
+    assert.equal(json.success, true);
+    assert.equal(capturedRequest.url, 'https://api.resend.com/emails');
+    assert.equal(capturedRequest.init.method, 'POST');
+    const body = JSON.parse(capturedRequest.init.body);
+    assert.equal(body.from, 'SAGEMRO <verify@example.com>');
+    assert.deepEqual(body.to, ['joe@example.com']);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test('CN registration verification code is sent through Aliyun SMS for a phone number', async () => {
   const env = createTestEnv({
     ENVIRONMENT: 'production',

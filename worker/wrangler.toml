@@ -40,6 +40,7 @@ name = "sagemro-api"
 [env.production.vars]
 ENVIRONMENT = "production"
 R2_PUBLIC_HOST = "pub-b468952d6e244e7d913c90a7ae6f81d6.r2.dev"
+VERIFICATION_EMAIL_FROM = "SAGEMRO <verify@sagemro.com>"
 
 [[env.production.d1_databases]]
 binding = "DB"
@@ -59,3 +60,6 @@ bucket_name = "sagemro-attachments"
 [[env.production.kv_namespaces]]
 binding = "KV"
 id = "2d34230fd0e74b0fa83fdd4ee0c934f1"
+
+[[env.production.send_email]]
+name = "EMAIL"
