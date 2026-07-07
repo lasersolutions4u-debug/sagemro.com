@@ -1,5 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 import {
@@ -148,6 +150,6 @@ test('material request residue parser reads command query output', () => {
 });
 
 test('material request smoke isCliEntry handles unicode workspace paths', () => {
-  const scriptPath = '/tmp/SAGEMRO AI/中文 smoke/material-requests-production-smoke.mjs';
+  const scriptPath = join(tmpdir(), 'SAGEMRO AI', '中文 smoke', 'material-requests-production-smoke.mjs');
   assert.equal(isCliEntry(pathToFileURL(scriptPath).href, scriptPath), true);
 });
