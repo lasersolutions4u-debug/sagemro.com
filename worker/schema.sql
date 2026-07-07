@@ -586,6 +586,41 @@ CREATE INDEX IF NOT EXISTS idx_material_requests_work_order ON material_requests
 CREATE INDEX IF NOT EXISTS idx_material_requests_requester ON material_requests(requested_by_type, requested_by_id);
 CREATE INDEX IF NOT EXISTS idx_material_requests_created_at ON material_requests(created_at);
 
+-- 增购与改造需求记录（029）
+CREATE TABLE IF NOT EXISTS upsell_requests (
+  id TEXT PRIMARY KEY,
+  market TEXT NOT NULL DEFAULT 'com',
+  source_type TEXT NOT NULL DEFAULT 'engineer_workspace',
+  work_order_id TEXT,
+  customer_id TEXT,
+  engineer_id TEXT NOT NULL,
+  category TEXT NOT NULL DEFAULT 'other_retrofit',
+  title TEXT NOT NULL,
+  description TEXT NOT NULL,
+  site_context TEXT,
+  expected_timeline TEXT DEFAULT 'unclear',
+  budget_signal TEXT DEFAULT 'unknown',
+  contact_name TEXT,
+  contact_phone TEXT,
+  status TEXT NOT NULL DEFAULT 'pending_assignment',
+  assigned_sales_owner TEXT,
+  admin_note TEXT,
+  quote_status TEXT DEFAULT 'not_started',
+  deal_result TEXT DEFAULT 'undecided',
+  handover_note TEXT,
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now')),
+  FOREIGN KEY (work_order_id) REFERENCES work_orders(id),
+  FOREIGN KEY (customer_id) REFERENCES customers(id),
+  FOREIGN KEY (engineer_id) REFERENCES engineers(id)
+);
+CREATE INDEX IF NOT EXISTS idx_upsell_requests_market ON upsell_requests(market);
+CREATE INDEX IF NOT EXISTS idx_upsell_requests_status ON upsell_requests(status);
+CREATE INDEX IF NOT EXISTS idx_upsell_requests_category ON upsell_requests(category);
+CREATE INDEX IF NOT EXISTS idx_upsell_requests_engineer ON upsell_requests(engineer_id);
+CREATE INDEX IF NOT EXISTS idx_upsell_requests_work_order ON upsell_requests(work_order_id);
+CREATE INDEX IF NOT EXISTS idx_upsell_requests_created_at ON upsell_requests(created_at);
+
 -- 商机线索表（021）
 CREATE TABLE IF NOT EXISTS leads (
     id TEXT PRIMARY KEY,
@@ -836,4 +871,5 @@ INSERT OR IGNORE INTO _migrations (version, note) VALUES
     ('025_engineer_applications_and_calendar', '工程师申请与工程师本人维护的排单日历'),
     ('026_material_master_data',        'Admin 物料主数据与库存手动调整记录'),
     ('027_work_order_material_items',   '工单物料引用：报价、备件准备和服务报告'),
-    ('028_material_requests',           '工程师新增物料申请与 Admin 审核入库');
+    ('028_material_requests',           '工程师新增物料申请与 Admin 审核入库'),
+    ('029_upsell_requests',             '工程师增购与改造需求记录');
