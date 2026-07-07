@@ -1759,7 +1759,39 @@ async function sendVerificationEmail(env, email, code, request) {
   if (env.ENVIRONMENT === 'development') {
     return { skipped: true };
   }
-  if (!env.RESEND_API_KEY || !env.VERIFICATION_EMAIL_FROM) {
+  if (!env.VERIFICATION_EMAIL_FROM) {
+    return {
+      error: getRequestMarket(request) === 'cn'
+        ? '邮件验证码服务尚未配置，请稍后再试'
+        : 'Email verification service is not configured yet.',
+    };
+  }
+
+  const emailPayload = {
+    from: env.VERIFICATION_EMAIL_FROM,
+    to: email,
+    subject: 'SAGEMRO verification code',
+    text: `Your SAGEMRO verification code is ${code}. It is valid for 5 minutes. Do not share it with others.`,
+  };
+
+  if (env.EMAIL?.send) {
+    try {
+      await env.EMAIL.send(emailPayload);
+      return { sent: true, provider: 'cloudflare' };
+    } catch (error) {
+      console.warn('[email] Cloudflare Email send failed', {
+        message: error?.message,
+        emailSuffix: String(email || '').split('@').pop(),
+      });
+      return {
+        error: getRequestMarket(request) === 'cn'
+          ? '邮件验证码发送失败，请稍后再试'
+          : 'Failed to send verification email. Please try again later.',
+      };
+    }
+  }
+
+  if (!env.RESEND_API_KEY) {
     return {
       error: getRequestMarket(request) === 'cn'
         ? '邮件验证码服务尚未配置，请稍后再试'
@@ -1774,10 +1806,8 @@ async function sendVerificationEmail(env, email, code, request) {
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      from: env.VERIFICATION_EMAIL_FROM,
+      ...emailPayload,
       to: [email],
-      subject: 'SAGEMRO verification code',
-      text: `Your SAGEMRO verification code is ${code}. It is valid for 5 minutes. Do not share it with others.`,
     }),
   });
   if (!response.ok) {
