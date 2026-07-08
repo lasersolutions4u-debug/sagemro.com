@@ -12,6 +12,14 @@ import {
   rejectAdminWorkOrderPricing,
 } from '../services/api';
 import { runtimeConfig } from '../config/runtime';
+import {
+  formatEngineerOption,
+  formatListValue,
+  formatQuoteNote,
+  getQuoteReviewRows,
+  money,
+  parseJsonValue,
+} from './workOrderDisplay';
 
 const STATUS_MAP = {
   pending: { color: 'var(--color-info)' },
@@ -60,37 +68,11 @@ function isImageAttachment(attachment) {
 function describeEngineer(engineer) {
   if (!engineer) return '';
   return [
-    engineer.service_region || engineer.responsible_region,
+    formatListValue(engineer.service_region || engineer.responsible_region),
     engineer.team_name,
-    engineer.specialties,
+    formatListValue(engineer.specialties),
     engineer.rating_avg ? `rating ${formatScore(engineer.rating_avg)}` : '',
   ].filter(Boolean).join(' · ');
-}
-
-function money(value) {
-  return Number(value || 0).toLocaleString(undefined, { maximumFractionDigits: 2 });
-}
-
-function parseJsonValue(value) {
-  if (!value || typeof value !== 'string') return value;
-  try {
-    return JSON.parse(value);
-  } catch {
-    return value;
-  }
-}
-
-function formatQuoteNote(value) {
-  if (!value || value === '[]') return '';
-  const parsed = parseJsonValue(value);
-  if (typeof parsed === 'string') return parsed;
-  if (Array.isArray(parsed)) {
-    return parsed
-      .map((item) => item.note || item.description || item.name || '')
-      .filter(Boolean)
-      .join('; ');
-  }
-  return parsed?.note || parsed?.description || '';
 }
 
 function quoteParts(detail) {
@@ -694,31 +676,41 @@ export function WorkOrdersPage() {
                           <div className="min-w-[170px] space-y-2">
                             <div className="text-xs text-[var(--color-text-secondary)]">
                               {wo.pricing_status
-                                ? `${t.pricing[wo.pricing_status] || wo.pricing_status}${wo.pricing_total_amount || wo.pricing_subtotal ? ` 路 ${wo.pricing_total_amount || wo.pricing_subtotal} CNY` : ''}`
+                                ? `${t.pricing[wo.pricing_status] || wo.pricing_status}${wo.pricing_total_amount || wo.pricing_subtotal ? ` · ${money(wo.pricing_total_amount || wo.pricing_subtotal)} CNY` : ''}`
                                 : t.noQuote}
                             </div>
                             {wo.pricing_status === 'pending_review' && (
-                              <div className="flex flex-wrap gap-1">
-                                <button
-                                  onClick={() => openDetail(wo)}
-                                  className="rounded-lg border border-[var(--color-primary)]/40 px-2 py-1 text-xs text-[var(--color-primary)]"
-                                >
-                                  {t.viewQuoteDetail || t.view}
-                                </button>
-                                <button
-                                  onClick={() => handleApprovePricing(wo)}
-                                  disabled={assigningId === `${wo.id}:approve`}
-                                  className="rounded-lg bg-[var(--color-primary)] px-2 py-1 text-xs text-white disabled:opacity-50"
-                                >
-                                  {t.approve}
-                                </button>
-                                <button
-                                  onClick={() => handleRejectPricing(wo)}
-                                  disabled={assigningId === `${wo.id}:reject`}
-                                  className="rounded-lg border border-[var(--color-border)] px-2 py-1 text-xs text-[var(--color-text-secondary)] disabled:opacity-50"
-                                >
-                                  {t.return}
-                                </button>
+                              <div className="space-y-2">
+                                <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-elevated)] p-2 text-[11px] text-[var(--color-text-secondary)]">
+                                  {getQuoteReviewRows(wo).map(([label, value]) => (
+                                    <div key={label} className="flex justify-between gap-3">
+                                      <span>{label}</span>
+                                      <span className="max-w-[150px] text-right text-[var(--color-text)]">{value}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                                <div className="flex flex-wrap gap-1">
+                                  <button
+                                    onClick={() => openDetail(wo)}
+                                    className="rounded-lg border border-[var(--color-primary)]/40 px-2 py-1 text-xs text-[var(--color-primary)]"
+                                  >
+                                    {t.viewQuoteDetail || t.view}
+                                  </button>
+                                  <button
+                                    onClick={() => handleApprovePricing(wo)}
+                                    disabled={assigningId === `${wo.id}:approve`}
+                                    className="rounded-lg bg-[var(--color-primary)] px-2 py-1 text-xs text-white disabled:opacity-50"
+                                  >
+                                    {t.approve}
+                                  </button>
+                                  <button
+                                    onClick={() => handleRejectPricing(wo)}
+                                    disabled={assigningId === `${wo.id}:reject`}
+                                    className="rounded-lg border border-[var(--color-border)] px-2 py-1 text-xs text-[var(--color-text-secondary)] disabled:opacity-50"
+                                  >
+                                    {t.return}
+                                  </button>
+                                </div>
                               </div>
                             )}
                             {['resolved', 'pending_review'].includes(wo.status) && (
@@ -746,7 +738,7 @@ export function WorkOrdersPage() {
                                 <option value="">{t.regionalLeadOption}</option>
                                 {regionalLeads.map((lead) => (
                                   <option key={lead.id} value={lead.id}>
-                                    {lead.name}{lead.responsible_region || lead.service_region ? ` 路 ${lead.responsible_region || lead.service_region}` : ''}
+                                    {formatEngineerOption(lead)}
                                   </option>
                                 ))}
                               </select>
@@ -768,7 +760,7 @@ export function WorkOrdersPage() {
                                   <option value="">{t.engineerOption}</option>
                                   {engineers.map((engineer) => (
                                     <option key={engineer.id} value={engineer.id}>
-                                      {engineer.user_no ? `${engineer.user_no} - ` : ''}{engineer.name}{engineer.service_region ? ` / ${engineer.service_region}` : ''}
+                                      {formatEngineerOption(engineer)}
                                     </option>
                                   ))}
                                 </select>

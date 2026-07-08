@@ -7699,7 +7699,12 @@ async function handleAdminWorkOrders(request, env) {
              c.name as customer_name, c.company as customer_company, c.user_no as customer_no,
              rl.name as regional_lead_name, rl.user_no as regional_lead_no,
              e.id as engineer_id, e.name as engineer_name, e.company as engineer_company, e.user_no as engineer_no,
-             p.status as pricing_status, p.total_amount as pricing_total_amount, p.subtotal as pricing_subtotal
+             e.commission_rate as engineer_commission_rate,
+             p.status as pricing_status, p.total_amount as pricing_total_amount, p.subtotal as pricing_subtotal,
+             p.labor_fee as pricing_labor_fee, p.parts_fee as pricing_parts_fee,
+             p.travel_fee as pricing_travel_fee, p.other_fee as pricing_other_fee,
+             p.parts_detail as pricing_parts_detail, p.platform_fee as pricing_platform_fee,
+             p.ai_price_check as pricing_ai_price_check
       FROM work_orders w
       LEFT JOIN customers c ON w.customer_id = c.id
       LEFT JOIN engineers rl ON w.assigned_regional_lead_id = rl.id
