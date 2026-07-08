@@ -7526,13 +7526,14 @@ async function handleAdminUsers(request, env) {
       const status = url.searchParams.get('status') || '';
       const region = url.searchParams.get('region') || '';
       const specialty = url.searchParams.get('specialty') || '';
+      const service = url.searchParams.get('service') || '';
 
       let where = 'WHERE 1=1';
       const params = [];
 
       if (search) {
-        where += ' AND (name LIKE ? OR phone LIKE ?)';
-        params.push(`%${search}%`, `%${search}%`);
+        where += ' AND (user_no LIKE ? OR name LIKE ? OR phone LIKE ? OR company LIKE ? OR service_region LIKE ? OR responsible_region LIKE ? OR team_name LIKE ?)';
+        params.push(`%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`);
       }
       if (status) {
         where += ' AND status = ?';
@@ -7546,18 +7547,27 @@ async function handleAdminUsers(request, env) {
         where += ' AND specialties LIKE ?';
         params.push(`%${specialty}%`);
       }
+      if (service) {
+        where += ' AND services LIKE ?';
+        params.push(`%${service}%`);
+      }
       const aliasedWhere = where
-        .replaceAll('name', 'e.name')
-        .replaceAll('phone', 'e.phone')
-        .replaceAll('status', 'e.status')
-        .replaceAll('service_region', 'e.service_region')
-        .replaceAll('specialties', 'e.specialties');
+        .replace(/\buser_no\b/g, 'e.user_no')
+        .replace(/\bteam_name\b/g, 'e.team_name')
+        .replace(/\bname\b/g, 'e.name')
+        .replace(/\bphone\b/g, 'e.phone')
+        .replace(/\bcompany\b/g, 'e.company')
+        .replace(/\bstatus\b/g, 'e.status')
+        .replace(/\bservice_region\b/g, 'e.service_region')
+        .replace(/\bresponsible_region\b/g, 'e.responsible_region')
+        .replace(/\bspecialties\b/g, 'e.specialties')
+        .replace(/\bservices\b/g, 'e.services');
 
       const total = await env.DB.prepare(`SELECT COUNT(*) as count FROM engineers ${where}`).bind(...params).first();
       const list = await env.DB.prepare(
         `SELECT
-           e.id, e.user_no, e.name, e.phone, e.company, e.specialties, e.service_region,
-           e.status, e.rating_count, e.rating_technical, e.created_at,
+           e.id, e.user_no, e.name, e.phone, e.company, e.specialties, e.services, e.service_region,
+           e.status, e.rating_count, e.rating_technical, e.total_orders, e.created_at,
            e.engineer_role, e.regional_lead_id, e.responsible_region, e.team_name,
            e.certification_status, e.cooperation_status, e.workload_status,
            rl.name as regional_lead_name
@@ -7572,6 +7582,7 @@ async function handleAdminUsers(request, env) {
         list: (list.results || []).map(e => ({
           ...e,
           specialties: typeof e.specialties === 'string' ? JSON.parse(e.specialties) : (e.specialties || []),
+          services: typeof e.services === 'string' ? JSON.parse(e.services) : (e.services || []),
         })),
       });
     } else {
@@ -7605,6 +7616,59 @@ async function handleAdminUsers(request, env) {
 }
 
 // 工单列表
+async function handleAdminEngineerDetail(request, env) {
+  try {
+    const engineerId = new URL(request.url).pathname.split('/').pop();
+    if (!engineerId) return errorResponse('缺少工程师 ID', 400);
+
+    const engineer = await env.DB.prepare(`
+      SELECT
+        e.id, e.user_no, e.name, e.phone, e.company, e.specialties, e.brands, e.services,
+        e.service_region, e.status, e.rating_count, e.rating_timeliness, e.rating_technical,
+        e.rating_communication, e.rating_professional, e.created_at, e.bio, e.total_orders,
+        e.complex_orders, e.success_orders, e.engineer_role, e.regional_lead_id,
+        e.responsible_region, e.team_name, e.certification_status, e.cooperation_status,
+        e.workload_status, rl.name as regional_lead_name, rl.user_no as regional_lead_no
+      FROM engineers e
+      LEFT JOIN engineers rl ON e.regional_lead_id = rl.id
+      WHERE e.id = ?
+    `).bind(engineerId).first();
+
+    if (!engineer) return errorResponse('工程师不存在', 404);
+
+    const workOrders = await env.DB.prepare(`
+      SELECT
+        w.id, w.order_no, w.type, w.urgency, w.status, w.created_at,
+        c.name as customer_name, c.company as customer_company, c.user_no as customer_no,
+        p.status as pricing_status, p.total_amount as pricing_total_amount, p.subtotal as pricing_subtotal
+      FROM work_orders w
+      LEFT JOIN customers c ON w.customer_id = c.id
+      LEFT JOIN work_order_pricing p ON p.work_order_id = w.id
+      WHERE w.engineer_id = ?
+      ORDER BY w.created_at DESC
+      LIMIT 50
+    `).bind(engineerId).all();
+
+    const rows = workOrders.results || [];
+    return jsonResponse({
+      engineer: {
+        ...engineer,
+        specialties: parseJsonArray(engineer.specialties),
+        brands: parseJsonArray(engineer.brands),
+        services: parseJsonArray(engineer.services),
+      },
+      stats: {
+        total_work_orders: rows.length,
+        completed_work_orders: rows.filter((row) => ['completed', 'resolved'].includes(row.status)).length,
+        active_work_orders: rows.filter((row) => !['completed', 'resolved', 'cancelled', 'rejected'].includes(row.status)).length,
+      },
+      work_orders: rows,
+    });
+  } catch (error) {
+    return errorResponse(error.message, 500);
+  }
+}
+
 async function handleAdminWorkOrders(request, env) {
   try {
     const url = new URL(request.url);
@@ -9852,6 +9916,9 @@ async function routeRequest(request, env, ctx) {
       }
       if (path === '/api/admin/users' && request.method === 'POST') {
         return handleAdminCreateUser(request, env);
+      }
+      if (path.match(/^\/api\/admin\/engineers\/[^/]+$/) && request.method === 'GET') {
+        return handleAdminEngineerDetail(request, env);
       }
       if (path === '/api/admin/engineer-applications' && request.method === 'GET') {
         return handleAdminEngineerApplications(request, env);

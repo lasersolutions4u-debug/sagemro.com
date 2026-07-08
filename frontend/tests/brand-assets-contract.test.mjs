@@ -137,17 +137,27 @@ test('assigned work orders expose quote preparation instead of only cancellation
   assert.match(detailModal, /pricingStatuses\.includes\(effectiveStatus\)/);
 });
 
-test('admin dispatch supports searchable engineer selection and local CSV backup', () => {
+test('admin dispatch stays simple while Engineers owns search and profiles', () => {
+  const app = read('admin/src/App.jsx');
   const workOrdersPage = read('admin/src/pages/WorkOrdersPage.jsx');
-  const usersPage = read('admin/src/pages/UsersPage.jsx');
+  const engineersPage = read('admin/src/pages/EngineersPage.jsx');
+  const api = read('admin/src/services/api.js');
 
-  assert.match(workOrdersPage, /function downloadCsv/);
-  assert.match(workOrdersPage, /exportEngineerPool/);
-  assert.match(workOrdersPage, /sagemro-engineer-pool\.csv/);
-  assert.match(workOrdersPage, /const \[engineerSearch, setEngineerSearch\] = useState\(\{\}\)/);
-  assert.match(workOrdersPage, /getEngineerSearchText\(engineer\)\.includes\(engineerQuery\)/);
-  assert.match(workOrdersPage, /describeEngineer\(selectedEngineer\)/);
-  assert.match(usersPage, /exportCurrentList/);
-  assert.match(usersPage, /sagemro-engineers-current\.csv/);
-  assert.match(usersPage, /sagemro-customers-current\.csv/);
+  assert.match(app, /import \{ EngineersPage \} from '\.\/pages\/EngineersPage'/);
+  assert.match(app, /engineers: 'Engineers'/);
+  assert.match(app, /users: 'Customers'/);
+  assert.match(app, /case 'engineers': return <EngineersPage \/>/);
+
+  assert.doesNotMatch(workOrdersPage, /engineerSearch/);
+  assert.doesNotMatch(workOrdersPage, /exportEngineerPool/);
+  assert.doesNotMatch(workOrdersPage, /filteredEngineers/);
+  assert.match(workOrdersPage, /engineer\.user_no/);
+
+  assert.match(engineersPage, /getAdminEngineerDetail/);
+  assert.match(engineersPage, /sagemro-engineers-current\.csv/);
+  assert.match(engineersPage, /filterService/);
+  assert.match(engineersPage, /selectedEngineer/);
+  assert.match(engineersPage, /work_orders/);
+
+  assert.match(api, /getAdminEngineerDetail\(engineerId\)/);
 });

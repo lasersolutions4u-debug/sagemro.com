@@ -1,8 +1,9 @@
 import { useState } from 'react';
-import { Boxes, ClipboardList, LayoutDashboard, Users, FileText, Star, LogOut, Target } from 'lucide-react';
+import { Boxes, ClipboardList, LayoutDashboard, Users, UserCog, FileText, Star, LogOut, Target } from 'lucide-react';
 import { LoginPage } from './pages/LoginPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { UsersPage } from './pages/UsersPage';
+import { EngineersPage } from './pages/EngineersPage';
 import { WorkOrdersPage } from './pages/WorkOrdersPage';
 import { RatingsPage } from './pages/RatingsPage';
 import { LeadsPage } from './pages/LeadsPage';
@@ -23,7 +24,8 @@ const TEXT = {
       workorders: 'Service Orders',
       engineerApplications: 'Engineer Applications',
       materials: 'Material Master',
-      users: 'Customers & Engineers',
+      engineers: 'Engineers',
+      users: 'Customers',
       ratings: 'Service Reviews',
     },
   },
@@ -52,6 +54,7 @@ const NAV_ITEMS = [
   { key: 'workorders', label: t.nav.workorders, icon: FileText },
   { key: 'materials', label: t.nav.materials, icon: Boxes },
   { key: 'engineerApplications', label: t.nav.engineerApplications, icon: ClipboardList },
+  { key: 'engineers', label: t.nav.engineers || 'Engineers', icon: UserCog },
   { key: 'users', label: t.nav.users, icon: Users },
   { key: 'ratings', label: t.nav.ratings, icon: Star },
 ];
@@ -78,6 +81,7 @@ export default function App() {
     switch (activePage) {
       case 'dashboard': return <DashboardPage />;
       case 'users': return <UsersPage />;
+      case 'engineers': return <EngineersPage />;
       case 'workorders': return <WorkOrdersPage />;
       case 'materials': return <MaterialsPage />;
       case 'engineerApplications': return <EngineerApplicationsPage />;
