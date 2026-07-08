@@ -470,8 +470,7 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
               <EngineerPricingPanel
                 workOrderId={workOrder.id}
                 engineerId={userId}
-                commissionRate={detail?.engineer_commission_rate || 0.80}
-                engineerLevel={detail?.engineer_level || 'junior'}
+                pricing={detail?.pricing || null}
                 onSubmitted={() => { loadDetail(); onConfirmed?.(); }}
               />
             )}

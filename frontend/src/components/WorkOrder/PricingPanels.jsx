@@ -10,7 +10,13 @@ import { PaymentModal } from '../Payment/PaymentModal';
 import { toastSuccess, toastError, toastWarning } from '../../utils/feedback';
 import { isCnLocale } from '../../utils/locale';
 import { MaterialPicker } from './MaterialPicker';
-import { createEngineerPricingDraft, getEngineerPricingTotals } from './pricingDraft';
+import {
+  createEngineerPricingDraft,
+  createEngineerPricingDraftFromPricing,
+  getEngineerPricingTotals,
+} from './pricingDraft';
+
+const CURRENCY = 'USD';
 
 const PRICING_COPY = {
   en: {
@@ -21,7 +27,7 @@ const PRICING_COPY = {
       confirmed: 'Confirmed',
     },
     priceCheck: {
-      reasonable: 'Price is reasonable',
+      reasonable: 'According to SAGEMRO AI market research, this price is within a reasonable range.',
       high: 'Price is on the high side',
       low: 'Price is on the low side',
     },
@@ -38,8 +44,7 @@ const PRICING_COPY = {
       otherPlaceholder: 'Miscellaneous',
       partsDetail: 'Other Fee Note (Optional)',
       partsDetailPlaceholder: 'e.g. special access, weekend support, crane, overtime',
-      quoteSubtotal: 'Quote Subtotal (Customer Pays)',
-      internalSettlement: 'Internal Settlement Estimate',
+      quoteSubtotal: 'Quote Subtotal Price',
       submitting: 'Submitting...',
       submit: 'Submit for Operations Review',
     },
@@ -48,19 +53,17 @@ const PRICING_COPY = {
       negotiationRequired: 'Please enter a reason for negotiation',
       negotiationToast: 'Negotiation initiated. Operations will review and submit a revised quote.',
       preparingQuote: 'SAGEMRO is preparing a formal quote. You will be notified after diagnosis, scope, and safety requirements are reviewed.',
-      serviceFee: 'Service Fee',
-      serviceManagementFee: 'SAGEMRO Service Management Fee',
-      totalPayable: 'Total Payable',
+      totalPayable: 'Quote Subtotal Price',
       confirmQuote: 'Confirm Quote',
       negotiate: 'Negotiate',
       negotiationPlaceholder: 'Please explain your reason for negotiation...',
-      counterOfferPlaceholder: 'Your expected price (CNY, optional)',
+      counterOfferPlaceholder: 'Your expected price (USD, optional)',
       cancel: 'Cancel',
       submitting: 'Submitting...',
       confirmNotice: 'After confirmation, SAGEMRO will begin service scheduling.',
       confirming: 'Confirming...',
       quoteConfirmed: 'Quote Confirmed',
-      payment: (amount) => `Proceed to Payment (${amount} CNY)`,
+      payment: (amount) => `Proceed to Payment (${amount} USD)`,
     },
   },
   cn: {
@@ -71,7 +74,7 @@ const PRICING_COPY = {
       confirmed: '已确认',
     },
     priceCheck: {
-      reasonable: '报价在合理范围内',
+      reasonable: '经过 SAGEMRO AI 市场调查，这个价格在合理区间内。',
       high: '报价偏高',
       low: '报价偏低',
     },
@@ -88,8 +91,7 @@ const PRICING_COPY = {
       otherPlaceholder: '其他必要费用',
       partsDetail: '其他费用备注（可选）',
       partsDetailPlaceholder: '例如：特殊进场、周末服务、吊车、加班',
-      quoteSubtotal: '报价小计（客户支付）',
-      internalSettlement: '内部结算预估',
+      quoteSubtotal: '报价小计价格',
       submitting: '提交中...',
       submit: '提交运营复核',
     },
@@ -98,19 +100,17 @@ const PRICING_COPY = {
       negotiationRequired: '请填写需要协商的原因',
       negotiationToast: '已发起协商。运营团队将复核并提交调整后的报价。',
       preparingQuote: 'SAGEMRO 正在准备正式报价。诊断方向、服务范围和安全要求复核后会通知你确认。',
-      serviceFee: '服务费用',
-      serviceManagementFee: 'SAGEMRO 服务管理费',
-      totalPayable: '应付合计',
+      totalPayable: '报价小计价格',
       confirmQuote: '确认报价',
       negotiate: '协商',
       negotiationPlaceholder: '请说明需要协商的原因...',
-      counterOfferPlaceholder: '你的期望价格（人民币，可选）',
+      counterOfferPlaceholder: '你的期望价格（美元，可选）',
       cancel: '取消',
       submitting: '提交中...',
       confirmNotice: '确认后，SAGEMRO 将开始推进服务排期。',
       confirming: '确认中...',
       quoteConfirmed: '报价已确认',
-      payment: (amount) => `继续支付（${amount} CNY）`,
+      payment: (amount) => `继续支付（${amount} USD）`,
     },
   },
 };
@@ -119,13 +119,14 @@ function getPricingCopy() {
   return isCnLocale() ? PRICING_COPY.cn : PRICING_COPY.en;
 }
 
-function readEngineerPricingDraft(workOrderId) {
-  if (typeof window === 'undefined') return createEngineerPricingDraft();
+function readEngineerPricingDraft(workOrderId, pricing) {
+  const fallbackDraft = pricing ? createEngineerPricingDraftFromPricing(pricing) : createEngineerPricingDraft();
+  if (typeof window === 'undefined') return fallbackDraft;
   try {
     const saved = window.sessionStorage.getItem(`sagemro_quote_draft:${workOrderId}`);
-    return createEngineerPricingDraft(saved ? JSON.parse(saved) : {});
+    return saved ? createEngineerPricingDraft(JSON.parse(saved)) : fallbackDraft;
   } catch {
-    return createEngineerPricingDraft();
+    return fallbackDraft;
   }
 }
 
@@ -202,9 +203,9 @@ export function AIPriceCheck({ check }) {
 }
 
 // ========== 核价区（工程师填写） ==========
-export function EngineerPricingPanel({ workOrderId, engineerId, onSubmitted, commissionRate = 0.80, engineerLevel = 'junior' }) {
+export function EngineerPricingPanel({ workOrderId, engineerId, pricing, onSubmitted }) {
   const t = getPricingCopy();
-  const initialDraft = readEngineerPricingDraft(workOrderId);
+  const initialDraft = readEngineerPricingDraft(workOrderId, pricing);
   const [form, setForm] = useState(initialDraft.form);
   const [materialItems, setMaterialItems] = useState(initialDraft.materialItems);
   const [submitting, setSubmitting] = useState(false);
@@ -213,10 +214,20 @@ export function EngineerPricingPanel({ workOrderId, engineerId, onSubmitted, com
     writeEngineerPricingDraft(workOrderId, { form, materialItems });
   }, [form, materialItems, workOrderId]);
 
-  const { partsFee, subtotal, internalEstimate } = getEngineerPricingTotals({
+  useEffect(() => {
+    const saved = typeof window !== 'undefined'
+      ? window.sessionStorage.getItem(`sagemro_quote_draft:${workOrderId}`)
+      : null;
+    if (!saved && pricing?.status === 'draft') {
+      const draft = createEngineerPricingDraftFromPricing(pricing);
+      setForm(draft.form);
+      setMaterialItems(draft.materialItems);
+    }
+  }, [pricing, workOrderId]);
+
+  const { partsFee, subtotal } = getEngineerPricingTotals({
     form,
     materialItems,
-    commissionRate,
   });
 
   const handleSubmit = async () => {
@@ -252,7 +263,7 @@ export function EngineerPricingPanel({ workOrderId, engineerId, onSubmitted, com
           placeholder={placeholder}
           className="w-full px-3 py-2 text-sm border border-[var(--color-border)] rounded-xl bg-[var(--color-surface)] text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
         />
-        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-[var(--color-text-muted)]">CNY</span>
+        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-[var(--color-text-muted)]">{CURRENCY}</span>
       </div>
     </div>
   );
@@ -266,7 +277,7 @@ export function EngineerPricingPanel({ workOrderId, engineerId, onSubmitted, com
           <div>
             <label className="block text-xs text-[var(--color-text-secondary)] mb-1">{t.engineer.partsFee}</label>
             <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-3 py-2 text-sm text-[var(--color-text-primary)]">
-              {partsFee} CNY
+              {partsFee} {CURRENCY}
             </div>
           </div>
         ) : field('parts_fee', t.engineer.partsFee, t.engineer.partsPlaceholder)}
@@ -288,15 +299,11 @@ export function EngineerPricingPanel({ workOrderId, engineerId, onSubmitted, com
       <MaterialPicker purpose="quote" workOrderId={workOrderId} items={materialItems} onChange={setMaterialItems} />
       {/* 费用汇总 */}
       <div className="p-3 bg-[var(--color-surface-elevated)] rounded-xl space-y-1.5 text-sm">
-        <div className="flex justify-between"><span className="text-[var(--color-text-secondary)]">{t.engineer.laborFee}</span><span>{form.labor_fee || 0} CNY</span></div>
-        <div className="flex justify-between"><span className="text-[var(--color-text-secondary)]">{t.engineer.partsFee}</span><span>{partsFee} CNY</span></div>
-        <div className="flex justify-between"><span className="text-[var(--color-text-secondary)]">{t.engineer.travelFee}</span><span>{form.travel_fee || 0} CNY</span></div>
-        <div className="flex justify-between"><span className="text-[var(--color-text-secondary)]">{t.engineer.otherFee}</span><span>{form.other_fee || 0} CNY</span></div>
-        <div className="flex justify-between border-t border-[var(--color-border)] pt-1.5"><span className="text-[var(--color-text-secondary)]">{t.engineer.quoteSubtotal}</span><span className="font-medium">{subtotal} CNY</span></div>
-        <div className="flex justify-between font-semibold text-[var(--color-primary)]">
-          <span>{t.engineer.internalSettlement} ({Math.round(commissionRate * 100)}%)</span>
-          <span>{internalEstimate} CNY</span>
-        </div>
+        <div className="flex justify-between"><span className="text-[var(--color-text-secondary)]">{t.engineer.laborFee}</span><span>{form.labor_fee || 0} {CURRENCY}</span></div>
+        <div className="flex justify-between"><span className="text-[var(--color-text-secondary)]">{t.engineer.partsFee}</span><span>{partsFee} {CURRENCY}</span></div>
+        <div className="flex justify-between"><span className="text-[var(--color-text-secondary)]">{t.engineer.travelFee}</span><span>{form.travel_fee || 0} {CURRENCY}</span></div>
+        <div className="flex justify-between"><span className="text-[var(--color-text-secondary)]">{t.engineer.otherFee}</span><span>{form.other_fee || 0} {CURRENCY}</span></div>
+        <div className="flex justify-between border-t border-[var(--color-border)] pt-1.5 font-semibold text-[var(--color-primary)]"><span>{t.engineer.quoteSubtotal}</span><span>{subtotal} {CURRENCY}</span></div>
       </div>
       <button
         data-testid="submit-pricing-button"
@@ -379,10 +386,10 @@ export function CustomerPricingPanel({ workOrderId, customerId, onConfirmed }) {
 
       {/* 费用明细 */}
       <div className="p-3 bg-[var(--color-surface-elevated)] rounded-xl space-y-1.5 text-sm">
-        <div className="flex justify-between"><span className="text-[var(--color-text-secondary)]">{t.engineer.laborFee}</span><span>{pricing.labor_fee || 0} CNY</span></div>
-        <div className="flex justify-between"><span className="text-[var(--color-text-secondary)]">{t.engineer.partsFee}</span><span>{pricing.parts_fee || 0} CNY</span></div>
-        <div className="flex justify-between"><span className="text-[var(--color-text-secondary)]">{t.engineer.travelFee}</span><span>{pricing.travel_fee || 0} CNY</span></div>
-        <div className="flex justify-between"><span className="text-[var(--color-text-secondary)]">{t.engineer.otherFee}</span><span>{pricing.other_fee || 0} CNY</span></div>
+        <div className="flex justify-between"><span className="text-[var(--color-text-secondary)]">{t.engineer.laborFee}</span><span>{pricing.labor_fee || 0} {CURRENCY}</span></div>
+        <div className="flex justify-between"><span className="text-[var(--color-text-secondary)]">{t.engineer.partsFee}</span><span>{pricing.parts_fee || 0} {CURRENCY}</span></div>
+        <div className="flex justify-between"><span className="text-[var(--color-text-secondary)]">{t.engineer.travelFee}</span><span>{pricing.travel_fee || 0} {CURRENCY}</span></div>
+        <div className="flex justify-between"><span className="text-[var(--color-text-secondary)]">{t.engineer.otherFee}</span><span>{pricing.other_fee || 0} {CURRENCY}</span></div>
         {formatQuoteNote(pricing.parts_detail) && (
           <div className="text-xs text-[var(--color-text-secondary)] pt-1 border-t border-[var(--color-border)]">
             Other Fee Note: {formatQuoteNote(pricing.parts_detail)}
@@ -394,22 +401,8 @@ export function CustomerPricingPanel({ workOrderId, customerId, onConfirmed }) {
             <MaterialPicker items={pricing.material_items} readonly />
           </div>
         )}
-        <div className="flex justify-between border-t border-[var(--color-border)] pt-1.5"><span className="text-[var(--color-text-secondary)]">{t.engineer.quoteSubtotal}</span><span className="font-medium">{pricing.subtotal || 0} CNY</span></div>
-        {/* Legacy platform fee fields are not exposed as marketplace fees in Service OS. */}
-        {pricing.platform_fee > 0 && (
-          <>
-            <div className="flex justify-between">
-              <span className="text-[var(--color-text-secondary)]">{t.customer.serviceFee}</span>
-              <span>{(pricing.subtotal || 0) - (pricing.platform_fee || 0)} CNY</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-[var(--color-text-secondary)]">{t.customer.serviceManagementFee}</span>
-              <span>{pricing.platform_fee} CNY</span>
-            </div>
-          </>
-        )}
-        <div className="flex justify-between font-semibold text-base text-[var(--color-primary)]">
-          <span>{t.customer.totalPayable}</span><span>{pricing.total_amount || pricing.subtotal || 0} CNY</span>
+        <div className="flex justify-between border-t border-[var(--color-border)] pt-1.5 font-semibold text-base text-[var(--color-primary)]">
+          <span>{t.engineer.quoteSubtotal}</span><span>{pricing.total_amount || pricing.subtotal || 0} {CURRENCY}</span>
         </div>
       </div>
 

@@ -9,6 +9,8 @@ const PAYMENT_METHODS = [
   { id: 'wechat', label: 'WeChat Pay', icon: Smartphone, desc: 'Simulated WeChat Pay' },
 ];
 
+const CURRENCY = 'USD';
+
 export function PaymentModal({ isOpen, onClose, workOrderId, customerId, onPaid }) {
   const [step, setStep] = useState('pay'); // pay | processing | success | already_paid
   const [pricing, setPricing] = useState(null);
@@ -97,7 +99,7 @@ export function PaymentModal({ isOpen, onClose, workOrderId, customerId, onPaid 
               <div className="bg-[var(--color-surface-elevated)] rounded-xl p-3 space-y-1.5 text-sm">
                 <div className="flex justify-between">
                   <span className="text-[var(--color-text-secondary)]">Amount</span>
-                  <span className="font-semibold text-[var(--color-text-primary)]">{result?.amount?.toLocaleString() || amount.toLocaleString()} CNY</span>
+                  <span className="font-semibold text-[var(--color-text-primary)]">{result?.amount?.toLocaleString() || amount.toLocaleString()} {CURRENCY}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-[var(--color-text-secondary)]">Payment Method</span>
@@ -129,7 +131,7 @@ export function PaymentModal({ isOpen, onClose, workOrderId, customerId, onPaid 
               <div className="bg-[var(--color-surface-elevated)] rounded-xl p-3 space-y-1.5 text-sm">
                 <div className="flex justify-between">
                   <span className="text-[var(--color-text-secondary)]">Amount</span>
-                  <span className="font-semibold text-[var(--color-text-primary)]">{result?.amount?.toLocaleString()} CNY</span>
+                  <span className="font-semibold text-[var(--color-text-primary)]">{result?.amount?.toLocaleString()} {CURRENCY}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-[var(--color-text-secondary)]">Transaction ID</span>
@@ -140,7 +142,7 @@ export function PaymentModal({ isOpen, onClose, workOrderId, customerId, onPaid 
             </div>
           ) : (
             <>
-              {/* 订单摘要 */}
+              {/* Order summary */}
               <div className="bg-[var(--color-surface-elevated)] rounded-xl p-3 space-y-1.5 text-sm">
                 <div className="flex justify-between">
                   <span className="text-[var(--color-text-secondary)]">Order No</span>
@@ -148,11 +150,11 @@ export function PaymentModal({ isOpen, onClose, workOrderId, customerId, onPaid 
                 </div>
                 <div className="border-t border-[var(--color-border)] pt-1.5 flex justify-between">
                   <span className="text-[var(--color-text-secondary)]">Amount</span>
-                  <span className="text-lg font-bold text-[var(--color-text-primary)]">{amount.toLocaleString()} CNY</span>
+                  <span className="text-lg font-bold text-[var(--color-text-primary)]">{amount.toLocaleString()} {CURRENCY}</span>
                 </div>
               </div>
 
-              {/* 付款方式选择 */}
+              {/* Payment method */}
               <div>
                 <label className="block text-xs text-[var(--color-text-secondary)] mb-2">Select Payment Method</label>
                 <div className="space-y-2">
@@ -187,7 +189,7 @@ export function PaymentModal({ isOpen, onClose, workOrderId, customerId, onPaid 
                 </div>
               </div>
 
-              {/* 安全提示 */}
+              {/* Payment notice */}
               <div className="flex items-start gap-2 p-2.5 bg-blue-500/5 border border-blue-500/10 rounded-xl">
                 <Shield size={16} className="text-blue-500 flex-shrink-0 mt-0.5" />
                 <div className="text-xs text-[var(--color-text-secondary)]">
@@ -196,14 +198,14 @@ export function PaymentModal({ isOpen, onClose, workOrderId, customerId, onPaid 
                 </div>
               </div>
 
-              {/* 付款按钮 */}
+              {/* Payment button */}
               <button
                 onClick={handlePay}
                 disabled={submitting}
                 className="w-full py-3 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] disabled:opacity-50 text-white rounded-xl font-semibold flex items-center justify-center gap-2 transition-colors"
               >
                 <MethodIcon size={20} />
-                {submitting ? 'Processing...' : `Pay ${amount.toLocaleString()} CNY`}
+                {submitting ? 'Processing...' : `Pay ${amount.toLocaleString()} ${CURRENCY}`}
               </button>
             </>
           )}

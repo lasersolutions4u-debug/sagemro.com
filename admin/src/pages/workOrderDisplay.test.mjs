@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import { test } from 'node:test';
 
 import {
@@ -26,18 +27,15 @@ test('builds quote review rows with fee breakdown and other fee note', () => {
     pricing_parts_detail: 'Custom parking fee',
     pricing_subtotal: 2080,
     pricing_total_amount: 2080,
-    engineer_commission_rate: 0.8,
-    pricing_platform_fee: 416,
   });
 
   assert.deepEqual(rows, [
-    ['Labor', '1,200 CNY'],
-    ['Parts', '500 CNY'],
-    ['Travel', '300 CNY'],
-    ['Other', '80 CNY'],
+    ['Labor', '1,200 USD'],
+    ['Parts', '500 USD'],
+    ['Travel', '300 USD'],
+    ['Other', '80 USD'],
     ['Other fee note', 'Custom parking fee'],
-    ['Engineer settlement', '1,664 CNY'],
-    ['Platform portion', '416 CNY'],
+    ['Quote subtotal price', '2,080 USD'],
   ]);
 });
 
@@ -53,4 +51,14 @@ test('formats AI summary JSON into readable review notes', () => {
   assert.match(formatted, /Urgency notes: Production is stopped\./);
   assert.equal(formatted.includes('{'), false);
   assert.equal(formatted.includes('required_specialties'), false);
+});
+
+test('work order quote display uses USD without internal settlement split', async () => {
+  const source = await readFile(new URL('./WorkOrdersPage.jsx', import.meta.url), 'utf8');
+
+  assert.equal(source.includes(' CNY'), false);
+  assert.equal(source.includes('internalSettlement'), false);
+  assert.equal(source.includes('platformPart'), false);
+  assert.match(source, /Quote subtotal price/);
+  assert.match(source, /USD/);
 });

@@ -56,7 +56,7 @@ function MoneyRow({ label, value }) {
   return (
     <div className="flex items-center justify-between gap-3 rounded-lg bg-[var(--color-surface-elevated)] px-3 py-2">
       <span>{label}</span>
-      <span className="font-semibold text-[var(--color-primary)]">{money(value)} CNY</span>
+      <span className="font-semibold text-[var(--color-primary)]">{money(value)} USD</span>
     </div>
   );
 }
@@ -166,7 +166,7 @@ const TEXT = {
     viewQuoteDetail: 'Review full order',
     reviewQuoteFirst: 'Open the quote details before approving.',
     fullOrderReviewTitle: 'Full order review required',
-    fullOrderReviewHint: 'Review the customer issue, AI summary, attachments, quote details, parts, settlement split, and internal notes before approval.',
+    fullOrderReviewHint: 'Review the customer issue, AI summary, attachments, quote details, parts, quote subtotal price, and internal notes before approval.',
     archive: 'Archive',
     regionalLeadOption: 'Select regional lead',
     assigning: 'Assigning',
@@ -186,10 +186,7 @@ const TEXT = {
     engineerLabel: 'Engineer',
     quoteReviewLabel: 'Quote review',
     quoteDetailTitle: 'Quote Details',
-    customerPays: 'Customer pays',
-    internalSettlement: 'Internal settlement estimate',
-    platformServiceFee: 'Platform service / management portion',
-    settlementRule: 'Calculated from the engineer settlement rate. Example: 80% to internal settlement, 20% retained by platform.',
+    quoteSubtotalPrice: 'Quote subtotal price',
     otherFeeNote: 'Other fee note',
     partsList: 'Parts list',
     aiPriceCheck: 'AI price check',
@@ -581,7 +578,7 @@ export function WorkOrdersPage() {
                           <div className="min-w-[170px] space-y-2">
                             <div className="text-xs text-[var(--color-text-secondary)]">
                               {wo.pricing_status
-                                ? `${t.pricing[wo.pricing_status] || wo.pricing_status}${wo.pricing_total_amount || wo.pricing_subtotal ? ` · ${money(wo.pricing_total_amount || wo.pricing_subtotal)} CNY` : ''}`
+                                ? `${t.pricing[wo.pricing_status] || wo.pricing_status}${wo.pricing_total_amount || wo.pricing_subtotal ? ` · ${money(wo.pricing_total_amount || wo.pricing_subtotal)} USD` : ''}`
                                 : t.noQuote}
                             </div>
                             {wo.pricing_status === 'pending_review' && (
@@ -780,9 +777,6 @@ export function WorkOrdersPage() {
                     const pricing = detail.pricing;
                     const parts = quoteParts(detail);
                     const subtotal = pricing.subtotal || pricing.total_amount || 0;
-                    const commissionRate = detail.engineer_commission_rate || 0.8;
-                    const internalSettlement = Math.round(subtotal * commissionRate);
-                    const platformPart = Math.max(0, subtotal - internalSettlement);
                     const note = formatQuoteNote(pricing.parts_detail);
                     const aiCheck = quoteAiCheck(pricing);
                     return (
@@ -813,8 +807,8 @@ export function WorkOrdersPage() {
                                       <div className="text-[var(--color-text-muted)]">{[part.material_code, part.spec, part.brand].filter(Boolean).join(' · ') || '-'}</div>
                                     </td>
                                     <td className="px-3 py-2 text-right">{part.quantity || 1} {part.unit || 'pcs'}</td>
-                                    <td className="px-3 py-2 text-right">{money(part.unit_price)} CNY</td>
-                                    <td className="px-3 py-2 text-right">{money(part.line_total || Number(part.quantity || 0) * Number(part.unit_price || 0))} CNY</td>
+                                    <td className="px-3 py-2 text-right">{money(part.unit_price)} USD</td>
+                                    <td className="px-3 py-2 text-right">{money(part.line_total || Number(part.quantity || 0) * Number(part.unit_price || 0))} USD</td>
                                   </tr>
                                 ))}
                               </tbody>
@@ -823,18 +817,9 @@ export function WorkOrdersPage() {
                         )}
                         <div className="rounded-lg bg-[var(--color-surface-elevated)] p-3">
                           <div className="flex justify-between">
-                            <span>{t.customerPays || 'Customer pays'}</span>
-                            <span className="font-semibold text-[var(--color-text)]">{money(subtotal)} CNY</span>
+                            <span>{t.quoteSubtotalPrice || 'Quote subtotal price'}</span>
+                            <span className="font-semibold text-[var(--color-primary)]">{money(subtotal)} USD</span>
                           </div>
-                          <div className="mt-1 flex justify-between">
-                            <span>{t.internalSettlement || 'Internal settlement estimate'} ({Math.round(commissionRate * 100)}%)</span>
-                            <span className="font-semibold text-[var(--color-primary)]">{money(internalSettlement)} CNY</span>
-                          </div>
-                          <div className="mt-1 flex justify-between">
-                            <span>{t.platformServiceFee || 'Platform service / management portion'} ({Math.round((1 - commissionRate) * 100)}%)</span>
-                            <span>{money(platformPart)} CNY</span>
-                          </div>
-                          <div className="mt-2 text-xs text-[var(--color-text-muted)]">{t.settlementRule || 'Calculated from the engineer settlement rate.'}</div>
                         </div>
                         {aiCheck && (
                           <div className="rounded-lg border border-[var(--color-border)] p-3">

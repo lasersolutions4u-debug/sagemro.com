@@ -151,7 +151,7 @@ test('admin dispatch stays simple while Engineers owns search and profiles', () 
   assert.doesNotMatch(workOrdersPage, /engineerSearch/);
   assert.doesNotMatch(workOrdersPage, /exportEngineerPool/);
   assert.doesNotMatch(workOrdersPage, /filteredEngineers/);
-  assert.match(workOrdersPage, /engineer\.user_no/);
+  assert.match(workOrdersPage, /formatEngineerOption\(engineer\)/);
 
   assert.match(engineersPage, /getAdminEngineerDetail/);
   assert.match(engineersPage, /sagemro-engineers-current\.csv/);

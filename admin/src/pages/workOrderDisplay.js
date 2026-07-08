@@ -86,26 +86,14 @@ export function formatEngineerOption(engineer) {
 
 export function getQuoteReviewRows(wo) {
   const subtotal = Number(wo.pricing_total_amount || wo.pricing_subtotal || 0);
-  const platformFee = Number(wo.pricing_platform_fee || 0);
-  const commissionRate = Number(wo.engineer_commission_rate || 0);
-  const engineerSettlement = platformFee > 0
-    ? subtotal - platformFee
-    : commissionRate > 0
-      ? subtotal * commissionRate
-      : 0;
   const rows = [
-    ['Labor', `${money(wo.pricing_labor_fee)} CNY`],
-    ['Parts', `${money(wo.pricing_parts_fee)} CNY`],
-    ['Travel', `${money(wo.pricing_travel_fee)} CNY`],
-    ['Other', `${money(wo.pricing_other_fee)} CNY`],
+    ['Labor', `${money(wo.pricing_labor_fee)} USD`],
+    ['Parts', `${money(wo.pricing_parts_fee)} USD`],
+    ['Travel', `${money(wo.pricing_travel_fee)} USD`],
+    ['Other', `${money(wo.pricing_other_fee)} USD`],
   ];
   const note = formatQuoteNote(wo.pricing_parts_detail);
   if (note) rows.push(['Other fee note', note]);
-  if (engineerSettlement > 0) {
-    rows.push(['Engineer settlement', `${money(engineerSettlement)} CNY`]);
-  }
-  if (platformFee > 0) {
-    rows.push(['Platform portion', `${money(platformFee)} CNY`]);
-  }
+  rows.push(['Quote subtotal price', `${money(subtotal)} USD`]);
   return rows;
 }
