@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { signJwt } from '../src/lib/auth.js';
-import { handleChat } from '../src/index.js';
+import { buildWorkOrderSummaryPrompt, handleChat } from '../src/index.js';
 
 const JWT_SECRET = 'chat-access-test-secret-32-chars';
 
@@ -273,6 +273,19 @@ test('handleChat tells COM site to answer English by default', async () => {
   assert.match(prompt, /Market: International edition \/ sagemro\.com/);
 });
 
+test('handleChat keeps COM site AI output in English even when the user writes Chinese', async () => {
+  const prompt = await captureChatPrompt({
+    request: makeRequest({
+      conversation_id: 'com-chinese-input-1',
+      message: '激光切割机自动对焦失败，Z 轴不动作，怎么办？',
+    }, null, 'https://api.sagemro.com/api/chat', 'https://sagemro.com'),
+  });
+
+  assert.match(prompt, /You MUST answer this turn in English/);
+  assert.match(prompt, /For sagemro\.com, keep all AI-generated replies, service-ready summaries, work-order summaries, progress text, and AI analysis in English even if the user writes in Chinese/);
+  assert.doesNotMatch(prompt, /Use Chinese only if the user clearly writes in Chinese/);
+});
+
 test('handleChat prompt keeps simple questions useful without pushing a work order', async () => {
   const prompt = await captureChatPrompt({
     request: makeRequest({
@@ -284,4 +297,31 @@ test('handleChat prompt keeps simple questions useful without pushing a work ord
   assert.match(prompt, /Do not push a work order or service request after a simple question is already answered clearly/);
   assert.match(prompt, /Add a short SAGEMRO service follow-up offer only when manual confirmation, quotation, parts, service scheduling, safety handling, or reviewed parameter verification is clearly useful/);
   assert.match(prompt, /If the user did not explicitly request a detailed plan, table, report, or full checklist, write exactly 5 compact lines/);
+});
+
+test('work order summary prompt keeps COM generated summaries in English', () => {
+  const prompt = buildWorkOrderSummaryPrompt({
+    type: 'fault',
+    description: '激光切割机自动对焦失败，Z 轴不动作。',
+    urgency: 'urgent',
+    market: 'com',
+  });
+
+  assert.match(prompt, /You are a work order analysis assistant/);
+  assert.match(prompt, /Return JSON fields in English/);
+  assert.match(prompt, /Work order summary, required specialties, suggested skills, urgency notes, and AI analysis must be written in English/);
+  assert.doesNotMatch(prompt, /你是工单分析助手/);
+});
+
+test('work order summary prompt keeps CN generated summaries in Simplified Chinese', () => {
+  const prompt = buildWorkOrderSummaryPrompt({
+    type: 'fault',
+    description: '激光切割机自动对焦失败，Z 轴不动作。',
+    urgency: 'urgent',
+    market: 'cn',
+  });
+
+  assert.match(prompt, /你是工单分析助手/);
+  assert.match(prompt, /只返回 JSON/);
+  assert.doesNotMatch(prompt, /Return JSON fields in English/);
 });

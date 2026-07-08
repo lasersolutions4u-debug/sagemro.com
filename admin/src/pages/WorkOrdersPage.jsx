@@ -48,6 +48,45 @@ function isImageAttachment(attachment) {
   return attachment?.file_type?.startsWith('image/');
 }
 
+function csvCell(value) {
+  const text = String(value ?? '').replace(/\r?\n/g, ' ');
+  return `"${text.replace(/"/g, '""')}"`;
+}
+
+function downloadCsv(filename, rows) {
+  const csv = rows.map((row) => row.map(csvCell).join(',')).join('\n');
+  const blob = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+function getEngineerSearchText(engineer) {
+  return [
+    engineer.name,
+    engineer.phone,
+    engineer.company,
+    engineer.service_region,
+    engineer.responsible_region,
+    engineer.team_name,
+    engineer.specialties,
+    engineer.services,
+  ].filter(Boolean).join(' ').toLowerCase();
+}
+
+function describeEngineer(engineer) {
+  if (!engineer) return '';
+  return [
+    engineer.service_region || engineer.responsible_region,
+    engineer.team_name,
+    engineer.specialties,
+    engineer.rating_avg ? `rating ${formatScore(engineer.rating_avg)}` : '',
+  ].filter(Boolean).join(' · ');
+}
+
 const TEXT = {
   en: {
     statuses: {
@@ -127,6 +166,8 @@ const TEXT = {
     engineerOption: 'Select engineer',
     dispatching: 'Dispatching',
     directDispatch: 'Direct dispatch',
+    searchEngineer: 'Search engineer by name, region, skill, or team',
+    exportEngineers: 'Export engineer pool',
     view: 'View',
     previous: 'Previous',
     next: 'Next',
@@ -252,6 +293,8 @@ const TEXT = {
     engineerOption: '选择工程师',
     dispatching: '派工中',
     directDispatch: '直接派工',
+    searchEngineer: '按姓名、地区、技能或团队搜索工程师',
+    exportEngineers: '导出工程师池',
     view: '查看',
     previous: '上一页',
     next: '下一页',
@@ -309,6 +352,7 @@ export function WorkOrdersPage() {
   const [regionalLeads, setRegionalLeads] = useState([]);
   const [selectedEngineers, setSelectedEngineers] = useState({});
   const [selectedRegionalLeads, setSelectedRegionalLeads] = useState({});
+  const [engineerSearch, setEngineerSearch] = useState({});
   const [assigningId, setAssigningId] = useState('');
   const [message, setMessage] = useState('');
   const [detailOpen, setDetailOpen] = useState(false);
@@ -333,7 +377,7 @@ export function WorkOrdersPage() {
   }, [status, page]);
 
   useEffect(() => {
-    getAdminUsers('engineer', 1, 100, { status: 'available' })
+    getAdminUsers('engineer', 1, 50, { status: 'available' })
       .then((res) => {
         const list = res.list || [];
         setEngineers(list.filter((engineer) => engineer.engineer_role !== 'regional_lead'));
@@ -346,6 +390,24 @@ export function WorkOrdersPage() {
   }, []);
 
   const totalPages = Math.max(1, Math.ceil(data.total / pageSize));
+
+  function exportEngineerPool() {
+    downloadCsv('sagemro-engineer-pool.csv', [
+      ['id', 'name', 'phone', 'role', 'service_region', 'responsible_region', 'team_name', 'status', 'rating', 'company'],
+      ...[...regionalLeads, ...engineers].map((engineer) => [
+        engineer.id,
+        engineer.name,
+        engineer.phone,
+        engineer.engineer_role || 'engineer',
+        engineer.service_region,
+        engineer.responsible_region,
+        engineer.team_name,
+        engineer.status,
+        engineer.rating_avg,
+        engineer.company,
+      ]),
+    ]);
+  }
 
   const statusTabs = [
     { key: 'all', label: t.tabs.all },
@@ -516,11 +578,19 @@ export function WorkOrdersPage() {
 
   return (
     <div>
-      <div className="mb-6">
+      <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
+        <div>
           <h2 className="text-lg font-semibold">{t.title}</h2>
           <p className="text-sm text-[var(--color-text-muted)] mt-1">
-          {t.subtitle}
-        </p>
+            {t.subtitle}
+          </p>
+        </div>
+        <button
+          onClick={exportEngineerPool}
+          className="rounded-lg border border-[var(--color-border)] px-3 py-2 text-xs text-[var(--color-text-secondary)] hover:text-[var(--color-text)]"
+        >
+          {t.exportEngineers}
+        </button>
       </div>
       {message && (
         <div className="mb-4 rounded-lg bg-[var(--color-surface-elevated)] px-4 py-3 text-sm text-[var(--color-text-secondary)]">
@@ -575,6 +645,11 @@ export function WorkOrdersPage() {
                 ) : (
                   data.list.map((wo) => {
                     const statusInfo = STATUS_MAP[wo.status] || { color: 'var(--color-text-muted)' };
+                    const engineerQuery = (engineerSearch[wo.id] || '').trim().toLowerCase();
+                    const filteredEngineers = engineerQuery
+                      ? engineers.filter((engineer) => getEngineerSearchText(engineer).includes(engineerQuery))
+                      : engineers;
+                    const selectedEngineer = engineers.find((engineer) => engineer.id === (selectedEngineers[wo.id] || wo.engineer_id));
                     return (
                       <tr key={wo.id} className="border-b border-[var(--color-border)]/50 hover:bg-[var(--color-surface-elevated)]/50">
                         <td className="py-3 px-2 font-mono text-[var(--color-primary)]">{wo.order_no}</td>
@@ -667,26 +742,39 @@ export function WorkOrdersPage() {
                                 {assigningId === `${wo.id}:lead` ? t.assigning : t.assignRegion}
                               </button>
                             </div>
-                            <div className="flex items-center gap-2">
-                            <select
-                              value={selectedEngineers[wo.id] || wo.engineer_id || ''}
-                              onChange={(event) => setSelectedEngineers((prev) => ({ ...prev, [wo.id]: event.target.value }))}
-                              className="min-w-0 flex-1 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-2 py-1.5 text-xs text-[var(--color-text)]"
-                            >
-                              <option value="">{t.engineerOption}</option>
-                              {engineers.map((engineer) => (
-                                <option key={engineer.id} value={engineer.id}>
-                                  {engineer.name}{engineer.service_region ? ` · ${engineer.service_region}` : ''}
-                                </option>
-                              ))}
-                            </select>
-                            <button
-                              onClick={() => handleAssign(wo)}
-                              disabled={assigningId === `${wo.id}:engineer`}
-                              className="rounded-lg bg-[var(--color-primary)] px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50"
-                            >
-                              {assigningId === `${wo.id}:engineer` ? t.dispatching : t.directDispatch}
-                            </button>
+                            <div className="space-y-1">
+                              <input
+                                value={engineerSearch[wo.id] || ''}
+                                onChange={(event) => setEngineerSearch((prev) => ({ ...prev, [wo.id]: event.target.value }))}
+                                placeholder={t.searchEngineer}
+                                className="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1.5 text-xs text-[var(--color-text)]"
+                              />
+                              <div className="flex items-center gap-2">
+                                <select
+                                  value={selectedEngineers[wo.id] || wo.engineer_id || ''}
+                                  onChange={(event) => setSelectedEngineers((prev) => ({ ...prev, [wo.id]: event.target.value }))}
+                                  className="min-w-0 flex-1 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-2 py-1.5 text-xs text-[var(--color-text)]"
+                                >
+                                  <option value="">{t.engineerOption}</option>
+                                  {filteredEngineers.map((engineer) => (
+                                    <option key={engineer.id} value={engineer.id}>
+                                      {engineer.name}{engineer.service_region ? ` · ${engineer.service_region}` : ''}
+                                    </option>
+                                  ))}
+                                </select>
+                                <button
+                                  onClick={() => handleAssign(wo)}
+                                  disabled={assigningId === `${wo.id}:engineer`}
+                                  className="rounded-lg bg-[var(--color-primary)] px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50"
+                                >
+                                  {assigningId === `${wo.id}:engineer` ? t.dispatching : t.directDispatch}
+                                </button>
+                              </div>
+                              {selectedEngineer && (
+                                <div className="rounded-lg bg-[var(--color-surface-elevated)] px-2 py-1 text-xs text-[var(--color-text-muted)]">
+                                  {describeEngineer(selectedEngineer) || selectedEngineer.phone || selectedEngineer.id}
+                                </div>
+                              )}
                             </div>
                           </div>
                         </td>

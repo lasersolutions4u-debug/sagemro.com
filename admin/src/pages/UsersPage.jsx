@@ -40,6 +40,22 @@ const COMMON_SERVICES = [
   { value: '配件供应', en: 'Spare parts supply', zh: '配件供应' },
 ];
 
+function csvCell(value) {
+  const text = String(value ?? '').replace(/\r?\n/g, ' ');
+  return `"${text.replace(/"/g, '""')}"`;
+}
+
+function downloadCsv(filename, rows) {
+  const csv = rows.map((row) => row.map(csvCell).join(',')).join('\n');
+  const blob = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
 const TEXT = {
   en: {
     optionKey: 'en',
@@ -50,6 +66,7 @@ const TEXT = {
     },
     title: 'User Management',
     addUser: 'Add user',
+    exportCurrent: 'Export current list',
     customer: 'Customer',
     engineer: 'Engineer',
     searchPlaceholder: 'Search name, company, or phone...',
@@ -118,6 +135,7 @@ const TEXT = {
     },
     title: '用户管理',
     addUser: '添加用户',
+    exportCurrent: '导出当前列表',
     customer: '客户',
     engineer: '工程师',
     searchPlaceholder: '搜索姓名、公司名或手机号...',
@@ -312,17 +330,56 @@ export function UsersPage() {
 
   const hasActiveFilters = search || filterStatus || filterRegion || filterSpecialty;
 
+  const exportCurrentList = () => {
+    const filename = type === 'engineer' ? 'sagemro-engineers-current.csv' : 'sagemro-customers-current.csv';
+    const headers = type === 'engineer'
+      ? ['id', 'user_no', 'name', 'company', 'phone', 'status', 'engineer_role', 'regional_lead_name', 'service_region', 'responsible_region', 'team_name', 'specialties', 'services', 'rating_technical', 'rating_count', 'created_at']
+      : ['id', 'user_no', 'name', 'company', 'phone', 'region', 'created_at'];
+    const rows = data.list.map((user) => (
+      type === 'engineer'
+        ? [
+            user.id,
+            user.user_no,
+            user.name,
+            user.company,
+            user.phone,
+            user.status,
+            user.engineer_role,
+            user.regional_lead_name,
+            user.service_region,
+            user.responsible_region,
+            user.team_name,
+            (user.specialties || []).join('; '),
+            (user.services || []).join('; '),
+            user.rating_technical,
+            user.rating_count,
+            user.created_at,
+          ]
+        : [user.id, user.user_no, user.name, user.company, user.phone, user.region, user.created_at]
+    ));
+    downloadCsv(filename, [headers, ...rows]);
+  };
+
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
         <h2 className="text-lg font-semibold">{t.title}</h2>
-        <button
-          onClick={() => { resetAddForm(); setShowAdd(true); }}
-          className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm bg-[var(--color-primary)] text-white hover:opacity-90 transition-opacity"
-        >
-          <Plus size={16} />
-          {t.addUser}
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={exportCurrentList}
+            disabled={data.list.length === 0}
+            className="px-3 py-2 rounded-lg text-sm border border-[var(--color-border)] text-[var(--color-text-secondary)] hover:text-[var(--color-text)] disabled:opacity-40"
+          >
+            {t.exportCurrent}
+          </button>
+          <button
+            onClick={() => { resetAddForm(); setShowAdd(true); }}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm bg-[var(--color-primary)] text-white hover:opacity-90 transition-opacity"
+          >
+            <Plus size={16} />
+            {t.addUser}
+          </button>
+        </div>
       </div>
 
       {/* Tab 切换 */}
