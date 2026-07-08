@@ -11,6 +11,45 @@ export function parseJsonValue(value) {
   }
 }
 
+function humanizeKey(key) {
+  return String(key || '')
+    .replace(/_/g, ' ')
+    .replace(/([a-z])([A-Z])/g, '$1 $2')
+    .trim()
+    .replace(/^./, (char) => char.toUpperCase());
+}
+
+function formatDisplayValue(value) {
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => formatDisplayValue(item))
+      .filter(Boolean)
+      .join(', ');
+  }
+  if (value && typeof value === 'object') {
+    return Object.entries(value)
+      .map(([key, item]) => `${humanizeKey(key)}: ${formatDisplayValue(item)}`)
+      .filter(Boolean)
+      .join('; ');
+  }
+  return value == null ? '' : String(value);
+}
+
+export function formatAiSummary(value) {
+  const parsed = parseJsonValue(value);
+  if (!parsed) return '';
+  if (typeof parsed === 'string') return parsed;
+  if (Array.isArray(parsed)) return formatDisplayValue(parsed);
+
+  return Object.entries(parsed)
+    .map(([key, item]) => {
+      const displayValue = formatDisplayValue(item);
+      return displayValue ? `${humanizeKey(key)}: ${displayValue}` : '';
+    })
+    .filter(Boolean)
+    .join('\n');
+}
+
 export function formatListValue(value) {
   const parsed = parseJsonValue(value);
   if (Array.isArray(parsed)) {

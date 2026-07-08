@@ -13,10 +13,10 @@ import {
 } from '../services/api';
 import { runtimeConfig } from '../config/runtime';
 import {
+  formatAiSummary,
   formatEngineerOption,
   formatListValue,
   formatQuoteNote,
-  getQuoteReviewRows,
   money,
   parseJsonValue,
 } from './workOrderDisplay';
@@ -160,9 +160,13 @@ const TEXT = {
     conflictFallback: 'Conflict exists',
     noQuote: 'No quote',
     approve: 'Approve',
+    approveFullOrder: 'Approve full order',
     return: 'Return',
-    viewQuoteDetail: 'Show details',
+    returnQuote: 'Return quote',
+    viewQuoteDetail: 'Review full order',
     reviewQuoteFirst: 'Open the quote details before approving.',
+    fullOrderReviewTitle: 'Full order review required',
+    fullOrderReviewHint: 'Review the customer issue, AI summary, attachments, quote details, parts, settlement split, and internal notes before approval.',
     archive: 'Archive',
     regionalLeadOption: 'Select regional lead',
     assigning: 'Assigning',
@@ -370,6 +374,16 @@ export function WorkOrdersPage() {
             : item
         )),
       }));
+      setDetail((prev) => (
+        prev?.id === wo.id
+          ? {
+              ...prev,
+              status: 'pricing',
+              quote_review_status: 'approved',
+              pricing: prev.pricing ? { ...prev.pricing, status: 'submitted' } : prev.pricing,
+            }
+          : prev
+      ));
       setMessage(t.quoteSent(wo.order_no));
     } catch (err) {
       setMessage(err.message || t.quoteReviewFailed);
@@ -392,6 +406,16 @@ export function WorkOrdersPage() {
             : item
         )),
       }));
+      setDetail((prev) => (
+        prev?.id === wo.id
+          ? {
+              ...prev,
+              status: 'in_progress',
+              quote_review_status: 'rejected',
+              pricing: prev.pricing ? { ...prev.pricing, status: 'draft' } : prev.pricing,
+            }
+          : prev
+      ));
       setMessage(t.quoteReturned(wo.order_no));
     } catch (err) {
       setMessage(err.message || t.quoteReturnFailed);
@@ -518,7 +542,14 @@ export function WorkOrdersPage() {
                     const statusInfo = STATUS_MAP[wo.status] || { color: 'var(--color-text-muted)' };
                     return (
                       <tr key={wo.id} className="border-b border-[var(--color-border)]/50 hover:bg-[var(--color-surface-elevated)]/50">
-                        <td className="py-3 px-2 font-mono text-[var(--color-primary)]">{wo.order_no}</td>
+                        <td className="py-3 px-2">
+                          <button
+                            onClick={() => openDetail(wo)}
+                            className="font-mono text-left text-[var(--color-primary)] hover:underline"
+                          >
+                            {wo.order_no}
+                          </button>
+                        </td>
                         <td className="py-3 px-2">
                           <div>{wo.customer_name || '-'}</div>
                           {wo.customer_company && <div className="text-xs text-[var(--color-text-muted)]">{wo.customer_company}</div>}
@@ -555,34 +586,12 @@ export function WorkOrdersPage() {
                             </div>
                             {wo.pricing_status === 'pending_review' && (
                               <div className="space-y-2">
-                                <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-elevated)] p-2 text-[11px] text-[var(--color-text-secondary)]">
-                                  {getQuoteReviewRows(wo).map(([label, value]) => (
-                                    <div key={label} className="flex justify-between gap-3">
-                                      <span>{label}</span>
-                                      <span className="max-w-[150px] text-right text-[var(--color-text)]">{value}</span>
-                                    </div>
-                                  ))}
-                                </div>
                                 <div className="flex flex-wrap gap-1">
                                   <button
                                     onClick={() => openDetail(wo)}
                                     className="rounded-lg border border-[var(--color-primary)]/40 px-2 py-1 text-xs text-[var(--color-primary)]"
                                   >
                                     {t.viewQuoteDetail || t.view}
-                                  </button>
-                                  <button
-                                    onClick={() => handleApprovePricing(wo)}
-                                    disabled={assigningId === `${wo.id}:approve`}
-                                    className="rounded-lg bg-[var(--color-primary)] px-2 py-1 text-xs text-white disabled:opacity-50"
-                                  >
-                                    {t.approve}
-                                  </button>
-                                  <button
-                                    onClick={() => handleRejectPricing(wo)}
-                                    disabled={assigningId === `${wo.id}:reject`}
-                                    className="rounded-lg border border-[var(--color-border)] px-2 py-1 text-xs text-[var(--color-text-secondary)] disabled:opacity-50"
-                                  >
-                                    {t.return}
                                   </button>
                                 </div>
                               </div>
@@ -692,7 +701,7 @@ export function WorkOrdersPage() {
       {detailOpen && (
         <div className="fixed inset-0 z-50 flex justify-end">
           <div className="absolute inset-0 bg-black/40" onClick={() => setDetailOpen(false)} />
-          <div className="relative h-full w-full max-w-2xl overflow-y-auto bg-[var(--color-surface)] p-5 shadow-2xl">
+          <div className="relative h-full w-full max-w-4xl overflow-y-auto bg-[var(--color-surface)] p-5 shadow-2xl">
             <div className="mb-4 flex items-start justify-between gap-4">
               <div>
                 <div className="text-xs uppercase tracking-[0.18em] text-[var(--color-primary)]">Service Record</div>
@@ -711,6 +720,32 @@ export function WorkOrdersPage() {
               <div className="py-12 text-center text-sm text-[var(--color-text-muted)]">{t.loading}</div>
             ) : detail ? (
               <div className="space-y-4">
+                {detail.pricing?.status === 'pending_review' && (
+                  <section className="rounded-xl border border-[var(--color-primary)]/40 bg-[var(--color-primary)]/5 p-4">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                      <div>
+                        <h4 className="font-medium text-[var(--color-text)]">{t.fullOrderReviewTitle}</h4>
+                        <p className="mt-1 text-sm text-[var(--color-text-secondary)]">{t.fullOrderReviewHint}</p>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          onClick={() => handleRejectPricing(detail)}
+                          disabled={assigningId === `${detail.id}:reject`}
+                          className="rounded-lg border border-[var(--color-border)] px-3 py-2 text-sm text-[var(--color-text-secondary)] disabled:opacity-50"
+                        >
+                          {t.returnQuote || t.return}
+                        </button>
+                        <button
+                          onClick={() => handleApprovePricing(detail)}
+                          disabled={assigningId === `${detail.id}:approve`}
+                          className="rounded-lg bg-[var(--color-primary)] px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
+                        >
+                          {t.approveFullOrder || t.approve}
+                        </button>
+                      </div>
+                    </div>
+                  </section>
+                )}
                 <section className="rounded-xl bg-[var(--color-surface-elevated)] p-4">
                   <div className="mb-2 flex items-center justify-between gap-3">
                     <div className="font-mono text-[var(--color-primary)]">{detail.order_no}</div>
@@ -727,9 +762,9 @@ export function WorkOrdersPage() {
 
                 <section className="rounded-xl border border-[var(--color-border)] p-4">
                   <h4 className="mb-2 font-medium">{t.aiSummaryTitle}</h4>
-                  <pre className="whitespace-pre-wrap rounded-lg bg-[var(--color-surface-elevated)] p-3 text-xs text-[var(--color-text-secondary)]">
-                    {detail.ai_summary || t.noAiSummary}
-                  </pre>
+                  <div className="whitespace-pre-wrap rounded-lg bg-[var(--color-surface-elevated)] p-3 text-xs text-[var(--color-text-secondary)]">
+                    {formatAiSummary(detail.ai_summary) || t.noAiSummary}
+                  </div>
                 </section>
 
                 <section className="rounded-xl border border-[var(--color-border)] p-4">
@@ -775,7 +810,7 @@ export function WorkOrdersPage() {
                                   <tr key={part.id || `${part.material_code || part.name}-${index}`} className="border-t border-[var(--color-border)]">
                                     <td className="px-3 py-2">
                                       <div className="text-[var(--color-text)]">{part.name_en || part.name || '-'}</div>
-                                      <div className="text-[var(--color-text-muted)]">{[part.material_code, part.spec, part.brand].filter(Boolean).join(' 路 ') || '-'}</div>
+                                      <div className="text-[var(--color-text-muted)]">{[part.material_code, part.spec, part.brand].filter(Boolean).join(' · ') || '-'}</div>
                                     </td>
                                     <td className="px-3 py-2 text-right">{part.quantity || 1} {part.unit || 'pcs'}</td>
                                     <td className="px-3 py-2 text-right">{money(part.unit_price)} CNY</td>
@@ -953,7 +988,7 @@ export function WorkOrdersPage() {
                         className={`rounded-lg p-3 text-sm ${item.is_internal_note ? 'bg-amber-500/10 text-amber-700' : 'bg-[var(--color-surface-elevated)] text-[var(--color-text-secondary)]'}`}
                       >
                         <div className="mb-1 flex items-center justify-between gap-2 text-xs">
-                          <span>{item.sender_name || item.sender_type}{item.is_internal_note ? ` 路 ${t.internalNote}` : ''}</span>
+                          <span>{item.sender_name || item.sender_type}{item.is_internal_note ? ` · ${t.internalNote}` : ''}</span>
                           <span className="text-[var(--color-text-muted)]">{item.created_at?.slice(0, 16)?.replace('T', ' ')}</span>
                         </div>
                         <div>{item.content}</div>

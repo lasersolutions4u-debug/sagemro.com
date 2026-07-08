@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import {
+  formatAiSummary,
   formatEngineerOption,
   getQuoteReviewRows,
 } from './workOrderDisplay.js';
@@ -38,4 +39,18 @@ test('builds quote review rows with fee breakdown and other fee note', () => {
     ['Engineer settlement', '1,664 CNY'],
     ['Platform portion', '416 CNY'],
   ]);
+});
+
+test('formats AI summary JSON into readable review notes', () => {
+  const formatted = formatAiSummary(JSON.stringify({
+    summary: 'Z axis calibration failed.',
+    required_specialties: ['laser cutting', 'servo diagnostics'],
+    urgency_notes: 'Production is stopped.',
+  }));
+
+  assert.match(formatted, /Summary: Z axis calibration failed\./);
+  assert.match(formatted, /Required specialties: laser cutting, servo diagnostics/);
+  assert.match(formatted, /Urgency notes: Production is stopped\./);
+  assert.equal(formatted.includes('{'), false);
+  assert.equal(formatted.includes('required_specialties'), false);
 });
