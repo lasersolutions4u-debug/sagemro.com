@@ -38,6 +38,10 @@ function createTestEnv(overrides = {}) {
             return this;
           },
           async first() {
+            if (/SELECT \* FROM customers WHERE phone = \?/i.test(sql)) {
+              const row = dbState.customers.find((customer) => customer.phone === this.args[0]);
+              return row || null;
+            }
             if (/SELECT user_no FROM customers/i.test(sql)) {
               const last = dbState.customers.at(-1);
               return last ? { user_no: last.user_no } : null;
@@ -460,6 +464,32 @@ test('COM customer registration accepts an email verification code while keeping
   assert.equal(json.customer.phone, '13800000001');
   assert.equal(env.__dbState.customers[0].auth_status, 'authenticated');
   assert.equal(await env.KV.get('verify_code_email_joe@example.com'), null);
+});
+
+test('customer login returns company profile fields saved during registration', async () => {
+  const env = createTestEnv();
+  await env.KV.put('verify_code_email_buyer@example.com', '1357');
+
+  const company = 'ABC Metal Products Co., Ltd.';
+  const registration = await postJson('https://api.sagemro.com/api/auth/register/customer', {
+    name: 'Buyer One',
+    phone: '13800000002',
+    email: 'buyer@example.com',
+    password: 'secret123',
+    code: '1357',
+    company,
+    identity: 'customer',
+  }, env);
+  assert.equal(registration.response.status, 200);
+
+  const loginResult = await postJson('https://api.sagemro.com/api/auth/login', {
+    phone: '13800000002',
+    password: 'secret123',
+  }, env);
+
+  assert.equal(loginResult.response.status, 200);
+  assert.equal(loginResult.json.user.company, company);
+  assert.equal(loginResult.json.user.auth_status, 'authenticated');
 });
 
 test('CN customer registration accepts a phone verification code without requiring email', async () => {

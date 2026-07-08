@@ -379,7 +379,7 @@ SAGEMRO AI helps laser cutting and sheet metal equipment users turn messy equipm
 
 ## 语言策略
 
-- 对 sagemro.com 国际版：默认英文回复；如果用户明确使用中文或要求中文，则使用中文。
+- 对 sagemro.com 国际版：平台生成内容固定使用英文。即使用户用中文输入，AI 回复、服务摘要、工单摘要、进度文本和分析内容也保持英文；用户原文可以作为引用或现场描述保留。
 - 对 sagemro.cn 中国版：默认简体中文回复。英文报警代码、品牌名、CNC 术语、型号或短英文短语不代表用户要求英文回复；只有用户明确要求英文回复时，才切换英文。
 - 多轮对话中优先匹配用户当前使用的语言。
 - 专业术语可以保留英文缩写，例如 CNC、PLC、servo、nozzle、assist gas。
@@ -844,6 +844,7 @@ export async function executeTool(ctxObj) {
     engineerId = null,
     customerId = null,
     conversationId = null,
+    market = 'com',
     iteration = 0,
   } = ctxObj;
 
@@ -880,7 +881,7 @@ export async function executeTool(ctxObj) {
     get_pending_tickets_for_engineer: () => toolGetPendingTickets({ limit: args?.limit || 10, engineerId, env }),
     get_customer_devices: () => toolGetCustomerDevices(customerId, env),
     get_device_detail: () => toolGetDeviceDetail(customerId, args?.device_id, env),
-    create_work_order: () => toolCreateWorkOrder({ customerId, env, ctx, args, conversationId }),
+    create_work_order: () => toolCreateWorkOrder({ customerId, env, ctx, args, conversationId, market }),
     get_conversation_history: () =>
       toolGetConversationHistory({
         customerId,
@@ -1401,7 +1402,7 @@ async function attachConversationImagesToWorkOrder(env, {
 
 // 工具：AI 创建工单（function calling）
 // 与 POST /api/workorders 共享核心逻辑，但不走 HTTP 层
-async function toolCreateWorkOrder({ customerId, env, ctx, args, conversationId }) {
+async function toolCreateWorkOrder({ customerId, env, ctx, args, conversationId, market = 'com' }) {
   const { type, description, urgency, device_id, category_l1, category_l2 } = args;
 
   if (!customerId) return { error: 'not_authenticated', reason: '客户未登录，无法创建工单。请引导客户先登录。' };
@@ -1450,7 +1451,7 @@ async function toolCreateWorkOrder({ customerId, env, ctx, args, conversationId 
     });
 
     // AI 摘要异步生成
-    const aiSummaryPromise = generateWorkOrderSummary(type, safeDescription, urgency, env)
+    const aiSummaryPromise = generateWorkOrderSummary(type, safeDescription, urgency, env, { market })
       .then(async (summary) => {
         if (summary) {
           await env.DB.prepare('UPDATE work_orders SET ai_summary = ? WHERE id = ?')
@@ -2249,6 +2250,14 @@ async function handleLogin(request, env) {
         user_no: user.user_no,
         name: user.name,
         phone: user.phone,
+        company: user.company || '',
+        region: user.region || '',
+        city: user.city || '',
+        address: user.address || '',
+        company_description: user.company_description || '',
+        business_scope: user.business_scope || '',
+        logo_url: user.logo_url || '',
+        auth_status: user.auth_status || 'pending',
         ...(userType === 'engineer' ? {
           engineer_role: user.engineer_role || 'engineer',
           regional_lead_id: user.regional_lead_id || null,
@@ -2881,7 +2890,8 @@ Reply in Simplified Chinese.
 English alarm codes, brand names, CNC terms, or short English phrases do not count as a request to answer in English.`
       : `You MUST answer this turn in English.
 Reply in English.
-Use Chinese only if the user clearly writes in Chinese or explicitly asks for Chinese.`;
+For sagemro.com, keep all AI-generated replies, service-ready summaries, work-order summaries, progress text, and AI analysis in English even if the user writes in Chinese.
+The user's original Chinese text may be preserved only as quoted source input, fault description, or customer-provided context.`;
     const marketContext = `
 
 ## 当前请求上下文
@@ -3002,6 +3012,7 @@ ${turnLanguageRule}
                 env,
                 ctx: request._ctx,
                 conversationId: convId,
+                market: isCnMarket ? 'cn' : 'com',
                 args: {
                   type: woType,
                   description: problemDescription,
@@ -3128,6 +3139,7 @@ ${turnLanguageRule}
                   engineerId: trustedEngineerId,
                   customerId: trustedCustomerId,
                   conversationId: convId,
+                  market: isCnMarket ? 'cn' : 'com',
                   iteration,
                 });
                 return { tool_call_id: tc.id, result };
@@ -3353,26 +3365,51 @@ const WORK_ORDER_TYPE_LABELS = {
   other: '其他'
 };
 
-// 生成工单 AI 摘要
-async function generateWorkOrderSummary(type, description, urgency, env) {
-  // 后台系统调用，计入全平台日配额（不占用任何用户个人配额）
-  try {
-    await enforceOpenAIBudget(env, { userKey: 'system:summary', tag: 'summary' });
-  } catch (e) {
-    if (e instanceof BudgetError) {
-      console.warn('[generateWorkOrderSummary] skipped by budget:', e.message);
-      return null;
-    }
-    throw e;
-  }
-  const typeLabel = WORK_ORDER_TYPE_LABELS[type] || type;
+const WORK_ORDER_TYPE_LABELS_EN = {
+  fault: 'Equipment fault',
+  maintenance: 'Maintenance',
+  parameter: 'Parameter tuning',
+  consult: 'Technical consultation',
+  parts: 'Spare parts purchase',
+  aftersales: 'After-sales service',
+  other: 'Other'
+};
 
-  const prompt = `你是工单分析助手。当客户提交一个维修工单时，你需要生成一个简洁的摘要，帮助工程师快速了解工单情况。
+export function buildWorkOrderSummaryPrompt({ type, description, urgency, market = 'com' }) {
+  const isCnMarket = market === 'cn';
+  const typeLabel = isCnMarket
+    ? (WORK_ORDER_TYPE_LABELS[type] || type)
+    : (WORK_ORDER_TYPE_LABELS_EN[type] || type);
+  const urgencyLabel = isCnMarket
+    ? (urgency === 'critical' ? '非常紧急' : urgency === 'urgent' ? '紧急' : '普通')
+    : (urgency === 'critical' ? 'Critical' : urgency === 'urgent' ? 'Urgent' : 'Normal');
+
+  if (!isCnMarket) {
+    return `You are a work order analysis assistant for SAGEMRO Service OS. When a customer submits a service request, generate a concise structured summary that helps engineers and admins quickly understand the case.
+
+For sagemro.com, keep all AI-generated work-order summaries and analysis in English, even if the customer's original description is written in Chinese.
+Work order summary, required specialties, suggested skills, urgency notes, and AI analysis must be written in English.
+
+Work order information:
+- Type: ${typeLabel}
+- Description: ${description}
+- Urgency: ${urgencyLabel}
+
+Return JSON fields in English only. Return valid JSON only, with no markdown and no extra commentary:
+{
+  "summary": "Use 2-3 sentences to summarize the core issue and recommended handling direction.",
+  "required_specialties": ["Most relevant equipment type labels, such as laser cutting machine or press brake."],
+  "suggested_skills": ["Recommended technical skill tags, such as laser source repair or parameter tuning."],
+  "urgency_notes": "If urgent, explain why it is urgent and what the team should watch for."
+}`;
+  }
+
+  return `你是工单分析助手。当客户提交一个维修工单时，你需要生成一个简洁的摘要，帮助工程师快速了解工单情况。
 
 工单信息：
 - 类型：${typeLabel}
 - 描述：${description}
-- 紧急程度：${urgency === 'critical' ? '非常紧急' : urgency === 'urgent' ? '紧急' : '普通'}
+- 紧急程度：${urgencyLabel}
 
 请生成以下格式的 JSON 响应（只返回 JSON，不要有其他内容）：
 {
@@ -3383,6 +3420,21 @@ async function generateWorkOrderSummary(type, description, urgency, env) {
 }
 
 只返回 JSON，不要有其他内容。`;
+}
+
+// 生成工单 AI 摘要
+async function generateWorkOrderSummary(type, description, urgency, env, { market = 'com' } = {}) {
+  // 后台系统调用，计入全平台日配额（不占用任何用户个人配额）
+  try {
+    await enforceOpenAIBudget(env, { userKey: 'system:summary', tag: 'summary' });
+  } catch (e) {
+    if (e instanceof BudgetError) {
+      console.warn('[generateWorkOrderSummary] skipped by budget:', e.message);
+      return null;
+    }
+    throw e;
+  }
+  const prompt = buildWorkOrderSummaryPrompt({ type, description, urgency, market });
 
   try {
     const apiResponse = await fetch(env.OPENAI_API_ENDPOINT, {
@@ -3482,7 +3534,7 @@ async function handleCreateWorkOrder(request, env) {
     // AI 摘要异步生成：不阻塞响应，生成完成后回写 ai_summary
     // 使用 ctx.waitUntil 保证 Worker 在返回响应后仍会完成该任务
     const ctx = request._ctx;
-    const aiSummaryPromise = generateWorkOrderSummary(type, safeDescription, urgency, env)
+    const aiSummaryPromise = generateWorkOrderSummary(type, safeDescription, urgency, env, { market: getRequestMarket(request) })
       .then(async (summary) => {
         if (summary) {
           await env.DB.prepare('UPDATE work_orders SET ai_summary = ? WHERE id = ?')
@@ -5659,6 +5711,16 @@ function normalizeUpsellRequest(row) {
     assigned_sales_owner: row.assigned_sales_owner || '',
     admin_note: row.admin_note || '',
     handover_note: row.handover_note || '',
+  };
+}
+
+function normalizeWorkOrderMessage(row) {
+  if (!row) return row;
+  return {
+    ...row,
+    attachment_urls: parseJsonArray(row.attachment_urls),
+    is_internal_note: Number(row.is_internal_note || 0),
+    is_customer_visible: Number(row.is_customer_visible ?? 1),
   };
 }
 
@@ -8114,6 +8176,9 @@ async function handleInitDb(env) {
         sender_name TEXT DEFAULT '',
         content TEXT NOT NULL,
         message_type TEXT DEFAULT 'text',
+        attachment_urls TEXT DEFAULT '[]',
+        is_internal_note INTEGER DEFAULT 0,
+        is_customer_visible INTEGER DEFAULT 1,
         created_at TEXT DEFAULT (datetime('now')),
         FOREIGN KEY (work_order_id) REFERENCES work_orders(id)
       )`,
@@ -8429,7 +8494,7 @@ async function handleTestFullPricingFlow(env) {
     `).bind(workOrderId, orderNo, finalCustomerId, computeSlaDeadline('urgent')).run();
 
     // 生成 AI 摘要
-    const aiSummary = await generateWorkOrderSummary('fault', '光纤激光切割机（3000W大族）切割时出现毛刺，切面不光洁，侧壁有挂渣。已经更换过辅助气体（氮气），问题仍然存在。设备使用3年，近期未做保养。', 'urgent', env);
+    const aiSummary = await generateWorkOrderSummary('fault', '光纤激光切割机（3000W大族）切割时出现毛刺，切面不光洁，侧壁有挂渣。已经更换过辅助气体（氮气），问题仍然存在。设备使用3年，近期未做保养。', 'urgent', env, { market: 'cn' });
     await env.DB.prepare('UPDATE work_orders SET ai_summary = ? WHERE id = ?').bind(JSON.stringify(aiSummary), workOrderId).run();
 
     log('step3_done', { work_order_id: workOrderId, order_no: orderNo, ai_summary: aiSummary });
@@ -8819,7 +8884,7 @@ async function handleGetWorkOrderMessages(request, env) {
       : await env.DB.prepare(
           'SELECT * FROM work_order_messages WHERE work_order_id = ? ORDER BY created_at ASC'
         ).bind(workOrderId).all();
-    return jsonResponse({ list: messages.results || [] });
+    return jsonResponse({ list: (messages.results || []).map(normalizeWorkOrderMessage) });
   } catch (error) {
     if (error instanceof GuardError) return errorResponse(error.message, error.status);
     return errorResponse(error.message, 500);
@@ -8830,15 +8895,18 @@ async function handleGetWorkOrderMessages(request, env) {
 async function handlePostWorkOrderMessage(request, env) {
   try {
     const workOrderId = new URL(request.url).pathname.split('/')[3];
-    const { content, message_type, is_internal_note } = await request.json();
+    const { content, message_type, is_internal_note, attachment_urls } = await request.json();
+    const attachments = cleanTextArray(attachment_urls, 8, 500);
 
     // 认证：sender_type / sender_id / sender_name 从 token 和数据库查，不接受客户端传入
     const auth = request._auth;
     if (!auth) return errorResponse('请先登录', 401);
-    if (!content) return errorResponse('消息内容不能为空');
+    if (!content && attachments.length === 0) return errorResponse('消息内容不能为空');
 
     try {
+      if (content) {
       assertMaxLength(content, 'content', LIMITS.content);
+      }
     } catch (e) {
       const resp = validationErrorToResponse(e, errorResponse);
       if (resp) return resp;
@@ -8875,14 +8943,14 @@ async function handlePostWorkOrderMessage(request, env) {
     // PII 脱敏（Phase 0.5）：工单消息是客户↔工程师的自由输入，最容易泄露手机号
     // 只清洗 text 类消息；pricing_update / system 是平台自生成的结构化消息，不需要清洗
     const safeContent =
-      (message_type || 'text') === 'text' ? redactPII(content) : content;
+      (message_type || 'text') === 'text' ? redactPII(content || '') : (content || '');
     const internalNote = auth.userType === 'customer' ? 0 : (is_internal_note ? 1 : 0);
     const customerVisible = internalNote ? 0 : 1;
 
     const id = generateId();
     await env.DB.prepare(
-      'INSERT INTO work_order_messages (id, work_order_id, sender_type, sender_id, sender_name, content, message_type, is_internal_note, is_customer_visible) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
-    ).bind(id, workOrderId, sender_type, sender_id, sender_name, safeContent, message_type || 'text', internalNote, customerVisible).run();
+      'INSERT INTO work_order_messages (id, work_order_id, sender_type, sender_id, sender_name, content, message_type, attachment_urls, is_internal_note, is_customer_visible) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+    ).bind(id, workOrderId, sender_type, sender_id, sender_name, safeContent, message_type || 'text', JSON.stringify(attachments), internalNote, customerVisible).run();
 
     await writeAuditLog(env, request, {
       targetType: 'work_order',
@@ -8891,7 +8959,7 @@ async function handlePostWorkOrderMessage(request, env) {
       afterState: { message_id: id, sender_type, is_internal_note: internalNote },
     });
 
-    return jsonResponse({ success: true, id });
+    return jsonResponse({ success: true, id, attachment_urls: attachments });
   } catch (error) {
     return errorResponse(error.message, 500);
   }
@@ -9626,7 +9694,7 @@ async function routeRequest(request, env, ctx) {
       `).bind(id, order_no, customerId, type, description, urgency, computeSlaDeadline(urgency), 'other', 'other').run();
 
       // 生成AI摘要
-      const aiSummary = await generateWorkOrderSummary(type, description, urgency, env);
+      const aiSummary = await generateWorkOrderSummary(type, description, urgency, env, { market: getRequestMarket(request) });
 
       const workOrderData = { id, order_no, type, description, urgency, ai_summary: aiSummary };
 

@@ -108,6 +108,14 @@ test('registration copy hides CN email input and routes verification through pho
   assert.doesNotMatch(toolbar, /<span>Sign In \/ Register<\/span>/);
 });
 
+test('registration identity copy uses service-need wording instead of customer self-label', () => {
+  const loginModal = read('frontend/src/components/Auth/LoginModal.jsx');
+
+  assert.match(loginModal, /customerTitle: 'I Need Service'/);
+  assert.match(loginModal, /customerDesc: 'Use AI diagnostics, service requests, equipment records, spare parts, and maintenance follow-up.'/);
+  assert.doesNotMatch(loginModal, /customerTitle: "I'm a Customer"/);
+});
+
 test('customer sidebar tools stay expanded without a More overflow menu', () => {
   const toolbar = read('frontend/src/components/Sidebar/ToolBar.jsx');
 
@@ -120,4 +128,26 @@ test('customer sidebar tools stay expanded without a More overflow menu', () => 
     'Notifications should appear before My Equipment for logged-in customers'
   );
   assert.doesNotMatch(toolbar, /MoreHorizontal|sidebar-more-button|showCollapsed|setCollapsed|showMore|moreMenuRef/);
+});
+
+test('assigned work orders expose quote preparation instead of only cancellation', () => {
+  const detailModal = read('frontend/src/components/WorkOrder/WorkOrderDetailModal.jsx');
+
+  assert.match(detailModal, /const pricingStatuses = \['assigned', 'in_progress', 'pricing', 'pending_payment', 'in_service'\]/);
+  assert.match(detailModal, /pricingStatuses\.includes\(effectiveStatus\)/);
+});
+
+test('admin dispatch supports searchable engineer selection and local CSV backup', () => {
+  const workOrdersPage = read('admin/src/pages/WorkOrdersPage.jsx');
+  const usersPage = read('admin/src/pages/UsersPage.jsx');
+
+  assert.match(workOrdersPage, /function downloadCsv/);
+  assert.match(workOrdersPage, /exportEngineerPool/);
+  assert.match(workOrdersPage, /sagemro-engineer-pool\.csv/);
+  assert.match(workOrdersPage, /const \[engineerSearch, setEngineerSearch\] = useState\(\{\}\)/);
+  assert.match(workOrdersPage, /getEngineerSearchText\(engineer\)\.includes\(engineerQuery\)/);
+  assert.match(workOrdersPage, /describeEngineer\(selectedEngineer\)/);
+  assert.match(usersPage, /exportCurrentList/);
+  assert.match(usersPage, /sagemro-engineers-current\.csv/);
+  assert.match(usersPage, /sagemro-customers-current\.csv/);
 });

@@ -119,7 +119,8 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
   ];
 
   // 核价Tab：工程师看表单，客户看报价确认（含待付款状态）
-  if (effectiveStatus === 'in_progress' || effectiveStatus === 'pricing' || effectiveStatus === 'pending_payment' || effectiveStatus === 'in_service') {
+  const pricingStatuses = ['assigned', 'in_progress', 'pricing', 'pending_payment', 'in_service'];
+  if (pricingStatuses.includes(effectiveStatus)) {
     tabs.push({ key: 'pricing', label: isEngineer ? 'Submit Quote' : 'Confirm Quote' });
   }
 
