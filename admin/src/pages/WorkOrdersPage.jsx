@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+﻿import { useState, useEffect } from 'react';
 import {
   assignAdminWorkOrder,
   assignAdminWorkOrderRegionalLead,
@@ -44,6 +44,15 @@ function ScoreRow({ label, value }) {
   );
 }
 
+function MoneyRow({ label, value }) {
+  return (
+    <div className="flex items-center justify-between gap-3 rounded-lg bg-[var(--color-surface-elevated)] px-3 py-2">
+      <span>{label}</span>
+      <span className="font-semibold text-[var(--color-primary)]">{money(value)} CNY</span>
+    </div>
+  );
+}
+
 function isImageAttachment(attachment) {
   return attachment?.file_type?.startsWith('image/');
 }
@@ -56,6 +65,46 @@ function describeEngineer(engineer) {
     engineer.specialties,
     engineer.rating_avg ? `rating ${formatScore(engineer.rating_avg)}` : '',
   ].filter(Boolean).join(' · ');
+}
+
+function money(value) {
+  return Number(value || 0).toLocaleString(undefined, { maximumFractionDigits: 2 });
+}
+
+function parseJsonValue(value) {
+  if (!value || typeof value !== 'string') return value;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return value;
+  }
+}
+
+function formatQuoteNote(value) {
+  if (!value || value === '[]') return '';
+  const parsed = parseJsonValue(value);
+  if (typeof parsed === 'string') return parsed;
+  if (Array.isArray(parsed)) {
+    return parsed
+      .map((item) => item.note || item.description || item.name || '')
+      .filter(Boolean)
+      .join('; ');
+  }
+  return parsed?.note || parsed?.description || '';
+}
+
+function quoteParts(detail) {
+  const items = Array.isArray(detail?.pricing?.material_items)
+    ? detail.pricing.material_items
+    : Array.isArray(detail?.material_items)
+      ? detail.material_items.filter((item) => item.purpose === 'quote')
+      : [];
+  return items;
+}
+
+function quoteAiCheck(pricing) {
+  const parsed = parseJsonValue(pricing?.ai_price_check);
+  return parsed && typeof parsed === 'object' ? parsed : null;
 }
 
 const TEXT = {
@@ -130,6 +179,8 @@ const TEXT = {
     noQuote: 'No quote',
     approve: 'Approve',
     return: 'Return',
+    viewQuoteDetail: 'Show details',
+    reviewQuoteFirst: 'Open the quote details before approving.',
     archive: 'Archive',
     regionalLeadOption: 'Select regional lead',
     assigning: 'Assigning',
@@ -148,6 +199,15 @@ const TEXT = {
     customerLabel: 'Customer',
     engineerLabel: 'Engineer',
     quoteReviewLabel: 'Quote review',
+    quoteDetailTitle: 'Quote Details',
+    customerPays: 'Customer pays',
+    internalSettlement: 'Internal settlement estimate',
+    platformServiceFee: 'Platform service / management portion',
+    settlementRule: 'Calculated from the engineer settlement rate. Example: 80% to internal settlement, 20% retained by platform.',
+    otherFeeNote: 'Other fee note',
+    partsList: 'Parts list',
+    aiPriceCheck: 'AI price check',
+    noQuoteDetail: 'No quote detail',
     riskControlLabel: 'Risk control',
     aiSummaryTitle: 'AI Intake Summary',
     noAiSummary: 'No AI summary',
@@ -188,130 +248,130 @@ const TEXT = {
   },
   'zh-CN': {
     statuses: {
-      pending: '待处理',
-      pending_dispatch: '待区域派工',
-      assigned: '已分配',
-      in_progress: '处理中',
-      resolved: '已解决',
-      completed: '已完成',
-      rejected: '已拒绝',
-      cancelled: '已取消',
+      pending: '寰呭鐞?,
+      pending_dispatch: '寰呭尯鍩熸淳宸?,
+      assigned: '宸插垎閰?,
+      in_progress: '澶勭悊涓?,
+      resolved: '宸茶В鍐?,
+      completed: '宸插畬鎴?,
+      rejected: '宸叉嫆缁?,
+      cancelled: '宸插彇娑?,
     },
     urgency: {
-      normal: '普通',
-      urgent: '紧急',
-      critical: '非常紧急',
+      normal: '鏅€?,
+      urgent: '绱ф€?,
+      critical: '闈炲父绱ф€?,
     },
     types: {
-      fault: '设备故障',
-      maintenance: '设备保养',
-      parameter: '参数调试',
-      other: '其他',
+      fault: '璁惧鏁呴殰',
+      maintenance: '璁惧淇濆吇',
+      parameter: '鍙傛暟璋冭瘯',
+      other: '鍏朵粬',
     },
     pricing: {
-      pending_review: '待运营复核',
-      submitted: '已发客户确认',
-      confirmed: '客户已确认',
-      draft: '退回修改',
+      pending_review: '寰呰繍钀ュ鏍?,
+      submitted: '宸插彂瀹㈡埛纭',
+      confirmed: '瀹㈡埛宸茬‘璁?,
+      draft: '閫€鍥炰慨鏀?,
     },
     tabs: {
-      all: '全部',
-      pending: '待处理',
-      pending_dispatch: '待区域派工',
-      in_progress: '处理中',
-      completed: '已完成',
+      all: '鍏ㄩ儴',
+      pending: '寰呭鐞?,
+      pending_dispatch: '寰呭尯鍩熸淳宸?,
+      in_progress: '澶勭悊涓?,
+      completed: '宸插畬鎴?,
     },
-    title: '派工与服务质量',
-    subtitle: '主流程为 Admin 分配给区域负责人，区域负责人再分给具体工程师；直接派工程师作为兼容操作保留，并受利益冲突风控限制。',
-    loading: '加载中...',
-    empty: '暂无数据',
-    selectRegionalLead: '请先选择区域负责人',
-    assignedRegionalLead: (orderNo) => `已分配区域负责人：${orderNo}`,
-    assignRegionalLeadFailed: '分配区域负责人失败',
-    selectEngineer: '请先选择内部工程师',
-    assignedEngineer: (orderNo) => `已派工：${orderNo}`,
-    assignEngineerFailed: '派工失败',
-    quoteSent: (orderNo) => `已审核报价已发送给客户：${orderNo}`,
-    quoteReviewFailed: '报价审核失败',
-    rejectPrompt: '退回原因（可选，工程师端可见内部备注）：',
-    quoteReturned: (orderNo) => `已退回报价修改：${orderNo}`,
-    quoteReturnFailed: '报价退回失败',
-    archived: (orderNo) => `已归档：${orderNo}`,
-    archiveFailed: '归档失败',
-    detailLoadFailed: '工单详情加载失败',
-    noteSaveFailed: '内部备注保存失败',
+    title: '娲惧伐涓庢湇鍔¤川閲?,
+    subtitle: '涓绘祦绋嬩负 Admin 鍒嗛厤缁欏尯鍩熻礋璐ｄ汉锛屽尯鍩熻礋璐ｄ汉鍐嶅垎缁欏叿浣撳伐绋嬪笀锛涚洿鎺ユ淳宸ョ▼甯堜綔涓哄吋瀹规搷浣滀繚鐣欙紝骞跺彈鍒╃泭鍐茬獊椋庢帶闄愬埗銆?,
+    loading: '鍔犺浇涓?..',
+    empty: '鏆傛棤鏁版嵁',
+    selectRegionalLead: '璇峰厛閫夋嫨鍖哄煙璐熻矗浜?,
+    assignedRegionalLead: (orderNo) => `宸插垎閰嶅尯鍩熻礋璐ｄ汉锛?{orderNo}`,
+    assignRegionalLeadFailed: '鍒嗛厤鍖哄煙璐熻矗浜哄け璐?,
+    selectEngineer: '璇峰厛閫夋嫨鍐呴儴宸ョ▼甯?,
+    assignedEngineer: (orderNo) => `宸叉淳宸ワ細${orderNo}`,
+    assignEngineerFailed: '娲惧伐澶辫触',
+    quoteSent: (orderNo) => `宸插鏍告姤浠峰凡鍙戦€佺粰瀹㈡埛锛?{orderNo}`,
+    quoteReviewFailed: '鎶ヤ环瀹℃牳澶辫触',
+    rejectPrompt: '閫€鍥炲師鍥狅紙鍙€夛紝宸ョ▼甯堢鍙鍐呴儴澶囨敞锛夛細',
+    quoteReturned: (orderNo) => `宸查€€鍥炴姤浠蜂慨鏀癸細${orderNo}`,
+    quoteReturnFailed: '鎶ヤ环閫€鍥炲け璐?,
+    archived: (orderNo) => `宸插綊妗ｏ細${orderNo}`,
+    archiveFailed: '褰掓。澶辫触',
+    detailLoadFailed: '宸ュ崟璇︽儏鍔犺浇澶辫触',
+    noteSaveFailed: '鍐呴儴澶囨敞淇濆瓨澶辫触',
     headers: {
-      orderNo: '服务编号',
-      customer: '客户',
-      regionalLead: '区域负责人',
-      engineer: '内部工程师',
-      type: '类型',
-      urgency: '紧急',
-      status: '状态',
-      quoteArchive: '报价/归档',
-      createdAt: '创建时间',
-      dispatch: '派工',
-      detail: '详情',
+      orderNo: '鏈嶅姟缂栧彿',
+      customer: '瀹㈡埛',
+      regionalLead: '鍖哄煙璐熻矗浜?,
+      engineer: '鍐呴儴宸ョ▼甯?,
+      type: '绫诲瀷',
+      urgency: '绱ф€?,
+      status: '鐘舵€?,
+      quoteArchive: '鎶ヤ环/褰掓。',
+      createdAt: '鍒涘缓鏃堕棿',
+      dispatch: '娲惧伐',
+      detail: '璇︽儏',
     },
-    conflictFallback: '存在利益冲突',
-    noQuote: '暂无报价',
-    approve: '通过',
-    return: '退回',
-    archive: '归档',
-    regionalLeadOption: '选择区域负责人',
-    assigning: '分配中',
-    assignRegion: '分配区域',
-    engineerOption: '选择工程师',
-    dispatching: '派工中',
-    directDispatch: '直接派工',
-    searchEngineer: '按姓名、地区、技能或团队搜索工程师',
-    exportEngineers: '导出工程师池',
-    view: '查看',
-    previous: '上一页',
-    next: '下一页',
-    drawerTitle: '工单监管视图',
-    drawerSubtitle: '查看客户沟通、内部备注、AI 摘要、服务报告和双向评价。',
-    close: '关闭',
-    customerLabel: '客户',
-    engineerLabel: '工程师',
-    quoteReviewLabel: '报价审核',
-    riskControlLabel: '风控',
-    aiSummaryTitle: 'AI 初诊摘要',
-    noAiSummary: '暂无 AI 摘要',
-    attachmentsTitle: '诊断图片与附件',
-    attachmentCount: (count) => `${count} 个`,
-    openAttachment: '点击查看附件',
-    noAttachments: '暂无诊断图片或附件',
-    reportTitle: '服务报告',
+    conflictFallback: '瀛樺湪鍒╃泭鍐茬獊',
+    noQuote: '鏆傛棤鎶ヤ环',
+    approve: '閫氳繃',
+    return: '閫€鍥?,
+    archive: '褰掓。',
+    regionalLeadOption: '閫夋嫨鍖哄煙璐熻矗浜?,
+    assigning: '鍒嗛厤涓?,
+    assignRegion: '鍒嗛厤鍖哄煙',
+    engineerOption: '閫夋嫨宸ョ▼甯?,
+    dispatching: '娲惧伐涓?,
+    directDispatch: '鐩存帴娲惧伐',
+    searchEngineer: '鎸夊鍚嶃€佸湴鍖恒€佹妧鑳芥垨鍥㈤槦鎼滅储宸ョ▼甯?,
+    exportEngineers: '瀵煎嚭宸ョ▼甯堟睜',
+    view: '鏌ョ湅',
+    previous: '涓婁竴椤?,
+    next: '涓嬩竴椤?,
+    drawerTitle: '宸ュ崟鐩戠瑙嗗浘',
+    drawerSubtitle: '鏌ョ湅瀹㈡埛娌熼€氥€佸唴閮ㄥ娉ㄣ€丄I 鎽樿銆佹湇鍔℃姤鍛婂拰鍙屽悜璇勪环銆?,
+    close: '鍏抽棴',
+    customerLabel: '瀹㈡埛',
+    engineerLabel: '宸ョ▼甯?,
+    quoteReviewLabel: '鎶ヤ环瀹℃牳',
+    riskControlLabel: '椋庢帶',
+    aiSummaryTitle: 'AI 鍒濊瘖鎽樿',
+    noAiSummary: '鏆傛棤 AI 鎽樿',
+    attachmentsTitle: '璇婃柇鍥剧墖涓庨檮浠?,
+    attachmentCount: (count) => `${count} 涓猔,
+    openAttachment: '鐐瑰嚮鏌ョ湅闄勪欢',
+    noAttachments: '鏆傛棤璇婃柇鍥剧墖鎴栭檮浠?,
+    reportTitle: '鏈嶅姟鎶ュ憡',
     reportFields: {
-      symptom: '症状',
-      diagnosis: '诊断',
-      solution: '处理',
-      laborHours: '工时',
+      symptom: '鐥囩姸',
+      diagnosis: '璇婃柇',
+      solution: '澶勭悊',
+      laborHours: '宸ユ椂',
     },
-    noReport: '暂无服务报告',
-    customerReviewTitle: '客户服务评价',
-    average: '平均',
+    noReport: '鏆傛棤鏈嶅姟鎶ュ憡',
+    customerReviewTitle: '瀹㈡埛鏈嶅姟璇勪环',
+    average: '骞冲潎',
     scoreRows: {
-      timeliness: '响应及时',
-      technical: '技术能力',
-      communication: '沟通体验',
-      professional: '专业形象',
-      cooperation: '配合程度',
-      payment: '付款配合',
-      environment: '现场条件',
+      timeliness: '鍝嶅簲鍙婃椂',
+      technical: '鎶€鏈兘鍔?,
+      communication: '娌熼€氫綋楠?,
+      professional: '涓撲笟褰㈣薄',
+      cooperation: '閰嶅悎绋嬪害',
+      payment: '浠樻閰嶅悎',
+      environment: '鐜板満鏉′欢',
     },
-    noCustomerReview: '客户尚未评价本次服务',
-    engineerReviewTitle: '工程师内部客户评价',
-    internalRiskNote: '内部风控资料，仅用于派工判断、服务准备和质量复盘，客户不可见。',
-    noEngineerReview: '工程师尚未提交客户协作评价',
-    messagesTitle: '工单会话与内部备注',
-    messageCount: (count) => `${count} 条`,
-    noMessages: '暂无消息',
-    internalNote: '内部备注',
-    notePlaceholder: '添加内部备注，仅 Admin / 区域负责人 / 工程师可见，客户不可见。',
-    saveNote: '保存内部备注',
-    noDetail: '未加载到工单详情',
+    noCustomerReview: '瀹㈡埛灏氭湭璇勪环鏈鏈嶅姟',
+    engineerReviewTitle: '宸ョ▼甯堝唴閮ㄥ鎴疯瘎浠?,
+    internalRiskNote: '鍐呴儴椋庢帶璧勬枡锛屼粎鐢ㄤ簬娲惧伐鍒ゆ柇銆佹湇鍔″噯澶囧拰璐ㄩ噺澶嶇洏锛屽鎴蜂笉鍙銆?,
+    noEngineerReview: '宸ョ▼甯堝皻鏈彁浜ゅ鎴峰崗浣滆瘎浠?,
+    messagesTitle: '宸ュ崟浼氳瘽涓庡唴閮ㄥ娉?,
+    messageCount: (count) => `${count} 鏉,
+    noMessages: '鏆傛棤娑堟伅',
+    internalNote: '鍐呴儴澶囨敞',
+    notePlaceholder: '娣诲姞鍐呴儴澶囨敞锛屼粎 Admin / 鍖哄煙璐熻矗浜?/ 宸ョ▼甯堝彲瑙侊紝瀹㈡埛涓嶅彲瑙併€?,
+    saveNote: '淇濆瓨鍐呴儴澶囨敞',
+    noDetail: '鏈姞杞藉埌宸ュ崟璇︽儏',
   },
 };
 
@@ -330,6 +390,7 @@ export function WorkOrdersPage() {
   const [detail, setDetail] = useState(null);
   const [detailMessages, setDetailMessages] = useState([]);
   const [internalNote, setInternalNote] = useState('');
+  const [reviewedQuoteIds, setReviewedQuoteIds] = useState({});
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const pageSize = 20;
@@ -436,6 +497,11 @@ export function WorkOrdersPage() {
   }
 
   async function handleApprovePricing(wo) {
+    if (!reviewedQuoteIds[wo.id]) {
+      setMessage(t.reviewQuoteFirst || 'Open the quote details before approving.');
+      await openDetail(wo);
+      return;
+    }
     setAssigningId(`${wo.id}:approve`);
     setMessage('');
     try {
@@ -502,6 +568,9 @@ export function WorkOrdersPage() {
     setDetailLoading(true);
     setDetail(null);
     setDetailMessages([]);
+    if (wo.pricing_status === 'pending_review') {
+      setReviewedQuoteIds((prev) => ({ ...prev, [wo.id]: true }));
+    }
     try {
       const [detailData, messagesData] = await Promise.all([
         getAdminWorkOrder(wo.id),
@@ -625,11 +694,17 @@ export function WorkOrdersPage() {
                           <div className="min-w-[170px] space-y-2">
                             <div className="text-xs text-[var(--color-text-secondary)]">
                               {wo.pricing_status
-                                ? `${t.pricing[wo.pricing_status] || wo.pricing_status}${wo.pricing_total_amount || wo.pricing_subtotal ? ` · ${wo.pricing_total_amount || wo.pricing_subtotal} CNY` : ''}`
+                                ? `${t.pricing[wo.pricing_status] || wo.pricing_status}${wo.pricing_total_amount || wo.pricing_subtotal ? ` 路 ${wo.pricing_total_amount || wo.pricing_subtotal} CNY` : ''}`
                                 : t.noQuote}
                             </div>
                             {wo.pricing_status === 'pending_review' && (
-                              <div className="flex gap-1">
+                              <div className="flex flex-wrap gap-1">
+                                <button
+                                  onClick={() => openDetail(wo)}
+                                  className="rounded-lg border border-[var(--color-primary)]/40 px-2 py-1 text-xs text-[var(--color-primary)]"
+                                >
+                                  {t.viewQuoteDetail || t.view}
+                                </button>
                                 <button
                                   onClick={() => handleApprovePricing(wo)}
                                   disabled={assigningId === `${wo.id}:approve`}
@@ -671,7 +746,7 @@ export function WorkOrdersPage() {
                                 <option value="">{t.regionalLeadOption}</option>
                                 {regionalLeads.map((lead) => (
                                   <option key={lead.id} value={lead.id}>
-                                    {lead.name}{lead.responsible_region || lead.service_region ? ` · ${lead.responsible_region || lead.service_region}` : ''}
+                                    {lead.name}{lead.responsible_region || lead.service_region ? ` 路 ${lead.responsible_region || lead.service_region}` : ''}
                                   </option>
                                 ))}
                               </select>
@@ -789,6 +864,91 @@ export function WorkOrdersPage() {
                   <pre className="whitespace-pre-wrap rounded-lg bg-[var(--color-surface-elevated)] p-3 text-xs text-[var(--color-text-secondary)]">
                     {detail.ai_summary || t.noAiSummary}
                   </pre>
+                </section>
+
+                <section className="rounded-xl border border-[var(--color-border)] p-4">
+                  <div className="mb-3 flex items-center justify-between gap-3">
+                    <h4 className="font-medium">{t.quoteDetailTitle || 'Quote Details'}</h4>
+                    {detail.pricing?.status && (
+                      <span className="rounded-full bg-[var(--color-primary)]/10 px-2 py-1 text-xs text-[var(--color-primary)]">
+                        {t.pricing[detail.pricing.status] || detail.pricing.status}
+                      </span>
+                    )}
+                  </div>
+                  {detail.pricing ? (() => {
+                    const pricing = detail.pricing;
+                    const parts = quoteParts(detail);
+                    const subtotal = pricing.subtotal || pricing.total_amount || 0;
+                    const commissionRate = detail.engineer_commission_rate || 0.8;
+                    const internalSettlement = Math.round(subtotal * commissionRate);
+                    const platformPart = Math.max(0, subtotal - internalSettlement);
+                    const note = formatQuoteNote(pricing.parts_detail);
+                    const aiCheck = quoteAiCheck(pricing);
+                    return (
+                      <div className="space-y-3 text-sm text-[var(--color-text-secondary)]">
+                        <div className="grid gap-2 sm:grid-cols-2">
+                          <MoneyRow label="Labor Fee" value={pricing.labor_fee || 0} />
+                          <MoneyRow label="Parts Fee" value={pricing.parts_fee || 0} />
+                          <MoneyRow label="Travel Fee" value={pricing.travel_fee || 0} />
+                          <MoneyRow label="Other Fees" value={pricing.other_fee || 0} />
+                        </div>
+                        {note && (
+                          <div className="rounded-lg bg-[var(--color-surface-elevated)] p-3">
+                            <div className="mb-1 text-xs font-medium text-[var(--color-text-muted)]">{t.otherFeeNote || 'Other fee note'}</div>
+                            <div>{note}</div>
+                          </div>
+                        )}
+                        {parts.length > 0 && (
+                          <div className="overflow-hidden rounded-lg border border-[var(--color-border)]">
+                            <div className="bg-[var(--color-surface-elevated)] px-3 py-2 text-xs font-medium text-[var(--color-text-muted)]">
+                              {t.partsList || 'Parts list'}
+                            </div>
+                            <table className="w-full text-xs">
+                              <tbody>
+                                {parts.map((part, index) => (
+                                  <tr key={part.id || `${part.material_code || part.name}-${index}`} className="border-t border-[var(--color-border)]">
+                                    <td className="px-3 py-2">
+                                      <div className="text-[var(--color-text)]">{part.name_en || part.name || '-'}</div>
+                                      <div className="text-[var(--color-text-muted)]">{[part.material_code, part.spec, part.brand].filter(Boolean).join(' 路 ') || '-'}</div>
+                                    </td>
+                                    <td className="px-3 py-2 text-right">{part.quantity || 1} {part.unit || 'pcs'}</td>
+                                    <td className="px-3 py-2 text-right">{money(part.unit_price)} CNY</td>
+                                    <td className="px-3 py-2 text-right">{money(part.line_total || Number(part.quantity || 0) * Number(part.unit_price || 0))} CNY</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        )}
+                        <div className="rounded-lg bg-[var(--color-surface-elevated)] p-3">
+                          <div className="flex justify-between">
+                            <span>{t.customerPays || 'Customer pays'}</span>
+                            <span className="font-semibold text-[var(--color-text)]">{money(subtotal)} CNY</span>
+                          </div>
+                          <div className="mt-1 flex justify-between">
+                            <span>{t.internalSettlement || 'Internal settlement estimate'} ({Math.round(commissionRate * 100)}%)</span>
+                            <span className="font-semibold text-[var(--color-primary)]">{money(internalSettlement)} CNY</span>
+                          </div>
+                          <div className="mt-1 flex justify-between">
+                            <span>{t.platformServiceFee || 'Platform service / management portion'} ({Math.round((1 - commissionRate) * 100)}%)</span>
+                            <span>{money(platformPart)} CNY</span>
+                          </div>
+                          <div className="mt-2 text-xs text-[var(--color-text-muted)]">{t.settlementRule || 'Calculated from the engineer settlement rate.'}</div>
+                        </div>
+                        {aiCheck && (
+                          <div className="rounded-lg border border-[var(--color-border)] p-3">
+                            <div className="mb-1 text-xs font-medium text-[var(--color-text-muted)]">{t.aiPriceCheck || 'AI price check'}</div>
+                            <div className="font-medium text-[var(--color-text)]">{aiCheck.status || '-'}</div>
+                            {(aiCheck.reason || aiCheck.ai_note) && (
+                              <div className="mt-1 text-xs whitespace-pre-wrap">{aiCheck.reason || aiCheck.ai_note}</div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })() : (
+                    <div className="text-sm text-[var(--color-text-muted)]">{t.noQuoteDetail || t.noQuote}</div>
+                  )}
                 </section>
 
                 <section className="rounded-xl border border-[var(--color-border)] p-4">
@@ -927,7 +1087,7 @@ export function WorkOrdersPage() {
                         className={`rounded-lg p-3 text-sm ${item.is_internal_note ? 'bg-amber-500/10 text-amber-700' : 'bg-[var(--color-surface-elevated)] text-[var(--color-text-secondary)]'}`}
                       >
                         <div className="mb-1 flex items-center justify-between gap-2 text-xs">
-                          <span>{item.sender_name || item.sender_type}{item.is_internal_note ? ` · ${t.internalNote}` : ''}</span>
+                          <span>{item.sender_name || item.sender_type}{item.is_internal_note ? ` 路 ${t.internalNote}` : ''}</span>
                           <span className="text-[var(--color-text-muted)]">{item.created_at?.slice(0, 16)?.replace('T', ' ')}</span>
                         </div>
                         <div>{item.content}</div>

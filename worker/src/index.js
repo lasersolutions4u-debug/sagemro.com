@@ -4231,11 +4231,16 @@ async function handleGetWorkOrder(request, env) {
       'SELECT * FROM work_order_repair_records WHERE work_order_id = ?'
     ).bind(id).first();
 
+    const pricing = await env.DB.prepare(
+      'SELECT * FROM work_order_pricing WHERE work_order_id = ?'
+    ).bind(id).first();
+
     const attachments = await env.DB.prepare(
       'SELECT * FROM work_order_attachments WHERE work_order_id = ? ORDER BY created_at DESC'
     ).bind(id).all();
 
     const materialItems = await listWorkOrderMaterialItems(env, id);
+    const quoteMaterialItems = materialItems.filter((item) => item.purpose === 'quote');
 
     return jsonResponse({
       ...workOrder,
@@ -4247,6 +4252,7 @@ async function handleGetWorkOrder(request, env) {
       repair_record: repairRecord
         ? { ...repairRecord, material_items: materialItems.filter((item) => item.purpose === 'service_report') }
         : null,
+      pricing: pricing ? { ...pricing, material_items: quoteMaterialItems } : null,
       material_items: materialItems,
       attachments: attachments.results,
     });
