@@ -11,6 +11,7 @@ export function InputArea({ onSend, onStop, disabled, isStreaming }) {
   const [isRecording, setIsRecording] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [voiceError, setVoiceError] = useState('');
+  const [voiceLanguage, setVoiceLanguage] = useState('auto');
   const textareaRef = useRef(null);
   const mediaRecorderRef = useRef(null);
   const mediaStreamRef = useRef(null);
@@ -84,7 +85,7 @@ export function InputArea({ onSend, onStop, disabled, isStreaming }) {
 
         setIsTranscribing(true);
         try {
-          const result = await transcribeVoiceInput(audioBlob);
+          const result = await transcribeVoiceInput(audioBlob, voiceLanguage);
           const transcript = (result.transcript || '').trim();
           if (transcript) {
             setInput((current) => current ? `${current} ${transcript}` : transcript);
@@ -117,6 +118,11 @@ export function InputArea({ onSend, onStop, disabled, isStreaming }) {
 
   const canSend = input.trim() && !disabled;
   const placeholder = isCn ? '描述设备问题' : 'Describe your service issue';
+  const voiceLanguageOptions = [
+    { value: 'auto', label: 'Auto' },
+    { value: 'zh', label: '中' },
+    { value: 'en', label: 'EN' },
+  ];
   const voiceTitle = !supportsVoiceInput
     ? (isCn ? '语音输入不可用' : 'Voice input unavailable')
     : isRecording
@@ -132,19 +138,39 @@ export function InputArea({ onSend, onStop, disabled, isStreaming }) {
           </div>
         )}
         <div className="flex items-start gap-2 sm:gap-3">
-          <button
-            type="button"
-            onClick={handleVoiceClick}
-            disabled={!supportsVoiceInput || disabled || isStreaming || isTranscribing}
-            title={voiceTitle}
-            className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl transition-colors active:scale-95 disabled:opacity-45 ${
-              isRecording
-                ? 'bg-red-500 text-white hover:bg-red-600'
-                : 'bg-[var(--color-surface-elevated)] text-[var(--color-text-secondary)] hover:text-[var(--color-primary)]'
-            }`}
-          >
-            {isTranscribing ? <Loader2 size={20} className="animate-spin" /> : <Mic size={20} />}
-          </button>
+          <div className="flex shrink-0 flex-col items-center gap-1">
+            <button
+              type="button"
+              onClick={handleVoiceClick}
+              disabled={!supportsVoiceInput || disabled || isStreaming || isTranscribing}
+              title={voiceTitle}
+              className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl transition-colors active:scale-95 disabled:opacity-45 ${
+                isRecording
+                  ? 'bg-red-500 text-white hover:bg-red-600'
+                  : 'bg-[var(--color-surface-elevated)] text-[var(--color-text-secondary)] hover:text-[var(--color-primary)]'
+              }`}
+            >
+              {isTranscribing ? <Loader2 size={20} className="animate-spin" /> : <Mic size={20} />}
+            </button>
+            <div className="flex rounded-full bg-[var(--color-surface-elevated)] p-0.5 text-[10px] leading-none">
+              {voiceLanguageOptions.map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  onClick={() => setVoiceLanguage(option.value)}
+                  disabled={disabled || isRecording || isTranscribing}
+                  className={`h-5 min-w-6 rounded-full px-1.5 transition-colors disabled:opacity-50 ${
+                    voiceLanguage === option.value
+                      ? 'bg-[var(--color-primary)] text-white'
+                      : 'text-[var(--color-text-muted)]'
+                  }`}
+                  title={option.value === 'auto' ? 'Auto language' : option.value === 'zh' ? 'Chinese' : 'English'}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          </div>
 
           <div
             className={`input-wrapper flex-1 rounded-2xl transition-colors ${disabled ? 'opacity-50' : ''}`}

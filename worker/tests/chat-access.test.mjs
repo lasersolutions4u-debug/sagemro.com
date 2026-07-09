@@ -313,7 +313,7 @@ test('handleChatTranscribe requires Deepgram configuration', async () => {
   assert.match(body.error, /Voice input is not configured/);
 });
 
-test('handleChatTranscribe sends short mobile recordings to Deepgram Nova-3 multilingual', async () => {
+test('handleChatTranscribe auto mode only detects Chinese or English', async () => {
   const formData = new FormData();
   formData.append('audio', new Blob(['audio'], { type: 'audio/webm' }), 'voice.webm');
 
@@ -345,10 +345,47 @@ test('handleChatTranscribe sends short mobile recordings to Deepgram Nova-3 mult
     assert.match(String(captured.url), /https:\/\/api\.deepgram\.com\/v1\/listen/);
     assert.match(String(captured.url), /model=nova-3/);
     assert.match(String(captured.url), /smart_format=true/);
-    assert.match(String(captured.url), /detect_language=true/);
+    assert.match(String(captured.url), /detect_language=zh/);
+    assert.match(String(captured.url), /detect_language=en/);
+    assert.doesNotMatch(String(captured.url), /detect_language=true/);
+    assert.doesNotMatch(String(captured.url), /language=multi/);
     assert.equal(captured.init.method, 'POST');
     assert.equal(captured.init.headers.Authorization, 'Token deepgram-test-key');
     assert.equal(captured.init.headers['Content-Type'], 'audio/webm');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('handleChatTranscribe lets users force Chinese or English transcription', async () => {
+  const originalFetch = globalThis.fetch;
+  const capturedUrls = [];
+  globalThis.fetch = async (url) => {
+    capturedUrls.push(String(url));
+    return new Response(JSON.stringify({
+      results: { channels: [{ alternatives: [{ transcript: 'ok' }] }] },
+    }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  };
+
+  try {
+    for (const language of ['zh', 'en']) {
+      const formData = new FormData();
+      formData.append('audio', new Blob(['audio'], { type: 'audio/webm' }), 'voice.webm');
+      formData.append('language', language);
+
+      const response = await handleChatTranscribe(new Request('https://api.sagemro.com/api/chat/transcribe', {
+        method: 'POST',
+        body: formData,
+      }), { DEEPGRAM_API_KEY: 'deepgram-test-key' });
+
+      assert.equal(response.status, 200);
+    }
+
+    assert.match(capturedUrls[0], /language=zh/);
+    assert.match(capturedUrls[1], /language=en/);
   } finally {
     globalThis.fetch = originalFetch;
   }

@@ -2764,6 +2764,7 @@ export async function handleChatTranscribe(request, env) {
 
     const formData = await request.formData();
     const file = formData.get('audio');
+    const requestedLanguage = String(formData.get('language') || 'auto').toLowerCase();
 
     if (!file || typeof file === 'string') {
       return errorResponse('Please record audio first.', 400);
@@ -2798,7 +2799,12 @@ export async function handleChatTranscribe(request, env) {
     const deepgramUrl = new URL('https://api.deepgram.com/v1/listen');
     deepgramUrl.searchParams.set('model', env.DEEPGRAM_MODEL || 'nova-3');
     deepgramUrl.searchParams.set('smart_format', 'true');
-    deepgramUrl.searchParams.set('detect_language', 'true');
+    if (requestedLanguage === 'zh' || requestedLanguage === 'en') {
+      deepgramUrl.searchParams.set('language', requestedLanguage);
+    } else {
+      deepgramUrl.searchParams.append('detect_language', 'zh');
+      deepgramUrl.searchParams.append('detect_language', 'en');
+    }
 
     const dgResponse = await fetch(deepgramUrl.toString(), {
       method: 'POST',
