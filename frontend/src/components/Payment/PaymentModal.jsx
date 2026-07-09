@@ -5,10 +5,11 @@ import { toastSuccess, toastError } from '../../utils/feedback';
 
 const PAYMENT_METHODS = [
   { id: 'bank_transfer', label: 'Bank Transfer / Wire Transfer', icon: Building2, desc: 'Request TT bank details, then send the bank slip to the engineer in Messages.' },
-  { id: 'paypal_card', label: 'PayPal / Credit or Debit Card', icon: CreditCard, desc: 'Use the official PayPal checkout or invoice link, then send the payment screenshot in Messages.' },
+  { id: 'paypal_card', label: 'PayPal / Credit or Debit Card', icon: CreditCard, desc: 'Pay through the official PayPal page, then send the payment screenshot in Messages.' },
 ];
 
 const CURRENCY = 'USD';
+const PAYPAL_PAYMENT_LINK = 'https://www.paypal.com/ncp/payment/4YLFXRSUSZJ5N';
 
 function paymentStatusCopy(status) {
   const map = {
@@ -59,7 +60,12 @@ export function PaymentModal({ isOpen, onClose, workOrderId, customerId, onPaid 
       const res = await payWorkOrder(workOrderId, { payment_method: method });
       setResult(res.payment);
       setStep('submitted');
-      toastSuccess('Payment method confirmed. Please send the payment proof to the engineer in Messages after payment.');
+      if (method === 'paypal_card') {
+        window.open(PAYPAL_PAYMENT_LINK, '_blank', 'noopener,noreferrer');
+        toastSuccess('Payment method confirmed. PayPal opened in a new tab. Please send the payment screenshot in Messages after payment.');
+      } else {
+        toastSuccess('Payment method confirmed. Please send the payment proof to the engineer in Messages after payment.');
+      }
       onPaid?.();
     } catch (e) {
       toastError('Payment method confirmation failed: ' + e.message);
@@ -119,6 +125,17 @@ export function PaymentModal({ isOpen, onClose, workOrderId, customerId, onPaid 
                   <span className="text-slate-950">{order?.order_no || workOrderId?.slice(0, 14)}</span>
                 </div>
               </div>
+              {result?.payment_method === 'paypal_card' && (
+                <a
+                  href={PAYPAL_PAYMENT_LINK}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex w-full items-center justify-center gap-2 rounded-xl border border-blue-200 bg-blue-50 px-3 py-2.5 text-sm font-semibold text-blue-700 transition-colors hover:border-blue-300 hover:bg-blue-100"
+                >
+                  <CreditCard size={18} />
+                  Open PayPal Payment Page
+                </a>
+              )}
               <p className="text-xs text-slate-500">Please complete payment, then send the bank slip or PayPal screenshot to the engineer in Messages. Service starts only after Admin confirms receipt.</p>
               <button onClick={onClose} className="w-full rounded-xl bg-amber-500 py-2.5 text-sm font-medium text-white hover:bg-amber-600">
                 Go to Messages
@@ -172,7 +189,7 @@ export function PaymentModal({ isOpen, onClose, workOrderId, customerId, onPaid 
                 <Shield size={16} className="mt-0.5 flex-shrink-0 text-blue-600" />
                 <div className="text-xs text-blue-900">
                   <p className="mb-0.5 font-medium text-blue-950">Payment Notice</p>
-                  <p>TT users receive bank details. PayPal users should complete the official PayPal checkout/invoice flow when provided. After payment, send the proof screenshot in Messages.</p>
+                  <p>TT users receive bank details. PayPal users will be sent to SAGEMRO's official PayPal payment page. After payment, send the proof screenshot in Messages.</p>
                 </div>
               </div>
 

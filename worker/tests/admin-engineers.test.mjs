@@ -95,6 +95,9 @@ function makeEnv() {
               return { results: workOrders };
             }
             if (/FROM engineer_calendar_events/i.test(sql)) {
+              if (/location,\s*note\s+FROM/i.test(sql)) {
+                throw new Error('no such column: note');
+              }
               return { results: calendarEvents };
             }
             return { results: [] };
