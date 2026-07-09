@@ -16,6 +16,7 @@ import { MessagePanel } from './MessagePanel';
 import { EngineerPricingPanel, CustomerPricingPanel } from './PricingPanels';
 import { RepairRecordPanel } from './RepairRecordPanel';
 import { AttachmentsPanel } from './AttachmentsPanel';
+import { formatCustomerDeviceLine } from '../../utils/workOrderDisplay';
 
 function hasServiceReportContent(record) {
   if (!record) return false;
@@ -180,6 +181,11 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
           <div className="text-sm text-[var(--color-text-secondary)]">
             SAGEMRO Engineer: <span className="text-[var(--color-primary)]">{detail.engineer_name}</span>
             {detail.engineer_phone && <span className="ml-1 opacity-70">{detail.engineer_phone}</span>}
+          </div>
+        )}
+        {isCustomer && formatCustomerDeviceLine(detail || workOrder) && (
+          <div className="text-sm text-[var(--color-text-secondary)]">
+            Machine: <span className="text-[var(--color-text-primary)]">{formatCustomerDeviceLine(detail || workOrder)}</span>
           </div>
         )}
         {detail?.customer_name && (
@@ -502,7 +508,15 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
               />
             )}
             {tab === 'pricing' && isCustomer && (
-              <CustomerPricingPanel workOrderId={workOrder.id} customerId={userId} onConfirmed={() => { loadDetail(); onConfirmed?.(); }} />
+              <CustomerPricingPanel
+                workOrderId={workOrder.id}
+                customerId={userId}
+                onConfirmed={(nextTab) => {
+                  if (nextTab) setTab(nextTab);
+                  loadDetail();
+                  onConfirmed?.();
+                }}
+              />
             )}
             {tab === 'rating' && renderRatingTab()}
             {tab === 'repairRecord' && (

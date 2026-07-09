@@ -7656,6 +7656,14 @@ async function handleAdminEngineerDetail(request, env) {
     `).bind(engineerId).all();
 
     const rows = workOrders.results || [];
+    const calendarEvents = await env.DB.prepare(`
+      SELECT id, title, event_type, start_at, end_at, location, note
+      FROM engineer_calendar_events
+      WHERE engineer_id = ? AND end_at >= datetime('now')
+      ORDER BY start_at ASC
+      LIMIT 12
+    `).bind(engineerId).all();
+
     return jsonResponse({
       engineer: {
         ...engineer,
@@ -7669,6 +7677,72 @@ async function handleAdminEngineerDetail(request, env) {
         active_work_orders: rows.filter((row) => !['completed', 'resolved', 'cancelled', 'rejected'].includes(row.status)).length,
       },
       work_orders: rows,
+      calendar_events: calendarEvents.results || [],
+    });
+  } catch (error) {
+    return errorResponse(error.message, 500);
+  }
+}
+
+async function handleAdminUpdateEngineer(request, env) {
+  try {
+    const engineerId = new URL(request.url).pathname.split('/').pop();
+    if (!engineerId) return errorResponse('Missing engineer ID', 400);
+
+    const existing = await env.DB.prepare('SELECT id, engineer_role FROM engineers WHERE id = ?').bind(engineerId).first();
+    if (!existing) return errorResponse('Engineer not found', 404);
+
+    const body = await request.json();
+    const updates = [];
+    const values = [];
+
+    if (body.engineer_role !== undefined) {
+      const role = body.engineer_role === 'regional_lead' ? 'regional_lead' : 'engineer';
+      updates.push('engineer_role = ?');
+      values.push(role);
+      if (role === 'regional_lead') {
+        updates.push('regional_lead_id = NULL');
+      }
+    }
+    if (body.regional_lead_id !== undefined) {
+      updates.push('regional_lead_id = ?');
+      values.push(body.regional_lead_id || null);
+    }
+    if (body.responsible_region !== undefined) {
+      updates.push('responsible_region = ?');
+      values.push(String(body.responsible_region || '').slice(0, 200));
+    }
+    if (body.team_name !== undefined) {
+      updates.push('team_name = ?');
+      values.push(String(body.team_name || '').slice(0, 120));
+    }
+    if (body.service_region !== undefined) {
+      updates.push('service_region = ?');
+      values.push(String(body.service_region || '').slice(0, 200));
+    }
+
+    if (!updates.length) return errorResponse('No engineer fields to update', 400);
+
+    values.push(engineerId);
+    await env.DB.prepare(`UPDATE engineers SET ${updates.join(', ')} WHERE id = ?`).bind(...values).run();
+
+    const updated = await env.DB.prepare(`
+      SELECT e.id, e.user_no, e.name, e.phone, e.company, e.specialties, e.services,
+             e.service_region, e.status, e.rating_count, e.rating_technical, e.total_orders,
+             e.engineer_role, e.regional_lead_id, e.responsible_region, e.team_name,
+             rl.name as regional_lead_name
+      FROM engineers e
+      LEFT JOIN engineers rl ON e.regional_lead_id = rl.id
+      WHERE e.id = ?
+    `).bind(engineerId).first();
+
+    return jsonResponse({
+      success: true,
+      engineer: {
+        ...updated,
+        specialties: parseJsonArray(updated.specialties),
+        services: parseJsonArray(updated.services),
+      },
     });
   } catch (error) {
     return errorResponse(error.message, 500);
@@ -10034,6 +10108,9 @@ async function routeRequest(request, env, ctx) {
       }
       if (path.match(/^\/api\/admin\/engineers\/[^/]+$/) && request.method === 'GET') {
         return handleAdminEngineerDetail(request, env);
+      }
+      if (path.match(/^\/api\/admin\/engineers\/[^/]+$/) && request.method === 'PATCH') {
+        return handleAdminUpdateEngineer(request, env);
       }
       if (path === '/api/admin/engineer-applications' && request.method === 'GET') {
         return handleAdminEngineerApplications(request, env);

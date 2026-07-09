@@ -48,9 +48,22 @@ function makeEnv() {
       pricing_total_amount: 5000,
     },
   ];
+  const calendarEvents = [
+    {
+      id: 'cal-1',
+      title: 'Available for field service',
+      event_type: 'engineer_available',
+      start_at: '2026-07-10T09:00:00Z',
+      end_at: '2026-07-10T17:00:00Z',
+      location: 'Chicago',
+      note: 'Remote or onsite window',
+    },
+  ];
+  const updates = [];
 
   return {
     JWT_SECRET,
+    __updates: updates,
     DB: {
       prepare(sql) {
         return {
@@ -60,6 +73,18 @@ function makeEnv() {
             return this;
           },
           async first() {
+            if (/SELECT id, engineer_role FROM engineers WHERE id = \?/i.test(sql)) {
+              return this.args[0] === engineer.id ? { id: engineer.id, engineer_role: engineer.engineer_role } : null;
+            }
+            if (/SELECT e\.id, e\.user_no/i.test(sql) && /WHERE e\.id = \?/i.test(sql)) {
+              return {
+                ...engineer,
+                engineer_role: 'regional_lead',
+                responsible_region: 'North America',
+                team_name: 'Lead Team',
+                regional_lead_id: null,
+              };
+            }
             if (/FROM engineers e/i.test(sql) && /WHERE e\.id = \?/i.test(sql)) {
               return this.args[0] === engineer.id ? engineer : null;
             }
@@ -69,7 +94,14 @@ function makeEnv() {
             if (/FROM work_orders w/i.test(sql) && /w\.engineer_id = \?/i.test(sql)) {
               return { results: workOrders };
             }
+            if (/FROM engineer_calendar_events/i.test(sql)) {
+              return { results: calendarEvents };
+            }
             return { results: [] };
+          },
+          async run() {
+            updates.push({ sql, args: this.args });
+            return { success: true };
           },
         };
       },
@@ -77,7 +109,7 @@ function makeEnv() {
   };
 }
 
-async function adminRequest(path) {
+async function adminRequest(path, options = {}) {
   const token = await signJwt({
     userId: 'admin',
     userType: 'admin',
@@ -85,10 +117,13 @@ async function adminRequest(path) {
   }, JWT_SECRET);
 
   return new Request(`https://api.sagemro.com${path}`, {
+    method: options.method || 'GET',
     headers: {
+      'Content-Type': 'application/json',
       Authorization: `Bearer ${token}`,
       Origin: 'https://admin.sagemro.com',
     },
+    body: options.body ? JSON.stringify(options.body) : undefined,
   });
 }
 
@@ -110,4 +145,31 @@ test('admin can open an engineer profile with service history by engineer id', a
   assert.equal(body.work_orders.length, 1);
   assert.equal(body.work_orders[0].order_no, 'WO-20260708-001');
   assert.equal(body.stats.total_work_orders, 1);
+  assert.equal(body.calendar_events.length, 1);
+  assert.equal(body.calendar_events[0].event_type, 'engineer_available');
+});
+
+test('admin can promote an existing engineer to regional lead', async () => {
+  const env = makeEnv();
+
+  const response = await worker.fetch(
+    await adminRequest('/api/admin/engineers/eng-1', {
+      method: 'PATCH',
+      body: {
+        engineer_role: 'regional_lead',
+        responsible_region: 'North America',
+        team_name: 'Lead Team',
+      },
+    }),
+    env,
+    { waitUntil() {} },
+  );
+  const body = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(body.engineer.engineer_role, 'regional_lead');
+  assert.equal(body.engineer.responsible_region, 'North America');
+  assert.equal(env.__updates.length, 1);
+  assert.match(env.__updates[0].sql, /engineer_role = \?/);
+  assert.match(env.__updates[0].sql, /regional_lead_id = NULL/);
 });

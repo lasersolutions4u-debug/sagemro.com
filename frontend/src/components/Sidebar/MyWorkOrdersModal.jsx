@@ -6,6 +6,7 @@ import { getWorkOrders, cancelWorkOrder } from '../../services/api';
 import { toastSuccess, toastError, confirmDialog } from '../../utils/feedback';
 import { WorkOrderDetailModal } from '../WorkOrder/WorkOrderDetailModal';
 import { formatSlaRemaining, categoryConfig, categoryL2Labels } from '../../data/workOrderConfig';
+import { formatCustomerDeviceLine, toEnglishDeviceValue } from '../../utils/workOrderDisplay';
 
 // 客户侧需要关注的状态
 const customerStatuses = [
@@ -154,8 +155,8 @@ export function MyWorkOrdersModal({ isOpen, onClose }) {
                 )}
                 <p className="text-sm text-[var(--color-text-secondary)] mb-1">
                   {order.category_l1 && order.category_l1 !== 'other'
-                    ? `${categoryConfig[order.category_l1]?.label || order.category_l1}${order.category_l2 && order.category_l2 !== 'other' ? ' · ' + (categoryL2Labels[order.category_l2] || order.category_l2) : ''}`
-                    : order.type} | {order.device_id || 'No device specified'}
+                    ? `${toEnglishDeviceValue(categoryConfig[order.category_l1]?.label || order.category_l1)}${order.category_l2 && order.category_l2 !== 'other' ? ' / ' + toEnglishDeviceValue(categoryL2Labels[order.category_l2] || order.category_l2) : ''}`
+                    : toEnglishDeviceValue(order.type)} | {formatCustomerDeviceLine(order) || order.device_id || 'No device specified'}
                 </p>
                 <p className="text-sm text-[var(--color-text-primary)] line-clamp-2">
                   {order.description}

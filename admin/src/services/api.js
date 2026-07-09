@@ -56,6 +56,13 @@ export async function getAdminEngineerDetail(engineerId) {
   return request(`/api/admin/engineers/${engineerId}`);
 }
 
+export async function updateAdminEngineer(engineerId, data) {
+  return request(`/api/admin/engineers/${engineerId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  });
+}
+
 export async function getAdminWorkOrders(status = 'all', page = 1, pageSize = 20) {
   return request(`/api/admin/workorders?status=${status}&page=${page}&pageSize=${pageSize}`);
 }

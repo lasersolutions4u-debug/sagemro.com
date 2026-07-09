@@ -161,3 +161,37 @@ test('admin dispatch stays simple while Engineers owns search and profiles', () 
 
   assert.match(api, /getAdminEngineerDetail\(engineerId\)/);
 });
+
+test('engineer profile lets Admin manage regional lead role and schedule signals', () => {
+  const engineersPage = read('admin/src/pages/EngineersPage.jsx');
+  const api = read('admin/src/services/api.js');
+
+  assert.match(api, /updateAdminEngineer\(engineerId, data\)/);
+  assert.match(engineersPage, /roleSettings: 'Regional Lead Settings'/);
+  assert.match(engineersPage, /value: 'regional_lead'/);
+  assert.match(engineersPage, /calendar_events/);
+  assert.match(engineersPage, /active_work_orders/);
+});
+
+test('customer service views translate machine fields to English', () => {
+  const display = read('frontend/src/utils/workOrderDisplay.js');
+  const myServices = read('frontend/src/components/Sidebar/MyWorkOrdersModal.jsx');
+  const detailModal = read('frontend/src/components/WorkOrder/WorkOrderDetailModal.jsx');
+
+  assert.match(display, /\['激光切割机', 'Laser cutting machine'\]/);
+  assert.match(display, /\['折弯机', 'Press brake'\]/);
+  assert.match(myServices, /formatCustomerDeviceLine\(order\)/);
+  assert.match(detailModal, /Machine: <span/);
+});
+
+test('payment instructions are readable and send customers back to Messages with proof guidance', () => {
+  const paymentModal = read('frontend/src/components/Payment/PaymentModal.jsx');
+  const pricingPanels = read('frontend/src/components/WorkOrder/PricingPanels.jsx');
+  const detailModal = read('frontend/src/components/WorkOrder/WorkOrderDetailModal.jsx');
+
+  assert.match(paymentModal, /bg-white text-slate-950/);
+  assert.match(paymentModal, /send the bank slip or PayPal screenshot to the engineer in Messages/);
+  assert.match(paymentModal, /Continue with PayPal Instructions/);
+  assert.match(pricingPanels, /onConfirmed\?\.\('messages'\)/);
+  assert.match(detailModal, /if \(nextTab\) setTab\(nextTab\)/);
+});

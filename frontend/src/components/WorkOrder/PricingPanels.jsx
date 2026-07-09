@@ -423,8 +423,7 @@ export function CustomerPricingPanel({ workOrderId, customerId, onConfirmed }) {
 
       {pricing.status === 'confirmed' && (
         <div className="space-y-3">
-          <div className="p-3 bg-green-500/10 border border-green-500/30 rounded-xl text-center text-sm text-green-500">
-            閴?{t.customer.quoteConfirmed}
+          <div className="p-3 bg-green-500/10 border border-green-500/30 rounded-xl text-center text-sm text-green-500">            {t.customer.quoteConfirmed}
           </div>
           <button
             onClick={() => setPaymentOpen(true)}
@@ -441,7 +440,7 @@ export function CustomerPricingPanel({ workOrderId, customerId, onConfirmed }) {
         onClose={() => setPaymentOpen(false)}
         workOrderId={workOrderId}
         customerId={customerId}
-        onPaid={() => { setPaymentOpen(false); onConfirmed?.(); load(); }}
+        onPaid={() => { setPaymentOpen(false); onConfirmed?.('messages'); load(); }}
       />
     </div>
   );

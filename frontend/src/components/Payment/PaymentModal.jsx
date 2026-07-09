@@ -4,8 +4,8 @@ import { getWorkOrderPricing, getWorkOrderPayment, payWorkOrder, getWorkOrder } 
 import { toastSuccess, toastError } from '../../utils/feedback';
 
 const PAYMENT_METHODS = [
-  { id: 'bank_transfer', label: 'Bank Transfer / Wire Transfer', icon: Building2, desc: 'Best for formal B2B payments and larger orders.' },
-  { id: 'paypal_card', label: 'PayPal / Credit or Debit Card', icon: CreditCard, desc: 'Pay securely by PayPal invoice. No PayPal account is required for eligible card payments.' },
+  { id: 'bank_transfer', label: 'Bank Transfer / Wire Transfer', icon: Building2, desc: 'Request TT bank details, then send the bank slip to the engineer in Messages.' },
+  { id: 'paypal_card', label: 'PayPal / Credit or Debit Card', icon: CreditCard, desc: 'Use the official PayPal checkout or invoice link, then send the payment screenshot in Messages.' },
 ];
 
 const CURRENCY = 'USD';
@@ -59,7 +59,7 @@ export function PaymentModal({ isOpen, onClose, workOrderId, customerId, onPaid 
       const res = await payWorkOrder(workOrderId, { payment_method: method });
       setResult(res.payment);
       setStep('submitted');
-      toastSuccess('Payment method confirmed. SAGEMRO will provide payment instructions.');
+      toastSuccess('Payment method confirmed. Please send the payment proof to the engineer in Messages after payment.');
       onPaid?.();
     } catch (e) {
       toastError('Payment method confirmation failed: ' + e.message);
@@ -72,73 +72,73 @@ export function PaymentModal({ isOpen, onClose, workOrderId, customerId, onPaid 
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative w-full max-w-md bg-[var(--color-bg)] border border-[var(--color-border)] rounded-2xl shadow-2xl overflow-hidden">
-        <div className="flex items-center justify-between p-4 border-b border-[var(--color-border)]">
-          <h2 className="text-lg font-semibold text-[var(--color-text-primary)]">
+    <div className="fixed inset-0 z-[120] flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-slate-950/65 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative w-full max-w-md overflow-hidden rounded-2xl border border-slate-200 bg-white text-slate-950 shadow-2xl">
+        <div className="flex items-center justify-between border-b border-slate-200 p-4">
+          <h2 className="text-lg font-semibold text-slate-950">
             {step === 'processing' ? 'Confirming...' : step === 'submitted' ? 'Payment Follow-up' : 'Confirm Payment Method'}
           </h2>
-          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-[var(--color-hover)] text-[var(--color-text-muted)] transition-colors">
+          <button onClick={onClose} className="rounded-lg p-1.5 text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-900">
             <X size={20} />
           </button>
         </div>
 
         <div className="p-4 space-y-4">
           {loading ? (
-            <div className="text-center py-8 text-sm text-[var(--color-text-muted)]">
+            <div className="py-8 text-center text-sm text-slate-500">
               <Loader2 size={24} className="animate-spin mx-auto mb-2" />
               Loading...
             </div>
           ) : step === 'processing' ? (
             <div className="text-center py-8 space-y-3">
-              <Loader2 size={48} className="animate-spin mx-auto text-[var(--color-primary)]" />
-              <p className="text-sm text-[var(--color-text-secondary)]">Confirming payment method...</p>
+              <Loader2 size={48} className="mx-auto animate-spin text-amber-500" />
+              <p className="text-sm text-slate-600">Confirming payment method...</p>
             </div>
           ) : step === 'submitted' ? (
             <div className="text-center py-6 space-y-3">
               <div className="w-16 h-16 rounded-full bg-blue-500/10 flex items-center justify-center mx-auto">
                 <CheckCircle size={36} className="text-blue-500" />
               </div>
-              <h3 className="text-lg font-semibold text-[var(--color-text-primary)]">Payment method received</h3>
-              <div className="bg-[var(--color-surface-elevated)] rounded-xl p-3 space-y-1.5 text-sm text-left">
+              <h3 className="text-lg font-semibold text-slate-950">Payment method received</h3>
+              <div className="space-y-1.5 rounded-xl bg-slate-50 p-3 text-left text-sm">
                 <div className="flex justify-between gap-3">
-                  <span className="text-[var(--color-text-secondary)]">Amount</span>
-                  <span className="font-semibold text-[var(--color-text-primary)]">{result?.amount?.toLocaleString() || amount.toLocaleString()} {CURRENCY}</span>
+                  <span className="text-slate-500">Amount</span>
+                  <span className="font-semibold text-slate-950">{result?.amount?.toLocaleString() || amount.toLocaleString()} {CURRENCY}</span>
                 </div>
                 <div className="flex justify-between gap-3">
-                  <span className="text-[var(--color-text-secondary)]">Payment Method</span>
-                  <span className="text-[var(--color-text-primary)] text-right">{PAYMENT_METHODS.find(m => m.id === result?.payment_method)?.label || 'Bank Transfer'}</span>
+                  <span className="text-slate-500">Payment Method</span>
+                  <span className="text-right text-slate-950">{PAYMENT_METHODS.find(m => m.id === result?.payment_method)?.label || 'Bank Transfer'}</span>
                 </div>
                 <div className="flex justify-between gap-3">
-                  <span className="text-[var(--color-text-secondary)]">Status</span>
-                  <span className="text-[var(--color-text-primary)] text-right">{paymentStatusCopy(result?.status)}</span>
+                  <span className="text-slate-500">Status</span>
+                  <span className="text-right text-slate-950">{paymentStatusCopy(result?.status)}</span>
                 </div>
                 <div className="flex justify-between gap-3">
-                  <span className="text-[var(--color-text-secondary)]">Order No</span>
-                  <span className="text-[var(--color-text-primary)]">{order?.order_no || workOrderId?.slice(0, 14)}</span>
+                  <span className="text-slate-500">Order No</span>
+                  <span className="text-slate-950">{order?.order_no || workOrderId?.slice(0, 14)}</span>
                 </div>
               </div>
-              <p className="text-xs text-[var(--color-text-muted)]">The assigned engineer will follow up collection. Service starts only after Admin confirms receipt.</p>
-              <button onClick={onClose} className="w-full py-2.5 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white rounded-xl font-medium text-sm">
-                Done
+              <p className="text-xs text-slate-500">Please complete payment, then send the bank slip or PayPal screenshot to the engineer in Messages. Service starts only after Admin confirms receipt.</p>
+              <button onClick={onClose} className="w-full rounded-xl bg-amber-500 py-2.5 text-sm font-medium text-white hover:bg-amber-600">
+                Go to Messages
               </button>
             </div>
           ) : (
             <>
-              <div className="bg-[var(--color-surface-elevated)] rounded-xl p-3 space-y-1.5 text-sm">
+              <div className="space-y-1.5 rounded-xl bg-slate-50 p-3 text-sm">
                 <div className="flex justify-between">
-                  <span className="text-[var(--color-text-secondary)]">Order No</span>
-                  <span className="text-[var(--color-text-primary)]">{order?.order_no || workOrderId?.slice(0, 14)}</span>
+                  <span className="text-slate-500">Order No</span>
+                  <span className="text-slate-950">{order?.order_no || workOrderId?.slice(0, 14)}</span>
                 </div>
-                <div className="border-t border-[var(--color-border)] pt-1.5 flex justify-between">
-                  <span className="text-[var(--color-text-secondary)]">Amount</span>
-                  <span className="text-lg font-bold text-[var(--color-text-primary)]">{amount.toLocaleString()} {CURRENCY}</span>
+                <div className="flex justify-between border-t border-slate-200 pt-1.5">
+                  <span className="text-slate-500">Amount</span>
+                  <span className="text-lg font-bold text-slate-950">{amount.toLocaleString()} {CURRENCY}</span>
                 </div>
               </div>
 
               <div>
-                <label className="block text-xs text-[var(--color-text-secondary)] mb-2">Select Payment Method</label>
+                <label className="mb-2 block text-xs font-medium text-slate-500">Select Payment Method</label>
                 <div className="space-y-2">
                   {PAYMENT_METHODS.map((m) => {
                     const Icon = m.icon;
@@ -148,41 +148,41 @@ export function PaymentModal({ isOpen, onClose, workOrderId, customerId, onPaid 
                         key={m.id}
                         type="button"
                         onClick={() => setMethod(m.id)}
-                        className={`w-full flex items-center gap-3 p-3 rounded-xl border transition-all text-left ${
+                        className={`flex w-full items-center gap-3 rounded-xl border p-3 text-left transition-all ${
                           selected
-                            ? 'border-[var(--color-primary)] bg-[var(--color-primary)]/5'
-                            : 'border-[var(--color-border)] hover:border-[var(--color-text-muted)]'
+                            ? 'border-amber-500 bg-amber-50 shadow-sm'
+                            : 'border-slate-200 bg-white hover:border-slate-400'
                         }`}
                       >
-                        <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${selected ? 'bg-[var(--color-primary)]/10 text-[var(--color-primary)]' : 'bg-[var(--color-surface-elevated)] text-[var(--color-text-muted)]'}`}>
+                        <div className={`flex h-10 w-10 items-center justify-center rounded-lg ${selected ? 'bg-amber-100 text-amber-600' : 'bg-slate-100 text-slate-500'}`}>
                           <Icon size={20} />
                         </div>
                         <div className="min-w-0 flex-1">
-                          <div className="text-sm font-medium text-[var(--color-text-primary)]">{m.label}</div>
-                          <div className="text-xs text-[var(--color-text-muted)]">{m.desc}</div>
+                          <div className="text-sm font-medium text-slate-950">{m.label}</div>
+                          <div className="text-xs leading-5 text-slate-500">{m.desc}</div>
                         </div>
-                        {selected && <CheckCircle size={18} className="text-[var(--color-primary)]" />}
+                        {selected && <CheckCircle size={18} className="text-amber-500" />}
                       </button>
                     );
                   })}
                 </div>
               </div>
 
-              <div className="flex items-start gap-2 p-2.5 bg-blue-500/5 border border-blue-500/10 rounded-xl">
-                <Shield size={16} className="text-blue-500 flex-shrink-0 mt-0.5" />
-                <div className="text-xs text-[var(--color-text-secondary)]">
-                  <p className="font-medium text-[var(--color-text-primary)] mb-0.5">Payment Notice</p>
-                  <p>SAGEMRO will send bank transfer details or a secure PayPal invoice/payment link. The engineer follows up collection, then requests Admin approval to start service.</p>
+              <div className="flex items-start gap-2 rounded-xl border border-blue-200 bg-blue-50 p-2.5">
+                <Shield size={16} className="mt-0.5 flex-shrink-0 text-blue-600" />
+                <div className="text-xs text-blue-900">
+                  <p className="mb-0.5 font-medium text-blue-950">Payment Notice</p>
+                  <p>TT users receive bank details. PayPal users should complete the official PayPal checkout/invoice flow when provided. After payment, send the proof screenshot in Messages.</p>
                 </div>
               </div>
 
               <button
                 onClick={handlePay}
                 disabled={submitting}
-                className="w-full py-3 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] disabled:opacity-50 text-white rounded-xl font-semibold flex items-center justify-center gap-2 transition-colors"
+                className="flex w-full items-center justify-center gap-2 rounded-xl bg-amber-500 py-3 font-semibold text-white transition-colors hover:bg-amber-600 disabled:opacity-50"
               >
                 <Send size={20} />
-                {submitting ? 'Confirming...' : 'Request Payment Instructions'}
+                {submitting ? 'Confirming...' : method === 'paypal_card' ? 'Continue with PayPal Instructions' : 'Request TT Instructions'}
               </button>
             </>
           )}

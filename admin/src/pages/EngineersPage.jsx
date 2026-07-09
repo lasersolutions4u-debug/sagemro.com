@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Download, Search, X } from 'lucide-react';
-import { getAdminEngineerDetail, getAdminUsers } from '../services/api';
+import { getAdminEngineerDetail, getAdminUsers, updateAdminEngineer } from '../services/api';
 import { runtimeConfig } from '../config/runtime';
 
 const STATUS_MAP = {
@@ -32,6 +32,23 @@ function listText(value) {
 function formatScore(value) {
   const score = Number(value);
   return Number.isFinite(score) && score > 0 ? score.toFixed(1) : '-';
+}
+
+function formatDateTime(value) {
+  if (!value) return '-';
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleString('en-US');
+}
+
+function eventLabel(type) {
+  const map = {
+    engineer_available: 'Available',
+    engineer_unavailable: 'Unavailable',
+    reserved_service: 'Reserved',
+    service_visit: 'Service visit',
+    travel: 'Travel',
+  };
+  return map[type] || type || 'Calendar';
 }
 
 const TEXT = {
@@ -70,6 +87,20 @@ const TEXT = {
     serviceScope: 'Service Scope',
     performance: 'Performance',
     workOrders: 'Related Service Orders',
+    roleSettings: 'Regional Lead Settings',
+    promoteLead: 'Set as Regional Lead',
+    demoteLead: 'Set as Engineer',
+    saveRole: 'Save settings',
+    savingRole: 'Saving...',
+    roleUpdated: 'Engineer role settings updated.',
+    roleUpdateFailed: 'Failed to update engineer role settings',
+    responsibleRegion: 'Responsible region',
+    teamName: 'Team name',
+    serviceRegion: 'Service region',
+    currentLoad: 'Current load',
+    activeOrders: 'Active service orders',
+    availability: 'Availability / schedule',
+    noAvailability: 'No future availability entries',
     noWorkOrders: 'No related service orders',
     customer: 'Customer',
     quote: 'Quote',
@@ -136,6 +167,8 @@ export function EngineersPage() {
   const [selectedEngineer, setSelectedEngineer] = useState(null);
   const [profile, setProfile] = useState(null);
   const [profileLoading, setProfileLoading] = useState(false);
+  const [roleDraft, setRoleDraft] = useState({ engineer_role: 'engineer', responsible_region: '', team_name: '', service_region: '' });
+  const [roleSaving, setRoleSaving] = useState(false);
   const pageSize = 20;
 
   useEffect(() => {
@@ -166,10 +199,35 @@ export function EngineersPage() {
     try {
       const result = await getAdminEngineerDetail(engineer.id);
       setProfile(result);
+      setRoleDraft({
+        engineer_role: result.engineer?.engineer_role || 'engineer',
+        responsible_region: result.engineer?.responsible_region || '',
+        team_name: result.engineer?.team_name || '',
+        service_region: result.engineer?.service_region || '',
+      });
     } catch (err) {
       setMessage(err.message || t.loadFailed);
     } finally {
       setProfileLoading(false);
+    }
+  }
+
+  async function saveRoleSettings() {
+    if (!profile?.engineer?.id) return;
+    setRoleSaving(true);
+    setMessage('');
+    try {
+      const result = await updateAdminEngineer(profile.engineer.id, roleDraft);
+      setProfile((current) => current ? { ...current, engineer: { ...current.engineer, ...result.engineer } } : current);
+      setData((current) => ({
+        ...current,
+        list: current.list.map((engineer) => engineer.id === profile.engineer.id ? { ...engineer, ...result.engineer } : engineer),
+      }));
+      setMessage(t.roleUpdated);
+    } catch (err) {
+      setMessage(err.message || t.roleUpdateFailed);
+    } finally {
+      setRoleSaving(false);
     }
   }
 
@@ -371,13 +429,77 @@ export function EngineersPage() {
                   <div className="rounded-xl bg-[var(--color-surface-elevated)] p-4">
                     <div className="text-xs text-[var(--color-text-muted)]">{t.serviceScope}</div>
                     <div className="mt-2 text-sm">{profile.engineer.service_region || profile.engineer.responsible_region || '-'}</div>
-                    <div className="text-sm text-[var(--color-text-secondary)]">{profile.engineer.team_name || profile.engineer.regional_lead_name || '-'}</div>
+                    <div className="text-sm text-[var(--color-text-secondary)]">
+                      {profile.engineer.engineer_role === 'regional_lead'
+                        ? t.regionalLead
+                        : profile.engineer.regional_lead_name
+                          ? t.upstreamLead(profile.engineer.regional_lead_name)
+                          : profile.engineer.team_name || '-'}
+                    </div>
                   </div>
                   <div className="rounded-xl bg-[var(--color-surface-elevated)] p-4">
-                    <div className="text-xs text-[var(--color-text-muted)]">{t.performance}</div>
-                    <div className="mt-2 text-sm">{formatScore(profile.engineer.rating_technical)}</div>
-                    <div className="text-sm text-[var(--color-text-secondary)]">{profile.stats.total_work_orders} orders</div>
+                    <div className="text-xs text-[var(--color-text-muted)]">{t.currentLoad}</div>
+                    <div className="mt-2 text-sm">{profile.stats.active_work_orders} {t.activeOrders}</div>
+                    <div className="text-sm text-[var(--color-text-secondary)]">{t.performance}: {formatScore(profile.engineer.rating_technical)}</div>
                   </div>
+                </section>
+
+                <section className="rounded-xl border border-[var(--color-border)] p-4">
+                  <div className="mb-3 flex items-center justify-between gap-3">
+                    <h4 className="font-medium">{t.roleSettings}</h4>
+                    <div className="flex rounded-lg border border-[var(--color-border)] p-1">
+                      {[
+                        { value: 'engineer', label: t.engineer },
+                        { value: 'regional_lead', label: t.regionalLead },
+                      ].map((role) => (
+                        <button
+                          key={role.value}
+                          type="button"
+                          onClick={() => setRoleDraft((draft) => ({ ...draft, engineer_role: role.value }))}
+                          className={`rounded-md px-3 py-1.5 text-xs font-medium ${
+                            roleDraft.engineer_role === role.value
+                              ? 'bg-[var(--color-primary)] text-white'
+                              : 'text-[var(--color-text-secondary)] hover:text-[var(--color-text)]'
+                          }`}
+                        >
+                          {role.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="grid gap-3 sm:grid-cols-3">
+                    <label className="text-xs text-[var(--color-text-muted)]">
+                      {t.responsibleRegion}
+                      <input
+                        value={roleDraft.responsible_region}
+                        onChange={(event) => setRoleDraft((draft) => ({ ...draft, responsible_region: event.target.value }))}
+                        className="mt-1 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-3 py-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)]"
+                      />
+                    </label>
+                    <label className="text-xs text-[var(--color-text-muted)]">
+                      {t.teamName}
+                      <input
+                        value={roleDraft.team_name}
+                        onChange={(event) => setRoleDraft((draft) => ({ ...draft, team_name: event.target.value }))}
+                        className="mt-1 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-3 py-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)]"
+                      />
+                    </label>
+                    <label className="text-xs text-[var(--color-text-muted)]">
+                      {t.serviceRegion}
+                      <input
+                        value={roleDraft.service_region}
+                        onChange={(event) => setRoleDraft((draft) => ({ ...draft, service_region: event.target.value }))}
+                        className="mt-1 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-3 py-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)]"
+                      />
+                    </label>
+                  </div>
+                  <button
+                    onClick={saveRoleSettings}
+                    disabled={roleSaving}
+                    className="mt-3 rounded-lg bg-[var(--color-primary)] px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
+                  >
+                    {roleSaving ? t.savingRole : t.saveRole}
+                  </button>
                 </section>
 
                 <section className="rounded-xl border border-[var(--color-border)] p-4">
@@ -395,6 +517,30 @@ export function EngineersPage() {
                   {profile.engineer.bio && (
                     <div className="mt-3 rounded-lg bg-[var(--color-surface-elevated)] p-3 text-sm text-[var(--color-text-secondary)]">
                       {profile.engineer.bio}
+                    </div>
+                  )}
+                </section>
+
+                <section className="rounded-xl border border-[var(--color-border)] p-4">
+                  <h4 className="mb-3 font-medium">{t.availability}</h4>
+                  {!profile.calendar_events?.length ? (
+                    <div className="py-4 text-sm text-[var(--color-text-muted)]">{t.noAvailability}</div>
+                  ) : (
+                    <div className="space-y-2">
+                      {profile.calendar_events.map((event) => (
+                        <div key={event.id} className="rounded-lg bg-[var(--color-surface-elevated)] px-3 py-2 text-sm">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <span className="font-medium">{event.title || eventLabel(event.event_type)}</span>
+                            <span className="text-xs text-[var(--color-text-muted)]">{eventLabel(event.event_type)}</span>
+                          </div>
+                          <div className="mt-1 text-xs text-[var(--color-text-secondary)]">
+                            {formatDateTime(event.start_at)} - {formatDateTime(event.end_at)}
+                          </div>
+                          {(event.location || event.note) && (
+                            <div className="mt-1 text-xs text-[var(--color-text-muted)]">{[event.location, event.note].filter(Boolean).join(' / ')}</div>
+                          )}
+                        </div>
+                      ))}
                     </div>
                   )}
                 </section>
