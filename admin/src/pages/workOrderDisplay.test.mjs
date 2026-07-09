@@ -5,6 +5,7 @@ import { test } from 'node:test';
 import {
   formatAiSummary,
   formatEngineerOption,
+  formatListValue,
   getQuoteReviewRows,
 } from './workOrderDisplay.js';
 
@@ -16,6 +17,21 @@ test('formats engineer option without leaking JSON array strings', () => {
   });
 
   assert.equal(label, 'E90002 - SAGEMRO Test Engineer / North America, Europe');
+});
+
+test('formats engineer profile list and enum values for display', () => {
+  assert.equal(
+    formatListValue('["North America","Europe","Asia Pacific"]'),
+    'North America, Europe, Asia Pacific',
+  );
+  assert.equal(
+    formatListValue(['laser_cutting', 'press_brake']),
+    'Laser cutting, Press brake',
+  );
+  assert.equal(
+    formatListValue(['diagnosis', 'maintenance', 'onsite_service']),
+    'Diagnosis, Maintenance, Onsite service',
+  );
 });
 
 test('builds quote review rows with fee breakdown and other fee note', () => {
@@ -47,7 +63,7 @@ test('formats AI summary JSON into readable review notes', () => {
   }));
 
   assert.match(formatted, /Summary: Z axis calibration failed\./);
-  assert.match(formatted, /Required specialties: laser cutting, servo diagnostics/);
+  assert.match(formatted, /Required specialties: Laser cutting, Servo diagnostics/);
   assert.match(formatted, /Urgency notes: Production is stopped\./);
   assert.equal(formatted.includes('{'), false);
   assert.equal(formatted.includes('required_specialties'), false);

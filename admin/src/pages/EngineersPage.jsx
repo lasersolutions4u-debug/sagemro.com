@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Download, Search, X } from 'lucide-react';
 import { getAdminEngineerDetail, getAdminUsers, updateAdminEngineer } from '../services/api';
 import { runtimeConfig } from '../config/runtime';
+import { formatListValue } from './workOrderDisplay';
 
 const STATUS_MAP = {
   available: { color: 'var(--color-success)' },
@@ -26,7 +27,7 @@ function downloadCsv(filename, rows) {
 }
 
 function listText(value) {
-  return Array.isArray(value) && value.length ? value.join(', ') : '-';
+  return formatListValue(value) || '-';
 }
 
 function formatScore(value) {
@@ -347,7 +348,7 @@ export function EngineersPage() {
                         <div className="text-xs text-[var(--color-text-muted)]">{engineer.company || engineer.phone || '-'}</div>
                       </td>
                       <td className="px-2 py-3 text-[var(--color-text-secondary)]">
-                        <div>{engineer.service_region || engineer.responsible_region || '-'}</div>
+                        <div>{formatListValue(engineer.service_region || engineer.responsible_region) || '-'}</div>
                         <div className="text-xs text-[var(--color-text-muted)]">
                           {engineer.engineer_role === 'regional_lead'
                             ? t.regionalLead
@@ -428,7 +429,7 @@ export function EngineersPage() {
                   </div>
                   <div className="rounded-xl bg-[var(--color-surface-elevated)] p-4">
                     <div className="text-xs text-[var(--color-text-muted)]">{t.serviceScope}</div>
-                    <div className="mt-2 text-sm">{profile.engineer.service_region || profile.engineer.responsible_region || '-'}</div>
+                    <div className="mt-2 text-sm">{formatListValue(profile.engineer.service_region || profile.engineer.responsible_region) || '-'}</div>
                     <div className="text-sm text-[var(--color-text-secondary)]">
                       {profile.engineer.engineer_role === 'regional_lead'
                         ? t.regionalLead

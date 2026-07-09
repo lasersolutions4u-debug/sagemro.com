@@ -19,6 +19,12 @@ function humanizeKey(key) {
     .replace(/^./, (char) => char.toUpperCase());
 }
 
+function formatEnumLabel(value) {
+  const text = String(value ?? '').trim();
+  if (!text) return '';
+  return /^[a-z][a-z0-9_ -]*$/.test(text) ? humanizeKey(text) : text;
+}
+
 function formatDisplayValue(value) {
   if (Array.isArray(value)) {
     return value
@@ -32,7 +38,7 @@ function formatDisplayValue(value) {
       .filter(Boolean)
       .join('; ');
   }
-  return value == null ? '' : String(value);
+  return value == null ? '' : formatEnumLabel(value);
 }
 
 export function formatAiSummary(value) {
@@ -55,13 +61,13 @@ export function formatListValue(value) {
   if (Array.isArray(parsed)) {
     return parsed
       .map((item) => {
-        if (typeof item === 'string') return item;
-        return item?.name || item?.label || item?.description || '';
+        if (typeof item === 'string') return formatEnumLabel(item);
+        return formatEnumLabel(item?.name || item?.label || item?.description || '');
       })
       .filter(Boolean)
       .join(', ');
   }
-  return typeof parsed === 'string' ? parsed : '';
+  return typeof parsed === 'string' ? formatEnumLabel(parsed) : '';
 }
 
 export function formatQuoteNote(value) {
