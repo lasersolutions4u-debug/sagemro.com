@@ -78,11 +78,11 @@ export function PaymentModal({ isOpen, onClose, workOrderId, customerId, onPaid 
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[120] flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-[120] flex items-center justify-center p-2 sm:p-4">
       <div className="absolute inset-0 bg-slate-950/65 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative w-full max-w-md overflow-hidden rounded-2xl border border-slate-200 bg-white text-slate-950 shadow-2xl">
-        <div className="flex items-center justify-between border-b border-slate-200 p-4">
-          <h2 className="text-lg font-semibold text-slate-950">
+      <div className="relative flex max-h-[calc(100dvh-16px)] w-full max-w-md flex-col overflow-hidden rounded-xl border border-slate-200 bg-white text-slate-950 shadow-2xl sm:rounded-2xl">
+        <div className="flex shrink-0 items-center justify-between gap-3 border-b border-slate-200 p-3 sm:p-4">
+          <h2 className="min-w-0 truncate text-base font-semibold text-slate-950 sm:text-lg">
             {step === 'processing' ? 'Confirming...' : step === 'submitted' ? 'Payment Follow-up' : 'Confirm Payment Method'}
           </h2>
           <button onClick={onClose} className="rounded-lg p-1.5 text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-900">
@@ -90,7 +90,7 @@ export function PaymentModal({ isOpen, onClose, workOrderId, customerId, onPaid 
           </button>
         </div>
 
-        <div className="p-4 space-y-4">
+        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-3 sm:p-4">
           {loading ? (
             <div className="py-8 text-center text-sm text-slate-500">
               <Loader2 size={24} className="animate-spin mx-auto mb-2" />
@@ -165,7 +165,7 @@ export function PaymentModal({ isOpen, onClose, workOrderId, customerId, onPaid 
                         key={m.id}
                         type="button"
                         onClick={() => setMethod(m.id)}
-                        className={`flex w-full items-center gap-3 rounded-xl border p-3 text-left transition-all ${
+                        className={`flex w-full items-start gap-3 rounded-xl border p-3 text-left transition-all ${
                           selected
                             ? 'border-amber-500 bg-amber-50 shadow-sm'
                             : 'border-slate-200 bg-white hover:border-slate-400'

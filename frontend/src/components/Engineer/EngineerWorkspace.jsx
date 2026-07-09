@@ -184,24 +184,24 @@ export function EngineerWorkspace({ currentUser, onLogout, onOpenProfile }) {
     <>
     <div className="h-[100dvh] overflow-y-auto bg-[var(--color-bg)] text-[var(--color-text-primary)]">
       <header className="border-b border-[var(--color-border)] bg-[var(--color-surface)]">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-5 py-4">
-          <div>
+        <div className="mx-auto flex max-w-7xl flex-col gap-3 px-3 py-4 sm:px-5 md:flex-row md:items-center md:justify-between">
+          <div className="min-w-0">
             <div className="text-xs uppercase tracking-[0.24em] text-[var(--color-primary)]">SAGEMRO</div>
             <h1 className="text-xl font-semibold">
               {isRegionalLead ? 'Regional Lead Workspace' : 'Engineer Workspace'}
             </h1>
             <p className="text-sm text-[var(--color-text-muted)]">SAGEMRO Service Console</p>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="grid grid-cols-2 gap-2 sm:flex sm:items-center sm:gap-3">
             <button
               onClick={onOpenProfile}
-              className="rounded-xl border border-[var(--color-border)] px-3 py-2 text-sm text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]"
+              className="min-h-10 rounded-xl border border-[var(--color-border)] px-3 py-2 text-sm text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]"
             >
               {currentUser?.name || 'Engineer Profile'}
             </button>
             <button
               onClick={onLogout}
-              className="rounded-xl bg-[var(--color-primary)] px-3 py-2 text-sm font-medium text-white"
+              className="min-h-10 rounded-xl bg-[var(--color-primary)] px-3 py-2 text-sm font-medium text-white"
             >
               Sign Out
             </button>
@@ -209,7 +209,7 @@ export function EngineerWorkspace({ currentUser, onLogout, onOpenProfile }) {
         </div>
       </header>
 
-      <main className="mx-auto max-w-7xl px-5 py-6">
+      <main className="mx-auto max-w-7xl px-3 py-4 sm:px-5 sm:py-6">
         {message && (
           <div className="mb-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3 text-sm text-[var(--color-text-secondary)]">
             {message}
@@ -218,12 +218,12 @@ export function EngineerWorkspace({ currentUser, onLogout, onOpenProfile }) {
 
         <section className="mb-6 grid gap-4 lg:grid-cols-[1.7fr_1fr]">
           <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5">
-            <div className="mb-4 flex items-center justify-between">
+            <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <h2 className="font-semibold">Task Overview</h2>
                 <p className="text-sm text-[var(--color-text-muted)]">Only service tasks assigned through SAGEMRO are shown here.</p>
               </div>
-              <div className="flex gap-2">
+              <div className="grid grid-cols-3 gap-2 sm:flex">
                 {[
                   { value: 'available', label: 'Available' },
                   { value: 'paused', label: 'Paused' },
@@ -232,7 +232,7 @@ export function EngineerWorkspace({ currentUser, onLogout, onOpenProfile }) {
                   <button
                     key={item.value}
                     onClick={() => updateStatus(item.value)}
-                    className={`rounded-lg px-3 py-1.5 text-xs font-medium ${
+                    className={`min-h-9 rounded-lg px-3 py-1.5 text-xs font-medium ${
                       status === item.value
                         ? 'bg-[var(--color-primary)] text-white'
                         : 'bg-[var(--color-surface-elevated)] text-[var(--color-text-secondary)]'
@@ -281,7 +281,7 @@ export function EngineerWorkspace({ currentUser, onLogout, onOpenProfile }) {
               <div className="space-y-3">
                 {tickets.map((ticket) => (
                   <article key={ticket.id} className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-elevated)] p-4">
-                    <div className="mb-2 flex items-start justify-between gap-3">
+                    <div className="mb-2 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
                       <div>
                         <div className="font-medium">{ticket.order_no || ticket.id}</div>
                         <div className="text-sm text-[var(--color-text-muted)]">
@@ -298,10 +298,10 @@ export function EngineerWorkspace({ currentUser, onLogout, onOpenProfile }) {
                       <div>Safety risk: {ticket.urgency === 'critical' ? 'High risk' : ticket.urgency === 'urgent' ? 'Priority' : 'Standard'}</div>
                       <div>Current engineer: {ticket.engineer_name || 'Pending regional assignment'}</div>
                     </div>
-                    <div className="mt-3 flex flex-wrap gap-2">
+                    <div className="mt-3 grid gap-2 sm:flex sm:flex-wrap">
                       <button
                         onClick={() => setSelectedTicket(ticket)}
-                        className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm font-medium text-[var(--color-text-primary)] hover:border-[var(--color-primary)]"
+                        className="min-h-10 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm font-medium text-[var(--color-text-primary)] hover:border-[var(--color-primary)]"
                       >
                         View / Handle Task
                       </button>
@@ -310,14 +310,14 @@ export function EngineerWorkspace({ currentUser, onLogout, onOpenProfile }) {
                           <button
                             onClick={() => confirmAssignment(ticket)}
                             disabled={assigningId === `${ticket.id}:accept`}
-                            className="rounded-lg bg-[var(--color-primary)] px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
+                            className="min-h-10 rounded-lg bg-[var(--color-primary)] px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
                           >
                             {assigningId === `${ticket.id}:accept` ? 'Confirming' : 'Confirm Assignment'}
                           </button>
                           <button
                             onClick={() => returnAssignment(ticket)}
                             disabled={assigningId === `${ticket.id}:reject`}
-                            className="rounded-lg border border-[var(--color-border)] px-3 py-2 text-sm font-medium text-[var(--color-text-secondary)] disabled:opacity-50"
+                            className="min-h-10 rounded-lg border border-[var(--color-border)] px-3 py-2 text-sm font-medium text-[var(--color-text-secondary)] disabled:opacity-50"
                           >
                             {assigningId === `${ticket.id}:reject` ? 'Returning' : 'Return to Dispatch'}
                           </button>

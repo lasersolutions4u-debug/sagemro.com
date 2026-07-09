@@ -85,7 +85,7 @@ export function MyWorkOrdersModal({ isOpen, onClose }) {
 
   return (
     <>
-      <Modal isOpen={isOpen} onClose={onClose} title="My Services" size="md">
+      <Modal isOpen={isOpen} onClose={onClose} title="My Services" size="lg">
         <div className="space-y-3">
           {loading && (
             <div className="text-center py-8 text-[var(--color-text-secondary)]">
@@ -128,14 +128,14 @@ export function MyWorkOrdersModal({ isOpen, onClose }) {
             return (
               <div
                 key={order.id}
-                className="p-4 bg-[var(--color-surface-elevated)] rounded-xl cursor-pointer hover:bg-[var(--color-hover)] transition-colors"
+                className="p-3 sm:p-4 bg-[var(--color-surface-elevated)] rounded-xl cursor-pointer hover:bg-[var(--color-hover)] transition-colors"
                 onClick={() => handleViewDetail(order)}
               >
-                <div className="flex items-center justify-between mb-2">
-                  <span className="font-medium text-[var(--color-text-primary)]">
+                <div className="mb-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <span className="break-all font-medium text-[var(--color-text-primary)]">
                     {order.order_no || order.id}
                   </span>
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     {showSla && (
                       <span className={`flex items-center gap-1 px-1.5 py-0.5 text-xs rounded ${slaColors[sla.status]} ${slaBg[sla.status]}`}>
                         <Clock size={10} />
@@ -161,11 +161,11 @@ export function MyWorkOrdersModal({ isOpen, onClose }) {
                 <p className="text-sm text-[var(--color-text-primary)] line-clamp-2">
                   {order.description}
                 </p>
-                <div className="flex items-center justify-between mt-2">
+                <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                   <p className="text-xs text-[var(--color-text-secondary)]">
                     Submitted: {new Date(order.created_at).toLocaleString('en-US')}
                   </p>
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     {[WorkOrderStatus.PENDING, WorkOrderStatus.ASSIGNED, WorkOrderStatus.IN_PROGRESS, WorkOrderStatus.PRICING].includes(order.status) && (
                       <button
                         data-testid="cancel-work-order-list-button"

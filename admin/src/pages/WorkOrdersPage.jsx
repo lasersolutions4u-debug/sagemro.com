@@ -517,7 +517,7 @@ export function WorkOrdersPage() {
 
   return (
     <div>
-      <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
+      <div className="mb-4 flex flex-wrap items-start justify-between gap-3 sm:mb-6">
         <div>
           <h2 className="text-lg font-semibold">{t.title}</h2>
           <p className="text-sm text-[var(--color-text-muted)] mt-1">
@@ -531,12 +531,12 @@ export function WorkOrdersPage() {
         </div>
       )}
 
-      <div className="flex gap-2 mb-6 flex-wrap">
+      <div className="-mx-3 mb-4 flex gap-2 overflow-x-auto px-3 pb-1 sm:mx-0 sm:mb-6 sm:flex-wrap sm:px-0">
         {statusTabs.map((tab) => (
           <button
             key={tab.key}
             onClick={() => setStatus(tab.key)}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+            className={`shrink-0 px-3 py-2 sm:px-4 rounded-lg text-sm font-medium transition-colors ${
               status === tab.key
                 ? 'bg-[var(--color-primary)] text-white'
                 : 'bg-[var(--color-surface-elevated)] text-[var(--color-text-secondary)] hover:text-[var(--color-text)]'
@@ -551,7 +551,126 @@ export function WorkOrdersPage() {
         <div className="text-center py-12 text-[var(--color-text-muted)]">{t.loading}</div>
       ) : (
         <>
-          <div className="overflow-x-auto">
+          <div className="space-y-3 md:hidden">
+            {data.list.length === 0 ? (
+              <div className="rounded-xl bg-[var(--color-surface-elevated)] py-8 text-center text-sm text-[var(--color-text-muted)]">
+                {t.empty}
+              </div>
+            ) : data.list.map((wo) => {
+              const statusInfo = STATUS_MAP[wo.status] || { color: 'var(--color-text-muted)' };
+              return (
+                <article key={wo.id} className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-3 shadow-sm">
+                  <div className="flex items-start justify-between gap-3">
+                    <button
+                      onClick={() => openDetail(wo)}
+                      className="min-w-0 break-all text-left font-mono text-sm font-semibold text-[var(--color-primary)]"
+                    >
+                      {wo.order_no}
+                    </button>
+                    <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-[var(--color-surface-elevated)] px-2 py-1 text-xs">
+                      <span className="h-2 w-2 rounded-full" style={{ backgroundColor: statusInfo.color }} />
+                      {t.statuses[wo.status] || wo.status}
+                    </span>
+                  </div>
+                  <div className="mt-2 text-sm">
+                    <div className="font-medium">{wo.customer_name || '-'}</div>
+                    {wo.customer_company && <div className="text-xs text-[var(--color-text-muted)]">{wo.customer_company}</div>}
+                  </div>
+                  <div className="mt-3 grid gap-2 text-xs text-[var(--color-text-secondary)]">
+                    <div>{t.headers.type}: {t.types[wo.type] || wo.type || '-'}</div>
+                    <div>
+                      {t.headers.urgency}: <span className={wo.urgency === 'critical' ? 'text-[var(--color-error)] font-medium' : wo.urgency === 'urgent' ? 'text-[var(--color-warning)]' : ''}>
+                        {t.urgency[wo.urgency] || wo.urgency || '-'}
+                      </span>
+                    </div>
+                    <div>{t.headers.regionalLead}: {wo.regional_lead_name || '-'}</div>
+                    <div>{t.headers.engineer}: {wo.engineer_name || '-'}</div>
+                    <div>
+                      {t.headers.quoteArchive}: {wo.pricing_status
+                        ? `${t.pricing[wo.pricing_status] || wo.pricing_status}${wo.pricing_total_amount || wo.pricing_subtotal ? ` / ${money(wo.pricing_total_amount || wo.pricing_subtotal)} USD` : ''}`
+                        : t.noQuote}
+                    </div>
+                  </div>
+                  {wo.conflict_status === 'blocked' && (
+                    <div className="mt-3 rounded-lg border border-[var(--color-error)]/30 bg-[var(--color-error)]/10 px-3 py-2 text-xs text-[var(--color-error)]">
+                      {wo.conflict_reason || t.conflictFallback}
+                    </div>
+                  )}
+                  <div className="mt-3 space-y-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-elevated)] p-2">
+                    <div className="flex flex-col gap-2">
+                      <select
+                        value={selectedRegionalLeads[wo.id] || wo.assigned_regional_lead_id || ''}
+                        onChange={(event) => setSelectedRegionalLeads((prev) => ({ ...prev, [wo.id]: event.target.value }))}
+                        className="min-h-10 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)]"
+                      >
+                        <option value="">{t.regionalLeadOption}</option>
+                        {regionalLeads.map((lead) => (
+                          <option key={lead.id} value={lead.id}>{formatEngineerOption(lead)}</option>
+                        ))}
+                      </select>
+                      <button
+                        onClick={() => handleAssignRegionalLead(wo)}
+                        disabled={assigningId === `${wo.id}:lead`}
+                        className="min-h-10 rounded-lg bg-[var(--color-primary)] px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
+                      >
+                        {assigningId === `${wo.id}:lead` ? t.assigning : t.assignRegion}
+                      </button>
+                    </div>
+                    <div className="flex flex-col gap-2">
+                      <select
+                        value={selectedEngineers[wo.id] || wo.engineer_id || ''}
+                        onChange={(event) => setSelectedEngineers((prev) => ({ ...prev, [wo.id]: event.target.value }))}
+                        className="min-h-10 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)]"
+                      >
+                        <option value="">{t.engineerOption}</option>
+                        {engineers.map((engineer) => (
+                          <option key={engineer.id} value={engineer.id}>{formatEngineerOption(engineer)}</option>
+                        ))}
+                      </select>
+                      <button
+                        onClick={() => handleAssign(wo)}
+                        disabled={assigningId === `${wo.id}:engineer`}
+                        className="min-h-10 rounded-lg bg-[var(--color-primary)] px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
+                      >
+                        {assigningId === `${wo.id}:engineer` ? t.dispatching : t.directDispatch}
+                      </button>
+                    </div>
+                  </div>
+                  <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                    <button
+                      onClick={() => openDetail(wo)}
+                      className="min-h-10 rounded-lg border border-[var(--color-border)] px-3 py-2 text-sm font-medium text-[var(--color-text-secondary)]"
+                    >
+                      {wo.pricing_status === 'pending_review' ? (t.viewQuoteDetail || t.view) : t.view}
+                    </button>
+                    {wo.status === 'payment_review' && (
+                      <button
+                        onClick={() => handleApprovePaymentStart(wo)}
+                        disabled={assigningId === `${wo.id}:payment-start`}
+                        className="min-h-10 rounded-lg bg-[var(--color-primary)] px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
+                      >
+                        {t.approvePaymentStart}
+                      </button>
+                    )}
+                    {['resolved', 'pending_review'].includes(wo.status) && (
+                      <button
+                        onClick={() => handleArchive(wo)}
+                        disabled={assigningId === `${wo.id}:archive`}
+                        className="min-h-10 rounded-lg border border-[var(--color-border)] px-3 py-2 text-sm font-medium text-[var(--color-text-secondary)] disabled:opacity-50"
+                      >
+                        {t.archive}
+                      </button>
+                    )}
+                  </div>
+                  <div className="mt-2 text-xs text-[var(--color-text-muted)]">
+                    {wo.created_at?.slice(0, 16)?.replace('T', ' ')}
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+
+          <div className="hidden overflow-x-auto md:block">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-[var(--color-border)]">
@@ -746,20 +865,21 @@ export function WorkOrdersPage() {
       {detailOpen && (
         <div className="fixed inset-0 z-50 flex justify-end">
           <div className="absolute inset-0 bg-black/40" onClick={() => setDetailOpen(false)} />
-          <div className="relative h-full w-full max-w-4xl overflow-y-auto bg-[var(--color-surface)] p-5 shadow-2xl">
-            <div className="mb-4 flex items-start justify-between gap-4">
-              <div>
+          <div className="relative flex h-full w-full max-w-4xl flex-col overflow-hidden bg-[var(--color-surface)] shadow-2xl">
+            <div className="sticky top-0 z-10 flex shrink-0 items-start justify-between gap-3 border-b border-[var(--color-border)] bg-[var(--color-surface)] p-3 sm:p-5">
+              <div className="min-w-0">
                 <div className="text-xs uppercase tracking-[0.18em] text-[var(--color-primary)]">Service Record</div>
                 <h3 className="text-lg font-semibold">{t.drawerTitle}</h3>
-                <p className="text-sm text-[var(--color-text-muted)]">{t.drawerSubtitle}</p>
+                <p className="mt-1 text-sm text-[var(--color-text-muted)]">{t.drawerSubtitle}</p>
               </div>
               <button
                 onClick={() => setDetailOpen(false)}
-                className="rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-sm"
+                className="shrink-0 rounded-lg border border-[var(--color-border)] px-3 py-2 text-sm"
               >
                 {t.close}
               </button>
             </div>
+            <div className="min-h-0 flex-1 overflow-y-auto p-3 sm:p-5">
 
             {detailLoading ? (
               <div className="py-12 text-center text-sm text-[var(--color-text-muted)]">{t.loading}</div>
@@ -1066,6 +1186,7 @@ export function WorkOrdersPage() {
             ) : (
               <div className="py-12 text-center text-sm text-[var(--color-text-muted)]">{t.noDetail}</div>
             )}
+            </div>
           </div>
         </div>
       )}

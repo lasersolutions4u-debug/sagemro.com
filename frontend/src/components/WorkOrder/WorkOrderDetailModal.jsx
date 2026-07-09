@@ -149,9 +149,9 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
   const renderInfoTab = () => (
     <div className="space-y-4">
       <div className="p-4 bg-[var(--color-surface-elevated)] rounded-xl space-y-2">
-        <div className="flex items-center justify-between">
-          <span className="font-medium text-[var(--color-text-primary)]">{detail?.order_no || workOrder.id}</span>
-          <div className="flex gap-2">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <span className="break-all font-medium text-[var(--color-text-primary)]">{detail?.order_no || workOrder.id}</span>
+          <div className="flex flex-wrap gap-2">
             <span className={`px-2 py-0.5 text-xs text-white rounded ${status.color}`}>{status.text}</span>
             <span className={`px-2 py-0.5 text-xs rounded ${urgency.color}`}>{urgency.text}</span>
           </div>
@@ -171,7 +171,7 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
           const remaining = formatSlaRemaining(sla);
           const slaColor = sla.status === 'breached' ? 'text-red-500' : sla.status === 'at_risk' ? 'text-yellow-500' : 'text-green-500';
           return (
-            <div className="flex items-center gap-4 text-sm">
+            <div className="flex flex-col gap-1 text-sm sm:flex-row sm:items-center sm:gap-4">
               <span className="text-[var(--color-text-secondary)]">SLA Deadline: {new Date(detail.sla_deadline).toLocaleString('en-US')}</span>
               {remaining && <span className={slaColor}>{remaining}</span>}
             </div>
@@ -472,15 +472,15 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
   );
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Work Order Details" size="md">
-      <div>
+    <Modal isOpen={isOpen} onClose={onClose} title="Work Order Details" size="2xl">
+      <div className="min-h-0">
         {/* Tab 切换 */}
-        <div className="flex gap-1 mb-4 border-b border-[var(--color-border)] pb-0">
+        <div className="-mx-3 mb-4 flex gap-1 overflow-x-auto border-b border-[var(--color-border)] px-3 pb-0 sm:mx-0 sm:px-0">
           {tabs.map((t) => (
             <button
               key={t.key}
               onClick={() => setTab(t.key)}
-              className={`px-3 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
+              className={`shrink-0 px-3 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
                 tab === t.key
                   ? 'border-[var(--color-primary)] text-[var(--color-primary)]'
                   : 'border-transparent text-[var(--color-text-secondary)] hover:text-[var(--color-text)]'

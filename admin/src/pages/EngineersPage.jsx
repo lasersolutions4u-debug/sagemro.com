@@ -259,7 +259,7 @@ export function EngineersPage() {
 
   return (
     <div>
-      <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
+      <div className="mb-4 flex flex-wrap items-start justify-between gap-3 sm:mb-6">
         <div>
           <h2 className="text-lg font-semibold">{t.title}</h2>
           <p className="mt-1 text-sm text-[var(--color-text-muted)]">{t.subtitle}</p>
@@ -267,7 +267,7 @@ export function EngineersPage() {
         <button
           onClick={exportCurrentList}
           disabled={!data.list.length}
-          className="inline-flex items-center gap-2 rounded-lg border border-[var(--color-border)] px-3 py-2 text-sm text-[var(--color-text-secondary)] hover:text-[var(--color-text)] disabled:opacity-40"
+          className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-[var(--color-border)] px-3 py-2 text-sm text-[var(--color-text-secondary)] hover:text-[var(--color-text)] disabled:opacity-40"
         >
           <Download size={15} />
           {t.exportCurrent}
@@ -280,33 +280,33 @@ export function EngineersPage() {
         </div>
       )}
 
-      <div className="mb-4 grid gap-2 lg:grid-cols-[minmax(240px,1fr)_160px_180px_180px]">
+      <div className="mb-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-[minmax(240px,1fr)_160px_180px_180px]">
         <label className="relative">
           <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--color-text-muted)]" />
           <input
             value={search}
             onChange={(event) => setSearch(event.target.value)}
             placeholder={t.searchPlaceholder}
-            className="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-elevated)] py-2 pl-9 pr-3 text-sm outline-none focus:border-[var(--color-primary)]"
+            className="min-h-10 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-elevated)] py-2 pl-9 pr-3 text-sm outline-none focus:border-[var(--color-primary)]"
           />
         </label>
         <input
           value={filterRegion}
           onChange={(event) => setFilterRegion(event.target.value)}
           placeholder={t.regionPlaceholder}
-          className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-3 py-2 text-sm outline-none focus:border-[var(--color-primary)]"
+          className="min-h-10 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-3 py-2 text-sm outline-none focus:border-[var(--color-primary)]"
         />
         <input
           value={filterSpecialty}
           onChange={(event) => setFilterSpecialty(event.target.value)}
           placeholder={t.equipmentPlaceholder}
-          className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-3 py-2 text-sm outline-none focus:border-[var(--color-primary)]"
+          className="min-h-10 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-3 py-2 text-sm outline-none focus:border-[var(--color-primary)]"
         />
         <input
           value={filterService}
           onChange={(event) => setFilterService(event.target.value)}
           placeholder={t.servicePlaceholder}
-          className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-3 py-2 text-sm outline-none focus:border-[var(--color-primary)]"
+          className="min-h-10 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-3 py-2 text-sm outline-none focus:border-[var(--color-primary)]"
         />
       </div>
 
@@ -315,7 +315,50 @@ export function EngineersPage() {
       ) : (
         <>
           <div className="mb-2 text-xs text-[var(--color-text-muted)]">{t.total(data.total)}</div>
-          <div className="overflow-x-auto">
+          <div className="space-y-3 md:hidden">
+            {data.list.length === 0 ? (
+              <div className="rounded-xl bg-[var(--color-surface-elevated)] py-8 text-center text-sm text-[var(--color-text-muted)]">{t.empty}</div>
+            ) : data.list.map((engineer) => {
+              const statusInfo = STATUS_MAP[engineer.status] || { color: 'var(--color-text-muted)' };
+              return (
+                <article
+                  key={engineer.id}
+                  onClick={() => openProfile(engineer)}
+                  className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-3 shadow-sm"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="font-mono text-sm font-semibold text-[var(--color-primary)]">{engineer.user_no || '-'}</div>
+                      <div className="mt-1 font-medium">{engineer.name}</div>
+                      <div className="truncate text-xs text-[var(--color-text-muted)]">{engineer.company || engineer.phone || '-'}</div>
+                    </div>
+                    <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-[var(--color-surface-elevated)] px-2 py-1 text-xs">
+                      <span className="h-2 w-2 rounded-full" style={{ backgroundColor: statusInfo.color }} />
+                      {t.statuses[engineer.status] || engineer.status}
+                    </span>
+                  </div>
+                  <div className="mt-3 grid gap-2 text-xs text-[var(--color-text-secondary)]">
+                    <div>{t.headers.region}: {formatListValue(engineer.service_region || engineer.responsible_region) || '-'}</div>
+                    <div>
+                      {engineer.engineer_role === 'regional_lead'
+                        ? t.regionalLead
+                        : engineer.regional_lead_name
+                          ? t.upstreamLead(engineer.regional_lead_name)
+                          : engineer.team_name || '-'}
+                    </div>
+                    <div>{t.headers.specialties}: {listText(engineer.specialties)}</div>
+                    <div>{t.headers.services}: {listText(engineer.services)}</div>
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-2 text-xs text-[var(--color-text-muted)]">
+                    <span className="rounded-lg bg-[var(--color-surface-elevated)] px-2 py-1">{t.headers.rating}: {formatScore(engineer.rating_technical)}</span>
+                    <span className="rounded-lg bg-[var(--color-surface-elevated)] px-2 py-1">{t.headers.orders}: {engineer.total_orders ?? '-'}</span>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+
+          <div className="hidden overflow-x-auto md:block">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-[var(--color-border)]">
@@ -399,9 +442,9 @@ export function EngineersPage() {
       {selectedEngineer && (
         <div className="fixed inset-0 z-50 flex justify-end">
           <div className="absolute inset-0 bg-black/40" onClick={() => setSelectedEngineer(null)} />
-          <div className="relative h-full w-full max-w-3xl overflow-y-auto bg-[var(--color-surface)] p-5 shadow-2xl">
-            <div className="mb-4 flex items-start justify-between gap-4">
-              <div>
+          <div className="relative flex h-full w-full max-w-3xl flex-col overflow-hidden bg-[var(--color-surface)] shadow-2xl">
+            <div className="sticky top-0 z-10 flex shrink-0 items-start justify-between gap-3 border-b border-[var(--color-border)] bg-[var(--color-surface)] p-3 sm:p-5">
+              <div className="min-w-0">
                 <div className="font-mono text-xs uppercase tracking-[0.18em] text-[var(--color-primary)]">
                   {profile?.engineer?.user_no || selectedEngineer.user_no || '-'}
                 </div>
@@ -410,12 +453,13 @@ export function EngineersPage() {
               </div>
               <button
                 onClick={() => setSelectedEngineer(null)}
-                className="inline-flex items-center gap-2 rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-sm"
+                className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-[var(--color-border)] px-3 py-2 text-sm"
               >
                 <X size={15} />
                 {t.close}
               </button>
             </div>
+            <div className="min-h-0 flex-1 overflow-y-auto p-3 sm:p-5">
 
             {profileLoading ? (
               <div className="py-12 text-center text-sm text-[var(--color-text-muted)]">{t.loading}</div>
@@ -446,9 +490,9 @@ export function EngineersPage() {
                 </section>
 
                 <section className="rounded-xl border border-[var(--color-border)] p-4">
-                  <div className="mb-3 flex items-center justify-between gap-3">
+                  <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                     <h4 className="font-medium">{t.roleSettings}</h4>
-                    <div className="flex rounded-lg border border-[var(--color-border)] p-1">
+                    <div className="grid grid-cols-2 rounded-lg border border-[var(--color-border)] p-1 sm:flex">
                       {[
                         { value: 'engineer', label: t.engineer },
                         { value: 'regional_lead', label: t.regionalLead },
@@ -457,7 +501,7 @@ export function EngineersPage() {
                           key={role.value}
                           type="button"
                           onClick={() => setRoleDraft((draft) => ({ ...draft, engineer_role: role.value }))}
-                          className={`rounded-md px-3 py-1.5 text-xs font-medium ${
+                          className={`rounded-md px-3 py-2 text-xs font-medium ${
                             roleDraft.engineer_role === role.value
                               ? 'bg-[var(--color-primary)] text-white'
                               : 'text-[var(--color-text-secondary)] hover:text-[var(--color-text)]'
@@ -589,6 +633,7 @@ export function EngineersPage() {
             ) : (
               <div className="py-12 text-center text-sm text-[var(--color-text-muted)]">{t.loadFailed}</div>
             )}
+            </div>
           </div>
         </div>
       )}

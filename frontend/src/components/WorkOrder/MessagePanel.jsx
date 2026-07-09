@@ -127,7 +127,7 @@ export function MessagePanel({ workOrderId, userType }) {
 
   return (
     <div className="space-y-3">
-      <div className="max-h-80 overflow-y-auto space-y-2 p-2 bg-[var(--color-surface-elevated)] rounded-xl">
+      <div className="max-h-[52dvh] min-h-72 overflow-y-auto space-y-2 p-2 bg-[var(--color-surface-elevated)] rounded-xl sm:max-h-80">
         {messages.length === 0 ? (
           <div className="text-center py-6 text-xs text-[var(--color-text-muted)]">No messages yet. Start the conversation!</div>
         ) : (
@@ -146,7 +146,7 @@ export function MessagePanel({ workOrderId, userType }) {
             }
             return (
               <div key={msg.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}>
-                <div className={`max-w-[82%] px-3 py-2 rounded-2xl text-sm ${
+                <div className={`max-w-[88%] px-3 py-2 rounded-2xl text-sm sm:max-w-[82%] ${
                   isMe
                     ? 'bg-[var(--color-primary)] text-white rounded-br-md'
                     : 'bg-[var(--color-surface-elevated)] text-[var(--color-text-primary)] rounded-bl-md'
@@ -181,7 +181,7 @@ export function MessagePanel({ workOrderId, userType }) {
         </div>
       )}
 
-      <div className="flex gap-2">
+      <div className="flex items-center gap-2">
         <input
           ref={fileInputRef}
           type="file"
@@ -195,7 +195,7 @@ export function MessagePanel({ workOrderId, userType }) {
           onClick={() => fileInputRef.current?.click()}
           disabled={sending}
           title="Attach image or video"
-          className="px-3 py-2 border border-[var(--color-border)] text-[var(--color-text-secondary)] rounded-xl hover:bg-[var(--color-surface-elevated)] disabled:opacity-40"
+          className="flex h-11 w-11 shrink-0 items-center justify-center border border-[var(--color-border)] text-[var(--color-text-secondary)] rounded-xl hover:bg-[var(--color-surface-elevated)] disabled:opacity-40"
         >
           <Paperclip size={16} />
         </button>
@@ -204,12 +204,12 @@ export function MessagePanel({ workOrderId, userType }) {
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && handleSend()}
           placeholder="Type a message..."
-          className="flex-1 px-3 py-2 text-sm border border-[var(--color-border)] rounded-xl bg-[var(--color-surface)] text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
+          className="min-h-11 min-w-0 flex-1 px-3 py-2 text-sm border border-[var(--color-border)] rounded-xl bg-[var(--color-surface)] text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
         />
         <button
           onClick={handleSend}
           disabled={sending || (!input.trim() && pendingFiles.length === 0)}
-          className="px-3 py-2 bg-[var(--color-primary)] disabled:opacity-40 text-white rounded-xl"
+          className="flex h-11 w-11 shrink-0 items-center justify-center bg-[var(--color-primary)] disabled:opacity-40 text-white rounded-xl"
         >
           {sending ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
         </button>
