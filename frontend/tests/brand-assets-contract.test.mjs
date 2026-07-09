@@ -43,6 +43,21 @@ test('main chat input is text-only and uses short mobile placeholder copy', () =
   assert.match(placeholderExpression, /Describe your service issue/);
 });
 
+test('main chat input supports Deepgram voice transcription without image upload', () => {
+  const inputArea = read('frontend/src/components/Chat/InputArea.jsx');
+  const api = read('frontend/src/services/api.js');
+
+  assert.match(inputArea, /Mic/);
+  assert.match(inputArea, /MediaRecorder/);
+  assert.match(inputArea, /VOICE_RECORDING_LIMIT_MS = 30 \* 1000/);
+  assert.match(inputArea, /transcribeVoiceInput\(audioBlob\)/);
+  assert.match(inputArea, /setInput\(\(current\) => current \? `\$\{current\} \$\{transcript\}` : transcript\)/);
+  assert.match(inputArea, /Voice input unavailable/);
+  assert.match(api, /transcribeVoiceInput\(audioBlob\)/);
+  assert.match(api, /\/api\/chat\/transcribe/);
+  assert.doesNotMatch(inputArea, /type="file"|accept="image/);
+});
+
 test('main site first-impression copy keeps CN and COM market language separate', () => {
   const welcome = read('frontend/src/components/Chat/WelcomePage.jsx');
   const about = read('frontend/src/components/common/AboutModal.jsx');

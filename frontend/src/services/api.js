@@ -236,6 +236,24 @@ export async function uploadChatImage(file) {
   return response.json();
 }
 
+export async function transcribeVoiceInput(audioBlob) {
+  const formData = new FormData();
+  formData.append('audio', audioBlob, 'voice.webm');
+
+  const response = await fetch(`${API_BASE}/api/chat/transcribe`, {
+    method: 'POST',
+    headers: authHeadersNoContentType(),
+    body: formData,
+  });
+
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.error || `Transcription failed (${response.status})`);
+  }
+
+  return response.json();
+}
+
 /**
  * 获取对话列表
  */

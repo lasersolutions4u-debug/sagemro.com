@@ -2607,6 +2607,19 @@ async function enforceOpenAIBudget(env, { userKey, tag = 'chat' }) {
 //   chat:    对话主流程，允许较长回复
 //   summary: 工单摘要，短 JSON
 //   note:    核价点评，一句话 + 2 条建议
+async function enforceHourlyKvLimit(env, { key, limit, ttlSeconds = 3600, message }) {
+  if (!env.KV) return;
+
+  const currentStr = await env.KV.get(key);
+  const currentCount = currentStr ? parseInt(currentStr, 10) : 0;
+
+  if (currentCount >= limit) {
+    throw new BudgetError(message, 429);
+  }
+
+  await env.KV.put(key, String(currentCount + 1), { expirationTtl: ttlSeconds });
+}
+
 const MAX_TOKENS = {
   chat: 2000,
   chat_tool_followup: 2000,
@@ -2743,6 +2756,75 @@ async function handleChatUploadImage(request, env) {
 }
 
 // 处理聊天请求
+export async function handleChatTranscribe(request, env) {
+  try {
+    if (!env.DEEPGRAM_API_KEY) {
+      return errorResponse('Voice input is not configured.', 503);
+    }
+
+    const formData = await request.formData();
+    const file = formData.get('audio');
+
+    if (!file || typeof file === 'string') {
+      return errorResponse('Please record audio first.', 400);
+    }
+
+    const maxVoiceBytes = 6 * 1024 * 1024;
+    if (file.size > maxVoiceBytes) {
+      return errorResponse('Voice recording is too large. Please keep it under 30 seconds.', 413);
+    }
+
+    const contentType = file.type || 'audio/webm';
+    if (!/^audio\//i.test(contentType) && !/webm|ogg|mp4|mpeg/i.test(contentType)) {
+      return errorResponse('Unsupported audio format.', 400);
+    }
+
+    let auth = null;
+    try {
+      auth = await authenticateRequest(request, env);
+    } catch {
+      auth = null;
+    }
+    const clientIP = getRequestIp(request) || 'unknown';
+    const voiceUserKey = auth?.userId ? `${auth.userType}:${auth.userId}` : `guest:${clientIP}`;
+    const hourlyLimit = parseInt(env.DEEPGRAM_HOURLY_PER_USER || '20', 10);
+    await enforceHourlyKvLimit(env, {
+      key: `deepgram_voice_hour_${voiceUserKey}`,
+      limit: hourlyLimit,
+      ttlSeconds: 3600,
+      message: `Voice transcription limit reached. Please try again later.`,
+    });
+
+    const deepgramUrl = new URL('https://api.deepgram.com/v1/listen');
+    deepgramUrl.searchParams.set('model', env.DEEPGRAM_MODEL || 'nova-3');
+    deepgramUrl.searchParams.set('smart_format', 'true');
+    deepgramUrl.searchParams.set('detect_language', 'true');
+
+    const dgResponse = await fetch(deepgramUrl.toString(), {
+      method: 'POST',
+      headers: {
+        Authorization: `Token ${env.DEEPGRAM_API_KEY}`,
+        'Content-Type': contentType,
+      },
+      body: file.stream(),
+    });
+
+    const dgBody = await dgResponse.json().catch(() => ({}));
+    if (!dgResponse.ok) {
+      const message = dgBody.err_msg || dgBody.error || 'Voice transcription failed.';
+      return errorResponse(message, dgResponse.status >= 500 ? 503 : 400);
+    }
+
+    const transcript = dgBody?.results?.channels?.[0]?.alternatives?.[0]?.transcript || '';
+    return jsonResponse({ success: true, transcript });
+  } catch (error) {
+    if (error instanceof BudgetError) {
+      return errorResponse(error.message, error.status);
+    }
+    return errorResponse(error.message || 'Voice transcription failed.', 500);
+  }
+}
+
 export async function handleChat(request, env) {
   try {
     const body = await request.json();
@@ -9874,6 +9956,9 @@ async function routeRequest(request, env, ctx) {
     // 聊天相关（允许未登录用户使用 AI 对话）
     if (path === '/api/chat/upload-image' && request.method === 'POST') {
       return handleChatUploadImage(request, env);
+    }
+    if (path === '/api/chat/transcribe' && request.method === 'POST') {
+      return handleChatTranscribe(request, env);
     }
     if (path === '/api/chat' && request.method === 'POST') {
       return handleChat(request, env);

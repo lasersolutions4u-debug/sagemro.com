@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { signJwt } from '../src/lib/auth.js';
-import { buildWorkOrderSummaryPrompt, handleChat } from '../src/index.js';
+import { buildWorkOrderSummaryPrompt, handleChat, handleChatTranscribe } from '../src/index.js';
 
 const JWT_SECRET = 'chat-access-test-secret-32-chars';
 
@@ -297,6 +297,101 @@ test('handleChat prompt keeps simple questions useful without pushing a work ord
   assert.match(prompt, /Do not push a work order or service request after a simple question is already answered clearly/);
   assert.match(prompt, /Add a short SAGEMRO service follow-up offer only when manual confirmation, quotation, parts, service scheduling, safety handling, or reviewed parameter verification is clearly useful/);
   assert.match(prompt, /If the user did not explicitly request a detailed plan, table, report, or full checklist, write exactly 5 compact lines/);
+});
+
+test('handleChatTranscribe requires Deepgram configuration', async () => {
+  const formData = new FormData();
+  formData.append('audio', new Blob(['audio'], { type: 'audio/webm' }), 'voice.webm');
+
+  const response = await handleChatTranscribe(new Request('https://api.sagemro.com/api/chat/transcribe', {
+    method: 'POST',
+    body: formData,
+  }), {});
+
+  assert.equal(response.status, 503);
+  const body = await response.json();
+  assert.match(body.error, /Voice input is not configured/);
+});
+
+test('handleChatTranscribe sends short mobile recordings to Deepgram Nova-3 multilingual', async () => {
+  const formData = new FormData();
+  formData.append('audio', new Blob(['audio'], { type: 'audio/webm' }), 'voice.webm');
+
+  const originalFetch = globalThis.fetch;
+  let captured = null;
+  globalThis.fetch = async (url, init) => {
+    captured = { url, init };
+    return new Response(JSON.stringify({
+      results: {
+        channels: [
+          { alternatives: [{ transcript: 'Check the laser alarm E012.' }] },
+        ],
+      },
+    }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  };
+
+  try {
+    const response = await handleChatTranscribe(new Request('https://api.sagemro.com/api/chat/transcribe', {
+      method: 'POST',
+      body: formData,
+    }), { DEEPGRAM_API_KEY: 'deepgram-test-key' });
+
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.equal(body.transcript, 'Check the laser alarm E012.');
+    assert.match(String(captured.url), /https:\/\/api\.deepgram\.com\/v1\/listen/);
+    assert.match(String(captured.url), /model=nova-3/);
+    assert.match(String(captured.url), /smart_format=true/);
+    assert.match(String(captured.url), /detect_language=true/);
+    assert.equal(captured.init.method, 'POST');
+    assert.equal(captured.init.headers.Authorization, 'Token deepgram-test-key');
+    assert.equal(captured.init.headers['Content-Type'], 'audio/webm');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('handleChatTranscribe rate limits voice transcription before calling Deepgram', async () => {
+  const formData = new FormData();
+  formData.append('audio', new Blob(['audio'], { type: 'audio/webm' }), 'voice.webm');
+
+  const originalFetch = globalThis.fetch;
+  let deepgramCalled = false;
+  let storedKey = '';
+  globalThis.fetch = async () => {
+    deepgramCalled = true;
+    return new Response('{}', { status: 200 });
+  };
+
+  try {
+    const response = await handleChatTranscribe(new Request('https://api.sagemro.com/api/chat/transcribe', {
+      method: 'POST',
+      headers: { 'CF-Connecting-IP': '203.0.113.10' },
+      body: formData,
+    }), {
+      DEEPGRAM_API_KEY: 'deepgram-test-key',
+      KV: {
+        async get(key) {
+          storedKey = key;
+          return '20';
+        },
+        async put() {
+          throw new Error('quota should not be incremented after limit is reached');
+        },
+      },
+    });
+
+    assert.equal(response.status, 429);
+    const body = await response.json();
+    assert.match(body.error, /Voice transcription limit reached/);
+    assert.equal(deepgramCalled, false);
+    assert.match(storedKey, /deepgram_voice_hour_guest:203\.0\.113\.10/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
 
 test('work order summary prompt keeps COM generated summaries in English', () => {
