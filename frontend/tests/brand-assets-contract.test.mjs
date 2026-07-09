@@ -52,6 +52,9 @@ test('main chat input supports Deepgram voice transcription without image upload
   assert.match(inputArea, /VOICE_RECORDING_LIMIT_MS = 30 \* 1000/);
   assert.match(inputArea, /voiceLanguage/);
   assert.match(inputArea, /Auto/);
+  assert.match(inputArea, /<select/);
+  assert.match(inputArea, /aria-label="Voice language"/);
+  assert.doesNotMatch(inputArea, /flex-col items-center gap-1/);
   assert.match(inputArea, /transcribeVoiceInput\(audioBlob, voiceLanguage\)/);
   assert.match(inputArea, /setInput\(\(current\) => current \? `\$\{current\} \$\{transcript\}` : transcript\)/);
   assert.match(inputArea, /Voice input unavailable/);

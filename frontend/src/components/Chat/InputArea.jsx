@@ -138,7 +138,7 @@ export function InputArea({ onSend, onStop, disabled, isStreaming }) {
           </div>
         )}
         <div className="flex items-start gap-2 sm:gap-3">
-          <div className="flex shrink-0 flex-col items-center gap-1">
+          <div className="flex shrink-0 items-start gap-1">
             <button
               type="button"
               onClick={handleVoiceClick}
@@ -152,24 +152,23 @@ export function InputArea({ onSend, onStop, disabled, isStreaming }) {
             >
               {isTranscribing ? <Loader2 size={20} className="animate-spin" /> : <Mic size={20} />}
             </button>
-            <div className="flex rounded-full bg-[var(--color-surface-elevated)] p-0.5 text-[10px] leading-none">
+            <select
+              aria-label="Voice language"
+              value={voiceLanguage}
+              onChange={(event) => setVoiceLanguage(event.target.value)}
+              disabled={disabled || isRecording || isTranscribing}
+              className="h-12 w-[58px] shrink-0 rounded-2xl border-0 bg-[var(--color-surface-elevated)] px-2 text-xs font-medium text-[var(--color-text-secondary)] outline-none transition-colors hover:text-[var(--color-primary)] disabled:opacity-45 sm:w-[68px]"
+              title={isCn ? '语音语言' : 'Voice language'}
+            >
               {voiceLanguageOptions.map((option) => (
-                <button
+                <option
                   key={option.value}
-                  type="button"
-                  onClick={() => setVoiceLanguage(option.value)}
-                  disabled={disabled || isRecording || isTranscribing}
-                  className={`h-5 min-w-6 rounded-full px-1.5 transition-colors disabled:opacity-50 ${
-                    voiceLanguage === option.value
-                      ? 'bg-[var(--color-primary)] text-white'
-                      : 'text-[var(--color-text-muted)]'
-                  }`}
-                  title={option.value === 'auto' ? 'Auto language' : option.value === 'zh' ? 'Chinese' : 'English'}
+                  value={option.value}
                 >
                   {option.label}
-                </button>
+                </option>
               ))}
-            </div>
+            </select>
           </div>
 
           <div
