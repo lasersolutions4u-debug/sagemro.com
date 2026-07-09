@@ -102,11 +102,11 @@ export async function registerCustomer({ name, phone, email, password, code, com
 /**
  * 登录
  */
-export async function login({ phone, password }) {
+export async function login({ phone, email, password }) {
   const response = await fetch(`${API_BASE}/api/auth/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ phone, password }),
+    body: JSON.stringify({ phone, email, password }),
   });
   if (!response.ok) {
     const data = await response.json();

@@ -2044,8 +2044,9 @@ async function handleRegisterCustomer(request, env) {
   try {
     const { name, phone, email, password, code, company, identity } = await request.json();
     const market = getRequestMarket(request);
+    const normalizedEmail = normalizeEmail(email);
 
-    if (!name || !phone || !password || !company || (market !== 'cn' && !email)) {
+    if (!name || !phone || !password || !company || (market !== 'cn' && !normalizedEmail)) {
       return localizedErrorResponse('name_phone_company_password_required', request);
     }
 
@@ -2062,8 +2063,11 @@ async function handleRegisterCustomer(request, env) {
     const existingEngineer = await env.DB.prepare(
       'SELECT id FROM engineers WHERE phone = ?'
     ).bind(phone).first();
+    const existingEmailCustomer = normalizedEmail
+      ? await env.DB.prepare('SELECT id FROM customers WHERE lower(email) = ?').bind(normalizedEmail).first()
+      : null;
 
-    if (existingCustomer || existingEngineer) {
+    if (existingCustomer || existingEngineer || existingEmailCustomer) {
       return errorResponse('该手机号已注册', 409);
     }
 
@@ -2080,8 +2084,8 @@ async function handleRegisterCustomer(request, env) {
     const passwordHash = await hashPasswordNew(password, salt);
 
     await env.DB.prepare(
-      'INSERT INTO customers (id, user_no, name, phone, password_hash, salt, company, auth_status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
-    ).bind(id, userNo, name, phone, passwordHash, salt, company, authStatus).run();
+      'INSERT INTO customers (id, user_no, name, phone, email, password_hash, salt, company, auth_status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+    ).bind(id, userNo, name, phone, normalizedEmail || null, passwordHash, salt, company, authStatus).run();
 
     // 删除已使用的验证码
     await deleteVerificationCode(env, { phone, email });
@@ -2089,7 +2093,7 @@ async function handleRegisterCustomer(request, env) {
 
     return jsonResponse({
       success: true,
-      customer: { id, user_no: userNo, name, phone }
+      customer: { id, user_no: userNo, name, phone, email: normalizedEmail || '' }
     });
   } catch (error) {
     return errorResponse(error.message, 500);
@@ -2173,14 +2177,16 @@ async function handleRegisterEngineer(request, env) {
 // 登录
 async function handleLogin(request, env) {
   try {
-    const { phone, password } = await request.json();
+    const { phone, email, password } = await request.json();
+    const normalizedEmail = normalizeEmail(email);
+    const loginKey = normalizedEmail || phone;
 
-    if (!phone || !password) {
+    if (!loginKey || !password) {
       return localizedErrorResponse('phone_password_required', request);
     }
 
     // 登录失败计数（防暴力破解）：同一手机号 15 分钟内失败 5 次锁定
-    const failKey = `login_fail_${phone}`;
+    const failKey = `login_fail_${loginKey}`;
     const failCountStr = await env.KV.get(failKey);
     const failCount = failCountStr ? parseInt(failCountStr, 10) : 0;
     if (failCount >= 5) {
@@ -2188,9 +2194,13 @@ async function handleLogin(request, env) {
     }
 
     // 查找客户
-    let user = await env.DB.prepare(
-      'SELECT * FROM customers WHERE phone = ?'
-    ).bind(phone).first();
+    let user = normalizedEmail
+      ? await env.DB.prepare(
+          'SELECT * FROM customers WHERE lower(email) = ?'
+        ).bind(normalizedEmail).first()
+      : await env.DB.prepare(
+          'SELECT * FROM customers WHERE phone = ?'
+        ).bind(phone).first();
 
     let userType = 'customer';
 
@@ -2198,7 +2208,7 @@ async function handleLogin(request, env) {
     if (!user) {
       user = await env.DB.prepare(
         'SELECT * FROM engineers WHERE phone = ?'
-      ).bind(phone).first();
+      ).bind(loginKey).first();
       userType = 'engineer';
     }
 
@@ -2250,6 +2260,7 @@ async function handleLogin(request, env) {
         user_no: user.user_no,
         name: user.name,
         phone: user.phone,
+        email: user.email || '',
         company: user.company || '',
         region: user.region || '',
         city: user.city || '',

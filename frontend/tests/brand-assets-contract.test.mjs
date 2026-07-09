@@ -34,12 +34,13 @@ test('customer, engineer, admin, and browser icons use the exact supplied SAGEMR
   assert.match(read('admin/index.html'), /href="\/sagemro-logo\.png"/);
 });
 
-test('CN chat input does not promote image upload in placeholder copy', () => {
-  const placeholderExpression = extractPlaceholderExpression(read('frontend/src/components/Chat/InputArea.jsx'));
+test('main chat input is text-only and uses short mobile placeholder copy', () => {
+  const inputArea = read('frontend/src/components/Chat/InputArea.jsx');
+  const placeholderExpression = extractPlaceholderExpression(inputArea);
 
-  assert.doesNotMatch(placeholderExpression, /上传图片/);
-  assert.doesNotMatch(placeholderExpression, /随时上传/);
-  assert.match(placeholderExpression, /描述设备、报警、材料厚度或现场问题。/);
+  assert.doesNotMatch(inputArea, /uploadChatImage|ImagePlus|type="file"|accept="image/);
+  assert.doesNotMatch(placeholderExpression, /upload image|Add device|field context|material, thickness/i);
+  assert.match(placeholderExpression, /Describe your service issue/);
 });
 
 test('main site first-impression copy keeps CN and COM market language separate', () => {
@@ -108,6 +109,21 @@ test('registration copy hides CN email input and routes verification through pho
   assert.doesNotMatch(toolbar, /<span>Sign In \/ Register<\/span>/);
 });
 
+test('international login accepts email or long international phone numbers', () => {
+  const loginModal = read('frontend/src/components/Auth/LoginModal.jsx');
+  const api = read('frontend/src/services/api.js');
+
+  assert.match(loginModal, /accountLabel: 'Email or phone'/);
+  assert.match(loginModal, /accountPlaceholder: 'Email or phone number'/);
+  assert.match(loginModal, /const \[loginAccount, setLoginAccount\] = useState\(''\)/);
+  assert.match(loginModal, /maxLength=\{24\}/);
+  assert.doesNotMatch(loginModal, /phone\.length !== 11/);
+  assert.doesNotMatch(loginModal, /placeholder=\{copy\.phonePlaceholder\} maxLength=\{11\}/);
+  assert.match(loginModal, /login\(\{ email: credential, password \}\)/);
+  assert.match(api, /login\(\{ phone, email, password \}\)/);
+  assert.match(api, /JSON\.stringify\(\{ phone, email, password \}\)/);
+});
+
 test('registration identity copy uses service-need wording instead of customer self-label', () => {
   const loginModal = read('frontend/src/components/Auth/LoginModal.jsx');
 
@@ -139,6 +155,7 @@ test('assigned work orders expose quote preparation instead of only cancellation
 
 test('admin dispatch stays simple while Engineers owns search and profiles', () => {
   const app = read('admin/src/App.jsx');
+  const usersPage = read('admin/src/pages/UsersPage.jsx');
   const workOrdersPage = read('admin/src/pages/WorkOrdersPage.jsx');
   const engineersPage = read('admin/src/pages/EngineersPage.jsx');
   const api = read('admin/src/services/api.js');
@@ -147,6 +164,10 @@ test('admin dispatch stays simple while Engineers owns search and profiles', () 
   assert.match(app, /engineers: 'Engineers'/);
   assert.match(app, /users: 'Customers'/);
   assert.match(app, /case 'engineers': return <EngineersPage \/>/);
+
+  assert.match(usersPage, /const type = 'customer'/);
+  assert.doesNotMatch(usersPage, /\{ key: 'engineer', label: t\.engineer \}/);
+  assert.doesNotMatch(usersPage, /\['customer', 'engineer'\]\.map/);
 
   assert.doesNotMatch(workOrdersPage, /engineerSearch/);
   assert.doesNotMatch(workOrdersPage, /exportEngineerPool/);

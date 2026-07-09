@@ -200,7 +200,7 @@ const TEXT = {
 export function UsersPage() {
   const t = TEXT[runtimeConfig.locale] || TEXT.en;
   const optionLabel = (option) => option[t.optionKey] || option.zh;
-  const [type, setType] = useState('customer');
+  const type = 'customer';
   const [data, setData] = useState({ total: 0, list: [] });
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
@@ -215,7 +215,7 @@ export function UsersPage() {
 
   // 添加用户弹窗
   const [showAdd, setShowAdd] = useState(false);
-  const [addType, setAddType] = useState('customer');
+  const addType = 'customer';
   const [addForm, setAddForm] = useState({
     name: '', phone: '', password: '', region: '',
     engineerRole: 'engineer', regionalLeadId: '', responsibleRegion: '', teamName: '',
@@ -228,10 +228,6 @@ export function UsersPage() {
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [deleteNotice, setDeleteNotice] = useState('');
-
-  useEffect(() => {
-    setPage(1);
-  }, [type]);
 
   const buildFilters = () => {
     const f = {};
@@ -267,7 +263,6 @@ export function UsersPage() {
       specialties: [], services: [], serviceRegion: '', bio: '',
     });
     setAddError('');
-    setAddType('customer');
   };
 
   const handleAdd = async () => {
@@ -290,11 +285,7 @@ export function UsersPage() {
       await createAdminUser(payload);
       setShowAdd(false);
       resetAddForm();
-      if (addType === type) {
-        loadUsers();
-      } else {
-        setType(addType);
-      }
+      loadUsers();
     } catch (err) {
       setAddError(err.message);
     } finally {
@@ -328,7 +319,7 @@ export function UsersPage() {
     }
   };
 
-  const hasActiveFilters = search || filterStatus || filterRegion || filterSpecialty;
+  const hasActiveFilters = search || filterRegion;
 
   const exportCurrentList = () => {
     const filename = type === 'engineer' ? 'sagemro-engineers-current.csv' : 'sagemro-customers-current.csv';
@@ -386,11 +377,10 @@ export function UsersPage() {
       <div className="flex gap-2 mb-4">
         {[
           { key: 'customer', label: t.customer },
-          { key: 'engineer', label: t.engineer },
         ].map((tab) => (
           <button
             key={tab.key}
-            onClick={() => { setType(tab.key); setSearch(''); setFilterStatus(''); setFilterRegion(''); setFilterSpecialty(''); }}
+            onClick={() => { setSearch(''); setFilterStatus(''); setFilterRegion(''); setFilterSpecialty(''); }}
             className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
               type === tab.key
                 ? 'bg-[var(--color-primary)] text-white'
@@ -659,22 +649,6 @@ export function UsersPage() {
               {addError && (
                 <div className="px-3 py-2 rounded-lg bg-[var(--color-error)]/10 text-[var(--color-error)] text-sm">{addError}</div>
               )}
-
-              <div className="flex gap-2">
-                {['customer', 'engineer'].map((t) => (
-                  <button
-                    key={t}
-                    onClick={() => setAddType(t)}
-                    className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-                      addType === t
-                        ? 'bg-[var(--color-primary)] text-white'
-                        : 'bg-[var(--color-surface-elevated)] text-[var(--color-text-secondary)]'
-                    }`}
-                  >
-                    {t === 'customer' ? (TEXT[runtimeConfig.locale] || TEXT.en).customer : (TEXT[runtimeConfig.locale] || TEXT.en).engineer}
-                  </button>
-                ))}
-              </div>
 
               <input
                 type="text"

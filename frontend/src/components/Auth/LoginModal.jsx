@@ -88,7 +88,9 @@ const LOGIN_COPY = {
     phoneInvalid: 'Please enter a valid phone number',
     emailRequired: 'Please enter your email address',
     emailInvalid: 'Please enter a valid email address',
-    phonePasswordRequired: 'Please enter your phone number and password',
+    phonePasswordRequired: 'Please enter your email/phone and password',
+    accountLabel: 'Email or phone',
+    accountPlaceholder: 'Email or phone number',
     sendFailed: 'Failed to send',
     requiredFields: 'Please fill in all required fields',
     passwordMismatch: 'Passwords do not match',
@@ -163,12 +165,17 @@ const LOGIN_COPY = {
   },
 };
 
+const normalizePhone = (value) => String(value || '').trim();
+const isInternationalPhone = (value) => /^\+?[0-9\s().-]{6,24}$/.test(normalizePhone(value));
+const isEmailAddress = (value) => /^\S+@\S+\.\S+$/.test(String(value || '').trim());
+
 export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
   const isCn = isCnLocale();
   const copy = isCn ? LOGIN_COPY.cn : LOGIN_COPY.en;
   // step flow:
   // choice -> register-company -> register-auth -> customer / visitor completion / login
   const [step, setStep] = useState('login');
+  const [loginAccount, setLoginAccount] = useState('');
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -237,7 +244,7 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
     try {
       // 注册时传递 company 和 identity
       await registerCustomer({ name, phone, email, password, code, company: companyName, identity: selectedIdentity });
-      const result = await login({ phone, password });
+      const result = await login(isCn ? { phone, password } : { email, password });
       localStorage.setItem('sagemro_token', result.token);
       localStorage.setItem('sagemro_user', JSON.stringify(result.user));
       localStorage.setItem('sagemro_user_type', result.userType);
@@ -263,6 +270,7 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
   };
 
   const handleClose = () => {
+    setLoginAccount('');
     setPhone('');
     setEmail('');
     setPassword('');
@@ -289,9 +297,13 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
   // 第1步：公司名 + 基本信息
   const handleCompanySubmit = () => {
     if (!companyName.trim()) { setError(copy.companyRequired); return; }
-    if (!phone || phone.length !== 11) { setError(copy.phoneInvalid); return; }
-    if (!isCn && (!email || !/^\S+@\S+\.\S+$/.test(email.trim()))) { setError(copy.emailInvalid); return; }
-    if (isCn && email && !/^\S+@\S+\.\S+$/.test(email.trim())) { setError(copy.emailInvalid); return; }
+    if (isCn) {
+      if (!/^1\d{10}$/.test(normalizePhone(phone))) { setError(copy.phoneInvalid); return; }
+    } else if (!isInternationalPhone(phone)) {
+      setError(copy.phoneInvalid); return;
+    }
+    if (!isCn && (!email || !isEmailAddress(email))) { setError(copy.emailInvalid); return; }
+    if (isCn && email && !isEmailAddress(email)) { setError(copy.emailInvalid); return; }
     if (!password || password.length < 6) { setError(copy.passwordMin); return; }
     if (password !== confirmPassword) { setError(copy.passwordMismatch); return; }
     if (!agreedToTerms) { setError(copy.termsRequired); return; }
@@ -322,7 +334,7 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
     setError('');
     try {
       await registerCustomer({ name: name || copy.guestName, phone, email, password, code, company: companyName, identity: 'visitor' });
-      const result = await login({ phone, password });
+      const result = await login(isCn ? { phone, password } : { email, password });
       localStorage.setItem('sagemro_token', result.token);
       localStorage.setItem('sagemro_user', JSON.stringify(result.user));
       localStorage.setItem('sagemro_user_type', result.userType);
@@ -448,7 +460,7 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
               <label className="block text-sm font-medium mb-1">{copy.phoneNumber}</label>
               <input
                 type="tel" value={phone} onChange={(e) => setPhone(e.target.value)}
-                placeholder={copy.phonePlaceholder} maxLength={11}
+                placeholder={copy.phonePlaceholder} maxLength={24}
                 className="w-full px-3 py-2 border border-[var(--color-input-border)] rounded-xl bg-[var(--color-input-bg)] text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
               />
             </div>
@@ -642,10 +654,10 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
             )}
 
             <div>
-              <label className="block text-sm font-medium mb-1">{copy.phoneNumberLabel}</label>
+              <label className="block text-sm font-medium mb-1">{isCn ? copy.phoneNumberLabel : copy.accountLabel}</label>
               <input
-                type="tel" value={phone} onChange={(e) => setPhone(e.target.value)}
-                placeholder={copy.phonePlaceholder} maxLength={11}
+                type={isCn ? 'tel' : 'text'} value={isCn ? phone : loginAccount} onChange={(e) => { isCn ? setPhone(e.target.value) : setLoginAccount(e.target.value); }}
+                placeholder={isCn ? copy.phonePlaceholder : copy.accountPlaceholder} maxLength={24}
                 className="w-full px-3 py-2 border border-[var(--color-input-border)] rounded-xl bg-[var(--color-input-bg)] text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
               />
             </div>
@@ -660,11 +672,16 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
 
             <button
               onClick={async () => {
-                if (!phone || !password) { setError(copy.phonePasswordRequired); return; }
+                const credential = (isCn ? phone : loginAccount).trim();
+                if (!credential || !password) { setError(copy.phonePasswordRequired); return; }
                 setSubmitting(true);
                 setError('');
                 try {
-                  const result = await login({ phone, password });
+                  const result = isCn
+                    ? await login({ phone: credential, password })
+                    : credential.includes('@')
+                      ? await login({ email: credential, password })
+                      : await login({ phone: credential, password });
                   localStorage.setItem('sagemro_token', result.token);
                   localStorage.setItem('sagemro_user', JSON.stringify(result.user));
                   localStorage.setItem('sagemro_user_type', result.userType);
@@ -716,7 +733,7 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
               <label className="block text-sm font-medium mb-1">{copy.phoneNumberLabel}</label>
               <input
                 type="tel" value={phone} onChange={(e) => setPhone(e.target.value)}
-                placeholder={copy.registeredPhonePlaceholder} maxLength={11}
+                placeholder={copy.registeredPhonePlaceholder} maxLength={24}
                 className="w-full px-3 py-2 border border-[var(--color-input-border)] rounded-xl bg-[var(--color-input-bg)] text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
               />
             </div>

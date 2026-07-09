@@ -42,6 +42,10 @@ function createTestEnv(overrides = {}) {
               const row = dbState.customers.find((customer) => customer.phone === this.args[0]);
               return row || null;
             }
+            if (/SELECT \* FROM customers WHERE lower\(email\) = \?/i.test(sql)) {
+              const row = dbState.customers.find((customer) => customer.email?.toLowerCase() === this.args[0]);
+              return row || null;
+            }
             if (/SELECT user_no FROM customers/i.test(sql)) {
               const last = dbState.customers.at(-1);
               return last ? { user_no: last.user_no } : null;
@@ -54,6 +58,10 @@ function createTestEnv(overrides = {}) {
               const row = dbState.customers.find((customer) => customer.phone === this.args[0]);
               return row ? { id: row.id } : null;
             }
+            if (/FROM customers WHERE lower\(email\) = \?/i.test(sql)) {
+              const row = dbState.customers.find((customer) => customer.email?.toLowerCase() === this.args[0]);
+              return row ? { id: row.id } : null;
+            }
             if (/FROM engineers WHERE phone = \?/i.test(sql)) {
               const row = dbState.engineers.find((engineer) => engineer.phone === this.args[0]);
               return row ? { id: row.id } : null;
@@ -62,8 +70,13 @@ function createTestEnv(overrides = {}) {
           },
           async run() {
             if (/INSERT INTO customers/i.test(sql)) {
-              const [id, user_no, name, phone, password_hash, salt, company, auth_status] = this.args;
-              dbState.customers.push({ id, user_no, name, phone, password_hash, salt, company, auth_status });
+              if (/\bemail\b/i.test(sql)) {
+                const [id, user_no, name, phone, email, password_hash, salt, company, auth_status] = this.args;
+                dbState.customers.push({ id, user_no, name, phone, email, password_hash, salt, company, auth_status });
+              } else {
+                const [id, user_no, name, phone, password_hash, salt, company, auth_status] = this.args;
+                dbState.customers.push({ id, user_no, name, phone, password_hash, salt, company, auth_status });
+              }
             }
             return { success: true };
           },
@@ -445,14 +458,14 @@ test('production CN verification ignores DEV_BYPASS_CODE and sends the random SM
   }
 });
 
-test('COM customer registration accepts an email verification code while keeping phone as login contact', async () => {
+test('COM customer registration stores email and allows email login', async () => {
   const env = createTestEnv();
   await env.KV.put('verify_code_email_joe@example.com', '1357');
 
   const { response, json } = await postJson('https://api.sagemro.com/api/auth/register/customer', {
     name: 'Joe',
-    phone: '13800000001',
-    email: 'joe@example.com',
+    phone: '+66961135966',
+    email: 'Joe@Example.com',
     password: 'secret123',
     code: '1357',
     company: '济南钰峭机械有限公司',
@@ -461,9 +474,19 @@ test('COM customer registration accepts an email verification code while keeping
 
   assert.equal(response.status, 200);
   assert.equal(json.success, true);
-  assert.equal(json.customer.phone, '13800000001');
+  assert.equal(json.customer.phone, '+66961135966');
+  assert.equal(env.__dbState.customers[0].email, 'joe@example.com');
   assert.equal(env.__dbState.customers[0].auth_status, 'authenticated');
   assert.equal(await env.KV.get('verify_code_email_joe@example.com'), null);
+
+  const loginResult = await postJson('https://api.sagemro.com/api/auth/login', {
+    email: 'JOE@example.com',
+    password: 'secret123',
+  }, env);
+
+  assert.equal(loginResult.response.status, 200);
+  assert.equal(loginResult.json.user.phone, '+66961135966');
+  assert.equal(loginResult.json.user.email, 'joe@example.com');
 });
 
 test('customer login returns company profile fields saved during registration', async () => {
