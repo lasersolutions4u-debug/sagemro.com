@@ -35,7 +35,7 @@ const PRICING_COPY = {
       submitted: 'Quote submitted for operations review.',
       helper: 'Fill in the fee details as an internal quote proposal. The operations team will review scope, fees, and safety requirements before the customer sees a formal quote.',
       laborFee: 'Labor Fee',
-      laborPlaceholder: 'Hours × Rate',
+      laborPlaceholder: 'Hours x Rate',
       partsFee: 'Parts Fee',
       partsPlaceholder: 'Total parts cost',
       travelFee: 'Travel Fee',
@@ -49,7 +49,7 @@ const PRICING_COPY = {
       submit: 'Submit for Operations Review',
     },
     customer: {
-      confirmedToast: 'Quote confirmed. SAGEMRO will proceed with service scheduling.',
+      confirmedToast: 'Quote confirmed. Please choose a payment method so SAGEMRO can send instructions.',
       negotiationRequired: 'Please enter a reason for negotiation',
       negotiationToast: 'Negotiation initiated. Operations will review and submit a revised quote.',
       preparingQuote: 'SAGEMRO is preparing a formal quote. You will be notified after diagnosis, scope, and safety requirements are reviewed.',
@@ -60,58 +60,14 @@ const PRICING_COPY = {
       counterOfferPlaceholder: 'Your expected price (USD, optional)',
       cancel: 'Cancel',
       submitting: 'Submitting...',
-      confirmNotice: 'After confirmation, SAGEMRO will begin service scheduling.',
+      confirmNotice: 'After confirmation, please choose a payment method. The engineer follows up collection and Admin approves service start after receipt.',
       confirming: 'Confirming...',
       quoteConfirmed: 'Quote Confirmed',
-      payment: (amount) => `Proceed to Payment (${amount} USD)`,
+      payment: (amount) => `Request Payment Instructions (${amount} USD)`,
     },
   },
-  cn: {
-    status: {
-      draft: '草稿 / 协商中',
-      pending_review: '运营复核中',
-      submitted: '已提交，待客户确认',
-      confirmed: '已确认',
-    },
-    priceCheck: {
-      reasonable: '经过 SAGEMRO AI 市场调查，这个价格在合理区间内。',
-      high: '报价偏高',
-      low: '报价偏低',
-    },
-    engineer: {
-      submitted: '报价建议已提交，等待运营复核。',
-      helper: '请填写费用明细作为内部报价建议。客户看到正式报价前，运营团队会先复核服务范围、费用和安全要求。',
-      laborFee: '人工费',
-      laborPlaceholder: '工时 × 单价',
-      partsFee: '备件费',
-      partsPlaceholder: '备件合计',
-      travelFee: '差旅费',
-      travelPlaceholder: '交通 + 住宿',
-      otherFee: '其他费用',
-      otherPlaceholder: '其他必要费用',
-      partsDetail: '其他费用备注（可选）',
-      partsDetailPlaceholder: '例如：特殊进场、周末服务、吊车、加班',
-      quoteSubtotal: '报价小计价格',
-      submitting: '提交中...',
-      submit: '提交运营复核',
-    },
-    customer: {
-      confirmedToast: '报价已确认。SAGEMRO 将继续推进服务排期。',
-      negotiationRequired: '请填写需要协商的原因',
-      negotiationToast: '已发起协商。运营团队将复核并提交调整后的报价。',
-      preparingQuote: 'SAGEMRO 正在准备正式报价。诊断方向、服务范围和安全要求复核后会通知你确认。',
-      totalPayable: '报价小计价格',
-      confirmQuote: '确认报价',
-      negotiate: '协商',
-      negotiationPlaceholder: '请说明需要协商的原因...',
-      counterOfferPlaceholder: '你的期望价格（美元，可选）',
-      cancel: '取消',
-      submitting: '提交中...',
-      confirmNotice: '确认后，SAGEMRO 将开始推进服务排期。',
-      confirming: '确认中...',
-      quoteConfirmed: '报价已确认',
-      payment: (amount) => `继续支付（${amount} USD）`,
-    },
+  get cn() {
+    return this.en;
   },
 };
 
@@ -202,7 +158,7 @@ export function AIPriceCheck({ check }) {
   );
 }
 
-// ========== 核价区（工程师填写） ==========
+// ========== 閺嶉晲鐜崠鐚寸礄瀹搞儳鈻肩敮鍫濓綖閸愭瑱绱?==========
 export function EngineerPricingPanel({ workOrderId, engineerId, pricing, onSubmitted }) {
   const t = getPricingCopy();
   const initialDraft = readEngineerPricingDraft(workOrderId, pricing);
@@ -297,7 +253,7 @@ export function EngineerPricingPanel({ workOrderId, engineerId, pricing, onSubmi
         />
       </div>
       <MaterialPicker purpose="quote" workOrderId={workOrderId} items={materialItems} onChange={setMaterialItems} />
-      {/* 费用汇总 */}
+      {/* 鐠愬湱鏁ゅЧ鍥ㄢ偓?*/}
       <div className="p-3 bg-[var(--color-surface-elevated)] rounded-xl space-y-1.5 text-sm">
         <div className="flex justify-between"><span className="text-[var(--color-text-secondary)]">{t.engineer.laborFee}</span><span>{form.labor_fee || 0} {CURRENCY}</span></div>
         <div className="flex justify-between"><span className="text-[var(--color-text-secondary)]">{t.engineer.partsFee}</span><span>{partsFee} {CURRENCY}</span></div>
@@ -317,7 +273,7 @@ export function EngineerPricingPanel({ workOrderId, engineerId, pricing, onSubmi
   );
 }
 
-// ========== 报价确认区（客户查看） ==========
+// ========== 閹躲儰鐜涵顔款吇閸栫尨绱欑€广垺鍩涢弻銉ф箙閿?==========
 export function CustomerPricingPanel({ workOrderId, customerId, onConfirmed }) {
   const t = getPricingCopy();
   const [pricing, setPricing] = useState(null);
@@ -384,7 +340,7 @@ export function CustomerPricingPanel({ workOrderId, customerId, onConfirmed }) {
         <PricingStatusBadge status={pricing.status} />
       </div>
 
-      {/* 费用明细 */}
+      {/* 鐠愬湱鏁ら弰搴ｇ矎 */}
       <div className="p-3 bg-[var(--color-surface-elevated)] rounded-xl space-y-1.5 text-sm">
         <div className="flex justify-between"><span className="text-[var(--color-text-secondary)]">{t.engineer.laborFee}</span><span>{pricing.labor_fee || 0} {CURRENCY}</span></div>
         <div className="flex justify-between"><span className="text-[var(--color-text-secondary)]">{t.engineer.partsFee}</span><span>{pricing.parts_fee || 0} {CURRENCY}</span></div>
@@ -397,7 +353,7 @@ export function CustomerPricingPanel({ workOrderId, customerId, onConfirmed }) {
         )}
         {pricing.material_items?.length > 0 && (
           <div className="pt-2 border-t border-[var(--color-border)]">
-            <div className="mb-2 text-xs font-medium text-[var(--color-text-secondary)]">{isCnLocale() ? '配件清单' : 'Parts List'}</div>
+            <div className="mb-2 text-xs font-medium text-[var(--color-text-secondary)]">{isCnLocale() ? '闁板秳娆㈠〒鍛礋' : 'Parts List'}</div>
             <MaterialPicker items={pricing.material_items} readonly />
           </div>
         )}
@@ -406,10 +362,10 @@ export function CustomerPricingPanel({ workOrderId, customerId, onConfirmed }) {
         </div>
       </div>
 
-      {/* AI 审核 */}
+      {/* AI 鐎光剝鐗?*/}
       {pricing.status === 'submitted' && <AIPriceCheck check={pricing.ai_price_check} />}
 
-      {/* 操作区 */}
+      {/* 閹垮秳缍旈崠?*/}
       {pricing.status === 'submitted' && action !== 'reject' && (
         <div className="flex gap-2">
           <button
@@ -468,7 +424,7 @@ export function CustomerPricingPanel({ workOrderId, customerId, onConfirmed }) {
       {pricing.status === 'confirmed' && (
         <div className="space-y-3">
           <div className="p-3 bg-green-500/10 border border-green-500/30 rounded-xl text-center text-sm text-green-500">
-            ✓ {t.customer.quoteConfirmed}
+            閴?{t.customer.quoteConfirmed}
           </div>
           <button
             onClick={() => setPaymentOpen(true)}
@@ -479,7 +435,7 @@ export function CustomerPricingPanel({ workOrderId, customerId, onConfirmed }) {
         </div>
       )}
 
-      {/* 付款弹窗 */}
+      {/* 娴犳ɑ顑欏鍦崶 */}
       <PaymentModal
         isOpen={paymentOpen}
         onClose={() => setPaymentOpen(false)}

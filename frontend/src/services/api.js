@@ -701,6 +701,20 @@ export async function payWorkOrder(workOrderId, { payment_method }) {
   return response.json();
 }
 
+export async function requestWorkOrderPaymentStart(workOrderId, note = '') {
+  const response = await fetch(`${API_BASE}/api/workorders/${workOrderId}/payment/start-request`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({ note }),
+  });
+  if (!response.ok) {
+    const d = await response.json();
+    throw new Error(d.error || `HTTP ${response.status}`);
+  }
+  return response.json();
+}
+
+
 /**
  * 获取工单付款记录
  */

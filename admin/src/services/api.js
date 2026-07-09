@@ -103,6 +103,14 @@ export async function rejectAdminWorkOrderPricing(workOrderId, note = '') {
   });
 }
 
+
+export async function approveAdminWorkOrderPaymentStart(workOrderId, note = '') {
+  return request(`/api/admin/workorders/${workOrderId}/payment/approve-start`, {
+    method: 'POST',
+    body: JSON.stringify({ note }),
+  });
+}
+
 export async function archiveAdminWorkOrder(workOrderId) {
   return request(`/api/admin/workorders/${workOrderId}/archive`, {
     method: 'PATCH',

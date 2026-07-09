@@ -133,7 +133,7 @@ test('customer sidebar tools stay expanded without a More overflow menu', () => 
 test('assigned work orders expose quote preparation instead of only cancellation', () => {
   const detailModal = read('frontend/src/components/WorkOrder/WorkOrderDetailModal.jsx');
 
-  assert.match(detailModal, /const pricingStatuses = \['assigned', 'in_progress', 'pricing', 'pending_payment', 'in_service'\]/);
+  assert.match(detailModal, /const pricingStatuses = \['assigned', 'in_progress', 'pricing', 'pending_payment', 'payment_review', 'in_service'\]/);
   assert.match(detailModal, /pricingStatuses\.includes\(effectiveStatus\)/);
 });
 

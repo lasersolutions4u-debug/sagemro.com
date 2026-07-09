@@ -3,6 +3,7 @@ import {
   assignAdminWorkOrder,
   assignAdminWorkOrderRegionalLead,
   approveAdminWorkOrderPricing,
+  approveAdminWorkOrderPaymentStart,
   archiveAdminWorkOrder,
   getAdminWorkOrder,
   getAdminWorkOrderMessages,
@@ -26,6 +27,10 @@ const STATUS_MAP = {
   pending_dispatch: { color: 'var(--color-warning)' },
   assigned: { color: 'var(--color-warning)' },
   in_progress: { color: 'var(--color-warning)' },
+  payment_review: { color: 'var(--color-warning)' },
+  pending_payment: { color: 'var(--color-warning)' },
+  pricing: { color: 'var(--color-primary)' },
+  in_service: { color: 'var(--color-info)' },
   resolved: { color: 'var(--color-success)' },
   completed: { color: 'var(--color-success)' },
   rejected: { color: 'var(--color-error)' },
@@ -96,6 +101,10 @@ const TEXT = {
       pending_dispatch: 'Regional dispatch pending',
       assigned: 'Assigned',
       in_progress: 'In progress',
+      pricing: 'Quote confirmation',
+      pending_payment: 'Payment follow-up',
+      payment_review: 'Payment review',
+      in_service: 'In service',
       resolved: 'Resolved',
       completed: 'Completed',
       rejected: 'Rejected',
@@ -140,6 +149,11 @@ const TEXT = {
     rejectPrompt: 'Reason for return (optional, visible to engineer as an internal note):',
     quoteReturned: (orderNo) => `Quote returned for revision: ${orderNo}`,
     quoteReturnFailed: 'Failed to return quote',
+    paymentStartApproved: (orderNo) => `Payment confirmed. Service can start: ${orderNo}`,
+    paymentStartApproveFailed: 'Failed to approve service start',
+    approvePaymentStart: 'Confirm payment & start',
+    paymentReviewTitle: 'Payment confirmation required',
+    paymentReviewHint: 'Engineer has followed up payment. Confirm receipt before allowing service execution.',
     archived: (orderNo) => `Archived: ${orderNo}`,
     archiveFailed: 'Archive failed',
     detailLoadFailed: 'Failed to load service order detail',
@@ -421,6 +435,33 @@ export function WorkOrdersPage() {
     }
   }
 
+  async function handleApprovePaymentStart(wo) {
+    const note = window.prompt('Payment confirmation note (optional):') || '';
+    setAssigningId(`${wo.id}:payment-start`);
+    setMessage('');
+    try {
+      await approveAdminWorkOrderPaymentStart(wo.id, note);
+      setData((prev) => ({
+        ...prev,
+        list: prev.list.map((item) => (
+          item.id === wo.id
+            ? { ...item, status: 'in_service' }
+            : item
+        )),
+      }));
+      setDetail((prev) => (
+        prev?.id === wo.id
+          ? { ...prev, status: 'in_service' }
+          : prev
+      ));
+      setMessage(t.paymentStartApproved(wo.order_no));
+    } catch (err) {
+      setMessage(err.message || t.paymentStartApproveFailed);
+    } finally {
+      setAssigningId('');
+    }
+  }
+
   async function handleArchive(wo) {
     setAssigningId(`${wo.id}:archive`);
     setMessage('');
@@ -593,6 +634,15 @@ export function WorkOrdersPage() {
                                 </div>
                               </div>
                             )}
+                            {wo.status === 'payment_review' && (
+                              <button
+                                onClick={() => handleApprovePaymentStart(wo)}
+                                disabled={assigningId === `${wo.id}:payment-start`}
+                                className="rounded-lg border border-[var(--color-primary)] bg-[var(--color-primary)]/10 px-2 py-1 text-xs text-[var(--color-primary)] disabled:opacity-50"
+                              >
+                                {t.approvePaymentStart}
+                              </button>
+                            )}
                             {['resolved', 'pending_review'].includes(wo.status) && (
                               <button
                                 onClick={() => handleArchive(wo)}
@@ -740,6 +790,23 @@ export function WorkOrdersPage() {
                           {t.approveFullOrder || t.approve}
                         </button>
                       </div>
+                    </div>
+                  </section>
+                )}
+                {detail.status === 'payment_review' && (
+                  <section className="rounded-xl border border-[var(--color-primary)]/40 bg-[var(--color-primary)]/5 p-4">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                      <div>
+                        <h4 className="font-medium text-[var(--color-text)]">{t.paymentReviewTitle}</h4>
+                        <p className="mt-1 text-sm text-[var(--color-text-secondary)]">{t.paymentReviewHint}</p>
+                      </div>
+                      <button
+                        onClick={() => handleApprovePaymentStart(detail)}
+                        disabled={assigningId === `${detail.id}:payment-start`}
+                        className="rounded-lg bg-[var(--color-primary)] px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
+                      >
+                        {t.approvePaymentStart}
+                      </button>
                     </div>
                   </section>
                 )}

@@ -7,6 +7,7 @@ import {
   cancelWorkOrder,
   submitEngineerReview,
   getEngineerReview,
+  requestWorkOrderPaymentStart,
 } from '../../services/api';
 import { statusConfig, urgencyConfig, typeLabels, categoryConfig, categoryL2Labels, formatSlaRemaining } from '../../data/workOrderConfig.js';
 import { toastSuccess, toastError, toastWarning, confirmDialog } from '../../utils/feedback';
@@ -44,6 +45,7 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
   const [engReviewRatings, setEngReviewRatings] = useState({ cooperation: 5, communication: 5, payment: 5, environment: 5 });
   const [engReviewComment, setEngReviewComment] = useState('');
   const [engReviewSubmitting, setEngReviewSubmitting] = useState(false);
+  const [paymentStartSubmitting, setPaymentStartSubmitting] = useState(false);
   const workOrderId = workOrder?.id;
 
   const loadDetail = useCallback(async () => {
@@ -119,7 +121,7 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
   ];
 
   // 核价Tab：工程师看表单，客户看报价确认（含待付款状态）
-  const pricingStatuses = ['assigned', 'in_progress', 'pricing', 'pending_payment', 'in_service'];
+  const pricingStatuses = ['assigned', 'in_progress', 'pricing', 'pending_payment', 'payment_review', 'in_service'];
   if (pricingStatuses.includes(effectiveStatus)) {
     tabs.push({ key: 'pricing', label: isEngineer ? 'Submit Quote' : 'Confirm Quote' });
   }
@@ -260,6 +262,31 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
           className="w-full py-3 bg-red-500 hover:bg-red-600 text-white rounded-xl font-medium"
         >
           Cancel Service Request
+        </button>
+      )}
+
+      {isEngineer && ['pending_payment', 'payment_review'].includes(effectiveStatus) && (
+        <button
+          onClick={async () => {
+            if (!(await confirmDialog('Request Admin approval to start service after payment follow-up?'))) return;
+            setPaymentStartSubmitting(true);
+            try {
+              await requestWorkOrderPaymentStart(workOrder.id, 'Engineer confirmed payment follow-up with the customer.');
+              toastSuccess('Start request sent to Admin for payment confirmation.');
+              loadDetail();
+              onConfirmed?.();
+            } catch (e) {
+              toastError('Start request failed: ' + e.message);
+            } finally {
+              setPaymentStartSubmitting(false);
+            }
+          }}
+          disabled={paymentStartSubmitting || effectiveStatus === 'payment_review'}
+          className="w-full py-3 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] disabled:opacity-50 text-white rounded-xl font-medium"
+        >
+          {effectiveStatus === 'payment_review'
+            ? 'Waiting for Admin Payment Confirmation'
+            : paymentStartSubmitting ? 'Submitting...' : 'Request Admin Approval to Start'}
         </button>
       )}
 

@@ -9435,73 +9435,74 @@ async function handleConfirmWorkOrderPricing(request, env) {
   }
 }
 
-// 客户模拟付款（mock payment）
+function paymentMethodLabel(method) {
+  const labels = {
+    bank_transfer: 'Bank Transfer / Wire Transfer',
+    paypal_card: 'PayPal / Credit or Debit Card',
+    paypal: 'PayPal / Credit or Debit Card',
+  };
+  return labels[method] || method || 'Payment method';
+}
+
+// Customer confirms preferred payment method. Collection is followed up by the engineer and confirmed by Admin.
 async function handlePayWorkOrder(request, env) {
   try {
     const workOrderId = new URL(request.url).pathname.split('/')[3];
 
-    // 认证：仅客户可付款
     const auth = request._auth;
     if (!auth || auth.userType !== 'customer') {
-      return errorResponse('仅客户可付款', 403);
+      return errorResponse('Only the customer can confirm payment method', 403);
     }
     const customer_id = auth.userId;
 
-    // 校验工单归属
     const wo = await env.DB.prepare(
       'SELECT id, customer_id, status, order_no, engineer_id FROM work_orders WHERE id = ?'
     ).bind(workOrderId).first();
-    if (!wo) return errorResponse('工单不存在', 404);
+    if (!wo) return errorResponse('Work order not found', 404);
     if (wo.customer_id !== customer_id) {
-      return errorResponse('您无权操作该工单', 403);
+      return errorResponse('You do not have permission for this work order', 403);
     }
     if (wo.status !== 'pending_payment') {
-      return errorResponse('工单状态不正确，无法付款', 400);
+      return errorResponse('Work order is not waiting for payment method confirmation', 400);
     }
 
-    // 获取定价信息
     const pricing = await env.DB.prepare(
       'SELECT subtotal, total_amount FROM work_order_pricing WHERE work_order_id = ? AND status = ?'
     ).bind(workOrderId, 'confirmed').first();
-    if (!pricing) return errorResponse('报价不存在或未确认', 404);
+    if (!pricing) return errorResponse('Quote not found or not confirmed', 404);
 
     const amount = pricing.total_amount || pricing.subtotal || 0;
-    if (amount <= 0) return errorResponse('报价金额无效', 400);
+    if (amount <= 0) return errorResponse('Invalid quote amount', 400);
 
     const body = await request.json().catch(() => ({}));
-    const paymentMethod = body.payment_method || 'bank_transfer';
+    const allowedMethods = ['bank_transfer', 'paypal_card', 'paypal'];
+    const paymentMethod = allowedMethods.includes(body.payment_method) ? body.payment_method : 'bank_transfer';
+    const methodLabel = paymentMethodLabel(paymentMethod);
 
-    // 模拟付款成功
     const paymentId = generateId();
-    const transactionId = 'TXN' + Date.now().toString(36).toUpperCase() + Math.random().toString(36).slice(2, 6).toUpperCase();
+    const instructionId = 'PAYREQ' + Date.now().toString(36).toUpperCase() + Math.random().toString(36).slice(2, 6).toUpperCase();
 
     await env.DB.prepare(`
       INSERT INTO work_order_payments (id, work_order_id, customer_id, amount, payment_method, transaction_id, status)
-      VALUES (?, ?, ?, ?, ?, ?, 'completed')
-    `).bind(paymentId, workOrderId, customer_id, amount, paymentMethod, transactionId).run();
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).bind(paymentId, workOrderId, customer_id, amount, paymentMethod, instructionId, 'instructions_requested').run();
 
-    // 更新工单状态
     await env.DB.prepare(
-      "UPDATE work_orders SET status = 'in_service' WHERE id = ?"
-    ).bind(workOrderId).run();
+      "INSERT INTO work_order_messages (id, work_order_id, sender_type, sender_id, sender_name, content, message_type) VALUES (?, ?, 'system', '', 'System', ?, 'payment_update')"
+    ).bind(
+      generateId(),
+      workOrderId,
+      `Customer selected ${methodLabel} for ${amount} USD. Engineer should follow up collection and request Admin approval before service starts.`
+    ).run();
 
-    // 系统消息
-    const msgId = generateId();
-    const methodLabels = { bank_transfer: '银行转账', alipay: '支付宝', wechat: '微信支付' };
-    const methodLabel = methodLabels[paymentMethod] || paymentMethod;
-    await env.DB.prepare(
-      "INSERT INTO work_order_messages (id, work_order_id, sender_type, sender_id, sender_name, content, message_type) VALUES (?, ?, 'system', '', '系统', ?, 'system')"
-    ).bind(msgId, workOrderId, `客户已通过${methodLabel}完成付款，金额 ${amount} 元。工程师可以开始上门服务。交易流水号：${transactionId}`).run();
-
-    // 通知工程师：客户已付款
     if (wo.engineer_id) {
       await createNotification(env, {
         user_id: wo.engineer_id,
         user_type: 'engineer',
-        type: 'payment_received',
-        title: '客户已付款',
-        body: `工单 ${wo.order_no} 客户已付款 ${amount} 元，请安排上门服务。`,
-        data: { work_order_id: workOrderId, amount, transaction_id: transactionId },
+        type: 'payment_method_selected',
+        title: 'Payment follow-up required',
+        body: `Work order ${wo.order_no} selected ${methodLabel}. Follow up payment and request Admin start approval after receipt evidence is available.`,
+        data: { work_order_id: workOrderId, amount, payment_method: paymentMethod },
       });
     }
 
@@ -9509,11 +9510,10 @@ async function handlePayWorkOrder(request, env) {
       success: true,
       payment: {
         id: paymentId,
-        transaction_id: transactionId,
+        transaction_id: instructionId,
         amount,
         payment_method: paymentMethod,
-        status: 'completed',
-        paid_at: new Date().toISOString(),
+        status: 'instructions_requested',
       }
     });
   } catch (error) {
@@ -9521,6 +9521,110 @@ async function handlePayWorkOrder(request, env) {
   }
 }
 
+async function handleEngineerRequestPaymentStart(request, env) {
+  try {
+    const workOrderId = new URL(request.url).pathname.split('/')[3];
+    const auth = request._auth;
+    if (!auth || auth.userType !== 'engineer') {
+      return errorResponse('Only the assigned engineer can request service start', 403);
+    }
+    const body = await request.json().catch(() => ({}));
+    const note = String(body.note || '').trim();
+
+    const wo = await env.DB.prepare(
+      'SELECT id, engineer_id, status, order_no FROM work_orders WHERE id = ?'
+    ).bind(workOrderId).first();
+    if (!wo) return errorResponse('Work order not found', 404);
+    if (wo.engineer_id !== auth.userId) return errorResponse('You are not assigned to this work order', 403);
+    if (wo.status !== 'pending_payment' && wo.status !== 'payment_review') {
+      return errorResponse('Work order is not waiting for payment follow-up', 400);
+    }
+
+    const payment = await env.DB.prepare(
+      'SELECT id, status, payment_method FROM work_order_payments WHERE work_order_id = ? ORDER BY created_at DESC LIMIT 1'
+    ).bind(workOrderId).first();
+    if (!payment) return errorResponse('Payment method has not been confirmed by the customer', 400);
+
+    await env.DB.prepare(
+      "UPDATE work_order_payments SET status = 'pending_admin_confirmation' WHERE work_order_id = ?"
+    ).bind(workOrderId).run();
+    await env.DB.prepare(
+      "UPDATE work_orders SET status = 'payment_review' WHERE id = ?"
+    ).bind(workOrderId).run();
+
+    await env.DB.prepare(
+      "INSERT INTO work_order_messages (id, work_order_id, sender_type, sender_id, sender_name, content, message_type, is_internal_note, is_customer_visible) VALUES (?, ?, 'engineer', ?, 'Engineer', ?, 'payment_update', 1, 0)"
+    ).bind(
+      generateId(),
+      workOrderId,
+      auth.userId,
+      `Engineer requested Admin approval to start service after payment follow-up.${note ? ` Note: ${note}` : ''}`
+    ).run();
+
+    await writeAuditLog(env, request, {
+      targetType: 'work_order',
+      targetId: workOrderId,
+      action: 'payment_start_requested',
+      beforeState: { status: wo.status, payment_status: payment.status },
+      afterState: { status: 'payment_review', payment_status: 'pending_admin_confirmation', note },
+    });
+
+    return jsonResponse({ success: true, status: 'payment_review' });
+  } catch (error) {
+    return errorResponse(error.message, 500);
+  }
+}
+
+async function handleAdminApprovePaymentStart(request, env) {
+  try {
+    const workOrderId = new URL(request.url).pathname.split('/')[4];
+    const body = await request.json().catch(() => ({}));
+    const note = String(body.note || '').trim();
+
+    const wo = await env.DB.prepare(
+      'SELECT id, status, order_no FROM work_orders WHERE id = ?'
+    ).bind(workOrderId).first();
+    if (!wo) return errorResponse('Work order not found', 404);
+    if (wo.status !== 'payment_review' && wo.status !== 'pending_payment') {
+      return errorResponse('Work order is not waiting for payment approval', 400);
+    }
+
+    const payment = await env.DB.prepare(
+      'SELECT id, status, payment_method FROM work_order_payments WHERE work_order_id = ? ORDER BY created_at DESC LIMIT 1'
+    ).bind(workOrderId).first();
+    if (!payment) return errorResponse('Payment record not found', 400);
+    if (payment.status !== 'pending_admin_confirmation' && payment.status !== 'instructions_requested') {
+      return errorResponse('Payment is not ready for Admin confirmation', 400);
+    }
+
+    await env.DB.prepare(
+      "UPDATE work_order_payments SET status = 'completed' WHERE work_order_id = ?"
+    ).bind(workOrderId).run();
+    await env.DB.prepare(
+      "UPDATE work_orders SET status = 'in_service' WHERE id = ?"
+    ).bind(workOrderId).run();
+
+    await env.DB.prepare(
+      "INSERT INTO work_order_messages (id, work_order_id, sender_type, sender_id, sender_name, content, message_type, is_internal_note, is_customer_visible) VALUES (?, ?, 'system', '', 'System', ?, 'payment_update', 0, 1)"
+    ).bind(
+      generateId(),
+      workOrderId,
+      `SAGEMRO confirmed payment receipt. The work order is approved to start service.${note ? ` Note: ${note}` : ''}`
+    ).run();
+
+    await writeAuditLog(env, request, {
+      targetType: 'work_order',
+      targetId: workOrderId,
+      action: 'payment_start_approved',
+      beforeState: { status: wo.status, payment_status: payment.status },
+      afterState: { status: 'in_service', payment_status: 'completed', note },
+    });
+
+    return jsonResponse({ success: true, status: 'in_service' });
+  } catch (error) {
+    return errorResponse(error.message, 500);
+  }
+}
 // 获取工单付款记录
 async function handleGetWorkOrderPayment(request, env) {
   try {
@@ -9979,6 +10083,9 @@ async function routeRequest(request, env, ctx) {
       if (path.match(/^\/api\/admin\/workorders\/[^/]+\/pricing\/(approve|reject)$/) && request.method === 'PATCH') {
         return handleAdminReviewWorkOrderPricing(request, env);
       }
+      if (path.match(/^\/api\/admin\/workorders\/[^/]+\/payment\/approve-start$/) && request.method === 'POST') {
+        return handleAdminApprovePaymentStart(request, env);
+      }
       if (path.startsWith('/api/admin/workorders/') && path.endsWith('/archive') && request.method === 'PATCH') {
         return handleAdminArchiveWorkOrder(request, env);
       }
@@ -10207,6 +10314,9 @@ async function routeRequest(request, env, ctx) {
     // 客户付款（记录客户-工程师之间的交易）
     if (path.match(/^\/api\/workorders\/[^/]+\/pay$/) && request.method === 'POST') {
       return handlePayWorkOrder(request, env);
+    }
+    if (path.match(/^\/api\/workorders\/[^/]+\/payment\/start-request$/) && request.method === 'POST') {
+      return handleEngineerRequestPaymentStart(request, env);
     }
     // 获取付款记录
     if (path.match(/^\/api\/workorders\/[^/]+\/payment$/) && request.method === 'GET') {
