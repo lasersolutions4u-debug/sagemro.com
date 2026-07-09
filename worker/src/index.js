@@ -7657,7 +7657,10 @@ async function handleAdminEngineerDetail(request, env) {
 
     const rows = workOrders.results || [];
     const calendarEvents = await env.DB.prepare(`
-      SELECT id, title, event_type, start_at, end_at, location, notes AS note
+      SELECT
+        id, title, event_type, start_at, end_at,
+        TRIM(COALESCE(region, '') || ' ' || COALESCE(city, '')) AS location,
+        notes AS note
       FROM engineer_calendar_events
       WHERE engineer_id = ? AND end_at >= datetime('now')
       ORDER BY start_at ASC
