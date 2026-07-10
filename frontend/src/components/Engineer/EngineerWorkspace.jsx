@@ -336,7 +336,7 @@ export function EngineerWorkspace({ currentUser, onLogout, onOpenProfile }) {
           </div>
         )}
 
-        <section className="mb-6 grid gap-4 lg:grid-cols-[1.7fr_1fr]">
+        <section className="mb-6 grid items-start gap-4 lg:grid-cols-[1.7fr_1fr]">
           <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5">
             <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div>

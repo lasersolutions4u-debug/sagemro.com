@@ -388,6 +388,7 @@ test('engineer workspace places calendar above tasks and checklist at the right 
   const workspace = read('frontend/src/components/Engineer/EngineerWorkspace.jsx');
 
   const taskOverviewIndex = workspace.indexOf('Task Overview');
+  const topGridIndex = workspace.indexOf('mb-6 grid items-start gap-4');
   const calendarIndex = workspace.indexOf('<EngineerAvailabilityCalendar />');
   const serviceTasksIndex = workspace.indexOf('Service Tasks');
   const contextIndex = workspace.indexOf('Current Task Context');
@@ -395,6 +396,7 @@ test('engineer workspace places calendar above tasks and checklist at the right 
   const checklistIndex = workspace.indexOf('Service Standard Checklist');
 
   assert.ok(taskOverviewIndex > -1);
+  assert.ok(topGridIndex > -1);
   assert.ok(calendarIndex > taskOverviewIndex);
   assert.ok(calendarIndex < serviceTasksIndex);
   assert.ok(contextIndex < preparationIndex);
