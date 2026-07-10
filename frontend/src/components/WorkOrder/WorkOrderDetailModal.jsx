@@ -141,11 +141,6 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
     tabs.push({ key: 'repairRecord', label: 'Service Report' });
   }
 
-  // 附件Tab：工单已分配后可见；若 AI 对话图片已随工单带入，pending 阶段也要可查看。
-  if (effectiveStatus !== 'pending' || detail?.attachments?.length > 0) {
-    tabs.push({ key: 'attachments', label: 'Attachments' });
-  }
-
   const renderInfoTab = () => (
     <div className="space-y-4">
       <div className="p-4 bg-[var(--color-surface-elevated)] rounded-xl space-y-2">
@@ -223,6 +218,18 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
           </div>
         );
       })()}
+
+      {detail?.attachments?.length > 0 && (
+        <div>
+          <h3 className="text-sm font-medium text-[var(--color-text-primary)] mb-2">Attachments</h3>
+          <AttachmentsPanel
+            workOrderId={workOrder.id}
+            userType={userType}
+            userId={userId}
+            readOnly
+          />
+        </div>
+      )}
 
       {/* 工程师：标记服务完成 */}
       {isEngineer && (effectiveStatus === 'in_service' || effectiveStatus === 'pricing') && (
@@ -525,13 +532,6 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
                 userType={userType}
                 repairRecord={detail?.repair_record || null}
                 onSaved={() => loadDetail()}
-              />
-            )}
-            {tab === 'attachments' && (
-              <AttachmentsPanel
-                workOrderId={workOrder.id}
-                userType={userType}
-                userId={userId}
               />
             )}
           </>

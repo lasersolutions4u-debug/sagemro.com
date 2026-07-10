@@ -104,6 +104,25 @@ function joinList(value) {
   return value || '-';
 }
 
+function renderTags(value) {
+  const list = Array.isArray(value)
+    ? value.filter(Boolean)
+    : String(value || '')
+      .split(/[,;，、]/)
+      .map((item) => item.trim())
+      .filter(Boolean);
+  if (!list.length) return <span className="mt-1 block text-[var(--color-text-muted)]">-</span>;
+  return (
+    <div className="mt-2 flex flex-wrap gap-1.5">
+      {list.map((item) => (
+        <span key={item} className="rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1 text-xs text-[var(--color-text-secondary)]">
+          {item}
+        </span>
+      ))}
+    </div>
+  );
+}
+
 function contactLine(application) {
   return [application.phone, application.email, application.whatsapp].filter(Boolean).join(' / ') || '-';
 }
@@ -280,14 +299,14 @@ export function EngineerApplicationsPage() {
                         <ShieldCheck size={13} />
                         {t.headers.regions}
                       </div>
-                      <div className="mt-1 text-[var(--color-text-secondary)]">{joinList(application.service_regions)}</div>
+                      {renderTags(application.service_regions)}
                     </div>
                     <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-elevated)] p-3">
                       <div className="flex items-center gap-1.5 text-xs text-[var(--color-text-muted)]">
                         <Wrench size={13} />
                         {t.headers.skills}
                       </div>
-                      <div className="mt-1 text-[var(--color-text-secondary)]">{joinList(application.skill_tags)}</div>
+                      {renderTags(application.skill_tags)}
                     </div>
                   </div>
 

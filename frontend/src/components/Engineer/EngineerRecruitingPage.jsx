@@ -95,11 +95,113 @@ function getLocale() {
   return 'en';
 }
 
-function splitList(value) {
-  return value
-    .split(/[,，\n]/)
+function splitTagList(value) {
+  const source = Array.isArray(value) ? value.join(',') : String(value || '');
+  const normalized = source.replace(/[\uFF0C\uFF1B;\s]+/g, ',');
+  return normalized
+    .split(/[,，\s\n]+/)
     .map((item) => item.trim())
     .filter(Boolean);
+}
+
+const REGION_SUGGESTIONS = [
+  'North America',
+  'Europe',
+  'Southeast Asia',
+  'Middle East',
+  'Mexico',
+  'Malaysia',
+  'Illinois',
+  'Indiana',
+  'Wisconsin',
+];
+
+const SKILL_SUGGESTIONS = [
+  'Laser cutting machine',
+  'Press brake',
+  'Laser source',
+  'Cutting head',
+  'CNC alarms',
+  'Servo drive',
+  'Maintenance',
+  'On-site troubleshooting',
+];
+
+function TagInput({ label, value, suggestions, placeholder, onChange }) {
+  const [draft, setDraft] = useState('');
+  const tags = Array.isArray(value) ? value : splitTagList(value);
+
+  const addTags = (text) => {
+    const next = splitTagList(text).filter((tag) => !tags.includes(tag));
+    if (next.length) onChange([...tags, ...next]);
+    setDraft('');
+  };
+
+  const removeTag = (tag) => onChange(tags.filter((item) => item !== tag));
+
+  return (
+    <div className="block text-[13px] font-semibold text-[#312317]">
+      {label}
+      <div className="mt-1.5 rounded-xl border border-[#eadfce] bg-[#fffdf8] px-3 py-2.5 transition focus-within:border-amber-500 focus-within:bg-white focus-within:shadow-[0_0_0_3px_rgba(245,158,11,0.12)]">
+        <div className="flex flex-wrap gap-2">
+          {tags.map((tag) => (
+            <button
+              key={tag}
+              type="button"
+              onClick={() => removeTag(tag)}
+              className="rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-800"
+              title="Remove"
+            >
+              {tag} x
+            </button>
+          ))}
+          <input
+            value={draft}
+            onChange={(event) => {
+              const next = event.target.value;
+              if (/[,，\s]$/.test(next)) addTags(next);
+              else setDraft(next);
+            }}
+            onKeyDown={(event) => {
+              if (event.key === ',' || event.key === ' ') {
+                event.preventDefault();
+                addTags(draft);
+              }
+              if (event.key === 'Enter') {
+                event.preventDefault();
+                addTags(draft);
+              }
+              if (event.key === 'Backspace' && !draft && tags.length) {
+                removeTag(tags[tags.length - 1]);
+              }
+            }}
+            onBlur={() => addTags(draft)}
+            placeholder={tags.length ? '' : placeholder}
+            className="min-w-[180px] flex-1 bg-transparent text-sm outline-none placeholder:text-[#8a8178]"
+          />
+        </div>
+      </div>
+      <div className="mt-2 flex flex-wrap gap-2">
+        {suggestions.map((item) => {
+          const selected = tags.includes(item);
+          return (
+            <button
+              key={item}
+              type="button"
+              onClick={() => onChange(selected ? tags.filter((tag) => tag !== item) : [...tags, item])}
+              className={`rounded-full border px-2.5 py-1 text-xs font-medium transition ${
+                selected
+                  ? 'border-amber-500 bg-amber-100 text-amber-900'
+                  : 'border-[#eadfce] bg-white text-[#6b5a48] hover:border-amber-300'
+              }`}
+            >
+              {item}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
 }
 
 export function EngineerRecruitingPage({ onOpenLogin }) {
@@ -112,8 +214,8 @@ export function EngineerRecruitingPage({ onOpenLogin }) {
     whatsapp: '',
     country: '',
     city: '',
-    service_regions: '',
-    skill_tags: '',
+    service_regions: [],
+    skill_tags: [],
     experience_summary: '',
     can_travel: false,
     can_weekend: false,
@@ -136,8 +238,8 @@ export function EngineerRecruitingPage({ onOpenLogin }) {
     try {
       await submitEngineerApplication({
         ...form,
-        service_regions: splitList(form.service_regions),
-        skill_tags: splitList(form.skill_tags),
+        service_regions: splitTagList(form.service_regions),
+        skill_tags: splitTagList(form.skill_tags),
       });
       setMessage(copy.success);
       setForm((prev) => ({
@@ -148,8 +250,8 @@ export function EngineerRecruitingPage({ onOpenLogin }) {
         whatsapp: '',
         country: '',
         city: '',
-        service_regions: '',
-        skill_tags: '',
+        service_regions: [],
+        skill_tags: [],
         experience_summary: '',
       }));
     } catch (err) {
@@ -241,24 +343,20 @@ export function EngineerRecruitingPage({ onOpenLogin }) {
                   </label>
                 ))}
               </div>
-              <label className="block text-[13px] font-semibold text-[#312317]">
-                {copy.fields.regions}
-                <input
-                  value={form.service_regions}
-                  onChange={(event) => updateField('service_regions', event.target.value)}
-                  placeholder={copy.placeholders.regions}
-                  className="mt-1.5 w-full rounded-xl border border-[#eadfce] bg-[#fffdf8] px-3 py-2.5 text-sm outline-none transition focus:border-amber-500 focus:bg-white focus:shadow-[0_0_0_3px_rgba(245,158,11,0.12)]"
-                />
-              </label>
-              <label className="block text-[13px] font-semibold text-[#312317]">
-                {copy.fields.skills}
-                <input
-                  value={form.skill_tags}
-                  onChange={(event) => updateField('skill_tags', event.target.value)}
-                  placeholder={copy.placeholders.skills}
-                  className="mt-1.5 w-full rounded-xl border border-[#eadfce] bg-[#fffdf8] px-3 py-2.5 text-sm outline-none transition focus:border-amber-500 focus:bg-white focus:shadow-[0_0_0_3px_rgba(245,158,11,0.12)]"
-                />
-              </label>
+              <TagInput
+                label={copy.fields.regions}
+                value={form.service_regions}
+                suggestions={REGION_SUGGESTIONS}
+                placeholder={copy.placeholders.regions}
+                onChange={(tags) => updateField('service_regions', tags)}
+              />
+              <TagInput
+                label={copy.fields.skills}
+                value={form.skill_tags}
+                suggestions={SKILL_SUGGESTIONS}
+                placeholder={copy.placeholders.skills}
+                onChange={(tags) => updateField('skill_tags', tags)}
+              />
               <label className="block text-[13px] font-semibold text-[#312317]">
                 {copy.fields.experience}
                 <textarea

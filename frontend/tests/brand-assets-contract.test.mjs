@@ -170,6 +170,17 @@ test('assigned work orders expose quote preparation instead of only cancellation
   assert.match(detailModal, /pricingStatuses\.includes\(effectiveStatus\)/);
 });
 
+test('work order attachments are folded into info instead of a separate tab', () => {
+  const detailModal = read('frontend/src/components/WorkOrder/WorkOrderDetailModal.jsx');
+  const repairRecord = read('frontend/src/components/WorkOrder/RepairRecordPanel.jsx');
+
+  assert.doesNotMatch(detailModal, /tabs\.push\(\{ key: 'attachments'/);
+  assert.doesNotMatch(detailModal, /tab === 'attachments'/);
+  assert.match(detailModal, /detail\?\.attachments\?\.length > 0/);
+  assert.match(detailModal, /readOnly/);
+  assert.doesNotMatch(repairRecord, /Attachments tab/);
+});
+
 test('admin dispatch stays simple while Engineers owns search and profiles', () => {
   const app = read('admin/src/App.jsx');
   const usersPage = read('admin/src/pages/UsersPage.jsx');
@@ -209,6 +220,32 @@ test('engineer profile lets Admin manage regional lead role and schedule signals
   assert.match(engineersPage, /value: 'regional_lead'/);
   assert.match(engineersPage, /calendar_events/);
   assert.match(engineersPage, /active_work_orders/);
+});
+
+test('engineer application and admin engineer pages render regions and skills as tags', () => {
+  const recruiting = read('frontend/src/components/Engineer/EngineerRecruitingPage.jsx');
+  const engineersPage = read('admin/src/pages/EngineersPage.jsx');
+  const applicationsPage = read('admin/src/pages/EngineerApplicationsPage.jsx');
+
+  assert.match(recruiting, /TagInput/);
+  assert.match(recruiting, /REGION_SUGGESTIONS/);
+  assert.match(recruiting, /SKILL_SUGGESTIONS/);
+  assert.match(recruiting, /onKeyDown/);
+  assert.match(recruiting, /service_regions: \[\]/);
+  assert.match(recruiting, /skill_tags: \[\]/);
+  assert.doesNotMatch(recruiting, /service_regions: ''/);
+  assert.doesNotMatch(recruiting, /skill_tags: ''/);
+
+  assert.match(engineersPage, /renderTags\(profile\.engineer\.specialties/);
+  assert.match(engineersPage, /renderTags\(profile\.engineer\.services/);
+  assert.match(applicationsPage, /renderTags\(application\.service_regions/);
+  assert.match(applicationsPage, /renderTags\(application\.skill_tags/);
+});
+
+test('engineer task overview uses two columns on mobile', () => {
+  const workspace = read('frontend/src/components/Engineer/EngineerWorkspace.jsx');
+
+  assert.match(workspace, /grid grid-cols-2 gap-3 sm:grid-cols-2 lg:grid-cols-5/);
 });
 
 test('customer service views translate machine fields to English', () => {

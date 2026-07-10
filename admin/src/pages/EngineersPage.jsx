@@ -30,6 +30,25 @@ function listText(value) {
   return formatListValue(value) || '-';
 }
 
+function renderTags(value) {
+  const list = Array.isArray(value)
+    ? value
+    : String(formatListValue(value) || '')
+      .split(/[,;，、]/)
+      .map((item) => item.trim())
+      .filter(Boolean);
+  if (!list.length) return <span className="text-[var(--color-text-muted)]">-</span>;
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {list.map((item) => (
+        <span key={item} className="rounded-full border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-2 py-1 text-xs text-[var(--color-text-secondary)]">
+          {item}
+        </span>
+      ))}
+    </div>
+  );
+}
+
 function formatScore(value) {
   const score = Number(value);
   return Number.isFinite(score) && score > 0 ? score.toFixed(1) : '-';
@@ -552,11 +571,11 @@ export function EngineersPage() {
                   <div className="grid gap-3 text-sm sm:grid-cols-2">
                     <div>
                       <div className="mb-1 text-xs text-[var(--color-text-muted)]">{t.headers.specialties}</div>
-                      <div className="text-[var(--color-text-secondary)]">{listText(profile.engineer.specialties)}</div>
+                      {renderTags(profile.engineer.specialties)}
                     </div>
                     <div>
                       <div className="mb-1 text-xs text-[var(--color-text-muted)]">{t.headers.services}</div>
-                      <div className="text-[var(--color-text-secondary)]">{listText(profile.engineer.services)}</div>
+                      {renderTags(profile.engineer.services)}
                     </div>
                   </div>
                   {profile.engineer.bio && (

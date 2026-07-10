@@ -243,7 +243,7 @@ export function EngineerWorkspace({ currentUser, onLogout, onOpenProfile }) {
                 ))}
               </div>
             </div>
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-2 lg:grid-cols-5">
               {metrics.map((metric) => (
                 <div key={metric.label} className="rounded-xl bg-[var(--color-surface-elevated)] p-4">
                   <metric.icon size={18} className="mb-2 text-[var(--color-primary)]" />

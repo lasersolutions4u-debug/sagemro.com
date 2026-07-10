@@ -176,7 +176,7 @@ export function RepairRecordPanel({ workOrderId, userType, repairRecord, onSaved
         <div className="font-medium text-[var(--color-text-primary)]">SAGEMRO Service Report SOP</div>
         <div>1. Record customer symptom and current machine condition.</div>
         <div>2. Write root cause, on-site actions, parameters adjusted, parts used, and next maintenance advice.</div>
-        <div>3. Upload on-site photos or acceptance files in the Attachments tab when available.</div>
+        <div>3. Share on-site photos or acceptance files in Messages when available; existing files remain visible in Details.</div>
         <div>4. Save this report before marking the service complete.</div>
       </div>
 
