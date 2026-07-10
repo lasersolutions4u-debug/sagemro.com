@@ -98,52 +98,63 @@ const COPY = {
   en: {
     badge: 'SAGEMRO Service OS · Certified Representative Program',
     networkLabel: 'Service Representative Network',
-    title: 'A service network built for engineers who take field work seriously.',
-    subtitle: 'SAGEMRO is building an independent service coordination network for laser cutting machines and sheet metal equipment. We review each application manually, then support approved representatives with dispatch coordination, service standards, equipment context, and growth resources.',
-    primary: 'Apply as a Certified Service Representative',
-    applyNow: 'Apply now',
+    title: "Join SAGEMRO's Industrial Service Network",
+    subtitle: 'Get matched with paid field service opportunities for laser cutting machines, press brakes, and sheet metal equipment. SAGEMRO reviews every application manually and supports approved representatives with job context, quote review, payment confirmation, and dispatch coordination.',
+    primary: 'Apply to Join',
+    applyNow: 'Apply to Join',
+    howItWorks: 'How It Works',
     signIn: 'I already have an engineer account',
     heroStats: [
-      { value: 'Manual', label: 'review before account access' },
-      { value: 'Regional', label: 'dispatch coordination' },
-      { value: 'Field-first', label: 'service standards' },
+      { value: 'Paid', label: 'field service opportunities' },
+      { value: 'Reviewed', label: 'manual application screening' },
+      { value: 'Confirmed', label: 'payment before dispatch' },
     ],
+    whatTitle: 'What is SAGEMRO?',
+    whatText: 'SAGEMRO is an AI-assisted industrial service platform for machine users who need reliable field support. We help customers describe service needs, prepare job context, coordinate qualified engineers, and manage service records.',
     pillars: [
-      { title: 'Reviewed access, coordinated service', text: 'Approved accounts are assigned by SAGEMRO. Admin and regional leads coordinate service tasks.' },
-      { title: 'Field expertise respected', text: 'Equipment records, AI intake notes, parts preparation, and reports help reduce low-value back-and-forth.' },
-      { title: 'Clear scheduling signals', text: 'Engineers maintain their own availability so dispatch decisions can respect real field capacity.' },
+      { title: 'Manual review before access', text: 'SAGEMRO checks fit, experience, region, and cooperation readiness before account activation.' },
+      { title: 'Job context before dispatch', text: 'Approved engineers receive customer symptoms, machine details, AI intake notes, and available records before service starts.' },
+      { title: 'Payment confirmation first', text: 'Service starts only after customer payment is confirmed or approved by Admin.' },
     ],
-    valuesTitle: 'When engineers are supported well, customers are served well.',
-    valuesText: 'Our operating idea is simple: care for the people who care for the machines. SAGEMRO supports regional leads and engineers with standards, coordination, safety awareness, and long-term growth.',
-    joinTitle: 'Why join SAGEMRO',
-    joinIntro: 'This is not a marketplace that treats field experts like anonymous labor. SAGEMRO is building a service network that respects real troubleshooting experience.',
+    valuesTitle: 'We are building the network region by region',
+    valuesText: 'Applying does not guarantee immediate dispatch. Approved engineers enter our verified service pool and may be matched when customer needs fit their region, equipment experience, and availability.',
+    joinTitle: 'What you may receive after approval',
+    joinIntro: 'The goal is not to collect profiles. SAGEMRO is building a verified service pool that can match real customer service requests with qualified field engineers.',
     joinItems: [
-      { title: 'Better prepared service visits', text: 'Before dispatch, engineers can receive customer symptoms, machine context, AI intake notes, and available records.' },
-      { title: 'Less low-value back-and-forth', text: 'Structured service records, quote review, messages, and payment confirmation keep operations clearer.' },
-      { title: 'A path beyond one-time jobs', text: 'Reliable engineers can grow into regional service partners as the network expands.' },
+      { title: 'Paid field service opportunities', text: 'Approved representatives may be matched with customer service requests in their region.' },
+      { title: 'Prepared job context', text: 'Before dispatch, you may receive customer symptoms, machine details, service history, and AI intake notes.' },
+      { title: 'Quote review support', text: 'Engineers submit service quotes, and SAGEMRO reviews them before customer confirmation.' },
+      { title: 'Payment confirmation before service', text: 'Work starts only after customer payment is confirmed or approved by Admin.' },
+      { title: 'Long-term regional growth', text: 'Reliable engineers may be considered for Regional Lead coordination opportunities.' },
     ],
     lookForTitle: 'What we look for',
     lookForItems: [
-      'Hands-on experience with laser cutting machines, press brakes, or sheet metal equipment.',
-      'Clear communication with customers and SAGEMRO operations.',
-      'Ability to document service findings, parts needs, and follow-up advice.',
-      'Honest schedule signals, travel range, and emergency support capacity.',
+      'Real hands-on troubleshooting experience.',
+      'Familiarity with laser cutting, press brakes, CNC systems, electrical or mechanical issues.',
+      'Clear communication with customers.',
+      'Ability to document findings and parts needs.',
+      'Honest availability and travel range.',
     ],
     leadTitle: 'Regional Lead opportunity',
-    leadText: 'Experienced representatives may be invited to become Regional Leads after trust is established. Regional Leads help coordinate local engineers, support dispatch decisions, and keep service standards consistent.',
-    processTitle: 'How applications work',
+    leadText: 'Experienced and reliable representatives may be invited to support regional coordination. Regional Leads may help review local capacity, recommend engineers, support dispatch decisions, and maintain service standards as the network grows.',
+    processTitle: 'How work and payment starts',
     process: [
-      { step: '01', title: 'Apply online', text: 'Share your service regions, skills, field experience, and availability signals.' },
-      { step: '02', title: 'SAGEMRO reviews manually', text: 'Our operations team checks fit, experience, and regional coverage before any account is opened.' },
-      { step: '03', title: 'Activation after approval', text: 'Approved representatives receive an account activation link from SAGEMRO.' },
-      { step: '04', title: 'Start with coordinated service', text: 'Admin and Regional Leads coordinate dispatch, quote review, payment follow-up, and service standards.' },
+      { step: '01', title: 'Customer submits a service request', text: 'The customer describes the machine issue, urgency, region, and available equipment context.' },
+      { step: '02', title: 'SAGEMRO reviews the case', text: 'Admin checks the request and matches suitable engineers or Regional Leads.' },
+      { step: '03', title: 'Engineer reviews job context', text: 'The engineer reviews the job context and submits a quote when the scope is clear.' },
+      { step: '04', title: 'Admin reviews the quote', text: 'SAGEMRO reviews the quote before it is shown to the customer.' },
+      { step: '05', title: 'Customer confirms price and payment', text: 'The customer confirms the price and receives payment instructions.' },
+      { step: '06', title: 'Service starts after confirmation', text: 'Service starts after payment confirmation or Admin approval.' },
     ],
     faqTitle: 'Frequently asked questions',
     faqs: [
       { q: 'Does applying create a login account?', a: 'No. Application and account access are separate. Accounts are opened only after SAGEMRO confirms cooperation.' },
+      { q: 'Will I get service orders immediately?', a: 'Not necessarily. Approved engineers enter the verified service pool and are matched when customer needs fit their region, equipment experience, and availability.' },
+      { q: 'Who decides the service price?', a: 'The engineer submits a quote based on the job context. SAGEMRO reviews the quote before customer confirmation.' },
+      { q: 'When does the engineer start work?', a: 'The engineer starts only after customer payment is confirmed or Admin approves the work order to start.' },
       { q: 'Can I apply if I only cover one city or one state?', a: 'Yes. Clear local coverage is useful. We care more about reliable service capacity than large but vague coverage.' },
-      { q: 'Is this only for laser cutting machines?', a: 'Laser cutting is a key category, but sheet metal equipment experience such as press brakes and related CNC service is also valuable.' },
-      { q: 'How does payment work?', a: 'Customer payment is coordinated through SAGEMRO-approved payment instructions. Engineers follow up with customers and request Admin approval before starting service.' },
+      { q: 'Can I become a Regional Lead?', a: 'Experienced and reliable representatives may be invited after trust is established and regional demand grows.' },
+      { q: 'How will SAGEMRO contact me after applying?', a: 'If there is a fit, SAGEMRO will contact you through the phone, email, WhatsApp, or other contact details you submit.' },
     ],
     modalTitle: 'Apply as a Certified Service Representative',
     fields: {
@@ -487,7 +498,7 @@ export function EngineerRecruitingPage({ onOpenLogin }) {
                     href="#how-it-works"
                     className="inline-flex items-center justify-center gap-2 rounded-2xl border border-[#eadfce] bg-white px-5 py-3 text-sm font-semibold text-[#3b2612] transition hover:border-amber-300 hover:bg-amber-50"
                   >
-                    {copy.processTitle}
+                    {copy.howItWorks || copy.processTitle}
                   </a>
                 </div>
               </div>
@@ -503,6 +514,18 @@ export function EngineerRecruitingPage({ onOpenLogin }) {
               </div>
             </div>
           </section>
+
+          {copy.whatTitle && (
+            <section className="mt-6 rounded-[2rem] border border-[#ece3d6] bg-white p-6 shadow-sm">
+              <div className="grid gap-4 lg:grid-cols-[260px_1fr] lg:items-start">
+                <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-amber-700">
+                  <ClipboardCheck size={15} />
+                  {copy.whatTitle}
+                </div>
+                <p className="text-base leading-8 text-[#5f4d3b]">{copy.whatText}</p>
+              </div>
+            </section>
+          )}
 
           <section className="mt-6 grid gap-4 md:grid-cols-3">
             {copy.pillars.map((item, index) => {

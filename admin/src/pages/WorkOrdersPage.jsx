@@ -11,6 +11,7 @@ import {
   getAdminWorkOrders,
   postAdminWorkOrderMessage,
   rejectAdminWorkOrderPricing,
+  updateAdminWorkOrderPayout,
 } from '../services/api';
 import { runtimeConfig } from '../config/runtime';
 import {
@@ -64,6 +65,17 @@ function MoneyRow({ label, value }) {
       <span className="font-semibold text-[var(--color-primary)]">{money(value)} USD</span>
     </div>
   );
+}
+
+function payoutLabel(status) {
+  const labels = {
+    not_ready: 'Not ready',
+    pending: 'Payout pending',
+    processing: 'Processing',
+    completed: 'Completed',
+    exception: 'Exception',
+  };
+  return labels[status] || status || 'Not ready';
 }
 
 function isImageAttachment(attachment) {
@@ -476,6 +488,36 @@ export function WorkOrdersPage() {
       setMessage(t.archived(wo.order_no));
     } catch (err) {
       setMessage(err.message || t.archiveFailed);
+    } finally {
+      setAssigningId('');
+    }
+  }
+
+  async function handleUpdatePayout(wo, status) {
+    const currentPayout = wo.payout || {};
+    const amountInput = window.prompt('Engineer service payment amount in USD (optional):', currentPayout.amount || '');
+    if (amountInput === null) return;
+    const reference = window.prompt('Payment reference / transaction ID (optional):', currentPayout.transaction_reference || '') || '';
+    const note = window.prompt('Internal payout note (optional):', currentPayout.internal_note || '') || '';
+    setAssigningId(`${wo.id}:payout:${status}`);
+    setMessage('');
+    try {
+      const response = await updateAdminWorkOrderPayout(wo.id, {
+        status,
+        amount: amountInput,
+        currency: currentPayout.currency || 'USD',
+        method: currentPayout.method || 'paypal',
+        transaction_reference: reference,
+        internal_note: note,
+      });
+      setDetail((prev) => (
+        prev?.id === wo.id
+          ? { ...prev, payout: response.payout, payout_status: response.payout_status }
+          : prev
+      ));
+      setMessage(`Engineer service payment updated: ${payoutLabel(response.payout_status)}`);
+    } catch (err) {
+      setMessage(err.message || 'Failed to update engineer service payment');
     } finally {
       setAssigningId('');
     }
@@ -939,6 +981,48 @@ export function WorkOrdersPage() {
                     <div>{t.engineerLabel}: {detail.engineer_name || '-'}</div>
                     <div>{t.quoteReviewLabel}: {detail.quote_review_status || '-'}</div>
                     <div>{t.riskControlLabel}: {detail.conflict_status || 'clear'}</div>
+                  </div>
+                </section>
+
+                <section className="rounded-xl border border-[var(--color-primary)]/30 bg-[var(--color-primary)]/5 p-4">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div>
+                      <h4 className="font-medium text-[var(--color-text)]">Engineer service payment</h4>
+                      <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
+                        Internal closure is not complete until this work order's engineer payout is completed.
+                      </p>
+                      <div className="mt-3 grid gap-2 text-xs text-[var(--color-text-muted)] sm:grid-cols-2">
+                        <div>Status: {payoutLabel(detail.payout_status)}</div>
+                        <div>Method: {detail.payout?.method === 'bank_swift' ? 'Bank transfer / SWIFT' : 'PayPal account'}</div>
+                        <div>Amount: {detail.payout?.amount ? `${money(detail.payout.amount)} ${detail.payout.currency || 'USD'}` : '-'}</div>
+                        <div>Reference: {detail.payout?.transaction_reference || '-'}</div>
+                        <div>Paid at: {detail.payout?.paid_at ? new Date(detail.payout.paid_at).toLocaleString('en-US') : '-'}</div>
+                        <div>Note: {detail.payout?.internal_note || '-'}</div>
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        onClick={() => handleUpdatePayout(detail, 'processing')}
+                        disabled={assigningId === `${detail.id}:payout:processing`}
+                        className="rounded-lg border border-[var(--color-border)] px-3 py-2 text-sm text-[var(--color-text-secondary)] disabled:opacity-50"
+                      >
+                        Mark payout processing
+                      </button>
+                      <button
+                        onClick={() => handleUpdatePayout(detail, 'completed')}
+                        disabled={assigningId === `${detail.id}:payout:completed`}
+                        className="rounded-lg bg-[var(--color-primary)] px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
+                      >
+                        Mark payout completed
+                      </button>
+                      <button
+                        onClick={() => handleUpdatePayout(detail, 'exception')}
+                        disabled={assigningId === `${detail.id}:payout:exception`}
+                        className="rounded-lg border border-red-500/40 px-3 py-2 text-sm text-red-500 disabled:opacity-50"
+                      >
+                        Mark payout exception
+                      </button>
+                    </div>
                   </div>
                 </section>
 

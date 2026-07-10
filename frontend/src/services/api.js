@@ -744,6 +744,15 @@ export async function getWorkOrderPayment(workOrderId) {
   return response.json();
 }
 
+export async function getWorkOrderPayout(workOrderId) {
+  const response = await fetch(`${API_BASE}/api/workorders/${workOrderId}`, {
+    headers: authHeaders(),
+  });
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  const data = await response.json();
+  return { payout: data.payout || null, payout_status: data.payout_status || 'not_ready' };
+}
+
 // 保存推送订阅（OneSignal Player ID）
 // 后端按 JWT 里的 userType 自动路由到 customers / engineers 表
 export async function savePushSubscription(userId, { onesignal_player_id }) {
@@ -896,11 +905,37 @@ export async function updateCustomerProfile({ name, region }) {
 /**
  * 更新工程师档案
  */
-export async function updateEngineerProfile({ name, bio, service_region, bank_name, bank_account, bank_branch, account_holder }) {
+export async function updateEngineerProfile({
+  name,
+  bio,
+  service_region,
+  payout_method,
+  paypal_account,
+  bank_country,
+  bank_name,
+  bank_account,
+  bank_branch,
+  bank_swift_code,
+  account_holder,
+  payout_notes,
+}) {
   const response = await fetch(`${API_BASE}/api/engineers/profile`, {
     method: 'PATCH',
     headers: { ...authHeaders(), 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name, bio, service_region, bank_name, bank_account, bank_branch, account_holder }),
+    body: JSON.stringify({
+      name,
+      bio,
+      service_region,
+      payout_method,
+      paypal_account,
+      bank_country,
+      bank_name,
+      bank_account,
+      bank_branch,
+      bank_swift_code,
+      account_holder,
+      payout_notes,
+    }),
   });
   if (!response.ok) throw new Error(`HTTP ${response.status}`);
   return response.json();

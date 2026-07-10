@@ -1,12 +1,24 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Modal } from '../common/Modal';
-import { Star, MapPin, Phone, Briefcase, Wrench, Award, Bell, BellOff } from 'lucide-react';
-import { getEngineerProfile } from '../../services/api';
+import { Star, MapPin, Phone, Briefcase, Wrench, Award, Bell, BellOff, CreditCard } from 'lucide-react';
+import { getEngineerProfile, updateEngineerProfile } from '../../services/api';
 import { usePushNotification } from '../../hooks/usePushNotification';
 
 export function EngineerProfileModal({ isOpen, onClose, engineerId }) {
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [payoutForm, setPayoutForm] = useState({
+    payout_method: 'paypal',
+    paypal_account: '',
+    bank_country: '',
+    bank_name: '',
+    bank_account: '',
+    bank_swift_code: '',
+    account_holder: '',
+    payout_notes: '',
+  });
+  const [payoutSaving, setPayoutSaving] = useState(false);
+  const [payoutMessage, setPayoutMessage] = useState('');
   const { pushEnabled, pushPermission, enablePush, disablePush, isConfigured } =
     usePushNotification(engineerId, !!engineerId);
 
@@ -15,6 +27,16 @@ export function EngineerProfileModal({ isOpen, onClose, engineerId }) {
     try {
       const data = await getEngineerProfile(engineerId);
       setProfile(data.engineer);
+      setPayoutForm({
+        payout_method: data.engineer?.payout_method || 'paypal',
+        paypal_account: data.engineer?.paypal_account || '',
+        bank_country: data.engineer?.bank_country || '',
+        bank_name: data.engineer?.bank_name || '',
+        bank_account: data.engineer?.bank_account || '',
+        bank_swift_code: data.engineer?.bank_swift_code || '',
+        account_holder: data.engineer?.account_holder || '',
+        payout_notes: data.engineer?.payout_notes || '',
+      });
     } catch (e) {
       console.error('加载工程师档案失败:', e);
     } finally {
@@ -38,6 +60,25 @@ export function EngineerProfileModal({ isOpen, onClose, engineerId }) {
   // 评分显示
   const renderStars = (rating) => {
     return '★'.repeat(Math.round(rating)) + '☆'.repeat(5 - Math.round(rating));
+  };
+
+  const updatePayoutField = (field, value) => {
+    setPayoutForm((prev) => ({ ...prev, [field]: value }));
+    setPayoutMessage('');
+  };
+
+  const handleSavePayout = async () => {
+    setPayoutSaving(true);
+    setPayoutMessage('');
+    try {
+      const data = await updateEngineerProfile(payoutForm);
+      setProfile(data.engineer);
+      setPayoutMessage('Payout method saved.');
+    } catch (e) {
+      setPayoutMessage(e.message || 'Failed to save payout method.');
+    } finally {
+      setPayoutSaving(false);
+    }
   };
 
   const avgRating = profile
@@ -215,6 +256,99 @@ export function EngineerProfileModal({ isOpen, onClose, engineerId }) {
             )}
 
             {/* 推送通知设置 */}
+            <div className="p-4 bg-[var(--color-surface-elevated)] rounded-xl">
+              <div className="flex items-center gap-2 mb-3">
+                <CreditCard size={16} className="text-[var(--color-primary)]" />
+                <h3 className="text-sm font-medium text-[var(--color-text-primary)]">
+                  Engineer payout method
+                </h3>
+              </div>
+              <div className="grid gap-3">
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <label className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm">
+                    <input
+                      type="radio"
+                      name="payout_method"
+                      checked={payoutForm.payout_method === 'paypal'}
+                      onChange={() => updatePayoutField('payout_method', 'paypal')}
+                      className="mr-2"
+                    />
+                    PayPal account
+                  </label>
+                  <label className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm">
+                    <input
+                      type="radio"
+                      name="payout_method"
+                      checked={payoutForm.payout_method === 'bank_swift'}
+                      onChange={() => updatePayoutField('payout_method', 'bank_swift')}
+                      className="mr-2"
+                    />
+                    Bank transfer / SWIFT
+                  </label>
+                </div>
+
+                {payoutForm.payout_method === 'paypal' ? (
+                  <label className="text-xs text-[var(--color-text-secondary)]">
+                    PayPal account
+                    <input
+                      value={payoutForm.paypal_account}
+                      onChange={(event) => updatePayoutField('paypal_account', event.target.value)}
+                      placeholder="PayPal email account"
+                      className="mt-1 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text-primary)] outline-none"
+                    />
+                  </label>
+                ) : (
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <label className="text-xs text-[var(--color-text-secondary)]">
+                      Bank country
+                      <input value={payoutForm.bank_country} onChange={(event) => updatePayoutField('bank_country', event.target.value)} className="mt-1 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text-primary)] outline-none" />
+                    </label>
+                    <label className="text-xs text-[var(--color-text-secondary)]">
+                      Account holder
+                      <input value={payoutForm.account_holder} onChange={(event) => updatePayoutField('account_holder', event.target.value)} className="mt-1 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text-primary)] outline-none" />
+                    </label>
+                    <label className="text-xs text-[var(--color-text-secondary)]">
+                      Bank name
+                      <input value={payoutForm.bank_name} onChange={(event) => updatePayoutField('bank_name', event.target.value)} className="mt-1 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text-primary)] outline-none" />
+                    </label>
+                    <label className="text-xs text-[var(--color-text-secondary)]">
+                      Bank account
+                      <input value={payoutForm.bank_account} onChange={(event) => updatePayoutField('bank_account', event.target.value)} className="mt-1 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text-primary)] outline-none" />
+                    </label>
+                    <label className="text-xs text-[var(--color-text-secondary)] sm:col-span-2">
+                      SWIFT code
+                      <input value={payoutForm.bank_swift_code} onChange={(event) => updatePayoutField('bank_swift_code', event.target.value)} className="mt-1 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text-primary)] outline-none" />
+                    </label>
+                  </div>
+                )}
+
+                <label className="text-xs text-[var(--color-text-secondary)]">
+                  Notes for Admin
+                  <textarea
+                    value={payoutForm.payout_notes}
+                    onChange={(event) => updatePayoutField('payout_notes', event.target.value)}
+                    rows={2}
+                    className="mt-1 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text-primary)] outline-none"
+                  />
+                </label>
+
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <p className="text-xs text-[var(--color-text-secondary)]">
+                    SAGEMRO currently supports PayPal account and Bank transfer / SWIFT for engineer service payments.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={handleSavePayout}
+                    disabled={payoutSaving}
+                    className="rounded-lg bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+                  >
+                    {payoutSaving ? 'Saving...' : 'Save payout method'}
+                  </button>
+                </div>
+                {payoutMessage && <div className="text-xs text-[var(--color-text-secondary)]">{payoutMessage}</div>}
+              </div>
+            </div>
+
             {isConfigured && (
               <div className="p-4 bg-[var(--color-surface-elevated)] rounded-xl">
                 <div className="flex items-center justify-between">

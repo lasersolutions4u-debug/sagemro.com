@@ -118,6 +118,13 @@ export async function approveAdminWorkOrderPaymentStart(workOrderId, note = '') 
   });
 }
 
+export async function updateAdminWorkOrderPayout(workOrderId, data) {
+  return request(`/api/admin/workorders/${workOrderId}/payout`, {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  });
+}
+
 export async function archiveAdminWorkOrder(workOrderId) {
   return request(`/api/admin/workorders/${workOrderId}/archive`, {
     method: 'PATCH',

@@ -32,6 +32,17 @@ function hasServiceReportContent(record) {
   return hasText || hasLabor || hasParts;
 }
 
+function payoutLabel(status) {
+  const labels = {
+    not_ready: 'Payout not ready',
+    pending: 'Payout pending',
+    processing: 'Payout processing',
+    completed: 'Payout completed',
+    exception: 'Payout exception',
+  };
+  return labels[status] || status || 'Payout not ready';
+}
+
 // ========== 主组件 ==========
 export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess, onConfirmed, userType, userId }) {
   const [detail, setDetail] = useState(null);
@@ -143,6 +154,29 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
 
   const renderInfoTab = () => (
     <div className="space-y-4">
+      {isEngineer && ['resolved', 'pending_review', 'completed'].includes(effectiveStatus) && (
+        <div className="rounded-xl border border-[var(--color-primary)]/30 bg-[var(--color-primary)]/5 p-4">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h3 className="text-sm font-medium text-[var(--color-text-primary)]">Engineer service payment</h3>
+              <p className="mt-1 text-xs text-[var(--color-text-secondary)]">
+                This internal closure is handled by Admin after customer confirmation.
+              </p>
+            </div>
+            <span className="rounded-full bg-[var(--color-surface-elevated)] px-3 py-1 text-xs font-semibold text-[var(--color-primary)]">
+              {payoutLabel(detail?.payout_status)}
+            </span>
+          </div>
+          {detail?.payout && (
+            <div className="mt-3 grid gap-2 text-xs text-[var(--color-text-secondary)] sm:grid-cols-3">
+              <div>Method: {detail.payout.method === 'bank_swift' ? 'Bank transfer / SWIFT' : 'PayPal account'}</div>
+              <div>Amount: {detail.payout.amount ? `${detail.payout.amount} ${detail.payout.currency || 'USD'}` : '-'}</div>
+              <div>Reference: {detail.payout.transaction_reference || '-'}</div>
+            </div>
+          )}
+        </div>
+      )}
+
       <div className="p-4 bg-[var(--color-surface-elevated)] rounded-xl space-y-2">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <span className="break-all font-medium text-[var(--color-text-primary)]">{detail?.order_no || workOrder.id}</span>

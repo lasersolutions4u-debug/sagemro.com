@@ -4346,6 +4346,13 @@ async function handleGetWorkOrder(request, env) {
       'SELECT * FROM work_order_pricing WHERE work_order_id = ?'
     ).bind(id).first();
 
+    let payout = await env.DB.prepare(
+      'SELECT * FROM work_order_payouts WHERE work_order_id = ?'
+    ).bind(id).first();
+    if (!payout && workOrder?.status === 'completed' && workOrder?.engineer_id) {
+      payout = await ensureWorkOrderPayout(env, id, workOrder.engineer_id, 'pending');
+    }
+
     const attachments = await env.DB.prepare(
       'SELECT * FROM work_order_attachments WHERE work_order_id = ? ORDER BY created_at DESC'
     ).bind(id).all();
@@ -4364,6 +4371,8 @@ async function handleGetWorkOrder(request, env) {
         ? { ...repairRecord, material_items: materialItems.filter((item) => item.purpose === 'service_report') }
         : null,
       pricing: pricing ? { ...pricing, material_items: quoteMaterialItems } : null,
+      payout_status: payout?.status || 'not_ready',
+      payout: sanitizePayoutForUser(payout, request._auth),
       material_items: materialItems,
       attachments: attachments.results,
     });
@@ -4689,6 +4698,54 @@ async function settleEngineerWallet(env, workOrderId, engineerId) {
 }
 
 // 提交评价
+const WORK_ORDER_PAYOUT_STATUSES = new Set(['not_ready', 'pending', 'processing', 'completed', 'exception']);
+const ENGINEER_PAYOUT_METHODS = new Set(['paypal', 'bank_swift']);
+
+function sanitizePayoutForUser(payout, auth) {
+  if (!payout) return null;
+  if (auth?.userType === 'admin') return payout;
+  const { internal_note, ...safePayout } = payout;
+  return safePayout;
+}
+
+async function ensureWorkOrderPayout(env, workOrderId, engineerId, status = 'pending') {
+  if (!workOrderId || !engineerId) return null;
+
+  const existing = await env.DB.prepare(
+    'SELECT * FROM work_order_payouts WHERE work_order_id = ?'
+  ).bind(workOrderId).first();
+  if (existing) return existing;
+
+  const engineer = await env.DB.prepare(
+    'SELECT payout_method FROM engineers WHERE id = ?'
+  ).bind(engineerId).first();
+
+  const payout = {
+    id: generateId(),
+    work_order_id: workOrderId,
+    engineer_id: engineerId,
+    amount: 0,
+    currency: 'USD',
+    method: ENGINEER_PAYOUT_METHODS.has(engineer?.payout_method) ? engineer.payout_method : 'paypal',
+    status: WORK_ORDER_PAYOUT_STATUSES.has(status) ? status : 'pending',
+  };
+
+  await env.DB.prepare(`
+    INSERT INTO work_order_payouts (id, work_order_id, engineer_id, amount, currency, method, status)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `).bind(
+    payout.id,
+    payout.work_order_id,
+    payout.engineer_id,
+    payout.amount,
+    payout.currency,
+    payout.method,
+    payout.status
+  ).run();
+
+  return env.DB.prepare('SELECT * FROM work_order_payouts WHERE id = ?').bind(payout.id).first();
+}
+
 async function handleSubmitRating(request, env) {
   try {
     const body = await request.json();
@@ -4766,6 +4823,7 @@ async function handleSubmitRating(request, env) {
 
     // 钱包结算：按工程师提成率将确认后的报价入账
     const settlement = await settleEngineerWallet(env, work_order_id, engineer_id);
+    const payout = await ensureWorkOrderPayout(env, work_order_id, engineer_id, 'pending');
 
     // 通知工程师：收到新评价
     const avgAll = ((rating_timeliness + rating_technical + rating_communication + rating_professional) / 4).toFixed(1);
@@ -4782,7 +4840,7 @@ async function handleSubmitRating(request, env) {
     // SERVICE_OS_LEGACY: settlement is kept for historical accounting compatibility,
     // but Service OS no longer exposes wallet/commission notifications to engineers.
 
-    return jsonResponse({ success: true, settlement });
+    return jsonResponse({ success: true, settlement, payout });
   } catch (error) {
     return errorResponse(error.message, 500);
   }
@@ -5320,7 +5378,7 @@ async function handleGetEngineerProfile(request, env) {
     }
 
     const engineer = await env.DB.prepare(
-      'SELECT id, name, phone, specialties, brands, services, service_region, bio, status, rating_timeliness, rating_technical, rating_communication, rating_professional, rating_count, created_at, level, commission_rate, credit_score, wallet_balance, deposit_balance, total_orders, complex_orders, success_orders FROM engineers WHERE id = ?'
+      'SELECT id, name, phone, specialties, brands, services, service_region, bio, status, rating_timeliness, rating_technical, rating_communication, rating_professional, rating_count, created_at, level, commission_rate, credit_score, wallet_balance, deposit_balance, total_orders, complex_orders, success_orders, payout_method, paypal_account, bank_country, bank_name, bank_account, bank_swift_code, account_holder, payout_notes FROM engineers WHERE id = ?'
     ).bind(engineerId).first();
 
     if (!engineer) {
@@ -5403,7 +5461,7 @@ async function handleUpdateEngineerProfile(request, env) {
     if (!engineerId) return errorResponse('未登录', 401);
 
     const body = await request.json();
-    const { name, bio, service_region, bank_name, bank_account, bank_branch, account_holder } = body;
+    const { name, bio, service_region, bank_name, bank_account, bank_branch, account_holder, payout_method, paypal_account, bank_country, bank_swift_code, payout_notes } = body;
 
     try {
       assertFieldLimits(body, {
@@ -5414,6 +5472,11 @@ async function handleUpdateEngineerProfile(request, env) {
         bank_account: { max: 30 },
         bank_branch: { max: 100 },
         account_holder: { max: 20 },
+        payout_method: { max: 20 },
+        paypal_account: { max: 120 },
+        bank_country: { max: 80 },
+        bank_swift_code: { max: 20 },
+        payout_notes: { max: 500 },
       });
     } catch (e) {
       const resp = validationErrorToResponse(e, errorResponse);
@@ -5423,13 +5486,21 @@ async function handleUpdateEngineerProfile(request, env) {
 
     const updates = [];
     const values = [];
+    if (payout_method !== undefined && !ENGINEER_PAYOUT_METHODS.has(payout_method)) {
+      return errorResponse('Unsupported payout method', 400);
+    }
     if (name !== undefined) { updates.push('name = ?'); values.push(name); }
     if (bio !== undefined) { updates.push('bio = ?'); values.push(bio); }
     if (service_region !== undefined) { updates.push('service_region = ?'); values.push(service_region); }
+    if (payout_method !== undefined) { updates.push('payout_method = ?'); values.push(payout_method); }
+    if (paypal_account !== undefined) { updates.push('paypal_account = ?'); values.push(paypal_account); }
+    if (bank_country !== undefined) { updates.push('bank_country = ?'); values.push(bank_country); }
     if (bank_name !== undefined) { updates.push('bank_name = ?'); values.push(bank_name); }
     if (bank_account !== undefined) { updates.push('bank_account = ?'); values.push(bank_account); }
     if (bank_branch !== undefined) { updates.push('bank_branch = ?'); values.push(bank_branch); }
+    if (bank_swift_code !== undefined) { updates.push('bank_swift_code = ?'); values.push(bank_swift_code); }
     if (account_holder !== undefined) { updates.push('account_holder = ?'); values.push(account_holder); }
+    if (payout_notes !== undefined) { updates.push('payout_notes = ?'); values.push(payout_notes); }
 
     if (updates.length === 0) return errorResponse('没有要更新的字段');
 
@@ -5437,7 +5508,7 @@ async function handleUpdateEngineerProfile(request, env) {
     await env.DB.prepare(`UPDATE engineers SET ${updates.join(', ')} WHERE id = ?`).bind(...values).run();
 
     const updated = await env.DB.prepare(
-      'SELECT id, user_no, name, phone, specialties, brands, services, service_region, bio, status, level, commission_rate, credit_score, rating_timeliness, rating_technical, rating_communication, rating_professional, rating_count, bank_name, bank_account, bank_branch, account_holder FROM engineers WHERE id = ?'
+      'SELECT id, user_no, name, phone, specialties, brands, services, service_region, bio, status, level, commission_rate, credit_score, rating_timeliness, rating_technical, rating_communication, rating_professional, rating_count, payout_method, paypal_account, bank_country, bank_name, bank_account, bank_branch, bank_swift_code, account_holder, payout_notes FROM engineers WHERE id = ?'
     ).bind(engineerId).first();
 
     if (!updated) return errorResponse('工程师不存在', 404);
@@ -9814,6 +9885,62 @@ async function handleAdminApprovePaymentStart(request, env) {
   }
 }
 // 获取工单付款记录
+async function handleAdminUpdateWorkOrderPayout(request, env) {
+  try {
+    const workOrderId = new URL(request.url).pathname.split('/')[4];
+    const body = await request.json().catch(() => ({}));
+    const status = String(body.status || '').trim();
+    const amount = body.amount === undefined || body.amount === '' ? 0 : Math.round(Number(body.amount));
+    const currency = String(body.currency || 'USD').trim().toUpperCase() || 'USD';
+    const method = body.method === undefined ? undefined : String(body.method || '').trim();
+    const transaction_reference = String(body.transaction_reference || '').trim();
+    const internal_note = String(body.internal_note || '').trim();
+    const paid_at = String(body.paid_at || '').trim();
+
+    if (!WORK_ORDER_PAYOUT_STATUSES.has(status)) {
+      return errorResponse('Unsupported payout status', 400);
+    }
+    if (!Number.isFinite(amount) || amount < 0) {
+      return errorResponse('Invalid payout amount', 400);
+    }
+    if (method && !ENGINEER_PAYOUT_METHODS.has(method)) {
+      return errorResponse('Unsupported payout method', 400);
+    }
+
+    const wo = await env.DB.prepare(
+      'SELECT id, order_no, engineer_id, status FROM work_orders WHERE id = ?'
+    ).bind(workOrderId).first();
+    if (!wo) return errorResponse('Work order not found', 404);
+    if (!wo.engineer_id) return errorResponse('Work order has no assigned engineer', 400);
+
+    let payout = await ensureWorkOrderPayout(env, workOrderId, wo.engineer_id, status === 'not_ready' ? 'not_ready' : 'pending');
+    const nextPaidAt = status === 'completed' ? (paid_at || new Date().toISOString()) : (paid_at || payout.paid_at || '');
+    const nextMethod = method || payout.method || 'paypal';
+
+    await env.DB.prepare(`
+      UPDATE work_order_payouts
+      SET status = ?, amount = ?, currency = ?, method = ?, transaction_reference = ?, paid_at = ?, internal_note = ?, updated_at = CURRENT_TIMESTAMP
+      WHERE work_order_id = ?
+    `).bind(status, amount, currency, nextMethod, transaction_reference, nextPaidAt, internal_note, workOrderId).run();
+
+    payout = await env.DB.prepare(
+      'SELECT * FROM work_order_payouts WHERE work_order_id = ?'
+    ).bind(workOrderId).first();
+
+    await writeAuditLog(env, request, {
+      targetType: 'work_order',
+      targetId: workOrderId,
+      action: 'engineer_payout_updated',
+      beforeState: {},
+      afterState: { status, amount, currency, method: nextMethod, transaction_reference },
+    });
+
+    return jsonResponse({ success: true, payout, payout_status: payout?.status || 'not_ready' });
+  } catch (error) {
+    return errorResponse(error.message, 500);
+  }
+}
+
 async function handleGetWorkOrderPayment(request, env) {
   try {
     const workOrderId = new URL(request.url).pathname.split('/')[3];
@@ -10279,6 +10406,9 @@ async function routeRequest(request, env, ctx) {
       }
       if (path.match(/^\/api\/admin\/workorders\/[^/]+\/payment\/approve-start$/) && request.method === 'POST') {
         return handleAdminApprovePaymentStart(request, env);
+      }
+      if (path.match(/^\/api\/admin\/workorders\/[^/]+\/payout$/) && request.method === 'PATCH') {
+        return handleAdminUpdateWorkOrderPayout(request, env);
       }
       if (path.startsWith('/api/admin/workorders/') && path.endsWith('/archive') && request.method === 'PATCH') {
         return handleAdminArchiveWorkOrder(request, env);

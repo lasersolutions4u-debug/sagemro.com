@@ -246,15 +246,64 @@ test('engineer recruiting page is an ad-ready landing page with modal applicatio
   const recruiting = read('frontend/src/components/Engineer/EngineerRecruitingPage.jsx');
 
   assert.match(recruiting, /modalOpen/);
-  assert.match(recruiting, /Apply now/);
-  assert.match(recruiting, /Why join SAGEMRO/);
+  assert.match(recruiting, /Join SAGEMRO.s Industrial Service Network/);
+  assert.match(recruiting, /Get matched with paid field service opportunities/);
+  assert.match(recruiting, /Apply to Join/);
+  assert.match(recruiting, /What is SAGEMRO/);
+  assert.match(recruiting, /AI-assisted industrial service platform/);
+  assert.match(recruiting, /What you may receive after approval/);
+  assert.match(recruiting, /Paid field service opportunities/);
+  assert.match(recruiting, /Quote review support/);
+  assert.match(recruiting, /Payment confirmation before service/);
+  assert.match(recruiting, /We are building the network region by region/);
   assert.match(recruiting, /What we look for/);
   assert.match(recruiting, /Regional Lead opportunity/);
-  assert.match(recruiting, /How applications work/);
+  assert.match(recruiting, /How work and payment starts/);
   assert.match(recruiting, /Frequently asked questions/);
   assert.match(recruiting, /Approved representatives receive an account activation link/);
   assert.match(recruiting, /fixed inset-0 z-50/);
   assert.doesNotMatch(recruiting, /lg:grid-cols-\[1\.06fr_0\.94fr\]/);
+});
+
+test('engineer profile supports PayPal and SWIFT payout methods only', () => {
+  const api = read('frontend/src/services/api.js');
+  const profileModal = read('frontend/src/components/Engineer/EngineerProfileModal.jsx');
+  const worker = read('worker/src/index.js');
+  const migration = read('worker/migrations/031_engineer_payouts.sql');
+
+  assert.match(api, /payout_method/);
+  assert.match(api, /paypal_account/);
+  assert.match(api, /bank_swift_code/);
+  assert.match(profileModal, /Engineer payout method/);
+  assert.match(profileModal, /PayPal account/);
+  assert.match(profileModal, /Bank transfer \/ SWIFT/);
+  assert.doesNotMatch(profileModal, /Wise/);
+  assert.doesNotMatch(profileModal, /Payoneer/);
+  assert.match(worker, /payout_method, paypal_account, bank_country, bank_name, bank_account, bank_swift_code, account_holder/);
+  assert.match(migration, /payout_method TEXT DEFAULT 'paypal'/);
+  assert.match(migration, /paypal_account TEXT/);
+  assert.match(migration, /bank_swift_code TEXT/);
+});
+
+test('work orders expose engineer payout as internal closure after service completion', () => {
+  const frontendApi = read('frontend/src/services/api.js');
+  const adminApi = read('admin/src/services/api.js');
+  const detailModal = read('frontend/src/components/WorkOrder/WorkOrderDetailModal.jsx');
+  const workOrdersPage = read('admin/src/pages/WorkOrdersPage.jsx');
+  const worker = read('worker/src/index.js');
+  const migration = read('worker/migrations/031_engineer_payouts.sql');
+
+  assert.match(frontendApi, /getWorkOrderPayout/);
+  assert.match(adminApi, /updateAdminWorkOrderPayout/);
+  assert.match(detailModal, /Engineer service payment/);
+  assert.match(detailModal, /Payout pending/);
+  assert.match(workOrdersPage, /Engineer service payment/);
+  assert.match(workOrdersPage, /Mark payout completed/);
+  assert.match(worker, /handleAdminUpdateWorkOrderPayout/);
+  assert.match(worker, /work_order_payouts/);
+  assert.match(worker, /payout_status: payout\?\.status \|\| 'not_ready'/);
+  assert.match(migration, /CREATE TABLE IF NOT EXISTS work_order_payouts/);
+  assert.match(migration, /status TEXT DEFAULT 'not_ready'/);
 });
 
 test('engineer task overview uses two columns on mobile', () => {
