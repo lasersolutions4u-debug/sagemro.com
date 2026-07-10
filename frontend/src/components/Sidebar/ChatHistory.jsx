@@ -4,8 +4,13 @@ import { toastError, confirmDialog } from '../../utils/feedback';
 import { useState, useRef, useEffect } from 'react';
 
 export function ChatHistory({ conversations, currentId, onSelect, onDelete, onRename }) {
-  // 按日期分组
-  const grouped = conversations.reduce((acc, conv) => {
+  const [query, setQuery] = useState('');
+  const normalizedQuery = query.trim().toLowerCase();
+  const filteredConversations = normalizedQuery
+    ? conversations.filter((conv) => `${conv.title || ''} ${conv.last_message || ''}`.toLowerCase().includes(normalizedQuery))
+    : conversations;
+
+  const grouped = filteredConversations.reduce((acc, conv) => {
     const date = formatDate(conv.updated_at);
     if (!acc[date]) acc[date] = [];
     acc[date].push(conv);
@@ -15,35 +20,47 @@ export function ChatHistory({ conversations, currentId, onSelect, onDelete, onRe
   const dateOrder = ['Today', 'Yesterday', 'Last 7 Days', 'Earlier'];
 
   return (
-    <div className="flex-1 min-h-0 overflow-y-auto py-2">
-      {dateOrder.map((date) => {
-        const items = grouped[date];
-        if (!items || items.length === 0) return null;
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div className="mb-3">
+        <div className="text-sm font-semibold text-[var(--color-text-primary)]">Conversation History</div>
+        <p className="mt-1 text-xs text-[var(--color-text-secondary)]">Find previous machine issues, service notes, and AI summaries.</p>
+      </div>
+      <input
+        value={query}
+        onChange={(event) => setQuery(event.target.value)}
+        placeholder="Search conversations"
+        className="mb-3 w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-3 py-2 text-sm text-[var(--color-text-primary)] placeholder:text-[var(--color-text-muted)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
+      />
+      <div className="min-h-0 flex-1 overflow-y-auto rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface-elevated)] py-2">
+        {dateOrder.map((date) => {
+          const items = grouped[date];
+          if (!items || items.length === 0) return null;
 
-        return (
-          <div key={date} className="mb-2">
-            <div className="px-4 py-2 text-[12px] text-[var(--color-sidebar-muted)] font-medium uppercase tracking-wide">
-              {date}
+          return (
+            <div key={date} className="mb-2">
+              <div className="px-4 py-2 text-[12px] font-medium uppercase tracking-wide text-[var(--color-text-muted)]">
+                {date}
+              </div>
+              {items.map((conv) => (
+                <ConversationItem
+                  key={conv.id}
+                  conversation={conv}
+                  isActive={conv.id === currentId}
+                  onSelect={() => onSelect(conv)}
+                  onDelete={() => onDelete(conv.id)}
+                  onRename={onRename ? (title) => onRename(conv.id, title) : null}
+                />
+              ))}
             </div>
-            {items.map((conv) => (
-              <ConversationItem
-                key={conv.id}
-                conversation={conv}
-                isActive={conv.id === currentId}
-                onSelect={() => onSelect(conv)}
-                onDelete={() => onDelete(conv.id)}
-                onRename={onRename ? (title) => onRename(conv.id, title) : null}
-              />
-            ))}
-          </div>
-        );
-      })}
+          );
+        })}
 
-      {conversations.length === 0 && (
-        <div className="px-4 py-8 text-center text-sm text-[var(--color-text-muted)]">
-          Your service conversations will appear here
-        </div>
-      )}
+        {filteredConversations.length === 0 && (
+          <div className="px-4 py-8 text-center text-sm text-[var(--color-text-muted)]">
+            {conversations.length === 0 ? 'Your service conversations will appear here' : 'No conversations match your search'}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -116,10 +133,10 @@ function ConversationItem({ conversation, isActive, onSelect, onDelete, onRename
             }}
             onBlur={commitRename}
             maxLength={50}
-            className="flex-1 bg-transparent border-b border-[var(--color-primary)] text-[15px] text-[var(--color-sidebar-text)] outline-none"
+            className="flex-1 border-b border-[var(--color-primary)] bg-transparent text-[15px] text-[var(--color-text-primary)] outline-none"
           />
         ) : (
-          <span className="flex-1 text-[15px] text-[var(--color-sidebar-text)] truncate">
+          <span className="flex-1 truncate text-[15px] text-[var(--color-text-primary)]">
             {conversation.title || 'Service Chat'}
           </span>
         )}

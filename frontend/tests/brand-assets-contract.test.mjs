@@ -66,15 +66,19 @@ test('main site first-impression copy keeps CN and COM market language separate'
   const footer = read('frontend/src/components/common/Footer.jsx');
   const engineerRecruiting = read('frontend/src/components/Engineer/EngineerRecruitingPage.jsx');
 
-  assert.match(welcome, /Keep laser and sheet-metal equipment running with AI-assisted service intake/);
-  assert.match(welcome, /spare parts, consumables, laser peripherals, retrofit needs, automation accessories, and press brake tooling/);
-  assert.match(welcome, /Retrofit review/);
+  assert.match(welcome, /Describe the machine issue/);
+  assert.match(welcome, /organize symptoms, risks, and next-step options/);
+  assert.match(welcome, /before any service or purchasing decision/);
+  assert.match(welcome, /Not a sales shortcut/);
   assert.doesNotMatch(welcome, /Machine selection|new-machine evaluation/);
-  assert.match(welcome, /让专业 AI 协助，设备问题解决得更高效。/);
-  assert.match(about, /An AI-assisted independent service platform/);
-  assert.match(about, /spare parts, consumables, maintenance, retrofit, automation accessories, laser peripherals, or press brake tooling/);
+  assert.doesNotMatch(welcome, /supports international customers with independent after-sales service, spare parts, consumables/);
+  assert.match(welcome, /先描述设备问题/);
+  assert.match(welcome, /再决定是否需要人工服务、备件或进一步评估/);
+  assert.match(about, /helps customers and engineers organize machine symptoms/);
+  assert.match(about, /What The Chat Can Help Clarify/);
+  assert.doesNotMatch(about, /One Chat, Six Service Outcomes/);
   assert.doesNotMatch(about, /Machine selection|new-machine projects/);
-  assert.match(about, /面向激光切割与钣金加工设备的第三方智能服务平台。/);
+  assert.match(about, /帮助客户与工程师整理设备现象、风险和可选下一步/);
   assert.doesNotMatch(about, /field photos|现场照片/);
   assert.match(footer, /SAGEMRO operated by Jinan Euchio Machinery Co\., Ltd\./);
   assert.match(footer, /SAGEMRO 由济南钰峭机械有限公司运营/);
@@ -304,6 +308,34 @@ test('engineer recruiting page is an ad-ready landing page with modal applicatio
   assert.match(recruiting, /Approved representatives receive an account activation link/);
   assert.match(recruiting, /fixed inset-0 z-50/);
   assert.doesNotMatch(recruiting, /lg:grid-cols-\[1\.06fr_0\.94fr\]/);
+});
+
+test('client shell moves conversation history into a modal and exposes industry tools', () => {
+  const sidebar = read('frontend/src/components/Sidebar/Sidebar.jsx');
+  const app = read('frontend/src/App.jsx');
+  const chatHistory = read('frontend/src/components/Sidebar/ChatHistory.jsx');
+  const industryToolsModal = read('frontend/src/components/Tools/IndustryToolsModal.jsx');
+  const industryTools = read('frontend/src/data/industryTools.js');
+
+  assert.match(sidebar, /onOpenHistory/);
+  assert.match(sidebar, /onOpenIndustryTools/);
+  assert.match(sidebar, /History/);
+  assert.match(sidebar, /Tools/);
+  assert.match(sidebar, /w-\[72px\]/);
+  assert.doesNotMatch(sidebar, /<ChatHistory/);
+  assert.match(app, /historyModalOpen/);
+  assert.match(app, /industryToolsOpen/);
+  assert.match(app, /<ChatHistory/);
+  assert.match(app, /<IndustryToolsModal/);
+  assert.match(chatHistory, /Conversation History/);
+  assert.match(chatHistory, /Search conversations/);
+  assert.match(industryToolsModal, /Ask SAGEMRO AI to review this result/);
+  assert.match(industryTools, /Metal Weight Calculator/);
+  assert.match(industryTools, /Steel Price Watch/);
+  assert.match(industryTools, /Laser Cutting Cost Calculator/);
+  assert.match(industryTools, /Press Brake Tonnage Calculator/);
+  assert.match(industryTools, /densityKgM3/);
+  assert.match(industryTools, /market reference only, not a supplier quote/i);
 });
 
 test('engineer profile supports PayPal and SWIFT payout methods only', () => {

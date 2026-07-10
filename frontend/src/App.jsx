@@ -2,7 +2,9 @@ import { useState, useCallback, useEffect, useRef, lazy, Suspense } from 'react'
 import { ErrorBoundary } from './components/common/ErrorBoundary';
 import { Footer } from './components/common/Footer';
 import { Sidebar } from './components/Sidebar/Sidebar';
+import { ChatHistory } from './components/Sidebar/ChatHistory';
 import { ChatArea } from './components/Chat/ChatArea';
+import { Modal } from './components/common/Modal';
 import { FeedbackHost } from './components/common/FeedbackHost';
 import { PushNotificationBanner } from './components/PushNotification/PushNotificationBanner';
 import { useChat } from './hooks/useChat';
@@ -26,6 +28,7 @@ const AboutModal = lazy(() => import('./components/common/AboutModal').then(m =>
 const LegalModal = lazy(() => import('./components/common/LegalModal').then(m => ({ default: m.LegalModal })));
 const MyDevicesModal = lazy(() => import('./components/Device/MyDevicesModal').then(m => ({ default: m.MyDevicesModal })));
 const NotificationModal = lazy(() => import('./components/Notification/NotificationModal').then(m => ({ default: m.NotificationModal })));
+const IndustryToolsModal = lazy(() => import('./components/Tools/IndustryToolsModal').then(m => ({ default: m.IndustryToolsModal })));
 
 function App() {
   const isEngineerHost = typeof window !== 'undefined'
@@ -42,6 +45,8 @@ function App() {
 
   // Modal 状态
   const [workOrderModalOpen, setWorkOrderModalOpen] = useState(false);
+  const [historyModalOpen, setHistoryModalOpen] = useState(false);
+  const [industryToolsOpen, setIndustryToolsOpen] = useState(false);
   const [myWorkOrdersModalOpen, setMyWorkOrdersModalOpen] = useState(false);
   const [customerHomeModalOpen, setCustomerHomeModalOpen] = useState(false);
   const [aboutModalOpen, setAboutModalOpen] = useState(false);
@@ -146,12 +151,14 @@ function App() {
   const handleNewChat = useCallback(() => {
     clearMessages();
     setSidebarOpen(false);
+    setHistoryModalOpen(false);
   }, [clearMessages]);
 
   // 选择对话
   const handleSelectConversation = useCallback((conv) => {
     if (conv.id === conversationId) {
       setSidebarOpen(false);
+      setHistoryModalOpen(false);
       return;
     }
     // 从 localStorage 加载历史消息
@@ -164,6 +171,7 @@ function App() {
       loadMessages([], conv.id);
     }
     setSidebarOpen(false);
+    setHistoryModalOpen(false);
   }, [conversationId, clearMessages, loadMessages]);
 
   // 发送消息
@@ -409,6 +417,8 @@ function App() {
         onSelectConversation={handleSelectConversation}
         onDeleteConversation={handleDeleteConversation}
         onRenameConversation={handleRenameConversation}
+        onOpenHistory={() => setHistoryModalOpen(true)}
+        onOpenIndustryTools={() => setIndustryToolsOpen(true)}
         onOpenWorkOrder={() => setWorkOrderModalOpen(true)}
         onOpenMyWorkOrders={() => setMyWorkOrdersModalOpen(true)}
         onOpenSettings={() => {
@@ -448,6 +458,27 @@ function App() {
       {/* Modals — 重型组件使用 Suspense 懒加载 */}
       <ErrorBoundary>
         <Suspense fallback={null}>
+          <Modal
+            isOpen={historyModalOpen}
+            onClose={() => setHistoryModalOpen(false)}
+            title="Conversation History"
+            size="2xl"
+          >
+            <ChatHistory
+              conversations={conversations}
+              currentId={conversationId}
+              onSelect={handleSelectConversation}
+              onDelete={handleDeleteConversation}
+              onRename={handleRenameConversation}
+            />
+          </Modal>
+          {industryToolsOpen && (
+            <IndustryToolsModal
+              isOpen={industryToolsOpen}
+              onClose={() => setIndustryToolsOpen(false)}
+              onSendMessage={handleSendMessage}
+            />
+          )}
           {workOrderModalOpen && (
             <WorkOrderModal
               isOpen={workOrderModalOpen}
