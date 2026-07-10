@@ -433,6 +433,21 @@ test('engineer workspace pairs compact task overview with a prominent calendar l
   assert.ok(preparationIndex < checklistIndex);
 });
 
+test('engineer workspace calendar launcher previews the next 30 days with scheduled dates highlighted', () => {
+  const workspace = read('frontend/src/components/Engineer/EngineerWorkspace.jsx');
+
+  assert.match(workspace, /getEngineerCalendarEvents/);
+  assert.match(workspace, /buildCalendarPreviewDays/);
+  assert.match(workspace, /getScheduledDateKeys/);
+  assert.match(workspace, /calendarPreviewDays/);
+  assert.match(workspace, /scheduledDateKeys/);
+  assert.match(workspace, /Future 30 days/);
+  assert.match(workspace, /Scheduled dates/);
+  assert.match(workspace, /bg-amber-100/);
+  assert.match(workspace, /text-amber-700/);
+  assert.match(workspace, /grid-cols-7/);
+});
+
 test('engineer machine lead form captures multiple equipment needs and submits to admin', () => {
   const modal = read('frontend/src/components/WorkOrder/WorkOrderDetailModal.jsx');
 

@@ -3,6 +3,7 @@ import { AlertTriangle, CalendarDays, ClipboardCheck, FileText, Package, ShieldC
 import {
   assignEngineerWorkOrder,
   acceptTicket,
+  getEngineerCalendarEvents,
   getEngineerTeam,
   getEngineerTickets,
   rejectTicket,
@@ -34,6 +35,9 @@ const CHECKLIST = [
   'Document service actions, parts replacement, and follow-up recommendations',
   'Submit the service report for customer confirmation',
 ];
+
+const CALENDAR_PREVIEW_DAYS = 30;
+const WEEKDAY_LABELS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 
 // This component is the first shared implementation slice for the future
 // engineer.sagemro.com portal. The customer main site should not remain the
@@ -164,6 +168,64 @@ function formatEngineerDescription(description) {
   return redactContactInfo(replaceChineseDeviceLabels(description));
 }
 
+function startOfLocalDay(value) {
+  const date = value instanceof Date ? new Date(value) : new Date(value);
+  date.setHours(0, 0, 0, 0);
+  return date;
+}
+
+function addDays(value, days) {
+  const date = startOfLocalDay(value);
+  date.setDate(date.getDate() + days);
+  return date;
+}
+
+function formatDateKey(value) {
+  const date = startOfLocalDay(value);
+  return [
+    date.getFullYear(),
+    String(date.getMonth() + 1).padStart(2, '0'),
+    String(date.getDate()).padStart(2, '0'),
+  ].join('-');
+}
+
+function buildCalendarPreviewDays(referenceDate = new Date(), length = CALENDAR_PREVIEW_DAYS) {
+  const start = startOfLocalDay(referenceDate);
+  return Array.from({ length }, (_, index) => {
+    const date = addDays(start, index);
+    return {
+      key: formatDateKey(date),
+      date,
+      day: date.getDate(),
+      month: date.getMonth(),
+      isToday: index === 0,
+    };
+  });
+}
+
+function getScheduledDateKeys(events, referenceDate = new Date(), length = CALENDAR_PREVIEW_DAYS) {
+  const windowStart = startOfLocalDay(referenceDate);
+  const windowEnd = addDays(windowStart, length - 1);
+  const scheduled = new Set();
+
+  events.forEach((event) => {
+    const start = new Date(event.start_at);
+    const end = new Date(event.end_at || event.start_at);
+    if (Number.isNaN(start.getTime())) return;
+
+    const eventStart = startOfLocalDay(start);
+    const eventEnd = Number.isNaN(end.getTime()) ? eventStart : startOfLocalDay(end);
+    const rangeStart = eventStart < windowStart ? windowStart : eventStart;
+    const rangeEnd = eventEnd > windowEnd ? windowEnd : eventEnd;
+
+    for (let day = rangeStart; day <= rangeEnd; day = addDays(day, 1)) {
+      scheduled.add(formatDateKey(day));
+    }
+  });
+
+  return scheduled;
+}
+
 export function EngineerWorkspace({ currentUser, onLogout, onOpenProfile }) {
   const engineerId = localStorage.getItem('sagemro_engineer_id');
   const isRegionalLead =
@@ -179,6 +241,8 @@ export function EngineerWorkspace({ currentUser, onLogout, onOpenProfile }) {
   const [message, setMessage] = useState('');
   const [selectedTicket, setSelectedTicket] = useState(null);
   const [isCalendarOpen, setIsCalendarOpen] = useState(false);
+  const [calendarPreviewEvents, setCalendarPreviewEvents] = useState([]);
+  const [calendarPreviewLoading, setCalendarPreviewLoading] = useState(false);
 
   const loadTickets = useCallback(async () => {
     if (!engineerId) return;
@@ -203,6 +267,23 @@ export function EngineerWorkspace({ currentUser, onLogout, onOpenProfile }) {
     }
   }, [isRegionalLead]);
 
+  const loadCalendarPreview = useCallback(async () => {
+    setCalendarPreviewLoading(true);
+    try {
+      const from = startOfLocalDay(new Date());
+      const to = addDays(from, CALENDAR_PREVIEW_DAYS);
+      const data = await getEngineerCalendarEvents({
+        from: from.toISOString(),
+        to: to.toISOString(),
+      });
+      setCalendarPreviewEvents(data.events || []);
+    } catch {
+      setCalendarPreviewEvents([]);
+    } finally {
+      setCalendarPreviewLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     loadTickets();
   }, [loadTickets]);
@@ -210,6 +291,10 @@ export function EngineerWorkspace({ currentUser, onLogout, onOpenProfile }) {
   useEffect(() => {
     loadTeam();
   }, [loadTeam]);
+
+  useEffect(() => {
+    loadCalendarPreview();
+  }, [loadCalendarPreview]);
 
   const updateStatus = async (nextStatus) => {
     setStatus(nextStatus);
@@ -293,6 +378,9 @@ export function EngineerWorkspace({ currentUser, onLogout, onOpenProfile }) {
   const grouped = groupTickets(tickets);
   const activeTicket = selectedTicket || tickets[0] || null;
   const activeAiSummary = formatAiIntakeSummary(activeTicket);
+  const calendarPreviewDays = buildCalendarPreviewDays();
+  const scheduledDateKeys = getScheduledDateKeys(calendarPreviewEvents, calendarPreviewDays[0]?.date);
+  const scheduledPreviewCount = calendarPreviewDays.filter((day) => scheduledDateKeys.has(day.key)).length;
   const metrics = [
     ...(isRegionalLead ? [{ icon: ClipboardCheck, label: 'Regional Queue', value: grouped.pending.length }] : []),
     { icon: AlertTriangle, label: 'Needs action', value: grouped.needsAction.length },
@@ -379,22 +467,56 @@ export function EngineerWorkspace({ currentUser, onLogout, onOpenProfile }) {
 
           <button
             onClick={() => setIsCalendarOpen(true)}
-            className="group flex min-h-[190px] flex-col justify-between rounded-2xl border border-[var(--color-primary)]/30 bg-[var(--color-surface)] p-5 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-[var(--color-primary)] hover:shadow-md focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
+            className="group flex min-h-[260px] flex-col gap-4 rounded-2xl border border-[var(--color-primary)]/30 bg-[var(--color-surface)] p-5 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-[var(--color-primary)] hover:shadow-md focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
           >
             <div className="flex items-start justify-between gap-4">
-              <div className="rounded-2xl bg-[var(--color-primary)]/10 p-3 text-[var(--color-primary)]">
-                <CalendarDays size={34} />
+              <div className="flex items-start gap-3">
+                <div className="rounded-2xl bg-[var(--color-primary)]/10 p-3 text-[var(--color-primary)]">
+                  <CalendarDays size={28} />
+                </div>
+                <div>
+                  <h2 className="text-lg font-semibold text-[var(--color-text-primary)]">Scheduling Calendar</h2>
+                  <p className="mt-1 text-sm leading-5 text-[var(--color-text-secondary)]">
+                    Update availability, blocked dates, and service windows.
+                  </p>
+                </div>
               </div>
               <span className="rounded-full bg-[var(--color-primary)]/10 px-3 py-1 text-xs font-medium text-[var(--color-primary)]">
                 Open calendar
               </span>
             </div>
-            <div>
-              <h2 className="text-lg font-semibold text-[var(--color-text-primary)]">Scheduling Calendar</h2>
-              <p className="mt-1 text-sm leading-5 text-[var(--color-text-secondary)]">
-                Update availability, blocked dates, and service windows.
-              </p>
+
+            <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface-elevated)] p-3">
+              <div className="mb-2 flex items-center justify-between text-[11px] font-medium text-[var(--color-text-secondary)]">
+                <span>Future 30 days · Scheduled dates</span>
+                <span>{calendarPreviewLoading ? 'Loading' : `${scheduledPreviewCount} scheduled`}</span>
+              </div>
+              <div className="mb-2 grid grid-cols-7 gap-1 text-center text-[10px] font-semibold text-[var(--color-text-muted)]">
+                {WEEKDAY_LABELS.map((label, index) => (
+                  <div key={`${label}-${index}`}>{label}</div>
+                ))}
+              </div>
+              <div className="grid grid-cols-7 gap-1">
+                {calendarPreviewDays.map((day) => {
+                  const isScheduled = scheduledDateKeys.has(day.key);
+                  return (
+                    <div
+                      key={day.key}
+                      className={`flex aspect-square min-h-7 items-center justify-center rounded-lg text-[11px] font-semibold ${
+                        isScheduled
+                          ? 'bg-amber-100 text-amber-700 ring-1 ring-amber-200'
+                          : day.isToday
+                            ? 'bg-[var(--color-primary)]/10 text-[var(--color-primary)]'
+                            : 'bg-[var(--color-surface)] text-[var(--color-text-secondary)]'
+                      }`}
+                    >
+                      {day.day}
+                    </div>
+                  );
+                })}
+              </div>
             </div>
+
             <div className="grid grid-cols-3 gap-2 text-center text-[11px] font-medium text-[var(--color-text-secondary)]">
               <div className="rounded-xl bg-[var(--color-surface-elevated)] px-2 py-2">Availability</div>
               <div className="rounded-xl bg-[var(--color-surface-elevated)] px-2 py-2">Visit windows</div>
@@ -595,7 +717,10 @@ export function EngineerWorkspace({ currentUser, onLogout, onOpenProfile }) {
     />
     <Modal
       isOpen={isCalendarOpen}
-      onClose={() => setIsCalendarOpen(false)}
+      onClose={() => {
+        setIsCalendarOpen(false);
+        loadCalendarPreview();
+      }}
       title="My Scheduling Calendar"
       size="2xl"
     >
