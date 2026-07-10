@@ -2756,6 +2756,16 @@ async function handleChatUploadImage(request, env) {
 }
 
 // 处理聊天请求
+function normalizeVoiceTranscript(text) {
+  let normalized = String(text || '');
+  let next = normalized;
+  do {
+    normalized = next;
+    next = normalized.replace(/([\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}])\s+([\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}])/gu, '$1$2');
+  } while (next !== normalized);
+  return normalized;
+}
+
 export async function handleChatTranscribe(request, env) {
   try {
     if (!env.DEEPGRAM_API_KEY) {
@@ -2816,7 +2826,7 @@ export async function handleChatTranscribe(request, env) {
     }
 
     const channel = dgBody?.results?.channels?.[0] || {};
-    const transcript = channel?.alternatives?.[0]?.transcript || '';
+    const transcript = normalizeVoiceTranscript(channel?.alternatives?.[0]?.transcript || '');
     return jsonResponse({
       success: true,
       transcript,

@@ -369,7 +369,7 @@ test('handleChatTranscribe asks Deepgram to detect the spoken language for CN si
   globalThis.fetch = async (url) => {
     capturedUrl = String(url);
     return new Response(JSON.stringify({
-      results: { channels: [{ detected_language: 'zh', alternatives: [{ transcript: 'ok' }] }] },
+      results: { channels: [{ detected_language: 'zh', alternatives: [{ transcript: '激 光 切 割 机 报 警 了' }] }] },
     }), {
       status: 200,
       headers: { 'Content-Type': 'application/json' },
@@ -385,6 +385,7 @@ test('handleChatTranscribe asks Deepgram to detect the spoken language for CN si
 
     assert.equal(response.status, 200);
     const body = await response.json();
+    assert.equal(body.transcript, '激光切割机报警了');
     assert.equal(body.detectedLanguage, 'zh');
     assert.match(capturedUrl, /detect_language=true/);
     assert.doesNotMatch(capturedUrl, /detect_language=zh/);
