@@ -433,6 +433,23 @@ test('engineer workspace pairs compact task overview with a prominent calendar l
   assert.ok(preparationIndex < checklistIndex);
 });
 
+test('engineer machine lead form captures multiple equipment needs and submits to admin', () => {
+  const modal = read('frontend/src/components/WorkOrder/WorkOrderDetailModal.jsx');
+
+  assert.match(modal, /equipment_needs/);
+  assert.match(modal, /Equipment needs/);
+  assert.match(modal, /Add equipment/);
+  assert.match(modal, /Laser cutting machine/);
+  assert.match(modal, /Laser welding machine/);
+  assert.match(modal, /Press brake/);
+  assert.match(modal, /Quantity/);
+  assert.match(modal, /Power \/ specification/);
+  assert.match(modal, /Submit to Admin/);
+  assert.match(modal, /Machine lead submitted to Admin/);
+  assert.doesNotMatch(modal, /Submit to Euchio Sales/);
+  assert.doesNotMatch(modal, /why Euchio sales should follow up/);
+});
+
 test('engineer work order views redact customer contact before service and inside messages', () => {
   const detailModal = read('frontend/src/components/WorkOrder/WorkOrderDetailModal.jsx');
   const messagePanel = read('frontend/src/components/WorkOrder/MessagePanel.jsx');

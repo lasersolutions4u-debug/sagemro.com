@@ -45,6 +45,18 @@ function payoutLabel(status) {
   return labels[status] || status || 'Payout not ready';
 }
 
+const MACHINE_NEED_TYPES = [
+  'Laser cutting machine',
+  'Laser welding machine',
+  'Press brake',
+  'Production line',
+  'Other complete machine',
+];
+
+function createEmptyEquipmentNeed() {
+  return { type: '', quantity: '1', specification: '', note: '' };
+}
+
 // ========== 主组件 ==========
 export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess, onConfirmed, userType, userId }) {
   const [detail, setDetail] = useState(null);
@@ -61,7 +73,7 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
   const [engReviewSubmitting, setEngReviewSubmitting] = useState(false);
   const [paymentStartSubmitting, setPaymentStartSubmitting] = useState(false);
   const [machineLeadForm, setMachineLeadForm] = useState({
-    machine_type: '',
+    equipment_needs: [createEmptyEquipmentNeed()],
     customer_intent: '',
     contact_name: '',
     contact_phone: '',
@@ -146,7 +158,39 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
     }
   };
 
+  const updateEquipmentNeed = (index, field, value) => {
+    setMachineLeadForm((current) => ({
+      ...current,
+      equipment_needs: current.equipment_needs.map((need, needIndex) => (
+        needIndex === index ? { ...need, [field]: value } : need
+      )),
+    }));
+  };
+
+  const addEquipmentNeed = () => {
+    setMachineLeadForm((current) => ({
+      ...current,
+      equipment_needs: [...current.equipment_needs, createEmptyEquipmentNeed()],
+    }));
+  };
+
+  const removeEquipmentNeed = (index) => {
+    setMachineLeadForm((current) => ({
+      ...current,
+      equipment_needs: current.equipment_needs.length > 1
+        ? current.equipment_needs.filter((_, needIndex) => needIndex !== index)
+        : [createEmptyEquipmentNeed()],
+    }));
+  };
+
   const handleSubmitMachineLead = async () => {
+    const equipmentNeeds = machineLeadForm.equipment_needs.filter((need) => (
+      need.type.trim() || need.quantity.trim() || need.specification.trim() || need.note.trim()
+    ));
+    if (equipmentNeeds.length === 0) {
+      toastWarning('Please add at least one complete-machine equipment need.');
+      return;
+    }
     if (!machineLeadForm.customer_intent.trim()) {
       toastWarning('Please describe the customer whole-machine purchase intent.');
       return;
@@ -155,15 +199,16 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
     try {
       await createMachineLead({
         work_order_id: workOrder.id,
-        machine_type: machineLeadForm.machine_type,
+        equipment_needs: equipmentNeeds,
+        machine_type: equipmentNeeds.map((need) => need.type).filter(Boolean).join('; '),
         customer_intent: machineLeadForm.customer_intent,
         contact_name: machineLeadForm.contact_name || detail?.customer_name || '',
         contact_phone: machineLeadForm.contact_phone || detail?.customer_phone || '',
         region: machineLeadForm.region || detail?.region || detail?.customer_region || '',
       });
-      toastSuccess('Machine lead submitted to Euchio sales.');
+      toastSuccess('Machine lead submitted to Admin.');
       setMachineLeadForm({
-        machine_type: '',
+        equipment_needs: [createEmptyEquipmentNeed()],
         customer_intent: '',
         contact_name: '',
         contact_phone: '',
@@ -565,20 +610,80 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
       <div className="rounded-xl border border-[var(--color-primary)]/25 bg-[var(--color-primary)]/5 p-4">
         <h3 className="text-sm font-medium text-[var(--color-text-primary)]">Whole-machine opportunity</h3>
         <p className="mt-1 text-xs leading-5 text-[var(--color-text-secondary)]">
-          Use this only when the customer is considering a new complete machine such as a laser cutting machine, press brake, or production line. Parts, consumables, peripherals, and retrofit opportunities stay in engineer value-added service workflows.
+          Use this only when the customer is considering one or more new complete machines such as laser cutting, laser welding, press brake, or production line equipment. Parts, consumables, peripherals, and retrofit opportunities stay in engineer value-added service workflows.
         </p>
       </div>
 
+      <div className="space-y-3">
+        <div className="flex items-center justify-between gap-3">
+          <h4 className="text-sm font-medium text-[var(--color-text-primary)]">Equipment needs</h4>
+          <button
+            type="button"
+            onClick={addEquipmentNeed}
+            className="rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-xs font-medium text-[var(--color-text-primary)] hover:border-[var(--color-primary)]"
+          >
+            Add equipment
+          </button>
+        </div>
+        {machineLeadForm.equipment_needs.map((need, index) => (
+          <div key={index} className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-elevated)] p-3">
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <span className="text-xs font-medium text-[var(--color-text-secondary)]">Equipment #{index + 1}</span>
+              <button
+                type="button"
+                onClick={() => removeEquipmentNeed(index)}
+                className="text-xs font-medium text-[var(--color-text-muted)] hover:text-[var(--color-primary)]"
+              >
+                Remove
+              </button>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-[1.2fr_0.5fr_1.3fr]">
+              <label>
+                <span className="mb-1 block text-xs text-[var(--color-text-secondary)]">Equipment type</span>
+                <select
+                  value={need.type}
+                  onChange={(e) => updateEquipmentNeed(index, 'type', e.target.value)}
+                  className="w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text-primary)] outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
+                >
+                  <option value="">Select type</option>
+                  {MACHINE_NEED_TYPES.map((type) => (
+                    <option key={type} value={type}>{type}</option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                <span className="mb-1 block text-xs text-[var(--color-text-secondary)]">Quantity</span>
+                <input
+                  value={need.quantity}
+                  onChange={(e) => updateEquipmentNeed(index, 'quantity', e.target.value)}
+                  placeholder="1"
+                  className="w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text-primary)] outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
+                />
+              </label>
+              <label>
+                <span className="mb-1 block text-xs text-[var(--color-text-secondary)]">Power / specification</span>
+                <input
+                  value={need.specification}
+                  onChange={(e) => updateEquipmentNeed(index, 'specification', e.target.value)}
+                  placeholder="3015 single table, 3000W"
+                  className="w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text-primary)] outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
+                />
+              </label>
+              <label className="sm:col-span-3">
+                <span className="mb-1 block text-xs text-[var(--color-text-secondary)]">Need notes</span>
+                <input
+                  value={need.note}
+                  onChange={(e) => updateEquipmentNeed(index, 'note', e.target.value)}
+                  placeholder="Timeline, preferred configuration, known constraints"
+                  className="w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text-primary)] outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
+                />
+              </label>
+            </div>
+          </div>
+        ))}
+      </div>
+
       <div className="grid gap-3 sm:grid-cols-2">
-        <label>
-          <span className="mb-1 block text-xs text-[var(--color-text-secondary)]">Machine type</span>
-          <input
-            value={machineLeadForm.machine_type}
-            onChange={(e) => setMachineLeadForm({ ...machineLeadForm, machine_type: e.target.value })}
-            placeholder="Fiber laser cutting machine, press brake..."
-            className="w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text-primary)] outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
-          />
-        </label>
         <label>
           <span className="mb-1 block text-xs text-[var(--color-text-secondary)]">Region</span>
           <input
@@ -611,7 +716,7 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
           <textarea
             value={machineLeadForm.customer_intent}
             onChange={(e) => setMachineLeadForm({ ...machineLeadForm, customer_intent: e.target.value })}
-            placeholder="Describe the customer's whole-machine demand, planned timeline, production goal, and why Euchio sales should follow up."
+            placeholder="Describe the customer's whole-machine demand, planned timeline, production goal, budget signals, and technical context Admin should review."
             rows={4}
             className="w-full resize-none rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text-primary)] outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
           />
@@ -623,7 +728,7 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
         disabled={machineLeadSubmitting}
         className="w-full rounded-xl bg-[var(--color-primary)] py-3 text-sm font-medium text-white hover:bg-[var(--color-primary-hover)] disabled:opacity-50"
       >
-        {machineLeadSubmitting ? 'Submitting...' : 'Submit to Euchio Sales'}
+        {machineLeadSubmitting ? 'Submitting...' : 'Submit to Admin'}
       </button>
     </div>
   );

@@ -203,7 +203,8 @@ test('customer chat creates a lead only for whole machine purchase intent', asyn
   assert.equal(env.__leads[0].source_type, 'machine_purchase_ai');
   assert.equal(env.__leads[0].customer_id, 'customer-1');
   assert.equal(env.__leads[0].conversation_id, 'conv-1');
-  assert.match(env.__leads[0].recommended_next_step, /Euchio/i);
+  assert.doesNotMatch(env.__leads[0].recommended_next_step, /Euchio/i);
+  assert.match(env.__leads[0].recommended_next_step, /Admin/i);
 });
 
 test('customer chat does not create a lead for parts or consumables demand', async () => {
@@ -215,7 +216,7 @@ test('customer chat does not create a lead for parts or consumables demand', asy
   assert.equal(env.__leads.length, 0);
 });
 
-test('engineer can submit a work-order-linked whole machine lead for Euchio sales follow-up', async () => {
+test('engineer can submit a work-order-linked whole machine lead with multiple equipment needs for admin follow-up', async () => {
   const env = createEnv();
   const jwt = await token(env, 'engineer', 'engineer-1');
 
@@ -228,8 +229,11 @@ test('engineer can submit a work-order-linked whole machine lead for Euchio sale
     },
     body: JSON.stringify({
       work_order_id: 'wo-1',
-      machine_type: 'press brake',
-      customer_intent: 'Customer is planning to purchase a new press brake line this quarter.',
+      equipment_needs: [
+        { type: 'Laser cutting machine', quantity: '1', specification: '3015 single table 3000W', note: 'Compare service coverage and ROI.' },
+        { type: 'Press brake', quantity: '1', specification: '100T/3200', note: 'May purchase in the same project.' },
+      ],
+      customer_intent: 'Customer is planning to purchase a new laser cutting machine and press brake line this quarter.',
       contact_name: 'Buyer One',
       contact_phone: '+15550001111',
       region: 'USA',
@@ -242,6 +246,13 @@ test('engineer can submit a work-order-linked whole machine lead for Euchio sale
   assert.equal(body.lead.source_type, 'machine_purchase_engineer');
   assert.equal(body.lead.work_order_id, 'wo-1');
   assert.equal(body.lead.customer_id, 'customer-1');
+  assert.match(body.lead.interest, /Laser cutting machine/);
+  assert.match(body.lead.interest, /Press brake/);
+  assert.match(body.lead.message, /Equipment needs:/);
+  assert.match(body.lead.message, /3015 single table 3000W/);
+  assert.match(body.lead.ai_summary, /2 equipment needs/);
+  assert.match(body.lead.recommended_next_step, /Admin/i);
+  assert.doesNotMatch(body.lead.recommended_next_step, /Euchio/i);
   assert.equal(env.__leads.length, 1);
   assert.equal(env.__auditLogs.length, 1);
 });

@@ -5837,7 +5837,7 @@ async function insertMachineLead(env, {
   message,
   conversationId = null,
   aiSummary = '',
-  recommendedNextStep = 'Route to Euchio sales for whole-machine follow-up; assign an engineer for technical support when needed.',
+  recommendedNextStep = 'Admin should route this whole-machine lead for sales follow-up and keep engineer support available for technical selection.',
   customerId = null,
   workOrderId = null,
   region = '',
@@ -5888,6 +5888,33 @@ async function insertMachineLead(env, {
   return lead;
 }
 
+function normalizeEquipmentNeeds(input) {
+  const items = Array.isArray(input) ? input : [];
+  return items.slice(0, 8).map((item) => ({
+    type: cleanText(item?.type, 120),
+    quantity: cleanText(item?.quantity, 20) || '1',
+    specification: cleanText(item?.specification, 160),
+    note: cleanText(item?.note, 300),
+  })).filter((item) => item.type || item.specification || item.note);
+}
+
+function formatEquipmentNeedLine(item, index) {
+  const label = item.type || 'Complete machine';
+  const quantity = item.quantity ? ` x${item.quantity}` : '';
+  const specification = item.specification ? ` - ${item.specification}` : '';
+  const note = item.note ? ` (${item.note})` : '';
+  return `${index + 1}. ${label}${quantity}${specification}${note}`;
+}
+
+function formatEquipmentNeedsSummary(items) {
+  return items.map((item) => {
+    const label = item.type || 'Complete machine';
+    const quantity = item.quantity ? ` x${item.quantity}` : '';
+    const specification = item.specification ? ` (${item.specification})` : '';
+    return `${label}${quantity}${specification}`;
+  }).join('; ');
+}
+
 async function maybeCreateMachineLeadFromChat({ env, message, conversationId, customerId }) {
   if (!hasWholeMachineLeadIntent(message)) return null;
 
@@ -5913,7 +5940,7 @@ async function maybeCreateMachineLeadFromChat({ env, message, conversationId, cu
       conversationId,
       customerId,
       region: customer?.region || '',
-      recommendedNextStep: 'Euchio sales should follow up this whole-machine opportunity; coordinate engineer support for technical selection if needed.',
+      recommendedNextStep: 'Admin should route this whole-machine opportunity for sales follow-up and coordinate engineer support for technical selection if needed.',
     });
   } catch (error) {
     console.warn('[lead] failed to create machine lead from chat:', error?.message || error);
@@ -5964,8 +5991,17 @@ async function handleCreateMachineLead(request, env) {
     const workOrderId = cleanText(body.work_order_id, 80);
     const machineType = cleanText(body.machine_type, 160);
     const customerIntent = cleanText(body.customer_intent || body.message || body.description, 3000);
+    const equipmentNeeds = normalizeEquipmentNeeds(body.equipment_needs);
+    const equipmentNeedsForLead = equipmentNeeds.length > 0
+      ? equipmentNeeds
+      : (machineType ? [{ type: machineType, quantity: '1', specification: '', note: '' }] : []);
+    const equipmentSummary = formatEquipmentNeedsSummary(equipmentNeedsForLead);
+    const equipmentBlock = equipmentNeedsForLead.length > 0
+      ? `Equipment needs:\n${equipmentNeedsForLead.map(formatEquipmentNeedLine).join('\n')}`
+      : '';
+    const leadMessage = [equipmentBlock, `Customer purchase intent:\n${customerIntent}`].filter(Boolean).join('\n\n');
     if (!customerIntent) return errorResponse('请填写客户整机需求说明', 400);
-    if (!hasWholeMachineLeadIntent(`${machineType}\n${customerIntent}\n整机 采购`)) {
+    if (!hasWholeMachineLeadIntent(`${equipmentSummary}\n${machineType}\n${customerIntent}\n整机 采购`)) {
       return errorResponse('Lead 仅用于整机/新机设备需求；配件、耗材、升级改造请提交增值服务或物料请求', 400);
     }
 
@@ -5982,10 +6018,10 @@ async function handleCreateMachineLead(request, env) {
       email: cleanText(body.contact_email, 160) || null,
       source: 'engineer_machine_opportunity',
       sourceType: 'machine_purchase_engineer',
-      interest: machineType ? `Whole machine purchase: ${machineType}` : 'Whole machine purchase',
-      message: customerIntent,
-      aiSummary: `Engineer submitted whole-machine opportunity: ${customerIntent}`,
-      recommendedNextStep: 'Euchio sales should own follow-up; keep the submitting engineer available for technical selection and site context.',
+      interest: equipmentSummary ? `Whole machine purchase: ${equipmentSummary}` : 'Whole machine purchase',
+      message: leadMessage,
+      aiSummary: `Engineer submitted whole-machine opportunity with ${equipmentNeedsForLead.length || 1} equipment needs: ${equipmentSummary || customerIntent}`,
+      recommendedNextStep: 'Admin should route this whole-machine lead for sales follow-up and keep the submitting engineer available for technical selection and site context.',
       customerId,
       workOrderId: workOrderId || null,
       region: cleanText(body.region, 120),
@@ -7730,7 +7766,7 @@ async function handleAdminLeads(request, env) {
         recommended_next_step:
           lead.recommended_next_step ||
           (sourceType === 'machine_selection_ai'
-            ? '安排 SAGEMRO/EUCHIO 选型顾问跟进'
+            ? 'Admin 安排整机销售跟进，并协调工程师提供技术选型支持'
             : riskLevel === 'high'
               ? '优先人工审核并确认是否需要停机处理'
               : '联系客户补全设备与现场信息'),
@@ -10849,7 +10885,7 @@ async function routeRequest(request, env, ctx) {
         return handleAdminLeads(request, env);
       }
       if (path.startsWith('/api/admin/leads/') && path.endsWith('/convert-workorder') && request.method === 'POST') {
-        return errorResponse('整机线索由 Euchio 业务员跟进，不转为服务申请', 400);
+        return errorResponse('整机线索由 Admin 负责销售流转，不转为服务申请', 400);
       }
       if (path.startsWith('/api/admin/leads/') && request.method === 'PATCH') {
         return handleAdminUpdateLead(request, env);
