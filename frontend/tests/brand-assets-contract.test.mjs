@@ -350,7 +350,7 @@ test('work orders expose engineer payout as internal closure after service compl
 test('engineer task overview uses two columns on mobile', () => {
   const workspace = read('frontend/src/components/Engineer/EngineerWorkspace.jsx');
 
-  assert.match(workspace, /grid grid-cols-2 gap-2 sm:grid-cols-4 xl:grid-cols-7/);
+  assert.match(workspace, /grid grid-cols-2 gap-3 sm:grid-cols-2 lg:grid-cols-5/);
 });
 
 test('engineer workspace gives English next steps and selected task context', () => {
@@ -424,7 +424,10 @@ test('engineer workspace pairs compact task overview with a prominent calendar l
   assert.ok(calendarLauncherIndex > taskOverviewIndex);
   assert.match(workspace, /const \[isCalendarOpen, setIsCalendarOpen\] = useState\(false\)/);
   assert.match(workspace, /Update availability, blocked dates, and service windows/);
-  assert.match(workspace, /xl:grid-cols-7/);
+  assert.match(workspace, /lg:grid-cols-5/);
+  assert.match(workspace, /bg-\[var\(--color-surface-elevated\)\] p-4/);
+  assert.match(workspace, /size=\{18\}/);
+  assert.match(workspace, /text-2xl font-semibold/);
   assert.match(workspace, /h-full rounded-2xl/);
   assert.doesNotMatch(workspace, /Visit windows/);
   assert.doesNotMatch(workspace, /Blocked dates/);

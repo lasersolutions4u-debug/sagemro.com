@@ -454,11 +454,11 @@ export function EngineerWorkspace({ currentUser, onLogout, onOpenProfile }) {
                 ))}
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 xl:grid-cols-7">
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-2 lg:grid-cols-5">
               {metrics.map((metric) => (
-                <div key={metric.label} className="rounded-xl px-3 py-2">
-                  <metric.icon size={15} className="mb-2 text-[var(--color-primary)]" />
-                  <div className="text-xl font-semibold leading-none">{metric.value}</div>
+                <div key={metric.label} className="rounded-xl bg-[var(--color-surface-elevated)] p-4">
+                  <metric.icon size={18} className="mb-2 text-[var(--color-primary)]" />
+                  <div className="text-2xl font-semibold">{metric.value}</div>
                   <div className="text-xs text-[var(--color-text-muted)]">{metric.label}</div>
                 </div>
               ))}
