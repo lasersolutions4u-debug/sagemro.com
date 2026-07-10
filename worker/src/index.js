@@ -457,6 +457,14 @@ SAGEMRO AI helps laser cutting and sheet metal equipment users turn messy equipm
 
 ### 安全与责任边界
 - AI guidance is preliminary. Final diagnosis, quote, and on-site safety requirements are confirmed through the SAGEMRO service process.
+
+### Knowledge Priority & Conflict Policy
+- This is an internal decision policy. Do not expose the words "policy", "conflict", "priority", or "knowledge base" to customers.
+- Prefer published SAGEMRO knowledge over general model knowledge for SAGEMRO-specific facts, product details, service process, parts compatibility, parameters, warranty, quote, inventory, certification, delivery, and safety commitments.
+- General model knowledge may fill only general background, language, and non-committal troubleshooting guidance.
+- If no matching published SAGEMRO knowledge is available, answer general maintenance or education questions cautiously, but do not invent SAGEMRO-specific facts.
+- If the user asks for quote, price, availability, lead time, exact parameter, parts compatibility, certification, warranty, final diagnosis, or safety approval and no published SAGEMRO knowledge supports it, ask for missing facts or route to SAGEMRO manual confirmation instead of giving a final answer.
+- If published SAGEMRO knowledge and general model knowledge appear inconsistent, follow the published SAGEMRO knowledge and make the customer-facing answer calm and natural, using wording such as "based on the information currently available" or "this should be confirmed before quotation/use"; do not mention an internal conflict.
 - 涉及激光、电气、高压气体、液压、吊装、高温、火灾风险、联锁失效、带电开柜或进入危险区域时，先提醒用户停止不安全操作，等待具备资质的人员处理。
 - 不要指导用户绕过安全联锁、屏蔽保护装置、带电拆装高风险部件。
 
@@ -669,7 +677,7 @@ const TOOLS_SCHEMAS = [
     type: 'function',
     function: {
       name: 'search_knowledge_base',
-      description: 'Search published SAGEMRO knowledge articles for equipment service, fault, maintenance, parts, cutting parameter, safety, machine selection, or health questions. Use this before answering professional equipment questions when relevant. Only published knowledge is returned.',
+      description: 'Search published SAGEMRO knowledge articles for equipment service, fault, maintenance, parts, cutting parameter, safety, machine selection, or health questions. Use this before answering professional equipment questions when relevant. Only published knowledge is returned. Prefer returned SAGEMRO knowledge over general model knowledge for SAGEMRO-specific facts. If no matching published SAGEMRO knowledge is found, do not invent quotes, parts compatibility, safety approvals, exact parameters, certification, warranty, inventory, delivery, or final diagnosis.',
       parameters: {
         type: 'object',
         properties: {
@@ -953,7 +961,9 @@ async function toolSearchKnowledgeBase({ args = {}, env, market = 'com' }) {
   return {
     count: articles.length,
     articles,
-    note: 'Only published SAGEMRO knowledge articles are returned. Use them as reference, not as final diagnosis, quote, safety approval, or parts compatibility commitment.',
+    note: articles.length > 0
+      ? 'Only published SAGEMRO knowledge articles are returned. Prefer these articles over general model knowledge for SAGEMRO-specific facts. Use them as reference, not as final diagnosis, quote, safety approval, or parts compatibility commitment.'
+      : 'No matching published SAGEMRO knowledge was found. General model knowledge may be used only for general background and cautious troubleshooting. Do not invent SAGEMRO-specific facts, quote, safety approval, exact parameters, inventory, delivery, warranty, certification, final diagnosis, or parts compatibility commitment.',
   };
 }
 
@@ -2756,6 +2766,19 @@ const MAX_TOKENS = {
 // 4 轮足够复杂 Agent 场景（查客户 → 查设备 → 查历史报价 → 查同区域均价），生产可按需调。
 const MAX_TOOL_ITERATIONS = 4;
 
+function sanitizeCustomerVisibleAiContent(text) {
+  if (typeof text !== 'string' || !text) return '';
+
+  return text
+    .replace(/Knowledge\s+Priority\s*&\s*Conflict\s+Policy\s*:?\s*/gi, '')
+    .replace(/\binternal\s+(?:decision\s+)?policy\b/gi, 'service rule')
+    .replace(/\binternal\s+conflict\b/gi, 'inconsistency')
+    .replace(/\bknowledge\s+priority\b/gi, 'available information')
+    .replace(/\bpublished\s+SAGEMRO\s+knowledge\b/gi, 'available SAGEMRO information')
+    .replace(/\bSAGEMRO\s+knowledge\s+articles?\b/gi, 'available SAGEMRO information')
+    .replace(/\bknowledge\s+base\b/gi, 'available SAGEMRO information');
+}
+
 /**
  * 消费一次 LLM 的 SSE 流：
  *   - delta.content 实时转发给客户端
@@ -2799,10 +2822,12 @@ export async function consumeLlmStream({ response, controller, encoder, convId, 
       if (!delta) continue;
 
       if (delta.content) {
-        content += delta.content;
+        const customerContent = sanitizeCustomerVisibleAiContent(delta.content);
+        content += customerContent;
+        if (!customerContent) continue;
         controller.enqueue(
           encoder.encode(
-            `data: ${JSON.stringify({ content: delta.content, conversation_id: convId })}\n`,
+            `data: ${JSON.stringify({ content: customerContent, conversation_id: convId })}\n`,
           ),
         );
       }
