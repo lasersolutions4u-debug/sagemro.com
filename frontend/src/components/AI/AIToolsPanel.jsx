@@ -29,10 +29,6 @@ export function AIToolsPanel({ onSendMessage }) {
     onSendMessage(`Start ${activeTool.title} as a SAGEMRO Service OS agent. First ask me to describe the problem naturally. Then auto-extract structured fields, identify missing information, provide safe preliminary feedback, and prepare the right SAGEMRO conversion action for ${activeTool.leadType}.`);
   };
 
-  const leadSummary = activeTool.fields
-    .map((field) => `${field.label}: ${currentValues[field.name] || '-'}`)
-    .join('\n');
-
   return (
     <div className="w-full max-w-7xl mx-auto rounded-[2rem] border border-[var(--color-border)] bg-white/85 p-4 shadow-sm sm:p-5">
       <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
