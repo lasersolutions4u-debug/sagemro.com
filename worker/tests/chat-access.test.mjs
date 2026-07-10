@@ -316,7 +316,7 @@ test('handleChatTranscribe requires Deepgram configuration', async () => {
   assert.match(body.error, /Voice input is not configured/);
 });
 
-test('handleChatTranscribe uses multilingual auto transcription for COM site', async () => {
+test('handleChatTranscribe asks Deepgram to detect the spoken language for COM site', async () => {
   const formData = new FormData();
   formData.append('audio', new Blob(['audio'], { type: 'audio/webm' }), 'voice.webm');
 
@@ -348,8 +348,8 @@ test('handleChatTranscribe uses multilingual auto transcription for COM site', a
     assert.match(String(captured.url), /https:\/\/api\.deepgram\.com\/v1\/listen/);
     assert.match(String(captured.url), /model=nova-3/);
     assert.match(String(captured.url), /smart_format=true/);
-    assert.match(String(captured.url), /language=multi/);
-    assert.doesNotMatch(String(captured.url), /detect_language=true/);
+    assert.match(String(captured.url), /detect_language=true/);
+    assert.doesNotMatch(String(captured.url), /language=multi/);
     assert.doesNotMatch(String(captured.url), /detect_language=zh/);
     assert.equal(captured.init.method, 'POST');
     assert.equal(captured.init.headers.Authorization, 'Token deepgram-test-key');
@@ -359,7 +359,7 @@ test('handleChatTranscribe uses multilingual auto transcription for COM site', a
   }
 });
 
-test('handleChatTranscribe keeps CN voice transcription scoped to Chinese and English', async () => {
+test('handleChatTranscribe asks Deepgram to detect the spoken language for CN site', async () => {
   const formData = new FormData();
   formData.append('audio', new Blob(['audio'], { type: 'audio/webm' }), 'voice.webm');
 
@@ -383,8 +383,9 @@ test('handleChatTranscribe keeps CN voice transcription scoped to Chinese and En
     }), { DEEPGRAM_API_KEY: 'deepgram-test-key' });
 
     assert.equal(response.status, 200);
-    assert.match(capturedUrl, /detect_language=zh/);
-    assert.match(capturedUrl, /detect_language=en/);
+    assert.match(capturedUrl, /detect_language=true/);
+    assert.doesNotMatch(capturedUrl, /detect_language=zh/);
+    assert.doesNotMatch(capturedUrl, /detect_language=en/);
     assert.doesNotMatch(capturedUrl, /language=multi/);
   } finally {
     globalThis.fetch = originalFetch;

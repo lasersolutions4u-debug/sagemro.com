@@ -2798,12 +2798,7 @@ export async function handleChatTranscribe(request, env) {
     const deepgramUrl = new URL('https://api.deepgram.com/v1/listen');
     deepgramUrl.searchParams.set('model', env.DEEPGRAM_MODEL || 'nova-3');
     deepgramUrl.searchParams.set('smart_format', 'true');
-    if (getRequestMarket(request) === 'cn') {
-      deepgramUrl.searchParams.append('detect_language', 'zh');
-      deepgramUrl.searchParams.append('detect_language', 'en');
-    } else {
-      deepgramUrl.searchParams.set('language', 'multi');
-    }
+    deepgramUrl.searchParams.set('detect_language', 'true');
 
     const dgResponse = await fetch(deepgramUrl.toString(), {
       method: 'POST',
