@@ -2796,7 +2796,7 @@ export async function handleChatTranscribe(request, env) {
     });
 
     const deepgramUrl = new URL('https://api.deepgram.com/v1/listen');
-    deepgramUrl.searchParams.set('model', env.DEEPGRAM_MODEL || 'nova-3');
+    deepgramUrl.searchParams.set('model', env.DEEPGRAM_MODEL || 'whisper-large');
     deepgramUrl.searchParams.set('smart_format', 'true');
     deepgramUrl.searchParams.set('detect_language', 'true');
 
@@ -2815,8 +2815,14 @@ export async function handleChatTranscribe(request, env) {
       return errorResponse(message, dgResponse.status >= 500 ? 503 : 400);
     }
 
-    const transcript = dgBody?.results?.channels?.[0]?.alternatives?.[0]?.transcript || '';
-    return jsonResponse({ success: true, transcript });
+    const channel = dgBody?.results?.channels?.[0] || {};
+    const transcript = channel?.alternatives?.[0]?.transcript || '';
+    return jsonResponse({
+      success: true,
+      transcript,
+      detectedLanguage: channel.detected_language || null,
+      languageConfidence: channel.language_confidence ?? null,
+    });
   } catch (error) {
     if (error instanceof BudgetError) {
       return errorResponse(error.message, error.status);

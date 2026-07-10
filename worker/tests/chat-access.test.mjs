@@ -327,7 +327,7 @@ test('handleChatTranscribe asks Deepgram to detect the spoken language for COM s
     return new Response(JSON.stringify({
       results: {
         channels: [
-          { alternatives: [{ transcript: 'Check the laser alarm E012.' }] },
+          { detected_language: 'fr', alternatives: [{ transcript: 'Check the laser alarm E012.' }] },
         ],
       },
     }), {
@@ -345,8 +345,9 @@ test('handleChatTranscribe asks Deepgram to detect the spoken language for COM s
     assert.equal(response.status, 200);
     const body = await response.json();
     assert.equal(body.transcript, 'Check the laser alarm E012.');
+    assert.equal(body.detectedLanguage, 'fr');
     assert.match(String(captured.url), /https:\/\/api\.deepgram\.com\/v1\/listen/);
-    assert.match(String(captured.url), /model=nova-3/);
+    assert.match(String(captured.url), /model=whisper-large/);
     assert.match(String(captured.url), /smart_format=true/);
     assert.match(String(captured.url), /detect_language=true/);
     assert.doesNotMatch(String(captured.url), /language=multi/);
@@ -368,7 +369,7 @@ test('handleChatTranscribe asks Deepgram to detect the spoken language for CN si
   globalThis.fetch = async (url) => {
     capturedUrl = String(url);
     return new Response(JSON.stringify({
-      results: { channels: [{ alternatives: [{ transcript: 'ok' }] }] },
+      results: { channels: [{ detected_language: 'zh', alternatives: [{ transcript: 'ok' }] }] },
     }), {
       status: 200,
       headers: { 'Content-Type': 'application/json' },
@@ -383,6 +384,8 @@ test('handleChatTranscribe asks Deepgram to detect the spoken language for CN si
     }), { DEEPGRAM_API_KEY: 'deepgram-test-key' });
 
     assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.equal(body.detectedLanguage, 'zh');
     assert.match(capturedUrl, /detect_language=true/);
     assert.doesNotMatch(capturedUrl, /detect_language=zh/);
     assert.doesNotMatch(capturedUrl, /detect_language=en/);
