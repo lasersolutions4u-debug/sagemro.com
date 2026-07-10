@@ -192,6 +192,17 @@ test('engineer final service report can be submitted to customer review from rep
   assert.match(detailModal, /setTab\('info'\)/);
 });
 
+test('service report edit action is a compact top action instead of a bottom block button', () => {
+  const repairRecord = read('frontend/src/components/WorkOrder/RepairRecordPanel.jsx');
+
+  assert.match(repairRecord, /Pencil/);
+  assert.match(repairRecord, /aria-label="Edit service report"/);
+  assert.match(repairRecord, /<Pencil size=\{14\}/);
+  assert.match(repairRecord, /self-start rounded-lg border border-\[var\(--color-border\)\] bg-\[var\(--color-surface\)\] px-3 py-2 text-xs/);
+  assert.doesNotMatch(repairRecord, /grid gap-2 sm:grid-cols-2/);
+  assert.doesNotMatch(repairRecord, /w-full py-2\.5 text-sm bg-\[var\(--color-surface-elevated\)\].*Edit Service Report/s);
+});
+
 test('service report parts entry explains manual parts and avoids material line duplication', () => {
   const repairRecord = read('frontend/src/components/WorkOrder/RepairRecordPanel.jsx');
 

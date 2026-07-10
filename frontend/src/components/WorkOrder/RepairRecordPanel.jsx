@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Plus, Trash2 } from 'lucide-react';
+import { Pencil, Plus, Trash2 } from 'lucide-react';
 import { saveRepairRecord } from '../../services/api';
 import { toastSuccess, toastError } from '../../utils/feedback';
 import { isCnLocale } from '../../utils/locale';
@@ -118,8 +118,21 @@ export function RepairRecordPanel({ workOrderId, userType, repairRecord, onSaved
 
     return (
       <div className="space-y-4">
-        <div className="p-3 bg-[var(--color-primary)]/10 border border-[var(--color-primary)]/20 rounded-xl text-sm text-[var(--color-text-primary)]">
-          SAGEMRO Service Report: diagnosis, actions, parts, labor time, and follow-up notes for customer acceptance and equipment history.
+        <div className="flex items-start justify-between gap-3 rounded-xl border border-[var(--color-primary)]/20 bg-[var(--color-primary)]/10 p-3 text-sm text-[var(--color-text-primary)]">
+          <div>
+            SAGEMRO Service Report: diagnosis, actions, parts, labor time, and follow-up notes for customer acceptance and equipment history.
+          </div>
+          {isEngineer && (
+            <button
+              type="button"
+              onClick={() => setIsEditing(true)}
+              aria-label="Edit service report"
+              className="inline-flex shrink-0 items-center gap-1.5 self-start rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-xs font-medium text-[var(--color-text-secondary)] shadow-sm hover:border-[var(--color-primary)] hover:text-[var(--color-primary)]"
+            >
+              <Pencil size={14} />
+              Edit
+            </button>
+          )}
         </div>
         {symptom && (
           <div>
@@ -184,22 +197,14 @@ export function RepairRecordPanel({ workOrderId, userType, repairRecord, onSaved
           </div>
         )}
         {/* 工程师可以继续编辑已有记录 */}
-        {isEngineer && (
-          <div className="grid gap-2 sm:grid-cols-2">
+        {isEngineer && canSubmitComplete && (
+          <div>
             <button
-              onClick={() => setIsEditing(true)}
-              className="w-full py-2.5 text-sm bg-[var(--color-surface-elevated)] hover:bg-[var(--color-border)] text-[var(--color-text-primary)] rounded-xl"
+              onClick={onSubmitComplete}
+              className="w-full py-2.5 text-sm bg-green-500 hover:bg-green-600 text-white rounded-xl"
             >
-              Edit Service Report
+              Submit Final Report to Customer
             </button>
-            {canSubmitComplete && (
-              <button
-                onClick={onSubmitComplete}
-                className="w-full py-2.5 text-sm bg-green-500 hover:bg-green-600 text-white rounded-xl"
-              >
-                Submit Final Report to Customer
-              </button>
-            )}
           </div>
         )}
       </div>
