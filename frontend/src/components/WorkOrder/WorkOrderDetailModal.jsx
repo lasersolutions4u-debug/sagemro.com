@@ -17,6 +17,7 @@ import { EngineerPricingPanel, CustomerPricingPanel } from './PricingPanels';
 import { RepairRecordPanel } from './RepairRecordPanel';
 import { AttachmentsPanel } from './AttachmentsPanel';
 import { formatCustomerDeviceLine } from '../../utils/workOrderDisplay';
+import { canEngineerViewCustomerContact, redactContactInfo } from '../../utils/contactRedaction';
 
 function hasServiceReportContent(record) {
   if (!record) return false;
@@ -144,6 +145,8 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
   const urgency = urgencyConfig[workOrder.urgency] || urgencyConfig.normal;
   const isEngineer = userType === 'engineer';
   const isCustomer = userType === 'customer';
+  const shouldShowCustomerContact = !isEngineer || canEngineerViewCustomerContact(effectiveStatus);
+  const customerPhoneDisplay = shouldShowCustomerContact ? detail?.customer_phone : detail?.customer_phone ? 'XXX' : '';
 
   const tabs = [
     { key: 'info', label: 'Details' },
@@ -238,7 +241,7 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
         {detail?.customer_name && (
           <div className="text-sm text-[var(--color-text-secondary)]">
             Customer: <span className="text-[var(--color-primary)]">{detail.customer_name}</span>
-            {detail.customer_phone && <span className="ml-1 opacity-70">{detail.customer_phone}</span>}
+            {detail.customer_phone && <span className="ml-1 opacity-70">{customerPhoneDisplay}</span>}
           </div>
         )}
       </div>
@@ -246,7 +249,7 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
       <div>
         <h3 className="text-sm font-medium text-[var(--color-text-primary)] mb-1">Fault Description</h3>
         <div className="p-3 bg-[var(--color-surface-elevated)] rounded-xl text-sm text-[var(--color-text-primary)]">
-          {workOrder.description}
+          {isEngineer ? redactContactInfo(workOrder.description) : workOrder.description}
         </div>
       </div>
 

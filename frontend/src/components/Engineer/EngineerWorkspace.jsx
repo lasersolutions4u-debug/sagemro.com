@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { AlertTriangle, ClipboardCheck, FileText, Package, ShieldCheck, Wrench } from 'lucide-react';
+import { AlertTriangle, CalendarDays, ClipboardCheck, FileText, Package, ShieldCheck, Wrench } from 'lucide-react';
 import {
   assignEngineerWorkOrder,
   acceptTicket,
@@ -9,8 +9,10 @@ import {
   updateEngineerStatus,
 } from '../../services/api';
 import { WorkOrderDetailModal } from '../WorkOrder/WorkOrderDetailModal';
+import { Modal } from '../common/Modal';
 import { EngineerAvailabilityCalendar } from './EngineerAvailabilityCalendar';
 import { categoryConfig, categoryL2Labels, typeLabels } from '../../data/workOrderConfig';
+import { redactContactInfo } from '../../utils/contactRedaction';
 
 const STATUS_LABELS = {
   pending: 'Pending Confirmation',
@@ -159,7 +161,7 @@ function replaceChineseDeviceLabels(text) {
 }
 
 function formatEngineerDescription(description) {
-  return replaceChineseDeviceLabels(description);
+  return redactContactInfo(replaceChineseDeviceLabels(description));
 }
 
 export function EngineerWorkspace({ currentUser, onLogout, onOpenProfile }) {
@@ -176,6 +178,7 @@ export function EngineerWorkspace({ currentUser, onLogout, onOpenProfile }) {
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState('');
   const [selectedTicket, setSelectedTicket] = useState(null);
+  const [isCalendarOpen, setIsCalendarOpen] = useState(false);
 
   const loadTickets = useCallback(async () => {
     if (!engineerId) return;
@@ -336,13 +339,20 @@ export function EngineerWorkspace({ currentUser, onLogout, onOpenProfile }) {
           </div>
         )}
 
-        <section className="mb-6 grid items-start gap-4 lg:grid-cols-[1.7fr_1fr]">
-          <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5">
-            <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <h2 className="font-semibold">Task Overview</h2>
-                <p className="text-sm text-[var(--color-text-muted)]">Only service tasks assigned through SAGEMRO are shown here.</p>
-              </div>
+        <section className="mb-6 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5">
+          <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <h2 className="font-semibold">Task Overview</h2>
+              <p className="text-sm text-[var(--color-text-muted)]">Only service tasks assigned through SAGEMRO are shown here.</p>
+            </div>
+            <div className="grid gap-2 sm:grid-cols-[auto_1fr] sm:items-center">
+              <button
+                onClick={() => setIsCalendarOpen(true)}
+                className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-3 py-2 text-sm font-medium text-[var(--color-text-primary)] hover:border-[var(--color-primary)]"
+              >
+                <CalendarDays size={16} className="text-[var(--color-primary)]" />
+                Open Scheduling Calendar
+              </button>
               <div className="grid grid-cols-3 gap-2 sm:flex">
                 {[
                   { value: 'available', label: 'Available' },
@@ -363,18 +373,16 @@ export function EngineerWorkspace({ currentUser, onLogout, onOpenProfile }) {
                 ))}
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-2 lg:grid-cols-5">
-              {metrics.map((metric) => (
-                <div key={metric.label} className="rounded-xl bg-[var(--color-surface-elevated)] p-4">
-                  <metric.icon size={18} className="mb-2 text-[var(--color-primary)]" />
-                  <div className="text-2xl font-semibold">{metric.value}</div>
-                  <div className="text-xs text-[var(--color-text-muted)]">{metric.label}</div>
-                </div>
-              ))}
-            </div>
           </div>
-
-          <EngineerAvailabilityCalendar />
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-2 lg:grid-cols-5">
+            {metrics.map((metric) => (
+              <div key={metric.label} className="rounded-xl bg-[var(--color-surface-elevated)] p-4">
+                <metric.icon size={18} className="mb-2 text-[var(--color-primary)]" />
+                <div className="text-2xl font-semibold">{metric.value}</div>
+                <div className="text-xs text-[var(--color-text-muted)]">{metric.label}</div>
+              </div>
+            ))}
+          </div>
         </section>
 
         <section className="grid gap-4 lg:grid-cols-[1.4fr_1fr]">
@@ -567,6 +575,14 @@ export function EngineerWorkspace({ currentUser, onLogout, onOpenProfile }) {
       onRateSuccess={loadTickets}
       onConfirmed={loadTickets}
     />
+    <Modal
+      isOpen={isCalendarOpen}
+      onClose={() => setIsCalendarOpen(false)}
+      title="My Scheduling Calendar"
+      size="2xl"
+    >
+      <EngineerAvailabilityCalendar />
+    </Modal>
     </>
   );
 }

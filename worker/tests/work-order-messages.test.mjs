@@ -120,3 +120,22 @@ test('work order messages persist and return image and video attachment URLs', a
   assert.equal(listed.json.list.length, 1);
   assert.deepEqual(listed.json.list[0].attachment_urls, attachmentUrls);
 });
+
+test('work order messages redact direct contact details as XXX', async () => {
+  const env = makeEnv();
+
+  const created = await api(env, '/api/workorders/wo-1/messages', {
+    method: 'POST',
+    body: {
+      content: 'Call me at +66961135966 or email ops@example.com. WhatsApp: +1 555 0100',
+      message_type: 'text',
+    },
+  });
+
+  assert.equal(created.response.status, 200);
+  assert.equal(env.__state.messages[0].content, 'Call me at XXX or email XXX. WhatsApp: XXX');
+
+  const listed = await api(env, '/api/workorders/wo-1/messages');
+  assert.equal(listed.response.status, 200);
+  assert.equal(listed.json.list[0].content, 'Call me at XXX or email XXX. WhatsApp: XXX');
+});

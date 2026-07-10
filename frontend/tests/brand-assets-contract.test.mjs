@@ -384,11 +384,11 @@ test('engineer workspace keeps task context and scheduling display fully English
   assert.doesNotMatch(calendar, /type="datetime-local"/);
 });
 
-test('engineer workspace places calendar above tasks and checklist at the right bottom', () => {
+test('engineer workspace keeps overview full-width and opens calendar in a modal', () => {
   const workspace = read('frontend/src/components/Engineer/EngineerWorkspace.jsx');
 
   const taskOverviewIndex = workspace.indexOf('Task Overview');
-  const topGridIndex = workspace.indexOf('mb-6 grid items-start gap-4');
+  const fullWidthOverviewIndex = workspace.indexOf('mb-6 rounded-2xl');
   const calendarIndex = workspace.indexOf('<EngineerAvailabilityCalendar />');
   const serviceTasksIndex = workspace.indexOf('Service Tasks');
   const contextIndex = workspace.indexOf('Current Task Context');
@@ -396,11 +396,38 @@ test('engineer workspace places calendar above tasks and checklist at the right 
   const checklistIndex = workspace.indexOf('Service Standard Checklist');
 
   assert.ok(taskOverviewIndex > -1);
-  assert.ok(topGridIndex > -1);
-  assert.ok(calendarIndex > taskOverviewIndex);
-  assert.ok(calendarIndex < serviceTasksIndex);
+  assert.ok(fullWidthOverviewIndex > -1);
+  assert.match(workspace, /CalendarDays/);
+  assert.match(workspace, /const \[isCalendarOpen, setIsCalendarOpen\] = useState\(false\)/);
+  assert.match(workspace, /Open Scheduling Calendar/);
+  assert.match(workspace, /title="My Scheduling Calendar"/);
+  assert.match(workspace, /size="2xl"/);
+  assert.ok(calendarIndex > checklistIndex);
   assert.ok(contextIndex < preparationIndex);
   assert.ok(preparationIndex < checklistIndex);
+});
+
+test('engineer work order views redact customer contact before service and inside messages', () => {
+  const detailModal = read('frontend/src/components/WorkOrder/WorkOrderDetailModal.jsx');
+  const messagePanel = read('frontend/src/components/WorkOrder/MessagePanel.jsx');
+  const redaction = read('frontend/src/utils/contactRedaction.js');
+  const worker = read('worker/src/index.js');
+
+  assert.match(redaction, /function redactContactInfo/);
+  assert.match(redaction, /function canEngineerViewCustomerContact/);
+  assert.match(redaction, /return 'XXX'/);
+  assert.match(detailModal, /import \{ canEngineerViewCustomerContact, redactContactInfo \}/);
+  assert.match(messagePanel, /import \{ redactContactInfo \}/);
+  assert.match(read('frontend/src/components/Engineer/EngineerWorkspace.jsx'), /redactContactInfo\(replaceChineseDeviceLabels\(description\)\)/);
+  assert.match(detailModal, /canEngineerViewCustomerContact\(effectiveStatus\)/);
+  assert.match(detailModal, /redactContactInfo\(workOrder\.description\)/);
+  assert.match(detailModal, /const customerPhoneDisplay = shouldShowCustomerContact \? detail\?\.customer_phone : detail\?\.customer_phone \? 'XXX' : ''/);
+  assert.match(messagePanel, /redactContactInfo\(msg\.content\)/);
+  assert.match(messagePanel, /content: redactContactInfo\(input\.trim\(\)\)/);
+  assert.match(worker, /function redactContactInfoForWorkOrder/);
+  assert.match(worker, /customer_phone: ''/);
+  assert.match(worker, /description: redactContactInfoForWorkOrder\(wo\.description\)/);
+  assert.match(worker, /content: redactContactInfoForWorkOrder\(row\.content\)/);
 });
 
 test('customer service views translate machine fields to English', () => {

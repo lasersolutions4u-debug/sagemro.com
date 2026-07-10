@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { Image, Loader2, Paperclip, Send, Video, X } from 'lucide-react';
 import { getWorkOrderMessages, postWorkOrderMessage, uploadWorkOrderAttachment } from '../../services/api';
 import { toastError } from '../../utils/feedback';
+import { redactContactInfo } from '../../utils/contactRedaction';
 
 const ALLOWED_TYPES = [
   'image/jpeg',
@@ -110,7 +111,7 @@ export function MessagePanel({ workOrderId, userType }) {
         if (url) attachmentUrls.push(url);
       }
       await postWorkOrderMessage(workOrderId, {
-        content: input.trim(),
+        content: redactContactInfo(input.trim()),
         message_type: 'text',
         attachment_urls: attachmentUrls,
       });
@@ -154,7 +155,7 @@ export function MessagePanel({ workOrderId, userType }) {
                   {!isMe && msg.sender_name && (
                     <div className="text-xs opacity-70 mb-0.5">{msg.sender_name}</div>
                   )}
-                  {msg.content && <div className="whitespace-pre-wrap">{msg.content}</div>}
+                  {msg.content && <div className="whitespace-pre-wrap">{redactContactInfo(msg.content)}</div>}
                   <MediaGrid urls={attachmentUrls} isMe={isMe} />
                   <div className={`text-xs mt-1 ${isMe ? 'text-white/50 text-right' : 'text-[var(--color-text-muted)]'}`}>
                     {new Date(msg.created_at).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}

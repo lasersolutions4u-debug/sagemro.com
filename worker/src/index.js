@@ -78,6 +78,24 @@ import {
 // ============ SLA 时效配置 ============
 const SLA_HOURS = { critical: 4, urgent: 24, normal: 72 };
 
+const CONTACT_EMAIL_PATTERN = /[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g;
+const CONTACT_PLUS_PHONE_PATTERN = /\+\d[\d\s().-]{6,}\d/g;
+const CONTACT_CN_PHONE_PATTERN = /(?<!\d)1[3-9]\d{9}(?!\d)/g;
+
+function redactContactInfoForWorkOrder(text) {
+  if (typeof text !== 'string' || !text) return text;
+  return text
+    .replace(CONTACT_EMAIL_PATTERN, 'XXX')
+    .replace(CONTACT_PLUS_PHONE_PATTERN, (match) => (
+      String(match).replace(/\D/g, '').length >= 8 ? 'XXX' : match
+    ))
+    .replace(CONTACT_CN_PHONE_PATTERN, 'XXX');
+}
+
+function canEngineerViewCustomerContact(status) {
+  return ['in_service', 'resolved', 'pending_review', 'completed'].includes(status);
+}
+
 function getChatModel(env) {
   return env.OPENAI_CHAT_MODEL || env.OPENAI_MODEL || 'deepseek-chat';
 }
@@ -1042,7 +1060,7 @@ async function toolGetPendingTickets({ limit, engineerId, env }) {
         device_type: t.device_type || '未知设备',
         device_brand: t.device_brand || '',
         device_model: t.device_model || '',
-        problem: t.description,
+        problem: redactContactInfoForWorkOrder(t.description),
         urgency: urgencyText[t.urgency] || t.urgency,
         type: typeText[t.type] || t.type,
         customer: t.customer_name || '匿名客户',
@@ -1055,7 +1073,7 @@ async function toolGetPendingTickets({ limit, engineerId, env }) {
         device_type: t.device_type || '未知设备',
         device_brand: t.device_brand || '',
         device_model: t.device_model || '',
-        problem: t.description,
+        problem: redactContactInfoForWorkOrder(t.description),
         urgency: urgencyText[t.urgency] || t.urgency,
         type: typeText[t.type] || t.type,
         customer: t.customer_name || '匿名客户',
@@ -4279,6 +4297,8 @@ async function handleGetWorkOrders(request, env) {
 
     const workOrders = results.map(wo => ({
       ...wo,
+      description: redactContactInfoForWorkOrder(wo.description),
+      customer_phone: '',
       sla_status: getSlaStatus(wo.sla_deadline, wo.urgency),
     }));
 
@@ -4359,9 +4379,15 @@ async function handleGetWorkOrder(request, env) {
 
     const materialItems = await listWorkOrderMaterialItems(env, id);
     const quoteMaterialItems = materialItems.filter((item) => item.purpose === 'quote');
+    const isEngineerDetailView = request._auth?.userType === 'engineer';
+    const safeWorkOrder = {
+      ...workOrder,
+      description: isEngineerDetailView ? redactContactInfoForWorkOrder(workOrder.description) : workOrder.description,
+      customer_phone: isEngineerDetailView && !canEngineerViewCustomerContact(workOrder.status) ? '' : workOrder.customer_phone,
+    };
 
     return jsonResponse({
-      ...workOrder,
+      ...safeWorkOrder,
       sla_status: getSlaStatus(workOrder.sla_deadline, workOrder.urgency),
       logs: logs.results,
       rating: rating || null,
@@ -5906,6 +5932,7 @@ function normalizeWorkOrderMessage(row) {
   if (!row) return row;
   return {
     ...row,
+    content: redactContactInfoForWorkOrder(row.content),
     attachment_urls: parseJsonArray(row.attachment_urls),
     is_internal_note: Number(row.is_internal_note || 0),
     is_customer_visible: Number(row.is_customer_visible ?? 1),
@@ -9277,7 +9304,7 @@ async function handlePostWorkOrderMessage(request, env) {
     // PII 脱敏（Phase 0.5）：工单消息是客户↔工程师的自由输入，最容易泄露手机号
     // 只清洗 text 类消息；pricing_update / system 是平台自生成的结构化消息，不需要清洗
     const safeContent =
-      (message_type || 'text') === 'text' ? redactPII(content || '') : (content || '');
+      (message_type || 'text') === 'text' ? redactContactInfoForWorkOrder(content || '') : (content || '');
     const internalNote = auth.userType === 'customer' ? 0 : (is_internal_note ? 1 : 0);
     const customerVisible = internalNote ? 0 : 1;
 
