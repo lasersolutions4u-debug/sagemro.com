@@ -252,40 +252,58 @@ export function RepairRecordPanel({ workOrderId, userType, repairRecord, onSaved
 
       {/* 配件清单 */}
       <div>
-        <label className="block text-xs text-[var(--color-text-secondary)] mb-2">Parts Used</label>
+        <div className="mb-2">
+          <label className="block text-xs font-medium text-[var(--color-text-primary)]">Parts Used (manual entry)</label>
+          <p className="mt-1 text-xs leading-relaxed text-[var(--color-text-muted)]">
+            Use this only for parts actually consumed or replaced on site. If you already selected the same item in Material lines, do not enter it again here.
+          </p>
+        </div>
         <div className="space-y-2">
           {partsUsed.map((part, i) => (
-            <div key={i} className="flex gap-2 items-start">
-              <input
-                value={part.name}
-                onChange={(e) => updatePart(i, 'name', e.target.value)}
-                placeholder="Part name"
-                className={inputClass + ' flex-1 min-w-0'}
-              />
-              <input
-                type="number"
-                value={part.qty}
-                onChange={(e) => updatePart(i, 'qty', e.target.value)}
-                placeholder="Qty"
-                min="1"
-                className={inputClass + ' w-16 text-center'}
-              />
-              <input
-                value={part.unit}
-                onChange={(e) => updatePart(i, 'unit', e.target.value)}
-                placeholder="Unit"
-                className={inputClass + ' w-16'}
-              />
-              <input
-                value={part.specs}
-                onChange={(e) => updatePart(i, 'specs', e.target.value)}
-                placeholder="Specs"
-                className={inputClass + ' w-28'}
-              />
+            <div key={i} className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(180px,1fr)_80px_90px_minmax(160px,0.8fr)_auto] sm:items-end">
+              <label className="block text-[11px] font-medium text-[var(--color-text-secondary)]">
+                Part name
+                <input
+                  value={part.name}
+                  onChange={(e) => updatePart(i, 'name', e.target.value)}
+                  placeholder="Protective lens"
+                  className={inputClass + ' mt-1'}
+                />
+              </label>
+              <label className="block text-[11px] font-medium text-[var(--color-text-secondary)]">
+                Qty
+                <input
+                  type="number"
+                  value={part.qty}
+                  onChange={(e) => updatePart(i, 'qty', e.target.value)}
+                  placeholder="1"
+                  min="1"
+                  className={inputClass + ' mt-1 text-center'}
+                />
+              </label>
+              <label className="block text-[11px] font-medium text-[var(--color-text-secondary)]">
+                Unit
+                <input
+                  value={part.unit}
+                  onChange={(e) => updatePart(i, 'unit', e.target.value)}
+                  placeholder="pcs"
+                  className={inputClass + ' mt-1'}
+                />
+              </label>
+              <label className="block text-[11px] font-medium text-[var(--color-text-secondary)]">
+                Spec / note
+                <input
+                  value={part.specs}
+                  onChange={(e) => updatePart(i, 'specs', e.target.value)}
+                  placeholder="D28 / BM110"
+                  className={inputClass + ' mt-1'}
+                />
+              </label>
               <button
                 onClick={() => removePart(i)}
                 disabled={partsUsed.length <= 1}
-                className="p-2 text-[var(--color-text-muted)] hover:text-red-500 disabled:opacity-30 flex-shrink-0 mt-1"
+                className="flex h-10 w-10 items-center justify-center rounded-xl text-[var(--color-text-muted)] hover:bg-red-50 hover:text-red-500 disabled:opacity-30"
+                aria-label="Remove part"
               >
                 <Trash2 size={16} />
               </button>

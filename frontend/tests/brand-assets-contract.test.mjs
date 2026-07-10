@@ -192,6 +192,20 @@ test('engineer final service report can be submitted to customer review from rep
   assert.match(detailModal, /setTab\('info'\)/);
 });
 
+test('service report parts entry explains manual parts and avoids material line duplication', () => {
+  const repairRecord = read('frontend/src/components/WorkOrder/RepairRecordPanel.jsx');
+
+  assert.match(repairRecord, /Parts Used \(manual entry\)/);
+  assert.match(repairRecord, /Use this only for parts actually consumed or replaced on site/);
+  assert.match(repairRecord, /If you already selected the same item in Material lines, do not enter it again here/);
+  assert.match(repairRecord, /Part name/);
+  assert.match(repairRecord, /Qty/);
+  assert.match(repairRecord, /Unit/);
+  assert.match(repairRecord, /Spec \/ note/);
+  assert.match(repairRecord, /grid grid-cols-1 gap-2 sm:grid-cols-\[minmax\(180px,1fr\)_80px_90px_minmax\(160px,0\.8fr\)_auto\]/);
+  assert.doesNotMatch(repairRecord, /placeholder="Specs"/);
+});
+
 test('engineer can create a service report when the stored report is empty', () => {
   const repairRecord = read('frontend/src/components/WorkOrder/RepairRecordPanel.jsx');
 
