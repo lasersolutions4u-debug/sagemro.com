@@ -11,7 +11,6 @@ import {
 import { WorkOrderDetailModal } from '../WorkOrder/WorkOrderDetailModal';
 import { EngineerAvailabilityCalendar } from './EngineerAvailabilityCalendar';
 import { categoryConfig, categoryL2Labels, typeLabels } from '../../data/workOrderConfig';
-import { formatCustomerDeviceLine } from '../../utils/workOrderDisplay';
 
 const STATUS_LABELS = {
   pending: 'Pending Confirmation',
@@ -65,15 +64,53 @@ function getNextAction(ticket) {
   return actions[ticket?.status] || 'Open the task and review current details.';
 }
 
+function getDeviceLabel(ticket) {
+  const label = ticket?.category_l1 && ticket.category_l1 !== 'other'
+    ? categoryConfig[ticket.category_l1]?.label
+    : typeLabels[ticket?.type];
+  return label || '';
+}
+
+function getIssueLabel(ticket) {
+  if (!ticket?.category_l2 || ticket.category_l2 === 'other') return '';
+  return categoryConfig[ticket.category_l1]?.l2?.[ticket.category_l2] || categoryL2Labels[ticket.category_l2] || '';
+}
+
 function getMachineLine(ticket) {
-  const category = ticket?.category_l1 && ticket.category_l1 !== 'other'
-    ? categoryConfig[ticket.category_l1]?.label || ticket.category_l1
-    : typeLabels[ticket?.type] || ticket?.type;
-  const subCategory = ticket?.category_l2 && ticket.category_l2 !== 'other'
-    ? categoryL2Labels[ticket.category_l2] || ticket.category_l2
-    : '';
-  const device = formatCustomerDeviceLine(ticket || {});
-  return [category, subCategory, device].filter(Boolean).join(' / ') || 'Machine details pending';
+  const deviceDetails = [ticket?.device_brand || ticket?.brand, ticket?.device_model || ticket?.model].filter(Boolean);
+  const serviceContext = [getDeviceLabel(ticket), getIssueLabel(ticket)].filter(Boolean);
+  return [...serviceContext, ...deviceDetails].filter(Boolean).join(' / ') || 'Machine details pending';
+}
+
+function tryParseAiSummary(value) {
+  if (!value) return null;
+  if (typeof value === 'object') return value;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return null;
+  }
+}
+
+function formatAiIntakeSummary(ticket) {
+  const raw = ticket?.ai_summary || ticket?.summary || '';
+  const summary = tryParseAiSummary(raw);
+  if (!summary) {
+    return {
+      text: raw || ticket?.description || 'Review the customer description, quote details, messages, attachments, and service report before taking action.',
+      tags: [],
+      notes: '',
+    };
+  }
+  const tags = [
+    ...(Array.isArray(summary.required_specialties) ? summary.required_specialties : []),
+    ...(Array.isArray(summary.suggested_skills) ? summary.suggested_skills : []),
+  ].filter(Boolean);
+  return {
+    text: summary.summary || ticket?.description || 'Review the customer issue and service context before taking action.',
+    tags,
+    notes: summary.urgency_notes || '',
+  };
 }
 
 export function EngineerWorkspace({ currentUser, onLogout, onOpenProfile }) {
@@ -203,7 +240,7 @@ export function EngineerWorkspace({ currentUser, onLogout, onOpenProfile }) {
 
   const grouped = groupTickets(tickets);
   const activeTicket = selectedTicket || tickets[0] || null;
-  const activeAiSummary = activeTicket?.ai_summary || activeTicket?.summary || '';
+  const activeAiSummary = formatAiIntakeSummary(activeTicket);
   const metrics = [
     ...(isRegionalLead ? [{ icon: ClipboardCheck, label: 'Regional Queue', value: grouped.pending.length }] : []),
     { icon: AlertTriangle, label: 'Needs action', value: grouped.needsAction.length },
@@ -434,7 +471,19 @@ export function EngineerWorkspace({ currentUser, onLogout, onOpenProfile }) {
                 <div className="space-y-3 text-sm text-[var(--color-text-secondary)]">
                   <div>
                     <div className="mb-1 text-xs uppercase text-[var(--color-text-muted)]">AI Intake Summary</div>
-                    <p>{activeAiSummary || activeTicket.description || 'Review the customer description, quote details, messages, attachments, and service report before taking action.'}</p>
+                    <p>{activeAiSummary.text}</p>
+                    {activeAiSummary.tags.length > 0 && (
+                      <div className="mt-2 flex flex-wrap gap-1.5">
+                        {activeAiSummary.tags.map((tag) => (
+                          <span key={tag} className="rounded-full bg-[var(--color-primary)]/10 px-2 py-0.5 text-xs text-[var(--color-primary)]">
+                            {tag}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                    {activeAiSummary.notes && (
+                      <p className="mt-2 text-xs text-[var(--color-text-muted)]">{activeAiSummary.notes}</p>
+                    )}
                   </div>
                   <div>
                     <div className="mb-1 text-xs uppercase text-[var(--color-text-muted)]">Customer Equipment Record</div>

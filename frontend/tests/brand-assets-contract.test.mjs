@@ -348,6 +348,20 @@ test('engineer workspace gives English next steps and selected task context', ()
   assert.doesNotMatch(workspace, / 路 |澶囦欢|閰嶄欢/);
 });
 
+test('engineer workspace formats AI intake JSON and hides internal category codes', () => {
+  const workspace = read('frontend/src/components/Engineer/EngineerWorkspace.jsx');
+
+  assert.match(workspace, /formatAiIntakeSummary/);
+  assert.match(workspace, /tryParseAiSummary/);
+  assert.match(workspace, /summary\.required_specialties/);
+  assert.match(workspace, /summary\.suggested_skills/);
+  assert.match(workspace, /summary\.urgency_notes/);
+  assert.match(workspace, /getDeviceLabel/);
+  assert.match(workspace, /getIssueLabel/);
+  assert.doesNotMatch(workspace, /<p>\{activeAiSummary \|\| activeTicket\.description/);
+  assert.doesNotMatch(workspace, /formatCustomerDeviceLine\(ticket \|\| \{\}\)/);
+});
+
 test('customer service views translate machine fields to English', () => {
   const display = read('frontend/src/utils/workOrderDisplay.js');
   const myServices = read('frontend/src/components/Sidebar/MyWorkOrdersModal.jsx');
