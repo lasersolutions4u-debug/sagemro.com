@@ -15,7 +15,7 @@ function parseParts(partsUsed) {
   }
 }
 
-export function RepairRecordPanel({ workOrderId, userType, repairRecord, onSaved }) {
+export function RepairRecordPanel({ workOrderId, userType, repairRecord, onSaved, onSubmitComplete, canSubmitComplete = false }) {
   const isCn = isCnLocale();
   const isEngineer = userType === 'engineer';
   const [isEditing, setIsEditing] = useState(false);
@@ -158,12 +158,22 @@ export function RepairRecordPanel({ workOrderId, userType, repairRecord, onSaved
         )}
         {/* 工程师可以继续编辑已有记录 */}
         {isEngineer && (
-          <button
-            onClick={() => setIsEditing(true)}
-            className="w-full py-2.5 text-sm bg-[var(--color-surface-elevated)] hover:bg-[var(--color-border)] text-[var(--color-text-primary)] rounded-xl"
-          >
-            Edit Service Report
-          </button>
+          <div className="grid gap-2 sm:grid-cols-2">
+            <button
+              onClick={() => setIsEditing(true)}
+              className="w-full py-2.5 text-sm bg-[var(--color-surface-elevated)] hover:bg-[var(--color-border)] text-[var(--color-text-primary)] rounded-xl"
+            >
+              Edit Service Report
+            </button>
+            {canSubmitComplete && (
+              <button
+                onClick={onSubmitComplete}
+                className="w-full py-2.5 text-sm bg-green-500 hover:bg-green-600 text-white rounded-xl"
+              >
+                Submit Final Report to Customer
+              </button>
+            )}
+          </div>
         )}
       </div>
     );

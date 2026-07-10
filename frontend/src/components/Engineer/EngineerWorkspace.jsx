@@ -10,6 +10,8 @@ import {
 } from '../../services/api';
 import { WorkOrderDetailModal } from '../WorkOrder/WorkOrderDetailModal';
 import { EngineerAvailabilityCalendar } from './EngineerAvailabilityCalendar';
+import { categoryConfig, categoryL2Labels, typeLabels } from '../../data/workOrderConfig';
+import { formatCustomerDeviceLine } from '../../utils/workOrderDisplay';
 
 const STATUS_LABELS = {
   pending: 'Pending Confirmation',
@@ -38,11 +40,40 @@ const CHECKLIST = [
 function groupTickets(tickets) {
   return {
     today: tickets.filter((ticket) => ['assigned', 'in_progress', 'in_service'].includes(ticket.status)),
+    needsAction: tickets.filter((ticket) => ['assigned', 'pricing', 'in_service', 'pending_payment'].includes(ticket.status)),
     pending: tickets.filter((ticket) => ['pending', 'pending_dispatch', 'assigned'].includes(ticket.status)),
     active: tickets.filter((ticket) => ['in_progress', 'in_service', 'pricing'].includes(ticket.status)),
     reports: tickets.filter((ticket) => ['resolved', 'pending_review'].includes(ticket.status)),
-    parts: tickets.filter((ticket) => /parts|备件|配件/i.test(`${ticket.type || ''} ${ticket.description || ''}`)),
+    parts: tickets.filter((ticket) => /parts|spare|consumable/i.test(`${ticket.type || ''} ${ticket.description || ''}`)),
   };
+}
+
+function getNextAction(ticket) {
+  const actions = {
+    pending: 'Wait for SAGEMRO dispatch review.',
+    pending_dispatch: 'Regional Lead should assign a qualified engineer.',
+    assigned: 'Confirm assignment or return it with a reason.',
+    in_progress: 'Prepare quote, site plan, and customer communication.',
+    pricing: 'Submit or update the quote for Admin review.',
+    pending_payment: 'Follow up with the customer and request Admin approval after payment.',
+    payment_review: 'Wait for Admin payment confirmation before starting service.',
+    in_service: 'Complete the service report and submit it to the customer.',
+    resolved: 'Wait for customer confirmation and review.',
+    pending_review: 'Wait for customer confirmation and review.',
+    completed: 'Confirm payout status and archive your notes.',
+  };
+  return actions[ticket?.status] || 'Open the task and review current details.';
+}
+
+function getMachineLine(ticket) {
+  const category = ticket?.category_l1 && ticket.category_l1 !== 'other'
+    ? categoryConfig[ticket.category_l1]?.label || ticket.category_l1
+    : typeLabels[ticket?.type] || ticket?.type;
+  const subCategory = ticket?.category_l2 && ticket.category_l2 !== 'other'
+    ? categoryL2Labels[ticket.category_l2] || ticket.category_l2
+    : '';
+  const device = formatCustomerDeviceLine(ticket || {});
+  return [category, subCategory, device].filter(Boolean).join(' / ') || 'Machine details pending';
 }
 
 export function EngineerWorkspace({ currentUser, onLogout, onOpenProfile }) {
@@ -171,8 +202,11 @@ export function EngineerWorkspace({ currentUser, onLogout, onOpenProfile }) {
   };
 
   const grouped = groupTickets(tickets);
+  const activeTicket = selectedTicket || tickets[0] || null;
+  const activeAiSummary = activeTicket?.ai_summary || activeTicket?.summary || '';
   const metrics = [
     ...(isRegionalLead ? [{ icon: ClipboardCheck, label: 'Regional Queue', value: grouped.pending.length }] : []),
+    { icon: AlertTriangle, label: 'Needs action', value: grouped.needsAction.length },
     { icon: ClipboardCheck, label: "Today's Tasks", value: grouped.today.length },
     { icon: AlertTriangle, label: 'Pending Confirmation', value: grouped.pending.length },
     { icon: Wrench, label: 'In Service', value: grouped.active.length },
@@ -285,7 +319,7 @@ export function EngineerWorkspace({ currentUser, onLogout, onOpenProfile }) {
                       <div>
                         <div className="font-medium">{ticket.order_no || ticket.id}</div>
                         <div className="text-sm text-[var(--color-text-muted)]">
-                          {ticket.customer_name || 'Customer'} · {ticket.customer_region || 'Region pending'}
+                          {ticket.customer_name || 'Customer'} / {ticket.customer_region || 'Region pending'}
                         </div>
                       </div>
                       <span className="rounded-lg bg-[var(--color-primary)]/10 px-2 py-1 text-xs text-[var(--color-primary)]">
@@ -293,6 +327,9 @@ export function EngineerWorkspace({ currentUser, onLogout, onOpenProfile }) {
                       </span>
                     </div>
                     <p className="text-sm text-[var(--color-text-secondary)]">{ticket.description || 'No service description yet'}</p>
+                    <div className="mt-3 rounded-lg border border-[var(--color-primary)]/20 bg-[var(--color-primary)]/5 px-3 py-2 text-xs text-[var(--color-text-primary)]">
+                      <span className="font-semibold text-[var(--color-primary)]">Next step:</span> {getNextAction(ticket)}
+                    </div>
                     <div className="mt-3 grid gap-2 text-xs text-[var(--color-text-muted)] sm:grid-cols-3">
                       <div>Customer issue: {ticket.type || '-'}</div>
                       <div>Safety risk: {ticket.urgency === 'critical' ? 'High risk' : ticket.urgency === 'urgent' ? 'Priority' : 'Standard'}</div>
@@ -341,7 +378,7 @@ export function EngineerWorkspace({ currentUser, onLogout, onOpenProfile }) {
                             <option value="">Select team engineer</option>
                             {team.map((engineer) => (
                               <option key={engineer.id} value={engineer.id}>
-                                {engineer.name}{engineer.service_region ? ` · ${engineer.service_region}` : ''}{engineer.status ? ` · ${engineer.status}` : ''}
+                                {engineer.name}{engineer.service_region ? ` / ${engineer.service_region}` : ''}{engineer.status ? ` / ${engineer.status}` : ''}
                               </option>
                             ))}
                           </select>
@@ -367,16 +404,48 @@ export function EngineerWorkspace({ currentUser, onLogout, onOpenProfile }) {
           <aside className="space-y-4">
             <EngineerAvailabilityCalendar />
             <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5">
-              <h2 className="mb-3 font-semibold">AI Intake Summary</h2>
-              <p className="text-sm text-[var(--color-text-secondary)]">
-                When a task has intake details, this area should show symptoms, possible causes, safety risks, suggested spare parts, and on-site inspection priorities.
-              </p>
+              <h2 className="mb-3 font-semibold">Current Task Context</h2>
+              {activeTicket ? (
+                <div className="space-y-3 text-sm">
+                  <div>
+                    <div className="text-xs uppercase text-[var(--color-text-muted)]">Work Order</div>
+                    <div className="font-medium text-[var(--color-text-primary)]">{activeTicket.order_no || activeTicket.id}</div>
+                  </div>
+                  <div>
+                    <div className="text-xs uppercase text-[var(--color-text-muted)]">Customer / Region</div>
+                    <div className="text-[var(--color-text-secondary)]">{activeTicket.customer_name || 'Customer'} / {activeTicket.customer_region || 'Region pending'}</div>
+                  </div>
+                  <div>
+                    <div className="text-xs uppercase text-[var(--color-text-muted)]">Machine / Service Type</div>
+                    <div className="text-[var(--color-text-secondary)]">{getMachineLine(activeTicket)}</div>
+                  </div>
+                  <div>
+                    <div className="text-xs uppercase text-[var(--color-text-muted)]">Next Step</div>
+                    <div className="text-[var(--color-text-secondary)]">{getNextAction(activeTicket)}</div>
+                  </div>
+                </div>
+              ) : (
+                <p className="text-sm text-[var(--color-text-secondary)]">No active task selected.</p>
+              )}
             </div>
             <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5">
-              <h2 className="mb-3 font-semibold">Customer Equipment Record</h2>
-              <p className="text-sm text-[var(--color-text-secondary)]">
-                Machine model, brand, service history, photos, and service reports will support better preparation before the site visit.
-              </p>
+              <h2 className="mb-3 font-semibold">Job Preparation</h2>
+              {activeTicket ? (
+                <div className="space-y-3 text-sm text-[var(--color-text-secondary)]">
+                  <div>
+                    <div className="mb-1 text-xs uppercase text-[var(--color-text-muted)]">AI Intake Summary</div>
+                    <p>{activeAiSummary || activeTicket.description || 'Review the customer description, quote details, messages, attachments, and service report before taking action.'}</p>
+                  </div>
+                  <div>
+                    <div className="mb-1 text-xs uppercase text-[var(--color-text-muted)]">Customer Equipment Record</div>
+                    <p>{getMachineLine(activeTicket)}</p>
+                  </div>
+                </div>
+              ) : (
+                <p className="text-sm text-[var(--color-text-secondary)]">
+                  Select a service task to review customer issue, machine record, and preparation notes.
+                </p>
+              )}
             </div>
           </aside>
         </section>

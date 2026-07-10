@@ -181,6 +181,17 @@ test('work order attachments are folded into info instead of a separate tab', ()
   assert.doesNotMatch(repairRecord, /Attachments tab/);
 });
 
+test('engineer final service report can be submitted to customer review from report tab', () => {
+  const detailModal = read('frontend/src/components/WorkOrder/WorkOrderDetailModal.jsx');
+  const repairRecord = read('frontend/src/components/WorkOrder/RepairRecordPanel.jsx');
+
+  assert.match(repairRecord, /Submit Final Report to Customer/);
+  assert.match(repairRecord, /onSubmitComplete/);
+  assert.match(detailModal, /onSubmitComplete=\{/);
+  assert.match(detailModal, /resolveWorkOrder\(workOrder\.id, userId\)/);
+  assert.match(detailModal, /setTab\('info'\)/);
+});
+
 test('admin dispatch stays simple while Engineers owns search and profiles', () => {
   const app = read('admin/src/App.jsx');
   const usersPage = read('admin/src/pages/UsersPage.jsx');
@@ -312,6 +323,21 @@ test('engineer task overview uses two columns on mobile', () => {
   assert.match(workspace, /grid grid-cols-2 gap-3 sm:grid-cols-2 lg:grid-cols-5/);
 });
 
+test('engineer workspace gives English next steps and selected task context', () => {
+  const workspace = read('frontend/src/components/Engineer/EngineerWorkspace.jsx');
+
+  assert.match(workspace, /getNextAction/);
+  assert.match(workspace, /Needs action/);
+  assert.match(workspace, /Next step:/);
+  assert.match(workspace, /const activeTicket = selectedTicket \|\| tickets\[0\] \|\| null/);
+  assert.match(workspace, /Current Task Context/);
+  assert.match(workspace, /Customer \/ Region/);
+  assert.match(workspace, /Machine \/ Service Type/);
+  assert.match(workspace, /Job Preparation/);
+  assert.match(workspace, /AI Intake Summary/);
+  assert.doesNotMatch(workspace, / 路 |澶囦欢|閰嶄欢/);
+});
+
 test('customer service views translate machine fields to English', () => {
   const display = read('frontend/src/utils/workOrderDisplay.js');
   const myServices = read('frontend/src/components/Sidebar/MyWorkOrdersModal.jsx');
@@ -319,6 +345,12 @@ test('customer service views translate machine fields to English', () => {
 
   assert.match(display, /\['激光切割机', 'Laser cutting machine'\]/);
   assert.match(display, /\['折弯机', 'Press brake'\]/);
+  assert.match(myServices, /^const customerStatuses = \[/m);
+  assert.match(myServices, /WorkOrderStatus\.RESOLVED/);
+  assert.match(myServices, /WorkOrderStatus\.PENDING_REVIEW/);
+  assert.match(myServices, /data-testid="go-rate-button"/);
+  assert.match(detailModal, /const canRate = effectiveStatus === 'resolved' \|\| effectiveStatus === 'pending_review'/);
+  assert.match(detailModal, /tabs\.push\(\{ key: 'repairRecord', label: 'Service Report' \}\)/);
   assert.match(myServices, /formatCustomerDeviceLine\(order\)/);
   assert.match(detailModal, /Machine: <span/);
 });

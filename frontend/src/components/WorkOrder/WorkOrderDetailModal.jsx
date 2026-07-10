@@ -118,6 +118,24 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
     }
   };
 
+  const handleSubmitFinalReport = async () => {
+    if (!hasServiceReportContent(detail?.repair_record)) {
+      setTab('repairRecord');
+      toastWarning('Please save the service report before submitting the final report.');
+      return;
+    }
+    if (!(await confirmDialog('Submit the final service report to the customer for confirmation and review?'))) return;
+    try {
+      await resolveWorkOrder(workOrder.id, userId);
+      toastSuccess('Final service report sent to the customer for confirmation.');
+      setTab('info');
+      loadDetail();
+      onConfirmed?.();
+    } catch (e) {
+      toastError('Operation failed: ' + e.message);
+    }
+  };
+
   if (!workOrder) return null;
 
   // 使用 detail 中的最新状态（loadDetail 刷新后），回退到 prop 中的初始状态
@@ -269,25 +287,10 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
       {isEngineer && (effectiveStatus === 'in_service' || effectiveStatus === 'pricing') && (
         <button
           data-testid="mark-service-complete-button"
-          onClick={async () => {
-            if (!hasServiceReportContent(detail?.repair_record)) {
-              setTab('repairRecord');
-              toastWarning('Please save the service report before marking the service complete.');
-              return;
-            }
-            if (!(await confirmDialog('Confirm that the service report is complete and the on-site work is finished?'))) return;
-            try {
-              await resolveWorkOrder(workOrder.id, userId);
-              toastSuccess('Service report submitted for customer confirmation.');
-              loadDetail();
-              onConfirmed?.();
-            } catch (e) {
-              toastError('Operation failed: ' + e.message);
-            }
-          }}
+          onClick={handleSubmitFinalReport}
           className="w-full py-3 bg-green-500 hover:bg-green-600 text-white rounded-xl font-medium"
         >
-          Mark Service Complete
+          Submit Final Report to Customer
         </button>
       )}
 
@@ -566,6 +569,8 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
                 userType={userType}
                 repairRecord={detail?.repair_record || null}
                 onSaved={() => loadDetail()}
+                onSubmitComplete={handleSubmitFinalReport}
+                canSubmitComplete={isEngineer && (effectiveStatus === 'in_service' || effectiveStatus === 'pricing')}
               />
             )}
           </>
