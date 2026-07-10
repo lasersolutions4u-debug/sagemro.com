@@ -71,17 +71,45 @@ function getLocale() {
 function defaultLocalDateTime(hoursFromNow) {
   const date = new Date(Date.now() + hoursFromNow * 3600000);
   date.setMinutes(0, 0, 0);
-  return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+  return formatLocalDateTimeInput(date);
+}
+
+function padDatePart(value) {
+  return String(value).padStart(2, '0');
+}
+
+function formatLocalDateTimeInput(valueOrDate) {
+  const date = valueOrDate instanceof Date ? valueOrDate : new Date(valueOrDate);
+  if (Number.isNaN(date.getTime())) return '';
+  return [
+    date.getFullYear(),
+    '-',
+    padDatePart(date.getMonth() + 1),
+    '-',
+    padDatePart(date.getDate()),
+    ' ',
+    padDatePart(date.getHours()),
+    ':',
+    padDatePart(date.getMinutes()),
+  ].join('');
+}
+
+function parseLocalDateTimeInput(value) {
+  const match = String(value || '').trim().match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})$/);
+  if (!match) return '';
+  const [, year, month, day, hour, minute] = match;
+  const date = new Date(Number(year), Number(month) - 1, Number(day), Number(hour), Number(minute), 0, 0);
+  return Number.isNaN(date.getTime()) ? '' : date.toISOString();
 }
 
 function localDateTimeToIso(value) {
-  return value ? new Date(value).toISOString() : '';
+  return parseLocalDateTimeInput(value);
 }
 
 function formatDateTime(value) {
   if (!value) return '-';
   try {
-    return new Intl.DateTimeFormat(undefined, {
+    return new Intl.DateTimeFormat('en-US', {
       month: 'short',
       day: 'numeric',
       hour: '2-digit',
@@ -218,9 +246,10 @@ export function EngineerAvailabilityCalendar() {
           <label className="text-xs font-medium text-[var(--color-text-secondary)]">
             {copy.start}
             <input
-              type="datetime-local"
+              type="text"
               value={form.start_at}
               onChange={(event) => updateField('start_at', event.target.value)}
+              placeholder="YYYY-MM-DD HH:mm"
               className="mt-1 w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text-primary)] outline-none transition focus:border-[var(--color-primary)]"
               required
             />
@@ -228,9 +257,10 @@ export function EngineerAvailabilityCalendar() {
           <label className="text-xs font-medium text-[var(--color-text-secondary)]">
             {copy.end}
             <input
-              type="datetime-local"
+              type="text"
               value={form.end_at}
               onChange={(event) => updateField('end_at', event.target.value)}
+              placeholder="YYYY-MM-DD HH:mm"
               className="mt-1 w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text-primary)] outline-none transition focus:border-[var(--color-primary)]"
               required
             />

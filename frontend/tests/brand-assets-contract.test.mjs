@@ -362,6 +362,28 @@ test('engineer workspace formats AI intake JSON and hides internal category code
   assert.doesNotMatch(workspace, /formatCustomerDeviceLine\(ticket \|\| \{\}\)/);
 });
 
+test('engineer workspace keeps task context and scheduling display fully English', () => {
+  const workspace = read('frontend/src/components/Engineer/EngineerWorkspace.jsx');
+  const calendar = read('frontend/src/components/Engineer/EngineerAvailabilityCalendar.jsx');
+
+  assert.match(workspace, /formatEngineerDescription/);
+  assert.match(workspace, /replaceChineseDeviceLabels/);
+  assert.match(workspace, /CHINESE_ENGINEER_DESCRIPTION_TERMS/);
+  assert.match(workspace, /\['客户', 'Customer'\]/);
+  assert.match(workspace, /\['故障', 'Fault'\]/);
+  assert.match(workspace, /\['激光切割头', 'laser cutting head'\]/);
+  assert.match(workspace, /ticket\.description \? formatEngineerDescription\(ticket\.description\)/);
+  assert.match(workspace, /Preparation for/);
+  assert.match(workspace, /\{activeTicket\.order_no \|\| activeTicket\.id\}/);
+  assert.doesNotMatch(workspace, /\{ticket\.description \|\| 'No service description yet'\}/);
+
+  assert.match(calendar, /type="text"/);
+  assert.match(calendar, /formatLocalDateTimeInput/);
+  assert.match(calendar, /parseLocalDateTimeInput/);
+  assert.match(calendar, /placeholder="YYYY-MM-DD HH:mm"/);
+  assert.doesNotMatch(calendar, /type="datetime-local"/);
+});
+
 test('customer service views translate machine fields to English', () => {
   const display = read('frontend/src/utils/workOrderDisplay.js');
   const myServices = read('frontend/src/components/Sidebar/MyWorkOrdersModal.jsx');

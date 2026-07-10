@@ -113,6 +113,55 @@ function formatAiIntakeSummary(ticket) {
   };
 }
 
+const CHINESE_ENGINEER_DESCRIPTION_TERMS = [
+  ['客户', 'Customer'],
+  ['所在地区', 'Region'],
+  ['休斯顿地区', 'Houston area'],
+  ['设备类型', 'Equipment type'],
+  ['设备品牌', 'Brand'],
+  ['设备型号', 'Model'],
+  ['设备', 'Machine'],
+  ['品牌', 'Brand'],
+  ['型号', 'Model'],
+  ['故障', 'Fault'],
+  ['激光切割机', 'laser cutting machine'],
+  ['激光切割头', 'laser cutting head'],
+  ['光纤激光器', 'fiber laser source'],
+  ['不锈钢', 'stainless steel'],
+  ['主要加工', 'mainly processes'],
+  ['搭载', 'equipped with'],
+  ['自动对焦无法校准', 'auto-focus cannot be calibrated'],
+  ['校准启动时', 'when calibration starts'],
+  ['轴头部完全不动', 'axis head does not move at all'],
+  ['无碰撞或撞头历史', 'no collision or cutting-head crash history'],
+  ['尚未完成', 'has not completed'],
+  ['手动 JOG 测试', 'manual JOG test'],
+  ['手动JOG测试', 'manual JOG test'],
+  ['电容放大器', 'capacitance amplifier'],
+  ['指示灯检查', 'indicator light check'],
+  ['控制器报警确认', 'controller alarm confirmation'],
+  ['生产已停产', 'production is stopped'],
+  ['紧急程度为', 'urgency is'],
+];
+
+function replaceChineseDeviceLabels(text) {
+  return CHINESE_ENGINEER_DESCRIPTION_TERMS.reduce(
+    (value, [source, replacement]) => value.split(source).join(replacement),
+    String(text || ''),
+  )
+    .replace(/Equipment type[：:]/g, 'Equipment type: ')
+    .replace(/Brand[：:]/g, 'Brand: ')
+    .replace(/Model[：:]/g, 'Model: ')
+    .replace(/Region[：:]/g, 'Region: ')
+    .replace(/；/g, '; ')
+    .replace(/，/g, ', ')
+    .replace(/。/g, '. ');
+}
+
+function formatEngineerDescription(description) {
+  return replaceChineseDeviceLabels(description);
+}
+
 export function EngineerWorkspace({ currentUser, onLogout, onOpenProfile }) {
   const engineerId = localStorage.getItem('sagemro_engineer_id');
   const isRegionalLead =
@@ -363,7 +412,9 @@ export function EngineerWorkspace({ currentUser, onLogout, onOpenProfile }) {
                         {STATUS_LABELS[ticket.status] || ticket.status}
                       </span>
                     </div>
-                    <p className="text-sm text-[var(--color-text-secondary)]">{ticket.description || 'No service description yet'}</p>
+                    <p className="text-sm text-[var(--color-text-secondary)]">
+                      {ticket.description ? formatEngineerDescription(ticket.description) : 'No service description yet'}
+                    </p>
                     <div className="mt-3 rounded-lg border border-[var(--color-primary)]/20 bg-[var(--color-primary)]/5 px-3 py-2 text-xs text-[var(--color-text-primary)]">
                       <span className="font-semibold text-[var(--color-primary)]">Next step:</span> {getNextAction(ticket)}
                     </div>
@@ -466,12 +517,19 @@ export function EngineerWorkspace({ currentUser, onLogout, onOpenProfile }) {
               )}
             </div>
             <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5">
-              <h2 className="mb-3 font-semibold">Job Preparation</h2>
+              <div className="mb-3">
+                <h2 className="font-semibold">Job Preparation</h2>
+                {activeTicket && (
+                  <p className="mt-1 text-xs text-[var(--color-text-muted)]">
+                    Preparation for {activeTicket.order_no || activeTicket.id}
+                  </p>
+                )}
+              </div>
               {activeTicket ? (
                 <div className="space-y-3 text-sm text-[var(--color-text-secondary)]">
                   <div>
                     <div className="mb-1 text-xs uppercase text-[var(--color-text-muted)]">AI Intake Summary</div>
-                    <p>{activeAiSummary.text}</p>
+                    <p>{formatEngineerDescription(activeAiSummary.text)}</p>
                     {activeAiSummary.tags.length > 0 && (
                       <div className="mt-2 flex flex-wrap gap-1.5">
                         {activeAiSummary.tags.map((tag) => (
