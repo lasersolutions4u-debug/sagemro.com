@@ -195,6 +195,25 @@ export async function convertAdminLeadToWorkOrder(leadId) {
   });
 }
 
+export async function getAdminKnowledge(page = 1, pageSize = 20, filters = {}) {
+  const params = new URLSearchParams({ page, pageSize, ...filters });
+  return request(`/api/admin/knowledge?${params}`);
+}
+
+export async function createAdminKnowledge(article) {
+  return request('/api/admin/knowledge', {
+    method: 'POST',
+    body: JSON.stringify(article),
+  });
+}
+
+export async function updateAdminKnowledge(articleId, article) {
+  return request(`/api/admin/knowledge/${articleId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(article),
+  });
+}
+
 export async function getAdminMaterials(page = 1, pageSize = 20, filters = {}) {
   const params = new URLSearchParams({ page, pageSize, ...filters });
   return request(`/api/admin/materials?${params}`);

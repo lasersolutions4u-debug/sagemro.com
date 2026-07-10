@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Boxes, ClipboardList, LayoutDashboard, Users, UserCog, FileText, Star, LogOut, Target } from 'lucide-react';
+import { Boxes, ClipboardList, LayoutDashboard, Users, UserCog, FileText, Star, LogOut, Target, BookOpenText } from 'lucide-react';
 import { LoginPage } from './pages/LoginPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { UsersPage } from './pages/UsersPage';
@@ -9,6 +9,7 @@ import { RatingsPage } from './pages/RatingsPage';
 import { LeadsPage } from './pages/LeadsPage';
 import { EngineerApplicationsPage } from './pages/EngineerApplicationsPage';
 import { MaterialsPage } from './pages/MaterialsPage';
+import { KnowledgePage } from './pages/KnowledgePage';
 import { runtimeConfig } from './config/runtime';
 import { BrandMark } from './components/BrandMark';
 
@@ -51,6 +52,7 @@ const t = TEXT[runtimeConfig.locale] || TEXT.en;
 const NAV_ITEMS = [
   { key: 'dashboard', label: t.nav.dashboard, icon: LayoutDashboard },
   { key: 'leads', label: t.nav.leads, icon: Target },
+  { key: 'knowledge', label: t.nav.knowledge || 'Knowledge Base', icon: BookOpenText },
   { key: 'workorders', label: t.nav.workorders, icon: FileText },
   { key: 'materials', label: t.nav.materials, icon: Boxes },
   { key: 'engineerApplications', label: t.nav.engineerApplications, icon: ClipboardList },
@@ -84,6 +86,7 @@ export default function App() {
       case 'engineers': return <EngineersPage />;
       case 'workorders': return <WorkOrdersPage />;
       case 'materials': return <MaterialsPage />;
+      case 'knowledge': return <KnowledgePage />;
       case 'engineerApplications': return <EngineerApplicationsPage />;
       case 'ratings': return <RatingsPage />;
       case 'leads': return <LeadsPage />;

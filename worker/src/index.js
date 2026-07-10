@@ -668,6 +668,37 @@ const TOOLS_SCHEMAS = [
   {
     type: 'function',
     function: {
+      name: 'search_knowledge_base',
+      description: 'Search published SAGEMRO knowledge articles for equipment service, fault, maintenance, parts, cutting parameter, safety, machine selection, or health questions. Use this before answering professional equipment questions when relevant. Only published knowledge is returned.',
+      parameters: {
+        type: 'object',
+        properties: {
+          market: {
+            type: 'string',
+            description: 'Market: cn for sagemro.cn, com for sagemro.com',
+            enum: ['cn', 'com']
+          },
+          locale: {
+            type: 'string',
+            description: 'Preferred language locale, such as zh-CN or en'
+          },
+          category: {
+            type: 'string',
+            description: 'Knowledge category',
+            enum: ['fault', 'cutting_parameters', 'parts', 'maintenance', 'machine_selection', 'health', 'safety', 'other']
+          },
+          query: {
+            type: 'string',
+            description: 'Short search query from the user question, alarm code, part model, equipment brand/model, or symptom'
+          }
+        },
+        required: ['query']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
       name: 'get_engineer_profile',
       description: '查询当前登录 SAGEMRO 工程师的完整档案信息，包括评分、专长、服务地区、累计完成服务数等。当工程师询问自身状态时调用此工具。',
       parameters: {
@@ -809,19 +840,24 @@ const TOOLS_SCHEMAS = [
 // 注意：prompt 层面的角色约束会被越狱绕过，这里是最终一道闸。
 // 游客调试用允许空集；admin 看全部；system 是服务端触发（内部流程），也全开。
 const ROLE_ALLOWED_TOOLS = {
-  guest: new Set([]),
+  guest: new Set([
+    'search_knowledge_base',
+  ]),
   customer: new Set([
+    'search_knowledge_base',
     'get_customer_devices',
     'get_device_detail',
     'get_conversation_history',
     'create_work_order',
   ]),
   engineer: new Set([
+    'search_knowledge_base',
     'get_engineer_profile',
     'get_pending_tickets_for_engineer',
     'get_conversation_history',
   ]),
   admin: new Set([
+    'search_knowledge_base',
     'get_engineer_profile',
     'get_pending_tickets_for_engineer',
     'get_customer_devices',
@@ -829,6 +865,7 @@ const ROLE_ALLOWED_TOOLS = {
     'get_conversation_history',
   ]),
   system: new Set([
+    'search_knowledge_base',
     'get_engineer_profile',
     'get_pending_tickets_for_engineer',
     'get_customer_devices',
@@ -852,6 +889,74 @@ const FALLBACK_INSTRUCTIONS = {
 // 参数改为 context 对象，方便 Phase 0.3 多轮 tool call 传递 iteration。
 // 返回值永远是 JSON-safe 对象：正常结果 / { error, fallback_instruction }
 // 导出以供 worker/tests/test-execute-tool.mjs 单元测试直接调用。
+async function toolSearchKnowledgeBase({ args = {}, env, market = 'com' }) {
+  if (!env?.DB) {
+    return { count: 0, articles: [] };
+  }
+  const search = cleanText(args.query, 160);
+  if (!search) {
+    return { count: 0, articles: [] };
+  }
+  const requestedMarket = cleanText(args.market, 20) || market || 'com';
+  const requestedLocale = cleanText(args.locale, 20);
+  const category = cleanText(args.category, 80);
+  const limit = Math.min(8, Math.max(1, parseInt(args.limit || '5', 10) || 5));
+
+  let where = "WHERE status = 'published' AND market = ?";
+  const binds = [requestedMarket];
+  if (requestedLocale) {
+    where += ' AND locale = ?';
+    binds.push(requestedLocale);
+  }
+  if (category && KNOWLEDGE_CATEGORIES.has(category)) {
+    where += ' AND category = ?';
+    binds.push(category);
+  }
+  where += ` AND (
+    instr(lower(COALESCE(title, '')), lower(?)) > 0 OR
+    instr(lower(COALESCE(content, '')), lower(?)) > 0 OR
+    instr(lower(COALESCE(applicable_equipment, '')), lower(?)) > 0 OR
+    instr(lower(COALESCE(applicable_brand, '')), lower(?)) > 0 OR
+    instr(lower(COALESCE(applicable_model, '')), lower(?)) > 0
+  )`;
+  binds.push(search, search, search, search, search);
+
+  const rows = await env.DB.prepare(`
+    SELECT id, market, locale, category, title, content, source,
+           applicable_equipment, applicable_brand, applicable_model,
+           risk_level, version, status, reviewed_by, reviewed_at, updated_at
+    FROM knowledge_articles
+    ${where}
+    ORDER BY updated_at DESC, created_at DESC
+    LIMIT ?
+  `).bind(...binds, limit).all();
+
+  const articles = (rows.results || []).map((row) => ({
+    id: row.id,
+    market: row.market,
+    locale: row.locale,
+    category: row.category,
+    title: row.title,
+    content: row.content,
+    source: row.source,
+    applicable_equipment: row.applicable_equipment,
+    applicable_brand: row.applicable_brand,
+    applicable_model: row.applicable_model,
+    risk_level: row.risk_level,
+    version: Number(row.version || 1),
+    status: row.status,
+    reviewed_by: row.reviewed_by,
+    reviewed_at: row.reviewed_at,
+    updated_at: row.updated_at,
+  }));
+
+  return {
+    count: articles.length,
+    articles,
+    note: 'Only published SAGEMRO knowledge articles are returned. Use them as reference, not as final diagnosis, quote, safety approval, or parts compatibility commitment.',
+  };
+}
+
 export async function executeTool(ctxObj) {
   const {
     toolName,
@@ -895,6 +1000,7 @@ export async function executeTool(ctxObj) {
 
   // 2. 未知工具
   const executor = {
+    search_knowledge_base: () => toolSearchKnowledgeBase({ args, env, market }),
     get_engineer_profile: () => toolGetEngineerProfile(engineerId, env),
     get_pending_tickets_for_engineer: () => toolGetPendingTickets({ limit: args?.limit || 10, engineerId, env }),
     get_customer_devices: () => toolGetCustomerDevices(customerId, env),
@@ -5789,6 +5895,17 @@ const UPSELL_TIMELINES = new Set(['immediate', 'within_1_month', 'within_3_month
 const UPSELL_BUDGET_SIGNALS = new Set(['has_budget', 'comparing_quotes', 'unknown']);
 const UPSELL_QUOTE_STATUSES = new Set(['not_started', 'in_progress', 'quoted']);
 const UPSELL_DEAL_RESULTS = new Set(['undecided', 'won', 'lost']);
+const KNOWLEDGE_STATUSES = new Set(['draft', 'published', 'archived']);
+const KNOWLEDGE_CATEGORIES = new Set([
+  'fault',
+  'cutting_parameters',
+  'parts',
+  'maintenance',
+  'machine_selection',
+  'health',
+  'safety',
+  'other',
+]);
 
 function cleanText(value, maxLength = 300) {
   if (value === undefined || value === null) return '';
@@ -5936,6 +6053,41 @@ function normalizeWorkOrderMessage(row) {
     attachment_urls: parseJsonArray(row.attachment_urls),
     is_internal_note: Number(row.is_internal_note || 0),
     is_customer_visible: Number(row.is_customer_visible ?? 1),
+  };
+}
+
+function normalizeKnowledgeArticle(row) {
+  if (!row) return row;
+  return {
+    ...row,
+    version: Number(row.version || 1),
+  };
+}
+
+function readKnowledgePayload(body = {}, { existing } = {}) {
+  const category = cleanChoice(body.category ?? existing?.category, KNOWLEDGE_CATEGORIES, '');
+  const status = cleanChoice(body.status ?? existing?.status, KNOWLEDGE_STATUSES, existing?.status || 'draft');
+  const title = cleanText(body.title ?? existing?.title, 240);
+  const content = cleanText(body.content ?? existing?.content, 12000);
+  const market = cleanText(body.market ?? existing?.market, 20);
+  const locale = cleanText(body.locale ?? existing?.locale, 20);
+
+  if (!category) return { error: '请选择有效知识分类' };
+  if (!title) return { error: '请填写知识标题' };
+  if (!content) return { error: '请填写知识内容' };
+
+  return {
+    market,
+    locale,
+    category,
+    title,
+    content,
+    source: cleanText(body.source ?? existing?.source, 1000) || null,
+    applicable_equipment: cleanText(body.applicable_equipment ?? existing?.applicable_equipment, 300) || null,
+    applicable_brand: cleanText(body.applicable_brand ?? existing?.applicable_brand, 200) || null,
+    applicable_model: cleanText(body.applicable_model ?? existing?.applicable_model, 200) || null,
+    risk_level: cleanText(body.risk_level ?? existing?.risk_level, 40) || null,
+    status,
   };
 }
 
@@ -6200,6 +6352,161 @@ async function handleAdminMaterials(request, env) {
     return jsonResponse({
       total: total?.count || 0,
       list: (list.results || []).map(normalizeMaterial),
+    });
+  } catch (error) {
+    return errorResponse(error.message, 500);
+  }
+}
+
+async function handleAdminKnowledge(request, env) {
+  try {
+    const url = new URL(request.url);
+    const page = Math.max(1, parseInt(url.searchParams.get('page') || '1', 10));
+    const pageSize = Math.min(100, Math.max(1, parseInt(url.searchParams.get('pageSize') || '20', 10)));
+    const offset = (page - 1) * pageSize;
+    const category = cleanText(url.searchParams.get('category'), 80);
+    const status = cleanText(url.searchParams.get('status'), 40);
+    const search = cleanText(url.searchParams.get('search'), 160);
+    const market = cleanText(url.searchParams.get('market'), 20) || getRequestMarket(request);
+    const locale = cleanText(url.searchParams.get('locale'), 20);
+
+    let where = 'WHERE market = ?';
+    const binds = [market];
+    if (locale && locale !== 'all') {
+      where += ' AND locale = ?';
+      binds.push(locale);
+    }
+    if (category && category !== 'all') {
+      where += ' AND category = ?';
+      binds.push(category);
+    }
+    if (status && status !== 'all') {
+      where += ' AND status = ?';
+      binds.push(status);
+    }
+    if (search) {
+      where += ` AND (
+        instr(lower(COALESCE(title, '')), lower(?)) > 0 OR
+        instr(lower(COALESCE(content, '')), lower(?)) > 0 OR
+        instr(lower(COALESCE(applicable_equipment, '')), lower(?)) > 0 OR
+        instr(lower(COALESCE(applicable_brand, '')), lower(?)) > 0 OR
+        instr(lower(COALESCE(applicable_model, '')), lower(?)) > 0
+      )`;
+      binds.push(search, search, search, search, search);
+    }
+
+    const total = await env.DB.prepare(
+      `SELECT COUNT(*) as count FROM knowledge_articles ${where}`
+    ).bind(...binds).first();
+    const list = await env.DB.prepare(
+      `SELECT * FROM knowledge_articles ${where} ORDER BY updated_at DESC, created_at DESC LIMIT ? OFFSET ?`
+    ).bind(...binds, pageSize, offset).all();
+
+    return jsonResponse({
+      total: total?.count || 0,
+      list: (list.results || []).map(normalizeKnowledgeArticle),
+    });
+  } catch (error) {
+    return errorResponse(error.message, 500);
+  }
+}
+
+async function handleAdminCreateKnowledge(request, env) {
+  try {
+    const body = await request.json().catch(() => ({}));
+    const payload = readKnowledgePayload(body);
+    if (payload.error) return errorResponse(payload.error, 400);
+
+    const id = generateId();
+    const market = payload.market || getRequestMarket(request);
+    const locale = payload.locale || (market === 'cn' ? 'zh-CN' : 'en');
+    await env.DB.prepare(`
+      INSERT INTO knowledge_articles (
+        id, market, locale, category, title, content, source,
+        applicable_equipment, applicable_brand, applicable_model, risk_level, status
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).bind(
+      id,
+      market,
+      locale,
+      payload.category,
+      payload.title,
+      payload.content,
+      payload.source,
+      payload.applicable_equipment,
+      payload.applicable_brand,
+      payload.applicable_model,
+      payload.risk_level,
+      payload.status
+    ).run();
+
+    const article = await env.DB.prepare('SELECT * FROM knowledge_articles WHERE id = ?').bind(id).first();
+    await writeAuditLog(env, request, {
+      targetType: 'knowledge_article',
+      targetId: id,
+      action: 'knowledge_article_created',
+      afterState: normalizeKnowledgeArticle(article || { id, market, locale, version: 1, ...payload }),
+    });
+
+    return jsonResponse({
+      success: true,
+      article: normalizeKnowledgeArticle(article || { id, market, locale, version: 1, ...payload }),
+    }, 201);
+  } catch (error) {
+    return errorResponse(error.message, 500);
+  }
+}
+
+async function handleAdminUpdateKnowledge(request, env) {
+  try {
+    const articleId = new URL(request.url).pathname.split('/')[4];
+    if (!articleId) return errorResponse('缺少知识条目 ID', 400);
+
+    const existing = await env.DB.prepare('SELECT * FROM knowledge_articles WHERE id = ?').bind(articleId).first();
+    if (!existing) return errorResponse('知识条目不存在', 404);
+
+    const body = await request.json().catch(() => ({}));
+    const payload = readKnowledgePayload(body, { existing });
+    if (payload.error) return errorResponse(payload.error, 400);
+    const reviewerId = payload.status === 'published' ? (request._auth?.userId || 'admin') : null;
+
+    const result = await env.DB.prepare(`
+      UPDATE knowledge_articles SET
+        market = ?, locale = ?, category = ?, title = ?, content = ?, source = ?,
+        applicable_equipment = ?, applicable_brand = ?, applicable_model = ?, risk_level = ?,
+        status = ?, reviewed_by = ?, reviewed_at = CASE WHEN ? = 'published' THEN datetime('now') ELSE NULL END,
+        version = version + 1, updated_at = datetime('now')
+      WHERE id = ?
+    `).bind(
+      payload.market || existing.market || getRequestMarket(request),
+      payload.locale || existing.locale || 'en',
+      payload.category,
+      payload.title,
+      payload.content,
+      payload.source,
+      payload.applicable_equipment,
+      payload.applicable_brand,
+      payload.applicable_model,
+      payload.risk_level,
+      payload.status,
+      reviewerId,
+      payload.status,
+      articleId
+    ).run();
+
+    if (result.meta?.changes === 0) return errorResponse('知识条目不存在', 404);
+    const article = await env.DB.prepare('SELECT * FROM knowledge_articles WHERE id = ?').bind(articleId).first();
+    await writeAuditLog(env, request, {
+      targetType: 'knowledge_article',
+      targetId: articleId,
+      action: 'knowledge_article_updated',
+      beforeState: normalizeKnowledgeArticle(existing),
+      afterState: normalizeKnowledgeArticle(article || { ...existing, ...payload, reviewed_by: reviewerId }),
+    });
+
+    return jsonResponse({
+      success: true,
+      article: normalizeKnowledgeArticle(article || { ...existing, ...payload, reviewed_by: reviewerId }),
     });
   } catch (error) {
     return errorResponse(error.message, 500);
@@ -10403,6 +10710,15 @@ async function routeRequest(request, env, ctx) {
       }
       if (path.match(/^\/api\/admin\/upsell-requests\/[^/]+$/) && request.method === 'PATCH') {
         return handleAdminUpdateUpsellRequest(request, env);
+      }
+      if (path === '/api/admin/knowledge' && request.method === 'GET') {
+        return handleAdminKnowledge(request, env);
+      }
+      if (path === '/api/admin/knowledge' && request.method === 'POST') {
+        return handleAdminCreateKnowledge(request, env);
+      }
+      if (path.match(/^\/api\/admin\/knowledge\/[^/]+$/) && request.method === 'PATCH') {
+        return handleAdminUpdateKnowledge(request, env);
       }
       if (path === '/api/admin/materials' && request.method === 'GET') {
         return handleAdminMaterials(request, env);
