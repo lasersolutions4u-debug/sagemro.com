@@ -37,8 +37,9 @@ const TEXT = {
     search: 'Search title, content, equipment, brand, or model',
     all: 'All',
     newArticle: 'New article',
-    importText: 'Import text/Markdown',
-    usageRules: 'Usage & rules',
+    newBlankDraft: 'New blank draft',
+    importText: 'Import',
+    usageRules: 'Rules',
     close: 'Close',
     saveDraft: 'Save draft',
     update: 'Update article',
@@ -96,8 +97,9 @@ const TEXT = {
     search: '搜索标题、内容、设备、品牌或型号',
     all: '全部',
     newArticle: '新建条目',
-    importText: '导入文本/Markdown',
-    usageRules: '使用方法和规则',
+    newBlankDraft: '新建空白草稿',
+    importText: '导入',
+    usageRules: '规则',
     close: '关闭',
     saveDraft: '保存草稿',
     update: '更新条目',
@@ -256,12 +258,12 @@ export function KnowledgePage() {
 
   return (
     <div>
-      <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-        <div>
+      <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+        <div className="min-w-0">
           <h2 className="text-lg font-semibold">{t.title}</h2>
-          <p className="mt-1 max-w-3xl text-sm text-[var(--color-text-muted)]">{t.subtitle}</p>
+          <p className="mt-1 max-w-2xl text-sm leading-6 text-[var(--color-text-muted)]">{t.subtitle}</p>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex shrink-0 flex-wrap gap-2 lg:flex-nowrap lg:justify-end">
           <input
             ref={fileInputRef}
             type="file"
@@ -272,7 +274,7 @@ export function KnowledgePage() {
           <button
             type="button"
             onClick={() => fileInputRef.current?.click()}
-            className="inline-flex items-center justify-center gap-2 rounded-lg border border-[var(--color-border)] px-3 py-2 text-sm font-medium text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-elevated)] hover:text-[var(--color-text)]"
+            className="inline-flex items-center justify-center gap-2 rounded-lg bg-[var(--color-primary)] px-3 py-2 text-sm font-medium text-white"
           >
             <FileUp size={16} />
             {t.importText}
@@ -284,14 +286,6 @@ export function KnowledgePage() {
           >
             <HelpCircle size={16} />
             {t.usageRules}
-          </button>
-          <button
-            type="button"
-            onClick={resetForm}
-            className="inline-flex items-center justify-center gap-2 rounded-lg bg-[var(--color-primary)] px-3 py-2 text-sm font-medium text-white"
-          >
-            <Plus size={16} />
-            {t.newArticle}
           </button>
         </div>
       </div>
@@ -352,21 +346,22 @@ export function KnowledgePage() {
       )}
 
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_380px]">
-        <section>
-          <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center">
+        <section className="min-w-0">
+          <div className="mb-4 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
             <div className="relative min-w-0 flex-1">
               <Search className="pointer-events-none absolute left-3 top-2.5 text-[var(--color-text-muted)]" size={16} />
               <input
                 value={filters.search}
                 onChange={(event) => setFilters((prev) => ({ ...prev, search: event.target.value }))}
                 placeholder={t.search}
-                className="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] py-2 pl-9 pr-3 text-sm outline-none focus:border-[var(--color-primary)]"
+                className="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-elevated)] py-2 pl-9 pr-3 text-sm outline-none focus:border-[var(--color-primary)]"
               />
             </div>
             <select
               value={filters.category}
               onChange={(event) => setFilters((prev) => ({ ...prev, category: event.target.value }))}
-              className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm"
+              className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-3 py-2 text-sm lg:w-44"
             >
               <option value="all">{t.all}</option>
               {CATEGORIES.map((category) => <option key={category} value={category}>{category}</option>)}
@@ -374,11 +369,12 @@ export function KnowledgePage() {
             <select
               value={filters.status}
               onChange={(event) => setFilters((prev) => ({ ...prev, status: event.target.value }))}
-              className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm"
+              className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-3 py-2 text-sm lg:w-36"
             >
               <option value="all">{t.all}</option>
               {STATUSES.map((status) => <option key={status} value={status}>{status}</option>)}
             </select>
+            </div>
           </div>
 
           <div className="mb-2 text-xs text-[var(--color-text-muted)]">{t.total(data.total)}</div>
@@ -431,9 +427,19 @@ export function KnowledgePage() {
         </section>
 
         <aside className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-          <div className="mb-4 flex items-center gap-2">
-            <CheckCircle2 size={17} className="text-[var(--color-primary)]" />
-            <h3 className="font-medium">{t.formTitle}</h3>
+          <div className="mb-4 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <CheckCircle2 size={17} className="text-[var(--color-primary)]" />
+              <h3 className="font-medium">{t.formTitle}</h3>
+            </div>
+            <button
+              type="button"
+              onClick={resetForm}
+              className="inline-flex items-center justify-center gap-1 rounded-lg border border-[var(--color-border)] px-2 py-1 text-xs font-medium text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-elevated)] hover:text-[var(--color-text)]"
+            >
+              <Plus size={13} />
+              {t.newBlankDraft}
+            </button>
           </div>
           <div className="grid gap-3">
             <label className="text-xs font-medium text-[var(--color-text-secondary)]">

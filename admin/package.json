@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "test": "node --test src/config/runtime.test.mjs src/utils/asyncTimeout.test.mjs src/pages/LoginPage.test.mjs src/pages/KnowledgePage.test.mjs src/pages/workOrderDisplay.test.mjs src/pages/WorkOrdersPage.review-flow.test.mjs",
+    "test": "node --test src/config/runtime.test.mjs src/utils/asyncTimeout.test.mjs src/pages/LoginPage.test.mjs src/pages/KnowledgePage.test.mjs src/pages/MaterialsPage.bulk-import.test.mjs src/pages/workOrderDisplay.test.mjs src/pages/WorkOrdersPage.review-flow.test.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

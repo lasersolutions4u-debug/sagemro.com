@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
-import { Boxes, CheckCircle2, Edit3, PackagePlus, RefreshCw, Save, SlidersHorizontal, XCircle } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Boxes, CheckCircle2, Download, Edit3, FileSpreadsheet, PackagePlus, RefreshCw, Save, SlidersHorizontal, Upload, XCircle } from 'lucide-react';
 import {
   adjustAdminMaterialInventory,
   createAdminMaterial,
@@ -21,6 +21,44 @@ const CATEGORY_KEYS = [
 ];
 
 const STATUS_KEYS = ['active', 'inactive', 'pending'];
+
+const MATERIAL_TEMPLATE_HEADERS = [
+  'material_code',
+  'category',
+  'name',
+  'name_en',
+  'spec',
+  'brand',
+  'compatible_equipment',
+  'supplier',
+  'production_code',
+  'unit',
+  'reference_cost',
+  'reference_price',
+  'stock_quantity',
+  'safety_stock',
+  'status',
+  'notes',
+];
+
+const MATERIAL_TEMPLATE_EXAMPLE = [
+  'LC-LENS-001',
+  'laser_cutting',
+  '保护镜片',
+  'Protective lens',
+  'D28*4.1mm',
+  'Generic',
+  'fiber laser cutting machine',
+  'Sample Supplier',
+  'BATCH-2026-001',
+  'pcs',
+  '3.5',
+  '8',
+  '20',
+  '5',
+  'active',
+  'Example only. Replace with reviewed product data.',
+];
 
 const EMPTY_FORM = {
   material_code: '',
@@ -71,6 +109,16 @@ const TEXT = {
     rejectRequest: 'Reject',
     requestUpdated: 'Request reviewed.',
     sourceWorkOrder: 'Work order',
+    bulkTitle: 'Bulk import preview',
+    bulkSubtitle: 'Download the template, fill product data, then upload CSV for preview only. Nothing is written to Material Master until an import confirmation workflow is added.',
+    downloadTemplate: 'Download CSV template',
+    uploadCsv: 'Preview CSV',
+    previewOnly: 'Preview only. No product data will be saved from this upload.',
+    previewReady: (count, errors) => `${count} row(s) loaded for preview. ${errors} issue(s) found.`,
+    previewEmpty: 'Upload a CSV file to preview material rows before import.',
+    fileReadFailed: 'CSV preview failed. Please use a UTF-8 CSV file based on the template.',
+    csvErrors: 'CSV issues',
+    previewRows: 'Preview rows',
     categories: {
       laser_cutting: 'Laser cutting',
       bending: 'Bending',
@@ -160,6 +208,16 @@ const TEXT = {
     rejectRequest: '驳回',
     requestUpdated: '申请已处理。',
     sourceWorkOrder: '来源工单',
+    bulkTitle: '批量导入预览',
+    bulkSubtitle: '先下载模板，填写产品资料后上传 CSV 做预览校验。当前只是预览，不会写入物料库。',
+    downloadTemplate: '下载 CSV 模板',
+    uploadCsv: '预览 CSV',
+    previewOnly: '仅预览。本次上传不会保存任何产品数据。',
+    previewReady: (count, errors) => `已加载 ${count} 行预览，发现 ${errors} 个问题。`,
+    previewEmpty: '上传 CSV 文件后，可以先预览物料数据再导入。',
+    fileReadFailed: 'CSV 预览失败。请使用基于模板填写的 UTF-8 CSV 文件。',
+    csvErrors: 'CSV 问题',
+    previewRows: '预览行',
     categories: {
       laser_cutting: '激光切割',
       bending: '折弯',
@@ -227,6 +285,75 @@ function numberOrBlank(value) {
   return Number(value);
 }
 
+function csvCell(value) {
+  const text = String(value ?? '');
+  if (/[",\n\r]/.test(text)) return `"${text.replace(/"/g, '""')}"`;
+  return text;
+}
+
+function parseCsvRows(text) {
+  const rows = [];
+  let row = [];
+  let cell = '';
+  let quoted = false;
+
+  for (let index = 0; index < text.length; index += 1) {
+    const char = text[index];
+    const next = text[index + 1];
+    if (quoted) {
+      if (char === '"' && next === '"') {
+        cell += '"';
+        index += 1;
+      } else if (char === '"') {
+        quoted = false;
+      } else {
+        cell += char;
+      }
+    } else if (char === '"') {
+      quoted = true;
+    } else if (char === ',') {
+      row.push(cell);
+      cell = '';
+    } else if (char === '\n') {
+      row.push(cell);
+      rows.push(row);
+      row = [];
+      cell = '';
+    } else if (char !== '\r') {
+      cell += char;
+    }
+  }
+
+  if (cell || row.length) {
+    row.push(cell);
+    rows.push(row);
+  }
+
+  return rows.filter((items) => items.some((item) => item.trim()));
+}
+
+function buildMaterialPreview(text) {
+  const [headerRow = [], ...bodyRows] = parseCsvRows(text);
+  const headers = headerRow.map((header) => header.trim());
+  const errors = [];
+  const missingHeaders = MATERIAL_TEMPLATE_HEADERS.filter((field) => !headers.includes(field));
+  if (missingHeaders.length) errors.push(`Missing columns: ${missingHeaders.join(', ')}`);
+
+  const rows = bodyRows.map((items, rowIndex) => {
+    const row = {};
+    headers.forEach((header, index) => {
+      row[header] = (items[index] ?? '').trim();
+    });
+    if (!row.material_code) errors.push(`Row ${rowIndex + 2}: material_code is required`);
+    if (!row.name && !row.name_en) errors.push(`Row ${rowIndex + 2}: name or name_en is required`);
+    if (row.category && !CATEGORY_KEYS.includes(row.category)) errors.push(`Row ${rowIndex + 2}: category is not recognized`);
+    if (row.status && !STATUS_KEYS.includes(row.status)) errors.push(`Row ${rowIndex + 2}: status is not recognized`);
+    return row;
+  });
+
+  return { rows, errors };
+}
+
 function statusClass(status) {
   if (status === 'active') return 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300';
   if (status === 'pending') return 'border-amber-500/30 bg-amber-500/10 text-amber-300';
@@ -250,6 +377,8 @@ export function MaterialsPage() {
   const [adjustment, setAdjustment] = useState({ change_type: 'manual_in', delta: '', reason: '' });
   const [requests, setRequests] = useState({ total: 0, list: [] });
   const [requestsLoading, setRequestsLoading] = useState(true);
+  const [materialPreview, setMaterialPreview] = useState({ rows: [], errors: [] });
+  const csvInputRef = useRef(null);
   const pageSize = 20;
 
   const filters = useMemo(() => ({
@@ -305,6 +434,36 @@ export function MaterialsPage() {
 
   const updateForm = (field, value) => {
     setForm((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const downloadMaterialTemplate = () => {
+    const rows = [
+      MATERIAL_TEMPLATE_HEADERS,
+      MATERIAL_TEMPLATE_EXAMPLE,
+    ];
+    const csv = rows.map((row) => row.map(csvCell).join(',')).join('\n');
+    const blob = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'sagemro-material-master-template.csv';
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const previewMaterialCsv = (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = buildMaterialPreview(String(reader.result || ''));
+      setMaterialPreview(result);
+      setMessage(t.previewReady(result.rows.length, result.errors.length));
+    };
+    reader.onerror = () => setMessage(t.fileReadFailed);
+    reader.readAsText(file, 'UTF-8');
   };
 
   const saveMaterial = async () => {
@@ -469,6 +628,92 @@ export function MaterialsPage() {
           {message}
         </div>
       )}
+
+      <div className="mb-5 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <FileSpreadsheet size={17} className="text-[var(--color-primary)]" />
+              <h3 className="font-semibold text-[var(--color-text-primary)]">{t.bulkTitle}</h3>
+            </div>
+            <p className="mt-1 max-w-3xl text-xs leading-5 text-[var(--color-text-secondary)]">{t.bulkSubtitle}</p>
+            <p className="mt-2 text-xs font-medium text-amber-300">{t.previewOnly}</p>
+          </div>
+          <div className="flex shrink-0 flex-wrap gap-2">
+            <input
+              ref={csvInputRef}
+              type="file"
+              accept=".csv"
+              onChange={previewMaterialCsv}
+              className="hidden"
+            />
+            <button
+              type="button"
+              onClick={downloadMaterialTemplate}
+              className="inline-flex items-center justify-center gap-2 rounded-xl border border-[var(--color-border)] px-3 py-2 text-sm text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-elevated)] hover:text-[var(--color-text)]"
+            >
+              <Download size={15} />
+              {t.downloadTemplate}
+            </button>
+            <button
+              type="button"
+              onClick={() => csvInputRef.current?.click()}
+              className="inline-flex items-center justify-center gap-2 rounded-xl bg-[var(--color-primary)] px-3 py-2 text-sm font-medium text-black"
+            >
+              <Upload size={15} />
+              {t.uploadCsv}
+            </button>
+          </div>
+        </div>
+
+        {materialPreview.rows.length === 0 && materialPreview.errors.length === 0 ? (
+          <div className="mt-4 rounded-xl border border-dashed border-[var(--color-border)] px-4 py-5 text-sm text-[var(--color-text-muted)]">
+            {t.previewEmpty}
+          </div>
+        ) : (
+          <div className="mt-4 grid gap-3 xl:grid-cols-[280px_minmax(0,1fr)]">
+            <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-elevated)] p-3">
+              <div className="mb-2 text-sm font-medium text-[var(--color-text-primary)]">{t.csvErrors}</div>
+              {materialPreview.errors.length === 0 ? (
+                <div className="text-xs text-emerald-300">No blocking issues found.</div>
+              ) : (
+                <ul className="space-y-1 text-xs leading-5 text-amber-300">
+                  {materialPreview.errors.slice(0, 8).map((error) => <li key={error}>{error}</li>)}
+                </ul>
+              )}
+            </div>
+            <div className="min-w-0 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-elevated)] p-3">
+              <div className="mb-2 text-sm font-medium text-[var(--color-text-primary)]">{t.previewRows}</div>
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[720px] text-xs">
+                  <thead>
+                    <tr className="border-b border-[var(--color-border)] text-[var(--color-text-muted)]">
+                      <th className="px-2 py-2 text-left">material_code</th>
+                      <th className="px-2 py-2 text-left">category</th>
+                      <th className="px-2 py-2 text-left">name</th>
+                      <th className="px-2 py-2 text-left">name_en</th>
+                      <th className="px-2 py-2 text-left">spec</th>
+                      <th className="px-2 py-2 text-left">stock</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {materialPreview.rows.slice(0, 6).map((row, index) => (
+                      <tr key={`${row.material_code}-${index}`} className="border-b border-[var(--color-border)]/50">
+                        <td className="px-2 py-2">{row.material_code || '-'}</td>
+                        <td className="px-2 py-2">{row.category || '-'}</td>
+                        <td className="px-2 py-2">{row.name || '-'}</td>
+                        <td className="px-2 py-2">{row.name_en || '-'}</td>
+                        <td className="px-2 py-2">{row.spec || '-'}</td>
+                        <td className="px-2 py-2">{row.stock_quantity || '-'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
 
       <div className="mb-5 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
         <div className="mb-4 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
