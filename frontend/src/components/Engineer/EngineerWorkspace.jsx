@@ -339,20 +339,13 @@ export function EngineerWorkspace({ currentUser, onLogout, onOpenProfile }) {
           </div>
         )}
 
-        <section className="mb-6 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5">
-          <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-            <div>
-              <h2 className="font-semibold">Task Overview</h2>
-              <p className="text-sm text-[var(--color-text-muted)]">Only service tasks assigned through SAGEMRO are shown here.</p>
-            </div>
-            <div className="grid gap-2 sm:grid-cols-[auto_1fr] sm:items-center">
-              <button
-                onClick={() => setIsCalendarOpen(true)}
-                className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-3 py-2 text-sm font-medium text-[var(--color-text-primary)] hover:border-[var(--color-primary)]"
-              >
-                <CalendarDays size={16} className="text-[var(--color-primary)]" />
-                Open Scheduling Calendar
-              </button>
+        <section className="mb-6 grid gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(280px,1fr)]">
+          <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5">
+            <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+              <div>
+                <h2 className="font-semibold">Task Overview</h2>
+                <p className="text-sm text-[var(--color-text-muted)]">Only service tasks assigned through SAGEMRO are shown here.</p>
+              </div>
               <div className="grid grid-cols-3 gap-2 sm:flex">
                 {[
                   { value: 'available', label: 'Available' },
@@ -373,16 +366,41 @@ export function EngineerWorkspace({ currentUser, onLogout, onOpenProfile }) {
                 ))}
               </div>
             </div>
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-2 lg:grid-cols-5">
+              {metrics.map((metric) => (
+                <div key={metric.label} className="rounded-xl bg-[var(--color-surface-elevated)] p-4">
+                  <metric.icon size={18} className="mb-2 text-[var(--color-primary)]" />
+                  <div className="text-2xl font-semibold">{metric.value}</div>
+                  <div className="text-xs text-[var(--color-text-muted)]">{metric.label}</div>
+                </div>
+              ))}
+            </div>
           </div>
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-2 lg:grid-cols-5">
-            {metrics.map((metric) => (
-              <div key={metric.label} className="rounded-xl bg-[var(--color-surface-elevated)] p-4">
-                <metric.icon size={18} className="mb-2 text-[var(--color-primary)]" />
-                <div className="text-2xl font-semibold">{metric.value}</div>
-                <div className="text-xs text-[var(--color-text-muted)]">{metric.label}</div>
+
+          <button
+            onClick={() => setIsCalendarOpen(true)}
+            className="group flex min-h-[190px] flex-col justify-between rounded-2xl border border-[var(--color-primary)]/30 bg-[var(--color-surface)] p-5 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-[var(--color-primary)] hover:shadow-md focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
+          >
+            <div className="flex items-start justify-between gap-4">
+              <div className="rounded-2xl bg-[var(--color-primary)]/10 p-3 text-[var(--color-primary)]">
+                <CalendarDays size={34} />
               </div>
-            ))}
-          </div>
+              <span className="rounded-full bg-[var(--color-primary)]/10 px-3 py-1 text-xs font-medium text-[var(--color-primary)]">
+                Open calendar
+              </span>
+            </div>
+            <div>
+              <h2 className="text-lg font-semibold text-[var(--color-text-primary)]">Scheduling Calendar</h2>
+              <p className="mt-1 text-sm leading-5 text-[var(--color-text-secondary)]">
+                Update availability, blocked dates, and service windows.
+              </p>
+            </div>
+            <div className="grid grid-cols-3 gap-2 text-center text-[11px] font-medium text-[var(--color-text-secondary)]">
+              <div className="rounded-xl bg-[var(--color-surface-elevated)] px-2 py-2">Availability</div>
+              <div className="rounded-xl bg-[var(--color-surface-elevated)] px-2 py-2">Visit windows</div>
+              <div className="rounded-xl bg-[var(--color-surface-elevated)] px-2 py-2">Blocked dates</div>
+            </div>
+          </button>
         </section>
 
         <section className="grid gap-4 lg:grid-cols-[1.4fr_1fr]">

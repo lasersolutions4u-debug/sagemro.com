@@ -404,11 +404,12 @@ test('engineer workspace keeps task context and scheduling display fully English
   assert.doesNotMatch(calendar, /type="datetime-local"/);
 });
 
-test('engineer workspace keeps overview full-width and opens calendar in a modal', () => {
+test('engineer workspace pairs compact task overview with a prominent calendar launcher', () => {
   const workspace = read('frontend/src/components/Engineer/EngineerWorkspace.jsx');
 
   const taskOverviewIndex = workspace.indexOf('Task Overview');
-  const fullWidthOverviewIndex = workspace.indexOf('mb-6 rounded-2xl');
+  const splitOverviewIndex = workspace.indexOf('lg:grid-cols-[minmax(0,2fr)_minmax(280px,1fr)]');
+  const calendarLauncherIndex = workspace.indexOf('Scheduling Calendar');
   const calendarIndex = workspace.indexOf('<EngineerAvailabilityCalendar />');
   const serviceTasksIndex = workspace.indexOf('Service Tasks');
   const contextIndex = workspace.indexOf('Current Task Context');
@@ -416,10 +417,15 @@ test('engineer workspace keeps overview full-width and opens calendar in a modal
   const checklistIndex = workspace.indexOf('Service Standard Checklist');
 
   assert.ok(taskOverviewIndex > -1);
-  assert.ok(fullWidthOverviewIndex > -1);
+  assert.ok(splitOverviewIndex > -1);
+  assert.ok(taskOverviewIndex > splitOverviewIndex);
+  assert.ok(calendarLauncherIndex > taskOverviewIndex);
   assert.match(workspace, /CalendarDays/);
   assert.match(workspace, /const \[isCalendarOpen, setIsCalendarOpen\] = useState\(false\)/);
-  assert.match(workspace, /Open Scheduling Calendar/);
+  assert.match(workspace, /Update availability, blocked dates, and service windows/);
+  assert.match(workspace, /Availability/);
+  assert.match(workspace, /Visit windows/);
+  assert.match(workspace, /Blocked dates/);
   assert.match(workspace, /title="My Scheduling Calendar"/);
   assert.match(workspace, /size="2xl"/);
   assert.ok(calendarIndex > checklistIndex);
