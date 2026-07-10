@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { AlertTriangle, CalendarDays, ClipboardCheck, FileText, Package, ShieldCheck, Wrench } from 'lucide-react';
+import { AlertTriangle, ClipboardCheck, FileText, Package, ShieldCheck, Wrench } from 'lucide-react';
 import {
   assignEngineerWorkOrder,
   acceptTicket,
@@ -427,9 +427,9 @@ export function EngineerWorkspace({ currentUser, onLogout, onOpenProfile }) {
           </div>
         )}
 
-        <section className="mb-6 grid gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(280px,1fr)]">
-          <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5">
-            <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+        <section className="mb-6 grid items-stretch gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(280px,1fr)]">
+          <div className="h-full rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+            <div className="mb-3 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
               <div>
                 <h2 className="font-semibold">Task Overview</h2>
                 <p className="text-sm text-[var(--color-text-muted)]">Only service tasks assigned through SAGEMRO are shown here.</p>
@@ -443,7 +443,7 @@ export function EngineerWorkspace({ currentUser, onLogout, onOpenProfile }) {
                   <button
                     key={item.value}
                     onClick={() => updateStatus(item.value)}
-                    className={`min-h-9 rounded-lg px-3 py-1.5 text-xs font-medium ${
+                    className={`min-h-8 rounded-lg px-3 py-1.5 text-xs font-medium ${
                       status === item.value
                         ? 'bg-[var(--color-primary)] text-white'
                         : 'bg-[var(--color-surface-elevated)] text-[var(--color-text-secondary)]'
@@ -454,11 +454,11 @@ export function EngineerWorkspace({ currentUser, onLogout, onOpenProfile }) {
                 ))}
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-2 lg:grid-cols-5">
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 xl:grid-cols-7">
               {metrics.map((metric) => (
-                <div key={metric.label} className="rounded-xl bg-[var(--color-surface-elevated)] p-4">
-                  <metric.icon size={18} className="mb-2 text-[var(--color-primary)]" />
-                  <div className="text-2xl font-semibold">{metric.value}</div>
+                <div key={metric.label} className="rounded-xl px-3 py-2">
+                  <metric.icon size={15} className="mb-2 text-[var(--color-primary)]" />
+                  <div className="text-xl font-semibold leading-none">{metric.value}</div>
                   <div className="text-xs text-[var(--color-text-muted)]">{metric.label}</div>
                 </div>
               ))}
@@ -467,42 +467,37 @@ export function EngineerWorkspace({ currentUser, onLogout, onOpenProfile }) {
 
           <button
             onClick={() => setIsCalendarOpen(true)}
-            className="group flex min-h-[260px] flex-col gap-4 rounded-2xl border border-[var(--color-primary)]/30 bg-[var(--color-surface)] p-5 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-[var(--color-primary)] hover:shadow-md focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
+            className="group flex h-full flex-col gap-3 rounded-2xl border border-[var(--color-primary)]/30 bg-[var(--color-surface)] p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-[var(--color-primary)] hover:shadow-md focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
           >
             <div className="flex items-start justify-between gap-4">
-              <div className="flex items-start gap-3">
-                <div className="rounded-2xl bg-[var(--color-primary)]/10 p-3 text-[var(--color-primary)]">
-                  <CalendarDays size={28} />
-                </div>
-                <div>
-                  <h2 className="text-lg font-semibold text-[var(--color-text-primary)]">Scheduling Calendar</h2>
-                  <p className="mt-1 text-sm leading-5 text-[var(--color-text-secondary)]">
-                    Update availability, blocked dates, and service windows.
-                  </p>
-                </div>
+              <div>
+                <h2 className="text-lg font-semibold text-[var(--color-text-primary)]">Scheduling Calendar</h2>
+                <p className="mt-1 text-sm leading-5 text-[var(--color-text-secondary)]">
+                  Update availability, blocked dates, and service windows.
+                </p>
               </div>
-              <span className="rounded-full bg-[var(--color-primary)]/10 px-3 py-1 text-xs font-medium text-[var(--color-primary)]">
+              <span className="shrink-0 rounded-full bg-[var(--color-primary)]/10 px-3 py-1 text-xs font-medium text-[var(--color-primary)]">
                 Open calendar
               </span>
             </div>
 
-            <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface-elevated)] p-3">
-              <div className="mb-2 flex items-center justify-between text-[11px] font-medium text-[var(--color-text-secondary)]">
+            <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-elevated)] p-2">
+              <div className="mb-1 flex items-center justify-between text-[11px] font-medium text-[var(--color-text-secondary)]">
                 <span>Future 30 days · Scheduled dates</span>
                 <span>{calendarPreviewLoading ? 'Loading' : `${scheduledPreviewCount} scheduled`}</span>
               </div>
-              <div className="mb-2 grid grid-cols-7 gap-1 text-center text-[10px] font-semibold text-[var(--color-text-muted)]">
+              <div className="mb-1 grid grid-cols-7 gap-0.5 text-center text-[10px] font-semibold text-[var(--color-text-muted)]">
                 {WEEKDAY_LABELS.map((label, index) => (
                   <div key={`${label}-${index}`}>{label}</div>
                 ))}
               </div>
-              <div className="grid grid-cols-7 gap-1">
+              <div className="grid grid-cols-7 gap-0.5">
                 {calendarPreviewDays.map((day) => {
                   const isScheduled = scheduledDateKeys.has(day.key);
                   return (
                     <div
                       key={day.key}
-                      className={`flex aspect-square min-h-7 items-center justify-center rounded-lg text-[11px] font-semibold ${
+                      className={`flex aspect-square min-h-6 items-center justify-center rounded-md text-[10px] font-semibold ${
                         isScheduled
                           ? 'bg-amber-100 text-amber-700 ring-1 ring-amber-200'
                           : day.isToday
@@ -515,12 +510,6 @@ export function EngineerWorkspace({ currentUser, onLogout, onOpenProfile }) {
                   );
                 })}
               </div>
-            </div>
-
-            <div className="grid grid-cols-3 gap-2 text-center text-[11px] font-medium text-[var(--color-text-secondary)]">
-              <div className="rounded-xl bg-[var(--color-surface-elevated)] px-2 py-2">Availability</div>
-              <div className="rounded-xl bg-[var(--color-surface-elevated)] px-2 py-2">Visit windows</div>
-              <div className="rounded-xl bg-[var(--color-surface-elevated)] px-2 py-2">Blocked dates</div>
             </div>
           </button>
         </section>

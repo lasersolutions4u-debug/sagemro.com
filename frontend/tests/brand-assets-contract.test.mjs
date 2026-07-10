@@ -350,7 +350,7 @@ test('work orders expose engineer payout as internal closure after service compl
 test('engineer task overview uses two columns on mobile', () => {
   const workspace = read('frontend/src/components/Engineer/EngineerWorkspace.jsx');
 
-  assert.match(workspace, /grid grid-cols-2 gap-3 sm:grid-cols-2 lg:grid-cols-5/);
+  assert.match(workspace, /grid grid-cols-2 gap-2 sm:grid-cols-4 xl:grid-cols-7/);
 });
 
 test('engineer workspace gives English next steps and selected task context', () => {
@@ -408,7 +408,8 @@ test('engineer workspace pairs compact task overview with a prominent calendar l
   const workspace = read('frontend/src/components/Engineer/EngineerWorkspace.jsx');
 
   const taskOverviewIndex = workspace.indexOf('Task Overview');
-  const splitOverviewIndex = workspace.indexOf('lg:grid-cols-[minmax(0,2fr)_minmax(280px,1fr)]');
+  const splitOverviewIndex = workspace.indexOf('mb-6 grid items-stretch gap-4');
+  const splitColumnsIndex = workspace.indexOf('lg:grid-cols-[minmax(0,2fr)_minmax(280px,1fr)]');
   const calendarLauncherIndex = workspace.indexOf('Scheduling Calendar');
   const calendarIndex = workspace.indexOf('<EngineerAvailabilityCalendar />');
   const serviceTasksIndex = workspace.indexOf('Service Tasks');
@@ -418,14 +419,15 @@ test('engineer workspace pairs compact task overview with a prominent calendar l
 
   assert.ok(taskOverviewIndex > -1);
   assert.ok(splitOverviewIndex > -1);
+  assert.ok(splitColumnsIndex > splitOverviewIndex);
   assert.ok(taskOverviewIndex > splitOverviewIndex);
   assert.ok(calendarLauncherIndex > taskOverviewIndex);
-  assert.match(workspace, /CalendarDays/);
   assert.match(workspace, /const \[isCalendarOpen, setIsCalendarOpen\] = useState\(false\)/);
   assert.match(workspace, /Update availability, blocked dates, and service windows/);
-  assert.match(workspace, /Availability/);
-  assert.match(workspace, /Visit windows/);
-  assert.match(workspace, /Blocked dates/);
+  assert.match(workspace, /xl:grid-cols-7/);
+  assert.match(workspace, /h-full rounded-2xl/);
+  assert.doesNotMatch(workspace, /Visit windows/);
+  assert.doesNotMatch(workspace, /Blocked dates/);
   assert.match(workspace, /title="My Scheduling Calendar"/);
   assert.match(workspace, /size="2xl"/);
   assert.ok(calendarIndex > checklistIndex);
@@ -446,6 +448,8 @@ test('engineer workspace calendar launcher previews the next 30 days with schedu
   assert.match(workspace, /bg-amber-100/);
   assert.match(workspace, /text-amber-700/);
   assert.match(workspace, /grid-cols-7/);
+  assert.match(workspace, /gap-0\.5/);
+  assert.match(workspace, /min-h-6/);
 });
 
 test('engineer machine lead form captures multiple equipment needs and submits to admin', () => {
