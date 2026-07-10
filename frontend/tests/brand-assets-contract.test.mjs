@@ -192,6 +192,16 @@ test('engineer final service report can be submitted to customer review from rep
   assert.match(detailModal, /setTab\('info'\)/);
 });
 
+test('engineer can create a service report when the stored report is empty', () => {
+  const repairRecord = read('frontend/src/components/WorkOrder/RepairRecordPanel.jsx');
+
+  assert.match(repairRecord, /hasRepairRecordContent/);
+  assert.match(repairRecord, /!hasRepairRecordContent\(repairRecord\)/);
+  assert.match(repairRecord, /setIsEditing\(true\)/);
+  assert.match(repairRecord, /Create Service Report/);
+  assert.match(repairRecord, /Please complete and save this service report before submitting it to the customer/);
+});
+
 test('admin dispatch stays simple while Engineers owns search and profiles', () => {
   const app = read('admin/src/App.jsx');
   const usersPage = read('admin/src/pages/UsersPage.jsx');

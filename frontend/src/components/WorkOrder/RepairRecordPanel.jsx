@@ -15,6 +15,16 @@ function parseParts(partsUsed) {
   }
 }
 
+function hasRepairRecordContent(record) {
+  if (!record) return false;
+  const hasText = Boolean(record.symptom || record.diagnosis || record.solution);
+  const hasLabor = Number(record.labor_hours || 0) > 0;
+  const parts = parseParts(record.parts_used);
+  const hasParts = parts.some((part) => part?.name);
+  const hasMaterialItems = Array.isArray(record.material_items) && record.material_items.length > 0;
+  return hasText || hasLabor || hasParts || hasMaterialItems;
+}
+
 export function RepairRecordPanel({ workOrderId, userType, repairRecord, onSaved, onSubmitComplete, canSubmitComplete = false }) {
   const isCn = isCnLocale();
   const isEngineer = userType === 'engineer';
@@ -37,7 +47,7 @@ export function RepairRecordPanel({ workOrderId, userType, repairRecord, onSaved
       const parts = parseParts(repairRecord.parts_used);
       setPartsUsed(parts.length > 0 ? parts : [{ ...emptyPart }]);
       setMaterialItems(Array.isArray(repairRecord.material_items) ? repairRecord.material_items : []);
-      setIsEditing(false);
+      setIsEditing(isEngineer && !hasRepairRecordContent(repairRecord));
     } else if (isEngineer) {
       setIsEditing(true);
     }
@@ -82,9 +92,26 @@ export function RepairRecordPanel({ workOrderId, userType, repairRecord, onSaved
 
   // ====== 查看模式 ======
   if (!isEditing) {
-    const hasContent = symptom || diagnosis || solution || (repairRecord?.labor_hours > 0);
+    const hasContent = hasRepairRecordContent(repairRecord);
     if (!hasContent) {
-      return <div className="text-center py-8 text-sm text-[var(--color-text-muted)]">No service report yet</div>;
+      return (
+        <div className="space-y-3 text-center py-8">
+          <div className="text-sm text-[var(--color-text-muted)]">No service report yet</div>
+          {isEngineer && (
+            <>
+              <div className="mx-auto max-w-sm text-xs text-[var(--color-text-secondary)]">
+                Please complete and save this service report before submitting it to the customer.
+              </div>
+              <button
+                onClick={() => setIsEditing(true)}
+                className="rounded-xl bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-white hover:bg-[var(--color-primary-hover)]"
+              >
+                Create Service Report
+              </button>
+            </>
+          )}
+        </div>
+      );
     }
     const parts = parseParts(repairRecord?.parts_used);
     const structuredParts = Array.isArray(repairRecord?.material_items) ? repairRecord.material_items : [];
