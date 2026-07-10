@@ -236,10 +236,9 @@ export async function uploadChatImage(file) {
   return response.json();
 }
 
-export async function transcribeVoiceInput(audioBlob, language = 'auto') {
+export async function transcribeVoiceInput(audioBlob) {
   const formData = new FormData();
   formData.append('audio', audioBlob, 'voice.webm');
-  formData.append('language', language);
 
   const response = await fetch(`${API_BASE}/api/chat/transcribe`, {
     method: 'POST',

@@ -261,7 +261,7 @@ test('handleChat prompt teaches CN users the correct portal and auth entry detai
   assert.doesNotMatch(prompt, /真实姓名/);
 });
 
-test('handleChat tells COM site to answer English by default', async () => {
+test('handleChat tells COM site to follow the customer language while keeping system UI in English', async () => {
   const prompt = await captureChatPrompt({
     request: makeRequest({
       conversation_id: 'com-prompt-1',
@@ -269,11 +269,14 @@ test('handleChat tells COM site to answer English by default', async () => {
     }, null, 'https://api.sagemro.com/api/chat', 'https://sagemro.com'),
   });
 
-  assert.match(prompt, /You MUST answer this turn in English/);
+  assert.match(prompt, /Reply in the same natural language the customer uses in their latest message/);
+  assert.match(prompt, /If the latest customer message is in Russian, reply in Russian/);
+  assert.match(prompt, /SAGEMRO system UI labels, button names, routes, account type names, and portal names remain in English/);
+  assert.match(prompt, /Internal service-ready summaries, work-order summaries, progress text, and AI analysis must remain in English/);
   assert.match(prompt, /Market: International edition \/ sagemro\.com/);
 });
 
-test('handleChat keeps COM site AI output in English even when the user writes Chinese', async () => {
+test('handleChat lets COM customer-facing replies follow Chinese input language', async () => {
   const prompt = await captureChatPrompt({
     request: makeRequest({
       conversation_id: 'com-chinese-input-1',
@@ -281,9 +284,9 @@ test('handleChat keeps COM site AI output in English even when the user writes C
     }, null, 'https://api.sagemro.com/api/chat', 'https://sagemro.com'),
   });
 
-  assert.match(prompt, /You MUST answer this turn in English/);
-  assert.match(prompt, /For sagemro\.com, keep all AI-generated replies, service-ready summaries, work-order summaries, progress text, and AI analysis in English even if the user writes in Chinese/);
-  assert.doesNotMatch(prompt, /Use Chinese only if the user clearly writes in Chinese/);
+  assert.match(prompt, /Reply in the same natural language the customer uses in their latest message/);
+  assert.doesNotMatch(prompt, /You MUST answer this turn in English/);
+  assert.doesNotMatch(prompt, /keep all AI-generated replies/);
 });
 
 test('handleChat prompt keeps simple questions useful without pushing a work order', async () => {
@@ -313,7 +316,7 @@ test('handleChatTranscribe requires Deepgram configuration', async () => {
   assert.match(body.error, /Voice input is not configured/);
 });
 
-test('handleChatTranscribe auto mode only detects Chinese or English', async () => {
+test('handleChatTranscribe uses multilingual auto transcription for COM site', async () => {
   const formData = new FormData();
   formData.append('audio', new Blob(['audio'], { type: 'audio/webm' }), 'voice.webm');
 
@@ -345,10 +348,9 @@ test('handleChatTranscribe auto mode only detects Chinese or English', async () 
     assert.match(String(captured.url), /https:\/\/api\.deepgram\.com\/v1\/listen/);
     assert.match(String(captured.url), /model=nova-3/);
     assert.match(String(captured.url), /smart_format=true/);
-    assert.match(String(captured.url), /detect_language=zh/);
-    assert.match(String(captured.url), /detect_language=en/);
+    assert.match(String(captured.url), /language=multi/);
     assert.doesNotMatch(String(captured.url), /detect_language=true/);
-    assert.doesNotMatch(String(captured.url), /language=multi/);
+    assert.doesNotMatch(String(captured.url), /detect_language=zh/);
     assert.equal(captured.init.method, 'POST');
     assert.equal(captured.init.headers.Authorization, 'Token deepgram-test-key');
     assert.equal(captured.init.headers['Content-Type'], 'audio/webm');
@@ -357,11 +359,14 @@ test('handleChatTranscribe auto mode only detects Chinese or English', async () 
   }
 });
 
-test('handleChatTranscribe lets users force Chinese or English transcription', async () => {
+test('handleChatTranscribe keeps CN voice transcription scoped to Chinese and English', async () => {
+  const formData = new FormData();
+  formData.append('audio', new Blob(['audio'], { type: 'audio/webm' }), 'voice.webm');
+
   const originalFetch = globalThis.fetch;
-  const capturedUrls = [];
+  let capturedUrl = '';
   globalThis.fetch = async (url) => {
-    capturedUrls.push(String(url));
+    capturedUrl = String(url);
     return new Response(JSON.stringify({
       results: { channels: [{ alternatives: [{ transcript: 'ok' }] }] },
     }), {
@@ -371,21 +376,16 @@ test('handleChatTranscribe lets users force Chinese or English transcription', a
   };
 
   try {
-    for (const language of ['zh', 'en']) {
-      const formData = new FormData();
-      formData.append('audio', new Blob(['audio'], { type: 'audio/webm' }), 'voice.webm');
-      formData.append('language', language);
+    const response = await handleChatTranscribe(new Request('https://api.sagemro.cn/api/chat/transcribe', {
+      method: 'POST',
+      headers: { Origin: 'https://sagemro.cn' },
+      body: formData,
+    }), { DEEPGRAM_API_KEY: 'deepgram-test-key' });
 
-      const response = await handleChatTranscribe(new Request('https://api.sagemro.com/api/chat/transcribe', {
-        method: 'POST',
-        body: formData,
-      }), { DEEPGRAM_API_KEY: 'deepgram-test-key' });
-
-      assert.equal(response.status, 200);
-    }
-
-    assert.match(capturedUrls[0], /language=zh/);
-    assert.match(capturedUrls[1], /language=en/);
+    assert.equal(response.status, 200);
+    assert.match(capturedUrl, /detect_language=zh/);
+    assert.match(capturedUrl, /detect_language=en/);
+    assert.doesNotMatch(capturedUrl, /language=multi/);
   } finally {
     globalThis.fetch = originalFetch;
   }

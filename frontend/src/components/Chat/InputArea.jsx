@@ -11,7 +11,6 @@ export function InputArea({ onSend, onStop, disabled, isStreaming }) {
   const [isRecording, setIsRecording] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [voiceError, setVoiceError] = useState('');
-  const [voiceLanguage, setVoiceLanguage] = useState('auto');
   const textareaRef = useRef(null);
   const mediaRecorderRef = useRef(null);
   const mediaStreamRef = useRef(null);
@@ -85,7 +84,7 @@ export function InputArea({ onSend, onStop, disabled, isStreaming }) {
 
         setIsTranscribing(true);
         try {
-          const result = await transcribeVoiceInput(audioBlob, voiceLanguage);
+          const result = await transcribeVoiceInput(audioBlob);
           const transcript = (result.transcript || '').trim();
           if (transcript) {
             setInput((current) => current ? `${current} ${transcript}` : transcript);
@@ -118,11 +117,6 @@ export function InputArea({ onSend, onStop, disabled, isStreaming }) {
 
   const canSend = input.trim() && !disabled;
   const placeholder = isCn ? '描述设备问题' : 'Describe your service issue';
-  const voiceLanguageOptions = [
-    { value: 'auto', label: 'Auto' },
-    { value: 'zh', label: '中' },
-    { value: 'en', label: 'EN' },
-  ];
   const voiceTitle = !supportsVoiceInput
     ? (isCn ? '语音输入不可用' : 'Voice input unavailable')
     : isRecording
@@ -138,38 +132,19 @@ export function InputArea({ onSend, onStop, disabled, isStreaming }) {
           </div>
         )}
         <div className="flex items-start gap-2 sm:gap-3">
-          <div className="flex shrink-0 items-start gap-1">
-            <button
-              type="button"
-              onClick={handleVoiceClick}
-              disabled={!supportsVoiceInput || disabled || isStreaming || isTranscribing}
-              title={voiceTitle}
-              className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl transition-colors active:scale-95 disabled:opacity-45 ${
-                isRecording
-                  ? 'bg-red-500 text-white hover:bg-red-600'
-                  : 'bg-[var(--color-surface-elevated)] text-[var(--color-text-secondary)] hover:text-[var(--color-primary)]'
-              }`}
-            >
-              {isTranscribing ? <Loader2 size={20} className="animate-spin" /> : <Mic size={20} />}
-            </button>
-            <select
-              aria-label="Voice language"
-              value={voiceLanguage}
-              onChange={(event) => setVoiceLanguage(event.target.value)}
-              disabled={disabled || isRecording || isTranscribing}
-              className="h-12 w-[58px] shrink-0 rounded-2xl border-0 bg-[var(--color-surface-elevated)] px-2 text-xs font-medium text-[var(--color-text-secondary)] outline-none transition-colors hover:text-[var(--color-primary)] disabled:opacity-45 sm:w-[68px]"
-              title={isCn ? '语音语言' : 'Voice language'}
-            >
-              {voiceLanguageOptions.map((option) => (
-                <option
-                  key={option.value}
-                  value={option.value}
-                >
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </div>
+          <button
+            type="button"
+            onClick={handleVoiceClick}
+            disabled={!supportsVoiceInput || disabled || isStreaming || isTranscribing}
+            title={voiceTitle}
+            className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl transition-colors active:scale-95 disabled:opacity-45 ${
+              isRecording
+                ? 'bg-red-500 text-white hover:bg-red-600'
+                : 'bg-[var(--color-surface-elevated)] text-[var(--color-text-secondary)] hover:text-[var(--color-primary)]'
+            }`}
+          >
+            {isTranscribing ? <Loader2 size={20} className="animate-spin" /> : <Mic size={20} />}
+          </button>
 
           <div
             className={`input-wrapper flex-1 rounded-2xl transition-colors ${disabled ? 'opacity-50' : ''}`}

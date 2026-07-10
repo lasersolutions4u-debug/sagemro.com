@@ -379,7 +379,7 @@ SAGEMRO AI helps laser cutting and sheet metal equipment users turn messy equipm
 
 ## 语言策略
 
-- 对 sagemro.com 国际版：平台生成内容固定使用英文。即使用户用中文输入，AI 回复、服务摘要、工单摘要、进度文本和分析内容也保持英文；用户原文可以作为引用或现场描述保留。
+- 对 sagemro.com 国际版：客户可见的普通聊天回复跟随客户最新消息的自然语言；俄语用俄语回复，法语用法语回复，德语用德语回复，意大利语用意大利语回复，西班牙语用西班牙语回复，英语用英语回复。如果最新消息主要是报警代码、品牌、型号或短技术片段导致语言不明确，默认英文。SAGEMRO 系统 UI 标签、按钮名、路由、账号身份和入口名称保持英文；内部服务摘要、工单摘要、进度文本和 AI 分析保持英文。
 - 对 sagemro.cn 中国版：默认简体中文回复。英文报警代码、品牌名、CNC 术语、型号或短英文短语不代表用户要求英文回复；只有用户明确要求英文回复时，才切换英文。
 - 多轮对话中优先匹配用户当前使用的语言。
 - 专业术语可以保留英文缩写，例如 CNC、PLC、servo、nozzle、assist gas。
@@ -2764,7 +2764,6 @@ export async function handleChatTranscribe(request, env) {
 
     const formData = await request.formData();
     const file = formData.get('audio');
-    const requestedLanguage = String(formData.get('language') || 'auto').toLowerCase();
 
     if (!file || typeof file === 'string') {
       return errorResponse('Please record audio first.', 400);
@@ -2799,11 +2798,11 @@ export async function handleChatTranscribe(request, env) {
     const deepgramUrl = new URL('https://api.deepgram.com/v1/listen');
     deepgramUrl.searchParams.set('model', env.DEEPGRAM_MODEL || 'nova-3');
     deepgramUrl.searchParams.set('smart_format', 'true');
-    if (requestedLanguage === 'zh' || requestedLanguage === 'en') {
-      deepgramUrl.searchParams.set('language', requestedLanguage);
-    } else {
+    if (getRequestMarket(request) === 'cn') {
       deepgramUrl.searchParams.append('detect_language', 'zh');
       deepgramUrl.searchParams.append('detect_language', 'en');
+    } else {
+      deepgramUrl.searchParams.set('language', 'multi');
     }
 
     const dgResponse = await fetch(deepgramUrl.toString(), {
@@ -2987,10 +2986,12 @@ export async function handleChat(request, env) {
       ? `You MUST answer this turn in Simplified Chinese.
 Reply in Simplified Chinese.
 English alarm codes, brand names, CNC terms, or short English phrases do not count as a request to answer in English.`
-      : `You MUST answer this turn in English.
-Reply in English.
-For sagemro.com, keep all AI-generated replies, service-ready summaries, work-order summaries, progress text, and AI analysis in English even if the user writes in Chinese.
-The user's original Chinese text may be preserved only as quoted source input, fault description, or customer-provided context.`;
+      : `Reply in the same natural language the customer uses in their latest message.
+If the latest customer message is in Russian, reply in Russian; if it is in French, reply in French; if it is in German, reply in German; if it is in Italian, reply in Italian; if it is in Spanish, reply in Spanish; if it is in English, reply in English.
+If the latest customer message is ambiguous, mostly alarm codes, brand names, model names, CNC terms, or short technical fragments, default to English.
+SAGEMRO system UI labels, button names, routes, account type names, and portal names remain in English.
+Internal service-ready summaries, work-order summaries, progress text, and AI analysis must remain in English.
+Customer-facing explanatory chat replies may follow the customer's language.`;
     const marketContext = `
 
 ## 当前请求上下文
