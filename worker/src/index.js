@@ -3196,6 +3196,13 @@ ${turnLanguageRule}
       { label: 'chat:insert_user_message' },
     );
 
+    await maybeCreateMachineLeadFromChat({
+      env,
+      message,
+      conversationId: convId,
+      customerId: trustedCustomerId,
+    });
+
     // 流式返回响应（Phase 0.3：多轮 tool call while 循环）
     // 每轮都带 tools 参数，允许 AI 链式调多个工具；最后一轮强制不带 tools，逼 LLM 产出文本。
     const encoder = new TextEncoder();
@@ -5818,6 +5825,100 @@ async function handleWithdrawRequest(request, env) {
 
 // ============ 商机线索 API ============
 
+async function insertMachineLead(env, {
+  name,
+  email = null,
+  phone = null,
+  source = 'machine_selection_ai',
+  sourceType = 'machine_purchase_ai',
+  interest = 'Whole machine purchase',
+  message,
+  conversationId = null,
+  aiSummary = '',
+  recommendedNextStep = 'Route to Euchio sales for whole-machine follow-up; assign an engineer for technical support when needed.',
+  customerId = null,
+  workOrderId = null,
+  region = '',
+}) {
+  const id = generateId();
+  const lead = normalizeMachineLead({
+    id,
+    name: cleanText(name, 120) || 'Machine prospect',
+    email: cleanText(email, 160) || null,
+    phone: cleanText(phone, 60) || null,
+    source,
+    interest: cleanText(interest, 240) || 'Whole machine purchase',
+    message: cleanText(message, 3000) || null,
+    conversation_id: conversationId || null,
+    source_type: sourceType,
+    ai_summary: cleanText(aiSummary, 1000) || cleanText(message, 1000),
+    recommended_next_step: recommendedNextStep,
+    assignment_status: 'unassigned',
+    customer_id: customerId || null,
+    work_order_id: workOrderId || null,
+    region: cleanText(region, 120),
+  });
+
+  await env.DB.prepare(`
+    INSERT INTO leads (
+      id, name, email, phone, source, interest, message, conversation_id,
+      source_type, ai_summary, recommended_next_step, assignment_status,
+      customer_id, work_order_id, region
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).bind(
+    lead.id,
+    lead.name,
+    lead.email,
+    lead.phone,
+    lead.source,
+    lead.interest,
+    lead.message,
+    lead.conversation_id,
+    lead.source_type,
+    lead.ai_summary,
+    lead.recommended_next_step,
+    lead.assignment_status,
+    lead.customer_id,
+    lead.work_order_id,
+    lead.region
+  ).run();
+
+  return lead;
+}
+
+async function maybeCreateMachineLeadFromChat({ env, message, conversationId, customerId }) {
+  if (!hasWholeMachineLeadIntent(message)) return null;
+
+  try {
+    const existing = conversationId
+      ? await env.DB.prepare(
+        "SELECT id FROM leads WHERE conversation_id = ? AND source = 'machine_selection_ai' LIMIT 1"
+      ).bind(conversationId).first()
+      : null;
+    if (existing) return null;
+
+    const customer = customerId
+      ? await env.DB.prepare('SELECT name, phone, region FROM customers WHERE id = ?').bind(customerId).first()
+      : null;
+
+    return await insertMachineLead(env, {
+      name: customer?.name || 'AI machine prospect',
+      phone: customer?.phone || null,
+      source: 'machine_selection_ai',
+      sourceType: 'machine_purchase_ai',
+      interest: 'Whole machine purchase',
+      message,
+      conversationId,
+      customerId,
+      region: customer?.region || '',
+      recommendedNextStep: 'Euchio sales should follow up this whole-machine opportunity; coordinate engineer support for technical selection if needed.',
+    });
+  } catch (error) {
+    console.warn('[lead] failed to create machine lead from chat:', error?.message || error);
+    return null;
+  }
+}
+
 async function handleSubmitLead(request, env) {
   try {
     const body = await request.json().catch(() => ({}));
@@ -5830,23 +5931,74 @@ async function handleSubmitLead(request, env) {
       return errorResponse('请提供邮箱或手机号');
     }
 
-    const id = generateId();
-    await env.DB.prepare(
-      `INSERT INTO leads (id, name, email, phone, source, interest, message, conversation_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-    ).bind(
-      id,
-      name.trim(),
-      email?.trim() || null,
-      phone?.trim() || null,
-      source || 'chat',
-      interest?.trim() || null,
-      message?.trim() || null,
-      conversation_id || null
-    ).run();
+    if (!hasWholeMachineLeadIntent(`${interest || ''}\n${message || ''}`)) {
+      return errorResponse('Lead Inbox 仅接收整机/新机设备商机；配件、耗材、升级改造请走工程师增值服务流程', 400);
+    }
 
-    return jsonResponse({ success: true, lead_id: id });
+    const lead = await insertMachineLead(env, {
+      name,
+      email,
+      phone,
+      source: source || 'machine_selection_ai',
+      sourceType: 'machine_purchase_ai',
+      interest: interest || 'Whole machine purchase',
+      message,
+      conversationId: conversation_id || null,
+    });
+
+    return jsonResponse({ success: true, lead_id: lead.id });
   } catch (error) {
+    return errorResponse(error.message, 500);
+  }
+}
+
+async function handleCreateMachineLead(request, env) {
+  try {
+    if (request._auth?.userType !== 'engineer') {
+      return errorResponse('需要工程师权限', 403);
+    }
+
+    const body = await request.json().catch(() => ({}));
+    const workOrderId = cleanText(body.work_order_id, 80);
+    const machineType = cleanText(body.machine_type, 160);
+    const customerIntent = cleanText(body.customer_intent || body.message || body.description, 3000);
+    if (!customerIntent) return errorResponse('请填写客户整机需求说明', 400);
+    if (!hasWholeMachineLeadIntent(`${machineType}\n${customerIntent}\n整机 采购`)) {
+      return errorResponse('Lead 仅用于整机/新机设备需求；配件、耗材、升级改造请提交增值服务或物料请求', 400);
+    }
+
+    let customerId = cleanText(body.customer_id, 80) || null;
+    if (workOrderId) {
+      const workOrder = await getWorkOrderForMaterialAccess(env, workOrderId);
+      assertWorkOrderAccess(request._auth, workOrder);
+      customerId = workOrder.customer_id || customerId;
+    }
+
+    const lead = await insertMachineLead(env, {
+      name: cleanText(body.contact_name, 120) || 'Engineer submitted machine prospect',
+      phone: cleanText(body.contact_phone, 60) || null,
+      email: cleanText(body.contact_email, 160) || null,
+      source: 'engineer_machine_opportunity',
+      sourceType: 'machine_purchase_engineer',
+      interest: machineType ? `Whole machine purchase: ${machineType}` : 'Whole machine purchase',
+      message: customerIntent,
+      aiSummary: `Engineer submitted whole-machine opportunity: ${customerIntent}`,
+      recommendedNextStep: 'Euchio sales should own follow-up; keep the submitting engineer available for technical selection and site context.',
+      customerId,
+      workOrderId: workOrderId || null,
+      region: cleanText(body.region, 120),
+    });
+
+    await writeAuditLog(env, request, {
+      targetType: 'lead',
+      targetId: lead.id,
+      action: 'machine_lead_created_by_engineer',
+      afterState: lead,
+    });
+
+    return jsonResponse({ success: true, lead }, 201);
+  } catch (error) {
+    if (error instanceof GuardError) return errorResponse(error.message, error.status);
     return errorResponse(error.message, 500);
   }
 }
@@ -5940,6 +6092,33 @@ function cleanText(value, maxLength = 300) {
 function cleanChoice(value, allowed, fallback) {
   const text = cleanText(value, 80);
   return allowed.has(text) ? text : fallback;
+}
+
+function hasWholeMachineLeadIntent(text) {
+  const value = cleanText(text, 5000).toLowerCase();
+  if (!value) return false;
+
+  const serviceOrPartsOnly =
+    /(配件|备件|易损件|耗材|喷嘴|保护镜|镜片|陶瓷环|传感器|电缆|维修|保养|改造|升级|外设|除尘|冷水机|气体|parts?|spares?|consumables?|nozzles?|lenses?|protective lens|ceramic ring|repair|maintenance|retrofit|upgrade|peripherals?|chiller|dust collector)/i;
+  const wholeMachine =
+    /(整机|新机|新设备|整线|机床|激光切割机|光纤激光切割机|折弯机|数控折弯|剪板机|laser cutting machine|fiber laser|laser cutter|press brake|bending machine|sheet metal machine|complete machine|new machine|equipment line|euchio)/i;
+  const purchaseIntent =
+    /(买|购买|采购|订购|询价|报价|价格|预算|销售|业务员|buy|purchase|order|quote|quotation|price|pricing|budget|sales|supplier)/i;
+
+  return wholeMachine.test(value) && purchaseIntent.test(value) && !serviceOrPartsOnly.test(value);
+}
+
+function normalizeMachineLead(row) {
+  if (!row) return row;
+  return {
+    ...row,
+    source: row.source || 'machine_selection_ai',
+    source_type: row.source_type || 'machine_purchase_ai',
+    assignment_status: row.assignment_status || 'unassigned',
+    region: row.region || '',
+    customer_id: row.customer_id || null,
+    work_order_id: row.work_order_id || null,
+  };
 }
 
 function toSafeNumber(value, fallback = 0) {
@@ -7493,12 +7672,15 @@ async function handleAdminLeads(request, env) {
     const status = url.searchParams.get('status') || '';
     const offset = (page - 1) * pageSize;
 
-    let where = '';
+    const whereParts = [
+      "(l.source IN ('machine_selection_ai', 'engineer_machine_opportunity') OR l.source_type IN ('machine_purchase_ai', 'machine_purchase_engineer') OR l.interest LIKE '%新机%' OR l.interest LIKE '%EUCHIO%' OR l.interest LIKE '%machine%')",
+    ];
     const binds = [];
     if (status && status !== 'all') {
-      where = 'WHERE l.status = ?';
+      whereParts.push('l.status = ?');
       binds.push(status);
     }
+    const where = `WHERE ${whereParts.join(' AND ')}`;
 
     const countRow = await env.DB.prepare(
       `SELECT COUNT(*) as total FROM leads l ${where}`
@@ -7520,6 +7702,9 @@ async function handleAdminLeads(request, env) {
       parts_identification_ai: '备件识别 AI',
       repair_estimate_ai: '维修预估 AI',
       machine_selection_ai: '新机选型 AI',
+      machine_purchase_ai: '整机采购 AI',
+      machine_purchase_engineer: '工程师提交整机线索',
+      engineer_machine_opportunity: '工程师提交整机线索',
       health_report_ai: '设备健康报告 AI',
       manual_service_request: '手动服务申请',
       contact_form: '联系表单',
@@ -7568,133 +7753,6 @@ async function handleAdminUpdateLead(request, env) {
     }
     await env.DB.prepare('UPDATE leads SET status = ? WHERE id = ?').bind(status, leadId).run();
     return jsonResponse({ success: true });
-  } catch (error) {
-    return errorResponse(error.message, 500);
-  }
-}
-
-function inferWorkOrderTypeFromLead(lead) {
-  const sourceType = lead.source_type || lead.source || '';
-  const text = `${lead.interest || ''} ${lead.message || ''}`.toLowerCase();
-  if (sourceType === 'cutting_parameter_ai' || /参数|parameter/.test(text)) return 'parameter';
-  if (sourceType === 'health_report_ai' || /保养|maintenance|health/.test(text)) return 'maintenance';
-  if (sourceType === 'fault_diagnosis_ai' || sourceType === 'repair_estimate_ai' || /故障|维修|报警|repair|fault|alarm/.test(text)) return 'fault';
-  return 'other';
-}
-
-function inferUrgencyFromLead(lead) {
-  const risk = lead.risk_level || '';
-  const text = `${lead.interest || ''} ${lead.message || ''}`.toLowerCase();
-  if (risk === 'critical' || /停机|停产|critical|fire|smoke/.test(text)) return 'critical';
-  if (risk === 'high' || /紧急|urgent|报警|alarm/.test(text)) return 'urgent';
-  return 'normal';
-}
-
-async function ensureCustomerForLead(env, lead) {
-  const phone = (lead.phone || '').trim();
-  if (!phone) return null;
-
-  const existing = await env.DB.prepare(
-    'SELECT id FROM customers WHERE phone = ?'
-  ).bind(phone).first();
-  if (existing?.id) return existing.id;
-
-  const customerId = generateId();
-  await env.DB.prepare(`
-    INSERT INTO customers (id, user_no, name, phone, password_hash, salt, region)
-    VALUES (?, 'C' || substr(?, 10), ?, ?, 'pending_reset', '', ?)
-  `).bind(
-    customerId,
-    customerId,
-    lead.name || '待完善客户',
-    phone,
-    lead.region || null
-  ).run();
-  return customerId;
-}
-
-// 管理后台 — 将 AI/CRM 线索转为服务申请，进入后续派工流程
-async function handleAdminConvertLeadToWorkOrder(request, env) {
-  try {
-    const leadId = new URL(request.url).pathname.split('/')[4];
-    const lead = await env.DB.prepare(
-      'SELECT * FROM leads WHERE id = ?'
-    ).bind(leadId).first();
-    if (!lead) return errorResponse('线索不存在', 404);
-
-    if (lead.work_order_id) {
-      return jsonResponse({
-        success: true,
-        work_order_id: lead.work_order_id,
-        already_converted: true,
-      });
-    }
-
-    const customerId = lead.customer_id || await ensureCustomerForLead(env, lead);
-    const type = inferWorkOrderTypeFromLead(lead);
-    const urgency = inferUrgencyFromLead(lead);
-    const id = generateId();
-    const orderNo = generateOrderNo();
-    const description = [
-      `线索转服务申请：${lead.interest || lead.source_type || lead.source || '客户咨询'}`,
-      `联系人：${lead.name || '-'}`,
-      lead.phone ? `电话：${lead.phone}` : '',
-      lead.email ? `邮箱：${lead.email}` : '',
-      lead.region ? `地区：${lead.region}` : '',
-      lead.ai_summary ? `AI 摘要：${lead.ai_summary}` : '',
-      lead.message ? `客户描述：${lead.message}` : '',
-    ].filter(Boolean).join('\n');
-    const safeDescription = redactPII(description);
-
-    await env.DB.prepare(`
-      INSERT INTO work_orders (id, order_no, customer_id, type, description, urgency, status, sla_deadline, category_l1, category_l2, ai_summary)
-      VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, 'other', 'other', ?)
-    `).bind(
-      id,
-      orderNo,
-      customerId,
-      type,
-      safeDescription,
-      urgency,
-      computeSlaDeadline(urgency),
-      lead.ai_summary || null
-    ).run();
-
-    await env.DB.prepare(`
-      INSERT INTO work_order_logs (id, work_order_id, action, actor_type, actor_id, content)
-      VALUES (?, ?, 'created_from_lead', 'admin', ?, ?)
-    `).bind(
-      generateId(),
-      id,
-      request._auth?.userId || 'admin',
-      `SAGEMRO 运营已将线索转为服务申请：${lead.name || leadId}`
-    ).run();
-
-    await env.DB.prepare(`
-      UPDATE leads
-      SET status = 'converted', assignment_status = 'converted', work_order_id = ?, customer_id = COALESCE(customer_id, ?)
-      WHERE id = ?
-    `).bind(id, customerId, leadId).run();
-
-    await writeAuditLog(env, request, {
-      targetType: 'lead',
-      targetId: leadId,
-      action: 'lead_converted_to_work_order',
-      beforeState: { status: lead.status, assignment_status: lead.assignment_status, work_order_id: lead.work_order_id },
-      afterState: { status: 'converted', assignment_status: 'converted', work_order_id: id, customer_id: customerId },
-    });
-
-    return jsonResponse({
-      success: true,
-      work_order: {
-        id,
-        order_no: orderNo,
-        customer_id: customerId,
-        type,
-        urgency,
-        status: 'pending',
-      },
-    });
   } catch (error) {
     return errorResponse(error.message, 500);
   }
@@ -8000,13 +8058,13 @@ async function handleAdminStats(request, env) {
       "SELECT COUNT(*) as count FROM work_orders WHERE urgency = 'critical' AND status NOT IN ('completed', 'resolved', 'cancelled', 'rejected')"
     ).first();
     const todayLeads = await env.DB.prepare(
-      "SELECT COUNT(*) as count FROM leads WHERE created_at >= date('now')"
-    ).first();
-    const partsLeads = await env.DB.prepare(
-      "SELECT COUNT(*) as count FROM leads WHERE source = 'parts_identification_ai' OR interest LIKE '%备件%' OR interest LIKE '%parts%'"
+      "SELECT COUNT(*) as count FROM leads WHERE created_at >= date('now') AND (source IN ('machine_selection_ai', 'engineer_machine_opportunity') OR source_type IN ('machine_purchase_ai', 'machine_purchase_engineer'))"
     ).first();
     const machineLeads = await env.DB.prepare(
-      "SELECT COUNT(*) as count FROM leads WHERE source = 'machine_selection_ai' OR interest LIKE '%新机%' OR interest LIKE '%EUCHIO%' OR interest LIKE '%machine%'"
+      "SELECT COUNT(*) as count FROM leads WHERE source IN ('machine_selection_ai', 'engineer_machine_opportunity') OR source_type IN ('machine_purchase_ai', 'machine_purchase_engineer') OR interest LIKE '%新机%' OR interest LIKE '%EUCHIO%' OR interest LIKE '%machine%'"
+    ).first();
+    const valueAddedRequests = await env.DB.prepare(
+      "SELECT COUNT(*) as count FROM upsell_requests WHERE status NOT IN ('completed', 'lost')"
     ).first();
 
     // 最近7天注册数
@@ -8043,7 +8101,7 @@ async function handleAdminStats(request, env) {
         pendingDispatch: woPending?.count || 0,
         inService: (woInService?.count || 0) + (woInProgress?.count || 0),
         pendingArchive: woPendingArchive?.count || 0,
-        partsLeads: partsLeads?.count || 0,
+        valueAddedRequests: valueAddedRequests?.count || 0,
         euchioMachineLeads: machineLeads?.count || 0,
       },
       recentRegistrations: (recentCustomers?.count || 0) + (recentEngineers?.count || 0),
@@ -10665,6 +10723,7 @@ async function routeRequest(request, env, ctx) {
       path === '/api/material-requests' ||
       path === '/api/upsell-requests' ||
       path === '/api/upsell-requests/mine' ||
+      path === '/api/leads/machine' ||
       path === '/api/conversations' ||
       path.startsWith('/api/conversations/') ||
       path === '/api/materials' ||
@@ -10788,7 +10847,7 @@ async function routeRequest(request, env, ctx) {
         return handleAdminLeads(request, env);
       }
       if (path.startsWith('/api/admin/leads/') && path.endsWith('/convert-workorder') && request.method === 'POST') {
-        return handleAdminConvertLeadToWorkOrder(request, env);
+        return errorResponse('整机线索由 Euchio 业务员跟进，不转为服务申请', 400);
       }
       if (path.startsWith('/api/admin/leads/') && request.method === 'PATCH') {
         return handleAdminUpdateLead(request, env);
@@ -10833,6 +10892,9 @@ async function routeRequest(request, env, ctx) {
     }
     if (path === '/api/upsell-requests/mine' && request.method === 'GET') {
       return handleListMyUpsellRequests(request, env);
+    }
+    if (path === '/api/leads/machine' && request.method === 'POST') {
+      return handleCreateMachineLead(request, env);
     }
 
     // 工单相关

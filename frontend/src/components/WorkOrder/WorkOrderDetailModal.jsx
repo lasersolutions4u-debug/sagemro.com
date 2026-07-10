@@ -8,6 +8,7 @@ import {
   submitEngineerReview,
   getEngineerReview,
   requestWorkOrderPaymentStart,
+  createMachineLead,
 } from '../../services/api';
 import { statusConfig, urgencyConfig, typeLabels, categoryConfig, categoryL2Labels, formatSlaRemaining } from '../../data/workOrderConfig.js';
 import { toastSuccess, toastError, toastWarning, confirmDialog } from '../../utils/feedback';
@@ -59,6 +60,14 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
   const [engReviewComment, setEngReviewComment] = useState('');
   const [engReviewSubmitting, setEngReviewSubmitting] = useState(false);
   const [paymentStartSubmitting, setPaymentStartSubmitting] = useState(false);
+  const [machineLeadForm, setMachineLeadForm] = useState({
+    machine_type: '',
+    customer_intent: '',
+    contact_name: '',
+    contact_phone: '',
+    region: '',
+  });
+  const [machineLeadSubmitting, setMachineLeadSubmitting] = useState(false);
   const workOrderId = workOrder?.id;
 
   const loadDetail = useCallback(async () => {
@@ -137,6 +146,36 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
     }
   };
 
+  const handleSubmitMachineLead = async () => {
+    if (!machineLeadForm.customer_intent.trim()) {
+      toastWarning('Please describe the customer whole-machine purchase intent.');
+      return;
+    }
+    setMachineLeadSubmitting(true);
+    try {
+      await createMachineLead({
+        work_order_id: workOrder.id,
+        machine_type: machineLeadForm.machine_type,
+        customer_intent: machineLeadForm.customer_intent,
+        contact_name: machineLeadForm.contact_name || detail?.customer_name || '',
+        contact_phone: machineLeadForm.contact_phone || detail?.customer_phone || '',
+        region: machineLeadForm.region || detail?.region || detail?.customer_region || '',
+      });
+      toastSuccess('Machine lead submitted to Euchio sales.');
+      setMachineLeadForm({
+        machine_type: '',
+        customer_intent: '',
+        contact_name: '',
+        contact_phone: '',
+        region: '',
+      });
+    } catch (e) {
+      toastError('Machine lead submission failed: ' + e.message);
+    } finally {
+      setMachineLeadSubmitting(false);
+    }
+  };
+
   if (!workOrder) return null;
 
   // 使用 detail 中的最新状态（loadDetail 刷新后），回退到 prop 中的初始状态
@@ -171,6 +210,9 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
   const repairStatuses = ['in_service', 'pricing', 'resolved', 'pending_review', 'completed'];
   if ((isEngineer && repairStatuses.includes(effectiveStatus)) || (isCustomer && hasRepairRecord)) {
     tabs.push({ key: 'repairRecord', label: 'Service Report' });
+  }
+  if (isEngineer) {
+    tabs.push({ key: 'machineLead', label: 'Machine Lead' });
   }
 
   const renderInfoTab = () => (
@@ -518,6 +560,74 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
     </div>
   );
 
+  const renderMachineLeadTab = () => (
+    <div className="space-y-4">
+      <div className="rounded-xl border border-[var(--color-primary)]/25 bg-[var(--color-primary)]/5 p-4">
+        <h3 className="text-sm font-medium text-[var(--color-text-primary)]">Whole-machine opportunity</h3>
+        <p className="mt-1 text-xs leading-5 text-[var(--color-text-secondary)]">
+          Use this only when the customer is considering a new complete machine such as a laser cutting machine, press brake, or production line. Parts, consumables, peripherals, and retrofit opportunities stay in engineer value-added service workflows.
+        </p>
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-2">
+        <label>
+          <span className="mb-1 block text-xs text-[var(--color-text-secondary)]">Machine type</span>
+          <input
+            value={machineLeadForm.machine_type}
+            onChange={(e) => setMachineLeadForm({ ...machineLeadForm, machine_type: e.target.value })}
+            placeholder="Fiber laser cutting machine, press brake..."
+            className="w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text-primary)] outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
+          />
+        </label>
+        <label>
+          <span className="mb-1 block text-xs text-[var(--color-text-secondary)]">Region</span>
+          <input
+            value={machineLeadForm.region}
+            onChange={(e) => setMachineLeadForm({ ...machineLeadForm, region: e.target.value })}
+            placeholder={detail?.region || detail?.customer_region || 'Country / city'}
+            className="w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text-primary)] outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
+          />
+        </label>
+        <label>
+          <span className="mb-1 block text-xs text-[var(--color-text-secondary)]">Contact name</span>
+          <input
+            value={machineLeadForm.contact_name}
+            onChange={(e) => setMachineLeadForm({ ...machineLeadForm, contact_name: e.target.value })}
+            placeholder={detail?.customer_name || 'Customer contact'}
+            className="w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text-primary)] outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
+          />
+        </label>
+        <label>
+          <span className="mb-1 block text-xs text-[var(--color-text-secondary)]">Contact phone</span>
+          <input
+            value={machineLeadForm.contact_phone}
+            onChange={(e) => setMachineLeadForm({ ...machineLeadForm, contact_phone: e.target.value })}
+            placeholder={shouldShowCustomerContact ? detail?.customer_phone || 'Phone' : 'Visible after service starts'}
+            className="w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text-primary)] outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
+          />
+        </label>
+        <label className="sm:col-span-2">
+          <span className="mb-1 block text-xs text-[var(--color-text-secondary)]">Customer purchase intent *</span>
+          <textarea
+            value={machineLeadForm.customer_intent}
+            onChange={(e) => setMachineLeadForm({ ...machineLeadForm, customer_intent: e.target.value })}
+            placeholder="Describe the customer's whole-machine demand, planned timeline, production goal, and why Euchio sales should follow up."
+            rows={4}
+            className="w-full resize-none rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text-primary)] outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
+          />
+        </label>
+      </div>
+
+      <button
+        onClick={handleSubmitMachineLead}
+        disabled={machineLeadSubmitting}
+        className="w-full rounded-xl bg-[var(--color-primary)] py-3 text-sm font-medium text-white hover:bg-[var(--color-primary-hover)] disabled:opacity-50"
+      >
+        {machineLeadSubmitting ? 'Submitting...' : 'Submit to Euchio Sales'}
+      </button>
+    </div>
+  );
+
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="Work Order Details" size="2xl">
       <div className="min-h-0">
@@ -576,6 +686,7 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
                 canSubmitComplete={isEngineer && (effectiveStatus === 'in_service' || effectiveStatus === 'pricing')}
               />
             )}
+            {tab === 'machineLead' && renderMachineLeadTab()}
           </>
         )}
       </div>

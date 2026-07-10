@@ -188,13 +188,6 @@ export async function updateAdminLead(leadId, status) {
   });
 }
 
-export async function convertAdminLeadToWorkOrder(leadId) {
-  return request(`/api/admin/leads/${leadId}/convert-workorder`, {
-    method: 'POST',
-    body: JSON.stringify({}),
-  });
-}
-
 export async function getAdminKnowledge(page = 1, pageSize = 20, filters = {}) {
   const params = new URLSearchParams({ page, pageSize, ...filters });
   return request(`/api/admin/knowledge?${params}`);

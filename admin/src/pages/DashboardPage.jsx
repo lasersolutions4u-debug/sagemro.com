@@ -10,15 +10,15 @@ const TEXT = {
     title: 'SAGEMRO Operations Console',
     subtitle: 'Lead routing, service review, dispatch management, quote approval, service quality, and compliant archiving.',
     cards: {
-      aiLeadsToday: 'New AI leads today',
+      aiLeadsToday: 'New machine leads today',
       pendingReview: 'Service requests pending review',
       highRiskDowntime: 'High-risk downtime issues',
       pendingQuotes: 'Quotes pending review',
       pendingDispatch: 'Pending dispatch',
       inService: 'In service',
       pendingArchive: 'Pending archive',
-      partsLeads: 'Parts leads',
-      euchioMachineLeads: 'Euchio machine leads',
+      valueAddedRequests: 'Value-added requests',
+      euchioMachineLeads: 'Machine leads total',
     },
     status: {
       pending: 'Pending',
@@ -33,15 +33,15 @@ const TEXT = {
     title: 'SAGEMRO 运营中枢',
     subtitle: '线索分流、服务审核、派工管理、报价确认、服务质量和合规归档。',
     cards: {
-      aiLeadsToday: '今日新增 AI 线索',
+      aiLeadsToday: '今日新增整机线索',
       pendingReview: '待审核服务申请',
       highRiskDowntime: '高风险停机问题',
       pendingQuotes: '待报价',
       pendingDispatch: '待派工',
       inService: '服务中',
       pendingArchive: '待归档',
-      partsLeads: '备件线索',
-      euchioMachineLeads: 'Euchio 新机线索',
+      valueAddedRequests: '增值服务需求',
+      euchioMachineLeads: '整机线索总数',
     },
     status: {
       pending: '待处理',
@@ -89,7 +89,7 @@ export function DashboardPage() {
     { icon: UserCheck, label: t.cards.pendingDispatch, value: operations.pendingDispatch ?? stats.workOrders.pending, color: 'var(--color-info)' },
     { icon: Wrench, label: t.cards.inService, value: operations.inService ?? stats.workOrders.in_progress, color: 'var(--color-success)' },
     { icon: Archive, label: t.cards.pendingArchive, value: operations.pendingArchive ?? 0, color: 'var(--color-text-muted)' },
-    { icon: Package, label: t.cards.partsLeads, value: operations.partsLeads ?? 0, color: 'var(--color-warning)' },
+    { icon: Package, label: t.cards.valueAddedRequests, value: operations.valueAddedRequests ?? 0, color: 'var(--color-warning)' },
     { icon: Timer, label: t.cards.euchioMachineLeads, value: operations.euchioMachineLeads ?? 0, color: 'var(--color-primary)' },
   ];
 

@@ -1,12 +1,10 @@
 import { useState } from 'react';
-import { ArrowRight, Bot, ClipboardList, Send, ShieldAlert, Sparkles, X } from 'lucide-react';
-import { LeadForm } from '../Chat/LeadForm';
+import { ArrowRight, Bot, ClipboardList, ShieldAlert, Sparkles, X } from 'lucide-react';
 import { aiServiceTools, buildAiToolPrompt } from '../../data/aiServiceTools';
 
 export function AIToolsPanel({ onSendMessage }) {
   const [activeToolId, setActiveToolId] = useState(aiServiceTools[0].id);
   const [values, setValues] = useState({});
-  const [leadOpen, setLeadOpen] = useState(false);
 
   const activeTool = aiServiceTools.find((tool) => tool.id === activeToolId) || aiServiceTools[0];
 
@@ -196,25 +194,9 @@ export function AIToolsPanel({ onSendMessage }) {
               Use confirmed fields
               <ArrowRight size={14} />
             </button>
-            <button
-              type="button"
-              onClick={() => setLeadOpen(true)}
-              className="inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white text-xs font-medium transition-colors"
-            >
-              Request Follow-up
-              <Send size={14} />
-            </button>
           </div>
         </div>
       </div>
-
-      <LeadForm
-        isOpen={leadOpen}
-        onClose={() => setLeadOpen(false)}
-        source="ai_tool"
-        interest={activeTool.leadType}
-        initialMessage={`AI Tool: ${activeTool.title}\n${leadSummary}`}
-      />
     </div>
   );
 }

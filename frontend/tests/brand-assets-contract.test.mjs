@@ -85,12 +85,7 @@ test('main site first-impression copy keeps CN and COM market language separate'
 });
 
 test('COM inquiry path asks for service-ready international request details', () => {
-  const leadForm = read('frontend/src/components/Chat/LeadForm.jsx');
   const workOrderModal = read('frontend/src/components/Sidebar/WorkOrderModal.jsx');
-
-  assert.match(leadForm, /machine brand\/model, part number, country, urgency, and photos available/);
-  assert.match(leadForm, /Country \/ region, equipment model, part number, urgency, and preferred contact channel/);
-  assert.doesNotMatch(leadForm, /Briefly describe your equipment needs/);
 
   assert.match(workOrderModal, /Request Details/);
   assert.match(workOrderModal, /Country \/ Region/);
