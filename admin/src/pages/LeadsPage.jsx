@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { convertAdminLeadToWorkOrder, getAdminLeads, updateAdminLead } from '../services/api';
+import { getAdminLeads, updateAdminLead } from '../services/api';
 import { runtimeConfig } from '../config/runtime';
 
 const STATUS_MAP = {
@@ -34,6 +34,9 @@ const TEXT = {
       parts_identification_ai: 'Parts identification AI',
       repair_estimate_ai: 'Repair estimate AI',
       machine_selection_ai: 'Machine selection AI',
+      machine_purchase_ai: 'Machine purchase AI',
+      machine_purchase_engineer: 'Engineer-submitted machine lead',
+      engineer_machine_opportunity: 'Engineer-submitted machine lead',
       health_report_ai: 'Equipment health report AI',
       manual_service_request: 'Manual service request',
       contact_form: 'Contact form',
@@ -44,15 +47,14 @@ const TEXT = {
       high: 'High',
       critical: 'Downtime',
     },
-    title: 'Lead Inbox',
-    subtitle: 'Route service, spare parts, and new-machine opportunities by AI source, risk level, and recommended next step.',
+    title: 'Machine Lead Inbox',
+    subtitle: 'Whole-machine opportunities only. Euchio sales owns follow-up, with engineers supporting technical selection and site context.',
     all: 'All',
     total: (count) => `${count} total`,
     loading: 'Loading...',
     updateFailed: 'Update failed: ',
-    defaultWorkOrder: 'service request',
-    convertedMessage: (orderNo) => `Converted to service request: ${orderNo}. Continue assignment in Service Orders.`,
-    convertFailed: 'Failed to convert service request: ',
+    salesFollowUp: 'Euchio sales follow-up',
+    engineerAssisted: 'Engineer-assisted',
     headers: {
       name: 'Name',
       contact: 'Contact',
@@ -62,7 +64,7 @@ const TEXT = {
       nextStep: 'Recommended next step',
       assignment: 'Assignment',
       status: 'Status',
-      action: 'Action',
+      action: 'Sales follow-up',
       time: 'Time',
     },
     empty: 'No leads yet',
@@ -71,9 +73,7 @@ const TEXT = {
       converted: 'Converted',
       unassigned: 'Unassigned',
     },
-    converted: 'Converted to service request',
     processing: 'Processing',
-    convert: 'Convert to service request',
     previous: 'Previous',
     next: 'Next',
   },
@@ -94,6 +94,9 @@ const TEXT = {
       parts_identification_ai: '备件识别 AI',
       repair_estimate_ai: '维修预估 AI',
       machine_selection_ai: '新机选型 AI',
+      machine_purchase_ai: '整机采购 AI',
+      machine_purchase_engineer: '工程师提交整机线索',
+      engineer_machine_opportunity: '工程师提交整机线索',
       health_report_ai: '设备健康报告 AI',
       manual_service_request: '手动服务申请',
       contact_form: '联系表单',
@@ -104,15 +107,14 @@ const TEXT = {
       high: '高',
       critical: '停机',
     },
-    title: '线索池',
-    subtitle: '按 AI 来源、风险等级和推荐下一步分流服务、备件与新机机会。',
+    title: '整机线索池',
+    subtitle: '仅承接整机/新机设备商机。Euchio 业务员主跟进，工程师提供选型与现场技术配合。',
     all: '全部',
     total: (count) => `共 ${count} 条`,
     loading: '加载中...',
     updateFailed: '更新失败：',
-    defaultWorkOrder: '服务申请',
-    convertedMessage: (orderNo) => `已转为服务申请：${orderNo}。请到“派工与服务质量”继续分配区域负责人。`,
-    convertFailed: '转服务申请失败：',
+    salesFollowUp: 'Euchio 业务跟进',
+    engineerAssisted: '工程师协同',
     headers: {
       name: '姓名',
       contact: '联系方式',
@@ -122,7 +124,7 @@ const TEXT = {
       nextStep: '推荐下一步',
       assignment: '分配',
       status: '状态',
-      action: '运营动作',
+      action: '销售跟进',
       time: '时间',
     },
     empty: '暂无线索数据',
@@ -131,9 +133,7 @@ const TEXT = {
       converted: '已转化',
       unassigned: '未分配',
     },
-    converted: '已转服务申请',
     processing: '处理中',
-    convert: '转服务申请',
     previous: '上一页',
     next: '下一页',
   },
@@ -167,21 +167,6 @@ export function LeadsPage() {
       load();
     } catch (e) {
       setMessage(t.updateFailed + e.message);
-    } finally {
-      setUpdatingId(null);
-    }
-  };
-
-  const handleConvertToWorkOrder = async (lead) => {
-    setUpdatingId(lead.id);
-    setMessage('');
-    try {
-      const result = await convertAdminLeadToWorkOrder(lead.id);
-      const orderNo = result.work_order?.order_no || result.work_order_id || t.defaultWorkOrder;
-      setMessage(t.convertedMessage(orderNo));
-      load();
-    } catch (e) {
-      setMessage(t.convertFailed + e.message);
     } finally {
       setUpdatingId(null);
     }
@@ -284,20 +269,12 @@ export function LeadsPage() {
                         </select>
                       </td>
                       <td className="py-3 px-2">
-                        {lead.work_order_id || lead.assignment_status === 'converted' ? (
-                          <div className="text-xs text-[var(--color-success)]">
-                            {t.converted}
-                            {lead.work_order_id && <div className="font-mono text-[var(--color-text-muted)]">{lead.work_order_id}</div>}
-                          </div>
-                        ) : (
-                          <button
-                            onClick={() => handleConvertToWorkOrder(lead)}
-                            disabled={updatingId === lead.id}
-                            className="rounded-lg bg-[var(--color-primary)] px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50"
-                          >
-                            {updatingId === lead.id ? t.processing : t.convert}
-                          </button>
-                        )}
+                        <div className="text-xs text-[var(--color-text-secondary)]">
+                          {lead.source === 'engineer_machine_opportunity' || lead.source_type === 'machine_purchase_engineer'
+                            ? t.engineerAssisted
+                            : t.salesFollowUp}
+                          {lead.work_order_id && <div className="font-mono text-[var(--color-text-muted)]">{lead.work_order_id}</div>}
+                        </div>
                       </td>
                       <td className="py-3 px-2 text-[var(--color-text-secondary)] text-xs">{lead.created_at?.slice(0, 16)?.replace('T', ' ')}</td>
                     </tr>

@@ -1,12 +1,10 @@
 import { useState } from 'react';
-import { ArrowRight, Bot, ClipboardList, Send, ShieldAlert, Sparkles, X } from 'lucide-react';
-import { LeadForm } from '../Chat/LeadForm';
+import { ArrowRight, Bot, ClipboardList, ShieldAlert, Sparkles, X } from 'lucide-react';
 import { aiServiceTools, buildAiToolPrompt } from '../../data/aiServiceTools';
 
 export function AIToolsPanel({ onSendMessage }) {
   const [activeToolId, setActiveToolId] = useState(aiServiceTools[0].id);
   const [values, setValues] = useState({});
-  const [leadOpen, setLeadOpen] = useState(false);
 
   const activeTool = aiServiceTools.find((tool) => tool.id === activeToolId) || aiServiceTools[0];
 
@@ -31,10 +29,6 @@ export function AIToolsPanel({ onSendMessage }) {
     onSendMessage(`Start ${activeTool.title} as a SAGEMRO Service OS agent. First ask me to describe the problem naturally. Then auto-extract structured fields, identify missing information, provide safe preliminary feedback, and prepare the right SAGEMRO conversion action for ${activeTool.leadType}.`);
   };
 
-  const leadSummary = activeTool.fields
-    .map((field) => `${field.label}: ${currentValues[field.name] || '-'}`)
-    .join('\n');
-
   return (
     <div className="w-full max-w-7xl mx-auto rounded-[2rem] border border-[var(--color-border)] bg-white/85 p-4 shadow-sm sm:p-5">
       <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
@@ -47,7 +41,7 @@ export function AIToolsPanel({ onSendMessage }) {
             Six agents, one natural-language intake
           </h2>
           <p className="mt-2 max-w-3xl text-sm leading-relaxed text-[var(--color-text-secondary)]">
-            Users can start from chat. These agents help the system route the request, extract fields, generate immediate feedback, and prepare a service, parts, maintenance, or Euchio lead.
+            Users can start from chat. These agents help the system route the request, extract fields, generate immediate feedback, and prepare a service, parts, maintenance, retrofit, or accessory follow-up.
           </p>
         </div>
         <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs leading-relaxed text-slate-600">
@@ -196,25 +190,9 @@ export function AIToolsPanel({ onSendMessage }) {
               Use confirmed fields
               <ArrowRight size={14} />
             </button>
-            <button
-              type="button"
-              onClick={() => setLeadOpen(true)}
-              className="inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white text-xs font-medium transition-colors"
-            >
-              Request Follow-up
-              <Send size={14} />
-            </button>
           </div>
         </div>
       </div>
-
-      <LeadForm
-        isOpen={leadOpen}
-        onClose={() => setLeadOpen(false)}
-        source="ai_tool"
-        interest={activeTool.leadType}
-        initialMessage={`AI Tool: ${activeTool.title}\n${leadSummary}`}
-      />
     </div>
   );
 }

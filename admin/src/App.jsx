@@ -20,7 +20,7 @@ const TEXT = {
     logout: 'Sign out',
     nav: {
       dashboard: 'Operations Dashboard',
-      leads: 'Lead Inbox',
+      leads: 'Machine Leads',
       upsellRequests: 'Upsell Requests',
       workorders: 'Service Orders',
       engineerApplications: 'Engineer Applications',
@@ -36,7 +36,7 @@ const TEXT = {
     logout: '退出登录',
     nav: {
       dashboard: '运营驾驶舱',
-      leads: '线索池',
+      leads: '整机线索',
       upsellRequests: '增购需求池',
       workorders: '派工与服务质量',
       engineerApplications: '工程师申请审核',

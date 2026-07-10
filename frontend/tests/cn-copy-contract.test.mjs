@@ -169,7 +169,7 @@ test('CN secondary customer flows include localized visible copy', () => {
     ['frontend/src/components/WorkOrder/PricingPanels.jsx', /正式报价|确认报价|协商调整|SAGEMRO 正在准备正式报价/],
     ['frontend/src/components/WorkOrder/AttachmentsPanel.jsx', /上传中|暂无附件|支持 JPG\/PNG\/GIF\/WebP\/MP4\/WebM/],
     ['frontend/src/components/Payment/PaymentModal.jsx', /确认付款|付款成功|模拟付款环境|正式付款安排以 SAGEMRO 确认为准/],
-    ['frontend/src/components/Chat/LeadForm.jsx', /申请 SAGEMRO 跟进|提交成功|请留下联系方式/],
+    ['frontend/src/components/WorkOrder/WorkOrderDetailModal.jsx', /整机线索|整机商机|提交到后台整机线索池/],
     ['frontend/src/components/Device/MyDevicesModal.jsx', /我的设备|设备信息会自动整理|不会公开展示/],
     ['frontend/src/components/Settings/CustomerHomeModal.jsx', /公司资料|公司信息|账户安全|保存修改/],
     ['frontend/src/components/Device/DeviceForm.jsx', /添加设备|设备名称|设备类型|添加/],

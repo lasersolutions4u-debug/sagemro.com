@@ -7,6 +7,7 @@ import {
   cancelWorkOrder,
   submitEngineerReview,
   getEngineerReview,
+  createMachineLead,
 } from '../../services/api';
 import {
   statusConfig,
@@ -66,6 +67,14 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
   const [engReviewComment, setEngReviewComment] = useState('');
   const [engReviewSubmitting, setEngReviewSubmitting] = useState(false);
   const [upsellOpen, setUpsellOpen] = useState(false);
+  const [machineLeadForm, setMachineLeadForm] = useState({
+    machine_type: '',
+    customer_intent: '',
+    contact_name: '',
+    contact_phone: '',
+    region: '',
+  });
+  const [machineLeadSubmitting, setMachineLeadSubmitting] = useState(false);
   const workOrderId = workOrder?.id;
 
   const loadDetail = useCallback(async () => {
@@ -126,6 +135,36 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
     }
   };
 
+  const handleSubmitMachineLead = async () => {
+    if (!machineLeadForm.customer_intent.trim()) {
+      toastWarning(isCn ? '请填写客户整机采购意向。' : 'Please describe the customer whole-machine purchase intent.');
+      return;
+    }
+    setMachineLeadSubmitting(true);
+    try {
+      await createMachineLead({
+        work_order_id: workOrder.id,
+        machine_type: machineLeadForm.machine_type,
+        customer_intent: machineLeadForm.customer_intent,
+        contact_name: machineLeadForm.contact_name || detail?.customer_name || '',
+        contact_phone: machineLeadForm.contact_phone || detail?.customer_phone || '',
+        region: machineLeadForm.region || detail?.region || detail?.customer_region || '',
+      });
+      toastSuccess(isCn ? '整机线索已提交到后台线索池。' : 'Machine lead submitted to the admin lead pool.');
+      setMachineLeadForm({
+        machine_type: '',
+        customer_intent: '',
+        contact_name: '',
+        contact_phone: '',
+        region: '',
+      });
+    } catch (e) {
+      toastError((isCn ? '整机线索提交失败：' : 'Machine lead submission failed: ') + e.message);
+    } finally {
+      setMachineLeadSubmitting(false);
+    }
+  };
+
   if (!workOrder) return null;
 
   // 使用 detail 中的最新状态（loadDetail 刷新后），回退到 prop 中的初始状态
@@ -165,6 +204,9 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
   const repairStatuses = ['in_service', 'pricing', 'resolved', 'pending_review', 'completed'];
   if ((isEngineer && repairStatuses.includes(effectiveStatus)) || (isCustomer && hasRepairRecord)) {
     tabs.push({ key: 'repairRecord', label: isCn ? '服务报告' : 'Service Report' });
+  }
+  if (isEngineer) {
+    tabs.push({ key: 'machineLead', label: isCn ? '整机线索' : 'Machine Lead' });
   }
 
   // 附件Tab：工单已分配后可见；若 AI 对话图片已随工单带入，pending 阶段也要可查看。
@@ -515,6 +557,78 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
     </div>
   );
 
+  const renderMachineLeadTab = () => (
+    <div className="space-y-4">
+      <div className="rounded-xl border border-[var(--color-primary)]/25 bg-[var(--color-primary)]/5 p-4">
+        <h3 className="text-sm font-medium text-[var(--color-text-primary)]">
+          {isCn ? '整机商机' : 'Whole-machine opportunity'}
+        </h3>
+        <p className="mt-1 text-xs leading-5 text-[var(--color-text-secondary)]">
+          {isCn
+            ? '仅在客户考虑购买激光切割机、折弯机、整线等完整设备时使用。配件、耗材、外设和升级改造仍走工程师增值服务流程。'
+            : 'Use this only when the customer is considering a new complete machine such as a laser cutting machine, press brake, or production line. Parts, consumables, peripherals, and retrofit opportunities stay in engineer value-added service workflows.'}
+        </p>
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-2">
+        <label>
+          <span className="mb-1 block text-xs text-[var(--color-text-secondary)]">{isCn ? '设备类型' : 'Machine type'}</span>
+          <input
+            value={machineLeadForm.machine_type}
+            onChange={(e) => setMachineLeadForm({ ...machineLeadForm, machine_type: e.target.value })}
+            placeholder={isCn ? '光纤激光切割机、折弯机...' : 'Fiber laser cutting machine, press brake...'}
+            className="w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text-primary)] outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
+          />
+        </label>
+        <label>
+          <span className="mb-1 block text-xs text-[var(--color-text-secondary)]">{isCn ? '地区' : 'Region'}</span>
+          <input
+            value={machineLeadForm.region}
+            onChange={(e) => setMachineLeadForm({ ...machineLeadForm, region: e.target.value })}
+            placeholder={detail?.region || detail?.customer_region || (isCn ? '国家 / 城市' : 'Country / city')}
+            className="w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text-primary)] outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
+          />
+        </label>
+        <label>
+          <span className="mb-1 block text-xs text-[var(--color-text-secondary)]">{isCn ? '联系人' : 'Contact name'}</span>
+          <input
+            value={machineLeadForm.contact_name}
+            onChange={(e) => setMachineLeadForm({ ...machineLeadForm, contact_name: e.target.value })}
+            placeholder={detail?.customer_name || (isCn ? '客户联系人' : 'Customer contact')}
+            className="w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text-primary)] outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
+          />
+        </label>
+        <label>
+          <span className="mb-1 block text-xs text-[var(--color-text-secondary)]">{isCn ? '联系电话' : 'Contact phone'}</span>
+          <input
+            value={machineLeadForm.contact_phone}
+            onChange={(e) => setMachineLeadForm({ ...machineLeadForm, contact_phone: e.target.value })}
+            placeholder={detail?.customer_phone || (isCn ? '客户电话' : 'Phone')}
+            className="w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text-primary)] outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
+          />
+        </label>
+        <label className="sm:col-span-2">
+          <span className="mb-1 block text-xs text-[var(--color-text-secondary)]">{isCn ? '客户整机采购意向 *' : 'Customer purchase intent *'}</span>
+          <textarea
+            value={machineLeadForm.customer_intent}
+            onChange={(e) => setMachineLeadForm({ ...machineLeadForm, customer_intent: e.target.value })}
+            placeholder={isCn ? '说明客户想买的整机设备、时间计划、产能目标和现场背景。' : "Describe the customer's whole-machine demand, planned timeline, production goal, and site context."}
+            rows={4}
+            className="w-full resize-none rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text-primary)] outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
+          />
+        </label>
+      </div>
+
+      <button
+        onClick={handleSubmitMachineLead}
+        disabled={machineLeadSubmitting}
+        className="w-full rounded-xl bg-[var(--color-primary)] py-3 text-sm font-medium text-white hover:bg-[var(--color-primary-hover)] disabled:opacity-50"
+      >
+        {machineLeadSubmitting ? (isCn ? '提交中...' : 'Submitting...') : (isCn ? '提交到后台整机线索池' : 'Submit to Admin Lead Pool')}
+      </button>
+    </div>
+  );
+
   return (
     <>
     <Modal isOpen={isOpen} onClose={onClose} title={isCn ? '工单详情' : 'Work Order Details'} size="md">
@@ -572,6 +686,7 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
                 userId={userId}
               />
             )}
+            {tab === 'machineLead' && renderMachineLeadTab()}
           </>
         )}
       </div>

@@ -221,9 +221,28 @@ test('handleChat prompt teaches CN users the correct portal and auth entry detai
   assert.match(prompt, /左侧工具栏底部/);
   assert.match(prompt, /移动端.*左上角菜单/s);
   assert.match(prompt, /公司名称、姓名、密码、手机号、邮箱和邮箱验证码/);
-  assert.match(prompt, /济南钰峭机械有限公司（EUCHIO）/);
   assert.doesNotMatch(prompt, /右上角.*登录/);
   assert.doesNotMatch(prompt, /真实姓名/);
+});
+
+test('handleChat prompt keeps customer-facing machine recommendations neutral', async () => {
+  const prompt = await captureChatPrompt({
+    request: makeRequest({
+      conversation_id: 'machine-brand-neutrality-1',
+      message: '我需要购买一台新的3015 单平台 激光切割机，3000W，买哪个品牌比较好？',
+    }, null, 'https://api.sagemro.com/api/chat', 'https://sagemro.com'),
+  });
+
+  assert.match(prompt, /Customer-facing machine recommendations must stay neutral/i);
+  assert.match(prompt, /Do not mention affiliated machine suppliers, affiliated corporate operators, related sales websites, sales handoff, or internal lead routing/i);
+  assert.match(prompt, /public market evidence/i);
+  assert.doesNotMatch(prompt, /EUCHIO/i);
+  assert.doesNotMatch(prompt, /Jinan Euchio/i);
+  assert.doesNotMatch(prompt, /euchio\.com/i);
+  assert.doesNotMatch(prompt, /EUCHIO 主要产品线/);
+  assert.doesNotMatch(prompt, /济南钰峭机械有限公司（EUCHIO）/);
+  assert.doesNotMatch(prompt, /Jinan Euchio Machinery Co\., Ltd\. 承接新机选型/);
+  assert.doesNotMatch(prompt, /引导用户访问 euchio\.com/);
 });
 
 test('handleChat tells COM site to answer English by default', async () => {
