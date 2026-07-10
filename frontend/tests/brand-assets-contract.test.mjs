@@ -10,7 +10,7 @@ function read(relativePath) {
 }
 
 function extractPlaceholderExpression(source) {
-  const match = source.match(/const placeholder = ([\s\S]*?);\n\n  return \(/);
+  const match = source.match(/const placeholder = ([^;]+);/);
   assert.ok(match, 'expected InputArea placeholder expression to be discoverable');
   return match[1];
 }
