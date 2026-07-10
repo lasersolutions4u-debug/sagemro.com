@@ -242,6 +242,21 @@ test('engineer application and admin engineer pages render regions and skills as
   assert.match(applicationsPage, /renderTags\(application\.skill_tags/);
 });
 
+test('engineer recruiting page is an ad-ready landing page with modal application', () => {
+  const recruiting = read('frontend/src/components/Engineer/EngineerRecruitingPage.jsx');
+
+  assert.match(recruiting, /modalOpen/);
+  assert.match(recruiting, /Apply now/);
+  assert.match(recruiting, /Why join SAGEMRO/);
+  assert.match(recruiting, /What we look for/);
+  assert.match(recruiting, /Regional Lead opportunity/);
+  assert.match(recruiting, /How applications work/);
+  assert.match(recruiting, /Frequently asked questions/);
+  assert.match(recruiting, /Approved representatives receive an account activation link/);
+  assert.match(recruiting, /fixed inset-0 z-50/);
+  assert.doesNotMatch(recruiting, /lg:grid-cols-\[1\.06fr_0\.94fr\]/);
+});
+
 test('engineer task overview uses two columns on mobile', () => {
   const workspace = read('frontend/src/components/Engineer/EngineerWorkspace.jsx');
 
