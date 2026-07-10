@@ -353,6 +353,23 @@ test('engineer task overview uses two columns on mobile', () => {
   assert.match(workspace, /grid grid-cols-2 gap-3 sm:grid-cols-2 lg:grid-cols-5/);
 });
 
+test('engineer task overview shows 8 personal metrics and 2 regional metrics', () => {
+  const workspace = read('frontend/src/components/Engineer/EngineerWorkspace.jsx');
+
+  assert.match(workspace, /quotePending: tickets\.filter/);
+  assert.match(workspace, /paymentFollowUp: tickets\.filter/);
+  assert.match(workspace, /regionalQueue: tickets\.filter/);
+  assert.match(workspace, /label: 'Quote Pending'/);
+  assert.match(workspace, /label: 'Scheduled Dates'/);
+  assert.match(workspace, /label: 'Regional Queue'/);
+  assert.match(workspace, /label: 'Payment Follow-up'/);
+  assert.match(workspace, /scheduledPreviewCount/);
+  assert.match(workspace, /const personalMetrics = \[/);
+  assert.match(workspace, /const regionalMetrics = isRegionalLead/);
+  assert.match(workspace, /const metrics = \[\.\.\.regionalMetrics, \.\.\.personalMetrics\]/);
+  assert.doesNotMatch(workspace, /label: 'Payment Follow-up'[\s\S]*const personalMetrics = \[/);
+});
+
 test('engineer workspace gives English next steps and selected task context', () => {
   const workspace = read('frontend/src/components/Engineer/EngineerWorkspace.jsx');
 

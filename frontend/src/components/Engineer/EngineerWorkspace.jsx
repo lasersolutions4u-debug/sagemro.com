@@ -1,5 +1,15 @@
 import { useCallback, useEffect, useState } from 'react';
-import { AlertTriangle, ClipboardCheck, FileText, Package, ShieldCheck, Wrench } from 'lucide-react';
+import {
+  AlertTriangle,
+  CalendarDays,
+  ClipboardCheck,
+  CreditCard,
+  FileText,
+  Package,
+  ReceiptText,
+  ShieldCheck,
+  Wrench,
+} from 'lucide-react';
 import {
   assignEngineerWorkOrder,
   acceptTicket,
@@ -47,7 +57,10 @@ function groupTickets(tickets) {
     today: tickets.filter((ticket) => ['assigned', 'in_progress', 'in_service'].includes(ticket.status)),
     needsAction: tickets.filter((ticket) => ['assigned', 'pricing', 'in_service', 'pending_payment'].includes(ticket.status)),
     pending: tickets.filter((ticket) => ['pending', 'pending_dispatch', 'assigned'].includes(ticket.status)),
+    regionalQueue: tickets.filter((ticket) => ticket.status === 'pending_dispatch'),
     active: tickets.filter((ticket) => ['in_progress', 'in_service', 'pricing'].includes(ticket.status)),
+    quotePending: tickets.filter((ticket) => ticket.status === 'pricing'),
+    paymentFollowUp: tickets.filter((ticket) => ['pending_payment', 'payment_review'].includes(ticket.status)),
     reports: tickets.filter((ticket) => ['resolved', 'pending_review'].includes(ticket.status)),
     parts: tickets.filter((ticket) => /parts|spare|consumable/i.test(`${ticket.type || ''} ${ticket.description || ''}`)),
   };
@@ -381,15 +394,23 @@ export function EngineerWorkspace({ currentUser, onLogout, onOpenProfile }) {
   const calendarPreviewDays = buildCalendarPreviewDays();
   const scheduledDateKeys = getScheduledDateKeys(calendarPreviewEvents, calendarPreviewDays[0]?.date);
   const scheduledPreviewCount = calendarPreviewDays.filter((day) => scheduledDateKeys.has(day.key)).length;
-  const metrics = [
-    ...(isRegionalLead ? [{ icon: ClipboardCheck, label: 'Regional Queue', value: grouped.pending.length }] : []),
+  const personalMetrics = [
     { icon: AlertTriangle, label: 'Needs action', value: grouped.needsAction.length },
     { icon: ClipboardCheck, label: "Today's Tasks", value: grouped.today.length },
     { icon: AlertTriangle, label: 'Pending Confirmation', value: grouped.pending.length },
     { icon: Wrench, label: 'In Service', value: grouped.active.length },
+    { icon: ReceiptText, label: 'Quote Pending', value: grouped.quotePending.length },
+    { icon: CalendarDays, label: 'Scheduled Dates', value: scheduledPreviewCount },
     { icon: FileText, label: 'Reports Due', value: grouped.reports.length },
     { icon: Package, label: 'Parts Needs', value: grouped.parts.length },
   ];
+  const regionalMetrics = isRegionalLead
+    ? [
+        { icon: ClipboardCheck, label: 'Regional Queue', value: grouped.regionalQueue.length },
+        { icon: CreditCard, label: 'Payment Follow-up', value: grouped.paymentFollowUp.length },
+      ]
+    : [];
+  const metrics = [...regionalMetrics, ...personalMetrics];
 
   return (
     <>
