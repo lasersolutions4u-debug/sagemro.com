@@ -374,20 +374,7 @@ export function EngineerWorkspace({ currentUser, onLogout, onOpenProfile }) {
             </div>
           </div>
 
-          <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5">
-            <div className="mb-3 flex items-center gap-2">
-              <ShieldCheck size={18} className="text-[var(--color-primary)]" />
-              <h2 className="font-semibold">Service Standard Checklist</h2>
-            </div>
-            <div className="space-y-2">
-              {CHECKLIST.map((item) => (
-                <label key={item} className="flex gap-2 text-sm text-[var(--color-text-secondary)]">
-                  <input type="checkbox" className="mt-1" />
-                  <span>{item}</span>
-                </label>
-              ))}
-            </div>
-          </div>
+          <EngineerAvailabilityCalendar />
         </section>
 
         <section className="grid gap-4 lg:grid-cols-[1.4fr_1fr]">
@@ -490,7 +477,6 @@ export function EngineerWorkspace({ currentUser, onLogout, onOpenProfile }) {
           </div>
 
           <aside className="space-y-4">
-            <EngineerAvailabilityCalendar />
             <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5">
               <h2 className="mb-3 font-semibold">Current Task Context</h2>
               {activeTicket ? (
@@ -553,6 +539,20 @@ export function EngineerWorkspace({ currentUser, onLogout, onOpenProfile }) {
                   Select a service task to review customer issue, machine record, and preparation notes.
                 </p>
               )}
+            </div>
+            <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5">
+              <div className="mb-3 flex items-center gap-2">
+                <ShieldCheck size={18} className="text-[var(--color-primary)]" />
+                <h2 className="font-semibold">Service Standard Checklist</h2>
+              </div>
+              <div className="space-y-2">
+                {CHECKLIST.map((item) => (
+                  <label key={item} className="flex gap-2 text-sm text-[var(--color-text-secondary)]">
+                    <input type="checkbox" className="mt-1" />
+                    <span>{item}</span>
+                  </label>
+                ))}
+              </div>
             </div>
           </aside>
         </section>

@@ -384,6 +384,23 @@ test('engineer workspace keeps task context and scheduling display fully English
   assert.doesNotMatch(calendar, /type="datetime-local"/);
 });
 
+test('engineer workspace places calendar above tasks and checklist at the right bottom', () => {
+  const workspace = read('frontend/src/components/Engineer/EngineerWorkspace.jsx');
+
+  const taskOverviewIndex = workspace.indexOf('Task Overview');
+  const calendarIndex = workspace.indexOf('<EngineerAvailabilityCalendar />');
+  const serviceTasksIndex = workspace.indexOf('Service Tasks');
+  const contextIndex = workspace.indexOf('Current Task Context');
+  const preparationIndex = workspace.indexOf('Job Preparation');
+  const checklistIndex = workspace.indexOf('Service Standard Checklist');
+
+  assert.ok(taskOverviewIndex > -1);
+  assert.ok(calendarIndex > taskOverviewIndex);
+  assert.ok(calendarIndex < serviceTasksIndex);
+  assert.ok(contextIndex < preparationIndex);
+  assert.ok(preparationIndex < checklistIndex);
+});
+
 test('customer service views translate machine fields to English', () => {
   const display = read('frontend/src/utils/workOrderDisplay.js');
   const myServices = read('frontend/src/components/Sidebar/MyWorkOrdersModal.jsx');
