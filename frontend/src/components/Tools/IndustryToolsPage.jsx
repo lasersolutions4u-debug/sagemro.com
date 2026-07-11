@@ -5,7 +5,11 @@ import {
   ChartNoAxesCombined,
   CircleDollarSign,
   Factory,
+  Flame,
+  Gauge,
+  Ruler,
   Scale,
+  Snowflake,
 } from 'lucide-react';
 import { BrandMark } from '../common/BrandMark';
 import { Footer } from '../common/Footer';
@@ -15,7 +19,6 @@ import {
   getToolBySlug,
   industryTools,
   materialDensities,
-  plannedIndustryTools,
   shapeProfiles,
 } from '../../data/industryTools';
 
@@ -24,6 +27,11 @@ const toolIcons = {
   'steel-price': ChartNoAxesCombined,
   'laser-cost': CircleDollarSign,
   'press-brake-tonnage': Factory,
+  'gas-consumption': Flame,
+  'cutting-speed': Gauge,
+  'bend-allowance': Ruler,
+  'equipment-roi': CircleDollarSign,
+  'auxiliary-sizing': Snowflake,
 };
 
 function setMeta(name, content) {
@@ -53,7 +61,7 @@ export function IndustryToolsPage({ pathname = '/tools', onOpenLegal }) {
   const pageTitle = selectedTool ? selectedTool.seoTitle : 'Free Sheet Metal and Laser Cutting Calculators';
   const pageDescription = selectedTool
     ? selectedTool.seoDescription
-    : 'Use free SAGEMRO calculators for metal weight, steel price planning, laser cutting cost, and press brake tonnage.';
+    : 'Use free SAGEMRO calculators for metal weight, steel price planning, laser cutting cost, gas use, speed reference, bending, ROI, and auxiliary sizing.';
 
   useEffect(() => {
     document.title = `${pageTitle} | SAGEMRO`;
@@ -86,7 +94,7 @@ export function IndustryToolsPage({ pathname = '/tools', onOpenLegal }) {
 function ToolsHub({ onOpenLegal }) {
   useEffect(() => {
     document.title = 'Free Sheet Metal and Laser Cutting Calculators | SAGEMRO';
-    setMeta('description', 'Use free SAGEMRO calculators for metal weight, steel price planning, laser cutting cost, and press brake tonnage.');
+    setMeta('description', 'Use free SAGEMRO calculators for metal weight, steel price planning, laser cutting cost, gas use, speed reference, bending, ROI, and auxiliary sizing.');
     setCanonical('/tools');
   }, []);
 
@@ -103,15 +111,15 @@ function ToolsHub({ onOpenLegal }) {
             Shop-floor tools
           </div>
           <h1 className="mt-5 max-w-3xl text-3xl font-semibold leading-tight text-[var(--color-text-primary)] sm:text-5xl">
-            Free calculators for sheet metal, laser cutting, bending, and material planning.
+            Free tools for sheet metal, laser cutting, bending, ROI, and auxiliary planning.
           </h1>
           <p className="mt-4 max-w-2xl text-sm leading-7 text-[var(--color-text-secondary)] sm:text-base">
-            Start with numbers you can check: material weight, reference budget, cutting time, and press brake tonnage. Each tool keeps assumptions visible so you can review the next decision with better context.
+            Start with numbers you can check: material weight, reference budget, cutting time, assist gas, bending assumptions, equipment ROI, and support equipment needs. Each tool keeps assumptions visible so you can review the next decision with better context.
           </p>
         </div>
 
         <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-elevated)] p-4 shadow-sm">
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {industryTools.map((tool) => (
               <ToolLinkCard key={tool.id} tool={tool} />
             ))}
@@ -137,22 +145,17 @@ function ToolsHub({ onOpenLegal }) {
       </section>
 
       <section className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
-        <div className="mb-4 flex items-center justify-between gap-4">
+        <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-elevated)] p-4 sm:flex sm:items-center sm:justify-between sm:gap-4">
           <div>
-            <div className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--color-text-muted)]">Tool roadmap</div>
-            <h2 className="mt-1 text-2xl font-semibold text-[var(--color-text-primary)]">Planned next calculators</h2>
+            <div className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--color-text-muted)]">Insights</div>
+            <h2 className="mt-1 text-xl font-semibold text-[var(--color-text-primary)]">Read practical notes behind the calculators</h2>
+            <p className="mt-1 text-sm leading-6 text-[var(--color-text-secondary)]">
+              Short equipment and process articles connect the tools to real production decisions.
+            </p>
           </div>
-          <a href="/insights" className="hidden rounded-lg border border-[var(--color-border)] px-3 py-2 text-sm text-[var(--color-text-secondary)] hover:border-[var(--color-primary)] hover:text-[var(--color-primary)] sm:inline-flex">
+          <a href="/insights" className="mt-4 inline-flex rounded-lg border border-[var(--color-border)] px-3 py-2 text-sm text-[var(--color-text-secondary)] hover:border-[var(--color-primary)] hover:text-[var(--color-primary)] sm:mt-0">
             Read insights
           </a>
-        </div>
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {plannedIndustryTools.map((tool) => (
-            <div key={tool.label} className="rounded-xl border border-dashed border-[var(--color-border)] bg-[var(--color-surface-elevated)] p-4">
-              <h3 className="text-sm font-semibold text-[var(--color-text-primary)]">{tool.label}</h3>
-              <p className="mt-1 text-sm leading-6 text-[var(--color-text-secondary)]">{tool.description}</p>
-            </div>
-          ))}
         </div>
       </section>
     </ToolPageShell>
@@ -189,9 +192,9 @@ function ToolDetail({ tool, values, onChange, onOpenLegal }) {
               Related tools
             </div>
             <div className="mt-3 grid gap-2">
-              {relatedTools.map((item) => (
+              {relatedTools.slice(0, 6).map((item) => (
                 <a key={item.id} href={`/tools/${item.slug}`} className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text-primary)] hover:border-[var(--color-primary)]">
-                  {item.label}
+                  {item.shortLabel || item.label}
                 </a>
               ))}
             </div>

@@ -5,6 +5,7 @@ import {
   calculateIndustryToolResult,
   defaultIndustryToolForms,
   getToolBySlug,
+  industryTools,
   materialDensities,
   shapeProfiles,
 } from '../src/data/industryTools.js';
@@ -73,9 +74,95 @@ test('steel price calculator uses selected material and structural profile weigh
 });
 
 test('public tool slugs resolve to SEO-ready tool definitions', () => {
+  assert.equal(industryTools.length, 9);
   assert.equal(getToolBySlug('metal-weight-calculator').id, 'metal-weight');
   assert.equal(getToolBySlug('steel-price-watch').id, 'steel-price');
   assert.equal(getToolBySlug('laser-cutting-cost-calculator').id, 'laser-cost');
   assert.equal(getToolBySlug('press-brake-tonnage-calculator').id, 'press-brake-tonnage');
+  assert.equal(getToolBySlug('laser-assist-gas-consumption-calculator').id, 'gas-consumption');
+  assert.equal(getToolBySlug('laser-cutting-speed-reference').id, 'cutting-speed');
+  assert.equal(getToolBySlug('press-brake-v-die-bend-allowance-helper').id, 'bend-allowance');
+  assert.equal(getToolBySlug('laser-cutting-machine-roi-calculator').id, 'equipment-roi');
+  assert.equal(getToolBySlug('laser-chiller-dust-collector-sizing-checklist').id, 'auxiliary-sizing');
   assert.equal(getToolBySlug('missing-tool'), null);
+});
+
+test('gas consumption calculator estimates assist gas usage and cost', () => {
+  const result = calculateIndustryToolResult('gas-consumption', {
+    ...defaultIndustryToolForms['gas-consumption'],
+    assistGas: 'nitrogen',
+    nozzleDiameterMm: '2',
+    pressureBar: '12',
+    cuttingMinutes: '45',
+    dutyCyclePercent: '70',
+    gasCostUsdM3: '0.42',
+  });
+
+  assert.equal(result.title, 'Estimated assist gas consumption');
+  assert.match(result.rows.find(([label]) => label === 'Assist gas')?.[1], /Nitrogen/);
+  assert.match(result.rows.find(([label]) => label === 'Estimated volume')?.[1], /m3/);
+  assert.match(result.rows.find(([label]) => label === 'Estimated gas cost')?.[1], /\$/);
+});
+
+test('cutting speed reference returns a material and power based range', () => {
+  const result = calculateIndustryToolResult('cutting-speed', {
+    ...defaultIndustryToolForms['cutting-speed'],
+    material: 'carbon_steel',
+    assistGas: 'oxygen',
+    thicknessMm: '6',
+    laserPowerKw: '3',
+  });
+
+  assert.equal(result.title, 'Reference cutting speed range');
+  assert.match(result.rows.find(([label]) => label === 'Material')?.[1], /Carbon steel/);
+  assert.match(result.rows.find(([label]) => label === 'Reference range')?.[1], /m\/min/);
+});
+
+test('bend allowance helper calculates bend allowance and flat length reference', () => {
+  const result = calculateIndustryToolResult('bend-allowance', {
+    ...defaultIndustryToolForms['bend-allowance'],
+    thicknessMm: '3',
+    insideRadiusMm: '3',
+    bendAngleDeg: '90',
+    kFactor: '0.38',
+    bendCount: '2',
+    flangeAMm: '100',
+    flangeBMm: '80',
+  });
+
+  assert.equal(result.title, 'Estimated bend allowance');
+  assert.match(result.rows.find(([label]) => label === 'Bend allowance')?.[1], /mm/);
+  assert.match(result.rows.find(([label]) => label === 'Flat length reference')?.[1], /mm/);
+});
+
+test('equipment ROI calculator compares outsource spend and new machine cost', () => {
+  const result = calculateIndustryToolResult('equipment-roi', {
+    ...defaultIndustryToolForms['equipment-roi'],
+    outsourceCostUsdMonth: '12000',
+    machinePaymentUsdMonth: '4500',
+    operatorCostUsdMonth: '3800',
+    maintenanceUsdMonth: '700',
+    utilitiesUsdMonth: '500',
+    addedRevenueUsdMonth: '2500',
+    upfrontCostUsd: '25000',
+  });
+
+  assert.equal(result.title, 'Estimated equipment ROI');
+  assert.match(result.rows.find(([label]) => label === 'Monthly net impact')?.[1], /\$/);
+  assert.match(result.rows.find(([label]) => label === 'Simple payback')?.[1], /months/);
+});
+
+test('auxiliary sizing checklist estimates chiller and dust collector reference ranges', () => {
+  const result = calculateIndustryToolResult('auxiliary-sizing', {
+    ...defaultIndustryToolForms['auxiliary-sizing'],
+    laserPowerKw: '6',
+    tableLengthMm: '3000',
+    tableWidthMm: '1500',
+    cuttingHoursDay: '8',
+    dustLoad: 'medium',
+  });
+
+  assert.equal(result.title, 'Auxiliary equipment sizing reference');
+  assert.match(result.rows.find(([label]) => label === 'Chiller capacity reference')?.[1], /kW/);
+  assert.match(result.rows.find(([label]) => label === 'Dust collector airflow reference')?.[1], /CFM/);
 });

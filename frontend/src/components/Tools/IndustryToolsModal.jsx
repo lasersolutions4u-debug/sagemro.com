@@ -1,94 +1,89 @@
-import { useState } from 'react';
 import {
   Calculator,
   ChartNoAxesCombined,
   CircleDollarSign,
+  Gauge,
   ExternalLink,
   Factory,
+  Fan,
+  Flame,
+  Ruler,
   Scale,
+  Snowflake,
 } from 'lucide-react';
 import { Modal } from '../common/Modal';
-import { IndustryToolCalculator } from './IndustryToolCalculator';
-import {
-  defaultIndustryToolForms,
-  industryTools,
-} from '../../data/industryTools';
+import { industryTools } from '../../data/industryTools';
 
 const toolIcons = {
   'metal-weight': Scale,
   'steel-price': ChartNoAxesCombined,
   'laser-cost': CircleDollarSign,
   'press-brake-tonnage': Factory,
+  'gas-consumption': Flame,
+  'cutting-speed': Gauge,
+  'bend-allowance': Ruler,
+  'equipment-roi': CircleDollarSign,
+  'auxiliary-sizing': Snowflake,
 };
 
-export function IndustryToolsModal({ isOpen, onClose, onSendMessage }) {
-  const [activeToolId, setActiveToolId] = useState(industryTools[0].id);
-  const [forms, setForms] = useState(defaultIndustryToolForms);
-  const activeTool = industryTools.find((tool) => tool.id === activeToolId) || industryTools[0];
-  const values = forms[activeToolId] || defaultIndustryToolForms[activeToolId];
-
-  const updateValue = (name, value) => {
-    setForms((current) => ({
-      ...current,
-      [activeToolId]: {
-        ...(current[activeToolId] || defaultIndustryToolForms[activeToolId]),
-        [name]: value,
-      },
-    }));
-  };
-
+export function IndustryToolsModal({ isOpen, onClose }) {
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Industry Tools" size="full">
-      <div className="grid gap-4 lg:grid-cols-[280px_minmax(0,1fr)]">
-        <aside className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-elevated)] p-3">
-          <div className="mb-3 flex items-center justify-between gap-2 px-1">
+    <Modal isOpen={isOpen} onClose={onClose} title="Industry Tools" size="2xl">
+      <div>
+        <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+          <div>
             <div className="flex items-center gap-2 text-xs font-semibold uppercase text-[var(--color-text-muted)]">
-              <Calculator size={14} />
-              Shop-floor calculators
+              <Calculator size={14} className="text-[var(--color-primary)]" />
+              Shop-floor tools
             </div>
+            <p className="mt-1 max-w-xl text-sm leading-6 text-[var(--color-text-secondary)]">
+              Quick references for weight, cost, speed, bending, ROI, and auxiliary equipment checks.
+            </p>
+          </div>
+          <div className="flex gap-2">
             <a
               href="/tools"
-              className="inline-flex items-center gap-1 rounded-lg border border-[var(--color-border)] px-2 py-1 text-[11px] font-medium text-[var(--color-text-secondary)] hover:border-[var(--color-primary)] hover:text-[var(--color-primary)]"
+              className="inline-flex items-center gap-1 rounded-lg border border-[var(--color-border)] px-3 py-2 text-xs font-medium text-[var(--color-text-secondary)] hover:border-[var(--color-primary)] hover:text-[var(--color-primary)]"
             >
-              Full page
-              <ExternalLink size={12} />
+              All tools
+              <ExternalLink size={13} />
+            </a>
+            <a
+              href="/insights"
+              className="inline-flex items-center gap-1 rounded-lg border border-[var(--color-border)] px-3 py-2 text-xs font-medium text-[var(--color-text-secondary)] hover:border-[var(--color-primary)] hover:text-[var(--color-primary)]"
+            >
+              Insights
+              <ExternalLink size={13} />
             </a>
           </div>
-          <div className="grid gap-2">
-            {industryTools.map((tool) => {
-              const Icon = toolIcons[tool.id] || Calculator;
-              const selected = tool.id === activeToolId;
-              return (
-                <button
-                  key={tool.id}
-                  type="button"
-                  onClick={() => setActiveToolId(tool.id)}
-                  className={`rounded-lg border p-3 text-left transition ${
-                    selected
-                      ? 'border-[var(--color-primary)] bg-[var(--color-primary)]/10'
-                      : 'border-transparent bg-[var(--color-surface)] hover:border-[var(--color-border)]'
-                  }`}
-                >
-                  <div className="flex items-start gap-3">
-                    <Icon size={18} className="mt-0.5 shrink-0 text-[var(--color-primary)]" />
-                    <div>
-                      <div className="text-sm font-medium text-[var(--color-text-primary)]">{tool.label}</div>
-                      <div className="mt-1 text-xs leading-relaxed text-[var(--color-text-secondary)]">{tool.description}</div>
-                    </div>
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-        </aside>
+        </div>
 
-        <IndustryToolCalculator
-          tool={activeTool}
-          values={values}
-          onChange={updateValue}
-          onSendMessage={onSendMessage}
-          onAfterSend={onClose}
-        />
+        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+          {industryTools.map((tool) => {
+            const Icon = toolIcons[tool.id] || Fan;
+            return (
+              <a
+                key={tool.id}
+                href={`/tools/${tool.slug}`}
+                className="group rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-elevated)] p-3 transition hover:-translate-y-0.5 hover:border-[var(--color-primary)] hover:shadow-sm"
+              >
+                <div className="flex items-start gap-3">
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[var(--color-primary)]/10 text-[var(--color-primary)]">
+                    <Icon size={18} />
+                  </span>
+                  <span>
+                    <span className="block text-sm font-semibold leading-5 text-[var(--color-text-primary)] group-hover:text-[var(--color-primary)]">
+                      {tool.shortLabel || tool.label}
+                    </span>
+                    <span className="mt-1 block text-xs leading-5 text-[var(--color-text-secondary)]">
+                      {tool.description}
+                    </span>
+                  </span>
+                </div>
+              </a>
+            );
+          })}
+        </div>
       </div>
     </Modal>
   );

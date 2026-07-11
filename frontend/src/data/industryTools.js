@@ -72,6 +72,18 @@ export const steelPriceReferences = [
   },
 ];
 
+export const assistGasOptions = {
+  nitrogen: { label: 'Nitrogen', flowFactor: 0.034, speedFactor: 1.05 },
+  oxygen: { label: 'Oxygen', flowFactor: 0.026, speedFactor: 0.78 },
+  air: { label: 'Compressed air', flowFactor: 0.03, speedFactor: 0.92 },
+};
+
+export const dustLoadOptions = {
+  light: { label: 'Light dust load', airflowFactor: 720 },
+  medium: { label: 'Medium dust load', airflowFactor: 900 },
+  heavy: { label: 'Heavy dust load', airflowFactor: 1120 },
+};
+
 export const industryTools = [
   {
     id: 'metal-weight',
@@ -137,28 +149,85 @@ export const industryTools = [
       ['When should an engineer review the bend?', 'Ask for review when the estimate is close to machine capacity, material is high strength, or the bend requires special tooling.'],
     ],
   },
-];
-
-export const plannedIndustryTools = [
   {
-    label: 'Gas consumption calculator',
-    description: 'Estimate nitrogen, oxygen, or air usage from pressure, nozzle, cutting time, and duty cycle.',
+    id: 'gas-consumption',
+    slug: 'laser-assist-gas-consumption-calculator',
+    label: 'Assist Gas Consumption Calculator',
+    shortLabel: 'Gas Use',
+    description: 'Estimate nitrogen, oxygen, or compressed air consumption from nozzle, pressure, cutting time, and duty cycle.',
+    leadAction: 'Use this to compare assist-gas assumptions before checking supplier rates or production records.',
+    seoTitle: 'Laser Assist Gas Consumption Calculator',
+    seoDescription: 'Estimate laser cutting assist gas consumption and cost for nitrogen, oxygen, or compressed air from nozzle diameter, pressure, cutting minutes, duty cycle, and gas price.',
+    guideTitle: 'Estimate assist gas usage before quoting or checking operating cost.',
+    guideBody: 'Enter nozzle size, pressure, cutting time, and gas price to create a planning reference. Real consumption depends on regulator setup, nozzle condition, piercing strategy, leaks, and machine controls.',
+    faqs: [
+      ['Is this a gas supplier bill estimate?', 'It is a planning reference. Verify with flowmeter data, gas supplier statements, or machine records before using it for purchasing.'],
+      ['Why does nozzle size matter?', 'A larger nozzle opening can increase flow quickly, especially at higher pressures. Nozzle condition and standoff also affect actual use.'],
+    ],
   },
   {
-    label: 'Laser cutting speed reference',
-    description: 'Compare rough speed ranges by material, thickness, gas, and laser power for planning checks.',
+    id: 'cutting-speed',
+    slug: 'laser-cutting-speed-reference',
+    label: 'Laser Cutting Speed Reference',
+    shortLabel: 'Cut Speed',
+    description: 'Compare rough speed ranges by material, thickness, assist gas, and laser power for planning checks.',
+    leadAction: 'Use the range to sanity-check cycle time before confirming with a machine parameter table.',
+    seoTitle: 'Laser Cutting Speed Reference by Material, Thickness, Gas, and Power',
+    seoDescription: 'Get a planning reference for laser cutting speed by material, thickness, assist gas, and fiber laser power.',
+    guideTitle: 'Build a first-pass cutting speed range before checking machine parameters.',
+    guideBody: 'This reference is for early planning. Actual speed depends on machine dynamics, beam quality, cutting head, nozzle, gas purity, material surface, and edge quality requirements.',
+    faqs: [
+      ['Can I use this as the final machine parameter?', 'Use it as a rough range only. Final parameters should come from machine tests, OEM tables, and acceptable edge quality.'],
+      ['Why does gas change the range?', 'Oxygen, nitrogen, and compressed air create different cutting behavior, edge quality, and heat input.'],
+    ],
   },
   {
-    label: 'Press brake V-die and bend allowance helper',
-    description: 'Connect V opening, bend radius, K-factor, and flat pattern assumptions before production.',
+    id: 'bend-allowance',
+    slug: 'press-brake-v-die-bend-allowance-helper',
+    label: 'V-die and Bend Allowance Helper',
+    shortLabel: 'Bend Allowance',
+    description: 'Connect V opening, inside radius, bend angle, K-factor, and flat pattern assumptions before production.',
+    leadAction: 'Use this to document bend assumptions before nesting, quoting, or engineer review.',
+    seoTitle: 'Press Brake V-die and Bend Allowance Helper',
+    seoDescription: 'Estimate V-die opening, bend allowance, and flat length reference from material thickness, inside radius, bend angle, K-factor, bend count, and flange lengths.',
+    guideTitle: 'Check bend allowance assumptions before releasing a flat pattern.',
+    guideBody: 'The helper calculates a planning bend allowance and common V-die starting point. Real flat patterns depend on tooling, material tensile strength, grain direction, bend method, and shop calibration.',
+    faqs: [
+      ['What K-factor should I use?', 'A common planning range is about 0.33 to 0.45 for air bending, but your shop standard or measured bend data should decide.'],
+      ['Is 8x thickness always the right V opening?', 'It is a common starting point for mild steel. Radius, tonnage, tooling, and material may require a different opening.'],
+    ],
   },
   {
-    label: 'Equipment ROI comparison',
-    description: 'Compare outsourcing, used machine, and new machine scenarios with utilization and maintenance assumptions.',
+    id: 'equipment-roi',
+    slug: 'laser-cutting-machine-roi-calculator',
+    label: 'Equipment ROI Calculator',
+    shortLabel: 'Equipment ROI',
+    description: 'Compare outsourcing, in-house operating cost, added revenue, upfront cost, and simple payback.',
+    leadAction: 'Use this to frame investment tradeoffs without relying on a single supplier claim.',
+    seoTitle: 'Laser Cutting Machine ROI Calculator',
+    seoDescription: 'Estimate monthly net impact and simple payback when comparing outsourced cutting with an in-house laser cutting machine.',
+    guideTitle: 'Compare equipment investment assumptions before asking for quotes.',
+    guideBody: 'This calculator compares monthly outsource spend with estimated in-house payment, operator, maintenance, utilities, and added revenue. It is a planning model, not a financing quote.',
+    faqs: [
+      ['What should I include in in-house cost?', 'Include machine payment or depreciation, operator time, maintenance, utilities, gas, consumables, floor space, and programming time when available.'],
+      ['Why include added revenue?', 'Some shops buy equipment not only to replace outsourcing, but also to win faster-turnaround or higher-margin work.'],
+    ],
   },
   {
-    label: 'Chiller and dust collector sizing checklist',
-    description: 'Organize auxiliary equipment requirements before retrofit or capacity expansion decisions.',
+    id: 'auxiliary-sizing',
+    slug: 'laser-chiller-dust-collector-sizing-checklist',
+    label: 'Chiller and Dust Collector Sizing',
+    shortLabel: 'Auxiliary Sizing',
+    description: 'Estimate chiller capacity and dust collector airflow reference from laser power, table size, hours, and dust load.',
+    leadAction: 'Use this as a checklist before retrofit, relocation, or capacity expansion planning.',
+    seoTitle: 'Laser Chiller and Dust Collector Sizing Checklist',
+    seoDescription: 'Estimate reference chiller capacity and dust collector airflow for laser cutting equipment from laser power, table size, operating hours, and dust load.',
+    guideTitle: 'Organize auxiliary-equipment requirements before retrofit or expansion.',
+    guideBody: 'The reference helps structure early checks for cooling and fume extraction. Final sizing should be confirmed with equipment manuals, duct layout, local code, material mix, and qualified suppliers.',
+    faqs: [
+      ['Can this replace a supplier sizing calculation?', 'No. Use it to prepare the discussion and identify obvious gaps before requesting formal sizing.'],
+      ['Why does table area matter for dust collection?', 'Larger cutting areas and heavier dust loads usually require higher capture airflow and better duct planning.'],
+    ],
   },
 ];
 
@@ -213,6 +282,45 @@ export const defaultIndustryToolForms = {
     bendLengthMm: '3000',
     vDieMm: '48',
     safetyFactor: '1.2',
+  },
+  'gas-consumption': {
+    assistGas: 'nitrogen',
+    nozzleDiameterMm: '2',
+    pressureBar: '12',
+    cuttingMinutes: '45',
+    dutyCyclePercent: '70',
+    gasCostUsdM3: '0.42',
+  },
+  'cutting-speed': {
+    material: 'carbon_steel',
+    assistGas: 'oxygen',
+    thicknessMm: '6',
+    laserPowerKw: '3',
+  },
+  'bend-allowance': {
+    thicknessMm: '3',
+    insideRadiusMm: '3',
+    bendAngleDeg: '90',
+    kFactor: '0.38',
+    bendCount: '2',
+    flangeAMm: '100',
+    flangeBMm: '80',
+  },
+  'equipment-roi': {
+    outsourceCostUsdMonth: '12000',
+    machinePaymentUsdMonth: '4500',
+    operatorCostUsdMonth: '3800',
+    maintenanceUsdMonth: '700',
+    utilitiesUsdMonth: '500',
+    addedRevenueUsdMonth: '2500',
+    upfrontCostUsd: '25000',
+  },
+  'auxiliary-sizing': {
+    laserPowerKw: '6',
+    tableLengthMm: '3000',
+    tableWidthMm: '1500',
+    cuttingHoursDay: '8',
+    dustLoad: 'medium',
   },
 };
 
@@ -390,11 +498,156 @@ function calculatePressBrakeTonnage(values) {
   };
 }
 
+function assistGasOption(key) {
+  return assistGasOptions[key] || assistGasOptions.nitrogen;
+}
+
+function dustLoadOption(key) {
+  return dustLoadOptions[key] || dustLoadOptions.medium;
+}
+
+function calculateGasConsumption(values) {
+  const gas = assistGasOption(values.assistGas);
+  const nozzleDiameterMm = parsePositiveNumber(values.nozzleDiameterMm, 2);
+  const pressureBar = parsePositiveNumber(values.pressureBar, 10);
+  const cuttingMinutes = parsePositiveNumber(values.cuttingMinutes);
+  const dutyCycle = parsePositiveNumber(values.dutyCyclePercent, 100) / 100;
+  const gasCost = parsePositiveNumber(values.gasCostUsdM3);
+  const effectiveMinutes = cuttingMinutes * Math.min(dutyCycle, 1);
+  const flowM3Min = gas.flowFactor * nozzleDiameterMm ** 2 * pressureBar;
+  const volumeM3 = flowM3Min * effectiveMinutes;
+  const cost = volumeM3 * gasCost;
+
+  return {
+    title: 'Estimated assist gas consumption',
+    rows: [
+      ['Assist gas', gas.label],
+      ['Estimated flow', `${roundNumber(flowM3Min, 2)} m3/min`],
+      ['Effective cutting time', `${roundNumber(effectiveMinutes, 1)} min`],
+      ['Estimated volume', `${roundNumber(volumeM3, 2)} m3`],
+      ['Estimated gas cost', `$${roundNumber(cost, 2)} USD`],
+    ],
+    note: 'Planning reference only. Nozzle condition, piercing, leaks, regulator setup, gas purity, and machine controls can change actual consumption.',
+  };
+}
+
+function calculateCuttingSpeed(values) {
+  const material = materialOption(values.material);
+  const gas = assistGasOption(values.assistGas);
+  const thicknessMm = parsePositiveNumber(values.thicknessMm, 1);
+  const laserPowerKw = parsePositiveNumber(values.laserPowerKw, 3);
+  const materialFactors = {
+    carbon_steel: 1,
+    stainless_steel: 0.82,
+    aluminum: 0.95,
+    brass: 0.48,
+    copper: 0.42,
+    red_copper: 0.4,
+    titanium_alloy: 0.36,
+  };
+  const materialFactor = materialFactors[values.material] || 1;
+  const midpoint = Math.max(0.08, (laserPowerKw * 4.1 * materialFactor * gas.speedFactor) / thicknessMm ** 1.12);
+  const low = midpoint * 0.72;
+  const high = midpoint * 1.28;
+
+  return {
+    title: 'Reference cutting speed range',
+    rows: [
+      ['Material', material.label],
+      ['Assist gas', gas.label],
+      ['Thickness', `${roundNumber(thicknessMm, 2)} mm`],
+      ['Laser power', `${roundNumber(laserPowerKw, 2)} kW`],
+      ['Reference range', `${roundNumber(low, 2)}-${roundNumber(high, 2)} m/min`],
+    ],
+    note: 'Use this as a rough planning range. Edge quality, machine dynamics, nozzle, focus, gas purity, and material surface decide final cutting parameters.',
+  };
+}
+
+function calculateBendAllowance(values) {
+  const thicknessMm = parsePositiveNumber(values.thicknessMm);
+  const insideRadiusMm = parsePositiveNumber(values.insideRadiusMm, thicknessMm);
+  const bendAngleDeg = parsePositiveNumber(values.bendAngleDeg, 90);
+  const kFactor = parsePositiveNumber(values.kFactor, 0.38);
+  const bendCount = parsePositiveNumber(values.bendCount, 1);
+  const flangeA = parsePositiveNumber(values.flangeAMm);
+  const flangeB = parsePositiveNumber(values.flangeBMm);
+  const suggestedV = thicknessMm * 8;
+  const allowancePerBend = (Math.PI / 180) * bendAngleDeg * (insideRadiusMm + kFactor * thicknessMm);
+  const totalAllowance = allowancePerBend * bendCount;
+  const flatReference = flangeA + flangeB + totalAllowance;
+
+  return {
+    title: 'Estimated bend allowance',
+    rows: [
+      ['Suggested V opening', `${roundNumber(suggestedV, 1)} mm`],
+      ['Bend allowance', `${roundNumber(totalAllowance, 2)} mm total / ${roundNumber(allowancePerBend, 2)} mm per bend`],
+      ['Flat length reference', `${roundNumber(flatReference, 2)} mm`],
+      ['K-factor', `${roundNumber(kFactor, 3)}`],
+    ],
+    note: 'Planning reference only. Validate with shop bend tests, actual tooling, material tensile strength, grain direction, and required tolerance.',
+  };
+}
+
+function calculateEquipmentRoi(values) {
+  const outsource = parsePositiveNumber(values.outsourceCostUsdMonth);
+  const payment = parsePositiveNumber(values.machinePaymentUsdMonth);
+  const operator = parsePositiveNumber(values.operatorCostUsdMonth);
+  const maintenance = parsePositiveNumber(values.maintenanceUsdMonth);
+  const utilities = parsePositiveNumber(values.utilitiesUsdMonth);
+  const addedRevenue = parsePositiveNumber(values.addedRevenueUsdMonth);
+  const upfront = parsePositiveNumber(values.upfrontCostUsd);
+  const inHouseCost = payment + operator + maintenance + utilities;
+  const netImpact = outsource - inHouseCost + addedRevenue;
+  const payback = netImpact > 0 ? upfront / netImpact : 0;
+
+  return {
+    title: 'Estimated equipment ROI',
+    rows: [
+      ['Current outsource spend', `$${roundNumber(outsource, 2)} USD / month`],
+      ['Estimated in-house cost', `$${roundNumber(inHouseCost, 2)} USD / month`],
+      ['Added revenue assumption', `$${roundNumber(addedRevenue, 2)} USD / month`],
+      ['Monthly net impact', `$${roundNumber(netImpact, 2)} USD`],
+      ['Simple payback', netImpact > 0 ? `${roundNumber(payback, 1)} months` : 'No positive payback in this scenario'],
+    ],
+    note: 'Planning model only. Financing, utilization, resale value, maintenance risk, operator availability, floor space, and material handling can change the investment case.',
+  };
+}
+
+function calculateAuxiliarySizing(values) {
+  const laserPowerKw = parsePositiveNumber(values.laserPowerKw, 3);
+  const tableLengthM = parsePositiveNumber(values.tableLengthMm, 3000) / 1000;
+  const tableWidthM = parsePositiveNumber(values.tableWidthMm, 1500) / 1000;
+  const cuttingHoursDay = parsePositiveNumber(values.cuttingHoursDay, 8);
+  const dustLoad = dustLoadOption(values.dustLoad);
+  const tableAreaM2 = tableLengthM * tableWidthM;
+  const chillerKw = laserPowerKw * (cuttingHoursDay > 8 ? 1.45 : 1.25);
+  const airflowM3H = tableAreaM2 * dustLoad.airflowFactor;
+  const airflowCfm = airflowM3H * 0.58858;
+
+  return {
+    title: 'Auxiliary equipment sizing reference',
+    rows: [
+      ['Laser power', `${roundNumber(laserPowerKw, 2)} kW`],
+      ['Table area', `${roundNumber(tableAreaM2, 2)} m2`],
+      ['Chiller capacity reference', `${roundNumber(chillerKw, 1)} kW cooling class`],
+      ['Dust collector airflow reference', `${roundNumber(airflowM3H, 0)} m3/h / ${roundNumber(airflowCfm, 0)} CFM`],
+      ['Dust load', dustLoad.label],
+    ],
+    note: 'Use this to prepare a sizing discussion. Final equipment selection should follow machine manuals, duct layout, local code, material mix, and supplier engineering review.',
+  };
+}
+
 export function calculateIndustryToolResult(toolId, values) {
   if (toolId === 'metal-weight') return calculateMetalWeight(values);
   if (toolId === 'steel-price') return calculateSteelPrice(values);
   if (toolId === 'laser-cost') return calculateLaserCost(values);
-  return calculatePressBrakeTonnage(values);
+  if (toolId === 'press-brake-tonnage') return calculatePressBrakeTonnage(values);
+  if (toolId === 'gas-consumption') return calculateGasConsumption(values);
+  if (toolId === 'cutting-speed') return calculateCuttingSpeed(values);
+  if (toolId === 'bend-allowance') return calculateBendAllowance(values);
+  if (toolId === 'equipment-roi') return calculateEquipmentRoi(values);
+  if (toolId === 'auxiliary-sizing') return calculateAuxiliarySizing(values);
+  return calculateMetalWeight(values);
 }
 
 export function buildIndustryToolReviewPrompt(tool, result) {

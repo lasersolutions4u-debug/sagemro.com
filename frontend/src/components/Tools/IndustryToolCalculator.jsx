@@ -1,9 +1,11 @@
 import { useMemo } from 'react';
 import { ArrowRight, Ruler } from 'lucide-react';
 import {
+  assistGasOptions,
   buildIndustryToolReviewPrompt,
   calculateIndustryToolResult,
   defaultIndustryToolForms,
+  dustLoadOptions,
   materialDensities,
   shapeProfiles,
   steelPriceReferences,
@@ -37,6 +39,30 @@ const FIELD_LABELS = {
   bendLengthMm: 'Bend length (mm)',
   vDieMm: 'V die opening (mm)',
   safetyFactor: 'Safety factor',
+  assistGas: 'Assist gas',
+  nozzleDiameterMm: 'Nozzle diameter (mm)',
+  pressureBar: 'Pressure (bar)',
+  cuttingMinutes: 'Cutting time (min)',
+  dutyCyclePercent: 'Duty cycle (%)',
+  gasCostUsdM3: 'Gas cost (USD / m3)',
+  laserPowerKw: 'Laser power (kW)',
+  insideRadiusMm: 'Inside radius (mm)',
+  bendAngleDeg: 'Bend angle (deg)',
+  kFactor: 'K-factor',
+  bendCount: 'Bend count',
+  flangeAMm: 'Flange A (mm)',
+  flangeBMm: 'Flange B (mm)',
+  outsourceCostUsdMonth: 'Outsource cost (USD/month)',
+  machinePaymentUsdMonth: 'Machine payment (USD/month)',
+  operatorCostUsdMonth: 'Operator cost (USD/month)',
+  maintenanceUsdMonth: 'Maintenance (USD/month)',
+  utilitiesUsdMonth: 'Utilities (USD/month)',
+  addedRevenueUsdMonth: 'Added revenue (USD/month)',
+  upfrontCostUsd: 'Upfront cost (USD)',
+  tableLengthMm: 'Table length (mm)',
+  tableWidthMm: 'Table width (mm)',
+  cuttingHoursDay: 'Cutting hours/day',
+  dustLoad: 'Dust load',
 };
 
 function getFieldsForTool(toolId, values) {
@@ -52,7 +78,31 @@ function getFieldsForTool(toolId, values) {
     return ['cutLengthM', 'cuttingSpeedMMin', 'pierces', 'pierceSeconds', 'machineRateUsdHour', 'gasRateUsdHour', 'setupMinutes'];
   }
 
-  return ['thicknessMm', 'bendLengthMm', 'vDieMm', 'materialFactor', 'safetyFactor'];
+  if (toolId === 'press-brake-tonnage') {
+    return ['thicknessMm', 'bendLengthMm', 'vDieMm', 'materialFactor', 'safetyFactor'];
+  }
+
+  if (toolId === 'gas-consumption') {
+    return ['assistGas', 'nozzleDiameterMm', 'pressureBar', 'cuttingMinutes', 'dutyCyclePercent', 'gasCostUsdM3'];
+  }
+
+  if (toolId === 'cutting-speed') {
+    return ['material', 'assistGas', 'thicknessMm', 'laserPowerKw'];
+  }
+
+  if (toolId === 'bend-allowance') {
+    return ['thicknessMm', 'insideRadiusMm', 'bendAngleDeg', 'kFactor', 'bendCount', 'flangeAMm', 'flangeBMm'];
+  }
+
+  if (toolId === 'equipment-roi') {
+    return ['outsourceCostUsdMonth', 'machinePaymentUsdMonth', 'operatorCostUsdMonth', 'maintenanceUsdMonth', 'utilitiesUsdMonth', 'addedRevenueUsdMonth', 'upfrontCostUsd'];
+  }
+
+  if (toolId === 'auxiliary-sizing') {
+    return ['laserPowerKw', 'tableLengthMm', 'tableWidthMm', 'cuttingHoursDay', 'dustLoad'];
+  }
+
+  return [];
 }
 
 export function IndustryToolCalculator({ tool, values, onChange, onSendMessage, onAfterSend }) {
@@ -100,6 +150,30 @@ export function IndustryToolCalculator({ tool, values, onChange, onSendMessage, 
                   value={currentValues.shape}
                   onChange={(value) => updateValue('shape', value)}
                   options={Object.entries(shapeProfiles).map(([value, shape]) => ({ value, label: shape.label }))}
+                />
+              );
+            }
+
+            if (field === 'assistGas') {
+              return (
+                <SelectField
+                  key={field}
+                  label={FIELD_LABELS[field]}
+                  value={currentValues.assistGas}
+                  onChange={(value) => updateValue('assistGas', value)}
+                  options={Object.entries(assistGasOptions).map(([value, gas]) => ({ value, label: gas.label }))}
+                />
+              );
+            }
+
+            if (field === 'dustLoad') {
+              return (
+                <SelectField
+                  key={field}
+                  label={FIELD_LABELS[field]}
+                  value={currentValues.dustLoad}
+                  onChange={(value) => updateValue('dustLoad', value)}
+                  options={Object.entries(dustLoadOptions).map(([value, load]) => ({ value, label: load.label }))}
                 />
               );
             }
