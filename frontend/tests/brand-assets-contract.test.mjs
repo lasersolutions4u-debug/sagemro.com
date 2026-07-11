@@ -345,7 +345,10 @@ test('client shell moves conversation history into a modal and exposes industry 
   const app = read('frontend/src/App.jsx');
   const chatHistory = read('frontend/src/components/Sidebar/ChatHistory.jsx');
   const industryToolsModal = read('frontend/src/components/Tools/IndustryToolsModal.jsx');
+  const industryToolCalculator = read('frontend/src/components/Tools/IndustryToolCalculator.jsx');
+  const industryToolsPage = read('frontend/src/components/Tools/IndustryToolsPage.jsx');
   const industryTools = read('frontend/src/data/industryTools.js');
+  const redirects = read('frontend/public/_redirects');
 
   assert.match(sidebar, /onOpenHistory/);
   assert.match(sidebar, /onOpenIndustryTools/);
@@ -355,31 +358,41 @@ test('client shell moves conversation history into a modal and exposes industry 
   assert.doesNotMatch(sidebar, /<ChatHistory/);
   assert.match(app, /historyModalOpen/);
   assert.match(app, /industryToolsOpen/);
+  assert.match(app, /currentPath === '\/tools'/);
+  assert.match(app, /currentPath\.startsWith\('\/tools\/'\)/);
   assert.match(app, /<ChatHistory/);
   assert.match(app, /<IndustryToolsModal/);
+  assert.match(app, /<IndustryToolsPage/);
   assert.match(chatHistory, /Conversation History/);
   assert.match(chatHistory, /Search conversations/);
-  assert.match(industryToolsModal, /Ask SAGEMRO AI to review this result/);
+  assert.match(industryToolsModal, /<IndustryToolCalculator/);
+  assert.match(industryToolCalculator, /Ask SAGEMRO AI to review this result/);
+  assert.match(industryToolsPage, /href=\{`\/tools\/\$\{tool\.slug\}`\}/);
+  assert.match(industryToolsPage, /link\[rel="canonical"\]/);
+  assert.match(industryToolsPage, /meta\[name="\$\{name\}"\]/);
   assert.match(industryTools, /Metal Weight Calculator/);
   assert.match(industryTools, /Steel Price Watch/);
   assert.match(industryTools, /Laser Cutting Cost Calculator/);
   assert.match(industryTools, /Press Brake Tonnage Calculator/);
   assert.match(industryTools, /densityKgM3/);
   assert.match(industryTools, /market reference for planning/i);
+  assert.match(industryTools, /metal-weight-calculator/);
+  assert.match(industryTools, /steel-price-watch/);
+  assert.match(redirects, /\/\* \/index\.html 200/);
 });
 
 test('public legal and tool copy use transparent reviewed-engineer wording', () => {
   const legal = read('frontend/src/components/common/LegalModal.jsx');
   const industryTools = read('frontend/src/data/industryTools.js');
-  const toolsModal = read('frontend/src/components/Tools/IndustryToolsModal.jsx');
+  const toolsCalculator = read('frontend/src/components/Tools/IndustryToolCalculator.jsx');
 
   assert.match(legal, /qualified engineers reviewed by SAGEMRO/);
   assert.match(legal, /合格工程师或经 SAGEMRO 审核的服务人员/);
   assert.doesNotMatch(legal, /SAGEMRO-designated service personnel/);
   assert.match(industryTools, /supplier quotes decide final purchasing cost/i);
-  assert.match(toolsModal, /Supplier quotes decide final purchasing cost/);
+  assert.match(toolsCalculator, /steelPriceReferences/);
   assert.doesNotMatch(industryTools, /not a supplier quote/i);
-  assert.doesNotMatch(toolsModal, /not a supplier quote/i);
+  assert.doesNotMatch(toolsCalculator, /not a supplier quote/i);
 });
 
 test('engineer profile supports PayPal and SWIFT payout methods only', () => {
