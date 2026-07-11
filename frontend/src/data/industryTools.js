@@ -139,6 +139,29 @@ export const industryTools = [
   },
 ];
 
+export const plannedIndustryTools = [
+  {
+    label: 'Gas consumption calculator',
+    description: 'Estimate nitrogen, oxygen, or air usage from pressure, nozzle, cutting time, and duty cycle.',
+  },
+  {
+    label: 'Laser cutting speed reference',
+    description: 'Compare rough speed ranges by material, thickness, gas, and laser power for planning checks.',
+  },
+  {
+    label: 'Press brake V-die and bend allowance helper',
+    description: 'Connect V opening, bend radius, K-factor, and flat pattern assumptions before production.',
+  },
+  {
+    label: 'Equipment ROI comparison',
+    description: 'Compare outsourcing, used machine, and new machine scenarios with utilization and maintenance assumptions.',
+  },
+  {
+    label: 'Chiller and dust collector sizing checklist',
+    description: 'Organize auxiliary equipment requirements before retrofit or capacity expansion decisions.',
+  },
+];
+
 export const defaultIndustryToolForms = {
   'metal-weight': {
     material: 'carbon_steel',

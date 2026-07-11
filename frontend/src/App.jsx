@@ -30,6 +30,7 @@ const MyDevicesModal = lazy(() => import('./components/Device/MyDevicesModal').t
 const NotificationModal = lazy(() => import('./components/Notification/NotificationModal').then(m => ({ default: m.NotificationModal })));
 const IndustryToolsModal = lazy(() => import('./components/Tools/IndustryToolsModal').then(m => ({ default: m.IndustryToolsModal })));
 const IndustryToolsPage = lazy(() => import('./components/Tools/IndustryToolsPage').then(m => ({ default: m.IndustryToolsPage })));
+const InsightsPage = lazy(() => import('./components/Insights/InsightsPage').then(m => ({ default: m.InsightsPage })));
 
 function App() {
   const isEngineerHost = typeof window !== 'undefined'
@@ -371,6 +372,22 @@ function App() {
       <ErrorBoundary>
         <Suspense fallback={null}>
           <IndustryToolsPage pathname={currentPath} onOpenLegal={openLegal} />
+          <LegalModal
+            isOpen={legalModalOpen}
+            onClose={() => setLegalModalOpen(false)}
+            initialTab={legalInitialTab}
+          />
+        </Suspense>
+        <FeedbackHost />
+      </ErrorBoundary>
+    );
+  }
+
+  if (currentPath === '/insights' || currentPath.startsWith('/insights/')) {
+    return (
+      <ErrorBoundary>
+        <Suspense fallback={null}>
+          <InsightsPage pathname={currentPath} onOpenLegal={openLegal} />
           <LegalModal
             isOpen={legalModalOpen}
             onClose={() => setLegalModalOpen(false)}

@@ -72,6 +72,10 @@ test('main site first-impression copy keeps CN and COM market language separate'
   assert.match(welcome, /Clear facts first/);
   assert.match(welcome, /BM111 alarm/);
   assert.match(welcome, /burrs on stainless steel/);
+  assert.match(welcome, /href: '\/tools'/);
+  assert.match(welcome, /href: '\/insights'/);
+  assert.match(welcome, /Calculators/);
+  assert.match(welcome, /Insights/);
   assert.doesNotMatch(welcome, /sales form|sales shortcut/i);
   assert.doesNotMatch(welcome, /Machine selection|new-machine evaluation/);
   assert.doesNotMatch(welcome, /supports international customers with independent after-sales service, spare parts, consumables/);
@@ -348,6 +352,8 @@ test('client shell moves conversation history into a modal and exposes industry 
   const industryToolCalculator = read('frontend/src/components/Tools/IndustryToolCalculator.jsx');
   const industryToolsPage = read('frontend/src/components/Tools/IndustryToolsPage.jsx');
   const industryTools = read('frontend/src/data/industryTools.js');
+  const insightsPage = read('frontend/src/components/Insights/InsightsPage.jsx');
+  const insights = read('frontend/src/data/insights.js');
   const redirects = read('frontend/public/_redirects');
 
   assert.match(sidebar, /onOpenHistory/);
@@ -360,9 +366,12 @@ test('client shell moves conversation history into a modal and exposes industry 
   assert.match(app, /industryToolsOpen/);
   assert.match(app, /currentPath === '\/tools'/);
   assert.match(app, /currentPath\.startsWith\('\/tools\/'\)/);
+  assert.match(app, /currentPath === '\/insights'/);
+  assert.match(app, /currentPath\.startsWith\('\/insights\/'\)/);
   assert.match(app, /<ChatHistory/);
   assert.match(app, /<IndustryToolsModal/);
   assert.match(app, /<IndustryToolsPage/);
+  assert.match(app, /<InsightsPage/);
   assert.match(chatHistory, /Conversation History/);
   assert.match(chatHistory, /Search conversations/);
   assert.match(industryToolsModal, /<IndustryToolCalculator/);
@@ -378,6 +387,12 @@ test('client shell moves conversation history into a modal and exposes industry 
   assert.match(industryTools, /market reference for planning/i);
   assert.match(industryTools, /metal-weight-calculator/);
   assert.match(industryTools, /steel-price-watch/);
+  assert.match(industryTools, /plannedIndustryTools/);
+  assert.match(industryToolsPage, /Planned next calculators/);
+  assert.match(insightsPage, /SAGEMRO Insights/);
+  assert.match(insightsPage, /href=\{`\/tools\/\$\{insight\.toolSlug\}`\}/);
+  assert.match(insights, /laser-cutting-cost-drivers/);
+  assert.match(insights, /metal-weight-for-structural-profiles/);
   assert.match(redirects, /\/\* \/index\.html 200/);
 });
 

@@ -1,4 +1,6 @@
 import {
+  BookOpen,
+  Calculator,
   ClipboardCheck,
   ShieldCheck,
 } from 'lucide-react';
@@ -23,6 +25,11 @@ const copy = {
       'Heavy burrs on stainless steel edge',
       'Laser source power drops after warm-up',
       'Press brake angle drifts across the bend',
+    ],
+    resourceTitle: 'Useful public resources',
+    resources: [
+      { icon: Calculator, label: 'Calculators', desc: 'Weight, material budget, laser cost, and bending tonnage', href: '/tools' },
+      { icon: BookOpen, label: 'Insights', desc: 'Practical notes for equipment and process decisions', href: '/insights' },
     ],
     capabilities: [
       'Symptom summary',
@@ -50,6 +57,11 @@ const copy = {
       '不锈钢切割边缘毛刺很重',
       '激光器预热后功率下降',
       '折弯角度沿长度方向漂移',
+    ],
+    resourceTitle: '公开资源',
+    resources: [
+      { icon: Calculator, label: '计算工具', desc: '重量、材料预算、激光切割成本和折弯吨位', href: '/tools' },
+      { icon: BookOpen, label: '行业观察', desc: '设备与工艺决策相关的实用说明', href: '/insights' },
     ],
     capabilities: [
       '现象摘要',
@@ -121,6 +133,22 @@ export function WelcomePage() {
                 <div key={item} className="rounded-xl border border-[var(--color-border)] bg-[var(--color-chat-bg)] px-3 py-2 text-xs text-[var(--color-text-secondary)]">
                   {item}
                 </div>
+              ))}
+            </div>
+          </div>
+          <div className="mt-4 border-t border-[var(--color-border)] pt-4">
+            <div className="mb-2 text-center text-[11px] font-medium uppercase tracking-[0.16em] text-[var(--color-text-muted)]">
+              {t.resourceTitle}
+            </div>
+            <div className="grid gap-2 sm:grid-cols-2">
+              {t.resources.map(({ icon: Icon, label, desc, href }) => (
+                <a key={label} href={href} className="flex items-start gap-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-chat-bg)] px-3 py-2.5 text-left transition hover:border-[var(--color-primary)]">
+                  <Icon size={16} className="mt-0.5 shrink-0 text-[var(--color-primary)]" />
+                  <span>
+                    <span className="block text-xs font-semibold text-[var(--color-text-primary)]">{label}</span>
+                    <span className="mt-0.5 block text-xs leading-relaxed text-[var(--color-text-secondary)]">{desc}</span>
+                  </span>
+                </a>
               ))}
             </div>
           </div>

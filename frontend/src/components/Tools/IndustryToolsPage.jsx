@@ -15,6 +15,7 @@ import {
   getToolBySlug,
   industryTools,
   materialDensities,
+  plannedIndustryTools,
   shapeProfiles,
 } from '../../data/industryTools';
 
@@ -132,6 +133,26 @@ function ToolsHub({ onOpenLegal }) {
             <div className="text-xs uppercase tracking-[0.14em] text-amber-300">Boundary</div>
             <p className="mt-1 text-white/80">Planning references only. Supplier quotes and qualified review decide final production choices.</p>
           </div>
+        </div>
+      </section>
+
+      <section className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
+        <div className="mb-4 flex items-center justify-between gap-4">
+          <div>
+            <div className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--color-text-muted)]">Tool roadmap</div>
+            <h2 className="mt-1 text-2xl font-semibold text-[var(--color-text-primary)]">Planned next calculators</h2>
+          </div>
+          <a href="/insights" className="hidden rounded-lg border border-[var(--color-border)] px-3 py-2 text-sm text-[var(--color-text-secondary)] hover:border-[var(--color-primary)] hover:text-[var(--color-primary)] sm:inline-flex">
+            Read insights
+          </a>
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {plannedIndustryTools.map((tool) => (
+            <div key={tool.label} className="rounded-xl border border-dashed border-[var(--color-border)] bg-[var(--color-surface-elevated)] p-4">
+              <h3 className="text-sm font-semibold text-[var(--color-text-primary)]">{tool.label}</h3>
+              <p className="mt-1 text-sm leading-6 text-[var(--color-text-secondary)]">{tool.description}</p>
+            </div>
+          ))}
         </div>
       </section>
     </ToolPageShell>
