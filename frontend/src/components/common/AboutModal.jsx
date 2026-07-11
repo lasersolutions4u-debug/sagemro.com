@@ -36,10 +36,10 @@ const copy = {
     outcomesText: 'The conversation should help you understand the situation before you commit to service, parts, equipment, or a purchasing path.',
     standardTitle: 'Service Standard',
     standards: [
-      'AI should organize facts and explain uncertainty; it should not replace qualified on-site judgment',
+      'AI organizes facts, flags uncertainty, and leaves site judgment to qualified people',
       'Equipment records, service context, service history, and reports stay connected for future support',
       'Final diagnosis, quotation, purchase decisions, and safety requirements require qualified confirmation',
-      'Parts, maintenance, peripherals, automation upgrades, and press brake tooling questions can be documented without turning every chat into a sales request',
+      'Parts, maintenance, peripherals, automation upgrades, and press brake tooling questions can be documented as technical context first',
     ],
     featureCards: [
       { icon: ShieldCheck, label: 'Safety-first AI boundaries' },
@@ -49,7 +49,6 @@ const copy = {
     longTermTitle: 'Built For Long-Term Equipment Value',
     longTermText: 'Each conversation can become a reusable technical record: faster future troubleshooting, clearer parts decisions, better maintenance planning, and more transparent equipment decisions.',
     closing: 'You describe the machine. SAGEMRO helps make the next decision clearer.',
-    operatorLine: 'Operated by Jinan Euchio Machinery Co., Ltd.',
   },
   zh: {
     title: '关于 SAGEMRO 智能服务系统',
@@ -73,10 +72,10 @@ const copy = {
     outcomesText: '对话的目标是让你在决定服务、备件、设备或采购路径之前，先把情况理解清楚。',
     standardTitle: '服务标准',
     standards: [
-      'AI 应帮助整理事实并说明不确定性，不能替代合格人员的现场判断',
+      'AI 负责整理事实、提示不确定性，现场判断仍由合格人员完成',
       '设备档案、服务上下文、服务历史和报告持续关联，便于后续支持',
       '最终诊断、报价、采购决策和现场安全要求需要合格人员确认',
-      '备件、维保、激光周边、自动化改造和折弯模具问题可以被记录清楚，但不应把每次对话都变成销售请求',
+      '备件、维保、激光周边、自动化改造和折弯模具问题先作为技术背景记录清楚',
     ],
     featureCards: [
       { icon: ShieldCheck, label: '安全优先的 AI 边界' },
@@ -86,7 +85,6 @@ const copy = {
     longTermTitle: '为设备长期价值而设计',
     longTermText: '每一次对话都可以整理为可复用的技术记录：让后续排故更快、备件判断更清晰、维保计划更主动，设备决策也更透明。',
     closing: '你描述设备情况，SAGEMRO 帮你把下一步判断得更清楚。',
-    operatorLine: '由济南钰峭机械有限公司运营',
   },
 };
 
@@ -191,9 +189,6 @@ export function AboutModal({ isOpen, onClose }) {
           </p>
           <p className="text-xs text-[var(--color-text-secondary)]">
             © 2026 SAGEMRO. All rights reserved.
-          </p>
-          <p className="text-[10px] text-[var(--color-text-muted)]">
-            {t.operatorLine}
           </p>
         </div>
       </div>

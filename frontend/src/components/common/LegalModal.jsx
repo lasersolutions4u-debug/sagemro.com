@@ -7,7 +7,7 @@ const USER_AGREEMENT = `
 
 1.1 SAGEMRO Service OS provides AI-assisted equipment consultation, service request preparation, independent service coordination, equipment records, spare parts and consumables consultation, maintenance follow-up, retrofit review, laser peripheral equipment support, automation accessory support, and press brake tooling support for laser cutting and sheet metal equipment.
 
-1.2 SAGEMRO is an independent third-party equipment service workflow, not a public technician marketplace. Customers submit service needs to SAGEMRO, and SAGEMRO reviews the request and arranges internal engineers or SAGEMRO-designated service personnel when applicable.
+1.2 SAGEMRO is an independent third-party equipment service workflow, not a public technician marketplace. Customers submit service needs to SAGEMRO, and SAGEMRO reviews the request and arranges internal engineers or qualified engineers reviewed by SAGEMRO when applicable.
 
 1.3 SAGEMRO provides information services and service coordination, including demand intake, technical consultation support, service request organization, resource coordination, and digital service records. SAGEMRO does not operate as an open bidding platform, commission-splitting marketplace, or escrow settlement system.
 
@@ -89,7 +89,7 @@ const PRIVACY_POLICY = `
 
 - Providing AI preliminary diagnostics and technical consultation
 - Creating service requests, equipment records, and service reports
-- Arranging SAGEMRO internal engineers or SAGEMRO-designated service personnel
+- Arranging SAGEMRO internal engineers or qualified engineers reviewed by SAGEMRO
 - Recommending spare parts, consumables, maintenance plans, peripheral equipment, retrofit options, or tooling support
 - Improving AI response quality with anonymized or desensitized data
 - Security protection, abuse prevention, and operational troubleshooting
@@ -105,7 +105,7 @@ const PRIVACY_POLICY = `
 ## 4. Information Sharing
 
 - We do not sell your personal information
-- Service request information may be shared with SAGEMRO internal engineers or SAGEMRO-designated service personnel only as needed for service delivery
+- Service request information may be shared with SAGEMRO internal engineers or qualified engineers reviewed by SAGEMRO only as needed for service delivery
 - AI conversation content may be sent through encrypted interfaces to AI service providers without account passwords
 - Information may be disclosed when required by law, regulation, or competent authorities
 
@@ -139,8 +139,8 @@ const AI_DISCLAIMER = `
 - **Fault diagnosis:** AI can summarize symptoms and likely causes, but final diagnosis requires SAGEMRO confirmation.
 - **Cutting parameters:** AI parameters are reference ranges and must be adjusted according to machine condition, material, gas, nozzle, and safety rules.
 - **Spare parts:** AI identification is preliminary. Compatibility must be manually confirmed before purchase or replacement.
-- **Repair estimate:** AI may provide cost level or influencing factors, not a binding price.
-- **Retrofit and peripheral equipment:** AI suggestions are preliminary. Formal retrofit, auxiliary equipment, automation accessory, or tooling projects are confirmed by SAGEMRO-designated personnel.
+- **Service cost reference:** AI may provide cost level or influencing factors for planning. Formal pricing requires qualified confirmation.
+- **Retrofit and peripheral equipment:** AI suggestions are preliminary. Formal retrofit, auxiliary equipment, automation accessory, or tooling projects are confirmed by qualified personnel reviewed by SAGEMRO.
 
 ## 3. Safety Restrictions
 
@@ -175,7 +175,7 @@ const CN_USER_AGREEMENT = `
 
 1.1 SAGEMRO 智能服务系统为激光切割与钣金加工设备提供 AI 辅助咨询、服务需求整理、第三方服务协调、设备档案、备件及易损件咨询、维护跟进、增购改造评估、激光周边设备、自动化配套和折弯模具支持。
 
-1.2 SAGEMRO 是独立第三方设备服务流程入口，不是公开工程师竞价平台。客户向 SAGEMRO 提交服务需求后，由 SAGEMRO 审核并根据实际情况安排内部工程师或 SAGEMRO 指定服务人员跟进。
+1.2 SAGEMRO 是独立第三方设备服务流程入口，不是公开工程师竞价平台。客户向 SAGEMRO 提交服务需求后，由 SAGEMRO 审核并根据实际情况安排内部工程师、合格工程师或经 SAGEMRO 审核的服务人员跟进。
 
 1.3 SAGEMRO 提供信息服务与服务协调，包括需求接收、技术咨询支持、工单整理、资源协调和数字化服务记录。SAGEMRO 不作为公开竞价平台、佣金抽成平台或资金托管结算平台运营。
 
@@ -257,7 +257,7 @@ const CN_PRIVACY_POLICY = `
 
 - 提供 AI 初步诊断和技术咨询
 - 创建服务请求、设备档案和服务报告
-- 安排 SAGEMRO 内部工程师或 SAGEMRO 指定服务人员
+- 安排 SAGEMRO 内部工程师、合格工程师或经 SAGEMRO 审核的服务人员
 - 推荐备件、易损件、维护计划、激光周边设备、自动化改造或折弯模具支持
 - 使用匿名化或脱敏数据改善 AI 回复质量
 - 进行安全保护、防滥用和运营故障排查
@@ -273,7 +273,7 @@ const CN_PRIVACY_POLICY = `
 ## 4. 信息共享
 
 - 我们不会出售你的个人信息
-- 为完成服务交付，服务请求信息可能按需提供给 SAGEMRO 内部工程师或 SAGEMRO 指定服务人员
+- 为完成服务交付，服务请求信息可能按需提供给 SAGEMRO 内部工程师、合格工程师或经 SAGEMRO 审核的服务人员
 - AI 对话内容可能通过加密接口发送给 AI 服务提供方，但不包含账号密码
 - 法律法规或主管部门要求时，信息可能依法披露
 
@@ -307,8 +307,8 @@ const CN_AI_DISCLAIMER = `
 - **故障诊断：**AI 可以总结症状和可能原因，最终诊断需由 SAGEMRO 确认。
 - **切割参数：**AI 参数为参考范围，应结合设备状态、材料、气体、喷嘴和安全规则调整。
 - **备件识别：**AI 识别为初步判断，采购或更换前需人工确认兼容性。
-- **维修估算：**AI 可提供费用级别或影响因素，不构成绑定价格。
-- **增购改造与周边设备：**AI 建议为初步参考，正式增购改造、激光周边设备、自动化配套或折弯模具项目由 SAGEMRO 指定人员确认。
+- **服务费用参考：**AI 可提供费用级别或影响因素，便于前期规划。正式价格需经合格人员确认。
+- **增购改造与周边设备：**AI 建议为初步参考，正式增购改造、激光周边设备、自动化配套或折弯模具项目由合格人员或经 SAGEMRO 审核的人员确认。
 
 ## 3. 安全限制
 

@@ -16,7 +16,7 @@ export const steelPriceReferences = [
   {
     label: 'Global steel reference',
     value: 'Trading Economics steel',
-    note: 'Market reference only, not a supplier quote.',
+    note: 'Market reference for planning. Supplier quotes decide final purchasing cost.',
     url: 'https://tradingeconomics.com/commodity/steel',
   },
   {
@@ -67,4 +67,3 @@ export function parsePositiveNumber(value, fallback = 0) {
   const parsed = Number.parseFloat(value);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
-

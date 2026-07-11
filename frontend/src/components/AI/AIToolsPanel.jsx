@@ -26,7 +26,7 @@ export function AIToolsPanel({ onSendMessage }) {
   };
 
   const handleAgentStart = () => {
-    onSendMessage(`Start ${activeTool.title} as a SAGEMRO Service OS agent. First ask me to describe the problem naturally. Then auto-extract structured fields, identify missing information, provide safe preliminary feedback, and prepare the right SAGEMRO conversion action for ${activeTool.leadType}.`);
+    onSendMessage(`Start ${activeTool.title} as a SAGEMRO Service OS agent. First ask me to describe the problem naturally. Then auto-extract structured fields, identify missing information, provide safe preliminary feedback, and prepare a neutral reviewed next-step summary for ${activeTool.leadType}.`);
   };
 
   return (
@@ -45,7 +45,7 @@ export function AIToolsPanel({ onSendMessage }) {
           </p>
         </div>
         <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs leading-relaxed text-slate-600">
-          Form fields are optional confirmation aids, not the primary user experience.
+          Form fields support confirmation; natural chat remains the primary experience.
         </div>
       </div>
 
@@ -114,7 +114,7 @@ export function AIToolsPanel({ onSendMessage }) {
                 <strong className="text-slate-900">{activeTool.shortTitle}</strong>
               </div>
               <div className="flex justify-between gap-3">
-                <span>Lead type</span>
+                <span>Case type</span>
                 <strong className="text-slate-900">{activeTool.leadType}</strong>
               </div>
               <div className="flex justify-between gap-3">
@@ -125,7 +125,7 @@ export function AIToolsPanel({ onSendMessage }) {
           </div>
           <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-xs leading-relaxed text-amber-900">
             <strong className="block text-amber-950">How users should experience this:</strong>
-            They describe the problem naturally. AI replies with preliminary value, extracts known fields, highlights missing information, and offers the right conversion action.
+            They describe the problem naturally. AI replies with preliminary value, extracts known fields, highlights missing information, and offers a practical reviewed next step.
           </div>
         </div>
 

@@ -69,7 +69,10 @@ test('main site first-impression copy keeps CN and COM market language separate'
   assert.match(welcome, /Describe the machine issue/);
   assert.match(welcome, /organize symptoms, risks, and next-step options/);
   assert.match(welcome, /before any service or purchasing decision/);
-  assert.match(welcome, /Not a sales shortcut/);
+  assert.match(welcome, /Clear facts first/);
+  assert.match(welcome, /BM111 alarm/);
+  assert.match(welcome, /burrs on stainless steel/);
+  assert.doesNotMatch(welcome, /sales form|sales shortcut/i);
   assert.doesNotMatch(welcome, /Machine selection|new-machine evaluation/);
   assert.doesNotMatch(welcome, /supports international customers with independent after-sales service, spare parts, consumables/);
   assert.match(welcome, /先描述设备问题/);
@@ -77,15 +80,35 @@ test('main site first-impression copy keeps CN and COM market language separate'
   assert.match(about, /helps customers and engineers organize machine symptoms/);
   assert.match(about, /What The Chat Can Help Clarify/);
   assert.doesNotMatch(about, /One Chat, Six Service Outcomes/);
+  assert.doesNotMatch(about, /sales request/i);
   assert.doesNotMatch(about, /Machine selection|new-machine projects/);
   assert.match(about, /帮助客户与工程师整理设备现象、风险和可选下一步/);
+  assert.doesNotMatch(about, /operatorLine|Operated by Jinan Euchio Machinery/);
   assert.doesNotMatch(about, /field photos|现场照片/);
-  assert.match(footer, /SAGEMRO operated by Jinan Euchio Machinery Co\., Ltd\./);
-  assert.match(footer, /SAGEMRO 由济南钰峭机械有限公司运营/);
+  assert.match(footer, /© 2026 SAGEMRO/);
+  assert.doesNotMatch(footer, /operated by Jinan Euchio Machinery|由济南钰峭机械有限公司运营/);
   assert.match(footer, /鲁ICP备2026032904号-1/);
   assert.match(footer, /https:\/\/beian\.miit\.gov\.cn\//);
   assert.match(engineerRecruiting, /SAGEMRO 智能服务系统 · 认证服务代表计划/);
   assert.doesNotMatch(engineerRecruiting, /badge: 'SAGEMRO Service OS · 认证服务代表计划'/);
+});
+
+test('AI tool copy keeps service preparation neutral instead of sales routing', () => {
+  const aiTools = read('frontend/src/data/aiServiceTools.js');
+  const aiPanel = read('frontend/src/components/AI/AIToolsPanel.jsx');
+  const legal = read('frontend/src/components/common/LegalModal.jsx');
+
+  assert.match(aiTools, /Service Cost Reference AI/);
+  assert.match(aiTools, /Maintenance Risk Review AI/);
+  assert.match(aiTools, /service request preparation or admin review/);
+  assert.match(aiPanel, /neutral reviewed next-step summary/);
+  assert.match(aiPanel, /Case type/);
+  assert.match(aiPanel, /natural chat remains the primary experience/);
+  assert.match(legal, /Service cost reference/);
+  assert.match(legal, /服务费用参考/);
+  assert.doesNotMatch(aiTools, /sales lead|Repair Estimate AI|Equipment Health Report AI|Health Report/);
+  assert.doesNotMatch(aiPanel, /right SAGEMRO conversion action|right conversion action|Lead type/);
+  assert.doesNotMatch(legal, /Repair estimate|维修估算/);
 });
 
 test('COM inquiry path asks for service-ready international request details', () => {
@@ -145,6 +168,8 @@ test('registration identity copy uses service-need wording instead of customer s
 
   assert.match(loginModal, /customerTitle: 'I Need Service'/);
   assert.match(loginModal, /customerDesc: 'Use AI diagnostics, service requests, equipment records, spare parts, and maintenance follow-up.'/);
+  assert.match(loginModal, /helps organize the facts so you can decide what to do next/);
+  assert.doesNotMatch(loginModal, /guide the next service step/);
   assert.doesNotMatch(loginModal, /customerTitle: "I'm a Customer"/);
 });
 
@@ -292,15 +317,20 @@ test('engineer recruiting page is an ad-ready landing page with modal applicatio
 
   assert.match(recruiting, /modalOpen/);
   assert.match(recruiting, /Join SAGEMRO.s Industrial Service Network/);
-  assert.match(recruiting, /Get matched with paid field service opportunities/);
+  assert.match(recruiting, /Work with clear scope, prepared context, and documented service records/);
   assert.match(recruiting, /Apply to Join/);
   assert.match(recruiting, /What is SAGEMRO/);
   assert.match(recruiting, /AI-assisted industrial service platform/);
   assert.match(recruiting, /What you may receive after approval/);
-  assert.match(recruiting, /Paid field service opportunities/);
+  assert.match(recruiting, /Clear-scope field work/);
+  assert.match(recruiting, /Prepared context and documented records/);
   assert.match(recruiting, /Quote review support/);
-  assert.match(recruiting, /Payment confirmation before service/);
+  assert.match(recruiting, /Payment and start authorization/);
   assert.match(recruiting, /We are building the network region by region/);
+  assert.match(recruiting, /客户信息、报价边界、付款确认、现场安全和服务记录/);
+  assert.doesNotMatch(recruiting, /Paid field service opportunities/);
+  assert.doesNotMatch(recruiting, /Payment confirmation first/);
+  assert.doesNotMatch(recruiting, /被看见、被支持、被认真对待/);
   assert.match(recruiting, /What we look for/);
   assert.match(recruiting, /Regional Lead opportunity/);
   assert.match(recruiting, /How work and payment starts/);
@@ -335,7 +365,21 @@ test('client shell moves conversation history into a modal and exposes industry 
   assert.match(industryTools, /Laser Cutting Cost Calculator/);
   assert.match(industryTools, /Press Brake Tonnage Calculator/);
   assert.match(industryTools, /densityKgM3/);
-  assert.match(industryTools, /market reference only, not a supplier quote/i);
+  assert.match(industryTools, /market reference for planning/i);
+});
+
+test('public legal and tool copy use transparent reviewed-engineer wording', () => {
+  const legal = read('frontend/src/components/common/LegalModal.jsx');
+  const industryTools = read('frontend/src/data/industryTools.js');
+  const toolsModal = read('frontend/src/components/Tools/IndustryToolsModal.jsx');
+
+  assert.match(legal, /qualified engineers reviewed by SAGEMRO/);
+  assert.match(legal, /合格工程师或经 SAGEMRO 审核的服务人员/);
+  assert.doesNotMatch(legal, /SAGEMRO-designated service personnel/);
+  assert.match(industryTools, /supplier quotes decide final purchasing cost/i);
+  assert.match(toolsModal, /Supplier quotes decide final purchasing cost/);
+  assert.doesNotMatch(industryTools, /not a supplier quote/i);
+  assert.doesNotMatch(toolsModal, /not a supplier quote/i);
 });
 
 test('engineer profile supports PayPal and SWIFT payout methods only', () => {

@@ -93,7 +93,7 @@ function calculateSteelPrice(values) {
       ['Estimated material budget', `$${roundNumber(reference * tons, 2)} USD`],
       ['Required quantity', `${roundNumber(tons, 3)} metric tons`],
     ],
-    note: 'Market reference only, not a supplier quote. Confirm grade, tolerance, freight, taxes, and local availability before purchasing.',
+    note: 'Market reference for planning. Supplier quotes decide final purchasing cost. Confirm grade, tolerance, freight, taxes, and local availability before purchasing.',
   };
 }
 
@@ -349,4 +349,3 @@ function SelectField({ label, value, onChange }) {
     </label>
   );
 }
-
