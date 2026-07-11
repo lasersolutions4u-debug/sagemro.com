@@ -360,6 +360,9 @@ test('client shell moves conversation history into a modal and exposes industry 
   assert.match(sidebar, /onOpenIndustryTools/);
   assert.match(sidebar, /History/);
   assert.match(sidebar, /Tools/);
+  assert.match(sidebar, /Insights/);
+  assert.match(sidebar, /href: '\/insights'/);
+  assert.match(sidebar, /tool-insights/);
   assert.match(sidebar, /w-\[72px\]/);
   assert.doesNotMatch(sidebar, /<ChatHistory/);
   assert.match(app, /historyModalOpen/);
@@ -375,6 +378,8 @@ test('client shell moves conversation history into a modal and exposes industry 
   assert.match(chatHistory, /Conversation History/);
   assert.match(chatHistory, /Search conversations/);
   assert.match(industryToolsModal, /<IndustryToolCalculator/);
+  assert.match(industryToolsModal, /href="\/tools"/);
+  assert.match(industryToolsModal, /Full page/);
   assert.match(industryToolCalculator, /Ask SAGEMRO AI to review this result/);
   assert.match(industryToolsPage, /href=\{`\/tools\/\$\{tool\.slug\}`\}/);
   assert.match(industryToolsPage, /link\[rel="canonical"\]/);

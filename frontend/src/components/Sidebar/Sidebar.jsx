@@ -1,5 +1,6 @@
 import {
   Bell,
+  BookOpen,
   ClipboardList,
   FileText,
   History,
@@ -39,6 +40,7 @@ export function Sidebar({
     { icon: Plus, label: isCn ? '新对话' : 'New Chat', onClick: onNewChat, testid: 'new-chat-button', primary: true },
     { icon: History, label: isCn ? '历史' : 'History', onClick: onOpenHistory, testid: 'tool-history' },
     { icon: Wrench, label: isCn ? '工具' : 'Tools', onClick: onOpenIndustryTools, testid: 'tool-industry-tools' },
+    { icon: BookOpen, label: isCn ? '洞察' : 'Insights', href: '/insights', testid: 'tool-insights' },
   ];
   const customerTools = currentUser
     ? [
@@ -107,6 +109,20 @@ export function Sidebar({
 }
 function RailButton({ tool, onClick }) {
   const Icon = tool.icon || Settings;
+  if (tool.href) {
+    return (
+      <a
+        href={tool.href}
+        title={tool.label}
+        data-testid={tool.testid || `tool-${tool.label}`}
+        className="relative flex h-11 w-11 items-center justify-center rounded-2xl text-[var(--color-sidebar-muted)] transition hover:bg-[var(--color-sidebar-surface)] hover:text-[var(--color-sidebar-text)]"
+      >
+        <Icon size={20} />
+        <span className="sr-only">{tool.label}</span>
+      </a>
+    );
+  }
+
   return (
     <button
       type="button"

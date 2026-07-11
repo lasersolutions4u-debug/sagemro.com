@@ -3,6 +3,7 @@ import {
   Calculator,
   ChartNoAxesCombined,
   CircleDollarSign,
+  ExternalLink,
   Factory,
   Scale,
 } from 'lucide-react';
@@ -40,9 +41,18 @@ export function IndustryToolsModal({ isOpen, onClose, onSendMessage }) {
     <Modal isOpen={isOpen} onClose={onClose} title="Industry Tools" size="full">
       <div className="grid gap-4 lg:grid-cols-[280px_minmax(0,1fr)]">
         <aside className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-elevated)] p-3">
-          <div className="mb-3 flex items-center gap-2 px-1 text-xs font-semibold uppercase text-[var(--color-text-muted)]">
-            <Calculator size={14} />
-            Shop-floor calculators
+          <div className="mb-3 flex items-center justify-between gap-2 px-1">
+            <div className="flex items-center gap-2 text-xs font-semibold uppercase text-[var(--color-text-muted)]">
+              <Calculator size={14} />
+              Shop-floor calculators
+            </div>
+            <a
+              href="/tools"
+              className="inline-flex items-center gap-1 rounded-lg border border-[var(--color-border)] px-2 py-1 text-[11px] font-medium text-[var(--color-text-secondary)] hover:border-[var(--color-primary)] hover:text-[var(--color-primary)]"
+            >
+              Full page
+              <ExternalLink size={12} />
+            </a>
           </div>
           <div className="grid gap-2">
             {industryTools.map((tool) => {
