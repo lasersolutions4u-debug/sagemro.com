@@ -2,13 +2,16 @@ import { useState, useCallback, useEffect, useRef, lazy, Suspense } from 'react'
 import { ErrorBoundary } from './components/common/ErrorBoundary';
 import { Footer } from './components/common/Footer';
 import { Sidebar } from './components/Sidebar/Sidebar';
+import { ChatHistory } from './components/Sidebar/ChatHistory';
 import { ChatArea } from './components/Chat/ChatArea';
+import { Modal } from './components/common/Modal';
 import { FeedbackHost } from './components/common/FeedbackHost';
 import { PushNotificationBanner } from './components/PushNotification/PushNotificationBanner';
 import { useChat } from './hooks/useChat';
 import { useConversations } from './hooks/useConversations';
 import { usePushNotification } from './hooks/usePushNotification';
 import { generateId } from './utils/helpers';
+import { isCnLocale } from './utils/locale';
 import { submitWorkOrder as submitWorkOrderApi, getUnreadNotificationCount } from './services/api';
 
 // 重型 Modal 懒加载，减少首屏 bundle 体积
@@ -25,15 +28,15 @@ const AboutModal = lazy(() => import('./components/common/AboutModal').then(m =>
 const LegalModal = lazy(() => import('./components/common/LegalModal').then(m => ({ default: m.LegalModal })));
 const MyDevicesModal = lazy(() => import('./components/Device/MyDevicesModal').then(m => ({ default: m.MyDevicesModal })));
 const NotificationModal = lazy(() => import('./components/Notification/NotificationModal').then(m => ({ default: m.NotificationModal })));
+const IndustryToolsModal = lazy(() => import('./components/Tools/IndustryToolsModal').then(m => ({ default: m.IndustryToolsModal })));
+const IndustryToolsPage = lazy(() => import('./components/Tools/IndustryToolsPage').then(m => ({ default: m.IndustryToolsPage })));
+const InsightsPage = lazy(() => import('./components/Insights/InsightsPage').then(m => ({ default: m.InsightsPage })));
 
 function App() {
   const isEngineerHost = typeof window !== 'undefined'
     && window.location.hostname.startsWith('engineer.');
-  const isCn = typeof window !== 'undefined'
-    && window.location.hostname.endsWith('.cn');
-  const engineerPortalUrl = typeof window !== 'undefined' && window.location.hostname.endsWith('.cn')
-    ? 'https://engineer.sagemro.cn'
-    : 'https://engineer.sagemro.com';
+  const isCn = isCnLocale();
+  const engineerPortalUrl = isCn ? 'https://engineer.sagemro.cn' : 'https://engineer.sagemro.com';
 
   useEffect(() => {
     document.title = isCn ? 'SAGEMRO 智能服务系统' : 'SAGEMRO Service OS';
@@ -44,6 +47,8 @@ function App() {
 
   // Modal 状态
   const [workOrderModalOpen, setWorkOrderModalOpen] = useState(false);
+  const [historyModalOpen, setHistoryModalOpen] = useState(false);
+  const [industryToolsOpen, setIndustryToolsOpen] = useState(false);
   const [myWorkOrdersModalOpen, setMyWorkOrdersModalOpen] = useState(false);
   const [customerHomeModalOpen, setCustomerHomeModalOpen] = useState(false);
   const [aboutModalOpen, setAboutModalOpen] = useState(false);
@@ -148,12 +153,14 @@ function App() {
   const handleNewChat = useCallback(() => {
     clearMessages();
     setSidebarOpen(false);
+    setHistoryModalOpen(false);
   }, [clearMessages]);
 
   // 选择对话
   const handleSelectConversation = useCallback((conv) => {
     if (conv.id === conversationId) {
       setSidebarOpen(false);
+      setHistoryModalOpen(false);
       return;
     }
     // 从 localStorage 加载历史消息
@@ -166,6 +173,7 @@ function App() {
       loadMessages([], conv.id);
     }
     setSidebarOpen(false);
+    setHistoryModalOpen(false);
   }, [conversationId, clearMessages, loadMessages]);
 
   // 发送消息
@@ -359,27 +367,73 @@ function App() {
     );
   }
 
+  if (currentPath === '/tools' || currentPath.startsWith('/tools/')) {
+    return (
+      <ErrorBoundary>
+        <Suspense fallback={null}>
+          <IndustryToolsPage pathname={currentPath} onOpenLegal={openLegal} />
+          <LegalModal
+            isOpen={legalModalOpen}
+            onClose={() => setLegalModalOpen(false)}
+            initialTab={legalInitialTab}
+          />
+        </Suspense>
+        <FeedbackHost />
+      </ErrorBoundary>
+    );
+  }
+
+  if (currentPath === '/insights' || currentPath.startsWith('/insights/')) {
+    return (
+      <ErrorBoundary>
+        <Suspense fallback={null}>
+          <InsightsPage pathname={currentPath} onOpenLegal={openLegal} />
+          <LegalModal
+            isOpen={legalModalOpen}
+            onClose={() => setLegalModalOpen(false)}
+            initialTab={legalInitialTab}
+          />
+        </Suspense>
+        <FeedbackHost />
+      </ErrorBoundary>
+    );
+  }
+
   if (userType === 'engineer') {
+    const engineerRedirectCopy = isCn
+      ? {
+          title: '请从专属工作台继续',
+          body: '当前账号适用于 SAGEMRO 工程师工作台。请前往专属入口查看服务任务、客户沟通和现场服务记录。',
+          cta: `前往 ${engineerPortalUrl.replace('https://', '')}`,
+          signOut: '退出当前账号',
+        }
+      : {
+          title: 'Continue in the Engineer Workspace',
+          body: 'This account is intended for the SAGEMRO Engineer Workspace. Use the dedicated portal to review service tasks, customer communication, and field service records.',
+          cta: `Go to ${engineerPortalUrl.replace('https://', '')}`,
+          signOut: 'Sign Out',
+        };
+
     return (
       <div className="flex min-h-[100dvh] items-center justify-center bg-[var(--color-bg)] px-5 text-[var(--color-text-primary)]">
         <div className="max-w-md rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6 text-center shadow-xl">
           <div className="text-xs uppercase tracking-[0.24em] text-[var(--color-primary)]">SAGEMRO</div>
-          <h1 className="mt-2 text-xl font-semibold">请从专属工作台继续</h1>
+          <h1 className="mt-2 text-xl font-semibold">{engineerRedirectCopy.title}</h1>
           <p className="mt-3 text-sm text-[var(--color-text-secondary)]">
-            当前账号适用于 SAGEMRO 工程师工作台。请前往专属入口查看服务任务、客户沟通和现场服务记录。
+            {engineerRedirectCopy.body}
           </p>
           <div className="mt-5 flex flex-col gap-2">
             <a
               href={engineerPortalUrl}
               className="rounded-xl bg-[var(--color-primary)] px-4 py-2.5 text-sm font-medium text-white"
             >
-              前往 {engineerPortalUrl.replace('https://', '')}
+              {engineerRedirectCopy.cta}
             </a>
             <button
               onClick={handleLogout}
               className="rounded-xl border border-[var(--color-border)] px-4 py-2.5 text-sm text-[var(--color-text-secondary)]"
             >
-              退出当前账号
+              {engineerRedirectCopy.signOut}
             </button>
           </div>
         </div>
@@ -397,6 +451,8 @@ function App() {
         onSelectConversation={handleSelectConversation}
         onDeleteConversation={handleDeleteConversation}
         onRenameConversation={handleRenameConversation}
+        onOpenHistory={() => setHistoryModalOpen(true)}
+        onOpenIndustryTools={() => setIndustryToolsOpen(true)}
         onOpenWorkOrder={() => setWorkOrderModalOpen(true)}
         onOpenMyWorkOrders={() => setMyWorkOrdersModalOpen(true)}
         onOpenSettings={() => {
@@ -436,6 +492,27 @@ function App() {
       {/* Modals — 重型组件使用 Suspense 懒加载 */}
       <ErrorBoundary>
         <Suspense fallback={null}>
+          <Modal
+            isOpen={historyModalOpen}
+            onClose={() => setHistoryModalOpen(false)}
+            title="Conversation History"
+            size="2xl"
+          >
+            <ChatHistory
+              conversations={conversations}
+              currentId={conversationId}
+              onSelect={handleSelectConversation}
+              onDelete={handleDeleteConversation}
+              onRename={handleRenameConversation}
+            />
+          </Modal>
+          {industryToolsOpen && (
+            <IndustryToolsModal
+              isOpen={industryToolsOpen}
+              onClose={() => setIndustryToolsOpen(false)}
+              onSendMessage={handleSendMessage}
+            />
+          )}
           {workOrderModalOpen && (
             <WorkOrderModal
               isOpen={workOrderModalOpen}

@@ -57,7 +57,7 @@ const TEXT = {
   },
   'zh-CN': {
     title: '工程师申请审核池',
-    subtitle: '审核认证服务工程师申请。这里的通过不自动创建工程师账号，账号仍由运营团队在确认合作后人工分配。',
+    subtitle: '审核认证服务代表申请。这里的通过不自动创建工程师账号，账号仍由 Admin 在确认合作后人工分配。',
     all: '全部状态',
     marketAll: '全部市场',
     total: (count) => `共 ${count} 条申请`,
@@ -87,7 +87,7 @@ const TEXT = {
       can_night: '可夜间',
       has_tools: '有工具',
     },
-    notesPlaceholder: '审核备注、下一步安排、区域匹配、是否需要创建账号...',
+    notesPlaceholder: '审核备注、下一步、区域匹配、是否需要创建账号...',
     convertedUserPlaceholder: '创建账号后的工程师 ID',
     save: '保存审核',
     saving: '保存中...',
@@ -102,6 +102,25 @@ const TEXT = {
 function joinList(value) {
   if (Array.isArray(value)) return value.join(', ');
   return value || '-';
+}
+
+function renderTags(value) {
+  const list = Array.isArray(value)
+    ? value.filter(Boolean)
+    : String(value || '')
+      .split(/[,;，、]/)
+      .map((item) => item.trim())
+      .filter(Boolean);
+  if (!list.length) return <span className="mt-1 block text-[var(--color-text-muted)]">-</span>;
+  return (
+    <div className="mt-2 flex flex-wrap gap-1.5">
+      {list.map((item) => (
+        <span key={item} className="rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1 text-xs text-[var(--color-text-secondary)]">
+          {item}
+        </span>
+      ))}
+    </div>
+  );
 }
 
 function contactLine(application) {
@@ -180,7 +199,7 @@ export function EngineerApplicationsPage() {
         <div>
           <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-[var(--color-primary)]/30 bg-[var(--color-primary)]/10 px-3 py-1 text-xs font-medium text-[var(--color-primary)]">
             <ClipboardList size={14} />
-            SAGEMRO 认证服务工程师网络
+            SAGEMRO Service Representative Network
           </div>
           <h2 className="text-2xl font-semibold tracking-tight text-[var(--color-text)]">{t.title}</h2>
           <p className="mt-2 max-w-2xl text-sm leading-6 text-[var(--color-text-secondary)]">
@@ -280,14 +299,14 @@ export function EngineerApplicationsPage() {
                         <ShieldCheck size={13} />
                         {t.headers.regions}
                       </div>
-                      <div className="mt-1 text-[var(--color-text-secondary)]">{joinList(application.service_regions)}</div>
+                      {renderTags(application.service_regions)}
                     </div>
                     <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-elevated)] p-3">
                       <div className="flex items-center gap-1.5 text-xs text-[var(--color-text-muted)]">
                         <Wrench size={13} />
                         {t.headers.skills}
                       </div>
-                      <div className="mt-1 text-[var(--color-text-secondary)]">{joinList(application.skill_tags)}</div>
+                      {renderTags(application.skill_tags)}
                     </div>
                   </div>
 

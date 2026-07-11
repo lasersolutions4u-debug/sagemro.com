@@ -78,6 +78,24 @@ import {
 // ============ SLA 时效配置 ============
 const SLA_HOURS = { critical: 4, urgent: 24, normal: 72 };
 
+const CONTACT_EMAIL_PATTERN = /[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g;
+const CONTACT_PLUS_PHONE_PATTERN = /\+\d[\d\s().-]{6,}\d/g;
+const CONTACT_CN_PHONE_PATTERN = /(?<!\d)1[3-9]\d{9}(?!\d)/g;
+
+function redactContactInfoForWorkOrder(text) {
+  if (typeof text !== 'string' || !text) return text;
+  return text
+    .replace(CONTACT_EMAIL_PATTERN, 'XXX')
+    .replace(CONTACT_PLUS_PHONE_PATTERN, (match) => (
+      String(match).replace(/\D/g, '').length >= 8 ? 'XXX' : match
+    ))
+    .replace(CONTACT_CN_PHONE_PATTERN, 'XXX');
+}
+
+function canEngineerViewCustomerContact(status) {
+  return ['in_service', 'resolved', 'pending_review', 'completed'].includes(status);
+}
+
 function getChatModel(env) {
   return env.OPENAI_CHAT_MODEL || env.OPENAI_MODEL || 'deepseek-chat';
 }
@@ -101,6 +119,8 @@ class TransientD1Error extends Error {
     this.cause = cause;
   }
 }
+
+const CHAT_CONVERSATION_CREATE_RETRY_DELAY_MS = 80;
 
 function isTransientD1Error(error) {
   const message = String(error?.message || error || '').toLowerCase();
@@ -132,6 +152,96 @@ async function runD1WithTransientRetry(operation, { label, attempts = 2, delayMs
     'SAGEMRO chat service is temporarily busy. Please try again shortly.',
     lastError,
   );
+}
+
+function isConversationIdConflict(error) {
+  const message = String(error?.message || error || '').toLowerCase();
+  return message.includes('d1_error') &&
+    message.includes('conversations.id') &&
+    (message.includes('unique constraint') || message.includes('sqlite_constraint'));
+}
+
+async function loadChatConversation(env, conversationId, label = 'chat:load_conversation') {
+  return runD1WithTransientRetry(
+    () => env.DB.prepare(
+      'SELECT customer_id, engineer_id FROM conversations WHERE id = ?'
+    ).bind(conversationId).first(),
+    { label },
+  );
+}
+
+function assertChatConversationAccess(chatAuth, trustedRole, conversation) {
+  if (!conversation) return;
+  if (trustedRole === 'guest') {
+    if (conversation.customer_id || conversation.engineer_id) {
+      throw new GuardError('鎮ㄦ棤鏉冭闂瀵硅瘽', 403);
+    }
+    return;
+  }
+  assertConversationAccess(chatAuth, conversation);
+}
+
+async function loadCommittedConversationAfterCreateFailure(env, convId, chatAuth, trustedRole, originalError) {
+  const committedConversation = await loadChatConversation(
+    env,
+    convId,
+    'chat:load_conversation_after_create_failure',
+  );
+  if (!committedConversation) throw originalError;
+  assertChatConversationAccess(chatAuth, trustedRole, committedConversation);
+  return committedConversation;
+}
+
+async function createChatConversation(env, {
+  convId,
+  message,
+  chatAuth,
+  trustedRole,
+  trustedCustomerId,
+  trustedEngineerId,
+}) {
+  const insertConversation = () => env.DB.prepare(
+    'INSERT INTO conversations (id, title, last_message, customer_id, engineer_id) VALUES (?, ?, ?, ?, ?)'
+  ).bind(convId, truncateStr(message, 20), truncateStr(message, 50), trustedCustomerId, trustedEngineerId).run();
+
+  try {
+    await insertConversation();
+    return null;
+  } catch (error) {
+    if (isConversationIdConflict(error)) {
+      return loadCommittedConversationAfterCreateFailure(env, convId, chatAuth, trustedRole, error);
+    }
+    if (!isTransientD1Error(error)) throw error;
+
+    console.warn('[d1] transient error during chat:create_conversation attempt 1/2:', error?.message || error);
+    const committedConversation = await loadChatConversation(
+      env,
+      convId,
+      'chat:load_conversation_after_create_timeout',
+    );
+    if (committedConversation) {
+      assertChatConversationAccess(chatAuth, trustedRole, committedConversation);
+      return committedConversation;
+    }
+
+    await delay(CHAT_CONVERSATION_CREATE_RETRY_DELAY_MS);
+    try {
+      await insertConversation();
+      return null;
+    } catch (retryError) {
+      if (isConversationIdConflict(retryError)) {
+        return loadCommittedConversationAfterCreateFailure(env, convId, chatAuth, trustedRole, retryError);
+      }
+      if (isTransientD1Error(retryError)) {
+        console.warn('[d1] transient error during chat:create_conversation attempt 2/2:', retryError?.message || retryError);
+        throw new TransientD1Error(
+          'SAGEMRO chat service is temporarily busy. Please try again shortly.',
+          retryError,
+        );
+      }
+      throw retryError;
+    }
+  }
 }
 
 function computeSlaDeadline(urgency) {
@@ -287,7 +397,7 @@ SAGEMRO AI helps laser cutting and sheet metal equipment users turn messy equipm
 
 ## 语言策略
 
-- 对 sagemro.com 国际版：默认英文回复；如果用户明确使用中文或要求中文，则使用中文。
+- 对 sagemro.com 国际版：客户可见的普通聊天回复跟随客户最新消息的自然语言；俄语用俄语回复，法语用法语回复，德语用德语回复，意大利语用意大利语回复，西班牙语用西班牙语回复，英语用英语回复。如果最新消息主要是报警代码、品牌、型号或短技术片段导致语言不明确，默认英文。SAGEMRO 系统 UI 标签、按钮名、路由、账号身份和入口名称保持英文；内部服务摘要、工单摘要、进度文本和 AI 分析保持英文。
 - 对 sagemro.cn 中国版：默认简体中文回复。英文报警代码、品牌名、CNC 术语、型号或短英文短语不代表用户要求英文回复；只有用户明确要求英文回复时，才切换英文。
 - 多轮对话中优先匹配用户当前使用的语言。
 - 专业术语可以保留英文缩写，例如 CNC、PLC、servo、nozzle、assist gas。
@@ -301,7 +411,7 @@ SAGEMRO AI helps laser cutting and sheet metal equipment users turn messy equipm
 - 中文工程师入口：engineer.sagemro.cn。工程师账号由 SAGEMRO 内部创建或审核，不开放普通客户自助注册为工程师。
 - 中文后台入口：admin.sagemro.cn。后台只供 SAGEMRO 运营和管理团队使用，不向普通客户开放。
 - 中文站桌面端登录/注册入口在左侧工具栏底部。移动端需要先点左上角菜单，再进入左侧工具栏里的登录/注册入口。
-- 注册流程可以自然说明为：点击“登录 / 注册” → 选择注册 → 填写公司名称、姓名、密码、手机号、邮箱和邮箱验证码 → 勾选用户协议、隐私政策和 AI 服务说明 → 选择使用身份并完成。
+- 注册流程可以自然说明为：点击“登录 / 注册” → 选择注册 → 填写公司名称、姓名、密码、手机号和短信验证码 → 邮箱可选补充 → 勾选用户协议、隐私政策和 AI 服务说明 → 选择使用身份并完成。
 - 已登录客户可以要求你把对话整理为 SAGEMRO 服务跟进摘要；信息齐全并经客户确认后，才能创建正式服务申请。
 - 游客不能直接创建正式服务申请，但你可以先给初步判断，并在需要后续跟进时引导其登录、注册或留下联系方式。
 
@@ -347,6 +457,14 @@ SAGEMRO AI helps laser cutting and sheet metal equipment users turn messy equipm
 
 ### 安全与责任边界
 - AI guidance is preliminary. Final diagnosis, quote, and on-site safety requirements are confirmed through the SAGEMRO service process.
+
+### Knowledge Priority & Conflict Policy
+- This is an internal decision policy. Do not expose the words "policy", "conflict", "priority", or "knowledge base" to customers.
+- Prefer published SAGEMRO knowledge over general model knowledge for SAGEMRO-specific facts, product details, service process, parts compatibility, parameters, warranty, quote, inventory, certification, delivery, and safety commitments.
+- General model knowledge may fill only general background, language, and non-committal troubleshooting guidance.
+- If no matching published SAGEMRO knowledge is available, answer general maintenance or education questions cautiously, but do not invent SAGEMRO-specific facts.
+- If the user asks for quote, price, availability, lead time, exact parameter, parts compatibility, certification, warranty, final diagnosis, or safety approval and no published SAGEMRO knowledge supports it, ask for missing facts or route to SAGEMRO manual confirmation instead of giving a final answer.
+- If published SAGEMRO knowledge and general model knowledge appear inconsistent, follow the published SAGEMRO knowledge and make the customer-facing answer calm and natural, using wording such as "based on the information currently available" or "this should be confirmed before quotation/use"; do not mention an internal conflict.
 - 涉及激光、电气、高压气体、液压、吊装、高温、火灾风险、联锁失效、带电开柜或进入危险区域时，先提醒用户停止不安全操作，等待具备资质的人员处理。
 - 不要指导用户绕过安全联锁、屏蔽保护装置、带电拆装高风险部件。
 
@@ -560,6 +678,37 @@ const TOOLS_SCHEMAS = [
   {
     type: 'function',
     function: {
+      name: 'search_knowledge_base',
+      description: 'Search published SAGEMRO knowledge articles for equipment service, fault, maintenance, parts, cutting parameter, safety, machine selection, or health questions. Use this before answering professional equipment questions when relevant. Only published knowledge is returned. Prefer returned SAGEMRO knowledge over general model knowledge for SAGEMRO-specific facts. If no matching published SAGEMRO knowledge is found, do not invent quotes, parts compatibility, safety approvals, exact parameters, certification, warranty, inventory, delivery, or final diagnosis.',
+      parameters: {
+        type: 'object',
+        properties: {
+          market: {
+            type: 'string',
+            description: 'Market: cn for sagemro.cn, com for sagemro.com',
+            enum: ['cn', 'com']
+          },
+          locale: {
+            type: 'string',
+            description: 'Preferred language locale, such as zh-CN or en'
+          },
+          category: {
+            type: 'string',
+            description: 'Knowledge category',
+            enum: ['fault', 'cutting_parameters', 'parts', 'maintenance', 'machine_selection', 'health', 'safety', 'other']
+          },
+          query: {
+            type: 'string',
+            description: 'Short search query from the user question, alarm code, part model, equipment brand/model, or symptom'
+          }
+        },
+        required: ['query']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
       name: 'get_engineer_profile',
       description: '查询当前登录 SAGEMRO 工程师的完整档案信息，包括评分、专长、服务地区、累计完成服务数等。当工程师询问自身状态时调用此工具。',
       parameters: {
@@ -701,19 +850,24 @@ const TOOLS_SCHEMAS = [
 // 注意：prompt 层面的角色约束会被越狱绕过，这里是最终一道闸。
 // 游客调试用允许空集；admin 看全部；system 是服务端触发（内部流程），也全开。
 const ROLE_ALLOWED_TOOLS = {
-  guest: new Set([]),
+  guest: new Set([
+    'search_knowledge_base',
+  ]),
   customer: new Set([
+    'search_knowledge_base',
     'get_customer_devices',
     'get_device_detail',
     'get_conversation_history',
     'create_work_order',
   ]),
   engineer: new Set([
+    'search_knowledge_base',
     'get_engineer_profile',
     'get_pending_tickets_for_engineer',
     'get_conversation_history',
   ]),
   admin: new Set([
+    'search_knowledge_base',
     'get_engineer_profile',
     'get_pending_tickets_for_engineer',
     'get_customer_devices',
@@ -721,6 +875,7 @@ const ROLE_ALLOWED_TOOLS = {
     'get_conversation_history',
   ]),
   system: new Set([
+    'search_knowledge_base',
     'get_engineer_profile',
     'get_pending_tickets_for_engineer',
     'get_customer_devices',
@@ -744,6 +899,76 @@ const FALLBACK_INSTRUCTIONS = {
 // 参数改为 context 对象，方便 Phase 0.3 多轮 tool call 传递 iteration。
 // 返回值永远是 JSON-safe 对象：正常结果 / { error, fallback_instruction }
 // 导出以供 worker/tests/test-execute-tool.mjs 单元测试直接调用。
+async function toolSearchKnowledgeBase({ args = {}, env, market = 'com' }) {
+  if (!env?.DB) {
+    return { count: 0, articles: [] };
+  }
+  const search = cleanText(args.query, 160);
+  if (!search) {
+    return { count: 0, articles: [] };
+  }
+  const requestedMarket = cleanText(args.market, 20) || market || 'com';
+  const requestedLocale = cleanText(args.locale, 20);
+  const category = cleanText(args.category, 80);
+  const limit = Math.min(8, Math.max(1, parseInt(args.limit || '5', 10) || 5));
+
+  let where = "WHERE status = 'published' AND market = ?";
+  const binds = [requestedMarket];
+  if (requestedLocale) {
+    where += ' AND locale = ?';
+    binds.push(requestedLocale);
+  }
+  if (category && KNOWLEDGE_CATEGORIES.has(category)) {
+    where += ' AND category = ?';
+    binds.push(category);
+  }
+  where += ` AND (
+    instr(lower(COALESCE(title, '')), lower(?)) > 0 OR
+    instr(lower(COALESCE(content, '')), lower(?)) > 0 OR
+    instr(lower(COALESCE(applicable_equipment, '')), lower(?)) > 0 OR
+    instr(lower(COALESCE(applicable_brand, '')), lower(?)) > 0 OR
+    instr(lower(COALESCE(applicable_model, '')), lower(?)) > 0
+  )`;
+  binds.push(search, search, search, search, search);
+
+  const rows = await env.DB.prepare(`
+    SELECT id, market, locale, category, title, content, source,
+           applicable_equipment, applicable_brand, applicable_model,
+           risk_level, version, status, reviewed_by, reviewed_at, updated_at
+    FROM knowledge_articles
+    ${where}
+    ORDER BY updated_at DESC, created_at DESC
+    LIMIT ?
+  `).bind(...binds, limit).all();
+
+  const articles = (rows.results || []).map((row) => ({
+    id: row.id,
+    market: row.market,
+    locale: row.locale,
+    category: row.category,
+    title: row.title,
+    content: row.content,
+    source: row.source,
+    applicable_equipment: row.applicable_equipment,
+    applicable_brand: row.applicable_brand,
+    applicable_model: row.applicable_model,
+    risk_level: row.risk_level,
+    version: Number(row.version || 1),
+    status: row.status,
+    reviewed_by: row.reviewed_by,
+    reviewed_at: row.reviewed_at,
+    updated_at: row.updated_at,
+  }));
+
+  return {
+    count: articles.length,
+    articles,
+    note: articles.length > 0
+      ? 'Only published SAGEMRO knowledge articles are returned. Prefer these articles over general model knowledge for SAGEMRO-specific facts. Use them as reference, not as final diagnosis, quote, safety approval, or parts compatibility commitment.'
+      : 'No matching published SAGEMRO knowledge was found. General model knowledge may be used only for general background and cautious troubleshooting. Do not invent SAGEMRO-specific facts, quote, safety approval, exact parameters, inventory, delivery, warranty, certification, final diagnosis, or parts compatibility commitment.',
+  };
+}
+
 export async function executeTool(ctxObj) {
   const {
     toolName,
@@ -754,6 +979,7 @@ export async function executeTool(ctxObj) {
     engineerId = null,
     customerId = null,
     conversationId = null,
+    market = 'com',
     iteration = 0,
   } = ctxObj;
 
@@ -786,11 +1012,12 @@ export async function executeTool(ctxObj) {
 
   // 2. 未知工具
   const executor = {
+    search_knowledge_base: () => toolSearchKnowledgeBase({ args, env, market }),
     get_engineer_profile: () => toolGetEngineerProfile(engineerId, env),
     get_pending_tickets_for_engineer: () => toolGetPendingTickets({ limit: args?.limit || 10, engineerId, env }),
     get_customer_devices: () => toolGetCustomerDevices(customerId, env),
     get_device_detail: () => toolGetDeviceDetail(customerId, args?.device_id, env),
-    create_work_order: () => toolCreateWorkOrder({ customerId, env, ctx, args, conversationId }),
+    create_work_order: () => toolCreateWorkOrder({ customerId, env, ctx, args, conversationId, market }),
     get_conversation_history: () =>
       toolGetConversationHistory({
         customerId,
@@ -951,7 +1178,7 @@ async function toolGetPendingTickets({ limit, engineerId, env }) {
         device_type: t.device_type || '未知设备',
         device_brand: t.device_brand || '',
         device_model: t.device_model || '',
-        problem: t.description,
+        problem: redactContactInfoForWorkOrder(t.description),
         urgency: urgencyText[t.urgency] || t.urgency,
         type: typeText[t.type] || t.type,
         customer: t.customer_name || '匿名客户',
@@ -964,7 +1191,7 @@ async function toolGetPendingTickets({ limit, engineerId, env }) {
         device_type: t.device_type || '未知设备',
         device_brand: t.device_brand || '',
         device_model: t.device_model || '',
-        problem: t.description,
+        problem: redactContactInfoForWorkOrder(t.description),
         urgency: urgencyText[t.urgency] || t.urgency,
         type: typeText[t.type] || t.type,
         customer: t.customer_name || '匿名客户',
@@ -1311,7 +1538,7 @@ async function attachConversationImagesToWorkOrder(env, {
 
 // 工具：AI 创建工单（function calling）
 // 与 POST /api/workorders 共享核心逻辑，但不走 HTTP 层
-async function toolCreateWorkOrder({ customerId, env, ctx, args, conversationId }) {
+async function toolCreateWorkOrder({ customerId, env, ctx, args, conversationId, market = 'com' }) {
   const { type, description, urgency, device_id, category_l1, category_l2 } = args;
 
   if (!customerId) return { error: 'not_authenticated', reason: '客户未登录，无法创建工单。请引导客户先登录。' };
@@ -1360,7 +1587,7 @@ async function toolCreateWorkOrder({ customerId, env, ctx, args, conversationId 
     });
 
     // AI 摘要异步生成
-    const aiSummaryPromise = generateWorkOrderSummary(type, safeDescription, urgency, env)
+    const aiSummaryPromise = generateWorkOrderSummary(type, safeDescription, urgency, env, { market })
       .then(async (summary) => {
         if (summary) {
           await env.DB.prepare('UPDATE work_orders SET ai_summary = ? WHERE id = ?')
@@ -1569,7 +1796,7 @@ const ERROR_MESSAGES = {
   },
   name_phone_company_password_required: {
     com: 'Name, phone number, email, company name, and password are required.',
-    cn: '姓名、手机号、邮箱、公司名称、密码不能为空',
+    cn: '姓名、手机号、公司名称、密码不能为空',
   },
   phone_password_required: {
     com: 'Phone number and password are required.',
@@ -1631,6 +1858,10 @@ function isValidEmail(email) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
 
+function isCnPhoneNumber(phone) {
+  return /^1\d{10}$/.test(String(phone || ''));
+}
+
 function getVerificationTarget({ phone, email }) {
   const normalizedEmail = normalizeEmail(email);
   if (normalizedEmail) {
@@ -1650,11 +1881,54 @@ function getVerificationTarget({ phone, email }) {
   return null;
 }
 
+function getRegistrationVerificationTarget({ phone, email }, request) {
+  if (getRequestMarket(request) === 'cn' && phone) {
+    return {
+      type: 'phone',
+      value: phone,
+      key: phone,
+    };
+  }
+  return getVerificationTarget({ phone, email });
+}
+
 async function sendVerificationEmail(env, email, code, request) {
-  if (env.ENVIRONMENT === 'development' || env.DEV_BYPASS_CODE) {
+  if (env.ENVIRONMENT === 'development') {
     return { skipped: true };
   }
-  if (!env.RESEND_API_KEY || !env.VERIFICATION_EMAIL_FROM) {
+  if (!env.VERIFICATION_EMAIL_FROM) {
+    return {
+      error: getRequestMarket(request) === 'cn'
+        ? '邮件验证码服务尚未配置，请稍后再试'
+        : 'Email verification service is not configured yet.',
+    };
+  }
+
+  const emailPayload = {
+    from: env.VERIFICATION_EMAIL_FROM,
+    to: email,
+    subject: 'SAGEMRO verification code',
+    text: `Your SAGEMRO verification code is ${code}. It is valid for 5 minutes. Do not share it with others.`,
+  };
+
+  if (env.EMAIL?.send) {
+    try {
+      await env.EMAIL.send(emailPayload);
+      return { sent: true, provider: 'cloudflare' };
+    } catch (error) {
+      console.warn('[email] Cloudflare Email send failed', {
+        message: error?.message,
+        emailSuffix: String(email || '').split('@').pop(),
+      });
+      return {
+        error: getRequestMarket(request) === 'cn'
+          ? '邮件验证码发送失败，请稍后再试'
+          : 'Failed to send verification email. Please try again later.',
+      };
+    }
+  }
+
+  if (!env.RESEND_API_KEY) {
     return {
       error: getRequestMarket(request) === 'cn'
         ? '邮件验证码服务尚未配置，请稍后再试'
@@ -1669,10 +1943,8 @@ async function sendVerificationEmail(env, email, code, request) {
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      from: env.VERIFICATION_EMAIL_FROM,
+      ...emailPayload,
       to: [email],
-      subject: 'SAGEMRO verification code',
-      text: `Your SAGEMRO verification code is ${code}. It is valid for 5 minutes. Do not share it with others.`,
     }),
   });
   if (!response.ok) {
@@ -1685,22 +1957,133 @@ async function sendVerificationEmail(env, email, code, request) {
   return { sent: true };
 }
 
+function toHex(buffer) {
+  return Array.from(new Uint8Array(buffer))
+    .map((byte) => byte.toString(16).padStart(2, '0'))
+    .join('');
+}
+
+async function sha256Hex(value) {
+  const encoded = new TextEncoder().encode(value);
+  const digest = await crypto.subtle.digest('SHA-256', encoded);
+  return toHex(digest);
+}
+
+async function hmacSha256Hex(secret, value) {
+  const key = await crypto.subtle.importKey(
+    'raw',
+    new TextEncoder().encode(secret),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign'],
+  );
+  const signature = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(value));
+  return toHex(signature);
+}
+
+function createAliyunNonce() {
+  if (crypto.randomUUID) return crypto.randomUUID();
+  const bytes = new Uint8Array(16);
+  crypto.getRandomValues(bytes);
+  return toHex(bytes);
+}
+
+async function buildAliyunSmsRequest(env, phone, code) {
+  const endpoint = 'https://dysmsapi.aliyuncs.com';
+  const host = 'dysmsapi.aliyuncs.com';
+  const date = new Date().toISOString().replace(/\.\d{3}Z$/, 'Z');
+  const nonce = createAliyunNonce();
+  const queryParams = new URLSearchParams({
+    PhoneNumbers: phone,
+    SignName: env.ALIYUN_SMS_SIGN_NAME_CN,
+    TemplateCode: env.ALIYUN_SMS_TEMPLATE_CODE_REGISTER_CN,
+    TemplateParam: JSON.stringify({ code }),
+  });
+  queryParams.sort();
+  const canonicalQueryString = queryParams.toString();
+  const bodyHash = await sha256Hex('');
+  const headersToSign = {
+    host,
+    'x-acs-action': 'SendSms',
+    'x-acs-content-sha256': bodyHash,
+    'x-acs-date': date,
+    'x-acs-signature-nonce': nonce,
+    'x-acs-version': '2017-05-25',
+  };
+  const signedHeaders = Object.keys(headersToSign).sort().join(';');
+  const canonicalHeaders = Object.keys(headersToSign)
+    .sort()
+    .map((key) => `${key}:${headersToSign[key]}\n`)
+    .join('');
+  const canonicalRequest = [
+    'POST',
+    '/',
+    canonicalQueryString,
+    canonicalHeaders,
+    signedHeaders,
+    bodyHash,
+  ].join('\n');
+  const stringToSign = [
+    'ACS3-HMAC-SHA256',
+    await sha256Hex(canonicalRequest),
+  ].join('\n');
+  const signature = await hmacSha256Hex(env.ALIYUN_SMS_ACCESS_KEY_SECRET, stringToSign);
+
+  return {
+    url: `${endpoint}/?${canonicalQueryString}`,
+    init: {
+      method: 'POST',
+      headers: {
+        Authorization: `ACS3-HMAC-SHA256 Credential=${env.ALIYUN_SMS_ACCESS_KEY_ID},SignedHeaders=${signedHeaders},Signature=${signature}`,
+        'x-acs-action': headersToSign['x-acs-action'],
+        'x-acs-content-sha256': headersToSign['x-acs-content-sha256'],
+        'x-acs-date': headersToSign['x-acs-date'],
+        'x-acs-signature-nonce': headersToSign['x-acs-signature-nonce'],
+        'x-acs-version': headersToSign['x-acs-version'],
+      },
+    },
+  };
+}
+
+async function sendAliyunSmsVerification(env, phone, code) {
+  if (env.ENVIRONMENT === 'development') {
+    return { skipped: true };
+  }
+  if (
+    !env.ALIYUN_SMS_ACCESS_KEY_ID
+    || !env.ALIYUN_SMS_ACCESS_KEY_SECRET
+    || !env.ALIYUN_SMS_SIGN_NAME_CN
+    || !env.ALIYUN_SMS_TEMPLATE_CODE_REGISTER_CN
+  ) {
+    return { error: '短信验证码服务尚未配置，请稍后再试' };
+  }
+
+  const smsRequest = await buildAliyunSmsRequest(env, phone, code);
+  const response = await fetch(smsRequest.url, smsRequest.init);
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok || result.Code !== 'OK') {
+    console.warn('[aliyun-sms] send failed', {
+      status: response.status,
+      code: result.Code,
+      message: result.Message,
+      requestId: result.RequestId,
+      phoneSuffix: String(phone || '').slice(-4),
+    });
+    return { error: '短信验证码发送失败，请稍后再试' };
+  }
+  return { sent: true };
+}
+
 async function isVerificationCodeValid(env, { phone, email, code }) {
   const target = getVerificationTarget({ phone, email });
   if (!target) return false;
   const storedCode = await env.KV.get(`verify_code_${target.key}`);
-  const bypassCode = await env.KV.get(`verify_code_${target.key}_bypass`);
   const legacyStoredCode = target.type === 'email' && phone
     ? await env.KV.get(`verify_code_${phone}`)
     : null;
-  const legacyBypassCode = target.type === 'email' && phone
-    ? await env.KV.get(`verify_code_${phone}_bypass`)
-    : null;
-  const devBypass = env.DEV_BYPASS_CODE;
+  const devBypass = env.ENVIRONMENT === 'development' ? env.DEV_BYPASS_CODE : null;
   return (storedCode && storedCode === code)
-    || (bypassCode && bypassCode === code)
     || (legacyStoredCode && legacyStoredCode === code)
-    || (legacyBypassCode && legacyBypassCode === code)
     || (devBypass && devBypass === code);
 }
 
@@ -1708,11 +2091,9 @@ async function deleteVerificationCode(env, { phone, email }) {
   const target = getVerificationTarget({ phone, email });
   if (target) {
     await env.KV.delete(`verify_code_${target.key}`);
-    await env.KV.delete(`verify_code_${target.key}_bypass`);
   }
   if (phone) {
     await env.KV.delete(`verify_code_${phone}`);
-    await env.KV.delete(`verify_code_${phone}_bypass`);
   }
 }
 
@@ -1720,7 +2101,7 @@ async function deleteVerificationCode(env, { phone, email }) {
 async function handleSendCode(request, env) {
   try {
     const { phone, email } = await request.json();
-    const target = getVerificationTarget({ phone, email });
+    const target = getRegistrationVerificationTarget({ phone, email }, request);
     if (!target) {
       if (email !== undefined) return localizedErrorResponse('email_required', request);
       return localizedErrorResponse('phone_required', request);
@@ -1729,7 +2110,7 @@ async function handleSendCode(request, env) {
     if (target.type === 'email' && !isValidEmail(target.value)) {
       return localizedErrorResponse('invalid_email', request);
     }
-    if (target.type === 'phone' && !/^1\d{10}$/.test(target.value)) {
+    if (target.type === 'phone' && !isCnPhoneNumber(target.value)) {
       return localizedErrorResponse('invalid_phone', request);
     }
 
@@ -1766,24 +2147,26 @@ async function handleSendCode(request, env) {
     // - DEV_BYPASS_CODE：如果配置了固定验证码，直接使用该码（跳过随机生成）
     const devBypass = env.DEV_BYPASS_CODE;
     const response = { success: true, message: '验证码已发送' };
-    if (devBypass) {
-      await env.KV.put(`verify_code_${target.key}_bypass`, devBypass, { expirationTtl: 300 });
-      if (env.ENVIRONMENT === 'development') {
+    if (env.ENVIRONMENT === 'development') {
+      if (devBypass) {
         response.code = devBypass;
         response.note = 'DEV_BYPASS_CODE 已启用，验证码为固定值';
-      }
-    } else {
-      if (env.ENVIRONMENT === 'development') {
+      } else {
         response.code = code;
       }
-      await env.KV.put(`verify_code_${target.key}_bypass`, '888888', { expirationTtl: 300 });
     }
 
     if (target.type === 'email') {
-      const emailResult = await sendVerificationEmail(env, target.value, devBypass || code, request);
+      const emailResult = await sendVerificationEmail(env, target.value, env.ENVIRONMENT === 'development' && devBypass ? devBypass : code, request);
       if (emailResult.error) {
         await deleteVerificationCode(env, { email: target.value });
         return errorResponse(emailResult.error, 503);
+      }
+    } else if (getRequestMarket(request) === 'cn') {
+      const smsResult = await sendAliyunSmsVerification(env, target.value, env.ENVIRONMENT === 'development' && devBypass ? devBypass : code);
+      if (smsResult.error) {
+        await deleteVerificationCode(env, { phone: target.value });
+        return errorResponse(smsResult.error, 503);
       }
     }
     return jsonResponse(response);
@@ -1796,8 +2179,10 @@ async function handleSendCode(request, env) {
 async function handleRegisterCustomer(request, env) {
   try {
     const { name, phone, email, password, code, company, identity } = await request.json();
+    const market = getRequestMarket(request);
+    const normalizedEmail = normalizeEmail(email);
 
-    if (!name || !phone || !email || !password || !company) {
+    if (!name || !phone || !password || !company || (market !== 'cn' && !normalizedEmail)) {
       return localizedErrorResponse('name_phone_company_password_required', request);
     }
 
@@ -1814,8 +2199,11 @@ async function handleRegisterCustomer(request, env) {
     const existingEngineer = await env.DB.prepare(
       'SELECT id FROM engineers WHERE phone = ?'
     ).bind(phone).first();
+    const existingEmailCustomer = normalizedEmail
+      ? await env.DB.prepare('SELECT id FROM customers WHERE lower(email) = ?').bind(normalizedEmail).first()
+      : null;
 
-    if (existingCustomer || existingEngineer) {
+    if (existingCustomer || existingEngineer || existingEmailCustomer) {
       return errorResponse('该手机号已注册', 409);
     }
 
@@ -1832,8 +2220,8 @@ async function handleRegisterCustomer(request, env) {
     const passwordHash = await hashPasswordNew(password, salt);
 
     await env.DB.prepare(
-      'INSERT INTO customers (id, user_no, name, phone, password_hash, salt, company, auth_status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
-    ).bind(id, userNo, name, phone, passwordHash, salt, company, authStatus).run();
+      'INSERT INTO customers (id, user_no, name, phone, email, password_hash, salt, company, auth_status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+    ).bind(id, userNo, name, phone, normalizedEmail || null, passwordHash, salt, company, authStatus).run();
 
     // 删除已使用的验证码
     await deleteVerificationCode(env, { phone, email });
@@ -1841,7 +2229,7 @@ async function handleRegisterCustomer(request, env) {
 
     return jsonResponse({
       success: true,
-      customer: { id, user_no: userNo, name, phone }
+      customer: { id, user_no: userNo, name, phone, email: normalizedEmail || '' }
     });
   } catch (error) {
     return errorResponse(error.message, 500);
@@ -1925,14 +2313,16 @@ async function handleRegisterEngineer(request, env) {
 // 登录
 async function handleLogin(request, env) {
   try {
-    const { phone, password } = await request.json();
+    const { phone, email, password } = await request.json();
+    const normalizedEmail = normalizeEmail(email);
+    const loginKey = normalizedEmail || phone;
 
-    if (!phone || !password) {
+    if (!loginKey || !password) {
       return localizedErrorResponse('phone_password_required', request);
     }
 
     // 登录失败计数（防暴力破解）：同一手机号 15 分钟内失败 5 次锁定
-    const failKey = `login_fail_${phone}`;
+    const failKey = `login_fail_${loginKey}`;
     const failCountStr = await env.KV.get(failKey);
     const failCount = failCountStr ? parseInt(failCountStr, 10) : 0;
     if (failCount >= 5) {
@@ -1940,9 +2330,13 @@ async function handleLogin(request, env) {
     }
 
     // 查找客户
-    let user = await env.DB.prepare(
-      'SELECT * FROM customers WHERE phone = ?'
-    ).bind(phone).first();
+    let user = normalizedEmail
+      ? await env.DB.prepare(
+          'SELECT * FROM customers WHERE lower(email) = ?'
+        ).bind(normalizedEmail).first()
+      : await env.DB.prepare(
+          'SELECT * FROM customers WHERE phone = ?'
+        ).bind(phone).first();
 
     let userType = 'customer';
 
@@ -1950,7 +2344,7 @@ async function handleLogin(request, env) {
     if (!user) {
       user = await env.DB.prepare(
         'SELECT * FROM engineers WHERE phone = ?'
-      ).bind(phone).first();
+      ).bind(loginKey).first();
       userType = 'engineer';
     }
 
@@ -2002,6 +2396,15 @@ async function handleLogin(request, env) {
         user_no: user.user_no,
         name: user.name,
         phone: user.phone,
+        email: user.email || '',
+        company: user.company || '',
+        region: user.region || '',
+        city: user.city || '',
+        address: user.address || '',
+        company_description: user.company_description || '',
+        business_scope: user.business_scope || '',
+        logo_url: user.logo_url || '',
+        auth_status: user.auth_status || 'pending',
         ...(userType === 'engineer' ? {
           engineer_role: user.engineer_role || 'engineer',
           regional_lead_id: user.regional_lead_id || null,
@@ -2071,16 +2474,12 @@ async function handleSendResetCode(request, env) {
     // - DEV_BYPASS_CODE：如果配置了固定验证码，直接使用该码
     const devBypass = env.DEV_BYPASS_CODE;
     const response = { success: true, message: '验证码已发送' };
-    if (devBypass) {
-      await env.KV.put(`reset_code_${phone}_bypass`, devBypass, { expirationTtl: 300 });
-      if (env.ENVIRONMENT === 'development') {
+    if (env.ENVIRONMENT === 'development') {
+      if (devBypass) {
         response.code = devBypass;
-      }
-    } else {
-      if (env.ENVIRONMENT === 'development') {
+      } else {
         response.code = code;
       }
-      await env.KV.put(`reset_code_${phone}_bypass`, '888888', { expirationTtl: 300 });
     }
     return jsonResponse(response);
   } catch (error) {
@@ -2103,10 +2502,8 @@ async function handleResetPassword(request, env) {
 
     // 验证验证码（开发环境支持 bypass 码 "888888" + DEV_BYPASS_CODE 用于自动化测试）
     const storedCode = await env.KV.get(`reset_code_${phone}`);
-    const bypassCode = await env.KV.get(`reset_code_${phone}_bypass`);
-    const devBypass = env.DEV_BYPASS_CODE;
+    const devBypass = env.ENVIRONMENT === 'development' ? env.DEV_BYPASS_CODE : null;
     const isValid = (storedCode && storedCode === code)
-      || (bypassCode && bypassCode === code)
       || (devBypass && devBypass === code);
     if (!isValid) {
       return errorResponse('验证码错误或已过期');
@@ -2346,6 +2743,19 @@ async function enforceOpenAIBudget(env, { userKey, tag = 'chat' }) {
 //   chat:    对话主流程，允许较长回复
 //   summary: 工单摘要，短 JSON
 //   note:    核价点评，一句话 + 2 条建议
+async function enforceHourlyKvLimit(env, { key, limit, ttlSeconds = 3600, message }) {
+  if (!env.KV) return;
+
+  const currentStr = await env.KV.get(key);
+  const currentCount = currentStr ? parseInt(currentStr, 10) : 0;
+
+  if (currentCount >= limit) {
+    throw new BudgetError(message, 429);
+  }
+
+  await env.KV.put(key, String(currentCount + 1), { expirationTtl: ttlSeconds });
+}
+
 const MAX_TOKENS = {
   chat: 2000,
   chat_tool_followup: 2000,
@@ -2357,6 +2767,19 @@ const MAX_TOKENS = {
 // 设计意图：每轮允许 AI 继续调工具（chain），最后一轮强制不给 tools，LLM 必须产出文本。
 // 4 轮足够复杂 Agent 场景（查客户 → 查设备 → 查历史报价 → 查同区域均价），生产可按需调。
 const MAX_TOOL_ITERATIONS = 4;
+
+function sanitizeCustomerVisibleAiContent(text) {
+  if (typeof text !== 'string' || !text) return '';
+
+  return text
+    .replace(/Knowledge\s+Priority\s*&\s*Conflict\s+Policy\s*:?\s*/gi, '')
+    .replace(/\binternal\s+(?:decision\s+)?policy\b/gi, 'service rule')
+    .replace(/\binternal\s+conflict\b/gi, 'inconsistency')
+    .replace(/\bknowledge\s+priority\b/gi, 'available information')
+    .replace(/\bpublished\s+SAGEMRO\s+knowledge\b/gi, 'available SAGEMRO information')
+    .replace(/\bSAGEMRO\s+knowledge\s+articles?\b/gi, 'available SAGEMRO information')
+    .replace(/\bknowledge\s+base\b/gi, 'available SAGEMRO information');
+}
 
 /**
  * 消费一次 LLM 的 SSE 流：
@@ -2401,10 +2824,12 @@ export async function consumeLlmStream({ response, controller, encoder, convId, 
       if (!delta) continue;
 
       if (delta.content) {
-        content += delta.content;
+        const customerContent = sanitizeCustomerVisibleAiContent(delta.content);
+        content += customerContent;
+        if (!customerContent) continue;
         controller.enqueue(
           encoder.encode(
-            `data: ${JSON.stringify({ content: delta.content, conversation_id: convId })}\n`,
+            `data: ${JSON.stringify({ content: customerContent, conversation_id: convId })}\n`,
           ),
         );
       }
@@ -2482,6 +2907,91 @@ async function handleChatUploadImage(request, env) {
 }
 
 // 处理聊天请求
+function normalizeVoiceTranscript(text) {
+  let normalized = String(text || '');
+  let next = normalized;
+  do {
+    normalized = next;
+    next = normalized.replace(/([\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}])\s+([\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}])/gu, '$1$2');
+  } while (next !== normalized);
+  return normalized;
+}
+
+export async function handleChatTranscribe(request, env) {
+  try {
+    if (!env.DEEPGRAM_API_KEY) {
+      return errorResponse('Voice input is not configured.', 503);
+    }
+
+    const formData = await request.formData();
+    const file = formData.get('audio');
+
+    if (!file || typeof file === 'string') {
+      return errorResponse('Please record audio first.', 400);
+    }
+
+    const maxVoiceBytes = 6 * 1024 * 1024;
+    if (file.size > maxVoiceBytes) {
+      return errorResponse('Voice recording is too large. Please keep it under 30 seconds.', 413);
+    }
+
+    const contentType = file.type || 'audio/webm';
+    if (!/^audio\//i.test(contentType) && !/webm|ogg|mp4|mpeg/i.test(contentType)) {
+      return errorResponse('Unsupported audio format.', 400);
+    }
+
+    let auth = null;
+    try {
+      auth = await authenticateRequest(request, env);
+    } catch {
+      auth = null;
+    }
+    const clientIP = getRequestIp(request) || 'unknown';
+    const voiceUserKey = auth?.userId ? `${auth.userType}:${auth.userId}` : `guest:${clientIP}`;
+    const hourlyLimit = parseInt(env.DEEPGRAM_HOURLY_PER_USER || '20', 10);
+    await enforceHourlyKvLimit(env, {
+      key: `deepgram_voice_hour_${voiceUserKey}`,
+      limit: hourlyLimit,
+      ttlSeconds: 3600,
+      message: `Voice transcription limit reached. Please try again later.`,
+    });
+
+    const deepgramUrl = new URL('https://api.deepgram.com/v1/listen');
+    deepgramUrl.searchParams.set('model', env.DEEPGRAM_MODEL || 'whisper-large');
+    deepgramUrl.searchParams.set('smart_format', 'true');
+    deepgramUrl.searchParams.set('detect_language', 'true');
+
+    const dgResponse = await fetch(deepgramUrl.toString(), {
+      method: 'POST',
+      headers: {
+        Authorization: `Token ${env.DEEPGRAM_API_KEY}`,
+        'Content-Type': contentType,
+      },
+      body: file.stream(),
+    });
+
+    const dgBody = await dgResponse.json().catch(() => ({}));
+    if (!dgResponse.ok) {
+      const message = dgBody.err_msg || dgBody.error || 'Voice transcription failed.';
+      return errorResponse(message, dgResponse.status >= 500 ? 503 : 400);
+    }
+
+    const channel = dgBody?.results?.channels?.[0] || {};
+    const transcript = normalizeVoiceTranscript(channel?.alternatives?.[0]?.transcript || '');
+    return jsonResponse({
+      success: true,
+      transcript,
+      detectedLanguage: channel.detected_language || null,
+      languageConfidence: channel.language_confidence ?? null,
+    });
+  } catch (error) {
+    if (error instanceof BudgetError) {
+      return errorResponse(error.message, error.status);
+    }
+    return errorResponse(error.message || 'Voice transcription failed.', 500);
+  }
+}
+
 export async function handleChat(request, env) {
   try {
     const body = await request.json();
@@ -2638,9 +3148,12 @@ export async function handleChat(request, env) {
       ? `You MUST answer this turn in Simplified Chinese.
 Reply in Simplified Chinese.
 English alarm codes, brand names, CNC terms, or short English phrases do not count as a request to answer in English.`
-      : `You MUST answer this turn in English.
-Reply in English.
-Use Chinese only if the user clearly writes in Chinese or explicitly asks for Chinese.`;
+      : `Reply in the same natural language the customer uses in their latest message.
+If the latest customer message is in Russian, reply in Russian; if it is in French, reply in French; if it is in German, reply in German; if it is in Italian, reply in Italian; if it is in Spanish, reply in Spanish; if it is in English, reply in English.
+If the latest customer message is ambiguous, mostly alarm codes, brand names, model names, CNC terms, or short technical fragments, default to English.
+SAGEMRO system UI labels, button names, routes, account type names, and portal names remain in English.
+Internal service-ready summaries, work-order summaries, progress text, and AI analysis must remain in English.
+Customer-facing explanatory chat replies may follow the customer's language.`;
     const marketContext = `
 
 ## 当前请求上下文
@@ -2658,12 +3171,14 @@ ${turnLanguageRule}
     let convId = conversation_id;
     if (!convId || !existingConversation) {
       convId = convId || generateId();
-      await runD1WithTransientRetry(
-        () => env.DB.prepare(
-          'INSERT INTO conversations (id, title, last_message, customer_id, engineer_id) VALUES (?, ?, ?, ?, ?)'
-        ).bind(convId, truncateStr(message, 20), truncateStr(message, 50), trustedCustomerId, trustedEngineerId).run(),
-        { label: 'chat:create_conversation' },
-      );
+      existingConversation = await createChatConversation(env, {
+        convId,
+        message,
+        chatAuth,
+        trustedRole,
+        trustedCustomerId,
+        trustedEngineerId,
+      });
     } else {
       await runD1WithTransientRetry(
         () => env.DB.prepare(
@@ -2766,6 +3281,7 @@ ${turnLanguageRule}
                 env,
                 ctx: request._ctx,
                 conversationId: convId,
+                market: isCnMarket ? 'cn' : 'com',
                 args: {
                   type: woType,
                   description: problemDescription,
@@ -2892,6 +3408,7 @@ ${turnLanguageRule}
                   engineerId: trustedEngineerId,
                   customerId: trustedCustomerId,
                   conversationId: convId,
+                  market: isCnMarket ? 'cn' : 'com',
                   iteration,
                 });
                 return { tool_call_id: tc.id, result };
@@ -3117,26 +3634,51 @@ const WORK_ORDER_TYPE_LABELS = {
   other: '其他'
 };
 
-// 生成工单 AI 摘要
-async function generateWorkOrderSummary(type, description, urgency, env) {
-  // 后台系统调用，计入全平台日配额（不占用任何用户个人配额）
-  try {
-    await enforceOpenAIBudget(env, { userKey: 'system:summary', tag: 'summary' });
-  } catch (e) {
-    if (e instanceof BudgetError) {
-      console.warn('[generateWorkOrderSummary] skipped by budget:', e.message);
-      return null;
-    }
-    throw e;
-  }
-  const typeLabel = WORK_ORDER_TYPE_LABELS[type] || type;
+const WORK_ORDER_TYPE_LABELS_EN = {
+  fault: 'Equipment fault',
+  maintenance: 'Maintenance',
+  parameter: 'Parameter tuning',
+  consult: 'Technical consultation',
+  parts: 'Spare parts purchase',
+  aftersales: 'After-sales service',
+  other: 'Other'
+};
 
-  const prompt = `你是工单分析助手。当客户提交一个维修工单时，你需要生成一个简洁的摘要，帮助工程师快速了解工单情况。
+export function buildWorkOrderSummaryPrompt({ type, description, urgency, market = 'com' }) {
+  const isCnMarket = market === 'cn';
+  const typeLabel = isCnMarket
+    ? (WORK_ORDER_TYPE_LABELS[type] || type)
+    : (WORK_ORDER_TYPE_LABELS_EN[type] || type);
+  const urgencyLabel = isCnMarket
+    ? (urgency === 'critical' ? '非常紧急' : urgency === 'urgent' ? '紧急' : '普通')
+    : (urgency === 'critical' ? 'Critical' : urgency === 'urgent' ? 'Urgent' : 'Normal');
+
+  if (!isCnMarket) {
+    return `You are a work order analysis assistant for SAGEMRO Service OS. When a customer submits a service request, generate a concise structured summary that helps engineers and admins quickly understand the case.
+
+For sagemro.com, keep all AI-generated work-order summaries and analysis in English, even if the customer's original description is written in Chinese.
+Work order summary, required specialties, suggested skills, urgency notes, and AI analysis must be written in English.
+
+Work order information:
+- Type: ${typeLabel}
+- Description: ${description}
+- Urgency: ${urgencyLabel}
+
+Return JSON fields in English only. Return valid JSON only, with no markdown and no extra commentary:
+{
+  "summary": "Use 2-3 sentences to summarize the core issue and recommended handling direction.",
+  "required_specialties": ["Most relevant equipment type labels, such as laser cutting machine or press brake."],
+  "suggested_skills": ["Recommended technical skill tags, such as laser source repair or parameter tuning."],
+  "urgency_notes": "If urgent, explain why it is urgent and what the team should watch for."
+}`;
+  }
+
+  return `你是工单分析助手。当客户提交一个维修工单时，你需要生成一个简洁的摘要，帮助工程师快速了解工单情况。
 
 工单信息：
 - 类型：${typeLabel}
 - 描述：${description}
-- 紧急程度：${urgency === 'critical' ? '非常紧急' : urgency === 'urgent' ? '紧急' : '普通'}
+- 紧急程度：${urgencyLabel}
 
 请生成以下格式的 JSON 响应（只返回 JSON，不要有其他内容）：
 {
@@ -3147,6 +3689,21 @@ async function generateWorkOrderSummary(type, description, urgency, env) {
 }
 
 只返回 JSON，不要有其他内容。`;
+}
+
+// 生成工单 AI 摘要
+async function generateWorkOrderSummary(type, description, urgency, env, { market = 'com' } = {}) {
+  // 后台系统调用，计入全平台日配额（不占用任何用户个人配额）
+  try {
+    await enforceOpenAIBudget(env, { userKey: 'system:summary', tag: 'summary' });
+  } catch (e) {
+    if (e instanceof BudgetError) {
+      console.warn('[generateWorkOrderSummary] skipped by budget:', e.message);
+      return null;
+    }
+    throw e;
+  }
+  const prompt = buildWorkOrderSummaryPrompt({ type, description, urgency, market });
 
   try {
     const apiResponse = await fetch(env.OPENAI_API_ENDPOINT, {
@@ -3246,7 +3803,7 @@ async function handleCreateWorkOrder(request, env) {
     // AI 摘要异步生成：不阻塞响应，生成完成后回写 ai_summary
     // 使用 ctx.waitUntil 保证 Worker 在返回响应后仍会完成该任务
     const ctx = request._ctx;
-    const aiSummaryPromise = generateWorkOrderSummary(type, safeDescription, urgency, env)
+    const aiSummaryPromise = generateWorkOrderSummary(type, safeDescription, urgency, env, { market: getRequestMarket(request) })
       .then(async (summary) => {
         if (summary) {
           await env.DB.prepare('UPDATE work_orders SET ai_summary = ? WHERE id = ?')
@@ -3880,6 +4437,8 @@ async function handleGetWorkOrders(request, env) {
 
     const workOrders = results.map(wo => ({
       ...wo,
+      description: redactContactInfoForWorkOrder(wo.description),
+      customer_phone: '',
       sla_status: getSlaStatus(wo.sla_deadline, wo.urgency),
     }));
 
@@ -3943,14 +4502,32 @@ async function handleGetWorkOrder(request, env) {
       'SELECT * FROM work_order_repair_records WHERE work_order_id = ?'
     ).bind(id).first();
 
+    const pricing = await env.DB.prepare(
+      'SELECT * FROM work_order_pricing WHERE work_order_id = ?'
+    ).bind(id).first();
+
+    let payout = await env.DB.prepare(
+      'SELECT * FROM work_order_payouts WHERE work_order_id = ?'
+    ).bind(id).first();
+    if (!payout && workOrder?.status === 'completed' && workOrder?.engineer_id) {
+      payout = await ensureWorkOrderPayout(env, id, workOrder.engineer_id, 'pending');
+    }
+
     const attachments = await env.DB.prepare(
       'SELECT * FROM work_order_attachments WHERE work_order_id = ? ORDER BY created_at DESC'
     ).bind(id).all();
 
     const materialItems = await listWorkOrderMaterialItems(env, id);
+    const quoteMaterialItems = materialItems.filter((item) => item.purpose === 'quote');
+    const isEngineerDetailView = request._auth?.userType === 'engineer';
+    const safeWorkOrder = {
+      ...workOrder,
+      description: isEngineerDetailView ? redactContactInfoForWorkOrder(workOrder.description) : workOrder.description,
+      customer_phone: isEngineerDetailView && !canEngineerViewCustomerContact(workOrder.status) ? '' : workOrder.customer_phone,
+    };
 
     return jsonResponse({
-      ...workOrder,
+      ...safeWorkOrder,
       sla_status: getSlaStatus(workOrder.sla_deadline, workOrder.urgency),
       logs: logs.results,
       rating: rating || null,
@@ -3959,6 +4536,9 @@ async function handleGetWorkOrder(request, env) {
       repair_record: repairRecord
         ? { ...repairRecord, material_items: materialItems.filter((item) => item.purpose === 'service_report') }
         : null,
+      pricing: pricing ? { ...pricing, material_items: quoteMaterialItems } : null,
+      payout_status: payout?.status || 'not_ready',
+      payout: sanitizePayoutForUser(payout, request._auth),
       material_items: materialItems,
       attachments: attachments.results,
     });
@@ -4284,6 +4864,54 @@ async function settleEngineerWallet(env, workOrderId, engineerId) {
 }
 
 // 提交评价
+const WORK_ORDER_PAYOUT_STATUSES = new Set(['not_ready', 'pending', 'processing', 'completed', 'exception']);
+const ENGINEER_PAYOUT_METHODS = new Set(['paypal', 'bank_swift']);
+
+function sanitizePayoutForUser(payout, auth) {
+  if (!payout) return null;
+  if (auth?.userType === 'admin') return payout;
+  const { internal_note, ...safePayout } = payout;
+  return safePayout;
+}
+
+async function ensureWorkOrderPayout(env, workOrderId, engineerId, status = 'pending') {
+  if (!workOrderId || !engineerId) return null;
+
+  const existing = await env.DB.prepare(
+    'SELECT * FROM work_order_payouts WHERE work_order_id = ?'
+  ).bind(workOrderId).first();
+  if (existing) return existing;
+
+  const engineer = await env.DB.prepare(
+    'SELECT payout_method FROM engineers WHERE id = ?'
+  ).bind(engineerId).first();
+
+  const payout = {
+    id: generateId(),
+    work_order_id: workOrderId,
+    engineer_id: engineerId,
+    amount: 0,
+    currency: 'USD',
+    method: ENGINEER_PAYOUT_METHODS.has(engineer?.payout_method) ? engineer.payout_method : 'paypal',
+    status: WORK_ORDER_PAYOUT_STATUSES.has(status) ? status : 'pending',
+  };
+
+  await env.DB.prepare(`
+    INSERT INTO work_order_payouts (id, work_order_id, engineer_id, amount, currency, method, status)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `).bind(
+    payout.id,
+    payout.work_order_id,
+    payout.engineer_id,
+    payout.amount,
+    payout.currency,
+    payout.method,
+    payout.status
+  ).run();
+
+  return env.DB.prepare('SELECT * FROM work_order_payouts WHERE id = ?').bind(payout.id).first();
+}
+
 async function handleSubmitRating(request, env) {
   try {
     const body = await request.json();
@@ -4361,6 +4989,7 @@ async function handleSubmitRating(request, env) {
 
     // 钱包结算：按工程师提成率将确认后的报价入账
     const settlement = await settleEngineerWallet(env, work_order_id, engineer_id);
+    const payout = await ensureWorkOrderPayout(env, work_order_id, engineer_id, 'pending');
 
     // 通知工程师：收到新评价
     const avgAll = ((rating_timeliness + rating_technical + rating_communication + rating_professional) / 4).toFixed(1);
@@ -4377,7 +5006,7 @@ async function handleSubmitRating(request, env) {
     // SERVICE_OS_LEGACY: settlement is kept for historical accounting compatibility,
     // but Service OS no longer exposes wallet/commission notifications to engineers.
 
-    return jsonResponse({ success: true, settlement });
+    return jsonResponse({ success: true, settlement, payout });
   } catch (error) {
     return errorResponse(error.message, 500);
   }
@@ -4915,7 +5544,7 @@ async function handleGetEngineerProfile(request, env) {
     }
 
     const engineer = await env.DB.prepare(
-      'SELECT id, name, phone, specialties, brands, services, service_region, bio, status, rating_timeliness, rating_technical, rating_communication, rating_professional, rating_count, created_at, level, commission_rate, credit_score, wallet_balance, deposit_balance, total_orders, complex_orders, success_orders FROM engineers WHERE id = ?'
+      'SELECT id, name, phone, specialties, brands, services, service_region, bio, status, rating_timeliness, rating_technical, rating_communication, rating_professional, rating_count, created_at, level, commission_rate, credit_score, wallet_balance, deposit_balance, total_orders, complex_orders, success_orders, payout_method, paypal_account, bank_country, bank_name, bank_account, bank_swift_code, account_holder, payout_notes FROM engineers WHERE id = ?'
     ).bind(engineerId).first();
 
     if (!engineer) {
@@ -4998,7 +5627,7 @@ async function handleUpdateEngineerProfile(request, env) {
     if (!engineerId) return errorResponse('未登录', 401);
 
     const body = await request.json();
-    const { name, bio, service_region, bank_name, bank_account, bank_branch, account_holder } = body;
+    const { name, bio, service_region, bank_name, bank_account, bank_branch, account_holder, payout_method, paypal_account, bank_country, bank_swift_code, payout_notes } = body;
 
     try {
       assertFieldLimits(body, {
@@ -5009,6 +5638,11 @@ async function handleUpdateEngineerProfile(request, env) {
         bank_account: { max: 30 },
         bank_branch: { max: 100 },
         account_holder: { max: 20 },
+        payout_method: { max: 20 },
+        paypal_account: { max: 120 },
+        bank_country: { max: 80 },
+        bank_swift_code: { max: 20 },
+        payout_notes: { max: 500 },
       });
     } catch (e) {
       const resp = validationErrorToResponse(e, errorResponse);
@@ -5018,13 +5652,21 @@ async function handleUpdateEngineerProfile(request, env) {
 
     const updates = [];
     const values = [];
+    if (payout_method !== undefined && !ENGINEER_PAYOUT_METHODS.has(payout_method)) {
+      return errorResponse('Unsupported payout method', 400);
+    }
     if (name !== undefined) { updates.push('name = ?'); values.push(name); }
     if (bio !== undefined) { updates.push('bio = ?'); values.push(bio); }
     if (service_region !== undefined) { updates.push('service_region = ?'); values.push(service_region); }
+    if (payout_method !== undefined) { updates.push('payout_method = ?'); values.push(payout_method); }
+    if (paypal_account !== undefined) { updates.push('paypal_account = ?'); values.push(paypal_account); }
+    if (bank_country !== undefined) { updates.push('bank_country = ?'); values.push(bank_country); }
     if (bank_name !== undefined) { updates.push('bank_name = ?'); values.push(bank_name); }
     if (bank_account !== undefined) { updates.push('bank_account = ?'); values.push(bank_account); }
     if (bank_branch !== undefined) { updates.push('bank_branch = ?'); values.push(bank_branch); }
+    if (bank_swift_code !== undefined) { updates.push('bank_swift_code = ?'); values.push(bank_swift_code); }
     if (account_holder !== undefined) { updates.push('account_holder = ?'); values.push(account_holder); }
+    if (payout_notes !== undefined) { updates.push('payout_notes = ?'); values.push(payout_notes); }
 
     if (updates.length === 0) return errorResponse('没有要更新的字段');
 
@@ -5032,7 +5674,7 @@ async function handleUpdateEngineerProfile(request, env) {
     await env.DB.prepare(`UPDATE engineers SET ${updates.join(', ')} WHERE id = ?`).bind(...values).run();
 
     const updated = await env.DB.prepare(
-      'SELECT id, user_no, name, phone, specialties, brands, services, service_region, bio, status, level, commission_rate, credit_score, rating_timeliness, rating_technical, rating_communication, rating_professional, rating_count, bank_name, bank_account, bank_branch, account_holder FROM engineers WHERE id = ?'
+      'SELECT id, user_no, name, phone, specialties, brands, services, service_region, bio, status, level, commission_rate, credit_score, rating_timeliness, rating_technical, rating_communication, rating_professional, rating_count, payout_method, paypal_account, bank_country, bank_name, bank_account, bank_branch, bank_swift_code, account_holder, payout_notes FROM engineers WHERE id = ?'
     ).bind(engineerId).first();
 
     if (!updated) return errorResponse('工程师不存在', 404);
@@ -5195,7 +5837,7 @@ async function insertMachineLead(env, {
   message,
   conversationId = null,
   aiSummary = '',
-  recommendedNextStep = 'Route to Euchio sales for whole-machine follow-up; assign an engineer for technical support when needed.',
+  recommendedNextStep = 'Admin should route this whole-machine lead for sales follow-up and keep engineer support available for technical selection.',
   customerId = null,
   workOrderId = null,
   region = '',
@@ -5246,6 +5888,33 @@ async function insertMachineLead(env, {
   return lead;
 }
 
+function normalizeEquipmentNeeds(input) {
+  const items = Array.isArray(input) ? input : [];
+  return items.slice(0, 8).map((item) => ({
+    type: cleanText(item?.type, 120),
+    quantity: cleanText(item?.quantity, 20) || '1',
+    specification: cleanText(item?.specification, 160),
+    note: cleanText(item?.note, 300),
+  })).filter((item) => item.type || item.specification || item.note);
+}
+
+function formatEquipmentNeedLine(item, index) {
+  const label = item.type || 'Complete machine';
+  const quantity = item.quantity ? ` x${item.quantity}` : '';
+  const specification = item.specification ? ` - ${item.specification}` : '';
+  const note = item.note ? ` (${item.note})` : '';
+  return `${index + 1}. ${label}${quantity}${specification}${note}`;
+}
+
+function formatEquipmentNeedsSummary(items) {
+  return items.map((item) => {
+    const label = item.type || 'Complete machine';
+    const quantity = item.quantity ? ` x${item.quantity}` : '';
+    const specification = item.specification ? ` (${item.specification})` : '';
+    return `${label}${quantity}${specification}`;
+  }).join('; ');
+}
+
 async function maybeCreateMachineLeadFromChat({ env, message, conversationId, customerId }) {
   if (!hasWholeMachineLeadIntent(message)) return null;
 
@@ -5271,7 +5940,7 @@ async function maybeCreateMachineLeadFromChat({ env, message, conversationId, cu
       conversationId,
       customerId,
       region: customer?.region || '',
-      recommendedNextStep: 'Euchio sales should follow up this whole-machine opportunity; coordinate engineer support for technical selection if needed.',
+      recommendedNextStep: 'Admin should route this whole-machine opportunity for sales follow-up and coordinate engineer support for technical selection if needed.',
     });
   } catch (error) {
     console.warn('[lead] failed to create machine lead from chat:', error?.message || error);
@@ -5322,8 +5991,17 @@ async function handleCreateMachineLead(request, env) {
     const workOrderId = cleanText(body.work_order_id, 80);
     const machineType = cleanText(body.machine_type, 160);
     const customerIntent = cleanText(body.customer_intent || body.message || body.description, 3000);
+    const equipmentNeeds = normalizeEquipmentNeeds(body.equipment_needs);
+    const equipmentNeedsForLead = equipmentNeeds.length > 0
+      ? equipmentNeeds
+      : (machineType ? [{ type: machineType, quantity: '1', specification: '', note: '' }] : []);
+    const equipmentSummary = formatEquipmentNeedsSummary(equipmentNeedsForLead);
+    const equipmentBlock = equipmentNeedsForLead.length > 0
+      ? `Equipment needs:\n${equipmentNeedsForLead.map(formatEquipmentNeedLine).join('\n')}`
+      : '';
+    const leadMessage = [equipmentBlock, `Customer purchase intent:\n${customerIntent}`].filter(Boolean).join('\n\n');
     if (!customerIntent) return errorResponse('请填写客户整机需求说明', 400);
-    if (!hasWholeMachineLeadIntent(`${machineType}\n${customerIntent}\n整机 采购`)) {
+    if (!hasWholeMachineLeadIntent(`${equipmentSummary}\n${machineType}\n${customerIntent}\n整机 采购`)) {
       return errorResponse('Lead 仅用于整机/新机设备需求；配件、耗材、升级改造请提交增值服务或物料请求', 400);
     }
 
@@ -5340,10 +6018,10 @@ async function handleCreateMachineLead(request, env) {
       email: cleanText(body.contact_email, 160) || null,
       source: 'engineer_machine_opportunity',
       sourceType: 'machine_purchase_engineer',
-      interest: machineType ? `Whole machine purchase: ${machineType}` : 'Whole machine purchase',
-      message: customerIntent,
-      aiSummary: `Engineer submitted whole-machine opportunity: ${customerIntent}`,
-      recommendedNextStep: 'Euchio sales should own follow-up; keep the submitting engineer available for technical selection and site context.',
+      interest: equipmentSummary ? `Whole machine purchase: ${equipmentSummary}` : 'Whole machine purchase',
+      message: leadMessage,
+      aiSummary: `Engineer submitted whole-machine opportunity with ${equipmentNeedsForLead.length || 1} equipment needs: ${equipmentSummary || customerIntent}`,
+      recommendedNextStep: 'Admin should route this whole-machine lead for sales follow-up and keep the submitting engineer available for technical selection and site context.',
       customerId,
       workOrderId: workOrderId || null,
       region: cleanText(body.region, 120),
@@ -5432,6 +6110,17 @@ const UPSELL_TIMELINES = new Set(['immediate', 'within_1_month', 'within_3_month
 const UPSELL_BUDGET_SIGNALS = new Set(['has_budget', 'comparing_quotes', 'unknown']);
 const UPSELL_QUOTE_STATUSES = new Set(['not_started', 'in_progress', 'quoted']);
 const UPSELL_DEAL_RESULTS = new Set(['undecided', 'won', 'lost']);
+const KNOWLEDGE_STATUSES = new Set(['draft', 'published', 'archived']);
+const KNOWLEDGE_CATEGORIES = new Set([
+  'fault',
+  'cutting_parameters',
+  'parts',
+  'maintenance',
+  'machine_selection',
+  'health',
+  'safety',
+  'other',
+]);
 
 function cleanText(value, maxLength = 300) {
   if (value === undefined || value === null) return '';
@@ -5595,6 +6284,52 @@ function normalizeUpsellRequest(row) {
     assigned_sales_owner: row.assigned_sales_owner || '',
     admin_note: row.admin_note || '',
     handover_note: row.handover_note || '',
+  };
+}
+
+function normalizeWorkOrderMessage(row) {
+  if (!row) return row;
+  return {
+    ...row,
+    content: redactContactInfoForWorkOrder(row.content),
+    attachment_urls: parseJsonArray(row.attachment_urls),
+    is_internal_note: Number(row.is_internal_note || 0),
+    is_customer_visible: Number(row.is_customer_visible ?? 1),
+  };
+}
+
+function normalizeKnowledgeArticle(row) {
+  if (!row) return row;
+  return {
+    ...row,
+    version: Number(row.version || 1),
+  };
+}
+
+function readKnowledgePayload(body = {}, { existing } = {}) {
+  const category = cleanChoice(body.category ?? existing?.category, KNOWLEDGE_CATEGORIES, '');
+  const status = cleanChoice(body.status ?? existing?.status, KNOWLEDGE_STATUSES, existing?.status || 'draft');
+  const title = cleanText(body.title ?? existing?.title, 240);
+  const content = cleanText(body.content ?? existing?.content, 12000);
+  const market = cleanText(body.market ?? existing?.market, 20);
+  const locale = cleanText(body.locale ?? existing?.locale, 20);
+
+  if (!category) return { error: '请选择有效知识分类' };
+  if (!title) return { error: '请填写知识标题' };
+  if (!content) return { error: '请填写知识内容' };
+
+  return {
+    market,
+    locale,
+    category,
+    title,
+    content,
+    source: cleanText(body.source ?? existing?.source, 1000) || null,
+    applicable_equipment: cleanText(body.applicable_equipment ?? existing?.applicable_equipment, 300) || null,
+    applicable_brand: cleanText(body.applicable_brand ?? existing?.applicable_brand, 200) || null,
+    applicable_model: cleanText(body.applicable_model ?? existing?.applicable_model, 200) || null,
+    risk_level: cleanText(body.risk_level ?? existing?.risk_level, 40) || null,
+    status,
   };
 }
 
@@ -5859,6 +6594,161 @@ async function handleAdminMaterials(request, env) {
     return jsonResponse({
       total: total?.count || 0,
       list: (list.results || []).map(normalizeMaterial),
+    });
+  } catch (error) {
+    return errorResponse(error.message, 500);
+  }
+}
+
+async function handleAdminKnowledge(request, env) {
+  try {
+    const url = new URL(request.url);
+    const page = Math.max(1, parseInt(url.searchParams.get('page') || '1', 10));
+    const pageSize = Math.min(100, Math.max(1, parseInt(url.searchParams.get('pageSize') || '20', 10)));
+    const offset = (page - 1) * pageSize;
+    const category = cleanText(url.searchParams.get('category'), 80);
+    const status = cleanText(url.searchParams.get('status'), 40);
+    const search = cleanText(url.searchParams.get('search'), 160);
+    const market = cleanText(url.searchParams.get('market'), 20) || getRequestMarket(request);
+    const locale = cleanText(url.searchParams.get('locale'), 20);
+
+    let where = 'WHERE market = ?';
+    const binds = [market];
+    if (locale && locale !== 'all') {
+      where += ' AND locale = ?';
+      binds.push(locale);
+    }
+    if (category && category !== 'all') {
+      where += ' AND category = ?';
+      binds.push(category);
+    }
+    if (status && status !== 'all') {
+      where += ' AND status = ?';
+      binds.push(status);
+    }
+    if (search) {
+      where += ` AND (
+        instr(lower(COALESCE(title, '')), lower(?)) > 0 OR
+        instr(lower(COALESCE(content, '')), lower(?)) > 0 OR
+        instr(lower(COALESCE(applicable_equipment, '')), lower(?)) > 0 OR
+        instr(lower(COALESCE(applicable_brand, '')), lower(?)) > 0 OR
+        instr(lower(COALESCE(applicable_model, '')), lower(?)) > 0
+      )`;
+      binds.push(search, search, search, search, search);
+    }
+
+    const total = await env.DB.prepare(
+      `SELECT COUNT(*) as count FROM knowledge_articles ${where}`
+    ).bind(...binds).first();
+    const list = await env.DB.prepare(
+      `SELECT * FROM knowledge_articles ${where} ORDER BY updated_at DESC, created_at DESC LIMIT ? OFFSET ?`
+    ).bind(...binds, pageSize, offset).all();
+
+    return jsonResponse({
+      total: total?.count || 0,
+      list: (list.results || []).map(normalizeKnowledgeArticle),
+    });
+  } catch (error) {
+    return errorResponse(error.message, 500);
+  }
+}
+
+async function handleAdminCreateKnowledge(request, env) {
+  try {
+    const body = await request.json().catch(() => ({}));
+    const payload = readKnowledgePayload(body);
+    if (payload.error) return errorResponse(payload.error, 400);
+
+    const id = generateId();
+    const market = payload.market || getRequestMarket(request);
+    const locale = payload.locale || (market === 'cn' ? 'zh-CN' : 'en');
+    await env.DB.prepare(`
+      INSERT INTO knowledge_articles (
+        id, market, locale, category, title, content, source,
+        applicable_equipment, applicable_brand, applicable_model, risk_level, status
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).bind(
+      id,
+      market,
+      locale,
+      payload.category,
+      payload.title,
+      payload.content,
+      payload.source,
+      payload.applicable_equipment,
+      payload.applicable_brand,
+      payload.applicable_model,
+      payload.risk_level,
+      payload.status
+    ).run();
+
+    const article = await env.DB.prepare('SELECT * FROM knowledge_articles WHERE id = ?').bind(id).first();
+    await writeAuditLog(env, request, {
+      targetType: 'knowledge_article',
+      targetId: id,
+      action: 'knowledge_article_created',
+      afterState: normalizeKnowledgeArticle(article || { id, market, locale, version: 1, ...payload }),
+    });
+
+    return jsonResponse({
+      success: true,
+      article: normalizeKnowledgeArticle(article || { id, market, locale, version: 1, ...payload }),
+    }, 201);
+  } catch (error) {
+    return errorResponse(error.message, 500);
+  }
+}
+
+async function handleAdminUpdateKnowledge(request, env) {
+  try {
+    const articleId = new URL(request.url).pathname.split('/')[4];
+    if (!articleId) return errorResponse('缺少知识条目 ID', 400);
+
+    const existing = await env.DB.prepare('SELECT * FROM knowledge_articles WHERE id = ?').bind(articleId).first();
+    if (!existing) return errorResponse('知识条目不存在', 404);
+
+    const body = await request.json().catch(() => ({}));
+    const payload = readKnowledgePayload(body, { existing });
+    if (payload.error) return errorResponse(payload.error, 400);
+    const reviewerId = payload.status === 'published' ? (request._auth?.userId || 'admin') : null;
+
+    const result = await env.DB.prepare(`
+      UPDATE knowledge_articles SET
+        market = ?, locale = ?, category = ?, title = ?, content = ?, source = ?,
+        applicable_equipment = ?, applicable_brand = ?, applicable_model = ?, risk_level = ?,
+        status = ?, reviewed_by = ?, reviewed_at = CASE WHEN ? = 'published' THEN datetime('now') ELSE NULL END,
+        version = version + 1, updated_at = datetime('now')
+      WHERE id = ?
+    `).bind(
+      payload.market || existing.market || getRequestMarket(request),
+      payload.locale || existing.locale || 'en',
+      payload.category,
+      payload.title,
+      payload.content,
+      payload.source,
+      payload.applicable_equipment,
+      payload.applicable_brand,
+      payload.applicable_model,
+      payload.risk_level,
+      payload.status,
+      reviewerId,
+      payload.status,
+      articleId
+    ).run();
+
+    if (result.meta?.changes === 0) return errorResponse('知识条目不存在', 404);
+    const article = await env.DB.prepare('SELECT * FROM knowledge_articles WHERE id = ?').bind(articleId).first();
+    await writeAuditLog(env, request, {
+      targetType: 'knowledge_article',
+      targetId: articleId,
+      action: 'knowledge_article_updated',
+      beforeState: normalizeKnowledgeArticle(existing),
+      afterState: normalizeKnowledgeArticle(article || { ...existing, ...payload, reviewed_by: reviewerId }),
+    });
+
+    return jsonResponse({
+      success: true,
+      article: normalizeKnowledgeArticle(article || { ...existing, ...payload, reviewed_by: reviewerId }),
     });
   } catch (error) {
     return errorResponse(error.message, 500);
@@ -6876,7 +7766,7 @@ async function handleAdminLeads(request, env) {
         recommended_next_step:
           lead.recommended_next_step ||
           (sourceType === 'machine_selection_ai'
-            ? '安排 SAGEMRO/EUCHIO 选型顾问跟进'
+            ? 'Admin 安排整机销售跟进，并协调工程师提供技术选型支持'
             : riskLevel === 'high'
               ? '优先人工审核并确认是否需要停机处理'
               : '联系客户补全设备与现场信息'),
@@ -7279,13 +8169,14 @@ async function handleAdminUsers(request, env) {
       const status = url.searchParams.get('status') || '';
       const region = url.searchParams.get('region') || '';
       const specialty = url.searchParams.get('specialty') || '';
+      const service = url.searchParams.get('service') || '';
 
       let where = 'WHERE 1=1';
       const params = [];
 
       if (search) {
-        where += ' AND (name LIKE ? OR phone LIKE ?)';
-        params.push(`%${search}%`, `%${search}%`);
+        where += ' AND (user_no LIKE ? OR name LIKE ? OR phone LIKE ? OR company LIKE ? OR service_region LIKE ? OR responsible_region LIKE ? OR team_name LIKE ?)';
+        params.push(`%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`);
       }
       if (status) {
         where += ' AND status = ?';
@@ -7299,18 +8190,27 @@ async function handleAdminUsers(request, env) {
         where += ' AND specialties LIKE ?';
         params.push(`%${specialty}%`);
       }
+      if (service) {
+        where += ' AND services LIKE ?';
+        params.push(`%${service}%`);
+      }
       const aliasedWhere = where
-        .replaceAll('name', 'e.name')
-        .replaceAll('phone', 'e.phone')
-        .replaceAll('status', 'e.status')
-        .replaceAll('service_region', 'e.service_region')
-        .replaceAll('specialties', 'e.specialties');
+        .replace(/\buser_no\b/g, 'e.user_no')
+        .replace(/\bteam_name\b/g, 'e.team_name')
+        .replace(/\bname\b/g, 'e.name')
+        .replace(/\bphone\b/g, 'e.phone')
+        .replace(/\bcompany\b/g, 'e.company')
+        .replace(/\bstatus\b/g, 'e.status')
+        .replace(/\bservice_region\b/g, 'e.service_region')
+        .replace(/\bresponsible_region\b/g, 'e.responsible_region')
+        .replace(/\bspecialties\b/g, 'e.specialties')
+        .replace(/\bservices\b/g, 'e.services');
 
       const total = await env.DB.prepare(`SELECT COUNT(*) as count FROM engineers ${where}`).bind(...params).first();
       const list = await env.DB.prepare(
         `SELECT
-           e.id, e.user_no, e.name, e.phone, e.company, e.specialties, e.service_region,
-           e.status, e.rating_count, e.rating_technical, e.created_at,
+           e.id, e.user_no, e.name, e.phone, e.company, e.specialties, e.services, e.service_region,
+           e.status, e.rating_count, e.rating_technical, e.total_orders, e.created_at,
            e.engineer_role, e.regional_lead_id, e.responsible_region, e.team_name,
            e.certification_status, e.cooperation_status, e.workload_status,
            rl.name as regional_lead_name
@@ -7325,6 +8225,7 @@ async function handleAdminUsers(request, env) {
         list: (list.results || []).map(e => ({
           ...e,
           specialties: typeof e.specialties === 'string' ? JSON.parse(e.specialties) : (e.specialties || []),
+          services: typeof e.services === 'string' ? JSON.parse(e.services) : (e.services || []),
         })),
       });
     } else {
@@ -7358,6 +8259,136 @@ async function handleAdminUsers(request, env) {
 }
 
 // 工单列表
+async function handleAdminEngineerDetail(request, env) {
+  try {
+    const engineerId = new URL(request.url).pathname.split('/').pop();
+    if (!engineerId) return errorResponse('缺少工程师 ID', 400);
+
+    const engineer = await env.DB.prepare(`
+      SELECT
+        e.id, e.user_no, e.name, e.phone, e.company, e.specialties, e.brands, e.services,
+        e.service_region, e.status, e.rating_count, e.rating_timeliness, e.rating_technical,
+        e.rating_communication, e.rating_professional, e.created_at, e.bio, e.total_orders,
+        e.complex_orders, e.success_orders, e.engineer_role, e.regional_lead_id,
+        e.responsible_region, e.team_name, e.certification_status, e.cooperation_status,
+        e.workload_status, rl.name as regional_lead_name, rl.user_no as regional_lead_no
+      FROM engineers e
+      LEFT JOIN engineers rl ON e.regional_lead_id = rl.id
+      WHERE e.id = ?
+    `).bind(engineerId).first();
+
+    if (!engineer) return errorResponse('工程师不存在', 404);
+
+    const workOrders = await env.DB.prepare(`
+      SELECT
+        w.id, w.order_no, w.type, w.urgency, w.status, w.created_at,
+        c.name as customer_name, c.company as customer_company, c.user_no as customer_no,
+        p.status as pricing_status, p.total_amount as pricing_total_amount, p.subtotal as pricing_subtotal
+      FROM work_orders w
+      LEFT JOIN customers c ON w.customer_id = c.id
+      LEFT JOIN work_order_pricing p ON p.work_order_id = w.id
+      WHERE w.engineer_id = ?
+      ORDER BY w.created_at DESC
+      LIMIT 50
+    `).bind(engineerId).all();
+
+    const rows = workOrders.results || [];
+    const calendarEvents = await env.DB.prepare(`
+      SELECT
+        id, title, event_type, start_at, end_at,
+        TRIM(COALESCE(region, '') || ' ' || COALESCE(city, '')) AS location,
+        notes AS note
+      FROM engineer_calendar_events
+      WHERE engineer_id = ? AND end_at >= datetime('now')
+      ORDER BY start_at ASC
+      LIMIT 12
+    `).bind(engineerId).all();
+
+    return jsonResponse({
+      engineer: {
+        ...engineer,
+        specialties: parseJsonArray(engineer.specialties),
+        brands: parseJsonArray(engineer.brands),
+        services: parseJsonArray(engineer.services),
+      },
+      stats: {
+        total_work_orders: rows.length,
+        completed_work_orders: rows.filter((row) => ['completed', 'resolved'].includes(row.status)).length,
+        active_work_orders: rows.filter((row) => !['completed', 'resolved', 'cancelled', 'rejected'].includes(row.status)).length,
+      },
+      work_orders: rows,
+      calendar_events: calendarEvents.results || [],
+    });
+  } catch (error) {
+    return errorResponse(error.message, 500);
+  }
+}
+
+async function handleAdminUpdateEngineer(request, env) {
+  try {
+    const engineerId = new URL(request.url).pathname.split('/').pop();
+    if (!engineerId) return errorResponse('Missing engineer ID', 400);
+
+    const existing = await env.DB.prepare('SELECT id, engineer_role FROM engineers WHERE id = ?').bind(engineerId).first();
+    if (!existing) return errorResponse('Engineer not found', 404);
+
+    const body = await request.json();
+    const updates = [];
+    const values = [];
+
+    if (body.engineer_role !== undefined) {
+      const role = body.engineer_role === 'regional_lead' ? 'regional_lead' : 'engineer';
+      updates.push('engineer_role = ?');
+      values.push(role);
+      if (role === 'regional_lead') {
+        updates.push('regional_lead_id = NULL');
+      }
+    }
+    if (body.regional_lead_id !== undefined) {
+      updates.push('regional_lead_id = ?');
+      values.push(body.regional_lead_id || null);
+    }
+    if (body.responsible_region !== undefined) {
+      updates.push('responsible_region = ?');
+      values.push(String(body.responsible_region || '').slice(0, 200));
+    }
+    if (body.team_name !== undefined) {
+      updates.push('team_name = ?');
+      values.push(String(body.team_name || '').slice(0, 120));
+    }
+    if (body.service_region !== undefined) {
+      updates.push('service_region = ?');
+      values.push(String(body.service_region || '').slice(0, 200));
+    }
+
+    if (!updates.length) return errorResponse('No engineer fields to update', 400);
+
+    values.push(engineerId);
+    await env.DB.prepare(`UPDATE engineers SET ${updates.join(', ')} WHERE id = ?`).bind(...values).run();
+
+    const updated = await env.DB.prepare(`
+      SELECT e.id, e.user_no, e.name, e.phone, e.company, e.specialties, e.services,
+             e.service_region, e.status, e.rating_count, e.rating_technical, e.total_orders,
+             e.engineer_role, e.regional_lead_id, e.responsible_region, e.team_name,
+             rl.name as regional_lead_name
+      FROM engineers e
+      LEFT JOIN engineers rl ON e.regional_lead_id = rl.id
+      WHERE e.id = ?
+    `).bind(engineerId).first();
+
+    return jsonResponse({
+      success: true,
+      engineer: {
+        ...updated,
+        specialties: parseJsonArray(updated.specialties),
+        services: parseJsonArray(updated.services),
+      },
+    });
+  } catch (error) {
+    return errorResponse(error.message, 500);
+  }
+}
+
 async function handleAdminWorkOrders(request, env) {
   try {
     const url = new URL(request.url);
@@ -7382,7 +8413,12 @@ async function handleAdminWorkOrders(request, env) {
              c.name as customer_name, c.company as customer_company, c.user_no as customer_no,
              rl.name as regional_lead_name, rl.user_no as regional_lead_no,
              e.id as engineer_id, e.name as engineer_name, e.company as engineer_company, e.user_no as engineer_no,
-             p.status as pricing_status, p.total_amount as pricing_total_amount, p.subtotal as pricing_subtotal
+             e.commission_rate as engineer_commission_rate,
+             p.status as pricing_status, p.total_amount as pricing_total_amount, p.subtotal as pricing_subtotal,
+             p.labor_fee as pricing_labor_fee, p.parts_fee as pricing_parts_fee,
+             p.travel_fee as pricing_travel_fee, p.other_fee as pricing_other_fee,
+             p.parts_detail as pricing_parts_detail, p.platform_fee as pricing_platform_fee,
+             p.ai_price_check as pricing_ai_price_check
       FROM work_orders w
       LEFT JOIN customers c ON w.customer_id = c.id
       LEFT JOIN engineers rl ON w.assigned_regional_lead_id = rl.id
@@ -7929,6 +8965,9 @@ async function handleInitDb(env) {
         sender_name TEXT DEFAULT '',
         content TEXT NOT NULL,
         message_type TEXT DEFAULT 'text',
+        attachment_urls TEXT DEFAULT '[]',
+        is_internal_note INTEGER DEFAULT 0,
+        is_customer_visible INTEGER DEFAULT 1,
         created_at TEXT DEFAULT (datetime('now')),
         FOREIGN KEY (work_order_id) REFERENCES work_orders(id)
       )`,
@@ -8244,7 +9283,7 @@ async function handleTestFullPricingFlow(env) {
     `).bind(workOrderId, orderNo, finalCustomerId, computeSlaDeadline('urgent')).run();
 
     // 生成 AI 摘要
-    const aiSummary = await generateWorkOrderSummary('fault', '光纤激光切割机（3000W大族）切割时出现毛刺，切面不光洁，侧壁有挂渣。已经更换过辅助气体（氮气），问题仍然存在。设备使用3年，近期未做保养。', 'urgent', env);
+    const aiSummary = await generateWorkOrderSummary('fault', '光纤激光切割机（3000W大族）切割时出现毛刺，切面不光洁，侧壁有挂渣。已经更换过辅助气体（氮气），问题仍然存在。设备使用3年，近期未做保养。', 'urgent', env, { market: 'cn' });
     await env.DB.prepare('UPDATE work_orders SET ai_summary = ? WHERE id = ?').bind(JSON.stringify(aiSummary), workOrderId).run();
 
     log('step3_done', { work_order_id: workOrderId, order_no: orderNo, ai_summary: aiSummary });
@@ -8634,7 +9673,7 @@ async function handleGetWorkOrderMessages(request, env) {
       : await env.DB.prepare(
           'SELECT * FROM work_order_messages WHERE work_order_id = ? ORDER BY created_at ASC'
         ).bind(workOrderId).all();
-    return jsonResponse({ list: messages.results || [] });
+    return jsonResponse({ list: (messages.results || []).map(normalizeWorkOrderMessage) });
   } catch (error) {
     if (error instanceof GuardError) return errorResponse(error.message, error.status);
     return errorResponse(error.message, 500);
@@ -8645,15 +9684,18 @@ async function handleGetWorkOrderMessages(request, env) {
 async function handlePostWorkOrderMessage(request, env) {
   try {
     const workOrderId = new URL(request.url).pathname.split('/')[3];
-    const { content, message_type, is_internal_note } = await request.json();
+    const { content, message_type, is_internal_note, attachment_urls } = await request.json();
+    const attachments = cleanTextArray(attachment_urls, 8, 500);
 
     // 认证：sender_type / sender_id / sender_name 从 token 和数据库查，不接受客户端传入
     const auth = request._auth;
     if (!auth) return errorResponse('请先登录', 401);
-    if (!content) return errorResponse('消息内容不能为空');
+    if (!content && attachments.length === 0) return errorResponse('消息内容不能为空');
 
     try {
+      if (content) {
       assertMaxLength(content, 'content', LIMITS.content);
+      }
     } catch (e) {
       const resp = validationErrorToResponse(e, errorResponse);
       if (resp) return resp;
@@ -8690,14 +9732,14 @@ async function handlePostWorkOrderMessage(request, env) {
     // PII 脱敏（Phase 0.5）：工单消息是客户↔工程师的自由输入，最容易泄露手机号
     // 只清洗 text 类消息；pricing_update / system 是平台自生成的结构化消息，不需要清洗
     const safeContent =
-      (message_type || 'text') === 'text' ? redactPII(content) : content;
+      (message_type || 'text') === 'text' ? redactContactInfoForWorkOrder(content || '') : (content || '');
     const internalNote = auth.userType === 'customer' ? 0 : (is_internal_note ? 1 : 0);
     const customerVisible = internalNote ? 0 : 1;
 
     const id = generateId();
     await env.DB.prepare(
-      'INSERT INTO work_order_messages (id, work_order_id, sender_type, sender_id, sender_name, content, message_type, is_internal_note, is_customer_visible) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
-    ).bind(id, workOrderId, sender_type, sender_id, sender_name, safeContent, message_type || 'text', internalNote, customerVisible).run();
+      'INSERT INTO work_order_messages (id, work_order_id, sender_type, sender_id, sender_name, content, message_type, attachment_urls, is_internal_note, is_customer_visible) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+    ).bind(id, workOrderId, sender_type, sender_id, sender_name, safeContent, message_type || 'text', JSON.stringify(attachments), internalNote, customerVisible).run();
 
     await writeAuditLog(env, request, {
       targetType: 'work_order',
@@ -8706,7 +9748,7 @@ async function handlePostWorkOrderMessage(request, env) {
       afterState: { message_id: id, sender_type, is_internal_note: internalNote },
     });
 
-    return jsonResponse({ success: true, id });
+    return jsonResponse({ success: true, id, attachment_urls: attachments });
   } catch (error) {
     return errorResponse(error.message, 500);
   }
@@ -9107,73 +10149,74 @@ async function handleConfirmWorkOrderPricing(request, env) {
   }
 }
 
-// 客户模拟付款（mock payment）
+function paymentMethodLabel(method) {
+  const labels = {
+    bank_transfer: 'Bank Transfer / Wire Transfer',
+    paypal_card: 'PayPal / Credit or Debit Card',
+    paypal: 'PayPal / Credit or Debit Card',
+  };
+  return labels[method] || method || 'Payment method';
+}
+
+// Customer confirms preferred payment method. Collection is followed up by the engineer and confirmed by Admin.
 async function handlePayWorkOrder(request, env) {
   try {
     const workOrderId = new URL(request.url).pathname.split('/')[3];
 
-    // 认证：仅客户可付款
     const auth = request._auth;
     if (!auth || auth.userType !== 'customer') {
-      return errorResponse('仅客户可付款', 403);
+      return errorResponse('Only the customer can confirm payment method', 403);
     }
     const customer_id = auth.userId;
 
-    // 校验工单归属
     const wo = await env.DB.prepare(
       'SELECT id, customer_id, status, order_no, engineer_id FROM work_orders WHERE id = ?'
     ).bind(workOrderId).first();
-    if (!wo) return errorResponse('工单不存在', 404);
+    if (!wo) return errorResponse('Work order not found', 404);
     if (wo.customer_id !== customer_id) {
-      return errorResponse('您无权操作该工单', 403);
+      return errorResponse('You do not have permission for this work order', 403);
     }
     if (wo.status !== 'pending_payment') {
-      return errorResponse('工单状态不正确，无法付款', 400);
+      return errorResponse('Work order is not waiting for payment method confirmation', 400);
     }
 
-    // 获取定价信息
     const pricing = await env.DB.prepare(
       'SELECT subtotal, total_amount FROM work_order_pricing WHERE work_order_id = ? AND status = ?'
     ).bind(workOrderId, 'confirmed').first();
-    if (!pricing) return errorResponse('报价不存在或未确认', 404);
+    if (!pricing) return errorResponse('Quote not found or not confirmed', 404);
 
     const amount = pricing.total_amount || pricing.subtotal || 0;
-    if (amount <= 0) return errorResponse('报价金额无效', 400);
+    if (amount <= 0) return errorResponse('Invalid quote amount', 400);
 
     const body = await request.json().catch(() => ({}));
-    const paymentMethod = body.payment_method || 'bank_transfer';
+    const allowedMethods = ['bank_transfer', 'paypal_card', 'paypal'];
+    const paymentMethod = allowedMethods.includes(body.payment_method) ? body.payment_method : 'bank_transfer';
+    const methodLabel = paymentMethodLabel(paymentMethod);
 
-    // 模拟付款成功
     const paymentId = generateId();
-    const transactionId = 'TXN' + Date.now().toString(36).toUpperCase() + Math.random().toString(36).slice(2, 6).toUpperCase();
+    const instructionId = 'PAYREQ' + Date.now().toString(36).toUpperCase() + Math.random().toString(36).slice(2, 6).toUpperCase();
 
     await env.DB.prepare(`
       INSERT INTO work_order_payments (id, work_order_id, customer_id, amount, payment_method, transaction_id, status)
-      VALUES (?, ?, ?, ?, ?, ?, 'completed')
-    `).bind(paymentId, workOrderId, customer_id, amount, paymentMethod, transactionId).run();
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).bind(paymentId, workOrderId, customer_id, amount, paymentMethod, instructionId, 'instructions_requested').run();
 
-    // 更新工单状态
     await env.DB.prepare(
-      "UPDATE work_orders SET status = 'in_service' WHERE id = ?"
-    ).bind(workOrderId).run();
+      "INSERT INTO work_order_messages (id, work_order_id, sender_type, sender_id, sender_name, content, message_type) VALUES (?, ?, 'system', '', 'System', ?, 'payment_update')"
+    ).bind(
+      generateId(),
+      workOrderId,
+      `Customer selected ${methodLabel} for ${amount} USD. Engineer should follow up collection and request Admin approval before service starts.`
+    ).run();
 
-    // 系统消息
-    const msgId = generateId();
-    const methodLabels = { bank_transfer: '银行转账', alipay: '支付宝', wechat: '微信支付' };
-    const methodLabel = methodLabels[paymentMethod] || paymentMethod;
-    await env.DB.prepare(
-      "INSERT INTO work_order_messages (id, work_order_id, sender_type, sender_id, sender_name, content, message_type) VALUES (?, ?, 'system', '', '系统', ?, 'system')"
-    ).bind(msgId, workOrderId, `客户已通过${methodLabel}完成付款，金额 ${amount} 元。工程师可以开始上门服务。交易流水号：${transactionId}`).run();
-
-    // 通知工程师：客户已付款
     if (wo.engineer_id) {
       await createNotification(env, {
         user_id: wo.engineer_id,
         user_type: 'engineer',
-        type: 'payment_received',
-        title: '客户已付款',
-        body: `工单 ${wo.order_no} 客户已付款 ${amount} 元，请安排上门服务。`,
-        data: { work_order_id: workOrderId, amount, transaction_id: transactionId },
+        type: 'payment_method_selected',
+        title: 'Payment follow-up required',
+        body: `Work order ${wo.order_no} selected ${methodLabel}. Follow up payment and request Admin start approval after receipt evidence is available.`,
+        data: { work_order_id: workOrderId, amount, payment_method: paymentMethod },
       });
     }
 
@@ -9181,11 +10224,10 @@ async function handlePayWorkOrder(request, env) {
       success: true,
       payment: {
         id: paymentId,
-        transaction_id: transactionId,
+        transaction_id: instructionId,
         amount,
         payment_method: paymentMethod,
-        status: 'completed',
-        paid_at: new Date().toISOString(),
+        status: 'instructions_requested',
       }
     });
   } catch (error) {
@@ -9193,7 +10235,167 @@ async function handlePayWorkOrder(request, env) {
   }
 }
 
+async function handleEngineerRequestPaymentStart(request, env) {
+  try {
+    const workOrderId = new URL(request.url).pathname.split('/')[3];
+    const auth = request._auth;
+    if (!auth || auth.userType !== 'engineer') {
+      return errorResponse('Only the assigned engineer can request service start', 403);
+    }
+    const body = await request.json().catch(() => ({}));
+    const note = String(body.note || '').trim();
+
+    const wo = await env.DB.prepare(
+      'SELECT id, engineer_id, status, order_no FROM work_orders WHERE id = ?'
+    ).bind(workOrderId).first();
+    if (!wo) return errorResponse('Work order not found', 404);
+    if (wo.engineer_id !== auth.userId) return errorResponse('You are not assigned to this work order', 403);
+    if (wo.status !== 'pending_payment' && wo.status !== 'payment_review') {
+      return errorResponse('Work order is not waiting for payment follow-up', 400);
+    }
+
+    const payment = await env.DB.prepare(
+      'SELECT id, status, payment_method FROM work_order_payments WHERE work_order_id = ? ORDER BY created_at DESC LIMIT 1'
+    ).bind(workOrderId).first();
+    if (!payment) return errorResponse('Payment method has not been confirmed by the customer', 400);
+
+    await env.DB.prepare(
+      "UPDATE work_order_payments SET status = 'pending_admin_confirmation' WHERE work_order_id = ?"
+    ).bind(workOrderId).run();
+    await env.DB.prepare(
+      "UPDATE work_orders SET status = 'payment_review' WHERE id = ?"
+    ).bind(workOrderId).run();
+
+    await env.DB.prepare(
+      "INSERT INTO work_order_messages (id, work_order_id, sender_type, sender_id, sender_name, content, message_type, is_internal_note, is_customer_visible) VALUES (?, ?, 'engineer', ?, 'Engineer', ?, 'payment_update', 1, 0)"
+    ).bind(
+      generateId(),
+      workOrderId,
+      auth.userId,
+      `Engineer requested Admin approval to start service after payment follow-up.${note ? ` Note: ${note}` : ''}`
+    ).run();
+
+    await writeAuditLog(env, request, {
+      targetType: 'work_order',
+      targetId: workOrderId,
+      action: 'payment_start_requested',
+      beforeState: { status: wo.status, payment_status: payment.status },
+      afterState: { status: 'payment_review', payment_status: 'pending_admin_confirmation', note },
+    });
+
+    return jsonResponse({ success: true, status: 'payment_review' });
+  } catch (error) {
+    return errorResponse(error.message, 500);
+  }
+}
+
+async function handleAdminApprovePaymentStart(request, env) {
+  try {
+    const workOrderId = new URL(request.url).pathname.split('/')[4];
+    const body = await request.json().catch(() => ({}));
+    const note = String(body.note || '').trim();
+
+    const wo = await env.DB.prepare(
+      'SELECT id, status, order_no FROM work_orders WHERE id = ?'
+    ).bind(workOrderId).first();
+    if (!wo) return errorResponse('Work order not found', 404);
+    if (wo.status !== 'payment_review' && wo.status !== 'pending_payment') {
+      return errorResponse('Work order is not waiting for payment approval', 400);
+    }
+
+    const payment = await env.DB.prepare(
+      'SELECT id, status, payment_method FROM work_order_payments WHERE work_order_id = ? ORDER BY created_at DESC LIMIT 1'
+    ).bind(workOrderId).first();
+    if (!payment) return errorResponse('Payment record not found', 400);
+    if (payment.status !== 'pending_admin_confirmation' && payment.status !== 'instructions_requested') {
+      return errorResponse('Payment is not ready for Admin confirmation', 400);
+    }
+
+    await env.DB.prepare(
+      "UPDATE work_order_payments SET status = 'completed' WHERE work_order_id = ?"
+    ).bind(workOrderId).run();
+    await env.DB.prepare(
+      "UPDATE work_orders SET status = 'in_service' WHERE id = ?"
+    ).bind(workOrderId).run();
+
+    await env.DB.prepare(
+      "INSERT INTO work_order_messages (id, work_order_id, sender_type, sender_id, sender_name, content, message_type, is_internal_note, is_customer_visible) VALUES (?, ?, 'system', '', 'System', ?, 'payment_update', 0, 1)"
+    ).bind(
+      generateId(),
+      workOrderId,
+      `SAGEMRO confirmed payment receipt. The work order is approved to start service.${note ? ` Note: ${note}` : ''}`
+    ).run();
+
+    await writeAuditLog(env, request, {
+      targetType: 'work_order',
+      targetId: workOrderId,
+      action: 'payment_start_approved',
+      beforeState: { status: wo.status, payment_status: payment.status },
+      afterState: { status: 'in_service', payment_status: 'completed', note },
+    });
+
+    return jsonResponse({ success: true, status: 'in_service' });
+  } catch (error) {
+    return errorResponse(error.message, 500);
+  }
+}
 // 获取工单付款记录
+async function handleAdminUpdateWorkOrderPayout(request, env) {
+  try {
+    const workOrderId = new URL(request.url).pathname.split('/')[4];
+    const body = await request.json().catch(() => ({}));
+    const status = String(body.status || '').trim();
+    const amount = body.amount === undefined || body.amount === '' ? 0 : Math.round(Number(body.amount));
+    const currency = String(body.currency || 'USD').trim().toUpperCase() || 'USD';
+    const method = body.method === undefined ? undefined : String(body.method || '').trim();
+    const transaction_reference = String(body.transaction_reference || '').trim();
+    const internal_note = String(body.internal_note || '').trim();
+    const paid_at = String(body.paid_at || '').trim();
+
+    if (!WORK_ORDER_PAYOUT_STATUSES.has(status)) {
+      return errorResponse('Unsupported payout status', 400);
+    }
+    if (!Number.isFinite(amount) || amount < 0) {
+      return errorResponse('Invalid payout amount', 400);
+    }
+    if (method && !ENGINEER_PAYOUT_METHODS.has(method)) {
+      return errorResponse('Unsupported payout method', 400);
+    }
+
+    const wo = await env.DB.prepare(
+      'SELECT id, order_no, engineer_id, status FROM work_orders WHERE id = ?'
+    ).bind(workOrderId).first();
+    if (!wo) return errorResponse('Work order not found', 404);
+    if (!wo.engineer_id) return errorResponse('Work order has no assigned engineer', 400);
+
+    let payout = await ensureWorkOrderPayout(env, workOrderId, wo.engineer_id, status === 'not_ready' ? 'not_ready' : 'pending');
+    const nextPaidAt = status === 'completed' ? (paid_at || new Date().toISOString()) : (paid_at || payout.paid_at || '');
+    const nextMethod = method || payout.method || 'paypal';
+
+    await env.DB.prepare(`
+      UPDATE work_order_payouts
+      SET status = ?, amount = ?, currency = ?, method = ?, transaction_reference = ?, paid_at = ?, internal_note = ?, updated_at = CURRENT_TIMESTAMP
+      WHERE work_order_id = ?
+    `).bind(status, amount, currency, nextMethod, transaction_reference, nextPaidAt, internal_note, workOrderId).run();
+
+    payout = await env.DB.prepare(
+      'SELECT * FROM work_order_payouts WHERE work_order_id = ?'
+    ).bind(workOrderId).first();
+
+    await writeAuditLog(env, request, {
+      targetType: 'work_order',
+      targetId: workOrderId,
+      action: 'engineer_payout_updated',
+      beforeState: {},
+      afterState: { status, amount, currency, method: nextMethod, transaction_reference },
+    });
+
+    return jsonResponse({ success: true, payout, payout_status: payout?.status || 'not_ready' });
+  } catch (error) {
+    return errorResponse(error.message, 500);
+  }
+}
+
 async function handleGetWorkOrderPayment(request, env) {
   try {
     const workOrderId = new URL(request.url).pathname.split('/')[3];
@@ -9355,6 +10557,9 @@ async function routeRequest(request, env, ctx) {
     if (path === '/api/chat/upload-image' && request.method === 'POST') {
       return handleChatUploadImage(request, env);
     }
+    if (path === '/api/chat/transcribe' && request.method === 'POST') {
+      return handleChatTranscribe(request, env);
+    }
     if (path === '/api/chat' && request.method === 'POST') {
       return handleChat(request, env);
     }
@@ -9441,7 +10646,7 @@ async function routeRequest(request, env, ctx) {
       `).bind(id, order_no, customerId, type, description, urgency, computeSlaDeadline(urgency), 'other', 'other').run();
 
       // 生成AI摘要
-      const aiSummary = await generateWorkOrderSummary(type, description, urgency, env);
+      const aiSummary = await generateWorkOrderSummary(type, description, urgency, env, { market: getRequestMarket(request) });
 
       const workOrderData = { id, order_no, type, description, urgency, ai_summary: aiSummary };
 
@@ -9601,6 +10806,12 @@ async function routeRequest(request, env, ctx) {
       if (path === '/api/admin/users' && request.method === 'POST') {
         return handleAdminCreateUser(request, env);
       }
+      if (path.match(/^\/api\/admin\/engineers\/[^/]+$/) && request.method === 'GET') {
+        return handleAdminEngineerDetail(request, env);
+      }
+      if (path.match(/^\/api\/admin\/engineers\/[^/]+$/) && request.method === 'PATCH') {
+        return handleAdminUpdateEngineer(request, env);
+      }
       if (path === '/api/admin/engineer-applications' && request.method === 'GET') {
         return handleAdminEngineerApplications(request, env);
       }
@@ -9621,6 +10832,15 @@ async function routeRequest(request, env, ctx) {
       }
       if (path.match(/^\/api\/admin\/upsell-requests\/[^/]+$/) && request.method === 'PATCH') {
         return handleAdminUpdateUpsellRequest(request, env);
+      }
+      if (path === '/api/admin/knowledge' && request.method === 'GET') {
+        return handleAdminKnowledge(request, env);
+      }
+      if (path === '/api/admin/knowledge' && request.method === 'POST') {
+        return handleAdminCreateKnowledge(request, env);
+      }
+      if (path.match(/^\/api\/admin\/knowledge\/[^/]+$/) && request.method === 'PATCH') {
+        return handleAdminUpdateKnowledge(request, env);
       }
       if (path === '/api/admin/materials' && request.method === 'GET') {
         return handleAdminMaterials(request, env);
@@ -9649,6 +10869,12 @@ async function routeRequest(request, env, ctx) {
       if (path.match(/^\/api\/admin\/workorders\/[^/]+\/pricing\/(approve|reject)$/) && request.method === 'PATCH') {
         return handleAdminReviewWorkOrderPricing(request, env);
       }
+      if (path.match(/^\/api\/admin\/workorders\/[^/]+\/payment\/approve-start$/) && request.method === 'POST') {
+        return handleAdminApprovePaymentStart(request, env);
+      }
+      if (path.match(/^\/api\/admin\/workorders\/[^/]+\/payout$/) && request.method === 'PATCH') {
+        return handleAdminUpdateWorkOrderPayout(request, env);
+      }
       if (path.startsWith('/api/admin/workorders/') && path.endsWith('/archive') && request.method === 'PATCH') {
         return handleAdminArchiveWorkOrder(request, env);
       }
@@ -9659,7 +10885,7 @@ async function routeRequest(request, env, ctx) {
         return handleAdminLeads(request, env);
       }
       if (path.startsWith('/api/admin/leads/') && path.endsWith('/convert-workorder') && request.method === 'POST') {
-        return errorResponse('整机线索由 Euchio 业务员跟进，不转为服务申请', 400);
+        return errorResponse('整机线索由 Admin 负责销售流转，不转为服务申请', 400);
       }
       if (path.startsWith('/api/admin/leads/') && request.method === 'PATCH') {
         return handleAdminUpdateLead(request, env);
@@ -9880,6 +11106,9 @@ async function routeRequest(request, env, ctx) {
     // 客户付款（记录客户-工程师之间的交易）
     if (path.match(/^\/api\/workorders\/[^/]+\/pay$/) && request.method === 'POST') {
       return handlePayWorkOrder(request, env);
+    }
+    if (path.match(/^\/api\/workorders\/[^/]+\/payment\/start-request$/) && request.method === 'POST') {
+      return handleEngineerRequestPaymentStart(request, env);
     }
     // 获取付款记录
     if (path.match(/^\/api\/workorders\/[^/]+\/payment$/) && request.method === 'GET') {

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Plus, Trash2 } from 'lucide-react';
+import { Pencil, Plus, Trash2 } from 'lucide-react';
 import { saveRepairRecord } from '../../services/api';
 import { toastSuccess, toastError } from '../../utils/feedback';
 import { isCnLocale } from '../../utils/locale';
@@ -15,7 +15,17 @@ function parseParts(partsUsed) {
   }
 }
 
-export function RepairRecordPanel({ workOrderId, userType, repairRecord, onSaved }) {
+function hasRepairRecordContent(record) {
+  if (!record) return false;
+  const hasText = Boolean(record.symptom || record.diagnosis || record.solution);
+  const hasLabor = Number(record.labor_hours || 0) > 0;
+  const parts = parseParts(record.parts_used);
+  const hasParts = parts.some((part) => part?.name);
+  const hasMaterialItems = Array.isArray(record.material_items) && record.material_items.length > 0;
+  return hasText || hasLabor || hasParts || hasMaterialItems;
+}
+
+export function RepairRecordPanel({ workOrderId, userType, repairRecord, onSaved, onSubmitComplete, canSubmitComplete = false }) {
   const isCn = isCnLocale();
   const isEngineer = userType === 'engineer';
   const [isEditing, setIsEditing] = useState(false);
@@ -37,7 +47,7 @@ export function RepairRecordPanel({ workOrderId, userType, repairRecord, onSaved
       const parts = parseParts(repairRecord.parts_used);
       setPartsUsed(parts.length > 0 ? parts : [{ ...emptyPart }]);
       setMaterialItems(Array.isArray(repairRecord.material_items) ? repairRecord.material_items : []);
-      setIsEditing(false);
+      setIsEditing(isEngineer && !hasRepairRecordContent(repairRecord));
     } else if (isEngineer) {
       setIsEditing(true);
     }
@@ -82,17 +92,47 @@ export function RepairRecordPanel({ workOrderId, userType, repairRecord, onSaved
 
   // ====== 查看模式 ======
   if (!isEditing) {
-    const hasContent = symptom || diagnosis || solution || (repairRecord?.labor_hours > 0);
+    const hasContent = hasRepairRecordContent(repairRecord);
     if (!hasContent) {
-      return <div className="text-center py-8 text-sm text-[var(--color-text-muted)]">No service report yet</div>;
+      return (
+        <div className="space-y-3 text-center py-8">
+          <div className="text-sm text-[var(--color-text-muted)]">No service report yet</div>
+          {isEngineer && (
+            <>
+              <div className="mx-auto max-w-sm text-xs text-[var(--color-text-secondary)]">
+                Please complete and save this service report before submitting it to the customer.
+              </div>
+              <button
+                onClick={() => setIsEditing(true)}
+                className="rounded-xl bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-white hover:bg-[var(--color-primary-hover)]"
+              >
+                Create Service Report
+              </button>
+            </>
+          )}
+        </div>
+      );
     }
     const parts = parseParts(repairRecord?.parts_used);
     const structuredParts = Array.isArray(repairRecord?.material_items) ? repairRecord.material_items : [];
 
     return (
       <div className="space-y-4">
-        <div className="p-3 bg-[var(--color-primary)]/10 border border-[var(--color-primary)]/20 rounded-xl text-sm text-[var(--color-text-primary)]">
-          SAGEMRO Service Report: diagnosis, actions, parts, labor time, and follow-up notes for customer acceptance and equipment history.
+        <div className="flex items-start justify-between gap-3 rounded-xl border border-[var(--color-primary)]/20 bg-[var(--color-primary)]/10 p-3 text-sm text-[var(--color-text-primary)]">
+          <div>
+            SAGEMRO Service Report: diagnosis, actions, parts, labor time, and follow-up notes for customer acceptance and equipment history.
+          </div>
+          {isEngineer && (
+            <button
+              type="button"
+              onClick={() => setIsEditing(true)}
+              aria-label="Edit service report"
+              className="inline-flex shrink-0 items-center gap-1.5 self-start rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-xs font-medium text-[var(--color-text-secondary)] shadow-sm hover:border-[var(--color-primary)] hover:text-[var(--color-primary)]"
+            >
+              <Pencil size={14} />
+              Edit
+            </button>
+          )}
         </div>
         {symptom && (
           <div>
@@ -157,13 +197,15 @@ export function RepairRecordPanel({ workOrderId, userType, repairRecord, onSaved
           </div>
         )}
         {/* 工程师可以继续编辑已有记录 */}
-        {isEngineer && (
-          <button
-            onClick={() => setIsEditing(true)}
-            className="w-full py-2.5 text-sm bg-[var(--color-surface-elevated)] hover:bg-[var(--color-border)] text-[var(--color-text-primary)] rounded-xl"
-          >
-            Edit Service Report
-          </button>
+        {isEngineer && canSubmitComplete && (
+          <div>
+            <button
+              onClick={onSubmitComplete}
+              className="w-full py-2.5 text-sm bg-green-500 hover:bg-green-600 text-white rounded-xl"
+            >
+              Submit Final Report to Customer
+            </button>
+          </div>
         )}
       </div>
     );
@@ -176,7 +218,7 @@ export function RepairRecordPanel({ workOrderId, userType, repairRecord, onSaved
         <div className="font-medium text-[var(--color-text-primary)]">SAGEMRO Service Report SOP</div>
         <div>1. Record customer symptom and current machine condition.</div>
         <div>2. Write root cause, on-site actions, parameters adjusted, parts used, and next maintenance advice.</div>
-        <div>3. Upload on-site photos or acceptance files in the Attachments tab when available.</div>
+        <div>3. Share on-site photos or acceptance files in Messages when available; existing files remain visible in Details.</div>
         <div>4. Save this report before marking the service complete.</div>
       </div>
 
@@ -215,40 +257,58 @@ export function RepairRecordPanel({ workOrderId, userType, repairRecord, onSaved
 
       {/* 配件清单 */}
       <div>
-        <label className="block text-xs text-[var(--color-text-secondary)] mb-2">Parts Used</label>
+        <div className="mb-2">
+          <label className="block text-xs font-medium text-[var(--color-text-primary)]">Parts Used (manual entry)</label>
+          <p className="mt-1 text-xs leading-relaxed text-[var(--color-text-muted)]">
+            Use this only for parts actually consumed or replaced on site. If you already selected the same item in Material lines, do not enter it again here.
+          </p>
+        </div>
         <div className="space-y-2">
           {partsUsed.map((part, i) => (
-            <div key={i} className="flex gap-2 items-start">
-              <input
-                value={part.name}
-                onChange={(e) => updatePart(i, 'name', e.target.value)}
-                placeholder="Part name"
-                className={inputClass + ' flex-1 min-w-0'}
-              />
-              <input
-                type="number"
-                value={part.qty}
-                onChange={(e) => updatePart(i, 'qty', e.target.value)}
-                placeholder="Qty"
-                min="1"
-                className={inputClass + ' w-16 text-center'}
-              />
-              <input
-                value={part.unit}
-                onChange={(e) => updatePart(i, 'unit', e.target.value)}
-                placeholder="Unit"
-                className={inputClass + ' w-16'}
-              />
-              <input
-                value={part.specs}
-                onChange={(e) => updatePart(i, 'specs', e.target.value)}
-                placeholder="Specs"
-                className={inputClass + ' w-28'}
-              />
+            <div key={i} className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(180px,1fr)_80px_90px_minmax(160px,0.8fr)_auto] sm:items-end">
+              <label className="block text-[11px] font-medium text-[var(--color-text-secondary)]">
+                Part name
+                <input
+                  value={part.name}
+                  onChange={(e) => updatePart(i, 'name', e.target.value)}
+                  placeholder="Protective lens"
+                  className={inputClass + ' mt-1'}
+                />
+              </label>
+              <label className="block text-[11px] font-medium text-[var(--color-text-secondary)]">
+                Qty
+                <input
+                  type="number"
+                  value={part.qty}
+                  onChange={(e) => updatePart(i, 'qty', e.target.value)}
+                  placeholder="1"
+                  min="1"
+                  className={inputClass + ' mt-1 text-center'}
+                />
+              </label>
+              <label className="block text-[11px] font-medium text-[var(--color-text-secondary)]">
+                Unit
+                <input
+                  value={part.unit}
+                  onChange={(e) => updatePart(i, 'unit', e.target.value)}
+                  placeholder="pcs"
+                  className={inputClass + ' mt-1'}
+                />
+              </label>
+              <label className="block text-[11px] font-medium text-[var(--color-text-secondary)]">
+                Spec / note
+                <input
+                  value={part.specs}
+                  onChange={(e) => updatePart(i, 'specs', e.target.value)}
+                  placeholder="D28 / BM110"
+                  className={inputClass + ' mt-1'}
+                />
+              </label>
               <button
                 onClick={() => removePart(i)}
                 disabled={partsUsed.length <= 1}
-                className="p-2 text-[var(--color-text-muted)] hover:text-red-500 disabled:opacity-30 flex-shrink-0 mt-1"
+                className="flex h-10 w-10 items-center justify-center rounded-xl text-[var(--color-text-muted)] hover:bg-red-50 hover:text-red-500 disabled:opacity-30"
+                aria-label="Remove part"
               >
                 <Trash2 size={16} />
               </button>

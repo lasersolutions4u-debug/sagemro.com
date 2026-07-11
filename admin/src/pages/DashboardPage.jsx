@@ -31,7 +31,7 @@ const TEXT = {
     loading: '加载中...',
     loadFailed: '加载失败',
     title: 'SAGEMRO 运营中枢',
-    subtitle: '集中处理线索分流、服务确认、区域派工、报价审核、服务质量和合规归档。',
+    subtitle: '线索分流、服务审核、派工管理、报价确认、服务质量和合规归档。',
     cards: {
       aiLeadsToday: '今日新增整机线索',
       pendingReview: '待审核服务申请',

@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { signJwt } from '../src/lib/auth.js';
-import { handleChat } from '../src/index.js';
+import { buildWorkOrderSummaryPrompt, handleChat, handleChatTranscribe } from '../src/index.js';
 
 const JWT_SECRET = 'chat-access-test-secret-32-chars';
 
@@ -17,9 +17,10 @@ function makeRequest(body, token, url = 'https://api.sagemro.com/api/chat', orig
   });
 }
 
-function makeEnv({ conversation = null, conversationInsertFailures = 0 } = {}) {
+function makeEnv({ conversation = null, conversationInsertFailures = 0, commitConversationBeforeFailure = false } = {}) {
   const insertedConversations = [];
   let conversationInsertAttempts = 0;
+  let loadedConversation = conversation;
   const db = {
     prepare(sql) {
       return {
@@ -29,7 +30,7 @@ function makeEnv({ conversation = null, conversationInsertFailures = 0 } = {}) {
           return this;
         },
         async first() {
-          if (/FROM conversations WHERE id = \?/.test(sql)) return conversation;
+          if (/FROM conversations WHERE id = \?/.test(sql)) return loadedConversation;
           return null;
         },
         async all() {
@@ -38,14 +39,29 @@ function makeEnv({ conversation = null, conversationInsertFailures = 0 } = {}) {
         async run() {
           if (/INSERT INTO conversations/.test(sql)) {
             conversationInsertAttempts++;
-            if (conversationInsertAttempts <= conversationInsertFailures) {
-              throw new Error('D1_ERROR: D1 DB storage operation exceeded timeout which caused object to be reset.');
-            }
-            insertedConversations.push({
+            const insertedConversation = {
               id: this.args[0],
               customer_id: this.args[3],
               engineer_id: this.args[4],
-            });
+            };
+            if (conversationInsertAttempts <= conversationInsertFailures) {
+              if (commitConversationBeforeFailure) {
+                insertedConversations.push(insertedConversation);
+                loadedConversation = {
+                  customer_id: insertedConversation.customer_id,
+                  engineer_id: insertedConversation.engineer_id,
+                };
+              }
+              throw new Error('D1_ERROR: D1 DB storage operation exceeded timeout which caused object to be reset.');
+            }
+            if (insertedConversations.some((row) => row.id === insertedConversation.id)) {
+              throw new Error('D1_ERROR: UNIQUE constraint failed: conversations.id: SQLITE_CONSTRAINT');
+            }
+            insertedConversations.push(insertedConversation);
+            loadedConversation = {
+              customer_id: insertedConversation.customer_id,
+              engineer_id: insertedConversation.engineer_id,
+            };
           }
           return { success: true };
         },
@@ -167,6 +183,24 @@ test('handleChat retries a transient D1 timeout while creating a guest conversat
   assert.equal(insertedConversations[0].id, 'retry-conv-1');
 });
 
+test('handleChat treats retried conversation create as idempotent when D1 committed before timing out', async () => {
+  const { env, insertedConversations, getConversationInsertAttempts } = makeEnv({
+    conversationInsertFailures: 1,
+    commitConversationBeforeFailure: true,
+  });
+
+  const response = await handleChat(makeRequest({
+    conversation_id: 'retry-conv-committed',
+    message: 'My fiber laser cutter shows alarm E012.',
+  }), env);
+
+  assert.equal(response.status, 200);
+  await response.body?.cancel();
+  assert.equal(getConversationInsertAttempts(), 1);
+  assert.equal(insertedConversations.length, 1);
+  assert.equal(insertedConversations[0].id, 'retry-conv-committed');
+});
+
 test('handleChat returns a friendly 503 when transient D1 timeout persists before streaming starts', async () => {
   const { env, getConversationInsertAttempts } = makeEnv({
     conversationInsertFailures: 2,
@@ -211,7 +245,7 @@ test('handleChat prompt teaches CN users the correct portal and auth entry detai
   const prompt = await captureChatPrompt({
     request: makeRequest({
       conversation_id: 'cn-platform-guide-1',
-      message: '怎么注册和登录？如果我要买新机呢？',
+      message: '怎么注册和登录？',
     }, null, 'https://api.sagemro.cn/api/chat', 'https://sagemro.cn'),
   });
 
@@ -220,7 +254,8 @@ test('handleChat prompt teaches CN users the correct portal and auth entry detai
   assert.match(prompt, /admin\.sagemro\.cn/);
   assert.match(prompt, /左侧工具栏底部/);
   assert.match(prompt, /移动端.*左上角菜单/s);
-  assert.match(prompt, /公司名称、姓名、密码、手机号、邮箱和邮箱验证码/);
+  assert.match(prompt, /公司名称、姓名、密码、手机号和短信验证码/);
+  assert.doesNotMatch(prompt, /邮箱和邮箱验证码/);
   assert.doesNotMatch(prompt, /右上角.*登录/);
   assert.doesNotMatch(prompt, /真实姓名/);
 });
@@ -245,7 +280,7 @@ test('handleChat prompt keeps customer-facing machine recommendations neutral', 
   assert.doesNotMatch(prompt, /引导用户访问 euchio\.com/);
 });
 
-test('handleChat tells COM site to answer English by default', async () => {
+test('handleChat tells COM site to follow the customer language while keeping system UI in English', async () => {
   const prompt = await captureChatPrompt({
     request: makeRequest({
       conversation_id: 'com-prompt-1',
@@ -253,8 +288,24 @@ test('handleChat tells COM site to answer English by default', async () => {
     }, null, 'https://api.sagemro.com/api/chat', 'https://sagemro.com'),
   });
 
-  assert.match(prompt, /You MUST answer this turn in English/);
+  assert.match(prompt, /Reply in the same natural language the customer uses in their latest message/);
+  assert.match(prompt, /If the latest customer message is in Russian, reply in Russian/);
+  assert.match(prompt, /SAGEMRO system UI labels, button names, routes, account type names, and portal names remain in English/);
+  assert.match(prompt, /Internal service-ready summaries, work-order summaries, progress text, and AI analysis must remain in English/);
   assert.match(prompt, /Market: International edition \/ sagemro\.com/);
+});
+
+test('handleChat lets COM customer-facing replies follow Chinese input language', async () => {
+  const prompt = await captureChatPrompt({
+    request: makeRequest({
+      conversation_id: 'com-chinese-input-1',
+      message: '激光切割机自动对焦失败，Z 轴不动作，怎么办？',
+    }, null, 'https://api.sagemro.com/api/chat', 'https://sagemro.com'),
+  });
+
+  assert.match(prompt, /Reply in the same natural language the customer uses in their latest message/);
+  assert.doesNotMatch(prompt, /You MUST answer this turn in English/);
+  assert.doesNotMatch(prompt, /keep all AI-generated replies/);
 });
 
 test('handleChat prompt keeps simple questions useful without pushing a work order', async () => {
@@ -268,4 +319,165 @@ test('handleChat prompt keeps simple questions useful without pushing a work ord
   assert.match(prompt, /Do not push a work order or service request after a simple question is already answered clearly/);
   assert.match(prompt, /Add a short SAGEMRO service follow-up offer only when manual confirmation, quotation, parts, service scheduling, safety handling, or reviewed parameter verification is clearly useful/);
   assert.match(prompt, /If the user did not explicitly request a detailed plan, table, report, or full checklist, write exactly 5 compact lines/);
+});
+
+test('handleChatTranscribe requires Deepgram configuration', async () => {
+  const formData = new FormData();
+  formData.append('audio', new Blob(['audio'], { type: 'audio/webm' }), 'voice.webm');
+
+  const response = await handleChatTranscribe(new Request('https://api.sagemro.com/api/chat/transcribe', {
+    method: 'POST',
+    body: formData,
+  }), {});
+
+  assert.equal(response.status, 503);
+  const body = await response.json();
+  assert.match(body.error, /Voice input is not configured/);
+});
+
+test('handleChatTranscribe asks Deepgram to detect the spoken language for COM site', async () => {
+  const formData = new FormData();
+  formData.append('audio', new Blob(['audio'], { type: 'audio/webm' }), 'voice.webm');
+
+  const originalFetch = globalThis.fetch;
+  let captured = null;
+  globalThis.fetch = async (url, init) => {
+    captured = { url, init };
+    return new Response(JSON.stringify({
+      results: {
+        channels: [
+          { detected_language: 'fr', alternatives: [{ transcript: 'Check the laser alarm E012.' }] },
+        ],
+      },
+    }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  };
+
+  try {
+    const response = await handleChatTranscribe(new Request('https://api.sagemro.com/api/chat/transcribe', {
+      method: 'POST',
+      body: formData,
+    }), { DEEPGRAM_API_KEY: 'deepgram-test-key' });
+
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.equal(body.transcript, 'Check the laser alarm E012.');
+    assert.equal(body.detectedLanguage, 'fr');
+    assert.match(String(captured.url), /https:\/\/api\.deepgram\.com\/v1\/listen/);
+    assert.match(String(captured.url), /model=whisper-large/);
+    assert.match(String(captured.url), /smart_format=true/);
+    assert.match(String(captured.url), /detect_language=true/);
+    assert.doesNotMatch(String(captured.url), /language=multi/);
+    assert.doesNotMatch(String(captured.url), /detect_language=zh/);
+    assert.equal(captured.init.method, 'POST');
+    assert.equal(captured.init.headers.Authorization, 'Token deepgram-test-key');
+    assert.equal(captured.init.headers['Content-Type'], 'audio/webm');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('handleChatTranscribe asks Deepgram to detect the spoken language for CN site', async () => {
+  const formData = new FormData();
+  formData.append('audio', new Blob(['audio'], { type: 'audio/webm' }), 'voice.webm');
+
+  const originalFetch = globalThis.fetch;
+  let capturedUrl = '';
+  globalThis.fetch = async (url) => {
+    capturedUrl = String(url);
+    return new Response(JSON.stringify({
+      results: { channels: [{ detected_language: 'zh', alternatives: [{ transcript: '激 光 切 割 机 报 警 了' }] }] },
+    }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  };
+
+  try {
+    const response = await handleChatTranscribe(new Request('https://api.sagemro.cn/api/chat/transcribe', {
+      method: 'POST',
+      headers: { Origin: 'https://sagemro.cn' },
+      body: formData,
+    }), { DEEPGRAM_API_KEY: 'deepgram-test-key' });
+
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.equal(body.transcript, '激光切割机报警了');
+    assert.equal(body.detectedLanguage, 'zh');
+    assert.match(capturedUrl, /detect_language=true/);
+    assert.doesNotMatch(capturedUrl, /detect_language=zh/);
+    assert.doesNotMatch(capturedUrl, /detect_language=en/);
+    assert.doesNotMatch(capturedUrl, /language=multi/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('handleChatTranscribe rate limits voice transcription before calling Deepgram', async () => {
+  const formData = new FormData();
+  formData.append('audio', new Blob(['audio'], { type: 'audio/webm' }), 'voice.webm');
+
+  const originalFetch = globalThis.fetch;
+  let deepgramCalled = false;
+  let storedKey = '';
+  globalThis.fetch = async () => {
+    deepgramCalled = true;
+    return new Response('{}', { status: 200 });
+  };
+
+  try {
+    const response = await handleChatTranscribe(new Request('https://api.sagemro.com/api/chat/transcribe', {
+      method: 'POST',
+      headers: { 'CF-Connecting-IP': '203.0.113.10' },
+      body: formData,
+    }), {
+      DEEPGRAM_API_KEY: 'deepgram-test-key',
+      KV: {
+        async get(key) {
+          storedKey = key;
+          return '20';
+        },
+        async put() {
+          throw new Error('quota should not be incremented after limit is reached');
+        },
+      },
+    });
+
+    assert.equal(response.status, 429);
+    const body = await response.json();
+    assert.match(body.error, /Voice transcription limit reached/);
+    assert.equal(deepgramCalled, false);
+    assert.match(storedKey, /deepgram_voice_hour_guest:203\.0\.113\.10/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('work order summary prompt keeps COM generated summaries in English', () => {
+  const prompt = buildWorkOrderSummaryPrompt({
+    type: 'fault',
+    description: '激光切割机自动对焦失败，Z 轴不动作。',
+    urgency: 'urgent',
+    market: 'com',
+  });
+
+  assert.match(prompt, /You are a work order analysis assistant/);
+  assert.match(prompt, /Return JSON fields in English/);
+  assert.match(prompt, /Work order summary, required specialties, suggested skills, urgency notes, and AI analysis must be written in English/);
+  assert.doesNotMatch(prompt, /你是工单分析助手/);
+});
+
+test('work order summary prompt keeps CN generated summaries in Simplified Chinese', () => {
+  const prompt = buildWorkOrderSummaryPrompt({
+    type: 'fault',
+    description: '激光切割机自动对焦失败，Z 轴不动作。',
+    urgency: 'urgent',
+    market: 'cn',
+  });
+
+  assert.match(prompt, /你是工单分析助手/);
+  assert.match(prompt, /只返回 JSON/);
+  assert.doesNotMatch(prompt, /Return JSON fields in English/);
 });

@@ -5,8 +5,8 @@ import { WorkOrderStatus } from '../../types';
 import { getWorkOrders, cancelWorkOrder } from '../../services/api';
 import { toastSuccess, toastError, confirmDialog } from '../../utils/feedback';
 import { WorkOrderDetailModal } from '../WorkOrder/WorkOrderDetailModal';
-import { formatSlaRemaining, categoryConfig, categoryConfigCn, categoryL2Labels, categoryL2LabelsCn } from '../../data/workOrderConfig';
-import { isCnLocale } from '../../utils/locale';
+import { formatSlaRemaining, categoryConfig, categoryL2Labels } from '../../data/workOrderConfig';
+import { formatCustomerDeviceLine, toEnglishDeviceValue } from '../../utils/workOrderDisplay';
 
 // 客户侧需要关注的状态
 const customerStatuses = [
@@ -32,33 +32,7 @@ const statusLabels = {
   [WorkOrderStatus.CANCELLED]: { text: 'Cancelled', color: 'bg-gray-400' },
 };
 
-const statusLabelsCn = {
-  [WorkOrderStatus.PENDING]: { text: '待确认', color: 'bg-blue-500' },
-  [WorkOrderStatus.ASSIGNED]: { text: '已派工', color: 'bg-blue-400' },
-  [WorkOrderStatus.IN_PROGRESS]: { text: '处理中', color: 'bg-yellow-500' },
-  [WorkOrderStatus.PRICING]: { text: '待报价', color: 'bg-orange-500' },
-  [WorkOrderStatus.IN_SERVICE]: { text: '服务中', color: 'bg-purple-500' },
-  [WorkOrderStatus.RESOLVED]: { text: '待确认', color: 'bg-green-500' },
-  [WorkOrderStatus.PENDING_REVIEW]: { text: '待评价', color: 'bg-teal-500' },
-  [WorkOrderStatus.COMPLETED]: { text: '已完成', color: 'bg-gray-500' },
-  [WorkOrderStatus.REJECTED]: { text: '已拒绝', color: 'bg-red-500' },
-  [WorkOrderStatus.CANCELLED]: { text: '已取消', color: 'bg-gray-400' },
-};
-
-function formatSlaRemainingCn(slaStatus) {
-  if (!slaStatus || slaStatus.remaining_seconds == null) return null;
-  const seconds = slaStatus.remaining_seconds;
-  const abs = Math.abs(seconds);
-  const h = Math.floor(abs / 3600);
-  const m = Math.floor((abs % 3600) / 60);
-  const prefix = slaStatus.status === 'breached' ? '已超时 ' : '剩余 ';
-  if (h > 0) return prefix + h + '小时' + (m > 0 ? m + '分钟' : '');
-  if (m > 0) return prefix + m + '分钟';
-  return slaStatus.status === 'breached' ? '刚刚超时' : '不到 1 分钟';
-}
-
 export function MyWorkOrdersModal({ isOpen, onClose }) {
-  const isCn = isCnLocale();
   const [workOrders, setWorkOrders] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -96,14 +70,14 @@ export function MyWorkOrdersModal({ isOpen, onClose }) {
   };
 
   const handleRateSuccess = () => {
-    // 刷新服务任务列表
+    // 刷新工单列表
     const loadWorkOrders = async () => {
       try {
         const customerId = localStorage.getItem('sagemro_customer_id') || 'guest';
         const data = await getWorkOrders(customerId);
         setWorkOrders(data.work_orders || []);
       } catch (e) {
-        console.error('刷新服务任务失败:', e);
+        console.error('刷新工单失败:', e);
       }
     };
     loadWorkOrders();
@@ -111,33 +85,30 @@ export function MyWorkOrdersModal({ isOpen, onClose }) {
 
   return (
     <>
-      <Modal isOpen={isOpen} onClose={onClose} title={isCn ? '我的服务' : 'My Services'} size="md">
+      <Modal isOpen={isOpen} onClose={onClose} title="My Services" size="lg">
         <div className="space-y-3">
           {loading && (
             <div className="text-center py-8 text-[var(--color-text-secondary)]">
-              {isCn ? '正在加载...' : 'Loading...'}
+              Loading...
             </div>
           )}
 
           {error && (
             <div className="text-center py-4 text-red-500 text-sm">
-              {isCn ? '加载失败：' : 'Failed to load: '}{error}
+              Failed to load: {error}
             </div>
           )}
 
           {!loading && workOrders.length === 0 && !error && (
             <div className="text-center py-8 text-[var(--color-text-secondary)]">
-              {isCn ? '还没有服务记录' : 'No service requests found'}
+              No service requests found
             </div>
           )}
 
           {!loading && workOrders.map((order) => {
-            const localizedStatusLabels = isCn ? statusLabelsCn : statusLabels;
-            const localizedCategoryConfig = isCn ? categoryConfigCn : categoryConfig;
-            const localizedCategoryL2Labels = isCn ? categoryL2LabelsCn : categoryL2Labels;
-            const status = localizedStatusLabels[order.status] || localizedStatusLabels[WorkOrderStatus.PENDING];
+            const status = statusLabels[order.status] || statusLabels[WorkOrderStatus.PENDING];
             const sla = order.sla_status;
-            const slaText = isCn ? formatSlaRemainingCn(sla) : formatSlaRemaining(sla);
+            const slaText = formatSlaRemaining(sla);
             const slaColors = {
               on_track: 'text-green-500',
               at_risk: 'text-yellow-500',
@@ -157,14 +128,14 @@ export function MyWorkOrdersModal({ isOpen, onClose }) {
             return (
               <div
                 key={order.id}
-                className="p-4 bg-[var(--color-surface-elevated)] rounded-xl cursor-pointer hover:bg-[var(--color-hover)] transition-colors"
+                className="p-3 sm:p-4 bg-[var(--color-surface-elevated)] rounded-xl cursor-pointer hover:bg-[var(--color-hover)] transition-colors"
                 onClick={() => handleViewDetail(order)}
               >
-                <div className="flex items-center justify-between mb-2">
-                  <span className="font-medium text-[var(--color-text-primary)]">
+                <div className="mb-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <span className="break-all font-medium text-[var(--color-text-primary)]">
                     {order.order_no || order.id}
                   </span>
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     {showSla && (
                       <span className={`flex items-center gap-1 px-1.5 py-0.5 text-xs rounded ${slaColors[sla.status]} ${slaBg[sla.status]}`}>
                         <Clock size={10} />
@@ -179,44 +150,41 @@ export function MyWorkOrdersModal({ isOpen, onClose }) {
                 </div>
                 {order.engineer_name && (
                   <p className="text-xs text-[var(--color-primary)] mb-1">
-                    {isCn ? 'SAGEMRO 工程师：' : 'SAGEMRO Engineer: '}{order.engineer_name}
+                    SAGEMRO Engineer: {order.engineer_name}
                   </p>
                 )}
                 <p className="text-sm text-[var(--color-text-secondary)] mb-1">
                   {order.category_l1 && order.category_l1 !== 'other'
-                    ? `${localizedCategoryConfig[order.category_l1]?.label || order.category_l1}${order.category_l2 && order.category_l2 !== 'other' ? ' · ' + (localizedCategoryL2Labels[order.category_l2] || order.category_l2) : ''}`
-                    : order.type} | {order.device_id || (isCn ? '未关联设备' : 'No device specified')}
+                    ? `${toEnglishDeviceValue(categoryConfig[order.category_l1]?.label || order.category_l1)}${order.category_l2 && order.category_l2 !== 'other' ? ' / ' + toEnglishDeviceValue(categoryL2Labels[order.category_l2] || order.category_l2) : ''}`
+                    : toEnglishDeviceValue(order.type)} | {formatCustomerDeviceLine(order) || order.device_id || 'No device specified'}
                 </p>
                 <p className="text-sm text-[var(--color-text-primary)] line-clamp-2">
                   {order.description}
                 </p>
-                <div className="flex items-center justify-between mt-2">
+                <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                   <p className="text-xs text-[var(--color-text-secondary)]">
-                    {isCn ? '提交时间：' : 'Submitted: '}{new Date(order.created_at).toLocaleString(isCn ? 'zh-CN' : 'en-US')}
+                    Submitted: {new Date(order.created_at).toLocaleString('en-US')}
                   </p>
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     {[WorkOrderStatus.PENDING, WorkOrderStatus.ASSIGNED, WorkOrderStatus.IN_PROGRESS, WorkOrderStatus.PRICING].includes(order.status) && (
                       <button
                         data-testid="cancel-work-order-list-button"
                         onClick={async (e) => {
                           e.stopPropagation();
-                          if (!(await confirmDialog(
-                            isCn ? '确认取消这条服务申请？取消后将无法恢复。' : 'Are you sure you want to cancel this service request? This action cannot be undone.',
-                            { danger: true, confirmText: isCn ? '确认取消' : 'OK', cancelText: isCn ? '先不取消' : 'Cancel' }
-                          ))) return;
+                          if (!(await confirmDialog('Are you sure you want to cancel this service request? This action cannot be undone.', { danger: true }))) return;
                           try {
                             await cancelWorkOrder(order.id);
-                            toastSuccess(isCn ? '服务申请已取消' : 'Service request cancelled');
+                            toastSuccess('Service request cancelled');
                             setWorkOrders((prev) =>
                               prev.map((wo) => wo.id === order.id ? { ...wo, status: WorkOrderStatus.CANCELLED } : wo)
                             );
                           } catch (err) {
-                            toastError((isCn ? '操作失败：' : 'Operation failed: ') + err.message);
+                            toastError('Operation failed: ' + err.message);
                           }
                         }}
                         className="px-3 py-1.5 text-xs font-medium bg-red-500 hover:bg-red-600 text-white rounded-lg transition-colors"
                       >
-                        {isCn ? '取消申请' : 'Cancel'}
+                        Cancel
                       </button>
                     )}
                     {(order.status === WorkOrderStatus.PENDING_REVIEW || order.status === WorkOrderStatus.RESOLVED) && (
@@ -225,7 +193,7 @@ export function MyWorkOrdersModal({ isOpen, onClose }) {
                         onClick={(e) => { e.stopPropagation(); handleViewDetail(order); }}
                         className="px-3 py-1.5 text-xs font-medium bg-yellow-500 hover:bg-yellow-600 text-white rounded-lg transition-colors"
                       >
-                        {isCn ? '评价服务' : 'Rate'}
+                        Rate
                       </button>
                     )}
                   </div>
@@ -236,10 +204,10 @@ export function MyWorkOrdersModal({ isOpen, onClose }) {
 
           {/* 图例（只显示客户相关状态） */}
           <div className="pt-4 border-t border-[var(--color-border)]">
-            <p className="text-xs text-[var(--color-text-secondary)] mb-2">{isCn ? '服务状态：' : 'Service Status:'}</p>
+            <p className="text-xs text-[var(--color-text-secondary)] mb-2">Service Status:</p>
             <div className="flex flex-wrap gap-3">
               {customerStatuses.map((key) => {
-                const val = (isCn ? statusLabelsCn : statusLabels)[key];
+                const val = statusLabels[key];
                 return (
                   <div key={key} className="flex items-center gap-1">
                     <span className={`w-2 h-2 rounded-full ${val.color}`} />

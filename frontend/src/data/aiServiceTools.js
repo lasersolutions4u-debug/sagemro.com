@@ -68,11 +68,11 @@ export const aiServiceTools = [
   {
     id: 'repair-estimate',
     icon: BadgeDollarSign,
-    title: 'Repair Estimate AI',
-    shortTitle: 'Repair Estimate',
-    description: 'Estimate cost level and service complexity without making a binding quote.',
-    cta: 'Estimate Repair',
-    leadType: 'Repair Quote',
+    title: 'Service Cost Reference AI',
+    shortTitle: 'Cost Reference',
+    description: 'Organize likely cost drivers and service complexity before formal review.',
+    cta: 'Review Cost Drivers',
+    leadType: 'Service Cost Context',
     fields: [
       { name: 'faultType', label: 'Fault type', placeholder: 'e.g. laser power drop, cutting head crash, chiller alarm' },
       { name: 'machineAge', label: 'Machine age', placeholder: 'e.g. 4 years' },
@@ -80,36 +80,36 @@ export const aiServiceTools = [
       { name: 'history', label: 'Repair history', type: 'textarea', placeholder: 'Previous repairs, replaced parts, repeated faults.' },
       { name: 'location', label: 'Location', placeholder: 'City / country' },
     ],
-    promptIntro: 'Please act as SAGEMRO Repair Estimate AI and provide a non-binding cost-level assessment.',
-    outputGuide: 'Return low/medium/high cost level, key cost drivers, likely parts or labor, information needed for a formal SAGEMRO quote, and safety notes.',
+    promptIntro: 'Please act as SAGEMRO Service Cost Reference AI and provide a planning-level cost driver review.',
+    outputGuide: 'Return low/medium/high cost level, key cost drivers, likely parts or labor, information needed for qualified confirmation, and safety notes.',
   },
   {
     id: 'machine-selection',
     icon: Activity,
-    title: 'Machine Selection AI',
-    shortTitle: 'Machine Selection',
-    description: 'Recommend laser power, bed size, automation, and route qualified new-machine leads to Euchio.',
-    cta: 'Select Machine',
-    leadType: 'New Machine',
+    title: 'Retrofit & Peripherals AI',
+    shortTitle: 'Retrofit Review',
+    description: 'Collect upgrade, automation, laser peripheral, and post-processing needs for SAGEMRO review.',
+    cta: 'Review Upgrade',
+    leadType: 'Retrofit / Peripherals',
     fields: [
-      { name: 'materials', label: 'Materials', placeholder: 'e.g. carbon steel, stainless steel, aluminum' },
-      { name: 'thicknessRange', label: 'Thickness range', placeholder: 'e.g. 1-20mm' },
-      { name: 'sheetSize', label: 'Sheet size', placeholder: 'e.g. 1500x3000mm' },
-      { name: 'capacity', label: 'Production capacity', placeholder: 'Daily/monthly output target' },
+      { name: 'materials', label: 'Current process / materials', placeholder: 'e.g. laser cutting carbon steel, bending stainless steel' },
+      { name: 'thicknessRange', label: 'Current range or bottleneck', placeholder: 'e.g. 1-20mm, slow loading, unstable nitrogen supply' },
+      { name: 'sheetSize', label: 'Machine / line size', placeholder: 'e.g. 1500x3000mm laser, 110T press brake' },
+      { name: 'capacity', label: 'Production goal', placeholder: 'Daily/monthly output target or labor-saving goal' },
       { name: 'budget', label: 'Budget range', placeholder: 'Optional' },
-      { name: 'automation', label: 'Automation needs', placeholder: 'Manual / exchange table / loading system' },
-      { name: 'country', label: 'Installation country', placeholder: 'Country / region' },
+      { name: 'automation', label: 'Needed equipment or upgrade', placeholder: 'Chiller, dust collector, gas mixer, deburring, lifter, seventh axis, gantry, tooling' },
+      { name: 'country', label: 'Project country', placeholder: 'Country / region' },
     ],
-    promptIntro: 'Please act as SAGEMRO Machine Selection AI and create a preliminary laser cutting machine configuration.',
-    outputGuide: 'Return recommended power range, table size, automation, auxiliary equipment, whether repair/upgrade/new purchase is better, and note that Euchio can follow up for a formal project quote.',
+    promptIntro: 'Please act as SAGEMRO Retrofit and Peripheral Equipment AI and create a preliminary upgrade requirement summary.',
+    outputGuide: 'Return likely upgrade category, compatibility questions, required machine/site information, possible auxiliary equipment, whether maintenance/retrofit/accessory procurement is the better next step, and note that SAGEMRO can follow up for formal confirmation.',
   },
   {
     id: 'health-report',
     icon: HeartPulse,
-    title: 'Equipment Health Report AI',
-    shortTitle: 'Health Report',
-    description: 'Create a health score and maintenance plan from usage, faults, and repair history.',
-    cta: 'Create Report',
+    title: 'Maintenance Risk Review AI',
+    shortTitle: 'Maintenance Risk',
+    description: 'Organize maintenance risk signals from usage, faults, and repair history.',
+    cta: 'Review Risk Signals',
     leadType: 'Maintenance Plan',
     fields: [
       { name: 'machine', label: 'Machine profile', placeholder: 'Brand, model, power, year' },
@@ -118,8 +118,8 @@ export const aiServiceTools = [
       { name: 'maintenance', label: 'Maintenance history', type: 'textarea', placeholder: 'Cleaning, lens replacement, chiller service, previous repairs.' },
       { name: 'qualityIssues', label: 'Quality issues', placeholder: 'Burr, unstable power, poor accuracy, repeated alarms' },
     ],
-    promptIntro: 'Please act as SAGEMRO Equipment Health Report AI and create a practical maintenance and lifecycle assessment.',
-    outputGuide: 'Return health score, risk components, recommended maintenance, suggested spare parts kit, maintenance-plan opportunity, and possible upgrade/new-machine signal.',
+    promptIntro: 'Please act as SAGEMRO Maintenance Risk Review AI and create a practical maintenance and lifecycle assessment.',
+    outputGuide: 'Return observed risk signals, maintenance priorities, suggested spare parts to confirm, planning notes, and possible retrofit or peripheral equipment signals.',
   },
 ];
 
@@ -131,9 +131,9 @@ export function buildAiToolPrompt(tool, values) {
   return `${tool.promptIntro}
 
 Business context:
-- SAGEMRO is an independent third-party service brand for laser cutting and sheet metal equipment, not a machine manufacturer after-sales desk or a loose matchmaking platform.
+- SAGEMRO provides independent service coordination for laser cutting and sheet metal equipment, separate from machine-maker after-sales desks and open technician marketplaces.
 - AI advice is preliminary and must avoid unsafe repair instructions, absolute diagnosis, or binding price commitments.
-- If on-site confirmation is needed, guide the user to request SAGEMRO service coordination.
+- When on-site confirmation is needed, help the user prepare a clear service request for qualified review.
 
 User input:
 ${details}
@@ -141,5 +141,5 @@ ${details}
 Required output:
 ${tool.outputGuide}
 
-Also create a short structured summary suitable for a service request or sales lead.`;
+Also create a short structured summary suitable for service request preparation or admin review.`;
 }

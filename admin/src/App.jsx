@@ -1,14 +1,15 @@
 import { useState } from 'react';
-import { Boxes, ClipboardList, LayoutDashboard, Users, FileText, Star, LogOut, Target, Lightbulb } from 'lucide-react';
+import { Boxes, ClipboardList, LayoutDashboard, Users, UserCog, FileText, Star, LogOut, Target, BookOpenText } from 'lucide-react';
 import { LoginPage } from './pages/LoginPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { UsersPage } from './pages/UsersPage';
+import { EngineersPage } from './pages/EngineersPage';
 import { WorkOrdersPage } from './pages/WorkOrdersPage';
 import { RatingsPage } from './pages/RatingsPage';
 import { LeadsPage } from './pages/LeadsPage';
-import { UpsellRequestsPage } from './pages/UpsellRequestsPage';
 import { EngineerApplicationsPage } from './pages/EngineerApplicationsPage';
 import { MaterialsPage } from './pages/MaterialsPage';
+import { KnowledgePage } from './pages/KnowledgePage';
 import { runtimeConfig } from './config/runtime';
 import { BrandMark } from './components/BrandMark';
 
@@ -21,11 +22,11 @@ const TEXT = {
     nav: {
       dashboard: 'Operations Dashboard',
       leads: 'Machine Leads',
-      upsellRequests: 'Upsell Requests',
       workorders: 'Service Orders',
       engineerApplications: 'Engineer Applications',
       materials: 'Material Master',
-      users: 'Customers & Engineers',
+      engineers: 'Engineers',
+      users: 'Customers',
       ratings: 'Service Reviews',
     },
   },
@@ -37,7 +38,6 @@ const TEXT = {
     nav: {
       dashboard: '运营驾驶舱',
       leads: '整机线索',
-      upsellRequests: '增购需求池',
       workorders: '派工与服务质量',
       engineerApplications: '工程师申请审核',
       materials: '物料管理',
@@ -52,10 +52,11 @@ const t = TEXT[runtimeConfig.locale] || TEXT.en;
 const NAV_ITEMS = [
   { key: 'dashboard', label: t.nav.dashboard, icon: LayoutDashboard },
   { key: 'leads', label: t.nav.leads, icon: Target },
-  { key: 'upsellRequests', label: t.nav.upsellRequests, icon: Lightbulb },
+  { key: 'knowledge', label: t.nav.knowledge || 'Knowledge Base', icon: BookOpenText },
   { key: 'workorders', label: t.nav.workorders, icon: FileText },
   { key: 'materials', label: t.nav.materials, icon: Boxes },
   { key: 'engineerApplications', label: t.nav.engineerApplications, icon: ClipboardList },
+  { key: 'engineers', label: t.nav.engineers || 'Engineers', icon: UserCog },
   { key: 'users', label: t.nav.users, icon: Users },
   { key: 'ratings', label: t.nav.ratings, icon: Star },
 ];
@@ -82,18 +83,19 @@ export default function App() {
     switch (activePage) {
       case 'dashboard': return <DashboardPage />;
       case 'users': return <UsersPage />;
+      case 'engineers': return <EngineersPage />;
       case 'workorders': return <WorkOrdersPage />;
       case 'materials': return <MaterialsPage />;
+      case 'knowledge': return <KnowledgePage />;
       case 'engineerApplications': return <EngineerApplicationsPage />;
       case 'ratings': return <RatingsPage />;
       case 'leads': return <LeadsPage />;
-      case 'upsellRequests': return <UpsellRequestsPage />;
       default: return <DashboardPage />;
     }
   };
 
   return (
-    <div className="min-h-screen flex">
+    <div className="min-h-screen flex bg-[var(--color-bg)]">
       {/* Mobile overlay */}
       {sidebarOpen && (
         <div className="fixed inset-0 bg-black/50 z-30 lg:hidden" onClick={() => setSidebarOpen(false)} />
@@ -153,8 +155,8 @@ export default function App() {
       {/* Main content */}
       <main className="flex-1 min-w-0">
         {/* Mobile header */}
-        <div className="lg:hidden flex items-center gap-3 px-4 py-3 border-b border-[var(--color-border)]">
-          <button onClick={() => setSidebarOpen(true)} className="p-1">
+        <div className="sticky top-0 z-20 lg:hidden flex items-center gap-3 px-3 py-3 border-b border-[var(--color-border)] bg-[var(--color-surface)]/95 backdrop-blur">
+          <button onClick={() => setSidebarOpen(true)} className="flex h-10 w-10 items-center justify-center rounded-lg border border-[var(--color-border)]">
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <line x1="3" y1="6" x2="21" y2="6" />
               <line x1="3" y1="12" x2="21" y2="12" />
@@ -162,10 +164,10 @@ export default function App() {
             </svg>
           </button>
           <BrandMark className="h-8 w-8 shrink-0 rounded-full" />
-          <span className="text-sm font-medium">{t.mobileTitle}</span>
+          <span className="min-w-0 truncate text-sm font-medium">{t.mobileTitle}</span>
         </div>
 
-        <div className="p-6 max-w-6xl mx-auto">
+        <div className="mx-auto max-w-6xl px-3 py-4 sm:px-5 sm:py-5 lg:p-6">
           {renderPage()}
         </div>
       </main>

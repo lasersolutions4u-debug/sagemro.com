@@ -39,6 +39,7 @@ CREATE TABLE IF NOT EXISTS customers (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
     phone TEXT NOT NULL UNIQUE,
+    email TEXT,
     password_hash TEXT NOT NULL,
     region TEXT,
     created_at TEXT DEFAULT (datetime('now')),

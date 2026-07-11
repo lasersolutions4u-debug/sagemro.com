@@ -4,51 +4,63 @@ import { toastError, confirmDialog } from '../../utils/feedback';
 import { useState, useRef, useEffect } from 'react';
 
 export function ChatHistory({ conversations, currentId, onSelect, onDelete, onRename }) {
-  // 按日期分组
-  const grouped = conversations.reduce((acc, conv) => {
+  const [query, setQuery] = useState('');
+  const normalizedQuery = query.trim().toLowerCase();
+  const filteredConversations = normalizedQuery
+    ? conversations.filter((conv) => `${conv.title || ''} ${conv.last_message || ''}`.toLowerCase().includes(normalizedQuery))
+    : conversations;
+
+  const grouped = filteredConversations.reduce((acc, conv) => {
     const date = formatDate(conv.updated_at);
     if (!acc[date]) acc[date] = [];
     acc[date].push(conv);
     return acc;
   }, {});
 
-  const dateOrder = [
-    { key: 'Today', label: '今天' },
-    { key: 'Yesterday', label: '昨天' },
-    { key: 'Last 7 Days', label: '最近 7 天' },
-    { key: 'Earlier', label: '更早' },
-  ];
+  const dateOrder = ['Today', 'Yesterday', 'Last 7 Days', 'Earlier'];
 
   return (
-    <div className="flex-1 min-h-0 overflow-y-auto py-2">
-      {dateOrder.map(({ key, label }) => {
-        const items = grouped[key];
-        if (!items || items.length === 0) return null;
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div className="mb-3">
+        <div className="text-sm font-semibold text-[var(--color-text-primary)]">Conversation History</div>
+        <p className="mt-1 text-xs text-[var(--color-text-secondary)]">Find previous machine issues, service notes, and AI summaries.</p>
+      </div>
+      <input
+        value={query}
+        onChange={(event) => setQuery(event.target.value)}
+        placeholder="Search conversations"
+        className="mb-3 w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-3 py-2 text-sm text-[var(--color-text-primary)] placeholder:text-[var(--color-text-muted)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
+      />
+      <div className="min-h-0 flex-1 overflow-y-auto rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface-elevated)] py-2">
+        {dateOrder.map((date) => {
+          const items = grouped[date];
+          if (!items || items.length === 0) return null;
 
-        return (
-          <div key={key} className="mb-2">
-            <div className="px-4 py-2 text-[12px] text-[var(--color-sidebar-muted)] font-medium uppercase tracking-wide">
-              {label}
+          return (
+            <div key={date} className="mb-2">
+              <div className="px-4 py-2 text-[12px] font-medium uppercase tracking-wide text-[var(--color-text-muted)]">
+                {date}
+              </div>
+              {items.map((conv) => (
+                <ConversationItem
+                  key={conv.id}
+                  conversation={conv}
+                  isActive={conv.id === currentId}
+                  onSelect={() => onSelect(conv)}
+                  onDelete={() => onDelete(conv.id)}
+                  onRename={onRename ? (title) => onRename(conv.id, title) : null}
+                />
+              ))}
             </div>
-            {items.map((conv) => (
-              <ConversationItem
-                key={conv.id}
-                conversation={conv}
-                isActive={conv.id === currentId}
-                onSelect={() => onSelect(conv)}
-                onDelete={() => onDelete(conv.id)}
-                onRename={onRename ? (title) => onRename(conv.id, title) : null}
-              />
-            ))}
-          </div>
-        );
-      })}
+          );
+        })}
 
-      {conversations.length === 0 && (
-        <div className="px-4 py-8 text-center text-sm text-[var(--color-text-muted)]">
-          服务对话会出现在这里
-        </div>
-      )}
+        {filteredConversations.length === 0 && (
+          <div className="px-4 py-8 text-center text-sm text-[var(--color-text-muted)]">
+            {conversations.length === 0 ? 'Your service conversations will appear here' : 'No conversations match your search'}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -56,7 +68,7 @@ export function ChatHistory({ conversations, currentId, onSelect, onDelete, onRe
 function ConversationItem({ conversation, isActive, onSelect, onDelete, onRename }) {
   const [showActions, setShowActions] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
-  const [draftTitle, setDraftTitle] = useState(conversation.title || '服务对话');
+  const [draftTitle, setDraftTitle] = useState(conversation.title || 'Service Chat');
   const inputRef = useRef(null);
 
   useEffect(() => {
@@ -68,20 +80,20 @@ function ConversationItem({ conversation, isActive, onSelect, onDelete, onRename
 
   const startRename = (e) => {
     e.stopPropagation();
-    setDraftTitle(conversation.title || '服务对话');
+    setDraftTitle(conversation.title || 'Service Chat');
     setIsEditing(true);
   };
 
   const cancelRename = (e) => {
     if (e) e.stopPropagation();
     setIsEditing(false);
-    setDraftTitle(conversation.title || '服务对话');
+    setDraftTitle(conversation.title || 'Service Chat');
   };
 
   const commitRename = async (e) => {
     if (e) e.stopPropagation();
     const next = draftTitle.trim();
-    if (!next || next === (conversation.title || '服务对话')) {
+    if (!next || next === (conversation.title || 'Service Chat')) {
       cancelRename();
       return;
     }
@@ -89,7 +101,7 @@ function ConversationItem({ conversation, isActive, onSelect, onDelete, onRename
       if (onRename) await onRename(next);
       setIsEditing(false);
     } catch (err) {
-      toastError(`重命名失败：${err.message || err}`);
+      toastError(`Rename failed: ${err.message || err}`);
       cancelRename();
     }
   };
@@ -121,11 +133,11 @@ function ConversationItem({ conversation, isActive, onSelect, onDelete, onRename
             }}
             onBlur={commitRename}
             maxLength={50}
-            className="flex-1 bg-transparent border-b border-[var(--color-primary)] text-[15px] text-[var(--color-sidebar-text)] outline-none"
+            className="flex-1 border-b border-[var(--color-primary)] bg-transparent text-[15px] text-[var(--color-text-primary)] outline-none"
           />
         ) : (
-          <span className="flex-1 text-[15px] text-[var(--color-sidebar-text)] truncate">
-            {conversation.title || '服务对话'}
+          <span className="flex-1 truncate text-[15px] text-[var(--color-text-primary)]">
+            {conversation.title || 'Service Chat'}
           </span>
         )}
       </div>
@@ -141,7 +153,7 @@ function ConversationItem({ conversation, isActive, onSelect, onDelete, onRename
           {onRename && (
             <button
               onClick={startRename}
-              title="重命名"
+              title="Rename"
               className="p-1 rounded hover:bg-[var(--color-hover)] text-[var(--color-text-muted)] hover:text-[var(--color-sidebar-text)]"
             >
               <Pencil size={14} />
@@ -150,11 +162,11 @@ function ConversationItem({ conversation, isActive, onSelect, onDelete, onRename
           <button
             onClick={async (e) => {
               e.stopPropagation();
-              if (await confirmDialog('删除这条服务对话？', { danger: true, confirmText: '删除' })) {
+              if (await confirmDialog('Delete this conversation?', { danger: true, confirmText: 'Delete' })) {
                 onDelete();
               }
             }}
-            title="删除"
+            title="Delete"
             className="p-1 rounded hover:bg-[var(--color-hover)] text-[var(--color-text-muted)] hover:text-red-400"
           >
             <Trash2 size={14} />
@@ -166,7 +178,7 @@ function ConversationItem({ conversation, isActive, onSelect, onDelete, onRename
           <button
             onMouseDown={(e) => e.preventDefault()} // 防止 blur 先触发
             onClick={commitRename}
-              title="保存"
+            title="Save"
             className="p-1 rounded hover:bg-[var(--color-hover)] text-[var(--color-text-muted)] hover:text-green-400"
           >
             <Check size={14} />
@@ -174,7 +186,7 @@ function ConversationItem({ conversation, isActive, onSelect, onDelete, onRename
           <button
             onMouseDown={(e) => e.preventDefault()}
             onClick={cancelRename}
-              title="取消"
+            title="Cancel"
             className="p-1 rounded hover:bg-[var(--color-hover)] text-[var(--color-text-muted)] hover:text-red-400"
           >
             <X size={14} />

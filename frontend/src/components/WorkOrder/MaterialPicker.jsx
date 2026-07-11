@@ -172,8 +172,8 @@ export function MaterialPicker({ purpose = 'quote', workOrderId = '', items = []
                   </div>
                 </td>
                 <td className="px-3 py-2 text-center text-[var(--color-text-primary)]">{item.quantity || 1} {item.unit || 'pcs'}</td>
-                <td className="px-3 py-2 text-right text-[var(--color-text-primary)]">{money(item.unit_price)} CNY</td>
-                <td className="px-3 py-2 text-right text-[var(--color-text-primary)]">{money(item.line_total || Number(item.quantity || 0) * Number(item.unit_price || 0))} CNY</td>
+                <td className="px-3 py-2 text-right text-[var(--color-text-primary)]">{money(item.unit_price)} USD</td>
+                <td className="px-3 py-2 text-right text-[var(--color-text-primary)]">{money(item.line_total || Number(item.quantity || 0) * Number(item.unit_price || 0))} USD</td>
               </tr>
             ))}
           </tbody>
@@ -191,7 +191,7 @@ export function MaterialPicker({ purpose = 'quote', workOrderId = '', items = []
             {isCn ? '从物料库选择配件，报价和服务报告会保留清晰明细。' : 'Select parts from the material master for cleaner quotes and reports.'}
           </div>
         </div>
-        <div className="text-sm font-semibold text-[var(--color-primary)]">{money(total)} CNY</div>
+        <div className="text-sm font-semibold text-[var(--color-primary)]">{money(total)} USD</div>
       </div>
 
       <div className="relative">

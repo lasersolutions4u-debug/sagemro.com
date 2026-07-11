@@ -97,6 +97,11 @@ CREATE TABLE IF NOT EXISTS engineers (
     bank_name TEXT,
     bank_branch TEXT DEFAULT '',         -- 012
     account_holder TEXT DEFAULT '',      -- 012
+    payout_method TEXT DEFAULT 'paypal',
+    paypal_account TEXT,
+    bank_country TEXT,
+    bank_swift_code TEXT,
+    payout_notes TEXT,
 
     -- 状态和评分
     status TEXT DEFAULT 'available',           -- available / paused / offline / pending_approval
@@ -347,6 +352,25 @@ CREATE TABLE IF NOT EXISTS work_order_payments (
     FOREIGN KEY (work_order_id) REFERENCES work_orders(id)
 );
 CREATE INDEX IF NOT EXISTS idx_work_order_payments_wo ON work_order_payments(work_order_id);
+
+CREATE TABLE IF NOT EXISTS work_order_payouts (
+    id TEXT PRIMARY KEY,
+    work_order_id TEXT NOT NULL UNIQUE,
+    engineer_id TEXT NOT NULL,
+    amount INTEGER DEFAULT 0,
+    currency TEXT DEFAULT 'USD',
+    method TEXT,
+    status TEXT DEFAULT 'not_ready',
+    transaction_reference TEXT,
+    paid_at TEXT,
+    internal_note TEXT,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (work_order_id) REFERENCES work_orders(id),
+    FOREIGN KEY (engineer_id) REFERENCES engineers(id)
+);
+CREATE INDEX IF NOT EXISTS idx_work_order_payouts_status ON work_order_payouts(status);
+CREATE INDEX IF NOT EXISTS idx_work_order_payouts_engineer ON work_order_payouts(engineer_id);
 
 -- 工单附件表（019）
 CREATE TABLE IF NOT EXISTS work_order_attachments (

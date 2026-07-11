@@ -13,54 +13,103 @@ import {
 } from 'lucide-react';
 import { isCnLocale } from '../../utils/locale';
 
-const serviceMoments = [
-  { icon: MessageCircle, title: '从一次对话开始', desc: '用自然语言描述报警、备件、切割质量、维保需求或新机项目，不需要先填复杂表单。' },
-  { icon: ClipboardCheck, title: '把问题整理清楚', desc: 'SAGEMRO AI 会追问关键细节，把现场情况整理成便于确认和跟进的服务摘要。' },
-  { icon: Wrench, title: '进入人工确认与服务协调', desc: '涉及诊断、报价、备件、排期或现场安全时，由 SAGEMRO 继续协调确认。' },
-];
-
-const conversationCapabilities = [
-  '故障诊断',
-  '切割参数',
-  '备件识别',
-  '维修预估',
-  '新机选型',
-  '设备健康报告',
-];
-
-const serviceStandards = [
-  'AI 初步指导、服务审核、工程师执行和服务归档统一遵循 SAGEMRO 服务标准',
-  '设备档案、服务上下文、服务历史和报告持续关联，便于后续支持',
-  'AI 用于提升准备效率；最终诊断、报价和安全要求通过 SAGEMRO 服务流程确认',
-  '备件、维保、生命周期建议和 Euchio 新机项目可以从同一服务记录自然延展',
-];
+const copy = {
+  en: {
+    title: 'About SAGEMRO Service OS',
+    serviceName: 'SAGEMRO Service OS',
+    intro: 'An AI-assisted workspace that helps customers and engineers organize machine symptoms, safety concerns, missing facts, and practical next-step options for laser cutting and sheet metal equipment.',
+    howItWorks: 'How It Works',
+    moments: [
+      { icon: MessageCircle, title: 'Start With The Field Facts', desc: 'Describe the alarm, cut quality issue, maintenance concern, part question, or equipment decision in plain language.' },
+      { icon: ClipboardCheck, title: 'Clarify What Is Known', desc: 'SAGEMRO AI may ask relevant follow-up questions and organize the case into a summary you can check.' },
+      { icon: Wrench, title: 'Choose A Reviewed Next Step', desc: 'When diagnosis, quotation, parts, scheduling, or site safety matters, qualified review confirms what should happen next.' },
+    ],
+    outcomesTitle: 'What The Chat Can Help Clarify',
+    capabilities: [
+      'Observed symptoms',
+      'Risk signals',
+      'Missing information',
+      'Process parameters',
+      'Parts compatibility questions',
+      'Service or purchasing options',
+    ],
+    outcomesText: 'The conversation should help you understand the situation before you commit to service, parts, equipment, or a purchasing path.',
+    standardTitle: 'Service Standard',
+    standards: [
+      'AI organizes facts, flags uncertainty, and leaves site judgment to qualified people',
+      'Equipment records, service context, service history, and reports stay connected for future support',
+      'Final diagnosis, quotation, purchase decisions, and safety requirements require qualified confirmation',
+      'Parts, maintenance, peripherals, automation upgrades, and press brake tooling questions can be documented as technical context first',
+    ],
+    featureCards: [
+      { icon: ShieldCheck, label: 'Safety-first AI boundaries' },
+      { icon: Database, label: 'Connected equipment records' },
+      { icon: FileText, label: 'Service reports and follow-up' },
+    ],
+    longTermTitle: 'Built For Long-Term Equipment Value',
+    longTermText: 'Each conversation can become a reusable technical record: faster future troubleshooting, clearer parts decisions, better maintenance planning, and more transparent equipment decisions.',
+    closing: 'You describe the machine. SAGEMRO helps make the next decision clearer.',
+  },
+  zh: {
+    title: '关于 SAGEMRO 智能服务系统',
+    serviceName: 'SAGEMRO 智能服务系统',
+    intro: 'SAGEMRO 帮助客户与工程师整理设备现象、风险和可选下一步，适用于激光切割与钣金加工设备相关的咨询、排查和决策准备。',
+    howItWorks: '如何工作',
+    moments: [
+      { icon: MessageCircle, title: '从现场事实开始', desc: '用自然语言描述报警、切割质量、维保疑问、备件问题或设备决策，不需要先填复杂表单。' },
+      { icon: ClipboardCheck, title: '把已知信息整理清楚', desc: 'SAGEMRO AI 会根据需要追问相关细节，并把情况整理成便于你确认的摘要。' },
+      { icon: Wrench, title: '再选择需要确认的下一步', desc: '涉及诊断、报价、备件、排期或现场安全时，再由合格人员进一步确认。' },
+    ],
+    outcomesTitle: '对话可以帮助澄清什么',
+    capabilities: [
+      '现场现象',
+      '风险信号',
+      '缺失信息',
+      '工艺参数',
+      '备件兼容疑问',
+      '服务或采购选项',
+    ],
+    outcomesText: '对话的目标是让你在决定服务、备件、设备或采购路径之前，先把情况理解清楚。',
+    standardTitle: '服务标准',
+    standards: [
+      'AI 负责整理事实、提示不确定性，现场判断仍由合格人员完成',
+      '设备档案、服务上下文、服务历史和报告持续关联，便于后续支持',
+      '最终诊断、报价、采购决策和现场安全要求需要合格人员确认',
+      '备件、维保、激光周边、自动化改造和折弯模具问题先作为技术背景记录清楚',
+    ],
+    featureCards: [
+      { icon: ShieldCheck, label: '安全优先的 AI 边界' },
+      { icon: Database, label: '持续关联的设备档案' },
+      { icon: FileText, label: '服务报告与后续跟进' },
+    ],
+    longTermTitle: '为设备长期价值而设计',
+    longTermText: '每一次对话都可以整理为可复用的技术记录：让后续排故更快、备件判断更清晰、维保计划更主动，设备决策也更透明。',
+    closing: '你描述设备情况，SAGEMRO 帮你把下一步判断得更清楚。',
+  },
+};
 
 export function AboutModal({ isOpen, onClose }) {
-  const isCn = isCnLocale();
-  const serviceName = isCn ? 'SAGEMRO 智能服务系统' : 'SAGEMRO Service OS';
-  const operatorLine = isCn
-    ? '由济南钰峭机械有限公司运营'
-    : 'Operated by Jinan Euchio Machinery Co., Ltd.';
+  const t = isCnLocale() ? copy.zh : copy.en;
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title={isCn ? `关于 ${serviceName}` : `About ${serviceName}`} size="lg">
+    <Modal isOpen={isOpen} onClose={onClose} title={t.title} size="lg">
       <div className="space-y-6">
         <div className="text-center py-2">
           <BrandMark variant="logo" className="mx-auto mb-3 h-24 w-24 object-contain drop-shadow-[0_18px_36px_rgba(245,158,11,0.24)]" />
           <h2 className="text-xl font-medium text-[var(--color-text-primary)] mb-1">
-            {serviceName}
+            {t.serviceName}
           </h2>
           <p className="text-sm text-[var(--color-text-secondary)] leading-relaxed">
-            面向激光切割与钣金加工设备的第三方智能服务平台。你只需说明现场情况，SAGEMRO 会帮助梳理问题、确认关键信息，并把它推进到诊断、备件、维保、服务协调或设备升级评估。
+            {t.intro}
           </p>
         </div>
 
         <section>
           <h3 className="text-sm font-medium text-[var(--color-text-primary)] mb-3">
-            如何工作
+            {t.howItWorks}
           </h3>
           <div className="grid grid-cols-1 gap-3">
-            {serviceMoments.map(({ icon: Icon, title, desc }) => (
+            {t.moments.map(({ icon: Icon, title, desc }) => (
               <div key={title} className="flex items-start gap-3 p-3 bg-[var(--color-surface-elevated)] rounded-xl">
                 <div className="w-8 h-8 rounded-lg bg-[var(--color-primary)]/10 flex items-center justify-center flex-shrink-0">
                   <Icon size={16} className="text-[var(--color-primary)]" />
@@ -80,10 +129,10 @@ export function AboutModal({ isOpen, onClose }) {
 
         <section>
           <h3 className="text-sm font-medium text-[var(--color-text-primary)] mb-3">
-            一次对话，理清六类服务方向
+            {t.outcomesTitle}
           </h3>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-            {conversationCapabilities.map((item) => (
+            {t.capabilities.map((item) => (
               <div key={item} className="flex items-center gap-2 p-2 bg-[var(--color-surface-elevated)] rounded-lg">
                 <Cog size={14} className="text-[var(--color-primary)] flex-shrink-0" />
                 <span className="text-[12px] text-[var(--color-text-primary)]">{item}</span>
@@ -91,16 +140,16 @@ export function AboutModal({ isOpen, onClose }) {
             ))}
           </div>
           <p className="mt-3 text-[12px] leading-relaxed text-[var(--color-text-secondary)]">
-            这些能力都在同一个聊天过程中完成。SAGEMRO 会识别场景、追问关键问题，并在聊天中请你确认关键信息。
+            {t.outcomesText}
           </p>
         </section>
 
         <section>
           <h3 className="text-sm font-medium text-[var(--color-text-primary)] mb-3">
-            服务标准
+            {t.standardTitle}
           </h3>
           <div className="space-y-2">
-            {serviceStandards.map((item) => (
+            {t.standards.map((item) => (
               <div key={item} className="flex items-start gap-2 text-[12px] text-[var(--color-text-secondary)] leading-relaxed">
                 <CheckCircle2 size={14} className="text-[var(--color-primary)] mt-0.5 flex-shrink-0" />
                 <span>{item}</span>
@@ -110,11 +159,7 @@ export function AboutModal({ isOpen, onClose }) {
         </section>
 
         <section className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          {[
-            { icon: ShieldCheck, label: '安全优先的 AI 边界' },
-            { icon: Database, label: '持续关联的设备档案' },
-            { icon: FileText, label: '服务报告与后续跟进' },
-          ].map(({ icon: Icon, label }) => (
+          {t.featureCards.map(({ icon: Icon, label }) => (
             <div key={label} className="p-3 bg-[var(--color-primary)]/10 border border-[var(--color-primary)]/20 rounded-xl flex items-center gap-2">
               <Icon size={16} className="text-[var(--color-primary)] flex-shrink-0" />
               <span className="text-[12px] text-[var(--color-text-primary)]">{label}</span>
@@ -129,10 +174,10 @@ export function AboutModal({ isOpen, onClose }) {
             </div>
             <div>
               <h3 className="text-sm font-medium text-[var(--color-text-primary)]">
-                为设备长期价值而设计
+                {t.longTermTitle}
               </h3>
               <p className="mt-1 text-[12px] leading-relaxed text-[var(--color-text-secondary)]">
-                每一次对话都可以整理为可复用的服务记录：让后续排故更快、备件判断更清晰、维保计划更主动，新机升级决策也更有依据。
+                {t.longTermText}
               </p>
             </div>
           </div>
@@ -140,13 +185,10 @@ export function AboutModal({ isOpen, onClose }) {
 
         <div className="pt-4 border-t border-[var(--color-border)] text-center space-y-2">
           <p className="text-sm font-medium text-[var(--color-primary)]">
-            你描述设备情况，SAGEMRO 把它变成可靠的下一步。
+            {t.closing}
           </p>
           <p className="text-xs text-[var(--color-text-secondary)]">
             © 2026 SAGEMRO. All rights reserved.
-          </p>
-          <p className="text-[10px] text-[var(--color-text-muted)]">
-            {operatorLine}
           </p>
         </div>
       </div>

@@ -30,7 +30,18 @@ export function ChatArea({
   const hasMessages = messages.length > 0;
   const isCn = isCnLocale();
   const serviceName = isCn ? 'SAGEMRO 智能服务系统' : 'SAGEMRO Service OS';
-  const pageTitle = hasMessages ? (currentTitle || '服务对话') : serviceName;
+  const pageTitle = hasMessages
+    ? (currentTitle || (isCn ? '服务对话' : 'Service conversation'))
+    : serviceName;
+  const subtitle = isCn
+    ? '面向激光切割与钣金设备的第三方智能服务入口'
+    : 'Independent service intelligence for laser cutting and sheet metal equipment';
+  const aboutLabel = isCn ? '关于 SAGEMRO' : 'About SAGEMRO';
+  const homeLabel = isCn ? '返回首页' : 'Service OS Home';
+  const aiNotice = isCn
+    ? 'AI 用于快速梳理问题。最终诊断、报价和现场安全要求需经 SAGEMRO 服务流程确认。'
+    : 'AI helps organize the case faster. Final diagnosis, quote, and site safety requirements are confirmed through the SAGEMRO service process.';
+  const detailsLabel = isCn ? '详情' : 'Details';
 
   return (
     <div className="flex flex-col h-full bg-[var(--color-chat-bg)]">
@@ -48,7 +59,7 @@ export function ChatArea({
           </h1>
           {!hasMessages && (
             <p className="hidden sm:block text-[11px] text-[var(--color-text-secondary)]">
-              面向激光切割与钣金设备的第三方智能服务入口
+              {subtitle}
             </p>
           )}
         </div>
@@ -58,7 +69,7 @@ export function ChatArea({
             className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-[var(--color-border)] text-[11px] text-[var(--color-text-secondary)] hover:text-[var(--color-primary)] hover:border-[var(--color-primary)] transition-colors"
           >
             <Info size={13} />
-            关于 SAGEMRO
+            {aboutLabel}
           </button>
         )}
         {hasMessages && (
@@ -67,7 +78,7 @@ export function ChatArea({
             className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[var(--color-primary)]/10 text-[11px] text-[var(--color-primary)] hover:bg-[var(--color-primary)]/15 transition-colors"
           >
             <Home size={13} />
-            返回首页
+            {homeLabel}
           </button>
         )}
       </header>
@@ -76,13 +87,13 @@ export function ChatArea({
         <div className="px-3 sm:px-5 py-2 border-b border-[var(--color-border)] bg-[var(--color-surface)]/70 flex items-center justify-center gap-2">
           <Info size={12} className="text-[var(--color-text-muted)] flex-shrink-0" />
           <p className="text-[11px] text-[var(--color-text-secondary)] leading-tight">
-            AI 用于快速梳理问题。最终诊断、报价和现场安全要求需经 SAGEMRO 服务流程确认。
+            {aiNotice}
             {onOpenLegal && (
               <button
                 onClick={() => onOpenLegal('ai')}
                 className="ml-1 underline decoration-dotted underline-offset-2 hover:text-[var(--color-primary)] transition-colors"
               >
-                详情
+                {detailsLabel}
               </button>
             )}
           </p>

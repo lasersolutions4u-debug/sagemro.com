@@ -1,19 +1,26 @@
-import { useState, useRef, useEffect } from 'react';
-import { Send, StopCircle, ImagePlus, X, Loader2 } from 'lucide-react';
-import { uploadChatImage } from '../../services/api';
+import { useEffect, useRef, useState } from 'react';
+import { Loader2, Mic, Send, StopCircle } from 'lucide-react';
 import { isCnLocale } from '../../utils/locale';
+import { transcribeVoiceInput } from '../../services/api';
 
-const MAX_IMAGES = 4;
+const VOICE_RECORDING_LIMIT_MS = 30 * 1000;
 
 export function InputArea({ onSend, onStop, disabled, isStreaming }) {
   const isCn = isCnLocale();
   const [input, setInput] = useState('');
-  const [pendingImages, setPendingImages] = useState([]); // { file, previewUrl, uploading, url, error }
+  const [isRecording, setIsRecording] = useState(false);
+  const [isTranscribing, setIsTranscribing] = useState(false);
+  const [voiceError, setVoiceError] = useState('');
   const textareaRef = useRef(null);
-  const fileInputRef = useRef(null);
-  const previewUrlsRef = useRef(new Set());
+  const mediaRecorderRef = useRef(null);
+  const mediaStreamRef = useRef(null);
+  const audioChunksRef = useRef([]);
+  const recordingTimerRef = useRef(null);
 
-  // 自动调整高度
+  const supportsVoiceInput = typeof window !== 'undefined'
+    && typeof MediaRecorder !== 'undefined'
+    && Boolean(navigator.mediaDevices?.getUserMedia);
+
   useEffect(() => {
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto';
@@ -21,76 +28,17 @@ export function InputArea({ onSend, onStop, disabled, isStreaming }) {
     }
   }, [input]);
 
-  // 清理 previewUrl 防止内存泄漏
-  useEffect(() => {
-    const previewUrls = previewUrlsRef.current;
-    return () => {
-      previewUrls.forEach(url => URL.revokeObjectURL(url));
-      previewUrls.clear();
-    };
+  useEffect(() => () => {
+    if (recordingTimerRef.current) clearTimeout(recordingTimerRef.current);
+    mediaStreamRef.current?.getTracks().forEach((track) => track.stop());
   }, []);
-
-  const handleFileSelect = async (e) => {
-    const files = [...e.target.files];
-    if (!files.length) return;
-
-    const slotsLeft = MAX_IMAGES - pendingImages.length;
-    const toAdd = files.slice(0, slotsLeft);
-
-    const newImages = toAdd.map(file => ({
-      file,
-      previewUrl: URL.createObjectURL(file),
-      uploading: true,
-      url: null,
-      error: null,
-    }));
-    newImages.forEach(img => previewUrlsRef.current.add(img.previewUrl));
-
-    setPendingImages(prev => [...prev, ...newImages]);
-    e.target.value = '';
-
-    // 逐个上传
-    for (let i = 0; i < newImages.length; i++) {
-      const idx = pendingImages.length + i;
-      try {
-        const result = await uploadChatImage(newImages[i].file);
-        setPendingImages(prev => prev.map((img, j) =>
-          j === idx ? { ...img, uploading: false, url: result.image_url } : img
-        ));
-      } catch (err) {
-        setPendingImages(prev => prev.map((img, j) =>
-          j === idx ? { ...img, uploading: false, error: err.message } : img
-        ));
-      }
-    }
-  };
-
-  const removeImage = (index) => {
-    setPendingImages(prev => {
-      const img = prev[index];
-      if (img.previewUrl) {
-        URL.revokeObjectURL(img.previewUrl);
-        previewUrlsRef.current.delete(img.previewUrl);
-      }
-      return prev.filter((_, i) => i !== index);
-    });
-  };
 
   const handleSend = () => {
     const text = input.trim();
-    const uploadedImages = pendingImages.filter(img => img.url);
-    if ((!text && uploadedImages.length === 0) || disabled) return;
+    if (!text || disabled) return;
 
-    const images = uploadedImages.map(img => ({ url: img.url }));
-    onSend(text || (isCn ? '发送图片，请帮我看一下现场情况' : 'Please review this image and help me understand the field situation'), images);
+    onSend(text);
     setInput('');
-    pendingImages.forEach(img => {
-      if (img.previewUrl) {
-        URL.revokeObjectURL(img.previewUrl);
-        previewUrlsRef.current.delete(img.previewUrl);
-      }
-    });
-    setPendingImages([]);
   };
 
   const handleKeyDown = (e) => {
@@ -100,65 +48,104 @@ export function InputArea({ onSend, onStop, disabled, isStreaming }) {
     }
   };
 
-  const hasUploading = pendingImages.some(img => img.uploading);
-  const canSend = (input.trim() || pendingImages.some(img => img.url)) && !hasUploading;
+  const stopRecording = () => {
+    if (recordingTimerRef.current) {
+      clearTimeout(recordingTimerRef.current);
+      recordingTimerRef.current = null;
+    }
+    const recorder = mediaRecorderRef.current;
+    if (recorder && recorder.state !== 'inactive') {
+      recorder.stop();
+    }
+    mediaStreamRef.current?.getTracks().forEach((track) => track.stop());
+    mediaStreamRef.current = null;
+    setIsRecording(false);
+  };
+
+  const startRecording = async () => {
+    if (!supportsVoiceInput || disabled || isStreaming || isTranscribing) return;
+
+    setVoiceError('');
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const recorder = new MediaRecorder(stream);
+      mediaStreamRef.current = stream;
+      mediaRecorderRef.current = recorder;
+      audioChunksRef.current = [];
+
+      recorder.ondataavailable = (event) => {
+        if (event.data?.size > 0) audioChunksRef.current.push(event.data);
+      };
+
+      recorder.onstop = async () => {
+        const audioBlob = new Blob(audioChunksRef.current, { type: recorder.mimeType || 'audio/webm' });
+        audioChunksRef.current = [];
+        if (!audioBlob.size) return;
+
+        setIsTranscribing(true);
+        try {
+          const result = await transcribeVoiceInput(audioBlob);
+          const transcript = (result.transcript || '').trim();
+          if (transcript) {
+            setInput((current) => current ? `${current} ${transcript}` : transcript);
+          }
+        } catch (error) {
+          setVoiceError(error.message || (isCn ? '语音转文字失败' : 'Voice transcription failed'));
+        } finally {
+          setIsTranscribing(false);
+        }
+      };
+
+      recorder.start();
+      setIsRecording(true);
+      recordingTimerRef.current = setTimeout(stopRecording, VOICE_RECORDING_LIMIT_MS);
+    } catch {
+      setVoiceError(isCn ? '无法使用麦克风' : 'Voice input unavailable');
+      mediaStreamRef.current?.getTracks().forEach((track) => track.stop());
+      mediaStreamRef.current = null;
+      setIsRecording(false);
+    }
+  };
+
+  const handleVoiceClick = () => {
+    if (isRecording) {
+      stopRecording();
+    } else {
+      startRecording();
+    }
+  };
+
+  const canSend = input.trim() && !disabled;
+  const placeholder = isCn ? '描述设备问题' : 'Describe your service issue';
+  const voiceTitle = !supportsVoiceInput
+    ? (isCn ? '语音输入不可用' : 'Voice input unavailable')
+    : isRecording
+      ? (isCn ? '点击停止录音' : 'Stop recording')
+      : (isCn ? '语音转文字' : 'Voice to text');
 
   return (
-    <div className="border-t border-[var(--color-border)] bg-[var(--color-chat-bg)] px-3 sm:px-6 py-3 sm:py-4 pb-[env(safe-area-inset-bottom)]">
-      <div className="max-w-4xl mx-auto">
-        {/* 图片预览条 */}
-        {pendingImages.length > 0 && (
-          <div className="flex gap-2 mb-3 overflow-x-auto pb-1">
-            {pendingImages.map((img, i) => (
-              <div key={i} className="relative flex-shrink-0 w-16 h-16 rounded-lg overflow-hidden border border-[var(--color-border)]">
-                <img
-                  src={img.previewUrl}
-                  alt=""
-                  className="w-full h-full object-cover"
-                />
-                {img.uploading && (
-                  <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
-                    <Loader2 size={16} className="text-white animate-spin" />
-                  </div>
-                )}
-                {img.error && (
-                  <div className="absolute inset-0 bg-red-500/80 flex items-center justify-center" title={img.error}>
-                    <X size={16} className="text-white" />
-                  </div>
-                )}
-                <button
-                  onClick={() => removeImage(i)}
-                  className="absolute top-0.5 right-0.5 w-5 h-5 rounded-full bg-black/60 text-white flex items-center justify-center hover:bg-black/80"
-                >
-                  <X size={12} />
-                </button>
-              </div>
-            ))}
-            {pendingImages.length < MAX_IMAGES && (
-              <button
-                onClick={() => fileInputRef.current?.click()}
-                className="flex-shrink-0 w-16 h-16 rounded-lg border-2 border-dashed border-[var(--color-border)] flex items-center justify-center hover:border-[var(--color-text-muted)] transition-colors"
-              >
-                <ImagePlus size={20} className="text-[var(--color-text-muted)]" />
-              </button>
-            )}
+    <div className="border-t border-[var(--color-border)] bg-[var(--color-chat-bg)] px-3 py-3 pb-[env(safe-area-inset-bottom)] sm:px-6 sm:py-4">
+      <div className="mx-auto max-w-4xl">
+        {voiceError && (
+          <div className="mb-2 text-xs text-red-500">
+            {voiceError}
           </div>
         )}
+        <div className="flex items-start gap-2 sm:gap-3">
+          <button
+            type="button"
+            onClick={handleVoiceClick}
+            disabled={!supportsVoiceInput || disabled || isStreaming || isTranscribing}
+            title={voiceTitle}
+            className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl transition-colors active:scale-95 disabled:opacity-45 ${
+              isRecording
+                ? 'bg-red-500 text-white hover:bg-red-600'
+                : 'bg-[var(--color-surface-elevated)] text-[var(--color-text-secondary)] hover:text-[var(--color-primary)]'
+            }`}
+          >
+            {isTranscribing ? <Loader2 size={20} className="animate-spin" /> : <Mic size={20} />}
+          </button>
 
-        <div className="flex items-start gap-3">
-          {/* 图片上传按钮 */}
-          {pendingImages.length === 0 && (
-            <button
-              onClick={() => fileInputRef.current?.click()}
-              disabled={disabled || isStreaming}
-              className="w-12 h-12 flex items-center justify-center rounded-2xl hover:bg-[var(--color-hover)] transition-colors flex-shrink-0 disabled:opacity-50"
-              title={isCn ? '补充现场信息' : 'Add field context'}
-            >
-              <ImagePlus size={22} className="text-[var(--color-text-muted)]" />
-            </button>
-          )}
-
-          {/* 输入框 */}
           <div
             className={`input-wrapper flex-1 rounded-2xl transition-colors ${disabled ? 'opacity-50' : ''}`}
             style={{ backgroundColor: 'var(--color-input-bg)' }}
@@ -168,22 +155,19 @@ export function InputArea({ onSend, onStop, disabled, isStreaming }) {
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder={pendingImages.length > 0
-                ? (isCn ? '补充设备、报警、材料或现场工况。Enter 发送，Shift + Enter 换行。' : 'Add device, alarm, material, or field context. Enter to send, Shift + Enter for a new line.')
-                : (isCn ? '描述设备、报警、材料厚度或现场问题。' : 'Describe the device, alarm code, material, thickness, or field issue.')}
+              placeholder={placeholder}
               disabled={disabled}
               rows={1}
-              className="w-full px-4 py-3 bg-transparent resize-none focus:outline-none text-[var(--color-text-primary)] placeholder-[var(--color-text-muted)] disabled:opacity-50 text-[15px]"
+              className="w-full resize-none bg-transparent px-4 py-3 text-[15px] text-[var(--color-text-primary)] placeholder-[var(--color-text-muted)] focus:outline-none disabled:opacity-50"
               style={{ minHeight: '48px', maxHeight: '200px' }}
             />
           </div>
 
-          {/* 发送/停止按钮 */}
           <div className="flex items-start">
             {isStreaming ? (
               <button
                 onClick={onStop}
-                className="w-12 h-12 flex items-center justify-center bg-red-500 hover:bg-red-600 text-white rounded-2xl transition-colors flex-shrink-0 active:scale-95"
+                className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-red-500 text-white transition-colors hover:bg-red-600 active:scale-95"
                 title={isCn ? '停止生成' : 'Stop generation'}
               >
                 <StopCircle size={22} />
@@ -192,22 +176,13 @@ export function InputArea({ onSend, onStop, disabled, isStreaming }) {
               <button
                 onClick={handleSend}
                 disabled={!canSend || disabled}
-                className="w-12 h-12 flex items-center justify-center bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] disabled:bg-[var(--color-border)] disabled:opacity-50 text-white rounded-2xl transition-colors flex-shrink-0 active:scale-95"
+                className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-[var(--color-primary)] text-white transition-colors hover:bg-[var(--color-primary-hover)] active:scale-95 disabled:bg-[var(--color-border)] disabled:opacity-50"
               >
                 <Send size={20} />
               </button>
             )}
           </div>
         </div>
-
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="image/jpeg,image/png,image/gif,image/webp"
-          multiple
-          onChange={handleFileSelect}
-          className="hidden"
-        />
       </div>
     </div>
   );

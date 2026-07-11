@@ -6,6 +6,7 @@ export const statusConfig = {
   in_progress: { text: 'In Progress', color: 'bg-orange-500' },
   pricing: { text: 'Awaiting Quote', color: 'bg-purple-500' },
   pending_payment: { text: 'Awaiting Payment', color: 'bg-pink-500' },
+  payment_review: { text: 'Payment Review', color: 'bg-amber-500' },
   in_service: { text: 'In Service', color: 'bg-cyan-500' },
   resolved: { text: 'Resolved', color: 'bg-green-500' },
   pending_review: { text: 'Pending Review', color: 'bg-teal-500' },

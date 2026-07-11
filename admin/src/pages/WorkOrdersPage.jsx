@@ -3,6 +3,7 @@ import {
   assignAdminWorkOrder,
   assignAdminWorkOrderRegionalLead,
   approveAdminWorkOrderPricing,
+  approveAdminWorkOrderPaymentStart,
   archiveAdminWorkOrder,
   getAdminWorkOrder,
   getAdminWorkOrderMessages,
@@ -10,14 +11,27 @@ import {
   getAdminWorkOrders,
   postAdminWorkOrderMessage,
   rejectAdminWorkOrderPricing,
+  updateAdminWorkOrderPayout,
 } from '../services/api';
 import { runtimeConfig } from '../config/runtime';
+import {
+  formatAiSummary,
+  formatEngineerOption,
+  formatListValue,
+  formatQuoteNote,
+  money,
+  parseJsonValue,
+} from './workOrderDisplay';
 
 const STATUS_MAP = {
   pending: { color: 'var(--color-info)' },
   pending_dispatch: { color: 'var(--color-warning)' },
   assigned: { color: 'var(--color-warning)' },
   in_progress: { color: 'var(--color-warning)' },
+  payment_review: { color: 'var(--color-warning)' },
+  pending_payment: { color: 'var(--color-warning)' },
+  pricing: { color: 'var(--color-primary)' },
+  in_service: { color: 'var(--color-info)' },
   resolved: { color: 'var(--color-success)' },
   completed: { color: 'var(--color-success)' },
   rejected: { color: 'var(--color-error)' },
@@ -44,8 +58,52 @@ function ScoreRow({ label, value }) {
   );
 }
 
+function MoneyRow({ label, value }) {
+  return (
+    <div className="flex items-center justify-between gap-3 rounded-lg bg-[var(--color-surface-elevated)] px-3 py-2">
+      <span>{label}</span>
+      <span className="font-semibold text-[var(--color-primary)]">{money(value)} USD</span>
+    </div>
+  );
+}
+
+function payoutLabel(status) {
+  const labels = {
+    not_ready: 'Not ready',
+    pending: 'Payout pending',
+    processing: 'Processing',
+    completed: 'Completed',
+    exception: 'Exception',
+  };
+  return labels[status] || status || 'Not ready';
+}
+
 function isImageAttachment(attachment) {
   return attachment?.file_type?.startsWith('image/');
+}
+
+function describeEngineer(engineer) {
+  if (!engineer) return '';
+  return [
+    formatListValue(engineer.service_region || engineer.responsible_region),
+    engineer.team_name,
+    formatListValue(engineer.specialties),
+    engineer.rating_avg ? `rating ${formatScore(engineer.rating_avg)}` : '',
+  ].filter(Boolean).join(' · ');
+}
+
+function quoteParts(detail) {
+  const items = Array.isArray(detail?.pricing?.material_items)
+    ? detail.pricing.material_items
+    : Array.isArray(detail?.material_items)
+      ? detail.material_items.filter((item) => item.purpose === 'quote')
+      : [];
+  return items;
+}
+
+function quoteAiCheck(pricing) {
+  const parsed = parseJsonValue(pricing?.ai_price_check);
+  return parsed && typeof parsed === 'object' ? parsed : null;
 }
 
 const TEXT = {
@@ -55,6 +113,10 @@ const TEXT = {
       pending_dispatch: 'Regional dispatch pending',
       assigned: 'Assigned',
       in_progress: 'In progress',
+      pricing: 'Quote confirmation',
+      pending_payment: 'Payment follow-up',
+      payment_review: 'Payment review',
+      in_service: 'In service',
       resolved: 'Resolved',
       completed: 'Completed',
       rejected: 'Rejected',
@@ -99,6 +161,11 @@ const TEXT = {
     rejectPrompt: 'Reason for return (optional, visible to engineer as an internal note):',
     quoteReturned: (orderNo) => `Quote returned for revision: ${orderNo}`,
     quoteReturnFailed: 'Failed to return quote',
+    paymentStartApproved: (orderNo) => `Payment confirmed. Service can start: ${orderNo}`,
+    paymentStartApproveFailed: 'Failed to approve service start',
+    approvePaymentStart: 'Confirm payment & start',
+    paymentReviewTitle: 'Payment confirmation required',
+    paymentReviewHint: 'Engineer has followed up payment. Confirm receipt before allowing service execution.',
     archived: (orderNo) => `Archived: ${orderNo}`,
     archiveFailed: 'Archive failed',
     detailLoadFailed: 'Failed to load service order detail',
@@ -119,7 +186,13 @@ const TEXT = {
     conflictFallback: 'Conflict exists',
     noQuote: 'No quote',
     approve: 'Approve',
+    approveFullOrder: 'Approve full order',
     return: 'Return',
+    returnQuote: 'Return quote',
+    viewQuoteDetail: 'Review full order',
+    reviewQuoteFirst: 'Open the quote details before approving.',
+    fullOrderReviewTitle: 'Full order review required',
+    fullOrderReviewHint: 'Review the customer issue, AI summary, attachments, quote details, parts, quote subtotal price, and internal notes before approval.',
     archive: 'Archive',
     regionalLeadOption: 'Select regional lead',
     assigning: 'Assigning',
@@ -127,6 +200,8 @@ const TEXT = {
     engineerOption: 'Select engineer',
     dispatching: 'Dispatching',
     directDispatch: 'Direct dispatch',
+    searchEngineer: 'Search engineer by name, region, skill, or team',
+    exportEngineers: 'Export engineer pool',
     view: 'View',
     previous: 'Previous',
     next: 'Next',
@@ -136,6 +211,12 @@ const TEXT = {
     customerLabel: 'Customer',
     engineerLabel: 'Engineer',
     quoteReviewLabel: 'Quote review',
+    quoteDetailTitle: 'Quote Details',
+    quoteSubtotalPrice: 'Quote subtotal price',
+    otherFeeNote: 'Other fee note',
+    partsList: 'Parts list',
+    aiPriceCheck: 'AI price check',
+    noQuoteDetail: 'No quote detail',
     riskControlLabel: 'Risk control',
     aiSummaryTitle: 'AI Intake Summary',
     noAiSummary: 'No AI summary',
@@ -174,135 +255,11 @@ const TEXT = {
     saveNote: 'Save internal note',
     noDetail: 'No service order detail loaded',
   },
-  'zh-CN': {
-    statuses: {
-      pending: '待处理',
-      pending_dispatch: '待区域派工',
-      assigned: '已分配',
-      in_progress: '处理中',
-      resolved: '已解决',
-      completed: '已完成',
-      rejected: '已拒绝',
-      cancelled: '已取消',
-    },
-    urgency: {
-      normal: '普通',
-      urgent: '紧急',
-      critical: '非常紧急',
-    },
-    types: {
-      fault: '设备故障',
-      maintenance: '设备保养',
-      parameter: '参数调试',
-      other: '其他',
-    },
-    pricing: {
-      pending_review: '待运营复核',
-      submitted: '已发客户确认',
-      confirmed: '客户已确认',
-      draft: '退回修改',
-    },
-    tabs: {
-      all: '全部',
-      pending: '待处理',
-      pending_dispatch: '待区域派工',
-      in_progress: '处理中',
-      completed: '已完成',
-    },
-    title: '派工与服务质量',
-    subtitle: '主流程为运营团队先分配区域负责人，再由区域负责人安排具体工程师；直接派工仅作为兼容操作保留，并受利益冲突风控限制。',
-    loading: '加载中...',
-    empty: '暂无数据',
-    selectRegionalLead: '请先选择区域负责人',
-    assignedRegionalLead: (orderNo) => `已分配区域负责人：${orderNo}`,
-    assignRegionalLeadFailed: '分配区域负责人失败',
-    selectEngineer: '请先选择内部工程师',
-    assignedEngineer: (orderNo) => `已派工：${orderNo}`,
-    assignEngineerFailed: '派工失败',
-    quoteSent: (orderNo) => `已审核报价已发送给客户：${orderNo}`,
-    quoteReviewFailed: '报价审核失败',
-    rejectPrompt: '退回原因（可选，工程师端可见内部备注）：',
-    quoteReturned: (orderNo) => `已退回报价修改：${orderNo}`,
-    quoteReturnFailed: '报价退回失败',
-    archived: (orderNo) => `已归档：${orderNo}`,
-    archiveFailed: '归档失败',
-    detailLoadFailed: '工单详情加载失败',
-    noteSaveFailed: '内部备注保存失败',
-    headers: {
-      orderNo: '服务编号',
-      customer: '客户',
-      regionalLead: '区域负责人',
-      engineer: '内部工程师',
-      type: '类型',
-      urgency: '紧急',
-      status: '状态',
-      quoteArchive: '报价/归档',
-      createdAt: '创建时间',
-      dispatch: '派工',
-      detail: '详情',
-    },
-    conflictFallback: '存在利益冲突',
-    noQuote: '暂无报价',
-    approve: '通过',
-    return: '退回',
-    archive: '归档',
-    regionalLeadOption: '选择区域负责人',
-    assigning: '分配中',
-    assignRegion: '分配区域',
-    engineerOption: '选择工程师',
-    dispatching: '派工中',
-    directDispatch: '直接派工',
-    view: '查看',
-    previous: '上一页',
-    next: '下一页',
-    drawerTitle: '工单监管视图',
-    drawerSubtitle: '查看客户沟通、内部备注、AI 摘要、服务报告和双向评价。',
-    close: '关闭',
-    customerLabel: '客户',
-    engineerLabel: '工程师',
-    quoteReviewLabel: '报价审核',
-    riskControlLabel: '风控',
-    aiSummaryTitle: 'AI 初诊摘要',
-    noAiSummary: '暂无 AI 摘要',
-    attachmentsTitle: '诊断图片与附件',
-    attachmentCount: (count) => `${count} 个`,
-    openAttachment: '点击查看附件',
-    noAttachments: '暂无诊断图片或附件',
-    reportTitle: '服务报告',
-    reportFields: {
-      symptom: '症状',
-      diagnosis: '诊断',
-      solution: '处理',
-      laborHours: '工时',
-    },
-    noReport: '暂无服务报告',
-    customerReviewTitle: '客户服务评价',
-    average: '平均',
-    scoreRows: {
-      timeliness: '响应及时',
-      technical: '技术能力',
-      communication: '沟通体验',
-      professional: '专业形象',
-      cooperation: '配合程度',
-      payment: '付款配合',
-      environment: '现场条件',
-    },
-    noCustomerReview: '客户尚未评价本次服务',
-    engineerReviewTitle: '工程师内部客户评价',
-    internalRiskNote: '内部风控资料，仅用于派工判断、服务准备和质量复盘，客户不可见。',
-    noEngineerReview: '工程师尚未提交客户协作评价',
-    messagesTitle: '工单会话与内部备注',
-    messageCount: (count) => `${count} 条`,
-    noMessages: '暂无消息',
-    internalNote: '内部备注',
-    notePlaceholder: '添加内部备注，仅运营团队、区域负责人和工程师可见，客户不可见。',
-    saveNote: '保存内部备注',
-    noDetail: '未加载到工单详情',
-  },
+  'zh-CN': {},
 };
 
 export function WorkOrdersPage() {
-  const t = TEXT[runtimeConfig.locale] || TEXT.en;
+  const t = { ...TEXT.en, ...(TEXT[runtimeConfig.locale] || {}) };
   const [status, setStatus] = useState('all');
   const [data, setData] = useState({ total: 0, list: [] });
   const [engineers, setEngineers] = useState([]);
@@ -316,6 +273,7 @@ export function WorkOrdersPage() {
   const [detail, setDetail] = useState(null);
   const [detailMessages, setDetailMessages] = useState([]);
   const [internalNote, setInternalNote] = useState('');
+  const [reviewedQuoteIds, setReviewedQuoteIds] = useState({});
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const pageSize = 20;
@@ -333,7 +291,7 @@ export function WorkOrdersPage() {
   }, [status, page]);
 
   useEffect(() => {
-    getAdminUsers('engineer', 1, 100, { status: 'available' })
+    getAdminUsers('engineer', 1, 50, { status: 'available' })
       .then((res) => {
         const list = res.list || [];
         setEngineers(list.filter((engineer) => engineer.engineer_role !== 'regional_lead'));
@@ -422,6 +380,11 @@ export function WorkOrdersPage() {
   }
 
   async function handleApprovePricing(wo) {
+    if (!reviewedQuoteIds[wo.id]) {
+      setMessage(t.reviewQuoteFirst || 'Open the quote details before approving.');
+      await openDetail(wo);
+      return;
+    }
     setAssigningId(`${wo.id}:approve`);
     setMessage('');
     try {
@@ -434,6 +397,16 @@ export function WorkOrdersPage() {
             : item
         )),
       }));
+      setDetail((prev) => (
+        prev?.id === wo.id
+          ? {
+              ...prev,
+              status: 'pricing',
+              quote_review_status: 'approved',
+              pricing: prev.pricing ? { ...prev.pricing, status: 'submitted' } : prev.pricing,
+            }
+          : prev
+      ));
       setMessage(t.quoteSent(wo.order_no));
     } catch (err) {
       setMessage(err.message || t.quoteReviewFailed);
@@ -456,9 +429,46 @@ export function WorkOrdersPage() {
             : item
         )),
       }));
+      setDetail((prev) => (
+        prev?.id === wo.id
+          ? {
+              ...prev,
+              status: 'in_progress',
+              quote_review_status: 'rejected',
+              pricing: prev.pricing ? { ...prev.pricing, status: 'draft' } : prev.pricing,
+            }
+          : prev
+      ));
       setMessage(t.quoteReturned(wo.order_no));
     } catch (err) {
       setMessage(err.message || t.quoteReturnFailed);
+    } finally {
+      setAssigningId('');
+    }
+  }
+
+  async function handleApprovePaymentStart(wo) {
+    const note = window.prompt('Payment confirmation note (optional):') || '';
+    setAssigningId(`${wo.id}:payment-start`);
+    setMessage('');
+    try {
+      await approveAdminWorkOrderPaymentStart(wo.id, note);
+      setData((prev) => ({
+        ...prev,
+        list: prev.list.map((item) => (
+          item.id === wo.id
+            ? { ...item, status: 'in_service' }
+            : item
+        )),
+      }));
+      setDetail((prev) => (
+        prev?.id === wo.id
+          ? { ...prev, status: 'in_service' }
+          : prev
+      ));
+      setMessage(t.paymentStartApproved(wo.order_no));
+    } catch (err) {
+      setMessage(err.message || t.paymentStartApproveFailed);
     } finally {
       setAssigningId('');
     }
@@ -483,11 +493,44 @@ export function WorkOrdersPage() {
     }
   }
 
+  async function handleUpdatePayout(wo, status) {
+    const currentPayout = wo.payout || {};
+    const amountInput = window.prompt('Engineer service payment amount in USD (optional):', currentPayout.amount || '');
+    if (amountInput === null) return;
+    const reference = window.prompt('Payment reference / transaction ID (optional):', currentPayout.transaction_reference || '') || '';
+    const note = window.prompt('Internal payout note (optional):', currentPayout.internal_note || '') || '';
+    setAssigningId(`${wo.id}:payout:${status}`);
+    setMessage('');
+    try {
+      const response = await updateAdminWorkOrderPayout(wo.id, {
+        status,
+        amount: amountInput,
+        currency: currentPayout.currency || 'USD',
+        method: currentPayout.method || 'paypal',
+        transaction_reference: reference,
+        internal_note: note,
+      });
+      setDetail((prev) => (
+        prev?.id === wo.id
+          ? { ...prev, payout: response.payout, payout_status: response.payout_status }
+          : prev
+      ));
+      setMessage(`Engineer service payment updated: ${payoutLabel(response.payout_status)}`);
+    } catch (err) {
+      setMessage(err.message || 'Failed to update engineer service payment');
+    } finally {
+      setAssigningId('');
+    }
+  }
+
   async function openDetail(wo) {
     setDetailOpen(true);
     setDetailLoading(true);
     setDetail(null);
     setDetailMessages([]);
+    if (wo.pricing_status === 'pending_review') {
+      setReviewedQuoteIds((prev) => ({ ...prev, [wo.id]: true }));
+    }
     try {
       const [detailData, messagesData] = await Promise.all([
         getAdminWorkOrder(wo.id),
@@ -516,11 +559,13 @@ export function WorkOrdersPage() {
 
   return (
     <div>
-      <div className="mb-6">
+      <div className="mb-4 flex flex-wrap items-start justify-between gap-3 sm:mb-6">
+        <div>
           <h2 className="text-lg font-semibold">{t.title}</h2>
           <p className="text-sm text-[var(--color-text-muted)] mt-1">
-          {t.subtitle}
-        </p>
+            {t.subtitle}
+          </p>
+        </div>
       </div>
       {message && (
         <div className="mb-4 rounded-lg bg-[var(--color-surface-elevated)] px-4 py-3 text-sm text-[var(--color-text-secondary)]">
@@ -528,12 +573,12 @@ export function WorkOrdersPage() {
         </div>
       )}
 
-      <div className="flex gap-2 mb-6 flex-wrap">
+      <div className="-mx-3 mb-4 flex gap-2 overflow-x-auto px-3 pb-1 sm:mx-0 sm:mb-6 sm:flex-wrap sm:px-0">
         {statusTabs.map((tab) => (
           <button
             key={tab.key}
             onClick={() => setStatus(tab.key)}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+            className={`shrink-0 px-3 py-2 sm:px-4 rounded-lg text-sm font-medium transition-colors ${
               status === tab.key
                 ? 'bg-[var(--color-primary)] text-white'
                 : 'bg-[var(--color-surface-elevated)] text-[var(--color-text-secondary)] hover:text-[var(--color-text)]'
@@ -548,12 +593,132 @@ export function WorkOrdersPage() {
         <div className="text-center py-12 text-[var(--color-text-muted)]">{t.loading}</div>
       ) : (
         <>
-          <div className="overflow-x-auto">
+          <div className="space-y-3 md:hidden">
+            {data.list.length === 0 ? (
+              <div className="rounded-xl bg-[var(--color-surface-elevated)] py-8 text-center text-sm text-[var(--color-text-muted)]">
+                {t.empty}
+              </div>
+            ) : data.list.map((wo) => {
+              const statusInfo = STATUS_MAP[wo.status] || { color: 'var(--color-text-muted)' };
+              return (
+                <article key={wo.id} className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-3 shadow-sm">
+                  <div className="flex items-start justify-between gap-3">
+                    <button
+                      onClick={() => openDetail(wo)}
+                      className="min-w-0 break-all text-left font-mono text-sm font-semibold text-[var(--color-primary)]"
+                    >
+                      {wo.order_no}
+                    </button>
+                    <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-[var(--color-surface-elevated)] px-2 py-1 text-xs">
+                      <span className="h-2 w-2 rounded-full" style={{ backgroundColor: statusInfo.color }} />
+                      {t.statuses[wo.status] || wo.status}
+                    </span>
+                  </div>
+                  <div className="mt-2 text-sm">
+                    <div className="font-medium">{wo.customer_name || '-'}</div>
+                    {wo.customer_company && <div className="text-xs text-[var(--color-text-muted)]">{wo.customer_company}</div>}
+                  </div>
+                  <div className="mt-3 grid gap-2 text-xs text-[var(--color-text-secondary)]">
+                    <div>{t.headers.type}: {t.types[wo.type] || wo.type || '-'}</div>
+                    <div>
+                      {t.headers.urgency}: <span className={wo.urgency === 'critical' ? 'text-[var(--color-error)] font-medium' : wo.urgency === 'urgent' ? 'text-[var(--color-warning)]' : ''}>
+                        {t.urgency[wo.urgency] || wo.urgency || '-'}
+                      </span>
+                    </div>
+                    <div>{t.headers.regionalLead}: {wo.regional_lead_name || '-'}</div>
+                    <div>{t.headers.engineer}: {wo.engineer_name || '-'}</div>
+                    <div>
+                      {t.headers.quoteArchive}: {wo.pricing_status
+                        ? `${t.pricing[wo.pricing_status] || wo.pricing_status}${wo.pricing_total_amount || wo.pricing_subtotal ? ` / ${money(wo.pricing_total_amount || wo.pricing_subtotal)} USD` : ''}`
+                        : t.noQuote}
+                    </div>
+                  </div>
+                  {wo.conflict_status === 'blocked' && (
+                    <div className="mt-3 rounded-lg border border-[var(--color-error)]/30 bg-[var(--color-error)]/10 px-3 py-2 text-xs text-[var(--color-error)]">
+                      {wo.conflict_reason || t.conflictFallback}
+                    </div>
+                  )}
+                  <div className="mt-3 space-y-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-elevated)] p-2">
+                    <div className="flex flex-col gap-2">
+                      <select
+                        value={selectedRegionalLeads[wo.id] || wo.assigned_regional_lead_id || ''}
+                        onChange={(event) => setSelectedRegionalLeads((prev) => ({ ...prev, [wo.id]: event.target.value }))}
+                        className="min-h-10 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)]"
+                      >
+                        <option value="">{t.regionalLeadOption}</option>
+                        {regionalLeads.map((lead) => (
+                          <option key={lead.id} value={lead.id}>{formatEngineerOption(lead)}</option>
+                        ))}
+                      </select>
+                      <button
+                        onClick={() => handleAssignRegionalLead(wo)}
+                        disabled={assigningId === `${wo.id}:lead`}
+                        className="min-h-10 rounded-lg bg-[var(--color-primary)] px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
+                      >
+                        {assigningId === `${wo.id}:lead` ? t.assigning : t.assignRegion}
+                      </button>
+                    </div>
+                    <div className="flex flex-col gap-2">
+                      <select
+                        value={selectedEngineers[wo.id] || wo.engineer_id || ''}
+                        onChange={(event) => setSelectedEngineers((prev) => ({ ...prev, [wo.id]: event.target.value }))}
+                        className="min-h-10 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)]"
+                      >
+                        <option value="">{t.engineerOption}</option>
+                        {engineers.map((engineer) => (
+                          <option key={engineer.id} value={engineer.id}>{formatEngineerOption(engineer)}</option>
+                        ))}
+                      </select>
+                      <button
+                        onClick={() => handleAssign(wo)}
+                        disabled={assigningId === `${wo.id}:engineer`}
+                        className="min-h-10 rounded-lg bg-[var(--color-primary)] px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
+                      >
+                        {assigningId === `${wo.id}:engineer` ? t.dispatching : t.directDispatch}
+                      </button>
+                    </div>
+                  </div>
+                  <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                    <button
+                      onClick={() => openDetail(wo)}
+                      className="min-h-10 rounded-lg border border-[var(--color-border)] px-3 py-2 text-sm font-medium text-[var(--color-text-secondary)]"
+                    >
+                      {wo.pricing_status === 'pending_review' ? (t.viewQuoteDetail || t.view) : t.view}
+                    </button>
+                    {wo.status === 'payment_review' && (
+                      <button
+                        onClick={() => handleApprovePaymentStart(wo)}
+                        disabled={assigningId === `${wo.id}:payment-start`}
+                        className="min-h-10 rounded-lg bg-[var(--color-primary)] px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
+                      >
+                        {t.approvePaymentStart}
+                      </button>
+                    )}
+                    {['resolved', 'pending_review'].includes(wo.status) && (
+                      <button
+                        onClick={() => handleArchive(wo)}
+                        disabled={assigningId === `${wo.id}:archive`}
+                        className="min-h-10 rounded-lg border border-[var(--color-border)] px-3 py-2 text-sm font-medium text-[var(--color-text-secondary)] disabled:opacity-50"
+                      >
+                        {t.archive}
+                      </button>
+                    )}
+                  </div>
+                  <div className="mt-2 text-xs text-[var(--color-text-muted)]">
+                    {wo.created_at?.slice(0, 16)?.replace('T', ' ')}
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+
+          <div className="hidden overflow-x-auto md:block">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-[var(--color-border)]">
                   <th className="text-left py-3 px-2 text-[var(--color-text-secondary)] font-medium">{t.headers.orderNo}</th>
                   <th className="text-left py-3 px-2 text-[var(--color-text-secondary)] font-medium">{t.headers.customer}</th>
+                  <th className="text-left py-3 px-2 text-[var(--color-text-secondary)] font-medium">{t.headers.dispatch}</th>
                   <th className="text-left py-3 px-2 text-[var(--color-text-secondary)] font-medium">{t.headers.regionalLead}</th>
                   <th className="text-left py-3 px-2 text-[var(--color-text-secondary)] font-medium">{t.headers.engineer}</th>
                   <th className="text-left py-3 px-2 text-[var(--color-text-secondary)] font-medium">{t.headers.type}</th>
@@ -561,7 +726,6 @@ export function WorkOrdersPage() {
                   <th className="text-left py-3 px-2 text-[var(--color-text-secondary)] font-medium">{t.headers.status}</th>
                   <th className="text-left py-3 px-2 text-[var(--color-text-secondary)] font-medium">{t.headers.quoteArchive}</th>
                   <th className="text-left py-3 px-2 text-[var(--color-text-secondary)] font-medium">{t.headers.createdAt}</th>
-                  <th className="text-left py-3 px-2 text-[var(--color-text-secondary)] font-medium">{t.headers.dispatch}</th>
                   <th className="text-left py-3 px-2 text-[var(--color-text-secondary)] font-medium">{t.headers.detail}</th>
                 </tr>
               </thead>
@@ -577,10 +741,63 @@ export function WorkOrdersPage() {
                     const statusInfo = STATUS_MAP[wo.status] || { color: 'var(--color-text-muted)' };
                     return (
                       <tr key={wo.id} className="border-b border-[var(--color-border)]/50 hover:bg-[var(--color-surface-elevated)]/50">
-                        <td className="py-3 px-2 font-mono text-[var(--color-primary)]">{wo.order_no}</td>
+                        <td className="py-3 px-2">
+                          <button
+                            onClick={() => openDetail(wo)}
+                            className="font-mono text-left text-[var(--color-primary)] hover:underline"
+                          >
+                            {wo.order_no}
+                          </button>
+                        </td>
                         <td className="py-3 px-2">
                           <div>{wo.customer_name || '-'}</div>
                           {wo.customer_company && <div className="text-xs text-[var(--color-text-muted)]">{wo.customer_company}</div>}
+                        </td>
+                        <td className="py-3 px-2">
+                          <div className="flex min-w-[280px] flex-col gap-2">
+                            <div className="flex items-center gap-2">
+                              <select
+                                value={selectedRegionalLeads[wo.id] || wo.assigned_regional_lead_id || ''}
+                                onChange={(event) => setSelectedRegionalLeads((prev) => ({ ...prev, [wo.id]: event.target.value }))}
+                                className="min-w-0 flex-1 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-2 py-1.5 text-xs text-[var(--color-text)]"
+                              >
+                                <option value="">{t.regionalLeadOption}</option>
+                                {regionalLeads.map((lead) => (
+                                  <option key={lead.id} value={lead.id}>
+                                    {formatEngineerOption(lead)}
+                                  </option>
+                                ))}
+                              </select>
+                              <button
+                                onClick={() => handleAssignRegionalLead(wo)}
+                                disabled={assigningId === `${wo.id}:lead`}
+                                className="whitespace-nowrap rounded-lg bg-[var(--color-primary)] px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50"
+                              >
+                                {assigningId === `${wo.id}:lead` ? t.assigning : t.assignRegion}
+                              </button>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <select
+                                value={selectedEngineers[wo.id] || wo.engineer_id || ''}
+                                onChange={(event) => setSelectedEngineers((prev) => ({ ...prev, [wo.id]: event.target.value }))}
+                                className="min-w-0 flex-1 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-2 py-1.5 text-xs text-[var(--color-text)]"
+                              >
+                                <option value="">{t.engineerOption}</option>
+                                {engineers.map((engineer) => (
+                                  <option key={engineer.id} value={engineer.id}>
+                                    {formatEngineerOption(engineer)}
+                                  </option>
+                                ))}
+                              </select>
+                              <button
+                                onClick={() => handleAssign(wo)}
+                                disabled={assigningId === `${wo.id}:engineer`}
+                                className="whitespace-nowrap rounded-lg bg-[var(--color-primary)] px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50"
+                              >
+                                {assigningId === `${wo.id}:engineer` ? t.dispatching : t.directDispatch}
+                              </button>
+                            </div>
+                          </div>
                         </td>
                         <td className="py-3 px-2">
                           <div>{wo.regional_lead_name || '-'}</div>
@@ -609,26 +826,29 @@ export function WorkOrdersPage() {
                           <div className="min-w-[170px] space-y-2">
                             <div className="text-xs text-[var(--color-text-secondary)]">
                               {wo.pricing_status
-                                ? `${t.pricing[wo.pricing_status] || wo.pricing_status}${wo.pricing_total_amount || wo.pricing_subtotal ? ` · ${wo.pricing_total_amount || wo.pricing_subtotal} CNY` : ''}`
+                                ? `${t.pricing[wo.pricing_status] || wo.pricing_status}${wo.pricing_total_amount || wo.pricing_subtotal ? ` · ${money(wo.pricing_total_amount || wo.pricing_subtotal)} USD` : ''}`
                                 : t.noQuote}
                             </div>
                             {wo.pricing_status === 'pending_review' && (
-                              <div className="flex gap-1">
-                                <button
-                                  onClick={() => handleApprovePricing(wo)}
-                                  disabled={assigningId === `${wo.id}:approve`}
-                                  className="rounded-lg bg-[var(--color-primary)] px-2 py-1 text-xs text-white disabled:opacity-50"
-                                >
-                                  {t.approve}
-                                </button>
-                                <button
-                                  onClick={() => handleRejectPricing(wo)}
-                                  disabled={assigningId === `${wo.id}:reject`}
-                                  className="rounded-lg border border-[var(--color-border)] px-2 py-1 text-xs text-[var(--color-text-secondary)] disabled:opacity-50"
-                                >
-                                  {t.return}
-                                </button>
+                              <div className="space-y-2">
+                                <div className="flex flex-wrap gap-1">
+                                  <button
+                                    onClick={() => openDetail(wo)}
+                                    className="rounded-lg border border-[var(--color-primary)]/40 px-2 py-1 text-xs text-[var(--color-primary)]"
+                                  >
+                                    {t.viewQuoteDetail || t.view}
+                                  </button>
+                                </div>
                               </div>
+                            )}
+                            {wo.status === 'payment_review' && (
+                              <button
+                                onClick={() => handleApprovePaymentStart(wo)}
+                                disabled={assigningId === `${wo.id}:payment-start`}
+                                className="rounded-lg border border-[var(--color-primary)] bg-[var(--color-primary)]/10 px-2 py-1 text-xs text-[var(--color-primary)] disabled:opacity-50"
+                              >
+                                {t.approvePaymentStart}
+                              </button>
                             )}
                             {['resolved', 'pending_review'].includes(wo.status) && (
                               <button
@@ -643,52 +863,6 @@ export function WorkOrdersPage() {
                         </td>
                         <td className="py-3 px-2 text-[var(--color-text-secondary)]">
                           {wo.created_at?.slice(0, 16)?.replace('T', ' ')}
-                        </td>
-                        <td className="py-3 px-2">
-                          <div className="flex min-w-[320px] flex-col gap-2">
-                            <div className="flex items-center gap-2">
-                              <select
-                                value={selectedRegionalLeads[wo.id] || wo.assigned_regional_lead_id || ''}
-                                onChange={(event) => setSelectedRegionalLeads((prev) => ({ ...prev, [wo.id]: event.target.value }))}
-                                className="min-w-0 flex-1 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-2 py-1.5 text-xs text-[var(--color-text)]"
-                              >
-                                <option value="">{t.regionalLeadOption}</option>
-                                {regionalLeads.map((lead) => (
-                                  <option key={lead.id} value={lead.id}>
-                                    {lead.name}{lead.responsible_region || lead.service_region ? ` · ${lead.responsible_region || lead.service_region}` : ''}
-                                  </option>
-                                ))}
-                              </select>
-                              <button
-                                onClick={() => handleAssignRegionalLead(wo)}
-                                disabled={assigningId === `${wo.id}:lead`}
-                                className="rounded-lg bg-[var(--color-primary)] px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50"
-                              >
-                                {assigningId === `${wo.id}:lead` ? t.assigning : t.assignRegion}
-                              </button>
-                            </div>
-                            <div className="flex items-center gap-2">
-                            <select
-                              value={selectedEngineers[wo.id] || wo.engineer_id || ''}
-                              onChange={(event) => setSelectedEngineers((prev) => ({ ...prev, [wo.id]: event.target.value }))}
-                              className="min-w-0 flex-1 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-2 py-1.5 text-xs text-[var(--color-text)]"
-                            >
-                              <option value="">{t.engineerOption}</option>
-                              {engineers.map((engineer) => (
-                                <option key={engineer.id} value={engineer.id}>
-                                  {engineer.name}{engineer.service_region ? ` · ${engineer.service_region}` : ''}
-                                </option>
-                              ))}
-                            </select>
-                            <button
-                              onClick={() => handleAssign(wo)}
-                              disabled={assigningId === `${wo.id}:engineer`}
-                              className="rounded-lg bg-[var(--color-primary)] px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50"
-                            >
-                              {assigningId === `${wo.id}:engineer` ? t.dispatching : t.directDispatch}
-                            </button>
-                            </div>
-                          </div>
                         </td>
                         <td className="py-3 px-2">
                           <button
@@ -733,25 +907,69 @@ export function WorkOrdersPage() {
       {detailOpen && (
         <div className="fixed inset-0 z-50 flex justify-end">
           <div className="absolute inset-0 bg-black/40" onClick={() => setDetailOpen(false)} />
-          <div className="relative h-full w-full max-w-2xl overflow-y-auto bg-[var(--color-surface)] p-5 shadow-2xl">
-            <div className="mb-4 flex items-start justify-between gap-4">
-              <div>
+          <div className="relative flex h-full w-full max-w-4xl flex-col overflow-hidden bg-[var(--color-surface)] shadow-2xl">
+            <div className="sticky top-0 z-10 flex shrink-0 items-start justify-between gap-3 border-b border-[var(--color-border)] bg-[var(--color-surface)] p-3 sm:p-5">
+              <div className="min-w-0">
                 <div className="text-xs uppercase tracking-[0.18em] text-[var(--color-primary)]">Service Record</div>
                 <h3 className="text-lg font-semibold">{t.drawerTitle}</h3>
-                <p className="text-sm text-[var(--color-text-muted)]">{t.drawerSubtitle}</p>
+                <p className="mt-1 text-sm text-[var(--color-text-muted)]">{t.drawerSubtitle}</p>
               </div>
               <button
                 onClick={() => setDetailOpen(false)}
-                className="rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-sm"
+                className="shrink-0 rounded-lg border border-[var(--color-border)] px-3 py-2 text-sm"
               >
                 {t.close}
               </button>
             </div>
+            <div className="min-h-0 flex-1 overflow-y-auto p-3 sm:p-5">
 
             {detailLoading ? (
               <div className="py-12 text-center text-sm text-[var(--color-text-muted)]">{t.loading}</div>
             ) : detail ? (
               <div className="space-y-4">
+                {detail.pricing?.status === 'pending_review' && (
+                  <section className="rounded-xl border border-[var(--color-primary)]/40 bg-[var(--color-primary)]/5 p-4">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                      <div>
+                        <h4 className="font-medium text-[var(--color-text)]">{t.fullOrderReviewTitle}</h4>
+                        <p className="mt-1 text-sm text-[var(--color-text-secondary)]">{t.fullOrderReviewHint}</p>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          onClick={() => handleRejectPricing(detail)}
+                          disabled={assigningId === `${detail.id}:reject`}
+                          className="rounded-lg border border-[var(--color-border)] px-3 py-2 text-sm text-[var(--color-text-secondary)] disabled:opacity-50"
+                        >
+                          {t.returnQuote || t.return}
+                        </button>
+                        <button
+                          onClick={() => handleApprovePricing(detail)}
+                          disabled={assigningId === `${detail.id}:approve`}
+                          className="rounded-lg bg-[var(--color-primary)] px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
+                        >
+                          {t.approveFullOrder || t.approve}
+                        </button>
+                      </div>
+                    </div>
+                  </section>
+                )}
+                {detail.status === 'payment_review' && (
+                  <section className="rounded-xl border border-[var(--color-primary)]/40 bg-[var(--color-primary)]/5 p-4">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                      <div>
+                        <h4 className="font-medium text-[var(--color-text)]">{t.paymentReviewTitle}</h4>
+                        <p className="mt-1 text-sm text-[var(--color-text-secondary)]">{t.paymentReviewHint}</p>
+                      </div>
+                      <button
+                        onClick={() => handleApprovePaymentStart(detail)}
+                        disabled={assigningId === `${detail.id}:payment-start`}
+                        className="rounded-lg bg-[var(--color-primary)] px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
+                      >
+                        {t.approvePaymentStart}
+                      </button>
+                    </div>
+                  </section>
+                )}
                 <section className="rounded-xl bg-[var(--color-surface-elevated)] p-4">
                   <div className="mb-2 flex items-center justify-between gap-3">
                     <div className="font-mono text-[var(--color-primary)]">{detail.order_no}</div>
@@ -766,11 +984,126 @@ export function WorkOrdersPage() {
                   </div>
                 </section>
 
+                <section className="rounded-xl border border-[var(--color-primary)]/30 bg-[var(--color-primary)]/5 p-4">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div>
+                      <h4 className="font-medium text-[var(--color-text)]">Engineer service payment</h4>
+                      <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
+                        Internal closure is not complete until this work order's engineer payout is completed.
+                      </p>
+                      <div className="mt-3 grid gap-2 text-xs text-[var(--color-text-muted)] sm:grid-cols-2">
+                        <div>Status: {payoutLabel(detail.payout_status)}</div>
+                        <div>Method: {detail.payout?.method === 'bank_swift' ? 'Bank transfer / SWIFT' : 'PayPal account'}</div>
+                        <div>Amount: {detail.payout?.amount ? `${money(detail.payout.amount)} ${detail.payout.currency || 'USD'}` : '-'}</div>
+                        <div>Reference: {detail.payout?.transaction_reference || '-'}</div>
+                        <div>Paid at: {detail.payout?.paid_at ? new Date(detail.payout.paid_at).toLocaleString('en-US') : '-'}</div>
+                        <div>Note: {detail.payout?.internal_note || '-'}</div>
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        onClick={() => handleUpdatePayout(detail, 'processing')}
+                        disabled={assigningId === `${detail.id}:payout:processing`}
+                        className="rounded-lg border border-[var(--color-border)] px-3 py-2 text-sm text-[var(--color-text-secondary)] disabled:opacity-50"
+                      >
+                        Mark payout processing
+                      </button>
+                      <button
+                        onClick={() => handleUpdatePayout(detail, 'completed')}
+                        disabled={assigningId === `${detail.id}:payout:completed`}
+                        className="rounded-lg bg-[var(--color-primary)] px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
+                      >
+                        Mark payout completed
+                      </button>
+                      <button
+                        onClick={() => handleUpdatePayout(detail, 'exception')}
+                        disabled={assigningId === `${detail.id}:payout:exception`}
+                        className="rounded-lg border border-red-500/40 px-3 py-2 text-sm text-red-500 disabled:opacity-50"
+                      >
+                        Mark payout exception
+                      </button>
+                    </div>
+                  </div>
+                </section>
+
                 <section className="rounded-xl border border-[var(--color-border)] p-4">
                   <h4 className="mb-2 font-medium">{t.aiSummaryTitle}</h4>
-                  <pre className="whitespace-pre-wrap rounded-lg bg-[var(--color-surface-elevated)] p-3 text-xs text-[var(--color-text-secondary)]">
-                    {detail.ai_summary || t.noAiSummary}
-                  </pre>
+                  <div className="whitespace-pre-wrap rounded-lg bg-[var(--color-surface-elevated)] p-3 text-xs text-[var(--color-text-secondary)]">
+                    {formatAiSummary(detail.ai_summary) || t.noAiSummary}
+                  </div>
+                </section>
+
+                <section className="rounded-xl border border-[var(--color-border)] p-4">
+                  <div className="mb-3 flex items-center justify-between gap-3">
+                    <h4 className="font-medium">{t.quoteDetailTitle || 'Quote Details'}</h4>
+                    {detail.pricing?.status && (
+                      <span className="rounded-full bg-[var(--color-primary)]/10 px-2 py-1 text-xs text-[var(--color-primary)]">
+                        {t.pricing[detail.pricing.status] || detail.pricing.status}
+                      </span>
+                    )}
+                  </div>
+                  {detail.pricing ? (() => {
+                    const pricing = detail.pricing;
+                    const parts = quoteParts(detail);
+                    const subtotal = pricing.subtotal || pricing.total_amount || 0;
+                    const note = formatQuoteNote(pricing.parts_detail);
+                    const aiCheck = quoteAiCheck(pricing);
+                    return (
+                      <div className="space-y-3 text-sm text-[var(--color-text-secondary)]">
+                        <div className="grid gap-2 sm:grid-cols-2">
+                          <MoneyRow label="Labor Fee" value={pricing.labor_fee || 0} />
+                          <MoneyRow label="Parts Fee" value={pricing.parts_fee || 0} />
+                          <MoneyRow label="Travel Fee" value={pricing.travel_fee || 0} />
+                          <MoneyRow label="Other Fees" value={pricing.other_fee || 0} />
+                        </div>
+                        {note && (
+                          <div className="rounded-lg bg-[var(--color-surface-elevated)] p-3">
+                            <div className="mb-1 text-xs font-medium text-[var(--color-text-muted)]">{t.otherFeeNote || 'Other fee note'}</div>
+                            <div>{note}</div>
+                          </div>
+                        )}
+                        {parts.length > 0 && (
+                          <div className="overflow-hidden rounded-lg border border-[var(--color-border)]">
+                            <div className="bg-[var(--color-surface-elevated)] px-3 py-2 text-xs font-medium text-[var(--color-text-muted)]">
+                              {t.partsList || 'Parts list'}
+                            </div>
+                            <table className="w-full text-xs">
+                              <tbody>
+                                {parts.map((part, index) => (
+                                  <tr key={part.id || `${part.material_code || part.name}-${index}`} className="border-t border-[var(--color-border)]">
+                                    <td className="px-3 py-2">
+                                      <div className="text-[var(--color-text)]">{part.name_en || part.name || '-'}</div>
+                                      <div className="text-[var(--color-text-muted)]">{[part.material_code, part.spec, part.brand].filter(Boolean).join(' · ') || '-'}</div>
+                                    </td>
+                                    <td className="px-3 py-2 text-right">{part.quantity || 1} {part.unit || 'pcs'}</td>
+                                    <td className="px-3 py-2 text-right">{money(part.unit_price)} USD</td>
+                                    <td className="px-3 py-2 text-right">{money(part.line_total || Number(part.quantity || 0) * Number(part.unit_price || 0))} USD</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        )}
+                        <div className="rounded-lg bg-[var(--color-surface-elevated)] p-3">
+                          <div className="flex justify-between">
+                            <span>{t.quoteSubtotalPrice || 'Quote subtotal price'}</span>
+                            <span className="font-semibold text-[var(--color-primary)]">{money(subtotal)} USD</span>
+                          </div>
+                        </div>
+                        {aiCheck && (
+                          <div className="rounded-lg border border-[var(--color-border)] p-3">
+                            <div className="mb-1 text-xs font-medium text-[var(--color-text-muted)]">{t.aiPriceCheck || 'AI price check'}</div>
+                            <div className="font-medium text-[var(--color-text)]">{aiCheck.status || '-'}</div>
+                            {(aiCheck.reason || aiCheck.ai_note) && (
+                              <div className="mt-1 text-xs whitespace-pre-wrap">{aiCheck.reason || aiCheck.ai_note}</div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })() : (
+                    <div className="text-sm text-[var(--color-text-muted)]">{t.noQuoteDetail || t.noQuote}</div>
+                  )}
                 </section>
 
                 <section className="rounded-xl border border-[var(--color-border)] p-4">
@@ -937,6 +1270,7 @@ export function WorkOrdersPage() {
             ) : (
               <div className="py-12 text-center text-sm text-[var(--color-text-muted)]">{t.noDetail}</div>
             )}
+            </div>
           </div>
         </div>
       )}

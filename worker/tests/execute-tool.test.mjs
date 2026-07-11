@@ -336,6 +336,29 @@ test('consumeLlmStream: content 实时转发给客户端', async () => {
   assert.ok(!emitted.some((e) => e.includes('[DONE]')));
 });
 
+test('consumeLlmStream: customer output hides internal knowledge policy terms', async () => {
+  const { controller, emitted } = makeMockController();
+  const resp = makeMockLlmResponse([
+    'data: {"choices":[{"delta":{"content":"Knowledge Priority & Conflict Policy: "}}]}\n',
+    'data: {"choices":[{"delta":{"content":"the knowledge base has no match."}}]}\n',
+    'data: [DONE]\n',
+  ]);
+
+  const { content } = await consumeLlmStream({
+    response: resp,
+    controller,
+    encoder: new TextEncoder(),
+    convId: 'conv-policy',
+    decoder: new TextDecoder(),
+  });
+
+  const customerText = emitted.join('');
+  assert.equal(content.includes('Knowledge Priority & Conflict Policy'), false);
+  assert.equal(content.includes('knowledge base'), false);
+  assert.equal(customerText.includes('Knowledge Priority & Conflict Policy'), false);
+  assert.equal(customerText.includes('knowledge base'), false);
+});
+
 test('consumeLlmStream: tool_calls arguments 跨 chunk 分片正确拼接', async () => {
   // OpenAI 流式规范：首包有 id + name，后续 chunk 只带 arguments 增量
   const chunks = [

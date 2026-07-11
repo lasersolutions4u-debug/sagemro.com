@@ -3,18 +3,6 @@ import { fileURLToPath } from 'node:url';
 
 const DEFAULT_TIMEOUT_MS = 20000;
 
-function normalizeCliPath(value) {
-  const normalized = String(value || '')
-    .replace(/\\/g, '/')
-    .replace(/^\/([A-Za-z]:\/)/, '$1');
-  return /^[A-Za-z]:\//.test(normalized) ? normalized.toLowerCase() : normalized;
-}
-
-export function isCliEntry(importMetaUrl, argvPath) {
-  if (!argvPath) return false;
-  return normalizeCliPath(fileURLToPath(importMetaUrl)) === normalizeCliPath(argvPath);
-}
-
 export function buildSmokeTargets() {
   return [
     { key: 'com-home', url: 'https://sagemro.com/', thresholdMs: 5000 },
@@ -159,6 +147,18 @@ async function smokeChat(market) {
     summary.cleanupHint = `Delete conversation/messages by exact conversation_id: ${conversationId}`;
     return summary;
   }
+}
+
+function normalizeCliPath(value) {
+  const normalized = String(value || '')
+    .replace(/\\/g, '/')
+    .replace(/^\/([A-Za-z]:\/)/, '$1');
+  return /^[A-Za-z]:\//.test(normalized) ? normalized.toLowerCase() : normalized;
+}
+
+export function isCliEntry(importMetaUrl, argvPath) {
+  if (!argvPath) return false;
+  return normalizeCliPath(fileURLToPath(importMetaUrl)) === normalizeCliPath(argvPath);
 }
 
 async function main() {

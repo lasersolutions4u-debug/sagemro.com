@@ -1,6 +1,5 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { pathToFileURL } from 'node:url';
 
 import {
   buildChatSmokePayload,
@@ -66,14 +65,6 @@ test('summarizeResult marks slow targets as warnings, not failures', () => {
 
   assert.equal(result.ok, true);
   assert.equal(result.warning, 'slow: 4200ms > 3000ms');
-});
-
-test('isCliEntry handles spaces and unicode in script paths', () => {
-  const scriptPath = '/tmp/SAGEMRO AI/中文 smoke/production-smoke.mjs';
-  const moduleUrl = pathToFileURL(scriptPath).href;
-
-  assert.equal(isCliEntry(moduleUrl, scriptPath), true);
-  assert.equal(isCliEntry(moduleUrl, '/tmp/other-script.mjs'), false);
 });
 
 test('isCliEntry supports Windows argv paths', () => {

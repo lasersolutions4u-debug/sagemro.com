@@ -389,7 +389,7 @@
     {
       "id": "pc-002",
       "category": "prompt_contract",
-      "description": "国际站英文报警问题默认英文",
+      "description": "国际站客户聊天跟随客户语言且系统信息保持英文",
       "input": {
         "url": "https://api.sagemro.com/api/chat",
         "origin": "https://sagemro.com",
@@ -397,9 +397,14 @@
       },
       "expect": {
         "prompt_contains": [
-          "You MUST answer this turn in English",
           "Market: International edition / sagemro.com",
-          "Reply in English"
+          "Reply in the same natural language the customer uses in their latest message",
+          "If the latest customer message is ambiguous, mostly alarm codes, brand names, model names, CNC terms, or short technical fragments, default to English",
+          "SAGEMRO system UI labels, button names, routes, account type names, and portal names remain in English",
+          "Internal service-ready summaries, work-order summaries, progress text, and AI analysis must remain in English"
+        ],
+        "prompt_not_contains": [
+          "You MUST answer this turn in English"
         ]
       }
     },

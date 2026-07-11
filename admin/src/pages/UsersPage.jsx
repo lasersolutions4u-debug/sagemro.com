@@ -40,6 +40,22 @@ const COMMON_SERVICES = [
   { value: '配件供应', en: 'Spare parts supply', zh: '配件供应' },
 ];
 
+function csvCell(value) {
+  const text = String(value ?? '').replace(/\r?\n/g, ' ');
+  return `"${text.replace(/"/g, '""')}"`;
+}
+
+function downloadCsv(filename, rows) {
+  const csv = rows.map((row) => row.map(csvCell).join(',')).join('\n');
+  const blob = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
 const TEXT = {
   en: {
     optionKey: 'en',
@@ -50,6 +66,7 @@ const TEXT = {
     },
     title: 'User Management',
     addUser: 'Add user',
+    exportCurrent: 'Export current list',
     customer: 'Customer',
     engineer: 'Engineer',
     searchPlaceholder: 'Search name, company, or phone...',
@@ -118,6 +135,7 @@ const TEXT = {
     },
     title: '用户管理',
     addUser: '添加用户',
+    exportCurrent: '导出当前列表',
     customer: '客户',
     engineer: '工程师',
     searchPlaceholder: '搜索姓名、公司名或手机号...',
@@ -182,7 +200,7 @@ const TEXT = {
 export function UsersPage() {
   const t = TEXT[runtimeConfig.locale] || TEXT.en;
   const optionLabel = (option) => option[t.optionKey] || option.zh;
-  const [type, setType] = useState('customer');
+  const type = 'customer';
   const [data, setData] = useState({ total: 0, list: [] });
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
@@ -197,7 +215,7 @@ export function UsersPage() {
 
   // 添加用户弹窗
   const [showAdd, setShowAdd] = useState(false);
-  const [addType, setAddType] = useState('customer');
+  const addType = 'customer';
   const [addForm, setAddForm] = useState({
     name: '', phone: '', password: '', region: '',
     engineerRole: 'engineer', regionalLeadId: '', responsibleRegion: '', teamName: '',
@@ -210,10 +228,6 @@ export function UsersPage() {
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [deleteNotice, setDeleteNotice] = useState('');
-
-  useEffect(() => {
-    setPage(1);
-  }, [type]);
 
   const buildFilters = () => {
     const f = {};
@@ -249,7 +263,6 @@ export function UsersPage() {
       specialties: [], services: [], serviceRegion: '', bio: '',
     });
     setAddError('');
-    setAddType('customer');
   };
 
   const handleAdd = async () => {
@@ -272,11 +285,7 @@ export function UsersPage() {
       await createAdminUser(payload);
       setShowAdd(false);
       resetAddForm();
-      if (addType === type) {
-        loadUsers();
-      } else {
-        setType(addType);
-      }
+      loadUsers();
     } catch (err) {
       setAddError(err.message);
     } finally {
@@ -310,30 +319,68 @@ export function UsersPage() {
     }
   };
 
-  const hasActiveFilters = search || filterStatus || filterRegion || filterSpecialty;
+  const hasActiveFilters = search || filterRegion;
+
+  const exportCurrentList = () => {
+    const filename = type === 'engineer' ? 'sagemro-engineers-current.csv' : 'sagemro-customers-current.csv';
+    const headers = type === 'engineer'
+      ? ['id', 'user_no', 'name', 'company', 'phone', 'status', 'engineer_role', 'regional_lead_name', 'service_region', 'responsible_region', 'team_name', 'specialties', 'services', 'rating_technical', 'rating_count', 'created_at']
+      : ['id', 'user_no', 'name', 'company', 'phone', 'region', 'created_at'];
+    const rows = data.list.map((user) => (
+      type === 'engineer'
+        ? [
+            user.id,
+            user.user_no,
+            user.name,
+            user.company,
+            user.phone,
+            user.status,
+            user.engineer_role,
+            user.regional_lead_name,
+            user.service_region,
+            user.responsible_region,
+            user.team_name,
+            (user.specialties || []).join('; '),
+            (user.services || []).join('; '),
+            user.rating_technical,
+            user.rating_count,
+            user.created_at,
+          ]
+        : [user.id, user.user_no, user.name, user.company, user.phone, user.region, user.created_at]
+    ));
+    downloadCsv(filename, [headers, ...rows]);
+  };
 
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
         <h2 className="text-lg font-semibold">{t.title}</h2>
-        <button
-          onClick={() => { resetAddForm(); setShowAdd(true); }}
-          className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm bg-[var(--color-primary)] text-white hover:opacity-90 transition-opacity"
-        >
-          <Plus size={16} />
-          {t.addUser}
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={exportCurrentList}
+            disabled={data.list.length === 0}
+            className="px-3 py-2 rounded-lg text-sm border border-[var(--color-border)] text-[var(--color-text-secondary)] hover:text-[var(--color-text)] disabled:opacity-40"
+          >
+            {t.exportCurrent}
+          </button>
+          <button
+            onClick={() => { resetAddForm(); setShowAdd(true); }}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm bg-[var(--color-primary)] text-white hover:opacity-90 transition-opacity"
+          >
+            <Plus size={16} />
+            {t.addUser}
+          </button>
+        </div>
       </div>
 
       {/* Tab 切换 */}
       <div className="flex gap-2 mb-4">
         {[
           { key: 'customer', label: t.customer },
-          { key: 'engineer', label: t.engineer },
         ].map((tab) => (
           <button
             key={tab.key}
-            onClick={() => { setType(tab.key); setSearch(''); setFilterStatus(''); setFilterRegion(''); setFilterSpecialty(''); }}
+            onClick={() => { setSearch(''); setFilterStatus(''); setFilterRegion(''); setFilterSpecialty(''); }}
             className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
               type === tab.key
                 ? 'bg-[var(--color-primary)] text-white'
@@ -602,22 +649,6 @@ export function UsersPage() {
               {addError && (
                 <div className="px-3 py-2 rounded-lg bg-[var(--color-error)]/10 text-[var(--color-error)] text-sm">{addError}</div>
               )}
-
-              <div className="flex gap-2">
-                {['customer', 'engineer'].map((t) => (
-                  <button
-                    key={t}
-                    onClick={() => setAddType(t)}
-                    className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-                      addType === t
-                        ? 'bg-[var(--color-primary)] text-white'
-                        : 'bg-[var(--color-surface-elevated)] text-[var(--color-text-secondary)]'
-                    }`}
-                  >
-                    {t === 'customer' ? (TEXT[runtimeConfig.locale] || TEXT.en).customer : (TEXT[runtimeConfig.locale] || TEXT.en).engineer}
-                  </button>
-                ))}
-              </div>
 
               <input
                 type="text"

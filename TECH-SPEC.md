@@ -12,8 +12,7 @@
 ```
 GitHub 仓库（代码托管）
     ↓ push / merge
-Cloudflare Pages（国际版前台/后台 + 中国版辅助目标）
-Aliyun ECS + nginx（中国版前台/后台/工程师端实际生产入口）
+Cloudflare Pages（官网部署）
 Cloudflare Workers（AI API 代理 + 工单后端）
     ↓
 Cloudflare D1（国际版 / 中国版独立数据库）
@@ -23,14 +22,12 @@ OpenAI-compatible LLM API（DeepSeek / OpenAI / compatible provider）
 
 生产环境按域名分为两套业务入口：
 
-| 版本 | 前台 | 后台 | 工程师端 | API | 数据库 |
-|------|------|------|----------|-----|--------|
-| 国际版 | `sagemro.com` | `admin.sagemro.com` | `engineer.sagemro.com`（同 frontend 构建逻辑） | `api.sagemro.com` | D1 `sagemro-db` |
-| 中国版 | `sagemro.cn` | `admin.sagemro.cn` | `engineer.sagemro.cn` | `api.sagemro.cn` | D1 `sagemro-db-cn` |
+| 版本 | 前台 | 后台 | API | 数据库 |
+|------|------|------|-----|--------|
+| 国际版 | `sagemro.com` | `admin.sagemro.com` | `api.sagemro.com` | D1 `sagemro-db` |
+| 中国版 | `sagemro.cn` | `admin.sagemro.cn` | `api.sagemro.cn` | D1 `sagemro-db-cn` |
 
-前台和工程师端使用同一套 `frontend` React 源码，后台使用 `admin` 源码。运行在 `.cn` 域名时默认调用 `https://api.sagemro.cn`。Worker 使用同一套代码部署，按 API 域名或请求来源域名把中国版请求路由到 `DB_CN`，避免中英文版本数据混用。
-
-当前 `sagemro.cn`、`admin.sagemro.cn`、`engineer.sagemro.cn` 的实际生产流量由阿里云 ECS/nginx 承载；Cloudflare Pages 的中国版项目仅作为辅助部署目标和构建校验参考。详见 [DEPLOY.md](./DEPLOY.md)。
+前台和后台使用同一套 React 源码，但运行在 `.cn` 域名时默认调用 `https://api.sagemro.cn`。Worker 使用同一套代码部署，按 API 域名或请求来源域名把中国版请求路由到 `DB_CN`，避免中英文版本数据混用。
 
 ### 1.1 技术栈
 
@@ -41,7 +38,7 @@ OpenAI-compatible LLM API（DeepSeek / OpenAI / compatible provider）
 | 图标 | Lucide React |
 | 动画 | Framer Motion |
 | 路由 | React Router DOM |
-| 部署 | 国际版 Cloudflare Pages；中国版阿里云 ECS + nginx；API Cloudflare Workers |
+| 部署 | Cloudflare Pages |
 | 后端 | Cloudflare Workers |
 | 数据库 | Cloudflare D1（SQLite） |
 | AI | OpenAI-compatible Chat Completions API（model configurable） |
@@ -54,7 +51,6 @@ OpenAI-compatible LLM API（DeepSeek / OpenAI / compatible provider）
 - **中国版域名**：`sagemro.cn`
 - **国际版后台**：`admin.sagemro.com`
 - **中国版后台**：`admin.sagemro.cn`
-- **中国版工程师端**：`engineer.sagemro.cn`
 - **国际版 API**：`api.sagemro.com`
 - **中国版 API**：`api.sagemro.cn`
 - **GitHub 仓库**：`lasersolutions4u-debug/sagemro.com`
@@ -163,13 +159,7 @@ VITE_API_BASE=https://api.sagemro.com
 |------|------|
 | `ENVIRONMENT` | `development` / `production` |
 
-本地调试如需固定验证码，可在不提交的 `worker/.dev.vars` 中设置：
-
-```text
-DEV_BYPASS_CODE=123456
-```
-
-不要把 `DEV_BYPASS_CODE` 写入 `wrangler.toml`。该值只用于本地开发/自动化调试，不能进入生产配置。
+本地调试如需固定验证码，可在未提交的 `worker/.dev.vars` 中设置 `DEV_BYPASS_CODE`。不要把固定验证码写入 `wrangler.toml`。
 
 ### 4.3 Worker Secrets（`wrangler secret put`）
 
@@ -180,8 +170,10 @@ DEV_BYPASS_CODE=123456
 | `OPENAI_CHAT_MODEL` | 主聊天模型名（可选但生产建议显式设置） |
 | `OPENAI_JSON_MODEL` | JSON/摘要/报价点评模型名（可选，不设置则回退聊天模型） |
 | `JWT_SECRET` | JWT 签名密钥 |
-| `ADMIN_PHONE` | 管理员手机号 |
-| `ADMIN_PASSWORD` | 管理员密码 |
+| `ADMIN_PHONE` | 国际版后台管理员手机号（`admin.sagemro.com`） |
+| `ADMIN_PASSWORD` | 国际版后台管理员密码 |
+| `ADMIN_PHONE_CN` | 中国版后台管理员手机号（`admin.sagemro.cn`，未配置时临时回退国际版账号） |
+| `ADMIN_PASSWORD_CN` | 中国版后台管理员密码（需与 `ADMIN_PHONE_CN` 成对配置） |
 | `ONESIGNAL_APP_ID` | OneSignal 推送 App ID |
 | `ONESIGNAL_REST_API_KEY` | OneSignal REST API Key |
 
@@ -195,14 +187,12 @@ DEV_BYPASS_CODE=123456
 |------|--------------|
 | 网站主域名 | `sagemro.cn` |
 | 管理后台 | `admin.sagemro.cn` |
-| 工程师端 | `engineer.sagemro.cn` |
 | API 服务 | `api.sagemro.cn` |
-| 前台/后台/工程师端接入 | 当前由阿里云 ECS + nginx 对外服务 |
 | 数据库 | D1 `sagemro-db-cn`，与国际版 `sagemro-db` 隔离 |
 | 数据路由 | Worker 按 `.cn` API 域名或 `.cn` 来源域名进入 `DB_CN` |
 | 用户协议/隐私政策 | 中国版页面需展示适用于国内主体的协议、隐私政策和 AI 服务说明 |
 | 许可证展示 | 取得 ICP 经营许可证后，应在 `sagemro.cn` 页脚展示许可证编号 |
-| 备案/接入 | 中国版前台、后台、工程师端已接入阿里云 ECS。API 当前仍在 Cloudflare Workers，按后续资质或接入要求评估是否继续迁移 |
+| 备案/接入 | 如主管部门或接入商要求大陆接入，应将中国版前台、后台、API 迁移或接入到可备案的国内接入服务商 |
 
 ---
 
@@ -535,6 +525,12 @@ DELETE /api/devices/:id          删除设备
 
 ## 七、关键业务流程
 
+### 7.0 当前商业模式口径
+
+SAGEMRO 当前按信息服务与服务协调模式运营。系统用于承接客户需求、AI 初步诊断、服务申请整理、内部审核、服务资源协调、派工记录、服务报告和后续跟进。收入口径为信息服务费、服务协调费或技术咨询服务费，由 SAGEMRO 与客户或合作方在线下通过合同、报价或服务单另行确认。
+
+当前产品不作为公开工程师撮合平台、佣金抽成平台或资金托管结算平台运营。客户侧不展示平台抽佣、工程师钱包、提现、自动分账或自由竞价规则。
+
 ### 7.1 服务申请状态机
 
 ```
@@ -546,15 +542,15 @@ pending → assigned → in_progress → pricing → in_service → resolved →
 ### 7.2 派工与服务报告主流程
 
 1. 客户通过 AI 工具、AI 对话或服务申请入口提交需求。
-2. SAGEMRO 后台在“服务运营”中选择内部工程师并派工。
-3. 工程师处理服务任务，必要时提交报价或沟通备件/差旅。
+2. SAGEMRO 后台在“服务运营”中审核需求，并选择内部工程师、认证服务代表或合作服务资源进行协调。
+3. 工程师或服务代表处理服务任务，必要时提交服务准备信息、备件/差旅参考或线下报价所需资料。
 4. 工程师保存服务报告，包含客户现象、诊断、处理动作、配件、工时和后续建议。
 5. 工程师标记服务完成；后端要求已有服务报告内容。
 6. 客户确认服务并提交评价，服务申请进入 completed。
 
 ### 7.3 SERVICE_OS_LEGACY：旧核价/分账字段
 
-旧 `platform_fee`、`commission_rate`、`wallet_balance`、`engineer_wallets` 等字段仍在数据库中保留，用于历史兼容和后续清理。当前产品口径不展示平台抽佣、工程师钱包或提现。
+旧 `platform_fee`、`commission_rate`、`wallet_balance`、`engineer_wallets` 等字段仍在数据库中保留，用于历史兼容和后续清理。当前产品口径不展示平台抽佣、工程师钱包、提现、自动分账或资金托管能力。
 
 ---
 

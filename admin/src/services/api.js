@@ -52,6 +52,17 @@ export async function getAdminUsers(type = 'customer', page = 1, pageSize = 20, 
   return request(`/api/admin/users?${params}`);
 }
 
+export async function getAdminEngineerDetail(engineerId) {
+  return request(`/api/admin/engineers/${engineerId}`);
+}
+
+export async function updateAdminEngineer(engineerId, data) {
+  return request(`/api/admin/engineers/${engineerId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  });
+}
+
 export async function getAdminWorkOrders(status = 'all', page = 1, pageSize = 20) {
   return request(`/api/admin/workorders?status=${status}&page=${page}&pageSize=${pageSize}`);
 }
@@ -96,6 +107,21 @@ export async function rejectAdminWorkOrderPricing(workOrderId, note = '') {
   return request(`/api/admin/workorders/${workOrderId}/pricing/reject`, {
     method: 'PATCH',
     body: JSON.stringify({ note }),
+  });
+}
+
+
+export async function approveAdminWorkOrderPaymentStart(workOrderId, note = '') {
+  return request(`/api/admin/workorders/${workOrderId}/payment/approve-start`, {
+    method: 'POST',
+    body: JSON.stringify({ note }),
+  });
+}
+
+export async function updateAdminWorkOrderPayout(workOrderId, data) {
+  return request(`/api/admin/workorders/${workOrderId}/payout`, {
+    method: 'PATCH',
+    body: JSON.stringify(data),
   });
 }
 
@@ -162,19 +188,22 @@ export async function updateAdminLead(leadId, status) {
   });
 }
 
-export async function getAdminUpsellRequests(page = 1, pageSize = 20, filters = {}) {
+export async function getAdminKnowledge(page = 1, pageSize = 20, filters = {}) {
   const params = new URLSearchParams({ page, pageSize, ...filters });
-  return request(`/api/admin/upsell-requests?${params}`);
+  return request(`/api/admin/knowledge?${params}`);
 }
 
-export async function getAdminUpsellRequest(requestId) {
-  return request(`/api/admin/upsell-requests/${requestId}`);
+export async function createAdminKnowledge(article) {
+  return request('/api/admin/knowledge', {
+    method: 'POST',
+    body: JSON.stringify(article),
+  });
 }
 
-export async function updateAdminUpsellRequest(requestId, payload) {
-  return request(`/api/admin/upsell-requests/${requestId}`, {
+export async function updateAdminKnowledge(articleId, article) {
+  return request(`/api/admin/knowledge/${articleId}`, {
     method: 'PATCH',
-    body: JSON.stringify(payload),
+    body: JSON.stringify(article),
   });
 }
 

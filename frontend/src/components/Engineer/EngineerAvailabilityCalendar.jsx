@@ -8,15 +8,15 @@ import {
 
 const COPY = {
   cn: {
-    title: '可接单时间',
-    subtitle: '把你方便到场、暂时不可接单和已经预留的时间写清楚。运营和区域负责人安排任务时，会优先参考这里。',
+    title: '我的排单日历',
+    subtitle: '请主动维护你的可服务时间、不可服务时间和已预留现场时间。Admin 与区域负责人派工时会把它作为重要参考。',
     type: '类型',
     titleLabel: '标题',
     start: '开始时间',
     end: '结束时间',
     region: '区域',
     notes: '备注',
-    add: '保存时间安排',
+    add: '发布排单信号',
     adding: '正在添加...',
     empty: '暂无日历记录',
     delete: '删除',
@@ -24,13 +24,13 @@ const COPY = {
     createError: '日历记录保存失败',
     deleteError: '日历记录删除失败',
     defaultTitle: {
-      engineer_available: '可接现场服务',
-      engineer_unavailable: '暂不接单',
-      reserved_for_service: '已预留现场服务',
+      engineer_available: '可安排现场服务',
+      engineer_unavailable: '暂不可安排',
+      reserved_for_service: '已预留服务时间',
     },
     eventTypes: [
-      ['engineer_available', '可接单'],
-      ['engineer_unavailable', '暂不接单'],
+      ['engineer_available', '可服务'],
+      ['engineer_unavailable', '不可服务'],
       ['reserved_for_service', '已预留'],
     ],
   },
@@ -71,17 +71,45 @@ function getLocale() {
 function defaultLocalDateTime(hoursFromNow) {
   const date = new Date(Date.now() + hoursFromNow * 3600000);
   date.setMinutes(0, 0, 0);
-  return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+  return formatLocalDateTimeInput(date);
+}
+
+function padDatePart(value) {
+  return String(value).padStart(2, '0');
+}
+
+function formatLocalDateTimeInput(valueOrDate) {
+  const date = valueOrDate instanceof Date ? valueOrDate : new Date(valueOrDate);
+  if (Number.isNaN(date.getTime())) return '';
+  return [
+    date.getFullYear(),
+    '-',
+    padDatePart(date.getMonth() + 1),
+    '-',
+    padDatePart(date.getDate()),
+    ' ',
+    padDatePart(date.getHours()),
+    ':',
+    padDatePart(date.getMinutes()),
+  ].join('');
+}
+
+function parseLocalDateTimeInput(value) {
+  const match = String(value || '').trim().match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})$/);
+  if (!match) return '';
+  const [, year, month, day, hour, minute] = match;
+  const date = new Date(Number(year), Number(month) - 1, Number(day), Number(hour), Number(minute), 0, 0);
+  return Number.isNaN(date.getTime()) ? '' : date.toISOString();
 }
 
 function localDateTimeToIso(value) {
-  return value ? new Date(value).toISOString() : '';
+  return parseLocalDateTimeInput(value);
 }
 
 function formatDateTime(value) {
   if (!value) return '-';
   try {
-    return new Intl.DateTimeFormat(undefined, {
+    return new Intl.DateTimeFormat('en-US', {
       month: 'short',
       day: 'numeric',
       hour: '2-digit',
@@ -218,9 +246,10 @@ export function EngineerAvailabilityCalendar() {
           <label className="text-xs font-medium text-[var(--color-text-secondary)]">
             {copy.start}
             <input
-              type="datetime-local"
+              type="text"
               value={form.start_at}
               onChange={(event) => updateField('start_at', event.target.value)}
+              placeholder="YYYY-MM-DD HH:mm"
               className="mt-1 w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text-primary)] outline-none transition focus:border-[var(--color-primary)]"
               required
             />
@@ -228,9 +257,10 @@ export function EngineerAvailabilityCalendar() {
           <label className="text-xs font-medium text-[var(--color-text-secondary)]">
             {copy.end}
             <input
-              type="datetime-local"
+              type="text"
               value={form.end_at}
               onChange={(event) => updateField('end_at', event.target.value)}
+              placeholder="YYYY-MM-DD HH:mm"
               className="mt-1 w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text-primary)] outline-none transition focus:border-[var(--color-primary)]"
               required
             />

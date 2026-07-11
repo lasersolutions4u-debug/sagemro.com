@@ -102,11 +102,11 @@ export async function registerCustomer({ name, phone, email, password, code, com
 /**
  * 登录
  */
-export async function login({ phone, password }) {
+export async function login({ phone, email, password }) {
   const response = await fetch(`${API_BASE}/api/auth/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ phone, password }),
+    body: JSON.stringify({ phone, email, password }),
   });
   if (!response.ok) {
     const data = await response.json();
@@ -231,6 +231,24 @@ export async function uploadChatImage(file) {
   if (!response.ok) {
     const err = await response.json().catch(() => ({}));
     throw new Error(err.error || `Upload failed (${response.status})`);
+  }
+
+  return response.json();
+}
+
+export async function transcribeVoiceInput(audioBlob) {
+  const formData = new FormData();
+  formData.append('audio', audioBlob, 'voice.webm');
+
+  const response = await fetch(`${API_BASE}/api/chat/transcribe`, {
+    method: 'POST',
+    headers: authHeadersNoContentType(),
+    body: formData,
+  });
+
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.error || `Transcription failed (${response.status})`);
   }
 
   return response.json();
@@ -368,30 +386,6 @@ export async function createMaterialRequest(data) {
     method: 'POST',
     headers: authHeaders(),
     body: JSON.stringify(data),
-  });
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({}));
-    throw new Error(error.error || `HTTP ${response.status}`);
-  }
-  return response.json();
-}
-
-export async function createUpsellRequest(payload) {
-  const response = await fetch(`${API_BASE}/api/upsell-requests`, {
-    method: 'POST',
-    headers: authHeaders(),
-    body: JSON.stringify(payload),
-  });
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({}));
-    throw new Error(error.error || `HTTP ${response.status}`);
-  }
-  return response.json();
-}
-
-export async function getMyUpsellRequests() {
-  const response = await fetch(`${API_BASE}/api/upsell-requests/mine`, {
-    headers: authHeaders(),
   });
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
@@ -725,6 +719,20 @@ export async function payWorkOrder(workOrderId, { payment_method }) {
   return response.json();
 }
 
+export async function requestWorkOrderPaymentStart(workOrderId, note = '') {
+  const response = await fetch(`${API_BASE}/api/workorders/${workOrderId}/payment/start-request`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({ note }),
+  });
+  if (!response.ok) {
+    const d = await response.json();
+    throw new Error(d.error || `HTTP ${response.status}`);
+  }
+  return response.json();
+}
+
+
 /**
  * 获取工单付款记录
  */
@@ -734,6 +742,15 @@ export async function getWorkOrderPayment(workOrderId) {
   });
   if (!response.ok) throw new Error(`HTTP ${response.status}`);
   return response.json();
+}
+
+export async function getWorkOrderPayout(workOrderId) {
+  const response = await fetch(`${API_BASE}/api/workorders/${workOrderId}`, {
+    headers: authHeaders(),
+  });
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  const data = await response.json();
+  return { payout: data.payout || null, payout_status: data.payout_status || 'not_ready' };
 }
 
 // 保存推送订阅（OneSignal Player ID）
@@ -888,11 +905,37 @@ export async function updateCustomerProfile({ name, region }) {
 /**
  * 更新工程师档案
  */
-export async function updateEngineerProfile({ name, bio, service_region, bank_name, bank_account, bank_branch, account_holder }) {
+export async function updateEngineerProfile({
+  name,
+  bio,
+  service_region,
+  payout_method,
+  paypal_account,
+  bank_country,
+  bank_name,
+  bank_account,
+  bank_branch,
+  bank_swift_code,
+  account_holder,
+  payout_notes,
+}) {
   const response = await fetch(`${API_BASE}/api/engineers/profile`, {
     method: 'PATCH',
     headers: { ...authHeaders(), 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name, bio, service_region, bank_name, bank_account, bank_branch, account_holder }),
+    body: JSON.stringify({
+      name,
+      bio,
+      service_region,
+      payout_method,
+      paypal_account,
+      bank_country,
+      bank_name,
+      bank_account,
+      bank_branch,
+      bank_swift_code,
+      account_holder,
+      payout_notes,
+    }),
   });
   if (!response.ok) throw new Error(`HTTP ${response.status}`);
   return response.json();
