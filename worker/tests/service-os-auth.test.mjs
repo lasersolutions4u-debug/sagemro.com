@@ -145,7 +145,7 @@ test('CN public engineer registration closure is localized', async () => {
   const body = await response.json();
 
   assert.equal(response.status, 410);
-  assert.equal(body.error, '工程师账号由 SAGEMRO 内部创建，公开注册已关闭。');
+  assert.equal(body.error, '工程师账号暂不开放公开注册。');
 });
 
 test('COM admin login uses the international admin secret', async () => {
