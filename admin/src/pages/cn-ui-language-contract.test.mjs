@@ -40,3 +40,10 @@ test('CN admin materials import preview uses localized empty-state copy', () => 
   assert.match(source, /noBlockingIssues: '未发现阻塞问题。'/);
   assert.doesNotMatch(source, />No blocking issues found\.<\/div>/);
 });
+
+test('CN admin shell HTML starts with Chinese language metadata on china branch', () => {
+  const source = read('admin/index.html');
+
+  assert.match(source, /<html lang="zh-CN">/);
+  assert.match(source, /<title>SAGEMRO 运营中枢<\/title>/);
+});
