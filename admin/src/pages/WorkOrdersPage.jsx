@@ -1,4 +1,26 @@
-import { useState, useEffect } from 'react';
+import { Component, useState, useEffect } from 'react';
+
+class DetailErrorBoundary extends Component {
+  constructor(props) {
+    super(props);
+    this.state = { error: null };
+  }
+  static getDerivedStateFromError(error) {
+    return { error };
+  }
+  render() {
+    if (this.state.error) {
+      return (
+        <div className="rounded-xl border border-red-500/40 bg-red-500/5 p-4">
+          <h4 className="font-medium text-red-600">Render Error</h4>
+          <pre className="mt-2 whitespace-pre-wrap text-xs text-red-500">{this.state.error?.message || 'Unknown error'}</pre>
+          <p className="mt-2 text-xs text-[var(--color-text-muted)]">Stack: {this.state.error?.stack || 'N/A'}</p>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 import {
   assignAdminWorkOrder,
   assignAdminWorkOrderRegionalLead,
@@ -1108,6 +1130,7 @@ export function WorkOrdersPage() {
             {detailLoading ? (
               <div className="py-12 text-center text-sm text-[var(--color-text-muted)]">{t.loading}</div>
             ) : detail ? (
+              <DetailErrorBoundary>
               <div className="space-y-4">
                 {detail.pricing?.status === 'pending_review' && (
                   <section className="rounded-xl border border-[var(--color-primary)]/40 bg-[var(--color-primary)]/5 p-4">
@@ -1528,6 +1551,7 @@ export function WorkOrdersPage() {
                   </div>
                 </section>
               </div>
+              </DetailErrorBoundary>
             ) : (
               <div className="py-12 text-center text-sm text-[var(--color-text-muted)]">{t.noDetail}</div>
             )}
