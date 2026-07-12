@@ -636,9 +636,9 @@ test('engineer work order views redact customer contact before service and insid
   assert.match(messagePanel, /import \{ redactContactInfo \}/);
   assert.match(read('frontend/src/components/Engineer/EngineerWorkspace.jsx'), /redactContactInfo\(replaceChineseDeviceLabels\(description\)\)/);
   assert.match(detailModal, /canEngineerViewCustomerContact\(effectiveStatus\)/);
-  assert.match(detailModal, /redactContactInfo\(workOrder\.description\)/);
+  assert.match(detailModal, /redactContactInfo\(formatServiceTextForLocale\(workOrder\.description/);
   assert.match(detailModal, /const customerPhoneDisplay = shouldShowCustomerContact \? detail\?\.customer_phone : detail\?\.customer_phone \? 'XXX' : ''/);
-  assert.match(messagePanel, /redactContactInfo\(msg\.content\)/);
+  assert.match(messagePanel, /redactContactInfo\(formatServiceTextForLocale\(msg\.content/);
   assert.match(messagePanel, /content: redactContactInfo\(input\.trim\(\)\)/);
   assert.match(worker, /function redactContactInfoForWorkOrder/);
   assert.match(worker, /customer_phone: ''/);
