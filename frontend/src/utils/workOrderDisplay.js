@@ -148,7 +148,7 @@ export function toEnglishRegionValue(value) {
   if (!value) return '';
   if (!/[\u4e00-\u9fff]/.test(String(value))) return String(value).trim();
   return String(value)
-    .split(/[,，、;；/\-]/)
+    .split(/[,，、;；/-]/)
     .map((part) => {
       const clean = part.trim();
       return REGION_EN.get(clean) || clean;
