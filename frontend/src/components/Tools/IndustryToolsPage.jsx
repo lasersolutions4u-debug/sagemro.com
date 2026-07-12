@@ -92,6 +92,24 @@ export function IndustryToolsPage({ pathname = '/tools', onOpenLegal }) {
 }
 
 function ToolsHub({ onOpenLegal }) {
+  const referenceItems = [
+    {
+      label: 'Material range',
+      Icon: Scale,
+      body: Object.values(materialDensities).map((item) => item.label).join(', '),
+    },
+    {
+      label: 'Profile coverage',
+      Icon: Ruler,
+      body: Object.values(shapeProfiles).map((item) => item.label).join(', '),
+    },
+    {
+      label: 'Planning boundary',
+      Icon: Calculator,
+      body: 'Planning references only. Supplier quotes and qualified review decide final production choices.',
+    },
+  ];
+
   useEffect(() => {
     document.title = 'Free Sheet Metal and Laser Cutting Calculators | SAGEMRO';
     setMeta('description', 'Use free SAGEMRO calculators for metal weight, steel price planning, laser cutting cost, gas use, speed reference, bending, ROI, and auxiliary sizing.');
@@ -127,20 +145,11 @@ function ToolsHub({ onOpenLegal }) {
         </div>
       </section>
 
-      <section className="border-y border-[var(--color-border)] bg-[#111820] px-4 py-5 text-white sm:px-6">
-        <div className="mx-auto grid max-w-6xl gap-4 text-sm sm:grid-cols-3">
-          <div>
-            <div className="text-xs uppercase tracking-[0.14em] text-amber-300">Materials</div>
-            <p className="mt-1 text-white/80">{Object.values(materialDensities).map((item) => item.label).join(', ')}</p>
-          </div>
-          <div>
-            <div className="text-xs uppercase tracking-[0.14em] text-amber-300">Profiles</div>
-            <p className="mt-1 text-white/80">{Object.values(shapeProfiles).map((item) => item.label).join(', ')}</p>
-          </div>
-          <div>
-            <div className="text-xs uppercase tracking-[0.14em] text-amber-300">Boundary</div>
-            <p className="mt-1 text-white/80">Planning references only. Supplier quotes and qualified review decide final production choices.</p>
-          </div>
+      <section className="border-y border-[#1f2a32] bg-[#0f171d] px-4 py-6 text-white sm:px-6">
+        <div className="mx-auto grid max-w-6xl overflow-hidden rounded-lg border border-white/10 bg-white/[0.025] text-sm shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] md:grid-cols-3">
+          {referenceItems.map((item, index) => (
+            <ToolReferenceItem key={item.label} item={item} isFirst={index === 0} />
+          ))}
         </div>
       </section>
 
@@ -159,6 +168,22 @@ function ToolsHub({ onOpenLegal }) {
         </div>
       </section>
     </ToolPageShell>
+  );
+}
+
+function ToolReferenceItem({ item, isFirst }) {
+  const Icon = item.Icon;
+
+  return (
+    <div className={`flex gap-3 px-5 py-5 ${isFirst ? '' : 'border-t border-white/10 md:border-l md:border-t-0'}`}>
+      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-amber-300/10 text-amber-300 ring-1 ring-amber-300/15">
+        <Icon size={17} />
+      </div>
+      <div className="min-w-0">
+        <div className="text-xs font-semibold uppercase tracking-[0.14em] text-amber-300">{item.label}</div>
+        <p className="mt-2 text-sm leading-6 text-white/78">{item.body}</p>
+      </div>
+    </div>
   );
 }
 

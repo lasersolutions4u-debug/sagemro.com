@@ -386,6 +386,14 @@ test('client shell moves conversation history into a modal and exposes industry 
   assert.match(industryToolsPage, /href=\{`\/tools\/\$\{tool\.slug\}`\}/);
   assert.match(industryToolsPage, /link\[rel="canonical"\]/);
   assert.match(industryToolsPage, /meta\[name="\$\{name\}"\]/);
+  assert.match(industryToolsPage, /referenceItems/);
+  assert.match(industryToolsPage, /ToolReferenceItem/);
+  assert.match(industryToolsPage, /Material range/);
+  assert.match(industryToolsPage, /Profile coverage/);
+  assert.match(industryToolsPage, /Planning boundary/);
+  assert.match(industryToolsPage, /bg-\[#0f171d\]/);
+  assert.match(industryToolsPage, /border-white\/10/);
+  assert.match(industryToolsPage, /md:border-l/);
   assert.match(industryTools, /Metal Weight Calculator/);
   assert.match(industryTools, /Steel Price Watch/);
   assert.match(industryTools, /Laser Cutting Cost Calculator/);
