@@ -9852,6 +9852,56 @@ async function handlePostWorkOrderMessage(request, env) {
       afterState: { message_id: id, sender_type, is_internal_note: internalNote },
     });
 
+    // 工单消息推送通知
+    if (!internalNote && sender_type !== 'system') {
+      const market = getRequestMarket(request);
+      const preview = (content || '').slice(0, 100);
+      if (sender_type === 'customer' && wo.engineer_id) {
+        createNotification(env, {
+          user_id: wo.engineer_id,
+          user_type: 'engineer',
+          type: 'work_order_message',
+          title: market === 'cn' ? '工单新消息' : 'New Work Order Message',
+          body: market === 'cn'
+            ? `工单 ${wo.order_no} 客户消息：${preview}`
+            : `Customer replied on ${wo.order_no}: ${preview}`,
+          data: { work_order_id: workOrderId, message_id: id },
+        });
+      } else if (sender_type === 'engineer' && wo.customer_id) {
+        createNotification(env, {
+          user_id: wo.customer_id,
+          user_type: 'customer',
+          type: 'work_order_message',
+          title: market === 'cn' ? '工单新消息' : 'New Work Order Message',
+          body: market === 'cn'
+            ? `工单 ${wo.order_no} 工程师回复：${preview}`
+            : `Engineer replied on ${wo.order_no}: ${preview}`,
+          data: { work_order_id: workOrderId, message_id: id },
+        });
+      } else if (sender_type === 'admin') {
+        if (wo.engineer_id) {
+          createNotification(env, {
+            user_id: wo.engineer_id,
+            user_type: 'engineer',
+            type: 'work_order_message',
+            title: market === 'cn' ? '工单新消息' : 'New Work Order Message',
+            body: market === 'cn' ? `管理员在工单 ${wo.order_no} 留言：${preview}` : `Admin messaged on ${wo.order_no}: ${preview}`,
+            data: { work_order_id: workOrderId, message_id: id },
+          });
+        }
+        if (wo.customer_id) {
+          createNotification(env, {
+            user_id: wo.customer_id,
+            user_type: 'customer',
+            type: 'work_order_message',
+            title: market === 'cn' ? '工单新消息' : 'New Work Order Message',
+            body: market === 'cn' ? `管理员在工单 ${wo.order_no} 留言：${preview}` : `Admin messaged on ${wo.order_no}: ${preview}`,
+            data: { work_order_id: workOrderId, message_id: id },
+          });
+        }
+      }
+    }
+
     return jsonResponse({ success: true, id, attachment_urls: attachments });
   } catch (error) {
     return errorResponse(error.message, 500);

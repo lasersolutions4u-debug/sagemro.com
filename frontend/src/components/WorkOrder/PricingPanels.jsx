@@ -16,7 +16,7 @@ import {
   getEngineerPricingTotals,
 } from './pricingDraft';
 
-const CURRENCY = 'USD';
+const CURRENCY = isCnLocale() ? 'CNY' : 'USD';
 
 const PRICING_COPY = {
   en: {
@@ -104,13 +104,13 @@ const PRICING_COPY = {
       confirmQuote: '确认报价',
       negotiate: '沟通报价',
       negotiationPlaceholder: '请说明你希望沟通报价的原因...',
-      counterOfferPlaceholder: '你的期望价格（USD，可选）',
+      counterOfferPlaceholder: '你的期望价格（CNY，可选）',
       cancel: '取消',
       submitting: '提交中...',
       confirmNotice: '确认后，请选择付款方式。工程师会跟进收款凭证，Admin 收到后批准开始服务。',
       confirming: '确认中...',
       quoteConfirmed: '报价已确认',
-      payment: (amount) => `获取付款说明（${amount} USD）`,
+      payment: (amount) => `获取付款说明（${amount} CNY）`,
     },
   },
 };

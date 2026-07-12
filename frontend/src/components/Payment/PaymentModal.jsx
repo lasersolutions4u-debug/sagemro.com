@@ -9,7 +9,7 @@ const PAYMENT_METHODS = [
   { id: 'paypal_card', label: 'PayPal / Credit or Debit Card', icon: CreditCard, desc: 'Pay through the official PayPal page, then send the payment screenshot in Messages.' },
 ];
 
-const CURRENCY = 'USD';
+const CURRENCY = isCnLocale() ? 'CNY' : 'USD';
 const PAYPAL_PAYMENT_LINK = 'https://www.paypal.com/ncp/payment/4YLFXRSUSZJ5N';
 
 const COPY = {
