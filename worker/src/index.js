@@ -3189,6 +3189,13 @@ export async function handleChat(request, env) {
         { label: 'chat:load_conversation' },
       );
       if (existingConversation) {
+        // 已认证用户访问无主对话时自动认领
+        if (trustedCustomerId && !existingConversation.customer_id && !existingConversation.engineer_id) {
+          await env.DB.prepare(
+            'UPDATE conversations SET customer_id = ? WHERE id = ? AND customer_id IS NULL'
+          ).bind(trustedCustomerId, conversation_id).run();
+          existingConversation.customer_id = trustedCustomerId;
+        }
         if (trustedRole === 'guest') {
           if (existingConversation.customer_id || existingConversation.engineer_id) {
             return errorResponse('您无权访问该对话', 403);
