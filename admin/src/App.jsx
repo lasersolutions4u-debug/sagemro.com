@@ -39,7 +39,7 @@ const TEXT = {
     nav: {
       dashboard: '运营驾驶舱',
       leads: '整机线索',
-      workorders: '派工与服务质量',
+      workorders: '服务工单',
       engineerApplications: '工程师申请审核',
       materials: '物料管理',
       knowledge: '知识库',
