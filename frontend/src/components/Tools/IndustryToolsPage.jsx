@@ -164,15 +164,17 @@ function ToolsHub({ copy, locale, onOpenLegal }) {
     <ToolPageShell copy={copy} onOpenLegal={onOpenLegal}>
       <section className="mx-auto grid max-w-6xl gap-8 px-4 py-8 sm:px-6 lg:grid-cols-[0.9fr_1.1fr] lg:py-12">
         <div>
-          <a href="/" className="mb-6 inline-flex items-center gap-2 text-sm text-[var(--color-text-secondary)] hover:text-[var(--color-primary)]">
-            <ArrowLeft size={16} />
-            {copy.back}
-          </a>
-          <div className="inline-flex items-center gap-2 rounded-lg border border-[#263238] bg-[#111820] px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-white">
-            <Calculator size={14} className="text-[var(--color-primary)]" />
-            {copy.eyebrow}
+          <div className="flex flex-col items-start gap-4">
+            <a href="/" className="inline-flex items-center gap-2 text-sm text-[var(--color-text-secondary)] hover:text-[var(--color-primary)]">
+              <ArrowLeft size={16} />
+              {copy.back}
+            </a>
+            <div className="inline-flex items-center gap-2 rounded-lg border border-[#263238] bg-[#111820] px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-white">
+              <Calculator size={14} className="text-[var(--color-primary)]" />
+              {copy.eyebrow}
+            </div>
           </div>
-          <h1 className="mt-5 max-w-3xl text-3xl font-semibold leading-tight text-[var(--color-text-primary)] sm:text-5xl">
+          <h1 className="mt-5 max-w-3xl break-keep text-3xl font-semibold leading-[1.08] text-[var(--color-text-primary)] sm:text-[2.75rem]">
             {copy.h1}
           </h1>
           <p className="mt-4 max-w-2xl text-sm leading-7 text-[var(--color-text-secondary)] sm:text-base">
@@ -233,10 +235,12 @@ function ToolDetail({ tool, copy, locale, values, onChange, onOpenLegal }) {
   return (
     <ToolPageShell copy={copy} onOpenLegal={onOpenLegal}>
       <main className="mx-auto max-w-6xl px-4 py-8 sm:px-6 lg:py-10">
-        <a href="/tools" className="mb-6 inline-flex items-center gap-2 text-sm text-[var(--color-text-secondary)] hover:text-[var(--color-primary)]">
-          <ArrowLeft size={16} />
-          {copy.allTools}
-        </a>
+        <div className="mb-6 flex flex-col items-start gap-4">
+          <a href="/tools" className="inline-flex items-center gap-2 text-sm text-[var(--color-text-secondary)] hover:text-[var(--color-primary)]">
+            <ArrowLeft size={16} />
+            {copy.allTools}
+          </a>
+        </div>
 
         <section className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
           <div>
@@ -244,7 +248,7 @@ function ToolDetail({ tool, copy, locale, values, onChange, onOpenLegal }) {
               <Calculator size={14} className="text-[var(--color-primary)]" />
               {copy.detailEyebrow}
             </div>
-            <h1 className="mt-4 text-3xl font-semibold leading-tight text-[var(--color-text-primary)] sm:text-5xl">
+            <h1 className="mt-4 break-keep text-3xl font-semibold leading-[1.08] text-[var(--color-text-primary)] sm:text-[2.75rem]">
               {tool.seoTitle}
             </h1>
             <p className="mt-4 max-w-3xl text-sm leading-7 text-[var(--color-text-secondary)] sm:text-base">
@@ -306,8 +310,8 @@ function ToolLinkCard({ tool }) {
           <Icon size={18} />
         </div>
         <div>
-          <h2 className="text-base font-semibold text-[var(--color-text-primary)]">{tool.label}</h2>
-          <p className="mt-1 text-sm leading-6 text-[var(--color-text-secondary)]">{tool.description}</p>
+          <h2 className="break-keep text-base font-semibold text-[var(--color-text-primary)]">{tool.label}</h2>
+          <p className="mt-1 break-keep text-sm leading-6 text-[var(--color-text-secondary)]">{tool.description}</p>
         </div>
       </div>
     </a>

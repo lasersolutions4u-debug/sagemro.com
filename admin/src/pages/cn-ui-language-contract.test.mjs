@@ -47,3 +47,12 @@ test('CN admin shell HTML starts with Chinese language metadata on china branch'
   assert.match(source, /<html lang="zh-CN">/);
   assert.match(source, /<title>SAGEMRO 运营中枢<\/title>/);
 });
+
+test('CN admin sidebar translates knowledge and engineer navigation labels', () => {
+  const source = read('admin/src/App.jsx');
+
+  assert.match(source, /knowledge: '知识库'/);
+  assert.match(source, /engineers: '工程师'/);
+  assert.doesNotMatch(source, /t\.nav\.knowledge \|\| 'Knowledge Base'/);
+  assert.doesNotMatch(source, /t\.nav\.engineers \|\| 'Engineers'/);
+});
