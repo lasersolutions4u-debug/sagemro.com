@@ -147,7 +147,8 @@ function App() {
 
   // 当前对话标题
   const currentConversation = conversationId ? getConversation(conversationId) : null;
-  const currentTitle = currentConversation?.title || 'Service Chat';
+  const currentTitle = currentConversation?.title || (isCn ? '服务对话' : 'Service Chat');
+  const historyTitle = isCn ? '会话历史' : 'Conversation History';
 
   // 新建对话
   const handleNewChat = useCallback(() => {
@@ -495,7 +496,7 @@ function App() {
           <Modal
             isOpen={historyModalOpen}
             onClose={() => setHistoryModalOpen(false)}
-            title="Conversation History"
+            title={historyTitle}
             size="2xl"
           >
             <ChatHistory

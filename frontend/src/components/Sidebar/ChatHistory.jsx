@@ -1,9 +1,55 @@
 import { Trash2, Pencil, Check, X } from 'lucide-react';
 import { formatDate } from '../../utils/helpers';
 import { toastError, confirmDialog } from '../../utils/feedback';
+import { isCnLocale } from '../../utils/locale';
 import { useState, useRef, useEffect } from 'react';
 
+const COPY = {
+  en: {
+    title: 'Conversation History',
+    intro: 'Find previous machine issues, service notes, and AI summaries.',
+    search: 'Search conversations',
+    empty: 'Your service conversations will appear here',
+    noMatch: 'No conversations match your search',
+    fallbackTitle: 'Service Chat',
+    renameFailed: 'Rename failed',
+    rename: 'Rename',
+    delete: 'Delete',
+    save: 'Save',
+    cancel: 'Cancel',
+    deleteConfirm: 'Delete this conversation?',
+    dateLabels: {
+      Today: 'Today',
+      Yesterday: 'Yesterday',
+      'Last 7 Days': 'Last 7 Days',
+      Earlier: 'Earlier',
+    },
+  },
+  cn: {
+    title: '会话历史',
+    intro: '查找之前的设备问题、服务记录和 AI 摘要。',
+    search: '搜索会话',
+    empty: '你的服务对话会显示在这里',
+    noMatch: '没有匹配的会话',
+    fallbackTitle: '服务对话',
+    renameFailed: '重命名失败',
+    rename: '重命名',
+    delete: '删除',
+    save: '保存',
+    cancel: '取消',
+    deleteConfirm: '删除这条会话？',
+    dateLabels: {
+      Today: '今天',
+      Yesterday: '昨天',
+      'Last 7 Days': '最近 7 天',
+      Earlier: '更早',
+    },
+  },
+};
+
 export function ChatHistory({ conversations, currentId, onSelect, onDelete, onRename }) {
+  const isCn = isCnLocale();
+  const copy = isCn ? COPY.cn : COPY.en;
   const [query, setQuery] = useState('');
   const normalizedQuery = query.trim().toLowerCase();
   const filteredConversations = normalizedQuery
@@ -22,13 +68,13 @@ export function ChatHistory({ conversations, currentId, onSelect, onDelete, onRe
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="mb-3">
-        <div className="text-sm font-semibold text-[var(--color-text-primary)]">Conversation History</div>
-        <p className="mt-1 text-xs text-[var(--color-text-secondary)]">Find previous machine issues, service notes, and AI summaries.</p>
+        <div className="text-sm font-semibold text-[var(--color-text-primary)]">{copy.title}</div>
+        <p className="mt-1 text-xs text-[var(--color-text-secondary)]">{copy.intro}</p>
       </div>
       <input
         value={query}
         onChange={(event) => setQuery(event.target.value)}
-        placeholder="Search conversations"
+        placeholder={copy.search}
         className="mb-3 w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-3 py-2 text-sm text-[var(--color-text-primary)] placeholder:text-[var(--color-text-muted)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
       />
       <div className="min-h-0 flex-1 overflow-y-auto rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface-elevated)] py-2">
@@ -39,7 +85,7 @@ export function ChatHistory({ conversations, currentId, onSelect, onDelete, onRe
           return (
             <div key={date} className="mb-2">
               <div className="px-4 py-2 text-[12px] font-medium uppercase tracking-wide text-[var(--color-text-muted)]">
-                {date}
+                {copy.dateLabels[date] || date}
               </div>
               {items.map((conv) => (
                 <ConversationItem
@@ -49,6 +95,7 @@ export function ChatHistory({ conversations, currentId, onSelect, onDelete, onRe
                   onSelect={() => onSelect(conv)}
                   onDelete={() => onDelete(conv.id)}
                   onRename={onRename ? (title) => onRename(conv.id, title) : null}
+                  copy={copy}
                 />
               ))}
             </div>
@@ -57,7 +104,7 @@ export function ChatHistory({ conversations, currentId, onSelect, onDelete, onRe
 
         {filteredConversations.length === 0 && (
           <div className="px-4 py-8 text-center text-sm text-[var(--color-text-muted)]">
-            {conversations.length === 0 ? 'Your service conversations will appear here' : 'No conversations match your search'}
+            {conversations.length === 0 ? copy.empty : copy.noMatch}
           </div>
         )}
       </div>
@@ -65,10 +112,10 @@ export function ChatHistory({ conversations, currentId, onSelect, onDelete, onRe
   );
 }
 
-function ConversationItem({ conversation, isActive, onSelect, onDelete, onRename }) {
+function ConversationItem({ conversation, isActive, onSelect, onDelete, onRename, copy }) {
   const [showActions, setShowActions] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
-  const [draftTitle, setDraftTitle] = useState(conversation.title || 'Service Chat');
+  const [draftTitle, setDraftTitle] = useState(conversation.title || copy.fallbackTitle);
   const inputRef = useRef(null);
 
   useEffect(() => {
@@ -80,20 +127,20 @@ function ConversationItem({ conversation, isActive, onSelect, onDelete, onRename
 
   const startRename = (e) => {
     e.stopPropagation();
-    setDraftTitle(conversation.title || 'Service Chat');
+    setDraftTitle(conversation.title || copy.fallbackTitle);
     setIsEditing(true);
   };
 
   const cancelRename = (e) => {
     if (e) e.stopPropagation();
     setIsEditing(false);
-    setDraftTitle(conversation.title || 'Service Chat');
+    setDraftTitle(conversation.title || copy.fallbackTitle);
   };
 
   const commitRename = async (e) => {
     if (e) e.stopPropagation();
     const next = draftTitle.trim();
-    if (!next || next === (conversation.title || 'Service Chat')) {
+    if (!next || next === (conversation.title || copy.fallbackTitle)) {
       cancelRename();
       return;
     }
@@ -101,7 +148,7 @@ function ConversationItem({ conversation, isActive, onSelect, onDelete, onRename
       if (onRename) await onRename(next);
       setIsEditing(false);
     } catch (err) {
-      toastError(`Rename failed: ${err.message || err}`);
+      toastError(`${copy.renameFailed}: ${err.message || err}`);
       cancelRename();
     }
   };
@@ -137,7 +184,7 @@ function ConversationItem({ conversation, isActive, onSelect, onDelete, onRename
           />
         ) : (
           <span className="flex-1 truncate text-[15px] text-[var(--color-text-primary)]">
-            {conversation.title || 'Service Chat'}
+            {conversation.title || copy.fallbackTitle}
           </span>
         )}
       </div>
@@ -153,7 +200,7 @@ function ConversationItem({ conversation, isActive, onSelect, onDelete, onRename
           {onRename && (
             <button
               onClick={startRename}
-              title="Rename"
+              title={copy.rename}
               className="p-1 rounded hover:bg-[var(--color-hover)] text-[var(--color-text-muted)] hover:text-[var(--color-sidebar-text)]"
             >
               <Pencil size={14} />
@@ -162,11 +209,11 @@ function ConversationItem({ conversation, isActive, onSelect, onDelete, onRename
           <button
             onClick={async (e) => {
               e.stopPropagation();
-              if (await confirmDialog('Delete this conversation?', { danger: true, confirmText: 'Delete' })) {
+              if (await confirmDialog(copy.deleteConfirm, { danger: true, confirmText: copy.delete })) {
                 onDelete();
               }
             }}
-            title="Delete"
+            title={copy.delete}
             className="p-1 rounded hover:bg-[var(--color-hover)] text-[var(--color-text-muted)] hover:text-red-400"
           >
             <Trash2 size={14} />
@@ -178,7 +225,7 @@ function ConversationItem({ conversation, isActive, onSelect, onDelete, onRename
           <button
             onMouseDown={(e) => e.preventDefault()} // 防止 blur 先触发
             onClick={commitRename}
-            title="Save"
+            title={copy.save}
             className="p-1 rounded hover:bg-[var(--color-hover)] text-[var(--color-text-muted)] hover:text-green-400"
           >
             <Check size={14} />
@@ -186,7 +233,7 @@ function ConversationItem({ conversation, isActive, onSelect, onDelete, onRename
           <button
             onMouseDown={(e) => e.preventDefault()}
             onClick={cancelRename}
-            title="Cancel"
+            title={copy.cancel}
             className="p-1 rounded hover:bg-[var(--color-hover)] text-[var(--color-text-muted)] hover:text-red-400"
           >
             <X size={14} />

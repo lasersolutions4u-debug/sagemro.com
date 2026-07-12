@@ -18,6 +18,7 @@ const COPY = {
     notes: '备注',
     add: '发布排单信号',
     adding: '正在添加...',
+    loading: '加载中...',
     empty: '暂无日历记录',
     delete: '删除',
     loadError: '日历加载失败',
@@ -45,6 +46,7 @@ const COPY = {
     notes: 'Notes',
     add: 'Publish Scheduling Signal',
     adding: 'Adding...',
+    loading: 'Loading...',
     empty: 'No calendar entries yet',
     delete: 'Delete',
     loadError: 'Failed to load calendar',
@@ -295,7 +297,7 @@ export function EngineerAvailabilityCalendar() {
 
       <div className="mt-4 space-y-2">
         {loading ? (
-          <div className="py-6 text-center text-sm text-[var(--color-text-muted)]">Loading...</div>
+          <div className="py-6 text-center text-sm text-[var(--color-text-muted)]">{copy.loading}</div>
         ) : events.length === 0 ? (
           <div className="py-6 text-center text-sm text-[var(--color-text-muted)]">{copy.empty}</div>
         ) : (

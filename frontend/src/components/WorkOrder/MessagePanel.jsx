@@ -3,6 +3,7 @@ import { Image, Loader2, Paperclip, Send, Video, X } from 'lucide-react';
 import { getWorkOrderMessages, postWorkOrderMessage, uploadWorkOrderAttachment } from '../../services/api';
 import { toastError } from '../../utils/feedback';
 import { redactContactInfo } from '../../utils/contactRedaction';
+import { isCnLocale } from '../../utils/locale';
 
 const ALLOWED_TYPES = [
   'image/jpeg',
@@ -13,6 +14,27 @@ const ALLOWED_TYPES = [
   'video/webm',
 ];
 const MAX_SIZE = 50 * 1024 * 1024;
+
+const COPY = {
+  en: {
+    unsupportedType: 'Unsupported file type: ',
+    fileTooLarge: 'File too large (max 50MB): ',
+    uploading: (current, total) => `Uploading ${current}/${total}`,
+    sendFailed: 'Failed to send: ',
+    empty: 'No messages yet. Start the conversation!',
+    attach: 'Attach image or video',
+    placeholder: 'Type a message...',
+  },
+  cn: {
+    unsupportedType: '暂不支持的文件类型：',
+    fileTooLarge: '文件过大（最大 50MB）：',
+    uploading: (current, total) => `上传中 ${current}/${total}`,
+    sendFailed: '发送失败：',
+    empty: '暂无消息，可以在这里继续沟通。',
+    attach: '添加图片或视频',
+    placeholder: '输入消息...',
+  },
+};
 
 function isVideoUrl(url) {
   return /\.(mp4|webm)(\?.*)?$/i.test(url);
@@ -50,6 +72,7 @@ function MediaGrid({ urls = [], isMe }) {
 }
 
 export function MessagePanel({ workOrderId, userType }) {
+  const copy = isCnLocale() ? COPY.cn : COPY.en;
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
@@ -80,11 +103,11 @@ export function MessagePanel({ workOrderId, userType }) {
     const validFiles = [];
     for (const file of files) {
       if (!ALLOWED_TYPES.includes(file.type)) {
-        toastError(`Unsupported file type: ${file.type || file.name}`);
+        toastError(copy.unsupportedType + (file.type || file.name));
         continue;
       }
       if (file.size > MAX_SIZE) {
-        toastError(`File too large (max 50MB): ${file.name}`);
+        toastError(copy.fileTooLarge + file.name);
         continue;
       }
       validFiles.push(file);
@@ -105,7 +128,7 @@ export function MessagePanel({ workOrderId, userType }) {
       const attachmentUrls = [];
       for (let i = 0; i < pendingFiles.length; i += 1) {
         const file = pendingFiles[i];
-        setUploadingLabel(`Uploading ${i + 1}/${pendingFiles.length}`);
+        setUploadingLabel(copy.uploading(i + 1, pendingFiles.length));
         const result = await uploadWorkOrderAttachment(workOrderId, file);
         const url = result?.attachment?.r2_url;
         if (url) attachmentUrls.push(url);
@@ -119,7 +142,7 @@ export function MessagePanel({ workOrderId, userType }) {
       setPendingFiles([]);
       load();
     } catch (e) {
-      toastError('Failed to send: ' + e.message);
+      toastError(copy.sendFailed + e.message);
     } finally {
       setUploadingLabel('');
       setSending(false);
@@ -130,7 +153,7 @@ export function MessagePanel({ workOrderId, userType }) {
     <div className="space-y-3">
       <div className="max-h-[52dvh] min-h-72 overflow-y-auto space-y-2 p-2 bg-[var(--color-surface-elevated)] rounded-xl sm:max-h-80">
         {messages.length === 0 ? (
-          <div className="text-center py-6 text-xs text-[var(--color-text-muted)]">No messages yet. Start the conversation!</div>
+          <div className="text-center py-6 text-xs text-[var(--color-text-muted)]">{copy.empty}</div>
         ) : (
           messages.map((msg) => {
             const isMe = msg.sender_type === userType;
@@ -195,7 +218,7 @@ export function MessagePanel({ workOrderId, userType }) {
           type="button"
           onClick={() => fileInputRef.current?.click()}
           disabled={sending}
-          title="Attach image or video"
+          title={copy.attach}
           className="flex h-11 w-11 shrink-0 items-center justify-center border border-[var(--color-border)] text-[var(--color-text-secondary)] rounded-xl hover:bg-[var(--color-surface-elevated)] disabled:opacity-40"
         >
           <Paperclip size={16} />
@@ -204,7 +227,7 @@ export function MessagePanel({ workOrderId, userType }) {
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && handleSend()}
-          placeholder="Type a message..."
+          placeholder={copy.placeholder}
           className="min-h-11 min-w-0 flex-1 px-3 py-2 text-sm border border-[var(--color-border)] rounded-xl bg-[var(--color-surface)] text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
         />
         <button

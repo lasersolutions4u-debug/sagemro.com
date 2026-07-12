@@ -2,8 +2,110 @@ import { useState, useEffect } from 'react';
 import { Modal } from '../common/Modal';
 import { Package, Star, ToggleLeft, ToggleRight, ChevronRight } from 'lucide-react';
 import { updateCustomerProfile, updateEngineerProfile, changePassword, getEngineerProfile, updateEngineerStatus } from '../../services/api';
+import { isCnLocale } from '../../utils/locale';
+
+const COPY = {
+  en: {
+    title: 'Account',
+    saved: 'Saved successfully',
+    saveFailed: 'Save failed',
+    statusFailed: 'Failed to update status',
+    passwordMismatch: 'New passwords do not match',
+    passwordTooShort: 'New password must be at least 6 characters',
+    passwordSaved: 'Password changed successfully',
+    changeFailed: 'Change failed',
+    status: { available: 'Available', paused: 'Paused', offline: 'Offline' },
+    level: { junior: 'Junior', senior: 'Senior', expert: 'Expert' },
+    engineerSuffix: 'SAGEMRO Engineer',
+    serviceScore: 'Service Score',
+    reviews: 'reviews',
+    profile: 'Profile',
+    devices: 'My Equipment',
+    password: 'Change Password',
+    name: 'Name',
+    phone: 'Phone',
+    region: 'Region',
+    regionPlaceholder: 'e.g. East China, Suzhou',
+    serviceRegion: 'Service Region',
+    bio: 'Bio',
+    bioPlaceholder: 'Introduce yourself to customers...',
+    bankTitle: 'Bank Account (internal settlement)',
+    bankName: 'Bank Name',
+    bankPlaceholder: 'e.g. ICBC, Construction Bank',
+    branch: 'Branch',
+    branchPlaceholder: 'e.g. Jinan Lixia Branch',
+    holder: 'Account Holder',
+    holderPlaceholder: 'Must match the bank account name',
+    accountNumber: 'Account Number',
+    accountPlaceholder: 'Enter bank account number',
+    levelLabel: 'Level',
+    creditScore: 'Credit Score',
+    saving: 'Saving...',
+    save: 'Save Changes',
+    devicesIntro: 'Manage your equipment profiles here. Each equipment has its own repair records.',
+    devicesTitle: 'My Equipment',
+    devicesSubtitle: 'View all equipment profiles',
+    currentPassword: 'Current Password',
+    currentPasswordPlaceholder: 'Enter current password',
+    newPassword: 'New Password',
+    newPasswordPlaceholder: 'At least 6 characters',
+    confirmPassword: 'Confirm New Password',
+    confirmPasswordPlaceholder: 'Re-enter new password',
+    changing: 'Changing...',
+  },
+  cn: {
+    title: '账号',
+    saved: '已保存',
+    saveFailed: '保存失败',
+    statusFailed: '状态更新失败',
+    passwordMismatch: '两次输入的新密码不一致',
+    passwordTooShort: '新密码至少需要 6 位',
+    passwordSaved: '密码已修改',
+    changeFailed: '修改失败',
+    status: { available: '可接单', paused: '暂停接单', offline: '离线' },
+    level: { junior: '初级', senior: '高级', expert: '专家' },
+    engineerSuffix: 'SAGEMRO 工程师',
+    serviceScore: '服务分',
+    reviews: '条评价',
+    profile: '个人资料',
+    devices: '我的设备',
+    password: '修改密码',
+    name: '姓名',
+    phone: '手机号',
+    region: '地区',
+    regionPlaceholder: '例如：华东，苏州',
+    serviceRegion: '服务区域',
+    bio: '简介',
+    bioPlaceholder: '向客户介绍你的设备经验和服务能力...',
+    bankTitle: '收款账户（内部结算）',
+    bankName: '开户行',
+    bankPlaceholder: '例如：工商银行、建设银行',
+    branch: '支行',
+    branchPlaceholder: '例如：济南历下支行',
+    holder: '账户姓名',
+    holderPlaceholder: '需与银行账户姓名一致',
+    accountNumber: '账号',
+    accountPlaceholder: '请输入银行账号',
+    levelLabel: '等级',
+    creditScore: '信用分',
+    saving: '保存中...',
+    save: '保存修改',
+    devicesIntro: '在这里管理你的设备档案。每台设备都有独立的维修与服务记录。',
+    devicesTitle: '我的设备',
+    devicesSubtitle: '查看全部设备档案',
+    currentPassword: '当前密码',
+    currentPasswordPlaceholder: '输入当前密码',
+    newPassword: '新密码',
+    newPasswordPlaceholder: '至少 6 位',
+    confirmPassword: '确认新密码',
+    confirmPasswordPlaceholder: '再次输入新密码',
+    changing: '修改中...',
+  },
+};
 
 export function SettingsModal({ isOpen, onClose, currentUser, userType, onOpenMyDevices }) {
+  const isCn = isCnLocale();
+  const copy = isCn ? COPY.cn : COPY.en;
   const [tab, setTab] = useState('profile'); // 'profile' | 'devices' | 'password'
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -83,10 +185,10 @@ export function SettingsModal({ isOpen, onClose, currentUser, userType, onOpenMy
         const updated = { ...currentUser, ...engineerForm };
         localStorage.setItem('sagemro_user', JSON.stringify(updated));
       }
-      setSuccess('Saved successfully');
+      setSuccess(copy.saved);
       setTimeout(() => setSuccess(''), 2000);
     } catch (err) {
-      setError(err.message || 'Save failed');
+      setError(err.message || copy.saveFailed);
     } finally {
       setLoading(false);
     }
@@ -102,17 +204,17 @@ export function SettingsModal({ isOpen, onClose, currentUser, userType, onOpenMy
       const updated = { ...currentUser, status: newStatus };
       localStorage.setItem('sagemro_user', JSON.stringify(updated));
     } catch (err) {
-      setError('Failed to update status');
+      setError(copy.statusFailed);
     }
   }
 
   async function handleChangePassword() {
     if (pwdForm.newPassword !== pwdForm.confirmPassword) {
-      setError('New passwords do not match');
+      setError(copy.passwordMismatch);
       return;
     }
     if (pwdForm.newPassword.length < 6) {
-      setError('New password must be at least 6 characters');
+      setError(copy.passwordTooShort);
       return;
     }
     setLoading(true);
@@ -120,22 +222,22 @@ export function SettingsModal({ isOpen, onClose, currentUser, userType, onOpenMy
     try {
       await changePassword({ oldPassword: pwdForm.oldPassword, newPassword: pwdForm.newPassword });
       setPwdForm({ oldPassword: '', newPassword: '', confirmPassword: '' });
-      setSuccess('Password changed successfully');
+      setSuccess(copy.passwordSaved);
       setTimeout(() => setSuccess(''), 2000);
     } catch (err) {
-      setError(err.message || 'Change failed');
+      setError(err.message || copy.changeFailed);
     } finally {
       setLoading(false);
     }
   }
 
-  const statusLabels = { available: 'Available', paused: 'Paused', offline: 'Offline' };
+  const statusLabels = copy.status;
   const statusColors = { available: 'text-green-500', paused: 'text-yellow-500', offline: 'text-gray-400' };
 
-  const levelLabels = { junior: 'Junior', senior: 'Senior', expert: 'Expert' };
+  const levelLabels = copy.level;
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Account" size="md">
+    <Modal isOpen={isOpen} onClose={onClose} title={copy.title} size="md">
       <div className="flex flex-col gap-5">
         {/* 头像 + 名称区 */}
         <div className="flex items-center gap-3">
@@ -154,7 +256,7 @@ export function SettingsModal({ isOpen, onClose, currentUser, userType, onOpenMy
             {userType === 'engineer' && (
               <div className="flex items-center gap-2 mt-0.5">
                 <span className="text-[11px] px-1.5 py-0.5 bg-[var(--color-primary)]/20 text-[var(--color-primary)] rounded">
-                  {levelLabels[engineerStats?.level] || 'Junior'} SAGEMRO Engineer
+                  {levelLabels[engineerStats?.level] || copy.level.junior} {copy.engineerSuffix}
                 </span>
                 <span className={`text-[11px] ${statusColors[currentStatus]}`}>
                   {statusLabels[currentStatus]}
@@ -185,7 +287,7 @@ export function SettingsModal({ isOpen, onClose, currentUser, userType, onOpenMy
               <div className="text-[18px] font-semibold text-green-400">
                 {engineerStats?.credit_score ?? 100}
               </div>
-              <div className="text-[11px] text-[var(--color-sidebar-text)] opacity-50 mt-0.5">Service Score</div>
+              <div className="text-[11px] text-[var(--color-sidebar-text)] opacity-50 mt-0.5">{copy.serviceScore}</div>
             </div>
             <div className="bg-[var(--color-surface-elevated)] rounded-xl p-3 text-center">
               <div className="text-[18px] font-semibold text-yellow-400 flex items-center justify-center gap-1">
@@ -193,7 +295,7 @@ export function SettingsModal({ isOpen, onClose, currentUser, userType, onOpenMy
                 {engineerStats?.rating || 'N/A'}
               </div>
               <div className="text-[11px] text-[var(--color-sidebar-text)] opacity-50 mt-0.5">
-                {engineerStats?.rating_count || 0} reviews
+                {engineerStats?.rating_count || 0} {copy.reviews}
               </div>
             </div>
           </div>
@@ -209,7 +311,7 @@ export function SettingsModal({ isOpen, onClose, currentUser, userType, onOpenMy
                 : 'border-transparent text-[var(--color-sidebar-text)] opacity-50 hover:opacity-80'
             }`}
           >
-            Profile
+            {copy.profile}
           </button>
           {userType === 'customer' && (
             <button
@@ -220,7 +322,7 @@ export function SettingsModal({ isOpen, onClose, currentUser, userType, onOpenMy
                   : 'border-transparent text-[var(--color-sidebar-text)] opacity-50 hover:opacity-80'
               }`}
             >
-              My Equipment
+              {copy.devices}
             </button>
           )}
           <button
@@ -231,7 +333,7 @@ export function SettingsModal({ isOpen, onClose, currentUser, userType, onOpenMy
                 : 'border-transparent text-[var(--color-sidebar-text)] opacity-50 hover:opacity-80'
             }`}
           >
-            Change Password
+            {copy.password}
           </button>
         </div>
 
@@ -244,7 +346,7 @@ export function SettingsModal({ isOpen, onClose, currentUser, userType, onOpenMy
               {userType === 'customer' ? (
                 <>
                   <div>
-                    <label className="block text-[12px] text-[var(--color-sidebar-text)] opacity-60 mb-1.5">Name</label>
+                    <label className="block text-[12px] text-[var(--color-sidebar-text)] opacity-60 mb-1.5">{copy.name}</label>
                     <input
                       type="text"
                       value={customerForm.name}
@@ -253,7 +355,7 @@ export function SettingsModal({ isOpen, onClose, currentUser, userType, onOpenMy
                     />
                   </div>
                   <div>
-                    <label className="block text-[12px] text-[var(--color-sidebar-text)] opacity-60 mb-1.5">Phone</label>
+                    <label className="block text-[12px] text-[var(--color-sidebar-text)] opacity-60 mb-1.5">{copy.phone}</label>
                     <input
                       type="text"
                       value={currentUser?.phone || ''}
@@ -262,12 +364,12 @@ export function SettingsModal({ isOpen, onClose, currentUser, userType, onOpenMy
                     />
                   </div>
                   <div>
-                    <label className="block text-[12px] text-[var(--color-sidebar-text)] opacity-60 mb-1.5">Region</label>
+                    <label className="block text-[12px] text-[var(--color-sidebar-text)] opacity-60 mb-1.5">{copy.region}</label>
                     <input
                       type="text"
                       value={customerForm.region}
                       onChange={e => setCustomerForm({ ...customerForm, region: e.target.value })}
-                      placeholder="e.g. East China, Suzhou"
+                      placeholder={copy.regionPlaceholder}
                       className="w-full bg-[var(--color-input-bg)] border border-[var(--color-input-border)] rounded-lg px-3 py-2.5 text-[14px] text-[var(--color-sidebar-text)]"
                     />
                   </div>
@@ -275,7 +377,7 @@ export function SettingsModal({ isOpen, onClose, currentUser, userType, onOpenMy
               ) : (
                 <>
                   <div>
-                    <label className="block text-[12px] text-[var(--color-sidebar-text)] opacity-60 mb-1.5">Name</label>
+                    <label className="block text-[12px] text-[var(--color-sidebar-text)] opacity-60 mb-1.5">{copy.name}</label>
                     <input
                       type="text"
                       value={engineerForm.name}
@@ -284,7 +386,7 @@ export function SettingsModal({ isOpen, onClose, currentUser, userType, onOpenMy
                     />
                   </div>
                   <div>
-                    <label className="block text-[12px] text-[var(--color-sidebar-text)] opacity-60 mb-1.5">Phone</label>
+                    <label className="block text-[12px] text-[var(--color-sidebar-text)] opacity-60 mb-1.5">{copy.phone}</label>
                     <input
                       type="text"
                       value={currentUser?.phone || ''}
@@ -293,66 +395,66 @@ export function SettingsModal({ isOpen, onClose, currentUser, userType, onOpenMy
                     />
                   </div>
                   <div>
-                    <label className="block text-[12px] text-[var(--color-sidebar-text)] opacity-60 mb-1.5">Service Region</label>
+                    <label className="block text-[12px] text-[var(--color-sidebar-text)] opacity-60 mb-1.5">{copy.serviceRegion}</label>
                     <input
                       type="text"
                       value={engineerForm.service_region}
                       onChange={e => setEngineerForm({ ...engineerForm, service_region: e.target.value })}
-                      placeholder="e.g. East China, Suzhou"
+                      placeholder={copy.regionPlaceholder}
                       className="w-full bg-[var(--color-input-bg)] border border-[var(--color-input-border)] rounded-lg px-3 py-2.5 text-[14px] text-[var(--color-sidebar-text)]"
                     />
                   </div>
                   <div>
-                    <label className="block text-[12px] text-[var(--color-sidebar-text)] opacity-60 mb-1.5">Bio</label>
+                    <label className="block text-[12px] text-[var(--color-sidebar-text)] opacity-60 mb-1.5">{copy.bio}</label>
                     <textarea
                       value={engineerForm.bio}
                       onChange={e => setEngineerForm({ ...engineerForm, bio: e.target.value })}
-                      placeholder="Introduce yourself to customers..."
+                      placeholder={copy.bioPlaceholder}
                       rows={3}
                       className="w-full bg-[var(--color-input-bg)] border border-[var(--color-input-border)] rounded-lg px-3 py-2.5 text-[14px] text-[var(--color-sidebar-text)] resize-none"
                     />
                   </div>
                   {/* SERVICE_OS_LEGACY: bank info is kept for internal settlement transition. */}
                   <div className="border-t border-[var(--color-border)] pt-4 mt-2">
-                    <p className="text-[12px] text-[var(--color-sidebar-text)] opacity-60 mb-3">Bank Account (internal settlement)</p>
+                    <p className="text-[12px] text-[var(--color-sidebar-text)] opacity-60 mb-3">{copy.bankTitle}</p>
                     <div className="space-y-3">
                       <div>
-                        <label className="block text-[12px] text-[var(--color-sidebar-text)] opacity-60 mb-1.5">Bank Name</label>
+                        <label className="block text-[12px] text-[var(--color-sidebar-text)] opacity-60 mb-1.5">{copy.bankName}</label>
                         <input
                           type="text"
                           value={engineerForm.bank_name}
                           onChange={e => setEngineerForm({ ...engineerForm, bank_name: e.target.value })}
-                          placeholder="e.g. ICBC, Construction Bank"
+                          placeholder={copy.bankPlaceholder}
                           className="w-full bg-[var(--color-input-bg)] border border-[var(--color-input-border)] rounded-lg px-3 py-2.5 text-[14px] text-[var(--color-sidebar-text)]"
                         />
                       </div>
                       <div>
-                        <label className="block text-[12px] text-[var(--color-sidebar-text)] opacity-60 mb-1.5">Branch</label>
+                        <label className="block text-[12px] text-[var(--color-sidebar-text)] opacity-60 mb-1.5">{copy.branch}</label>
                         <input
                           type="text"
                           value={engineerForm.bank_branch}
                           onChange={e => setEngineerForm({ ...engineerForm, bank_branch: e.target.value })}
-                          placeholder="e.g. Jinan Lixia Branch"
+                          placeholder={copy.branchPlaceholder}
                           className="w-full bg-[var(--color-input-bg)] border border-[var(--color-input-border)] rounded-lg px-3 py-2.5 text-[14px] text-[var(--color-sidebar-text)]"
                         />
                       </div>
                       <div>
-                        <label className="block text-[12px] text-[var(--color-sidebar-text)] opacity-60 mb-1.5">Account Holder</label>
+                        <label className="block text-[12px] text-[var(--color-sidebar-text)] opacity-60 mb-1.5">{copy.holder}</label>
                         <input
                           type="text"
                           value={engineerForm.account_holder}
                           onChange={e => setEngineerForm({ ...engineerForm, account_holder: e.target.value })}
-                          placeholder="Must match the bank account name"
+                          placeholder={copy.holderPlaceholder}
                           className="w-full bg-[var(--color-input-bg)] border border-[var(--color-input-border)] rounded-lg px-3 py-2.5 text-[14px] text-[var(--color-sidebar-text)]"
                         />
                       </div>
                       <div>
-                        <label className="block text-[12px] text-[var(--color-sidebar-text)] opacity-60 mb-1.5">Account Number</label>
+                        <label className="block text-[12px] text-[var(--color-sidebar-text)] opacity-60 mb-1.5">{copy.accountNumber}</label>
                         <input
                           type="text"
                           value={engineerForm.bank_account}
                           onChange={e => setEngineerForm({ ...engineerForm, bank_account: e.target.value })}
-                          placeholder="Enter bank account number"
+                          placeholder={copy.accountPlaceholder}
                           className="w-full bg-[var(--color-input-bg)] border border-[var(--color-input-border)] rounded-lg px-3 py-2.5 text-[14px] text-[var(--color-sidebar-text)]"
                         />
                       </div>
@@ -362,11 +464,11 @@ export function SettingsModal({ isOpen, onClose, currentUser, userType, onOpenMy
                   {/* 工程师等级信息 */}
                   <div className="bg-[var(--color-surface-elevated)] rounded-xl p-3 space-y-2">
                     <div className="flex justify-between text-[13px]">
-                      <span className="text-[var(--color-sidebar-text)] opacity-60">Level</span>
-                      <span className="text-[var(--color-sidebar-text)]">{levelLabels[engineerStats?.level] || 'Junior'}</span>
+                      <span className="text-[var(--color-sidebar-text)] opacity-60">{copy.levelLabel}</span>
+                      <span className="text-[var(--color-sidebar-text)]">{levelLabels[engineerStats?.level] || copy.level.junior}</span>
                     </div>
                     <div className="flex justify-between text-[13px]">
-                      <span className="text-[var(--color-sidebar-text)] opacity-60">Credit Score</span>
+                      <span className="text-[var(--color-sidebar-text)] opacity-60">{copy.creditScore}</span>
                       <span className="text-[var(--color-sidebar-text)]">{engineerStats?.credit_score ?? 100}</span>
                     </div>
                   </div>
@@ -385,7 +487,7 @@ export function SettingsModal({ isOpen, onClose, currentUser, userType, onOpenMy
                 disabled={loading}
                 className="w-full py-2.5 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white rounded-lg text-[14px] font-medium transition-colors disabled:opacity-50"
               >
-                {loading ? 'Saving...' : 'Save Changes'}
+                {loading ? copy.saving : copy.save}
               </button>
             </div>
           )}
@@ -394,7 +496,7 @@ export function SettingsModal({ isOpen, onClose, currentUser, userType, onOpenMy
           {tab === 'devices' && userType === 'customer' && (
             <div className="space-y-3">
               <p className="text-[13px] text-[var(--color-sidebar-text)] opacity-60">
-                Manage your equipment profiles here. Each equipment has its own repair records.
+                {copy.devicesIntro}
               </p>
               <button
                 onClick={() => { onClose(); onOpenMyDevices(); }}
@@ -405,8 +507,8 @@ export function SettingsModal({ isOpen, onClose, currentUser, userType, onOpenMy
                     <Package size={20} className="text-[var(--color-primary)]" />
                   </div>
                   <div className="text-left">
-                    <div className="text-[14px] font-medium text-[var(--color-sidebar-text)]">My Equipment</div>
-                    <div className="text-[12px] text-[var(--color-sidebar-text)] opacity-50">View all equipment profiles</div>
+                    <div className="text-[14px] font-medium text-[var(--color-sidebar-text)]">{copy.devicesTitle}</div>
+                    <div className="text-[12px] text-[var(--color-sidebar-text)] opacity-50">{copy.devicesSubtitle}</div>
                   </div>
                 </div>
                 <ChevronRight size={18} className="text-[var(--color-sidebar-text)] opacity-40" />
@@ -418,32 +520,32 @@ export function SettingsModal({ isOpen, onClose, currentUser, userType, onOpenMy
           {tab === 'password' && (
             <div className="space-y-4">
               <div>
-                <label className="block text-[12px] text-[var(--color-sidebar-text)] opacity-60 mb-1.5">Current Password</label>
+                <label className="block text-[12px] text-[var(--color-sidebar-text)] opacity-60 mb-1.5">{copy.currentPassword}</label>
                 <input
                   type="password"
                   value={pwdForm.oldPassword}
                   onChange={e => setPwdForm({ ...pwdForm, oldPassword: e.target.value })}
-                  placeholder="Enter current password"
+                  placeholder={copy.currentPasswordPlaceholder}
                   className="w-full bg-[var(--color-input-bg)] border border-[var(--color-input-border)] rounded-lg px-3 py-2.5 text-[14px] text-[var(--color-sidebar-text)]"
                 />
               </div>
               <div>
-                <label className="block text-[12px] text-[var(--color-sidebar-text)] opacity-60 mb-1.5">New Password</label>
+                <label className="block text-[12px] text-[var(--color-sidebar-text)] opacity-60 mb-1.5">{copy.newPassword}</label>
                 <input
                   type="password"
                   value={pwdForm.newPassword}
                   onChange={e => setPwdForm({ ...pwdForm, newPassword: e.target.value })}
-                  placeholder="At least 6 characters"
+                  placeholder={copy.newPasswordPlaceholder}
                   className="w-full bg-[var(--color-input-bg)] border border-[var(--color-input-border)] rounded-lg px-3 py-2.5 text-[14px] text-[var(--color-sidebar-text)]"
                 />
               </div>
               <div>
-                <label className="block text-[12px] text-[var(--color-sidebar-text)] opacity-60 mb-1.5">Confirm New Password</label>
+                <label className="block text-[12px] text-[var(--color-sidebar-text)] opacity-60 mb-1.5">{copy.confirmPassword}</label>
                 <input
                   type="password"
                   value={pwdForm.confirmPassword}
                   onChange={e => setPwdForm({ ...pwdForm, confirmPassword: e.target.value })}
-                  placeholder="Re-enter new password"
+                  placeholder={copy.confirmPasswordPlaceholder}
                   className="w-full bg-[var(--color-input-bg)] border border-[var(--color-input-border)] rounded-lg px-3 py-2.5 text-[14px] text-[var(--color-sidebar-text)]"
                 />
               </div>
@@ -460,7 +562,7 @@ export function SettingsModal({ isOpen, onClose, currentUser, userType, onOpenMy
                 disabled={loading}
                 className="w-full py-2.5 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white rounded-lg text-[14px] font-medium transition-colors disabled:opacity-50"
               >
-                {loading ? 'Changing...' : 'Change Password'}
+                {loading ? copy.changing : copy.password}
               </button>
             </div>
           )}

@@ -4,6 +4,7 @@ import {
   renameConversation as apiRenameConversation,
 } from '../services/api';
 import { generateId } from '../utils/helpers';
+import { isCnLocale } from '../utils/locale';
 
 export function useConversations() {
   const [conversations, setConversations] = useState([]);
@@ -34,9 +35,10 @@ export function useConversations() {
 
   // 创建新对话
   const createConversation = useCallback(() => {
+    const title = isCnLocale() ? '新对话' : 'New Chat';
     const newConv = {
       id: generateId(),
-      title: 'New Chat',
+      title,
       last_message: '',
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),

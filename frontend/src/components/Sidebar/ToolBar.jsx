@@ -4,9 +4,23 @@ import { isCnLocale } from '../../utils/locale';
 const TOOLBAR_COPY = {
   cn: {
     loginLabel: '登录 / 注册',
+    requestService: '请求服务',
+    myServices: '我的服务',
+    assignedServices: '已派工服务',
+    notifications: '通知',
+    myEquipment: '我的设备',
+    engineerBadge: 'SAGEMRO 工程师',
+    logout: '退出登录',
   },
   en: {
     loginLabel: 'Sign In / Register',
+    requestService: 'Request Service',
+    myServices: 'My Services',
+    assignedServices: 'Assigned Services',
+    notifications: 'Notifications',
+    myEquipment: 'My Equipment',
+    engineerBadge: 'SAGEMRO Engineer',
+    logout: 'Log Out',
   },
 };
 
@@ -28,20 +42,20 @@ export function ToolBar({
 
   const primaryTools = isEngineer
     ? [
-        { icon: ClipboardList, label: 'Assigned Services', onClick: onOpenMyWorkOrders, testid: 'tool-my-work-orders' },
+        { icon: ClipboardList, label: copy.assignedServices, onClick: onOpenMyWorkOrders, testid: 'tool-my-work-orders' },
       ]
     : [
-        { icon: FileText, label: 'Request Service', onClick: onOpenWorkOrder, testid: 'tool-create-work-order' },
-        { icon: ClipboardList, label: 'My Services', onClick: onOpenMyWorkOrders, testid: 'tool-my-work-orders' },
+        { icon: FileText, label: copy.requestService, onClick: onOpenWorkOrder, testid: 'tool-create-work-order' },
+        { icon: ClipboardList, label: copy.myServices, onClick: onOpenMyWorkOrders, testid: 'tool-my-work-orders' },
       ];
 
   const extraTools = isEngineer
     ? [
-        { icon: Bell, label: 'Notifications', badge: unreadCount, testid: 'tool-notifications', onClick: onOpenNotifications },
+        { icon: Bell, label: copy.notifications, badge: unreadCount, testid: 'tool-notifications', onClick: onOpenNotifications },
       ]
     : [
-        { icon: Bell, label: 'Notifications', badge: unreadCount, testid: 'tool-notifications', onClick: onOpenNotifications },
-        { icon: Package, label: 'My Equipment', testid: 'tool-my-devices', onClick: onOpenMyDevices },
+        { icon: Bell, label: copy.notifications, badge: unreadCount, testid: 'tool-notifications', onClick: onOpenNotifications },
+        { icon: Package, label: copy.myEquipment, testid: 'tool-my-devices', onClick: onOpenMyDevices },
       ];
 
   const avatarAction = isEngineer ? onOpenEngineerDashboard : onOpenSettings;
@@ -86,7 +100,7 @@ export function ToolBar({
               </div>
               <span className="truncate">{currentUser.name}</span>
               {isEngineer && (
-                <span className="text-[10px] px-1.5 py-0.5 bg-[var(--color-primary)]/20 text-[var(--color-primary)] rounded">SAGEMRO Engineer</span>
+                <span className="text-[10px] px-1.5 py-0.5 bg-[var(--color-primary)]/20 text-[var(--color-primary)] rounded">{copy.engineerBadge}</span>
               )}
             </button>
             <button
@@ -95,7 +109,7 @@ export function ToolBar({
               className="w-full flex items-center gap-3 px-4 py-2.5 text-[14px] text-[var(--color-sidebar-muted)] hover:bg-[var(--color-sidebar-surface)] hover:text-[var(--color-sidebar-text)] rounded-lg mx-1 transition-colors"
             >
               <LogOut size={17} />
-              <span>Log Out</span>
+              <span>{copy.logout}</span>
             </button>
           </>
         ) : (

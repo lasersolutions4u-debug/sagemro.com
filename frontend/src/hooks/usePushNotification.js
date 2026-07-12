@@ -215,7 +215,7 @@ export function usePushNotification(userId, shouldSubscribe) {
       typeof window.OneSignal.getNotificationPermission !== 'function'
     ) {
       console.error('[Push] OneSignal SDK not available');
-      toastError('Push service unavailable, please refresh and try again');
+      toastError(isChinaDomain() ? '推送服务暂不可用，请刷新后重试' : 'Push service unavailable, please refresh and try again');
       return;
     }
 
@@ -224,7 +224,7 @@ export function usePushNotification(userId, shouldSubscribe) {
       debugLog('[Push] permission:', permission);
 
       if (permission === 'denied') {
-        toastError('Push notifications blocked by browser. Please allow notifications in browser settings.');
+        toastError(isChinaDomain() ? '浏览器已阻止推送通知，请在浏览器设置中允许通知' : 'Push notifications blocked by browser. Please allow notifications in browser settings.');
         return;
       }
 
