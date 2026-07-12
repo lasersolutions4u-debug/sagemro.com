@@ -182,7 +182,7 @@ const TEXT = {
   },
   'zh-CN': {
     title: '物料管理',
-    subtitle: '由运营团队维护常用配件、易损件和耗材。工程师后续只能引用到报价、备件准备和服务报告，不能直接修改物料库。',
+    subtitle: '由运营团队维护常用配件、易损件和耗材。工程师可在报价、备件准备和服务报告中引用，但不能直接修改物料库。',
     badge: 'Admin 控制的产品数据',
     search: '搜索编码、名称、规格、品牌、供应商',
     allCategories: '全部类别',
@@ -202,7 +202,7 @@ const TEXT = {
     adjust: '调整',
     adjustmentSaved: '库存已更新。',
     requestsTitle: '工程师物料申请',
-    requestsSubtitle: '工程师在工单里找不到合适配件时提交，Admin 核对后再进入物料库。',
+    requestsSubtitle: '工程师在工单中找不到合适配件时提交申请，Admin 核对后录入物料库。',
     noRequests: '暂无待处理物料申请。',
     approveCreate: '批准并创建',
     requestMoreInfo: '补充信息',

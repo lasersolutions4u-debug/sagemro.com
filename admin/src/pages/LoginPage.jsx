@@ -18,7 +18,7 @@ const TEXT = {
   'zh-CN': {
     title: 'SAGEMRO 运营中枢',
     eyebrow: '服务运营控制台',
-    subtitle: '用于线索审核、派工、报价和服务归档，帮助团队把客户问题推进到可靠结果。',
+    subtitle: '高效完成线索审核、派工、报价到服务归档的全流程管理。',
     panelTitle: '管理员登录',
     phonePlaceholder: '管理员手机号',
     passwordPlaceholder: '密码',

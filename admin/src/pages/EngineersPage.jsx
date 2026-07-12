@@ -132,7 +132,7 @@ const TEXT = {
   },
   'zh-CN': {
     title: '工程师',
-    subtitle: '独立管理工程师档案、服务能力、地区和历史工单，派工前先在这里判断。',
+    subtitle: '管理工程师档案、服务能力、服务区域和历史工单，派工前先在这里评估。',
     searchPlaceholder: '搜索姓名、No.、电话、公司、地区、团队...',
     regionPlaceholder: '地区',
     equipmentPlaceholder: '熟悉设备',
@@ -182,7 +182,7 @@ const TEXT = {
     noWorkOrders: '暂无关联工单',
     customer: '客户',
     quote: '报价',
-    openOrderHint: '可用工单号回到服务工单中打开完整详情。',
+    openOrderHint: '可使用工单号回到服务工单页面查看完整详情。',
     loadFailed: '工程师档案加载失败',
     previous: '上一页',
     next: '下一页',

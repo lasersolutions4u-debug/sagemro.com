@@ -1819,7 +1819,7 @@ const ERROR_MESSAGES = {
   },
   public_engineer_registration_closed: {
     com: 'Public engineer registration is closed. SAGEMRO engineer accounts are created internally.',
-    cn: '工程师账号由 SAGEMRO 内部创建，公开注册已关闭。',
+    cn: '工程师账号暂不开放公开注册。',
   },
   missing_required_fields: {
     com: 'Missing required fields.',
@@ -8451,7 +8451,7 @@ async function handleAdminUpdateEngineer(request, env) {
       values.push(String(body.service_region || '').slice(0, 200));
     }
 
-    if (!updates.length) return errorResponse(getRequestMarket(request) === 'cn' ? '没有需要更新的工程师字段' : 'No engineer fields to update', 400);
+    if (!updates.length) return errorResponse(getRequestMarket(request) === 'cn' ? '没有需要修改的工程师信息' : 'No engineer fields to update', 400);
 
     values.push(engineerId);
     await env.DB.prepare(`UPDATE engineers SET ${updates.join(', ')} WHERE id = ?`).bind(...values).run();
