@@ -20,16 +20,10 @@ const LOGIN_COPY = {
     registerFailed: '注册失败，请稍后重试。',
     companyRequired: '请输入公司名称',
     termsRequired: '请阅读并同意服务协议、隐私政策和 AI 服务说明',
-    guestName: '访客',
     resetSuccess: '密码已重置，请使用新密码登录。',
     codeRequired: '请输入验证码',
-    choiceTitle: '请选择最符合你当前情况的一项',
-    needServiceTitle: '我需要设备服务、备件或增购改造帮助',
-    needServiceDesc: '告诉 SAGEMRO 你的设备情况，我们会帮助整理事实，方便你判断下一步。',
-    exploringTitle: '我只是先了解一下',
-    exploringDesc: '可以先浏览 SAGEMRO 的功能，暂时不需要注册。',
     back: '← 返回',
-    companyIntro: '请先填写你的公司和账号信息',
+    companyIntro: '创建 SAGEMRO 账号，用于保存对话、设备信息和服务记录。',
     companyName: '公司名称 *',
     companyPlaceholder: '例如：济南某某钣金制造有限公司',
     fullName: '姓名 *',
@@ -51,22 +45,10 @@ const LOGIN_COPY = {
     privacy: '隐私政策',
     aiNotice: 'AI 服务说明',
     termsAnd: '和',
-    nextRole: '下一步：选择角色',
+    createAccount: '创建账号',
     alreadyAccount: '已有账号？',
     signIn: '登录',
-    roleIntro: '你希望如何使用 SAGEMRO 智能服务系统？',
-    customerTitle: '我是客户',
-    customerDesc: '获取 AI 初步诊断、服务请求、设备档案、备件和维护跟进。',
-    guestTitle: '我只是浏览（访客）',
-    guestDesc: '无需认证即可体验部分功能，可随时升级为完整访问权限。',
-    identityVerification: '身份确认',
-    customerSelectedDesc: '你选择了“客户”。完成账号验证后，可以使用 AI 诊断、服务请求和设备档案。',
-    customerBenefits: '完成账号验证后，你可以提交 SAGEMRO 服务请求、查看设备档案、跟踪服务进度，并获得个性化建议。实名认证或企业资料审核会在后续资料完善、入驻或人工审核环节进行。',
-    completeVerification: '完成账号验证并开始使用',
-    guestAccess: '访客访问',
-    guestAccessDesc: '你可以先浏览 SAGEMRO 的部分功能，之后可在设置中升级为完整访问权限。',
     registering: '正在注册...',
-    continueGuest: '以访客身份继续',
     loginIntro: '有钣金设备相关问题？可以随时询问 SAGEMRO AI',
     password: '密码',
     passwordPlaceholder: '请输入密码',
@@ -99,16 +81,10 @@ const LOGIN_COPY = {
     registerFailed: 'Registration failed. Please try again.',
     companyRequired: 'Please enter your company name',
     termsRequired: 'Please read and agree to the Terms of Service, Privacy Policy, and AI Service Notice',
-    guestName: 'Guest',
     resetSuccess: 'Password reset successfully. Please sign in with your new password.',
     codeRequired: 'Please enter the verification code',
-    choiceTitle: 'Which best describes your situation?',
-    needServiceTitle: 'I need equipment service, spare parts, consumables, or retrofit help',
-    needServiceDesc: 'Tell SAGEMRO about your equipment. SAGEMRO helps organize the facts so you can decide what to do next.',
-    exploringTitle: "I'm just exploring",
-    exploringDesc: "Browse SAGEMRO's features at your own pace. No registration required.",
     back: '← Back',
-    companyIntro: 'First, tell us about your company',
+    companyIntro: 'Create your SAGEMRO account to save conversations, equipment records, and service requests.',
     companyName: 'Company name *',
     companyPlaceholder: 'e.g., ABC Metal Products Co., Ltd.',
     fullName: 'Full name *',
@@ -132,22 +108,10 @@ const LOGIN_COPY = {
     privacy: 'Privacy Policy',
     aiNotice: 'AI Service Notice',
     termsAnd: 'and',
-    nextRole: 'Next: Choose your role',
+    createAccount: 'Create account',
     alreadyAccount: 'Already have an account?',
     signIn: 'Sign in',
-    roleIntro: 'How would you like to use SAGEMRO Service OS?',
-    customerTitle: 'I Need Service',
-    customerDesc: 'Use AI diagnostics, service requests, equipment records, spare parts, and maintenance follow-up.',
-    guestTitle: "I'm just browsing (Guest)",
-    guestDesc: "Explore SAGEMRO's features without verification. Limited functionality, upgrade anytime.",
-    identityVerification: 'Identity Confirmation',
-    customerSelectedDesc: 'You selected "Customer". After account verification, you\'ll have access to AI diagnostics, service requests, and equipment records.',
-    customerBenefits: 'After account verification, you can submit SAGEMRO service requests, view equipment records, track service progress, and receive personalized recommendations. Real-name or company review can be handled later during profile completion, onboarding, or manual review.',
-    completeVerification: 'Complete account verification and start',
-    guestAccess: 'Guest Access',
-    guestAccessDesc: "Browse SAGEMRO's features with limited access. Upgrade to full access anytime in settings.",
     registering: 'Registering...',
-    continueGuest: 'Continue as Guest',
     loginIntro: 'Have questions about sheet metal equipment? Ask SAGEMRO AI anytime',
     password: 'Password',
     passwordPlaceholder: 'Enter your password',
@@ -173,7 +137,7 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
   const isCn = isCnLocale();
   const copy = isCn ? LOGIN_COPY.cn : LOGIN_COPY.en;
   // step flow:
-  // choice -> register-company -> register-auth -> customer / visitor completion / login
+  // login -> register-company -> login / authenticated customer account
   const [step, setStep] = useState('login');
   const [loginAccount, setLoginAccount] = useState('');
   const [phone, setPhone] = useState('');
@@ -190,9 +154,6 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
 
   // 公司名（必填）
   const [companyName, setCompanyName] = useState('');
-
-  // 身份选择
-  const [selectedIdentity, setSelectedIdentity] = useState(null); // 'customer' | 'engineer' | 'visitor'
 
   // 协议勾选
   const [agreedToTerms, setAgreedToTerms] = useState(false);
@@ -242,8 +203,7 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
     setSubmitting(true);
     setError('');
     try {
-      // 注册时传递 company 和 identity
-      await registerCustomer({ name, phone, email, password, code, company: companyName, identity: selectedIdentity });
+      await registerCustomer({ name, phone, email, password, code, company: companyName, identity: 'customer' });
       const result = await login(isCn ? { phone, password } : { email, password });
       localStorage.setItem('sagemro_token', result.token);
       localStorage.setItem('sagemro_user', JSON.stringify(result.user));
@@ -279,14 +239,12 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
     setCode('');
     setError('');
     setCompanyName('');
-    setSelectedIdentity(null);
     setAgreedToTerms(false);
     setStep('login');
     onClose();
   };
 
-    // ===== 步骤导航 =====
-  const goToChoice = () => { setStep('choice'); setError(''); };
+  // ===== 步骤导航 =====
   const goToRegisterCompany = () => {
     setStep('register-company');
     setError('');
@@ -308,50 +266,10 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
     if (password !== confirmPassword) { setError(copy.passwordMismatch); return; }
     if (!agreedToTerms) { setError(copy.termsRequired); return; }
     setError('');
-    setStep('register-auth');
-  };
-
-  // 第2步：身份选择
-  const handleIdentitySelect = (identity) => {
-    setSelectedIdentity(identity);
-    if (identity === 'visitor') {
-      // 访客直接完成注册（模拟认证）
-      setStep('register-visitor-complete');
-    } else {
-      // 客户或工程师进入认证提示
-      setStep('register-auth-prompt');
-    }
-  };
-
-  // 认证提示后
-  const handleAuthConfirm = () => {
     handleRegisterCustomer();
   };
 
-  // 访客完成
-  const handleVisitorComplete = async () => {
-    setSubmitting(true);
-    setError('');
-    try {
-      await registerCustomer({ name: name || copy.guestName, phone, email, password, code, company: companyName, identity: 'visitor' });
-      const result = await login(isCn ? { phone, password } : { email, password });
-      localStorage.setItem('sagemro_token', result.token);
-      localStorage.setItem('sagemro_user', JSON.stringify(result.user));
-      localStorage.setItem('sagemro_user_type', result.userType);
-      if (result.userType === 'customer') {
-        localStorage.setItem('sagemro_customer_id', result.user.id);
-      }
-      onLoginSuccess?.(result);
-      handleClose();
-    } catch (e) {
-      setError(e.message);
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
   const getModalSize = () => {
-    if (step === 'choice') return 'md';
     if (step === 'register-company') return 'lg';
     return 'md';
   };
@@ -360,48 +278,11 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
     <Modal isOpen={isOpen} onClose={handleClose} title={copy.modalTitle} size={getModalSize()}>
       <div className="space-y-4">
 
-        {/* ========== Step choice: 身份分流 ========== */}
-        {step === 'choice' && (
-          <div className="space-y-4">
-            <div className="text-center mb-6">
-              <h3 className="text-base font-medium">{copy.choiceTitle}</h3>
-            </div>
-
-            <div className="space-y-2.5">
-              <button
-                onClick={goToRegisterCompany}
-                className="w-full p-4 text-left rounded-xl border-2 border-[var(--color-border)] hover:border-[var(--color-primary)] transition-colors group"
-              >
-                <div className="flex items-start gap-3">
-                  <span className="flex-shrink-0 w-7 h-7 rounded-full bg-[var(--color-primary)] text-white text-sm flex items-center justify-center font-medium">A</span>
-                  <div>
-                    <p className="font-medium text-sm group-hover:text-[var(--color-primary)] transition-colors">{copy.needServiceTitle}</p>
-                    <p className="text-xs text-[var(--color-text-secondary)] mt-0.5">{copy.needServiceDesc}</p>
-                  </div>
-                </div>
-              </button>
-
-              <button
-                onClick={goToRegisterCompany}
-                className="w-full p-4 text-left rounded-xl border-2 border-[var(--color-border)] hover:border-[var(--color-text-muted)] transition-colors group"
-              >
-                <div className="flex items-start gap-3">
-                  <span className="flex-shrink-0 w-7 h-7 rounded-full bg-[var(--color-text-muted)] text-white text-sm flex items-center justify-center font-medium">B</span>
-                  <div>
-                    <p className="font-medium text-sm text-[var(--color-text-secondary)] group-hover:text-[var(--color-text-primary)] transition-colors">{copy.exploringTitle}</p>
-                    <p className="text-xs text-[var(--color-text-secondary)] mt-0.5">{copy.exploringDesc}</p>
-                  </div>
-                </div>
-              </button>
-            </div>
-          </div>
-        )}
-
         {/* ========== Step register-company: 公司名 + 基本信息 ========== */}
         {step === 'register-company' && (
           <div className="space-y-3">
             <div className="flex items-center gap-2 mb-2">
-              <button onClick={goToChoice} className="text-sm text-[var(--color-text-secondary)] hover:text-[var(--color-primary)]">{copy.back}</button>
+              <button onClick={goToLogin} className="text-sm text-[var(--color-text-secondary)] hover:text-[var(--color-primary)]">{copy.back}</button>
             </div>
 
             <div className="text-center mb-4">
@@ -520,123 +401,16 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
 
             <button
               onClick={handleCompanySubmit}
+              disabled={submitting}
               className="w-full py-3 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white rounded-xl font-medium transition-colors"
             >
-              {copy.nextRole}
+              {submitting ? copy.registering : copy.createAccount}
             </button>
 
             <div className="text-center text-sm text-[var(--color-text-secondary)] pt-1">
               {copy.alreadyAccount}{' '}
               <button onClick={goToLogin} className="text-[var(--color-primary)] hover:underline font-medium">{copy.signIn}</button>
             </div>
-          </div>
-        )}
-
-        {/* ========== Step register-auth: 身份选择 ========== */}
-        {step === 'register-auth' && (
-          <div className="space-y-4">
-            <div className="flex items-center gap-2 mb-2">
-              <button onClick={() => setStep('register-company')} className="text-sm text-[var(--color-text-secondary)] hover:text-[var(--color-primary)]">{copy.back}</button>
-            </div>
-
-            <div className="text-center mb-4">
-              <p className="text-sm text-[var(--color-text-secondary)]">{copy.roleIntro}</p>
-            </div>
-
-            <div className="space-y-2.5">
-              <button
-                data-testid="identity-select-customer"
-                onClick={() => handleIdentitySelect('customer')}
-                className="w-full p-4 text-left rounded-xl border-2 border-[var(--color-border)] hover:border-[var(--color-primary)] transition-colors group"
-              >
-                <div className="flex items-start gap-3">
-                  <span className="flex-shrink-0 w-7 h-7 rounded-full bg-[var(--color-primary)] text-white text-sm flex items-center justify-center font-medium">A</span>
-                  <div>
-                    <p className="font-medium text-sm group-hover:text-[var(--color-primary)] transition-colors">{copy.customerTitle}</p>
-                    <p className="text-xs text-[var(--color-text-secondary)] mt-0.5">{copy.customerDesc}</p>
-                  </div>
-                </div>
-              </button>
-
-              <button
-                data-testid="identity-select-visitor"
-                onClick={() => handleIdentitySelect('visitor')}
-                className="w-full p-4 text-left rounded-xl border-2 border-[var(--color-border)] hover:border-[var(--color-text-muted)] transition-colors group"
-              >
-                <div className="flex items-start gap-3">
-                  <span className="flex-shrink-0 w-7 h-7 rounded-full bg-[var(--color-text-muted)] text-white text-sm flex items-center justify-center font-medium">B</span>
-                  <div>
-                    <p className="font-medium text-sm text-[var(--color-text-secondary)] group-hover:text-[var(--color-text-primary)] transition-colors">{copy.guestTitle}</p>
-                    <p className="text-xs text-[var(--color-text-secondary)] mt-0.5">{copy.guestDesc}</p>
-                  </div>
-                </div>
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* ========== Step register-auth-prompt: 认证提示 ========== */}
-        {step === 'register-auth-prompt' && (
-          <div className="space-y-4">
-            <div className="flex items-center gap-2 mb-2">
-              <button onClick={() => setStep('register-auth')} className="text-sm text-[var(--color-text-secondary)] hover:text-[var(--color-primary)]">{copy.back}</button>
-            </div>
-
-            <div className="text-center mb-4">
-              <div className="w-14 h-14 mx-auto mb-3 rounded-full bg-[var(--color-primary)]/10 flex items-center justify-center">
-                <span className="text-2xl">✓</span>
-              </div>
-              <p className="text-base font-medium mb-1">{copy.identityVerification}</p>
-              <p className="text-sm text-[var(--color-text-secondary)]">
-                {copy.customerSelectedDesc}
-              </p>
-            </div>
-
-            <div className="p-4 bg-[var(--color-surface-elevated)] rounded-xl text-[13px] text-[var(--color-text-secondary)]">
-              {selectedIdentity === 'customer' ? (
-                <p>{copy.customerBenefits}</p>
-              ) : null}
-            </div>
-
-            <button
-              data-testid="auth-confirm-button"
-              onClick={handleAuthConfirm}
-              className="w-full py-3 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white rounded-xl font-medium transition-colors"
-            >
-              {copy.completeVerification}
-            </button>
-          </div>
-        )}
-
-        {/* ========== Step register-visitor-complete: 访客完成 ========== */}
-        {step === 'register-visitor-complete' && (
-          <div className="space-y-4">
-            <div className="flex items-center gap-2 mb-2">
-              <button onClick={() => setStep('register-auth')} className="text-sm text-[var(--color-text-secondary)] hover:text-[var(--color-primary)]">{copy.back}</button>
-            </div>
-
-            <div className="text-center mb-4">
-              <div className="w-14 h-14 mx-auto mb-3 rounded-full bg-[var(--color-text-muted)]/10 flex items-center justify-center">
-                <span className="text-2xl">👁</span>
-              </div>
-              <p className="text-base font-medium mb-1">{copy.guestAccess}</p>
-              <p className="text-sm text-[var(--color-text-secondary)]">{copy.guestAccessDesc}</p>
-            </div>
-
-            {error && (
-              <div className="p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl text-red-600 dark:text-red-400 text-sm">
-                {error}
-              </div>
-            )}
-
-            <button
-              data-testid="visitor-start-button"
-              onClick={handleVisitorComplete}
-              disabled={submitting}
-              className="w-full py-3 bg-[var(--color-text-muted)] hover:bg-[var(--color-text-secondary)] disabled:bg-[var(--color-text-muted)]/50 text-white rounded-xl font-medium transition-colors"
-            >
-              {submitting ? copy.registering : copy.continueGuest}
-            </button>
           </div>
         )}
 
