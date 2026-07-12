@@ -4684,6 +4684,7 @@ async function handleGetRepairRecord(request, env) {
 // 保存/更新维修记录（工程师专用）
 async function handleSaveRepairRecord(request, env) {
   try {
+    const market = getRequestMarket(request);
     const auth = request._auth;
     if (!auth || auth.userType !== 'engineer') {
       return errorResponse('仅工程师可填写维修记录', 403);
@@ -4745,8 +4746,13 @@ async function handleSaveRepairRecord(request, env) {
 
     await env.DB.prepare(`
       INSERT INTO work_order_logs (id, work_order_id, action, actor_type, actor_id, content)
-      VALUES (?, ?, 'repair_record_saved', 'engineer', ?, '工程师填写了维修记录。')
-    `).bind(generateId(), workOrderId, engineer_id).run();
+      VALUES (?, ?, 'repair_record_saved', 'engineer', ?, ?)
+    `).bind(
+      generateId(),
+      workOrderId,
+      engineer_id,
+      market === 'cn' ? '工程师填写了维修记录。' : 'Engineer saved the service report.'
+    ).run();
 
     if (Array.isArray(body.material_items)) {
       await replaceWorkOrderMaterialItems(env, request, workOrderId, 'service_report', body.material_items);
@@ -4769,6 +4775,7 @@ async function handleSaveRepairRecord(request, env) {
 
 async function handleUploadAttachment(request, env) {
   try {
+    const market = getRequestMarket(request);
     const auth = request._auth;
     const segments = new URL(request.url).pathname.split('/');
     const workOrderId = segments[3];
@@ -4812,7 +4819,14 @@ async function handleUploadAttachment(request, env) {
     await env.DB.prepare(`
       INSERT INTO work_order_logs (id, work_order_id, action, actor_type, actor_id, content)
       VALUES (?, ?, ?, ?, ?, ?)
-    `).bind(generateId(), workOrderId, 'attachment_uploaded', auth.userType, auth.userId, `上传附件: ${safeName}`).run();
+    `).bind(
+      generateId(),
+      workOrderId,
+      'attachment_uploaded',
+      auth.userType,
+      auth.userId,
+      market === 'cn' ? `上传附件: ${safeName}` : `Attachment uploaded: ${safeName}`
+    ).run();
 
     const attachment = await env.DB.prepare(
       'SELECT * FROM work_order_attachments WHERE id = ?'
@@ -4852,6 +4866,7 @@ async function handleGetAttachments(request, env) {
 
 async function handleDeleteAttachment(request, env) {
   try {
+    const market = getRequestMarket(request);
     const auth = request._auth;
     const segments = new URL(request.url).pathname.split('/');
     const workOrderId = segments[3];
@@ -4891,7 +4906,14 @@ async function handleDeleteAttachment(request, env) {
     await env.DB.prepare(`
       INSERT INTO work_order_logs (id, work_order_id, action, actor_type, actor_id, content)
       VALUES (?, ?, ?, ?, ?, ?)
-    `).bind(generateId(), workOrderId, 'attachment_deleted', auth.userType, auth.userId, `删除附件: ${attachment.file_name}`).run();
+    `).bind(
+      generateId(),
+      workOrderId,
+      'attachment_deleted',
+      auth.userType,
+      auth.userId,
+      market === 'cn' ? `删除附件: ${attachment.file_name}` : `Attachment deleted: ${attachment.file_name}`
+    ).run();
 
     return jsonResponse({ success: true });
   } catch (error) {
@@ -5018,6 +5040,7 @@ async function ensureWorkOrderPayout(env, workOrderId, engineerId, status = 'pen
 
 async function handleSubmitRating(request, env) {
   try {
+    const market = getRequestMarket(request);
     const body = await request.json();
     const { work_order_id, rating_timeliness, rating_technical, rating_communication, rating_professional, comment } = body;
 
@@ -5102,8 +5125,10 @@ async function handleSubmitRating(request, env) {
       user_id: engineer_id,
       user_type: 'engineer',
       type: 'rating_received',
-      title: '收到新评价',
-      body: `工单 ${woRating?.order_no || ''} 的客户给您评分 ${avgAll} 分${comment ? '："' + comment.slice(0, 30) + '"' : ''}`,
+      title: market === 'cn' ? '收到新评价' : 'New customer review received',
+      body: market === 'cn'
+        ? `工单 ${woRating?.order_no || ''} 的客户给您评分 ${avgAll} 分${comment ? '："' + comment.slice(0, 30) + '"' : ''}`
+        : `The customer rated Work Order ${woRating?.order_no || ''} ${avgAll}/5${comment ? ': "' + comment.slice(0, 30) + '"' : ''}`,
       data: { work_order_id },
     });
 
@@ -5329,6 +5354,7 @@ async function handleGetEngineerTeam(request, env) {
 
 async function handleRegionalLeadAssignEngineer(request, env) {
   try {
+    const market = getRequestMarket(request);
     const auth = request._auth;
     if (!auth || auth.userType !== 'engineer') {
       return errorResponse('需要工程师权限', 403);
@@ -5392,16 +5418,21 @@ async function handleRegionalLeadAssignEngineer(request, env) {
       generateId(),
       work_order_id,
       auth.userId,
-      `区域负责人已分配给 ${engineer.name || '内部工程师'}`
+      market === 'cn'
+        ? `区域负责人已分配给 ${engineer.name || '内部工程师'}`
+        : `Regional lead assigned ${engineer.name || 'an internal engineer'}`
     ).run();
 
     await env.DB.prepare(`
       INSERT INTO work_order_messages (id, work_order_id, sender_type, sender_id, sender_name, content, message_type, is_internal_note, is_customer_visible)
-      VALUES (?, ?, 'system', '', '系统', ?, 'system', 0, 1)
+      VALUES (?, ?, 'system', '', ?, ?, 'system', 0, 1)
     `).bind(
       generateId(),
       work_order_id,
-      `SAGEMRO 已安排 ${engineer.name || '内部工程师'} 跟进该服务申请。`
+      systemSenderName(market),
+      market === 'cn'
+        ? `SAGEMRO 已安排 ${engineer.name || '内部工程师'} 跟进该服务申请。`
+        : `SAGEMRO has assigned ${engineer.name || 'an internal engineer'} to follow up on this service request.`
     ).run();
 
     await writeAuditLog(env, request, {
@@ -5417,8 +5448,10 @@ async function handleRegionalLeadAssignEngineer(request, env) {
         user_id: wo.customer_id,
         user_type: 'customer',
         type: 'service_assigned',
-        title: '服务申请已安排工程师',
-        body: `服务编号 ${wo.order_no} 已由 SAGEMRO 安排内部工程师跟进。`,
+        title: market === 'cn' ? '服务申请已安排工程师' : 'Engineer assigned',
+        body: market === 'cn'
+          ? `服务编号 ${wo.order_no} 已由 SAGEMRO 安排内部工程师跟进。`
+          : `Service No. ${wo.order_no} has been assigned to a SAGEMRO internal engineer.`,
         data: { work_order_id, engineer_id },
       });
     }
@@ -5427,8 +5460,10 @@ async function handleRegionalLeadAssignEngineer(request, env) {
       user_id: engineer_id,
       user_type: 'engineer',
       type: 'service_assignment',
-      title: '新的服务任务',
-      body: `服务编号 ${wo.order_no} 已分配给你，请确认客户现场信息。`,
+      title: market === 'cn' ? '新的服务任务' : 'New service assignment',
+      body: market === 'cn'
+        ? `服务编号 ${wo.order_no} 已分配给你，请确认客户现场信息。`
+        : `Service No. ${wo.order_no} has been assigned to you. Please confirm the customer's site information.`,
       data: { work_order_id },
     });
 
@@ -5451,6 +5486,7 @@ async function handleRegionalLeadAssignEngineer(request, env) {
 // 工程师确认派工
 async function handleAcceptTicket(request, env) {
   try {
+    const market = getRequestMarket(request);
     const { work_order_id } = await request.json();
 
     // 认证：engineer_id 从 token 取
@@ -5483,7 +5519,14 @@ async function handleAcceptTicket(request, env) {
     await env.DB.prepare(`
       INSERT INTO work_order_logs (id, work_order_id, action, actor_type, actor_id, content)
       VALUES (?, ?, ?, ?, ?, ?)
-    `).bind(generateId(), work_order_id, 'accepted', 'engineer', engineer_id, '工程师已确认派工').run();
+    `).bind(
+      generateId(),
+      work_order_id,
+      'accepted',
+      'engineer',
+      engineer_id,
+      market === 'cn' ? '工程师已确认派工' : 'Engineer accepted the assignment'
+    ).run();
 
     // 通知客户：工程师已确认派工
     const eng = await env.DB.prepare('SELECT name FROM engineers WHERE id = ?').bind(engineer_id).first();
@@ -5492,8 +5535,10 @@ async function handleAcceptTicket(request, env) {
         user_id: wo.customer_id,
         user_type: 'customer',
         type: 'ticket_accepted',
-        title: '服务任务已确认',
-        body: `服务编号 ${wo.order_no} 已由 ${eng?.name || 'SAGEMRO 工程师'} 确认跟进。`,
+        title: market === 'cn' ? '服务任务已确认' : 'Service assignment accepted',
+        body: market === 'cn'
+          ? `服务编号 ${wo.order_no} 已由 ${eng?.name || 'SAGEMRO 工程师'} 确认跟进。`
+          : `Service No. ${wo.order_no} has been accepted by ${eng?.name || 'a SAGEMRO engineer'}.`,
         data: { work_order_id },
       });
     }
@@ -5510,6 +5555,7 @@ async function handleAcceptTicket(request, env) {
 // 不在 engineers 表上。历史实现写错表，此处修复。
 async function handleRejectTicket(request, env) {
   try {
+    const market = getRequestMarket(request);
     const { work_order_id, reason } = await request.json();
     const rejectReason = typeof reason === 'string' ? reason.trim() : '';
 
@@ -5559,12 +5605,25 @@ async function handleRejectTicket(request, env) {
     await env.DB.prepare(`
       INSERT INTO work_order_logs (id, work_order_id, action, actor_type, actor_id, content)
       VALUES (?, ?, ?, ?, ?, ?)
-    `).bind(generateId(), work_order_id, 'rejected', 'engineer', engineer_id, '工程师已退回派工').run();
+    `).bind(
+      generateId(),
+      work_order_id,
+      'rejected',
+      'engineer',
+      engineer_id,
+      market === 'cn' ? '工程师已退回派工' : 'Engineer returned the assignment'
+    ).run();
 
+    const rejectSenderName = market === 'cn' ? '工程师' : 'Engineer';
     await env.DB.prepare(`
       INSERT INTO work_order_messages (id, work_order_id, sender_type, sender_id, sender_name, content, message_type, is_internal_note, is_customer_visible)
-      VALUES (?, ?, 'engineer', ?, '工程师', ?, 'internal_note', 1, 0)
-    `).bind(generateId(), work_order_id, engineer_id, `退回派工理由：${rejectReason}`).run();
+      VALUES (?, ?, 'engineer', ?, '${rejectSenderName}', ?, 'internal_note', 1, 0)
+    `).bind(
+      generateId(),
+      work_order_id,
+      engineer_id,
+      market === 'cn' ? `退回派工理由：${rejectReason}` : `Assignment return reason: ${rejectReason}`
+    ).run();
 
     // 通知客户服务任务已退回调度
     const woForReject = await env.DB.prepare(
@@ -5575,8 +5634,10 @@ async function handleRejectTicket(request, env) {
         user_id: woForReject.customer_id,
         user_type: 'customer',
         type: 'ticket_rejected',
-        title: '服务任务已退回调度',
-        body: `服务编号 ${woForReject.order_no} 已退回 SAGEMRO 运营调度，团队会继续安排合适工程师。`,
+        title: market === 'cn' ? '服务任务已退回调度' : 'Service assignment returned',
+        body: market === 'cn'
+          ? `服务编号 ${woForReject.order_no} 已退回 SAGEMRO 运营调度，团队会继续安排合适工程师。`
+          : `Service No. ${woForReject.order_no} has been returned to SAGEMRO operations. The team will arrange another qualified engineer.`,
         data: { work_order_id },
       });
     }
@@ -8545,6 +8606,7 @@ async function handleAdminWorkOrders(request, env) {
 // 管理员将服务申请分配给区域负责人：Service OS 主派工第一步。
 async function handleAdminAssignRegionalLead(request, env) {
   try {
+    const market = getRequestMarket(request);
     const workOrderId = new URL(request.url).pathname.split('/')[4];
     const { regional_lead_id } = await request.json();
 
@@ -8581,16 +8643,21 @@ async function handleAdminAssignRegionalLead(request, env) {
       generateId(),
       workOrderId,
       request._auth?.userId || 'admin',
-      `SAGEMRO 运营已分配给区域负责人 ${regionalLead.name || ''}`
+      market === 'cn'
+        ? `SAGEMRO 运营已分配给区域负责人 ${regionalLead.name || ''}`
+        : `SAGEMRO operations assigned regional lead ${regionalLead.name || ''}`
     ).run();
 
     await env.DB.prepare(`
       INSERT INTO work_order_messages (id, work_order_id, sender_type, sender_id, sender_name, content, message_type, is_internal_note, is_customer_visible)
-      VALUES (?, ?, 'system', '', '系统', ?, 'system', 1, 0)
+      VALUES (?, ?, 'system', '', ?, ?, 'system', 1, 0)
     `).bind(
       generateId(),
       workOrderId,
-      `内部派工：SAGEMRO 运营已将服务申请分配给区域负责人 ${regionalLead.name || '区域负责人'}。`
+      systemSenderName(market),
+      market === 'cn'
+        ? `内部派工：SAGEMRO 运营已将服务申请分配给区域负责人 ${regionalLead.name || '区域负责人'}。`
+        : `Internal dispatch: SAGEMRO operations assigned this service request to regional lead ${regionalLead.name || 'the regional lead'}.`
     ).run();
 
     await writeAuditLog(env, request, {
@@ -8605,8 +8672,10 @@ async function handleAdminAssignRegionalLead(request, env) {
       user_id: regional_lead_id,
       user_type: 'engineer',
       type: 'regional_assignment',
-      title: '新的区域服务任务',
-      body: `SAGEMRO 运营已将服务编号 ${wo.order_no} 分配给你，请安排具体工程师。`,
+      title: market === 'cn' ? '新的区域服务任务' : 'New regional service assignment',
+      body: market === 'cn'
+        ? `SAGEMRO 运营已将服务编号 ${wo.order_no} 分配给你，请安排具体工程师。`
+        : `SAGEMRO operations assigned Service No. ${wo.order_no} to you. Please assign a field engineer.`,
       data: { work_order_id: workOrderId },
     });
 
@@ -8628,6 +8697,7 @@ async function handleAdminAssignRegionalLead(request, env) {
 // 管理员派工：Service OS 的主派工路径，替代旧工程师自由接单模型。
 async function handleAdminAssignWorkOrder(request, env) {
   try {
+    const market = getRequestMarket(request);
     const workOrderId = new URL(request.url).pathname.split('/')[4];
     const { engineer_id } = await request.json();
 
@@ -8677,16 +8747,21 @@ async function handleAdminAssignWorkOrder(request, env) {
       generateId(),
       workOrderId,
       request._auth?.userId || 'admin',
-      `SAGEMRO 运营已派工给 ${engineer.name || '内部工程师'}`
+      market === 'cn'
+        ? `SAGEMRO 运营已派工给 ${engineer.name || '内部工程师'}`
+        : `SAGEMRO operations assigned ${engineer.name || 'an internal engineer'}`
     ).run();
 
     await env.DB.prepare(`
       INSERT INTO work_order_messages (id, work_order_id, sender_type, sender_id, sender_name, content, message_type, is_internal_note, is_customer_visible)
-      VALUES (?, ?, 'system', '', '系统', ?, 'system', 0, 1)
+      VALUES (?, ?, 'system', '', ?, ?, 'system', 0, 1)
     `).bind(
       generateId(),
       workOrderId,
-      `SAGEMRO 运营已安排 ${engineer.name || '内部工程师'} 跟进该服务申请。`
+      systemSenderName(market),
+      market === 'cn'
+        ? `SAGEMRO 运营已安排 ${engineer.name || '内部工程师'} 跟进该服务申请。`
+        : `SAGEMRO operations assigned ${engineer.name || 'an internal engineer'} to follow up on this service request.`
     ).run();
 
     await writeAuditLog(env, request, {
@@ -8702,8 +8777,10 @@ async function handleAdminAssignWorkOrder(request, env) {
         user_id: wo.customer_id,
         user_type: 'customer',
         type: 'service_assigned',
-        title: '服务申请已安排工程师',
-        body: `服务编号 ${wo.order_no} 已由 SAGEMRO 运营安排内部工程师跟进。`,
+        title: market === 'cn' ? '服务申请已安排工程师' : 'Engineer assigned',
+        body: market === 'cn'
+          ? `服务编号 ${wo.order_no} 已由 SAGEMRO 运营安排内部工程师跟进。`
+          : `Service No. ${wo.order_no} has been assigned to a SAGEMRO internal engineer.`,
         data: { work_order_id: workOrderId, engineer_id },
       });
     }
@@ -8712,8 +8789,10 @@ async function handleAdminAssignWorkOrder(request, env) {
       user_id: engineer_id,
       user_type: 'engineer',
       type: 'service_assignment',
-      title: '新的服务任务',
-      body: `SAGEMRO 运营已将服务编号 ${wo.order_no} 分配给你，请确认客户现场信息。`,
+      title: market === 'cn' ? '新的服务任务' : 'New service assignment',
+      body: market === 'cn'
+        ? `SAGEMRO 运营已将服务编号 ${wo.order_no} 分配给你，请确认客户现场信息。`
+        : `SAGEMRO operations assigned Service No. ${wo.order_no} to you. Please confirm the customer's site information.`,
       data: { work_order_id: workOrderId },
     });
 
@@ -8734,6 +8813,7 @@ async function handleAdminAssignWorkOrder(request, env) {
 
 async function handleAdminReviewWorkOrderPricing(request, env) {
   try {
+    const market = getRequestMarket(request);
     const url = new URL(request.url);
     const parts = url.pathname.split('/');
     const workOrderId = parts[4];
@@ -8768,11 +8848,14 @@ async function handleAdminReviewWorkOrderPricing(request, env) {
 
       await env.DB.prepare(`
         INSERT INTO work_order_messages (id, work_order_id, sender_type, sender_id, sender_name, content, message_type, is_internal_note, is_customer_visible)
-        VALUES (?, ?, 'system', '', '系统', ?, 'pricing_update', 0, 1)
+        VALUES (?, ?, 'system', '', ?, ?, 'pricing_update', 0, 1)
       `).bind(
         generateId(),
         workOrderId,
-        'SAGEMRO 已完成报价审核，请查看报价明细并确认。'
+        systemSenderName(market),
+        market === 'cn'
+          ? 'SAGEMRO 已完成报价审核，请查看报价明细并确认。'
+          : 'SAGEMRO has reviewed the quote. Please review the quote details and confirm.'
       ).run();
 
       await writeAuditLog(env, request, {
@@ -8788,8 +8871,10 @@ async function handleAdminReviewWorkOrderPricing(request, env) {
           user_id: wo.customer_id,
           user_type: 'customer',
           type: 'official_quote_ready',
-          title: 'SAGEMRO 报价已确认',
-          body: `服务编号 ${wo.order_no} 的报价已完成审核，请查看并确认。`,
+          title: market === 'cn' ? 'SAGEMRO 报价已确认' : 'SAGEMRO quote ready',
+          body: market === 'cn'
+            ? `服务编号 ${wo.order_no} 的报价已完成审核，请查看并确认。`
+            : `The quote for Service No. ${wo.order_no} has been reviewed. Please review and confirm it.`,
           data: { work_order_id: workOrderId },
         });
       }
@@ -8806,11 +8891,14 @@ async function handleAdminReviewWorkOrderPricing(request, env) {
 
     await env.DB.prepare(`
       INSERT INTO work_order_messages (id, work_order_id, sender_type, sender_id, sender_name, content, message_type, is_internal_note, is_customer_visible)
-      VALUES (?, ?, 'system', '', '系统', ?, 'system', 1, 0)
+      VALUES (?, ?, 'system', '', ?, ?, 'system', 1, 0)
     `).bind(
       generateId(),
       workOrderId,
-      `内部报价审核未通过，请工程师修改后重新提交。${reviewNote ? `原因：${reviewNote}` : ''}`
+      systemSenderName(market),
+      market === 'cn'
+        ? `内部报价审核未通过，请工程师修改后重新提交。${reviewNote ? `原因：${reviewNote}` : ''}`
+        : `Internal quote review was not approved. Please revise and resubmit the quote.${reviewNote ? ` Reason: ${reviewNote}` : ''}`
     ).run();
 
     await writeAuditLog(env, request, {
@@ -8826,8 +8914,10 @@ async function handleAdminReviewWorkOrderPricing(request, env) {
         user_id: wo.engineer_id,
         user_type: 'engineer',
         type: 'quote_review_rejected',
-        title: '报价需修改',
-        body: `服务编号 ${wo.order_no} 的报价未通过运营复核，请修改后重新提交。`,
+        title: market === 'cn' ? '报价需修改' : 'Quote revision required',
+        body: market === 'cn'
+          ? `服务编号 ${wo.order_no} 的报价未通过运营复核，请修改后重新提交。`
+          : `The quote for Service No. ${wo.order_no} did not pass operations review. Please revise and resubmit it.`,
         data: { work_order_id: workOrderId },
       });
     }
@@ -8840,6 +8930,7 @@ async function handleAdminReviewWorkOrderPricing(request, env) {
 
 async function handleAdminArchiveWorkOrder(request, env) {
   try {
+    const market = getRequestMarket(request);
     const workOrderId = new URL(request.url).pathname.split('/')[4];
     if (!workOrderId) return errorResponse('缺少服务申请 ID');
 
@@ -8857,8 +8948,13 @@ async function handleAdminArchiveWorkOrder(request, env) {
 
     await env.DB.prepare(`
       INSERT INTO work_order_logs (id, work_order_id, action, actor_type, actor_id, content)
-      VALUES (?, ?, 'archived', 'admin', ?, 'SAGEMRO 运营已完成服务归档。')
-    `).bind(generateId(), workOrderId, request._auth?.userId || 'admin').run();
+      VALUES (?, ?, 'archived', 'admin', ?, ?)
+    `).bind(
+      generateId(),
+      workOrderId,
+      request._auth?.userId || 'admin',
+      market === 'cn' ? 'SAGEMRO 运营已完成服务归档。' : 'SAGEMRO operations archived the completed service.'
+    ).run();
 
     await writeAuditLog(env, request, {
       targetType: 'work_order',
@@ -9548,10 +9644,11 @@ async function handleTestFullPricingFlow(env) {
 // 工程师标记服务完成
 async function handleResolveWorkOrder(request, env) {
   try {
+    const market = getRequestMarket(request);
     // 认证：engineer_id 从 token 取
     const auth = request._auth;
     if (!auth || auth.userType !== 'engineer') {
-      return errorResponse('仅工程师可标记完成', 403);
+      return errorResponse(market === 'cn' ? '仅工程师可标记完成' : 'Only the assigned engineer can mark service complete', 403);
     }
     const engineer_id = auth.userId;
 
@@ -9559,9 +9656,9 @@ async function handleResolveWorkOrder(request, env) {
     const wo = await env.DB.prepare(
       'SELECT status, engineer_id FROM work_orders WHERE id = ?'
     ).bind(workOrderId).first();
-    if (!wo) return errorResponse('工单不存在', 404);
+    if (!wo) return errorResponse(market === 'cn' ? '工单不存在' : 'Work order not found', 404);
     if (wo.engineer_id !== engineer_id) {
-      return errorResponse('您无权操作该工单', 403);
+      return errorResponse(market === 'cn' ? '您无权操作该工单' : 'You do not have permission for this work order', 403);
     }
 
     const repairRecord = await env.DB.prepare(
@@ -9584,7 +9681,7 @@ async function handleResolveWorkOrder(request, env) {
       hasParts
     );
     if (!hasServiceReport) {
-      return errorResponse('请先填写服务报告，再标记服务完成', 400);
+      return errorResponse(market === 'cn' ? '请先填写服务报告，再标记服务完成' : 'Please complete the service report before marking service complete', 400);
     }
 
     // 仅允许 in_service 或 pricing 状态时标记完成
@@ -9595,13 +9692,23 @@ async function handleResolveWorkOrder(request, env) {
 
       await env.DB.prepare(`
         INSERT INTO work_order_logs (id, work_order_id, action, actor_type, actor_id, content)
-        VALUES (?, ?, 'resolved', 'engineer', ?, '工程师标记服务完成，等待客户确认。')
-      `).bind(generateId(), workOrderId, engineer_id || '').run();
+        VALUES (?, ?, 'resolved', 'engineer', ?, ?)
+      `).bind(
+        generateId(),
+        workOrderId,
+        engineer_id || '',
+        market === 'cn' ? '工程师标记服务完成，等待客户确认。' : 'Engineer marked service complete; awaiting customer confirmation.'
+      ).run();
 
       await env.DB.prepare(`
         INSERT INTO work_order_messages (id, work_order_id, sender_type, sender_id, sender_name, content, message_type)
-        VALUES (?, ?, 'system', '', '系统', '服务已完成，请客户确认并评价。', 'system')
-      `).bind(generateId(), workOrderId).run();
+        VALUES (?, ?, 'system', '', ?, ?, 'system')
+      `).bind(
+        generateId(),
+        workOrderId,
+        systemSenderName(market),
+        market === 'cn' ? '服务已完成，请客户确认并评价。' : 'Service is complete. Please confirm the result and leave a review.'
+      ).run();
 
       // 通知客户：服务已完成
       const woResolve = await env.DB.prepare('SELECT customer_id, order_no FROM work_orders WHERE id = ?').bind(workOrderId).first();
@@ -9610,8 +9717,10 @@ async function handleResolveWorkOrder(request, env) {
           user_id: woResolve.customer_id,
           user_type: 'customer',
           type: 'ticket_resolved',
-          title: '服务已完成',
-          body: `工单 ${woResolve.order_no} 的服务已完成，请确认并评价。`,
+          title: market === 'cn' ? '服务已完成' : 'Service completed',
+          body: market === 'cn'
+            ? `工单 ${woResolve.order_no} 的服务已完成，请确认并评价。`
+            : `Service for Work Order ${woResolve.order_no} is complete. Please confirm and leave a review.`,
           data: { work_order_id: workOrderId },
         });
       }
@@ -9626,9 +9735,10 @@ async function handleResolveWorkOrder(request, env) {
 // 客户取消工单
 async function handleCancelWorkOrder(request, env) {
   try {
+    const market = getRequestMarket(request);
     const auth = request._auth;
     if (!auth || (auth.userType !== 'customer' && auth.userType !== 'admin')) {
-      return errorResponse('仅客户可取消工单', 403);
+      return errorResponse(market === 'cn' ? '仅客户可取消工单' : 'Only the customer can cancel this work order', 403);
     }
     const userId = auth.userId;
 
@@ -9636,15 +9746,15 @@ async function handleCancelWorkOrder(request, env) {
     const wo = await env.DB.prepare(
       'SELECT id, status, customer_id, engineer_id, order_no FROM work_orders WHERE id = ?'
     ).bind(workOrderId).first();
-    if (!wo) return errorResponse('工单不存在', 404);
+    if (!wo) return errorResponse(market === 'cn' ? '工单不存在' : 'Work order not found', 404);
 
     if (auth.userType === 'customer' && wo.customer_id !== userId) {
-      return errorResponse('您无权操作该工单', 403);
+      return errorResponse(market === 'cn' ? '您无权操作该工单' : 'You do not have permission for this work order', 403);
     }
 
     const cancelableStatuses = ['pending', 'assigned', 'in_progress', 'pricing'];
     if (!cancelableStatuses.includes(wo.status)) {
-      return errorResponse('当前状态不可取消', 400);
+      return errorResponse(market === 'cn' ? '当前状态不可取消' : 'This work order cannot be cancelled in its current status', 400);
     }
 
     const now = new Date().toISOString();
@@ -9654,8 +9764,14 @@ async function handleCancelWorkOrder(request, env) {
 
     await env.DB.prepare(`
       INSERT INTO work_order_logs (id, work_order_id, action, actor_type, actor_id, content)
-      VALUES (?, ?, 'cancelled', ?, ?, '客户取消工单')
-    `).bind(generateId(), workOrderId, auth.userType, userId).run();
+      VALUES (?, ?, 'cancelled', ?, ?, ?)
+    `).bind(
+      generateId(),
+      workOrderId,
+      auth.userType,
+      userId,
+      market === 'cn' ? '客户取消工单' : 'Customer cancelled the work order'
+    ).run();
 
     // 通知工程师（如已分配）
     if (wo.engineer_id) {
@@ -9663,8 +9779,10 @@ async function handleCancelWorkOrder(request, env) {
         user_id: wo.engineer_id,
         user_type: 'engineer',
         type: 'ticket_cancelled',
-        title: '工单已取消',
-        body: `工单 ${wo.order_no} 已被客户取消。`,
+        title: market === 'cn' ? '工单已取消' : 'Work order cancelled',
+        body: market === 'cn'
+          ? `工单 ${wo.order_no} 已被客户取消。`
+          : `Work Order ${wo.order_no} was cancelled by the customer.`,
         data: { work_order_id: workOrderId },
       });
     }
@@ -10728,13 +10846,14 @@ async function handleGetWorkOrderPayment(request, env) {
 // 客户拒绝/议价
 async function handleRejectWorkOrderPricing(request, env) {
   try {
+    const market = getRequestMarket(request);
     const workOrderId = new URL(request.url).pathname.split('/')[3];
     const { reason, counter_offer } = await request.json();
 
     // 认证：仅客户可拒绝报价；customer_id 从 token 取
     const auth = request._auth;
     if (!auth || auth.userType !== 'customer') {
-      return errorResponse('仅客户可拒绝报价', 403);
+      return errorResponse(market === 'cn' ? '仅客户可拒绝报价' : 'Only the customer can reject or negotiate the quote', 403);
     }
     const customer_id = auth.userId;
 
@@ -10742,9 +10861,9 @@ async function handleRejectWorkOrderPricing(request, env) {
     const wo = await env.DB.prepare(
       'SELECT customer_id FROM work_orders WHERE id = ?'
     ).bind(workOrderId).first();
-    if (!wo) return errorResponse('工单不存在', 404);
+    if (!wo) return errorResponse(market === 'cn' ? '工单不存在' : 'Work order not found', 404);
     if (wo.customer_id !== customer_id) {
-      return errorResponse('您无权操作该工单', 403);
+      return errorResponse(market === 'cn' ? '您无权操作该工单' : 'You do not have permission for this work order', 403);
     }
 
     await env.DB.prepare(
@@ -10756,14 +10875,16 @@ async function handleRejectWorkOrderPricing(request, env) {
     ).bind(workOrderId).run();
 
     // 发送议价消息
-    let messageContent = reason || '希望重新报价';
+    let messageContent = reason || (market === 'cn' ? '希望重新报价' : 'The customer requested a revised quote.');
     if (counter_offer) {
-      messageContent += `（期望价格：${counter_offer} 元）`;
+      messageContent += market === 'cn'
+        ? `（期望价格：${counter_offer} 元）`
+        : ` Expected price: ${counter_offer} USD.`;
     }
     const msgId = generateId();
     await env.DB.prepare(
-      "INSERT INTO work_order_messages (id, work_order_id, sender_type, sender_id, sender_name, content, message_type) VALUES (?, ?, 'customer', ?, '客户', ?, 'text')"
-    ).bind(msgId, workOrderId, customer_id, messageContent).run();
+      "INSERT INTO work_order_messages (id, work_order_id, sender_type, sender_id, sender_name, content, message_type) VALUES (?, ?, 'customer', ?, ?, ?, 'text')"
+    ).bind(msgId, workOrderId, customer_id, market === 'cn' ? '客户' : 'Customer', messageContent).run();
 
     return jsonResponse({ success: true });
   } catch (error) {
