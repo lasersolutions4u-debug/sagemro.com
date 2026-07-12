@@ -167,14 +167,20 @@ test('international login accepts email or long international phone numbers', ()
   assert.match(api, /JSON\.stringify\(\{ phone, email, password \}\)/);
 });
 
-test('registration identity copy uses service-need wording instead of customer self-label', () => {
+test('registration creates customer accounts without a public role selection step', () => {
   const loginModal = read('frontend/src/components/Auth/LoginModal.jsx');
 
-  assert.match(loginModal, /customerTitle: 'I Need Service'/);
-  assert.match(loginModal, /customerDesc: 'Use AI diagnostics, service requests, equipment records, spare parts, and maintenance follow-up.'/);
-  assert.match(loginModal, /helps organize the facts so you can decide what to do next/);
-  assert.doesNotMatch(loginModal, /guide the next service step/);
-  assert.doesNotMatch(loginModal, /customerTitle: "I'm a Customer"/);
+  assert.match(loginModal, /createAccount: 'Create account'/);
+  assert.match(loginModal, /createAccount: '创建账号'/);
+  assert.match(loginModal, /identity: 'customer'/);
+  assert.match(loginModal, /Create your SAGEMRO account to save conversations, equipment records, and service requests\./);
+  assert.doesNotMatch(loginModal, /Next: Choose your role/);
+  assert.doesNotMatch(loginModal, /选择角色/);
+  assert.doesNotMatch(loginModal, /identity-select-customer/);
+  assert.doesNotMatch(loginModal, /identity-select-visitor/);
+  assert.doesNotMatch(loginModal, /How would you like to use SAGEMRO Service OS/);
+  assert.doesNotMatch(loginModal, /I Need Service/);
+  assert.doesNotMatch(loginModal, /I'm just browsing \(Guest\)/);
 });
 
 test('customer sidebar tools stay expanded without a More overflow menu', () => {
