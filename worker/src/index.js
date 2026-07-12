@@ -174,7 +174,7 @@ function assertChatConversationAccess(chatAuth, trustedRole, conversation) {
   if (!conversation) return;
   if (trustedRole === 'guest') {
     if (conversation.customer_id || conversation.engineer_id) {
-      throw new GuardError('鎮ㄦ棤鏉冭闂瀵硅瘽', 403);
+      throw new GuardError('您无权访问该对话', 403);
     }
     return;
   }
@@ -1455,6 +1455,7 @@ async function attachConversationImagesToWorkOrder(env, {
   uploaderType = 'customer',
   uploaderId = '',
   limit = 12,
+  market = 'com',
 }) {
   if (!workOrderId || !conversationId) return 0;
 
@@ -1529,7 +1530,7 @@ async function attachConversationImagesToWorkOrder(env, {
       workOrderId,
       uploaderType,
       uploaderId || '',
-      `已从 AI 对话带入 ${attached} 张诊断图片。`
+      serviceCopy(market).attachmentLog(attached)
     ).run();
   }
 
@@ -1540,12 +1541,14 @@ async function attachConversationImagesToWorkOrder(env, {
 // 与 POST /api/workorders 共享核心逻辑，但不走 HTTP 层
 async function toolCreateWorkOrder({ customerId, env, ctx, args, conversationId, market = 'com' }) {
   const { type, description, urgency, device_id, category_l1, category_l2 } = args;
+  const copy = serviceCopy(market);
 
-  if (!customerId) return { error: 'not_authenticated', reason: '客户未登录，无法创建工单。请引导客户先登录。' };
+  if (!customerId) return { error: 'not_authenticated', reason: copy.notAuthenticatedReason };
   if (!type || !description || !urgency) {
+    const missingFields = [!type && 'type', !description && 'description', !urgency && 'urgency'].filter(Boolean);
     return {
       error: 'missing_required_fields',
-      reason: `缺少必填字段：${[!type && 'type', !description && 'description', !urgency && 'urgency'].filter(Boolean).join('、')}。请向客户追问缺失信息后再调用。`,
+      reason: copy.missingFieldsReason(missingFields),
     };
   }
 
@@ -1556,8 +1559,8 @@ async function toolCreateWorkOrder({ customerId, env, ctx, args, conversationId,
   const catL1 = ALLOWED_CATEGORIES_L1.includes(category_l1) ? category_l1 : 'other';
 
   // 输入长度检查
-  if (description.length > 10000) return { error: 'description_too_long', reason: '工单描述过长，请精简后重试。' };
-  if (type.length > 100) return { error: 'invalid_type', reason: '工单类型值不合法。' };
+  if (description.length > 10000) return { error: 'description_too_long', reason: copy.descriptionTooLongReason };
+  if (type.length > 100) return { error: 'invalid_type', reason: copy.invalidTypeReason };
 
   try {
     // PII 脱敏
@@ -1577,13 +1580,14 @@ async function toolCreateWorkOrder({ customerId, env, ctx, args, conversationId,
     await env.DB.prepare(`
       INSERT INTO work_order_logs (id, work_order_id, action, actor_type, actor_id, content)
       VALUES (?, ?, ?, ?, ?, ?)
-    `).bind(generateId(), id, 'created', 'customer', customerId, 'AI 对话创建工单').run();
+    `).bind(generateId(), id, 'created', 'customer', customerId, copy.aiCreatedLog).run();
 
     const attachedImages = await attachConversationImagesToWorkOrder(env, {
       workOrderId: id,
       conversationId,
       uploaderType: 'customer',
       uploaderId: customerId,
+      market,
     });
 
     // AI 摘要异步生成
@@ -1603,18 +1607,13 @@ async function toolCreateWorkOrder({ customerId, env, ctx, args, conversationId,
     // 工程师匹配与推送
     const workOrderData = { id, order_no, type, description: safeDescription, urgency, ai_summary: null, customer_id: customerId };
     const matchingEngineers = await findMatchingEngineers(workOrderData, env);
-
-    const typeLabels = {
-      fault: '设备故障', maintenance: '维护保养', parameter: '参数调试',
-      consult: '技术咨询', parts: '配件采购', aftersales: '售后服务', other: '其他'
-    };
-    const urgencyLabels = { normal: '普通', urgent: '紧急', critical: '非常紧急' };
+    const notificationBody = serviceNotificationBody(order_no, type, urgency, market);
 
     for (const engineer of matchingEngineers) {
       if (engineer.onesignal_player_id) {
         await sendPushToEngineer(engineer.id, env, {
-          title: '📋 新服务任务待确认',
-          message: `服务编号：${order_no} | 类型：${typeLabels[type] || type} | 紧急程度：${urgencyLabels[urgency] || urgency}`,
+          title: copy.newPushTitle,
+          message: notificationBody,
           data: { work_order_id: id, type: 'new_ticket' }
         });
       }
@@ -1622,8 +1621,8 @@ async function toolCreateWorkOrder({ customerId, env, ctx, args, conversationId,
         user_id: engineer.id,
         user_type: 'engineer',
         type: 'new_ticket',
-        title: '新服务任务待确认',
-        body: `服务编号：${order_no} | 类型：${typeLabels[type] || type} | 紧急程度：${urgencyLabels[urgency] || urgency}`,
+        title: copy.newTaskTitle,
+        body: notificationBody,
         data: { work_order_id: id, order_no },
       });
     }
@@ -1634,15 +1633,15 @@ async function toolCreateWorkOrder({ customerId, env, ctx, args, conversationId,
         id,
         order_no,
         status: 'pending',
-        type: typeLabels[type] || type,
-        urgency: urgencyLabels[urgency] || urgency,
+        type: serviceTypeLabel(type, market),
+        urgency: serviceUrgencyLabel(urgency, market),
       },
       matching_engineers_count: matchingEngineers.length,
       attached_images_count: attachedImages,
     };
   } catch (error) {
     console.error('[toolCreateWorkOrder] error:', error);
-    return { error: 'tool_failed', reason: `工单创建失败：${error.message}。请告知客户稍后重试或通过侧边栏手动提交。` };
+    return { error: 'tool_failed', reason: copy.toolFailedReason(error.message) };
   }
 }
 
@@ -1820,7 +1819,11 @@ const ERROR_MESSAGES = {
   },
   public_engineer_registration_closed: {
     com: 'Public engineer registration is closed. SAGEMRO engineer accounts are created internally.',
-    cn: '工程师账号由 SAGEMRO 内部创建，公开注册已关闭。',
+    cn: '工程师账号暂不开放公开注册。',
+  },
+  missing_required_fields: {
+    com: 'Missing required fields.',
+    cn: '缺少必填字段',
   },
 };
 
@@ -1832,6 +1835,98 @@ function localizedMessage(key, request) {
 
 function localizedErrorResponse(key, request, status = 400) {
   return errorResponse(localizedMessage(key, request), status);
+}
+
+const SERVICE_TYPE_LABELS = {
+  com: {
+    fault: 'Equipment repair',
+    maintenance: 'Maintenance',
+    parameter: 'Parameter tuning',
+    consult: 'Technical consultation',
+    parts: 'Spare parts / consumables',
+    aftersales: 'Retrofit / peripheral equipment',
+    other: 'Other request',
+  },
+  cn: {
+    fault: '设备故障',
+    maintenance: '维护保养',
+    parameter: '参数调试',
+    consult: '技术咨询',
+    parts: '配件采购',
+    aftersales: '售后服务',
+    other: '其他',
+  },
+};
+
+const SERVICE_URGENCY_LABELS = {
+  com: { normal: 'Normal', urgent: 'Urgent', critical: 'Critical' },
+  cn: { normal: '普通', urgent: '紧急', critical: '非常紧急' },
+};
+
+function serviceTypeLabel(type, market = 'com') {
+  const labels = SERVICE_TYPE_LABELS[market] || SERVICE_TYPE_LABELS.com;
+  return labels[type] || type || labels.other;
+}
+
+function serviceUrgencyLabel(urgency, market = 'com') {
+  const labels = SERVICE_URGENCY_LABELS[market] || SERVICE_URGENCY_LABELS.com;
+  return labels[urgency] || urgency || labels.normal;
+}
+
+function serviceNotificationBody(orderNo, type, urgency, market = 'com') {
+  if (market === 'cn') {
+    return `服务编号：${orderNo} | 类型：${serviceTypeLabel(type, market)} | 紧急程度：${serviceUrgencyLabel(urgency, market)}`;
+  }
+  return `Service No.: ${orderNo} | Type: ${serviceTypeLabel(type, market)} | Urgency: ${serviceUrgencyLabel(urgency, market)}`;
+}
+
+function serviceCopy(market = 'com') {
+  if (market === 'cn') {
+    return {
+      createdLog: '创建工单',
+      aiCreatedLog: 'AI 对话创建工单',
+      newTaskTitle: '新服务任务待确认',
+      newPushTitle: '📋 新服务任务待确认',
+      attachmentLog: (count) => `已从 AI 对话带入 ${count} 张诊断图片。`,
+      quoteSubmittedInternal: '工程师已提交报价建议，等待运营复核后发送给客户。',
+      quoteConfirmedMessage: '客户已确认报价，等待客户付款。付款完成后工程师即可开始上门服务。',
+      quoteConfirmedTitle: '报价已确认，等待客户付款',
+      quoteConfirmedBody: (orderNo) => `工单 ${orderNo} 的客户已确认报价，请等待客户完成付款。`,
+      notAuthenticatedReason: '客户未登录，无法创建工单。请引导客户先登录。',
+      missingFieldsReason: (fields) => `缺少必填字段：${fields.join('、')}。请向客户追问缺失信息后再调用。`,
+      descriptionTooLongReason: '工单描述过长，请精简后重试。',
+      invalidTypeReason: '工单类型值不合法。',
+      toolFailedReason: (message) => `工单创建失败：${message}。请告知客户稍后重试或通过侧边栏手动提交。`,
+    };
+  }
+  return {
+    createdLog: 'Service request created',
+    aiCreatedLog: 'Service request created from AI conversation',
+    newTaskTitle: 'New service task pending confirmation',
+    newPushTitle: '📋 New service task pending confirmation',
+    attachmentLog: (count) => `Attached ${count} diagnostic image${count === 1 ? '' : 's'} from the AI conversation.`,
+    quoteSubmittedInternal: 'The engineer submitted a quote proposal. SAGEMRO operations will review it before sending it to the customer.',
+    quoteConfirmedMessage: 'The customer confirmed the quote. Payment follow-up is pending before service starts.',
+    quoteConfirmedTitle: 'Quote confirmed; payment pending',
+    quoteConfirmedBody: (orderNo) => `Work order ${orderNo} has a customer-confirmed quote. Please wait for payment completion before service starts.`,
+    notAuthenticatedReason: 'The customer is not signed in. Ask the customer to sign in before creating the service request.',
+    missingFieldsReason: (fields) => `Missing required field(s): ${fields.join(', ')}. Ask the customer for the missing information before calling this tool.`,
+    descriptionTooLongReason: 'The service request description is too long. Please shorten it and try again.',
+    invalidTypeReason: 'The service request type is invalid.',
+    toolFailedReason: (message) => `Service request creation failed: ${message}. Ask the customer to try again later or submit manually from the sidebar.`,
+  };
+}
+
+function systemSenderName(market = 'com') {
+  return market === 'cn' ? '系统' : 'System';
+}
+
+function internalEngineerLabel(market = 'com') {
+  return market === 'cn' ? '内部工程师' : 'internal engineer';
+}
+
+function sagemroEngineerLabel(market = 'com') {
+  return market === 'cn' ? 'SAGEMRO 工程师' : 'SAGEMRO engineer';
 }
 
 // ============ 认证相关 ============
@@ -1904,11 +1999,14 @@ async function sendVerificationEmail(env, email, code, request) {
     };
   }
 
+  const market = getRequestMarket(request);
   const emailPayload = {
     from: env.VERIFICATION_EMAIL_FROM,
     to: email,
-    subject: 'SAGEMRO verification code',
-    text: `Your SAGEMRO verification code is ${code}. It is valid for 5 minutes. Do not share it with others.`,
+    subject: market === 'cn' ? `SAGEMRO 验证码` : 'SAGEMRO verification code',
+    text: market === 'cn'
+      ? `您的 SAGEMRO 验证码是 ${code}，有效期为 5 分钟。请勿将验证码告知他人。`
+      : `Your SAGEMRO verification code is ${code}. It is valid for 5 minutes. Do not share it with others.`,
   };
 
   if (env.EMAIL?.send) {
@@ -2178,7 +2276,7 @@ async function handleSendCode(request, env) {
 // 客户注册
 async function handleRegisterCustomer(request, env) {
   try {
-    const { name, phone, email, password, code, company, identity } = await request.json();
+    const { name, phone, email, password, code, company, identity, conversation_id } = await request.json();
     const market = getRequestMarket(request);
     const normalizedEmail = normalizeEmail(email);
 
@@ -2222,6 +2320,13 @@ async function handleRegisterCustomer(request, env) {
     await env.DB.prepare(
       'INSERT INTO customers (id, user_no, name, phone, email, password_hash, salt, company, auth_status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
     ).bind(id, userNo, name, phone, normalizedEmail || null, passwordHash, salt, company, authStatus).run();
+
+    // 如果提供了 conversation_id，将游客对话关联到新注册的客户
+    if (conversation_id) {
+      await env.DB.prepare(
+        'UPDATE conversations SET customer_id = ?, updated_at = datetime("now") WHERE id = ? AND customer_id IS NULL'
+      ).bind(id, conversation_id).run();
+    }
 
     // 删除已使用的验证码
     await deleteVerificationCode(env, { phone, email });
@@ -2919,25 +3024,26 @@ function normalizeVoiceTranscript(text) {
 
 export async function handleChatTranscribe(request, env) {
   try {
+    const market = getRequestMarket(request);
     if (!env.DEEPGRAM_API_KEY) {
-      return errorResponse('Voice input is not configured.', 503);
+      return errorResponse(market === 'cn' ? '语音输入功能未配置' : 'Voice input is not configured.', 503);
     }
 
     const formData = await request.formData();
     const file = formData.get('audio');
 
     if (!file || typeof file === 'string') {
-      return errorResponse('Please record audio first.', 400);
+      return errorResponse(market === 'cn' ? '请先录制语音' : 'Please record audio first.', 400);
     }
 
     const maxVoiceBytes = 6 * 1024 * 1024;
     if (file.size > maxVoiceBytes) {
-      return errorResponse('Voice recording is too large. Please keep it under 30 seconds.', 413);
+      return errorResponse(market === 'cn' ? '语音文件太大，请控制在 30 秒以内' : 'Voice recording is too large. Please keep it under 30 seconds.', 413);
     }
 
     const contentType = file.type || 'audio/webm';
     if (!/^audio\//i.test(contentType) && !/webm|ogg|mp4|mpeg/i.test(contentType)) {
-      return errorResponse('Unsupported audio format.', 400);
+      return errorResponse(market === 'cn' ? '不支持的音频格式' : 'Unsupported audio format.', 400);
     }
 
     let auth = null;
@@ -2949,11 +3055,12 @@ export async function handleChatTranscribe(request, env) {
     const clientIP = getRequestIp(request) || 'unknown';
     const voiceUserKey = auth?.userId ? `${auth.userType}:${auth.userId}` : `guest:${clientIP}`;
     const hourlyLimit = parseInt(env.DEEPGRAM_HOURLY_PER_USER || '20', 10);
+    const limitMsg = market === 'cn' ? '语音转写次数已用完，请稍后再试' : 'Voice transcription limit reached. Please try again later.';
     await enforceHourlyKvLimit(env, {
       key: `deepgram_voice_hour_${voiceUserKey}`,
       limit: hourlyLimit,
       ttlSeconds: 3600,
-      message: `Voice transcription limit reached. Please try again later.`,
+      message: limitMsg,
     });
 
     const deepgramUrl = new URL('https://api.deepgram.com/v1/listen');
@@ -2972,7 +3079,7 @@ export async function handleChatTranscribe(request, env) {
 
     const dgBody = await dgResponse.json().catch(() => ({}));
     if (!dgResponse.ok) {
-      const message = dgBody.err_msg || dgBody.error || 'Voice transcription failed.';
+      const message = dgBody.err_msg || dgBody.error || (market === 'cn' ? '语音转写失败' : 'Voice transcription failed.');
       return errorResponse(message, dgResponse.status >= 500 ? 503 : 400);
     }
 
@@ -2988,7 +3095,7 @@ export async function handleChatTranscribe(request, env) {
     if (error instanceof BudgetError) {
       return errorResponse(error.message, error.status);
     }
-    return errorResponse(error.message || 'Voice transcription failed.', 500);
+    return errorResponse(error.message || (market === 'cn' ? '语音转写失败' : 'Voice transcription failed.'), 500);
   }
 }
 
@@ -3082,6 +3189,13 @@ export async function handleChat(request, env) {
         { label: 'chat:load_conversation' },
       );
       if (existingConversation) {
+        // 已认证用户访问无主对话时自动认领
+        if (trustedCustomerId && !existingConversation.customer_id && !existingConversation.engineer_id) {
+          await env.DB.prepare(
+            'UPDATE conversations SET customer_id = ? WHERE id = ? AND customer_id IS NULL'
+          ).bind(trustedCustomerId, conversation_id).run();
+          existingConversation.customer_id = trustedCustomerId;
+        }
         if (trustedRole === 'guest') {
           if (existingConversation.customer_id || existingConversation.engineer_id) {
             return errorResponse('您无权访问该对话', 403);
@@ -3751,10 +3865,12 @@ async function generateWorkOrderSummary(type, description, urgency, env, { marke
 // 创建工单
 async function handleCreateWorkOrder(request, env) {
   try {
+    const market = getRequestMarket(request);
+    const copy = serviceCopy(market);
     const { customer_id, type, description, urgency, device_id, category_l1, category_l2, conversation_id } = await request.json();
 
     if (!customer_id || !type || !description) {
-      return errorResponse('缺少必填字段');
+      return localizedErrorResponse('missing_required_fields', request);
     }
 
     // 输入长度上限：防止客户端粘贴巨型文本打爆 D1 / AI 请求
@@ -3791,19 +3907,20 @@ async function handleCreateWorkOrder(request, env) {
     await env.DB.prepare(`
       INSERT INTO work_order_logs (id, work_order_id, action, actor_type, actor_id, content)
       VALUES (?, ?, ?, ?, ?, ?)
-    `).bind(generateId(), id, 'created', 'customer', customer_id, '创建工单').run();
+    `).bind(generateId(), id, 'created', 'customer', customer_id, copy.createdLog).run();
 
     const attachedImages = await attachConversationImagesToWorkOrder(env, {
       workOrderId: id,
       conversationId: conversation_id,
       uploaderType: 'customer',
       uploaderId: customer_id,
+      market,
     });
 
     // AI 摘要异步生成：不阻塞响应，生成完成后回写 ai_summary
     // 使用 ctx.waitUntil 保证 Worker 在返回响应后仍会完成该任务
     const ctx = request._ctx;
-    const aiSummaryPromise = generateWorkOrderSummary(type, safeDescription, urgency, env, { market: getRequestMarket(request) })
+    const aiSummaryPromise = generateWorkOrderSummary(type, safeDescription, urgency, env, { market })
       .then(async (summary) => {
         if (summary) {
           await env.DB.prepare('UPDATE work_orders SET ai_summary = ? WHERE id = ?')
@@ -3834,28 +3951,15 @@ async function handleCreateWorkOrder(request, env) {
     // 过滤出有 playerId 的工程师（只有订阅了推送的才发）
     const engineersWithPush = matchingEngineers.filter(e => e.onesignal_player_id);
 
-    const typeLabels = {
-      fault: '设备故障',
-      maintenance: '维护保养',
-      parameter: '参数调试',
-      consult: '技术咨询',
-      parts: '配件采购',
-      aftersales: '售后服务',
-      other: '其他'
-    };
-    const urgencyLabels = { normal: '普通', urgent: '紧急', critical: '非常紧急' };
+    const notificationBody = serviceNotificationBody(order_no, type, urgency, market);
 
     for (const engineer of matchingEngineers) {
       if (engineer.onesignal_player_id) {
-        const pushTitle = '📋 New Service Assignment';
-        const pushTitleZh = '📋 新服务任务待确认';
-        const pushMessage = `Service: ${order_no} | Type: ${typeLabels[type] || type} | Urgency: ${urgencyLabels[urgency] || urgency}`;
-        const pushMessageZh = `服务编号：${order_no} | 类型：${typeLabels[type] || type} | 紧急程度：${urgencyLabels[urgency] || urgency}`;
         await sendPushToEngineer(engineer.id, env, {
-          title: pushTitle,
-          titleZh: pushTitleZh,
-          message: pushMessage,
-          messageZh: pushMessageZh,
+          title: copy.newPushTitle,
+          titleZh: serviceCopy('cn').newPushTitle,
+          message: notificationBody,
+          messageZh: serviceNotificationBody(order_no, type, urgency, 'cn'),
           data: { work_order_id: id, type: 'new_ticket' }
         });
       }
@@ -3867,8 +3971,8 @@ async function handleCreateWorkOrder(request, env) {
         user_id: engineer.id,
         user_type: 'engineer',
         type: 'new_ticket',
-        title: '新服务任务待确认',
-        body: `服务编号：${order_no} | 类型：${typeLabels[type] || type} | 紧急程度：${urgencyLabels[urgency] || urgency}`,
+        title: copy.newTaskTitle,
+        body: notificationBody,
         data: { work_order_id: id, order_no },
       });
     }
@@ -8327,10 +8431,10 @@ async function handleAdminEngineerDetail(request, env) {
 async function handleAdminUpdateEngineer(request, env) {
   try {
     const engineerId = new URL(request.url).pathname.split('/').pop();
-    if (!engineerId) return errorResponse('Missing engineer ID', 400);
+    if (!engineerId) return errorResponse(getRequestMarket(request) === 'cn' ? '缺少工程师 ID' : 'Missing engineer ID', 400);
 
     const existing = await env.DB.prepare('SELECT id, engineer_role FROM engineers WHERE id = ?').bind(engineerId).first();
-    if (!existing) return errorResponse('Engineer not found', 404);
+    if (!existing) return errorResponse(getRequestMarket(request) === 'cn' ? '工程师不存在' : 'Engineer not found', 404);
 
     const body = await request.json();
     const updates = [];
@@ -8361,7 +8465,7 @@ async function handleAdminUpdateEngineer(request, env) {
       values.push(String(body.service_region || '').slice(0, 200));
     }
 
-    if (!updates.length) return errorResponse('No engineer fields to update', 400);
+    if (!updates.length) return errorResponse(getRequestMarket(request) === 'cn' ? '没有需要修改的工程师信息' : 'No engineer fields to update', 400);
 
     values.push(engineerId);
     await env.DB.prepare(`UPDATE engineers SET ${updates.join(', ')} WHERE id = ?`).bind(...values).run();
@@ -9748,6 +9852,56 @@ async function handlePostWorkOrderMessage(request, env) {
       afterState: { message_id: id, sender_type, is_internal_note: internalNote },
     });
 
+    // 工单消息推送通知
+    if (!internalNote && sender_type !== 'system') {
+      const market = getRequestMarket(request);
+      const preview = (content || '').slice(0, 100);
+      if (sender_type === 'customer' && wo.engineer_id) {
+        createNotification(env, {
+          user_id: wo.engineer_id,
+          user_type: 'engineer',
+          type: 'work_order_message',
+          title: market === 'cn' ? '工单新消息' : 'New Work Order Message',
+          body: market === 'cn'
+            ? `工单 ${wo.order_no} 客户消息：${preview}`
+            : `Customer replied on ${wo.order_no}: ${preview}`,
+          data: { work_order_id: workOrderId, message_id: id },
+        });
+      } else if (sender_type === 'engineer' && wo.customer_id) {
+        createNotification(env, {
+          user_id: wo.customer_id,
+          user_type: 'customer',
+          type: 'work_order_message',
+          title: market === 'cn' ? '工单新消息' : 'New Work Order Message',
+          body: market === 'cn'
+            ? `工单 ${wo.order_no} 工程师回复：${preview}`
+            : `Engineer replied on ${wo.order_no}: ${preview}`,
+          data: { work_order_id: workOrderId, message_id: id },
+        });
+      } else if (sender_type === 'admin') {
+        if (wo.engineer_id) {
+          createNotification(env, {
+            user_id: wo.engineer_id,
+            user_type: 'engineer',
+            type: 'work_order_message',
+            title: market === 'cn' ? '工单新消息' : 'New Work Order Message',
+            body: market === 'cn' ? `管理员在工单 ${wo.order_no} 留言：${preview}` : `Admin messaged on ${wo.order_no}: ${preview}`,
+            data: { work_order_id: workOrderId, message_id: id },
+          });
+        }
+        if (wo.customer_id) {
+          createNotification(env, {
+            user_id: wo.customer_id,
+            user_type: 'customer',
+            type: 'work_order_message',
+            title: market === 'cn' ? '工单新消息' : 'New Work Order Message',
+            body: market === 'cn' ? `管理员在工单 ${wo.order_no} 留言：${preview}` : `Admin messaged on ${wo.order_no}: ${preview}`,
+            data: { work_order_id: workOrderId, message_id: id },
+          });
+        }
+      }
+    }
+
     return jsonResponse({ success: true, id, attachment_urls: attachments });
   } catch (error) {
     return errorResponse(error.message, 500);
@@ -9964,6 +10118,8 @@ async function generatePricingAINote(ctx, env) {
 // 工程师提交/更新核价（V2：按工程师等级浮动佣金）
 async function handleSubmitWorkOrderPricing(request, env) {
   try {
+    const market = getRequestMarket(request);
+    const copy = serviceCopy(market);
     const workOrderId = new URL(request.url).pathname.split('/')[3];
     const body = await request.json();
     const { labor_fee, travel_fee, other_fee, parts_detail } = body;
@@ -10063,8 +10219,8 @@ async function handleSubmitWorkOrderPricing(request, env) {
     // 发送内部系统消息：工程师报价建议需要运营复核后才对客户可见。
     const msgId = generateId();
     await env.DB.prepare(
-      "INSERT INTO work_order_messages (id, work_order_id, sender_type, sender_id, sender_name, content, message_type, is_internal_note, is_customer_visible) VALUES (?, ?, 'system', '', '系统', '工程师已提交报价建议，等待运营复核后发送给客户。', 'pricing_update', 1, 0)"
-    ).bind(msgId, workOrderId).run();
+      "INSERT INTO work_order_messages (id, work_order_id, sender_type, sender_id, sender_name, content, message_type, is_internal_note, is_customer_visible) VALUES (?, ?, 'system', '', ?, ?, 'pricing_update', 1, 0)"
+    ).bind(msgId, workOrderId, systemSenderName(market), copy.quoteSubmittedInternal).run();
 
     await writeAuditLog(env, request, {
       targetType: 'work_order',
@@ -10092,12 +10248,14 @@ async function handleSubmitWorkOrderPricing(request, env) {
 // 客户确认报价
 async function handleConfirmWorkOrderPricing(request, env) {
   try {
+    const market = getRequestMarket(request);
+    const copy = serviceCopy(market);
     const workOrderId = new URL(request.url).pathname.split('/')[3];
 
     // 认证：仅客户可确认报价；customer_id 从 token 取
     const auth = request._auth;
     if (!auth || auth.userType !== 'customer') {
-      return errorResponse('仅客户可确认报价', 403);
+      return errorResponse(market === 'cn' ? '仅客户可确认报价' : 'Only the customer can confirm the quote', 403);
     }
     const customer_id = auth.userId;
 
@@ -10105,16 +10263,16 @@ async function handleConfirmWorkOrderPricing(request, env) {
     const wo = await env.DB.prepare(
       'SELECT customer_id FROM work_orders WHERE id = ?'
     ).bind(workOrderId).first();
-    if (!wo) return errorResponse('工单不存在', 404);
+    if (!wo) return errorResponse(market === 'cn' ? '工单不存在' : 'Work order not found', 404);
     if (wo.customer_id !== customer_id) {
-      return errorResponse('您无权确认该工单报价', 403);
+      return errorResponse(market === 'cn' ? '您无权确认该工单报价' : 'You do not have permission to confirm this quote', 403);
     }
 
     const pricing = await env.DB.prepare(
       'SELECT * FROM work_order_pricing WHERE work_order_id = ?'
     ).bind(workOrderId).first();
-    if (!pricing) return errorResponse('报价不存在', 404);
-    if (pricing.status !== 'submitted') return errorResponse('报价状态不正确，无法确认');
+    if (!pricing) return errorResponse(market === 'cn' ? '报价不存在' : 'Quote not found', 404);
+    if (pricing.status !== 'submitted') return errorResponse(market === 'cn' ? '报价状态不正确，无法确认' : 'Quote status does not allow customer confirmation');
 
     await env.DB.prepare(
       "UPDATE work_order_pricing SET status = 'confirmed', confirmed_at = datetime('now') WHERE work_order_id = ?"
@@ -10127,8 +10285,8 @@ async function handleConfirmWorkOrderPricing(request, env) {
     // 系统消息
     const msgId = generateId();
     await env.DB.prepare(
-      "INSERT INTO work_order_messages (id, work_order_id, sender_type, sender_id, sender_name, content, message_type) VALUES (?, ?, 'system', '', '系统', '客户已确认报价，等待客户付款。付款完成后工程师即可开始上门服务。', 'system')"
-    ).bind(msgId, workOrderId).run();
+      "INSERT INTO work_order_messages (id, work_order_id, sender_type, sender_id, sender_name, content, message_type) VALUES (?, ?, 'system', '', ?, ?, 'system')"
+    ).bind(msgId, workOrderId, systemSenderName(market), copy.quoteConfirmedMessage).run();
 
     // 通知工程师：报价已确认，等待付款
     const woConfirm = await env.DB.prepare('SELECT engineer_id, order_no FROM work_orders WHERE id = ?').bind(workOrderId).first();
@@ -10137,8 +10295,8 @@ async function handleConfirmWorkOrderPricing(request, env) {
         user_id: woConfirm.engineer_id,
         user_type: 'engineer',
         type: 'pricing_confirmed',
-        title: '报价已确认，等待客户付款',
-        body: `工单 ${woConfirm.order_no} 的客户已确认报价，请等待客户完成付款。`,
+        title: copy.quoteConfirmedTitle,
+        body: copy.quoteConfirmedBody(woConfirm.order_no),
         data: { work_order_id: workOrderId },
       });
     }
@@ -10149,13 +10307,19 @@ async function handleConfirmWorkOrderPricing(request, env) {
   }
 }
 
-function paymentMethodLabel(method) {
-  const labels = {
+function paymentMethodLabel(method, market = 'com') {
+  const labelsEn = {
     bank_transfer: 'Bank Transfer / Wire Transfer',
     paypal_card: 'PayPal / Credit or Debit Card',
     paypal: 'PayPal / Credit or Debit Card',
   };
-  return labels[method] || method || 'Payment method';
+  const labelsCn = {
+    bank_transfer: '银行转账 / 电汇',
+    paypal_card: 'PayPal / 信用卡或借记卡',
+    paypal: 'PayPal / 信用卡或借记卡',
+  };
+  const labels = market === 'cn' ? labelsCn : labelsEn;
+  return labels[method] || method || (market === 'cn' ? '支付方式' : 'Payment method');
 }
 
 // Customer confirms preferred payment method. Collection is followed up by the engineer and confirmed by Admin.
@@ -10165,33 +10329,34 @@ async function handlePayWorkOrder(request, env) {
 
     const auth = request._auth;
     if (!auth || auth.userType !== 'customer') {
-      return errorResponse('Only the customer can confirm payment method', 403);
+      return errorResponse(getRequestMarket(request) === 'cn' ? '仅客户可确认支付方式' : 'Only the customer can confirm payment method', 403);
     }
     const customer_id = auth.userId;
 
     const wo = await env.DB.prepare(
       'SELECT id, customer_id, status, order_no, engineer_id FROM work_orders WHERE id = ?'
     ).bind(workOrderId).first();
-    if (!wo) return errorResponse('Work order not found', 404);
+    if (!wo) return errorResponse(getRequestMarket(request) === 'cn' ? '工单不存在' : 'Work order not found', 404);
     if (wo.customer_id !== customer_id) {
-      return errorResponse('You do not have permission for this work order', 403);
+      return errorResponse(getRequestMarket(request) === 'cn' ? '您无权操作此工单' : 'You do not have permission for this work order', 403);
     }
     if (wo.status !== 'pending_payment') {
-      return errorResponse('Work order is not waiting for payment method confirmation', 400);
+      return errorResponse(getRequestMarket(request) === 'cn' ? '工单当前状态不允许确认支付方式' : 'Work order is not waiting for payment method confirmation', 400);
     }
 
     const pricing = await env.DB.prepare(
       'SELECT subtotal, total_amount FROM work_order_pricing WHERE work_order_id = ? AND status = ?'
     ).bind(workOrderId, 'confirmed').first();
-    if (!pricing) return errorResponse('Quote not found or not confirmed', 404);
+    if (!pricing) return errorResponse(getRequestMarket(request) === 'cn' ? '报价未找到或未确认' : 'Quote not found or not confirmed', 404);
 
     const amount = pricing.total_amount || pricing.subtotal || 0;
-    if (amount <= 0) return errorResponse('Invalid quote amount', 400);
+    if (amount <= 0) return errorResponse(getRequestMarket(request) === 'cn' ? '报价金额无效' : 'Invalid quote amount', 400);
 
     const body = await request.json().catch(() => ({}));
     const allowedMethods = ['bank_transfer', 'paypal_card', 'paypal'];
     const paymentMethod = allowedMethods.includes(body.payment_method) ? body.payment_method : 'bank_transfer';
-    const methodLabel = paymentMethodLabel(paymentMethod);
+    const market = getRequestMarket(request);
+    const methodLabel = paymentMethodLabel(paymentMethod, market);
 
     const paymentId = generateId();
     const instructionId = 'PAYREQ' + Date.now().toString(36).toUpperCase() + Math.random().toString(36).slice(2, 6).toUpperCase();
@@ -10201,23 +10366,44 @@ async function handlePayWorkOrder(request, env) {
       VALUES (?, ?, ?, ?, ?, ?, ?)
     `).bind(paymentId, workOrderId, customer_id, amount, paymentMethod, instructionId, 'instructions_requested').run();
 
-    await env.DB.prepare(
-      "INSERT INTO work_order_messages (id, work_order_id, sender_type, sender_id, sender_name, content, message_type) VALUES (?, ?, 'system', '', 'System', ?, 'payment_update')"
-    ).bind(
-      generateId(),
-      workOrderId,
-      `Customer selected ${methodLabel} for ${amount} USD. Engineer should follow up collection and request Admin approval before service starts.`
-    ).run();
+    if (market === 'cn') {
+      await env.DB.prepare(
+        "INSERT INTO work_order_messages (id, work_order_id, sender_type, sender_id, sender_name, content, message_type) VALUES (?, ?, 'system', '', 'System', ?, 'payment_update')"
+      ).bind(
+        generateId(),
+        workOrderId,
+        `客户选择了 ${methodLabel}，金额 ${amount} CNY。工程师跟进收款后，请向管理员申请开工确认。`
+      ).run();
 
-    if (wo.engineer_id) {
-      await createNotification(env, {
-        user_id: wo.engineer_id,
-        user_type: 'engineer',
-        type: 'payment_method_selected',
-        title: 'Payment follow-up required',
-        body: `Work order ${wo.order_no} selected ${methodLabel}. Follow up payment and request Admin start approval after receipt evidence is available.`,
-        data: { work_order_id: workOrderId, amount, payment_method: paymentMethod },
-      });
+      if (wo.engineer_id) {
+        await createNotification(env, {
+          user_id: wo.engineer_id,
+          user_type: 'engineer',
+          type: 'payment_method_selected',
+          title: '收款跟进提醒',
+          body: `工单 ${wo.order_no} 的客户已选择 ${methodLabel}。请跟进收款进度，收到凭证后申请管理员确认开工。`,
+          data: { work_order_id: workOrderId, amount, payment_method: paymentMethod },
+        });
+      }
+    } else {
+      await env.DB.prepare(
+        "INSERT INTO work_order_messages (id, work_order_id, sender_type, sender_id, sender_name, content, message_type) VALUES (?, ?, 'system', '', 'System', ?, 'payment_update')"
+      ).bind(
+        generateId(),
+        workOrderId,
+        `Customer selected ${methodLabel} for ${amount} USD. Engineer should follow up collection and request Admin approval before service starts.`
+      ).run();
+
+      if (wo.engineer_id) {
+        await createNotification(env, {
+          user_id: wo.engineer_id,
+          user_type: 'engineer',
+          type: 'payment_method_selected',
+          title: 'Payment follow-up required',
+          body: `Work order ${wo.order_no} selected ${methodLabel}. Follow up payment and request Admin start approval after receipt evidence is available.`,
+          data: { work_order_id: workOrderId, amount, payment_method: paymentMethod },
+        });
+      }
     }
 
     return jsonResponse({
@@ -10239,8 +10425,9 @@ async function handleEngineerRequestPaymentStart(request, env) {
   try {
     const workOrderId = new URL(request.url).pathname.split('/')[3];
     const auth = request._auth;
+    const market = getRequestMarket(request);
     if (!auth || auth.userType !== 'engineer') {
-      return errorResponse('Only the assigned engineer can request service start', 403);
+      return errorResponse(market === 'cn' ? '仅指派的工程师可申请开工' : 'Only the assigned engineer can request service start', 403);
     }
     const body = await request.json().catch(() => ({}));
     const note = String(body.note || '').trim();
@@ -10248,16 +10435,16 @@ async function handleEngineerRequestPaymentStart(request, env) {
     const wo = await env.DB.prepare(
       'SELECT id, engineer_id, status, order_no FROM work_orders WHERE id = ?'
     ).bind(workOrderId).first();
-    if (!wo) return errorResponse('Work order not found', 404);
-    if (wo.engineer_id !== auth.userId) return errorResponse('You are not assigned to this work order', 403);
+    if (!wo) return errorResponse(market === 'cn' ? '工单不存在' : 'Work order not found', 404);
+    if (wo.engineer_id !== auth.userId) return errorResponse(market === 'cn' ? '您未被指派到此工单' : 'You are not assigned to this work order', 403);
     if (wo.status !== 'pending_payment' && wo.status !== 'payment_review') {
-      return errorResponse('Work order is not waiting for payment follow-up', 400);
+      return errorResponse(market === 'cn' ? '工单当前状态不允许申请开工' : 'Work order is not waiting for payment follow-up', 400);
     }
 
     const payment = await env.DB.prepare(
       'SELECT id, status, payment_method FROM work_order_payments WHERE work_order_id = ? ORDER BY created_at DESC LIMIT 1'
     ).bind(workOrderId).first();
-    if (!payment) return errorResponse('Payment method has not been confirmed by the customer', 400);
+    if (!payment) return errorResponse(market === 'cn' ? '客户尚未确认支付方式' : 'Payment method has not been confirmed by the customer', 400);
 
     await env.DB.prepare(
       "UPDATE work_order_payments SET status = 'pending_admin_confirmation' WHERE work_order_id = ?"
@@ -10266,13 +10453,17 @@ async function handleEngineerRequestPaymentStart(request, env) {
       "UPDATE work_orders SET status = 'payment_review' WHERE id = ?"
     ).bind(workOrderId).run();
 
+    const internalNote = market === 'cn'
+      ? `工程师在收款跟进后申请管理员确认开工。${note ? ` 备注：${note}` : ''}`
+      : `Engineer requested Admin approval to start service after payment follow-up.${note ? ` Note: ${note}` : ''}`;
+
     await env.DB.prepare(
       "INSERT INTO work_order_messages (id, work_order_id, sender_type, sender_id, sender_name, content, message_type, is_internal_note, is_customer_visible) VALUES (?, ?, 'engineer', ?, 'Engineer', ?, 'payment_update', 1, 0)"
     ).bind(
       generateId(),
       workOrderId,
       auth.userId,
-      `Engineer requested Admin approval to start service after payment follow-up.${note ? ` Note: ${note}` : ''}`
+      internalNote
     ).run();
 
     await writeAuditLog(env, request, {
@@ -10292,23 +10483,24 @@ async function handleEngineerRequestPaymentStart(request, env) {
 async function handleAdminApprovePaymentStart(request, env) {
   try {
     const workOrderId = new URL(request.url).pathname.split('/')[4];
+    const market = getRequestMarket(request);
     const body = await request.json().catch(() => ({}));
     const note = String(body.note || '').trim();
 
     const wo = await env.DB.prepare(
       'SELECT id, status, order_no FROM work_orders WHERE id = ?'
     ).bind(workOrderId).first();
-    if (!wo) return errorResponse('Work order not found', 404);
+    if (!wo) return errorResponse(market === 'cn' ? '工单不存在' : 'Work order not found', 404);
     if (wo.status !== 'payment_review' && wo.status !== 'pending_payment') {
-      return errorResponse('Work order is not waiting for payment approval', 400);
+      return errorResponse(market === 'cn' ? '工单当前状态不允许管理员确认付款' : 'Work order is not waiting for payment approval', 400);
     }
 
     const payment = await env.DB.prepare(
       'SELECT id, status, payment_method FROM work_order_payments WHERE work_order_id = ? ORDER BY created_at DESC LIMIT 1'
     ).bind(workOrderId).first();
-    if (!payment) return errorResponse('Payment record not found', 400);
+    if (!payment) return errorResponse(market === 'cn' ? '未找到付款记录' : 'Payment record not found', 400);
     if (payment.status !== 'pending_admin_confirmation' && payment.status !== 'instructions_requested') {
-      return errorResponse('Payment is not ready for Admin confirmation', 400);
+      return errorResponse(market === 'cn' ? '付款状态不允许管理员确认' : 'Payment is not ready for Admin confirmation', 400);
     }
 
     await env.DB.prepare(
@@ -10318,12 +10510,16 @@ async function handleAdminApprovePaymentStart(request, env) {
       "UPDATE work_orders SET status = 'in_service' WHERE id = ?"
     ).bind(workOrderId).run();
 
+    const confirmMsg = market === 'cn'
+      ? `SAGEMRO 已确认收款，工单已获批准可开始服务。${note ? ` 备注：${note}` : ''}`
+      : `SAGEMRO confirmed payment receipt. The work order is approved to start service.${note ? ` Note: ${note}` : ''}`;
+
     await env.DB.prepare(
       "INSERT INTO work_order_messages (id, work_order_id, sender_type, sender_id, sender_name, content, message_type, is_internal_note, is_customer_visible) VALUES (?, ?, 'system', '', 'System', ?, 'payment_update', 0, 1)"
     ).bind(
       generateId(),
       workOrderId,
-      `SAGEMRO confirmed payment receipt. The work order is approved to start service.${note ? ` Note: ${note}` : ''}`
+      confirmMsg
     ).run();
 
     await writeAuditLog(env, request, {
@@ -10339,10 +10535,126 @@ async function handleAdminApprovePaymentStart(request, env) {
     return errorResponse(error.message, 500);
   }
 }
+// 客户提交发票申请
+async function handleSubmitInvoiceRequest(request, env) {
+  try {
+    const workOrderId = new URL(request.url).pathname.split('/')[3];
+    const auth = request._auth;
+    const market = getRequestMarket(request);
+    if (!auth || auth.userType !== 'customer') {
+      return errorResponse(market === 'cn' ? '仅客户可申请发票' : 'Only customers can request invoices', 403);
+    }
+    const customer_id = auth.userId;
+
+    const wo = await env.DB.prepare(
+      'SELECT id, customer_id, status FROM work_orders WHERE id = ?'
+    ).bind(workOrderId).first();
+    if (!wo) return errorResponse(market === 'cn' ? '工单不存在' : 'Work order not found', 404);
+    if (wo.customer_id !== customer_id) {
+      return errorResponse(market === 'cn' ? '您无权操作此工单' : 'You do not have permission for this work order', 403);
+    }
+
+    // 检查是否已有发票申请
+    const existing = await env.DB.prepare(
+      "SELECT id, status FROM invoice_requests WHERE work_order_id = ? AND status = 'pending' LIMIT 1"
+    ).bind(workOrderId).first();
+    if (existing) {
+      return errorResponse(market === 'cn' ? '已有待处理的发票申请' : 'An invoice request is already pending', 400);
+    }
+
+    // 获取工单付款金额
+    const payment = await env.DB.prepare(
+      "SELECT amount FROM work_order_payments WHERE work_order_id = ? AND status = 'completed' ORDER BY created_at DESC LIMIT 1"
+    ).bind(workOrderId).first();
+    const amount = payment?.amount || 0;
+
+    const body = await request.json().catch(() => ({}));
+    const invoiceId = generateId();
+
+    await env.DB.prepare(`
+      INSERT INTO invoice_requests (id, work_order_id, customer_id, invoice_type, company_name, tax_id, company_address, company_phone, bank_name, bank_account, amount, notes)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).bind(
+      invoiceId,
+      workOrderId,
+      customer_id,
+      String(body.invoice_type || '普通发票').trim(),
+      String(body.company_name || '').trim(),
+      String(body.tax_id || '').trim(),
+      String(body.company_address || '').trim(),
+      String(body.company_phone || '').trim(),
+      String(body.bank_name || '').trim(),
+      String(body.bank_account || '').trim(),
+      amount,
+      String(body.notes || '').trim()
+    ).run();
+
+    // 系统消息
+    await env.DB.prepare(
+      "INSERT INTO work_order_messages (id, work_order_id, sender_type, sender_id, sender_name, content, message_type, is_internal_note, is_customer_visible) VALUES (?, ?, 'system', '', 'System', ?, 'invoice_update', 0, 1)"
+    ).bind(
+      generateId(),
+      workOrderId,
+      market === 'cn' ? `客户已申请开具发票（${body.company_name || ''}），请管理员处理。` : `Customer requested an invoice (${body.company_name || ''}). Admin to process.`
+    ).run();
+
+    return jsonResponse({ success: true, invoice_request: { id: invoiceId, status: 'pending', amount } });
+  } catch (error) {
+    return errorResponse(error.message, 500);
+  }
+}
+
+// 获取发票申请状态
+async function handleGetInvoiceRequest(request, env) {
+  try {
+    const workOrderId = new URL(request.url).pathname.split('/')[3];
+    const auth = request._auth;
+    const market = getRequestMarket(request);
+    if (!auth) return errorResponse(market === 'cn' ? '未认证' : 'Unauthorized', 401);
+
+    const invoiceRequest = await env.DB.prepare(
+      'SELECT * FROM invoice_requests WHERE work_order_id = ? ORDER BY created_at DESC LIMIT 1'
+    ).bind(workOrderId).first();
+
+    return jsonResponse({ success: true, invoice_request: invoiceRequest || null });
+  } catch (error) {
+    return errorResponse(error.message, 500);
+  }
+}
+
+// 管理员处理发票申请（标记已开票）
+async function handleAdminProcessInvoiceRequest(request, env) {
+  try {
+    const workOrderId = new URL(request.url).pathname.split('/')[4];
+    const market = getRequestMarket(request);
+    const body = await request.json().catch(() => ({}));
+
+    const invoiceRequest = await env.DB.prepare(
+      "SELECT id, status FROM invoice_requests WHERE work_order_id = ? AND status = 'pending' ORDER BY created_at DESC LIMIT 1"
+    ).bind(workOrderId).first();
+    if (!invoiceRequest) {
+      return errorResponse(market === 'cn' ? '没有待处理的发票申请' : 'No pending invoice request found', 404);
+    }
+
+    await env.DB.prepare(`
+      UPDATE invoice_requests SET status = 'issued', invoice_number = ?, admin_notes = ?, issued_at = datetime('now') WHERE id = ?
+    `).bind(
+      String(body.invoice_number || '').trim(),
+      String(body.admin_notes || '').trim(),
+      invoiceRequest.id
+    ).run();
+
+    return jsonResponse({ success: true, status: 'issued' });
+  } catch (error) {
+    return errorResponse(error.message, 500);
+  }
+}
+
 // 获取工单付款记录
 async function handleAdminUpdateWorkOrderPayout(request, env) {
   try {
     const workOrderId = new URL(request.url).pathname.split('/')[4];
+    const market = getRequestMarket(request);
     const body = await request.json().catch(() => ({}));
     const status = String(body.status || '').trim();
     const amount = body.amount === undefined || body.amount === '' ? 0 : Math.round(Number(body.amount));
@@ -10353,20 +10665,20 @@ async function handleAdminUpdateWorkOrderPayout(request, env) {
     const paid_at = String(body.paid_at || '').trim();
 
     if (!WORK_ORDER_PAYOUT_STATUSES.has(status)) {
-      return errorResponse('Unsupported payout status', 400);
+      return errorResponse(market === 'cn' ? '不支持的结算状态' : 'Unsupported payout status', 400);
     }
     if (!Number.isFinite(amount) || amount < 0) {
-      return errorResponse('Invalid payout amount', 400);
+      return errorResponse(market === 'cn' ? '结算金额无效' : 'Invalid payout amount', 400);
     }
     if (method && !ENGINEER_PAYOUT_METHODS.has(method)) {
-      return errorResponse('Unsupported payout method', 400);
+      return errorResponse(market === 'cn' ? '不支持的结算方式' : 'Unsupported payout method', 400);
     }
 
     const wo = await env.DB.prepare(
       'SELECT id, order_no, engineer_id, status FROM work_orders WHERE id = ?'
     ).bind(workOrderId).first();
-    if (!wo) return errorResponse('Work order not found', 404);
-    if (!wo.engineer_id) return errorResponse('Work order has no assigned engineer', 400);
+    if (!wo) return errorResponse(market === 'cn' ? '工单不存在' : 'Work order not found', 404);
+    if (!wo.engineer_id) return errorResponse(market === 'cn' ? '工单未指派工程师' : 'Work order has no assigned engineer', 400);
 
     let payout = await ensureWorkOrderPayout(env, workOrderId, wo.engineer_id, status === 'not_ready' ? 'not_ready' : 'pending');
     const nextPaidAt = status === 'completed' ? (paid_at || new Date().toISOString()) : (paid_at || payout.paid_at || '');
@@ -10608,7 +10920,7 @@ async function routeRequest(request, env, ctx) {
     );
     if (isTestRoute) {
       if (env.ENVIRONMENT !== 'development') {
-        return errorResponse('Not found', 404);
+        return errorResponse(getRequestMarket(request) === 'cn' ? '未找到' : 'Not found', 404);
       }
       const admin = await authenticateAdmin(request, env);
       if (!admin) return errorResponse('需要管理员权限', 403);
@@ -10781,7 +11093,7 @@ async function routeRequest(request, env, ctx) {
       path === '/api/auth/change-password'
     );
     if (!isKnownProtectedRoute) {
-      return errorResponse('Not found', 404);
+      return errorResponse(getRequestMarket(request) === 'cn' ? '未找到' : 'Not found', 404);
     }
 
     const auth = await authenticateRequest(request, env);
@@ -10874,6 +11186,9 @@ async function routeRequest(request, env, ctx) {
       }
       if (path.match(/^\/api\/admin\/workorders\/[^/]+\/payout$/) && request.method === 'PATCH') {
         return handleAdminUpdateWorkOrderPayout(request, env);
+      }
+      if (path.match(/^\/api\/admin\/workorders\/[^/]+\/invoice-request\/process$/) && request.method === 'POST') {
+        return handleAdminProcessInvoiceRequest(request, env);
       }
       if (path.startsWith('/api/admin/workorders/') && path.endsWith('/archive') && request.method === 'PATCH') {
         return handleAdminArchiveWorkOrder(request, env);
@@ -11114,6 +11429,14 @@ async function routeRequest(request, env, ctx) {
     if (path.match(/^\/api\/workorders\/[^/]+\/payment$/) && request.method === 'GET') {
       return handleGetWorkOrderPayment(request, env);
     }
+    // 发票申请（客户提交）
+    if (path.match(/^\/api\/workorders\/[^/]+\/invoice-request$/) && request.method === 'POST') {
+      return handleSubmitInvoiceRequest(request, env);
+    }
+    // 获取发票申请状态
+    if (path.match(/^\/api\/workorders\/[^/]+\/invoice-request$/) && request.method === 'GET') {
+      return handleGetInvoiceRequest(request, env);
+    }
     // 推送订阅（OneSignal Player ID）- 客户和工程师共用同一处理器，按 auth.userType 分发
     if (
       (path === '/api/engineers/push-subscription' ||
@@ -11125,7 +11448,7 @@ async function routeRequest(request, env, ctx) {
     }
 
     // 默认返回 404
-    return new Response('Not found', { status: 404 });
+    return errorResponse(getRequestMarket(request) === 'cn' ? '未找到' : 'Not found', 404);
 }
 
 // 将 routeRequest 的响应与动态 CORS 头合并
@@ -11198,7 +11521,7 @@ export default {
       captureException(error, requestEnv, { request, ctx });
       const corsH = getCorsHeaders(request, requestEnv);
       return new Response(
-        JSON.stringify({ error: error?.message || 'Internal Server Error' }),
+        JSON.stringify({ error: error?.message || (getRequestMarket(request) === 'cn' ? '服务器内部错误' : 'Internal Server Error') }),
         {
           status: 500,
           headers: { 'Content-Type': 'application/json', ...corsH },
