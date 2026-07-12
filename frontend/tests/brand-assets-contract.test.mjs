@@ -659,7 +659,7 @@ test('customer service views translate machine fields to English', () => {
   assert.match(myServices, /data-testid="go-rate-button"/);
   assert.match(detailModal, /const canRate = effectiveStatus === 'resolved' \|\| effectiveStatus === 'pending_review'/);
   assert.match(detailModal, /tabs\.push\(\{ key: 'repairRecord', label: 'Service Report' \}\)/);
-  assert.match(myServices, /formatCustomerDeviceLine\(order\)/);
+  assert.match(myServices, /formatCustomerDeviceLine\(order, isCn \? 'zh-CN' : 'en'\)/);
   assert.match(detailModal, /Machine: <span/);
 });
 
