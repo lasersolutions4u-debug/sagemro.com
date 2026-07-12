@@ -638,46 +638,6 @@ export function WorkOrdersPage() {
                       {wo.conflict_reason || t.conflictFallback}
                     </div>
                   )}
-                  <div className="mt-3 space-y-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-elevated)] p-2">
-                    <div className="flex flex-col gap-2">
-                      <select
-                        value={selectedRegionalLeads[wo.id] || wo.assigned_regional_lead_id || ''}
-                        onChange={(event) => setSelectedRegionalLeads((prev) => ({ ...prev, [wo.id]: event.target.value }))}
-                        className="min-h-10 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)]"
-                      >
-                        <option value="">{t.regionalLeadOption}</option>
-                        {regionalLeads.map((lead) => (
-                          <option key={lead.id} value={lead.id}>{formatEngineerOption(lead)}</option>
-                        ))}
-                      </select>
-                      <button
-                        onClick={() => handleAssignRegionalLead(wo)}
-                        disabled={assigningId === `${wo.id}:lead`}
-                        className="min-h-10 rounded-lg bg-[var(--color-primary)] px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
-                      >
-                        {assigningId === `${wo.id}:lead` ? t.assigning : t.assignRegion}
-                      </button>
-                    </div>
-                    <div className="flex flex-col gap-2">
-                      <select
-                        value={selectedEngineers[wo.id] || wo.engineer_id || ''}
-                        onChange={(event) => setSelectedEngineers((prev) => ({ ...prev, [wo.id]: event.target.value }))}
-                        className="min-h-10 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)]"
-                      >
-                        <option value="">{t.engineerOption}</option>
-                        {engineers.map((engineer) => (
-                          <option key={engineer.id} value={engineer.id}>{formatEngineerOption(engineer)}</option>
-                        ))}
-                      </select>
-                      <button
-                        onClick={() => handleAssign(wo)}
-                        disabled={assigningId === `${wo.id}:engineer`}
-                        className="min-h-10 rounded-lg bg-[var(--color-primary)] px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
-                      >
-                        {assigningId === `${wo.id}:engineer` ? t.dispatching : t.directDispatch}
-                      </button>
-                    </div>
-                  </div>
                   <div className="mt-3 grid gap-2 sm:grid-cols-2">
                     <button
                       onClick={() => openDetail(wo)}
@@ -718,7 +678,6 @@ export function WorkOrdersPage() {
                 <tr className="border-b border-[var(--color-border)]">
                   <th className="text-left py-3 px-2 text-[var(--color-text-secondary)] font-medium">{t.headers.orderNo}</th>
                   <th className="text-left py-3 px-2 text-[var(--color-text-secondary)] font-medium">{t.headers.customer}</th>
-                  <th className="text-left py-3 px-2 text-[var(--color-text-secondary)] font-medium">{t.headers.dispatch}</th>
                   <th className="text-left py-3 px-2 text-[var(--color-text-secondary)] font-medium">{t.headers.regionalLead}</th>
                   <th className="text-left py-3 px-2 text-[var(--color-text-secondary)] font-medium">{t.headers.engineer}</th>
                   <th className="text-left py-3 px-2 text-[var(--color-text-secondary)] font-medium">{t.headers.type}</th>
@@ -732,7 +691,7 @@ export function WorkOrdersPage() {
               <tbody>
                 {data.list.length === 0 ? (
                   <tr>
-                    <td colSpan={11} className="text-center py-8 text-[var(--color-text-muted)]">
+                    <td colSpan={10} className="text-center py-8 text-[var(--color-text-muted)]">
                       {t.empty}
                     </td>
                   </tr>
@@ -752,52 +711,6 @@ export function WorkOrdersPage() {
                         <td className="py-3 px-2">
                           <div>{wo.customer_name || '-'}</div>
                           {wo.customer_company && <div className="text-xs text-[var(--color-text-muted)]">{wo.customer_company}</div>}
-                        </td>
-                        <td className="py-3 px-2">
-                          <div className="flex min-w-[280px] flex-col gap-2">
-                            <div className="flex items-center gap-2">
-                              <select
-                                value={selectedRegionalLeads[wo.id] || wo.assigned_regional_lead_id || ''}
-                                onChange={(event) => setSelectedRegionalLeads((prev) => ({ ...prev, [wo.id]: event.target.value }))}
-                                className="min-w-0 flex-1 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-2 py-1.5 text-xs text-[var(--color-text)]"
-                              >
-                                <option value="">{t.regionalLeadOption}</option>
-                                {regionalLeads.map((lead) => (
-                                  <option key={lead.id} value={lead.id}>
-                                    {formatEngineerOption(lead)}
-                                  </option>
-                                ))}
-                              </select>
-                              <button
-                                onClick={() => handleAssignRegionalLead(wo)}
-                                disabled={assigningId === `${wo.id}:lead`}
-                                className="whitespace-nowrap rounded-lg bg-[var(--color-primary)] px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50"
-                              >
-                                {assigningId === `${wo.id}:lead` ? t.assigning : t.assignRegion}
-                              </button>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <select
-                                value={selectedEngineers[wo.id] || wo.engineer_id || ''}
-                                onChange={(event) => setSelectedEngineers((prev) => ({ ...prev, [wo.id]: event.target.value }))}
-                                className="min-w-0 flex-1 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-2 py-1.5 text-xs text-[var(--color-text)]"
-                              >
-                                <option value="">{t.engineerOption}</option>
-                                {engineers.map((engineer) => (
-                                  <option key={engineer.id} value={engineer.id}>
-                                    {formatEngineerOption(engineer)}
-                                  </option>
-                                ))}
-                              </select>
-                              <button
-                                onClick={() => handleAssign(wo)}
-                                disabled={assigningId === `${wo.id}:engineer`}
-                                className="whitespace-nowrap rounded-lg bg-[var(--color-primary)] px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50"
-                              >
-                                {assigningId === `${wo.id}:engineer` ? t.dispatching : t.directDispatch}
-                              </button>
-                            </div>
-                          </div>
                         </td>
                         <td className="py-3 px-2">
                           <div>{wo.regional_lead_name || '-'}</div>
@@ -981,6 +894,50 @@ export function WorkOrdersPage() {
                     <div>{t.engineerLabel}: {detail.engineer_name || '-'}</div>
                     <div>{t.quoteReviewLabel}: {detail.quote_review_status || '-'}</div>
                     <div>{t.riskControlLabel}: {detail.conflict_status || 'clear'}</div>
+                  </div>
+                </section>
+
+                <section className="rounded-xl border border-[var(--color-border)] p-4">
+                  <h4 className="mb-3 font-medium text-[var(--color-text)]">{t.headers.dispatch}</h4>
+                  <div className="flex flex-col gap-3">
+                    <div className="flex items-center gap-2">
+                      <select
+                        value={selectedRegionalLeads[detail.id] || detail.assigned_regional_lead_id || ''}
+                        onChange={(event) => setSelectedRegionalLeads((prev) => ({ ...prev, [detail.id]: event.target.value }))}
+                        className="min-w-0 flex-1 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-2 py-1.5 text-xs text-[var(--color-text)]"
+                      >
+                        <option value="">{t.regionalLeadOption}</option>
+                        {regionalLeads.map((lead) => (
+                          <option key={lead.id} value={lead.id}>{formatEngineerOption(lead)}</option>
+                        ))}
+                      </select>
+                      <button
+                        onClick={() => handleAssignRegionalLead(detail)}
+                        disabled={assigningId === `${detail.id}:lead`}
+                        className="whitespace-nowrap rounded-lg bg-[var(--color-primary)] px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50"
+                      >
+                        {assigningId === `${detail.id}:lead` ? t.assigning : t.assignRegion}
+                      </button>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <select
+                        value={selectedEngineers[detail.id] || detail.engineer_id || ''}
+                        onChange={(event) => setSelectedEngineers((prev) => ({ ...prev, [detail.id]: event.target.value }))}
+                        className="min-w-0 flex-1 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-2 py-1.5 text-xs text-[var(--color-text)]"
+                      >
+                        <option value="">{t.engineerOption}</option>
+                        {engineers.map((engineer) => (
+                          <option key={engineer.id} value={engineer.id}>{formatEngineerOption(engineer)}</option>
+                        ))}
+                      </select>
+                      <button
+                        onClick={() => handleAssign(detail)}
+                        disabled={assigningId === `${detail.id}:engineer`}
+                        className="whitespace-nowrap rounded-lg bg-[var(--color-primary)] px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50"
+                      >
+                        {assigningId === `${detail.id}:engineer` ? t.dispatching : t.directDispatch}
+                      </button>
+                    </div>
                   </div>
                 </section>
 
