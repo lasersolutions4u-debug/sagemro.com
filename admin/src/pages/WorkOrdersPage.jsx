@@ -82,11 +82,11 @@ function ScoreRow({ label, value }) {
   );
 }
 
-function MoneyRow({ label, value }) {
+function MoneyRow({ label, value, currency = 'USD' }) {
   return (
     <div className="flex items-center justify-between gap-3 rounded-lg bg-[var(--color-surface-elevated)] px-3 py-2">
       <span>{label}</span>
-      <span className="font-semibold text-[var(--color-primary)]">{money(value)} {CURRENCY}</span>
+      <span className="font-semibold text-[var(--color-primary)]">{money(value)} {currency}</span>
     </div>
   );
 }
@@ -1335,10 +1335,10 @@ export function WorkOrdersPage() {
                     return (
                       <div className="space-y-3 text-sm text-[var(--color-text-secondary)]">
                         <div className="grid gap-2 sm:grid-cols-2">
-                          <MoneyRow label={t.quoteFeeLabels.labor} value={pricing.labor_fee || 0} />
-                          <MoneyRow label={t.quoteFeeLabels.parts} value={pricing.parts_fee || 0} />
-                          <MoneyRow label={t.quoteFeeLabels.travel} value={pricing.travel_fee || 0} />
-                          <MoneyRow label={t.quoteFeeLabels.other} value={pricing.other_fee || 0} />
+                          <MoneyRow label={t.quoteFeeLabels.labor} value={pricing.labor_fee || 0} currency={CURRENCY} />
+                          <MoneyRow label={t.quoteFeeLabels.parts} value={pricing.parts_fee || 0} currency={CURRENCY} />
+                          <MoneyRow label={t.quoteFeeLabels.travel} value={pricing.travel_fee || 0} currency={CURRENCY} />
+                          <MoneyRow label={t.quoteFeeLabels.other} value={pricing.other_fee || 0} currency={CURRENCY} />
                         </div>
                         {note && (
                           <div className="rounded-lg bg-[var(--color-surface-elevated)] p-3">
