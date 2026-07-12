@@ -87,5 +87,10 @@ test('CN tools hub keeps header controls stacked and Chinese text balanced', () 
 
   assert.match(toolsPage, /flex flex-col items-start gap-4/);
   assert.match(toolsPage, /break-keep/);
+  assert.match(toolsPage, /grid gap-3 md:grid-cols-2/);
+  assert.match(toolsPage, /className="min-w-0"/);
   assert.doesNotMatch(toolsPage, /className="mb-6 inline-flex items-center gap-2/);
+  assert.doesNotMatch(toolsPage, /<h2 className="break-keep text-base/);
+  assert.doesNotMatch(toolsPage, /<p className="mt-1 break-keep text-sm/);
+  assert.doesNotMatch(toolsPage, /lg:grid-cols-3/);
 });

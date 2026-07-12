@@ -85,7 +85,7 @@ const toolsPageCopy = {
     hubDescription: '使用 SAGEMRO 行业工具估算材料重量、钢材预算、激光切割成本、辅助气体用量、切割速度、折弯、设备 ROI 和辅机选型参考。',
     back: '返回 SAGEMRO AI',
     eyebrow: '行业工具',
-    h1: '钣金、激光切割、折弯、投资和辅机规划工具。',
+    h1: '钣金、切割、折弯与设备规划工具。',
     intro: '先从可检查的数据开始：材料重量、预算参考、切割时间、辅助气体、折弯假设、设备 ROI 和辅机需求。每个工具都会把假设列出来，方便你再做下一步判断。',
     materials: '材料',
     profiles: '型材',
@@ -162,7 +162,7 @@ function ToolsHub({ copy, locale, onOpenLegal }) {
 
   return (
     <ToolPageShell copy={copy} onOpenLegal={onOpenLegal}>
-      <section className="mx-auto grid max-w-6xl gap-8 px-4 py-8 sm:px-6 lg:grid-cols-[0.9fr_1.1fr] lg:py-12">
+      <section className="mx-auto grid max-w-7xl gap-8 px-4 py-8 sm:px-6 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)] lg:py-12">
         <div>
           <div className="flex flex-col items-start gap-4">
             <a href="/" className="inline-flex items-center gap-2 text-sm text-[var(--color-text-secondary)] hover:text-[var(--color-primary)]">
@@ -174,7 +174,7 @@ function ToolsHub({ copy, locale, onOpenLegal }) {
               {copy.eyebrow}
             </div>
           </div>
-          <h1 className="mt-5 max-w-3xl break-keep text-3xl font-semibold leading-[1.08] text-[var(--color-text-primary)] sm:text-[2.75rem]">
+          <h1 className="mt-5 max-w-2xl break-keep text-3xl font-semibold leading-[1.1] text-[var(--color-text-primary)] sm:text-[2.4rem]">
             {copy.h1}
           </h1>
           <p className="mt-4 max-w-2xl text-sm leading-7 text-[var(--color-text-secondary)] sm:text-base">
@@ -183,7 +183,7 @@ function ToolsHub({ copy, locale, onOpenLegal }) {
         </div>
 
         <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-elevated)] p-4 shadow-sm">
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="grid gap-3 md:grid-cols-2">
             {tools.map((tool) => (
               <ToolLinkCard key={tool.id} tool={tool} />
             ))}
@@ -192,7 +192,7 @@ function ToolsHub({ copy, locale, onOpenLegal }) {
       </section>
 
       <section className="border-y border-[var(--color-border)] bg-[#111820] px-4 py-5 text-white sm:px-6">
-        <div className="mx-auto grid max-w-6xl gap-4 text-sm sm:grid-cols-3">
+        <div className="mx-auto grid max-w-7xl gap-4 text-sm sm:grid-cols-3">
           <div>
             <div className="text-xs uppercase tracking-[0.14em] text-amber-300">{copy.materials}</div>
             <p className="mt-1 text-white/80">{Object.values(materials).map((item) => item.label).join(', ')}</p>
@@ -208,7 +208,7 @@ function ToolsHub({ copy, locale, onOpenLegal }) {
         </div>
       </section>
 
-      <section className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
+      <section className="mx-auto max-w-7xl px-4 py-8 sm:px-6">
         <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-elevated)] p-4 sm:flex sm:items-center sm:justify-between sm:gap-4">
           <div>
             <div className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--color-text-muted)]">{copy.insights}</div>
@@ -304,14 +304,14 @@ function ToolLinkCard({ tool }) {
   const Icon = toolIcons[tool.id] || Calculator;
 
   return (
-    <a href={`/tools/${tool.slug}`} className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4 transition hover:border-[var(--color-primary)] hover:shadow-sm">
+    <a href={`/tools/${tool.slug}`} className="h-full overflow-hidden rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4 transition hover:border-[var(--color-primary)] hover:shadow-sm">
       <div className="flex items-start gap-3">
         <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[var(--color-primary)]/10 text-[var(--color-primary)]">
           <Icon size={18} />
         </div>
-        <div>
-          <h2 className="break-keep text-base font-semibold text-[var(--color-text-primary)]">{tool.label}</h2>
-          <p className="mt-1 break-keep text-sm leading-6 text-[var(--color-text-secondary)]">{tool.description}</p>
+        <div className="min-w-0">
+          <h2 className="text-base font-semibold leading-snug text-[var(--color-text-primary)]">{tool.label}</h2>
+          <p className="mt-1 text-sm leading-6 text-[var(--color-text-secondary)]">{tool.description}</p>
         </div>
       </div>
     </a>
@@ -322,7 +322,7 @@ function ToolPageShell({ children, copy, onOpenLegal }) {
   return (
     <div className="min-h-[100dvh] bg-[var(--color-bg)] text-[var(--color-text-primary)]">
       <header className="border-b border-[var(--color-border)] bg-[var(--color-surface)]">
-        <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-3 sm:px-6">
+        <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-3 sm:px-6">
           <a href="/" className="flex items-center gap-2 text-sm font-semibold text-[var(--color-text-primary)]">
             <BrandMark variant="logo" className="h-8 w-8 object-contain" />
             SAGEMRO
