@@ -5,11 +5,13 @@ import {
   approveAdminWorkOrderPricing,
   approveAdminWorkOrderPaymentStart,
   archiveAdminWorkOrder,
+  getAdminInvoiceRequest,
   getAdminWorkOrder,
   getAdminWorkOrderMessages,
   getAdminUsers,
   getAdminWorkOrders,
   postAdminWorkOrderMessage,
+  processAdminInvoiceRequest,
   rejectAdminWorkOrderPricing,
   updateAdminWorkOrderPayout,
 } from '../services/api';
@@ -62,7 +64,7 @@ function MoneyRow({ label, value }) {
   return (
     <div className="flex items-center justify-between gap-3 rounded-lg bg-[var(--color-surface-elevated)] px-3 py-2">
       <span>{label}</span>
-      <span className="font-semibold text-[var(--color-primary)]">{money(value)} USD</span>
+      <span className="font-semibold text-[var(--color-primary)]">{money(value)} {CURRENCY}</span>
     </div>
   );
 }
@@ -296,6 +298,12 @@ const TEXT = {
     notePlaceholder: 'Add an internal note. Visible only to Admin / regional lead / engineer, not to the customer.',
     saveNote: 'Save internal note',
     noDetail: 'No service order detail loaded',
+    invoiceTitle: 'Invoice Request',
+    invoiceStatus: (status) => status === 'issued' ? 'Issued' : 'Pending',
+    invoiceProcessBtn: 'Mark as Issued',
+    invoiceNumber: 'Invoice No.',
+    noInvoice: 'No invoice request',
+    invoiceConfirmLabel: 'Invoice number (required):',
   },
   'zh-CN': {
     statuses: {
@@ -433,7 +441,7 @@ const TEXT = {
     payoutUpdated: (status) => `工程师服务费已更新：${status}`,
     payoutUpdateFailed: '工程师服务费更新失败',
     payoutPrompts: {
-      amount: '工程师服务费金额（USD，可选）：',
+      amount: '工程师服务费金额（CNY，可选）：',
       reference: '付款流水号 / 交易编号（可选）：',
       note: '内部结算备注（可选）：',
     },
@@ -486,11 +494,18 @@ const TEXT = {
     notePlaceholder: '添加内部备注。仅 Admin / 区域负责人 / 工程师可见，客户不可见。',
     saveNote: '保存内部备注',
     noDetail: '尚未加载工单详情',
+    invoiceTitle: '发票申请',
+    invoiceStatus: (status) => status === 'issued' ? '已开票' : '待处理',
+    invoiceProcessBtn: '标记为已开票',
+    invoiceNumber: '发票号码',
+    noInvoice: '暂无发票申请',
+    invoiceConfirmLabel: '发票号码（必填）：',
   },
 };
 
 export function WorkOrdersPage() {
   const t = { ...TEXT.en, ...(TEXT[runtimeConfig.locale] || {}) };
+  const CURRENCY = runtimeConfig.locale === 'zh-CN' ? 'CNY' : 'USD';
   const [status, setStatus] = useState('all');
   const [data, setData] = useState({ total: 0, list: [] });
   const [engineers, setEngineers] = useState([]);
@@ -507,6 +522,8 @@ export function WorkOrdersPage() {
   const [reviewedQuoteIds, setReviewedQuoteIds] = useState({});
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
+  const [detailInvoice, setDetailInvoice] = useState(null);
+  const [invoiceProcessing, setInvoiceProcessing] = useState(false);
   const pageSize = 20;
 
   useEffect(() => {
@@ -736,7 +753,7 @@ export function WorkOrdersPage() {
       const response = await updateAdminWorkOrderPayout(wo.id, {
         status,
         amount: amountInput,
-        currency: currentPayout.currency || 'USD',
+        currency: currentPayout.currency || CURRENCY,
         method: currentPayout.method || 'paypal',
         transaction_reference: reference,
         internal_note: note,
@@ -769,6 +786,7 @@ export function WorkOrdersPage() {
       ]);
       setDetail(detailData);
       setDetailMessages(messagesData.list || []);
+      getAdminInvoiceRequest(wo.id).then(setDetailInvoice).catch(() => setDetailInvoice(null));
     } catch (err) {
       setMessage(err.message || t.detailLoadFailed);
     } finally {
@@ -785,6 +803,26 @@ export function WorkOrdersPage() {
       setInternalNote('');
     } catch (err) {
       setMessage(err.message || t.noteSaveFailed);
+    }
+  }
+
+  async function handleProcessInvoice() {
+    const invoiceNumber = window.prompt(t.invoiceConfirmLabel);
+    if (!invoiceNumber) return;
+    setInvoiceProcessing(true);
+    try {
+      await processAdminInvoiceRequest(detail.id, {
+        action: 'issue',
+        invoice_number: invoiceNumber,
+      });
+      setDetailInvoice((prev) => (
+        prev ? { ...prev, status: 'issued', invoice_number: invoiceNumber } : prev
+      ));
+      setMessage(t.invoiceStatus('issued'));
+    } catch (err) {
+      setMessage(err.message || '处理发票失败');
+    } finally {
+      setInvoiceProcessing(false);
     }
   }
 
@@ -860,7 +898,7 @@ export function WorkOrdersPage() {
                     <div>{t.headers.engineer}: {wo.engineer_name || '-'}</div>
                     <div>
                       {t.headers.quoteArchive}: {wo.pricing_status
-                        ? `${t.pricing[wo.pricing_status] || wo.pricing_status}${wo.pricing_total_amount || wo.pricing_subtotal ? ` / ${money(wo.pricing_total_amount || wo.pricing_subtotal)} USD` : ''}`
+                        ? `${t.pricing[wo.pricing_status] || wo.pricing_status}${wo.pricing_total_amount || wo.pricing_subtotal ? ` / ${money(wo.pricing_total_amount || wo.pricing_subtotal)} ${CURRENCY}` : ''}`
                         : t.noQuote}
                     </div>
                   </div>
@@ -1057,7 +1095,7 @@ export function WorkOrdersPage() {
                           <div className="min-w-[170px] space-y-2">
                             <div className="text-xs text-[var(--color-text-secondary)]">
                               {wo.pricing_status
-                                ? `${t.pricing[wo.pricing_status] || wo.pricing_status}${wo.pricing_total_amount || wo.pricing_subtotal ? ` · ${money(wo.pricing_total_amount || wo.pricing_subtotal)} USD` : ''}`
+                                ? `${t.pricing[wo.pricing_status] || wo.pricing_status}${wo.pricing_total_amount || wo.pricing_subtotal ? ` · ${money(wo.pricing_total_amount || wo.pricing_subtotal)} ${CURRENCY}` : ''}`
                                 : t.noQuote}
                             </div>
                             {wo.pricing_status === 'pending_review' && (
@@ -1225,7 +1263,7 @@ export function WorkOrdersPage() {
                       <div className="mt-3 grid gap-2 text-xs text-[var(--color-text-muted)] sm:grid-cols-2">
                         <div>{t.payoutFields.status}: {payoutLabel(detail.payout_status, t)}</div>
                         <div>{t.payoutFields.method}: {detail.payout?.method === 'bank_swift' ? t.payoutMethods.bank_swift : t.payoutMethods.paypal}</div>
-                        <div>{t.payoutFields.amount}: {detail.payout?.amount ? `${money(detail.payout.amount)} ${detail.payout.currency || 'USD'}` : '-'}</div>
+                        <div>{t.payoutFields.amount}: {detail.payout?.amount ? `${money(detail.payout.amount)} ${detail.payout.currency || CURRENCY}` : '-'}</div>
                         <div>{t.payoutFields.reference}: {detail.payout?.transaction_reference || '-'}</div>
                         <div>{t.payoutFields.paidAt}: {detail.payout?.paid_at ? new Date(detail.payout.paid_at).toLocaleString(runtimeConfig.locale === 'zh-CN' ? 'zh-CN' : 'en-US') : '-'}</div>
                         <div>{t.payoutFields.note}: {detail.payout?.internal_note || '-'}</div>
@@ -1256,6 +1294,41 @@ export function WorkOrdersPage() {
                     </div>
                   </div>
                 </section>
+
+                {runtimeConfig.locale === 'zh-CN' && (
+                  <section className="rounded-xl border border-[var(--color-border)] p-4">
+                    <h4 className="mb-2 font-medium">{t.invoiceTitle}</h4>
+                    {detailInvoice ? (
+                      <div className="space-y-3 text-sm">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[var(--color-text-secondary)]">
+                            {t.invoiceStatus(detailInvoice.status)}
+                          </span>
+                          {detailInvoice.status === 'issued' && detailInvoice.invoice_number && (
+                            <span className="text-xs text-[var(--color-text-muted)]">
+                              {t.invoiceNumber}: {detailInvoice.invoice_number}
+                            </span>
+                          )}
+                        </div>
+                        <div className="grid gap-1.5 text-xs text-[var(--color-text-muted)]">
+                          <div>{detailInvoice.company_name}</div>
+                          <div>税号: {detailInvoice.tax_id}</div>
+                        </div>
+                        {detailInvoice.status === 'pending' && (
+                          <button
+                            onClick={handleProcessInvoice}
+                            disabled={invoiceProcessing}
+                            className="rounded-lg bg-[var(--color-primary)] px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
+                          >
+                            {invoiceProcessing ? t.loading : t.invoiceProcessBtn}
+                          </button>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="text-sm text-[var(--color-text-muted)]">{t.noInvoice}</div>
+                    )}
+                  </section>
+                )}
 
                 <section className="rounded-xl border border-[var(--color-border)] p-4">
                   <h4 className="mb-2 font-medium">{t.aiSummaryTitle}</h4>
@@ -1307,8 +1380,8 @@ export function WorkOrdersPage() {
                                       <div className="text-[var(--color-text-muted)]">{[part.material_code, part.spec, part.brand].filter(Boolean).join(' · ') || '-'}</div>
                                     </td>
                                     <td className="px-3 py-2 text-right">{part.quantity || 1} {part.unit || 'pcs'}</td>
-                                    <td className="px-3 py-2 text-right">{money(part.unit_price)} USD</td>
-                                    <td className="px-3 py-2 text-right">{money(part.line_total || Number(part.quantity || 0) * Number(part.unit_price || 0))} USD</td>
+                                    <td className="px-3 py-2 text-right">{money(part.unit_price)} {CURRENCY}</td>
+                                    <td className="px-3 py-2 text-right">{money(part.line_total || Number(part.quantity || 0) * Number(part.unit_price || 0))} {CURRENCY}</td>
                                   </tr>
                                 ))}
                               </tbody>
@@ -1318,7 +1391,7 @@ export function WorkOrdersPage() {
                         <div className="rounded-lg bg-[var(--color-surface-elevated)] p-3">
                           <div className="flex justify-between">
                             <span>{t.quoteSubtotalPrice || 'Quote subtotal price'}</span>
-                            <span className="font-semibold text-[var(--color-primary)]">{money(subtotal)} USD</span>
+                            <span className="font-semibold text-[var(--color-primary)]">{money(subtotal)} {CURRENCY}</span>
                           </div>
                         </div>
                         {aiCheck && (

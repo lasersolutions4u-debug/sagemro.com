@@ -125,6 +125,17 @@ export async function updateAdminWorkOrderPayout(workOrderId, data) {
   });
 }
 
+export async function getAdminInvoiceRequest(workOrderId) {
+  return request(`/api/workorders/${workOrderId}/invoice-request`);
+}
+
+export async function processAdminInvoiceRequest(workOrderId, data) {
+  return request(`/api/admin/workorders/${workOrderId}/invoice-request/process`, {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
 export async function archiveAdminWorkOrder(workOrderId) {
   return request(`/api/admin/workorders/${workOrderId}/archive`, {
     method: 'PATCH',

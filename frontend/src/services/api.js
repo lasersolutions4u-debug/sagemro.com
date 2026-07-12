@@ -753,6 +753,24 @@ export async function getWorkOrderPayout(workOrderId) {
   return { payout: data.payout || null, payout_status: data.payout_status || 'not_ready' };
 }
 
+export async function submitInvoiceRequest(workOrderId, invoiceData) {
+  const response = await fetch(`${API_BASE}/api/workorders/${workOrderId}/invoice-request`, {
+    method: 'POST',
+    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+    body: JSON.stringify(invoiceData),
+  });
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  return response.json();
+}
+
+export async function getInvoiceRequest(workOrderId) {
+  const response = await fetch(`${API_BASE}/api/workorders/${workOrderId}/invoice-request`, {
+    headers: authHeaders(),
+  });
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  return response.json();
+}
+
 // 保存推送订阅（OneSignal Player ID）
 // 后端按 JWT 里的 userType 自动路由到 customers / engineers 表
 export async function savePushSubscription(userId, { onesignal_player_id }) {

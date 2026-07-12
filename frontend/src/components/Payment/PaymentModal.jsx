@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { X, CheckCircle, CreditCard, Building2, Shield, Loader2, Send } from 'lucide-react';
-import { getWorkOrderPricing, getWorkOrderPayment, payWorkOrder, getWorkOrder } from '../../services/api';
+import { X, CheckCircle, CreditCard, Building2, Shield, Loader2, Send, FileText } from 'lucide-react';
+import { getWorkOrderPricing, getWorkOrderPayment, payWorkOrder, getWorkOrder, submitInvoiceRequest, getInvoiceRequest } from '../../services/api';
 import { toastSuccess, toastError } from '../../utils/feedback';
 import { isCnLocale } from '../../utils/locale';
 
@@ -11,6 +11,31 @@ const PAYMENT_METHODS = [
 
 const CURRENCY = isCnLocale() ? 'CNY' : 'USD';
 const PAYPAL_PAYMENT_LINK = 'https://www.paypal.com/ncp/payment/4YLFXRSUSZJ5N';
+
+// China edition bank account info for 公对公转账
+const CN_BANK_INFO = {
+  bank_name: '中国银行济南高新支行',
+  account_name: '济南钰峭机械有限公司',
+  account_number: '218252321255',
+};
+
+function cnPaymentMethods() {
+  return [
+    { id: 'bank_transfer', label: '公对公转账', icon: Building2, desc: '对公账户收款信息如下，请通过网银或柜台转账，转账后请在消息中发送付款凭证给工程师。' },
+  ];
+}
+
+function cnBankInfoDisplay() {
+  const bank = CN_BANK_INFO;
+  return (
+    <div className="rounded-xl bg-blue-50 border border-blue-200 p-3 space-y-1.5 text-xs text-blue-900">
+      <p className="font-medium text-blue-950">对公账户收款信息</p>
+      <p>收款银行：{bank.bank_name}</p>
+      <p>收款户名：{bank.account_name}</p>
+      <p>收款账号：{bank.account_number}</p>
+    </div>
+  );
+}
 
 const COPY = {
   en: {
@@ -46,6 +71,18 @@ const COPY = {
     paypalToast: 'Payment method confirmed. PayPal opened in a new tab. Please send the payment screenshot in Messages after payment.',
     bankToast: 'Payment method confirmed. Please send the payment proof to the engineer in Messages after payment.',
     errorToast: 'Payment method confirmation failed: ',
+    invoiceTitle: 'Request an Invoice',
+    invoiceDesc: 'Need a Chinese  VAT invoice for your company? Fill in the information below.',
+    invoiceBtn: 'Submit Invoice Request',
+    invoiceSubmitted: 'Invoice request submitted. We will contact you after issuing.',
+    invoiceSkip: 'Skip, I don\'t need an invoice',
+    invoiceCompanyName: 'Company Name',
+    invoiceTaxId: 'Tax ID',
+    invoiceAddress: 'Company Address',
+    invoicePhone: 'Company Phone',
+    invoiceBankName: 'Bank Name',
+    invoiceBankAccount: 'Bank Account',
+    invoiceNote: 'Notes (optional)',
   },
   cn: {
     methods: [
@@ -80,10 +117,23 @@ const COPY = {
     paypalToast: '付款方式已确认。PayPal 已在新标签页打开，付款后请在消息中发送付款截图。',
     bankToast: '付款方式已确认。付款后请在消息中把付款凭证发送给工程师。',
     errorToast: '付款方式确认失败：',
+    invoiceTitle: '申请开具发票',
+    invoiceDesc: '需要开具增值税发票吗？请填写贵司开票信息。',
+    invoiceBtn: '提交开票申请',
+    invoiceSubmitted: '开票申请已提交，开票后我们会联系您。',
+    invoiceSkip: '跳过，不需要发票',
+    invoiceCompanyName: '公司名称',
+    invoiceTaxId: '纳税人识别号',
+    invoiceAddress: '公司地址',
+    invoicePhone: '公司电话',
+    invoiceBankName: '开户银行',
+    invoiceBankAccount: '银行账号',
+    invoiceNote: '备注（可选）',
   },
 };
 
-function getPaymentMethods(copy) {
+function getPaymentMethods(isCn, copy) {
+  if (isCn) return cnPaymentMethods();
   return PAYMENT_METHODS.map((method) => ({
     ...method,
     ...(copy.methods.find((item) => item.id === method.id) || {}),
@@ -102,7 +152,7 @@ function paymentStatusCopy(status, copy = COPY.en) {
 export function PaymentModal({ isOpen, onClose, workOrderId, customerId, onPaid }) {
   const isCn = isCnLocale();
   const copy = isCn ? COPY.cn : COPY.en;
-  const paymentMethods = getPaymentMethods(copy);
+  const paymentMethods = getPaymentMethods(isCn, copy);
   const [step, setStep] = useState('pay');
   const [pricing, setPricing] = useState(null);
   const [order, setOrder] = useState(null);
@@ -110,6 +160,11 @@ export function PaymentModal({ isOpen, onClose, workOrderId, customerId, onPaid 
   const [method, setMethod] = useState('bank_transfer');
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState(null);
+  const [showInvoiceForm, setShowInvoiceForm] = useState(false);
+  const [invoiceData, setInvoiceData] = useState({ company_name: '', tax_id: '', company_address: '', company_phone: '', bank_name: '', bank_account: '', notes: '' });
+  const [invoiceSubmitted, setInvoiceSubmitted] = useState(false);
+  const [invoiceSubmitting, setInvoiceSubmitting] = useState(false);
+  const [existingInvoice, setExistingInvoice] = useState(null);
 
   useEffect(() => {
     if (!isOpen || !workOrderId) return;
@@ -117,18 +172,23 @@ export function PaymentModal({ isOpen, onClose, workOrderId, customerId, onPaid 
     setStep('pay');
     setSubmitting(false);
     setResult(null);
+    setShowInvoiceForm(false);
+    setInvoiceSubmitted(false);
+    setExistingInvoice(null);
 
     Promise.all([
       getWorkOrderPricing(workOrderId).catch(() => ({ pricing: null })),
       getWorkOrderPayment(workOrderId).catch(() => ({ payment: null })),
       getWorkOrder(workOrderId).catch(() => null),
-    ]).then(([pricingRes, paymentRes, orderRes]) => {
+      isCn ? getInvoiceRequest(workOrderId).catch(() => ({ invoice_request: null })) : Promise.resolve({ invoice_request: null }),
+    ]).then(([pricingRes, paymentRes, orderRes, invoiceRes]) => {
       if (paymentRes?.payment) {
         setStep('submitted');
         setResult(paymentRes.payment);
       }
       setPricing(pricingRes?.pricing || null);
       setOrder(orderRes);
+      if (invoiceRes?.invoice_request) setExistingInvoice(invoiceRes.invoice_request);
     }).catch(() => {}).finally(() => setLoading(false));
   }, [isOpen, workOrderId]);
 
@@ -149,11 +209,30 @@ export function PaymentModal({ isOpen, onClose, workOrderId, customerId, onPaid 
         toastSuccess(copy.bankToast);
       }
       onPaid?.();
+      if (isCn) setShowInvoiceForm(true);
     } catch (e) {
       toastError(copy.errorToast + e.message);
       setStep('pay');
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const handleInvoiceSubmit = async () => {
+    if (!invoiceData.company_name || !invoiceData.tax_id) {
+      toastError(isCn ? '请填写公司名称和纳税人识别号' : 'Please fill in company name and tax ID');
+      return;
+    }
+    setInvoiceSubmitting(true);
+    try {
+      await submitInvoiceRequest(workOrderId, invoiceData);
+      setInvoiceSubmitted(true);
+      setShowInvoiceForm(false);
+      toastSuccess(copy.invoiceSubmitted);
+    } catch (e) {
+      toastError(isCn ? '开票申请提交失败：' : 'Invoice request failed: ' + e.message);
+    } finally {
+      setInvoiceSubmitting(false);
     }
   };
 
@@ -184,11 +263,13 @@ export function PaymentModal({ isOpen, onClose, workOrderId, customerId, onPaid 
               <p className="text-sm text-slate-600">{copy.confirming}</p>
             </div>
           ) : step === 'submitted' ? (
-            <div className="text-center py-6 space-y-3">
-              <div className="w-16 h-16 rounded-full bg-blue-500/10 flex items-center justify-center mx-auto">
-                <CheckCircle size={36} className="text-blue-500" />
+            <div className="py-6 space-y-3">
+              <div className="text-center space-y-3">
+                <div className="w-16 h-16 rounded-full bg-blue-500/10 flex items-center justify-center mx-auto">
+                  <CheckCircle size={36} className="text-blue-500" />
+                </div>
+                <h3 className="text-lg font-semibold text-slate-950">{copy.received}</h3>
               </div>
-              <h3 className="text-lg font-semibold text-slate-950">{copy.received}</h3>
               <div className="space-y-1.5 rounded-xl bg-slate-50 p-3 text-left text-sm">
                 <div className="flex justify-between gap-3">
                   <span className="text-slate-500">{copy.amount}</span>
@@ -218,7 +299,76 @@ export function PaymentModal({ isOpen, onClose, workOrderId, customerId, onPaid 
                   {copy.openPaypal}
                 </a>
               )}
+              {isCn && cnBankInfoDisplay()}
               <p className="text-xs text-slate-500">{copy.followup}</p>
+
+              {/* Invoice request section */}
+              {isCn && !existingInvoice && !invoiceSubmitted && showInvoiceForm && (
+                <div className="rounded-xl border border-slate-200 p-3 space-y-3">
+                  <div className="flex items-center gap-2 text-sm font-medium text-slate-950">
+                    <FileText size={16} />
+                    {copy.invoiceTitle}
+                  </div>
+                  <p className="text-xs text-slate-500">{copy.invoiceDesc}</p>
+                  {[
+                    { key: 'company_name', label: copy.invoiceCompanyName, required: true },
+                    { key: 'tax_id', label: copy.invoiceTaxId, required: true },
+                    { key: 'company_address', label: copy.invoiceAddress },
+                    { key: 'company_phone', label: copy.invoicePhone },
+                    { key: 'bank_name', label: copy.invoiceBankName },
+                    { key: 'bank_account', label: copy.invoiceBankAccount },
+                  ].map((field) => (
+                    <input
+                      key={field.key}
+                      type="text"
+                      value={invoiceData[field.key]}
+                      onChange={(e) => setInvoiceData({ ...invoiceData, [field.key]: e.target.value })}
+                      placeholder={`${field.label}${field.required ? ' *' : ''}`}
+                      className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs text-slate-950 placeholder:text-slate-400 focus:border-amber-400 focus:outline-none"
+                    />
+                  ))}
+                  <textarea
+                    value={invoiceData.notes}
+                    onChange={(e) => setInvoiceData({ ...invoiceData, notes: e.target.value })}
+                    placeholder={copy.invoiceNote}
+                    rows={2}
+                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs text-slate-950 placeholder:text-slate-400 focus:border-amber-400 focus:outline-none"
+                  />
+                  <div className="flex gap-2">
+                    <button
+                      onClick={handleInvoiceSubmit}
+                      disabled={invoiceSubmitting}
+                      className="flex-1 rounded-xl bg-blue-600 py-2 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+                    >
+                      {invoiceSubmitting ? copy.titleProcessing : copy.invoiceBtn}
+                    </button>
+                    <button
+                      onClick={() => setShowInvoiceForm(false)}
+                      className="rounded-xl border border-slate-200 px-4 py-2 text-xs text-slate-500 hover:bg-slate-50"
+                    >
+                      {copy.invoiceSkip}
+                    </button>
+                  </div>
+                </div>
+              )}
+              {isCn && existingInvoice && (
+                <div className="rounded-xl border border-blue-200 bg-blue-50 p-3 text-xs text-blue-900">
+                  <div className="flex items-center gap-2 font-medium text-blue-950 mb-1">
+                    <FileText size={16} />
+                    发票申请
+                  </div>
+                  <p>状态：{existingInvoice.status === 'issued' ? '已开票' : '待处理'}</p>
+                  {existingInvoice.invoice_number && <p>发票号码：{existingInvoice.invoice_number}</p>}
+                  {existingInvoice.company_name && <p>公司：{existingInvoice.company_name}</p>}
+                </div>
+              )}
+              {isCn && invoiceSubmitted && (
+                <div className="rounded-xl border border-green-200 bg-green-50 p-3 text-xs text-green-900 flex items-center gap-2">
+                  <CheckCircle size={14} />
+                  {copy.invoiceSubmitted}
+                </div>
+              )}
+
               <button onClick={onClose} className="w-full rounded-xl bg-amber-500 py-2.5 text-sm font-medium text-white hover:bg-amber-600">
                 {copy.goMessages}
               </button>
@@ -266,6 +416,8 @@ export function PaymentModal({ isOpen, onClose, workOrderId, customerId, onPaid 
                   })}
                 </div>
               </div>
+
+              {isCn && cnBankInfoDisplay()}
 
               <div className="flex items-start gap-2 rounded-xl border border-blue-200 bg-blue-50 p-2.5">
                 <Shield size={16} className="mt-0.5 flex-shrink-0 text-blue-600" />

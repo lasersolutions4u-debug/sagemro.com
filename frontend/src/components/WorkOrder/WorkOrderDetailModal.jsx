@@ -34,6 +34,8 @@ import { formatCustomerDeviceLine, formatServiceTextForLocale } from '../../util
 import { canEngineerViewCustomerContact, redactContactInfo } from '../../utils/contactRedaction';
 import { isCnLocale } from '../../utils/locale';
 
+const CURRENCY = isCnLocale() ? 'CNY' : 'USD';
+
 function hasServiceReportContent(record) {
   if (!record) return false;
   const hasText = Boolean(record.symptom || record.diagnosis || record.solution);
@@ -514,7 +516,7 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
           {detail?.payout && (
             <div className="mt-3 grid gap-2 text-xs text-[var(--color-text-secondary)] sm:grid-cols-3">
               <div>{copy.payoutMethod}: {detail.payout.method === 'bank_swift' ? 'Bank transfer / SWIFT' : 'PayPal account'}</div>
-              <div>{copy.payoutAmount}: {detail.payout.amount ? `${detail.payout.amount} ${detail.payout.currency || 'USD'}` : '-'}</div>
+              <div>{copy.payoutAmount}: {detail.payout.amount ? `${detail.payout.amount} ${detail.payout.currency || CURRENCY}` : '-'}</div>
               <div>{copy.payoutReference}: {detail.payout.transaction_reference || '-'}</div>
             </div>
           )}

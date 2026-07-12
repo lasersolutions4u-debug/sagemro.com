@@ -90,16 +90,16 @@ export function formatEngineerOption(engineer) {
   return `${prefix}${engineer.name || ''}${region ? ` / ${region}` : ''}`;
 }
 
-export function getQuoteReviewRows(wo) {
+export function getQuoteReviewRows(wo, currency = 'USD') {
   const subtotal = Number(wo.pricing_total_amount || wo.pricing_subtotal || 0);
   const rows = [
-    ['Labor', `${money(wo.pricing_labor_fee)} USD`],
-    ['Parts', `${money(wo.pricing_parts_fee)} USD`],
-    ['Travel', `${money(wo.pricing_travel_fee)} USD`],
-    ['Other', `${money(wo.pricing_other_fee)} USD`],
+    ['Labor', `${money(wo.pricing_labor_fee)} ${currency}`],
+    ['Parts', `${money(wo.pricing_parts_fee)} ${currency}`],
+    ['Travel', `${money(wo.pricing_travel_fee)} ${currency}`],
+    ['Other', `${money(wo.pricing_other_fee)} ${currency}`],
   ];
   const note = formatQuoteNote(wo.pricing_parts_detail);
   if (note) rows.push(['Other fee note', note]);
-  rows.push(['Quote subtotal price', `${money(subtotal)} USD`]);
+  rows.push(['Quote subtotal price', `${money(subtotal)} ${currency}`]);
   return rows;
 }

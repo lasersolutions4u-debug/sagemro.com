@@ -10372,7 +10372,7 @@ async function handlePayWorkOrder(request, env) {
       ).bind(
         generateId(),
         workOrderId,
-        `客户选择了 ${methodLabel}，金额 ${amount} USD。工程师跟进收款后，请向管理员申请开工确认。`
+        `客户选择了 ${methodLabel}，金额 ${amount} CNY。工程师跟进收款后，请向管理员申请开工确认。`
       ).run();
 
       if (wo.engineer_id) {
@@ -10535,6 +10535,121 @@ async function handleAdminApprovePaymentStart(request, env) {
     return errorResponse(error.message, 500);
   }
 }
+// 客户提交发票申请
+async function handleSubmitInvoiceRequest(request, env) {
+  try {
+    const workOrderId = new URL(request.url).pathname.split('/')[3];
+    const auth = request._auth;
+    const market = getRequestMarket(request);
+    if (!auth || auth.userType !== 'customer') {
+      return errorResponse(market === 'cn' ? '仅客户可申请发票' : 'Only customers can request invoices', 403);
+    }
+    const customer_id = auth.userId;
+
+    const wo = await env.DB.prepare(
+      'SELECT id, customer_id, status FROM work_orders WHERE id = ?'
+    ).bind(workOrderId).first();
+    if (!wo) return errorResponse(market === 'cn' ? '工单不存在' : 'Work order not found', 404);
+    if (wo.customer_id !== customer_id) {
+      return errorResponse(market === 'cn' ? '您无权操作此工单' : 'You do not have permission for this work order', 403);
+    }
+
+    // 检查是否已有发票申请
+    const existing = await env.DB.prepare(
+      "SELECT id, status FROM invoice_requests WHERE work_order_id = ? AND status = 'pending' LIMIT 1"
+    ).bind(workOrderId).first();
+    if (existing) {
+      return errorResponse(market === 'cn' ? '已有待处理的发票申请' : 'An invoice request is already pending', 400);
+    }
+
+    // 获取工单付款金额
+    const payment = await env.DB.prepare(
+      "SELECT amount FROM work_order_payments WHERE work_order_id = ? AND status = 'completed' ORDER BY created_at DESC LIMIT 1"
+    ).bind(workOrderId).first();
+    const amount = payment?.amount || 0;
+
+    const body = await request.json().catch(() => ({}));
+    const invoiceId = generateId();
+
+    await env.DB.prepare(`
+      INSERT INTO invoice_requests (id, work_order_id, customer_id, invoice_type, company_name, tax_id, company_address, company_phone, bank_name, bank_account, amount, notes)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).bind(
+      invoiceId,
+      workOrderId,
+      customer_id,
+      String(body.invoice_type || '普通发票').trim(),
+      String(body.company_name || '').trim(),
+      String(body.tax_id || '').trim(),
+      String(body.company_address || '').trim(),
+      String(body.company_phone || '').trim(),
+      String(body.bank_name || '').trim(),
+      String(body.bank_account || '').trim(),
+      amount,
+      String(body.notes || '').trim()
+    ).run();
+
+    // 系统消息
+    await env.DB.prepare(
+      "INSERT INTO work_order_messages (id, work_order_id, sender_type, sender_id, sender_name, content, message_type, is_internal_note, is_customer_visible) VALUES (?, ?, 'system', '', 'System', ?, 'invoice_update', 0, 1)"
+    ).bind(
+      generateId(),
+      workOrderId,
+      market === 'cn' ? `客户已申请开具发票（${body.company_name || ''}），请管理员处理。` : `Customer requested an invoice (${body.company_name || ''}). Admin to process.`
+    ).run();
+
+    return jsonResponse({ success: true, invoice_request: { id: invoiceId, status: 'pending', amount } });
+  } catch (error) {
+    return errorResponse(error.message, 500);
+  }
+}
+
+// 获取发票申请状态
+async function handleGetInvoiceRequest(request, env) {
+  try {
+    const workOrderId = new URL(request.url).pathname.split('/')[3];
+    const auth = request._auth;
+    const market = getRequestMarket(request);
+    if (!auth) return errorResponse(market === 'cn' ? '未认证' : 'Unauthorized', 401);
+
+    const invoiceRequest = await env.DB.prepare(
+      'SELECT * FROM invoice_requests WHERE work_order_id = ? ORDER BY created_at DESC LIMIT 1'
+    ).bind(workOrderId).first();
+
+    return jsonResponse({ success: true, invoice_request: invoiceRequest || null });
+  } catch (error) {
+    return errorResponse(error.message, 500);
+  }
+}
+
+// 管理员处理发票申请（标记已开票）
+async function handleAdminProcessInvoiceRequest(request, env) {
+  try {
+    const workOrderId = new URL(request.url).pathname.split('/')[4];
+    const market = getRequestMarket(request);
+    const body = await request.json().catch(() => ({}));
+
+    const invoiceRequest = await env.DB.prepare(
+      "SELECT id, status FROM invoice_requests WHERE work_order_id = ? AND status = 'pending' ORDER BY created_at DESC LIMIT 1"
+    ).bind(workOrderId).first();
+    if (!invoiceRequest) {
+      return errorResponse(market === 'cn' ? '没有待处理的发票申请' : 'No pending invoice request found', 404);
+    }
+
+    await env.DB.prepare(`
+      UPDATE invoice_requests SET status = 'issued', invoice_number = ?, admin_notes = ?, issued_at = datetime('now') WHERE id = ?
+    `).bind(
+      String(body.invoice_number || '').trim(),
+      String(body.admin_notes || '').trim(),
+      invoiceRequest.id
+    ).run();
+
+    return jsonResponse({ success: true, status: 'issued' });
+  } catch (error) {
+    return errorResponse(error.message, 500);
+  }
+}
+
 // 获取工单付款记录
 async function handleAdminUpdateWorkOrderPayout(request, env) {
   try {
@@ -11072,6 +11187,9 @@ async function routeRequest(request, env, ctx) {
       if (path.match(/^\/api\/admin\/workorders\/[^/]+\/payout$/) && request.method === 'PATCH') {
         return handleAdminUpdateWorkOrderPayout(request, env);
       }
+      if (path.match(/^\/api\/admin\/workorders\/[^/]+\/invoice-request\/process$/) && request.method === 'POST') {
+        return handleAdminProcessInvoiceRequest(request, env);
+      }
       if (path.startsWith('/api/admin/workorders/') && path.endsWith('/archive') && request.method === 'PATCH') {
         return handleAdminArchiveWorkOrder(request, env);
       }
@@ -11310,6 +11428,14 @@ async function routeRequest(request, env, ctx) {
     // 获取付款记录
     if (path.match(/^\/api\/workorders\/[^/]+\/payment$/) && request.method === 'GET') {
       return handleGetWorkOrderPayment(request, env);
+    }
+    // 发票申请（客户提交）
+    if (path.match(/^\/api\/workorders\/[^/]+\/invoice-request$/) && request.method === 'POST') {
+      return handleSubmitInvoiceRequest(request, env);
+    }
+    // 获取发票申请状态
+    if (path.match(/^\/api\/workorders\/[^/]+\/invoice-request$/) && request.method === 'GET') {
+      return handleGetInvoiceRequest(request, env);
     }
     // 推送订阅（OneSignal Player ID）- 客户和工程师共用同一处理器，按 auth.userType 分发
     if (
