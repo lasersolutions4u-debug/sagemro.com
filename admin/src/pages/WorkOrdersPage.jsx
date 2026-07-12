@@ -67,8 +67,8 @@ function MoneyRow({ label, value }) {
   );
 }
 
-function payoutLabel(status) {
-  const labels = {
+function payoutLabel(status, t = TEXT.en) {
+  const labels = t.payoutStatuses || {
     not_ready: 'Not ready',
     pending: 'Payout pending',
     processing: 'Processing',
@@ -211,6 +211,7 @@ const TEXT = {
     customerLabel: 'Customer',
     engineerLabel: 'Engineer',
     quoteReviewLabel: 'Quote review',
+    serviceRecordLabel: 'Service Record',
     quoteDetailTitle: 'Quote Details',
     quoteSubtotalPrice: 'Quote subtotal price',
     otherFeeNote: 'Other fee note',
@@ -218,6 +219,44 @@ const TEXT = {
     aiPriceCheck: 'AI price check',
     noQuoteDetail: 'No quote detail',
     riskControlLabel: 'Risk control',
+    clearRisk: 'clear',
+    engineerPayoutTitle: 'Engineer service payment',
+    engineerPayoutHint: "Internal closure is not complete until this work order's engineer payout is completed.",
+    payoutFields: {
+      status: 'Status',
+      method: 'Method',
+      amount: 'Amount',
+      reference: 'Reference',
+      paidAt: 'Paid at',
+      note: 'Note',
+    },
+    payoutMethods: {
+      bank_swift: 'Bank transfer / SWIFT',
+      paypal: 'PayPal account',
+    },
+    payoutActions: {
+      processing: 'Mark payout processing',
+      completed: 'Mark payout completed',
+      exception: 'Mark payout exception',
+    },
+    payoutPrompts: {
+      amount: 'Engineer service payment amount in USD (optional):',
+      reference: 'Payment reference / transaction ID (optional):',
+      note: 'Internal payout note (optional):',
+    },
+    payoutStatuses: {
+      not_ready: 'Not ready',
+      pending: 'Payout pending',
+      processing: 'Processing',
+      completed: 'Completed',
+      exception: 'Exception',
+    },
+    quoteFeeLabels: {
+      labor: 'Labor Fee',
+      parts: 'Parts Fee',
+      travel: 'Travel Fee',
+      other: 'Other Fees',
+    },
     aiSummaryTitle: 'AI Intake Summary',
     noAiSummary: 'No AI summary',
     attachmentsTitle: 'Diagnostic Images & Attachments',
@@ -255,7 +294,193 @@ const TEXT = {
     saveNote: 'Save internal note',
     noDetail: 'No service order detail loaded',
   },
-  'zh-CN': {},
+  'zh-CN': {
+    statuses: {
+      pending: '待审核',
+      pending_dispatch: '待区域派工',
+      assigned: '已派工',
+      in_progress: '处理中',
+      pricing: '报价确认',
+      pending_payment: '待付款跟进',
+      payment_review: '付款审核',
+      in_service: '服务中',
+      resolved: '已解决',
+      completed: '已完成',
+      rejected: '已驳回',
+      cancelled: '已取消',
+    },
+    urgency: {
+      normal: '普通',
+      urgent: '紧急',
+      critical: '停机',
+    },
+    types: {
+      fault: '设备故障',
+      maintenance: '维护保养',
+      parameter: '参数调试',
+      other: '其他',
+    },
+    pricing: {
+      pending_review: '待运营审核',
+      submitted: '已发送给客户',
+      confirmed: '客户已确认',
+      draft: '已退回修改',
+    },
+    tabs: {
+      all: '全部',
+      pending: '待审核',
+      pending_dispatch: '待区域派工',
+      in_progress: '处理中',
+      completed: '已完成',
+    },
+    title: '服务工单',
+    subtitle: '主流程为 Admin 分配区域负责人，再由区域负责人分配工程师。直接派给工程师仅作为兼容操作，并受冲突检查限制。',
+    loading: '加载中...',
+    empty: '暂无数据',
+    selectRegionalLead: '请先选择区域负责人',
+    assignedRegionalLead: (orderNo) => `已分配区域负责人：${orderNo}`,
+    assignRegionalLeadFailed: '区域负责人分配失败',
+    selectEngineer: '请先选择内部工程师',
+    assignedEngineer: (orderNo) => `已派工：${orderNo}`,
+    assignEngineerFailed: '派工失败',
+    quoteSent: (orderNo) => `审核后的报价已发送给客户：${orderNo}`,
+    quoteReviewFailed: '报价审核失败',
+    rejectPrompt: '退回原因（可选，将作为内部备注给工程师查看）：',
+    quoteReturned: (orderNo) => `报价已退回修改：${orderNo}`,
+    quoteReturnFailed: '报价退回失败',
+    paymentStartApproved: (orderNo) => `付款已确认，可以开始服务：${orderNo}`,
+    paymentStartApproveFailed: '服务开始确认失败',
+    approvePaymentStart: '确认付款并开始',
+    paymentReviewTitle: '需要确认付款',
+    paymentReviewHint: '工程师已跟进付款。确认到账后再允许进入现场服务。',
+    archived: (orderNo) => `已归档：${orderNo}`,
+    archiveFailed: '归档失败',
+    detailLoadFailed: '工单详情加载失败',
+    noteSaveFailed: '内部备注保存失败',
+    headers: {
+      orderNo: '服务单号',
+      customer: '客户',
+      regionalLead: '区域负责人',
+      engineer: '内部工程师',
+      type: '类型',
+      urgency: '紧急程度',
+      status: '状态',
+      quoteArchive: '报价 / 归档',
+      createdAt: '创建时间',
+      dispatch: '派工',
+      detail: '详情',
+    },
+    conflictFallback: '存在冲突',
+    noQuote: '暂无报价',
+    approve: '批准',
+    approveFullOrder: '批准完整订单',
+    return: '退回',
+    returnQuote: '退回报价',
+    viewQuoteDetail: '审核完整订单',
+    reviewQuoteFirst: '请先打开报价详情完成审核。',
+    fullOrderReviewTitle: '需要完整订单审核',
+    fullOrderReviewHint: '批准前请核对客户问题、AI 摘要、附件、报价明细、配件、报价小计和内部备注。',
+    archive: '归档',
+    regionalLeadOption: '选择区域负责人',
+    assigning: '分配中',
+    assignRegion: '分配区域',
+    engineerOption: '选择工程师',
+    dispatching: '派工中',
+    directDispatch: '直接派工',
+    searchEngineer: '按姓名、地区、技能或团队搜索工程师',
+    exportEngineers: '导出工程师池',
+    view: '查看',
+    previous: '上一页',
+    next: '下一页',
+    drawerTitle: '服务管控视图',
+    drawerSubtitle: '审核客户沟通、内部备注、AI 摘要、服务报告和双向评价。',
+    close: '关闭',
+    customerLabel: '客户',
+    engineerLabel: '工程师',
+    quoteReviewLabel: '报价审核',
+    serviceRecordLabel: '服务记录',
+    quoteDetailTitle: '报价详情',
+    quoteSubtotalPrice: '报价小计',
+    otherFeeNote: '其他费用备注',
+    partsList: '配件清单',
+    aiPriceCheck: 'AI 价格检查',
+    noQuoteDetail: '暂无报价详情',
+    riskControlLabel: '风控状态',
+    clearRisk: '正常',
+    engineerPayoutTitle: '工程师服务费结算',
+    engineerPayoutHint: '工程师服务费完成结算后，内部闭环才算完成。',
+    payoutFields: {
+      status: '状态',
+      method: '方式',
+      amount: '金额',
+      reference: '流水号',
+      paidAt: '付款时间',
+      note: '备注',
+    },
+    payoutMethods: {
+      bank_swift: '银行转账 / SWIFT',
+      paypal: 'PayPal 账号',
+    },
+    payoutActions: {
+      processing: '标记为结算中',
+      completed: '标记为已结算',
+      exception: '标记为结算异常',
+    },
+    payoutPrompts: {
+      amount: '工程师服务费金额（USD，可选）：',
+      reference: '付款流水号 / 交易编号（可选）：',
+      note: '内部结算备注（可选）：',
+    },
+    payoutStatuses: {
+      not_ready: '未就绪',
+      pending: '待结算',
+      processing: '结算中',
+      completed: '已结算',
+      exception: '异常',
+    },
+    quoteFeeLabels: {
+      labor: '人工费',
+      parts: '配件费',
+      travel: '差旅费',
+      other: '其他费用',
+    },
+    aiSummaryTitle: 'AI 需求摘要',
+    noAiSummary: '暂无 AI 摘要',
+    attachmentsTitle: '诊断图片与附件',
+    attachmentCount: (count) => `${count} 个附件`,
+    openAttachment: '打开附件',
+    noAttachments: '暂无诊断图片或附件',
+    reportTitle: '服务报告',
+    reportFields: {
+      symptom: '现象',
+      diagnosis: '诊断',
+      solution: '处理方案',
+      laborHours: '工时',
+    },
+    noReport: '暂无服务报告',
+    customerReviewTitle: '客户服务评价',
+    average: '平均',
+    scoreRows: {
+      timeliness: '响应及时性',
+      technical: '技术能力',
+      communication: '沟通',
+      professional: '专业度',
+      cooperation: '配合度',
+      payment: '付款配合',
+      environment: '现场条件',
+    },
+    noCustomerReview: '客户尚未评价本次服务',
+    engineerReviewTitle: '工程师内部客户评价',
+    internalRiskNote: '仅作为内部风控资料，用于派工判断、服务准备和质量复盘，不向客户展示。',
+    noEngineerReview: '工程师尚未提交客户配合评价',
+    messagesTitle: '服务沟通与内部备注',
+    messageCount: (count) => `${count} 条消息`,
+    noMessages: '暂无消息',
+    internalNote: '内部备注',
+    notePlaceholder: '添加内部备注。仅 Admin / 区域负责人 / 工程师可见，客户不可见。',
+    saveNote: '保存内部备注',
+    noDetail: '尚未加载工单详情',
+  },
 };
 
 export function WorkOrdersPage() {
@@ -495,10 +720,10 @@ export function WorkOrdersPage() {
 
   async function handleUpdatePayout(wo, status) {
     const currentPayout = wo.payout || {};
-    const amountInput = window.prompt('Engineer service payment amount in USD (optional):', currentPayout.amount || '');
+    const amountInput = window.prompt(t.payoutPrompts.amount, currentPayout.amount || '');
     if (amountInput === null) return;
-    const reference = window.prompt('Payment reference / transaction ID (optional):', currentPayout.transaction_reference || '') || '';
-    const note = window.prompt('Internal payout note (optional):', currentPayout.internal_note || '') || '';
+    const reference = window.prompt(t.payoutPrompts.reference, currentPayout.transaction_reference || '') || '';
+    const note = window.prompt(t.payoutPrompts.note, currentPayout.internal_note || '') || '';
     setAssigningId(`${wo.id}:payout:${status}`);
     setMessage('');
     try {
@@ -910,7 +1135,7 @@ export function WorkOrdersPage() {
           <div className="relative flex h-full w-full max-w-4xl flex-col overflow-hidden bg-[var(--color-surface)] shadow-2xl">
             <div className="sticky top-0 z-10 flex shrink-0 items-start justify-between gap-3 border-b border-[var(--color-border)] bg-[var(--color-surface)] p-3 sm:p-5">
               <div className="min-w-0">
-                <div className="text-xs uppercase tracking-[0.18em] text-[var(--color-primary)]">Service Record</div>
+                <div className="text-xs uppercase tracking-[0.18em] text-[var(--color-primary)]">{t.serviceRecordLabel}</div>
                 <h3 className="text-lg font-semibold">{t.drawerTitle}</h3>
                 <p className="mt-1 text-sm text-[var(--color-text-muted)]">{t.drawerSubtitle}</p>
               </div>
@@ -980,24 +1205,24 @@ export function WorkOrdersPage() {
                     <div>{t.customerLabel}: {detail.customer_name || '-'}</div>
                     <div>{t.engineerLabel}: {detail.engineer_name || '-'}</div>
                     <div>{t.quoteReviewLabel}: {detail.quote_review_status || '-'}</div>
-                    <div>{t.riskControlLabel}: {detail.conflict_status || 'clear'}</div>
+                    <div>{t.riskControlLabel}: {detail.conflict_status || t.clearRisk}</div>
                   </div>
                 </section>
 
                 <section className="rounded-xl border border-[var(--color-primary)]/30 bg-[var(--color-primary)]/5 p-4">
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                     <div>
-                      <h4 className="font-medium text-[var(--color-text)]">Engineer service payment</h4>
+                      <h4 className="font-medium text-[var(--color-text)]">{t.engineerPayoutTitle}</h4>
                       <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
-                        Internal closure is not complete until this work order's engineer payout is completed.
+                        {t.engineerPayoutHint}
                       </p>
                       <div className="mt-3 grid gap-2 text-xs text-[var(--color-text-muted)] sm:grid-cols-2">
-                        <div>Status: {payoutLabel(detail.payout_status)}</div>
-                        <div>Method: {detail.payout?.method === 'bank_swift' ? 'Bank transfer / SWIFT' : 'PayPal account'}</div>
-                        <div>Amount: {detail.payout?.amount ? `${money(detail.payout.amount)} ${detail.payout.currency || 'USD'}` : '-'}</div>
-                        <div>Reference: {detail.payout?.transaction_reference || '-'}</div>
-                        <div>Paid at: {detail.payout?.paid_at ? new Date(detail.payout.paid_at).toLocaleString('en-US') : '-'}</div>
-                        <div>Note: {detail.payout?.internal_note || '-'}</div>
+                        <div>{t.payoutFields.status}: {payoutLabel(detail.payout_status, t)}</div>
+                        <div>{t.payoutFields.method}: {detail.payout?.method === 'bank_swift' ? t.payoutMethods.bank_swift : t.payoutMethods.paypal}</div>
+                        <div>{t.payoutFields.amount}: {detail.payout?.amount ? `${money(detail.payout.amount)} ${detail.payout.currency || 'USD'}` : '-'}</div>
+                        <div>{t.payoutFields.reference}: {detail.payout?.transaction_reference || '-'}</div>
+                        <div>{t.payoutFields.paidAt}: {detail.payout?.paid_at ? new Date(detail.payout.paid_at).toLocaleString(runtimeConfig.locale === 'zh-CN' ? 'zh-CN' : 'en-US') : '-'}</div>
+                        <div>{t.payoutFields.note}: {detail.payout?.internal_note || '-'}</div>
                       </div>
                     </div>
                     <div className="flex flex-wrap gap-2">
@@ -1006,21 +1231,21 @@ export function WorkOrdersPage() {
                         disabled={assigningId === `${detail.id}:payout:processing`}
                         className="rounded-lg border border-[var(--color-border)] px-3 py-2 text-sm text-[var(--color-text-secondary)] disabled:opacity-50"
                       >
-                        Mark payout processing
+                        {t.payoutActions.processing}
                       </button>
                       <button
                         onClick={() => handleUpdatePayout(detail, 'completed')}
                         disabled={assigningId === `${detail.id}:payout:completed`}
                         className="rounded-lg bg-[var(--color-primary)] px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
                       >
-                        Mark payout completed
+                        {t.payoutActions.completed}
                       </button>
                       <button
                         onClick={() => handleUpdatePayout(detail, 'exception')}
                         disabled={assigningId === `${detail.id}:payout:exception`}
                         className="rounded-lg border border-red-500/40 px-3 py-2 text-sm text-red-500 disabled:opacity-50"
                       >
-                        Mark payout exception
+                        {t.payoutActions.exception}
                       </button>
                     </div>
                   </div>
@@ -1051,10 +1276,10 @@ export function WorkOrdersPage() {
                     return (
                       <div className="space-y-3 text-sm text-[var(--color-text-secondary)]">
                         <div className="grid gap-2 sm:grid-cols-2">
-                          <MoneyRow label="Labor Fee" value={pricing.labor_fee || 0} />
-                          <MoneyRow label="Parts Fee" value={pricing.parts_fee || 0} />
-                          <MoneyRow label="Travel Fee" value={pricing.travel_fee || 0} />
-                          <MoneyRow label="Other Fees" value={pricing.other_fee || 0} />
+                          <MoneyRow label={t.quoteFeeLabels.labor} value={pricing.labor_fee || 0} />
+                          <MoneyRow label={t.quoteFeeLabels.parts} value={pricing.parts_fee || 0} />
+                          <MoneyRow label={t.quoteFeeLabels.travel} value={pricing.travel_fee || 0} />
+                          <MoneyRow label={t.quoteFeeLabels.other} value={pricing.other_fee || 0} />
                         </div>
                         {note && (
                           <div className="rounded-lg bg-[var(--color-surface-elevated)] p-3">

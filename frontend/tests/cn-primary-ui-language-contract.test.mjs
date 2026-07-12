@@ -147,3 +147,62 @@ test('CN legacy engineer dashboard modal localizes dispatch labels', () => {
   assert.match(dashboard, /退回派工/);
   assert.doesNotMatch(dashboard, /title="SAGEMRO Internal Engineer Workspace"/);
 });
+
+test('CN recruiting and shared overlays localize secondary labels', () => {
+  const recruiting = read('frontend/src/components/Engineer/EngineerRecruitingPage.jsx');
+  const feedback = read('frontend/src/components/common/FeedbackHost.jsx');
+
+  assert.match(recruiting, /为什么加入 SAGEMRO/);
+  assert.match(recruiting, /派工前资料更完整/);
+  assert.match(recruiting, /建立信任后/);
+  assert.match(recruiting, /removeLabel=\{copy\.removeTag \|\| 'Remove'\}/);
+  assert.match(recruiting, /aria-label=\{copy\.closeApplication \|\| 'Close application form'\}/);
+  assert.doesNotMatch(recruiting, /title="Remove"/);
+  assert.doesNotMatch(recruiting, /aria-label="Close application form"/);
+
+  assert.match(feedback, /isCnLocale/);
+  assert.match(feedback, /关闭/);
+  assert.doesNotMatch(feedback, /aria-label="Close"/);
+});
+
+test('CN legacy AI tools panel localizes visible service-agent copy', () => {
+  const panel = read('frontend/src/components/AI/AIToolsPanel.jsx');
+
+  assert.match(panel, /isCnLocale/);
+  assert.match(panel, /AI 服务助手/);
+  assert.match(panel, /结构化服务卡片/);
+  assert.match(panel, /识别模块/);
+  assert.match(panel, /用户应该怎样体验/);
+  assert.match(panel, /开始助手对话/);
+  assert.doesNotMatch(panel, />Detected module</);
+  assert.doesNotMatch(panel, />How users should experience this:<\/strong>/);
+  assert.doesNotMatch(panel, />Start agent chat/);
+});
+
+test('CN deep customer workflow modals avoid hard-coded English labels', () => {
+  const messageBubble = read('frontend/src/components/Chat/MessageBubble.jsx');
+  const rating = read('frontend/src/components/WorkOrder/RatingModal.jsx');
+  const engineerReview = read('frontend/src/components/WorkOrder/EngineerReviewModal.jsx');
+
+  assert.match(messageBubble, /isCnLocale/);
+  assert.match(messageBubble, /复制/);
+  assert.match(messageBubble, /图片预览/);
+  assert.doesNotMatch(messageBubble, /title="Copy"/);
+  assert.doesNotMatch(messageBubble, /alt="Preview"/);
+
+  assert.match(rating, /isCnLocale/);
+  assert.match(rating, /确认服务并评价/);
+  assert.match(rating, /响应及时性/);
+  assert.match(rating, /验收备注（可选）/);
+  assert.match(rating, /title=\{copy\.title\}/);
+  assert.match(rating, /placeholder=\{copy\.commentPlaceholder\}/);
+  assert.doesNotMatch(rating, /title="Confirm Service & Review"/);
+
+  assert.match(engineerReview, /isCnLocale/);
+  assert.match(engineerReview, /评价客户配合/);
+  assert.match(engineerReview, /现场条件/);
+  assert.match(engineerReview, /提交评价/);
+  assert.match(engineerReview, /title=\{copy\.title\}/);
+  assert.match(engineerReview, /placeholder=\{copy\.commentPlaceholder\}/);
+  assert.doesNotMatch(engineerReview, /title="Review Customer"/);
+});

@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { AnimatePresence, motion as Motion } from 'framer-motion';
 import { CheckCircle2, XCircle, Info, AlertTriangle, X } from 'lucide-react';
+import { isCnLocale } from '../../utils/locale';
 
 const TOAST_ICON = {
   success: CheckCircle2,
@@ -19,6 +20,7 @@ const TOAST_COLOR = {
 function ToastItem({ toast, onDismiss }) {
   const Icon = TOAST_ICON[toast.type] || Info;
   const color = TOAST_COLOR[toast.type] || TOAST_COLOR.info;
+  const closeLabel = isCnLocale() ? '关闭' : 'Close';
   return (
     <Motion.div
       layout
@@ -35,7 +37,7 @@ function ToastItem({ toast, onDismiss }) {
       <button
         onClick={() => onDismiss(toast.id)}
         className="p-1 -mr-1 -mt-1 rounded hover:bg-[var(--color-hover)] transition-colors flex-shrink-0"
-        aria-label="Close"
+        aria-label={closeLabel}
       >
         <X size={14} className="text-[var(--color-text-secondary)]" />
       </button>

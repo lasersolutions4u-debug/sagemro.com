@@ -2,15 +2,43 @@ import { useState } from 'react';
 import { Modal } from '../common/Modal';
 import { Star } from 'lucide-react';
 import { submitRating } from '../../services/api';
+import { isCnLocale } from '../../utils/locale';
 
-const ratingDimensions = [
-  { key: 'timeliness', label: 'Response & Timeliness' },
-  { key: 'technical', label: 'Problem Solving' },
-  { key: 'communication', label: 'Communication' },
-  { key: 'professional', label: 'SAGEMRO Service Standard' },
-];
+const COPY = {
+  en: {
+    title: 'Confirm Service & Review',
+    serviceNo: 'Service No',
+    incomplete: 'Work order information is incomplete',
+    commentLabel: 'Acceptance Comment (Optional)',
+    commentPlaceholder: 'Confirm service result, remaining concerns, or follow-up needs...',
+    submitting: 'Submitting...',
+    submit: 'Confirm Service & Submit Review',
+    dimensions: {
+      timeliness: 'Response & Timeliness',
+      technical: 'Problem Solving',
+      communication: 'Communication',
+      professional: 'SAGEMRO Service Standard',
+    },
+  },
+  cn: {
+    title: '确认服务并评价',
+    serviceNo: '服务单号',
+    incomplete: '工单信息不完整',
+    commentLabel: '验收备注（可选）',
+    commentPlaceholder: '记录服务结果、仍需关注的问题或后续需求...',
+    submitting: '提交中...',
+    submit: '确认服务并提交评价',
+    dimensions: {
+      timeliness: '响应及时性',
+      technical: '问题解决能力',
+      communication: '沟通配合',
+      professional: 'SAGEMRO 服务规范',
+    },
+  },
+};
 
 export function RatingModal({ isOpen, onClose, workOrder, onSuccess }) {
+  const copy = isCnLocale() ? COPY.cn : COPY.en;
   const [ratings, setRatings] = useState({
     timeliness: 5,
     technical: 5,
@@ -23,7 +51,7 @@ export function RatingModal({ isOpen, onClose, workOrder, onSuccess }) {
 
   const handleSubmit = async () => {
     if (!workOrder?.id || !workOrder?.engineer_id || !workOrder?.customer_id) {
-      setError('Work order information is incomplete');
+      setError(copy.incomplete);
       return;
     }
 
@@ -71,12 +99,12 @@ export function RatingModal({ isOpen, onClose, workOrder, onSuccess }) {
   };
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Confirm Service & Review" size="sm">
+    <Modal isOpen={isOpen} onClose={onClose} title={copy.title} size="sm">
       <div className="space-y-4">
         {/* 工单信息 */}
         <div className="p-3 bg-[var(--color-surface-elevated)] rounded-xl">
           <div className="text-sm text-[var(--color-text-primary)]">
-            Service No: {workOrder?.order_no || workOrder?.id}
+            {copy.serviceNo}: {workOrder?.order_no || workOrder?.id}
           </div>
         </div>
 
@@ -89,10 +117,10 @@ export function RatingModal({ isOpen, onClose, workOrder, onSuccess }) {
 
         {/* 评分维度 */}
         <div className="space-y-3">
-          {ratingDimensions.map((dim) => (
-            <div key={dim.key} className="flex items-center justify-between">
-              <span className="text-sm text-[var(--color-text-primary)]">{dim.label}</span>
-              {renderStars(dim.key)}
+          {Object.entries(copy.dimensions).map(([key, label]) => (
+            <div key={key} className="flex items-center justify-between">
+              <span className="text-sm text-[var(--color-text-primary)]">{label}</span>
+              {renderStars(key)}
             </div>
           ))}
         </div>
@@ -100,12 +128,12 @@ export function RatingModal({ isOpen, onClose, workOrder, onSuccess }) {
         {/* 评价备注 */}
         <div>
           <label className="block text-sm font-medium text-[var(--color-text-primary)] mb-1">
-            Acceptance Comment (Optional)
+            {copy.commentLabel}
           </label>
           <textarea
             value={comment}
             onChange={(e) => setComment(e.target.value)}
-            placeholder="Confirm service result, remaining concerns, or follow-up needs..."
+            placeholder={copy.commentPlaceholder}
             rows={3}
             className="w-full px-3 py-2 border border-[var(--color-input-border)] rounded-xl bg-[var(--color-input-bg)] text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)] resize-none"
           />
@@ -117,7 +145,7 @@ export function RatingModal({ isOpen, onClose, workOrder, onSuccess }) {
           disabled={submitting}
           className="w-full py-3 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] disabled:bg-[var(--color-text-muted)] text-white rounded-xl font-medium transition-colors"
         >
-          {submitting ? 'Submitting...' : 'Confirm Service & Submit Review'}
+          {submitting ? copy.submitting : copy.submit}
         </button>
       </div>
     </Modal>

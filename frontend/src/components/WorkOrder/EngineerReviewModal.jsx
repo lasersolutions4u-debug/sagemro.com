@@ -2,15 +2,45 @@ import { useState } from 'react';
 import { Modal } from '../common/Modal';
 import { Star } from 'lucide-react';
 import { submitEngineerReview } from '../../services/api';
+import { isCnLocale } from '../../utils/locale';
 
-const reviewDimensions = [
-  { key: 'cooperation', label: 'Cooperation' },
-  { key: 'communication', label: 'Communication' },
-  { key: 'payment', label: 'Payment Timeliness' },
-  { key: 'environment', label: 'Site Conditions' },
-];
+const COPY = {
+  en: {
+    title: 'Review Customer',
+    orderNo: 'Order No',
+    internalOnly: 'This review is only visible to SAGEMRO internal operations, not to the customer',
+    incomplete: 'Work order information is incomplete',
+    commentLabel: 'Comment (Optional)',
+    commentPlaceholder: 'Record customer cooperation, site conditions, etc...',
+    submitting: 'Submitting...',
+    submit: 'Submit Review',
+    dimensions: {
+      cooperation: 'Cooperation',
+      communication: 'Communication',
+      payment: 'Payment Timeliness',
+      environment: 'Site Conditions',
+    },
+  },
+  cn: {
+    title: '评价客户配合',
+    orderNo: '工单号',
+    internalOnly: '此评价仅供 SAGEMRO 内部运营查看，不向客户展示',
+    incomplete: '工单信息不完整',
+    commentLabel: '备注（可选）',
+    commentPlaceholder: '记录客户配合、付款沟通、现场条件等情况...',
+    submitting: '提交中...',
+    submit: '提交评价',
+    dimensions: {
+      cooperation: '配合程度',
+      communication: '沟通情况',
+      payment: '付款及时性',
+      environment: '现场条件',
+    },
+  },
+};
 
 export function EngineerReviewModal({ isOpen, onClose, workOrder, onSuccess }) {
+  const copy = isCnLocale() ? COPY.cn : COPY.en;
   const [ratings, setRatings] = useState({
     cooperation: 5,
     communication: 5,
@@ -23,7 +53,7 @@ export function EngineerReviewModal({ isOpen, onClose, workOrder, onSuccess }) {
 
   const handleSubmit = async () => {
     if (!workOrder?.id || !workOrder?.engineer_id || !workOrder?.customer_id) {
-      setError('Work order information is incomplete');
+      setError(copy.incomplete);
       return;
     }
 
@@ -70,14 +100,14 @@ export function EngineerReviewModal({ isOpen, onClose, workOrder, onSuccess }) {
   };
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Review Customer" size="sm">
+    <Modal isOpen={isOpen} onClose={onClose} title={copy.title} size="sm">
       <div className="space-y-4">
         <div className="p-3 bg-[var(--color-surface-elevated)] rounded-xl">
           <div className="text-sm text-[var(--color-text-primary)]">
-            Order No: {workOrder?.order_no || workOrder?.id}
+            {copy.orderNo}: {workOrder?.order_no || workOrder?.id}
           </div>
           <div className="text-xs text-[var(--color-text-secondary)] mt-1">
-            This review is only visible to SAGEMRO internal operations, not to the customer
+            {copy.internalOnly}
           </div>
         </div>
 
@@ -88,22 +118,22 @@ export function EngineerReviewModal({ isOpen, onClose, workOrder, onSuccess }) {
         )}
 
         <div className="space-y-3">
-          {reviewDimensions.map((dim) => (
-            <div key={dim.key} className="flex items-center justify-between">
-              <span className="text-sm text-[var(--color-text-primary)]">{dim.label}</span>
-              {renderStars(dim.key)}
+          {Object.entries(copy.dimensions).map(([key, label]) => (
+            <div key={key} className="flex items-center justify-between">
+              <span className="text-sm text-[var(--color-text-primary)]">{label}</span>
+              {renderStars(key)}
             </div>
           ))}
         </div>
 
         <div>
           <label className="block text-sm font-medium text-[var(--color-text-primary)] mb-1">
-            Comment (Optional)
+            {copy.commentLabel}
           </label>
           <textarea
             value={comment}
             onChange={(e) => setComment(e.target.value)}
-            placeholder="Record customer cooperation, site conditions, etc..."
+            placeholder={copy.commentPlaceholder}
             rows={3}
             className="w-full px-3 py-2 border border-[var(--color-input-border)] rounded-xl bg-[var(--color-input-bg)] text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)] resize-none"
           />
@@ -114,7 +144,7 @@ export function EngineerReviewModal({ isOpen, onClose, workOrder, onSuccess }) {
           disabled={submitting}
           className="w-full py-3 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] disabled:bg-[var(--color-text-muted)] text-white rounded-xl font-medium transition-colors"
         >
-          {submitting ? 'Submitting...' : 'Submit Review'}
+          {submitting ? copy.submitting : copy.submit}
         </button>
       </div>
     </Modal>

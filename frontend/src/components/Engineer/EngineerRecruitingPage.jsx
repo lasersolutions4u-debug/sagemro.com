@@ -22,12 +22,12 @@ const COPY = {
     title: '清晰工况、明确边界、可沉淀的服务记录。',
     subtitle: 'SAGEMRO 正在建设面向激光切割机与钣金加工设备的第三方服务协作网络。我们寻找真正理解现场、设备和客户压力的工程师，并通过人工审核、派工资料、报价边界、付款确认、现场安全和服务记录来支持协作。',
     primary: '申请成为认证服务代表',
-    applyNow: 'Apply now',
+    applyNow: '立即申请',
     signIn: '已有工程师账号，进入工作台',
     heroStats: [
-      { value: 'Manual', label: 'review before account access' },
-      { value: 'Regional', label: 'dispatch coordination' },
-      { value: 'Field-first', label: 'service standards' },
+      { value: '人工', label: '审核后开通账号' },
+      { value: '区域', label: '协同派工' },
+      { value: '现场优先', label: '服务标准' },
     ],
     pillars: [
       { title: '人工审核，统一协作', text: '申请通过后由 SAGEMRO 分配账号，服务任务由 Admin 与区域负责人统一协调。' },
@@ -36,37 +36,37 @@ const COPY = {
     ],
     valuesTitle: '我们相信：成就工程师，就是成就客户。',
     valuesText: '从 Admin 到区域负责人，协作重点是客户信息、报价边界、付款确认、现场安全和服务记录。工程师掌握的信息越完整，客户现场越容易得到稳定、可靠的服务。',
-    joinTitle: 'Why join SAGEMRO',
+    joinTitle: '为什么加入 SAGEMRO',
     joinIntro: '我们建设的是一个更专业、更清晰、更尊重现场经验的服务网络，让每次服务从范围、风险、记录和后续责任上都更容易对齐。',
     joinItems: [
-      { title: 'Better prepared service visits', text: 'Before dispatch, engineers can receive customer symptoms, machine context, AI intake notes, and available records.' },
-      { title: 'Less low-value back-and-forth', text: 'Structured service records, quote review, messages, and payment confirmation keep operations clearer.' },
-      { title: 'A path beyond one-time jobs', text: 'Reliable engineers can grow into regional service partners as the network expands.' },
+      { title: '派工前资料更完整', text: '工程师在接单前可看到客户现象、设备背景、AI 初步整理和已有记录。' },
+      { title: '减少低价值反复沟通', text: '服务记录、报价审核、消息和付款确认都沉淀在同一流程里，协作更清楚。' },
+      { title: '不止一次性服务', text: '稳定可靠的工程师，后续可以随着区域网络发展成为区域服务伙伴。' },
     ],
-    lookForTitle: 'What we look for',
+    lookForTitle: '我们看重什么',
     lookForItems: [
-      'Hands-on experience with laser cutting machines, press brakes, or sheet metal equipment.',
-      'Clear communication with customers and SAGEMRO operations.',
-      'Ability to document service findings, parts needs, and follow-up advice.',
-      'Honest schedule signals, travel range, and emergency support capacity.',
+      '有激光切割机、折弯机或钣金设备的一线服务经验。',
+      '能和客户、SAGEMRO 运营团队清楚沟通。',
+      '能记录服务发现、配件需求和后续建议。',
+      '如实维护可服务时间、出差范围和紧急支持能力。',
     ],
-    leadTitle: 'Regional Lead opportunity',
-    leadText: 'Experienced representatives may be invited to become Regional Leads after trust is established. Regional Leads help coordinate local engineers, support dispatch decisions, and keep service standards consistent.',
-    processTitle: 'How applications work',
+    leadTitle: '区域负责人机会',
+    leadText: '建立信任后，经验稳定的服务代表可能被邀请成为区域负责人。区域负责人协助协调本地工程师、支持派工判断，并保持服务标准一致。',
+    processTitle: '申请流程',
     process: [
-      { step: '01', title: 'Apply online', text: 'Share your service regions, skills, field experience, and availability signals.' },
-      { step: '02', title: 'SAGEMRO reviews manually', text: 'Our operations team checks fit, experience, and regional coverage before any account is opened.' },
-      { step: '03', title: 'Activation after approval', text: 'Approved representatives receive an account activation link from SAGEMRO.' },
-      { step: '04', title: 'Start with coordinated service', text: 'Admin and Regional Leads coordinate dispatch, quote review, payment follow-up, and service standards.' },
+      { step: '01', title: '在线提交申请', text: '填写可服务区域、技能、现场经验和可服务时间。' },
+      { step: '02', title: 'SAGEMRO 人工审核', text: '运营团队会先核对经验、区域覆盖和协作匹配度，再决定是否开通账号。' },
+      { step: '03', title: '审核通过后激活', text: '通过审核的服务代表会收到 SAGEMRO 发出的账号激活链接。' },
+      { step: '04', title: '从协同服务开始', text: 'Admin 与区域负责人协同派工、报价审核、付款跟进和服务标准。' },
     ],
-    faqTitle: 'Frequently asked questions',
+    faqTitle: '常见问题',
     faqs: [
-      { q: 'Does applying create a login account?', a: 'No. Application and account access are separate. Accounts are opened only after SAGEMRO confirms cooperation.' },
-      { q: 'Can I apply if I only cover one city or one state?', a: 'Yes. Clear local coverage is useful. We care more about reliable service capacity than large but vague coverage.' },
-      { q: 'Is this only for laser cutting machines?', a: 'Laser cutting is a key category, but sheet metal equipment experience such as press brakes and related CNC service is also valuable.' },
-      { q: 'How does payment work?', a: 'Customer payment is coordinated through SAGEMRO-approved payment instructions. Engineers follow up with customers and request Admin approval before starting service.' },
+      { q: '提交申请会自动创建登录账号吗？', a: '不会。申请和账号开通是分开的，只有 SAGEMRO 确认合作后才会开通账号。' },
+      { q: '只覆盖一个城市或一个省份可以申请吗？', a: '可以。清楚可靠的本地覆盖很有价值，我们更看重真实服务能力。' },
+      { q: '只招激光切割机工程师吗？', a: '激光切割是重点方向，但折弯机和相关数控钣金设备经验同样有价值。' },
+      { q: '付款怎么处理？', a: '客户付款按 SAGEMRO 确认的付款指引协调。工程师跟进客户付款后，需要 Admin 确认再开始服务。' },
     ],
-    modalTitle: 'Apply as a Certified Service Representative',
+    modalTitle: '申请成为认证服务代表',
     fields: {
       name: '姓名',
       phone: '手机 / 电话',
@@ -93,7 +93,11 @@ const COPY = {
     submit: '提交申请',
     submitting: '正在提交...',
     success: '申请已收到。SAGEMRO 运营团队会审核资料，并在匹配合适区域后联系你。',
-    note: 'Submitting an application does not create a login account. Approved representatives receive an account activation link from SAGEMRO after review.',
+    note: '提交申请不会自动创建登录账号。审核通过后，服务代表会收到 SAGEMRO 发出的账号激活链接。',
+    removeTag: '移除',
+    closeApplication: '关闭申请表',
+    regionSuggestions: ['华东', '华南', '华北', '长三角', '珠三角', '江苏', '浙江', '上海', '广东'],
+    skillSuggestions: ['激光切割机', '折弯机', '激光器', '切割头', 'CNC 报警', '伺服驱动', '维护保养', '现场故障排查'],
   },
   en: {
     badge: 'SAGEMRO Service OS · Certified Representative Program',
@@ -224,7 +228,7 @@ const SKILL_SUGGESTIONS = [
   'On-site troubleshooting',
 ];
 
-function TagInput({ label, value, suggestions, placeholder, onChange }) {
+function TagInput({ label, value, suggestions, placeholder, removeLabel, onChange }) {
   const [draft, setDraft] = useState('');
   const tags = Array.isArray(value) ? value : splitTagList(value);
 
@@ -247,7 +251,7 @@ function TagInput({ label, value, suggestions, placeholder, onChange }) {
               type="button"
               onClick={() => removeTag(tag)}
               className="rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-800"
-              title="Remove"
+              title={removeLabel}
             >
               {tag} x
             </button>
@@ -321,15 +325,17 @@ function ApplicationForm({ copy, form, submitting, message, error, updateField, 
       <TagInput
         label={copy.fields.regions}
         value={form.service_regions}
-        suggestions={REGION_SUGGESTIONS}
+        suggestions={copy.regionSuggestions || REGION_SUGGESTIONS}
         placeholder={copy.placeholders.regions}
+        removeLabel={copy.removeTag || 'Remove'}
         onChange={(tags) => updateField('service_regions', tags)}
       />
       <TagInput
         label={copy.fields.skills}
         value={form.skill_tags}
-        suggestions={SKILL_SUGGESTIONS}
+        suggestions={copy.skillSuggestions || SKILL_SUGGESTIONS}
         placeholder={copy.placeholders.skills}
+        removeLabel={copy.removeTag || 'Remove'}
         onChange={(tags) => updateField('skill_tags', tags)}
       />
       <label className="block text-[13px] font-semibold text-[#312317]">
@@ -651,7 +657,7 @@ export function EngineerRecruitingPage({ onOpenLogin }) {
                 type="button"
                 onClick={() => setModalOpen(false)}
                 className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-[#eadfce] text-[#5e4d3d] transition hover:border-amber-300 hover:bg-amber-50"
-                aria-label="Close application form"
+                aria-label={copy.closeApplication || 'Close application form'}
               >
                 <X size={18} />
               </button>

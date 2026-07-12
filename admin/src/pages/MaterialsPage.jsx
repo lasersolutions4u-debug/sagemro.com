@@ -118,6 +118,7 @@ const TEXT = {
     previewEmpty: 'Upload a CSV file to preview material rows before import.',
     fileReadFailed: 'CSV preview failed. Please use a UTF-8 CSV file based on the template.',
     csvErrors: 'CSV issues',
+    noBlockingIssues: 'No blocking issues found.',
     previewRows: 'Preview rows',
     categories: {
       laser_cutting: 'Laser cutting',
@@ -217,6 +218,7 @@ const TEXT = {
     previewEmpty: '上传 CSV 文件后，可以先预览物料数据再导入。',
     fileReadFailed: 'CSV 预览失败。请使用基于模板填写的 UTF-8 CSV 文件。',
     csvErrors: 'CSV 问题',
+    noBlockingIssues: '未发现阻塞问题。',
     previewRows: '预览行',
     categories: {
       laser_cutting: '激光切割',
@@ -675,7 +677,7 @@ export function MaterialsPage() {
             <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-elevated)] p-3">
               <div className="mb-2 text-sm font-medium text-[var(--color-text-primary)]">{t.csvErrors}</div>
               {materialPreview.errors.length === 0 ? (
-                <div className="text-xs text-emerald-300">No blocking issues found.</div>
+                <div className="text-xs text-emerald-300">{t.noBlockingIssues}</div>
               ) : (
                 <ul className="space-y-1 text-xs leading-5 text-amber-300">
                   {materialPreview.errors.slice(0, 8).map((error) => <li key={error}>{error}</li>)}
