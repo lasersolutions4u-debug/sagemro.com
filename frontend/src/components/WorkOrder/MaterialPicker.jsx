@@ -7,6 +7,7 @@ import { isCnLocale } from '../../utils/locale';
 function money(value) {
   return Number(value || 0).toLocaleString(undefined, { maximumFractionDigits: 2 });
 }
+const CURRENCY = isCnLocale() ? 'CNY' : 'USD';
 
 function itemKey(item, index) {
   return item.id || item.material_id || `${item.material_code || item.name}-${index}`;
@@ -172,8 +173,8 @@ export function MaterialPicker({ purpose = 'quote', workOrderId = '', items = []
                   </div>
                 </td>
                 <td className="px-3 py-2 text-center text-[var(--color-text-primary)]">{item.quantity || 1} {item.unit || 'pcs'}</td>
-                <td className="px-3 py-2 text-right text-[var(--color-text-primary)]">{money(item.unit_price)} USD</td>
-                <td className="px-3 py-2 text-right text-[var(--color-text-primary)]">{money(item.line_total || Number(item.quantity || 0) * Number(item.unit_price || 0))} USD</td>
+                <td className="px-3 py-2 text-right text-[var(--color-text-primary)]">{money(item.unit_price)} {CURRENCY}</td>
+                <td className="px-3 py-2 text-right text-[var(--color-text-primary)]">{money(item.line_total || Number(item.quantity || 0) * Number(item.unit_price || 0))} {CURRENCY}</td>
               </tr>
             ))}
           </tbody>
@@ -191,7 +192,7 @@ export function MaterialPicker({ purpose = 'quote', workOrderId = '', items = []
             {isCn ? '从物料库选择配件，报价和服务报告会保留清晰明细。' : 'Select parts from the material master for cleaner quotes and reports.'}
           </div>
         </div>
-        <div className="text-sm font-semibold text-[var(--color-primary)]">{money(total)} USD</div>
+        <div className="text-sm font-semibold text-[var(--color-primary)]">{money(total)} {CURRENCY}</div>
       </div>
 
       <div className="relative">
