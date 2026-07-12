@@ -133,7 +133,7 @@ const normalizePhone = (value) => String(value || '').trim();
 const isInternationalPhone = (value) => /^\+?[0-9\s().-]{6,24}$/.test(normalizePhone(value));
 const isEmailAddress = (value) => /^\S+@\S+\.\S+$/.test(String(value || '').trim());
 
-export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
+export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal, conversationId }) {
   const isCn = isCnLocale();
   const copy = isCn ? LOGIN_COPY.cn : LOGIN_COPY.en;
   // step flow:
@@ -203,7 +203,7 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
     setSubmitting(true);
     setError('');
     try {
-      await registerCustomer({ name, phone, email, password, code, company: companyName, identity: 'customer' });
+      await registerCustomer({ name, phone, email, password, code, company: companyName, identity: 'customer', conversation_id: conversationId });
       const result = await login(isCn ? { phone, password } : { email, password });
       localStorage.setItem('sagemro_token', result.token);
       localStorage.setItem('sagemro_user', JSON.stringify(result.user));

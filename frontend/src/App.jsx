@@ -255,9 +255,8 @@ function App() {
       // The main site remains customer/visitor focused.
       setLoginModalOpen(false);
     }
-    // 登录后清空对话，确保用新账号的正确身份上下文开始对话
-    clearMessages();
-  }, [clearMessages]);
+    // 登录前如果已有游客对话，保留它 — 后端已通过 conversation_id 关联到新客户
+  }, []);
 
   // 登出
   const handleLogout = useCallback(() => {
@@ -345,6 +344,7 @@ function App() {
             onClose={() => setLoginModalOpen(false)}
             onLoginSuccess={handleLoginSuccess}
             onOpenLegal={openLegal}
+            conversationId={conversationId}
           />
           {legalModalOpen && (
             <LegalModal
@@ -540,6 +540,7 @@ function App() {
           onClose={() => setLoginModalOpen(false)}
           onLoginSuccess={handleLoginSuccess}
           onOpenLegal={openLegal}
+          conversationId={conversationId}
         />
       )}
       <ErrorBoundary>

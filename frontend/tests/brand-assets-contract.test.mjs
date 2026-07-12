@@ -146,7 +146,7 @@ test('registration copy hides CN email input and routes verification through pho
   assert.doesNotMatch(loginModal, /真实姓名/);
   assert.match(api, /sendVerifyCode\(\{ phone, email \}\)/);
   assert.match(api, /JSON\.stringify\(payload\)/);
-  assert.match(api, /registerCustomer\(\{ name, phone, email, password, code, company, identity \}\)/);
+  assert.match(api, /registerCustomer\(\{ name, phone, email, password, code, company, identity, conversation_id \}\)/);
   assert.match(toolbar, /loginLabel: '登录 \/ 注册'/);
   assert.match(toolbar, /loginLabel: 'Sign In \/ Register'/);
   assert.doesNotMatch(toolbar, /<span>Sign In \/ Register<\/span>/);

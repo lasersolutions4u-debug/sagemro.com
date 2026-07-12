@@ -84,11 +84,11 @@ export async function sendVerifyCode({ phone, email }) {
 /**
  * 客户注册
  */
-export async function registerCustomer({ name, phone, email, password, code, company, identity }) {
+export async function registerCustomer({ name, phone, email, password, code, company, identity, conversation_id }) {
   const response = await fetch(`${API_BASE}/api/auth/register/customer`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name, phone, email, password, code, company, identity }),
+    body: JSON.stringify({ name, phone, email, password, code, company, identity, conversation_id }),
   });
   if (!response.ok) {
     const data = await response.json();

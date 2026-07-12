@@ -174,7 +174,7 @@ function assertChatConversationAccess(chatAuth, trustedRole, conversation) {
   if (!conversation) return;
   if (trustedRole === 'guest') {
     if (conversation.customer_id || conversation.engineer_id) {
-      throw new GuardError('鎮ㄦ棤鏉冭闂瀵硅瘽', 403);
+      throw new GuardError('您无权访问该对话', 403);
     }
     return;
   }
@@ -2276,7 +2276,7 @@ async function handleSendCode(request, env) {
 // 客户注册
 async function handleRegisterCustomer(request, env) {
   try {
-    const { name, phone, email, password, code, company, identity } = await request.json();
+    const { name, phone, email, password, code, company, identity, conversation_id } = await request.json();
     const market = getRequestMarket(request);
     const normalizedEmail = normalizeEmail(email);
 
@@ -2320,6 +2320,13 @@ async function handleRegisterCustomer(request, env) {
     await env.DB.prepare(
       'INSERT INTO customers (id, user_no, name, phone, email, password_hash, salt, company, auth_status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
     ).bind(id, userNo, name, phone, normalizedEmail || null, passwordHash, salt, company, authStatus).run();
+
+    // 如果提供了 conversation_id，将游客对话关联到新注册的客户
+    if (conversation_id) {
+      await env.DB.prepare(
+        'UPDATE conversations SET customer_id = ?, updated_at = datetime("now") WHERE id = ? AND customer_id IS NULL'
+      ).bind(id, conversation_id).run();
+    }
 
     // 删除已使用的验证码
     await deleteVerificationCode(env, { phone, email });
