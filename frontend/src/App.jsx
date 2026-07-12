@@ -12,6 +12,7 @@ import { useConversations } from './hooks/useConversations';
 import { usePushNotification } from './hooks/usePushNotification';
 import { generateId } from './utils/helpers';
 import { isCnLocale } from './utils/locale';
+import { buildWorkOrderDescription } from './utils/workOrderDisplay';
 import { submitWorkOrder as submitWorkOrderApi, getUnreadNotificationCount } from './services/api';
 
 // 重型 Modal 懒加载，减少首屏 bundle 体积
@@ -213,20 +214,10 @@ function App() {
 
     // 检查是否登录
     if (!customer_id) {
-      throw new Error('请先登录后再提交工单');
+      throw new Error(isCn ? '请先登录后再提交工单' : 'Please sign in before submitting a service request');
     }
 
-    // 将设备信息组合进描述，供 AI 分析
-    const deviceInfo = [
-      data.device_type?.length > 0 ? `设备类型：${data.device_type.join('、')}` : null,
-      data.device_brand?.length > 0 ? `品牌：${data.device_brand.join('、')}` : null,
-      data.device_model ? `型号：${data.device_model}` : null,
-      data.region?.length > 0 ? `所在地区：${data.region.join('、')}` : null,
-    ].filter(Boolean).join('；');
-
-    const fullDescription = deviceInfo
-      ? `${deviceInfo}。${data.description}`
-      : data.description;
+    const fullDescription = buildWorkOrderDescription(data, isCn ? 'zh-CN' : 'en');
 
     const result = await submitWorkOrderApi({
       customer_id,
@@ -239,7 +230,7 @@ function App() {
     });
 
     return result.work_order;
-  }, []);
+  }, [isCn]);
 
   // 删除对话
   const handleDeleteConversation = useCallback((id) => {

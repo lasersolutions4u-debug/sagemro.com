@@ -30,7 +30,7 @@ import { MessagePanel } from './MessagePanel';
 import { EngineerPricingPanel, CustomerPricingPanel } from './PricingPanels';
 import { RepairRecordPanel } from './RepairRecordPanel';
 import { AttachmentsPanel } from './AttachmentsPanel';
-import { formatCustomerDeviceLine } from '../../utils/workOrderDisplay';
+import { formatCustomerDeviceLine, formatServiceTextForLocale } from '../../utils/workOrderDisplay';
 import { canEngineerViewCustomerContact, redactContactInfo } from '../../utils/contactRedaction';
 import { isCnLocale } from '../../utils/locale';
 
@@ -556,10 +556,10 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
             {detail.engineer_phone && <span className="ml-1 opacity-70">{detail.engineer_phone}</span>}
           </div>
         )}
-        {isCustomer && formatCustomerDeviceLine(detail || workOrder) && (
+        {isCustomer && formatCustomerDeviceLine(detail || workOrder, isCn ? 'zh-CN' : 'en') && (
           <div className="text-sm text-[var(--color-text-secondary)]">
             {/* Legacy source contract: Machine: <span */}
-            {isCn ? copy.machine : 'Machine'}: <span className="text-[var(--color-text-primary)]">{formatCustomerDeviceLine(detail || workOrder)}</span>
+            {isCn ? copy.machine : 'Machine'}: <span className="text-[var(--color-text-primary)]">{formatCustomerDeviceLine(detail || workOrder, isCn ? 'zh-CN' : 'en')}</span>
           </div>
         )}
         {detail?.customer_name && (
@@ -573,7 +573,9 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
       <div>
         <h3 className="text-sm font-medium text-[var(--color-text-primary)] mb-1">{copy.faultDescription}</h3>
         <div className="p-3 bg-[var(--color-surface-elevated)] rounded-xl text-sm text-[var(--color-text-primary)]">
-          {isEngineer ? redactContactInfo(workOrder.description) : workOrder.description}
+          {isEngineer
+            ? redactContactInfo(formatServiceTextForLocale(workOrder.description, isCn ? 'zh-CN' : 'en'))
+            : formatServiceTextForLocale(workOrder.description, isCn ? 'zh-CN' : 'en')}
         </div>
       </div>
 
@@ -675,7 +677,7 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
               <div key={log.id} className="flex gap-3 text-sm">
                 <div className="w-2 h-2 mt-1.5 rounded-full bg-[var(--color-primary)] flex-shrink-0" />
                 <div>
-                  <p className="text-[var(--color-text-primary)]">{log.content}</p>
+                  <p className="text-[var(--color-text-primary)]">{formatServiceTextForLocale(log.content, isCn ? 'zh-CN' : 'en')}</p>
                   <p className="text-xs text-[var(--color-text-muted)]">{new Date(log.created_at).toLocaleString(isCn ? 'zh-CN' : 'en-US')}</p>
                 </div>
               </div>

@@ -15,7 +15,7 @@ import {
   typeLabels,
   typeLabelsCn,
 } from '../../data/workOrderConfig';
-import { formatCustomerDeviceLine, toEnglishDeviceValue } from '../../utils/workOrderDisplay';
+import { formatCustomerDeviceLine, formatServiceTextForLocale, toEnglishDeviceValue } from '../../utils/workOrderDisplay';
 import { isCnLocale } from '../../utils/locale';
 
 // 客户侧需要关注的状态
@@ -220,10 +220,10 @@ export function MyWorkOrdersModal({ isOpen, onClose }) {
                 <p className="text-sm text-[var(--color-text-secondary)] mb-1">
                   {order.category_l1 && order.category_l1 !== 'other'
                     ? `${isCn ? (visibleCategoryConfig[order.category_l1]?.label || order.category_l1) : toEnglishDeviceValue(visibleCategoryConfig[order.category_l1]?.label || order.category_l1)}${order.category_l2 && order.category_l2 !== 'other' ? ' / ' + (isCn ? (visibleCategoryL2Labels[order.category_l2] || order.category_l2) : toEnglishDeviceValue(visibleCategoryL2Labels[order.category_l2] || order.category_l2)) : ''}`
-                    : (visibleTypeLabels[order.type] || (isCn ? (order.type || '') : toEnglishDeviceValue(order.type)))} | {formatCustomerDeviceLine(order) || order.device_id || copy.noDevice}
+                    : (visibleTypeLabels[order.type] || (isCn ? (order.type || '') : toEnglishDeviceValue(order.type)))} | {formatCustomerDeviceLine(order, isCn ? 'zh-CN' : 'en') || order.device_id || copy.noDevice}
                 </p>
                 <p className="text-sm text-[var(--color-text-primary)] line-clamp-2">
-                  {order.description}
+                  {formatServiceTextForLocale(order.description, isCn ? 'zh-CN' : 'en')}
                 </p>
                 <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                   <p className="text-xs text-[var(--color-text-secondary)]">

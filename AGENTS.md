@@ -91,3 +91,29 @@ Codex（本地）
 
 - `AGENTS.md` 等文档：Codex 自动加载 + 团队共享 → git
 - `.Codex/memory/`：跨会话私人笔记（决策草稿、未公开思路）→ 坚果云
+
+
+<claude-mem-context>
+# Memory Context
+
+# [sagemro.com] recent context, 2026-07-12 12:02pm GMT+8
+
+Legend: 🎯session 🔴bugfix 🟣feature 🔄refactor ✅change 🔵discovery ⚖️decision 🚨security_alert 🔐security_note
+Format: ID TIME TYPE TITLE
+Fetch details: get_observations([IDs]) | Search: mem-search skill
+
+Stats: 3 obs (536t read) | 89,481t work | 99% savings
+
+### Jul 12, 2026
+1978 11:44a 🔵 SAGEMRO 中文站前端国际化状态扫描
+1979 11:45a 🔵 Footer.jsx 已实现中英文切换
+1980 " 🔵 SAGEMRO 中文站前端国际化扫描（第一批）— 发现 3 处硬编码英文和小优化点
+S737 中文站（sagemro.cn）i18n 审计：深入每个页面和功能架构，找出显示英文的地方 (Jul 12 at 11:47 AM)
+S738 中文站 sagemro.cn i18n 审计 — 扫描 Worker 后端和前端残留英文 (Jul 12 at 11:53 AM)
+**Investigated**: 已审查 worker/src/index.js 全部 11209 行中的 errorResponse 调用，通过 grep 过滤已本地化的中文错误，找出纯英文错误消息。同时使用 Explore agent 系统扫描整个 worker/src/ 目录下的硬编码英文用户界面文本。已审阅的关键代码段：支付流程（L10152-10370）、语音转录（L2874-2991）、验证码邮件（L1895-1960）、Admin 工程师管理（L8320-8364）、AI 系统提示（L350-550+）、商机/Lead 提交（L5951-6025）、路由兜底（L10600-10785、L11190-11201）。
+
+**Next Steps**: 审计结果已呈现给用户（Joe），等待回复三个确认问题：是否全部修复、DeviceDetailPanel 的 ¥ 符号用人民币还是美元、验证码邮件中文站发中文还是英文。修复将按优先级：支付流程错误 → 语音错误 → 验证码邮件 → Worker 兜底错误 → Admin 杂项 → 前端组件。使用本地文件编辑工具（Read + Edit/Write），操作路径为 /Users/joe/Projects/sagemro.com/。
+
+
+Access 89k tokens of past work via get_observations([IDs]) or mem-search skill.
+</claude-mem-context>

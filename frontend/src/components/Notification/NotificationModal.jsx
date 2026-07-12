@@ -3,6 +3,7 @@ import { Modal } from '../common/Modal';
 import { Bell, CheckCheck, FileText, DollarSign, Star, Wrench, ClipboardCheck } from 'lucide-react';
 import { getNotifications, markNotificationRead, markAllNotificationsRead } from '../../services/api';
 import { isCnLocale } from '../../utils/locale';
+import { formatServiceTextForLocale } from '../../utils/workOrderDisplay';
 
 const COPY = {
   en: {
@@ -170,14 +171,14 @@ export function NotificationModal({ isOpen, onClose, onUnreadCountChange, onOpen
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
                       <span className="text-[13px] font-medium text-[var(--color-text-primary)] truncate">
-                        {notif.title}
+                        {formatServiceTextForLocale(notif.title, isCn ? 'zh-CN' : 'en')}
                       </span>
                       {!notif.is_read && (
                         <span className="w-2 h-2 rounded-full bg-blue-500 flex-shrink-0" />
                       )}
                     </div>
                     <div className="text-[12px] text-[var(--color-text-secondary)] mt-0.5 line-clamp-2">
-                      {notif.body}
+                      {formatServiceTextForLocale(notif.body, isCn ? 'zh-CN' : 'en')}
                     </div>
                     <div className="text-[11px] text-[var(--color-text-secondary)] opacity-60 mt-1">
                       {formatTime(notif.created_at, copy)}

@@ -4,6 +4,7 @@ import { getWorkOrderMessages, postWorkOrderMessage, uploadWorkOrderAttachment }
 import { toastError } from '../../utils/feedback';
 import { redactContactInfo } from '../../utils/contactRedaction';
 import { isCnLocale } from '../../utils/locale';
+import { formatServiceTextForLocale } from '../../utils/workOrderDisplay';
 
 const ALLOWED_TYPES = [
   'image/jpeg',
@@ -163,7 +164,7 @@ export function MessagePanel({ workOrderId, userType }) {
               return (
                 <div key={msg.id} className="flex justify-center">
                   <div className="text-xs text-[var(--color-text-muted)] bg-[var(--color-surface-elevated)] px-3 py-1 rounded-full">
-                    {msg.content}
+                    {formatServiceTextForLocale(msg.content, isCnLocale() ? 'zh-CN' : 'en')}
                   </div>
                 </div>
               );
@@ -178,7 +179,7 @@ export function MessagePanel({ workOrderId, userType }) {
                   {!isMe && msg.sender_name && (
                     <div className="text-xs opacity-70 mb-0.5">{msg.sender_name}</div>
                   )}
-                  {msg.content && <div className="whitespace-pre-wrap">{redactContactInfo(msg.content)}</div>}
+                  {msg.content && <div className="whitespace-pre-wrap">{redactContactInfo(formatServiceTextForLocale(msg.content, isCnLocale() ? 'zh-CN' : 'en'))}</div>}
                   <MediaGrid urls={attachmentUrls} isMe={isMe} />
                   <div className={`text-xs mt-1 ${isMe ? 'text-white/50 text-right' : 'text-[var(--color-text-muted)]'}`}>
                     {new Date(msg.created_at).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
