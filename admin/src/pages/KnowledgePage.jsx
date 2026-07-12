@@ -63,6 +63,21 @@ const TEXT = {
     imported: (name) => `Imported ${name} as a draft. Review before saving or publishing.`,
     importFailed: 'Import failed. Please use a UTF-8 text, Markdown, or CSV file.',
     failed: 'Operation failed: ',
+    categoryLabels: {
+      fault: 'Equipment fault',
+      cutting_parameters: 'Cutting parameters',
+      parts: 'Parts & accessories',
+      maintenance: 'Maintenance',
+      machine_selection: 'Machine selection',
+      health: 'Equipment health',
+      safety: 'Safety',
+      other: 'Other',
+    },
+    statusLabels: {
+      draft: 'Draft',
+      published: 'Published',
+      archived: 'Archived',
+    },
     usage: {
       title: 'Knowledge Base usage and rules',
       intro: 'Only reviewed and published knowledge can be used by AI. Treat this as the source of truth for manuals, repair notes, parameter sheets, and service experience.',
@@ -123,6 +138,21 @@ const TEXT = {
     imported: (name) => `已将 ${name} 导入为草稿，请审核后再保存或发布。`,
     importFailed: '导入失败。请使用 UTF-8 编码的文本、Markdown 或 CSV 文件。',
     failed: '操作失败：',
+    categoryLabels: {
+      fault: '设备故障',
+      cutting_parameters: '切割参数',
+      parts: '配件',
+      maintenance: '维护保养',
+      machine_selection: '选型',
+      health: '设备健康',
+      safety: '安全',
+      other: '其他',
+    },
+    statusLabels: {
+      draft: '草稿',
+      published: '已发布',
+      archived: '已归档',
+    },
     usage: {
       title: '知识库使用方法和发布规则',
       intro: '只有经过人工审核并发布的知识，AI 才能调用。这里用于沉淀说明书、维修经验、参数表、规格表和售后处理规则。',
@@ -364,7 +394,7 @@ export function KnowledgePage() {
               className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-3 py-2 text-sm lg:w-44"
             >
               <option value="all">{t.all}</option>
-              {CATEGORIES.map((category) => <option key={category} value={category}>{category}</option>)}
+              {CATEGORIES.map((category) => <option key={category} value={category}>{t.categoryLabels[category]}</option>)}
             </select>
             <select
               value={filters.status}
@@ -372,7 +402,7 @@ export function KnowledgePage() {
               className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-3 py-2 text-sm lg:w-36"
             >
               <option value="all">{t.all}</option>
-              {STATUSES.map((status) => <option key={status} value={status}>{status}</option>)}
+              {STATUSES.map((status) => <option key={status} value={status}>{t.statusLabels[status]}</option>)}
             </select>
             </div>
           </div>
@@ -401,7 +431,7 @@ export function KnowledgePage() {
                         <div className="font-medium text-[var(--color-text-primary)]">{article.title}</div>
                         <div className="mt-1 line-clamp-2 text-xs leading-5 text-[var(--color-text-muted)]">{article.content}</div>
                         <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-[var(--color-text-secondary)]">
-                          <span>{article.category}</span>
+                          <span>{t.categoryLabels[article.category] || article.category}</span>
                           <span>{article.locale}</span>
                           <span>v{article.version}</span>
                           {article.applicable_brand && <span>{article.applicable_brand}</span>}
@@ -415,7 +445,7 @@ export function KnowledgePage() {
                               ? 'bg-gray-500/10 text-gray-400'
                               : 'bg-yellow-500/10 text-yellow-400'
                         }`}>
-                          {article.status}
+                          {t.statusLabels[article.status] || article.status}
                         </span>
                       </td>
                     </tr>
@@ -445,13 +475,13 @@ export function KnowledgePage() {
             <label className="text-xs font-medium text-[var(--color-text-secondary)]">
               {t.category}
               <select value={form.category} onChange={(event) => setForm({ ...form, category: event.target.value })} className="mt-1 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-3 py-2 text-sm">
-                {CATEGORIES.map((category) => <option key={category} value={category}>{category}</option>)}
+                {CATEGORIES.map((category) => <option key={category} value={category}>{t.categoryLabels[category]}</option>)}
               </select>
             </label>
             <label className="text-xs font-medium text-[var(--color-text-secondary)]">
               {t.status}
               <select value={form.status} onChange={(event) => setForm({ ...form, status: event.target.value })} className="mt-1 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-3 py-2 text-sm">
-                {STATUSES.map((status) => <option key={status} value={status}>{status}</option>)}
+                {STATUSES.map((status) => <option key={status} value={status}>{t.statusLabels[status]}</option>)}
               </select>
             </label>
             <label className="text-xs font-medium text-[var(--color-text-secondary)]">

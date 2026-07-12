@@ -239,6 +239,9 @@ const TEXT = {
       completed: 'Mark payout completed',
       exception: 'Mark payout exception',
     },
+    paymentConfirmationNote: 'Payment confirmation note (optional):',
+    payoutUpdated: (status) => `Engineer service payment updated: ${status}`,
+    payoutUpdateFailed: 'Failed to update engineer service payment',
     payoutPrompts: {
       amount: 'Engineer service payment amount in USD (optional):',
       reference: 'Payment reference / transaction ID (optional):',
@@ -426,6 +429,9 @@ const TEXT = {
       completed: '标记为已结算',
       exception: '标记为结算异常',
     },
+    paymentConfirmationNote: '付款确认备注（可选）：',
+    payoutUpdated: (status) => `工程师服务费已更新：${status}`,
+    payoutUpdateFailed: '工程师服务费更新失败',
     payoutPrompts: {
       amount: '工程师服务费金额（USD，可选）：',
       reference: '付款流水号 / 交易编号（可选）：',
@@ -673,7 +679,7 @@ export function WorkOrdersPage() {
   }
 
   async function handleApprovePaymentStart(wo) {
-    const note = window.prompt('Payment confirmation note (optional):') || '';
+    const note = window.prompt(t.paymentConfirmationNote) || '';
     setAssigningId(`${wo.id}:payment-start`);
     setMessage('');
     try {
@@ -740,9 +746,9 @@ export function WorkOrdersPage() {
           ? { ...prev, payout: response.payout, payout_status: response.payout_status }
           : prev
       ));
-      setMessage(`Engineer service payment updated: ${payoutLabel(response.payout_status)}`);
+      setMessage(t.payoutUpdated(payoutLabel(response.payout_status)));
     } catch (err) {
-      setMessage(err.message || 'Failed to update engineer service payment');
+      setMessage(err.message || t.payoutUpdateFailed);
     } finally {
       setAssigningId('');
     }

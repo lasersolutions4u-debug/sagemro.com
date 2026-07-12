@@ -1,8 +1,12 @@
 import { useState, useRef, useEffect } from 'react';
 import { MapPin, X } from 'lucide-react';
 import { searchDivisions } from '../../data/administrativeDivisions.js';
+import { isCnLocale } from '../../utils/locale';
 
-export function RegionInput({ label, value = [], onChange, placeholder = 'Search by region name...' }) {
+export function RegionInput({ label, value = [], onChange, placeholder }) {
+  const allowDivisionSearch = isCnLocale();
+  const noMatchText = allowDivisionSearch ? '未找到匹配地区，请尝试其他关键词。' : 'No matching regions found. Please try different keywords.';
+  const inputPlaceholder = placeholder ?? (allowDivisionSearch ? '按地区名称搜索...' : 'Search by region name...');
   const [inputValue, setInputValue] = useState('');
   const [showDropdown, setShowDropdown] = useState(false);
   const [suggestions, setSuggestions] = useState([]);
@@ -21,8 +25,9 @@ export function RegionInput({ label, value = [], onChange, placeholder = 'Search
   const handleInputChange = (e) => {
     const val = e.target.value;
     setInputValue(val);
-    if (val.length >= 1) {
-      setSuggestions(searchDivisions(val));
+    if (allowDivisionSearch && val.length >= 1) {
+      const nextSuggestions = searchDivisions(val);
+      setSuggestions(nextSuggestions);
       setShowDropdown(true);
     } else {
       setSuggestions([]);
@@ -34,6 +39,17 @@ export function RegionInput({ label, value = [], onChange, placeholder = 'Search
     const fullName = item.fullName;
     if (!value.includes(fullName)) {
       onChange([...value, fullName]);
+    }
+    setInputValue('');
+    setSuggestions([]);
+    setShowDropdown(false);
+  };
+
+  const handleFreeformRegion = () => {
+    const clean = inputValue.trim();
+    if (!clean) return;
+    if (!value.includes(clean)) {
+      onChange([...value, clean]);
     }
     setInputValue('');
     setSuggestions([]);
@@ -76,8 +92,14 @@ export function RegionInput({ label, value = [], onChange, placeholder = 'Search
           type="text"
           value={inputValue}
           onChange={handleInputChange}
-          onFocus={() => inputValue.length >= 1 && setShowDropdown(true)}
-          placeholder={placeholder}
+          onFocus={() => allowDivisionSearch && inputValue.length >= 1 && setShowDropdown(true)}
+          onKeyDown={(e) => {
+            if (!allowDivisionSearch && e.key === 'Enter') {
+              e.preventDefault();
+              handleFreeformRegion();
+            }
+          }}
+          placeholder={inputPlaceholder}
           className="w-full px-3 py-1.5 text-sm border border-[var(--color-border)] dark:border-[var(--color-border-strong)] rounded-lg bg-[var(--color-surface)] dark:bg-[var(--color-surface-elevated)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)] placeholder:text-xs"
         />
       </div>
@@ -96,7 +118,7 @@ export function RegionInput({ label, value = [], onChange, placeholder = 'Search
                 item.level === 'city' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' :
                 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300'
               }`}>
-                {item.level === 'province' ? 'Province' : item.level === 'city' ? 'City' : 'District'}
+                {allowDivisionSearch ? (item.level === 'province' ? '省份' : item.level === 'city' ? '城市' : '区县') : (item.level === 'province' ? 'Province' : item.level === 'city' ? 'City' : 'District')}
               </span>
               <span className="flex-1">{item.name}</span>
               {item.level === 'district' && (
@@ -107,9 +129,9 @@ export function RegionInput({ label, value = [], onChange, placeholder = 'Search
         </div>
       )}
 
-      {showDropdown && suggestions.length === 0 && inputValue.length >= 1 && (
+      {allowDivisionSearch && showDropdown && suggestions.length === 0 && inputValue.length >= 1 && (
         <div className="absolute z-50 w-full mt-1 bg-[var(--color-surface)] dark:bg-[var(--color-surface-elevated)] border border-[var(--color-border)] dark:border-[var(--color-border-strong)] rounded-lg shadow-lg p-3 text-sm text-[var(--color-text-secondary)]">
-          No matching regions found. Please try different keywords.
+          {noMatchText}
         </div>
       )}
     </div>

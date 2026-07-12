@@ -15,6 +15,7 @@ const STATUS_STYLE = {
 const TEXT = {
   en: {
     title: 'Engineer Applications',
+    badge: 'SAGEMRO Service Representative Network',
     subtitle: 'Review certified service representative applications. Approval here does not create an engineer account automatically.',
     all: 'All',
     marketAll: 'All markets',
@@ -57,6 +58,7 @@ const TEXT = {
   },
   'zh-CN': {
     title: '工程师申请审核池',
+    badge: 'SAGEMRO 认证服务代表网络',
     subtitle: '审核认证服务代表申请。这里的通过不自动创建工程师账号，账号仍由 Admin 在确认合作后人工分配。',
     all: '全部状态',
     marketAll: '全部市场',
@@ -199,7 +201,7 @@ export function EngineerApplicationsPage() {
         <div>
           <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-[var(--color-primary)]/30 bg-[var(--color-primary)]/10 px-3 py-1 text-xs font-medium text-[var(--color-primary)]">
             <ClipboardList size={14} />
-            SAGEMRO Service Representative Network
+            {t.badge}
           </div>
           <h2 className="text-2xl font-semibold tracking-tight text-[var(--color-text)]">{t.title}</h2>
           <p className="mt-2 max-w-2xl text-sm leading-6 text-[var(--color-text-secondary)]">
