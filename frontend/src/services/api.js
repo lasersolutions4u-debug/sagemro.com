@@ -654,6 +654,16 @@ export async function resolveWorkOrder(workOrderId, engineerId) {
   return response.json();
 }
 
+export async function searchServiceLocations(query) {
+  const params = new URLSearchParams({ q: query, limit: '5' });
+  const response = await fetch(`${API_BASE}/api/location/search?${params}`, {
+    headers: authHeaders(),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+  return data;
+}
+
 export async function checkInWorkOrder(workOrderId, location) {
   const response = await fetch(`${API_BASE}/api/workorders/${workOrderId}/arrival-check`, {
     method: 'POST',

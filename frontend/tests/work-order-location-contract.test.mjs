@@ -12,6 +12,7 @@ function read(relativePath) {
 test('customer service requests capture the site address and browser coordinates', () => {
   const modal = read('frontend/src/components/Sidebar/WorkOrderModal.jsx');
   const app = read('frontend/src/App.jsx');
+  const api = read('frontend/src/services/api.js');
 
   assert.match(modal, /service_address/);
   assert.match(modal, /navigator\.geolocation\.getCurrentPosition/);
@@ -19,6 +20,8 @@ test('customer service requests capture the site address and browser coordinates
   assert.match(modal, /serviceModeOptions/);
   assert.match(app, /service_latitude: data\.service_latitude/);
   assert.match(app, /service_location_source: data\.service_location_source/);
+  assert.match(modal, /searchServiceLocations/);
+  assert.match(api, /\/api\/location\/search/);
 });
 
 test('engineers can check in before completing an on-site work order', () => {
