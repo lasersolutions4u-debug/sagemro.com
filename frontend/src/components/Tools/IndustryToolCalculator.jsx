@@ -32,6 +32,7 @@ const FIELD_LABELS = {
   webThicknessMm: 'Web thickness (mm)',
   flangeThicknessMm: 'Flange thickness (mm)',
   referenceUsdPerTon: 'Reference price (USD / metric ton)',
+  referenceCnyPerTon: 'Reference price (CNY / metric ton)',
   cutLengthM: 'Cut length (m)',
   cuttingSpeedMMin: 'Cutting speed (m/min)',
   pierces: 'Pierces',
@@ -86,6 +87,7 @@ const FIELD_LABELS_CN = {
   webThicknessMm: '腹板厚度 (mm)',
   flangeThicknessMm: '翼缘厚度 (mm)',
   referenceUsdPerTon: '参考价格 (USD / 公吨)',
+  referenceCnyPerTon: '参考价格 (CNY / 公吨)',
   cutLengthM: '切割长度 (m)',
   cuttingSpeedMMin: '切割速度 (m/min)',
   pierces: '穿孔数量',
@@ -123,13 +125,14 @@ const FIELD_LABELS_CN = {
   dustLoad: '粉尘负荷',
 };
 
-function getFieldsForTool(toolId, values, profiles = shapeProfiles) {
+function getFieldsForTool(toolId, values, profiles = shapeProfiles, locale = 'en') {
   if (toolId === 'metal-weight') {
     return ['material', 'shape', ...profiles[values.shape || 'sheet_plate'].fields, 'quantity'];
   }
 
   if (toolId === 'steel-price') {
-    return ['material', 'shape', ...profiles[values.shape || 'sheet_plate'].fields, 'quantity', 'referenceUsdPerTon'];
+    const priceField = locale === 'zh-CN' ? 'referenceCnyPerTon' : 'referenceUsdPerTon';
+    return ['material', 'shape', ...profiles[values.shape || 'sheet_plate'].fields, 'quantity', priceField];
   }
 
   if (toolId === 'laser-cost') {
@@ -187,7 +190,7 @@ export function IndustryToolCalculator({ tool, values, onChange, onSendMessage, 
         marketReferences: 'Market references',
         reviewButton: 'Ask SAGEMRO AI to review this result',
       };
-  const fields = getFieldsForTool(tool.id, currentValues, profiles);
+  const fields = getFieldsForTool(tool.id, currentValues, profiles, locale);
 
   const updateValue = (name, value) => {
     onChange?.(name, value);

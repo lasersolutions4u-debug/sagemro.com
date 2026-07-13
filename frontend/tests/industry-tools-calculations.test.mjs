@@ -4,6 +4,7 @@ import test from 'node:test';
 import {
   calculateIndustryToolResult,
   defaultIndustryToolForms,
+  getLocalizedSteelPriceReferences,
   getToolBySlug,
   industryTools,
   materialDensities,
@@ -70,7 +71,24 @@ test('steel price calculator uses selected material and structural profile weigh
   assert.equal(result.title, 'Reference material budget');
   assert.match(result.rows.find(([label]) => label === 'Material')?.[1], /Titanium alloy/);
   assert.match(result.rows.find(([label]) => label === 'Profile')?.[1], /Round bar/);
-  assert.match(result.rows.find(([label]) => label === 'Estimated material budget')?.[1], /\$/);
+  assert.match(result.rows.find(([label]) => label === 'Estimated material budget')?.[1], /USD/);
+});
+
+test('CN steel price calculator uses domestic references and CNY', () => {
+  const references = getLocalizedSteelPriceReferences('zh-CN');
+  const result = calculateIndustryToolResult('steel-price', {
+    ...defaultIndustryToolForms['steel-price'],
+    referenceCnyPerTon: '3600',
+  }, 'zh-CN');
+
+  assert.deepEqual(references.map((item) => item.url), [
+    'https://www.mysteel.com/',
+    'https://www.shfe.com.cn/',
+    'https://www.chinaisa.org.cn/',
+  ]);
+  assert.match(result.rows.find(([label]) => label === '参考单价')?.[1], /CNY/);
+  assert.match(result.rows.find(([label]) => label === '材料预算估算')?.[1], /CNY/);
+  assert.doesNotMatch(result.rows.find(([label]) => label === '参考单价')?.[1] || '', /USD/);
 });
 
 test('public tool slugs resolve to SEO-ready tool definitions', () => {

@@ -119,22 +119,22 @@ export const steelPriceReferences = [
 
 const steelPriceReferencesCn = [
   {
-    label: '美国热轧卷板期货',
-    value: 'CME HRC 期货',
-    note: '用于观察美国热轧卷板价格趋势的交易所参考。',
-    url: 'https://www.cmegroup.com/markets/metals/ferrous/hrc-steel.html',
+    label: '我的钢铁网（Mysteel）',
+    value: '国内钢材市场行情',
+    note: '用于查看国内地区、品种和规格的现货行情。本工具不自动同步实时价格。',
+    url: 'https://www.mysteel.com/',
   },
   {
-    label: '全球钢材参考',
-    value: 'Trading Economics steel',
-    note: '用于规划阶段参考。最终采购成本仍由供应商报价决定。',
-    url: 'https://tradingeconomics.com/commodity/steel',
+    label: '上海期货交易所',
+    value: '螺纹钢 / 热轧卷板期货',
+    note: '用于观察国内期货市场趋势，不能替代具体地区的现货报价。',
+    url: 'https://www.shfe.com.cn/',
   },
   {
-    label: '材料估算边界',
-    value: '需要本地报价确认',
-    note: '最终板材、运费和加工成本取决于供应商、牌号和地区。',
-    url: '',
+    label: '中国钢铁工业协会',
+    value: '行业数据与运行信息',
+    note: '用于行业趋势和背景参考。最终采购成本仍以国内供应商报价为准。',
+    url: 'https://www.chinaisa.org.cn/',
   },
 ];
 
@@ -473,6 +473,7 @@ export const defaultIndustryToolForms = {
     webThicknessMm: '6',
     flangeThicknessMm: '8',
     referenceUsdPerTon: '760',
+    referenceCnyPerTon: '3600',
   },
   'laser-cost': {
     cutLengthM: '120',
@@ -677,8 +678,13 @@ function calculateMetalWeight(values, locale = 'en') {
 
 function calculateSteelPrice(values, locale = 'en') {
   const profile = calculateProfileWeight(values, locale);
-  const reference = parsePositiveNumber(values.referenceUsdPerTon, profile.material.priceUsdPerTon);
+  const china = isCn(locale);
+  const reference = parsePositiveNumber(
+    china ? values.referenceCnyPerTon : values.referenceUsdPerTon,
+    china ? 3600 : profile.material.priceUsdPerTon,
+  );
   const budget = (profile.weightKg / 1000) * reference;
+  const currency = china ? 'CNY' : 'USD';
 
   return {
     title: 'Reference material budget',
@@ -686,8 +692,8 @@ function calculateSteelPrice(values, locale = 'en') {
       ['Material', profile.material.label],
       ['Profile', profile.shape.label],
       ['Theoretical weight', `${roundNumber(profile.weightKg, 2)} kg / ${roundNumber(profile.weightKg / 1000, 4)} metric tons`],
-      ['Reference price', `$${roundNumber(reference, 2)} USD / metric ton`],
-      ['Estimated material budget', `$${roundNumber(budget, 2)} USD`],
+      ['Reference price', `${roundNumber(reference, 2)} ${currency} / metric ton`],
+      ['Estimated material budget', `${roundNumber(budget, 2)} ${currency}`],
     ],
     note: 'Market reference for planning. Supplier quotes decide final purchasing cost. Confirm grade, tolerance, freight, taxes, and local availability before purchasing.',
   };
