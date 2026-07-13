@@ -27,6 +27,7 @@ function createPaymentFlowEnv() {
       customer_id: 'customer-1',
       engineer_id: 'engineer-1',
       status: 'pending_payment',
+      arrival_verification_required: 0,
     }],
     __pricing: [{
       id: 'price-1',
@@ -112,9 +113,14 @@ function createStatement(env, sql) {
         return payment ? { id: payment.id, status: payment.status, payment_method: payment.payment_method } : null;
       }
 
-      if (/SELECT status, engineer_id FROM work_orders WHERE id = \?/i.test(normalized)) {
+      if (/SELECT status, engineer_id, arrival_verification_required, arrival_verified_at FROM work_orders WHERE id = \?/i.test(normalized)) {
         const order = env.__workOrders.find((item) => item.id === this.args[0]);
-        return order ? { status: order.status, engineer_id: order.engineer_id } : null;
+        return order ? {
+          status: order.status,
+          engineer_id: order.engineer_id,
+          arrival_verification_required: order.arrival_verification_required,
+          arrival_verified_at: order.arrival_verified_at || null,
+        } : null;
       }
 
       if (/SELECT symptom, diagnosis, solution, parts_used, labor_hours FROM work_order_repair_records WHERE work_order_id = \?/i.test(normalized)) {

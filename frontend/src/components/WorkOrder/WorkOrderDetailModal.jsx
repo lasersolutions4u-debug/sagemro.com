@@ -7,6 +7,7 @@ import {
   cancelWorkOrder,
   submitEngineerReview,
   getEngineerReview,
+  checkInWorkOrder,
   requestWorkOrderPaymentStart,
   createMachineLead,
 } from '../../services/api';
@@ -96,6 +97,13 @@ const COPY = {
     saveReportFirst: 'Please save the service report before submitting the final report.',
     submitFinalConfirm: 'Submit the final service report to the customer for confirmation and review?',
     finalReportSent: 'Final service report sent to the customer for confirmation.',
+    arrivalTitle: 'Arrival verification',
+    arrivalAddress: 'Customer site',
+    arrivalButton: 'Check in at customer site',
+    arrivalLocating: 'Getting current location...',
+    arrivalVerified: 'Arrival verified. You may begin or complete the service task.',
+    arrivalBeforeComplete: 'Please check in at the customer site before submitting the final service report.',
+    arrivalLocationFailed: 'Unable to get your current location. Please allow browser location access and try again.',
     operationFailed: 'Operation failed: ',
     machineLeadNeed: 'Please add at least one complete-machine equipment need.',
     machineLeadIntent: 'Please describe the customer whole-machine purchase intent.',
@@ -197,6 +205,13 @@ const COPY = {
     saveReportFirst: '请先保存服务报告，再提交给客户确认。',
     submitFinalConfirm: '确认将最终服务报告提交给客户确认和评价吗？',
     finalReportSent: '最终服务报告已发送给客户确认。',
+    arrivalTitle: '到场核验',
+    arrivalAddress: '客户现场',
+    arrivalButton: '到客户现场打卡',
+    arrivalLocating: '正在获取当前位置...',
+    arrivalVerified: '到场已核验，可以开始或完成服务任务。',
+    arrivalBeforeComplete: '提交最终服务报告前，请先完成客户现场到场打卡。',
+    arrivalLocationFailed: '无法获取当前位置，请允许浏览器使用定位后重试。',
     operationFailed: '操作失败：',
     machineLeadNeed: '请至少添加一项整机设备需求。',
     machineLeadIntent: '请描述客户的整机采购意向。',
@@ -304,6 +319,7 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
   const [engReviewComment, setEngReviewComment] = useState('');
   const [engReviewSubmitting, setEngReviewSubmitting] = useState(false);
   const [paymentStartSubmitting, setPaymentStartSubmitting] = useState(false);
+  const [arrivalSubmitting, setArrivalSubmitting] = useState(false);
   const [machineLeadForm, setMachineLeadForm] = useState({
     equipment_needs: [createEmptyEquipmentNeed()],
     customer_intent: '',
@@ -374,6 +390,10 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
   };
 
   const handleSubmitFinalReport = async () => {
+    if (detail?.arrival_verification_required && !detail?.arrival_verified_at) {
+      toastWarning(copy.arrivalBeforeComplete);
+      return;
+    }
     if (!hasServiceReportContent(detail?.repair_record)) {
       setTab('repairRecord');
       toastWarning(copy.saveReportFirst);
@@ -389,6 +409,38 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
     } catch (e) {
       toastError(copy.operationFailed + e.message);
     }
+  };
+
+  const handleArrivalCheck = () => {
+    if (!navigator.geolocation) {
+      toastError(copy.arrivalLocationFailed);
+      return;
+    }
+    setArrivalSubmitting(true);
+    navigator.geolocation.getCurrentPosition(
+      async ({ coords }) => {
+        try {
+          await checkInWorkOrder(workOrder.id, {
+            latitude: coords.latitude,
+            longitude: coords.longitude,
+            accuracy_m: coords.accuracy,
+            coordinate_system: 'wgs84',
+            location_source: 'browser',
+          });
+          toastSuccess(copy.arrivalVerified);
+          await loadDetail();
+        } catch (e) {
+          toastError(e.message || copy.arrivalLocationFailed);
+        } finally {
+          setArrivalSubmitting(false);
+        }
+      },
+      () => {
+        setArrivalSubmitting(false);
+        toastError(copy.arrivalLocationFailed);
+      },
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 30000 },
+    );
   };
 
   const updateEquipmentNeed = (index, field, value) => {
@@ -572,7 +624,30 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
             {detail.customer_phone && <span className="ml-1 opacity-70">{customerPhoneDisplay}</span>}
           </div>
         )}
+        {isEngineer && detail?.service_address && (
+          <div className="text-sm text-[var(--color-text-secondary)]">
+            {copy.arrivalAddress}: <span className="text-[var(--color-text-primary)]">{detail.service_address}</span>
+          </div>
+        )}
       </div>
+
+      {isEngineer && detail?.arrival_verification_required && effectiveStatus === 'in_service' && (
+        <div className="rounded-xl border border-[var(--color-primary)]/30 bg-[var(--color-primary)]/5 p-4">
+          <h3 className="text-sm font-medium text-[var(--color-text-primary)]">{copy.arrivalTitle}</h3>
+          {detail.arrival_verified_at ? (
+            <p className="mt-2 text-xs text-green-600">{copy.arrivalVerified}</p>
+          ) : (
+            <button
+              type="button"
+              onClick={handleArrivalCheck}
+              disabled={arrivalSubmitting}
+              className="mt-3 w-full rounded-xl bg-[var(--color-primary)] py-3 text-sm font-medium text-white hover:bg-[var(--color-primary-hover)] disabled:opacity-50"
+            >
+              {arrivalSubmitting ? copy.arrivalLocating : copy.arrivalButton}
+            </button>
+          )}
+        </div>
+      )}
 
       <div>
         <h3 className="text-sm font-medium text-[var(--color-text-primary)] mb-1">{copy.faultDescription}</h3>

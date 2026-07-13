@@ -6,7 +6,7 @@ import { toastError, toastWarning, toastSuccess } from '../../utils/feedback';
 import { uploadWorkOrderAttachment } from '../../services/api';
 import { WorkOrderType, UrgencyLevel } from '../../types';
 import { categoryConfig } from '../../data/workOrderConfig';
-import { Paperclip, Loader2, X } from 'lucide-react';
+import { LocateFixed, Paperclip, Loader2, X } from 'lucide-react';
 import { isCnLocale } from '../../utils/locale';
 
 // 设备类型选项
@@ -34,6 +34,8 @@ const DEVICE_TYPE_PRESET_KEYS = {
   其他: 'Other',
 };
 
+const SITE_SERVICE_TYPES = new Set(['fault', 'maintenance', 'parameter', 'parts', 'aftersales']);
+
 const WORK_ORDER_COPY = {
   en: {
     fillRequired: 'Please fill in all required fields',
@@ -57,6 +59,13 @@ const WORK_ORDER_COPY = {
     brandDisabledPlaceholder: 'Select equipment type first',
     region: 'Country / Region',
     regionPlaceholder: 'Search or enter country / region...',
+    serviceAddress: 'Customer Site Address',
+    serviceAddressPlaceholder: 'Enter the exact service site, gate, building, or workshop address',
+    locateSite: 'Confirm site location',
+    locatingSite: 'Getting location...',
+    locationCaptured: 'Site location captured',
+    locationRequired: 'On-site service requires the customer site address and location',
+    locationFailed: 'Unable to get location. Please allow browser location access and try again.',
     equipmentModel: 'Equipment Model / Part No.',
     modelPlaceholder: 'e.g. C3015 3000W, BM111, nozzle 1.5S, press brake tooling size',
     description: 'Request Details',
@@ -107,6 +116,13 @@ const WORK_ORDER_COPY = {
     brandDisabledPlaceholder: '请先选择设备类型',
     region: '所在地区',
     regionPlaceholder: '搜索省市区...',
+    serviceAddress: '客户现场地址',
+    serviceAddressPlaceholder: '请填写准确的服务地址、厂区入口、楼栋或车间信息',
+    locateSite: '确认现场定位',
+    locatingSite: '正在获取定位...',
+    locationCaptured: '现场定位已获取',
+    locationRequired: '现场服务需要提供客户现场地址和定位',
+    locationFailed: '无法获取定位，请允许浏览器使用定位后重试。',
     equipmentModel: '设备型号 / 规格',
     modelPlaceholder: '例如：C3015 3000W',
     description: '故障 / 服务需求描述',
@@ -207,6 +223,12 @@ export function WorkOrderModal({ isOpen, onClose, onSubmit }) {
     device_type: [],
     device_brand: [],
     region: [],
+    service_address: '',
+    service_latitude: null,
+    service_longitude: null,
+    service_accuracy_m: null,
+    service_coordinate_system: 'wgs84',
+    service_location_source: 'customer_browser',
     device_model: '',
     description: '',
     contact: '',
@@ -217,6 +239,7 @@ export function WorkOrderModal({ isOpen, onClose, onSubmit }) {
   const [brandOptions, setBrandOptions] = useState([]);
   const [files, setFiles] = useState([]); // 待上传附件
   const [uploadPhase, setUploadPhase] = useState(null); // { current, total } | null
+  const [locating, setLocating] = useState(false);
   const fileInputRef = useRef(null);
 
   // 监听设备类型变化，更新品牌预设选项
@@ -234,6 +257,11 @@ export function WorkOrderModal({ isOpen, onClose, onSubmit }) {
   const handleSubmit = async () => {
     if (!form.type || !form.description || !form.contact) {
       toastWarning(copy.fillRequired);
+      return;
+    }
+    if (SITE_SERVICE_TYPES.has(form.type)
+      && (!form.service_address.trim() || form.service_latitude === null || form.service_longitude === null)) {
+      toastWarning(copy.locationRequired);
       return;
     }
 
@@ -267,6 +295,32 @@ export function WorkOrderModal({ isOpen, onClose, onSubmit }) {
     }
   };
 
+  const captureSiteLocation = () => {
+    if (!navigator.geolocation) {
+      toastError(copy.locationFailed);
+      return;
+    }
+    setLocating(true);
+    navigator.geolocation.getCurrentPosition(
+      ({ coords }) => {
+        setForm((current) => ({
+          ...current,
+          service_latitude: coords.latitude,
+          service_longitude: coords.longitude,
+          service_accuracy_m: coords.accuracy,
+          service_coordinate_system: 'wgs84',
+          service_location_source: 'customer_browser',
+        }));
+        setLocating(false);
+      },
+      () => {
+        setLocating(false);
+        toastError(copy.locationFailed);
+      },
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 },
+    );
+  };
+
   const handleClose = () => {
     // 关闭时重置表单和成功状态
     setForm({
@@ -276,6 +330,12 @@ export function WorkOrderModal({ isOpen, onClose, onSubmit }) {
       device_type: [],
       device_brand: [],
       region: [],
+      service_address: '',
+      service_latitude: null,
+      service_longitude: null,
+      service_accuracy_m: null,
+      service_coordinate_system: 'wgs84',
+      service_location_source: 'customer_browser',
       device_model: '',
       description: '',
       contact: '',
@@ -408,6 +468,31 @@ export function WorkOrderModal({ isOpen, onClose, onSubmit }) {
           onChange={(val) => setForm({ ...form, region: val })}
           placeholder={copy.regionPlaceholder}
         />
+
+        <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-elevated)] p-3 space-y-3">
+          <label className="block text-sm font-medium text-[var(--color-text-primary)]">
+            {copy.serviceAddress} {SITE_SERVICE_TYPES.has(form.type) && <span className="text-red-500">*</span>}
+          </label>
+          <input
+            type="text"
+            value={form.service_address}
+            onChange={(e) => setForm({ ...form, service_address: e.target.value })}
+            placeholder={copy.serviceAddressPlaceholder}
+            className="w-full px-3 py-2 border border-[var(--color-border)] dark:border-[var(--color-border-strong)] rounded-xl bg-[var(--color-surface)] dark:bg-[var(--color-surface-elevated)] text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
+          />
+          <button
+            type="button"
+            onClick={captureSiteLocation}
+            disabled={locating}
+            className="inline-flex items-center gap-2 rounded-xl border border-[var(--color-border)] px-3 py-2 text-sm text-[var(--color-text-primary)] hover:border-[var(--color-primary)] disabled:opacity-50"
+          >
+            {locating ? <Loader2 size={16} className="animate-spin" /> : <LocateFixed size={16} />}
+            {locating ? copy.locatingSite : copy.locateSite}
+          </button>
+          {form.service_latitude !== null && form.service_longitude !== null && (
+            <p className="text-xs text-green-600">{copy.locationCaptured} · ±{Math.round(form.service_accuracy_m || 0)} m</p>
+          )}
+        </div>
 
         {/* 设备规格型号 */}
         <div>

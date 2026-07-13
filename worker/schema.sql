@@ -200,6 +200,22 @@ CREATE TABLE IF NOT EXISTS work_orders (
     conflict_reason TEXT,
     quote_review_status TEXT DEFAULT 'not_required',
     customer_confirmation_method TEXT,
+    arrival_verification_required INTEGER NOT NULL DEFAULT 0,
+    service_address TEXT,
+    service_latitude REAL,
+    service_longitude REAL,
+    service_accuracy_m REAL,
+    service_coordinate_system TEXT DEFAULT 'wgs84',
+    service_location_source TEXT,
+    service_location_confirmed_at TEXT,
+    arrival_verified_at TEXT,
+    arrival_distance_m REAL,
+    arrival_radius_m REAL,
+    arrival_accuracy_m REAL,
+    arrival_latitude REAL,
+    arrival_longitude REAL,
+    arrival_coordinate_system TEXT,
+    arrival_location_source TEXT,
 
     FOREIGN KEY (customer_id) REFERENCES customers(id),
     FOREIGN KEY (engineer_id) REFERENCES engineers(id),
@@ -210,6 +226,26 @@ CREATE INDEX IF NOT EXISTS idx_work_orders_engineer ON work_orders(engineer_id);
 CREATE INDEX IF NOT EXISTS idx_work_orders_status ON work_orders(status);
 CREATE INDEX IF NOT EXISTS idx_work_orders_regional_lead ON work_orders(assigned_regional_lead_id);
 CREATE INDEX IF NOT EXISTS idx_work_orders_conflict_status ON work_orders(conflict_status);
+
+CREATE TABLE IF NOT EXISTS work_order_arrival_checks (
+    id TEXT PRIMARY KEY,
+    work_order_id TEXT NOT NULL,
+    engineer_id TEXT NOT NULL,
+    latitude REAL NOT NULL,
+    longitude REAL NOT NULL,
+    accuracy_m REAL,
+    coordinate_system TEXT NOT NULL DEFAULT 'wgs84',
+    location_source TEXT NOT NULL DEFAULT 'browser',
+    distance_m REAL,
+    radius_m REAL,
+    within_geofence INTEGER NOT NULL DEFAULT 0,
+    failure_reason TEXT,
+    created_at TEXT DEFAULT (datetime('now')),
+    FOREIGN KEY (work_order_id) REFERENCES work_orders(id),
+    FOREIGN KEY (engineer_id) REFERENCES engineers(id)
+);
+CREATE INDEX IF NOT EXISTS idx_arrival_checks_work_order ON work_order_arrival_checks(work_order_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_arrival_checks_engineer ON work_order_arrival_checks(engineer_id, created_at);
 
 -- 工单进度日志（000）
 CREATE TABLE IF NOT EXISTS work_order_logs (
