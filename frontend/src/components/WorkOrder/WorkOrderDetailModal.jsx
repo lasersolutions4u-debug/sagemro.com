@@ -7,6 +7,7 @@ import {
   cancelWorkOrder,
   submitEngineerReview,
   getEngineerReview,
+  checkInWorkOrder,
   requestWorkOrderPaymentStart,
   createMachineLead,
 } from '../../services/api';
@@ -73,6 +74,7 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
   const [engReviewComment, setEngReviewComment] = useState('');
   const [engReviewSubmitting, setEngReviewSubmitting] = useState(false);
   const [paymentStartSubmitting, setPaymentStartSubmitting] = useState(false);
+  const [arrivalSubmitting, setArrivalSubmitting] = useState(false);
   const [machineLeadForm, setMachineLeadForm] = useState({
     equipment_needs: [createEmptyEquipmentNeed()],
     customer_intent: '',
@@ -143,6 +145,10 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
   };
 
   const handleSubmitFinalReport = async () => {
+    if (detail?.arrival_verification_required && !detail?.arrival_verified_at) {
+      toastWarning('Please check in at the customer site before submitting the final service report.');
+      return;
+    }
     if (!hasServiceReportContent(detail?.repair_record)) {
       setTab('repairRecord');
       toastWarning('Please save the service report before submitting the final report.');
@@ -158,6 +164,38 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
     } catch (e) {
       toastError('Operation failed: ' + e.message);
     }
+  };
+
+  const handleArrivalCheck = () => {
+    if (!navigator.geolocation) {
+      toastError('Unable to get your current location. Please allow browser location access and try again.');
+      return;
+    }
+    setArrivalSubmitting(true);
+    navigator.geolocation.getCurrentPosition(
+      async ({ coords }) => {
+        try {
+          await checkInWorkOrder(workOrder.id, {
+            latitude: coords.latitude,
+            longitude: coords.longitude,
+            accuracy_m: coords.accuracy,
+            coordinate_system: 'wgs84',
+            location_source: 'browser',
+          });
+          toastSuccess('Arrival verified. You may begin or complete the service task.');
+          await loadDetail();
+        } catch (e) {
+          toastError(e.message || 'Unable to verify arrival.');
+        } finally {
+          setArrivalSubmitting(false);
+        }
+      },
+      () => {
+        setArrivalSubmitting(false);
+        toastError('Unable to get your current location. Please allow browser location access and try again.');
+      },
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 30000 },
+    );
   };
 
   const updateEquipmentNeed = (index, field, value) => {
@@ -356,7 +394,30 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
             {detail.customer_phone && <span className="ml-1 opacity-70">{customerPhoneDisplay}</span>}
           </div>
         )}
+        {isEngineer && detail?.service_address && (
+          <div className="text-sm text-[var(--color-text-secondary)]">
+            Customer site: <span className="text-[var(--color-text-primary)]">{detail.service_address}</span>
+          </div>
+        )}
       </div>
+
+      {isEngineer && detail?.arrival_verification_required && effectiveStatus === 'in_service' && (
+        <div className="rounded-xl border border-[var(--color-primary)]/30 bg-[var(--color-primary)]/5 p-4">
+          <h3 className="text-sm font-medium text-[var(--color-text-primary)]">Arrival verification</h3>
+          {detail.arrival_verified_at ? (
+            <p className="mt-2 text-xs text-green-600">Arrival verified. You may begin or complete the service task.</p>
+          ) : (
+            <button
+              type="button"
+              onClick={handleArrivalCheck}
+              disabled={arrivalSubmitting}
+              className="mt-3 w-full rounded-xl bg-[var(--color-primary)] py-3 text-sm font-medium text-white hover:bg-[var(--color-primary-hover)] disabled:opacity-50"
+            >
+              {arrivalSubmitting ? 'Getting current location...' : 'Check in at customer site'}
+            </button>
+          )}
+        </div>
+      )}
 
       <div>
         <h3 className="text-sm font-medium text-[var(--color-text-primary)] mb-1">Fault Description</h3>

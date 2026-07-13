@@ -18,6 +18,12 @@ import {
 
 // 通用小工具（generateId / truncateStr）
 import { generateId, truncateStr } from './lib/util.js';
+import {
+  SUPPORTED_COORDINATE_SYSTEMS,
+  evaluateArrivalCheck,
+  isValidCoordinatePair,
+  normalizeCoordinate,
+} from './lib/location.js';
 
 // OneSignal 推送 + 站内通知 helpers
 import { createNotification, sendPushToUser, sendPushToEngineer } from './lib/push.js';
@@ -94,6 +100,57 @@ function redactContactInfoForWorkOrder(text) {
 
 function canEngineerViewCustomerContact(status) {
   return ['in_service', 'resolved', 'pending_review', 'completed'].includes(status);
+}
+
+const ARRIVAL_VERIFICATION_TYPES = new Set(['fault', 'maintenance', 'parameter', 'parts', 'aftersales']);
+
+function requiresArrivalVerification(type) {
+  return ARRIVAL_VERIFICATION_TYPES.has(type);
+}
+
+function parseServiceLocation(input = {}) {
+  const address = typeof input.service_address === 'string' ? input.service_address.trim() : '';
+  const latitude = normalizeCoordinate(input.service_latitude);
+  const longitude = normalizeCoordinate(input.service_longitude);
+  const accuracyMeters = normalizeCoordinate(input.service_accuracy_m);
+  const coordinateSystem = String(input.service_coordinate_system || 'wgs84').trim().toLowerCase();
+  const source = String(input.service_location_source || 'customer').trim().slice(0, 40) || 'customer';
+  const hasLatitude = latitude !== null;
+  const hasLongitude = longitude !== null;
+
+  if (hasLatitude !== hasLongitude) {
+    return { error: 'service_location_incomplete' };
+  }
+  if (hasLatitude && !isValidCoordinatePair(latitude, longitude)) {
+    return { error: 'service_location_invalid' };
+  }
+  if (hasLatitude && !SUPPORTED_COORDINATE_SYSTEMS.has(coordinateSystem)) {
+    return { error: 'service_coordinate_system_invalid' };
+  }
+  if (accuracyMeters !== null && (accuracyMeters < 0 || accuracyMeters > 10000)) {
+    return { error: 'service_accuracy_invalid' };
+  }
+
+  return {
+    address: address.slice(0, 500),
+    latitude,
+    longitude,
+    accuracyMeters,
+    coordinateSystem: hasLatitude ? coordinateSystem : null,
+    source: hasLatitude ? source : null,
+    hasCoordinates: hasLatitude,
+  };
+}
+
+function serviceLocationErrorMessage(errorCode, market) {
+  const messages = {
+    service_location_incomplete: market === 'cn' ? '现场定位需要同时提供纬度和经度' : 'Service location requires both latitude and longitude',
+    service_location_invalid: market === 'cn' ? '现场定位坐标无效' : 'Service location coordinates are invalid',
+    service_coordinate_system_invalid: market === 'cn' ? '现场定位坐标系不受支持' : 'Service location coordinate system is not supported',
+    service_accuracy_invalid: market === 'cn' ? '现场定位精度无效' : 'Service location accuracy is invalid',
+    service_location_required: market === 'cn' ? '现场服务工单必须提供客户现场地址和定位' : 'On-site service orders require a customer site address and location',
+  };
+  return messages[errorCode] || (market === 'cn' ? '现场定位信息无效' : 'Invalid service location');
 }
 
 function getChatModel(env) {
@@ -834,6 +891,31 @@ const TOOLS_SCHEMAS = [
           device_id: {
             type: 'string',
             description: '客户设备的 ID。如果客户在对话中指定了具体设备且你知道其 device_id，则填入。否则留空。'
+          },
+          service_address: {
+            type: 'string',
+            description: '现场服务地址。现场维修、保养、参数调试、配件上门或改造服务必须收集。'
+          },
+          service_latitude: {
+            type: 'number',
+            description: '客户现场纬度。只有客户明确提供或确认定位后才能填写。'
+          },
+          service_longitude: {
+            type: 'number',
+            description: '客户现场经度。只有客户明确提供或确认定位后才能填写。'
+          },
+          service_accuracy_m: {
+            type: 'number',
+            description: '客户现场定位精度，单位米；如果没有可靠精度信息则留空。'
+          },
+          service_coordinate_system: {
+            type: 'string',
+            enum: ['wgs84', 'gcj02'],
+            description: '客户现场坐标系。浏览器 GPS 通常使用 wgs84；高德地图坐标使用 gcj02。'
+          },
+          service_location_source: {
+            type: 'string',
+            description: '现场定位来源，例如 customer_browser、amap 或 customer_confirmed。'
           }
         },
         required: ['type', 'description', 'urgency']
@@ -1540,7 +1622,20 @@ async function attachConversationImagesToWorkOrder(env, {
 // 工具：AI 创建工单（function calling）
 // 与 POST /api/workorders 共享核心逻辑，但不走 HTTP 层
 async function toolCreateWorkOrder({ customerId, env, ctx, args, conversationId, market = 'com' }) {
-  const { type, description, urgency, device_id, category_l1, category_l2 } = args;
+  const {
+    type,
+    description,
+    urgency,
+    device_id,
+    category_l1,
+    category_l2,
+    service_address,
+    service_latitude,
+    service_longitude,
+    service_accuracy_m,
+    service_coordinate_system,
+    service_location_source,
+  } = args;
   const copy = serviceCopy(market);
 
   if (!customerId) return { error: 'not_authenticated', reason: copy.notAuthenticatedReason };
@@ -1558,6 +1653,21 @@ async function toolCreateWorkOrder({ customerId, env, ctx, args, conversationId,
   ];
   const catL1 = ALLOWED_CATEGORIES_L1.includes(category_l1) ? category_l1 : 'other';
 
+  const serviceLocation = parseServiceLocation({
+    service_address,
+    service_latitude,
+    service_longitude,
+    service_accuracy_m,
+    service_coordinate_system,
+    service_location_source,
+  });
+  if (serviceLocation.error) {
+    return { error: serviceLocation.error, reason: serviceLocationErrorMessage(serviceLocation.error, market) };
+  }
+  if (requiresArrivalVerification(type) && (!serviceLocation.address || !serviceLocation.hasCoordinates)) {
+    return { error: 'service_location_required', reason: serviceLocationErrorMessage('service_location_required', market) };
+  }
+
   // 输入长度检查
   if (description.length > 10000) return { error: 'description_too_long', reason: copy.descriptionTooLongReason };
   if (type.length > 100) return { error: 'invalid_type', reason: copy.invalidTypeReason };
@@ -1572,9 +1682,32 @@ async function toolCreateWorkOrder({ customerId, env, ctx, args, conversationId,
     const slaDeadline2 = computeSlaDeadline(urgency || 'normal');
 
     await env.DB.prepare(`
-      INSERT INTO work_orders (id, order_no, customer_id, type, description, urgency, device_id, status, sla_deadline, category_l1, category_l2)
-      VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)
-    `).bind(id, order_no, customerId, type, safeDescription, urgency || 'normal', device_id || null, slaDeadline2, catL1, category_l2 || 'other').run();
+      INSERT INTO work_orders (
+        id, order_no, customer_id, type, description, urgency, device_id, status,
+        sla_deadline, category_l1, category_l2, arrival_verification_required,
+        service_address, service_latitude, service_longitude, service_accuracy_m,
+        service_coordinate_system, service_location_source, service_location_confirmed_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).bind(
+      id,
+      order_no,
+      customerId,
+      type,
+      safeDescription,
+      urgency || 'normal',
+      device_id || null,
+      slaDeadline2,
+      catL1,
+      category_l2 || 'other',
+      requiresArrivalVerification(type) ? 1 : 0,
+      serviceLocation.address || null,
+      serviceLocation.latitude,
+      serviceLocation.longitude,
+      serviceLocation.accuracyMeters,
+      serviceLocation.coordinateSystem,
+      serviceLocation.source,
+      serviceLocation.hasCoordinates ? new Date().toISOString() : null,
+    ).run();
 
     // 记录日志
     await env.DB.prepare(`
@@ -3867,7 +4000,22 @@ async function handleCreateWorkOrder(request, env) {
   try {
     const market = getRequestMarket(request);
     const copy = serviceCopy(market);
-    const { customer_id, type, description, urgency, device_id, category_l1, category_l2, conversation_id } = await request.json();
+    const {
+      customer_id,
+      type,
+      description,
+      urgency,
+      device_id,
+      category_l1,
+      category_l2,
+      conversation_id,
+      service_address,
+      service_latitude,
+      service_longitude,
+      service_accuracy_m,
+      service_coordinate_system,
+      service_location_source,
+    } = await request.json();
 
     if (!customer_id || !type || !description) {
       return localizedErrorResponse('missing_required_fields', request);
@@ -3890,6 +4038,21 @@ async function handleCreateWorkOrder(request, env) {
     ];
     const catL1 = ALLOWED_CATEGORIES_L1.includes(category_l1) ? category_l1 : 'other';
 
+    const serviceLocation = parseServiceLocation({
+      service_address,
+      service_latitude,
+      service_longitude,
+      service_accuracy_m,
+      service_coordinate_system,
+      service_location_source,
+    });
+    if (serviceLocation.error) {
+      return errorResponse(serviceLocationErrorMessage(serviceLocation.error, market), 400);
+    }
+    if (requiresArrivalVerification(type) && (!serviceLocation.address || !serviceLocation.hasCoordinates)) {
+      return errorResponse(serviceLocationErrorMessage('service_location_required', market), 400);
+    }
+
     // PII 脱敏（Phase 0.5）：手机号/邮箱/身份证/银行卡/车牌等在入库前替换为占位符
     // 注：device_id / type / urgency 是枚举/引用，不脱敏。只洗用户自由输入的 description
     const safeDescription = redactPII(description);
@@ -3900,9 +4063,32 @@ async function handleCreateWorkOrder(request, env) {
     const slaDeadline = computeSlaDeadline(urgency || 'normal');
 
     await env.DB.prepare(`
-      INSERT INTO work_orders (id, order_no, customer_id, type, description, urgency, device_id, status, sla_deadline, category_l1, category_l2)
-      VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)
-    `).bind(id, order_no, customer_id, type, safeDescription, urgency || 'normal', device_id || null, slaDeadline, catL1, category_l2 || 'other').run();
+      INSERT INTO work_orders (
+        id, order_no, customer_id, type, description, urgency, device_id, status,
+        sla_deadline, category_l1, category_l2, arrival_verification_required,
+        service_address, service_latitude, service_longitude, service_accuracy_m,
+        service_coordinate_system, service_location_source, service_location_confirmed_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).bind(
+      id,
+      order_no,
+      customer_id,
+      type,
+      safeDescription,
+      urgency || 'normal',
+      device_id || null,
+      slaDeadline,
+      catL1,
+      category_l2 || 'other',
+      requiresArrivalVerification(type) ? 1 : 0,
+      serviceLocation.address || null,
+      serviceLocation.latitude,
+      serviceLocation.longitude,
+      serviceLocation.accuracyMeters,
+      serviceLocation.coordinateSystem,
+      serviceLocation.source,
+      serviceLocation.hasCoordinates ? new Date().toISOString() : null,
+    ).run();
     // 记录日志
     await env.DB.prepare(`
       INSERT INTO work_order_logs (id, work_order_id, action, actor_type, actor_id, content)
@@ -4702,11 +4888,14 @@ async function handleSaveRepairRecord(request, env) {
     const workOrderId = new URL(request.url).pathname.split('/')[3];
 
     const wo = await env.DB.prepare(
-      'SELECT status, engineer_id FROM work_orders WHERE id = ?'
+      'SELECT status, engineer_id, arrival_verification_required, arrival_verified_at FROM work_orders WHERE id = ?'
     ).bind(workOrderId).first();
     if (!wo) return errorResponse('工单不存在', 404);
     if (wo.engineer_id !== engineer_id) {
       return errorResponse('您无权操作该工单', 403);
+    }
+    if (wo.arrival_verification_required && !wo.arrival_verified_at) {
+      return errorResponse('请先完成到场定位核验，再提交服务完成', 400);
     }
 
     const body = await request.json();
@@ -9555,6 +9744,145 @@ async function handleTestFullPricingFlow(env) {
   }
 }
 
+async function handleWorkOrderArrivalCheck(request, env) {
+  try {
+    const auth = request._auth;
+    const market = getRequestMarket(request);
+    if (!auth || auth.userType !== 'engineer') {
+      return errorResponse(market === 'cn' ? '仅工程师可提交到场定位' : 'Only engineers can submit an arrival check', 403);
+    }
+
+    const workOrderId = new URL(request.url).pathname.split('/')[3];
+    const body = await request.json().catch(() => ({}));
+    const currentLatitude = normalizeCoordinate(body.latitude);
+    const currentLongitude = normalizeCoordinate(body.longitude);
+    const currentAccuracyMeters = normalizeCoordinate(body.accuracy_m);
+    const currentCoordinateSystem = String(body.coordinate_system || 'wgs84').trim().toLowerCase();
+    const locationSource = String(body.location_source || 'browser').trim().slice(0, 40) || 'browser';
+
+    if (!isValidCoordinatePair(currentLatitude, currentLongitude)) {
+      return errorResponse(market === 'cn' ? '工程师当前位置无效' : 'Engineer location is invalid', 400);
+    }
+    if (!SUPPORTED_COORDINATE_SYSTEMS.has(currentCoordinateSystem)) {
+      return errorResponse(market === 'cn' ? '工程师坐标系不受支持' : 'Engineer coordinate system is not supported', 400);
+    }
+    if (currentAccuracyMeters !== null && (currentAccuracyMeters < 0 || currentAccuracyMeters > 10000)) {
+      return errorResponse(market === 'cn' ? '工程师定位精度无效' : 'Engineer location accuracy is invalid', 400);
+    }
+
+    const workOrder = await env.DB.prepare(`
+      SELECT id, order_no, engineer_id, status, arrival_verification_required,
+        service_address, service_latitude, service_longitude, service_accuracy_m, service_coordinate_system
+      FROM work_orders WHERE id = ?
+    `).bind(workOrderId).first();
+    if (!workOrder) return errorResponse(market === 'cn' ? '工单不存在' : 'Work order not found', 404);
+    if (workOrder.engineer_id !== auth.userId) {
+      return errorResponse(market === 'cn' ? '您未被指派到此工单' : 'You are not assigned to this work order', 403);
+    }
+    if (workOrder.status !== 'in_service') {
+      return errorResponse(market === 'cn' ? '付款确认后才能提交到场定位' : 'Arrival checks are available after service start approval', 409);
+    }
+    if (!isValidCoordinatePair(workOrder.service_latitude, workOrder.service_longitude)) {
+      return errorResponse(serviceLocationErrorMessage('service_location_required', market), 400);
+    }
+
+    const check = evaluateArrivalCheck({
+      targetLatitude: workOrder.service_latitude,
+      targetLongitude: workOrder.service_longitude,
+      targetCoordinateSystem: workOrder.service_coordinate_system || 'wgs84',
+      currentLatitude,
+      currentLongitude,
+      currentAccuracyMeters,
+      currentCoordinateSystem,
+    });
+    if (!check.valid) {
+      return errorResponse(market === 'cn' ? '客户位置和工程师位置坐标系不一致' : 'Customer and engineer coordinate systems do not match', 400);
+    }
+
+    const failureReason = check.withinGeofence ? null : 'outside_geofence';
+    await env.DB.prepare(`
+      INSERT INTO work_order_arrival_checks (
+        id, work_order_id, engineer_id, latitude, longitude, accuracy_m,
+        coordinate_system, location_source, distance_m, radius_m, within_geofence, failure_reason
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).bind(
+      generateId(),
+      workOrderId,
+      auth.userId,
+      currentLatitude,
+      currentLongitude,
+      currentAccuracyMeters,
+      currentCoordinateSystem,
+      locationSource,
+      check.distanceMeters,
+      check.radiusMeters,
+      check.withinGeofence ? 1 : 0,
+      failureReason,
+    ).run();
+
+    if (!check.withinGeofence) {
+      return jsonResponse({
+        success: false,
+        arrival_verified: false,
+        distance_m: check.distanceMeters,
+        radius_m: check.radiusMeters,
+        reason: market === 'cn' ? '当前位置距离客户现场过远，请到达现场后重试' : 'You are outside the customer site area. Try again after arriving.',
+      }, 409);
+    }
+
+    await env.DB.prepare(`
+      UPDATE work_orders SET
+        arrival_verified_at = datetime('now'),
+        arrival_distance_m = ?,
+        arrival_radius_m = ?,
+        arrival_accuracy_m = ?,
+        arrival_latitude = ?,
+        arrival_longitude = ?,
+        arrival_coordinate_system = ?,
+        arrival_location_source = ?
+      WHERE id = ?
+    `).bind(
+      check.distanceMeters,
+      check.radiusMeters,
+      currentAccuracyMeters,
+      currentLatitude,
+      currentLongitude,
+      currentCoordinateSystem,
+      locationSource,
+      workOrderId,
+    ).run();
+
+    await env.DB.prepare(`
+      INSERT INTO work_order_logs (id, work_order_id, action, actor_type, actor_id, content)
+      VALUES (?, ?, 'arrival_verified', 'engineer', ?, ?)
+    `).bind(
+      generateId(),
+      workOrderId,
+      auth.userId,
+      market === 'cn'
+        ? `工程师已完成到场定位核验，距离客户现场 ${check.distanceMeters} 米。`
+        : `Engineer arrival verified at ${check.distanceMeters} meters from the customer site.`,
+    ).run();
+
+    await writeAuditLog(env, request, {
+      targetType: 'work_order',
+      targetId: workOrderId,
+      action: 'arrival_verified',
+      beforeState: { arrival_verified_at: null },
+      afterState: { arrival_verified_at: 'now', distance_m: check.distanceMeters, radius_m: check.radiusMeters },
+    });
+
+    return jsonResponse({
+      success: true,
+      arrival_verified: true,
+      distance_m: check.distanceMeters,
+      radius_m: check.radiusMeters,
+    });
+  } catch (error) {
+    return errorResponse(error.message, 500);
+  }
+}
+
 // 工程师标记服务完成
 async function handleResolveWorkOrder(request, env) {
   try {
@@ -11509,6 +11837,10 @@ async function routeRequest(request, env, ctx) {
     }
     if (path.match(/^\/api\/workorders\/[^/]+\/pricing$/) && request.method === 'POST') {
       return handleSubmitWorkOrderPricing(request, env);
+    }
+    // 工程师到场定位核验
+    if (path.match(/^\/api\/workorders\/[^/]+\/arrival-check$/) && request.method === 'POST') {
+      return handleWorkOrderArrivalCheck(request, env);
     }
     // 工程师标记服务完成
     if (path.match(/^\/api\/workorders\/[^/]+\/resolve$/) && request.method === 'POST') {

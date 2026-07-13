@@ -654,6 +654,17 @@ export async function resolveWorkOrder(workOrderId, engineerId) {
   return response.json();
 }
 
+export async function checkInWorkOrder(workOrderId, location) {
+  const response = await fetch(`${API_BASE}/api/workorders/${workOrderId}/arrival-check`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify(location),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.error || data.reason || `HTTP ${response.status}`);
+  return data;
+}
+
 /**
  * 客户取消工单
  */
