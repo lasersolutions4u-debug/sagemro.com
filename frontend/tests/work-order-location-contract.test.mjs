@@ -15,7 +15,8 @@ test('customer service requests capture the site address and browser coordinates
 
   assert.match(modal, /service_address/);
   assert.match(modal, /navigator\.geolocation\.getCurrentPosition/);
-  assert.match(modal, /SITE_SERVICE_TYPES/);
+  assert.match(modal, /service_mode/);
+  assert.match(modal, /serviceModeOptions/);
   assert.match(app, /service_latitude: data\.service_latitude/);
   assert.match(app, /service_location_source: data\.service_location_source/);
 });

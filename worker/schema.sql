@@ -200,6 +200,7 @@ CREATE TABLE IF NOT EXISTS work_orders (
     conflict_reason TEXT,
     quote_review_status TEXT DEFAULT 'not_required',
     customer_confirmation_method TEXT,
+    service_mode TEXT NOT NULL DEFAULT 'remote',
     arrival_verification_required INTEGER NOT NULL DEFAULT 0,
     service_address TEXT,
     service_latitude REAL,

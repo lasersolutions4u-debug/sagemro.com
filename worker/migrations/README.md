@@ -32,6 +32,7 @@
 | `027_work_order_material_items.sql` | 工单物料引用：报价、备件准备和服务报告 |
 | `028_material_requests.sql` | 工程师新增物料申请与 Admin 审核入库 |
 | `033_work_order_location_verification.sql` | 客户现场地址、工程师到场定位和地理围栏核验 |
+| `034_add_service_mode.sql` | 远程、上门和混合服务方式及对应完工规则 |
 
 > 约定：文件名格式 `NNN_*.sql`，按字典序顺序执行；历史命名中出现过 `001_partner_upgrade.sql`（已删除，是 `001_add_engineer_fields.sql + 002_pricing_and_new_tables.sql` 的合并版本，避免重复执行）。
 
