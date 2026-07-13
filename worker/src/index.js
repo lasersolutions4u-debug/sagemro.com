@@ -24,6 +24,7 @@ import {
   isValidCoordinatePair,
   normalizeCoordinate,
 } from './lib/location.js';
+import { normalizeServiceMode, requiresArrivalVerification } from './lib/service-mode.js';
 
 // OneSignal 推送 + 站内通知 helpers
 import { createNotification, sendPushToUser, sendPushToEngineer } from './lib/push.js';
@@ -100,12 +101,6 @@ function redactContactInfoForWorkOrder(text) {
 
 function canEngineerViewCustomerContact(status) {
   return ['in_service', 'resolved', 'pending_review', 'completed'].includes(status);
-}
-
-const ARRIVAL_VERIFICATION_TYPES = new Set(['fault', 'maintenance', 'parameter', 'parts', 'aftersales']);
-
-function requiresArrivalVerification(type) {
-  return ARRIVAL_VERIFICATION_TYPES.has(type);
 }
 
 function parseServiceLocation(input = {}) {
@@ -892,6 +887,11 @@ const TOOLS_SCHEMAS = [
             type: 'string',
             description: '客户设备的 ID。如果客户在对话中指定了具体设备且你知道其 device_id，则填入。否则留空。'
           },
+          service_mode: {
+            type: 'string',
+            enum: ['remote', 'onsite', 'hybrid'],
+            description: '服务执行方式。remote 为远程指导，onsite 为必须上门，hybrid 为先远程诊断、必要时再上门。未明确时使用 remote。'
+          },
           service_address: {
             type: 'string',
             description: '现场服务地址。现场维修、保养、参数调试、配件上门或改造服务必须收集。'
@@ -1629,6 +1629,7 @@ async function toolCreateWorkOrder({ customerId, env, ctx, args, conversationId,
     device_id,
     category_l1,
     category_l2,
+    service_mode,
     service_address,
     service_latitude,
     service_longitude,
@@ -1653,6 +1654,7 @@ async function toolCreateWorkOrder({ customerId, env, ctx, args, conversationId,
   ];
   const catL1 = ALLOWED_CATEGORIES_L1.includes(category_l1) ? category_l1 : 'other';
 
+  const serviceMode = normalizeServiceMode(service_mode);
   const serviceLocation = parseServiceLocation({
     service_address,
     service_latitude,
@@ -1664,7 +1666,7 @@ async function toolCreateWorkOrder({ customerId, env, ctx, args, conversationId,
   if (serviceLocation.error) {
     return { error: serviceLocation.error, reason: serviceLocationErrorMessage(serviceLocation.error, market) };
   }
-  if (requiresArrivalVerification(type) && (!serviceLocation.address || !serviceLocation.hasCoordinates)) {
+  if (requiresArrivalVerification(serviceMode) && (!serviceLocation.address || !serviceLocation.hasCoordinates)) {
     return { error: 'service_location_required', reason: serviceLocationErrorMessage('service_location_required', market) };
   }
 
@@ -1684,7 +1686,7 @@ async function toolCreateWorkOrder({ customerId, env, ctx, args, conversationId,
     await env.DB.prepare(`
       INSERT INTO work_orders (
         id, order_no, customer_id, type, description, urgency, device_id, status,
-        sla_deadline, category_l1, category_l2, arrival_verification_required,
+        sla_deadline, category_l1, category_l2, service_mode, arrival_verification_required,
         service_address, service_latitude, service_longitude, service_accuracy_m,
         service_coordinate_system, service_location_source, service_location_confirmed_at
       ) VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -1699,7 +1701,8 @@ async function toolCreateWorkOrder({ customerId, env, ctx, args, conversationId,
       slaDeadline2,
       catL1,
       category_l2 || 'other',
-      requiresArrivalVerification(type) ? 1 : 0,
+      serviceMode,
+      requiresArrivalVerification(serviceMode) ? 1 : 0,
       serviceLocation.address || null,
       serviceLocation.latitude,
       serviceLocation.longitude,
@@ -4009,6 +4012,7 @@ async function handleCreateWorkOrder(request, env) {
       category_l1,
       category_l2,
       conversation_id,
+      service_mode,
       service_address,
       service_latitude,
       service_longitude,
@@ -4038,6 +4042,7 @@ async function handleCreateWorkOrder(request, env) {
     ];
     const catL1 = ALLOWED_CATEGORIES_L1.includes(category_l1) ? category_l1 : 'other';
 
+    const serviceMode = normalizeServiceMode(service_mode);
     const serviceLocation = parseServiceLocation({
       service_address,
       service_latitude,
@@ -4049,7 +4054,7 @@ async function handleCreateWorkOrder(request, env) {
     if (serviceLocation.error) {
       return errorResponse(serviceLocationErrorMessage(serviceLocation.error, market), 400);
     }
-    if (requiresArrivalVerification(type) && (!serviceLocation.address || !serviceLocation.hasCoordinates)) {
+    if (requiresArrivalVerification(serviceMode) && (!serviceLocation.address || !serviceLocation.hasCoordinates)) {
       return errorResponse(serviceLocationErrorMessage('service_location_required', market), 400);
     }
 
@@ -4065,7 +4070,7 @@ async function handleCreateWorkOrder(request, env) {
     await env.DB.prepare(`
       INSERT INTO work_orders (
         id, order_no, customer_id, type, description, urgency, device_id, status,
-        sla_deadline, category_l1, category_l2, arrival_verification_required,
+        sla_deadline, category_l1, category_l2, service_mode, arrival_verification_required,
         service_address, service_latitude, service_longitude, service_accuracy_m,
         service_coordinate_system, service_location_source, service_location_confirmed_at
       ) VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -4080,7 +4085,8 @@ async function handleCreateWorkOrder(request, env) {
       slaDeadline,
       catL1,
       category_l2 || 'other',
-      requiresArrivalVerification(type) ? 1 : 0,
+      serviceMode,
+      requiresArrivalVerification(serviceMode) ? 1 : 0,
       serviceLocation.address || null,
       serviceLocation.latitude,
       serviceLocation.longitude,
@@ -9771,7 +9777,7 @@ async function handleWorkOrderArrivalCheck(request, env) {
     }
 
     const workOrder = await env.DB.prepare(`
-      SELECT id, order_no, engineer_id, status, arrival_verification_required,
+      SELECT id, order_no, engineer_id, status, service_mode, arrival_verification_required,
         service_address, service_latitude, service_longitude, service_accuracy_m, service_coordinate_system
       FROM work_orders WHERE id = ?
     `).bind(workOrderId).first();
@@ -9781,6 +9787,9 @@ async function handleWorkOrderArrivalCheck(request, env) {
     }
     if (workOrder.status !== 'in_service') {
       return errorResponse(market === 'cn' ? '付款确认后才能提交到场定位' : 'Arrival checks are available after service start approval', 409);
+    }
+    if (!workOrder.arrival_verification_required && workOrder.service_mode !== 'hybrid') {
+      return errorResponse(market === 'cn' ? '此工单为远程服务，无需到场打卡' : 'This work order does not require an onsite arrival check', 409);
     }
     if (!isValidCoordinatePair(workOrder.service_latitude, workOrder.service_longitude)) {
       return errorResponse(serviceLocationErrorMessage('service_location_required', market), 400);
@@ -9832,6 +9841,8 @@ async function handleWorkOrderArrivalCheck(request, env) {
 
     await env.DB.prepare(`
       UPDATE work_orders SET
+        service_mode = 'onsite',
+        arrival_verification_required = 1,
         arrival_verified_at = datetime('now'),
         arrival_distance_m = ?,
         arrival_radius_m = ?,

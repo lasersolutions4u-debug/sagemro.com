@@ -401,7 +401,7 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
         )}
       </div>
 
-      {isEngineer && detail?.arrival_verification_required && effectiveStatus === 'in_service' && (
+      {isEngineer && (detail?.arrival_verification_required || detail?.service_mode === 'hybrid') && effectiveStatus === 'in_service' && (
         <div className="rounded-xl border border-[var(--color-primary)]/30 bg-[var(--color-primary)]/5 p-4">
           <h3 className="text-sm font-medium text-[var(--color-text-primary)]">Arrival verification</h3>
           {detail.arrival_verified_at ? (

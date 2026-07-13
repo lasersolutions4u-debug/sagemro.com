@@ -34,8 +34,6 @@ const DEVICE_TYPE_PRESET_KEYS = {
   其他: 'Other',
 };
 
-const SITE_SERVICE_TYPES = new Set(['fault', 'maintenance', 'parameter', 'parts', 'aftersales']);
-
 const WORK_ORDER_COPY = {
   en: {
     fillRequired: 'Please fill in all required fields',
@@ -59,6 +57,12 @@ const WORK_ORDER_COPY = {
     brandDisabledPlaceholder: 'Select equipment type first',
     region: 'Country / Region',
     regionPlaceholder: 'Search or enter country / region...',
+    serviceMode: 'Service Mode',
+    serviceModeOptions: {
+      remote: 'Remote guidance',
+      onsite: 'On-site service',
+      hybrid: 'Hybrid: remote first, on-site if needed',
+    },
     serviceAddress: 'Customer Site Address',
     serviceAddressPlaceholder: 'Enter the exact service site, gate, building, or workshop address',
     locateSite: 'Confirm site location',
@@ -116,6 +120,12 @@ const WORK_ORDER_COPY = {
     brandDisabledPlaceholder: '请先选择设备类型',
     region: '所在地区',
     regionPlaceholder: '搜索省市区...',
+    serviceMode: '服务方式',
+    serviceModeOptions: {
+      remote: '远程指导',
+      onsite: '上门服务',
+      hybrid: '混合服务：先远程，必要时上门',
+    },
     serviceAddress: '客户现场地址',
     serviceAddressPlaceholder: '请填写准确的服务地址、厂区入口、楼栋或车间信息',
     locateSite: '确认现场定位',
@@ -223,6 +233,7 @@ export function WorkOrderModal({ isOpen, onClose, onSubmit }) {
     device_type: [],
     device_brand: [],
     region: [],
+    service_mode: 'remote',
     service_address: '',
     service_latitude: null,
     service_longitude: null,
@@ -260,7 +271,7 @@ export function WorkOrderModal({ isOpen, onClose, onSubmit }) {
       return;
     }
 
-    if (SITE_SERVICE_TYPES.has(form.type)
+    if (form.service_mode === 'onsite'
       && (!form.service_address.trim() || form.service_latitude === null || form.service_longitude === null)) {
       toastWarning(copy.locationRequired);
       return;
@@ -331,6 +342,7 @@ export function WorkOrderModal({ isOpen, onClose, onSubmit }) {
       device_type: [],
       device_brand: [],
       region: [],
+      service_mode: 'remote',
       service_address: '',
       service_latitude: null,
       service_longitude: null,
@@ -471,9 +483,37 @@ export function WorkOrderModal({ isOpen, onClose, onSubmit }) {
         />
 
         {/* 设备规格型号 */}
+        <div>
+          <label className="block text-sm font-medium text-[var(--color-text-primary)] mb-2">
+            {copy.serviceMode}
+          </label>
+          <div className="flex flex-wrap gap-2">
+            {Object.entries(copy.serviceModeOptions).map(([value, label]) => (
+              <label
+                key={value}
+                className={`flex cursor-pointer items-center rounded-xl border px-3 py-2 text-sm transition-colors ${
+                  form.service_mode === value
+                    ? 'border-[var(--color-primary)] bg-[var(--color-primary)]/10 text-[var(--color-primary)]'
+                    : 'border-[var(--color-border)] text-[var(--color-text-secondary)]'
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="service_mode"
+                  value={value}
+                  checked={form.service_mode === value}
+                  onChange={(e) => setForm({ ...form, service_mode: e.target.value })}
+                  className="sr-only"
+                />
+                {label}
+              </label>
+            ))}
+          </div>
+        </div>
+
         <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-elevated)] p-3 space-y-3">
           <label className="block text-sm font-medium text-[var(--color-text-primary)]">
-            {copy.serviceAddress} {SITE_SERVICE_TYPES.has(form.type) && <span className="text-red-500">*</span>}
+            {copy.serviceAddress} {form.service_mode === 'onsite' && <span className="text-red-500">*</span>}
           </label>
           <input
             type="text"
