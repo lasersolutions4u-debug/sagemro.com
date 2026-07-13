@@ -25,6 +25,7 @@ import {
   normalizeCoordinate,
 } from './lib/location.js';
 import { normalizeServiceMode, requiresArrivalVerification } from './lib/service-mode.js';
+import { normalizeLocationQuery, searchLocationProvider } from './lib/location-search.js';
 
 // OneSignal 推送 + 站内通知 helpers
 import { createNotification, sendPushToUser, sendPushToEngineer } from './lib/push.js';
@@ -3995,6 +3996,27 @@ async function generateWorkOrderSummary(type, description, urgency, env, { marke
   } catch (error) {
     console.error('generateWorkOrderSummary error:', error);
     return null;
+  }
+}
+
+async function handleLocationSearch(request, env) {
+  const market = getRequestMarket(request);
+  const url = new URL(request.url);
+  const query = normalizeLocationQuery(url.searchParams.get('q'));
+  const limit = url.searchParams.get('limit') || '5';
+  if (query.length < 2) {
+    return errorResponse(market === 'cn' ? '请输入至少两个字符的地址' : 'Please enter at least two address characters', 400);
+  }
+
+  try {
+    const result = await searchLocationProvider({ query, market, env, limit });
+    return jsonResponse({ market, query, ...result });
+  } catch (error) {
+    if (error.message === 'amap_key_not_configured' || error.message === 'mapbox_token_not_configured') {
+      return errorResponse(market === 'cn' ? '高德地图服务尚未配置' : 'Mapbox search is not configured', 503);
+    }
+    console.error('[location-search] provider request failed:', error.message);
+    return errorResponse(market === 'cn' ? '地址搜索暂时不可用，请稍后重试' : 'Address search is temporarily unavailable. Please try again.', 502);
   }
 }
 
@@ -11602,6 +11624,7 @@ async function routeRequest(request, env, ctx) {
       path === '/api/conversations' ||
       path.startsWith('/api/conversations/') ||
       path === '/api/materials' ||
+      path === '/api/location/search' ||
       path === '/api/workorders' ||
       path.startsWith('/api/workorders/') ||
       path === '/api/devices' ||
@@ -11779,6 +11802,9 @@ async function routeRequest(request, env, ctx) {
     }
 
     // 工单相关
+    if (path === '/api/location/search' && request.method === 'GET') {
+      return handleLocationSearch(request, env);
+    }
     if (path === '/api/workorders' && request.method === 'POST') {
       return handleCreateWorkOrder(request, env);
     }

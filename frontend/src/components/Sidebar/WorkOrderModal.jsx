@@ -3,10 +3,10 @@ import { Modal } from '../common/Modal';
 import { TagInput } from '../common/TagInput';
 import { RegionInput } from '../common/RegionInput';
 import { toastError, toastWarning, toastSuccess } from '../../utils/feedback';
-import { uploadWorkOrderAttachment } from '../../services/api';
+import { searchServiceLocations, uploadWorkOrderAttachment } from '../../services/api';
 import { WorkOrderType, UrgencyLevel } from '../../types';
 import { categoryConfig } from '../../data/workOrderConfig';
-import { LocateFixed, Paperclip, Loader2, X } from 'lucide-react';
+import { LocateFixed, Paperclip, Loader2, Search, X } from 'lucide-react';
 import { isCnLocale } from '../../utils/locale';
 
 // 设备类型选项
@@ -70,6 +70,10 @@ const WORK_ORDER_COPY = {
     locationCaptured: 'Site location captured',
     locationRequired: 'On-site service requires the customer site address and location',
     locationFailed: 'Unable to get location. Please allow browser location access and try again.',
+    searchLocation: 'Search address',
+    searchingLocation: 'Searching...',
+    mapSearchResults: 'Select a map result to confirm the service point',
+    noLocationResults: 'No matching locations found',
     equipmentModel: 'Equipment Model / Part No.',
     modelPlaceholder: 'e.g. C3015 3000W, BM111, nozzle 1.5S, press brake tooling size',
     description: 'Request Details',
@@ -133,6 +137,10 @@ const WORK_ORDER_COPY = {
     locationCaptured: '现场定位已获取',
     locationRequired: '现场服务需要提供客户现场地址和定位',
     locationFailed: '无法获取定位，请允许浏览器使用定位后重试。',
+    searchLocation: '搜索地址',
+    searchingLocation: '搜索中...',
+    mapSearchResults: '请选择地图结果确认服务点位',
+    noLocationResults: '没有找到匹配的地址',
     equipmentModel: '设备型号 / 规格',
     modelPlaceholder: '例如：C3015 3000W',
     description: '故障 / 服务需求描述',
@@ -251,6 +259,8 @@ export function WorkOrderModal({ isOpen, onClose, onSubmit }) {
   const [files, setFiles] = useState([]); // 待上传附件
   const [uploadPhase, setUploadPhase] = useState(null); // { current, total } | null
   const [locating, setLocating] = useState(false);
+  const [locationSearching, setLocationSearching] = useState(false);
+  const [locationResults, setLocationResults] = useState([]);
   const fileInputRef = useRef(null);
 
   // 监听设备类型变化，更新品牌预设选项
@@ -333,6 +343,37 @@ export function WorkOrderModal({ isOpen, onClose, onSubmit }) {
     );
   };
 
+  const searchSiteAddress = async () => {
+    const query = form.service_address.trim();
+    if (query.length < 2) {
+      toastWarning(copy.locationRequired);
+      return;
+    }
+    setLocationSearching(true);
+    try {
+      const result = await searchServiceLocations(query);
+      setLocationResults(result.results || []);
+    } catch (e) {
+      setLocationResults([]);
+      toastError(e.message || copy.locationFailed);
+    } finally {
+      setLocationSearching(false);
+    }
+  };
+
+  const selectSiteLocation = (result) => {
+    setForm((current) => ({
+      ...current,
+      service_address: result.address || result.label,
+      service_latitude: result.latitude,
+      service_longitude: result.longitude,
+      service_accuracy_m: null,
+      service_coordinate_system: result.coordinate_system,
+      service_location_source: result.source,
+    }));
+    setLocationResults([]);
+  };
+
   const handleClose = () => {
     // 关闭时重置表单和成功状态
     setForm({
@@ -355,6 +396,7 @@ export function WorkOrderModal({ isOpen, onClose, onSubmit }) {
       urgency: 'normal',
     });
     setFiles([]);
+    setLocationResults([]);
     setUploadPhase(null);
     setSubmitted(null);
     onClose();
@@ -518,19 +560,56 @@ export function WorkOrderModal({ isOpen, onClose, onSubmit }) {
           <input
             type="text"
             value={form.service_address}
-            onChange={(e) => setForm({ ...form, service_address: e.target.value })}
+            onChange={(e) => {
+              setForm({
+                ...form,
+                service_address: e.target.value,
+                service_latitude: null,
+                service_longitude: null,
+                service_accuracy_m: null,
+                service_coordinate_system: 'wgs84',
+                service_location_source: 'customer_browser',
+              });
+              setLocationResults([]);
+            }}
             placeholder={copy.serviceAddressPlaceholder}
             className="w-full px-3 py-2 border border-[var(--color-border)] dark:border-[var(--color-border-strong)] rounded-xl bg-[var(--color-surface)] dark:bg-[var(--color-surface-elevated)] text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
           />
-          <button
-            type="button"
-            onClick={captureSiteLocation}
-            disabled={locating}
-            className="inline-flex items-center gap-2 rounded-xl border border-[var(--color-border)] px-3 py-2 text-sm text-[var(--color-text-primary)] hover:border-[var(--color-primary)] disabled:opacity-50"
-          >
-            {locating ? <Loader2 size={16} className="animate-spin" /> : <LocateFixed size={16} />}
-            {locating ? copy.locatingSite : copy.locateSite}
-          </button>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={searchSiteAddress}
+              disabled={locationSearching}
+              className="inline-flex items-center gap-2 rounded-xl border border-[var(--color-border)] px-3 py-2 text-sm text-[var(--color-text-primary)] hover:border-[var(--color-primary)] disabled:opacity-50"
+            >
+              {locationSearching ? <Loader2 size={16} className="animate-spin" /> : <Search size={16} />}
+              {locationSearching ? copy.searchingLocation : copy.searchLocation}
+            </button>
+            <button
+              type="button"
+              onClick={captureSiteLocation}
+              disabled={locating}
+              className="inline-flex items-center gap-2 rounded-xl border border-[var(--color-border)] px-3 py-2 text-sm text-[var(--color-text-primary)] hover:border-[var(--color-primary)] disabled:opacity-50"
+            >
+              {locating ? <Loader2 size={16} className="animate-spin" /> : <LocateFixed size={16} />}
+              {locating ? copy.locatingSite : copy.locateSite}
+            </button>
+          </div>
+          {locationResults.length > 0 && (
+            <div className="space-y-2 rounded-xl border border-[var(--color-border)] p-2">
+              <p className="text-xs text-[var(--color-text-muted)]">{copy.mapSearchResults}</p>
+              {locationResults.map((result) => (
+                <button
+                  type="button"
+                  key={result.id}
+                  onClick={() => selectSiteLocation(result)}
+                  className="block w-full rounded-lg px-2 py-2 text-left text-sm text-[var(--color-text-primary)] hover:bg-[var(--color-primary)]/10"
+                >
+                  {result.label}
+                </button>
+              ))}
+            </div>
+          )}
           {form.service_latitude !== null && form.service_longitude !== null && (
             <p className="text-xs text-green-600">{copy.locationCaptured} · ±{Math.round(form.service_accuracy_m || 0)} m</p>
           )}

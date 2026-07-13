@@ -5,6 +5,7 @@ import {
   calculateDistanceMeters,
   evaluateArrivalCheck,
   getArrivalRadiusMeters,
+  wgs84ToGcj02,
 } from '../src/lib/location.js';
 
 test('calculates geographic distance in meters', () => {
@@ -31,17 +32,19 @@ test('expands the geofence when browser accuracy is low', () => {
   assert.equal(getArrivalRadiusMeters(500), 500);
 });
 
-test('rejects mismatched coordinate systems and distant locations', () => {
-  const mismatch = evaluateArrivalCheck({
-    targetLatitude: 36.6512,
-    targetLongitude: 117.1201,
+test('converts WGS84 engineer coordinates before checking a GCJ-02 site', () => {
+  const target = wgs84ToGcj02(36.6512, 117.1201);
+  const result = evaluateArrivalCheck({
+    targetLatitude: target.latitude,
+    targetLongitude: target.longitude,
     targetCoordinateSystem: 'gcj02',
     currentLatitude: 36.6512,
     currentLongitude: 117.1201,
     currentCoordinateSystem: 'wgs84',
     currentAccuracyMeters: 10,
   });
-  assert.deepEqual(mismatch, { valid: false, reason: 'coordinate_system_mismatch' });
+  assert.equal(result.valid, true);
+  assert.equal(result.withinGeofence, true);
 
   const distant = evaluateArrivalCheck({
     targetLatitude: 36.6512,
