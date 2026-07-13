@@ -213,6 +213,22 @@ jobs:
           $SUDO ln -sfnT "$release/frontend" "$current/engineer"
           $SUDO ln -sfnT "$release/admin" "$current/admin"
 
+          performance_conf="/etc/nginx/conf.d/sagemro-cn-performance.conf"
+          $SUDO tee "$performance_conf" > /dev/null <<'NGINX'
+          map $request_uri $sagemro_asset_cache_control {
+            default "";
+            ~^/assets/ "public, max-age=31536000, immutable";
+            ~^/sagemro-logo\.png$ "public, max-age=86400";
+          }
+
+          gzip on;
+          gzip_vary on;
+          gzip_min_length 1024;
+          gzip_comp_level 5;
+          gzip_types text/plain text/css application/javascript application/json application/xml image/svg+xml font/woff2;
+          add_header Cache-Control $sagemro_asset_cache_control always;
+          NGINX
+
           $SUDO nginx -t
           $SUDO systemctl reload nginx
 
