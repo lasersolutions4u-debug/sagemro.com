@@ -347,11 +347,16 @@ CREATE TABLE IF NOT EXISTS work_order_payments (
     payment_method TEXT DEFAULT 'bank_transfer',
     transaction_id TEXT UNIQUE,
     status TEXT DEFAULT 'completed',
+    payment_stage TEXT NOT NULL DEFAULT 'advance',
+    quote_total_amount INTEGER DEFAULT 0,
+    advance_amount INTEGER DEFAULT 0,
+    balance_amount INTEGER DEFAULT 0,
     paid_at TEXT DEFAULT (datetime('now')),
     created_at TEXT DEFAULT (datetime('now')),
     FOREIGN KEY (work_order_id) REFERENCES work_orders(id)
 );
 CREATE INDEX IF NOT EXISTS idx_work_order_payments_wo ON work_order_payments(work_order_id);
+CREATE INDEX IF NOT EXISTS idx_work_order_payments_stage ON work_order_payments(work_order_id, payment_stage, created_at);
 
 CREATE TABLE IF NOT EXISTS work_order_payouts (
     id TEXT PRIMARY KEY,

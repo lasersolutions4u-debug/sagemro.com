@@ -360,6 +360,12 @@ export function CustomerPricingPanel({ workOrderId, customerId, onConfirmed }) {
         <div className="flex justify-between border-t border-[var(--color-border)] pt-1.5 font-semibold text-base text-[var(--color-primary)]">
           <span>{t.engineer.quoteSubtotal}</span><span>{pricing.total_amount || pricing.subtotal || 0} {CURRENCY}</span>
         </div>
+        {pricing.payment_policy && (
+          <div className="border-t border-[var(--color-border)] pt-2 text-xs text-[var(--color-text-secondary)]">
+            <div className="flex justify-between"><span>Advance payment before service</span><span>{pricing.payment_policy.advance_amount || 0} {CURRENCY}</span></div>
+            <div className="mt-1 flex justify-between"><span>Service balance after completion</span><span>{pricing.payment_policy.balance_amount || 0} {CURRENCY}</span></div>
+          </div>
+        )}
       </div>
 
       {/* AI 鐎光剝鐗?*/}
@@ -429,7 +435,7 @@ export function CustomerPricingPanel({ workOrderId, customerId, onConfirmed }) {
             onClick={() => setPaymentOpen(true)}
             className="w-full py-3 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white rounded-xl font-semibold text-sm transition-colors"
           >
-            {t.customer.payment((pricing.total_amount || pricing.subtotal || 0).toLocaleString())}
+            {t.customer.payment((pricing.payment_policy?.advance_amount ?? pricing.total_amount ?? pricing.subtotal ?? 0).toLocaleString())}
           </button>
         </div>
       )}

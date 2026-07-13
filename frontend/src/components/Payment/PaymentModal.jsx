@@ -13,6 +13,7 @@ const PAYPAL_PAYMENT_LINK = 'https://www.paypal.com/ncp/payment/4YLFXRSUSZJ5N';
 
 function paymentStatusCopy(status) {
   const map = {
+    awaiting_customer: 'Payment request ready',
     instructions_requested: 'Payment instructions requested',
     pending_admin_confirmation: 'Waiting for Admin payment confirmation',
     completed: 'Payment confirmed by SAGEMRO',
@@ -20,7 +21,7 @@ function paymentStatusCopy(status) {
   return map[status] || status || 'Payment follow-up pending';
 }
 
-export function PaymentModal({ isOpen, onClose, workOrderId, customerId, onPaid }) {
+export function PaymentModal({ isOpen, onClose, workOrderId, customerId, paymentStage = 'advance', onPaid }) {
   const [step, setStep] = useState('pay');
   const [pricing, setPricing] = useState(null);
   const [order, setOrder] = useState(null);
@@ -38,33 +39,38 @@ export function PaymentModal({ isOpen, onClose, workOrderId, customerId, onPaid 
 
     Promise.all([
       getWorkOrderPricing(workOrderId).catch(() => ({ pricing: null })),
-      getWorkOrderPayment(workOrderId).catch(() => ({ payment: null })),
+      getWorkOrderPayment(workOrderId, paymentStage).catch(() => ({ payment: null })),
       getWorkOrder(workOrderId).catch(() => null),
     ]).then(([pricingRes, paymentRes, orderRes]) => {
-      if (paymentRes?.payment) {
+      if (paymentRes?.payment && paymentRes.payment.status !== 'awaiting_customer') {
         setStep('submitted');
         setResult(paymentRes.payment);
       }
       setPricing(pricingRes?.pricing || null);
       setOrder(orderRes);
     }).catch(() => {}).finally(() => setLoading(false));
-  }, [isOpen, workOrderId]);
+  }, [isOpen, paymentStage, workOrderId]);
 
-  const amount = pricing?.total_amount || pricing?.subtotal || 0;
+  const paymentPolicy = pricing?.payment_policy || {};
+  const isBalancePayment = paymentStage === 'balance';
+  const amount = isBalancePayment
+    ? paymentPolicy.balance_amount ?? 0
+    : paymentPolicy.advance_amount ?? pricing?.total_amount ?? pricing?.subtotal ?? 0;
+  const balanceAmount = paymentPolicy.balance_amount ?? Math.max(0, (pricing?.total_amount || pricing?.subtotal || 0) - amount);
   const MethodIcon = PAYMENT_METHODS.find(m => m.id === method)?.icon || Building2;
 
   const handlePay = async () => {
     setSubmitting(true);
     setStep('processing');
     try {
-      const res = await payWorkOrder(workOrderId, { payment_method: method });
+      const res = await payWorkOrder(workOrderId, { payment_method: method, payment_stage: paymentStage });
       setResult(res.payment);
       setStep('submitted');
       if (method === 'paypal_card') {
         window.open(PAYPAL_PAYMENT_LINK, '_blank', 'noopener,noreferrer');
-        toastSuccess('Payment method confirmed. PayPal opened in a new tab. Please send the payment screenshot in Messages after payment.');
+        toastSuccess(`${isBalancePayment ? 'Balance' : 'Advance'} payment method confirmed. PayPal opened in a new tab. Please send the payment screenshot in Messages after payment.`);
       } else {
-        toastSuccess('Payment method confirmed. Please send the payment proof to the engineer in Messages after payment.');
+        toastSuccess(`${isBalancePayment ? 'Balance' : 'Advance'} payment method confirmed. Please send the payment proof in Messages after payment.`);
       }
       onPaid?.();
     } catch (e) {
@@ -83,7 +89,7 @@ export function PaymentModal({ isOpen, onClose, workOrderId, customerId, onPaid 
       <div className="relative flex max-h-[calc(100dvh-16px)] w-full max-w-md flex-col overflow-hidden rounded-xl border border-slate-200 bg-white text-slate-950 shadow-2xl sm:rounded-2xl">
         <div className="flex shrink-0 items-center justify-between gap-3 border-b border-slate-200 p-3 sm:p-4">
           <h2 className="min-w-0 truncate text-base font-semibold text-slate-950 sm:text-lg">
-            {step === 'processing' ? 'Confirming...' : step === 'submitted' ? 'Payment Follow-up' : 'Confirm Payment Method'}
+            {step === 'processing' ? 'Confirming...' : step === 'submitted' ? 'Payment Follow-up' : isBalancePayment ? 'Confirm Balance Payment' : 'Confirm Advance Payment'}
           </h2>
           <button onClick={onClose} className="rounded-lg p-1.5 text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-900">
             <X size={20} />
@@ -109,8 +115,12 @@ export function PaymentModal({ isOpen, onClose, workOrderId, customerId, onPaid 
               <h3 className="text-lg font-semibold text-slate-950">Payment method received</h3>
               <div className="space-y-1.5 rounded-xl bg-slate-50 p-3 text-left text-sm">
                 <div className="flex justify-between gap-3">
-                  <span className="text-slate-500">Amount</span>
+                  <span className="text-slate-500">{isBalancePayment ? 'Service Balance' : 'Advance Payment'}</span>
                   <span className="font-semibold text-slate-950">{result?.amount?.toLocaleString() || amount.toLocaleString()} {CURRENCY}</span>
+                </div>
+                <div className="flex justify-between gap-3">
+                  <span className="text-slate-500">{isBalancePayment ? 'Quote Total' : 'Service Balance'}</span>
+                  <span className="text-right text-slate-950">{(isBalancePayment ? (result?.quote_total_amount ?? paymentPolicy.subtotal) : (result?.balance_amount ?? balanceAmount)).toLocaleString()} {CURRENCY}</span>
                 </div>
                 <div className="flex justify-between gap-3">
                   <span className="text-slate-500">Payment Method</span>
@@ -136,7 +146,7 @@ export function PaymentModal({ isOpen, onClose, workOrderId, customerId, onPaid 
                   Open PayPal Payment Page
                 </a>
               )}
-              <p className="text-xs text-slate-500">Please complete payment, then send the bank slip or PayPal screenshot to the engineer in Messages. Service starts only after Admin confirms receipt.</p>
+              <p className="text-xs text-slate-500">{isBalancePayment ? 'Please complete the service balance payment, then send the bank slip or PayPal screenshot in Messages. Admin will confirm receipt and close the payment record.' : 'Please complete the advance payment, then send the bank slip or PayPal screenshot in Messages. The advance covers parts, dispatch preparation, and part of the service fee. Service starts only after Admin confirms receipt; the remaining balance is payable after completion.'}</p>
               <button onClick={onClose} className="w-full rounded-xl bg-amber-500 py-2.5 text-sm font-medium text-white hover:bg-amber-600">
                 Go to Messages
               </button>
@@ -149,8 +159,12 @@ export function PaymentModal({ isOpen, onClose, workOrderId, customerId, onPaid 
                   <span className="text-slate-950">{order?.order_no || workOrderId?.slice(0, 14)}</span>
                 </div>
                 <div className="flex justify-between border-t border-slate-200 pt-1.5">
-                  <span className="text-slate-500">Amount</span>
+                  <span className="text-slate-500">{isBalancePayment ? 'Service Balance' : 'Advance Payment'}</span>
                   <span className="text-lg font-bold text-slate-950">{amount.toLocaleString()} {CURRENCY}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-500">{isBalancePayment ? 'Quote Total' : 'Service Balance'}</span>
+                  <span className="text-slate-950">{(isBalancePayment ? (paymentPolicy.subtotal || 0) : balanceAmount).toLocaleString()} {CURRENCY}</span>
                 </div>
               </div>
 
@@ -189,7 +203,7 @@ export function PaymentModal({ isOpen, onClose, workOrderId, customerId, onPaid 
                 <Shield size={16} className="mt-0.5 flex-shrink-0 text-blue-600" />
                 <div className="text-xs text-blue-900">
                   <p className="mb-0.5 font-medium text-blue-950">Payment Notice</p>
-                  <p>TT users receive bank details. PayPal users will be sent to SAGEMRO's official PayPal payment page. After payment, send the proof screenshot in Messages.</p>
+                  <p>{isBalancePayment ? 'The service balance is due after the service report is submitted. Admin confirms receipt before the payment record is closed.' : 'The advance covers parts, engineer dispatch preparation, and part of the service fee. The remaining balance is payable after completion.'}</p>
                 </div>
               </div>
 
@@ -199,7 +213,7 @@ export function PaymentModal({ isOpen, onClose, workOrderId, customerId, onPaid 
                 className="flex w-full items-center justify-center gap-2 rounded-xl bg-amber-500 py-3 font-semibold text-white transition-colors hover:bg-amber-600 disabled:opacity-50"
               >
                 <Send size={20} />
-                {submitting ? 'Confirming...' : method === 'paypal_card' ? 'Continue with PayPal Instructions' : 'Request TT Instructions'}
+                {submitting ? 'Confirming...' : method === 'paypal_card' ? 'Continue with PayPal Instructions' : isBalancePayment ? 'Request Balance TT Instructions' : 'Request TT Instructions'}
               </button>
             </>
           )}

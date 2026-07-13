@@ -25,6 +25,7 @@ import {
   assignAdminWorkOrder,
   assignAdminWorkOrderRegionalLead,
   approveAdminWorkOrderPricing,
+  approveAdminWorkOrderBalance,
   approveAdminWorkOrderPaymentStart,
   archiveAdminWorkOrder,
   getAdminWorkOrder,
@@ -188,6 +189,11 @@ const TEXT = {
     approvePaymentStart: 'Confirm payment & start',
     paymentReviewTitle: 'Payment confirmation required',
     paymentReviewHint: 'Engineer has followed up payment. Confirm receipt before allowing service execution.',
+    balancePaymentTitle: 'Service balance confirmation required',
+    balancePaymentHint: 'The customer has requested the remaining service balance payment. Confirm receipt to settle the payment record.',
+    approveBalancePayment: 'Confirm balance received',
+    balancePaymentApproved: (orderNo) => `Service balance confirmed: ${orderNo}`,
+    balancePaymentApproveFailed: 'Failed to confirm service balance',
     archived: (orderNo) => `Archived: ${orderNo}`,
     archiveFailed: 'Archive failed',
     detailLoadFailed: 'Failed to load service order detail',
@@ -491,6 +497,25 @@ export function WorkOrdersPage() {
       setMessage(t.paymentStartApproved(wo.order_no));
     } catch (err) {
       setMessage(err.message || t.paymentStartApproveFailed);
+    } finally {
+      setAssigningId('');
+    }
+  }
+
+  async function handleApproveBalancePayment(wo) {
+    const note = window.prompt('Balance payment confirmation note (optional):') || '';
+    setAssigningId(`${wo.id}:balance-payment`);
+    setMessage('');
+    try {
+      await approveAdminWorkOrderBalance(wo.id, note);
+      setDetail((prev) => (
+        prev?.id === wo.id
+          ? { ...prev, balance_payment: prev.balance_payment ? { ...prev.balance_payment, status: 'completed' } : prev.balance_payment }
+          : prev
+      ));
+      setMessage(t.balancePaymentApproved(wo.order_no));
+    } catch (err) {
+      setMessage(err.message || t.balancePaymentApproveFailed);
     } finally {
       setAssigningId('');
     }
@@ -902,6 +927,26 @@ export function WorkOrdersPage() {
                         className="rounded-lg bg-[var(--color-primary)] px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
                       >
                         {t.approvePaymentStart}
+                      </button>
+                    </div>
+                  </section>
+                )}
+                {['instructions_requested', 'pending_admin_confirmation'].includes(detail.balance_payment?.status) && (
+                  <section className="rounded-xl border border-amber-500/40 bg-amber-500/5 p-4">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                      <div>
+                        <h4 className="font-medium text-[var(--color-text)]">{t.balancePaymentTitle}</h4>
+                        <p className="mt-1 text-sm text-[var(--color-text-secondary)]">{t.balancePaymentHint}</p>
+                        <p className="mt-2 text-xs text-[var(--color-text-muted)]">
+                          Amount: {detail.balance_payment.amount || detail.payment_policy?.balance_amount || 0} USD · Status: {detail.balance_payment.status}
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => handleApproveBalancePayment(detail)}
+                        disabled={assigningId === `${detail.id}:balance-payment`}
+                        className="rounded-lg bg-amber-500 px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
+                      >
+                        {t.approveBalancePayment}
                       </button>
                     </div>
                   </section>

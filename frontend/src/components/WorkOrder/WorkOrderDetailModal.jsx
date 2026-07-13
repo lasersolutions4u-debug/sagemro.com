@@ -17,6 +17,7 @@ import { MessagePanel } from './MessagePanel';
 import { EngineerPricingPanel, CustomerPricingPanel } from './PricingPanels';
 import { RepairRecordPanel } from './RepairRecordPanel';
 import { AttachmentsPanel } from './AttachmentsPanel';
+import { PaymentModal } from '../Payment/PaymentModal';
 import { formatCustomerDeviceLine } from '../../utils/workOrderDisplay';
 import { canEngineerViewCustomerContact, redactContactInfo } from '../../utils/contactRedaction';
 
@@ -80,6 +81,7 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
     region: '',
   });
   const [machineLeadSubmitting, setMachineLeadSubmitting] = useState(false);
+  const [balancePaymentOpen, setBalancePaymentOpen] = useState(false);
   const workOrderId = workOrder?.id;
 
   const loadDetail = useCallback(async () => {
@@ -285,6 +287,29 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
         </div>
       )}
 
+      {isCustomer && ['resolved', 'pending_review', 'completed'].includes(effectiveStatus) && Number(detail?.payment_policy?.balance_amount || 0) > 0 && (
+        <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-4">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h3 className="text-sm font-medium text-[var(--color-text-primary)]">Service balance</h3>
+              <p className="mt-1 text-xs text-[var(--color-text-secondary)]">
+                Remaining service balance: {detail.payment_policy.balance_amount} USD. Pay after the service report is submitted.
+              </p>
+            </div>
+            {detail?.balance_payment?.status === 'completed' ? (
+              <span className="rounded-full bg-green-500/10 px-3 py-1 text-xs font-semibold text-green-600">Payment confirmed</span>
+            ) : (
+              <button
+                onClick={() => setBalancePaymentOpen(true)}
+                className="shrink-0 rounded-lg bg-amber-500 px-3 py-2 text-sm font-medium text-white hover:bg-amber-600"
+              >
+                {detail?.balance_payment?.status === 'awaiting_customer' ? 'Pay service balance' : 'View balance payment'}
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
       <div className="p-4 bg-[var(--color-surface-elevated)] rounded-xl space-y-2">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <span className="break-all font-medium text-[var(--color-text-primary)]">{detail?.order_no || workOrder.id}</span>
@@ -408,11 +433,11 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
       {isEngineer && ['pending_payment', 'payment_review'].includes(effectiveStatus) && (
         <button
           onClick={async () => {
-            if (!(await confirmDialog('Request Admin approval to start service after payment follow-up?'))) return;
+            if (!(await confirmDialog('Request Admin approval to start service after advance payment follow-up?'))) return;
             setPaymentStartSubmitting(true);
             try {
-              await requestWorkOrderPaymentStart(workOrder.id, 'Engineer confirmed payment follow-up with the customer.');
-              toastSuccess('Start request sent to Admin for payment confirmation.');
+              await requestWorkOrderPaymentStart(workOrder.id, 'Engineer confirmed advance payment follow-up with the customer.');
+              toastSuccess('Start request sent to Admin for advance payment confirmation.');
               loadDetail();
               onConfirmed?.();
             } catch (e) {
@@ -425,7 +450,7 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
           className="w-full py-3 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] disabled:opacity-50 text-white rounded-xl font-medium"
         >
           {effectiveStatus === 'payment_review'
-            ? 'Waiting for Admin Payment Confirmation'
+            ? 'Waiting for Admin Advance Payment Confirmation'
             : paymentStartSubmitting ? 'Submitting...' : 'Request Admin Approval to Start'}
         </button>
       )}
@@ -734,6 +759,7 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
   );
 
   return (
+    <>
     <Modal isOpen={isOpen} onClose={onClose} title="Work Order Details" size="2xl">
       <div className="min-h-0">
         {/* Tab 切换 */}
@@ -796,5 +822,14 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
         )}
       </div>
     </Modal>
+    <PaymentModal
+      isOpen={balancePaymentOpen}
+      onClose={() => setBalancePaymentOpen(false)}
+      workOrderId={workOrderId}
+      customerId={userId}
+      paymentStage="balance"
+      onPaid={() => { setBalancePaymentOpen(false); loadDetail(); onConfirmed?.(); }}
+    />
+    </>
   );
 }

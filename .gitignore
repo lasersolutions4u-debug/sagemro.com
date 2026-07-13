@@ -54,3 +54,4 @@ __pycache__/
 
 # Misc
 *.bak
+worker/.codex-production-backups/
