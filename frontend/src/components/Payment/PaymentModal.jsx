@@ -191,7 +191,7 @@ export function PaymentModal({ isOpen, onClose, workOrderId, customerId, payment
       setOrder(orderRes);
       if (invoiceRes?.invoice_request) setExistingInvoice(invoiceRes.invoice_request);
     }).catch(() => {}).finally(() => setLoading(false));
-  }, [isOpen, paymentStage, workOrderId]);
+  }, [isCn, isOpen, paymentStage, workOrderId]);
 
   const paymentPolicy = pricing?.payment_policy || {};
   const amount = isBalancePayment
