@@ -706,11 +706,11 @@ export async function applyWithdraw(amount) {
 /**
  * 客户模拟付款
  */
-export async function payWorkOrder(workOrderId, { payment_method }) {
+export async function payWorkOrder(workOrderId, { payment_method, payment_stage = 'advance' }) {
   const response = await fetch(`${API_BASE}/api/workorders/${workOrderId}/pay`, {
     method: 'POST',
     headers: authHeaders(),
-    body: JSON.stringify({ payment_method }),
+    body: JSON.stringify({ payment_method, payment_stage }),
   });
   if (!response.ok) {
     const d = await response.json();
@@ -736,8 +736,9 @@ export async function requestWorkOrderPaymentStart(workOrderId, note = '') {
 /**
  * 获取工单付款记录
  */
-export async function getWorkOrderPayment(workOrderId) {
-  const response = await fetch(`${API_BASE}/api/workorders/${workOrderId}/payment`, {
+export async function getWorkOrderPayment(workOrderId, paymentStage = 'advance') {
+  const query = paymentStage ? `?payment_stage=${encodeURIComponent(paymentStage)}` : '';
+  const response = await fetch(`${API_BASE}/api/workorders/${workOrderId}/payment${query}`, {
     headers: authHeaders(),
   });
   if (!response.ok) throw new Error(`HTTP ${response.status}`);

@@ -149,8 +149,9 @@ function paymentStatusCopy(status, copy = COPY.en) {
   return map[status] || status || copy.status.fallback;
 }
 
-export function PaymentModal({ isOpen, onClose, workOrderId, customerId, onPaid }) {
+export function PaymentModal({ isOpen, onClose, workOrderId, customerId, paymentStage = 'advance', onPaid }) {
   const isCn = isCnLocale();
+  const isBalancePayment = paymentStage === 'balance';
   const copy = isCn ? COPY.cn : COPY.en;
   const paymentMethods = getPaymentMethods(isCn, copy);
   const [step, setStep] = useState('pay');
@@ -178,28 +179,31 @@ export function PaymentModal({ isOpen, onClose, workOrderId, customerId, onPaid 
 
     Promise.all([
       getWorkOrderPricing(workOrderId).catch(() => ({ pricing: null })),
-      getWorkOrderPayment(workOrderId).catch(() => ({ payment: null })),
+      getWorkOrderPayment(workOrderId, paymentStage).catch(() => ({ payment: null })),
       getWorkOrder(workOrderId).catch(() => null),
       isCn ? getInvoiceRequest(workOrderId).catch(() => ({ invoice_request: null })) : Promise.resolve({ invoice_request: null }),
     ]).then(([pricingRes, paymentRes, orderRes, invoiceRes]) => {
       if (paymentRes?.payment) {
-        setStep('submitted');
+        setStep(paymentRes.payment.status === 'awaiting_customer' ? 'pay' : 'submitted');
         setResult(paymentRes.payment);
       }
       setPricing(pricingRes?.pricing || null);
       setOrder(orderRes);
       if (invoiceRes?.invoice_request) setExistingInvoice(invoiceRes.invoice_request);
     }).catch(() => {}).finally(() => setLoading(false));
-  }, [isOpen, workOrderId]);
+  }, [isOpen, paymentStage, workOrderId]);
 
-  const amount = pricing?.total_amount || pricing?.subtotal || 0;
+  const paymentPolicy = pricing?.payment_policy || {};
+  const amount = isBalancePayment
+    ? paymentPolicy.balance_amount || 0
+    : paymentPolicy.advance_amount ?? pricing?.total_amount ?? pricing?.subtotal ?? 0;
   const MethodIcon = paymentMethods.find(m => m.id === method)?.icon || Building2;
 
   const handlePay = async () => {
     setSubmitting(true);
     setStep('processing');
     try {
-      const res = await payWorkOrder(workOrderId, { payment_method: method });
+      const res = await payWorkOrder(workOrderId, { payment_method: method, payment_stage: paymentStage });
       setResult(res.payment);
       setStep('submitted');
       if (method === 'paypal_card') {
@@ -209,7 +213,7 @@ export function PaymentModal({ isOpen, onClose, workOrderId, customerId, onPaid 
         toastSuccess(copy.bankToast);
       }
       onPaid?.();
-      if (isCn) setShowInvoiceForm(true);
+      if (isCn && !isBalancePayment) setShowInvoiceForm(true);
     } catch (e) {
       toastError(copy.errorToast + e.message);
       setStep('pay');

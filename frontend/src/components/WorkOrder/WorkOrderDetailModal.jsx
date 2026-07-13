@@ -30,6 +30,7 @@ import { MessagePanel } from './MessagePanel';
 import { EngineerPricingPanel, CustomerPricingPanel } from './PricingPanels';
 import { RepairRecordPanel } from './RepairRecordPanel';
 import { AttachmentsPanel } from './AttachmentsPanel';
+import { PaymentModal } from '../Payment/PaymentModal';
 import { formatCustomerDeviceLine, formatServiceTextForLocale } from '../../utils/workOrderDisplay';
 import { canEngineerViewCustomerContact, redactContactInfo } from '../../utils/contactRedaction';
 import { isCnLocale } from '../../utils/locale';
@@ -311,6 +312,7 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
     region: '',
   });
   const [machineLeadSubmitting, setMachineLeadSubmitting] = useState(false);
+  const [balancePaymentOpen, setBalancePaymentOpen] = useState(false);
   const workOrderId = workOrder?.id;
 
   const loadDetail = useCallback(async () => {
@@ -613,6 +615,24 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
           />
         </div>
       )}
+
+      {isCustomer && ['resolved', 'pending_review', 'completed'].includes(effectiveStatus) && Number(detail?.payment_policy?.balance_amount || 0) > 0 && renderSection(isCn ? '服务尾款' : 'Service Balance', (
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="text-sm text-[var(--color-text-secondary)]">
+            {isCn ? `完工后服务尾款：${detail.payment_policy.balance_amount} CNY` : `Remaining service balance: ${detail.payment_policy.balance_amount} ${CURRENCY}`}
+          </div>
+          {detail?.balance_payment?.status === 'completed' ? (
+            <span className="rounded-full bg-green-500/10 px-3 py-1 text-xs font-semibold text-green-600">{isCn ? '已确认收款' : 'Payment confirmed'}</span>
+          ) : (
+            <button
+              onClick={() => setBalancePaymentOpen(true)}
+              className="rounded-lg bg-[var(--color-primary)] px-3 py-2 text-sm font-medium text-white"
+            >
+              {detail?.balance_payment?.status === 'awaiting_customer' ? (isCn ? '支付服务尾款' : 'Pay service balance') : (isCn ? '查看尾款付款' : 'View balance payment')}
+            </button>
+          )}
+        </div>
+      ))}
 
       {/* 工程师：标记服务完成 */}
       {isEngineer && (effectiveStatus === 'in_service' || effectiveStatus === 'pricing') && (
@@ -975,6 +995,7 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
   );
 
   return (
+    <>
     <Modal isOpen={isOpen} onClose={onClose} title={copy.modalTitle} size="2xl">
       <div className="min-h-0">
         {/* Tab 切换 */}
@@ -1037,5 +1058,14 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
         )}
       </div>
     </Modal>
+    <PaymentModal
+      isOpen={balancePaymentOpen}
+      onClose={() => setBalancePaymentOpen(false)}
+      workOrderId={workOrderId}
+      customerId={userId}
+      paymentStage="balance"
+      onPaid={() => { setBalancePaymentOpen(false); loadDetail(); onConfirmed?.(); }}
+    />
+    </>
   );
 }

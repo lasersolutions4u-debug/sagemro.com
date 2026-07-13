@@ -469,11 +469,17 @@ export function CustomerPricingPanel({ workOrderId, customerId, onConfirmed }) {
         <div className="space-y-3">
           <div className="p-3 bg-green-500/10 border border-green-500/30 rounded-xl text-center text-sm text-green-500">            {t.customer.quoteConfirmed}
           </div>
+          {pricing.payment_policy && (
+            <div className="rounded-xl bg-[var(--color-surface-elevated)] p-3 text-sm text-[var(--color-text-secondary)]">
+              <div className="flex justify-between"><span>{isCnLocale() ? '服务前预付款' : 'Advance payment before service'}</span><span>{pricing.payment_policy.advance_amount || 0} {CURRENCY}</span></div>
+              <div className="mt-1 flex justify-between"><span>{isCnLocale() ? '完工后服务尾款' : 'Service balance after completion'}</span><span>{pricing.payment_policy.balance_amount || 0} {CURRENCY}</span></div>
+            </div>
+          )}
           <button
             onClick={() => setPaymentOpen(true)}
             className="w-full py-3 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white rounded-xl font-semibold text-sm transition-colors"
           >
-            {t.customer.payment((pricing.total_amount || pricing.subtotal || 0).toLocaleString())}
+            {t.customer.payment((pricing.payment_policy?.advance_amount ?? pricing.total_amount ?? pricing.subtotal ?? 0).toLocaleString())}
           </button>
         </div>
       )}
@@ -484,6 +490,7 @@ export function CustomerPricingPanel({ workOrderId, customerId, onConfirmed }) {
         onClose={() => setPaymentOpen(false)}
         workOrderId={workOrderId}
         customerId={customerId}
+        paymentStage="advance"
         onPaid={() => { setPaymentOpen(false); onConfirmed?.('messages'); load(); }}
       />
     </div>
