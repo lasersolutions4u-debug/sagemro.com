@@ -524,16 +524,47 @@ function App() {
           )}
         </Suspense>
       </ErrorBoundary>
-      <CustomerHomeModal
-        isOpen={customerHomeModalOpen}
-        onClose={() => setCustomerHomeModalOpen(false)}
-        currentUser={currentUser}
-        userType={userType}
-      />
-      <AboutModal
-        isOpen={aboutModalOpen}
-        onClose={() => setAboutModalOpen(false)}
-      />
+      <ErrorBoundary>
+        <Suspense fallback={null}>
+          {customerHomeModalOpen && (
+            <CustomerHomeModal
+              isOpen={customerHomeModalOpen}
+              onClose={() => setCustomerHomeModalOpen(false)}
+              currentUser={currentUser}
+              userType={userType}
+            />
+          )}
+          {aboutModalOpen && (
+            <AboutModal
+              isOpen={aboutModalOpen}
+              onClose={() => setAboutModalOpen(false)}
+            />
+          )}
+          {myDevicesOpen && (
+            <MyDevicesModal
+              isOpen={myDevicesOpen}
+              onClose={() => setMyDevicesOpen(false)}
+              currentUser={currentUser}
+              userType={userType}
+            />
+          )}
+          {notificationsOpen && (
+            <NotificationModal
+              isOpen={notificationsOpen}
+              onClose={() => setNotificationsOpen(false)}
+              onUnreadCountChange={handleUnreadCountChange}
+              onOpenWorkOrderDetail={handleOpenWorkOrderDetail}
+            />
+          )}
+          {legalModalOpen && (
+            <LegalModal
+              isOpen={legalModalOpen}
+              onClose={() => setLegalModalOpen(false)}
+              initialTab={legalInitialTab}
+            />
+          )}
+        </Suspense>
+      </ErrorBoundary>
       {loginModalOpen && (
         <LoginModal
           isOpen={loginModalOpen}
@@ -566,24 +597,6 @@ function App() {
           )}
         </Suspense>
       </ErrorBoundary>
-      <MyDevicesModal
-        isOpen={myDevicesOpen}
-        onClose={() => setMyDevicesOpen(false)}
-        currentUser={currentUser}
-        userType={userType}
-      />
-      <NotificationModal
-        isOpen={notificationsOpen}
-        onClose={() => setNotificationsOpen(false)}
-        onUnreadCountChange={handleUnreadCountChange}
-        onOpenWorkOrderDetail={handleOpenWorkOrderDetail}
-      />
-      <LegalModal
-        isOpen={legalModalOpen}
-        onClose={() => setLegalModalOpen(false)}
-        initialTab={legalInitialTab}
-      />
-
       {/* 推送通知 Banner（工程师在线时收到推送） */}
       {userType === 'engineer' && (
         <PushNotificationBanner

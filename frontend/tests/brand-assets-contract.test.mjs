@@ -382,6 +382,11 @@ test('client shell moves conversation history into a modal and exposes industry 
   assert.match(app, /<IndustryToolsModal/);
   assert.match(app, /<IndustryToolsPage/);
   assert.match(app, /<InsightsPage/);
+  assert.match(app, /customerHomeModalOpen &&/);
+  assert.match(app, /aboutModalOpen &&/);
+  assert.match(app, /myDevicesOpen &&/);
+  assert.match(app, /notificationsOpen &&/);
+  assert.match(app, /legalModalOpen &&/);
   assert.match(chatHistory, /Conversation History/);
   assert.match(chatHistory, /Search conversations/);
   assert.doesNotMatch(industryToolsModal, /<IndustryToolCalculator/);
