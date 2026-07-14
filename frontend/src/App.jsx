@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect, useRef, lazy, Suspense } from 'react';
 import { ErrorBoundary } from './components/common/ErrorBoundary';
 import { Footer } from './components/common/Footer';
+import { NotFoundPage } from './components/common/NotFoundPage';
 import { Sidebar } from './components/Sidebar/Sidebar';
 import { ChatHistory } from './components/Sidebar/ChatHistory';
 import { ChatArea } from './components/Chat/ChatArea';
@@ -366,7 +367,13 @@ function App() {
     );
   }
 
-  if (currentPath === '/tools' || currentPath.startsWith('/tools/')) {
+  const isToolsPath = currentPath === '/tools' || currentPath.startsWith('/tools/');
+  const isInsightsPath = currentPath === '/insights' || currentPath.startsWith('/insights/');
+  if (currentPath !== '/' && !isToolsPath && !isInsightsPath) {
+    return <NotFoundPage isCn={isCn} />;
+  }
+
+  if (isToolsPath) {
     return (
       <ErrorBoundary>
         <Suspense fallback={null}>
@@ -382,7 +389,7 @@ function App() {
     );
   }
 
-  if (currentPath === '/insights' || currentPath.startsWith('/insights/')) {
+  if (isInsightsPath) {
     return (
       <ErrorBoundary>
         <Suspense fallback={null}>

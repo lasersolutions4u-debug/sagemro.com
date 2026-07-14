@@ -198,6 +198,15 @@ test('customer sidebar tools stay expanded without a More overflow menu', () => 
   assert.doesNotMatch(toolbar, /MoreHorizontal|sidebar-more-button|showCollapsed|setCollapsed|showMore|moreMenuRef/);
 });
 
+test('mobile sidebar keeps labels visible and names customer work-order actions clearly', () => {
+  const sidebar = read('frontend/src/components/Sidebar/Sidebar.jsx');
+
+  assert.match(sidebar, /max-lg:w-full max-lg:justify-start max-lg:px-2/);
+  assert.match(sidebar, /group-hover:block max-lg:block/);
+  assert.match(sidebar, /label: isCn \? '发起工单'/);
+  assert.match(sidebar, /label: isCn \? '我的工单'/);
+});
+
 test('assigned work orders expose quote preparation instead of only cancellation', () => {
   const detailModal = read('frontend/src/components/WorkOrder/WorkOrderDetailModal.jsx');
 

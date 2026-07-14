@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { BrandMark } from '../common/BrandMark';
 import { Footer } from '../common/Footer';
+import { NotFoundPage } from '../common/NotFoundPage';
 import { IndustryToolCalculator } from './IndustryToolCalculator';
 import {
   defaultIndustryToolForms,
@@ -123,6 +124,10 @@ export function IndustryToolsPage({ pathname = '/tools', onOpenLegal }) {
     setMeta('description', pageDescription);
     setCanonical(selectedTool ? `/tools/${selectedTool.slug}` : '/tools', canonicalHost);
   }, [canonicalHost, pageDescription, pageTitle, selectedTool]);
+
+  if (slug && !rawSelectedTool) {
+    return <NotFoundPage isCn={locale === 'zh-CN'} />;
+  }
 
   if (!selectedTool) {
     return <ToolsHub copy={copy} locale={locale} onOpenLegal={onOpenLegal} />;
@@ -267,12 +272,12 @@ function ToolDetail({ tool, copy, locale, values, onChange, onOpenLegal }) {
         </div>
 
         <section className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
-          <div>
+          <div className="min-w-0">
             <div className="inline-flex items-center gap-2 rounded-lg border border-[#263238] bg-[#111820] px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-white">
               <Calculator size={14} className="text-[var(--color-primary)]" />
               {copy.detailEyebrow}
             </div>
-            <h1 className="mt-4 break-keep text-3xl font-semibold leading-[1.08] text-[var(--color-text-primary)] sm:text-[2.75rem]">
+            <h1 className="mt-4 break-words text-3xl font-semibold leading-[1.08] text-[var(--color-text-primary)] sm:text-[2.75rem]">
               {tool.seoTitle}
             </h1>
             <p className="mt-4 max-w-3xl text-sm leading-7 text-[var(--color-text-secondary)] sm:text-base">

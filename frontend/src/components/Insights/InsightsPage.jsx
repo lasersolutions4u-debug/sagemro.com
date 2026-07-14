@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { ArrowLeft, BookOpen, Calculator, Newspaper } from 'lucide-react';
 import { BrandMark } from '../common/BrandMark';
 import { Footer } from '../common/Footer';
+import { NotFoundPage } from '../common/NotFoundPage';
 import { getLocalizedInsight, getLocalizedInsights } from '../../data/insights';
 import { isCnLocale } from '../../utils/locale';
 
@@ -71,6 +72,10 @@ export function InsightsPage({ pathname = '/insights', onOpenLegal }) {
     setMeta('description', description);
     setCanonical(insight ? `/insights/${insight.slug}` : '/insights', canonicalHost);
   }, [canonicalHost, copy, insight]);
+
+  if (slug && !insight) {
+    return <NotFoundPage isCn={locale === 'zh-CN'} />;
+  }
 
   if (insight) {
     return <InsightDetail copy={copy} insight={insight} onOpenLegal={onOpenLegal} />;

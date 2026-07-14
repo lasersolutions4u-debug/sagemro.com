@@ -1,1 +1,5 @@
-/* /index.html 200
+/tools /index.html 200
+/tools/* /index.html 200
+/insights /index.html 200
+/insights/* /index.html 200
+/* /404.html 404
