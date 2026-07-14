@@ -79,13 +79,15 @@ jobs:
           echo "RELEASE_ID=${RELEASE_ID}" >> "$GITHUB_ENV"
           echo "PACKAGE_NAME=${PACKAGE_NAME}" >> "$GITHUB_ENV"
 
-          mkdir -p release/frontend release/admin
+          mkdir -p release/frontend release/admin release/ops
           cp -a frontend/dist/. release/frontend/
           cp -a admin/dist/. release/admin/
+          cp ops/enable_nginx_http2.py release/ops/
           tar -czf "$PACKAGE_NAME" -C release .
 
           test -f release/frontend/index.html
           test -f release/admin/index.html
+          test -f release/ops/enable_nginx_http2.py
 
       - name: Setup Aliyun CLI
         uses: aliyun/setup-aliyun-cli-action@v1
@@ -182,6 +184,7 @@ jobs:
             "$ALIYUN_ECS_USER@$ALIYUN_ECS_HOST:/tmp/$PACKAGE_NAME"
 
       - name: Activate release
+        id: activate
         env:
           ALIYUN_ECS_HOST: ${{ secrets.ALIYUN_ECS_HOST }}
           ALIYUN_ECS_PORT: ${{ secrets.ALIYUN_ECS_PORT }}
@@ -209,22 +212,61 @@ jobs:
           test -f "$release/frontend/index.html"
           test -f "$release/admin/index.html"
 
+          backup_root="/var/backups/sagemro-nginx"
+          release_state="$backup_root/${RELEASE_ID}.release"
+          nginx_backup="$backup_root/${RELEASE_ID}.tgz"
+          performance_conf="/etc/nginx/conf.d/sagemro-cn-performance.conf"
+          performance_backup="$backup_root/${RELEASE_ID}.performance.conf"
+          performance_missing_marker="$backup_root/${RELEASE_ID}.performance.missing"
+
+          $SUDO mkdir -p "$backup_root"
+          capture_previous_target() {
+            link_path="$1"
+            if $SUDO test -L "$link_path" || $SUDO test -e "$link_path"; then
+              readlink -f "$link_path"
+            else
+              printf '__MISSING__'
+            fi
+          }
+
+          previous_frontend="$(capture_previous_target "$current/frontend")"
+          previous_engineer="$(capture_previous_target "$current/engineer")"
+          previous_admin="$(capture_previous_target "$current/admin")"
+          printf '%s\n' "$previous_frontend" "$previous_engineer" "$previous_admin" | $SUDO tee "$release_state" > /dev/null
+
+          if $SUDO test -e "$performance_conf"; then
+            $SUDO cp -a "$performance_conf" "$performance_backup"
+            $SUDO rm -f "$performance_missing_marker"
+          else
+            $SUDO touch "$performance_missing_marker"
+          fi
+
+          nginx_config_files="$($SUDO grep -RIlE 'server_name[^;]*sagemro\.cn' /etc/nginx/sites-enabled /etc/nginx/conf.d 2>/dev/null \
+            | while IFS= read -r nginx_config_file; do readlink -f "$nginx_config_file"; done \
+            | sort -u || true)"
+          if [ -z "$nginx_config_files" ]; then
+            echo "Unable to locate the active sagemro.cn Nginx server configuration." >&2
+            exit 1
+          fi
+          $SUDO tar -czf "$nginx_backup" $nginx_config_files
+
           $SUDO ln -sfnT "$release/frontend" "$current/frontend"
           $SUDO ln -sfnT "$release/frontend" "$current/engineer"
           $SUDO ln -sfnT "$release/admin" "$current/admin"
 
-          performance_conf="/etc/nginx/conf.d/sagemro-cn-performance.conf"
           $SUDO tee "$performance_conf" > /dev/null <<'NGINX'
-          map $request_uri $sagemro_asset_cache_control {
+          map "$host:$request_uri" $sagemro_asset_cache_control {
             default "";
-            ~^/assets/ "public, max-age=31536000, immutable";
-            ~^/sagemro-logo\.png$ "public, max-age=86400";
+            ~^((www\.)?sagemro\.cn|admin\.sagemro\.cn|engineer\.sagemro\.cn):/assets/ "public, max-age=31536000, immutable";
+            ~^((www\.)?sagemro\.cn|admin\.sagemro\.cn|engineer\.sagemro\.cn):/sagemro-logo\.png$ "public, max-age=86400";
+            ~^((www\.)?sagemro\.cn|admin\.sagemro\.cn|engineer\.sagemro\.cn):/ "no-cache";
           }
 
           gzip_types text/plain text/css application/javascript application/json application/xml image/svg+xml font/woff2;
           add_header Cache-Control $sagemro_asset_cache_control always;
           NGINX
 
+          $SUDO python3 "$release/ops/enable_nginx_http2.py" $nginx_config_files
           $SUDO nginx -t
           $SUDO systemctl reload nginx
 
@@ -232,12 +274,127 @@ jobs:
           REMOTE_SCRIPT
 
       - name: Health checks
+        id: health
         run: |
           set -euo pipefail
           curl -fsS --retry 3 --retry-delay 2 https://sagemro.cn/ >/dev/null
           curl -fsS --retry 3 --retry-delay 2 https://admin.sagemro.cn/ >/dev/null
           curl -fsS --retry 3 --retry-delay 2 https://engineer.sagemro.cn/ >/dev/null
           curl -fsS --retry 3 --retry-delay 2 https://api.sagemro.cn/health >/dev/null
+
+          for site_host in sagemro.cn admin.sagemro.cn engineer.sagemro.cn; do
+            site_url="https://${site_host}"
+            http_version="$(curl -fsS --http2 -o /dev/null -w '%{http_version}' "$site_url/")"
+            if [ "$http_version" != "2" ]; then
+              echo "::error::${site_host} negotiated HTTP/$http_version instead of HTTP/2"
+              exit 1
+            fi
+
+            root_headers="$(curl -fsS -D - -o /dev/null "$site_url/" | tr -d '\r')"
+            grep -Eqi '^cache-control:.*no-cache' <<< "$root_headers" || {
+              echo "::error::${site_host} HTML is missing the no-cache policy"
+              exit 1
+            }
+
+            page_html="$(curl -fsS "$site_url/")"
+            asset_path="$(sed -n 's/.*src="\([^"]*\/assets\/index-[^"]*\.js\)".*/\1/p' <<< "$page_html" | head -1)"
+            if [ -z "$asset_path" ]; then
+              echo "::error::Unable to locate the ${site_host} entry asset"
+              exit 1
+            fi
+
+            asset_headers="$(curl --compressed -fsS -D - -o /dev/null "${site_url}${asset_path}" | tr -d '\r')"
+            grep -qi '^content-encoding: gzip$' <<< "$asset_headers" || {
+              echo "::error::${site_host} JavaScript is not gzip compressed"
+              exit 1
+            }
+
+            asset_cache_control="$(grep -i '^cache-control:' <<< "$asset_headers" | sed 's/^[^:]*:[[:space:]]*//' | tr '[:upper:]' '[:lower:]' | tr '\n' ',')"
+            public_found=false
+            immutable_found=false
+            max_age_count=0
+            cache_conflict=false
+            IFS=',' read -ra cache_directives <<< "$asset_cache_control"
+            for cache_directive in "${cache_directives[@]}"; do
+              cache_directive="$(xargs <<< "$cache_directive")"
+              case "$cache_directive" in
+                public) public_found=true ;;
+                immutable) immutable_found=true ;;
+                max-age=31536000) max_age_count=$((max_age_count + 1)) ;;
+                max-age=*|s-maxage=*|private|no-cache|no-store) cache_conflict=true ;;
+              esac
+            done
+            if [ "$public_found" != "true" ] || [ "$immutable_found" != "true" ] || [ "$max_age_count" -ne 1 ] || [ "$cache_conflict" = "true" ]; then
+              echo "::error::${site_host} JavaScript has invalid cache directives: ${asset_cache_control}"
+              exit 1
+            fi
+          done
+
+      - name: Roll back failed China release
+        if: ${{ always() && (steps.activate.outcome == 'failure' || steps.health.outcome == 'failure') }}
+        env:
+          ALIYUN_ECS_HOST: ${{ secrets.ALIYUN_ECS_HOST }}
+          ALIYUN_ECS_PORT: ${{ secrets.ALIYUN_ECS_PORT }}
+          ALIYUN_ECS_USER: ${{ secrets.ALIYUN_ECS_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i ~/.ssh/aliyun_ecs -p "$ALIYUN_ECS_PORT" \
+            -o StrictHostKeyChecking=yes \
+            "$ALIYUN_ECS_USER@$ALIYUN_ECS_HOST" \
+            "RELEASE_ID='$RELEASE_ID' bash -s" <<'REMOTE_SCRIPT'
+          set -euo pipefail
+
+          current="/var/www/sagemro-cn/current"
+          backup_root="/var/backups/sagemro-nginx"
+          release_state="$backup_root/${RELEASE_ID}.release"
+          nginx_backup="$backup_root/${RELEASE_ID}.tgz"
+          performance_conf="/etc/nginx/conf.d/sagemro-cn-performance.conf"
+          performance_backup="$backup_root/${RELEASE_ID}.performance.conf"
+          performance_missing_marker="$backup_root/${RELEASE_ID}.performance.missing"
+
+          SUDO=""
+          if [ "$(id -u)" -ne 0 ]; then
+            SUDO="sudo"
+          fi
+
+          if ! $SUDO test -f "$release_state"; then
+            echo "No activation state found; nothing to roll back."
+            exit 0
+          fi
+
+          mapfile -t previous_releases < <($SUDO cat "$release_state")
+          if [ "${#previous_releases[@]}" -lt 3 ]; then
+            echo "Activation state is incomplete; refusing an unsafe rollback." >&2
+            exit 1
+          fi
+
+          if $SUDO test -f "$nginx_backup"; then
+            $SUDO tar -xzf "$nginx_backup" -C /
+          fi
+          if $SUDO test -f "$performance_backup"; then
+            $SUDO cp -a "$performance_backup" "$performance_conf"
+          elif $SUDO test -f "$performance_missing_marker"; then
+            $SUDO rm -f "$performance_conf"
+          fi
+
+          restore_link() {
+            previous_target="$1"
+            link_path="$2"
+            if [ "$previous_target" = "__MISSING__" ]; then
+              $SUDO rm -f "$link_path"
+            else
+              $SUDO ln -sfnT "$previous_target" "$link_path"
+            fi
+          }
+
+          restore_link "${previous_releases[0]}" "$current/frontend"
+          restore_link "${previous_releases[1]}" "$current/engineer"
+          restore_link "${previous_releases[2]}" "$current/admin"
+
+          $SUDO nginx -t
+          $SUDO systemctl reload nginx
+          echo "Rolled back failed release: ${RELEASE_ID}"
+          REMOTE_SCRIPT
 
       - name: Revoke GitHub runner SSH
         if: always()
