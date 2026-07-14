@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { ArrowLeft, BookOpen, Calculator, Newspaper } from 'lucide-react';
 import { BrandMark } from '../common/BrandMark';
 import { Footer } from '../common/Footer';
+import { NotFoundPage } from '../common/NotFoundPage';
 import { getInsightBySlug, insights } from '../../data/insights';
 
 function setMeta(name, content) {
@@ -37,6 +38,10 @@ export function InsightsPage({ pathname = '/insights', onOpenLegal }) {
     setMeta('description', description);
     setCanonical(insight ? `/insights/${insight.slug}` : '/insights');
   }, [insight]);
+
+  if (slug && !insight) {
+    return <NotFoundPage />;
+  }
 
   if (insight) {
     return <InsightDetail insight={insight} onOpenLegal={onOpenLegal} />;

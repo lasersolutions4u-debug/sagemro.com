@@ -69,6 +69,24 @@ export default function App() {
   const [activePage, setActivePage] = useState('dashboard');
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
+  if (window.location.pathname !== '/') {
+    const isCn = runtimeConfig.locale === 'zh-CN';
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-[var(--color-bg)] px-5 text-[var(--color-text-primary)]">
+        <div className="w-full max-w-md rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6 text-center shadow-xl">
+          <div className="text-xs font-semibold uppercase tracking-[0.24em] text-[var(--color-primary)]">404</div>
+          <h1 className="mt-3 text-2xl font-semibold">{isCn ? '页面不存在' : 'Page not found'}</h1>
+          <p className="mt-3 text-sm leading-6 text-[var(--color-text-secondary)]">
+            {isCn ? '你访问的页面不存在，或者链接已经失效。' : 'The page you requested does not exist or the link has expired.'}
+          </p>
+          <a href="/" className="mt-6 inline-flex rounded-xl bg-[var(--color-primary)] px-4 py-2.5 text-sm font-medium text-white">
+            {isCn ? '返回管理后台' : 'Back to Admin'}
+          </a>
+        </div>
+      </main>
+    );
+  }
+
   const handleLogout = () => {
     localStorage.removeItem('admin_token');
     localStorage.removeItem('admin_user');

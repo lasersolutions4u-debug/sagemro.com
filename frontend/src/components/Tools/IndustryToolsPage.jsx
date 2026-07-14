@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { BrandMark } from '../common/BrandMark';
 import { Footer } from '../common/Footer';
+import { NotFoundPage } from '../common/NotFoundPage';
 import { IndustryToolCalculator } from './IndustryToolCalculator';
 import {
   defaultIndustryToolForms,
@@ -21,6 +22,7 @@ import {
   materialDensities,
   shapeProfiles,
 } from '../../data/industryTools';
+import { isCnLocale } from '../../utils/locale';
 
 const toolIcons = {
   'metal-weight': Scale,
@@ -68,6 +70,10 @@ export function IndustryToolsPage({ pathname = '/tools', onOpenLegal }) {
     setMeta('description', pageDescription);
     setCanonical(selectedTool ? `/tools/${selectedTool.slug}` : '/tools');
   }, [pageDescription, pageTitle, selectedTool]);
+
+  if (slug && !selectedTool) {
+    return <NotFoundPage isCn={isCnLocale()} />;
+  }
 
   if (!selectedTool) {
     return <ToolsHub onOpenLegal={onOpenLegal} />;
@@ -199,12 +205,12 @@ function ToolDetail({ tool, values, onChange, onOpenLegal }) {
         </a>
 
         <section className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
-          <div>
+          <div className="min-w-0">
             <div className="inline-flex items-center gap-2 rounded-lg border border-[#263238] bg-[#111820] px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-white">
               <Calculator size={14} className="text-[var(--color-primary)]" />
               Free industry calculator
             </div>
-            <h1 className="mt-4 text-3xl font-semibold leading-tight text-[var(--color-text-primary)] sm:text-5xl">
+            <h1 className="mt-4 break-words text-3xl font-semibold leading-tight text-[var(--color-text-primary)] sm:text-5xl">
               {tool.seoTitle}
             </h1>
             <p className="mt-4 max-w-3xl text-sm leading-7 text-[var(--color-text-secondary)] sm:text-base">
