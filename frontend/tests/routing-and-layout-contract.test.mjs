@@ -29,6 +29,23 @@ test('CN tool detail titles wrap on narrow screens and reject unknown slugs', ()
   assert.match(insights, /slug && !insight/);
 });
 
+test('work order modal shrink-wraps short content instead of filling the viewport', () => {
+  const modal = read('frontend/src/components/common/Modal.jsx');
+
+  assert.doesNotMatch(modal, /min-h-0 flex-1 overflow-y-auto/);
+  assert.match(modal, /min-h-0 overflow-y-auto/);
+});
+
+test('customer site location distinguishes current position from map selection', () => {
+  const workOrderModal = read('frontend/src/components/Sidebar/WorkOrderModal.jsx');
+
+  assert.match(workOrderModal, /locateSite: '使用我的当前位置'/);
+  assert.match(workOrderModal, /currentLocationHint: '仅当您目前位于设备现场时使用'/);
+  assert.match(workOrderModal, /mapLocationCaptured: '设备位置已在地图中确认'/);
+  assert.match(workOrderModal, /form\.service_mode !== 'remote' && \(/);
+  assert.doesNotMatch(workOrderModal, /service_accuracy_m \|\| 0/);
+});
+
 test('frontend build keeps modulepreload dependencies enabled', () => {
   const viteConfig = read('frontend/vite.config.js');
 

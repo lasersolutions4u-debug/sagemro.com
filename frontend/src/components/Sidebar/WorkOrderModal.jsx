@@ -65,14 +65,17 @@ const WORK_ORDER_COPY = {
     },
     serviceAddress: 'Customer Site Address',
     serviceAddressPlaceholder: 'Enter the exact service site, gate, building, or workshop address',
-    locateSite: 'Confirm site location',
+    locateSite: 'Use my current location',
     locatingSite: 'Getting location...',
-    locationCaptured: 'Site location captured',
-    locationRequired: 'On-site service requires the customer site address and location',
+    currentLocationHint: 'Use this only when you are currently at the equipment site',
+    currentLocationCaptured: 'Current location recorded',
+    mapLocationCaptured: 'Equipment location confirmed on the map',
+    locationAccuracy: (value) => `Location accuracy about ±${value} m`,
+    locationRequired: 'On-site service requires an address and a location confirmed by map or current position',
     locationFailed: 'Unable to get location. Please allow browser location access and try again.',
-    searchLocation: 'Search address',
+    searchLocation: 'Choose equipment location on map',
     searchingLocation: 'Searching...',
-    mapSearchResults: 'Select a map result to confirm the service point',
+    mapSearchResults: 'Select the correct equipment location',
     noLocationResults: 'No matching locations found',
     equipmentModel: 'Equipment Model / Part No.',
     modelPlaceholder: 'e.g. C3015 3000W, BM111, nozzle 1.5S, press brake tooling size',
@@ -132,14 +135,17 @@ const WORK_ORDER_COPY = {
     },
     serviceAddress: '客户现场地址',
     serviceAddressPlaceholder: '请填写准确的服务地址、厂区入口、楼栋或车间信息',
-    locateSite: '确认现场定位',
+    locateSite: '使用我的当前位置',
     locatingSite: '正在获取定位...',
-    locationCaptured: '现场定位已获取',
-    locationRequired: '现场服务需要提供客户现场地址和定位',
+    currentLocationHint: '仅当您目前位于设备现场时使用',
+    currentLocationCaptured: '当前位置已记录',
+    mapLocationCaptured: '设备位置已在地图中确认',
+    locationAccuracy: (value) => `定位精度约 ±${value} 米`,
+    locationRequired: '上门服务需要填写现场地址，并通过地图选点或当前位置确认设备位置',
     locationFailed: '无法获取定位，请允许浏览器使用定位后重试。',
-    searchLocation: '搜索地址',
+    searchLocation: '在地图中选择设备位置',
     searchingLocation: '搜索中...',
-    mapSearchResults: '请选择地图结果确认服务点位',
+    mapSearchResults: '请选择正确的设备位置',
     noLocationResults: '没有找到匹配的地址',
     equipmentModel: '设备型号 / 规格',
     modelPlaceholder: '例如：C3015 3000W',
@@ -551,6 +557,7 @@ export function WorkOrderModal({ isOpen, onClose, onSubmit }) {
           </div>
         </div>
 
+        {form.service_mode !== 'remote' && (
         <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-elevated)] p-3 space-y-3">
           <label className="block text-sm font-medium text-[var(--color-text-primary)]">
             {copy.serviceAddress} {form.service_mode === 'onsite' && <span className="text-red-500">*</span>}
@@ -587,12 +594,14 @@ export function WorkOrderModal({ isOpen, onClose, onSubmit }) {
               type="button"
               onClick={captureSiteLocation}
               disabled={locating}
+              title={copy.currentLocationHint}
               className="inline-flex items-center gap-2 rounded-xl border border-[var(--color-border)] px-3 py-2 text-sm text-[var(--color-text-primary)] hover:border-[var(--color-primary)] disabled:opacity-50"
             >
               {locating ? <Loader2 size={16} className="animate-spin" /> : <LocateFixed size={16} />}
               {locating ? copy.locatingSite : copy.locateSite}
             </button>
           </div>
+          <p className="text-xs text-[var(--color-text-muted)]">{copy.currentLocationHint}</p>
           {locationResults.length > 0 && (
             <div className="space-y-2 rounded-xl border border-[var(--color-border)] p-2">
               <p className="text-xs text-[var(--color-text-muted)]">{copy.mapSearchResults}</p>
@@ -609,9 +618,14 @@ export function WorkOrderModal({ isOpen, onClose, onSubmit }) {
             </div>
           )}
           {form.service_latitude !== null && form.service_longitude !== null && (
-            <p className="text-xs text-green-600">{copy.locationCaptured} · ±{Math.round(form.service_accuracy_m || 0)} m</p>
+            <p className="text-xs text-green-600">
+              {form.service_location_source === 'customer_browser'
+                ? `${copy.currentLocationCaptured}${form.service_accuracy_m !== null ? ` · ${copy.locationAccuracy(Math.round(form.service_accuracy_m))}` : ''}`
+                : copy.mapLocationCaptured}
+            </p>
           )}
         </div>
+        )}
 
         {/* 设备规格型号 */}
         <div>

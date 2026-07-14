@@ -44,7 +44,7 @@ export function Modal({ isOpen, onClose, title, children, size = 'md' }) {
               </button>
             </div>
             {/* 内容 */}
-            <div className="min-h-0 flex-1 overflow-y-auto p-3 sm:p-4">
+            <div className="min-h-0 overflow-y-auto p-3 sm:p-4">
               {children}
             </div>
           </Motion.div>
