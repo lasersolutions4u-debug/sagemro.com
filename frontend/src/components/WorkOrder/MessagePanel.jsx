@@ -73,7 +73,8 @@ function MediaGrid({ urls = [], isMe }) {
 }
 
 export function MessagePanel({ workOrderId, userType }) {
-  const copy = isCnLocale() ? COPY.cn : COPY.en;
+  const isCn = isCnLocale();
+  const copy = isCn ? COPY.cn : COPY.en;
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
@@ -182,7 +183,11 @@ export function MessagePanel({ workOrderId, userType }) {
                   {msg.content && <div className="whitespace-pre-wrap">{redactContactInfo(formatServiceTextForLocale(msg.content, isCnLocale() ? 'zh-CN' : 'en'))}</div>}
                   <MediaGrid urls={attachmentUrls} isMe={isMe} />
                   <div className={`text-xs mt-1 ${isMe ? 'text-white/50 text-right' : 'text-[var(--color-text-muted)]'}`}>
-                    {new Date(msg.created_at).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
+                    {new Date(msg.created_at).toLocaleTimeString(isCn ? 'zh-CN' : 'en-US', {
+                      hour: '2-digit',
+                      minute: '2-digit',
+                      hour12: !isCn,
+                    })}
                   </div>
                 </div>
               </div>

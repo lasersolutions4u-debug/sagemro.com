@@ -78,6 +78,8 @@ test('CN service detail workflow localizes customer-visible secondary UI', () =>
   assert.match(messagePanel, /暂无消息/);
   assert.match(messagePanel, /输入消息/);
   assert.match(messagePanel, /添加图片或视频/);
+  assert.match(messagePanel, /toLocaleTimeString\(isCn \? 'zh-CN' : 'en-US'/);
+  assert.match(messagePanel, /hour12: !isCn/);
 
   assert.match(repairRecord, /暂无服务报告/);
   assert.match(repairRecord, /客户描述/);
