@@ -59,14 +59,14 @@ export function Sidebar({
   const tools = [...baseTools, ...(isEngineer ? engineerTools : customerTools)];
 
   const rail = (
-    <aside className="group flex h-full w-[72px] flex-col items-center overflow-hidden border-r border-[var(--color-border)] bg-[var(--color-sidebar)] px-2 py-3 transition-all duration-200 ease-in-out hover:w-[220px] max-lg:w-[220px]">
-      <BrandMark className="mb-3 h-10 w-10 shadow-sm" />
-      <div className="flex w-full flex-1 flex-col items-center gap-2 max-lg:items-stretch">
+    <aside className="flex h-full w-[184px] flex-col items-stretch overflow-hidden border-r border-[var(--color-border)] bg-[var(--color-sidebar)] px-2 py-3">
+      <BrandMark className="mb-3 h-10 w-10 self-center shadow-sm" />
+      <div className="flex w-full flex-1 flex-col items-stretch gap-2">
         {tools.map((tool) => (
           <RailButton key={tool.label} tool={tool} onClick={() => { tool.onClick?.(); onClose?.(); }} />
         ))}
       </div>
-      <div className="flex w-full flex-col items-center gap-2 border-t border-[var(--color-border)] pt-3 max-lg:items-stretch">
+      <div className="flex w-full flex-col items-stretch gap-2 border-t border-[var(--color-border)] pt-3">
         {currentUser ? (
           <>
             <RailButton
@@ -115,10 +115,10 @@ function RailButton({ tool, onClick }) {
         href={tool.href}
         title={tool.label}
         data-testid={tool.testid || `tool-${tool.label}`}
-        className="relative flex h-11 w-11 items-center justify-center gap-2 rounded-2xl text-[var(--color-sidebar-muted)] transition-all duration-200 hover:bg-[var(--color-sidebar-surface)] hover:text-[var(--color-sidebar-text)] group-hover:w-full group-hover:justify-start group-hover:px-2 max-lg:w-full max-lg:justify-start max-lg:px-2"
+        className="relative flex h-11 w-full items-center justify-start gap-2 rounded-lg px-2 text-[var(--color-sidebar-muted)] transition-colors duration-200 hover:bg-[var(--color-sidebar-surface)] hover:text-[var(--color-sidebar-text)]"
       >
         <Icon size={20} className="shrink-0" />
-        <span className="hidden whitespace-nowrap text-xs group-hover:block max-lg:block">{tool.label}</span>
+        <span className="min-w-0 truncate whitespace-nowrap text-xs">{tool.label}</span>
       </a>
     );
   }
@@ -129,14 +129,14 @@ function RailButton({ tool, onClick }) {
       title={tool.label}
       data-testid={tool.testid || `tool-${tool.label}`}
       onClick={onClick}
-      className={`relative flex h-11 w-11 items-center justify-center gap-2 rounded-2xl transition-all duration-200 group-hover:w-full group-hover:justify-start group-hover:px-2 max-lg:w-full max-lg:justify-start max-lg:px-2 ${
+      className={`relative flex h-11 w-full items-center justify-start gap-2 rounded-lg px-2 transition-colors duration-200 ${
         tool.primary
           ? 'bg-[var(--color-primary)] text-white hover:bg-[var(--color-primary-hover)]'
           : 'text-[var(--color-sidebar-muted)] hover:bg-[var(--color-sidebar-surface)] hover:text-[var(--color-sidebar-text)]'
       }`}
     >
       <Icon size={20} className="shrink-0" />
-      <span className="hidden whitespace-nowrap text-xs group-hover:block max-lg:block">{tool.label}</span>
+      <span className="min-w-0 truncate whitespace-nowrap text-xs">{tool.label}</span>
       {tool.badge > 0 && (
         <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-medium text-white">
           {tool.badge > 99 ? '99+' : tool.badge}

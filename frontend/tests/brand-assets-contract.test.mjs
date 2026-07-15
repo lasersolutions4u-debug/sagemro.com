@@ -198,11 +198,15 @@ test('customer sidebar tools stay expanded without a More overflow menu', () => 
   assert.doesNotMatch(toolbar, /MoreHorizontal|sidebar-more-button|showCollapsed|setCollapsed|showMore|moreMenuRef/);
 });
 
-test('mobile sidebar keeps labels visible and names customer work-order actions clearly', () => {
+test('sidebar stays fixed on desktop and remains a dismissible mobile drawer', () => {
   const sidebar = read('frontend/src/components/Sidebar/Sidebar.jsx');
+  const chatArea = read('frontend/src/components/Chat/ChatArea.jsx');
 
-  assert.match(sidebar, /max-lg:w-full max-lg:justify-start max-lg:px-2/);
-  assert.match(sidebar, /group-hover:block max-lg:block/);
+  assert.match(sidebar, /w-\[184px\]/);
+  assert.doesNotMatch(sidebar, /hover:w-\[|group-hover:/);
+  assert.match(sidebar, /fixed inset-0 z-30 bg-black\/50 lg:hidden/);
+  assert.match(sidebar, /isOpen \? 'translate-x-0' : '-translate-x-full'/);
+  assert.match(chatArea, /className="lg:hidden p-2/);
   assert.match(sidebar, /label: isCn \? '发起工单'/);
   assert.match(sidebar, /label: isCn \? '我的工单'/);
 });
@@ -379,7 +383,7 @@ test('client shell moves conversation history into a modal and exposes industry 
   assert.match(sidebar, /Insights/);
   assert.match(sidebar, /href: '\/insights'/);
   assert.match(sidebar, /tool-insights/);
-  assert.match(sidebar, /w-\[72px\]/);
+  assert.match(sidebar, /w-\[184px\]/);
   assert.doesNotMatch(sidebar, /<ChatHistory/);
   assert.match(app, /historyModalOpen/);
   assert.match(app, /industryToolsOpen/);
