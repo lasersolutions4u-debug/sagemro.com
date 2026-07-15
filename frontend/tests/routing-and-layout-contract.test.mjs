@@ -29,11 +29,12 @@ test('CN tool detail titles wrap on narrow screens and reject unknown slugs', ()
   assert.match(insights, /slug && !insight/);
 });
 
-test('work order modal shrink-wraps short content instead of filling the viewport', () => {
+test('work order modal uses one full-height scroll surface without trailing blank space', () => {
   const modal = read('frontend/src/components/common/Modal.jsx');
 
-  assert.doesNotMatch(modal, /min-h-0 flex-1 overflow-y-auto/);
-  assert.match(modal, /min-h-0 overflow-y-auto/);
+  assert.match(modal, /overflow-y-auto/);
+  assert.doesNotMatch(modal, /flex flex-col/);
+  assert.doesNotMatch(modal, /min-h-0 overflow-y-auto/);
 });
 
 test('customer site location distinguishes current position from map selection', () => {
