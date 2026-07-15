@@ -406,7 +406,7 @@ const TEXT = {
     conflictFallback: '存在冲突',
     noQuote: '暂无报价',
     approve: '批准',
-    approveFullOrder: '批准完整订单',
+    approveFullOrder: '批准报价',
     return: '退回',
     returnQuote: '退回报价',
     viewQuoteDetail: '审核完整订单',

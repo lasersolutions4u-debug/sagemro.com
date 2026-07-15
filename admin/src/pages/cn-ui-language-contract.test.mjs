@@ -15,6 +15,8 @@ test('CN admin service orders avoid hard-coded English detail labels', () => {
   assert.match(source, /'zh-CN': \{/);
   assert.match(source, /serviceRecordLabel: '服务记录'/);
   assert.match(source, /engineerPayoutTitle: '工程师服务费结算'/);
+  assert.match(source, /approveFullOrder: '批准报价'/);
+  assert.doesNotMatch(source, /approveFullOrder: '批准完整订单'/);
   assert.match(source, /payoutFields: \{/);
   assert.doesNotMatch(source, />Service Record</);
   assert.doesNotMatch(source, />Engineer service payment</);
