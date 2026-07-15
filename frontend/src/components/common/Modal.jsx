@@ -29,10 +29,10 @@ export function Modal({ isOpen, onClose, title, children, size = 'md' }) {
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.95, y: 20 }}
             transition={{ duration: 0.2 }}
-            className={`fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[calc(100vw-16px)] sm:w-[calc(100vw-32px)] ${sizeClasses[size] || sizeClasses.md} max-h-[calc(100dvh-16px)] sm:max-h-[90vh] overflow-hidden bg-[var(--color-surface)] rounded-xl sm:rounded-2xl shadow-2xl z-50 flex flex-col`}
+            className={`fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[calc(100vw-16px)] sm:w-[calc(100vw-32px)] ${sizeClasses[size] || sizeClasses.md} max-h-[calc(100dvh-16px)] sm:max-h-[90vh] overflow-y-auto bg-[var(--color-surface)] rounded-xl sm:rounded-2xl shadow-2xl z-50`}
           >
             {/* 头部 */}
-            <div className="flex shrink-0 items-center justify-between gap-3 p-3 sm:p-4 border-b border-[var(--color-border)]">
+            <div className="sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-[var(--color-border)] bg-[var(--color-surface)] p-3 sm:p-4">
               <h2 className="min-w-0 truncate text-base sm:text-lg font-medium text-[var(--color-text-primary)]">
                 {title}
               </h2>
@@ -44,7 +44,7 @@ export function Modal({ isOpen, onClose, title, children, size = 'md' }) {
               </button>
             </div>
             {/* 内容 */}
-            <div className="min-h-0 flex-1 overflow-y-auto p-3 sm:p-4">
+            <div className="p-3 sm:p-4">
               {children}
             </div>
           </Motion.div>

@@ -210,6 +210,16 @@ test('sidebar stays fixed on desktop and remains a dismissible mobile drawer', (
   assert.match(sidebar, /label: isCn \? '我的工单'/);
 });
 
+test('shared modal uses one scroll surface without a trailing blank area', () => {
+  const modal = read('frontend/src/components/common/Modal.jsx');
+
+  assert.match(modal, /max-h-\[calc\(100dvh-16px\)\][\s\S]*overflow-y-auto/);
+  assert.doesNotMatch(modal, /z-50 flex flex-col/);
+  assert.match(modal, /sticky top-0 z-10/);
+  assert.match(modal, /<div className="p-3 sm:p-4">/);
+  assert.doesNotMatch(modal, /<div className="min-h-0 overflow-y-auto/);
+});
+
 test('assigned work orders expose quote preparation instead of only cancellation', () => {
   const detailModal = read('frontend/src/components/WorkOrder/WorkOrderDetailModal.jsx');
 
