@@ -1144,7 +1144,7 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
       workOrderId={workOrderId}
       customerId={userId}
       paymentStage="balance"
-      onPaid={() => { setBalancePaymentOpen(false); loadDetail(); onConfirmed?.(); }}
+      onPaid={() => { setBalancePaymentOpen(false); setTab('messages'); loadDetail(); onConfirmed?.(); }}
     />
     </>
   );

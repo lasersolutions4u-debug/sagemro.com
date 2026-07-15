@@ -31,6 +31,7 @@ test('CN primary customer UI avoids English-only modal and conversation copy', (
 test('CN notifications and payment modals expose Chinese customer-facing copy', () => {
   const notifications = read('frontend/src/components/Notification/NotificationModal.jsx');
   const payment = read('frontend/src/components/Payment/PaymentModal.jsx');
+  const cnMethods = payment.match(/function cnPaymentMethods\(\) \{([\s\S]*?)\n\}/)?.[1] || '';
 
   assert.match(notifications, /isCnLocale/);
   assert.match(notifications, /通知/);
@@ -39,10 +40,15 @@ test('CN notifications and payment modals expose Chinese customer-facing copy', 
   assert.doesNotMatch(notifications, /title="Notifications"/);
 
   assert.match(payment, /isCnLocale/);
-  assert.match(payment, /确认付款方式/);
-  assert.match(payment, /付款方式已收到/);
-  assert.match(payment, /前往消息/);
-  assert.match(payment, /电汇/);
+  assert.match(payment, /titlePay: '线下付款'/);
+  assert.match(payment, /received: '已通知工程师'/);
+  assert.match(payment, /goMessages: '前往消息并发送水单'/);
+  assert.match(payment, /confirmBank: '付款成功通知工程师'/);
+  assert.match(payment, /请通过上方对公账户完成线下付款/);
+  assert.match(cnMethods, /bank_transfer/);
+  assert.doesNotMatch(cnMethods, /paypal/i);
+  assert.match(payment, /!isCn && result\?\.payment_method === 'paypal_card'/);
+  assert.doesNotMatch(payment, /confirmBank: '申请 TT 电汇说明'/);
 });
 
 test('CN service list localizes visible service request labels', () => {
@@ -72,6 +78,7 @@ test('CN service detail workflow localizes customer-visible secondary UI', () =>
   assert.match(detailModal, /故障描述/);
   assert.match(detailModal, /AI 分析/);
   assert.match(detailModal, /取消服务请求/);
+  assert.match(detailModal, /setBalancePaymentOpen\(false\); setTab\('messages'\)/);
   assert.doesNotMatch(detailModal, /title="Work Order Details"/);
 
   assert.match(messagePanel, /isCnLocale/);

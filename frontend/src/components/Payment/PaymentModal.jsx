@@ -21,7 +21,7 @@ const CN_BANK_INFO = {
 
 function cnPaymentMethods() {
   return [
-    { id: 'bank_transfer', label: '公对公转账', icon: Building2, desc: '对公账户收款信息如下，请通过网银或柜台转账，转账后请在消息中发送付款凭证给工程师。' },
+    { id: 'bank_transfer', label: '公对公转账', icon: Building2, desc: '请通过网银或柜台向下方对公账户转账。付款成功后点击底部按钮，再前往消息发送付款水单。' },
   ];
 }
 
@@ -86,37 +86,33 @@ const COPY = {
   },
   cn: {
     methods: [
-      { id: 'bank_transfer', label: '银行电汇 / TT', desc: '申请收款信息后，请在消息中把银行付款凭证发送给工程师。' },
-      { id: 'paypal_card', label: 'PayPal / 信用卡或借记卡', desc: '通过官方 PayPal 页面付款后，请在消息中发送付款截图。' },
+      { id: 'bank_transfer', label: '公对公转账', desc: '请通过网银或柜台向对公账户转账，付款后在消息中发送水单。' },
     ],
     status: {
-      instructions_requested: '已申请付款说明',
+      instructions_requested: '已通知工程师，等待核对付款凭证',
       pending_admin_confirmation: '等待 Admin 确认收款',
       completed: 'SAGEMRO 已确认收款',
       fallback: '等待付款跟进',
     },
-    titleProcessing: '确认中...',
+    titleProcessing: '正在通知工程师...',
     titleSubmitted: '付款跟进',
-    titlePay: '确认付款方式',
+    titlePay: '线下付款',
     loading: '加载中...',
-    confirming: '正在确认付款方式...',
-    received: '付款方式已收到',
+    confirming: '正在通知工程师...',
+    received: '已通知工程师',
     amount: '金额',
     paymentMethod: '付款方式',
     statusLabel: '状态',
     orderNo: '工单号',
-    bankFallback: '银行电汇',
-    openPaypal: '打开 PayPal 付款页面',
-    followup: '请完成付款后，在消息中把银行凭证或 PayPal 截图发送给工程师。Admin 确认收款后再开始服务。',
-    goMessages: '前往消息',
-    selectMethod: '选择付款方式',
+    bankFallback: '公对公转账',
+    followup: '已通知工程师。请前往消息发送付款水单，工程师核对后将提交 Admin 确认收款。',
+    goMessages: '前往消息并发送水单',
+    selectMethod: '付款方式',
     noticeTitle: '付款说明',
-    noticeBody: '选择电汇会获得收款信息；选择 PayPal 会打开 SAGEMRO 官方 PayPal 付款页面。付款后请在消息中发送凭证截图。',
-    confirmPaypal: '继续查看 PayPal 付款说明',
-    confirmBank: '申请 TT 电汇说明',
-    paypalToast: '付款方式已确认。PayPal 已在新标签页打开，付款后请在消息中发送付款截图。',
-    bankToast: '付款方式已确认。付款后请在消息中把付款凭证发送给工程师。',
-    errorToast: '付款方式确认失败：',
+    noticeBody: '请通过上方对公账户完成线下付款。付款成功后点击下方按钮通知工程师，再前往消息发送付款水单。',
+    confirmBank: '付款成功通知工程师',
+    bankToast: '已通知工程师，请前往消息发送付款水单。',
+    errorToast: '通知工程师失败：',
     invoiceTitle: '申请开具发票',
     invoiceDesc: '需要开具增值税发票吗？请填写贵司开票信息。',
     invoiceBtn: '提交开票申请',
@@ -292,7 +288,7 @@ export function PaymentModal({ isOpen, onClose, workOrderId, customerId, payment
                   <span className="text-slate-950">{order?.order_no || workOrderId?.slice(0, 14)}</span>
                 </div>
               </div>
-              {result?.payment_method === 'paypal_card' && (
+              {!isCn && result?.payment_method === 'paypal_card' && (
                 <a
                   href={PAYPAL_PAYMENT_LINK}
                   target="_blank"
