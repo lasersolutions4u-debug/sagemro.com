@@ -143,7 +143,7 @@ test('CN legacy engineer dashboard modal localizes dispatch labels', () => {
   assert.match(dashboard, /查看我的资料/);
   assert.match(dashboard, /可服务状态/);
   assert.match(dashboard, /已派工服务任务/);
-  assert.match(dashboard, /确认派工/);
+  assert.match(dashboard, /接受派工/);
   assert.match(dashboard, /退回派工/);
   assert.doesNotMatch(dashboard, /title="SAGEMRO Internal Engineer Workspace"/);
 });

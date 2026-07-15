@@ -61,7 +61,7 @@ const COPY = {
     urgent: '紧急',
     critical: '高风险',
     customer: '客户',
-    confirmAssignment: '确认派工',
+    confirmAssignment: '接受派工',
     returnDispatch: '退回派工',
     empty: '暂无需要处理的服务派工',
     loading: '加载中...',

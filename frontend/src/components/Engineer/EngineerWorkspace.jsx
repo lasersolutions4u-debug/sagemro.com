@@ -227,7 +227,7 @@ const WORKSPACE_COPY = {
     pendingRegionalAssignment: '等待区域派工',
     viewTask: '查看 / 处理任务',
     confirming: '确认中',
-    confirmAssignment: '确认派工',
+    confirmAssignment: '接受派工',
     returning: '退回中',
     returnToDispatch: '退回派工',
     conflictCheck: '冲突检查',
@@ -256,7 +256,7 @@ const WORKSPACE_COPY = {
     nextActions: {
       pending: '等待 SAGEMRO 派工审核。',
       pending_dispatch: '区域负责人需要分配合适的工程师。',
-      assigned: '确认派工，或填写原因退回。',
+      assigned: '接受派工，或填写原因退回。',
       in_progress: '准备报价、现场计划和客户沟通。',
       pricing: '提交或更新报价，等待 Admin 审核。',
       pending_payment: '跟进客户付款，并在付款后请求 Admin 批准开始服务。',
