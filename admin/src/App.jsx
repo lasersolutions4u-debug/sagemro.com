@@ -44,7 +44,7 @@ const TEXT = {
       materials: '物料管理',
       knowledge: '知识库',
       engineers: '工程师',
-      users: '客户与工程师',
+      users: '客户',
       ratings: '评价管理',
     },
   },

@@ -59,7 +59,7 @@ const STATUS_LABELS_CN = {
 
 const CHECKLIST = [
   'Confirm customer issue, machine model, site contact, and arrival window',
-  'Review the SAGEMRO AI intake summary and flag safety risks',
+  'Review the customer request summary and flag safety risks',
   'Check spare parts, tools, consumables, and protective equipment',
   'Record nameplate, alarm screen, and fault area photos on site',
   'Document service actions, parts replacement, and follow-up recommendations',
@@ -68,7 +68,7 @@ const CHECKLIST = [
 
 const CHECKLIST_CN = [
   '确认客户问题、设备型号、现场联系人和到场时间',
-  '查看 SAGEMRO AI 整理的接单摘要，并标记安全风险',
+  '核对客户需求摘要，并标记安全风险',
   '检查备件、工具、耗材和防护用品',
   '现场记录铭牌、报警画面和故障区域照片',
   '记录服务动作、配件更换和后续建议',
@@ -151,7 +151,7 @@ const WORKSPACE_COPY = {
     noActiveTask: 'No active task selected.',
     preparationTitle: 'Job Preparation',
     preparationFor: (orderNo) => `Preparation for ${orderNo}`,
-    aiIntakeSummary: 'AI Intake Summary',
+    aiIntakeSummary: 'Service Request Summary',
     equipmentRecord: 'Customer Equipment Record',
     selectTaskHint: 'Select a service task to review customer issue, machine record, and preparation notes.',
     checklistTitle: 'Service Standard Checklist',
@@ -245,7 +245,7 @@ const WORKSPACE_COPY = {
     noActiveTask: '暂无选中的任务。',
     preparationTitle: '服务准备',
     preparationFor: (orderNo) => `${orderNo} 的服务准备`,
-    aiIntakeSummary: 'AI 接单摘要',
+    aiIntakeSummary: '工单信息摘要',
     equipmentRecord: '客户设备档案',
     selectTaskHint: '选择一个服务任务，查看客户问题、设备档案和准备要点。',
     checklistTitle: '服务标准检查清单',

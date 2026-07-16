@@ -163,7 +163,7 @@ test('CN recruiting and shared overlays localize secondary labels', () => {
   const feedbackUtils = read('frontend/src/utils/feedback.js');
 
   assert.match(recruiting, /为什么加入 SAGEMRO/);
-  assert.match(recruiting, /派工前资料更完整/);
+  assert.match(recruiting, /派工前查看资料/);
   assert.match(recruiting, /建立信任后/);
   assert.match(recruiting, /removeLabel=\{copy\.removeTag \|\| 'Remove'\}/);
   assert.match(recruiting, /aria-label=\{copy\.closeApplication \|\| 'Close application form'\}/);

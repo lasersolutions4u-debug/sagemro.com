@@ -30,7 +30,7 @@ const insightsCopy = {
   en: {
     hubTitle: 'SAGEMRO Insights for Laser Cutting and Sheet Metal Equipment',
     hubDescription: 'Practical notes, calculators, and decision guides for laser cutting, bending, materials, and sheet metal equipment.',
-    back: 'Back to SAGEMRO AI',
+    back: 'Back to service',
     eyebrow: 'SAGEMRO Insights',
     h1: 'Practical notes for machine decisions, service risk, and shop-floor planning.',
     intro: 'Short, checkable guides connected to the calculators and AI workspace. The goal is to clarify assumptions before service, purchasing, or production decisions.',
@@ -43,7 +43,7 @@ const insightsCopy = {
   'zh-CN': {
     hubTitle: 'SAGEMRO 洞察：激光切割、折弯和钣金设备',
     hubDescription: '面向激光切割、折弯、材料和钣金设备的实务说明、计算工具和判断参考。',
-    back: '返回 SAGEMRO AI',
+    back: '返回服务首页',
     eyebrow: 'SAGEMRO 洞察',
     h1: '关于设备判断、服务风险和车间规划的实务说明。',
     intro: '这些简短、可检查的内容会连接计算器和 AI 工作区，帮助你在服务、采购或生产决策前先把假设说清楚。',

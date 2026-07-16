@@ -171,7 +171,7 @@ export function AIToolsPanel({ onSendMessage }) {
   const handleAgentStart = () => {
     const prompt = isCn
       ? `请启动 ${activeTool.title}。先让我自然描述问题，再提取结构化字段、识别缺失信息、给出安全克制的初步反馈，并为 ${activeTool.leadType} 准备一段便于人工复核的下一步摘要。`
-      : `Start ${activeTool.title} as a SAGEMRO Service OS agent. First ask me to describe the problem naturally. Then auto-extract structured fields, identify missing information, provide safe preliminary feedback, and prepare a neutral reviewed next-step summary for ${activeTool.leadType}.`;
+      : `Start ${activeTool.title} as a SAGEMRO service assistant. First ask me to describe the problem naturally. Then extract structured fields, identify missing information, provide safe preliminary feedback, and prepare a neutral next-step summary for ${activeTool.leadType}.`;
     onSendMessage(prompt);
   };
 

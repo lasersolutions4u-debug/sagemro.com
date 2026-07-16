@@ -29,18 +29,18 @@ export function ChatArea({
 
   const hasMessages = messages.length > 0;
   const isCn = isCnLocale();
-  const serviceName = isCn ? 'SAGEMRO 智能服务系统' : 'SAGEMRO Service OS';
+  const serviceName = isCn ? 'SAGEMRO 设备服务平台' : 'SAGEMRO Equipment Service';
   const pageTitle = hasMessages
     ? (currentTitle || (isCn ? '服务对话' : 'Service conversation'))
     : serviceName;
   const subtitle = isCn
-    ? '面向激光切割与钣金设备的第三方智能服务入口'
-    : 'Independent service intelligence for laser cutting and sheet metal equipment';
+    ? '激光切割与钣金设备服务入口'
+    : 'Service support for laser cutting and sheet metal equipment';
   const aboutLabel = isCn ? '关于 SAGEMRO' : 'About SAGEMRO';
-  const homeLabel = isCn ? '返回首页' : 'Service OS Home';
+  const homeLabel = isCn ? '返回首页' : 'Back to start';
   const aiNotice = isCn
-    ? 'AI 用于快速梳理问题。最终诊断、报价和现场安全要求需经 SAGEMRO 服务流程确认。'
-    : 'AI helps organize the case faster. Final diagnosis, quote, and site safety requirements are confirmed through the SAGEMRO service process.';
+    ? '系统整理结果仅用于前期沟通。最终诊断、报价和现场安全要求需经 SAGEMRO 服务流程确认。'
+    : 'System-generated guidance is for initial review. Final diagnosis, quotes, and site safety requirements must be confirmed through the SAGEMRO service process.';
   const detailsLabel = isCn ? '详情' : 'Details';
 
   return (

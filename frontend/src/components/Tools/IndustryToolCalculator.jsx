@@ -182,13 +182,13 @@ export function IndustryToolCalculator({ tool, values, onChange, onSendMessage, 
         eyebrow: '免费行业工具',
         profileNote: '型材说明',
         marketReferences: '市场参考',
-        reviewButton: '让 SAGEMRO AI 帮我复核这个结果',
+        reviewButton: '在服务对话中复核这个结果',
       }
     : {
         eyebrow: 'Free industry tool',
         profileNote: 'Profile note',
         marketReferences: 'Market references',
-        reviewButton: 'Ask SAGEMRO AI to review this result',
+        reviewButton: 'Review this result in service chat',
       };
   const fields = getFieldsForTool(tool.id, currentValues, profiles, locale);
 

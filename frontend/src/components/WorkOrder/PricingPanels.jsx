@@ -27,7 +27,7 @@ const PRICING_COPY = {
       confirmed: 'Confirmed',
     },
     priceCheck: {
-      reasonable: 'According to SAGEMRO AI market research, this price is within a reasonable range.',
+      reasonable: 'Based on current market reference data, this price is within the expected range.',
       high: 'Price is on the high side',
       low: 'Price is on the low side',
     },
@@ -74,7 +74,7 @@ const PRICING_COPY = {
       confirmed: '已确认',
     },
     priceCheck: {
-      reasonable: '根据 SAGEMRO AI 市场参考，这个价格处在合理区间。',
+      reasonable: '根据当前市场参考数据，这个价格处在合理区间。',
       high: '价格偏高',
       low: '价格偏低',
     },

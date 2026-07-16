@@ -61,7 +61,7 @@ const toolsPageCopy = {
   en: {
     hubTitle: 'Free Sheet Metal and Laser Cutting Calculators',
     hubDescription: 'Use free SAGEMRO calculators for metal weight, steel price planning, laser cutting cost, gas use, speed reference, bending, ROI, and auxiliary sizing.',
-    back: 'Back to SAGEMRO AI',
+    back: 'Back to service',
     eyebrow: 'Shop-floor tools',
     h1: 'Free tools for sheet metal, laser cutting, bending, ROI, and auxiliary planning.',
     intro: 'Start with numbers you can check: material weight, reference budget, cutting time, assist gas, bending assumptions, equipment ROI, and support equipment needs. Each tool keeps assumptions visible so you can review the next decision with better context.',
@@ -84,7 +84,7 @@ const toolsPageCopy = {
   'zh-CN': {
     hubTitle: '钣金、激光切割和折弯行业工具',
     hubDescription: '使用 SAGEMRO 行业工具估算材料重量、钢材预算、激光切割成本、辅助气体用量、切割速度、折弯、设备 ROI 和辅机选型参考。',
-    back: '返回 SAGEMRO AI',
+    back: '返回服务首页',
     eyebrow: '行业工具',
     h1: '钣金、切割、折弯与设备规划工具。',
     intro: '先从可检查的数据开始：材料重量、预算参考、切割时间、辅助气体、折弯假设、设备 ROI 和辅机需求。每个工具都会把假设列出来，方便你再做下一步判断。',

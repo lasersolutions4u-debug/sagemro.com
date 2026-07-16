@@ -67,9 +67,9 @@ test('main site first-impression copy keeps CN and COM market language separate'
   const engineerRecruiting = read('frontend/src/components/Engineer/EngineerRecruitingPage.jsx');
 
   assert.match(welcome, /Describe the machine issue/);
-  assert.match(welcome, /organize symptoms, risks, and next-step options/);
-  assert.match(welcome, /before any service or purchasing decision/);
-  assert.match(welcome, /Clear facts first/);
+  assert.match(welcome, /The system organizes the details/);
+  assert.match(welcome, /before requesting service, parts, or further assessment/);
+  assert.match(welcome, /Review the facts before deciding what to do/);
   assert.match(welcome, /BM111 alarm/);
   assert.match(welcome, /burrs on stainless steel/);
   assert.match(welcome, /href: '\/tools'/);
@@ -80,8 +80,8 @@ test('main site first-impression copy keeps CN and COM market language separate'
   assert.doesNotMatch(welcome, /Machine selection|new-machine evaluation/);
   assert.doesNotMatch(welcome, /supports international customers with independent after-sales service, spare parts, consumables/);
   assert.match(welcome, /先描述设备问题/);
-  assert.match(welcome, /再决定是否需要人工服务、备件或进一步评估/);
-  assert.match(about, /helps customers and engineers organize machine symptoms/);
+  assert.match(welcome, /便于你判断是否需要维修、备件或进一步检查/);
+  assert.match(about, /service workspace for recording machine symptoms/i);
   assert.match(about, /What The Chat Can Help Clarify/);
   assert.doesNotMatch(about, /One Chat, Six Service Outcomes/);
   assert.doesNotMatch(about, /sales request/i);
@@ -93,8 +93,9 @@ test('main site first-impression copy keeps CN and COM market language separate'
   assert.doesNotMatch(footer, /operated by Jinan Euchio Machinery|由济南钰峭机械有限公司运营/);
   assert.match(footer, /鲁ICP备2026032904号-1/);
   assert.match(footer, /https:\/\/beian\.miit\.gov\.cn\//);
-  assert.match(engineerRecruiting, /SAGEMRO 智能服务系统 · 认证服务代表计划/);
-  assert.doesNotMatch(engineerRecruiting, /badge: 'SAGEMRO Service OS · 认证服务代表计划'/);
+  assert.match(engineerRecruiting, /SAGEMRO 工程师合作计划/);
+  assert.match(engineerRecruiting, /SAGEMRO Engineer Partner Program/);
+  assert.doesNotMatch(engineerRecruiting, /智能服务系统|Certified Representative Program/);
 });
 
 test('AI tool copy keeps service preparation neutral instead of sales routing', () => {
@@ -105,7 +106,7 @@ test('AI tool copy keeps service preparation neutral instead of sales routing', 
   assert.match(aiTools, /Service Cost Reference AI/);
   assert.match(aiTools, /Maintenance Risk Review AI/);
   assert.match(aiTools, /service request preparation or admin review/);
-  assert.match(aiPanel, /neutral reviewed next-step summary/);
+  assert.match(aiPanel, /neutral next-step summary/);
   assert.match(aiPanel, /Case type/);
   assert.match(aiPanel, /natural chat remains the primary experience/);
   assert.match(legal, /Service cost reference/);
@@ -346,22 +347,23 @@ test('engineer application and admin engineer pages render regions and skills as
   assert.match(applicationsPage, /renderTags\(application\.skill_tags/);
 });
 
-test('engineer recruiting page is an ad-ready landing page with modal application', () => {
+test('engineer recruiting page explains cooperation and supports modal application', () => {
   const recruiting = read('frontend/src/components/Engineer/EngineerRecruitingPage.jsx');
 
   assert.match(recruiting, /modalOpen/);
-  assert.match(recruiting, /Join SAGEMRO.s Industrial Service Network/);
-  assert.match(recruiting, /Work with clear scope, prepared context, and documented service records/);
+  assert.match(recruiting, /Join the SAGEMRO Service Engineer Network/);
+  assert.match(recruiting, /We accept applications from engineers/);
   assert.match(recruiting, /Apply to Join/);
-  assert.match(recruiting, /What is SAGEMRO/);
-  assert.match(recruiting, /AI-assisted industrial service platform/);
+  assert.match(recruiting, /How SAGEMRO service work is coordinated/);
+  assert.match(recruiting, /receives customer service requests/);
   assert.match(recruiting, /What you may receive after approval/);
   assert.match(recruiting, /Clear-scope field work/);
-  assert.match(recruiting, /Prepared context and documented records/);
+  assert.match(recruiting, /Job information before dispatch/);
   assert.match(recruiting, /Quote review support/);
   assert.match(recruiting, /Payment and start authorization/);
-  assert.match(recruiting, /We are building the network region by region/);
-  assert.match(recruiting, /客户信息、报价边界、付款确认、现场安全和服务记录/);
+  assert.match(recruiting, /How engineer cooperation works/);
+  assert.match(recruiting, /负责派工协调、报价审核、付款确认和服务记录/);
+  assert.doesNotMatch(recruiting, /AI-assisted industrial service platform|verified service pool|Certified Representative/);
   assert.doesNotMatch(recruiting, /Paid field service opportunities/);
   assert.doesNotMatch(recruiting, /Payment confirmation first/);
   assert.doesNotMatch(recruiting, /被看见、被支持、被认真对待/);
@@ -417,7 +419,7 @@ test('client shell moves conversation history into a modal and exposes industry 
   assert.match(industryToolsModal, /All tools/);
   assert.match(industryToolsModal, /href="\/insights"/);
   assert.match(industryToolsModal, /industryTools\.map/);
-  assert.match(industryToolCalculator, /Ask SAGEMRO AI to review this result/);
+  assert.match(industryToolCalculator, /Review this result in service chat/);
   assert.match(industryToolsPage, /href=\{`\/tools\/\$\{tool\.slug\}`\}/);
   assert.match(industryToolsPage, /link\[rel="canonical"\]/);
   assert.match(industryToolsPage, /meta\[name="\$\{name\}"\]/);
@@ -540,7 +542,7 @@ test('engineer workspace gives localized next steps and selected task context', 
   assert.match(workspace, /customerRegion: '客户 \/ 地区'/);
   assert.match(workspace, /machineServiceType: '设备 \/ 服务类型'/);
   assert.match(workspace, /preparationTitle: '服务准备'/);
-  assert.match(workspace, /aiIntakeSummary: 'AI 接单摘要'/);
+  assert.match(workspace, /aiIntakeSummary: '工单信息摘要'/);
   assert.doesNotMatch(workspace, / 路 |澶囦欢|閰嶄欢/);
 });
 
