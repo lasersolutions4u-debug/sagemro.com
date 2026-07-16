@@ -75,6 +75,25 @@ export async function getAdminWorkOrderMessages(workOrderId) {
   return request(`/api/workorders/${workOrderId}/messages`);
 }
 
+export async function searchAdminServiceLocations(query) {
+  const params = new URLSearchParams({ q: query, limit: '5' });
+  return request(`/api/location/search?${params}`);
+}
+
+export async function confirmAdminOnsiteConversion(workOrderId, data) {
+  return request(`/api/admin/workorders/${workOrderId}/onsite-conversion/confirm`, {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function overrideAdminArrival(workOrderId, reason) {
+  return request(`/api/admin/workorders/${workOrderId}/arrival-override`, {
+    method: 'POST',
+    body: JSON.stringify({ reason }),
+  });
+}
+
 export async function postAdminWorkOrderMessage(workOrderId, content, isInternalNote = true) {
   return request(`/api/workorders/${workOrderId}/messages`, {
     method: 'POST',

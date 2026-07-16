@@ -1,5 +1,5 @@
 -- ============================================================
--- schema.sql — 全量当前状态快照（由 migrations/000-011 累加合并而成）
+-- schema.sql — 全量当前状态快照（由 migrations/ 累加合并而成）
 --
 -- 🔑 真相源政策（Source of Truth）：
 --   - **migrations/** 是唯一真相源；每次改表必须通过新增 NNN_xxx.sql。
@@ -51,6 +51,7 @@ CREATE TABLE IF NOT EXISTS customers (
     user_no TEXT UNIQUE NOT NULL,              -- U + 6位数字
     name TEXT NOT NULL,
     phone TEXT NOT NULL UNIQUE,
+    email TEXT,                                -- 030: international customer login email
     password_hash TEXT NOT NULL,
     salt TEXT NOT NULL DEFAULT '',
     region TEXT,
@@ -217,6 +218,16 @@ CREATE TABLE IF NOT EXISTS work_orders (
     arrival_longitude REAL,
     arrival_coordinate_system TEXT,
     arrival_location_source TEXT,
+    onsite_conversion_status TEXT NOT NULL DEFAULT 'not_requested',
+    onsite_conversion_requested_at TEXT,
+    onsite_conversion_requested_by TEXT,
+    onsite_conversion_request_note TEXT,
+    onsite_conversion_confirmed_at TEXT,
+    onsite_conversion_confirmed_by TEXT,
+    onsite_conversion_confirmation_note TEXT,
+    arrival_override_at TEXT,
+    arrival_override_by TEXT,
+    arrival_override_reason TEXT,
 
     FOREIGN KEY (customer_id) REFERENCES customers(id),
     FOREIGN KEY (engineer_id) REFERENCES engineers(id),
@@ -259,6 +270,21 @@ CREATE TABLE IF NOT EXISTS work_order_logs (
     created_at TEXT DEFAULT (datetime('now')),
     FOREIGN KEY (work_order_id) REFERENCES work_orders(id)
 );
+
+-- 维修记录（016）
+CREATE TABLE IF NOT EXISTS work_order_repair_records (
+    id TEXT PRIMARY KEY,
+    work_order_id TEXT NOT NULL UNIQUE,
+    symptom TEXT,
+    diagnosis TEXT,
+    solution TEXT,
+    parts_used TEXT DEFAULT '[]',
+    labor_hours REAL DEFAULT 0,
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now')),
+    FOREIGN KEY (work_order_id) REFERENCES work_orders(id)
+);
+CREATE INDEX IF NOT EXISTS idx_repair_records_wo ON work_order_repair_records(work_order_id);
 
 -- 评价表（000）
 CREATE TABLE IF NOT EXISTS ratings (
@@ -394,6 +420,30 @@ CREATE TABLE IF NOT EXISTS work_order_payments (
 );
 CREATE INDEX IF NOT EXISTS idx_work_order_payments_wo ON work_order_payments(work_order_id);
 CREATE INDEX IF NOT EXISTS idx_work_order_payments_stage ON work_order_payments(work_order_id, payment_stage, created_at);
+
+-- 发票申请（032）
+CREATE TABLE IF NOT EXISTS invoice_requests (
+    id TEXT PRIMARY KEY,
+    work_order_id TEXT NOT NULL,
+    customer_id TEXT,
+    invoice_type TEXT DEFAULT '普通发票',
+    company_name TEXT NOT NULL,
+    tax_id TEXT NOT NULL,
+    company_address TEXT DEFAULT '',
+    company_phone TEXT DEFAULT '',
+    bank_name TEXT DEFAULT '',
+    bank_account TEXT DEFAULT '',
+    amount INTEGER NOT NULL,
+    status TEXT DEFAULT 'pending',
+    notes TEXT DEFAULT '',
+    invoice_number TEXT DEFAULT '',
+    admin_notes TEXT DEFAULT '',
+    issued_at TEXT,
+    created_at TEXT DEFAULT (datetime('now')),
+    FOREIGN KEY (work_order_id) REFERENCES work_orders(id)
+);
+CREATE INDEX IF NOT EXISTS idx_invoice_requests_wo ON invoice_requests(work_order_id);
+CREATE INDEX IF NOT EXISTS idx_invoice_requests_status ON invoice_requests(status);
 
 CREATE TABLE IF NOT EXISTS work_order_payouts (
     id TEXT PRIMARY KEY,
@@ -938,4 +988,11 @@ INSERT OR IGNORE INTO _migrations (version, note) VALUES
     ('026_material_master_data',        'Admin 物料主数据与库存手动调整记录'),
     ('027_work_order_material_items',   '工单物料引用：报价、备件准备和服务报告'),
     ('028_material_requests',           '工程师新增物料申请与 Admin 审核入库'),
-    ('029_upsell_requests',             '工程师增购与改造需求记录');
+    ('029_upsell_requests',             '工程师增购与改造需求记录'),
+    ('030_add_customer_email',          'Add customer email login field'),
+    ('031_engineer_payouts',            'Add engineer payout settings and work-order payouts'),
+    ('032_invoice_requests',            'Add China invoice request workflow'),
+    ('032_payment_stages',              'Add advance and balance payment stages'),
+    ('033_work_order_location_verification', 'Add service location and engineer arrival verification'),
+    ('034_add_service_mode',            'Add remote, onsite, and hybrid service modes'),
+    ('035_onsite_conversion_workflow',  'Add audited remote-to-onsite conversion and arrival override workflow');

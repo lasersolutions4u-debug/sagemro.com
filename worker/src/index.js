@@ -1864,6 +1864,7 @@ const ALLOWED_ORIGINS_DEV = [
   'http://localhost:4173',
   'http://127.0.0.1:5173',
   'http://127.0.0.1:5174',
+  'http://127.0.0.1:3000',
 ];
 
 function getAllowedOrigin(origin, env) {
@@ -4841,6 +4842,17 @@ async function handleGetWorkOrder(request, env) {
       'SELECT * FROM work_order_attachments WHERE work_order_id = ? ORDER BY created_at DESC'
     ).bind(id).all();
 
+    let arrivalChecks = [];
+    if (request._auth?.userType === 'admin' || request._auth?.userType === 'engineer') {
+      const arrivalCheckRecords = await env.DB.prepare(`
+        SELECT * FROM work_order_arrival_checks
+        WHERE work_order_id = ?
+        ORDER BY created_at DESC
+        LIMIT 20
+      `).bind(id).all();
+      arrivalChecks = arrivalCheckRecords.results || [];
+    }
+
     const materialItems = await listWorkOrderMaterialItems(env, id);
     const quoteMaterialItems = materialItems.filter((item) => item.purpose === 'quote');
     const isEngineerDetailView = request._auth?.userType === 'engineer';
@@ -4869,6 +4881,7 @@ async function handleGetWorkOrder(request, env) {
       payout: sanitizePayoutForUser(payout, request._auth),
       material_items: materialItems,
       attachments: attachments.results,
+      arrival_checks: arrivalChecks,
     });
   } catch (error) {
     if (error instanceof GuardError) return errorResponse(error.message, error.status);
@@ -9810,7 +9823,7 @@ async function handleWorkOrderArrivalCheck(request, env) {
     if (workOrder.status !== 'in_service') {
       return errorResponse(market === 'cn' ? '付款确认后才能提交到场定位' : 'Arrival checks are available after service start approval', 409);
     }
-    if (!workOrder.arrival_verification_required && workOrder.service_mode !== 'hybrid') {
+    if (!workOrder.arrival_verification_required) {
       return errorResponse(market === 'cn' ? '此工单为远程服务，无需到场打卡' : 'This work order does not require an onsite arrival check', 409);
     }
     if (!isValidCoordinatePair(workOrder.service_latitude, workOrder.service_longitude)) {
@@ -9917,6 +9930,265 @@ async function handleWorkOrderArrivalCheck(request, env) {
 }
 
 // 工程师标记服务完成
+async function handleRequestOnsiteConversion(request, env) {
+  try {
+    const auth = request._auth;
+    const market = getRequestMarket(request);
+    if (!auth || auth.userType !== 'engineer') {
+      return errorResponse(market === 'cn' ? '仅工程师可以申请转为上门服务' : 'Only engineers can request onsite conversion', 403);
+    }
+
+    const workOrderId = new URL(request.url).pathname.split('/')[3];
+    const body = await request.json().catch(() => ({}));
+    const note = String(body.note || '').trim().slice(0, 1000);
+    if (!note) {
+      return errorResponse(market === 'cn' ? '请说明需要转为上门服务的原因' : 'Explain why onsite service is required', 400);
+    }
+
+    const workOrder = await env.DB.prepare(`
+      SELECT id, order_no, customer_id, engineer_id, status, service_mode, onsite_conversion_status
+      FROM work_orders WHERE id = ?
+    `).bind(workOrderId).first();
+    if (!workOrder) return errorResponse(market === 'cn' ? '工单不存在' : 'Work order not found', 404);
+    if (workOrder.engineer_id !== auth.userId) {
+      return errorResponse(market === 'cn' ? '您未被指派到此工单' : 'You are not assigned to this work order', 403);
+    }
+    if (workOrder.status !== 'in_service') {
+      return errorResponse(market === 'cn' ? '服务开始后才能申请转为上门服务' : 'Onsite conversion is available after service starts', 409);
+    }
+    if (workOrder.service_mode === 'onsite' || workOrder.onsite_conversion_status === 'confirmed') {
+      return errorResponse(market === 'cn' ? '此工单已经是上门服务' : 'This work order is already onsite', 409);
+    }
+
+    await env.DB.prepare(`
+      UPDATE work_orders SET
+        service_mode = 'hybrid',
+        onsite_conversion_status = 'requested',
+        onsite_conversion_requested_at = datetime('now'),
+        onsite_conversion_request_note = ?,
+        onsite_conversion_requested_by = ?
+      WHERE id = ?
+    `).bind(note, auth.userId, workOrderId).run();
+
+    await env.DB.prepare(`
+      INSERT INTO work_order_logs (id, work_order_id, action, actor_type, actor_id, content)
+      VALUES (?, ?, 'onsite_conversion_requested', 'engineer', ?, ?)
+    `).bind(generateId(), workOrderId, auth.userId, note).run();
+
+    await writeAuditLog(env, request, {
+      targetType: 'work_order',
+      targetId: workOrderId,
+      action: 'onsite_conversion_requested',
+      beforeState: {
+        service_mode: workOrder.service_mode,
+        onsite_conversion_status: workOrder.onsite_conversion_status || 'not_requested',
+      },
+      afterState: { service_mode: 'hybrid', onsite_conversion_status: 'requested', note },
+    });
+
+    if (workOrder.customer_id) {
+      await createNotification(env, {
+        user_id: workOrder.customer_id,
+        user_type: 'customer',
+        type: 'onsite_conversion_requested',
+        title: market === 'cn' ? '请确认上门服务位置' : 'Confirm the on-site service location',
+        body: market === 'cn'
+          ? `工程师申请将工单 ${workOrder.order_no || workOrderId} 转为上门服务，请确认准确地址和地图位置。`
+          : `The engineer requested an on-site visit for ${workOrder.order_no || workOrderId}. Confirm the exact address and map point.`,
+        data: { work_order_id: workOrderId },
+      });
+    }
+
+    return jsonResponse({
+      success: true,
+      service_mode: 'hybrid',
+      onsite_conversion_status: 'requested',
+    });
+  } catch (error) {
+    return errorResponse(error.message, 500);
+  }
+}
+
+async function handleConfirmOnsiteConversion(request, env, { admin = false } = {}) {
+  try {
+    const auth = request._auth;
+    const market = getRequestMarket(request);
+    const workOrderId = new URL(request.url).pathname.split('/')[admin ? 4 : 3];
+    const body = await request.json().catch(() => ({}));
+    const note = String(body.note || '').trim().slice(0, 1000);
+    const adminReason = String(body.reason || '').trim().slice(0, 1000);
+
+    if (admin) {
+      if (!auth || auth.userType !== 'admin') {
+        return errorResponse(market === 'cn' ? '需要管理员权限' : 'Admin access required', 403);
+      }
+      if (!adminReason) {
+        return errorResponse(market === 'cn' ? '管理员代确认必须填写原因' : 'A reason is required for admin confirmation', 400);
+      }
+    } else if (!auth || auth.userType !== 'customer') {
+      return errorResponse(market === 'cn' ? '仅客户可以确认现场位置' : 'Only the customer can confirm the service location', 403);
+    }
+
+    const location = parseServiceLocation(body);
+    if (location.error) return errorResponse(serviceLocationErrorMessage(location.error, market), 400);
+    if (!location.address || !location.hasCoordinates) {
+      return errorResponse(serviceLocationErrorMessage('service_location_required', market), 400);
+    }
+
+    const workOrder = await env.DB.prepare(`
+      SELECT id, order_no, customer_id, engineer_id, service_mode, onsite_conversion_status,
+        service_address, service_latitude, service_longitude
+      FROM work_orders WHERE id = ?
+    `).bind(workOrderId).first();
+    if (!workOrder) return errorResponse(market === 'cn' ? '工单不存在' : 'Work order not found', 404);
+    if (!admin && workOrder.customer_id !== auth.userId) {
+      return errorResponse(market === 'cn' ? '您无权确认此工单位置' : 'You cannot confirm this work order location', 403);
+    }
+    if (workOrder.onsite_conversion_status !== 'requested') {
+      return errorResponse(market === 'cn' ? '此工单没有待确认的上门服务申请' : 'This work order has no pending onsite conversion request', 409);
+    }
+
+    const confirmationNote = admin
+      ? `${note}${note ? '\n' : ''}${market === 'cn' ? '管理员代确认原因' : 'Admin reason'}: ${adminReason}`
+      : note;
+    await env.DB.prepare(`
+      UPDATE work_orders SET
+        service_address = ?,
+        service_latitude = ?,
+        service_longitude = ?,
+        service_accuracy_m = ?,
+        service_coordinate_system = ?,
+        service_location_source = ?,
+        service_location_confirmed_at = datetime('now'),
+        service_mode = 'onsite',
+        arrival_verification_required = 1,
+        arrival_verified_at = NULL,
+        onsite_conversion_status = 'confirmed',
+        onsite_conversion_confirmed_at = datetime('now'),
+        onsite_conversion_confirmation_note = ?,
+        onsite_conversion_confirmed_by = ?
+      WHERE id = ?
+    `).bind(
+      location.address,
+      location.latitude,
+      location.longitude,
+      location.accuracyMeters,
+      location.coordinateSystem,
+      location.source,
+      confirmationNote,
+      auth.userId,
+      workOrderId,
+    ).run();
+
+    const actorType = admin ? 'admin' : 'customer';
+    await env.DB.prepare(`
+      INSERT INTO work_order_logs (id, work_order_id, action, actor_type, actor_id, content)
+      VALUES (?, ?, 'onsite_conversion_confirmed', ?, ?, ?)
+    `).bind(
+      generateId(),
+      workOrderId,
+      actorType,
+      auth.userId,
+      admin ? adminReason : (note || location.address),
+    ).run();
+
+    await writeAuditLog(env, request, {
+      targetType: 'work_order',
+      targetId: workOrderId,
+      action: admin ? 'onsite_conversion_admin_confirmed' : 'onsite_conversion_confirmed',
+      beforeState: {
+        service_mode: workOrder.service_mode,
+        onsite_conversion_status: workOrder.onsite_conversion_status,
+        service_address: workOrder.service_address,
+        service_latitude: workOrder.service_latitude,
+        service_longitude: workOrder.service_longitude,
+      },
+      afterState: {
+        service_mode: 'onsite',
+        onsite_conversion_status: 'confirmed',
+        service_address: location.address,
+        service_latitude: location.latitude,
+        service_longitude: location.longitude,
+        reason: adminReason || undefined,
+      },
+    });
+
+    if (workOrder.engineer_id) {
+      await createNotification(env, {
+        user_id: workOrder.engineer_id,
+        user_type: 'engineer',
+        type: 'onsite_conversion_confirmed',
+        title: market === 'cn' ? '客户现场位置已确认' : 'Customer site location confirmed',
+        body: market === 'cn'
+          ? `工单 ${workOrder.order_no || workOrderId} 已转为上门服务，到达现场后请完成定位打卡。`
+          : `${workOrder.order_no || workOrderId} is now an on-site service order. Check in after arriving at the customer site.`,
+        data: { work_order_id: workOrderId },
+      });
+    }
+
+    return jsonResponse({
+      success: true,
+      service_mode: 'onsite',
+      onsite_conversion_status: 'confirmed',
+      arrival_verification_required: true,
+    });
+  } catch (error) {
+    return errorResponse(error.message, 500);
+  }
+}
+
+async function handleAdminArrivalOverride(request, env) {
+  try {
+    const auth = request._auth;
+    const market = getRequestMarket(request);
+    if (!auth || auth.userType !== 'admin') {
+      return errorResponse(market === 'cn' ? '需要管理员权限' : 'Admin access required', 403);
+    }
+
+    const workOrderId = new URL(request.url).pathname.split('/')[4];
+    const body = await request.json().catch(() => ({}));
+    const reason = String(body.reason || '').trim().slice(0, 1000);
+    if (!reason) {
+      return errorResponse(market === 'cn' ? '人工放行必须填写原因' : 'A reason is required for arrival override', 400);
+    }
+
+    const workOrder = await env.DB.prepare(`
+      SELECT id, order_no, engineer_id, service_mode, arrival_verification_required, arrival_verified_at
+      FROM work_orders WHERE id = ?
+    `).bind(workOrderId).first();
+    if (!workOrder) return errorResponse(market === 'cn' ? '工单不存在' : 'Work order not found', 404);
+    if (!workOrder.arrival_verification_required || workOrder.service_mode !== 'onsite') {
+      return errorResponse(market === 'cn' ? '此工单不需要到场核验' : 'This work order does not require arrival verification', 409);
+    }
+
+    await env.DB.prepare(`
+      UPDATE work_orders SET
+        arrival_verified_at = datetime('now'),
+        arrival_override_at = datetime('now'),
+        arrival_override_reason = ?,
+        arrival_override_by = ?
+      WHERE id = ?
+    `).bind(reason, auth.userId, workOrderId).run();
+
+    await env.DB.prepare(`
+      INSERT INTO work_order_logs (id, work_order_id, action, actor_type, actor_id, content)
+      VALUES (?, ?, 'arrival_override', 'admin', ?, ?)
+    `).bind(generateId(), workOrderId, auth.userId, reason).run();
+
+    await writeAuditLog(env, request, {
+      targetType: 'work_order',
+      targetId: workOrderId,
+      action: 'arrival_override',
+      beforeState: { arrival_verified_at: workOrder.arrival_verified_at || null },
+      afterState: { arrival_verified_at: 'now', reason },
+    });
+
+    return jsonResponse({ success: true, arrival_verified: true, override: true });
+  } catch (error) {
+    return errorResponse(error.message, 500);
+  }
+}
+
 async function handleResolveWorkOrder(request, env) {
   try {
     // 认证：engineer_id 从 token 取
@@ -11720,6 +11992,12 @@ async function routeRequest(request, env, ctx) {
       if (path === '/api/admin/workorders' && request.method === 'GET') {
         return handleAdminWorkOrders(request, env);
       }
+      if (path.match(/^\/api\/admin\/workorders\/[^/]+\/onsite-conversion\/confirm$/) && request.method === 'POST') {
+        return handleConfirmOnsiteConversion(request, env, { admin: true });
+      }
+      if (path.match(/^\/api\/admin\/workorders\/[^/]+\/arrival-override$/) && request.method === 'POST') {
+        return handleAdminArrivalOverride(request, env);
+      }
       if (path.startsWith('/api/admin/workorders/') && path.endsWith('/assign-regional-lead') && request.method === 'PATCH') {
         return handleAdminAssignRegionalLead(request, env);
       }
@@ -11878,6 +12156,12 @@ async function routeRequest(request, env, ctx) {
     // 工程师到场定位核验
     if (path.match(/^\/api\/workorders\/[^/]+\/arrival-check$/) && request.method === 'POST') {
       return handleWorkOrderArrivalCheck(request, env);
+    }
+    if (path.match(/^\/api\/workorders\/[^/]+\/onsite-conversion\/request$/) && request.method === 'POST') {
+      return handleRequestOnsiteConversion(request, env);
+    }
+    if (path.match(/^\/api\/workorders\/[^/]+\/onsite-conversion\/confirm$/) && request.method === 'POST') {
+      return handleConfirmOnsiteConversion(request, env);
     }
     // 工程师标记服务完成
     if (path.match(/^\/api\/workorders\/[^/]+\/resolve$/) && request.method === 'POST') {

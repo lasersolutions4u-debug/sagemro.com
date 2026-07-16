@@ -8,7 +8,6 @@ export default defineConfig({
     target: 'es2020',
     modulePreload: {
       polyfill: false,
-      resolveDependencies: () => [],
     },
     rollupOptions: {
       output: {

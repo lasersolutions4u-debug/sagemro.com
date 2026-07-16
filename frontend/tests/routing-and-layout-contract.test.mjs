@@ -24,3 +24,10 @@ test('tool and insight detail routes reject unknown slugs', () => {
   assert.match(tools, /slug && !selectedTool/);
   assert.match(insights, /slug && !insight/);
 });
+
+test('frontend build keeps modulepreload dependencies enabled', () => {
+  const viteConfig = read('frontend/vite.config.js');
+
+  assert.match(viteConfig, /modulePreload:\s*\{[\s\S]*polyfill:\s*false/);
+  assert.doesNotMatch(viteConfig, /resolveDependencies:\s*\(\)\s*=>\s*\[\]/);
+});

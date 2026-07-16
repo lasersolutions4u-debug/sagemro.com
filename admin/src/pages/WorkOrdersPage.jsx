@@ -28,12 +28,15 @@ import {
   approveAdminWorkOrderBalance,
   approveAdminWorkOrderPaymentStart,
   archiveAdminWorkOrder,
+  confirmAdminOnsiteConversion,
   getAdminWorkOrder,
   getAdminWorkOrderMessages,
   getAdminUsers,
   getAdminWorkOrders,
+  overrideAdminArrival,
   postAdminWorkOrderMessage,
   rejectAdminWorkOrderPricing,
+  searchAdminServiceLocations,
   updateAdminWorkOrderPayout,
 } from '../services/api';
 import { runtimeConfig } from '../config/runtime';
@@ -301,6 +304,18 @@ export function WorkOrdersPage() {
   const [detail, setDetail] = useState(null);
   const [detailMessages, setDetailMessages] = useState([]);
   const [internalNote, setInternalNote] = useState('');
+  const [adminSiteLocation, setAdminSiteLocation] = useState({
+    service_address: '',
+    service_latitude: '',
+    service_longitude: '',
+    service_accuracy_m: '',
+    service_coordinate_system: 'wgs84',
+    service_location_source: 'admin_customer_confirmation',
+    note: '',
+    reason: '',
+  });
+  const [adminLocationResults, setAdminLocationResults] = useState([]);
+  const [adminLocationSearching, setAdminLocationSearching] = useState(false);
   const [reviewedQuoteIds, setReviewedQuoteIds] = useState({});
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
@@ -585,6 +600,17 @@ export function WorkOrdersPage() {
       ]);
       setDetail(detailData);
       setDetailMessages(messagesData.list || []);
+      setAdminSiteLocation({
+        service_address: detailData.service_address || '',
+        service_latitude: detailData.service_latitude ?? '',
+        service_longitude: detailData.service_longitude ?? '',
+        service_accuracy_m: detailData.service_accuracy_m ?? '',
+        service_coordinate_system: detailData.service_coordinate_system || 'wgs84',
+        service_location_source: detailData.service_location_source || 'admin_customer_confirmation',
+        note: detailData.onsite_conversion_confirmation_note || '',
+        reason: '',
+      });
+      setAdminLocationResults([]);
     } catch (err) {
       setMessage(err.message || t.detailLoadFailed);
     } finally {
@@ -601,6 +627,86 @@ export function WorkOrdersPage() {
       setInternalNote('');
     } catch (err) {
       setMessage(err.message || t.noteSaveFailed);
+    }
+  }
+
+  async function searchAdminLocation() {
+    const query = adminSiteLocation.service_address.trim();
+    if (query.length < 2) {
+      setMessage('Enter the customer site address before searching.');
+      return;
+    }
+    setAdminLocationSearching(true);
+    try {
+      const result = await searchAdminServiceLocations(query);
+      setAdminLocationResults(result.results || []);
+    } catch (err) {
+      setAdminLocationResults([]);
+      setMessage(err.message || 'Failed to search the service address.');
+    } finally {
+      setAdminLocationSearching(false);
+    }
+  }
+
+  function selectAdminLocation(result) {
+    setAdminSiteLocation((current) => ({
+      ...current,
+      service_address: result.address || result.label,
+      service_latitude: result.latitude,
+      service_longitude: result.longitude,
+      service_accuracy_m: '',
+      service_coordinate_system: result.coordinate_system,
+      service_location_source: result.source,
+    }));
+    setAdminLocationResults([]);
+  }
+
+  async function handleAdminOnsiteConfirmation(wo) {
+    const latitude = Number(adminSiteLocation.service_latitude);
+    const longitude = Number(adminSiteLocation.service_longitude);
+    const missingCoordinates = adminSiteLocation.service_latitude === '' || adminSiteLocation.service_longitude === '';
+    if (missingCoordinates || !adminSiteLocation.service_address.trim() || !Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+      setMessage('A complete site address and valid map coordinates are required.');
+      return;
+    }
+    if (!adminSiteLocation.reason.trim()) {
+      setMessage('Explain why Admin is confirming the location on behalf of the customer.');
+      return;
+    }
+
+    setAssigningId(`${wo.id}:onsite-confirm`);
+    setMessage('');
+    try {
+      await confirmAdminOnsiteConversion(wo.id, {
+        ...adminSiteLocation,
+        service_latitude: latitude,
+        service_longitude: longitude,
+        service_accuracy_m: adminSiteLocation.service_accuracy_m === ''
+          ? null
+          : Number(adminSiteLocation.service_accuracy_m),
+      });
+      setMessage(`On-site service location confirmed: ${wo.order_no}`);
+      await openDetail(wo);
+    } catch (err) {
+      setMessage(err.message || 'Failed to confirm the on-site service location.');
+    } finally {
+      setAssigningId('');
+    }
+  }
+
+  async function handleAdminArrivalOverride(wo) {
+    const reason = window.prompt('Reason for manually approving the engineer arrival check:') || '';
+    if (!reason.trim()) return;
+    setAssigningId(`${wo.id}:arrival-override`);
+    setMessage('');
+    try {
+      await overrideAdminArrival(wo.id, reason.trim());
+      setMessage(`Engineer arrival manually approved: ${wo.order_no}`);
+      await openDetail(wo);
+    } catch (err) {
+      setMessage(err.message || 'Failed to approve the engineer arrival.');
+    } finally {
+      setAssigningId('');
     }
   }
 
@@ -948,6 +1054,139 @@ export function WorkOrdersPage() {
                       >
                         {t.approveBalancePayment}
                       </button>
+                    </div>
+                  </section>
+                )}
+                {detail.onsite_conversion_status === 'requested' && (
+                  <section className="rounded-xl border border-amber-500/40 bg-amber-500/5 p-4">
+                    <div>
+                      <h4 className="font-medium text-[var(--color-text)]">On-site conversion awaiting location confirmation</h4>
+                      <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
+                        Admin may confirm on behalf of the customer only after independently verifying the address and map point. The reason is written to the audit log.
+                      </p>
+                      {detail.onsite_conversion_request_note && (
+                        <p className="mt-2 rounded-lg bg-[var(--color-surface-elevated)] px-3 py-2 text-xs text-[var(--color-text)]">
+                          Engineer request: {detail.onsite_conversion_request_note}
+                        </p>
+                      )}
+                    </div>
+                    <div className="mt-4 space-y-3">
+                      <div className="flex flex-col gap-2 sm:flex-row">
+                        <input
+                          value={adminSiteLocation.service_address}
+                          onChange={(event) => setAdminSiteLocation((current) => ({ ...current, service_address: event.target.value }))}
+                          placeholder="Exact customer site address"
+                          className="min-w-0 flex-1 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)]"
+                        />
+                        <button
+                          type="button"
+                          onClick={searchAdminLocation}
+                          disabled={adminLocationSearching}
+                          className="rounded-lg border border-[var(--color-border)] px-3 py-2 text-sm text-[var(--color-text-secondary)] disabled:opacity-50"
+                        >
+                          {adminLocationSearching ? 'Searching...' : 'Search map'}
+                        </button>
+                      </div>
+                      {adminLocationResults.length > 0 && (
+                        <div className="space-y-1 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-2">
+                          {adminLocationResults.map((result) => (
+                            <button
+                              type="button"
+                              key={result.id}
+                              onClick={() => selectAdminLocation(result)}
+                              className="block w-full rounded-md px-2 py-2 text-left text-sm text-[var(--color-text)] hover:bg-[var(--color-primary)]/10"
+                            >
+                              {result.label}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                      <div className="grid gap-2 sm:grid-cols-3">
+                        <input
+                          inputMode="decimal"
+                          value={adminSiteLocation.service_latitude}
+                          onChange={(event) => setAdminSiteLocation((current) => ({ ...current, service_latitude: event.target.value }))}
+                          placeholder="Latitude"
+                          className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)]"
+                        />
+                        <input
+                          inputMode="decimal"
+                          value={adminSiteLocation.service_longitude}
+                          onChange={(event) => setAdminSiteLocation((current) => ({ ...current, service_longitude: event.target.value }))}
+                          placeholder="Longitude"
+                          className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)]"
+                        />
+                        <select
+                          value={adminSiteLocation.service_coordinate_system}
+                          onChange={(event) => setAdminSiteLocation((current) => ({ ...current, service_coordinate_system: event.target.value }))}
+                          className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)]"
+                        >
+                          <option value="wgs84">WGS84</option>
+                          <option value="gcj02">GCJ-02</option>
+                        </select>
+                      </div>
+                      <textarea
+                        value={adminSiteLocation.note}
+                        onChange={(event) => setAdminSiteLocation((current) => ({ ...current, note: event.target.value }))}
+                        rows={2}
+                        placeholder="Location confirmation note or arrival instructions"
+                        className="w-full resize-none rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)]"
+                      />
+                      <textarea
+                        value={adminSiteLocation.reason}
+                        onChange={(event) => setAdminSiteLocation((current) => ({ ...current, reason: event.target.value }))}
+                        rows={2}
+                        placeholder="Required: why Admin is confirming instead of the customer"
+                        className="w-full resize-none rounded-lg border border-amber-500/40 bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)]"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => handleAdminOnsiteConfirmation(detail)}
+                        disabled={assigningId === `${detail.id}:onsite-confirm`}
+                        className="w-full rounded-lg bg-amber-500 px-3 py-2.5 text-sm font-medium text-white hover:bg-amber-600 disabled:opacity-50"
+                      >
+                        Confirm location on behalf of customer
+                      </button>
+                    </div>
+                  </section>
+                )}
+                {(detail.arrival_verification_required || detail.arrival_checks?.length > 0) && (
+                  <section className="rounded-xl border border-[var(--color-border)] p-4">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                      <div>
+                        <h4 className="font-medium text-[var(--color-text)]">Arrival verification audit</h4>
+                        <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
+                          Site: {detail.service_address || 'Location not confirmed'}
+                        </p>
+                        <p className="mt-1 text-xs text-[var(--color-text-muted)]">
+                          Status: {detail.arrival_verified_at ? 'Verified' : 'Waiting for engineer check-in'}
+                          {detail.arrival_override_reason ? ` · Admin override: ${detail.arrival_override_reason}` : ''}
+                        </p>
+                      </div>
+                      {detail.arrival_verification_required && !detail.arrival_verified_at && (
+                        <button
+                          type="button"
+                          onClick={() => handleAdminArrivalOverride(detail)}
+                          disabled={assigningId === `${detail.id}:arrival-override`}
+                          className="shrink-0 rounded-lg border border-red-500/40 px-3 py-2 text-sm font-medium text-red-600 disabled:opacity-50"
+                        >
+                          Manual arrival approval
+                        </button>
+                      )}
+                    </div>
+                    <div className="mt-4 space-y-2">
+                      {detail.arrival_checks?.length > 0 ? detail.arrival_checks.map((check) => (
+                        <div key={check.id} className="grid gap-1 rounded-lg bg-[var(--color-surface-elevated)] px-3 py-2 text-xs text-[var(--color-text-secondary)] sm:grid-cols-4">
+                          <span>{check.created_at ? new Date(check.created_at).toLocaleString(runtimeConfig.locale) : '-'}</span>
+                          <span>Distance: {check.distance_m ?? '-'} m</span>
+                          <span>Allowed radius: {check.radius_m ?? '-'} m</span>
+                          <span className={check.within_geofence ? 'text-green-600' : 'text-red-600'}>
+                            {check.within_geofence ? 'Passed' : (check.failure_reason || 'Failed')}
+                          </span>
+                        </div>
+                      )) : (
+                        <p className="text-xs text-[var(--color-text-muted)]">No engineer arrival attempts have been recorded.</p>
+                      )}
                     </div>
                   </section>
                 )}

@@ -694,7 +694,7 @@ test('payment instructions are readable and send customers back to Messages with
   assert.match(paymentModal, /bg-white text-slate-950/);
   assert.match(paymentModal, /https:\/\/www\.paypal\.com\/ncp\/payment\/4YLFXRSUSZJ5N/);
   assert.match(paymentModal, /Open PayPal Payment Page/);
-  assert.match(paymentModal, /send the bank slip or PayPal screenshot to the engineer in Messages/);
+  assert.match(paymentModal, /send the bank slip or PayPal screenshot in Messages/);
   assert.match(paymentModal, /Continue with PayPal Instructions/);
   assert.match(pricingPanels, /onConfirmed\?\.\('messages'\)/);
   assert.match(detailModal, /if \(nextTab\) setTab\(nextTab\)/);
