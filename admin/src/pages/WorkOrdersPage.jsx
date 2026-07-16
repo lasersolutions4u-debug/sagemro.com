@@ -249,7 +249,7 @@ const TEXT = {
     aiPriceCheck: 'AI price check',
     noQuoteDetail: 'No quote detail',
     riskControlLabel: 'Risk control',
-    aiSummaryTitle: 'AI Intake Summary',
+    aiSummaryTitle: 'Service Request Summary',
     noAiSummary: 'No AI summary',
     attachmentsTitle: 'Diagnostic Images & Attachments',
     attachmentCount: (count) => `${count} item(s)`,

@@ -39,7 +39,7 @@ const STATUS_LABELS = {
 
 const CHECKLIST = [
   'Confirm customer issue, machine model, site contact, and arrival window',
-  'Review the SAGEMRO AI intake summary and flag safety risks',
+  'Review the customer request summary and flag safety risks',
   'Check spare parts, tools, consumables, and protective equipment',
   'Record nameplate, alarm screen, and fault area photos on site',
   'Document service actions, parts replacement, and follow-up recommendations',
@@ -672,7 +672,7 @@ export function EngineerWorkspace({ currentUser, onLogout, onOpenProfile }) {
               {activeTicket ? (
                 <div className="space-y-3 text-sm text-[var(--color-text-secondary)]">
                   <div>
-                    <div className="mb-1 text-xs uppercase text-[var(--color-text-muted)]">AI Intake Summary</div>
+                    <div className="mb-1 text-xs uppercase text-[var(--color-text-muted)]">Service Request Summary</div>
                     <p>{formatEngineerDescription(activeAiSummary.text)}</p>
                     {activeAiSummary.tags.length > 0 && (
                       <div className="mt-2 flex flex-wrap gap-1.5">

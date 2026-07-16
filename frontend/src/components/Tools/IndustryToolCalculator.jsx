@@ -241,7 +241,7 @@ export function IndustryToolCalculator({ tool, values, onChange, onSendMessage, 
             onClick={sendForReview}
             className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-[var(--color-primary)] px-4 py-2.5 text-sm font-medium text-white transition hover:bg-[var(--color-primary-hover)]"
           >
-            Ask SAGEMRO AI to review this result
+            Review this result in service chat
             <ArrowRight size={16} />
           </button>
         )}

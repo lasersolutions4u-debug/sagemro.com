@@ -33,7 +33,7 @@ const EMPTY_FORM = {
 const TEXT = {
   en: {
     title: 'Knowledge Base',
-    subtitle: 'Review and publish external references, manuals, repair notes, and service experience before AI can use them.',
+    subtitle: 'Review manuals, repair notes, parameter sheets, and external references before they are available in service conversations.',
     search: 'Search title, content, equipment, brand, or model',
     all: 'All',
     newArticle: 'New article',
@@ -65,7 +65,7 @@ const TEXT = {
     failed: 'Operation failed: ',
     usage: {
       title: 'Knowledge Base usage and rules',
-      intro: 'Only reviewed and published knowledge can be used by AI. Treat this as the source of truth for manuals, repair notes, parameter sheets, and service experience.',
+      intro: 'Only reviewed and published material is available in service conversations. Use this library for manuals, repair notes, parameter sheets, and verified service references.',
       stepsTitle: 'Daily workflow',
       steps: [
         'Click New article, then fill title, category, source, applicable equipment, brand, model, risk level, and knowledge content.',
@@ -93,7 +93,7 @@ const TEXT = {
   },
   'zh-CN': {
     title: '知识库管理',
-    subtitle: '外部资料、说明书、维修经验先进入可审核知识库，发布后才允许 AI 检索使用。',
+    subtitle: '说明书、维修记录、参数资料和外部参考资料经审核发布后，才可用于服务对话。',
     search: '搜索标题、内容、设备、品牌或型号',
     all: '全部',
     newArticle: '新建条目',

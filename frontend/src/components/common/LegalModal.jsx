@@ -5,7 +5,7 @@ import { isCnLocale } from '../../utils/locale';
 const USER_AGREEMENT = `
 ## 1. Service Scope
 
-1.1 SAGEMRO Service OS provides AI-assisted equipment consultation, service request preparation, independent service coordination, equipment records, spare parts and consumables consultation, maintenance follow-up, retrofit review, laser peripheral equipment support, automation accessory support, and press brake tooling support for laser cutting and sheet metal equipment.
+1.1 SAGEMRO Equipment Service provides AI-assisted equipment consultation, service request preparation, independent service coordination, equipment records, spare parts and consumables consultation, maintenance follow-up, retrofit review, laser peripheral equipment support, automation accessory support, and press brake tooling support for laser cutting and sheet metal equipment.
 
 1.2 SAGEMRO is an independent third-party equipment service workflow, not a public technician marketplace. Customers submit service needs to SAGEMRO, and SAGEMRO reviews the request and arranges internal engineers or qualified engineers reviewed by SAGEMRO when applicable.
 
@@ -173,7 +173,7 @@ Jinan Euchio Machinery Co., Ltd. | Email: support@sagemro.com | https://sagemro.
 const CN_USER_AGREEMENT = `
 ## 1. 服务范围
 
-1.1 SAGEMRO 智能服务系统为激光切割与钣金加工设备提供 AI 辅助咨询、服务需求整理、第三方服务协调、设备档案、备件及易损件咨询、维护跟进、增购改造评估、激光周边设备、自动化配套和折弯模具支持。
+1.1 SAGEMRO 设备服务平台为激光切割与钣金加工设备提供 AI 辅助咨询、服务需求整理、第三方服务协调、设备档案、备件及易损件咨询、维护跟进、增购改造评估、激光周边设备、自动化配套和折弯模具支持。
 
 1.2 SAGEMRO 是独立第三方设备服务流程入口，不是公开工程师竞价平台。客户向 SAGEMRO 提交服务需求后，由 SAGEMRO 审核并根据实际情况安排内部工程师、合格工程师或经 SAGEMRO 审核的服务人员跟进。
 

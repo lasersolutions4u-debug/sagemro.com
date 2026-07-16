@@ -9,11 +9,11 @@ import { isCnLocale } from '../../utils/locale';
 
 const copy = {
   en: {
-    eyebrow: 'SAGEMRO Service OS',
+    eyebrow: 'SAGEMRO Equipment Service',
     headline: 'Describe the machine issue. Get the facts organized before the next decision.',
-    intro: 'SAGEMRO AI helps organize symptoms, risks, and next-step options before any service or purchasing decision. Start with the alarm, material, machine model, production impact, or the question you are trying to answer.',
-    cardTitle: 'Clear facts first. Better decisions next.',
-    cardText: 'Share what is happening in your own words. SAGEMRO AI may ask relevant follow-up questions, highlight safety concerns, and turn scattered details into a clearer technical summary you can review.',
+    intro: 'Describe the alarm, material, machine model, production impact, or service question. The system organizes the details so you can review the issue before requesting service, parts, or further assessment.',
+    cardTitle: 'Review the facts before deciding what to do.',
+    cardText: 'Write what you see on site. The system may ask for missing details, flag safety concerns, and prepare a summary for you to check.',
     trustPoints: [
       'Recommendations should explain assumptions, tradeoffs, and available evidence',
       'Practical context for alarms, downtime, cutting quality, parts questions, maintenance, and process planning',
@@ -41,11 +41,11 @@ const copy = {
     ],
   },
   zh: {
-    eyebrow: 'SAGEMRO 智能服务系统',
+    eyebrow: 'SAGEMRO 设备服务平台',
     headline: '先描述设备问题，再判断下一步。',
-    intro: 'SAGEMRO AI 帮你整理设备现象、风险和可选下一步，再决定是否需要人工服务、备件或进一步评估。你可以从报警、材料、设备型号、生产影响，或者一个具体疑问开始。',
-    cardTitle: '先把事实说清楚，再判断下一步。',
-    cardText: '你可以用自己的话描述现场情况。SAGEMRO AI 会根据需要追问相关细节、提示安全风险，并把零散信息整理成便于你确认的技术摘要。',
+    intro: '请说明报警、材料、设备型号、生产影响或具体问题。系统会整理相关信息，便于你判断是否需要维修、备件或进一步检查。',
+    cardTitle: '先确认现场情况，再决定怎么处理。',
+    cardText: '按现场实际情况填写即可。系统会补充询问缺失信息、提示安全注意事项，并生成一份供你确认的问题摘要。',
     trustPoints: [
       '涉及推荐时，应说明判断假设、取舍依据和可查证信息',
       '适用于报警、停机、切割质量、备件疑问、维保和工艺判断等场景',

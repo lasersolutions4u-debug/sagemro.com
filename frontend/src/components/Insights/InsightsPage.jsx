@@ -56,7 +56,7 @@ function InsightsHub({ onOpenLegal }) {
       <main className="mx-auto max-w-6xl px-4 py-8 sm:px-6 lg:py-12">
         <a href="/" className="mb-6 inline-flex items-center gap-2 text-sm text-[var(--color-text-secondary)] hover:text-[var(--color-primary)]">
           <ArrowLeft size={16} />
-          Back to SAGEMRO AI
+          Back to service
         </a>
         <section className="grid gap-8 lg:grid-cols-[0.9fr_1.1fr]">
           <div>

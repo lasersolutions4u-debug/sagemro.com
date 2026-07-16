@@ -41,7 +41,7 @@ const TEXT = {
       workorders: '服务工单',
       engineerApplications: '工程师申请审核',
       materials: '物料管理',
-      users: '客户与工程师',
+      users: '客户',
       ratings: '评价管理',
     },
   },

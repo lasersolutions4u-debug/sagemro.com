@@ -26,7 +26,7 @@ export function AIToolsPanel({ onSendMessage }) {
   };
 
   const handleAgentStart = () => {
-    onSendMessage(`Start ${activeTool.title} as a SAGEMRO Service OS agent. First ask me to describe the problem naturally. Then auto-extract structured fields, identify missing information, provide safe preliminary feedback, and prepare a neutral reviewed next-step summary for ${activeTool.leadType}.`);
+    onSendMessage(`Start ${activeTool.title} as a SAGEMRO service assistant. First ask me to describe the problem naturally. Then extract structured fields, identify missing information, provide safe preliminary feedback, and prepare a neutral next-step summary for ${activeTool.leadType}.`);
   };
 
   return (

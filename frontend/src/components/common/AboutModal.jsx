@@ -15,13 +15,13 @@ import { isCnLocale } from '../../utils/locale';
 
 const copy = {
   en: {
-    title: 'About SAGEMRO Service OS',
-    serviceName: 'SAGEMRO Service OS',
-    intro: 'An AI-assisted workspace that helps customers and engineers organize machine symptoms, safety concerns, missing facts, and practical next-step options for laser cutting and sheet metal equipment.',
+    title: 'About SAGEMRO Equipment Service',
+    serviceName: 'SAGEMRO Equipment Service',
+    intro: 'A service workspace for recording machine symptoms, safety concerns, missing details, parts questions, and follow-up actions for laser cutting and sheet metal equipment.',
     howItWorks: 'How It Works',
     moments: [
       { icon: MessageCircle, title: 'Start With The Field Facts', desc: 'Describe the alarm, cut quality issue, maintenance concern, part question, or equipment decision in plain language.' },
-      { icon: ClipboardCheck, title: 'Clarify What Is Known', desc: 'SAGEMRO AI may ask relevant follow-up questions and organize the case into a summary you can check.' },
+      { icon: ClipboardCheck, title: 'Clarify What Is Known', desc: 'The system may ask relevant follow-up questions and organize the case into a summary you can check.' },
       { icon: Wrench, title: 'Choose A Reviewed Next Step', desc: 'When diagnosis, quotation, parts, scheduling, or site safety matters, qualified review confirms what should happen next.' },
     ],
     outcomesTitle: 'What The Chat Can Help Clarify',
@@ -51,13 +51,13 @@ const copy = {
     closing: 'You describe the machine. SAGEMRO helps make the next decision clearer.',
   },
   zh: {
-    title: '关于 SAGEMRO 智能服务系统',
-    serviceName: 'SAGEMRO 智能服务系统',
+    title: '关于 SAGEMRO 设备服务平台',
+    serviceName: 'SAGEMRO 设备服务平台',
     intro: 'SAGEMRO 帮助客户与工程师整理设备现象、风险和可选下一步，适用于激光切割与钣金加工设备相关的咨询、排查和决策准备。',
     howItWorks: '如何工作',
     moments: [
       { icon: MessageCircle, title: '从现场事实开始', desc: '用自然语言描述报警、切割质量、维保疑问、备件问题或设备决策，不需要先填复杂表单。' },
-      { icon: ClipboardCheck, title: '把已知信息整理清楚', desc: 'SAGEMRO AI 会根据需要追问相关细节，并把情况整理成便于你确认的摘要。' },
+      { icon: ClipboardCheck, title: '把已知信息整理清楚', desc: '系统会根据需要追问相关细节，并把情况整理成便于你确认的摘要。' },
       { icon: Wrench, title: '再选择需要确认的下一步', desc: '涉及诊断、报价、备件、排期或现场安全时，再由合格人员进一步确认。' },
     ],
     outcomesTitle: '对话可以帮助澄清什么',

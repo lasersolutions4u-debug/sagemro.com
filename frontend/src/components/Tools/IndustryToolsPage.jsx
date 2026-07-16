@@ -128,7 +128,7 @@ function ToolsHub({ onOpenLegal }) {
         <div>
           <a href="/" className="mb-6 inline-flex items-center gap-2 text-sm text-[var(--color-text-secondary)] hover:text-[var(--color-primary)]">
             <ArrowLeft size={16} />
-            Back to SAGEMRO AI
+            Back to service
           </a>
           <div className="inline-flex items-center gap-2 rounded-lg border border-[#263238] bg-[#111820] px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-white">
             <Calculator size={14} className="text-[var(--color-primary)]" />

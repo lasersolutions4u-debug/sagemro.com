@@ -20,9 +20,10 @@ test('payment modal uses USD for quote payment amounts', async () => {
   assert.match(source, /USD/);
 });
 
-test('reasonable AI price copy references SAGEMRO AI market research', async () => {
+test('reasonable price copy uses neutral market reference language', async () => {
   const source = await readFile(new URL('../src/components/WorkOrder/PricingPanels.jsx', import.meta.url), 'utf8');
 
-  assert.match(source, /SAGEMRO AI market research/);
+  assert.match(source, /current market reference data/);
+  assert.equal(source.includes('SAGEMRO AI market research'), false);
   assert.equal(source.includes('Price is reasonable'), false);
 });

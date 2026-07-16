@@ -40,7 +40,7 @@ function App() {
   const engineerPortalUrl = isCn ? 'https://engineer.sagemro.cn' : 'https://engineer.sagemro.com';
 
   useEffect(() => {
-    document.title = isCn ? 'SAGEMRO 智能服务系统' : 'SAGEMRO Service OS';
+    document.title = isCn ? 'SAGEMRO 设备服务平台' : 'SAGEMRO Equipment Service';
   }, [isCn]);
 
   // 侧边栏状态
