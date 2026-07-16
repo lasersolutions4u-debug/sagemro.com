@@ -1864,6 +1864,10 @@ const ALLOWED_ORIGINS_DEV = [
   'http://localhost:4173',
   'http://127.0.0.1:5173',
   'http://127.0.0.1:5174',
+  'http://127.0.0.1:3000',
+  'http://local.sagemro-test.cn:5175',
+  'http://engineer.local.sagemro-test.cn:3001',
+  'http://admin.local.sagemro-test.cn:5176',
 ];
 
 function getAllowedOrigin(origin, env) {
@@ -4824,6 +4828,12 @@ async function handleGetWorkOrder(request, env) {
       'SELECT * FROM work_order_pricing WHERE work_order_id = ?'
     ).bind(id).first();
 
+    const paymentRecords = await env.DB.prepare(
+      'SELECT * FROM work_order_payments WHERE work_order_id = ? ORDER BY created_at ASC'
+    ).bind(id).all();
+    const payments = paymentRecords.results || [];
+    const paymentPolicy = pricing ? computeServicePaymentPolicy(pricing) : null;
+
     let payout = await env.DB.prepare(
       'SELECT * FROM work_order_payouts WHERE work_order_id = ?'
     ).bind(id).first();
@@ -4834,6 +4844,17 @@ async function handleGetWorkOrder(request, env) {
     const attachments = await env.DB.prepare(
       'SELECT * FROM work_order_attachments WHERE work_order_id = ? ORDER BY created_at DESC'
     ).bind(id).all();
+
+    let arrivalChecks = [];
+    if (request._auth?.userType === 'admin' || request._auth?.userType === 'engineer') {
+      const arrivalCheckRecords = await env.DB.prepare(`
+        SELECT * FROM work_order_arrival_checks
+        WHERE work_order_id = ?
+        ORDER BY created_at DESC
+        LIMIT 20
+      `).bind(id).all();
+      arrivalChecks = arrivalCheckRecords.results || [];
+    }
 
     const materialItems = await listWorkOrderMaterialItems(env, id);
     const quoteMaterialItems = materialItems.filter((item) => item.purpose === 'quote');
@@ -4854,11 +4875,16 @@ async function handleGetWorkOrder(request, env) {
       repair_record: repairRecord
         ? { ...repairRecord, material_items: materialItems.filter((item) => item.purpose === 'service_report') }
         : null,
-      pricing: pricing ? { ...pricing, material_items: quoteMaterialItems } : null,
+      pricing: pricing ? { ...pricing, material_items: quoteMaterialItems, payment_policy: paymentPolicy } : null,
+      payment_policy: paymentPolicy,
+      payments,
+      advance_payment: payments.find((payment) => payment.payment_stage === 'advance') || null,
+      balance_payment: payments.find((payment) => payment.payment_stage === 'balance') || null,
       payout_status: payout?.status || 'not_ready',
       payout: sanitizePayoutForUser(payout, request._auth),
       material_items: materialItems,
       attachments: attachments.results,
+      arrival_checks: arrivalChecks,
     });
   } catch (error) {
     if (error instanceof GuardError) return errorResponse(error.message, error.status);
@@ -4912,7 +4938,6 @@ async function handleSaveRepairRecord(request, env) {
     if (wo.engineer_id !== engineer_id) {
       return errorResponse('您无权操作该工单', 403);
     }
-
     const body = await request.json();
     assertFieldLimits(body, {
       symptom: LIMITS.symptom,
@@ -9797,7 +9822,7 @@ async function handleWorkOrderArrivalCheck(request, env) {
     if (workOrder.status !== 'in_service') {
       return errorResponse(market === 'cn' ? '付款确认后才能提交到场定位' : 'Arrival checks are available after service start approval', 409);
     }
-    if (!workOrder.arrival_verification_required && workOrder.service_mode !== 'hybrid') {
+    if (!workOrder.arrival_verification_required) {
       return errorResponse(market === 'cn' ? '此工单为远程服务，无需到场打卡' : 'This work order does not require an onsite arrival check', 409);
     }
     if (!isValidCoordinatePair(workOrder.service_latitude, workOrder.service_longitude)) {
@@ -9904,6 +9929,265 @@ async function handleWorkOrderArrivalCheck(request, env) {
 }
 
 // 工程师标记服务完成
+async function handleRequestOnsiteConversion(request, env) {
+  try {
+    const auth = request._auth;
+    const market = getRequestMarket(request);
+    if (!auth || auth.userType !== 'engineer') {
+      return errorResponse(market === 'cn' ? '仅工程师可以申请转为上门服务' : 'Only engineers can request onsite conversion', 403);
+    }
+
+    const workOrderId = new URL(request.url).pathname.split('/')[3];
+    const body = await request.json().catch(() => ({}));
+    const note = String(body.note || '').trim().slice(0, 1000);
+    if (!note) {
+      return errorResponse(market === 'cn' ? '请说明需要转为上门服务的原因' : 'Explain why onsite service is required', 400);
+    }
+
+    const workOrder = await env.DB.prepare(`
+      SELECT id, order_no, customer_id, engineer_id, status, service_mode, onsite_conversion_status
+      FROM work_orders WHERE id = ?
+    `).bind(workOrderId).first();
+    if (!workOrder) return errorResponse(market === 'cn' ? '工单不存在' : 'Work order not found', 404);
+    if (workOrder.engineer_id !== auth.userId) {
+      return errorResponse(market === 'cn' ? '您未被指派到此工单' : 'You are not assigned to this work order', 403);
+    }
+    if (workOrder.status !== 'in_service') {
+      return errorResponse(market === 'cn' ? '服务开始后才能申请转为上门服务' : 'Onsite conversion is available after service starts', 409);
+    }
+    if (workOrder.service_mode === 'onsite' || workOrder.onsite_conversion_status === 'confirmed') {
+      return errorResponse(market === 'cn' ? '此工单已经是上门服务' : 'This work order is already onsite', 409);
+    }
+
+    await env.DB.prepare(`
+      UPDATE work_orders SET
+        service_mode = 'hybrid',
+        onsite_conversion_status = 'requested',
+        onsite_conversion_requested_at = datetime('now'),
+        onsite_conversion_request_note = ?,
+        onsite_conversion_requested_by = ?
+      WHERE id = ?
+    `).bind(note, auth.userId, workOrderId).run();
+
+    await env.DB.prepare(`
+      INSERT INTO work_order_logs (id, work_order_id, action, actor_type, actor_id, content)
+      VALUES (?, ?, 'onsite_conversion_requested', 'engineer', ?, ?)
+    `).bind(generateId(), workOrderId, auth.userId, note).run();
+
+    await writeAuditLog(env, request, {
+      targetType: 'work_order',
+      targetId: workOrderId,
+      action: 'onsite_conversion_requested',
+      beforeState: {
+        service_mode: workOrder.service_mode,
+        onsite_conversion_status: workOrder.onsite_conversion_status || 'not_requested',
+      },
+      afterState: { service_mode: 'hybrid', onsite_conversion_status: 'requested', note },
+    });
+
+    if (workOrder.customer_id) {
+      await createNotification(env, {
+        user_id: workOrder.customer_id,
+        user_type: 'customer',
+        type: 'onsite_conversion_requested',
+        title: market === 'cn' ? '请确认上门服务位置' : 'Confirm the on-site service location',
+        body: market === 'cn'
+          ? `工程师申请将工单 ${workOrder.order_no || workOrderId} 转为上门服务，请确认准确地址和地图位置。`
+          : `The engineer requested an on-site visit for ${workOrder.order_no || workOrderId}. Confirm the exact address and map point.`,
+        data: { work_order_id: workOrderId },
+      });
+    }
+
+    return jsonResponse({
+      success: true,
+      service_mode: 'hybrid',
+      onsite_conversion_status: 'requested',
+    });
+  } catch (error) {
+    return errorResponse(error.message, 500);
+  }
+}
+
+async function handleConfirmOnsiteConversion(request, env, { admin = false } = {}) {
+  try {
+    const auth = request._auth;
+    const market = getRequestMarket(request);
+    const workOrderId = new URL(request.url).pathname.split('/')[admin ? 4 : 3];
+    const body = await request.json().catch(() => ({}));
+    const note = String(body.note || '').trim().slice(0, 1000);
+    const adminReason = String(body.reason || '').trim().slice(0, 1000);
+
+    if (admin) {
+      if (!auth || auth.userType !== 'admin') {
+        return errorResponse(market === 'cn' ? '需要管理员权限' : 'Admin access required', 403);
+      }
+      if (!adminReason) {
+        return errorResponse(market === 'cn' ? '管理员代确认必须填写原因' : 'A reason is required for admin confirmation', 400);
+      }
+    } else if (!auth || auth.userType !== 'customer') {
+      return errorResponse(market === 'cn' ? '仅客户可以确认现场位置' : 'Only the customer can confirm the service location', 403);
+    }
+
+    const location = parseServiceLocation(body);
+    if (location.error) return errorResponse(serviceLocationErrorMessage(location.error, market), 400);
+    if (!location.address || !location.hasCoordinates) {
+      return errorResponse(serviceLocationErrorMessage('service_location_required', market), 400);
+    }
+
+    const workOrder = await env.DB.prepare(`
+      SELECT id, order_no, customer_id, engineer_id, service_mode, onsite_conversion_status,
+        service_address, service_latitude, service_longitude
+      FROM work_orders WHERE id = ?
+    `).bind(workOrderId).first();
+    if (!workOrder) return errorResponse(market === 'cn' ? '工单不存在' : 'Work order not found', 404);
+    if (!admin && workOrder.customer_id !== auth.userId) {
+      return errorResponse(market === 'cn' ? '您无权确认此工单位置' : 'You cannot confirm this work order location', 403);
+    }
+    if (workOrder.onsite_conversion_status !== 'requested') {
+      return errorResponse(market === 'cn' ? '此工单没有待确认的上门服务申请' : 'This work order has no pending onsite conversion request', 409);
+    }
+
+    const confirmationNote = admin
+      ? `${note}${note ? '\n' : ''}${market === 'cn' ? '管理员代确认原因' : 'Admin reason'}: ${adminReason}`
+      : note;
+    await env.DB.prepare(`
+      UPDATE work_orders SET
+        service_address = ?,
+        service_latitude = ?,
+        service_longitude = ?,
+        service_accuracy_m = ?,
+        service_coordinate_system = ?,
+        service_location_source = ?,
+        service_location_confirmed_at = datetime('now'),
+        service_mode = 'onsite',
+        arrival_verification_required = 1,
+        arrival_verified_at = NULL,
+        onsite_conversion_status = 'confirmed',
+        onsite_conversion_confirmed_at = datetime('now'),
+        onsite_conversion_confirmation_note = ?,
+        onsite_conversion_confirmed_by = ?
+      WHERE id = ?
+    `).bind(
+      location.address,
+      location.latitude,
+      location.longitude,
+      location.accuracyMeters,
+      location.coordinateSystem,
+      location.source,
+      confirmationNote,
+      auth.userId,
+      workOrderId,
+    ).run();
+
+    const actorType = admin ? 'admin' : 'customer';
+    await env.DB.prepare(`
+      INSERT INTO work_order_logs (id, work_order_id, action, actor_type, actor_id, content)
+      VALUES (?, ?, 'onsite_conversion_confirmed', ?, ?, ?)
+    `).bind(
+      generateId(),
+      workOrderId,
+      actorType,
+      auth.userId,
+      admin ? adminReason : (note || location.address),
+    ).run();
+
+    await writeAuditLog(env, request, {
+      targetType: 'work_order',
+      targetId: workOrderId,
+      action: admin ? 'onsite_conversion_admin_confirmed' : 'onsite_conversion_confirmed',
+      beforeState: {
+        service_mode: workOrder.service_mode,
+        onsite_conversion_status: workOrder.onsite_conversion_status,
+        service_address: workOrder.service_address,
+        service_latitude: workOrder.service_latitude,
+        service_longitude: workOrder.service_longitude,
+      },
+      afterState: {
+        service_mode: 'onsite',
+        onsite_conversion_status: 'confirmed',
+        service_address: location.address,
+        service_latitude: location.latitude,
+        service_longitude: location.longitude,
+        reason: adminReason || undefined,
+      },
+    });
+
+    if (workOrder.engineer_id) {
+      await createNotification(env, {
+        user_id: workOrder.engineer_id,
+        user_type: 'engineer',
+        type: 'onsite_conversion_confirmed',
+        title: market === 'cn' ? '客户现场位置已确认' : 'Customer site location confirmed',
+        body: market === 'cn'
+          ? `工单 ${workOrder.order_no || workOrderId} 已转为上门服务，到达现场后请完成定位打卡。`
+          : `${workOrder.order_no || workOrderId} is now an on-site service order. Check in after arriving at the customer site.`,
+        data: { work_order_id: workOrderId },
+      });
+    }
+
+    return jsonResponse({
+      success: true,
+      service_mode: 'onsite',
+      onsite_conversion_status: 'confirmed',
+      arrival_verification_required: true,
+    });
+  } catch (error) {
+    return errorResponse(error.message, 500);
+  }
+}
+
+async function handleAdminArrivalOverride(request, env) {
+  try {
+    const auth = request._auth;
+    const market = getRequestMarket(request);
+    if (!auth || auth.userType !== 'admin') {
+      return errorResponse(market === 'cn' ? '需要管理员权限' : 'Admin access required', 403);
+    }
+
+    const workOrderId = new URL(request.url).pathname.split('/')[4];
+    const body = await request.json().catch(() => ({}));
+    const reason = String(body.reason || '').trim().slice(0, 1000);
+    if (!reason) {
+      return errorResponse(market === 'cn' ? '人工放行必须填写原因' : 'A reason is required for arrival override', 400);
+    }
+
+    const workOrder = await env.DB.prepare(`
+      SELECT id, order_no, engineer_id, service_mode, arrival_verification_required, arrival_verified_at
+      FROM work_orders WHERE id = ?
+    `).bind(workOrderId).first();
+    if (!workOrder) return errorResponse(market === 'cn' ? '工单不存在' : 'Work order not found', 404);
+    if (!workOrder.arrival_verification_required || workOrder.service_mode !== 'onsite') {
+      return errorResponse(market === 'cn' ? '此工单不需要到场核验' : 'This work order does not require arrival verification', 409);
+    }
+
+    await env.DB.prepare(`
+      UPDATE work_orders SET
+        arrival_verified_at = datetime('now'),
+        arrival_override_at = datetime('now'),
+        arrival_override_reason = ?,
+        arrival_override_by = ?
+      WHERE id = ?
+    `).bind(reason, auth.userId, workOrderId).run();
+
+    await env.DB.prepare(`
+      INSERT INTO work_order_logs (id, work_order_id, action, actor_type, actor_id, content)
+      VALUES (?, ?, 'arrival_override', 'admin', ?, ?)
+    `).bind(generateId(), workOrderId, auth.userId, reason).run();
+
+    await writeAuditLog(env, request, {
+      targetType: 'work_order',
+      targetId: workOrderId,
+      action: 'arrival_override',
+      beforeState: { arrival_verified_at: workOrder.arrival_verified_at || null },
+      afterState: { arrival_verified_at: 'now', reason },
+    });
+
+    return jsonResponse({ success: true, arrival_verified: true, override: true });
+  } catch (error) {
+    return errorResponse(error.message, 500);
+  }
+}
+
 async function handleResolveWorkOrder(request, env) {
   try {
     // 认证：engineer_id 从 token 取
@@ -9915,7 +10199,7 @@ async function handleResolveWorkOrder(request, env) {
 
     const workOrderId = new URL(request.url).pathname.split('/')[3];
     const wo = await env.DB.prepare(
-      'SELECT status, engineer_id, arrival_verification_required, arrival_verified_at FROM work_orders WHERE id = ?'
+      'SELECT status, engineer_id, customer_id, arrival_verification_required, arrival_verified_at FROM work_orders WHERE id = ?'
     ).bind(workOrderId).first();
     if (!wo) return errorResponse('工单不存在', 404);
     if (wo.engineer_id !== engineer_id) {
@@ -9953,6 +10237,8 @@ async function handleResolveWorkOrder(request, env) {
       await env.DB.prepare(
         "UPDATE work_orders SET status = 'resolved', resolved_at = datetime('now') WHERE id = ?"
       ).bind(workOrderId).run();
+
+      await ensureBalancePayment(env, workOrderId, wo.customer_id);
 
       await env.DB.prepare(`
         INSERT INTO work_order_logs (id, work_order_id, action, actor_type, actor_id, content)
@@ -10282,6 +10568,7 @@ async function handleGetWorkOrderPricing(request, env) {
       'SELECT * FROM work_order_pricing WHERE work_order_id = ?'
     ).bind(workOrderId).first();
     const materialItems = await listWorkOrderMaterialItems(env, workOrderId, { purpose: 'quote' });
+    const paymentPolicy = pricing ? computeServicePaymentPolicy(pricing) : null;
     if (
       request._auth?.userType === 'customer' &&
       pricing &&
@@ -10290,7 +10577,7 @@ async function handleGetWorkOrderPricing(request, env) {
       return jsonResponse({ pricing: null, quote_review_status: wo.quote_review_status || 'pending_review' });
     }
     return jsonResponse({
-      pricing: pricing ? { ...pricing, material_items: materialItems } : null,
+      pricing: pricing ? { ...pricing, material_items: materialItems, payment_policy: paymentPolicy } : null,
       material_items: materialItems,
     });
   } catch (error) {
@@ -10683,10 +10970,80 @@ function paymentMethodLabel(method, market = 'com') {
   return labels[method] || method || (market === 'cn' ? '支付方式' : 'Payment method');
 }
 
+function computeServicePaymentPolicy(pricing = {}) {
+  const subtotal = Math.max(0, Math.round(Number(pricing.total_amount || pricing.subtotal || 0)));
+  const laborFee = Math.max(0, Math.round(Number(pricing.labor_fee || 0)));
+  const partsFee = Math.max(0, Math.round(Number(pricing.parts_fee || 0)));
+  const travelFee = Math.max(0, Math.round(Number(pricing.travel_fee || 0)));
+  const otherFee = Math.max(0, Math.round(Number(pricing.other_fee || 0)));
+  const serviceAdvance = Math.ceil((laborFee + otherFee) * 0.5);
+  const advanceAmount = Math.max(0, Math.min(subtotal, partsFee + travelFee + serviceAdvance));
+  const balanceAmount = Math.max(0, subtotal - advanceAmount);
+
+  return {
+    subtotal,
+    advance_amount: advanceAmount,
+    balance_amount: balanceAmount,
+    labor_fee: laborFee,
+    parts_fee: partsFee,
+    travel_fee: travelFee,
+    other_fee: otherFee,
+  };
+}
+
+function paymentInstructionId(stage) {
+  const prefix = stage === 'balance' ? 'BALREQ' : 'ADVREQ';
+  return prefix + Date.now().toString(36).toUpperCase() + Math.random().toString(36).slice(2, 6).toUpperCase();
+}
+
+async function getPaymentByStage(env, workOrderId, paymentStage) {
+  return env.DB.prepare(
+    'SELECT * FROM work_order_payments WHERE work_order_id = ? AND payment_stage = ? ORDER BY created_at DESC LIMIT 1'
+  ).bind(workOrderId, paymentStage).first();
+}
+
+async function ensureBalancePayment(env, workOrderId, customerId) {
+  const existing = await getPaymentByStage(env, workOrderId, 'balance');
+  if (existing) return existing;
+
+  const pricing = await env.DB.prepare(
+    'SELECT subtotal, total_amount, labor_fee, parts_fee, travel_fee, other_fee FROM work_order_pricing WHERE work_order_id = ? AND status = ?'
+  ).bind(workOrderId, 'confirmed').first();
+  if (!pricing) return null;
+
+  const policy = computeServicePaymentPolicy(pricing);
+  if (policy.balance_amount <= 0) return null;
+
+  const paymentId = generateId();
+  await env.DB.prepare(`
+    INSERT INTO work_order_payments (
+      id, work_order_id, customer_id, amount, payment_method, transaction_id, status,
+      payment_stage, quote_total_amount, advance_amount, balance_amount, paid_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).bind(
+    paymentId,
+    workOrderId,
+    customerId || null,
+    policy.balance_amount,
+    'bank_transfer',
+    paymentInstructionId('balance'),
+    'awaiting_customer',
+    'balance',
+    policy.subtotal,
+    policy.advance_amount,
+    policy.balance_amount,
+    null
+  ).run();
+
+  return getPaymentByStage(env, workOrderId, 'balance');
+}
+
 // Customer confirms preferred payment method. Collection is followed up by the engineer and confirmed by Admin.
 async function handlePayWorkOrder(request, env) {
   try {
     const workOrderId = new URL(request.url).pathname.split('/')[3];
+    const body = await request.json().catch(() => ({}));
+    const paymentStage = body.payment_stage === 'balance' ? 'balance' : 'advance';
 
     const auth = request._auth;
     if (!auth || auth.userType !== 'customer') {
@@ -10701,31 +11058,75 @@ async function handlePayWorkOrder(request, env) {
     if (wo.customer_id !== customer_id) {
       return errorResponse(getRequestMarket(request) === 'cn' ? '您无权操作此工单' : 'You do not have permission for this work order', 403);
     }
-    if (wo.status !== 'pending_payment') {
+    if (paymentStage === 'balance' && !['resolved', 'pending_review', 'completed'].includes(wo.status)) {
+      return errorResponse('Work order is not ready for balance payment', 400);
+    }
+    if (paymentStage === 'advance' && wo.status !== 'pending_payment') {
       return errorResponse(getRequestMarket(request) === 'cn' ? '工单当前状态不允许确认支付方式' : 'Work order is not waiting for payment method confirmation', 400);
     }
 
     const pricing = await env.DB.prepare(
-      'SELECT subtotal, total_amount FROM work_order_pricing WHERE work_order_id = ? AND status = ?'
+      'SELECT subtotal, total_amount, labor_fee, parts_fee, travel_fee, other_fee FROM work_order_pricing WHERE work_order_id = ? AND status = ?'
     ).bind(workOrderId, 'confirmed').first();
     if (!pricing) return errorResponse(getRequestMarket(request) === 'cn' ? '报价未找到或未确认' : 'Quote not found or not confirmed', 404);
 
-    const amount = pricing.total_amount || pricing.subtotal || 0;
+    const paymentPolicy = computeServicePaymentPolicy(pricing);
+    const amount = paymentStage === 'balance' ? paymentPolicy.balance_amount : paymentPolicy.advance_amount;
     if (amount <= 0) return errorResponse(getRequestMarket(request) === 'cn' ? '报价金额无效' : 'Invalid quote amount', 400);
 
-    const body = await request.json().catch(() => ({}));
     const allowedMethods = ['bank_transfer', 'paypal_card', 'paypal'];
     const paymentMethod = allowedMethods.includes(body.payment_method) ? body.payment_method : 'bank_transfer';
     const market = getRequestMarket(request);
     const methodLabel = paymentMethodLabel(paymentMethod, market);
 
-    const paymentId = generateId();
-    const instructionId = 'PAYREQ' + Date.now().toString(36).toUpperCase() + Math.random().toString(36).slice(2, 6).toUpperCase();
+    let payment = await getPaymentByStage(env, workOrderId, paymentStage);
+    if (payment?.status === 'completed') {
+      return jsonResponse({
+        success: true,
+        payment: { ...payment, advance_amount: paymentPolicy.advance_amount, balance_amount: paymentPolicy.balance_amount },
+      });
+    }
 
-    await env.DB.prepare(`
-      INSERT INTO work_order_payments (id, work_order_id, customer_id, amount, payment_method, transaction_id, status)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).bind(paymentId, workOrderId, customer_id, amount, paymentMethod, instructionId, 'instructions_requested').run();
+    const paymentId = payment?.id || generateId();
+    const instructionId = paymentInstructionId(paymentStage);
+    if (payment) {
+      await env.DB.prepare(`
+        UPDATE work_order_payments SET
+          customer_id = ?, amount = ?, payment_method = ?, transaction_id = ?, status = ?,
+          quote_total_amount = ?, advance_amount = ?, balance_amount = ?, paid_at = NULL
+        WHERE id = ?
+      `).bind(
+        customer_id,
+        amount,
+        paymentMethod,
+        instructionId,
+        'instructions_requested',
+        paymentPolicy.subtotal,
+        paymentPolicy.advance_amount,
+        paymentPolicy.balance_amount,
+        payment.id
+      ).run();
+    } else {
+      await env.DB.prepare(`
+        INSERT INTO work_order_payments (
+          id, work_order_id, customer_id, amount, payment_method, transaction_id, status,
+          payment_stage, quote_total_amount, advance_amount, balance_amount, paid_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).bind(
+        paymentId,
+        workOrderId,
+        customer_id,
+        amount,
+        paymentMethod,
+        instructionId,
+        'instructions_requested',
+        paymentStage,
+        paymentPolicy.subtotal,
+        paymentPolicy.advance_amount,
+        paymentPolicy.balance_amount,
+        null
+      ).run();
+    }
 
     if (market === 'cn') {
       await env.DB.prepare(
@@ -10752,17 +11153,19 @@ async function handlePayWorkOrder(request, env) {
       ).bind(
         generateId(),
         workOrderId,
-        `Customer selected ${methodLabel} for ${amount} USD. Engineer should follow up collection and request Admin approval before service starts.`
+        paymentStage === 'balance'
+          ? `Customer selected ${methodLabel} for the ${amount} USD service balance. Admin should confirm receipt before final closure.`
+          : `Customer selected ${methodLabel} for the ${amount} USD advance payment. Engineer should follow up collection and request Admin approval before service starts.`
       ).run();
 
-      if (wo.engineer_id) {
+      if (wo.engineer_id && paymentStage === 'advance') {
         await createNotification(env, {
           user_id: wo.engineer_id,
           user_type: 'engineer',
           type: 'payment_method_selected',
           title: 'Payment follow-up required',
-          body: `Work order ${wo.order_no} selected ${methodLabel}. Follow up payment and request Admin start approval after receipt evidence is available.`,
-          data: { work_order_id: workOrderId, amount, payment_method: paymentMethod },
+          body: `Work order ${wo.order_no} selected ${methodLabel} for the advance payment. Follow up collection and request Admin start approval after receipt evidence is available.`,
+          data: { work_order_id: workOrderId, amount, payment_method: paymentMethod, payment_stage: paymentStage },
         });
       }
     }
@@ -10773,6 +11176,10 @@ async function handlePayWorkOrder(request, env) {
         id: paymentId,
         transaction_id: instructionId,
         amount,
+        payment_stage: paymentStage,
+        quote_total_amount: paymentPolicy.subtotal,
+        advance_amount: paymentPolicy.advance_amount,
+        balance_amount: paymentPolicy.balance_amount,
         payment_method: paymentMethod,
         status: 'instructions_requested',
       }
@@ -10803,13 +11210,13 @@ async function handleEngineerRequestPaymentStart(request, env) {
     }
 
     const payment = await env.DB.prepare(
-      'SELECT id, status, payment_method FROM work_order_payments WHERE work_order_id = ? ORDER BY created_at DESC LIMIT 1'
-    ).bind(workOrderId).first();
+      'SELECT id, status, payment_method, payment_stage FROM work_order_payments WHERE work_order_id = ? AND payment_stage = ? ORDER BY created_at DESC LIMIT 1'
+    ).bind(workOrderId, 'advance').first();
     if (!payment) return errorResponse(market === 'cn' ? '客户尚未确认支付方式' : 'Payment method has not been confirmed by the customer', 400);
 
     await env.DB.prepare(
-      "UPDATE work_order_payments SET status = 'pending_admin_confirmation' WHERE work_order_id = ?"
-    ).bind(workOrderId).run();
+      "UPDATE work_order_payments SET status = 'pending_admin_confirmation' WHERE id = ?"
+    ).bind(payment.id).run();
     await env.DB.prepare(
       "UPDATE work_orders SET status = 'payment_review' WHERE id = ?"
     ).bind(workOrderId).run();
@@ -10857,16 +11264,16 @@ async function handleAdminApprovePaymentStart(request, env) {
     }
 
     const payment = await env.DB.prepare(
-      'SELECT id, status, payment_method FROM work_order_payments WHERE work_order_id = ? ORDER BY created_at DESC LIMIT 1'
-    ).bind(workOrderId).first();
+      'SELECT id, status, payment_method, payment_stage FROM work_order_payments WHERE work_order_id = ? AND payment_stage = ? ORDER BY created_at DESC LIMIT 1'
+    ).bind(workOrderId, 'advance').first();
     if (!payment) return errorResponse(market === 'cn' ? '未找到付款记录' : 'Payment record not found', 400);
     if (payment.status !== 'pending_admin_confirmation' && payment.status !== 'instructions_requested') {
       return errorResponse(market === 'cn' ? '付款状态不允许管理员确认' : 'Payment is not ready for Admin confirmation', 400);
     }
 
     await env.DB.prepare(
-      "UPDATE work_order_payments SET status = 'completed' WHERE work_order_id = ?"
-    ).bind(workOrderId).run();
+      "UPDATE work_order_payments SET status = 'completed', paid_at = datetime('now') WHERE id = ?"
+    ).bind(payment.id).run();
     await env.DB.prepare(
       "UPDATE work_orders SET status = 'in_service' WHERE id = ?"
     ).bind(workOrderId).run();
@@ -10984,6 +11391,54 @@ async function handleGetInvoiceRequest(request, env) {
 }
 
 // 管理员处理发票申请（标记已开票）
+async function handleAdminApproveWorkOrderBalance(request, env) {
+  try {
+    const workOrderId = new URL(request.url).pathname.split('/')[4];
+    const body = await request.json().catch(() => ({}));
+    const note = String(body.note || '').trim();
+
+    const wo = await env.DB.prepare(
+      'SELECT id, status, order_no FROM work_orders WHERE id = ?'
+    ).bind(workOrderId).first();
+    if (!wo) return errorResponse('Work order not found', 404);
+    if (!['resolved', 'pending_review', 'completed'].includes(wo.status)) {
+      return errorResponse('Work order is not waiting for balance payment', 400);
+    }
+
+    const payment = await env.DB.prepare(
+      'SELECT id, status, payment_method, payment_stage FROM work_order_payments WHERE work_order_id = ? AND payment_stage = ? ORDER BY created_at DESC LIMIT 1'
+    ).bind(workOrderId, 'balance').first();
+    if (!payment) return errorResponse('Balance payment record not found', 400);
+    if (!['instructions_requested', 'pending_admin_confirmation'].includes(payment.status)) {
+      return errorResponse('Balance payment is not ready for Admin confirmation', 400);
+    }
+
+    await env.DB.prepare(
+      "UPDATE work_order_payments SET status = 'completed', paid_at = datetime('now') WHERE id = ?"
+    ).bind(payment.id).run();
+    await env.DB.prepare(
+      "INSERT INTO work_order_messages (id, work_order_id, sender_type, sender_id, sender_name, content, message_type, is_internal_note, is_customer_visible) VALUES (?, ?, 'system', '', 'System', ?, 'payment_update', 0, 1)"
+    ).bind(
+      generateId(),
+      workOrderId,
+      `SAGEMRO confirmed receipt of the service balance. The payment account is settled.${note ? ` ${note}` : ''}`
+    ).run();
+
+    await writeAuditLog(env, request, {
+      targetType: 'work_order',
+      targetId: workOrderId,
+      action: 'balance_payment_approved',
+      beforeState: { status: wo.status, payment_status: payment.status },
+      afterState: { status: wo.status, payment_status: 'completed', note },
+    });
+
+    return jsonResponse({ success: true, status: wo.status, payment_status: 'completed' });
+  } catch (error) {
+    if (error instanceof GuardError) return errorResponse(error.message, error.status);
+    return errorResponse(error.message, 500);
+  }
+}
+
 async function handleAdminProcessInvoiceRequest(request, env) {
   try {
     const workOrderId = new URL(request.url).pathname.split('/')[4];
@@ -11076,9 +11531,14 @@ async function handleGetWorkOrderPayment(request, env) {
     const auth = request._auth;
     if (!auth) return errorResponse('未登录', 401);
 
-    const payment = await env.DB.prepare(
-      'SELECT * FROM work_order_payments WHERE work_order_id = ? ORDER BY created_at DESC LIMIT 1'
+    const workOrder = await env.DB.prepare(
+      'SELECT id, customer_id, engineer_id, assigned_regional_lead_id FROM work_orders WHERE id = ?'
     ).bind(workOrderId).first();
+    assertWorkOrderAccess(request._auth, workOrder);
+
+    const requestedStage = new URL(request.url).searchParams.get('payment_stage');
+    const paymentStage = requestedStage === 'balance' ? 'balance' : 'advance';
+    const payment = await getPaymentByStage(env, workOrderId, paymentStage);
 
     return jsonResponse({ payment: payment || null });
   } catch (error) {
@@ -11534,6 +11994,12 @@ async function routeRequest(request, env, ctx) {
       if (path === '/api/admin/workorders' && request.method === 'GET') {
         return handleAdminWorkOrders(request, env);
       }
+      if (path.match(/^\/api\/admin\/workorders\/[^/]+\/onsite-conversion\/confirm$/) && request.method === 'POST') {
+        return handleConfirmOnsiteConversion(request, env, { admin: true });
+      }
+      if (path.match(/^\/api\/admin\/workorders\/[^/]+\/arrival-override$/) && request.method === 'POST') {
+        return handleAdminArrivalOverride(request, env);
+      }
       if (path.startsWith('/api/admin/workorders/') && path.endsWith('/assign-regional-lead') && request.method === 'PATCH') {
         return handleAdminAssignRegionalLead(request, env);
       }
@@ -11545,6 +12011,9 @@ async function routeRequest(request, env, ctx) {
       }
       if (path.match(/^\/api\/admin\/workorders\/[^/]+\/payment\/approve-start$/) && request.method === 'POST') {
         return handleAdminApprovePaymentStart(request, env);
+      }
+      if (path.match(/^\/api\/admin\/workorders\/[^/]+\/payment\/approve-balance$/) && request.method === 'POST') {
+        return handleAdminApproveWorkOrderBalance(request, env);
       }
       if (path.match(/^\/api\/admin\/workorders\/[^/]+\/payout$/) && request.method === 'PATCH') {
         return handleAdminUpdateWorkOrderPayout(request, env);
@@ -11689,6 +12158,12 @@ async function routeRequest(request, env, ctx) {
     // 工程师到场定位核验
     if (path.match(/^\/api\/workorders\/[^/]+\/arrival-check$/) && request.method === 'POST') {
       return handleWorkOrderArrivalCheck(request, env);
+    }
+    if (path.match(/^\/api\/workorders\/[^/]+\/onsite-conversion\/request$/) && request.method === 'POST') {
+      return handleRequestOnsiteConversion(request, env);
+    }
+    if (path.match(/^\/api\/workorders\/[^/]+\/onsite-conversion\/confirm$/) && request.method === 'POST') {
+      return handleConfirmOnsiteConversion(request, env);
     }
     // 工程师标记服务完成
     if (path.match(/^\/api\/workorders\/[^/]+\/resolve$/) && request.method === 'POST') {

@@ -15,6 +15,8 @@
  *   - FeedbackHost 组件在根节点挂一次，订阅事件后渲染 UI
  */
 
+import { isCnLocale } from './locale';
+
 let autoId = 0;
 function nextId() {
   autoId = (autoId + 1) % Number.MAX_SAFE_INTEGER;
@@ -48,6 +50,7 @@ export function toastWarning(msg, opts) { toast(msg, { ...opts, type: 'warning' 
 export function confirmDialog(message, opts = {}) {
   return new Promise((resolve) => {
     if (typeof window === 'undefined') { resolve(false); return; }
+    const isCn = isCnLocale();
     const id = nextId();
     const handler = (e) => {
       if (e.detail?.id !== id) return;
@@ -59,9 +62,9 @@ export function confirmDialog(message, opts = {}) {
       detail: {
         id,
         message: String(message ?? ''),
-        title: opts.title || 'Confirm',
-        confirmText: opts.confirmText || 'OK',
-        cancelText: opts.cancelText || 'Cancel',
+        title: opts.title || (isCn ? '确认' : 'Confirm'),
+        confirmText: opts.confirmText || (isCn ? '确定' : 'OK'),
+        cancelText: opts.cancelText || (isCn ? '取消' : 'Cancel'),
         danger: !!opts.danger,
       },
     }));

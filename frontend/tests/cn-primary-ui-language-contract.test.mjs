@@ -160,6 +160,7 @@ test('CN legacy engineer dashboard modal localizes dispatch labels', () => {
 test('CN recruiting and shared overlays localize secondary labels', () => {
   const recruiting = read('frontend/src/components/Engineer/EngineerRecruitingPage.jsx');
   const feedback = read('frontend/src/components/common/FeedbackHost.jsx');
+  const feedbackUtils = read('frontend/src/utils/feedback.js');
 
   assert.match(recruiting, /为什么加入 SAGEMRO/);
   assert.match(recruiting, /派工前资料更完整/);
@@ -172,6 +173,11 @@ test('CN recruiting and shared overlays localize secondary labels', () => {
   assert.match(feedback, /isCnLocale/);
   assert.match(feedback, /关闭/);
   assert.doesNotMatch(feedback, /aria-label="Close"/);
+
+  assert.match(feedbackUtils, /isCnLocale/);
+  assert.match(feedbackUtils, /isCn \? '确认' : 'Confirm'/);
+  assert.match(feedbackUtils, /isCn \? '确定' : 'OK'/);
+  assert.match(feedbackUtils, /isCn \? '取消' : 'Cancel'/);
 });
 
 test('CN legacy AI tools panel localizes visible service-agent copy', () => {

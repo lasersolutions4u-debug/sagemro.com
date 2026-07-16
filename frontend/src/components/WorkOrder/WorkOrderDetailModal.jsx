@@ -8,6 +8,9 @@ import {
   submitEngineerReview,
   getEngineerReview,
   checkInWorkOrder,
+  requestOnsiteConversion,
+  confirmOnsiteConversion,
+  searchServiceLocations,
   requestWorkOrderPaymentStart,
   createMachineLead,
 } from '../../services/api';
@@ -35,6 +38,7 @@ import { PaymentModal } from '../Payment/PaymentModal';
 import { formatCustomerDeviceLine, formatServiceTextForLocale } from '../../utils/workOrderDisplay';
 import { canEngineerViewCustomerContact, redactContactInfo } from '../../utils/contactRedaction';
 import { isCnLocale } from '../../utils/locale';
+import { Loader2, LocateFixed, MapPin, Search } from 'lucide-react';
 
 const CURRENCY = isCnLocale() ? 'CNY' : 'USD';
 
@@ -320,6 +324,20 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
   const [engReviewSubmitting, setEngReviewSubmitting] = useState(false);
   const [paymentStartSubmitting, setPaymentStartSubmitting] = useState(false);
   const [arrivalSubmitting, setArrivalSubmitting] = useState(false);
+  const [onsiteRequestNote, setOnsiteRequestNote] = useState('');
+  const [onsiteSubmitting, setOnsiteSubmitting] = useState(false);
+  const [siteLocation, setSiteLocation] = useState({
+    service_address: '',
+    service_latitude: null,
+    service_longitude: null,
+    service_accuracy_m: null,
+    service_coordinate_system: 'wgs84',
+    service_location_source: 'customer_browser',
+    note: '',
+  });
+  const [siteLocationResults, setSiteLocationResults] = useState([]);
+  const [siteLocationSearching, setSiteLocationSearching] = useState(false);
+  const [siteLocationLocating, setSiteLocationLocating] = useState(false);
   const [machineLeadForm, setMachineLeadForm] = useState({
     equipment_needs: [createEmptyEquipmentNeed()],
     customer_intent: '',
@@ -337,6 +355,15 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
     try {
       const data = await getWorkOrder(workOrderId);
       setDetail(data);
+      setSiteLocation({
+        service_address: data.service_address || '',
+        service_latitude: data.service_latitude ?? null,
+        service_longitude: data.service_longitude ?? null,
+        service_accuracy_m: data.service_accuracy_m ?? null,
+        service_coordinate_system: data.service_coordinate_system || 'wgs84',
+        service_location_source: data.service_location_source || 'customer_browser',
+        note: '',
+      });
       // 加载工程师评价
       if (userType === 'engineer') {
         try {
@@ -441,6 +468,101 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
       },
       { enableHighAccuracy: true, timeout: 15000, maximumAge: 30000 },
     );
+  };
+
+  const handleRequestOnsite = async () => {
+    const note = onsiteRequestNote.trim();
+    if (!note) {
+      toastWarning(isCn ? '请说明为什么需要转为上门服务。' : 'Explain why an on-site visit is required.');
+      return;
+    }
+    setOnsiteSubmitting(true);
+    try {
+      await requestOnsiteConversion(workOrder.id, note);
+      setOnsiteRequestNote('');
+      toastSuccess(isCn ? '已申请转为上门服务，等待客户确认现场位置。' : 'On-site visit requested. Waiting for the customer to confirm the service location.');
+      await loadDetail();
+    } catch (e) {
+      toastError(e.message || (isCn ? '申请上门服务失败。' : 'Unable to request an on-site visit.'));
+    } finally {
+      setOnsiteSubmitting(false);
+    }
+  };
+
+  const captureConversionLocation = () => {
+    if (!navigator.geolocation) {
+      toastError(isCn ? '无法获取现场定位，请允许浏览器使用定位后重试。' : 'Unable to get the site location. Allow browser location access and try again.');
+      return;
+    }
+    setSiteLocationLocating(true);
+    navigator.geolocation.getCurrentPosition(
+      ({ coords }) => {
+        setSiteLocation((current) => ({
+          ...current,
+          service_latitude: coords.latitude,
+          service_longitude: coords.longitude,
+          service_accuracy_m: coords.accuracy,
+          service_coordinate_system: 'wgs84',
+          service_location_source: 'customer_browser',
+        }));
+        setSiteLocationLocating(false);
+      },
+      () => {
+        setSiteLocationLocating(false);
+        toastError(isCn ? '无法获取现场定位，请允许浏览器使用定位后重试。' : 'Unable to get the site location. Allow browser location access and try again.');
+      },
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 },
+    );
+  };
+
+  const searchConversionLocation = async () => {
+    const query = siteLocation.service_address.trim();
+    if (query.length < 2) {
+      toastWarning(isCn ? '请先填写客户现场地址。' : 'Enter the customer site address before searching.');
+      return;
+    }
+    setSiteLocationSearching(true);
+    try {
+      const result = await searchServiceLocations(query);
+      setSiteLocationResults(result.results || []);
+    } catch (e) {
+      setSiteLocationResults([]);
+      toastError(e.message || (isCn ? '搜索现场地址失败。' : 'Unable to search the service address.'));
+    } finally {
+      setSiteLocationSearching(false);
+    }
+  };
+
+  const selectConversionLocation = (result) => {
+    setSiteLocation((current) => ({
+      ...current,
+      service_address: result.address || result.label,
+      service_latitude: result.latitude,
+      service_longitude: result.longitude,
+      service_accuracy_m: null,
+      service_coordinate_system: result.coordinate_system,
+      service_location_source: result.source,
+    }));
+    setSiteLocationResults([]);
+  };
+
+  const handleConfirmOnsite = async () => {
+    if (!siteLocation.service_address.trim()
+      || siteLocation.service_latitude === null
+      || siteLocation.service_longitude === null) {
+      toastWarning(isCn ? '请先确认准确的现场地址和地图定位。' : 'Confirm the exact customer site address and map location first.');
+      return;
+    }
+    setOnsiteSubmitting(true);
+    try {
+      await confirmOnsiteConversion(workOrder.id, siteLocation);
+      toastSuccess(isCn ? '现场位置已确认，工程师到达后必须进行到场打卡。' : 'Service location confirmed. The engineer must check in after arriving on site.');
+      await loadDetail();
+    } catch (e) {
+      toastError(e.message || (isCn ? '确认现场位置失败。' : 'Unable to confirm the service location.'));
+    } finally {
+      setOnsiteSubmitting(false);
+    }
   };
 
   const updateEquipmentNeed = (index, field, value) => {
@@ -631,7 +753,142 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
         )}
       </div>
 
-      {isEngineer && (detail?.arrival_verification_required || detail?.service_mode === 'hybrid') && effectiveStatus === 'in_service' && (
+      {isEngineer && detail && effectiveStatus === 'in_service' && detail.service_mode !== 'onsite' && (
+        <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-4">
+          <div className="flex items-start gap-3">
+            <MapPin size={18} className="mt-0.5 shrink-0 text-amber-600" />
+            <div className="min-w-0 flex-1">
+              <h3 className="text-sm font-medium text-[var(--color-text-primary)]">{isCn ? '需要转为上门服务' : 'On-site visit required'}</h3>
+              {detail.onsite_conversion_status === 'requested' ? (
+                <div className="mt-2 space-y-2 text-xs text-[var(--color-text-secondary)]">
+                  <p>{isCn ? '客户确认准确的服务地址和地图定位后，系统才会开放到场打卡。' : 'The customer must confirm the exact service address and map point before site check-in is enabled.'}</p>
+                  {detail.onsite_conversion_request_note && (
+                    <p className="rounded-lg bg-[var(--color-surface-elevated)] px-3 py-2 text-[var(--color-text-primary)]">
+                      {isCn ? '申请说明' : 'Request note'}: {detail.onsite_conversion_request_note}
+                    </p>
+                  )}
+                  <span className="inline-flex rounded-full bg-amber-500/10 px-2.5 py-1 font-medium text-amber-700">
+                    {isCn ? '等待客户确认现场位置' : 'Waiting for customer location confirmation'}
+                  </span>
+                </div>
+              ) : (
+                <div className="mt-3 space-y-3">
+                  <textarea
+                    value={onsiteRequestNote}
+                    onChange={(event) => setOnsiteRequestNote(event.target.value)}
+                    rows={3}
+                    placeholder={isCn ? '说明远程支持为什么无法完成、需要上门处理什么，以及客户应提前准备什么。' : 'Explain why remote support cannot complete the task and what should be prepared for the visit.'}
+                    className="w-full resize-none rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-amber-500/40"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleRequestOnsite}
+                    disabled={onsiteSubmitting}
+                    className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-amber-500 px-3 py-2.5 text-sm font-medium text-white hover:bg-amber-600 disabled:opacity-50"
+                  >
+                    {onsiteSubmitting && <Loader2 size={16} className="animate-spin" />}
+                    {isCn ? '申请转为上门服务' : 'Request on-site visit'}
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {isCustomer && detail?.onsite_conversion_status === 'requested' && (
+        <div className="rounded-xl border border-[var(--color-primary)]/30 bg-[var(--color-primary)]/5 p-4">
+          <div className="flex items-start gap-3">
+            <MapPin size={18} className="mt-0.5 shrink-0 text-[var(--color-primary)]" />
+            <div className="min-w-0 flex-1 space-y-3">
+              <div>
+                <h3 className="text-sm font-medium text-[var(--color-text-primary)]">{isCn ? '确认上门服务现场位置' : 'Confirm the on-site service location'}</h3>
+                <p className="mt-1 text-xs text-[var(--color-text-secondary)]">
+                  {isCn ? '工程师已申请上门处理。请确认准确的厂区入口、楼栋或车间位置。' : 'The engineer requested an on-site visit. Confirm the exact gate, building, or workshop location before dispatch.'}
+                </p>
+                {detail.onsite_conversion_request_note && (
+                  <p className="mt-2 rounded-lg bg-[var(--color-surface-elevated)] px-3 py-2 text-xs text-[var(--color-text-primary)]">
+                    {isCn ? '工程师说明' : 'Engineer note'}: {detail.onsite_conversion_request_note}
+                  </p>
+                )}
+              </div>
+              <input
+                type="text"
+                value={siteLocation.service_address}
+                onChange={(event) => {
+                  setSiteLocation((current) => ({
+                    ...current,
+                    service_address: event.target.value,
+                    service_latitude: null,
+                    service_longitude: null,
+                    service_accuracy_m: null,
+                  }));
+                  setSiteLocationResults([]);
+                }}
+                placeholder={isCn ? '准确的客户现场地址、厂区入口、楼栋或车间' : 'Exact customer site address, gate, building, or workshop'}
+                className="w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/40"
+              />
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={searchConversionLocation}
+                  disabled={siteLocationSearching}
+                  className="inline-flex items-center gap-2 rounded-xl border border-[var(--color-border)] px-3 py-2 text-sm text-[var(--color-text-primary)] hover:border-[var(--color-primary)] disabled:opacity-50"
+                >
+                  {siteLocationSearching ? <Loader2 size={16} className="animate-spin" /> : <Search size={16} />}
+                  {isCn ? '搜索地址' : 'Search address'}
+                </button>
+                <button
+                  type="button"
+                  onClick={captureConversionLocation}
+                  disabled={siteLocationLocating}
+                  className="inline-flex items-center gap-2 rounded-xl border border-[var(--color-border)] px-3 py-2 text-sm text-[var(--color-text-primary)] hover:border-[var(--color-primary)] disabled:opacity-50"
+                >
+                  {siteLocationLocating ? <Loader2 size={16} className="animate-spin" /> : <LocateFixed size={16} />}
+                  {isCn ? '使用当前位置' : 'Use current location'}
+                </button>
+              </div>
+              {siteLocationResults.length > 0 && (
+                <div className="space-y-1 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-2">
+                  {siteLocationResults.map((result) => (
+                    <button
+                      type="button"
+                      key={result.id}
+                      onClick={() => selectConversionLocation(result)}
+                      className="block w-full rounded-lg px-2 py-2 text-left text-sm text-[var(--color-text-primary)] hover:bg-[var(--color-primary)]/10"
+                    >
+                      {result.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+              {siteLocation.service_latitude !== null && siteLocation.service_longitude !== null && (
+                <p className="text-xs font-medium text-green-600">
+                  {isCn ? '地图位置已确认' : 'Map point confirmed'}{siteLocation.service_accuracy_m ? ` · ±${Math.round(siteLocation.service_accuracy_m)} m` : ''}
+                </p>
+              )}
+              <textarea
+                value={siteLocation.note}
+                onChange={(event) => setSiteLocation((current) => ({ ...current, note: event.target.value }))}
+                rows={2}
+                placeholder={isCn ? '可选：到场说明、联系人或门岗信息' : 'Optional arrival instructions, contact person, or gate information'}
+                className="w-full resize-none rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/40"
+              />
+              <button
+                type="button"
+                onClick={handleConfirmOnsite}
+                disabled={onsiteSubmitting}
+                className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-[var(--color-primary)] px-3 py-2.5 text-sm font-medium text-white hover:bg-[var(--color-primary-hover)] disabled:opacity-50"
+              >
+                {onsiteSubmitting && <Loader2 size={16} className="animate-spin" />}
+                {isCn ? '确认位置并转为上门服务' : 'Confirm location and on-site visit'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {isEngineer && detail?.arrival_verification_required && effectiveStatus === 'in_service' && (
         <div className="rounded-xl border border-[var(--color-primary)]/30 bg-[var(--color-primary)]/5 p-4">
           <h3 className="text-sm font-medium text-[var(--color-text-primary)]">{copy.arrivalTitle}</h3>
           {detail.arrival_verified_at ? (

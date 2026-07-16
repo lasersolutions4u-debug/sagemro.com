@@ -675,6 +675,28 @@ export async function checkInWorkOrder(workOrderId, location) {
   return data;
 }
 
+export async function requestOnsiteConversion(workOrderId, note) {
+  const response = await fetch(`${API_BASE}/api/workorders/${workOrderId}/onsite-conversion/request`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({ note }),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+  return data;
+}
+
+export async function confirmOnsiteConversion(workOrderId, location) {
+  const response = await fetch(`${API_BASE}/api/workorders/${workOrderId}/onsite-conversion/confirm`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify(location),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+  return data;
+}
+
 /**
  * 客户取消工单
  */

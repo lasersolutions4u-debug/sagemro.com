@@ -27,11 +27,14 @@ function createPaymentFlowEnv() {
       customer_id: 'customer-1',
       engineer_id: 'engineer-1',
       status: 'pending_payment',
-      arrival_verification_required: 0,
     }],
     __pricing: [{
       id: 'price-1',
       work_order_id: 'wo-pay-1',
+      labor_fee: 3600,
+      parts_fee: 1200,
+      travel_fee: 400,
+      other_fee: 200,
       subtotal: 5400,
       total_amount: 5400,
       status: 'confirmed',
@@ -90,6 +93,17 @@ function createStatement(env, sql) {
         return order ? { ...order } : null;
       }
 
+      if (/SELECT id, customer_id, engineer_id, assigned_regional_lead_id, quote_review_status FROM work_orders WHERE id = \?/i.test(normalized)) {
+        const order = env.__workOrders.find((item) => item.id === this.args[0]);
+        return order ? {
+          id: order.id,
+          customer_id: order.customer_id,
+          engineer_id: order.engineer_id,
+          assigned_regional_lead_id: order.assigned_regional_lead_id,
+          quote_review_status: order.quote_review_status || 'pending_review',
+        } : null;
+      }
+
       if (/SELECT id, engineer_id, status, order_no FROM work_orders WHERE id = \?/i.test(normalized)) {
         const order = env.__workOrders.find((item) => item.id === this.args[0]);
         return order ? { id: order.id, engineer_id: order.engineer_id, status: order.status, order_no: order.order_no } : null;
@@ -104,21 +118,30 @@ function createStatement(env, sql) {
         return env.__pricing.find((item) => item.work_order_id === this.args[0] && item.status === this.args[1]) || null;
       }
 
-      if (/SELECT \* FROM work_order_payments WHERE work_order_id = \?/i.test(normalized)) {
-        return env.__payments.filter((item) => item.work_order_id === this.args[0]).at(-1) || null;
+      if (/SELECT subtotal, total_amount, labor_fee, parts_fee, travel_fee, other_fee FROM work_order_pricing WHERE work_order_id = \? AND status = \?/i.test(normalized)) {
+        return env.__pricing.find((item) => item.work_order_id === this.args[0] && item.status === this.args[1]) || null;
       }
 
-      if (/SELECT id, status, payment_method FROM work_order_payments WHERE work_order_id = \?/i.test(normalized)) {
-        const payment = env.__payments.filter((item) => item.work_order_id === this.args[0]).at(-1);
-        return payment ? { id: payment.id, status: payment.status, payment_method: payment.payment_method } : null;
+      if (/SELECT \* FROM work_order_pricing WHERE work_order_id = \?/i.test(normalized)) {
+        return env.__pricing.find((item) => item.work_order_id === this.args[0]) || null;
       }
 
-      if (/SELECT status, engineer_id, arrival_verification_required, arrival_verified_at FROM work_orders WHERE id = \?/i.test(normalized)) {
+      if (/SELECT \* FROM work_order_payments WHERE work_order_id = \? AND payment_stage = \?/i.test(normalized)) {
+        return env.__payments.filter((item) => item.work_order_id === this.args[0] && (item.payment_stage || 'advance') === this.args[1]).at(-1) || null;
+      }
+
+      if (/SELECT id, status, payment_method, payment_stage FROM work_order_payments WHERE work_order_id = \? AND payment_stage = \?/i.test(normalized)) {
+        const payment = env.__payments.filter((item) => item.work_order_id === this.args[0] && (item.payment_stage || 'advance') === this.args[1]).at(-1);
+        return payment ? { id: payment.id, status: payment.status, payment_method: payment.payment_method, payment_stage: payment.payment_stage || 'advance' } : null;
+      }
+
+      if (/SELECT status, engineer_id, customer_id, arrival_verification_required, arrival_verified_at FROM work_orders WHERE id = \?/i.test(normalized)) {
         const order = env.__workOrders.find((item) => item.id === this.args[0]);
         return order ? {
           status: order.status,
           engineer_id: order.engineer_id,
-          arrival_verification_required: order.arrival_verification_required,
+          customer_id: order.customer_id,
+          arrival_verification_required: order.arrival_verification_required || 0,
           arrival_verified_at: order.arrival_verified_at || null,
         } : null;
       }
@@ -169,6 +192,10 @@ function createStatement(env, sql) {
         return env.__payouts.find((item) => item.id === this.args[0]) || null;
       }
 
+      if (/SELECT \* FROM work_order_payments WHERE work_order_id = \?/i.test(normalized)) {
+        return env.__payments.filter((item) => item.work_order_id === this.args[0]).at(-1) || null;
+      }
+
       if (/SELECT order_no FROM work_orders WHERE id = \?/i.test(normalized)) {
         const order = env.__workOrders.find((item) => item.id === this.args[0]);
         return order ? { order_no: order.order_no } : null;
@@ -211,24 +238,42 @@ function createStatement(env, sql) {
         return { results: [] };
       }
 
+      if (/SELECT \* FROM work_order_payments WHERE work_order_id = \? ORDER BY created_at ASC/i.test(normalized)) {
+        return { results: env.__payments.filter((item) => item.work_order_id === this.args[0]) };
+      }
+
       return { results: [] };
     },
     async run() {
       const normalized = normalizeSql(sql);
 
       if (/INSERT INTO work_order_payments/i.test(normalized)) {
-        const [id, work_order_id, customer_id, amount, payment_method, transaction_id, status] = this.args;
-        env.__payments.push({ id, work_order_id, customer_id, amount, payment_method, transaction_id, status });
+        const [id, work_order_id, customer_id, amount, payment_method, transaction_id, status, payment_stage, quote_total_amount, advance_amount, balance_amount] = this.args;
+        env.__payments.push({ id, work_order_id, customer_id, amount, payment_method, transaction_id, status, payment_stage: payment_stage || 'advance', quote_total_amount, advance_amount, balance_amount });
       }
 
-      if (/UPDATE work_order_payments SET status = 'pending_admin_confirmation'/i.test(normalized)) {
-        const payment = env.__payments.find((item) => item.work_order_id === this.args[0]);
+      if (/UPDATE work_order_payments SET status = 'pending_admin_confirmation' WHERE id =/i.test(normalized)) {
+        const payment = env.__payments.find((item) => item.id === this.args[0]);
         if (payment) payment.status = 'pending_admin_confirmation';
       }
 
       if (/UPDATE work_order_payments SET status = 'completed'/i.test(normalized)) {
-        const payment = env.__payments.find((item) => item.work_order_id === this.args[0]);
+        const payment = env.__payments.find((item) => item.id === this.args[0] || item.work_order_id === this.args[0]);
         if (payment) payment.status = 'completed';
+      }
+
+      if (/UPDATE work_order_payments SET\s+customer_id =/i.test(normalized)) {
+        const payment = env.__payments.find((item) => item.id === this.args.at(-1));
+        if (payment) {
+          payment.customer_id = this.args[0];
+          payment.amount = this.args[1];
+          payment.payment_method = this.args[2];
+          payment.transaction_id = this.args[3];
+          payment.status = this.args[4];
+          payment.quote_total_amount = this.args[5];
+          payment.advance_amount = this.args[6];
+          payment.balance_amount = this.args[7];
+        }
       }
 
       if (/UPDATE work_orders SET status = 'payment_review'/i.test(normalized)) {
@@ -356,6 +401,62 @@ test('customer payment method confirmation does not start service automatically'
   assert.equal(env.__workOrders[0].status, 'pending_payment');
 });
 
+test('payment quote exposes advance and balance amounts for service orders', async () => {
+  const env = createPaymentFlowEnv();
+
+  const { response, json } = await api(env, '/api/workorders/wo-pay-1/pricing', {
+    method: 'GET',
+    userType: 'customer',
+    userId: 'customer-1',
+  });
+
+  assert.equal(response.status, 200);
+  assert.equal(json.pricing.subtotal, 5400);
+  assert.deepEqual(json.pricing.payment_policy, {
+    subtotal: 5400,
+    advance_amount: 3500,
+    balance_amount: 1900,
+    labor_fee: 3600,
+    parts_fee: 1200,
+    travel_fee: 400,
+    other_fee: 200,
+  });
+});
+
+test('customer payment request uses the advance amount rather than the full quote', async () => {
+  const env = createPaymentFlowEnv();
+
+  const { response, json } = await api(env, '/api/workorders/wo-pay-1/pay', {
+    body: { payment_method: 'bank_transfer' },
+  });
+
+  assert.equal(response.status, 200);
+  assert.equal(json.payment.amount, 3500);
+  assert.equal(json.payment.advance_amount, 3500);
+  assert.equal(json.payment.balance_amount, 1900);
+});
+
+test('pure service quote still requires a service advance payment', async () => {
+  const env = createPaymentFlowEnv();
+  env.__pricing[0] = {
+    ...env.__pricing[0],
+    parts_fee: 0,
+    travel_fee: 0,
+    labor_fee: 2000,
+    other_fee: 0,
+    subtotal: 2000,
+    total_amount: 2000,
+  };
+
+  const { response, json } = await api(env, '/api/workorders/wo-pay-1/pay', {
+    body: { payment_method: 'bank_transfer' },
+  });
+
+  assert.equal(response.status, 200);
+  assert.equal(json.payment.amount, 1000);
+  assert.equal(json.payment.balance_amount, 1000);
+});
+
 test('engineer requests service start after following up payment', async () => {
   const env = createPaymentFlowEnv();
   await api(env, '/api/workorders/wo-pay-1/pay', {
@@ -395,6 +496,52 @@ test('admin confirms payment before work order enters service', async () => {
   assert.equal(json.status, 'in_service');
   assert.equal(env.__payments.at(-1).status, 'completed');
   assert.equal(env.__workOrders[0].status, 'in_service');
+});
+
+test('service completion creates a separate balance payment record', async () => {
+  const env = createPaymentFlowEnv();
+  env.__workOrders[0].status = 'in_service';
+
+  const resolved = await api(env, '/api/workorders/wo-pay-1/resolve', {
+    userType: 'engineer',
+    userId: 'engineer-1',
+    body: { engineer_id: 'engineer-1' },
+  });
+
+  assert.equal(resolved.response.status, 200);
+  assert.equal(env.__workOrders[0].status, 'resolved');
+  assert.equal(env.__payments.length, 1);
+  assert.equal(env.__payments[0].payment_stage, 'balance');
+  assert.equal(env.__payments[0].status, 'awaiting_customer');
+  assert.equal(env.__payments[0].amount, 1900);
+});
+
+test('customer requests and Admin confirms the service balance without changing service status', async () => {
+  const env = createPaymentFlowEnv();
+  env.__workOrders[0].status = 'in_service';
+  await api(env, '/api/workorders/wo-pay-1/resolve', {
+    userType: 'engineer',
+    userId: 'engineer-1',
+    body: { engineer_id: 'engineer-1' },
+  });
+
+  const requested = await api(env, '/api/workorders/wo-pay-1/pay', {
+    body: { payment_method: 'bank_transfer', payment_stage: 'balance' },
+  });
+  assert.equal(requested.response.status, 200);
+  assert.equal(requested.json.payment.payment_stage, 'balance');
+  assert.equal(requested.json.payment.amount, 1900);
+  assert.equal(env.__payments[0].status, 'instructions_requested');
+
+  const approved = await api(env, '/api/admin/workorders/wo-pay-1/payment/approve-balance', {
+    userType: 'admin',
+    userId: 'admin-1',
+    body: { note: 'Balance receipt confirmed.' },
+  });
+  assert.equal(approved.response.status, 200);
+  assert.equal(approved.json.payment_status, 'completed');
+  assert.equal(env.__payments[0].status, 'completed');
+  assert.equal(env.__workOrders[0].status, 'resolved');
 });
 
 test('final service report opens customer review and creates admin service review record', async () => {

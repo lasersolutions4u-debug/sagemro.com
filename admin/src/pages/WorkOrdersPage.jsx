@@ -24,17 +24,21 @@ class DetailErrorBoundary extends Component {
 import {
   assignAdminWorkOrder,
   assignAdminWorkOrderRegionalLead,
+  approveAdminWorkOrderBalance,
   approveAdminWorkOrderPricing,
   approveAdminWorkOrderPaymentStart,
   archiveAdminWorkOrder,
+  confirmAdminOnsiteConversion,
   getAdminInvoiceRequest,
   getAdminWorkOrder,
   getAdminWorkOrderMessages,
   getAdminUsers,
   getAdminWorkOrders,
+  overrideAdminArrival,
   postAdminWorkOrderMessage,
   processAdminInvoiceRequest,
   rejectAdminWorkOrderPricing,
+  searchAdminServiceLocations,
   updateAdminWorkOrderPayout,
 } from '../services/api';
 import { runtimeConfig } from '../config/runtime';
@@ -190,6 +194,12 @@ const TEXT = {
     approvePaymentStart: 'Confirm payment & start',
     paymentReviewTitle: 'Payment confirmation required',
     paymentReviewHint: 'Engineer has followed up payment. Confirm receipt before allowing service execution.',
+    balancePaymentTitle: 'Service balance confirmation required',
+    balancePaymentHint: 'The customer has arranged the remaining service balance. Confirm receipt to settle the payment record.',
+    approveBalancePayment: 'Confirm balance received',
+    balancePaymentPrompt: 'Balance payment confirmation note (optional):',
+    balancePaymentApproved: (orderNo) => `Service balance confirmed: ${orderNo}`,
+    balancePaymentApproveFailed: 'Failed to confirm service balance',
     archived: (orderNo) => `Archived: ${orderNo}`,
     archiveFailed: 'Archive failed',
     detailLoadFailed: 'Failed to load service order detail',
@@ -386,6 +396,12 @@ const TEXT = {
     approvePaymentStart: '确认付款并开始',
     paymentReviewTitle: '需要确认付款',
     paymentReviewHint: '工程师已跟进付款。确认到账后再安排工程师现场服务。',
+    balancePaymentTitle: '服务尾款待确认',
+    balancePaymentHint: '客户已安排支付剩余服务尾款。确认公司账户到账后，再结清该付款记录。',
+    approveBalancePayment: '确认尾款到账',
+    balancePaymentPrompt: '尾款到账确认备注（可选）：',
+    balancePaymentApproved: (orderNo) => `服务尾款已确认：${orderNo}`,
+    balancePaymentApproveFailed: '服务尾款确认失败',
     archived: (orderNo) => `已归档：${orderNo}`,
     archiveFailed: '归档失败',
     detailLoadFailed: '工单详情加载失败',
@@ -541,6 +557,18 @@ export function WorkOrdersPage() {
   const [detail, setDetail] = useState(null);
   const [detailMessages, setDetailMessages] = useState([]);
   const [internalNote, setInternalNote] = useState('');
+  const [adminSiteLocation, setAdminSiteLocation] = useState({
+    service_address: '',
+    service_latitude: '',
+    service_longitude: '',
+    service_accuracy_m: '',
+    service_coordinate_system: 'wgs84',
+    service_location_source: 'admin_customer_confirmation',
+    note: '',
+    reason: '',
+  });
+  const [adminLocationResults, setAdminLocationResults] = useState([]);
+  const [adminLocationSearching, setAdminLocationSearching] = useState(false);
   const [reviewedQuoteIds, setReviewedQuoteIds] = useState({});
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
@@ -744,6 +772,25 @@ export function WorkOrdersPage() {
     }
   }
 
+  async function handleApproveBalancePayment(wo) {
+    const note = window.prompt(t.balancePaymentPrompt) || '';
+    setAssigningId(`${wo.id}:balance-payment`);
+    setMessage('');
+    try {
+      await approveAdminWorkOrderBalance(wo.id, note);
+      setDetail((prev) => (
+        prev?.id === wo.id
+          ? { ...prev, balance_payment: prev.balance_payment ? { ...prev.balance_payment, status: 'completed' } : prev.balance_payment }
+          : prev
+      ));
+      setMessage(t.balancePaymentApproved(wo.order_no));
+    } catch (err) {
+      setMessage(err.message || t.balancePaymentApproveFailed);
+    } finally {
+      setAssigningId('');
+    }
+  }
+
   async function handleArchive(wo) {
     setAssigningId(`${wo.id}:archive`);
     setMessage('');
@@ -808,6 +855,17 @@ export function WorkOrdersPage() {
       ]);
       setDetail(detailData);
       setDetailMessages(messagesData.list || []);
+      setAdminSiteLocation({
+        service_address: detailData.service_address || '',
+        service_latitude: detailData.service_latitude ?? '',
+        service_longitude: detailData.service_longitude ?? '',
+        service_accuracy_m: detailData.service_accuracy_m ?? '',
+        service_coordinate_system: detailData.service_coordinate_system || 'wgs84',
+        service_location_source: detailData.service_location_source || 'admin_customer_confirmation',
+        note: detailData.onsite_conversion_confirmation_note || '',
+        reason: '',
+      });
+      setAdminLocationResults([]);
       getAdminInvoiceRequest(wo.id).then(setDetailInvoice).catch(() => setDetailInvoice(null));
     } catch (err) {
       setMessage(err.message || t.detailLoadFailed);
@@ -825,6 +883,88 @@ export function WorkOrdersPage() {
       setInternalNote('');
     } catch (err) {
       setMessage(err.message || t.noteSaveFailed);
+    }
+  }
+
+  async function searchAdminLocation() {
+    const query = adminSiteLocation.service_address.trim();
+    if (query.length < 2) {
+      setMessage(runtimeConfig.locale === 'zh-CN' ? '请先填写客户现场地址。' : 'Enter the customer site address before searching.');
+      return;
+    }
+    setAdminLocationSearching(true);
+    try {
+      const result = await searchAdminServiceLocations(query);
+      setAdminLocationResults(result.results || []);
+    } catch (err) {
+      setAdminLocationResults([]);
+      setMessage(err.message || (runtimeConfig.locale === 'zh-CN' ? '搜索现场地址失败。' : 'Failed to search the service address.'));
+    } finally {
+      setAdminLocationSearching(false);
+    }
+  }
+
+  function selectAdminLocation(result) {
+    setAdminSiteLocation((current) => ({
+      ...current,
+      service_address: result.address || result.label,
+      service_latitude: result.latitude,
+      service_longitude: result.longitude,
+      service_accuracy_m: '',
+      service_coordinate_system: result.coordinate_system,
+      service_location_source: result.source,
+    }));
+    setAdminLocationResults([]);
+  }
+
+  async function handleAdminOnsiteConfirmation(wo) {
+    const latitude = Number(adminSiteLocation.service_latitude);
+    const longitude = Number(adminSiteLocation.service_longitude);
+    const missingCoordinates = adminSiteLocation.service_latitude === '' || adminSiteLocation.service_longitude === '';
+    if (missingCoordinates || !adminSiteLocation.service_address.trim() || !Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+      setMessage(runtimeConfig.locale === 'zh-CN' ? '必须填写完整的现场地址和有效坐标。' : 'A complete site address and valid map coordinates are required.');
+      return;
+    }
+    if (!adminSiteLocation.reason.trim()) {
+      setMessage(runtimeConfig.locale === 'zh-CN' ? '请说明管理员代客户确认位置的原因。' : 'Explain why Admin is confirming the location on behalf of the customer.');
+      return;
+    }
+
+    setAssigningId(`${wo.id}:onsite-confirm`);
+    setMessage('');
+    try {
+      await confirmAdminOnsiteConversion(wo.id, {
+        ...adminSiteLocation,
+        service_latitude: latitude,
+        service_longitude: longitude,
+        service_accuracy_m: adminSiteLocation.service_accuracy_m === ''
+          ? null
+          : Number(adminSiteLocation.service_accuracy_m),
+      });
+      setMessage(runtimeConfig.locale === 'zh-CN' ? `已确认上门服务位置：${wo.order_no}` : `On-site service location confirmed: ${wo.order_no}`);
+      await openDetail(wo);
+    } catch (err) {
+      setMessage(err.message || (runtimeConfig.locale === 'zh-CN' ? '确认上门服务位置失败。' : 'Failed to confirm the on-site service location.'));
+    } finally {
+      setAssigningId('');
+    }
+  }
+
+  async function handleAdminArrivalOverride(wo) {
+    const reason = window.prompt(runtimeConfig.locale === 'zh-CN'
+      ? '请填写人工批准工程师到场核验的原因：'
+      : 'Reason for manually approving the engineer arrival check:') || '';
+    if (!reason.trim()) return;
+    setAssigningId(`${wo.id}:arrival-override`);
+    setMessage('');
+    try {
+      await overrideAdminArrival(wo.id, reason.trim());
+      setMessage(runtimeConfig.locale === 'zh-CN' ? `已人工批准工程师到场：${wo.order_no}` : `Engineer arrival manually approved: ${wo.order_no}`);
+      await openDetail(wo);
+    } catch (err) {
+      setMessage(err.message || (runtimeConfig.locale === 'zh-CN' ? '人工批准到场失败。' : 'Failed to approve the engineer arrival.'));
+    } finally {
+      setAssigningId('');
     }
   }
 
@@ -1172,6 +1312,169 @@ export function WorkOrdersPage() {
                       >
                         {t.approvePaymentStart}
                       </button>
+                    </div>
+                  </section>
+                )}
+                {['instructions_requested', 'pending_admin_confirmation'].includes(detail.balance_payment?.status) && (
+                  <section className="rounded-xl border border-amber-500/40 bg-amber-500/5 p-4">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                      <div>
+                        <h4 className="font-medium text-[var(--color-text)]">{t.balancePaymentTitle}</h4>
+                        <p className="mt-1 text-sm text-[var(--color-text-secondary)]">{t.balancePaymentHint}</p>
+                        <p className="mt-2 text-xs text-[var(--color-text-muted)]">
+                          {money(detail.balance_payment.amount || detail.payment_policy?.balance_amount || 0)} {CURRENCY} · {detail.balance_payment.status}
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => handleApproveBalancePayment(detail)}
+                        disabled={assigningId === `${detail.id}:balance-payment`}
+                        className="rounded-lg bg-amber-500 px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
+                      >
+                        {t.approveBalancePayment}
+                      </button>
+                    </div>
+                  </section>
+                )}
+                {detail.onsite_conversion_status === 'requested' && (
+                  <section className="rounded-xl border border-amber-500/40 bg-amber-500/5 p-4">
+                    <div>
+                      <h4 className="font-medium text-[var(--color-text)]">
+                        {runtimeConfig.locale === 'zh-CN' ? '转上门服务等待位置确认' : 'On-site conversion awaiting location confirmation'}
+                      </h4>
+                      <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
+                        {runtimeConfig.locale === 'zh-CN'
+                          ? '管理员只有在独立核实客户地址和地图位置后，才可以代客户确认；代确认原因会写入审计日志。'
+                          : 'Admin may confirm on behalf of the customer only after independently verifying the address and map point.'}
+                      </p>
+                      {detail.onsite_conversion_request_note && (
+                        <p className="mt-2 rounded-lg bg-[var(--color-surface-elevated)] px-3 py-2 text-xs text-[var(--color-text)]">
+                          {runtimeConfig.locale === 'zh-CN' ? '工程师申请说明' : 'Engineer request'}: {detail.onsite_conversion_request_note}
+                        </p>
+                      )}
+                    </div>
+                    <div className="mt-4 space-y-3">
+                      <div className="flex flex-col gap-2 sm:flex-row">
+                        <input
+                          value={adminSiteLocation.service_address}
+                          onChange={(event) => setAdminSiteLocation((current) => ({ ...current, service_address: event.target.value }))}
+                          placeholder={runtimeConfig.locale === 'zh-CN' ? '准确的客户现场地址' : 'Exact customer site address'}
+                          className="min-w-0 flex-1 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)]"
+                        />
+                        <button
+                          type="button"
+                          onClick={searchAdminLocation}
+                          disabled={adminLocationSearching}
+                          className="rounded-lg border border-[var(--color-border)] px-3 py-2 text-sm text-[var(--color-text-secondary)] disabled:opacity-50"
+                        >
+                          {adminLocationSearching
+                            ? (runtimeConfig.locale === 'zh-CN' ? '搜索中...' : 'Searching...')
+                            : (runtimeConfig.locale === 'zh-CN' ? '搜索地图' : 'Search map')}
+                        </button>
+                      </div>
+                      {adminLocationResults.length > 0 && (
+                        <div className="space-y-1 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-2">
+                          {adminLocationResults.map((result) => (
+                            <button
+                              type="button"
+                              key={result.id}
+                              onClick={() => selectAdminLocation(result)}
+                              className="block w-full rounded-md px-2 py-2 text-left text-sm text-[var(--color-text)] hover:bg-[var(--color-primary)]/10"
+                            >
+                              {result.label}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                      <div className="grid gap-2 sm:grid-cols-3">
+                        <input
+                          inputMode="decimal"
+                          value={adminSiteLocation.service_latitude}
+                          onChange={(event) => setAdminSiteLocation((current) => ({ ...current, service_latitude: event.target.value }))}
+                          placeholder={runtimeConfig.locale === 'zh-CN' ? '纬度' : 'Latitude'}
+                          className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)]"
+                        />
+                        <input
+                          inputMode="decimal"
+                          value={adminSiteLocation.service_longitude}
+                          onChange={(event) => setAdminSiteLocation((current) => ({ ...current, service_longitude: event.target.value }))}
+                          placeholder={runtimeConfig.locale === 'zh-CN' ? '经度' : 'Longitude'}
+                          className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)]"
+                        />
+                        <select
+                          value={adminSiteLocation.service_coordinate_system}
+                          onChange={(event) => setAdminSiteLocation((current) => ({ ...current, service_coordinate_system: event.target.value }))}
+                          className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)]"
+                        >
+                          <option value="wgs84">WGS84</option>
+                          <option value="gcj02">GCJ-02</option>
+                        </select>
+                      </div>
+                      <textarea
+                        value={adminSiteLocation.note}
+                        onChange={(event) => setAdminSiteLocation((current) => ({ ...current, note: event.target.value }))}
+                        rows={2}
+                        placeholder={runtimeConfig.locale === 'zh-CN' ? '位置确认说明或到场指引' : 'Location confirmation note or arrival instructions'}
+                        className="w-full resize-none rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)]"
+                      />
+                      <textarea
+                        value={adminSiteLocation.reason}
+                        onChange={(event) => setAdminSiteLocation((current) => ({ ...current, reason: event.target.value }))}
+                        rows={2}
+                        placeholder={runtimeConfig.locale === 'zh-CN' ? '必填：管理员代客户确认的原因' : 'Required: why Admin is confirming instead of the customer'}
+                        className="w-full resize-none rounded-lg border border-amber-500/40 bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)]"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => handleAdminOnsiteConfirmation(detail)}
+                        disabled={assigningId === `${detail.id}:onsite-confirm`}
+                        className="w-full rounded-lg bg-amber-500 px-3 py-2.5 text-sm font-medium text-white hover:bg-amber-600 disabled:opacity-50"
+                      >
+                        {runtimeConfig.locale === 'zh-CN' ? '代客户确认位置' : 'Confirm location on behalf of customer'}
+                      </button>
+                    </div>
+                  </section>
+                )}
+                {(detail.arrival_verification_required || detail.arrival_checks?.length > 0) && (
+                  <section className="rounded-xl border border-[var(--color-border)] p-4">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                      <div>
+                        <h4 className="font-medium text-[var(--color-text)]">{runtimeConfig.locale === 'zh-CN' ? '到场核验记录' : 'Arrival verification audit'}</h4>
+                        <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
+                          {runtimeConfig.locale === 'zh-CN' ? '现场' : 'Site'}: {detail.service_address || (runtimeConfig.locale === 'zh-CN' ? '尚未确认位置' : 'Location not confirmed')}
+                        </p>
+                        <p className="mt-1 text-xs text-[var(--color-text-muted)]">
+                          {runtimeConfig.locale === 'zh-CN' ? '状态' : 'Status'}: {detail.arrival_verified_at
+                            ? (runtimeConfig.locale === 'zh-CN' ? '已核验' : 'Verified')
+                            : (runtimeConfig.locale === 'zh-CN' ? '等待工程师打卡' : 'Waiting for engineer check-in')}
+                          {detail.arrival_override_reason ? ` · ${runtimeConfig.locale === 'zh-CN' ? '人工放行原因' : 'Admin override'}: ${detail.arrival_override_reason}` : ''}
+                        </p>
+                      </div>
+                      {detail.arrival_verification_required && !detail.arrival_verified_at && (
+                        <button
+                          type="button"
+                          onClick={() => handleAdminArrivalOverride(detail)}
+                          disabled={assigningId === `${detail.id}:arrival-override`}
+                          className="shrink-0 rounded-lg border border-red-500/40 px-3 py-2 text-sm font-medium text-red-600 disabled:opacity-50"
+                        >
+                          {runtimeConfig.locale === 'zh-CN' ? '人工批准到场' : 'Manual arrival approval'}
+                        </button>
+                      )}
+                    </div>
+                    <div className="mt-4 space-y-2">
+                      {detail.arrival_checks?.length > 0 ? detail.arrival_checks.map((check) => (
+                        <div key={check.id} className="grid gap-1 rounded-lg bg-[var(--color-surface-elevated)] px-3 py-2 text-xs text-[var(--color-text-secondary)] sm:grid-cols-4">
+                          <span>{check.created_at ? new Date(check.created_at).toLocaleString(runtimeConfig.locale === 'zh-CN' ? 'zh-CN' : 'en-US') : '-'}</span>
+                          <span>{runtimeConfig.locale === 'zh-CN' ? '距离' : 'Distance'}: {check.distance_m ?? '-'} m</span>
+                          <span>{runtimeConfig.locale === 'zh-CN' ? '允许半径' : 'Allowed radius'}: {check.radius_m ?? '-'} m</span>
+                          <span className={check.within_geofence ? 'text-green-600' : 'text-red-600'}>
+                            {check.within_geofence
+                              ? (runtimeConfig.locale === 'zh-CN' ? '通过' : 'Passed')
+                              : (check.failure_reason || (runtimeConfig.locale === 'zh-CN' ? '失败' : 'Failed'))}
+                          </span>
+                        </div>
+                      )) : (
+                        <p className="text-xs text-[var(--color-text-muted)]">{runtimeConfig.locale === 'zh-CN' ? '尚无工程师到场尝试记录。' : 'No engineer arrival attempts have been recorded.'}</p>
+                      )}
                     </div>
                   </section>
                 )}

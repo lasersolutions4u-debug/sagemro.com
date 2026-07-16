@@ -37,3 +37,25 @@ test('engineers can check in before completing an on-site work order', () => {
   assert.match(worker, /arrival_verified_at/);
   assert.match(migration, /work_order_arrival_checks/);
 });
+
+test('remote and hybrid work orders can be converted to confirmed onsite service', () => {
+  const api = read('frontend/src/services/api.js');
+  const detail = read('frontend/src/components/WorkOrder/WorkOrderDetailModal.jsx');
+  const worker = read('worker/src/index.js');
+  const migration = read('worker/migrations/035_onsite_conversion_workflow.sql');
+
+  assert.match(api, /onsite-conversion\/request/);
+  assert.match(api, /onsite-conversion\/confirm/);
+  assert.match(detail, /requestOnsiteConversion/);
+  assert.match(detail, /confirmOnsiteConversion/);
+  assert.match(detail, /onsite_conversion_status/);
+  assert.match(detail, /searchServiceLocations/);
+  assert.match(detail, /navigator\.geolocation\.getCurrentPosition/);
+  assert.match(worker, /handleRequestOnsiteConversion/);
+  assert.match(worker, /handleConfirmOnsiteConversion/);
+  assert.match(worker, /if \(!workOrder\.arrival_verification_required\)/);
+  assert.doesNotMatch(worker, /!workOrder\.arrival_verification_required && workOrder\.service_mode !== 'hybrid'/);
+  assert.doesNotMatch(detail, /arrival_verification_required \|\| detail\?\.service_mode === 'hybrid'/);
+  assert.doesNotMatch(detail, /data\.service_address \|\| current\.service_address/);
+  assert.match(migration, /onsite_conversion_requested_at/);
+});
