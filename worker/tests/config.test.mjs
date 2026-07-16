@@ -48,3 +48,15 @@ test('schema snapshot includes the current work-order workflow migrations', () =
     assert.match(schema, new RegExp(`\\('${version}'`));
   }
 });
+
+test('onsite arrival is required for completion but not for saving a service report draft', () => {
+  const source = readFileSync(new URL('../src/index.js', import.meta.url), 'utf8');
+  const saveStart = source.indexOf('async function handleSaveRepairRecord');
+  const resolveStart = source.indexOf('async function handleResolveWorkOrder');
+  const saveSource = source.slice(saveStart, source.indexOf('// ============ 工单附件', saveStart));
+  const resolveSource = source.slice(resolveStart, source.indexOf('// 客户取消工单', resolveStart));
+
+  assert.doesNotMatch(saveSource, /arrival_verification_required/);
+  assert.match(resolveSource, /arrival_verification_required/);
+  assert.match(resolveSource, /arrival_verified_at/);
+});

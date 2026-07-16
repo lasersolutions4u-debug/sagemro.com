@@ -135,9 +135,15 @@ function createStatement(env, sql) {
         return payment ? { id: payment.id, status: payment.status, payment_method: payment.payment_method, payment_stage: payment.payment_stage || 'advance' } : null;
       }
 
-      if (/SELECT status, engineer_id, customer_id FROM work_orders WHERE id = \?/i.test(normalized)) {
+      if (/SELECT status, engineer_id, customer_id, arrival_verification_required, arrival_verified_at FROM work_orders WHERE id = \?/i.test(normalized)) {
         const order = env.__workOrders.find((item) => item.id === this.args[0]);
-        return order ? { status: order.status, engineer_id: order.engineer_id, customer_id: order.customer_id } : null;
+        return order ? {
+          status: order.status,
+          engineer_id: order.engineer_id,
+          customer_id: order.customer_id,
+          arrival_verification_required: order.arrival_verification_required || 0,
+          arrival_verified_at: order.arrival_verified_at || null,
+        } : null;
       }
 
       if (/SELECT symptom, diagnosis, solution, parts_used, labor_hours FROM work_order_repair_records WHERE work_order_id = \?/i.test(normalized)) {

@@ -4929,16 +4929,12 @@ async function handleSaveRepairRecord(request, env) {
     const workOrderId = new URL(request.url).pathname.split('/')[3];
 
     const wo = await env.DB.prepare(
-      'SELECT status, engineer_id, arrival_verification_required, arrival_verified_at FROM work_orders WHERE id = ?'
+      'SELECT status, engineer_id FROM work_orders WHERE id = ?'
     ).bind(workOrderId).first();
     if (!wo) return errorResponse('工单不存在', 404);
     if (wo.engineer_id !== engineer_id) {
       return errorResponse('您无权操作该工单', 403);
     }
-    if (wo.arrival_verification_required && !wo.arrival_verified_at) {
-      return errorResponse('请先完成到场定位核验，再提交服务完成', 400);
-    }
-
     const body = await request.json();
     assertFieldLimits(body, {
       symptom: LIMITS.symptom,
@@ -10200,11 +10196,14 @@ async function handleResolveWorkOrder(request, env) {
 
     const workOrderId = new URL(request.url).pathname.split('/')[3];
     const wo = await env.DB.prepare(
-      'SELECT status, engineer_id, customer_id FROM work_orders WHERE id = ?'
+      'SELECT status, engineer_id, customer_id, arrival_verification_required, arrival_verified_at FROM work_orders WHERE id = ?'
     ).bind(workOrderId).first();
     if (!wo) return errorResponse('工单不存在', 404);
     if (wo.engineer_id !== engineer_id) {
       return errorResponse('您无权操作该工单', 403);
+    }
+    if (wo.arrival_verification_required && !wo.arrival_verified_at) {
+      return errorResponse('请先完成到场定位核验，再提交服务完成', 400);
     }
 
     const repairRecord = await env.DB.prepare(
