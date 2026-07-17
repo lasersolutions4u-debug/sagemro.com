@@ -43,14 +43,14 @@ const COPY = {
     confirmPassword: 'Confirm New Password',
     pwdPlaceholders: {
       current: 'Enter your current password',
-      new: 'At least 6 characters',
+      new: 'At least 10 characters',
       confirm: 'Re-enter your new password',
     },
     saveChanges: 'Save Changes',
     changePassword: 'Change Password',
     updating: 'Updating...',
     passwordsMismatch: 'New passwords do not match',
-    passwordMin: 'Password must be at least 6 characters',
+    passwordMin: 'Password must be at least 10 characters',
     passwordChanged: 'Password changed successfully',
     updateFailed: 'Update failed',
   },
@@ -92,14 +92,14 @@ const COPY = {
     confirmPassword: '确认新密码',
     pwdPlaceholders: {
       current: '请输入当前密码',
-      new: '至少 6 位',
+      new: '至少 10 位',
       confirm: '再次输入新密码',
     },
     saveChanges: '保存修改',
     changePassword: '修改密码',
     updating: '更新中...',
     passwordsMismatch: '两次输入的新密码不一致',
-    passwordMin: '密码至少需要 6 位',
+    passwordMin: '密码至少需要 10 位',
     passwordChanged: '密码修改成功',
     updateFailed: '更新失败',
   },
@@ -182,7 +182,7 @@ export function CustomerHomeModal({ isOpen, onClose, currentUser, userType }) {
       setError(copy.passwordsMismatch);
       return;
     }
-    if (pwdForm.newPassword.length < 6) {
+    if (pwdForm.newPassword.length < 10) {
       setError(copy.passwordMin);
       return;
     }

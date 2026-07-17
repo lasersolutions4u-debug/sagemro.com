@@ -12,7 +12,7 @@ test('public frontend routes render a localized 404 after the SPA fallback loads
   const redirects = read('frontend/public/_redirects');
 
   assert.match(app, /<NotFoundPage isCn=\{isCn\} \/>/);
-  assert.match(notFound, /Page not found/);
+  assert.match(notFound, /This page doesn\\'t exist/);
   assert.match(notFound, /页面不存在/);
   assert.equal(existsSync(path.join(root, 'frontend/public/404.html')), false);
   assert.equal(redirects.trim(), '/* /index.html 200');
