@@ -40,11 +40,13 @@ const WORK_ORDER_COPY = {
     attachmentFailed: (name, message) => `Attachment ${name} upload failed: ${message}`,
     submittedWithAttachments: (count) => `Service request submitted, ${count} attachment(s) uploaded`,
     submitFailed: (message) => `Submission failed: ${message}`,
+    aiGuidanceTitle: 'Not sure how to describe the issue?',
+    aiGuidanceDesc: 'Try the AI chat first — it helps organize the symptoms and context before you submit.',
     titleSubmitted: 'Service Request Submitted',
     titleDefault: 'Request SAGEMRO Service Support',
     successTitle: 'Service request submitted successfully.',
     serviceNo: (value) => `Service No.: ${value}`,
-    successDesc: 'SAGEMRO will review the request, confirm details, and coordinate the right engineer or service representative. You can track progress in "My Services" at any time.',
+    successDesc: 'Your request is now in the SAGEMRO queue. We\'ll review it and coordinate the right engineer. Track progress in "My Services" at any time.',
     gotIt: 'Got it',
     serviceType: 'Request Type',
     selectServiceType: 'Select request type',
@@ -65,17 +67,14 @@ const WORK_ORDER_COPY = {
     },
     serviceAddress: 'Customer Site Address',
     serviceAddressPlaceholder: 'Enter the exact service site, gate, building, or workshop address',
-    locateSite: 'Use my current location',
+    locateSite: 'Confirm site location',
     locatingSite: 'Getting location...',
-    currentLocationHint: 'Use this only when you are currently at the equipment site',
-    currentLocationCaptured: 'Current location recorded',
-    mapLocationCaptured: 'Equipment location confirmed on the map',
-    locationAccuracy: (value) => `Location accuracy about ±${value} m`,
-    locationRequired: 'On-site service requires an address and a location confirmed by map or current position',
+    locationCaptured: 'Site location captured',
+    locationRequired: 'On-site service requires the customer site address and location',
     locationFailed: 'Unable to get location. Please allow browser location access and try again.',
-    searchLocation: 'Choose equipment location on map',
+    searchLocation: 'Search address',
     searchingLocation: 'Searching...',
-    mapSearchResults: 'Select the correct equipment location',
+    mapSearchResults: 'Select a map result to confirm the service point',
     noLocationResults: 'No matching locations found',
     equipmentModel: 'Equipment Model / Part No.',
     modelPlaceholder: 'e.g. C3015 3000W, BM111, nozzle 1.5S, press brake tooling size',
@@ -110,11 +109,13 @@ const WORK_ORDER_COPY = {
     attachmentFailed: (name, message) => `附件 ${name} 上传失败：${message}`,
     submittedWithAttachments: (count) => `服务请求已提交，已上传 ${count} 个附件`,
     submitFailed: (message) => `提交失败：${message}`,
+    aiGuidanceTitle: '不确定怎么描述问题？',
+    aiGuidanceDesc: '先试试 AI 对话 — AI 帮你整理症状和背景信息，然后回来提交更完整的服务请求。',
     titleSubmitted: '服务请求已提交',
     titleDefault: '请求 SAGEMRO 服务支持',
     successTitle: '服务请求已提交成功。',
     serviceNo: (value) => `服务编号：${value}`,
-    successDesc: 'SAGEMRO 会审核请求、确认细节，并协调合适的工程师或服务代表跟进。你可以随时在“我的服务”中查看进度。',
+    successDesc: '你的请求已进入 SAGEMRO 队列。我们会审核内容并协调合适的工程师跟进。随时可以在"我的服务"中查看进度。',
     gotIt: '知道了',
     serviceType: '服务类型',
     selectServiceType: '请选择服务类型',
@@ -135,20 +136,17 @@ const WORK_ORDER_COPY = {
     },
     serviceAddress: '客户现场地址',
     serviceAddressPlaceholder: '请填写准确的服务地址、厂区入口、楼栋或车间信息',
-    locateSite: '使用我的当前位置',
+    locateSite: '确认现场定位',
     locatingSite: '正在获取定位...',
-    currentLocationHint: '仅当您目前位于设备现场时使用',
-    currentLocationCaptured: '当前位置已记录',
-    mapLocationCaptured: '设备位置已在地图中确认',
-    locationAccuracy: (value) => `定位精度约 ±${value} 米`,
-    locationRequired: '上门服务需要填写现场地址，并通过地图选点或当前位置确认设备位置',
+    locationCaptured: '现场定位已获取',
+    locationRequired: '现场服务需要提供客户现场地址和定位',
     locationFailed: '无法获取定位，请允许浏览器使用定位后重试。',
-    searchLocation: '在地图中选择设备位置',
+    searchLocation: '搜索地址',
     searchingLocation: '搜索中...',
-    mapSearchResults: '请选择正确的设备位置',
+    mapSearchResults: '请选择地图结果确认服务点位',
     noLocationResults: '没有找到匹配的地址',
     equipmentModel: '设备型号 / 规格',
-    modelPlaceholder: '例如：C3015 3000W',
+    modelPlaceholder: '例如：C3015 3000W、BM111、喷嘴 1.5S',
     description: '故障 / 服务需求描述',
     descriptionPlaceholder: '请说明设备问题、服务需求、报警代码或对生产的影响...',
     contact: '联系方式',
@@ -286,6 +284,7 @@ export function WorkOrderModal({ isOpen, onClose, onSubmit }) {
       toastWarning(copy.fillRequired);
       return;
     }
+
     if (form.service_mode === 'onsite'
       && (!form.service_address.trim() || form.service_latitude === null || form.service_longitude === null)) {
       toastWarning(copy.locationRequired);
@@ -452,6 +451,17 @@ export function WorkOrderModal({ isOpen, onClose, onSubmit }) {
 
       {!submitted && (
         <div className="space-y-4">
+        {/* AI 前置引导 */}
+        <div className="rounded-xl border border-[var(--color-primary)]/25 bg-[var(--color-primary)]/5 p-3.5 text-sm">
+          <div className="flex items-start gap-3">
+            <span className="mt-0.5 text-base">💡</span>
+            <div>
+              <p className="font-medium text-[var(--color-text-primary)]">{copy.aiGuidanceTitle}</p>
+              <p className="mt-1 text-xs leading-relaxed text-[var(--color-text-secondary)]">{copy.aiGuidanceDesc}</p>
+            </div>
+          </div>
+        </div>
+
         {/* 问题类型 */}
         <div>
           <label className="block text-sm font-medium text-[var(--color-text-primary)] mb-1">
@@ -529,6 +539,7 @@ export function WorkOrderModal({ isOpen, onClose, onSubmit }) {
           placeholder={copy.regionPlaceholder}
         />
 
+        {/* 设备规格型号 */}
         <div>
           <label className="block text-sm font-medium text-[var(--color-text-primary)] mb-2">
             {copy.serviceMode}
@@ -557,7 +568,6 @@ export function WorkOrderModal({ isOpen, onClose, onSubmit }) {
           </div>
         </div>
 
-        {form.service_mode !== 'remote' && (
         <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-elevated)] p-3 space-y-3">
           <label className="block text-sm font-medium text-[var(--color-text-primary)]">
             {copy.serviceAddress} {form.service_mode === 'onsite' && <span className="text-red-500">*</span>}
@@ -594,14 +604,12 @@ export function WorkOrderModal({ isOpen, onClose, onSubmit }) {
               type="button"
               onClick={captureSiteLocation}
               disabled={locating}
-              title={copy.currentLocationHint}
               className="inline-flex items-center gap-2 rounded-xl border border-[var(--color-border)] px-3 py-2 text-sm text-[var(--color-text-primary)] hover:border-[var(--color-primary)] disabled:opacity-50"
             >
               {locating ? <Loader2 size={16} className="animate-spin" /> : <LocateFixed size={16} />}
               {locating ? copy.locatingSite : copy.locateSite}
             </button>
           </div>
-          <p className="text-xs text-[var(--color-text-muted)]">{copy.currentLocationHint}</p>
           {locationResults.length > 0 && (
             <div className="space-y-2 rounded-xl border border-[var(--color-border)] p-2">
               <p className="text-xs text-[var(--color-text-muted)]">{copy.mapSearchResults}</p>
@@ -618,16 +626,10 @@ export function WorkOrderModal({ isOpen, onClose, onSubmit }) {
             </div>
           )}
           {form.service_latitude !== null && form.service_longitude !== null && (
-            <p className="text-xs text-green-600">
-              {form.service_location_source === 'customer_browser'
-                ? `${copy.currentLocationCaptured}${form.service_accuracy_m !== null ? ` · ${copy.locationAccuracy(Math.round(form.service_accuracy_m))}` : ''}`
-                : copy.mapLocationCaptured}
-            </p>
+            <p className="text-xs text-green-600">{copy.locationCaptured} · ±{Math.round(form.service_accuracy_m || 0)} m</p>
           )}
         </div>
-        )}
 
-        {/* 设备规格型号 */}
         <div>
           <label className="block text-sm font-medium text-[var(--color-text-primary)] mb-1">
             {copy.equipmentModel}

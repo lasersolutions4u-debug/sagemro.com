@@ -23,7 +23,7 @@ const LOGIN_COPY = {
     resetSuccess: '密码已重置，请使用新密码登录。',
     codeRequired: '请输入验证码',
     back: '← 返回',
-    companyIntro: '创建 SAGEMRO 账号，用于保存对话、设备信息和服务记录。',
+    companyIntro: '保存每一次服务记录。对话、设备档案、历史工单——随时随地查看。',
     companyName: '公司名称 *',
     companyPlaceholder: '例如：济南某某钣金制造有限公司',
     fullName: '姓名 *',
@@ -49,7 +49,7 @@ const LOGIN_COPY = {
     alreadyAccount: '已有账号？',
     signIn: '登录',
     registering: '正在注册...',
-    loginIntro: '有钣金设备问题？请描述现场情况或提交服务请求',
+    loginIntro: '登录后可查看服务历史、设备档案和 AI 辅助支持。',
     password: '密码',
     passwordPlaceholder: '请输入密码',
     signingIn: '正在登录...',
@@ -84,7 +84,7 @@ const LOGIN_COPY = {
     resetSuccess: 'Password reset successfully. Please sign in with your new password.',
     codeRequired: 'Please enter the verification code',
     back: '← Back',
-    companyIntro: 'Create your SAGEMRO account to save conversations, equipment records, and service requests.',
+    companyIntro: 'Keep every service interaction. Your conversations, equipment details, and past records — accessible from anywhere.',
     companyName: 'Company name *',
     companyPlaceholder: 'e.g., ABC Metal Products Co., Ltd.',
     fullName: 'Full name *',
@@ -112,7 +112,7 @@ const LOGIN_COPY = {
     alreadyAccount: 'Already have an account?',
     signIn: 'Sign in',
     registering: 'Registering...',
-    loginIntro: 'Have a sheet metal equipment issue? Describe the situation or submit a service request',
+    loginIntro: 'Sign in to access your service history, equipment records, and AI-assisted support.',
     password: 'Password',
     passwordPlaceholder: 'Enter your password',
     signingIn: 'Signing in...',
@@ -133,7 +133,7 @@ const normalizePhone = (value) => String(value || '').trim();
 const isInternationalPhone = (value) => /^\+?[0-9\s().-]{6,24}$/.test(normalizePhone(value));
 const isEmailAddress = (value) => /^\S+@\S+\.\S+$/.test(String(value || '').trim());
 
-export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal, conversationId }) {
+export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
   const isCn = isCnLocale();
   const copy = isCn ? LOGIN_COPY.cn : LOGIN_COPY.en;
   // step flow:
@@ -203,7 +203,7 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal, conve
     setSubmitting(true);
     setError('');
     try {
-      await registerCustomer({ name, phone, email, password, code, company: companyName, identity: 'customer', conversation_id: conversationId });
+      await registerCustomer({ name, phone, email, password, code, company: companyName, identity: 'customer' });
       const result = await login(isCn ? { phone, password } : { email, password });
       localStorage.setItem('sagemro_token', result.token);
       localStorage.setItem('sagemro_user', JSON.stringify(result.user));

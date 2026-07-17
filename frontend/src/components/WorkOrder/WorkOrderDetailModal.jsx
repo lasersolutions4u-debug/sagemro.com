@@ -14,20 +14,7 @@ import {
   requestWorkOrderPaymentStart,
   createMachineLead,
 } from '../../services/api';
-import {
-  statusConfig,
-  statusConfigCn,
-  urgencyConfig,
-  urgencyConfigCn,
-  typeLabels,
-  typeLabelsCn,
-  categoryConfig,
-  categoryConfigCn,
-  categoryL2Labels,
-  categoryL2LabelsCn,
-  formatSlaRemaining,
-  formatSlaRemainingCn,
-} from '../../data/workOrderConfig.js';
+import { statusConfig, urgencyConfig, typeLabels, categoryConfig, categoryL2Labels, formatSlaRemaining } from '../../data/workOrderConfig.js';
 import { toastSuccess, toastError, toastWarning, confirmDialog } from '../../utils/feedback';
 import { Stars } from './Stars';
 import { MessagePanel } from './MessagePanel';
@@ -35,12 +22,9 @@ import { EngineerPricingPanel, CustomerPricingPanel } from './PricingPanels';
 import { RepairRecordPanel } from './RepairRecordPanel';
 import { AttachmentsPanel } from './AttachmentsPanel';
 import { PaymentModal } from '../Payment/PaymentModal';
-import { formatCustomerDeviceLine, formatServiceTextForLocale } from '../../utils/workOrderDisplay';
+import { formatCustomerDeviceLine } from '../../utils/workOrderDisplay';
 import { canEngineerViewCustomerContact, redactContactInfo } from '../../utils/contactRedaction';
-import { isCnLocale } from '../../utils/locale';
 import { Loader2, LocateFixed, MapPin, Search } from 'lucide-react';
-
-const CURRENCY = isCnLocale() ? 'CNY' : 'USD';
 
 function hasServiceReportContent(record) {
   if (!record) return false;
@@ -75,241 +59,12 @@ const MACHINE_NEED_TYPES = [
   'Other complete machine',
 ];
 
-const MACHINE_NEED_TYPES_CN = [
-  '激光切割机',
-  '激光焊接机',
-  '折弯机',
-  '产线设备',
-  '其他整机设备',
-];
-
-const COPY = {
-  en: {
-    modalTitle: 'Work Order Details',
-    tabs: {
-      info: 'Details',
-      messages: 'Messages',
-      submitQuote: 'Submit Quote',
-      confirmQuote: 'Confirm Quote',
-      review: 'Review',
-      serviceReport: 'Service Report',
-      machineLead: 'Machine Lead',
-    },
-    incomplete: 'Work order information is incomplete',
-    ratingSaved: 'Service confirmed. Thank you for the review.',
-    ratingFailed: 'Review submission failed: ',
-    saveReportFirst: 'Please save the service report before submitting the final report.',
-    submitFinalConfirm: 'Submit the final service report to the customer for confirmation and review?',
-    finalReportSent: 'Final service report sent to the customer for confirmation.',
-    arrivalTitle: 'Arrival verification',
-    arrivalAddress: 'Customer site',
-    arrivalButton: 'Check in at customer site',
-    arrivalLocating: 'Getting current location...',
-    arrivalVerified: 'Arrival verified. You may begin or complete the service task.',
-    arrivalBeforeComplete: 'Please check in at the customer site before submitting the final service report.',
-    arrivalLocationFailed: 'Unable to get your current location. Please allow browser location access and try again.',
-    operationFailed: 'Operation failed: ',
-    machineLeadNeed: 'Please add at least one complete-machine equipment need.',
-    machineLeadIntent: 'Please describe the customer whole-machine purchase intent.',
-    machineLeadSaved: 'Machine lead submitted to Admin.',
-    machineLeadFailed: 'Machine lead submission failed: ',
-    payoutTitle: 'Engineer service payment',
-    payoutNote: 'This internal closure is handled by Admin after customer confirmation.',
-    payoutMethod: 'Method',
-    payoutAmount: 'Amount',
-    payoutReference: 'Reference',
-    issueType: 'Issue Type',
-    equipmentCategory: 'Equipment Category',
-    submitted: 'Submitted',
-    slaDeadline: 'SLA Deadline',
-    engineer: 'SAGEMRO Engineer',
-    machine: 'Machine',
-    customer: 'Customer',
-    faultDescription: 'Fault Description',
-    aiAnalysis: 'AI Analysis',
-    matchedEquipment: 'Matched Equipment',
-    attachments: 'Attachments',
-    submitFinalReport: 'Submit Final Report to Customer',
-    cancelConfirm: 'Are you sure you want to cancel this service request? This action cannot be undone.',
-    cancelSuccess: 'Service request cancelled',
-    cancelService: 'Cancel Service Request',
-    paymentStartConfirm: 'Request Admin approval to start service after payment follow-up?',
-    paymentStartNote: 'Engineer confirmed payment follow-up with the customer.',
-    paymentStartSent: 'Start request sent to Admin for payment confirmation.',
-    paymentStartFailed: 'Start request failed: ',
-    waitingPaymentConfirmation: 'Waiting for Admin Payment Confirmation',
-    submitting: 'Submitting...',
-    requestAdminStart: 'Request Admin Approval to Start',
-    progress: 'Progress',
-    confirmReview: 'Confirm Service & Review',
-    viewReview: 'View Review →',
-    yourReview: 'Your Review',
-    serviceReview: 'Service Review',
-    ratingUnavailable: 'Review not available',
-    reviewed: 'Reviewed',
-    ratingCommentPlaceholder: 'Share your service experience (optional)...',
-    ratingDimensions: {
-      timeliness: 'Timeliness',
-      technical: 'Technical Skill',
-      communication: 'Communication',
-      professional: 'Professionalism',
-    },
-    submitReview: 'Submit Review',
-    customerReviewTitle: 'Your Review of the Customer',
-    internalReviewVisible: 'This review is only visible to SAGEMRO internal operations',
-    reviewCustomer: 'Review Customer',
-    internalReviewEditorNote: 'This review is only visible to SAGEMRO internal operations, not to the customer',
-    engineerReviewPlaceholder: 'Note customer cooperation details (optional)...',
-    engineerReviewDimensions: {
-      cooperation: 'Cooperation',
-      communication: 'Communication',
-      payment: 'Payment Timeliness',
-      environment: 'Site Conditions',
-    },
-    cancel: 'Cancel',
-    machineLeadTitle: 'Whole-machine opportunity',
-    machineLeadHelper: 'Use this only when the customer is considering one or more new complete machines such as laser cutting, laser welding, press brake, or production line equipment. Parts, consumables, peripherals, and retrofit opportunities stay in engineer value-added service workflows.',
-    equipmentNeeds: 'Equipment needs',
-    addEquipment: 'Add equipment',
-    equipmentNumber: (index) => `Equipment #${index + 1}`,
-    remove: 'Remove',
-    equipmentType: 'Equipment type',
-    selectType: 'Select type',
-    quantity: 'Quantity',
-    specification: 'Power / specification',
-    specificationPlaceholder: '3015 single table, 3000W',
-    needNotes: 'Need notes',
-    needNotesPlaceholder: 'Timeline, preferred configuration, known constraints',
-    region: 'Region',
-    regionPlaceholder: 'Country / city',
-    contactName: 'Contact name',
-    contactNamePlaceholder: 'Customer contact',
-    contactPhone: 'Contact phone',
-    contactPhonePlaceholder: 'Phone',
-    contactHidden: 'Visible after service starts',
-    purchaseIntent: 'Customer purchase intent *',
-    purchaseIntentPlaceholder: "Describe the customer's whole-machine demand, planned timeline, production goal, budget signals, and technical context Admin should review.",
-    submitToAdmin: 'Submit to Admin',
-    loading: 'Loading...',
-  },
-  cn: {
-    modalTitle: '工单详情',
-    tabs: {
-      info: '详情',
-      messages: '消息',
-      submitQuote: '提交报价',
-      confirmQuote: '确认报价',
-      review: '评价',
-      serviceReport: '服务报告',
-      machineLead: '整机线索',
-    },
-    incomplete: '工单信息不完整',
-    ratingSaved: '服务已确认，感谢你的评价。',
-    ratingFailed: '评价提交失败：',
-    saveReportFirst: '请先保存服务报告，再提交给客户确认。',
-    submitFinalConfirm: '确认将最终服务报告提交给客户确认和评价吗？',
-    finalReportSent: '最终服务报告已发送给客户确认。',
-    arrivalTitle: '到场核验',
-    arrivalAddress: '客户现场',
-    arrivalButton: '到客户现场打卡',
-    arrivalLocating: '正在获取当前位置...',
-    arrivalVerified: '到场已核验，可以开始或完成服务任务。',
-    arrivalBeforeComplete: '提交最终服务报告前，请先完成客户现场到场打卡。',
-    arrivalLocationFailed: '无法获取当前位置，请允许浏览器使用定位后重试。',
-    operationFailed: '操作失败：',
-    machineLeadNeed: '请至少添加一项整机设备需求。',
-    machineLeadIntent: '请描述客户的整机采购意向。',
-    machineLeadSaved: '整机线索已提交给 Admin。',
-    machineLeadFailed: '整机线索提交失败：',
-    payoutTitle: '工程师服务结算',
-    payoutNote: '客户确认后，由 Admin 处理内部结算。',
-    payoutMethod: '方式',
-    payoutAmount: '金额',
-    payoutReference: '参考号',
-    issueType: '问题类型',
-    equipmentCategory: '设备类别',
-    submitted: '提交时间',
-    slaDeadline: 'SLA 截止',
-    engineer: 'SAGEMRO 工程师',
-    machine: '设备',
-    customer: '客户',
-    faultDescription: '故障描述',
-    aiAnalysis: 'AI 分析',
-    matchedEquipment: '匹配设备',
-    attachments: '附件',
-    submitFinalReport: '提交最终服务报告给客户',
-    cancelConfirm: '确定取消这个服务请求吗？取消后无法撤回。',
-    cancelSuccess: '服务请求已取消',
-    cancelService: '取消服务请求',
-    paymentStartConfirm: '是否请求 Admin 在付款跟进后批准开始服务？',
-    paymentStartNote: '工程师已与客户完成付款跟进确认。',
-    paymentStartSent: '开始服务请求已提交给 Admin 做付款确认。',
-    paymentStartFailed: '开始服务请求失败：',
-    waitingPaymentConfirmation: '等待 Admin 确认付款',
-    submitting: '提交中...',
-    requestAdminStart: '请求 Admin 批准开始服务',
-    progress: '进度',
-    confirmReview: '确认服务并评价',
-    viewReview: '查看评价 →',
-    yourReview: '你的评价',
-    serviceReview: '服务评价',
-    ratingUnavailable: '暂不可评价',
-    reviewed: '评价时间',
-    ratingCommentPlaceholder: '补充你的服务体验（可选）...',
-    ratingDimensions: {
-      timeliness: '及时性',
-      technical: '技术能力',
-      communication: '沟通配合',
-      professional: '专业度',
-    },
-    submitReview: '提交评价',
-    customerReviewTitle: '你对客户的评价',
-    internalReviewVisible: '此评价仅 SAGEMRO 内部运营可见',
-    reviewCustomer: '评价客户',
-    internalReviewEditorNote: '此评价仅 SAGEMRO 内部运营可见，客户不可见',
-    engineerReviewPlaceholder: '记录客户配合情况（可选）...',
-    engineerReviewDimensions: {
-      cooperation: '配合度',
-      communication: '沟通情况',
-      payment: '付款及时性',
-      environment: '现场条件',
-    },
-    cancel: '取消',
-    machineLeadTitle: '整机设备机会',
-    machineLeadHelper: '仅当客户正在考虑新增整机设备时使用，例如激光切割、激光焊接、折弯机或产线设备。配件、耗材、外设和升级改造需求继续留在工程师增值服务流程中。',
-    equipmentNeeds: '设备需求',
-    addEquipment: '添加设备',
-    equipmentNumber: (index) => `设备 #${index + 1}`,
-    remove: '移除',
-    equipmentType: '设备类型',
-    selectType: '选择类型',
-    quantity: '数量',
-    specification: '功率 / 规格',
-    specificationPlaceholder: '3015 单平台，3000W',
-    needNotes: '需求备注',
-    needNotesPlaceholder: '计划时间、偏好配置、已知限制',
-    region: '地区',
-    regionPlaceholder: '国家 / 城市',
-    contactName: '联系人',
-    contactNamePlaceholder: '客户联系人',
-    contactPhone: '联系电话',
-    contactPhonePlaceholder: '电话',
-    contactHidden: '服务开始后可见',
-    purchaseIntent: '客户采购意向 *',
-    purchaseIntentPlaceholder: '描述客户的整机需求、计划时间、生产目标、预算信号，以及 Admin 需要了解的技术背景。',
-    submitToAdmin: '提交给 Admin',
-    loading: '加载中...',
-  },
-};
-
 function createEmptyEquipmentNeed() {
   return { type: '', quantity: '1', specification: '', note: '' };
 }
 
 // ========== 主组件 ==========
 export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess, onConfirmed, userType, userId }) {
-  const isCn = isCnLocale();
-  const copy = isCn ? COPY.cn : COPY.en;
   const [detail, setDetail] = useState(null);
   const [loading, setLoading] = useState(false);
   const [tab, setTab] = useState('info');
@@ -393,7 +148,7 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
   }, [isOpen, workOrder, workOrderId, userType, loadDetail]);
 
   const handleSubmitRating = async () => {
-    if (!detail?.engineer_id || !detail?.customer_id) { toastWarning(copy.incomplete); return; }
+    if (!detail?.engineer_id || !detail?.customer_id) { toastWarning('Work order information is incomplete'); return; }
     setSubmitting(true);
     try {
       await submitRating({
@@ -406,11 +161,11 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
         rating_professional: ratings.professional,
         comment,
       });
-      toastSuccess(copy.ratingSaved);
+      toastSuccess('Service confirmed. Your review helps SAGEMRO match better engineers. Thank you.');
       onRateSuccess?.();
       loadDetail();
     } catch (e) {
-      toastError(copy.ratingFailed + e.message);
+      toastError('Review submission failed: ' + e.message);
     } finally {
       setSubmitting(false);
     }
@@ -418,29 +173,29 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
 
   const handleSubmitFinalReport = async () => {
     if (detail?.arrival_verification_required && !detail?.arrival_verified_at) {
-      toastWarning(copy.arrivalBeforeComplete);
+      toastWarning('Please check in at the customer site before submitting the final service report.');
       return;
     }
     if (!hasServiceReportContent(detail?.repair_record)) {
       setTab('repairRecord');
-      toastWarning(copy.saveReportFirst);
+      toastWarning('Please save the service report before submitting the final report.');
       return;
     }
-    if (!(await confirmDialog(copy.submitFinalConfirm))) return;
+    if (!(await confirmDialog('Submit the final service report to the customer for confirmation and review?'))) return;
     try {
       await resolveWorkOrder(workOrder.id, userId);
-      toastSuccess(copy.finalReportSent);
+      toastSuccess('Final service report sent to the customer for confirmation.');
       setTab('info');
       loadDetail();
       onConfirmed?.();
     } catch (e) {
-      toastError(copy.operationFailed + e.message);
+      toastError('Operation failed: ' + e.message);
     }
   };
 
   const handleArrivalCheck = () => {
     if (!navigator.geolocation) {
-      toastError(copy.arrivalLocationFailed);
+      toastError('Unable to get your current location. Please allow browser location access and try again.');
       return;
     }
     setArrivalSubmitting(true);
@@ -454,17 +209,17 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
             coordinate_system: 'wgs84',
             location_source: 'browser',
           });
-          toastSuccess(copy.arrivalVerified);
+          toastSuccess('Arrival verified. You may begin or complete the service task.');
           await loadDetail();
         } catch (e) {
-          toastError(e.message || copy.arrivalLocationFailed);
+          toastError(e.message || 'Unable to verify arrival.');
         } finally {
           setArrivalSubmitting(false);
         }
       },
       () => {
         setArrivalSubmitting(false);
-        toastError(copy.arrivalLocationFailed);
+        toastError('Unable to get your current location. Please allow browser location access and try again.');
       },
       { enableHighAccuracy: true, timeout: 15000, maximumAge: 30000 },
     );
@@ -473,17 +228,17 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
   const handleRequestOnsite = async () => {
     const note = onsiteRequestNote.trim();
     if (!note) {
-      toastWarning(isCn ? '请说明为什么需要转为上门服务。' : 'Explain why an on-site visit is required.');
+      toastWarning('Explain why an on-site visit is required.');
       return;
     }
     setOnsiteSubmitting(true);
     try {
       await requestOnsiteConversion(workOrder.id, note);
       setOnsiteRequestNote('');
-      toastSuccess(isCn ? '已申请转为上门服务，等待客户确认现场位置。' : 'On-site visit requested. Waiting for the customer to confirm the service location.');
+      toastSuccess('On-site visit requested. Waiting for the customer to confirm the service location.');
       await loadDetail();
     } catch (e) {
-      toastError(e.message || (isCn ? '申请上门服务失败。' : 'Unable to request an on-site visit.'));
+      toastError(e.message || 'Unable to request an on-site visit.');
     } finally {
       setOnsiteSubmitting(false);
     }
@@ -491,7 +246,7 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
 
   const captureConversionLocation = () => {
     if (!navigator.geolocation) {
-      toastError(isCn ? '无法获取现场定位，请允许浏览器使用定位后重试。' : 'Unable to get the site location. Allow browser location access and try again.');
+      toastError('Unable to get the site location. Allow browser location access and try again.');
       return;
     }
     setSiteLocationLocating(true);
@@ -509,7 +264,7 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
       },
       () => {
         setSiteLocationLocating(false);
-        toastError(isCn ? '无法获取现场定位，请允许浏览器使用定位后重试。' : 'Unable to get the site location. Allow browser location access and try again.');
+        toastError('Unable to get the site location. Allow browser location access and try again.');
       },
       { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 },
     );
@@ -518,7 +273,7 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
   const searchConversionLocation = async () => {
     const query = siteLocation.service_address.trim();
     if (query.length < 2) {
-      toastWarning(isCn ? '请先填写客户现场地址。' : 'Enter the customer site address before searching.');
+      toastWarning('Enter the customer site address before searching.');
       return;
     }
     setSiteLocationSearching(true);
@@ -527,7 +282,7 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
       setSiteLocationResults(result.results || []);
     } catch (e) {
       setSiteLocationResults([]);
-      toastError(e.message || (isCn ? '搜索现场地址失败。' : 'Unable to search the service address.'));
+      toastError(e.message || 'Unable to search the service address.');
     } finally {
       setSiteLocationSearching(false);
     }
@@ -550,16 +305,16 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
     if (!siteLocation.service_address.trim()
       || siteLocation.service_latitude === null
       || siteLocation.service_longitude === null) {
-      toastWarning(isCn ? '请先确认准确的现场地址和地图定位。' : 'Confirm the exact customer site address and map location first.');
+      toastWarning('Confirm the exact customer site address and map location first.');
       return;
     }
     setOnsiteSubmitting(true);
     try {
       await confirmOnsiteConversion(workOrder.id, siteLocation);
-      toastSuccess(isCn ? '现场位置已确认，工程师到达后必须进行到场打卡。' : 'Service location confirmed. The engineer must check in after arriving on site.');
+      toastSuccess('Service location confirmed. The engineer must check in after arriving on site.');
       await loadDetail();
     } catch (e) {
-      toastError(e.message || (isCn ? '确认现场位置失败。' : 'Unable to confirm the service location.'));
+      toastError(e.message || 'Unable to confirm the service location.');
     } finally {
       setOnsiteSubmitting(false);
     }
@@ -595,11 +350,11 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
       need.type.trim() || need.quantity.trim() || need.specification.trim() || need.note.trim()
     ));
     if (equipmentNeeds.length === 0) {
-      toastWarning(copy.machineLeadNeed);
+      toastWarning('Please add at least one complete-machine equipment need.');
       return;
     }
     if (!machineLeadForm.customer_intent.trim()) {
-      toastWarning(copy.machineLeadIntent);
+      toastWarning('Please describe the customer whole-machine purchase intent.');
       return;
     }
     setMachineLeadSubmitting(true);
@@ -613,7 +368,7 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
         contact_phone: machineLeadForm.contact_phone || detail?.customer_phone || '',
         region: machineLeadForm.region || detail?.region || detail?.customer_region || '',
       });
-      toastSuccess(copy.machineLeadSaved);
+      toastSuccess('Machine lead submitted to Admin.');
       setMachineLeadForm({
         equipment_needs: [createEmptyEquipmentNeed()],
         customer_intent: '',
@@ -622,7 +377,7 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
         region: '',
       });
     } catch (e) {
-      toastError(copy.machineLeadFailed + e.message);
+      toastError('Machine lead submission failed: ' + e.message);
     } finally {
       setMachineLeadSubmitting(false);
     }
@@ -632,46 +387,39 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
 
   // 使用 detail 中的最新状态（loadDetail 刷新后），回退到 prop 中的初始状态
   const effectiveStatus = detail?.status || workOrder.status;
-  const statusSet = isCn ? statusConfigCn : statusConfig;
-  const urgencySet = isCn ? urgencyConfigCn : urgencyConfig;
-  const typeSet = isCn ? typeLabelsCn : typeLabels;
-  const categorySet = isCn ? categoryConfigCn : categoryConfig;
-  const categoryL2Set = isCn ? categoryL2LabelsCn : categoryL2Labels;
-  const formatSla = isCn ? formatSlaRemainingCn : formatSlaRemaining;
-  const status = statusSet[effectiveStatus] || { text: effectiveStatus, color: 'bg-gray-500' };
-  const urgency = urgencySet[workOrder.urgency] || urgencySet.normal;
+  const status = statusConfig[effectiveStatus] || { text: effectiveStatus, color: 'bg-gray-500' };
+  const urgency = urgencyConfig[workOrder.urgency] || urgencyConfig.normal;
   const isEngineer = userType === 'engineer';
   const isCustomer = userType === 'customer';
   const shouldShowCustomerContact = !isEngineer || canEngineerViewCustomerContact(effectiveStatus);
   const customerPhoneDisplay = shouldShowCustomerContact ? detail?.customer_phone : detail?.customer_phone ? 'XXX' : '';
 
   const tabs = [
-    { key: 'info', label: copy.tabs.info },
-    { key: 'messages', label: copy.tabs.messages },
+    { key: 'info', label: 'Details' },
+    { key: 'messages', label: 'Messages' },
   ];
 
   // 核价Tab：工程师看表单，客户看报价确认（含待付款状态）
   const pricingStatuses = ['assigned', 'in_progress', 'pricing', 'pending_payment', 'payment_review', 'in_service'];
   if (pricingStatuses.includes(effectiveStatus)) {
-    tabs.push({ key: 'pricing', label: isEngineer ? copy.tabs.submitQuote : copy.tabs.confirmQuote });
+    tabs.push({ key: 'pricing', label: isEngineer ? 'Submit Quote' : 'Confirm Quote' });
   }
 
   // 评价Tab：客户对服务进行评价（resolved/pending_review 可评价，completed 查看已有评价）
   const canRate = effectiveStatus === 'resolved' || effectiveStatus === 'pending_review';
   const hasRating = detail?.rating;
   if (isCustomer && (canRate || (effectiveStatus === 'completed' && hasRating))) {
-    tabs.push({ key: 'rating', label: copy.tabs.review });
+    tabs.push({ key: 'rating', label: 'Review' });
   }
 
   // 维修记录Tab：工程师在服务中及之后可见，客户在有记录时可见
   const hasRepairRecord = detail?.repair_record;
   const repairStatuses = ['in_service', 'pricing', 'resolved', 'pending_review', 'completed'];
   if ((isEngineer && repairStatuses.includes(effectiveStatus)) || (isCustomer && hasRepairRecord)) {
-    // Legacy source contract: tabs.push({ key: 'repairRecord', label: 'Service Report' });
-    tabs.push({ key: 'repairRecord', label: isCn ? copy.tabs.serviceReport : 'Service Report' });
+    tabs.push({ key: 'repairRecord', label: 'Service Report' });
   }
   if (isEngineer) {
-    tabs.push({ key: 'machineLead', label: copy.tabs.machineLead });
+    tabs.push({ key: 'machineLead', label: 'Machine Lead' });
   }
 
   const renderInfoTab = () => (
@@ -680,9 +428,9 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
         <div className="rounded-xl border border-[var(--color-primary)]/30 bg-[var(--color-primary)]/5 p-4">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <h3 className="text-sm font-medium text-[var(--color-text-primary)]">{copy.payoutTitle}</h3>
+              <h3 className="text-sm font-medium text-[var(--color-text-primary)]">Engineer service payment</h3>
               <p className="mt-1 text-xs text-[var(--color-text-secondary)]">
-                {copy.payoutNote}
+                This internal closure is handled by Admin after customer confirmation.
               </p>
             </div>
             <span className="rounded-full bg-[var(--color-surface-elevated)] px-3 py-1 text-xs font-semibold text-[var(--color-primary)]">
@@ -691,11 +439,34 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
           </div>
           {detail?.payout && (
             <div className="mt-3 grid gap-2 text-xs text-[var(--color-text-secondary)] sm:grid-cols-3">
-              <div>{copy.payoutMethod}: {detail.payout.method === 'bank_swift' ? 'Bank transfer / SWIFT' : 'PayPal account'}</div>
-              <div>{copy.payoutAmount}: {detail.payout.amount ? `${detail.payout.amount} ${detail.payout.currency || CURRENCY}` : '-'}</div>
-              <div>{copy.payoutReference}: {detail.payout.transaction_reference || '-'}</div>
+              <div>Method: {detail.payout.method === 'bank_swift' ? 'Bank transfer / SWIFT' : 'PayPal account'}</div>
+              <div>Amount: {detail.payout.amount ? `${detail.payout.amount} ${detail.payout.currency || 'USD'}` : '-'}</div>
+              <div>Reference: {detail.payout.transaction_reference || '-'}</div>
             </div>
           )}
+        </div>
+      )}
+
+      {isCustomer && ['resolved', 'pending_review', 'completed'].includes(effectiveStatus) && Number(detail?.payment_policy?.balance_amount || 0) > 0 && (
+        <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-4">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h3 className="text-sm font-medium text-[var(--color-text-primary)]">Service balance</h3>
+              <p className="mt-1 text-xs text-[var(--color-text-secondary)]">
+                Remaining service balance: {detail.payment_policy.balance_amount} USD. Pay after the service report is submitted.
+              </p>
+            </div>
+            {detail?.balance_payment?.status === 'completed' ? (
+              <span className="rounded-full bg-green-500/10 px-3 py-1 text-xs font-semibold text-green-600">Payment confirmed</span>
+            ) : (
+              <button
+                onClick={() => setBalancePaymentOpen(true)}
+                className="shrink-0 rounded-lg bg-amber-500 px-3 py-2 text-sm font-medium text-white hover:bg-amber-600"
+              >
+                {detail?.balance_payment?.status === 'awaiting_customer' ? 'Pay service balance' : 'View balance payment'}
+              </button>
+            )}
+          </div>
         </div>
       )}
 
@@ -707,48 +478,47 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
             <span className={`px-2 py-0.5 text-xs rounded ${urgency.color}`}>{urgency.text}</span>
           </div>
         </div>
-        <div className="text-sm text-[var(--color-text-secondary)]">{copy.issueType}: {typeSet[workOrder.type] || workOrder.type}</div>
+        <div className="text-sm text-[var(--color-text-secondary)]">Issue Type: {typeLabels[workOrder.type] || workOrder.type}</div>
         {(workOrder.category_l1 && workOrder.category_l1 !== 'other') && (
           <div className="text-sm text-[var(--color-text-secondary)]">
-            {copy.equipmentCategory}: {categorySet[workOrder.category_l1]?.label || workOrder.category_l1}
+            Equipment Category: {categoryConfig[workOrder.category_l1]?.label || workOrder.category_l1}
             {workOrder.category_l2 && workOrder.category_l2 !== 'other' && (
-              <span className="ml-1">· {categoryL2Set[workOrder.category_l2] || workOrder.category_l2}</span>
+              <span className="ml-1">· {categoryL2Labels[workOrder.category_l2] || workOrder.category_l2}</span>
             )}
           </div>
         )}
-        <div className="text-sm text-[var(--color-text-secondary)]">{copy.submitted}: {workOrder.created_at ? new Date(workOrder.created_at).toLocaleString(isCn ? 'zh-CN' : 'en-US') : '-'}</div>
+        <div className="text-sm text-[var(--color-text-secondary)]">Submitted: {workOrder.created_at ? new Date(workOrder.created_at).toLocaleString('en-US') : '-'}</div>
         {detail?.sla_deadline && (() => {
           const sla = detail.sla_status || {};
-          const remaining = formatSla(sla);
+          const remaining = formatSlaRemaining(sla);
           const slaColor = sla.status === 'breached' ? 'text-red-500' : sla.status === 'at_risk' ? 'text-yellow-500' : 'text-green-500';
           return (
             <div className="flex flex-col gap-1 text-sm sm:flex-row sm:items-center sm:gap-4">
-              <span className="text-[var(--color-text-secondary)]">{copy.slaDeadline}: {new Date(detail.sla_deadline).toLocaleString(isCn ? 'zh-CN' : 'en-US')}</span>
+              <span className="text-[var(--color-text-secondary)]">SLA Deadline: {new Date(detail.sla_deadline).toLocaleString('en-US')}</span>
               {remaining && <span className={slaColor}>{remaining}</span>}
             </div>
           );
         })()}
         {detail?.engineer_name && (
           <div className="text-sm text-[var(--color-text-secondary)]">
-            {copy.engineer}: <span className="text-[var(--color-primary)]">{detail.engineer_name}</span>
+            SAGEMRO Engineer: <span className="text-[var(--color-primary)]">{detail.engineer_name}</span>
             {detail.engineer_phone && <span className="ml-1 opacity-70">{detail.engineer_phone}</span>}
           </div>
         )}
-        {isCustomer && formatCustomerDeviceLine(detail || workOrder, isCn ? 'zh-CN' : 'en') && (
+        {isCustomer && formatCustomerDeviceLine(detail || workOrder) && (
           <div className="text-sm text-[var(--color-text-secondary)]">
-            {/* Legacy source contract: Machine: <span */}
-            {isCn ? copy.machine : 'Machine'}: <span className="text-[var(--color-text-primary)]">{formatCustomerDeviceLine(detail || workOrder, isCn ? 'zh-CN' : 'en')}</span>
+            Machine: <span className="text-[var(--color-text-primary)]">{formatCustomerDeviceLine(detail || workOrder)}</span>
           </div>
         )}
         {detail?.customer_name && (
           <div className="text-sm text-[var(--color-text-secondary)]">
-            {copy.customer}: <span className="text-[var(--color-primary)]">{detail.customer_name}</span>
+            Customer: <span className="text-[var(--color-primary)]">{detail.customer_name}</span>
             {detail.customer_phone && <span className="ml-1 opacity-70">{customerPhoneDisplay}</span>}
           </div>
         )}
         {isEngineer && detail?.service_address && (
           <div className="text-sm text-[var(--color-text-secondary)]">
-            {copy.arrivalAddress}: <span className="text-[var(--color-text-primary)]">{detail.service_address}</span>
+            Customer site: <span className="text-[var(--color-text-primary)]">{detail.service_address}</span>
           </div>
         )}
       </div>
@@ -758,17 +528,17 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
           <div className="flex items-start gap-3">
             <MapPin size={18} className="mt-0.5 shrink-0 text-amber-600" />
             <div className="min-w-0 flex-1">
-              <h3 className="text-sm font-medium text-[var(--color-text-primary)]">{isCn ? '需要转为上门服务' : 'On-site visit required'}</h3>
-              {detail.onsite_conversion_status === 'requested' ? (
+              <h3 className="text-sm font-medium text-[var(--color-text-primary)]">On-site visit required</h3>
+              {detail?.onsite_conversion_status === 'requested' ? (
                 <div className="mt-2 space-y-2 text-xs text-[var(--color-text-secondary)]">
-                  <p>{isCn ? '客户确认准确的服务地址和地图定位后，系统才会开放到场打卡。' : 'The customer must confirm the exact service address and map point before site check-in is enabled.'}</p>
+                  <p>The customer must confirm the exact service address and map point before site check-in is enabled.</p>
                   {detail.onsite_conversion_request_note && (
                     <p className="rounded-lg bg-[var(--color-surface-elevated)] px-3 py-2 text-[var(--color-text-primary)]">
-                      {isCn ? '申请说明' : 'Request note'}: {detail.onsite_conversion_request_note}
+                      Request note: {detail.onsite_conversion_request_note}
                     </p>
                   )}
                   <span className="inline-flex rounded-full bg-amber-500/10 px-2.5 py-1 font-medium text-amber-700">
-                    {isCn ? '等待客户确认现场位置' : 'Waiting for customer location confirmation'}
+                    Waiting for customer location confirmation
                   </span>
                 </div>
               ) : (
@@ -777,7 +547,7 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
                     value={onsiteRequestNote}
                     onChange={(event) => setOnsiteRequestNote(event.target.value)}
                     rows={3}
-                    placeholder={isCn ? '说明远程支持为什么无法完成、需要上门处理什么，以及客户应提前准备什么。' : 'Explain why remote support cannot complete the task and what should be prepared for the visit.'}
+                    placeholder="Explain why remote support cannot complete the task and what should be prepared for the visit."
                     className="w-full resize-none rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-amber-500/40"
                   />
                   <button
@@ -787,7 +557,7 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
                     className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-amber-500 px-3 py-2.5 text-sm font-medium text-white hover:bg-amber-600 disabled:opacity-50"
                   >
                     {onsiteSubmitting && <Loader2 size={16} className="animate-spin" />}
-                    {isCn ? '申请转为上门服务' : 'Request on-site visit'}
+                    Request on-site visit
                   </button>
                 </div>
               )}
@@ -802,13 +572,13 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
             <MapPin size={18} className="mt-0.5 shrink-0 text-[var(--color-primary)]" />
             <div className="min-w-0 flex-1 space-y-3">
               <div>
-                <h3 className="text-sm font-medium text-[var(--color-text-primary)]">{isCn ? '确认上门服务现场位置' : 'Confirm the on-site service location'}</h3>
+                <h3 className="text-sm font-medium text-[var(--color-text-primary)]">Confirm the on-site service location</h3>
                 <p className="mt-1 text-xs text-[var(--color-text-secondary)]">
-                  {isCn ? '工程师已申请上门处理。请确认准确的厂区入口、楼栋或车间位置。' : 'The engineer requested an on-site visit. Confirm the exact gate, building, or workshop location before dispatch.'}
+                  The engineer requested an on-site visit. Confirm the exact gate, building, or workshop location before dispatch.
                 </p>
                 {detail.onsite_conversion_request_note && (
                   <p className="mt-2 rounded-lg bg-[var(--color-surface-elevated)] px-3 py-2 text-xs text-[var(--color-text-primary)]">
-                    {isCn ? '工程师说明' : 'Engineer note'}: {detail.onsite_conversion_request_note}
+                    Engineer note: {detail.onsite_conversion_request_note}
                   </p>
                 )}
               </div>
@@ -825,7 +595,7 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
                   }));
                   setSiteLocationResults([]);
                 }}
-                placeholder={isCn ? '准确的客户现场地址、厂区入口、楼栋或车间' : 'Exact customer site address, gate, building, or workshop'}
+                placeholder="Exact customer site address, gate, building, or workshop"
                 className="w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/40"
               />
               <div className="flex flex-wrap gap-2">
@@ -836,7 +606,7 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
                   className="inline-flex items-center gap-2 rounded-xl border border-[var(--color-border)] px-3 py-2 text-sm text-[var(--color-text-primary)] hover:border-[var(--color-primary)] disabled:opacity-50"
                 >
                   {siteLocationSearching ? <Loader2 size={16} className="animate-spin" /> : <Search size={16} />}
-                  {isCn ? '搜索地址' : 'Search address'}
+                  Search address
                 </button>
                 <button
                   type="button"
@@ -845,7 +615,7 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
                   className="inline-flex items-center gap-2 rounded-xl border border-[var(--color-border)] px-3 py-2 text-sm text-[var(--color-text-primary)] hover:border-[var(--color-primary)] disabled:opacity-50"
                 >
                   {siteLocationLocating ? <Loader2 size={16} className="animate-spin" /> : <LocateFixed size={16} />}
-                  {isCn ? '使用当前位置' : 'Use current location'}
+                  Use current location
                 </button>
               </div>
               {siteLocationResults.length > 0 && (
@@ -864,14 +634,14 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
               )}
               {siteLocation.service_latitude !== null && siteLocation.service_longitude !== null && (
                 <p className="text-xs font-medium text-green-600">
-                  {isCn ? '地图位置已确认' : 'Map point confirmed'}{siteLocation.service_accuracy_m ? ` · ±${Math.round(siteLocation.service_accuracy_m)} m` : ''}
+                  Map point confirmed{siteLocation.service_accuracy_m ? ` · ±${Math.round(siteLocation.service_accuracy_m)} m` : ''}
                 </p>
               )}
               <textarea
                 value={siteLocation.note}
                 onChange={(event) => setSiteLocation((current) => ({ ...current, note: event.target.value }))}
                 rows={2}
-                placeholder={isCn ? '可选：到场说明、联系人或门岗信息' : 'Optional arrival instructions, contact person, or gate information'}
+                placeholder="Optional arrival instructions, contact person, or gate information"
                 className="w-full resize-none rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/40"
               />
               <button
@@ -881,7 +651,7 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
                 className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-[var(--color-primary)] px-3 py-2.5 text-sm font-medium text-white hover:bg-[var(--color-primary-hover)] disabled:opacity-50"
               >
                 {onsiteSubmitting && <Loader2 size={16} className="animate-spin" />}
-                {isCn ? '确认位置并转为上门服务' : 'Confirm location and on-site visit'}
+                Confirm location and on-site visit
               </button>
             </div>
           </div>
@@ -890,9 +660,9 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
 
       {isEngineer && detail?.arrival_verification_required && effectiveStatus === 'in_service' && (
         <div className="rounded-xl border border-[var(--color-primary)]/30 bg-[var(--color-primary)]/5 p-4">
-          <h3 className="text-sm font-medium text-[var(--color-text-primary)]">{copy.arrivalTitle}</h3>
+          <h3 className="text-sm font-medium text-[var(--color-text-primary)]">Arrival verification</h3>
           {detail.arrival_verified_at ? (
-            <p className="mt-2 text-xs text-green-600">{copy.arrivalVerified}</p>
+            <p className="mt-2 text-xs text-green-600">Arrival verified. You may begin or complete the service task.</p>
           ) : (
             <button
               type="button"
@@ -900,18 +670,16 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
               disabled={arrivalSubmitting}
               className="mt-3 w-full rounded-xl bg-[var(--color-primary)] py-3 text-sm font-medium text-white hover:bg-[var(--color-primary-hover)] disabled:opacity-50"
             >
-              {arrivalSubmitting ? copy.arrivalLocating : copy.arrivalButton}
+              {arrivalSubmitting ? 'Getting current location...' : 'Check in at customer site'}
             </button>
           )}
         </div>
       )}
 
       <div>
-        <h3 className="text-sm font-medium text-[var(--color-text-primary)] mb-1">{copy.faultDescription}</h3>
+        <h3 className="text-sm font-medium text-[var(--color-text-primary)] mb-1">Fault Description</h3>
         <div className="p-3 bg-[var(--color-surface-elevated)] rounded-xl text-sm text-[var(--color-text-primary)]">
-          {isEngineer
-            ? redactContactInfo(formatServiceTextForLocale(workOrder.description, isCn ? 'zh-CN' : 'en'))
-            : formatServiceTextForLocale(workOrder.description, isCn ? 'zh-CN' : 'en')}
+          {isEngineer ? redactContactInfo(workOrder.description) : workOrder.description}
         </div>
       </div>
 
@@ -920,12 +688,12 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
         try { aiData = typeof detail.ai_summary === 'string' ? JSON.parse(detail.ai_summary) : detail.ai_summary; } catch { return null; }
         return (
           <div>
-            <h3 className="text-sm font-medium text-[var(--color-text-primary)] mb-1">{copy.aiAnalysis}</h3>
+            <h3 className="text-sm font-medium text-[var(--color-text-primary)] mb-1">AI Analysis</h3>
             <div className="p-3 bg-yellow-500/10 border border-yellow-500/30 rounded-xl text-sm text-[var(--color-text-primary)] space-y-2">
               {aiData.summary && <p>{aiData.summary}</p>}
               {aiData.required_specialties?.length > 0 && (
                 <div className="flex flex-wrap gap-1">
-                  <span className="text-xs text-[var(--color-text-secondary)]">{copy.matchedEquipment}:</span>
+                  <span className="text-xs text-[var(--color-text-secondary)]">Matched Equipment:</span>
                   {aiData.required_specialties.map((s, i) => (
                     <span key={i} className="px-2 py-0.5 text-xs bg-yellow-500/20 text-yellow-600 dark:text-yellow-400 rounded">{s}</span>
                   ))}
@@ -938,36 +706,13 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
 
       {detail?.attachments?.length > 0 && (
         <div>
-          <h3 className="text-sm font-medium text-[var(--color-text-primary)] mb-2">{copy.attachments}</h3>
+          <h3 className="text-sm font-medium text-[var(--color-text-primary)] mb-2">Attachments</h3>
           <AttachmentsPanel
             workOrderId={workOrder.id}
             userType={userType}
             userId={userId}
             readOnly
           />
-        </div>
-      )}
-
-      {isCustomer && ['resolved', 'pending_review', 'completed'].includes(effectiveStatus) && Number(detail?.payment_policy?.balance_amount || 0) > 0 && (
-        <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-4">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <h3 className="text-sm font-medium text-[var(--color-text-primary)]">{isCn ? '服务尾款' : 'Service Balance'}</h3>
-              <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
-                {isCn ? `完工后服务尾款：${detail.payment_policy.balance_amount} CNY` : `Remaining service balance: ${detail.payment_policy.balance_amount} ${CURRENCY}`}
-              </p>
-            </div>
-            {detail?.balance_payment?.status === 'completed' ? (
-              <span className="rounded-full bg-green-500/10 px-3 py-1 text-xs font-semibold text-green-600">{isCn ? '已确认收款' : 'Payment confirmed'}</span>
-            ) : (
-              <button
-                onClick={() => setBalancePaymentOpen(true)}
-                className="rounded-lg bg-[var(--color-primary)] px-3 py-2 text-sm font-medium text-white"
-              >
-                {detail?.balance_payment?.status === 'awaiting_customer' ? (isCn ? '支付服务尾款' : 'Pay service balance') : (isCn ? '查看尾款付款' : 'View balance payment')}
-              </button>
-            )}
-          </div>
         </div>
       )}
 
@@ -978,7 +723,7 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
           onClick={handleSubmitFinalReport}
           className="w-full py-3 bg-green-500 hover:bg-green-600 text-white rounded-xl font-medium"
         >
-          {copy.submitFinalReport}
+          Submit Final Report to Customer
         </button>
       )}
 
@@ -987,34 +732,34 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
         <button
           data-testid="cancel-work-order-button"
           onClick={async () => {
-            if (!(await confirmDialog(copy.cancelConfirm, { danger: true }))) return;
+            if (!(await confirmDialog('Are you sure you want to cancel this service request? This action cannot be undone.', { danger: true }))) return;
             try {
               await cancelWorkOrder(workOrder.id);
-              toastSuccess(copy.cancelSuccess);
+              toastSuccess('Service request cancelled');
               loadDetail();
               onConfirmed?.();
             } catch (e) {
-              toastError(copy.operationFailed + e.message);
+              toastError('Operation failed: ' + e.message);
             }
           }}
           className="w-full py-3 bg-red-500 hover:bg-red-600 text-white rounded-xl font-medium"
         >
-          {copy.cancelService}
+          Cancel Service Request
         </button>
       )}
 
       {isEngineer && ['pending_payment', 'payment_review'].includes(effectiveStatus) && (
         <button
           onClick={async () => {
-            if (!(await confirmDialog(copy.paymentStartConfirm))) return;
+            if (!(await confirmDialog('Request Admin approval to start service after advance payment follow-up?'))) return;
             setPaymentStartSubmitting(true);
             try {
-              await requestWorkOrderPaymentStart(workOrder.id, copy.paymentStartNote);
-              toastSuccess(copy.paymentStartSent);
+              await requestWorkOrderPaymentStart(workOrder.id, 'Engineer confirmed advance payment follow-up with the customer.');
+              toastSuccess('Start request sent to Admin for advance payment confirmation.');
               loadDetail();
               onConfirmed?.();
             } catch (e) {
-              toastError(copy.paymentStartFailed + e.message);
+              toastError('Start request failed: ' + e.message);
             } finally {
               setPaymentStartSubmitting(false);
             }
@@ -1023,21 +768,21 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
           className="w-full py-3 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] disabled:opacity-50 text-white rounded-xl font-medium"
         >
           {effectiveStatus === 'payment_review'
-            ? copy.waitingPaymentConfirmation
-            : paymentStartSubmitting ? copy.submitting : copy.requestAdminStart}
+            ? 'Waiting for Admin Advance Payment Confirmation'
+            : paymentStartSubmitting ? 'Submitting...' : 'Request Admin Approval to Start'}
         </button>
       )}
 
       {detail?.logs?.length > 0 && (
         <div>
-          <h3 className="text-sm font-medium text-[var(--color-text-primary)] mb-2">{copy.progress}</h3>
+          <h3 className="text-sm font-medium text-[var(--color-text-primary)] mb-2">Progress</h3>
           <div className="space-y-2">
             {detail.logs.map((log) => (
               <div key={log.id} className="flex gap-3 text-sm">
                 <div className="w-2 h-2 mt-1.5 rounded-full bg-[var(--color-primary)] flex-shrink-0" />
                 <div>
-                  <p className="text-[var(--color-text-primary)]">{formatServiceTextForLocale(log.content, isCn ? 'zh-CN' : 'en')}</p>
-                  <p className="text-xs text-[var(--color-text-muted)]">{new Date(log.created_at).toLocaleString(isCn ? 'zh-CN' : 'en-US')}</p>
+                  <p className="text-[var(--color-text-primary)]">{log.content}</p>
+                  <p className="text-xs text-[var(--color-text-muted)]">{new Date(log.created_at).toLocaleString('en-US')}</p>
                 </div>
               </div>
             ))}
@@ -1052,7 +797,7 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
           onClick={() => setTab('rating')}
           className="w-full py-3 bg-yellow-500 hover:bg-yellow-600 text-white rounded-xl font-medium"
         >
-          {copy.confirmReview}
+          Confirm Service & Review
         </button>
       )}
       {isCustomer && hasRating && (
@@ -1060,20 +805,20 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
           onClick={() => setTab('rating')}
           className="w-full py-2.5 text-sm text-[var(--color-primary)] hover:underline"
         >
-          {copy.viewReview}
+          View Review →
         </button>
       )}
 
       {/* 工程师评价客户（仅工程师可见） */}
       {isEngineer && (effectiveStatus === 'resolved' || effectiveStatus === 'completed' || effectiveStatus === 'pending_review') && engineerReview && (
         <div>
-          <h3 className="text-sm font-medium text-[var(--color-text-primary)] mb-2">{copy.customerReviewTitle}</h3>
+          <h3 className="text-sm font-medium text-[var(--color-text-primary)] mb-2">Your Review of the Customer</h3>
           <div className="p-3 bg-blue-500/10 border border-blue-500/30 rounded-xl space-y-2">
             {[
-              { key: 'rating_cooperation', label: copy.engineerReviewDimensions.cooperation },
-              { key: 'rating_communication', label: copy.engineerReviewDimensions.communication },
-              { key: 'rating_payment', label: copy.engineerReviewDimensions.payment },
-              { key: 'rating_environment', label: copy.engineerReviewDimensions.environment },
+              { key: 'rating_cooperation', label: 'Cooperation' },
+              { key: 'rating_communication', label: 'Communication' },
+              { key: 'rating_payment', label: 'Payment Timeliness' },
+              { key: 'rating_environment', label: 'Site Conditions' },
             ].map((dim) => (
               <div key={dim.key} className="flex items-center justify-between">
                 <span className="text-sm text-[var(--color-text-secondary)]">{dim.label}</span>
@@ -1083,39 +828,39 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
             {engineerReview.comment && (
               <div className="pt-2 border-t border-blue-500/20 text-sm text-[var(--color-text-primary)]">{engineerReview.comment}</div>
             )}
-            <div className="text-xs text-[var(--color-text-muted)]">{copy.internalReviewVisible}</div>
+            <div className="text-xs text-[var(--color-text-muted)]">This review is only visible to SAGEMRO internal operations</div>
           </div>
         </div>
       )}
 
       {isEngineer && (effectiveStatus === 'resolved' || effectiveStatus === 'completed' || effectiveStatus === 'pending_review') && !engineerReview && !showEngineerReview && (
         <button onClick={() => setShowEngineerReview(true)} className="w-full py-3 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white rounded-xl font-medium">
-          {copy.reviewCustomer}
+          Review Customer
         </button>
       )}
 
       {showEngineerReview && (
         <div className="space-y-3 p-4 bg-blue-500/10 border border-blue-500/30 rounded-xl">
-          <h3 className="text-sm font-medium text-[var(--color-text-primary)]">{copy.reviewCustomer}</h3>
-          <div className="text-xs text-[var(--color-text-muted)]">{copy.internalReviewEditorNote}</div>
+          <h3 className="text-sm font-medium text-[var(--color-text-primary)]">Review Customer</h3>
+          <div className="text-xs text-[var(--color-text-muted)]">This review is only visible to SAGEMRO internal operations, not to the customer</div>
           {[
-            { key: 'cooperation', label: copy.engineerReviewDimensions.cooperation },
-            { key: 'communication', label: copy.engineerReviewDimensions.communication },
-            { key: 'payment', label: copy.engineerReviewDimensions.payment },
-            { key: 'environment', label: copy.engineerReviewDimensions.environment },
+            { key: 'cooperation', label: 'Cooperation' },
+            { key: 'communication', label: 'Communication' },
+            { key: 'payment', label: 'Payment Timeliness' },
+            { key: 'environment', label: 'Site Conditions' },
           ].map((dim) => (
             <div key={dim.key} className="flex items-center justify-between">
               <span className="text-sm text-[var(--color-text-secondary)]">{dim.label}</span>
               <Stars value={engReviewRatings[dim.key]} onChange={(v) => setEngReviewRatings({ ...engReviewRatings, [dim.key]: v })} />
             </div>
           ))}
-          <textarea value={engReviewComment} onChange={(e) => setEngReviewComment(e.target.value)} placeholder={copy.engineerReviewPlaceholder} rows={2}
+          <textarea value={engReviewComment} onChange={(e) => setEngReviewComment(e.target.value)} placeholder="Note customer cooperation details (optional)..." rows={2}
             className="w-full px-3 py-2 text-sm border border-[var(--color-border)] rounded-xl bg-[var(--color-surface)] text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)] resize-none" />
           <div className="flex gap-2">
-            <button onClick={() => setShowEngineerReview(false)} className="flex-1 py-2 bg-[var(--color-border)] text-[var(--color-text-secondary)] rounded-xl text-sm">{copy.cancel}</button>
+            <button onClick={() => setShowEngineerReview(false)} className="flex-1 py-2 bg-[var(--color-border)] text-[var(--color-text-secondary)] rounded-xl text-sm">Cancel</button>
             <button
               onClick={async () => {
-                if (!detail?.engineer_id || !detail?.customer_id) { toastWarning(copy.incomplete); return; }
+                if (!detail?.engineer_id || !detail?.customer_id) { toastWarning('Work order information is incomplete'); return; }
                 setEngReviewSubmitting(true);
                 try {
                   await submitEngineerReview(workOrder.id, {
@@ -1128,10 +873,10 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
                     comment: engReviewComment,
                   });
                   setShowEngineerReview(false);
-                  toastSuccess(copy.ratingSaved);
+                  toastSuccess('Service confirmed. Your review helps SAGEMRO operations improve service coordination. Thank you.');
                   loadDetail();
                 } catch (e) {
-                  toastError(copy.ratingFailed + e.message);
+                  toastError('Review submission failed: ' + e.message);
                 } finally {
                   setEngReviewSubmitting(false);
                 }
@@ -1139,7 +884,7 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
               disabled={engReviewSubmitting}
               className="flex-1 py-2 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] disabled:opacity-50 text-white rounded-xl text-sm"
             >
-              {engReviewSubmitting ? copy.submitting : copy.submitReview}
+              {engReviewSubmitting ? 'Submitting...' : 'Submit Review'}
             </button>
           </div>
         </div>
@@ -1151,13 +896,13 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
     <div className="space-y-4">
       {hasRating ? (
         <div>
-          <h3 className="text-sm font-medium text-[var(--color-text-primary)] mb-3">{copy.yourReview}</h3>
+          <h3 className="text-sm font-medium text-[var(--color-text-primary)] mb-3">Your Review</h3>
           <div className="p-4 bg-[var(--color-surface-elevated)] rounded-xl space-y-2">
             {[
-              { key: 'timeliness', label: copy.ratingDimensions.timeliness },
-              { key: 'technical', label: copy.ratingDimensions.technical },
-              { key: 'communication', label: copy.ratingDimensions.communication },
-              { key: 'professional', label: copy.ratingDimensions.professional },
+              { key: 'timeliness', label: 'Timeliness' },
+              { key: 'technical', label: 'Technical Skill' },
+              { key: 'communication', label: 'Communication' },
+              { key: 'professional', label: 'Professionalism' },
             ].map((dim) => (
               <div key={dim.key} className="flex items-center justify-between">
                 <span className="text-sm text-[var(--color-text-secondary)]">{dim.label}</span>
@@ -1168,25 +913,25 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
               <div className="pt-3 border-t border-[var(--color-border)] text-sm text-[var(--color-text-primary)]">{detail.rating.comment}</div>
             )}
             <div className="pt-1 text-xs text-[var(--color-text-muted)]">
-              {copy.reviewed}: {detail.rating.created_at ? new Date(detail.rating.created_at).toLocaleString(isCn ? 'zh-CN' : 'en-US') : '-'}
+              Reviewed: {detail.rating.created_at ? new Date(detail.rating.created_at).toLocaleString('en-US') : '-'}
             </div>
           </div>
         </div>
       ) : canRate ? (
         <div className="space-y-3 p-4 bg-[var(--color-surface-elevated)] rounded-xl">
-          <h3 className="text-sm font-medium text-[var(--color-text-primary)]">{copy.serviceReview}</h3>
+          <h3 className="text-sm font-medium text-[var(--color-text-primary)]">Service Review</h3>
           {[
-            { key: 'timeliness', label: copy.ratingDimensions.timeliness },
-            { key: 'technical', label: copy.ratingDimensions.technical },
-            { key: 'communication', label: copy.ratingDimensions.communication },
-            { key: 'professional', label: copy.ratingDimensions.professional },
+            { key: 'timeliness', label: 'Timeliness' },
+            { key: 'technical', label: 'Technical Skill' },
+            { key: 'communication', label: 'Communication' },
+            { key: 'professional', label: 'Professionalism' },
           ].map((dim) => (
             <div key={dim.key} className="flex items-center justify-between">
               <span className="text-sm text-[var(--color-text-secondary)]">{dim.label}</span>
               <Stars value={ratings[dim.key]} onChange={(v) => setRatings({ ...ratings, [dim.key]: v })} />
             </div>
           ))}
-          <textarea value={comment} onChange={(e) => setComment(e.target.value)} placeholder={copy.ratingCommentPlaceholder} rows={3}
+          <textarea value={comment} onChange={(e) => setComment(e.target.value)} placeholder="Share your service experience (optional)..." rows={3}
             className="w-full px-3 py-2 text-sm border border-[var(--color-border)] rounded-xl bg-[var(--color-surface)] text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-yellow-500 resize-none" />
           <button
             data-testid="submit-rating-button"
@@ -1194,11 +939,11 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
             disabled={submitting}
             className="w-full py-3 bg-yellow-500 hover:bg-yellow-600 disabled:opacity-50 text-white rounded-xl font-medium"
           >
-            {submitting ? copy.submitting : copy.submitReview}
+            {submitting ? 'Submitting...' : 'Submit Review'}
           </button>
         </div>
       ) : (
-        <div className="text-center py-8 text-[var(--color-text-muted)] text-sm">{copy.ratingUnavailable}</div>
+        <div className="text-center py-8 text-[var(--color-text-muted)] text-sm">Review not available</div>
       )}
     </div>
   );
@@ -1206,51 +951,51 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
   const renderMachineLeadTab = () => (
     <div className="space-y-4">
       <div className="rounded-xl border border-[var(--color-primary)]/25 bg-[var(--color-primary)]/5 p-4">
-        <h3 className="text-sm font-medium text-[var(--color-text-primary)]">{copy.machineLeadTitle}</h3>
+        <h3 className="text-sm font-medium text-[var(--color-text-primary)]">Whole-machine opportunity</h3>
         <p className="mt-1 text-xs leading-5 text-[var(--color-text-secondary)]">
-          {copy.machineLeadHelper}
+          Use this only when the customer is considering one or more new complete machines such as laser cutting, laser welding, press brake, or production line equipment. Parts, consumables, peripherals, and retrofit opportunities stay in engineer value-added service workflows.
         </p>
       </div>
 
       <div className="space-y-3">
         <div className="flex items-center justify-between gap-3">
-          <h4 className="text-sm font-medium text-[var(--color-text-primary)]">{copy.equipmentNeeds}</h4>
+          <h4 className="text-sm font-medium text-[var(--color-text-primary)]">Equipment needs</h4>
           <button
             type="button"
             onClick={addEquipmentNeed}
             className="rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-xs font-medium text-[var(--color-text-primary)] hover:border-[var(--color-primary)]"
           >
-            {copy.addEquipment}
+            Add equipment
           </button>
         </div>
         {machineLeadForm.equipment_needs.map((need, index) => (
           <div key={index} className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-elevated)] p-3">
             <div className="mb-3 flex items-center justify-between gap-3">
-              <span className="text-xs font-medium text-[var(--color-text-secondary)]">{copy.equipmentNumber(index)}</span>
+              <span className="text-xs font-medium text-[var(--color-text-secondary)]">Equipment #{index + 1}</span>
               <button
                 type="button"
                 onClick={() => removeEquipmentNeed(index)}
                 className="text-xs font-medium text-[var(--color-text-muted)] hover:text-[var(--color-primary)]"
               >
-                {copy.remove}
+                Remove
               </button>
             </div>
             <div className="grid gap-3 sm:grid-cols-[1.2fr_0.5fr_1.3fr]">
               <label>
-                <span className="mb-1 block text-xs text-[var(--color-text-secondary)]">{copy.equipmentType}</span>
+                <span className="mb-1 block text-xs text-[var(--color-text-secondary)]">Equipment type</span>
                 <select
                   value={need.type}
                   onChange={(e) => updateEquipmentNeed(index, 'type', e.target.value)}
                   className="w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text-primary)] outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
                 >
-                  <option value="">{copy.selectType}</option>
-                  {(isCn ? MACHINE_NEED_TYPES_CN : MACHINE_NEED_TYPES).map((type) => (
+                  <option value="">Select type</option>
+                  {MACHINE_NEED_TYPES.map((type) => (
                     <option key={type} value={type}>{type}</option>
                   ))}
                 </select>
               </label>
               <label>
-                <span className="mb-1 block text-xs text-[var(--color-text-secondary)]">{copy.quantity}</span>
+                <span className="mb-1 block text-xs text-[var(--color-text-secondary)]">Quantity</span>
                 <input
                   value={need.quantity}
                   onChange={(e) => updateEquipmentNeed(index, 'quantity', e.target.value)}
@@ -1259,20 +1004,20 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
                 />
               </label>
               <label>
-                <span className="mb-1 block text-xs text-[var(--color-text-secondary)]">{copy.specification}</span>
+                <span className="mb-1 block text-xs text-[var(--color-text-secondary)]">Power / specification</span>
                 <input
                   value={need.specification}
                   onChange={(e) => updateEquipmentNeed(index, 'specification', e.target.value)}
-                  placeholder={copy.specificationPlaceholder}
+                  placeholder="3015 single table, 3000W"
                   className="w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text-primary)] outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
                 />
               </label>
               <label className="sm:col-span-3">
-                <span className="mb-1 block text-xs text-[var(--color-text-secondary)]">{copy.needNotes}</span>
+                <span className="mb-1 block text-xs text-[var(--color-text-secondary)]">Need notes</span>
                 <input
                   value={need.note}
                   onChange={(e) => updateEquipmentNeed(index, 'note', e.target.value)}
-                  placeholder={copy.needNotesPlaceholder}
+                  placeholder="Timeline, preferred configuration, known constraints"
                   className="w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text-primary)] outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
                 />
               </label>
@@ -1283,38 +1028,38 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
 
       <div className="grid gap-3 sm:grid-cols-2">
         <label>
-          <span className="mb-1 block text-xs text-[var(--color-text-secondary)]">{copy.region}</span>
+          <span className="mb-1 block text-xs text-[var(--color-text-secondary)]">Region</span>
           <input
             value={machineLeadForm.region}
             onChange={(e) => setMachineLeadForm({ ...machineLeadForm, region: e.target.value })}
-            placeholder={detail?.region || detail?.customer_region || copy.regionPlaceholder}
+            placeholder={detail?.region || detail?.customer_region || 'Country / city'}
             className="w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text-primary)] outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
           />
         </label>
         <label>
-          <span className="mb-1 block text-xs text-[var(--color-text-secondary)]">{copy.contactName}</span>
+          <span className="mb-1 block text-xs text-[var(--color-text-secondary)]">Contact name</span>
           <input
             value={machineLeadForm.contact_name}
             onChange={(e) => setMachineLeadForm({ ...machineLeadForm, contact_name: e.target.value })}
-            placeholder={detail?.customer_name || copy.contactNamePlaceholder}
+            placeholder={detail?.customer_name || 'Customer contact'}
             className="w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text-primary)] outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
           />
         </label>
         <label>
-          <span className="mb-1 block text-xs text-[var(--color-text-secondary)]">{copy.contactPhone}</span>
+          <span className="mb-1 block text-xs text-[var(--color-text-secondary)]">Contact phone</span>
           <input
             value={machineLeadForm.contact_phone}
             onChange={(e) => setMachineLeadForm({ ...machineLeadForm, contact_phone: e.target.value })}
-            placeholder={shouldShowCustomerContact ? detail?.customer_phone || copy.contactPhonePlaceholder : copy.contactHidden}
+            placeholder={shouldShowCustomerContact ? detail?.customer_phone || 'Phone' : 'Visible after service starts'}
             className="w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text-primary)] outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
           />
         </label>
         <label className="sm:col-span-2">
-          <span className="mb-1 block text-xs text-[var(--color-text-secondary)]">{copy.purchaseIntent}</span>
+          <span className="mb-1 block text-xs text-[var(--color-text-secondary)]">Customer purchase intent *</span>
           <textarea
             value={machineLeadForm.customer_intent}
             onChange={(e) => setMachineLeadForm({ ...machineLeadForm, customer_intent: e.target.value })}
-            placeholder={copy.purchaseIntentPlaceholder}
+            placeholder="Describe the customer's whole-machine demand, planned timeline, production goal, budget signals, and technical context Admin should review."
             rows={4}
             className="w-full resize-none rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text-primary)] outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
           />
@@ -1326,14 +1071,14 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
         disabled={machineLeadSubmitting}
         className="w-full rounded-xl bg-[var(--color-primary)] py-3 text-sm font-medium text-white hover:bg-[var(--color-primary-hover)] disabled:opacity-50"
       >
-        {machineLeadSubmitting ? copy.submitting : copy.submitToAdmin}
+        {machineLeadSubmitting ? 'Submitting...' : 'Submit to Admin'}
       </button>
     </div>
   );
 
   return (
     <>
-    <Modal isOpen={isOpen} onClose={onClose} title={copy.modalTitle} size="2xl">
+    <Modal isOpen={isOpen} onClose={onClose} title="Work Order Details" size="2xl">
       <div className="min-h-0">
         {/* Tab 切换 */}
         <div className="-mx-3 mb-4 flex gap-1 overflow-x-auto border-b border-[var(--color-border)] px-3 pb-0 sm:mx-0 sm:px-0">
@@ -1353,7 +1098,7 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
         </div>
 
         {loading ? (
-          <div className="text-center py-8 text-[var(--color-text-muted)]">{copy.loading}</div>
+          <div className="text-center py-8 text-[var(--color-text-muted)]">Loading...</div>
         ) : (
           <>
             {tab === 'info' && renderInfoTab()}
@@ -1401,7 +1146,7 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
       workOrderId={workOrderId}
       customerId={userId}
       paymentStage="balance"
-      onPaid={() => { setBalancePaymentOpen(false); setTab('messages'); loadDetail(); onConfirmed?.(); }}
+      onPaid={() => { setBalancePaymentOpen(false); loadDetail(); onConfirmed?.(); }}
     />
     </>
   );

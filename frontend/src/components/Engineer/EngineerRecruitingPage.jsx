@@ -22,12 +22,13 @@ const COPY = {
     title: '加入 SAGEMRO 服务工程师网络',
     subtitle: '我们面向激光切割机、折弯机和钣金设备工程师开放合作申请。申请通过后，工程师可根据服务区域、设备经验和可服务时间参与派工。',
     primary: '申请成为服务工程师',
-    applyNow: '立即申请',
-    signIn: '工程师登录',
+    applyNow: '申请加入',
+    howItWorks: '申请流程',
+    signIn: '已有工程师账号，进入工作台',
     heroStats: [
-      { value: '人工', label: '审核后开通账号' },
-      { value: '区域', label: '协同派工' },
-      { value: '现场优先', label: '服务标准' },
+      { value: '人工审核', label: '审核后开通账号' },
+      { value: '区域协调', label: '统一派工调配' },
+      { value: '现场优先', label: '按照服务标准执行' },
     ],
     pillars: [
       { title: '人工审核，统一协作', text: '申请通过后由 SAGEMRO 分配账号，服务任务由 Admin 与区域负责人统一协调。' },
@@ -36,35 +37,35 @@ const COPY = {
     ],
     valuesTitle: '工程师合作方式',
     valuesText: 'Admin 和区域负责人负责派工协调、报价审核、付款确认和服务记录。工程师负责核对工单范围、执行服务并提交现场结果。',
-    joinTitle: '为什么加入 SAGEMRO',
+    joinTitle: '加入后的收益',
     joinIntro: '合作规则包括服务范围、报价、付款确认、现场安全、服务报告和后续责任。工程师可在接单前查看相关要求。',
     joinItems: [
       { title: '派工前查看资料', text: '工程师在接单前可查看客户描述、设备信息、服务历史和已有附件。' },
-      { title: '减少低价值反复沟通', text: '服务记录、报价审核、消息和付款确认都沉淀在同一流程里，协作更清楚。' },
-      { title: '不止一次性服务', text: '稳定可靠的工程师，后续可以随着区域网络发展成为区域服务伙伴。' },
+      { title: '减少低效沟通', text: '服务记录、报价审核、消息和付款确认流程清晰，减少来回确认。' },
+      { title: '长期合作空间', text: '稳定合作的工程师可随网络扩展成长为区域负责人。' },
     ],
-    lookForTitle: '我们看重什么',
+    lookForTitle: '我们寻找的工程师',
     lookForItems: [
-      '有激光切割机、折弯机或钣金设备的一线服务经验。',
-      '能和客户、SAGEMRO 运营团队清楚沟通。',
-      '能记录服务发现、配件需求和后续建议。',
-      '如实维护可服务时间、出差范围和紧急支持能力。',
+      '激光切割机、折弯机或钣金设备的实际维修经验',
+      '与客户和运营团队的清晰沟通能力',
+      '能记录现场诊断、备件需求和后续建议',
+      '诚实反馈可服务时间、出差范围和紧急支持能力',
     ],
     leadTitle: '区域负责人机会',
-    leadText: '建立信任后，经验稳定的服务代表可能被邀请成为区域负责人。区域负责人协助协调本地工程师、支持派工判断，并保持服务标准一致。',
+    leadText: '合作稳定后，资深代表可能被邀请成为区域负责人，协调本地工程师、支持派工决策，并维护服务标准的一致性。',
     processTitle: '申请流程',
     process: [
-      { step: '01', title: '在线提交申请', text: '填写可服务区域、技能、现场经验和可服务时间。' },
-      { step: '02', title: 'SAGEMRO 人工审核', text: '运营团队会先核对经验、区域覆盖和协作匹配度，再决定是否开通账号。' },
-      { step: '03', title: '审核通过后激活', text: '通过审核的服务代表会收到 SAGEMRO 发出的账号激活链接。' },
-      { step: '04', title: '从协同服务开始', text: 'Admin 与区域负责人协同派工、报价审核、付款跟进和服务标准。' },
+      { step: '01', title: '在线申请', text: '填写服务区域、技能、现场经验和可服务时间。' },
+      { step: '02', title: 'SAGEMRO 人工审核', text: '运营团队核实经验、区域覆盖和合作意向后才开通账号。' },
+      { step: '03', title: '审核通过后激活', text: '通过审核的代表会收到 SAGEMRO 发送的账号激活链接。' },
+      { step: '04', title: '开始协调派工', text: 'Admin 和区域负责人协调派工、报价审核、付款跟进和服务标准。' },
     ],
     faqTitle: '常见问题',
     faqs: [
-      { q: '提交申请会自动创建登录账号吗？', a: '不会。申请和账号开通是分开的，只有 SAGEMRO 确认合作后才会开通账号。' },
-      { q: '只覆盖一个城市或一个省份可以申请吗？', a: '可以。清楚可靠的本地覆盖很有价值，我们更看重真实服务能力。' },
-      { q: '只招激光切割机工程师吗？', a: '激光切割是重点方向，但折弯机和相关数控钣金设备经验同样有价值。' },
-      { q: '付款怎么处理？', a: '客户付款按 SAGEMRO 确认的付款指引协调。工程师跟进客户付款后，需要 Admin 确认再开始服务。' },
+      { q: '提交申请会创建登录账号吗？', a: '不会。申请和账号开通是分开的。只有合作确认后才会开通账号。' },
+      { q: '只覆盖一个城市可以申请吗？', a: '可以。清晰的区域覆盖是有价值的。我们更看重可靠的服务能力而非大而模糊的覆盖范围。' },
+      { q: '只招激光切割机工程师吗？', a: '激光切割是主要品类，但折弯机、CNC 等相关钣金设备经验也同样欢迎。' },
+      { q: '付款如何操作？', a: '客户付款通过 SAGEMRO 确认的付款指令协调。工程师跟进客户并在开始服务前请 Admin 确认。' },
     ],
     modalTitle: '申请成为服务工程师',
     fields: {
@@ -84,7 +85,7 @@ const COPY = {
       email: '可选',
       whatsapp: '可选',
       country: '中国 / 马来西亚 / 美国...',
-      city: '例如：苏州 / Chicago',
+      city: '例如：苏州',
       regions: '例如：江苏、浙江、上海',
       skills: '例如：激光器、切割头、总线报警、保养',
       experience: '请简单说明服务年限、熟悉品牌、典型案例或希望加入的原因',
@@ -93,11 +94,7 @@ const COPY = {
     submit: '提交申请',
     submitting: '正在提交...',
     success: '申请已收到。SAGEMRO 运营团队会审核资料，并在匹配合适区域后联系你。',
-    note: '提交申请不会自动创建登录账号。审核通过后，服务代表会收到 SAGEMRO 发出的账号激活链接。',
-    removeTag: '移除',
-    closeApplication: '关闭申请表',
-    regionSuggestions: ['华东', '华南', '华北', '长三角', '珠三角', '江苏', '浙江', '上海', '广东'],
-    skillSuggestions: ['激光切割机', '折弯机', '激光器', '切割头', 'CNC 报警', '伺服驱动', '维护保养', '现场故障排查'],
+    note: '提交申请不会创建登录账号。审核通过后，SAGEMRO 会发送账号激活链接。',
   },
   en: {
     badge: 'SAGEMRO Engineer Partner Program',
@@ -228,7 +225,7 @@ const SKILL_SUGGESTIONS = [
   'On-site troubleshooting',
 ];
 
-function TagInput({ label, value, suggestions, placeholder, removeLabel, onChange }) {
+function TagInput({ label, value, suggestions, placeholder, onChange }) {
   const [draft, setDraft] = useState('');
   const tags = Array.isArray(value) ? value : splitTagList(value);
 
@@ -251,7 +248,7 @@ function TagInput({ label, value, suggestions, placeholder, removeLabel, onChang
               type="button"
               onClick={() => removeTag(tag)}
               className="rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-800"
-              title={removeLabel}
+              title="Remove"
             >
               {tag} x
             </button>
@@ -325,17 +322,15 @@ function ApplicationForm({ copy, form, submitting, message, error, updateField, 
       <TagInput
         label={copy.fields.regions}
         value={form.service_regions}
-        suggestions={copy.regionSuggestions || REGION_SUGGESTIONS}
+        suggestions={REGION_SUGGESTIONS}
         placeholder={copy.placeholders.regions}
-        removeLabel={copy.removeTag || 'Remove'}
         onChange={(tags) => updateField('service_regions', tags)}
       />
       <TagInput
         label={copy.fields.skills}
         value={form.skill_tags}
-        suggestions={copy.skillSuggestions || SKILL_SUGGESTIONS}
+        suggestions={SKILL_SUGGESTIONS}
         placeholder={copy.placeholders.skills}
-        removeLabel={copy.removeTag || 'Remove'}
         onChange={(tags) => updateField('skill_tags', tags)}
       />
       <label className="block text-[13px] font-semibold text-[#312317]">
@@ -657,7 +652,7 @@ export function EngineerRecruitingPage({ onOpenLogin }) {
                 type="button"
                 onClick={() => setModalOpen(false)}
                 className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-[#eadfce] text-[#5e4d3d] transition hover:border-amber-300 hover:bg-amber-50"
-                aria-label={copy.closeApplication || 'Close application form'}
+                aria-label="Close application form"
               >
                 <X size={18} />
               </button>

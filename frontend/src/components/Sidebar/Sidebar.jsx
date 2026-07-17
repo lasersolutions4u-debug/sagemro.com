@@ -46,7 +46,7 @@ export function Sidebar({
     ? [
         { icon: FileText, label: isCn ? '发起工单' : 'Request Service', onClick: onOpenWorkOrder, testid: 'tool-create-work-order' },
         { icon: ClipboardList, label: isCn ? '我的工单' : 'My Services', onClick: onOpenMyWorkOrders, testid: 'tool-my-work-orders' },
-        { icon: Package, label: isCn ? '我的设备' : 'My Equipment', onClick: onOpenMyDevices, testid: 'tool-my-devices' },
+        { icon: Package, label: isCn ? '设备' : 'My Equipment', onClick: onOpenMyDevices, testid: 'tool-my-devices' },
         { icon: Bell, label: isCn ? '通知' : 'Notifications', onClick: onOpenNotifications, testid: 'tool-notifications', badge: unreadCount },
       ]
     : [];
@@ -80,7 +80,7 @@ export function Sidebar({
           </>
         ) : (
           <RailButton
-            tool={{ icon: LogIn, label: isCn ? '登录' : 'Sign In / Register', onClick: onOpenLogin, testid: 'sidebar-login-button' }}
+            tool={{ icon: LogIn, label: isCn ? '登录' : 'Sign In', onClick: onOpenLogin, testid: 'sidebar-login-button' }}
             onClick={() => { onOpenLogin?.(); onClose?.(); }}
           />
         )}

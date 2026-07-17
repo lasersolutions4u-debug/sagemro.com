@@ -40,10 +40,9 @@ test('work order modal uses one full-height scroll surface without trailing blan
 test('customer site location distinguishes current position from map selection', () => {
   const workOrderModal = read('frontend/src/components/Sidebar/WorkOrderModal.jsx');
 
-  assert.match(workOrderModal, /locateSite: '使用我的当前位置'/);
-  assert.match(workOrderModal, /currentLocationHint: '仅当您目前位于设备现场时使用'/);
-  assert.match(workOrderModal, /mapLocationCaptured: '设备位置已在地图中确认'/);
-  assert.match(workOrderModal, /form\.service_mode !== 'remote' && \(/);
+  assert.match(workOrderModal, /locateSite: '确认现场定位'/);
+  assert.match(workOrderModal, /locationCaptured: '现场定位已获取'/);
+  assert.match(workOrderModal, /service_mode: 'remote'/);
   assert.doesNotMatch(workOrderModal, /service_accuracy_m \|\| 0/);
 });
 

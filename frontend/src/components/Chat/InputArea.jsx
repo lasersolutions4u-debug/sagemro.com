@@ -116,7 +116,7 @@ export function InputArea({ onSend, onStop, disabled, isStreaming }) {
   };
 
   const canSend = input.trim() && !disabled;
-  const placeholder = isCn ? '描述设备问题' : 'Describe your service issue';
+  const placeholder = isCn ? '描述设备问题，或直接开始说...' : 'Describe the problem — or just start talking';
   const voiceTitle = !supportsVoiceInput
     ? (isCn ? '语音输入不可用' : 'Voice input unavailable')
     : isRecording
