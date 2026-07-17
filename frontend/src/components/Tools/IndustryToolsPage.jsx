@@ -106,7 +106,7 @@ const toolsPageCopy = {
   },
 };
 
-export function IndustryToolsPage({ pathname = '/tools', onOpenLegal }) {
+export function IndustryToolsPage({ pathname = '/tools', onOpenLegal, onSendMessage, onNavigateHome }) {
   const locale = isCnLocale() ? 'zh-CN' : 'en';
   const canonicalHost = locale === 'zh-CN' ? 'https://sagemro.cn' : 'https://sagemro.com';
   const copy = toolsPageCopy[locale];
@@ -149,6 +149,8 @@ export function IndustryToolsPage({ pathname = '/tools', onOpenLegal }) {
         }));
       }}
       onOpenLegal={onOpenLegal}
+      onSendMessage={onSendMessage}
+      onNavigateHome={onNavigateHome}
     />
   );
 }
@@ -255,11 +257,15 @@ function ToolReferenceItem({ item, isFirst }) {
   );
 }
 
-function ToolDetail({ tool, copy, locale, values, onChange, onOpenLegal }) {
+function ToolDetail({ tool, copy, locale, values, onChange, onOpenLegal, onSendMessage, onNavigateHome }) {
   const relatedTools = useMemo(
     () => industryTools.filter((item) => item.id !== tool.id).map((item) => getLocalizedTool(item, locale)),
     [locale, tool.id],
   );
+  const handleSendToolReview = (prompt) => {
+    onSendMessage?.(prompt);
+    onNavigateHome?.();
+  };
 
   return (
     <ToolPageShell copy={copy} onOpenLegal={onOpenLegal}>
@@ -271,7 +277,7 @@ function ToolDetail({ tool, copy, locale, values, onChange, onOpenLegal }) {
           </a>
         </div>
 
-        <section className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
+        <section>
           <div className="min-w-0">
             <div className="inline-flex items-center gap-2 rounded-lg border border-[#263238] bg-[#111820] px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-white">
               <Calculator size={14} className="text-[var(--color-primary)]" />
@@ -284,45 +290,47 @@ function ToolDetail({ tool, copy, locale, values, onChange, onOpenLegal }) {
               {tool.guideBody}
             </p>
           </div>
-
-          <aside className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-elevated)] p-4">
-            <div className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--color-text-muted)]">
-              {copy.relatedTools}
-            </div>
-            <div className="mt-3 grid gap-2">
-              {relatedTools.slice(0, 6).map((item) => (
-                <a key={item.id} href={`/tools/${item.slug}`} className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text-primary)] hover:border-[var(--color-primary)]">
-                  {item.shortLabel || item.label}
-                </a>
-              ))}
-            </div>
-          </aside>
         </section>
 
-        <div className="mt-6">
-          <IndustryToolCalculator tool={tool} values={values} onChange={onChange} />
-        </div>
+        <section className="mt-6 grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
+          <div className="min-w-0">
+            <IndustryToolCalculator tool={tool} values={values} onChange={onChange} onSendMessage={handleSendToolReview} />
 
-        <section className="mt-6 grid gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
-          <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-elevated)] p-4">
-            <h2 className="text-lg font-semibold text-[var(--color-text-primary)]">{tool.guideTitle}</h2>
-            <p className="mt-2 text-sm leading-7 text-[var(--color-text-secondary)]">{tool.guideBody}</p>
-            <div className="mt-4 rounded-lg bg-[#111820] px-4 py-3 text-xs leading-relaxed text-white/85">
-              {copy.keepInputs}
+            <div className="mt-6 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-elevated)] p-4">
+              <h2 className="text-lg font-semibold text-[var(--color-text-primary)]">{tool.guideTitle}</h2>
+              <p className="mt-2 text-sm leading-7 text-[var(--color-text-secondary)]">{tool.guideBody}</p>
+              <div className="mt-4 rounded-lg bg-[#111820] px-4 py-3 text-xs leading-relaxed text-white/85">
+                {copy.keepInputs}
+              </div>
             </div>
           </div>
 
-          <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-elevated)] p-4">
-            <h2 className="text-lg font-semibold text-[var(--color-text-primary)]">{copy.faq}</h2>
-            <div className="mt-3 space-y-3">
-              {tool.faqs.map(([question, answer]) => (
-                <div key={question} className="border-t border-[var(--color-border)] pt-3">
-                  <h3 className="text-sm font-semibold text-[var(--color-text-primary)]">{question}</h3>
-                  <p className="mt-1 text-sm leading-6 text-[var(--color-text-secondary)]">{answer}</p>
-                </div>
-              ))}
+          <aside className="grid gap-4 lg:sticky lg:top-4 lg:self-start">
+            <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-elevated)] p-4">
+              <div className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--color-text-muted)]">
+                {copy.relatedTools}
+              </div>
+              <div className="mt-3 grid gap-2">
+                {relatedTools.slice(0, 6).map((item) => (
+                  <a key={item.id} href={`/tools/${item.slug}`} className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text-primary)] hover:border-[var(--color-primary)]">
+                    {item.shortLabel || item.label}
+                  </a>
+                ))}
+              </div>
             </div>
-          </div>
+
+            <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-elevated)] p-4">
+              <h2 className="text-lg font-semibold text-[var(--color-text-primary)]">{copy.faq}</h2>
+              <div className="mt-3 space-y-3">
+                {tool.faqs.map(([question, answer]) => (
+                  <div key={question} className="border-t border-[var(--color-border)] pt-3">
+                    <h3 className="text-sm font-semibold text-[var(--color-text-primary)]">{question}</h3>
+                    <p className="mt-1 text-sm leading-6 text-[var(--color-text-secondary)]">{answer}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </aside>
         </section>
       </main>
     </ToolPageShell>

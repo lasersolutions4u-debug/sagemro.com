@@ -320,6 +320,11 @@ function App() {
     setLegalModalOpen(true);
   }, []);
 
+  const navigateHome = useCallback(() => {
+    window.history.pushState({}, '', '/');
+    setCurrentPath('/');
+  }, []);
+
   const showEngineerWorkspace = (isEngineerHost || currentPath === '/engineer') && userType === 'engineer';
 
   if (showEngineerWorkspace) {
@@ -385,7 +390,12 @@ function App() {
     return (
       <ErrorBoundary>
         <Suspense fallback={null}>
-          <IndustryToolsPage pathname={currentPath} onOpenLegal={openLegal} />
+          <IndustryToolsPage
+            pathname={currentPath}
+            onOpenLegal={openLegal}
+            onSendMessage={handleSendMessage}
+            onNavigateHome={navigateHome}
+          />
           <LegalModal
             isOpen={legalModalOpen}
             onClose={() => setLegalModalOpen(false)}

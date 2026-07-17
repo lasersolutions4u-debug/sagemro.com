@@ -182,13 +182,17 @@ export function IndustryToolCalculator({ tool, values, onChange, onSendMessage, 
         eyebrow: '免费行业工具',
         profileNote: '型材说明',
         marketReferences: '市场参考',
-        reviewButton: '在服务对话中复核这个结果',
+        estimateTitle: '规划估算',
+        estimateSuffix: '生产或采购前请再次确认。',
+        reviewButton: '让 SAGEMRO AI 分析这个结果',
       }
     : {
         eyebrow: 'Free industry tool',
         profileNote: 'Profile note',
         marketReferences: 'Market references',
-        reviewButton: 'Review this result in service chat',
+        estimateTitle: 'Planning estimate',
+        estimateSuffix: 'Confirm before production or purchasing.',
+        reviewButton: 'Ask SAGEMRO AI to review this result',
       };
   const fields = getFieldsForTool(tool.id, currentValues, profiles, locale);
 
@@ -316,7 +320,10 @@ export function IndustryToolCalculator({ tool, values, onChange, onSendMessage, 
             </div>
           ))}
         </div>
-        <p className="mt-3 text-xs leading-relaxed text-[var(--color-text-secondary)]">{result.note}</p>
+        <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-950">
+          <strong className="block font-semibold">{copy.estimateTitle}</strong>
+          <span>{result.note} {copy.estimateSuffix}</span>
+        </div>
         {onSendMessage && (
           <button
             type="button"

@@ -419,7 +419,7 @@ test('client shell moves conversation history into a modal and exposes industry 
   assert.match(industryToolsModal, /All tools/);
   assert.match(industryToolsModal, /href="\/insights"/);
   assert.match(industryToolsModal, /industryTools\.map/);
-  assert.match(industryToolCalculator, /Review this result in service chat/);
+  assert.match(industryToolCalculator, /Ask SAGEMRO AI to review this result/);
   assert.match(industryToolsPage, /href=\{`\/tools\/\$\{tool\.slug\}`\}/);
   assert.match(industryToolsPage, /link\[rel="canonical"\]/);
   assert.match(industryToolsPage, /meta\[name="\$\{name\}"\]/);
@@ -447,6 +447,36 @@ test('client shell moves conversation history into a modal and exposes industry 
   assert.match(insights, /laser-cutting-cost-drivers/);
   assert.match(insights, /metal-weight-for-structural-profiles/);
   assert.match(redirects, /\/\* \/index\.html 200/);
+});
+
+test('localized public industry tool detail prioritizes calculator before related tools and exposes AI review CTA', () => {
+  const industryToolsPage = read('frontend/src/components/Tools/IndustryToolsPage.jsx');
+  const industryToolCalculator = read('frontend/src/components/Tools/IndustryToolCalculator.jsx');
+
+  const calculatorIndex = industryToolsPage.indexOf('<IndustryToolCalculator');
+  const relatedToolsIndex = industryToolsPage.indexOf('{copy.relatedTools}');
+
+  assert.ok(calculatorIndex > -1, 'tool detail should render the calculator');
+  assert.ok(relatedToolsIndex > -1, 'tool detail should render localized related tools');
+  assert.ok(
+    calculatorIndex < relatedToolsIndex,
+    'calculator should appear before related tools in DOM order so mobile users reach the tool first'
+  );
+  assert.match(industryToolsPage, /handleSendToolReview/);
+  assert.match(industryToolsPage, /<IndustryToolCalculator tool=\{tool\} values=\{values\} onChange=\{onChange\} onSendMessage=\{handleSendToolReview\}/);
+  assert.match(industryToolsPage, /onNavigateHome\?\.\(\)/);
+  assert.match(industryToolCalculator, /Ask SAGEMRO AI to review this result/);
+  assert.match(industryToolCalculator, /让 SAGEMRO AI 分析这个结果/);
+});
+
+test('localized industry calculator result card makes estimate limits visible', () => {
+  const industryToolCalculator = read('frontend/src/components/Tools/IndustryToolCalculator.jsx');
+
+  assert.match(industryToolCalculator, /Planning estimate/);
+  assert.match(industryToolCalculator, /Confirm before production or purchasing/);
+  assert.match(industryToolCalculator, /规划估算/);
+  assert.match(industryToolCalculator, /生产或采购前请再次确认/);
+  assert.match(industryToolCalculator, /result\.note/);
 });
 
 test('public legal and tool copy use transparent reviewed-engineer wording', () => {
