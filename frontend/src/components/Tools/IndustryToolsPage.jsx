@@ -164,6 +164,21 @@ function ToolsHub({ onOpenLegal }) {
       <section className="mx-auto max-w-7xl px-4 py-8 sm:px-6">
         <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-elevated)] p-4 sm:flex sm:items-center sm:justify-between sm:gap-4">
           <div>
+            <div className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--color-text-muted)]">AI Chat</div>
+            <h2 className="mt-1 text-xl font-semibold text-[var(--color-text-primary)]">Not sure which tool fits your case?</h2>
+            <p className="mt-1 text-sm leading-6 text-[var(--color-text-secondary)]">
+              Describe your material, specs, and production scenario in the AI chat. It will recommend the right tool and explain the assumptions behind each number.
+            </p>
+          </div>
+          <a href="/" className="mt-4 inline-flex rounded-lg border border-[var(--color-border)] px-3 py-2 text-sm text-[var(--color-text-secondary)] hover:border-[var(--color-primary)] hover:text-[var(--color-primary)] sm:mt-0">
+            Ask AI Chat
+          </a>
+        </div>
+      </section>
+
+      <section className="mx-auto max-w-7xl px-4 py-8 sm:px-6">
+        <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-elevated)] p-4 sm:flex sm:items-center sm:justify-between sm:gap-4">
+          <div>
             <div className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--color-text-muted)]">Insights</div>
             <h2 className="mt-1 text-xl font-semibold text-[var(--color-text-primary)]">Read practical notes behind the calculators</h2>
             <p className="mt-1 text-sm leading-6 text-[var(--color-text-secondary)]">

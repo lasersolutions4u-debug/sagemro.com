@@ -4,7 +4,8 @@ const ICP_RECORD_NUMBER = '鲁ICP备2026032904号-1';
 
 export function Footer({ onOpenLegal, compact = false }) {
   const isCn = isCnLocale();
-  const companyLine = '© 2026 SAGEMRO';
+  const companyLine = '© 2026 SAGEMRO — AI-powered equipment service platform';
+  const companyLineCn = '© 2026 SAGEMRO — AI 驱动的设备服务平台';
   const icpLink = isCn ? (
     <>
       <span className="text-[var(--color-border)]">|</span>
@@ -42,7 +43,7 @@ export function Footer({ onOpenLegal, compact = false }) {
         <button onClick={() => onOpenLegal?.('ai')} className="hover:text-[var(--color-primary)] transition-colors">{isCn ? 'AI 服务说明' : 'AI Service Notice'}</button>
       </div>
       <p className="text-[10px] text-[var(--color-text-muted)]">
-        {companyLine}
+        {isCn ? companyLineCn : companyLine}
       </p>
       {isCn && (
         <p className="text-[10px] text-[var(--color-text-muted)]">

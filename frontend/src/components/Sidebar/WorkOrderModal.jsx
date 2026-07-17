@@ -40,11 +40,13 @@ const WORK_ORDER_COPY = {
     attachmentFailed: (name, message) => `Attachment ${name} upload failed: ${message}`,
     submittedWithAttachments: (count) => `Service request submitted, ${count} attachment(s) uploaded`,
     submitFailed: (message) => `Submission failed: ${message}`,
+    aiGuidanceTitle: 'Not sure how to describe the issue?',
+    aiGuidanceDesc: 'Try the AI chat first — it helps organize the symptoms and context before you submit.',
     titleSubmitted: 'Service Request Submitted',
     titleDefault: 'Request SAGEMRO Service Support',
     successTitle: 'Service request submitted successfully.',
     serviceNo: (value) => `Service No.: ${value}`,
-    successDesc: 'SAGEMRO will review the request, confirm details, and coordinate the right engineer or service representative. You can track progress in "My Services" at any time.',
+    successDesc: 'Your request is now in the SAGEMRO queue. We\'ll review it and coordinate the right engineer. Track progress in "My Services" at any time.',
     gotIt: 'Got it',
     serviceType: 'Request Type',
     selectServiceType: 'Select request type',
@@ -107,11 +109,13 @@ const WORK_ORDER_COPY = {
     attachmentFailed: (name, message) => `附件 ${name} 上传失败：${message}`,
     submittedWithAttachments: (count) => `服务请求已提交，已上传 ${count} 个附件`,
     submitFailed: (message) => `提交失败：${message}`,
+    aiGuidanceTitle: '不确定怎么描述问题？',
+    aiGuidanceDesc: '先试试 AI 对话 — AI 帮你整理症状和背景信息，然后回来提交更完整的服务请求。',
     titleSubmitted: '服务请求已提交',
     titleDefault: '请求 SAGEMRO 服务支持',
     successTitle: '服务请求已提交成功。',
     serviceNo: (value) => `服务编号：${value}`,
-    successDesc: 'SAGEMRO 会审核请求、确认细节，并协调合适的工程师或服务代表跟进。你可以随时在“我的服务”中查看进度。',
+    successDesc: '你的请求已进入 SAGEMRO 队列。我们会审核内容并协调合适的工程师跟进。随时可以在"我的服务"中查看进度。',
     gotIt: '知道了',
     serviceType: '服务类型',
     selectServiceType: '请选择服务类型',
@@ -142,7 +146,7 @@ const WORK_ORDER_COPY = {
     mapSearchResults: '请选择地图结果确认服务点位',
     noLocationResults: '没有找到匹配的地址',
     equipmentModel: '设备型号 / 规格',
-    modelPlaceholder: '例如：C3015 3000W',
+    modelPlaceholder: '例如：C3015 3000W、BM111、喷嘴 1.5S',
     description: '故障 / 服务需求描述',
     descriptionPlaceholder: '请说明设备问题、服务需求、报警代码或对生产的影响...',
     contact: '联系方式',
@@ -447,6 +451,17 @@ export function WorkOrderModal({ isOpen, onClose, onSubmit }) {
 
       {!submitted && (
         <div className="space-y-4">
+        {/* AI 前置引导 */}
+        <div className="rounded-xl border border-[var(--color-primary)]/25 bg-[var(--color-primary)]/5 p-3.5 text-sm">
+          <div className="flex items-start gap-3">
+            <span className="mt-0.5 text-base">💡</span>
+            <div>
+              <p className="font-medium text-[var(--color-text-primary)]">{copy.aiGuidanceTitle}</p>
+              <p className="mt-1 text-xs leading-relaxed text-[var(--color-text-secondary)]">{copy.aiGuidanceDesc}</p>
+            </div>
+          </div>
+        </div>
+
         {/* 问题类型 */}
         <div>
           <label className="block text-sm font-medium text-[var(--color-text-primary)] mb-1">

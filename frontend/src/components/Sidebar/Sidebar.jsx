@@ -80,7 +80,7 @@ export function Sidebar({
           </>
         ) : (
           <RailButton
-            tool={{ icon: LogIn, label: isCn ? '登录' : 'Sign In / Register', onClick: onOpenLogin, testid: 'sidebar-login-button' }}
+            tool={{ icon: LogIn, label: isCn ? '登录' : 'Sign In', onClick: onOpenLogin, testid: 'sidebar-login-button' }}
             onClick={() => { onOpenLogin?.(); onClose?.(); }}
           />
         )}

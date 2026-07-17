@@ -70,6 +70,11 @@ function InsightsHub({ onOpenLegal }) {
             <p className="mt-4 max-w-2xl text-sm leading-7 text-[var(--color-text-secondary)] sm:text-base">
               Short, checkable guides connected to the calculators and AI workspace. The goal is to clarify assumptions before service, purchasing, or production decisions.
             </p>
+            <div className="mt-5 rounded-xl border border-[var(--color-primary)]/20 bg-[var(--color-primary)]/5 px-4 py-3">
+              <p className="text-sm leading-6 text-[var(--color-text-secondary)]">
+                <span className="font-medium text-[var(--color-text-primary)]">Reading an insight?</span> When your AI analysis mentions a concept you haven\'t seen before, jump straight to the matching article for a quick reference.
+              </p>
+            </div>
           </div>
           <div className="grid gap-3">
             {insights.map((item) => (

@@ -30,6 +30,7 @@ export function DeviceForm({ onClose, onSuccess, initialValues = null, title, su
     modelPlaceholder: '例如：G3015H',
     power: '功率或规格（选填）',
     powerPlaceholder: '例如：6000W',
+    intro: '注册设备信息后，提交服务请求时可自动带入，无需重复填写规格。',
     cancel: '取消',
     saving: '保存中...',
     save: '保存设备',
@@ -49,6 +50,7 @@ export function DeviceForm({ onClose, onSuccess, initialValues = null, title, su
     modelPlaceholder: 'e.g. G3015H',
     power: 'Power or specification (optional)',
     powerPlaceholder: 'e.g. 6000W',
+    intro: 'Register equipment to speed up future service requests. Saved machines let you skip re-entering specs each time.',
     cancel: 'Cancel',
     saving: 'Saving...',
     save: 'Save equipment',
@@ -91,6 +93,10 @@ export function DeviceForm({ onClose, onSuccess, initialValues = null, title, su
           <button onClick={onClose} className="rounded-lg p-1.5 hover:bg-[var(--color-hover)]">
             <X size={18} className="text-[var(--color-text-secondary)]" />
           </button>
+        </div>
+
+        <div className="mb-4 rounded-lg bg-[var(--color-primary)]/5 px-3 py-2.5 text-xs leading-relaxed text-[var(--color-text-secondary)]">
+          {copy.intro}
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">

@@ -250,7 +250,8 @@ export function EngineerDashboard({ isOpen, onClose, engineerId, onViewProfile }
         {/* 空状态 */}
         {!loading && pendingTickets.length === 0 && activeTickets.length === 0 && (
           <div className="text-center py-8 text-[var(--color-text-secondary)]">
-            No service assignments to process
+            <p className="text-sm font-medium">No service assignments yet</p>
+            <p className="mt-1 text-xs">New tasks will appear here when Admin matches a request to your region and skills. Make sure your availability status is set to "Available."</p>
           </div>
         )}
 

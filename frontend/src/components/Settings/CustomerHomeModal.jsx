@@ -2,15 +2,113 @@ import { useState, useEffect } from 'react';
 import { Modal } from '../common/Modal';
 import { Building2 } from 'lucide-react';
 import { updateCustomerProfile, changePassword } from '../../services/api';
+import { isCnLocale } from '../../utils/locale';
 
-const authStatusLabels = {
-  authenticated: { label: 'Verified', color: 'px-2 py-0.5 rounded-full bg-green-500/15 text-green-600 dark:text-green-400 text-[11px]' },
-  pending: { label: 'Pending Verification', color: 'px-2 py-0.5 rounded-full bg-yellow-500/15 text-yellow-600 dark:text-yellow-400 text-[11px]' },
-  rejected: { label: 'Verification Rejected', color: 'px-2 py-0.5 rounded-full bg-red-500/15 text-red-600 dark:text-red-400 text-[11px]' },
-  guest: { label: 'Guest', color: 'px-2 py-0.5 rounded-full bg-[var(--color-input-bg)] text-[var(--color-text-secondary)] text-[11px]' },
+const COPY = {
+  en: {
+    authStatusLabels: {
+      authenticated: { label: 'Verified', color: 'px-2 py-0.5 rounded-full bg-green-500/15 text-green-600 dark:text-green-400 text-[11px]' },
+      pending: { label: 'Pending Verification', color: 'px-2 py-0.5 rounded-full bg-yellow-500/15 text-yellow-600 dark:text-yellow-400 text-[11px]' },
+      rejected: { label: 'Verification Rejected', color: 'px-2 py-0.5 rounded-full bg-red-500/15 text-red-600 dark:text-red-400 text-[11px]' },
+      guest: { label: 'Guest', color: 'px-2 py-0.5 rounded-full bg-[var(--color-input-bg)] text-[var(--color-text-secondary)] text-[11px]' },
+    },
+    modalTitle: 'Company Profile',
+    tabs: { info: 'Company Info', preferences: 'Preferences', security: 'Security' },
+    companyNotSet: 'Company name not set',
+    saving: 'Saving...',
+    saved: 'Saved successfully',
+    saveFailed: 'Save failed',
+    fields: {
+      companyName: 'Company Name',
+      city: 'City',
+      address: 'Address',
+      phone: 'Phone',
+      companyDescription: 'Company Description',
+      businessScope: 'Business Scope',
+    },
+    placeholders: {
+      companyName: 'e.g. ABC Metal Products Co., Ltd.',
+      city: 'e.g. Shanghai',
+      address: 'e.g. 123 Industrial Park Road',
+      phone: 'Mobile or landline',
+      companyDescription: 'Briefly describe your company...',
+      businessScope: 'e.g. Sheet metal fabrication, laser cutting, bending',
+    },
+    appearance: 'Appearance',
+    light: 'Light',
+    dark: 'Dark',
+    system: 'System',
+    currentPassword: 'Current Password',
+    newPassword: 'New Password',
+    confirmPassword: 'Confirm New Password',
+    pwdPlaceholders: {
+      current: 'Enter your current password',
+      new: 'At least 6 characters',
+      confirm: 'Re-enter your new password',
+    },
+    saveChanges: 'Save Changes',
+    changePassword: 'Change Password',
+    updating: 'Updating...',
+    passwordsMismatch: 'New passwords do not match',
+    passwordMin: 'Password must be at least 6 characters',
+    passwordChanged: 'Password changed successfully',
+    updateFailed: 'Update failed',
+  },
+  cn: {
+    authStatusLabels: {
+      authenticated: { label: '已认证', color: 'px-2 py-0.5 rounded-full bg-green-500/15 text-green-600 dark:text-green-400 text-[11px]' },
+      pending: { label: '待审核', color: 'px-2 py-0.5 rounded-full bg-yellow-500/15 text-yellow-600 dark:text-yellow-400 text-[11px]' },
+      rejected: { label: '认证未通过', color: 'px-2 py-0.5 rounded-full bg-red-500/15 text-red-600 dark:text-red-400 text-[11px]' },
+      guest: { label: '游客', color: 'px-2 py-0.5 rounded-full bg-[var(--color-input-bg)] text-[var(--color-text-secondary)] text-[11px]' },
+    },
+    modalTitle: '公司资料',
+    tabs: { info: '公司信息', preferences: '偏好设置', security: '账户安全' },
+    companyNotSet: '尚未设置公司名称',
+    saving: '保存中...',
+    saved: '保存成功',
+    saveFailed: '保存失败',
+    fields: {
+      companyName: '公司名称',
+      city: '所在城市',
+      address: '地址',
+      phone: '联系电话',
+      companyDescription: '公司简介',
+      businessScope: '经营范围',
+    },
+    placeholders: {
+      companyName: '例如：济南某某钣金制造有限公司',
+      city: '例如：苏州',
+      address: '例如：工业园路 123 号',
+      phone: '手机号或固定电话',
+      companyDescription: '简单介绍你的公司...',
+      businessScope: '例如：钣金加工、激光切割、折弯',
+    },
+    appearance: '外观',
+    light: '浅色',
+    dark: '深色',
+    system: '跟随系统',
+    currentPassword: '当前密码',
+    newPassword: '新密码',
+    confirmPassword: '确认新密码',
+    pwdPlaceholders: {
+      current: '请输入当前密码',
+      new: '至少 6 位',
+      confirm: '再次输入新密码',
+    },
+    saveChanges: '保存修改',
+    changePassword: '修改密码',
+    updating: '更新中...',
+    passwordsMismatch: '两次输入的新密码不一致',
+    passwordMin: '密码至少需要 6 位',
+    passwordChanged: '密码修改成功',
+    updateFailed: '更新失败',
+  },
 };
 
 export function CustomerHomeModal({ isOpen, onClose, currentUser, userType }) {
+  const isCn = isCnLocale();
+  const copy = isCn ? COPY.cn : COPY.en;
+  const status = copy.authStatusLabels[currentUser?.auth_status] || copy.authStatusLabels.pending;
   const [tab, setTab] = useState('info');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -54,10 +152,10 @@ export function CustomerHomeModal({ isOpen, onClose, currentUser, userType }) {
       await updateCustomerProfile(form);
       const updated = { ...currentUser, ...form };
       localStorage.setItem('sagemro_user', JSON.stringify(updated));
-      setSuccess('Saved successfully');
+      setSuccess(copy.saved);
       setTimeout(() => setSuccess(''), 2000);
     } catch (err) {
-      setError(err.message || 'Save failed');
+      setError(err.message || copy.saveFailed);
     } finally {
       setLoading(false);
     }
@@ -81,11 +179,11 @@ export function CustomerHomeModal({ isOpen, onClose, currentUser, userType }) {
 
   const handleChangePassword = async () => {
     if (pwdForm.newPassword !== pwdForm.confirmPassword) {
-      setError('New passwords do not match');
+      setError(copy.passwordsMismatch);
       return;
     }
     if (pwdForm.newPassword.length < 6) {
-      setError('Password must be at least 6 characters');
+      setError(copy.passwordMin);
       return;
     }
     setLoading(true);
@@ -93,21 +191,19 @@ export function CustomerHomeModal({ isOpen, onClose, currentUser, userType }) {
     try {
       await changePassword({ oldPassword: pwdForm.oldPassword, newPassword: pwdForm.newPassword });
       setPwdForm({ oldPassword: '', newPassword: '', confirmPassword: '' });
-      setSuccess('Password changed successfully');
+      setSuccess(copy.passwordChanged);
       setTimeout(() => setSuccess(''), 2000);
     } catch (err) {
-      setError(err.message || 'Update failed');
+      setError(err.message || copy.updateFailed);
     } finally {
       setLoading(false);
     }
   };
 
-  const status = authStatusLabels[currentUser?.auth_status] || authStatusLabels.pending;
-
   const inputClass = "w-full bg-[var(--color-input-bg)] border border-[var(--color-border)] rounded-lg px-3 py-2.5 text-[14px] text-[var(--color-text-primary)] placeholder:text-[var(--color-text-secondary)] focus:outline-none focus:ring-2 focus:ring-blue-500";
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Company Profile" size="lg">
+    <Modal isOpen={isOpen} onClose={onClose} title={copy.modalTitle} size="lg">
       <div className="flex flex-col gap-5">
 
         {/* 头部：公司 Logo + 名称 + 认证状态 */}
@@ -122,7 +218,7 @@ export function CustomerHomeModal({ isOpen, onClose, currentUser, userType }) {
 
           <div className="flex-1 min-w-0">
             <div className="text-[18px] font-semibold text-[var(--color-text-primary)] truncate">
-              {form.company || 'Company name not set'}
+              {form.company || copy.companyNotSet}
             </div>
             <div className="text-[13px] text-[var(--color-text-secondary)] truncate mt-0.5">
               {currentUser?.phone}
@@ -150,7 +246,7 @@ export function CustomerHomeModal({ isOpen, onClose, currentUser, userType }) {
                 : 'border-transparent text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]'
             }`}
           >
-            Company Info
+            {copy.tabs.info}
           </button>
           <button
             onClick={() => setTab('preferences')}
@@ -160,7 +256,7 @@ export function CustomerHomeModal({ isOpen, onClose, currentUser, userType }) {
                 : 'border-transparent text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]'
             }`}
           >
-            Preferences
+            {copy.tabs.preferences}
           </button>
           <button
             onClick={() => setTab('security')}
@@ -170,7 +266,7 @@ export function CustomerHomeModal({ isOpen, onClose, currentUser, userType }) {
                 : 'border-transparent text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]'
             }`}
           >
-            Security
+            {copy.tabs.security}
           </button>
         </div>
 
@@ -181,62 +277,62 @@ export function CustomerHomeModal({ isOpen, onClose, currentUser, userType }) {
           {tab === 'info' && (
             <div className="space-y-4">
               <div>
-                <label className="block text-[12px] text-[var(--color-text-secondary)] mb-1.5">Company Name</label>
+                <label className="block text-[12px] text-[var(--color-text-secondary)] mb-1.5">{copy.fields.companyName}</label>
                 <input
                   type="text"
                   value={form.company}
                   onChange={e => setForm({ ...form, company: e.target.value })}
-                  placeholder="e.g. ABC Metal Products Co., Ltd."
+                  placeholder={copy.placeholders.companyName}
                   className={inputClass}
                 />
               </div>
               <div>
-                <label className="block text-[12px] text-[var(--color-text-secondary)] mb-1.5">City</label>
+                <label className="block text-[12px] text-[var(--color-text-secondary)] mb-1.5">{copy.fields.city}</label>
                 <input
                   type="text"
                   value={form.city}
                   onChange={e => setForm({ ...form, city: e.target.value })}
-                  placeholder="e.g. Shanghai"
+                  placeholder={copy.placeholders.city}
                   className={inputClass}
                 />
               </div>
               <div>
-                <label className="block text-[12px] text-[var(--color-text-secondary)] mb-1.5">Address</label>
+                <label className="block text-[12px] text-[var(--color-text-secondary)] mb-1.5">{copy.fields.address}</label>
                 <input
                   type="text"
                   value={form.address}
                   onChange={e => setForm({ ...form, address: e.target.value })}
-                  placeholder="e.g. 123 Industrial Park Road"
+                  placeholder={copy.placeholders.address}
                   className={inputClass}
                 />
               </div>
               <div>
-                <label className="block text-[12px] text-[var(--color-text-secondary)] mb-1.5">Phone</label>
+                <label className="block text-[12px] text-[var(--color-text-secondary)] mb-1.5">{copy.fields.phone}</label>
                 <input
                   type="text"
                   value={form.phone}
                   onChange={e => setForm({ ...form, phone: e.target.value })}
-                  placeholder="Mobile or landline"
+                  placeholder={copy.placeholders.phone}
                   className={inputClass}
                 />
               </div>
               <div>
-                <label className="block text-[12px] text-[var(--color-text-secondary)] mb-1.5">Company Description</label>
+                <label className="block text-[12px] text-[var(--color-text-secondary)] mb-1.5">{copy.fields.companyDescription}</label>
                 <textarea
                   value={form.company_description}
                   onChange={e => setForm({ ...form, company_description: e.target.value })}
-                  placeholder="Briefly describe your company..."
+                  placeholder={copy.placeholders.companyDescription}
                   rows={2}
                   className={`${inputClass} resize-none`}
                 />
               </div>
               <div>
-                <label className="block text-[12px] text-[var(--color-text-secondary)] mb-1.5">Business Scope</label>
+                <label className="block text-[12px] text-[var(--color-text-secondary)] mb-1.5">{copy.fields.businessScope}</label>
                 <input
                   type="text"
                   value={form.business_scope}
                   onChange={e => setForm({ ...form, business_scope: e.target.value })}
-                  placeholder="e.g. Sheet metal fabrication, laser cutting, bending"
+                  placeholder={copy.placeholders.businessScope}
                   className={inputClass}
                 />
               </div>
@@ -253,7 +349,7 @@ export function CustomerHomeModal({ isOpen, onClose, currentUser, userType }) {
                 disabled={loading}
                 className="w-full py-2.5 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] disabled:opacity-50 text-white rounded-lg text-[14px] font-medium transition-colors"
               >
-                {loading ? 'Saving...' : 'Save Changes'}
+                {loading ? copy.saving : copy.saveChanges}
               </button>
             </div>
           )}
@@ -262,7 +358,7 @@ export function CustomerHomeModal({ isOpen, onClose, currentUser, userType }) {
           {tab === 'preferences' && (
             <div className="space-y-4">
               <div>
-                <label className="block text-[12px] text-[var(--color-text-secondary)] mb-3">Appearance</label>
+                <label className="block text-[12px] text-[var(--color-text-secondary)] mb-3">{copy.appearance}</label>
                 <div className="flex gap-3">
                   <button
                     onClick={() => handleThemeChange('light')}
@@ -273,7 +369,7 @@ export function CustomerHomeModal({ isOpen, onClose, currentUser, userType }) {
                     }`}
                   >
                     <span className="text-2xl">☀️</span>
-                    <span className="text-[13px] text-[var(--color-text-primary)]">Light</span>
+                    <span className="text-[13px] text-[var(--color-text-primary)]">{copy.light}</span>
                   </button>
                   <button
                     onClick={() => handleThemeChange('dark')}
@@ -284,7 +380,7 @@ export function CustomerHomeModal({ isOpen, onClose, currentUser, userType }) {
                     }`}
                   >
                     <span className="text-2xl">🌙</span>
-                    <span className="text-[13px] text-[var(--color-text-primary)]">Dark</span>
+                    <span className="text-[13px] text-[var(--color-text-primary)]">{copy.dark}</span>
                   </button>
                   <button
                     onClick={() => handleThemeChange('system')}
@@ -295,7 +391,7 @@ export function CustomerHomeModal({ isOpen, onClose, currentUser, userType }) {
                     }`}
                   >
                     <span className="text-2xl">💻</span>
-                    <span className="text-[13px] text-[var(--color-text-primary)]">System</span>
+                    <span className="text-[13px] text-[var(--color-text-primary)]">{copy.system}</span>
                   </button>
                 </div>
               </div>
@@ -306,32 +402,32 @@ export function CustomerHomeModal({ isOpen, onClose, currentUser, userType }) {
           {tab === 'security' && (
             <div className="space-y-4">
               <div>
-                <label className="block text-[12px] text-[var(--color-text-secondary)] mb-1.5">Current Password</label>
+                <label className="block text-[12px] text-[var(--color-text-secondary)] mb-1.5">{copy.currentPassword}</label>
                 <input
                   type="password"
                   value={pwdForm.oldPassword}
                   onChange={e => setPwdForm({ ...pwdForm, oldPassword: e.target.value })}
-                  placeholder="Enter your current password"
+                  placeholder={copy.pwdPlaceholders.current}
                   className={inputClass}
                 />
               </div>
               <div>
-                <label className="block text-[12px] text-[var(--color-text-secondary)] mb-1.5">New Password</label>
+                <label className="block text-[12px] text-[var(--color-text-secondary)] mb-1.5">{copy.newPassword}</label>
                 <input
                   type="password"
                   value={pwdForm.newPassword}
                   onChange={e => setPwdForm({ ...pwdForm, newPassword: e.target.value })}
-                  placeholder="At least 6 characters"
+                  placeholder={copy.pwdPlaceholders.new}
                   className={inputClass}
                 />
               </div>
               <div>
-                <label className="block text-[12px] text-[var(--color-text-secondary)] mb-1.5">Confirm New Password</label>
+                <label className="block text-[12px] text-[var(--color-text-secondary)] mb-1.5">{copy.confirmPassword}</label>
                 <input
                   type="password"
                   value={pwdForm.confirmPassword}
                   onChange={e => setPwdForm({ ...pwdForm, confirmPassword: e.target.value })}
-                  placeholder="Re-enter your new password"
+                  placeholder={copy.pwdPlaceholders.confirm}
                   className={inputClass}
                 />
               </div>
@@ -348,7 +444,7 @@ export function CustomerHomeModal({ isOpen, onClose, currentUser, userType }) {
                 disabled={loading}
                 className="w-full py-2.5 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] disabled:opacity-50 text-white rounded-lg text-[14px] font-medium transition-colors"
               >
-                {loading ? 'Updating...' : 'Change Password'}
+                {loading ? copy.updating : copy.changePassword}
               </button>
             </div>
           )}

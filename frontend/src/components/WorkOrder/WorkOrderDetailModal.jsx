@@ -161,7 +161,7 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
         rating_professional: ratings.professional,
         comment,
       });
-      toastSuccess('Service confirmed. Thank you for the review.');
+      toastSuccess('Service confirmed. Your review helps SAGEMRO match better engineers. Thank you.');
       onRateSuccess?.();
       loadDetail();
     } catch (e) {
@@ -873,7 +873,7 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
                     comment: engReviewComment,
                   });
                   setShowEngineerReview(false);
-                  toastSuccess('Service confirmed. Thank you for the review.');
+                  toastSuccess('Service confirmed. Your review helps SAGEMRO operations improve service coordination. Thank you.');
                   loadDetail();
                 } catch (e) {
                   toastError('Review submission failed: ' + e.message);
