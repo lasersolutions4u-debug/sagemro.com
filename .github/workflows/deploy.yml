@@ -8,7 +8,7 @@ on:
   push:
     branches: [main, china-edition]
   pull_request:
-    branches: [main]
+    branches: [main, china-edition]
 
 jobs:
   # ============ 测试门禁（所有 deploy job 的前置条件）============
@@ -44,6 +44,10 @@ jobs:
       - name: Frontend lint
         working-directory: frontend
         run: npm run lint --if-present
+
+      - name: Frontend tests
+        working-directory: frontend
+        run: npm test
 
       - name: Frontend build
         working-directory: frontend
