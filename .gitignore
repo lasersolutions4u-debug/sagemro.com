@@ -44,9 +44,9 @@ Thumbs.db
 worker/.eval-runs/
 
 # Claude memory backup (synced via 坚果云, not for git)
-memory/
-.claude/memory/
+/memory/
 .claude/cache/
+.Codex/memory/
 
 # Python
 __pycache__/
@@ -54,8 +54,4 @@ __pycache__/
 
 # Misc
 *.bak
-.gstack/
-.npm-cache/
-.playwright-cli/
-.worktrees/
-output/
+worker/.codex-production-backups/
