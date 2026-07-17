@@ -380,7 +380,7 @@ function ToolLinkCard({ tool }) {
 
 function ToolPageShell({ children, copy, onOpenLegal }) {
   return (
-    <div className="min-h-[100dvh] bg-[var(--color-bg)] text-[var(--color-text-primary)]">
+    <div className="flex min-h-[100dvh] flex-col bg-[var(--color-bg)] text-[var(--color-text-primary)]">
       <header className="border-b border-[var(--color-border)] bg-[var(--color-surface)]">
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-3 sm:px-6">
           <a href="/" className="flex items-center gap-2 text-sm font-semibold text-[var(--color-text-primary)]">
@@ -393,7 +393,7 @@ function ToolPageShell({ children, copy, onOpenLegal }) {
           </nav>
         </div>
       </header>
-      {children}
+      <div className="flex-1">{children}</div>
       <Footer onOpenLegal={onOpenLegal} />
     </div>
   );
