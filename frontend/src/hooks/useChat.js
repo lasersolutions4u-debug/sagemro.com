@@ -11,6 +11,7 @@ export function useChat() {
   const [isStreaming, setIsStreaming] = useState(false);
   const [conversationId, setConversationId] = useState(null);
   const [error, setError] = useState(null);
+  const [deviceSuggestion, setDeviceSuggestion] = useState(null);
   const abortControllerRef = useRef(null);
 
   // 发送消息
@@ -64,6 +65,9 @@ export function useChat() {
           if (data.conversation_id && !conversationId) {
             setConversationId(data.conversation_id);
           }
+          if (data.device_suggestion) {
+            setDeviceSuggestion(data.device_suggestion);
+          }
         },
         onDone: () => {
           setIsStreaming(false);
@@ -99,6 +103,11 @@ export function useChat() {
     setMessages([]);
     setConversationId(null);
     setError(null);
+    setDeviceSuggestion(null);
+  }, []);
+
+  const clearDeviceSuggestion = useCallback(() => {
+    setDeviceSuggestion(null);
   }, []);
 
   // 加载历史消息
@@ -123,9 +132,11 @@ export function useChat() {
     isStreaming,
     conversationId,
     error,
+    deviceSuggestion,
     sendMessage,
     stopGeneration,
     clearMessages,
     loadMessages,
+    clearDeviceSuggestion,
   };
 }

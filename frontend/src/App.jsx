@@ -145,7 +145,15 @@ function App() {
     stopGeneration,
     clearMessages,
     loadMessages,
+    deviceSuggestion,
+    clearDeviceSuggestion,
   } = useChat();
+
+  useEffect(() => {
+    if (deviceSuggestion && userType === 'customer') {
+      setMyDevicesOpen(true);
+    }
+  }, [deviceSuggestion, userType]);
 
   // 当前对话标题
   const currentConversation = conversationId ? getConversation(conversationId) : null;
@@ -555,12 +563,17 @@ function App() {
             />
           )}
           {myDevicesOpen && (
-            <MyDevicesModal
-              isOpen={myDevicesOpen}
-              onClose={() => setMyDevicesOpen(false)}
-              currentUser={currentUser}
-              userType={userType}
-            />
+      <MyDevicesModal
+        isOpen={myDevicesOpen}
+        onClose={() => {
+          setMyDevicesOpen(false);
+          clearDeviceSuggestion();
+        }}
+        currentUser={currentUser}
+        userType={userType}
+        deviceSuggestion={deviceSuggestion}
+        onSuggestionHandled={clearDeviceSuggestion}
+      />
           )}
           {notificationsOpen && (
             <NotificationModal

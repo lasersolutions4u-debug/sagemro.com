@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { X } from 'lucide-react';
 import { createDevice } from '../../services/api';
 import { isCnLocale } from '../../utils/locale';
@@ -17,15 +17,17 @@ const typeLabelsCn = {
   Other: '其他',
 };
 
-export function DeviceForm({ onClose, onSuccess }) {
+const EMPTY_FORM = {
+  name: '',
+  type: '',
+  brand: '',
+  model: '',
+  power: '',
+};
+
+export function DeviceForm({ onClose, onSuccess, initialValues = null, title, submitLabel }) {
   const isCn = isCnLocale();
-  const [form, setForm] = useState({
-    name: '',
-    type: '',
-    brand: '',
-    model: '',
-    power: ''
-  });
+  const [form, setForm] = useState({ ...EMPTY_FORM, ...(initialValues || {}) });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -34,6 +36,11 @@ export function DeviceForm({ onClose, onSuccess }) {
     'Welding Machine', 'Plasma Cutter', 'Waterjet Cutter',
     'Plate Rolling Machine', 'Riveting Machine', 'Spray Coating Equipment', 'Other'
   ];
+
+  useEffect(() => {
+    setForm({ ...EMPTY_FORM, ...(initialValues || {}) });
+    setError('');
+  }, [initialValues]);
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -48,19 +55,22 @@ export function DeviceForm({ onClose, onSuccess }) {
       const result = await createDevice(form);
       onSuccess(result.device);
     } catch (err) {
-      setError(err.message || (isCn ? '添加失败' : 'Failed to add'));
+      setError(err.message || (isCn ? '设备保存失败' : 'Failed to save equipment'));
     } finally {
       setLoading(false);
     }
   }
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center">
+    <div className="fixed inset-0 z-[60] flex items-center justify-center px-3">
       <div className="absolute inset-0 bg-black/50" onClick={onClose} />
-      <div className="relative bg-[var(--color-surface)] rounded-2xl shadow-2xl w-full max-w-md p-5"
-           style={{ maxWidth: '420px' }}>
+      <div className="relative max-h-[calc(100dvh-24px)] w-full max-w-md overflow-y-auto rounded-2xl bg-[var(--color-surface)] p-5 shadow-2xl">
         <div className="flex items-center justify-between mb-5">
-          <h3 className="text-[15px] font-medium text-[var(--color-text-primary)]">{isCn ? '添加设备' : 'Add Equipment'}</h3>
+          <h3 className="text-[15px] font-medium text-[var(--color-text-primary)]">
+            {title || (initialValues
+              ? (isCn ? '确认设备信息' : 'Confirm equipment information')
+              : (isCn ? '添加设备' : 'Add equipment'))}
+          </h3>
           <button onClick={onClose} className="p-1.5 hover:bg-[var(--color-hover)] rounded-lg">
             <X size={18} className="text-[var(--color-text-secondary)]" />
           </button>
@@ -183,7 +193,9 @@ export function DeviceForm({ onClose, onSuccess }) {
               disabled={loading}
               className="flex-1 py-2.5 bg-[var(--color-primary)] text-white rounded-lg text-[14px] font-medium hover:bg-[var(--color-primary-hover)] transition-colors disabled:opacity-50"
             >
-              {loading ? (isCn ? '添加中...' : 'Adding...') : (isCn ? '添加' : 'Add')}
+              {loading
+                ? (isCn ? '保存中...' : 'Saving...')
+                : (submitLabel || (isCn ? '保存设备' : 'Save equipment'))}
             </button>
           </div>
         </form>

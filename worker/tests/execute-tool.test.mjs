@@ -206,6 +206,60 @@ test('customer 调 get_customer_devices → ok + ok trace', async () => {
   assert.ok(traceRows[0].result_size_bytes > 0, '应记录返回体字节数');
 });
 
+test('customer 提供设备信息时只生成待确认候选，不直接写入设备档案', async () => {
+  const { env, traceRows } = makeMockEnv();
+  const { ctx, flush } = makeMockCtx();
+
+  const result = await executeTool({
+    toolName: 'suggest_device_profile',
+    args: {
+      name: 'Workshop 1 laser cutter',
+      type: 'Laser cutting machine',
+      brand: 'TRUMPF',
+      model: 'TruLaser 3030',
+      power: '6000 W',
+    },
+    env,
+    ctx,
+    userRole: 'customer',
+    customerId: 'cust-test-1',
+    conversationId: 'conv-device-suggestion',
+    iteration: 0,
+  });
+
+  await flush();
+
+  assert.deepEqual(result.device_suggestion, {
+    name: 'Workshop 1 laser cutter',
+    type: 'Laser cutting machine',
+    brand: 'TRUMPF',
+    model: 'TruLaser 3030',
+    power: '6000 W',
+    source: 'chat',
+  });
+  assert.equal(traceRows[0].tool_name, 'suggest_device_profile');
+  assert.equal(traceRows[0].result_status, 'ok');
+});
+
+test('engineer cannot create a customer device suggestion', async () => {
+  const { env } = makeMockEnv();
+  const { ctx, flush } = makeMockCtx();
+
+  const result = await executeTool({
+    toolName: 'suggest_device_profile',
+    args: { type: 'Press brake', brand: 'TRUMPF', model: 'TruBend 3100' },
+    env,
+    ctx,
+    userRole: 'engineer',
+    engineerId: 'eng-test-1',
+    conversationId: 'conv-device-suggestion-denied',
+    iteration: 0,
+  });
+
+  await flush();
+  assert.equal(result.error, 'permission_denied');
+});
+
 test('engineer 调 get_engineer_profile → ok + ok trace', async () => {
   const { env, traceRows } = makeMockEnv();
   const { ctx, flush } = makeMockCtx();
