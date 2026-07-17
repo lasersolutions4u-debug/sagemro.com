@@ -67,10 +67,10 @@ test('main site first-impression copy keeps CN and COM market language separate'
   const footer = read('frontend/src/components/common/Footer.jsx');
   const engineerRecruiting = read('frontend/src/components/Engineer/EngineerRecruitingPage.jsx');
 
-  assert.match(welcome, /Type the problem/);
-  assert.match(welcome, /AI turns scattered symptoms into a structured service brief/);
-  assert.match(welcome, /asks for what.*missing before the next step/);
-  assert.match(welcome, /From scattered symptoms to a clear brief/);
+  assert.match(welcome, /3 minutes of AI chat/);
+  assert.match(welcome, /Get your solution and next steps/);
+  assert.match(welcome, /structured diagnosis, solution options/);
+  assert.match(welcome, /From symptoms to solution/);
   assert.match(welcome, /AI asks for missing details/);
   assert.match(welcome, /BM111 alarm/);
   assert.match(welcome, /burrs on stainless steel/);
@@ -81,15 +81,14 @@ test('main site first-impression copy keeps CN and COM market language separate'
   assert.doesNotMatch(welcome, /sales form|sales shortcut/i);
   assert.doesNotMatch(welcome, /Machine selection|new-machine evaluation/);
   assert.doesNotMatch(welcome, /supports international customers with independent after-sales service, spare parts, consumables/);
-  assert.match(welcome, /描述问题，三分钟拿到结构化服务简报/);
-  assert.match(welcome, /AI 把零散现象整理成清晰的服务摘要/);
-  assert.match(welcome, /说明报警、材料、设备型号或生产影响/);
-  assert.match(welcome, /从零散现象到清晰简报/);
+  assert.match(welcome, /跟 AI 聊三分钟/);
+  assert.match(welcome, /获取设备问题解决方案和下一步/);
+  assert.match(welcome, /结构化诊断、解决思路/);
+  assert.match(welcome, /从现象到方案/);
   assert.match(welcome, /AI 会追问缺失信息/);
-  assert.match(welcome, /AI 先行/);
-  assert.match(chatArea, /描述问题，AI 三分钟整理服务简报/);
   assert.match(welcome, /AI-First Service Platform/);
-  assert.match(chatArea, /Describe the problem. AI prepares your service brief/);
+  assert.match(chatArea, /跟 AI 聊三分钟/);
+  assert.match(chatArea, /3 minutes of AI chat/);
   assert.match(about, /service workspace for recording machine symptoms/i);
   assert.match(about, /What The Chat Can Help Clarify/);
   assert.doesNotMatch(about, /One Chat, Six Service Outcomes/);
