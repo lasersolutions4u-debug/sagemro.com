@@ -101,7 +101,8 @@ export function MyWorkOrdersModal({ isOpen, onClose }) {
 
           {!loading && workOrders.length === 0 && !error && (
             <div className="text-center py-8 text-[var(--color-text-secondary)]">
-              No service requests found
+              <p className="text-sm font-medium">No service requests yet</p>
+              <p className="mt-1 text-xs">Describe your equipment issue in the AI chat first, then submit a service request when you're ready.</p>
             </div>
           )}
 

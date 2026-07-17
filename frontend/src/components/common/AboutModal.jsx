@@ -24,7 +24,7 @@ const copy = {
       { icon: ClipboardCheck, title: 'Clarify What Is Known', desc: 'The system may ask relevant follow-up questions and organize the case into a summary you can check.' },
       { icon: Wrench, title: 'Choose A Reviewed Next Step', desc: 'When diagnosis, quotation, parts, scheduling, or site safety matters, qualified review confirms what should happen next.' },
     ],
-    outcomesTitle: 'What The Chat Can Help Clarify',
+    outcomesTitle: 'What SAGEMRO AI Can Help Clarify',
     capabilities: [
       'Observed symptoms',
       'Risk signals',

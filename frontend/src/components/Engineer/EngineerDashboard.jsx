@@ -7,7 +7,7 @@ import { WorkOrderDetailModal } from '../WorkOrder/WorkOrderDetailModal';
 import { formatSlaRemaining, categoryConfig, categoryL2Labels } from '../../data/workOrderConfig';
 
 const statusConfig = {
-  [WorkOrderStatus.PENDING]: { text: 'Pending Dispatch', color: 'bg-blue-500', textColor: 'text-blue-500' },
+  [WorkOrderStatus.PENDING]: { text: 'Awaiting Dispatch', color: 'bg-blue-500', textColor: 'text-blue-500' },
   [WorkOrderStatus.ASSIGNED]: { text: 'Assigned', color: 'bg-yellow-500', textColor: 'text-yellow-500' },
   [WorkOrderStatus.IN_PROGRESS]: { text: 'In Progress', color: 'bg-orange-500', textColor: 'text-orange-500' },
   [WorkOrderStatus.PRICING]: { text: 'Awaiting Pricing', color: 'bg-purple-500', textColor: 'text-purple-500' },

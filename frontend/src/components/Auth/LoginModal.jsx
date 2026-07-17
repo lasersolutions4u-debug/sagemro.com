@@ -112,7 +112,7 @@ const LOGIN_COPY = {
     alreadyAccount: 'Already have an account?',
     signIn: 'Sign in',
     registering: 'Registering...',
-    loginIntro: 'Sign in to access your service history, equipment records, and AI-assisted support.',
+    loginIntro: 'Sign in to continue your conversations, manage equipment records, and get AI-driven service support.',
     password: 'Password',
     passwordPlaceholder: 'Enter your password',
     signingIn: 'Signing in...',

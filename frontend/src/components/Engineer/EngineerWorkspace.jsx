@@ -657,7 +657,7 @@ export function EngineerWorkspace({ currentUser, onLogout, onOpenProfile }) {
                   </div>
                 </div>
               ) : (
-                <p className="text-sm text-[var(--color-text-secondary)]">No active task selected.</p>
+                <p className="text-sm text-[var(--color-text-secondary)]">Select a task to view job details and service preparation.</p>
               )}
             </div>
             <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5">

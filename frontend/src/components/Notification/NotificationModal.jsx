@@ -117,7 +117,10 @@ export function NotificationModal({ isOpen, onClose, onUnreadCountChange, onOpen
         ) : notifications.length === 0 ? (
           <div className="py-12 text-center">
             <Bell size={36} className="mx-auto text-[var(--color-text-secondary)] opacity-30 mb-3" />
-            <div className="text-[14px] text-[var(--color-text-secondary)]">No notifications</div>
+            <div className="text-center">
+              <div className="text-[14px] text-[var(--color-text-secondary)]">No notifications yet</div>
+              <div className="mt-1 text-xs text-[var(--color-text-muted)]">You'll be notified here when your service request status changes.</div>
+            </div>
           </div>
         ) : (
           <div className="max-h-[60vh] overflow-y-auto -mx-1 px-1 space-y-1">
