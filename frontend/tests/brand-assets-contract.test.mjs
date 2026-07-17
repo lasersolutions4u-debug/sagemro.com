@@ -276,6 +276,7 @@ test('CN deployment gates run frontend tests before production deploy jobs', () 
   const cloudflareWorkflow = read('.github/workflows/deploy.yml');
   const aliyunWorkflow = read('.github/workflows/aliyun-cn-deploy.yml');
 
+  assert.match(cloudflareWorkflow, /pull_request:\s+branches: \[main, china-edition\]/);
   assert.match(cloudflareWorkflow, /name: Frontend tests/);
   assert.match(cloudflareWorkflow, /working-directory: frontend\s+run: npm test/);
   assert.ok(
