@@ -60,7 +60,8 @@ const COPY = {
     title: 'My Services',
     loading: 'Loading...',
     failed: 'Failed to load',
-    empty: 'No service requests found',
+    empty: 'No service requests yet',
+    emptyHint: 'Describe your equipment issue in the AI chat first, then submit a service request when you\'re ready.',
     engineer: 'SAGEMRO Engineer',
     noDevice: 'No device specified',
     submitted: 'Submitted',
@@ -77,6 +78,7 @@ const COPY = {
     loading: '加载中...',
     failed: '加载失败',
     empty: '暂无服务请求',
+    emptyHint: '先在 AI 对话中描述设备问题，准备好后再提交服务请求。',
     engineer: 'SAGEMRO 工程师',
     noDevice: '未指定设备',
     submitted: '提交时间',
@@ -165,7 +167,8 @@ export function MyWorkOrdersModal({ isOpen, onClose }) {
 
           {!loading && workOrders.length === 0 && !error && (
             <div className="text-center py-8 text-[var(--color-text-secondary)]">
-              {copy.empty}
+              <p className="text-sm font-medium">{copy.empty}</p>
+              <p className="mt-1 text-xs">{copy.emptyHint}</p>
             </div>
           )}
 

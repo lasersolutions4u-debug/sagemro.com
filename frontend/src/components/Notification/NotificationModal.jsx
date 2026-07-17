@@ -10,7 +10,8 @@ const COPY = {
     title: 'Notifications',
     markAllRead: 'Mark all as read',
     loading: 'Loading...',
-    empty: 'No notifications',
+    empty: 'No notifications yet',
+    emptyHint: 'You\'ll be notified here when your service request status changes or when an engineer responds.',
     justNow: 'Just now',
     minuteAgo: (value) => `${value}m ago`,
     hourAgo: (value) => `${value}h ago`,
@@ -22,6 +23,7 @@ const COPY = {
     markAllRead: '全部标为已读',
     loading: '加载中...',
     empty: '暂无通知',
+    emptyHint: '当服务请求状态更新或有工程师回复时，你会在这里收到通知。',
     justNow: '刚刚',
     minuteAgo: (value) => `${value} 分钟前`,
     hourAgo: (value) => `${value} 小时前`,
@@ -146,7 +148,10 @@ export function NotificationModal({ isOpen, onClose, onUnreadCountChange, onOpen
         ) : notifications.length === 0 ? (
           <div className="py-12 text-center">
             <Bell size={36} className="mx-auto text-[var(--color-text-secondary)] opacity-30 mb-3" />
-            <div className="text-[14px] text-[var(--color-text-secondary)]">{copy.empty}</div>
+            <div className="text-center">
+              <div className="text-[14px] text-[var(--color-text-secondary)]">{copy.empty}</div>
+              <div className="mt-1 text-xs text-[var(--color-text-muted)]">{copy.emptyHint}</div>
+            </div>
           </div>
         ) : (
           <div className="max-h-[60vh] overflow-y-auto -mx-1 px-1 space-y-1">

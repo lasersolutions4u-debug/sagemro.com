@@ -6,9 +6,9 @@ export function NotFoundPage({ isCn = false }) {
         back: '返回 SAGEMRO',
       }
     : {
-        title: 'Page not found',
-        body: 'The page you requested does not exist or the link has expired.',
-        back: 'Back to SAGEMRO',
+        title: 'This page doesn\'t exist',
+        body: 'The link may have expired, or the page may have moved. Let\'s get you back on track.',
+        back: 'Go to AI Chat',
       };
 
   return (

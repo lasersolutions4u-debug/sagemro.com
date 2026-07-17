@@ -148,7 +148,7 @@ const WORKSPACE_COPY = {
     customerRegion: 'Customer / Region',
     machineServiceType: 'Machine / Service Type',
     nextStepLabel: 'Next Step',
-    noActiveTask: 'No active task selected.',
+    noActiveTask: 'Select a task to view job details and service preparation.',
     preparationTitle: 'Job Preparation',
     preparationFor: (orderNo) => `Preparation for ${orderNo}`,
     aiIntakeSummary: 'Service Request Summary',
