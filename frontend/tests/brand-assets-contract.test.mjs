@@ -67,11 +67,11 @@ test('main site first-impression copy keeps CN and COM market language separate'
   const footer = read('frontend/src/components/common/Footer.jsx');
   const engineerRecruiting = read('frontend/src/components/Engineer/EngineerRecruitingPage.jsx');
 
-  assert.match(welcome, /Start with AI-assisted equipment troubleshooting/);
-  assert.match(welcome, /AI turns scattered symptoms into a clear service brief/);
-  assert.match(welcome, /SAGEMRO AI helps structure the issue before requesting service, parts, or further assessment/);
-  assert.match(welcome, /Let AI organize the first service brief/);
-  assert.match(welcome, /AI will ask for missing details/);
+  assert.match(welcome, /3 minutes of AI chat/);
+  assert.match(welcome, /Get your solution and next steps/);
+  assert.match(welcome, /structured diagnosis, solution options/);
+  assert.match(welcome, /From symptoms to solution/);
+  assert.match(welcome, /AI asks for missing details/);
   assert.match(welcome, /BM111 alarm/);
   assert.match(welcome, /burrs on stainless steel/);
   assert.match(welcome, /href: '\/tools'/);
@@ -81,15 +81,15 @@ test('main site first-impression copy keeps CN and COM market language separate'
   assert.doesNotMatch(welcome, /sales form|sales shortcut/i);
   assert.doesNotMatch(welcome, /Machine selection|new-machine evaluation/);
   assert.doesNotMatch(welcome, /supports international customers with independent after-sales service, spare parts, consumables/);
-  assert.match(welcome, /从 AI 设备问题分析开始/);
-  assert.match(welcome, /AI 会把零散现象整理成清晰的服务摘要/);
-  assert.match(welcome, /SAGEMRO AI 会先整理问题，再辅助你判断是否需要维修、备件或进一步检查/);
-  assert.match(welcome, /让 AI 先整理第一份服务简报/);
+  assert.match(welcome, /跟 AI 聊三分钟/);
+  assert.match(welcome, /获取设备问题解决方案和下一步/);
+  assert.match(welcome, /结构化诊断、解决思路/);
+  assert.match(welcome, /从现象到方案/);
   assert.match(welcome, /AI 会追问缺失信息/);
   assert.match(chatArea, /SAGEMRO AI 设备服务平台/);
-  assert.match(chatArea, /AI 先整理设备问题和下一步建议/);
+  assert.match(chatArea, /跟 AI 聊三分钟/);
   assert.match(chatArea, /SAGEMRO AI Equipment Service/);
-  assert.match(chatArea, /AI organizes equipment issues and next-step options/);
+  assert.match(chatArea, /3 minutes of AI chat/);
   assert.match(about, /service workspace for recording machine symptoms/i);
   assert.match(about, /What The Chat Can Help Clarify/);
   assert.doesNotMatch(about, /One Chat, Six Service Outcomes/);
