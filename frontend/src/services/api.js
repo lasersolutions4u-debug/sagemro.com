@@ -9,6 +9,100 @@ function resolveApiBase() {
 
 const API_BASE = resolveApiBase();
 
+const FUNNEL_STORAGE_KEYS = {
+  anonymousId: 'sagemro_analytics_anonymous_id',
+  sessionId: 'sagemro_analytics_session_id',
+  source: 'sagemro_analytics_source',
+};
+const FUNNEL_EVENT_NAMES = [
+  'traffic_source_captured',
+  'ai_conversation_started',
+  'ai_response_received',
+  'signup_started',
+  'verification_succeeded',
+  'signup_completed',
+  'device_saved',
+  'service_request_created',
+];
+
+function analyticsId(prefix) {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) return `${prefix}_${crypto.randomUUID()}`;
+  return `${prefix}_${Date.now().toString(36)}${Math.random().toString(36).slice(2)}`;
+}
+
+function getStoredAnalyticsValue(key, fallback) {
+  try {
+    const existing = localStorage.getItem(key);
+    if (existing) return existing;
+    const value = typeof fallback === 'function' ? fallback() : fallback;
+    localStorage.setItem(key, value);
+    return value;
+  } catch {
+    return typeof fallback === 'function' ? fallback() : fallback;
+  }
+}
+
+function currentAttribution() {
+  if (typeof window === 'undefined') return {};
+  const params = new URLSearchParams(window.location.search);
+  const fromUrl = {
+    source: params.get('utm_source') || '',
+    medium: params.get('utm_medium') || '',
+    campaign: params.get('utm_campaign') || '',
+    content: params.get('utm_content') || '',
+    term: params.get('utm_term') || '',
+  };
+  const hasUrlAttribution = Object.values(fromUrl).some(Boolean);
+  if (hasUrlAttribution) {
+    try {
+      localStorage.setItem(FUNNEL_STORAGE_KEYS.source, JSON.stringify(fromUrl));
+    } catch { /* ignore */ }
+    return fromUrl;
+  }
+  try {
+    return JSON.parse(localStorage.getItem(FUNNEL_STORAGE_KEYS.source) || '{}');
+  } catch {
+    return {};
+  }
+}
+
+export function trackFunnelEvent(eventName, properties = {}) {
+  if (typeof window === 'undefined') return;
+  if (!FUNNEL_EVENT_NAMES.includes(eventName)) return;
+  const attribution = currentAttribution();
+  const payload = {
+    event_name: eventName,
+    anonymous_id: getStoredAnalyticsValue(FUNNEL_STORAGE_KEYS.anonymousId, () => analyticsId('anon')),
+    session_id: getStoredAnalyticsValue(FUNNEL_STORAGE_KEYS.sessionId, () => analyticsId('session')),
+    user_type: localStorage.getItem('sagemro_user_type') || 'guest',
+    source: attribution.source || '',
+    medium: attribution.medium || '',
+    campaign: attribution.campaign || '',
+    page_path: window.location.pathname,
+    referrer: document.referrer || '',
+    properties: {
+      ...properties,
+      market: window.location.hostname.endsWith('.cn') ? 'cn' : 'com',
+      locale: window.location.hostname.endsWith('.cn') ? 'zh-CN' : 'en',
+    },
+  };
+
+  const body = JSON.stringify(payload);
+  try {
+    if (navigator.sendBeacon) {
+      const blob = new Blob([body], { type: 'application/json' });
+      if (navigator.sendBeacon(`${API_BASE}/api/analytics/funnel`, blob)) return;
+    }
+  } catch { /* fall back to fetch */ }
+
+  fetch(`${API_BASE}/api/analytics/funnel`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body,
+    keepalive: true,
+  }).catch(() => {});
+}
+
 // 401 统一拦截：当任意认证接口返回 401 时，清理本地 token 并派发事件，
 // 由 App.jsx 订阅后自动登出并弹出登录框。避免用户在 token 过期后看到一堆
 // "HTTP 401" 红色弹窗但登录状态仍保持的混乱体验。
@@ -826,7 +920,9 @@ export async function createDevice({ name, type, brand, model, power }) {
     const d = await response.json();
     throw new Error(d.error || `HTTP ${response.status}`);
   }
-  return response.json();
+  const result = await response.json();
+  trackFunnelEvent('device_saved', { device_type: type, authenticated: true });
+  return result;
 }
 
 /**

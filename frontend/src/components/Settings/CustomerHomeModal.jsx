@@ -86,8 +86,8 @@ export function CustomerHomeModal({ isOpen, onClose, currentUser, userType }) {
       setError(isCn ? '两次输入的新密码不一致' : 'New passwords do not match');
       return;
     }
-    if (pwdForm.newPassword.length < 6) {
-      setError(isCn ? '密码至少需要 6 位字符' : 'Password must be at least 6 characters');
+    if (pwdForm.newPassword.length < 10) {
+      setError(isCn ? '密码至少需要 10 位字符' : 'Password must be at least 10 characters');
       return;
     }
     setLoading(true);
@@ -323,7 +323,7 @@ export function CustomerHomeModal({ isOpen, onClose, currentUser, userType }) {
                   type="password"
                   value={pwdForm.newPassword}
                   onChange={e => setPwdForm({ ...pwdForm, newPassword: e.target.value })}
-                  placeholder={isCn ? '至少 6 位字符' : 'At least 6 characters'}
+                  placeholder={isCn ? '至少 10 位字符' : 'At least 10 characters'}
                   className={inputClass}
                 />
               </div>

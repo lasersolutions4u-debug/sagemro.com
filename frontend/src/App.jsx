@@ -13,7 +13,7 @@ import { usePushNotification } from './hooks/usePushNotification';
 import { generateId } from './utils/helpers';
 import { isCnLocale } from './utils/locale';
 import { buildWorkOrderDescription } from './utils/workOrderDisplay';
-import { submitWorkOrder as submitWorkOrderApi, getUnreadNotificationCount } from './services/api';
+import { submitWorkOrder as submitWorkOrderApi, getUnreadNotificationCount, trackFunnelEvent } from './services/api';
 
 // 重型 Modal 懒加载，减少首屏 bundle 体积
 // LoginModal 直接导入 — 关键的登录/注册入口，懒加载会导致 React #306（重复 React 实例）
@@ -42,6 +42,10 @@ function App() {
   useEffect(() => {
     document.title = isCn ? 'SAGEMRO 智能服务系统' : 'SAGEMRO Service OS';
   }, [isCn]);
+
+  useEffect(() => {
+    trackFunnelEvent('traffic_source_captured', { entry: 'app_loaded' });
+  }, []);
 
   // 侧边栏状态
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -189,6 +193,13 @@ function App() {
     const stored = localStorage.getItem(`sagemro_messages_${convId}`);
     const currentMessages = stored ? JSON.parse(stored) : [];
 
+    trackFunnelEvent('ai_conversation_started', {
+      entry: 'main_chat',
+      authenticated: Boolean(currentUser),
+      conversation_id: convId,
+      has_images: Boolean(images && images.length > 0),
+    });
+
     await sendMessage(content, images, convId);
 
     setTimeout(() => {
@@ -206,7 +217,7 @@ function App() {
         last_message: content.slice(0, 50) + (content.length > 50 ? '...' : ''),
       });
     }, 0);
-  }, [conversationId, createConversation, sendMessage, updateConversation]);
+  }, [conversationId, createConversation, currentUser, sendMessage, updateConversation]);
 
   // 提交工单
   const handleSubmitWorkOrder = useCallback(async (data) => {
@@ -227,6 +238,12 @@ function App() {
       device_id: data.device_id,
       category_l1: data.category_l1 || 'other',
       category_l2: data.category_l2 || 'other',
+    });
+
+    trackFunnelEvent('service_request_created', {
+      service_type: data.type,
+      urgency: data.urgency,
+      authenticated: true,
     });
 
     return result.work_order;

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Modal } from '../common/Modal';
-import { login, sendVerifyCode, sendResetCode, resetPassword, registerCustomer } from '../../services/api';
+import { login, sendVerifyCode, sendResetCode, resetPassword, registerCustomer, trackFunnelEvent } from '../../services/api';
 import { toastSuccess, toastError } from '../../utils/feedback';
 import { isCnLocale } from '../../utils/locale';
 
@@ -15,7 +15,7 @@ const LOGIN_COPY = {
     sendFailed: '发送失败',
     requiredFields: '请填写所有必填项',
     passwordMismatch: '两次输入的密码不一致',
-    passwordMin: '密码至少需要 6 位',
+    passwordMin: '密码至少需要 10 位',
     registeredPhone: '该手机号已注册，请直接登录。',
     registerFailed: '注册失败，请稍后重试。',
     companyRequired: '请输入公司名称',
@@ -29,7 +29,7 @@ const LOGIN_COPY = {
     fullName: '姓名 *',
     fullNamePlaceholder: '请输入姓名',
     setPassword: '设置密码 *',
-    setPasswordPlaceholder: '设置密码（至少 6 位）',
+    setPasswordPlaceholder: '设置密码（至少 10 位）',
     confirmPassword: '确认密码 *',
     confirmPasswordPlaceholder: '再次输入密码',
     phoneNumber: '手机号 *',
@@ -60,7 +60,7 @@ const LOGIN_COPY = {
     backToSignIn: '← 返回登录',
     forgotIntro: '请输入手机号，我们会发送验证码用于重置密码',
     newPassword: '设置新密码',
-    newPasswordPlaceholder: '设置新密码（至少 6 位）',
+    newPasswordPlaceholder: '设置新密码（至少 10 位）',
     processing: '处理中...',
     resetPassword: '重置密码',
   },
@@ -76,7 +76,7 @@ const LOGIN_COPY = {
     sendFailed: 'Failed to send',
     requiredFields: 'Please fill in all required fields',
     passwordMismatch: 'Passwords do not match',
-    passwordMin: 'Password must be at least 6 characters',
+    passwordMin: 'Password must be at least 10 characters',
     registeredPhone: 'This phone number is already registered. Please sign in.',
     registerFailed: 'Registration failed. Please try again.',
     companyRequired: 'Please enter your company name',
@@ -90,7 +90,7 @@ const LOGIN_COPY = {
     fullName: 'Full name *',
     fullNamePlaceholder: 'Enter your name',
     setPassword: 'Set password *',
-    setPasswordPlaceholder: 'Set a password (min. 6 characters)',
+    setPasswordPlaceholder: 'Set a password (min. 10 characters)',
     confirmPassword: 'Confirm password *',
     confirmPasswordPlaceholder: 'Re-enter your password',
     phoneNumber: 'Phone number *',
@@ -123,7 +123,7 @@ const LOGIN_COPY = {
     backToSignIn: '← Back to sign in',
     forgotIntro: "Enter your phone number and we'll send a verification code to reset your password",
     newPassword: 'Set new password',
-    newPasswordPlaceholder: 'Set new password (min. 6 characters)',
+    newPasswordPlaceholder: 'Set new password (min. 10 characters)',
     processing: 'Processing...',
     resetPassword: 'Reset Password',
   },
@@ -132,6 +132,7 @@ const LOGIN_COPY = {
 const normalizePhone = (value) => String(value || '').trim();
 const isInternationalPhone = (value) => /^\+?[0-9\s().-]{6,24}$/.test(normalizePhone(value));
 const isEmailAddress = (value) => /^\S+@\S+\.\S+$/.test(String(value || '').trim());
+const PASSWORD_MIN_LENGTH = 10;
 
 export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal, conversationId }) {
   const isCn = isCnLocale();
@@ -198,12 +199,14 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal, conve
       setError(copy.requiredFields); return;
     }
     if (password !== confirmPassword) { setError(copy.passwordMismatch); return; }
-    if (password.length < 6) { setError(copy.passwordMin); return; }
+    if (password.length < PASSWORD_MIN_LENGTH) { setError(copy.passwordMin); return; }
 
     setSubmitting(true);
     setError('');
     try {
       await registerCustomer({ name, phone, email, password, code, company: companyName, identity: 'customer', conversation_id: conversationId });
+      trackFunnelEvent('verification_succeeded', { entry: 'registration' });
+      trackFunnelEvent('signup_completed', { entry: 'registration' });
       const result = await login(isCn ? { phone, password } : { email, password });
       localStorage.setItem('sagemro_token', result.token);
       localStorage.setItem('sagemro_user', JSON.stringify(result.user));
@@ -246,6 +249,7 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal, conve
 
   // ===== 步骤导航 =====
   const goToRegisterCompany = () => {
+    trackFunnelEvent('signup_started', { entry: 'login_modal' });
     setStep('register-company');
     setError('');
   };
@@ -262,7 +266,7 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal, conve
     }
     if (!isCn && (!email || !isEmailAddress(email))) { setError(copy.emailInvalid); return; }
     if (isCn && email && !isEmailAddress(email)) { setError(copy.emailInvalid); return; }
-    if (!password || password.length < 6) { setError(copy.passwordMin); return; }
+    if (!password || password.length < PASSWORD_MIN_LENGTH) { setError(copy.passwordMin); return; }
     if (password !== confirmPassword) { setError(copy.passwordMismatch); return; }
     if (!agreedToTerms) { setError(copy.termsRequired); return; }
     setError('');
@@ -546,7 +550,7 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal, conve
                     setError(e.message);
                   }
                 } else {
-                  if (!password || password.length < 6) { setError(copy.passwordMin); return; }
+                  if (!password || password.length < PASSWORD_MIN_LENGTH) { setError(copy.passwordMin); return; }
                   if (!code) { setError(copy.codeRequired); return; }
                   setSubmitting(true);
                   try {

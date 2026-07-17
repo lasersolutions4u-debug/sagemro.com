@@ -11,7 +11,7 @@ const COPY = {
     saveFailed: 'Save failed',
     statusFailed: 'Failed to update status',
     passwordMismatch: 'New passwords do not match',
-    passwordTooShort: 'New password must be at least 6 characters',
+    passwordTooShort: 'New password must be at least 10 characters',
     passwordSaved: 'Password changed successfully',
     changeFailed: 'Change failed',
     status: { available: 'Available', paused: 'Paused', offline: 'Offline' },
@@ -48,7 +48,7 @@ const COPY = {
     currentPassword: 'Current Password',
     currentPasswordPlaceholder: 'Enter current password',
     newPassword: 'New Password',
-    newPasswordPlaceholder: 'At least 6 characters',
+    newPasswordPlaceholder: 'At least 10 characters',
     confirmPassword: 'Confirm New Password',
     confirmPasswordPlaceholder: 'Re-enter new password',
     changing: 'Changing...',
@@ -59,7 +59,7 @@ const COPY = {
     saveFailed: '保存失败',
     statusFailed: '状态更新失败',
     passwordMismatch: '两次输入的新密码不一致',
-    passwordTooShort: '新密码至少需要 6 位',
+    passwordTooShort: '新密码至少需要 10 位',
     passwordSaved: '密码已修改',
     changeFailed: '修改失败',
     status: { available: '可接单', paused: '暂停接单', offline: '离线' },
@@ -96,7 +96,7 @@ const COPY = {
     currentPassword: '当前密码',
     currentPasswordPlaceholder: '输入当前密码',
     newPassword: '新密码',
-    newPasswordPlaceholder: '至少 6 位',
+    newPasswordPlaceholder: '至少 10 位',
     confirmPassword: '确认新密码',
     confirmPasswordPlaceholder: '再次输入新密码',
     changing: '修改中...',
@@ -213,7 +213,7 @@ export function SettingsModal({ isOpen, onClose, currentUser, userType, onOpenMy
       setError(copy.passwordMismatch);
       return;
     }
-    if (pwdForm.newPassword.length < 6) {
+    if (pwdForm.newPassword.length < 10) {
       setError(copy.passwordTooShort);
       return;
     }
