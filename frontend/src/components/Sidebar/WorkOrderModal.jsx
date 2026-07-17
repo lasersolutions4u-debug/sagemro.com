@@ -36,6 +36,8 @@ const DEVICE_TYPE_PRESET_KEYS = {
 
 const WORK_ORDER_COPY = {
   en: {
+    aiGuidanceTitle: 'Not sure how to describe the issue?',
+    aiGuidanceDesc: 'Try the AI chat first — it helps organize the symptoms and context before you submit.',
     fillRequired: 'Please fill in all required fields',
     attachmentFailed: (name, message) => `Attachment ${name} upload failed: ${message}`,
     submittedWithAttachments: (count) => `Service request submitted, ${count} attachment(s) uploaded`,
@@ -105,6 +107,8 @@ const WORK_ORDER_COPY = {
     },
   },
   cn: {
+    aiGuidanceTitle: '不确定怎么描述问题？',
+    aiGuidanceDesc: '先试试 AI 对话 — AI 帮你整理症状和背景信息，然后回来提交更完整的服务请求。',
     fillRequired: '请填写必填信息',
     attachmentFailed: (name, message) => `附件 ${name} 上传失败：${message}`,
     submittedWithAttachments: (count) => `服务请求已提交，已上传 ${count} 个附件`,

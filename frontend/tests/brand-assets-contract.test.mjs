@@ -40,7 +40,7 @@ test('main chat input is text-only and uses short mobile placeholder copy', () =
 
   assert.doesNotMatch(inputArea, /uploadChatImage|ImagePlus|type="file"|accept="image/);
   assert.doesNotMatch(placeholderExpression, /upload image|Add device|field context|material, thickness/i);
-  assert.match(placeholderExpression, /Describe your service issue/);
+  assert.match(placeholderExpression, /Describe the problem/);
 });
 
 test('main chat input supports Deepgram voice transcription without image upload', () => {
@@ -67,11 +67,11 @@ test('main site first-impression copy keeps CN and COM market language separate'
   const footer = read('frontend/src/components/common/Footer.jsx');
   const engineerRecruiting = read('frontend/src/components/Engineer/EngineerRecruitingPage.jsx');
 
-  assert.match(welcome, /Start with AI-assisted equipment troubleshooting/);
-  assert.match(welcome, /AI turns scattered symptoms into a clear service brief/);
-  assert.match(welcome, /SAGEMRO AI helps structure the issue before requesting service, parts, or further assessment/);
-  assert.match(welcome, /Let AI organize the first service brief/);
-  assert.match(welcome, /AI will ask for missing details/);
+  assert.match(welcome, /Type the problem/);
+  assert.match(welcome, /AI turns scattered symptoms into a structured service brief/);
+  assert.match(welcome, /asks for what.*missing before the next step/);
+  assert.match(welcome, /From scattered symptoms to a clear brief/);
+  assert.match(welcome, /AI asks for missing details/);
   assert.match(welcome, /BM111 alarm/);
   assert.match(welcome, /burrs on stainless steel/);
   assert.match(welcome, /href: '\/tools'/);
@@ -81,15 +81,15 @@ test('main site first-impression copy keeps CN and COM market language separate'
   assert.doesNotMatch(welcome, /sales form|sales shortcut/i);
   assert.doesNotMatch(welcome, /Machine selection|new-machine evaluation/);
   assert.doesNotMatch(welcome, /supports international customers with independent after-sales service, spare parts, consumables/);
-  assert.match(welcome, /从 AI 设备问题分析开始/);
-  assert.match(welcome, /AI 会把零散现象整理成清晰的服务摘要/);
-  assert.match(welcome, /SAGEMRO AI 会先整理问题，再辅助你判断是否需要维修、备件或进一步检查/);
-  assert.match(welcome, /让 AI 先整理第一份服务简报/);
+  assert.match(welcome, /描述问题，三分钟拿到结构化服务简报/);
+  assert.match(welcome, /AI 把零散现象整理成清晰的服务摘要/);
+  assert.match(welcome, /说明报警、材料、设备型号或生产影响/);
+  assert.match(welcome, /从零散现象到清晰简报/);
   assert.match(welcome, /AI 会追问缺失信息/);
-  assert.match(chatArea, /SAGEMRO AI 设备服务平台/);
-  assert.match(chatArea, /AI 先整理设备问题和下一步建议/);
-  assert.match(chatArea, /SAGEMRO AI Equipment Service/);
-  assert.match(chatArea, /AI organizes equipment issues and next-step options/);
+  assert.match(welcome, /AI 先行/);
+  assert.match(chatArea, /描述问题，AI 三分钟整理服务简报/);
+  assert.match(welcome, /AI-First Service Platform/);
+  assert.match(chatArea, /Describe the problem. AI prepares your service brief/);
   assert.match(about, /service workspace for recording machine symptoms/i);
   assert.match(about, /What The Chat Can Help Clarify/);
   assert.doesNotMatch(about, /One Chat, Six Service Outcomes/);
@@ -183,7 +183,7 @@ test('registration creates customer accounts without a public role selection ste
   assert.match(loginModal, /createAccount: 'Create account'/);
   assert.match(loginModal, /createAccount: '创建账号'/);
   assert.match(loginModal, /identity: 'customer'/);
-  assert.match(loginModal, /Create your SAGEMRO account to save conversations, equipment records, and service requests\./);
+  assert.match(loginModal, /Keep every service interaction/);
   assert.doesNotMatch(loginModal, /Next: Choose your role/);
   assert.doesNotMatch(loginModal, /选择角色/);
   assert.doesNotMatch(loginModal, /identity-select-customer/);
