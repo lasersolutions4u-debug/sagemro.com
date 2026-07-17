@@ -109,7 +109,7 @@ test('CN account settings localizes customer profile and password UI', () => {
   assert.match(settings, /账号/);
   assert.match(settings, /个人资料/);
   assert.match(settings, /我的设备/);
-  assert.match(sidebar, /label: isCn \? '我的设备' : 'My Equipment'/);
+  assert.match(sidebar, /label: isCn \? '设备' : 'My Equipment'/);
   assert.match(myDevices, /title: '我的设备'/);
   assert.match(myDevices, /add: '添加设备'/);
   assert.match(myDevices, /手动添加设备/);
@@ -175,7 +175,7 @@ test('CN recruiting and shared overlays localize secondary labels', () => {
 
   assert.match(recruiting, /为什么加入 SAGEMRO|加入后的收益/);
   assert.match(recruiting, /派工前查看资料/);
-  assert.match(recruiting, /建立信任后/);
+  assert.match(recruiting, /合作稳定后/);
   assert.match(recruiting, /removeLabel=\{copy\.removeTag \|\| 'Remove'\}/);
   assert.match(recruiting, /aria-label=\{copy\.closeApplication \|\| 'Close application form'\}/);
   assert.doesNotMatch(recruiting, /title="Remove"/);
