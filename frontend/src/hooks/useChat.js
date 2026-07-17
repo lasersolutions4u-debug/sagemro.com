@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback } from 'react';
-import { streamChat } from '../services/api';
+import { streamChat, trackFunnelEvent } from '../services/api';
 
 // 生成唯一 ID
 function generateId() {
@@ -70,6 +70,12 @@ export function useChat() {
           }
         },
         onDone: () => {
+          if (aiContent) {
+            trackFunnelEvent('ai_response_received', {
+              conversation_id: targetConversationId || conversationId,
+              response_status: 'received',
+            });
+          }
           setIsStreaming(false);
           resolve();
         },
@@ -79,7 +85,7 @@ export function useChat() {
             m.id === assistantMessageId
               ? {
                   ...m,
-                  content: `Sorry, SAGEMRO AI could not respond right now (${message}). Please try again, or leave your equipment details and SAGEMRO will follow up through the service process.`,
+                  content: `Sorry, SAGEMRO AI could not respond right now (${message}). Please try again, or leave your equipment details and SAGEMRO will follow up through the service process.\n\nAI guidance is for reference only and needs SAGEMRO confirmation before repair, safety, or purchasing decisions.`,
                 }
               : m
           ));

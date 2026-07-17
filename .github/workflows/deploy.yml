@@ -45,6 +45,10 @@ jobs:
         working-directory: frontend
         run: npm run lint --if-present
 
+      - name: Frontend tests
+        working-directory: frontend
+        run: npm test
+
       - name: Frontend build
         working-directory: frontend
         run: npm run build

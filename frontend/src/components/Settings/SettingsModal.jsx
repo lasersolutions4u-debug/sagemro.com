@@ -111,8 +111,8 @@ export function SettingsModal({ isOpen, onClose, currentUser, userType, onOpenMy
       setError('New passwords do not match');
       return;
     }
-    if (pwdForm.newPassword.length < 6) {
-      setError('New password must be at least 6 characters');
+    if (pwdForm.newPassword.length < 10) {
+      setError('New password must be at least 10 characters');
       return;
     }
     setLoading(true);
