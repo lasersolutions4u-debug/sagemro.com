@@ -646,6 +646,7 @@ const ROLE_PROMPTS = {
 - 询问自己有哪些设备、有哪些设备档案 → 调用 get_customer_devices
 - 询问某个设备的详细信息、维修历史、工单记录 → 调用 get_device_detail（需提供 device_id）
 - 询问某个设备的状态（是否正常使用、是否在维保中）→ 调用 get_device_detail
+- 当客户在对话中明确提供一台设备的类型，并同时提供品牌、型号、功率或设备名称中的至少一项 → 调用 suggest_device_profile。该工具只生成待确认候选，不代表设备已保存；必须提醒客户确认或修改后再保存。
 - 提到"上次""之前""我的那个单子""那台设备的问题" 等对过去对话的指涉，或新会话开头想确认是否有未闭环事项 → 调用 get_conversation_history
   - 需要 SAGEMRO 服务/上门服务/远程诊断/设备故障需人工处理，且已完成信息收集和客户确认 → 调用 create_work_order
 
@@ -820,6 +821,24 @@ const TOOLS_SCHEMAS = [
   {
     type: 'function',
     function: {
+      name: 'suggest_device_profile',
+      description: '把当前登录客户在对话中明确提供的设备信息整理为待确认候选。只在客户明确说出设备类型，并同时提供品牌、型号、功率或设备名称中的至少一项时调用。不得猜测缺失字段；该工具不会保存设备。',
+      parameters: {
+        type: 'object',
+        properties: {
+          name: { type: 'string', description: '客户用于区分设备的名称，例如 1 号车间激光机。未提供则留空。' },
+          type: { type: 'string', description: '设备类型，例如激光切割机、折弯机。' },
+          brand: { type: 'string', description: '设备品牌。未提供则留空。' },
+          model: { type: 'string', description: '设备型号。未提供则留空。' },
+          power: { type: 'string', description: '设备功率或主要规格。未提供则留空。' },
+        },
+        required: ['type']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
       name: 'get_conversation_history',
       description: '查询当前登录用户（客户或工程师）最近若干次对话的结构化摘要（SummaryProtocol v1），每条摘要包含对话类型、一句话总结、涉及的设备、故障关键词、未闭环事项 pending_items、情绪、相关工单ID 等。用于跨会话识别用户历史、延续未完成事项、避免重复询问。当用户提到"上次""之前""我的那个单子"等时调用此工具。可选按对话类型或设备类型过滤。',
       parameters: {
@@ -940,6 +959,7 @@ const ROLE_ALLOWED_TOOLS = {
     'search_knowledge_base',
     'get_customer_devices',
     'get_device_detail',
+    'suggest_device_profile',
     'get_conversation_history',
     'create_work_order',
   ]),
@@ -1052,6 +1072,26 @@ async function toolSearchKnowledgeBase({ args = {}, env, market = 'com' }) {
   };
 }
 
+function toolSuggestDeviceProfile(args = {}) {
+  const suggestion = {
+    name: cleanText(args.name, LIMITS.name),
+    type: cleanText(args.type, LIMITS.type),
+    brand: cleanText(args.brand, LIMITS.brand),
+    model: cleanText(args.model, LIMITS.model),
+    power: cleanText(args.power, LIMITS.power),
+    source: 'chat',
+  };
+
+  if (!suggestion.type || !(suggestion.name || suggestion.brand || suggestion.model || suggestion.power)) {
+    return {
+      error: 'device_details_incomplete',
+      fallback_instruction: 'Ask the customer for the device type and at least one identifying detail such as brand, model, power, or device name.',
+    };
+  }
+
+  return { device_suggestion: suggestion };
+}
+
 export async function executeTool(ctxObj) {
   const {
     toolName,
@@ -1100,6 +1140,7 @@ export async function executeTool(ctxObj) {
     get_pending_tickets_for_engineer: () => toolGetPendingTickets({ limit: args?.limit || 10, engineerId, env }),
     get_customer_devices: () => toolGetCustomerDevices(customerId, env),
     get_device_detail: () => toolGetDeviceDetail(customerId, args?.device_id, env),
+    suggest_device_profile: () => toolSuggestDeviceProfile(args),
     create_work_order: () => toolCreateWorkOrder({ customerId, env, ctx, args, conversationId, market }),
     get_conversation_history: () =>
       toolGetConversationHistory({
@@ -3480,6 +3521,7 @@ ${turnLanguageRule}
           { role: 'user', content: userMessageContent },
         ];
         let iteration = 0;
+        let pendingDeviceSuggestion = null;
 
         // 服务端直接创建工单：当 AI 展示了工单汇总且用户确认时，
         // 绕过不可靠的 AI function calling，直接在服务端创建工单并注入结果。
@@ -3669,6 +3711,9 @@ ${turnLanguageRule}
 
             // 把 tool 结果作为 tool 角色消息追加
             for (const { tool_call_id, result } of toolResults) {
+              if (result?.device_suggestion) {
+                pendingDeviceSuggestion = result.device_suggestion;
+              }
               currentMessages.push({
                 role: 'tool',
                 tool_call_id,
@@ -3695,6 +3740,13 @@ ${turnLanguageRule}
             /* 吃掉 */
           }
         } finally {
+          if (pendingDeviceSuggestion) {
+            controller.enqueue(
+              encoder.encode(
+                `data: ${JSON.stringify({ device_suggestion: pendingDeviceSuggestion, conversation_id: convId })}\n`,
+              ),
+            );
+          }
           // 统一下发 [DONE] —— 外层控制，不被中间轮次提前触发
           controller.enqueue(encoder.encode('data: [DONE]\n'));
 

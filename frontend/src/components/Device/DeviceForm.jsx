@@ -1,28 +1,70 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { X } from 'lucide-react';
 import { createDevice } from '../../services/api';
+import { isCnLocale } from '../../utils/locale';
 
-export function DeviceForm({ onClose, onSuccess }) {
-  const [form, setForm] = useState({
-    name: '',
-    type: '',
-    brand: '',
-    model: '',
-    power: ''
-  });
+const EMPTY_FORM = {
+  name: '',
+  type: '',
+  brand: '',
+  model: '',
+  power: '',
+};
+
+export function DeviceForm({ onClose, onSuccess, initialValues = null, title, submitLabel }) {
+  const isCn = isCnLocale();
+  const [form, setForm] = useState({ ...EMPTY_FORM, ...(initialValues || {}) });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const copy = isCn ? {
+    confirmTitle: '确认设备信息',
+    addTitle: '添加设备',
+    typeRequired: '请选择设备类型',
+    name: '设备名称（选填）',
+    namePlaceholder: '例如：1 号车间激光切割机',
+    type: '设备类型',
+    otherType: '或输入其他设备类型',
+    brand: '品牌（选填）',
+    brandPlaceholder: '例如：大族、通快、百超',
+    model: '型号（选填）',
+    modelPlaceholder: '例如：G3015H',
+    power: '功率或规格（选填）',
+    powerPlaceholder: '例如：6000W',
+    cancel: '取消',
+    saving: '保存中...',
+    save: '保存设备',
+    failed: '设备保存失败',
+    types: ['激光切割机', '折弯机', '冲床', '剪板机', '焊接设备', '等离子切割机', '水切割机', '卷板机', '其他'],
+  } : {
+    confirmTitle: 'Confirm equipment information',
+    addTitle: 'Add equipment',
+    typeRequired: 'Please select an equipment type',
+    name: 'Equipment name (optional)',
+    namePlaceholder: 'e.g. Workshop 1 laser cutter',
+    type: 'Equipment type',
+    otherType: 'Or enter another equipment type',
+    brand: 'Brand (optional)',
+    brandPlaceholder: "e.g. Han's Laser, TRUMPF, Bystronic",
+    model: 'Model (optional)',
+    modelPlaceholder: 'e.g. G3015H',
+    power: 'Power or specification (optional)',
+    powerPlaceholder: 'e.g. 6000W',
+    cancel: 'Cancel',
+    saving: 'Saving...',
+    save: 'Save equipment',
+    failed: 'Failed to save equipment',
+    types: ['Laser cutting machine', 'Press brake', 'Punch press', 'Shearing machine', 'Welding machine', 'Plasma cutter', 'Waterjet cutter', 'Plate rolling machine', 'Other'],
+  };
 
-  const commonTypes = [
-    'Laser Cutter', 'Press Brake', 'Punch Press', 'Shearing Machine',
-    'Welding Machine', 'Plasma Cutter', 'Waterjet Cutter',
-    'Plate Rolling Machine', 'Riveting Machine', 'Spray Coating Equipment', 'Other'
-  ];
+  useEffect(() => {
+    setForm({ ...EMPTY_FORM, ...(initialValues || {}) });
+    setError('');
+  }, [initialValues]);
 
-  async function handleSubmit(e) {
-    e.preventDefault();
+  async function handleSubmit(event) {
+    event.preventDefault();
     if (!form.type) {
-      setError('Please select a device type');
+      setError(copy.typeRequired);
       return;
     }
 
@@ -32,142 +74,97 @@ export function DeviceForm({ onClose, onSuccess }) {
       const result = await createDevice(form);
       onSuccess(result.device);
     } catch (err) {
-      setError(err.message || 'Failed to add');
+      setError(err.message || copy.failed);
     } finally {
       setLoading(false);
     }
   }
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center">
+    <div className="fixed inset-0 z-[60] flex items-center justify-center px-3">
       <div className="absolute inset-0 bg-black/50" onClick={onClose} />
-      <div className="relative bg-[var(--color-surface)] rounded-2xl shadow-2xl w-full max-w-md p-5"
-           style={{ maxWidth: '420px' }}>
-        <div className="flex items-center justify-between mb-5">
-          <h3 className="text-[15px] font-medium text-[var(--color-text-primary)]">Add Equipment</h3>
-          <button onClick={onClose} className="p-1.5 hover:bg-[var(--color-hover)] rounded-lg">
+      <div className="relative max-h-[calc(100dvh-24px)] w-full max-w-md overflow-y-auto rounded-2xl bg-[var(--color-surface)] p-5 shadow-2xl">
+        <div className="mb-5 flex items-center justify-between">
+          <h3 className="text-[15px] font-medium text-[var(--color-text-primary)]">
+            {title || (initialValues ? copy.confirmTitle : copy.addTitle)}
+          </h3>
+          <button onClick={onClose} className="rounded-lg p-1.5 hover:bg-[var(--color-hover)]">
             <X size={18} className="text-[var(--color-text-secondary)]" />
           </button>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
-          {/* 设备名称 */}
           <div>
-            <label className="block text-[12px] text-[var(--color-text-secondary)] opacity-60 mb-1.5">
-              Device Name (Optional)
-            </label>
+            <label className="mb-1.5 block text-[12px] text-[var(--color-text-secondary)]">{copy.name}</label>
             <input
               type="text"
               name="device-name"
               data-testid="device-name-input"
               value={form.name}
-              onChange={e => setForm({ ...form, name: e.target.value })}
-              placeholder="e.g. Workshop #1 Laser Cutter"
-              className="w-full bg-[var(--color-input-bg)] border border-[var(--color-input-border)] rounded-lg px-3 py-2.5 text-[14px] text-[var(--color-text-primary)] placeholder:text-[var(--color-text-muted)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
+              onChange={(event) => setForm({ ...form, name: event.target.value })}
+              placeholder={copy.namePlaceholder}
+              className="w-full rounded-lg border border-[var(--color-input-border)] bg-[var(--color-input-bg)] px-3 py-2.5 text-[14px] text-[var(--color-text-primary)] placeholder:text-[var(--color-text-muted)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
             />
           </div>
 
-          {/* 设备类型 */}
           <div>
-            <label className="block text-[12px] text-[var(--color-text-secondary)] opacity-60 mb-1.5">
-              Device Type <span className="text-red-400">*</span>
+            <label className="mb-1.5 block text-[12px] text-[var(--color-text-secondary)]">
+              {copy.type} <span className="text-red-400">*</span>
             </label>
             <div className="flex flex-wrap gap-2">
-              {commonTypes.map(t => (
+              {copy.types.map((type) => (
                 <button
-                  key={t}
+                  key={type}
                   type="button"
-                  onClick={() => setForm({ ...form, type: t })}
-                  className={`px-3 py-1.5 rounded-lg text-[12px] transition-colors ${
-                    form.type === t
+                  onClick={() => setForm({ ...form, type })}
+                  className={`rounded-lg px-3 py-1.5 text-[12px] transition-colors ${
+                    form.type === type
                       ? 'bg-[var(--color-primary)] text-white'
                       : 'bg-[var(--color-surface-elevated)] text-[var(--color-text-secondary)] hover:bg-[var(--color-hover)]'
                   }`}
                 >
-                  {t}
+                  {type}
                 </button>
               ))}
             </div>
             <input
               type="text"
-              value={form.type}
               name="device-type"
               data-testid="device-type-input"
-              onChange={e => setForm({ ...form, type: e.target.value })}
-              placeholder="Or enter another type"
-              className="w-full mt-2 bg-[var(--color-input-bg)] border border-[var(--color-input-border)] rounded-lg px-3 py-2.5 text-[14px] text-[var(--color-text-primary)] placeholder:text-[var(--color-text-muted)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
+              value={form.type}
+              onChange={(event) => setForm({ ...form, type: event.target.value })}
+              placeholder={copy.otherType}
+              className="mt-2 w-full rounded-lg border border-[var(--color-input-border)] bg-[var(--color-input-bg)] px-3 py-2.5 text-[14px] text-[var(--color-text-primary)] placeholder:text-[var(--color-text-muted)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
             />
           </div>
 
-          {/* 品牌 */}
-          <div>
-            <label className="block text-[12px] text-[var(--color-text-secondary)] opacity-60 mb-1.5">
-              Brand (Optional)
-            </label>
-            <input
-              type="text"
-              value={form.brand}
-              onChange={e => setForm({ ...form, brand: e.target.value })}
-              placeholder="e.g. Han's Laser, Trumpf, Bystronic"
-              name="device-brand"
-              data-testid="device-brand-input"
-              className="w-full bg-[var(--color-input-bg)] border border-[var(--color-input-border)] rounded-lg px-3 py-2.5 text-[14px] text-[var(--color-text-primary)] placeholder:text-[var(--color-text-muted)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
-            />
-          </div>
-
-          {/* 型号 */}
-          <div>
-            <label className="block text-[12px] text-[var(--color-text-secondary)] opacity-60 mb-1.5">
-              Model (Optional)
-            </label>
-            <input
-              type="text"
-              value={form.model}
-              onChange={e => setForm({ ...form, model: e.target.value })}
-              placeholder="e.g. G3015H"
-              name="device-model"
-              data-testid="device-model-input"
-              className="w-full bg-[var(--color-input-bg)] border border-[var(--color-input-border)] rounded-lg px-3 py-2.5 text-[14px] text-[var(--color-text-primary)] placeholder:text-[var(--color-text-muted)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
-            />
-          </div>
-
-          {/* 功率 */}
-          <div>
-            <label className="block text-[12px] text-[var(--color-text-secondary)] opacity-60 mb-1.5">
-              Power (Optional)
-            </label>
-            <input
-              type="text"
-              value={form.power}
-              onChange={e => setForm({ ...form, power: e.target.value })}
-              placeholder="e.g. 3000W"
-              name="device-power"
-              data-testid="device-power-input"
-              className="w-full bg-[var(--color-input-bg)] border border-[var(--color-input-border)] rounded-lg px-3 py-2.5 text-[14px] text-[var(--color-text-primary)] placeholder:text-[var(--color-text-muted)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
-            />
-          </div>
-
-          {error && (
-            <div className="text-[13px] text-red-400 bg-red-400/10 rounded-lg px-3 py-2">
-              {error}
+          {[
+            ['brand', copy.brand, copy.brandPlaceholder],
+            ['model', copy.model, copy.modelPlaceholder],
+            ['power', copy.power, copy.powerPlaceholder],
+          ].map(([field, label, placeholder]) => (
+            <div key={field}>
+              <label className="mb-1.5 block text-[12px] text-[var(--color-text-secondary)]">{label}</label>
+              <input
+                type="text"
+                name={`device-${field}`}
+                data-testid={`device-${field}-input`}
+                value={form[field]}
+                onChange={(event) => setForm({ ...form, [field]: event.target.value })}
+                placeholder={placeholder}
+                className="w-full rounded-lg border border-[var(--color-input-border)] bg-[var(--color-input-bg)] px-3 py-2.5 text-[14px] text-[var(--color-text-primary)] placeholder:text-[var(--color-text-muted)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
+              />
             </div>
-          )}
+          ))}
+
+          {error && <div className="rounded-lg bg-red-400/10 px-3 py-2 text-[13px] text-red-400">{error}</div>}
 
           <div className="flex gap-3 pt-2">
-            <button
-              type="button"
-              onClick={onClose}
-              className="flex-1 py-2.5 bg-[var(--color-surface-elevated)] text-[var(--color-text-secondary)] rounded-lg text-[14px] font-medium hover:bg-[var(--color-hover)] transition-colors"
-            >
-              Cancel
+            <button type="button" onClick={onClose} className="flex-1 rounded-lg bg-[var(--color-surface-elevated)] py-2.5 text-[14px] font-medium text-[var(--color-text-secondary)] hover:bg-[var(--color-hover)]">
+              {copy.cancel}
             </button>
-            <button
-              type="submit"
-              data-testid="device-form-submit"
-              disabled={loading}
-              className="flex-1 py-2.5 bg-[var(--color-primary)] text-white rounded-lg text-[14px] font-medium hover:bg-[var(--color-primary-hover)] transition-colors disabled:opacity-50"
-            >
-              {loading ? 'Adding...' : 'Add'}
+            <button type="submit" data-testid="device-form-submit" disabled={loading} className="flex-1 rounded-lg bg-[var(--color-primary)] py-2.5 text-[14px] font-medium text-white hover:bg-[var(--color-primary-hover)] disabled:opacity-50">
+              {loading ? copy.saving : (submitLabel || copy.save)}
             </button>
           </div>
         </form>
