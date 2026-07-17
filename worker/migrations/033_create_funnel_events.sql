@@ -25,3 +25,6 @@ CREATE INDEX IF NOT EXISTS idx_funnel_events_session_created
 
 CREATE INDEX IF NOT EXISTS idx_funnel_events_campaign_created
   ON funnel_events(source, medium, campaign, created_at);
+
+INSERT OR IGNORE INTO _migrations (version, note)
+VALUES ('033_create_funnel_events', 'Controlled beta funnel event tracking');
