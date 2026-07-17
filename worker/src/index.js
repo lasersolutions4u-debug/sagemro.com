@@ -85,10 +85,49 @@ import {
 
 // ============ SLA 时效配置 ============
 const SLA_HOURS = { critical: 4, urgent: 24, normal: 72 };
+const MIN_PASSWORD_LENGTH = 10;
+const FUNNEL_EVENTS = new Set([
+  'traffic_source_captured',
+  'ai_conversation_started',
+  'ai_response_received',
+  'signup_started',
+  'verification_succeeded',
+  'signup_completed',
+  'device_saved',
+  'service_request_created',
+]);
+const FUNNEL_PROPERTY_ALLOWLIST = new Set([
+  'entry',
+  'market',
+  'locale',
+  'user_type',
+  'authenticated',
+  'conversation_id',
+  'has_images',
+  'response_status',
+  'device_type',
+  'service_type',
+  'urgency',
+  'tool_id',
+]);
 
 const CONTACT_EMAIL_PATTERN = /[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g;
 const CONTACT_PLUS_PHONE_PATTERN = /\+\d[\d\s().-]{6,}\d/g;
 const CONTACT_CN_PHONE_PATTERN = /(?<!\d)1[3-9]\d{9}(?!\d)/g;
+
+function passwordTooShortResponse(request) {
+  const market = request ? getRequestMarket(request) : 'com';
+  return errorResponse(
+    market === 'cn'
+      ? `密码至少需要 ${MIN_PASSWORD_LENGTH} 位`
+      : `Password must be at least ${MIN_PASSWORD_LENGTH} characters`,
+    400,
+  );
+}
+
+function isPasswordTooShort(password) {
+  return typeof password !== 'string' || password.length < MIN_PASSWORD_LENGTH;
+}
 
 function redactContactInfoForWorkOrder(text) {
   if (typeof text !== 'string' || !text) return text;
@@ -510,6 +549,10 @@ SAGEMRO AI helps laser cutting and sheet metal equipment users turn messy equipm
 
 ### 安全与责任边界
 - AI guidance is preliminary. Final diagnosis, quote, and on-site safety requirements are confirmed through the SAGEMRO service process.
+- AI guidance is preliminary and for reference only. Present troubleshooting as a structured assessment, not as a guaranteed solution.
+- Use "likely causes", "possible causes", "check first", and "should be confirmed" language. Avoid ranking any cause as "#1" or "the root cause" unless verified by measurements, inspection, or published SAGEMRO information.
+- Exact numbers, dimensions, cutting parameters, pressure ranges, prices, compatibility, and repair decisions are reference ranges only; tell users they require machine-specific confirmation before use.
+- For electrical, laser, high-pressure gas, hydraulic, pneumatic, lifting, hot-work, fire, exposed wiring, safety interlock, or energized cabinet scenarios, tell the user to stop operation and require qualified manual confirmation before further operation.
 
 ### Knowledge Priority & Conflict Policy
 - This is an internal decision policy. Do not expose the words "policy", "conflict", "priority", or "knowledge base" to customers.
@@ -2465,6 +2508,9 @@ async function handleRegisterCustomer(request, env) {
     if (!name || !phone || !password || !company || (market !== 'cn' && !normalizedEmail)) {
       return localizedErrorResponse('name_phone_company_password_required', request);
     }
+    if (isPasswordTooShort(password)) {
+      return passwordTooShortResponse(request);
+    }
 
     // 验证验证码（开发环境支持 bypass 码 "888888" + DEV_BYPASS_CODE 用于自动化测试）
     const isValid = await isVerificationCodeValid(env, { phone, email, code });
@@ -2534,6 +2580,9 @@ async function handleRegisterEngineer(request, env) {
 
     if (!name || !phone || !password || !company) {
       return localizedErrorResponse('name_phone_company_password_required', request);
+    }
+    if (isPasswordTooShort(password)) {
+      return passwordTooShortResponse(request);
     }
 
     // 验证验证码（开发环境支持 bypass 码 "888888" + DEV_BYPASS_CODE 用于自动化测试）
@@ -2783,8 +2832,8 @@ async function handleResetPassword(request, env) {
       return errorResponse('手机号、验证码、新密码不能为空');
     }
 
-    if (newPassword.length < 6) {
-      return errorResponse('密码至少6位');
+    if (isPasswordTooShort(newPassword)) {
+      return passwordTooShortResponse(request);
     }
 
     // 验证验证码（开发环境支持 bypass 码 "888888" + DEV_BYPASS_CODE 用于自动化测试）
@@ -6097,7 +6146,7 @@ async function handleChangePassword(request, env) {
     const { oldPassword, newPassword } = body;
 
     if (!oldPassword || !newPassword) return errorResponse('旧密码和新密码不能为空');
-    if (newPassword.length < 6) return errorResponse('新密码至少6位');
+    if (isPasswordTooShort(newPassword)) return passwordTooShortResponse(request);
 
     const table = auth.userType === 'engineer' ? 'engineers' : 'customers';
     const user = await env.DB.prepare(`SELECT id, password_hash, salt FROM ${table} WHERE id = ?`).bind(auth.userId).first();
@@ -11705,6 +11754,75 @@ async function handleMarkAllNotificationsRead(request, env) {
   }
 }
 
+function cleanFunnelValue(value, max = 160) {
+  if (value === undefined || value === null) return '';
+  return String(value).trim().slice(0, max);
+}
+
+function sanitizeFunnelProperties(properties) {
+  if (!properties || typeof properties !== 'object' || Array.isArray(properties)) return {};
+  const out = {};
+  for (const [key, value] of Object.entries(properties)) {
+    if (!FUNNEL_PROPERTY_ALLOWLIST.has(key)) continue;
+    if (value === undefined || value === null) continue;
+    if (typeof value === 'boolean' || typeof value === 'number') {
+      out[key] = value;
+    } else {
+      out[key] = cleanFunnelValue(value, 120);
+    }
+  }
+  return out;
+}
+
+async function handleFunnelEvent(request, env) {
+  try {
+    const body = await request.json().catch(() => ({}));
+    const eventName = cleanFunnelValue(body.event_name, 80);
+    if (!FUNNEL_EVENTS.has(eventName)) {
+      return errorResponse('Invalid funnel event', 400);
+    }
+
+    let auth = null;
+    try {
+      auth = await authenticateRequest(request, env);
+    } catch {
+      auth = null;
+    }
+
+    const properties = sanitizeFunnelProperties(body.properties);
+    const ip = getRequestIp(request);
+    const userAgent = cleanFunnelValue(request.headers.get('user-agent'), 300);
+    const ipHash = ip ? await sha256Hex(`${ip}:${userAgent}`) : '';
+
+    await env.DB.prepare(`
+      INSERT INTO funnel_events (
+        id, event_name, market, anonymous_id, session_id, user_type, user_id,
+        source, medium, campaign, page_path, referrer, properties_json, ip_hash, user_agent
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).bind(
+      generateId(),
+      eventName,
+      getRequestMarket(request),
+      cleanFunnelValue(body.anonymous_id, 120),
+      cleanFunnelValue(body.session_id, 120),
+      auth?.userType || cleanFunnelValue(body.user_type, 40) || 'guest',
+      auth?.userId || null,
+      cleanFunnelValue(body.source, 120),
+      cleanFunnelValue(body.medium, 120),
+      cleanFunnelValue(body.campaign, 160),
+      cleanFunnelValue(body.page_path, 240),
+      cleanFunnelValue(body.referrer, 300),
+      JSON.stringify(properties),
+      ipHash,
+      userAgent,
+    ).run();
+
+    return jsonResponse({ success: true }, 202);
+  } catch (error) {
+    return errorResponse(error.message, 500);
+  }
+}
+
 // ============ 主处理函数 ============
 // 将路由分发抽成独立函数，由 fetch 包装以统一注入动态 CORS 头
 async function routeRequest(request, env, ctx) {
@@ -11755,6 +11873,9 @@ async function routeRequest(request, env, ctx) {
     }
     if (path === '/api/engineer-applications' && request.method === 'POST') {
       return handleSubmitEngineerApplication(request, env);
+    }
+    if (path === '/api/analytics/funnel' && request.method === 'POST') {
+      return handleFunnelEvent(request, env);
     }
 
     // 健康检查（无需 token）

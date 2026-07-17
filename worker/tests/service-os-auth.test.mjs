@@ -447,7 +447,7 @@ test('production CN verification ignores DEV_BYPASS_CODE and sends the random SM
     const invalidRegister = await postJson('https://api.sagemro.cn/api/auth/register/customer', {
       name: 'Test Customer',
       phone: '13800000004',
-      password: 'secret123',
+      password: 'secret12345',
       company: 'Test Co',
       code: '2468',
     }, env);
@@ -466,7 +466,7 @@ test('COM customer registration stores email and allows email login', async () =
     name: 'Joe',
     phone: '+66961135966',
     email: 'Joe@Example.com',
-    password: 'secret123',
+    password: 'secret12345',
     code: '1357',
     company: '济南钰峭机械有限公司',
     identity: 'customer',
@@ -481,7 +481,7 @@ test('COM customer registration stores email and allows email login', async () =
 
   const loginResult = await postJson('https://api.sagemro.com/api/auth/login', {
     email: 'JOE@example.com',
-    password: 'secret123',
+    password: 'secret12345',
   }, env);
 
   assert.equal(loginResult.response.status, 200);
@@ -498,7 +498,7 @@ test('customer login returns company profile fields saved during registration', 
     name: 'Buyer One',
     phone: '13800000002',
     email: 'buyer@example.com',
-    password: 'secret123',
+    password: 'secret12345',
     code: '1357',
     company,
     identity: 'customer',
@@ -507,7 +507,7 @@ test('customer login returns company profile fields saved during registration', 
 
   const loginResult = await postJson('https://api.sagemro.com/api/auth/login', {
     phone: '13800000002',
-    password: 'secret123',
+    password: 'secret12345',
   }, env);
 
   assert.equal(loginResult.response.status, 200);
@@ -522,7 +522,7 @@ test('CN customer registration accepts a phone verification code without requiri
   const { response, json } = await postJson('https://api.sagemro.cn/api/auth/register/customer', {
     name: 'Joe',
     phone: '13800000003',
-    password: 'secret123',
+    password: 'secret12345',
     code: '2468',
     company: '济南钰峭机械有限公司',
     identity: 'customer',
@@ -543,7 +543,7 @@ test('CN customer registration still verifies the phone code when optional email
     name: 'Joe',
     phone: '13800000004',
     email: 'joe@example.com',
-    password: 'secret123',
+    password: 'secret12345',
     code: '8642',
     company: '济南钰峭机械有限公司',
     identity: 'customer',
@@ -553,6 +553,47 @@ test('CN customer registration still verifies the phone code when optional email
   assert.equal(json.success, true);
   assert.equal(json.customer.phone, '13800000004');
   assert.equal(await env.KV.get('verify_code_13800000004'), null);
+});
+
+test('customer registration rejects public passwords shorter than 10 characters', async () => {
+  const env = createTestEnv();
+  await env.KV.put('verify_code_email_short@example.com', '1357');
+
+  const { response, json } = await postJson('https://api.sagemro.com/api/auth/register/customer', {
+    name: 'Short Password',
+    phone: '+15551234567',
+    email: 'short@example.com',
+    password: 'secret123',
+    code: '1357',
+    company: 'Test Co',
+    identity: 'customer',
+  }, env);
+
+  assert.equal(response.status, 400);
+  assert.match(json.error, /Password must be at least 10 characters/);
+  assert.equal(env.__dbState.customers.length, 0);
+});
+
+test('password reset rejects new passwords shorter than 10 characters', async () => {
+  const env = createTestEnv();
+  env.__dbState.customers.push({
+    id: 'cust-1',
+    user_no: 'U000001',
+    name: 'Reset Customer',
+    phone: '13800000005',
+    password_hash: 'old-hash',
+    salt: 'old-salt',
+  });
+  await env.KV.put('reset_code_13800000005', '2468');
+
+  const { response, json } = await postJson('https://api.sagemro.cn/api/auth/reset-password', {
+    phone: '13800000005',
+    code: '2468',
+    newPassword: 'secret123',
+  }, env);
+
+  assert.equal(response.status, 400);
+  assert.match(json.error, /密码至少需要 10 位|Password must be at least 10 characters/);
 });
 
 function makeEngineerRejectEnv() {

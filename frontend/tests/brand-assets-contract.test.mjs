@@ -192,6 +192,104 @@ test('registration creates customer accounts without a public role selection ste
   assert.doesNotMatch(loginModal, /I'm just browsing \(Guest\)/);
 });
 
+test('public beta funnel events are tracked without collecting message or contact text', () => {
+  const app = read('frontend/src/App.jsx');
+  const useChat = read('frontend/src/hooks/useChat.js');
+  const loginModal = read('frontend/src/components/Auth/LoginModal.jsx');
+  const api = read('frontend/src/services/api.js');
+  const trackFunction = api.slice(
+    api.indexOf('export function trackFunnelEvent'),
+    api.indexOf('// 401 统一拦截')
+  );
+
+  assert.match(api, /export function trackFunnelEvent/);
+  assert.match(api, /\/api\/analytics\/funnel/);
+  assert.match(api, /traffic_source_captured/);
+  assert.match(api, /utm_source/);
+  assert.match(api, /FUNNEL_PROPERTY_ALLOWLIST/);
+  assert.doesNotMatch(trackFunction, /message:/);
+  assert.doesNotMatch(trackFunction, /phone:/);
+  assert.doesNotMatch(trackFunction, /email:/);
+
+  assert.match(app, /trackFunnelEvent\('traffic_source_captured'/);
+  assert.match(app, /trackFunnelEvent\('ai_conversation_started'/);
+  assert.match(app, /trackFunnelEvent\('service_request_created'/);
+  assert.match(api, /trackFunnelEvent\('device_saved'/);
+  assert.match(useChat, /trackFunnelEvent\('ai_response_received'/);
+  assert.match(loginModal, /trackFunnelEvent\('signup_started'/);
+  assert.match(loginModal, /trackFunnelEvent\('verification_succeeded'/);
+  assert.match(loginModal, /trackFunnelEvent\('signup_completed'/);
+});
+
+test('registration and reset password copy require stronger public passwords', () => {
+  const loginModal = read('frontend/src/components/Auth/LoginModal.jsx');
+  const customerHome = read('frontend/src/components/Settings/CustomerHomeModal.jsx');
+
+  assert.match(loginModal, /PASSWORD_MIN_LENGTH = 10/);
+  assert.match(loginModal, /password\.length < PASSWORD_MIN_LENGTH/);
+  assert.match(loginModal, /Password must be at least 10 characters/);
+  assert.match(loginModal, /Set a password \(min\. 10 characters\)/);
+  assert.match(loginModal, /密码至少需要 10 位/);
+  assert.match(loginModal, /设置密码（至少 10 位）/);
+  assert.match(customerHome, /At least 10 characters/);
+  assert.match(customerHome, /至少 10 位/);
+  assert.doesNotMatch(loginModal, /at least 6 characters/);
+  assert.doesNotMatch(loginModal, /至少 6 位/);
+  assert.doesNotMatch(loginModal, /password\.length < 6/);
+});
+
+test('AI safety boundary is visible in prompt, chat fallback, and legal notice', () => {
+  const workerIndex = read('worker/src/index.js');
+  const useChat = read('frontend/src/hooks/useChat.js');
+  const legal = read('frontend/src/components/common/LegalModal.jsx');
+
+  assert.match(workerIndex, /AI guidance is preliminary and for reference only/i);
+  assert.match(workerIndex, /structured assessment/i);
+  assert.match(workerIndex, /likely causes/i);
+  assert.match(workerIndex, /Avoid ranking any cause as "#1" or "the root cause"/i);
+  assert.match(workerIndex, /electrical, laser, high-pressure gas, hydraulic/i);
+  assert.match(workerIndex, /stop operation and require qualified manual confirmation/i);
+  assert.match(useChat, /AI guidance is for reference only/);
+  assert.match(useChat, /SAGEMRO confirmation/);
+  assert.match(legal, /for reference only/);
+  assert.match(legal, /仅供参考/);
+  assert.match(legal, /qualified manual confirmation/);
+  assert.match(legal, /人工确认/);
+});
+
+test('CN privacy policy covers retention, processors, transfers, rights, and complaint channels', () => {
+  const legal = read('frontend/src/components/common/LegalModal.jsx');
+
+  assert.match(legal, /Data Retention/i);
+  assert.match(legal, /Storage Regions/i);
+  assert.match(legal, /AI and Cloud Subprocessors/i);
+  assert.match(legal, /International Transfers/i);
+  assert.match(legal, /GDPR \/ UK GDPR Rights/i);
+  assert.match(legal, /数据保存期限/);
+  assert.match(legal, /数据存储地区/);
+  assert.match(legal, /AI 与云服务处理方/);
+  assert.match(legal, /跨境传输/);
+  assert.match(legal, /投诉/);
+});
+
+test('CN deployment gates run frontend tests before production deploy jobs', () => {
+  const cloudflareWorkflow = read('.github/workflows/deploy.yml');
+  const aliyunWorkflow = read('.github/workflows/aliyun-cn-deploy.yml');
+
+  assert.match(cloudflareWorkflow, /name: Frontend tests/);
+  assert.match(cloudflareWorkflow, /working-directory: frontend\s+run: npm test/);
+  assert.ok(
+    cloudflareWorkflow.indexOf('name: Frontend tests') > cloudflareWorkflow.indexOf('name: Frontend lint'),
+    'frontend tests should run after lint in the Cloudflare test gate'
+  );
+  assert.ok(
+    cloudflareWorkflow.indexOf('name: Frontend tests') < cloudflareWorkflow.indexOf('name: Frontend build'),
+    'frontend tests should run before frontend build and deploy'
+  );
+  assert.match(aliyunWorkflow, /working-directory: frontend[\s\S]*npm test --if-present[\s\S]*npm run build/);
+  assert.match(aliyunWorkflow, /curl -fsS --retry 3 --retry-delay 2 https:\/\/sagemro\.cn\//);
+});
+
 test('customer sidebar tools stay expanded without a More overflow menu', () => {
   const toolbar = read('frontend/src/components/Sidebar/ToolBar.jsx');
 

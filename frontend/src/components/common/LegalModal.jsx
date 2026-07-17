@@ -102,25 +102,45 @@ const PRIVACY_POLICY = `
 - API access uses authentication controls
 - Service data is accessible only to authorized users and SAGEMRO operational staff
 
-## 4. Information Sharing
+## 4. Data Retention
+
+- Account records are retained while your account remains active
+- Service requests, equipment records, messages, attachments, and service reports are retained for service continuity, warranty or dispute handling, safety review, and legal compliance
+- Security logs, rate-limit records, and abuse-prevention records are retained only as long as reasonably needed for security and operations
+- You may request deletion where permitted by law; some records may be retained when necessary for legal obligations, dispute resolution, fraud prevention, or legitimate service records
+
+## 5. Storage Regions
+
+SAGEMRO primarily operates through cloud infrastructure and service providers that may store or process data in regions including the United States, the European Economic Area, the United Kingdom, mainland China, and other regions where our infrastructure or subprocessors operate. The applicable region may depend on the domain, user location, cloud routing, and service provider availability.
+
+## 6. AI and Cloud Subprocessors
 
 - We do not sell your personal information
 - Service request information may be shared with SAGEMRO internal engineers or qualified engineers reviewed by SAGEMRO only as needed for service delivery
 - AI conversation content may be sent through encrypted interfaces to AI service providers without account passwords
+- Cloud hosting, database, email, logging, security, AI, speech transcription, file storage, and notification providers may act as processors or subprocessors for the limited purposes described in this policy
 - Information may be disclosed when required by law, regulation, or competent authorities
 
-## 5. Your Rights
+## 7. International Transfers
+
+If personal data is transferred across borders, SAGEMRO uses appropriate safeguards where required, which may include standard contractual clauses, equivalent contractual protections, technical safeguards, and transfer risk review.
+
+## 8. Your Rights
 
 - Access: view your account, service requests, and equipment records
 - Correction: update personal information and equipment records when available
 - Deletion: contact us to delete your account or relevant data where legally permitted
 - Notification management: manage browser or in-app notifications where supported
 
-## 6. Cookies and Local Storage
+## 9. GDPR / UK GDPR Rights
+
+Where GDPR or UK GDPR applies, you may also have the right to data portability, restriction of processing, objection to processing based on legitimate interests, withdrawal of consent where processing is consent-based, and the right to lodge a complaint with your local data protection authority.
+
+## 10. Cookies and Local Storage
 
 This platform uses browser localStorage for login state and chat continuity. We do not rely on third-party tracking cookies for core service delivery.
 
-## 7. Contact Us
+## 11. Contact Us
 
 Jinan Euchio Machinery Co., Ltd. | Email: support@sagemro.com | https://sagemro.com
 `.trim();
@@ -130,7 +150,7 @@ const AI_DISCLAIMER = `
 
 1.1 SAGEMRO AI is an equipment consultation and intake assistant based on large language model technology.
 
-1.2 AI outputs are preliminary service guidance only. They do not constitute final diagnosis, repair commitment, safety approval, binding quotation, or quality guarantee.
+1.2 AI outputs are preliminary service guidance for reference only. They do not constitute final diagnosis, repair commitment, safety approval, binding quotation, or quality guarantee.
 
 1.3 AI cannot replace on-site diagnosis, lockout/tagout procedures, electrical safety assessment, laser safety assessment, or qualified engineer judgment.
 
@@ -147,6 +167,7 @@ const AI_DISCLAIMER = `
 - Do not perform energized electrical repair based solely on AI output
 - Do not open laser optical paths, high-pressure gas lines, hydraulic systems, or safety covers without qualified personnel
 - Stop operation when there is smoke, fire risk, abnormal smell, exposed wiring, severe collision, or repeated high-risk alarms
+- Electrical, laser, high-pressure gas, hydraulic, pneumatic, lifting, hot-work, fire, exposed wiring, safety interlock, and energized cabinet scenarios require qualified manual confirmation before further operation
 - For uncertain high-risk conditions, request SAGEMRO service support
 
 ## 4. Data Usage
@@ -270,25 +291,45 @@ const CN_PRIVACY_POLICY = `
 - API 访问采用身份认证控制
 - 服务数据仅授权用户和 SAGEMRO 运营人员可访问
 
-## 4. 信息共享
+## 4. 数据保存期限
+
+- 账号记录会在账号有效期间保存
+- 服务请求、设备档案、消息、附件和服务报告会为服务连续性、质保或争议处理、安全复核和法律合规需要保存
+- 安全日志、限流记录和防滥用记录仅在安全与运营合理需要的期限内保存
+- 你可以在法律允许范围内申请删除；为履行法律义务、争议处理、防欺诈或必要服务记录，部分信息可能需要继续保留
+
+## 5. 数据存储地区
+
+SAGEMRO 主要通过云基础设施和服务商运营，数据可能在中国大陆、美国、欧洲经济区、英国以及我们的基础设施或分处理方所在的其他地区存储或处理。具体地区可能取决于访问域名、用户所在地、云服务路由和服务商可用性。
+
+## 6. AI 与云服务处理方
 
 - 我们不会出售你的个人信息
 - 为完成服务交付，服务请求信息可能按需提供给 SAGEMRO 内部工程师、合格工程师或经 SAGEMRO 审核的服务人员
 - AI 对话内容可能通过加密接口发送给 AI 服务提供方，但不包含账号密码
+- 云托管、数据库、邮件、日志、安全、AI、语音转写、文件存储和通知服务商可能作为处理方或分处理方，仅为本政策说明的目的处理数据
 - 法律法规或主管部门要求时，信息可能依法披露
 
-## 5. 你的权利
+## 7. 跨境传输
+
+如个人信息发生跨境传输，SAGEMRO 会在适用法律要求下采用适当保障措施，可能包括标准合同条款、同等合同保护、技术安全措施和传输风险评估。
+
+## 8. 你的权利
 
 - 访问：查看账号、服务请求和设备档案
 - 更正：在功能支持时更新个人信息和设备记录
 - 删除：在法律允许范围内联系我们删除账号或相关数据
 - 通知管理：在浏览器或应用内管理通知设置
 
-## 6. Cookies 与本地存储
+## 9. GDPR / UK GDPR 权利与投诉渠道
+
+在 GDPR 或 UK GDPR 适用时，你还可能享有数据可携带权、限制处理权、反对基于合法利益的处理、撤回同意以及向所在地数据保护主管机构投诉的权利。你也可以先通过 support@sagemro.com 联系我们处理隐私请求或投诉。
+
+## 10. Cookies 与本地存储
 
 本平台使用浏览器 localStorage 保存登录状态和对话连续性。核心服务交付不依赖第三方跟踪 Cookie。
 
-## 7. 联系我们
+## 11. 联系我们
 
 济南钰峭机械有限公司 | 邮箱：support@sagemro.com | https://sagemro.cn
 `.trim();
@@ -298,7 +339,7 @@ const CN_AI_DISCLAIMER = `
 
 1.1 SAGEMRO AI 是基于大语言模型技术的设备咨询与需求接收助手。
 
-1.2 AI 输出仅为初步服务参考，不构成最终诊断、维修承诺、安全许可、约束性报价或质量保证。
+1.2 AI 输出仅供参考，属于初步服务建议，不构成最终诊断、维修承诺、安全许可、约束性报价或质量保证。
 
 1.3 AI 不能替代现场诊断、断电挂牌程序、电气安全评估、激光安全评估或合格工程师判断。
 
@@ -315,6 +356,7 @@ const CN_AI_DISCLAIMER = `
 - 不要仅凭 AI 输出进行带电维修
 - 未经合格人员确认，不要打开激光光路、高压气路、液压系统或安全防护罩
 - 出现烟雾、火灾风险、异味、裸露线路、严重碰撞或反复高风险报警时，应停止运行
+- 涉及电气、激光、高压气体、液压、气动、吊装、动火、火灾、裸露线路、安全联锁或带电柜体的场景，继续操作前必须经过合格人员人工确认
 - 不确定的高风险情况，应提交 SAGEMRO 服务请求
 
 ## 4. 数据使用
