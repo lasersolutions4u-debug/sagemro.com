@@ -179,7 +179,7 @@ test('CN recruiting and shared overlays localize secondary labels', () => {
   assert.match(recruiting, /removeTag\(tag\)/);
   assert.match(recruiting, /aria-label="Close application form"/);
   assert.match(recruiting, /title="Remove"/);
-  assert.doesNotMatch(recruiting, /aria-label="Close application form"/);
+  assert.doesNotMatch(recruiting, /aria-label=\{copy/);
 
   assert.match(feedback, /isCnLocale/);
   assert.match(feedback, /关闭/);
