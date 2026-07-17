@@ -6,7 +6,7 @@ import test from 'node:test';
 const root = path.resolve(import.meta.dirname, '../..');
 const read = (relativePath) => readFileSync(path.join(root, relativePath), 'utf8');
 
-test('public frontend routes render a localized 404 and keep static fallback rules', () => {
+test('public frontend routes render a localized 404 after the SPA fallback loads React', () => {
   const app = read('frontend/src/App.jsx');
   const notFound = read('frontend/src/components/common/NotFoundPage.jsx');
   const redirects = read('frontend/public/_redirects');
@@ -14,7 +14,8 @@ test('public frontend routes render a localized 404 and keep static fallback rul
   assert.match(app, /<NotFoundPage isCn=\{isCn\} \/>/);
   assert.match(notFound, /Page not found/);
   assert.match(notFound, /页面不存在/);
-  assert.match(redirects, /\/\* \/404\.html 404/);
+  assert.equal(redirects.trim(), '/* /index.html 200');
+  assert.doesNotMatch(redirects, /\/\* \/404\.html 404/);
 });
 
 test('tool and insight detail routes reject unknown slugs', () => {
