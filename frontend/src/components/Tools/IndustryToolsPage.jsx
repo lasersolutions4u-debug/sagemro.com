@@ -124,7 +124,7 @@ function ToolsHub({ onOpenLegal }) {
 
   return (
     <ToolPageShell onOpenLegal={onOpenLegal}>
-      <section className="mx-auto grid max-w-6xl gap-8 px-4 py-8 sm:px-6 lg:grid-cols-[0.9fr_1.1fr] lg:py-12">
+      <section className="mx-auto grid max-w-7xl gap-8 px-4 py-8 sm:px-6 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)] lg:py-12">
         <div>
           <a href="/" className="mb-6 inline-flex items-center gap-2 text-sm text-[var(--color-text-secondary)] hover:text-[var(--color-primary)]">
             <ArrowLeft size={16} />
@@ -143,7 +143,7 @@ function ToolsHub({ onOpenLegal }) {
         </div>
 
         <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-elevated)] p-4 shadow-sm">
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="grid gap-3 md:grid-cols-2">
             {industryTools.map((tool) => (
               <ToolLinkCard key={tool.id} tool={tool} />
             ))}
@@ -152,14 +152,14 @@ function ToolsHub({ onOpenLegal }) {
       </section>
 
       <section className="border-y border-[#1f2a32] bg-[#0f171d] px-4 py-6 text-white sm:px-6">
-        <div className="mx-auto grid max-w-6xl overflow-hidden rounded-lg border border-white/10 bg-white/[0.025] text-sm shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] md:grid-cols-3">
+        <div className="mx-auto grid max-w-7xl overflow-hidden rounded-lg border border-white/10 bg-white/[0.025] text-sm shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] md:grid-cols-3">
           {referenceItems.map((item, index) => (
             <ToolReferenceItem key={item.label} item={item} isFirst={index === 0} />
           ))}
         </div>
       </section>
 
-      <section className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
+      <section className="mx-auto max-w-7xl px-4 py-8 sm:px-6">
         <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-elevated)] p-4 sm:flex sm:items-center sm:justify-between sm:gap-4">
           <div>
             <div className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--color-text-muted)]">Insights</div>
@@ -266,13 +266,13 @@ function ToolLinkCard({ tool }) {
   const Icon = toolIcons[tool.id] || Calculator;
 
   return (
-    <a href={`/tools/${tool.slug}`} className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4 transition hover:border-[var(--color-primary)] hover:shadow-sm">
+    <a href={`/tools/${tool.slug}`} className="h-full overflow-hidden rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4 transition hover:border-[var(--color-primary)] hover:shadow-sm">
       <div className="flex items-start gap-3">
         <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[var(--color-primary)]/10 text-[var(--color-primary)]">
           <Icon size={18} />
         </div>
-        <div>
-          <h2 className="text-base font-semibold text-[var(--color-text-primary)]">{tool.label}</h2>
+        <div className="min-w-0">
+          <h2 className="text-base font-semibold leading-snug text-[var(--color-text-primary)]">{tool.label}</h2>
           <p className="mt-1 text-sm leading-6 text-[var(--color-text-secondary)]">{tool.description}</p>
         </div>
       </div>
@@ -284,7 +284,7 @@ function ToolPageShell({ children, onOpenLegal }) {
   return (
     <div className="min-h-[100dvh] bg-[var(--color-bg)] text-[var(--color-text-primary)]">
       <header className="border-b border-[var(--color-border)] bg-[var(--color-surface)]">
-        <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-3 sm:px-6">
+        <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-3 sm:px-6">
           <a href="/" className="flex items-center gap-2 text-sm font-semibold text-[var(--color-text-primary)]">
             <BrandMark variant="logo" className="h-8 w-8 object-contain" />
             SAGEMRO

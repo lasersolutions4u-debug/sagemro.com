@@ -415,6 +415,9 @@ test('client shell moves conversation history into a modal and exposes industry 
   assert.match(industryToolsModal, /industryTools\.map/);
   assert.match(industryToolCalculator, /Review this result in service chat/);
   assert.match(industryToolsPage, /href=\{`\/tools\/\$\{tool\.slug\}`\}/);
+  assert.match(industryToolsPage, /max-w-7xl/);
+  assert.match(industryToolsPage, /md:grid-cols-2/);
+  assert.doesNotMatch(industryToolsPage, /lg:grid-cols-3/);
   assert.match(industryToolsPage, /link\[rel="canonical"\]/);
   assert.match(industryToolsPage, /meta\[name="\$\{name\}"\]/);
   assert.match(industryToolsPage, /referenceItems/);
