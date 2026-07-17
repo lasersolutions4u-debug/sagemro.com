@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 
@@ -14,6 +14,7 @@ test('public frontend routes render a localized 404 after the SPA fallback loads
   assert.match(app, /<NotFoundPage isCn=\{isCn\} \/>/);
   assert.match(notFound, /Page not found/);
   assert.match(notFound, /页面不存在/);
+  assert.equal(existsSync(path.join(root, 'frontend/public/404.html')), false);
   assert.equal(redirects.trim(), '/* /index.html 200');
   assert.doesNotMatch(redirects, /\/\* \/404\.html 404/);
 });
