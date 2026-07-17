@@ -29,13 +29,13 @@ export function ChatArea({
 
   const hasMessages = messages.length > 0;
   const isCn = isCnLocale();
-  const serviceName = isCn ? 'SAGEMRO 设备服务平台' : 'SAGEMRO Equipment Service';
+  const serviceName = isCn ? 'SAGEMRO AI 设备服务平台' : 'SAGEMRO AI Equipment Service';
   const pageTitle = hasMessages
     ? (currentTitle || (isCn ? '服务对话' : 'Service conversation'))
     : serviceName;
   const subtitle = isCn
-    ? '激光切割与钣金设备服务入口'
-    : 'Service support for laser cutting and sheet metal equipment';
+    ? 'AI 先整理设备问题和下一步建议'
+    : 'AI organizes equipment issues and next-step options';
   const aboutLabel = isCn ? '关于 SAGEMRO' : 'About SAGEMRO';
   const homeLabel = isCn ? '返回首页' : 'Back to start';
   const aiNotice = isCn
