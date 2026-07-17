@@ -42,7 +42,7 @@ test('customer site location distinguishes current position from map selection',
 
   assert.match(workOrderModal, /locateSite: '确认现场定位'/);
   assert.match(workOrderModal, /locationCaptured: '现场定位已获取'/);
-  assert.match(workOrderModal, /form\.service_mode !== 'remote'/);
+  assert.match(workOrderModal, /form\.service_mode === 'onsite'/);
   assert.doesNotMatch(workOrderModal, /service_accuracy_m \|\| 0/);
 });
 
