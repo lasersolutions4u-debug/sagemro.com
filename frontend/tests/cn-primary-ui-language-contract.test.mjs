@@ -103,12 +103,21 @@ test('CN service detail workflow localizes customer-visible secondary UI', () =>
 test('CN account settings localizes customer profile and password UI', () => {
   const settings = read('frontend/src/components/Settings/SettingsModal.jsx');
   const sidebar = read('frontend/src/components/Sidebar/Sidebar.jsx');
+  const myDevices = read('frontend/src/components/Device/MyDevicesModal.jsx');
 
   assert.match(settings, /isCnLocale/);
   assert.match(settings, /账号/);
   assert.match(settings, /个人资料/);
   assert.match(settings, /我的设备/);
   assert.match(sidebar, /label: isCn \? '我的设备' : 'My Equipment'/);
+  assert.match(myDevices, /title: '我的设备'/);
+  assert.match(myDevices, /add: '添加设备'/);
+  assert.match(myDevices, /手动添加设备/);
+  assert.match(myDevices, /确认后才会保存/);
+  assert.match(myDevices, /findMatchingDevice/);
+  assert.match(myDevices, /setSelectedDevice\(existing\)/);
+  assert.match(myDevices, /initialValues=\{deviceSuggestion\}/);
+  assert.match(myDevices, /setError\(copy\.loadFailed\)/);
   assert.match(settings, /修改密码/);
   assert.match(settings, /姓名/);
   assert.match(settings, /手机号/);
