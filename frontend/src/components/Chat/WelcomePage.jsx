@@ -10,10 +10,10 @@ import { isCnLocale } from '../../utils/locale';
 const copy = {
   en: {
     eyebrow: 'AI-First Service Platform',
-    headline: 'Type the problem. Get a clear service brief in seconds.',
-    intro: 'Describe the alarm, material, machine model, or production impact. AI turns scattered symptoms into a structured service brief — and asks for what\'s missing before the next step.',
-    cardTitle: 'From scattered symptoms to a clear brief.',
-    cardText: 'Write what you see on site. AI organizes the issue, flags safety concerns, checks for missing details, and prepares next-step options for you to review.',
+    headline: '3 minutes of AI chat. Get your solution and next steps.',
+    intro: 'Describe the alarm, material, or machine issue. In a short AI conversation, you\'ll get a structured diagnosis, solution options, and clear next steps — no waiting, no back-and-forth.',
+    cardTitle: 'From symptoms to solution — in one conversation.',
+    cardText: 'Write what you see on site. AI organizes the issue, suggests solutions, flags safety concerns, and prepares next-step options — all in a short chat.',
     trustPoints: [
       'AI asks for missing details before the case moves forward',
       'AI organizes alarms, downtime, cutting quality, parts questions, maintenance, and process context',
@@ -42,10 +42,10 @@ const copy = {
   },
   zh: {
     eyebrow: 'AI 先行 · 服务简报',
-    headline: '描述问题，三分钟拿到结构化服务简报。',
-    intro: '说明报警、材料、设备型号或生产影响。AI 把零散现象整理成清晰的服务摘要——追问缺失信息，提示安全风险，生成可确认的下一步建议。',
-    cardTitle: '从零散现象到清晰简报。',
-    cardText: '按现场实际情况填写即可。AI 把零散现象整理成清晰的服务摘要，追问缺失信息，提示安全风险，并生成可确认的下一步建议。',
+    headline: '跟 AI 聊三分钟，获取设备问题解决方案和下一步。',
+    intro: '说明报警、材料或设备现象。AI 会在简短对话中给出结构化诊断、解决思路和明确的下一步建议——无需等待，无需来回沟通。',
+    cardTitle: '从现象到方案，一次对话搞定。',
+    cardText: '按现场实际情况填写即可。AI 整理问题、给出解决思路、提示安全风险、推送下一步——全部在简短对话中完成。',
     trustPoints: [
       'AI 会追问缺失信息，避免一开始就遗漏关键条件',
       'AI 会整理报警、停机、切割质量、备件疑问、维保和工艺背景',
