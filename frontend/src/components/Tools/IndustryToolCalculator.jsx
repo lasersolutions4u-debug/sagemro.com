@@ -234,14 +234,17 @@ export function IndustryToolCalculator({ tool, values, onChange, onSendMessage, 
             </div>
           ))}
         </div>
-        <p className="mt-3 text-xs leading-relaxed text-[var(--color-text-secondary)]">{result.note}</p>
+        <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-950">
+          <strong className="block font-semibold">Planning estimate</strong>
+          <span>{result.note} Confirm before production or purchasing.</span>
+        </div>
         {onSendMessage && (
           <button
             type="button"
             onClick={sendForReview}
             className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-[var(--color-primary)] px-4 py-2.5 text-sm font-medium text-white transition hover:bg-[var(--color-primary-hover)]"
           >
-            Review this result in service chat
+            Ask SAGEMRO AI to review this result
             <ArrowRight size={16} />
           </button>
         )}
