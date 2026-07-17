@@ -1,0 +1,2 @@
+- [AI-first client copy](ai-first-client-copy.md) — Core positioning principle for AI-first copy
+- [UI copy launch review](ui-copy-launch-review.md) — Full copy audit, fixes, and launch readiness analysis (2026-07-17)
