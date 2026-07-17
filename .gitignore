@@ -47,6 +47,7 @@ worker/.eval-runs/
 memory/
 .claude/memory/
 .claude/cache/
+.Codex/memory/
 
 # Python
 __pycache__/
