@@ -102,11 +102,13 @@ test('CN service detail workflow localizes customer-visible secondary UI', () =>
 
 test('CN account settings localizes customer profile and password UI', () => {
   const settings = read('frontend/src/components/Settings/SettingsModal.jsx');
+  const sidebar = read('frontend/src/components/Sidebar/Sidebar.jsx');
 
   assert.match(settings, /isCnLocale/);
   assert.match(settings, /账号/);
   assert.match(settings, /个人资料/);
   assert.match(settings, /我的设备/);
+  assert.match(sidebar, /label: isCn \? '我的设备' : 'My Equipment'/);
   assert.match(settings, /修改密码/);
   assert.match(settings, /姓名/);
   assert.match(settings, /手机号/);
