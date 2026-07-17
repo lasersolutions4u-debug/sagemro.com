@@ -34,8 +34,8 @@ export function ChatArea({
     ? (currentTitle || (isCn ? '服务对话' : 'Service conversation'))
     : serviceName;
   const subtitle = isCn
-    ? '描述问题，AI 三分钟整理服务简报'
-    : 'Describe the problem. AI prepares your service brief.';
+    ? '跟 AI 聊三分钟，获取解决方案和下一步'
+    : '3 minutes of AI chat. Get your solution and next steps.';
   const aboutLabel = isCn ? '关于 SAGEMRO' : 'About SAGEMRO';
   const homeLabel = isCn ? '返回首页' : 'Back to start';
   const aiNotice = isCn
