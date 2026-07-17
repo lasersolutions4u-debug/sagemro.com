@@ -91,7 +91,7 @@ test('main site first-impression copy keeps CN and COM market language separate'
   assert.match(chatArea, /SAGEMRO AI Equipment Service/);
   assert.match(chatArea, /3 minutes of AI chat/);
   assert.match(about, /service workspace for recording machine symptoms/i);
-  assert.match(about, /What The Chat Can Help Clarify/);
+  assert.match(about, /What SAGEMRO AI Can Help Clarify/);
   assert.doesNotMatch(about, /One Chat, Six Service Outcomes/);
   assert.doesNotMatch(about, /sales request/i);
   assert.doesNotMatch(about, /Machine selection|new-machine projects/);
