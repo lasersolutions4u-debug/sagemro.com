@@ -1,4 +1,4 @@
-import { FileText, ClipboardList, LogIn, LogOut, Package, Bell } from 'lucide-react';
+import { FileText, ClipboardList, LogIn, LogOut, Package, Bell, Wrench } from 'lucide-react';
 import { isCnLocale } from '../../utils/locale';
 
 const TOOLBAR_COPY = {
@@ -10,6 +10,8 @@ const TOOLBAR_COPY = {
     notifications: '通知',
     myEquipment: '我的设备',
     engineerBadge: 'SAGEMRO 工程师',
+    engineerEntry: '工程师入口 / 合作',
+    engineerHref: 'https://engineer.sagemro.cn',
     logout: '退出登录',
   },
   en: {
@@ -20,6 +22,8 @@ const TOOLBAR_COPY = {
     notifications: 'Notifications',
     myEquipment: 'My Equipment',
     engineerBadge: 'SAGEMRO Engineer',
+    engineerEntry: 'Engineer Portal / Partner Program',
+    engineerHref: 'https://engineer.sagemro.com',
     logout: 'Log Out',
   },
 };
@@ -113,14 +117,24 @@ export function ToolBar({
             </button>
           </>
         ) : (
-          <button
-            data-testid="sidebar-login-button"
-            onClick={onOpenLogin}
-            className="w-full flex items-center gap-3 px-4 py-2.5 text-[14px] text-[var(--color-sidebar-muted)] hover:bg-[var(--color-sidebar-surface)] hover:text-[var(--color-sidebar-text)] rounded-lg mx-1 transition-colors"
-          >
-            <LogIn size={17} />
-            <span>{copy.loginLabel}</span>
-          </button>
+          <>
+            <button
+              data-testid="sidebar-login-button"
+              onClick={onOpenLogin}
+              className="w-full flex items-center gap-3 px-4 py-2.5 text-[14px] text-[var(--color-sidebar-muted)] hover:bg-[var(--color-sidebar-surface)] hover:text-[var(--color-sidebar-text)] rounded-lg mx-1 transition-colors"
+            >
+              <LogIn size={17} />
+              <span>{copy.loginLabel}</span>
+            </button>
+            <a
+              data-testid="sidebar-engineer-link"
+              href={copy.engineerHref}
+              className="mt-1 flex w-full items-center gap-3 rounded-lg px-4 py-2 text-[12px] text-[var(--color-sidebar-muted)]/80 hover:bg-[var(--color-sidebar-surface)] hover:text-[var(--color-sidebar-text)] transition-colors"
+            >
+              <Wrench size={15} />
+              <span>{copy.engineerEntry}</span>
+            </a>
+          </>
         )}
       </div>
     </div>
