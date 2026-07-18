@@ -194,7 +194,7 @@ test('registration creates customer accounts without a public role selection ste
 
 test('customer shell exposes low-priority engineer entry and consolidated legal footer', () => {
   const footer = read('frontend/src/components/common/Footer.jsx');
-  const toolbar = read('frontend/src/components/Sidebar/ToolBar.jsx');
+  const sidebar = read('frontend/src/components/Sidebar/Sidebar.jsx');
   const engineerRecruiting = read('frontend/src/components/Engineer/EngineerRecruitingPage.jsx');
 
   assert.match(footer, /规则与说明/);
@@ -202,12 +202,11 @@ test('customer shell exposes low-priority engineer entry and consolidated legal 
   assert.match(footer, /onOpenLegal\?\.\('agreement'\)/);
   assert.doesNotMatch(footer, /Terms of Service|Privacy Policy|AI Service Notice|用户协议|隐私政策|AI 服务说明/);
 
-  assert.match(toolbar, /engineerEntry: '工程师入口 \/ 合作'/);
-  assert.match(toolbar, /engineerEntry: 'Engineer Portal \/ Partner Program'/);
-  assert.match(toolbar, /engineerHref: 'https:\/\/engineer\.sagemro\.cn'/);
-  assert.match(toolbar, /engineerHref: 'https:\/\/engineer\.sagemro\.com'/);
-  assert.match(toolbar, /data-testid="sidebar-engineer-link"/);
-  assert.match(toolbar, /href=\{copy\.engineerHref\}/);
+  assert.match(sidebar, /label: isCn \? '工程师入口 \/ 合作' : 'Engineer Portal \/ Partner Program'/);
+  assert.match(sidebar, /href: isCn \? 'https:\/\/engineer\.sagemro\.cn' : 'https:\/\/engineer\.sagemro\.com'/);
+  assert.match(sidebar, /testid: 'sidebar-engineer-link'/);
+  assert.match(sidebar, /data-testid=\{engineerEntry\.testid\}/);
+  assert.match(sidebar, /href=\{engineerEntry\.href\}/);
 
   assert.match(engineerRecruiting, /returnToCustomer: '返回客户服务首页'/);
   assert.match(engineerRecruiting, /returnToCustomer: 'Back to customer service'/);
