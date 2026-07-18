@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import {
+  ArrowLeft,
   ArrowRight,
   BadgeCheck,
   CalendarCheck,
@@ -25,6 +26,8 @@ const COPY = {
     applyNow: '申请加入',
     howItWorks: '申请流程',
     signIn: '已有工程师账号，进入工作台',
+    returnToCustomer: '返回客户服务首页',
+    customerHomeHref: 'https://sagemro.cn',
     heroStats: [
       { value: '人工审核', label: '审核后开通账号' },
       { value: '区域协调', label: '统一派工调配' },
@@ -105,6 +108,8 @@ const COPY = {
     applyNow: 'Apply to Join',
     howItWorks: 'How It Works',
     signIn: 'I already have an engineer account',
+    returnToCustomer: 'Back to customer service',
+    customerHomeHref: 'https://sagemro.com',
     heroStats: [
       { value: 'Scoped', label: 'field work context' },
       { value: 'Reviewed', label: 'manual application screening' },
@@ -457,7 +462,7 @@ export function EngineerRecruitingPage({ onOpenLogin }) {
       </div>
 
       <div className="relative mx-auto max-w-7xl px-5 py-6">
-        <header className="flex items-center justify-between gap-4">
+        <header className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             <BrandMark variant="logo" className="h-14 w-14 object-contain drop-shadow-[0_12px_24px_rgba(245,158,11,0.22)]" />
             <div>
@@ -465,12 +470,21 @@ export function EngineerRecruitingPage({ onOpenLogin }) {
               <div className="text-xs text-white/70">{copy.networkLabel}</div>
             </div>
           </div>
-          <button
-            onClick={onOpenLogin}
-            className="rounded-full border border-white/25 bg-white/10 px-4 py-2 text-sm font-medium text-white backdrop-blur hover:bg-white/15"
-          >
-            {copy.signIn}
-          </button>
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <a
+              href={copy.customerHomeHref}
+              className="inline-flex items-center gap-1.5 rounded-full px-3 py-2 text-sm font-medium text-white/80 hover:bg-white/10 hover:text-white"
+            >
+              <ArrowLeft size={15} />
+              {copy.returnToCustomer}
+            </a>
+            <button
+              onClick={onOpenLogin}
+              className="rounded-full border border-white/25 bg-white/10 px-4 py-2 text-sm font-medium text-white backdrop-blur hover:bg-white/15"
+            >
+              {copy.signIn}
+            </button>
+          </div>
         </header>
 
         <main className="py-10">
