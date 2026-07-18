@@ -36,6 +36,11 @@ export function Sidebar({
   const isCn = isCnLocale();
   const isEngineer = userType === 'engineer';
   const accountAction = isEngineer ? onOpenEngineerDashboard : onOpenSettings;
+  const engineerEntry = {
+    label: isCn ? '工程师入口 / 合作' : 'Engineer Portal / Partner Program',
+    href: isCn ? 'https://engineer.sagemro.cn' : 'https://engineer.sagemro.com',
+    testid: 'sidebar-engineer-link',
+  };
   const baseTools = [
     { icon: Plus, label: isCn ? '新对话' : 'New Chat', onClick: onNewChat, testid: 'new-chat-button', primary: true },
     { icon: History, label: isCn ? '历史' : 'History', onClick: onOpenHistory, testid: 'tool-history' },
@@ -79,10 +84,21 @@ export function Sidebar({
             />
           </>
         ) : (
-          <RailButton
-            tool={{ icon: LogIn, label: isCn ? '登录' : 'Sign In', onClick: onOpenLogin, testid: 'sidebar-login-button' }}
-            onClick={() => { onOpenLogin?.(); onClose?.(); }}
-          />
+          <>
+            <RailButton
+              tool={{ icon: LogIn, label: isCn ? '登录' : 'Sign In', onClick: onOpenLogin, testid: 'sidebar-login-button' }}
+              onClick={() => { onOpenLogin?.(); onClose?.(); }}
+            />
+            <a
+              href={engineerEntry.href}
+              title={engineerEntry.label}
+              data-testid={engineerEntry.testid}
+              className="relative flex w-full items-center justify-start gap-2 rounded-lg px-2 py-1.5 text-[11px] leading-4 text-[var(--color-sidebar-muted)]/75 transition-colors duration-200 hover:bg-[var(--color-sidebar-surface)] hover:text-[var(--color-sidebar-text)]"
+            >
+              <Wrench size={15} className="shrink-0" />
+              <span className="min-w-0 truncate whitespace-nowrap">{engineerEntry.label}</span>
+            </a>
+          </>
         )}
       </div>
     </aside>
