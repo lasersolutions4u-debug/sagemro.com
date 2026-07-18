@@ -193,6 +193,29 @@ test('registration creates customer accounts without a public role selection ste
   assert.doesNotMatch(loginModal, /I'm just browsing \(Guest\)/);
 });
 
+test('customer shell exposes low-priority engineer entry and consolidated legal footer', () => {
+  const footer = read('frontend/src/components/common/Footer.jsx');
+  const sidebar = read('frontend/src/components/Sidebar/Sidebar.jsx');
+  const engineerRecruiting = read('frontend/src/components/Engineer/EngineerRecruitingPage.jsx');
+
+  assert.match(footer, /规则与说明/);
+  assert.match(footer, /Terms, Privacy & AI Notice/);
+  assert.match(footer, /onOpenLegal\?\.\('agreement'\)/);
+  assert.doesNotMatch(footer, /Terms of Service|Privacy Policy|AI Service Notice|用户协议|隐私政策|AI 服务说明/);
+
+  assert.match(sidebar, /label: isCn \? '工程师入口 \/ 合作' : 'Engineer Portal \/ Partner Program'/);
+  assert.match(sidebar, /href: isCn \? 'https:\/\/engineer\.sagemro\.cn' : 'https:\/\/engineer\.sagemro\.com'/);
+  assert.match(sidebar, /testid: 'sidebar-engineer-link'/);
+  assert.match(sidebar, /data-testid=\{engineerEntry\.testid\}/);
+  assert.match(sidebar, /href=\{engineerEntry\.href\}/);
+
+  assert.match(engineerRecruiting, /returnToCustomer: '返回客户服务首页'/);
+  assert.match(engineerRecruiting, /returnToCustomer: 'Back to customer service'/);
+  assert.match(engineerRecruiting, /customerHomeHref: 'https:\/\/sagemro\.cn'/);
+  assert.match(engineerRecruiting, /customerHomeHref: 'https:\/\/sagemro\.com'/);
+  assert.match(engineerRecruiting, /href=\{copy\.customerHomeHref\}/);
+});
+
 test('public beta funnel events are tracked without collecting message or contact text', () => {
   const app = read('frontend/src/App.jsx');
   const useChat = read('frontend/src/hooks/useChat.js');
