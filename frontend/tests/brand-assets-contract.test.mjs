@@ -67,12 +67,10 @@ test('main site first-impression copy keeps CN and COM market language separate'
   const footer = read('frontend/src/components/common/Footer.jsx');
   const engineerRecruiting = read('frontend/src/components/Engineer/EngineerRecruitingPage.jsx');
 
-  assert.match(welcome, /Get your solution and next steps/);
-  assert.match(welcome, /structured diagnosis, solution options/);
-  assert.match(welcome, /From symptoms to solution/);
-  assert.match(welcome, /AI asks for missing details/);
-  assert.match(welcome, /BM111 alarm/);
-  assert.match(welcome, /burrs on stainless steel/);
+  assert.match(welcome, /AI for sheet metal equipment service/);
+  assert.match(welcome, /troubleshooting/);
+  assert.match(welcome, /SAGEMRO Service OS/);
+  assert.match(welcome, /alarm, cutting issue, bending/);
   assert.match(welcome, /href: '\/tools'/);
   assert.match(welcome, /href: '\/insights'/);
   assert.match(welcome, /Calculators/);
@@ -80,11 +78,11 @@ test('main site first-impression copy keeps CN and COM market language separate'
   assert.doesNotMatch(welcome, /sales form|sales shortcut/i);
   assert.doesNotMatch(welcome, /Machine selection|new-machine evaluation/);
   assert.doesNotMatch(welcome, /supports international customers with independent after-sales service, spare parts, consumables/);
-  assert.match(welcome, /跟 AI 聊三分钟/);
-  assert.match(welcome, /获取设备问题解决方案和下一步/);
-  assert.match(welcome, /结构化诊断、解决思路/);
-  assert.match(welcome, /从现象到方案/);
-  assert.match(welcome, /AI 会追问缺失信息/);
+  assert.match(welcome, /SAGEMRO 智能服务系统/);
+  assert.match(welcome, /钣金设备故障/);
+  assert.match(welcome, /先用 AI 看看/);
+  assert.match(welcome, /报了什么警/);
+  assert.match(welcome, /公开资源/);
   assert.match(chatArea, /SAGEMRO AI 设备服务平台/);
   assert.match(chatArea, /跟 AI 聊三分钟/);
   assert.match(chatArea, /SAGEMRO AI Equipment Service/);
@@ -154,7 +152,7 @@ test('registration copy hides CN email input and routes verification through pho
   assert.doesNotMatch(loginModal, /真实姓名/);
   assert.match(api, /sendVerifyCode\(\{ phone, email \}\)/);
   assert.match(api, /JSON\.stringify\(payload\)/);
-  assert.match(api, /registerCustomer\(\{ name, phone, email, password, code, company, identity \}\)/);
+  assert.match(api, /registerCustomer\(\{ name, phone, email, password, code, company, identity, conversation_id \}\)/);
   assert.match(toolbar, /loginLabel: '登录 \/ 注册'/);
   assert.match(toolbar, /loginLabel: 'Sign In \/ Register'/);
   assert.doesNotMatch(toolbar, /<span>Sign In \/ Register<\/span>/);
@@ -303,12 +301,12 @@ test('Cloudflare deploy gate runs frontend tests before production deploy jobs',
 test('customer sidebar tools stay expanded without a More overflow menu', () => {
   const toolbar = read('frontend/src/components/Sidebar/ToolBar.jsx');
 
-  assert.match(toolbar, /label: 'Request Service'/);
-  assert.match(toolbar, /label: 'My Services'/);
-  assert.match(toolbar, /label: 'Notifications'/);
-  assert.match(toolbar, /label: 'My Equipment'/);
+  assert.match(toolbar, /requestService: 'Request Service'/);
+  assert.match(toolbar, /myServices: 'My Services'/);
+  assert.match(toolbar, /notifications: 'Notifications'/);
+  assert.match(toolbar, /myEquipment: 'My Equipment'/);
   assert.ok(
-    toolbar.indexOf("label: 'Notifications'") < toolbar.indexOf("label: 'My Equipment'"),
+    toolbar.indexOf("notifications: 'Notifications'") < toolbar.indexOf("myEquipment: 'My Equipment'"),
     'Notifications should appear before My Equipment for logged-in customers'
   );
   assert.doesNotMatch(toolbar, /MoreHorizontal|sidebar-more-button|showCollapsed|setCollapsed|showMore|moreMenuRef/);
@@ -534,7 +532,7 @@ test('client shell moves conversation history into a modal and exposes industry 
   assert.match(industryToolsPage, /max-w-7xl/);
   assert.match(industryToolsPage, /md:grid-cols-2/);
   assert.doesNotMatch(industryToolsPage, /lg:grid-cols-3/);
-  assert.match(industryToolsPage, /<a href="\/" className="mb-5 flex w-fit items-center/);
+  assert.match(industryToolsPage, /<a href="\/" className="mt-4 inline-flex rounded-lg/);
   assert.match(industryToolsPage, /link\[rel="canonical"\]/);
   assert.match(industryToolsPage, /meta\[name="\$\{name\}"\]/);
   assert.match(industryToolsPage, /referenceItems/);
@@ -576,7 +574,7 @@ test('public industry tool detail prioritizes calculator before related tools an
   const industryToolCalculator = read('frontend/src/components/Tools/IndustryToolCalculator.jsx');
 
   const calculatorIndex = industryToolsPage.indexOf('<IndustryToolCalculator');
-  const relatedToolsIndex = industryToolsPage.indexOf('Related tools');
+  const relatedToolsIndex = industryToolsPage.indexOf('{copy.relatedTools}');
 
   assert.ok(calculatorIndex > -1, 'tool detail should render the calculator');
   assert.ok(relatedToolsIndex > -1, 'tool detail should render related tools');
@@ -665,10 +663,10 @@ test('engineer task overview shows 8 personal metrics and 2 regional metrics', (
   assert.match(workspace, /quotePending: tickets\.filter/);
   assert.match(workspace, /paymentFollowUp: tickets\.filter/);
   assert.match(workspace, /regionalQueue: tickets\.filter/);
-  assert.match(workspace, /label: 'Quote Pending'/);
-  assert.match(workspace, /label: 'Scheduled Dates'/);
-  assert.match(workspace, /label: 'Regional Queue'/);
-  assert.match(workspace, /label: 'Payment Follow-up'/);
+  assert.match(workspace, /quotePending: 'Quote Pending'/);
+  assert.match(workspace, /scheduledDates: 'Scheduled Dates'/);
+  assert.match(workspace, /regionalQueue: 'Regional Queue'/);
+  assert.match(workspace, /paymentFollowUp: 'Payment Follow-up'/);
   assert.match(workspace, /scheduledPreviewCount/);
   assert.match(workspace, /const personalMetrics = \[/);
   assert.match(workspace, /const regionalMetrics = isRegionalLead/);
@@ -681,7 +679,7 @@ test('engineer workspace gives English next steps and selected task context', ()
 
   assert.match(workspace, /getNextAction/);
   assert.match(workspace, /Needs action/);
-  assert.match(workspace, /Next step:/);
+  assert.match(workspace, /\{copy\.nextStep\}:<\/span> \{getNextAction/);
   assert.match(workspace, /const activeTicket = selectedTicket \|\| tickets\[0\] \|\| null/);
   assert.match(workspace, /Current Task Context/);
   assert.match(workspace, /Customer \/ Region/);
@@ -715,7 +713,7 @@ test('engineer workspace keeps task context and scheduling display fully English
   assert.match(workspace, /\['客户', 'Customer'\]/);
   assert.match(workspace, /\['故障', 'Fault'\]/);
   assert.match(workspace, /\['激光切割头', 'laser cutting head'\]/);
-  assert.match(workspace, /ticket\.description \? formatEngineerDescription\(ticket\.description\)/);
+  assert.match(workspace, /ticket\.description \? formatEngineerDescription\(ticket\.description, isCn\)/);
   assert.match(workspace, /Preparation for/);
   assert.match(workspace, /\{activeTicket\.order_no \|\| activeTicket\.id\}/);
   assert.doesNotMatch(workspace, /\{ticket\.description \|\| 'No service description yet'\}/);
@@ -730,12 +728,12 @@ test('engineer workspace keeps task context and scheduling display fully English
 test('engineer workspace pairs compact task overview with a prominent calendar launcher', () => {
   const workspace = read('frontend/src/components/Engineer/EngineerWorkspace.jsx');
 
-  const taskOverviewIndex = workspace.indexOf('Task Overview');
+  const taskOverviewIndex = workspace.indexOf('{copy.taskOverview}');
   const splitOverviewIndex = workspace.indexOf('mb-6 grid items-stretch gap-4');
   const splitColumnsIndex = workspace.indexOf('lg:grid-cols-[minmax(0,2fr)_minmax(280px,1fr)]');
-  const calendarLauncherIndex = workspace.indexOf('Scheduling Calendar');
+  const calendarLauncherIndex = workspace.indexOf('{copy.calendarTitle}');
   const calendarIndex = workspace.indexOf('<EngineerAvailabilityCalendar />');
-  const serviceTasksIndex = workspace.indexOf('Service Tasks');
+  const serviceTasksIndex = workspace.indexOf('{copy.serviceTasks}');
   const contextIndex = workspace.indexOf('Current Task Context');
   const preparationIndex = workspace.indexOf('Job Preparation');
   const checklistIndex = workspace.indexOf('Service Standard Checklist');
@@ -754,7 +752,7 @@ test('engineer workspace pairs compact task overview with a prominent calendar l
   assert.match(workspace, /h-full rounded-2xl/);
   assert.doesNotMatch(workspace, /Visit windows/);
   assert.doesNotMatch(workspace, /Blocked dates/);
-  assert.match(workspace, /title="My Scheduling Calendar"/);
+  assert.match(workspace, /title=\{copy\.modalCalendarTitle\}/);
   assert.match(workspace, /size="2xl"/);
   assert.ok(calendarIndex > checklistIndex);
   assert.ok(contextIndex < preparationIndex);
@@ -808,9 +806,9 @@ test('engineer work order views redact customer contact before service and insid
   assert.match(messagePanel, /import \{ redactContactInfo \}/);
   assert.match(read('frontend/src/components/Engineer/EngineerWorkspace.jsx'), /redactContactInfo\(replaceChineseDeviceLabels\(description\)\)/);
   assert.match(detailModal, /canEngineerViewCustomerContact\(effectiveStatus\)/);
-  assert.match(detailModal, /redactContactInfo\(workOrder\.description\)/);
+  assert.match(detailModal, /redactContactInfo\(formatServiceTextForLocale\(workOrder\.description/);
   assert.match(detailModal, /const customerPhoneDisplay = shouldShowCustomerContact \? detail\?\.customer_phone : detail\?\.customer_phone \? 'XXX' : ''/);
-  assert.match(messagePanel, /redactContactInfo\(msg\.content\)/);
+  assert.match(messagePanel, /redactContactInfo\(formatServiceTextForLocale\(msg\.content/);
   assert.match(messagePanel, /content: redactContactInfo\(input\.trim\(\)\)/);
   assert.match(worker, /function redactContactInfoForWorkOrder/);
   assert.match(worker, /customer_phone: ''/);
@@ -831,7 +829,7 @@ test('customer service views translate machine fields to English', () => {
   assert.match(myServices, /data-testid="go-rate-button"/);
   assert.match(detailModal, /const canRate = effectiveStatus === 'resolved' \|\| effectiveStatus === 'pending_review'/);
   assert.match(detailModal, /tabs\.push\(\{ key: 'repairRecord', label: 'Service Report' \}\)/);
-  assert.match(myServices, /formatCustomerDeviceLine\(order\)/);
+  assert.match(myServices, /formatCustomerDeviceLine\(order, isCn/);
   assert.match(detailModal, /Machine: <span/);
 });
 
@@ -843,7 +841,7 @@ test('payment instructions are readable and send customers back to Messages with
   assert.match(paymentModal, /bg-white text-slate-950/);
   assert.match(paymentModal, /https:\/\/www\.paypal\.com\/ncp\/payment\/4YLFXRSUSZJ5N/);
   assert.match(paymentModal, /Open PayPal Payment Page/);
-  assert.match(paymentModal, /send the bank slip or PayPal screenshot in Messages/);
+  assert.match(paymentModal, /send the bank slip or PayPal screenshot to the engineer in Messages/);
   assert.match(paymentModal, /Continue with PayPal Instructions/);
   assert.match(pricingPanels, /onConfirmed\?\.\('messages'\)/);
   assert.match(detailModal, /if \(nextTab\) setTab\(nextTab\)/);
