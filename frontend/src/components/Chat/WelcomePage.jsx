@@ -1,7 +1,6 @@
 import {
   BookOpen,
   Calculator,
-  ClipboardCheck,
   ShieldCheck,
 } from 'lucide-react';
 import { BrandMark } from '../common/BrandMark';
@@ -9,67 +8,23 @@ import { isCnLocale } from '../../utils/locale';
 
 const copy = {
   en: {
-    eyebrow: 'AI-First Service Platform',
-    headline: '3 minutes of AI chat. Get your solution and next steps.',
-    intro: 'Describe the alarm, material, or machine issue. In a short AI conversation, you\'ll get a structured diagnosis, solution options, and clear next steps — no waiting, no back-and-forth.',
-    cardTitle: 'From symptoms to solution — in one conversation.',
-    cardText: 'Write what you see on site. AI organizes the issue, suggests solutions, flags safety concerns, and prepares next-step options — all in a short chat.',
-    trustPoints: [
-      'AI asks for missing details before the case moves forward',
-      'AI organizes alarms, downtime, cutting quality, parts questions, maintenance, and process context',
-      'Final diagnosis, quote, purchase, and site safety decisions still require qualified review',
-    ],
-    examplesTitle: 'Common starting points',
-    examples: [
-      'BM111 alarm during height calibration',
-      'Heavy burrs on stainless steel edge',
-      'Laser source power drops after warm-up',
-      'Press brake angle drifts across the bend',
-    ],
+    eyebrow: 'SAGEMRO Service OS',
+    headline: 'AI for sheet metal equipment service and troubleshooting.',
+    intro: 'Describe any alarm, cutting issue, bending problem, or machine symptom. SAGEMRO AI turns what you see into organized context.',
     resourceTitle: 'Useful public resources',
     resources: [
       { icon: Calculator, label: 'Calculators', desc: 'Weight, material budget, laser cost, and bending tonnage', href: '/tools' },
       { icon: BookOpen, label: 'Insights', desc: 'Practical notes for equipment and process decisions', href: '/insights' },
     ],
-    capabilities: [
-      'Describe → AI structures it',
-      'Risks flagged early',
-      'AI catches what you missed',
-      'Parameter context',
-      'Parts questions',
-      'Next-step options',
-    ],
   },
   zh: {
-    eyebrow: 'AI 先行 · 服务简报',
-    headline: '跟 AI 聊三分钟，获取设备问题解决方案和下一步。',
-    intro: '说明报警、材料或设备现象。AI 会在简短对话中给出结构化诊断、解决思路和明确的下一步建议——无需等待，无需来回沟通。',
-    cardTitle: '从现象到方案，一次对话搞定。',
-    cardText: '按现场实际情况填写即可。AI 整理问题、给出解决思路、提示安全风险、推送下一步——全部在简短对话中完成。',
-    trustPoints: [
-      'AI 会追问缺失信息，避免一开始就遗漏关键条件',
-      'AI 会整理报警、停机、切割质量、备件疑问、维保和工艺背景',
-      '最终诊断、报价、采购和现场安全要求仍需合格人员确认',
-    ],
-    examplesTitle: '常见提问方式',
-    examples: [
-      'BM111 调高校准时报错',
-      '不锈钢切割边缘毛刺很重',
-      '激光器预热后功率下降',
-      '折弯角度沿长度方向漂移',
-    ],
+    eyebrow: 'SAGEMRO 智能服务系统',
+    headline: '钣金设备故障，先用 AI 看看。',
+    intro: '报了什么警、切割出了什么问题、折弯不对了——描述你现场遇到的情况，SAGEMRO AI 帮你理清楚。',
     resourceTitle: '公开资源',
     resources: [
       { icon: Calculator, label: '计算工具', desc: '重量、材料预算、激光切割成本和折弯吨位', href: '/tools' },
       { icon: BookOpen, label: '行业观察', desc: '设备与工艺决策相关的实用说明', href: '/insights' },
-    ],
-    capabilities: [
-      '描述即结构化',
-      '提前预警风险',
-      'AI 追问补漏',
-      '参数背景',
-      '备件疑问',
-      '可选下一步',
     ],
   },
 };
@@ -95,62 +50,20 @@ export function WelcomePage() {
           </p>
         </div>
 
-        <div className="mx-auto mt-7 max-w-3xl rounded-3xl border border-[var(--color-border)] bg-[var(--color-surface-elevated)] p-4 text-left shadow-sm sm:p-5">
-          <div className="mb-4 flex items-start gap-3">
-            <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl bg-[var(--color-primary)]/12 text-[var(--color-primary)]">
-              <ClipboardCheck size={18} />
-            </div>
-            <div>
-              <h2 className="text-base font-semibold text-[var(--color-text-primary)]">
-                {t.cardTitle}
-              </h2>
-              <p className="mt-1 text-xs leading-relaxed text-[var(--color-text-secondary)] sm:text-sm">
-                {t.cardText}
-              </p>
-            </div>
+        <div className="mx-auto mt-7 max-w-sm rounded-3xl border border-[var(--color-border)] bg-[var(--color-surface-elevated)] p-4 shadow-sm sm:p-5">
+          <div className="mb-2 text-center text-[11px] font-medium uppercase tracking-[0.16em] text-[var(--color-text-muted)]">
+            {t.resourceTitle}
           </div>
-          <div className="grid gap-2 text-xs leading-relaxed text-[var(--color-text-secondary)] sm:grid-cols-3">
-            {t.trustPoints.map((item) => (
-              <div key={item} className="flex gap-2 rounded-2xl bg-[var(--color-surface)] px-3 py-2.5">
-                <ShieldCheck size={14} className="mt-0.5 shrink-0 text-[var(--color-primary)]" />
-                <span>{item}</span>
-              </div>
+          <div className="grid gap-2 sm:grid-cols-2">
+            {t.resources.map(({ icon: Icon, label, desc, href }) => (
+              <a key={label} href={href} className="flex items-start gap-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-chat-bg)] px-3 py-2.5 text-left transition hover:border-[var(--color-primary)]">
+                <Icon size={16} className="mt-0.5 shrink-0 text-[var(--color-primary)]" />
+                <span>
+                  <span className="block text-xs font-semibold text-[var(--color-text-primary)]">{label}</span>
+                  <span className="mt-0.5 block text-xs leading-relaxed text-[var(--color-text-secondary)]">{desc}</span>
+                </span>
+              </a>
             ))}
-          </div>
-          <div className="mt-4 flex flex-wrap justify-center gap-2">
-            {t.capabilities.map((label) => (
-              <span key={label} className="rounded-full border border-[var(--color-border)] bg-[var(--color-chat-bg)] px-3 py-1.5 text-[11px] font-medium text-[var(--color-text-primary)]">
-                {label}
-              </span>
-            ))}
-          </div>
-          <div className="mt-4 border-t border-[var(--color-border)] pt-4">
-            <div className="mb-2 text-center text-[11px] font-medium uppercase tracking-[0.16em] text-[var(--color-text-muted)]">
-              {t.examplesTitle}
-            </div>
-            <div className="grid gap-2 sm:grid-cols-2">
-              {t.examples.map((item) => (
-                <div key={item} className="rounded-xl border border-[var(--color-border)] bg-[var(--color-chat-bg)] px-3 py-2 text-xs text-[var(--color-text-secondary)]">
-                  {item}
-                </div>
-              ))}
-            </div>
-          </div>
-          <div className="mt-4 border-t border-[var(--color-border)] pt-4">
-            <div className="mb-2 text-center text-[11px] font-medium uppercase tracking-[0.16em] text-[var(--color-text-muted)]">
-              {t.resourceTitle}
-            </div>
-            <div className="grid gap-2 sm:grid-cols-2">
-              {t.resources.map(({ icon: Icon, label, desc, href }) => (
-                <a key={label} href={href} className="flex items-start gap-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-chat-bg)] px-3 py-2.5 text-left transition hover:border-[var(--color-primary)]">
-                  <Icon size={16} className="mt-0.5 shrink-0 text-[var(--color-primary)]" />
-                  <span>
-                    <span className="block text-xs font-semibold text-[var(--color-text-primary)]">{label}</span>
-                    <span className="mt-0.5 block text-xs leading-relaxed text-[var(--color-text-secondary)]">{desc}</span>
-                  </span>
-                </a>
-              ))}
-            </div>
           </div>
         </div>
       </div>
