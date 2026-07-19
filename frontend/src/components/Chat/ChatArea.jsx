@@ -35,7 +35,7 @@ export function ChatArea({
     : serviceName;
   const subtitle = isCn
     ? '跟 AI 聊三分钟，获取解决方案和下一步'
-    : '3 minutes of AI chat. Get your solution and next steps.';
+    : 'Quick troubleshooting context from SAGEMRO AI.';
   const aboutLabel = isCn ? '关于 SAGEMRO' : 'About SAGEMRO';
   const homeLabel = isCn ? '返回首页' : 'Back to start';
   const aiNotice = isCn

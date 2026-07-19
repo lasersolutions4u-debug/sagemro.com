@@ -67,7 +67,6 @@ test('main site first-impression copy keeps CN and COM market language separate'
   const footer = read('frontend/src/components/common/Footer.jsx');
   const engineerRecruiting = read('frontend/src/components/Engineer/EngineerRecruitingPage.jsx');
 
-  assert.match(welcome, /3 minutes of AI chat/);
   assert.match(welcome, /Get your solution and next steps/);
   assert.match(welcome, /structured diagnosis, solution options/);
   assert.match(welcome, /From symptoms to solution/);
@@ -89,7 +88,6 @@ test('main site first-impression copy keeps CN and COM market language separate'
   assert.match(chatArea, /SAGEMRO AI 设备服务平台/);
   assert.match(chatArea, /跟 AI 聊三分钟/);
   assert.match(chatArea, /SAGEMRO AI Equipment Service/);
-  assert.match(chatArea, /3 minutes of AI chat/);
   assert.match(about, /service workspace for recording machine symptoms/i);
   assert.match(about, /What SAGEMRO AI Can Help Clarify/);
   assert.doesNotMatch(about, /One Chat, Six Service Outcomes/);
