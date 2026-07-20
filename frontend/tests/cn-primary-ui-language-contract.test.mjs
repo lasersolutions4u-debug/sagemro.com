@@ -173,13 +173,22 @@ test('CN recruiting and shared overlays localize secondary labels', () => {
   const feedback = read('frontend/src/components/common/FeedbackHost.jsx');
   const feedbackUtils = read('frontend/src/utils/feedback.js');
 
-  assert.match(recruiting, /为什么加入 SAGEMRO|加入后的收益/);
-  assert.match(recruiting, /派工前查看资料/);
+  assert.match(recruiting, /让工程师专注解决设备问题，不再被杂务拖住/);
+  assert.match(recruiting, /本地维修团队与个人工程师/);
+  assert.match(recruiting, /AI 接住流程，工程师负责判断/);
+  assert.match(recruiting, /减少信息不足造成的非必要上门/);
+  assert.match(recruiting, /改善成本与利润空间/);
+  assert.match(recruiting, /服务安全与责任边界/);
+  assert.match(recruiting, /申请加入服务网络/);
+  assert.match(recruiting, /个人 \/ 团队服务能力/);
   assert.match(recruiting, /合作稳定后/);
   assert.match(recruiting, /removeTag\(tag\)/);
-  assert.match(recruiting, /aria-label="Close application form"/);
-  assert.match(recruiting, /title="Remove"/);
-  assert.doesNotMatch(recruiting, /aria-label=\{copy/);
+  assert.match(recruiting, /aria-label=\{copy\.closeForm\}/);
+  assert.match(recruiting, /title=\{removeLabel\}/);
+  assert.match(recruiting, /removeTag: '移除'/);
+  assert.match(recruiting, /closeForm: '关闭申请表'/);
+  assert.doesNotMatch(recruiting, /aria-label="Close application form"/);
+  assert.doesNotMatch(recruiting, /title="Remove"/);
 
   assert.match(feedback, /isCnLocale/);
   assert.match(feedback, /关闭/);
