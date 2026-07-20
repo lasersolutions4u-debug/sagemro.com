@@ -176,7 +176,6 @@ VITE_API_BASE=https://api.sagemro.com
 | `ADMIN_PASSWORD_CN` | 中国版后台管理员密码（需与 `ADMIN_PHONE_CN` 成对配置） |
 | `ONESIGNAL_APP_ID` | OneSignal 推送 App ID |
 | `ONESIGNAL_REST_API_KEY` | OneSignal REST API Key |
-| `AMAP_WEB_SERVICE_KEY` | China Amap Web Service geocoding key, used only by the Worker |
 | `MAPBOX_ACCESS_TOKEN` | International Mapbox geocoding token, used only by the Worker |
 
 ---

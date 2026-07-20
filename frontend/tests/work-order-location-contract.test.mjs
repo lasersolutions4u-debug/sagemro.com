@@ -11,6 +11,8 @@ function read(relativePath) {
 
 test('customer service requests capture the site address and browser coordinates', () => {
   const modal = read('frontend/src/components/Sidebar/WorkOrderModal.jsx');
+  const detail = read('frontend/src/components/WorkOrder/WorkOrderDetailModal.jsx');
+  const admin = read('admin/src/pages/WorkOrdersPage.jsx');
   const app = read('frontend/src/App.jsx');
   const api = read('frontend/src/services/api.js');
 
@@ -20,7 +22,13 @@ test('customer service requests capture the site address and browser coordinates
   assert.match(modal, /serviceModeOptions/);
   assert.match(app, /service_latitude: data\.service_latitude/);
   assert.match(app, /service_location_source: data\.service_location_source/);
-  assert.match(modal, /searchServiceLocations/);
+  assert.match(modal, /const allowAddressSearch = !isCn/);
+  assert.match(modal, /\{allowAddressSearch && \(/);
+  assert.match(detail, /const allowAddressSearch = !isCn/);
+  assert.match(detail, /\{allowAddressSearch && \(/);
+  assert.match(admin, /const isCn = runtimeConfig\.locale === 'zh-CN'/);
+  assert.match(admin, /const allowAddressSearch = !isCn/);
+  assert.match(admin, /\{allowAddressSearch && \(/);
   assert.match(api, /\/api\/location\/search/);
 });
 
@@ -49,7 +57,7 @@ test('remote and hybrid work orders can be converted to confirmed onsite service
   assert.match(detail, /requestOnsiteConversion/);
   assert.match(detail, /confirmOnsiteConversion/);
   assert.match(detail, /onsite_conversion_status/);
-  assert.match(detail, /searchServiceLocations/);
+  assert.match(detail, /\{allowAddressSearch && \(/);
   assert.match(detail, /navigator\.geolocation\.getCurrentPosition/);
   assert.match(worker, /handleRequestOnsiteConversion/);
   assert.match(worker, /handleConfirmOnsiteConversion/);

@@ -141,10 +141,7 @@ const WORK_ORDER_COPY = {
     locationCaptured: '现场定位已获取',
     locationRequired: '现场服务需要提供客户现场地址和定位',
     locationFailed: '无法获取定位，请允许浏览器使用定位后重试。',
-    searchLocation: '搜索地址',
-    searchingLocation: '搜索中...',
-    mapSearchResults: '请选择地图结果确认服务点位',
-    noLocationResults: '没有找到匹配的地址',
+    locationHint: '请在设备现场使用手机获取当前位置，用于确认服务点位和工程师到场核验。',
     equipmentModel: '设备型号 / 规格',
     modelPlaceholder: '例如：C3015 3000W、BM111、喷嘴 1.5S',
     description: '故障 / 服务需求描述',
@@ -236,6 +233,7 @@ const brandPresets = {
 
 export function WorkOrderModal({ isOpen, onClose, onSubmit }) {
   const isCn = isCnLocale();
+  const allowAddressSearch = !isCn;
   const copy = isCn ? WORK_ORDER_COPY.cn : WORK_ORDER_COPY.en;
   const deviceTypeOptions = isCn ? DEVICE_TYPE_OPTIONS.cn : DEVICE_TYPE_OPTIONS.en;
   const [form, setForm] = useState({
@@ -590,16 +588,21 @@ export function WorkOrderModal({ isOpen, onClose, onSubmit }) {
             placeholder={copy.serviceAddressPlaceholder}
             className="w-full px-3 py-2 border border-[var(--color-border)] dark:border-[var(--color-border-strong)] rounded-xl bg-[var(--color-surface)] dark:bg-[var(--color-surface-elevated)] text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
           />
+          {isCn && (
+            <p className="text-xs leading-relaxed text-[var(--color-text-secondary)]">{copy.locationHint}</p>
+          )}
           <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={searchSiteAddress}
-              disabled={locationSearching}
-              className="inline-flex items-center gap-2 rounded-xl border border-[var(--color-border)] px-3 py-2 text-sm text-[var(--color-text-primary)] hover:border-[var(--color-primary)] disabled:opacity-50"
-            >
-              {locationSearching ? <Loader2 size={16} className="animate-spin" /> : <Search size={16} />}
-              {locationSearching ? copy.searchingLocation : copy.searchLocation}
-            </button>
+            {allowAddressSearch && (
+              <button
+                type="button"
+                onClick={searchSiteAddress}
+                disabled={locationSearching}
+                className="inline-flex items-center gap-2 rounded-xl border border-[var(--color-border)] px-3 py-2 text-sm text-[var(--color-text-primary)] hover:border-[var(--color-primary)] disabled:opacity-50"
+              >
+                {locationSearching ? <Loader2 size={16} className="animate-spin" /> : <Search size={16} />}
+                {locationSearching ? copy.searchingLocation : copy.searchLocation}
+              </button>
+            )}
             <button
               type="button"
               onClick={captureSiteLocation}
@@ -610,7 +613,7 @@ export function WorkOrderModal({ isOpen, onClose, onSubmit }) {
               {locating ? copy.locatingSite : copy.locateSite}
             </button>
           </div>
-          {locationResults.length > 0 && (
+          {allowAddressSearch && locationResults.length > 0 && (
             <div className="space-y-2 rounded-xl border border-[var(--color-border)] p-2">
               <p className="text-xs text-[var(--color-text-muted)]">{copy.mapSearchResults}</p>
               {locationResults.map((result) => (

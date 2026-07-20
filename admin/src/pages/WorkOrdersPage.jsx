@@ -543,6 +543,8 @@ const TEXT = {
 
 export function WorkOrdersPage() {
   const t = { ...TEXT.en, ...(TEXT[runtimeConfig.locale] || {}) };
+  const isCn = runtimeConfig.locale === 'zh-CN';
+  const allowAddressSearch = !isCn;
   const CURRENCY = runtimeConfig.locale === 'zh-CN' ? 'CNY' : 'USD';
   const [status, setStatus] = useState('all');
   const [data, setData] = useState({ total: 0, list: [] });
@@ -1343,7 +1345,7 @@ export function WorkOrdersPage() {
                       </h4>
                       <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
                         {runtimeConfig.locale === 'zh-CN'
-                          ? '管理员只有在独立核实客户地址和地图位置后，才可以代客户确认；代确认原因会写入审计日志。'
+                          ? '管理员只有在独立核实客户地址和现场坐标后，才可以代客户确认；代确认原因会写入审计日志。'
                           : 'Admin may confirm on behalf of the customer only after independently verifying the address and map point.'}
                       </p>
                       {detail.onsite_conversion_request_note && (
@@ -1360,18 +1362,23 @@ export function WorkOrdersPage() {
                           placeholder={runtimeConfig.locale === 'zh-CN' ? '准确的客户现场地址' : 'Exact customer site address'}
                           className="min-w-0 flex-1 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)]"
                         />
-                        <button
-                          type="button"
-                          onClick={searchAdminLocation}
-                          disabled={adminLocationSearching}
-                          className="rounded-lg border border-[var(--color-border)] px-3 py-2 text-sm text-[var(--color-text-secondary)] disabled:opacity-50"
-                        >
-                          {adminLocationSearching
-                            ? (runtimeConfig.locale === 'zh-CN' ? '搜索中...' : 'Searching...')
-                            : (runtimeConfig.locale === 'zh-CN' ? '搜索地图' : 'Search map')}
-                        </button>
+                        {allowAddressSearch && (
+                          <button
+                            type="button"
+                            onClick={searchAdminLocation}
+                            disabled={adminLocationSearching}
+                            className="rounded-lg border border-[var(--color-border)] px-3 py-2 text-sm text-[var(--color-text-secondary)] disabled:opacity-50"
+                          >
+                            {adminLocationSearching ? 'Searching...' : 'Search map'}
+                          </button>
+                        )}
                       </div>
-                      {adminLocationResults.length > 0 && (
+                      {isCn && (
+                        <p className="text-xs leading-relaxed text-[var(--color-text-muted)]">
+                          仅在已通过客户或现场人员独立核实后代为录入坐标，并填写代确认原因；系统会保留审计记录。
+                        </p>
+                      )}
+                      {allowAddressSearch && adminLocationResults.length > 0 && (
                         <div className="space-y-1 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-2">
                           {adminLocationResults.map((result) => (
                             <button

@@ -309,6 +309,7 @@ function createEmptyEquipmentNeed() {
 // ========== 主组件 ==========
 export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess, onConfirmed, userType, userId }) {
   const isCn = isCnLocale();
+  const allowAddressSearch = !isCn;
   const copy = isCn ? COPY.cn : COPY.en;
   const [detail, setDetail] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -804,7 +805,7 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
               <div>
                 <h3 className="text-sm font-medium text-[var(--color-text-primary)]">{isCn ? '确认上门服务现场位置' : 'Confirm the on-site service location'}</h3>
                 <p className="mt-1 text-xs text-[var(--color-text-secondary)]">
-                  {isCn ? '工程师已申请上门处理。请确认准确的厂区入口、楼栋或车间位置。' : 'The engineer requested an on-site visit. Confirm the exact gate, building, or workshop location before dispatch.'}
+                  {isCn ? '工程师已申请上门处理。请填写准确地址，并在设备现场使用手机获取当前位置。' : 'The engineer requested an on-site visit. Confirm the exact gate, building, or workshop location before dispatch.'}
                 </p>
                 {detail.onsite_conversion_request_note && (
                   <p className="mt-2 rounded-lg bg-[var(--color-surface-elevated)] px-3 py-2 text-xs text-[var(--color-text-primary)]">
@@ -829,15 +830,17 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
                 className="w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/40"
               />
               <div className="flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  onClick={searchConversionLocation}
-                  disabled={siteLocationSearching}
-                  className="inline-flex items-center gap-2 rounded-xl border border-[var(--color-border)] px-3 py-2 text-sm text-[var(--color-text-primary)] hover:border-[var(--color-primary)] disabled:opacity-50"
-                >
-                  {siteLocationSearching ? <Loader2 size={16} className="animate-spin" /> : <Search size={16} />}
-                  {isCn ? '搜索地址' : 'Search address'}
-                </button>
+                {allowAddressSearch && (
+                  <button
+                    type="button"
+                    onClick={searchConversionLocation}
+                    disabled={siteLocationSearching}
+                    className="inline-flex items-center gap-2 rounded-xl border border-[var(--color-border)] px-3 py-2 text-sm text-[var(--color-text-primary)] hover:border-[var(--color-primary)] disabled:opacity-50"
+                  >
+                    {siteLocationSearching ? <Loader2 size={16} className="animate-spin" /> : <Search size={16} />}
+                    Search address
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={captureConversionLocation}
@@ -848,7 +851,7 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
                   {isCn ? '使用当前位置' : 'Use current location'}
                 </button>
               </div>
-              {siteLocationResults.length > 0 && (
+              {allowAddressSearch && siteLocationResults.length > 0 && (
                 <div className="space-y-1 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-2">
                   {siteLocationResults.map((result) => (
                     <button

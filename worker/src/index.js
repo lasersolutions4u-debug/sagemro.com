@@ -974,11 +974,11 @@ const TOOLS_SCHEMAS = [
           service_coordinate_system: {
             type: 'string',
             enum: ['wgs84', 'gcj02'],
-            description: '客户现场坐标系。浏览器 GPS 通常使用 wgs84；高德地图坐标使用 gcj02。'
+            description: '客户现场坐标系。浏览器定位通常使用 wgs84；gcj02 仅用于兼容历史坐标。'
           },
           service_location_source: {
             type: 'string',
-            description: '现场定位来源，例如 customer_browser、amap 或 customer_confirmed。'
+            description: '现场定位来源，例如 customer_browser 或 customer_confirmed。'
           }
         },
         required: ['type', 'description', 'urgency']
@@ -4117,8 +4117,8 @@ async function handleLocationSearch(request, env) {
     const result = await searchLocationProvider({ query, market, env, limit });
     return jsonResponse({ market, query, ...result });
   } catch (error) {
-    if (error.message === 'amap_key_not_configured' || error.message === 'mapbox_token_not_configured') {
-      return errorResponse(market === 'cn' ? '高德地图服务尚未配置' : 'Mapbox search is not configured', 503);
+    if (error.message === 'mapbox_token_not_configured') {
+      return errorResponse('Mapbox search is not configured', 503);
     }
     console.error('[location-search] provider request failed:', error.message);
     return errorResponse(market === 'cn' ? '地址搜索暂时不可用，请稍后重试' : 'Address search is temporarily unavailable. Please try again.', 502);
