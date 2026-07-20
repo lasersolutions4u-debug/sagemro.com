@@ -52,7 +52,7 @@ Codex（本地）
 - `/AGENTS.md`、`/TECH-SPEC.md`、`/DEPLOY.md` — 项目文档（进 git）
 
 ## 五、协作约束
-- 所有提交必须能通过 `test` job
+- 所有提交必须能通过完整的 `test` job（包含 Worker 测试、前端 lint/测试/构建和后台构建）
 - 修改 `wrangler.toml` / `deploy.yml` / Pages 项目名前，先在对话中确认
 - secrets 只在 GitHub Repo Settings 配置，绝不写入代码
 - API Token 是 **Custom Token**（见 TECH-SPEC.md），**不是** "Edit Cloudflare Workers" 模板

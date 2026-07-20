@@ -67,9 +67,11 @@ test('main site first-impression copy keeps CN and COM market language separate'
   const footer = read('frontend/src/components/common/Footer.jsx');
   const engineerRecruiting = read('frontend/src/components/Engineer/EngineerRecruitingPage.jsx');
 
-  assert.match(welcome, /AI for sheet metal equipment service and troubleshooting/);
+  assert.match(welcome, /AI assistant specialized for laser and metal forming equipment\./);
+  assert.match(welcome, /AI for laser and metal forming equipment service and troubleshooting/);
   assert.match(welcome, /Describe any alarm, cutting issue, bending problem, or machine symptom/);
   assert.match(welcome, /turns what you see into organized context/);
+  assert.match(welcome, /AI-generated content is for reference only/);
   assert.match(welcome, /Useful public resources/);
   assert.match(welcome, /href: '\/tools'/);
   assert.match(welcome, /href: '\/insights'/);
@@ -79,9 +81,15 @@ test('main site first-impression copy keeps CN and COM market language separate'
   assert.doesNotMatch(welcome, /Machine selection|new-machine evaluation/);
   assert.doesNotMatch(welcome, /supports international customers with independent after-sales service, spare parts, consumables/);
   assert.doesNotMatch(welcome, /purchasing decision|Clear facts first|BM111 alarm|burrs on stainless steel/i);
-  assert.match(welcome, /钣金设备故障，先用 AI 看看/);
-  assert.match(welcome, /报了什么警、切割出了什么问题、折弯不对了/);
-  assert.match(welcome, /SAGEMRO AI 帮你理清楚/);  assert.match(chatArea, /SAGEMRO AI 设备服务平台/);
+  assert.match(welcome, /专为激光和成型设备打造的智能服务助手/);
+  assert.match(welcome, /激光和成型设备问题，先问AI试试/);
+  assert.match(welcome, /切割出了什么问题、折弯哪里不对、焊接报了什么警/);
+  assert.match(welcome, /让SAGEMRO AI 给你分析和建议/);
+  assert.match(welcome, /内容由 AI 生成，仅供参考/);
+  assert.doesNotMatch(welcome, /钣金设备故障，先用 AI 看看/);
+  assert.doesNotMatch(welcome, /报了什么警、切割出了什么问题、折弯不对了/);
+  assert.match(welcome, /max-w-2xl/);
+  assert.match(chatArea, /SAGEMRO AI 设备服务平台/);
   assert.match(chatArea, /跟 AI 聊三分钟/);
   assert.match(chatArea, /SAGEMRO AI Equipment Service/);
   assert.match(chatArea, /3 minutes of AI chat/);
