@@ -34,13 +34,13 @@ export function ChatArea({
     ? (currentTitle || (isCn ? '服务对话' : 'Service conversation'))
     : serviceName;
   const subtitle = isCn
-    ? '跟 AI 聊三分钟，获取解决方案和下一步'
-    : 'Quick troubleshooting context from SAGEMRO AI.';
+    ? '专为激光和成型设备打造的智能服务助手'
+    : 'AI assistant specialized for laser and metal forming equipment.';
   const aboutLabel = isCn ? '关于 SAGEMRO' : 'About SAGEMRO';
   const homeLabel = isCn ? '返回首页' : 'Back to start';
   const aiNotice = isCn
-    ? 'AI 生成初步服务简报。最终诊断、报价和现场安全需经 SAGEMRO 服务流程确认。'
-    : 'AI prepares the initial brief. Final diagnosis, pricing, and safety decisions follow the SAGEMRO service process.';
+    ? '内容由 AI 生成，仅供参考。最终诊断、报价和现场安全需经 SAGEMRO 服务流程确认。'
+    : 'AI-generated content is for reference only. Final diagnosis, pricing, and safety decisions follow the SAGEMRO service process.';
   const detailsLabel = isCn ? '详情' : 'Details';
 
   return (
