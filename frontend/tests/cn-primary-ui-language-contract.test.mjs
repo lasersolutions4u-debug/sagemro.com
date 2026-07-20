@@ -175,9 +175,10 @@ test('CN recruiting and shared overlays localize secondary labels', () => {
 
   assert.match(recruiting, /让工程师专注解决设备问题，不再被杂务拖住/);
   assert.match(recruiting, /本地维修团队与个人工程师/);
-  assert.match(recruiting, /AI 接住流程，工程师负责判断/);
-  assert.match(recruiting, /减少信息不足造成的非必要上门/);
-  assert.match(recruiting, /改善成本与利润空间/);
+  assert.match(recruiting, /AI 先把问题理清，工程师专心确认方案和落地执行/);
+  assert.match(recruiting, /沟通清楚再上门，少跑没必要去的现场/);
+  assert.match(recruiting, /让工程师少做杂事，让团队更有效率/);
+  assert.match(recruiting, /形成团队服务的知识和技能资产/);
   assert.match(recruiting, /服务安全与责任边界/);
   assert.match(recruiting, /申请加入服务网络/);
   assert.match(recruiting, /个人 \/ 团队服务能力/);
@@ -187,6 +188,7 @@ test('CN recruiting and shared overlays localize secondary labels', () => {
   assert.match(recruiting, /title=\{removeLabel\}/);
   assert.match(recruiting, /removeTag: '移除'/);
   assert.match(recruiting, /closeForm: '关闭申请表'/);
+  assert.doesNotMatch(recruiting, /AI 接住流程|合作能带来什么|减少信息不足造成的非必要上门/);
   assert.doesNotMatch(recruiting, /aria-label="Close application form"/);
   assert.doesNotMatch(recruiting, /title="Remove"/);
 
