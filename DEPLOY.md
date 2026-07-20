@@ -156,7 +156,6 @@ npx wrangler secret put ADMIN_PASSWORD --env production
 npx wrangler secret put ADMIN_PHONE_CN --env production      # 中国版后台 admin.sagemro.cn；不设置时暂回退国际版后台账号
 npx wrangler secret put ADMIN_PASSWORD_CN --env production
 npx wrangler secret put ONESIGNAL_REST_API_KEY --env production
-npx wrangler secret put AMAP_WEB_SERVICE_KEY --env production
 npx wrangler secret put MAPBOX_ACCESS_TOKEN --env production
 ```
 

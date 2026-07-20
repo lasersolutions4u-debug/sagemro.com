@@ -3,25 +3,20 @@ import test from 'node:test';
 
 import { searchLocationProvider } from '../src/lib/location-search.js';
 
-test('queries Amap for CN addresses and normalizes GCJ-02 results', async () => {
-  let requestedUrl;
+test('does not query a third-party geocoder for CN addresses', async () => {
+  let requestCount = 0;
   const result = await searchLocationProvider({
     query: '济南市历城区',
     market: 'cn',
-    env: { AMAP_WEB_SERVICE_KEY: 'test-amap-key' },
-    fetchImpl: async (url) => {
-      requestedUrl = new URL(url);
-      return new Response(JSON.stringify({
-        status: '1',
-        geocodes: [{ formatted_address: '济南市历城区', location: '117.1201,36.6512', level: '区县' }],
-      }));
+    fetchImpl: async () => {
+      requestCount += 1;
+      throw new Error('CN location search must not call a provider');
     },
   });
 
-  assert.equal(requestedUrl.hostname, 'restapi.amap.com');
-  assert.equal(requestedUrl.searchParams.get('key'), 'test-amap-key');
-  assert.equal(result.provider, 'amap');
-  assert.equal(result.results[0].coordinate_system, 'gcj02');
+  assert.equal(requestCount, 0);
+  assert.equal(result.provider, 'browser_location');
+  assert.deepEqual(result.results, []);
 });
 
 test('queries Mapbox for international addresses and normalizes WGS84 results', async () => {
