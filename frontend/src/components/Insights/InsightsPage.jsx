@@ -30,10 +30,10 @@ export function InsightsPage({ pathname = '/insights', onOpenLegal }) {
   const insight = getInsightBySlug(slug);
 
   useEffect(() => {
-    const title = insight ? insight.title : 'SAGEMRO Insights for Laser Cutting and Sheet Metal Equipment';
+    const title = insight ? insight.title : 'SAGEMRO Insights for Laser and Metal Forming Equipment';
     const description = insight
       ? insight.description
-      : 'Practical notes, calculators, and decision guides for laser cutting, bending, materials, and sheet metal equipment.';
+      : 'Practical notes, calculators, and decision guides for laser and metal forming equipment.';
     document.title = `${title} | SAGEMRO`;
     setMeta('description', description);
     setCanonical(insight ? `/insights/${insight.slug}` : '/insights');

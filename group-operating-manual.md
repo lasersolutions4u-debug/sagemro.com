@@ -10,7 +10,7 @@
 
 ### 1.1 我们是谁
 
-**Euchio Machinery（济南钰峭机械有限公司）** 是一家专注于钣金加工设备领域的国际化运营公司。
+**Euchio Machinery（济南钰峭机械有限公司）** 是一家专注于激光和成型设备领域的国际化运营公司。
 
 我们不制造设备——我们做三件事：
 1. 通过 OEM 合作打造自有设备品牌（EUCHIO）
@@ -19,11 +19,11 @@
 
 ### 1.2 统一愿景
 
-**让全球钣金加工行业用上可靠的中国制造设备和专业服务。**
+**让全球激光和成型设备行业用上可靠的中国制造设备和专业服务。**
 
 ### 1.3 统一使命
 
-连接中国钣金设备制造能力与全球市场需求——通过品牌运营、技术推广和服务平台。
+连接中国激光和成型设备制造能力与全球市场需求——通过品牌运营、技术推广和服务平台。
 
 ### 1.4 统一价值观（所有项目共同遵守）
 
@@ -46,7 +46,7 @@
 
 | 品牌 | 对外一句话 | 客户问「你们公司和 XX 什么关系」时 |
 |------|-----------|----------------------------------|
-| **EUCHIO** | EUCHIO is a sheet metal equipment brand, backed by Euchio Machinery's OEM partnership network. | — |
+| **EUCHIO** | EUCHIO is a laser and metal forming equipment brand, backed by Euchio Machinery's OEM partnership network. | — |
 | **LISHI LASER** | LISHI LASER is a specialized gas mixing technology manufacturer. Euchio Machinery handles their global marketing and distribution. | "We work with LISHI as their global distribution partner. They focus on manufacturing the technology; we handle overseas sales and support." |
 | **SAGEMRO** | SAGEMRO is an AI-powered MRO platform for the sheet metal fabrication industry. Founded by the team behind Euchio Machinery. | "SAGEMRO is an independent platform. It was created by our team because we saw the industry needed better after-sales support — for all machine brands, not just ours." |
 
@@ -116,7 +116,7 @@
 |------|------|
 | 有人问「你们是工厂还是贸易商」 | 如实回答：我们有自有品牌，OEM 工厂代工制造；同时也代理合作工厂的设备 |
 | gasmixtech 的客户也想买激光切割机 | 由销售人员单独沟通，不在 gasmixtech.com 上宣传 Euchio 整机 |
-| sagemro 上来了一个非钣金设备的工单 | 接受，但不在平台上宣传非钣金业务。sagemro 是钣金行业平台 |
+| sagemro 上来了一个非激光和成型设备的工单 | 接受，但不在平台上宣传非核心品类业务。sagemro 是激光和成型设备服务平台 |
 | 某个合作工厂要求我们宣传他们是「唯一合作伙伴」 | 拒绝。使用「trusted partner」或「preferred manufacturer」，除非有书面独家协议 |
 | 竞品在某个关键词上排名超过我们 | 分析他们为什么被谷歌认为更相关，提升内容质量，而不是堆关键词 |
 

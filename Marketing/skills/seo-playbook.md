@@ -34,7 +34,7 @@ if (crawlerUA.test(request.headers.get('user-agent'))) {
 **P0 最低成本：动态 `<title>`**
 ```jsx
 // 在 index.html 中用占位符，或 React Helmet
-<title>SAGEMRO - 钣金加工设备技术咨询与维修服务平台</title>
+<title>SAGEMRO - 激光和成型设备技术咨询与维修服务平台</title>
 <meta name="description" content="AI小智提供激光切割、折弯、焊接等设备即时技术诊断，精准匹配工程师上门服务。">
 ```
 
@@ -52,7 +52,7 @@ if (crawlerUA.test(request.headers.get('user-agent'))) {
   "SAGEMRO"、"小智AI"
   
 第二层：品类词（3-5个）
-  "钣金加工设备维修"、"激光切割机维修"、"折弯机维修"
+  "激光和成型设备维修"、"激光切割机维修"、"折弯机维修"
   
 第三层：痛点词（20+个）
   "激光切割毛刺多怎么调"、"光纤激光器功率衰减"

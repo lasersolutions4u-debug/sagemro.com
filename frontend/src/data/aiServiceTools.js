@@ -131,7 +131,7 @@ export function buildAiToolPrompt(tool, values) {
   return `${tool.promptIntro}
 
 Business context:
-- SAGEMRO provides independent service coordination for laser cutting and sheet metal equipment, separate from machine-maker after-sales desks and open technician marketplaces.
+- SAGEMRO provides independent service coordination for laser and metal forming equipment, separate from machine-maker after-sales desks and open technician marketplaces.
 - AI advice is preliminary and must avoid unsafe repair instructions, absolute diagnosis, or binding price commitments.
 - When on-site confirmation is needed, help the user prepare a clear service request for qualified review.
 
