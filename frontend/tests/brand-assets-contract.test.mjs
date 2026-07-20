@@ -120,8 +120,8 @@ test('main site first-impression copy keeps CN and COM market language separate'
   assert.doesNotMatch(footer, /operated by Jinan Euchio Machinery|由济南钰峭机械有限公司运营/);
   assert.match(footer, /鲁ICP备2026032904号-1/);
   assert.match(footer, /https:\/\/beian\.miit\.gov\.cn\//);
-  assert.match(engineerRecruiting, /SAGEMRO 工程师合作计划/);
-  assert.match(engineerRecruiting, /SAGEMRO Engineer Partner Program/);
+  assert.match(engineerRecruiting, /SAGEMRO 工程师服务协作网络/);
+  assert.match(engineerRecruiting, /SAGEMRO Engineer Service Network/);
   assert.doesNotMatch(engineerRecruiting, /智能服务系统|Certified Representative Program/);
 });
 
@@ -484,11 +484,16 @@ test('engineer application and admin engineer pages render regions and skills as
   const applicationsPage = read('admin/src/pages/EngineerApplicationsPage.jsx');
 
   assert.match(recruiting, /TagInput/);
-  assert.match(recruiting, /REGION_SUGGESTIONS/);
-  assert.match(recruiting, /SKILL_SUGGESTIONS/);
+  assert.match(recruiting, /regionSuggestions/);
+  assert.match(recruiting, /skillSuggestions/);
   assert.match(recruiting, /onKeyDown/);
   assert.match(recruiting, /service_regions: \[\]/);
   assert.match(recruiting, /skill_tags: \[\]/);
+  assert.match(recruiting, /regionSuggestions: \['华东', '华南', '华北'/);
+  assert.match(recruiting, /skillSuggestions: \['激光切割机', '折弯机', '激光器'/);
+  assert.match(recruiting, /removeTag: '移除'/);
+  assert.match(recruiting, /failure: '提交失败，请稍后重试。'/);
+  assert.match(recruiting, /copy\.required/);
   assert.doesNotMatch(recruiting, /service_regions: ''/);
   assert.doesNotMatch(recruiting, /skill_tags: ''/);
 
@@ -498,31 +503,53 @@ test('engineer application and admin engineer pages render regions and skills as
   assert.match(applicationsPage, /renderTags\(application\.skill_tags/);
 });
 
-test('engineer recruiting page explains cooperation and supports modal application', () => {
+test('engineer recruiting page leads with engineer leverage and a bounded service workflow', () => {
   const recruiting = read('frontend/src/components/Engineer/EngineerRecruitingPage.jsx');
 
   assert.match(recruiting, /modalOpen/);
-  assert.match(recruiting, /Join the SAGEMRO Service Engineer Network/);
-  assert.match(recruiting, /We accept applications from engineers/);
-  assert.match(recruiting, /Apply to Join/);
-  assert.match(recruiting, /How SAGEMRO service work is coordinated/);
-  assert.match(recruiting, /receives customer service requests/);
-  assert.match(recruiting, /What you may receive after approval/);
-  assert.match(recruiting, /Clear-scope field work/);
-  assert.match(recruiting, /Job information before dispatch/);
-  assert.match(recruiting, /Quote review support/);
-  assert.match(recruiting, /Payment and start authorization/);
-  assert.match(recruiting, /How engineer cooperation works/);
+  assert.match(recruiting, /让工程师专注解决设备问题，不再被杂务拖住/);
+  assert.match(recruiting, /Let engineers focus on equipment problems, not service admin/);
+  assert.match(recruiting, /AI 接住流程，工程师负责判断/);
+  assert.match(recruiting, /AI handles the workflow; engineers own the judgment/);
+  assert.match(recruiting, /AI 输出仅供参考/);
+  assert.match(recruiting, /AI output is preliminary and for reference only/);
+  assert.match(recruiting, /维修团队最贵的，不只是一次上门，而是工程师时间被不断打碎/);
+  assert.match(recruiting, /The hidden cost in field service is fragmented engineer time/);
+  assert.match(recruiting, /把个人经验，变成团队可以复用的服务能力/);
+  assert.match(recruiting, /Turn individual expertise into a service capability the team can reuse/);
+  assert.match(recruiting, /本地维修团队与个人工程师/);
+  assert.match(recruiting, /Local service teams and independent engineers/);
+  assert.match(recruiting, /减少信息不足造成的非必要上门/);
+  assert.match(recruiting, /Reduce avoidable site visits caused by incomplete information/);
+  assert.match(recruiting, /客户沟通、判断依据和服务记录留在统一流程中/);
+  assert.match(recruiting, /Keep customer context, decision rationale, and service records in one workflow/);
+  assert.match(recruiting, /服务安全与责任边界/);
+  assert.match(recruiting, /Service safety and responsibility boundaries/);
+  assert.match(recruiting, /在线处理或升级人工/);
+  assert.match(recruiting, /Resolve online or escalate to an engineer/);
+  assert.match(recruiting, /AI 与系统负责/);
+  assert.match(recruiting, /工程师负责/);
+  assert.match(recruiting, /SAGEMRO 负责/);
+  assert.match(recruiting, /AI and system/);
+  assert.match(recruiting, /Engineer/);
+  assert.match(recruiting, /SAGEMRO operations/);
   assert.match(recruiting, /负责派工协调、报价审核、付款确认和服务记录/);
+  assert.match(recruiting, /申请加入服务网络/);
+  assert.match(recruiting, /Apply to the Service Network/);
+  assert.match(recruiting, /className="grid gap-2 sm:grid-cols-3 lg:grid-cols-1"/);
+  assert.doesNotMatch(recruiting, /className="grid grid-cols-3 gap-2 lg:grid-cols-1"/);
   assert.doesNotMatch(recruiting, /AI-assisted industrial service platform|verified service pool|Certified Representative/);
+  assert.doesNotMatch(recruiting, /AI 解决所有不用上门就能解决的问题/);
+  assert.doesNotMatch(recruiting, /AI replaces engineers|AI diagnoses every issue/);
   assert.doesNotMatch(recruiting, /Paid field service opportunities/);
   assert.doesNotMatch(recruiting, /Payment confirmation first/);
   assert.doesNotMatch(recruiting, /被看见、被支持、被认真对待/);
   assert.match(recruiting, /What we look for/);
   assert.match(recruiting, /Regional Lead opportunity/);
-  assert.match(recruiting, /How work and payment starts/);
+  assert.match(recruiting, /Application and activation/);
   assert.match(recruiting, /Frequently asked questions/);
-  assert.match(recruiting, /Approved representatives receive an account activation link/);
+  assert.match(recruiting, /Approved engineers and service teams receive an account activation link/);
+  assert.doesNotMatch(recruiting, /Service Representative Network|Approved representatives/);
   assert.match(recruiting, /fixed inset-0 z-50/);
   assert.doesNotMatch(recruiting, /lg:grid-cols-\[1\.06fr_0\.94fr\]/);
 });
