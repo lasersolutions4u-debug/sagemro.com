@@ -67,7 +67,7 @@ Codex（本地）
 - `/AGENTS.md`、`/TECH-SPEC.md`、`/DEPLOY.md` — 项目文档（进 git）
 
 ## 五、协作约束
-- 所有提交必须能通过 `test` job
+- 所有提交必须能通过完整的 `test` job（包含 Worker 测试、前端 lint/测试/构建和后台构建）
 - 修改 `wrangler.toml` / `deploy.yml` / Pages 项目名前，先在对话中确认
 - secrets 只在 GitHub Repo Settings 配置，绝不写入代码
 - API Token 是 **Custom Token**（见 TECH-SPEC.md），**不是** "Edit Cloudflare Workers" 模板
@@ -96,24 +96,38 @@ Codex（本地）
 <claude-mem-context>
 # Memory Context
 
-# [sagemro.com] recent context, 2026-07-12 12:02pm GMT+8
+# [sagemro.com] recent context, 2026-07-20 9:45am GMT+8
 
 Legend: 🎯session 🔴bugfix 🟣feature 🔄refactor ✅change 🔵discovery ⚖️decision 🚨security_alert 🔐security_note
 Format: ID TIME TYPE TITLE
 Fetch details: get_observations([IDs]) | Search: mem-search skill
 
-Stats: 3 obs (536t read) | 89,481t work | 99% savings
+Stats: 17 obs (3,513t read) | 760,103t work | 100% savings
 
 ### Jul 12, 2026
 1978 11:44a 🔵 SAGEMRO 中文站前端国际化状态扫描
 1979 11:45a 🔵 Footer.jsx 已实现中英文切换
 1980 " 🔵 SAGEMRO 中文站前端国际化扫描（第一批）— 发现 3 处硬编码英文和小优化点
+S738 中文站 sagemro.cn i18n 审计 — 扫描 Worker 后端和前端残留英文 (Jul 12 at 11:47 AM)
 S737 中文站（sagemro.cn）i18n 审计：深入每个页面和功能架构，找出显示英文的地方 (Jul 12 at 11:47 AM)
-S738 中文站 sagemro.cn i18n 审计 — 扫描 Worker 后端和前端残留英文 (Jul 12 at 11:53 AM)
-**Investigated**: 已审查 worker/src/index.js 全部 11209 行中的 errorResponse 调用，通过 grep 过滤已本地化的中文错误，找出纯英文错误消息。同时使用 Explore agent 系统扫描整个 worker/src/ 目录下的硬编码英文用户界面文本。已审阅的关键代码段：支付流程（L10152-10370）、语音转录（L2874-2991）、验证码邮件（L1895-1960）、Admin 工程师管理（L8320-8364）、AI 系统提示（L350-550+）、商机/Lead 提交（L5951-6025）、路由兜底（L10600-10785、L11190-11201）。
+S740 Verify China Edition deployment to Aliyun ECS succeeded (Jul 12 at 11:53 AM)
+1981 11:53a ⚖️ 用户确认继续执行当前任务
+1982 12:12p 🔴 Fixed two frontend contract tests that failed CI for Aliyun ECS deploy
+S739 Verify and fix China Edition deployment to Aliyun ECS (Jul 12 at 12:28 PM)
+1983 12:31p 🔵 中文站结算币种硬编码为 USD
+1984 " ⚖️ 工单新消息通知需求确认
+1985 3:29p 🟣 添加中国站国内公户付款信息
+1986 6:26p ✅ Chinese version payment info to be added to euchio.com
+1987 6:45p ✅ Service work order UI optimization requested
+1988 7:15p ✅ Admin nav tab renamed from "派工与服务质量" to "服务工单"
+### Jul 19, 2026
+1989 10:40p 🔵 Sagemro frontend API service contains funnel tracking system
+### Jul 20, 2026
+1990 12:27a 🔵 Sagemro codebase exploration in engineer-entry-links-cn worktree
+1991 12:30a ✅ Updated brand-assets-contract test to match new WelcomePage copy
+1992 12:34a ✅ Updated registerCustomer test assertion to include conversation_id parameter
+1993 12:36a ✅ Fixed ToolBar and IndustryToolsPage href test assertions in contract test
+1994 12:37a ✅ Fixed WorkOrderDetailModal redactContactInfo assertion to match formatServiceTextForLocale wrapper
 
-**Next Steps**: 审计结果已呈现给用户（Joe），等待回复三个确认问题：是否全部修复、DeviceDetailPanel 的 ¥ 符号用人民币还是美元、验证码邮件中文站发中文还是英文。修复将按优先级：支付流程错误 → 语音错误 → 验证码邮件 → Worker 兜底错误 → Admin 杂项 → 前端组件。使用本地文件编辑工具（Read + Edit/Write），操作路径为 /Users/joe/Projects/sagemro.com/。
-
-
-Access 89k tokens of past work via get_observations([IDs]) or mem-search skill.
+Access 760k tokens of past work via get_observations([IDs]) or mem-search skill.
 </claude-mem-context>

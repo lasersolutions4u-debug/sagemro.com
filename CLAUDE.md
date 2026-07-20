@@ -67,7 +67,7 @@ Claude Code / Cloud Code（本地）
 - `/CLAUDE.md`、`/TECH-SPEC.md`、`/DEPLOY.md` — Claude Code / Cloud Code 应优先读取的项目文档（进 git）
 
 ## 五、协作约束
-- 所有提交必须能通过 `test` job
+- 所有提交必须能通过完整的 `test` job（包含 Worker 测试、前端 lint/测试/构建和后台构建）
 - 修改 `wrangler.toml` / `deploy.yml` / `aliyun-cn-deploy.yml` / Pages 项目名 / ECS 发布路径前，先在对话中确认
 - secrets 只在 GitHub Repo Settings 或服务器环境配置，绝不写入代码
 - API Token 是 **Custom Token**（见 TECH-SPEC.md），**不是** "Edit Cloudflare Workers" 模板
