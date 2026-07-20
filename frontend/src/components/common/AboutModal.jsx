@@ -17,7 +17,7 @@ const copy = {
   en: {
     title: 'About SAGEMRO Equipment Service',
     serviceName: 'SAGEMRO Equipment Service',
-    intro: 'A service workspace for recording machine symptoms, safety concerns, missing details, parts questions, and follow-up actions for laser cutting and sheet metal equipment.',
+    intro: 'A service workspace for recording machine symptoms, safety concerns, missing details, parts questions, and follow-up actions for laser and metal forming equipment.',
     howItWorks: 'How It Works',
     moments: [
       { icon: MessageCircle, title: 'Start With The Field Facts', desc: 'Describe the alarm, cut quality issue, maintenance concern, part question, or equipment decision in plain language.' },
@@ -53,7 +53,7 @@ const copy = {
   zh: {
     title: '关于 SAGEMRO 设备服务平台',
     serviceName: 'SAGEMRO 设备服务平台',
-    intro: 'SAGEMRO 帮助客户与工程师整理设备现象、风险和可选下一步，适用于激光切割与钣金加工设备相关的咨询、排查和决策准备。',
+    intro: 'SAGEMRO 帮助客户与工程师整理设备现象、风险和可选下一步，适用于激光和成型设备相关的咨询、排查和决策准备。',
     howItWorks: '如何工作',
     moments: [
       { icon: MessageCircle, title: '从现场事实开始', desc: '用自然语言描述报警、切割质量、维保疑问、备件问题或设备决策，不需要先填复杂表单。' },

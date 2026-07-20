@@ -28,8 +28,8 @@ function setCanonical(pathname, canonicalHost = 'https://sagemro.com') {
 
 const insightsCopy = {
   en: {
-    hubTitle: 'SAGEMRO Insights for Laser Cutting and Sheet Metal Equipment',
-    hubDescription: 'Practical notes, calculators, and decision guides for laser cutting, bending, materials, and sheet metal equipment.',
+    hubTitle: 'SAGEMRO Insights for Laser and Metal Forming Equipment',
+    hubDescription: 'Practical notes, calculators, and decision guides for laser and metal forming equipment.',
     back: 'Back to service',
     eyebrow: 'SAGEMRO Insights',
     h1: 'Practical notes for machine decisions, service risk, and shop-floor planning.',
@@ -42,8 +42,8 @@ const insightsCopy = {
     navChat: 'AI chat',
   },
   'zh-CN': {
-    hubTitle: 'SAGEMRO 洞察：激光切割、折弯和钣金设备',
-    hubDescription: '面向激光切割、折弯、材料和钣金设备的实务说明、计算工具和判断参考。',
+    hubTitle: 'SAGEMRO 洞察：激光和成型设备',
+    hubDescription: '面向激光和成型设备的实务说明、计算工具和判断参考。',
     back: '返回服务首页',
     eyebrow: 'SAGEMRO 洞察',
     h1: '关于设备判断、服务风险和车间规划的实务说明。',

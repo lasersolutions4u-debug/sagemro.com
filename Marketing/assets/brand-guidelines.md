@@ -10,7 +10,7 @@
 | 公司主体 | 济南钰峭机械有限公司 / Jinan Euchio Machinery Co., Ltd. |
 | AI 助手名 | **小智** |
 | 域名 | sagemro.com |
-| 行业定位 | 钣金加工设备后服务 B2B 信息技术服务平台 |
+| 行业定位 | 激光和成型设备后服务 B2B 信息技术服务平台 |
 
 ---
 
@@ -18,7 +18,7 @@
 
 ### 2.1 一句话介绍
 
-> SAGEMRO 是专注钣金加工行业的设备技术服务平台。AI 小智提供即时诊断，需要上门时精准匹配工程师。
+> SAGEMRO 是专注激光和成型设备服务的技术平台。AI 小智提供即时诊断，需要上门时精准匹配工程师。
 
 ### 2.2 价值主张
 
@@ -39,7 +39,7 @@
 | 工厂老板 | "设备故障不用慌，AI 小智 24 小时在线诊断，比打一圈电话快。" |
 | 设备主管 | "上千种设备故障模式，AI 小智都能诊断。拿不准的复杂故障，帮你匹配专业工程师。" |
 | 维修师傅 | "平台帮你接单、帮你定价、帮你背书。你只管修好设备，剩下的平台来。" |
-| 海外客户 | "China's sheet metal equipment experts, now powered by AI. Get instant diagnosis or find vetted engineers." |
+| 海外客户 | "China's laser and metal forming equipment experts, now powered by AI. Get instant diagnosis or find vetted engineers." |
 
 ---
 

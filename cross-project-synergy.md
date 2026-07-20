@@ -15,13 +15,13 @@
 ```
 Euchio Machinery (运营公司)
 │
-├── 自有品牌 EUCHIO ─── euchio.com ────── 激光切割/折弯/焊接/打标等钣金设备
+├── 自有品牌 EUCHIO ─── euchio.com ────── 激光和成型设备
 │   （Euchio 品牌，OEM 工厂代工制造）
 │
 ├── 合作工厂品牌 ────── gasmixtech.com ─── LISHI LASER 混气装置
 │   （工厂品牌，Euchio 负责海外推广销售）    KingMotor 伺服吊机（未来）
 │
-└── 平台品牌 ────────── sagemro.com ────── 全品牌钣金设备 AI 售后平台
+└── 平台品牌 ────────── sagemro.com ────── 全品牌激光和成型设备 AI 售后平台
     （独立运营，不绑定 Euchio 设备）
 ```
 
@@ -69,7 +69,7 @@ Euchio Machinery (运营公司)
 | **euchio.com 博客提到售后服务** | 不硬推 sagemro，但可提及 AI 售后是行业趋势 | 「像 SAGEMRO 这样的 AI 售后平台」— 说明趋势，不做 CTA |
 | **gasmixtech.com 品牌归属** | Footer/About 标注 Euchio 为推广伙伴 | 「Promoted globally by Euchio Machinery」 |
 | **gasmixtech.com 产品组合** | 客户咨询时，可口头推荐 Euchio 整机 | 不在网站内强推，由销售人员判断 |
-| **sagemro.com 行业信任** | About 可提「由钣金设备行业团队创建」 | 不强调 Euchio 品牌，保持平台中立性 |
+| **sagemro.com 行业信任** | About 可提「由激光和成型设备行业团队创建」 | 不强调 Euchio 品牌，保持平台中立性 |
 
 ### 2.4 链接策略
 
@@ -99,8 +99,8 @@ sagemro.com
 
 | 要素 | 内容 |
 |------|------|
-| **定位** | 钣金设备 OEM/ODM 解决方案合作伙伴 |
-| **关键词方向** | `OEM laser cutting machine`, `sheet metal equipment supplier China`, `custom press brake manufacturer` |
+| **定位** | 激光和成型设备 OEM/ODM 解决方案合作伙伴 |
+| **关键词方向** | `OEM laser cutting machine`, `laser and metal forming equipment supplier China`, `custom press brake manufacturer` |
 | **内容调性** | 行业顾问，深度技术文章，赋能渠道商 |
 | **证明点** | Euchio 自有品牌（OEM 代工）+ 代理优质合作工厂设备 |
 | **CTA** | Get A Free Quote / Talk to Our Team |
@@ -119,8 +119,8 @@ sagemro.com
 
 | 要素 | 内容 |
 |------|------|
-| **定位** | 钣金加工设备 AI 售后服务平台（全品牌开放） |
-| **关键词方向** | `laser cutting machine repair`, `sheet metal equipment service`, `MRO platform` |
+| **定位** | 激光和成型设备 AI 售后服务平台（全品牌开放） |
+| **关键词方向** | `laser cutting machine repair`, `laser and metal forming equipment service`, `MRO platform` |
 | **内容调性** | 便利、快速、AI 智能匹配 |
 | **证明点** | AI 诊断能力 + 本地合伙人网络 |
 | **CTA** | 开始对话 / 提交工单 |
@@ -137,7 +137,7 @@ sagemro.com
 | 描述 LISHI 混气装置 | "LISHI LASER gas mixing technology — we partner with LISHI for global distribution" | "Our exclusive brand" / "独家代理" |
 | 描述与工厂关系 | "We work with partner factories" / "We distribute for manufacturing partners" | "Exclusive distributor" / "Sole agent" |
 | 描述 SAGEMRO | "An AI-powered MRO platform for the sheet metal industry" | "Euchio's after-sales service platform" |
-| 描述 Euchio 公司 | "Euchio Machinery — sheet metal equipment and solutions" | — |
+| 描述 Euchio 公司 | "Euchio Machinery — laser and metal forming equipment and solutions" | — |
 
 ### 为什么不用「独家代理」
 

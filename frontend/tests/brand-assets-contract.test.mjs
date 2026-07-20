@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 
@@ -7,6 +7,17 @@ const root = path.resolve(import.meta.dirname, '../..');
 
 function read(relativePath) {
   return readFileSync(path.join(root, relativePath), 'utf8');
+}
+
+function collectCopyFiles(relativePath) {
+  const absolutePath = path.join(root, relativePath);
+  const entries = readdirSync(absolutePath, { withFileTypes: true });
+
+  return entries.flatMap((entry) => {
+    const childPath = path.join(relativePath, entry.name);
+    if (entry.isDirectory()) return collectCopyFiles(childPath);
+    return /\.(?:html|js|jsx|json|md|mjs|toml|ya?ml)$/.test(entry.name) ? [childPath] : [];
+  });
 }
 
 function extractPlaceholderExpression(source) {
@@ -112,6 +123,22 @@ test('main site first-impression copy keeps CN and COM market language separate'
   assert.match(engineerRecruiting, /SAGEMRO 工程师合作计划/);
   assert.match(engineerRecruiting, /SAGEMRO Engineer Partner Program/);
   assert.doesNotMatch(engineerRecruiting, /智能服务系统|Certified Representative Program/);
+});
+
+test('equipment category narrative uses laser and metal forming equipment consistently', () => {
+  const copyFiles = [
+    ...collectCopyFiles('frontend/src'),
+    ...collectCopyFiles('admin/src'),
+    ...collectCopyFiles('worker/src'),
+    ...collectCopyFiles('docs'),
+    ...collectCopyFiles('Marketing'),
+    ...readdirSync(root)
+      .filter((fileName) => fileName.endsWith('.md')),
+  ];
+  const forbiddenNarrative = /钣金加工全工艺链设备|钣金加工设备|钣金设备|激光和金属成型设备|sheet[- ]metal equipment/i;
+  const violations = copyFiles.filter((filePath) => forbiddenNarrative.test(read(filePath)));
+
+  assert.deepEqual(violations, []);
 });
 
 test('AI tool copy keeps service preparation neutral instead of sales routing', () => {
