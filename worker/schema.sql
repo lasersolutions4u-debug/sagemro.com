@@ -922,6 +922,34 @@ CREATE INDEX IF NOT EXISTS idx_engineer_applications_market ON engineer_applicat
 CREATE INDEX IF NOT EXISTS idx_engineer_applications_created_at ON engineer_applications(created_at);
 CREATE INDEX IF NOT EXISTS idx_engineer_applications_converted_user ON engineer_applications(converted_user_id);
 
+CREATE TABLE IF NOT EXISTS funnel_events (
+  id TEXT PRIMARY KEY,
+  event_name TEXT NOT NULL,
+  market TEXT NOT NULL DEFAULT 'com',
+  anonymous_id TEXT,
+  session_id TEXT,
+  user_type TEXT,
+  user_id TEXT,
+  source TEXT,
+  medium TEXT,
+  campaign TEXT,
+  page_path TEXT,
+  referrer TEXT,
+  properties_json TEXT,
+  ip_hash TEXT,
+  user_agent TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_funnel_events_event_created
+  ON funnel_events(event_name, created_at);
+
+CREATE INDEX IF NOT EXISTS idx_funnel_events_session_created
+  ON funnel_events(session_id, created_at);
+
+CREATE INDEX IF NOT EXISTS idx_funnel_events_campaign_created
+  ON funnel_events(source, medium, campaign, created_at);
+
 -- 跨角色登录身份与工程师账号激活（037）
 CREATE TABLE IF NOT EXISTS account_identities (
     identity_type TEXT NOT NULL CHECK(identity_type IN ('email', 'phone')),
@@ -1040,4 +1068,5 @@ INSERT OR IGNORE INTO _migrations (version, note) VALUES
     ('033_work_order_location_verification', 'Add service location and engineer arrival verification'),
     ('034_add_service_mode',            'Add remote, onsite, and hybrid service modes'),
     ('035_onsite_conversion_workflow',  'Add audited remote-to-onsite conversion and arrival override workflow'),
+    ('036_create_funnel_events',         'Controlled beta funnel event tracking'),
     ('037_engineer_account_activation', 'Engineer email activation and cross-role identity registry');

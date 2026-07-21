@@ -8,10 +8,10 @@ HAVING COUNT(*) > 1;
 
 SELECT normalized_phone, COUNT(*) AS account_count
 FROM (
-  SELECT replace(replace(replace(replace(replace(trim(phone), ' ', ''), '-', ''), '(', ''), ')', ''), '.', '') AS normalized_phone
+  SELECT replace(replace(replace(replace(replace(replace(replace(replace(trim(phone), ' ', ''), char(9), ''), char(10), ''), char(13), ''), '-', ''), '(', ''), ')', ''), '.', '') AS normalized_phone
   FROM customers WHERE phone IS NOT NULL AND trim(phone) <> ''
   UNION ALL
-  SELECT replace(replace(replace(replace(replace(trim(phone), ' ', ''), '-', ''), '(', ''), ')', ''), '.', '') AS normalized_phone
+  SELECT replace(replace(replace(replace(replace(replace(replace(replace(trim(phone), ' ', ''), char(9), ''), char(10), ''), char(13), ''), '-', ''), '(', ''), ')', ''), '.', '') AS normalized_phone
   FROM engineers WHERE phone IS NOT NULL AND trim(phone) <> ''
 )
 GROUP BY normalized_phone

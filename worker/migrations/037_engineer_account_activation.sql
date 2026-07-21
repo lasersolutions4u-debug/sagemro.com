@@ -56,12 +56,12 @@ FROM customers
 WHERE email IS NOT NULL AND trim(email) <> '';
 
 INSERT INTO account_identities (identity_type, normalized_value, owner_type, owner_id)
-SELECT 'phone', replace(replace(replace(replace(replace(trim(phone), ' ', ''), '-', ''), '(', ''), ')', ''), '.', ''), 'customer', id
+SELECT 'phone', replace(replace(replace(replace(replace(replace(replace(replace(trim(phone), ' ', ''), char(9), ''), char(10), ''), char(13), ''), '-', ''), '(', ''), ')', ''), '.', ''), 'customer', id
 FROM customers
 WHERE phone IS NOT NULL AND trim(phone) <> '';
 
 INSERT INTO account_identities (identity_type, normalized_value, owner_type, owner_id)
-SELECT 'phone', replace(replace(replace(replace(replace(trim(phone), ' ', ''), '-', ''), '(', ''), ')', ''), '.', ''), 'engineer', id
+SELECT 'phone', replace(replace(replace(replace(replace(replace(replace(replace(trim(phone), ' ', ''), char(9), ''), char(10), ''), char(13), ''), '-', ''), '(', ''), ')', ''), '.', ''), 'engineer', id
 FROM engineers
 WHERE phone IS NOT NULL AND trim(phone) <> '';
 
