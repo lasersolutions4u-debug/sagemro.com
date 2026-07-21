@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SAGEMRO Engineer Service Animation Preview</title>
+    <link rel="icon" href="data:," />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="preview-shell">
+      <header class="preview-header">
+        <div>
+          <p class="preview-kicker">SAGEMRO / Motion Review</p>
+          <h1 class="preview-title">20-second engineer service network overview</h1>
+        </div>
+        <output class="preview-time" data-output="time">00.00s</output>
+      </header>
+
+      <div class="stage-frame">
+        <div class="animation-stage" data-stage></div>
+      </div>
+
+      <div class="preview-controls" aria-label="Animation review controls">
+        <div class="control-group" aria-label="Language">
+          <button class="control-button" type="button" data-action="locale-cn">中文</button>
+          <button class="control-button" type="button" data-action="locale-en">English</button>
+        </div>
+        <div class="control-group playback-controls" aria-label="Playback">
+          <button class="control-button" type="button" data-action="play">Play</button>
+          <button class="control-button" type="button" data-action="pause">Pause</button>
+          <button class="control-button" type="button" data-action="replay">Replay</button>
+        </div>
+        <input class="timeline" data-action="seek" type="range" min="0" max="20000" step="50" value="0" aria-label="Timeline" />
+      </div>
+    </main>
+
+    <script type="module">
+      import { DURATION_MS, LOCALES, renderFrame } from './engineer-service-animation.js';
+
+      const params = new URLSearchParams(window.location.search);
+      const stage = document.querySelector('[data-stage]');
+      const timeline = document.querySelector('[data-action="seek"]');
+      const timeOutput = document.querySelector('[data-output="time"]');
+      const hasFixedTime = params.has('time');
+      const renderOnly = params.get('render') === '1';
+      let locale = LOCALES.includes(params.get('locale')) ? params.get('locale') : 'cn';
+      let currentTime = Math.min(DURATION_MS - 1, Math.max(0, Number(params.get('time')) || 0));
+      let playing = !hasFixedTime;
+      let previousTimestamp = null;
+
+      if (renderOnly) document.body.classList.add('render-only');
+      timeline.max = String(DURATION_MS);
+
+      function updateControls() {
+        document.querySelector('[data-action="locale-cn"]').setAttribute('aria-pressed', String(locale === 'cn'));
+        document.querySelector('[data-action="locale-en"]').setAttribute('aria-pressed', String(locale === 'en'));
+        document.querySelector('[data-action="play"]').setAttribute('aria-pressed', String(playing));
+        document.querySelector('[data-action="pause"]').setAttribute('aria-pressed', String(!playing));
+        timeline.value = String(Math.round(currentTime));
+        timeOutput.value = `${(currentTime / 1000).toFixed(2).padStart(5, '0')}s`;
+      }
+
+      function draw() {
+        renderFrame(stage, locale, currentTime);
+        updateControls();
+      }
+
+      function tick(timestamp) {
+        if (previousTimestamp === null) previousTimestamp = timestamp;
+        const elapsed = timestamp - previousTimestamp;
+        previousTimestamp = timestamp;
+
+        if (playing) {
+          currentTime = (currentTime + elapsed) % DURATION_MS;
+          draw();
+        }
+        requestAnimationFrame(tick);
+      }
+
+      document.querySelector('[data-action="locale-cn"]').addEventListener('click', () => {
+        locale = 'cn';
+        document.documentElement.lang = 'zh-CN';
+        draw();
+      });
+
+      document.querySelector('[data-action="locale-en"]').addEventListener('click', () => {
+        locale = 'en';
+        document.documentElement.lang = 'en';
+        draw();
+      });
+
+      document.querySelector('[data-action="play"]').addEventListener('click', () => {
+        playing = true;
+        previousTimestamp = null;
+        updateControls();
+      });
+
+      document.querySelector('[data-action="pause"]').addEventListener('click', () => {
+        playing = false;
+        updateControls();
+      });
+
+      document.querySelector('[data-action="replay"]').addEventListener('click', () => {
+        currentTime = 0;
+        playing = true;
+        previousTimestamp = null;
+        draw();
+      });
+
+      timeline.addEventListener('input', (event) => {
+        currentTime = Number(event.target.value);
+        playing = false;
+        draw();
+      });
+
+      draw();
+      requestAnimationFrame(tick);
+    </script>
+  </body>
+</html>
