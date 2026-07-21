@@ -76,7 +76,7 @@ const TEXT = {
   en: {
     title: 'Engineers',
     subtitle: 'Search, inspect, and back up engineer profiles before assigning service orders.',
-    searchPlaceholder: 'Search name, No., phone, company, region, team...',
+    searchPlaceholder: 'Search name, engineer number, phone, company, region, team...',
     regionPlaceholder: 'Region',
     equipmentPlaceholder: 'Equipment specialty',
     servicePlaceholder: 'Process / service item',
@@ -85,7 +85,7 @@ const TEXT = {
     empty: 'No engineers found',
     total: (count) => `${count} engineer(s)`,
     headers: {
-      no: 'No.',
+      no: 'Engineer number',
       name: 'Engineer',
       region: 'Region / team',
       specialties: 'Equipment',
@@ -118,6 +118,7 @@ const TEXT = {
     responsibleRegion: 'Responsible region',
     teamName: 'Team name',
     serviceRegion: 'Service region',
+    workloadStatus: 'Work status',
     currentLoad: 'Current load',
     activeOrders: 'Active service orders',
     availability: 'Availability / schedule',
@@ -133,20 +134,20 @@ const TEXT = {
   'zh-CN': {
     title: '工程师',
     subtitle: '管理工程师档案、服务能力、服务区域和历史工单，派工前先在这里评估。',
-    searchPlaceholder: '搜索姓名、No.、电话、公司、地区、团队...',
+    searchPlaceholder: '搜索姓名、工程师编号、电话、公司、地区、团队...',
     regionPlaceholder: '地区',
     equipmentPlaceholder: '熟悉设备',
-    servicePlaceholder: '熟悉工艺/服务项目',
+    servicePlaceholder: '服务项目',
     exportCurrent: '导出当前列表',
     loading: '加载中...',
     empty: '暂无工程师',
     total: (count) => `共 ${count} 位工程师`,
     headers: {
-      no: 'No.',
+      no: '工程师编号',
       name: '工程师',
       region: '地区/团队',
       specialties: '熟悉设备',
-      services: '熟悉工艺/服务',
+      services: '服务项目',
       rating: '评分',
       orders: '工单',
       status: '状态',
@@ -156,9 +157,9 @@ const TEXT = {
       paused: '暂停',
       offline: '离线',
     },
-    regionalLead: '区域主管',
+    regionalLead: '区域负责人',
     engineer: '工程师',
-    upstreamLead: (name) => `主管：${name}`,
+    upstreamLead: (name) => `区域负责人：${name}`,
     profileTitle: '工程师档案',
     close: '关闭',
     contact: '联系方式',
@@ -175,6 +176,7 @@ const TEXT = {
     responsibleRegion: '负责区域',
     teamName: '团队名称',
     serviceRegion: '服务区域',
+    workloadStatus: '工作状态',
     currentLoad: '当前负荷',
     activeOrders: '个进行中工单',
     availability: '可服务时间 / 排期',
@@ -422,7 +424,7 @@ export function EngineersPage({ initialEngineerId = '', onEngineerOpened }) {
                   <th className="px-2 py-3 text-left font-medium text-[var(--color-text-secondary)]">{t.headers.services}</th>
                   <th className="px-2 py-3 text-left font-medium text-[var(--color-text-secondary)]">{t.headers.rating}</th>
                   <th className="px-2 py-3 text-left font-medium text-[var(--color-text-secondary)]">{t.headers.orders}</th>
-                  <th className="px-2 py-3 text-left font-medium text-[var(--color-text-secondary)]">{t.headers.status}</th>
+                  <th className="px-2 py-3 text-left font-medium text-[var(--color-text-secondary)]">{t.workloadStatus}</th>
                 </tr>
               </thead>
               <tbody>

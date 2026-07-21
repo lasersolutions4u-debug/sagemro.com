@@ -36,6 +36,22 @@ test('CN admin engineers page translates profile workflow and table labels', () 
   assert.doesNotMatch(source, />Created<\/th>/);
 });
 
+test('CN engineer Admin terminology is consistent', () => {
+  const applications = read('admin/src/pages/EngineerApplicationsPage.jsx');
+  const engineers = read('admin/src/pages/EngineersPage.jsx');
+
+  assert.match(applications, /工程师合作申请/);
+  assert.match(applications, /工程师服务协作网络/);
+  assert.match(engineers, /regionalLead: '区域负责人'/);
+  assert.match(engineers, /no: '工程师编号'/);
+  assert.match(engineers, /services: '服务项目'/);
+  assert.match(engineers, /serviceRegion: '服务区域'/);
+  assert.match(engineers, /workloadStatus: '工作状态'/);
+
+  assert.doesNotMatch(`${applications}\n${engineers}`, /认证服务代表|区域主管|主管：|熟悉工艺\/服务|服务地区/);
+  assert.doesNotMatch(engineers, /no: 'No\.'/);
+});
+
 test('CN admin materials import preview uses localized empty-state copy', () => {
   const source = read('admin/src/pages/MaterialsPage.jsx');
 

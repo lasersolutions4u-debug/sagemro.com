@@ -170,6 +170,7 @@ test('CN legacy engineer dashboard modal localizes dispatch labels', () => {
 
 test('CN recruiting and shared overlays localize secondary labels', () => {
   const recruiting = read('frontend/src/components/Engineer/EngineerRecruitingPage.jsx');
+  const activation = read('frontend/src/components/Engineer/EngineerActivationPage.jsx');
   const feedback = read('frontend/src/components/common/FeedbackHost.jsx');
   const feedbackUtils = read('frontend/src/utils/feedback.js');
 
@@ -205,6 +206,11 @@ test('CN recruiting and shared overlays localize secondary labels', () => {
   assert.doesNotMatch(recruiting, /AI 接住流程|合作能带来什么|减少信息不足造成的非必要上门/);
   assert.doesNotMatch(recruiting, /aria-label="Close application form"/);
   assert.doesNotMatch(recruiting, /title="Remove"/);
+
+  assert.match(activation, /portal: '工程师工作台'/);
+  assert.match(activation, /eyebrow: '账号激活'/);
+  assert.match(activation, /申请邮箱或手机号登录/);
+  assert.doesNotMatch(`${recruiting}\n${activation}`, /认证服务代表|服务代表/);
 
   assert.match(feedback, /isCnLocale/);
   assert.match(feedback, /关闭/);

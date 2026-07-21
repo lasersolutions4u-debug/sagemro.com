@@ -40,8 +40,8 @@ const ACCOUNT_STYLE = {
 
 const TEXT = {
   en: {
-    title: 'Engineer Cooperation Applications',
-    badge: 'SAGEMRO Engineer Service Collaboration Network',
+    title: 'Engineer Applications',
+    badge: 'SAGEMRO Engineer Service Network',
     subtitle: 'Review applications and open approved engineer accounts from the same card.',
     section: 'Review and account setup',
     all: 'All review states',
@@ -135,7 +135,7 @@ const TEXT = {
       has_tools: '有工具',
     },
     notesPlaceholder: '审核备注、下一步与区域匹配...',
-    save: '保存审核',
+    save: '保存审核结果',
     saving: '保存中...',
     saved: '申请审核已更新。',
     failed: '操作失败：',
