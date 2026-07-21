@@ -509,8 +509,10 @@ test('engineer recruiting page leads with engineer leverage and a bounded servic
   assert.match(recruiting, /modalOpen/);
   assert.match(recruiting, /设备维保最佳方案：AI知识飞轮\+工程师技能实践/);
   assert.match(recruiting, /A better equipment service model: AI knowledge flywheel \+ engineer expertise/);
-  assert.match(recruiting, /内容为AI 生成，仅供参考/);
-  assert.match(recruiting, /AI-generated content is for reference only/);
+  assert.match(recruiting, /不要忽略的重要提示：内容为AI生成，仅供参考/);
+  assert.match(recruiting, /本页面文案均经人工审核确认/);
+  assert.match(recruiting, /Important notice: AI-generated content is for reference only/);
+  assert.match(recruiting, /All copy on this page has been reviewed and approved by people/);
   assert.match(recruiting, /维修保养工作最大的消耗，是工程师琐事缠身、时间碎片化所带来的人效降低/);
   assert.match(recruiting, /The hidden cost in field service is fragmented engineer time/);
   assert.match(recruiting, /把个人经验，变成团队可以复用的服务能力/);
@@ -539,6 +541,10 @@ test('engineer recruiting page leads with engineer leverage and a bounded servic
   assert.match(recruiting, /Progressive engineer training/);
   assert.match(recruiting, /申请加入服务网络/);
   assert.match(recruiting, /Apply to the Service Network/);
+  assert.match(recruiting, /finalLogin: '登录'/);
+  assert.match(recruiting, /finalLogin: 'Login'/);
+  assert.match(recruiting, /onClick=\{openApply\} className="[^"]*whitespace-nowrap[^"]*"/);
+  assert.match(recruiting, /onClick=\{onOpenLogin\} className="[^"]*whitespace-nowrap[^"]*"/);
   assert.match(recruiting, /className="grid gap-2 sm:grid-cols-3 lg:grid-cols-1"/);
   assert.doesNotMatch(recruiting, /className="grid grid-cols-3 gap-2 lg:grid-cols-1"/);
   assert.doesNotMatch(recruiting, /AI-assisted industrial service platform|verified service pool|Certified Representative/);
