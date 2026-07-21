@@ -507,6 +507,9 @@ test('engineer recruiting page leads with engineer leverage and a bounded servic
   const recruiting = read('frontend/src/components/Engineer/EngineerRecruitingPage.jsx');
 
   assert.match(recruiting, /modalOpen/);
+  assert.match(recruiting, /flex max-h-\[92dvh\].*flex-col.*overflow-hidden/);
+  assert.match(recruiting, /min-h-0.*flex-1.*overflow-y-auto/);
+  assert.doesNotMatch(recruiting, /max-h-\[calc\(92dvh-96px\)\]/);
   assert.match(recruiting, /networkLabel: '工程师工作台'/);
   assert.match(recruiting, /networkLabel: 'Engineer Workspace'/);
   assert.match(recruiting, /title: '设备维保最佳方案：AI知识飞轮\+工程师技能实践'/);

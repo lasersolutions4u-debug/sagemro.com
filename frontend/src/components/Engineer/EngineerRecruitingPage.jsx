@@ -856,7 +856,7 @@ export function EngineerRecruitingPage({ onOpenLogin }) {
 
       {modalOpen && (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-[#120b05]/70 px-3 py-4 backdrop-blur-sm sm:items-center">
-          <div className="max-h-[92dvh] w-full max-w-3xl overflow-hidden rounded-[1.75rem] border border-[#eadfce] bg-white shadow-[0_28px_90px_rgba(18,11,5,0.34)]">
+          <div className="flex max-h-[92dvh] w-full max-w-3xl flex-col overflow-hidden rounded-[1.75rem] border border-[#eadfce] bg-white shadow-[0_28px_90px_rgba(18,11,5,0.34)]">
             <div className="sticky top-0 z-10 flex items-start justify-between gap-3 border-b border-[#f0e6d7] bg-white/95 p-5 backdrop-blur">
               <div>
                 <div className="text-xs uppercase tracking-[0.18em] text-amber-700">{copy.primary}</div>
@@ -872,7 +872,7 @@ export function EngineerRecruitingPage({ onOpenLogin }) {
                 <X size={18} />
               </button>
             </div>
-            <div className="max-h-[calc(92dvh-96px)] overflow-y-auto p-5">
+            <div className="min-h-0 flex-1 overflow-y-auto p-5">
               <ApplicationForm
                 copy={copy}
                 form={form}
