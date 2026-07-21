@@ -26,6 +26,12 @@ import {
 } from './lib/location.js';
 import { normalizeServiceMode, requiresArrivalVerification } from './lib/service-mode.js';
 import { normalizeLocationQuery, searchLocationProvider } from './lib/location-search.js';
+import {
+  identityDeleteStatement,
+  identityInsertStatements,
+  normalizeIdentityEmail,
+  normalizeIdentityPhone,
+} from './lib/accountIdentity.js';
 
 // OneSignal 推送 + 站内通知 helpers
 import { createNotification, sendPushToUser, sendPushToEngineer } from './lib/push.js';
@@ -2043,6 +2049,10 @@ const ERROR_MESSAGES = {
     com: 'Public engineer registration is closed. SAGEMRO engineer accounts are created internally.',
     cn: '工程师账号暂不开放公开注册。',
   },
+  admin_engineer_creation_retired: {
+    com: 'Engineer accounts must be opened from an approved application.',
+    cn: '请从审核通过的工程师申请中开通账号。',
+  },
   missing_required_fields: {
     com: 'Missing required fields.',
     cn: '缺少必填字段',
@@ -2057,6 +2067,30 @@ function localizedMessage(key, request) {
 
 function localizedErrorResponse(key, request, status = 400) {
   return errorResponse(localizedMessage(key, request), status);
+}
+
+function accountIdentityConflictResponse(identityType, request) {
+  const market = getRequestMarket(request);
+  const messages = identityType === 'email'
+    ? { com: 'This email address is already registered.', cn: '该邮箱已注册' }
+    : { com: 'This phone number is already registered.', cn: '该手机号已注册' };
+  return errorResponse(messages[market] || messages.com, 409);
+}
+
+async function findAccountIdentityConflict(env, normalizedEmail, normalizedPhone) {
+  return env.DB.prepare(`
+    SELECT identity_type, owner_type, owner_id
+    FROM account_identities
+    WHERE (identity_type = 'email' AND normalized_value = ?)
+       OR (identity_type = 'phone' AND normalized_value = ?)
+    LIMIT 1
+  `).bind(normalizedEmail, normalizedPhone).first();
+}
+
+async function recoverAccountIdentityConflict(error, env, normalizedEmail, normalizedPhone, request) {
+  if (!String(error?.message || error).includes('account_identities')) return null;
+  const conflict = await findAccountIdentityConflict(env, normalizedEmail, normalizedPhone);
+  return conflict ? accountIdentityConflictResponse(conflict.identity_type, request) : null;
 }
 
 const SERVICE_TYPE_LABELS = {
@@ -2500,7 +2534,8 @@ async function handleRegisterCustomer(request, env) {
   try {
     const { name, phone, email, password, code, company, identity, conversation_id } = await request.json();
     const market = getRequestMarket(request);
-    const normalizedEmail = normalizeEmail(email);
+    const normalizedEmail = normalizeIdentityEmail(email);
+    const normalizedPhone = normalizeIdentityPhone(phone);
 
     if (!name || !phone || !password || !company || (market !== 'cn' && !normalizedEmail)) {
       return localizedErrorResponse('name_phone_company_password_required', request);
@@ -2516,18 +2551,32 @@ async function handleRegisterCustomer(request, env) {
     }
 
     // 检查手机号是否已在任意角色注册（跨表去重）
-    const existingCustomer = await env.DB.prepare(
-      'SELECT id FROM customers WHERE phone = ?'
-    ).bind(phone).first();
-    const existingEngineer = await env.DB.prepare(
-      'SELECT id FROM engineers WHERE phone = ?'
-    ).bind(phone).first();
-    const existingEmailCustomer = normalizedEmail
-      ? await env.DB.prepare('SELECT id FROM customers WHERE lower(email) = ?').bind(normalizedEmail).first()
-      : null;
+    const [identityConflict, existingCustomer, existingEngineer, existingEmailCustomer, existingEmailEngineer] = await Promise.all([
+      findAccountIdentityConflict(env, normalizedEmail, normalizedPhone),
+      env.DB.prepare(`
+        SELECT id FROM customers
+        WHERE replace(replace(replace(replace(replace(trim(phone), ' ', ''), '-', ''), '(', ''), ')', ''), '.', '') = ?
+      `).bind(normalizedPhone).first(),
+      env.DB.prepare(`
+        SELECT id FROM engineers
+        WHERE replace(replace(replace(replace(replace(trim(phone), ' ', ''), '-', ''), '(', ''), ')', ''), '.', '') = ?
+      `).bind(normalizedPhone).first(),
+      normalizedEmail
+        ? env.DB.prepare('SELECT id FROM customers WHERE lower(email) = ?').bind(normalizedEmail).first()
+        : Promise.resolve(null),
+      normalizedEmail
+        ? env.DB.prepare('SELECT id FROM engineers WHERE lower(email) = ?').bind(normalizedEmail).first()
+        : Promise.resolve(null),
+    ]);
 
-    if (existingCustomer || existingEngineer || existingEmailCustomer) {
-      return errorResponse('该手机号已注册', 409);
+    if (identityConflict) {
+      return accountIdentityConflictResponse(identityConflict.identity_type, request);
+    }
+    if (existingEmailCustomer || existingEmailEngineer) {
+      return accountIdentityConflictResponse('email', request);
+    }
+    if (existingCustomer || existingEngineer) {
+      return accountIdentityConflictResponse('phone', request);
     }
 
     // 根据身份设置认证状态
@@ -2542,9 +2591,26 @@ async function handleRegisterCustomer(request, env) {
     const salt = generateSalt();
     const passwordHash = await hashPasswordNew(password, salt);
 
-    await env.DB.prepare(
+    const customerInsert = env.DB.prepare(
       'INSERT INTO customers (id, user_no, name, phone, email, password_hash, salt, company, auth_status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
-    ).bind(id, userNo, name, phone, normalizedEmail || null, passwordHash, salt, company, authStatus).run();
+    ).bind(id, userNo, name, phone, normalizedEmail || null, passwordHash, salt, company, authStatus);
+    try {
+      await env.DB.batch([
+        customerInsert,
+        ...identityInsertStatements(env, {
+          ownerType: 'customer',
+          ownerId: id,
+          email: normalizedEmail,
+          phone,
+        }),
+      ]);
+    } catch (error) {
+      const conflictResponse = await recoverAccountIdentityConflict(
+        error, env, normalizedEmail, normalizedPhone, request
+      );
+      if (conflictResponse) return conflictResponse;
+      throw error;
+    }
 
     // 如果提供了 conversation_id，将游客对话关联到新注册的客户
     if (conversation_id) {
@@ -8273,17 +8339,33 @@ async function handleAdminCreateUser(request, env) {
     const body = await request.json();
     const { userType, name, phone, password, region } = body;
 
+    if (userType === 'engineer') {
+      return localizedErrorResponse('admin_engineer_creation_retired', request, 410);
+    }
+
     if (!userType || !name || !phone || !password) {
       return errorResponse('用户类型、姓名、手机号、密码不能为空');
     }
 
     if (userType === 'customer') {
       // 检查手机号是否已注册
-      const existing = await env.DB.prepare(
-        'SELECT id FROM customers WHERE phone = ?'
-      ).bind(phone).first();
-      if (existing) {
-        return errorResponse('该手机号已注册为客户');
+      const normalizedPhone = normalizeIdentityPhone(phone);
+      const [identityConflict, existingCustomer, existingEngineer] = await Promise.all([
+        findAccountIdentityConflict(env, '', normalizedPhone),
+        env.DB.prepare(`
+          SELECT id FROM customers
+          WHERE replace(replace(replace(replace(replace(trim(phone), ' ', ''), '-', ''), '(', ''), ')', ''), '.', '') = ?
+        `).bind(normalizedPhone).first(),
+        env.DB.prepare(`
+          SELECT id FROM engineers
+          WHERE replace(replace(replace(replace(replace(trim(phone), ' ', ''), '-', ''), '(', ''), ')', ''), '.', '') = ?
+        `).bind(normalizedPhone).first(),
+      ]);
+      if (identityConflict) {
+        return accountIdentityConflictResponse(identityConflict.identity_type, request);
+      }
+      if (existingCustomer || existingEngineer) {
+        return accountIdentityConflictResponse('phone', request);
       }
 
       const id = generateId();
@@ -8291,70 +8373,25 @@ async function handleAdminCreateUser(request, env) {
       const salt = generateSalt();
       const passwordHash = await hashPasswordNew(password, salt);
 
-      await env.DB.prepare(
+      const customerInsert = env.DB.prepare(
         'INSERT INTO customers (id, user_no, name, phone, password_hash, salt, region) VALUES (?, ?, ?, ?, ?, ?, ?)'
-      ).bind(id, userNo, name, phone, passwordHash, salt, region || null).run();
+      ).bind(id, userNo, name, phone, passwordHash, salt, region || null);
+      try {
+        await env.DB.batch([
+          customerInsert,
+          ...identityInsertStatements(env, {
+            ownerType: 'customer',
+            ownerId: id,
+            phone,
+          }),
+        ]);
+      } catch (error) {
+        const conflictResponse = await recoverAccountIdentityConflict(error, env, '', normalizedPhone, request);
+        if (conflictResponse) return conflictResponse;
+        throw error;
+      }
 
       return jsonResponse({ success: true, user: { id, user_no: userNo, name, phone, region } });
-    } else if (userType === 'engineer') {
-      const {
-        specialties,
-        brands,
-        services,
-        serviceRegion,
-        bio,
-        engineerRole,
-        regionalLeadId,
-        responsibleRegion,
-        teamName,
-        certificationStatus,
-      } = body;
-      const safeRole = engineerRole === 'regional_lead' ? 'regional_lead' : 'engineer';
-
-      if (!specialties || !specialties.length || !services || !services.length) {
-        return errorResponse('工程师必须填写擅长设备类型和维修项目');
-      }
-
-      const existing = await env.DB.prepare(
-        'SELECT id FROM engineers WHERE phone = ?'
-      ).bind(phone).first();
-      if (existing) {
-        return errorResponse('该手机号已注册为工程师');
-      }
-
-      const id = generateId();
-      const userNo = await generateUserNo(env, 'E');
-      const salt = generateSalt();
-      const passwordHash = await hashPasswordNew(password, salt);
-
-      await env.DB.prepare(
-        `INSERT INTO engineers (
-          id, user_no, name, phone, password_hash, salt, specialties, brands, services,
-          service_region, bio, engineer_role, regional_lead_id, responsible_region,
-          team_name, certification_status, cooperation_status, workload_status
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'confirmed', 'available')`
-      ).bind(
-        id, userNo, name, phone, passwordHash, salt,
-        JSON.stringify(specialties),
-        JSON.stringify(brands || {}),
-        JSON.stringify(services),
-        serviceRegion || null,
-        bio || null,
-        safeRole,
-        safeRole === 'engineer' ? (regionalLeadId || null) : null,
-        responsibleRegion || serviceRegion || null,
-        teamName || null,
-        certificationStatus || 'pending'
-      ).run();
-
-      await writeAuditLog(env, request, {
-        targetType: 'engineer',
-        targetId: id,
-        action: 'engineer_account_created',
-        afterState: { engineer_role: safeRole, regional_lead_id: regionalLeadId || null },
-      });
-
-      return jsonResponse({ success: true, user: { id, user_no: userNo, name, phone, serviceRegion, engineer_role: safeRole } });
     } else {
       return errorResponse('不支持的用户类型');
     }
@@ -8404,6 +8441,7 @@ async function handleAdminDeleteUser(request, env) {
       statements.push(env.DB.prepare('DELETE FROM work_orders WHERE customer_id = ?').bind(userId));
       statements.push(env.DB.prepare('DELETE FROM conversations WHERE customer_id = ?').bind(userId));
       statements.push(env.DB.prepare('DELETE FROM devices WHERE customer_id = ?').bind(userId));
+      statements.push(identityDeleteStatement(env, 'customer', userId));
       statements.push(env.DB.prepare('DELETE FROM customers WHERE id = ?').bind(userId));
 
       await env.DB.batch(statements);
@@ -8432,6 +8470,9 @@ async function handleAdminDeleteUser(request, env) {
       statements.push(env.DB.prepare('DELETE FROM work_orders WHERE engineer_id = ?').bind(userId));
       statements.push(env.DB.prepare('DELETE FROM conversations WHERE engineer_id = ?').bind(userId));
       statements.push(env.DB.prepare('DELETE FROM ratings WHERE engineer_id = ?').bind(userId));
+      statements.push(env.DB.prepare('UPDATE engineer_applications SET converted_user_id = NULL WHERE converted_user_id = ?').bind(userId));
+      statements.push(env.DB.prepare('DELETE FROM engineer_account_activations WHERE engineer_id = ?').bind(userId));
+      statements.push(identityDeleteStatement(env, 'engineer', userId));
       statements.push(env.DB.prepare('DELETE FROM engineers WHERE id = ?').bind(userId));
 
       await env.DB.batch(statements);
