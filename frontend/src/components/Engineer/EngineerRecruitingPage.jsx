@@ -19,8 +19,8 @@ import { EngineerOverviewVideo } from './EngineerOverviewVideo';
 const COPY = {
   cn: {
     badge: 'SAGEMRO 工程师服务协作网络',
-    networkLabel: 'SAGEMRO 工程师工作台',
-    title: '设备维保最佳方案：AI知识飞轮+工程师技能实践。',
+    networkLabel: '工程师工作台',
+    title: '设备维保最佳方案：AI知识飞轮+工程师技能实践',
     subtitle: 'AI 做前期沟通，形成详细工单需求，然后由工程师具体执行。减少重复沟通和无效上门，让技术服务更纯粹高效；平台知识结构化，AI 总结学习后更懂客户，形成正向的成长飞轮。',
     primary: '申请加入服务网络',
     applyNow: '申请加入',
@@ -47,7 +47,7 @@ const COPY = {
       { label: '如何加入', value: '提交资料 → 人工审核 → 确认规则 → 开通账号' },
       { label: '完整说明', value: '合作规则、责任边界和常见问题可按需展开查看' },
     ],
-    problemTitle: '维修保养工作最大的消耗，是工程师琐事缠身、时间碎片化所带来的人效降低。',
+    problemTitle: '维修保养工作最大的消耗，是工程师琐事缠身、时间碎片化所带来的人效降低',
     problemIntro: '很多维修团队把接咨询、判断问题、回复客户、安排人员、做报价、整理记录和写汇报，全压在少数几个工程师身上。工程师越能干，越容易被各种事情反复打断，团队也越难复制他的能力。',
     problemItems: [
       { title: '零散咨询不停打断工作', text: '客户常常只发来一句话或一张照片，没有设备型号、报警、现场情况和维修记录。工程师被反复追问，真正用来做技术判断和解决问题的时间反而越来越少。' },
@@ -67,7 +67,7 @@ const COPY = {
       { step: '07', title: '工程师完成任务，总结汇报', text: '工程师完成服务并提交总结，由客户查看、评论和确认结果；工程师同时提供材料需求和后续建议，异议由运营团队和区域负责人协助处理。' },
       { step: '08', title: 'AI 自动学习，增强系统知识和技能', text: 'AI 按隐私与安全规则收集和整理工单、沟通、附件和总结报告，形成结构化服务知识；客户私有设备信息也会被记录，便于后续沟通、跟进和提醒。' },
     ],
-    scaleTitle: '把个人经验，变成团队可以复用的服务能力。',
+    scaleTitle: '把个人经验，变成团队可以复用的服务能力',
     scaleText: '优秀工程师仍然是服务核心，但客户情况、判断过程和服务记录都留在系统里，不再只存在于某个人的微信和记忆中。用过哪些备件、后续还需要什么材料，也能跟着案例一起留下来。这样团队才能持续服务客户、复盘案例、带新人，逐步改善材料配合，并建立稳定的口碑。',
     scaleAssetLine: '形成团队服务的知识和技能资产',
     scaleItems: [
@@ -119,7 +119,7 @@ const COPY = {
       { q: '只服务一个城市也可以申请吗？', a: '可以。稳定、可靠的本地服务能力，比范围很大但不确定能否及时到场更有价值。' },
       { q: '服务价格由谁确定？', a: '工程师根据任务情况提交报价，SAGEMRO 审核后再交由客户确认。开始服务前，还需要确认客户付款，或由运营团队明确同意开工。' },
     ],
-    finalTitle: '让工程师把时间用在真正需要技术的地方。',
+    finalTitle: '让工程师把时间用在真正需要技术的地方',
     finalText: '提交你的服务区域、设备经验和可服务时间。SAGEMRO 会先进行人工审核，再与你确认合作范围和具体规则。',
     finalLogin: '登录',
     modalTitle: '申请加入',
@@ -160,8 +160,8 @@ const COPY = {
   },
   en: {
     badge: 'SAGEMRO Engineer Service Network',
-    networkLabel: 'SAGEMRO Engineer Workspace',
-    title: 'A better equipment service model: AI knowledge flywheel + engineer expertise.',
+    networkLabel: 'Engineer Workspace',
+    title: 'A better equipment service model: AI knowledge flywheel + engineer expertise',
     subtitle: 'AI handles the early conversation and prepares a detailed service request; engineers take over for technical execution. Less repeated communication and fewer avoidable visits make service work more focused and efficient, while structured knowledge helps the AI understand customers better over time.',
     primary: 'Apply to the Service Network',
     applyNow: 'Apply to Join',
@@ -188,7 +188,7 @@ const COPY = {
       { label: 'How to join', value: 'Submit details → Manual review → Confirm terms → Activate account' },
       { label: 'Full details', value: 'Cooperation terms, responsibility boundaries, and FAQs are available below' },
     ],
-    problemTitle: 'The hidden cost in field service is fragmented engineer time.',
+    problemTitle: 'The hidden cost in field service is fragmented engineer time',
     problemIntro: 'Traditional service operations place inquiries, technical judgment, customer communication, dispatch, quoting, documentation, and reporting on a small number of engineers. The more capable the engineer, the more likely they become a bottleneck the team cannot reproduce.',
     problemItems: [
       { title: 'Fragmented inquiries interrupt technical work', text: 'Cases often arrive without machine models, alarms, site conditions, or service history. Engineers spend time repeatedly asking for context before they can think about the problem.' },
@@ -208,7 +208,7 @@ const COPY = {
       { step: '07', title: 'Engineer completes and reports the work', text: 'The engineer completes the task and submits the service summary. The customer reviews the result, while materials, follow-up, and any dispute remain coordinated in the workflow.' },
       { step: '08', title: 'AI learns from structured service data', text: 'Subject to privacy and security rules, AI structures work-order details, messages, attachments, and reports into service knowledge while retaining customer-specific equipment context for future support.' },
     ],
-    scaleTitle: 'Turn individual expertise into a service capability the team can reuse.',
+    scaleTitle: 'Turn individual expertise into a service capability the team can reuse',
     scaleText: 'Strong engineers remain at the center of service. Keep customer context, decision rationale, and service records in one workflow instead of personal chat threads and memory. Teams can then maintain continuity, review cases, develop new engineers, improve material coordination, and build a more reliable service reputation.',
     scaleAssetLine: 'Build team-owned knowledge and skill assets',
     scaleItems: [
@@ -261,7 +261,7 @@ const COPY = {
       { q: 'When does the engineer start work?', a: 'The engineer starts only after customer payment is confirmed or Admin approves the work order to start.' },
       { q: 'Can I apply if I only cover one city or state?', a: 'Yes. Clear local coverage is valuable. Reliable service capacity matters more than broad but uncertain coverage.' },
     ],
-    finalTitle: 'Put engineer time where technical skill is truly needed.',
+    finalTitle: 'Put engineer time where technical skill is truly needed',
     finalText: 'Share your service region, equipment experience, and availability. SAGEMRO will review the application manually and confirm the cooperation scope and rules with you.',
     finalLogin: 'Login',
     modalTitle: 'Apply to Join',
