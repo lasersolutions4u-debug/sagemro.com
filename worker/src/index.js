@@ -2311,6 +2311,68 @@ async function sendVerificationEmail(env, email, code, request) {
   return { sent: true };
 }
 
+export async function sendEngineerActivationEmail(env, { to, subject, text, html }, market = 'com') {
+  const errorMessage = market === 'cn'
+    ? '激活邮件发送失败，请稍后再试'
+    : 'Failed to send activation email. Please try again later.';
+  if (!env.VERIFICATION_EMAIL_FROM) {
+    return { error: errorMessage };
+  }
+
+  const emailPayload = {
+    from: env.VERIFICATION_EMAIL_FROM,
+    to,
+    subject,
+    text,
+    html,
+  };
+
+  if (env.EMAIL?.send) {
+    try {
+      await env.EMAIL.send(emailPayload);
+      return { sent: true };
+    } catch (error) {
+      console.warn('[email] Cloudflare activation email send failed', {
+        message: error?.message,
+        emailSuffix: String(to || '').split('@').pop(),
+      });
+      return { error: errorMessage };
+    }
+  }
+
+  if (!env.RESEND_API_KEY) {
+    return { error: errorMessage };
+  }
+
+  try {
+    const response = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${env.RESEND_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        ...emailPayload,
+        to: [to],
+      }),
+    });
+    if (!response.ok) {
+      console.warn('[email] Resend activation email send failed', {
+        status: response.status,
+        emailSuffix: String(to || '').split('@').pop(),
+      });
+      return { error: errorMessage };
+    }
+    return { sent: true };
+  } catch (error) {
+    console.warn('[email] Resend activation email send failed', {
+      message: error?.message,
+      emailSuffix: String(to || '').split('@').pop(),
+    });
+    return { error: errorMessage };
+  }
+}
+
 function toHex(buffer) {
   return Array.from(new Uint8Array(buffer))
     .map((byte) => byte.toString(16).padStart(2, '0'))
