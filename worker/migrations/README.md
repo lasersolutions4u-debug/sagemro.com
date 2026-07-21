@@ -39,6 +39,8 @@
 | `033_work_order_location_verification.sql` | 客户现场地址、工程师到场定位和地理围栏核验 |
 | `034_add_service_mode.sql` | 远程、上门和混合服务方式及对应完工规则 |
 | `035_onsite_conversion_workflow.sql` | 远程工单转上门、客户位置确认和 Admin 到场人工放行 |
+| `036_create_funnel_events.sql` | 注册漏斗事件与会话归因记录 |
+| `037_engineer_account_activation.sql` | 工程师邮箱激活与客户/工程师跨角色登录身份唯一性 |
 
 > 约定：文件名格式 `NNN_*.sql`，按字典序顺序执行；历史命名中出现过 `001_partner_upgrade.sql`（已删除，是 `001_add_engineer_fields.sql + 002_pricing_and_new_tables.sql` 的合并版本，避免重复执行）。
 
@@ -75,3 +77,4 @@ done
 | `temp_enrich_users.sql` | 早期 user_no / salt 回填脚本（已执行过，保留备查） |
 | `temp_enrich_devices.sql` | 早期 device name / status 回填脚本（已执行过，保留备查） |
 | `cleanup_test_accounts.sql` | 上线前清理测试账号（手机号 13800000xx / 13900000xx / 13700000xx 或姓名含"测试"/"test"）及其工单、设备、钱包流水等关联数据。**生产环境执行前必须手工核对清单。** |
+| `account_identity_preflight.sql` | 迁移 037 前只读检查客户邮箱重复及客户/工程师手机号冲突；两个结果集都必须为空。 |
