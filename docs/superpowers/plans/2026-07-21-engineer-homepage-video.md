@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add approved Chinese and English 15-second workflow animations to the engineer recruiting page while implementing and retaining the complete confirmed partner-page copy.
+**Goal:** Add approved Chinese and English 20-second workflow animations to the engineer recruiting page while implementing and retaining the complete confirmed partner-page copy.
 
 **Architecture:** Keep animation production separate from the React runtime. A deterministic JavaScript SVG renderer drives both the browser preview and local frame sequence; FFmpeg exports localized WebM, MP4, and poster assets. The React page chooses localized media by hostname and falls back to the poster without affecting the existing application workflow.
 
@@ -12,7 +12,7 @@
 
 - The video supplements the confirmed homepage copy and does not replace or remove any confirmed section.
 - Deliver separate Chinese and English video assets; never mix languages in one video.
-- Duration is exactly 15 seconds; playback is muted, inline, autoplay, and loop.
+- Duration is exactly 20 seconds; playback is muted, inline, autoplay, and loop.
 - Under `prefers-reduced-motion: reduce`, do not autoplay and show the poster.
 - AI is not presented as producing a final diagnosis or authorizing field action.
 - Do not claim guaranteed orders, guaranteed cost savings, universal brand authorization, nationwide local stock, or statutory industry certification.
@@ -24,7 +24,7 @@
 ## File Structure
 
 - Create `tools/engineer-video/index.html`: standalone reviewer preview with locale, play, pause, replay, and timeline controls.
-- Create `tools/engineer-video/engineer-service-animation.js`: shared 15-second scene data and deterministic SVG/HTML frame renderer.
+- Create `tools/engineer-video/engineer-service-animation.js`: shared 20-second scene data and deterministic SVG/HTML frame renderer.
 - Create `tools/engineer-video/styles.css`: preview and 16:9 animation-stage styling.
 - Create `tools/engineer-video/render.mjs`: SVG-frame generation and FFmpeg export orchestration for both locales.
 - Create `frontend/public/media/engineer-service-flywheel-{cn,en}.{webm,mp4}`: final localized video files.
@@ -53,24 +53,24 @@
 Use one data structure with the approved Chinese and English text:
 
 ```js
-export const DURATION_MS = 15000;
+export const DURATION_MS = 20000;
 
 export const COPY = {
   cn: [
     '客户需求进入系统',
     'AI 咨询接待 · 任务整理',
     '运营协调 · 匹配资源',
-    '工程师最终确认 · 解决问题',
-    '服务结果沉淀 · AI 持续学习',
+    '工程师确认 · 解决问题',
+    '服务数据沉淀 · AI 持续学习',
     '知识技能 · 供应链 · 品牌获客 · 工程师培训',
   ],
   en: [
     'Service requests enter the workflow',
     'AI intake · Structured work orders',
     'Operations coordination · Resource matching',
-    'Engineer confirmation · Service delivery',
-    'Service records · Continuous AI learning',
-    'Knowledge · Supply chain · Shared marketing · Training',
+    'Engineer confirmation · Problem resolution',
+    'Service data captured · Continuous AI learning',
+    'Knowledge · Supply chain · Shared marketing · Engineer training',
   ],
 };
 ```
@@ -91,7 +91,7 @@ Provide a compact toolbar outside the capture stage with:
 <button data-action="play">Play</button>
 <button data-action="pause">Pause</button>
 <button data-action="replay">Replay</button>
-<input data-action="seek" type="range" min="0" max="15000" step="50">
+<input data-action="seek" type="range" min="0" max="20000" step="50">
 ```
 
 The `render=1` query parameter hides controls and renders only the exact 16:9 stage for export.
@@ -143,7 +143,7 @@ Expected: only deterministic preview source is committed; review screenshots rem
 
 - [ ] **Step 1: Implement deterministic SVG frame generation**
 
-In `render.mjs`, generate 360 SVG frames per locale at 24 fps from the 15-second timeline. Import the same `renderSvg(locale, timeMs)` function used by the browser preview and write temporary SVG frames outside `frontend/public`.
+In `render.mjs`, generate 480 SVG frames per locale at 24 fps from the 20-second timeline. Import the same `renderSvg(locale, timeMs)` function used by the browser preview and write temporary SVG frames outside `frontend/public`.
 
 The frame timing must be:
 
@@ -177,7 +177,7 @@ ffprobe -v error -show_entries format=duration -of default=nw=1:nk=1 frontend/pu
 find frontend/public/media -type f -maxdepth 1 -print0 | xargs -0 ls -lh
 ```
 
-Expected: both durations report approximately `15.000000`; each video is below 5 MB and each poster is below 250 KB.
+Expected: both durations report approximately `20.000000`; each video is below 5 MB and each poster is below 250 KB.
 
 - [ ] **Step 5: Inspect representative frames and posters**
 
@@ -315,7 +315,7 @@ Build the page in this order:
 
 1. Existing brand navigation and primary application action.
 2. Complete hero with the three-party flow: AI system, engineer, operations management.
-3. Independent `15 秒了解协作模式` / `The model in 15 seconds` video section.
+3. Independent `20 秒了解协作模式` / `The model in 20 seconds` video section.
 4. Three core benefits.
 5. Safety boundary.
 6. Detailed problem, eight-step service process, reusable team capability, and shared scale capabilities.

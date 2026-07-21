@@ -1,8 +1,8 @@
-# Engineer Homepage 15-Second Video Design
+# Engineer Homepage 20-Second Video Design
 
 ## Goal
 
-Add a concise visual overview to the engineer-facing homepage so a local service team or independent engineer can understand the SAGEMRO cooperation model in about 15 seconds.
+Add a concise visual overview to the engineer-facing homepage so a local service team or independent engineer can understand the SAGEMRO cooperation model in about 20 seconds.
 
 The video supplements the confirmed homepage copy. It does not replace or remove the hero copy, three-party workflow, benefits, service process, shared supply-chain, marketing, training, cooperation, application, safety, or FAQ content.
 
@@ -38,7 +38,7 @@ Place the video in a new unframed overview section after the complete hero and i
 
 The section contains:
 
-- A compact label such as `15 秒了解协作模式` outside the video.
+- A compact label such as `20 秒了解协作模式` outside the video.
 - The video as the dominant visual element.
 - No paragraph that repeats the animation text.
 - Existing confirmed sections immediately below, unchanged in meaning and completeness.
@@ -49,12 +49,12 @@ The video must not become the hero background and must not push the application 
 
 | Time | Visual action | Chinese text | English text |
 | --- | --- | --- | --- |
-| 0.0-2.5s | Equipment alarms, images, messages, and service needs enter from several directions and converge into the SAGEMRO workflow. | `客户需求进入系统` | `Service requests enter the workflow` |
-| 2.5-5.0s | AI groups equipment details, symptoms, site conditions, risk signals, and history into a structured work order. | `AI 咨询接待 · 任务整理` | `AI intake · Structured work orders` |
-| 5.0-7.5s | The work order passes through operations, which matches region, urgency, equipment type, and available service resources. | `运营协调 · 匹配资源` | `Operations coordination · Resource matching` |
-| 7.5-10.0s | An engineer reviews the structured case, confirms materials, service mode, risk, and quote, then resolves the problem remotely or on site. | `工程师最终确认 · 解决问题` | `Engineer confirmation · Service delivery` |
-| 10.0-12.5s | Service report, material use, communication, and outcome flow back into structured knowledge. | `服务结果沉淀 · AI 持续学习` | `Service records · Continuous AI learning` |
-| 12.5-15.0s | The knowledge flywheel becomes the center of a service network connected to four shared capabilities. | `知识技能 · 供应链 · 品牌获客 · 工程师培训` | `Knowledge · Supply chain · Shared marketing · Training` |
+| 0.0-3.3s | Equipment alarms, images, messages, and service needs enter from several directions and converge into the SAGEMRO workflow. | `客户需求进入系统` | `Service requests enter the workflow` |
+| 3.3-6.7s | AI groups equipment details, symptoms, site conditions, risk signals, and history into a structured work order. | `AI 咨询接待 · 任务整理` | `AI intake · Structured work orders` |
+| 6.7-10.0s | The work order passes through operations, which matches region, urgency, equipment type, and available service resources. | `运营协调 · 匹配资源` | `Operations coordination · Resource matching` |
+| 10.0-13.3s | An engineer reviews the structured case, confirms materials, service mode, risk, and quote, then resolves the problem remotely or on site. | `工程师确认 · 解决问题` | `Engineer confirmation · Problem resolution` |
+| 13.3-16.7s | Service data, material use, communication, and outcome flow back into structured knowledge. | `服务数据沉淀 · AI 持续学习` | `Service data captured · Continuous AI learning` |
+| 16.7-20.0s | The knowledge flywheel becomes the center of a service network connected to four shared capabilities. | `知识技能 · 供应链 · 品牌获客 · 工程师培训` | `Knowledge · Supply chain · Shared marketing · Engineer training` |
 
 Final lockup:
 
@@ -90,7 +90,7 @@ A service network that improves with every job
 
 ## Playback And Accessibility
 
-- Duration: exactly 15 seconds.
+- Duration: exactly 20 seconds.
 - Playback: muted, inline, autoplay, and loop.
 - User controls are not shown for the decorative overview video.
 - Provide an informative poster image that represents the full workflow when video playback is unavailable.
@@ -146,7 +146,7 @@ The animation source and export tooling remain separate from the production Reac
 
 ## Verification
 
-- Confirm the animation duration is 15 seconds and loops without a visible blank frame.
+- Confirm the animation duration is 20 seconds and loops without a visible blank frame.
 - Confirm every approved Chinese and English on-screen phrase appears for sufficient reading time and no extra marketing claim is introduced.
 - Confirm WebM, MP4, and poster assets load successfully from the production build.
 - Confirm the Chinese site loads only Chinese media and the international site loads only English media.

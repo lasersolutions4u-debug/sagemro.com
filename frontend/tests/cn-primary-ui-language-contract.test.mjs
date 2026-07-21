@@ -173,14 +173,20 @@ test('CN recruiting and shared overlays localize secondary labels', () => {
   const feedback = read('frontend/src/components/common/FeedbackHost.jsx');
   const feedbackUtils = read('frontend/src/utils/feedback.js');
 
-  assert.match(recruiting, /让工程师专注解决设备问题，不再被杂务拖住/);
-  assert.match(recruiting, /本地维修团队与个人工程师/);
-  assert.match(recruiting, /AI 先把问题理清，工程师专心确认方案和落地执行/);
-  assert.match(recruiting, /沟通清楚再上门，少跑没必要去的现场/);
-  assert.match(recruiting, /让工程师少做杂事，让团队更有效率/);
-  assert.match(recruiting, /形成团队服务的知识和技能资产/);
-  assert.match(recruiting, /服务安全与责任边界/);
-  assert.match(recruiting, /申请加入服务网络/);
+  assert.match(recruiting, /设备维保最佳方案：AI知识飞轮\+工程师技能实践/);
+  assert.match(recruiting, /激光及金属成型设备维保工程师/);
+  assert.match(recruiting, /咨询接待，任务整理/);
+  assert.match(recruiting, /确认方案，解决问题/);
+  assert.match(recruiting, /协调流程，沉淀记录/);
+  assert.match(recruiting, /减少反复沟通，避免无效上门/);
+  assert.match(recruiting, /一个越来越懂客户的AI，让技术服务更高效/);
+  assert.match(recruiting, /知识技能持续进化，服务能力无限增长/);
+  assert.match(recruiting, /内容为AI 生成，仅供参考/);
+  assert.match(recruiting, /申请加入/);
+  assert.match(recruiting, /从单打独斗，到共享规模化能力/);
+  assert.match(recruiting, /共享更有竞争力的供应链/);
+  assert.match(recruiting, /共享品牌和市场获客能力/);
+  assert.match(recruiting, /共享持续进阶的工程师培训/);
   assert.match(recruiting, /个人 \/ 团队服务能力/);
   assert.match(recruiting, /合作稳定后/);
   assert.match(recruiting, /removeTag\(tag\)/);
