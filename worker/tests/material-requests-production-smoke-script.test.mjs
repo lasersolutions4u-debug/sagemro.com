@@ -63,6 +63,8 @@ test('material request cleanup covers request, material, work order, and users',
   assert.match(cleanupSql, /DELETE FROM engineers/);
   assert.ok(cleanupSql.indexOf('DELETE FROM work_order_material_items') < cleanupSql.indexOf('DELETE FROM materials'));
   assert.ok(cleanupSql.indexOf('DELETE FROM work_orders') < cleanupSql.indexOf('DELETE FROM customers'));
+  assert.ok(cleanupSql.indexOf('DELETE FROM account_identities') < cleanupSql.indexOf('DELETE FROM engineers'));
+  assert.ok(cleanupSql.indexOf('DELETE FROM account_identities') < cleanupSql.indexOf('DELETE FROM customers'));
 
   assert.match(residueSql, /material_requests/);
   assert.match(residueSql, /total_residue/);

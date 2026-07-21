@@ -129,9 +129,11 @@ DELETE FROM engineer_promotions WHERE engineer_id=${eng};
 DELETE FROM engineer_violations WHERE engineer_id=${eng} OR work_order_id=${wo};
 DELETE FROM engineer_withdrawals WHERE engineer_id=${eng};
 DELETE FROM push_subscriptions WHERE engineer_id=${eng};
+DELETE FROM account_identities WHERE owner_type='engineer' AND owner_id=${eng};
 DELETE FROM engineers WHERE id=${eng};
 DELETE FROM messages WHERE conversation_id IN (SELECT id FROM conversations WHERE customer_id=${cust} OR engineer_id=${eng} OR id LIKE '%' || ${runId} || '%');
 DELETE FROM conversations WHERE customer_id=${cust} OR engineer_id=${eng} OR id LIKE '%' || ${runId} || '%';
+DELETE FROM account_identities WHERE owner_type='customer' AND owner_id=${cust};
 DELETE FROM customers WHERE id=${cust};
 `;
 }

@@ -63,6 +63,8 @@ test('cleanup SQL deletes child records before parent records and verifies resid
   assert.ok(cleanupSql.indexOf('DELETE FROM work_order_pricing_history') < cleanupSql.indexOf('DELETE FROM work_order_pricing WHERE'));
   assert.ok(cleanupSql.indexOf('DELETE FROM work_orders') < cleanupSql.indexOf('DELETE FROM engineers'));
   assert.ok(cleanupSql.indexOf('DELETE FROM work_orders') < cleanupSql.indexOf('DELETE FROM customers'));
+  assert.ok(cleanupSql.indexOf('DELETE FROM account_identities') < cleanupSql.indexOf('DELETE FROM engineers'));
+  assert.ok(cleanupSql.indexOf('DELETE FROM account_identities') < cleanupSql.indexOf('DELETE FROM customers'));
   assert.match(cleanupSql, /DELETE FROM materials/);
 
   const residueSql = buildResidueSql(context);

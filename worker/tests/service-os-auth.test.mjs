@@ -11,6 +11,11 @@ function createTestEnv(overrides = {}) {
   const dbState = {
     customers: [],
     engineers: [],
+    identities: [],
+    engineerApplications: [],
+    engineerActivations: [],
+    batches: [],
+    batchError: null,
   };
   return {
     JWT_SECRET: 'test-secret-with-enough-length',
@@ -32,12 +37,28 @@ function createTestEnv(overrides = {}) {
     DB: {
       prepare(sql) {
         return {
+          sql,
           args: [],
           bind(...args) {
             this.args = args;
             return this;
           },
           async first() {
+            if (/FROM account_identities/i.test(sql)) {
+              const [email, phone] = this.args;
+              return dbState.identities.find((identity) => (
+                (identity.identity_type === 'email' && identity.normalized_value === email)
+                || (identity.identity_type === 'phone' && identity.normalized_value === phone)
+              )) || null;
+            }
+            if (/SELECT id FROM customers WHERE id = \?/i.test(sql)) {
+              const row = dbState.customers.find((customer) => customer.id === this.args[0]);
+              return row ? { id: row.id } : null;
+            }
+            if (/SELECT id FROM engineers WHERE id = \?/i.test(sql)) {
+              const row = dbState.engineers.find((engineer) => engineer.id === this.args[0]);
+              return row ? { id: row.id } : null;
+            }
             if (/SELECT \* FROM customers WHERE phone = \?/i.test(sql)) {
               const row = dbState.customers.find((customer) => customer.phone === this.args[0]);
               return row || null;
@@ -58,6 +79,12 @@ function createTestEnv(overrides = {}) {
               const row = dbState.customers.find((customer) => customer.phone === this.args[0]);
               return row ? { id: row.id } : null;
             }
+            if (/FROM customers\s+WHERE replace\(/i.test(sql)) {
+              const row = dbState.customers.find((customer) => (
+                String(customer.phone || '').trim().replace(/[\s().-]/g, '') === this.args[0]
+              ));
+              return row ? { id: row.id } : null;
+            }
             if (/FROM customers WHERE lower\(email\) = \?/i.test(sql)) {
               const row = dbState.customers.find((customer) => customer.email?.toLowerCase() === this.args[0]);
               return row ? { id: row.id } : null;
@@ -66,7 +93,16 @@ function createTestEnv(overrides = {}) {
               const row = dbState.engineers.find((engineer) => engineer.phone === this.args[0]);
               return row ? { id: row.id } : null;
             }
+            if (/FROM engineers\s+WHERE replace\(/i.test(sql)) {
+              const row = dbState.engineers.find((engineer) => (
+                String(engineer.phone || '').trim().replace(/[\s().-]/g, '') === this.args[0]
+              ));
+              return row ? { id: row.id } : null;
+            }
             return null;
+          },
+          async all() {
+            return { results: [] };
           },
           async run() {
             if (/INSERT INTO customers/i.test(sql)) {
@@ -78,15 +114,67 @@ function createTestEnv(overrides = {}) {
                 dbState.customers.push({ id, user_no, name, phone, password_hash, salt, company, auth_status });
               }
             }
+            if (/INSERT INTO account_identities/i.test(sql)) {
+              const [identity_type, normalized_value, owner_type, owner_id] = this.args;
+              dbState.identities.push({ identity_type, normalized_value, owner_type, owner_id });
+            }
+            if (/UPDATE engineer_applications SET converted_user_id = NULL/i.test(sql)) {
+              for (const application of dbState.engineerApplications) {
+                if (application.converted_user_id === this.args[0]) application.converted_user_id = null;
+              }
+            }
+            if (/DELETE FROM engineer_account_activations/i.test(sql)) {
+              dbState.engineerActivations = dbState.engineerActivations.filter((row) => row.engineer_id !== this.args[0]);
+            }
+            if (/DELETE FROM account_identities/i.test(sql)) {
+              const [ownerType, ownerId] = this.args;
+              dbState.identities = dbState.identities.filter((row) => (
+                row.owner_type !== ownerType || row.owner_id !== ownerId
+              ));
+            }
+            if (/DELETE FROM customers WHERE id = \?/i.test(sql)) {
+              dbState.customers = dbState.customers.filter((row) => row.id !== this.args[0]);
+            }
+            if (/DELETE FROM engineers WHERE id = \?/i.test(sql)) {
+              dbState.engineers = dbState.engineers.filter((row) => row.id !== this.args[0]);
+            }
             return { success: true };
           },
         };
+      },
+      async batch(statements) {
+        dbState.batches.push(statements.map((statement) => statement.sql.trim().replace(/\s+/g, ' ')));
+        if (dbState.batchError) {
+          const error = dbState.batchError;
+          dbState.batchError = null;
+          throw error;
+        }
+        for (const statement of statements) await statement.run();
+        return statements.map(() => ({ success: true }));
       },
     },
     __kv: kv,
     __dbState: dbState,
     ...overrides,
   };
+}
+
+async function adminRequest(url, { method = 'POST', body } = {}) {
+  const token = await signJwt({
+    userId: 'admin',
+    userType: 'admin',
+    exp: Math.floor(Date.now() / 1000) + 60,
+  }, 'test-secret-with-enough-length');
+
+  return new Request(url, {
+    method,
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+      Origin: new URL(url).origin.replace('api.', 'admin.'),
+    },
+    body: body ? JSON.stringify(body) : undefined,
+  });
 }
 
 async function adminLogin(url, body, env = createTestEnv()) {
@@ -477,6 +565,13 @@ test('COM customer registration stores email and allows email login', async () =
   assert.equal(json.customer.phone, '+66961135966');
   assert.equal(env.__dbState.customers[0].email, 'joe@example.com');
   assert.equal(env.__dbState.customers[0].auth_status, 'authenticated');
+  assert.equal(env.__dbState.identities.some((row) => (
+    row.identity_type === 'email' && row.normalized_value === 'joe@example.com'
+  )), true);
+  assert.equal(env.__dbState.identities.some((row) => (
+    row.identity_type === 'phone' && row.normalized_value === '+66961135966'
+  )), true);
+  assert.equal(env.__dbState.batches[0].length, 3);
   assert.equal(await env.KV.get('verify_code_email_joe@example.com'), null);
 
   const loginResult = await postJson('https://api.sagemro.com/api/auth/login', {
@@ -487,6 +582,165 @@ test('COM customer registration stores email and allows email login', async () =
   assert.equal(loginResult.response.status, 200);
   assert.equal(loginResult.json.user.phone, '+66961135966');
   assert.equal(loginResult.json.user.email, 'joe@example.com');
+});
+
+test('customer registration rejects an email owned by an engineer identity', async () => {
+  const env = createTestEnv();
+  env.__dbState.identities.push({
+    identity_type: 'email',
+    normalized_value: 'joe@example.com',
+    owner_type: 'engineer',
+    owner_id: 'eng-1',
+  });
+  await env.KV.put('verify_code_email_joe@example.com', '1357');
+
+  const { response, json } = await postJson('https://api.sagemro.com/api/auth/register/customer', {
+    name: 'Joe',
+    phone: '+66961135966',
+    email: 'JOE@example.com',
+    password: 'secret12345',
+    code: '1357',
+    company: 'Test Co',
+    identity: 'customer',
+  }, env);
+
+  assert.equal(response.status, 409);
+  assert.match(json.error, /email/i);
+  assert.equal(env.__dbState.customers.length, 0);
+});
+
+test('customer registration direct-table fallback normalizes an engineer phone', async () => {
+  const env = createTestEnv();
+  env.__dbState.engineers.push({ id: 'eng-1', phone: '+52 (5572) 080-065' });
+  await env.KV.put('verify_code_email_joe@example.com', '1357');
+
+  const { response } = await postJson('https://api.sagemro.com/api/auth/register/customer', {
+    name: 'Joe',
+    phone: '+525572080065',
+    email: 'joe@example.com',
+    password: 'secret12345',
+    code: '1357',
+    company: 'Test Co',
+    identity: 'customer',
+  }, env);
+
+  assert.equal(response.status, 409);
+  assert.equal(env.__dbState.customers.length, 0);
+});
+
+test('customer registration maps a concurrent identity claim to 409', async () => {
+  const env = createTestEnv();
+  await env.KV.put('verify_code_email_joe@example.com', '1357');
+  env.__dbState.batchError = new Error(
+    'D1_ERROR: UNIQUE constraint failed: account_identities.identity_type, account_identities.normalized_value: SQLITE_CONSTRAINT',
+  );
+  const originalBatch = env.DB.batch;
+  env.DB.batch = async (statements) => {
+    env.__dbState.identities.push({
+      identity_type: 'email',
+      normalized_value: 'joe@example.com',
+      owner_type: 'engineer',
+      owner_id: 'eng-race',
+    });
+    return originalBatch(statements);
+  };
+
+  const { response, json } = await postJson('https://api.sagemro.com/api/auth/register/customer', {
+    name: 'Joe',
+    phone: '+66961135966',
+    email: 'joe@example.com',
+    password: 'secret12345',
+    code: '1357',
+    company: 'Test Co',
+    identity: 'customer',
+  }, env);
+
+  assert.equal(response.status, 409);
+  assert.match(json.error, /email/i);
+  assert.equal(env.__dbState.customers.length, 0);
+});
+
+test('Admin customer creation atomically claims the phone identity', async () => {
+  const env = createTestEnv();
+  const response = await worker.fetch(await adminRequest('https://api.sagemro.com/api/admin/users', {
+    body: {
+      userType: 'customer',
+      name: 'Customer One',
+      phone: '+1 (555) 123-4567',
+      password: 'secret12345',
+      region: 'Texas',
+    },
+  }), env, { waitUntil() {} });
+  const json = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(json.user.phone, '+1 (555) 123-4567');
+  assert.equal(env.__dbState.batches.at(-1).length, 2);
+  assert.equal(env.__dbState.identities.some((row) => (
+    row.identity_type === 'phone'
+    && row.normalized_value === '+15551234567'
+    && row.owner_type === 'customer'
+  )), true);
+});
+
+test('generic Admin engineer creation is retired with guidance', async () => {
+  const env = createTestEnv();
+  const response = await worker.fetch(await adminRequest('https://api.sagemro.com/api/admin/users', {
+    body: {
+      userType: 'engineer',
+      name: 'Engineer One',
+      phone: '+15551234567',
+      password: 'secret12345',
+    },
+  }), env, { waitUntil() {} });
+  const json = await response.json();
+
+  assert.equal(response.status, 410);
+  assert.match(json.error, /approved application/i);
+  assert.equal(env.__dbState.engineers.length, 0);
+});
+
+test('Admin account deletion releases customer identity before deleting the customer', async () => {
+  const env = createTestEnv();
+  env.__dbState.customers.push({ id: 'cust-1', phone: '+15551230001' });
+  env.__dbState.identities.push({
+    identity_type: 'phone', normalized_value: '+15551230001', owner_type: 'customer', owner_id: 'cust-1',
+  });
+
+  const response = await worker.fetch(await adminRequest(
+    'https://api.sagemro.com/api/admin/users/cust-1?type=customer',
+    { method: 'DELETE' },
+  ), env, { waitUntil() {} });
+
+  assert.equal(response.status, 200);
+  const batch = env.__dbState.batches.at(-1);
+  assert.ok(batch.findIndex((sql) => sql.startsWith('DELETE FROM account_identities'))
+    < batch.findIndex((sql) => sql.startsWith('DELETE FROM customers')));
+});
+
+test('Admin engineer deletion clears application, activation, and identity before the engineer', async () => {
+  const env = createTestEnv();
+  env.__dbState.engineers.push({ id: 'eng-1', phone: '+15551230002' });
+  env.__dbState.engineerApplications.push({ id: 'app-1', converted_user_id: 'eng-1' });
+  env.__dbState.engineerActivations.push({ id: 'activation-1', engineer_id: 'eng-1' });
+  env.__dbState.identities.push({
+    identity_type: 'phone', normalized_value: '+15551230002', owner_type: 'engineer', owner_id: 'eng-1',
+  });
+
+  const response = await worker.fetch(await adminRequest(
+    'https://api.sagemro.com/api/admin/users/eng-1?type=engineer',
+    { method: 'DELETE' },
+  ), env, { waitUntil() {} });
+
+  assert.equal(response.status, 200);
+  const batch = env.__dbState.batches.at(-1);
+  const applicationIndex = batch.findIndex((sql) => sql.startsWith('UPDATE engineer_applications'));
+  const activationIndex = batch.findIndex((sql) => sql.startsWith('DELETE FROM engineer_account_activations'));
+  const identityIndex = batch.findIndex((sql) => sql.startsWith('DELETE FROM account_identities'));
+  const engineerIndex = batch.findIndex((sql) => sql.startsWith('DELETE FROM engineers'));
+  assert.ok(applicationIndex < activationIndex);
+  assert.ok(activationIndex < identityIndex);
+  assert.ok(identityIndex < engineerIndex);
 });
 
 test('customer login returns company profile fields saved during registration', async () => {
