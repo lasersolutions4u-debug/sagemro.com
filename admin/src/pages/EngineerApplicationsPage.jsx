@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import {
   CheckCircle2,
+  ChevronRight,
   ClipboardList,
   ExternalLink,
   Mail,
@@ -10,6 +11,7 @@ import {
   UserPlus,
   UserRound,
   Wrench,
+  X,
 } from 'lucide-react';
 import { EngineerAccountSetupModal } from '../components/EngineerAccountSetupModal';
 import {
@@ -42,7 +44,7 @@ const TEXT = {
   en: {
     title: 'Engineer Applications',
     badge: 'SAGEMRO Engineer Service Network',
-    subtitle: 'Review applications and open approved engineer accounts from the same card.',
+    subtitle: 'Review applications and open approved engineer accounts from one focused detail view.',
     section: 'Review and account setup',
     all: 'All review states',
     marketAll: 'All markets',
@@ -95,11 +97,17 @@ const TEXT = {
     expiresAt: 'Expires',
     previous: 'Previous',
     next: 'Next',
+    viewApplication: 'View application',
+    close: 'Close',
+    submittedAt: 'Submitted',
+    contact: 'Contact',
+    account: 'Account status',
+    applicationDetails: 'Application details',
   },
   'zh-CN': {
     title: '工程师合作申请',
     badge: 'SAGEMRO 工程师服务协作网络',
-    subtitle: '在同一张申请卡片中完成审核、账号开通与激活跟进。',
+    subtitle: '在清单中快速浏览申请，并在详情页完成审核、账号开通与激活跟进。',
     section: '审核与账号开通',
     all: '全部审核状态',
     marketAll: '全部市场',
@@ -152,6 +160,12 @@ const TEXT = {
     expiresAt: '有效期至',
     previous: '上一页',
     next: '下一页',
+    viewApplication: '查看申请详情',
+    close: '关闭',
+    submittedAt: '提交时间',
+    contact: '联系方式',
+    account: '账号状态',
+    applicationDetails: '申请详情',
   },
 };
 
@@ -196,6 +210,7 @@ export function EngineerApplicationsPage({ onOpenEngineer }) {
   const [actionId, setActionId] = useState('');
   const [message, setMessage] = useState('');
   const [drafts, setDrafts] = useState({});
+  const [selectedApplication, setSelectedApplication] = useState(null);
   const [setupApplication, setSetupApplication] = useState(null);
   const [setupError, setSetupError] = useState('');
   const [regionalLeads, setRegionalLeads] = useState([]);
@@ -210,6 +225,7 @@ export function EngineerApplicationsPage({ onOpenEngineer }) {
           status: reviewStatus(item.status),
           review_notes: item.review_notes || '',
         }])));
+        setSelectedApplication((current) => current ? (nextData.list || []).find((item) => item.id === current.id) || null : null);
       })
       .catch((error) => setMessage(error.message))
       .finally(() => setLoading(false));
@@ -313,77 +329,100 @@ export function EngineerApplicationsPage({ onOpenEngineer }) {
       ) : data.list.length === 0 ? (
         <div className="border-y border-[var(--color-border)] py-12 text-center text-sm text-[var(--color-text-muted)]">{t.empty}</div>
       ) : (
-        <div className="space-y-4">
+        <div className="overflow-hidden rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]">
+          <div className="hidden grid-cols-[minmax(220px,1.4fr)_minmax(140px,1fr)_150px_170px_150px_32px] gap-4 border-b border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-4 py-3 text-xs font-medium text-[var(--color-text-muted)] lg:grid">
+            <span>{t.contact}</span><span>{t.headers.location}</span><span>{t.headers.review}</span><span>{t.account}</span><span>{t.submittedAt}</span><span />
+          </div>
           {data.list.map((application) => {
-            const draft = drafts[application.id] || {};
             const currentReview = reviewStatus(application.status);
             const account = application.account || { activation_status: 'not_opened' };
             const activationStatus = account.activation_status || 'not_opened';
-            const canOpen = currentReview === 'qualified' && activationStatus === 'not_opened';
-            const canResend = ['awaiting_activation', 'activation_expired'].includes(activationStatus);
             return (
-              <article key={application.id} className="overflow-hidden rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] shadow-sm">
-                <div className="border-b border-[var(--color-border)] p-4">
-                  <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                    <div className="flex items-start gap-3">
-                      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-[var(--color-primary)]/10 text-sm font-semibold text-[var(--color-primary)]">{applicantInitial(application.name)}</div>
-                      <div>
-                        <div className="flex flex-wrap items-center gap-2">
-                          <h3 className="font-semibold text-[var(--color-text)]">{application.name}</h3>
-                          <span className={`rounded-full border px-2 py-0.5 text-xs ${REVIEW_STYLE[currentReview]}`}>{t.reviewStatuses[currentReview]}</span>
-                          <span className={`rounded-full border px-2 py-0.5 text-xs ${ACCOUNT_STYLE[activationStatus]}`}>{t.accountStatuses[activationStatus]}</span>
-                          <span className="rounded-full bg-[var(--color-surface-elevated)] px-2 py-0.5 text-xs text-[var(--color-text-muted)]">{application.market === 'cn' ? 'sagemro.cn' : 'sagemro.com'}</span>
-                        </div>
-                        <p className="mt-1 break-words text-sm text-[var(--color-text-secondary)]">{contactLine(application)}</p>
-                      </div>
-                    </div>
-                    <div className="text-xs text-[var(--color-text-muted)]">{application.created_at || '-'}</div>
-                  </div>
-                </div>
-
-                <div className="grid gap-4 p-4 lg:grid-cols-[1fr_1fr_1.25fr]">
-                  <div className="space-y-3 text-sm">
-                    <div><div className="flex items-center gap-1.5 text-xs text-[var(--color-text-muted)]"><MapPin size={13} />{t.headers.location}</div><div className="mt-1 text-[var(--color-text-secondary)]">{[application.country, application.province, application.city, application.base_region].filter(Boolean).join(' / ') || '-'}</div></div>
-                    <div><div className="flex items-center gap-1.5 text-xs text-[var(--color-text-muted)]"><ShieldCheck size={13} />{t.headers.regions}</div>{renderTags(application.service_regions)}</div>
-                    <div><div className="flex items-center gap-1.5 text-xs text-[var(--color-text-muted)]"><Wrench size={13} />{t.headers.skills}</div>{renderTags(application.skill_tags)}</div>
-                  </div>
-
-                  <div className="space-y-3 text-sm">
-                    <div><div className="text-xs text-[var(--color-text-muted)]">{t.headers.capacity}</div><div className="mt-2 flex flex-wrap gap-2">{Object.entries(t.capacity).map(([key, label]) => <span key={key} className={`inline-flex items-center gap-1 rounded-full border px-2 py-1 text-xs ${application[key] ? 'border-green-500/30 bg-green-500/10 text-green-300' : 'border-[var(--color-border)] text-[var(--color-text-muted)]'}`}>{application[key] && <CheckCircle2 size={12} />}{label}</span>)}</div></div>
-                    <div><div className="flex items-center gap-1.5 text-xs text-[var(--color-text-muted)]"><UserRound size={13} />{t.headers.experience}</div><p className="mt-1 line-clamp-6 text-[var(--color-text-secondary)]">{application.experience_summary || '-'}</p></div>
-                  </div>
-
-                  <div className="rounded-lg border border-[var(--color-primary)]/20 bg-[var(--color-primary)]/5 p-3">
-                    <div className="mb-3 flex items-center gap-2 text-xs font-medium text-[var(--color-primary)]"><ClipboardList size={13} />{t.section}</div>
-                    <div className="space-y-2">
-                      <select value={draft.status || currentReview} onChange={(event) => updateDraft(application.id, 'status', event.target.value)} className="min-h-10 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)]">
-                        {REVIEW_STATUSES.map((status) => <option key={status} value={status}>{t.reviewStatuses[status]}</option>)}
-                      </select>
-                      <textarea value={draft.review_notes || ''} onChange={(event) => updateDraft(application.id, 'review_notes', event.target.value)} placeholder={t.notesPlaceholder} rows={3} className="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)]" />
-                      <button onClick={() => saveReview(application)} disabled={savingId === application.id} className="min-h-10 w-full whitespace-nowrap rounded-lg bg-[var(--color-primary)] px-3 text-sm font-semibold text-white disabled:opacity-60">{savingId === application.id ? t.saving : t.save}</button>
-
-                      <div className="border-t border-[var(--color-primary)]/20 pt-3">
-                        {activationStatus === 'not_opened' && (
-                          <>
-                            <button onClick={() => openSetup(application)} disabled={!canOpen || actionId === application.id} className="inline-flex min-h-10 w-full items-center justify-center gap-2 whitespace-nowrap rounded-lg border border-[var(--color-primary)]/40 bg-[var(--color-primary)]/10 px-3 text-sm font-medium text-[var(--color-primary)] disabled:cursor-not-allowed disabled:opacity-45"><UserPlus size={15} />{t.openAccount}</button>
-                            {!canOpen && <p className="mt-2 text-xs leading-5 text-[var(--color-text-muted)]">{t.approveFirst}</p>}
-                          </>
-                        )}
-                        {canResend && <button onClick={() => resend(application)} disabled={actionId === application.id} className="inline-flex min-h-10 w-full items-center justify-center gap-2 whitespace-nowrap rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 text-sm font-medium text-amber-300 disabled:opacity-50"><Mail size={15} />{actionId === application.id ? t.resending : t.resend}</button>}
-                        {account.engineer_id && <button onClick={() => onOpenEngineer?.(account.engineer_id)} className="mt-2 inline-flex min-h-10 w-full items-center justify-center gap-2 whitespace-nowrap rounded-lg border border-[var(--color-border)] px-3 text-sm text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-elevated)]"><ExternalLink size={15} />{t.viewProfile}</button>}
-                        {(account.sent_at || account.expires_at) && <div className="mt-2 space-y-1 text-xs text-[var(--color-text-muted)]">{account.sent_at && <div>{t.sentAt}: {account.sent_at}</div>}{account.expires_at && <div>{t.expiresAt}: {account.expires_at}</div>}</div>}
-                        {account.send_status === 'failed' && <p className="mt-2 text-xs leading-5 text-amber-300">{t.resendFailed}</p>}
-                      </div>
-
-                      {setupApplication?.id === application.id && <EngineerAccountSetupModal application={application} locale={locale} regionalLeads={regionalLeads} submitting={actionId === application.id} error={setupError} onClose={() => { setSetupApplication(null); setSetupError(''); }} onSubmit={submitSetup} />}
-                    </div>
-                  </div>
-                </div>
-              </article>
+              <button key={application.id} type="button" data-testid="application-row" onClick={() => setSelectedApplication(application)} className="grid w-full grid-cols-1 gap-3 border-b border-[var(--color-border)] px-4 py-4 text-left transition-colors last:border-b-0 hover:bg-[var(--color-surface-elevated)] lg:grid-cols-[minmax(220px,1.4fr)_minmax(140px,1fr)_150px_170px_150px_32px] lg:items-center lg:gap-4">
+                <span className="flex min-w-0 items-center gap-3">
+                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[var(--color-primary)]/10 text-sm font-semibold text-[var(--color-primary)]">{applicantInitial(application.name)}</span>
+                  <span className="min-w-0">
+                    <span className="block truncate font-semibold text-[var(--color-text)]">{application.name || '-'}</span>
+                    <span className="mt-1 block truncate text-sm text-[var(--color-text-secondary)]">{contactLine(application)}</span>
+                    <span className="mt-1 inline-block text-xs text-[var(--color-text-muted)]">{application.market === 'cn' ? 'sagemro.cn' : 'sagemro.com'}</span>
+                  </span>
+                </span>
+                <span className="flex min-w-0 items-center gap-2 text-sm text-[var(--color-text-secondary)]"><MapPin size={14} className="shrink-0 text-[var(--color-text-muted)]" /><span className="truncate">{[application.province, application.city, application.base_region].filter(Boolean).join(' / ') || '-'}</span></span>
+                <span className={`w-fit rounded-full border px-2 py-1 text-xs ${REVIEW_STYLE[currentReview]}`}>{t.reviewStatuses[currentReview]}</span>
+                <span className={`w-fit rounded-full border px-2 py-1 text-xs ${ACCOUNT_STYLE[activationStatus]}`}>{t.accountStatuses[activationStatus]}</span>
+                <span className="text-xs text-[var(--color-text-muted)]"><span className="lg:hidden">{t.submittedAt}: </span>{application.created_at || '-'}</span>
+                <span className="hidden justify-end text-[var(--color-text-muted)] lg:flex"><ChevronRight size={18} /></span>
+                <span className="flex items-center justify-between text-xs font-medium text-[var(--color-primary)] lg:hidden"><span>{t.viewApplication}</span><ChevronRight size={16} /></span>
+              </button>
             );
           })}
         </div>
       )}
+
+      {selectedApplication && (() => {
+        const application = selectedApplication;
+        const draft = drafts[application.id] || {};
+        const currentReview = reviewStatus(application.status);
+        const account = application.account || { activation_status: 'not_opened' };
+        const activationStatus = account.activation_status || 'not_opened';
+        const canOpen = currentReview === 'qualified' && activationStatus === 'not_opened';
+        const canResend = ['awaiting_activation', 'activation_expired'].includes(activationStatus);
+        return (
+          <div className="fixed inset-0 z-50 flex justify-end">
+            <button type="button" aria-label={t.close} onClick={() => setSelectedApplication(null)} className="absolute inset-0 cursor-default bg-black/60" />
+            <aside role="dialog" aria-modal="true" aria-labelledby="engineer-application-detail-title" className="relative flex h-full w-full max-w-4xl flex-col border-l border-[var(--color-border)] bg-[var(--color-surface)] shadow-2xl">
+              <div className="flex items-start justify-between gap-4 border-b border-[var(--color-border)] px-5 py-4">
+                <div className="flex min-w-0 items-start gap-3">
+                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-[var(--color-primary)]/10 text-sm font-semibold text-[var(--color-primary)]">{applicantInitial(application.name)}</div>
+                  <div className="min-w-0">
+                    <h3 id="engineer-application-detail-title" className="truncate text-lg font-semibold text-[var(--color-text)]">{application.name || '-'}</h3>
+                    <p className="mt-1 break-words text-sm text-[var(--color-text-secondary)]">{contactLine(application)}</p>
+                    <div className="mt-2 flex flex-wrap items-center gap-2"><span className={`rounded-full border px-2 py-0.5 text-xs ${REVIEW_STYLE[currentReview]}`}>{t.reviewStatuses[currentReview]}</span><span className={`rounded-full border px-2 py-0.5 text-xs ${ACCOUNT_STYLE[activationStatus]}`}>{t.accountStatuses[activationStatus]}</span><span className="text-xs text-[var(--color-text-muted)]">{application.market === 'cn' ? 'sagemro.cn' : 'sagemro.com'}</span></div>
+                  </div>
+                </div>
+                <button type="button" onClick={() => setSelectedApplication(null)} aria-label={t.close} title={t.close} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-[var(--color-text-muted)] hover:bg-[var(--color-surface-elevated)]"><X size={18} /></button>
+              </div>
+
+              <div className="flex-1 space-y-5 overflow-y-auto p-5">
+                <section aria-labelledby="engineer-application-info-title">
+                  <h4 id="engineer-application-info-title" className="mb-3 text-sm font-semibold text-[var(--color-text)]">{t.applicationDetails}</h4>
+                  <div className="grid gap-4 border-y border-[var(--color-border)] py-4 md:grid-cols-2">
+                    <div><div className="flex items-center gap-1.5 text-xs text-[var(--color-text-muted)]"><MapPin size={13} />{t.headers.location}</div><div className="mt-1 text-sm text-[var(--color-text-secondary)]">{[application.country, application.province, application.city, application.base_region].filter(Boolean).join(' / ') || '-'}</div></div>
+                    <div><div className="flex items-center gap-1.5 text-xs text-[var(--color-text-muted)]"><ShieldCheck size={13} />{t.headers.regions}</div>{renderTags(application.service_regions)}</div>
+                    <div><div className="flex items-center gap-1.5 text-xs text-[var(--color-text-muted)]"><Wrench size={13} />{t.headers.skills}</div>{renderTags(application.skill_tags)}</div>
+                    <div><div className="text-xs text-[var(--color-text-muted)]">{t.headers.capacity}</div><div className="mt-2 flex flex-wrap gap-2">{Object.entries(t.capacity).map(([key, label]) => <span key={key} className={`inline-flex items-center gap-1 rounded-full border px-2 py-1 text-xs ${application[key] ? 'border-green-500/30 bg-green-500/10 text-green-300' : 'border-[var(--color-border)] text-[var(--color-text-muted)]'}`}>{application[key] && <CheckCircle2 size={12} />}{label}</span>)}</div></div>
+                    <div className="md:col-span-2"><div className="flex items-center gap-1.5 text-xs text-[var(--color-text-muted)]"><UserRound size={13} />{t.headers.experience}</div><p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-[var(--color-text-secondary)]">{application.experience_summary || '-'}</p></div>
+                    <div className="text-sm text-[var(--color-text-secondary)]"><span className="text-xs text-[var(--color-text-muted)]">{t.contact}</span><div className="mt-1 break-words">{contactLine(application)}</div></div>
+                    <div className="text-sm text-[var(--color-text-secondary)]"><span className="text-xs text-[var(--color-text-muted)]">{t.submittedAt}</span><div className="mt-1">{application.created_at || '-'}</div></div>
+                  </div>
+                </section>
+
+                <section className="rounded-lg border border-[var(--color-primary)]/20 bg-[var(--color-primary)]/5 p-4" aria-labelledby="engineer-application-review-title">
+                  <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-[var(--color-primary)]"><ClipboardList size={15} /><h4 id="engineer-application-review-title">{t.section}</h4></div>
+                  <div className="space-y-3">
+                    <select value={draft.status || currentReview} onChange={(event) => updateDraft(application.id, 'status', event.target.value)} className="min-h-10 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)]">
+                      {REVIEW_STATUSES.map((status) => <option key={status} value={status}>{t.reviewStatuses[status]}</option>)}
+                    </select>
+                    <textarea value={draft.review_notes || ''} onChange={(event) => updateDraft(application.id, 'review_notes', event.target.value)} placeholder={t.notesPlaceholder} rows={4} className="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)]" />
+                    <button onClick={() => saveReview(application)} disabled={savingId === application.id} className="min-h-10 w-full whitespace-nowrap rounded-lg bg-[var(--color-primary)] px-3 text-sm font-semibold text-white disabled:opacity-60">{savingId === application.id ? t.saving : t.save}</button>
+                  </div>
+                </section>
+
+                <section className="border-t border-[var(--color-border)] pt-5" aria-label={t.accountStatuses[activationStatus]}>
+                  <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-[var(--color-text)]"><UserPlus size={15} />{t.accountStatuses[activationStatus]}</div>
+                  {activationStatus === 'not_opened' && <><button onClick={() => openSetup(application)} disabled={!canOpen || actionId === application.id} className="inline-flex min-h-10 w-full items-center justify-center gap-2 whitespace-nowrap rounded-lg border border-[var(--color-primary)]/40 bg-[var(--color-primary)]/10 px-3 text-sm font-medium text-[var(--color-primary)] disabled:cursor-not-allowed disabled:opacity-45"><UserPlus size={15} />{t.openAccount}</button>{!canOpen && <p className="mt-2 text-xs leading-5 text-[var(--color-text-muted)]">{t.approveFirst}</p>}</>}
+                  {canResend && <button onClick={() => resend(application)} disabled={actionId === application.id} className="inline-flex min-h-10 w-full items-center justify-center gap-2 whitespace-nowrap rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 text-sm font-medium text-amber-300 disabled:opacity-50"><Mail size={15} />{actionId === application.id ? t.resending : t.resend}</button>}
+                  {account.engineer_id && <button onClick={() => onOpenEngineer?.(account.engineer_id)} className="mt-2 inline-flex min-h-10 w-full items-center justify-center gap-2 whitespace-nowrap rounded-lg border border-[var(--color-border)] px-3 text-sm text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-elevated)]"><ExternalLink size={15} />{t.viewProfile}</button>}
+                  {(account.sent_at || account.expires_at) && <div className="mt-3 space-y-1 text-xs text-[var(--color-text-muted)]">{account.sent_at && <div>{t.sentAt}: {account.sent_at}</div>}{account.expires_at && <div>{t.expiresAt}: {account.expires_at}</div>}</div>}
+                  {account.send_status === 'failed' && <p className="mt-2 text-xs leading-5 text-amber-300">{t.resendFailed}</p>}
+                </section>
+
+                {setupApplication?.id === application.id && <EngineerAccountSetupModal application={application} locale={locale} regionalLeads={regionalLeads} submitting={actionId === application.id} error={setupError} onClose={() => { setSetupApplication(null); setSetupError(''); }} onSubmit={submitSetup} />}
+              </div>
+            </aside>
+          </div>
+        );
+      })()}
 
       <div className="mt-6 flex items-center justify-between">
         <button onClick={() => setPage((current) => Math.max(1, current - 1))} disabled={page === 1} className="min-h-10 whitespace-nowrap rounded-lg bg-[var(--color-surface-elevated)] px-4 text-sm disabled:opacity-50">{t.previous}</button>

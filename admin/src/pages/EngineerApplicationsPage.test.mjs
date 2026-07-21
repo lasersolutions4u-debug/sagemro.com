@@ -22,6 +22,12 @@ test('engineer applications expose independent review and activation workflows',
   assert.match(applications, /awaiting_activation/);
   assert.match(applications, /activation_expired/);
   assert.match(applications, /activated/);
+  assert.match(applications, /application-row/);
+  assert.match(applications, /role="dialog"/);
+  assert.match(applications, /aria-modal="true"/);
+  assert.match(applications, /selectedApplication/);
+  assert.match(applications, /查看申请详情/);
+  assert.doesNotMatch(applications, /<article key=\{application\.id\}[^>]*>[\s\S]*t\.section/);
   assert.doesNotMatch(applications, /认证服务代表|创建账号后的工程师 ID|converted_user_id.*<input/);
 });
 
