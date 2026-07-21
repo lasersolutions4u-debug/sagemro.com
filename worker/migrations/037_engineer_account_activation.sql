@@ -14,7 +14,7 @@ CREATE TABLE IF NOT EXISTS account_identities (
   owner_type TEXT NOT NULL CHECK(owner_type IN ('customer', 'engineer')),
   owner_id TEXT NOT NULL,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
-  UNIQUE (identity_type, normalized_value),
+  PRIMARY KEY (identity_type, normalized_value),
   UNIQUE (owner_type, owner_id, identity_type)
 );
 
