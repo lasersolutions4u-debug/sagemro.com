@@ -177,6 +177,20 @@ export async function updateAdminEngineerApplication(applicationId, data) {
   });
 }
 
+export function openAdminEngineerAccount(applicationId, data) {
+  return request(`/api/admin/engineer-applications/${applicationId}/open-account`, {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+export function resendAdminEngineerActivation(applicationId) {
+  return request(`/api/admin/engineer-applications/${applicationId}/resend-activation`, {
+    method: 'POST',
+    body: JSON.stringify({}),
+  });
+}
+
 export async function deleteAdminUser(userId, userType) {
   return request(`/api/admin/users/${userId}?type=${userType}`, {
     method: 'DELETE',

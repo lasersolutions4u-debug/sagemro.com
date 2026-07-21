@@ -174,7 +174,7 @@ const TEXT = {
   },
 };
 
-export function EngineersPage() {
+export function EngineersPage({ initialEngineerId = '', onEngineerOpened }) {
   const t = TEXT[runtimeConfig.locale] || TEXT.en;
   const [data, setData] = useState({ total: 0, list: [] });
   const [page, setPage] = useState(1);
@@ -231,6 +231,12 @@ export function EngineersPage() {
       setProfileLoading(false);
     }
   }
+
+  useEffect(() => {
+    if (!initialEngineerId) return;
+    openProfile({ id: initialEngineerId });
+    onEngineerOpened?.();
+  }, [initialEngineerId, onEngineerOpened]);
 
   async function saveRoleSettings() {
     if (!profile?.engineer?.id) return;

@@ -577,6 +577,60 @@ test('application list projects independent review and activation states', async
   ]);
 });
 
+test('legacy converted applications remain readable but cannot be newly written', async () => {
+  const env = makeActivationEnv({ applicationStatus: 'converted' });
+  const token = await signJwt({
+    userId: 'admin-1',
+    userType: 'admin',
+    exp: Math.floor(Date.now() / 1000) + 3600,
+  }, JWT_SECRET);
+  const listResponse = await worker.fetch(new Request(
+    'https://api.sagemro.com/api/admin/engineer-applications',
+    { headers: { Authorization: `Bearer ${token}` } },
+  ), env, { waitUntil() {} });
+  const updateResponse = await worker.fetch(new Request(
+    'https://api.sagemro.com/api/admin/engineer-applications/app-1',
+    {
+      method: 'PATCH',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ status: 'converted', review_notes: 'legacy write attempt' }),
+    },
+  ), env, { waitUntil() {} });
+
+  assert.equal(listResponse.status, 200);
+  assert.equal((await listResponse.json()).list[0].status, 'converted');
+  assert.equal(updateResponse.status, 400);
+  assert.equal(env.__runs.some(({ sql }) => /UPDATE engineer_applications/i.test(sql)), false);
+});
+
+test('saving an application review preserves its linked engineer account', async () => {
+  const env = makeActivationEnv({ convertedUserId: 'eng-1' });
+  const token = await signJwt({
+    userId: 'admin-1',
+    userType: 'admin',
+    exp: Math.floor(Date.now() / 1000) + 3600,
+  }, JWT_SECRET);
+  const response = await worker.fetch(new Request(
+    'https://api.sagemro.com/api/admin/engineer-applications/app-1',
+    {
+      method: 'PATCH',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ status: 'qualified', review_notes: 'Keep linked account' }),
+    },
+  ), env, { waitUntil() {} });
+  const update = env.__runs.find(({ sql }) => /UPDATE engineer_applications/i.test(sql));
+
+  assert.equal(response.status, 200);
+  assert.ok(update);
+  assert.doesNotMatch(update.sql, /converted_user_id/);
+});
+
 test('valid activation sets password and consumes the token atomically', async () => {
   const env = makeActivationEnv({ validToken: true, authStatus: 'pending_activation' });
   const response = await postActivation(env, { token: 'valid-token', password: 'secret12345' });

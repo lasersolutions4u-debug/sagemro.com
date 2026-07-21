@@ -6769,7 +6769,6 @@ const ENGINEER_APPLICATION_STATUSES = new Set([
   'reviewing',
   'qualified',
   'rejected',
-  'converted',
   'archived',
 ]);
 
@@ -7547,12 +7546,11 @@ async function handleAdminUpdateEngineerApplication(request, env) {
 
     const result = await env.DB.prepare(`
       UPDATE engineer_applications
-      SET status = ?, review_notes = ?, converted_user_id = ?, reviewed_by = ?, reviewed_at = datetime('now'), updated_at = datetime('now')
+      SET status = ?, review_notes = ?, reviewed_by = ?, reviewed_at = datetime('now'), updated_at = datetime('now')
       WHERE id = ?
     `).bind(
       status,
       cleanText(body.review_notes, 1200) || null,
-      cleanText(body.converted_user_id, 80) || null,
       request._auth?.userId || 'admin',
       applicationId
     ).run();
