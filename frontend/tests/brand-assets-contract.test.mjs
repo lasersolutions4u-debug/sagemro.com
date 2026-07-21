@@ -493,6 +493,10 @@ test('engineer application and admin engineer pages render regions and skills as
   assert.match(recruiting, /skillSuggestions: \['激光切割机', '折弯机', '激光器'/);
   assert.match(recruiting, /removeTag: '移除'/);
   assert.match(recruiting, /failure: '提交失败，请稍后重试。'/);
+  assert.match(recruiting, /email: '请输入常用邮箱'/);
+  assert.match(recruiting, /email: 'Enter your primary email address'/);
+  assert.match(recruiting, /type=\{field === 'email' \? 'email' : 'text'\}/);
+  assert.match(recruiting, /field === 'name' \|\| field === 'phone' \|\| field === 'email'/);
   assert.match(recruiting, /copy\.required/);
   assert.doesNotMatch(recruiting, /service_regions: ''/);
   assert.doesNotMatch(recruiting, /skill_tags: ''/);

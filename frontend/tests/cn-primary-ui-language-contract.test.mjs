@@ -200,6 +200,8 @@ test('CN recruiting and shared overlays localize secondary labels', () => {
   assert.match(recruiting, /title=\{removeLabel\}/);
   assert.match(recruiting, /removeTag: '移除'/);
   assert.match(recruiting, /closeForm: '关闭申请表'/);
+  assert.match(recruiting, /email: '请输入常用邮箱'/);
+  assert.match(recruiting, /field === 'name' \|\| field === 'phone' \|\| field === 'email'/);
   assert.doesNotMatch(recruiting, /AI 接住流程|合作能带来什么|减少信息不足造成的非必要上门/);
   assert.doesNotMatch(recruiting, /aria-label="Close application form"/);
   assert.doesNotMatch(recruiting, /title="Remove"/);
