@@ -483,6 +483,20 @@ test('open-account maps approved application defaults and cleaned admin fields t
   assert.equal(engineerInsert.args.includes(JSON.stringify(['maintenance', 'repair'])), true);
 });
 
+test('open-account parses application JSON arrays without turning them into literal tags', async () => {
+  const env = makeActivationEnv();
+  const response = await worker.fetch(
+    await adminActivationRequest('app-1/open-account', {}), env, { waitUntil() {} },
+  );
+
+  assert.equal(response.status, 200);
+  const engineerInsert = env.__batches[0].find((item) => /INSERT INTO engineers/.test(item.sql));
+  assert.equal(engineerInsert.args.includes(JSON.stringify(['laser_cutting'])), true);
+  assert.equal(engineerInsert.args.includes(JSON.stringify(['maintenance', 'repair'])), true);
+  assert.equal(engineerInsert.args.includes(JSON.stringify(['[]'])), false);
+  assert.equal(engineerInsert.args.includes(JSON.stringify(['["maintenance"', '"repair"]'])), false);
+});
+
 test('unapproved application cannot open an engineer account', async () => {
   const env = makeActivationEnv({ applicationStatus: 'rejected' });
   const response = await worker.fetch(await adminActivationRequest('app-1/open-account'), env, { waitUntil() {} });

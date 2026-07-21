@@ -8,7 +8,9 @@ const TEXT = {
     name: 'Name',
     email: 'Email',
     phone: 'Phone',
-    services: 'Service capabilities',
+    specialties: 'Equipment specialties',
+    specialtiesHint: 'Separate multiple equipment types with commas',
+    services: 'Service items',
     servicesHint: 'Separate multiple items with commas',
     regions: 'Service regions',
     experience: 'Experience summary',
@@ -36,7 +38,9 @@ const TEXT = {
     name: '姓名',
     email: '邮箱',
     phone: '手机号',
-    services: '服务能力',
+    specialties: '熟悉设备',
+    specialtiesHint: '多种设备请用逗号分隔',
+    services: '服务项目',
     servicesHint: '多项内容请用逗号分隔',
     regions: '服务区域',
     experience: '经验说明',
@@ -62,6 +66,14 @@ const TEXT = {
 
 function toList(value) {
   if (Array.isArray(value)) return value.filter(Boolean);
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value);
+      if (Array.isArray(parsed)) return parsed.filter(Boolean);
+    } catch {
+      // Fall through to delimiter parsing for Admin-edited text.
+    }
+  }
   return String(value || '').split(/[,;，、\n]/).map((item) => item.trim()).filter(Boolean);
 }
 
@@ -70,6 +82,7 @@ function initialForm(application) {
     name: application.name || '',
     email: application.email || '',
     phone: application.phone || '',
+    specialties: toList(application.equipment_types).join(', '),
     services: toList(application.skill_tags).join(', '),
     service_regions: toList(application.service_regions).join(', '),
     bio: application.experience_summary || '',
@@ -112,6 +125,7 @@ export function EngineerAccountSetupModal({
     setValidationError('');
     onSubmit({
       ...form,
+      specialties: toList(form.specialties),
       services,
       service_regions: toList(form.service_regions),
       regional_lead_id: form.engineer_role === 'engineer' ? form.regional_lead_id : '',
@@ -141,6 +155,7 @@ export function EngineerAccountSetupModal({
         <label className="text-xs text-[var(--color-text-secondary)]">{t.email}<input type="email" className={`${inputClass} mt-1`} value={form.email} onChange={(event) => update('email', event.target.value)} /></label>
         <label className="text-xs text-[var(--color-text-secondary)]">{t.phone}<input type="tel" className={`${inputClass} mt-1`} value={form.phone} onChange={(event) => update('phone', event.target.value)} /></label>
         <label className="text-xs text-[var(--color-text-secondary)]">{t.responsibleRegion}<input className={`${inputClass} mt-1`} value={form.responsible_region} onChange={(event) => update('responsible_region', event.target.value)} /></label>
+        <label className="text-xs text-[var(--color-text-secondary)] md:col-span-2">{t.specialties}<input className={`${inputClass} mt-1`} value={form.specialties} onChange={(event) => update('specialties', event.target.value)} placeholder={t.specialtiesHint} /></label>
         <label className="text-xs text-[var(--color-text-secondary)] md:col-span-2">{t.services}<input className={`${inputClass} mt-1`} value={form.services} onChange={(event) => update('services', event.target.value)} placeholder={t.servicesHint} /></label>
         <label className="text-xs text-[var(--color-text-secondary)] md:col-span-2">{t.regions}<input className={`${inputClass} mt-1`} value={form.service_regions} onChange={(event) => update('service_regions', event.target.value)} /></label>
         <label className="text-xs text-[var(--color-text-secondary)] md:col-span-2">{t.experience}<textarea rows={3} className={`${inputClass} mt-1 resize-y`} value={form.bio} onChange={(event) => update('bio', event.target.value)} /></label>

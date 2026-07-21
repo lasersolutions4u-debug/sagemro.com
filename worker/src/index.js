@@ -6893,9 +6893,15 @@ function toSafeInteger(value, fallback = 0) {
 }
 
 function cleanTextArray(value, maxItems = 12, maxItemLength = 80) {
-  const raw = Array.isArray(value)
-    ? value
-    : (typeof value === 'string' ? value.split(/[,，\n]/) : []);
+  let raw = Array.isArray(value) ? value : [];
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value);
+      raw = Array.isArray(parsed) ? parsed : value.split(/[,，\n]/);
+    } catch {
+      raw = value.split(/[,，\n]/);
+    }
+  }
   return raw
     .map((item) => cleanText(item, maxItemLength))
     .filter(Boolean)
@@ -7427,7 +7433,7 @@ async function handleAdminOpenEngineerAccount(request, env) {
       engineerRole === 'regional_lead' ? null : cleanText(body.regional_lead_id, 80) || null,
       cleanText(body.cooperation_status, 40) || 'confirmed',
       cleanText(body.certification_status, 40) || 'pending',
-      JSON.stringify(cleanTextArray(body.capability_tags ?? application.skill_tags)),
+      JSON.stringify(cleanTextArray(body.capability_tags ?? services)),
       JSON.stringify(brands),
       cleanText(body.workload_status, 40) || 'available',
       responsibleRegion,
