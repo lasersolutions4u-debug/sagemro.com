@@ -10,7 +10,170 @@ import {
   createEngineerActivationToken,
   hashEngineerActivationToken,
 } from '../src/lib/engineerActivation.js';
-import { sendEngineerActivationEmail } from '../src/index.js';
+import { signJwt } from '../src/lib/auth.js';
+import worker, { sendEngineerActivationEmail } from '../src/index.js';
+
+const JWT_SECRET = 'engineer-activation-test-secret';
+const FIXED_EXPIRES_AT = '2026-07-23T12:00:00.000Z';
+
+function statement(sql, env) {
+  return {
+    sql,
+    args: [],
+    bind(...args) {
+      this.args = args;
+      return this;
+    },
+    async first() {
+      if (/SELECT user_no FROM engineers/i.test(sql)) return { user_no: 'E000127' };
+      if (/FROM engineer_account_activations activation/i.test(sql)) {
+        if (!env.__options.validToken) return null;
+        return {
+          activation_id: 'activation-1',
+          engineer_id: 'eng-1',
+          engineer_no: 'E000128',
+          engineer_name: 'Alex Service',
+          market: 'com',
+          auth_status: env.__options.authStatus || 'pending_activation',
+        };
+      }
+      if (/FROM engineer_applications a/i.test(sql) && /WHERE a\.id = \?/i.test(sql)) {
+        return env.__applicationRow();
+      }
+      if (/FROM engineer_applications WHERE id = \?/i.test(sql)) return env.__applicationRow();
+      if (/FROM account_identities/i.test(sql)) return env.__options.identityConflict || null;
+      if (/FROM customers/i.test(sql) || /FROM engineers/i.test(sql)) return null;
+      return null;
+    },
+    async all() {
+      if (/FROM engineer_applications a/i.test(sql)) {
+        return { results: env.__options.applicationRows || [env.__applicationRow()] };
+      }
+      return { results: [] };
+    },
+    async run() {
+      env.__runs.push({ sql, args: this.args });
+      return { success: true, meta: { changes: 1 } };
+    },
+  };
+}
+
+function makeActivationEnv(options = {}) {
+  class TestEmailMessage {
+    constructor(from, to, raw) {
+      this.from = from;
+      this.to = to;
+      this.raw = raw;
+    }
+  }
+  const env = {
+    JWT_SECRET,
+    VERIFICATION_EMAIL_FROM: 'SAGEMRO <verify@example.com>',
+    __EmailMessage: TestEmailMessage,
+    __options: options,
+    __batches: [],
+    __runs: [],
+    __kv: new Map([
+      ...(options.rateLimited ? [['engineer_activation_resend_eng-1', '1']] : []),
+      ...(options.activationAttemptCount
+        ? [
+            ['engineer_activation_attempt_ip_203.0.113.10', String(options.activationAttemptCount)],
+            ['engineer_activation_attempt_token_' + 'placeholder', String(options.activationAttemptCount)],
+          ]
+        : []),
+    ]),
+    __kvPuts: [],
+    __applicationRow() {
+      return {
+        id: 'app-1',
+        market: 'com',
+        status: options.applicationStatus || 'qualified',
+        name: 'Alex Service',
+        phone: '+1 555 0100',
+        email: 'alex@example.com',
+        base_region: 'Chicago',
+        service_regions: '["Illinois","Indiana"]',
+        equipment_types: '["laser_cutting"]',
+        brand_experience: '["Raycus"]',
+        skill_tags: '["maintenance","repair"]',
+        languages: '["English"]',
+        converted_user_id: options.convertedUserId || null,
+        engineer_no: options.convertedUserId ? 'E000128' : null,
+        engineer_auth_status: options.authStatus || (options.convertedUserId ? 'pending_activation' : null),
+        activation_expires_at: options.convertedUserId ? FIXED_EXPIRES_AT : null,
+        activation_sent_at: options.convertedUserId ? '2026-07-21T12:01:00.000Z' : null,
+        activation_send_status: options.convertedUserId ? 'sent' : null,
+        activation_revoked_at: null,
+      };
+    },
+    DB: {
+      prepare(sql) {
+        return statement(sql, env);
+      },
+      async batch(statements) {
+        env.__batches.push(statements.map((item) => ({ sql: item.sql, args: item.args })));
+        if (options.activationGuardError) {
+          throw new Error("CHECK constraint failed: identity_type IN ('email', 'phone')");
+        }
+        return statements.map((_, index) => ({
+          success: true,
+          meta: { changes: options.batchChanges?.[index] ?? 1 },
+        }));
+      },
+    },
+    KV: {
+      async get(key) {
+        if (options.activationAttemptCount && key.startsWith('engineer_activation_attempt_')) {
+          return String(options.activationAttemptCount);
+        }
+        return env.__kv.get(key) || null;
+      },
+      async put(key, value, settings) {
+        env.__kv.set(key, value);
+        env.__kvPut = { key, value, settings };
+        env.__kvPuts.push(env.__kvPut);
+      },
+    },
+    EMAIL: {
+      async send(payload) {
+        env.__emailPayload = payload;
+        if (options.emailError) throw new Error(options.emailError);
+      },
+    },
+    __batchSql() {
+      return (env.__batches.at(-1) || []).map((item) => item.sql.replace(/\s+/g, ' ').trim()).join('\n');
+    },
+  };
+  return env;
+}
+
+async function adminActivationRequest(action, body = {}) {
+  const token = await signJwt({
+    userId: 'admin-1',
+    userType: 'admin',
+    exp: Math.floor(Date.now() / 1000) + 3600,
+  }, JWT_SECRET);
+  return new Request(`https://api.sagemro.com/api/admin/engineer-applications/${action}`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+      Origin: 'https://admin.sagemro.com',
+    },
+    body: JSON.stringify(body),
+  });
+}
+
+function postActivation(env, body) {
+  return worker.fetch(new Request('https://api.sagemro.com/api/auth/engineer/activate', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'CF-Connecting-IP': '203.0.113.10',
+    },
+    body: JSON.stringify(body),
+  }), env, { waitUntil() {} });
+}
 
 const root = path.resolve(import.meta.dirname, '../..');
 const migrationPath = path.join(root, 'worker/migrations/037_engineer_account_activation.sql');
@@ -93,6 +256,7 @@ test('activation email contains no password and explains the 48-hour expiry', ()
   assert.match(email.subject, /Activate your SAGEMRO engineer account/);
   assert.match(email.text, /48 hours/);
   assert.match(email.html, /<a[^>]+href="https:\/\/example\.test\/#token=x"/);
+  assert.match(email.html, />https:\/\/example\.test\/#token=x</);
   assert.doesNotMatch(email.text, /password:/i);
 });
 
@@ -110,8 +274,15 @@ test('activation email escapes applicant-controlled HTML', () => {
   assert.match(email.html, /href="https:\/\/example\.test\/#token=x&amp;next=&quot;bad&quot;"/);
 });
 
-test('activation email sender uses Cloudflare Email without a network request', async () => {
+test('activation email sender uses a raw MIME EmailMessage with Cloudflare Email', async () => {
   const sent = [];
+  class TestEmailMessage {
+    constructor(from, to, raw) {
+      this.from = from;
+      this.to = to;
+      this.raw = raw;
+    }
+  }
   const payload = {
     to: 'engineer@example.com',
     subject: 'Activate account',
@@ -120,6 +291,7 @@ test('activation email sender uses Cloudflare Email without a network request', 
   };
   const env = {
     VERIFICATION_EMAIL_FROM: 'SAGEMRO <verify@mail.sagemro.com>',
+    __EmailMessage: TestEmailMessage,
     EMAIL: {
       async send(message) {
         sent.push(message);
@@ -130,7 +302,15 @@ test('activation email sender uses Cloudflare Email without a network request', 
   const result = await sendEngineerActivationEmail(env, payload, 'com');
 
   assert.deepEqual(result, { sent: true });
-  assert.deepEqual(sent, [{ from: env.VERIFICATION_EMAIL_FROM, ...payload }]);
+  assert.equal(sent.length, 1);
+  assert.ok(sent[0] instanceof TestEmailMessage);
+  assert.equal(sent[0].from, env.VERIFICATION_EMAIL_FROM);
+  assert.equal(sent[0].to, payload.to);
+  assert.match(sent[0].raw, /MIME-Version: 1\.0/);
+  assert.match(sent[0].raw, /Content-Type: multipart\/alternative/);
+  assert.match(sent[0].raw, /Content-Type: text\/plain; charset=UTF-8/);
+  assert.match(sent[0].raw, /Content-Type: text\/html; charset=UTF-8/);
+  assert.doesNotMatch(sent[0].raw, /\r?\nBcc:/i);
 });
 
 test('activation email sender falls back to Resend without sending a real email', async () => {
@@ -169,7 +349,35 @@ test('activation email sender falls back to Resend without sending a real email'
   }
 });
 
-test('activation email provider failure does not log the activation link or body', async () => {
+test('activation email sender falls back to Resend after Cloudflare Email fails', async () => {
+  const originalFetch = globalThis.fetch;
+  let resendCalls = 0;
+  globalThis.fetch = async () => {
+    resendCalls += 1;
+    return new Response(JSON.stringify({ id: 'email-test-id' }), { status: 200 });
+  };
+
+  try {
+    const result = await sendEngineerActivationEmail({
+      VERIFICATION_EMAIL_FROM: 'SAGEMRO <verify@example.com>',
+      RESEND_API_KEY: 'test-resend-key',
+      __EmailMessage: class TestEmailMessage {},
+      EMAIL: { async send() { throw new Error('binding unavailable'); } },
+    }, {
+      to: 'engineer@example.com',
+      subject: 'Activate account',
+      text: 'Open the activation link.',
+      html: '<p>Open the activation link.</p>',
+    }, 'com');
+
+    assert.deepEqual(result, { sent: true });
+    assert.equal(resendCalls, 1);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('activation email provider failure logs only a generic sanitized reason', async () => {
   const warnings = [];
   const originalWarn = console.warn;
   console.warn = (...args) => warnings.push(args);
@@ -177,9 +385,10 @@ test('activation email provider failure does not log the activation link or body
   try {
     const result = await sendEngineerActivationEmail({
       VERIFICATION_EMAIL_FROM: 'SAGEMRO <verify@example.com>',
+      __EmailMessage: class TestEmailMessage {},
       EMAIL: {
         async send() {
-          throw new Error('provider unavailable');
+          throw new Error('provider failed for https://engineer.sagemro.com/activate#token=secret-token');
         },
       },
     }, {
@@ -191,10 +400,237 @@ test('activation email provider failure does not log the activation link or body
 
     assert.deepEqual(result, { error: 'Failed to send activation email. Please try again later.' });
     assert.equal(warnings.length, 1);
-    assert.match(JSON.stringify(warnings[0]), /provider unavailable/);
+    assert.match(JSON.stringify(warnings[0]), /provider_error/);
     assert.match(JSON.stringify(warnings[0]), /example\.com/);
-    assert.doesNotMatch(JSON.stringify(warnings[0]), /secret-token-url/);
+    assert.doesNotMatch(JSON.stringify(warnings[0]), /provider failed|activate#token|secret-token-url/);
   } finally {
     console.warn = originalWarn;
   }
+});
+
+test('admin authentication is required to open an engineer account', async () => {
+  const response = await worker.fetch(new Request(
+    'https://api.sagemro.com/api/admin/engineer-applications/app-1/open-account',
+    { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' },
+  ), makeActivationEnv(), { waitUntil() {} });
+
+  assert.equal(response.status, 401);
+});
+
+test('approved application opens and links one pending engineer account atomically', async () => {
+  const env = makeActivationEnv({ applicationStatus: 'qualified' });
+  const response = await worker.fetch(await adminActivationRequest('app-1/open-account', {
+    services: ['maintenance'],
+    engineer_role: 'engineer',
+  }), env, { waitUntil() {} });
+  const body = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(body.account, {
+    engineer_id: body.account.engineer_id,
+    engineer_no: 'E000128',
+    activation_status: 'awaiting_activation',
+    email_sent: true,
+    expires_at: body.account.expires_at,
+  });
+  assert.equal(env.__batches.length, 1);
+  assert.match(env.__batchSql(), /INSERT INTO account_identities/);
+  assert.match(env.__batchSql(), /INSERT INTO engineers/);
+  assert.match(env.__batchSql(), /INSERT INTO engineer_account_activations/);
+  assert.match(env.__batchSql(), /UPDATE engineer_applications/);
+  assert.match(env.__batchSql(), /INSERT INTO audit_logs/);
+  assert.match(env.__batchSql(), /first_login_password_reset_required[\s\S]*1, 'pending_activation'/);
+  assert.match(env.__runs.at(-1).sql, /send_status = 'sent'/);
+  assert.match(env.__emailPayload.raw, /Activate engineer account/);
+});
+
+test('open-account maps approved application defaults and cleaned admin fields to engineer values', async () => {
+  const env = makeActivationEnv();
+  const response = await worker.fetch(await adminActivationRequest('app-1/open-account', {
+    name: '  Alex Field  ',
+    services: ['maintenance', 'repair'],
+    engineer_role: 'regional_lead',
+    regional_lead_id: 'ignored-for-lead',
+    responsible_region: ' North America ',
+    team_name: '  Midwest Team ',
+    certification_status: 'verified',
+    cooperation_status: 'active',
+    workload_status: 'normal',
+  }), env, { waitUntil() {} });
+
+  assert.equal(response.status, 200);
+  const engineerInsert = env.__batches[0].find((item) => /INSERT INTO engineers/.test(item.sql));
+  assert.equal(engineerInsert.args.includes('Alex Field'), true);
+  assert.equal(engineerInsert.args.includes('regional_lead'), true);
+  assert.equal(engineerInsert.args.includes('North America'), true);
+  assert.equal(engineerInsert.args.includes('Midwest Team'), true);
+  assert.equal(engineerInsert.args.includes('verified'), true);
+  assert.equal(engineerInsert.args.includes('active'), true);
+  assert.equal(engineerInsert.args.includes('normal'), true);
+  assert.equal(engineerInsert.args.includes(null), true);
+  assert.equal(engineerInsert.args.includes(JSON.stringify(['maintenance', 'repair'])), true);
+});
+
+test('unapproved application cannot open an engineer account', async () => {
+  const env = makeActivationEnv({ applicationStatus: 'rejected' });
+  const response = await worker.fetch(await adminActivationRequest('app-1/open-account'), env, { waitUntil() {} });
+
+  assert.equal(response.status, 409);
+  assert.equal(env.__batches.length, 0);
+});
+
+test('open-account retry returns the existing linked engineer', async () => {
+  const env = makeActivationEnv({ convertedUserId: 'eng-1' });
+  const response = await worker.fetch(await adminActivationRequest('app-1/open-account'), env, { waitUntil() {} });
+  const body = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(body.account.engineer_id, 'eng-1');
+  assert.equal(env.__batches.length, 0);
+});
+
+test('cross-role email or phone conflict prevents account creation', async () => {
+  const env = makeActivationEnv({ identityConflict: { identity_type: 'email', owner_type: 'customer' } });
+  const response = await worker.fetch(await adminActivationRequest('app-1/open-account'), env, { waitUntil() {} });
+
+  assert.equal(response.status, 409);
+  assert.equal(env.__batches.length, 0);
+});
+
+test('email failure preserves the linked pending account for resend', async () => {
+  const env = makeActivationEnv({ emailError: 'provider unavailable' });
+  const response = await worker.fetch(await adminActivationRequest('app-1/open-account'), env, { waitUntil() {} });
+  const body = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(body.account.email_sent, false);
+  assert.equal(body.account.activation_status, 'awaiting_activation');
+  assert.equal(env.__batches.length, 1);
+  assert.match(env.__runs.at(-1).sql, /send_status = 'failed'/);
+  assert.doesNotMatch(JSON.stringify(env.__runs.at(-1).args), /provider unavailable/);
+});
+
+test('resend revokes the previous token and creates one replacement', async () => {
+  const env = makeActivationEnv({ convertedUserId: 'eng-1', authStatus: 'pending_activation' });
+  const response = await worker.fetch(await adminActivationRequest('app-1/resend-activation'), env, { waitUntil() {} });
+  const body = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(body.account.engineer_id, 'eng-1');
+  assert.match(env.__batchSql(), /SET revoked_at = datetime\('now'\)/);
+  assert.match(env.__batchSql(), /INSERT INTO engineer_account_activations/);
+  assert.deepEqual(env.__kvPut, {
+    key: 'engineer_activation_resend_eng-1',
+    value: '1',
+    settings: { expirationTtl: 60 },
+  });
+});
+
+test('resend uses the linked engineer email after an admin correction', async () => {
+  const env = makeActivationEnv({ convertedUserId: 'eng-1', authStatus: 'pending_activation' });
+  const originalApplicationRow = env.__applicationRow;
+  env.__applicationRow = () => ({
+    ...originalApplicationRow(),
+    email: 'application@example.com',
+    engineer_email: 'corrected@example.com',
+    engineer_name: 'Corrected Engineer',
+  });
+
+  const response = await worker.fetch(
+    await adminActivationRequest('app-1/resend-activation'), env, { waitUntil() {} },
+  );
+
+  assert.equal(response.status, 200);
+  assert.equal(env.__emailPayload.to, 'corrected@example.com');
+});
+
+test('resend is rate limited and activated accounts cannot receive activation emails', async () => {
+  const limited = makeActivationEnv({ convertedUserId: 'eng-1', rateLimited: true });
+  const limitedResponse = await worker.fetch(await adminActivationRequest('app-1/resend-activation'), limited, { waitUntil() {} });
+  assert.equal(limitedResponse.status, 429);
+  assert.equal(limited.__batches.length, 0);
+
+  const activated = makeActivationEnv({ convertedUserId: 'eng-1', authStatus: 'authenticated' });
+  const activatedResponse = await worker.fetch(await adminActivationRequest('app-1/resend-activation'), activated, { waitUntil() {} });
+  assert.equal(activatedResponse.status, 409);
+  assert.equal(activated.__batches.length, 0);
+});
+
+test('application list projects independent review and activation states', async () => {
+  const env = makeActivationEnv({ applicationRows: [
+    { ...makeActivationEnv().__applicationRow(), id: 'not-opened', converted_user_id: null },
+    { ...makeActivationEnv().__applicationRow(), id: 'awaiting', converted_user_id: 'eng-1', engineer_no: 'E000128', engineer_auth_status: 'pending_activation', activation_expires_at: '2999-01-01T00:00:00.000Z' },
+    { ...makeActivationEnv().__applicationRow(), id: 'expired', converted_user_id: 'eng-2', engineer_no: 'E000129', engineer_auth_status: 'pending_activation', activation_expires_at: '2000-01-01T00:00:00.000Z' },
+    { ...makeActivationEnv().__applicationRow(), id: 'activated', converted_user_id: 'eng-3', engineer_no: 'E000130', engineer_auth_status: 'authenticated', activation_expires_at: '2000-01-01T00:00:00.000Z' },
+  ] });
+  const response = await worker.fetch(await adminActivationRequest('', {}), env, { waitUntil() {} });
+  const body = await response.json();
+
+  assert.equal(response.status, 404);
+  const token = await signJwt({ userId: 'admin-1', userType: 'admin', exp: Math.floor(Date.now() / 1000) + 3600 }, JWT_SECRET);
+  const listResponse = await worker.fetch(new Request('https://api.sagemro.com/api/admin/engineer-applications', {
+    headers: { Authorization: `Bearer ${token}` },
+  }), env, { waitUntil() {} });
+  const listBody = await listResponse.json();
+  assert.deepEqual(listBody.list.map((item) => item.account.activation_status), [
+    'not_opened', 'awaiting_activation', 'activation_expired', 'activated',
+  ]);
+});
+
+test('valid activation sets password and consumes the token atomically', async () => {
+  const env = makeActivationEnv({ validToken: true, authStatus: 'pending_activation' });
+  const response = await postActivation(env, { token: 'valid-token', password: 'secret12345' });
+
+  assert.equal(response.status, 200);
+  assert.match(env.__batchSql(), /auth_status = 'authenticated'/);
+  assert.match(env.__batchSql(), /first_login_password_reset_required = 0/);
+  assert.match(env.__batchSql(), /SET used_at = datetime\('now'\)/);
+  assert.match(env.__batchSql(), /INSERT INTO audit_logs/);
+  assert.equal(env.__kvPuts.length, 2);
+  assert.ok(env.__kvPuts.every((entry) => entry.settings.expirationTtl === 900));
+  assert.ok(env.__kvPuts.every((entry) => entry.value === '1'));
+});
+
+test('concurrent activation consumption returns the safe invalid-link error', async () => {
+  const env = makeActivationEnv({
+    validToken: true,
+    authStatus: 'pending_activation',
+    activationGuardError: true,
+  });
+  const response = await postActivation(env, { token: 'valid-token', password: 'secret12345' });
+
+  assert.equal(response.status, 400);
+  assert.match((await response.json()).error, /expired|invalid|已失效|无效/i);
+});
+
+for (const state of ['expired', 'used', 'revoked', 'unknown']) {
+  test(`${state} activation token returns the same safe error`, async () => {
+    const response = await postActivation(makeActivationEnv({ tokenState: state }), {
+      token: 'invalid-token', password: 'secret12345',
+    });
+
+    assert.equal(response.status, 400);
+    assert.match((await response.json()).error, /expired|invalid|已失效|无效/i);
+  });
+}
+
+test('activation rejects a password shorter than ten characters', async () => {
+  const env = makeActivationEnv({ validToken: true });
+  const response = await postActivation(env, { token: 'valid-token', password: 'short' });
+
+  assert.equal(response.status, 400);
+  assert.equal(env.__batches.length, 0);
+});
+
+test('activation attempts increment IP and token counters and rate limit generically', async () => {
+  const env = makeActivationEnv({ activationAttemptCount: 10 });
+  const response = await postActivation(env, { token: 'unknown-token', password: 'secret12345' });
+  const body = await response.json();
+
+  assert.equal(response.status, 429);
+  assert.match(body.error, /too many|稍后/i);
+  assert.equal(env.__batches.length, 0);
+  assert.equal(env.__kvPuts.length, 2);
+  assert.ok(env.__kvPuts.every((entry) => entry.settings.expirationTtl === 900));
+  assert.ok(env.__kvPuts.every((entry) => entry.value === '11'));
 });
