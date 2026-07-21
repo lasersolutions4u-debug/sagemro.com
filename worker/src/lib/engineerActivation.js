@@ -49,13 +49,13 @@ export function buildEngineerActivationEmail({ market, name, engineerNo, activat
     return {
       subject: '激活你的 SAGEMRO 工程师账号',
       text: `${name}，你的工程师编号是 ${engineerNo}。请在 48 小时内打开以下链接设置密码：\n${activationUrl}\n如非本人申请，请忽略本邮件。`,
-      html: `<p>${safeName}，你的工程师编号是 <strong>${safeEngineerNo}</strong>。</p><p><a href="${safeActivationUrl}">激活工程师账号</a></p><p>链接将在 48 小时后失效。如非本人申请，请忽略本邮件。</p>`,
+      html: `<p>${safeName}，你的工程师编号是 <strong>${safeEngineerNo}</strong>。</p><p><a href="${safeActivationUrl}">激活工程师账号</a></p><p>如按钮无法打开，请复制以下完整链接：</p><p>${safeActivationUrl}</p><p>链接将在 48 小时后失效。如非本人申请，请忽略本邮件。</p>`,
     };
   }
 
   return {
     subject: 'Activate your SAGEMRO engineer account',
     text: `${name}, your engineer number is ${engineerNo}. Set your password within 48 hours:\n${activationUrl}\nIgnore this email if you did not apply.`,
-    html: `<p>${safeName}, your engineer number is <strong>${safeEngineerNo}</strong>.</p><p><a href="${safeActivationUrl}">Activate engineer account</a></p><p>This link expires in 48 hours. Ignore this email if you did not apply.</p>`,
+    html: `<p>${safeName}, your engineer number is <strong>${safeEngineerNo}</strong>.</p><p><a href="${safeActivationUrl}">Activate engineer account</a></p><p>If the button does not open, copy this full link:</p><p>${safeActivationUrl}</p><p>This link expires in 48 hours. Ignore this email if you did not apply.</p>`,
   };
 }

@@ -32,6 +32,13 @@ import {
   normalizeIdentityEmail,
   normalizeIdentityPhone,
 } from './lib/accountIdentity.js';
+import {
+  activationExpiresAt,
+  buildEngineerActivationEmail,
+  buildEngineerActivationUrl,
+  createEngineerActivationToken,
+  hashEngineerActivationToken,
+} from './lib/engineerActivation.js';
 
 // OneSignal 推送 + 站内通知 helpers
 import { createNotification, sendPushToUser, sendPushToEngineer } from './lib/push.js';
@@ -375,7 +382,7 @@ function getRequestIp(request) {
     || '';
 }
 
-async function writeAuditLog(env, request, {
+function buildAuditLogStatement(env, request, {
   actorType,
   actorId,
   targetType,
@@ -384,22 +391,26 @@ async function writeAuditLog(env, request, {
   beforeState,
   afterState,
 }) {
+  return env.DB.prepare(`
+    INSERT INTO audit_logs (id, actor_type, actor_id, target_type, target_id, action, before_state, after_state, ip, device_info)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).bind(
+    generateId(),
+    actorType || request?._auth?.userType || 'system',
+    actorId || request?._auth?.userId || '',
+    targetType,
+    targetId,
+    action,
+    beforeState ? JSON.stringify(beforeState) : null,
+    afterState ? JSON.stringify(afterState) : null,
+    request ? getRequestIp(request) : '',
+    request?.headers?.get('user-agent') || ''
+  );
+}
+
+async function writeAuditLog(env, request, data) {
   try {
-    await env.DB.prepare(`
-      INSERT INTO audit_logs (id, actor_type, actor_id, target_type, target_id, action, before_state, after_state, ip, device_info)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).bind(
-      generateId(),
-      actorType || request?._auth?.userType || 'system',
-      actorId || request?._auth?.userId || '',
-      targetType,
-      targetId,
-      action,
-      beforeState ? JSON.stringify(beforeState) : null,
-      afterState ? JSON.stringify(afterState) : null,
-      request ? getRequestIp(request) : '',
-      request?.headers?.get('user-agent') || ''
-    ).run();
+    await buildAuditLogStatement(env, request, data).run();
   } catch (error) {
     console.warn('[audit] write failed:', error?.message || error);
   }
@@ -2092,10 +2103,11 @@ async function findAccountIdentityConflict(env, normalizedEmail, normalizedPhone
 
 async function recoverAccountIdentityConflict(error, env, normalizedEmail, normalizedPhone, request) {
   const message = String(error?.message || error);
-  if (message.includes('idx_customers_email_normalized_unique')) {
+  if (message.includes('idx_customers_email_normalized_unique')
+    || message.includes('idx_engineers_email_normalized')) {
     return accountIdentityConflictResponse('email', request);
   }
-  if (/UNIQUE constraint failed:\s*customers\.phone/i.test(message)) {
+  if (/UNIQUE constraint failed:\s*(?:customers|engineers)\.phone/i.test(message)) {
     return accountIdentityConflictResponse('phone', request);
   }
   if (!message.includes('account_identities')) return null;
@@ -2339,14 +2351,35 @@ export async function sendEngineerActivationEmail(env, { to, subject, text, html
 
   if (env.EMAIL?.send) {
     try {
-      await env.EMAIL.send(emailPayload);
+      const EmailMessage = env.__EmailMessage || (await import('cloudflare:email')).EmailMessage;
+      const boundary = `sagemro-${crypto.randomUUID()}`;
+      const raw = [
+        `From: ${emailPayload.from}`,
+        `To: ${emailPayload.to}`,
+        `Subject: ${emailPayload.subject.replace(/[\r\n]+/g, ' ')}`,
+        'MIME-Version: 1.0',
+        `Content-Type: multipart/alternative; boundary="${boundary}"`,
+        '',
+        `--${boundary}`,
+        'Content-Type: text/plain; charset=UTF-8',
+        'Content-Transfer-Encoding: 8bit',
+        '',
+        emailPayload.text,
+        `--${boundary}`,
+        'Content-Type: text/html; charset=UTF-8',
+        'Content-Transfer-Encoding: 8bit',
+        '',
+        emailPayload.html,
+        `--${boundary}--`,
+        '',
+      ].join('\r\n');
+      await env.EMAIL.send(new EmailMessage(emailPayload.from, emailPayload.to, raw));
       return { sent: true };
-    } catch (error) {
+    } catch {
       console.warn('[email] Cloudflare activation email send failed', {
-        message: error?.message,
+        reason: 'provider_error',
         emailSuffix: String(to || '').split('@').pop(),
       });
-      return { error: errorMessage };
     }
   }
 
@@ -2376,7 +2409,7 @@ export async function sendEngineerActivationEmail(env, { to, subject, text, html
     return { sent: true };
   } catch (error) {
     console.warn('[email] Resend activation email send failed', {
-      message: error?.message,
+      reason: 'provider_error',
       emailSuffix: String(to || '').split('@').pop(),
     });
     return { error: errorMessage };
@@ -2813,15 +2846,28 @@ async function handleLogin(request, env) {
 
     // 查找工程师
     if (!user) {
-      user = await env.DB.prepare(
-        'SELECT * FROM engineers WHERE phone = ?'
-      ).bind(loginKey).first();
+      user = normalizedEmail
+        ? await env.DB.prepare(
+            'SELECT * FROM engineers WHERE lower(email) = ?'
+          ).bind(normalizedEmail).first()
+        : await env.DB.prepare(
+            'SELECT * FROM engineers WHERE phone = ?'
+          ).bind(phone).first();
       userType = 'engineer';
     }
 
     if (!user) {
       await env.KV.put(failKey, String(failCount + 1), { expirationTtl: 900 });
       return localizedErrorResponse('account_not_found', request);
+    }
+
+    if (userType === 'engineer' && user.auth_status === 'pending_activation') {
+      return errorResponse(
+        getRequestMarket(request) === 'cn'
+          ? '账号尚未激活，请先使用激活邮件设置密码'
+          : 'This engineer account is awaiting activation. Use the activation email to set a password.',
+        403,
+      );
     }
 
     // 验证密码（兼容新旧算法）
@@ -2885,6 +2931,105 @@ async function handleLogin(request, env) {
       }
     });
 } catch (error) {
+    return errorResponse(error.message, 500);
+  }
+}
+
+async function incrementEngineerActivationAttemptCounters(env, request, tokenHash) {
+  const keys = [
+    `engineer_activation_attempt_ip_${getRequestIp(request) || 'unknown'}`,
+    `engineer_activation_attempt_token_${tokenHash}`,
+  ];
+  const counts = await Promise.all(keys.map(async (key) => {
+    const previous = Number(await env.KV.get(key) || 0);
+    const next = previous + 1;
+    await env.KV.put(key, String(next), { expirationTtl: 900 });
+    return next;
+  }));
+  return Math.max(...counts);
+}
+
+async function handleEngineerActivation(request, env) {
+  const market = getRequestMarket(request);
+  const invalidTokenMessage = market === 'cn'
+    ? '激活链接无效或已失效'
+    : 'This activation link is invalid or has expired.';
+  const rateLimitMessage = market === 'cn'
+    ? '激活尝试次数过多，请 15 分钟后再试'
+    : 'Too many activation attempts. Please try again in 15 minutes.';
+  try {
+    const body = await request.json().catch(() => ({}));
+    const token = cleanText(body.token, 200);
+    const password = body.password;
+    if (!token) return errorResponse(invalidTokenMessage, 400);
+    const tokenHash = await hashEngineerActivationToken(token);
+    const attempts = await incrementEngineerActivationAttemptCounters(env, request, tokenHash);
+    if (attempts > 10) return errorResponse(rateLimitMessage, 429);
+    if (isPasswordTooShort(password)) return passwordTooShortResponse(request);
+
+    const activation = await env.DB.prepare(`
+      SELECT activation.id AS activation_id, activation.engineer_id,
+             e.user_no AS engineer_no, e.name AS engineer_name, e.auth_status
+      FROM engineer_account_activations activation
+      JOIN engineers e ON e.id = activation.engineer_id
+      WHERE activation.token_hash = ?
+        AND activation.used_at IS NULL
+        AND activation.revoked_at IS NULL
+        AND activation.expires_at > datetime('now')
+        AND e.auth_status = 'pending_activation'
+      LIMIT 1
+    `).bind(tokenHash).first();
+    if (!activation) return errorResponse(invalidTokenMessage, 400);
+
+    const salt = generateSalt();
+    const passwordHash = await hashPasswordNew(password, salt);
+    const guardStatement = env.DB.prepare(`
+      INSERT INTO account_identities (identity_type, normalized_value, owner_type, owner_id)
+      SELECT 'activation_guard', ?, 'engineer', ?
+      WHERE NOT EXISTS (
+        SELECT 1
+        FROM engineer_account_activations activation
+        JOIN engineers e ON e.id = activation.engineer_id
+        WHERE activation.id = ?
+          AND activation.used_at IS NULL
+          AND activation.revoked_at IS NULL
+          AND activation.expires_at > datetime('now')
+          AND e.auth_status = 'pending_activation'
+        )
+    `).bind(activation.activation_id, activation.engineer_id, activation.activation_id);
+    let results;
+    try {
+      results = await env.DB.batch([
+        guardStatement,
+        env.DB.prepare(`
+          UPDATE engineers
+          SET password_hash = ?, salt = ?, auth_status = 'authenticated',
+              first_login_password_reset_required = 0
+          WHERE id = ? AND auth_status = 'pending_activation'
+        `).bind(passwordHash, salt, activation.engineer_id),
+        env.DB.prepare(`
+          UPDATE engineer_account_activations
+          SET used_at = datetime('now'), updated_at = datetime('now')
+          WHERE id = ? AND used_at IS NULL AND revoked_at IS NULL
+        `).bind(activation.activation_id),
+        buildAuditLogStatement(env, request, {
+          actorType: 'engineer', actorId: activation.engineer_id,
+          targetType: 'engineer', targetId: activation.engineer_id,
+          action: 'engineer_account_activated',
+          afterState: { engineer_no: activation.engineer_no },
+        }),
+      ]);
+    } catch (error) {
+      if (/CHECK constraint failed(?::\s*identity_type IN \('email', 'phone'\))?/i.test(String(error?.message || error))) {
+        return errorResponse(invalidTokenMessage, 400);
+      }
+      throw error;
+    }
+    if (results?.[1]?.meta?.changes !== 1 || results?.[2]?.meta?.changes !== 1) {
+      return errorResponse(invalidTokenMessage, 400);
+    }
+    return jsonResponse({ success: true });
+  } catch (error) {
     return errorResponse(error.message, 500);
   }
 }
@@ -6775,6 +6920,16 @@ function parseJsonArray(value) {
 
 function normalizeEngineerApplication(row) {
   if (!row) return row;
+  const activationStatus = row.engineer_auth_status === 'authenticated'
+    ? 'activated'
+    : row.converted_user_id
+      && !row.activation_revoked_at
+      && row.activation_expires_at
+      && new Date(row.activation_expires_at).getTime() > Date.now()
+      ? 'awaiting_activation'
+      : row.converted_user_id
+        ? 'activation_expired'
+        : 'not_opened';
   return {
     ...row,
     service_regions: parseJsonArray(row.service_regions),
@@ -6786,6 +6941,14 @@ function normalizeEngineerApplication(row) {
     can_weekend: Boolean(row.can_weekend),
     can_night: Boolean(row.can_night),
     has_tools: Boolean(row.has_tools),
+    account: {
+      engineer_id: row.converted_user_id || null,
+      engineer_no: row.engineer_no || null,
+      activation_status: activationStatus,
+      sent_at: row.activation_sent_at || null,
+      expires_at: row.activation_expires_at || null,
+      send_status: row.activation_send_status || null,
+    },
   };
 }
 
@@ -7088,14 +7251,290 @@ async function handleAdminEngineerApplications(request, env) {
     const total = await env.DB.prepare(
       `SELECT COUNT(*) as count FROM engineer_applications ${where}`
     ).bind(...binds).first();
-    const list = await env.DB.prepare(
-      `SELECT * FROM engineer_applications ${where} ORDER BY created_at DESC LIMIT ? OFFSET ?`
-    ).bind(...binds, pageSize, offset).all();
+    const list = await env.DB.prepare(`
+      SELECT a.*,
+             e.user_no AS engineer_no,
+             e.auth_status AS engineer_auth_status,
+             activation.expires_at AS activation_expires_at,
+             activation.sent_at AS activation_sent_at,
+             activation.send_status AS activation_send_status,
+             activation.revoked_at AS activation_revoked_at
+      FROM engineer_applications a
+      LEFT JOIN engineers e ON e.id = a.converted_user_id
+      LEFT JOIN engineer_account_activations activation
+        ON activation.id = (
+          SELECT candidate.id
+          FROM engineer_account_activations candidate
+          WHERE candidate.engineer_id = e.id
+            AND candidate.revoked_at IS NULL
+          ORDER BY candidate.created_at DESC
+          LIMIT 1
+        )
+      ${where.replace(/\bstatus\b/g, 'a.status').replace(/\bmarket\b/g, 'a.market')}
+      ORDER BY a.created_at DESC LIMIT ? OFFSET ?
+    `).bind(...binds, pageSize, offset).all();
 
     return jsonResponse({
       total: total?.count || 0,
       list: (list.results || []).map(normalizeEngineerApplication),
     });
+  } catch (error) {
+    return errorResponse(error.message, 500);
+  }
+}
+
+function engineerAccountResponse(row, emailSent) {
+  const normalized = normalizeEngineerApplication(row);
+  return {
+    engineer_id: normalized.account.engineer_id,
+    engineer_no: normalized.account.engineer_no,
+    activation_status: normalized.account.activation_status,
+    email_sent: emailSent ?? normalized.account.send_status === 'sent',
+    expires_at: normalized.account.expires_at,
+  };
+}
+
+async function persistActivationSendResult(env, activationId, result) {
+  const sent = Boolean(result?.sent);
+  await env.DB.prepare(`
+    UPDATE engineer_account_activations
+    SET sent_at = ${sent ? "datetime('now')" : 'NULL'},
+        send_status = '${sent ? 'sent' : 'failed'}',
+        send_error = ?,
+        updated_at = datetime('now')
+    WHERE id = ?
+  `).bind(sent ? null : 'provider_error', activationId).run();
+  return sent;
+}
+
+async function sendActivationForEngineer(env, engineer, activation) {
+  const activationUrl = buildEngineerActivationUrl(engineer.market, activation.token);
+  const message = buildEngineerActivationEmail({
+    market: engineer.market,
+    name: engineer.name,
+    engineerNo: engineer.engineer_no,
+    activationUrl,
+  });
+  const result = await sendEngineerActivationEmail(env, {
+    to: engineer.email,
+    ...message,
+  }, engineer.market);
+  return persistActivationSendResult(env, activation.id, result);
+}
+
+async function loadEngineerApplicationAccount(env, applicationId) {
+  return env.DB.prepare(`
+    SELECT a.*,
+           e.user_no AS engineer_no,
+           e.name AS engineer_name,
+           e.email AS engineer_email,
+           e.phone AS engineer_phone,
+           e.auth_status AS engineer_auth_status,
+           activation.expires_at AS activation_expires_at,
+           activation.sent_at AS activation_sent_at,
+           activation.send_status AS activation_send_status,
+           activation.revoked_at AS activation_revoked_at
+    FROM engineer_applications a
+    LEFT JOIN engineers e ON e.id = a.converted_user_id
+    LEFT JOIN engineer_account_activations activation
+      ON activation.id = (
+        SELECT candidate.id
+        FROM engineer_account_activations candidate
+        WHERE candidate.engineer_id = e.id
+          AND candidate.revoked_at IS NULL
+        ORDER BY candidate.created_at DESC
+        LIMIT 1
+      )
+    WHERE a.id = ?
+  `).bind(applicationId).first();
+}
+
+async function handleAdminOpenEngineerAccount(request, env) {
+  try {
+    const applicationId = new URL(request.url).pathname.split('/')[4];
+    const application = await loadEngineerApplicationAccount(env, applicationId);
+    if (!application) return errorResponse('申请不存在', 404);
+    if (application.converted_user_id) {
+      return jsonResponse({ account: engineerAccountResponse(application) });
+    }
+    if (application.status !== 'qualified') {
+      return errorResponse('仅审核通过的申请可以开通账号', 409);
+    }
+
+    const body = await request.json().catch(() => ({}));
+    const name = cleanText(body.name ?? application.name, 80);
+    const email = normalizeIdentityEmail(body.email ?? application.email);
+    const phone = cleanText(body.phone ?? application.phone, 40);
+    const normalizedPhone = normalizeIdentityPhone(phone);
+    if (!name || !email || !phone || !isValidEmail(email)) {
+      return errorResponse('姓名、邮箱和手机号必须有效');
+    }
+
+    const [identityConflict, existingCustomerPhone, existingEngineerPhone, existingCustomerEmail, existingEngineerEmail] = await Promise.all([
+      findAccountIdentityConflict(env, email, normalizedPhone),
+      env.DB.prepare(`
+        SELECT id FROM customers
+        WHERE replace(replace(replace(replace(replace(replace(replace(replace(trim(phone), char(9), ''), char(10), ''), char(13), ''), ' ', ''), '-', ''), '(', ''), ')', ''), '.', '') = ?
+      `).bind(normalizedPhone).first(),
+      env.DB.prepare(`
+        SELECT id FROM engineers
+        WHERE replace(replace(replace(replace(replace(replace(replace(replace(trim(phone), char(9), ''), char(10), ''), char(13), ''), ' ', ''), '-', ''), '(', ''), ')', ''), '.', '') = ?
+      `).bind(normalizedPhone).first(),
+      env.DB.prepare('SELECT id FROM customers WHERE lower(trim(email)) = ?').bind(email).first(),
+      env.DB.prepare('SELECT id FROM engineers WHERE lower(trim(email)) = ?').bind(email).first(),
+    ]);
+    if (identityConflict) return accountIdentityConflictResponse(identityConflict.identity_type, request);
+    if (existingCustomerEmail || existingEngineerEmail) return accountIdentityConflictResponse('email', request);
+    if (existingCustomerPhone || existingEngineerPhone) return accountIdentityConflictResponse('phone', request);
+
+    const engineerId = generateId();
+    const engineerNo = await generateUserNo(env, 'E');
+    const activationId = generateId();
+    const activationToken = createEngineerActivationToken();
+    const activationHash = await hashEngineerActivationToken(activationToken);
+    const expiresAt = activationExpiresAt();
+    const salt = generateSalt();
+    const unusablePassword = createEngineerActivationToken();
+    const passwordHash = await hashPasswordNew(unusablePassword, salt);
+    const engineerRole = body.engineer_role === 'regional_lead' ? 'regional_lead' : 'engineer';
+    const services = cleanTextArray(body.services ?? application.skill_tags);
+    const specialties = cleanTextArray(body.specialties ?? application.equipment_types);
+    const brands = cleanTextArray(body.brands ?? application.brand_experience);
+    const responsibleRegion = cleanText(body.responsible_region ?? application.base_region, 200) || null;
+    const serviceRegion = cleanTextArray(body.service_regions ?? application.service_regions).join(', ') || responsibleRegion;
+
+    const engineerInsert = env.DB.prepare(`
+      INSERT INTO engineers (
+        id, user_no, name, phone, email, password_hash, salt, specialties, brands, services,
+        service_region, bio, status, engineer_role, regional_lead_id, cooperation_status,
+        certification_status, capability_tags, brand_coverage, workload_status,
+        responsible_region, team_name, first_login_password_reset_required, auth_status
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 'pending_activation')
+    `).bind(
+      engineerId,
+      engineerNo,
+      name,
+      phone,
+      email,
+      passwordHash,
+      salt,
+      JSON.stringify(specialties),
+      JSON.stringify(brands),
+      JSON.stringify(services),
+      serviceRegion,
+      cleanText(body.bio ?? application.experience_summary, 1200) || null,
+      'pending_approval',
+      engineerRole,
+      engineerRole === 'regional_lead' ? null : cleanText(body.regional_lead_id, 80) || null,
+      cleanText(body.cooperation_status, 40) || 'confirmed',
+      cleanText(body.certification_status, 40) || 'pending',
+      JSON.stringify(cleanTextArray(body.capability_tags ?? application.skill_tags)),
+      JSON.stringify(brands),
+      cleanText(body.workload_status, 40) || 'available',
+      responsibleRegion,
+      cleanText(body.team_name, 120) || null,
+    );
+    const activationInsert = env.DB.prepare(`
+      INSERT INTO engineer_account_activations (
+        id, engineer_id, token_hash, expires_at, created_by, send_status
+      ) VALUES (?, ?, ?, ?, ?, 'pending')
+    `).bind(activationId, engineerId, activationHash, expiresAt, request._auth?.userId || 'admin');
+    const applicationUpdate = env.DB.prepare(`
+      UPDATE engineer_applications
+      SET status = 'qualified', converted_user_id = ?, reviewed_by = ?,
+          reviewed_at = COALESCE(reviewed_at, datetime('now')), updated_at = datetime('now')
+      WHERE id = ? AND converted_user_id IS NULL
+    `).bind(engineerId, request._auth?.userId || 'admin', applicationId);
+
+    try {
+      await env.DB.batch([
+        ...identityInsertStatements(env, { ownerType: 'engineer', ownerId: engineerId, email, phone }),
+        engineerInsert,
+        activationInsert,
+        applicationUpdate,
+        buildAuditLogStatement(env, request, {
+          targetType: 'engineer', targetId: engineerId, action: 'engineer_account_created',
+          afterState: { application_id: applicationId, auth_status: 'pending_activation' },
+        }),
+        buildAuditLogStatement(env, request, {
+          targetType: 'engineer_application', targetId: applicationId, action: 'engineer_application_account_linked',
+          afterState: { engineer_id: engineerId },
+        }),
+      ]);
+    } catch (error) {
+      const conflictResponse = await recoverAccountIdentityConflict(error, env, email, normalizedPhone, request);
+      if (conflictResponse) return conflictResponse;
+      throw error;
+    }
+
+    const emailSent = await sendActivationForEngineer(env, {
+      market: application.market || getRequestMarket(request),
+      name,
+      email,
+      engineer_no: engineerNo,
+    }, { id: activationId, token: activationToken });
+    return jsonResponse({
+      account: {
+        engineer_id: engineerId,
+        engineer_no: engineerNo,
+        activation_status: 'awaiting_activation',
+        email_sent: emailSent,
+        expires_at: expiresAt,
+      },
+    });
+  } catch (error) {
+    return errorResponse(error.message, 500);
+  }
+}
+
+async function handleAdminResendEngineerActivation(request, env) {
+  try {
+    const applicationId = new URL(request.url).pathname.split('/')[4];
+    const application = await loadEngineerApplicationAccount(env, applicationId);
+    if (!application) return errorResponse('申请不存在', 404);
+    if (!application.converted_user_id) return errorResponse('工程师账号尚未开通', 409);
+    if (application.engineer_auth_status === 'authenticated') {
+      return errorResponse('工程师账号已激活', 409);
+    }
+
+    const rateLimitKey = `engineer_activation_resend_${application.converted_user_id}`;
+    if (await env.KV.get(rateLimitKey)) return errorResponse('请稍后再重新发送', 429);
+    await env.KV.put(rateLimitKey, '1', { expirationTtl: 60 });
+
+    const activationId = generateId();
+    const activationToken = createEngineerActivationToken();
+    const activationHash = await hashEngineerActivationToken(activationToken);
+    const expiresAt = activationExpiresAt();
+    await env.DB.batch([
+      env.DB.prepare(`
+        UPDATE engineer_account_activations
+        SET revoked_at = datetime('now'), updated_at = datetime('now')
+        WHERE engineer_id = ? AND used_at IS NULL AND revoked_at IS NULL
+      `).bind(application.converted_user_id),
+      env.DB.prepare(`
+        INSERT INTO engineer_account_activations (
+          id, engineer_id, token_hash, expires_at, created_by, send_status
+        ) VALUES (?, ?, ?, ?, ?, 'pending')
+      `).bind(activationId, application.converted_user_id, activationHash, expiresAt, request._auth?.userId || 'admin'),
+      buildAuditLogStatement(env, request, {
+        targetType: 'engineer', targetId: application.converted_user_id, action: 'engineer_activation_resent',
+        afterState: { application_id: applicationId, expires_at: expiresAt },
+      }),
+    ]);
+
+    const emailSent = await sendActivationForEngineer(env, {
+      market: application.market || getRequestMarket(request),
+      name: application.engineer_name || application.name,
+      email: application.engineer_email || application.email,
+      engineer_no: application.engineer_no,
+    }, { id: activationId, token: activationToken });
+    return jsonResponse({ account: {
+      engineer_id: application.converted_user_id,
+      engineer_no: application.engineer_no,
+      activation_status: 'awaiting_activation',
+      email_sent: emailSent,
+      expires_at: expiresAt,
+    } });
   } catch (error) {
     return errorResponse(error.message, 500);
   }
@@ -11963,6 +12402,9 @@ async function routeRequest(request, env, ctx) {
     if (path === '/api/auth/login' && request.method === 'POST') {
       return handleLogin(request, env);
     }
+    if (path === '/api/auth/engineer/activate' && request.method === 'POST') {
+      return handleEngineerActivation(request, env);
+    }
     if (path === '/api/auth/reset-password' && request.method === 'POST') {
       return handleResetPassword(request, env);
     }
@@ -12235,6 +12677,12 @@ async function routeRequest(request, env, ctx) {
       }
       if (path === '/api/admin/engineer-applications' && request.method === 'GET') {
         return handleAdminEngineerApplications(request, env);
+      }
+      if (path.match(/^\/api\/admin\/engineer-applications\/[^/]+\/open-account$/) && request.method === 'POST') {
+        return handleAdminOpenEngineerAccount(request, env);
+      }
+      if (path.match(/^\/api\/admin\/engineer-applications\/[^/]+\/resend-activation$/) && request.method === 'POST') {
+        return handleAdminResendEngineerActivation(request, env);
       }
       if (path.startsWith('/api/admin/engineer-applications/') && request.method === 'PATCH') {
         return handleAdminUpdateEngineerApplication(request, env);

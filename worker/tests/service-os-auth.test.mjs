@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { signJwt } from '../src/lib/auth.js';
+import { hashPasswordNew, signJwt } from '../src/lib/auth.js';
 import worker from '../src/index.js';
 
 const ENGINEER_REJECT_JWT_SECRET = 'service-os-auth-test-secret-32-chars';
@@ -96,6 +96,14 @@ function createTestEnv(overrides = {}) {
             if (/FROM customers WHERE lower\(email\) = \?/i.test(sql)) {
               const row = dbState.customers.find((customer) => customer.email?.toLowerCase() === this.args[0]);
               return row ? { id: row.id } : null;
+            }
+            if (/SELECT \* FROM engineers WHERE lower\(email\) = \?/i.test(sql)) {
+              const row = dbState.engineers.find((engineer) => engineer.email?.toLowerCase() === this.args[0]);
+              return row || null;
+            }
+            if (/SELECT \* FROM engineers WHERE phone = \?/i.test(sql)) {
+              const row = dbState.engineers.find((engineer) => engineer.phone === this.args[0]);
+              return row || null;
             }
             if (/FROM engineers WHERE phone = \?/i.test(sql)) {
               const row = dbState.engineers.find((engineer) => engineer.phone === this.args[0]);
@@ -856,6 +864,77 @@ test('customer login returns company profile fields saved during registration', 
   assert.equal(loginResult.response.status, 200);
   assert.equal(loginResult.json.user.company, company);
   assert.equal(loginResult.json.user.auth_status, 'authenticated');
+});
+
+test('activated engineer signs in with normalized email and phone', async () => {
+  const env = createTestEnv();
+  const salt = 'engineer-login-salt';
+  const password = 'secret12345';
+  env.__dbState.engineers.push({
+    id: 'eng-login-1',
+    user_no: 'E000001',
+    name: 'Tom Lee',
+    phone: '+525572080065',
+    email: 'tom@example.com',
+    password_hash: await hashPasswordNew(password, salt),
+    salt,
+    auth_status: 'authenticated',
+  });
+
+  const emailLogin = await postJson('https://api.sagemro.com/api/auth/login', {
+    email: ' TOM@EXAMPLE.COM ', password,
+  }, env);
+  assert.equal(emailLogin.response.status, 200);
+  assert.equal(emailLogin.json.userType, 'engineer');
+
+  const phoneLogin = await postJson('https://api.sagemro.com/api/auth/login', {
+    phone: '+525572080065', password,
+  }, env);
+  assert.equal(phoneLogin.response.status, 200);
+});
+
+test('pending engineer cannot sign in with phone or email', async () => {
+  const env = createTestEnv();
+  const salt = 'pending-engineer-salt';
+  const password = 'secret12345';
+  env.__dbState.engineers.push({
+    id: 'eng-pending-1',
+    user_no: 'E000002',
+    name: 'Pending Engineer',
+    phone: '+525572080066',
+    email: 'pending@example.com',
+    password_hash: await hashPasswordNew(password, salt),
+    salt,
+    auth_status: 'pending_activation',
+  });
+
+  for (const body of [
+    { phone: '+525572080066', password },
+    { email: 'PENDING@example.com', password },
+  ]) {
+    const result = await postJson('https://api.sagemro.com/api/auth/login', body, env);
+    assert.equal(result.response.status, 403);
+  }
+});
+
+test('legacy engineer auth status keeps current login behavior', async () => {
+  const env = createTestEnv();
+  const salt = 'legacy-engineer-salt';
+  const password = 'secret12345';
+  env.__dbState.engineers.push({
+    id: 'eng-legacy-1',
+    user_no: 'E000003',
+    name: 'Legacy Engineer',
+    phone: '13800000000',
+    password_hash: await hashPasswordNew(password, salt),
+    salt,
+    auth_status: 'pending',
+  });
+
+  const result = await postJson('https://api.sagemro.com/api/auth/login', {
+    phone: '13800000000', password,
+  }, env);
+  assert.equal(result.response.status, 200);
 });
 
 test('CN customer registration accepts a phone verification code without requiring email', async () => {
