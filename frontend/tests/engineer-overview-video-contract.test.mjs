@@ -57,8 +57,13 @@ test('engineer recruiting page adds the overview after the hero without replacin
   assert.ok(source.indexOf('<EngineerOverviewVideo locale={locale} />') < source.indexOf('copy.audienceTitle'));
   assert.match(source, /copy\.workflowTitle/);
   assert.match(source, /copy\.faqTitle/);
-  assert.match(source, /设备维保最佳方案：AI知识飞轮\+工程师技能实践。/);
-  assert.match(source, /A better equipment service model: AI knowledge flywheel \+ engineer expertise\./);
+  assert.match(source, /title: '设备维保最佳方案：AI知识飞轮\+工程师技能实践'/);
+  assert.match(source, /title: 'A better equipment service model: AI knowledge flywheel \+ engineer expertise'/);
+  assert.match(source, /scaleTitle: '把个人经验，变成团队可以复用的服务能力'/);
+  assert.match(source, /finalTitle: '让工程师把时间用在真正需要技术的地方'/);
+  assert.match(source, /problemTitle: 'The hidden cost in field service is fragmented engineer time'/);
+  assert.match(source, /scaleTitle: 'Turn individual expertise into a service capability the team can reuse'/);
+  assert.match(source, /finalTitle: 'Put engineer time where technical skill is truly needed'/);
   assert.match(source, /咨询接待，任务整理/);
   assert.match(source, /确认方案，解决问题/);
   assert.match(source, /协调流程，沉淀记录/);

@@ -507,8 +507,18 @@ test('engineer recruiting page leads with engineer leverage and a bounded servic
   const recruiting = read('frontend/src/components/Engineer/EngineerRecruitingPage.jsx');
 
   assert.match(recruiting, /modalOpen/);
-  assert.match(recruiting, /设备维保最佳方案：AI知识飞轮\+工程师技能实践/);
-  assert.match(recruiting, /A better equipment service model: AI knowledge flywheel \+ engineer expertise/);
+  assert.match(recruiting, /networkLabel: '工程师工作台'/);
+  assert.match(recruiting, /networkLabel: 'Engineer Workspace'/);
+  assert.match(recruiting, /title: '设备维保最佳方案：AI知识飞轮\+工程师技能实践'/);
+  assert.match(recruiting, /title: 'A better equipment service model: AI knowledge flywheel \+ engineer expertise'/);
+  assert.match(recruiting, /scaleTitle: '把个人经验，变成团队可以复用的服务能力'/);
+  assert.match(recruiting, /finalTitle: '让工程师把时间用在真正需要技术的地方'/);
+  assert.match(recruiting, /problemTitle: 'The hidden cost in field service is fragmented engineer time'/);
+  assert.match(recruiting, /scaleTitle: 'Turn individual expertise into a service capability the team can reuse'/);
+  assert.match(recruiting, /finalTitle: 'Put engineer time where technical skill is truly needed'/);
+  assert.doesNotMatch(recruiting, /networkLabel: 'SAGEMRO 工程师工作台'|networkLabel: 'SAGEMRO Engineer Workspace'/);
+  assert.doesNotMatch(recruiting, /title: '设备维保最佳方案：AI知识飞轮\+工程师技能实践。'|title: 'A better equipment service model: AI knowledge flywheel \+ engineer expertise\.'/);
+  assert.doesNotMatch(recruiting, /(?:^|\n)\s+(?:title|benefitsTitle|audienceTitle|problemTitle|workflowTitle|scaleTitle|sharedTitle|standardTitle|joinTitle|lookForTitle|leadTitle|processTitle|faqTitle|finalTitle|modalTitle): '[^'\n]*[。.。]'/m);
   assert.doesNotMatch(recruiting, /safetyLabel:|safetyTitle:|safetyText:|copy\.safetyTitle|ShieldCheck/);
   assert.match(recruiting, /让优秀的维保工程师体现价值/);
   assert.match(recruiting, /The hidden cost in field service is fragmented engineer time/);

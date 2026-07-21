@@ -173,7 +173,10 @@ test('CN recruiting and shared overlays localize secondary labels', () => {
   const feedback = read('frontend/src/components/common/FeedbackHost.jsx');
   const feedbackUtils = read('frontend/src/utils/feedback.js');
 
-  assert.match(recruiting, /设备维保最佳方案：AI知识飞轮\+工程师技能实践/);
+  assert.match(recruiting, /networkLabel: '工程师工作台'/);
+  assert.match(recruiting, /title: '设备维保最佳方案：AI知识飞轮\+工程师技能实践'/);
+  assert.match(recruiting, /scaleTitle: '把个人经验，变成团队可以复用的服务能力'/);
+  assert.match(recruiting, /finalTitle: '让工程师把时间用在真正需要技术的地方'/);
   assert.match(recruiting, /激光及金属成型设备维保工程师/);
   assert.match(recruiting, /咨询接待，任务整理/);
   assert.match(recruiting, /确认方案，解决问题/);
