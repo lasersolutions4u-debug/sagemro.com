@@ -447,9 +447,13 @@ test('admin dispatch stays simple while Engineers owns search and profiles', () 
   assert.match(app, /import \{ EngineersPage \} from '\.\/pages\/EngineersPage'/);
   assert.match(app, /engineers: 'Engineers'/);
   assert.match(app, /users: 'Customers'/);
-  assert.match(app, /case 'engineers': return <EngineersPage \/>/);
+  assert.match(app, /const \[selectedEngineerId, setSelectedEngineerId\] = useState\(''\)/);
+  assert.match(app, /case 'engineers': return <EngineersPage initialEngineerId=\{selectedEngineerId\} onEngineerOpened=\{\(\) => setSelectedEngineerId\(''\)\} \/>/);
+  assert.match(app, /case 'engineerApplications': return <EngineerApplicationsPage onOpenEngineer=\{\(engineerId\) => \{ setSelectedEngineerId\(engineerId\); setActivePage\('engineers'\); \}\} \/>/);
 
-  assert.match(usersPage, /const type = 'customer'/);
+  assert.match(usersPage, /getAdminUsers\('customer', page, pageSize, filters\)/);
+  assert.match(usersPage, /createAdminUser\(\{ userType: 'customer', \.\.\.form \}\)/);
+  assert.match(usersPage, /deleteAdminUser\(deleteTarget\.id, 'customer'\)/);
   assert.doesNotMatch(usersPage, /\{ key: 'engineer', label: t\.engineer \}/);
   assert.doesNotMatch(usersPage, /\['customer', 'engineer'\]\.map/);
 
@@ -463,6 +467,8 @@ test('admin dispatch stays simple while Engineers owns search and profiles', () 
   assert.match(engineersPage, /filterService/);
   assert.match(engineersPage, /selectedEngineer/);
   assert.match(engineersPage, /work_orders/);
+  assert.match(engineersPage, /export function EngineersPage\(\{ initialEngineerId = '', onEngineerOpened \}\)/);
+  assert.match(engineersPage, /openProfile\(\{ id: initialEngineerId \}\);\s+onEngineerOpened\?\.\(\);/);
 
   assert.match(api, /getAdminEngineerDetail\(engineerId\)/);
 });

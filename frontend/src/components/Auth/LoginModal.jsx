@@ -11,7 +11,9 @@ const LOGIN_COPY = {
     phoneInvalid: '请输入有效手机号',
     emailRequired: '请输入邮箱',
     emailInvalid: '请输入有效邮箱',
-    phonePasswordRequired: '请输入手机号和密码',
+    phonePasswordRequired: '请输入邮箱或手机号和密码',
+    accountLabel: '邮箱或手机号',
+    accountPlaceholder: '请输入邮箱或手机号',
     sendFailed: '发送失败',
     requiredFields: '请填写所有必填项',
     passwordMismatch: '两次输入的密码不一致',
@@ -432,10 +434,10 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
             )}
 
             <div>
-              <label className="block text-sm font-medium mb-1">{isCn ? copy.phoneNumberLabel : copy.accountLabel}</label>
+              <label className="block text-sm font-medium mb-1">{copy.accountLabel}</label>
               <input
-                type={isCn ? 'tel' : 'text'} value={isCn ? phone : loginAccount} onChange={(e) => { isCn ? setPhone(e.target.value) : setLoginAccount(e.target.value); }}
-                placeholder={isCn ? copy.phonePlaceholder : copy.accountPlaceholder} maxLength={24}
+                type="text" value={loginAccount} onChange={(e) => setLoginAccount(e.target.value)}
+                placeholder={copy.accountPlaceholder} maxLength={254} autoComplete="username"
                 className="w-full px-3 py-2 border border-[var(--color-input-border)] rounded-xl bg-[var(--color-input-bg)] text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
               />
             </div>
@@ -450,16 +452,14 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
 
             <button
               onClick={async () => {
-                const credential = (isCn ? phone : loginAccount).trim();
+                const credential = loginAccount.trim();
                 if (!credential || !password) { setError(copy.phonePasswordRequired); return; }
                 setSubmitting(true);
                 setError('');
                 try {
-                  const result = isCn
-                    ? await login({ phone: credential, password })
-                    : credential.includes('@')
-                      ? await login({ email: credential, password })
-                      : await login({ phone: credential, password });
+                  const result = credential.includes('@')
+                    ? await login({ email: credential, password })
+                    : await login({ phone: credential, password });
                   localStorage.setItem('sagemro_token', result.token);
                   localStorage.setItem('sagemro_user', JSON.stringify(result.user));
                   localStorage.setItem('sagemro_user_type', result.userType);
