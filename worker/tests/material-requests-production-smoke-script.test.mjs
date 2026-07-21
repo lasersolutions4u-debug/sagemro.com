@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -15,6 +16,8 @@ import {
   parseMaterialRequestSmokeArgs,
   sanitizeMaterialRequestStepResult,
 } from '../scripts/material-requests-production-smoke.mjs';
+
+const scriptSource = readFileSync(new URL('../scripts/material-requests-production-smoke.mjs', import.meta.url), 'utf8');
 
 test('material request production smoke requires explicit write confirmation', () => {
   assert.throws(
@@ -67,8 +70,16 @@ test('material request cleanup covers request, material, work order, and users',
   assert.ok(cleanupSql.indexOf('DELETE FROM account_identities') < cleanupSql.indexOf('DELETE FROM customers'));
 
   assert.match(residueSql, /material_requests/);
+  assert.match(residueSql, /FROM account_identities/);
   assert.match(residueSql, /total_residue/);
   assert.match(residueSql, /SAGEMRO_SMOKE_MATERIAL_REQUEST_cn_20260704190506/);
+});
+
+test('material request seed SQL claims phone identities for temporary users', () => {
+  const identityInserts = scriptSource.match(/INSERT INTO account_identities/g) || [];
+  assert.equal(identityInserts.length, 2);
+  assert.match(scriptSource, /'phone'.*context\.customerPhone.*'customer'.*context\.customerId/s);
+  assert.match(scriptSource, /'phone'.*context\.engineerPhone.*'engineer'.*context\.engineerId/s);
 });
 
 test('material request smoke report sanitization excludes secrets', () => {

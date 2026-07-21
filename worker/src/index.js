@@ -2088,7 +2088,14 @@ async function findAccountIdentityConflict(env, normalizedEmail, normalizedPhone
 }
 
 async function recoverAccountIdentityConflict(error, env, normalizedEmail, normalizedPhone, request) {
-  if (!String(error?.message || error).includes('account_identities')) return null;
+  const message = String(error?.message || error);
+  if (message.includes('idx_customers_email_normalized_unique')) {
+    return accountIdentityConflictResponse('email', request);
+  }
+  if (/UNIQUE constraint failed:\s*customers\.phone/i.test(message)) {
+    return accountIdentityConflictResponse('phone', request);
+  }
+  if (!message.includes('account_identities')) return null;
   const conflict = await findAccountIdentityConflict(env, normalizedEmail, normalizedPhone);
   return conflict ? accountIdentityConflictResponse(conflict.identity_type, request) : null;
 }
@@ -2617,11 +2624,11 @@ async function handleRegisterCustomer(request, env) {
       findAccountIdentityConflict(env, normalizedEmail, normalizedPhone),
       env.DB.prepare(`
         SELECT id FROM customers
-        WHERE replace(replace(replace(replace(replace(trim(phone), ' ', ''), '-', ''), '(', ''), ')', ''), '.', '') = ?
+        WHERE replace(replace(replace(replace(replace(replace(replace(replace(trim(phone), char(9), ''), char(10), ''), char(13), ''), ' ', ''), '-', ''), '(', ''), ')', ''), '.', '') = ?
       `).bind(normalizedPhone).first(),
       env.DB.prepare(`
         SELECT id FROM engineers
-        WHERE replace(replace(replace(replace(replace(trim(phone), ' ', ''), '-', ''), '(', ''), ')', ''), '.', '') = ?
+        WHERE replace(replace(replace(replace(replace(replace(replace(replace(trim(phone), char(9), ''), char(10), ''), char(13), ''), ' ', ''), '-', ''), '(', ''), ')', ''), '.', '') = ?
       `).bind(normalizedPhone).first(),
       normalizedEmail
         ? env.DB.prepare('SELECT id FROM customers WHERE lower(email) = ?').bind(normalizedEmail).first()
@@ -8416,11 +8423,11 @@ async function handleAdminCreateUser(request, env) {
         findAccountIdentityConflict(env, '', normalizedPhone),
         env.DB.prepare(`
           SELECT id FROM customers
-          WHERE replace(replace(replace(replace(replace(trim(phone), ' ', ''), '-', ''), '(', ''), ')', ''), '.', '') = ?
+          WHERE replace(replace(replace(replace(replace(replace(replace(replace(trim(phone), char(9), ''), char(10), ''), char(13), ''), ' ', ''), '-', ''), '(', ''), ')', ''), '.', '') = ?
         `).bind(normalizedPhone).first(),
         env.DB.prepare(`
           SELECT id FROM engineers
-          WHERE replace(replace(replace(replace(replace(trim(phone), ' ', ''), '-', ''), '(', ''), ')', ''), '.', '') = ?
+          WHERE replace(replace(replace(replace(replace(replace(replace(replace(trim(phone), char(9), ''), char(10), ''), char(13), ''), ' ', ''), '-', ''), '(', ''), ')', ''), '.', '') = ?
         `).bind(normalizedPhone).first(),
       ]);
       if (identityConflict) {
