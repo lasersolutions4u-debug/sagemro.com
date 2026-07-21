@@ -71,6 +71,7 @@ export default function App() {
   });
   const [activePage, setActivePage] = useState('dashboard');
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [selectedEngineerId, setSelectedEngineerId] = useState('');
 
   if (window.location.pathname !== '/') {
     const isCn = runtimeConfig.locale === 'zh-CN';
@@ -104,11 +105,11 @@ export default function App() {
     switch (activePage) {
       case 'dashboard': return <DashboardPage />;
       case 'users': return <UsersPage />;
-      case 'engineers': return <EngineersPage />;
+      case 'engineers': return <EngineersPage initialEngineerId={selectedEngineerId} onEngineerOpened={() => setSelectedEngineerId('')} />;
       case 'workorders': return <WorkOrdersPage />;
       case 'materials': return <MaterialsPage />;
       case 'knowledge': return <KnowledgePage />;
-      case 'engineerApplications': return <EngineerApplicationsPage />;
+      case 'engineerApplications': return <EngineerApplicationsPage onOpenEngineer={(engineerId) => { setSelectedEngineerId(engineerId); setActivePage('engineers'); }} />;
       case 'ratings': return <RatingsPage />;
       case 'leads': return <LeadsPage />;
       default: return <DashboardPage />;
