@@ -2819,7 +2819,8 @@ async function handleLogin(request, env) {
   try {
     const { phone, email, password } = await request.json();
     const normalizedEmail = normalizeEmail(email);
-    const loginKey = normalizedEmail || phone;
+    const normalizedPhone = normalizeIdentityPhone(phone);
+    const loginKey = normalizedEmail || normalizedPhone;
 
     if (!loginKey || !password) {
       return localizedErrorResponse('phone_password_required', request);
@@ -2839,8 +2840,9 @@ async function handleLogin(request, env) {
           'SELECT * FROM customers WHERE lower(email) = ?'
         ).bind(normalizedEmail).first()
       : await env.DB.prepare(
-          'SELECT * FROM customers WHERE phone = ?'
-        ).bind(phone).first();
+          `SELECT * FROM customers
+           WHERE replace(replace(replace(replace(replace(replace(replace(replace(trim(phone), char(9), ''), char(10), ''), char(13), ''), ' ', ''), '-', ''), '(', ''), ')', ''), '.', '') = ?`
+        ).bind(normalizedPhone).first();
 
     let userType = 'customer';
 
@@ -2851,8 +2853,9 @@ async function handleLogin(request, env) {
             'SELECT * FROM engineers WHERE lower(email) = ?'
           ).bind(normalizedEmail).first()
         : await env.DB.prepare(
-            'SELECT * FROM engineers WHERE phone = ?'
-          ).bind(phone).first();
+            `SELECT * FROM engineers
+             WHERE replace(replace(replace(replace(replace(replace(replace(replace(trim(phone), char(9), ''), char(10), ''), char(13), ''), ' ', ''), '-', ''), '(', ''), ')', ''), '.', '') = ?`
+          ).bind(normalizedPhone).first();
       userType = 'engineer';
     }
 
@@ -7440,17 +7443,27 @@ async function handleAdminOpenEngineerAccount(request, env) {
     `).bind(activationId, engineerId, activationHash, expiresAt, request._auth?.userId || 'admin');
     const applicationUpdate = env.DB.prepare(`
       UPDATE engineer_applications
-      SET status = 'qualified', converted_user_id = ?, reviewed_by = ?,
+      SET converted_user_id = ?, reviewed_by = ?,
           reviewed_at = COALESCE(reviewed_at, datetime('now')), updated_at = datetime('now')
-      WHERE id = ? AND converted_user_id IS NULL
+      WHERE id = ? AND status = 'qualified' AND converted_user_id IS NULL
     `).bind(engineerId, request._auth?.userId || 'admin', applicationId);
+    const applicationGuard = env.DB.prepare(`
+      INSERT INTO account_identities (identity_type, normalized_value, owner_type, owner_id)
+      SELECT NULL AS application_account_guard_failed, ?, 'engineer', ?
+      WHERE NOT EXISTS (
+        SELECT 1
+        FROM engineer_applications
+        WHERE id = ? AND status = 'qualified' AND converted_user_id = ?
+      )
+    `).bind(applicationId, engineerId, applicationId, engineerId);
 
     try {
       await env.DB.batch([
+        applicationUpdate,
+        applicationGuard,
         ...identityInsertStatements(env, { ownerType: 'engineer', ownerId: engineerId, email, phone }),
         engineerInsert,
         activationInsert,
-        applicationUpdate,
         buildAuditLogStatement(env, request, {
           targetType: 'engineer', targetId: engineerId, action: 'engineer_account_created',
           afterState: { application_id: applicationId, auth_status: 'pending_activation' },
@@ -7461,6 +7474,9 @@ async function handleAdminOpenEngineerAccount(request, env) {
         }),
       ]);
     } catch (error) {
+      if (/NOT NULL constraint failed:\s*account_identities\.identity_type/i.test(String(error?.message || error))) {
+        return errorResponse('申请状态已变化或账号已由其他请求开通，请刷新后重试', 409);
+      }
       const conflictResponse = await recoverAccountIdentityConflict(error, env, email, normalizedPhone, request);
       if (conflictResponse) return conflictResponse;
       throw error;
@@ -7492,8 +7508,8 @@ async function handleAdminResendEngineerActivation(request, env) {
     const application = await loadEngineerApplicationAccount(env, applicationId);
     if (!application) return errorResponse('申请不存在', 404);
     if (!application.converted_user_id) return errorResponse('工程师账号尚未开通', 409);
-    if (application.engineer_auth_status === 'authenticated') {
-      return errorResponse('工程师账号已激活', 409);
+    if (application.engineer_auth_status !== 'pending_activation') {
+      return errorResponse('仅待激活的工程师账号可以重新发送激活邮件', 409);
     }
 
     const rateLimitKey = `engineer_activation_resend_${application.converted_user_id}`;
