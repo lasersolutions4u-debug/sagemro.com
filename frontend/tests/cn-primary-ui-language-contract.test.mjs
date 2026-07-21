@@ -181,8 +181,10 @@ test('CN recruiting and shared overlays localize secondary labels', () => {
   assert.match(recruiting, /减少反复沟通，避免无效上门/);
   assert.match(recruiting, /一个越来越懂客户的AI，让技术服务更高效/);
   assert.match(recruiting, /知识技能持续进化，服务能力无限增长/);
-  assert.match(recruiting, /内容为AI 生成，仅供参考/);
+  assert.match(recruiting, /不要忽略的重要提示：内容为AI生成，仅供参考/);
+  assert.match(recruiting, /本页面文案均经人工审核确认/);
   assert.match(recruiting, /申请加入/);
+  assert.match(recruiting, /finalLogin: '登录'/);
   assert.match(recruiting, /从单打独斗，到共享规模化能力/);
   assert.match(recruiting, /共享更有竞争力的供应链/);
   assert.match(recruiting, /共享品牌和市场获客能力/);

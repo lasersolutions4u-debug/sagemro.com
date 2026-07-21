@@ -43,8 +43,8 @@ const COPY = {
       { label: '技能', title: '知识技能持续进化，服务能力无限增长', text: '设备问题分析、材料需求、处理技巧和经验教训都留在系统里，并通过 AI 进行结构化整理，形成共享且持续进化的服务技能。' },
     ],
     safetyLabel: '服务安全与责任边界',
-    safetyTitle: '内容为AI 生成，仅供参考。',
-    safetyText: 'AI 不能替代人工对安全问题的判断。现场人员应注意先停机并确认风险已隔离后，再判断下一步。',
+    safetyTitle: '不要忽略的重要提示：内容为AI生成，仅供参考。',
+    safetyText: '本页面文案均经人工审核确认。AI 不能替代人工对安全问题的判断。现场人员应注意先停机并确认风险已隔离后，再判断下一步。',
     audienceTitle: '合作信息一览',
     audienceItems: [
       { label: '适合谁', value: '激光及金属成型设备维保工程师' },
@@ -125,7 +125,7 @@ const COPY = {
     ],
     finalTitle: '让工程师把时间用在真正需要技术的地方。',
     finalText: '提交你的服务区域、设备经验和可服务时间。SAGEMRO 会先进行人工审核，再与你确认合作范围和具体规则。',
-    finalLogin: '已有账号，进入工作台',
+    finalLogin: '登录',
     modalTitle: '申请加入',
     modalIntro: '请如实填写个人或团队的服务区域、设备经验和可服务时间。提交申请不会立即创建登录账号，审核通过并确认合作后再开通账号。',
     fields: {
@@ -187,8 +187,8 @@ const COPY = {
       { label: 'Capability', title: 'Let service knowledge keep improving', text: 'Problem analysis, material needs, service techniques, and lessons learned stay in the system, where AI can structure them into shared and continually improving service knowledge.' },
     ],
     safetyLabel: 'Service safety and responsibility boundaries',
-    safetyTitle: 'AI-generated content is for reference only.',
-    safetyText: 'AI cannot replace human judgment on safety. Stop the machine and confirm that risks are isolated before deciding what to do next.',
+    safetyTitle: 'Important notice: AI-generated content is for reference only.',
+    safetyText: 'All copy on this page has been reviewed and approved by people. AI cannot replace human judgment on safety. Stop the machine and confirm that risks are isolated before deciding what to do next.',
     audienceTitle: 'Cooperation at a glance',
     audienceItems: [
       { label: 'Who it is for', value: 'Local service teams and independent engineers for laser and metal forming equipment' },
@@ -270,7 +270,7 @@ const COPY = {
     ],
     finalTitle: 'Put engineer time where technical skill is truly needed.',
     finalText: 'Share your service region, equipment experience, and availability. SAGEMRO will review the application manually and confirm the cooperation scope and rules with you.',
-    finalLogin: 'Existing account: open the workspace',
+    finalLogin: 'Login',
     modalTitle: 'Apply to Join',
     modalIntro: 'Describe your individual or team service regions, equipment experience, and availability accurately. Applying does not create an account; access is opened only after review and cooperation confirmation.',
     fields: {
@@ -863,11 +863,11 @@ export function EngineerRecruitingPage({ onOpenLogin }) {
               <p className="mt-3 text-sm leading-7 text-white/70">{copy.finalText}</p>
             </div>
             <div className="mt-6 flex flex-col gap-3 sm:flex-row lg:mt-0">
-              <button onClick={openApply} className="inline-flex items-center justify-center gap-2 rounded-lg bg-amber-500 px-5 py-3 text-sm font-semibold text-[#21160c] hover:bg-amber-400">
+              <button onClick={openApply} className="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-lg bg-amber-500 px-5 py-3 text-sm font-semibold text-[#21160c] hover:bg-amber-400">
                 {copy.applyNow}
                 <ArrowRight size={16} />
               </button>
-              <button onClick={onOpenLogin} className="inline-flex items-center justify-center rounded-lg border border-white/25 px-5 py-3 text-sm font-semibold text-white hover:bg-white/10">
+              <button onClick={onOpenLogin} className="inline-flex items-center justify-center whitespace-nowrap rounded-lg border border-white/25 px-5 py-3 text-sm font-semibold text-white hover:bg-white/10">
                 {copy.finalLogin}
               </button>
             </div>
