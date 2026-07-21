@@ -511,7 +511,7 @@ test('engineer recruiting page leads with engineer leverage and a bounded servic
   assert.match(recruiting, /A better equipment service model: AI knowledge flywheel \+ engineer expertise/);
   assert.match(recruiting, /内容为AI 生成，仅供参考/);
   assert.match(recruiting, /AI-generated content is for reference only/);
-  assert.match(recruiting, /维修保养工作最大的消耗，是工程师琐事缠身、时间碎片化所带来的人效降低/);
+  assert.match(recruiting, /让优秀的维保工程师体现价值/);
   assert.match(recruiting, /The hidden cost in field service is fragmented engineer time/);
   assert.match(recruiting, /把个人经验，变成团队可以复用的服务能力/);
   assert.match(recruiting, /Turn individual expertise into a service capability the team can reuse/);
