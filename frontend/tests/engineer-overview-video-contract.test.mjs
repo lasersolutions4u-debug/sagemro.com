@@ -56,7 +56,6 @@ test('engineer recruiting page adds the overview after the hero without replacin
   assert.match(source, /<EngineerOverviewVideo locale=\{locale\} \/>/);
   assert.ok(source.indexOf('<EngineerOverviewVideo locale={locale} />') < source.indexOf('copy.audienceTitle'));
   assert.match(source, /copy\.workflowTitle/);
-  assert.match(source, /copy\.safetyTitle/);
   assert.match(source, /copy\.faqTitle/);
   assert.match(source, /设备维保最佳方案：AI知识飞轮\+工程师技能实践。/);
   assert.match(source, /A better equipment service model: AI knowledge flywheel \+ engineer expertise\./);

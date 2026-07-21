@@ -509,10 +509,7 @@ test('engineer recruiting page leads with engineer leverage and a bounded servic
   assert.match(recruiting, /modalOpen/);
   assert.match(recruiting, /设备维保最佳方案：AI知识飞轮\+工程师技能实践/);
   assert.match(recruiting, /A better equipment service model: AI knowledge flywheel \+ engineer expertise/);
-  assert.match(recruiting, /不要忽略的重要提示：内容为AI生成，仅供参考/);
-  assert.match(recruiting, /本页面文案均经人工审核确认/);
-  assert.match(recruiting, /Important notice: AI-generated content is for reference only/);
-  assert.match(recruiting, /All copy on this page has been reviewed and approved by people/);
+  assert.doesNotMatch(recruiting, /safetyLabel:|safetyTitle:|safetyText:|copy\.safetyTitle|ShieldCheck/);
   assert.match(recruiting, /让优秀的维保工程师体现价值/);
   assert.match(recruiting, /The hidden cost in field service is fragmented engineer time/);
   assert.match(recruiting, /把个人经验，变成团队可以复用的服务能力/);
@@ -523,8 +520,6 @@ test('engineer recruiting page leads with engineer leverage and a bounded servic
   assert.match(recruiting, /Reduce avoidable site visits caused by incomplete information/);
   assert.match(recruiting, /客户情况、判断过程和服务记录都留在系统里/);
   assert.match(recruiting, /Keep customer context, decision rationale, and service records in one workflow/);
-  assert.match(recruiting, /服务安全与责任边界/);
-  assert.match(recruiting, /Service safety and responsibility boundaries/);
   assert.match(recruiting, /能在线处理的先在线处理/);
   assert.match(recruiting, /Resolve online or escalate to an engineer/);
   assert.match(recruiting, /AI 系统/);
@@ -545,8 +540,13 @@ test('engineer recruiting page leads with engineer leverage and a bounded servic
   assert.match(recruiting, /finalLogin: 'Login'/);
   assert.match(recruiting, /onClick=\{openApply\} className="[^"]*whitespace-nowrap[^"]*"/);
   assert.match(recruiting, /onClick=\{onOpenLogin\} className="[^"]*whitespace-nowrap[^"]*"/);
-  assert.match(recruiting, /className="grid gap-2 sm:grid-cols-3 lg:grid-cols-1"/);
-  assert.doesNotMatch(recruiting, /className="grid grid-cols-3 gap-2 lg:grid-cols-1"/);
+  assert.match(recruiting, /lg:grid-cols-\[minmax\(0,1\.4fr\)_minmax\(18rem,0\.6fr\)\]/);
+  assert.match(recruiting, /lg:border-l lg:border-t-0 lg:pl-6/);
+  assert.match(recruiting, /border-l-2 border-amber-500 pl-4/);
+  assert.match(recruiting, /bg-\[#17110c\] px-6 py-6 text-white/);
+  assert.match(recruiting, /md:grid-cols-3/);
+  assert.match(recruiting, /md:border-l md:border-t-0/);
+  assert.doesNotMatch(recruiting, /rounded-\[2rem\]|blur-2xl|rounded-bl-\[5rem\]/);
   assert.doesNotMatch(recruiting, /AI-assisted industrial service platform|verified service pool|Certified Representative/);
   assert.doesNotMatch(recruiting, /AI 解决所有不用上门就能解决的问题/);
   assert.doesNotMatch(recruiting, /AI 接住流程|合作能带来什么|减少信息不足造成的非必要上门/);

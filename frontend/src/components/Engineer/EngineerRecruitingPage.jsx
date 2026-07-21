@@ -8,7 +8,6 @@ import {
   ClipboardCheck,
   Clock3,
   MapPin,
-  ShieldCheck,
   UsersRound,
   Wrench,
   X,
@@ -42,9 +41,6 @@ const COPY = {
       { label: '成本', title: '减少反复沟通，避免无效上门', text: '避免反复就是最好的降本之道。持续进化的 AI 会越来越懂客户，帮助判断适合远程服务还是上门服务，以及需要什么配件和额外支持。' },
       { label: '技能', title: '知识技能持续进化，服务能力无限增长', text: '设备问题分析、材料需求、处理技巧和经验教训都留在系统里，并通过 AI 进行结构化整理，形成共享且持续进化的服务技能。' },
     ],
-    safetyLabel: '服务安全与责任边界',
-    safetyTitle: '不要忽略的重要提示：内容为AI生成，仅供参考。',
-    safetyText: '本页面文案均经人工审核确认。AI 不能替代人工对安全问题的判断。现场人员应注意先停机并确认风险已隔离后，再判断下一步。',
     audienceTitle: '合作信息一览',
     audienceItems: [
       { label: '适合谁', value: '激光及金属成型设备维保工程师' },
@@ -186,9 +182,6 @@ const COPY = {
       { label: 'Cost', title: 'Reduce avoidable site visits caused by incomplete information', text: 'Less repetition is one of the clearest ways to control service cost. A learning AI helps distinguish remote work from field service and clarify parts or additional support before dispatch.' },
       { label: 'Capability', title: 'Let service knowledge keep improving', text: 'Problem analysis, material needs, service techniques, and lessons learned stay in the system, where AI can structure them into shared and continually improving service knowledge.' },
     ],
-    safetyLabel: 'Service safety and responsibility boundaries',
-    safetyTitle: 'Important notice: AI-generated content is for reference only.',
-    safetyText: 'All copy on this page has been reviewed and approved by people. AI cannot replace human judgment on safety. Stop the machine and confirm that risks are isolated before deciding what to do next.',
     audienceTitle: 'Cooperation at a glance',
     audienceItems: [
       { label: 'Who it is for', value: 'Local service teams and independent engineers for laser and metal forming equipment' },
@@ -555,11 +548,7 @@ export function EngineerRecruitingPage({ onOpenLogin }) {
 
   return (
     <div className="relative min-h-[100dvh] overflow-hidden bg-[#fbfaf7] text-[#17120b]">
-      <div className="absolute inset-x-0 top-0 h-[520px] overflow-hidden bg-[#14100b]">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_18%_15%,_rgba(245,158,11,0.28),_transparent_34%),radial-gradient(circle_at_80%_0%,_rgba(252,211,77,0.18),_transparent_32%),linear-gradient(135deg,_#14100b_0%,_#2b1b0d_58%,_#4a2a0e_100%)]" />
-        <div className="absolute inset-0 opacity-[0.14] [background-image:linear-gradient(rgba(255,255,255,.2)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,.2)_1px,transparent_1px)] [background-size:44px_44px]" />
-        <div className="absolute -bottom-32 left-1/2 h-64 w-[92%] -translate-x-1/2 rounded-[100%] bg-[#fbfaf7]" />
-      </div>
+      <div className="absolute inset-x-0 top-0 h-[31rem] bg-[#17110c]" />
 
       <div className="relative mx-auto max-w-7xl px-5 py-6">
         <header className="flex flex-wrap items-center justify-between gap-3">
@@ -588,48 +577,44 @@ export function EngineerRecruitingPage({ onOpenLogin }) {
         </header>
 
         <main className="py-10">
-          <section className="relative overflow-hidden rounded-[2rem] border border-white/50 bg-white/92 p-6 shadow-[0_24px_80px_rgba(48,31,12,0.14)] backdrop-blur-xl lg:p-9">
-            <div className="pointer-events-none absolute right-0 top-0 h-52 w-52 rounded-bl-[5rem] bg-amber-100/70 blur-2xl" />
-            <div className="relative grid gap-8 lg:grid-cols-[minmax(0,1.15fr)_360px] lg:items-end">
+          <section className="overflow-hidden rounded-lg border border-[#e6ded3] bg-white px-5 py-7 shadow-[0_18px_52px_rgba(35,24,14,0.12)] md:px-8 md:py-10 lg:px-10 lg:py-12">
+            <div className="grid gap-8 lg:grid-cols-[minmax(0,1.4fr)_minmax(18rem,0.6fr)] lg:items-center lg:gap-10">
               <div>
-                <div className="inline-flex rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-amber-800">
+                <div className="inline-flex border border-amber-300 bg-[#fffaf0] px-3 py-2 text-xs font-semibold uppercase text-amber-800">
                   {copy.badge}
                 </div>
-                <h1 className="mt-5 max-w-4xl text-4xl font-semibold leading-tight tracking-tight text-[#17120b] md:text-[3.4rem]">
+                <h1 className="mt-6 max-w-[46rem] text-[32px] font-semibold leading-[1.16] text-[#17110b] md:text-5xl md:leading-[1.12]">
                   {copy.title}
                 </h1>
-                <p className="mt-5 max-w-2xl text-base leading-8 text-[#6a5844]">
+                <p className="mt-5 max-w-[44rem] text-[15px] leading-7 text-[#76695d] md:text-base md:leading-8">
                   {copy.subtitle}
                 </p>
                 <div className="mt-7 flex flex-col gap-3 sm:flex-row">
                   <button
                     onClick={openApply}
-                    className="inline-flex items-center justify-center gap-2 rounded-2xl bg-[#21160c] px-5 py-3 text-sm font-semibold text-white shadow-[0_16px_34px_rgba(33,22,12,0.22)] transition hover:bg-[#3b2612]"
+                    className="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-lg bg-[#21160c] px-5 py-3 text-sm font-semibold text-white shadow-[0_16px_34px_rgba(33,22,12,0.22)] transition hover:bg-[#3b2612]"
                   >
                     {copy.applyNow}
                     <ArrowRight size={16} />
                   </button>
                   <a
                     href="#how-it-works"
-                    className="inline-flex items-center justify-center gap-2 rounded-2xl border border-[#eadfce] bg-white px-5 py-3 text-sm font-semibold text-[#3b2612] transition hover:border-amber-300 hover:bg-amber-50"
+                    className="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-lg border border-[#eadfce] bg-white px-5 py-3 text-sm font-semibold text-[#3b2612] transition hover:border-amber-300 hover:bg-amber-50"
                   >
                     {copy.howItWorks || copy.processTitle}
                   </a>
                 </div>
               </div>
-              <div className="border border-[#e5d7c3] bg-[#fffdf8] p-4">
-                <div className="grid gap-2 sm:grid-cols-3 lg:grid-cols-1">
+              <div className="border-t border-[#e6d8c7] pt-6 lg:border-l lg:border-t-0 lg:pl-6 lg:pt-0">
+                <div className="grid gap-5">
                   {copy.heroFlow.map((item, index) => (
-                    <div key={item.role} className="relative border border-[#efe6d8] bg-white p-4 shadow-sm">
+                    <div key={item.role} className="border-l-2 border-amber-500 pl-4">
                       <div className="flex items-center justify-between gap-3">
                         <div className="text-xs font-semibold uppercase text-amber-800">{item.role}</div>
                         <div className="font-mono text-xs text-[#a68d70]">0{index + 1}</div>
                       </div>
                       <div className="mt-2 text-base font-semibold text-[#21160c]">{item.title}</div>
                       <div className="mt-1 text-xs leading-5 text-[#7d6a56]">{item.text}</div>
-                      {index < copy.heroFlow.length - 1 && (
-                        <ArrowRight size={15} className="absolute -bottom-3 left-1/2 z-10 -translate-x-1/2 rotate-90 text-amber-700 lg:block" />
-                      )}
                     </div>
                   ))}
                 </div>
@@ -666,22 +651,16 @@ export function EngineerRecruitingPage({ onOpenLogin }) {
             </div>
           </section>
 
-          <section className="mt-6 bg-[#1d160f] px-5 py-5 text-white">
-            <div className="flex items-center gap-2 text-xs font-semibold uppercase text-amber-300">
-              <ShieldCheck size={17} />
-              {copy.safetyLabel}
-            </div>
-            <h2 className="mt-2 text-xl font-semibold">{copy.safetyTitle}</h2>
-            <p className="mt-2 max-w-6xl text-sm leading-7 text-white/72">{copy.safetyText}</p>
-          </section>
-
-          <section className="mt-6 border-y border-[#e7dccd] py-6">
-            <h2 className="text-sm font-semibold text-[#24170b]">{copy.audienceTitle}</h2>
-            <div className="mt-4 grid gap-4 md:grid-cols-3">
-              {copy.audienceItems.map((item) => (
-                <div key={item.label} className="border-l-2 border-amber-500 pl-4">
-                  <div className="text-xs font-semibold uppercase text-amber-800">{item.label}</div>
-                  <p className="mt-2 text-sm leading-6 text-[#5f4d3b]">{item.value}</p>
+          <section className="mt-6 bg-[#17110c] px-6 py-6 text-white md:px-8">
+            <h2 className="text-xs font-semibold uppercase text-amber-300">{copy.audienceTitle}</h2>
+            <div className="mt-5 grid md:grid-cols-3">
+              {copy.audienceItems.map((item, index) => (
+                <div
+                  key={item.label}
+                  className={`border-t border-white/15 py-5 md:border-l md:border-t-0 md:px-6 md:py-1 ${index === 0 ? 'md:border-l-0 md:pl-0' : ''}`}
+                >
+                  <div className="text-xs font-semibold uppercase text-amber-400">{item.label}</div>
+                  <p className="mt-2 text-sm leading-6 text-white/70">{item.value}</p>
                 </div>
               ))}
             </div>
