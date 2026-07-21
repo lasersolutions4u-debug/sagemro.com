@@ -112,6 +112,18 @@ function makeActivationEnv(options = {}) {
       },
       async batch(statements) {
         env.__batches.push(statements.map((item) => ({ sql: item.sql, args: item.args })));
+        const applicationGuard = statements.find((item) => (
+          /application_account_guard_failed/i.test(item.sql)
+        ));
+        const simulatesConcurrentApplicationChange = Object.hasOwn(
+          options, 'concurrentApplicationStatus'
+        ) || Object.hasOwn(options, 'concurrentConvertedUserId');
+        if (applicationGuard && simulatesConcurrentApplicationChange && (
+          options.concurrentApplicationStatus !== 'qualified'
+          || options.concurrentConvertedUserId
+        )) {
+          throw new Error('NOT NULL constraint failed: account_identities.identity_type');
+        }
         if (options.activationGuardError) {
           throw new Error("CHECK constraint failed: identity_type IN ('email', 'phone')");
         }
@@ -479,6 +491,42 @@ test('unapproved application cannot open an engineer account', async () => {
   assert.equal(env.__batches.length, 0);
 });
 
+test('concurrent open-account loser rolls back when another request links the application', async () => {
+  const env = makeActivationEnv({
+    applicationStatus: 'qualified',
+    concurrentApplicationStatus: 'qualified',
+    concurrentConvertedUserId: 'eng-winner',
+  });
+  const response = await worker.fetch(
+    await adminActivationRequest('app-1/open-account'), env, { waitUntil() {} },
+  );
+
+  assert.equal(response.status, 409);
+  assert.equal(env.__batches.length, 1);
+  assert.match(env.__batchSql(), /NULL AS application_account_guard_failed/i);
+  assert.match(env.__batchSql(), /status = 'qualified'/i);
+  assert.match(env.__batchSql(), /converted_user_id IS NULL/i);
+  assert.equal(env.__runs.length, 0);
+  assert.equal(env.__emailPayload, undefined);
+});
+
+test('concurrent review change prevents open-account from overwriting rejected or archived status', async () => {
+  for (const status of ['rejected', 'archived']) {
+    const env = makeActivationEnv({
+      applicationStatus: 'qualified',
+      concurrentApplicationStatus: status,
+      concurrentConvertedUserId: null,
+    });
+    const response = await worker.fetch(
+      await adminActivationRequest('app-1/open-account'), env, { waitUntil() {} },
+    );
+
+    assert.equal(response.status, 409, status);
+    assert.equal(env.__runs.length, 0, status);
+    assert.equal(env.__emailPayload, undefined, status);
+  }
+});
+
 test('open-account retry returns the existing linked engineer', async () => {
   const env = makeActivationEnv({ convertedUserId: 'eng-1' });
   const response = await worker.fetch(await adminActivationRequest('app-1/open-account'), env, { waitUntil() {} });
@@ -554,6 +602,22 @@ test('resend is rate limited and activated accounts cannot receive activation em
   const activatedResponse = await worker.fetch(await adminActivationRequest('app-1/resend-activation'), activated, { waitUntil() {} });
   assert.equal(activatedResponse.status, 409);
   assert.equal(activated.__batches.length, 0);
+});
+
+test('resend rejects legacy and non-activation engineer auth statuses without side effects', async () => {
+  for (const authStatus of ['pending', 'suspended']) {
+    const env = makeActivationEnv({ convertedUserId: 'eng-1', authStatus });
+    const response = await worker.fetch(
+      await adminActivationRequest('app-1/resend-activation'), env, { waitUntil() {} },
+    );
+    const body = await response.json();
+
+    assert.equal(response.status, 409, authStatus);
+    assert.match(body.error, /pending activation|待激活/i, authStatus);
+    assert.equal(env.__batches.length, 0, authStatus);
+    assert.equal(env.__kvPuts.length, 0, authStatus);
+    assert.equal(env.__emailPayload, undefined, authStatus);
+  }
 });
 
 test('application list projects independent review and activation states', async () => {

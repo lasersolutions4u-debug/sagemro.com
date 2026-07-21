@@ -67,8 +67,10 @@ function createTestEnv(overrides = {}) {
               const row = dbState.engineers.find((engineer) => engineer.id === this.args[0]);
               return row ? { id: row.id } : null;
             }
-            if (/SELECT \* FROM customers WHERE phone = \?/i.test(sql)) {
-              const row = dbState.customers.find((customer) => customer.phone === this.args[0]);
+            if (/SELECT \* FROM customers\s+WHERE replace\(/i.test(sql)) {
+              const row = dbState.customers.find((customer) => (
+                normalizePhoneWithSql(customer.phone, sql) === this.args[0]
+              ));
               return row || null;
             }
             if (/SELECT \* FROM customers WHERE lower\(email\) = \?/i.test(sql)) {
@@ -101,8 +103,10 @@ function createTestEnv(overrides = {}) {
               const row = dbState.engineers.find((engineer) => engineer.email?.toLowerCase() === this.args[0]);
               return row || null;
             }
-            if (/SELECT \* FROM engineers WHERE phone = \?/i.test(sql)) {
-              const row = dbState.engineers.find((engineer) => engineer.phone === this.args[0]);
+            if (/SELECT \* FROM engineers\s+WHERE replace\(/i.test(sql)) {
+              const row = dbState.engineers.find((engineer) => (
+                normalizePhoneWithSql(engineer.phone, sql) === this.args[0]
+              ));
               return row || null;
             }
             if (/FROM engineers WHERE phone = \?/i.test(sql)) {
@@ -866,6 +870,29 @@ test('customer login returns company profile fields saved during registration', 
   assert.equal(loginResult.json.user.auth_status, 'authenticated');
 });
 
+test('customer phone login matches canonical phone formatting', async () => {
+  const env = createTestEnv();
+  const salt = 'formatted-customer-salt';
+  const password = 'secret12345';
+  env.__dbState.customers.push({
+    id: 'cust-formatted-1',
+    user_no: 'U000002',
+    name: 'Formatted Customer',
+    phone: '+1 (555) 123-4567',
+    password_hash: await hashPasswordNew(password, salt),
+    salt,
+    auth_status: 'authenticated',
+  });
+
+  const result = await postJson('https://api.sagemro.com/api/auth/login', {
+    phone: '+15551234567', password,
+  }, env);
+
+  assert.equal(result.response.status, 200);
+  assert.equal(result.json.userType, 'customer');
+  assert.equal(result.json.user.id, 'cust-formatted-1');
+});
+
 test('activated engineer signs in with normalized email and phone', async () => {
   const env = createTestEnv();
   const salt = 'engineer-login-salt';
@@ -891,6 +918,29 @@ test('activated engineer signs in with normalized email and phone', async () => 
     phone: '+525572080065', password,
   }, env);
   assert.equal(phoneLogin.response.status, 200);
+});
+
+test('phone login preserves customer-first matching across canonical formats', async () => {
+  const env = createTestEnv();
+  const salt = 'customer-first-salt';
+  const password = 'secret12345';
+  const password_hash = await hashPasswordNew(password, salt);
+  env.__dbState.customers.push({
+    id: 'cust-first', user_no: 'U000003', name: 'Customer First',
+    phone: '+52 (55) 7208-0065', password_hash, salt, auth_status: 'authenticated',
+  });
+  env.__dbState.engineers.push({
+    id: 'eng-second', user_no: 'E000004', name: 'Engineer Second',
+    phone: '+525572080065', password_hash, salt, auth_status: 'authenticated',
+  });
+
+  const result = await postJson('https://api.sagemro.com/api/auth/login', {
+    phone: '+52 55 7208 0065', password,
+  }, env);
+
+  assert.equal(result.response.status, 200);
+  assert.equal(result.json.userType, 'customer');
+  assert.equal(result.json.user.id, 'cust-first');
 });
 
 test('pending engineer cannot sign in with phone or email', async () => {
