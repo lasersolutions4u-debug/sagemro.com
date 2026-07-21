@@ -29,6 +29,8 @@ Use the existing Engineer Applications page as the account-opening surface. Once
 
 Do not expose or transmit an Admin-generated plaintext password. The engineer receives a 48-hour, single-use activation link by email and chooses a password of at least 10 characters.
 
+Retire the legacy generic Admin engineer-creation branch that accepts a plaintext password. `POST /api/admin/users` remains available for customer creation only; attempts to create `userType = engineer` return an instruction to use an approved engineer application. Remove the unreachable engineer form code from the Admin customer page.
+
 ## Terminology
 
 Use `engineer service network` / `工程师服务协作网络` for the network and `engineer cooperation application` / `工程师合作申请` for the application. Do not use `certified service representative`, `认证服务代表`, or `服务代表` on these Admin surfaces.
@@ -189,6 +191,7 @@ Add a dedicated activation table with:
 - `token_hash`
 - `expires_at`
 - `used_at`
+- `revoked_at`
 - `created_by`
 - `sent_at`
 - `send_status`
@@ -196,7 +199,7 @@ Add a dedicated activation table with:
 - `created_at`
 - `updated_at`
 
-Only one unused activation token may be valid per engineer. Resending invalidates earlier unused tokens and creates a new token. Token values are never stored or logged in plaintext.
+Only one unused, unrevoked activation token may exist per engineer. Resending sets `revoked_at` on earlier unused tokens and creates a new token. Token values are never stored or logged in plaintext.
 
 The email link points to the engineer host for the current market and places the secret in the URL fragment so it is not sent in the HTTP request, access logs, or Referer headers:
 
@@ -230,7 +233,7 @@ Use a dedicated Admin endpoint:
 
 `POST /api/admin/engineer-applications/:applicationId/resend-activation`
 
-It validates the linked account, rejects already activated accounts, invalidates prior unused tokens, creates a new 48-hour token, sends the email, and returns the updated activation metadata.
+It validates the linked account, rejects already activated accounts, revokes prior unused tokens, creates a new 48-hour token, sends the email, and returns the updated activation metadata.
 
 ## Login And Recovery
 
@@ -250,7 +253,7 @@ Create one new numbered migration containing:
 - A unique normalized engineer email index as local table protection.
 - Any application indexes needed for linked-account lookup.
 
-Before enabling cross-role uniqueness enforcement, the migration or deployment preflight must check for duplicate emails and phones in existing customer and engineer data. It then backfills the registry for existing accounts. Do not silently delete or merge records. If conflicts exist, stop deployment and resolve them explicitly.
+Before enabling cross-role uniqueness enforcement, the migration or deployment preflight must check existing customer email duplicates and cross-role phone duplicates. Historical engineers do not yet have an email column, so engineer-email conflicts cannot exist before this migration. The migration then backfills the registry for existing accounts. Do not silently delete or merge records. If conflicts exist, stop deployment and resolve them explicitly.
 
 All future customer and engineer creation paths must claim identities in the registry. Account deletion must release the matching registry rows in the same D1 batch. This prevents the new workflow from being correct while older account creation paths bypass uniqueness.
 
@@ -263,7 +266,7 @@ The China full-schema representation must remain compatible with the incremental
 - Invalid application state returns a clear validation error and writes nothing.
 - D1 failure rolls back account, activation, application linkage, and audit writes together.
 - Email delivery failure does not roll back the database account; Admin sees the failure and can resend.
-- Resend revokes previous unused tokens before issuing a new one.
+- Resend sets `revoked_at` on previous unused tokens before issuing a new one.
 - Activation of an already activated account returns a safe completed/used response and does not change the password.
 - Expired activation does not allow password creation.
 
@@ -286,6 +289,7 @@ The China full-schema representation must remain compatible with the incremental
 - Submitted application fields correctly populate the engineer record.
 - Phone and email conflicts across both account tables are rejected.
 - Existing customer creation and deletion paths claim and release the shared identity registry correctly.
+- The legacy generic Admin engineer creation path is closed and cannot bypass activation.
 - Account opening is atomic and idempotent.
 - Activation token is hashed, single-use, and expires after 48 hours.
 - Email failure leaves a linked pending account that can be resent.
