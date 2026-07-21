@@ -67,6 +67,9 @@ CREATE TABLE IF NOT EXISTS customers (
     onesignal_player_id TEXT,
     created_at TEXT DEFAULT (datetime('now'))
 );
+CREATE UNIQUE INDEX IF NOT EXISTS idx_customers_email_normalized_unique
+  ON customers(lower(trim(email)))
+  WHERE email IS NOT NULL AND trim(email) <> '';
 
 -- 工程师表（000 + 001 + 001a + 003 + 005）
 CREATE TABLE IF NOT EXISTS engineers (
@@ -74,6 +77,7 @@ CREATE TABLE IF NOT EXISTS engineers (
     user_no TEXT UNIQUE NOT NULL,              -- E + 6位数字
     name TEXT NOT NULL,
     phone TEXT NOT NULL UNIQUE,
+    email TEXT,                                -- 037: account activation and email login
     password_hash TEXT NOT NULL,
     salt TEXT NOT NULL DEFAULT '',
 
@@ -146,6 +150,9 @@ CREATE INDEX IF NOT EXISTS idx_engineers_status ON engineers(status);
 CREATE INDEX IF NOT EXISTS idx_engineers_level ON engineers(level);
 CREATE INDEX IF NOT EXISTS idx_engineers_role ON engineers(engineer_role);
 CREATE INDEX IF NOT EXISTS idx_engineers_regional_lead ON engineers(regional_lead_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_engineers_email_normalized
+  ON engineers(lower(trim(email)))
+  WHERE email IS NOT NULL AND trim(email) <> '';
 
 -- 设备表（000 + 004）
 CREATE TABLE IF NOT EXISTS devices (
@@ -913,6 +920,43 @@ CREATE TABLE IF NOT EXISTS engineer_applications (
 CREATE INDEX IF NOT EXISTS idx_engineer_applications_status ON engineer_applications(status);
 CREATE INDEX IF NOT EXISTS idx_engineer_applications_market ON engineer_applications(market);
 CREATE INDEX IF NOT EXISTS idx_engineer_applications_created_at ON engineer_applications(created_at);
+CREATE INDEX IF NOT EXISTS idx_engineer_applications_converted_user ON engineer_applications(converted_user_id);
+
+-- 跨角色登录身份与工程师账号激活（037）
+CREATE TABLE IF NOT EXISTS account_identities (
+    identity_type TEXT NOT NULL CHECK(identity_type IN ('email', 'phone')),
+    normalized_value TEXT NOT NULL,
+    owner_type TEXT NOT NULL CHECK(owner_type IN ('customer', 'engineer')),
+    owner_id TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE (identity_type, normalized_value),
+    UNIQUE (owner_type, owner_id, identity_type)
+);
+CREATE INDEX IF NOT EXISTS idx_account_identities_owner
+  ON account_identities(owner_type, owner_id);
+
+CREATE TABLE IF NOT EXISTS engineer_account_activations (
+    id TEXT PRIMARY KEY,
+    engineer_id TEXT NOT NULL,
+    token_hash TEXT NOT NULL UNIQUE,
+    expires_at TEXT NOT NULL,
+    used_at TEXT,
+    revoked_at TEXT,
+    created_by TEXT,
+    sent_at TEXT,
+    send_status TEXT NOT NULL DEFAULT 'pending',
+    send_error TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY (engineer_id) REFERENCES engineers(id)
+);
+CREATE INDEX IF NOT EXISTS idx_engineer_activations_engineer
+  ON engineer_account_activations(engineer_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_engineer_activations_active
+  ON engineer_account_activations(engineer_id, used_at, revoked_at, expires_at);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_engineer_activations_one_open
+  ON engineer_account_activations(engineer_id)
+  WHERE used_at IS NULL AND revoked_at IS NULL;
 
 -- 工程师本人维护的排单日历（025）
 CREATE TABLE IF NOT EXISTS engineer_calendar_events (
@@ -995,4 +1039,5 @@ INSERT OR IGNORE INTO _migrations (version, note) VALUES
     ('032_payment_stages',              'Add advance and balance payment stages'),
     ('033_work_order_location_verification', 'Add service location and engineer arrival verification'),
     ('034_add_service_mode',            'Add remote, onsite, and hybrid service modes'),
-    ('035_onsite_conversion_workflow',  'Add audited remote-to-onsite conversion and arrival override workflow');
+    ('035_onsite_conversion_workflow',  'Add audited remote-to-onsite conversion and arrival override workflow'),
+    ('037_engineer_account_activation', 'Engineer email activation and cross-role identity registry');
