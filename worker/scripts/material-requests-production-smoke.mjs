@@ -173,6 +173,7 @@ SELECT
   (SELECT COUNT(*) FROM engineer_violations WHERE engineer_id=${eng} OR work_order_id=${wo}) +
   (SELECT COUNT(*) FROM engineer_withdrawals WHERE engineer_id=${eng}) +
   (SELECT COUNT(*) FROM push_subscriptions WHERE engineer_id=${eng}) +
+  (SELECT COUNT(*) FROM account_identities WHERE (owner_type='engineer' AND owner_id=${eng}) OR (owner_type='customer' AND owner_id=${cust})) +
   (SELECT COUNT(*) FROM engineers WHERE id=${eng}) +
   (SELECT COUNT(*) FROM customers WHERE id=${cust}) AS total_residue;
 `;
@@ -311,8 +312,14 @@ async function buildSeedSql(context) {
 INSERT INTO customers (id, user_no, name, phone, password_hash, salt, region, company, auth_status)
 VALUES (${quoteSql(context.customerId)}, ${quoteSql(`U${context.stamp.slice(-6)}`)}, ${quoteSql(`${context.runId}_CUSTOMER`)}, ${quoteSql(context.customerPhone)}, ${quoteSql(customerHash)}, ${quoteSql(customerSalt)}, ${quoteSql(context.region)}, ${quoteSql(`${context.runId}_COMPANY`)}, 'authenticated');
 
+INSERT INTO account_identities (identity_type, normalized_value, owner_type, owner_id)
+VALUES ('phone', ${quoteSql(context.customerPhone)}, 'customer', ${quoteSql(context.customerId)});
+
 INSERT INTO engineers (id, user_no, name, phone, password_hash, salt, specialties, brands, services, service_region, bio, level, commission_rate, credit_score, wallet_balance, deposit_balance, company, auth_status, status, engineer_role, cooperation_status, certification_status, first_login_password_reset_required)
 VALUES (${quoteSql(context.engineerId)}, ${quoteSql(`E${context.stamp.slice(-6)}`)}, ${quoteSql(`${context.runId}_ENGINEER`)}, ${quoteSql(context.engineerPhone)}, ${quoteSql(engineerHash)}, ${quoteSql(engineerSalt)}, ${quoteSql(JSON.stringify(['laser_cutting']))}, ${quoteSql(JSON.stringify({ laser: ['Euchio'] }))}, ${quoteSql(JSON.stringify(['field_service']))}, ${quoteSql(context.region)}, ${quoteSql(`${context.runId} engineer seed`)}, 'junior', 0.8, 100, 0, 0, ${quoteSql(`${context.runId}_SERVICE`)}, 'authenticated', 'available', 'engineer', 'confirmed', 'certified', 0);
+
+INSERT INTO account_identities (identity_type, normalized_value, owner_type, owner_id)
+VALUES ('phone', ${quoteSql(context.engineerPhone)}, 'engineer', ${quoteSql(context.engineerId)});
 
 INSERT INTO work_orders (id, order_no, customer_id, engineer_id, type, description, urgency, status, category_l1, category_l2, quote_review_status, assigned_at, started_at)
 VALUES (${quoteSql(context.workOrderId)}, ${quoteSql(context.orderNo)}, ${quoteSql(context.customerId)}, ${quoteSql(context.engineerId)}, 'fault', ${quoteSql(`${context.runId}: material request production smoke work order`)}, 'normal', 'in_progress', 'laser_cutting', 'laser_source', 'not_required', datetime('now'), datetime('now'));

@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -14,6 +15,8 @@ import {
   quoteSql,
   sanitizeStepResult,
 } from '../scripts/material-items-production-smoke.mjs';
+
+const scriptSource = readFileSync(new URL('../scripts/material-items-production-smoke.mjs', import.meta.url), 'utf8');
 
 test('material production smoke requires explicit write confirmation', () => {
   assert.throws(
@@ -69,7 +72,15 @@ test('cleanup SQL deletes child records before parent records and verifies resid
 
   const residueSql = buildResidueSql(context);
   assert.match(residueSql, /total_residue/);
+  assert.match(residueSql, /FROM account_identities/);
   assert.match(residueSql, /SAGEMRO_SMOKE_MATERIAL_cn_20260704050102/);
+});
+
+test('seed SQL claims phone identities for the temporary customer and engineer', () => {
+  const identityInserts = scriptSource.match(/INSERT INTO account_identities/g) || [];
+  assert.equal(identityInserts.length, 2);
+  assert.match(scriptSource, /'phone'.*context\.customerPhone.*'customer'.*context\.customerId/s);
+  assert.match(scriptSource, /'phone'.*context\.engineerPhone.*'engineer'.*context\.engineerId/s);
 });
 
 test('sanitizeStepResult never persists tokens or passwords', () => {

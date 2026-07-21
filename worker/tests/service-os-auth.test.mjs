@@ -6,6 +6,14 @@ import worker from '../src/index.js';
 
 const ENGINEER_REJECT_JWT_SECRET = 'service-os-auth-test-secret-32-chars';
 
+function normalizePhoneWithSql(value, sql) {
+  let normalized = String(value || '').trim().replace(/[ ().-]/g, '');
+  if (/char\(9\)/i.test(sql)) normalized = normalized.replace(/\t/g, '');
+  if (/char\(10\)/i.test(sql)) normalized = normalized.replace(/\n/g, '');
+  if (/char\(13\)/i.test(sql)) normalized = normalized.replace(/\r/g, '');
+  return normalized;
+}
+
 function createTestEnv(overrides = {}) {
   const kv = new Map();
   const dbState = {
@@ -81,7 +89,7 @@ function createTestEnv(overrides = {}) {
             }
             if (/FROM customers\s+WHERE replace\(/i.test(sql)) {
               const row = dbState.customers.find((customer) => (
-                String(customer.phone || '').trim().replace(/[\s().-]/g, '') === this.args[0]
+                normalizePhoneWithSql(customer.phone, sql) === this.args[0]
               ));
               return row ? { id: row.id } : null;
             }
@@ -95,7 +103,7 @@ function createTestEnv(overrides = {}) {
             }
             if (/FROM engineers\s+WHERE replace\(/i.test(sql)) {
               const row = dbState.engineers.find((engineer) => (
-                String(engineer.phone || '').trim().replace(/[\s().-]/g, '') === this.args[0]
+                normalizePhoneWithSql(engineer.phone, sql) === this.args[0]
               ));
               return row ? { id: row.id } : null;
             }
@@ -628,6 +636,25 @@ test('customer registration direct-table fallback normalizes an engineer phone',
   assert.equal(env.__dbState.customers.length, 0);
 });
 
+test('customer registration direct-table fallback removes historical phone control whitespace', async () => {
+  const env = createTestEnv();
+  env.__dbState.engineers.push({ id: 'eng-1', phone: '+52\t(5572)\n080-065\r' });
+  await env.KV.put('verify_code_email_joe@example.com', '1357');
+
+  const { response } = await postJson('https://api.sagemro.com/api/auth/register/customer', {
+    name: 'Joe',
+    phone: '+525572080065',
+    email: 'joe@example.com',
+    password: 'secret12345',
+    code: '1357',
+    company: 'Test Co',
+    identity: 'customer',
+  }, env);
+
+  assert.equal(response.status, 409);
+  assert.equal(env.__dbState.customers.length, 0);
+});
+
 test('customer registration maps a concurrent identity claim to 409', async () => {
   const env = createTestEnv();
   await env.KV.put('verify_code_email_joe@example.com', '1357');
@@ -644,6 +671,28 @@ test('customer registration maps a concurrent identity claim to 409', async () =
     });
     return originalBatch(statements);
   };
+
+  const { response, json } = await postJson('https://api.sagemro.com/api/auth/register/customer', {
+    name: 'Joe',
+    phone: '+66961135966',
+    email: 'joe@example.com',
+    password: 'secret12345',
+    code: '1357',
+    company: 'Test Co',
+    identity: 'customer',
+  }, env);
+
+  assert.equal(response.status, 409);
+  assert.match(json.error, /email/i);
+  assert.equal(env.__dbState.customers.length, 0);
+});
+
+test('customer registration maps a concurrent normalized email index conflict to 409', async () => {
+  const env = createTestEnv();
+  await env.KV.put('verify_code_email_joe@example.com', '1357');
+  env.__dbState.batchError = new Error(
+    "D1_ERROR: UNIQUE constraint failed: index 'idx_customers_email_normalized_unique': SQLITE_CONSTRAINT",
+  );
 
   const { response, json } = await postJson('https://api.sagemro.com/api/auth/register/customer', {
     name: 'Joe',
@@ -681,6 +730,46 @@ test('Admin customer creation atomically claims the phone identity', async () =>
     && row.normalized_value === '+15551234567'
     && row.owner_type === 'customer'
   )), true);
+});
+
+test('Admin customer creation direct-table fallback removes historical phone control whitespace', async () => {
+  const env = createTestEnv();
+  env.__dbState.customers.push({ id: 'cust-existing', phone: '+1\t(555)\n123-4567\r' });
+
+  const response = await worker.fetch(await adminRequest('https://api.sagemro.com/api/admin/users', {
+    body: {
+      userType: 'customer',
+      name: 'Customer Two',
+      phone: '+15551234567',
+      password: 'secret12345',
+      region: 'Texas',
+    },
+  }), env, { waitUntil() {} });
+
+  assert.equal(response.status, 409);
+  assert.equal(env.__dbState.customers.length, 1);
+});
+
+test('Admin customer creation maps a concurrent customer phone conflict to 409', async () => {
+  const env = createTestEnv();
+  env.__dbState.batchError = new Error(
+    'D1_ERROR: UNIQUE constraint failed: customers.phone: SQLITE_CONSTRAINT',
+  );
+
+  const response = await worker.fetch(await adminRequest('https://api.sagemro.com/api/admin/users', {
+    body: {
+      userType: 'customer',
+      name: 'Customer Two',
+      phone: '+15551234567',
+      password: 'secret12345',
+      region: 'Texas',
+    },
+  }), env, { waitUntil() {} });
+  const json = await response.json();
+
+  assert.equal(response.status, 409);
+  assert.match(json.error, /phone/i);
+  assert.equal(env.__dbState.customers.length, 0);
 });
 
 test('generic Admin engineer creation is retired with guidance', async () => {
