@@ -3,6 +3,15 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 
+import {
+  activationExpiresAt,
+  buildEngineerActivationEmail,
+  buildEngineerActivationUrl,
+  createEngineerActivationToken,
+  hashEngineerActivationToken,
+} from '../src/lib/engineerActivation.js';
+import { sendEngineerActivationEmail } from '../src/index.js';
+
 const root = path.resolve(import.meta.dirname, '../..');
 const migrationPath = path.join(root, 'worker/migrations/037_engineer_account_activation.sql');
 const preflightPath = path.join(root, 'worker/migrations/data_fixes/account_identity_preflight.sql');
@@ -52,4 +61,140 @@ test('schema snapshot includes migration 036 before activation migration 037', (
   assert.match(schemaSql, /\('036_create_funnel_events',\s+'Controlled beta funnel event tracking'\)/);
   assert.ok(schemaSql.indexOf('036_create_funnel_events') < schemaSql.indexOf('037_engineer_account_activation'));
   assert.ok(schemaSql.indexOf('CREATE TABLE IF NOT EXISTS funnel_events') < schemaSql.indexOf('CREATE TABLE IF NOT EXISTS account_identities'));
+});
+
+test('activation token is random, hashed, and placed in the URL fragment', async () => {
+  const first = createEngineerActivationToken();
+  const second = createEngineerActivationToken();
+
+  assert.notEqual(first, second);
+  assert.match(first, /^[A-Za-z0-9_-]{43}$/);
+  assert.match(await hashEngineerActivationToken(first), /^[a-f0-9]{64}$/);
+  assert.equal(
+    buildEngineerActivationUrl('cn', first),
+    `https://engineer.sagemro.cn/activate#token=${first}`,
+  );
+});
+
+test('activation expiry is exactly 48 hours after creation', () => {
+  const now = Date.parse('2026-07-21T12:00:00.000Z');
+
+  assert.equal(activationExpiresAt(now), '2026-07-23T12:00:00.000Z');
+});
+
+test('activation email contains no password and explains the 48-hour expiry', () => {
+  const email = buildEngineerActivationEmail({
+    market: 'com',
+    name: 'Tom Lee',
+    engineerNo: 'E000128',
+    activationUrl: 'https://example.test/#token=x',
+  });
+
+  assert.match(email.subject, /Activate your SAGEMRO engineer account/);
+  assert.match(email.text, /48 hours/);
+  assert.match(email.html, /<a[^>]+href="https:\/\/example\.test\/#token=x"/);
+  assert.doesNotMatch(email.text, /password:/i);
+});
+
+test('activation email escapes applicant-controlled HTML', () => {
+  const email = buildEngineerActivationEmail({
+    market: 'com',
+    name: '<img src=x onerror=alert(1)>',
+    engineerNo: '<script>alert(2)</script>',
+    activationUrl: 'https://example.test/#token=x&next="bad"',
+  });
+
+  assert.doesNotMatch(email.html, /<img|<script/);
+  assert.match(email.html, /&lt;img/);
+  assert.match(email.html, /&lt;script&gt;/);
+  assert.match(email.html, /href="https:\/\/example\.test\/#token=x&amp;next=&quot;bad&quot;"/);
+});
+
+test('activation email sender uses Cloudflare Email without a network request', async () => {
+  const sent = [];
+  const payload = {
+    to: 'engineer@example.com',
+    subject: 'Activate account',
+    text: 'Open the activation link.',
+    html: '<p>Open the activation link.</p>',
+  };
+  const env = {
+    VERIFICATION_EMAIL_FROM: 'SAGEMRO <verify@mail.sagemro.com>',
+    EMAIL: {
+      async send(message) {
+        sent.push(message);
+      },
+    },
+  };
+
+  const result = await sendEngineerActivationEmail(env, payload, 'com');
+
+  assert.deepEqual(result, { sent: true });
+  assert.deepEqual(sent, [{ from: env.VERIFICATION_EMAIL_FROM, ...payload }]);
+});
+
+test('activation email sender falls back to Resend without sending a real email', async () => {
+  const originalFetch = globalThis.fetch;
+  let capturedRequest = null;
+  globalThis.fetch = async (url, init) => {
+    capturedRequest = { url, init };
+    return new Response(JSON.stringify({ id: 'email-test-id' }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  };
+
+  try {
+    const payload = {
+      to: 'engineer@example.com',
+      subject: 'Activate account',
+      text: 'Open the activation link.',
+      html: '<p>Open the activation link.</p>',
+    };
+    const result = await sendEngineerActivationEmail({
+      VERIFICATION_EMAIL_FROM: 'SAGEMRO <verify@example.com>',
+      RESEND_API_KEY: 'test-resend-key',
+    }, payload, 'com');
+
+    assert.deepEqual(result, { sent: true });
+    assert.equal(capturedRequest.url, 'https://api.resend.com/emails');
+    assert.equal(capturedRequest.init.method, 'POST');
+    assert.deepEqual(JSON.parse(capturedRequest.init.body), {
+      from: 'SAGEMRO <verify@example.com>',
+      ...payload,
+      to: ['engineer@example.com'],
+    });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('activation email provider failure does not log the activation link or body', async () => {
+  const warnings = [];
+  const originalWarn = console.warn;
+  console.warn = (...args) => warnings.push(args);
+
+  try {
+    const result = await sendEngineerActivationEmail({
+      VERIFICATION_EMAIL_FROM: 'SAGEMRO <verify@example.com>',
+      EMAIL: {
+        async send() {
+          throw new Error('provider unavailable');
+        },
+      },
+    }, {
+      to: 'engineer@example.com',
+      subject: 'Activate account',
+      text: 'secret-token-url',
+      html: '<a href="secret-token-url">Activate</a>',
+    }, 'com');
+
+    assert.deepEqual(result, { error: 'Failed to send activation email. Please try again later.' });
+    assert.equal(warnings.length, 1);
+    assert.match(JSON.stringify(warnings[0]), /provider unavailable/);
+    assert.match(JSON.stringify(warnings[0]), /example\.com/);
+    assert.doesNotMatch(JSON.stringify(warnings[0]), /secret-token-url/);
+  } finally {
+    console.warn = originalWarn;
+  }
 });
