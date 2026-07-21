@@ -24,6 +24,7 @@ const MyWorkOrdersModal = lazy(() => import('./components/Sidebar/MyWorkOrdersMo
 const EngineerDashboard = lazy(() => import('./components/Engineer/EngineerDashboard').then(m => ({ default: m.EngineerDashboard })));
 const EngineerWorkspace = lazy(() => import('./components/Engineer/EngineerWorkspace').then(m => ({ default: m.EngineerWorkspace })));
 const EngineerRecruitingPage = lazy(() => import('./components/Engineer/EngineerRecruitingPage').then(m => ({ default: m.EngineerRecruitingPage })));
+const EngineerActivationPage = lazy(() => import('./components/Engineer/EngineerActivationPage').then(m => ({ default: m.EngineerActivationPage })));
 const EngineerProfileModal = lazy(() => import('./components/Engineer/EngineerProfileModal').then(m => ({ default: m.EngineerProfileModal })));
 const CustomerHomeModal = lazy(() => import('./components/Settings/CustomerHomeModal').then(m => ({ default: m.CustomerHomeModal })));
 const AboutModal = lazy(() => import('./components/common/AboutModal').then(m => ({ default: m.AboutModal })));
@@ -291,6 +292,12 @@ function App() {
     // 登录前如果已有游客对话，保留它 — 后端已通过 conversation_id 关联到新客户
   }, []);
 
+  const handleActivationLoginSuccess = useCallback((userData) => {
+    handleLoginSuccess(userData);
+    window.history.replaceState({}, '', '/');
+    setCurrentPath('/');
+  }, [handleLoginSuccess]);
+
   // 登出
   const handleLogout = useCallback(() => {
     localStorage.removeItem('sagemro_token');
@@ -343,6 +350,24 @@ function App() {
   }, []);
 
   const showEngineerWorkspace = (isEngineerHost || currentPath === '/engineer') && userType === 'engineer';
+
+  if (isEngineerHost && currentPath === '/activate') {
+    return (
+      <ErrorBoundary>
+        <Suspense fallback={null}>
+          <EngineerActivationPage onOpenLogin={() => setLoginModalOpen(true)} />
+          <LoginModal
+            isOpen={loginModalOpen}
+            onClose={() => setLoginModalOpen(false)}
+            onLoginSuccess={handleActivationLoginSuccess}
+            onOpenLegal={openLegal}
+            conversationId={conversationId}
+          />
+        </Suspense>
+        <FeedbackHost />
+      </ErrorBoundary>
+    );
+  }
 
   if (showEngineerWorkspace) {
     return (

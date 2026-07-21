@@ -236,6 +236,20 @@ export async function login({ phone, email, password }) {
 }
 
 /**
+ * 激活工程师账号并设置初始密码
+ */
+export async function activateEngineerAccount({ token, password }) {
+  const response = await fetch(`${API_BASE}/api/auth/engineer/activate`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ token, password }),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+  return data;
+}
+
+/**
  * 发送重置密码验证码
  */
 export async function sendResetCode(phone) {
