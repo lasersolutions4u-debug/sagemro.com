@@ -167,6 +167,18 @@ npx wrangler secret put MAPBOX_ACCESS_TOKEN --env production
 
 中国版后台建议正式运营前单独设置 `ADMIN_PHONE_CN` / `ADMIN_PASSWORD_CN`。一旦两个值都配置完成，`admin.sagemro.cn` 将只接受中国版后台账号，`admin.sagemro.com` 仍使用 `ADMIN_PHONE` / `ADMIN_PASSWORD`。
 
+工程师激活邮件优先使用 `wrangler.toml` 中的 Cloudflare Email binding，Resend 仅作为未配置该 binding 时的备用路径。核验配置时不要混淆 secret 与普通配置：
+
+```bash
+cd worker
+npx wrangler secret list --env production
+rg -n "send_email|VERIFICATION_EMAIL_FROM" wrangler.toml
+```
+
+- 使用 Resend 备用路径时，`wrangler secret list` 应包含 `RESEND_API_KEY`，但不会显示密钥值。
+- 使用 Cloudflare Email binding 时，`wrangler.toml` 应包含 `[[env.production.send_email]]`、binding 名 `EMAIL` 和 `VERIFICATION_EMAIL_FROM`；这些不是 secrets，不会出现在 `wrangler secret list` 中。
+- 不要在终端、日志或文档中输出邮件服务密钥或激活令牌。
+
 ### 2.6 创建 Pages 项目（空壳）
 
 由于不用 CF 原生 Git 集成，需要先在 CF 上**手动建四个空的 Pages 项目**：
@@ -227,6 +239,90 @@ ls migrations/*.sql
 补跑缺失的 migration：
 ```bash
 npx wrangler d1 execute sagemro-db --env production --remote --file migrations/0XX_xxx.sql
+```
+
+#### Migration 037：工程师账号激活与身份注册表
+
+`037_engineer_account_activation.sql` 必须在 Worker 新代码部署前手动应用到国际版和中国版两个 D1。严格按以下顺序执行：
+
+1. 在两个 D1 运行重复身份预检；任一查询返回记录就停止，先人工处理重复数据。
+2. 在两个 D1 应用 migration 037。
+3. 部署包含新身份写入逻辑的 Worker。
+4. 在两个 D1 执行下方幂等身份对账 SQL，补齐迁移后、Worker 切换前可能写入的账号。
+
+```bash
+cd worker
+
+# 1. 重复身份预检：两个数据库都必须返回零行
+npx wrangler d1 execute sagemro-db --env production --remote \
+  --file migrations/data_fixes/account_identity_preflight.sql
+npx wrangler d1 execute sagemro-db-cn --env production --remote \
+  --file migrations/data_fixes/account_identity_preflight.sql
+
+# 2. 预检通过后，再对两个数据库应用 migration 037
+npx wrangler d1 execute sagemro-db --env production --remote \
+  --file migrations/037_engineer_account_activation.sql
+npx wrangler d1 execute sagemro-db-cn --env production --remote \
+  --file migrations/037_engineer_account_activation.sql
+```
+
+部署 Worker 后，先再次运行上面的重复身份预检，再将以下完整 SQL 分别保存为临时文件并通过 `wrangler d1 execute ... --file` 对两个 D1 执行。四条语句均只跳过同一账号已经拥有的同类型 claim，因此可以重复运行；它们仍使用普通 `INSERT`，若规范化身份已被其他账号占用，会因主键或唯一约束失败并暴露冲突，不能改为 `INSERT OR IGNORE`。
+
+```sql
+INSERT INTO account_identities (identity_type, normalized_value, owner_type, owner_id)
+SELECT 'email', lower(trim(c.email)), 'customer', c.id
+FROM customers c
+WHERE c.email IS NOT NULL
+  AND trim(c.email) <> ''
+  AND NOT EXISTS (
+    SELECT 1 FROM account_identities ai
+    WHERE ai.owner_type = 'customer'
+      AND ai.owner_id = c.id
+      AND ai.identity_type = 'email'
+  );
+
+INSERT INTO account_identities (identity_type, normalized_value, owner_type, owner_id)
+SELECT 'phone', replace(replace(replace(replace(replace(replace(replace(replace(trim(c.phone), ' ', ''), char(9), ''), char(10), ''), char(13), ''), '-', ''), '(', ''), ')', ''), '.', ''), 'customer', c.id
+FROM customers c
+WHERE c.phone IS NOT NULL
+  AND trim(c.phone) <> ''
+  AND NOT EXISTS (
+    SELECT 1 FROM account_identities ai
+    WHERE ai.owner_type = 'customer'
+      AND ai.owner_id = c.id
+      AND ai.identity_type = 'phone'
+  );
+
+INSERT INTO account_identities (identity_type, normalized_value, owner_type, owner_id)
+SELECT 'email', lower(trim(e.email)), 'engineer', e.id
+FROM engineers e
+WHERE e.email IS NOT NULL
+  AND trim(e.email) <> ''
+  AND NOT EXISTS (
+    SELECT 1 FROM account_identities ai
+    WHERE ai.owner_type = 'engineer'
+      AND ai.owner_id = e.id
+      AND ai.identity_type = 'email'
+  );
+
+INSERT INTO account_identities (identity_type, normalized_value, owner_type, owner_id)
+SELECT 'phone', replace(replace(replace(replace(replace(replace(replace(replace(trim(e.phone), ' ', ''), char(9), ''), char(10), ''), char(13), ''), '-', ''), '(', ''), ')', ''), '.', ''), 'engineer', e.id
+FROM engineers e
+WHERE e.phone IS NOT NULL
+  AND trim(e.phone) <> ''
+  AND NOT EXISTS (
+    SELECT 1 FROM account_identities ai
+    WHERE ai.owner_type = 'engineer'
+      AND ai.owner_id = e.id
+      AND ai.identity_type = 'phone'
+  );
+```
+
+对账命令模板（国际版与中国版各执行一次）：
+
+```bash
+npx wrangler d1 execute sagemro-db --env production --remote --file /path/to/account_identity_reconciliation.sql
+npx wrangler d1 execute sagemro-db-cn --env production --remote --file /path/to/account_identity_reconciliation.sql
 ```
 
 ---

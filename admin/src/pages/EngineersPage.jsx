@@ -57,25 +57,26 @@ function formatScore(value) {
 function formatDateTime(value) {
   if (!value) return '-';
   const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? value : date.toLocaleString('en-US');
+  const locale = runtimeConfig.locale === 'zh-CN' ? 'zh-CN' : 'en-US';
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleString(locale);
 }
 
-function eventLabel(type) {
-  const map = {
+function eventLabel(type, t = TEXT.en) {
+  const map = t.eventTypes || {
     engineer_available: 'Available',
     engineer_unavailable: 'Unavailable',
     reserved_service: 'Reserved',
     service_visit: 'Service visit',
     travel: 'Travel',
   };
-  return map[type] || type || 'Calendar';
+  return map[type] || type || t.calendarFallback || 'Calendar';
 }
 
 const TEXT = {
   en: {
     title: 'Engineers',
     subtitle: 'Search, inspect, and back up engineer profiles before assigning service orders.',
-    searchPlaceholder: 'Search name, No., phone, company, region, team...',
+    searchPlaceholder: 'Search name, engineer number, phone, company, region, team...',
     regionPlaceholder: 'Region',
     equipmentPlaceholder: 'Equipment specialty',
     servicePlaceholder: 'Process / service item',
@@ -84,7 +85,7 @@ const TEXT = {
     empty: 'No engineers found',
     total: (count) => `${count} engineer(s)`,
     headers: {
-      no: 'No.',
+      no: 'Engineer number',
       name: 'Engineer',
       region: 'Region / team',
       specialties: 'Equipment',
@@ -117,6 +118,7 @@ const TEXT = {
     responsibleRegion: 'Responsible region',
     teamName: 'Team name',
     serviceRegion: 'Service region',
+    workloadStatus: 'Work status',
     currentLoad: 'Current load',
     activeOrders: 'Active service orders',
     availability: 'Availability / schedule',
@@ -130,22 +132,22 @@ const TEXT = {
     next: 'Next',
   },
   'zh-CN': {
-    title: 'Engineers',
-    subtitle: '独立管理工程师档案、服务能力、地区和历史工单，派工前先在这里判断。',
-    searchPlaceholder: '搜索姓名、No.、电话、公司、地区、团队...',
+    title: '工程师',
+    subtitle: '管理工程师档案、服务能力、服务区域和历史工单，派工前先在这里评估。',
+    searchPlaceholder: '搜索姓名、工程师编号、电话、公司、地区、团队...',
     regionPlaceholder: '地区',
     equipmentPlaceholder: '熟悉设备',
-    servicePlaceholder: '熟悉工艺/服务项目',
+    servicePlaceholder: '服务项目',
     exportCurrent: '导出当前列表',
     loading: '加载中...',
     empty: '暂无工程师',
     total: (count) => `共 ${count} 位工程师`,
     headers: {
-      no: 'No.',
+      no: '工程师编号',
       name: '工程师',
       region: '地区/团队',
       specialties: '熟悉设备',
-      services: '熟悉工艺/服务',
+      services: '服务项目',
       rating: '评分',
       orders: '工单',
       status: '状态',
@@ -155,22 +157,50 @@ const TEXT = {
       paused: '暂停',
       offline: '离线',
     },
-    regionalLead: '区域主管',
+    regionalLead: '区域负责人',
     engineer: '工程师',
-    upstreamLead: (name) => `主管：${name}`,
+    upstreamLead: (name) => `区域负责人：${name}`,
     profileTitle: '工程师档案',
     close: '关闭',
     contact: '联系方式',
     serviceScope: '服务能力',
     performance: '服务表现',
     workOrders: '关联工单',
+    roleSettings: '区域负责人设置',
+    promoteLead: '设为区域负责人',
+    demoteLead: '设为工程师',
+    saveRole: '保存设置',
+    savingRole: '保存中...',
+    roleUpdated: '工程师角色设置已更新。',
+    roleUpdateFailed: '工程师角色设置更新失败',
+    responsibleRegion: '负责区域',
+    teamName: '团队名称',
+    serviceRegion: '服务区域',
+    workloadStatus: '工作状态',
+    currentLoad: '当前负荷',
+    activeOrders: '个进行中工单',
+    availability: '可服务时间 / 排期',
+    noAvailability: '暂无未来排期',
     noWorkOrders: '暂无关联工单',
     customer: '客户',
     quote: '报价',
-    openOrderHint: '可用工单 No. 回到 Service Orders 中打开完整工单详情。',
+    openOrderHint: '可使用工单号回到服务工单页面查看完整详情。',
     loadFailed: '工程师档案加载失败',
     previous: '上一页',
     next: '下一页',
+    eventTypes: {
+      engineer_available: '可服务',
+      engineer_unavailable: '不可服务',
+      reserved_service: '已预留',
+      service_visit: '现场服务',
+      travel: '差旅',
+    },
+    calendarFallback: '日历',
+    workOrderHeaders: {
+      no: '工单号',
+      status: '状态',
+      created: '创建时间',
+    },
   },
 };
 
@@ -394,7 +424,7 @@ export function EngineersPage({ initialEngineerId = '', onEngineerOpened }) {
                   <th className="px-2 py-3 text-left font-medium text-[var(--color-text-secondary)]">{t.headers.services}</th>
                   <th className="px-2 py-3 text-left font-medium text-[var(--color-text-secondary)]">{t.headers.rating}</th>
                   <th className="px-2 py-3 text-left font-medium text-[var(--color-text-secondary)]">{t.headers.orders}</th>
-                  <th className="px-2 py-3 text-left font-medium text-[var(--color-text-secondary)]">{t.headers.status}</th>
+                  <th className="px-2 py-3 text-left font-medium text-[var(--color-text-secondary)]">{t.workloadStatus}</th>
                 </tr>
               </thead>
               <tbody>
@@ -600,8 +630,8 @@ export function EngineersPage({ initialEngineerId = '', onEngineerOpened }) {
                       {profile.calendar_events.map((event) => (
                         <div key={event.id} className="rounded-lg bg-[var(--color-surface-elevated)] px-3 py-2 text-sm">
                           <div className="flex flex-wrap items-center justify-between gap-2">
-                            <span className="font-medium">{event.title || eventLabel(event.event_type)}</span>
-                            <span className="text-xs text-[var(--color-text-muted)]">{eventLabel(event.event_type)}</span>
+                            <span className="font-medium">{event.title || eventLabel(event.event_type, t)}</span>
+                            <span className="text-xs text-[var(--color-text-muted)]">{eventLabel(event.event_type, t)}</span>
                           </div>
                           <div className="mt-1 text-xs text-[var(--color-text-secondary)]">
                             {formatDateTime(event.start_at)} - {formatDateTime(event.end_at)}
@@ -627,11 +657,11 @@ export function EngineersPage({ initialEngineerId = '', onEngineerOpened }) {
                       <table className="w-full text-sm">
                         <thead>
                           <tr className="border-b border-[var(--color-border)]">
-                            <th className="px-2 py-2 text-left text-[var(--color-text-secondary)]">No.</th>
+                            <th className="px-2 py-2 text-left text-[var(--color-text-secondary)]">{t.workOrderHeaders?.no || 'No.'}</th>
                             <th className="px-2 py-2 text-left text-[var(--color-text-secondary)]">{t.customer}</th>
-                            <th className="px-2 py-2 text-left text-[var(--color-text-secondary)]">Status</th>
+                            <th className="px-2 py-2 text-left text-[var(--color-text-secondary)]">{t.workOrderHeaders?.status || 'Status'}</th>
                             <th className="px-2 py-2 text-left text-[var(--color-text-secondary)]">{t.quote}</th>
-                            <th className="px-2 py-2 text-left text-[var(--color-text-secondary)]">Created</th>
+                            <th className="px-2 py-2 text-left text-[var(--color-text-secondary)]">{t.workOrderHeaders?.created || 'Created'}</th>
                           </tr>
                         </thead>
                         <tbody>

@@ -455,14 +455,20 @@ CREATE INDEX idx_engineers_level ON engineers(level);
 
 ```
 POST /api/auth/login
-Body: { "phone": "手机号", "password": "密码" }
+Body: { "phone": "手机号", "password": "密码" } 或 { "email": "邮箱", "password": "密码" }
 Response: { "token": "jwt", "user": {...}, "type": "customer" | "engineer" }
+
+说明：工程师完成账号激活后，可使用申请邮箱或手机号登录；`pending_activation` 状态不可登录。
+
+POST /api/auth/engineer/activate
+Body: { "token": "一次性激活令牌", "password": "工程师自行设置的密码" }
+说明：激活令牌 48 小时有效且只能使用一次。
 
 POST /api/auth/register/customer
 Body: { "name", "phone", "password", "code" }
 
 POST /api/auth/register/engineer
-说明：公众工程师注册已关闭，当前返回 410。内部工程师账号由后台或运营流程创建。
+说明：公众工程师注册已关闭，当前返回 410。工程师账号只能从审核通过的合作申请中开通。
 
 POST /api/auth/send-code
 Body: { "phone": "手机号" }
@@ -507,8 +513,10 @@ POST   /api/engineers/wallet/withdraw      已停用，返回 410
 ```
 GET    /api/admin/workorders                  服务运营列表
 PATCH  /api/admin/workorders/:id/assign       管理员派工
-GET    /api/admin/users                       用户/工程师列表
-POST   /api/admin/users                       创建内部用户/工程师
+GET    /api/admin/users                       客户/工程师列表
+POST   /api/admin/users                       创建客户；工程师分支已停用并返回 410
+POST   /api/admin/engineer-applications/:id/open-account       从审核通过的申请开通工程师账号并发送激活邮件
+POST   /api/admin/engineer-applications/:id/resend-activation  为待激活账号作废旧令牌并重新发送激活邮件
 GET    /api/admin/leads                       CRM 商机列表
 ```
 
