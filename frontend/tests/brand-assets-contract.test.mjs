@@ -494,9 +494,11 @@ test('engineer application and admin engineer pages render regions and skills as
   assert.match(recruiting, /skillSuggestions/);
   assert.match(recruiting, /onKeyDown/);
   assert.match(recruiting, /service_regions: \[\]/);
+  assert.match(recruiting, /equipment_types: \[\]/);
   assert.match(recruiting, /skill_tags: \[\]/);
   assert.match(recruiting, /regionSuggestions: \['华东', '华南', '华北'/);
-  assert.match(recruiting, /skillSuggestions: \['激光切割机', '折弯机', '激光器'/);
+  assert.match(recruiting, /equipmentSuggestions: \['激光切割机', '折弯机', '激光器'/);
+  assert.match(recruiting, /skillSuggestions: \['数控报警排查', '伺服驱动维修', '设备保养'/);
   assert.match(recruiting, /removeTag: '移除'/);
   assert.match(recruiting, /failure: '提交失败，请稍后重试。'/);
   assert.match(recruiting, /email: '请输入常用邮箱'/);
@@ -505,6 +507,7 @@ test('engineer application and admin engineer pages render regions and skills as
   assert.match(recruiting, /field === 'name' \|\| field === 'phone' \|\| field === 'email'/);
   assert.match(recruiting, /copy\.required/);
   assert.doesNotMatch(recruiting, /service_regions: ''/);
+  assert.doesNotMatch(recruiting, /equipment_types: ''/);
   assert.doesNotMatch(recruiting, /skill_tags: ''/);
 
   assert.match(engineersPage, /renderTags\(profile\.engineer\.specialties/);

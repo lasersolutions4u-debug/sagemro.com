@@ -32,6 +32,11 @@ test('engineer account setup stays inside the application card without password 
   assert.match(modal, /application/);
   assert.match(modal, /regionalLeads/);
   assert.match(modal, /services/);
+  assert.match(modal, /specialties/);
+  assert.match(modal, /熟悉设备/);
+  assert.match(modal, /服务项目/);
+  assert.match(modal, /specialties: toList\(application\.equipment_types\)/);
+  assert.match(modal, /services: toList\(application\.skill_tags\)/);
   assert.match(modal, /至少填写一项服务能力/);
   assert.doesNotMatch(modal, /type=["']password["']/);
 });

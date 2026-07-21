@@ -132,7 +132,8 @@ const COPY = {
       country: '国家',
       city: '常驻城市',
       regions: '可服务区域',
-      skills: '擅长设备 / 服务技能',
+      equipment: '熟悉设备',
+      skills: '服务项目',
       experience: '个人 / 团队服务能力说明',
     },
     placeholders: {
@@ -143,7 +144,8 @@ const COPY = {
       country: '中国 / 马来西亚 / 美国...',
       city: '例如：苏州',
       regions: '例如：江苏、浙江、上海',
-      skills: '例如：激光器、切割头、总线报警、保养',
+      equipment: '例如：激光切割机、折弯机、激光器',
+      skills: '例如：数控报警排查、伺服驱动维修、设备保养',
       experience: '请说明个人或团队规模、服务年限、熟悉品牌、典型案例、可服务时间和希望采用的合作方式',
     },
     checks: ['愿意跨城服务', '可周末服务', '可夜间紧急支持', '自备基础工具'],
@@ -152,7 +154,8 @@ const COPY = {
     closeForm: '关闭申请表',
     failure: '提交失败，请稍后重试。',
     regionSuggestions: ['华东', '华南', '华北', '华中', '西南', '东北', '江苏', '浙江', '山东'],
-    skillSuggestions: ['激光切割机', '折弯机', '激光器', '切割头', '数控报警', '伺服驱动', '设备保养', '现场排查'],
+    equipmentSuggestions: ['激光切割机', '折弯机', '激光器', '切割头'],
+    skillSuggestions: ['数控报警排查', '伺服驱动维修', '设备保养', '现场排查'],
     submit: '提交申请',
     submitting: '正在提交...',
     success: '申请已收到。SAGEMRO 运营团队会审核资料，并在确认合作条件后与你联系。',
@@ -274,7 +277,8 @@ const COPY = {
       country: 'Country',
       city: 'Base city',
       regions: 'Service regions',
-      skills: 'Equipment / skills',
+      equipment: 'Equipment specialties',
+      skills: 'Service items',
       experience: 'Individual / team capability',
     },
     placeholders: {
@@ -285,7 +289,8 @@ const COPY = {
       country: 'US / Mexico / Malaysia...',
       city: 'Chicago / Kuala Lumpur...',
       regions: 'Illinois, Indiana, Wisconsin...',
-      skills: 'Laser source, cutting head, alarms, maintenance...',
+      equipment: 'Laser cutting machine, press brake, laser source...',
+      skills: 'CNC alarm diagnosis, servo repair, maintenance...',
       experience: 'Describe individual or team size, service years, familiar brands, typical cases, and preferred cooperation model',
     },
     checks: ['Can travel', 'Weekend support', 'Night emergency support', 'Own basic tools'],
@@ -294,7 +299,8 @@ const COPY = {
     closeForm: 'Close application form',
     failure: 'Submission failed. Please try again.',
     regionSuggestions: ['North America', 'Europe', 'Southeast Asia', 'Middle East', 'Mexico', 'Malaysia', 'Illinois', 'Indiana', 'Wisconsin'],
-    skillSuggestions: ['Laser cutting machine', 'Press brake', 'Laser source', 'Cutting head', 'CNC alarms', 'Servo drive', 'Maintenance', 'On-site troubleshooting'],
+    equipmentSuggestions: ['Laser cutting machine', 'Press brake', 'Laser source', 'Cutting head'],
+    skillSuggestions: ['CNC alarm diagnosis', 'Servo repair', 'Maintenance', 'On-site troubleshooting'],
     submit: 'Submit Application',
     submitting: 'Submitting...',
     success: 'Application received. The SAGEMRO operations team will review your information and contact you when there is a suitable regional match.',
@@ -425,6 +431,14 @@ function ApplicationForm({ copy, form, submitting, message, error, updateField, 
         onChange={(tags) => updateField('service_regions', tags)}
       />
       <TagInput
+        label={copy.fields.equipment}
+        value={form.equipment_types}
+        suggestions={copy.equipmentSuggestions}
+        placeholder={copy.placeholders.equipment}
+        removeLabel={copy.removeTag}
+        onChange={(tags) => updateField('equipment_types', tags)}
+      />
+      <TagInput
         label={copy.fields.skills}
         value={form.skill_tags}
         suggestions={copy.skillSuggestions}
@@ -495,6 +509,7 @@ export function EngineerRecruitingPage({ onOpenLogin }) {
     country: '',
     city: '',
     service_regions: [],
+    equipment_types: [],
     skill_tags: [],
     experience_summary: '',
     can_travel: false,
@@ -519,6 +534,7 @@ export function EngineerRecruitingPage({ onOpenLogin }) {
       await submitEngineerApplication({
         ...form,
         service_regions: splitTagList(form.service_regions),
+        equipment_types: splitTagList(form.equipment_types),
         skill_tags: splitTagList(form.skill_tags),
       });
       setMessage(copy.success);
@@ -531,6 +547,7 @@ export function EngineerRecruitingPage({ onOpenLogin }) {
         country: '',
         city: '',
         service_regions: [],
+        equipment_types: [],
         skill_tags: [],
         experience_summary: '',
       }));
