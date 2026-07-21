@@ -81,6 +81,18 @@ test('public engineer application submits without creating an engineer account',
   assert.equal(env.__calls.some((sql) => sql.includes('INSERT INTO engineers')), false);
 });
 
+test('public engineer application requires a valid email', async () => {
+  const env = createEnv();
+  const response = await worker.fetch(new Request('https://api.sagemro.cn/api/engineer-applications', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Origin: 'https://engineer.sagemro.cn' },
+    body: JSON.stringify({ name: '测试工程师', phone: '13800000000', email: 'invalid' }),
+  }), env, { waitUntil() {} });
+
+  assert.equal(response.status, 400);
+  assert.equal(env.__calls.some((sql) => sql.includes('INSERT INTO engineer_applications')), false);
+});
+
 test('admin can list engineer applications', async () => {
   const env = createEnv();
   env.DB.prepare = (sql) => {

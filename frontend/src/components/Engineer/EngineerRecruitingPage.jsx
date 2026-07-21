@@ -138,7 +138,7 @@ const COPY = {
     placeholders: {
       name: '请输入姓名',
       phone: '便于运营团队联系',
-      email: '可选',
+      email: '请输入常用邮箱',
       whatsapp: '可选',
       country: '中国 / 马来西亚 / 美国...',
       city: '例如：苏州',
@@ -280,7 +280,7 @@ const COPY = {
     placeholders: {
       name: 'Your full name',
       phone: 'Best number for operations follow-up',
-      email: 'Optional',
+      email: 'Enter your primary email address',
       whatsapp: 'Optional',
       country: 'US / Mexico / Malaysia...',
       city: 'Chicago / Kuala Lumpur...',
@@ -401,16 +401,17 @@ function ApplicationForm({ copy, form, submitting, message, error, updateField, 
           <label key={field} className="block text-[13px] font-semibold text-[#312317]">
             <span className="flex items-center gap-1">
               {copy.fields[field]}
-              {(field === 'name' || field === 'phone') && (
+              {(field === 'name' || field === 'phone' || field === 'email') && (
                 <span className="text-xs font-medium text-amber-700">{copy.required}</span>
               )}
             </span>
             <input
+              type={field === 'email' ? 'email' : 'text'}
               value={form[field]}
               onChange={(event) => updateField(field, event.target.value)}
               placeholder={copy.placeholders[field]}
               className="mt-1.5 w-full rounded-xl border border-[#eadfce] bg-[#fffdf8] px-3 py-2.5 text-sm outline-none transition focus:border-amber-500 focus:bg-white focus:shadow-[0_0_0_3px_rgba(245,158,11,0.12)]"
-              required={field === 'name' || field === 'phone'}
+              required={field === 'name' || field === 'phone' || field === 'email'}
             />
           </label>
         ))}

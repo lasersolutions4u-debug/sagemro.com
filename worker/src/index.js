@@ -7015,11 +7015,15 @@ async function handleSubmitEngineerApplication(request, env) {
     const body = await request.json().catch(() => ({}));
     const name = cleanText(body.name, 80);
     const phone = cleanText(body.phone, 40);
-    const email = cleanText(body.email, 120);
+    const email = normalizeEmail(cleanText(body.email, 120));
     const whatsapp = cleanText(body.whatsapp, 80);
 
-    if (!name) return errorResponse('请填写姓名');
-    if (!phone && !email && !whatsapp) return errorResponse('请至少提供一种联系方式');
+    if (!name || !phone || !email) {
+      return errorResponse(getRequestMarket(request) === 'cn'
+        ? '姓名、联系电话和邮箱为必填项'
+        : 'Name, phone, and email are required.');
+    }
+    if (!isValidEmail(email)) return localizedErrorResponse('invalid_email', request);
 
     const id = generateId();
     await env.DB.prepare(`
@@ -7032,8 +7036,8 @@ async function handleSubmitEngineerApplication(request, env) {
       id,
       getRequestMarket(request),
       name,
-      phone || null,
-      email || null,
+      phone,
+      email,
       whatsapp || null,
       cleanText(body.country, 80) || null,
       cleanText(body.province, 80) || null,
