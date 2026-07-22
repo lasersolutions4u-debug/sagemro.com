@@ -9,13 +9,15 @@ const ROLE_ACTIONS = Object.freeze({
 const TERMINAL_REQUISITION_STATUSES = new Set(['rejected', 'cancelled', 'closed']);
 
 function quantity(value) {
-  const number = Number(value ?? 0);
-  if (!Number.isFinite(number) || number < 0) throw new Error('Quantities must be finite and non-negative');
-  return number;
+  if (value === undefined) return 0;
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
+    throw new Error('Quantities must be finite, non-negative number primitives');
+  }
+  return value;
 }
 
 export function canManageMaterialRequisition(role, action) {
-  return Boolean(ROLE_ACTIONS[role]?.has(action));
+  return Object.hasOwn(ROLE_ACTIONS, role) && ROLE_ACTIONS[role].has(action);
 }
 
 export function canCloseMaterialRequisition(items = []) {
@@ -51,7 +53,7 @@ export function deriveItemStatus(input = {}) {
     engineerReceived: input.engineerReceived,
   });
   if (values.engineerReceived >= values.requested) return 'received';
-  if (values.issued > 0) return 'issued';
+  if (values.issued > 0) return values.issued >= values.requested ? 'issued' : 'partially_ready';
   const ready = values.stockAllocated + values.procurementReceived;
   if (ready >= values.requested) return 'ready';
   if (values.procurementReceived > 0) return 'partially_ready';

@@ -32,6 +32,13 @@ test('procurement can record and receive purchases', () => {
   assert.equal(canManageMaterialRequisition('procurement', 'receive_purchase'), true);
 });
 
+test('unknown and prototype role names are denied safely', () => {
+  assert.equal(canManageMaterialRequisition('unknown', 'approve'), false);
+  assert.equal(canManageMaterialRequisition('toString', 'approve'), false);
+  assert.equal(canManageMaterialRequisition('constructor', 'approve'), false);
+  assert.equal(canManageMaterialRequisition('__proto__', 'approve'), false);
+});
+
 test('item status reflects stock, procurement, issue, and engineer receipt progress', () => {
   assert.equal(deriveItemStatus({ requested: 4, cancelled: true }), 'cancelled');
   assert.equal(deriveItemStatus({ requested: 4 }), 'pending');
@@ -41,6 +48,14 @@ test('item status reflects stock, procurement, issue, and engineer receipt progr
   assert.equal(deriveItemStatus({ requested: 4, stockAllocated: 2, procurementOrdered: 2, procurementReceived: 2 }), 'ready');
   assert.equal(deriveItemStatus({ requested: 4, stockAllocated: 4, issued: 4 }), 'issued');
   assert.equal(deriveItemStatus({ requested: 4, stockAllocated: 4, issued: 4, engineerReceived: 4 }), 'received');
+});
+
+test('partial issuance remains non-final for the item and requisition', () => {
+  const itemStatus = deriveItemStatus({ requested: 4, stockAllocated: 4, issued: 2 });
+
+  assert.equal(itemStatus, 'partially_ready');
+  assert.equal(deriveRequisitionStatus({ status: 'approved' }, [{ status: itemStatus }]), 'partially_fulfilled');
+  assert.equal(deriveRequisitionStatus({ status: 'approved' }, [{ status: itemStatus }, { status: 'cancelled' }]), 'partially_fulfilled');
 });
 
 test('fulfillment quantities enforce non-negative upstream bounds', () => {
@@ -53,6 +68,15 @@ test('fulfillment quantities enforce non-negative upstream bounds', () => {
   assert.throws(() => validateFulfillmentQuantities({ requested: 5, stockAllocated: 2, procurementOrdered: 1, procurementReceived: 1, issued: 4 }), /available/i);
   assert.throws(() => validateFulfillmentQuantities({ requested: 5, issued: 3, engineerReceived: 4 }), /issued/i);
   assert.doesNotThrow(() => validateFulfillmentQuantities({ requested: 5, stockAllocated: 2, procurementOrdered: 3, procurementReceived: 3, issued: 5, engineerReceived: 5 }));
+});
+
+test('fulfillment quantities accept only finite number primitives', () => {
+  for (const malformed of [true, null, [], [1], {}, '1']) {
+    assert.throws(
+      () => validateFulfillmentQuantities({ requested: 2, stockAllocated: malformed }),
+      /number/i,
+    );
+  }
 });
 
 test('requisition status derives partial, ready, issued, received, and closed states', () => {
