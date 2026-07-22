@@ -73,9 +73,13 @@ function createStatement(env, sql) {
     },
     async run() {
       const normalized = normalizeSql(sql);
+      let changes = 0;
 
       if (/INSERT INTO admin_staff_accounts/i.test(normalized)) {
         const [id, normalizedLogin, normalizedPhone, passwordHash, salt, role, displayName, marketScope, createdBy] = this.args;
+        if (env.__staff.some((item) => item.normalized_login === normalizedLogin || (normalizedPhone && item.normalized_phone === normalizedPhone))) {
+          throw new Error('UNIQUE constraint failed: admin_staff_accounts.normalized_login');
+        }
         env.__staff.push({
           id,
           normalized_login: normalizedLogin,
@@ -91,17 +95,34 @@ function createStatement(env, sql) {
           created_at: '2026-07-23 00:00:00',
           updated_at: '2026-07-23 00:00:00',
         });
+        changes = 1;
       } else if (/UPDATE admin_staff_accounts SET is_active = 0/i.test(normalized)) {
         const staff = env.__staff.find((item) => item.id === this.args[0]);
-        if (staff) staff.is_active = 0;
+        if (staff) {
+          staff.is_active = 0;
+          changes = 1;
+        }
       } else if (/UPDATE admin_staff_accounts SET password_hash = \?, salt = \?, must_change_password = 1/i.test(normalized)) {
         const staff = env.__staff.find((item) => item.id === this.args[2]);
-        if (staff) Object.assign(staff, { password_hash: this.args[0], salt: this.args[1], must_change_password: 1 });
+        if (staff) {
+          Object.assign(staff, { password_hash: this.args[0], salt: this.args[1], must_change_password: 1 });
+          changes = 1;
+        }
       } else if (/UPDATE admin_staff_accounts SET password_hash = \?, salt = \?, must_change_password = 0/i.test(normalized)) {
         const staff = env.__staff.find((item) => item.id === this.args[2]);
-        if (staff) Object.assign(staff, { password_hash: this.args[0], salt: this.args[1], must_change_password: 0 });
+        if (staff) {
+          Object.assign(staff, { password_hash: this.args[0], salt: this.args[1], must_change_password: 0 });
+          changes = 1;
+        }
       } else if (/INSERT INTO material_requisitions/i.test(normalized)) {
         const [id, requisitionNo, market, workOrderId, requestedByType, requestedById, status, urgency, requiredDate, purpose] = this.args;
+        if (env.__requisitionInsertCollisions > 0) {
+          env.__requisitionInsertCollisions -= 1;
+          throw new Error('UNIQUE constraint failed: material_requisitions.requisition_no');
+        }
+        if (env.__requisitions.some((item) => item.id === id || item.requisition_no === requisitionNo)) {
+          throw new Error('UNIQUE constraint failed: material_requisitions.requisition_no');
+        }
         env.__requisitions.push({
           id,
           requisition_no: requisitionNo,
@@ -116,6 +137,7 @@ function createStatement(env, sql) {
           created_at: '2026-07-23 00:00:00',
           updated_at: '2026-07-23 00:00:00',
         });
+        changes = 1;
       } else if (/INSERT INTO material_requisition_items/i.test(normalized)) {
         const [id, requisitionId, materialId, materialCode, name, nameEn, spec, brand, unit, requestedQuantity, notes] = this.args;
         env.__items.push({
@@ -139,8 +161,23 @@ function createStatement(env, sql) {
           notes,
           status: 'pending',
         });
+        changes = 1;
       } else if (/UPDATE material_requisitions SET/i.test(normalized)) {
-        const requisition = env.__requisitions.find((item) => item.id === this.args.at(-1));
+        const hasStatusPredicate = /WHERE id = \? AND status = \?/i.test(normalized);
+        const idIndex = hasStatusPredicate ? this.args.length - 2 : this.args.length - 1;
+        const requisition = env.__requisitions.find((item) => item.id === this.args[idIndex]);
+        if (requisition && hasStatusPredicate && requisition.status !== this.args.at(-1)) {
+          env.__lastChanges = 0;
+          return { success: true, meta: { changes: 0 } };
+        }
+        if (requisition && /NOT EXISTS/i.test(normalized)
+          && env.__items.some((item) => item.requisition_id === requisition.id
+            && (Number(item.procurement_received_quantity || 0) > 0
+              || Number(item.issued_quantity || 0) > 0
+              || Number(item.engineer_received_quantity || 0) > 0))) {
+          env.__lastChanges = 0;
+          return { success: true, meta: { changes: 0 } };
+        }
         if (requisition) {
           if (/SET status = \?, approved_by = \?/i.test(normalized)) {
             Object.assign(requisition, { status: this.args[0], approved_by: this.args[1], approved_at: env.__now });
@@ -149,10 +186,12 @@ function createStatement(env, sql) {
           } else if (/SET status = \?, cancellation_reason = \?/i.test(normalized)) {
             Object.assign(requisition, { status: this.args[0], cancellation_reason: this.args[1], cancelled_at: env.__now });
           } else if (/assigned_warehouse_staff_id = \?/i.test(normalized)) {
-            requisition.assigned_warehouse_staff_id = this.args[0];
+            requisition.status = this.args[0];
+            requisition.assigned_warehouse_staff_id = this.args[1];
             if (/issued_at = COALESCE/i.test(normalized)) requisition.issued_at ||= env.__now;
           } else if (/assigned_procurement_staff_id = \?/i.test(normalized)) {
-            requisition.assigned_procurement_staff_id = this.args[0];
+            requisition.status = this.args[0];
+            requisition.assigned_procurement_staff_id = this.args[1];
           } else if (/received_at = COALESCE/i.test(normalized)) {
             if (/SET status = \?/i.test(normalized)) requisition.status = this.args[0];
             requisition.received_at ||= env.__now;
@@ -162,25 +201,67 @@ function createStatement(env, sql) {
           } else if (/SET status = \?/i.test(normalized)) {
             requisition.status = this.args[0];
           }
+          changes = 1;
         }
       } else if (/UPDATE material_requisition_items SET/i.test(normalized)) {
-        const item = env.__items.find((entry) => entry.id === this.args.at(-2) && entry.requisition_id === this.args.at(-1));
-        if (item) {
+        const whereStart = normalized.indexOf(' WHERE ');
+        const whereSql = whereStart >= 0 ? normalized.slice(whereStart) : '';
+        const predicateColumns = [...whereSql.matchAll(/(?:WHERE|AND) ([a-z_]+) = \?/gi)].map((match) => match[1]);
+        const idOffset = this.args.length - predicateColumns.length;
+        const predicates = Object.fromEntries(predicateColumns.map((column, index) => [column, this.args[idOffset + index]]));
+        const item = env.__items.find((entry) => entry.id === predicates.id && entry.requisition_id === predicates.requisition_id);
+        if (env.__forceNextConditionalItemMiss && predicateColumns.length > 2) {
+          env.__forceNextConditionalItemMiss = false;
+          env.__lastChanges = 0;
+          return { success: true, meta: { changes: 0 } };
+        }
+        const matches = item && predicateColumns.every((column) => {
+          if (column === 'id' || column === 'requisition_id') return item[column] === predicates[column];
+          if (column === 'status') return item[column] === predicates[column];
+          return Number.isFinite(Number(item[column])) && Number(item[column]) === Number(predicates[column]);
+        });
+        if (matches) {
           const assignments = normalized.match(/SET (.+?) WHERE/i)?.[1].split(',').map((part) => part.trim()) || [];
           assignments.forEach((assignment, index) => {
             const column = assignment.split('=')[0].trim();
             if (!/updated_at/i.test(column)) item[column] = this.args[index];
           });
+          changes = 1;
         }
-      } else if (/UPDATE materials SET stock_quantity = stock_quantity \+ \?/i.test(normalized)) {
-        const material = env.__materials.find((item) => item.id === this.args[1]);
-        if (material) material.stock_quantity += this.args[0];
+      } else if (/UPDATE materials SET stock_quantity = stock_quantity(?: [+-] \?)?/i.test(normalized)) {
+        const subtract = /stock_quantity = stock_quantity - \?/i.test(normalized);
+        const add = /stock_quantity = stock_quantity \+ \?/i.test(normalized);
+        const quantity = add || subtract ? Number(this.args[0]) : 0;
+        const materialId = add || subtract ? this.args[1] : this.args[0];
+        const material = env.__materials.find((item) => item.id === materialId);
+        if (env.__stockBeforeNextMutation !== undefined) {
+          if (material) material.stock_quantity = env.__stockBeforeNextMutation;
+          delete env.__stockBeforeNextMutation;
+        }
+        const expectedIndex = /stock_quantity = \?/i.test(normalized) ? (add || subtract ? 2 : 1) : -1;
+        const hasEnough = !/stock_quantity >= \?/i.test(normalized)
+          || Number(material?.stock_quantity || 0) >= Number(this.args.at(-1));
+        const expectedMatches = expectedIndex < 0 || Number(material?.stock_quantity || 0) === Number(this.args[expectedIndex]);
+        if (material && hasEnough && expectedMatches) {
+          material.stock_quantity += subtract ? -quantity : quantity;
+          changes = 1;
+        }
       } else if (/INSERT INTO material_inventory_adjustments/i.test(normalized)) {
         env.__adjustments.push({ args: clone(this.args) });
+        changes = 1;
       } else if (/INSERT INTO audit_logs/i.test(normalized)) {
+        if (env.__failNextAudit) {
+          env.__failNextAudit = false;
+          throw new Error('audit insert failed');
+        }
         env.__auditLogs.push({ args: clone(this.args) });
+        changes = 1;
+      } else if (/SELECT CASE WHEN changes\(\) = 1/i.test(normalized)) {
+        if (env.__lastChanges !== 1) throw new Error('material requisition concurrent update');
+        changes = 1;
       }
-      return { success: true, meta: { changes: 1 } };
+      env.__lastChanges = changes;
+      return { success: true, meta: { changes } };
     },
   };
 }
@@ -195,6 +276,7 @@ function createEnv() {
     __items: [],
     __auditLogs: [],
     __adjustments: [],
+    __requisitionInsertCollisions: 0,
     __materials: [
       { id: 'material-stock', material_code: 'STOCK-1', name: 'Stock item', unit: 'pcs', stock_quantity: 10 },
       { id: 'material-buy', material_code: 'BUY-1', name: 'Purchased item', unit: 'pcs', stock_quantity: 0 },
@@ -206,9 +288,37 @@ function createEnv() {
     DB: {
       prepare(sql) { return createStatement(env, sql); },
       async batch(statements) {
-        const results = [];
-        for (const statement of statements) results.push(await statement.run());
-        return results;
+        if (env.__issueBeforeNextBatch) {
+          const item = env.__items.find((entry) => entry.requisition_id === env.__issueBeforeNextBatch);
+          if (item) item.issued_quantity = 1;
+          delete env.__issueBeforeNextBatch;
+        }
+        if (env.__terminalStatusBeforeNextBatch) {
+          const requisition = env.__requisitions.find((entry) => entry.id === env.__terminalStatusBeforeNextBatch.id);
+          if (requisition) requisition.status = env.__terminalStatusBeforeNextBatch.status;
+          delete env.__terminalStatusBeforeNextBatch;
+        }
+        const snapshot = clone({
+          staff: env.__staff,
+          requisitions: env.__requisitions,
+          items: env.__items,
+          auditLogs: env.__auditLogs,
+          adjustments: env.__adjustments,
+          materials: env.__materials,
+        });
+        try {
+          const results = [];
+          for (const statement of statements) results.push(await statement.run());
+          return results;
+        } catch (error) {
+          env.__staff = snapshot.staff;
+          env.__requisitions = snapshot.requisitions;
+          env.__items = snapshot.items;
+          env.__auditLogs = snapshot.auditLogs;
+          env.__adjustments = snapshot.adjustments;
+          env.__materials = snapshot.materials;
+          throw error;
+        }
       },
     },
     KV: {
@@ -308,6 +418,11 @@ test('bootstrap admin creates staff, staff login carries role claims, and only b
   assert.equal(created.json.staff.must_change_password, 1);
   assert.match(created.json.temporary_password, /^[A-Za-z0-9]{12}$/);
 
+  const listed = await api(env, '/api/admin/staff', { auth: bootstrap });
+  assert.equal(listed.response.status, 200);
+  assert.equal(listed.json.staff.length, 1);
+  assert.equal(listed.json.staff[0].id, created.json.staff.id);
+
   const denied = await api(env, '/api/admin/staff', { auth: staffAuth('admin') });
   assert.equal(denied.response.status, 403);
 
@@ -350,7 +465,30 @@ test('bootstrap admin creates staff, staff login carries role claims, and only b
   const deactivated = await api(env, `/api/admin/staff/${created.json.staff.id}/deactivate`, { method: 'POST', auth: bootstrap });
   assert.equal(deactivated.response.status, 200);
   assert.equal(deactivated.json.staff.is_active, 0);
+  const rejectedSession = await api(env, '/api/material-requisitions', { auth: temporaryAuth });
+  assert.equal(rejectedSession.response.status, 403);
+  const inactiveSession = await api(env, '/api/auth/session', { auth: temporaryAuth });
+  assert.equal(inactiveSession.response.status, 200);
+  assert.equal(inactiveSession.json.authenticated, false);
   assert.equal(env.__auditLogs.length, 4);
+});
+
+test('requisition number collisions retry without leaving a partial requisition', async () => {
+  const env = createEnv();
+  env.__requisitionInsertCollisions = 1;
+
+  const created = await api(env, '/api/material-requisitions', {
+    method: 'POST',
+    body: {
+      work_order_id: 'wo-1',
+      items: [{ material_id: 'material-stock', requested_quantity: 1 }],
+    },
+  });
+
+  assert.equal(created.response.status, 201);
+  assert.equal(env.__requisitions.length, 1);
+  assert.equal(env.__items.length, 1);
+  assert.match(created.json.requisition.requisition_no, /^MR-\d{8}-[A-Z0-9]{8,}$/);
 });
 
 test('assigned engineer creates and submits a deterministic multi-line draft; other engineers are denied', async () => {
@@ -498,6 +636,12 @@ test('operations, warehouse, procurement, and engineer complete a mixed fulfillm
   assert.equal(closed.json.requisition.status, 'closed');
   assert.equal(env.__requisitions[0].closed_at, env.__now);
   assert.equal(env.__adjustments.length, 4);
+  assert.deepEqual(env.__adjustments.map((entry) => entry.args.slice(3, 6)), [
+    [3, 0, 3],
+    [-2, 10, 8],
+    [-3, 3, 0],
+    [1, 0, 1],
+  ]);
   assert.ok(env.__auditLogs.length >= 11);
 });
 
@@ -542,6 +686,88 @@ test('role, state, ownership, and quantity invariants reject invalid writes with
   assert.equal(env.__adjustments.length, 0);
 });
 
+test('stale item updates fail atomically without item, stock, adjustment, or audit drift', async () => {
+  const env = createEnv();
+  const requisition = await createAndSubmit(env);
+  const item = requisition.items[0];
+  await api(env, `/api/material-requisitions/${requisition.id}/approve`, { method: 'POST', auth: staffAuth('operations') });
+  await api(env, `/api/material-requisitions/${requisition.id}/stock-allocation`, {
+    method: 'POST', auth: staffAuth('warehouse'), body: { item_id: item.id, quantity: 2 },
+  });
+  const before = clone({ item: env.__items[0], material: env.__materials[0], adjustments: env.__adjustments, auditLogs: env.__auditLogs });
+  env.__forceNextConditionalItemMiss = true;
+
+  const result = await api(env, `/api/material-requisitions/${requisition.id}/issue`, {
+    method: 'POST', auth: staffAuth('warehouse'), body: { item_id: item.id, quantity: 1 },
+  });
+
+  assert.equal(result.response.status, 409);
+  assert.deepEqual(env.__items[0], before.item);
+  assert.deepEqual(env.__materials[0], before.material);
+  assert.deepEqual(env.__adjustments, before.adjustments);
+  assert.deepEqual(env.__auditLogs, before.auditLogs);
+});
+
+test('concurrent stock overdraw fails atomically and preserves adjustment provenance', async () => {
+  const env = createEnv();
+  const requisition = await createAndSubmit(env);
+  const item = requisition.items[0];
+  await api(env, `/api/material-requisitions/${requisition.id}/approve`, { method: 'POST', auth: staffAuth('operations') });
+  await api(env, `/api/material-requisitions/${requisition.id}/stock-allocation`, {
+    method: 'POST', auth: staffAuth('warehouse'), body: { item_id: item.id, quantity: 2 },
+  });
+  const beforeItem = clone(env.__items[0]);
+  const beforeAuditCount = env.__auditLogs.length;
+  env.__stockBeforeNextMutation = 0;
+
+  const result = await api(env, `/api/material-requisitions/${requisition.id}/issue`, {
+    method: 'POST', auth: staffAuth('warehouse'), body: { item_id: item.id, quantity: 2 },
+  });
+
+  assert.equal(result.response.status, 409);
+  assert.deepEqual(env.__items[0], beforeItem);
+  assert.equal(env.__materials[0].stock_quantity, 10);
+  assert.equal(env.__adjustments.length, 0);
+  assert.equal(env.__auditLogs.length, beforeAuditCount);
+});
+
+test('audit insertion failure rolls back staff, requisition, line, and stock workflow writes', async () => {
+  const staffEnv = createEnv();
+  staffEnv.__failNextAudit = true;
+  const staffResult = await api(staffEnv, '/api/admin/staff', {
+    method: 'POST', auth: { userId: 'admin', userType: 'admin' },
+    body: { login: 'ops', role: 'operations', display_name: 'Ops', market_scope: 'all' },
+  });
+  assert.equal(staffResult.response.status, 500);
+  assert.equal(staffEnv.__staff.length, 0);
+
+  const createEnvWithAuditFailure = createEnv();
+  createEnvWithAuditFailure.__failNextAudit = true;
+  const createResult = await api(createEnvWithAuditFailure, '/api/material-requisitions', {
+    method: 'POST', body: { work_order_id: 'wo-1', items: [{ material_id: 'material-stock', requested_quantity: 1 }] },
+  });
+  assert.equal(createResult.response.status, 500);
+  assert.equal(createEnvWithAuditFailure.__requisitions.length, 0);
+  assert.equal(createEnvWithAuditFailure.__items.length, 0);
+
+  const stockEnv = createEnv();
+  const requisition = await createAndSubmit(stockEnv);
+  const item = requisition.items[0];
+  await api(stockEnv, `/api/material-requisitions/${requisition.id}/approve`, { method: 'POST', auth: staffAuth('operations') });
+  await api(stockEnv, `/api/material-requisitions/${requisition.id}/stock-allocation`, {
+    method: 'POST', auth: staffAuth('warehouse'), body: { item_id: item.id, quantity: 2 },
+  });
+  const before = clone({ item: stockEnv.__items[0], material: stockEnv.__materials[0], adjustments: stockEnv.__adjustments });
+  stockEnv.__failNextAudit = true;
+  const stockResult = await api(stockEnv, `/api/material-requisitions/${requisition.id}/issue`, {
+    method: 'POST', auth: staffAuth('warehouse'), body: { item_id: item.id, quantity: 1 },
+  });
+  assert.equal(stockResult.response.status, 500);
+  assert.deepEqual(stockEnv.__items[0], before.item);
+  assert.deepEqual(stockEnv.__materials[0], before.material);
+  assert.deepEqual(stockEnv.__adjustments, before.adjustments);
+});
+
 test('operations can reject submitted requisitions and cancel non-terminal requisitions', async () => {
   const rejectedEnv = createEnv();
   const rejected = await createAndSubmit(rejectedEnv);
@@ -560,6 +786,127 @@ test('operations can reject submitted requisitions and cancel non-terminal requi
   assert.equal(cancelResult.response.status, 200);
   assert.equal(cancelResult.json.requisition.status, 'cancelled');
   assert.equal(cancelResult.json.requisition.cancellation_reason, 'Work order cancelled');
+});
+
+test('whole cancellation is rejected after issue or receipt', async () => {
+  const env = createEnv();
+  const requisition = await createAndSubmit(env);
+  const item = requisition.items[0];
+  await api(env, `/api/material-requisitions/${requisition.id}/approve`, { method: 'POST', auth: staffAuth('operations') });
+  await api(env, `/api/material-requisitions/${requisition.id}/stock-allocation`, {
+    method: 'POST', auth: staffAuth('warehouse'), body: { item_id: item.id, quantity: 1 },
+  });
+  await api(env, `/api/material-requisitions/${requisition.id}/issue`, {
+    method: 'POST', auth: staffAuth('warehouse'), body: { item_id: item.id, quantity: 1 },
+  });
+
+  const issuedCancellation = await api(env, `/api/material-requisitions/${requisition.id}/cancel`, {
+    method: 'POST', auth: staffAuth('operations'), body: { reason: 'Too late' },
+  });
+  assert.equal(issuedCancellation.response.status, 409);
+
+  env.__items[0].issued_quantity = 0;
+  env.__items[0].engineer_received_quantity = 1;
+  const receivedCancellation = await api(env, `/api/material-requisitions/${requisition.id}/cancel`, {
+    method: 'POST', auth: staffAuth('operations'), body: { reason: 'Still too late' },
+  });
+  assert.equal(receivedCancellation.response.status, 409);
+  assert.notEqual(env.__requisitions[0].status, 'cancelled');
+
+  env.__items[0].engineer_received_quantity = 0;
+  env.__items[0].procurement_received_quantity = 1;
+  const procuredCancellation = await api(env, `/api/material-requisitions/${requisition.id}/cancel`, {
+    method: 'POST', auth: staffAuth('operations'), body: { reason: 'Received stock exists' },
+  });
+  assert.equal(procuredCancellation.response.status, 409);
+});
+
+test('cancellation loses a race with issue without overwriting the issued requisition', async () => {
+  const env = createEnv();
+  const requisition = await createAndSubmit(env);
+  env.__issueBeforeNextBatch = requisition.id;
+
+  const result = await api(env, `/api/material-requisitions/${requisition.id}/cancel`, {
+    method: 'POST', auth: staffAuth('operations'), body: { reason: 'Concurrent cancellation' },
+  });
+
+  assert.equal(result.response.status, 409);
+  assert.equal(env.__items[0].issued_quantity, 1);
+  assert.notEqual(env.__requisitions[0].status, 'cancelled');
+});
+
+test('procurement metadata loses a race with a terminal transition', async () => {
+  const env = createEnv();
+  const requisition = await createAndSubmit(env);
+  const item = requisition.items[1];
+  await api(env, `/api/material-requisitions/${requisition.id}/approve`, { method: 'POST', auth: staffAuth('operations') });
+  env.__terminalStatusBeforeNextBatch = { id: requisition.id, status: 'cancelled' };
+
+  const result = await api(env, `/api/material-requisitions/${requisition.id}/procurement`, {
+    method: 'PATCH', auth: staffAuth('procurement'),
+    body: { item_id: item.id, supplier_reference: 'LATE' },
+  });
+
+  assert.equal(result.response.status, 409);
+  assert.equal(env.__requisitions[0].status, 'cancelled');
+  assert.equal(env.__items[1].supplier_reference, undefined);
+});
+
+test('terminal requisitions reject line, procurement, receipt, and fulfillment writes', async () => {
+  for (const terminalStatus of ['cancelled', 'rejected', 'closed']) {
+    const env = createEnv();
+    const requisition = await createAndSubmit(env);
+    const item = requisition.items[0];
+    env.__requisitions[0].status = terminalStatus;
+    const before = clone({ item: env.__items[0], material: env.__materials[0], audits: env.__auditLogs });
+    const requests = [
+      api(env, `/api/material-requisitions/${requisition.id}/items/${item.id}/cancel`, { method: 'POST', auth: staffAuth('operations') }),
+      api(env, `/api/material-requisitions/${requisition.id}/procurement`, { method: 'PATCH', auth: staffAuth('procurement'), body: { item_id: item.id, supplier_reference: 'NOPE' } }),
+      api(env, `/api/material-requisitions/${requisition.id}/engineer-receipt`, { method: 'POST', body: { item_id: item.id, quantity: 1 } }),
+      api(env, `/api/material-requisitions/${requisition.id}/issue`, { method: 'POST', auth: staffAuth('warehouse'), body: { item_id: item.id, quantity: 1 } }),
+    ];
+    const results = await Promise.all(requests);
+    assert.deepEqual(results.map((result) => result.response.status), [409, 409, 409, 409], terminalStatus);
+    assert.deepEqual(env.__items[0], before.item);
+    assert.deepEqual(env.__materials[0], before.material);
+    assert.deepEqual(env.__auditLogs, before.audits);
+  }
+});
+
+test('closed requisitions reject repeated close writes', async () => {
+  const env = createEnv();
+  const requisition = await createAndSubmit(env);
+  env.__requisitions[0].status = 'closed';
+  env.__items.forEach((item) => { item.status = 'received'; });
+  const auditCount = env.__auditLogs.length;
+
+  const result = await api(env, `/api/material-requisitions/${requisition.id}/close`, {
+    method: 'POST', auth: staffAuth('operations'),
+  });
+
+  assert.equal(result.response.status, 409);
+  assert.equal(env.__auditLogs.length, auditCount);
+});
+
+test('received procurement lines cannot be cancelled', async () => {
+  const env = createEnv();
+  const requisition = await createAndSubmit(env);
+  const item = requisition.items[1];
+  await api(env, `/api/material-requisitions/${requisition.id}/approve`, { method: 'POST', auth: staffAuth('operations') });
+  await api(env, `/api/material-requisitions/${requisition.id}/procurement`, {
+    method: 'POST', auth: staffAuth('procurement'), body: { item_id: item.id, quantity: 1 },
+  });
+  await api(env, `/api/material-requisitions/${requisition.id}/procurement-receipt`, {
+    method: 'POST', auth: staffAuth('procurement'), body: { item_id: item.id, quantity: 1 },
+  });
+  const before = clone(env.__items[1]);
+
+  const result = await api(env, `/api/material-requisitions/${requisition.id}/items/${item.id}/cancel`, {
+    method: 'POST', auth: staffAuth('operations'), body: { reason: 'No longer needed' },
+  });
+
+  assert.equal(result.response.status, 409);
+  assert.deepEqual(env.__items[1], before);
 });
 
 test('operations can cancel an unneeded line so the remaining received lines can close', async () => {

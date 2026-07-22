@@ -6639,12 +6639,12 @@ async function handleChangePassword(request, env) {
       if (!ok) return errorResponse('旧密码错误');
       const newSalt = generateSalt();
       const newHash = await hashPasswordNew(newPassword, newSalt);
-      await env.DB.prepare(`
+      const mutation = env.DB.prepare(`
         UPDATE admin_staff_accounts
         SET password_hash = ?, salt = ?, must_change_password = 0, updated_at = datetime('now')
         WHERE id = ?
-      `).bind(newHash, newSalt, auth.staffId).run();
-      await writeAuditLog(env, request, {
+      `).bind(newHash, newSalt, auth.staffId);
+      await runAuditedWorkflowBatch(env, request, guardedWorkflowMutation(env, mutation), {
         targetType: 'admin_staff_account',
         targetId: auth.staffId,
         action: 'staff_password_changed',
@@ -8195,6 +8195,63 @@ const STAFF_ROLES = new Set(['admin', 'operations', 'warehouse', 'procurement'])
 const STAFF_MARKETS = new Set(['all', 'com', 'cn']);
 const REQUISITION_URGENCIES = new Set(['normal', 'urgent', 'critical']);
 const REQUISITION_TERMINAL_STATUSES = new Set(['rejected', 'cancelled', 'closed']);
+const REQUISITION_ITEM_CONCURRENCY_COLUMNS = [
+  'requested_quantity',
+  'stock_allocated_quantity',
+  'procurement_ordered_quantity',
+  'procurement_received_quantity',
+  'issued_quantity',
+  'returned_quantity',
+  'engineer_received_quantity',
+  'status',
+];
+
+function workflowMutationGuardStatement(env) {
+  return env.DB.prepare(`
+    SELECT CASE WHEN changes() = 1 THEN 1 ELSE json('material requisition concurrent update') END
+  `);
+}
+
+function guardedWorkflowMutation(env, statement) {
+  return [statement, workflowMutationGuardStatement(env)];
+}
+
+async function runAuditedWorkflowBatch(env, request, statements, auditData) {
+  if (typeof env.DB.batch !== 'function') throw new Error('Transactional D1 batch is required');
+  return env.DB.batch([...statements, buildAuditLogStatement(env, request, auditData)]);
+}
+
+function isWorkflowConcurrencyError(error) {
+  return /material requisition concurrent update|malformed json/i.test(String(error?.message || error));
+}
+
+function workflowErrorResponse(error, fallbackStatus = 500) {
+  if (isWorkflowConcurrencyError(error)) return errorResponse('数据已被更新，请刷新后重试', 409);
+  return errorResponse(error.message, fallbackStatus);
+}
+
+function conditionalItemUpdateStatements(env, item, next) {
+  const columns = Object.keys(next);
+  const statement = env.DB.prepare(`
+    UPDATE material_requisition_items
+    SET ${columns.map((column) => `${column} = ?`).join(', ')}, updated_at = datetime('now')
+    WHERE id = ? AND requisition_id = ?
+      ${REQUISITION_ITEM_CONCURRENCY_COLUMNS.map((column) => `AND ${column} = ?`).join('\n      ')}
+  `).bind(
+    ...columns.map((column) => next[column]),
+    item.id,
+    item.requisition_id,
+    ...REQUISITION_ITEM_CONCURRENCY_COLUMNS.map((column) => item[column]),
+  );
+  return guardedWorkflowMutation(env, statement);
+}
+
+function requisitionStatusGuardStatements(env, requisition) {
+  const statement = env.DB.prepare(`
+    UPDATE material_requisitions SET status = status WHERE id = ? AND status = ?
+  `).bind(requisition.id, requisition.status);
+  return guardedWorkflowMutation(env, statement);
+}
 
 function isBootstrapAdmin(auth) {
   return auth?.userType === 'admin' && !auth.staffId && auth.userId === 'admin';
@@ -8255,7 +8312,18 @@ async function handleAdminStaffCreate(request, env) {
     const temporaryPassword = generateTemporaryPassword();
     const salt = generateSalt();
     const passwordHash = await hashPasswordNew(temporaryPassword, salt);
-    await env.DB.prepare(`
+    const staff = {
+      id,
+      normalized_login: normalizedLogin,
+      normalized_phone: normalizedPhone || null,
+      role,
+      is_active: 1,
+      display_name: displayName,
+      market_scope: marketScope,
+      must_change_password: 1,
+      created_by: request._auth.userId,
+    };
+    const insert = env.DB.prepare(`
       INSERT INTO admin_staff_accounts (
         id, normalized_login, normalized_phone, password_hash, salt, role,
         display_name, market_scope, created_by
@@ -8263,9 +8331,8 @@ async function handleAdminStaffCreate(request, env) {
     `).bind(
       id, normalizedLogin, normalizedPhone || null, passwordHash, salt, role,
       displayName, marketScope, request._auth.userId,
-    ).run();
-    const staff = await env.DB.prepare('SELECT * FROM admin_staff_accounts WHERE id = ?').bind(id).first();
-    await writeAuditLog(env, request, {
+    );
+    await runAuditedWorkflowBatch(env, request, [insert], {
       targetType: 'admin_staff_account', targetId: id, action: 'staff_created',
       beforeState: null, afterState: publicStaffAccount(staff),
     });
@@ -8277,40 +8344,48 @@ async function handleAdminStaffCreate(request, env) {
 }
 
 async function handleAdminStaffDeactivate(request, env) {
-  if (!isBootstrapAdmin(request._auth)) return errorResponse('仅超级管理员可管理员工账号', 403);
-  const staffId = new URL(request.url).pathname.split('/')[4];
-  const staff = await env.DB.prepare('SELECT * FROM admin_staff_accounts WHERE id = ?').bind(staffId).first();
-  if (!staff) return errorResponse('员工账号不存在', 404);
-  await env.DB.prepare(`
-    UPDATE admin_staff_accounts SET is_active = 0, updated_at = datetime('now') WHERE id = ?
-  `).bind(staffId).run();
-  const updated = { ...staff, is_active: 0 };
-  await writeAuditLog(env, request, {
-    targetType: 'admin_staff_account', targetId: staffId, action: 'staff_deactivated',
-    beforeState: publicStaffAccount(staff), afterState: publicStaffAccount(updated),
-  });
-  return jsonResponse({ staff: publicStaffAccount(updated) });
+  try {
+    if (!isBootstrapAdmin(request._auth)) return errorResponse('仅超级管理员可管理员工账号', 403);
+    const staffId = new URL(request.url).pathname.split('/')[4];
+    const staff = await env.DB.prepare('SELECT * FROM admin_staff_accounts WHERE id = ?').bind(staffId).first();
+    if (!staff) return errorResponse('员工账号不存在', 404);
+    const updated = { ...staff, is_active: 0 };
+    const mutation = env.DB.prepare(`
+      UPDATE admin_staff_accounts SET is_active = 0, updated_at = datetime('now') WHERE id = ?
+    `).bind(staffId);
+    await runAuditedWorkflowBatch(env, request, guardedWorkflowMutation(env, mutation), {
+      targetType: 'admin_staff_account', targetId: staffId, action: 'staff_deactivated',
+      beforeState: publicStaffAccount(staff), afterState: publicStaffAccount(updated),
+    });
+    return jsonResponse({ staff: publicStaffAccount(updated) });
+  } catch (error) {
+    return workflowErrorResponse(error);
+  }
 }
 
 async function handleAdminStaffResetPassword(request, env) {
-  if (!isBootstrapAdmin(request._auth)) return errorResponse('仅超级管理员可管理员工账号', 403);
-  const staffId = new URL(request.url).pathname.split('/')[4];
-  const staff = await env.DB.prepare('SELECT * FROM admin_staff_accounts WHERE id = ?').bind(staffId).first();
-  if (!staff) return errorResponse('员工账号不存在', 404);
-  const temporaryPassword = generateTemporaryPassword();
-  const salt = generateSalt();
-  const passwordHash = await hashPasswordNew(temporaryPassword, salt);
-  await env.DB.prepare(`
-    UPDATE admin_staff_accounts
-    SET password_hash = ?, salt = ?, must_change_password = 1, updated_at = datetime('now')
-    WHERE id = ?
-  `).bind(passwordHash, salt, staffId).run();
-  await writeAuditLog(env, request, {
-    targetType: 'admin_staff_account', targetId: staffId, action: 'staff_temporary_password_reset',
-    beforeState: { must_change_password: Boolean(staff.must_change_password) },
-    afterState: { must_change_password: true },
-  });
-  return jsonResponse({ success: true, temporary_password: temporaryPassword });
+  try {
+    if (!isBootstrapAdmin(request._auth)) return errorResponse('仅超级管理员可管理员工账号', 403);
+    const staffId = new URL(request.url).pathname.split('/')[4];
+    const staff = await env.DB.prepare('SELECT * FROM admin_staff_accounts WHERE id = ?').bind(staffId).first();
+    if (!staff) return errorResponse('员工账号不存在', 404);
+    const temporaryPassword = generateTemporaryPassword();
+    const salt = generateSalt();
+    const passwordHash = await hashPasswordNew(temporaryPassword, salt);
+    const mutation = env.DB.prepare(`
+      UPDATE admin_staff_accounts
+      SET password_hash = ?, salt = ?, must_change_password = 1, updated_at = datetime('now')
+      WHERE id = ?
+    `).bind(passwordHash, salt, staffId);
+    await runAuditedWorkflowBatch(env, request, guardedWorkflowMutation(env, mutation), {
+      targetType: 'admin_staff_account', targetId: staffId, action: 'staff_temporary_password_reset',
+      beforeState: { must_change_password: Boolean(staff.must_change_password) },
+      afterState: { must_change_password: true },
+    });
+    return jsonResponse({ success: true, temporary_password: temporaryPassword });
+  } catch (error) {
+    return workflowErrorResponse(error);
+  }
 }
 
 async function requireActiveStaff(env, auth) {
@@ -8387,20 +8462,22 @@ async function handleCreateMaterialRequisition(request, env) {
     const lines = [];
     for (const item of body.items) lines.push(await normalizeRequisitionLine(env, item));
 
-    const id = generateId();
     const market = getRequestMarket(request);
-    const requisitionNo = generateRequisitionNumber(id);
-    await env.DB.prepare(`
-      INSERT INTO material_requisitions (
-        id, requisition_no, market, work_order_id, requested_by_type, requested_by_id,
-        status, urgency, required_date, purpose
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).bind(
-      id, requisitionNo, market, workOrderId, auth.userType, auth.userId, 'draft', urgency,
-      cleanText(body.required_date, 30) || null, cleanText(body.purpose, 600) || null,
-    ).run();
-    for (const line of lines) {
-      await env.DB.prepare(`
+    let id;
+    let requisitionNo;
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      id = generateId();
+      requisitionNo = generateRequisitionNumber(id);
+      const header = env.DB.prepare(`
+        INSERT INTO material_requisitions (
+          id, requisition_no, market, work_order_id, requested_by_type, requested_by_id,
+          status, urgency, required_date, purpose
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).bind(
+        id, requisitionNo, market, workOrderId, auth.userType, auth.userId, 'draft', urgency,
+        cleanText(body.required_date, 30) || null, cleanText(body.purpose, 600) || null,
+      );
+      const itemStatements = lines.map((line) => env.DB.prepare(`
         INSERT INTO material_requisition_items (
           id, requisition_id, material_id, material_code, name, name_en, spec, brand,
           unit, requested_quantity, notes
@@ -8408,13 +8485,33 @@ async function handleCreateMaterialRequisition(request, env) {
       `).bind(
         generateId(), id, line.materialId, line.materialCode, line.name, line.nameEn, line.spec,
         line.brand, line.unit, line.requestedQuantity, line.notes,
-      ).run();
+      ));
+      const auditAfterState = {
+        id,
+        requisition_no: requisitionNo,
+        market,
+        work_order_id: workOrderId,
+        requested_by_type: auth.userType,
+        requested_by_id: auth.userId,
+        status: 'draft',
+        urgency,
+        required_date: cleanText(body.required_date, 30) || null,
+        purpose: cleanText(body.purpose, 600) || null,
+        items: lines,
+      };
+      try {
+        await runAuditedWorkflowBatch(env, request, [header, ...itemStatements], {
+          targetType: 'material_requisition', targetId: id, action: 'material_requisition_created',
+          beforeState: null, afterState: auditAfterState,
+        });
+        break;
+      } catch (error) {
+        if (!/UNIQUE constraint failed: material_requisitions\.requisition_no/i.test(String(error?.message || '')) || attempt === 2) {
+          throw error;
+        }
+      }
     }
     const requisition = await getRequisitionWithItems(env, id);
-    await writeAuditLog(env, request, {
-      targetType: 'material_requisition', targetId: id, action: 'material_requisition_created',
-      beforeState: null, afterState: requisition,
-    });
     return jsonResponse({ requisition }, 201);
   } catch (error) {
     return errorResponse(error.message, /required|positive|not found/i.test(error.message) ? 400 : 500);
@@ -8447,33 +8544,32 @@ async function handleGetMaterialRequisition(request, env) {
   return jsonResponse({ requisition });
 }
 
-async function updateRequisitionStatus(env, requisitionId, status) {
-  await env.DB.prepare(`
-    UPDATE material_requisitions SET status = ?, updated_at = datetime('now') WHERE id = ?
-  `).bind(status, requisitionId).run();
-}
-
 async function handleSubmitMaterialRequisition(request, env) {
-  const requisitionId = new URL(request.url).pathname.split('/')[3];
-  const requisition = await getRequisitionWithItems(env, requisitionId);
-  if (!requisition) return errorResponse('领料申请不存在', 404);
-  const workOrder = await env.DB.prepare(`
-    SELECT id, customer_id, engineer_id, assigned_regional_lead_id, status FROM work_orders WHERE id = ?
-  `).bind(requisition.work_order_id).first();
-  if (request._auth.userType !== 'engineer' || workOrder?.engineer_id !== request._auth.userId) {
-    return errorResponse('仅创建申请的工程师可提交', 403);
+  try {
+    const requisitionId = new URL(request.url).pathname.split('/')[3];
+    const requisition = await getRequisitionWithItems(env, requisitionId);
+    if (!requisition) return errorResponse('领料申请不存在', 404);
+    const workOrder = await env.DB.prepare(`
+      SELECT id, customer_id, engineer_id, assigned_regional_lead_id, status FROM work_orders WHERE id = ?
+    `).bind(requisition.work_order_id).first();
+    if (request._auth.userType !== 'engineer' || workOrder?.engineer_id !== request._auth.userId) {
+      return errorResponse('仅创建申请的工程师可提交', 403);
+    }
+    if (requisition.status !== 'draft') return errorResponse('仅草稿可提交', 409);
+    if (!requisition.items.length || requisition.items.some((item) => Number(item.requested_quantity) <= 0)) {
+      return errorResponse('提交的领料申请必须包含正数数量物料', 400);
+    }
+    const mutation = env.DB.prepare(`
+      UPDATE material_requisitions SET status = ?, updated_at = datetime('now') WHERE id = ? AND status = ?
+    `).bind('submitted', requisitionId, requisition.status);
+    await runAuditedWorkflowBatch(env, request, guardedWorkflowMutation(env, mutation), {
+      targetType: 'material_requisition', targetId: requisitionId, action: 'material_requisition_submitted',
+      beforeState: { status: requisition.status }, afterState: { status: 'submitted' },
+    });
+    return jsonResponse({ requisition: { ...requisition, status: 'submitted' } });
+  } catch (error) {
+    return workflowErrorResponse(error);
   }
-  if (requisition.status !== 'draft') return errorResponse('仅草稿可提交', 409);
-  if (!requisition.items.length || requisition.items.some((item) => Number(item.requested_quantity) <= 0)) {
-    return errorResponse('提交的领料申请必须包含正数数量物料', 400);
-  }
-  await updateRequisitionStatus(env, requisitionId, 'submitted');
-  const updated = { ...requisition, status: 'submitted' };
-  await writeAuditLog(env, request, {
-    targetType: 'material_requisition', targetId: requisitionId, action: 'material_requisition_submitted',
-    beforeState: { status: requisition.status }, afterState: { status: 'submitted' },
-  });
-  return jsonResponse({ requisition: updated });
 }
 
 async function handleRequisitionDecision(request, env, action) {
@@ -8492,35 +8588,50 @@ async function handleRequisitionDecision(request, env, action) {
     nextStatus = 'rejected';
   } else {
     if (REQUISITION_TERMINAL_STATUSES.has(requisition.status)) return errorResponse('当前申请不可取消', 409);
+    if (requisition.items.some((item) => Number(item.procurement_received_quantity || 0) > 0
+      || Number(item.issued_quantity || 0) > 0
+      || Number(item.engineer_received_quantity || 0) > 0)) {
+      return errorResponse('已发料或签收的申请不能取消，请先完成允许的退库处理', 409);
+    }
     nextStatus = 'cancelled';
   }
   const reason = cleanText(body.reason, 600) || null;
+  let mutation;
   if (action === 'approve') {
-    await env.DB.prepare(`
+    mutation = env.DB.prepare(`
       UPDATE material_requisitions
       SET status = ?, approved_by = ?, approved_at = datetime('now'), updated_at = datetime('now')
-      WHERE id = ?
-    `).bind(nextStatus, request._auth.staffId || request._auth.userId, requisitionId).run();
+      WHERE id = ? AND status = ?
+    `).bind(nextStatus, request._auth.staffId || request._auth.userId, requisitionId, requisition.status);
   } else if (action === 'reject') {
-    await env.DB.prepare(`
+    mutation = env.DB.prepare(`
       UPDATE material_requisitions
       SET status = ?, rejection_reason = ?, updated_at = datetime('now')
-      WHERE id = ?
-    `).bind(nextStatus, reason, requisitionId).run();
+      WHERE id = ? AND status = ?
+    `).bind(nextStatus, reason, requisitionId, requisition.status);
   } else {
-    await env.DB.prepare(`
+    mutation = env.DB.prepare(`
       UPDATE material_requisitions
       SET status = ?, cancellation_reason = ?, cancelled_at = datetime('now'), updated_at = datetime('now')
-      WHERE id = ?
-    `).bind(nextStatus, reason, requisitionId).run();
+      WHERE id = ? AND status = ?
+        AND NOT EXISTS (
+          SELECT 1 FROM material_requisition_items
+          WHERE requisition_id = material_requisitions.id
+            AND (procurement_received_quantity > 0 OR issued_quantity > 0 OR engineer_received_quantity > 0)
+        )
+    `).bind(nextStatus, reason, requisitionId, requisition.status);
   }
-  await writeAuditLog(env, request, {
-    targetType: 'material_requisition', targetId: requisitionId,
-    action: `material_requisition_${{ approve: 'approved', reject: 'rejected', cancel: 'cancelled' }[action]}`,
-    beforeState: { status: requisition.status },
-    afterState: { status: nextStatus, reason },
-  });
-  return jsonResponse({ requisition: await getRequisitionWithItems(env, requisitionId) });
+  try {
+    await runAuditedWorkflowBatch(env, request, guardedWorkflowMutation(env, mutation), {
+      targetType: 'material_requisition', targetId: requisitionId,
+      action: `material_requisition_${{ approve: 'approved', reject: 'rejected', cancel: 'cancelled' }[action]}`,
+      beforeState: { status: requisition.status },
+      afterState: { status: nextStatus, reason },
+    });
+    return jsonResponse({ requisition: await getRequisitionWithItems(env, requisitionId) });
+  } catch (error) {
+    return workflowErrorResponse(error);
+  }
 }
 
 function fulfillmentValues(item, overrides = {}) {
@@ -8555,10 +8666,20 @@ async function buildInventoryMovementStatements(env, request, item, delta, chang
   const beforeQuantity = Number(material.stock_quantity || 0);
   const afterQuantity = beforeQuantity + delta;
   if (afterQuantity < 0) throw new Error('Insufficient material stock');
+  const quantity = Math.abs(delta);
+  const stockMutation = delta < 0
+    ? env.DB.prepare(`
+        UPDATE materials
+        SET stock_quantity = stock_quantity - ?, updated_at = datetime('now')
+        WHERE id = ? AND stock_quantity = ? AND stock_quantity >= ?
+      `).bind(quantity, item.material_id, beforeQuantity, quantity)
+    : env.DB.prepare(`
+        UPDATE materials
+        SET stock_quantity = stock_quantity + ?, updated_at = datetime('now')
+        WHERE id = ? AND stock_quantity = ?
+      `).bind(quantity, item.material_id, beforeQuantity);
   return [
-    env.DB.prepare(`
-      UPDATE materials SET stock_quantity = stock_quantity + ?, updated_at = datetime('now') WHERE id = ?
-    `).bind(delta, item.material_id),
+    ...guardedWorkflowMutation(env, stockMutation),
     env.DB.prepare(`
       INSERT INTO material_inventory_adjustments (
         id, material_id, change_type, delta, before_quantity, after_quantity, reason, created_by
@@ -8570,22 +8691,27 @@ async function buildInventoryMovementStatements(env, request, item, delta, chang
   ];
 }
 
-async function refreshRequisitionStatus(env, requisition) {
-  const current = await getRequisitionWithItems(env, requisition.id);
-  const nextStatus = deriveRequisitionStatus(current, current.items);
-  if (nextStatus !== current.status) {
-    if (nextStatus === 'received') {
-      await env.DB.prepare(`
-        UPDATE material_requisitions
-        SET status = ?, received_at = COALESCE(received_at, datetime('now')), updated_at = datetime('now')
-        WHERE id = ?
-      `).bind(nextStatus, current.id).run();
-    } else {
-      await updateRequisitionStatus(env, current.id, nextStatus);
-    }
-    return getRequisitionWithItems(env, current.id);
+function requisitionHeaderMutationStatements(env, requisition, items, action, actorId) {
+  const nextStatus = deriveRequisitionStatus(requisition, items);
+  const assignments = ['status = ?', 'updated_at = datetime(\'now\')'];
+  const values = [nextStatus];
+  if (['allocate_stock', 'issue', 'return'].includes(action)
+    || (action === 'receive_purchase' && actorId.role === 'warehouse')) {
+    assignments.push('assigned_warehouse_staff_id = ?');
+    values.push(actorId.id);
+    if (action === 'issue') assignments.push("issued_at = COALESCE(issued_at, datetime('now'))");
   }
-  return current;
+  if (action === 'record_purchase' || (action === 'receive_purchase' && actorId.role !== 'warehouse')) {
+    assignments.push('assigned_procurement_staff_id = ?');
+    values.push(actorId.id);
+  }
+  if (nextStatus === 'received') assignments.push("received_at = COALESCE(received_at, datetime('now'))");
+  const mutation = env.DB.prepare(`
+    UPDATE material_requisitions
+    SET ${assignments.join(', ')}
+    WHERE id = ? AND status = ?
+  `).bind(...values, requisition.id, requisition.status);
+  return guardedWorkflowMutation(env, mutation);
 }
 
 async function handleRequisitionLineAction(request, env, action) {
@@ -8609,10 +8735,11 @@ async function handleRequisitionLineAction(request, env, action) {
     if (action === 'allocate_stock' && !item.material_id) {
       return errorResponse('自由录入物料不能分配台账库存，请走采购流程', 400);
     }
+    let allocatedMaterial = null;
     if (action === 'allocate_stock') {
-      const material = await env.DB.prepare('SELECT * FROM materials WHERE id = ?').bind(item.material_id).first();
+      allocatedMaterial = await env.DB.prepare('SELECT * FROM materials WHERE id = ?').bind(item.material_id).first();
       const allocated = Number(item.stock_allocated_quantity || 0) + quantity;
-      if (!material || allocated > Number(material.stock_quantity || 0)) {
+      if (!allocatedMaterial || allocated > Number(allocatedMaterial.stock_quantity || 0)) {
         return errorResponse('库存分配数量不能超过当前库存', 400);
       }
     }
@@ -8642,50 +8769,38 @@ async function handleRequisitionLineAction(request, env, action) {
     );
     next.status = deriveApiItemStatus(item, next);
 
-    const columns = Object.keys(next);
-    const itemUpdate = env.DB.prepare(`
-      UPDATE material_requisition_items
-      SET ${columns.map((column) => `${column} = ?`).join(', ')}, updated_at = datetime('now')
-      WHERE id = ? AND requisition_id = ?
-    `).bind(...columns.map((column) => next[column]), itemId, requisitionId);
     let inventoryStatements = [];
-    if (action === 'receive_purchase') {
+    if (action === 'allocate_stock') {
+      const stockQuantity = Number(allocatedMaterial.stock_quantity || 0);
+      const allocationGuard = env.DB.prepare(`
+        UPDATE materials SET stock_quantity = stock_quantity
+        WHERE id = ? AND stock_quantity = ? AND stock_quantity >= ?
+      `).bind(item.material_id, stockQuantity, next.stock_allocated_quantity);
+      inventoryStatements = guardedWorkflowMutation(env, allocationGuard);
+    } else if (action === 'receive_purchase') {
       inventoryStatements = await buildInventoryMovementStatements(env, request, item, quantity, 'procurement_receipt', action);
     } else if (action === 'issue') {
       inventoryStatements = await buildInventoryMovementStatements(env, request, item, -quantity, 'requisition_issue', action);
     } else if (action === 'return') {
       inventoryStatements = await buildInventoryMovementStatements(env, request, item, quantity, 'requisition_return', action);
     }
-    if (inventoryStatements.length && typeof env.DB.batch === 'function') {
-      await env.DB.batch([...inventoryStatements, itemUpdate]);
-    } else {
-      for (const statement of inventoryStatements) await statement.run();
-      await itemUpdate.run();
-    }
-    if (action === 'allocate_stock' || action === 'issue' || action === 'return'
-      || (action === 'receive_purchase' && role === 'warehouse')) {
-      const issuedAtClause = action === 'issue' ? ", issued_at = COALESCE(issued_at, datetime('now'))" : '';
-      await env.DB.prepare(`
-        UPDATE material_requisitions
-        SET assigned_warehouse_staff_id = ?, updated_at = datetime('now')${issuedAtClause}
-        WHERE id = ?
-      `).bind(request._auth.staffId || request._auth.userId, requisitionId).run();
-    }
-    if (action === 'record_purchase' || (action === 'receive_purchase' && role !== 'warehouse')) {
-      await env.DB.prepare(`
-        UPDATE material_requisitions
-        SET assigned_procurement_staff_id = ?, updated_at = datetime('now')
-        WHERE id = ?
-      `).bind(request._auth.staffId || request._auth.userId, requisitionId).run();
-    }
-    const updated = await refreshRequisitionStatus(env, requisition);
-    await writeAuditLog(env, request, {
+    const nextItems = requisition.items.map((entry) => entry.id === item.id ? { ...entry, ...next } : entry);
+    const headerStatements = requisitionHeaderMutationStatements(env, requisition, nextItems, action, {
+      id: request._auth.staffId || request._auth.userId,
+      role,
+    });
+    await runAuditedWorkflowBatch(env, request, [
+      ...inventoryStatements,
+      ...conditionalItemUpdateStatements(env, item, next),
+      ...headerStatements,
+    ], {
       targetType: 'material_requisition_item', targetId: itemId,
       action: `material_requisition_${action}`,
       beforeState: item, afterState: { ...item, ...next },
     });
-    return jsonResponse({ requisition: updated });
+    return jsonResponse({ requisition: await getRequisitionWithItems(env, requisitionId) });
   } catch (error) {
+    if (isWorkflowConcurrencyError(error)) return workflowErrorResponse(error);
     return errorResponse(error.message, /stock|quantity|requested|ordered|available|issued|aggregate/i.test(error.message) ? 400 : 500);
   }
 }
@@ -8695,6 +8810,9 @@ async function handleEngineerRequisitionReceipt(request, env) {
     const requisitionId = new URL(request.url).pathname.split('/')[3];
     const requisition = await getRequisitionWithItems(env, requisitionId);
     if (!requisition) return errorResponse('领料申请不存在', 404);
+    if (REQUISITION_TERMINAL_STATUSES.has(requisition.status)) {
+      return errorResponse('当前申请状态不可确认签收', 409);
+    }
     const workOrder = await env.DB.prepare(`
       SELECT id, customer_id, engineer_id, assigned_regional_lead_id, status FROM work_orders WHERE id = ?
     `).bind(requisition.work_order_id).first();
@@ -8715,19 +8833,20 @@ async function handleEngineerRequisitionReceipt(request, env) {
       engineer_received_quantity: engineerReceived,
       status: deriveApiItemStatus(item, { engineer_received_quantity: engineerReceived }),
     };
-    await env.DB.prepare(`
-      UPDATE material_requisition_items
-      SET engineer_received_quantity = ?, status = ?, updated_at = datetime('now')
-      WHERE id = ? AND requisition_id = ?
-    `).bind(engineerReceived, next.status, item.id, requisitionId).run();
-    const updated = await refreshRequisitionStatus(env, requisition);
-    await writeAuditLog(env, request, {
+    const nextItems = requisition.items.map((entry) => entry.id === item.id ? { ...entry, ...next } : entry);
+    await runAuditedWorkflowBatch(env, request, [
+      ...conditionalItemUpdateStatements(env, item, next),
+      ...requisitionHeaderMutationStatements(env, requisition, nextItems, 'engineer_receipt', {
+        id: request._auth.userId,
+        role: 'engineer',
+      }),
+    ], {
       targetType: 'material_requisition_item', targetId: item.id,
       action: 'material_requisition_engineer_receipt', beforeState: item, afterState: { ...item, ...next },
     });
-    return jsonResponse({ requisition: updated });
+    return jsonResponse({ requisition: await getRequisitionWithItems(env, requisitionId) });
   } catch (error) {
-    return errorResponse(error.message, 500);
+    return workflowErrorResponse(error);
   }
 }
 
@@ -8749,18 +8868,20 @@ async function handleUpdateRequisitionProcurement(request, env) {
   if (!item) return errorResponse('领料明细不存在', 404);
   const supplierReference = cleanText(body.supplier_reference, 200) || null;
   const expectedArrival = cleanText(body.expected_arrival, 30) || null;
-  await env.DB.prepare(`
-    UPDATE material_requisition_items
-    SET supplier_reference = ?, expected_arrival = ?, updated_at = datetime('now')
-    WHERE id = ? AND requisition_id = ?
-  `).bind(supplierReference, expectedArrival, item.id, requisitionId).run();
-  const updated = await getRequisitionWithItems(env, requisitionId);
-  await writeAuditLog(env, request, {
-    targetType: 'material_requisition_item', targetId: item.id,
-    action: 'material_requisition_procurement_updated', beforeState: item,
-    afterState: { ...item, supplier_reference: supplierReference, expected_arrival: expectedArrival },
-  });
-  return jsonResponse({ requisition: updated });
+  try {
+    const next = { supplier_reference: supplierReference, expected_arrival: expectedArrival };
+    await runAuditedWorkflowBatch(env, request, [
+      ...conditionalItemUpdateStatements(env, item, next),
+      ...requisitionStatusGuardStatements(env, requisition),
+    ], {
+      targetType: 'material_requisition_item', targetId: item.id,
+      action: 'material_requisition_procurement_updated', beforeState: item,
+      afterState: { ...item, ...next },
+    });
+    return jsonResponse({ requisition: await getRequisitionWithItems(env, requisitionId) });
+  } catch (error) {
+    return workflowErrorResponse(error);
+  }
 }
 
 async function handleCloseMaterialRequisition(request, env) {
@@ -8769,17 +8890,22 @@ async function handleCloseMaterialRequisition(request, env) {
   const requisitionId = new URL(request.url).pathname.split('/')[3];
   const requisition = await getRequisitionWithItems(env, requisitionId);
   if (!requisition) return errorResponse('领料申请不存在', 404);
+  if (REQUISITION_TERMINAL_STATUSES.has(requisition.status)) return errorResponse('当前申请不可关闭', 409);
   if (!canCloseMaterialRequisition(requisition.items)) return errorResponse('仅全部签收或取消的申请可关闭', 409);
-  await env.DB.prepare(`
-    UPDATE material_requisitions
-    SET status = 'closed', closed_at = datetime('now'), updated_at = datetime('now')
-    WHERE id = ?
-  `).bind(requisitionId).run();
-  await writeAuditLog(env, request, {
-    targetType: 'material_requisition', targetId: requisitionId, action: 'material_requisition_closed',
-    beforeState: { status: requisition.status }, afterState: { status: 'closed' },
-  });
-  return jsonResponse({ requisition: await getRequisitionWithItems(env, requisitionId) });
+  try {
+    const mutation = env.DB.prepare(`
+      UPDATE material_requisitions
+      SET status = 'closed', closed_at = datetime('now'), updated_at = datetime('now')
+      WHERE id = ? AND status = ?
+    `).bind(requisitionId, requisition.status);
+    await runAuditedWorkflowBatch(env, request, guardedWorkflowMutation(env, mutation), {
+      targetType: 'material_requisition', targetId: requisitionId, action: 'material_requisition_closed',
+      beforeState: { status: requisition.status }, afterState: { status: 'closed' },
+    });
+    return jsonResponse({ requisition: await getRequisitionWithItems(env, requisitionId) });
+  } catch (error) {
+    return workflowErrorResponse(error);
+  }
 }
 
 async function handleCancelRequisitionItem(request, env) {
@@ -8795,24 +8921,32 @@ async function handleCancelRequisitionItem(request, env) {
     SELECT * FROM material_requisition_items WHERE id = ? AND requisition_id = ?
   `).bind(itemId, requisitionId).first();
   if (!item) return errorResponse('领料明细不存在', 404);
-  if (Number(item.issued_quantity || 0) > 0 || Number(item.engineer_received_quantity || 0) > 0) {
-    return errorResponse('已发料或签收的明细不能取消', 409);
+  if (Number(item.procurement_received_quantity || 0) > 0
+    || Number(item.issued_quantity || 0) > 0
+    || Number(item.engineer_received_quantity || 0) > 0) {
+    return errorResponse('已采购入库、发料或签收的明细不能取消', 409);
   }
   const body = await request.json().catch(() => ({}));
   const reason = cleanText(body.reason, 600);
   const notes = [cleanText(item.notes, 600), reason].filter(Boolean).join('\n').slice(0, 600) || null;
-  await env.DB.prepare(`
-    UPDATE material_requisition_items
-    SET status = ?, notes = ?, updated_at = datetime('now')
-    WHERE id = ? AND requisition_id = ?
-  `).bind('cancelled', notes, itemId, requisitionId).run();
-  const updated = await refreshRequisitionStatus(env, requisition);
-  await writeAuditLog(env, request, {
-    targetType: 'material_requisition_item', targetId: itemId,
-    action: 'material_requisition_item_cancelled', beforeState: item,
-    afterState: { ...item, status: 'cancelled', notes },
-  });
-  return jsonResponse({ requisition: updated });
+  try {
+    const next = { status: 'cancelled', notes };
+    const nextItems = requisition.items.map((entry) => entry.id === item.id ? { ...entry, ...next } : entry);
+    await runAuditedWorkflowBatch(env, request, [
+      ...conditionalItemUpdateStatements(env, item, next),
+      ...requisitionHeaderMutationStatements(env, requisition, nextItems, 'cancel_item', {
+        id: request._auth.staffId || request._auth.userId,
+        role,
+      }),
+    ], {
+      targetType: 'material_requisition_item', targetId: itemId,
+      action: 'material_requisition_item_cancelled', beforeState: item,
+      afterState: { ...item, ...next },
+    });
+    return jsonResponse({ requisition: await getRequisitionWithItems(env, requisitionId) });
+  } catch (error) {
+    return workflowErrorResponse(error);
+  }
 }
 
 async function handleSearchMaterials(request, env) {
