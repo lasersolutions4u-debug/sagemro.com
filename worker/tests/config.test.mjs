@@ -28,6 +28,30 @@ test('allows the local engineer frontend origin during development', async () =>
   assert.equal(response.headers.get('Access-Control-Allow-Origin'), 'http://127.0.0.1:3000');
 });
 
+test('API responses include baseline security headers without replacing CORS', async () => {
+  const response = await worker.fetch(new Request('https://api.sagemro.com/health', {
+    headers: { Origin: 'https://sagemro.com' },
+  }), { ENVIRONMENT: 'production' }, {});
+
+  assert.equal(response.headers.get('Access-Control-Allow-Origin'), 'https://sagemro.com');
+  assert.equal(response.headers.get('Content-Security-Policy'), "default-src 'none'; frame-ancestors 'none'; base-uri 'none'");
+  assert.equal(response.headers.get('Strict-Transport-Security'), 'max-age=31536000; includeSubDomains');
+  assert.equal(response.headers.get('X-Content-Type-Options'), 'nosniff');
+  assert.equal(response.headers.get('X-Frame-Options'), 'DENY');
+  assert.equal(response.headers.get('Referrer-Policy'), 'strict-origin-when-cross-origin');
+  assert.equal(response.headers.get('Permissions-Policy'), 'camera=(), microphone=(), geolocation=()');
+});
+
+test('development HTTP API responses do not force HSTS', async () => {
+  const response = await worker.fetch(new Request('http://127.0.0.1:8787/health', {
+    headers: { Origin: 'http://127.0.0.1:3000' },
+  }), { ENVIRONMENT: 'development' }, {});
+
+  assert.equal(response.headers.get('Access-Control-Allow-Origin'), 'http://127.0.0.1:3000');
+  assert.equal(response.headers.get('Strict-Transport-Security'), null);
+  assert.equal(response.headers.get('X-Content-Type-Options'), 'nosniff');
+});
+
 test('schema snapshot includes the current work-order workflow migrations', () => {
   const schema = readFileSync(new URL('../schema.sql', import.meta.url), 'utf8');
 
