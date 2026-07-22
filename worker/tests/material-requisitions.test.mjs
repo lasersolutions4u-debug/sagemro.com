@@ -766,11 +766,12 @@ test('two requisitions cannot reserve more than shared physical stock', async ()
     method: 'POST', auth: staffAuth('warehouse'), idempotencyKey: 'return-first',
     body: { item_id: first.items[0].id, quantity: 2 },
   })).response.status, 200);
-  assert.deepEqual([env.__materials[0].stock_quantity, env.__materials[0].reserved_quantity], [5, 2]);
+  assert.deepEqual([env.__materials[0].stock_quantity, env.__materials[0].reserved_quantity], [5, 0]);
   assert.equal((await api(env, `/api/material-requisitions/${second.id}/stock-allocation`, {
     method: 'POST', auth: staffAuth('warehouse'), idempotencyKey: 'reserve-second-after-return',
     body: { item_id: second.items[0].id, quantity: 4 },
-  })).response.status, 409);
+  })).response.status, 200);
+  assert.equal(env.__materials[0].reserved_quantity, 4);
 });
 
 test('purchased stock stays reserved to its requisition until issue or cancellation', async () => {
@@ -809,11 +810,14 @@ test('purchased stock stays reserved to its requisition until issue or cancellat
   assert.equal(env.__materials[1].reserved_quantity, 2);
 });
 
-test('stock issue consumes reservations and stock return restores material-backed demand', async () => {
+test('warehouse return releases stock without completing or reserving outstanding demand', async () => {
   const env = createEnv();
   const requisition = await createAndSubmit(env);
   const item = requisition.items[0];
   await api(env, `/api/material-requisitions/${requisition.id}/approve`, { method: 'POST', auth: staffAuth('operations') });
+  await api(env, `/api/material-requisitions/${requisition.id}/items/${requisition.items[1].id}/cancel`, {
+    method: 'POST', auth: staffAuth('operations'), body: { reason: 'Not required' },
+  });
   await api(env, `/api/material-requisitions/${requisition.id}/stock-allocation`, {
     method: 'POST', auth: staffAuth('warehouse'), body: { item_id: item.id, quantity: 2 },
   });
@@ -824,10 +828,62 @@ test('stock issue consumes reservations and stock return restores material-backe
   });
   assert.deepEqual([env.__materials[0].stock_quantity, env.__materials[0].reserved_quantity], [8, 0]);
 
+  const returned = await api(env, `/api/material-requisitions/${requisition.id}/return`, {
+    method: 'POST', auth: staffAuth('warehouse'), body: { item_id: item.id, quantity: 1 },
+  });
+  assert.equal(returned.response.status, 200);
+  assert.deepEqual([env.__materials[0].stock_quantity, env.__materials[0].reserved_quantity], [9, 0]);
+  assert.equal(env.__items[0].issued_quantity, 1);
+  assert.equal(env.__items[0].returned_quantity, 1);
+  assert.equal(env.__items[0].status, 'partially_ready');
+
+  const receivedNetIssue = await api(env, `/api/material-requisitions/${requisition.id}/engineer-receipt`, {
+    method: 'POST', body: { item_id: item.id, quantity: 1 },
+  });
+  assert.equal(receivedNetIssue.response.status, 200);
+  assert.equal(env.__items[0].status, 'partially_ready');
+
+  const close = await api(env, `/api/material-requisitions/${requisition.id}/close`, {
+    method: 'POST', auth: staffAuth('operations'),
+  });
+  assert.equal(close.response.status, 409);
+});
+
+test('returned stock can be reissued and fully received without leaving a reservation', async () => {
+  const env = createEnv();
+  const requisition = await createAndSubmit(env);
+  const item = requisition.items[0];
+  await api(env, `/api/material-requisitions/${requisition.id}/approve`, { method: 'POST', auth: staffAuth('operations') });
+  await api(env, `/api/material-requisitions/${requisition.id}/items/${requisition.items[1].id}/cancel`, {
+    method: 'POST', auth: staffAuth('operations'), body: { reason: 'Not required' },
+  });
+  await api(env, `/api/material-requisitions/${requisition.id}/stock-allocation`, {
+    method: 'POST', auth: staffAuth('warehouse'), body: { item_id: item.id, quantity: 2 },
+  });
+  await api(env, `/api/material-requisitions/${requisition.id}/issue`, {
+    method: 'POST', auth: staffAuth('warehouse'), body: { item_id: item.id, quantity: 2 },
+  });
   await api(env, `/api/material-requisitions/${requisition.id}/return`, {
     method: 'POST', auth: staffAuth('warehouse'), body: { item_id: item.id, quantity: 1 },
   });
-  assert.deepEqual([env.__materials[0].stock_quantity, env.__materials[0].reserved_quantity], [9, 1]);
+
+  const reissued = await api(env, `/api/material-requisitions/${requisition.id}/issue`, {
+    method: 'POST', auth: staffAuth('warehouse'), body: { item_id: item.id, quantity: 1 },
+  });
+  assert.equal(reissued.response.status, 200);
+  assert.deepEqual([env.__materials[0].stock_quantity, env.__materials[0].reserved_quantity], [8, 0]);
+  assert.equal(env.__items[0].issued_quantity, 2);
+  assert.equal(env.__items[0].returned_quantity, 1);
+
+  const received = await api(env, `/api/material-requisitions/${requisition.id}/engineer-receipt`, {
+    method: 'POST', body: { item_id: item.id, quantity: 2 },
+  });
+  assert.equal(received.response.status, 200);
+  const closed = await api(env, `/api/material-requisitions/${requisition.id}/close`, {
+    method: 'POST', auth: staffAuth('operations'),
+  });
+  assert.equal(closed.response.status, 200);
+  assert.equal(env.__materials[0].reserved_quantity, 0);
 });
 
 test('cancelling an allocated unissued line releases its stock reservation', async () => {
@@ -986,7 +1042,14 @@ test('operations, warehouse, procurement, and engineer complete a mixed fulfillm
   assert.equal(returned.response.status, 200);
   assert.equal(env.__materials[1].stock_quantity, 1);
 
-  for (const [itemId, quantity] of [[stockItem.id, 2], [buyItem.id, 2]]) {
+  const reissuedBuy = await api(env, `/api/material-requisitions/${requisition.id}/issue`, {
+    method: 'POST',
+    auth: staffAuth('warehouse'),
+    body: { item_id: buyItem.id, quantity: 1 },
+  });
+  assert.equal(reissuedBuy.response.status, 200);
+
+  for (const [itemId, quantity] of [[stockItem.id, 2], [buyItem.id, 3]]) {
     const receipt = await api(env, `/api/material-requisitions/${requisition.id}/engineer-receipt`, {
       method: 'POST',
       body: { item_id: itemId, quantity },
@@ -998,12 +1061,13 @@ test('operations, warehouse, procurement, and engineer complete a mixed fulfillm
   assert.equal(closed.response.status, 200);
   assert.equal(closed.json.requisition.status, 'closed');
   assert.equal(env.__requisitions[0].closed_at, env.__now);
-  assert.equal(env.__adjustments.length, 4);
+  assert.equal(env.__adjustments.length, 5);
   assert.deepEqual(env.__adjustments.map((entry) => entry.args.slice(3, 6)), [
     [3, 0, 3],
     [-2, 10, 8],
     [-3, 3, 0],
     [1, 0, 1],
+    [-1, 1, 0],
   ]);
   assert.ok(env.__auditLogs.length >= 11);
 });

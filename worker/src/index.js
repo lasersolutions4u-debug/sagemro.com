@@ -8696,9 +8696,7 @@ function fulfillmentValues(item, overrides = {}) {
 }
 
 function deriveApiItemStatus(item, overrides = {}) {
-  const returned = Number(overrides.returned_quantity ?? item.returned_quantity ?? 0);
   const values = fulfillmentValues(item, overrides);
-  if (values.engineerReceived + returned >= values.requested) return 'received';
   return deriveItemStatus(values);
 }
 
@@ -8715,7 +8713,7 @@ function outstandingItemReservation(item, overrides = {}) {
     Number(overrides.stock_allocated_quantity ?? item.stock_allocated_quantity ?? 0)
       + Number(overrides.procurement_received_quantity ?? item.procurement_received_quantity ?? 0)
       - Number(overrides.issued_quantity ?? item.issued_quantity ?? 0)
-      + Number(overrides.returned_quantity ?? item.returned_quantity ?? 0),
+      - Number(overrides.returned_quantity ?? item.returned_quantity ?? 0),
   );
 }
 
@@ -8912,10 +8910,11 @@ async function handleRequisitionLineAction(request, env, action) {
           + Math.min(quantity, remainingAllocatedStock);
       }
     } else if (action === 'return') {
-      next.returned_quantity = Number(item.returned_quantity || 0) + quantity;
-      if (next.returned_quantity > Number(item.issued_quantity || 0) - Number(item.engineer_received_quantity || 0)) {
+      if (quantity > Number(item.issued_quantity || 0) - Number(item.engineer_received_quantity || 0)) {
         return errorResponse('退库数量不能超过未签收发料数量', 400);
       }
+      next.issued_quantity = Number(item.issued_quantity || 0) - quantity;
+      next.returned_quantity = Number(item.returned_quantity || 0) + quantity;
     }
 
     validateFulfillmentQuantities(fulfillmentValues(item, next));
@@ -8938,16 +8937,18 @@ async function handleRequisitionLineAction(request, env, action) {
         stockDelta: quantity, reservedDelta: quantity, changeType: 'procurement_receipt', action,
       });
     } else if (action === 'issue') {
+      const reservedIssueQuantity = Math.min(quantity, outstandingItemReservation(item));
       inventoryStatements = await buildInventoryMovementStatements(env, request, item, {
         stockDelta: -quantity,
-        reservedDelta: -quantity,
-        requiredReserved: quantity,
+        reservedDelta: -reservedIssueQuantity,
+        requiredUnreserved: quantity - reservedIssueQuantity,
+        requiredReserved: reservedIssueQuantity,
         changeType: 'requisition_issue',
         action,
       });
     } else if (action === 'return') {
       inventoryStatements = await buildInventoryMovementStatements(env, request, item, {
-        stockDelta: quantity, reservedDelta: quantity, changeType: 'requisition_return', action,
+        stockDelta: quantity, changeType: 'requisition_return', action,
       });
     }
     const headerStatements = requisitionHeaderMutationStatements(env, requisition, action, {
@@ -9014,7 +9015,7 @@ async function handleEngineerRequisitionReceipt(request, env) {
     `).bind(itemId, requisitionId).first();
     if (!item) return errorResponse('领料明细不存在', 404);
     const engineerReceived = Number(item.engineer_received_quantity || 0) + quantity;
-    const issuedAvailable = Number(item.issued_quantity || 0) - Number(item.returned_quantity || 0);
+    const issuedAvailable = Number(item.issued_quantity || 0);
     if (engineerReceived > issuedAvailable) return errorResponse('签收数量不能超过净发料数量', 400);
     const next = {
       engineer_received_quantity: engineerReceived,

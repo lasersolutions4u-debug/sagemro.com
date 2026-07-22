@@ -116,14 +116,14 @@ test('procurement receipt stock is physically available but remains reserved to 
   });
 });
 
-test('stock issue and return arithmetic preserve physical and reserved balances', () => {
+test('stock return releases physical stock without recreating a reservation', () => {
   const db = minimalPreMigrationDatabase();
   db.exec(migrationSql);
   seedRequisition(db);
   db.prepare(`
     UPDATE materials SET reserved_quantity = reserved_quantity + ?
     WHERE id = ? AND stock_quantity - reserved_quantity >= ?
-  `).run(5, 'mat-1', 5);
+  `).run(3, 'mat-1', 3);
 
   const movement = db.prepare(`
     UPDATE materials
@@ -132,15 +132,20 @@ test('stock issue and return arithmetic preserve physical and reserved balances'
       AND stock_quantity + ? >= 0 AND reserved_quantity + ? >= 0
       AND stock_quantity - reserved_quantity >= ? AND reserved_quantity >= ?
   `);
-  assert.equal(movement.run(-3, -3, 'mat-1', 10, 5, -3, -3, 0, 3).changes, 1);
+  assert.equal(movement.run(-3, -3, 'mat-1', 10, 3, -3, -3, 0, 3).changes, 1);
   assert.deepEqual({ ...db.prepare('SELECT stock_quantity, reserved_quantity FROM materials WHERE id = ?').get('mat-1') }, {
     stock_quantity: 7,
-    reserved_quantity: 2,
+    reserved_quantity: 0,
   });
-  assert.equal(movement.run(1, 1, 'mat-1', 7, 2, 1, 1, 0, 0).changes, 1);
+  assert.equal(movement.run(1, 0, 'mat-1', 7, 0, 1, 0, 0, 0).changes, 1);
   assert.deepEqual({ ...db.prepare('SELECT stock_quantity, reserved_quantity FROM materials WHERE id = ?').get('mat-1') }, {
     stock_quantity: 8,
-    reserved_quantity: 3,
+    reserved_quantity: 0,
+  });
+  assert.equal(movement.run(-1, 0, 'mat-1', 8, 0, -1, 0, 1, 0).changes, 1);
+  assert.deepEqual({ ...db.prepare('SELECT stock_quantity, reserved_quantity FROM materials WHERE id = ?').get('mat-1') }, {
+    stock_quantity: 7,
+    reserved_quantity: 0,
   });
 });
 
