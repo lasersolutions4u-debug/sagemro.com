@@ -14,6 +14,7 @@ import { usePushNotification } from './hooks/usePushNotification';
 import { generateId } from './utils/helpers';
 import { isCnLocale } from './utils/locale';
 import { buildWorkOrderDescription } from './utils/workOrderDisplay';
+import { setSeoMetadata } from './utils/seo';
 import { submitWorkOrder as submitWorkOrderApi, getUnreadNotificationCount, trackFunnelEvent } from './services/api';
 
 // 重型 Modal 懒加载，减少首屏 bundle 体积
@@ -69,6 +70,36 @@ function App() {
   const [currentUser, setCurrentUser] = useState(null);
   const [userType, setUserType] = useState(null);
   const [currentPath, setCurrentPath] = useState(() => window.location.pathname);
+
+  useEffect(() => {
+    const isToolsOrInsights = currentPath === '/tools'
+      || currentPath.startsWith('/tools/')
+      || currentPath === '/insights'
+      || currentPath.startsWith('/insights/');
+    if (isToolsOrInsights || (isEngineerHost && currentPath === '/' && !userType)) return;
+
+    const isPrivateApp = Boolean(userType) || currentPath !== '/';
+    const canonicalHost = isCn ? 'https://sagemro.cn' : 'https://sagemro.com';
+    const publicHost = isEngineerHost ? canonicalHost.replace('://', '://engineer.') : canonicalHost;
+    setSeoMetadata({
+      title: isPrivateApp ? 'SAGEMRO Service Workspace' : isCn ? 'SAGEMRO 智能服务系统' : 'SAGEMRO Service OS',
+      description: isPrivateApp
+        ? 'Private SAGEMRO service workspace.'
+        : isCn
+          ? 'SAGEMRO 面向激光切割与金属成型设备，帮助客户整理问题、连接合格工程师并沉淀服务记录。'
+          : 'SAGEMRO helps industrial equipment users organize service needs, connect with qualified field engineers, and keep service records clear.',
+      canonical: `${publicHost}/`,
+      lang: isCn ? 'zh-CN' : 'en',
+      robots: isPrivateApp ? 'noindex,nofollow,noarchive' : 'index,follow',
+      structuredData: isPrivateApp ? null : {
+        '@context': 'https://schema.org',
+        '@type': 'Organization',
+        name: 'SAGEMRO',
+        url: `${canonicalHost}/`,
+        email: 'support@sagemro.com',
+      },
+    });
+  }, [currentPath, isCn, isEngineerHost, userType]);
 
   // 通知未读数
   const [unreadCount, setUnreadCount] = useState(0);

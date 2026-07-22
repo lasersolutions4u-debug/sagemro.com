@@ -24,6 +24,7 @@ import {
   industryTools,
 } from '../../data/industryTools';
 import { isCnLocale } from '../../utils/locale';
+import { setSeoMetadata } from '../../utils/seo';
 
 const toolIcons = {
   'metal-weight': Scale,
@@ -36,26 +37,6 @@ const toolIcons = {
   'equipment-roi': CircleDollarSign,
   'auxiliary-sizing': Snowflake,
 };
-
-function setMeta(name, content) {
-  let tag = document.querySelector(`meta[name="${name}"]`);
-  if (!tag) {
-    tag = document.createElement('meta');
-    tag.setAttribute('name', name);
-    document.head.appendChild(tag);
-  }
-  tag.setAttribute('content', content);
-}
-
-function setCanonical(pathname, canonicalHost = 'https://sagemro.com') {
-  let tag = document.querySelector('link[rel="canonical"]');
-  if (!tag) {
-    tag = document.createElement('link');
-    tag.setAttribute('rel', 'canonical');
-    document.head.appendChild(tag);
-  }
-  tag.setAttribute('href', `${canonicalHost}${pathname}`);
-}
 
 const toolsPageCopy = {
   en: {
@@ -128,10 +109,15 @@ export function IndustryToolsPage({ pathname = '/tools', onOpenLegal, onSendMess
     : copy.hubDescription;
 
   useEffect(() => {
-    document.title = `${pageTitle} | SAGEMRO`;
-    setMeta('description', pageDescription);
-    setCanonical(selectedTool ? `/tools/${selectedTool.slug}` : '/tools', canonicalHost);
-  }, [canonicalHost, pageDescription, pageTitle, selectedTool]);
+    const isMissing = Boolean(slug && !rawSelectedTool);
+    setSeoMetadata({
+      title: isMissing ? '工具未找到 | SAGEMRO' : `${pageTitle} | SAGEMRO`,
+      description: isMissing ? '找不到请求的 SAGEMRO 行业工具。' : pageDescription,
+      canonical: `${canonicalHost}${selectedTool ? `/tools/${selectedTool.slug}` : slug ? `/tools/${slug}` : '/tools'}`,
+      lang: locale,
+      robots: isMissing ? 'noindex,nofollow,noarchive' : 'index,follow',
+    });
+  }, [canonicalHost, pageDescription, pageTitle, rawSelectedTool, selectedTool, slug, locale]);
 
   if (slug && !rawSelectedTool) {
     return <NotFoundPage isCn={locale === 'zh-CN'} />;
@@ -187,9 +173,12 @@ function ToolsHub({ copy, locale, onOpenLegal }) {
   ];
 
   useEffect(() => {
-    document.title = `${copy.hubTitle} | SAGEMRO`;
-    setMeta('description', copy.hubDescription);
-    setCanonical('/tools', canonicalHost);
+    setSeoMetadata({
+      title: `${copy.hubTitle} | SAGEMRO`,
+      description: copy.hubDescription,
+      canonical: `${canonicalHost}/tools`,
+      lang: locale,
+    });
   }, [canonicalHost, copy]);
 
   return (
