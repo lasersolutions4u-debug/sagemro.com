@@ -179,7 +179,7 @@ function ToolsHub({ copy, locale, onOpenLegal }) {
       canonical: `${canonicalHost}/tools`,
       lang: locale,
     });
-  }, [canonicalHost, copy]);
+  }, [canonicalHost, copy, locale]);
 
   return (
     <ToolPageShell copy={copy} onOpenLegal={onOpenLegal}>
