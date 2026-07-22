@@ -8,21 +8,22 @@
 
 ## 1. 部署架构
 
-### 1.1 平台总览（统一为 Cloudflare 全家桶）
+### 1.1 平台总览
 
 | 组件       | 域名                | CF 项目 / 资源              | 工作目录              |
 | ---------- | ------------------- | --------------------------- | --------------------- |
 | 国际版前端 | `sagemro.com`       | Pages: `sagemro-com`        | `frontend/`           |
-| 中国版前端 | `sagemro.cn`        | Pages: `sagemro-cn`         | `frontend/`（同源码） |
+| 中国版前端 | `sagemro.cn`        | 阿里云 ECS + nginx（真实生产） | `frontend/`（同源码） |
 | 国际版后台 | `admin.sagemro.com` | Pages: `sagemro-admin`      | `admin/`              |
-| 中国版后台 | `admin.sagemro.cn`  | Pages: `sagemro-admin-cn`   | `admin/`（同源码）    |
+| 中国版后台 | `admin.sagemro.cn`  | 阿里云 ECS + nginx（真实生产） | `admin/`（同源码）    |
+| 中国版工程师端 | `engineer.sagemro.cn` | 阿里云 ECS + nginx | `frontend/`（同构建） |
 | 国际版 API | `api.sagemro.com`   | Workers: env=`production`   | `worker/`             |
 | 中国版 API | `api.sagemro.cn`    | Workers: env=`production`   | `worker/`（同 Worker）|
 | 国际版数据库 | —                 | D1: `sagemro-db`            | `worker/migrations/`  |
 | 中国版数据库 | —                 | D1: `sagemro-db-cn`         | `worker/migrations/`  |
 | 缓存       | —                   | KV namespace（绑定名 `KV`） | —                     |
 
-中国版前台/后台在 `.cn` 域名下会自动调用 `https://api.sagemro.cn`。Worker 会按 API 域名或请求来源域名识别中国版流量，并路由到 `DB_CN`（`sagemro-db-cn`）。
+中国版前台/后台/工程师端在 `.cn` 域名下会自动调用 `https://api.sagemro.cn`。`.cn` 真实生产流量由阿里云 ECS + nginx 承载；Cloudflare Pages 的 `sagemro-cn` / `sagemro-admin-cn` 只作为辅助部署目标。Worker 会按 API 域名或请求来源域名识别中国版流量，并路由到 `DB_CN`（`sagemro-db-cn`）。
 
 > **历史说明**：前端曾同时配过 Netlify（`netlify.toml`）和 Cloudflare Pages，造成双重部署和流量分裂。现已统一到 Cloudflare Pages。原 `netlify.toml` 备份为 `netlify.toml.deprecated`，确认 Pages 稳定运行一段时间后可删除。
 
@@ -192,14 +193,25 @@ CF Dashboard → Workers & Pages → Create application → Pages → **Direct U
 
 ⚠️ **项目名必须和 deploy.yml 里写的完全一致**。如果不一致，`wrangler pages deploy` 会自动创建一个新项目（名字对得上 yml），导致出现孤儿项目——部署成功了但访问的是另一个 URL。
 
-### 2.7 跑首次数据库迁移
-
-bash
+### 2.7 初始化数据库与恢复演练
 
 ```bash
 cd worker
-npx wrangler d1 migrations apply sagemro-db --remote --env production
+
+# 全新 D1 使用当前 schema.sql 建立基线；既有生产库继续按缺失 migration 增量升级。
+npx wrangler d1 execute sagemro-db --remote --env production --file schema.sql
+npx wrangler d1 execute sagemro-db-cn --remote --env production --file schema.sql
+
+# 只读 schema 探针，国际版和中国版分别执行。
+node scripts/d1-operations.mjs schema-check --market com --mode remote --confirm-production
+node scripts/d1-operations.mjs schema-check --market cn --mode remote --confirm-production
+
+# 完全本地的导出/恢复演练，不连接生产库。
+node scripts/d1-operations.mjs restore-drill --market com
+node scripts/d1-operations.mjs restore-drill --market cn
 ```
+
+历史 `migrations/` 用于既有数据库增量升级。由于早期 `000_initial.sql` 后来加入了 `001a_add_user_no.sql` 同名字段，历史链不能直接对空库无条件重放；新库初始化以 `schema.sql` 为基线。
 
 
 
@@ -218,6 +230,24 @@ CF 自动签发 SSL 证书。
 ------
 
 ## 3. 日常部署流程
+
+### 3.0 D1 备份、留存与恢复
+
+国际版 `sagemro-db` 和中国版 `sagemro-db-cn` 必须分别备份。建议至少保留每日备份 30 天、每周备份 12 周，并存放在受限的加密存储中；备份可能包含客户联系方式、服务记录和审计数据，绝不能提交 Git。
+
+```bash
+cd worker
+
+# 生产导出必须显式确认，两个市场分别执行。
+node scripts/d1-operations.mjs backup --market com --mode remote --output /secure-backups/sagemro-db-$(date +%F).sql --confirm-production
+node scripts/d1-operations.mjs backup --market cn --mode remote --output /secure-backups/sagemro-db-cn-$(date +%F).sql --confirm-production
+
+# 恢复演练只使用隔离本地 D1。
+node scripts/d1-operations.mjs restore-drill --market com
+node scripts/d1-operations.mjs restore-drill --market cn
+```
+
+恢复不是 migration 回滚。真正生产恢复前需先再次导出当前库、安排停写窗口，并在隔离 D1 验证目标备份；D1 schema 变更仍通过新的正向 migration 修复。
 
 ### 🔴 部署前必做：检查 migration 是否遗漏
 
@@ -327,12 +357,20 @@ npx wrangler d1 execute sagemro-db-cn --env production --remote --file /path/to/
 
 ---
 
-完成初始化后，日常部署只有一个动作：
+完成初始化后，国际版与 Cloudflare 辅助目标按分支 push：
 
 ```bash
 git push origin main             # 部署 frontend (sagemro-com) + worker + admin (sagemro-admin)
 git push origin china-edition    # 部署 frontend (sagemro-cn) + admin (sagemro-admin-cn)
 ```
+
+中国版真实生产更新还必须手动运行：
+
+```bash
+gh workflow run aliyun-cn-deploy.yml --ref china-edition
+```
+
+仅 Cloudflare Pages 部署成功，不代表 `sagemro.cn`、`admin.sagemro.cn` 或 `engineer.sagemro.cn` 已更新。
 
 GitHub Actions 自动：
 
