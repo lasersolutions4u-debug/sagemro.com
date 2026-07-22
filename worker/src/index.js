@@ -85,6 +85,7 @@ import {
 // Sentry 错误上报（零依赖 envelope 客户端）
 import { captureException } from './lib/sentry.js';
 import { isKnownProtectedRoute, isTestRoute } from './lib/routes.js';
+import { handlePublicRoute } from './lib/publicRoutes.js';
 
 // AI 工具调用确定性日志（Phase 0.1）
 import { logToolCall, measureAndLogToolCall, PermissionError } from './lib/trace.js';
@@ -12581,70 +12582,31 @@ async function routeRequest(request, env, ctx) {
     // 暂存 ctx 供需要 waitUntil 的处理函数使用（如 AI 摘要异步生成）
     request._ctx = ctx;
 
-    // 处理 CORS 预检
-    if (request.method === 'OPTIONS') {
-      return handleOptions(request, env);
-    }
-
-    if (path === '/api/_e2e/mailbox/activation' && request.method === 'GET') {
-      return handleE2EActivationMailbox(request, env);
-    }
-
-    // 认证相关（无需 token）
-    if (path === '/api/auth/send-code' && request.method === 'POST') {
-      return handleSendCode(request, env);
-    }
-    if (path === '/api/auth/register/customer' && request.method === 'POST') {
-      return handleRegisterCustomer(request, env);
-    }
-    if (path === '/api/auth/register/engineer' && request.method === 'POST') {
-      return localizedErrorResponse('public_engineer_registration_closed', request, 410);
-    }
-    if (path === '/api/auth/login' && request.method === 'POST') {
-      return handleLogin(request, env);
-    }
-    if (path === '/api/auth/session' && request.method === 'GET') {
-      return handleAuthSession(request, env);
-    }
-    if (path === '/api/auth/logout' && request.method === 'POST') {
-      return clearPortalSession(jsonResponse({ success: true }), request, env);
-    }
-    if (path === '/api/auth/engineer/activate' && request.method === 'POST') {
-      return handleEngineerActivation(request, env);
-    }
-    if (path === '/api/auth/reset-password' && request.method === 'POST') {
-      return handleResetPassword(request, env);
-    }
-    if (path === '/api/auth/send-reset-code' && request.method === 'POST') {
-      return handleSendResetCode(request, env);
-    }
-
-    // 聊天相关（允许未登录用户使用 AI 对话）
-    if (path === '/api/chat/upload-image' && request.method === 'POST') {
-      return handleChatUploadImage(request, env);
-    }
-    if (path === '/api/chat/transcribe' && request.method === 'POST') {
-      return handleChatTranscribe(request, env);
-    }
-    if (path === '/api/chat' && request.method === 'POST') {
-      return handleChat(request, env);
-    }
-
-    // 商机线索提交（无需登录）
-    if (path === '/api/leads' && request.method === 'POST') {
-      return handleSubmitLead(request, env);
-    }
-    if (path === '/api/engineer-applications' && request.method === 'POST') {
-      return handleSubmitEngineerApplication(request, env);
-    }
-    if (path === '/api/analytics/funnel' && request.method === 'POST') {
-      return handleFunnelEvent(request, env);
-    }
-
-    // 健康检查（无需 token）
-    if (path === '/health') {
-      return jsonResponse({ status: 'ok' });
-    }
+    const publicResponse = await handlePublicRoute(request, env, ctx, {
+      handleOptions,
+      handleE2EActivationMailbox,
+      handleSendCode,
+      handleRegisterCustomer,
+      handlePublicEngineerRegistrationClosed: (publicRequest) => (
+        localizedErrorResponse('public_engineer_registration_closed', publicRequest, 410)
+      ),
+      handleLogin,
+      handleAuthSession,
+      handleLogout: (publicRequest) => (
+        clearPortalSession(jsonResponse({ success: true }), publicRequest, env)
+      ),
+      handleEngineerActivation,
+      handleResetPassword,
+      handleSendResetCode,
+      handleChatUploadImage,
+      handleChatTranscribe,
+      handleChat,
+      handleSubmitLead,
+      handleSubmitEngineerApplication,
+      handleFunnelEvent,
+      handleHealth: () => jsonResponse({ status: 'ok' }),
+    });
+    if (publicResponse) return publicResponse;
 
     // Sentry 端到端冒烟测试。匹配 path 就拦下——要么抛错触发 Sentry，要么返回诊断
     // 响应说明为什么没触发，避免 fall through 到后面的认证守卫让人以为路由没生效。
