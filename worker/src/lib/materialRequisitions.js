@@ -1,8 +1,9 @@
 const ROLE_ACTIONS = Object.freeze({
-  admin: new Set(['approve', 'reject', 'cancel', 'allocate_stock', 'record_purchase', 'receive_purchase', 'issue', 'return', 'close', 'manage_staff']),
+  admin: new Set(['approve', 'reject', 'cancel', 'allocate_stock', 'record_purchase', 'receive_purchase', 'issue', 'return', 'close']),
   operations: new Set(['approve', 'reject', 'cancel', 'close']),
   warehouse: new Set(['allocate_stock', 'receive_purchase', 'issue', 'return']),
-  procurement: new Set(['record_purchase']),
+  procurement: new Set(['record_purchase', 'receive_purchase']),
+  engineer: new Set(['create_draft', 'submit', 'confirm_receipt']),
 });
 
 const TERMINAL_REQUISITION_STATUSES = new Set(['rejected', 'cancelled', 'closed']);
