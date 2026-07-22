@@ -1963,6 +1963,11 @@ const ALLOWED_ORIGINS_DEV = [
   'http://localhost:5174',
   'http://localhost:3000',
   'http://localhost:4173',
+  'http://engineer.localhost:4173',
+  'http://localhost:4174',
+  'http://localhost:4273',
+  'http://engineer.localhost:4273',
+  'http://localhost:4274',
   'http://127.0.0.1:5173',
   'http://127.0.0.1:5174',
   'http://127.0.0.1:3000',
@@ -2334,6 +2339,18 @@ export async function sendEngineerActivationEmail(env, { to, subject, text, html
   const errorMessage = market === 'cn'
     ? '激活邮件发送失败，请稍后再试'
     : 'Failed to send activation email. Please try again later.';
+  if (
+    env.ENVIRONMENT === 'development'
+    && env.E2E_TEST_MODE === 'true'
+    && env.E2E_TEST_SECRET
+    && env.KV?.put
+  ) {
+    const mailboxKey = `e2e_mailbox_activation_email_${normalizeEmail(to)}`;
+    await env.KV.put(mailboxKey, JSON.stringify({ to, subject, text, html }), {
+      expirationTtl: 3600,
+    });
+    return { sent: true, provider: 'e2e_mailbox' };
+  }
   if (!env.VERIFICATION_EMAIL_FROM) {
     return { error: errorMessage };
   }
@@ -2410,6 +2427,30 @@ export async function sendEngineerActivationEmail(env, { to, subject, text, html
       emailSuffix: String(to || '').split('@').pop(),
     });
     return { error: errorMessage };
+  }
+}
+
+async function handleE2EActivationMailbox(request, env) {
+  const denied = () => errorResponse('Not found', 404);
+  if (
+    env.ENVIRONMENT !== 'development'
+    || env.E2E_TEST_MODE !== 'true'
+    || !env.E2E_TEST_SECRET
+    || request.headers.get('X-E2E-Test-Secret') !== env.E2E_TEST_SECRET
+    || !env.KV?.get
+  ) {
+    return denied();
+  }
+
+  const email = normalizeEmail(new URL(request.url).searchParams.get('email'));
+  if (!email || !isValidEmail(email)) return denied();
+  const message = await env.KV.get(`e2e_mailbox_activation_email_${email}`);
+  if (!message) return denied();
+
+  try {
+    return jsonResponse(JSON.parse(message));
+  } catch {
+    return denied();
   }
 }
 
@@ -12404,6 +12445,10 @@ async function routeRequest(request, env, ctx) {
     // 处理 CORS 预检
     if (request.method === 'OPTIONS') {
       return handleOptions(request, env);
+    }
+
+    if (path === '/api/_e2e/mailbox/activation' && request.method === 'GET') {
+      return handleE2EActivationMailbox(request, env);
     }
 
     // 认证相关（无需 token）

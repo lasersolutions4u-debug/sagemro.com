@@ -325,6 +325,67 @@ test('activation email sender uses a raw MIME EmailMessage with Cloudflare Email
   assert.doesNotMatch(sent[0].raw, /\r?\nBcc:/i);
 });
 
+test('development E2E mode captures activation email in the local test mailbox', async () => {
+  const stored = new Map();
+  const payload = {
+    to: 'engineer@example.com',
+    subject: 'Activate account',
+    text: 'Open https://engineer.localhost/activate#token=test-token.',
+    html: '<a href="https://engineer.localhost/activate#token=test-token">Activate</a>',
+  };
+  const result = await sendEngineerActivationEmail({
+    ENVIRONMENT: 'development',
+    E2E_TEST_MODE: 'true',
+    E2E_TEST_SECRET: 'local-e2e-secret',
+    KV: {
+      async put(key, value) { stored.set(key, value); },
+    },
+  }, payload, 'com');
+
+  assert.deepEqual(result, { sent: true, provider: 'e2e_mailbox' });
+  assert.equal(stored.size, 1);
+  const [key, value] = stored.entries().next().value;
+  assert.equal(key, 'e2e_mailbox_activation_email_engineer@example.com');
+  assert.deepEqual(JSON.parse(value), {
+    to: payload.to,
+    subject: payload.subject,
+    text: payload.text,
+    html: payload.html,
+  });
+});
+
+test('E2E mailbox route requires development mode and its explicit secret', async () => {
+  const env = makeActivationEnv();
+  env.ENVIRONMENT = 'development';
+  env.E2E_TEST_MODE = 'true';
+  env.E2E_TEST_SECRET = 'local-e2e-secret';
+  await env.KV.put(
+    'e2e_mailbox_activation_email_engineer@example.com',
+    JSON.stringify({ to: 'engineer@example.com', text: 'https://engineer.localhost/activate#token=test-token' }),
+  );
+
+  const denied = await worker.fetch(new Request(
+    'https://api.sagemro.com/api/_e2e/mailbox/activation?email=engineer@example.com',
+  ), env, { waitUntil() {} });
+  assert.equal(denied.status, 404);
+
+  const allowed = await worker.fetch(new Request(
+    'https://api.sagemro.com/api/_e2e/mailbox/activation?email=engineer@example.com',
+    { headers: { 'X-E2E-Test-Secret': 'local-e2e-secret' } },
+  ), env, { waitUntil() {} });
+  assert.equal(allowed.status, 200);
+  assert.deepEqual(await allowed.json(), {
+    to: 'engineer@example.com',
+    text: 'https://engineer.localhost/activate#token=test-token',
+  });
+
+  const production = await worker.fetch(new Request(
+    'https://api.sagemro.com/api/_e2e/mailbox/activation?email=engineer@example.com',
+    { headers: { 'X-E2E-Test-Secret': 'local-e2e-secret' } },
+  ), makeActivationEnv({ ENVIRONMENT: 'production', E2E_TEST_MODE: 'true', E2E_TEST_SECRET: 'local-e2e-secret' }), { waitUntil() {} });
+  assert.equal(production.status, 404);
+});
+
 test('activation email sender falls back to Resend without sending a real email', async () => {
   const originalFetch = globalThis.fetch;
   let capturedRequest = null;

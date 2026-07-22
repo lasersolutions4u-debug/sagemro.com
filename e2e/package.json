@@ -1,0 +1,14 @@
+{
+  "name": "sagemro-e2e",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test:contracts": "node --test tests/*-contract.test.mjs",
+    "prepare:local": "node scripts/prepare-local-env.mjs",
+    "test": "npm run prepare:local && E2E_TEST_SECRET=local-e2e-secret-32-characters playwright test",
+    "test:onboarding": "npm run prepare:local && E2E_TEST_SECRET=local-e2e-secret-32-characters playwright test tests/engineer-onboarding.spec.mjs"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.54.2"
+  }
+}
