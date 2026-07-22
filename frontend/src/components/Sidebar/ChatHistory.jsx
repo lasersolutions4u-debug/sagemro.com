@@ -210,7 +210,11 @@ function ConversationItem({ conversation, isActive, onSelect, onDelete, onRename
             onClick={async (e) => {
               e.stopPropagation();
               if (await confirmDialog(copy.deleteConfirm, { danger: true, confirmText: copy.delete })) {
-                onDelete();
+                try {
+                  await onDelete();
+                } catch (err) {
+                  toastError(err.message || String(err));
+                }
               }
             }}
             title={copy.delete}
