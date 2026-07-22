@@ -634,8 +634,7 @@ test('client shell moves conversation history into a modal and exposes industry 
   assert.match(industryToolsPage, /md:grid-cols-2/);
   assert.doesNotMatch(industryToolsPage, /lg:grid-cols-3/);
   assert.match(industryToolsPage, /<a href="\/" className="mb-5 flex w-fit items-center/);
-  assert.match(industryToolsPage, /link\[rel="canonical"\]/);
-  assert.match(industryToolsPage, /meta\[name="\$\{name\}"\]/);
+  assert.match(industryToolsPage, /setSeoMetadata\(/);
   assert.match(industryToolsPage, /referenceItems/);
   assert.match(industryToolsPage, /ToolReferenceItem/);
   assert.match(industryToolsPage, /Material range/);

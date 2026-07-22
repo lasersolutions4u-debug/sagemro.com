@@ -4,6 +4,8 @@ import * as Sentry from '@sentry/react'
 import './index.css'
 import App from './App.jsx'
 
+document.documentElement.lang = window.location.hostname.endsWith('.cn') ? 'zh-CN' : 'en'
+
 // Sentry: DSN 通过 VITE_SENTRY_DSN 注入（公开 key，Sentry 设计允许前端暴露）
 // 没配 DSN 就跳过初始化，不影响开发和 CI 环境
 const SENTRY_DSN = import.meta.env.VITE_SENTRY_DSN

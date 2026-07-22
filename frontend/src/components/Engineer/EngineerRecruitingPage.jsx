@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   ArrowLeft,
   ArrowRight,
@@ -15,6 +15,7 @@ import {
 import { submitEngineerApplication } from '../../services/api';
 import { BrandMark } from '../common/BrandMark';
 import { EngineerOverviewVideo } from './EngineerOverviewVideo';
+import { setSeoMetadata } from '../../utils/seo';
 
 const COPY = {
   cn: {
@@ -500,6 +501,29 @@ function ApplicationForm({ copy, form, submitting, message, error, updateField, 
 export function EngineerRecruitingPage({ onOpenLogin }) {
   const locale = getLocale();
   const copy = COPY[locale];
+  useEffect(() => {
+    const canonicalHost = locale === 'cn' ? 'https://engineer.sagemro.cn' : 'https://engineer.sagemro.com';
+    setSeoMetadata({
+      title: locale === 'cn'
+        ? 'SAGEMRO 工程师服务协作网络'
+        : 'Industrial Service Network for Engineers | SAGEMRO',
+      description: locale === 'cn'
+        ? '加入 SAGEMRO 工程师服务协作网络，在清晰工单、人工审核和服务记录支持下开展设备维保服务。'
+        : 'Join SAGEMRO\'s industrial service engineer network for laser cutting, press brake, and sheet metal field service.',
+      canonical: `${canonicalHost}/`,
+      lang: locale === 'cn' ? 'zh-CN' : 'en',
+      structuredData: {
+        '@context': 'https://schema.org',
+        '@type': 'WebPage',
+        name: locale === 'cn' ? 'SAGEMRO 工程师服务协作网络' : 'Industrial Service Network for Engineers | SAGEMRO',
+        description: locale === 'cn'
+          ? '加入 SAGEMRO 工程师服务协作网络，在清晰工单、人工审核和服务记录支持下开展设备维保服务。'
+          : 'Join SAGEMRO\'s industrial service engineer network for laser cutting, press brake, and sheet metal field service.',
+        url: `${canonicalHost}/`,
+        isPartOf: { '@type': 'WebSite', name: 'SAGEMRO', url: locale === 'cn' ? 'https://sagemro.cn' : 'https://sagemro.com' },
+      },
+    });
+  }, [locale]);
   const [modalOpen, setModalOpen] = useState(false);
   const [form, setForm] = useState({
     name: '',

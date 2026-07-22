@@ -4,26 +4,8 @@ import { BrandMark } from '../common/BrandMark';
 import { Footer } from '../common/Footer';
 import { NotFoundPage } from '../common/NotFoundPage';
 import { getInsightBySlug, insights } from '../../data/insights';
-
-function setMeta(name, content) {
-  let tag = document.querySelector(`meta[name="${name}"]`);
-  if (!tag) {
-    tag = document.createElement('meta');
-    tag.setAttribute('name', name);
-    document.head.appendChild(tag);
-  }
-  tag.setAttribute('content', content);
-}
-
-function setCanonical(pathname) {
-  let tag = document.querySelector('link[rel="canonical"]');
-  if (!tag) {
-    tag = document.createElement('link');
-    tag.setAttribute('rel', 'canonical');
-    document.head.appendChild(tag);
-  }
-  tag.setAttribute('href', `https://sagemro.com${pathname}`);
-}
+import { isCnLocale } from '../../utils/locale';
+import { setSeoMetadata } from '../../utils/seo';
 
 export function InsightsPage({ pathname = '/insights', onOpenLegal }) {
   const slug = pathname.split('/insights/')[1]?.replace(/\/$/, '') || '';
@@ -34,10 +16,25 @@ export function InsightsPage({ pathname = '/insights', onOpenLegal }) {
     const description = insight
       ? insight.description
       : 'Practical notes, calculators, and decision guides for laser and metal forming equipment.';
-    document.title = `${title} | SAGEMRO`;
-    setMeta('description', description);
-    setCanonical(insight ? `/insights/${insight.slug}` : '/insights');
-  }, [insight]);
+    const locale = isCnLocale() ? 'zh-CN' : 'en';
+    const canonicalHost = locale === 'zh-CN' ? 'https://sagemro.cn' : 'https://sagemro.com';
+    const isMissing = Boolean(slug && !insight);
+    setSeoMetadata({
+      title: isMissing ? 'Insight Not Found | SAGEMRO' : `${title} | SAGEMRO`,
+      description: isMissing ? 'The requested SAGEMRO insight could not be found.' : description,
+      canonical: `${canonicalHost}${insight ? `/insights/${insight.slug}` : slug ? `/insights/${slug}` : '/insights'}`,
+      lang: locale,
+      robots: isMissing ? 'noindex,nofollow,noarchive' : 'index,follow',
+      structuredData: insight ? {
+        '@context': 'https://schema.org',
+        '@type': 'Article',
+        headline: insight.title,
+        description: insight.description,
+        url: `${canonicalHost}/insights/${insight.slug}`,
+        publisher: { '@type': 'Organization', name: 'SAGEMRO' },
+      } : null,
+    });
+  }, [insight, slug]);
 
   if (slug && !insight) {
     return <NotFoundPage />;

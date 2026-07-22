@@ -1,0 +1,9 @@
+User-agent: *
+Allow: /
+
+# Private application and account flows are not public search content.
+Disallow: /engineer
+Disallow: /activate
+Disallow: /login
+
+Sitemap: https://sagemro.com/sitemap.xml

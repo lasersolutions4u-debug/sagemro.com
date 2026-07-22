@@ -23,6 +23,7 @@ import {
   shapeProfiles,
 } from '../../data/industryTools';
 import { isCnLocale } from '../../utils/locale';
+import { setSeoMetadata } from '../../utils/seo';
 
 const toolIcons = {
   'metal-weight': Scale,
@@ -36,26 +37,6 @@ const toolIcons = {
   'auxiliary-sizing': Snowflake,
 };
 
-function setMeta(name, content) {
-  let tag = document.querySelector(`meta[name="${name}"]`);
-  if (!tag) {
-    tag = document.createElement('meta');
-    tag.setAttribute('name', name);
-    document.head.appendChild(tag);
-  }
-  tag.setAttribute('content', content);
-}
-
-function setCanonical(pathname) {
-  let tag = document.querySelector('link[rel="canonical"]');
-  if (!tag) {
-    tag = document.createElement('link');
-    tag.setAttribute('rel', 'canonical');
-    document.head.appendChild(tag);
-  }
-  tag.setAttribute('href', `https://sagemro.com${pathname}`);
-}
-
 export function IndustryToolsPage({ pathname = '/tools', onOpenLegal, onSendMessage, onNavigateHome }) {
   const slug = pathname.split('/tools/')[1]?.replace(/\/$/, '') || '';
   const selectedTool = getToolBySlug(slug);
@@ -66,10 +47,17 @@ export function IndustryToolsPage({ pathname = '/tools', onOpenLegal, onSendMess
     : 'Use free SAGEMRO calculators for metal weight, steel price planning, laser cutting cost, gas use, speed reference, bending, ROI, and auxiliary sizing.';
 
   useEffect(() => {
-    document.title = `${pageTitle} | SAGEMRO`;
-    setMeta('description', pageDescription);
-    setCanonical(selectedTool ? `/tools/${selectedTool.slug}` : '/tools');
-  }, [pageDescription, pageTitle, selectedTool]);
+    const locale = isCnLocale() ? 'zh-CN' : 'en';
+    const canonicalHost = locale === 'zh-CN' ? 'https://sagemro.cn' : 'https://sagemro.com';
+    const isMissing = Boolean(slug && !selectedTool);
+    setSeoMetadata({
+      title: isMissing ? 'Tool Not Found | SAGEMRO' : `${pageTitle} | SAGEMRO`,
+      description: isMissing ? 'The requested SAGEMRO tool could not be found.' : pageDescription,
+      canonical: `${canonicalHost}${selectedTool ? `/tools/${selectedTool.slug}` : slug ? `/tools/${slug}` : '/tools'}`,
+      lang: locale,
+      robots: isMissing ? 'noindex,nofollow,noarchive' : 'index,follow',
+    });
+  }, [pageDescription, pageTitle, selectedTool, slug]);
 
   if (slug && !selectedTool) {
     return <NotFoundPage isCn={isCnLocale()} />;
@@ -119,9 +107,14 @@ function ToolsHub({ onOpenLegal }) {
   ];
 
   useEffect(() => {
-    document.title = 'Free Sheet Metal and Laser Cutting Calculators | SAGEMRO';
-    setMeta('description', 'Use free SAGEMRO calculators for metal weight, steel price planning, laser cutting cost, gas use, speed reference, bending, ROI, and auxiliary sizing.');
-    setCanonical('/tools');
+    const locale = isCnLocale() ? 'zh-CN' : 'en';
+    const canonicalHost = locale === 'zh-CN' ? 'https://sagemro.cn' : 'https://sagemro.com';
+    setSeoMetadata({
+      title: 'Free Sheet Metal and Laser Cutting Calculators | SAGEMRO',
+      description: 'Use free SAGEMRO calculators for metal weight, steel price planning, laser cutting cost, gas use, speed reference, bending, ROI, and auxiliary sizing.',
+      canonical: `${canonicalHost}/tools`,
+      lang: locale,
+    });
   }, []);
 
   return (
