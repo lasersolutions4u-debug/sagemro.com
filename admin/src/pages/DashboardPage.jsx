@@ -26,6 +26,12 @@ const TEXT = {
       completed: 'Completed',
     },
     statusDistribution: 'Service order status',
+    requisitionOperations: 'Material requisition operations',
+    requisitionMetrics: {
+      pendingApproval: 'Pending approval', shortages: 'Shortage lines', overdue: 'Overdue',
+      medianApprovalHours: 'Median approval', medianFulfillmentHours: 'Median fulfillment', closureRatePercent: 'Closure rate',
+    },
+    hours: 'h',
   },
   'zh-CN': {
     loading: '加载中...',
@@ -49,6 +55,12 @@ const TEXT = {
       completed: '已完成',
     },
     statusDistribution: '工单状态分布',
+    requisitionOperations: '物料领用运营',
+    requisitionMetrics: {
+      pendingApproval: '待审批', shortages: '缺料明细', overdue: '已逾期',
+      medianApprovalHours: '审批中位时长', medianFulfillmentHours: '履约中位时长', closureRatePercent: '关闭率',
+    },
+    hours: '小时',
   },
 };
 
@@ -81,6 +93,7 @@ export function DashboardPage() {
   }
 
   const operations = stats.operations || {};
+  const requisitionOperations = stats.requisitionOperations || {};
   const cards = [
     { icon: TrendingUp, label: t.cards.aiLeadsToday, value: operations.aiLeadsToday ?? 0, color: 'var(--color-info)' },
     { icon: ClipboardCheck, label: t.cards.pendingReview, value: operations.pendingReview ?? stats.workOrders.pending, color: 'var(--color-primary)' },
@@ -99,6 +112,15 @@ export function DashboardPage() {
     { label: t.status.completed, value: stats.workOrders.completed, color: 'var(--color-success)' },
   ];
 
+  const requisitionMetrics = [
+    ['pendingApproval', requisitionOperations.pendingApproval ?? 0],
+    ['shortages', requisitionOperations.shortages ?? 0],
+    ['overdue', requisitionOperations.overdue ?? 0],
+    ['medianApprovalHours', requisitionOperations.medianApprovalHours == null ? '-' : `${Number(requisitionOperations.medianApprovalHours).toFixed(1)} ${t.hours}`],
+    ['medianFulfillmentHours', requisitionOperations.medianFulfillmentHours == null ? '-' : `${Number(requisitionOperations.medianFulfillmentHours).toFixed(1)} ${t.hours}`],
+    ['closureRatePercent', requisitionOperations.closureRatePercent == null ? '-' : `${Number(requisitionOperations.closureRatePercent).toFixed(1)}%`],
+  ];
+
   return (
     <div>
       <div className="mb-6">
@@ -107,6 +129,18 @@ export function DashboardPage() {
           {t.subtitle}
         </p>
       </div>
+
+      <section className="mb-6 border-y border-[var(--color-border)] bg-[var(--color-surface)]">
+        <div className="border-b border-[var(--color-border)] px-3 py-2 text-xs font-medium uppercase text-[var(--color-text-secondary)]">{t.requisitionOperations}</div>
+        <div className="grid grid-cols-2 divide-x divide-y divide-[var(--color-border)] sm:grid-cols-3 lg:grid-cols-6 lg:divide-y-0">
+          {requisitionMetrics.map(([key, value]) => (
+            <div key={key} className="min-w-0 px-3 py-3">
+              <div className="truncate text-xs text-[var(--color-text-muted)]">{t.requisitionMetrics[key]}</div>
+              <div className="mt-1 text-lg font-semibold">{value}</div>
+            </div>
+          ))}
+        </div>
+      </section>
 
       <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
         {cards.map((card) => (

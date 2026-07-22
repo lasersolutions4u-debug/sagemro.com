@@ -59,6 +59,27 @@ function createStatement(env, sql) {
       if (/FROM admin_staff_accounts/i.test(normalized)) {
         return { results: clone(env.__staff) };
       }
+      if (/FROM audit_logs/i.test(normalized) && /target_type = 'material_requisition'/i.test(normalized)) {
+        const requisitionId = this.args[0];
+        const itemIds = new Set(env.__items.filter((item) => item.requisition_id === requisitionId).map((item) => item.id));
+        const includesItemHistory = /target_type = 'material_requisition_item'/i.test(normalized);
+        return {
+          results: clone(env.__auditLogs
+            .filter((entry) => (
+              entry.args?.[3] === 'material_requisition' && entry.args?.[4] === requisitionId
+            ) || (includesItemHistory && (
+              entry.args?.[3] === 'material_requisition_item' && itemIds.has(entry.args?.[4])
+            )))
+            .map((entry) => ({
+              actor_type: entry.args[1],
+              actor_id: entry.args[2],
+              action: entry.args[5],
+              before_state: entry.args[6],
+              after_state: entry.args[7],
+              created_at: '2026-07-23 00:00:00',
+            }))),
+        };
+      }
       if (/FROM material_requisition_items WHERE requisition_id = \?/i.test(normalized)) {
         return { results: clone(env.__items.filter((item) => item.requisition_id === this.args[0])) };
       }
@@ -499,6 +520,33 @@ test('material requisition and staff routes are protected', async () => {
 
   const result = await api(createEnv(), '/api/material-requisitions', { auth: null });
   assert.equal(result.response.status, 401);
+});
+
+test('requisition detail returns persisted workflow history', async () => {
+  const env = createEnv();
+  const requisition = await createAndSubmit(env);
+
+  const detail = await api(env, `/api/material-requisitions/${requisition.id}`, { auth: staffAuth('operations') });
+
+  assert.equal(detail.response.status, 200);
+  assert.deepEqual(detail.json.requisition.history.map((entry) => entry.action), [
+    'material_requisition_created',
+    'material_requisition_submitted',
+  ]);
+});
+
+test('requisition detail history includes line-level fulfillment operations', async () => {
+  const env = createEnv();
+  const requisition = await createAndSubmit(env);
+  await api(env, `/api/material-requisitions/${requisition.id}/approve`, { method: 'POST', auth: staffAuth('operations') });
+  await api(env, `/api/material-requisitions/${requisition.id}/stock-allocation`, {
+    method: 'POST', auth: staffAuth('warehouse'), body: { item_id: requisition.items[0].id, quantity: 1 },
+  });
+
+  const detail = await api(env, `/api/material-requisitions/${requisition.id}`, { auth: staffAuth('operations') });
+
+  assert.equal(detail.response.status, 200);
+  assert.ok(detail.json.requisition.history.some((entry) => entry.action === 'material_requisition_allocate_stock'));
 });
 
 test('COM bootstrap and staff admin tokens are denied on CN protected routes', async () => {
