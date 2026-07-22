@@ -448,6 +448,8 @@ CREATE INDEX idx_engineers_level ON engineers(level);
 - `worker/migrations/` 是既有数据库的增量升级记录；`worker/schema.sql` 是当前新库基线快照。
 - 两套生产 D1 必须分别核对：国际版 `sagemro-db`，中国版 `sagemro-db-cn`。
 - `node worker/scripts/d1-operations.mjs backup --market com|cn --mode remote --confirm-production` 执行导出；默认禁止远端操作。
+- `schema-snapshot` 将 D1 `sqlite_master` 结果规范化为 JSON，`schema-diff` 对比国际版和中国版对象缺失及定义漂移。
+- `retention-check` 按 UTC 日历日保留最近 30 天每天最新一份，再保留 12 个较老 ISO 周每周最新一份；只有显式 `--apply-retention` 才删除本地文件。
 - `node worker/scripts/d1-operations.mjs restore-drill --market com|cn` 只在隔离本地 D1 做恢复演练。
 - 迁移与恢复不是同一动作；D1 没有自动 schema 回滚，重要变更前必须先备份。
 

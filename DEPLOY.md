@@ -206,10 +206,17 @@ npx wrangler d1 execute sagemro-db-cn --remote --env production --file schema.sq
 node scripts/d1-operations.mjs schema-check --market com --mode remote --confirm-production
 node scripts/d1-operations.mjs schema-check --market cn --mode remote --confirm-production
 
+# 生成可留档、可比较的规范化 schema 快照，然后检查两库漂移。
+node scripts/d1-operations.mjs schema-snapshot --market com --mode remote --output /secure-schema/sagemro-db-schema.json --confirm-production
+node scripts/d1-operations.mjs schema-snapshot --market cn --mode remote --output /secure-schema/sagemro-db-cn-schema.json --confirm-production
+node scripts/d1-operations.mjs schema-diff --left /secure-schema/sagemro-db-schema.json --right /secure-schema/sagemro-db-cn-schema.json
+
 # 完全本地的导出/恢复演练，不连接生产库。
 node scripts/d1-operations.mjs restore-drill --market com
 node scripts/d1-operations.mjs restore-drill --market cn
 ```
+
+本地执行中国库快照时，需通过 `--config` 指向声明了 `sagemro-db-cn` 的隔离 Wrangler 配置；默认开发配置只声明国际库。远端生产操作使用 `--mode remote --confirm-production`，不需要本地隔离配置。
 
 历史 `migrations/` 用于既有数据库增量升级。由于早期 `000_initial.sql` 后来加入了 `001a_add_user_no.sql` 同名字段，历史链不能直接对空库无条件重放；新库初始化以 `schema.sql` 为基线。
 
@@ -242,12 +249,21 @@ cd worker
 node scripts/d1-operations.mjs backup --market com --mode remote --output /secure-backups/sagemro-db-$(date +%F).sql --confirm-production
 node scripts/d1-operations.mjs backup --market cn --mode remote --output /secure-backups/sagemro-db-cn-$(date +%F).sql --confirm-production
 
+# 默认只打印留存计划；确认列表后才使用 --apply-retention 删除旧文件。
+# 按 UTC 日历日保留最近 30 天每天最新一份，再保留 12 个较老 ISO 周每周最新一份。
+node scripts/d1-operations.mjs retention-check --market com --directory /secure-backups --daily-days 30 --weekly-weeks 12
+node scripts/d1-operations.mjs retention-check --market cn --directory /secure-backups --daily-days 30 --weekly-weeks 12
+node scripts/d1-operations.mjs retention-check --market com --directory /secure-backups --daily-days 30 --weekly-weeks 12 --apply-retention
+node scripts/d1-operations.mjs retention-check --market cn --directory /secure-backups --daily-days 30 --weekly-weeks 12 --apply-retention
+
 # 恢复演练只使用隔离本地 D1。
 node scripts/d1-operations.mjs restore-drill --market com
 node scripts/d1-operations.mjs restore-drill --market cn
 ```
 
 恢复不是 migration 回滚。真正生产恢复前需先再次导出当前库、安排停写窗口，并在隔离 D1 验证目标备份；D1 schema 变更仍通过新的正向 migration 修复。
+
+`schema-diff` 无漂移时退出码为 0；发现对象缺失或定义变化时输出 `onlyLeft`、`onlyRight`、`changed` 并使用退出码 2。快照和备份都可能暴露生产结构或业务数据，应放在受限存储，不进入 Git。
 
 ### 🔴 部署前必做：检查 migration 是否遗漏
 

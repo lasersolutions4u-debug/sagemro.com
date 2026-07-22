@@ -55,6 +55,7 @@ __pycache__/
 # Misc
 *.bak
 worker/.codex-production-backups/
+worker/.codex-schema-snapshots/
 
 # Isolated browser-test runtime
 e2e/.generated/
