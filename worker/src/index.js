@@ -8148,15 +8148,19 @@ async function handleAdminMaterialInventoryAdjustment(request, env) {
     if (!delta) return errorResponse('库存调整数量不能为 0', 400);
 
     const beforeQuantity = Number(material.stock_quantity || 0);
+    const beforeReserved = Number(material.reserved_quantity || 0);
     const afterQuantity = beforeQuantity + delta;
     if (afterQuantity < 0) return errorResponse('库存不能调整为负数', 400);
-
-    await env.DB.prepare(
-      "UPDATE materials SET stock_quantity = stock_quantity + ?, updated_at = datetime('now') WHERE id = ?"
-    ).bind(delta, materialId).run();
+    if (afterQuantity < beforeReserved) return errorResponse('库存调整不能占用已预留库存', 409);
 
     const adjustmentId = generateId();
-    await env.DB.prepare(`
+    const stockMutation = env.DB.prepare(`
+      UPDATE materials
+      SET stock_quantity = stock_quantity + ?, updated_at = datetime('now')
+      WHERE id = ? AND stock_quantity = ? AND reserved_quantity = ?
+        AND stock_quantity + ? >= reserved_quantity
+    `).bind(delta, materialId, beforeQuantity, beforeReserved, delta);
+    const adjustment = env.DB.prepare(`
       INSERT INTO material_inventory_adjustments (
         id, material_id, change_type, delta, before_quantity, after_quantity, reason, created_by
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
@@ -8169,16 +8173,25 @@ async function handleAdminMaterialInventoryAdjustment(request, env) {
       afterQuantity,
       reason || null,
       request._auth?.userId || 'admin'
-    ).run();
-
-    const updated = await env.DB.prepare('SELECT * FROM materials WHERE id = ?').bind(materialId).first();
-    await writeAuditLog(env, request, {
+    );
+    await runAuditedWorkflowBatch(env, request, [
+      ...guardedWorkflowMutation(env, stockMutation),
+      adjustment,
+    ], {
       targetType: 'material',
       targetId: materialId,
       action: 'material_inventory_adjusted',
-      beforeState: { stock_quantity: beforeQuantity },
-      afterState: { stock_quantity: afterQuantity, delta, change_type: changeType, reason },
+      beforeState: { stock_quantity: beforeQuantity, reserved_quantity: beforeReserved },
+      afterState: {
+        stock_quantity: afterQuantity,
+        reserved_quantity: beforeReserved,
+        delta,
+        change_type: changeType,
+        reason,
+      },
     });
+
+    const updated = await env.DB.prepare('SELECT * FROM materials WHERE id = ?').bind(materialId).first();
 
     return jsonResponse({
       success: true,
@@ -8186,6 +8199,7 @@ async function handleAdminMaterialInventoryAdjustment(request, env) {
       material: normalizeMaterial(updated || { ...material, stock_quantity: afterQuantity }),
     });
   } catch (error) {
+    if (isWorkflowConcurrencyError(error)) return workflowErrorResponse(error);
     return errorResponse(error.message, 500);
   }
 }
@@ -8239,6 +8253,20 @@ function conditionalItemUpdateStatements(env, item, next) {
       ${REQUISITION_ITEM_CONCURRENCY_COLUMNS.map((column) => `AND ${column} = ?`).join('\n      ')}
   `).bind(
     ...columns.map((column) => next[column]),
+    item.id,
+    item.requisition_id,
+    ...REQUISITION_ITEM_CONCURRENCY_COLUMNS.map((column) => item[column]),
+  );
+  return guardedWorkflowMutation(env, statement);
+}
+
+function itemSnapshotGuardStatements(env, item) {
+  const statement = env.DB.prepare(`
+    UPDATE material_requisition_items
+    SET updated_at = updated_at
+    WHERE id = ? AND requisition_id = ?
+      ${REQUISITION_ITEM_CONCURRENCY_COLUMNS.map((column) => `AND ${column} = ?`).join('\n      ')}
+  `).bind(
     item.id,
     item.requisition_id,
     ...REQUISITION_ITEM_CONCURRENCY_COLUMNS.map((column) => item[column]),
@@ -8588,8 +8616,7 @@ async function handleRequisitionDecision(request, env, action) {
     nextStatus = 'rejected';
   } else {
     if (REQUISITION_TERMINAL_STATUSES.has(requisition.status)) return errorResponse('当前申请不可取消', 409);
-    if (requisition.items.some((item) => Number(item.procurement_received_quantity || 0) > 0
-      || Number(item.issued_quantity || 0) > 0
+    if (requisition.items.some((item) => Number(item.issued_quantity || 0) > 0
       || Number(item.engineer_received_quantity || 0) > 0)) {
       return errorResponse('已发料或签收的申请不能取消，请先完成允许的退库处理', 409);
     }
@@ -8613,10 +8640,9 @@ async function handleRequisitionDecision(request, env, action) {
   } else {
     const reservationsByMaterial = new Map();
     for (const item of requisition.items) {
+      reservationStatements.push(...itemSnapshotGuardStatements(env, item));
       if (!item.material_id) continue;
-      const outstandingReservation = Number(item.stock_allocated_quantity || 0)
-        - Number(item.stock_issued_quantity || 0)
-        + stockReturnedQuantity(item);
+      const outstandingReservation = outstandingItemReservation(item);
       if (outstandingReservation > 0) {
         reservationsByMaterial.set(
           item.material_id,
@@ -8638,7 +8664,7 @@ async function handleRequisitionDecision(request, env, action) {
         AND NOT EXISTS (
           SELECT 1 FROM material_requisition_items
           WHERE requisition_id = material_requisitions.id
-            AND (procurement_received_quantity > 0 OR issued_quantity > 0 OR engineer_received_quantity > 0)
+            AND (issued_quantity > 0 OR engineer_received_quantity > 0)
         )
     `).bind(nextStatus, reason, requisitionId, requisition.status);
   }
@@ -8683,15 +8709,14 @@ function fulfillmentSource(stockAllocated, procurementOrdered) {
   return 'unassigned';
 }
 
-function stockReturnedQuantity(item, overrides = {}) {
-  const issued = Number(overrides.issued_quantity ?? item.issued_quantity ?? 0);
-  const stockIssued = Number(overrides.stock_issued_quantity ?? item.stock_issued_quantity ?? 0);
-  const returned = Number(overrides.returned_quantity ?? item.returned_quantity ?? 0);
-  const engineerReceived = Number(overrides.engineer_received_quantity ?? item.engineer_received_quantity ?? 0);
-  const procurementIssued = Math.max(0, issued - stockIssued);
-  const procurementReceivedByEngineer = Math.max(0, engineerReceived - stockIssued);
-  const returnableProcurement = Math.max(0, procurementIssued - procurementReceivedByEngineer);
-  return Math.max(0, returned - returnableProcurement);
+function outstandingItemReservation(item, overrides = {}) {
+  return Math.max(
+    0,
+    Number(overrides.stock_allocated_quantity ?? item.stock_allocated_quantity ?? 0)
+      + Number(overrides.procurement_received_quantity ?? item.procurement_received_quantity ?? 0)
+      - Number(overrides.issued_quantity ?? item.issued_quantity ?? 0)
+      + Number(overrides.returned_quantity ?? item.returned_quantity ?? 0),
+  );
 }
 
 async function buildInventoryMovementStatements(env, request, item, {
@@ -8789,6 +8814,19 @@ function workflowOperationKey(request) {
   return cleanText(request.headers.get('Idempotency-Key'), 200);
 }
 
+async function workflowRequestFingerprint(action, requisitionId, itemId, quantity, body = {}) {
+  const canonicalPayload = JSON.stringify({
+    action,
+    requisition_id: requisitionId,
+    item_id: itemId,
+    quantity,
+    supplier_reference: action === 'record_purchase' ? cleanText(body.supplier_reference, 200) || null : null,
+    expected_arrival: action === 'record_purchase' ? cleanText(body.expected_arrival, 30) || null : null,
+  });
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(canonicalPayload));
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+
 async function existingWorkflowOperation(env, operationKey) {
   if (!operationKey) return null;
   return env.DB.prepare(`
@@ -8796,24 +8834,26 @@ async function existingWorkflowOperation(env, operationKey) {
   `).bind(operationKey).first();
 }
 
-function operationMatches(operation, action, requisitionId, itemId) {
+function operationMatches(operation, action, requisitionId, itemId, requestFingerprint) {
   return operation?.action === action
     && operation?.requisition_id === requisitionId
-    && operation?.item_id === itemId;
+    && operation?.item_id === itemId
+    && operation?.request_fingerprint === requestFingerprint;
 }
 
-function workflowOperationStatement(env, operationKey, action, requisitionId, itemId) {
+function workflowOperationStatement(env, operationKey, action, requisitionId, itemId, requestFingerprint) {
   return env.DB.prepare(`
-    INSERT INTO material_requisition_operations (operation_key, action, requisition_id, item_id)
-    VALUES (?, ?, ?, ?)
-  `).bind(operationKey, action, requisitionId, itemId);
+    INSERT INTO material_requisition_operations (
+      operation_key, action, requisition_id, item_id, request_fingerprint
+    ) VALUES (?, ?, ?, ?, ?)
+  `).bind(operationKey, action, requisitionId, itemId, requestFingerprint);
 }
 
-async function idempotentWorkflowResponse(env, operationKey, action, requisitionId, itemId) {
+async function idempotentWorkflowResponse(env, operationKey, action, requisitionId, itemId, requestFingerprint) {
   const operation = await existingWorkflowOperation(env, operationKey);
   if (!operation) return null;
-  if (!operationMatches(operation, action, requisitionId, itemId)) {
-    return errorResponse('Idempotency key is already used for another operation', 409);
+  if (!operationMatches(operation, action, requisitionId, itemId, requestFingerprint)) {
+    return errorResponse('Idempotency key is already used for a different request', 409);
   }
   return jsonResponse({ requisition: await getRequisitionWithItems(env, requisitionId) });
 }
@@ -8822,6 +8862,7 @@ async function handleRequisitionLineAction(request, env, action) {
   let body = {};
   let itemId = '';
   let operationKey = '';
+  let requestFingerprint = '';
   let requisitionId = '';
   try {
     const role = requisitionRole(request._auth);
@@ -8831,9 +8872,14 @@ async function handleRequisitionLineAction(request, env, action) {
     if (!requisition) return errorResponse('领料申请不存在', 404);
     body = await request.json().catch(() => ({}));
     itemId = cleanText(body.item_id, 100);
+    const quantity = toPositiveQuantity(body.quantity);
+    if (!itemId || !quantity) return errorResponse('物料明细和正数数量为必填项', 400);
     operationKey = workflowOperationKey(request);
     if (!operationKey) return errorResponse('Idempotency-Key header is required', 400);
-    const replay = await idempotentWorkflowResponse(env, operationKey, action, requisitionId, itemId);
+    requestFingerprint = await workflowRequestFingerprint(action, requisitionId, itemId, quantity, body);
+    const replay = await idempotentWorkflowResponse(
+      env, operationKey, action, requisitionId, itemId, requestFingerprint,
+    );
     if (replay) return replay;
     if (!['approved', 'processing', 'partially_fulfilled', 'ready', 'issued'].includes(requisition.status)) {
       return errorResponse('当前申请状态不可执行履约操作', 409);
@@ -8842,8 +8888,6 @@ async function handleRequisitionLineAction(request, env, action) {
       SELECT * FROM material_requisition_items WHERE id = ? AND requisition_id = ?
     `).bind(itemId, requisitionId).first();
     if (!item || item.status === 'cancelled') return errorResponse('领料明细不存在或已取消', 404);
-    const quantity = toPositiveQuantity(body.quantity);
-    if (!quantity) return errorResponse('数量必须为正数', 400);
     if (action === 'allocate_stock' && !item.material_id) {
       return errorResponse('自由录入物料不能分配台账库存，请走采购流程', 400);
     }
@@ -8858,13 +8902,15 @@ async function handleRequisitionLineAction(request, env, action) {
       next.procurement_received_quantity = Number(item.procurement_received_quantity || 0) + quantity;
     } else if (action === 'issue') {
       next.issued_quantity = Number(item.issued_quantity || 0) + quantity;
-      const remainingAllocatedStock = Math.max(
-        0,
-        Number(item.stock_allocated_quantity || 0)
-          - Number(item.stock_issued_quantity || 0)
-          + stockReturnedQuantity(item),
-      );
-      next.stock_issued_quantity = Number(item.stock_issued_quantity || 0) + Math.min(quantity, remainingAllocatedStock);
+      if (item.material_id) {
+        const remainingAllocatedStock = Math.max(
+          0,
+          Number(item.stock_allocated_quantity || 0)
+            - Number(item.stock_issued_quantity || 0),
+        );
+        next.stock_issued_quantity = Number(item.stock_issued_quantity || 0)
+          + Math.min(quantity, remainingAllocatedStock);
+      }
     } else if (action === 'return') {
       next.returned_quantity = Number(item.returned_quantity || 0) + quantity;
       if (next.returned_quantity > Number(item.issued_quantity || 0) - Number(item.engineer_received_quantity || 0)) {
@@ -8889,22 +8935,19 @@ async function handleRequisitionLineAction(request, env, action) {
       inventoryStatements = guardedWorkflowMutation(env, allocationGuard);
     } else if (action === 'receive_purchase') {
       inventoryStatements = await buildInventoryMovementStatements(env, request, item, {
-        stockDelta: quantity, changeType: 'procurement_receipt', action,
+        stockDelta: quantity, reservedDelta: quantity, changeType: 'procurement_receipt', action,
       });
     } else if (action === 'issue') {
-      const stockIssuedDelta = Number(next.stock_issued_quantity || 0) - Number(item.stock_issued_quantity || 0);
       inventoryStatements = await buildInventoryMovementStatements(env, request, item, {
         stockDelta: -quantity,
-        reservedDelta: -stockIssuedDelta,
-        requiredUnreserved: quantity - stockIssuedDelta,
-        requiredReserved: stockIssuedDelta,
+        reservedDelta: -quantity,
+        requiredReserved: quantity,
         changeType: 'requisition_issue',
         action,
       });
     } else if (action === 'return') {
-      const stockReturnDelta = stockReturnedQuantity(item, next) - stockReturnedQuantity(item);
       inventoryStatements = await buildInventoryMovementStatements(env, request, item, {
-        stockDelta: quantity, reservedDelta: stockReturnDelta, changeType: 'requisition_return', action,
+        stockDelta: quantity, reservedDelta: quantity, changeType: 'requisition_return', action,
       });
     }
     const headerStatements = requisitionHeaderMutationStatements(env, requisition, action, {
@@ -8912,10 +8955,11 @@ async function handleRequisitionLineAction(request, env, action) {
       role,
     });
     await runAuditedWorkflowBatch(env, request, [
+      ...requisitionStatusGuardStatements(env, requisition),
       ...inventoryStatements,
       ...conditionalItemUpdateStatements(env, item, next),
       ...headerStatements,
-      workflowOperationStatement(env, operationKey, action, requisitionId, itemId),
+      workflowOperationStatement(env, operationKey, action, requisitionId, itemId, requestFingerprint),
     ], {
       targetType: 'material_requisition_item', targetId: itemId,
       action: `material_requisition_${action}`,
@@ -8924,7 +8968,9 @@ async function handleRequisitionLineAction(request, env, action) {
     return jsonResponse({ requisition: await getRequisitionWithItems(env, requisitionId) });
   } catch (error) {
     if (/UNIQUE constraint failed: material_requisition_operations\.operation_key/i.test(String(error?.message || ''))) {
-      const replay = await idempotentWorkflowResponse(env, operationKey, action, requisitionId, itemId);
+      const replay = await idempotentWorkflowResponse(
+        env, operationKey, action, requisitionId, itemId, requestFingerprint,
+      );
       if (replay) return replay;
     }
     if (isWorkflowConcurrencyError(error)) return workflowErrorResponse(error);
@@ -8934,6 +8980,7 @@ async function handleRequisitionLineAction(request, env, action) {
 
 async function handleEngineerRequisitionReceipt(request, env) {
   let operationKey = '';
+  let requestFingerprint = '';
   let requisitionId = '';
   let itemId = '';
   try {
@@ -8950,7 +8997,14 @@ async function handleEngineerRequisitionReceipt(request, env) {
     operationKey = workflowOperationKey(request);
     if (!operationKey) return errorResponse('Idempotency-Key header is required', 400);
     itemId = cleanText(body.item_id, 100);
-    const replay = await idempotentWorkflowResponse(env, operationKey, 'engineer_receipt', requisitionId, itemId);
+    const quantity = toPositiveQuantity(body.quantity);
+    if (!itemId || !quantity) return errorResponse('物料明细和正数数量为必填项', 400);
+    requestFingerprint = await workflowRequestFingerprint(
+      'engineer_receipt', requisitionId, itemId, quantity, body,
+    );
+    const replay = await idempotentWorkflowResponse(
+      env, operationKey, 'engineer_receipt', requisitionId, itemId, requestFingerprint,
+    );
     if (replay) return replay;
     if (REQUISITION_TERMINAL_STATUSES.has(requisition.status)) {
       return errorResponse('当前申请状态不可确认签收', 409);
@@ -8959,8 +9013,6 @@ async function handleEngineerRequisitionReceipt(request, env) {
       SELECT * FROM material_requisition_items WHERE id = ? AND requisition_id = ?
     `).bind(itemId, requisitionId).first();
     if (!item) return errorResponse('领料明细不存在', 404);
-    const quantity = toPositiveQuantity(body.quantity);
-    if (!quantity) return errorResponse('数量必须为正数', 400);
     const engineerReceived = Number(item.engineer_received_quantity || 0) + quantity;
     const issuedAvailable = Number(item.issued_quantity || 0) - Number(item.returned_quantity || 0);
     if (engineerReceived > issuedAvailable) return errorResponse('签收数量不能超过净发料数量', 400);
@@ -8969,12 +9021,15 @@ async function handleEngineerRequisitionReceipt(request, env) {
       status: deriveApiItemStatus(item, { engineer_received_quantity: engineerReceived }),
     };
     await runAuditedWorkflowBatch(env, request, [
+      ...requisitionStatusGuardStatements(env, requisition),
       ...conditionalItemUpdateStatements(env, item, next),
       ...requisitionHeaderMutationStatements(env, requisition, 'engineer_receipt', {
         id: request._auth.userId,
         role: 'engineer',
       }),
-      workflowOperationStatement(env, operationKey, 'engineer_receipt', requisitionId, item.id),
+      workflowOperationStatement(
+        env, operationKey, 'engineer_receipt', requisitionId, item.id, requestFingerprint,
+      ),
     ], {
       targetType: 'material_requisition_item', targetId: item.id,
       action: 'material_requisition_engineer_receipt', beforeState: item, afterState: { ...item, ...next },
@@ -8982,10 +9037,10 @@ async function handleEngineerRequisitionReceipt(request, env) {
     return jsonResponse({ requisition: await getRequisitionWithItems(env, requisitionId) });
   } catch (error) {
     if (/UNIQUE constraint failed: material_requisition_operations\.operation_key/i.test(String(error?.message || ''))) {
-      const operation = await existingWorkflowOperation(env, operationKey);
-      if (operationMatches(operation, 'engineer_receipt', requisitionId, itemId)) {
-        return jsonResponse({ requisition: await getRequisitionWithItems(env, requisitionId) });
-      }
+      const replay = await idempotentWorkflowResponse(
+        env, operationKey, 'engineer_receipt', requisitionId, itemId, requestFingerprint,
+      );
+      if (replay) return replay;
     }
     return workflowErrorResponse(error);
   }
@@ -9062,10 +9117,9 @@ async function handleCancelRequisitionItem(request, env) {
     SELECT * FROM material_requisition_items WHERE id = ? AND requisition_id = ?
   `).bind(itemId, requisitionId).first();
   if (!item) return errorResponse('领料明细不存在', 404);
-  if (Number(item.procurement_received_quantity || 0) > 0
-    || Number(item.issued_quantity || 0) > 0
+  if (Number(item.issued_quantity || 0) > 0
     || Number(item.engineer_received_quantity || 0) > 0) {
-    return errorResponse('已采购入库、发料或签收的明细不能取消', 409);
+    return errorResponse('已发料或签收的明细不能取消', 409);
   }
   const body = await request.json().catch(() => ({}));
   const reason = cleanText(body.reason, 600);
@@ -9073,9 +9127,7 @@ async function handleCancelRequisitionItem(request, env) {
   try {
     const next = { status: 'cancelled', notes };
     let reservationStatements = [];
-    const outstandingReservation = Number(item.stock_allocated_quantity || 0)
-      - Number(item.stock_issued_quantity || 0)
-      + stockReturnedQuantity(item);
+    const outstandingReservation = outstandingItemReservation(item);
     if (item.material_id && outstandingReservation > 0) {
       const releaseReservation = env.DB.prepare(`
         UPDATE materials

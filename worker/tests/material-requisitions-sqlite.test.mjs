@@ -54,7 +54,7 @@ test('migration 038 adds reservation and idempotency schema with integer quantit
   const materialColumns = db.prepare('PRAGMA table_info(materials)').all().map((column) => column.name);
   const operationColumns = db.prepare('PRAGMA table_info(material_requisition_operations)').all().map((column) => column.name);
   assert.ok(materialColumns.includes('reserved_quantity'));
-  assert.deepEqual(operationColumns, ['operation_key', 'action', 'requisition_id', 'item_id', 'completed_at']);
+  assert.deepEqual(operationColumns, ['operation_key', 'action', 'requisition_id', 'item_id', 'request_fingerprint', 'completed_at']);
 
   seedRequisition(db);
   assert.throws(() => db.prepare(`
@@ -92,6 +92,30 @@ test('reservation SQL prevents two requisitions from overcommitting the same mat
   });
 });
 
+test('procurement receipt stock is physically available but remains reserved to its requisition', () => {
+  const db = minimalPreMigrationDatabase();
+  db.exec(migrationSql);
+  seedRequisition(db, { requisitionId: 'req-a', itemIds: ['item-a'] });
+  seedRequisition(db, { requisitionId: 'req-b', itemIds: ['item-b'] });
+  db.exec("UPDATE materials SET stock_quantity = 0, reserved_quantity = 0 WHERE id = 'mat-1'");
+
+  const receivePurchase = db.prepare(`
+    UPDATE materials
+    SET stock_quantity = stock_quantity + ?, reserved_quantity = reserved_quantity + ?
+    WHERE id = ? AND stock_quantity = ? AND reserved_quantity = ?
+  `);
+  assert.equal(receivePurchase.run(3, 3, 'mat-1', 0, 0).changes, 1);
+  const allocate = db.prepare(`
+    UPDATE materials SET reserved_quantity = reserved_quantity + ?
+    WHERE id = ? AND stock_quantity - reserved_quantity >= ?
+  `);
+  assert.equal(allocate.run(1, 'mat-1', 1).changes, 0);
+  assert.deepEqual({ ...db.prepare('SELECT stock_quantity, reserved_quantity FROM materials WHERE id = ?').get('mat-1') }, {
+    stock_quantity: 3,
+    reserved_quantity: 3,
+  });
+});
+
 test('stock issue and return arithmetic preserve physical and reserved balances', () => {
   const db = minimalPreMigrationDatabase();
   db.exec(migrationSql);
@@ -120,14 +144,15 @@ test('stock issue and return arithmetic preserve physical and reserved balances'
   });
 });
 
-test('operation keys are unique and requisition history blocks work order deletion', () => {
+test('operation keys store a request fingerprint and requisition history blocks work order deletion', () => {
   const db = minimalPreMigrationDatabase();
   db.exec(migrationSql);
   seedRequisition(db);
 
   const operation = db.prepare(`
-    INSERT INTO material_requisition_operations (operation_key, action, requisition_id, item_id)
-    VALUES (?, 'allocate_stock', 'req-1', 'item-1')
+    INSERT INTO material_requisition_operations (
+      operation_key, action, requisition_id, item_id, request_fingerprint
+    ) VALUES (?, 'allocate_stock', 'req-1', 'item-1', 'fingerprint-1')
   `);
   operation.run('operation-1');
   assert.throws(() => operation.run('operation-1'), /unique/i);

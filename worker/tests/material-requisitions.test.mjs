@@ -176,8 +176,7 @@ function createStatement(env, sql) {
         }
         if (requisition && /cancellation_reason/i.test(normalized) && /NOT EXISTS/i.test(normalized)
           && env.__items.some((item) => item.requisition_id === requisition.id
-            && (Number(item.procurement_received_quantity || 0) > 0
-              || Number(item.issued_quantity || 0) > 0
+            && (Number(item.issued_quantity || 0) > 0
               || Number(item.engineer_received_quantity || 0) > 0))) {
           env.__lastChanges = 0;
           return { success: true, meta: { changes: 0 } };
@@ -305,11 +304,17 @@ function createStatement(env, sql) {
         env.__adjustments.push({ args: clone(this.args) });
         changes = 1;
       } else if (/INSERT INTO material_requisition_operations/i.test(normalized)) {
-        const [operationKey, action, requisitionId, itemId] = this.args;
+        const [operationKey, action, requisitionId, itemId, requestFingerprint] = this.args;
         if (env.__operations.some((operation) => operation.operation_key === operationKey)) {
           throw new Error('UNIQUE constraint failed: material_requisition_operations.operation_key');
         }
-        env.__operations.push({ operation_key: operationKey, action, requisition_id: requisitionId, item_id: itemId });
+        env.__operations.push({
+          operation_key: operationKey,
+          action,
+          requisition_id: requisitionId,
+          item_id: itemId,
+          request_fingerprint: requestFingerprint,
+        });
         changes = 1;
       } else if (/INSERT INTO audit_logs/i.test(normalized)) {
         if (env.__failNextAudit) {
@@ -369,6 +374,16 @@ function createEnv() {
             item.status = 'received';
           }
           delete env.__receiveOtherItemBeforeNextBatch;
+        }
+        if (env.__allocateBeforeNextBatch) {
+          const item = env.__items.find((entry) => entry.id === env.__allocateBeforeNextBatch.itemId);
+          const material = env.__materials.find((entry) => entry.id === item?.material_id);
+          if (item && material) {
+            item.stock_allocated_quantity += env.__allocateBeforeNextBatch.quantity;
+            item.status = 'stock_allocated';
+            material.reserved_quantity += env.__allocateBeforeNextBatch.quantity;
+          }
+          delete env.__allocateBeforeNextBatch;
         }
         const snapshot = clone({
           staff: env.__staff,
@@ -685,6 +700,37 @@ test('duplicate delta operations return current state without quantity, inventor
   assert.deepEqual({ items: env.__items, audits: env.__auditLogs, operations: env.__operations }, beforeRetry);
 });
 
+test('idempotency keys reject changed quantities and procurement metadata', async () => {
+  const env = createEnv();
+  const requisition = await createAndSubmit(env);
+  const [stockItem, buyItem] = requisition.items;
+  await api(env, `/api/material-requisitions/${requisition.id}/approve`, { method: 'POST', auth: staffAuth('operations') });
+
+  const allocation = {
+    method: 'POST', auth: staffAuth('warehouse'), idempotencyKey: 'same-allocation',
+    body: { item_id: stockItem.id, quantity: 1 },
+  };
+  assert.equal((await api(env, `/api/material-requisitions/${requisition.id}/stock-allocation`, allocation)).response.status, 200);
+  const beforeQuantityMismatch = clone({ item: env.__items[0], material: env.__materials[0], operations: env.__operations });
+  const quantityMismatch = await api(env, `/api/material-requisitions/${requisition.id}/stock-allocation`, {
+    ...allocation, body: { item_id: stockItem.id, quantity: 2 },
+  });
+  assert.equal(quantityMismatch.response.status, 409);
+  assert.deepEqual({ item: env.__items[0], material: env.__materials[0], operations: env.__operations }, beforeQuantityMismatch);
+
+  const procurement = {
+    method: 'POST', auth: staffAuth('procurement'), idempotencyKey: 'same-procurement',
+    body: { item_id: buyItem.id, quantity: 1, supplier_reference: 'SUP-A', expected_arrival: '2026-08-01' },
+  };
+  assert.equal((await api(env, `/api/material-requisitions/${requisition.id}/procurement`, procurement)).response.status, 200);
+  const beforeMetadataMismatch = clone({ item: env.__items[1], operations: env.__operations });
+  const metadataMismatch = await api(env, `/api/material-requisitions/${requisition.id}/procurement`, {
+    ...procurement, body: { ...procurement.body, supplier_reference: 'SUP-B' },
+  });
+  assert.equal(metadataMismatch.response.status, 409);
+  assert.deepEqual({ item: env.__items[1], operations: env.__operations }, beforeMetadataMismatch);
+});
+
 test('two requisitions cannot reserve more than shared physical stock', async () => {
   const env = createEnv();
   const first = await createAndSubmit(env);
@@ -727,7 +773,43 @@ test('two requisitions cannot reserve more than shared physical stock', async ()
   })).response.status, 409);
 });
 
-test('stock issue consumes reservations and stock return restores only stock-sourced demand', async () => {
+test('purchased stock stays reserved to its requisition until issue or cancellation', async () => {
+  const env = createEnv();
+  const first = await createAndSubmit(env);
+  const second = await createAndSubmit(env);
+  const firstItem = first.items[1];
+  const secondItem = second.items[1];
+  env.__items.find((item) => item.id === firstItem.id).requested_quantity = 3;
+  env.__items.find((item) => item.id === secondItem.id).requested_quantity = 2;
+  await api(env, `/api/material-requisitions/${first.id}/approve`, { method: 'POST', auth: staffAuth('operations') });
+  await api(env, `/api/material-requisitions/${second.id}/approve`, { method: 'POST', auth: staffAuth('operations') });
+  await api(env, `/api/material-requisitions/${first.id}/procurement`, {
+    method: 'POST', auth: staffAuth('procurement'), body: { item_id: firstItem.id, quantity: 3 },
+  });
+  const received = await api(env, `/api/material-requisitions/${first.id}/procurement-receipt`, {
+    method: 'POST', auth: staffAuth('procurement'), body: { item_id: firstItem.id, quantity: 3 },
+  });
+  assert.equal(received.response.status, 200);
+  assert.deepEqual([env.__materials[1].stock_quantity, env.__materials[1].reserved_quantity], [3, 3]);
+
+  const stolen = await api(env, `/api/material-requisitions/${second.id}/stock-allocation`, {
+    method: 'POST', auth: staffAuth('warehouse'), body: { item_id: secondItem.id, quantity: 1 },
+  });
+  assert.equal(stolen.response.status, 409);
+
+  const cancelled = await api(env, `/api/material-requisitions/${first.id}/cancel`, {
+    method: 'POST', auth: staffAuth('operations'), body: { reason: 'No longer needed' },
+  });
+  assert.equal(cancelled.response.status, 200);
+  assert.deepEqual([env.__materials[1].stock_quantity, env.__materials[1].reserved_quantity], [3, 0]);
+  const released = await api(env, `/api/material-requisitions/${second.id}/stock-allocation`, {
+    method: 'POST', auth: staffAuth('warehouse'), body: { item_id: secondItem.id, quantity: 2 },
+  });
+  assert.equal(released.response.status, 200);
+  assert.equal(env.__materials[1].reserved_quantity, 2);
+});
+
+test('stock issue consumes reservations and stock return restores material-backed demand', async () => {
   const env = createEnv();
   const requisition = await createAndSubmit(env);
   const item = requisition.items[0];
@@ -893,6 +975,8 @@ test('operations, warehouse, procurement, and engineer complete a mixed fulfillm
   });
   assert.equal(issuedBuy.response.status, 200);
   assert.deepEqual(env.__materials.map((item) => item.stock_quantity), [8, 0]);
+  assert.equal(env.__items[0].stock_issued_quantity, 2);
+  assert.equal(env.__items[1].stock_issued_quantity, 0);
 
   const returned = await api(env, `/api/material-requisitions/${requisition.id}/return`, {
     method: 'POST',
@@ -1067,7 +1151,7 @@ test('operations can reject submitted requisitions and cancel non-terminal requi
   assert.equal(cancelResult.json.requisition.cancellation_reason, 'Work order cancelled');
 });
 
-test('whole cancellation is rejected after issue or receipt', async () => {
+test('whole cancellation is rejected after issue or engineer receipt', async () => {
   const env = createEnv();
   const requisition = await createAndSubmit(env);
   const item = requisition.items[0];
@@ -1092,12 +1176,6 @@ test('whole cancellation is rejected after issue or receipt', async () => {
   assert.equal(receivedCancellation.response.status, 409);
   assert.notEqual(env.__requisitions[0].status, 'cancelled');
 
-  env.__items[0].engineer_received_quantity = 0;
-  env.__items[0].procurement_received_quantity = 1;
-  const procuredCancellation = await api(env, `/api/material-requisitions/${requisition.id}/cancel`, {
-    method: 'POST', auth: staffAuth('operations'), body: { reason: 'Received stock exists' },
-  });
-  assert.equal(procuredCancellation.response.status, 409);
 });
 
 test('cancellation loses a race with issue without overwriting the issued requisition', async () => {
@@ -1111,6 +1189,23 @@ test('cancellation loses a race with issue without overwriting the issued requis
 
   assert.equal(result.response.status, 409);
   assert.equal(env.__items[0].issued_quantity, 1);
+  assert.notEqual(env.__requisitions[0].status, 'cancelled');
+});
+
+test('cancellation loses an allocation race without releasing the concurrent reservation', async () => {
+  const env = createEnv();
+  const requisition = await createAndSubmit(env);
+  const item = requisition.items[0];
+  await api(env, `/api/material-requisitions/${requisition.id}/approve`, { method: 'POST', auth: staffAuth('operations') });
+  env.__allocateBeforeNextBatch = { itemId: item.id, quantity: 1 };
+
+  const result = await api(env, `/api/material-requisitions/${requisition.id}/cancel`, {
+    method: 'POST', auth: staffAuth('operations'), body: { reason: 'Concurrent cancellation' },
+  });
+
+  assert.equal(result.response.status, 409);
+  assert.equal(env.__items[0].stock_allocated_quantity, 1);
+  assert.equal(env.__materials[0].reserved_quantity, 1);
   assert.notEqual(env.__requisitions[0].status, 'cancelled');
 });
 
@@ -1167,7 +1262,7 @@ test('closed requisitions reject repeated close writes', async () => {
   assert.equal(env.__auditLogs.length, auditCount);
 });
 
-test('received procurement lines cannot be cancelled', async () => {
+test('unissued procurement receipts can be cancelled and released to general stock', async () => {
   const env = createEnv();
   const requisition = await createAndSubmit(env);
   const item = requisition.items[1];
@@ -1178,14 +1273,13 @@ test('received procurement lines cannot be cancelled', async () => {
   await api(env, `/api/material-requisitions/${requisition.id}/procurement-receipt`, {
     method: 'POST', auth: staffAuth('procurement'), body: { item_id: item.id, quantity: 1 },
   });
-  const before = clone(env.__items[1]);
-
   const result = await api(env, `/api/material-requisitions/${requisition.id}/items/${item.id}/cancel`, {
     method: 'POST', auth: staffAuth('operations'), body: { reason: 'No longer needed' },
   });
 
-  assert.equal(result.response.status, 409);
-  assert.deepEqual(env.__items[1], before);
+  assert.equal(result.response.status, 200);
+  assert.equal(env.__items[1].status, 'cancelled');
+  assert.deepEqual([env.__materials[1].stock_quantity, env.__materials[1].reserved_quantity], [1, 0]);
 });
 
 test('operations can cancel an unneeded line so the remaining received lines can close', async () => {

@@ -105,6 +105,7 @@ CREATE TABLE IF NOT EXISTS material_requisition_operations (
     action TEXT NOT NULL,
     requisition_id TEXT NOT NULL,
     item_id TEXT NOT NULL,
+    request_fingerprint TEXT NOT NULL,
     completed_at TEXT NOT NULL DEFAULT (datetime('now')),
     FOREIGN KEY (requisition_id) REFERENCES material_requisitions(id),
     FOREIGN KEY (item_id) REFERENCES material_requisition_items(id)
