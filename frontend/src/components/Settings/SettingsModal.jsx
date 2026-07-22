@@ -29,15 +29,6 @@ const COPY = {
     serviceRegion: 'Service Region',
     bio: 'Bio',
     bioPlaceholder: 'Introduce yourself to customers...',
-    bankTitle: 'Bank Account (internal settlement)',
-    bankName: 'Bank Name',
-    bankPlaceholder: 'e.g. ICBC, Construction Bank',
-    branch: 'Branch',
-    branchPlaceholder: 'e.g. Jinan Lixia Branch',
-    holder: 'Account Holder',
-    holderPlaceholder: 'Must match the bank account name',
-    accountNumber: 'Account Number',
-    accountPlaceholder: 'Enter bank account number',
     levelLabel: 'Level',
     creditScore: 'Credit Score',
     saving: 'Saving...',
@@ -77,15 +68,6 @@ const COPY = {
     serviceRegion: '服务区域',
     bio: '简介',
     bioPlaceholder: '向客户介绍你的设备经验和服务能力...',
-    bankTitle: '收款账户（内部结算）',
-    bankName: '开户行',
-    bankPlaceholder: '例如：工商银行、建设银行',
-    branch: '支行',
-    branchPlaceholder: '例如：济南历下支行',
-    holder: '账户姓名',
-    holderPlaceholder: '需与银行账户姓名一致',
-    accountNumber: '账号',
-    accountPlaceholder: '请输入银行账号',
     levelLabel: '等级',
     creditScore: '信用分',
     saving: '保存中...',
@@ -115,7 +97,7 @@ export function SettingsModal({ isOpen, onClose, currentUser, userType, onOpenMy
   const [customerForm, setCustomerForm] = useState({ name: '', region: '' });
 
   // 工程师档案
-  const [engineerForm, setEngineerForm] = useState({ name: '', bio: '', service_region: '', bank_name: '', bank_account: '', bank_branch: '', account_holder: '' });
+  const [engineerForm, setEngineerForm] = useState({ name: '', bio: '', service_region: '' });
   const [engineerStats, setEngineerStats] = useState(null);
   const [currentStatus, setCurrentStatus] = useState('available');
 
@@ -131,10 +113,6 @@ export function SettingsModal({ isOpen, onClose, currentUser, userType, onOpenMy
           name: currentUser.name || '',
           bio: currentUser.bio || '',
           service_region: currentUser.service_region || '',
-          bank_name: currentUser.bank_name || '',
-          bank_account: currentUser.bank_account || '',
-          bank_branch: currentUser.bank_branch || '',
-          account_holder: currentUser.account_holder || '',
         });
         setCurrentStatus(currentUser.status || 'available');
         loadEngineerData();
@@ -159,14 +137,6 @@ export function SettingsModal({ isOpen, onClose, currentUser, userType, onOpenMy
           : 'N/A',
         rating_count: profile.rating_count || 0,
       });
-      // 回填银行卡信息
-      setEngineerForm(prev => ({
-        ...prev,
-        bank_name: profile.bank_name || prev.bank_name || '',
-        bank_account: profile.bank_account || prev.bank_account || '',
-        bank_branch: profile.bank_branch || prev.bank_branch || '',
-        account_holder: profile.account_holder || prev.account_holder || '',
-      }));
     } catch (err) {
       console.error('Failed to load engineer data', err);
     }
@@ -414,53 +384,6 @@ export function SettingsModal({ isOpen, onClose, currentUser, userType, onOpenMy
                       className="w-full bg-[var(--color-input-bg)] border border-[var(--color-input-border)] rounded-lg px-3 py-2.5 text-[14px] text-[var(--color-sidebar-text)] resize-none"
                     />
                   </div>
-                  {/* SERVICE_OS_LEGACY: bank info is kept for internal settlement transition. */}
-                  <div className="border-t border-[var(--color-border)] pt-4 mt-2">
-                    <p className="text-[12px] text-[var(--color-sidebar-text)] opacity-60 mb-3">{copy.bankTitle}</p>
-                    <div className="space-y-3">
-                      <div>
-                        <label className="block text-[12px] text-[var(--color-sidebar-text)] opacity-60 mb-1.5">{copy.bankName}</label>
-                        <input
-                          type="text"
-                          value={engineerForm.bank_name}
-                          onChange={e => setEngineerForm({ ...engineerForm, bank_name: e.target.value })}
-                          placeholder={copy.bankPlaceholder}
-                          className="w-full bg-[var(--color-input-bg)] border border-[var(--color-input-border)] rounded-lg px-3 py-2.5 text-[14px] text-[var(--color-sidebar-text)]"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-[12px] text-[var(--color-sidebar-text)] opacity-60 mb-1.5">{copy.branch}</label>
-                        <input
-                          type="text"
-                          value={engineerForm.bank_branch}
-                          onChange={e => setEngineerForm({ ...engineerForm, bank_branch: e.target.value })}
-                          placeholder={copy.branchPlaceholder}
-                          className="w-full bg-[var(--color-input-bg)] border border-[var(--color-input-border)] rounded-lg px-3 py-2.5 text-[14px] text-[var(--color-sidebar-text)]"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-[12px] text-[var(--color-sidebar-text)] opacity-60 mb-1.5">{copy.holder}</label>
-                        <input
-                          type="text"
-                          value={engineerForm.account_holder}
-                          onChange={e => setEngineerForm({ ...engineerForm, account_holder: e.target.value })}
-                          placeholder={copy.holderPlaceholder}
-                          className="w-full bg-[var(--color-input-bg)] border border-[var(--color-input-border)] rounded-lg px-3 py-2.5 text-[14px] text-[var(--color-sidebar-text)]"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-[12px] text-[var(--color-sidebar-text)] opacity-60 mb-1.5">{copy.accountNumber}</label>
-                        <input
-                          type="text"
-                          value={engineerForm.bank_account}
-                          onChange={e => setEngineerForm({ ...engineerForm, bank_account: e.target.value })}
-                          placeholder={copy.accountPlaceholder}
-                          className="w-full bg-[var(--color-input-bg)] border border-[var(--color-input-border)] rounded-lg px-3 py-2.5 text-[14px] text-[var(--color-sidebar-text)]"
-                        />
-                      </div>
-                    </div>
-                  </div>
-
                   {/* 工程师等级信息 */}
                   <div className="bg-[var(--color-surface-elevated)] rounded-xl p-3 space-y-2">
                     <div className="flex justify-between text-[13px]">

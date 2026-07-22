@@ -1543,47 +1543,51 @@ export function WorkOrdersPage() {
                   </div>
                 </section>
 
-                <section className="rounded-xl border border-[var(--color-primary)]/30 bg-[var(--color-primary)]/5 p-4">
-                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                    <div>
-                      <h4 className="font-medium text-[var(--color-text)]">{t.engineerPayoutTitle}</h4>
-                      <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
-                        {t.engineerPayoutHint}
-                      </p>
-                      <div className="mt-3 grid gap-2 text-xs text-[var(--color-text-muted)] sm:grid-cols-2">
-                        <div>{t.payoutFields.status}: {payoutLabel(detail.payout_status, t)}</div>
-                        <div>{t.payoutFields.method}: {detail.payout?.method === 'bank_swift' ? t.payoutMethods.bank_swift : t.payoutMethods.paypal}</div>
-                        <div>{t.payoutFields.amount}: {detail.payout?.amount ? `${money(detail.payout.amount)} ${detail.payout.currency || CURRENCY}` : '-'}</div>
-                        <div>{t.payoutFields.reference}: {detail.payout?.transaction_reference || '-'}</div>
-                        <div>{t.payoutFields.paidAt}: {detail.payout?.paid_at ? new Date(detail.payout.paid_at).toLocaleString(runtimeConfig.locale === 'zh-CN' ? 'zh-CN' : 'en-US') : '-'}</div>
-                        <div>{t.payoutFields.note}: {detail.payout?.internal_note || '-'}</div>
+                {detail.status === 'completed' && (
+                  <section className="rounded-xl border border-[var(--color-primary)]/30 bg-[var(--color-primary)]/5 p-4">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                      <div>
+                        <h4 className="font-medium text-[var(--color-text)]">{t.engineerPayoutTitle}</h4>
+                        <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
+                          {t.engineerPayoutHint}
+                        </p>
+                        <div className="mt-3 grid gap-2 text-xs text-[var(--color-text-muted)] sm:grid-cols-2">
+                          <div>{t.payoutFields.status}: {payoutLabel(detail.payout_status, t)}</div>
+                          <div>{t.payoutFields.method}: {detail.payout?.method === 'bank_swift' ? t.payoutMethods.bank_swift : t.payoutMethods.paypal}</div>
+                          <div>{t.payoutFields.amount}: {detail.payout?.amount ? `${money(detail.payout.amount)} ${detail.payout.currency || CURRENCY}` : '-'}</div>
+                          <div>{t.payoutFields.reference}: {detail.payout?.transaction_reference || '-'}</div>
+                          <div>{t.payoutFields.paidAt}: {detail.payout?.paid_at ? new Date(detail.payout.paid_at).toLocaleString(runtimeConfig.locale === 'zh-CN' ? 'zh-CN' : 'en-US') : '-'}</div>
+                          <div>{t.payoutFields.note}: {detail.payout?.internal_note || '-'}</div>
+                        </div>
                       </div>
+                      {detail.payout_status !== 'completed' && (
+                        <div className="flex flex-wrap gap-2">
+                          <button
+                            onClick={() => handleUpdatePayout(detail, 'processing')}
+                            disabled={assigningId === `${detail.id}:payout:processing`}
+                            className="rounded-lg border border-[var(--color-border)] px-3 py-2 text-sm text-[var(--color-text-secondary)] disabled:opacity-50"
+                          >
+                            {t.payoutActions.processing}
+                          </button>
+                          <button
+                            onClick={() => handleUpdatePayout(detail, 'completed')}
+                            disabled={assigningId === `${detail.id}:payout:completed`}
+                            className="rounded-lg bg-[var(--color-primary)] px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
+                          >
+                            {t.payoutActions.completed}
+                          </button>
+                          <button
+                            onClick={() => handleUpdatePayout(detail, 'exception')}
+                            disabled={assigningId === `${detail.id}:payout:exception`}
+                            className="rounded-lg border border-red-500/40 px-3 py-2 text-sm text-red-500 disabled:opacity-50"
+                          >
+                            {t.payoutActions.exception}
+                          </button>
+                        </div>
+                      )}
                     </div>
-                    <div className="flex flex-wrap gap-2">
-                      <button
-                        onClick={() => handleUpdatePayout(detail, 'processing')}
-                        disabled={assigningId === `${detail.id}:payout:processing`}
-                        className="rounded-lg border border-[var(--color-border)] px-3 py-2 text-sm text-[var(--color-text-secondary)] disabled:opacity-50"
-                      >
-                        {t.payoutActions.processing}
-                      </button>
-                      <button
-                        onClick={() => handleUpdatePayout(detail, 'completed')}
-                        disabled={assigningId === `${detail.id}:payout:completed`}
-                        className="rounded-lg bg-[var(--color-primary)] px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
-                      >
-                        {t.payoutActions.completed}
-                      </button>
-                      <button
-                        onClick={() => handleUpdatePayout(detail, 'exception')}
-                        disabled={assigningId === `${detail.id}:payout:exception`}
-                        className="rounded-lg border border-red-500/40 px-3 py-2 text-sm text-red-500 disabled:opacity-50"
-                      >
-                        {t.payoutActions.exception}
-                      </button>
-                    </div>
-                  </div>
-                </section>
+                  </section>
+                )}
 
                 {runtimeConfig.locale === 'zh-CN' && (
                   <section className="rounded-xl border border-[var(--color-border)] p-4">

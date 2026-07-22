@@ -5714,8 +5714,8 @@ async function handleSubmitRating(request, env) {
       'UPDATE work_orders SET status = ?, completed_at = datetime("now") WHERE id = ?'
     ).bind('completed', work_order_id).run();
 
-    // 钱包结算：按工程师提成率将确认后的报价入账
-    const settlement = await settleEngineerWallet(env, work_order_id, engineer_id);
+    // 正式口径：客户评价只完成服务闭环；工程师服务款由 Admin 在逐单记录中人工确认。
+    // 旧钱包结算函数保留用于历史兼容，但不再由新工单流程自动调用。
     const payout = await ensureWorkOrderPayout(env, work_order_id, engineer_id, 'pending');
 
     // 通知工程师：收到新评价
@@ -5730,10 +5730,7 @@ async function handleSubmitRating(request, env) {
       data: { work_order_id },
     });
 
-    // SERVICE_OS_LEGACY: settlement is kept for historical accounting compatibility,
-    // but Service OS no longer exposes wallet/commission notifications to engineers.
-
-    return jsonResponse({ success: true, settlement, payout });
+    return jsonResponse({ success: true, payout });
   } catch (error) {
     return errorResponse(error.message, 500);
   }
@@ -6271,7 +6268,7 @@ async function handleGetEngineerProfile(request, env) {
     }
 
     const engineer = await env.DB.prepare(
-      'SELECT id, name, phone, specialties, brands, services, service_region, bio, status, rating_timeliness, rating_technical, rating_communication, rating_professional, rating_count, created_at, level, commission_rate, credit_score, wallet_balance, deposit_balance, total_orders, complex_orders, success_orders, payout_method, paypal_account, bank_country, bank_name, bank_account, bank_swift_code, account_holder, payout_notes FROM engineers WHERE id = ?'
+      'SELECT id, name, phone, specialties, brands, services, service_region, bio, status, rating_timeliness, rating_technical, rating_communication, rating_professional, rating_count, created_at, level, credit_score, total_orders, complex_orders, success_orders, payout_method, paypal_account, bank_country, bank_name, bank_account, bank_swift_code, account_holder, payout_notes FROM engineers WHERE id = ?'
     ).bind(engineerId).first();
 
     if (!engineer) {
@@ -6401,7 +6398,7 @@ async function handleUpdateEngineerProfile(request, env) {
     await env.DB.prepare(`UPDATE engineers SET ${updates.join(', ')} WHERE id = ?`).bind(...values).run();
 
     const updated = await env.DB.prepare(
-      'SELECT id, user_no, name, phone, specialties, brands, services, service_region, bio, status, level, commission_rate, credit_score, rating_timeliness, rating_technical, rating_communication, rating_professional, rating_count, payout_method, paypal_account, bank_country, bank_name, bank_account, bank_branch, bank_swift_code, account_holder, payout_notes FROM engineers WHERE id = ?'
+      'SELECT id, user_no, name, phone, specialties, brands, services, service_region, bio, status, level, credit_score, rating_timeliness, rating_technical, rating_communication, rating_professional, rating_count, payout_method, paypal_account, bank_country, bank_name, bank_account, bank_branch, bank_swift_code, account_holder, payout_notes FROM engineers WHERE id = ?'
     ).bind(engineerId).first();
 
     if (!updated) return errorResponse('工程师不存在', 404);
@@ -12169,8 +12166,20 @@ async function handleAdminUpdateWorkOrderPayout(request, env) {
     ).bind(workOrderId).first();
     if (!wo) return errorResponse(market === 'cn' ? '工单不存在' : 'Work order not found', 404);
     if (!wo.engineer_id) return errorResponse(market === 'cn' ? '工单未指派工程师' : 'Work order has no assigned engineer', 400);
+    if (status === 'completed' && wo.status !== 'completed') {
+      return errorResponse(market === 'cn' ? '工单完成后才能确认工程师服务款' : 'Engineer payout can only be completed after the work order is completed', 409);
+    }
+    if (status === 'completed' && amount <= 0) {
+      return errorResponse(market === 'cn' ? '完成结算时金额必须大于 0' : 'Completed payout amount must be greater than zero', 400);
+    }
 
     let payout = await ensureWorkOrderPayout(env, workOrderId, wo.engineer_id, status === 'not_ready' ? 'not_ready' : 'pending');
+    if (payout.status === 'completed') {
+      if (status === 'completed') {
+        return jsonResponse({ success: true, payout, payout_status: payout.status, idempotent: true });
+      }
+      return errorResponse(market === 'cn' ? '已完成的工程师服务款不能回退' : 'Completed engineer payout cannot be reopened', 409);
+    }
     const nextPaidAt = status === 'completed' ? (paid_at || new Date().toISOString()) : (paid_at || payout.paid_at || '');
     const nextMethod = method || payout.method || 'paypal';
 

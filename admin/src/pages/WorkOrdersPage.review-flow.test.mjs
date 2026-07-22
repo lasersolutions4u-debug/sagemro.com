@@ -38,3 +38,10 @@ test('admin drawer can confirm the completed service balance payment', async () 
   assert.match(source, /detail\.balance_payment\?\.status/);
   assert.match(source, /确认尾款到账/);
 });
+
+test('engineer payout controls are limited to completed work orders and lock after completion', async () => {
+  const source = await readFile(new URL('./WorkOrdersPage.jsx', import.meta.url), 'utf8');
+
+  assert.match(source, /detail\.status === 'completed'[\s\S]*t\.engineerPayoutTitle/);
+  assert.match(source, /detail\.payout_status !== 'completed'[\s\S]*handleUpdatePayout\(detail, 'processing'\)/);
+});
