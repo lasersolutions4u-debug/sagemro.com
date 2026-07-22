@@ -90,7 +90,6 @@ import {
   canCloseMaterialRequisition,
   canManageMaterialRequisition,
   deriveItemStatus,
-  deriveRequisitionStatus,
   validateFulfillmentQuantities,
 } from './lib/materialRequisitions.js';
 
@@ -7119,7 +7118,7 @@ function toSafeInteger(value, fallback = 0) {
 }
 
 function toPositiveQuantity(value) {
-  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : null;
+  return typeof value === 'number' && Number.isInteger(value) && value > 0 ? value : null;
 }
 
 function cleanTextArray(value, maxItems = 12, maxItemLength = 80) {
@@ -8201,6 +8200,7 @@ const REQUISITION_ITEM_CONCURRENCY_COLUMNS = [
   'procurement_ordered_quantity',
   'procurement_received_quantity',
   'issued_quantity',
+  'stock_issued_quantity',
   'returned_quantity',
   'engineer_received_quantity',
   'status',
@@ -8419,7 +8419,7 @@ function generateRequisitionNumber(id) {
 
 async function normalizeRequisitionLine(env, input) {
   const requestedQuantity = toPositiveQuantity(input?.requested_quantity);
-  if (!requestedQuantity) throw new Error('Requested quantity must be a positive number');
+  if (!requestedQuantity) throw new Error('Requested quantity must be a positive integer');
   const materialId = cleanText(input.material_id, 100) || null;
   const material = materialId
     ? await env.DB.prepare('SELECT * FROM materials WHERE id = ?').bind(materialId).first()
@@ -8597,6 +8597,7 @@ async function handleRequisitionDecision(request, env, action) {
   }
   const reason = cleanText(body.reason, 600) || null;
   let mutation;
+  const reservationStatements = [];
   if (action === 'approve') {
     mutation = env.DB.prepare(`
       UPDATE material_requisitions
@@ -8610,6 +8611,26 @@ async function handleRequisitionDecision(request, env, action) {
       WHERE id = ? AND status = ?
     `).bind(nextStatus, reason, requisitionId, requisition.status);
   } else {
+    const reservationsByMaterial = new Map();
+    for (const item of requisition.items) {
+      if (!item.material_id) continue;
+      const outstandingReservation = Number(item.stock_allocated_quantity || 0)
+        - Number(item.stock_issued_quantity || 0)
+        + stockReturnedQuantity(item);
+      if (outstandingReservation > 0) {
+        reservationsByMaterial.set(
+          item.material_id,
+          (reservationsByMaterial.get(item.material_id) || 0) + outstandingReservation,
+        );
+      }
+    }
+    for (const [materialId, quantity] of reservationsByMaterial) {
+      reservationStatements.push(...guardedWorkflowMutation(env, env.DB.prepare(`
+        UPDATE materials
+        SET reserved_quantity = reserved_quantity - ?, updated_at = datetime('now')
+        WHERE id = ? AND reserved_quantity >= ?
+      `).bind(quantity, materialId, quantity)));
+    }
     mutation = env.DB.prepare(`
       UPDATE material_requisitions
       SET status = ?, cancellation_reason = ?, cancelled_at = datetime('now'), updated_at = datetime('now')
@@ -8622,7 +8643,10 @@ async function handleRequisitionDecision(request, env, action) {
     `).bind(nextStatus, reason, requisitionId, requisition.status);
   }
   try {
-    await runAuditedWorkflowBatch(env, request, guardedWorkflowMutation(env, mutation), {
+    await runAuditedWorkflowBatch(env, request, [
+      ...reservationStatements,
+      ...guardedWorkflowMutation(env, mutation),
+    ], {
       targetType: 'material_requisition', targetId: requisitionId,
       action: `material_requisition_${{ approve: 'approved', reject: 'rejected', cancel: 'cancelled' }[action]}`,
       beforeState: { status: requisition.status },
@@ -8659,25 +8683,45 @@ function fulfillmentSource(stockAllocated, procurementOrdered) {
   return 'unassigned';
 }
 
-async function buildInventoryMovementStatements(env, request, item, delta, changeType, action) {
+function stockReturnedQuantity(item, overrides = {}) {
+  const issued = Number(overrides.issued_quantity ?? item.issued_quantity ?? 0);
+  const stockIssued = Number(overrides.stock_issued_quantity ?? item.stock_issued_quantity ?? 0);
+  const returned = Number(overrides.returned_quantity ?? item.returned_quantity ?? 0);
+  const engineerReceived = Number(overrides.engineer_received_quantity ?? item.engineer_received_quantity ?? 0);
+  const procurementIssued = Math.max(0, issued - stockIssued);
+  const procurementReceivedByEngineer = Math.max(0, engineerReceived - stockIssued);
+  const returnableProcurement = Math.max(0, procurementIssued - procurementReceivedByEngineer);
+  return Math.max(0, returned - returnableProcurement);
+}
+
+async function buildInventoryMovementStatements(env, request, item, {
+  stockDelta,
+  reservedDelta = 0,
+  requiredUnreserved = 0,
+  requiredReserved = 0,
+  changeType,
+  action,
+}) {
   if (!item.material_id) return [];
   const material = await env.DB.prepare('SELECT * FROM materials WHERE id = ?').bind(item.material_id).first();
   if (!material) throw new Error('Material not found');
   const beforeQuantity = Number(material.stock_quantity || 0);
-  const afterQuantity = beforeQuantity + delta;
+  const beforeReserved = Number(material.reserved_quantity || 0);
+  const afterQuantity = beforeQuantity + stockDelta;
+  const afterReserved = beforeReserved + reservedDelta;
   if (afterQuantity < 0) throw new Error('Insufficient material stock');
-  const quantity = Math.abs(delta);
-  const stockMutation = delta < 0
-    ? env.DB.prepare(`
-        UPDATE materials
-        SET stock_quantity = stock_quantity - ?, updated_at = datetime('now')
-        WHERE id = ? AND stock_quantity = ? AND stock_quantity >= ?
-      `).bind(quantity, item.material_id, beforeQuantity, quantity)
-    : env.DB.prepare(`
-        UPDATE materials
-        SET stock_quantity = stock_quantity + ?, updated_at = datetime('now')
-        WHERE id = ? AND stock_quantity = ?
-      `).bind(quantity, item.material_id, beforeQuantity);
+  if (afterReserved < 0) throw new Error('Insufficient material reservation');
+  const stockMutation = env.DB.prepare(`
+    UPDATE materials
+    SET stock_quantity = stock_quantity + ?, reserved_quantity = reserved_quantity + ?,
+        updated_at = datetime('now')
+    WHERE id = ? AND stock_quantity = ? AND reserved_quantity = ?
+      AND stock_quantity + ? >= 0 AND reserved_quantity + ? >= 0
+      AND stock_quantity - reserved_quantity >= ? AND reserved_quantity >= ?
+  `).bind(
+    stockDelta, reservedDelta, item.material_id, beforeQuantity, beforeReserved,
+    stockDelta, reservedDelta, requiredUnreserved, requiredReserved,
+  );
   return [
     ...guardedWorkflowMutation(env, stockMutation),
     env.DB.prepare(`
@@ -8685,16 +8729,37 @@ async function buildInventoryMovementStatements(env, request, item, delta, chang
         id, material_id, change_type, delta, before_quantity, after_quantity, reason, created_by
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `).bind(
-      generateId(), item.material_id, changeType, delta, beforeQuantity, afterQuantity,
+      generateId(), item.material_id, changeType, stockDelta, beforeQuantity, afterQuantity,
       `${action}:${item.requisition_id}:${item.id}`, request._auth.staffId || request._auth.userId,
     ),
   ];
 }
 
-function requisitionHeaderMutationStatements(env, requisition, items, action, actorId) {
-  const nextStatus = deriveRequisitionStatus(requisition, items);
-  const assignments = ['status = ?', 'updated_at = datetime(\'now\')'];
-  const values = [nextStatus];
+function requisitionHeaderMutationStatements(env, requisition, action, actorId) {
+  const assignments = [`status = CASE
+    WHEN NOT EXISTS (
+      SELECT 1 FROM material_requisition_items
+      WHERE requisition_id = material_requisitions.id AND status != 'cancelled'
+    ) THEN status
+    WHEN NOT EXISTS (
+      SELECT 1 FROM material_requisition_items
+      WHERE requisition_id = material_requisitions.id AND status != 'cancelled' AND status != 'received'
+    ) THEN 'received'
+    WHEN NOT EXISTS (
+      SELECT 1 FROM material_requisition_items
+      WHERE requisition_id = material_requisitions.id AND status != 'cancelled' AND status NOT IN ('received', 'issued')
+    ) THEN 'issued'
+    WHEN NOT EXISTS (
+      SELECT 1 FROM material_requisition_items
+      WHERE requisition_id = material_requisitions.id AND status != 'cancelled' AND status NOT IN ('received', 'issued', 'ready')
+    ) THEN 'ready'
+    WHEN EXISTS (
+      SELECT 1 FROM material_requisition_items
+      WHERE requisition_id = material_requisitions.id AND status IN ('stock_allocated', 'purchasing', 'partially_ready', 'ready', 'issued', 'received')
+    ) THEN 'partially_fulfilled'
+    ELSE 'processing'
+  END`, 'updated_at = datetime(\'now\')'];
+  const values = [];
   if (['allocate_stock', 'issue', 'return'].includes(action)
     || (action === 'receive_purchase' && actorId.role === 'warehouse')) {
     assignments.push('assigned_warehouse_staff_id = ?');
@@ -8705,27 +8770,74 @@ function requisitionHeaderMutationStatements(env, requisition, items, action, ac
     assignments.push('assigned_procurement_staff_id = ?');
     values.push(actorId.id);
   }
-  if (nextStatus === 'received') assignments.push("received_at = COALESCE(received_at, datetime('now'))");
+  assignments.push(`received_at = CASE WHEN EXISTS (
+    SELECT 1 FROM material_requisition_items
+    WHERE requisition_id = material_requisitions.id AND status != 'cancelled'
+  ) AND NOT EXISTS (
+    SELECT 1 FROM material_requisition_items
+    WHERE requisition_id = material_requisitions.id AND status != 'cancelled' AND status != 'received'
+  ) THEN COALESCE(received_at, datetime('now')) ELSE received_at END`);
   const mutation = env.DB.prepare(`
     UPDATE material_requisitions
     SET ${assignments.join(', ')}
-    WHERE id = ? AND status = ?
-  `).bind(...values, requisition.id, requisition.status);
+    WHERE id = ? AND status NOT IN ('rejected', 'cancelled', 'closed')
+  `).bind(...values, requisition.id);
   return guardedWorkflowMutation(env, mutation);
 }
 
+function workflowOperationKey(request) {
+  return cleanText(request.headers.get('Idempotency-Key'), 200);
+}
+
+async function existingWorkflowOperation(env, operationKey) {
+  if (!operationKey) return null;
+  return env.DB.prepare(`
+    SELECT * FROM material_requisition_operations WHERE operation_key = ?
+  `).bind(operationKey).first();
+}
+
+function operationMatches(operation, action, requisitionId, itemId) {
+  return operation?.action === action
+    && operation?.requisition_id === requisitionId
+    && operation?.item_id === itemId;
+}
+
+function workflowOperationStatement(env, operationKey, action, requisitionId, itemId) {
+  return env.DB.prepare(`
+    INSERT INTO material_requisition_operations (operation_key, action, requisition_id, item_id)
+    VALUES (?, ?, ?, ?)
+  `).bind(operationKey, action, requisitionId, itemId);
+}
+
+async function idempotentWorkflowResponse(env, operationKey, action, requisitionId, itemId) {
+  const operation = await existingWorkflowOperation(env, operationKey);
+  if (!operation) return null;
+  if (!operationMatches(operation, action, requisitionId, itemId)) {
+    return errorResponse('Idempotency key is already used for another operation', 409);
+  }
+  return jsonResponse({ requisition: await getRequisitionWithItems(env, requisitionId) });
+}
+
 async function handleRequisitionLineAction(request, env, action) {
+  let body = {};
+  let itemId = '';
+  let operationKey = '';
+  let requisitionId = '';
   try {
     const role = requisitionRole(request._auth);
     if (!canManageMaterialRequisition(role, action)) return errorResponse('当前员工角色无权执行该操作', 403);
-    const requisitionId = new URL(request.url).pathname.split('/')[3];
+    requisitionId = new URL(request.url).pathname.split('/')[3];
     const requisition = await getRequisitionWithItems(env, requisitionId);
     if (!requisition) return errorResponse('领料申请不存在', 404);
+    body = await request.json().catch(() => ({}));
+    itemId = cleanText(body.item_id, 100);
+    operationKey = workflowOperationKey(request);
+    if (!operationKey) return errorResponse('Idempotency-Key header is required', 400);
+    const replay = await idempotentWorkflowResponse(env, operationKey, action, requisitionId, itemId);
+    if (replay) return replay;
     if (!['approved', 'processing', 'partially_fulfilled', 'ready', 'issued'].includes(requisition.status)) {
       return errorResponse('当前申请状态不可执行履约操作', 409);
     }
-    const body = await request.json().catch(() => ({}));
-    const itemId = cleanText(body.item_id, 100);
     const item = await env.DB.prepare(`
       SELECT * FROM material_requisition_items WHERE id = ? AND requisition_id = ?
     `).bind(itemId, requisitionId).first();
@@ -8735,15 +8847,6 @@ async function handleRequisitionLineAction(request, env, action) {
     if (action === 'allocate_stock' && !item.material_id) {
       return errorResponse('自由录入物料不能分配台账库存，请走采购流程', 400);
     }
-    let allocatedMaterial = null;
-    if (action === 'allocate_stock') {
-      allocatedMaterial = await env.DB.prepare('SELECT * FROM materials WHERE id = ?').bind(item.material_id).first();
-      const allocated = Number(item.stock_allocated_quantity || 0) + quantity;
-      if (!allocatedMaterial || allocated > Number(allocatedMaterial.stock_quantity || 0)) {
-        return errorResponse('库存分配数量不能超过当前库存', 400);
-      }
-    }
-
     const next = {};
     if (action === 'allocate_stock') {
       next.stock_allocated_quantity = Number(item.stock_allocated_quantity || 0) + quantity;
@@ -8755,6 +8858,13 @@ async function handleRequisitionLineAction(request, env, action) {
       next.procurement_received_quantity = Number(item.procurement_received_quantity || 0) + quantity;
     } else if (action === 'issue') {
       next.issued_quantity = Number(item.issued_quantity || 0) + quantity;
+      const remainingAllocatedStock = Math.max(
+        0,
+        Number(item.stock_allocated_quantity || 0)
+          - Number(item.stock_issued_quantity || 0)
+          + stockReturnedQuantity(item),
+      );
+      next.stock_issued_quantity = Number(item.stock_issued_quantity || 0) + Math.min(quantity, remainingAllocatedStock);
     } else if (action === 'return') {
       next.returned_quantity = Number(item.returned_quantity || 0) + quantity;
       if (next.returned_quantity > Number(item.issued_quantity || 0) - Number(item.engineer_received_quantity || 0)) {
@@ -8771,21 +8881,33 @@ async function handleRequisitionLineAction(request, env, action) {
 
     let inventoryStatements = [];
     if (action === 'allocate_stock') {
-      const stockQuantity = Number(allocatedMaterial.stock_quantity || 0);
       const allocationGuard = env.DB.prepare(`
-        UPDATE materials SET stock_quantity = stock_quantity
-        WHERE id = ? AND stock_quantity = ? AND stock_quantity >= ?
-      `).bind(item.material_id, stockQuantity, next.stock_allocated_quantity);
+        UPDATE materials
+        SET reserved_quantity = reserved_quantity + ?, updated_at = datetime('now')
+        WHERE id = ? AND stock_quantity - reserved_quantity >= ?
+      `).bind(quantity, item.material_id, quantity);
       inventoryStatements = guardedWorkflowMutation(env, allocationGuard);
     } else if (action === 'receive_purchase') {
-      inventoryStatements = await buildInventoryMovementStatements(env, request, item, quantity, 'procurement_receipt', action);
+      inventoryStatements = await buildInventoryMovementStatements(env, request, item, {
+        stockDelta: quantity, changeType: 'procurement_receipt', action,
+      });
     } else if (action === 'issue') {
-      inventoryStatements = await buildInventoryMovementStatements(env, request, item, -quantity, 'requisition_issue', action);
+      const stockIssuedDelta = Number(next.stock_issued_quantity || 0) - Number(item.stock_issued_quantity || 0);
+      inventoryStatements = await buildInventoryMovementStatements(env, request, item, {
+        stockDelta: -quantity,
+        reservedDelta: -stockIssuedDelta,
+        requiredUnreserved: quantity - stockIssuedDelta,
+        requiredReserved: stockIssuedDelta,
+        changeType: 'requisition_issue',
+        action,
+      });
     } else if (action === 'return') {
-      inventoryStatements = await buildInventoryMovementStatements(env, request, item, quantity, 'requisition_return', action);
+      const stockReturnDelta = stockReturnedQuantity(item, next) - stockReturnedQuantity(item);
+      inventoryStatements = await buildInventoryMovementStatements(env, request, item, {
+        stockDelta: quantity, reservedDelta: stockReturnDelta, changeType: 'requisition_return', action,
+      });
     }
-    const nextItems = requisition.items.map((entry) => entry.id === item.id ? { ...entry, ...next } : entry);
-    const headerStatements = requisitionHeaderMutationStatements(env, requisition, nextItems, action, {
+    const headerStatements = requisitionHeaderMutationStatements(env, requisition, action, {
       id: request._auth.staffId || request._auth.userId,
       role,
     });
@@ -8793,6 +8915,7 @@ async function handleRequisitionLineAction(request, env, action) {
       ...inventoryStatements,
       ...conditionalItemUpdateStatements(env, item, next),
       ...headerStatements,
+      workflowOperationStatement(env, operationKey, action, requisitionId, itemId),
     ], {
       targetType: 'material_requisition_item', targetId: itemId,
       action: `material_requisition_${action}`,
@@ -8800,19 +8923,23 @@ async function handleRequisitionLineAction(request, env, action) {
     });
     return jsonResponse({ requisition: await getRequisitionWithItems(env, requisitionId) });
   } catch (error) {
+    if (/UNIQUE constraint failed: material_requisition_operations\.operation_key/i.test(String(error?.message || ''))) {
+      const replay = await idempotentWorkflowResponse(env, operationKey, action, requisitionId, itemId);
+      if (replay) return replay;
+    }
     if (isWorkflowConcurrencyError(error)) return workflowErrorResponse(error);
     return errorResponse(error.message, /stock|quantity|requested|ordered|available|issued|aggregate/i.test(error.message) ? 400 : 500);
   }
 }
 
 async function handleEngineerRequisitionReceipt(request, env) {
+  let operationKey = '';
+  let requisitionId = '';
+  let itemId = '';
   try {
-    const requisitionId = new URL(request.url).pathname.split('/')[3];
+    requisitionId = new URL(request.url).pathname.split('/')[3];
     const requisition = await getRequisitionWithItems(env, requisitionId);
     if (!requisition) return errorResponse('领料申请不存在', 404);
-    if (REQUISITION_TERMINAL_STATUSES.has(requisition.status)) {
-      return errorResponse('当前申请状态不可确认签收', 409);
-    }
     const workOrder = await env.DB.prepare(`
       SELECT id, customer_id, engineer_id, assigned_regional_lead_id, status FROM work_orders WHERE id = ?
     `).bind(requisition.work_order_id).first();
@@ -8820,9 +8947,17 @@ async function handleEngineerRequisitionReceipt(request, env) {
       return errorResponse('仅创建申请的工程师可确认签收', 403);
     }
     const body = await request.json().catch(() => ({}));
+    operationKey = workflowOperationKey(request);
+    if (!operationKey) return errorResponse('Idempotency-Key header is required', 400);
+    itemId = cleanText(body.item_id, 100);
+    const replay = await idempotentWorkflowResponse(env, operationKey, 'engineer_receipt', requisitionId, itemId);
+    if (replay) return replay;
+    if (REQUISITION_TERMINAL_STATUSES.has(requisition.status)) {
+      return errorResponse('当前申请状态不可确认签收', 409);
+    }
     const item = await env.DB.prepare(`
       SELECT * FROM material_requisition_items WHERE id = ? AND requisition_id = ?
-    `).bind(cleanText(body.item_id, 100), requisitionId).first();
+    `).bind(itemId, requisitionId).first();
     if (!item) return errorResponse('领料明细不存在', 404);
     const quantity = toPositiveQuantity(body.quantity);
     if (!quantity) return errorResponse('数量必须为正数', 400);
@@ -8833,19 +8968,25 @@ async function handleEngineerRequisitionReceipt(request, env) {
       engineer_received_quantity: engineerReceived,
       status: deriveApiItemStatus(item, { engineer_received_quantity: engineerReceived }),
     };
-    const nextItems = requisition.items.map((entry) => entry.id === item.id ? { ...entry, ...next } : entry);
     await runAuditedWorkflowBatch(env, request, [
       ...conditionalItemUpdateStatements(env, item, next),
-      ...requisitionHeaderMutationStatements(env, requisition, nextItems, 'engineer_receipt', {
+      ...requisitionHeaderMutationStatements(env, requisition, 'engineer_receipt', {
         id: request._auth.userId,
         role: 'engineer',
       }),
+      workflowOperationStatement(env, operationKey, 'engineer_receipt', requisitionId, item.id),
     ], {
       targetType: 'material_requisition_item', targetId: item.id,
       action: 'material_requisition_engineer_receipt', beforeState: item, afterState: { ...item, ...next },
     });
     return jsonResponse({ requisition: await getRequisitionWithItems(env, requisitionId) });
   } catch (error) {
+    if (/UNIQUE constraint failed: material_requisition_operations\.operation_key/i.test(String(error?.message || ''))) {
+      const operation = await existingWorkflowOperation(env, operationKey);
+      if (operationMatches(operation, 'engineer_receipt', requisitionId, itemId)) {
+        return jsonResponse({ requisition: await getRequisitionWithItems(env, requisitionId) });
+      }
+    }
     return workflowErrorResponse(error);
   }
 }
@@ -8931,10 +9072,22 @@ async function handleCancelRequisitionItem(request, env) {
   const notes = [cleanText(item.notes, 600), reason].filter(Boolean).join('\n').slice(0, 600) || null;
   try {
     const next = { status: 'cancelled', notes };
-    const nextItems = requisition.items.map((entry) => entry.id === item.id ? { ...entry, ...next } : entry);
+    let reservationStatements = [];
+    const outstandingReservation = Number(item.stock_allocated_quantity || 0)
+      - Number(item.stock_issued_quantity || 0)
+      + stockReturnedQuantity(item);
+    if (item.material_id && outstandingReservation > 0) {
+      const releaseReservation = env.DB.prepare(`
+        UPDATE materials
+        SET reserved_quantity = reserved_quantity - ?, updated_at = datetime('now')
+        WHERE id = ? AND reserved_quantity >= ?
+      `).bind(outstandingReservation, item.material_id, outstandingReservation);
+      reservationStatements = guardedWorkflowMutation(env, releaseReservation);
+    }
     await runAuditedWorkflowBatch(env, request, [
+      ...reservationStatements,
       ...conditionalItemUpdateStatements(env, item, next),
-      ...requisitionHeaderMutationStatements(env, requisition, nextItems, 'cancel_item', {
+      ...requisitionHeaderMutationStatements(env, requisition, 'cancel_item', {
         id: request._auth.staffId || request._auth.userId,
         role,
       }),
@@ -9934,6 +10087,21 @@ async function handleAdminDeleteUser(request, env) {
 
     if (!userId || !userType) {
       return errorResponse('缺少用户ID或类型');
+    }
+
+    if (userType === 'customer' || userType === 'engineer') {
+      const linkedRequisition = await env.DB.prepare(`
+        SELECT mr.id FROM material_requisitions mr
+        JOIN work_orders wo ON wo.id = mr.work_order_id
+        WHERE wo.customer_id = ? OR wo.engineer_id = ?
+        LIMIT 1
+      `).bind(
+        userType === 'customer' ? userId : null,
+        userType === 'engineer' ? userId : null,
+      ).first();
+      if (linkedRequisition) {
+        return errorResponse('该用户关联领料申请历史，不能删除', 409);
+      }
     }
 
     if (userType === 'customer') {
@@ -13652,6 +13820,10 @@ async function routeRequest(request, env, ctx) {
 
     // 将认证信息挂到 request 上，供 handler 使用。Admin handler 也需要它写审计日志。
     request._auth = auth;
+
+    if (auth.userType === 'admin' && auth.market !== getRequestMarket(request)) {
+      return errorResponse('管理员会话无权访问当前市场', 403);
+    }
 
     if (auth.userType === 'admin' && auth.staffId) {
       const staff = await requireActiveStaff(env, auth);

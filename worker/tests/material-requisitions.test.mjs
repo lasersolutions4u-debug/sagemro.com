@@ -45,6 +45,9 @@ function createStatement(env, sql) {
       if (/FROM material_requisition_items WHERE id = \? AND requisition_id = \?/i.test(normalized)) {
         return clone(env.__items.find((item) => item.id === this.args[0] && item.requisition_id === this.args[1]) || null);
       }
+      if (/FROM material_requisition_operations WHERE operation_key = \?/i.test(normalized)) {
+        return clone(env.__operations.find((operation) => operation.operation_key === this.args[0]) || null);
+      }
       if (/SELECT \* FROM materials WHERE id = \?/i.test(normalized)) {
         return clone(env.__materials.find((item) => item.id === this.args[0]) || null);
       }
@@ -155,6 +158,7 @@ function createStatement(env, sql) {
           procurement_ordered_quantity: 0,
           procurement_received_quantity: 0,
           issued_quantity: 0,
+          stock_issued_quantity: 0,
           returned_quantity: 0,
           engineer_received_quantity: 0,
           fulfillment_source: 'unassigned',
@@ -170,7 +174,7 @@ function createStatement(env, sql) {
           env.__lastChanges = 0;
           return { success: true, meta: { changes: 0 } };
         }
-        if (requisition && /NOT EXISTS/i.test(normalized)
+        if (requisition && /cancellation_reason/i.test(normalized) && /NOT EXISTS/i.test(normalized)
           && env.__items.some((item) => item.requisition_id === requisition.id
             && (Number(item.procurement_received_quantity || 0) > 0
               || Number(item.issued_quantity || 0) > 0
@@ -178,7 +182,25 @@ function createStatement(env, sql) {
           env.__lastChanges = 0;
           return { success: true, meta: { changes: 0 } };
         }
-        if (requisition) {
+        if (requisition && /status = CASE/i.test(normalized)) {
+          if (['rejected', 'cancelled', 'closed'].includes(requisition.status)) {
+            env.__lastChanges = 0;
+            return { success: true, meta: { changes: 0 } };
+          }
+          const active = env.__items.filter((item) => item.requisition_id === requisition.id && item.status !== 'cancelled');
+          if (!active.length) requisition.status = requisition.status;
+          else if (active.every((item) => item.status === 'received')) requisition.status = 'received';
+          else if (active.length && active.every((item) => ['received', 'issued'].includes(item.status))) requisition.status = 'issued';
+          else if (active.length && active.every((item) => ['received', 'issued', 'ready'].includes(item.status))) requisition.status = 'ready';
+          else if (active.some((item) => ['stock_allocated', 'purchasing', 'partially_ready', 'ready', 'issued', 'received'].includes(item.status))) requisition.status = 'partially_fulfilled';
+          else requisition.status = 'processing';
+          let argIndex = 0;
+          if (/assigned_warehouse_staff_id = \?/i.test(normalized)) requisition.assigned_warehouse_staff_id = this.args[argIndex++];
+          if (/assigned_procurement_staff_id = \?/i.test(normalized)) requisition.assigned_procurement_staff_id = this.args[argIndex++];
+          if (/issued_at = COALESCE/i.test(normalized)) requisition.issued_at ||= env.__now;
+          if (requisition.status === 'received') requisition.received_at ||= env.__now;
+          changes = 1;
+        } else if (requisition) {
           if (/SET status = \?, approved_by = \?/i.test(normalized)) {
             Object.assign(requisition, { status: this.args[0], approved_by: this.args[1], approved_at: env.__now });
           } else if (/SET status = \?, rejection_reason = \?/i.test(normalized)) {
@@ -228,6 +250,39 @@ function createStatement(env, sql) {
           });
           changes = 1;
         }
+      } else if (/UPDATE materials SET reserved_quantity = reserved_quantity - \?/i.test(normalized)) {
+        const [quantity, materialId, required] = this.args;
+        const material = env.__materials.find((item) => item.id === materialId);
+        if (material && Number(material.reserved_quantity) >= Number(required)) {
+          material.reserved_quantity -= Number(quantity);
+          changes = 1;
+        }
+      } else if (/UPDATE materials SET reserved_quantity = reserved_quantity \+ \?/i.test(normalized)) {
+        const [quantity, materialId, required] = this.args;
+        const material = env.__materials.find((item) => item.id === materialId);
+        if (material && Number(material.stock_quantity) - Number(material.reserved_quantity) >= Number(required)) {
+          material.reserved_quantity += Number(quantity);
+          changes = 1;
+        }
+      } else if (/UPDATE materials SET stock_quantity = stock_quantity \+ \?, reserved_quantity = reserved_quantity \+ \?/i.test(normalized)) {
+        const [stockDelta, reservedDelta, materialId, expectedStock, expectedReserved, , , requiredUnreserved, requiredReserved] = this.args;
+        const material = env.__materials.find((item) => item.id === materialId);
+        if (env.__stockBeforeNextMutation !== undefined) {
+          if (material) material.stock_quantity = env.__stockBeforeNextMutation;
+          delete env.__stockBeforeNextMutation;
+        }
+        const matches = material
+          && Number(material.stock_quantity) === Number(expectedStock)
+          && Number(material.reserved_quantity) === Number(expectedReserved)
+          && Number(material.stock_quantity) + Number(stockDelta) >= 0
+          && Number(material.reserved_quantity) + Number(reservedDelta) >= 0
+          && Number(material.stock_quantity) - Number(material.reserved_quantity) >= Number(requiredUnreserved)
+          && Number(material.reserved_quantity) >= Number(requiredReserved);
+        if (matches) {
+          material.stock_quantity += Number(stockDelta);
+          material.reserved_quantity += Number(reservedDelta);
+          changes = 1;
+        }
       } else if (/UPDATE materials SET stock_quantity = stock_quantity(?: [+-] \?)?/i.test(normalized)) {
         const subtract = /stock_quantity = stock_quantity - \?/i.test(normalized);
         const add = /stock_quantity = stock_quantity \+ \?/i.test(normalized);
@@ -248,6 +303,13 @@ function createStatement(env, sql) {
         }
       } else if (/INSERT INTO material_inventory_adjustments/i.test(normalized)) {
         env.__adjustments.push({ args: clone(this.args) });
+        changes = 1;
+      } else if (/INSERT INTO material_requisition_operations/i.test(normalized)) {
+        const [operationKey, action, requisitionId, itemId] = this.args;
+        if (env.__operations.some((operation) => operation.operation_key === operationKey)) {
+          throw new Error('UNIQUE constraint failed: material_requisition_operations.operation_key');
+        }
+        env.__operations.push({ operation_key: operationKey, action, requisition_id: requisitionId, item_id: itemId });
         changes = 1;
       } else if (/INSERT INTO audit_logs/i.test(normalized)) {
         if (env.__failNextAudit) {
@@ -276,10 +338,12 @@ function createEnv() {
     __items: [],
     __auditLogs: [],
     __adjustments: [],
+    __operations: [],
     __requisitionInsertCollisions: 0,
+    __nextOperationKey: 1,
     __materials: [
-      { id: 'material-stock', material_code: 'STOCK-1', name: 'Stock item', unit: 'pcs', stock_quantity: 10 },
-      { id: 'material-buy', material_code: 'BUY-1', name: 'Purchased item', unit: 'pcs', stock_quantity: 0 },
+      { id: 'material-stock', material_code: 'STOCK-1', name: 'Stock item', unit: 'pcs', stock_quantity: 10, reserved_quantity: 0 },
+      { id: 'material-buy', material_code: 'BUY-1', name: 'Purchased item', unit: 'pcs', stock_quantity: 0, reserved_quantity: 0 },
     ],
     __workOrders: [
       { id: 'wo-1', customer_id: 'customer-1', engineer_id: 'engineer-1', assigned_regional_lead_id: 'lead-1', status: 'in_progress' },
@@ -298,12 +362,21 @@ function createEnv() {
           if (requisition) requisition.status = env.__terminalStatusBeforeNextBatch.status;
           delete env.__terminalStatusBeforeNextBatch;
         }
+        if (env.__receiveOtherItemBeforeNextBatch) {
+          const item = env.__items.find((entry) => entry.id === env.__receiveOtherItemBeforeNextBatch);
+          if (item) {
+            item.engineer_received_quantity = item.requested_quantity;
+            item.status = 'received';
+          }
+          delete env.__receiveOtherItemBeforeNextBatch;
+        }
         const snapshot = clone({
           staff: env.__staff,
           requisitions: env.__requisitions,
           items: env.__items,
           auditLogs: env.__auditLogs,
           adjustments: env.__adjustments,
+          operations: env.__operations,
           materials: env.__materials,
         });
         try {
@@ -316,6 +389,7 @@ function createEnv() {
           env.__items = snapshot.items;
           env.__auditLogs = snapshot.auditLogs;
           env.__adjustments = snapshot.adjustments;
+          env.__operations = snapshot.operations;
           env.__materials = snapshot.materials;
           throw error;
         }
@@ -334,6 +408,7 @@ function createEnv() {
 async function authToken(env, payload) {
   return signJwt({
     phone: '13800000000',
+    market: 'com',
     iat: 1,
     exp: Math.floor(Date.now() / 1000) + 3600,
     ...payload,
@@ -344,7 +419,11 @@ async function api(env, path, {
   method = 'GET',
   body,
   auth = { userId: 'engineer-1', userType: 'engineer' },
-  origin = auth?.userType === 'admin' ? 'https://admin.sagemro.com' : 'https://engineer.sagemro.com',
+  host = 'api.sagemro.com',
+  origin = auth?.userType === 'admin'
+    ? `https://admin.${host.endsWith('.cn') ? 'sagemro.cn' : 'sagemro.com'}`
+    : `https://engineer.${host.endsWith('.cn') ? 'sagemro.cn' : 'sagemro.com'}`,
+  idempotencyKey,
 } = {}) {
   if (auth?.staffId && !env.__staff.some((staff) => staff.id === auth.staffId)) {
     env.__staff.push({
@@ -362,7 +441,11 @@ async function api(env, path, {
   }
   const headers = { 'Content-Type': 'application/json', Origin: origin };
   if (auth) headers.Authorization = `Bearer ${await authToken(env, auth)}`;
-  const response = await worker.fetch(new Request(`https://api.sagemro.com${path}`, {
+  if (idempotencyKey === undefined && method === 'POST' && /\/(stock-allocation|procurement|procurement-receipt|issue|return|engineer-receipt)$/.test(path)) {
+    idempotencyKey = `test-operation-${env.__nextOperationKey++}`;
+  }
+  if (idempotencyKey) headers['Idempotency-Key'] = idempotencyKey;
+  const response = await worker.fetch(new Request(`https://${host}${path}`, {
     method,
     headers,
     body: body === undefined ? undefined : JSON.stringify(body),
@@ -401,6 +484,21 @@ test('material requisition and staff routes are protected', async () => {
 
   const result = await api(createEnv(), '/api/material-requisitions', { auth: null });
   assert.equal(result.response.status, 401);
+});
+
+test('COM bootstrap and staff admin tokens are denied on CN protected routes', async () => {
+  const env = createEnv();
+  const bootstrap = await api(env, '/api/admin/staff', {
+    host: 'api.sagemro.cn',
+    auth: { userId: 'admin', userType: 'admin', market: 'com' },
+  });
+  assert.equal(bootstrap.response.status, 403);
+
+  const staff = await api(env, '/api/material-requisitions', {
+    host: 'api.sagemro.cn',
+    auth: staffAuth('warehouse'),
+  });
+  assert.equal(staff.response.status, 403);
 });
 
 test('bootstrap admin creates staff, staff login carries role claims, and only bootstrap manages accounts', async () => {
@@ -522,6 +620,186 @@ test('assigned engineer creates and submits a deterministic multi-line draft; ot
     auth: { userId: 'engineer-2', userType: 'engineer' },
   });
   assert.equal(deniedDetail.response.status, 403);
+
+  const fractional = await api(env, '/api/material-requisitions', {
+    method: 'POST',
+    body: { work_order_id: 'wo-1', items: [{ name: 'Fractional item', requested_quantity: 1.5 }] },
+  });
+  assert.equal(fractional.response.status, 400);
+});
+
+test('delta mutation endpoints require an idempotency key', async () => {
+  const env = createEnv();
+  const requisition = await createAndSubmit(env);
+  const item = requisition.items[0];
+  await api(env, `/api/material-requisitions/${requisition.id}/approve`, { method: 'POST', auth: staffAuth('operations') });
+
+  const result = await api(env, `/api/material-requisitions/${requisition.id}/stock-allocation`, {
+    method: 'POST', auth: staffAuth('warehouse'), idempotencyKey: null, body: { item_id: item.id, quantity: 1 },
+  });
+
+  assert.equal(result.response.status, 400);
+  assert.match(result.json.error, /idempotency/i);
+});
+
+test('duplicate delta operations return current state without quantity, inventory, adjustment, or audit drift', async () => {
+  const env = createEnv();
+  const requisition = await createAndSubmit(env);
+  const [stockItem, buyItem] = requisition.items;
+  await api(env, `/api/material-requisitions/${requisition.id}/approve`, { method: 'POST', auth: staffAuth('operations') });
+
+  const operations = [
+    ['/stock-allocation', staffAuth('warehouse'), stockItem.id, 2, 'allocate-1'],
+    ['/procurement', staffAuth('procurement'), buyItem.id, 3, 'order-1'],
+    ['/procurement-receipt', staffAuth('procurement'), buyItem.id, 3, 'receipt-1'],
+    ['/issue', staffAuth('warehouse'), stockItem.id, 2, 'issue-stock-1'],
+    ['/issue', staffAuth('warehouse'), buyItem.id, 3, 'issue-buy-1'],
+    ['/return', staffAuth('warehouse'), buyItem.id, 1, 'return-1'],
+  ];
+  for (const [suffix, auth, itemId, quantity, key] of operations) {
+    const request = { method: 'POST', auth, body: { item_id: itemId, quantity }, idempotencyKey: key };
+    const first = await api(env, `/api/material-requisitions/${requisition.id}${suffix}`, request);
+    assert.equal(first.response.status, 200, `${suffix}: ${first.json.error || ''}`);
+    const beforeRetry = clone({
+      items: env.__items,
+      materials: env.__materials,
+      adjustments: env.__adjustments,
+      audits: env.__auditLogs,
+      operations: env.__operations,
+    });
+    const retry = await api(env, `/api/material-requisitions/${requisition.id}${suffix}`, request);
+    assert.equal(retry.response.status, 200, `${suffix} retry`);
+    assert.deepEqual({
+      items: env.__items,
+      materials: env.__materials,
+      adjustments: env.__adjustments,
+      audits: env.__auditLogs,
+      operations: env.__operations,
+    }, beforeRetry, `${suffix} retry drifted`);
+  }
+
+  const engineerReceipt = { method: 'POST', body: { item_id: stockItem.id, quantity: 2 }, idempotencyKey: 'engineer-receipt-1' };
+  assert.equal((await api(env, `/api/material-requisitions/${requisition.id}/engineer-receipt`, engineerReceipt)).response.status, 200);
+  const beforeRetry = clone({ items: env.__items, audits: env.__auditLogs, operations: env.__operations });
+  assert.equal((await api(env, `/api/material-requisitions/${requisition.id}/engineer-receipt`, engineerReceipt)).response.status, 200);
+  assert.deepEqual({ items: env.__items, audits: env.__auditLogs, operations: env.__operations }, beforeRetry);
+});
+
+test('two requisitions cannot reserve more than shared physical stock', async () => {
+  const env = createEnv();
+  const first = await createAndSubmit(env);
+  const second = await createAndSubmit(env);
+  await api(env, `/api/material-requisitions/${first.id}/approve`, { method: 'POST', auth: staffAuth('operations') });
+  await api(env, `/api/material-requisitions/${second.id}/approve`, { method: 'POST', auth: staffAuth('operations') });
+  env.__items.find((item) => item.requisition_id === first.id).requested_quantity = 7;
+  env.__items.find((item) => item.requisition_id === second.id).requested_quantity = 4;
+
+  const firstAllocation = await api(env, `/api/material-requisitions/${first.id}/stock-allocation`, {
+    method: 'POST', auth: staffAuth('warehouse'), idempotencyKey: 'reserve-first',
+    body: { item_id: first.items[0].id, quantity: 7 },
+  });
+  assert.equal(firstAllocation.response.status, 200);
+  const secondAllocation = await api(env, `/api/material-requisitions/${second.id}/stock-allocation`, {
+    method: 'POST', auth: staffAuth('warehouse'), idempotencyKey: 'reserve-second',
+    body: { item_id: second.items[0].id, quantity: 4 },
+  });
+  assert.equal(secondAllocation.response.status, 409);
+  assert.equal(env.__materials[0].reserved_quantity, 7);
+
+  assert.equal((await api(env, `/api/material-requisitions/${first.id}/issue`, {
+    method: 'POST', auth: staffAuth('warehouse'), idempotencyKey: 'issue-first',
+    body: { item_id: first.items[0].id, quantity: 7 },
+  })).response.status, 200);
+  assert.deepEqual([env.__materials[0].stock_quantity, env.__materials[0].reserved_quantity], [3, 0]);
+  assert.equal((await api(env, `/api/material-requisitions/${second.id}/stock-allocation`, {
+    method: 'POST', auth: staffAuth('warehouse'), idempotencyKey: 'reserve-second-after-issue',
+    body: { item_id: second.items[0].id, quantity: 4 },
+  })).response.status, 409);
+
+  assert.equal((await api(env, `/api/material-requisitions/${first.id}/return`, {
+    method: 'POST', auth: staffAuth('warehouse'), idempotencyKey: 'return-first',
+    body: { item_id: first.items[0].id, quantity: 2 },
+  })).response.status, 200);
+  assert.deepEqual([env.__materials[0].stock_quantity, env.__materials[0].reserved_quantity], [5, 2]);
+  assert.equal((await api(env, `/api/material-requisitions/${second.id}/stock-allocation`, {
+    method: 'POST', auth: staffAuth('warehouse'), idempotencyKey: 'reserve-second-after-return',
+    body: { item_id: second.items[0].id, quantity: 4 },
+  })).response.status, 409);
+});
+
+test('stock issue consumes reservations and stock return restores only stock-sourced demand', async () => {
+  const env = createEnv();
+  const requisition = await createAndSubmit(env);
+  const item = requisition.items[0];
+  await api(env, `/api/material-requisitions/${requisition.id}/approve`, { method: 'POST', auth: staffAuth('operations') });
+  await api(env, `/api/material-requisitions/${requisition.id}/stock-allocation`, {
+    method: 'POST', auth: staffAuth('warehouse'), body: { item_id: item.id, quantity: 2 },
+  });
+  assert.deepEqual([env.__materials[0].stock_quantity, env.__materials[0].reserved_quantity], [10, 2]);
+
+  await api(env, `/api/material-requisitions/${requisition.id}/issue`, {
+    method: 'POST', auth: staffAuth('warehouse'), body: { item_id: item.id, quantity: 2 },
+  });
+  assert.deepEqual([env.__materials[0].stock_quantity, env.__materials[0].reserved_quantity], [8, 0]);
+
+  await api(env, `/api/material-requisitions/${requisition.id}/return`, {
+    method: 'POST', auth: staffAuth('warehouse'), body: { item_id: item.id, quantity: 1 },
+  });
+  assert.deepEqual([env.__materials[0].stock_quantity, env.__materials[0].reserved_quantity], [9, 1]);
+});
+
+test('cancelling an allocated unissued line releases its stock reservation', async () => {
+  const env = createEnv();
+  const requisition = await createAndSubmit(env);
+  const item = requisition.items[0];
+  await api(env, `/api/material-requisitions/${requisition.id}/approve`, { method: 'POST', auth: staffAuth('operations') });
+  await api(env, `/api/material-requisitions/${requisition.id}/stock-allocation`, {
+    method: 'POST', auth: staffAuth('warehouse'), body: { item_id: item.id, quantity: 2 },
+  });
+
+  const cancelled = await api(env, `/api/material-requisitions/${requisition.id}/items/${item.id}/cancel`, {
+    method: 'POST', auth: staffAuth('operations'), body: { reason: 'No longer required' },
+  });
+
+  assert.equal(cancelled.response.status, 200);
+  assert.equal(env.__materials[0].reserved_quantity, 0);
+});
+
+test('whole cancellation releases all allocated but unissued stock reservations', async () => {
+  const env = createEnv();
+  const requisition = await createAndSubmit(env);
+  const item = requisition.items[0];
+  await api(env, `/api/material-requisitions/${requisition.id}/approve`, { method: 'POST', auth: staffAuth('operations') });
+  await api(env, `/api/material-requisitions/${requisition.id}/stock-allocation`, {
+    method: 'POST', auth: staffAuth('warehouse'), body: { item_id: item.id, quantity: 2 },
+  });
+
+  const cancelled = await api(env, `/api/material-requisitions/${requisition.id}/cancel`, {
+    method: 'POST', auth: staffAuth('operations'), body: { reason: 'Work order cancelled' },
+  });
+
+  assert.equal(cancelled.response.status, 200);
+  assert.equal(env.__materials[0].reserved_quantity, 0);
+});
+
+test('different-line final receipts reconcile the current persisted header to received', async () => {
+  const env = createEnv();
+  const requisition = await createAndSubmit(env);
+  env.__requisitions[0].status = 'issued';
+  for (const item of env.__items) {
+    item.stock_allocated_quantity = item.requested_quantity;
+    item.issued_quantity = item.requested_quantity;
+    item.status = 'issued';
+  }
+  env.__receiveOtherItemBeforeNextBatch = requisition.items[1].id;
+
+  const result = await api(env, `/api/material-requisitions/${requisition.id}/engineer-receipt`, {
+    method: 'POST', idempotencyKey: 'final-receipt',
+    body: { item_id: requisition.items[0].id, quantity: requisition.items[0].requested_quantity },
+  });
+
+  assert.equal(result.response.status, 200, result.json.error);
+  assert.equal(env.__requisitions[0].status, 'received');
 });
 
 test('admin-created draft remains operable by the engineer assigned to the work order', async () => {
@@ -550,9 +828,10 @@ test('admin-created draft remains operable by the engineer assigned to the work 
   assert.equal((await api(env, `/api/material-requisitions/${requisitionId}/stock-allocation`, {
     method: 'POST', auth: staffAuth('warehouse'), body: { item_id: itemId, quantity: 1 },
   })).response.status, 200);
-  assert.equal((await api(env, `/api/material-requisitions/${requisitionId}/issue`, {
+  const issued = await api(env, `/api/material-requisitions/${requisitionId}/issue`, {
     method: 'POST', auth: staffAuth('warehouse'), body: { item_id: itemId, quantity: 1 },
-  })).response.status, 200);
+  });
+  assert.equal(issued.response.status, 200, issued.json.error);
   assert.equal(env.__requisitions[0].assigned_warehouse_staff_id, 'warehouse-1');
   assert.equal(env.__requisitions[0].issued_at, env.__now);
   assert.equal((await api(env, `/api/material-requisitions/${requisitionId}/engineer-receipt`, {
@@ -673,7 +952,7 @@ test('role, state, ownership, and quantity invariants reject invalid writes with
   const overStock = await api(env, `/api/material-requisitions/${requisition.id}/stock-allocation`, {
     method: 'POST', auth: staffAuth('warehouse'), body: { item_id: item.id, quantity: 11 },
   });
-  assert.equal(overStock.response.status, 400);
+  assert.equal(overStock.response.status, 409);
 
   const otherEngineerReceipt = await api(env, `/api/material-requisitions/${requisition.id}/engineer-receipt`, {
     method: 'POST', auth: { userId: 'engineer-2', userType: 'engineer' }, body: { item_id: item.id, quantity: 1 },

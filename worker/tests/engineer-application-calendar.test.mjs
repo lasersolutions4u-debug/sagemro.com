@@ -43,6 +43,7 @@ async function adminToken(env) {
   return signJwt({
     userId: 'admin',
     userType: 'admin',
+    market: 'com',
     phone: 'admin',
     iat: 1,
     exp: Math.floor(Date.now() / 1000) + 3600,

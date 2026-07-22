@@ -163,6 +163,7 @@ async function adminActivationRequest(action, body = {}) {
   const token = await signJwt({
     userId: 'admin-1',
     userType: 'admin',
+    market: 'com',
     exp: Math.floor(Date.now() / 1000) + 3600,
   }, JWT_SECRET);
   return new Request(`https://api.sagemro.com/api/admin/engineer-applications/${action}`, {
@@ -706,7 +707,7 @@ test('application list projects independent review and activation states', async
   const body = await response.json();
 
   assert.equal(response.status, 404);
-  const token = await signJwt({ userId: 'admin-1', userType: 'admin', exp: Math.floor(Date.now() / 1000) + 3600 }, JWT_SECRET);
+  const token = await signJwt({ userId: 'admin-1', userType: 'admin', market: 'com', exp: Math.floor(Date.now() / 1000) + 3600 }, JWT_SECRET);
   const listResponse = await worker.fetch(new Request('https://api.sagemro.com/api/admin/engineer-applications', {
     headers: { Authorization: `Bearer ${token}` },
   }), env, { waitUntil() {} });
@@ -721,6 +722,7 @@ test('legacy converted applications remain readable but cannot be newly written'
   const token = await signJwt({
     userId: 'admin-1',
     userType: 'admin',
+    market: 'com',
     exp: Math.floor(Date.now() / 1000) + 3600,
   }, JWT_SECRET);
   const listResponse = await worker.fetch(new Request(
@@ -750,6 +752,7 @@ test('saving an application review preserves its linked engineer account', async
   const token = await signJwt({
     userId: 'admin-1',
     userType: 'admin',
+    market: 'com',
     exp: Math.floor(Date.now() / 1000) + 3600,
   }, JWT_SECRET);
   const response = await worker.fetch(new Request(

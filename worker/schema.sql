@@ -619,6 +619,7 @@ CREATE TABLE IF NOT EXISTS materials (
     reference_cost REAL DEFAULT 0,
     reference_price REAL DEFAULT 0,
     stock_quantity INTEGER DEFAULT 0,
+    reserved_quantity INTEGER NOT NULL DEFAULT 0 CHECK (reserved_quantity >= 0 AND typeof(reserved_quantity) = 'integer'),
     safety_stock INTEGER DEFAULT 0,
     status TEXT DEFAULT 'active',
     notes TEXT,
@@ -705,13 +706,14 @@ CREATE TABLE IF NOT EXISTS material_requisition_items (
     spec TEXT,
     brand TEXT,
     unit TEXT NOT NULL DEFAULT 'pcs',
-    requested_quantity REAL NOT NULL CHECK (requested_quantity > 0),
-    stock_allocated_quantity REAL NOT NULL DEFAULT 0 CHECK (stock_allocated_quantity >= 0),
-    procurement_ordered_quantity REAL NOT NULL DEFAULT 0 CHECK (procurement_ordered_quantity >= 0),
-    procurement_received_quantity REAL NOT NULL DEFAULT 0 CHECK (procurement_received_quantity >= 0),
-    issued_quantity REAL NOT NULL DEFAULT 0 CHECK (issued_quantity >= 0),
-    returned_quantity REAL NOT NULL DEFAULT 0 CHECK (returned_quantity >= 0),
-    engineer_received_quantity REAL NOT NULL DEFAULT 0 CHECK (engineer_received_quantity >= 0),
+    requested_quantity INTEGER NOT NULL CHECK (requested_quantity > 0 AND typeof(requested_quantity) = 'integer'),
+    stock_allocated_quantity INTEGER NOT NULL DEFAULT 0 CHECK (stock_allocated_quantity >= 0 AND typeof(stock_allocated_quantity) = 'integer'),
+    procurement_ordered_quantity INTEGER NOT NULL DEFAULT 0 CHECK (procurement_ordered_quantity >= 0 AND typeof(procurement_ordered_quantity) = 'integer'),
+    procurement_received_quantity INTEGER NOT NULL DEFAULT 0 CHECK (procurement_received_quantity >= 0 AND typeof(procurement_received_quantity) = 'integer'),
+    issued_quantity INTEGER NOT NULL DEFAULT 0 CHECK (issued_quantity >= 0 AND typeof(issued_quantity) = 'integer'),
+    stock_issued_quantity INTEGER NOT NULL DEFAULT 0 CHECK (stock_issued_quantity >= 0 AND typeof(stock_issued_quantity) = 'integer'),
+    returned_quantity INTEGER NOT NULL DEFAULT 0 CHECK (returned_quantity >= 0 AND typeof(returned_quantity) = 'integer'),
+    engineer_received_quantity INTEGER NOT NULL DEFAULT 0 CHECK (engineer_received_quantity >= 0 AND typeof(engineer_received_quantity) = 'integer'),
     fulfillment_source TEXT NOT NULL DEFAULT 'unassigned' CHECK (fulfillment_source IN ('unassigned', 'stock', 'procurement', 'mixed')),
     expected_arrival TEXT,
     supplier_reference TEXT,
@@ -725,6 +727,18 @@ CREATE TABLE IF NOT EXISTS material_requisition_items (
 CREATE INDEX IF NOT EXISTS idx_material_requisition_items_requisition ON material_requisition_items(requisition_id);
 CREATE INDEX IF NOT EXISTS idx_material_requisition_items_material ON material_requisition_items(material_id);
 CREATE INDEX IF NOT EXISTS idx_material_requisition_items_status ON material_requisition_items(status);
+
+CREATE TABLE IF NOT EXISTS material_requisition_operations (
+    operation_key TEXT PRIMARY KEY,
+    action TEXT NOT NULL,
+    requisition_id TEXT NOT NULL,
+    item_id TEXT NOT NULL,
+    completed_at TEXT NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY (requisition_id) REFERENCES material_requisitions(id),
+    FOREIGN KEY (item_id) REFERENCES material_requisition_items(id)
+);
+CREATE INDEX IF NOT EXISTS idx_material_requisition_operations_target
+  ON material_requisition_operations(requisition_id, item_id, action);
 
 -- 工单物料引用（027）
 CREATE TABLE IF NOT EXISTS work_order_material_items (

@@ -198,6 +198,7 @@ async function token(env, userType, userId) {
   return signJwt({
     userId,
     userType,
+    market: 'cn',
     phone: '13800000000',
     iat: 1,
     exp: Math.floor(Date.now() / 1000) + 3600,

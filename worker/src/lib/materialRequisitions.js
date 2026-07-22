@@ -10,8 +10,8 @@ const TERMINAL_REQUISITION_STATUSES = new Set(['rejected', 'cancelled', 'closed'
 
 function quantity(value) {
   if (value === undefined) return 0;
-  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
-    throw new Error('Quantities must be finite, non-negative number primitives');
+  if (typeof value !== 'number' || !Number.isInteger(value) || value < 0) {
+    throw new Error('Quantities must be non-negative integers');
   }
   return value;
 }

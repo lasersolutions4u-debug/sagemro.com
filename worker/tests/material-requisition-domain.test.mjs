@@ -60,7 +60,7 @@ test('partial issuance remains non-final for the item and requisition', () => {
 
 test('fulfillment quantities enforce non-negative upstream bounds', () => {
   assert.throws(() => validateFulfillmentQuantities({ requested: 0 }), /greater than zero/i);
-  assert.throws(() => validateFulfillmentQuantities({ requested: 2, stockAllocated: 'invalid' }), /finite/i);
+  assert.throws(() => validateFulfillmentQuantities({ requested: 2, stockAllocated: 'invalid' }), /integer/i);
   assert.throws(() => validateFulfillmentQuantities({ requested: 2, stockAllocated: -1 }), /non-negative/i);
   assert.throws(() => validateFulfillmentQuantities({ requested: 2, stockAllocated: 3 }), /requested/i);
   assert.throws(() => validateFulfillmentQuantities({ requested: 5, stockAllocated: 3, procurementOrdered: 3 }), /shortage/i);
@@ -71,10 +71,10 @@ test('fulfillment quantities enforce non-negative upstream bounds', () => {
 });
 
 test('fulfillment quantities accept only finite number primitives', () => {
-  for (const malformed of [true, null, [], [1], {}, '1']) {
+  for (const malformed of [true, null, [], [1], {}, '1', 1.5]) {
     assert.throws(
       () => validateFulfillmentQuantities({ requested: 2, stockAllocated: malformed }),
-      /number/i,
+      /integer/i,
     );
   }
 });
