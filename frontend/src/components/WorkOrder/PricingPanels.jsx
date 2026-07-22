@@ -213,6 +213,7 @@ export function EngineerPricingPanel({ workOrderId, engineerId, pricing, onSubmi
       <label className="block text-xs text-[var(--color-text-secondary)] mb-1">{label}</label>
       <div className="relative">
         <input
+          aria-label={label}
           type="number"
           value={form[key]}
           onChange={(e) => setForm({ ...form, [key]: e.target.value })}
@@ -245,6 +246,7 @@ export function EngineerPricingPanel({ workOrderId, engineerId, pricing, onSubmi
       <div>
         <label className="block text-xs text-[var(--color-text-secondary)] mb-1">{t.engineer.partsDetail}</label>
         <textarea
+          aria-label={t.engineer.partsDetail}
           value={form.other_fee_note}
           onChange={(e) => setForm({ ...form, other_fee_note: e.target.value })}
           placeholder={t.engineer.partsDetailPlaceholder}
@@ -375,6 +377,7 @@ export function CustomerPricingPanel({ workOrderId, customerId, onConfirmed }) {
       {pricing.status === 'submitted' && action !== 'reject' && (
         <div className="flex gap-2">
           <button
+            data-testid="open-confirm-pricing-button"
             onClick={() => setAction('confirm')}
             className="flex-1 py-2.5 bg-green-500 hover:bg-green-600 text-white rounded-xl font-medium"
           >

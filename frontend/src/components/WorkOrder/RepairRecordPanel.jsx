@@ -225,6 +225,7 @@ export function RepairRecordPanel({ workOrderId, userType, repairRecord, onSaved
       <div>
         <label className="block text-xs text-[var(--color-text-secondary)] mb-1">Customer Symptom</label>
         <textarea
+          aria-label="Customer Symptom"
           value={symptom}
           onChange={(e) => setSymptom(e.target.value)}
           placeholder="Describe the specific issue, e.g. Laser power dropped, severe dross on 3mm stainless steel cut..."
@@ -236,6 +237,7 @@ export function RepairRecordPanel({ workOrderId, userType, repairRecord, onSaved
       <div>
         <label className="block text-xs text-[var(--color-text-secondary)] mb-1">Root Cause / Diagnosis</label>
         <textarea
+          aria-label="Root Cause / Diagnosis"
           value={diagnosis}
           onChange={(e) => setDiagnosis(e.target.value)}
           placeholder="Issues found during inspection, e.g. Contaminated protective lens, thermal lensing on focus lens, low assist gas pressure..."
@@ -247,6 +249,7 @@ export function RepairRecordPanel({ workOrderId, userType, repairRecord, onSaved
       <div>
         <label className="block text-xs text-[var(--color-text-secondary)] mb-1">Service Actions / Next Advice</label>
         <textarea
+          aria-label="Service Actions / Next Advice"
           value={solution}
           onChange={(e) => setSolution(e.target.value)}
           placeholder="Actions taken, e.g. Replaced protective lens and focus lens, cleaned optical path, adjusted gas pressure to 1.2MPa..."
@@ -329,6 +332,7 @@ export function RepairRecordPanel({ workOrderId, userType, repairRecord, onSaved
       <div>
         <label className="block text-xs text-[var(--color-text-secondary)] mb-1">Labor Hours</label>
         <input
+          aria-label="Labor Hours"
           type="number"
           value={laborHours}
           onChange={(e) => setLaborHours(e.target.value)}

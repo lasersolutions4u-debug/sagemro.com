@@ -468,6 +468,7 @@ export function WorkOrderModal({ isOpen, onClose, onSubmit }) {
             {copy.serviceType} <span className="text-red-500">*</span>
           </label>
           <select
+            aria-label={copy.serviceType}
             value={form.type}
             onChange={(e) => setForm({ ...form, type: e.target.value })}
             className="w-full px-3 py-2 border border-[var(--color-border)] dark:border-[var(--color-border-strong)] rounded-xl bg-[var(--color-surface)] dark:bg-[var(--color-surface-elevated)] text-xs text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
@@ -573,6 +574,7 @@ export function WorkOrderModal({ isOpen, onClose, onSubmit }) {
             {copy.serviceAddress} {form.service_mode === 'onsite' && <span className="text-red-500">*</span>}
           </label>
           <input
+            aria-label={copy.serviceAddress}
             type="text"
             value={form.service_address}
             onChange={(e) => {
@@ -635,6 +637,7 @@ export function WorkOrderModal({ isOpen, onClose, onSubmit }) {
             {copy.equipmentModel}
           </label>
           <input
+            aria-label={copy.equipmentModel}
             type="text"
             value={form.device_model}
             onChange={(e) => setForm({ ...form, device_model: e.target.value })}
@@ -649,6 +652,7 @@ export function WorkOrderModal({ isOpen, onClose, onSubmit }) {
             {copy.description} <span className="text-red-500">*</span>
           </label>
           <textarea
+            aria-label={copy.description}
             value={form.description}
             onChange={(e) => setForm({ ...form, description: e.target.value })}
             placeholder={copy.descriptionPlaceholder}
@@ -663,6 +667,7 @@ export function WorkOrderModal({ isOpen, onClose, onSubmit }) {
             {copy.contact} <span className="text-red-500">*</span>
           </label>
           <input
+            aria-label={copy.contact}
             type="text"
             value={form.contact}
             onChange={(e) => setForm({ ...form, contact: e.target.value })}

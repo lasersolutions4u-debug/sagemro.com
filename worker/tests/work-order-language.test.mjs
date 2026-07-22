@@ -52,7 +52,7 @@ function makeEnv() {
                   specialties: JSON.stringify(['laser cutting']),
                   services: JSON.stringify(['repair']),
                   brands: JSON.stringify({ laser_cutting: ['TRUMPF'] }),
-                  service_region: JSON.stringify(['United States']),
+                  service_region: 'North America, United States',
                   status: 'available',
                   level: 'senior',
                   rating_count: 0,
@@ -118,24 +118,34 @@ async function makeCustomerToken() {
 test('COM work order creation writes customer and engineer service text in English', async () => {
   const env = makeEnv();
   const token = await makeCustomerToken();
+  const errors = [];
+  const originalError = console.error;
+  console.error = (...args) => errors.push(args.join(' '));
 
-  const response = await worker.fetch(new Request('https://api.sagemro.com/api/workorders', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
-      Origin: 'https://sagemro.com',
-    },
-    body: JSON.stringify({
-      customer_id: 'cust-1',
-      type: 'fault',
-      description: 'Equipment type: Laser Cutter; Brand: TRUMPF; Model: TruLaser 3030; Region: United States / Chicago. Cut edge has heavy burrs.',
-      urgency: 'urgent',
-      category_l1: 'laser_cutting',
-      category_l2: 'mechanical_fault',
-    }),
-  }), env, { waitUntil() {} });
-  const body = await response.json();
+  let response;
+  let body;
+  try {
+    response = await worker.fetch(new Request('https://api.sagemro.com/api/workorders', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+        Origin: 'https://sagemro.com',
+      },
+      body: JSON.stringify({
+        customer_id: 'cust-1',
+        type: 'fault',
+        description: 'Equipment type: Laser Cutter; Brand: TRUMPF; Model: TruLaser 3030; Region: United States / Chicago. Cut edge has heavy burrs.',
+        urgency: 'urgent',
+        category_l1: 'laser_cutting',
+        category_l2: 'mechanical_fault',
+      }),
+    }), env, { waitUntil() {} });
+    body = await response.json();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  } finally {
+    console.error = originalError;
+  }
 
   assert.equal(response.status, 200);
   assert.equal(body.work_order.status, 'pending');
@@ -145,4 +155,5 @@ test('COM work order creation writes customer and engineer service text in Engli
   assert.equal(env.__state.notifications[0].title, 'New service task pending confirmation');
   assert.match(env.__state.notifications[0].body, /Service No\.:/);
   assert.doesNotMatch(JSON.stringify(env.__state.notifications), HAN_RE);
+  assert.deepEqual(errors, []);
 });

@@ -973,7 +973,7 @@ export function WorkOrdersPage() {
       {detailOpen && (
         <div className="fixed inset-0 z-50 flex justify-end">
           <div className="absolute inset-0 bg-black/40" onClick={() => setDetailOpen(false)} />
-          <div className="relative flex h-full w-full max-w-4xl flex-col overflow-hidden bg-[var(--color-surface)] shadow-2xl">
+          <div role="dialog" aria-modal="true" aria-label={t.drawerTitle} className="relative flex h-full w-full max-w-4xl flex-col overflow-hidden bg-[var(--color-surface)] shadow-2xl">
             <div className="sticky top-0 z-10 flex shrink-0 items-start justify-between gap-3 border-b border-[var(--color-border)] bg-[var(--color-surface)] p-3 sm:p-5">
               <div className="min-w-0">
                 <div className="text-xs uppercase tracking-[0.18em] text-[var(--color-primary)]">Service Record</div>
@@ -1209,6 +1209,7 @@ export function WorkOrdersPage() {
                   <div className="flex flex-col gap-3">
                     <div className="flex items-center gap-2">
                       <select
+                        aria-label={t.regionalLeadOption}
                         value={selectedRegionalLeads[detail.id] || detail.assigned_regional_lead_id || ''}
                         onChange={(event) => setSelectedRegionalLeads((prev) => ({ ...prev, [detail.id]: event.target.value }))}
                         className="min-w-0 flex-1 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-2 py-1.5 text-xs text-[var(--color-text)]"
@@ -1228,6 +1229,7 @@ export function WorkOrdersPage() {
                     </div>
                     <div className="flex items-center gap-2">
                       <select
+                        aria-label={t.engineerOption}
                         value={selectedEngineers[detail.id] || detail.engineer_id || ''}
                         onChange={(event) => setSelectedEngineers((prev) => ({ ...prev, [detail.id]: event.target.value }))}
                         className="min-w-0 flex-1 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-2 py-1.5 text-xs text-[var(--color-text)]"
@@ -1248,47 +1250,51 @@ export function WorkOrdersPage() {
                   </div>
                 </section>
 
-                <section className="rounded-xl border border-[var(--color-primary)]/30 bg-[var(--color-primary)]/5 p-4">
-                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                    <div>
-                      <h4 className="font-medium text-[var(--color-text)]">Engineer service payment</h4>
-                      <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
-                        Internal closure is not complete until this work order's engineer payout is completed.
-                      </p>
-                      <div className="mt-3 grid gap-2 text-xs text-[var(--color-text-muted)] sm:grid-cols-2">
-                        <div>Status: {payoutLabel(detail.payout_status)}</div>
-                        <div>Method: {detail.payout?.method === 'bank_swift' ? 'Bank transfer / SWIFT' : 'PayPal account'}</div>
-                        <div>Amount: {detail.payout?.amount ? `${money(detail.payout.amount)} ${detail.payout.currency || 'USD'}` : '-'}</div>
-                        <div>Reference: {detail.payout?.transaction_reference || '-'}</div>
-                        <div>Paid at: {detail.payout?.paid_at ? new Date(detail.payout.paid_at).toLocaleString('en-US') : '-'}</div>
-                        <div>Note: {detail.payout?.internal_note || '-'}</div>
+                {detail.status === 'completed' && (
+                  <section className="rounded-xl border border-[var(--color-primary)]/30 bg-[var(--color-primary)]/5 p-4">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                      <div>
+                        <h4 className="font-medium text-[var(--color-text)]">Engineer service payment</h4>
+                        <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
+                          Internal closure is not complete until this work order's engineer payout is completed.
+                        </p>
+                        <div className="mt-3 grid gap-2 text-xs text-[var(--color-text-muted)] sm:grid-cols-2">
+                          <div>Status: {payoutLabel(detail.payout_status)}</div>
+                          <div>Method: {detail.payout?.method === 'bank_swift' ? 'Bank transfer / SWIFT' : 'PayPal account'}</div>
+                          <div>Amount: {detail.payout?.amount ? `${money(detail.payout.amount)} ${detail.payout.currency || 'USD'}` : '-'}</div>
+                          <div>Reference: {detail.payout?.transaction_reference || '-'}</div>
+                          <div>Paid at: {detail.payout?.paid_at ? new Date(detail.payout.paid_at).toLocaleString('en-US') : '-'}</div>
+                          <div>Note: {detail.payout?.internal_note || '-'}</div>
+                        </div>
                       </div>
+                      {detail.payout_status !== 'completed' && (
+                        <div className="flex flex-wrap gap-2">
+                          <button
+                            onClick={() => handleUpdatePayout(detail, 'processing')}
+                            disabled={assigningId === `${detail.id}:payout:processing`}
+                            className="rounded-lg border border-[var(--color-border)] px-3 py-2 text-sm text-[var(--color-text-secondary)] disabled:opacity-50"
+                          >
+                            Mark payout processing
+                          </button>
+                          <button
+                            onClick={() => handleUpdatePayout(detail, 'completed')}
+                            disabled={assigningId === `${detail.id}:payout:completed`}
+                            className="rounded-lg bg-[var(--color-primary)] px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
+                          >
+                            Mark payout completed
+                          </button>
+                          <button
+                            onClick={() => handleUpdatePayout(detail, 'exception')}
+                            disabled={assigningId === `${detail.id}:payout:exception`}
+                            className="rounded-lg border border-red-500/40 px-3 py-2 text-sm text-red-500 disabled:opacity-50"
+                          >
+                            Mark payout exception
+                          </button>
+                        </div>
+                      )}
                     </div>
-                    <div className="flex flex-wrap gap-2">
-                      <button
-                        onClick={() => handleUpdatePayout(detail, 'processing')}
-                        disabled={assigningId === `${detail.id}:payout:processing`}
-                        className="rounded-lg border border-[var(--color-border)] px-3 py-2 text-sm text-[var(--color-text-secondary)] disabled:opacity-50"
-                      >
-                        Mark payout processing
-                      </button>
-                      <button
-                        onClick={() => handleUpdatePayout(detail, 'completed')}
-                        disabled={assigningId === `${detail.id}:payout:completed`}
-                        className="rounded-lg bg-[var(--color-primary)] px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
-                      >
-                        Mark payout completed
-                      </button>
-                      <button
-                        onClick={() => handleUpdatePayout(detail, 'exception')}
-                        disabled={assigningId === `${detail.id}:payout:exception`}
-                        className="rounded-lg border border-red-500/40 px-3 py-2 text-sm text-red-500 disabled:opacity-50"
-                      >
-                        Mark payout exception
-                      </button>
-                    </div>
-                  </div>
-                </section>
+                  </section>
+                )}
 
                 <section className="rounded-xl border border-[var(--color-border)] p-4">
                   <h4 className="mb-2 font-medium">{t.aiSummaryTitle}</h4>

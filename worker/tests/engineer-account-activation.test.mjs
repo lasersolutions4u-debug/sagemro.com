@@ -776,6 +776,7 @@ test('valid activation sets password and consumes the token atomically', async (
 
   assert.equal(response.status, 200);
   assert.match(env.__batchSql(), /auth_status = 'authenticated'/);
+  assert.match(env.__batchSql(), /status = 'available'/);
   assert.match(env.__batchSql(), /first_login_password_reset_required = 0/);
   assert.match(env.__batchSql(), /SET used_at = datetime\('now'\)/);
   assert.match(env.__batchSql(), /INSERT INTO audit_logs/);
