@@ -3006,7 +3006,7 @@ async function handleEngineerActivation(request, env) {
         guardStatement,
         env.DB.prepare(`
           UPDATE engineers
-          SET password_hash = ?, salt = ?, auth_status = 'authenticated',
+          SET password_hash = ?, salt = ?, auth_status = 'authenticated', status = 'available',
               first_login_password_reset_required = 0
           WHERE id = ? AND auth_status = 'pending_activation'
         `).bind(passwordHash, salt, activation.engineer_id),
@@ -3019,7 +3019,7 @@ async function handleEngineerActivation(request, env) {
           actorType: 'engineer', actorId: activation.engineer_id,
           targetType: 'engineer', targetId: activation.engineer_id,
           action: 'engineer_account_activated',
-          afterState: { engineer_no: activation.engineer_no },
+          afterState: { engineer_no: activation.engineer_no, status: 'available' },
         }),
       ]);
     } catch (error) {
