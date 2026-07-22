@@ -262,8 +262,44 @@ jobs:
             ~^((www\.)?sagemro\.cn|admin\.sagemro\.cn|engineer\.sagemro\.cn):/ "no-cache";
           }
 
+          map $host $sagemro_content_security_policy {
+            default "";
+            ~^((www\.)?sagemro\.cn|admin\.sagemro\.cn|engineer\.sagemro\.cn)$ "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self' https://cdn.onesignal.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; media-src 'self' blob: https:; connect-src 'self' https://api.sagemro.com https://api.sagemro.cn https://*.sentry.io https://*.ingest.sentry.io https://onesignal.com https://*.onesignal.com wss://*.onesignal.com; worker-src 'self' blob:; frame-src 'self' https://*.onesignal.com; manifest-src 'self'; upgrade-insecure-requests";
+          }
+
+          map $host $sagemro_hsts {
+            default "";
+            ~^((www\.)?sagemro\.cn|admin\.sagemro\.cn|engineer\.sagemro\.cn)$ "max-age=31536000; includeSubDomains";
+          }
+
+          map $host $sagemro_nosniff {
+            default "";
+            ~^((www\.)?sagemro\.cn|admin\.sagemro\.cn|engineer\.sagemro\.cn)$ "nosniff";
+          }
+
+          map $host $sagemro_frame_options {
+            default "";
+            ~^((www\.)?sagemro\.cn|admin\.sagemro\.cn|engineer\.sagemro\.cn)$ "DENY";
+          }
+
+          map $host $sagemro_referrer_policy {
+            default "";
+            ~^((www\.)?sagemro\.cn|admin\.sagemro\.cn|engineer\.sagemro\.cn)$ "strict-origin-when-cross-origin";
+          }
+
+          map $host $sagemro_permissions_policy {
+            default "";
+            ~^((www\.)?sagemro\.cn|admin\.sagemro\.cn|engineer\.sagemro\.cn)$ "camera=(), microphone=(self), geolocation=(self)";
+          }
+
           gzip_types text/plain text/css application/javascript application/json application/xml image/svg+xml font/woff2;
           add_header Cache-Control $sagemro_asset_cache_control always;
+          add_header Content-Security-Policy $sagemro_content_security_policy always;
+          add_header Strict-Transport-Security $sagemro_hsts always;
+          add_header X-Content-Type-Options $sagemro_nosniff always;
+          add_header X-Frame-Options $sagemro_frame_options always;
+          add_header Referrer-Policy $sagemro_referrer_policy always;
+          add_header Permissions-Policy $sagemro_permissions_policy always;
           NGINX
 
           $SUDO python3 "$release/ops/enable_nginx_http2.py" $nginx_config_files
@@ -295,6 +331,12 @@ jobs:
               echo "::error::${site_host} HTML is missing the no-cache policy"
               exit 1
             }
+            for header_name in content-security-policy strict-transport-security x-content-type-options x-frame-options referrer-policy permissions-policy; do
+              grep -qi "^${header_name}:" <<< "$root_headers" || {
+                echo "::error::${site_host} HTML is missing security header: ${header_name}"
+                exit 1
+              }
+            done
 
             page_html="$(curl -fsS "$site_url/")"
             asset_path="$(sed -n 's/.*src="\([^"]*\/assets\/index-[^"]*\.js\)".*/\1/p' <<< "$page_html" | head -1)"

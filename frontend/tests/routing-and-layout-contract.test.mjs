@@ -67,7 +67,7 @@ test('production build emits modulepreload links for initial vendor chunks', asy
   }
 });
 
-test('Aliyun deploy enforces HTTP/2, compression, caching, and rollback', () => {
+test('Aliyun deploy enforces HTTP/2, compression, caching, security headers, and rollback', () => {
   const workflow = read('.github/workflows/aliyun-cn-deploy.yml');
 
   assert.match(workflow, /nginx_backup="\$backup_root\/\$\{RELEASE_ID\}\.tgz"/);
@@ -78,7 +78,11 @@ test('Aliyun deploy enforces HTTP/2, compression, caching, and rollback', () => 
   assert.match(workflow, /for site_host in sagemro\.cn admin\.sagemro\.cn engineer\.sagemro\.cn/);
   assert.match(workflow, /content-encoding: gzip/);
   assert.match(workflow, /max-age=31536000, immutable/);
+  assert.match(workflow, /Content-Security-Policy/);
+  assert.match(workflow, /X-Content-Type-Options/);
+  assert.match(workflow, /Strict-Transport-Security/);
   assert.match(workflow, /HTML is missing the no-cache policy/);
+  assert.match(workflow, /HTML is missing security header/);
   assert.match(workflow, /test -L "\$link_path" \|\| \$SUDO test -e "\$link_path"/);
   assert.match(workflow, /previous_target" = "__MISSING__"/);
 });
