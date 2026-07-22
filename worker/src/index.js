@@ -83,6 +83,7 @@ import {
 
 // Sentry 错误上报（零依赖 envelope 客户端）
 import { captureException } from './lib/sentry.js';
+import { isKnownProtectedRoute, isTestRoute } from './lib/routes.js';
 
 // AI 工具调用确定性日志（Phase 0.1）
 import { logToolCall, measureAndLogToolCall, PermissionError } from './lib/trace.js';
@@ -12702,14 +12703,7 @@ async function routeRequest(request, env, ctx) {
     // 任何 /api/test-*, /api/debug-*, /api/init-*, /api/clear-test-data
     // 只在 ENVIRONMENT === 'development' 且管理员认证通过时才开放，其他情况一律 404。
     // 默认拒绝策略：env 缺失或值非预期时（例如 staging、空字符串）也视作生产锁定，避免误暴露。
-    const isTestRoute = (
-      path.startsWith('/api/test-') ||
-      path.startsWith('/api/debug-') ||
-      path === '/api/init-test-data' ||
-      path === '/api/init-db' ||
-      path === '/api/clear-test-data'
-    );
-    if (isTestRoute) {
+    if (isTestRoute(path)) {
       if (env.ENVIRONMENT !== 'development') {
         return errorResponse(getRequestMarket(request) === 'cn' ? '未找到' : 'Not found', 404);
       }
@@ -12859,32 +12853,7 @@ async function routeRequest(request, env, ctx) {
     // 先判断 path 是否匹配任一已知受保护路由。不匹配则直接 404，
     // 避免未登录用户 GET /api/random-typo 拿到 401 泄露"此路径需要 token"。
     // 白名单必须与下方已登录路由列表保持同步。
-    const isKnownProtectedRoute = (
-      path.startsWith('/api/admin/') ||
-      path === '/api/material-requests' ||
-      path === '/api/upsell-requests' ||
-      path === '/api/upsell-requests/mine' ||
-      path === '/api/leads/machine' ||
-      path === '/api/conversations' ||
-      path.startsWith('/api/conversations/') ||
-      path === '/api/materials' ||
-      path === '/api/location/search' ||
-      path === '/api/workorders' ||
-      path.startsWith('/api/workorders/') ||
-      path === '/api/devices' ||
-      path.startsWith('/api/devices/') ||
-      path === '/api/notifications' ||
-      path.startsWith('/api/notifications/') ||
-      path.startsWith('/api/engineers/') ||
-      path === '/api/push-subscription' ||
-      path === '/api/platform-ratings' ||
-      path === '/api/customer-ratings' ||
-      path === '/api/customers/profile' ||
-      path === '/api/customers/push-subscription' ||
-      /^\/api\/customers\/[^/]+\/reviews$/.test(path) ||
-      path === '/api/auth/change-password'
-    );
-    if (!isKnownProtectedRoute) {
+    if (!isKnownProtectedRoute(path)) {
       return errorResponse(getRequestMarket(request) === 'cn' ? '未找到' : 'Not found', 404);
     }
 
