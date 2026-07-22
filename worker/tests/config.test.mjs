@@ -34,6 +34,30 @@ test('allows local CN acceptance origins during development', async () => {
   }
 });
 
+test('production HTTPS responses include baseline security headers', async () => {
+  const response = await worker.fetch(new Request('https://api.sagemro.cn/health', {
+    headers: { Origin: 'https://sagemro.cn' },
+  }), { ENVIRONMENT: 'production' }, {});
+
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get('Content-Security-Policy'), "default-src 'none'; frame-ancestors 'none'; base-uri 'none'");
+  assert.equal(response.headers.get('X-Content-Type-Options'), 'nosniff');
+  assert.equal(response.headers.get('X-Frame-Options'), 'DENY');
+  assert.equal(response.headers.get('Referrer-Policy'), 'strict-origin-when-cross-origin');
+  assert.equal(response.headers.get('Permissions-Policy'), 'camera=(), microphone=(), geolocation=()');
+  assert.equal(response.headers.get('Strict-Transport-Security'), 'max-age=31536000; includeSubDomains');
+});
+
+test('development HTTP responses do not force HSTS', async () => {
+  const response = await worker.fetch(new Request('http://api.local.sagemro-test.cn:8788/health', {
+    headers: { Origin: 'http://local.sagemro-test.cn:5175' },
+  }), { ENVIRONMENT: 'development' }, {});
+
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get('Strict-Transport-Security'), null);
+  assert.equal(response.headers.get('X-Content-Type-Options'), 'nosniff');
+});
+
 test('schema snapshot includes the current work-order workflow migrations', () => {
   const schema = readFileSync(new URL('../schema.sql', import.meta.url), 'utf8');
 

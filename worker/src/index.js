@@ -1989,6 +1989,22 @@ function getCorsHeaders(request, env) {
   };
 }
 
+function getSecurityHeaders(request, env) {
+  const headers = {
+    'Content-Security-Policy': "default-src 'none'; frame-ancestors 'none'; base-uri 'none'",
+    'X-Content-Type-Options': 'nosniff',
+    'X-Frame-Options': 'DENY',
+    'Referrer-Policy': 'strict-origin-when-cross-origin',
+    'Permissions-Policy': 'camera=(), microphone=(), geolocation=()',
+  };
+
+  if (env.ENVIRONMENT !== 'development' && new URL(request.url).protocol === 'https:') {
+    headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains';
+  }
+
+  return headers;
+}
+
 // 兼容旧代码：仅作兜底 Content-Type/Methods，动态 Origin 由 top-level 包装器覆盖。
 const corsHeaders = {
   'Access-Control-Allow-Origin': ALLOWED_ORIGINS_PRODUCTION[0],
@@ -13062,8 +13078,12 @@ async function routeRequest(request, env, ctx) {
 // 将 routeRequest 的响应与动态 CORS 头合并
 function withCorsHeaders(response, request, env) {
   const corsH = getCorsHeaders(request, env);
+  const securityH = getSecurityHeaders(request, env);
   const newHeaders = new Headers(response.headers);
   for (const [k, v] of Object.entries(corsH)) {
+    newHeaders.set(k, v);
+  }
+  for (const [k, v] of Object.entries(securityH)) {
     newHeaders.set(k, v);
   }
   return new Response(response.body, {
@@ -13128,11 +13148,12 @@ export default {
       console.error('[fetch] unhandled error:', error);
       captureException(error, requestEnv, { request, ctx });
       const corsH = getCorsHeaders(request, requestEnv);
+      const securityH = getSecurityHeaders(request, requestEnv);
       return new Response(
         JSON.stringify({ error: error?.message || (getRequestMarket(request) === 'cn' ? '服务器内部错误' : 'Internal Server Error') }),
         {
           status: 500,
-          headers: { 'Content-Type': 'application/json', ...corsH },
+          headers: { 'Content-Type': 'application/json', ...corsH, ...securityH },
         }
       );
     }
