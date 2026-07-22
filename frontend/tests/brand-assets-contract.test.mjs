@@ -484,8 +484,7 @@ test('client shell moves conversation history into a modal and exposes industry 
   assert.match(industryToolsModal, /industryTools\.map/);
   assert.match(industryToolCalculator, /Ask SAGEMRO AI to review this result/);
   assert.match(industryToolsPage, /href=\{`\/tools\/\$\{tool\.slug\}`\}/);
-  assert.match(industryToolsPage, /link\[rel="canonical"\]/);
-  assert.match(industryToolsPage, /meta\[name="\$\{name\}"\]/);
+  assert.match(industryToolsPage, /setSeoMetadata\(/);
   assert.match(industryTools, /Metal Weight Calculator/);
   assert.match(industryTools, /Steel Price Watch/);
   assert.match(industryTools, /Laser Cutting Cost Calculator/);

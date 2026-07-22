@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   ArrowRight,
   BadgeCheck,
@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { submitEngineerApplication } from '../../services/api';
 import { BrandMark } from '../common/BrandMark';
+import { setSeoMetadata } from '../../utils/seo';
 
 const COPY = {
   cn: {
@@ -392,6 +393,35 @@ function ApplicationForm({ copy, form, submitting, message, error, updateField, 
 export function EngineerRecruitingPage({ onOpenLogin }) {
   const locale = getLocale();
   const copy = COPY[locale];
+  useEffect(() => {
+    const isCn = locale === 'cn';
+    const canonicalHost = isCn ? 'https://engineer.sagemro.cn' : 'https://engineer.sagemro.com';
+    const title = isCn
+      ? '认证服务代表网络 | SAGEMRO'
+      : 'Industrial Service Engineer Network | SAGEMRO';
+    const description = isCn
+      ? '加入 SAGEMRO 认证服务代表网络，为激光切割机、折弯机和钣金设备提供清晰、可记录的现场服务协作。'
+      : 'Join SAGEMRO\'s industrial service engineer network for laser cutting, press brake, and sheet metal field service.';
+    setSeoMetadata({
+      title,
+      description,
+      canonical: `${canonicalHost}/`,
+      lang: isCn ? 'zh-CN' : 'en',
+      structuredData: {
+        '@context': 'https://schema.org',
+        '@type': 'Service',
+        name: isCn ? 'SAGEMRO 认证服务代表网络' : 'SAGEMRO Industrial Service Engineer Network',
+        description,
+        provider: {
+          '@type': 'Organization',
+          name: 'SAGEMRO',
+          url: isCn ? 'https://sagemro.cn/' : 'https://sagemro.com/',
+        },
+        areaServed: isCn ? 'China' : 'Worldwide',
+        url: canonicalHost,
+      },
+    });
+  }, [locale]);
   const [modalOpen, setModalOpen] = useState(false);
   const [form, setForm] = useState({
     name: '',

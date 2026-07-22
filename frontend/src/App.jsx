@@ -13,6 +13,7 @@ import { usePushNotification } from './hooks/usePushNotification';
 import { generateId } from './utils/helpers';
 import { isCnLocale } from './utils/locale';
 import { buildWorkOrderDescription } from './utils/workOrderDisplay';
+import { setSeoMetadata } from './utils/seo';
 import { submitWorkOrder as submitWorkOrderApi, getUnreadNotificationCount, trackFunnelEvent } from './services/api';
 
 // 重型 Modal 懒加载，减少首屏 bundle 体积
@@ -40,10 +41,6 @@ function App() {
   const engineerPortalUrl = isCn ? 'https://engineer.sagemro.cn' : 'https://engineer.sagemro.com';
 
   useEffect(() => {
-    document.title = isCn ? 'SAGEMRO 智能服务系统' : 'SAGEMRO Service OS';
-  }, [isCn]);
-
-  useEffect(() => {
     trackFunnelEvent('traffic_source_captured', { entry: 'app_loaded' });
   }, []);
 
@@ -67,6 +64,42 @@ function App() {
   const [currentUser, setCurrentUser] = useState(null);
   const [userType, setUserType] = useState(null);
   const [currentPath, setCurrentPath] = useState(() => window.location.pathname);
+
+  useEffect(() => {
+    const isEngineerLanding = isEngineerHost && !userType;
+    const isPrivateApp = Boolean(userType);
+    const title = isEngineerLanding
+      ? 'Industrial Service Engineer Network | SAGEMRO'
+      : isCn ? 'SAGEMRO 智能服务系统' : 'SAGEMRO Service OS';
+    const description = isEngineerLanding
+      ? 'Join SAGEMRO\'s industrial service engineer network for laser cutting, press brake, and sheet metal field service.'
+      : isCn
+        ? 'SAGEMRO 面向激光切割与钣金设备，帮助客户整理问题、连接合格工程师并沉淀服务记录。'
+        : 'SAGEMRO helps industrial equipment users organize service needs, connect with qualified field engineers, and keep service records clear.';
+    const canonicalHost = isCn ? 'https://sagemro.cn' : 'https://sagemro.com';
+    const publicHost = isEngineerHost ? canonicalHost.replace('://', '://engineer.') : canonicalHost;
+    setSeoMetadata({
+      title: isPrivateApp ? 'SAGEMRO Service Workspace' : title,
+      description: isPrivateApp ? 'Private SAGEMRO service workspace.' : description,
+      canonical: `${publicHost}/`,
+      lang: isCn ? 'zh-CN' : 'en',
+      robots: isPrivateApp ? 'noindex,nofollow,noarchive' : 'index,follow',
+      structuredData: isPrivateApp ? null : isEngineerLanding ? {
+        '@context': 'https://schema.org',
+        '@type': 'WebPage',
+        name: title,
+        description,
+        url: `${publicHost}/`,
+        isPartOf: { '@type': 'WebSite', name: 'SAGEMRO', url: canonicalHost },
+      } : {
+        '@context': 'https://schema.org',
+        '@type': 'Organization',
+        name: 'SAGEMRO',
+        url: `${canonicalHost}/`,
+        email: 'support@sagemro.com',
+      },
+    });
+  }, [isCn, isEngineerHost, userType]);
 
   // 通知未读数
   const [unreadCount, setUnreadCount] = useState(0);

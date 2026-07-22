@@ -4,26 +4,7 @@ import { BrandMark } from '../common/BrandMark';
 import { Footer } from '../common/Footer';
 import { getLocalizedInsight, getLocalizedInsights } from '../../data/insights';
 import { isCnLocale } from '../../utils/locale';
-
-function setMeta(name, content) {
-  let tag = document.querySelector(`meta[name="${name}"]`);
-  if (!tag) {
-    tag = document.createElement('meta');
-    tag.setAttribute('name', name);
-    document.head.appendChild(tag);
-  }
-  tag.setAttribute('content', content);
-}
-
-function setCanonical(pathname, canonicalHost = 'https://sagemro.com') {
-  let tag = document.querySelector('link[rel="canonical"]');
-  if (!tag) {
-    tag = document.createElement('link');
-    tag.setAttribute('rel', 'canonical');
-    document.head.appendChild(tag);
-  }
-  tag.setAttribute('href', `${canonicalHost}${pathname}`);
-}
+import { setSeoMetadata } from '../../utils/seo';
 
 const insightsCopy = {
   en: {
@@ -67,10 +48,21 @@ export function InsightsPage({ pathname = '/insights', onOpenLegal }) {
     const description = insight
       ? insight.description
       : copy.hubDescription;
-    document.title = `${title} | SAGEMRO`;
-    setMeta('description', description);
-    setCanonical(insight ? `/insights/${insight.slug}` : '/insights', canonicalHost);
-  }, [canonicalHost, copy, insight]);
+    setSeoMetadata({
+      title: `${title} | SAGEMRO`,
+      description,
+      canonical: `${canonicalHost}${insight ? `/insights/${insight.slug}` : '/insights'}`,
+      lang: locale === 'zh-CN' ? 'zh-CN' : 'en',
+      structuredData: insight ? {
+        '@context': 'https://schema.org',
+        '@type': 'Article',
+        headline: insight.title,
+        description: insight.description,
+        url: `${canonicalHost}/insights/${insight.slug}`,
+        publisher: { '@type': 'Organization', name: 'SAGEMRO' },
+      } : undefined,
+    });
+  }, [canonicalHost, copy, insight, locale]);
 
   if (insight) {
     return <InsightDetail copy={copy} insight={insight} onOpenLegal={onOpenLegal} />;
