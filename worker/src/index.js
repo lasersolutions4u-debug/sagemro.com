@@ -86,6 +86,13 @@ import {
 import { captureException } from './lib/sentry.js';
 import { isKnownProtectedRoute, isTestRoute } from './lib/routes.js';
 import { handlePublicRoute } from './lib/publicRoutes.js';
+import {
+  canCloseMaterialRequisition,
+  canManageMaterialRequisition,
+  deriveItemStatus,
+  deriveRequisitionStatus,
+  validateFulfillmentQuantities,
+} from './lib/materialRequisitions.js';
 
 // AI 工具调用确定性日志（Phase 0.1）
 import { logToolCall, measureAndLogToolCall, PermissionError } from './lib/trace.js';
@@ -3049,12 +3056,44 @@ async function handleAuthSession(request, env) {
   }
 
   if (sessionAuth.userType === 'admin') {
+    if (sessionAuth.staffId) {
+      const staff = await env.DB.prepare('SELECT * FROM admin_staff_accounts WHERE id = ?').bind(sessionAuth.staffId).first();
+      const requestMarket = getRequestMarket(request);
+      const marketAllowed = sessionAuth.market === requestMarket
+        && (staff?.market_scope === 'all' || staff?.market_scope === requestMarket);
+      if (!staff?.is_active || !marketAllowed) {
+        return clearPortalSession(jsonResponse({ authenticated: false }), request, env);
+      }
+      response = jsonResponse({
+        authenticated: true,
+        csrfToken: sessionAuth.csrf,
+        userType: 'admin',
+        user: {
+          id: staff.id,
+          name: staff.display_name,
+          phone: staff.normalized_phone || '',
+          type: 'admin',
+          market: sessionAuth.market || getRequestMarket(request),
+          staffRole: staff.role,
+          staffId: staff.id,
+          mustChangePassword: Boolean(staff.must_change_password),
+        },
+      });
+      return rotateLegacyBearer ? addSessionCookie(response, request, env, 'admin', await signJwt({
+        ...sessionAuth,
+        staffRole: staff.role,
+        mustChangePassword: Boolean(staff.must_change_password),
+      }, env.JWT_SECRET)) : response;
+    }
     const credentials = resolveAdminCredentials(request, env);
     response = jsonResponse({
       authenticated: true,
       csrfToken: sessionAuth.csrf,
       userType: 'admin',
-      user: { id: 'admin', name: '超级管理员', phone: credentials.phone, type: 'admin', market: credentials.market },
+      user: {
+        id: 'admin', name: '超级管理员', phone: credentials.phone, type: 'admin', market: credentials.market,
+        staffRole: 'admin', staffId: null, mustChangePassword: false,
+      },
     });
     return rotateLegacyBearer ? addSessionCookie(response, request, env, 'admin', await signJwt(sessionAuth, env.JWT_SECRET)) : response;
   }
@@ -6592,6 +6631,29 @@ async function handleChangePassword(request, env) {
     if (!oldPassword || !newPassword) return errorResponse('旧密码和新密码不能为空');
     if (isPasswordTooShort(newPassword)) return passwordTooShortResponse(request);
 
+    if (auth.userType === 'admin') {
+      if (!auth.staffId) return errorResponse('超级管理员密码由环境变量管理', 403);
+      const staff = await env.DB.prepare('SELECT * FROM admin_staff_accounts WHERE id = ?').bind(auth.staffId).first();
+      if (!staff?.is_active) return errorResponse('员工账号不存在或已停用', 404);
+      const ok = await verifyPassword(oldPassword, staff.password_hash, staff.salt);
+      if (!ok) return errorResponse('旧密码错误');
+      const newSalt = generateSalt();
+      const newHash = await hashPasswordNew(newPassword, newSalt);
+      await env.DB.prepare(`
+        UPDATE admin_staff_accounts
+        SET password_hash = ?, salt = ?, must_change_password = 0, updated_at = datetime('now')
+        WHERE id = ?
+      `).bind(newHash, newSalt, auth.staffId).run();
+      await writeAuditLog(env, request, {
+        targetType: 'admin_staff_account',
+        targetId: auth.staffId,
+        action: 'staff_password_changed',
+        beforeState: { must_change_password: Boolean(staff.must_change_password) },
+        afterState: { must_change_password: false },
+      });
+      return jsonResponse({ success: true, mustChangePassword: false });
+    }
+
     const table = auth.userType === 'engineer' ? 'engineers' : 'customers';
     const user = await env.DB.prepare(`SELECT id, password_hash, salt FROM ${table} WHERE id = ?`).bind(auth.userId).first();
     if (!user) return errorResponse('用户不存在', 404);
@@ -7054,6 +7116,10 @@ function toSafeNumber(value, fallback = 0) {
 function toSafeInteger(value, fallback = 0) {
   const num = parseInt(value, 10);
   return Number.isFinite(num) ? num : fallback;
+}
+
+function toPositiveQuantity(value) {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : null;
 }
 
 function cleanTextArray(value, maxItems = 12, maxItemLength = 80) {
@@ -8123,6 +8189,630 @@ async function handleAdminMaterialInventoryAdjustment(request, env) {
   } catch (error) {
     return errorResponse(error.message, 500);
   }
+}
+
+const STAFF_ROLES = new Set(['admin', 'operations', 'warehouse', 'procurement']);
+const STAFF_MARKETS = new Set(['all', 'com', 'cn']);
+const REQUISITION_URGENCIES = new Set(['normal', 'urgent', 'critical']);
+const REQUISITION_TERMINAL_STATUSES = new Set(['rejected', 'cancelled', 'closed']);
+
+function isBootstrapAdmin(auth) {
+  return auth?.userType === 'admin' && !auth.staffId && auth.userId === 'admin';
+}
+
+function requisitionRole(auth) {
+  if (auth?.userType === 'engineer') return 'engineer';
+  if (auth?.userType !== 'admin') return '';
+  return auth.staffRole || (isBootstrapAdmin(auth) ? 'admin' : '');
+}
+
+function publicStaffAccount(staff) {
+  if (!staff) return staff;
+  const { password_hash, salt, ...safe } = staff;
+  return safe;
+}
+
+function generateTemporaryPassword() {
+  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
+  const bytes = new Uint8Array(12);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (byte) => alphabet[byte % alphabet.length]).join('');
+}
+
+async function handleAdminStaffList(request, env) {
+  if (!isBootstrapAdmin(request._auth)) return errorResponse('仅超级管理员可管理员工账号', 403);
+  const { results } = await env.DB.prepare(`
+    SELECT id, normalized_login, normalized_phone, role, is_active, display_name,
+           market_scope, must_change_password, created_by, created_at, updated_at
+    FROM admin_staff_accounts ORDER BY created_at DESC
+  `).all();
+  return jsonResponse({ staff: results || [] });
+}
+
+async function handleAdminStaffCreate(request, env) {
+  try {
+    if (!isBootstrapAdmin(request._auth)) return errorResponse('仅超级管理员可管理员工账号', 403);
+    const body = await request.json().catch(() => ({}));
+    const normalizedLogin = normalizeIdentityEmail(body.login);
+    const normalizedPhone = normalizeIdentityPhone(body.phone);
+    const role = cleanText(body.role, 30);
+    const displayName = cleanText(body.display_name, 100);
+    const marketScope = cleanText(body.market_scope, 10) || 'all';
+    if (!normalizedLogin || !displayName || !STAFF_ROLES.has(role) || !STAFF_MARKETS.has(marketScope)) {
+      return errorResponse('员工账号信息不完整或无效', 400);
+    }
+
+    const existing = normalizedPhone
+      ? await env.DB.prepare(`
+          SELECT * FROM admin_staff_accounts WHERE normalized_login = ? OR normalized_phone = ?
+        `).bind(normalizedLogin, normalizedPhone).first()
+      : await env.DB.prepare(`
+          SELECT * FROM admin_staff_accounts WHERE normalized_login = ?
+        `).bind(normalizedLogin).first();
+    if (existing) return errorResponse('员工登录名或手机号已存在', 409);
+
+    const id = generateId();
+    const temporaryPassword = generateTemporaryPassword();
+    const salt = generateSalt();
+    const passwordHash = await hashPasswordNew(temporaryPassword, salt);
+    await env.DB.prepare(`
+      INSERT INTO admin_staff_accounts (
+        id, normalized_login, normalized_phone, password_hash, salt, role,
+        display_name, market_scope, created_by
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).bind(
+      id, normalizedLogin, normalizedPhone || null, passwordHash, salt, role,
+      displayName, marketScope, request._auth.userId,
+    ).run();
+    const staff = await env.DB.prepare('SELECT * FROM admin_staff_accounts WHERE id = ?').bind(id).first();
+    await writeAuditLog(env, request, {
+      targetType: 'admin_staff_account', targetId: id, action: 'staff_created',
+      beforeState: null, afterState: publicStaffAccount(staff),
+    });
+    return jsonResponse({ staff: publicStaffAccount(staff), temporary_password: temporaryPassword }, 201);
+  } catch (error) {
+    if (/UNIQUE/i.test(String(error?.message || ''))) return errorResponse('员工登录名或手机号已存在', 409);
+    return errorResponse(error.message, 500);
+  }
+}
+
+async function handleAdminStaffDeactivate(request, env) {
+  if (!isBootstrapAdmin(request._auth)) return errorResponse('仅超级管理员可管理员工账号', 403);
+  const staffId = new URL(request.url).pathname.split('/')[4];
+  const staff = await env.DB.prepare('SELECT * FROM admin_staff_accounts WHERE id = ?').bind(staffId).first();
+  if (!staff) return errorResponse('员工账号不存在', 404);
+  await env.DB.prepare(`
+    UPDATE admin_staff_accounts SET is_active = 0, updated_at = datetime('now') WHERE id = ?
+  `).bind(staffId).run();
+  const updated = { ...staff, is_active: 0 };
+  await writeAuditLog(env, request, {
+    targetType: 'admin_staff_account', targetId: staffId, action: 'staff_deactivated',
+    beforeState: publicStaffAccount(staff), afterState: publicStaffAccount(updated),
+  });
+  return jsonResponse({ staff: publicStaffAccount(updated) });
+}
+
+async function handleAdminStaffResetPassword(request, env) {
+  if (!isBootstrapAdmin(request._auth)) return errorResponse('仅超级管理员可管理员工账号', 403);
+  const staffId = new URL(request.url).pathname.split('/')[4];
+  const staff = await env.DB.prepare('SELECT * FROM admin_staff_accounts WHERE id = ?').bind(staffId).first();
+  if (!staff) return errorResponse('员工账号不存在', 404);
+  const temporaryPassword = generateTemporaryPassword();
+  const salt = generateSalt();
+  const passwordHash = await hashPasswordNew(temporaryPassword, salt);
+  await env.DB.prepare(`
+    UPDATE admin_staff_accounts
+    SET password_hash = ?, salt = ?, must_change_password = 1, updated_at = datetime('now')
+    WHERE id = ?
+  `).bind(passwordHash, salt, staffId).run();
+  await writeAuditLog(env, request, {
+    targetType: 'admin_staff_account', targetId: staffId, action: 'staff_temporary_password_reset',
+    beforeState: { must_change_password: Boolean(staff.must_change_password) },
+    afterState: { must_change_password: true },
+  });
+  return jsonResponse({ success: true, temporary_password: temporaryPassword });
+}
+
+async function requireActiveStaff(env, auth) {
+  if (!auth?.staffId) return isBootstrapAdmin(auth) ? { role: 'admin' } : null;
+  const staff = await env.DB.prepare('SELECT * FROM admin_staff_accounts WHERE id = ?').bind(auth.staffId).first();
+  return staff?.is_active ? staff : null;
+}
+
+async function getRequisitionWithItems(env, requisitionId) {
+  const requisition = await env.DB.prepare('SELECT * FROM material_requisitions WHERE id = ?').bind(requisitionId).first();
+  if (!requisition) return null;
+  const { results } = await env.DB.prepare(`
+    SELECT * FROM material_requisition_items WHERE requisition_id = ? ORDER BY created_at ASC
+  `).bind(requisitionId).all();
+  return { ...requisition, items: results || [] };
+}
+
+async function canAccessRequisition(env, auth, requisition) {
+  if (auth?.userType === 'admin') return true;
+  if (auth?.userType !== 'engineer') return false;
+  const workOrder = await env.DB.prepare(`
+    SELECT id, customer_id, engineer_id, assigned_regional_lead_id, status FROM work_orders WHERE id = ?
+  `).bind(requisition.work_order_id).first();
+  return workOrder?.engineer_id === auth.userId;
+}
+
+function generateRequisitionNumber(id) {
+  const date = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+  return `MR-${date}-${String(id).replace(/[^a-z0-9]/gi, '').toUpperCase()}`;
+}
+
+async function normalizeRequisitionLine(env, input) {
+  const requestedQuantity = toPositiveQuantity(input?.requested_quantity);
+  if (!requestedQuantity) throw new Error('Requested quantity must be a positive number');
+  const materialId = cleanText(input.material_id, 100) || null;
+  const material = materialId
+    ? await env.DB.prepare('SELECT * FROM materials WHERE id = ?').bind(materialId).first()
+    : null;
+  if (materialId && !material) throw new Error('Material not found');
+  const name = cleanText(input.name || material?.name, 200);
+  if (!name) throw new Error('Material name is required');
+  return {
+    materialId,
+    materialCode: cleanText(input.material_code || material?.material_code, 100) || null,
+    name,
+    nameEn: cleanText(input.name_en || material?.name_en, 200) || null,
+    spec: cleanText(input.spec || material?.spec, 300) || null,
+    brand: cleanText(input.brand || material?.brand, 100) || null,
+    unit: cleanText(input.unit || material?.unit, 30) || 'pcs',
+    requestedQuantity,
+    notes: cleanText(input.notes, 600) || null,
+  };
+}
+
+async function handleCreateMaterialRequisition(request, env) {
+  try {
+    const auth = request._auth;
+    const role = requisitionRole(auth);
+    if (!canManageMaterialRequisition(role, 'create_draft') && auth.userType !== 'admin') {
+      return errorResponse('无权创建领料申请', 403);
+    }
+    const body = await request.json().catch(() => ({}));
+    const workOrderId = cleanText(body.work_order_id, 100);
+    const workOrder = await env.DB.prepare(`
+      SELECT id, customer_id, engineer_id, assigned_regional_lead_id, status FROM work_orders WHERE id = ?
+    `).bind(workOrderId).first();
+    if (!workOrder) return errorResponse('工单不存在', 404);
+    if (auth.userType === 'engineer' && workOrder.engineer_id !== auth.userId) {
+      return errorResponse('仅指派工程师可创建领料申请', 403);
+    }
+    if (!Array.isArray(body.items) || body.items.length === 0) return errorResponse('领料申请至少需要一条物料', 400);
+    const urgency = cleanText(body.urgency, 20) || 'normal';
+    if (!REQUISITION_URGENCIES.has(urgency)) return errorResponse('无效紧急程度', 400);
+    const lines = [];
+    for (const item of body.items) lines.push(await normalizeRequisitionLine(env, item));
+
+    const id = generateId();
+    const market = getRequestMarket(request);
+    const requisitionNo = generateRequisitionNumber(id);
+    await env.DB.prepare(`
+      INSERT INTO material_requisitions (
+        id, requisition_no, market, work_order_id, requested_by_type, requested_by_id,
+        status, urgency, required_date, purpose
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).bind(
+      id, requisitionNo, market, workOrderId, auth.userType, auth.userId, 'draft', urgency,
+      cleanText(body.required_date, 30) || null, cleanText(body.purpose, 600) || null,
+    ).run();
+    for (const line of lines) {
+      await env.DB.prepare(`
+        INSERT INTO material_requisition_items (
+          id, requisition_id, material_id, material_code, name, name_en, spec, brand,
+          unit, requested_quantity, notes
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).bind(
+        generateId(), id, line.materialId, line.materialCode, line.name, line.nameEn, line.spec,
+        line.brand, line.unit, line.requestedQuantity, line.notes,
+      ).run();
+    }
+    const requisition = await getRequisitionWithItems(env, id);
+    await writeAuditLog(env, request, {
+      targetType: 'material_requisition', targetId: id, action: 'material_requisition_created',
+      beforeState: null, afterState: requisition,
+    });
+    return jsonResponse({ requisition }, 201);
+  } catch (error) {
+    return errorResponse(error.message, /required|positive|not found/i.test(error.message) ? 400 : 500);
+  }
+}
+
+async function handleListMaterialRequisitions(request, env) {
+  const auth = request._auth;
+  let statement;
+  if (auth.userType === 'engineer') {
+    statement = env.DB.prepare(`
+      SELECT mr.* FROM material_requisitions mr
+      JOIN work_orders wo ON wo.id = mr.work_order_id
+      WHERE wo.engineer_id = ? ORDER BY mr.created_at DESC
+    `).bind(auth.userId);
+  } else if (auth.userType === 'admin') {
+    statement = env.DB.prepare('SELECT * FROM material_requisitions ORDER BY created_at DESC');
+  } else {
+    return errorResponse('无权查看领料申请', 403);
+  }
+  const { results } = await statement.all();
+  return jsonResponse({ requisitions: results || [] });
+}
+
+async function handleGetMaterialRequisition(request, env) {
+  const requisitionId = new URL(request.url).pathname.split('/')[3];
+  const requisition = await getRequisitionWithItems(env, requisitionId);
+  if (!requisition) return errorResponse('领料申请不存在', 404);
+  if (!await canAccessRequisition(env, request._auth, requisition)) return errorResponse('无权查看该领料申请', 403);
+  return jsonResponse({ requisition });
+}
+
+async function updateRequisitionStatus(env, requisitionId, status) {
+  await env.DB.prepare(`
+    UPDATE material_requisitions SET status = ?, updated_at = datetime('now') WHERE id = ?
+  `).bind(status, requisitionId).run();
+}
+
+async function handleSubmitMaterialRequisition(request, env) {
+  const requisitionId = new URL(request.url).pathname.split('/')[3];
+  const requisition = await getRequisitionWithItems(env, requisitionId);
+  if (!requisition) return errorResponse('领料申请不存在', 404);
+  const workOrder = await env.DB.prepare(`
+    SELECT id, customer_id, engineer_id, assigned_regional_lead_id, status FROM work_orders WHERE id = ?
+  `).bind(requisition.work_order_id).first();
+  if (request._auth.userType !== 'engineer' || workOrder?.engineer_id !== request._auth.userId) {
+    return errorResponse('仅创建申请的工程师可提交', 403);
+  }
+  if (requisition.status !== 'draft') return errorResponse('仅草稿可提交', 409);
+  if (!requisition.items.length || requisition.items.some((item) => Number(item.requested_quantity) <= 0)) {
+    return errorResponse('提交的领料申请必须包含正数数量物料', 400);
+  }
+  await updateRequisitionStatus(env, requisitionId, 'submitted');
+  const updated = { ...requisition, status: 'submitted' };
+  await writeAuditLog(env, request, {
+    targetType: 'material_requisition', targetId: requisitionId, action: 'material_requisition_submitted',
+    beforeState: { status: requisition.status }, afterState: { status: 'submitted' },
+  });
+  return jsonResponse({ requisition: updated });
+}
+
+async function handleRequisitionDecision(request, env, action) {
+  const role = requisitionRole(request._auth);
+  if (!canManageMaterialRequisition(role, action)) return errorResponse('当前员工角色无权执行该操作', 403);
+  const requisitionId = new URL(request.url).pathname.split('/')[3];
+  const requisition = await getRequisitionWithItems(env, requisitionId);
+  if (!requisition) return errorResponse('领料申请不存在', 404);
+  const body = await request.json().catch(() => ({}));
+  let nextStatus;
+  if (action === 'approve') {
+    if (requisition.status !== 'submitted') return errorResponse('仅已提交申请可审批', 409);
+    nextStatus = 'approved';
+  } else if (action === 'reject') {
+    if (requisition.status !== 'submitted') return errorResponse('仅已提交申请可驳回', 409);
+    nextStatus = 'rejected';
+  } else {
+    if (REQUISITION_TERMINAL_STATUSES.has(requisition.status)) return errorResponse('当前申请不可取消', 409);
+    nextStatus = 'cancelled';
+  }
+  const reason = cleanText(body.reason, 600) || null;
+  if (action === 'approve') {
+    await env.DB.prepare(`
+      UPDATE material_requisitions
+      SET status = ?, approved_by = ?, approved_at = datetime('now'), updated_at = datetime('now')
+      WHERE id = ?
+    `).bind(nextStatus, request._auth.staffId || request._auth.userId, requisitionId).run();
+  } else if (action === 'reject') {
+    await env.DB.prepare(`
+      UPDATE material_requisitions
+      SET status = ?, rejection_reason = ?, updated_at = datetime('now')
+      WHERE id = ?
+    `).bind(nextStatus, reason, requisitionId).run();
+  } else {
+    await env.DB.prepare(`
+      UPDATE material_requisitions
+      SET status = ?, cancellation_reason = ?, cancelled_at = datetime('now'), updated_at = datetime('now')
+      WHERE id = ?
+    `).bind(nextStatus, reason, requisitionId).run();
+  }
+  await writeAuditLog(env, request, {
+    targetType: 'material_requisition', targetId: requisitionId,
+    action: `material_requisition_${{ approve: 'approved', reject: 'rejected', cancel: 'cancelled' }[action]}`,
+    beforeState: { status: requisition.status },
+    afterState: { status: nextStatus, reason },
+  });
+  return jsonResponse({ requisition: await getRequisitionWithItems(env, requisitionId) });
+}
+
+function fulfillmentValues(item, overrides = {}) {
+  return {
+    requested: Number(item.requested_quantity),
+    stockAllocated: Number(overrides.stock_allocated_quantity ?? item.stock_allocated_quantity ?? 0),
+    procurementOrdered: Number(overrides.procurement_ordered_quantity ?? item.procurement_ordered_quantity ?? 0),
+    procurementReceived: Number(overrides.procurement_received_quantity ?? item.procurement_received_quantity ?? 0),
+    issued: Number(overrides.issued_quantity ?? item.issued_quantity ?? 0),
+    engineerReceived: Number(overrides.engineer_received_quantity ?? item.engineer_received_quantity ?? 0),
+  };
+}
+
+function deriveApiItemStatus(item, overrides = {}) {
+  const returned = Number(overrides.returned_quantity ?? item.returned_quantity ?? 0);
+  const values = fulfillmentValues(item, overrides);
+  if (values.engineerReceived + returned >= values.requested) return 'received';
+  return deriveItemStatus(values);
+}
+
+function fulfillmentSource(stockAllocated, procurementOrdered) {
+  if (stockAllocated > 0 && procurementOrdered > 0) return 'mixed';
+  if (procurementOrdered > 0) return 'procurement';
+  if (stockAllocated > 0) return 'stock';
+  return 'unassigned';
+}
+
+async function buildInventoryMovementStatements(env, request, item, delta, changeType, action) {
+  if (!item.material_id) return [];
+  const material = await env.DB.prepare('SELECT * FROM materials WHERE id = ?').bind(item.material_id).first();
+  if (!material) throw new Error('Material not found');
+  const beforeQuantity = Number(material.stock_quantity || 0);
+  const afterQuantity = beforeQuantity + delta;
+  if (afterQuantity < 0) throw new Error('Insufficient material stock');
+  return [
+    env.DB.prepare(`
+      UPDATE materials SET stock_quantity = stock_quantity + ?, updated_at = datetime('now') WHERE id = ?
+    `).bind(delta, item.material_id),
+    env.DB.prepare(`
+      INSERT INTO material_inventory_adjustments (
+        id, material_id, change_type, delta, before_quantity, after_quantity, reason, created_by
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).bind(
+      generateId(), item.material_id, changeType, delta, beforeQuantity, afterQuantity,
+      `${action}:${item.requisition_id}:${item.id}`, request._auth.staffId || request._auth.userId,
+    ),
+  ];
+}
+
+async function refreshRequisitionStatus(env, requisition) {
+  const current = await getRequisitionWithItems(env, requisition.id);
+  const nextStatus = deriveRequisitionStatus(current, current.items);
+  if (nextStatus !== current.status) {
+    if (nextStatus === 'received') {
+      await env.DB.prepare(`
+        UPDATE material_requisitions
+        SET status = ?, received_at = COALESCE(received_at, datetime('now')), updated_at = datetime('now')
+        WHERE id = ?
+      `).bind(nextStatus, current.id).run();
+    } else {
+      await updateRequisitionStatus(env, current.id, nextStatus);
+    }
+    return getRequisitionWithItems(env, current.id);
+  }
+  return current;
+}
+
+async function handleRequisitionLineAction(request, env, action) {
+  try {
+    const role = requisitionRole(request._auth);
+    if (!canManageMaterialRequisition(role, action)) return errorResponse('当前员工角色无权执行该操作', 403);
+    const requisitionId = new URL(request.url).pathname.split('/')[3];
+    const requisition = await getRequisitionWithItems(env, requisitionId);
+    if (!requisition) return errorResponse('领料申请不存在', 404);
+    if (!['approved', 'processing', 'partially_fulfilled', 'ready', 'issued'].includes(requisition.status)) {
+      return errorResponse('当前申请状态不可执行履约操作', 409);
+    }
+    const body = await request.json().catch(() => ({}));
+    const itemId = cleanText(body.item_id, 100);
+    const item = await env.DB.prepare(`
+      SELECT * FROM material_requisition_items WHERE id = ? AND requisition_id = ?
+    `).bind(itemId, requisitionId).first();
+    if (!item || item.status === 'cancelled') return errorResponse('领料明细不存在或已取消', 404);
+    const quantity = toPositiveQuantity(body.quantity);
+    if (!quantity) return errorResponse('数量必须为正数', 400);
+    if (action === 'allocate_stock' && !item.material_id) {
+      return errorResponse('自由录入物料不能分配台账库存，请走采购流程', 400);
+    }
+    if (action === 'allocate_stock') {
+      const material = await env.DB.prepare('SELECT * FROM materials WHERE id = ?').bind(item.material_id).first();
+      const allocated = Number(item.stock_allocated_quantity || 0) + quantity;
+      if (!material || allocated > Number(material.stock_quantity || 0)) {
+        return errorResponse('库存分配数量不能超过当前库存', 400);
+      }
+    }
+
+    const next = {};
+    if (action === 'allocate_stock') {
+      next.stock_allocated_quantity = Number(item.stock_allocated_quantity || 0) + quantity;
+    } else if (action === 'record_purchase') {
+      next.procurement_ordered_quantity = Number(item.procurement_ordered_quantity || 0) + quantity;
+      next.supplier_reference = cleanText(body.supplier_reference, 200) || item.supplier_reference || null;
+      next.expected_arrival = cleanText(body.expected_arrival, 30) || item.expected_arrival || null;
+    } else if (action === 'receive_purchase') {
+      next.procurement_received_quantity = Number(item.procurement_received_quantity || 0) + quantity;
+    } else if (action === 'issue') {
+      next.issued_quantity = Number(item.issued_quantity || 0) + quantity;
+    } else if (action === 'return') {
+      next.returned_quantity = Number(item.returned_quantity || 0) + quantity;
+      if (next.returned_quantity > Number(item.issued_quantity || 0) - Number(item.engineer_received_quantity || 0)) {
+        return errorResponse('退库数量不能超过未签收发料数量', 400);
+      }
+    }
+
+    validateFulfillmentQuantities(fulfillmentValues(item, next));
+    next.fulfillment_source = fulfillmentSource(
+      Number(next.stock_allocated_quantity ?? item.stock_allocated_quantity ?? 0),
+      Number(next.procurement_ordered_quantity ?? item.procurement_ordered_quantity ?? 0),
+    );
+    next.status = deriveApiItemStatus(item, next);
+
+    const columns = Object.keys(next);
+    const itemUpdate = env.DB.prepare(`
+      UPDATE material_requisition_items
+      SET ${columns.map((column) => `${column} = ?`).join(', ')}, updated_at = datetime('now')
+      WHERE id = ? AND requisition_id = ?
+    `).bind(...columns.map((column) => next[column]), itemId, requisitionId);
+    let inventoryStatements = [];
+    if (action === 'receive_purchase') {
+      inventoryStatements = await buildInventoryMovementStatements(env, request, item, quantity, 'procurement_receipt', action);
+    } else if (action === 'issue') {
+      inventoryStatements = await buildInventoryMovementStatements(env, request, item, -quantity, 'requisition_issue', action);
+    } else if (action === 'return') {
+      inventoryStatements = await buildInventoryMovementStatements(env, request, item, quantity, 'requisition_return', action);
+    }
+    if (inventoryStatements.length && typeof env.DB.batch === 'function') {
+      await env.DB.batch([...inventoryStatements, itemUpdate]);
+    } else {
+      for (const statement of inventoryStatements) await statement.run();
+      await itemUpdate.run();
+    }
+    if (action === 'allocate_stock' || action === 'issue' || action === 'return'
+      || (action === 'receive_purchase' && role === 'warehouse')) {
+      const issuedAtClause = action === 'issue' ? ", issued_at = COALESCE(issued_at, datetime('now'))" : '';
+      await env.DB.prepare(`
+        UPDATE material_requisitions
+        SET assigned_warehouse_staff_id = ?, updated_at = datetime('now')${issuedAtClause}
+        WHERE id = ?
+      `).bind(request._auth.staffId || request._auth.userId, requisitionId).run();
+    }
+    if (action === 'record_purchase' || (action === 'receive_purchase' && role !== 'warehouse')) {
+      await env.DB.prepare(`
+        UPDATE material_requisitions
+        SET assigned_procurement_staff_id = ?, updated_at = datetime('now')
+        WHERE id = ?
+      `).bind(request._auth.staffId || request._auth.userId, requisitionId).run();
+    }
+    const updated = await refreshRequisitionStatus(env, requisition);
+    await writeAuditLog(env, request, {
+      targetType: 'material_requisition_item', targetId: itemId,
+      action: `material_requisition_${action}`,
+      beforeState: item, afterState: { ...item, ...next },
+    });
+    return jsonResponse({ requisition: updated });
+  } catch (error) {
+    return errorResponse(error.message, /stock|quantity|requested|ordered|available|issued|aggregate/i.test(error.message) ? 400 : 500);
+  }
+}
+
+async function handleEngineerRequisitionReceipt(request, env) {
+  try {
+    const requisitionId = new URL(request.url).pathname.split('/')[3];
+    const requisition = await getRequisitionWithItems(env, requisitionId);
+    if (!requisition) return errorResponse('领料申请不存在', 404);
+    const workOrder = await env.DB.prepare(`
+      SELECT id, customer_id, engineer_id, assigned_regional_lead_id, status FROM work_orders WHERE id = ?
+    `).bind(requisition.work_order_id).first();
+    if (request._auth.userType !== 'engineer' || workOrder?.engineer_id !== request._auth.userId) {
+      return errorResponse('仅创建申请的工程师可确认签收', 403);
+    }
+    const body = await request.json().catch(() => ({}));
+    const item = await env.DB.prepare(`
+      SELECT * FROM material_requisition_items WHERE id = ? AND requisition_id = ?
+    `).bind(cleanText(body.item_id, 100), requisitionId).first();
+    if (!item) return errorResponse('领料明细不存在', 404);
+    const quantity = toPositiveQuantity(body.quantity);
+    if (!quantity) return errorResponse('数量必须为正数', 400);
+    const engineerReceived = Number(item.engineer_received_quantity || 0) + quantity;
+    const issuedAvailable = Number(item.issued_quantity || 0) - Number(item.returned_quantity || 0);
+    if (engineerReceived > issuedAvailable) return errorResponse('签收数量不能超过净发料数量', 400);
+    const next = {
+      engineer_received_quantity: engineerReceived,
+      status: deriveApiItemStatus(item, { engineer_received_quantity: engineerReceived }),
+    };
+    await env.DB.prepare(`
+      UPDATE material_requisition_items
+      SET engineer_received_quantity = ?, status = ?, updated_at = datetime('now')
+      WHERE id = ? AND requisition_id = ?
+    `).bind(engineerReceived, next.status, item.id, requisitionId).run();
+    const updated = await refreshRequisitionStatus(env, requisition);
+    await writeAuditLog(env, request, {
+      targetType: 'material_requisition_item', targetId: item.id,
+      action: 'material_requisition_engineer_receipt', beforeState: item, afterState: { ...item, ...next },
+    });
+    return jsonResponse({ requisition: updated });
+  } catch (error) {
+    return errorResponse(error.message, 500);
+  }
+}
+
+async function handleUpdateRequisitionProcurement(request, env) {
+  const role = requisitionRole(request._auth);
+  if (!canManageMaterialRequisition(role, 'record_purchase')) {
+    return errorResponse('当前员工角色无权更新采购信息', 403);
+  }
+  const requisitionId = new URL(request.url).pathname.split('/')[3];
+  const requisition = await getRequisitionWithItems(env, requisitionId);
+  if (!requisition) return errorResponse('领料申请不存在', 404);
+  if (!['approved', 'processing', 'partially_fulfilled', 'ready'].includes(requisition.status)) {
+    return errorResponse('当前申请状态不可更新采购信息', 409);
+  }
+  const body = await request.json().catch(() => ({}));
+  const item = await env.DB.prepare(`
+    SELECT * FROM material_requisition_items WHERE id = ? AND requisition_id = ?
+  `).bind(cleanText(body.item_id, 100), requisitionId).first();
+  if (!item) return errorResponse('领料明细不存在', 404);
+  const supplierReference = cleanText(body.supplier_reference, 200) || null;
+  const expectedArrival = cleanText(body.expected_arrival, 30) || null;
+  await env.DB.prepare(`
+    UPDATE material_requisition_items
+    SET supplier_reference = ?, expected_arrival = ?, updated_at = datetime('now')
+    WHERE id = ? AND requisition_id = ?
+  `).bind(supplierReference, expectedArrival, item.id, requisitionId).run();
+  const updated = await getRequisitionWithItems(env, requisitionId);
+  await writeAuditLog(env, request, {
+    targetType: 'material_requisition_item', targetId: item.id,
+    action: 'material_requisition_procurement_updated', beforeState: item,
+    afterState: { ...item, supplier_reference: supplierReference, expected_arrival: expectedArrival },
+  });
+  return jsonResponse({ requisition: updated });
+}
+
+async function handleCloseMaterialRequisition(request, env) {
+  const role = requisitionRole(request._auth);
+  if (!canManageMaterialRequisition(role, 'close')) return errorResponse('当前员工角色无权关闭申请', 403);
+  const requisitionId = new URL(request.url).pathname.split('/')[3];
+  const requisition = await getRequisitionWithItems(env, requisitionId);
+  if (!requisition) return errorResponse('领料申请不存在', 404);
+  if (!canCloseMaterialRequisition(requisition.items)) return errorResponse('仅全部签收或取消的申请可关闭', 409);
+  await env.DB.prepare(`
+    UPDATE material_requisitions
+    SET status = 'closed', closed_at = datetime('now'), updated_at = datetime('now')
+    WHERE id = ?
+  `).bind(requisitionId).run();
+  await writeAuditLog(env, request, {
+    targetType: 'material_requisition', targetId: requisitionId, action: 'material_requisition_closed',
+    beforeState: { status: requisition.status }, afterState: { status: 'closed' },
+  });
+  return jsonResponse({ requisition: await getRequisitionWithItems(env, requisitionId) });
+}
+
+async function handleCancelRequisitionItem(request, env) {
+  const role = requisitionRole(request._auth);
+  if (!canManageMaterialRequisition(role, 'cancel')) return errorResponse('当前员工角色无权取消领料明细', 403);
+  const parts = new URL(request.url).pathname.split('/');
+  const requisitionId = parts[3];
+  const itemId = parts[5];
+  const requisition = await getRequisitionWithItems(env, requisitionId);
+  if (!requisition) return errorResponse('领料申请不存在', 404);
+  if (REQUISITION_TERMINAL_STATUSES.has(requisition.status)) return errorResponse('当前申请不可取消明细', 409);
+  const item = await env.DB.prepare(`
+    SELECT * FROM material_requisition_items WHERE id = ? AND requisition_id = ?
+  `).bind(itemId, requisitionId).first();
+  if (!item) return errorResponse('领料明细不存在', 404);
+  if (Number(item.issued_quantity || 0) > 0 || Number(item.engineer_received_quantity || 0) > 0) {
+    return errorResponse('已发料或签收的明细不能取消', 409);
+  }
+  const body = await request.json().catch(() => ({}));
+  const reason = cleanText(body.reason, 600);
+  const notes = [cleanText(item.notes, 600), reason].filter(Boolean).join('\n').slice(0, 600) || null;
+  await env.DB.prepare(`
+    UPDATE material_requisition_items
+    SET status = ?, notes = ?, updated_at = datetime('now')
+    WHERE id = ? AND requisition_id = ?
+  `).bind('cancelled', notes, itemId, requisitionId).run();
+  const updated = await refreshRequisitionStatus(env, requisition);
+  await writeAuditLog(env, request, {
+    targetType: 'material_requisition_item', targetId: itemId,
+    action: 'material_requisition_item_cancelled', beforeState: item,
+    afterState: { ...item, status: 'cancelled', notes },
+  });
+  return jsonResponse({ requisition: updated });
 }
 
 async function handleSearchMaterials(request, env) {
@@ -9197,9 +9887,6 @@ async function handleAdminLogin(request, env) {
     const adminCredentials = resolveAdminCredentials(request, env);
     const adminPhone = adminCredentials.phone;
     const adminPassword = adminCredentials.password;
-    if (!adminPhone || !adminPassword) {
-      return errorResponse('管理员账号未配置，请联系系统管理员', 500);
-    }
     if (!phone || !password) {
       return errorResponse('手机号、密码不能为空');
     }
@@ -9223,7 +9910,26 @@ async function handleAdminLogin(request, env) {
       return errorResponse('登录失败次数过多，请 15 分钟后再试', 429);
     }
 
-    if (phone !== adminPhone || password !== adminPassword) {
+    const bootstrapMatch = Boolean(adminPhone && adminPassword && phone === adminPhone && password === adminPassword);
+    let staff = null;
+    if (!bootstrapMatch) {
+      const normalizedLogin = normalizeIdentityEmail(phone);
+      const normalizedPhone = normalizeIdentityPhone(phone);
+      staff = await env.DB.prepare(`
+        SELECT * FROM admin_staff_accounts
+        WHERE normalized_login = ? OR normalized_phone = ?
+      `).bind(normalizedLogin, normalizedPhone).first();
+      const staffPasswordValid = staff?.is_active
+        ? await verifyPassword(password, staff.password_hash, staff.salt)
+        : false;
+      const marketAllowed = staff?.market_scope === 'all' || staff?.market_scope === adminCredentials.market;
+      if (!staffPasswordValid || !marketAllowed) staff = null;
+    }
+
+    if (!bootstrapMatch && !staff) {
+      if (!adminPhone || !adminPassword) {
+        return errorResponse('管理员账号未配置，请联系系统管理员', 500);
+      }
       await Promise.all([
         env.KV.put(phoneKey, String(phoneFail + 1), { expirationTtl: FAIL_TTL }),
         env.KV.put(ipKey, String(ipFail + 1), { expirationTtl: FAIL_TTL }),
@@ -9239,11 +9945,17 @@ async function handleAdminLogin(request, env) {
 
     const now = Math.floor(Date.now() / 1000);
     const csrfToken = generateCsrfToken();
+    const staffClaims = staff ? {
+      staffId: staff.id,
+      staffRole: staff.role,
+      mustChangePassword: Boolean(staff.must_change_password),
+    } : {};
     const token = await signJwt({
-      userId: 'admin',
+      userId: staff?.id || 'admin',
       userType: 'admin',
-      phone: adminPhone,
+      phone: staff?.normalized_phone || adminPhone,
       market: adminCredentials.market,
+      ...staffClaims,
       csrf: csrfToken,
       iat: now,
       exp: now + 86400 * 7,
@@ -9251,7 +9963,19 @@ async function handleAdminLogin(request, env) {
 
     return addSessionCookie(jsonResponse(sessionResponsePayload({
       csrfToken,
-      user: { id: 'admin', name: '超级管理员', phone: adminPhone, type: 'admin', market: adminCredentials.market },
+      user: staff ? {
+        id: staff.id,
+        name: staff.display_name,
+        phone: staff.normalized_phone || '',
+        type: 'admin',
+        market: adminCredentials.market,
+        staffRole: staff.role,
+        staffId: staff.id,
+        mustChangePassword: Boolean(staff.must_change_password),
+      } : {
+        id: 'admin', name: '超级管理员', phone: adminPhone, type: 'admin', market: adminCredentials.market,
+        staffRole: 'admin', staffId: null, mustChangePassword: false,
+      },
     }, token, requestPortalRole(request))), request, env, 'admin', token);
   } catch (error) {
     return errorResponse(error.message, 500);
@@ -12795,10 +13519,44 @@ async function routeRequest(request, env, ctx) {
     // 将认证信息挂到 request 上，供 handler 使用。Admin handler 也需要它写审计日志。
     request._auth = auth;
 
+    if (auth.userType === 'admin' && auth.staffId) {
+      const staff = await requireActiveStaff(env, auth);
+      const requestMarket = getRequestMarket(request);
+      const marketAllowed = auth.market === requestMarket
+        && (staff?.market_scope === 'all' || staff?.market_scope === requestMarket);
+      if (!staff || !marketAllowed) return errorResponse('员工账号不存在、已停用或无权访问当前市场', 403);
+      request._auth = {
+        ...auth,
+        staffRole: staff.role,
+        mustChangePassword: Boolean(staff.must_change_password),
+      };
+      if (staff.must_change_password && path !== '/api/auth/change-password') {
+        return errorResponse('请先修改临时密码', 403);
+      }
+      const operationalRoute = path === '/api/material-requisitions'
+        || path.startsWith('/api/material-requisitions/')
+        || path === '/api/auth/change-password';
+      if (staff.role !== 'admin' && !operationalRoute) {
+        return errorResponse('当前员工角色无权访问该管理接口', 403);
+      }
+    }
+
     // 管理后台 API（需要管理员权限）
     if (path.startsWith('/api/admin/')) {
       if (auth.userType !== 'admin') {
         return errorResponse('需要管理员权限', 403);
+      }
+      if (path === '/api/admin/staff' && request.method === 'GET') {
+        return handleAdminStaffList(request, env);
+      }
+      if (path === '/api/admin/staff' && request.method === 'POST') {
+        return handleAdminStaffCreate(request, env);
+      }
+      if (path.match(/^\/api\/admin\/staff\/[^/]+\/deactivate$/) && request.method === 'POST') {
+        return handleAdminStaffDeactivate(request, env);
+      }
+      if (path.match(/^\/api\/admin\/staff\/[^/]+\/reset-password$/) && request.method === 'POST') {
+        return handleAdminStaffResetPassword(request, env);
       }
       if (path === '/api/admin/stats' && request.method === 'GET') {
         return handleAdminStats(request, env);
@@ -12945,6 +13703,54 @@ async function routeRequest(request, env, ctx) {
     }
     if (path === '/api/material-requests' && request.method === 'POST') {
       return handleCreateMaterialRequest(request, env);
+    }
+    if (path === '/api/material-requisitions' && request.method === 'GET') {
+      return handleListMaterialRequisitions(request, env);
+    }
+    if (path === '/api/material-requisitions' && request.method === 'POST') {
+      return handleCreateMaterialRequisition(request, env);
+    }
+    if (path.match(/^\/api\/material-requisitions\/[^/]+$/) && request.method === 'GET') {
+      return handleGetMaterialRequisition(request, env);
+    }
+    if (path.match(/^\/api\/material-requisitions\/[^/]+\/submit$/) && request.method === 'POST') {
+      return handleSubmitMaterialRequisition(request, env);
+    }
+    if (path.match(/^\/api\/material-requisitions\/[^/]+\/approve$/) && request.method === 'POST') {
+      return handleRequisitionDecision(request, env, 'approve');
+    }
+    if (path.match(/^\/api\/material-requisitions\/[^/]+\/reject$/) && request.method === 'POST') {
+      return handleRequisitionDecision(request, env, 'reject');
+    }
+    if (path.match(/^\/api\/material-requisitions\/[^/]+\/cancel$/) && request.method === 'POST') {
+      return handleRequisitionDecision(request, env, 'cancel');
+    }
+    if (path.match(/^\/api\/material-requisitions\/[^/]+\/items\/[^/]+\/cancel$/) && request.method === 'POST') {
+      return handleCancelRequisitionItem(request, env);
+    }
+    if (path.match(/^\/api\/material-requisitions\/[^/]+\/stock-allocation$/) && request.method === 'POST') {
+      return handleRequisitionLineAction(request, env, 'allocate_stock');
+    }
+    if (path.match(/^\/api\/material-requisitions\/[^/]+\/procurement$/) && request.method === 'POST') {
+      return handleRequisitionLineAction(request, env, 'record_purchase');
+    }
+    if (path.match(/^\/api\/material-requisitions\/[^/]+\/procurement$/) && request.method === 'PATCH') {
+      return handleUpdateRequisitionProcurement(request, env);
+    }
+    if (path.match(/^\/api\/material-requisitions\/[^/]+\/procurement-receipt$/) && request.method === 'POST') {
+      return handleRequisitionLineAction(request, env, 'receive_purchase');
+    }
+    if (path.match(/^\/api\/material-requisitions\/[^/]+\/issue$/) && request.method === 'POST') {
+      return handleRequisitionLineAction(request, env, 'issue');
+    }
+    if (path.match(/^\/api\/material-requisitions\/[^/]+\/return$/) && request.method === 'POST') {
+      return handleRequisitionLineAction(request, env, 'return');
+    }
+    if (path.match(/^\/api\/material-requisitions\/[^/]+\/engineer-receipt$/) && request.method === 'POST') {
+      return handleEngineerRequisitionReceipt(request, env);
+    }
+    if (path.match(/^\/api\/material-requisitions\/[^/]+\/close$/) && request.method === 'POST') {
+      return handleCloseMaterialRequisition(request, env);
     }
     if (path === '/api/upsell-requests' && request.method === 'POST') {
       return handleCreateUpsellRequest(request, env);

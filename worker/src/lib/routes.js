@@ -12,6 +12,8 @@ export function isTestRoute(path) {
 
 export function isKnownProtectedRoute(path) {
   return path.startsWith('/api/admin/')
+    || path === '/api/material-requisitions'
+    || path.startsWith('/api/material-requisitions/')
     || path === '/api/material-requests'
     || path === '/api/upsell-requests'
     || path === '/api/upsell-requests/mine'
