@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Boxes, ClipboardList, LayoutDashboard, Users, UserCog, FileText, Star, LogOut, Target, BookOpenText } from 'lucide-react';
 import { LoginPage } from './pages/LoginPage';
 import { DashboardPage } from './pages/DashboardPage';
@@ -12,6 +12,7 @@ import { MaterialsPage } from './pages/MaterialsPage';
 import { KnowledgePage } from './pages/KnowledgePage';
 import { runtimeConfig } from './config/runtime';
 import { BrandMark } from './components/BrandMark';
+import { adminLogout, restoreAdminSession } from './services/api';
 
 const TEXT = {
   en: {
@@ -65,13 +66,31 @@ const NAV_ITEMS = [
 ];
 
 export default function App() {
-  const [user, setUser] = useState(() => {
-    const saved = localStorage.getItem('admin_user');
-    return saved ? JSON.parse(saved) : null;
-  });
+  const [user, setUser] = useState(null);
+  const [authReady, setAuthReady] = useState(false);
   const [activePage, setActivePage] = useState('dashboard');
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [selectedEngineerId, setSelectedEngineerId] = useState('');
+
+  useEffect(() => {
+    restoreAdminSession()
+      .then((session) => {
+        if (session.authenticated && session.userType === 'admin') {
+          localStorage.setItem('admin_user', JSON.stringify(session.user));
+          setUser(session.user);
+        } else {
+          localStorage.removeItem('admin_user');
+          setUser(null);
+        }
+      })
+      .catch(() => {
+        localStorage.removeItem('admin_token');
+        localStorage.removeItem('admin_user');
+        localStorage.removeItem('admin_csrf_token');
+        setUser(null);
+      })
+      .finally(() => setAuthReady(true));
+  }, []);
 
   if (window.location.pathname !== '/') {
     const isCn = runtimeConfig.locale === 'zh-CN';
@@ -92,10 +111,16 @@ export default function App() {
   }
 
   const handleLogout = () => {
+    adminLogout().catch(() => {});
     localStorage.removeItem('admin_token');
     localStorage.removeItem('admin_user');
+    localStorage.removeItem('admin_csrf_token');
     setUser(null);
   };
+
+  if (!authReady) {
+    return <div className="min-h-screen bg-[var(--color-bg)]" aria-busy="true" />;
+  }
 
   if (!user) {
     return <LoginPage onLogin={setUser} />;
