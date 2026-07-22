@@ -42,7 +42,6 @@ export function LoginPage({ onLogin }) {
     setLoading(true);
     try {
       const data = await adminLogin(phone, password);
-      localStorage.setItem('admin_token', data.token);
       localStorage.setItem('admin_user', JSON.stringify(data.user));
       onLogin(data.user);
     } catch (err) {

@@ -4,6 +4,7 @@ export function assertLoopbackUrl(value) {
   const isLoopback = hostname === 'localhost'
     || hostname.endsWith('.localhost')
     || hostname === '127.0.0.1'
+    || hostname.endsWith('.127.0.0.1.nip.io')
     || hostname === '::1'
     || hostname === '[::1]';
   if (!isLoopback) {
@@ -14,10 +15,10 @@ export function assertLoopbackUrl(value) {
 
 export function e2eRuntime(env = process.env) {
   const runtime = {
-    apiBase: env.E2E_API_BASE || 'http://127.0.0.1:8878',
-    customerBase: env.E2E_CUSTOMER_BASE || 'http://localhost:4273',
-    engineerBase: env.E2E_ENGINEER_BASE || 'http://engineer.localhost:4273',
-    adminBase: env.E2E_ADMIN_BASE || 'http://localhost:4274',
+    apiBase: env.E2E_API_BASE || 'http://api.127.0.0.1.nip.io:8878',
+    customerBase: env.E2E_CUSTOMER_BASE || 'http://customer.127.0.0.1.nip.io:4273',
+    engineerBase: env.E2E_ENGINEER_BASE || 'http://engineer.127.0.0.1.nip.io:4273',
+    adminBase: env.E2E_ADMIN_BASE || 'http://admin.127.0.0.1.nip.io:4274',
     testSecret: env.E2E_TEST_SECRET || '',
   };
   assertLoopbackUrl(runtime.apiBase);

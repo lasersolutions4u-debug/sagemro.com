@@ -1,13 +1,17 @@
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
 import { assertLoopbackUrl, e2eRuntime } from '../support/runtime.mjs';
 
+const playwrightConfig = await readFile(new URL('../playwright.config.mjs', import.meta.url), 'utf8');
+
 test('E2E runtime accepts only loopback service URLs', () => {
   for (const url of [
-    'http://127.0.0.1:8878',
-    'http://localhost:4273',
-    'http://engineer.localhost:4273',
+    'http://api.127.0.0.1.nip.io:8878',
+    'http://customer.127.0.0.1.nip.io:4273',
+    'http://engineer.127.0.0.1.nip.io:4273',
+    'http://admin.127.0.0.1.nip.io:4274',
   ]) {
     assert.equal(assertLoopbackUrl(url).href, `${url}/`);
   }
@@ -28,6 +32,13 @@ test('E2E runtime requires a nontrivial mailbox secret', () => {
   const runtime = e2eRuntime({
     E2E_TEST_SECRET: 'local-e2e-secret-32-characters',
   });
-  assert.equal(runtime.apiBase, 'http://127.0.0.1:8878');
+  assert.equal(runtime.apiBase, 'http://api.127.0.0.1.nip.io:8878');
+  assert.equal(runtime.customerBase, 'http://customer.127.0.0.1.nip.io:4273');
+  assert.equal(runtime.engineerBase, 'http://engineer.127.0.0.1.nip.io:4273');
+  assert.equal(runtime.adminBase, 'http://admin.127.0.0.1.nip.io:4274');
   assert.equal(runtime.testSecret, 'local-e2e-secret-32-characters');
+});
+
+test('E2E Chromium bypasses system proxies for the loopback nip.io topology', () => {
+  assert.match(playwrightConfig, /--no-proxy-server/);
 });

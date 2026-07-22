@@ -9,6 +9,8 @@ function authHeaders() {
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;
   }
+  const csrfToken = localStorage.getItem('admin_csrf_token');
+  if (csrfToken) headers['X-CSRF-Token'] = csrfToken;
   return headers;
 }
 
@@ -19,6 +21,7 @@ async function request(path, options = {}) {
   }
   const res = await fetch(`${API_BASE}${path}`, {
     ...options,
+    credentials: 'include',
     headers,
   });
   let data;
@@ -37,10 +40,36 @@ async function request(path, options = {}) {
 }
 
 export async function adminLogin(phone, password) {
-  return request('/api/admin/login', {
+  const data = await request('/api/admin/login', {
     method: 'POST',
     body: JSON.stringify({ phone, password }),
   });
+  if (data.csrfToken) localStorage.setItem('admin_csrf_token', data.csrfToken);
+  return data;
+}
+
+export async function restoreAdminSession() {
+  const data = await request('/api/auth/session');
+  if (!data.authenticated) {
+    localStorage.removeItem('admin_token');
+    localStorage.removeItem('admin_user');
+    localStorage.removeItem('admin_csrf_token');
+    return data;
+  }
+  if (data.csrfToken) {
+    localStorage.setItem('admin_csrf_token', data.csrfToken);
+    localStorage.removeItem('admin_token');
+  }
+  return data;
+}
+
+export async function adminLogout() {
+  try {
+    return await request('/api/auth/logout', { method: 'POST' });
+  } finally {
+    localStorage.removeItem('admin_token');
+    localStorage.removeItem('admin_csrf_token');
+  }
 }
 
 export async function getAdminStats() {

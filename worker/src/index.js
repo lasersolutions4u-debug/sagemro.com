@@ -15,6 +15,16 @@ import {
   signJwt,
   verifyJwt,
 } from './lib/auth.js';
+import {
+  buildSessionCookie,
+  clearSessionCookie,
+  expectedPortalRole,
+  generateCsrfToken,
+  parseCookies,
+  sessionResponsePayload,
+  sessionCookieName,
+  validateCsrfRequest,
+} from './lib/session.js';
 
 // 通用小工具（generateId / truncateStr）
 import { generateId, truncateStr } from './lib/util.js';
@@ -1923,24 +1933,73 @@ async function generateUserNo(env, prefix) {
   return `${prefix}${nextNum.toString().padStart(6, '0')}`;
 }
 
-// 从请求头中提取并验证 token
+function isProductionSession(request, env) {
+  return env.ENVIRONMENT !== 'development' && new URL(request.url).protocol === 'https:';
+}
+
+function requestPortalRole(request) {
+  return expectedPortalRole(request.headers.get('Origin'))
+    || expectedPortalRole(request.headers.get('Referer'));
+}
+
+function addSessionCookie(response, request, env, role, token) {
+  const headers = new Headers(response.headers);
+  headers.append('Set-Cookie', buildSessionCookie(role, token, {
+    production: isProductionSession(request, env),
+  }));
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+}
+
+function clearPortalSession(response, request, env) {
+  const role = requestPortalRole(request);
+  if (!role) return response;
+  const headers = new Headers(response.headers);
+  headers.append('Set-Cookie', clearSessionCookie(role, {
+    production: isProductionSession(request, env),
+  }));
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+}
+
+// Bearer remains supported for scripts and tests while browsers migrate to role-isolated cookies.
 async function authenticateRequest(request, env) {
   const authHeader = request.headers.get('Authorization');
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return null;
+  if (authHeader?.startsWith('Bearer ')) {
+    const payload = await verifyJwt(authHeader.slice(7), env.JWT_SECRET);
+    return payload ? { ...payload, authMethod: 'bearer' } : null;
   }
-  const token = authHeader.slice(7);
+
+  const role = requestPortalRole(request);
+  if (!role) return null;
+  const production = isProductionSession(request, env);
+  const token = parseCookies(request.headers.get('Cookie'))[sessionCookieName(role, { production })];
+  if (!token) return null;
   const payload = await verifyJwt(token, env.JWT_SECRET);
-  return payload; // { userId, userType, iat, exp }
+  if (!payload || payload.userType !== role) return null;
+  return { ...payload, authMethod: 'cookie' };
+}
+
+function hasValidCsrf(request, auth) {
+  return validateCsrfRequest({
+    method: request.method,
+    authMethod: auth?.authMethod,
+    expected: auth?.csrf,
+    provided: request.headers.get('X-CSRF-Token'),
+  });
 }
 
 // 验证是否为管理员（用于保护测试接口）
 async function authenticateAdmin(request, env) {
-  const authHeader = request.headers.get('Authorization');
-  if (!authHeader || !authHeader.startsWith('Bearer ')) return null;
   try {
-    const payload = await verifyJwt(authHeader.slice(7), env.JWT_SECRET);
-    return payload.userType === 'admin' ? payload : null;
+    const payload = await authenticateRequest(request, env);
+    return payload?.userType === 'admin' ? payload : null;
   } catch {
     return null;
   }
@@ -1968,6 +2027,9 @@ const ALLOWED_ORIGINS_DEV = [
   'http://localhost:4273',
   'http://engineer.localhost:4273',
   'http://localhost:4274',
+  'http://customer.127.0.0.1.nip.io:4273',
+  'http://engineer.127.0.0.1.nip.io:4273',
+  'http://admin.127.0.0.1.nip.io:4274',
   'http://127.0.0.1:5173',
   'http://127.0.0.1:5174',
   'http://127.0.0.1:3000',
@@ -1986,7 +2048,7 @@ function getCorsHeaders(request, env) {
     'Access-Control-Allow-Origin': getAllowedOrigin(origin, env),
     'Vary': 'Origin',
     'Access-Control-Allow-Methods': 'GET, POST, PATCH, DELETE, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-CSRF-Token',
     'Access-Control-Allow-Credentials': 'true',
   };
 }
@@ -2012,7 +2074,7 @@ const corsHeaders = {
   'Access-Control-Allow-Origin': ALLOWED_ORIGINS_PRODUCTION[0],
   'Vary': 'Origin',
   'Access-Control-Allow-Methods': 'GET, POST, PATCH, DELETE, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-CSRF-Token',
 };
 
 // 处理 OPTIONS 预检请求
@@ -2934,6 +2996,20 @@ async function handleLogin(request, env) {
       return localizedErrorResponse('wrong_password', request);
     }
 
+    const portalRole = requestPortalRole(request);
+    if (portalRole && portalRole !== userType) {
+      const market = getRequestMarket(request);
+      const target = userType === 'engineer'
+        ? (market === 'cn' ? 'https://engineer.sagemro.cn' : 'https://engineer.sagemro.com')
+        : (market === 'cn' ? 'https://sagemro.cn' : 'https://sagemro.com');
+      return errorResponse(
+        market === 'cn'
+          ? `该账号请前往 ${target} 登录`
+          : `Sign in to this account at ${target}.`,
+        403,
+      );
+    }
+
     // 登录成功：清除失败计数
     await env.KV.delete(failKey);
 
@@ -2952,18 +3028,20 @@ async function handleLogin(request, env) {
     }
 
     // 签发 JWT token（有效期 7 天）
+    const csrfToken = generateCsrfToken();
     const token = await signJwt({
       userId: user.id,
       userType,
       phone: user.phone,
+      csrf: csrfToken,
       iat: Math.floor(Date.now() / 1000),
       exp: Math.floor(Date.now() / 1000) + 7 * 24 * 60 * 60,
     }, env.JWT_SECRET);
     await incrementApiCounter(env, "login");
 
-    return jsonResponse({
+    return addSessionCookie(jsonResponse(sessionResponsePayload({
       success: true,
-      token,
+      csrfToken,
       userType,
       user: {
         id: user.id,
@@ -2986,10 +3064,66 @@ async function handleLogin(request, env) {
           team_name: user.team_name || null,
         } : {})
       }
-    });
+    }, token, portalRole)), request, env, userType, token);
 } catch (error) {
     return errorResponse(error.message, 500);
   }
+}
+
+async function handleAuthSession(request, env) {
+  const auth = await authenticateRequest(request, env);
+  if (!auth) return jsonResponse({ authenticated: false });
+
+  let sessionAuth = auth;
+  let response;
+  const rotateLegacyBearer = auth.authMethod === 'bearer' && !auth.csrf;
+  if (rotateLegacyBearer) {
+    sessionAuth = { ...auth, csrf: generateCsrfToken() };
+  }
+
+  if (sessionAuth.userType === 'admin') {
+    const credentials = resolveAdminCredentials(request, env);
+    response = jsonResponse({
+      authenticated: true,
+      csrfToken: sessionAuth.csrf,
+      userType: 'admin',
+      user: { id: 'admin', name: '超级管理员', phone: credentials.phone, type: 'admin', market: credentials.market },
+    });
+    return rotateLegacyBearer ? addSessionCookie(response, request, env, 'admin', await signJwt(sessionAuth, env.JWT_SECRET)) : response;
+  }
+
+  const table = sessionAuth.userType === 'engineer' ? 'engineers' : 'customers';
+  const user = await env.DB.prepare(`SELECT * FROM ${table} WHERE id = ?`).bind(sessionAuth.userId).first();
+  if (!user) return clearPortalSession(jsonResponse({ authenticated: false }), request, env);
+  response = jsonResponse({
+    authenticated: true,
+    csrfToken: sessionAuth.csrf,
+    userType: sessionAuth.userType,
+    user: {
+      id: user.id,
+      user_no: user.user_no,
+      name: user.name,
+      phone: user.phone,
+      email: user.email || '',
+      company: user.company || '',
+      region: user.region || '',
+      city: user.city || '',
+      address: user.address || '',
+      company_description: user.company_description || '',
+      business_scope: user.business_scope || '',
+      logo_url: user.logo_url || '',
+      auth_status: user.auth_status || 'pending',
+      ...(sessionAuth.userType === 'engineer' ? {
+        engineer_role: user.engineer_role || 'engineer',
+        regional_lead_id: user.regional_lead_id || null,
+        responsible_region: user.responsible_region || user.service_region || null,
+        team_name: user.team_name || null,
+      } : {}),
+    },
+  });
+  if (!rotateLegacyBearer) return response;
+  const rotatedToken = await signJwt(sessionAuth, env.JWT_SECRET);
+  return addSessionCookie(response, request, env, sessionAuth.userType, rotatedToken);
 }
 
 async function incrementEngineerActivationAttemptCounters(env, request, tokenHash) {
@@ -3620,6 +3754,9 @@ export async function handleChatTranscribe(request, env) {
     } catch {
       auth = null;
     }
+    if (auth && !hasValidCsrf(request, auth)) {
+      return errorResponse('Invalid CSRF token', 403);
+    }
     const clientIP = getRequestIp(request) || 'unknown';
     const voiceUserKey = auth?.userId ? `${auth.userType}:${auth.userId}` : `guest:${clientIP}`;
     const hourlyLimit = parseInt(env.DEEPGRAM_HOURLY_PER_USER || '20', 10);
@@ -3699,6 +3836,9 @@ export async function handleChat(request, env) {
       chatAuth = await authenticateRequest(request, env);
     } catch {
       chatAuth = null;
+    }
+    if (chatAuth && !hasValidCsrf(request, chatAuth)) {
+      return errorResponse('Invalid CSRF token', 403);
     }
     const trustedRole = chatAuth?.userType || 'guest';
     const trustedEngineerId =
@@ -9131,19 +9271,21 @@ async function handleAdminLogin(request, env) {
     ]);
 
     const now = Math.floor(Date.now() / 1000);
+    const csrfToken = generateCsrfToken();
     const token = await signJwt({
       userId: 'admin',
       userType: 'admin',
       phone: adminPhone,
       market: adminCredentials.market,
+      csrf: csrfToken,
       iat: now,
       exp: now + 86400 * 7,
     }, env.JWT_SECRET);
 
-    return jsonResponse({
-      token,
+    return addSessionCookie(jsonResponse(sessionResponsePayload({
+      csrfToken,
       user: { id: 'admin', name: '超级管理员', phone: adminPhone, type: 'admin', market: adminCredentials.market },
-    });
+    }, token, requestPortalRole(request))), request, env, 'admin', token);
   } catch (error) {
     return errorResponse(error.message, 500);
   }
@@ -12427,6 +12569,9 @@ async function handleFunnelEvent(request, env) {
     } catch {
       auth = null;
     }
+    if (auth && !hasValidCsrf(request, auth)) {
+      return errorResponse('Invalid CSRF token', 403);
+    }
 
     const properties = sanitizeFunnelProperties(body.properties);
     const ip = getRequestIp(request);
@@ -12491,6 +12636,12 @@ async function routeRequest(request, env, ctx) {
     }
     if (path === '/api/auth/login' && request.method === 'POST') {
       return handleLogin(request, env);
+    }
+    if (path === '/api/auth/session' && request.method === 'GET') {
+      return handleAuthSession(request, env);
+    }
+    if (path === '/api/auth/logout' && request.method === 'POST') {
+      return clearPortalSession(jsonResponse({ success: true }), request, env);
     }
     if (path === '/api/auth/engineer/activate' && request.method === 'POST') {
       return handleEngineerActivation(request, env);
@@ -12740,6 +12891,9 @@ async function routeRequest(request, env, ctx) {
     const auth = await authenticateRequest(request, env);
     if (!auth) {
       return localizedErrorResponse('sign_in_required', request, 401);
+    }
+    if (!hasValidCsrf(request, auth)) {
+      return errorResponse('Invalid CSRF token', 403);
     }
 
     // 将认证信息挂到 request 上，供 handler 使用。Admin handler 也需要它写审计日志。

@@ -14,7 +14,7 @@ import { usePushNotification } from './hooks/usePushNotification';
 import { generateId } from './utils/helpers';
 import { isCnLocale } from './utils/locale';
 import { setSeoMetadata } from './utils/seo';
-import { submitWorkOrder as submitWorkOrderApi, getConversation as getConversationApi, getUnreadNotificationCount, trackFunnelEvent } from './services/api';
+import { submitWorkOrder as submitWorkOrderApi, getConversation as getConversationApi, getUnreadNotificationCount, trackFunnelEvent, restoreSession, logout as logoutSession } from './services/api';
 
 // 重型 Modal 懒加载，减少首屏 bundle 体积
 // LoginModal 直接导入 — 关键的登录/注册入口，懒加载会导致 React #306（重复 React 实例）
@@ -64,6 +64,7 @@ function App() {
   const [legalInitialTab, setLegalInitialTab] = useState('agreement');
   const [currentUser, setCurrentUser] = useState(null);
   const [userType, setUserType] = useState(null);
+  const [authReady, setAuthReady] = useState(false);
   const [currentPath, setCurrentPath] = useState(() => window.location.pathname);
 
   useEffect(() => {
@@ -104,14 +105,28 @@ function App() {
 
   // 初始化用户状态
   useEffect(() => {
-    const storedUser = localStorage.getItem('sagemro_user');
-    const storedType = localStorage.getItem('sagemro_user_type');
-    if (storedUser) {
-      setCurrentUser(JSON.parse(storedUser));
-    }
-    if (storedType) {
-      setUserType(storedType);
-    }
+    restoreSession()
+      .then((session) => {
+        if (session.authenticated) {
+          setCurrentUser(session.user);
+          setUserType(session.userType);
+          localStorage.setItem('sagemro_user', JSON.stringify(session.user));
+          localStorage.setItem('sagemro_user_type', session.userType);
+        } else {
+          setCurrentUser(null);
+          setUserType(null);
+        }
+      })
+      .catch(() => {
+        localStorage.removeItem('sagemro_user');
+        localStorage.removeItem('sagemro_user_type');
+        localStorage.removeItem('sagemro_customer_id');
+        localStorage.removeItem('sagemro_engineer_id');
+        localStorage.removeItem('sagemro_csrf_token');
+        setCurrentUser(null);
+        setUserType(null);
+      })
+      .finally(() => setAuthReady(true));
   }, []);
 
   useEffect(() => {
@@ -351,6 +366,7 @@ function App() {
 
   // 登出
   const handleLogout = useCallback(() => {
+    logoutSession().catch(() => {});
     localStorage.removeItem('sagemro_token');
     localStorage.removeItem('sagemro_user');
     localStorage.removeItem('sagemro_user_type');
@@ -401,6 +417,10 @@ function App() {
   }, []);
 
   const showEngineerWorkspace = (isEngineerHost || currentPath === '/engineer') && userType === 'engineer';
+
+  if ((isEngineerHost || currentPath === '/engineer') && currentPath !== '/activate' && !authReady) {
+    return <div className="min-h-[100dvh] bg-[var(--color-bg)]" aria-busy="true" />;
+  }
 
   if (isEngineerHost && currentPath === '/activate') {
     return (

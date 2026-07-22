@@ -4,6 +4,12 @@ import tailwindcss from '@tailwindcss/vite'
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
+  server: {
+    allowedHosts: [
+      'customer.127.0.0.1.nip.io',
+      'engineer.127.0.0.1.nip.io',
+    ],
+  },
   build: {
     target: 'es2020',
     modulePreload: {

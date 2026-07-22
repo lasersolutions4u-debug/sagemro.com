@@ -21,17 +21,19 @@ CREATE TABLE IF NOT EXISTS _migrations (
     note TEXT
 );
 
--- 对话表（000 + 010）
+-- 对话表（000 + 010 + 015）
 CREATE TABLE IF NOT EXISTS conversations (
     id TEXT PRIMARY KEY,
     title TEXT DEFAULT '新对话',
     last_message TEXT,
     customer_id TEXT,                          -- 010: 归属客户，IDOR 校验依赖此列
+    engineer_id TEXT,                          -- 015: 归属工程师，工程师对话查询依赖此列
     created_at TEXT DEFAULT (datetime('now')),
     updated_at TEXT DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_conversations_updated_at ON conversations(updated_at);
 CREATE INDEX IF NOT EXISTS idx_conversations_customer_id ON conversations(customer_id);
+CREATE INDEX IF NOT EXISTS idx_conversations_engineer_id ON conversations(engineer_id);
 
 -- 消息表（000 + 020）
 CREATE TABLE IF NOT EXISTS messages (

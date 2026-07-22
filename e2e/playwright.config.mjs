@@ -18,6 +18,9 @@ export default defineConfig({
   use: {
     ...devices['Desktop Chrome'],
     channel: 'chromium',
+    launchOptions: {
+      args: ['--no-proxy-server'],
+    },
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
     video: 'retain-on-failure',

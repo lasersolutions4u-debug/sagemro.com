@@ -210,7 +210,7 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
       trackFunnelEvent('verification_succeeded', { entry: 'registration' });
       trackFunnelEvent('signup_completed', { entry: 'registration' });
       const result = await login(isCn ? { phone, password } : { email, password });
-      localStorage.setItem('sagemro_token', result.token);
+      if (result.csrfToken) localStorage.setItem('sagemro_csrf_token', result.csrfToken);
       localStorage.setItem('sagemro_user', JSON.stringify(result.user));
       localStorage.setItem('sagemro_user_type', result.userType);
       if (result.userType === 'customer') {
@@ -460,7 +460,7 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
                   const result = credential.includes('@')
                     ? await login({ email: credential, password })
                     : await login({ phone: credential, password });
-                  localStorage.setItem('sagemro_token', result.token);
+                  if (result.csrfToken) localStorage.setItem('sagemro_csrf_token', result.csrfToken);
                   localStorage.setItem('sagemro_user', JSON.stringify(result.user));
                   localStorage.setItem('sagemro_user_type', result.userType);
                   if (result.userType === 'customer') {
