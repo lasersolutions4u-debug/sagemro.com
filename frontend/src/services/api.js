@@ -9,6 +9,10 @@ function resolveApiBase() {
 
 const API_BASE = resolveApiBase();
 
+function isApiRequest(url) {
+  return typeof url === 'string' && url.startsWith(API_BASE);
+}
+
 const FUNNEL_STORAGE_KEYS = {
   anonymousId: 'sagemro_analytics_anonymous_id',
   sessionId: 'sagemro_analytics_session_id',
@@ -164,15 +168,15 @@ if (typeof window !== 'undefined' && !window.__sagemroFetchPatched) {
   const nativeFetch = window.fetch.bind(window);
   window.fetch = async (input, init) => {
     const url = typeof input === 'string' ? input : input?.url || '';
-    const isApiRequest = url.startsWith(API_BASE);
     let requestInit = init;
-    if (isApiRequest) {
+    if (isApiRequest(url)) {
       const method = (init?.method || 'GET').toUpperCase();
       const headers = new Headers(init?.headers || {});
       const legacyToken = localStorage.getItem('sagemro_token');
       if (legacyToken && !headers.has('Authorization')) headers.set('Authorization', `Bearer ${legacyToken}`);
-      if (!['GET', 'HEAD', 'OPTIONS'].includes(method)) {
-        headers.set('X-CSRF-Token', localStorage.getItem('sagemro_csrf_token') || '');
+      const csrfToken = localStorage.getItem('sagemro_csrf_token');
+      if (csrfToken && !['GET', 'HEAD', 'OPTIONS'].includes(method)) {
+        headers.set('X-CSRF-Token', csrfToken);
       }
       requestInit = { ...init, credentials: 'include', headers };
     }
@@ -197,8 +201,19 @@ function authHeaders() {
 }
 
 export async function restoreSession() {
+  const storedUser = localStorage.getItem('sagemro_user');
+  const storedType = localStorage.getItem('sagemro_user_type');
   const response = await fetch(`${API_BASE}/api/auth/session`, { credentials: 'include' });
   const data = await response.json().catch(() => ({ authenticated: false }));
+  if (response.status === 404) {
+    localStorage.removeItem('sagemro_csrf_token');
+    return {
+      authenticated: Boolean(localStorage.getItem('sagemro_token') && storedUser && storedType),
+      user: storedUser ? JSON.parse(storedUser) : null,
+      userType: storedType || null,
+      legacy: true,
+    };
+  }
   if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
   if (!data.authenticated) {
     localStorage.removeItem('sagemro_token');
@@ -219,6 +234,10 @@ export async function restoreSession() {
 export async function logout() {
   const response = await fetch(`${API_BASE}/api/auth/logout`, { method: 'POST', credentials: 'include' });
   localStorage.removeItem('sagemro_token');
+  localStorage.removeItem('sagemro_user');
+  localStorage.removeItem('sagemro_user_type');
+  localStorage.removeItem('sagemro_customer_id');
+  localStorage.removeItem('sagemro_engineer_id');
   localStorage.removeItem('sagemro_csrf_token');
   const data = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
@@ -275,7 +294,13 @@ export async function login({ phone, email, password }) {
     const data = await response.json();
     throw new Error(data.error || `HTTP ${response.status}`);
   }
-  return response.json();
+  const data = await response.json();
+  if (data.token) localStorage.setItem('sagemro_token', data.token);
+  if (data.csrfToken) {
+    localStorage.setItem('sagemro_csrf_token', data.csrfToken);
+    localStorage.removeItem('sagemro_token');
+  }
+  return data;
 }
 
 /**

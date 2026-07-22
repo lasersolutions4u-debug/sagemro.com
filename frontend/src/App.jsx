@@ -113,6 +113,8 @@ function App() {
           localStorage.setItem('sagemro_user', JSON.stringify(session.user));
           localStorage.setItem('sagemro_user_type', session.userType);
         } else {
+          localStorage.removeItem('sagemro_user');
+          localStorage.removeItem('sagemro_user_type');
           setCurrentUser(null);
           setUserType(null);
         }

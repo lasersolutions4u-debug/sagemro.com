@@ -7,10 +7,12 @@ const login = await readFile(new URL('../src/components/Auth/LoginModal.jsx', im
 const app = await readFile(new URL('../src/App.jsx', import.meta.url), 'utf8');
 const viteConfig = await readFile(new URL('../vite.config.js', import.meta.url), 'utf8');
 
-test('frontend API requests include cookies and CSRF for unsafe methods', () => {
+test('frontend API requests include cookies and non-empty CSRF for unsafe methods', () => {
   assert.match(api, /credentials:\s*'include'/);
   assert.match(api, /X-CSRF-Token/);
   assert.match(api, /sagemro_csrf_token/);
+  assert.match(api, /csrfToken[\s\S]*!\['GET', 'HEAD', 'OPTIONS'\]\.includes\(method\)/);
+  assert.doesNotMatch(api, /X-CSRF-Token', localStorage\.getItem\('sagemro_csrf_token'\) \|\| ''/);
 });
 
 test('frontend exposes session restore and logout APIs', () => {
@@ -20,9 +22,11 @@ test('frontend exposes session restore and logout APIs', () => {
   assert.match(api, /\/api\/auth\/logout/);
 });
 
-test('new frontend logins do not persist JWTs in localStorage', () => {
+test('frontend login keeps legacy JWT fallback without blindly persisting a missing token', () => {
   assert.doesNotMatch(login, /localStorage\.setItem\('sagemro_token'/);
   assert.match(login, /sagemro_csrf_token/);
+  assert.match(api, /if \(data\.token\) localStorage\.setItem\('sagemro_token', data\.token\)/);
+  assert.match(api, /if \(data\.csrfToken\)[\s\S]*localStorage\.removeItem\('sagemro_token'\)/);
 });
 
 test('frontend application restores and clears the server session', () => {
@@ -34,6 +38,12 @@ test('frontend application restores and clears the server session', () => {
   assert.match(app, /isEngineerHost[^\n]*&&[^\n]*!authReady/);
   assert.match(api, /if \(!data\.authenticated\)[\s\S]*localStorage\.removeItem\('sagemro_user'\)/);
   assert.match(api, /if \(!data\.authenticated\)[\s\S]*localStorage\.removeItem\('sagemro_csrf_token'\)/);
+});
+
+test('frontend session restore falls back to the legacy JWT during staggered deploys', () => {
+  assert.match(api, /response\.status === 404/);
+  assert.match(api, /localStorage\.getItem\('sagemro_token'\)[\s\S]*storedUser[\s\S]*storedType/);
+  assert.match(api, /legacy:\s*true/);
 });
 
 test('authenticated funnel events avoid sendBeacon so the CSRF header can be attached', () => {
