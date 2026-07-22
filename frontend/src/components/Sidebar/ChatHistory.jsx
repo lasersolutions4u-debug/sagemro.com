@@ -163,7 +163,11 @@ function ConversationItem({ conversation, isActive, onSelect, onDelete, onRename
             onClick={async (e) => {
               e.stopPropagation();
               if (await confirmDialog('Delete this conversation?', { danger: true, confirmText: 'Delete' })) {
-                onDelete();
+                try {
+                  await onDelete();
+                } catch (err) {
+                  toastError(err.message || String(err));
+                }
               }
             }}
             title="Delete"

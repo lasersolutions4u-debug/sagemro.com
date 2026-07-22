@@ -13,7 +13,7 @@ export function SettingsModal({ isOpen, onClose, currentUser, userType, onOpenMy
   const [customerForm, setCustomerForm] = useState({ name: '', region: '' });
 
   // 工程师档案
-  const [engineerForm, setEngineerForm] = useState({ name: '', bio: '', service_region: '', bank_name: '', bank_account: '', bank_branch: '', account_holder: '' });
+  const [engineerForm, setEngineerForm] = useState({ name: '', bio: '', service_region: '' });
   const [engineerStats, setEngineerStats] = useState(null);
   const [currentStatus, setCurrentStatus] = useState('available');
 
@@ -29,10 +29,6 @@ export function SettingsModal({ isOpen, onClose, currentUser, userType, onOpenMy
           name: currentUser.name || '',
           bio: currentUser.bio || '',
           service_region: currentUser.service_region || '',
-          bank_name: currentUser.bank_name || '',
-          bank_account: currentUser.bank_account || '',
-          bank_branch: currentUser.bank_branch || '',
-          account_holder: currentUser.account_holder || '',
         });
         setCurrentStatus(currentUser.status || 'available');
         loadEngineerData();
@@ -57,14 +53,6 @@ export function SettingsModal({ isOpen, onClose, currentUser, userType, onOpenMy
           : 'N/A',
         rating_count: profile.rating_count || 0,
       });
-      // 回填银行卡信息
-      setEngineerForm(prev => ({
-        ...prev,
-        bank_name: profile.bank_name || prev.bank_name || '',
-        bank_account: profile.bank_account || prev.bank_account || '',
-        bank_branch: profile.bank_branch || prev.bank_branch || '',
-        account_holder: profile.account_holder || prev.account_holder || '',
-      }));
     } catch (err) {
       console.error('Failed to load engineer data', err);
     }
@@ -312,53 +300,6 @@ export function SettingsModal({ isOpen, onClose, currentUser, userType, onOpenMy
                       className="w-full bg-[var(--color-input-bg)] border border-[var(--color-input-border)] rounded-lg px-3 py-2.5 text-[14px] text-[var(--color-sidebar-text)] resize-none"
                     />
                   </div>
-                  {/* SERVICE_OS_LEGACY: bank info is kept for internal settlement transition. */}
-                  <div className="border-t border-[var(--color-border)] pt-4 mt-2">
-                    <p className="text-[12px] text-[var(--color-sidebar-text)] opacity-60 mb-3">Bank Account (internal settlement)</p>
-                    <div className="space-y-3">
-                      <div>
-                        <label className="block text-[12px] text-[var(--color-sidebar-text)] opacity-60 mb-1.5">Bank Name</label>
-                        <input
-                          type="text"
-                          value={engineerForm.bank_name}
-                          onChange={e => setEngineerForm({ ...engineerForm, bank_name: e.target.value })}
-                          placeholder="e.g. ICBC, Construction Bank"
-                          className="w-full bg-[var(--color-input-bg)] border border-[var(--color-input-border)] rounded-lg px-3 py-2.5 text-[14px] text-[var(--color-sidebar-text)]"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-[12px] text-[var(--color-sidebar-text)] opacity-60 mb-1.5">Branch</label>
-                        <input
-                          type="text"
-                          value={engineerForm.bank_branch}
-                          onChange={e => setEngineerForm({ ...engineerForm, bank_branch: e.target.value })}
-                          placeholder="e.g. Jinan Lixia Branch"
-                          className="w-full bg-[var(--color-input-bg)] border border-[var(--color-input-border)] rounded-lg px-3 py-2.5 text-[14px] text-[var(--color-sidebar-text)]"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-[12px] text-[var(--color-sidebar-text)] opacity-60 mb-1.5">Account Holder</label>
-                        <input
-                          type="text"
-                          value={engineerForm.account_holder}
-                          onChange={e => setEngineerForm({ ...engineerForm, account_holder: e.target.value })}
-                          placeholder="Must match the bank account name"
-                          className="w-full bg-[var(--color-input-bg)] border border-[var(--color-input-border)] rounded-lg px-3 py-2.5 text-[14px] text-[var(--color-sidebar-text)]"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-[12px] text-[var(--color-sidebar-text)] opacity-60 mb-1.5">Account Number</label>
-                        <input
-                          type="text"
-                          value={engineerForm.bank_account}
-                          onChange={e => setEngineerForm({ ...engineerForm, bank_account: e.target.value })}
-                          placeholder="Enter bank account number"
-                          className="w-full bg-[var(--color-input-bg)] border border-[var(--color-input-border)] rounded-lg px-3 py-2.5 text-[14px] text-[var(--color-sidebar-text)]"
-                        />
-                      </div>
-                    </div>
-                  </div>
-
                   {/* 工程师等级信息 */}
                   <div className="bg-[var(--color-surface-elevated)] rounded-xl p-3 space-y-2">
                     <div className="flex justify-between text-[13px]">

@@ -28,3 +28,10 @@ test('admin drawer supports onsite confirmation, arrival audit, and manual overr
   assert.match(source, /adminSiteLocation\.service_longitude === ''/);
   assert.match(source, /window\.prompt/);
 });
+
+test('engineer payout controls are limited to completed work orders', async () => {
+  const source = await readFile(new URL('./WorkOrdersPage.jsx', import.meta.url), 'utf8');
+
+  assert.match(source, /detail\.status === 'completed'[\s\S]*Engineer service payment/);
+  assert.match(source, /detail\.payout_status !== 'completed'[\s\S]*Mark payout processing/);
+});

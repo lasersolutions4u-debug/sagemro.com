@@ -2,6 +2,9 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import worker from '../src/index.js';
+import { signJwt } from '../src/lib/auth.js';
+
+const JWT_SECRET = 'analytics-funnel-test-secret-32-chars';
 
 function createEnv() {
   const rows = [];
@@ -39,11 +42,12 @@ function createEnv() {
         };
       },
     },
+    JWT_SECRET,
     __rows: rows,
   };
 }
 
-async function postFunnel(body, env = createEnv()) {
+async function postFunnel(body, env = createEnv(), headers = {}) {
   const response = await worker.fetch(new Request('https://api.sagemro.com/api/analytics/funnel', {
     method: 'POST',
     headers: {
@@ -51,6 +55,7 @@ async function postFunnel(body, env = createEnv()) {
       Origin: 'https://sagemro.com',
       'CF-Connecting-IP': '203.0.113.40',
       'User-Agent': 'node-test-user-agent',
+      ...headers,
     },
     body: JSON.stringify(body),
   }), env, { waitUntil() {} });
@@ -105,4 +110,50 @@ test('public funnel endpoint rejects unknown event names', async () => {
   assert.equal(response.status, 400);
   assert.match(json.error, /Invalid funnel event/);
   assert.equal(env.__rows.length, 0);
+});
+
+test('cookie-authenticated funnel events reject missing CSRF', async () => {
+  const csrf = 'analytics-csrf-token';
+  const token = await signJwt({
+    userId: 'customer-analytics-1',
+    userType: 'customer',
+    csrf,
+    exp: Math.floor(Date.now() / 1000) + 60,
+  }, JWT_SECRET);
+
+  const { response, json, env } = await postFunnel({
+    event_name: 'ai_conversation_started',
+    anonymous_id: 'anon-cookie',
+    session_id: 'session-cookie',
+  }, createEnv(), {
+    Cookie: `__Host-sagemro_customer_session=${token}`,
+  });
+
+  assert.equal(response.status, 403);
+  assert.equal(json.error, 'Invalid CSRF token');
+  assert.equal(env.__rows.length, 0);
+});
+
+test('cookie-authenticated funnel events accept matching CSRF and trust the session identity', async () => {
+  const csrf = 'analytics-csrf-token';
+  const token = await signJwt({
+    userId: 'customer-analytics-1',
+    userType: 'customer',
+    csrf,
+    exp: Math.floor(Date.now() / 1000) + 60,
+  }, JWT_SECRET);
+
+  const { response, env } = await postFunnel({
+    event_name: 'ai_conversation_started',
+    anonymous_id: 'anon-cookie',
+    session_id: 'session-cookie',
+    user_type: 'engineer',
+  }, createEnv(), {
+    Cookie: `__Host-sagemro_customer_session=${token}`,
+    'X-CSRF-Token': csrf,
+  });
+
+  assert.equal(response.status, 202);
+  assert.equal(env.__rows[0].user_type, 'customer');
+  assert.equal(env.__rows[0].user_id, 'customer-analytics-1');
 });

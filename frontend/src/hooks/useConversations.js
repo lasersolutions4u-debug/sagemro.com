@@ -1,11 +1,12 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
   deleteConversation as apiDeleteConversation,
+  getConversations,
   renameConversation as apiRenameConversation,
 } from '../services/api';
 import { generateId } from '../utils/helpers';
 
-export function useConversations() {
+export function useConversations({ isAuthenticated = false } = {}) {
   const [conversations, setConversations] = useState([]);
   const [loading, setLoading] = useState(true);
   const error = null;
@@ -21,6 +22,19 @@ export function useConversations() {
       console.error('Failed to load conversations from storage:', e);
     }
     setLoading(false);
+  }, []);
+
+  const loadFromServer = useCallback(async () => {
+    setLoading(true);
+    try {
+      const data = await getConversations();
+      setConversations(Array.isArray(data.conversations) ? data.conversations : []);
+    } catch (e) {
+      console.error('Failed to load conversations from server:', e);
+      setConversations([]);
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   // 保存到 localStorage
@@ -43,11 +57,11 @@ export function useConversations() {
     };
     setConversations(prev => {
       const updated = [newConv, ...prev];
-      saveToStorage(updated);
+      if (!isAuthenticated) saveToStorage(updated);
       return updated;
     });
     return newConv;
-  }, [saveToStorage]);
+  }, [isAuthenticated, saveToStorage]);
 
   // 更新对话
   const updateConversation = useCallback((id, updates) => {
@@ -59,31 +73,39 @@ export function useConversations() {
       );
       // 按 updated_at 排序
       updated.sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at));
-      saveToStorage(updated);
+      if (!isAuthenticated) saveToStorage(updated);
       return updated;
     });
-  }, [saveToStorage]);
+  }, [isAuthenticated, saveToStorage]);
 
   // 删除对话
   const deleteConversation = useCallback(async (id) => {
-    try {
+    if (isAuthenticated) {
       await apiDeleteConversation(id);
-    } catch (e) {
-      // 即使 API 失败，也删除本地记录
+      setConversations(prev => prev.filter(conv => conv.id !== id));
+      return;
     }
+
     setConversations(prev => {
       const updated = prev.filter(conv => conv.id !== id);
       saveToStorage(updated);
       return updated;
     });
-  }, [saveToStorage]);
+  }, [isAuthenticated, saveToStorage]);
 
   // 重命名对话（本地乐观更新 + 后端同步）
   const renameConversation = useCallback(async (id, title) => {
     const trimmed = (title || '').trim().slice(0, 50);
     if (!trimmed) throw new Error('Title cannot be empty');
 
-    // 本地先更新（乐观）
+    if (isAuthenticated) {
+      const result = await apiRenameConversation(id, trimmed);
+      setConversations(prev => prev.map(conv => (
+        conv.id === id ? { ...conv, title: result.title || trimmed } : conv
+      )));
+      return;
+    }
+
     setConversations(prev => {
       const updated = prev.map(conv =>
         conv.id === id ? { ...conv, title: trimmed } : conv
@@ -92,13 +114,7 @@ export function useConversations() {
       return updated;
     });
 
-    // 后端同步（失败不回滚本地，避免用户误以为操作失败；仅在控制台记录）
-    try {
-      await apiRenameConversation(id, trimmed);
-    } catch (e) {
-      console.warn('[renameConversation] 后端同步失败，本地已更新:', e.message);
-    }
-  }, [saveToStorage]);
+  }, [isAuthenticated, saveToStorage]);
 
   // 获取单个对话
   const getConversation = useCallback((id) => {
@@ -107,8 +123,9 @@ export function useConversations() {
 
   // 初始化
   useEffect(() => {
-    loadFromStorage();
-  }, [loadFromStorage]);
+    if (isAuthenticated) loadFromServer();
+    else loadFromStorage();
+  }, [isAuthenticated, loadFromServer, loadFromStorage]);
 
   return {
     conversations,
@@ -119,6 +136,6 @@ export function useConversations() {
     deleteConversation,
     renameConversation,
     getConversation,
-    refresh: loadFromStorage,
+    refresh: isAuthenticated ? loadFromServer : loadFromStorage,
   };
 }

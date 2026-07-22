@@ -14,7 +14,7 @@ import { usePushNotification } from './hooks/usePushNotification';
 import { generateId } from './utils/helpers';
 import { isCnLocale } from './utils/locale';
 import { setSeoMetadata } from './utils/seo';
-import { submitWorkOrder as submitWorkOrderApi, getUnreadNotificationCount, trackFunnelEvent } from './services/api';
+import { submitWorkOrder as submitWorkOrderApi, getConversation as getConversationApi, getUnreadNotificationCount, trackFunnelEvent, restoreSession, logout as logoutSession } from './services/api';
 
 // 重型 Modal 懒加载，减少首屏 bundle 体积
 // LoginModal 直接导入 — 关键的登录/注册入口，懒加载会导致 React #306（重复 React 实例）
@@ -64,6 +64,7 @@ function App() {
   const [legalInitialTab, setLegalInitialTab] = useState('agreement');
   const [currentUser, setCurrentUser] = useState(null);
   const [userType, setUserType] = useState(null);
+  const [authReady, setAuthReady] = useState(false);
   const [currentPath, setCurrentPath] = useState(() => window.location.pathname);
 
   useEffect(() => {
@@ -104,14 +105,30 @@ function App() {
 
   // 初始化用户状态
   useEffect(() => {
-    const storedUser = localStorage.getItem('sagemro_user');
-    const storedType = localStorage.getItem('sagemro_user_type');
-    if (storedUser) {
-      setCurrentUser(JSON.parse(storedUser));
-    }
-    if (storedType) {
-      setUserType(storedType);
-    }
+    restoreSession()
+      .then((session) => {
+        if (session.authenticated) {
+          setCurrentUser(session.user);
+          setUserType(session.userType);
+          localStorage.setItem('sagemro_user', JSON.stringify(session.user));
+          localStorage.setItem('sagemro_user_type', session.userType);
+        } else {
+          localStorage.removeItem('sagemro_user');
+          localStorage.removeItem('sagemro_user_type');
+          setCurrentUser(null);
+          setUserType(null);
+        }
+      })
+      .catch(() => {
+        localStorage.removeItem('sagemro_user');
+        localStorage.removeItem('sagemro_user_type');
+        localStorage.removeItem('sagemro_customer_id');
+        localStorage.removeItem('sagemro_engineer_id');
+        localStorage.removeItem('sagemro_csrf_token');
+        setCurrentUser(null);
+        setUserType(null);
+      })
+      .finally(() => setAuthReady(true));
   }, []);
 
   useEffect(() => {
@@ -157,7 +174,8 @@ function App() {
     deleteConversation,
     renameConversation,
     getConversation,
-  } = useConversations();
+    refresh: refreshConversations,
+  } = useConversations({ isAuthenticated: Boolean(currentUser && userType) });
 
   // 推送通知（客户和工程师均可订阅）
   const pushUserId = userType === 'engineer'
@@ -200,24 +218,32 @@ function App() {
   }, [clearMessages]);
 
   // 选择对话
-  const handleSelectConversation = useCallback((conv) => {
+  const handleSelectConversation = useCallback(async (conv) => {
     if (conv.id === conversationId) {
       setSidebarOpen(false);
       setHistoryModalOpen(false);
       return;
     }
-    // 从 localStorage 加载历史消息
-    const stored = localStorage.getItem(`sagemro_messages_${conv.id}`);
-    if (stored) {
-      const history = JSON.parse(stored);
-      loadMessages(history, conv.id);
+    if (currentUser) {
+      try {
+        const data = await getConversationApi(conv.id);
+        loadMessages(data.messages || [], conv.id);
+      } catch (error) {
+        console.error('Failed to load conversation from server:', error);
+        clearMessages();
+      }
     } else {
-      clearMessages();
-      loadMessages([], conv.id);
+      const stored = localStorage.getItem(`sagemro_messages_${conv.id}`);
+      if (stored) {
+        loadMessages(JSON.parse(stored), conv.id);
+      } else {
+        clearMessages();
+        loadMessages([], conv.id);
+      }
     }
     setSidebarOpen(false);
     setHistoryModalOpen(false);
-  }, [conversationId, clearMessages, loadMessages]);
+  }, [conversationId, currentUser, clearMessages, loadMessages]);
 
   // 发送消息
   const handleSendMessage = useCallback(async (content, images) => {
@@ -227,7 +253,7 @@ function App() {
       convId = newConv.id;
     }
 
-    const stored = localStorage.getItem(`sagemro_messages_${convId}`);
+    const stored = currentUser ? null : localStorage.getItem(`sagemro_messages_${convId}`);
     const currentMessages = stored ? JSON.parse(stored) : [];
 
     trackFunnelEvent('ai_conversation_started', {
@@ -239,7 +265,7 @@ function App() {
 
     await sendMessage(content, images, convId);
 
-    setTimeout(() => {
+    if (!currentUser) setTimeout(() => {
       const updatedMessages = [...currentMessages, {
         id: generateId(),
         role: 'user',
@@ -254,7 +280,8 @@ function App() {
         last_message: content.slice(0, 50) + (content.length > 50 ? '...' : ''),
       });
     }, 0);
-  }, [conversationId, createConversation, currentUser, sendMessage, updateConversation]);
+    else refreshConversations();
+  }, [conversationId, createConversation, currentUser, refreshConversations, sendMessage, updateConversation]);
 
   // 提交工单
   const handleSubmitWorkOrder = useCallback(async (data) => {
@@ -304,13 +331,13 @@ function App() {
   }, []);
 
   // 删除对话
-  const handleDeleteConversation = useCallback((id) => {
-    deleteConversation(id);
+  const handleDeleteConversation = useCallback(async (id) => {
+    await deleteConversation(id);
     if (id === conversationId) {
       clearMessages();
     }
-    localStorage.removeItem(`sagemro_messages_${id}`);
-  }, [deleteConversation, conversationId, clearMessages]);
+    if (!currentUser) localStorage.removeItem(`sagemro_messages_${id}`);
+  }, [deleteConversation, conversationId, currentUser, clearMessages]);
 
   // 重命名对话
   const handleRenameConversation = useCallback(async (id, title) => {
@@ -326,9 +353,12 @@ function App() {
       // The main site remains customer/visitor focused.
       setLoginModalOpen(false);
     }
-    // 登录后清空对话，确保用新账号的正确身份上下文开始对话
-    clearMessages();
-  }, [clearMessages]);
+    if (conversationId) {
+      getConversationApi(conversationId)
+        .then((data) => loadMessages(data.messages || [], conversationId))
+        .catch(() => clearMessages());
+    }
+  }, [conversationId, loadMessages, clearMessages]);
 
   const handleActivationLoginSuccess = useCallback((userData) => {
     handleLoginSuccess(userData);
@@ -338,6 +368,7 @@ function App() {
 
   // 登出
   const handleLogout = useCallback(() => {
+    logoutSession().catch(() => {});
     localStorage.removeItem('sagemro_token');
     localStorage.removeItem('sagemro_user');
     localStorage.removeItem('sagemro_user_type');
@@ -388,6 +419,10 @@ function App() {
   }, []);
 
   const showEngineerWorkspace = (isEngineerHost || currentPath === '/engineer') && userType === 'engineer';
+
+  if ((isEngineerHost || currentPath === '/engineer') && currentPath !== '/activate' && !authReady) {
+    return <div className="min-h-[100dvh] bg-[var(--color-bg)]" aria-busy="true" />;
+  }
 
   if (isEngineerHost && currentPath === '/activate') {
     return (

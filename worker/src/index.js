@@ -13,8 +13,19 @@ import {
   base64UrlEncode,
   base64UrlDecode,
   signJwt,
-  verifyJwt,
 } from './lib/auth.js';
+import {
+  buildSessionCookie,
+  clearSessionCookie,
+  generateCsrfToken,
+  sessionResponsePayload,
+} from './lib/session.js';
+import {
+  authenticateRequest,
+  hasValidCsrf,
+  isProductionSession,
+  requestPortalRole,
+} from './lib/requestAuth.js';
 
 // 通用小工具（generateId / truncateStr）
 import { generateId, truncateStr } from './lib/util.js';
@@ -73,6 +84,8 @@ import {
 
 // Sentry 错误上报（零依赖 envelope 客户端）
 import { captureException } from './lib/sentry.js';
+import { isKnownProtectedRoute, isTestRoute } from './lib/routes.js';
+import { handlePublicRoute } from './lib/publicRoutes.js';
 
 // AI 工具调用确定性日志（Phase 0.1）
 import { logToolCall, measureAndLogToolCall, PermissionError } from './lib/trace.js';
@@ -1923,24 +1936,37 @@ async function generateUserNo(env, prefix) {
   return `${prefix}${nextNum.toString().padStart(6, '0')}`;
 }
 
-// 从请求头中提取并验证 token
-async function authenticateRequest(request, env) {
-  const authHeader = request.headers.get('Authorization');
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return null;
-  }
-  const token = authHeader.slice(7);
-  const payload = await verifyJwt(token, env.JWT_SECRET);
-  return payload; // { userId, userType, iat, exp }
+function addSessionCookie(response, request, env, role, token) {
+  const headers = new Headers(response.headers);
+  headers.append('Set-Cookie', buildSessionCookie(role, token, {
+    production: isProductionSession(request, env),
+  }));
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+}
+
+function clearPortalSession(response, request, env) {
+  const role = requestPortalRole(request);
+  if (!role) return response;
+  const headers = new Headers(response.headers);
+  headers.append('Set-Cookie', clearSessionCookie(role, {
+    production: isProductionSession(request, env),
+  }));
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
 }
 
 // 验证是否为管理员（用于保护测试接口）
 async function authenticateAdmin(request, env) {
-  const authHeader = request.headers.get('Authorization');
-  if (!authHeader || !authHeader.startsWith('Bearer ')) return null;
   try {
-    const payload = await verifyJwt(authHeader.slice(7), env.JWT_SECRET);
-    return payload.userType === 'admin' ? payload : null;
+    const payload = await authenticateRequest(request, env);
+    return payload?.userType === 'admin' ? payload : null;
   } catch {
     return null;
   }
@@ -1963,6 +1989,14 @@ const ALLOWED_ORIGINS_DEV = [
   'http://localhost:5174',
   'http://localhost:3000',
   'http://localhost:4173',
+  'http://engineer.localhost:4173',
+  'http://localhost:4174',
+  'http://localhost:4273',
+  'http://engineer.localhost:4273',
+  'http://localhost:4274',
+  'http://customer.127.0.0.1.nip.io:4273',
+  'http://engineer.127.0.0.1.nip.io:4273',
+  'http://admin.127.0.0.1.nip.io:4274',
   'http://127.0.0.1:5173',
   'http://127.0.0.1:5174',
   'http://127.0.0.1:3000',
@@ -1981,9 +2015,25 @@ function getCorsHeaders(request, env) {
     'Access-Control-Allow-Origin': getAllowedOrigin(origin, env),
     'Vary': 'Origin',
     'Access-Control-Allow-Methods': 'GET, POST, PATCH, DELETE, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-CSRF-Token',
     'Access-Control-Allow-Credentials': 'true',
   };
+}
+
+function getSecurityHeaders(request, env) {
+  const headers = {
+    'Content-Security-Policy': "default-src 'none'; frame-ancestors 'none'; base-uri 'none'",
+    'X-Content-Type-Options': 'nosniff',
+    'X-Frame-Options': 'DENY',
+    'Referrer-Policy': 'strict-origin-when-cross-origin',
+    'Permissions-Policy': 'camera=(), microphone=(), geolocation=()',
+  };
+
+  if (env.ENVIRONMENT !== 'development' && new URL(request.url).protocol === 'https:') {
+    headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains';
+  }
+
+  return headers;
 }
 
 // 兼容旧代码：仅作兜底 Content-Type/Methods，动态 Origin 由 top-level 包装器覆盖。
@@ -1991,7 +2041,7 @@ const corsHeaders = {
   'Access-Control-Allow-Origin': ALLOWED_ORIGINS_PRODUCTION[0],
   'Vary': 'Origin',
   'Access-Control-Allow-Methods': 'GET, POST, PATCH, DELETE, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-CSRF-Token',
 };
 
 // 处理 OPTIONS 预检请求
@@ -2334,6 +2384,18 @@ export async function sendEngineerActivationEmail(env, { to, subject, text, html
   const errorMessage = market === 'cn'
     ? '激活邮件发送失败，请稍后再试'
     : 'Failed to send activation email. Please try again later.';
+  if (
+    env.ENVIRONMENT === 'development'
+    && env.E2E_TEST_MODE === 'true'
+    && env.E2E_TEST_SECRET
+    && env.KV?.put
+  ) {
+    const mailboxKey = `e2e_mailbox_activation_email_${normalizeEmail(to)}`;
+    await env.KV.put(mailboxKey, JSON.stringify({ to, subject, text, html }), {
+      expirationTtl: 3600,
+    });
+    return { sent: true, provider: 'e2e_mailbox' };
+  }
   if (!env.VERIFICATION_EMAIL_FROM) {
     return { error: errorMessage };
   }
@@ -2410,6 +2472,30 @@ export async function sendEngineerActivationEmail(env, { to, subject, text, html
       emailSuffix: String(to || '').split('@').pop(),
     });
     return { error: errorMessage };
+  }
+}
+
+async function handleE2EActivationMailbox(request, env) {
+  const denied = () => errorResponse('Not found', 404);
+  if (
+    env.ENVIRONMENT !== 'development'
+    || env.E2E_TEST_MODE !== 'true'
+    || !env.E2E_TEST_SECRET
+    || request.headers.get('X-E2E-Test-Secret') !== env.E2E_TEST_SECRET
+    || !env.KV?.get
+  ) {
+    return denied();
+  }
+
+  const email = normalizeEmail(new URL(request.url).searchParams.get('email'));
+  if (!email || !isValidEmail(email)) return denied();
+  const message = await env.KV.get(`e2e_mailbox_activation_email_${email}`);
+  if (!message) return denied();
+
+  try {
+    return jsonResponse(JSON.parse(message));
+  } catch {
+    return denied();
   }
 }
 
@@ -2877,6 +2963,20 @@ async function handleLogin(request, env) {
       return localizedErrorResponse('wrong_password', request);
     }
 
+    const portalRole = requestPortalRole(request);
+    if (portalRole && portalRole !== userType) {
+      const market = getRequestMarket(request);
+      const target = userType === 'engineer'
+        ? (market === 'cn' ? 'https://engineer.sagemro.cn' : 'https://engineer.sagemro.com')
+        : (market === 'cn' ? 'https://sagemro.cn' : 'https://sagemro.com');
+      return errorResponse(
+        market === 'cn'
+          ? `该账号请前往 ${target} 登录`
+          : `Sign in to this account at ${target}.`,
+        403,
+      );
+    }
+
     // 登录成功：清除失败计数
     await env.KV.delete(failKey);
 
@@ -2895,18 +2995,20 @@ async function handleLogin(request, env) {
     }
 
     // 签发 JWT token（有效期 7 天）
+    const csrfToken = generateCsrfToken();
     const token = await signJwt({
       userId: user.id,
       userType,
       phone: user.phone,
+      csrf: csrfToken,
       iat: Math.floor(Date.now() / 1000),
       exp: Math.floor(Date.now() / 1000) + 7 * 24 * 60 * 60,
     }, env.JWT_SECRET);
     await incrementApiCounter(env, "login");
 
-    return jsonResponse({
+    return addSessionCookie(jsonResponse(sessionResponsePayload({
       success: true,
-      token,
+      csrfToken,
       userType,
       user: {
         id: user.id,
@@ -2929,10 +3031,66 @@ async function handleLogin(request, env) {
           team_name: user.team_name || null,
         } : {})
       }
-    });
+    }, token, portalRole)), request, env, userType, token);
 } catch (error) {
     return errorResponse(error.message, 500);
   }
+}
+
+async function handleAuthSession(request, env) {
+  const auth = await authenticateRequest(request, env);
+  if (!auth) return jsonResponse({ authenticated: false });
+
+  let sessionAuth = auth;
+  let response;
+  const rotateLegacyBearer = auth.authMethod === 'bearer' && !auth.csrf;
+  if (rotateLegacyBearer) {
+    sessionAuth = { ...auth, csrf: generateCsrfToken() };
+  }
+
+  if (sessionAuth.userType === 'admin') {
+    const credentials = resolveAdminCredentials(request, env);
+    response = jsonResponse({
+      authenticated: true,
+      csrfToken: sessionAuth.csrf,
+      userType: 'admin',
+      user: { id: 'admin', name: '超级管理员', phone: credentials.phone, type: 'admin', market: credentials.market },
+    });
+    return rotateLegacyBearer ? addSessionCookie(response, request, env, 'admin', await signJwt(sessionAuth, env.JWT_SECRET)) : response;
+  }
+
+  const table = sessionAuth.userType === 'engineer' ? 'engineers' : 'customers';
+  const user = await env.DB.prepare(`SELECT * FROM ${table} WHERE id = ?`).bind(sessionAuth.userId).first();
+  if (!user) return clearPortalSession(jsonResponse({ authenticated: false }), request, env);
+  response = jsonResponse({
+    authenticated: true,
+    csrfToken: sessionAuth.csrf,
+    userType: sessionAuth.userType,
+    user: {
+      id: user.id,
+      user_no: user.user_no,
+      name: user.name,
+      phone: user.phone,
+      email: user.email || '',
+      company: user.company || '',
+      region: user.region || '',
+      city: user.city || '',
+      address: user.address || '',
+      company_description: user.company_description || '',
+      business_scope: user.business_scope || '',
+      logo_url: user.logo_url || '',
+      auth_status: user.auth_status || 'pending',
+      ...(sessionAuth.userType === 'engineer' ? {
+        engineer_role: user.engineer_role || 'engineer',
+        regional_lead_id: user.regional_lead_id || null,
+        responsible_region: user.responsible_region || user.service_region || null,
+        team_name: user.team_name || null,
+      } : {}),
+    },
+  });
+  if (!rotateLegacyBearer) return response;
+  const rotatedToken = await signJwt(sessionAuth, env.JWT_SECRET);
+  return addSessionCookie(response, request, env, sessionAuth.userType, rotatedToken);
 }
 
 async function incrementEngineerActivationAttemptCounters(env, request, tokenHash) {
@@ -3003,7 +3161,7 @@ async function handleEngineerActivation(request, env) {
         guardStatement,
         env.DB.prepare(`
           UPDATE engineers
-          SET password_hash = ?, salt = ?, auth_status = 'authenticated',
+          SET password_hash = ?, salt = ?, auth_status = 'authenticated', status = 'available',
               first_login_password_reset_required = 0
           WHERE id = ? AND auth_status = 'pending_activation'
         `).bind(passwordHash, salt, activation.engineer_id),
@@ -3016,7 +3174,7 @@ async function handleEngineerActivation(request, env) {
           actorType: 'engineer', actorId: activation.engineer_id,
           targetType: 'engineer', targetId: activation.engineer_id,
           action: 'engineer_account_activated',
-          afterState: { engineer_no: activation.engineer_no },
+          afterState: { engineer_no: activation.engineer_no, status: 'available' },
         }),
       ]);
     } catch (error) {
@@ -3563,6 +3721,9 @@ export async function handleChatTranscribe(request, env) {
     } catch {
       auth = null;
     }
+    if (auth && !hasValidCsrf(request, auth)) {
+      return errorResponse('Invalid CSRF token', 403);
+    }
     const clientIP = getRequestIp(request) || 'unknown';
     const voiceUserKey = auth?.userId ? `${auth.userType}:${auth.userId}` : `guest:${clientIP}`;
     const hourlyLimit = parseInt(env.DEEPGRAM_HOURLY_PER_USER || '20', 10);
@@ -3642,6 +3803,9 @@ export async function handleChat(request, env) {
       chatAuth = await authenticateRequest(request, env);
     } catch {
       chatAuth = null;
+    }
+    if (chatAuth && !hasValidCsrf(request, chatAuth)) {
+      return errorResponse('Invalid CSRF token', 403);
     }
     const trustedRole = chatAuth?.userType || 'guest';
     const trustedEngineerId =
@@ -4329,6 +4493,8 @@ Return JSON fields in English only. Return valid JSON only, with no markdown and
 
 // 生成工单 AI 摘要
 async function generateWorkOrderSummary(type, description, urgency, env, { market = 'com' } = {}) {
+  if (!env.OPENAI_API_ENDPOINT || !env.OPENAI_API_KEY) return null;
+
   // 后台系统调用，计入全平台日配额（不占用任何用户个人配额）
   try {
     await enforceOpenAIBudget(env, { userKey: 'system:summary', tag: 'summary' });
@@ -4733,9 +4899,7 @@ async function findMatchingEngineers(workOrder, env) {
         engineerBrands = typeof engineer.brands === 'string'
           ? JSON.parse(engineer.brands)
           : (engineer.brands || {});
-        engRegions = typeof engineer.service_region === 'string'
-          ? JSON.parse(engineer.service_region)
-          : (engineer.service_region || []);
+        engRegions = cleanTextArray(engineer.service_region);
       } catch (e) {
         console.error('Failed to parse engineer data:', e);
       }
@@ -5711,8 +5875,8 @@ async function handleSubmitRating(request, env) {
       'UPDATE work_orders SET status = ?, completed_at = datetime("now") WHERE id = ?'
     ).bind('completed', work_order_id).run();
 
-    // 钱包结算：按工程师提成率将确认后的报价入账
-    const settlement = await settleEngineerWallet(env, work_order_id, engineer_id);
+    // 正式口径：客户评价只完成服务闭环；工程师服务款由 Admin 在逐单记录中人工确认。
+    // 旧钱包结算函数保留用于历史兼容，但不再由新工单流程自动调用。
     const payout = await ensureWorkOrderPayout(env, work_order_id, engineer_id, 'pending');
 
     // 通知工程师：收到新评价
@@ -5730,7 +5894,7 @@ async function handleSubmitRating(request, env) {
     // SERVICE_OS_LEGACY: settlement is kept for historical accounting compatibility,
     // but Service OS no longer exposes wallet/commission notifications to engineers.
 
-    return jsonResponse({ success: true, settlement, payout });
+    return jsonResponse({ success: true, payout });
   } catch (error) {
     return errorResponse(error.message, 500);
   }
@@ -6268,7 +6432,7 @@ async function handleGetEngineerProfile(request, env) {
     }
 
     const engineer = await env.DB.prepare(
-      'SELECT id, name, phone, specialties, brands, services, service_region, bio, status, rating_timeliness, rating_technical, rating_communication, rating_professional, rating_count, created_at, level, commission_rate, credit_score, wallet_balance, deposit_balance, total_orders, complex_orders, success_orders, payout_method, paypal_account, bank_country, bank_name, bank_account, bank_swift_code, account_holder, payout_notes FROM engineers WHERE id = ?'
+      'SELECT id, name, phone, specialties, brands, services, service_region, bio, status, rating_timeliness, rating_technical, rating_communication, rating_professional, rating_count, created_at, level, credit_score, total_orders, complex_orders, success_orders, payout_method, paypal_account, bank_country, bank_name, bank_account, bank_swift_code, account_holder, payout_notes FROM engineers WHERE id = ?'
     ).bind(engineerId).first();
 
     if (!engineer) {
@@ -9074,19 +9238,21 @@ async function handleAdminLogin(request, env) {
     ]);
 
     const now = Math.floor(Date.now() / 1000);
+    const csrfToken = generateCsrfToken();
     const token = await signJwt({
       userId: 'admin',
       userType: 'admin',
       phone: adminPhone,
       market: adminCredentials.market,
+      csrf: csrfToken,
       iat: now,
       exp: now + 86400 * 7,
     }, env.JWT_SECRET);
 
-    return jsonResponse({
-      token,
+    return addSessionCookie(jsonResponse(sessionResponsePayload({
+      csrfToken,
       user: { id: 'admin', name: '超级管理员', phone: adminPhone, type: 'admin', market: adminCredentials.market },
-    });
+    }, token, requestPortalRole(request))), request, env, 'admin', token);
   } catch (error) {
     return errorResponse(error.message, 500);
   }
@@ -12166,8 +12332,20 @@ async function handleAdminUpdateWorkOrderPayout(request, env) {
     ).bind(workOrderId).first();
     if (!wo) return errorResponse(market === 'cn' ? '工单不存在' : 'Work order not found', 404);
     if (!wo.engineer_id) return errorResponse(market === 'cn' ? '工单未指派工程师' : 'Work order has no assigned engineer', 400);
+    if (status === 'completed' && wo.status !== 'completed') {
+      return errorResponse(market === 'cn' ? '工单完成后才能确认工程师服务款' : 'Engineer payout can only be completed after the work order is completed', 409);
+    }
+    if (status === 'completed' && amount <= 0) {
+      return errorResponse(market === 'cn' ? '完成结算时金额必须大于 0' : 'Completed payout amount must be greater than zero', 400);
+    }
 
     let payout = await ensureWorkOrderPayout(env, workOrderId, wo.engineer_id, status === 'not_ready' ? 'not_ready' : 'pending');
+    if (payout.status === 'completed') {
+      if (status === 'completed') {
+        return jsonResponse({ success: true, payout, payout_status: payout.status, idempotent: true });
+      }
+      return errorResponse(market === 'cn' ? '已完成的工程师服务款不能回退' : 'Completed engineer payout cannot be reopened', 409);
+    }
     const nextPaidAt = status === 'completed' ? (paid_at || new Date().toISOString()) : (paid_at || payout.paid_at || '');
     const nextMethod = method || payout.method || 'paypal';
 
@@ -12358,6 +12536,9 @@ async function handleFunnelEvent(request, env) {
     } catch {
       auth = null;
     }
+    if (auth && !hasValidCsrf(request, auth)) {
+      return errorResponse('Invalid CSRF token', 403);
+    }
 
     const properties = sanitizeFunnelProperties(body.properties);
     const ip = getRequestIp(request);
@@ -12401,60 +12582,31 @@ async function routeRequest(request, env, ctx) {
     // 暂存 ctx 供需要 waitUntil 的处理函数使用（如 AI 摘要异步生成）
     request._ctx = ctx;
 
-    // 处理 CORS 预检
-    if (request.method === 'OPTIONS') {
-      return handleOptions(request, env);
-    }
-
-    // 认证相关（无需 token）
-    if (path === '/api/auth/send-code' && request.method === 'POST') {
-      return handleSendCode(request, env);
-    }
-    if (path === '/api/auth/register/customer' && request.method === 'POST') {
-      return handleRegisterCustomer(request, env);
-    }
-    if (path === '/api/auth/register/engineer' && request.method === 'POST') {
-      return localizedErrorResponse('public_engineer_registration_closed', request, 410);
-    }
-    if (path === '/api/auth/login' && request.method === 'POST') {
-      return handleLogin(request, env);
-    }
-    if (path === '/api/auth/engineer/activate' && request.method === 'POST') {
-      return handleEngineerActivation(request, env);
-    }
-    if (path === '/api/auth/reset-password' && request.method === 'POST') {
-      return handleResetPassword(request, env);
-    }
-    if (path === '/api/auth/send-reset-code' && request.method === 'POST') {
-      return handleSendResetCode(request, env);
-    }
-
-    // 聊天相关（允许未登录用户使用 AI 对话）
-    if (path === '/api/chat/upload-image' && request.method === 'POST') {
-      return handleChatUploadImage(request, env);
-    }
-    if (path === '/api/chat/transcribe' && request.method === 'POST') {
-      return handleChatTranscribe(request, env);
-    }
-    if (path === '/api/chat' && request.method === 'POST') {
-      return handleChat(request, env);
-    }
-
-    // 商机线索提交（无需登录）
-    if (path === '/api/leads' && request.method === 'POST') {
-      return handleSubmitLead(request, env);
-    }
-    if (path === '/api/engineer-applications' && request.method === 'POST') {
-      return handleSubmitEngineerApplication(request, env);
-    }
-    if (path === '/api/analytics/funnel' && request.method === 'POST') {
-      return handleFunnelEvent(request, env);
-    }
-
-    // 健康检查（无需 token）
-    if (path === '/health') {
-      return jsonResponse({ status: 'ok' });
-    }
+    const publicResponse = await handlePublicRoute(request, env, ctx, {
+      handleOptions,
+      handleE2EActivationMailbox,
+      handleSendCode,
+      handleRegisterCustomer,
+      handlePublicEngineerRegistrationClosed: (publicRequest) => (
+        localizedErrorResponse('public_engineer_registration_closed', publicRequest, 410)
+      ),
+      handleLogin,
+      handleAuthSession,
+      handleLogout: (publicRequest) => (
+        clearPortalSession(jsonResponse({ success: true }), publicRequest, env)
+      ),
+      handleEngineerActivation,
+      handleResetPassword,
+      handleSendResetCode,
+      handleChatUploadImage,
+      handleChatTranscribe,
+      handleChat,
+      handleSubmitLead,
+      handleSubmitEngineerApplication,
+      handleFunnelEvent,
+      handleHealth: () => jsonResponse({ status: 'ok' }),
+    });
+    if (publicResponse) return publicResponse;
 
     // Sentry 端到端冒烟测试。匹配 path 就拦下——要么抛错触发 Sentry，要么返回诊断
     // 响应说明为什么没触发，避免 fall through 到后面的认证守卫让人以为路由没生效。
@@ -12478,14 +12630,7 @@ async function routeRequest(request, env, ctx) {
     // 任何 /api/test-*, /api/debug-*, /api/init-*, /api/clear-test-data
     // 只在 ENVIRONMENT === 'development' 且管理员认证通过时才开放，其他情况一律 404。
     // 默认拒绝策略：env 缺失或值非预期时（例如 staging、空字符串）也视作生产锁定，避免误暴露。
-    const isTestRoute = (
-      path.startsWith('/api/test-') ||
-      path.startsWith('/api/debug-') ||
-      path === '/api/init-test-data' ||
-      path === '/api/init-db' ||
-      path === '/api/clear-test-data'
-    );
-    if (isTestRoute) {
+    if (isTestRoute(path)) {
       if (env.ENVIRONMENT !== 'development') {
         return errorResponse(getRequestMarket(request) === 'cn' ? '未找到' : 'Not found', 404);
       }
@@ -12635,38 +12780,16 @@ async function routeRequest(request, env, ctx) {
     // 先判断 path 是否匹配任一已知受保护路由。不匹配则直接 404，
     // 避免未登录用户 GET /api/random-typo 拿到 401 泄露"此路径需要 token"。
     // 白名单必须与下方已登录路由列表保持同步。
-    const isKnownProtectedRoute = (
-      path.startsWith('/api/admin/') ||
-      path === '/api/material-requests' ||
-      path === '/api/upsell-requests' ||
-      path === '/api/upsell-requests/mine' ||
-      path === '/api/leads/machine' ||
-      path === '/api/conversations' ||
-      path.startsWith('/api/conversations/') ||
-      path === '/api/materials' ||
-      path === '/api/location/search' ||
-      path === '/api/workorders' ||
-      path.startsWith('/api/workorders/') ||
-      path === '/api/devices' ||
-      path.startsWith('/api/devices/') ||
-      path === '/api/notifications' ||
-      path.startsWith('/api/notifications/') ||
-      path.startsWith('/api/engineers/') ||
-      path === '/api/push-subscription' ||
-      path === '/api/platform-ratings' ||
-      path === '/api/customer-ratings' ||
-      path === '/api/customers/profile' ||
-      path === '/api/customers/push-subscription' ||
-      /^\/api\/customers\/[^/]+\/reviews$/.test(path) ||
-      path === '/api/auth/change-password'
-    );
-    if (!isKnownProtectedRoute) {
+    if (!isKnownProtectedRoute(path)) {
       return errorResponse(getRequestMarket(request) === 'cn' ? '未找到' : 'Not found', 404);
     }
 
     const auth = await authenticateRequest(request, env);
     if (!auth) {
       return localizedErrorResponse('sign_in_required', request, 401);
+    }
+    if (!hasValidCsrf(request, auth)) {
+      return errorResponse('Invalid CSRF token', 403);
     }
 
     // 将认证信息挂到 request 上，供 handler 使用。Admin handler 也需要它写审计日志。
@@ -13050,8 +13173,12 @@ async function routeRequest(request, env, ctx) {
 // 将 routeRequest 的响应与动态 CORS 头合并
 function withCorsHeaders(response, request, env) {
   const corsH = getCorsHeaders(request, env);
+  const securityH = getSecurityHeaders(request, env);
   const newHeaders = new Headers(response.headers);
   for (const [k, v] of Object.entries(corsH)) {
+    newHeaders.set(k, v);
+  }
+  for (const [k, v] of Object.entries(securityH)) {
     newHeaders.set(k, v);
   }
   return new Response(response.body, {
@@ -13116,11 +13243,12 @@ export default {
       console.error('[fetch] unhandled error:', error);
       captureException(error, requestEnv, { request, ctx });
       const corsH = getCorsHeaders(request, requestEnv);
+      const securityH = getSecurityHeaders(request, requestEnv);
       return new Response(
         JSON.stringify({ error: error?.message || (getRequestMarket(request) === 'cn' ? '服务器内部错误' : 'Internal Server Error') }),
         {
           status: 500,
-          headers: { 'Content-Type': 'application/json', ...corsH },
+          headers: { 'Content-Type': 'application/json', ...corsH, ...securityH },
         }
       );
     }

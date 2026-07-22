@@ -335,6 +335,34 @@ test('handleChatTranscribe requires Deepgram configuration', async () => {
   assert.match(body.error, /Voice input is not configured/);
 });
 
+test('handleChatTranscribe rejects cookie authentication without matching CSRF', async () => {
+  const csrf = 'voice-csrf-token';
+  const token = await signJwt({
+    userId: 'customer-voice-1',
+    userType: 'customer',
+    csrf,
+    exp: Math.floor(Date.now() / 1000) + 60,
+  }, JWT_SECRET);
+  const formData = new FormData();
+  formData.append('audio', new Blob(['audio'], { type: 'audio/webm' }), 'voice.webm');
+
+  const response = await handleChatTranscribe(new Request('https://api.sagemro.com/api/chat/transcribe', {
+    method: 'POST',
+    headers: {
+      Origin: 'https://sagemro.com',
+      Cookie: `__Host-sagemro_customer_session=${token}`,
+    },
+    body: formData,
+  }), {
+    JWT_SECRET,
+    DEEPGRAM_API_KEY: 'deepgram-test-key',
+  });
+
+  assert.equal(response.status, 403);
+  const body = await response.json();
+  assert.equal(body.error, 'Invalid CSRF token');
+});
+
 test('handleChatTranscribe asks Deepgram to detect the spoken language for COM site', async () => {
   const formData = new FormData();
   formData.append('audio', new Blob(['audio'], { type: 'audio/webm' }), 'voice.webm');

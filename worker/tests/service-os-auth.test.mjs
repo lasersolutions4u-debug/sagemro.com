@@ -63,9 +63,15 @@ function createTestEnv(overrides = {}) {
               const row = dbState.customers.find((customer) => customer.id === this.args[0]);
               return row ? { id: row.id } : null;
             }
+            if (/SELECT \* FROM customers WHERE id = \?/i.test(sql)) {
+              return dbState.customers.find((customer) => customer.id === this.args[0]) || null;
+            }
             if (/SELECT id FROM engineers WHERE id = \?/i.test(sql)) {
               const row = dbState.engineers.find((engineer) => engineer.id === this.args[0]);
               return row ? { id: row.id } : null;
+            }
+            if (/SELECT \* FROM engineers WHERE id = \?/i.test(sql)) {
+              return dbState.engineers.find((engineer) => engineer.id === this.args[0]) || null;
             }
             if (/SELECT \* FROM customers\s+WHERE replace\(/i.test(sql)) {
               const row = dbState.customers.find((customer) => (
@@ -266,6 +272,27 @@ test('COM admin login uses the international admin secret', async () => {
   assert.equal(json.user.phone, '13800000000');
   assert.equal(json.user.market, 'com');
   assert.ok(json.token);
+  assert.match(json.csrfToken, /^[A-Za-z0-9_-]{32,}$/);
+  assert.match(response.headers.get('set-cookie') || '', /^__Host-sagemro_admin_session=/);
+  assert.match(response.headers.get('set-cookie') || '', /HttpOnly/);
+  assert.match(response.headers.get('set-cookie') || '', /Secure/);
+});
+
+test('browser admin login keeps the JWT out of the JSON response', async () => {
+  const response = await worker.fetch(new Request('https://api.sagemro.com/api/admin/login', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Origin: 'https://admin.sagemro.com',
+    },
+    body: JSON.stringify({ phone: '13800000000', password: 'global-pass' }),
+  }), createTestEnv(), { waitUntil() {} });
+  const json = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(json.token, undefined);
+  assert.match(json.csrfToken, /^[A-Za-z0-9_-]{32,}$/);
+  assert.match(response.headers.get('set-cookie') || '', /^__Host-sagemro_admin_session=/);
 });
 
 test('CN admin login uses the China admin secret', async () => {
@@ -290,12 +317,12 @@ test('CN admin login rejects the international admin secret when CN secret exist
   assert.match(json.error, /手机号或密码错误/);
 });
 
-async function postJson(url, body, env = createTestEnv()) {
+async function postJson(url, body, env = createTestEnv(), origin = new URL(url).origin.replace('api.', '')) {
   const response = await worker.fetch(new Request(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      Origin: new URL(url).origin.replace('api.', ''),
+      Origin: origin,
     },
     body: JSON.stringify(body),
   }), env, { waitUntil() {} });
@@ -868,6 +895,113 @@ test('customer login returns company profile fields saved during registration', 
   assert.equal(loginResult.response.status, 200);
   assert.equal(loginResult.json.user.company, company);
   assert.equal(loginResult.json.user.auth_status, 'authenticated');
+  assert.equal(loginResult.json.token, undefined);
+});
+
+test('non-browser customer login retains Bearer compatibility', async () => {
+  const env = createTestEnv();
+  const salt = 'script-login-salt';
+  env.__dbState.customers.push({
+    id: 'cust-script-login',
+    user_no: 'U000097',
+    name: 'Script Customer',
+    phone: '+15550000097',
+    email: 'script-login@example.com',
+    password_hash: await hashPasswordNew('secret12345', salt),
+    salt,
+    auth_status: 'authenticated',
+  });
+
+  const response = await worker.fetch(new Request('https://api.sagemro.com/api/auth/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email: 'script-login@example.com', password: 'secret12345' }),
+  }), env, { waitUntil() {} });
+  const json = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.match(json.token, /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/);
+});
+
+test('customer session is restored from its HttpOnly cookie', async () => {
+  const env = createTestEnv();
+  const salt = 'session-customer-salt';
+  const password = 'secret12345';
+  env.__dbState.customers.push({
+    id: 'cust-session-1',
+    user_no: 'U000099',
+    name: 'Session Customer',
+    phone: '+15550000099',
+    email: 'session@example.com',
+    password_hash: await hashPasswordNew(password, salt),
+    salt,
+    company: 'Session Co',
+    auth_status: 'authenticated',
+  });
+
+  const loginResult = await postJson('https://api.sagemro.com/api/auth/login', {
+    email: 'session@example.com', password,
+  }, env);
+  const cookie = (loginResult.response.headers.get('set-cookie') || '').split(';')[0];
+  const response = await worker.fetch(new Request('https://api.sagemro.com/api/auth/session', {
+    headers: { Origin: 'https://sagemro.com', Cookie: cookie },
+  }), env, { waitUntil() {} });
+  const json = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(json.authenticated, true);
+  assert.equal(json.userType, 'customer');
+  assert.equal(json.user.id, 'cust-session-1');
+  assert.equal(json.user.company, 'Session Co');
+  assert.equal(json.csrfToken, loginResult.json.csrfToken);
+});
+
+test('legacy Bearer session restore rotates into a CSRF-bound HttpOnly cookie', async () => {
+  const env = createTestEnv();
+  env.__dbState.customers.push({
+    id: 'cust-legacy-session',
+    user_no: 'U000098',
+    name: 'Legacy Session Customer',
+    phone: '+15550000098',
+    email: 'legacy-session@example.com',
+    company: 'Legacy Session Co',
+    auth_status: 'authenticated',
+  });
+  const legacyToken = await signJwt({
+    userId: 'cust-legacy-session',
+    userType: 'customer',
+    exp: Math.floor(Date.now() / 1000) + 3600,
+  }, env.JWT_SECRET);
+  const response = await worker.fetch(new Request('https://api.sagemro.com/api/auth/session', {
+    headers: {
+      Origin: 'https://sagemro.com',
+      Authorization: `Bearer ${legacyToken}`,
+    },
+  }), env, { waitUntil() {} });
+  const json = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(json.authenticated, true);
+  assert.match(json.csrfToken, /^[A-Za-z0-9_-]{32,}$/);
+  assert.match(response.headers.get('set-cookie') || '', /^__Host-sagemro_customer_session=/);
+});
+
+test('session endpoint returns an unauthenticated result without raising 401', async () => {
+  const response = await worker.fetch(new Request('https://api.sagemro.com/api/auth/session', {
+    headers: { Origin: 'https://sagemro.com' },
+  }), createTestEnv(), { waitUntil() {} });
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { authenticated: false });
+});
+
+test('logout clears the role-isolated session cookie', async () => {
+  const response = await worker.fetch(new Request('https://api.sagemro.com/api/auth/logout', {
+    method: 'POST',
+    headers: { Origin: 'https://sagemro.com' },
+  }), createTestEnv(), { waitUntil() {} });
+  assert.equal(response.status, 200);
+  assert.match(response.headers.get('set-cookie') || '', /^__Host-sagemro_customer_session=;/);
+  assert.match(response.headers.get('set-cookie') || '', /Max-Age=0/);
 });
 
 test('customer phone login matches canonical phone formatting', async () => {
@@ -910,14 +1044,62 @@ test('activated engineer signs in with normalized email and phone', async () => 
 
   const emailLogin = await postJson('https://api.sagemro.com/api/auth/login', {
     email: ' TOM@EXAMPLE.COM ', password,
-  }, env);
+  }, env, 'https://engineer.sagemro.com');
   assert.equal(emailLogin.response.status, 200);
   assert.equal(emailLogin.json.userType, 'engineer');
 
   const phoneLogin = await postJson('https://api.sagemro.com/api/auth/login', {
     phone: '+525572080065', password,
-  }, env);
+  }, env, 'https://engineer.sagemro.com');
   assert.equal(phoneLogin.response.status, 200);
+});
+
+test('customer portal rejects engineer credentials with portal guidance', async () => {
+  const env = createTestEnv();
+  const salt = 'engineer-portal-boundary-salt';
+  const password = 'secret12345';
+  env.__dbState.engineers.push({
+    id: 'eng-boundary-1',
+    user_no: 'E000010',
+    name: 'Portal Engineer',
+    phone: '+15550000010',
+    email: 'portal-engineer@example.com',
+    password_hash: await hashPasswordNew(password, salt),
+    salt,
+    auth_status: 'authenticated',
+  });
+
+  const response = await worker.fetch(new Request('https://api.sagemro.com/api/auth/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Origin: 'https://sagemro.com' },
+    body: JSON.stringify({ email: 'portal-engineer@example.com', password }),
+  }), env, { waitUntil() {} });
+  assert.equal(response.status, 403);
+  assert.match((await response.json()).error, /engineer\.sagemro\.com/);
+});
+
+test('engineer portal rejects customer credentials with portal guidance', async () => {
+  const env = createTestEnv();
+  const salt = 'customer-portal-boundary-salt';
+  const password = 'secret12345';
+  env.__dbState.customers.push({
+    id: 'cust-boundary-1',
+    user_no: 'U000010',
+    name: 'Portal Customer',
+    phone: '+15550000011',
+    email: 'portal-customer@example.com',
+    password_hash: await hashPasswordNew(password, salt),
+    salt,
+    auth_status: 'authenticated',
+  });
+
+  const response = await worker.fetch(new Request('https://api.sagemro.com/api/auth/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Origin: 'https://engineer.sagemro.com' },
+    body: JSON.stringify({ email: 'portal-customer@example.com', password }),
+  }), env, { waitUntil() {} });
+  assert.equal(response.status, 403);
+  assert.match((await response.json()).error, /sagemro\.com/);
 });
 
 test('phone login preserves customer-first matching across canonical formats', async () => {
@@ -983,7 +1165,7 @@ test('legacy engineer auth status keeps current login behavior', async () => {
 
   const result = await postJson('https://api.sagemro.com/api/auth/login', {
     phone: '13800000000', password,
-  }, env);
+  }, env, 'https://engineer.sagemro.com');
   assert.equal(result.response.status, 200);
 });
 
@@ -1156,6 +1338,53 @@ test('engineer reject dispatch requires a reason', async () => {
 
   assert.equal(response.status, 400);
   assert.ok(body.error);
+});
+
+test('cookie-authenticated engineer writes reject missing CSRF', async () => {
+  const { env } = makeEngineerRejectEnv();
+  const csrf = 'csrf-token-for-engineer';
+  const token = await signJwt({
+    userId: 'eng-1',
+    userType: 'engineer',
+    csrf,
+    exp: Math.floor(Date.now() / 1000) + 60,
+  }, ENGINEER_REJECT_JWT_SECRET);
+  const request = new Request('https://api.sagemro.com/api/engineers/tickets/reject', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Cookie: `__Host-sagemro_engineer_session=${token}`,
+      Origin: 'https://engineer.sagemro.com',
+    },
+    body: JSON.stringify({ work_order_id: 'wo-1', reason: 'Schedule conflict' }),
+  });
+
+  const response = await worker.fetch(request, env, { waitUntil() {} });
+  assert.equal(response.status, 403);
+});
+
+test('cookie-authenticated engineer writes accept matching CSRF', async () => {
+  const { env } = makeEngineerRejectEnv();
+  const csrf = 'csrf-token-for-engineer';
+  const token = await signJwt({
+    userId: 'eng-1',
+    userType: 'engineer',
+    csrf,
+    exp: Math.floor(Date.now() / 1000) + 60,
+  }, ENGINEER_REJECT_JWT_SECRET);
+  const request = new Request('https://api.sagemro.com/api/engineers/tickets/reject', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Cookie: `__Host-sagemro_engineer_session=${token}`,
+      Origin: 'https://engineer.sagemro.com',
+      'X-CSRF-Token': csrf,
+    },
+    body: JSON.stringify({ work_order_id: 'wo-1', reason: 'Schedule conflict' }),
+  });
+
+  const response = await worker.fetch(request, env, { waitUntil() {} });
+  assert.equal(response.status, 200);
 });
 
 test('engineer reject dispatch records the submitted reason as an internal note', async () => {

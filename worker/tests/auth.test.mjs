@@ -23,6 +23,15 @@ import {
   signJwt,
   verifyJwt,
 } from '../src/lib/auth.js';
+import {
+  buildSessionCookie,
+  clearSessionCookie,
+  expectedPortalRole,
+  generateCsrfToken,
+  parseCookies,
+  sessionCookieName,
+  validateCsrfRequest,
+} from '../src/lib/session.js';
 
 // ============ 盐值生成 ============
 
@@ -192,4 +201,71 @@ test('verifyJwt 在 secret 缺失或太短时直接返回 null（不走验证流
   assert.equal(await verifyJwt(token, ''), null);
   assert.equal(await verifyJwt(token, null), null);
   assert.equal(await verifyJwt(token, 'short'), null);
+});
+
+test('portal origins map to isolated customer, engineer, and admin roles', () => {
+  assert.equal(expectedPortalRole('https://sagemro.com'), 'customer');
+  assert.equal(expectedPortalRole('https://www.sagemro.cn'), 'customer');
+  assert.equal(expectedPortalRole('https://engineer.sagemro.com'), 'engineer');
+  assert.equal(expectedPortalRole('https://admin.sagemro.cn'), 'admin');
+  assert.equal(expectedPortalRole('http://engineer.localhost:4273'), 'engineer');
+  assert.equal(expectedPortalRole('http://localhost:4273'), 'customer');
+  assert.equal(expectedPortalRole('http://localhost:4274'), 'admin');
+  assert.equal(expectedPortalRole('http://customer.127.0.0.1.nip.io:4273'), 'customer');
+  assert.equal(expectedPortalRole('http://engineer.127.0.0.1.nip.io:4273'), 'engineer');
+  assert.equal(expectedPortalRole('http://admin.127.0.0.1.nip.io:4274'), 'admin');
+  assert.equal(expectedPortalRole('https://engineer.attacker.example'), null);
+  assert.equal(expectedPortalRole('https://admin.attacker.example'), null);
+});
+
+test('session cookie names isolate roles and use __Host prefix in production', () => {
+  assert.equal(sessionCookieName('customer', { production: true }), '__Host-sagemro_customer_session');
+  assert.equal(sessionCookieName('engineer', { production: true }), '__Host-sagemro_engineer_session');
+  assert.equal(sessionCookieName('admin', { production: true }), '__Host-sagemro_admin_session');
+  assert.equal(sessionCookieName('customer', { production: false }), 'sagemro_customer_session');
+});
+
+test('production session cookies are HttpOnly Secure SameSite Lax host cookies', () => {
+  const cookie = buildSessionCookie('customer', 'jwt-value', { production: true, maxAge: 3600 });
+  assert.match(cookie, /^__Host-sagemro_customer_session=jwt-value;/);
+  assert.match(cookie, /Path=\//);
+  assert.match(cookie, /HttpOnly/);
+  assert.match(cookie, /Secure/);
+  assert.match(cookie, /SameSite=Lax/);
+  assert.match(cookie, /Max-Age=3600/);
+  assert.doesNotMatch(cookie, /Domain=/);
+});
+
+test('development cookies omit Secure but retain HttpOnly and SameSite', () => {
+  const cookie = buildSessionCookie('engineer', 'jwt-value', { production: false, maxAge: 3600 });
+  assert.match(cookie, /^sagemro_engineer_session=jwt-value;/);
+  assert.match(cookie, /HttpOnly/);
+  assert.match(cookie, /SameSite=Lax/);
+  assert.doesNotMatch(cookie, /Secure/);
+});
+
+test('cookie parser and logout cookie preserve isolated role names', () => {
+  assert.deepEqual(parseCookies('a=1; sagemro_admin_session=token%20value; empty='), {
+    a: '1',
+    sagemro_admin_session: 'token value',
+    empty: '',
+  });
+  const cleared = clearSessionCookie('admin', { production: true });
+  assert.match(cleared, /^__Host-sagemro_admin_session=;/);
+  assert.match(cleared, /Max-Age=0/);
+});
+
+test('cookie-authenticated writes require the JWT-bound CSRF token', () => {
+  assert.equal(validateCsrfRequest({ method: 'GET', authMethod: 'cookie', expected: 'csrf', provided: '' }), true);
+  assert.equal(validateCsrfRequest({ method: 'POST', authMethod: 'bearer', expected: '', provided: '' }), true);
+  assert.equal(validateCsrfRequest({ method: 'POST', authMethod: 'cookie', expected: 'csrf', provided: 'csrf' }), true);
+  assert.equal(validateCsrfRequest({ method: 'POST', authMethod: 'cookie', expected: 'csrf', provided: '' }), false);
+  assert.equal(validateCsrfRequest({ method: 'DELETE', authMethod: 'cookie', expected: 'csrf', provided: 'wrong' }), false);
+});
+
+test('CSRF tokens are random URL-safe values', () => {
+  const first = generateCsrfToken();
+  const second = generateCsrfToken();
+  assert.match(first, /^[A-Za-z0-9_-]{32,}$/);
+  assert.notEqual(first, second);
 });

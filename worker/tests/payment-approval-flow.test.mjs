@@ -109,6 +109,11 @@ function createStatement(env, sql) {
         return order ? { id: order.id, engineer_id: order.engineer_id, status: order.status, order_no: order.order_no } : null;
       }
 
+      if (/SELECT id, order_no, engineer_id, status FROM work_orders WHERE id = \?/i.test(normalized)) {
+        const order = env.__workOrders.find((item) => item.id === this.args[0]);
+        return order ? { id: order.id, order_no: order.order_no, engineer_id: order.engineer_id, status: order.status } : null;
+      }
+
       if (/SELECT id, status, order_no FROM work_orders WHERE id = \?/i.test(normalized)) {
         const order = env.__workOrders.find((item) => item.id === this.args[0]);
         return order ? { id: order.id, status: order.status, order_no: order.order_no } : null;
@@ -346,6 +351,14 @@ function createStatement(env, sql) {
         env.__payouts.push({ id, work_order_id, engineer_id, amount, currency, method, status });
       }
 
+      if (/UPDATE work_order_payouts SET status = \?/i.test(normalized)) {
+        const [status, amount, currency, method, transaction_reference, paid_at, internal_note, work_order_id] = this.args;
+        const payout = env.__payouts.find((item) => item.work_order_id === work_order_id);
+        if (payout) {
+          Object.assign(payout, { status, amount, currency, method, transaction_reference, paid_at, internal_note });
+        }
+      }
+
       if (/INSERT INTO work_order_messages/i.test(normalized)) {
         env.__messages.push({ args: this.args });
       }
@@ -574,6 +587,10 @@ test('final service report opens customer review and creates admin service revie
   assert.equal(rated.response.status, 200);
   assert.equal(env.__workOrders[0].status, 'completed');
   assert.equal(env.__ratings.length, 1);
+  assert.equal(env.__wallets.length, 0, 'customer rating must not auto-settle the legacy wallet');
+  assert.equal(env.__engineers[0].wallet_balance, 0, 'customer rating must not change the legacy wallet balance');
+  assert.equal(env.__payouts.length, 1, 'completion should create one admin-managed per-order payout record');
+  assert.equal(env.__payouts[0].status, 'pending');
 
   const reviews = await api(env, '/api/admin/ratings?page=1&pageSize=20', {
     method: 'GET',
@@ -585,4 +602,64 @@ test('final service report opens customer review and creates admin service revie
   assert.equal(reviews.json.total, 1);
   assert.equal(reviews.json.list[0].order_no, 'WO-PAY-1');
   assert.equal(reviews.json.list[0].comment, 'Service report received and accepted.');
+});
+
+test('Admin payout completion requires a completed work order and positive amount', async () => {
+  const env = createPaymentFlowEnv();
+
+  const beforeCompletion = await api(env, '/api/admin/workorders/wo-pay-1/payout', {
+    method: 'PATCH',
+    userType: 'admin',
+    userId: 'admin-1',
+    body: { status: 'completed', amount: 720, currency: 'USD', method: 'paypal' },
+  });
+  assert.equal(beforeCompletion.response.status, 409);
+
+  env.__workOrders[0].status = 'completed';
+  const zeroAmount = await api(env, '/api/admin/workorders/wo-pay-1/payout', {
+    method: 'PATCH',
+    userType: 'admin',
+    userId: 'admin-1',
+    body: { status: 'completed', amount: 0, currency: 'USD', method: 'paypal' },
+  });
+  assert.equal(zeroAmount.response.status, 400);
+});
+
+test('completed engineer payout is idempotent and cannot be reopened', async () => {
+  const env = createPaymentFlowEnv();
+  env.__workOrders[0].status = 'completed';
+
+  const completed = await api(env, '/api/admin/workorders/wo-pay-1/payout', {
+    method: 'PATCH',
+    userType: 'admin',
+    userId: 'admin-1',
+    body: {
+      status: 'completed',
+      amount: 720,
+      currency: 'USD',
+      method: 'paypal',
+      transaction_reference: 'E2E-SETTLEMENT-1',
+    },
+  });
+  assert.equal(completed.response.status, 200);
+  const paidAt = completed.json.payout.paid_at;
+
+  const repeated = await api(env, '/api/admin/workorders/wo-pay-1/payout', {
+    method: 'PATCH',
+    userType: 'admin',
+    userId: 'admin-1',
+    body: { status: 'completed', amount: 999, currency: 'USD', method: 'paypal' },
+  });
+  assert.equal(repeated.response.status, 200);
+  assert.equal(repeated.json.payout.amount, 720);
+  assert.equal(repeated.json.payout.paid_at, paidAt);
+
+  const reopen = await api(env, '/api/admin/workorders/wo-pay-1/payout', {
+    method: 'PATCH',
+    userType: 'admin',
+    userId: 'admin-1',
+    body: { status: 'processing', amount: 720, currency: 'USD', method: 'paypal' },
+  });
+  assert.equal(reopen.response.status, 409);
+  assert.equal(env.__payouts[0].status, 'completed');
 });
