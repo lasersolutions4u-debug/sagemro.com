@@ -72,5 +72,5 @@ export function deriveRequisitionStatus(requisition = {}, items = []) {
   if (active.some((item) => ['stock_allocated', 'purchasing', 'partially_ready', 'ready', 'issued', 'received'].includes(item.status))) {
     return 'partially_fulfilled';
   }
-  return requisition.status === 'submitted' ? 'submitted' : 'processing';
+  return ['draft', 'submitted'].includes(requisition.status) ? requisition.status : 'processing';
 }

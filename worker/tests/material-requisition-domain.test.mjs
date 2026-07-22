@@ -82,6 +82,7 @@ test('fulfillment quantities accept only finite number primitives', () => {
 test('requisition status derives partial, ready, issued, received, and closed states', () => {
   const base = { status: 'approved' };
   assert.equal(deriveRequisitionStatus(base, [{ status: 'pending' }]), 'processing');
+  assert.equal(deriveRequisitionStatus({ status: 'draft' }, [{ status: 'pending' }]), 'draft');
   assert.equal(deriveRequisitionStatus({ status: 'submitted' }, [{ status: 'pending' }]), 'submitted');
   assert.equal(deriveRequisitionStatus(base, [{ status: 'ready' }, { status: 'partially_ready' }]), 'partially_fulfilled');
   assert.equal(deriveRequisitionStatus(base, [{ status: 'ready' }, { status: 'cancelled' }]), 'ready');
