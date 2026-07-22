@@ -13,18 +13,19 @@ import {
   base64UrlEncode,
   base64UrlDecode,
   signJwt,
-  verifyJwt,
 } from './lib/auth.js';
 import {
   buildSessionCookie,
   clearSessionCookie,
-  expectedPortalRole,
   generateCsrfToken,
-  parseCookies,
   sessionResponsePayload,
-  sessionCookieName,
-  validateCsrfRequest,
 } from './lib/session.js';
+import {
+  authenticateRequest,
+  hasValidCsrf,
+  isProductionSession,
+  requestPortalRole,
+} from './lib/requestAuth.js';
 
 // 通用小工具（generateId / truncateStr）
 import { generateId, truncateStr } from './lib/util.js';
@@ -1934,15 +1935,6 @@ async function generateUserNo(env, prefix) {
   return `${prefix}${nextNum.toString().padStart(6, '0')}`;
 }
 
-function isProductionSession(request, env) {
-  return env.ENVIRONMENT !== 'development' && new URL(request.url).protocol === 'https:';
-}
-
-function requestPortalRole(request) {
-  return expectedPortalRole(request.headers.get('Origin'))
-    || expectedPortalRole(request.headers.get('Referer'));
-}
-
 function addSessionCookie(response, request, env, role, token) {
   const headers = new Headers(response.headers);
   headers.append('Set-Cookie', buildSessionCookie(role, token, {
@@ -1966,33 +1958,6 @@ function clearPortalSession(response, request, env) {
     status: response.status,
     statusText: response.statusText,
     headers,
-  });
-}
-
-// Bearer remains supported for scripts and tests while browsers migrate to role-isolated cookies.
-async function authenticateRequest(request, env) {
-  const authHeader = request.headers.get('Authorization');
-  if (authHeader?.startsWith('Bearer ')) {
-    const payload = await verifyJwt(authHeader.slice(7), env.JWT_SECRET);
-    return payload ? { ...payload, authMethod: 'bearer' } : null;
-  }
-
-  const role = requestPortalRole(request);
-  if (!role) return null;
-  const production = isProductionSession(request, env);
-  const token = parseCookies(request.headers.get('Cookie'))[sessionCookieName(role, { production })];
-  if (!token) return null;
-  const payload = await verifyJwt(token, env.JWT_SECRET);
-  if (!payload || payload.userType !== role) return null;
-  return { ...payload, authMethod: 'cookie' };
-}
-
-function hasValidCsrf(request, auth) {
-  return validateCsrfRequest({
-    method: request.method,
-    authMethod: auth?.authMethod,
-    expected: auth?.csrf,
-    provided: request.headers.get('X-CSRF-Token'),
   });
 }
 
