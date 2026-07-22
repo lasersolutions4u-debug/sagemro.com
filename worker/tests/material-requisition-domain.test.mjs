@@ -1,0 +1,59 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+
+import {
+  canCloseMaterialRequisition,
+  canManageMaterialRequisition,
+  deriveItemStatus,
+  deriveRequisitionStatus,
+  validateFulfillmentQuantities,
+} from '../src/lib/materialRequisitions.js';
+
+test('material requisition permissions separate review, warehouse, and procurement actions', () => {
+  assert.equal(canManageMaterialRequisition('admin', 'approve'), true);
+  assert.equal(canManageMaterialRequisition('operations', 'approve'), true);
+  assert.equal(canManageMaterialRequisition('warehouse', 'allocate_stock'), true);
+  assert.equal(canManageMaterialRequisition('warehouse', 'record_purchase'), false);
+  assert.equal(canManageMaterialRequisition('procurement', 'record_purchase'), true);
+  assert.equal(canManageMaterialRequisition('procurement', 'issue'), false);
+  assert.equal(canManageMaterialRequisition('engineer', 'approve'), false);
+  assert.equal(canManageMaterialRequisition('admin', 'unknown'), false);
+});
+
+test('item status reflects stock, procurement, issue, and engineer receipt progress', () => {
+  assert.equal(deriveItemStatus({ requested: 4 }), 'pending');
+  assert.equal(deriveItemStatus({ requested: 4, stockAllocated: 2 }), 'stock_allocated');
+  assert.equal(deriveItemStatus({ requested: 4, stockAllocated: 2, procurementOrdered: 2 }), 'purchasing');
+  assert.equal(deriveItemStatus({ requested: 4, stockAllocated: 2, procurementOrdered: 2, procurementReceived: 1 }), 'partially_ready');
+  assert.equal(deriveItemStatus({ requested: 4, stockAllocated: 2, procurementOrdered: 2, procurementReceived: 2 }), 'ready');
+  assert.equal(deriveItemStatus({ requested: 4, stockAllocated: 4, issued: 4 }), 'issued');
+  assert.equal(deriveItemStatus({ requested: 4, stockAllocated: 4, issued: 4, engineerReceived: 4 }), 'received');
+});
+
+test('fulfillment quantities enforce non-negative upstream bounds', () => {
+  assert.throws(() => validateFulfillmentQuantities({ requested: 2, stockAllocated: 'invalid' }), /finite/i);
+  assert.throws(() => validateFulfillmentQuantities({ requested: 2, stockAllocated: -1 }), /non-negative/i);
+  assert.throws(() => validateFulfillmentQuantities({ requested: 2, stockAllocated: 3 }), /requested/i);
+  assert.throws(() => validateFulfillmentQuantities({ requested: 5, stockAllocated: 2, procurementOrdered: 2, procurementReceived: 3 }), /ordered/i);
+  assert.throws(() => validateFulfillmentQuantities({ requested: 5, stockAllocated: 2, procurementOrdered: 1, procurementReceived: 1, issued: 4 }), /available/i);
+  assert.throws(() => validateFulfillmentQuantities({ requested: 5, issued: 3, engineerReceived: 4 }), /issued/i);
+  assert.doesNotThrow(() => validateFulfillmentQuantities({ requested: 5, stockAllocated: 2, procurementOrdered: 3, procurementReceived: 3, issued: 5, engineerReceived: 5 }));
+});
+
+test('requisition status derives partial, ready, issued, received, and closed states', () => {
+  const base = { status: 'approved' };
+  assert.equal(deriveRequisitionStatus(base, [{ status: 'pending' }]), 'processing');
+  assert.equal(deriveRequisitionStatus({ status: 'submitted' }, [{ status: 'pending' }]), 'submitted');
+  assert.equal(deriveRequisitionStatus(base, [{ status: 'ready' }, { status: 'partially_ready' }]), 'partially_fulfilled');
+  assert.equal(deriveRequisitionStatus(base, [{ status: 'ready' }, { status: 'cancelled' }]), 'ready');
+  assert.equal(deriveRequisitionStatus(base, [{ status: 'issued' }]), 'issued');
+  assert.equal(deriveRequisitionStatus(base, [{ status: 'received' }]), 'received');
+  assert.equal(deriveRequisitionStatus({ status: 'closed' }, [{ status: 'received' }]), 'closed');
+});
+
+test('requisition can close only when every line is received or cancelled', () => {
+  assert.equal(canCloseMaterialRequisition([]), false);
+  assert.equal(canCloseMaterialRequisition([{ status: 'cancelled' }]), true);
+  assert.equal(canCloseMaterialRequisition([{ status: 'received' }, { status: 'cancelled' }]), true);
+  assert.equal(canCloseMaterialRequisition([{ status: 'received' }, { status: 'issued' }]), false);
+});
