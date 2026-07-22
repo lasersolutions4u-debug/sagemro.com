@@ -656,7 +656,7 @@ AI 中心不是普通表单集合，而是围绕主聊天体验展开的 **AI Se
 - Machine selection lead generation
 - WhatsApp / Email / remote diagnosis
 
-国际版可以保留：
+国际版可以保留以下服务能力表达，但不能包装成公开 marketplace 或自由入驻入口：
 
 - certified service partner network
 - remote troubleshooting
@@ -1039,7 +1039,7 @@ AI 聊天后应输出结构化摘要，而不是要求用户重新填表。
 
 - 改成内部派工工作台。
 - 强化服务报告、备件需求、安全检查。
-- 弱化钱包、提现、自由接单。
+- 删除用户可见的钱包、提现和自由接单入口；历史字段仅作兼容保留。
 
 验证：
 

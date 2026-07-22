@@ -28,7 +28,7 @@ OpenAI-compatible LLM API（DeepSeek / OpenAI / compatible provider）
 | 国际版 | `sagemro.com` | `admin.sagemro.com` | `api.sagemro.com` | D1 `sagemro-db` |
 | 中国版 | `sagemro.cn` | `admin.sagemro.cn` | `api.sagemro.cn` | D1 `sagemro-db-cn` |
 
-前台和后台使用同一套 React 源码，但运行在 `.cn` 域名时默认调用 `https://api.sagemro.cn`。Worker 使用同一套代码部署，按 API 域名或请求来源域名把中国版请求路由到 `DB_CN`，避免中英文版本数据混用。
+客户/工程师前端与 Admin 是两个独立 React 项目：`frontend/` 同时构建客户主站和按 engineer host 切换的工程师入口，`admin/` 构建管理后台。两套项目分别复用于 `.com` 和 `.cn` 市场，并在 `.cn` 域名下调用 `https://api.sagemro.cn`。Worker 使用同一套代码部署，按 API 域名或请求来源域名把中国版请求路由到 `DB_CN`，避免中英文版本数据混用。
 
 ### 1.1 技术栈
 
@@ -54,6 +54,8 @@ OpenAI-compatible LLM API（DeepSeek / OpenAI / compatible provider）
 - **中国版域名**：`sagemro.cn`
 - **国际版后台**：`admin.sagemro.com`
 - **中国版后台**：`admin.sagemro.cn`
+- **国际版工程师端**：`engineer.sagemro.com`
+- **中国版工程师端**：`engineer.sagemro.cn`
 - **国际版 API**：`api.sagemro.com`
 - **中国版 API**：`api.sagemro.cn`
 - **GitHub 仓库**：`lasersolutions4u-debug/sagemro.com`
@@ -83,13 +85,21 @@ sagemro/
 │   ├── vite.config.js
 │   └── package.json
 ├── admin/
-│   └── ...（管理后台独立项目）
+│   ├── src/
+│   ├── public/
+│   └── package.json          # 管理后台独立 React 项目
+├── e2e/
+│   ├── tests/                # 客户、工程师、Admin 三角色 Playwright 流程
+│   ├── support/
+│   └── scripts/              # 隔离本地 Worker/D1 测试环境
 ├── worker/
 │   ├── src/index.js          # 当前 Worker 单体入口，含路由、认证、工单、AI 和 Admin 处理
 │   ├── migrations/
+│   ├── scripts/d1-operations.mjs
 │   ├── tests/
 │   └── wrangler.toml
 ├── .github/workflows/deploy.yml
+├── .github/workflows/aliyun-cn-deploy.yml
 └── docs/
 ```
 
