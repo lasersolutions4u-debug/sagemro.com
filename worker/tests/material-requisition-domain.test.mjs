@@ -79,6 +79,14 @@ test('fulfillment quantities accept only finite number primitives', () => {
   }
 });
 
+test('draft requisition status is preserved before item progress', () => {
+  assert.equal(deriveRequisitionStatus({ status: 'draft' }, [{ status: 'ready' }]), 'draft');
+});
+
+test('submitted requisition status is preserved before item progress', () => {
+  assert.equal(deriveRequisitionStatus({ status: 'submitted' }, [{ status: 'issued' }]), 'submitted');
+});
+
 test('requisition status derives partial, ready, issued, received, and closed states', () => {
   const base = { status: 'approved' };
   assert.equal(deriveRequisitionStatus(base, [{ status: 'pending' }]), 'processing');

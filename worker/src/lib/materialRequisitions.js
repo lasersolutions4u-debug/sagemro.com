@@ -64,6 +64,7 @@ export function deriveItemStatus(input = {}) {
 
 export function deriveRequisitionStatus(requisition = {}, items = []) {
   if (TERMINAL_REQUISITION_STATUSES.has(requisition.status)) return requisition.status;
+  if (['draft', 'submitted'].includes(requisition.status)) return requisition.status;
   const active = items.filter((item) => item.status !== 'cancelled');
   if (!active.length) return requisition.status || 'draft';
   if (active.every((item) => item.status === 'received')) return 'received';
@@ -72,5 +73,5 @@ export function deriveRequisitionStatus(requisition = {}, items = []) {
   if (active.some((item) => ['stock_allocated', 'purchasing', 'partially_ready', 'ready', 'issued', 'received'].includes(item.status))) {
     return 'partially_fulfilled';
   }
-  return ['draft', 'submitted'].includes(requisition.status) ? requisition.status : 'processing';
+  return 'processing';
 }
