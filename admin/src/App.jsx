@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Boxes, ClipboardList, LayoutDashboard, Users, UserCog, FileText, Star, LogOut, Target, BookOpenText, Menu, PackageSearch, ShieldCheck } from 'lucide-react';
 import { LoginPage } from './pages/LoginPage';
 import { DashboardPage } from './pages/DashboardPage';
@@ -133,6 +133,17 @@ export default function App() {
   const [activePage, setActivePage] = useState('dashboard');
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [selectedEngineerId, setSelectedEngineerId] = useState('');
+  const visibleNavItems = useMemo(() => {
+    if (!user) return [];
+    const isBootstrapAdmin = user.staffRole === 'admin' && user.staffId == null;
+    const isOperationalStaff = user.staffId != null && user.staffRole !== 'admin';
+    return NAV_ITEMS.filter((item) => {
+      if (item.key === 'staffAccounts') return isBootstrapAdmin;
+      if (item.key === 'materialRequisitions') return REQUISITION_ROLES.includes(user.staffRole);
+      if (isOperationalStaff) return OPERATIONAL_NAV_KEYS.has(item.key);
+      return true;
+    });
+  }, [user]);
 
   useEffect(() => {
     restoreAdminSession()
@@ -140,6 +151,7 @@ export default function App() {
         if (session.authenticated && session.userType === 'admin') {
           const restoredUser = normalizeAdminUser(session.user);
           localStorage.setItem('admin_user', JSON.stringify(restoredUser));
+          setActivePage('dashboard');
           setUser(restoredUser);
         } else {
           localStorage.removeItem('admin_user');
@@ -153,6 +165,12 @@ export default function App() {
       })
       .finally(() => setAuthReady(true));
   }, []);
+
+  useEffect(() => {
+    if (user && !visibleNavItems.some((item) => item.key === activePage)) {
+      setActivePage('dashboard');
+    }
+  }, [activePage, user, visibleNavItems]);
 
   if (window.location.pathname !== '/') {
     const isCn = runtimeConfig.locale === 'zh-CN';
@@ -176,12 +194,14 @@ export default function App() {
     adminLogout().catch(() => {});
     localStorage.removeItem('admin_token');
     localStorage.removeItem('admin_user');
+    setActivePage('dashboard');
     setUser(null);
   };
 
   const handleLogin = (nextUser) => {
     const normalizedUser = normalizeAdminUser(nextUser);
     localStorage.setItem('admin_user', JSON.stringify(normalizedUser));
+    setActivePage('dashboard');
     setUser(normalizedUser);
   };
 
@@ -198,16 +218,10 @@ export default function App() {
   }
 
   const isBootstrapAdmin = user.staffRole === 'admin' && user.staffId == null;
-  const isOperationalStaff = user.staffId != null && user.staffRole !== 'admin';
-  const visibleNavItems = NAV_ITEMS.filter((item) => {
-    if (item.key === 'staffAccounts') return isBootstrapAdmin;
-    if (item.key === 'materialRequisitions') return REQUISITION_ROLES.includes(user.staffRole);
-    if (isOperationalStaff) return OPERATIONAL_NAV_KEYS.has(item.key);
-    return true;
-  });
+  const currentPage = visibleNavItems.some((item) => item.key === activePage) ? activePage : 'dashboard';
 
   const renderPage = () => {
-    switch (activePage) {
+    switch (currentPage) {
       case 'dashboard': return <DashboardPage staffRole={user.staffRole} staffId={user.staffId} />;
       case 'users': return <UsersPage />;
       case 'engineers': return <EngineersPage initialEngineerId={selectedEngineerId} onEngineerOpened={() => setSelectedEngineerId('')} />;
@@ -253,7 +267,7 @@ export default function App() {
               key={item.key}
               onClick={() => { setActivePage(item.key); setSidebarOpen(false); }}
               className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors ${
-                activePage === item.key
+                currentPage === item.key
                   ? 'bg-[var(--color-primary)]/15 text-[var(--color-primary)] font-medium'
                   : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-elevated)] hover:text-[var(--color-text)]'
               }`}
