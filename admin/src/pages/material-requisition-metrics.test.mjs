@@ -3,6 +3,8 @@ import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
 const dashboard = await readFile(new URL('./DashboardPage.jsx', import.meta.url), 'utf8');
+const app = await readFile(new URL('../App.jsx', import.meta.url), 'utf8');
+const api = await readFile(new URL('../services/api.js', import.meta.url), 'utf8');
 const materials = await readFile(new URL('./MaterialsPage.jsx', import.meta.url), 'utf8');
 
 test('dashboard adds a compact requisition operations band without removing existing metrics', () => {
@@ -14,6 +16,18 @@ test('dashboard adds a compact requisition operations band without removing exis
   assert.match(dashboard, /medianFulfillmentHours/);
   assert.match(dashboard, /closureRatePercent/);
   assert.match(dashboard, /cards\.map/);
+});
+
+test('operational dashboard uses scoped metrics and omits unrelated admin analytics', () => {
+  assert.match(api, /getMaterialRequisitionMetrics/);
+  assert.match(api, /\/api\/material-requisitions\/metrics/);
+  assert.match(app, /<DashboardPage staffRole=\{user\.staffRole\} staffId=\{user\.staffId\}/);
+  assert.match(dashboard, /isOperationalStaff/);
+  assert.match(dashboard, /isOperationalStaff \? getMaterialRequisitionMetrics\(\) : getAdminStats\(\)/);
+  assert.match(dashboard, /const workOrders = stats\.workOrders \|\| \{\}/);
+  assert.match(dashboard, /isOperationalStaff \? t\.operationalTitle : t\.title/);
+  assert.match(dashboard, /isOperationalStaff \? t\.operationalSubtitle : t\.subtitle/);
+  assert.match(dashboard, /\{!isOperationalStaff && \(/);
 });
 
 test('old engineer request panel is explicitly named material master-data requests', () => {

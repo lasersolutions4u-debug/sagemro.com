@@ -1,16 +1,18 @@
 import assert from 'node:assert/strict';
+import { DatabaseSync } from 'node:sqlite';
 import test from 'node:test';
 
 import worker from '../src/index.js';
 import { signJwt } from '../src/lib/auth.js';
+import { REQUISITION_OPERATION_METRIC_QUERIES } from '../src/lib/requisitionMetrics.js';
 
 function normalizeSql(sql) {
   return sql.replace(/\s+/g, ' ').trim();
 }
 
-function createEnv() {
+function createEnv(role = 'operations') {
   const staff = {
-    id: 'operations-1', role: 'operations', is_active: 1, market_scope: 'all', must_change_password: 0,
+    id: `${role}-1`, role, is_active: 1, market_scope: 'all', must_change_password: 0,
   };
   return {
     JWT_SECRET: 'metrics-test-secret',
@@ -40,52 +42,87 @@ function createEnv() {
   };
 }
 
-async function operationalStats(env) {
-  const token = await signJwt({
-    userId: 'operations-1', userType: 'admin', staffId: 'operations-1', staffRole: 'operations',
+async function adminToken(env, { role = 'operations', userType = 'admin', staffId = `${role}-1` } = {}) {
+  return signJwt({
+    userId: staffId || 'admin', userType, staffId, staffRole: role,
     mustChangePassword: false, phone: '13800000000', market: 'com', iat: 1,
     exp: Math.floor(Date.now() / 1000) + 3600,
   }, env.JWT_SECRET);
-  const response = await worker.fetch(new Request('https://api.sagemro.com/api/admin/stats', {
+}
+
+async function getWithToken(env, path, token) {
+  const response = await worker.fetch(new Request(`https://api.sagemro.com${path}`, {
     headers: { Authorization: `Bearer ${token}`, Origin: 'https://admin.sagemro.com' },
   }), env, { waitUntil() {} });
   return { response, json: await response.json() };
 }
 
-test('operational staff can read requisition pilot metrics without opening unrelated admin APIs', async () => {
-  const env = createEnv();
-  const stats = await operationalStats(env);
+test('operational metrics endpoint returns only the scoped requisition shape', async () => {
+  const env = createEnv('operations');
+  const result = await getWithToken(env, '/api/material-requisitions/metrics', await adminToken(env));
 
-  assert.equal(stats.response.status, 200);
-  assert.deepEqual(stats.json.requisitionOperations, {
-    pendingApproval: 7,
-    shortages: 4,
-    overdue: 3,
-    medianApprovalHours: 5.5,
-    medianFulfillmentHours: 26.25,
-    closureRatePercent: 62.5,
+  assert.equal(result.response.status, 200);
+  assert.deepEqual(result.json, {
+    requisitionOperations: {
+      pendingApproval: 7,
+      shortages: 4,
+      overdue: 3,
+      medianApprovalHours: 5.5,
+      medianFulfillmentHours: 26.25,
+      closureRatePercent: 62.5,
+    },
   });
-
-  const token = await signJwt({
-    userId: 'operations-1', userType: 'admin', staffId: 'operations-1', staffRole: 'operations',
-    mustChangePassword: false, phone: '13800000000', market: 'com', iat: 1,
-    exp: Math.floor(Date.now() / 1000) + 3600,
-  }, env.JWT_SECRET);
-  const denied = await worker.fetch(new Request('https://api.sagemro.com/api/admin/users', {
-    headers: { Authorization: `Bearer ${token}`, Origin: 'https://admin.sagemro.com' },
-  }), env, { waitUntil() {} });
-  assert.equal(denied.status, 403);
 });
 
-test('metrics SQL encodes the pilot definitions and true middle-row medians', async () => {
-  const source = await import('node:fs/promises').then(({ readFile }) => readFile(new URL('../src/index.js', import.meta.url), 'utf8'));
+test('operational staff remain denied full admin stats and unrelated admin APIs', async () => {
+  const env = createEnv('operations');
+  const token = await adminToken(env);
 
-  assert.match(source, /status = 'submitted'/);
-  assert.match(source, /stock_allocated_quantity \+ procurement_received_quantity < requested_quantity/);
-  assert.match(source, /required_date < date\('now'\)/);
-  assert.match(source, /ROW_NUMBER\(\) OVER \(ORDER BY hours\)/);
-  assert.match(source, /approved_at[\s\S]*created_at/);
-  assert.match(source, /received_at[\s\S]*approved_at/);
-  assert.match(source, /status != 'draft'/);
-  assert.match(source, /closure/);
+  assert.equal((await getWithToken(env, '/api/admin/stats', token)).response.status, 403);
+  assert.equal((await getWithToken(env, '/api/admin/users', token)).response.status, 403);
+});
+
+test('scoped metrics deny engineers and customers while allowing bootstrap admin', async () => {
+  const env = createEnv('operations');
+  const bootstrap = await adminToken(env, { role: 'admin', staffId: null });
+  const engineer = await adminToken(env, { role: 'engineer', userType: 'engineer', staffId: null });
+  const customer = await adminToken(env, { role: 'customer', userType: 'customer', staffId: null });
+
+  assert.equal((await getWithToken(env, '/api/material-requisitions/metrics', bootstrap)).response.status, 200);
+  assert.equal((await getWithToken(env, '/api/material-requisitions/metrics', engineer)).response.status, 403);
+  assert.equal((await getWithToken(env, '/api/material-requisitions/metrics', customer)).response.status, 403);
+});
+
+test('metrics queries handle active boundaries, even medians, and empty samples in SQLite', () => {
+  const db = new DatabaseSync(':memory:');
+  db.exec(`
+    CREATE TABLE material_requisitions (
+      id TEXT PRIMARY KEY, status TEXT, required_date TEXT, created_at TEXT,
+      approved_at TEXT, received_at TEXT
+    );
+    CREATE TABLE material_requisition_items (
+      id TEXT PRIMARY KEY, requisition_id TEXT, status TEXT, requested_quantity INTEGER,
+      stock_allocated_quantity INTEGER DEFAULT 0, procurement_received_quantity INTEGER DEFAULT 0
+    );
+  `);
+
+  assert.equal(db.prepare(REQUISITION_OPERATION_METRIC_QUERIES.medianApproval).get().value, null);
+  assert.equal(db.prepare(REQUISITION_OPERATION_METRIC_QUERIES.closureRate).get().closure_rate_percent, null);
+
+  const insertHeader = db.prepare('INSERT INTO material_requisitions VALUES (?, ?, ?, ?, ?, ?)');
+  insertHeader.run('submitted', 'submitted', '2000-01-01', '2026-01-01 00:00:00', null, null);
+  insertHeader.run('active', 'approved', '2000-01-01', '2026-01-01 00:00:00', '2026-01-01 02:00:00', null);
+  insertHeader.run('closed', 'closed', '2000-01-01', '2026-01-01 00:00:00', '2026-01-01 06:00:00', '2026-01-01 16:00:00');
+  insertHeader.run('draft', 'draft', '2000-01-01', '2026-01-01 00:00:00', null, null);
+  const insertItem = db.prepare('INSERT INTO material_requisition_items VALUES (?, ?, ?, ?, ?, ?)');
+  insertItem.run('short', 'active', 'pending', 5, 2, 1);
+  insertItem.run('closed-short', 'closed', 'pending', 5, 0, 0);
+  insertItem.run('cancelled', 'active', 'cancelled', 5, 0, 0);
+
+  assert.equal(db.prepare(REQUISITION_OPERATION_METRIC_QUERIES.pendingApproval).get().count, 1);
+  assert.equal(db.prepare(REQUISITION_OPERATION_METRIC_QUERIES.shortages).get().count, 1);
+  assert.equal(db.prepare(REQUISITION_OPERATION_METRIC_QUERIES.overdue).get().count, 3);
+  assert.equal(Math.round(db.prepare(REQUISITION_OPERATION_METRIC_QUERIES.medianApproval).get().value), 4);
+  assert.equal(Math.round(db.prepare(REQUISITION_OPERATION_METRIC_QUERIES.medianFulfillment).get().value), 10);
+  assert.equal(db.prepare(REQUISITION_OPERATION_METRIC_QUERIES.closureRate).get().closure_rate_percent, 33.33);
 });

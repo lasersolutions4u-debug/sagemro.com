@@ -208,18 +208,18 @@ export default function App() {
 
   const renderPage = () => {
     switch (activePage) {
-      case 'dashboard': return <DashboardPage />;
+      case 'dashboard': return <DashboardPage staffRole={user.staffRole} staffId={user.staffId} />;
       case 'users': return <UsersPage />;
       case 'engineers': return <EngineersPage initialEngineerId={selectedEngineerId} onEngineerOpened={() => setSelectedEngineerId('')} />;
       case 'workorders': return <WorkOrdersPage />;
       case 'materials': return <MaterialsPage />;
       case 'materialRequisitions': return <MaterialRequisitionsPage staffRole={user.staffRole} />;
-      case 'staffAccounts': return isBootstrapAdmin ? <StaffAccountsPage /> : <DashboardPage />;
+      case 'staffAccounts': return isBootstrapAdmin ? <StaffAccountsPage /> : <DashboardPage staffRole={user.staffRole} staffId={user.staffId} />;
       case 'knowledge': return <KnowledgePage />;
       case 'engineerApplications': return <EngineerApplicationsPage onOpenEngineer={(engineerId) => { setSelectedEngineerId(engineerId); setActivePage('engineers'); }} />;
       case 'ratings': return <RatingsPage />;
       case 'leads': return <LeadsPage />;
-      default: return <DashboardPage />;
+      default: return <DashboardPage staffRole={user.staffRole} staffId={user.staffId} />;
     }
   };
 

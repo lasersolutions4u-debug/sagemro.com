@@ -99,6 +99,10 @@ export async function getAdminStats() {
   return request('/api/admin/stats');
 }
 
+export async function getMaterialRequisitionMetrics() {
+  return request('/api/material-requisitions/metrics');
+}
+
 export async function changeAdminPassword(oldPassword, newPassword) {
   return request('/api/auth/change-password', {
     method: 'POST',
@@ -162,10 +166,9 @@ const QUANTITY_ACTION_PATHS = {
   return: 'return',
 };
 
-export async function postMaterialRequisitionQuantityAction(requisitionId, action, payload) {
+export async function postMaterialRequisitionQuantityAction(requisitionId, action, payload, idempotencyKey) {
   const path = QUANTITY_ACTION_PATHS[action];
   if (!path) throw new Error(`Unsupported material requisition action: ${action}`);
-  const idempotencyKey = crypto.randomUUID();
   return request(`/api/material-requisitions/${requisitionId}/${path}`, {
     method: 'POST',
     headers: { 'Idempotency-Key': idempotencyKey },

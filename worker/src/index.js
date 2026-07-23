@@ -92,6 +92,7 @@ import {
   deriveItemStatus,
   validateFulfillmentQuantities,
 } from './lib/materialRequisitions.js';
+import { getRequisitionOperationsMetrics } from './lib/requisitionMetrics.js';
 
 // AI 工具调用确定性日志（Phase 0.1）
 import { logToolCall, measureAndLogToolCall, PermissionError } from './lib/trace.js';
@@ -10379,64 +10380,7 @@ async function handleAdminStats(request, env) {
       "SELECT COUNT(*) as count FROM upsell_requests WHERE status NOT IN ('completed', 'lost')"
     ).first();
 
-    const pendingApproval = await env.DB.prepare(`
-      SELECT COUNT(*) AS count
-      FROM material_requisitions
-      WHERE status = 'submitted'
-    `).first();
-    const shortages = await env.DB.prepare(`
-      SELECT COUNT(*) AS count
-      FROM material_requisition_items mri
-      JOIN material_requisitions mr ON mr.id = mri.requisition_id
-      WHERE mri.status != 'cancelled'
-        AND mr.status NOT IN ('draft', 'rejected', 'cancelled', 'closed')
-        AND stock_allocated_quantity + procurement_received_quantity < requested_quantity
-    `).first();
-    const overdue = await env.DB.prepare(`
-      SELECT COUNT(*) AS count
-      FROM material_requisitions
-      WHERE required_date IS NOT NULL
-        AND required_date < date('now')
-        AND status NOT IN ('rejected', 'cancelled', 'closed')
-    `).first();
-    const medianApproval = await env.DB.prepare(`
-      WITH durations AS (
-        SELECT (julianday(approved_at) - julianday(created_at)) * 24.0 AS hours
-        FROM material_requisitions
-        WHERE approved_at IS NOT NULL
-      ), ranked AS (
-        SELECT hours,
-               ROW_NUMBER() OVER (ORDER BY hours) AS row_number,
-               COUNT(*) OVER () AS sample_count
-        FROM durations
-      )
-      SELECT AVG(hours) AS value
-      FROM ranked
-      WHERE row_number IN ((sample_count + 1) / 2, (sample_count + 2) / 2)
-    `).first();
-    const medianFulfillment = await env.DB.prepare(`
-      WITH durations AS (
-        SELECT (julianday(received_at) - julianday(approved_at)) * 24.0 AS hours
-        FROM material_requisitions
-        WHERE received_at IS NOT NULL AND approved_at IS NOT NULL
-      ), ranked AS (
-        SELECT hours,
-               ROW_NUMBER() OVER (ORDER BY hours) AS row_number,
-               COUNT(*) OVER () AS sample_count
-        FROM durations
-      )
-      SELECT AVG(hours) AS value
-      FROM ranked
-      WHERE row_number IN ((sample_count + 1) / 2, (sample_count + 2) / 2)
-    `).first();
-    const closureRate = await env.DB.prepare(`
-      SELECT CASE
-        WHEN COUNT(*) = 0 THEN NULL
-        ELSE ROUND(100.0 * SUM(CASE WHEN status = 'closed' THEN 1 ELSE 0 END) / COUNT(*), 2)
-      END AS closure_rate_percent
-      FROM material_requisitions
-      WHERE status != 'draft'
-    `).first();
+    const requisitionOperations = await getRequisitionOperationsMetrics(env);
 
     // 最近7天注册数
     const recentCustomers = await env.DB.prepare(
@@ -10475,14 +10419,7 @@ async function handleAdminStats(request, env) {
         valueAddedRequests: valueAddedRequests?.count || 0,
         euchioMachineLeads: machineLeads?.count || 0,
       },
-      requisitionOperations: {
-        pendingApproval: pendingApproval?.count || 0,
-        shortages: shortages?.count || 0,
-        overdue: overdue?.count || 0,
-        medianApprovalHours: medianApproval?.value == null ? null : Number(medianApproval.value),
-        medianFulfillmentHours: medianFulfillment?.value == null ? null : Number(medianFulfillment.value),
-        closureRatePercent: closureRate?.closure_rate_percent == null ? null : Number(closureRate.closure_rate_percent),
-      },
+      requisitionOperations,
       recentRegistrations: (recentCustomers?.count || 0) + (recentEngineers?.count || 0),
       apiCalls: {
         send_code: apiStats.send_code || 0,
@@ -10491,6 +10428,18 @@ async function handleAdminStats(request, env) {
         login: apiStats.login || 0,
       },
     });
+  } catch (error) {
+    return errorResponse(error.message, 500);
+  }
+}
+
+async function handleMaterialRequisitionMetrics(request, env) {
+  const role = requisitionRole(request._auth);
+  if (!['admin', 'operations', 'warehouse', 'procurement'].includes(role)) {
+    return errorResponse('当前角色无权查看领料运营指标', 403);
+  }
+  try {
+    return jsonResponse({ requisitionOperations: await getRequisitionOperationsMetrics(env) });
   } catch (error) {
     return errorResponse(error.message, 500);
   }
@@ -13976,7 +13925,6 @@ async function routeRequest(request, env, ctx) {
       }
       const operationalRoute = path === '/api/material-requisitions'
         || path.startsWith('/api/material-requisitions/')
-        || path === '/api/admin/stats'
         || path === '/api/auth/change-password';
       if (staff.role !== 'admin' && !operationalRoute) {
         return errorResponse('当前员工角色无权访问该管理接口', 403);
@@ -14151,6 +14099,9 @@ async function routeRequest(request, env, ctx) {
     }
     if (path === '/api/material-requisitions' && request.method === 'POST') {
       return handleCreateMaterialRequisition(request, env);
+    }
+    if (path === '/api/material-requisitions/metrics' && request.method === 'GET') {
+      return handleMaterialRequisitionMetrics(request, env);
     }
     if (path.match(/^\/api\/material-requisitions\/[^/]+$/) && request.method === 'GET') {
       return handleGetMaterialRequisition(request, env);

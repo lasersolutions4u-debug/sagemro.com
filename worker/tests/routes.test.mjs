@@ -13,6 +13,7 @@ test('test route classifier covers development-only diagnostics', () => {
 
 test('protected route classifier covers exact and parameterized authenticated paths', () => {
   assert.equal(isKnownProtectedRoute('/api/admin/stats'), true);
+  assert.equal(isKnownProtectedRoute('/api/material-requisitions/metrics'), true);
   assert.equal(isKnownProtectedRoute('/api/conversations'), true);
   assert.equal(isKnownProtectedRoute('/api/conversations/conversation-1'), true);
   assert.equal(isKnownProtectedRoute('/api/workorders/work-order-1/messages'), true);

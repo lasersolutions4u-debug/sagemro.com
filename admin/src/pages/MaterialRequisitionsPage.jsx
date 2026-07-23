@@ -6,15 +6,22 @@ import {
 import { runtimeConfig } from '../config/runtime';
 import {
   decideMaterialRequisition,
+  cancelMaterialRequisitionItem,
   getMaterialRequisition,
   getMaterialRequisitions,
   postMaterialRequisitionQuantityAction,
   updateMaterialRequisitionProcurement,
 } from '../services/api';
+import {
+  getRetryOperation,
+  isRetryableActionError,
+  retryOperationMatches,
+  requisitionLabel,
+} from './materialRequisitionOperations';
 
 const ROLE_ACTIONS = {
-  admin: ['approve', 'reject', 'cancel', 'close'],
-  operations: ['approve', 'reject', 'cancel', 'close'],
+  admin: ['approve', 'reject', 'cancel', 'close', 'cancel_item'],
+  operations: ['approve', 'reject', 'cancel', 'close', 'cancel_item'],
   warehouse: ['allocate_stock', 'receive_purchase', 'issue', 'return'],
   procurement: ['record_purchase', 'update_purchase', 'receive_purchase'],
 };
@@ -28,6 +35,7 @@ const TEXT = {
     required: 'Required', status: 'Status', updated: 'Updated', purpose: 'Purpose', lines: 'Material lines',
     history: 'Workflow history', actionNote: 'Reason or note', quantity: 'Qty', supplier: 'Supplier / PO reference',
     arrival: 'Expected arrival', approve: 'Approve', reject: 'Reject', cancel: 'Cancel requisition', close: 'Close',
+    cancel_item: 'Cancel line', pendingAction: 'Saving action...', noteRequired: 'Enter a reason or note before cancelling a line.',
     allocate_stock: 'Allocate', record_purchase: 'Order', update_purchase: 'Update purchase', receive_purchase: 'Receive purchase', issue: 'Issue', return: 'Return',
     requested: 'Requested', allocated: 'Allocated', ordered: 'Ordered', purchased: 'Purchased', issued: 'Issued', received: 'Engineer received',
     loadFailed: 'Could not load requisitions.', actionFailed: 'Action failed: ', closeDrawer: 'Close details',
@@ -41,6 +49,7 @@ const TEXT = {
     required: '需求日期', status: '状态', updated: '更新时间', purpose: '用途', lines: '物料明细',
     history: '流程记录', actionNote: '原因或备注', quantity: '数量', supplier: '供应商 / 采购单号',
     arrival: '预计到货', approve: '批准', reject: '驳回', cancel: '取消申请', close: '关闭申请',
+    cancel_item: '取消明细', pendingAction: '正在保存操作...', noteRequired: '取消物料明细前请填写原因或备注。',
     allocate_stock: '分配库存', record_purchase: '记录采购', update_purchase: '更新采购信息', receive_purchase: '采购入库', issue: '发料', return: '退库',
     requested: '申请', allocated: '已分配', ordered: '已采购', purchased: '已到货', issued: '已发料', received: '工程师签收',
     loadFailed: '物料领用申请加载失败。', actionFailed: '操作失败：', closeDrawer: '关闭详情',
@@ -61,10 +70,6 @@ function parseState(value) {
   if (!value) return null;
   if (typeof value === 'object') return value;
   try { return JSON.parse(value); } catch { return null; }
-}
-
-function statusLabel(value) {
-  return String(value || '-').replaceAll('_', ' ');
 }
 
 function statusTone(status) {
@@ -93,6 +98,11 @@ function actionAvailable(requisition, item, action) {
     return !TERMINAL.has(requisition.status)
       && requisition.items.every((line) => Number(line.issued_quantity || 0) === 0 && Number(line.engineer_received_quantity || 0) === 0);
   }
+  if (action === 'cancel_item') {
+    return !TERMINAL.has(requisition.status) && Boolean(item) && item.status !== 'cancelled'
+      && Number(item.issued_quantity || 0) === 0
+      && Number(item.engineer_received_quantity || 0) === 0;
+  }
   if (!item || item.status === 'cancelled' || !['approved', 'processing', 'partially_fulfilled', 'ready', 'issued'].includes(requisition.status)) return false;
   const requested = Number(item.requested_quantity || 0);
   const allocated = Number(item.stock_allocated_quantity || 0);
@@ -119,7 +129,9 @@ export function MaterialRequisitionsPage({ staffRole = 'admin' }) {
   const [note, setNote] = useState('');
   const [lineInputs, setLineInputs] = useState({});
   const [pendingActions, setPendingActions] = useState(new Set());
+  const [retryOperations, setRetryOperations] = useState({});
   const pendingActionKeys = useRef(new Set());
+  const drawerPending = pendingActions.size > 0;
 
   const allowedActions = ROLE_ACTIONS[staffRole] || [];
   const filtered = useMemo(() => (
@@ -159,15 +171,17 @@ export function MaterialRequisitionsPage({ staffRole = 'admin' }) {
     setRequisitions((current) => current.map((item) => (item.id === updated.id ? { ...item, ...updated } : item)));
   };
 
-  const runAction = async (key, operation) => {
-    if (pendingActionKeys.current.has(key)) return;
+  const runAction = async (key, operation, { onSuccess, onError } = {}) => {
+    if (pendingActionKeys.current.size > 0) return;
     pendingActionKeys.current.add(key);
     setPendingActions((current) => new Set(current).add(key));
     setError('');
     try {
       const data = await operation();
       applyUpdatedRequisition(data.requisition);
+      onSuccess?.();
     } catch (err) {
+      onError?.(err);
       setError(`${t.actionFailed}${err.message}`);
     } finally {
       pendingActionKeys.current.delete(key);
@@ -185,13 +199,39 @@ export function MaterialRequisitionsPage({ staffRole = 'admin' }) {
   );
 
   const inputFor = (itemId) => lineInputs[itemId] || { quantity: '1', supplier_reference: '', expected_arrival: '' };
-  const setInput = (itemId, field, value) => setLineInputs((current) => ({
-    ...current,
-    [itemId]: { ...inputFor(itemId), [field]: value },
-  }));
+  const setInput = (itemId, field, value) => {
+    const nextInput = { ...inputFor(itemId), [field]: value };
+    setLineInputs((current) => ({ ...current, [itemId]: nextInput }));
+    setRetryOperations((current) => {
+      if (!current[itemId]) return current;
+      const nextPayload = {
+        item_id: itemId,
+        quantity: Number(nextInput.quantity),
+        ...(current[itemId].action === 'record_purchase' ? {
+          supplier_reference: nextInput.supplier_reference,
+          expected_arrival: nextInput.expected_arrival,
+        } : {}),
+      };
+      if (retryOperationMatches(current[itemId], current[itemId].action, nextPayload)) return current;
+      const nextRetryOperations = { ...current };
+      delete nextRetryOperations[itemId];
+      return nextRetryOperations;
+    });
+  };
 
   const handleLineAction = (item, action) => {
+    if (pendingActionKeys.current.size > 0) return;
     const input = inputFor(item.id);
+    if (action === 'cancel_item') {
+      if (!note.trim()) {
+        setError(t.noteRequired);
+        return undefined;
+      }
+      return runAction(
+        `${item.id}:${action}`,
+        () => cancelMaterialRequisitionItem(selectedRequisition.id, item.id, note),
+      );
+    }
     if (action === 'update_purchase') {
       return runAction(
         `${item.id}:${action}`,
@@ -207,9 +247,23 @@ export function MaterialRequisitionsPage({ staffRole = 'admin' }) {
       payload.supplier_reference = input.supplier_reference;
       payload.expected_arrival = input.expected_arrival;
     }
+    const retryOperation = getRetryOperation(retryOperations[item.id], action, payload);
+    setRetryOperations((current) => ({ ...current, [item.id]: retryOperation }));
+    const clearRetryOperation = () => setRetryOperations((current) => {
+      if (current[item.id]?.idempotencyKey !== retryOperation.idempotencyKey) return current;
+      const next = { ...current };
+      delete next[item.id];
+      return next;
+    });
     return runAction(
       `${item.id}:${action}`,
-      () => postMaterialRequisitionQuantityAction(selectedRequisition.id, action, payload),
+      () => postMaterialRequisitionQuantityAction(
+        selectedRequisition.id, action, payload, retryOperation.idempotencyKey,
+      ),
+      {
+        onSuccess: clearRetryOperation,
+        onError: (err) => { if (!isRetryableActionError(err)) clearRetryOperation(); },
+      },
     );
   };
 
@@ -223,7 +277,7 @@ export function MaterialRequisitionsPage({ staffRole = 'admin' }) {
         <div className="flex items-center gap-2">
           <select value={status} onChange={(event) => setStatus(event.target.value)} className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-3 py-2 text-sm">
             <option value="all">{t.allStatuses}</option>
-            {STATUS_KEYS.map((key) => <option key={key} value={key}>{statusLabel(key)}</option>)}
+            {STATUS_KEYS.map((key) => <option key={key} value={key}>{requisitionLabel(runtimeConfig.locale, 'status', key)}</option>)}
           </select>
           <button type="button" onClick={load} className="inline-flex items-center gap-2 whitespace-nowrap rounded-lg border border-[var(--color-border)] px-3 py-2 text-sm hover:border-[var(--color-primary)]">
             <RefreshCw size={15} />{t.refresh}
@@ -249,9 +303,9 @@ export function MaterialRequisitionsPage({ staffRole = 'admin' }) {
               <tr key={requisition.id} onClick={() => openDetail(requisition)} className="cursor-pointer border-t border-[var(--color-border)] hover:bg-[var(--color-surface-elevated)]/70">
                 <td className="px-3 py-2.5 font-medium text-[var(--color-primary)]">{requisition.requisition_no}</td>
                 <td className="px-3 py-2.5">{requisition.work_order_id}</td>
-                <td className="px-3 py-2.5 capitalize">{requisition.urgency}</td>
+                <td className="px-3 py-2.5">{requisitionLabel(runtimeConfig.locale, 'urgency', requisition.urgency)}</td>
                 <td className="px-3 py-2.5">{requisition.required_date || '-'}</td>
-                <td className="px-3 py-2.5"><span className={`inline-flex whitespace-nowrap rounded border px-2 py-1 text-xs capitalize ${statusTone(requisition.status)}`}>{statusLabel(requisition.status)}</span></td>
+                <td className="px-3 py-2.5"><span className={`inline-flex whitespace-nowrap rounded border px-2 py-1 text-xs ${statusTone(requisition.status)}`}>{requisitionLabel(runtimeConfig.locale, 'status', requisition.status)}</span></td>
                 <td className="px-3 py-2.5 text-[var(--color-text-muted)]">{formatDate(requisition.updated_at)}</td>
               </tr>
             ))}
@@ -260,40 +314,41 @@ export function MaterialRequisitionsPage({ staffRole = 'admin' }) {
       </div>
 
       {selectedRequisition && (
-        <div className="fixed inset-0 z-50 flex justify-end bg-black/60" role="dialog" aria-modal="true" onMouseDown={(event) => { if (event.target === event.currentTarget) setSelectedRequisition(null); }}>
-          <section className="flex h-full w-full max-w-3xl flex-col overflow-hidden border-l border-[var(--color-border)] bg-[var(--color-bg)] shadow-2xl">
+        <div className="fixed inset-0 z-50 flex justify-end bg-black/60" role="dialog" aria-modal="true" onMouseDown={(event) => { if (!drawerPending && event.target === event.currentTarget) setSelectedRequisition(null); }}>
+          <section aria-busy={drawerPending} className="flex h-full w-full max-w-3xl flex-col overflow-hidden border-l border-[var(--color-border)] bg-[var(--color-bg)] shadow-2xl">
             <header className="flex items-start justify-between gap-4 border-b border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3">
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
                   <h3 className="font-semibold">{selectedRequisition.requisition_no}</h3>
-                  <span className={`inline-flex whitespace-nowrap rounded border px-2 py-1 text-xs capitalize ${statusTone(selectedRequisition.status)}`}>{statusLabel(selectedRequisition.status)}</span>
+                  <span className={`inline-flex whitespace-nowrap rounded border px-2 py-1 text-xs ${statusTone(selectedRequisition.status)}`}>{requisitionLabel(runtimeConfig.locale, 'status', selectedRequisition.status)}</span>
                 </div>
                 <div className="mt-1 text-xs text-[var(--color-text-muted)]">{t.workOrder}: {selectedRequisition.work_order_id} · {t.required}: {selectedRequisition.required_date || '-'}</div>
               </div>
-              <button type="button" title={t.closeDrawer} onClick={() => setSelectedRequisition(null)} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-[var(--color-border)]"><X size={18} /></button>
+              <button type="button" title={t.closeDrawer} disabled={drawerPending} onClick={() => setSelectedRequisition(null)} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-[var(--color-border)] disabled:opacity-50"><X size={18} /></button>
             </header>
 
             <div className="flex-1 overflow-y-auto px-4 py-4">
               <dl className="mb-5 grid gap-x-6 gap-y-2 border-b border-[var(--color-border)] pb-4 text-sm sm:grid-cols-2">
                 <div><dt className="text-xs text-[var(--color-text-muted)]">{t.purpose}</dt><dd className="mt-1">{selectedRequisition.purpose || '-'}</dd></div>
-                <div><dt className="text-xs text-[var(--color-text-muted)]">{t.current}</dt><dd className="mt-1 capitalize">{statusLabel(selectedRequisition.status)}</dd></div>
+                <div><dt className="text-xs text-[var(--color-text-muted)]">{t.current}</dt><dd className="mt-1">{requisitionLabel(runtimeConfig.locale, 'status', selectedRequisition.status)}</dd></div>
               </dl>
 
               <div className="mb-4 flex flex-col gap-2 border-b border-[var(--color-border)] pb-4 sm:flex-row sm:items-center">
-                <input value={note} onChange={(event) => setNote(event.target.value)} placeholder={t.actionNote} className="min-w-0 flex-1 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm outline-none focus:border-[var(--color-primary)]" />
+                <input value={note} disabled={drawerPending} onChange={(event) => setNote(event.target.value)} placeholder={t.actionNote} className="min-w-0 flex-1 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm outline-none focus:border-[var(--color-primary)] disabled:opacity-50" />
                 <div className="flex flex-wrap gap-2">
                   {allowedActions.filter((action) => ['approve', 'reject', 'cancel', 'close'].includes(action) && actionAvailable(selectedRequisition, null, action)).map((action) => {
                     const Icon = action === 'approve' ? Check : action === 'reject' ? CircleX : action === 'close' ? ClipboardCheck : X;
-                    return <button key={action} type="button" disabled={pendingActions.has(`header:${action}`)} onClick={() => handleDecision(action)} className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-lg border border-[var(--color-border)] px-3 py-2 text-xs hover:border-[var(--color-primary)] disabled:opacity-50"><Icon size={14} />{t[action]}</button>;
+                    return <button key={action} type="button" disabled={drawerPending} onClick={() => handleDecision(action)} className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-lg border border-[var(--color-border)] px-3 py-2 text-xs hover:border-[var(--color-primary)] disabled:opacity-50"><Icon size={14} />{t[action]}</button>;
                   })}
                 </div>
               </div>
+              {drawerPending && <div className="mb-4 text-xs font-medium text-[var(--color-primary)]" role="status">{t.pendingAction}</div>}
 
               <h4 className="mb-2 text-sm font-semibold">{t.lines}</h4>
               <div className="divide-y divide-[var(--color-border)] border-y border-[var(--color-border)]">
                 {selectedRequisition.items?.map((item) => {
                   const input = inputFor(item.id);
-                  const lineActions = allowedActions.filter((action) => ['allocate_stock', 'record_purchase', 'update_purchase', 'receive_purchase', 'issue', 'return'].includes(action) && actionAvailable(selectedRequisition, item, action));
+                  const lineActions = allowedActions.filter((action) => ['allocate_stock', 'record_purchase', 'update_purchase', 'receive_purchase', 'issue', 'return', 'cancel_item'].includes(action) && actionAvailable(selectedRequisition, item, action));
                   const showsPurchaseFields = lineActions.some((action) => ['record_purchase', 'update_purchase'].includes(action));
                   return (
                     <div key={item.id} className="py-3">
@@ -302,7 +357,7 @@ export function MaterialRequisitionsPage({ staffRole = 'admin' }) {
                           <div className="font-medium">{item.name_en && runtimeConfig.locale === 'en' ? item.name_en : item.name}</div>
                           <div className="mt-1 text-xs text-[var(--color-text-muted)]">{item.material_code || t.freeForm} · {[item.spec, item.brand, item.unit].filter(Boolean).join(' · ')}</div>
                         </div>
-                        <span className={`self-start whitespace-nowrap rounded border px-2 py-1 text-xs capitalize ${statusTone(item.status)}`}>{statusLabel(item.status)}</span>
+                        <span className={`self-start whitespace-nowrap rounded border px-2 py-1 text-xs ${statusTone(item.status)}`}>{requisitionLabel(runtimeConfig.locale, 'status', item.status)}</span>
                       </div>
                       <div className="mt-2 grid grid-cols-3 gap-2 text-xs sm:grid-cols-6">
                         {[
@@ -312,13 +367,13 @@ export function MaterialRequisitionsPage({ staffRole = 'admin' }) {
                       </div>
                       {lineActions.length > 0 && (
                         <div className="mt-3 grid gap-2 md:grid-cols-[90px_minmax(0,1fr)_150px_auto]">
-                          <input type="number" min="1" step="1" value={input.quantity} onChange={(event) => setInput(item.id, 'quantity', event.target.value)} aria-label={t.quantity} className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm" />
-                          {showsPurchaseFields ? <input value={input.supplier_reference} onChange={(event) => setInput(item.id, 'supplier_reference', event.target.value)} placeholder={t.supplier} className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm" /> : <div />}
-                          {showsPurchaseFields ? <input type="date" value={input.expected_arrival} onChange={(event) => setInput(item.id, 'expected_arrival', event.target.value)} aria-label={t.arrival} className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm" /> : <div />}
+                          <input type="number" min="1" step="1" value={input.quantity} disabled={drawerPending} onChange={(event) => setInput(item.id, 'quantity', event.target.value)} aria-label={t.quantity} className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm disabled:opacity-50" />
+                          {showsPurchaseFields ? <input value={input.supplier_reference} disabled={drawerPending} onChange={(event) => setInput(item.id, 'supplier_reference', event.target.value)} placeholder={t.supplier} className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm disabled:opacity-50" /> : <div />}
+                          {showsPurchaseFields ? <input type="date" value={input.expected_arrival} disabled={drawerPending} onChange={(event) => setInput(item.id, 'expected_arrival', event.target.value)} aria-label={t.arrival} className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm disabled:opacity-50" /> : <div />}
                           <div className="flex flex-wrap justify-end gap-2">
                             {lineActions.map((action) => {
-                              const Icon = action === 'allocate_stock' ? PackageOpen : ['record_purchase', 'update_purchase'].includes(action) ? ShoppingCart : action === 'receive_purchase' ? PackageCheck : action === 'issue' ? Truck : RotateCcw;
-                              return <button key={action} type="button" disabled={pendingActions.has(`${item.id}:${action}`)} onClick={() => handleLineAction(item, action)} className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-lg border border-[var(--color-border)] px-2.5 py-2 text-xs hover:border-[var(--color-primary)] disabled:opacity-50"><Icon size={14} />{t[action]}</button>;
+                              const Icon = action === 'allocate_stock' ? PackageOpen : ['record_purchase', 'update_purchase'].includes(action) ? ShoppingCart : action === 'receive_purchase' ? PackageCheck : action === 'issue' ? Truck : action === 'cancel_item' ? CircleX : RotateCcw;
+                              return <button key={action} type="button" disabled={drawerPending} onClick={() => handleLineAction(item, action)} className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-lg border border-[var(--color-border)] px-2.5 py-2 text-xs hover:border-[var(--color-primary)] disabled:opacity-50"><Icon size={14} />{t[action]}</button>;
                             })}
                           </div>
                         </div>
@@ -332,7 +387,8 @@ export function MaterialRequisitionsPage({ staffRole = 'admin' }) {
               <div className="border-l border-[var(--color-border)] pl-4">
                 {selectedRequisition.history?.length ? selectedRequisition.history.map((entry, index) => {
                   const after = parseState(entry.after_state);
-                  return <div key={`${entry.action}-${entry.created_at}-${index}`} className="relative pb-4 text-sm before:absolute before:-left-[19px] before:top-1.5 before:h-2 before:w-2 before:rounded-full before:bg-[var(--color-primary)]"><div className="font-medium capitalize">{statusLabel(entry.action.replace('material_requisition_', ''))}</div><div className="mt-0.5 text-xs text-[var(--color-text-muted)]">{entry.actor_id || entry.actor_type} · {formatDate(entry.created_at)}{after?.status ? ` · ${statusLabel(after.status)}` : ''}</div></div>;
+                  const actor = requisitionLabel(runtimeConfig.locale, 'actor', entry.actor_type);
+                  return <div key={`${entry.action}-${entry.created_at}-${index}`} className="relative pb-4 text-sm before:absolute before:-left-[19px] before:top-1.5 before:h-2 before:w-2 before:rounded-full before:bg-[var(--color-primary)]"><div className="font-medium">{requisitionLabel(runtimeConfig.locale, 'action', entry.action)}</div><div className="mt-0.5 text-xs text-[var(--color-text-muted)]">{actor}{entry.actor_id ? ` (${entry.actor_id})` : ''} · {formatDate(entry.created_at)}{after?.status ? ` · ${requisitionLabel(runtimeConfig.locale, 'status', after.status)}` : ''}</div></div>;
                 }) : <div className="pb-2 text-sm text-[var(--color-text-muted)]">{t.noHistory}</div>}
               </div>
             </div>
