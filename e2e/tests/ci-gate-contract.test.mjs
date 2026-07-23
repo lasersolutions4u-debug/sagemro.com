@@ -75,5 +75,7 @@ test('Worker deployment blocks on migrations for both production D1 databases', 
   assert.match(workerJob, /wrangler d1 execute sagemro-db --env production --remote/);
   assert.match(workerJob, /wrangler d1 execute sagemro-db-cn --env production --remote/);
   assert.match(workerJob, /038_material_requisitions_and_staff/);
+  assert.match(workerJob, /039_field_workdays/);
+  assert.match(workerJob, /040_field_evidence_cleanup_queue/);
   assert.match(workerJob, /CN_MISSING/);
 });

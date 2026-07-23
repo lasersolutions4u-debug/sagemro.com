@@ -85,7 +85,15 @@ const PRIVACY_POLICY = `
 
 **Information we do not intentionally collect:** national ID numbers, bank card information, biometric information, or remote-control data from your equipment unless separately agreed.
 
-## 2. Purposes of Information Use
+## 2. Protected Field Evidence
+
+- For on-site service, engineers use live field check-in photos and may upload daily progress photos to document attendance, site conditions, completed work, safety issues, and service delivery.
+- Protected field evidence is stored privately and is available only according to role and work-order relationship. Authorized engineers, customers, and SAGEMRO operational staff receive only the evidence needed for their service or review role. Internal notes and internal evidence are not shown to customers.
+- SAGEMRO does not perform facial recognition or biometric processing on field check-in or progress photos. The photos are service records, not biometric identity templates.
+- Field check-in and field-day photos are normally retained until 12 months after final completion of the work order, then become eligible for deletion.
+- Deletion is postponed while a complaint, warranty case, safety review, legal hold, or dispute requires the evidence to be preserved. Deletion resumes after the hold is resolved.
+
+## 3. Purposes of Information Use
 
 - Providing AI preliminary diagnostics and technical consultation
 - Creating service requests, equipment records, and service reports
@@ -94,7 +102,7 @@ const PRIVACY_POLICY = `
 - Improving AI response quality with anonymized or desensitized data
 - Security protection, abuse prevention, and operational troubleshooting
 
-## 3. Information Storage and Security
+## 4. Information Storage and Security
 
 - Data transmission uses HTTPS encryption
 - Passwords are salted and hashed; plaintext passwords are not stored
@@ -102,18 +110,18 @@ const PRIVACY_POLICY = `
 - API access uses authentication controls
 - Service data is accessible only to authorized users and SAGEMRO operational staff
 
-## 4. Data Retention
+## 5. Data Retention
 
 - Account records are retained while your account remains active
 - Service requests, equipment records, messages, attachments, and service reports are retained for service continuity, warranty or dispute handling, safety review, and legal compliance
 - Security logs, rate-limit records, and abuse-prevention records are retained only as long as reasonably needed for security and operations
 - You may request deletion where permitted by law; some records may be retained when necessary for legal obligations, dispute resolution, fraud prevention, or legitimate service records
 
-## 5. Storage Regions
+## 6. Storage Regions
 
 SAGEMRO primarily operates through cloud infrastructure and service providers that may store or process data in regions including the United States, the European Economic Area, the United Kingdom, mainland China, and other regions where our infrastructure or subprocessors operate. The applicable region may depend on the domain, user location, cloud routing, and service provider availability.
 
-## 6. AI and Cloud Subprocessors
+## 7. AI and Cloud Subprocessors
 
 - We do not sell your personal information
 - Service request information may be shared with SAGEMRO internal engineers or qualified engineers reviewed by SAGEMRO only as needed for service delivery
@@ -121,26 +129,26 @@ SAGEMRO primarily operates through cloud infrastructure and service providers th
 - Cloud hosting, database, email, logging, security, AI, speech transcription, file storage, and notification providers may act as processors or subprocessors for the limited purposes described in this policy
 - Information may be disclosed when required by law, regulation, or competent authorities
 
-## 7. International Transfers
+## 8. International Transfers
 
 If personal data is transferred across borders, SAGEMRO uses appropriate safeguards where required, which may include standard contractual clauses, equivalent contractual protections, technical safeguards, and transfer risk review.
 
-## 8. Your Rights
+## 9. Your Rights
 
 - Access: view your account, service requests, and equipment records
 - Correction: update personal information and equipment records when available
 - Deletion: contact us to delete your account or relevant data where legally permitted
 - Notification management: manage browser or in-app notifications where supported
 
-## 9. GDPR / UK GDPR Rights
+## 10. GDPR / UK GDPR Rights
 
 Where GDPR or UK GDPR applies, you may also have the right to data portability, restriction of processing, objection to processing based on legitimate interests, withdrawal of consent where processing is consent-based, and the right to lodge a complaint with your local data protection authority.
 
-## 10. Cookies and Local Storage
+## 11. Cookies and Local Storage
 
 This platform uses browser localStorage for login state and chat continuity. We do not rely on third-party tracking cookies for core service delivery.
 
-## 11. Contact Us
+## 12. Contact Us
 
 Jinan Euchio Machinery Co., Ltd. | Email: support@sagemro.com | https://sagemro.com
 `.trim();
@@ -274,7 +282,15 @@ const CN_PRIVACY_POLICY = `
 
 **我们不会主动收集的信息：**身份证号码、银行卡信息、生物识别信息或设备远程控制数据，除非双方另有明确约定。
 
-## 2. 信息使用目的
+## 2. 受保护的现场证据
+
+- 对于现场服务，工程师通过现场签到照片记录到场情况，并可上传每日进度照片，用于记录现场环境、已完成工作、安全问题和服务交付情况。
+- 受保护的现场证据采用私有存储，并根据用户角色及其与工单的关系控制访问。经授权的工程师、客户和 SAGEMRO 运营人员仅能查看其服务或审核职责所需的证据；内部备注和内部证据不会向客户展示。
+- SAGEMRO 不进行人脸识别或生物特征处理。现场签到照片和进度照片仅作为服务记录，不会用于建立生物身份模板。
+- 现场签到和现场作业日照片通常保留至工单最终完成后 12 个月，届时进入可删除范围。
+- 当存在投诉、质保、安全审查、法律保全或争议而需要保存证据时，将暂停删除；相关保全解除后恢复删除流程。
+
+## 3. 信息使用目的
 
 - 提供 AI 初步诊断和技术咨询
 - 创建服务请求、设备档案和服务报告
@@ -283,7 +299,7 @@ const CN_PRIVACY_POLICY = `
 - 使用匿名化或脱敏数据改善 AI 回复质量
 - 进行安全保护、防滥用和运营故障排查
 
-## 3. 信息存储与安全
+## 4. 信息存储与安全
 
 - 数据传输使用 HTTPS 加密
 - 密码经过加盐哈希处理，不保存明文密码
@@ -291,25 +307,25 @@ const CN_PRIVACY_POLICY = `
 - API 访问采用身份认证控制
 - 服务数据仅授权用户和 SAGEMRO 运营人员可访问
 
-## 4. 信息共享
+## 5. 信息共享
 
 - 我们不会出售你的个人信息
 - 为完成服务交付，服务请求信息可能按需提供给 SAGEMRO 内部工程师、合格工程师或经 SAGEMRO 审核的服务人员
 - AI 对话内容可能通过加密接口发送给 AI 服务提供方，但不包含账号密码
 - 法律法规或主管部门要求时，信息可能依法披露
 
-## 5. 你的权利
+## 6. 你的权利
 
 - 访问：查看账号、服务请求和设备档案
 - 更正：在功能支持时更新个人信息和设备记录
 - 删除：在法律允许范围内联系我们删除账号或相关数据
 - 通知管理：在浏览器或应用内管理通知设置
 
-## 6. Cookies 与本地存储
+## 7. Cookies 与本地存储
 
 本平台使用浏览器 localStorage 保存登录状态和对话连续性。核心服务交付不依赖第三方跟踪 Cookie。
 
-## 7. 联系我们
+## 8. 联系我们
 
 济南钰峭机械有限公司 | 邮箱：support@sagemro.com | https://sagemro.cn
 `.trim();
