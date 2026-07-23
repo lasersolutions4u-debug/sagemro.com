@@ -5,6 +5,7 @@ import {
   ClipboardList,
   Loader2,
   PackageCheck,
+  PackagePlus,
   Plus,
   RefreshCw,
   Trash2,
@@ -31,6 +32,7 @@ const COPY = {
     title: 'Material requisition',
     subtitle: 'Request parts for this work order and track fulfillment through engineer receipt.',
     newDraft: 'New draft',
+    quotePrefill: 'Import quote materials',
     prefill: 'Copy preparation lines',
     addLine: 'Add line',
     createDraft: 'Create draft',
@@ -42,6 +44,7 @@ const COPY = {
     notes: 'Notes',
     remove: 'Remove line',
     noPreparation: 'No preparation material lines are available to copy.',
+    noQuote: 'No quote material lines are available to import.',
     draftError: 'Add at least one line with a material name and a positive integer quantity.',
     listTitle: 'Current requisitions',
     empty: 'No requisitions have been created for this work order.',
@@ -77,6 +80,7 @@ const COPY = {
     title: '物料领用申请',
     subtitle: '为当前工单申请所需物料，并跟踪至工程师签收。',
     newDraft: '新建草稿',
+    quotePrefill: '导入报价物料',
     prefill: '复制准备物料',
     addLine: '添加明细',
     createDraft: '创建草稿',
@@ -88,6 +92,7 @@ const COPY = {
     notes: '备注',
     remove: '移除明细',
     noPreparation: '当前工单没有可复制的准备物料。',
+    noQuote: '当前报价没有可导入的物料明细。',
     draftError: '请至少添加一条物料名称完整、数量为正整数的明细。',
     listTitle: '当前申请单',
     empty: '当前工单还没有物料领用申请。',
@@ -153,6 +158,20 @@ function emptyDraftLine() {
   };
 }
 
+function mapMaterialItemsToDraft(items) {
+  return items.map((item) => ({
+    material_id: item.material_id || null,
+    material_code: item.material_code || '',
+    name: item.name || '',
+    name_en: item.name_en || '',
+    spec: item.spec || '',
+    brand: item.brand || '',
+    unit: item.unit || 'pcs',
+    requested_quantity: String(item.quantity || 1),
+    notes: item.note || '',
+  }));
+}
+
 function operationKey(prefix) {
   if (typeof crypto !== 'undefined' && crypto.randomUUID) return `${prefix}-${crypto.randomUUID()}`;
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -174,6 +193,7 @@ export function MaterialRequisitionPanel({ workOrderId, onBusyChange }) {
   const isCn = isCnLocale();
   const t = isCn ? COPY.cn : COPY.en;
   const [requisitions, setRequisitions] = useState([]);
+  const [quoteItems, setQuoteItems] = useState([]);
   const [preparationItems, setPreparationItems] = useState([]);
   const [draftItems, setDraftItems] = useState([emptyDraftLine()]);
   const [selectedRequisition, setSelectedRequisition] = useState(null);
@@ -190,6 +210,7 @@ export function MaterialRequisitionPanel({ workOrderId, onBusyChange }) {
   const receiptRetryRef = useRef({});
   const receiptInFlightRef = useRef(null);
   const detailRequestIdRef = useRef(0);
+  const autoPrefillWorkOrderRef = useRef('');
   const panelBusy = creating || submitting || Boolean(pendingReceiptId);
 
   const workOrderRequisitions = useMemo(
@@ -200,15 +221,32 @@ export function MaterialRequisitionPanel({ workOrderId, onBusyChange }) {
   const loadPanel = useCallback(async () => {
     setLoading(true);
     setError('');
-    const [requisitionResult, preparationResult] = await Promise.allSettled([
+    const [requisitionResult, quoteResult, preparationResult] = await Promise.allSettled([
       getMaterialRequisitions(workOrderId),
+      getWorkOrderMaterialItems(workOrderId, 'quote'),
       getWorkOrderMaterialItems(workOrderId, 'preparation'),
     ]);
+    let nextRequisitions = [];
     if (requisitionResult.status === 'rejected') {
       setRequisitions([]);
       setError(requisitionResult.reason?.message || t.loadFailed);
     } else {
-      setRequisitions(requisitionResult.value.requisitions || []);
+      nextRequisitions = requisitionResult.value.requisitions || [];
+      setRequisitions(nextRequisitions);
+    }
+    if (quoteResult.status === 'fulfilled') {
+      const nextQuoteItems = quoteResult.value.list || [];
+      const quoteDraftItems = mapMaterialItemsToDraft(quoteResult.value.list || []);
+      setQuoteItems(nextQuoteItems);
+      if (requisitionResult.status === 'fulfilled'
+        && !nextRequisitions.length
+        && quoteDraftItems.length
+        && autoPrefillWorkOrderRef.current !== workOrderId) {
+        autoPrefillWorkOrderRef.current = workOrderId;
+        setDraftItems(quoteDraftItems);
+      }
+    } else {
+      setQuoteItems([]);
     }
     if (preparationResult.status === 'fulfilled') {
       setPreparationItems(preparationResult.value.list || []);
@@ -262,19 +300,19 @@ export function MaterialRequisitionPanel({ workOrderId, onBusyChange }) {
       setError(t.noPreparation);
       return;
     }
-    const copied = preparationItems.map((item) => ({
-      material_id: item.material_id || null,
-      material_code: item.material_code || '',
-      name: item.name || '',
-      name_en: item.name_en || '',
-      spec: item.spec || '',
-      brand: item.brand || '',
-      unit: item.unit || 'pcs',
-      requested_quantity: String(item.quantity || 1),
-      notes: item.note || '',
-    }));
     clearDraftRetry();
-    setDraftItems(copied);
+    setDraftItems(mapMaterialItemsToDraft(preparationItems));
+    setError('');
+  };
+
+  const copyQuoteItems = () => {
+    if (creating || draftInFlightRef.current) return;
+    if (!quoteItems.length) {
+      setError(t.noQuote);
+      return;
+    }
+    clearDraftRetry();
+    setDraftItems(mapMaterialItemsToDraft(quoteItems));
     setError('');
   };
 
@@ -431,15 +469,26 @@ export function MaterialRequisitionPanel({ workOrderId, onBusyChange }) {
     <section className="space-y-3" aria-labelledby="material-requisition-draft-title">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <h3 id="material-requisition-draft-title" className="text-sm font-semibold text-[var(--color-text-primary)]">{t.newDraft}</h3>
-        <button
-          type="button"
-          onClick={copyPreparationItems}
-          disabled={creating || !preparationItems.length}
-          className="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-lg border border-[var(--color-border)] px-3 py-2 text-sm text-[var(--color-text-primary)] hover:border-[var(--color-primary)] disabled:opacity-50"
-        >
-          <ClipboardList size={16} />
-          {t.prefill}
-        </button>
+        <div className="flex flex-col gap-2 sm:flex-row">
+          <button
+            type="button"
+            onClick={copyQuoteItems}
+            disabled={creating || !quoteItems.length}
+            className="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-lg border border-[var(--color-primary)]/40 px-3 py-2 text-sm text-[var(--color-primary)] hover:bg-[var(--color-primary)]/10 disabled:opacity-50"
+          >
+            <PackagePlus size={16} />
+            {t.quotePrefill}
+          </button>
+          <button
+            type="button"
+            onClick={copyPreparationItems}
+            disabled={creating || !preparationItems.length}
+            className="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-lg border border-[var(--color-border)] px-3 py-2 text-sm text-[var(--color-text-primary)] hover:border-[var(--color-primary)] disabled:opacity-50"
+          >
+            <ClipboardList size={16} />
+            {t.prefill}
+          </button>
+        </div>
       </div>
 
       <div className="space-y-2">
