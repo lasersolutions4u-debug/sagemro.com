@@ -141,21 +141,17 @@ test('equipment category narrative uses laser and metal forming equipment consis
   assert.deepEqual(violations, []);
 });
 
-test('AI tool copy keeps service preparation neutral instead of sales routing', () => {
-  const aiTools = read('frontend/src/data/aiServiceTools.js');
-  const aiPanel = read('frontend/src/components/AI/AIToolsPanel.jsx');
+test('AI service copy keeps service preparation neutral instead of sales routing', () => {
+  const chatArea = read('frontend/src/components/Chat/ChatArea.jsx');
+  const welcomePage = read('frontend/src/components/Chat/WelcomePage.jsx');
   const legal = read('frontend/src/components/common/LegalModal.jsx');
 
-  assert.match(aiTools, /Service Cost Reference AI/);
-  assert.match(aiTools, /Maintenance Risk Review AI/);
-  assert.match(aiTools, /service request preparation or admin review/);
-  assert.match(aiPanel, /neutral next-step summary/);
-  assert.match(aiPanel, /Case type/);
-  assert.match(aiPanel, /natural chat remains the primary experience/);
+  assert.match(chatArea, /service process/i);
+  assert.match(welcomePage, /SAGEMRO Service OS|Useful public resources/i);
   assert.match(legal, /Service cost reference/);
   assert.match(legal, /服务费用参考/);
-  assert.doesNotMatch(aiTools, /sales lead|Repair Estimate AI|Equipment Health Report AI|Health Report/);
-  assert.doesNotMatch(aiPanel, /right SAGEMRO conversion action|right conversion action|Lead type/);
+  assert.doesNotMatch(chatArea, /sales lead|Repair Estimate AI|Equipment Health Report AI|Health Report/);
+  assert.doesNotMatch(welcomePage, /sales lead|right conversion action|Lead type/);
   assert.doesNotMatch(legal, /Repair estimate|维修估算/);
 });
 
@@ -175,7 +171,7 @@ test('COM inquiry path asks for service-ready international request details', ()
 test('registration copy hides CN email input and routes verification through phone SMS', () => {
   const loginModal = read('frontend/src/components/Auth/LoginModal.jsx');
   const api = read('frontend/src/services/api.js');
-  const toolbar = read('frontend/src/components/Sidebar/ToolBar.jsx');
+  const sidebar = read('frontend/src/components/Sidebar/Sidebar.jsx');
 
   assert.match(loginModal, /emailRequired: '请输入邮箱'/);
   assert.doesNotMatch(loginModal, /emailAddress: '邮箱/);
@@ -191,9 +187,9 @@ test('registration copy hides CN email input and routes verification through pho
   assert.match(api, /sendVerifyCode\(\{ phone, email \}\)/);
   assert.match(api, /JSON\.stringify\(payload\)/);
   assert.match(api, /registerCustomer\(\{ name, phone, email, password, code, company, identity \}\)/);
-  assert.match(toolbar, /loginLabel: '登录 \/ 注册'/);
-  assert.match(toolbar, /loginLabel: 'Sign In \/ Register'/);
-  assert.doesNotMatch(toolbar, /<span>Sign In \/ Register<\/span>/);
+  assert.match(loginModal, /modalTitle: '登录 \/ 注册'/);
+  assert.match(loginModal, /modalTitle: 'Sign In \/ Register'/);
+  assert.match(sidebar, /label: isCn \? '登录' : 'Sign In'/);
 });
 
 test('international login accepts email or long international phone numbers', () => {
@@ -337,14 +333,14 @@ test('Cloudflare deploy gate runs frontend tests before production deploy jobs',
 });
 
 test('customer sidebar tools stay expanded without a More overflow menu', () => {
-  const toolbar = read('frontend/src/components/Sidebar/ToolBar.jsx');
+  const toolbar = read('frontend/src/components/Sidebar/Sidebar.jsx');
 
-  assert.match(toolbar, /label: 'Request Service'/);
-  assert.match(toolbar, /label: 'My Services'/);
-  assert.match(toolbar, /label: 'Notifications'/);
-  assert.match(toolbar, /label: 'My Equipment'/);
+  assert.match(toolbar, /Request Service/);
+  assert.match(toolbar, /My Services/);
+  assert.match(toolbar, /Notifications/);
+  assert.match(toolbar, /My Equipment/);
   assert.ok(
-    toolbar.indexOf("label: 'Notifications'") < toolbar.indexOf("label: 'My Equipment'"),
+    toolbar.indexOf('Notifications') < toolbar.indexOf('My Equipment'),
     'Notifications should appear before My Equipment for logged-in customers'
   );
   assert.doesNotMatch(toolbar, /MoreHorizontal|sidebar-more-button|showCollapsed|setCollapsed|showMore|moreMenuRef/);
@@ -444,7 +440,7 @@ test('admin dispatch stays simple while Engineers owns search and profiles', () 
   const engineersPage = read('admin/src/pages/EngineersPage.jsx');
   const api = read('admin/src/services/api.js');
 
-  assert.match(app, /import \{ EngineersPage \} from '\.\/pages\/EngineersPage'/);
+  assert.match(app, /const EngineersPage = lazy\(\(\) => import\('\.\/pages\/EngineersPage\.jsx'\)/);
   assert.match(app, /engineers: 'Engineers'/);
   assert.match(app, /users: 'Customers'/);
   assert.match(app, /const \[selectedEngineerId, setSelectedEngineerId\] = useState\(''\)/);

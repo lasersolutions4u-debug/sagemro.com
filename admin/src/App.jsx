@@ -1,20 +1,21 @@
-import { useEffect, useMemo, useState } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
 import { Boxes, ClipboardList, LayoutDashboard, Users, UserCog, FileText, Star, LogOut, Target, BookOpenText, Menu, PackageSearch, ShieldCheck } from 'lucide-react';
 import { LoginPage } from './pages/LoginPage';
-import { DashboardPage } from './pages/DashboardPage';
-import { UsersPage } from './pages/UsersPage';
-import { EngineersPage } from './pages/EngineersPage';
-import { WorkOrdersPage } from './pages/WorkOrdersPage';
-import { RatingsPage } from './pages/RatingsPage';
-import { LeadsPage } from './pages/LeadsPage';
-import { EngineerApplicationsPage } from './pages/EngineerApplicationsPage';
-import { MaterialsPage } from './pages/MaterialsPage';
-import { KnowledgePage } from './pages/KnowledgePage';
-import { MaterialRequisitionsPage } from './pages/MaterialRequisitionsPage';
-import { StaffAccountsPage } from './pages/StaffAccountsPage';
 import { runtimeConfig } from './config/runtime';
 import { BrandMark } from './components/BrandMark';
 import { adminLogout, changeAdminPassword, restoreAdminSession } from './services/api';
+
+const DashboardPage = lazy(() => import('./pages/DashboardPage.jsx').then(({ DashboardPage }) => ({ default: DashboardPage })));
+const UsersPage = lazy(() => import('./pages/UsersPage.jsx').then(({ UsersPage }) => ({ default: UsersPage })));
+const EngineersPage = lazy(() => import('./pages/EngineersPage.jsx').then(({ EngineersPage }) => ({ default: EngineersPage })));
+const WorkOrdersPage = lazy(() => import('./pages/WorkOrdersPage.jsx').then(({ WorkOrdersPage }) => ({ default: WorkOrdersPage })));
+const RatingsPage = lazy(() => import('./pages/RatingsPage.jsx').then(({ RatingsPage }) => ({ default: RatingsPage })));
+const LeadsPage = lazy(() => import('./pages/LeadsPage.jsx').then(({ LeadsPage }) => ({ default: LeadsPage })));
+const EngineerApplicationsPage = lazy(() => import('./pages/EngineerApplicationsPage.jsx').then(({ EngineerApplicationsPage }) => ({ default: EngineerApplicationsPage })));
+const MaterialsPage = lazy(() => import('./pages/MaterialsPage.jsx').then(({ MaterialsPage }) => ({ default: MaterialsPage })));
+const KnowledgePage = lazy(() => import('./pages/KnowledgePage.jsx').then(({ KnowledgePage }) => ({ default: KnowledgePage })));
+const MaterialRequisitionsPage = lazy(() => import('./pages/MaterialRequisitionsPage.jsx').then(({ MaterialRequisitionsPage }) => ({ default: MaterialRequisitionsPage })));
+const StaffAccountsPage = lazy(() => import('./pages/StaffAccountsPage.jsx').then(({ StaffAccountsPage }) => ({ default: StaffAccountsPage })));
 
 const TEXT = {
   en: {
@@ -82,6 +83,15 @@ function normalizeAdminUser(user) {
     staffId: user.staffId ?? null,
     mustChangePassword: Boolean(user.mustChangePassword),
   };
+}
+
+function AdminPageLoading() {
+  return (
+    <div className="space-y-4" aria-busy="true" aria-label="Loading page">
+      <div className="h-8 w-52 animate-pulse rounded bg-[var(--color-surface-elevated)]" />
+      <div className="h-48 animate-pulse rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]" />
+    </div>
+  );
 }
 
 function MandatoryPasswordChange({ user, onChanged }) {
@@ -310,7 +320,9 @@ export default function App() {
         </div>
 
         <div className="mx-auto max-w-6xl px-3 py-4 sm:px-5 sm:py-5 lg:p-6">
-          {renderPage()}
+          <Suspense fallback={<AdminPageLoading />}>
+            {renderPage()}
+          </Suspense>
         </div>
       </main>
     </div>
