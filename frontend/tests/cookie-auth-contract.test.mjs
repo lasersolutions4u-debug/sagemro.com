@@ -36,8 +36,31 @@ test('frontend application restores and clears the server session', () => {
   assert.doesNotMatch(app, /localStorage\.getItem\('sagemro_user_type'\)/);
   assert.match(app, /setAuthReady\(true\)/);
   assert.match(app, /isEngineerHost[^\n]*&&[^\n]*!authReady/);
-  assert.match(api, /if \(!data\.authenticated\)[\s\S]*localStorage\.removeItem\('sagemro_user'\)/);
-  assert.match(api, /if \(!data\.authenticated\)[\s\S]*localStorage\.removeItem\('sagemro_csrf_token'\)/);
+  assert.match(app, /if \(authVersionRef\.current !== restoreVersion\) return;[\s\S]*localStorage\.setItem\('sagemro_csrf_token'/);
+  assert.match(app, /if \(authVersionRef\.current !== restoreVersion\) return;[\s\S]*localStorage\.removeItem\('sagemro_csrf_token'/);
+});
+
+test('a delayed startup session restore cannot overwrite a newer login', () => {
+  const restoreSessionSource = api.slice(
+    api.indexOf('export async function restoreSession'),
+    api.indexOf('export async function logout'),
+  );
+  const handleLogoutSource = app.slice(
+    app.indexOf('const handleLogout = useCallback'),
+    app.indexOf('// 监听 401 自动登出事件'),
+  );
+
+  assert.match(app, /const authVersionRef = useRef\(0\)/);
+  assert.match(app, /const restoreVersion = authVersionRef\.current/);
+  assert.match(app, /if \(authVersionRef\.current !== restoreVersion\) return/);
+  assert.match(app, /const handleLoginSuccess = useCallback[\s\S]*authVersionRef\.current \+= 1/);
+  assert.match(app, /const handleLogout = useCallback[\s\S]*authVersionRef\.current \+= 1/);
+  assert.match(api, /let __sessionRestoreOperation = null/);
+  assert.match(api, /async function waitForAuthTransitions/);
+  assert.match(api, /export async function login[\s\S]*await waitForAuthTransitions\(\)/);
+  assert.match(restoreSessionSource, /__sessionRestoreOperation/);
+  assert.doesNotMatch(restoreSessionSource, /localStorage\.removeItem/);
+  assert.match(handleLogoutSource, /localStorage\.removeItem\('sagemro_csrf_token'\)/);
 });
 
 test('frontend session restore falls back to the legacy JWT during staggered deploys', () => {

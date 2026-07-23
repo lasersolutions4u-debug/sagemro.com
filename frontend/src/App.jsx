@@ -66,6 +66,7 @@ function App() {
   const [userType, setUserType] = useState(null);
   const [authReady, setAuthReady] = useState(false);
   const [currentPath, setCurrentPath] = useState(() => window.location.pathname);
+  const authVersionRef = useRef(0);
 
   useEffect(() => {
     const isToolsOrInsights = currentPath === '/tools'
@@ -105,21 +106,32 @@ function App() {
 
   // 初始化用户状态
   useEffect(() => {
+    const restoreVersion = authVersionRef.current;
     restoreSession()
       .then((session) => {
+        if (authVersionRef.current !== restoreVersion) return;
         if (session.authenticated) {
+          if (session.csrfToken) {
+            localStorage.setItem('sagemro_csrf_token', session.csrfToken);
+            localStorage.removeItem('sagemro_token');
+          }
           setCurrentUser(session.user);
           setUserType(session.userType);
           localStorage.setItem('sagemro_user', JSON.stringify(session.user));
           localStorage.setItem('sagemro_user_type', session.userType);
         } else {
+          localStorage.removeItem('sagemro_token');
           localStorage.removeItem('sagemro_user');
           localStorage.removeItem('sagemro_user_type');
+          localStorage.removeItem('sagemro_customer_id');
+          localStorage.removeItem('sagemro_engineer_id');
+          localStorage.removeItem('sagemro_csrf_token');
           setCurrentUser(null);
           setUserType(null);
         }
       })
       .catch(() => {
+        if (authVersionRef.current !== restoreVersion) return;
         localStorage.removeItem('sagemro_user');
         localStorage.removeItem('sagemro_user_type');
         localStorage.removeItem('sagemro_customer_id');
@@ -346,6 +358,7 @@ function App() {
 
   // 登录成功
   const handleLoginSuccess = useCallback((userData) => {
+    authVersionRef.current += 1;
     setCurrentUser(userData.user);
     setUserType(userData.userType);
     if (userData.userType === 'engineer') {
@@ -368,12 +381,14 @@ function App() {
 
   // 登出
   const handleLogout = useCallback(() => {
+    authVersionRef.current += 1;
     logoutSession().catch(() => {});
     localStorage.removeItem('sagemro_token');
     localStorage.removeItem('sagemro_user');
     localStorage.removeItem('sagemro_user_type');
     localStorage.removeItem('sagemro_customer_id');
     localStorage.removeItem('sagemro_engineer_id');
+    localStorage.removeItem('sagemro_csrf_token');
     setCurrentUser(null);
     setUserType(null);
     setUnreadCount(0);
