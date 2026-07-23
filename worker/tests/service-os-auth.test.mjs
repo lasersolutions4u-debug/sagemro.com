@@ -22,6 +22,8 @@ function createTestEnv(overrides = {}) {
     identities: [],
     engineerApplications: [],
     engineerActivations: [],
+    workOrders: [],
+    materialRequisitions: [],
     batches: [],
     batchError: null,
   };
@@ -52,6 +54,13 @@ function createTestEnv(overrides = {}) {
             return this;
           },
           async first() {
+            if (/FROM material_requisitions mr\s+JOIN work_orders wo/i.test(sql)) {
+              const [customerId, engineerId] = this.args;
+              const workOrderIds = new Set(dbState.workOrders
+                .filter((order) => order.customer_id === customerId || order.engineer_id === engineerId)
+                .map((order) => order.id));
+              return dbState.materialRequisitions.find((row) => workOrderIds.has(row.work_order_id)) || null;
+            }
             if (/FROM account_identities/i.test(sql)) {
               const [email, phone] = this.args;
               return dbState.identities.find((identity) => (
@@ -128,6 +137,12 @@ function createTestEnv(overrides = {}) {
             return null;
           },
           async all() {
+            if (/SELECT id FROM work_orders WHERE customer_id = \?/i.test(sql)) {
+              return { results: dbState.workOrders.filter((order) => order.customer_id === this.args[0]).map(({ id }) => ({ id })) };
+            }
+            if (/SELECT id FROM work_orders WHERE engineer_id = \?/i.test(sql)) {
+              return { results: dbState.workOrders.filter((order) => order.engineer_id === this.args[0]).map(({ id }) => ({ id })) };
+            }
             return { results: [] };
           },
           async run() {
@@ -185,10 +200,11 @@ function createTestEnv(overrides = {}) {
   };
 }
 
-async function adminRequest(url, { method = 'POST', body } = {}) {
+async function adminRequest(url, { method = 'POST', body, market = 'com' } = {}) {
   const token = await signJwt({
     userId: 'admin',
     userType: 'admin',
+    market,
     exp: Math.floor(Date.now() / 1000) + 60,
   }, 'test-secret-with-enough-length');
 
@@ -869,6 +885,26 @@ test('Admin engineer deletion clears application, activation, and identity befor
   assert.ok(applicationIndex < activationIndex);
   assert.ok(activationIndex < identityIndex);
   assert.ok(identityIndex < engineerIndex);
+});
+
+test('Admin deletion preserves material requisition history for customers and engineers', async () => {
+  for (const [type, userId, ownerField] of [
+    ['customer', 'cust-linked', 'customer_id'],
+    ['engineer', 'eng-linked', 'engineer_id'],
+  ]) {
+    const env = createTestEnv();
+    env.__dbState[type === 'customer' ? 'customers' : 'engineers'].push({ id: userId });
+    env.__dbState.workOrders.push({ id: 'wo-linked', [ownerField]: userId });
+    env.__dbState.materialRequisitions.push({ id: 'req-linked', work_order_id: 'wo-linked' });
+
+    const response = await worker.fetch(await adminRequest(
+      `https://api.sagemro.com/api/admin/users/${userId}?type=${type}`,
+      { method: 'DELETE' },
+    ), env, { waitUntil() {} });
+
+    assert.equal(response.status, 409, type);
+    assert.equal(env.__dbState.batches.length, 0, type);
+  }
 });
 
 test('customer login returns company profile fields saved during registration', async () => {

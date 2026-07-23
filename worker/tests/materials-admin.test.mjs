@@ -30,6 +30,7 @@ function createStatement(env, sql) {
     },
     async run() {
       const normalized = sql.replace(/\s+/g, ' ');
+      let changes = 0;
       if (/INSERT INTO materials/i.test(normalized)) {
         const [
           id,
@@ -67,19 +68,37 @@ function createStatement(env, sql) {
           reference_cost,
           reference_price,
           stock_quantity,
+          reserved_quantity: 0,
           safety_stock,
           status,
           notes,
         });
+        changes = 1;
       }
       if (/UPDATE materials SET stock_quantity = stock_quantity \+ \?/i.test(normalized)) {
-        const [delta, id] = this.args;
+        const [delta, id, expectedStock, expectedReserved] = this.args;
         const material = env.__materials.find((item) => item.id === id);
-        if (!material) return { success: true, meta: { changes: 0 } };
+        if (!material) {
+          env.__lastChanges = 0;
+          return { success: true, meta: { changes: 0 } };
+        }
+        if (env.__forceNextStockMiss) {
+          env.__forceNextStockMiss = false;
+          env.__lastChanges = 0;
+          return { success: true, meta: { changes: 0 } };
+        }
+        if (expectedStock !== undefined && (material.stock_quantity !== expectedStock || material.reserved_quantity !== expectedReserved)) {
+          env.__lastChanges = 0;
+          return { success: true, meta: { changes: 0 } };
+        }
+        if (material.stock_quantity + delta < material.reserved_quantity) {
+          env.__lastChanges = 0;
+          return { success: true, meta: { changes: 0 } };
+        }
         material.stock_quantity += delta;
-        return { success: true, meta: { changes: 1 } };
+        changes = 1;
       }
-      if (/UPDATE materials SET/i.test(normalized) && /WHERE id = \?/i.test(normalized)) {
+      else if (/UPDATE materials SET/i.test(normalized) && /WHERE id = \?/i.test(normalized)) {
         const id = this.args.at(-1);
         const material = env.__materials.find((item) => item.id === id);
         if (!material) return { success: true, meta: { changes: 0 } };
@@ -102,7 +121,7 @@ function createStatement(env, sql) {
         ] = this.args.slice(0, 15);
         return { success: true, meta: { changes: 1 } };
       }
-      if (/INSERT INTO material_inventory_adjustments/i.test(normalized)) {
+      else if (/INSERT INTO material_inventory_adjustments/i.test(normalized)) {
         const [id, material_id, change_type, delta, before_quantity, after_quantity, reason, created_by] = this.args;
         env.__adjustments.push({
           id,
@@ -114,11 +133,22 @@ function createStatement(env, sql) {
           reason,
           created_by,
         });
+        changes = 1;
       }
-      if (/INSERT INTO audit_logs/i.test(normalized)) {
+      else if (/INSERT INTO audit_logs/i.test(normalized)) {
+        if (env.__failNextAudit) {
+          env.__failNextAudit = false;
+          throw new Error('audit insert failed');
+        }
         env.__auditLogs.push({ args: this.args });
+        changes = 1;
       }
-      return { success: true, meta: { changes: 1 } };
+      else if (/SELECT CASE WHEN changes\(\) = 1/i.test(normalized)) {
+        if (env.__lastChanges !== 1) throw new Error('material requisition concurrent update');
+        changes = 1;
+      }
+      env.__lastChanges = changes;
+      return { success: true, meta: { changes } };
     },
   };
 }
@@ -133,6 +163,23 @@ function createEnv() {
       prepare(sql) {
         return createStatement(env, sql);
       },
+      async batch(statements) {
+        const snapshot = structuredClone({
+          materials: env.__materials,
+          adjustments: env.__adjustments,
+          auditLogs: env.__auditLogs,
+        });
+        try {
+          const results = [];
+          for (const statement of statements) results.push(await statement.run());
+          return results;
+        } catch (error) {
+          env.__materials = snapshot.materials;
+          env.__adjustments = snapshot.adjustments;
+          env.__auditLogs = snapshot.auditLogs;
+          throw error;
+        }
+      },
     },
     KV: {
       async get() { return null; },
@@ -146,6 +193,7 @@ async function token(env, userType = 'admin') {
   return signJwt({
     userId: `${userType}-1`,
     userType,
+    market: 'cn',
     phone: '13800000000',
     iat: 1,
     exp: Math.floor(Date.now() / 1000) + 3600,
@@ -227,6 +275,45 @@ test('admin can update material inventory with an adjustment record', async () =
   assert.equal(env.__adjustments.length, 1);
   assert.equal(env.__adjustments[0].before_quantity, 10);
   assert.equal(env.__adjustments[0].after_quantity, 16);
+});
+
+test('manual inventory reduction cannot consume reserved stock', async () => {
+  const env = createEnv();
+  const created = await api(env, '/api/admin/materials', {
+    method: 'POST',
+    body: { material_code: 'RESERVED-001', name: 'Reserved part', stock_quantity: 10 },
+  });
+  env.__materials[0].reserved_quantity = 7;
+
+  const denied = await api(env, `/api/admin/materials/${created.json.material.id}/inventory-adjustments`, {
+    method: 'POST', body: { change_type: 'manual_out', delta: -5, reason: 'Count correction' },
+  });
+
+  assert.equal(denied.response.status, 409);
+  assert.equal(env.__materials[0].stock_quantity, 10);
+  assert.equal(env.__adjustments.length, 0);
+  assert.equal(env.__auditLogs.length, 1, 'only material creation audit remains');
+});
+
+test('manual inventory adjustment rolls back stock and adjustment when audit or guard fails', async () => {
+  for (const failure of ['audit', 'stale']) {
+    const env = createEnv();
+    const created = await api(env, '/api/admin/materials', {
+      method: 'POST', body: { material_code: `ATOMIC-${failure}`, name: 'Atomic part', stock_quantity: 10 },
+    });
+    const before = structuredClone({ material: env.__materials[0], adjustments: env.__adjustments, audits: env.__auditLogs });
+    if (failure === 'audit') env.__failNextAudit = true;
+    else env.__forceNextStockMiss = true;
+
+    const result = await api(env, `/api/admin/materials/${created.json.material.id}/inventory-adjustments`, {
+      method: 'POST', body: { change_type: 'manual_out', delta: -2, reason: failure },
+    });
+
+    assert.equal(result.response.status, failure === 'audit' ? 500 : 409, failure);
+    assert.deepEqual(env.__materials[0], before.material, failure);
+    assert.deepEqual(env.__adjustments, before.adjustments, failure);
+    assert.deepEqual(env.__auditLogs, before.audits, failure);
+  }
 });
 
 test('admin can update material master fields without directly changing stock', async () => {

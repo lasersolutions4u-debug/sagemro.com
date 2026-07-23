@@ -65,7 +65,7 @@ test('customer, Admin, and engineer complete a service order lifecycle', async (
   await expect(engineerTask).toBeVisible();
   await engineerTask.getByRole('button', { name: 'Confirm Assignment', exact: true }).click();
   await engineerTask.getByRole('button', { name: 'View / Handle Task', exact: true }).click();
-  await engineerPage.getByRole('button', { name: 'Submit Quote', exact: true }).click();
+  await engineerPage.getByRole('tab', { name: 'Submit Quote', exact: true }).click();
   await engineerPage.getByLabel('Labor Fee').fill('800');
   await engineerPage.getByLabel('Travel Fee').fill('100');
   await engineerPage.getByTestId('submit-pricing-button').click();
@@ -79,7 +79,7 @@ test('customer, Admin, and engineer complete a service order lifecycle', async (
 
   await customerPage.getByRole('button', { name: 'My Services', exact: true }).click();
   await customerPage.getByText(orderNo, { exact: true }).click();
-  await customerPage.getByRole('button', { name: 'Confirm Quote', exact: true }).click();
+  await customerPage.getByRole('tab', { name: 'Confirm Quote', exact: true }).click();
   await expect(customerPage.getByTestId('open-confirm-pricing-button')).toBeVisible();
   await customerPage.getByTestId('open-confirm-pricing-button').click();
   await expect(customerPage.getByTestId('confirm-pricing-button')).toBeVisible();
@@ -106,7 +106,7 @@ test('customer, Admin, and engineer complete a service order lifecycle', async (
   await engineerPage.reload();
   const serviceTask = engineerPage.locator('article').filter({ hasText: orderNo });
   await serviceTask.getByRole('button', { name: 'View / Handle Task', exact: true }).click();
-  await engineerPage.getByRole('button', { name: 'Service Report', exact: true }).click();
+  await engineerPage.getByRole('tab', { name: 'Service Report', exact: true }).click();
   await engineerPage.getByLabel('Customer Symptom').fill('Laser power dropped during continuous cutting.');
   await engineerPage.getByLabel('Root Cause / Diagnosis').fill('Protective lens contamination reduced delivered power.');
   await engineerPage.getByLabel('Service Actions / Next Advice').fill('Cleaned optical path and replaced the protective lens.');

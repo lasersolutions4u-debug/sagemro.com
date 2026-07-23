@@ -119,6 +119,7 @@ async function api(env, path, { body, userType, userId, method = 'POST' }) {
   const jwt = await signJwt({
     userId,
     userType,
+    market: 'com',
     phone: '13800000000',
     iat: 1,
     exp: Math.floor(Date.now() / 1000) + 3600,

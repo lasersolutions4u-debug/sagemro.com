@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Archive, ClipboardCheck, FileText, Package, ShieldAlert, Timer, TrendingUp, UserCheck, Wrench } from 'lucide-react';
-import { getAdminStats } from '../services/api';
+import { getAdminStats, getMaterialRequisitionMetrics } from '../services/api';
 import { runtimeConfig } from '../config/runtime';
 
 const TEXT = {
@@ -9,6 +9,8 @@ const TEXT = {
     loadFailed: 'Failed to load',
     title: 'SAGEMRO Operations Console',
     subtitle: 'Lead routing, service review, dispatch management, quote approval, service quality, and compliant archiving.',
+    operationalTitle: 'Material Requisition Operations',
+    operationalSubtitle: 'Approval, shortage, overdue, fulfillment, and closure performance.',
     cards: {
       aiLeadsToday: 'New machine leads today',
       pendingReview: 'Service requests pending review',
@@ -26,12 +28,20 @@ const TEXT = {
       completed: 'Completed',
     },
     statusDistribution: 'Service order status',
+    requisitionOperations: 'Material requisition operations',
+    requisitionMetrics: {
+      pendingApproval: 'Pending approval', shortages: 'Shortage lines', overdue: 'Overdue',
+      medianApprovalHours: 'Median approval', medianFulfillmentHours: 'Median fulfillment', closureRatePercent: 'Closure rate',
+    },
+    hours: 'h',
   },
   'zh-CN': {
     loading: '加载中...',
     loadFailed: '加载失败',
     title: 'SAGEMRO 运营中枢',
     subtitle: '线索分流、服务审核、派工管理、报价确认、服务质量和合规归档。',
+    operationalTitle: '物料领用运营',
+    operationalSubtitle: '查看审批、缺料、逾期、履约和关闭指标。',
     cards: {
       aiLeadsToday: '今日新增整机线索',
       pendingReview: '待审核服务申请',
@@ -49,11 +59,18 @@ const TEXT = {
       completed: '已完成',
     },
     statusDistribution: '工单状态分布',
+    requisitionOperations: '物料领用运营',
+    requisitionMetrics: {
+      pendingApproval: '待审批', shortages: '缺料明细', overdue: '已逾期',
+      medianApprovalHours: '审批中位时长', medianFulfillmentHours: '履约中位时长', closureRatePercent: '关闭率',
+    },
+    hours: '小时',
   },
 };
 
-export function DashboardPage() {
+export function DashboardPage({ staffRole = 'admin', staffId = null }) {
   const t = TEXT[runtimeConfig.locale] || TEXT.en;
+  const isOperationalStaff = staffId != null && staffRole !== 'admin';
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -61,11 +78,11 @@ export function DashboardPage() {
   useEffect(() => {
     setLoading(true);
     setError('');
-    getAdminStats()
+    (isOperationalStaff ? getMaterialRequisitionMetrics() : getAdminStats())
       .then(setStats)
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
-  }, []);
+  }, [isOperationalStaff]);
 
   if (loading) {
     return <div className="text-center py-12 text-[var(--color-text-muted)]">{t.loading}</div>;
@@ -81,33 +98,57 @@ export function DashboardPage() {
   }
 
   const operations = stats.operations || {};
+  const workOrders = stats.workOrders || {};
+  const requisitionOperations = stats.requisitionOperations || {};
   const cards = [
     { icon: TrendingUp, label: t.cards.aiLeadsToday, value: operations.aiLeadsToday ?? 0, color: 'var(--color-info)' },
-    { icon: ClipboardCheck, label: t.cards.pendingReview, value: operations.pendingReview ?? stats.workOrders.pending, color: 'var(--color-primary)' },
+    { icon: ClipboardCheck, label: t.cards.pendingReview, value: operations.pendingReview ?? workOrders.pending, color: 'var(--color-primary)' },
     { icon: ShieldAlert, label: t.cards.highRiskDowntime, value: operations.highRiskDowntime ?? 0, color: 'var(--color-error)' },
     { icon: FileText, label: t.cards.pendingQuotes, value: operations.pendingQuotes ?? 0, color: 'var(--color-warning)' },
-    { icon: UserCheck, label: t.cards.pendingDispatch, value: operations.pendingDispatch ?? stats.workOrders.pending, color: 'var(--color-info)' },
-    { icon: Wrench, label: t.cards.inService, value: operations.inService ?? stats.workOrders.in_progress, color: 'var(--color-success)' },
+    { icon: UserCheck, label: t.cards.pendingDispatch, value: operations.pendingDispatch ?? workOrders.pending, color: 'var(--color-info)' },
+    { icon: Wrench, label: t.cards.inService, value: operations.inService ?? workOrders.in_progress, color: 'var(--color-success)' },
     { icon: Archive, label: t.cards.pendingArchive, value: operations.pendingArchive ?? 0, color: 'var(--color-text-muted)' },
     { icon: Package, label: t.cards.valueAddedRequests, value: operations.valueAddedRequests ?? 0, color: 'var(--color-warning)' },
     { icon: Timer, label: t.cards.euchioMachineLeads, value: operations.euchioMachineLeads ?? 0, color: 'var(--color-primary)' },
   ];
 
   const statusItems = [
-    { label: t.status.pending, value: stats.workOrders.pending, color: 'var(--color-info)' },
-    { label: t.status.inProgress, value: stats.workOrders.in_progress, color: 'var(--color-warning)' },
-    { label: t.status.completed, value: stats.workOrders.completed, color: 'var(--color-success)' },
+    { label: t.status.pending, value: workOrders.pending, color: 'var(--color-info)' },
+    { label: t.status.inProgress, value: workOrders.in_progress, color: 'var(--color-warning)' },
+    { label: t.status.completed, value: workOrders.completed, color: 'var(--color-success)' },
+  ];
+
+  const requisitionMetrics = [
+    ['pendingApproval', requisitionOperations.pendingApproval ?? 0],
+    ['shortages', requisitionOperations.shortages ?? 0],
+    ['overdue', requisitionOperations.overdue ?? 0],
+    ['medianApprovalHours', requisitionOperations.medianApprovalHours == null ? '-' : `${Number(requisitionOperations.medianApprovalHours).toFixed(1)} ${t.hours}`],
+    ['medianFulfillmentHours', requisitionOperations.medianFulfillmentHours == null ? '-' : `${Number(requisitionOperations.medianFulfillmentHours).toFixed(1)} ${t.hours}`],
+    ['closureRatePercent', requisitionOperations.closureRatePercent == null ? '-' : `${Number(requisitionOperations.closureRatePercent).toFixed(1)}%`],
   ];
 
   return (
     <div>
       <div className="mb-6">
-        <h2 className="text-lg font-semibold">{t.title}</h2>
+        <h2 className="text-lg font-semibold">{isOperationalStaff ? t.operationalTitle : t.title}</h2>
         <p className="text-sm text-[var(--color-text-muted)] mt-1">
-          {t.subtitle}
+          {isOperationalStaff ? t.operationalSubtitle : t.subtitle}
         </p>
       </div>
 
+      <section className="mb-6 border-y border-[var(--color-border)] bg-[var(--color-surface)]">
+        <div className="border-b border-[var(--color-border)] px-3 py-2 text-xs font-medium uppercase text-[var(--color-text-secondary)]">{t.requisitionOperations}</div>
+        <div className="grid grid-cols-2 divide-x divide-y divide-[var(--color-border)] sm:grid-cols-3 lg:grid-cols-6 lg:divide-y-0">
+          {requisitionMetrics.map(([key, value]) => (
+            <div key={key} className="min-w-0 px-3 py-3">
+              <div className="truncate text-xs text-[var(--color-text-muted)]">{t.requisitionMetrics[key]}</div>
+              <div className="mt-1 text-lg font-semibold">{value}</div>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {!isOperationalStaff && (
       <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
         {cards.map((card) => (
           <div
@@ -122,12 +163,14 @@ export function DashboardPage() {
           </div>
         ))}
       </div>
+      )}
 
+      {!isOperationalStaff && (
       <div className="rounded-xl bg-[var(--color-surface-elevated)] border border-[var(--color-border)] p-4">
         <h3 className="text-sm font-medium mb-4">{t.statusDistribution}</h3>
         <div className="space-y-3">
           {statusItems.map((item) => {
-            const total = stats.workOrders.total || 1;
+            const total = workOrders.total || 1;
             const pct = Math.round((item.value / total) * 100);
             return (
               <div key={item.label} className="flex items-center gap-3">
@@ -144,6 +187,7 @@ export function DashboardPage() {
           })}
         </div>
       </div>
+      )}
     </div>
   );
 }

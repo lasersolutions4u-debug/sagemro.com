@@ -15,7 +15,7 @@ export function uniqueIdentity(prefix) {
 
 export async function loginAdmin(page, runtime = e2eRuntime()) {
   await page.goto(runtime.adminBase);
-  await page.getByPlaceholder('Admin phone number').fill('19900000001');
+  await page.getByPlaceholder('Phone number or login name').fill('19900000001');
   await page.getByPlaceholder('Password').fill('LocalAdminPassword123!');
   await page.getByRole('button', { name: 'Sign In', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Engineer Applications', exact: true })).toBeVisible();
@@ -71,4 +71,72 @@ export async function onboardEngineer({ browser, runtime = e2eRuntime() }) {
 
   await adminContext.close();
   return { engineer, context, page };
+}
+
+export async function createCustomerWorkOrder({ browser, runtime = e2eRuntime(), description }) {
+  const customer = {
+    ...uniqueIdentity('Customer'),
+    password: 'LocalCustomerPassword123!',
+  };
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  await page.goto(runtime.customerBase);
+  await page.getByRole('button', { name: 'Sign In', exact: true }).click();
+  await page.getByRole('button', { name: 'Register', exact: true }).click();
+  await page.getByPlaceholder('e.g., ABC Metal Products Co., Ltd.').fill(`E2E Metal ${customer.runId}`);
+  await page.getByPlaceholder('Enter your name').fill(customer.name);
+  await page.getByPlaceholder('Set a password (min. 10 characters)').fill(customer.password);
+  await page.getByPlaceholder('Re-enter your password').fill(customer.password);
+  await page.getByPlaceholder('Enter your phone number').fill(customer.phone);
+  await page.getByPlaceholder('Enter your email address').fill(customer.email);
+  await page.getByPlaceholder('Enter verification code').fill('246810');
+  await page.getByRole('checkbox').check();
+  await page.getByRole('button', { name: 'Create account', exact: true }).click();
+
+  const requestServiceButton = page.getByRole('button', { name: 'Request Service', exact: true });
+  await expect(requestServiceButton).toBeVisible();
+  await requestServiceButton.click();
+  await page.getByLabel('Request Type').selectOption('fault');
+  await page.getByLabel('Equipment Model / Part No.').fill('E2E-LASER-3015');
+  await page.getByLabel('Request Details').fill(description || `E2E lifecycle ${customer.runId}: replacement parts required.`);
+  await page.getByLabel('Contact Method').fill(customer.email);
+  await page.getByTestId('submit-work-order-button').click();
+
+  const serviceNo = page.getByText(/^Service No\.:/);
+  await expect(serviceNo).toBeVisible();
+  const orderNo = (await serviceNo.textContent()).replace('Service No.:', '').trim();
+  await page.getByRole('button', { name: 'Got it', exact: true }).click();
+  return { customer, context, page, orderNo };
+}
+
+export async function dispatchWorkOrder({ page, orderNo, engineer }) {
+  await page.getByRole('button', { name: 'Service Orders', exact: true }).click();
+  const row = page.locator('tr').filter({ hasText: orderNo });
+  await expect(row).toBeVisible();
+  await row.getByRole('button', { name: 'View', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Service Control View' });
+  const engineerOption = dialog.locator('select').last().locator('option').filter({ hasText: engineer.name });
+  await dialog.getByLabel('Select engineer').selectOption(await engineerOption.getAttribute('value'));
+  await dialog.getByRole('button', { name: 'Direct dispatch', exact: true }).click();
+  await expect(page.getByText(`Dispatched: ${orderNo}`, { exact: true })).toBeVisible();
+  await dialog.getByRole('button', { name: 'Close', exact: true }).click();
+}
+
+export async function adminApi(page, runtime, path, options = {}) {
+  return page.evaluate(async ({ apiBase, requestPath, requestOptions }) => {
+    const headers = new Headers(requestOptions.headers || {});
+    headers.set('Content-Type', 'application/json');
+    const csrfToken = localStorage.getItem('admin_csrf_token');
+    if (csrfToken && !['GET', 'HEAD', 'OPTIONS'].includes((requestOptions.method || 'GET').toUpperCase())) {
+      headers.set('X-CSRF-Token', csrfToken);
+    }
+    const response = await fetch(`${apiBase}${requestPath}`, {
+      ...requestOptions,
+      credentials: 'include',
+      headers,
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+    return data;
+  }, { apiBase: runtime.apiBase, requestPath: path, requestOptions: options });
 }

@@ -86,6 +86,13 @@ import {
 import { captureException } from './lib/sentry.js';
 import { isKnownProtectedRoute, isTestRoute } from './lib/routes.js';
 import { handlePublicRoute } from './lib/publicRoutes.js';
+import {
+  canCloseMaterialRequisition,
+  canManageMaterialRequisition,
+  deriveItemStatus,
+  validateFulfillmentQuantities,
+} from './lib/materialRequisitions.js';
+import { getRequisitionOperationsMetrics } from './lib/requisitionMetrics.js';
 
 // AI 工具调用确定性日志（Phase 0.1）
 import { logToolCall, measureAndLogToolCall, PermissionError } from './lib/trace.js';
@@ -409,7 +416,9 @@ function buildAuditLogStatement(env, request, {
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).bind(
     generateId(),
-    actorType || request?._auth?.userType || 'system',
+    actorType || (request?._auth?.userType === 'admin'
+      ? request._auth.staffRole || 'admin'
+      : request?._auth?.userType) || 'system',
     actorId || request?._auth?.userId || '',
     targetType,
     targetId,
@@ -2015,7 +2024,7 @@ function getCorsHeaders(request, env) {
     'Access-Control-Allow-Origin': getAllowedOrigin(origin, env),
     'Vary': 'Origin',
     'Access-Control-Allow-Methods': 'GET, POST, PATCH, DELETE, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-CSRF-Token',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-CSRF-Token, Idempotency-Key',
     'Access-Control-Allow-Credentials': 'true',
   };
 }
@@ -2041,7 +2050,7 @@ const corsHeaders = {
   'Access-Control-Allow-Origin': ALLOWED_ORIGINS_PRODUCTION[0],
   'Vary': 'Origin',
   'Access-Control-Allow-Methods': 'GET, POST, PATCH, DELETE, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-CSRF-Token',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-CSRF-Token, Idempotency-Key',
 };
 
 // 处理 OPTIONS 预检请求
@@ -3049,12 +3058,44 @@ async function handleAuthSession(request, env) {
   }
 
   if (sessionAuth.userType === 'admin') {
+    if (sessionAuth.staffId) {
+      const staff = await env.DB.prepare('SELECT * FROM admin_staff_accounts WHERE id = ?').bind(sessionAuth.staffId).first();
+      const requestMarket = getRequestMarket(request);
+      const marketAllowed = sessionAuth.market === requestMarket
+        && (staff?.market_scope === 'all' || staff?.market_scope === requestMarket);
+      if (!staff?.is_active || !marketAllowed) {
+        return clearPortalSession(jsonResponse({ authenticated: false }), request, env);
+      }
+      response = jsonResponse({
+        authenticated: true,
+        csrfToken: sessionAuth.csrf,
+        userType: 'admin',
+        user: {
+          id: staff.id,
+          name: staff.display_name,
+          phone: staff.normalized_phone || '',
+          type: 'admin',
+          market: sessionAuth.market || getRequestMarket(request),
+          staffRole: staff.role,
+          staffId: staff.id,
+          mustChangePassword: Boolean(staff.must_change_password),
+        },
+      });
+      return rotateLegacyBearer ? addSessionCookie(response, request, env, 'admin', await signJwt({
+        ...sessionAuth,
+        staffRole: staff.role,
+        mustChangePassword: Boolean(staff.must_change_password),
+      }, env.JWT_SECRET)) : response;
+    }
     const credentials = resolveAdminCredentials(request, env);
     response = jsonResponse({
       authenticated: true,
       csrfToken: sessionAuth.csrf,
       userType: 'admin',
-      user: { id: 'admin', name: '超级管理员', phone: credentials.phone, type: 'admin', market: credentials.market },
+      user: {
+        id: 'admin', name: '超级管理员', phone: credentials.phone, type: 'admin', market: credentials.market,
+        staffRole: 'admin', staffId: null, mustChangePassword: false,
+      },
     });
     return rotateLegacyBearer ? addSessionCookie(response, request, env, 'admin', await signJwt(sessionAuth, env.JWT_SECRET)) : response;
   }
@@ -5382,7 +5423,7 @@ async function handleGetWorkOrder(request, env) {
     let payout = await env.DB.prepare(
       'SELECT * FROM work_order_payouts WHERE work_order_id = ?'
     ).bind(id).first();
-    if (!payout && workOrder?.status === 'completed' && workOrder?.engineer_id) {
+    if (!payout && request._auth?.staffRole !== 'operations' && workOrder?.status === 'completed' && workOrder?.engineer_id) {
       payout = await ensureWorkOrderPayout(env, id, workOrder.engineer_id, 'pending');
     }
 
@@ -6592,6 +6633,29 @@ async function handleChangePassword(request, env) {
     if (!oldPassword || !newPassword) return errorResponse('旧密码和新密码不能为空');
     if (isPasswordTooShort(newPassword)) return passwordTooShortResponse(request);
 
+    if (auth.userType === 'admin') {
+      if (!auth.staffId) return errorResponse('超级管理员密码由环境变量管理', 403);
+      const staff = await env.DB.prepare('SELECT * FROM admin_staff_accounts WHERE id = ?').bind(auth.staffId).first();
+      if (!staff?.is_active) return errorResponse('员工账号不存在或已停用', 404);
+      const ok = await verifyPassword(oldPassword, staff.password_hash, staff.salt);
+      if (!ok) return errorResponse('旧密码错误');
+      const newSalt = generateSalt();
+      const newHash = await hashPasswordNew(newPassword, newSalt);
+      const mutation = env.DB.prepare(`
+        UPDATE admin_staff_accounts
+        SET password_hash = ?, salt = ?, must_change_password = 0, updated_at = datetime('now')
+        WHERE id = ?
+      `).bind(newHash, newSalt, auth.staffId);
+      await runAuditedWorkflowBatch(env, request, guardedWorkflowMutation(env, mutation), {
+        targetType: 'admin_staff_account',
+        targetId: auth.staffId,
+        action: 'staff_password_changed',
+        beforeState: { must_change_password: Boolean(staff.must_change_password) },
+        afterState: { must_change_password: false },
+      });
+      return jsonResponse({ success: true, mustChangePassword: false });
+    }
+
     const table = auth.userType === 'engineer' ? 'engineers' : 'customers';
     const user = await env.DB.prepare(`SELECT id, password_hash, salt FROM ${table} WHERE id = ?`).bind(auth.userId).first();
     if (!user) return errorResponse('用户不存在', 404);
@@ -7054,6 +7118,10 @@ function toSafeNumber(value, fallback = 0) {
 function toSafeInteger(value, fallback = 0) {
   const num = parseInt(value, 10);
   return Number.isFinite(num) ? num : fallback;
+}
+
+function toPositiveQuantity(value) {
+  return typeof value === 'number' && Number.isInteger(value) && value > 0 ? value : null;
 }
 
 function cleanTextArray(value, maxItems = 12, maxItemLength = 80) {
@@ -8083,15 +8151,19 @@ async function handleAdminMaterialInventoryAdjustment(request, env) {
     if (!delta) return errorResponse('库存调整数量不能为 0', 400);
 
     const beforeQuantity = Number(material.stock_quantity || 0);
+    const beforeReserved = Number(material.reserved_quantity || 0);
     const afterQuantity = beforeQuantity + delta;
     if (afterQuantity < 0) return errorResponse('库存不能调整为负数', 400);
-
-    await env.DB.prepare(
-      "UPDATE materials SET stock_quantity = stock_quantity + ?, updated_at = datetime('now') WHERE id = ?"
-    ).bind(delta, materialId).run();
+    if (afterQuantity < beforeReserved) return errorResponse('库存调整不能占用已预留库存', 409);
 
     const adjustmentId = generateId();
-    await env.DB.prepare(`
+    const stockMutation = env.DB.prepare(`
+      UPDATE materials
+      SET stock_quantity = stock_quantity + ?, updated_at = datetime('now')
+      WHERE id = ? AND stock_quantity = ? AND reserved_quantity = ?
+        AND stock_quantity + ? >= reserved_quantity
+    `).bind(delta, materialId, beforeQuantity, beforeReserved, delta);
+    const adjustment = env.DB.prepare(`
       INSERT INTO material_inventory_adjustments (
         id, material_id, change_type, delta, before_quantity, after_quantity, reason, created_by
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
@@ -8104,16 +8176,25 @@ async function handleAdminMaterialInventoryAdjustment(request, env) {
       afterQuantity,
       reason || null,
       request._auth?.userId || 'admin'
-    ).run();
-
-    const updated = await env.DB.prepare('SELECT * FROM materials WHERE id = ?').bind(materialId).first();
-    await writeAuditLog(env, request, {
+    );
+    await runAuditedWorkflowBatch(env, request, [
+      ...guardedWorkflowMutation(env, stockMutation),
+      adjustment,
+    ], {
       targetType: 'material',
       targetId: materialId,
       action: 'material_inventory_adjusted',
-      beforeState: { stock_quantity: beforeQuantity },
-      afterState: { stock_quantity: afterQuantity, delta, change_type: changeType, reason },
+      beforeState: { stock_quantity: beforeQuantity, reserved_quantity: beforeReserved },
+      afterState: {
+        stock_quantity: afterQuantity,
+        reserved_quantity: beforeReserved,
+        delta,
+        change_type: changeType,
+        reason,
+      },
     });
+
+    const updated = await env.DB.prepare('SELECT * FROM materials WHERE id = ?').bind(materialId).first();
 
     return jsonResponse({
       success: true,
@@ -8121,7 +8202,1073 @@ async function handleAdminMaterialInventoryAdjustment(request, env) {
       material: normalizeMaterial(updated || { ...material, stock_quantity: afterQuantity }),
     });
   } catch (error) {
+    if (isWorkflowConcurrencyError(error)) return workflowErrorResponse(error);
     return errorResponse(error.message, 500);
+  }
+}
+
+const STAFF_ROLES = new Set(['admin', 'operations', 'warehouse', 'procurement']);
+const STAFF_MARKETS = new Set(['all', 'com', 'cn']);
+const REQUISITION_URGENCIES = new Set(['normal', 'urgent', 'critical']);
+const REQUISITION_TERMINAL_STATUSES = new Set(['rejected', 'cancelled', 'closed']);
+const REQUISITION_ITEM_CONCURRENCY_COLUMNS = [
+  'requested_quantity',
+  'stock_allocated_quantity',
+  'procurement_ordered_quantity',
+  'procurement_received_quantity',
+  'issued_quantity',
+  'stock_issued_quantity',
+  'returned_quantity',
+  'engineer_received_quantity',
+  'status',
+];
+
+function workflowMutationGuardStatement(env) {
+  return env.DB.prepare(`
+    SELECT CASE WHEN changes() = 1 THEN 1 ELSE json('material requisition concurrent update') END
+  `);
+}
+
+function guardedWorkflowMutation(env, statement) {
+  return [statement, workflowMutationGuardStatement(env)];
+}
+
+async function runAuditedWorkflowBatch(env, request, statements, auditData) {
+  if (typeof env.DB.batch !== 'function') throw new Error('Transactional D1 batch is required');
+  return env.DB.batch([...statements, buildAuditLogStatement(env, request, auditData)]);
+}
+
+function isWorkflowConcurrencyError(error) {
+  return /material requisition concurrent update|malformed json/i.test(String(error?.message || error));
+}
+
+function workflowErrorResponse(error, fallbackStatus = 500) {
+  if (isWorkflowConcurrencyError(error)) return errorResponse('数据已被更新，请刷新后重试', 409);
+  return errorResponse(error.message, fallbackStatus);
+}
+
+function conditionalItemUpdateStatements(env, item, next) {
+  const columns = Object.keys(next);
+  const statement = env.DB.prepare(`
+    UPDATE material_requisition_items
+    SET ${columns.map((column) => `${column} = ?`).join(', ')}, updated_at = datetime('now')
+    WHERE id = ? AND requisition_id = ?
+      ${REQUISITION_ITEM_CONCURRENCY_COLUMNS.map((column) => `AND ${column} = ?`).join('\n      ')}
+  `).bind(
+    ...columns.map((column) => next[column]),
+    item.id,
+    item.requisition_id,
+    ...REQUISITION_ITEM_CONCURRENCY_COLUMNS.map((column) => item[column]),
+  );
+  return guardedWorkflowMutation(env, statement);
+}
+
+function itemSnapshotGuardStatements(env, item) {
+  const statement = env.DB.prepare(`
+    UPDATE material_requisition_items
+    SET updated_at = updated_at
+    WHERE id = ? AND requisition_id = ?
+      ${REQUISITION_ITEM_CONCURRENCY_COLUMNS.map((column) => `AND ${column} = ?`).join('\n      ')}
+  `).bind(
+    item.id,
+    item.requisition_id,
+    ...REQUISITION_ITEM_CONCURRENCY_COLUMNS.map((column) => item[column]),
+  );
+  return guardedWorkflowMutation(env, statement);
+}
+
+function requisitionStatusGuardStatements(env, requisition) {
+  const statement = env.DB.prepare(`
+    UPDATE material_requisitions SET status = status WHERE id = ? AND status = ?
+  `).bind(requisition.id, requisition.status);
+  return guardedWorkflowMutation(env, statement);
+}
+
+function isBootstrapAdmin(auth) {
+  return auth?.userType === 'admin' && !auth.staffId && auth.userId === 'admin';
+}
+
+function requisitionRole(auth) {
+  if (auth?.userType === 'engineer') return 'engineer';
+  if (auth?.userType !== 'admin') return '';
+  return auth.staffRole || (isBootstrapAdmin(auth) ? 'admin' : '');
+}
+
+function isOperationsReadRoute(path, method) {
+  if (method !== 'GET') return false;
+  return path === '/api/admin/workorders'
+    || path === '/api/admin/materials'
+    || /^\/api\/workorders\/[^/]+$/.test(path)
+    || /^\/api\/workorders\/[^/]+\/messages$/.test(path);
+}
+
+function publicStaffAccount(staff) {
+  if (!staff) return staff;
+  const { password_hash, salt, ...safe } = staff;
+  return safe;
+}
+
+function generateTemporaryPassword() {
+  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
+  const bytes = new Uint8Array(12);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (byte) => alphabet[byte % alphabet.length]).join('');
+}
+
+async function handleAdminStaffList(request, env) {
+  if (!isBootstrapAdmin(request._auth)) return errorResponse('仅超级管理员可管理员工账号', 403);
+  const { results } = await env.DB.prepare(`
+    SELECT id, normalized_login, normalized_phone, role, is_active, display_name,
+           market_scope, must_change_password, created_by, created_at, updated_at
+    FROM admin_staff_accounts ORDER BY created_at DESC
+  `).all();
+  return jsonResponse({ staff: results || [] });
+}
+
+async function handleAdminStaffCreate(request, env) {
+  try {
+    if (!isBootstrapAdmin(request._auth)) return errorResponse('仅超级管理员可管理员工账号', 403);
+    const body = await request.json().catch(() => ({}));
+    const normalizedLogin = normalizeIdentityEmail(body.login);
+    const normalizedPhone = normalizeIdentityPhone(body.phone);
+    const role = cleanText(body.role, 30);
+    const displayName = cleanText(body.display_name, 100);
+    const marketScope = cleanText(body.market_scope, 10) || 'all';
+    if (!normalizedLogin || !displayName || !STAFF_ROLES.has(role) || !STAFF_MARKETS.has(marketScope)) {
+      return errorResponse('员工账号信息不完整或无效', 400);
+    }
+
+    const existing = normalizedPhone
+      ? await env.DB.prepare(`
+          SELECT * FROM admin_staff_accounts WHERE normalized_login = ? OR normalized_phone = ?
+        `).bind(normalizedLogin, normalizedPhone).first()
+      : await env.DB.prepare(`
+          SELECT * FROM admin_staff_accounts WHERE normalized_login = ?
+        `).bind(normalizedLogin).first();
+    if (existing) return errorResponse('员工登录名或手机号已存在', 409);
+
+    const id = generateId();
+    const temporaryPassword = generateTemporaryPassword();
+    const salt = generateSalt();
+    const passwordHash = await hashPasswordNew(temporaryPassword, salt);
+    const staff = {
+      id,
+      normalized_login: normalizedLogin,
+      normalized_phone: normalizedPhone || null,
+      role,
+      is_active: 1,
+      display_name: displayName,
+      market_scope: marketScope,
+      must_change_password: 1,
+      created_by: request._auth.userId,
+    };
+    const insert = env.DB.prepare(`
+      INSERT INTO admin_staff_accounts (
+        id, normalized_login, normalized_phone, password_hash, salt, role,
+        display_name, market_scope, created_by
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).bind(
+      id, normalizedLogin, normalizedPhone || null, passwordHash, salt, role,
+      displayName, marketScope, request._auth.userId,
+    );
+    await runAuditedWorkflowBatch(env, request, [insert], {
+      targetType: 'admin_staff_account', targetId: id, action: 'staff_created',
+      beforeState: null, afterState: publicStaffAccount(staff),
+    });
+    return jsonResponse({ staff: publicStaffAccount(staff), temporary_password: temporaryPassword }, 201);
+  } catch (error) {
+    if (/UNIQUE/i.test(String(error?.message || ''))) return errorResponse('员工登录名或手机号已存在', 409);
+    return errorResponse(error.message, 500);
+  }
+}
+
+async function handleAdminStaffDeactivate(request, env) {
+  try {
+    if (!isBootstrapAdmin(request._auth)) return errorResponse('仅超级管理员可管理员工账号', 403);
+    const staffId = new URL(request.url).pathname.split('/')[4];
+    const staff = await env.DB.prepare('SELECT * FROM admin_staff_accounts WHERE id = ?').bind(staffId).first();
+    if (!staff) return errorResponse('员工账号不存在', 404);
+    const updated = { ...staff, is_active: 0 };
+    const mutation = env.DB.prepare(`
+      UPDATE admin_staff_accounts SET is_active = 0, updated_at = datetime('now') WHERE id = ?
+    `).bind(staffId);
+    await runAuditedWorkflowBatch(env, request, guardedWorkflowMutation(env, mutation), {
+      targetType: 'admin_staff_account', targetId: staffId, action: 'staff_deactivated',
+      beforeState: publicStaffAccount(staff), afterState: publicStaffAccount(updated),
+    });
+    return jsonResponse({ staff: publicStaffAccount(updated) });
+  } catch (error) {
+    return workflowErrorResponse(error);
+  }
+}
+
+async function handleAdminStaffResetPassword(request, env) {
+  try {
+    if (!isBootstrapAdmin(request._auth)) return errorResponse('仅超级管理员可管理员工账号', 403);
+    const staffId = new URL(request.url).pathname.split('/')[4];
+    const staff = await env.DB.prepare('SELECT * FROM admin_staff_accounts WHERE id = ?').bind(staffId).first();
+    if (!staff) return errorResponse('员工账号不存在', 404);
+    const temporaryPassword = generateTemporaryPassword();
+    const salt = generateSalt();
+    const passwordHash = await hashPasswordNew(temporaryPassword, salt);
+    const mutation = env.DB.prepare(`
+      UPDATE admin_staff_accounts
+      SET password_hash = ?, salt = ?, must_change_password = 1, updated_at = datetime('now')
+      WHERE id = ?
+    `).bind(passwordHash, salt, staffId);
+    await runAuditedWorkflowBatch(env, request, guardedWorkflowMutation(env, mutation), {
+      targetType: 'admin_staff_account', targetId: staffId, action: 'staff_temporary_password_reset',
+      beforeState: { must_change_password: Boolean(staff.must_change_password) },
+      afterState: { must_change_password: true },
+    });
+    return jsonResponse({ success: true, temporary_password: temporaryPassword });
+  } catch (error) {
+    return workflowErrorResponse(error);
+  }
+}
+
+async function requireActiveStaff(env, auth) {
+  if (!auth?.staffId) return isBootstrapAdmin(auth) ? { role: 'admin' } : null;
+  const staff = await env.DB.prepare('SELECT * FROM admin_staff_accounts WHERE id = ?').bind(auth.staffId).first();
+  return staff?.is_active ? staff : null;
+}
+
+async function getRequisitionWithItems(env, requisitionId) {
+  const requisition = await env.DB.prepare('SELECT * FROM material_requisitions WHERE id = ?').bind(requisitionId).first();
+  if (!requisition) return null;
+  const itemsResult = await env.DB.prepare(`
+    SELECT * FROM material_requisition_items WHERE requisition_id = ? ORDER BY created_at ASC
+  `).bind(requisitionId).all();
+  return {
+    ...requisition,
+    items: itemsResult.results || [],
+  };
+}
+
+async function getAdminRequisitionDetail(env, requisitionId) {
+  const requisition = await getRequisitionWithItems(env, requisitionId);
+  if (!requisition) return null;
+  const historyResult = await env.DB.prepare(`
+    SELECT actor_type, action, json_extract(after_state, '$.status') AS status, created_at
+    FROM audit_logs
+    WHERE (target_type = 'material_requisition' AND target_id = ?)
+       OR (target_type = 'material_requisition_item' AND target_id IN (
+         SELECT id FROM material_requisition_items WHERE requisition_id = ?
+       ))
+    ORDER BY created_at ASC, id ASC
+  `).bind(requisitionId, requisitionId).all();
+  return { ...requisition, history: historyResult.results || [] };
+}
+
+async function canAccessRequisition(env, auth, requisition) {
+  if (auth?.userType === 'admin') return true;
+  if (auth?.userType !== 'engineer') return false;
+  const workOrder = await env.DB.prepare(`
+    SELECT id, customer_id, engineer_id, assigned_regional_lead_id, status FROM work_orders WHERE id = ?
+  `).bind(requisition.work_order_id).first();
+  return workOrder?.engineer_id === auth.userId;
+}
+
+function generateRequisitionNumber(id) {
+  const date = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+  return `MR-${date}-${String(id).replace(/[^a-z0-9]/gi, '').toUpperCase()}`;
+}
+
+async function normalizeRequisitionLine(env, input) {
+  const requestedQuantity = toPositiveQuantity(input?.requested_quantity);
+  if (!requestedQuantity) throw new Error('Requested quantity must be a positive integer');
+  const materialId = cleanText(input.material_id, 100) || null;
+  const material = materialId
+    ? await env.DB.prepare('SELECT * FROM materials WHERE id = ?').bind(materialId).first()
+    : null;
+  if (materialId && !material) throw new Error('Material not found');
+  const name = cleanText(input.name || material?.name, 200);
+  if (!name) throw new Error('Material name is required');
+  return {
+    materialId,
+    materialCode: cleanText(input.material_code || material?.material_code, 100) || null,
+    name,
+    nameEn: cleanText(input.name_en || material?.name_en, 200) || null,
+    spec: cleanText(input.spec || material?.spec, 300) || null,
+    brand: cleanText(input.brand || material?.brand, 100) || null,
+    unit: cleanText(input.unit || material?.unit, 30) || 'pcs',
+    requestedQuantity,
+    notes: cleanText(input.notes, 600) || null,
+  };
+}
+
+function canonicalCreateDraftLine(input) {
+  const requestedQuantity = toPositiveQuantity(input?.requested_quantity);
+  if (!requestedQuantity) throw new Error('Requested quantity must be a positive integer');
+  return {
+    material_id: cleanText(input?.material_id, 100) || null,
+    material_code: cleanText(input?.material_code, 100) || null,
+    name: cleanText(input?.name, 200) || null,
+    name_en: cleanText(input?.name_en, 200) || null,
+    spec: cleanText(input?.spec, 300) || null,
+    brand: cleanText(input?.brand, 100) || null,
+    unit: cleanText(input?.unit, 30) || null,
+    requested_quantity: requestedQuantity,
+    notes: cleanText(input?.notes, 600) || null,
+  };
+}
+
+async function handleCreateMaterialRequisition(request, env) {
+  let operationKey = '';
+  let requestFingerprint = '';
+  try {
+    const auth = request._auth;
+    const role = requisitionRole(auth);
+    if (!canManageMaterialRequisition(role, 'create_draft') && auth.userType !== 'admin') {
+      return errorResponse('无权创建领料申请', 403);
+    }
+    operationKey = workflowOperationKey(request);
+    if (!operationKey) return errorResponse('Idempotency-Key header is required', 400);
+    const body = await request.json().catch(() => ({}));
+    const workOrderId = cleanText(body.work_order_id, 100);
+    const workOrder = await env.DB.prepare(`
+      SELECT id, customer_id, engineer_id, assigned_regional_lead_id, status FROM work_orders WHERE id = ?
+    `).bind(workOrderId).first();
+    if (!workOrder) return errorResponse('工单不存在', 404);
+    if (auth.userType === 'engineer' && workOrder.engineer_id !== auth.userId) {
+      return errorResponse('仅指派工程师可创建领料申请', 403);
+    }
+    if (!Array.isArray(body.items) || body.items.length === 0) return errorResponse('领料申请至少需要一条物料', 400);
+    const urgency = cleanText(body.urgency, 20) || 'normal';
+    if (!REQUISITION_URGENCIES.has(urgency)) return errorResponse('无效紧急程度', 400);
+    const market = getRequestMarket(request);
+    const requiredDate = cleanText(body.required_date, 30) || null;
+    const purpose = cleanText(body.purpose, 600) || null;
+    const fingerprintLines = body.items.map(canonicalCreateDraftLine);
+    requestFingerprint = await createDraftRequestFingerprint({
+      market,
+      workOrderId,
+      requestedByType: auth.userType,
+      requestedById: auth.userId,
+      urgency,
+      requiredDate,
+      purpose,
+      lines: fingerprintLines,
+    });
+    const replay = await idempotentCreateDraftResponse(env, operationKey, requestFingerprint);
+    if (replay) return replay;
+    const lines = [];
+    for (const item of body.items) lines.push(await normalizeRequisitionLine(env, item));
+    let id;
+    let requisitionNo;
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      id = generateId();
+      requisitionNo = generateRequisitionNumber(id);
+      const header = env.DB.prepare(`
+        INSERT INTO material_requisitions (
+          id, requisition_no, market, work_order_id, requested_by_type, requested_by_id,
+          status, urgency, required_date, purpose
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).bind(
+        id, requisitionNo, market, workOrderId, auth.userType, auth.userId, 'draft', urgency,
+        requiredDate, purpose,
+      );
+      const itemStatements = lines.map((line) => env.DB.prepare(`
+        INSERT INTO material_requisition_items (
+          id, requisition_id, material_id, material_code, name, name_en, spec, brand,
+          unit, requested_quantity, notes
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).bind(
+        generateId(), id, line.materialId, line.materialCode, line.name, line.nameEn, line.spec,
+        line.brand, line.unit, line.requestedQuantity, line.notes,
+      ));
+      const auditAfterState = {
+        id,
+        requisition_no: requisitionNo,
+        market,
+        work_order_id: workOrderId,
+        requested_by_type: auth.userType,
+        requested_by_id: auth.userId,
+        status: 'draft',
+        urgency,
+        required_date: requiredDate,
+        purpose,
+        items: lines,
+      };
+      try {
+        await runAuditedWorkflowBatch(env, request, [
+          header,
+          ...itemStatements,
+          workflowOperationStatement(env, operationKey, 'create_draft', id, null, requestFingerprint),
+        ], {
+          targetType: 'material_requisition', targetId: id, action: 'material_requisition_created',
+          beforeState: null, afterState: auditAfterState,
+        });
+        break;
+      } catch (error) {
+        if (/UNIQUE constraint failed: material_requisition_operations\.operation_key/i.test(String(error?.message || ''))) {
+          const operationReplay = await idempotentCreateDraftResponse(env, operationKey, requestFingerprint);
+          if (operationReplay) return operationReplay;
+        }
+        if (!/UNIQUE constraint failed: material_requisitions\.requisition_no/i.test(String(error?.message || '')) || attempt === 2) {
+          throw error;
+        }
+      }
+    }
+    const requisition = await getRequisitionWithItems(env, id);
+    return jsonResponse({ requisition }, 201);
+  } catch (error) {
+    return errorResponse(error.message, /required|positive|not found/i.test(error.message) ? 400 : 500);
+  }
+}
+
+async function handleListMaterialRequisitions(request, env) {
+  const auth = request._auth;
+  const workOrderId = cleanText(new URL(request.url).searchParams.get('work_order_id'), 100);
+  const market = getRequestMarket(request);
+  let statement;
+  if (auth.userType === 'engineer') {
+    statement = env.DB.prepare(`
+      SELECT mr.* FROM material_requisitions mr
+      JOIN work_orders wo ON wo.id = mr.work_order_id
+      WHERE wo.engineer_id = ? AND mr.market = ?
+        ${workOrderId ? 'AND mr.work_order_id = ?' : ''}
+      ORDER BY mr.created_at DESC
+    `).bind(auth.userId, market, ...(workOrderId ? [workOrderId] : []));
+  } else if (auth.userType === 'admin') {
+    statement = env.DB.prepare(`
+      SELECT * FROM material_requisitions
+      WHERE market = ? ${workOrderId ? 'AND work_order_id = ?' : ''}
+      ORDER BY created_at DESC
+    `).bind(market, ...(workOrderId ? [workOrderId] : []));
+  } else {
+    return errorResponse('无权查看领料申请', 403);
+  }
+  const { results } = await statement.all();
+  return jsonResponse({ requisitions: results || [] });
+}
+
+async function handleGetMaterialRequisition(request, env) {
+  const requisitionId = new URL(request.url).pathname.split('/')[3];
+  const requisition = request._auth.userType === 'admin'
+    ? await getAdminRequisitionDetail(env, requisitionId)
+    : await getRequisitionWithItems(env, requisitionId);
+  if (!requisition) return errorResponse('领料申请不存在', 404);
+  if (!await canAccessRequisition(env, request._auth, requisition)) return errorResponse('无权查看该领料申请', 403);
+  return jsonResponse({ requisition });
+}
+
+async function handleSubmitMaterialRequisition(request, env) {
+  try {
+    const requisitionId = new URL(request.url).pathname.split('/')[3];
+    const requisition = await getRequisitionWithItems(env, requisitionId);
+    if (!requisition) return errorResponse('领料申请不存在', 404);
+    const workOrder = await env.DB.prepare(`
+      SELECT id, customer_id, engineer_id, assigned_regional_lead_id, status FROM work_orders WHERE id = ?
+    `).bind(requisition.work_order_id).first();
+    if (request._auth.userType !== 'engineer' || workOrder?.engineer_id !== request._auth.userId) {
+      return errorResponse('仅创建申请的工程师可提交', 403);
+    }
+    if (requisition.status !== 'draft') return errorResponse('仅草稿可提交', 409);
+    if (!requisition.items.length || requisition.items.some((item) => Number(item.requested_quantity) <= 0)) {
+      return errorResponse('提交的领料申请必须包含正数数量物料', 400);
+    }
+    const mutation = env.DB.prepare(`
+      UPDATE material_requisitions
+      SET status = ?, submitted_at = datetime('now'), updated_at = datetime('now')
+      WHERE id = ? AND status = ?
+    `).bind('submitted', requisitionId, requisition.status);
+    await runAuditedWorkflowBatch(env, request, guardedWorkflowMutation(env, mutation), {
+      targetType: 'material_requisition', targetId: requisitionId, action: 'material_requisition_submitted',
+      beforeState: { status: requisition.status }, afterState: { status: 'submitted' },
+    });
+    return jsonResponse({ requisition: await getRequisitionWithItems(env, requisitionId) });
+  } catch (error) {
+    return workflowErrorResponse(error);
+  }
+}
+
+async function handleRequisitionDecision(request, env, action) {
+  const role = requisitionRole(request._auth);
+  if (!canManageMaterialRequisition(role, action)) return errorResponse('当前员工角色无权执行该操作', 403);
+  const requisitionId = new URL(request.url).pathname.split('/')[3];
+  const requisition = await getRequisitionWithItems(env, requisitionId);
+  if (!requisition) return errorResponse('领料申请不存在', 404);
+  const body = await request.json().catch(() => ({}));
+  let nextStatus;
+  if (action === 'approve') {
+    if (requisition.status !== 'submitted') return errorResponse('仅已提交申请可审批', 409);
+    nextStatus = 'approved';
+  } else if (action === 'reject') {
+    if (requisition.status !== 'submitted') return errorResponse('仅已提交申请可驳回', 409);
+    nextStatus = 'rejected';
+  } else {
+    if (REQUISITION_TERMINAL_STATUSES.has(requisition.status)) return errorResponse('当前申请不可取消', 409);
+    if (requisition.items.some((item) => Number(item.issued_quantity || 0) > 0
+      || Number(item.engineer_received_quantity || 0) > 0)) {
+      return errorResponse('已发料或签收的申请不能取消，请先完成允许的退库处理', 409);
+    }
+    nextStatus = 'cancelled';
+  }
+  const reason = cleanText(body.reason, 600) || null;
+  let mutation;
+  const reservationStatements = [];
+  if (action === 'approve') {
+    mutation = env.DB.prepare(`
+      UPDATE material_requisitions
+      SET status = ?, approved_by = ?, approved_at = datetime('now'), updated_at = datetime('now')
+      WHERE id = ? AND status = ?
+    `).bind(nextStatus, request._auth.staffId || request._auth.userId, requisitionId, requisition.status);
+  } else if (action === 'reject') {
+    mutation = env.DB.prepare(`
+      UPDATE material_requisitions
+      SET status = ?, rejection_reason = ?, updated_at = datetime('now')
+      WHERE id = ? AND status = ?
+    `).bind(nextStatus, reason, requisitionId, requisition.status);
+  } else {
+    const reservationsByMaterial = new Map();
+    for (const item of requisition.items) {
+      reservationStatements.push(...itemSnapshotGuardStatements(env, item));
+      if (!item.material_id) continue;
+      const outstandingReservation = outstandingItemReservation(item);
+      if (outstandingReservation > 0) {
+        reservationsByMaterial.set(
+          item.material_id,
+          (reservationsByMaterial.get(item.material_id) || 0) + outstandingReservation,
+        );
+      }
+    }
+    for (const [materialId, quantity] of reservationsByMaterial) {
+      reservationStatements.push(...guardedWorkflowMutation(env, env.DB.prepare(`
+        UPDATE materials
+        SET reserved_quantity = reserved_quantity - ?, updated_at = datetime('now')
+        WHERE id = ? AND reserved_quantity >= ?
+      `).bind(quantity, materialId, quantity)));
+    }
+    mutation = env.DB.prepare(`
+      UPDATE material_requisitions
+      SET status = ?, cancellation_reason = ?, cancelled_at = datetime('now'), updated_at = datetime('now')
+      WHERE id = ? AND status = ?
+        AND NOT EXISTS (
+          SELECT 1 FROM material_requisition_items
+          WHERE requisition_id = material_requisitions.id
+            AND (issued_quantity > 0 OR engineer_received_quantity > 0)
+        )
+    `).bind(nextStatus, reason, requisitionId, requisition.status);
+  }
+  try {
+    await runAuditedWorkflowBatch(env, request, [
+      ...reservationStatements,
+      ...guardedWorkflowMutation(env, mutation),
+    ], {
+      targetType: 'material_requisition', targetId: requisitionId,
+      action: `material_requisition_${{ approve: 'approved', reject: 'rejected', cancel: 'cancelled' }[action]}`,
+      beforeState: { status: requisition.status },
+      afterState: { status: nextStatus, reason },
+    });
+    return jsonResponse({ requisition: await getRequisitionWithItems(env, requisitionId) });
+  } catch (error) {
+    return workflowErrorResponse(error);
+  }
+}
+
+function fulfillmentValues(item, overrides = {}) {
+  return {
+    requested: Number(item.requested_quantity),
+    stockAllocated: Number(overrides.stock_allocated_quantity ?? item.stock_allocated_quantity ?? 0),
+    procurementOrdered: Number(overrides.procurement_ordered_quantity ?? item.procurement_ordered_quantity ?? 0),
+    procurementReceived: Number(overrides.procurement_received_quantity ?? item.procurement_received_quantity ?? 0),
+    issued: Number(overrides.issued_quantity ?? item.issued_quantity ?? 0),
+    engineerReceived: Number(overrides.engineer_received_quantity ?? item.engineer_received_quantity ?? 0),
+  };
+}
+
+function deriveApiItemStatus(item, overrides = {}) {
+  const values = fulfillmentValues(item, overrides);
+  return deriveItemStatus(values);
+}
+
+function fulfillmentSource(stockAllocated, procurementOrdered) {
+  if (stockAllocated > 0 && procurementOrdered > 0) return 'mixed';
+  if (procurementOrdered > 0) return 'procurement';
+  if (stockAllocated > 0) return 'stock';
+  return 'unassigned';
+}
+
+function outstandingItemReservation(item, overrides = {}) {
+  return Math.max(
+    0,
+    Number(overrides.stock_allocated_quantity ?? item.stock_allocated_quantity ?? 0)
+      + Number(overrides.procurement_received_quantity ?? item.procurement_received_quantity ?? 0)
+      - Number(overrides.issued_quantity ?? item.issued_quantity ?? 0)
+      - Number(overrides.returned_quantity ?? item.returned_quantity ?? 0),
+  );
+}
+
+async function buildInventoryMovementStatements(env, request, item, {
+  stockDelta,
+  reservedDelta = 0,
+  requiredUnreserved = 0,
+  requiredReserved = 0,
+  changeType,
+  action,
+}) {
+  if (!item.material_id) return [];
+  const material = await env.DB.prepare('SELECT * FROM materials WHERE id = ?').bind(item.material_id).first();
+  if (!material) throw new Error('Material not found');
+  const beforeQuantity = Number(material.stock_quantity || 0);
+  const beforeReserved = Number(material.reserved_quantity || 0);
+  const afterQuantity = beforeQuantity + stockDelta;
+  const afterReserved = beforeReserved + reservedDelta;
+  if (afterQuantity < 0) throw new Error('Insufficient material stock');
+  if (afterReserved < 0) throw new Error('Insufficient material reservation');
+  const stockMutation = env.DB.prepare(`
+    UPDATE materials
+    SET stock_quantity = stock_quantity + ?, reserved_quantity = reserved_quantity + ?,
+        updated_at = datetime('now')
+    WHERE id = ? AND stock_quantity = ? AND reserved_quantity = ?
+      AND stock_quantity + ? >= 0 AND reserved_quantity + ? >= 0
+      AND stock_quantity - reserved_quantity >= ? AND reserved_quantity >= ?
+  `).bind(
+    stockDelta, reservedDelta, item.material_id, beforeQuantity, beforeReserved,
+    stockDelta, reservedDelta, requiredUnreserved, requiredReserved,
+  );
+  return [
+    ...guardedWorkflowMutation(env, stockMutation),
+    env.DB.prepare(`
+      INSERT INTO material_inventory_adjustments (
+        id, material_id, change_type, delta, before_quantity, after_quantity, reason, created_by
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).bind(
+      generateId(), item.material_id, changeType, stockDelta, beforeQuantity, afterQuantity,
+      `${action}:${item.requisition_id}:${item.id}`, request._auth.staffId || request._auth.userId,
+    ),
+  ];
+}
+
+function requisitionHeaderMutationStatements(env, requisition, action, actorId) {
+  const assignments = [`status = CASE
+    WHEN NOT EXISTS (
+      SELECT 1 FROM material_requisition_items
+      WHERE requisition_id = material_requisitions.id AND status != 'cancelled'
+    ) THEN status
+    WHEN NOT EXISTS (
+      SELECT 1 FROM material_requisition_items
+      WHERE requisition_id = material_requisitions.id AND status != 'cancelled' AND status != 'received'
+    ) THEN 'received'
+    WHEN NOT EXISTS (
+      SELECT 1 FROM material_requisition_items
+      WHERE requisition_id = material_requisitions.id AND status != 'cancelled' AND status NOT IN ('received', 'issued')
+    ) THEN 'issued'
+    WHEN NOT EXISTS (
+      SELECT 1 FROM material_requisition_items
+      WHERE requisition_id = material_requisitions.id AND status != 'cancelled' AND status NOT IN ('received', 'issued', 'ready')
+    ) THEN 'ready'
+    WHEN EXISTS (
+      SELECT 1 FROM material_requisition_items
+      WHERE requisition_id = material_requisitions.id AND status IN ('stock_allocated', 'purchasing', 'partially_ready', 'ready', 'issued', 'received')
+    ) THEN 'partially_fulfilled'
+    ELSE 'processing'
+  END`, 'updated_at = datetime(\'now\')'];
+  const values = [];
+  if (['allocate_stock', 'issue', 'return'].includes(action)
+    || (action === 'receive_purchase' && actorId.role === 'warehouse')) {
+    assignments.push('assigned_warehouse_staff_id = ?');
+    values.push(actorId.id);
+    if (action === 'issue') assignments.push("issued_at = COALESCE(issued_at, datetime('now'))");
+  }
+  if (action === 'record_purchase' || (action === 'receive_purchase' && actorId.role !== 'warehouse')) {
+    assignments.push('assigned_procurement_staff_id = ?');
+    values.push(actorId.id);
+  }
+  assignments.push(`received_at = CASE WHEN EXISTS (
+    SELECT 1 FROM material_requisition_items
+    WHERE requisition_id = material_requisitions.id AND status != 'cancelled'
+  ) AND NOT EXISTS (
+    SELECT 1 FROM material_requisition_items
+    WHERE requisition_id = material_requisitions.id AND status != 'cancelled' AND status != 'received'
+  ) THEN COALESCE(received_at, datetime('now')) ELSE received_at END`);
+  const mutation = env.DB.prepare(`
+    UPDATE material_requisitions
+    SET ${assignments.join(', ')}
+    WHERE id = ? AND status NOT IN ('rejected', 'cancelled', 'closed')
+  `).bind(...values, requisition.id);
+  return guardedWorkflowMutation(env, mutation);
+}
+
+function workflowOperationKey(request) {
+  return cleanText(request.headers.get('Idempotency-Key'), 200);
+}
+
+async function workflowRequestFingerprint(action, requisitionId, itemId, quantity, body = {}) {
+  const canonicalPayload = JSON.stringify({
+    action,
+    requisition_id: requisitionId,
+    item_id: itemId,
+    quantity,
+    supplier_reference: action === 'record_purchase' ? cleanText(body.supplier_reference, 200) || null : null,
+    expected_arrival: action === 'record_purchase' ? cleanText(body.expected_arrival, 30) || null : null,
+  });
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(canonicalPayload));
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+
+async function createDraftRequestFingerprint({
+  market,
+  workOrderId,
+  requestedByType,
+  requestedById,
+  urgency,
+  requiredDate,
+  purpose,
+  lines,
+}) {
+  return sha256Hex(JSON.stringify({
+    action: 'create_draft',
+    market,
+    work_order_id: workOrderId,
+    requested_by_type: requestedByType,
+    requested_by_id: requestedById,
+    urgency,
+    required_date: requiredDate,
+    purpose,
+    items: lines,
+  }));
+}
+
+async function existingWorkflowOperation(env, operationKey) {
+  if (!operationKey) return null;
+  return env.DB.prepare(`
+    SELECT * FROM material_requisition_operations WHERE operation_key = ?
+  `).bind(operationKey).first();
+}
+
+function operationMatches(operation, action, requisitionId, itemId, requestFingerprint) {
+  return operation?.action === action
+    && operation?.requisition_id === requisitionId
+    && operation?.item_id === itemId
+    && operation?.request_fingerprint === requestFingerprint;
+}
+
+async function idempotentCreateDraftResponse(env, operationKey, requestFingerprint) {
+  const operation = await existingWorkflowOperation(env, operationKey);
+  if (!operation) return null;
+  if (operation.action !== 'create_draft'
+    || operation.item_id !== null
+    || operation.request_fingerprint !== requestFingerprint) {
+    return errorResponse('Idempotency key is already used for a different request', 409);
+  }
+  return jsonResponse({ requisition: await getRequisitionWithItems(env, operation.requisition_id) });
+}
+
+function workflowOperationStatement(env, operationKey, action, requisitionId, itemId, requestFingerprint) {
+  return env.DB.prepare(`
+    INSERT INTO material_requisition_operations (
+      operation_key, action, requisition_id, item_id, request_fingerprint
+    ) VALUES (?, ?, ?, ?, ?)
+  `).bind(operationKey, action, requisitionId, itemId, requestFingerprint);
+}
+
+async function idempotentWorkflowResponse(env, operationKey, action, requisitionId, itemId, requestFingerprint) {
+  const operation = await existingWorkflowOperation(env, operationKey);
+  if (!operation) return null;
+  if (!operationMatches(operation, action, requisitionId, itemId, requestFingerprint)) {
+    return errorResponse('Idempotency key is already used for a different request', 409);
+  }
+  return jsonResponse({ requisition: await getRequisitionWithItems(env, requisitionId) });
+}
+
+async function handleRequisitionLineAction(request, env, action) {
+  let body = {};
+  let itemId = '';
+  let operationKey = '';
+  let requestFingerprint = '';
+  let requisitionId = '';
+  try {
+    const role = requisitionRole(request._auth);
+    if (!canManageMaterialRequisition(role, action)) return errorResponse('当前员工角色无权执行该操作', 403);
+    requisitionId = new URL(request.url).pathname.split('/')[3];
+    const requisition = await getRequisitionWithItems(env, requisitionId);
+    if (!requisition) return errorResponse('领料申请不存在', 404);
+    body = await request.json().catch(() => ({}));
+    itemId = cleanText(body.item_id, 100);
+    const quantity = toPositiveQuantity(body.quantity);
+    if (!itemId || !quantity) return errorResponse('物料明细和正数数量为必填项', 400);
+    operationKey = workflowOperationKey(request);
+    if (!operationKey) return errorResponse('Idempotency-Key header is required', 400);
+    requestFingerprint = await workflowRequestFingerprint(action, requisitionId, itemId, quantity, body);
+    const replay = await idempotentWorkflowResponse(
+      env, operationKey, action, requisitionId, itemId, requestFingerprint,
+    );
+    if (replay) return replay;
+    if (!['approved', 'processing', 'partially_fulfilled', 'ready', 'issued'].includes(requisition.status)) {
+      return errorResponse('当前申请状态不可执行履约操作', 409);
+    }
+    const item = await env.DB.prepare(`
+      SELECT * FROM material_requisition_items WHERE id = ? AND requisition_id = ?
+    `).bind(itemId, requisitionId).first();
+    if (!item || item.status === 'cancelled') return errorResponse('领料明细不存在或已取消', 404);
+    if (action === 'allocate_stock' && !item.material_id) {
+      return errorResponse('自由录入物料不能分配台账库存，请走采购流程', 400);
+    }
+    const next = {};
+    if (action === 'allocate_stock') {
+      next.stock_allocated_quantity = Number(item.stock_allocated_quantity || 0) + quantity;
+    } else if (action === 'record_purchase') {
+      next.procurement_ordered_quantity = Number(item.procurement_ordered_quantity || 0) + quantity;
+      next.supplier_reference = cleanText(body.supplier_reference, 200) || item.supplier_reference || null;
+      next.expected_arrival = cleanText(body.expected_arrival, 30) || item.expected_arrival || null;
+    } else if (action === 'receive_purchase') {
+      next.procurement_received_quantity = Number(item.procurement_received_quantity || 0) + quantity;
+    } else if (action === 'issue') {
+      next.issued_quantity = Number(item.issued_quantity || 0) + quantity;
+      if (item.material_id) {
+        const remainingAllocatedStock = Math.max(
+          0,
+          Number(item.stock_allocated_quantity || 0)
+            - Number(item.stock_issued_quantity || 0),
+        );
+        next.stock_issued_quantity = Number(item.stock_issued_quantity || 0)
+          + Math.min(quantity, remainingAllocatedStock);
+      }
+    } else if (action === 'return') {
+      if (quantity > Number(item.issued_quantity || 0) - Number(item.engineer_received_quantity || 0)) {
+        return errorResponse('退库数量不能超过未签收发料数量', 400);
+      }
+      next.issued_quantity = Number(item.issued_quantity || 0) - quantity;
+      next.returned_quantity = Number(item.returned_quantity || 0) + quantity;
+    }
+
+    validateFulfillmentQuantities(fulfillmentValues(item, next));
+    next.fulfillment_source = fulfillmentSource(
+      Number(next.stock_allocated_quantity ?? item.stock_allocated_quantity ?? 0),
+      Number(next.procurement_ordered_quantity ?? item.procurement_ordered_quantity ?? 0),
+    );
+    next.status = deriveApiItemStatus(item, next);
+
+    let inventoryStatements = [];
+    if (action === 'allocate_stock') {
+      const allocationGuard = env.DB.prepare(`
+        UPDATE materials
+        SET reserved_quantity = reserved_quantity + ?, updated_at = datetime('now')
+        WHERE id = ? AND stock_quantity - reserved_quantity >= ?
+      `).bind(quantity, item.material_id, quantity);
+      inventoryStatements = guardedWorkflowMutation(env, allocationGuard);
+    } else if (action === 'receive_purchase') {
+      inventoryStatements = await buildInventoryMovementStatements(env, request, item, {
+        stockDelta: quantity, reservedDelta: quantity, changeType: 'procurement_receipt', action,
+      });
+    } else if (action === 'issue') {
+      const reservedIssueQuantity = Math.min(quantity, outstandingItemReservation(item));
+      inventoryStatements = await buildInventoryMovementStatements(env, request, item, {
+        stockDelta: -quantity,
+        reservedDelta: -reservedIssueQuantity,
+        requiredUnreserved: quantity - reservedIssueQuantity,
+        requiredReserved: reservedIssueQuantity,
+        changeType: 'requisition_issue',
+        action,
+      });
+    } else if (action === 'return') {
+      inventoryStatements = await buildInventoryMovementStatements(env, request, item, {
+        stockDelta: quantity, changeType: 'requisition_return', action,
+      });
+    }
+    const headerStatements = requisitionHeaderMutationStatements(env, requisition, action, {
+      id: request._auth.staffId || request._auth.userId,
+      role,
+    });
+    await runAuditedWorkflowBatch(env, request, [
+      ...requisitionStatusGuardStatements(env, requisition),
+      ...inventoryStatements,
+      ...conditionalItemUpdateStatements(env, item, next),
+      ...headerStatements,
+      workflowOperationStatement(env, operationKey, action, requisitionId, itemId, requestFingerprint),
+    ], {
+      targetType: 'material_requisition_item', targetId: itemId,
+      action: `material_requisition_${action}`,
+      beforeState: item, afterState: { ...item, ...next },
+    });
+    return jsonResponse({ requisition: await getRequisitionWithItems(env, requisitionId) });
+  } catch (error) {
+    if (/UNIQUE constraint failed: material_requisition_operations\.operation_key/i.test(String(error?.message || ''))) {
+      const replay = await idempotentWorkflowResponse(
+        env, operationKey, action, requisitionId, itemId, requestFingerprint,
+      );
+      if (replay) return replay;
+    }
+    if (isWorkflowConcurrencyError(error)) return workflowErrorResponse(error);
+    return errorResponse(error.message, /stock|quantity|requested|ordered|available|issued|aggregate/i.test(error.message) ? 400 : 500);
+  }
+}
+
+async function handleEngineerRequisitionReceipt(request, env) {
+  let operationKey = '';
+  let requestFingerprint = '';
+  let requisitionId = '';
+  let itemId = '';
+  try {
+    requisitionId = new URL(request.url).pathname.split('/')[3];
+    const requisition = await getRequisitionWithItems(env, requisitionId);
+    if (!requisition) return errorResponse('领料申请不存在', 404);
+    const workOrder = await env.DB.prepare(`
+      SELECT id, customer_id, engineer_id, assigned_regional_lead_id, status FROM work_orders WHERE id = ?
+    `).bind(requisition.work_order_id).first();
+    if (request._auth.userType !== 'engineer' || workOrder?.engineer_id !== request._auth.userId) {
+      return errorResponse('仅创建申请的工程师可确认签收', 403);
+    }
+    const body = await request.json().catch(() => ({}));
+    operationKey = workflowOperationKey(request);
+    if (!operationKey) return errorResponse('Idempotency-Key header is required', 400);
+    itemId = cleanText(body.item_id, 100);
+    const quantity = toPositiveQuantity(body.quantity);
+    if (!itemId || !quantity) return errorResponse('物料明细和正数数量为必填项', 400);
+    requestFingerprint = await workflowRequestFingerprint(
+      'engineer_receipt', requisitionId, itemId, quantity, body,
+    );
+    const replay = await idempotentWorkflowResponse(
+      env, operationKey, 'engineer_receipt', requisitionId, itemId, requestFingerprint,
+    );
+    if (replay) return replay;
+    if (REQUISITION_TERMINAL_STATUSES.has(requisition.status)) {
+      return errorResponse('当前申请状态不可确认签收', 409);
+    }
+    const item = await env.DB.prepare(`
+      SELECT * FROM material_requisition_items WHERE id = ? AND requisition_id = ?
+    `).bind(itemId, requisitionId).first();
+    if (!item) return errorResponse('领料明细不存在', 404);
+    const engineerReceived = Number(item.engineer_received_quantity || 0) + quantity;
+    const issuedAvailable = Number(item.issued_quantity || 0);
+    if (engineerReceived > issuedAvailable) return errorResponse('签收数量不能超过净发料数量', 400);
+    const next = {
+      engineer_received_quantity: engineerReceived,
+      status: deriveApiItemStatus(item, { engineer_received_quantity: engineerReceived }),
+    };
+    await runAuditedWorkflowBatch(env, request, [
+      ...requisitionStatusGuardStatements(env, requisition),
+      ...conditionalItemUpdateStatements(env, item, next),
+      ...requisitionHeaderMutationStatements(env, requisition, 'engineer_receipt', {
+        id: request._auth.userId,
+        role: 'engineer',
+      }),
+      workflowOperationStatement(
+        env, operationKey, 'engineer_receipt', requisitionId, item.id, requestFingerprint,
+      ),
+    ], {
+      targetType: 'material_requisition_item', targetId: item.id,
+      action: 'material_requisition_engineer_receipt', beforeState: item, afterState: { ...item, ...next },
+    });
+    return jsonResponse({ requisition: await getRequisitionWithItems(env, requisitionId) });
+  } catch (error) {
+    if (/UNIQUE constraint failed: material_requisition_operations\.operation_key/i.test(String(error?.message || ''))) {
+      const replay = await idempotentWorkflowResponse(
+        env, operationKey, 'engineer_receipt', requisitionId, itemId, requestFingerprint,
+      );
+      if (replay) return replay;
+    }
+    return workflowErrorResponse(error);
+  }
+}
+
+async function handleUpdateRequisitionProcurement(request, env) {
+  const role = requisitionRole(request._auth);
+  if (!canManageMaterialRequisition(role, 'record_purchase')) {
+    return errorResponse('当前员工角色无权更新采购信息', 403);
+  }
+  const requisitionId = new URL(request.url).pathname.split('/')[3];
+  const requisition = await getRequisitionWithItems(env, requisitionId);
+  if (!requisition) return errorResponse('领料申请不存在', 404);
+  if (!['approved', 'processing', 'partially_fulfilled', 'ready'].includes(requisition.status)) {
+    return errorResponse('当前申请状态不可更新采购信息', 409);
+  }
+  const body = await request.json().catch(() => ({}));
+  const item = await env.DB.prepare(`
+    SELECT * FROM material_requisition_items WHERE id = ? AND requisition_id = ?
+  `).bind(cleanText(body.item_id, 100), requisitionId).first();
+  if (!item) return errorResponse('领料明细不存在', 404);
+  const supplierReference = cleanText(body.supplier_reference, 200) || null;
+  const expectedArrival = cleanText(body.expected_arrival, 30) || null;
+  try {
+    const next = { supplier_reference: supplierReference, expected_arrival: expectedArrival };
+    await runAuditedWorkflowBatch(env, request, [
+      ...conditionalItemUpdateStatements(env, item, next),
+      ...requisitionStatusGuardStatements(env, requisition),
+    ], {
+      targetType: 'material_requisition_item', targetId: item.id,
+      action: 'material_requisition_procurement_updated', beforeState: item,
+      afterState: { ...item, ...next },
+    });
+    return jsonResponse({ requisition: await getRequisitionWithItems(env, requisitionId) });
+  } catch (error) {
+    return workflowErrorResponse(error);
+  }
+}
+
+async function handleCloseMaterialRequisition(request, env) {
+  const role = requisitionRole(request._auth);
+  if (!canManageMaterialRequisition(role, 'close')) return errorResponse('当前员工角色无权关闭申请', 403);
+  const requisitionId = new URL(request.url).pathname.split('/')[3];
+  const requisition = await getRequisitionWithItems(env, requisitionId);
+  if (!requisition) return errorResponse('领料申请不存在', 404);
+  if (REQUISITION_TERMINAL_STATUSES.has(requisition.status)) return errorResponse('当前申请不可关闭', 409);
+  if (!canCloseMaterialRequisition(requisition.items)) return errorResponse('仅全部签收或取消的申请可关闭', 409);
+  try {
+    const mutation = env.DB.prepare(`
+      UPDATE material_requisitions
+      SET status = 'closed', closed_at = datetime('now'), updated_at = datetime('now')
+      WHERE id = ? AND status = ?
+    `).bind(requisitionId, requisition.status);
+    await runAuditedWorkflowBatch(env, request, guardedWorkflowMutation(env, mutation), {
+      targetType: 'material_requisition', targetId: requisitionId, action: 'material_requisition_closed',
+      beforeState: { status: requisition.status }, afterState: { status: 'closed' },
+    });
+    return jsonResponse({ requisition: await getRequisitionWithItems(env, requisitionId) });
+  } catch (error) {
+    return workflowErrorResponse(error);
+  }
+}
+
+async function handleCancelRequisitionItem(request, env) {
+  const role = requisitionRole(request._auth);
+  if (!canManageMaterialRequisition(role, 'cancel')) return errorResponse('当前员工角色无权取消领料明细', 403);
+  const parts = new URL(request.url).pathname.split('/');
+  const requisitionId = parts[3];
+  const itemId = parts[5];
+  const requisition = await getRequisitionWithItems(env, requisitionId);
+  if (!requisition) return errorResponse('领料申请不存在', 404);
+  if (REQUISITION_TERMINAL_STATUSES.has(requisition.status)) return errorResponse('当前申请不可取消明细', 409);
+  const item = await env.DB.prepare(`
+    SELECT * FROM material_requisition_items WHERE id = ? AND requisition_id = ?
+  `).bind(itemId, requisitionId).first();
+  if (!item) return errorResponse('领料明细不存在', 404);
+  if (Number(item.issued_quantity || 0) > 0
+    || Number(item.engineer_received_quantity || 0) > 0) {
+    return errorResponse('已发料或签收的明细不能取消', 409);
+  }
+  const body = await request.json().catch(() => ({}));
+  const reason = cleanText(body.reason, 600);
+  const notes = [cleanText(item.notes, 600), reason].filter(Boolean).join('\n').slice(0, 600) || null;
+  try {
+    const next = { status: 'cancelled', notes };
+    let reservationStatements = [];
+    const outstandingReservation = outstandingItemReservation(item);
+    if (item.material_id && outstandingReservation > 0) {
+      const releaseReservation = env.DB.prepare(`
+        UPDATE materials
+        SET reserved_quantity = reserved_quantity - ?, updated_at = datetime('now')
+        WHERE id = ? AND reserved_quantity >= ?
+      `).bind(outstandingReservation, item.material_id, outstandingReservation);
+      reservationStatements = guardedWorkflowMutation(env, releaseReservation);
+    }
+    await runAuditedWorkflowBatch(env, request, [
+      ...reservationStatements,
+      ...conditionalItemUpdateStatements(env, item, next),
+      ...requisitionHeaderMutationStatements(env, requisition, 'cancel_item', {
+        id: request._auth.staffId || request._auth.userId,
+        role,
+      }),
+    ], {
+      targetType: 'material_requisition_item', targetId: itemId,
+      action: 'material_requisition_item_cancelled', beforeState: item,
+      afterState: { ...item, ...next },
+    });
+    return jsonResponse({ requisition: await getRequisitionWithItems(env, requisitionId) });
+  } catch (error) {
+    return workflowErrorResponse(error);
   }
 }
 
@@ -9112,6 +10259,21 @@ async function handleAdminDeleteUser(request, env) {
       return errorResponse('缺少用户ID或类型');
     }
 
+    if (userType === 'customer' || userType === 'engineer') {
+      const linkedRequisition = await env.DB.prepare(`
+        SELECT mr.id FROM material_requisitions mr
+        JOIN work_orders wo ON wo.id = mr.work_order_id
+        WHERE wo.customer_id = ? OR wo.engineer_id = ?
+        LIMIT 1
+      `).bind(
+        userType === 'customer' ? userId : null,
+        userType === 'engineer' ? userId : null,
+      ).first();
+      if (linkedRequisition) {
+        return errorResponse('该用户关联领料申请历史，不能删除', 409);
+      }
+    }
+
     if (userType === 'customer') {
       const user = await env.DB.prepare('SELECT id FROM customers WHERE id = ?').bind(userId).first();
       if (!user) {
@@ -9197,9 +10359,6 @@ async function handleAdminLogin(request, env) {
     const adminCredentials = resolveAdminCredentials(request, env);
     const adminPhone = adminCredentials.phone;
     const adminPassword = adminCredentials.password;
-    if (!adminPhone || !adminPassword) {
-      return errorResponse('管理员账号未配置，请联系系统管理员', 500);
-    }
     if (!phone || !password) {
       return errorResponse('手机号、密码不能为空');
     }
@@ -9223,7 +10382,26 @@ async function handleAdminLogin(request, env) {
       return errorResponse('登录失败次数过多，请 15 分钟后再试', 429);
     }
 
-    if (phone !== adminPhone || password !== adminPassword) {
+    const bootstrapMatch = Boolean(adminPhone && adminPassword && phone === adminPhone && password === adminPassword);
+    let staff = null;
+    if (!bootstrapMatch) {
+      const normalizedLogin = normalizeIdentityEmail(phone);
+      const normalizedPhone = normalizeIdentityPhone(phone);
+      staff = await env.DB.prepare(`
+        SELECT * FROM admin_staff_accounts
+        WHERE normalized_login = ? OR normalized_phone = ?
+      `).bind(normalizedLogin, normalizedPhone).first();
+      const staffPasswordValid = staff?.is_active
+        ? await verifyPassword(password, staff.password_hash, staff.salt)
+        : false;
+      const marketAllowed = staff?.market_scope === 'all' || staff?.market_scope === adminCredentials.market;
+      if (!staffPasswordValid || !marketAllowed) staff = null;
+    }
+
+    if (!bootstrapMatch && !staff) {
+      if (!adminPhone || !adminPassword) {
+        return errorResponse('管理员账号未配置，请联系系统管理员', 500);
+      }
       await Promise.all([
         env.KV.put(phoneKey, String(phoneFail + 1), { expirationTtl: FAIL_TTL }),
         env.KV.put(ipKey, String(ipFail + 1), { expirationTtl: FAIL_TTL }),
@@ -9239,11 +10417,17 @@ async function handleAdminLogin(request, env) {
 
     const now = Math.floor(Date.now() / 1000);
     const csrfToken = generateCsrfToken();
+    const staffClaims = staff ? {
+      staffId: staff.id,
+      staffRole: staff.role,
+      mustChangePassword: Boolean(staff.must_change_password),
+    } : {};
     const token = await signJwt({
-      userId: 'admin',
+      userId: staff?.id || 'admin',
       userType: 'admin',
-      phone: adminPhone,
+      phone: staff?.normalized_phone || adminPhone,
       market: adminCredentials.market,
+      ...staffClaims,
       csrf: csrfToken,
       iat: now,
       exp: now + 86400 * 7,
@@ -9251,7 +10435,19 @@ async function handleAdminLogin(request, env) {
 
     return addSessionCookie(jsonResponse(sessionResponsePayload({
       csrfToken,
-      user: { id: 'admin', name: '超级管理员', phone: adminPhone, type: 'admin', market: adminCredentials.market },
+      user: staff ? {
+        id: staff.id,
+        name: staff.display_name,
+        phone: staff.normalized_phone || '',
+        type: 'admin',
+        market: adminCredentials.market,
+        staffRole: staff.role,
+        staffId: staff.id,
+        mustChangePassword: Boolean(staff.must_change_password),
+      } : {
+        id: 'admin', name: '超级管理员', phone: adminPhone, type: 'admin', market: adminCredentials.market,
+        staffRole: 'admin', staffId: null, mustChangePassword: false,
+      },
     }, token, requestPortalRole(request))), request, env, 'admin', token);
   } catch (error) {
     return errorResponse(error.message, 500);
@@ -9284,6 +10480,8 @@ async function handleAdminStats(request, env) {
     const valueAddedRequests = await env.DB.prepare(
       "SELECT COUNT(*) as count FROM upsell_requests WHERE status NOT IN ('completed', 'lost')"
     ).first();
+
+    const requisitionOperations = await getRequisitionOperationsMetrics(env);
 
     // 最近7天注册数
     const recentCustomers = await env.DB.prepare(
@@ -9322,6 +10520,7 @@ async function handleAdminStats(request, env) {
         valueAddedRequests: valueAddedRequests?.count || 0,
         euchioMachineLeads: machineLeads?.count || 0,
       },
+      requisitionOperations,
       recentRegistrations: (recentCustomers?.count || 0) + (recentEngineers?.count || 0),
       apiCalls: {
         send_code: apiStats.send_code || 0,
@@ -9330,6 +10529,18 @@ async function handleAdminStats(request, env) {
         login: apiStats.login || 0,
       },
     });
+  } catch (error) {
+    return errorResponse(error.message, 500);
+  }
+}
+
+async function handleMaterialRequisitionMetrics(request, env) {
+  const role = requisitionRole(request._auth);
+  if (!['admin', 'operations', 'warehouse', 'procurement'].includes(role)) {
+    return errorResponse('当前角色无权查看领料运营指标', 403);
+  }
+  try {
+    return jsonResponse({ requisitionOperations: await getRequisitionOperationsMetrics(env) });
   } catch (error) {
     return errorResponse(error.message, 500);
   }
@@ -12795,10 +14006,49 @@ async function routeRequest(request, env, ctx) {
     // 将认证信息挂到 request 上，供 handler 使用。Admin handler 也需要它写审计日志。
     request._auth = auth;
 
+    if (auth.userType === 'admin' && auth.market !== getRequestMarket(request)) {
+      return errorResponse('管理员会话无权访问当前市场', 403);
+    }
+
+    if (auth.userType === 'admin' && auth.staffId) {
+      const staff = await requireActiveStaff(env, auth);
+      const requestMarket = getRequestMarket(request);
+      const marketAllowed = auth.market === requestMarket
+        && (staff?.market_scope === 'all' || staff?.market_scope === requestMarket);
+      if (!staff || !marketAllowed) return errorResponse('员工账号不存在、已停用或无权访问当前市场', 403);
+      request._auth = {
+        ...auth,
+        staffRole: staff.role,
+        mustChangePassword: Boolean(staff.must_change_password),
+      };
+      if (staff.must_change_password && path !== '/api/auth/change-password') {
+        return errorResponse('请先修改临时密码', 403);
+      }
+      const operationalRoute = path === '/api/material-requisitions'
+        || path.startsWith('/api/material-requisitions/')
+        || path === '/api/auth/change-password'
+        || (staff.role === 'operations' && isOperationsReadRoute(path, request.method));
+      if (staff.role !== 'admin' && !operationalRoute) {
+        return errorResponse('当前员工角色无权访问该管理接口', 403);
+      }
+    }
+
     // 管理后台 API（需要管理员权限）
     if (path.startsWith('/api/admin/')) {
       if (auth.userType !== 'admin') {
         return errorResponse('需要管理员权限', 403);
+      }
+      if (path === '/api/admin/staff' && request.method === 'GET') {
+        return handleAdminStaffList(request, env);
+      }
+      if (path === '/api/admin/staff' && request.method === 'POST') {
+        return handleAdminStaffCreate(request, env);
+      }
+      if (path.match(/^\/api\/admin\/staff\/[^/]+\/deactivate$/) && request.method === 'POST') {
+        return handleAdminStaffDeactivate(request, env);
+      }
+      if (path.match(/^\/api\/admin\/staff\/[^/]+\/reset-password$/) && request.method === 'POST') {
+        return handleAdminStaffResetPassword(request, env);
       }
       if (path === '/api/admin/stats' && request.method === 'GET') {
         return handleAdminStats(request, env);
@@ -12945,6 +14195,57 @@ async function routeRequest(request, env, ctx) {
     }
     if (path === '/api/material-requests' && request.method === 'POST') {
       return handleCreateMaterialRequest(request, env);
+    }
+    if (path === '/api/material-requisitions' && request.method === 'GET') {
+      return handleListMaterialRequisitions(request, env);
+    }
+    if (path === '/api/material-requisitions' && request.method === 'POST') {
+      return handleCreateMaterialRequisition(request, env);
+    }
+    if (path === '/api/material-requisitions/metrics' && request.method === 'GET') {
+      return handleMaterialRequisitionMetrics(request, env);
+    }
+    if (path.match(/^\/api\/material-requisitions\/[^/]+$/) && request.method === 'GET') {
+      return handleGetMaterialRequisition(request, env);
+    }
+    if (path.match(/^\/api\/material-requisitions\/[^/]+\/submit$/) && request.method === 'POST') {
+      return handleSubmitMaterialRequisition(request, env);
+    }
+    if (path.match(/^\/api\/material-requisitions\/[^/]+\/approve$/) && request.method === 'POST') {
+      return handleRequisitionDecision(request, env, 'approve');
+    }
+    if (path.match(/^\/api\/material-requisitions\/[^/]+\/reject$/) && request.method === 'POST') {
+      return handleRequisitionDecision(request, env, 'reject');
+    }
+    if (path.match(/^\/api\/material-requisitions\/[^/]+\/cancel$/) && request.method === 'POST') {
+      return handleRequisitionDecision(request, env, 'cancel');
+    }
+    if (path.match(/^\/api\/material-requisitions\/[^/]+\/items\/[^/]+\/cancel$/) && request.method === 'POST') {
+      return handleCancelRequisitionItem(request, env);
+    }
+    if (path.match(/^\/api\/material-requisitions\/[^/]+\/stock-allocation$/) && request.method === 'POST') {
+      return handleRequisitionLineAction(request, env, 'allocate_stock');
+    }
+    if (path.match(/^\/api\/material-requisitions\/[^/]+\/procurement$/) && request.method === 'POST') {
+      return handleRequisitionLineAction(request, env, 'record_purchase');
+    }
+    if (path.match(/^\/api\/material-requisitions\/[^/]+\/procurement$/) && request.method === 'PATCH') {
+      return handleUpdateRequisitionProcurement(request, env);
+    }
+    if (path.match(/^\/api\/material-requisitions\/[^/]+\/procurement-receipt$/) && request.method === 'POST') {
+      return handleRequisitionLineAction(request, env, 'receive_purchase');
+    }
+    if (path.match(/^\/api\/material-requisitions\/[^/]+\/issue$/) && request.method === 'POST') {
+      return handleRequisitionLineAction(request, env, 'issue');
+    }
+    if (path.match(/^\/api\/material-requisitions\/[^/]+\/return$/) && request.method === 'POST') {
+      return handleRequisitionLineAction(request, env, 'return');
+    }
+    if (path.match(/^\/api\/material-requisitions\/[^/]+\/engineer-receipt$/) && request.method === 'POST') {
+      return handleEngineerRequisitionReceipt(request, env);
+    }
+    if (path.match(/^\/api\/material-requisitions\/[^/]+\/close$/) && request.method === 'POST') {
+      return handleCloseMaterialRequisition(request, env);
     }
     if (path === '/api/upsell-requests' && request.method === 'POST') {
       return handleCreateUpsellRequest(request, env);

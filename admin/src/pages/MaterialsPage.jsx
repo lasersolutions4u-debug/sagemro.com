@@ -101,9 +101,9 @@ const TEXT = {
     adjustTitle: 'Adjust inventory',
     adjust: 'Adjust',
     adjustmentSaved: 'Inventory updated.',
-    requestsTitle: 'Engineer requests',
+    requestsTitle: 'Material master-data requests',
     requestsSubtitle: 'Review parts engineers could not find in the master data.',
-    noRequests: 'No pending material requests.',
+    noRequests: 'No pending material master-data requests.',
     approveCreate: 'Approve and create',
     requestMoreInfo: 'Need more info',
     rejectRequest: 'Reject',
@@ -200,9 +200,9 @@ const TEXT = {
     adjustTitle: '调整库存',
     adjust: '调整',
     adjustmentSaved: '库存已更新。',
-    requestsTitle: '工程师物料申请',
+    requestsTitle: '物料主数据申请',
     requestsSubtitle: '工程师在工单里找不到合适配件时提交，Admin 核对后再进入物料库。',
-    noRequests: '暂无待处理物料申请。',
+    noRequests: '暂无待处理物料主数据申请。',
     approveCreate: '批准并创建',
     requestMoreInfo: '补充信息',
     rejectRequest: '驳回',
@@ -360,7 +360,7 @@ function statusClass(status) {
   return 'border-slate-500/30 bg-slate-500/10 text-slate-300';
 }
 
-export function MaterialsPage() {
+export function MaterialsPage({ readOnly = false }) {
   const t = TEXT[runtimeConfig.locale] || TEXT.en;
   const [data, setData] = useState({ total: 0, list: [] });
   const [page, setPage] = useState(1);
@@ -396,6 +396,7 @@ export function MaterialsPage() {
   };
 
   const loadRequests = () => {
+    if (readOnly) return;
     setRequestsLoading(true);
     getAdminMaterialRequests(1, 8, { status: 'submitted' })
       .then(setRequests)
@@ -408,8 +409,8 @@ export function MaterialsPage() {
   }, [page, filters]);
 
   useEffect(() => {
-    loadRequests();
-  }, []);
+    if (!readOnly) loadRequests();
+  }, [readOnly]);
 
   const startCreate = () => {
     setEditing(null);
@@ -467,6 +468,7 @@ export function MaterialsPage() {
   };
 
   const saveMaterial = async () => {
+    if (readOnly) return;
     setSaving(true);
     setMessage('');
     const payload = {
@@ -493,12 +495,14 @@ export function MaterialsPage() {
   };
 
   const openAdjustment = (material) => {
+    if (readOnly) return;
     setAdjusting(material);
     setAdjustment({ change_type: 'manual_in', delta: '', reason: '' });
     setMessage('');
   };
 
   const saveAdjustment = async () => {
+    if (readOnly) return;
     if (!adjusting?.id) return;
     setSaving(true);
     setMessage('');
@@ -518,6 +522,7 @@ export function MaterialsPage() {
   };
 
   const useRequestAsDraft = (request) => {
+    if (readOnly) return;
     setEditing(null);
     setFormSourceRequestId(request.id);
     setForm({
@@ -538,6 +543,7 @@ export function MaterialsPage() {
   };
 
   const reviewRequest = async (request, action) => {
+    if (readOnly) return;
     setSaving(true);
     setMessage('');
     try {
@@ -614,7 +620,7 @@ export function MaterialsPage() {
           </div>
           <button
             type="button"
-            onClick={() => { load(); loadRequests(); }}
+            onClick={() => { load(); if (!readOnly) loadRequests(); }}
             className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-[var(--color-text-secondary)] transition hover:bg-white/10 hover:text-[var(--color-text)]"
           >
             <RefreshCw size={15} />
@@ -629,6 +635,7 @@ export function MaterialsPage() {
         </div>
       )}
 
+      {!readOnly && (
       <div className="mb-5 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div className="min-w-0">
@@ -714,7 +721,9 @@ export function MaterialsPage() {
           </div>
         )}
       </div>
+      )}
 
+      {!readOnly && (
       <div className="mb-5 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
         <div className="mb-4 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
           <div>
@@ -800,6 +809,7 @@ export function MaterialsPage() {
           </div>
         )}
       </div>
+      )}
 
       <div className="mb-5 grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
         <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
@@ -881,22 +891,22 @@ export function MaterialsPage() {
                       </td>
                       <td className="px-2 py-3">
                         <div className="flex flex-wrap gap-2">
-                          <button
+                          {!readOnly && (<button
                             type="button"
                             onClick={() => startEdit(material)}
                             className="inline-flex items-center gap-1 rounded-lg border border-[var(--color-border)] px-2 py-1 text-xs text-[var(--color-text-secondary)] hover:border-[var(--color-primary)] hover:text-[var(--color-primary)]"
                           >
                             <Edit3 size={13} />
                             {t.editMaterial}
-                          </button>
-                          <button
+                          </button>)}
+                          {!readOnly && (<button
                             type="button"
                             onClick={() => openAdjustment(material)}
                             className="inline-flex items-center gap-1 rounded-lg border border-[var(--color-primary)]/30 px-2 py-1 text-xs text-[var(--color-primary)] hover:bg-[var(--color-primary)]/10"
                           >
                             <PackagePlus size={13} />
                             {t.adjust}
-                          </button>
+                          </button>)}
                         </div>
                       </td>
                     </tr>
@@ -925,6 +935,7 @@ export function MaterialsPage() {
           </div>
         </div>
 
+        {!readOnly && (
         <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
           <div className="mb-4 flex items-center justify-between gap-3">
             <div>
@@ -979,9 +990,10 @@ export function MaterialsPage() {
             </button>
           </div>
         </div>
+        )}
       </div>
 
-      {adjusting && (
+      {!readOnly && adjusting && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
           <div className="w-full max-w-md rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-2xl">
             <h3 className="text-lg font-semibold text-[var(--color-text-primary)]">{t.adjustTitle}</h3>

@@ -289,7 +289,7 @@ const TEXT = {
   'zh-CN': {},
 };
 
-export function WorkOrdersPage() {
+export function WorkOrdersPage({ readOnly = false }) {
   const t = { ...TEXT.en, ...(TEXT[runtimeConfig.locale] || {}) };
   const [status, setStatus] = useState('all');
   const [data, setData] = useState({ total: 0, list: [] });
@@ -334,6 +334,7 @@ export function WorkOrdersPage() {
   }, [status, page]);
 
   useEffect(() => {
+    if (readOnly) return;
     getAdminUsers('engineer', 1, 50, { status: 'available' })
       .then((res) => {
         const list = res.list || [];
@@ -344,7 +345,7 @@ export function WorkOrdersPage() {
         setEngineers([]);
         setRegionalLeads([]);
       });
-  }, []);
+  }, [readOnly]);
 
   const totalPages = Math.max(1, Math.ceil(data.total / pageSize));
 
@@ -357,6 +358,7 @@ export function WorkOrdersPage() {
   ];
 
   async function handleAssignRegionalLead(wo) {
+    if (readOnly) return;
     const regionalLeadId = selectedRegionalLeads[wo.id];
     if (!regionalLeadId) {
       setMessage(t.selectRegionalLead);
@@ -389,6 +391,7 @@ export function WorkOrdersPage() {
   }
 
   async function handleAssign(wo) {
+    if (readOnly) return;
     const engineerId = selectedEngineers[wo.id];
     if (!engineerId) {
       setMessage(t.selectEngineer);
@@ -423,6 +426,7 @@ export function WorkOrdersPage() {
   }
 
   async function handleApprovePricing(wo) {
+    if (readOnly) return;
     if (!reviewedQuoteIds[wo.id]) {
       setMessage(t.reviewQuoteFirst || 'Open the quote details before approving.');
       await openDetail(wo);
@@ -459,6 +463,7 @@ export function WorkOrdersPage() {
   }
 
   async function handleRejectPricing(wo) {
+    if (readOnly) return;
     const note = window.prompt(t.rejectPrompt) || '';
     setAssigningId(`${wo.id}:reject`);
     setMessage('');
@@ -491,6 +496,7 @@ export function WorkOrdersPage() {
   }
 
   async function handleApprovePaymentStart(wo) {
+    if (readOnly) return;
     const note = window.prompt('Payment confirmation note (optional):') || '';
     setAssigningId(`${wo.id}:payment-start`);
     setMessage('');
@@ -518,6 +524,7 @@ export function WorkOrdersPage() {
   }
 
   async function handleApproveBalancePayment(wo) {
+    if (readOnly) return;
     const note = window.prompt('Balance payment confirmation note (optional):') || '';
     setAssigningId(`${wo.id}:balance-payment`);
     setMessage('');
@@ -537,6 +544,7 @@ export function WorkOrdersPage() {
   }
 
   async function handleArchive(wo) {
+    if (readOnly) return;
     setAssigningId(`${wo.id}:archive`);
     setMessage('');
     try {
@@ -556,6 +564,7 @@ export function WorkOrdersPage() {
   }
 
   async function handleUpdatePayout(wo, status) {
+    if (readOnly) return;
     const currentPayout = wo.payout || {};
     const amountInput = window.prompt('Engineer service payment amount in USD (optional):', currentPayout.amount || '');
     if (amountInput === null) return;
@@ -619,6 +628,7 @@ export function WorkOrdersPage() {
   }
 
   async function submitInternalNote() {
+    if (readOnly) return;
     if (!detail?.id || !internalNote.trim()) return;
     try {
       await postAdminWorkOrderMessage(detail.id, internalNote.trim(), true);
@@ -662,6 +672,7 @@ export function WorkOrdersPage() {
   }
 
   async function handleAdminOnsiteConfirmation(wo) {
+    if (readOnly) return;
     const latitude = Number(adminSiteLocation.service_latitude);
     const longitude = Number(adminSiteLocation.service_longitude);
     const missingCoordinates = adminSiteLocation.service_latitude === '' || adminSiteLocation.service_longitude === '';
@@ -695,6 +706,7 @@ export function WorkOrdersPage() {
   }
 
   async function handleAdminArrivalOverride(wo) {
+    if (readOnly) return;
     const reason = window.prompt('Reason for manually approving the engineer arrival check:') || '';
     if (!reason.trim()) return;
     setAssigningId(`${wo.id}:arrival-override`);
@@ -798,7 +810,7 @@ export function WorkOrdersPage() {
                     >
                       {wo.pricing_status === 'pending_review' ? (t.viewQuoteDetail || t.view) : t.view}
                     </button>
-                    {wo.status === 'payment_review' && (
+                    {!readOnly && wo.status === 'payment_review' && (
                       <button
                         onClick={() => handleApprovePaymentStart(wo)}
                         disabled={assigningId === `${wo.id}:payment-start`}
@@ -807,7 +819,7 @@ export function WorkOrdersPage() {
                         {t.approvePaymentStart}
                       </button>
                     )}
-                    {['resolved', 'pending_review'].includes(wo.status) && (
+                    {!readOnly && ['resolved', 'pending_review'].includes(wo.status) && (
                       <button
                         onClick={() => handleArchive(wo)}
                         disabled={assigningId === `${wo.id}:archive`}
@@ -907,7 +919,7 @@ export function WorkOrdersPage() {
                                 </div>
                               </div>
                             )}
-                            {wo.status === 'payment_review' && (
+                            {!readOnly && wo.status === 'payment_review' && (
                               <button
                                 onClick={() => handleApprovePaymentStart(wo)}
                                 disabled={assigningId === `${wo.id}:payment-start`}
@@ -916,7 +928,7 @@ export function WorkOrdersPage() {
                                 {t.approvePaymentStart}
                               </button>
                             )}
-                            {['resolved', 'pending_review'].includes(wo.status) && (
+                            {!readOnly && ['resolved', 'pending_review'].includes(wo.status) && (
                               <button
                                 onClick={() => handleArchive(wo)}
                                 disabled={assigningId === `${wo.id}:archive`}
@@ -994,7 +1006,7 @@ export function WorkOrdersPage() {
             ) : detail ? (
               <DetailErrorBoundary>
               <div className="space-y-4">
-                {detail.pricing?.status === 'pending_review' && (
+                {!readOnly && detail.pricing?.status === 'pending_review' && (
                   <section className="rounded-xl border border-[var(--color-primary)]/40 bg-[var(--color-primary)]/5 p-4">
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                       <div>
@@ -1020,7 +1032,7 @@ export function WorkOrdersPage() {
                     </div>
                   </section>
                 )}
-                {detail.status === 'payment_review' && (
+                {!readOnly && detail.status === 'payment_review' && (
                   <section className="rounded-xl border border-[var(--color-primary)]/40 bg-[var(--color-primary)]/5 p-4">
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                       <div>
@@ -1037,7 +1049,7 @@ export function WorkOrdersPage() {
                     </div>
                   </section>
                 )}
-                {['instructions_requested', 'pending_admin_confirmation'].includes(detail.balance_payment?.status) && (
+                {!readOnly && ['instructions_requested', 'pending_admin_confirmation'].includes(detail.balance_payment?.status) && (
                   <section className="rounded-xl border border-amber-500/40 bg-amber-500/5 p-4">
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                       <div>
@@ -1057,7 +1069,7 @@ export function WorkOrdersPage() {
                     </div>
                   </section>
                 )}
-                {detail.onsite_conversion_status === 'requested' && (
+                {!readOnly && detail.onsite_conversion_status === 'requested' && (
                   <section className="rounded-xl border border-amber-500/40 bg-amber-500/5 p-4">
                     <div>
                       <h4 className="font-medium text-[var(--color-text)]">On-site conversion awaiting location confirmation</h4>
@@ -1163,7 +1175,7 @@ export function WorkOrdersPage() {
                           {detail.arrival_override_reason ? ` · Admin override: ${detail.arrival_override_reason}` : ''}
                         </p>
                       </div>
-                      {detail.arrival_verification_required && !detail.arrival_verified_at && (
+                      {!readOnly && detail.arrival_verification_required && !detail.arrival_verified_at && (
                         <button
                           type="button"
                           onClick={() => handleAdminArrivalOverride(detail)}
@@ -1204,6 +1216,7 @@ export function WorkOrdersPage() {
                   </div>
                 </section>
 
+                {!readOnly && (
                 <section className="rounded-xl border border-[var(--color-border)] p-4">
                   <h4 className="mb-3 font-medium text-[var(--color-text)]">{t.headers.dispatch}</h4>
                   <div className="flex flex-col gap-3">
@@ -1249,6 +1262,7 @@ export function WorkOrdersPage() {
                     </div>
                   </div>
                 </section>
+                )}
 
                 {detail.status === 'completed' && (
                   <section className="rounded-xl border border-[var(--color-primary)]/30 bg-[var(--color-primary)]/5 p-4">
@@ -1267,7 +1281,7 @@ export function WorkOrdersPage() {
                           <div>Note: {detail.payout?.internal_note || '-'}</div>
                         </div>
                       </div>
-                      {detail.payout_status !== 'completed' && (
+                      {!readOnly && detail.payout_status !== 'completed' && (
                         <div className="flex flex-wrap gap-2">
                           <button
                             onClick={() => handleUpdatePayout(detail, 'processing')}
@@ -1519,6 +1533,7 @@ export function WorkOrdersPage() {
                       </div>
                     ))}
                   </div>
+                  {!readOnly && (
                   <div className="mt-3 space-y-2">
                     <textarea
                       value={internalNote}
@@ -1535,6 +1550,7 @@ export function WorkOrdersPage() {
                       {t.saveNote}
                     </button>
                   </div>
+                  )}
                 </section>
               </div>
               </DetailErrorBoundary>
