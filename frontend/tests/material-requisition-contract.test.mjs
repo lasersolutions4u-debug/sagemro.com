@@ -127,6 +127,33 @@ test('work-order details place the panel in an assigned-engineer-only tab', () =
   assert.match(modal, /role="tab"/);
   assert.match(modal, /aria-selected=\{tab === t\.key\}/);
   assert.match(modal, /tab === 'materialRequisition' && isAssignedEngineer/);
-  assert.match(modal, /<MaterialRequisitionPanel workOrderId=\{workOrder\.id\}/);
+  assert.match(modal, /<MaterialRequisitionPanel[\s\S]*workOrderId=\{workOrder\.id\}/);
   assert.doesNotMatch(modal, /isCustomer[\s\S]{0,120}<MaterialRequisitionPanel/);
+});
+
+test('requisition mutations keep the panel mounted by locking tabs and modal close', () => {
+  const panel = read('frontend/src/components/WorkOrder/MaterialRequisitionPanel.jsx');
+  const detailModal = read('frontend/src/components/WorkOrder/WorkOrderDetailModal.jsx');
+  const modal = read('frontend/src/components/common/Modal.jsx');
+
+  assert.match(panel, /export function MaterialRequisitionPanel\(\{ workOrderId, onBusyChange \}\)/);
+  assert.match(panel, /const panelBusy = creating \|\| submitting \|\| Boolean\(pendingReceiptId\)/);
+  assert.match(panel, /onBusyChange\?\.\(panelBusy\)/);
+  assert.match(panel, /draftInFlightRef\.current = draftRequest;[\s\S]*onBusyChange\?\.\(true\)/);
+  assert.match(panel, /receiptInFlightRef\.current = receiptRequest;[\s\S]*onBusyChange\?\.\(true\)/);
+  assert.match(panel, /useEffect\(\(\) => \(\) => onBusyChange\?\.\(false\), \[onBusyChange\]\)/);
+
+  assert.match(detailModal, /const \[materialRequisitionBusy, setMaterialRequisitionBusy\] = useState\(false\)/);
+  assert.match(detailModal, /onBusyChange=\{handleMaterialRequisitionBusyChange\}/);
+  assert.match(detailModal, /disabled=\{materialRequisitionBusy && tab !== t\.key\}/);
+  assert.match(detailModal, /title=\{materialRequisitionBusy && tab !== t\.key \? materialRequisitionBusyMessage : undefined\}/);
+  assert.match(detailModal, /closeDisabled=\{materialRequisitionBusy\}/);
+  assert.match(detailModal, /closeDisabledTitle=\{materialRequisitionBusyMessage\}/);
+  assert.match(detailModal, /isCnLocale\(\)[\s\S]*请等待物料申请操作完成[\s\S]*Wait for the material requisition operation to finish/);
+
+  assert.match(modal, /closeDisabled = false/);
+  assert.match(modal, /onClick=\{closeDisabled \? undefined : onClose\}/);
+  assert.match(modal, /disabled=\{closeDisabled\}/);
+  assert.match(modal, /aria-disabled=\{closeDisabled\}/);
+  assert.match(modal, /title=\{closeDisabled \? closeDisabledTitle : undefined\}/);
 });

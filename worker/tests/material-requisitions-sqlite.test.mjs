@@ -5,7 +5,6 @@ import { DatabaseSync } from 'node:sqlite';
 
 const schemaSql = readFileSync(new URL('../schema.sql', import.meta.url), 'utf8');
 const migrationSql = readFileSync(new URL('../migrations/038_material_requisitions_and_staff.sql', import.meta.url), 'utf8');
-const createIdempotencyMigrationSql = readFileSync(new URL('../migrations/039_material_requisition_create_idempotency.sql', import.meta.url), 'utf8');
 
 function minimalPreMigrationDatabase() {
   const db = new DatabaseSync(':memory:');
@@ -55,9 +54,12 @@ test('migration 038 adds reservation and idempotency schema with integer quantit
   const materialColumns = db.prepare('PRAGMA table_info(materials)').all().map((column) => column.name);
   const requisitionColumns = db.prepare('PRAGMA table_info(material_requisitions)').all().map((column) => column.name);
   const operationColumns = db.prepare('PRAGMA table_info(material_requisition_operations)').all().map((column) => column.name);
+  const operationItemColumn = db.prepare('PRAGMA table_info(material_requisition_operations)').all()
+    .find((column) => column.name === 'item_id');
   assert.ok(materialColumns.includes('reserved_quantity'));
   assert.ok(requisitionColumns.includes('submitted_at'));
   assert.deepEqual(operationColumns, ['operation_key', 'action', 'requisition_id', 'item_id', 'request_fingerprint', 'completed_at']);
+  assert.equal(operationItemColumn.notnull, 0);
 
   seedRequisition(db);
   assert.throws(() => db.prepare(`
@@ -171,10 +173,9 @@ test('operation keys store a request fingerprint and requisition history blocks 
   assert.throws(() => db.prepare('DELETE FROM work_orders WHERE id = ?').run('wo-1'), /foreign key/i);
 });
 
-test('migration 039 permits a requisition-level create operation without an item', () => {
+test('migration 038 permits a requisition-level create operation without an item', () => {
   const db = minimalPreMigrationDatabase();
   db.exec(migrationSql);
-  db.exec(createIdempotencyMigrationSql);
   seedRequisition(db);
 
   db.prepare(`

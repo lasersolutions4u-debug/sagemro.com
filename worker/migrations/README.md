@@ -42,7 +42,6 @@
 | `036_create_funnel_events.sql` | 注册漏斗事件与会话归因记录 |
 | `037_engineer_account_activation.sql` | 工程师邮箱激活与客户/工程师跨角色登录身份唯一性 |
 | `038_material_requisitions_and_staff.sql` | 内部员工账号与工单领料申请、库存预留、幂等采购/出入库和签收流程 |
-| `039_material_requisition_create_idempotency.sql` | 领料申请草稿创建幂等操作，允许操作记录不关联明细行 |
 
 > 约定：文件名格式 `NNN_*.sql`，按字典序顺序执行；历史命名中出现过 `001_partner_upgrade.sql`（已删除，是 `001_add_engineer_fields.sql + 002_pricing_and_new_tables.sql` 的合并版本，避免重复执行）。
 

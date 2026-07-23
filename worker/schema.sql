@@ -1167,5 +1167,4 @@ INSERT OR IGNORE INTO _migrations (version, note) VALUES
     ('035_onsite_conversion_workflow',  'Add audited remote-to-onsite conversion and arrival override workflow'),
     ('036_create_funnel_events',         'Controlled beta funnel event tracking'),
     ('037_engineer_account_activation', 'Engineer email activation and cross-role identity registry'),
-    ('038_material_requisitions_and_staff', 'Internal staff accounts and material requisition operations'),
-    ('039_material_requisition_create_idempotency', 'Allow idempotent material requisition draft creation');
+    ('038_material_requisitions_and_staff', 'Internal staff accounts and material requisition operations');

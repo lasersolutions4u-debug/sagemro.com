@@ -170,7 +170,7 @@ function statusTone(status) {
   return 'border-[var(--color-border)] bg-[var(--color-surface-elevated)] text-[var(--color-text-secondary)]';
 }
 
-export function MaterialRequisitionPanel({ workOrderId }) {
+export function MaterialRequisitionPanel({ workOrderId, onBusyChange }) {
   const isCn = isCnLocale();
   const t = isCn ? COPY.cn : COPY.en;
   const [requisitions, setRequisitions] = useState([]);
@@ -190,6 +190,7 @@ export function MaterialRequisitionPanel({ workOrderId }) {
   const receiptRetryRef = useRef({});
   const receiptInFlightRef = useRef(null);
   const detailRequestIdRef = useRef(0);
+  const panelBusy = creating || submitting || Boolean(pendingReceiptId);
 
   const workOrderRequisitions = useMemo(
     () => requisitions.filter((item) => item.work_order_id === workOrderId),
@@ -223,6 +224,12 @@ export function MaterialRequisitionPanel({ workOrderId }) {
       detailRequestIdRef.current += 1;
     };
   }, [loadPanel]);
+
+  useEffect(() => {
+    onBusyChange?.(panelBusy);
+  }, [onBusyChange, panelBusy]);
+
+  useEffect(() => () => onBusyChange?.(false), [onBusyChange]);
 
   const clearDraftRetry = () => {
     if (creating || draftInFlightRef.current) return;
@@ -315,6 +322,7 @@ export function MaterialRequisitionPanel({ workOrderId }) {
     const draftRequest = { payload, key: operation.key };
     draftRetryRef.current = operation;
     draftInFlightRef.current = draftRequest;
+    onBusyChange?.(true);
     setCreating(true);
     setError('');
     try {
@@ -361,6 +369,7 @@ export function MaterialRequisitionPanel({ workOrderId }) {
       title: t.submitDraft,
       confirmText: t.submitDraft,
     }))) return;
+    onBusyChange?.(true);
     setSubmitting(true);
     setDetailError('');
     try {
@@ -395,6 +404,7 @@ export function MaterialRequisitionPanel({ workOrderId }) {
     const receiptRequest = { itemId: item.id, payload, key: operation.key };
     receiptRetryRef.current[item.id] = operation;
     receiptInFlightRef.current = receiptRequest;
+    onBusyChange?.(true);
     setPendingReceiptId(item.id);
     setDetailError('');
     try {

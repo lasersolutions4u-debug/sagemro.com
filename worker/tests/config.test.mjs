@@ -84,7 +84,6 @@ test('schema snapshot includes the current work-order workflow migrations', () =
     '034_add_service_mode',
     '035_onsite_conversion_workflow',
     '038_material_requisitions_and_staff',
-    '039_material_requisition_create_idempotency',
   ]) {
     assert.match(schema, new RegExp(`\\('${version}'`));
   }
