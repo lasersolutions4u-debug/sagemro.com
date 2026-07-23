@@ -51,7 +51,7 @@ test('material requisition panel supports copied preparation lines and validated
   assert.match(panel, /requisitionResult\.status === 'rejected'/);
   assert.match(panel, /preparationResult\.status === 'fulfilled'/);
   assert.match(panel, /setPreparationItems\(\[\]\)/);
-  assert.match(panel, /preparationItems\.map\(\(item\)\s*=>\s*\(\{/);
+  assert.match(panel, /setDraftItems\(mapMaterialItemsToDraft\(preparationItems\)\)/);
   assert.match(panel, /requested_quantity:\s*String\(item\.quantity/);
   assert.match(panel, /setDraftItems\(\(current\)\s*=>\s*\[\.\.\.current,/);
   assert.match(panel, /setDraftItems\(\(current\)\s*=>\s*current\.filter/);
@@ -59,6 +59,22 @@ test('material requisition panel supports copied preparation lines and validated
   assert.match(panel, /work_order_id:\s*workOrderId/);
   assert.match(panel, /items:\s*draftItems\.map/);
   assert.doesNotMatch(panel, /addWorkOrderMaterialItem|updateWorkOrderMaterialItem/);
+});
+
+test('quote material lines prefill a new requisition without creating duplicate requests', () => {
+  const panel = read('frontend/src/components/WorkOrder/MaterialRequisitionPanel.jsx');
+
+  assert.match(panel, /getWorkOrderMaterialItems\(workOrderId, 'quote'\)/);
+  assert.match(panel, /const \[quoteItems, setQuoteItems\] = useState\(\[\]\)/);
+  assert.match(panel, /const quoteDraftItems = mapMaterialItemsToDraft\(quoteResult\.value\.list \|\| \[\]\)/);
+  assert.match(panel, /if \(requisitionResult\.status === 'fulfilled'\s*&& !nextRequisitions\.length\s*&& quoteDraftItems\.length/);
+  assert.match(panel, /setDraftItems\(quoteDraftItems\)/);
+  assert.match(panel, /const copyQuoteItems = \(\) =>/);
+  assert.match(panel, /setDraftItems\(mapMaterialItemsToDraft\(quoteItems\)\)/);
+  assert.match(panel, /requested_quantity:\s*String\(item\.quantity \|\| 1\)/);
+  assert.match(panel, /quotePrefill: 'Import quote materials'/);
+  assert.match(panel, /quotePrefill: '导入报价物料'/);
+  assert.doesNotMatch(panel, /copyQuoteItems[\s\S]{0,500}createMaterialRequisition/);
 });
 
 test('engineer can list, open, submit, and track requisitions with bilingual progress', () => {
