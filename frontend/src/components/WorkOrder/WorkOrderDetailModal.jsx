@@ -21,6 +21,7 @@ import { MessagePanel } from './MessagePanel';
 import { EngineerPricingPanel, CustomerPricingPanel } from './PricingPanels';
 import { RepairRecordPanel } from './RepairRecordPanel';
 import { AttachmentsPanel } from './AttachmentsPanel';
+import { MaterialRequisitionPanel } from './MaterialRequisitionPanel';
 import { PaymentModal } from '../Payment/PaymentModal';
 import { formatCustomerDeviceLine } from '../../utils/workOrderDisplay';
 import { canEngineerViewCustomerContact, redactContactInfo } from '../../utils/contactRedaction';
@@ -391,6 +392,12 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
   const urgency = urgencyConfig[workOrder.urgency] || urgencyConfig.normal;
   const isEngineer = userType === 'engineer';
   const isCustomer = userType === 'customer';
+  const assignedEngineerId = detail?.id === workOrder.id
+    ? detail.engineer_id
+    : workOrder.engineer_id;
+  const isAssignedEngineer = isEngineer
+    && Boolean(assignedEngineerId)
+    && String(assignedEngineerId) === String(userId);
   const shouldShowCustomerContact = !isEngineer || canEngineerViewCustomerContact(effectiveStatus);
   const customerPhoneDisplay = shouldShowCustomerContact ? detail?.customer_phone : detail?.customer_phone ? 'XXX' : '';
 
@@ -417,6 +424,9 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
   const repairStatuses = ['in_service', 'pricing', 'resolved', 'pending_review', 'completed'];
   if ((isEngineer && repairStatuses.includes(effectiveStatus)) || (isCustomer && hasRepairRecord)) {
     tabs.push({ key: 'repairRecord', label: 'Service Report' });
+  }
+  if (isAssignedEngineer) {
+    tabs.push({ key: 'materialRequisition', label: 'Material Requisition' });
   }
   if (isEngineer) {
     tabs.push({ key: 'machineLead', label: 'Machine Lead' });
@@ -1134,6 +1144,9 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
                 onSubmitComplete={handleSubmitFinalReport}
                 canSubmitComplete={isEngineer && (effectiveStatus === 'in_service' || effectiveStatus === 'pricing')}
               />
+            )}
+            {tab === 'materialRequisition' && isAssignedEngineer && (
+              <MaterialRequisitionPanel workOrderId={workOrder.id} />
             )}
             {tab === 'machineLead' && renderMachineLeadTab()}
           </>

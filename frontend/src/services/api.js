@@ -596,6 +596,70 @@ export async function createMaterialRequest(data) {
   return response.json();
 }
 
+export async function getMaterialRequisitions() {
+  const response = await fetch(`${API_BASE}/api/material-requisitions`, {
+    method: 'GET',
+    headers: authHeaders(),
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.error || `HTTP ${response.status}`);
+  }
+  return response.json();
+}
+
+export async function getMaterialRequisition(requisitionId) {
+  const response = await fetch(`${API_BASE}/api/material-requisitions/${requisitionId}`, {
+    method: 'GET',
+    headers: authHeaders(),
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.error || `HTTP ${response.status}`);
+  }
+  return response.json();
+}
+
+export async function createMaterialRequisition(data) {
+  const response = await fetch(`${API_BASE}/api/material-requisitions`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify(data),
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.error || `HTTP ${response.status}`);
+  }
+  return response.json();
+}
+
+export async function submitMaterialRequisition(requisitionId) {
+  const response = await fetch(`${API_BASE}/api/material-requisitions/${requisitionId}/submit`, {
+    method: 'POST',
+    headers: authHeaders(),
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.error || `HTTP ${response.status}`);
+  }
+  return response.json();
+}
+
+export async function confirmMaterialRequisitionReceipt(requisitionId, data, idempotencyKey) {
+  const response = await fetch(`${API_BASE}/api/material-requisitions/${requisitionId}/engineer-receipt`, {
+    method: 'POST',
+    headers: { ...authHeaders(), 'Idempotency-Key': idempotencyKey },
+    body: JSON.stringify(data),
+  });
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    const error = new Error(data.error || `HTTP ${response.status}`);
+    error.status = response.status;
+    throw error;
+  }
+  return response.json();
+}
+
 /**
  * 提交评价
  */
