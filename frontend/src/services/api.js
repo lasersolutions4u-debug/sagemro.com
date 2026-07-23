@@ -134,13 +134,27 @@ export function trackFunnelEvent(eventName, properties = {}) {
   }).catch(() => {});
 }
 
-// 401 统一拦截：当任意认证接口返回 401 时，清理本地 token 并派发事件，
-// 由 App.jsx 订阅后自动登出并弹出登录框。避免用户在 token 过期后看到一堆
-// "HTTP 401" 红色弹窗但登录状态仍保持的混乱体验。
-//
-// 实现方式：猴子补丁 window.fetch，只对 API_BASE 开头的请求生效，
-// 其他外部资源（如 CDN / OneSignal）完全不受影响。已做幂等保护，
-// 避免 HMR 或重复加载时装多层。
+const AUTH_FAILURE_EXEMPT_PATHS = new Set([
+  '/api/auth/login',
+  '/api/auth/session',
+  '/api/auth/logout',
+  '/api/auth/send-code',
+  '/api/auth/register/customer',
+  '/api/auth/register/engineer',
+  '/api/auth/engineer/activate',
+  '/api/auth/send-reset-code',
+  '/api/auth/reset-password',
+]);
+
+function shouldConfirmAuthFailure(rawUrl) {
+  try {
+    const url = new URL(rawUrl, window.location.origin);
+    return isApiRequest(url.href) && !AUTH_FAILURE_EXEMPT_PATHS.has(url.pathname);
+  } catch {
+    return false;
+  }
+}
+
 let __authFailureTriggered = false;
 function triggerAuthFailure() {
   // 同一帧内多个并发请求同时返回 401 时只触发一次
@@ -163,6 +177,34 @@ function triggerAuthFailure() {
   }
 }
 
+let __authFailureConfirmation = null;
+async function confirmAuthFailure(nativeFetch) {
+  if (__authFailureConfirmation) return __authFailureConfirmation;
+
+  __authFailureConfirmation = (async () => {
+    try {
+      const headers = new Headers();
+      const legacyToken = localStorage.getItem('sagemro_token');
+      if (legacyToken) headers.set('Authorization', `Bearer ${legacyToken}`);
+      const response = await nativeFetch(`${API_BASE}/api/auth/session`, {
+        credentials: 'include',
+        headers,
+      });
+      if (!response.ok) return;
+
+      const session = await response.json().catch(() => ({}));
+      if (session.authenticated) return;
+      triggerAuthFailure();
+    } catch {
+      // Network failures cannot prove that the session expired.
+    } finally {
+      __authFailureConfirmation = null;
+    }
+  })();
+
+  return __authFailureConfirmation;
+}
+
 if (typeof window !== 'undefined' && !window.__sagemroFetchPatched) {
   window.__sagemroFetchPatched = true;
   const nativeFetch = window.fetch.bind(window);
@@ -183,10 +225,10 @@ if (typeof window !== 'undefined' && !window.__sagemroFetchPatched) {
       requestInit = { ...init, credentials: 'include', headers };
     }
     const response = await nativeFetch(input, requestInit);
-    // 只对本平台 API 的 401 触发：避免干扰第三方 SDK（OneSignal 等）
-    if (response.status === 401 && url.startsWith(API_BASE)) {
-      // 不 clone response 消费 body — 交给调用方处理错误文案
-      triggerAuthFailure();
+    if (response.status === 401 && shouldConfirmAuthFailure(url)) {
+      // A single endpoint can reject access without invalidating the whole session.
+      // Confirm with the authoritative session endpoint before signing the user out.
+      confirmAuthFailure(nativeFetch);
     }
     return response;
   };
