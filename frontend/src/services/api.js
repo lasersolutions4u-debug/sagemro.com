@@ -244,53 +244,50 @@ function authHeaders() {
   return headers;
 }
 
-function clearStoredSession() {
-  localStorage.removeItem('sagemro_token');
-  localStorage.removeItem('sagemro_user');
-  localStorage.removeItem('sagemro_user_type');
-  localStorage.removeItem('sagemro_customer_id');
-  localStorage.removeItem('sagemro_engineer_id');
-  localStorage.removeItem('sagemro_csrf_token');
+let __sessionRestoreOperation = null;
+let __logoutOperation = null;
+
+async function waitForAuthTransitions() {
+  if (__sessionRestoreOperation) await __sessionRestoreOperation.catch(() => {});
+  if (__logoutOperation) await __logoutOperation.catch(() => {});
 }
 
 export async function restoreSession() {
+  if (__sessionRestoreOperation) return __sessionRestoreOperation;
   const storedUser = localStorage.getItem('sagemro_user');
   const storedType = localStorage.getItem('sagemro_user_type');
-  const response = await fetch(`${API_BASE}/api/auth/session`, { credentials: 'include' });
-  const data = await response.json().catch(() => ({}));
+  __sessionRestoreOperation = (async () => {
+    const response = await fetch(`${API_BASE}/api/auth/session`, { credentials: 'include' });
+    const data = await response.json().catch(() => ({}));
 
-  if (response.status === 404) {
-    localStorage.removeItem('sagemro_csrf_token');
-    return {
-      authenticated: Boolean(localStorage.getItem('sagemro_token') && storedUser && storedType),
-      user: storedUser ? JSON.parse(storedUser) : null,
-      userType: storedType || null,
-      legacy: true,
-    };
-  }
-  if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
-  if (!data.authenticated) {
-    clearStoredSession();
+    if (response.status === 404) {
+      return {
+        authenticated: Boolean(localStorage.getItem('sagemro_token') && storedUser && storedType),
+        user: storedUser ? JSON.parse(storedUser) : null,
+        userType: storedType || null,
+        legacy: true,
+      };
+    }
+    if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
     return data;
-  }
-  if (data.csrfToken) {
-    localStorage.setItem('sagemro_csrf_token', data.csrfToken);
-    localStorage.removeItem('sagemro_token');
-  }
-  return data;
+  })().finally(() => { __sessionRestoreOperation = null; });
+  return __sessionRestoreOperation;
 }
 
 export async function logout() {
-  const response = await fetch(`${API_BASE}/api/auth/logout`, {
-    method: 'POST',
-    credentials: 'include',
-  });
-  clearStoredSession();
-  if (!response.ok) {
-    const data = await response.json().catch(() => ({}));
-    throw new Error(data.error || `HTTP ${response.status}`);
-  }
-  return response.json().catch(() => ({}));
+  if (__logoutOperation) return __logoutOperation;
+  __logoutOperation = (async () => {
+    const response = await fetch(`${API_BASE}/api/auth/logout`, {
+      method: 'POST',
+      credentials: 'include',
+    });
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      throw new Error(data.error || `HTTP ${response.status}`);
+    }
+    return response.json().catch(() => ({}));
+  })().finally(() => { __logoutOperation = null; });
+  return __logoutOperation;
 }
 
 // ============ 认证相关 ============
@@ -334,6 +331,7 @@ export async function registerCustomer({ name, phone, email, password, code, com
  * 登录
  */
 export async function login({ phone, email, password }) {
+  await waitForAuthTransitions();
   const response = await fetch(`${API_BASE}/api/auth/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

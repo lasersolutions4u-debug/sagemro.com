@@ -26,3 +26,23 @@ test('CN frontend does not persist a missing JWT from a Cookie login', async () 
   assert.match(modal, /if \(result\.csrfToken\)[\s\S]*sagemro_csrf_token/);
   assert.doesNotMatch(modal, /localStorage\.setItem\(['"]sagemro_token['"], result\.token\)/);
 });
+
+test('a delayed startup session restore cannot overwrite a newer portal login', async () => {
+  const api = await read('src/services/api.js');
+  const app = await read('src/App.jsx');
+  const restoreSessionSource = api.slice(
+    api.indexOf('export async function restoreSession'),
+    api.indexOf('export async function logout'),
+  );
+
+  assert.match(app, /const authVersionRef = useRef\(0\)/);
+  assert.match(app, /const restoreVersion = authVersionRef\.current/);
+  assert.match(app, /if \(authVersionRef\.current !== restoreVersion\) return/);
+  assert.match(app, /const handleLoginSuccess = useCallback[\s\S]*authVersionRef\.current \+= 1/);
+  assert.match(app, /const handleLogout = useCallback[\s\S]*authVersionRef\.current \+= 1/);
+  assert.match(api, /let __sessionRestoreOperation = null/);
+  assert.match(api, /async function waitForAuthTransitions/);
+  assert.match(api, /export async function login[\s\S]*await waitForAuthTransitions\(\)/);
+  assert.match(restoreSessionSource, /__sessionRestoreOperation/);
+  assert.doesNotMatch(restoreSessionSource, /localStorage\.removeItem|clearStoredSession\(\)/);
+});
