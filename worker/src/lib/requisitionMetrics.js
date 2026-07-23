@@ -17,13 +17,13 @@ export const REQUISITION_OPERATION_METRIC_QUERIES = Object.freeze({
     FROM material_requisitions
     WHERE required_date IS NOT NULL
       AND required_date < date('now')
-      AND status NOT IN ('rejected', 'cancelled', 'closed')
+      AND status NOT IN ('draft', 'rejected', 'cancelled', 'closed')
   `,
   medianApproval: `
     WITH durations AS (
-      SELECT (julianday(approved_at) - julianday(created_at)) * 24.0 AS hours
+      SELECT (julianday(approved_at) - julianday(submitted_at)) * 24.0 AS hours
       FROM material_requisitions
-      WHERE approved_at IS NOT NULL
+      WHERE approved_at IS NOT NULL AND submitted_at IS NOT NULL
     ), ranked AS (
       SELECT hours,
              ROW_NUMBER() OVER (ORDER BY hours) AS row_number,

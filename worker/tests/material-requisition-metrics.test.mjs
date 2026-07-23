@@ -98,7 +98,7 @@ test('metrics queries handle active boundaries, even medians, and empty samples 
   db.exec(`
     CREATE TABLE material_requisitions (
       id TEXT PRIMARY KEY, status TEXT, required_date TEXT, created_at TEXT,
-      approved_at TEXT, received_at TEXT
+      submitted_at TEXT, approved_at TEXT, received_at TEXT
     );
     CREATE TABLE material_requisition_items (
       id TEXT PRIMARY KEY, requisition_id TEXT, status TEXT, requested_quantity INTEGER,
@@ -109,11 +109,11 @@ test('metrics queries handle active boundaries, even medians, and empty samples 
   assert.equal(db.prepare(REQUISITION_OPERATION_METRIC_QUERIES.medianApproval).get().value, null);
   assert.equal(db.prepare(REQUISITION_OPERATION_METRIC_QUERIES.closureRate).get().closure_rate_percent, null);
 
-  const insertHeader = db.prepare('INSERT INTO material_requisitions VALUES (?, ?, ?, ?, ?, ?)');
-  insertHeader.run('submitted', 'submitted', '2000-01-01', '2026-01-01 00:00:00', null, null);
-  insertHeader.run('active', 'approved', '2000-01-01', '2026-01-01 00:00:00', '2026-01-01 02:00:00', null);
-  insertHeader.run('closed', 'closed', '2000-01-01', '2026-01-01 00:00:00', '2026-01-01 06:00:00', '2026-01-01 16:00:00');
-  insertHeader.run('draft', 'draft', '2000-01-01', '2026-01-01 00:00:00', null, null);
+  const insertHeader = db.prepare('INSERT INTO material_requisitions VALUES (?, ?, ?, ?, ?, ?, ?)');
+  insertHeader.run('submitted', 'submitted', '2000-01-01', '2026-01-01 00:00:00', '2026-01-01 00:00:00', null, null);
+  insertHeader.run('active', 'approved', '2000-01-01', '2020-01-01 00:00:00', '2026-01-01 01:00:00', '2026-01-01 02:00:00', null);
+  insertHeader.run('closed', 'closed', '2000-01-01', '2026-01-01 00:00:00', '2026-01-01 02:00:00', '2026-01-01 06:00:00', '2026-01-01 16:00:00');
+  insertHeader.run('draft', 'draft', '2000-01-01', '2010-01-01 00:00:00', null, null, null);
   const insertItem = db.prepare('INSERT INTO material_requisition_items VALUES (?, ?, ?, ?, ?, ?)');
   insertItem.run('short', 'active', 'pending', 5, 2, 1);
   insertItem.run('closed-short', 'closed', 'pending', 5, 0, 0);
@@ -121,8 +121,8 @@ test('metrics queries handle active boundaries, even medians, and empty samples 
 
   assert.equal(db.prepare(REQUISITION_OPERATION_METRIC_QUERIES.pendingApproval).get().count, 1);
   assert.equal(db.prepare(REQUISITION_OPERATION_METRIC_QUERIES.shortages).get().count, 1);
-  assert.equal(db.prepare(REQUISITION_OPERATION_METRIC_QUERIES.overdue).get().count, 3);
-  assert.equal(Math.round(db.prepare(REQUISITION_OPERATION_METRIC_QUERIES.medianApproval).get().value), 4);
+  assert.equal(db.prepare(REQUISITION_OPERATION_METRIC_QUERIES.overdue).get().count, 2);
+  assert.ok(Math.abs(db.prepare(REQUISITION_OPERATION_METRIC_QUERIES.medianApproval).get().value - 2.5) < 0.001);
   assert.equal(Math.round(db.prepare(REQUISITION_OPERATION_METRIC_QUERIES.medianFulfillment).get().value), 10);
   assert.equal(db.prepare(REQUISITION_OPERATION_METRIC_QUERIES.closureRate).get().closure_rate_percent, 33.33);
 });

@@ -33,3 +33,14 @@ test('session role fields are persisted and forced password change blocks the co
   assert.match(app, /changeAdminPassword/);
   assert.match(api, /\/api\/auth\/change-password/);
 });
+
+test('password and staff account fields have visible associated labels', () => {
+  for (const id of ['current-password', 'new-password', 'confirm-password']) {
+    assert.match(app, new RegExp(`<label[^>]*htmlFor="${id}"`));
+    assert.match(app, new RegExp(`<input[^>]*id="${id}"`));
+  }
+  for (const id of ['staff-display-name', 'staff-login', 'staff-phone', 'staff-role', 'staff-market']) {
+    assert.match(page, new RegExp(`<label[^>]*htmlFor="${id}"`));
+    assert.match(page, new RegExp(`<(?:input|select)[^>]*id="${id}"`));
+  }
+});

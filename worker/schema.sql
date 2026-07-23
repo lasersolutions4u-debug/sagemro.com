@@ -678,6 +678,7 @@ CREATE TABLE IF NOT EXISTS material_requisitions (
     urgency TEXT NOT NULL DEFAULT 'normal' CHECK (urgency IN ('normal', 'urgent', 'critical')),
     required_date TEXT,
     purpose TEXT,
+    submitted_at TEXT,
     approved_by TEXT,
     approved_at TEXT,
     rejection_reason TEXT,

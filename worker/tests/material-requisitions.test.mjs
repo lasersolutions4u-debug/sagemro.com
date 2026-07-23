@@ -60,6 +60,7 @@ function createStatement(env, sql) {
         return { results: clone(env.__staff) };
       }
       if (/FROM audit_logs/i.test(normalized) && /target_type = 'material_requisition'/i.test(normalized)) {
+        env.__historyQueryCount += 1;
         const requisitionId = this.args[0];
         const itemIds = new Set(env.__items.filter((item) => item.requisition_id === requisitionId).map((item) => item.id));
         const includesItemHistory = /target_type = 'material_requisition_item'/i.test(normalized);
@@ -72,10 +73,8 @@ function createStatement(env, sql) {
             )))
             .map((entry) => ({
               actor_type: entry.args[1],
-              actor_id: entry.args[2],
               action: entry.args[5],
-              before_state: entry.args[6],
-              after_state: entry.args[7],
+              status: JSON.parse(entry.args[7] || 'null')?.status || null,
               created_at: '2026-07-23 00:00:00',
             }))),
         };
@@ -221,7 +220,9 @@ function createStatement(env, sql) {
           if (requisition.status === 'received') requisition.received_at ||= env.__now;
           changes = 1;
         } else if (requisition) {
-          if (/SET status = \?, approved_by = \?/i.test(normalized)) {
+          if (/submitted_at = datetime\('now'\)/i.test(normalized)) {
+            Object.assign(requisition, { status: this.args[0], submitted_at: env.__now });
+          } else if (/SET status = \?, approved_by = \?/i.test(normalized)) {
             Object.assign(requisition, { status: this.args[0], approved_by: this.args[1], approved_at: env.__now });
           } else if (/SET status = \?, rejection_reason = \?/i.test(normalized)) {
             Object.assign(requisition, { status: this.args[0], rejection_reason: this.args[1] });
@@ -363,6 +364,7 @@ function createEnv() {
     __requisitions: [],
     __items: [],
     __auditLogs: [],
+    __historyQueryCount: 0,
     __adjustments: [],
     __operations: [],
     __requisitionInsertCollisions: 0,
@@ -522,7 +524,7 @@ test('material requisition and staff routes are protected', async () => {
   assert.equal(result.response.status, 401);
 });
 
-test('requisition detail returns persisted workflow history', async () => {
+test('admin requisition detail returns sanitized persisted workflow history', async () => {
   const env = createEnv();
   const requisition = await createAndSubmit(env);
 
@@ -533,6 +535,36 @@ test('requisition detail returns persisted workflow history', async () => {
     'material_requisition_created',
     'material_requisition_submitted',
   ]);
+  assert.deepEqual(Object.keys(detail.json.requisition.history[0]).sort(), [
+    'action', 'actor_type', 'created_at', 'status',
+  ]);
+  assert.equal(detail.json.requisition.history[1].status, 'submitted');
+});
+
+test('engineer detail omits audit history and internal audit fields', async () => {
+  const env = createEnv();
+  const requisition = await createAndSubmit(env);
+
+  const detail = await api(env, `/api/material-requisitions/${requisition.id}`);
+
+  assert.equal(detail.response.status, 200);
+  assert.equal(Object.hasOwn(detail.json.requisition, 'history'), false);
+  const serialized = JSON.stringify(detail.json);
+  for (const field of ['actor_id', 'before_state', 'after_state']) assert.doesNotMatch(serialized, new RegExp(field));
+});
+
+test('internal requisition mutations do not query unpaginated audit history', async () => {
+  const env = createEnv();
+  const requisition = await createAndSubmit(env);
+  const historyQueriesBeforeApproval = env.__historyQueryCount;
+
+  const approved = await api(env, `/api/material-requisitions/${requisition.id}/approve`, {
+    method: 'POST', auth: staffAuth('operations'),
+  });
+
+  assert.equal(approved.response.status, 200);
+  assert.equal(env.__historyQueryCount, historyQueriesBeforeApproval);
+  assert.equal(Object.hasOwn(approved.json.requisition, 'history'), false);
 });
 
 test('requisition detail history includes line-level fulfillment operations', async () => {
@@ -658,6 +690,7 @@ test('assigned engineer creates and submits a deterministic multi-line draft; ot
 
   assert.match(requisition.requisition_no, /^MR-\d{8}-[A-Z0-9]{8,}$/);
   assert.equal(requisition.status, 'submitted');
+  assert.equal(requisition.submitted_at, env.__now);
   assert.equal(requisition.items.length, 2);
 
   const denied = await api(env, '/api/material-requisitions', {
@@ -689,6 +722,57 @@ test('assigned engineer creates and submits a deterministic multi-line draft; ot
     body: { work_order_id: 'wo-1', items: [{ name: 'Fractional item', requested_quantity: 1.5 }] },
   });
   assert.equal(fractional.response.status, 400);
+});
+
+test('engineer receipt response omits audit history and internal audit fields', async () => {
+  const env = createEnv();
+  const requisition = await createAndSubmit(env);
+  const item = requisition.items[0];
+  await api(env, `/api/material-requisitions/${requisition.id}/approve`, { method: 'POST', auth: staffAuth('operations') });
+  await api(env, `/api/material-requisitions/${requisition.id}/stock-allocation`, {
+    method: 'POST', auth: staffAuth('warehouse'), body: { item_id: item.id, quantity: 1 },
+  });
+  await api(env, `/api/material-requisitions/${requisition.id}/issue`, {
+    method: 'POST', auth: staffAuth('warehouse'), body: { item_id: item.id, quantity: 1 },
+  });
+
+  const receipt = await api(env, `/api/material-requisitions/${requisition.id}/engineer-receipt`, {
+    method: 'POST', body: { item_id: item.id, quantity: 1 },
+  });
+
+  assert.equal(receipt.response.status, 200);
+  assert.equal(Object.hasOwn(receipt.json.requisition, 'history'), false);
+  const serialized = JSON.stringify(receipt.json);
+  for (const field of ['actor_id', 'before_state', 'after_state']) assert.doesNotMatch(serialized, new RegExp(field));
+});
+
+test('requisition audit actor type records the actual staff role', async () => {
+  const env = createEnv();
+  const requisition = await createAndSubmit(env);
+  const [stockItem, buyItem] = requisition.items;
+  await api(env, `/api/material-requisitions/${requisition.id}/approve`, { method: 'POST', auth: staffAuth('operations') });
+  await api(env, `/api/material-requisitions/${requisition.id}/stock-allocation`, {
+    method: 'POST', auth: staffAuth('warehouse'), body: { item_id: stockItem.id, quantity: 1 },
+  });
+  await api(env, `/api/material-requisitions/${requisition.id}/procurement`, {
+    method: 'POST', auth: staffAuth('procurement'), body: { item_id: buyItem.id, quantity: 1 },
+  });
+
+  const actorByAction = Object.fromEntries(env.__auditLogs.map((entry) => [entry.args[5], entry.args[1]]));
+  assert.equal(actorByAction.material_requisition_created, 'engineer');
+  assert.equal(actorByAction.material_requisition_submitted, 'engineer');
+  assert.equal(actorByAction.material_requisition_approved, 'operations');
+  assert.equal(actorByAction.material_requisition_allocate_stock, 'warehouse');
+  assert.equal(actorByAction.material_requisition_record_purchase, 'procurement');
+
+  const bootstrapEnv = createEnv();
+  const bootstrapCreated = await api(bootstrapEnv, '/api/material-requisitions', {
+    method: 'POST',
+    auth: { userId: 'admin', userType: 'admin' },
+    body: { work_order_id: 'wo-1', items: [{ material_id: 'material-stock', requested_quantity: 1 }] },
+  });
+  assert.equal(bootstrapCreated.response.status, 201);
+  assert.equal(bootstrapEnv.__auditLogs[0].args[1], 'admin');
 });
 
 test('delta mutation endpoints require an idempotency key', async () => {

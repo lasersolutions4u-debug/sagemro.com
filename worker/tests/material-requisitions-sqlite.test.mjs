@@ -52,8 +52,10 @@ test('migration 038 adds reservation and idempotency schema with integer quantit
   db.exec(migrationSql);
 
   const materialColumns = db.prepare('PRAGMA table_info(materials)').all().map((column) => column.name);
+  const requisitionColumns = db.prepare('PRAGMA table_info(material_requisitions)').all().map((column) => column.name);
   const operationColumns = db.prepare('PRAGMA table_info(material_requisition_operations)').all().map((column) => column.name);
   assert.ok(materialColumns.includes('reserved_quantity'));
+  assert.ok(requisitionColumns.includes('submitted_at'));
   assert.deepEqual(operationColumns, ['operation_key', 'action', 'requisition_id', 'item_id', 'request_fingerprint', 'completed_at']);
 
   seedRequisition(db);
@@ -70,6 +72,7 @@ test('full schema loads with the material requisition reservation and operation 
   db.exec(schemaSql);
 
   assert.equal(db.prepare("SELECT reserved_quantity FROM materials WHERE 0").columns()[0].name, 'reserved_quantity');
+  assert.equal(db.prepare("SELECT submitted_at FROM material_requisitions WHERE 0").columns()[0].name, 'submitted_at');
   assert.equal(db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'material_requisition_operations'").get().name, 'material_requisition_operations');
 });
 

@@ -25,8 +25,10 @@ test('material requisitions use a dense list and a responsive detail drawer with
 });
 
 test('requisition actions are role-gated and quantity changes are idempotent and pending-safe', () => {
-  assert.match(page, /admin:.*approve.*reject.*cancel.*close/s);
-  assert.doesNotMatch(page, /^\s*admin:.*allocate_stock.*$/m);
+  const adminActions = page.match(/^\s*admin:\s*\[([^\n]+)\]/m)?.[1] || '';
+  for (const action of ['approve', 'reject', 'cancel', 'close', 'cancel_item', 'allocate_stock', 'receive_purchase', 'issue', 'return', 'record_purchase', 'update_purchase']) {
+    assert.match(adminActions, new RegExp(`'${action}'`));
+  }
   assert.match(page, /operations:.*approve.*reject.*cancel.*close/s);
   assert.match(page, /warehouse:.*allocate_stock.*receive_purchase.*issue.*return/s);
   assert.match(page, /procurement:.*record_purchase.*update_purchase.*receive_purchase/s);
@@ -47,6 +49,19 @@ test('requisition actions are role-gated and quantity changes are idempotent and
   assert.match(api, /procurement-receipt/);
   assert.match(page, /updateMaterialRequisitionProcurement/);
   assert.match(page, /update_purchase/);
+});
+
+test('requisition rows and drawer support keyboard focus navigation', () => {
+  assert.doesNotMatch(page, /<tr key=\{requisition\.id\}[^>]*onClick=/);
+  assert.match(page, /<button[^>]*type="button"[^>]*onClick=\{\(event\) => openDetail\(requisition, event\.currentTarget\)\}/);
+  assert.match(page, /drawerTriggerRef/);
+  assert.match(page, /drawerCloseRef/);
+  assert.match(page, /drawerCloseRef\.current\?\.focus\(\)/);
+  assert.match(page, /event\.key === 'Escape'/);
+  assert.match(page, /document\.addEventListener\('keydown'/);
+  assert.match(page, /drawerTriggerRef\.current\?\.focus\(\)/);
+  assert.match(page, /ref=\{drawerCloseRef\}/);
+  assert.match(page, /onClick=\{closeDetail\}/);
 });
 
 test('admin and operations can cancel eligible unissued and unreceived requisition lines', () => {

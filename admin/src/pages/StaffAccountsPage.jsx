@@ -119,16 +119,16 @@ export function StaffAccountsPage() {
       {error && <div className="mb-4 border-l-2 border-red-400 bg-red-500/10 px-3 py-2 text-sm text-red-300">{error}</div>}
 
       <form onSubmit={submit} className="mb-5 grid gap-3 border-y border-[var(--color-border)] bg-[var(--color-surface)] p-4 md:grid-cols-2 xl:grid-cols-[1fr_1fr_1fr_160px_150px_auto]">
-        <input required value={form.display_name} onChange={(event) => setForm({ ...form, display_name: event.target.value })} placeholder={t.name} className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-3 py-2 text-sm" />
-        <input required value={form.login} onChange={(event) => setForm({ ...form, login: event.target.value })} placeholder={t.login} className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-3 py-2 text-sm" />
-        <input value={form.phone} onChange={(event) => setForm({ ...form, phone: event.target.value })} placeholder={t.phone} className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-3 py-2 text-sm" />
-        <select aria-label={t.role} value={form.role} onChange={(event) => setForm({ ...form, role: event.target.value })} className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-3 py-2 text-sm">
+        <div><label htmlFor="staff-display-name" className="mb-1 block text-xs text-[var(--color-text-muted)]">{t.name}</label><input id="staff-display-name" required value={form.display_name} onChange={(event) => setForm({ ...form, display_name: event.target.value })} className="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-3 py-2 text-sm" /></div>
+        <div><label htmlFor="staff-login" className="mb-1 block text-xs text-[var(--color-text-muted)]">{t.login}</label><input id="staff-login" required value={form.login} onChange={(event) => setForm({ ...form, login: event.target.value })} className="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-3 py-2 text-sm" /></div>
+        <div><label htmlFor="staff-phone" className="mb-1 block text-xs text-[var(--color-text-muted)]">{t.phone}</label><input id="staff-phone" value={form.phone} onChange={(event) => setForm({ ...form, phone: event.target.value })} className="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-3 py-2 text-sm" /></div>
+        <div><label htmlFor="staff-role" className="mb-1 block text-xs text-[var(--color-text-muted)]">{t.role}</label><select id="staff-role" value={form.role} onChange={(event) => setForm({ ...form, role: event.target.value })} className="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-3 py-2 text-sm">
           {Object.entries(t.roles).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
-        </select>
-        <select aria-label={t.market} value={form.market_scope} onChange={(event) => setForm({ ...form, market_scope: event.target.value })} className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-3 py-2 text-sm">
+        </select></div>
+        <div><label htmlFor="staff-market" className="mb-1 block text-xs text-[var(--color-text-muted)]">{t.market}</label><select id="staff-market" value={form.market_scope} onChange={(event) => setForm({ ...form, market_scope: event.target.value })} className="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-3 py-2 text-sm">
           {Object.entries(t.markets).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
-        </select>
-        <button type="submit" disabled={pending === 'create'} className="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-lg bg-[var(--color-primary)] px-3 py-2 text-sm font-medium text-white disabled:opacity-50"><UserPlus size={16} />{pending === 'create' ? t.creating : t.create}</button>
+        </select></div>
+        <button type="submit" disabled={pending === 'create'} className="inline-flex items-center justify-center gap-2 self-end whitespace-nowrap rounded-lg bg-[var(--color-primary)] px-3 py-2 text-sm font-medium text-white disabled:opacity-50"><UserPlus size={16} />{pending === 'create' ? t.creating : t.create}</button>
       </form>
 
       <div className="overflow-x-auto border-y border-[var(--color-border)] bg-[var(--color-surface)]">

@@ -20,7 +20,7 @@ import {
 } from './materialRequisitionOperations';
 
 const ROLE_ACTIONS = {
-  admin: ['approve', 'reject', 'cancel', 'close', 'cancel_item'],
+  admin: ['approve', 'reject', 'cancel', 'close', 'cancel_item', 'allocate_stock', 'receive_purchase', 'issue', 'return', 'record_purchase', 'update_purchase'],
   operations: ['approve', 'reject', 'cancel', 'close', 'cancel_item'],
   warehouse: ['allocate_stock', 'receive_purchase', 'issue', 'return'],
   procurement: ['record_purchase', 'update_purchase', 'receive_purchase'],
@@ -64,12 +64,6 @@ function formatDate(value) {
   if (!value) return '-';
   const date = new Date(value.includes('T') ? value : `${value.replace(' ', 'T')}Z`);
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString(runtimeConfig.locale, { dateStyle: 'medium', timeStyle: 'short' });
-}
-
-function parseState(value) {
-  if (!value) return null;
-  if (typeof value === 'object') return value;
-  try { return JSON.parse(value); } catch { return null; }
 }
 
 function statusTone(status) {
@@ -131,6 +125,8 @@ export function MaterialRequisitionsPage({ staffRole = 'admin' }) {
   const [pendingActions, setPendingActions] = useState(new Set());
   const [retryOperations, setRetryOperations] = useState({});
   const pendingActionKeys = useRef(new Set());
+  const drawerTriggerRef = useRef(null);
+  const drawerCloseRef = useRef(null);
   const drawerPending = pendingActions.size > 0;
 
   const allowedActions = ROLE_ACTIONS[staffRole] || [];
@@ -153,7 +149,8 @@ export function MaterialRequisitionsPage({ staffRole = 'admin' }) {
 
   useEffect(() => { load(); }, []);
 
-  const openDetail = async (requisition) => {
+  const openDetail = async (requisition, trigger) => {
+    drawerTriggerRef.current = trigger;
     setError('');
     try {
       const data = await getMaterialRequisition(requisition.id);
@@ -165,8 +162,24 @@ export function MaterialRequisitionsPage({ staffRole = 'admin' }) {
     }
   };
 
+  const closeDetail = () => {
+    if (drawerPending) return;
+    setSelectedRequisition(null);
+    requestAnimationFrame(() => drawerTriggerRef.current?.focus());
+  };
+
+  useEffect(() => {
+    if (!selectedRequisition) return undefined;
+    drawerCloseRef.current?.focus();
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') closeDetail();
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [selectedRequisition, drawerPending]);
+
   const applyUpdatedRequisition = (updated) => {
-    setSelectedRequisition(updated);
+    setSelectedRequisition((current) => ({ ...updated, history: updated.history || current?.history || [] }));
     setLineInputs((current) => buildLineInputs(updated.items, current));
     setRequisitions((current) => current.map((item) => (item.id === updated.id ? { ...item, ...updated } : item)));
   };
@@ -300,8 +313,8 @@ export function MaterialRequisitionsPage({ staffRole = 'admin' }) {
             ) : filtered.length === 0 ? (
               <tr><td colSpan="6" className="px-3 py-10 text-center text-[var(--color-text-muted)]">{t.empty}</td></tr>
             ) : filtered.map((requisition) => (
-              <tr key={requisition.id} onClick={() => openDetail(requisition)} className="cursor-pointer border-t border-[var(--color-border)] hover:bg-[var(--color-surface-elevated)]/70">
-                <td className="px-3 py-2.5 font-medium text-[var(--color-primary)]">{requisition.requisition_no}</td>
+              <tr key={requisition.id} className="border-t border-[var(--color-border)] hover:bg-[var(--color-surface-elevated)]/70">
+                <td className="px-3 py-2.5 font-medium"><button type="button" onClick={(event) => openDetail(requisition, event.currentTarget)} className="text-[var(--color-primary)] hover:underline">{requisition.requisition_no}</button></td>
                 <td className="px-3 py-2.5">{requisition.work_order_id}</td>
                 <td className="px-3 py-2.5">{requisitionLabel(runtimeConfig.locale, 'urgency', requisition.urgency)}</td>
                 <td className="px-3 py-2.5">{requisition.required_date || '-'}</td>
@@ -314,7 +327,7 @@ export function MaterialRequisitionsPage({ staffRole = 'admin' }) {
       </div>
 
       {selectedRequisition && (
-        <div className="fixed inset-0 z-50 flex justify-end bg-black/60" role="dialog" aria-modal="true" onMouseDown={(event) => { if (!drawerPending && event.target === event.currentTarget) setSelectedRequisition(null); }}>
+        <div className="fixed inset-0 z-50 flex justify-end bg-black/60" role="dialog" aria-modal="true" onMouseDown={(event) => { if (!drawerPending && event.target === event.currentTarget) closeDetail(); }}>
           <section aria-busy={drawerPending} className="flex h-full w-full max-w-3xl flex-col overflow-hidden border-l border-[var(--color-border)] bg-[var(--color-bg)] shadow-2xl">
             <header className="flex items-start justify-between gap-4 border-b border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3">
               <div className="min-w-0">
@@ -324,7 +337,7 @@ export function MaterialRequisitionsPage({ staffRole = 'admin' }) {
                 </div>
                 <div className="mt-1 text-xs text-[var(--color-text-muted)]">{t.workOrder}: {selectedRequisition.work_order_id} · {t.required}: {selectedRequisition.required_date || '-'}</div>
               </div>
-              <button type="button" title={t.closeDrawer} disabled={drawerPending} onClick={() => setSelectedRequisition(null)} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-[var(--color-border)] disabled:opacity-50"><X size={18} /></button>
+              <button ref={drawerCloseRef} type="button" title={t.closeDrawer} disabled={drawerPending} onClick={closeDetail} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-[var(--color-border)] disabled:opacity-50"><X size={18} /></button>
             </header>
 
             <div className="flex-1 overflow-y-auto px-4 py-4">
@@ -386,9 +399,8 @@ export function MaterialRequisitionsPage({ staffRole = 'admin' }) {
               <h4 className="mb-2 mt-5 text-sm font-semibold">{t.history}</h4>
               <div className="border-l border-[var(--color-border)] pl-4">
                 {selectedRequisition.history?.length ? selectedRequisition.history.map((entry, index) => {
-                  const after = parseState(entry.after_state);
                   const actor = requisitionLabel(runtimeConfig.locale, 'actor', entry.actor_type);
-                  return <div key={`${entry.action}-${entry.created_at}-${index}`} className="relative pb-4 text-sm before:absolute before:-left-[19px] before:top-1.5 before:h-2 before:w-2 before:rounded-full before:bg-[var(--color-primary)]"><div className="font-medium">{requisitionLabel(runtimeConfig.locale, 'action', entry.action)}</div><div className="mt-0.5 text-xs text-[var(--color-text-muted)]">{actor}{entry.actor_id ? ` (${entry.actor_id})` : ''} · {formatDate(entry.created_at)}{after?.status ? ` · ${requisitionLabel(runtimeConfig.locale, 'status', after.status)}` : ''}</div></div>;
+                  return <div key={`${entry.action}-${entry.created_at}-${index}`} className="relative pb-4 text-sm before:absolute before:-left-[19px] before:top-1.5 before:h-2 before:w-2 before:rounded-full before:bg-[var(--color-primary)]"><div className="font-medium">{requisitionLabel(runtimeConfig.locale, 'action', entry.action)}</div><div className="mt-0.5 text-xs text-[var(--color-text-muted)]">{actor} · {formatDate(entry.created_at)}{entry.status ? ` · ${requisitionLabel(runtimeConfig.locale, 'status', entry.status)}` : ''}</div></div>;
                 }) : <div className="pb-2 text-sm text-[var(--color-text-muted)]">{t.noHistory}</div>}
               </div>
             </div>

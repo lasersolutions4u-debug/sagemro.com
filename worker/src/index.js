@@ -416,7 +416,9 @@ function buildAuditLogStatement(env, request, {
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).bind(
     generateId(),
-    actorType || request?._auth?.userType || 'system',
+    actorType || (request?._auth?.userType === 'admin'
+      ? request._auth.staffRole || 'admin'
+      : request?._auth?.userType) || 'system',
     actorId || request?._auth?.userId || '',
     targetType,
     targetId,
@@ -8426,25 +8428,28 @@ async function requireActiveStaff(env, auth) {
 async function getRequisitionWithItems(env, requisitionId) {
   const requisition = await env.DB.prepare('SELECT * FROM material_requisitions WHERE id = ?').bind(requisitionId).first();
   if (!requisition) return null;
-  const [itemsResult, historyResult] = await Promise.all([
-    env.DB.prepare(`
-      SELECT * FROM material_requisition_items WHERE requisition_id = ? ORDER BY created_at ASC
-    `).bind(requisitionId).all(),
-    env.DB.prepare(`
-      SELECT actor_type, actor_id, action, before_state, after_state, created_at
-      FROM audit_logs
-      WHERE (target_type = 'material_requisition' AND target_id = ?)
-         OR (target_type = 'material_requisition_item' AND target_id IN (
-           SELECT id FROM material_requisition_items WHERE requisition_id = ?
-         ))
-      ORDER BY created_at ASC, id ASC
-    `).bind(requisitionId, requisitionId).all(),
-  ]);
+  const itemsResult = await env.DB.prepare(`
+    SELECT * FROM material_requisition_items WHERE requisition_id = ? ORDER BY created_at ASC
+  `).bind(requisitionId).all();
   return {
     ...requisition,
     items: itemsResult.results || [],
-    history: historyResult.results || [],
   };
+}
+
+async function getAdminRequisitionDetail(env, requisitionId) {
+  const requisition = await getRequisitionWithItems(env, requisitionId);
+  if (!requisition) return null;
+  const historyResult = await env.DB.prepare(`
+    SELECT actor_type, action, json_extract(after_state, '$.status') AS status, created_at
+    FROM audit_logs
+    WHERE (target_type = 'material_requisition' AND target_id = ?)
+       OR (target_type = 'material_requisition_item' AND target_id IN (
+         SELECT id FROM material_requisition_items WHERE requisition_id = ?
+       ))
+    ORDER BY created_at ASC, id ASC
+  `).bind(requisitionId, requisitionId).all();
+  return { ...requisition, history: historyResult.results || [] };
 }
 
 async function canAccessRequisition(env, auth, requisition) {
@@ -8582,7 +8587,9 @@ async function handleListMaterialRequisitions(request, env) {
 
 async function handleGetMaterialRequisition(request, env) {
   const requisitionId = new URL(request.url).pathname.split('/')[3];
-  const requisition = await getRequisitionWithItems(env, requisitionId);
+  const requisition = request._auth.userType === 'admin'
+    ? await getAdminRequisitionDetail(env, requisitionId)
+    : await getRequisitionWithItems(env, requisitionId);
   if (!requisition) return errorResponse('领料申请不存在', 404);
   if (!await canAccessRequisition(env, request._auth, requisition)) return errorResponse('无权查看该领料申请', 403);
   return jsonResponse({ requisition });
@@ -8604,13 +8611,15 @@ async function handleSubmitMaterialRequisition(request, env) {
       return errorResponse('提交的领料申请必须包含正数数量物料', 400);
     }
     const mutation = env.DB.prepare(`
-      UPDATE material_requisitions SET status = ?, updated_at = datetime('now') WHERE id = ? AND status = ?
+      UPDATE material_requisitions
+      SET status = ?, submitted_at = datetime('now'), updated_at = datetime('now')
+      WHERE id = ? AND status = ?
     `).bind('submitted', requisitionId, requisition.status);
     await runAuditedWorkflowBatch(env, request, guardedWorkflowMutation(env, mutation), {
       targetType: 'material_requisition', targetId: requisitionId, action: 'material_requisition_submitted',
       beforeState: { status: requisition.status }, afterState: { status: 'submitted' },
     });
-    return jsonResponse({ requisition: { ...requisition, status: 'submitted' } });
+    return jsonResponse({ requisition: await getRequisitionWithItems(env, requisitionId) });
   } catch (error) {
     return workflowErrorResponse(error);
   }
