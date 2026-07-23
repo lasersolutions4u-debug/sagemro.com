@@ -10,7 +10,15 @@ const sizeClasses = {
   full: 'max-w-full mx-4',
 };
 
-export function Modal({ isOpen, onClose, title, children, size = 'md' }) {
+export function Modal({
+  isOpen,
+  onClose,
+  title,
+  children,
+  size = 'md',
+  closeDisabled = false,
+  closeDisabledTitle = '',
+}) {
   return (
     <AnimatePresence>
       {isOpen && (
@@ -20,7 +28,9 @@ export function Modal({ isOpen, onClose, title, children, size = 'md' }) {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            onClick={onClose}
+            onClick={closeDisabled ? undefined : onClose}
+            aria-disabled={closeDisabled}
+            title={closeDisabled ? closeDisabledTitle : undefined}
             className="fixed inset-0 bg-black/50 z-40"
           />
           {/* 弹窗 */}
@@ -37,8 +47,13 @@ export function Modal({ isOpen, onClose, title, children, size = 'md' }) {
                 {title}
               </h2>
               <button
-                onClick={onClose}
-                className="shrink-0 p-2 rounded-lg hover:bg-[var(--color-hover)] transition-colors"
+                type="button"
+                onClick={closeDisabled ? undefined : onClose}
+                disabled={closeDisabled}
+                aria-disabled={closeDisabled}
+                aria-label={closeDisabled ? closeDisabledTitle : 'Close'}
+                title={closeDisabled ? closeDisabledTitle : undefined}
+                className="shrink-0 p-2 rounded-lg hover:bg-[var(--color-hover)] transition-colors disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <X size={20} className="text-[var(--color-text-secondary)]" />
               </button>
