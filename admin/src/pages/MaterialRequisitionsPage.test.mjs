@@ -12,6 +12,9 @@ test('admin navigation exposes material requisitions to operational staff withou
   assert.match(app, /\['admin', 'operations', 'warehouse', 'procurement'\]/);
   assert.match(app, /OPERATIONAL_NAV_KEYS/);
   assert.match(app, /user\.staffRole/);
+  assert.match(app, /new Set\(\['dashboard', 'workorders', 'materials', 'materialRequisitions'\]\)/);
+  assert.match(app, /<WorkOrdersPage readOnly=\{user\.staffRole === 'operations'\}/);
+  assert.match(app, /<MaterialsPage readOnly=\{user\.staffRole === 'operations'\}/);
 });
 
 test('material requisitions use a dense list and a responsive detail drawer with lines and history', () => {

@@ -5423,7 +5423,7 @@ async function handleGetWorkOrder(request, env) {
     let payout = await env.DB.prepare(
       'SELECT * FROM work_order_payouts WHERE work_order_id = ?'
     ).bind(id).first();
-    if (!payout && workOrder?.status === 'completed' && workOrder?.engineer_id) {
+    if (!payout && request._auth?.staffRole !== 'operations' && workOrder?.status === 'completed' && workOrder?.engineer_id) {
       payout = await ensureWorkOrderPayout(env, id, workOrder.engineer_id, 'pending');
     }
 
@@ -8292,6 +8292,14 @@ function requisitionRole(auth) {
   if (auth?.userType === 'engineer') return 'engineer';
   if (auth?.userType !== 'admin') return '';
   return auth.staffRole || (isBootstrapAdmin(auth) ? 'admin' : '');
+}
+
+function isOperationsReadRoute(path, method) {
+  if (method !== 'GET') return false;
+  return path === '/api/admin/workorders'
+    || path === '/api/admin/materials'
+    || /^\/api\/workorders\/[^/]+$/.test(path)
+    || /^\/api\/workorders\/[^/]+\/messages$/.test(path);
 }
 
 function publicStaffAccount(staff) {
@@ -14018,7 +14026,8 @@ async function routeRequest(request, env, ctx) {
       }
       const operationalRoute = path === '/api/material-requisitions'
         || path.startsWith('/api/material-requisitions/')
-        || path === '/api/auth/change-password';
+        || path === '/api/auth/change-password'
+        || (staff.role === 'operations' && isOperationsReadRoute(path, request.method));
       if (staff.role !== 'admin' && !operationalRoute) {
         return errorResponse('当前员工角色无权访问该管理接口', 403);
       }

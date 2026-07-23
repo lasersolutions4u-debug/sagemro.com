@@ -24,6 +24,7 @@ function createEnv(role = 'operations') {
         return {
           args: [],
           bind(...args) { this.args = args; return this; },
+          async all() { return { results: [] }; },
           async first() {
             const normalized = normalizeSql(sql);
             if (/FROM admin_staff_accounts WHERE id = \?/i.test(normalized)) return staff;
@@ -80,6 +81,21 @@ test('operational staff remain denied full admin stats and unrelated admin APIs'
 
   assert.equal((await getWithToken(env, '/api/admin/stats', token)).response.status, 403);
   assert.equal((await getWithToken(env, '/api/admin/users', token)).response.status, 403);
+});
+
+test('operations staff can read service orders and materials but cannot mutate them', async () => {
+  const env = createEnv('operations');
+  const token = await adminToken(env);
+
+  assert.equal((await getWithToken(env, '/api/admin/workorders', token)).response.status, 200);
+  assert.equal((await getWithToken(env, '/api/admin/materials', token)).response.status, 200);
+
+  const write = async (path, method) => worker.fetch(new Request(`https://api.sagemro.com${path}`, {
+    method,
+    headers: { Authorization: `Bearer ${token}`, Origin: 'https://admin.sagemro.com' },
+  }), env, { waitUntil() {} });
+  assert.equal((await write('/api/admin/materials', 'POST')).status, 403);
+  assert.equal((await write('/api/admin/workorders/wo-1/archive', 'PATCH')).status, 403);
 });
 
 test('scoped metrics deny engineers and customers while allowing bootstrap admin', async () => {

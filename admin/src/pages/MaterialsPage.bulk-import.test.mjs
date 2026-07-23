@@ -13,3 +13,14 @@ test('material master offers CSV template download and local upload preview only
   assert.match(source, /preview only/i);
   assert.doesNotMatch(source, /bulkCreateAdminMaterial/);
 });
+
+test('operations staff receive material master data without mutation controls', async () => {
+  const source = await readFile(new URL('./MaterialsPage.jsx', import.meta.url), 'utf8');
+
+  assert.match(source, /export function MaterialsPage\(\{ readOnly = false \}\)/);
+  assert.match(source, /if \(readOnly\) return;/);
+  assert.match(source, /\{!readOnly && \([\s\S]*t\.bulkTitle/);
+  assert.match(source, /\{!readOnly && \([\s\S]*t\.requestsTitle/);
+  assert.match(source, /\{!readOnly && \([\s\S]*startEdit\(material\)/);
+  assert.match(source, /\{!readOnly && \([\s\S]*t\.newMaterial/);
+});

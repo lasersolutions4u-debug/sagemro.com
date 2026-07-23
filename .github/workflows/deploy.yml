@@ -140,8 +140,12 @@ jobs:
           wrangler d1 execute sagemro-db --env production --remote \
             --command "SELECT version FROM _migrations ORDER BY version;" \
             > /tmp/sagemro-d1-migrations.txt
+          wrangler d1 execute sagemro-db-cn --env production --remote \
+            --command "SELECT version FROM _migrations ORDER BY version;" \
+            > /tmp/sagemro-d1-migrations-cn.txt
 
           APPLIED=$(grep -Eo '[0-9]{3}[a-z]?_[A-Za-z0-9_]+' /tmp/sagemro-d1-migrations.txt | sort -u || true)
+          APPLIED_CN=$(grep -Eo '[0-9]{3}[a-z]?_[A-Za-z0-9_]+' /tmp/sagemro-d1-migrations-cn.txt | sort -u || true)
           LOCAL_FILES=$(find migrations -maxdepth 1 -type f -name '*.sql' -print \
             | sed 's#^migrations/##; s#\.sql$##' \
             | grep -v '^022_cn_full_schema$' \
@@ -157,15 +161,27 @@ jobs:
             fi
           done
 
-          if [ -n "$MISSING" ]; then
+          CN_REQUIRED="038_material_requisitions_and_staff"
+          CN_MISSING=""
+          for ver in $CN_REQUIRED; do
+            if ! echo "$APPLIED_CN" | grep -q "^${ver}$"; then
+              CN_MISSING="$CN_MISSING $ver"
+            fi
+          done
+
+          if [ -n "$MISSING" ] || [ -n "$CN_MISSING" ]; then
             echo ""
-            echo "❌ UNAPPLIED MIGRATIONS FOUND:$MISSING"
+            echo "❌ UNAPPLIED COM MIGRATIONS:$MISSING"
+            echo "❌ UNAPPLIED CN SHARED MIGRATIONS:$CN_MISSING"
             echo ""
             echo "These migration files exist locally but have NOT been applied to production D1."
             echo "You must run them manually BEFORE deploying the Worker:"
             echo ""
             for ver in $MISSING; do
               echo "  wrangler d1 execute sagemro-db --env production --remote --file migrations/${ver}.sql"
+            done
+            for ver in $CN_MISSING; do
+              echo "  wrangler d1 execute sagemro-db-cn --env production --remote --file migrations/${ver}.sql"
             done
             echo ""
             echo "See DEPLOY.md for details."

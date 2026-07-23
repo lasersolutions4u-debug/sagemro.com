@@ -72,6 +72,7 @@ const NAV_ITEMS = [
 
 const REQUISITION_ROLES = ['admin', 'operations', 'warehouse', 'procurement'];
 const OPERATIONAL_NAV_KEYS = new Set(['dashboard', 'materialRequisitions']);
+const OPERATIONS_NAV_KEYS = new Set(['dashboard', 'workorders', 'materials', 'materialRequisitions']);
 
 function normalizeAdminUser(user) {
   if (!user) return user;
@@ -140,7 +141,11 @@ export default function App() {
     return NAV_ITEMS.filter((item) => {
       if (item.key === 'staffAccounts') return isBootstrapAdmin;
       if (item.key === 'materialRequisitions') return REQUISITION_ROLES.includes(user.staffRole);
-      if (isOperationalStaff) return OPERATIONAL_NAV_KEYS.has(item.key);
+      if (isOperationalStaff) {
+        return user.staffRole === 'operations'
+          ? OPERATIONS_NAV_KEYS.has(item.key)
+          : OPERATIONAL_NAV_KEYS.has(item.key);
+      }
       return true;
     });
   }, [user]);
@@ -225,8 +230,8 @@ export default function App() {
       case 'dashboard': return <DashboardPage staffRole={user.staffRole} staffId={user.staffId} />;
       case 'users': return <UsersPage />;
       case 'engineers': return <EngineersPage initialEngineerId={selectedEngineerId} onEngineerOpened={() => setSelectedEngineerId('')} />;
-      case 'workorders': return <WorkOrdersPage />;
-      case 'materials': return <MaterialsPage />;
+      case 'workorders': return <WorkOrdersPage readOnly={user.staffRole === 'operations'} />;
+      case 'materials': return <MaterialsPage readOnly={user.staffRole === 'operations'} />;
       case 'materialRequisitions': return <MaterialRequisitionsPage staffRole={user.staffRole} />;
       case 'staffAccounts': return isBootstrapAdmin ? <StaffAccountsPage /> : <DashboardPage staffRole={user.staffRole} staffId={user.staffId} />;
       case 'knowledge': return <KnowledgePage />;

@@ -67,3 +67,13 @@ test('Cloudflare deploy jobs remain push-only with the existing branch guards', 
   assert.match(workflow, /deploy-admin:[\s\S]*?if: github\.event_name == 'push' && \(github\.ref == 'refs\/heads\/main' \|\| github\.ref == 'refs\/heads\/china-edition'\)/);
   assert.equal((workflow.match(/if: github\.event_name == 'push'/g) || []).length, 3);
 });
+
+test('Worker deployment blocks on migrations for both production D1 databases', () => {
+  const workflow = read('.github/workflows/deploy.yml');
+  const workerJob = workflow.slice(workflow.indexOf('  deploy-worker:'), workflow.indexOf('  deploy-admin:'));
+
+  assert.match(workerJob, /wrangler d1 execute sagemro-db --env production --remote/);
+  assert.match(workerJob, /wrangler d1 execute sagemro-db-cn --env production --remote/);
+  assert.match(workerJob, /038_material_requisitions_and_staff/);
+  assert.match(workerJob, /CN_MISSING/);
+});
