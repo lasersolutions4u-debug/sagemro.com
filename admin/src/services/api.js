@@ -99,6 +99,83 @@ export async function getAdminStats() {
   return request('/api/admin/stats');
 }
 
+export async function getMaterialRequisitionMetrics() {
+  return request('/api/material-requisitions/metrics');
+}
+
+export async function changeAdminPassword(oldPassword, newPassword) {
+  return request('/api/auth/change-password', {
+    method: 'POST',
+    body: JSON.stringify({ oldPassword, newPassword }),
+  });
+}
+
+export async function getAdminStaffAccounts() {
+  return request('/api/admin/staff');
+}
+
+export async function createAdminStaffAccount(staff) {
+  return request('/api/admin/staff', {
+    method: 'POST',
+    body: JSON.stringify(staff),
+  });
+}
+
+export async function deactivateAdminStaffAccount(staffId) {
+  return request(`/api/admin/staff/${staffId}/deactivate`, { method: 'POST' });
+}
+
+export async function resetAdminStaffPassword(staffId) {
+  return request(`/api/admin/staff/${staffId}/reset-password`, { method: 'POST' });
+}
+
+export async function getMaterialRequisitions() {
+  return request('/api/material-requisitions');
+}
+
+export async function getMaterialRequisition(requisitionId) {
+  return request(`/api/material-requisitions/${requisitionId}`);
+}
+
+export async function decideMaterialRequisition(requisitionId, action, reason = '') {
+  return request(`/api/material-requisitions/${requisitionId}/${action}`, {
+    method: 'POST',
+    body: JSON.stringify(reason ? { reason } : {}),
+  });
+}
+
+export async function cancelMaterialRequisitionItem(requisitionId, itemId, reason = '') {
+  return request(`/api/material-requisitions/${requisitionId}/items/${itemId}/cancel`, {
+    method: 'POST',
+    body: JSON.stringify(reason ? { reason } : {}),
+  });
+}
+
+export async function updateMaterialRequisitionProcurement(requisitionId, payload) {
+  return request(`/api/material-requisitions/${requisitionId}/procurement`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  });
+}
+
+const QUANTITY_ACTION_PATHS = {
+  allocate_stock: 'stock-allocation',
+  record_purchase: 'procurement',
+  receive_purchase: 'procurement-receipt',
+  issue: 'issue',
+  return: 'return',
+};
+
+export async function postMaterialRequisitionQuantityAction(requisitionId, action, payload, idempotencyKey) {
+  const path = QUANTITY_ACTION_PATHS[action];
+  if (!path) throw new Error(`Unsupported material requisition action: ${action}`);
+  return request(`/api/material-requisitions/${requisitionId}/${path}`, {
+    method: 'POST',
+    headers: { 'Idempotency-Key': idempotencyKey },
+    body: JSON.stringify(payload),
+  });
+}
+
 export async function getAdminUsers(type = 'customer', page = 1, pageSize = 20, filters = {}) {
   const params = new URLSearchParams({ type, page, pageSize, ...filters });
   return request(`/api/admin/users?${params}`);

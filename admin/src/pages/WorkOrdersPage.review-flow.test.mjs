@@ -45,3 +45,13 @@ test('engineer payout controls are limited to completed work orders and lock aft
   assert.match(source, /detail\.status === 'completed'[\s\S]*t\.engineerPayoutTitle/);
   assert.match(source, /detail\.payout_status !== 'completed'[\s\S]*handleUpdatePayout\(detail, 'processing'\)/);
 });
+
+test('operations staff receive a read-only service-order view', async () => {
+  const source = await readFile(new URL('./WorkOrdersPage.jsx', import.meta.url), 'utf8');
+
+  assert.match(source, /export function WorkOrdersPage\(\{ readOnly = false \}\)/);
+  assert.match(source, /if \(readOnly\) return;/);
+  assert.match(source, /\{!readOnly && wo\.status === 'payment_review'/);
+  assert.match(source, /\{!readOnly && detail\.pricing\?\.status === 'pending_review'/);
+  assert.match(source, /\{!readOnly && \([\s\S]*submitInternalNote/);
+});

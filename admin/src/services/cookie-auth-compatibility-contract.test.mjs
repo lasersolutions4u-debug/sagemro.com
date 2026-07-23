@@ -23,3 +23,13 @@ test('CN Admin does not store an absent JWT returned by Cookie login', async () 
   assert.match(login, /admin_csrf_token/);
   assert.doesNotMatch(login, /localStorage\.setItem\(['"]admin_token['"], data\.token\)/);
 });
+
+test('CN Admin resets and guards navigation across identity changes', async () => {
+  const app = await read('App.jsx');
+
+  assert.match(app, /restoreAdminSession\(\)[\s\S]*setActivePage\('dashboard'\)[\s\S]*setUser\(restoredUser\)/);
+  assert.match(app, /const handleLogout = \(\) => \{[\s\S]*setActivePage\('dashboard'\)[\s\S]*setUser\(null\)/);
+  assert.match(app, /const handleLogin = \(nextUser\) => \{[\s\S]*setActivePage\('dashboard'\)[\s\S]*setUser\(normalizedUser\)/);
+  assert.match(app, /const currentPage = visibleNavItems\.some\(\(item\) => item\.key === activePage\) \? activePage : 'dashboard'/);
+  assert.match(app, /switch \(currentPage\)/);
+});

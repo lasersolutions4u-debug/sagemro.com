@@ -9,7 +9,8 @@ const TEXT = {
     eyebrow: 'Service Operations',
     subtitle: 'Review leads, assign engineers, approve quotes, and archive completed service records.',
     panelTitle: 'Sign in to continue',
-    phonePlaceholder: 'Admin phone number',
+    loginLabel: 'Phone number or login name',
+    phonePlaceholder: 'Phone number or login name',
     passwordPlaceholder: 'Password',
     submit: 'Sign In',
     loading: 'Signing in...',
@@ -20,7 +21,8 @@ const TEXT = {
     eyebrow: '服务运营控制台',
     subtitle: '用于线索审核、派工、报价和服务归档，便于团队跟进每项客户服务。',
     panelTitle: '管理员登录',
-    phonePlaceholder: '管理员手机号',
+    loginLabel: '手机号或登录名',
+    phonePlaceholder: '手机号或登录名',
     passwordPlaceholder: '密码',
     submit: '登录',
     loading: '登录中...',
@@ -83,8 +85,10 @@ export function LoginPage({ onLogin }) {
           )}
 
           <div>
+            <label htmlFor="admin-login-identifier" className="mb-1.5 block text-sm font-medium text-[#6f5a40]">{t.loginLabel}</label>
             <input
-              type="tel"
+              id="admin-login-identifier"
+              type="text"
               autoComplete="username"
               placeholder={t.phonePlaceholder}
               value={phone}

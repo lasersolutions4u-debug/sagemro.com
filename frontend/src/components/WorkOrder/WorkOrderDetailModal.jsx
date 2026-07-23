@@ -34,6 +34,7 @@ import { MessagePanel } from './MessagePanel';
 import { EngineerPricingPanel, CustomerPricingPanel } from './PricingPanels';
 import { RepairRecordPanel } from './RepairRecordPanel';
 import { AttachmentsPanel } from './AttachmentsPanel';
+import { MaterialRequisitionPanel } from './MaterialRequisitionPanel';
 import { PaymentModal } from '../Payment/PaymentModal';
 import { formatCustomerDeviceLine, formatServiceTextForLocale } from '../../utils/workOrderDisplay';
 import { canEngineerViewCustomerContact, redactContactInfo } from '../../utils/contactRedaction';
@@ -348,7 +349,14 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
   });
   const [machineLeadSubmitting, setMachineLeadSubmitting] = useState(false);
   const [balancePaymentOpen, setBalancePaymentOpen] = useState(false);
+  const [materialRequisitionBusy, setMaterialRequisitionBusy] = useState(false);
   const workOrderId = workOrder?.id;
+  const materialRequisitionBusyMessage = isCnLocale()
+    ? '请等待物料申请操作完成后再离开。'
+    : 'Wait for the material requisition operation to finish before leaving.';
+  const handleMaterialRequisitionBusyChange = useCallback((busy) => {
+    setMaterialRequisitionBusy(busy);
+  }, []);
 
   const loadDetail = useCallback(async () => {
     if (!workOrderId) return;
@@ -643,6 +651,12 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
   const urgency = urgencySet[workOrder.urgency] || urgencySet.normal;
   const isEngineer = userType === 'engineer';
   const isCustomer = userType === 'customer';
+  const assignedEngineerId = detail?.id === workOrder.id
+    ? detail.engineer_id
+    : workOrder.engineer_id;
+  const isAssignedEngineer = isEngineer
+    && Boolean(assignedEngineerId)
+    && String(assignedEngineerId) === String(userId);
   const shouldShowCustomerContact = !isEngineer || canEngineerViewCustomerContact(effectiveStatus);
   const customerPhoneDisplay = shouldShowCustomerContact ? detail?.customer_phone : detail?.customer_phone ? 'XXX' : '';
 
@@ -670,6 +684,9 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
   if ((isEngineer && repairStatuses.includes(effectiveStatus)) || (isCustomer && hasRepairRecord)) {
     // Legacy source contract: tabs.push({ key: 'repairRecord', label: 'Service Report' });
     tabs.push({ key: 'repairRecord', label: isCn ? copy.tabs.serviceReport : 'Service Report' });
+  }
+  if (isAssignedEngineer) {
+    tabs.push({ key: 'materialRequisition', label: isCnLocale() ? '物料领用申请' : 'Material Requisition' });
   }
   if (isEngineer) {
     tabs.push({ key: 'machineLead', label: copy.tabs.machineLead });
@@ -1336,15 +1353,29 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
 
   return (
     <>
-    <Modal isOpen={isOpen} onClose={onClose} title={copy.modalTitle} size="2xl">
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      title={copy.modalTitle}
+      size="2xl"
+      closeDisabled={materialRequisitionBusy}
+      closeDisabledTitle={materialRequisitionBusyMessage}
+    >
       <div className="min-h-0">
+        {materialRequisitionBusy && (
+          <p role="status" className="sr-only">{materialRequisitionBusyMessage}</p>
+        )}
         {/* Tab 切换 */}
-        <div className="-mx-3 mb-4 flex gap-1 overflow-x-auto border-b border-[var(--color-border)] px-3 pb-0 sm:mx-0 sm:px-0">
+        <div role="tablist" className="-mx-3 mb-4 flex gap-1 overflow-x-auto border-b border-[var(--color-border)] px-3 pb-0 sm:mx-0 sm:px-0">
           {tabs.map((t) => (
             <button
               key={t.key}
+              role="tab"
+              aria-selected={tab === t.key}
+              disabled={materialRequisitionBusy && tab !== t.key}
+              title={materialRequisitionBusy && tab !== t.key ? materialRequisitionBusyMessage : undefined}
               onClick={() => setTab(t.key)}
-              className={`shrink-0 px-3 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
+              className={`shrink-0 px-3 py-2 text-sm font-medium border-b-2 -mb-px transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
                 tab === t.key
                   ? 'border-[var(--color-primary)] text-[var(--color-primary)]'
                   : 'border-transparent text-[var(--color-text-secondary)] hover:text-[var(--color-text)]'
@@ -1391,6 +1422,12 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
                 onSaved={() => loadDetail()}
                 onSubmitComplete={handleSubmitFinalReport}
                 canSubmitComplete={isEngineer && (effectiveStatus === 'in_service' || effectiveStatus === 'pricing')}
+              />
+            )}
+            {tab === 'materialRequisition' && isAssignedEngineer && (
+              <MaterialRequisitionPanel
+                workOrderId={workOrder.id}
+                onBusyChange={handleMaterialRequisitionBusyChange}
               />
             )}
             {tab === 'machineLead' && renderMachineLeadTab()}
