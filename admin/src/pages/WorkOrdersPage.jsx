@@ -42,6 +42,8 @@ import {
   updateAdminWorkOrderPayout,
 } from '../services/api';
 import { runtimeConfig } from '../config/runtime';
+import { FieldWorkAdminPanel } from '../components/FieldWorkAdminPanel';
+import { formatApiDateTime } from '../utils/dateTime';
 import {
   formatAiSummary,
   formatEngineerOption,
@@ -132,6 +134,14 @@ function quoteParts(detail) {
 function quoteAiCheck(pricing) {
   const parsed = parseJsonValue(pricing?.ai_price_check);
   return parsed && typeof parsed === 'object' ? parsed : null;
+}
+
+function arrivalCheckOutcome(check, t) {
+  if (check.location_status === 'location_unavailable' || check.location_status === 'unavailable' || check.failure_reason === 'location_unavailable' || check.failure_reason === 'unavailable') {
+    return { label: t.arrivalLocationUnavailable, tone: 'text-[var(--color-text-muted)]' };
+  }
+  if (check.within_geofence) return { label: t.arrivalPassed, tone: 'text-green-600' };
+  return { label: t.arrivalOutsideGeofence, tone: 'text-red-600' };
 }
 
 const TEXT = {
@@ -336,6 +346,12 @@ const TEXT = {
     invoiceNumber: 'Invoice No.',
     noInvoice: 'No invoice request',
     invoiceConfirmLabel: 'Invoice number (required):',
+    arrivalLocationUnavailable: 'Location unavailable · photo evidence accepted',
+    arrivalPassed: 'Passed',
+    arrivalOutsideGeofence: 'Outside geofence',
+    fieldToday: 'Checked in today',
+    fieldOverdue: (count) => `${count} report overdue`,
+    fieldExtension: 'Extension pending',
   },
   'zh-CN': {
     statuses: {
@@ -538,8 +554,25 @@ const TEXT = {
     invoiceNumber: '发票号码',
     noInvoice: '暂无发票申请',
     invoiceConfirmLabel: '发票号码（必填）：',
+    arrivalLocationUnavailable: '无法定位 · 已接受照片证据',
+    arrivalPassed: '已通过',
+    arrivalOutsideGeofence: '位于围栏外',
+    fieldToday: '今日已签到',
+    fieldOverdue: (count) => `${count} 份日报逾期`,
+    fieldExtension: '延期待审批',
   },
 };
+
+function FieldWorkIndicators({ workOrder, t }) {
+  if (!workOrder.field_checked_in_today && !workOrder.field_report_overdue_count && !workOrder.field_extension_pending) return null;
+  return (
+    <div className="mt-2 flex flex-wrap gap-1.5">
+      {workOrder.field_checked_in_today && <span className="rounded-lg border border-[var(--color-success)]/40 px-2 py-1 text-xs text-[var(--color-success)]">{t.fieldToday}</span>}
+      {workOrder.field_report_overdue_count > 0 && <span className="rounded-lg border border-[var(--color-error)]/40 px-2 py-1 text-xs text-[var(--color-error)]">{t.fieldOverdue(workOrder.field_report_overdue_count)}</span>}
+      {workOrder.field_extension_pending && <span className="rounded-lg border border-[var(--color-warning)]/40 px-2 py-1 text-xs text-[var(--color-warning)]">{t.fieldExtension}</span>}
+    </div>
+  );
+}
 
 export function WorkOrdersPage({ readOnly = false }) {
   const t = { ...TEXT.en, ...(TEXT[runtimeConfig.locale] || {}) };
@@ -885,6 +918,16 @@ export function WorkOrdersPage({ readOnly = false }) {
     }
   }
 
+  async function refreshOpenDetail(expectedWorkOrderId) {
+    if (!expectedWorkOrderId) return;
+    const [detailData, listData] = await Promise.all([
+      getAdminWorkOrder(expectedWorkOrderId),
+      getAdminWorkOrders(status, page, pageSize),
+    ]);
+    setDetail((current) => current?.id === expectedWorkOrderId ? detailData : current);
+    setData(listData);
+  }
+
   async function submitInternalNote() {
     if (readOnly) return;
     if (!detail?.id || !internalNote.trim()) return;
@@ -1078,6 +1121,7 @@ export function WorkOrdersPage({ readOnly = false }) {
                         : t.noQuote}
                     </div>
                   </div>
+                  <FieldWorkIndicators workOrder={wo} t={t} />
                   {wo.conflict_status === 'blocked' && (
                     <div className="mt-3 rounded-lg border border-[var(--color-error)]/30 bg-[var(--color-error)]/10 px-3 py-2 text-xs text-[var(--color-error)]">
                       {wo.conflict_reason || t.conflictFallback}
@@ -1179,6 +1223,7 @@ export function WorkOrdersPage({ readOnly = false }) {
                             <span className="w-2 h-2 rounded-full" style={{ backgroundColor: statusInfo.color }} />
                             {t.statuses[wo.status] || wo.status}
                           </span>
+                          <FieldWorkIndicators workOrder={wo} t={t} />
                         </td>
                         <td className="py-3 px-2">
                           <div className="min-w-[170px] space-y-2">
@@ -1480,22 +1525,26 @@ export function WorkOrdersPage({ readOnly = false }) {
                       )}
                     </div>
                     <div className="mt-4 space-y-2">
-                      {detail.arrival_checks?.length > 0 ? detail.arrival_checks.map((check) => (
-                        <div key={check.id} className="grid gap-1 rounded-lg bg-[var(--color-surface-elevated)] px-3 py-2 text-xs text-[var(--color-text-secondary)] sm:grid-cols-4">
-                          <span>{check.created_at ? new Date(check.created_at).toLocaleString(runtimeConfig.locale === 'zh-CN' ? 'zh-CN' : 'en-US') : '-'}</span>
+                      {detail.arrival_checks?.length > 0 ? detail.arrival_checks.map((check) => {
+                        const arrivalOutcome = arrivalCheckOutcome(check, t);
+                        return <div key={check.id} className="grid min-w-0 gap-1 rounded-lg bg-[var(--color-surface-elevated)] px-3 py-2 text-xs text-[var(--color-text-secondary)] [overflow-wrap:anywhere] sm:grid-cols-4">
+                          <span>{formatApiDateTime(check.created_at, runtimeConfig.locale)}</span>
                           <span>{runtimeConfig.locale === 'zh-CN' ? '距离' : 'Distance'}: {check.distance_m ?? '-'} m</span>
                           <span>{runtimeConfig.locale === 'zh-CN' ? '允许半径' : 'Allowed radius'}: {check.radius_m ?? '-'} m</span>
-                          <span className={check.within_geofence ? 'text-green-600' : 'text-red-600'}>
-                            {check.within_geofence
-                              ? (runtimeConfig.locale === 'zh-CN' ? '通过' : 'Passed')
-                              : (check.failure_reason || (runtimeConfig.locale === 'zh-CN' ? '失败' : 'Failed'))}
-                          </span>
-                        </div>
-                      )) : (
+                          <span className={arrivalOutcome.tone}>{arrivalOutcome.label}</span>
+                        </div>;
+                      }) : (
                         <p className="text-xs text-[var(--color-text-muted)]">{runtimeConfig.locale === 'zh-CN' ? '尚无工程师到场尝试记录。' : 'No engineer arrival attempts have been recorded.'}</p>
                       )}
                     </div>
                   </section>
+                )}
+                {(detail.arrival_verification_required || detail.onsite_conversion_status === 'confirmed' || detail.field_plan?.site_timezone || detail.field_days?.length > 0) && (
+                  <FieldWorkAdminPanel
+                    workOrder={detail}
+                    readOnly={readOnly}
+                    onRefresh={refreshOpenDetail}
+                  />
                 )}
                 <section className="rounded-xl bg-[var(--color-surface-elevated)] p-4">
                   <div className="mb-2 flex items-center justify-between gap-3">

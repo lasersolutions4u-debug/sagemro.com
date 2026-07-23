@@ -991,6 +991,77 @@ export async function checkInWorkOrder(workOrderId, location) {
   return data;
 }
 
+export async function checkInFieldDay(workOrderId, { photo, expectedCheckoutTime, location }, idempotencyKey) {
+  const formData = new FormData();
+  formData.append('photo', photo);
+  formData.append('expected_checkout_time', expectedCheckoutTime);
+  formData.append('location', JSON.stringify(location || { location_status: 'unavailable' }));
+
+  const response = await fetch(`${API_BASE}/api/workorders/${workOrderId}/field-days/check-in`, {
+    method: 'POST',
+    headers: { ...authHeadersNoContentType(), 'Idempotency-Key': idempotencyKey },
+    body: formData,
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+  return data;
+}
+
+export async function getFieldDays(workOrderId) {
+  const response = await fetch(`${API_BASE}/api/workorders/${workOrderId}/field-days`, {
+    headers: authHeaders(),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+  return data;
+}
+
+export async function submitFieldDayReport(workOrderId, fieldDayId, data, idempotencyKey) {
+  const formData = new FormData();
+  for (const field of [
+    'completed_work',
+    'issues_risks',
+    'next_plan',
+    'customer_support_needed',
+    'labor_hours',
+    'internal_note',
+    'late_reason',
+    'extension_reason',
+    'extension_customer_explanation',
+    'requested_additional_days',
+    'proposed_completion_date',
+    'extension_internal_note',
+  ]) {
+    if (data[field] !== undefined && data[field] !== null) formData.append(field, data[field]);
+  }
+  for (const photo of data.progress_photos || []) formData.append('progress_photos', photo);
+  for (const photo of data.internal_photos || []) formData.append('internal_photos', photo);
+
+  const response = await fetch(`${API_BASE}/api/workorders/${workOrderId}/field-days/${fieldDayId}/report`, {
+    method: 'POST',
+    headers: { ...authHeadersNoContentType(), 'Idempotency-Key': idempotencyKey },
+    body: formData,
+  });
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(result.error || `HTTP ${response.status}`);
+  return result;
+}
+
+export async function requestFieldExtension(workOrderId, data) {
+  const response = await fetch(`${API_BASE}/api/workorders/${workOrderId}/extension-requests`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify(data),
+  });
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(result.error || `HTTP ${response.status}`);
+  return result;
+}
+
+export function fieldMediaUrl(workOrderId, mediaId) {
+  return `${API_BASE}/api/workorders/${workOrderId}/field-media/${mediaId}`;
+}
+
 export async function requestOnsiteConversion(workOrderId, note) {
   const response = await fetch(`${API_BASE}/api/workorders/${workOrderId}/onsite-conversion/request`, {
     method: 'POST',

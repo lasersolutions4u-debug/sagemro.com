@@ -12,7 +12,6 @@ const REQUIRED_HEADERS = [
   /X-Content-Type-Options: nosniff/,
   /X-Frame-Options: DENY/,
   /Referrer-Policy: strict-origin-when-cross-origin/,
-  /Permissions-Policy: camera=\(\), microphone=\(self\), geolocation=\(self\)/,
 ];
 
 for (const site of ['frontend', 'admin']) {
@@ -21,6 +20,10 @@ for (const site of ['frontend', 'admin']) {
 
     assert.match(headers, /^\/\*$/m);
     for (const expected of REQUIRED_HEADERS) assert.match(headers, expected);
+    assert.match(
+      headers,
+      site === 'frontend' ? /Permissions-Policy: camera=\(self\), microphone=\(self\), geolocation=\(self\)/ : /Permissions-Policy: camera=\(\), microphone=\(self\), geolocation=\(self\)/,
+    );
     assert.match(headers, /frame-ancestors 'none'/);
     assert.match(headers, /object-src 'none'/);
   });
@@ -41,5 +44,5 @@ test('China ECS Nginx release applies the same headers only to SAGEMRO hosts', (
   ]) {
     assert.match(workflow, new RegExp(`add_header ${header}`));
   }
-  assert.match(workflow, /camera=\(\), microphone=\(self\), geolocation=\(self\)/);
+  assert.match(workflow, /camera=\(self\), microphone=\(self\), geolocation=\(self\)/);
 });

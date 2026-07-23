@@ -55,3 +55,36 @@ test('operations staff receive a read-only service-order view', async () => {
   assert.match(source, /\{!readOnly && detail\.pricing\?\.status === 'pending_review'/);
   assert.match(source, /\{!readOnly && \([\s\S]*submitInternalNote/);
 });
+
+test('service-order list and drawer integrate field operations with refreshable indicators', async () => {
+  const source = await readFile(new URL('./WorkOrdersPage.jsx', import.meta.url), 'utf8');
+
+  assert.match(source, /import \{ FieldWorkAdminPanel \} from '\.\.\/components\/FieldWorkAdminPanel'/);
+  assert.match(source, /field_checked_in_today/);
+  assert.match(source, /field_report_overdue_count/);
+  assert.match(source, /field_extension_pending/);
+  assert.match(source, /async function refreshOpenDetail\(expectedWorkOrderId\)/);
+  assert.match(source, /getAdminWorkOrder\(expectedWorkOrderId\)/);
+  assert.match(source, /setDetail\(\(current\) => current\?\.id === expectedWorkOrderId \? detailData : current\)/);
+  assert.match(source, /<FieldWorkAdminPanel[\s\S]*workOrder=\{detail\}[\s\S]*readOnly=\{readOnly\}[\s\S]*onRefresh=\{refreshOpenDetail\}/);
+});
+
+test('arrival audit treats unavailable location as allowed evidence instead of a failed geofence check', async () => {
+  const source = await readFile(new URL('./WorkOrdersPage.jsx', import.meta.url), 'utf8');
+
+  assert.match(source, /function arrivalCheckOutcome/);
+  assert.match(source, /location_unavailable/);
+  assert.match(source, /failure_reason === 'unavailable'/);
+  assert.match(source, /function arrivalCheckOutcome\(check, t\)/);
+  assert.match(source, /arrivalLocationUnavailable: 'Location unavailable · photo evidence accepted'/);
+  assert.match(source, /arrivalLocationUnavailable: '无法定位 · 已接受照片证据'/);
+  assert.match(source, /arrivalPassed: 'Passed'/);
+  assert.match(source, /arrivalPassed: '已通过'/);
+  assert.match(source, /arrivalOutsideGeofence: 'Outside geofence'/);
+  assert.match(source, /arrivalOutsideGeofence: '位于围栏外'/);
+  assert.match(source, /arrivalCheckOutcome\(check, t\)/);
+  assert.doesNotMatch(source, /label: check\.failure_reason/);
+  assert.match(source, /className=\{arrivalOutcome\.tone\}/);
+  assert.match(source, /formatApiDateTime\(check\.created_at/);
+  assert.match(source, /min-w-0[^"]*\[overflow-wrap:anywhere\]/);
+});
