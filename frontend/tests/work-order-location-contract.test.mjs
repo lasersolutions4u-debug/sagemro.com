@@ -23,7 +23,7 @@ test('customer service requests capture the site address and browser coordinates
   assert.match(detail, /getBrowserLocation/);
   assert.match(detail, /formatGeolocationError/);
   assert.match(detail, /isBrowserGeolocationError/);
-  assert.ok((detail.match(/getBrowserLocation\(\)/g) || []).length >= 2);
+  assert.ok((detail.match(/getBrowserLocation\(\)/g) || []).length >= 1);
   assert.doesNotMatch(detail, /error\?\.code \? formatGeolocationError/);
   assert.match(modal, /service_mode/);
   assert.match(modal, /serviceModeOptions/);
@@ -39,15 +39,20 @@ test('customer service requests capture the site address and browser coordinates
   assert.match(api, /\/api\/location\/search/);
 });
 
-test('engineers can check in before completing an on-site work order', () => {
+test('photo field days replace location-only arrival as the primary onsite check-in', () => {
   const api = read('frontend/src/services/api.js');
   const detail = read('frontend/src/components/WorkOrder/WorkOrderDetailModal.jsx');
+  const fieldWork = read('frontend/src/components/WorkOrder/FieldWorkPanel.jsx');
   const worker = read('worker/src/index.js');
   const migration = read('worker/migrations/033_work_order_location_verification.sql');
 
   assert.match(api, /\/arrival-check/);
-  assert.match(detail, /checkInWorkOrder/);
+  assert.match(api, /\/field-days\/check-in/);
+  assert.match(fieldWork, /checkInFieldDay/);
+  assert.match(fieldWork, /getBrowserLocation/);
   assert.match(detail, /arrival_verification_required/);
+  assert.match(detail, /Legacy arrival record|历史到场记录/);
+  assert.doesNotMatch(detail, /onClick=\{handleArrivalCheck\}/);
   assert.match(worker, /handleWorkOrderArrivalCheck/);
   assert.match(worker, /arrival_verified_at/);
   assert.match(migration, /work_order_arrival_checks/);
