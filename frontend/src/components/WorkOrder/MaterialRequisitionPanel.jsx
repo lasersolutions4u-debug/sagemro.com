@@ -20,6 +20,7 @@ import {
 } from '../../services/api';
 import { confirmDialog, toastSuccess } from '../../utils/feedback';
 import { isCnLocale } from '../../utils/locale';
+import { shouldPreserveReceiptRetryKey } from './materialRequisitionRetry';
 
 const COPY = {
   en: {
@@ -153,10 +154,6 @@ function operationKey() {
   return `engineer-receipt-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
-function isTransientReceiptError(error) {
-  return error instanceof TypeError || error?.status === 408 || error?.status === 429 || Number(error?.status || 0) >= 500;
-}
-
 function formatDate(value, isCn) {
   if (!value) return '-';
   const date = new Date(value.includes('T') ? value : `${value.replace(' ', 'T')}Z`);
@@ -200,18 +197,22 @@ export function MaterialRequisitionPanel({ workOrderId }) {
   const loadPanel = useCallback(async () => {
     setLoading(true);
     setError('');
-    try {
-      const [requisitionData, preparationData] = await Promise.all([
-        getMaterialRequisitions(),
-        getWorkOrderMaterialItems(workOrderId, 'preparation'),
-      ]);
-      setRequisitions(requisitionData.requisitions || []);
-      setPreparationItems(preparationData.list || []);
-    } catch (loadError) {
-      setError(loadError.message || t.loadFailed);
-    } finally {
-      setLoading(false);
+    const [requisitionResult, preparationResult] = await Promise.allSettled([
+      getMaterialRequisitions(),
+      getWorkOrderMaterialItems(workOrderId, 'preparation'),
+    ]);
+    if (requisitionResult.status === 'rejected') {
+      setRequisitions([]);
+      setError(requisitionResult.reason?.message || t.loadFailed);
+    } else {
+      setRequisitions(requisitionResult.value.requisitions || []);
     }
+    if (preparationResult.status === 'fulfilled') {
+      setPreparationItems(preparationResult.value.list || []);
+    } else {
+      setPreparationItems([]);
+    }
+    setLoading(false);
   }, [t.loadFailed, workOrderId]);
 
   useEffect(() => {
@@ -360,7 +361,7 @@ export function MaterialRequisitionPanel({ workOrderId }) {
       applyRequisitionUpdate(data.requisition);
       toastSuccess(t.receiptConfirmed);
     } catch (error) {
-      if (!isTransientReceiptError(error)) {
+      if (!shouldPreserveReceiptRetryKey(error)) {
         delete receiptRetryRef.current[item.id];
       }
       setDetailError(error.message || t.detailFailed);

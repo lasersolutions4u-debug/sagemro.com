@@ -11,6 +11,10 @@ function read(relativePath) {
 
 test('frontend API exposes engineer material requisition routes and idempotent receipt headers', () => {
   const api = read('frontend/src/services/api.js');
+  const receiptApi = api.slice(
+    api.indexOf('export async function confirmMaterialRequisitionReceipt'),
+    api.indexOf('/**\n * 提交评价'),
+  );
 
   assert.match(api, /export async function getMaterialRequisitions/);
   assert.match(api, /\/api\/material-requisitions`[\s\S]*method:\s*'GET'/);
@@ -23,6 +27,9 @@ test('frontend API exposes engineer material requisition routes and idempotent r
   assert.match(api, /export async function confirmMaterialRequisitionReceipt/);
   assert.match(api, /\/api\/material-requisitions\/\$\{requisitionId\}\/engineer-receipt`[\s\S]*method:\s*'POST'/);
   assert.match(api, /'Idempotency-Key':\s*idempotencyKey/);
+  assert.match(receiptApi, /const data = await response\.json\(\)/);
+  assert.doesNotMatch(receiptApi, /response\.json\(\)\.catch/);
+  assert.doesNotMatch(receiptApi, /try \{/);
 });
 
 test('material requisition panel supports copied preparation lines and validated multi-line drafts', () => {
@@ -31,7 +38,11 @@ test('material requisition panel supports copied preparation lines and validated
   const panel = read(componentPath);
 
   assert.match(panel, /getWorkOrderMaterialItems\(workOrderId, 'preparation'\)/);
-  assert.match(panel, /preparationData\.list/);
+  assert.match(panel, /preparationResult\.value\.list/);
+  assert.match(panel, /Promise\.allSettled\(/);
+  assert.match(panel, /requisitionResult\.status === 'rejected'/);
+  assert.match(panel, /preparationResult\.status === 'fulfilled'/);
+  assert.match(panel, /setPreparationItems\(\[\]\)/);
   assert.match(panel, /preparationItems\.map\(\(item\)\s*=>\s*\(\{/);
   assert.match(panel, /requested_quantity:\s*String\(item\.quantity/);
   assert.match(panel, /setDraftItems\(\(current\)\s*=>\s*\[\.\.\.current,/);
@@ -58,14 +69,14 @@ test('engineer can list, open, submit, and track requisitions with bilingual pro
   assert.doesNotMatch(panel, /history|audit_logs|after_state|before_state/);
 });
 
-test('receipt confirmation is line-scoped and keeps a stable retry key only for unchanged transient failures', () => {
+test('receipt confirmation is line-scoped and clears a stable retry key only for definitive failures', () => {
   const panel = read('frontend/src/components/WorkOrder/MaterialRequisitionPanel.jsx');
 
   assert.match(panel, /Number\(item\.issued_quantity\s*\|\|\s*0\)\s*>\s*Number\(item\.engineer_received_quantity\s*\|\|\s*0\)/);
   assert.match(panel, /const fingerprint = JSON\.stringify\(payload\)/);
   assert.match(panel, /retryOperation\?\.fingerprint === fingerprint/);
   assert.match(panel, /confirmMaterialRequisitionReceipt\([\s\S]*operation\.key/);
-  assert.match(panel, /if \(!isTransientReceiptError\(error\)\)[\s\S]*delete receiptRetryRef\.current\[item\.id\]/);
+  assert.match(panel, /if \(!shouldPreserveReceiptRetryKey\(error\)\)[\s\S]*delete receiptRetryRef\.current\[item\.id\]/);
   assert.match(panel, /delete receiptRetryRef\.current\[item\.id\][\s\S]*applyRequisitionUpdate/);
 });
 

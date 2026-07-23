@@ -652,7 +652,7 @@ export async function confirmMaterialRequisitionReceipt(requisitionId, data, ide
     body: JSON.stringify(data),
   });
   if (!response.ok) {
-    const data = await response.json().catch(() => ({}));
+    const data = await response.json();
     const error = new Error(data.error || `HTTP ${response.status}`);
     error.status = response.status;
     throw error;
