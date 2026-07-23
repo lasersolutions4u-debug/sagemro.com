@@ -733,7 +733,7 @@ CREATE TABLE IF NOT EXISTS material_requisition_operations (
     operation_key TEXT PRIMARY KEY,
     action TEXT NOT NULL,
     requisition_id TEXT NOT NULL,
-    item_id TEXT NOT NULL,
+    item_id TEXT,
     request_fingerprint TEXT NOT NULL,
     completed_at TEXT NOT NULL DEFAULT (datetime('now')),
     FOREIGN KEY (requisition_id) REFERENCES material_requisitions(id),
@@ -1167,4 +1167,5 @@ INSERT OR IGNORE INTO _migrations (version, note) VALUES
     ('035_onsite_conversion_workflow',  'Add audited remote-to-onsite conversion and arrival override workflow'),
     ('036_create_funnel_events',         'Controlled beta funnel event tracking'),
     ('037_engineer_account_activation', 'Engineer email activation and cross-role identity registry'),
-    ('038_material_requisitions_and_staff', 'Internal staff accounts and material requisition operations');
+    ('038_material_requisitions_and_staff', 'Internal staff accounts and material requisition operations'),
+    ('039_material_requisition_create_idempotency', 'Allow idempotent material requisition draft creation');

@@ -1,7 +1,22 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { shouldPreserveReceiptRetryKey } from '../src/components/WorkOrder/materialRequisitionRetry.js';
+import {
+  getMaterialRequisitionRetryOperation,
+  shouldPreserveReceiptRetryKey,
+} from '../src/components/WorkOrder/materialRequisitionRetry.js';
+
+test('retry operation is stable for the same payload and changes with the payload', () => {
+  let generated = 0;
+  const createKey = () => `operation-${++generated}`;
+  const first = getMaterialRequisitionRetryOperation(null, { quantity: 1 }, createKey);
+  const retry = getMaterialRequisitionRetryOperation(first, { quantity: 1 }, createKey);
+  const changed = getMaterialRequisitionRetryOperation(first, { quantity: 2 }, createKey);
+
+  assert.equal(retry, first);
+  assert.equal(changed.key, 'operation-2');
+  assert.notEqual(changed.fingerprint, first.fingerprint);
+});
 
 test('ambiguous receipt failures preserve the retry key', () => {
   const abortError = new Error('aborted');

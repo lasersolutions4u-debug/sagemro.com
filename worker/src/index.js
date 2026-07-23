@@ -8489,13 +8489,33 @@ async function normalizeRequisitionLine(env, input) {
   };
 }
 
+function canonicalCreateDraftLine(input) {
+  const requestedQuantity = toPositiveQuantity(input?.requested_quantity);
+  if (!requestedQuantity) throw new Error('Requested quantity must be a positive integer');
+  return {
+    material_id: cleanText(input?.material_id, 100) || null,
+    material_code: cleanText(input?.material_code, 100) || null,
+    name: cleanText(input?.name, 200) || null,
+    name_en: cleanText(input?.name_en, 200) || null,
+    spec: cleanText(input?.spec, 300) || null,
+    brand: cleanText(input?.brand, 100) || null,
+    unit: cleanText(input?.unit, 30) || null,
+    requested_quantity: requestedQuantity,
+    notes: cleanText(input?.notes, 600) || null,
+  };
+}
+
 async function handleCreateMaterialRequisition(request, env) {
+  let operationKey = '';
+  let requestFingerprint = '';
   try {
     const auth = request._auth;
     const role = requisitionRole(auth);
     if (!canManageMaterialRequisition(role, 'create_draft') && auth.userType !== 'admin') {
       return errorResponse('无权创建领料申请', 403);
     }
+    operationKey = workflowOperationKey(request);
+    if (!operationKey) return errorResponse('Idempotency-Key header is required', 400);
     const body = await request.json().catch(() => ({}));
     const workOrderId = cleanText(body.work_order_id, 100);
     const workOrder = await env.DB.prepare(`
@@ -8508,10 +8528,24 @@ async function handleCreateMaterialRequisition(request, env) {
     if (!Array.isArray(body.items) || body.items.length === 0) return errorResponse('领料申请至少需要一条物料', 400);
     const urgency = cleanText(body.urgency, 20) || 'normal';
     if (!REQUISITION_URGENCIES.has(urgency)) return errorResponse('无效紧急程度', 400);
+    const market = getRequestMarket(request);
+    const requiredDate = cleanText(body.required_date, 30) || null;
+    const purpose = cleanText(body.purpose, 600) || null;
+    const fingerprintLines = body.items.map(canonicalCreateDraftLine);
+    requestFingerprint = await createDraftRequestFingerprint({
+      market,
+      workOrderId,
+      requestedByType: auth.userType,
+      requestedById: auth.userId,
+      urgency,
+      requiredDate,
+      purpose,
+      lines: fingerprintLines,
+    });
+    const replay = await idempotentCreateDraftResponse(env, operationKey, requestFingerprint);
+    if (replay) return replay;
     const lines = [];
     for (const item of body.items) lines.push(await normalizeRequisitionLine(env, item));
-
-    const market = getRequestMarket(request);
     let id;
     let requisitionNo;
     for (let attempt = 0; attempt < 3; attempt += 1) {
@@ -8524,7 +8558,7 @@ async function handleCreateMaterialRequisition(request, env) {
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).bind(
         id, requisitionNo, market, workOrderId, auth.userType, auth.userId, 'draft', urgency,
-        cleanText(body.required_date, 30) || null, cleanText(body.purpose, 600) || null,
+        requiredDate, purpose,
       );
       const itemStatements = lines.map((line) => env.DB.prepare(`
         INSERT INTO material_requisition_items (
@@ -8544,17 +8578,25 @@ async function handleCreateMaterialRequisition(request, env) {
         requested_by_id: auth.userId,
         status: 'draft',
         urgency,
-        required_date: cleanText(body.required_date, 30) || null,
-        purpose: cleanText(body.purpose, 600) || null,
+        required_date: requiredDate,
+        purpose,
         items: lines,
       };
       try {
-        await runAuditedWorkflowBatch(env, request, [header, ...itemStatements], {
+        await runAuditedWorkflowBatch(env, request, [
+          header,
+          ...itemStatements,
+          workflowOperationStatement(env, operationKey, 'create_draft', id, null, requestFingerprint),
+        ], {
           targetType: 'material_requisition', targetId: id, action: 'material_requisition_created',
           beforeState: null, afterState: auditAfterState,
         });
         break;
       } catch (error) {
+        if (/UNIQUE constraint failed: material_requisition_operations\.operation_key/i.test(String(error?.message || ''))) {
+          const operationReplay = await idempotentCreateDraftResponse(env, operationKey, requestFingerprint);
+          if (operationReplay) return operationReplay;
+        }
         if (!/UNIQUE constraint failed: material_requisitions\.requisition_no/i.test(String(error?.message || '')) || attempt === 2) {
           throw error;
         }
@@ -8569,15 +8611,23 @@ async function handleCreateMaterialRequisition(request, env) {
 
 async function handleListMaterialRequisitions(request, env) {
   const auth = request._auth;
+  const workOrderId = cleanText(new URL(request.url).searchParams.get('work_order_id'), 100);
+  const market = getRequestMarket(request);
   let statement;
   if (auth.userType === 'engineer') {
     statement = env.DB.prepare(`
       SELECT mr.* FROM material_requisitions mr
       JOIN work_orders wo ON wo.id = mr.work_order_id
-      WHERE wo.engineer_id = ? ORDER BY mr.created_at DESC
-    `).bind(auth.userId);
+      WHERE wo.engineer_id = ? AND mr.market = ?
+        ${workOrderId ? 'AND mr.work_order_id = ?' : ''}
+      ORDER BY mr.created_at DESC
+    `).bind(auth.userId, market, ...(workOrderId ? [workOrderId] : []));
   } else if (auth.userType === 'admin') {
-    statement = env.DB.prepare('SELECT * FROM material_requisitions ORDER BY created_at DESC');
+    statement = env.DB.prepare(`
+      SELECT * FROM material_requisitions
+      WHERE market = ? ${workOrderId ? 'AND work_order_id = ?' : ''}
+      ORDER BY created_at DESC
+    `).bind(market, ...(workOrderId ? [workOrderId] : []));
   } else {
     return errorResponse('无权查看领料申请', 403);
   }
@@ -8850,6 +8900,29 @@ async function workflowRequestFingerprint(action, requisitionId, itemId, quantit
   return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
 }
 
+async function createDraftRequestFingerprint({
+  market,
+  workOrderId,
+  requestedByType,
+  requestedById,
+  urgency,
+  requiredDate,
+  purpose,
+  lines,
+}) {
+  return sha256Hex(JSON.stringify({
+    action: 'create_draft',
+    market,
+    work_order_id: workOrderId,
+    requested_by_type: requestedByType,
+    requested_by_id: requestedById,
+    urgency,
+    required_date: requiredDate,
+    purpose,
+    items: lines,
+  }));
+}
+
 async function existingWorkflowOperation(env, operationKey) {
   if (!operationKey) return null;
   return env.DB.prepare(`
@@ -8862,6 +8935,17 @@ function operationMatches(operation, action, requisitionId, itemId, requestFinge
     && operation?.requisition_id === requisitionId
     && operation?.item_id === itemId
     && operation?.request_fingerprint === requestFingerprint;
+}
+
+async function idempotentCreateDraftResponse(env, operationKey, requestFingerprint) {
+  const operation = await existingWorkflowOperation(env, operationKey);
+  if (!operation) return null;
+  if (operation.action !== 'create_draft'
+    || operation.item_id !== null
+    || operation.request_fingerprint !== requestFingerprint) {
+    return errorResponse('Idempotency key is already used for a different request', 409);
+  }
+  return jsonResponse({ requisition: await getRequisitionWithItems(env, operation.requisition_id) });
 }
 
 function workflowOperationStatement(env, operationKey, action, requisitionId, itemId, requestFingerprint) {

@@ -5,6 +5,7 @@ import { DatabaseSync } from 'node:sqlite';
 
 const schemaSql = readFileSync(new URL('../schema.sql', import.meta.url), 'utf8');
 const migrationSql = readFileSync(new URL('../migrations/038_material_requisitions_and_staff.sql', import.meta.url), 'utf8');
+const createIdempotencyMigrationSql = readFileSync(new URL('../migrations/039_material_requisition_create_idempotency.sql', import.meta.url), 'utf8');
 
 function minimalPreMigrationDatabase() {
   const db = new DatabaseSync(':memory:');
@@ -74,6 +75,9 @@ test('full schema loads with the material requisition reservation and operation 
   assert.equal(db.prepare("SELECT reserved_quantity FROM materials WHERE 0").columns()[0].name, 'reserved_quantity');
   assert.equal(db.prepare("SELECT submitted_at FROM material_requisitions WHERE 0").columns()[0].name, 'submitted_at');
   assert.equal(db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'material_requisition_operations'").get().name, 'material_requisition_operations');
+  const itemIdColumn = db.prepare('PRAGMA table_info(material_requisition_operations)').all()
+    .find((column) => column.name === 'item_id');
+  assert.equal(itemIdColumn.notnull, 0);
 });
 
 test('reservation SQL prevents two requisitions from overcommitting the same material', () => {
@@ -165,6 +169,23 @@ test('operation keys store a request fingerprint and requisition history blocks 
   operation.run('operation-1');
   assert.throws(() => operation.run('operation-1'), /unique/i);
   assert.throws(() => db.prepare('DELETE FROM work_orders WHERE id = ?').run('wo-1'), /foreign key/i);
+});
+
+test('migration 039 permits a requisition-level create operation without an item', () => {
+  const db = minimalPreMigrationDatabase();
+  db.exec(migrationSql);
+  db.exec(createIdempotencyMigrationSql);
+  seedRequisition(db);
+
+  db.prepare(`
+    INSERT INTO material_requisition_operations (
+      operation_key, action, requisition_id, item_id, request_fingerprint
+    ) VALUES (?, 'create_draft', 'req-1', NULL, 'fingerprint-create')
+  `).run('create-operation');
+
+  const operation = db.prepare('SELECT * FROM material_requisition_operations WHERE operation_key = ?').get('create-operation');
+  assert.equal(operation.item_id, null);
+  assert.equal(operation.action, 'create_draft');
 });
 
 test('persisted-line status reconciliation sees both final receipts', () => {

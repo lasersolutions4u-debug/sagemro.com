@@ -25,6 +25,7 @@ import { MaterialRequisitionPanel } from './MaterialRequisitionPanel';
 import { PaymentModal } from '../Payment/PaymentModal';
 import { formatCustomerDeviceLine } from '../../utils/workOrderDisplay';
 import { canEngineerViewCustomerContact, redactContactInfo } from '../../utils/contactRedaction';
+import { isCnLocale } from '../../utils/locale';
 import { Loader2, LocateFixed, MapPin, Search } from 'lucide-react';
 
 function hasServiceReportContent(record) {
@@ -426,7 +427,7 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
     tabs.push({ key: 'repairRecord', label: 'Service Report' });
   }
   if (isAssignedEngineer) {
-    tabs.push({ key: 'materialRequisition', label: 'Material Requisition' });
+    tabs.push({ key: 'materialRequisition', label: isCnLocale() ? '物料领用申请' : 'Material Requisition' });
   }
   if (isEngineer) {
     tabs.push({ key: 'machineLead', label: 'Machine Lead' });
@@ -1091,10 +1092,12 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
     <Modal isOpen={isOpen} onClose={onClose} title="Work Order Details" size="2xl">
       <div className="min-h-0">
         {/* Tab 切换 */}
-        <div className="-mx-3 mb-4 flex gap-1 overflow-x-auto border-b border-[var(--color-border)] px-3 pb-0 sm:mx-0 sm:px-0">
+        <div role="tablist" className="-mx-3 mb-4 flex gap-1 overflow-x-auto border-b border-[var(--color-border)] px-3 pb-0 sm:mx-0 sm:px-0">
           {tabs.map((t) => (
             <button
               key={t.key}
+              role="tab"
+              aria-selected={tab === t.key}
               onClick={() => setTab(t.key)}
               className={`shrink-0 px-3 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
                 tab === t.key

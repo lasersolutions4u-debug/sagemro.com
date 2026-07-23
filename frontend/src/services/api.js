@@ -596,8 +596,9 @@ export async function createMaterialRequest(data) {
   return response.json();
 }
 
-export async function getMaterialRequisitions() {
-  const response = await fetch(`${API_BASE}/api/material-requisitions`, {
+export async function getMaterialRequisitions(workOrderId) {
+  const query = workOrderId ? `?work_order_id=${encodeURIComponent(workOrderId)}` : '';
+  const response = await fetch(`${API_BASE}/api/material-requisitions${query}`, {
     method: 'GET',
     headers: authHeaders(),
   });
@@ -620,15 +621,17 @@ export async function getMaterialRequisition(requisitionId) {
   return response.json();
 }
 
-export async function createMaterialRequisition(data) {
+export async function createMaterialRequisition(data, idempotencyKey) {
   const response = await fetch(`${API_BASE}/api/material-requisitions`, {
     method: 'POST',
-    headers: authHeaders(),
+    headers: { ...authHeaders(), 'Idempotency-Key': idempotencyKey },
     body: JSON.stringify(data),
   });
   if (!response.ok) {
-    const error = await response.json().catch(() => ({}));
-    throw new Error(error.error || `HTTP ${response.status}`);
+    const data = await response.json();
+    const error = new Error(data.error || `HTTP ${response.status}`);
+    error.status = response.status;
+    throw error;
   }
   return response.json();
 }

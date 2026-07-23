@@ -9,19 +9,26 @@ function read(relativePath) {
   return readFileSync(path.join(root, relativePath), 'utf8');
 }
 
-test('frontend API exposes engineer material requisition routes and idempotent receipt headers', () => {
+test('frontend API scopes lists and sends idempotency headers for draft creation and receipt', () => {
   const api = read('frontend/src/services/api.js');
+  const createApi = api.slice(
+    api.indexOf('export async function createMaterialRequisition'),
+    api.indexOf('export async function submitMaterialRequisition'),
+  );
   const receiptApi = api.slice(
     api.indexOf('export async function confirmMaterialRequisitionReceipt'),
     api.indexOf('/**\n * 提交评价'),
   );
 
-  assert.match(api, /export async function getMaterialRequisitions/);
-  assert.match(api, /\/api\/material-requisitions`[\s\S]*method:\s*'GET'/);
+  assert.match(api, /export async function getMaterialRequisitions\(workOrderId\)/);
+  assert.match(api, /work_order_id=\$\{encodeURIComponent\(workOrderId\)\}/);
   assert.match(api, /export async function getMaterialRequisition/);
   assert.match(api, /\/api\/material-requisitions\/\$\{requisitionId\}`[\s\S]*method:\s*'GET'/);
-  assert.match(api, /export async function createMaterialRequisition/);
+  assert.match(api, /export async function createMaterialRequisition\(data, idempotencyKey\)/);
   assert.match(api, /\/api\/material-requisitions`[\s\S]*method:\s*'POST'/);
+  assert.match(createApi, /'Idempotency-Key':\s*idempotencyKey/);
+  assert.match(createApi, /const data = await response\.json\(\)/);
+  assert.doesNotMatch(createApi, /response\.json\(\)\.catch/);
   assert.match(api, /export async function submitMaterialRequisition/);
   assert.match(api, /\/api\/material-requisitions\/\$\{requisitionId\}\/submit`[\s\S]*method:\s*'POST'/);
   assert.match(api, /export async function confirmMaterialRequisitionReceipt/);
@@ -40,6 +47,7 @@ test('material requisition panel supports copied preparation lines and validated
   assert.match(panel, /getWorkOrderMaterialItems\(workOrderId, 'preparation'\)/);
   assert.match(panel, /preparationResult\.value\.list/);
   assert.match(panel, /Promise\.allSettled\(/);
+  assert.match(panel, /getMaterialRequisitions\(workOrderId\)/);
   assert.match(panel, /requisitionResult\.status === 'rejected'/);
   assert.match(panel, /preparationResult\.status === 'fulfilled'/);
   assert.match(panel, /setPreparationItems\(\[\]\)/);
@@ -74,10 +82,37 @@ test('receipt confirmation is line-scoped and clears a stable retry key only for
 
   assert.match(panel, /Number\(item\.issued_quantity\s*\|\|\s*0\)\s*>\s*Number\(item\.engineer_received_quantity\s*\|\|\s*0\)/);
   assert.match(panel, /const fingerprint = JSON\.stringify\(payload\)/);
-  assert.match(panel, /retryOperation\?\.fingerprint === fingerprint/);
-  assert.match(panel, /confirmMaterialRequisitionReceipt\([\s\S]*operation\.key/);
+  assert.match(panel, /getMaterialRequisitionRetryOperation\([\s\S]*retryOperation[\s\S]*payload/);
+  assert.match(panel, /const receiptRequest = \{[\s\S]*payload[\s\S]*key:\s*operation\.key/);
+  assert.match(panel, /receiptInFlightRef\.current = receiptRequest/);
+  assert.match(panel, /confirmMaterialRequisitionReceipt\([\s\S]*receiptRequest\.payload[\s\S]*receiptRequest\.key/);
+  assert.match(panel, /disabled=\{pendingReceiptId === item\.id\}/);
+  assert.match(panel, /if \(receiptInFlightRef\.current\?\.itemId === item\.id\) return/);
   assert.match(panel, /if \(!shouldPreserveReceiptRetryKey\(error\)\)[\s\S]*delete receiptRetryRef\.current\[item\.id\]/);
   assert.match(panel, /delete receiptRetryRef\.current\[item\.id\][\s\S]*applyRequisitionUpdate/);
+});
+
+test('draft creation keeps one retry operation per payload and locks draft controls while pending', () => {
+  const panel = read('frontend/src/components/WorkOrder/MaterialRequisitionPanel.jsx');
+
+  assert.match(panel, /const draftRetryRef = useRef\(/);
+  assert.match(panel, /const fingerprint = JSON\.stringify\(payload\)/);
+  assert.match(panel, /draftRetry\?\.fingerprint === fingerprint/);
+  assert.match(panel, /const draftRequest = \{[\s\S]*payload[\s\S]*key:\s*operation\.key/);
+  assert.match(panel, /createMaterialRequisition\(draftRequest\.payload, draftRequest\.key\)/);
+  assert.match(panel, /if \(!shouldPreserveReceiptRetryKey\(createError\)\)[\s\S]*draftRetryRef\.current = null/);
+  assert.match(panel, /const clearDraftRetry = \(\) => \{[\s\S]*if \(creating \|\| draftInFlightRef\.current\) return/);
+  assert.match(panel, /onChange=\{\(event\) => updateDraftItem[\s\S]*disabled=\{creating\}/);
+});
+
+test('only the latest requisition detail request may update panel state', () => {
+  const panel = read('frontend/src/components/WorkOrder/MaterialRequisitionPanel.jsx');
+
+  assert.match(panel, /const detailRequestIdRef = useRef\(0\)/);
+  assert.match(panel, /const requestId = \+\+detailRequestIdRef\.current/);
+  assert.match(panel, /if \(requestId !== detailRequestIdRef\.current\) return/);
+  assert.match(panel, /const closeRequisitionDetails = \(\) => \{[\s\S]*detailRequestIdRef\.current \+= 1/);
+  assert.match(panel, /return \(\) => \{[\s\S]*detailRequestIdRef\.current \+= 1/);
 });
 
 test('work-order details place the panel in an assigned-engineer-only tab', () => {
@@ -87,6 +122,10 @@ test('work-order details place the panel in an assigned-engineer-only tab', () =
   assert.match(modal, /const assignedEngineerId = detail\?\.id === workOrder\.id[\s\S]*detail\.engineer_id[\s\S]*workOrder\.engineer_id/);
   assert.match(modal, /const isAssignedEngineer = isEngineer[\s\S]*assignedEngineerId[\s\S]*userId/);
   assert.match(modal, /if \(isAssignedEngineer\)[\s\S]*materialRequisition/);
+  assert.match(modal, /isCnLocale\(\) \? '物料领用申请' : 'Material Requisition'/);
+  assert.match(modal, /role="tablist"/);
+  assert.match(modal, /role="tab"/);
+  assert.match(modal, /aria-selected=\{tab === t\.key\}/);
   assert.match(modal, /tab === 'materialRequisition' && isAssignedEngineer/);
   assert.match(modal, /<MaterialRequisitionPanel workOrderId=\{workOrder\.id\}/);
   assert.doesNotMatch(modal, /isCustomer[\s\S]{0,120}<MaterialRequisitionPanel/);

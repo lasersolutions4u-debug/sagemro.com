@@ -87,6 +87,11 @@ function createStatement(env, sql) {
         if (/JOIN work_orders/i.test(normalized)) {
           const workOrderIds = new Set(env.__workOrders.filter((order) => order.engineer_id === this.args[0]).map((order) => order.id));
           results = results.filter((item) => workOrderIds.has(item.work_order_id));
+          results = results.filter((item) => item.market === this.args[1]);
+          if (/mr\.work_order_id = \?/i.test(normalized)) results = results.filter((item) => item.work_order_id === this.args[2]);
+        } else if (/WHERE market = \?/i.test(normalized)) {
+          results = results.filter((item) => item.market === this.args[0]);
+          if (/work_order_id = \?/i.test(normalized)) results = results.filter((item) => item.work_order_id === this.args[1]);
         } else if (/requested_by_type = 'engineer' AND requested_by_id = \?/i.test(normalized)) {
           results = results.filter((item) => item.requested_by_type === 'engineer' && item.requested_by_id === this.args[0]);
         }
@@ -479,7 +484,8 @@ async function api(env, path, {
   }
   const headers = { 'Content-Type': 'application/json', Origin: origin };
   if (auth) headers.Authorization = `Bearer ${await authToken(env, auth)}`;
-  if (idempotencyKey === undefined && method === 'POST' && /\/(stock-allocation|procurement|procurement-receipt|issue|return|engineer-receipt)$/.test(path)) {
+  if (idempotencyKey === undefined && method === 'POST' && (/^\/api\/material-requisitions$/.test(path)
+    || /\/(stock-allocation|procurement|procurement-receipt|issue|return|engineer-receipt)$/.test(path))) {
     idempotencyKey = `test-operation-${env.__nextOperationKey++}`;
   }
   if (idempotencyKey) headers['Idempotency-Key'] = idempotencyKey;
@@ -682,6 +688,111 @@ test('requisition number collisions retry without leaving a partial requisition'
   assert.equal(env.__requisitions.length, 1);
   assert.equal(env.__items.length, 1);
   assert.match(created.json.requisition.requisition_no, /^MR-\d{8}-[A-Z0-9]{8,}$/);
+});
+
+test('draft creation requires an idempotency key and replays the same canonical payload', async () => {
+  const env = createEnv();
+  const body = {
+    work_order_id: 'wo-1',
+    urgency: 'urgent',
+    required_date: '2026-07-30',
+    purpose: 'Field repair',
+    items: [{ material_id: 'material-stock', requested_quantity: 2, notes: 'Use local stock' }],
+  };
+
+  const missing = await api(env, '/api/material-requisitions', {
+    method: 'POST', body, idempotencyKey: '',
+  });
+  assert.equal(missing.response.status, 400);
+
+  const first = await api(env, '/api/material-requisitions', {
+    method: 'POST', body, idempotencyKey: 'create-draft-1',
+  });
+  const replay = await api(env, '/api/material-requisitions', {
+    method: 'POST', body: clone(body), idempotencyKey: 'create-draft-1',
+  });
+
+  assert.equal(first.response.status, 201, first.json.error);
+  assert.equal(replay.response.status, 200, replay.json.error);
+  assert.equal(replay.json.requisition.id, first.json.requisition.id);
+  assert.equal(env.__requisitions.length, 1);
+  assert.equal(env.__items.length, 1);
+  assert.deepEqual(env.__operations, [{
+    operation_key: 'create-draft-1',
+    action: 'create_draft',
+    requisition_id: first.json.requisition.id,
+    item_id: null,
+    request_fingerprint: env.__operations[0].request_fingerprint,
+  }]);
+});
+
+test('draft creation rejects reuse of a key with a changed payload', async () => {
+  const env = createEnv();
+  const request = {
+    method: 'POST',
+    idempotencyKey: 'create-draft-mismatch',
+    body: { work_order_id: 'wo-1', items: [{ name: 'Manual item', requested_quantity: 1 }] },
+  };
+  const first = await api(env, '/api/material-requisitions', request);
+  const mismatch = await api(env, '/api/material-requisitions', {
+    ...request,
+    body: { work_order_id: 'wo-1', items: [{ name: 'Manual item', requested_quantity: 2 }] },
+  });
+
+  assert.equal(first.response.status, 201, first.json.error);
+  assert.equal(mismatch.response.status, 409);
+  assert.equal(env.__requisitions.length, 1);
+  assert.equal(env.__items.length, 1);
+  assert.equal(env.__operations.length, 1);
+});
+
+test('draft replay remains stable when material master snapshots change', async () => {
+  const env = createEnv();
+  const request = {
+    method: 'POST',
+    idempotencyKey: 'create-draft-material-snapshot',
+    body: { work_order_id: 'wo-1', items: [{ material_id: 'material-stock', requested_quantity: 1 }] },
+  };
+  const first = await api(env, '/api/material-requisitions', request);
+  env.__materials[0].name = 'Renamed stock item';
+  env.__materials[0].unit = 'box';
+
+  const replay = await api(env, '/api/material-requisitions', request);
+
+  assert.equal(first.response.status, 201, first.json.error);
+  assert.equal(replay.response.status, 200, replay.json.error);
+  assert.equal(replay.json.requisition.id, first.json.requisition.id);
+  assert.equal(replay.json.requisition.items[0].name, 'Stock item');
+  assert.equal(replay.json.requisition.items[0].unit, 'pcs');
+});
+
+test('material requisition list scopes by work order and request market', async () => {
+  const env = createEnv();
+  env.__workOrders.push({
+    id: 'wo-2', customer_id: 'customer-1', engineer_id: 'engineer-1', assigned_regional_lead_id: 'lead-1', status: 'in_progress',
+  });
+  const first = await api(env, '/api/material-requisitions', {
+    method: 'POST', idempotencyKey: 'create-wo-1',
+    body: { work_order_id: 'wo-1', items: [{ name: 'First', requested_quantity: 1 }] },
+  });
+  const second = await api(env, '/api/material-requisitions', {
+    method: 'POST', idempotencyKey: 'create-wo-2',
+    body: { work_order_id: 'wo-2', items: [{ name: 'Second', requested_quantity: 1 }] },
+  });
+  assert.equal(first.response.status, 201, first.json.error);
+  assert.equal(second.response.status, 201, second.json.error);
+  env.__requisitions.push({
+    id: 'req-cn', requisition_no: 'MR-CN', market: 'cn', work_order_id: 'wo-1',
+    requested_by_type: 'engineer', requested_by_id: 'engineer-1', status: 'draft', created_at: env.__now,
+  });
+
+  const engineerList = await api(env, '/api/material-requisitions?work_order_id=wo-1');
+  const adminList = await api(env, '/api/material-requisitions?work_order_id=wo-1', { auth: staffAuth('operations') });
+
+  assert.equal(engineerList.response.status, 200);
+  assert.deepEqual(engineerList.json.requisitions.map((item) => item.id), [first.json.requisition.id]);
+  assert.equal(adminList.response.status, 200);
+  assert.deepEqual(adminList.json.requisitions.map((item) => item.id), [first.json.requisition.id]);
 });
 
 test('assigned engineer creates and submits a deterministic multi-line draft; other engineers are denied', async () => {
@@ -1308,6 +1419,7 @@ test('audit insertion failure rolls back staff, requisition, line, and stock wor
   assert.equal(createResult.response.status, 500);
   assert.equal(createEnvWithAuditFailure.__requisitions.length, 0);
   assert.equal(createEnvWithAuditFailure.__items.length, 0);
+  assert.equal(createEnvWithAuditFailure.__operations.length, 0);
 
   const stockEnv = createEnv();
   const requisition = await createAndSubmit(stockEnv);

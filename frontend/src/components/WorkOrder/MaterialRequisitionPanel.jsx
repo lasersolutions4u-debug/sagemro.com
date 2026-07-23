@@ -20,7 +20,11 @@ import {
 } from '../../services/api';
 import { confirmDialog, toastSuccess } from '../../utils/feedback';
 import { isCnLocale } from '../../utils/locale';
-import { shouldPreserveReceiptRetryKey } from './materialRequisitionRetry';
+import { formatMaterialRequisitionDate } from './materialRequisitionFormat';
+import {
+  getMaterialRequisitionRetryOperation,
+  shouldPreserveReceiptRetryKey,
+} from './materialRequisitionRetry';
 
 const COPY = {
   en: {
@@ -149,15 +153,9 @@ function emptyDraftLine() {
   };
 }
 
-function operationKey() {
-  if (typeof crypto !== 'undefined' && crypto.randomUUID) return `engineer-receipt-${crypto.randomUUID()}`;
-  return `engineer-receipt-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-}
-
-function formatDate(value, isCn) {
-  if (!value) return '-';
-  const date = new Date(value.includes('T') ? value : `${value.replace(' ', 'T')}Z`);
-  return Number.isNaN(date.getTime()) ? value : date.toLocaleString(isCn ? 'zh-CN' : 'en-US', { dateStyle: 'medium' });
+function operationKey(prefix) {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) return `${prefix}-${crypto.randomUUID()}`;
+  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
 function statusLabel(status, isCn) {
@@ -187,7 +185,11 @@ export function MaterialRequisitionPanel({ workOrderId }) {
   const [creating, setCreating] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [pendingReceiptId, setPendingReceiptId] = useState('');
+  const draftRetryRef = useRef(null);
+  const draftInFlightRef = useRef(null);
   const receiptRetryRef = useRef({});
+  const receiptInFlightRef = useRef(null);
+  const detailRequestIdRef = useRef(0);
 
   const workOrderRequisitions = useMemo(
     () => requisitions.filter((item) => item.work_order_id === workOrderId),
@@ -198,7 +200,7 @@ export function MaterialRequisitionPanel({ workOrderId }) {
     setLoading(true);
     setError('');
     const [requisitionResult, preparationResult] = await Promise.allSettled([
-      getMaterialRequisitions(),
+      getMaterialRequisitions(workOrderId),
       getWorkOrderMaterialItems(workOrderId, 'preparation'),
     ]);
     if (requisitionResult.status === 'rejected') {
@@ -217,23 +219,38 @@ export function MaterialRequisitionPanel({ workOrderId }) {
 
   useEffect(() => {
     loadPanel();
+    return () => {
+      detailRequestIdRef.current += 1;
+    };
   }, [loadPanel]);
 
+  const clearDraftRetry = () => {
+    if (creating || draftInFlightRef.current) return;
+    draftRetryRef.current = null;
+  };
+
   const updateDraftItem = (index, field, value) => {
+    if (creating || draftInFlightRef.current) return;
+    clearDraftRetry();
     setDraftItems((current) => current.map((item, itemIndex) => (
       itemIndex === index ? { ...item, [field]: value } : item
     )));
   };
 
   const addDraftItem = () => {
+    if (creating || draftInFlightRef.current) return;
+    clearDraftRetry();
     setDraftItems((current) => [...current, emptyDraftLine()]);
   };
 
   const removeDraftItem = (index) => {
+    if (creating || draftInFlightRef.current) return;
+    clearDraftRetry();
     setDraftItems((current) => current.filter((_, itemIndex) => itemIndex !== index));
   };
 
   const copyPreparationItems = () => {
+    if (creating || draftInFlightRef.current) return;
     if (!preparationItems.length) {
       setError(t.noPreparation);
       return;
@@ -249,6 +266,7 @@ export function MaterialRequisitionPanel({ workOrderId }) {
       requested_quantity: String(item.quantity || 1),
       notes: item.note || '',
     }));
+    clearDraftRetry();
     setDraftItems(copied);
     setError('');
   };
@@ -270,49 +288,72 @@ export function MaterialRequisitionPanel({ workOrderId }) {
   };
 
   const createDraft = async () => {
+    if (draftInFlightRef.current) return;
     if (!draftItems.length || !draftItems.every(validDraftItem)) {
       setError(t.draftError);
       return;
     }
+    const payload = {
+      work_order_id: workOrderId,
+      items: draftItems.map((item) => ({
+        material_id: item.material_id || undefined,
+        material_code: item.material_code.trim() || undefined,
+        name: item.name.trim(),
+        name_en: item.name_en.trim() || undefined,
+        spec: item.spec.trim() || undefined,
+        brand: item.brand.trim() || undefined,
+        unit: item.unit.trim() || 'pcs',
+        requested_quantity: Number(item.requested_quantity),
+        notes: item.notes.trim() || undefined,
+      })),
+    };
+    const fingerprint = JSON.stringify(payload);
+    const draftRetry = draftRetryRef.current;
+    const operation = draftRetry?.fingerprint === fingerprint
+      ? draftRetry
+      : getMaterialRequisitionRetryOperation(null, payload, () => operationKey('engineer-draft'));
+    const draftRequest = { payload, key: operation.key };
+    draftRetryRef.current = operation;
+    draftInFlightRef.current = draftRequest;
     setCreating(true);
     setError('');
     try {
-      const data = await createMaterialRequisition({
-        work_order_id: workOrderId,
-        items: draftItems.map((item) => ({
-          material_id: item.material_id || undefined,
-          material_code: item.material_code.trim() || undefined,
-          name: item.name.trim(),
-          name_en: item.name_en.trim() || undefined,
-          spec: item.spec.trim() || undefined,
-          brand: item.brand.trim() || undefined,
-          unit: item.unit.trim() || 'pcs',
-          requested_quantity: Number(item.requested_quantity),
-          notes: item.notes.trim() || undefined,
-        })),
-      });
+      const data = await createMaterialRequisition(draftRequest.payload, draftRequest.key);
+      draftRetryRef.current = null;
       setRequisitions((current) => [data.requisition, ...current]);
       applyRequisitionUpdate(data.requisition);
       setDraftItems([emptyDraftLine()]);
       toastSuccess(t.created);
     } catch (createError) {
+      if (!shouldPreserveReceiptRetryKey(createError)) draftRetryRef.current = null;
       setError(createError.message || t.draftError);
     } finally {
+      if (draftInFlightRef.current === draftRequest) draftInFlightRef.current = null;
       setCreating(false);
     }
   };
 
   const openRequisition = async (requisition) => {
+    const requestId = ++detailRequestIdRef.current;
     setDetailLoading(true);
     setDetailError('');
     try {
       const data = await getMaterialRequisition(requisition.id);
+      if (requestId !== detailRequestIdRef.current) return;
       applyRequisitionUpdate(data.requisition);
     } catch (openError) {
+      if (requestId !== detailRequestIdRef.current) return;
       setDetailError(openError.message || t.detailFailed);
     } finally {
-      setDetailLoading(false);
+      if (requestId === detailRequestIdRef.current) setDetailLoading(false);
     }
+  };
+
+  const closeRequisitionDetails = () => {
+    detailRequestIdRef.current += 1;
+    setDetailLoading(false);
+    setSelectedRequisition(null);
+    setDetailError('');
   };
 
   const submitDraft = async () => {
@@ -334,28 +375,33 @@ export function MaterialRequisitionPanel({ workOrderId }) {
   };
 
   const updateReceiptQuantity = (item, value) => {
+    if (receiptInFlightRef.current?.itemId === item.id) return;
     setReceiptQuantities((current) => ({ ...current, [item.id]: value }));
     delete receiptRetryRef.current[item.id];
   };
 
   const confirmReceipt = async (item) => {
+    if (receiptInFlightRef.current) return;
     const quantity = Number(receiptQuantities[item.id]);
     const remaining = Number(item.issued_quantity || 0) - Number(item.engineer_received_quantity || 0);
     if (!Number.isInteger(quantity) || quantity <= 0 || quantity > remaining) return;
     const payload = { item_id: item.id, quantity };
-    const fingerprint = JSON.stringify(payload);
     const retryOperation = receiptRetryRef.current[item.id];
-    const operation = retryOperation?.fingerprint === fingerprint
-      ? retryOperation
-      : { fingerprint, key: operationKey() };
+    const operation = getMaterialRequisitionRetryOperation(
+      retryOperation,
+      payload,
+      () => operationKey('engineer-receipt'),
+    );
+    const receiptRequest = { itemId: item.id, payload, key: operation.key };
     receiptRetryRef.current[item.id] = operation;
+    receiptInFlightRef.current = receiptRequest;
     setPendingReceiptId(item.id);
     setDetailError('');
     try {
       const data = await confirmMaterialRequisitionReceipt(
         selectedRequisition.id,
-        payload,
-        operation.key,
+        receiptRequest.payload,
+        receiptRequest.key,
       );
       delete receiptRetryRef.current[item.id];
       applyRequisitionUpdate(data.requisition);
@@ -366,6 +412,7 @@ export function MaterialRequisitionPanel({ workOrderId }) {
       }
       setDetailError(error.message || t.detailFailed);
     } finally {
+      if (receiptInFlightRef.current === receiptRequest) receiptInFlightRef.current = null;
       setPendingReceiptId('');
     }
   };
@@ -391,6 +438,7 @@ export function MaterialRequisitionPanel({ workOrderId }) {
             <input
               value={item.name}
               onChange={(event) => updateDraftItem(index, 'name', event.target.value)}
+              disabled={creating}
               placeholder={t.name}
               aria-label={t.name}
               className="min-w-0 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/40"
@@ -398,6 +446,7 @@ export function MaterialRequisitionPanel({ workOrderId }) {
             <input
               value={item.spec}
               onChange={(event) => updateDraftItem(index, 'spec', event.target.value)}
+              disabled={creating}
               placeholder={t.spec}
               aria-label={t.spec}
               className="min-w-0 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/40"
@@ -405,6 +454,7 @@ export function MaterialRequisitionPanel({ workOrderId }) {
             <input
               value={item.unit}
               onChange={(event) => updateDraftItem(index, 'unit', event.target.value)}
+              disabled={creating}
               placeholder={t.unit}
               aria-label={t.unit}
               className="min-w-0 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-2 text-sm text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/40"
@@ -415,6 +465,7 @@ export function MaterialRequisitionPanel({ workOrderId }) {
               step="1"
               value={item.requested_quantity}
               onChange={(event) => updateDraftItem(index, 'requested_quantity', event.target.value)}
+              disabled={creating}
               aria-label={t.quantity}
               className="min-w-0 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-2 text-sm text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/40"
             />
@@ -431,6 +482,7 @@ export function MaterialRequisitionPanel({ workOrderId }) {
             <input
               value={item.notes}
               onChange={(event) => updateDraftItem(index, 'notes', event.target.value)}
+              disabled={creating}
               placeholder={t.notes}
               aria-label={t.notes}
               className="min-w-0 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/40 md:col-span-4"
@@ -501,7 +553,7 @@ export function MaterialRequisitionPanel({ workOrderId }) {
           ))}
           <div className="min-w-0">
             <dt className="text-[11px] text-[var(--color-text-muted)]">{t.arrival}</dt>
-            <dd className="mt-0.5 text-sm text-[var(--color-text-primary)]">{formatDate(item.expected_arrival, isCn)}</dd>
+            <dd className="mt-0.5 text-sm text-[var(--color-text-primary)]">{formatMaterialRequisitionDate(item.expected_arrival, isCn)}</dd>
           </div>
           <div className="min-w-0">
             <dt className="text-[11px] text-[var(--color-text-muted)]">{t.status}</dt>
@@ -520,6 +572,7 @@ export function MaterialRequisitionPanel({ workOrderId }) {
                 step="1"
                 value={receiptQuantity}
                 onChange={(event) => updateReceiptQuantity(item, event.target.value)}
+                disabled={pendingReceiptId === item.id}
                 className="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/40"
               />
             </label>
@@ -579,7 +632,7 @@ export function MaterialRequisitionPanel({ workOrderId }) {
               >
                 <span className="min-w-0">
                   <span className="block truncate text-sm font-medium text-[var(--color-text-primary)]">{requisition.requisition_no}</span>
-                  <span className="mt-1 block text-xs text-[var(--color-text-muted)]">{formatDate(requisition.created_at, isCn)}</span>
+                  <span className="mt-1 block text-xs text-[var(--color-text-muted)]">{formatMaterialRequisitionDate(requisition.created_at, isCn)}</span>
                 </span>
                 <span className="flex shrink-0 items-center gap-2">
                   <span className={`whitespace-nowrap rounded-full border px-2.5 py-1 text-xs font-medium ${statusTone(requisition.status)}`}>
@@ -606,12 +659,12 @@ export function MaterialRequisitionPanel({ workOrderId }) {
                   <div className="truncate font-semibold text-[var(--color-text-primary)]">{selectedRequisition.requisition_no}</div>
                   <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs text-[var(--color-text-muted)]">
                     {selectedRequisition.purpose && <span>{t.purpose}: {selectedRequisition.purpose}</span>}
-                    {selectedRequisition.required_date && <span>{t.required}: {formatDate(selectedRequisition.required_date, isCn)}</span>}
+                    {selectedRequisition.required_date && <span>{t.required}: {formatMaterialRequisitionDate(selectedRequisition.required_date, isCn)}</span>}
                   </div>
                 </div>
                 <button
                   type="button"
-                  onClick={() => { setSelectedRequisition(null); setDetailError(''); }}
+                  onClick={closeRequisitionDetails}
                   aria-label={t.close}
                   title={t.close}
                   disabled={submitting || Boolean(pendingReceiptId)}
