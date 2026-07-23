@@ -1,0 +1,97 @@
+name: Production D1 Backup - COM and CN
+
+on:
+  schedule:
+    - cron: '17 18 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-d1-backup
+  cancel-in-progress: false
+
+jobs:
+  backup:
+    name: Export production D1 databases
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 30
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+
+      - name: Install Worker dependencies
+        working-directory: worker
+        run: npm ci --no-audit --no-fund
+
+      - name: Prepare backup paths
+        run: |
+          set -euo pipefail
+          BACKUP_DIR="$(mktemp -d "${RUNNER_TEMP}/sagemro-d1-backup.XXXXXX")"
+          TIMESTAMP="$(date -u +'%Y%m%dT%H%M%SZ')"
+          echo "BACKUP_DIR=${BACKUP_DIR}" >> "$GITHUB_ENV"
+          echo "COM_BACKUP=${BACKUP_DIR}/sagemro-db-${TIMESTAMP}.sql" >> "$GITHUB_ENV"
+          echo "CN_BACKUP=${BACKUP_DIR}/sagemro-db-cn-${TIMESTAMP}.sql" >> "$GITHUB_ENV"
+          echo "MANIFEST=${BACKUP_DIR}/sha256-manifest.txt" >> "$GITHUB_ENV"
+
+      - name: Export COM and CN databases
+        working-directory: worker
+        run: |
+          set -euo pipefail
+          node scripts/d1-operations.mjs backup --market com --mode remote --confirm-production --output "$COM_BACKUP"
+          node scripts/d1-operations.mjs backup --market cn --mode remote --confirm-production --output "$CN_BACKUP"
+
+      - name: Validate backups and write manifest
+        run: |
+          set -euo pipefail
+          test "$(find "$COM_BACKUP" -type f -size +100c -print -quit)" = "$COM_BACKUP"
+          test "$(find "$CN_BACKUP" -type f -size +100c -print -quit)" = "$CN_BACKUP"
+          (
+            cd "$BACKUP_DIR"
+            sha256sum "$(basename "$COM_BACKUP")" "$(basename "$CN_BACKUP")" > "$(basename "$MANIFEST")"
+          )
+          {
+            echo "generated_at_utc=$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+            echo "databases=sagemro-db,sagemro-db-cn"
+            echo "git_sha=${GITHUB_SHA}"
+          } > "$BACKUP_DIR/metadata.txt"
+
+      - name: Upload COM backup
+        uses: actions/upload-artifact@v4
+        with:
+          name: sagemro-d1-com-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ env.COM_BACKUP }}
+            ${{ env.MANIFEST }}
+            ${{ env.BACKUP_DIR }}/metadata.txt
+          retention-days: 30
+          if-no-files-found: error
+
+      - name: Upload CN backup
+        uses: actions/upload-artifact@v4
+        with:
+          name: sagemro-d1-cn-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ env.CN_BACKUP }}
+            ${{ env.MANIFEST }}
+            ${{ env.BACKUP_DIR }}/metadata.txt
+          retention-days: 30
+          if-no-files-found: error
+
+      - name: Cleanup temporary backups
+        if: always()
+        run: |
+          if [ -n "${BACKUP_DIR:-}" ] && [ -d "$BACKUP_DIR" ]; then
+            rm -rf -- "$BACKUP_DIR"
+          fi
