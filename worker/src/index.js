@@ -175,7 +175,7 @@ function parseServiceLocation(input = {}) {
   if (hasLatitude && !SUPPORTED_COORDINATE_SYSTEMS.has(coordinateSystem)) {
     return { error: 'service_coordinate_system_invalid' };
   }
-  if (accuracyMeters !== null && (accuracyMeters < 0 || accuracyMeters > 10000)) {
+  if (accuracyMeters !== null && (accuracyMeters < 0 || accuracyMeters > 500)) {
     return { error: 'service_accuracy_invalid' };
   }
 
@@ -10493,7 +10493,7 @@ async function handleWorkOrderArrivalCheck(request, env) {
     if (!SUPPORTED_COORDINATE_SYSTEMS.has(currentCoordinateSystem)) {
       return errorResponse(market === 'cn' ? '工程师坐标系不受支持' : 'Engineer coordinate system is not supported', 400);
     }
-    if (currentAccuracyMeters !== null && (currentAccuracyMeters < 0 || currentAccuracyMeters > 10000)) {
+    if (currentAccuracyMeters === null || currentAccuracyMeters < 0 || currentAccuracyMeters > 500) {
       return errorResponse(market === 'cn' ? '工程师定位精度无效' : 'Engineer location accuracy is invalid', 400);
     }
 

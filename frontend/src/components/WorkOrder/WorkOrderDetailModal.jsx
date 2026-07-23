@@ -39,6 +39,7 @@ import { PaymentModal } from '../Payment/PaymentModal';
 import { formatCustomerDeviceLine, formatServiceTextForLocale } from '../../utils/workOrderDisplay';
 import { canEngineerViewCustomerContact, redactContactInfo } from '../../utils/contactRedaction';
 import { isCnLocale } from '../../utils/locale';
+import { formatGeolocationError, getBrowserLocation, isBrowserGeolocationError } from '../../utils/browserGeolocation';
 import { Loader2, LocateFixed, MapPin, Search } from 'lucide-react';
 
 const CURRENCY = isCnLocale() ? 'CNY' : 'USD';
@@ -447,36 +448,24 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
     }
   };
 
-  const handleArrivalCheck = () => {
-    if (!navigator.geolocation) {
-      toastError(copy.arrivalLocationFailed);
-      return;
-    }
+  const handleArrivalCheck = async () => {
     setArrivalSubmitting(true);
-    navigator.geolocation.getCurrentPosition(
-      async ({ coords }) => {
-        try {
-          await checkInWorkOrder(workOrder.id, {
-            latitude: coords.latitude,
-            longitude: coords.longitude,
-            accuracy_m: coords.accuracy,
-            coordinate_system: 'wgs84',
-            location_source: 'browser',
-          });
-          toastSuccess(copy.arrivalVerified);
-          await loadDetail();
-        } catch (e) {
-          toastError(e.message || copy.arrivalLocationFailed);
-        } finally {
-          setArrivalSubmitting(false);
-        }
-      },
-      () => {
-        setArrivalSubmitting(false);
-        toastError(copy.arrivalLocationFailed);
-      },
-      { enableHighAccuracy: true, timeout: 15000, maximumAge: 30000 },
-    );
+    try {
+      const { coords } = await getBrowserLocation();
+      await checkInWorkOrder(workOrder.id, {
+        latitude: coords.latitude,
+        longitude: coords.longitude,
+        accuracy_m: coords.accuracy,
+        coordinate_system: 'wgs84',
+        location_source: 'browser',
+      });
+      toastSuccess(copy.arrivalVerified);
+      await loadDetail();
+    } catch (error) {
+      toastError(isBrowserGeolocationError(error) ? formatGeolocationError(error, isCn) : (error.message || copy.arrivalLocationFailed));
+    } finally {
+      setArrivalSubmitting(false);
+    }
   };
 
   const handleRequestOnsite = async () => {
@@ -498,30 +487,23 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
     }
   };
 
-  const captureConversionLocation = () => {
-    if (!navigator.geolocation) {
-      toastError(isCn ? '无法获取现场定位，请允许浏览器使用定位后重试。' : 'Unable to get the site location. Allow browser location access and try again.');
-      return;
-    }
+  const captureConversionLocation = async () => {
     setSiteLocationLocating(true);
-    navigator.geolocation.getCurrentPosition(
-      ({ coords }) => {
-        setSiteLocation((current) => ({
-          ...current,
-          service_latitude: coords.latitude,
-          service_longitude: coords.longitude,
-          service_accuracy_m: coords.accuracy,
-          service_coordinate_system: 'wgs84',
-          service_location_source: 'customer_browser',
-        }));
-        setSiteLocationLocating(false);
-      },
-      () => {
-        setSiteLocationLocating(false);
-        toastError(isCn ? '无法获取现场定位，请允许浏览器使用定位后重试。' : 'Unable to get the site location. Allow browser location access and try again.');
-      },
-      { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 },
-    );
+    try {
+      const { coords } = await getBrowserLocation();
+      setSiteLocation((current) => ({
+        ...current,
+        service_latitude: coords.latitude,
+        service_longitude: coords.longitude,
+        service_accuracy_m: coords.accuracy,
+        service_coordinate_system: 'wgs84',
+        service_location_source: 'customer_browser',
+      }));
+    } catch (error) {
+      toastError(formatGeolocationError(error, isCn));
+    } finally {
+      setSiteLocationLocating(false);
+    }
   };
 
   const searchConversionLocation = async () => {

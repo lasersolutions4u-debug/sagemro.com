@@ -178,6 +178,46 @@ test('customer confirms the onsite address before arrival verification becomes r
   assert.equal(env.__notifications[0].args[1], 'engineer-1');
 });
 
+test('customer browser locations that are too coarse are rejected', async () => {
+  const env = createEnv();
+  env.__workOrders[0].service_mode = 'hybrid';
+  env.__workOrders[0].onsite_conversion_status = 'requested';
+
+  const { response, json } = await api(env, '/api/workorders/wo-remote-1/onsite-conversion/confirm', {
+    userType: 'customer',
+    userId: 'customer-1',
+    body: {
+      service_address: '88 Test Road, Jinan',
+      service_latitude: 36.6512,
+      service_longitude: 117.1201,
+      service_accuracy_m: 900,
+      service_coordinate_system: 'wgs84',
+      service_location_source: 'customer_browser',
+    },
+  });
+
+  assert.equal(response.status, 400);
+  assert.match(json.error, /accuracy/i);
+});
+
+test('engineer arrival checks require a usable browser accuracy', async () => {
+  const env = createEnv();
+  const { response, json } = await api(env, '/api/workorders/wo-remote-1/arrival-check', {
+    userType: 'engineer',
+    userId: 'engineer-1',
+    body: {
+      latitude: 36.6512,
+      longitude: 117.1201,
+      accuracy_m: 900,
+      coordinate_system: 'wgs84',
+      location_source: 'browser',
+    },
+  });
+
+  assert.equal(response.status, 400);
+  assert.match(json.error, /accuracy/i);
+});
+
 test('admin arrival override requires a reason and preserves an audit trail', async () => {
   const env = createEnv();
   env.__workOrders[0].service_mode = 'onsite';
