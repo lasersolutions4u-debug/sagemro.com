@@ -2024,7 +2024,7 @@ function getCorsHeaders(request, env) {
     'Access-Control-Allow-Origin': getAllowedOrigin(origin, env),
     'Vary': 'Origin',
     'Access-Control-Allow-Methods': 'GET, POST, PATCH, DELETE, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-CSRF-Token',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-CSRF-Token, Idempotency-Key',
     'Access-Control-Allow-Credentials': 'true',
   };
 }
@@ -2050,7 +2050,7 @@ const corsHeaders = {
   'Access-Control-Allow-Origin': ALLOWED_ORIGINS_PRODUCTION[0],
   'Vary': 'Origin',
   'Access-Control-Allow-Methods': 'GET, POST, PATCH, DELETE, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-CSRF-Token',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-CSRF-Token, Idempotency-Key',
 };
 
 // 处理 OPTIONS 预检请求

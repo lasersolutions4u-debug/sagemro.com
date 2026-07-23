@@ -28,6 +28,20 @@ test('allows the local engineer frontend origin during development', async () =>
   assert.equal(response.headers.get('Access-Control-Allow-Origin'), 'http://127.0.0.1:3000');
 });
 
+test('CORS preflight allows material requisition idempotency keys', async () => {
+  const response = await worker.fetch(new Request('http://api.127.0.0.1.nip.io:8878/api/material-requisitions', {
+    method: 'OPTIONS',
+    headers: {
+      Origin: 'http://engineer.127.0.0.1.nip.io:4273',
+      'Access-Control-Request-Method': 'POST',
+      'Access-Control-Request-Headers': 'content-type,idempotency-key,x-csrf-token',
+    },
+  }), { ENVIRONMENT: 'development' }, {});
+
+  assert.equal(response.status, 204);
+  assert.match(response.headers.get('Access-Control-Allow-Headers') || '', /\bIdempotency-Key\b/i);
+});
+
 test('allows same-site nip.io E2E portal origins during development', async () => {
   for (const origin of [
     'http://customer.127.0.0.1.nip.io:4273',

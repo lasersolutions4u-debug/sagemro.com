@@ -55,7 +55,12 @@ export function canonicalPayload(payload) {
   return JSON.stringify(canonicalize(payload));
 }
 
-export function getRetryOperation(current, action, payload, createKey = () => crypto.randomUUID()) {
+export function createOperationKey(cryptoApi = globalThis.crypto, now = Date.now(), random = Math.random) {
+  if (typeof cryptoApi?.randomUUID === 'function') return cryptoApi.randomUUID();
+  return `operation-${now}-${random().toString(36).slice(2)}`;
+}
+
+export function getRetryOperation(current, action, payload, createKey = createOperationKey) {
   const payloadKey = canonicalPayload(payload);
   if (current?.action === action && current?.payloadKey === payloadKey) return current;
   return { action, payloadKey, idempotencyKey: createKey() };

@@ -58,9 +58,25 @@ jobs:
         working-directory: admin
         run: npm install --no-audit --no-fund
 
+      - name: Admin tests
+        working-directory: admin
+        run: npm test
+
       - name: Admin build
         working-directory: admin
         run: npm run build
+
+      - name: E2E install
+        working-directory: e2e
+        run: npm install --no-audit --no-fund
+
+      - name: Install Playwright Chromium
+        working-directory: e2e
+        run: npx playwright install --with-deps chromium
+
+      - name: Full E2E tests
+        working-directory: e2e
+        run: npm test
 
   # ============ 部署 Frontend ============
   deploy-frontend:

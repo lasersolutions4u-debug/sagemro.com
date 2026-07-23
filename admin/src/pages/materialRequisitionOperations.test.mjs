@@ -2,11 +2,18 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  createOperationKey,
   getRetryOperation,
   isRetryableActionError,
   retryOperationMatches,
   requisitionLabel,
 } from './materialRequisitionOperations.js';
+
+test('operation keys fall back when randomUUID is unavailable', () => {
+  const key = createOperationKey({ randomUUID: undefined }, 123, () => 0.5);
+
+  assert.match(key, /^operation-123-/);
+});
 
 test('quantity action retries reuse one key for the same canonical action payload', () => {
   let generated = 0;

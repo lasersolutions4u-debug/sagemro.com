@@ -52,6 +52,26 @@ execFileSync('npx', [
   'wrangler', 'd1', 'execute', 'sagemro-db',
   '--local',
   '--persist-to', stateDir,
+  '--command', `
+    INSERT INTO materials (
+      id, market, material_code, category, name, name_en, spec, brand, unit,
+      stock_quantity, reserved_quantity, safety_stock, status
+    ) VALUES (
+      'e2e-stock-material', 'com', 'E2E-STOCK-001', 'consumables',
+      'E2E Stock Nozzle', 'E2E Stock Nozzle', 'D1.5', 'SAGEMRO', 'pcs',
+      20, 0, 0, 'active'
+    );
+  `,
+  '--yes',
+], {
+  cwd: workerDir,
+  stdio: 'inherit',
+});
+
+execFileSync('npx', [
+  'wrangler', 'd1', 'execute', 'sagemro-db',
+  '--local',
+  '--persist-to', stateDir,
   '--command', "SELECT COUNT(*) AS migration_count FROM _migrations; SELECT COUNT(*) AS application_count FROM engineer_applications;",
   '--yes',
 ], {
