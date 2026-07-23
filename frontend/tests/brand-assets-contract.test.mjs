@@ -257,7 +257,7 @@ test('public beta funnel events are tracked without collecting message or contac
   const api = read('frontend/src/services/api.js');
   const trackFunction = api.slice(
     api.indexOf('export function trackFunnelEvent'),
-    api.indexOf('// 401 统一拦截')
+    api.indexOf('const AUTH_FAILURE_EXEMPT_PATHS')
   );
 
   assert.match(api, /export function trackFunnelEvent/);
