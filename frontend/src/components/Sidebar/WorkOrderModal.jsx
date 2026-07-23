@@ -8,6 +8,7 @@ import { WorkOrderType, UrgencyLevel } from '../../types';
 import { categoryConfig } from '../../data/workOrderConfig';
 import { LocateFixed, Paperclip, Loader2, Search, X } from 'lucide-react';
 import { isCnLocale } from '../../utils/locale';
+import { formatGeolocationError, getBrowserLocation } from '../../utils/browserGeolocation';
 
 // 设备类型选项
 const DEVICE_TYPE_OPTIONS = {
@@ -321,30 +322,23 @@ export function WorkOrderModal({ isOpen, onClose, onSubmit }) {
     }
   };
 
-  const captureSiteLocation = () => {
-    if (!navigator.geolocation) {
-      toastError(copy.locationFailed);
-      return;
-    }
+  const captureSiteLocation = async () => {
     setLocating(true);
-    navigator.geolocation.getCurrentPosition(
-      ({ coords }) => {
-        setForm((current) => ({
-          ...current,
-          service_latitude: coords.latitude,
-          service_longitude: coords.longitude,
-          service_accuracy_m: coords.accuracy,
-          service_coordinate_system: 'wgs84',
-          service_location_source: 'customer_browser',
-        }));
-        setLocating(false);
-      },
-      () => {
-        setLocating(false);
-        toastError(copy.locationFailed);
-      },
-      { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 },
-    );
+    try {
+      const { coords } = await getBrowserLocation();
+      setForm((current) => ({
+        ...current,
+        service_latitude: coords.latitude,
+        service_longitude: coords.longitude,
+        service_accuracy_m: coords.accuracy,
+        service_coordinate_system: 'wgs84',
+        service_location_source: 'customer_browser',
+      }));
+    } catch (error) {
+      toastError(formatGeolocationError(error, isCn));
+    } finally {
+      setLocating(false);
+    }
   };
 
   const searchSiteAddress = async () => {
