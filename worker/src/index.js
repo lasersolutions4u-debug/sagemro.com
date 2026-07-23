@@ -36,6 +36,13 @@ import {
   normalizeCoordinate,
 } from './lib/location.js';
 import { normalizeServiceMode, requiresArrivalVerification } from './lib/service-mode.js';
+import {
+  fieldDayBlocksFinalReport,
+  fieldDayLocalDate,
+  siteLocalDateTimeToUtc,
+  validateDailyReport,
+  validateFieldPlan,
+} from './lib/field-work.js';
 import { normalizeLocationQuery, searchLocationProvider } from './lib/location-search.js';
 import {
   identityDeleteStatement,
@@ -5377,7 +5384,9 @@ async function handleGetWorkOrder(request, env) {
       WHERE w.id = ?
     `).bind(id).first();
 
-    assertWorkOrderAccess(request._auth, workOrder);
+    const fieldWorkAccessMode = await resolveFieldWorkAccessMode(env, request._auth, workOrder, id);
+    const historicalEngineerView = fieldWorkAccessMode === 'historical_engineer';
+    const noFieldWorkView = fieldWorkAccessMode === 'none';
 
     const logs = await env.DB.prepare(
       'SELECT * FROM work_order_logs WHERE work_order_id = ? ORDER BY created_at ASC'
@@ -5431,27 +5440,117 @@ async function handleGetWorkOrder(request, env) {
       'SELECT * FROM work_order_attachments WHERE work_order_id = ? ORDER BY created_at DESC'
     ).bind(id).all();
 
+    const fieldDayRecords = await env.DB.prepare(`
+      SELECT * FROM work_order_field_days WHERE work_order_id = ? ORDER BY site_local_date DESC, created_at DESC
+    `).bind(id).all();
+    const fieldMediaRecords = await env.DB.prepare(`
+      SELECT * FROM work_order_field_day_media WHERE work_order_id = ? AND deleted_at IS NULL ORDER BY created_at ASC
+    `).bind(id).all();
+    const extensionRecords = await env.DB.prepare(`
+      SELECT * FROM work_order_extension_requests WHERE work_order_id = ? ORDER BY created_at DESC
+    `).bind(id).all();
+    const adminFieldWorkRecords = request._auth?.userType === 'admin'
+      ? await Promise.all([
+        env.DB.prepare(`
+          SELECT * FROM work_order_field_evidence_holds WHERE work_order_id = ? ORDER BY opened_at DESC, id DESC
+        `).bind(id).all(),
+        env.DB.prepare(`
+          SELECT * FROM work_order_field_day_revisions WHERE work_order_id = ? ORDER BY created_at DESC, id DESC
+        `).bind(id).all(),
+        env.DB.prepare(`
+          SELECT * FROM audit_logs
+          WHERE (target_type = 'work_order' AND target_id = ? AND action LIKE 'field_%')
+          OR (target_type = 'work_order_field_day' AND target_id IN (
+            SELECT id FROM work_order_field_days WHERE work_order_id = ?
+          )) OR (target_type = 'work_order_field_evidence_hold' AND target_id IN (
+            SELECT id FROM work_order_field_evidence_holds WHERE work_order_id = ?
+          )) OR (target_type = 'work_order_extension_request' AND target_id IN (
+            SELECT id FROM work_order_extension_requests WHERE work_order_id = ?
+          ))
+          ORDER BY created_at DESC, id DESC
+        `).bind(id, id, id, id).all(),
+      ])
+      : null;
+    const customerFieldView = fieldWorkAccessMode === 'customer';
+    const visibleFieldDayRecords = noFieldWorkView
+      ? []
+      : historicalEngineerView
+      ? (fieldDayRecords.results || []).filter((fieldDay) => fieldDay.engineer_id === request._auth.userId)
+      : (fieldDayRecords.results || []);
+    const visibleFieldDayIds = new Set(visibleFieldDayRecords.map((fieldDay) => fieldDay.id));
+    const mediaByDay = new Map();
+    for (const media of fieldMediaRecords.results || []) {
+      if (noFieldWorkView) continue;
+      if (customerFieldView && !media.customer_visible) continue;
+      if (historicalEngineerView && !visibleFieldDayIds.has(media.field_day_id)) continue;
+      const list = mediaByDay.get(media.field_day_id) || [];
+      list.push(publicFieldMedia(media, id));
+      mediaByDay.set(media.field_day_id, list);
+    }
+    const fieldDays = visibleFieldDayRecords.map((fieldDay) => ({
+      ...publicFieldDay(fieldDay, { customerView: customerFieldView }),
+      media: mediaByDay.get(fieldDay.id) || [],
+    }));
+    const fieldWorkSummary = fieldDays.reduce((summary, fieldDay) => ({
+      total_days: summary.total_days + 1,
+      total_labor_hours: summary.total_labor_hours + Number(fieldDay.labor_hours || 0),
+      overdue_count: summary.overdue_count + (fieldDay.status === 'report_overdue' ? 1 : 0),
+    }), { total_days: 0, total_labor_hours: 0, overdue_count: 0 });
+    if (historicalEngineerView) {
+      return jsonResponse({
+        id: workOrder.id,
+        order_no: workOrder.order_no,
+        status: workOrder.status,
+        service_mode: workOrder.service_mode,
+        field_days: fieldDays,
+        field_work_summary: fieldWorkSummary,
+      });
+    }
+    const visibleExtensionRecords = noFieldWorkView
+      ? []
+      : customerFieldView
+      ? (extensionRecords.results || []).filter((extension) => ['approved', 'rejected'].includes(extension.status))
+      : (extensionRecords.results || []);
+    const fieldExtensionRequests = visibleExtensionRecords.map((extension) => {
+      if (!customerFieldView) return extension;
+      return {
+        status: extension.status,
+        requested_additional_days: extension.requested_additional_days,
+        proposed_completion_date: extension.proposed_completion_date,
+        customer_explanation: extension.customer_explanation,
+        decision_reason: extension.decision_reason || null,
+        approved_plan: extension.approved_plan || null,
+        decided_at: extension.decided_at || null,
+      };
+    });
+    const pendingExtensionRequests = customerFieldView
+      ? []
+      : fieldExtensionRequests.filter((extension) => extension.status === 'pending');
+
     let arrivalChecks = [];
-    if (request._auth?.userType === 'admin' || request._auth?.userType === 'engineer') {
+    if (request._auth?.userType === 'admin' || ['assigned_engineer', 'historical_engineer'].includes(fieldWorkAccessMode)) {
       const arrivalCheckRecords = await env.DB.prepare(`
         SELECT * FROM work_order_arrival_checks
         WHERE work_order_id = ?
         ORDER BY created_at DESC
         LIMIT 20
       `).bind(id).all();
-      arrivalChecks = arrivalCheckRecords.results || [];
+      arrivalChecks = historicalEngineerView
+        ? (arrivalCheckRecords.results || []).filter((check) => check.engineer_id === request._auth.userId)
+        : (arrivalCheckRecords.results || []);
     }
 
     const materialItems = await listWorkOrderMaterialItems(env, id);
     const quoteMaterialItems = materialItems.filter((item) => item.purpose === 'quote');
     const isEngineerDetailView = request._auth?.userType === 'engineer';
-    const safeWorkOrder = {
+    let safeWorkOrder = {
       ...workOrder,
       description: isEngineerDetailView ? redactContactInfoForWorkOrder(workOrder.description) : workOrder.description,
       customer_phone: isEngineerDetailView && !canEngineerViewCustomerContact(workOrder.status) ? '' : workOrder.customer_phone,
     };
+    if (customerFieldView || noFieldWorkView) safeWorkOrder = withoutPrivateFieldLocation(safeWorkOrder);
 
-    return jsonResponse({
+    const detail = {
       ...safeWorkOrder,
       sla_status: getSlaStatus(workOrder.sla_deadline, workOrder.urgency),
       logs: logs.results,
@@ -5471,7 +5570,18 @@ async function handleGetWorkOrder(request, env) {
       material_items: materialItems,
       attachments: attachments.results,
       arrival_checks: arrivalChecks,
-    });
+      field_plan: fieldPlanSnapshot(workOrder),
+      field_days: fieldDays,
+      field_work_summary: fieldWorkSummary,
+      field_extension_requests: fieldExtensionRequests,
+      pending_extension_requests: pendingExtensionRequests,
+    };
+    if (adminFieldWorkRecords) {
+      detail.field_evidence_holds = adminFieldWorkRecords[0].results || [];
+      detail.field_day_revisions = adminFieldWorkRecords[1].results || [];
+      detail.field_work_audit_logs = adminFieldWorkRecords[2].results || [];
+    }
+    return jsonResponse(detail);
   } catch (error) {
     if (error instanceof GuardError) return errorResponse(error.message, error.status);
     return errorResponse(error.message, 500);
@@ -5591,6 +5701,1115 @@ async function handleSaveRepairRecord(request, env) {
 }
 
 // ============ 工单附件 ============
+
+const FIELD_EVIDENCE_MIME_TYPES = new Map([
+  ['image/jpeg', 'jpg'],
+  ['image/png', 'png'],
+  ['image/webp', 'webp'],
+]);
+const FIELD_EVIDENCE_MAX_BYTES = 10 * 1024 * 1024;
+const FIELD_WORK_SCHEDULER_BATCH_SIZE = 100;
+const FIELD_EVIDENCE_RETENTION_CLAIM_MS = 60 * 60 * 1000;
+const FIELD_WORK_SCHEDULER_CURSOR_PREFIX = 'field-work:scheduler-cursor:';
+
+function subtractUtcMonths(date, months) {
+  const result = new Date(date);
+  const originalDay = result.getUTCDate();
+  result.setUTCDate(1);
+  result.setUTCMonth(result.getUTCMonth() - months);
+  const lastDay = new Date(Date.UTC(result.getUTCFullYear(), result.getUTCMonth() + 1, 0)).getUTCDate();
+  result.setUTCDate(Math.min(originalDay, lastDay));
+  return result;
+}
+
+function sqliteUtcTimestamp(date) {
+  return date.toISOString().slice(0, 19).replace('T', ' ');
+}
+const EVIDENCE_HOLD_REASON_CATEGORIES = new Set(['complaint', 'warranty', 'safety_review', 'legal_hold', 'dispute']);
+
+function hasFieldEvidenceSignature(bytes, mimeType) {
+  if (mimeType === 'image/jpeg') return bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
+  if (mimeType === 'image/png') return bytes.length >= 8
+    && bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47
+    && bytes[4] === 0x0d && bytes[5] === 0x0a && bytes[6] === 0x1a && bytes[7] === 0x0a;
+  if (mimeType === 'image/webp') return bytes.length >= 12
+    && String.fromCharCode(...bytes.slice(0, 4)) === 'RIFF'
+    && String.fromCharCode(...bytes.slice(8, 12)) === 'WEBP';
+  return false;
+}
+
+function parseFieldDayLocation(rawLocation, workOrder) {
+  let input = rawLocation;
+  if (typeof rawLocation === 'string' && rawLocation.trim()) {
+    try { input = JSON.parse(rawLocation); } catch { return { location_status: 'unavailable' }; }
+  }
+  if (!input || typeof input !== 'object') return { location_status: 'unavailable' };
+
+  const latitude = normalizeCoordinate(input.latitude);
+  const longitude = normalizeCoordinate(input.longitude);
+  const accuracy = normalizeCoordinate(input.accuracy_m ?? input.accuracy);
+  const coordinateSystem = String(input.coordinate_system || 'wgs84').trim().toLowerCase();
+  const locationSource = String(input.location_source || 'browser').trim().slice(0, 40) || 'browser';
+  if (!isValidCoordinatePair(latitude, longitude)
+    || accuracy === null || accuracy <= 0 || accuracy > 500
+    || !SUPPORTED_COORDINATE_SYSTEMS.has(coordinateSystem)) {
+    return { location_status: 'unavailable' };
+  }
+
+  if (!isValidCoordinatePair(workOrder.service_latitude, workOrder.service_longitude)) {
+    return { location_status: 'unavailable', latitude, longitude, accuracy, coordinateSystem, locationSource };
+  }
+  const evaluation = evaluateArrivalCheck({
+    targetLatitude: workOrder.service_latitude,
+    targetLongitude: workOrder.service_longitude,
+    targetCoordinateSystem: workOrder.service_coordinate_system || 'wgs84',
+    currentLatitude: latitude,
+    currentLongitude: longitude,
+    currentAccuracyMeters: accuracy,
+    currentCoordinateSystem: coordinateSystem,
+  });
+  if (!evaluation.valid) return { location_status: 'unavailable', latitude, longitude, accuracy, coordinateSystem, locationSource };
+  return {
+    location_status: evaluation.withinGeofence ? 'verified' : 'outside_geofence',
+    latitude,
+    longitude,
+    accuracy,
+    coordinateSystem,
+    locationSource,
+    distance: evaluation.distanceMeters,
+    radius: evaluation.radiusMeters,
+    withinGeofence: evaluation.withinGeofence ? 1 : 0,
+  };
+}
+
+function fieldDayResponse(fieldDay, media) {
+  return {
+    field_day: publicFieldDay(fieldDay),
+    media: media ? publicFieldMedia(media, fieldDay.work_order_id) : null,
+    location_status: fieldDay.location_status,
+  };
+}
+
+function fieldWorkNow(env) {
+  return new Date(env.FIELD_WORK_NOW || Date.now());
+}
+
+function fieldWorkError(code, status = 400) {
+  return jsonResponse({ error: code, code }, status);
+}
+
+function publicFieldMedia(media, workOrderId) {
+  if (!media) return media;
+  const { object_key, ...safeMedia } = media;
+  return {
+    ...safeMedia,
+    url: `/api/workorders/${workOrderId}/field-media/${media.id}`,
+  };
+}
+
+function publicFieldDay(fieldDay, { customerView = false } = {}) {
+  if (!fieldDay) return fieldDay;
+  const safe = { ...fieldDay };
+  if (safe.location_source === 'admin_override') safe.capture_source = 'admin_override';
+  delete safe.check_in_idempotency_key;
+  delete safe.report_idempotency_key;
+  if (customerView) {
+    delete safe.internal_note;
+    delete safe.location_status;
+    delete safe.latitude;
+    delete safe.longitude;
+    delete safe.accuracy_m;
+    delete safe.coordinate_system;
+    delete safe.location_source;
+    delete safe.distance_m;
+    delete safe.radius_m;
+    delete safe.within_geofence;
+    delete safe.admin_override_reason;
+    delete safe.capture_source;
+  }
+  return safe;
+}
+
+function withoutPrivateFieldLocation(workOrder) {
+  const safe = { ...workOrder };
+  for (const field of [
+    'service_latitude', 'service_longitude', 'service_accuracy_m', 'service_coordinate_system',
+    'service_location_source', 'service_location_confirmed_at', 'arrival_distance_m', 'arrival_radius_m',
+    'arrival_accuracy_m', 'arrival_latitude', 'arrival_longitude', 'arrival_coordinate_system',
+    'arrival_location_source',
+  ]) delete safe[field];
+  return safe;
+}
+
+function fieldPlanSnapshot(workOrder) {
+  return {
+    site_timezone: workOrder?.site_timezone || null,
+    expected_service_days: workOrder?.expected_service_days == null ? null : Number(workOrder.expected_service_days),
+    expected_completion_date: workOrder?.expected_completion_date || null,
+    planned_daily_start_time: workOrder?.planned_daily_start_time || null,
+    planned_daily_end_time: workOrder?.planned_daily_end_time || null,
+  };
+}
+
+function isValidFieldDate(value) {
+  const text = String(value || '').trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) return false;
+  const date = new Date(`${text}T00:00:00Z`);
+  return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === text;
+}
+
+function validateExtensionRequest(input = {}, currentCompletionDate = null) {
+  const reason = String(input.reason || '').trim();
+  const customerExplanation = String(input.customer_explanation || '').trim();
+  const requestedAdditionalDays = Number(input.requested_additional_days);
+  const proposedCompletionDate = String(input.proposed_completion_date || '').trim();
+  if (!reason || !customerExplanation) return { error: 'extension_request_incomplete' };
+  if (!Number.isInteger(requestedAdditionalDays) || requestedAdditionalDays < 1 || requestedAdditionalDays > 365) {
+    return { error: 'requested_additional_days_invalid' };
+  }
+  if (!isValidFieldDate(proposedCompletionDate)) return { error: 'proposed_completion_date_invalid' };
+  if (isValidFieldDate(currentCompletionDate) && proposedCompletionDate <= currentCompletionDate) {
+    return { error: 'proposed_completion_date_not_extended' };
+  }
+  return {
+    value: {
+      reason,
+      customer_explanation: customerExplanation,
+      requested_additional_days: requestedAdditionalDays,
+      proposed_completion_date: proposedCompletionDate,
+      internal_note: String(input.internal_note || '').trim() || null,
+    },
+  };
+}
+
+function extensionRequestStatement(env, { id, workOrder, engineerId, fieldDayId = null, value }) {
+  return env.DB.prepare(`
+    INSERT INTO work_order_extension_requests (
+      id, work_order_id, field_day_id, engineer_id, reason, customer_explanation,
+      internal_note, requested_additional_days, proposed_completion_date, original_plan
+    ) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+    WHERE EXISTS (
+      SELECT 1 FROM work_orders
+      WHERE id = ? AND engineer_id = ? AND service_mode = 'onsite' AND status = 'in_service'
+    )
+  `).bind(
+    id, workOrder.id, fieldDayId, engineerId, value.reason, value.customer_explanation,
+    value.internal_note, value.requested_additional_days, value.proposed_completion_date,
+    JSON.stringify(fieldPlanSnapshot(workOrder)), workOrder.id, engineerId,
+  );
+}
+
+async function getFieldDayReportMedia(env, fieldDayId) {
+  const records = await env.DB.prepare(`
+    SELECT * FROM work_order_field_day_media
+    WHERE field_day_id = ? AND purpose IN ('progress', 'internal') AND deleted_at IS NULL
+    ORDER BY created_at ASC
+  `).bind(fieldDayId).all();
+  return records.results || [];
+}
+
+function reportResponse(fieldDay, media, status = 200) {
+  return jsonResponse({
+    field_day: publicFieldDay(fieldDay),
+    media: media.map((item) => publicFieldMedia(item, fieldDay.work_order_id)),
+  }, status);
+}
+
+async function notifyFieldWorkBestEffort(env, payload) {
+  try {
+    const notifier = env.FIELD_WORK_NOTIFIER || createNotification;
+    await notifier(env, payload);
+  } catch (error) {
+    console.warn('[field-work] notification failed:', error?.message || error);
+  }
+}
+
+function scheduledNotificationStatement(env, { id, userId, userType, type, title, body, data }, claim = null) {
+  if (claim) {
+    return env.DB.prepare(`
+      INSERT OR IGNORE INTO notifications (id, user_id, user_type, type, title, body, data)
+      SELECT ?, ?, ?, ?, ?, ?, ?
+      WHERE EXISTS (
+        SELECT 1 FROM work_order_field_days
+        WHERE id = ? AND ${claim.column} = ?
+      )
+    `).bind(
+      id, userId, userType, type, title, body, data ? JSON.stringify(data) : null,
+      claim.fieldDayId, claim.timestamp,
+    );
+  }
+  return env.DB.prepare(`
+    INSERT OR IGNORE INTO notifications (id, user_id, user_type, type, title, body, data)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `).bind(id, userId, userType, type, title, body, data ? JSON.stringify(data) : null);
+}
+
+async function pushScheduledNotification(env, notification) {
+  try {
+    const pusher = env.FIELD_WORK_PUSHER || sendPushToUser;
+    await pusher(notification.userId, notification.userType, env, {
+      title: notification.title,
+      message: notification.body,
+      data: { ...(notification.data || {}), notification_type: notification.type },
+    });
+  } catch (error) {
+    console.warn('[field-work] scheduled push failed:', error?.message || error);
+  }
+}
+
+function schedulerCopy(market) {
+  if (market === 'cn') {
+    return {
+      reminderTitle: '现场日报提醒',
+      reminderBody: (orderNo) => `工单 ${orderNo} 距预计签退时间还有 30 分钟，请及时完成当日现场日报。`,
+      overdueTitle: '现场日报已逾期',
+      overdueBody: (orderNo) => `工单 ${orderNo} 的现场工作日已结束，但日报尚未提交。`,
+    };
+  }
+  return {
+    reminderTitle: 'Field report reminder',
+    reminderBody: (orderNo) => `${orderNo} is 30 minutes from expected checkout. Please complete today's field report.`,
+    overdueTitle: 'Field report overdue',
+    overdueBody: (orderNo) => `${orderNo} has a field day without a submitted daily report.`,
+  };
+}
+
+async function claimCheckoutReminder(env, fieldDay, now, market) {
+  if (!fieldDay.expected_check_out_at || fieldDay.checkout_reminder_sent_at) return;
+  const expectedCheckout = siteLocalDateTimeToUtc(fieldDay.expected_check_out_at, fieldDay.site_timezone);
+  const reminderAt = expectedCheckout.getTime() - (30 * 60 * 1000);
+  if (now.getTime() < reminderAt || now.getTime() >= expectedCheckout.getTime()) return;
+
+  const copy = schedulerCopy(market);
+  const notification = {
+    id: `field-checkout-reminder:${fieldDay.id}`,
+    userId: fieldDay.engineer_id,
+    userType: 'engineer',
+    type: 'field_checkout_reminder',
+    title: copy.reminderTitle,
+    body: copy.reminderBody(fieldDay.order_no || fieldDay.work_order_id),
+    data: { work_order_id: fieldDay.work_order_id, field_day_id: fieldDay.id },
+  };
+  const timestamp = now.toISOString();
+  const results = await env.DB.batch([
+    env.DB.prepare(`
+      UPDATE work_order_field_days
+      SET checkout_reminder_sent_at = ?, updated_at = ?
+      WHERE id = ? AND status = 'checked_in' AND checkout_reminder_sent_at IS NULL
+    `).bind(timestamp, timestamp, fieldDay.id),
+    scheduledNotificationStatement(env, notification, {
+      column: 'checkout_reminder_sent_at', fieldDayId: fieldDay.id, timestamp,
+    }),
+  ]);
+  if (Number(results?.[0]?.meta?.changes || 0) > 0) await pushScheduledNotification(env, notification);
+}
+
+async function claimOverdueFieldDay(env, fieldDay, now, market) {
+  if (fieldDay.overdue_notification_sent_at) return;
+  const currentLocalDate = fieldDayLocalDate(now, fieldDay.site_timezone);
+  if (currentLocalDate <= fieldDay.site_local_date) return;
+
+  const copy = schedulerCopy(market);
+  const recipients = [{ userId: fieldDay.engineer_id, userType: 'engineer' }];
+  const staffRecords = await env.DB.prepare(`
+    SELECT id FROM admin_staff_accounts
+    WHERE is_active = 1 AND role IN ('admin', 'operations') AND market_scope IN ('all', ?)
+  `).bind(market).all();
+  for (const staff of staffRecords.results || []) recipients.push({ userId: staff.id, userType: 'admin' });
+
+  const notifications = recipients.map((recipient) => ({
+    id: `field-report-overdue:${fieldDay.id}:${recipient.userType}:${recipient.userId}`,
+    ...recipient,
+    type: 'field_report_overdue',
+    title: copy.overdueTitle,
+    body: copy.overdueBody(fieldDay.order_no || fieldDay.work_order_id),
+    data: { work_order_id: fieldDay.work_order_id, field_day_id: fieldDay.id },
+  }));
+  const timestamp = now.toISOString();
+  const results = await env.DB.batch([
+    env.DB.prepare(`
+      UPDATE work_order_field_days
+      SET status = 'report_overdue', overdue_notification_sent_at = ?, updated_at = ?
+      WHERE id = ? AND status = 'checked_in' AND overdue_notification_sent_at IS NULL
+    `).bind(timestamp, timestamp, fieldDay.id),
+    ...notifications.map((notification) => scheduledNotificationStatement(env, notification, {
+      column: 'overdue_notification_sent_at', fieldDayId: fieldDay.id, timestamp,
+    })),
+  ]);
+  if (Number(results?.[0]?.meta?.changes || 0) > 0) {
+    await Promise.all(notifications.map((notification) => pushScheduledNotification(env, notification)));
+  }
+}
+
+async function processFieldDayScheduler(env, now, market) {
+  const cursorKey = `${FIELD_WORK_SCHEDULER_CURSOR_PREFIX}${market}`;
+  let cursor = null;
+  try {
+    cursor = env.KV ? await env.KV.get(cursorKey) : null;
+  } catch (error) {
+    console.warn(`[field-work] scheduler cursor read failed for ${market}:`, error?.message || error);
+  }
+  const records = await env.DB.prepare(cursor ? `
+    SELECT fd.*, wo.order_no
+    FROM work_order_field_days fd
+    JOIN work_orders wo ON wo.id = fd.work_order_id
+    WHERE fd.status = 'checked_in'
+      AND fd.id > ?
+    ORDER BY fd.id ASC
+    LIMIT ?
+  ` : `
+    SELECT fd.*, wo.order_no
+    FROM work_order_field_days fd
+    JOIN work_orders wo ON wo.id = fd.work_order_id
+    WHERE fd.status = 'checked_in'
+    ORDER BY fd.id ASC
+    LIMIT ?
+  `).bind(...(cursor ? [cursor, FIELD_WORK_SCHEDULER_BATCH_SIZE] : [FIELD_WORK_SCHEDULER_BATCH_SIZE])).all();
+  let fieldDays = records.results || [];
+  if (cursor && fieldDays.length < FIELD_WORK_SCHEDULER_BATCH_SIZE) {
+    const wrapped = await env.DB.prepare(`
+      SELECT fd.*, wo.order_no
+      FROM work_order_field_days fd
+      JOIN work_orders wo ON wo.id = fd.work_order_id
+      WHERE fd.status = 'checked_in' AND fd.id <= ?
+      ORDER BY fd.id ASC
+      LIMIT ?
+    `).bind(cursor, FIELD_WORK_SCHEDULER_BATCH_SIZE - fieldDays.length).all();
+    fieldDays = [...fieldDays, ...(wrapped.results || [])];
+  }
+  for (const fieldDay of fieldDays) {
+    try {
+      const currentLocalDate = fieldDayLocalDate(now, fieldDay.site_timezone);
+      if (currentLocalDate > fieldDay.site_local_date) {
+        await claimOverdueFieldDay(env, fieldDay, now, market);
+      } else {
+        await claimCheckoutReminder(env, fieldDay, now, market);
+      }
+    } catch (error) {
+      console.error(`[field-work] scheduler failed for field day ${fieldDay.id}:`, error?.message || error);
+    }
+  }
+  if (env.KV) {
+    try {
+      if (fieldDays.length) await env.KV.put(cursorKey, fieldDays.at(-1).id);
+      else await env.KV.delete(cursorKey);
+    } catch (error) {
+      console.warn(`[field-work] scheduler cursor write failed for ${market}:`, error?.message || error);
+    }
+  }
+}
+
+async function processFieldEvidenceRetention(env, now) {
+  if (!env.FIELD_EVIDENCE) {
+    console.warn('[field-work] FIELD_EVIDENCE binding missing; retention cleanup skipped');
+    return;
+  }
+  const completedBefore = sqliteUtcTimestamp(subtractUtcMonths(now, 12));
+  const staleClaimBefore = new Date(now.getTime() - FIELD_EVIDENCE_RETENTION_CLAIM_MS).toISOString();
+  const records = await env.DB.prepare(`
+    SELECT m.*, wo.status AS work_order_status, wo.completed_at
+    FROM work_order_field_day_media m
+    JOIN work_orders wo ON wo.id = m.work_order_id
+    WHERE m.deleted_at IS NULL
+      AND wo.status = 'completed'
+      AND wo.completed_at <= ?
+      AND (m.retention_claim_token IS NULL OR m.retention_claimed_at <= ?)
+      AND NOT EXISTS (
+        SELECT 1 FROM work_order_field_evidence_holds h
+        WHERE h.work_order_id = m.work_order_id AND h.status = 'open'
+      )
+    ORDER BY wo.completed_at ASC, m.id ASC
+    LIMIT ?
+  `).bind(completedBefore, staleClaimBefore, FIELD_WORK_SCHEDULER_BATCH_SIZE).all();
+
+  for (const media of records.results || []) {
+    const claimToken = generateId();
+    let objectDeleted = false;
+    try {
+      const claim = await env.DB.prepare(`
+        UPDATE work_order_field_day_media
+        SET retention_claim_token = ?, retention_claimed_at = ?
+        WHERE id = ? AND deleted_at IS NULL
+          AND (
+            retention_claim_token IS NULL
+            OR (retention_claim_token = ? AND retention_claimed_at <= ?)
+          )
+          AND NOT EXISTS (
+            SELECT 1 FROM work_order_field_evidence_holds h
+            WHERE h.work_order_id = work_order_field_day_media.work_order_id AND h.status = 'open'
+          )
+      `).bind(claimToken, now.toISOString(), media.id, media.retention_claim_token, staleClaimBefore).run();
+      if (Number(claim?.meta?.changes || 0) !== 1) continue;
+    } catch (error) {
+      console.error(`[field-work] retention claim failed for media ${media.id}:`, error?.message || error);
+      continue;
+    }
+    try {
+      await env.FIELD_EVIDENCE.delete(media.object_key);
+      objectDeleted = true;
+    } catch (error) {
+      try {
+        objectDeleted = !(await env.FIELD_EVIDENCE.head(media.object_key));
+      } catch (headError) {
+        console.error(`[field-work] retention delete state unknown for media ${media.id}:`, headError?.message || headError);
+        continue;
+      }
+      if (!objectDeleted) {
+        await env.DB.prepare(`
+          UPDATE work_order_field_day_media
+          SET retention_claim_token = NULL, retention_claimed_at = NULL
+          WHERE id = ? AND deleted_at IS NULL AND retention_claim_token = ?
+        `).bind(media.id, claimToken).run().catch(() => {});
+        console.error(`[field-work] retention delete failed for media ${media.id}:`, error?.message || error);
+        continue;
+      }
+    }
+    try {
+      const marked = await env.DB.prepare(`
+        UPDATE work_order_field_day_media
+        SET deleted_at = ?, retention_claim_token = NULL, retention_claimed_at = NULL
+        WHERE id = ? AND deleted_at IS NULL AND retention_claim_token = ?
+      `).bind(now.toISOString(), media.id, claimToken).run();
+      if (Number(marked?.meta?.changes || 0) !== 1) {
+        throw new Error('Retention delete mark lost its claim');
+      }
+    } catch (error) {
+      console.error(`[field-work] retention mark failed for media ${media.id}:`, error?.message || error);
+    }
+  }
+}
+
+async function processFieldEvidenceCleanupQueue(env) {
+  if (!env.FIELD_EVIDENCE) return;
+  const records = await env.DB.prepare(`
+    SELECT object_key FROM field_evidence_cleanup_queue ORDER BY created_at ASC LIMIT ?
+  `).bind(FIELD_WORK_SCHEDULER_BATCH_SIZE).all();
+  for (const record of records.results || []) {
+    try {
+      await env.FIELD_EVIDENCE.delete(record.object_key);
+      await env.DB.prepare(`DELETE FROM field_evidence_cleanup_queue WHERE object_key = ?`).bind(record.object_key).run();
+    } catch (error) {
+      console.error(`[field-work] cleanup queue delete failed for ${record.object_key}:`, error?.message || error);
+    }
+  }
+}
+
+async function cleanupFieldEvidenceObjects(env, objectKeys, failureReason) {
+  for (const objectKey of objectKeys.filter(Boolean)) {
+    try {
+      await env.FIELD_EVIDENCE.delete(objectKey);
+    } catch (error) {
+      console.error(`[field-work] rollback delete failed for ${objectKey}:`, error?.message || error);
+      try {
+        await env.DB.prepare(`
+          INSERT OR IGNORE INTO field_evidence_cleanup_queue (object_key, failure_reason, updated_at)
+          VALUES (?, ?, datetime('now'))
+        `).bind(objectKey, failureReason).run();
+      } catch (queueError) {
+        console.error(`[field-work] cleanup queue write failed for ${objectKey}:`, queueError?.message || queueError);
+      }
+    }
+  }
+}
+
+async function processFieldWorkDatabase(env, now, market) {
+  try {
+    await processFieldDayScheduler(env, now, market);
+  } catch (error) {
+    console.error(`[field-work] ${market} field-day scan failed:`, error?.message || error);
+  }
+  try {
+    await processFieldEvidenceRetention(env, now);
+  } catch (error) {
+    console.error(`[field-work] ${market} retention scan failed:`, error?.message || error);
+  }
+  try {
+    await processFieldEvidenceCleanupQueue(env);
+  } catch (error) {
+    console.error(`[field-work] ${market} cleanup queue scan failed:`, error?.message || error);
+  }
+}
+
+async function processFieldWorkScheduled(env, scheduledTime) {
+  const now = new Date(Number.isFinite(Number(scheduledTime)) ? Number(scheduledTime) : Date.now());
+  const databases = [{ DB: env.DB, market: 'com' }];
+  if (env.DB_CN && env.DB_CN !== env.DB) databases.push({ DB: env.DB_CN, market: 'cn' });
+  for (const database of databases) {
+    if (!database.DB) continue;
+    try {
+      await processFieldWorkDatabase({ ...env, DB: database.DB }, now, database.market);
+    } catch (error) {
+      console.error(`[field-work] scheduled ${database.market} database failed:`, error?.message || error);
+    }
+  }
+}
+
+async function notifyFieldExtensionRequested(env, request, workOrder, extensionId, value) {
+  try {
+    const market = getRequestMarket(request);
+    const staffRecords = await env.DB.prepare(`
+      SELECT id FROM admin_staff_accounts
+      WHERE is_active = 1 AND role IN ('admin', 'operations') AND market_scope IN ('all', ?)
+    `).bind(market).all();
+    await Promise.all((staffRecords.results || []).map((staff) => notifyFieldWorkBestEffort(env, {
+      user_id: staff.id,
+      user_type: 'admin',
+      type: 'extension_requested',
+      title: market === 'cn' ? '现场延期申请待审批' : 'Field extension request pending',
+      body: `${workOrder.order_no}: ${value.customer_explanation}`,
+      data: { work_order_id: workOrder.id, extension_request_id: extensionId },
+    })));
+  } catch (error) {
+    console.warn('[field-work] extension notification lookup failed:', error?.message || error);
+  }
+}
+
+function isD1ConstraintError(error) {
+  return /(?:unique\s+constraint|constraint\s+failed|sqlite_constraint)/i.test(String(error?.message || error || ''));
+}
+
+async function recoverConcurrentFieldDayCheckIn(env, { idempotencyKey, workOrderId, engineerId, siteLocalDate }) {
+  let winner = null;
+  if (idempotencyKey) {
+    winner = await env.DB.prepare(`
+      SELECT * FROM work_order_field_days WHERE check_in_idempotency_key = ?
+    `).bind(idempotencyKey).first();
+    if (winner && (winner.work_order_id !== workOrderId || winner.engineer_id !== engineerId)) {
+      return { conflict: true };
+    }
+  }
+  if (!winner) {
+    winner = await env.DB.prepare(`
+      SELECT * FROM work_order_field_days
+      WHERE work_order_id = ? AND engineer_id = ? AND site_local_date = ?
+    `).bind(workOrderId, engineerId, siteLocalDate).first();
+  }
+  if (!winner || winner.work_order_id !== workOrderId || winner.engineer_id !== engineerId) return null;
+  const media = await env.DB.prepare(`
+    SELECT * FROM work_order_field_day_media WHERE field_day_id = ? AND purpose = 'check_in' AND deleted_at IS NULL
+  `).bind(winner.id).first();
+  return { winner, media };
+}
+
+async function getFieldWorkOrder(env, workOrderId) {
+  return env.DB.prepare(`
+    SELECT id, order_no, customer_id, engineer_id, status, service_mode, site_timezone,
+      expected_service_days, expected_completion_date, planned_daily_start_time, planned_daily_end_time,
+      service_latitude, service_longitude, service_accuracy_m, service_coordinate_system, arrival_verified_at
+    FROM work_orders WHERE id = ?
+  `).bind(workOrderId).first();
+}
+
+function hasCompleteFieldPlan(workOrder) {
+  return Boolean(
+    workOrder?.site_timezone
+    && Number.isInteger(Number(workOrder.expected_service_days)) && Number(workOrder.expected_service_days) > 0
+    && workOrder.expected_completion_date
+  );
+}
+
+async function handleFieldDayCheckIn(request, env) {
+  let objectKey = null;
+  try {
+    const auth = request._auth;
+    if (auth?.userType !== 'engineer') return errorResponse('仅工程师可以拍照签到', 403);
+    if (!env.FIELD_EVIDENCE) return errorResponse('现场证据服务未配置', 503);
+
+    const workOrderId = new URL(request.url).pathname.split('/')[3];
+    const workOrder = await getFieldWorkOrder(env, workOrderId);
+    if (!workOrder) return errorResponse('工单不存在', 404);
+    if (workOrder.engineer_id !== auth.userId) return errorResponse('您未被指派到此工单', 403);
+    if (workOrder.service_mode !== 'onsite' || workOrder.status !== 'in_service') {
+      return errorResponse('仅服务中的现场工单可以签到', 409);
+    }
+    if (!hasCompleteFieldPlan(workOrder)) return errorResponse('现场服务计划不完整', 409);
+
+    const siteLocalDate = fieldDayLocalDate(fieldWorkNow(env), workOrder.site_timezone);
+    const idempotencyKey = String(request.headers.get('Idempotency-Key') || '').trim().slice(0, 200) || null;
+    if (idempotencyKey) {
+      const existingByKey = await env.DB.prepare(`
+        SELECT * FROM work_order_field_days WHERE check_in_idempotency_key = ?
+      `).bind(idempotencyKey).first();
+      if (existingByKey) {
+        if (existingByKey.work_order_id !== workOrderId || existingByKey.engineer_id !== auth.userId) {
+          return errorResponse('Idempotency-Key 已用于其他签到', 409);
+        }
+        const media = await env.DB.prepare(`
+          SELECT * FROM work_order_field_day_media WHERE field_day_id = ? AND purpose = 'check_in' AND deleted_at IS NULL
+        `).bind(existingByKey.id).first();
+        return jsonResponse(fieldDayResponse(existingByKey, media));
+      }
+    }
+
+    const existingFieldDay = await env.DB.prepare(`
+      SELECT * FROM work_order_field_days
+      WHERE work_order_id = ? AND engineer_id = ? AND site_local_date = ?
+    `).bind(workOrderId, auth.userId, siteLocalDate).first();
+    if (existingFieldDay) {
+      const media = await env.DB.prepare(`
+        SELECT * FROM work_order_field_day_media WHERE field_day_id = ? AND purpose = 'check_in' AND deleted_at IS NULL
+      `).bind(existingFieldDay.id).first();
+      return jsonResponse(fieldDayResponse(existingFieldDay, media));
+    }
+
+    const formData = await request.formData();
+    const photo = formData.get('photo');
+    if (!photo || typeof photo === 'string' || !FIELD_EVIDENCE_MIME_TYPES.has(photo.type)) {
+      return errorResponse('请上传 JPEG、PNG 或 WebP 格式的签到照片', 400);
+    }
+    if (!photo.size) return errorResponse('签到照片不能为空', 400);
+    if (photo.size > FIELD_EVIDENCE_MAX_BYTES) return errorResponse('签到照片不能超过 10MB', 413);
+    const photoBytes = new Uint8Array(await photo.arrayBuffer());
+    if (!hasFieldEvidenceSignature(photoBytes, photo.type)) return errorResponse('签到照片文件签名无效', 400);
+
+    const expectedCheckoutTime = String(
+      formData.get('expected_checkout_time') || workOrder.planned_daily_end_time || ''
+    ).trim();
+    if (!/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(expectedCheckoutTime)) {
+      return errorResponse('预计签退时间无效', 400);
+    }
+    const expectedCheckoutAt = `${siteLocalDate}T${expectedCheckoutTime}:00`;
+    try {
+      siteLocalDateTimeToUtc(expectedCheckoutAt, workOrder.site_timezone);
+    } catch {
+      return errorResponse('预计签退时间在现场时区不存在', 400);
+    }
+
+    const location = parseFieldDayLocation(formData.get('location') || {
+      latitude: formData.get('latitude'),
+      longitude: formData.get('longitude'),
+      accuracy_m: formData.get('accuracy_m'),
+      coordinate_system: formData.get('coordinate_system'),
+      location_source: formData.get('location_source'),
+    }, workOrder);
+    const fieldDayId = generateId();
+    const mediaId = generateId();
+    const extension = FIELD_EVIDENCE_MIME_TYPES.get(photo.type);
+    objectKey = `field-evidence/${getRequestMarket(request)}/${workOrderId}/${fieldDayId}/check-in.${extension}`;
+    await env.FIELD_EVIDENCE.put(objectKey, photoBytes, { httpMetadata: { contentType: photo.type } });
+
+    const fieldDay = {
+      id: fieldDayId, work_order_id: workOrderId, engineer_id: auth.userId, site_local_date: siteLocalDate,
+      site_timezone: workOrder.site_timezone, status: 'checked_in', expected_check_out_at: expectedCheckoutAt,
+      location_status: location.location_status, latitude: location.latitude ?? null, longitude: location.longitude ?? null,
+      accuracy_m: location.accuracy ?? null, coordinate_system: location.coordinateSystem ?? null,
+      location_source: location.locationSource ?? null, distance_m: location.distance ?? null,
+      radius_m: location.radius ?? null, within_geofence: location.withinGeofence ?? null,
+      check_in_idempotency_key: idempotencyKey,
+    };
+    const media = {
+      id: mediaId, work_order_id: workOrderId, field_day_id: fieldDayId, purpose: 'check_in', object_key: objectKey,
+      mime_type: photo.type, file_size: photo.size, uploader_type: 'engineer', uploader_id: auth.userId,
+      customer_visible: 1, capture_source: 'check_in',
+    };
+    if (typeof env.DB.batch !== 'function') {
+      await cleanupFieldEvidenceObjects(env, [objectKey], 'check_in_persistence_failed');
+      objectKey = null;
+      return errorResponse('现场签到存储暂不可用', 503);
+    }
+    const persistenceStatements = [
+      env.DB.prepare(`
+        INSERT INTO work_order_field_days (
+          id, work_order_id, engineer_id, site_local_date, site_timezone, expected_check_out_at,
+          location_status, latitude, longitude, accuracy_m, coordinate_system, location_source,
+          distance_m, radius_m, within_geofence, check_in_idempotency_key
+        ) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+        WHERE EXISTS (
+          SELECT 1 FROM work_orders
+          WHERE id = ? AND engineer_id = ? AND service_mode = 'onsite' AND status = 'in_service'
+        )
+      `).bind(
+        fieldDay.id, fieldDay.work_order_id, fieldDay.engineer_id, fieldDay.site_local_date, fieldDay.site_timezone,
+        fieldDay.expected_check_out_at, fieldDay.location_status, fieldDay.latitude, fieldDay.longitude,
+        fieldDay.accuracy_m, fieldDay.coordinate_system, fieldDay.location_source, fieldDay.distance_m,
+        fieldDay.radius_m, fieldDay.within_geofence, fieldDay.check_in_idempotency_key,
+        workOrderId, auth.userId,
+      ),
+      env.DB.prepare(`SELECT CASE WHEN changes() = 1 THEN 1 ELSE json('field check-in concurrent update') END`),
+      env.DB.prepare(`
+        INSERT INTO work_order_field_day_media (
+          id, work_order_id, field_day_id, purpose, object_key, mime_type, file_size,
+          uploader_type, uploader_id, customer_visible, capture_source
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).bind(
+        media.id, media.work_order_id, media.field_day_id, media.purpose, media.object_key, media.mime_type,
+        media.file_size, media.uploader_type, media.uploader_id, media.customer_visible, media.capture_source,
+      ),
+    ];
+    persistenceStatements.push(env.DB.prepare(`
+      INSERT INTO work_order_arrival_checks (
+        id, work_order_id, engineer_id, latitude, longitude, accuracy_m, coordinate_system,
+        location_source, distance_m, radius_m, within_geofence, failure_reason
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).bind(
+      generateId(), workOrderId, auth.userId, fieldDay.latitude, fieldDay.longitude,
+      fieldDay.accuracy_m, fieldDay.coordinate_system, fieldDay.location_source || 'field_day_check_in',
+      fieldDay.distance_m, fieldDay.radius_m, fieldDay.within_geofence,
+      fieldDay.location_status === 'outside_geofence' ? 'outside_geofence' : fieldDay.location_status === 'unavailable' ? 'unavailable' : null,
+    ));
+    if (!workOrder.arrival_verified_at) {
+      persistenceStatements.push(env.DB.prepare(`
+          UPDATE work_orders SET arrival_verified_at = datetime('now') WHERE id = ? AND arrival_verified_at IS NULL
+      `).bind(workOrderId));
+    }
+    persistenceStatements.push(buildAuditLogStatement(env, request, {
+      targetType: 'work_order_field_day', targetId: fieldDayId, action: 'field_day_checked_in',
+      afterState: { work_order_id: workOrderId, site_local_date: siteLocalDate, location_status: fieldDay.location_status },
+    }));
+    try {
+      await env.DB.batch(persistenceStatements);
+    } catch (error) {
+      await cleanupFieldEvidenceObjects(env, [objectKey], 'check_in_persistence_failed');
+      objectKey = null;
+      if (/field check-in concurrent update|malformed json/i.test(String(error?.message || error))) {
+        return errorResponse('工单状态已变更，无法完成现场签到', 409);
+      }
+      if (isD1ConstraintError(error)) {
+        const recovered = await recoverConcurrentFieldDayCheckIn(env, {
+          idempotencyKey, workOrderId, engineerId: auth.userId, siteLocalDate,
+        });
+        if (recovered?.conflict) return errorResponse('Idempotency-Key 已用于其他签到', 409);
+        if (recovered) return jsonResponse(fieldDayResponse(recovered.winner, recovered.media));
+      }
+      throw error;
+    }
+
+    await createNotification(env, {
+      user_id: workOrder.customer_id, user_type: 'customer', type: 'field_day_checked_in',
+      title: 'Engineer checked in', body: `Engineer checked in for ${workOrder.order_no}.`,
+      data: { work_order_id: workOrderId, field_day_id: fieldDayId },
+    });
+    return jsonResponse(fieldDayResponse(fieldDay, media), 201);
+  } catch (error) {
+    if (error instanceof GuardError) return errorResponse(error.message, error.status);
+    return errorResponse(error.message, 500);
+  }
+}
+
+async function handleSubmitFieldDayReport(request, env) {
+  const uploadedKeys = [];
+  let persistenceCommitted = false;
+  try {
+    const auth = request._auth;
+    if (auth?.userType !== 'engineer') return errorResponse('仅工程师可以提交现场日报', 403);
+    if (!env.FIELD_EVIDENCE) return errorResponse('现场证据服务未配置', 503);
+    const [, , , workOrderId, , fieldDayId] = new URL(request.url).pathname.split('/');
+    const workOrder = await getFieldWorkOrder(env, workOrderId);
+    if (!workOrder) return errorResponse('工单不存在', 404);
+    if (workOrder.engineer_id !== auth.userId) return errorResponse('您未被指派到此工单', 403);
+    if (workOrder.service_mode !== 'onsite' || workOrder.status !== 'in_service') {
+      return errorResponse('仅服务中的现场工单可以提交日报', 409);
+    }
+    const fieldDay = await env.DB.prepare(`
+      SELECT * FROM work_order_field_days WHERE id = ? AND work_order_id = ?
+    `).bind(fieldDayId, workOrderId).first();
+    if (!fieldDay) return errorResponse('现场工作日不存在', 404);
+    if (fieldDay.engineer_id !== auth.userId) return errorResponse('您无权提交此现场日报', 403);
+
+    const idempotencyKey = String(request.headers.get('Idempotency-Key') || '').trim().slice(0, 200) || null;
+    if (idempotencyKey) {
+      const existing = await env.DB.prepare(`
+        SELECT * FROM work_order_field_days WHERE report_idempotency_key = ?
+      `).bind(idempotencyKey).first();
+      if (existing) {
+        if (existing.id !== fieldDayId || existing.work_order_id !== workOrderId || existing.engineer_id !== auth.userId) {
+          return errorResponse('Idempotency-Key 已用于其他日报', 409);
+        }
+        return reportResponse(existing, await getFieldDayReportMedia(env, existing.id));
+      }
+    }
+    if (['report_submitted', 'late_report_submitted'].includes(fieldDay.status)) {
+      return reportResponse(fieldDay, await getFieldDayReportMedia(env, fieldDay.id));
+    }
+    if (!['checked_in', 'report_overdue'].includes(fieldDay.status)) return errorResponse('当前现场工作日不能提交日报', 409);
+
+    const formData = await request.formData();
+    const progressPhotos = formData.getAll('progress_photos');
+    const internalPhotos = formData.getAll('internal_photos');
+    const reportValidation = validateDailyReport({
+      completed_work: formData.get('completed_work'),
+      issues_risks: formData.get('issues_risks'),
+      next_plan: formData.get('next_plan'),
+      customer_support_needed: formData.get('customer_support_needed'),
+      labor_hours: formData.get('labor_hours'),
+      internal_note: formData.get('internal_note'),
+      late_reason: formData.get('late_reason'),
+      progress_media_count: progressPhotos.length,
+    }, { overdue: fieldDay.status === 'report_overdue' });
+    if (reportValidation.error) return fieldWorkError(reportValidation.error);
+
+    const extensionFields = ['extension_reason', 'extension_customer_explanation', 'requested_additional_days', 'proposed_completion_date', 'extension_internal_note'];
+    const hasExtension = extensionFields.some((name) => String(formData.get(name) || '').trim());
+    let extensionValue = null;
+    if (hasExtension) {
+      const extensionValidation = validateExtensionRequest({
+        reason: formData.get('extension_reason'),
+        customer_explanation: formData.get('extension_customer_explanation'),
+        requested_additional_days: formData.get('requested_additional_days'),
+        proposed_completion_date: formData.get('proposed_completion_date'),
+        internal_note: formData.get('extension_internal_note'),
+      }, workOrder.expected_completion_date);
+      if (extensionValidation.error) return fieldWorkError(extensionValidation.error);
+      const pending = await env.DB.prepare(`
+        SELECT * FROM work_order_extension_requests WHERE work_order_id = ? AND status = 'pending'
+      `).bind(workOrderId).first();
+      if (pending) return errorResponse('该工单已有待审批延期申请', 409);
+      extensionValue = extensionValidation.value;
+    }
+
+    const allUploads = [
+      ...progressPhotos.map((file) => ({ file, purpose: 'progress', customerVisible: 1 })),
+      ...internalPhotos.map((file) => ({ file, purpose: 'internal', customerVisible: 0 })),
+    ];
+    const preparedUploads = [];
+    for (const upload of allUploads) {
+      const file = upload.file;
+      if (!file || typeof file === 'string' || !FIELD_EVIDENCE_MIME_TYPES.has(file.type)) {
+        return errorResponse('现场日报照片仅支持 JPEG、PNG 或 WebP', 400);
+      }
+      if (!file.size) return errorResponse('现场日报照片不能为空', 400);
+      if (file.size > FIELD_EVIDENCE_MAX_BYTES) return errorResponse('现场日报照片不能超过 10MB', 413);
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      if (!hasFieldEvidenceSignature(bytes, file.type)) return errorResponse('现场日报照片文件签名无效', 400);
+      preparedUploads.push({ ...upload, bytes });
+    }
+
+    const mediaRows = [];
+    for (const upload of preparedUploads) {
+      const file = upload.file;
+      const mediaId = generateId();
+      const extension = FIELD_EVIDENCE_MIME_TYPES.get(file.type);
+      const objectKey = `field-evidence/${getRequestMarket(request)}/${workOrderId}/${fieldDayId}/${upload.purpose}/${mediaId}.${extension}`;
+      await env.FIELD_EVIDENCE.put(objectKey, upload.bytes, { httpMetadata: { contentType: file.type } });
+      uploadedKeys.push(objectKey);
+      mediaRows.push({
+        id: mediaId, work_order_id: workOrderId, field_day_id: fieldDayId, purpose: upload.purpose,
+        object_key: objectKey, mime_type: file.type, file_size: file.size, uploader_type: 'engineer',
+        uploader_id: auth.userId, customer_visible: upload.customerVisible, capture_source: 'daily_report',
+      });
+    }
+
+    const nextStatus = fieldDay.status === 'report_overdue' ? 'late_report_submitted' : 'report_submitted';
+    const value = reportValidation.value;
+    const statements = [env.DB.prepare(`
+      UPDATE work_order_field_days SET
+        status = ?, labor_hours = ?, completed_work = ?, issues_risks = ?, next_plan = ?,
+        customer_support_needed = ?, internal_note = ?, late_reason = ?, report_idempotency_key = ?,
+        report_submitted_at = datetime('now'), updated_at = datetime('now')
+      WHERE id = ? AND work_order_id = ? AND status = ?
+    `).bind(
+      nextStatus, value.labor_hours, value.completed_work, value.issues_risks, value.next_plan,
+      value.customer_support_needed, value.internal_note, value.late_reason, idempotencyKey, fieldDayId, workOrderId, fieldDay.status,
+    ), env.DB.prepare(`
+      SELECT CASE WHEN changes() = 1 THEN 1 ELSE json('field report concurrent update') END
+    `)];
+    for (const media of mediaRows) {
+      statements.push(env.DB.prepare(`
+        INSERT INTO work_order_field_day_media (
+          id, work_order_id, field_day_id, purpose, object_key, mime_type, file_size,
+          uploader_type, uploader_id, customer_visible, capture_source
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).bind(
+        media.id, media.work_order_id, media.field_day_id, media.purpose, media.object_key, media.mime_type,
+        media.file_size, media.uploader_type, media.uploader_id, media.customer_visible, media.capture_source,
+      ));
+    }
+    let extensionId = null;
+    if (extensionValue) {
+      extensionId = generateId();
+      statements.push(extensionRequestStatement(env, {
+        id: extensionId, workOrder, engineerId: auth.userId, fieldDayId, value: extensionValue,
+      }));
+      statements.push(env.DB.prepare(`
+        SELECT CASE WHEN changes() = 1 THEN 1 ELSE json('field extension concurrent update') END
+      `));
+      statements.push(env.DB.prepare(`
+        INSERT INTO work_order_logs (id, work_order_id, action, actor_type, actor_id, content)
+        VALUES (?, ?, 'extension_requested', 'engineer', ?, ?)
+      `).bind(generateId(), workOrderId, auth.userId, extensionValue.customer_explanation));
+    }
+    statements.push(buildAuditLogStatement(env, request, {
+      targetType: 'work_order_field_day', targetId: fieldDayId, action: 'field_day_report_submitted',
+      beforeState: { status: fieldDay.status },
+      afterState: { status: nextStatus, labor_hours: value.labor_hours, media_count: mediaRows.length, extension_request_id: extensionId },
+    }));
+    try {
+      await env.DB.batch(statements);
+    } catch (error) {
+      await cleanupFieldEvidenceObjects(env, uploadedKeys, 'field_report_persistence_failed');
+      uploadedKeys.length = 0;
+      if (isD1ConstraintError(error) || /field report concurrent update|malformed json/i.test(String(error?.message || error))) {
+        if (idempotencyKey) {
+          const recovered = await env.DB.prepare(`SELECT * FROM work_order_field_days WHERE report_idempotency_key = ?`).bind(idempotencyKey).first();
+          if (recovered?.id === fieldDayId && recovered.work_order_id === workOrderId) {
+            return reportResponse(recovered, await getFieldDayReportMedia(env, recovered.id));
+          }
+        }
+        return errorResponse('该工单已有待审批延期申请或日报已提交', 409);
+      }
+      throw error;
+    }
+    persistenceCommitted = true;
+    uploadedKeys.length = 0;
+    const savedFieldDay = { ...fieldDay, ...value, status: nextStatus, report_idempotency_key: idempotencyKey, report_submitted_at: new Date().toISOString() };
+    await notifyFieldWorkBestEffort(env, {
+      user_id: workOrder.customer_id, user_type: 'customer', type: 'field_day_report_submitted',
+      title: 'Field work update', body: `A field work update was submitted for ${workOrder.order_no}.`,
+      data: { work_order_id: workOrderId, field_day_id: fieldDayId },
+    });
+    if (extensionValue) {
+      await notifyFieldExtensionRequested(env, request, workOrder, extensionId, extensionValue);
+    }
+    return reportResponse(savedFieldDay, mediaRows, 201);
+  } catch (error) {
+    if (!persistenceCommitted) {
+      await cleanupFieldEvidenceObjects(env, uploadedKeys, 'field_report_request_failed');
+    }
+    return errorResponse(error.message, 500);
+  }
+}
+
+async function handleCreateExtensionRequest(request, env) {
+  try {
+    const auth = request._auth;
+    if (auth?.userType !== 'engineer') return errorResponse('仅工程师可以申请延期', 403);
+    const workOrderId = new URL(request.url).pathname.split('/')[3];
+    const workOrder = await getFieldWorkOrder(env, workOrderId);
+    if (!workOrder) return errorResponse('工单不存在', 404);
+    if (workOrder.engineer_id !== auth.userId) return errorResponse('您未被指派到此工单', 403);
+    if (workOrder.service_mode !== 'onsite' || workOrder.status !== 'in_service') return errorResponse('当前工单不能申请延期', 409);
+    const validation = validateExtensionRequest(await request.json().catch(() => ({})), workOrder.expected_completion_date);
+    if (validation.error) return fieldWorkError(validation.error);
+    const pending = await env.DB.prepare(`
+      SELECT * FROM work_order_extension_requests WHERE work_order_id = ? AND status = 'pending'
+    `).bind(workOrderId).first();
+    if (pending) return errorResponse('该工单已有待审批延期申请', 409);
+    const extensionId = generateId();
+    const value = validation.value;
+    try {
+      await env.DB.batch([
+        extensionRequestStatement(env, { id: extensionId, workOrder, engineerId: auth.userId, value }),
+        env.DB.prepare(`SELECT CASE WHEN changes() = 1 THEN 1 ELSE json('field extension concurrent update') END`),
+        env.DB.prepare(`
+          INSERT INTO work_order_logs (id, work_order_id, action, actor_type, actor_id, content)
+          VALUES (?, ?, 'extension_requested', 'engineer', ?, ?)
+        `).bind(generateId(), workOrderId, auth.userId, value.customer_explanation),
+        buildAuditLogStatement(env, request, {
+          targetType: 'work_order_extension_request', targetId: extensionId, action: 'field_extension_requested',
+          afterState: { work_order_id: workOrderId, requested_additional_days: value.requested_additional_days, proposed_completion_date: value.proposed_completion_date },
+        }),
+      ]);
+    } catch (error) {
+      if (/field extension concurrent update|malformed json/i.test(String(error?.message || error))) {
+        return errorResponse('工单状态已变更，无法提交延期申请', 409);
+      }
+      if (isD1ConstraintError(error)) return errorResponse('该工单已有待审批延期申请', 409);
+      throw error;
+    }
+    await notifyFieldExtensionRequested(env, request, workOrder, extensionId, value);
+    return jsonResponse({ extension_request: { id: extensionId, work_order_id: workOrderId, engineer_id: auth.userId, status: 'pending', ...value } }, 201);
+  } catch (error) {
+    return errorResponse(error.message, 500);
+  }
+}
+
+async function hasHistoricalFieldDayAccess(env, auth, workOrderId) {
+  if (auth?.userType !== 'engineer') return false;
+  const fieldDay = await env.DB.prepare(`
+    SELECT id FROM work_order_field_days WHERE work_order_id = ? AND engineer_id = ? LIMIT 1
+  `).bind(workOrderId, auth.userId).first();
+  return Boolean(fieldDay);
+}
+
+async function resolveFieldWorkAccessMode(env, auth, workOrder, workOrderId) {
+  try {
+    assertWorkOrderAccess(auth, workOrder);
+  } catch (error) {
+    if (!(error instanceof GuardError) || !await hasHistoricalFieldDayAccess(env, auth, workOrderId)) throw error;
+    return 'historical_engineer';
+  }
+  if (auth?.userType === 'admin') return 'admin';
+  if (auth?.userType === 'customer') return 'customer';
+  if (auth?.userType !== 'engineer') return 'none';
+  if (workOrder.engineer_id === auth.userId) return 'assigned_engineer';
+  if (await hasHistoricalFieldDayAccess(env, auth, workOrderId)) return 'historical_engineer';
+  return 'none';
+}
+
+async function handleGetFieldDays(request, env) {
+  try {
+    const auth = request._auth;
+    const workOrderId = new URL(request.url).pathname.split('/')[3];
+    const workOrder = await getFieldWorkOrder(env, workOrderId);
+    if (!workOrder) return errorResponse('工单不存在', 404);
+    const fieldWorkAccessMode = await resolveFieldWorkAccessMode(env, auth, workOrder, workOrderId);
+    if (fieldWorkAccessMode === 'none') return errorResponse('您无权访问现场作业记录', 403);
+    const historicalEngineerView = fieldWorkAccessMode === 'historical_engineer';
+
+    const fieldDayRecords = await env.DB.prepare(`
+      SELECT * FROM work_order_field_days WHERE work_order_id = ? ORDER BY site_local_date DESC
+    `).bind(workOrderId).all();
+    const customerView = fieldWorkAccessMode === 'customer';
+    const visibleFieldDayRecords = historicalEngineerView
+      ? (fieldDayRecords.results || []).filter((fieldDay) => fieldDay.engineer_id === auth.userId)
+      : (fieldDayRecords.results || []);
+    const visibleFieldDayIds = new Set(visibleFieldDayRecords.map((fieldDay) => fieldDay.id));
+    const fieldDays = visibleFieldDayRecords.map((fieldDay) => publicFieldDay(fieldDay, { customerView }));
+    const mediaRecords = await env.DB.prepare(customerView ? `
+      SELECT * FROM work_order_field_day_media
+      WHERE work_order_id = ? AND customer_visible = 1 AND deleted_at IS NULL ORDER BY created_at ASC
+    ` : `
+      SELECT * FROM work_order_field_day_media
+      WHERE work_order_id = ? AND deleted_at IS NULL ORDER BY created_at ASC
+    `).bind(workOrderId).all();
+    return jsonResponse({
+      field_days: fieldDays,
+      media: (mediaRecords.results || [])
+        .filter((media) => !historicalEngineerView || visibleFieldDayIds.has(media.field_day_id))
+        .map((media) => publicFieldMedia(media, workOrderId)),
+    });
+  } catch (error) {
+    if (error instanceof GuardError) return errorResponse(error.message, error.status);
+    return errorResponse(error.message, 500);
+  }
+}
+
+async function handleGetFieldMedia(request, env) {
+  try {
+    const auth = request._auth;
+    const [, , , workOrderId, , mediaId] = new URL(request.url).pathname.split('/');
+    const workOrder = await getFieldWorkOrder(env, workOrderId);
+    if (!workOrder) return errorResponse('工单不存在', 404);
+    const fieldWorkAccessMode = await resolveFieldWorkAccessMode(env, auth, workOrder, workOrderId);
+    if (fieldWorkAccessMode === 'none') return errorResponse('您无权查看此现场证据', 403);
+    const historicalEngineerView = fieldWorkAccessMode === 'historical_engineer';
+    const media = await env.DB.prepare(`
+      SELECT * FROM work_order_field_day_media WHERE id = ? AND work_order_id = ? AND deleted_at IS NULL
+    `).bind(mediaId, workOrderId).first();
+    if (!media) return errorResponse('现场证据不存在', 404);
+    if (fieldWorkAccessMode === 'customer' && !media.customer_visible) return errorResponse('您无权查看此现场证据', 403);
+    if (historicalEngineerView) {
+      const fieldDay = await env.DB.prepare(`
+        SELECT * FROM work_order_field_days WHERE id = ? AND work_order_id = ?
+      `).bind(media.field_day_id, workOrderId).first();
+      if (!fieldDay || fieldDay.engineer_id !== auth.userId) return errorResponse('您无权查看此现场证据', 403);
+    }
+    if (!env.FIELD_EVIDENCE) return errorResponse('现场证据服务未配置', 503);
+    const object = await env.FIELD_EVIDENCE.get(media.object_key);
+    if (!object) return errorResponse('现场证据文件不存在', 404);
+    return new Response(object.body, {
+      headers: {
+        'Content-Type': media.mime_type,
+        'Content-Disposition': 'inline',
+        'X-Content-Type-Options': 'nosniff',
+        'Cache-Control': 'private, no-store',
+      },
+    });
+  } catch (error) {
+    if (error instanceof GuardError) return errorResponse(error.message, error.status);
+    return errorResponse(error.message, 500);
+  }
+}
 
 async function handleUploadAttachment(request, env) {
   try {
@@ -8298,8 +9517,11 @@ function isOperationsReadRoute(path, method) {
   if (method !== 'GET') return false;
   return path === '/api/admin/workorders'
     || path === '/api/admin/materials'
+    || path === '/api/notifications'
+    || path === '/api/notifications/unread-count'
     || /^\/api\/workorders\/[^/]+$/.test(path)
-    || /^\/api\/workorders\/[^/]+\/messages$/.test(path);
+    || /^\/api\/workorders\/[^/]+\/messages$/.test(path)
+    || /^\/api\/workorders\/[^/]+\/field-media\/[^/]+$/.test(path);
 }
 
 function publicStaffAccount(staff) {
@@ -10820,10 +12042,345 @@ async function handleAdminWorkOrders(request, env) {
       LIMIT ? OFFSET ?
     `).bind(...params, pageSize, offset).all();
 
+    const rows = list.results || [];
+    if (rows.length) {
+      const workOrderIds = rows.map((item) => item.id);
+      const placeholders = workOrderIds.map(() => '?').join(', ');
+      const [fieldDayResult, extensionResult] = await Promise.all([
+        env.DB.prepare(`
+          SELECT work_order_id, site_local_date, site_timezone, status
+          FROM work_order_field_days WHERE work_order_id IN (${placeholders})
+        `).bind(...workOrderIds).all(),
+        env.DB.prepare(`
+          SELECT work_order_id FROM work_order_extension_requests
+          WHERE work_order_id IN (${placeholders}) AND status = 'pending'
+        `).bind(...workOrderIds).all(),
+      ]);
+      const fieldDaysByOrder = new Map();
+      for (const fieldDay of fieldDayResult.results || []) {
+        const days = fieldDaysByOrder.get(fieldDay.work_order_id) || [];
+        days.push(fieldDay);
+        fieldDaysByOrder.set(fieldDay.work_order_id, days);
+      }
+      const pendingOrders = new Set((extensionResult.results || []).map((item) => item.work_order_id));
+      for (const row of rows) {
+        const days = fieldDaysByOrder.get(row.id) || [];
+        row.field_checked_in_today = days.some((day) => {
+          try { return day.site_local_date === fieldDayLocalDate(new Date(), day.site_timezone); } catch { return false; }
+        });
+        row.field_report_overdue_count = days.filter((day) => day.status === 'report_overdue').length;
+        row.field_extension_pending = pendingOrders.has(row.id);
+      }
+    }
     return jsonResponse({
       total: total?.count || 0,
-      list: list.results || [],
+      list: rows,
     });
+  } catch (error) {
+    return errorResponse(error.message, 500);
+  }
+}
+
+function canMutateFieldWorkAdmin(auth) {
+  return auth?.userType === 'admin' && (!auth.staffId || auth.staffRole === 'admin');
+}
+
+async function handleAdminFieldPlan(request, env) {
+  try {
+    if (!canMutateFieldWorkAdmin(request._auth)) return errorResponse('当前员工角色无权修改现场计划', 403);
+    const workOrderId = new URL(request.url).pathname.split('/')[4];
+    const workOrder = await getFieldWorkOrder(env, workOrderId);
+    if (!workOrder) return errorResponse('工单不存在', 404);
+    const validation = validateFieldPlan(await request.json().catch(() => ({})));
+    if (validation.error) return fieldWorkError(validation.error);
+    const beforePlan = fieldPlanSnapshot(workOrder);
+    const plan = validation.value;
+    await env.DB.batch([
+      env.DB.prepare(`
+        UPDATE work_orders SET site_timezone = ?, expected_service_days = ?, expected_completion_date = ?,
+          planned_daily_start_time = ?, planned_daily_end_time = ?, updated_at = datetime('now')
+        WHERE id = ?
+      `).bind(
+        plan.site_timezone, plan.expected_service_days, plan.expected_completion_date,
+        plan.planned_daily_start_time, plan.planned_daily_end_time, workOrderId,
+      ),
+      buildAuditLogStatement(env, request, {
+        targetType: 'work_order', targetId: workOrderId, action: 'field_plan_updated',
+        beforeState: beforePlan, afterState: plan,
+      }),
+    ]);
+    return jsonResponse({ field_plan: plan });
+  } catch (error) {
+    return errorResponse(error.message, 500);
+  }
+}
+
+async function handleAdminExtensionDecision(request, env) {
+  try {
+    if (!canMutateFieldWorkAdmin(request._auth)) return errorResponse('当前员工角色无权审批延期', 403);
+    const segments = new URL(request.url).pathname.split('/');
+    const workOrderId = segments[4];
+    const requestId = segments[6];
+    const body = await request.json().catch(() => ({}));
+    const decision = String(body.decision || '').trim();
+    const decisionReason = String(body.decision_reason || '').trim();
+    if (!['approved', 'rejected'].includes(decision)) return fieldWorkError('extension_decision_invalid');
+    if (!decisionReason) return fieldWorkError('decision_reason_required');
+    const workOrder = await getFieldWorkOrder(env, workOrderId);
+    if (!workOrder) return errorResponse('工单不存在', 404);
+    const extension = await env.DB.prepare(`
+      SELECT * FROM work_order_extension_requests WHERE id = ? AND work_order_id = ?
+    `).bind(requestId, workOrderId).first();
+    if (!extension) return errorResponse('延期申请不存在', 404);
+    if (extension.status === decision) {
+      return jsonResponse({ extension_request: extension });
+    }
+    if (extension.status !== 'pending') return errorResponse('延期申请已处理', 409);
+    const approvedPlan = decision === 'approved' ? {
+      ...fieldPlanSnapshot(workOrder),
+      expected_service_days: Number(workOrder.expected_service_days || 0) + Number(extension.requested_additional_days),
+      expected_completion_date: extension.proposed_completion_date,
+    } : null;
+    const statements = [env.DB.prepare(`
+      UPDATE work_order_extension_requests SET status = ?, decided_by = ?, decision_reason = ?, approved_plan = ?,
+        decided_at = datetime('now'), updated_at = datetime('now')
+      WHERE id = ? AND work_order_id = ? AND status = 'pending'
+    `).bind(
+      decision, request._auth.staffId || request._auth.userId, decisionReason,
+      approvedPlan ? JSON.stringify(approvedPlan) : null, requestId, workOrderId,
+    ), env.DB.prepare(`
+      SELECT CASE WHEN changes() = 1 THEN 1 ELSE json('field extension concurrent update') END
+    `)];
+    if (approvedPlan) {
+      statements.push(env.DB.prepare(`
+        UPDATE work_orders SET expected_service_days = ?, expected_completion_date = ?, updated_at = datetime('now') WHERE id = ?
+      `).bind(approvedPlan.expected_service_days, approvedPlan.expected_completion_date, workOrderId));
+    }
+    statements.push(buildAuditLogStatement(env, request, {
+      targetType: 'work_order_extension_request', targetId: requestId, action: `field_extension_${decision}`,
+      beforeState: { status: extension.status, plan: fieldPlanSnapshot(workOrder) },
+      afterState: { status: decision, decision_reason: decisionReason, approved_plan: approvedPlan },
+    }));
+    try {
+      await env.DB.batch(statements);
+    } catch (error) {
+      if (!/field extension concurrent update|malformed json/i.test(String(error?.message || error))) throw error;
+      const storedExtension = await env.DB.prepare(`
+        SELECT * FROM work_order_extension_requests WHERE id = ? AND work_order_id = ?
+      `).bind(requestId, workOrderId).first();
+      if (storedExtension?.status === decision) {
+        return jsonResponse({ extension_request: storedExtension });
+      }
+      if (storedExtension && storedExtension.status !== 'pending') {
+        return errorResponse('延期申请已处理', 409);
+      }
+      throw error;
+    }
+    await notifyFieldWorkBestEffort(env, {
+      user_id: extension.engineer_id, user_type: 'engineer', type: `field_extension_${decision}`,
+      title: decision === 'approved' ? 'Extension approved' : 'Extension rejected', body: decisionReason,
+      data: { work_order_id: workOrderId, extension_request_id: requestId },
+    });
+    if (approvedPlan) {
+      await notifyFieldWorkBestEffort(env, {
+        user_id: workOrder.customer_id, user_type: 'customer', type: 'field_extension_approved',
+        title: 'Service plan updated', body: `The expected completion date is now ${approvedPlan.expected_completion_date}.`,
+        data: { work_order_id: workOrderId, extension_request_id: requestId },
+      });
+    }
+    return jsonResponse({ extension_request: { ...extension, status: decision, decision_reason: decisionReason, approved_plan: approvedPlan } });
+  } catch (error) {
+    return errorResponse(error.message, 500);
+  }
+}
+
+async function handleAdminFieldDayOverride(request, env) {
+  try {
+    if (!canMutateFieldWorkAdmin(request._auth)) return errorResponse('当前员工角色无权执行现场例外操作', 403);
+    const workOrderId = new URL(request.url).pathname.split('/')[4];
+    const workOrder = await getFieldWorkOrder(env, workOrderId);
+    if (!workOrder) return errorResponse('工单不存在', 404);
+    const body = await request.json().catch(() => ({}));
+    const action = String(body.action || '').trim();
+    const reason = String(body.reason || '').trim();
+    if (!reason) return fieldWorkError('override_reason_required');
+    if (action === 'create_day') {
+      const engineerId = String(body.engineer_id || workOrder.engineer_id || '').trim();
+      const siteLocalDate = String(body.site_local_date || '').trim();
+      const siteTimezone = String(body.site_timezone || workOrder.site_timezone || '').trim();
+      const checkInAt = String(body.check_in_at || '').trim();
+      const timezoneValidation = validateFieldPlan({
+        site_timezone: siteTimezone, expected_service_days: 1,
+        expected_completion_date: siteLocalDate, planned_daily_start_time: '', planned_daily_end_time: '',
+      });
+      if (!engineerId || !isValidFieldDate(siteLocalDate) || timezoneValidation.error || !Number.isFinite(new Date(checkInAt).getTime())) {
+        return fieldWorkError('field_day_override_invalid');
+      }
+      const fieldDayId = generateId();
+      await env.DB.batch([
+        env.DB.prepare(`
+          INSERT INTO work_order_field_days (
+            id, work_order_id, engineer_id, site_local_date, site_timezone, status, check_in_at,
+            location_status, location_source, internal_note
+          ) VALUES (?, ?, ?, ?, ?, 'admin_override_open', ?, 'admin_override', 'admin_override', ?)
+        `).bind(fieldDayId, workOrderId, engineerId, siteLocalDate, siteTimezone, checkInAt, reason),
+        env.DB.prepare(`
+          INSERT INTO work_order_logs (id, work_order_id, action, actor_type, actor_id, content)
+          VALUES (?, ?, 'field_day_admin_override_created', 'admin', ?, ?)
+        `).bind(generateId(), workOrderId, request._auth.staffId || request._auth.userId, reason),
+        buildAuditLogStatement(env, request, {
+          targetType: 'work_order_field_day', targetId: fieldDayId, action: 'field_day_admin_override_created',
+          afterState: { work_order_id: workOrderId, engineer_id: engineerId, site_local_date: siteLocalDate, capture_source: 'admin_override', reason },
+        }),
+      ]);
+      return jsonResponse({ field_day: publicFieldDay({
+        id: fieldDayId, work_order_id: workOrderId, engineer_id: engineerId, site_local_date: siteLocalDate,
+        site_timezone: siteTimezone, status: 'admin_override_open', check_in_at: checkInAt, location_status: 'admin_override',
+        location_source: 'admin_override', capture_source: 'admin_override', internal_note: reason,
+      }) }, 201);
+    }
+    if (action === 'close_day') {
+      const fieldDayId = String(body.field_day_id || '').trim();
+      const fieldDay = await env.DB.prepare(`SELECT * FROM work_order_field_days WHERE id = ? AND work_order_id = ?`).bind(fieldDayId, workOrderId).first();
+      if (!fieldDay) return errorResponse('现场工作日不存在', 404);
+      await env.DB.batch([
+        env.DB.prepare(`
+          UPDATE work_order_field_days SET status = 'admin_closed', internal_note = ?, updated_at = datetime('now')
+          WHERE id = ? AND work_order_id = ?
+        `).bind(reason, fieldDayId, workOrderId),
+        env.DB.prepare(`
+          INSERT INTO work_order_logs (id, work_order_id, action, actor_type, actor_id, content)
+          VALUES (?, ?, 'field_day_admin_override_closed', 'admin', ?, ?)
+        `).bind(generateId(), workOrderId, request._auth.staffId || request._auth.userId, reason),
+        buildAuditLogStatement(env, request, {
+          targetType: 'work_order_field_day', targetId: fieldDayId, action: 'field_day_admin_override_closed',
+          beforeState: { status: fieldDay.status }, afterState: { status: 'admin_closed', reason },
+        }),
+      ]);
+      return jsonResponse({ field_day: publicFieldDay({ ...fieldDay, status: 'admin_closed', internal_note: reason }) });
+    }
+    return fieldWorkError('field_day_override_action_invalid');
+  } catch (error) {
+    if (isD1ConstraintError(error)) return errorResponse('该日期已有现场工作日', 409);
+    return errorResponse(error.message, 500);
+  }
+}
+
+async function handleAdminCorrectFieldDayReport(request, env) {
+  try {
+    if (!canMutateFieldWorkAdmin(request._auth)) return errorResponse('当前员工角色无权修正现场日报', 403);
+    const segments = new URL(request.url).pathname.split('/');
+    const workOrderId = segments[4];
+    const fieldDayId = segments[6];
+    const fieldDay = await env.DB.prepare(`SELECT * FROM work_order_field_days WHERE id = ? AND work_order_id = ?`).bind(fieldDayId, workOrderId).first();
+    if (!fieldDay) return errorResponse('现场工作日不存在', 404);
+    if (!['report_submitted', 'late_report_submitted'].includes(fieldDay.status)) return errorResponse('现场日报尚未提交', 409);
+    const body = await request.json().catch(() => ({}));
+    const reason = String(body.reason || '').trim();
+    if (!reason) return fieldWorkError('correction_reason_required');
+    const validation = validateDailyReport({ ...body, progress_media_count: 1 }, { overdue: fieldDay.status === 'late_report_submitted' });
+    if (validation.error) return fieldWorkError(validation.error);
+    const previousReport = {
+      status: fieldDay.status, labor_hours: fieldDay.labor_hours, completed_work: fieldDay.completed_work,
+      issues_risks: fieldDay.issues_risks, next_plan: fieldDay.next_plan,
+      customer_support_needed: fieldDay.customer_support_needed, internal_note: fieldDay.internal_note,
+      late_reason: fieldDay.late_reason, report_submitted_at: fieldDay.report_submitted_at,
+    };
+    const value = validation.value;
+    await env.DB.batch([
+      env.DB.prepare(`
+        INSERT INTO work_order_field_day_revisions (
+          id, work_order_id, field_day_id, previous_report, changed_by_type, changed_by_id, reason
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+      `).bind(
+        generateId(), workOrderId, fieldDayId, JSON.stringify(previousReport),
+        request._auth.staffRole || 'admin', request._auth.staffId || request._auth.userId, reason,
+      ),
+      env.DB.prepare(`
+        UPDATE work_order_field_days SET labor_hours = ?, completed_work = ?, issues_risks = ?, next_plan = ?,
+          customer_support_needed = ?, internal_note = ?, late_reason = ?, updated_at = datetime('now')
+        WHERE id = ? AND work_order_id = ?
+      `).bind(
+        value.labor_hours, value.completed_work, value.issues_risks, value.next_plan,
+        value.customer_support_needed, value.internal_note, value.late_reason, fieldDayId, workOrderId,
+      ),
+      buildAuditLogStatement(env, request, {
+        targetType: 'work_order_field_day', targetId: fieldDayId, action: 'field_day_report_corrected',
+        beforeState: previousReport, afterState: { ...value, reason },
+      }),
+    ]);
+    return jsonResponse({ field_day: publicFieldDay({ ...fieldDay, ...value }) });
+  } catch (error) {
+    return errorResponse(error.message, 500);
+  }
+}
+
+async function handleAdminOpenEvidenceHold(request, env) {
+  try {
+    if (!canMutateFieldWorkAdmin(request._auth)) return errorResponse('当前员工角色无权管理证据保全', 403);
+    const workOrderId = new URL(request.url).pathname.split('/')[4];
+    if (!await getFieldWorkOrder(env, workOrderId)) return errorResponse('工单不存在', 404);
+    const body = await request.json().catch(() => ({}));
+    const reasonCategory = String(body.reason_category || '').trim();
+    const reason = String(body.reason || '').trim();
+    if (!reasonCategory || !reason) return fieldWorkError('evidence_hold_reason_required');
+    if (!EVIDENCE_HOLD_REASON_CATEGORIES.has(reasonCategory)) return fieldWorkError('evidence_hold_reason_category_invalid');
+    const holdId = generateId();
+    const openedBy = request._auth.staffId || request._auth.userId;
+    try {
+      await env.DB.batch([
+        env.DB.prepare(`
+          INSERT INTO work_order_field_evidence_holds (id, work_order_id, reason_category, reason, opened_by)
+          SELECT ?, ?, ?, ?, ?
+          WHERE NOT EXISTS (
+            SELECT 1 FROM work_order_field_day_media
+            WHERE work_order_id = ? AND deleted_at IS NULL AND retention_claim_token IS NOT NULL
+          )
+        `).bind(holdId, workOrderId, reasonCategory, reason, openedBy, workOrderId),
+        env.DB.prepare(`SELECT CASE WHEN changes() = 1 THEN 1 ELSE json('field evidence retention active') END`),
+        buildAuditLogStatement(env, request, {
+          targetType: 'work_order_field_evidence_hold', targetId: holdId, action: 'field_evidence_hold_opened',
+          afterState: { work_order_id: workOrderId, reason_category: reasonCategory, reason },
+        }),
+      ]);
+    } catch (error) {
+      if (/field evidence retention active|malformed json/i.test(String(error?.message || error))) {
+        return errorResponse('现场证据正在执行保留期清理，请稍后重试', 409);
+      }
+      throw error;
+    }
+    return jsonResponse({ evidence_hold: { id: holdId, work_order_id: workOrderId, reason_category: reasonCategory, reason, status: 'open', opened_by: openedBy } }, 201);
+  } catch (error) {
+    return errorResponse(error.message, 500);
+  }
+}
+
+async function handleAdminResolveEvidenceHold(request, env) {
+  try {
+    if (!canMutateFieldWorkAdmin(request._auth)) return errorResponse('当前员工角色无权管理证据保全', 403);
+    const segments = new URL(request.url).pathname.split('/');
+    const workOrderId = segments[4];
+    const holdId = segments[6];
+    const hold = await env.DB.prepare(`
+      SELECT * FROM work_order_field_evidence_holds WHERE id = ? AND work_order_id = ?
+    `).bind(holdId, workOrderId).first();
+    if (!hold) return errorResponse('证据保全记录不存在', 404);
+    if (hold.status !== 'open') return errorResponse('证据保全记录已处理', 409);
+    const body = await request.json().catch(() => ({}));
+    const resolutionReason = String(body.resolution_reason || '').trim();
+    if (!resolutionReason) return fieldWorkError('resolution_reason_required');
+    const resolvedBy = request._auth.staffId || request._auth.userId;
+    await env.DB.batch([
+      env.DB.prepare(`
+        UPDATE work_order_field_evidence_holds SET status = 'resolved', resolved_by = ?, resolution_reason = ?, resolved_at = datetime('now')
+        WHERE id = ? AND work_order_id = ? AND status = 'open'
+      `).bind(resolvedBy, resolutionReason, holdId, workOrderId),
+      buildAuditLogStatement(env, request, {
+        targetType: 'work_order_field_evidence_hold', targetId: holdId, action: 'field_evidence_hold_resolved',
+        beforeState: { status: hold.status }, afterState: { status: 'resolved', resolution_reason: resolutionReason },
+      }),
+    ]);
+    return jsonResponse({ evidence_hold: { ...hold, status: 'resolved', resolved_by: resolvedBy, resolution_reason: resolutionReason } });
   } catch (error) {
     return errorResponse(error.message, 500);
   }
@@ -12238,10 +13795,11 @@ async function handleAdminArrivalOverride(request, env) {
 
 async function handleResolveWorkOrder(request, env) {
   try {
+    const market = getRequestMarket(request);
     // 认证：engineer_id 从 token 取
     const auth = request._auth;
     if (!auth || auth.userType !== 'engineer') {
-      return errorResponse('仅工程师可标记完成', 403);
+      return errorResponse(market === 'cn' ? '仅工程师可标记完成' : 'Only engineers can complete service', 403);
     }
     const engineer_id = auth.userId;
 
@@ -12249,12 +13807,53 @@ async function handleResolveWorkOrder(request, env) {
     const wo = await env.DB.prepare(
       'SELECT status, engineer_id, customer_id, arrival_verification_required, arrival_verified_at FROM work_orders WHERE id = ?'
     ).bind(workOrderId).first();
-    if (!wo) return errorResponse('工单不存在', 404);
+    if (!wo) return errorResponse(market === 'cn' ? '工单不存在' : 'Work order not found', 404);
     if (wo.engineer_id !== engineer_id) {
-      return errorResponse('您无权操作该工单', 403);
+      return errorResponse(market === 'cn' ? '您无权操作该工单' : 'You do not have permission to update this work order', 403);
     }
     if (wo.arrival_verification_required && !wo.arrival_verified_at) {
-      return errorResponse('请先完成到场定位核验，再提交服务完成', 400);
+      return errorResponse(market === 'cn' ? '请先完成到场定位核验，再提交服务完成' : 'Complete the onsite arrival check before completing service', 400);
+    }
+
+    const fieldPlan = await env.DB.prepare(`
+      SELECT service_mode, site_timezone, expected_service_days, expected_completion_date
+      FROM work_orders WHERE id = ?
+    `).bind(workOrderId).first();
+    if (fieldPlan?.service_mode === 'onsite' && hasCompleteFieldPlan(fieldPlan)) {
+      const fieldDayRecords = await env.DB.prepare(`
+        SELECT * FROM work_order_field_days
+        WHERE work_order_id = ?
+        ORDER BY site_local_date DESC, created_at DESC
+      `).bind(workOrderId).all();
+      const fieldDays = fieldDayRecords.results || [];
+      if (!fieldDays.length) {
+        return errorResponse(
+          market === 'cn' ? '请至少完成一个现场工作日并提交日报' : 'Complete at least one field day before completing service',
+          409,
+        );
+      }
+      if (fieldDays.some((fieldDay) => fieldDayBlocksFinalReport(fieldDay.status))) {
+        return errorResponse(
+          market === 'cn' ? '请先提交所有未完成或逾期的现场日报' : 'Submit every open or overdue daily report before completing service',
+          409,
+        );
+      }
+      if (!['report_submitted', 'late_report_submitted'].includes(fieldDays[0].status)) {
+        return errorResponse(
+          market === 'cn' ? '最终现场工作日必须先提交日报' : 'Submit the final field day report before completing service',
+          409,
+        );
+      }
+      const pendingExtension = await env.DB.prepare(`
+        SELECT id FROM work_order_extension_requests
+        WHERE work_order_id = ? AND status = 'pending'
+      `).bind(workOrderId).first();
+      if (pendingExtension) {
+        return errorResponse(
+          market === 'cn' ? '请先完成待审批的延期申请' : 'Resolve the pending field extension before completing service',
+          409,
+        );
+      }
     }
 
     const repairRecord = await env.DB.prepare(
@@ -12277,14 +13876,45 @@ async function handleResolveWorkOrder(request, env) {
       hasParts
     );
     if (!hasServiceReport) {
-      return errorResponse('请先填写服务报告，再标记服务完成', 400);
+      return errorResponse(market === 'cn' ? '请先填写服务报告，再标记服务完成' : 'Complete the service report before completing service', 400);
     }
 
     // 仅允许 in_service 或 pricing 状态时标记完成
     if (['in_service', 'pricing'].includes(wo.status)) {
-      await env.DB.prepare(
-        "UPDATE work_orders SET status = 'resolved', resolved_at = datetime('now') WHERE id = ?"
-      ).bind(workOrderId).run();
+      const resolved = await env.DB.prepare(`
+        UPDATE work_orders
+        SET status = 'resolved', resolved_at = datetime('now')
+        WHERE id = ? AND engineer_id = ? AND status IN ('in_service', 'pricing')
+          AND (
+            service_mode <> 'onsite'
+            OR site_timezone IS NULL
+            OR expected_service_days IS NULL
+            OR expected_service_days < 1
+            OR expected_completion_date IS NULL
+            OR (
+              EXISTS (SELECT 1 FROM work_order_field_days WHERE work_order_id = work_orders.id)
+              AND NOT EXISTS (
+                SELECT 1 FROM work_order_field_days
+                WHERE work_order_id = work_orders.id AND status IN ('checked_in', 'report_overdue', 'admin_override_open')
+              )
+              AND (
+                SELECT status FROM work_order_field_days
+                WHERE work_order_id = work_orders.id
+                ORDER BY site_local_date DESC, created_at DESC LIMIT 1
+              ) IN ('report_submitted', 'late_report_submitted')
+              AND NOT EXISTS (
+                SELECT 1 FROM work_order_extension_requests
+                WHERE work_order_id = work_orders.id AND status = 'pending'
+              )
+            )
+          )
+      `).bind(workOrderId, engineer_id).run();
+      if (Number(resolved?.meta?.changes || 0) !== 1) {
+        return errorResponse(
+          market === 'cn' ? '工单状态或现场记录已变更，请刷新后重试' : 'The work order or field records changed. Refresh and try again',
+          409,
+        );
+      }
 
       await ensureBalancePayment(env, workOrderId, wo.customer_id);
 
@@ -14119,6 +15749,24 @@ async function routeRequest(request, env, ctx) {
       if (path === '/api/admin/workorders' && request.method === 'GET') {
         return handleAdminWorkOrders(request, env);
       }
+      if (path.match(/^\/api\/admin\/workorders\/[^/]+\/field-plan$/) && request.method === 'PATCH') {
+        return handleAdminFieldPlan(request, env);
+      }
+      if (path.match(/^\/api\/admin\/workorders\/[^/]+\/extension-requests\/[^/]+\/decision$/) && request.method === 'POST') {
+        return handleAdminExtensionDecision(request, env);
+      }
+      if (path.match(/^\/api\/admin\/workorders\/[^/]+\/field-days\/override$/) && request.method === 'POST') {
+        return handleAdminFieldDayOverride(request, env);
+      }
+      if (path.match(/^\/api\/admin\/workorders\/[^/]+\/field-days\/[^/]+\/report$/) && request.method === 'PATCH') {
+        return handleAdminCorrectFieldDayReport(request, env);
+      }
+      if (path.match(/^\/api\/admin\/workorders\/[^/]+\/evidence-holds$/) && request.method === 'POST') {
+        return handleAdminOpenEvidenceHold(request, env);
+      }
+      if (path.match(/^\/api\/admin\/workorders\/[^/]+\/evidence-holds\/[^/]+\/resolve$/) && request.method === 'POST') {
+        return handleAdminResolveEvidenceHold(request, env);
+      }
       if (path.match(/^\/api\/admin\/workorders\/[^/]+\/onsite-conversion\/confirm$/) && request.method === 'POST') {
         return handleConfirmOnsiteConversion(request, env, { admin: true });
       }
@@ -14295,6 +15943,21 @@ async function routeRequest(request, env, ctx) {
       return handleSubmitRating(request, env);
     }
     // 工单附件（必须在 catch-all GET 之前）
+    if (path.match(/^\/api\/workorders\/[^/]+\/field-days\/check-in$/) && request.method === 'POST') {
+      return handleFieldDayCheckIn(request, env);
+    }
+    if (path.match(/^\/api\/workorders\/[^/]+\/field-days\/[^/]+\/report$/) && request.method === 'POST') {
+      return handleSubmitFieldDayReport(request, env);
+    }
+    if (path.match(/^\/api\/workorders\/[^/]+\/extension-requests$/) && request.method === 'POST') {
+      return handleCreateExtensionRequest(request, env);
+    }
+    if (path.match(/^\/api\/workorders\/[^/]+\/field-days$/) && request.method === 'GET') {
+      return handleGetFieldDays(request, env);
+    }
+    if (path.match(/^\/api\/workorders\/[^/]+\/field-media\/[^/]+$/) && request.method === 'GET') {
+      return handleGetFieldMedia(request, env);
+    }
     if (path.match(/^\/api\/workorders\/[^/]+\/attachments\/[^/]+$/) && request.method === 'DELETE') {
       return handleDeleteAttachment(request, env);
     }
@@ -14532,6 +16195,9 @@ export function resolveAdminCredentials(request, env) {
 }
 
 export default {
+  async scheduled(controller, env, ctx) {
+    ctx.waitUntil(processFieldWorkScheduled(env, controller?.scheduledTime));
+  },
   async fetch(request, env, ctx) {
     // 按 API 域名或来源域名路由数据库：CN 站点走 CN 库，其他走 EN 库。
     const requestEnv = env.DB_CN && shouldUseCnDatabase(request)

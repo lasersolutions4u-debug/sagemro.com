@@ -161,7 +161,7 @@ jobs:
             fi
           done
 
-          CN_REQUIRED="038_material_requisitions_and_staff"
+          CN_REQUIRED="038_material_requisitions_and_staff 039_field_workdays 040_field_evidence_cleanup_queue"
           CN_MISSING=""
           for ver in $CN_REQUIRED; do
             if ! echo "$APPLIED_CN" | grep -q "^${ver}$"; then

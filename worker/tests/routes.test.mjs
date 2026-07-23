@@ -17,6 +17,17 @@ test('protected route classifier covers exact and parameterized authenticated pa
   assert.equal(isKnownProtectedRoute('/api/conversations'), true);
   assert.equal(isKnownProtectedRoute('/api/conversations/conversation-1'), true);
   assert.equal(isKnownProtectedRoute('/api/workorders/work-order-1/messages'), true);
+  assert.equal(isKnownProtectedRoute('/api/workorders/work-order-1/field-days'), true);
+  assert.equal(isKnownProtectedRoute('/api/workorders/work-order-1/field-days/check-in'), true);
+  assert.equal(isKnownProtectedRoute('/api/workorders/work-order-1/field-days/day-1/report'), true);
+  assert.equal(isKnownProtectedRoute('/api/workorders/work-order-1/extension-requests'), true);
+  assert.equal(isKnownProtectedRoute('/api/workorders/work-order-1/field-media/media-1'), true);
+  assert.equal(isKnownProtectedRoute('/api/admin/workorders/work-order-1/field-plan'), true);
+  assert.equal(isKnownProtectedRoute('/api/admin/workorders/work-order-1/extension-requests/request-1/decision'), true);
+  assert.equal(isKnownProtectedRoute('/api/admin/workorders/work-order-1/field-days/override'), true);
+  assert.equal(isKnownProtectedRoute('/api/admin/workorders/work-order-1/field-days/day-1/report'), true);
+  assert.equal(isKnownProtectedRoute('/api/admin/workorders/work-order-1/evidence-holds'), true);
+  assert.equal(isKnownProtectedRoute('/api/admin/workorders/work-order-1/evidence-holds/hold-1/resolve'), true);
   assert.equal(isKnownProtectedRoute('/api/customers/customer-1/reviews'), true);
   assert.equal(isKnownProtectedRoute('/api/auth/change-password'), true);
   assert.equal(isKnownProtectedRoute('/api/chat'), false);

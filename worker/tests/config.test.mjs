@@ -14,6 +14,45 @@ test('wrangler.toml does not ship a fixed development verification code', () => 
   );
 });
 
+test('wrangler.toml schedules field-work processing every 15 minutes in root and production', () => {
+  const config = readFileSync(new URL('../wrangler.toml', import.meta.url), 'utf8');
+
+  assert.match(config, /\[triggers\]\s*\ncrons\s*=\s*\["\*\/15 \* \* \* \*"\]/);
+  assert.match(config, /\[env\.production\.triggers\]\s*\ncrons\s*=\s*\["\*\/15 \* \* \* \*"\]/);
+});
+
+test('scheduled handler registers field-work processing with waitUntil', async () => {
+  const waits = [];
+  const emptyDb = {
+    prepare() {
+      return {
+        bind() { return this; },
+        async all() { return { results: [] }; },
+      };
+    },
+  };
+
+  await worker.scheduled(
+    { scheduledTime: Date.parse('2026-07-24T00:00:00Z') },
+    { DB: emptyDb },
+    { waitUntil(promise) { waits.push(promise); } },
+  );
+
+  assert.equal(waits.length, 1);
+  await waits[0];
+});
+
+test('field-work scheduler scans bounded batches', () => {
+  const source = readFileSync(new URL('../src/index.js', import.meta.url), 'utf8');
+  const schedulerStart = source.indexOf('async function processFieldDayScheduler');
+  const retentionStart = source.indexOf('async function processFieldEvidenceRetention');
+  const schedulerSource = source.slice(schedulerStart, retentionStart);
+  const retentionSource = source.slice(retentionStart, source.indexOf('async function processFieldWorkDatabase', retentionStart));
+
+  assert.match(schedulerSource, /LIMIT \?/);
+  assert.match(retentionSource, /LIMIT \?/);
+});
+
 test('allows the local engineer frontend origin during development', async () => {
   const response = await worker.fetch(new Request('http://127.0.0.1:8787/api/engineers/tickets', {
     method: 'OPTIONS',
@@ -98,9 +137,18 @@ test('schema snapshot includes the current work-order workflow migrations', () =
     '034_add_service_mode',
     '035_onsite_conversion_workflow',
     '038_material_requisitions_and_staff',
+    '039_field_workdays',
+    '040_field_evidence_cleanup_queue',
   ]) {
     assert.match(schema, new RegExp(`\\('${version}'`));
   }
+
+  assert.match(schema, /site_timezone TEXT/);
+  assert.match(schema, /CREATE TABLE IF NOT EXISTS work_order_field_days\s*\(/);
+  assert.match(schema, /CREATE TABLE IF NOT EXISTS work_order_field_day_media\s*\(/);
+  assert.match(schema, /CREATE TABLE IF NOT EXISTS work_order_extension_requests\s*\(/);
+  assert.match(schema, /CREATE TABLE IF NOT EXISTS work_order_field_evidence_holds\s*\(/);
+  assert.match(schema, /CREATE TABLE IF NOT EXISTS field_evidence_cleanup_queue\s*\(/);
 });
 
 test('onsite arrival is required for completion but not for saving a service report draft', () => {

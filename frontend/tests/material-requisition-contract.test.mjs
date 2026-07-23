@@ -161,10 +161,11 @@ test('requisition mutations keep the panel mounted by locking tabs and modal clo
 
   assert.match(detailModal, /const \[materialRequisitionBusy, setMaterialRequisitionBusy\] = useState\(false\)/);
   assert.match(detailModal, /onBusyChange=\{handleMaterialRequisitionBusyChange\}/);
-  assert.match(detailModal, /disabled=\{materialRequisitionBusy && tab !== t\.key\}/);
-  assert.match(detailModal, /title=\{materialRequisitionBusy && tab !== t\.key \? materialRequisitionBusyMessage : undefined\}/);
-  assert.match(detailModal, /closeDisabled=\{materialRequisitionBusy\}/);
-  assert.match(detailModal, /closeDisabledTitle=\{materialRequisitionBusyMessage\}/);
+  assert.match(detailModal, /const modalBusy = materialRequisitionBusy \|\| fieldWorkBusy/);
+  assert.match(detailModal, /disabled=\{modalBusy && tab !== t\.key\}/);
+  assert.match(detailModal, /title=\{modalBusy && tab !== t\.key \? modalBusyMessage : undefined\}/);
+  assert.match(detailModal, /closeDisabled=\{modalBusy\}/);
+  assert.match(detailModal, /closeDisabledTitle=\{modalBusyMessage\}/);
   assert.match(detailModal, /isCnLocale\(\)[\s\S]*请等待物料申请操作完成[\s\S]*Wait for the material requisition operation to finish/);
 
   assert.match(modal, /closeDisabled = false/);

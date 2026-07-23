@@ -2,6 +2,9 @@ name = "sagemro-api"
 main = "src/index.js"
 compatibility_date = "2024-01-01"
 
+[triggers]
+crons = ["*/15 * * * *"]
+
 [[d1_databases]]
 binding = "DB"
 database_name = "sagemro-db"
@@ -10,6 +13,10 @@ database_id = "eb84471f-ed33-47ae-827f-1419f5a9428f"
 [[r2_buckets]]
 binding = "ATTACHMENTS"
 bucket_name = "sagemro-attachments"
+
+[[r2_buckets]]
+binding = "FIELD_EVIDENCE"
+bucket_name = "sagemro-field-evidence"
 
 [[kv_namespaces]]
 binding = "KV"
@@ -37,6 +44,9 @@ R2_PUBLIC_HOST = "pub-b468952d6e244e7d913c90a7ae6f81d6.r2.dev"
 [env.production]
 name = "sagemro-api"
 
+[env.production.triggers]
+crons = ["*/15 * * * *"]
+
 [env.production.vars]
 ENVIRONMENT = "production"
 R2_PUBLIC_HOST = "pub-b468952d6e244e7d913c90a7ae6f81d6.r2.dev"
@@ -56,6 +66,10 @@ database_id = "d5f3a70f-6478-45d1-b73b-84d833afdcfa"
 [[env.production.r2_buckets]]
 binding = "ATTACHMENTS"
 bucket_name = "sagemro-attachments"
+
+[[env.production.r2_buckets]]
+binding = "FIELD_EVIDENCE"
+bucket_name = "sagemro-field-evidence"
 
 [[env.production.kv_namespaces]]
 binding = "KV"

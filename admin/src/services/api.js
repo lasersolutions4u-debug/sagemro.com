@@ -223,6 +223,66 @@ export async function overrideAdminArrival(workOrderId, reason) {
   });
 }
 
+export async function updateFieldPlan(workOrderId, payload) {
+  return request(`/api/admin/workorders/${workOrderId}/field-plan`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function decideFieldExtension(workOrderId, requestId, payload) {
+  return request(`/api/admin/workorders/${workOrderId}/extension-requests/${requestId}/decision`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function overrideFieldDay(workOrderId, payload) {
+  return request(`/api/admin/workorders/${workOrderId}/field-days/override`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function correctFieldDayReport(workOrderId, fieldDayId, payload) {
+  return request(`/api/admin/workorders/${workOrderId}/field-days/${fieldDayId}/report`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function openFieldEvidenceHold(workOrderId, payload) {
+  return request(`/api/admin/workorders/${workOrderId}/evidence-holds`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function resolveFieldEvidenceHold(workOrderId, holdId, payload) {
+  return request(`/api/admin/workorders/${workOrderId}/evidence-holds/${holdId}/resolve`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function getAuthenticatedFieldMediaUrl(workOrderId, mediaId) {
+  const res = await fetch(`${API_BASE}/api/workorders/${workOrderId}/field-media/${mediaId}`, {
+    credentials: 'include',
+    headers: authHeaders(),
+  });
+  if (!res.ok) {
+    let message = `请求失败 (${res.status})`;
+    try {
+      const data = await res.json();
+      message = data.error || message;
+    } catch {
+      // The protected media endpoint may return a non-JSON transport error.
+    }
+    throw new Error(message);
+  }
+  return URL.createObjectURL(await res.blob());
+}
+
 export async function postAdminWorkOrderMessage(workOrderId, content, isInternalNote = true) {
   return request(`/api/workorders/${workOrderId}/messages`, {
     method: 'POST',

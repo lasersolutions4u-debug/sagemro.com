@@ -7,7 +7,6 @@ import {
   cancelWorkOrder,
   submitEngineerReview,
   getEngineerReview,
-  checkInWorkOrder,
   requestOnsiteConversion,
   confirmOnsiteConversion,
   searchServiceLocations,
@@ -22,6 +21,7 @@ import { EngineerPricingPanel, CustomerPricingPanel } from './PricingPanels';
 import { RepairRecordPanel } from './RepairRecordPanel';
 import { AttachmentsPanel } from './AttachmentsPanel';
 import { MaterialRequisitionPanel } from './MaterialRequisitionPanel';
+import { FieldWorkPanel } from './FieldWorkPanel';
 import { PaymentModal } from '../Payment/PaymentModal';
 import { formatCustomerDeviceLine } from '../../utils/workOrderDisplay';
 import { canEngineerViewCustomerContact, redactContactInfo } from '../../utils/contactRedaction';
@@ -81,7 +81,6 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
   const [engReviewComment, setEngReviewComment] = useState('');
   const [engReviewSubmitting, setEngReviewSubmitting] = useState(false);
   const [paymentStartSubmitting, setPaymentStartSubmitting] = useState(false);
-  const [arrivalSubmitting, setArrivalSubmitting] = useState(false);
   const [onsiteRequestNote, setOnsiteRequestNote] = useState('');
   const [onsiteSubmitting, setOnsiteSubmitting] = useState(false);
   const [siteLocation, setSiteLocation] = useState({
@@ -106,15 +105,24 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
   const [machineLeadSubmitting, setMachineLeadSubmitting] = useState(false);
   const [balancePaymentOpen, setBalancePaymentOpen] = useState(false);
   const [materialRequisitionBusy, setMaterialRequisitionBusy] = useState(false);
+  const [fieldWorkBusy, setFieldWorkBusy] = useState(false);
   const workOrderId = workOrder?.id;
   const materialRequisitionBusyMessage = isCnLocale()
     ? '请等待物料申请操作完成后再离开。'
     : 'Wait for the material requisition operation to finish before leaving.';
+  const fieldWorkBusyMessage = isCnLocale()
+    ? '请等待现场作业操作完成后再离开。'
+    : 'Wait for the field-work operation to finish before leaving.';
+  const modalBusy = materialRequisitionBusy || fieldWorkBusy;
+  const modalBusyMessage = fieldWorkBusy ? fieldWorkBusyMessage : materialRequisitionBusyMessage;
   const handleMaterialRequisitionBusyChange = useCallback((busy) => {
     setMaterialRequisitionBusy(busy);
   }, []);
+  const handleFieldWorkBusyChange = useCallback((busy) => {
+    setFieldWorkBusy(busy);
+  }, []);
 
-  const loadDetail = useCallback(async () => {
+  const loadDetail = useCallback(async ({ throwOnError = false } = {}) => {
     if (!workOrderId) return;
     setLoading(true);
     try {
@@ -140,10 +148,12 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
       }
     } catch (e) {
       console.error('加载工单详情失败:', e);
+      if (throwOnError) throw e;
     } finally {
       setLoading(false);
     }
   }, [workOrderId, userType]);
+  const handleFieldWorkChanged = useCallback(() => loadDetail({ throwOnError: true }), [loadDetail]);
 
   useEffect(() => {
     if (isOpen && workOrderId) {
@@ -182,6 +192,25 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
   };
 
   const handleSubmitFinalReport = async () => {
+    const hasCompleteFieldPlan = Boolean(
+      detail?.service_mode === 'onsite'
+      && detail?.field_plan?.site_timezone
+      && detail?.field_plan?.expected_service_days
+      && detail?.field_plan?.expected_completion_date
+    );
+    const fieldDays = detail?.field_days || [];
+    const fieldWorkIncomplete = hasCompleteFieldPlan && (
+      fieldDays.length === 0
+      || fieldDays.some((day) => ['checked_in', 'report_overdue'].includes(day.status))
+      || (detail?.pending_extension_requests || []).length > 0
+    );
+    if (fieldWorkIncomplete) {
+      setTab('fieldWork');
+      toastWarning(isCnLocale()
+        ? '提交最终服务报告前，请先完成所有现场日报。'
+        : 'Complete every field-day report before submitting the final service report.');
+      return;
+    }
     if (detail?.arrival_verification_required && !detail?.arrival_verified_at) {
       toastWarning('Please check in at the customer site before submitting the final service report.');
       return;
@@ -200,26 +229,6 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
       onConfirmed?.();
     } catch (e) {
       toastError('Operation failed: ' + e.message);
-    }
-  };
-
-  const handleArrivalCheck = async () => {
-    setArrivalSubmitting(true);
-    try {
-      const { coords } = await getBrowserLocation();
-      await checkInWorkOrder(workOrder.id, {
-        latitude: coords.latitude,
-        longitude: coords.longitude,
-        accuracy_m: coords.accuracy,
-        coordinate_system: 'wgs84',
-        location_source: 'browser',
-      });
-      toastSuccess('Arrival verified. You may begin or complete the service task.');
-      await loadDetail();
-    } catch (error) {
-      toastError(isBrowserGeolocationError(error) ? formatGeolocationError(error, false) : (error.message || 'Unable to verify arrival.'));
-    } finally {
-      setArrivalSubmitting(false);
     }
   };
 
@@ -255,7 +264,7 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
         service_location_source: 'customer_browser',
       }));
     } catch (error) {
-      toastError(formatGeolocationError(error, false));
+      toastError(isBrowserGeolocationError(error) ? formatGeolocationError(error, false) : (error.message || 'Unable to get current location.'));
     } finally {
       setSiteLocationLocating(false);
     }
@@ -414,6 +423,11 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
   const repairStatuses = ['in_service', 'pricing', 'resolved', 'pending_review', 'completed'];
   if ((isEngineer && repairStatuses.includes(effectiveStatus)) || (isCustomer && hasRepairRecord)) {
     tabs.push({ key: 'repairRecord', label: 'Service Report' });
+  }
+  const showFieldWork = (detail?.service_mode === 'onsite' && effectiveStatus === 'in_service')
+    || Boolean(detail?.field_days?.length);
+  if (showFieldWork) {
+    tabs.push({ key: 'fieldWork', label: isCnLocale() ? '现场作业' : 'Field work' });
   }
   if (isAssignedEngineer) {
     tabs.push({ key: 'materialRequisition', label: isCnLocale() ? '物料领用申请' : 'Material Requisition' });
@@ -658,21 +672,14 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
         </div>
       )}
 
-      {isEngineer && detail?.arrival_verification_required && effectiveStatus === 'in_service' && (
-        <div className="rounded-xl border border-[var(--color-primary)]/30 bg-[var(--color-primary)]/5 p-4">
-          <h3 className="text-sm font-medium text-[var(--color-text-primary)]">Arrival verification</h3>
-          {detail.arrival_verified_at ? (
-            <p className="mt-2 text-xs text-green-600">Arrival verified. You may begin or complete the service task.</p>
-          ) : (
-            <button
-              type="button"
-              onClick={handleArrivalCheck}
-              disabled={arrivalSubmitting}
-              className="mt-3 w-full rounded-xl bg-[var(--color-primary)] py-3 text-sm font-medium text-white hover:bg-[var(--color-primary-hover)] disabled:opacity-50"
-            >
-              {arrivalSubmitting ? 'Getting current location...' : 'Check in at customer site'}
-            </button>
-          )}
+      {isEngineer && detail?.arrival_verification_required && detail?.arrival_verified_at && (
+        <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-elevated)] p-3">
+          <h3 className="text-xs font-medium text-[var(--color-text-secondary)]">
+            {isCnLocale() ? '历史到场记录' : 'Legacy arrival record'}
+          </h3>
+          <p className="mt-1 text-xs text-[var(--color-text-muted)]">
+            {new Date(detail.arrival_verified_at).toLocaleString(isCnLocale() ? 'zh-CN' : 'en-US')}
+          </p>
         </div>
       )}
 
@@ -1083,12 +1090,12 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
       onClose={onClose}
       title="Work Order Details"
       size="2xl"
-      closeDisabled={materialRequisitionBusy}
-      closeDisabledTitle={materialRequisitionBusyMessage}
+      closeDisabled={modalBusy}
+      closeDisabledTitle={modalBusyMessage}
     >
       <div className="min-h-0">
-        {materialRequisitionBusy && (
-          <p role="status" className="sr-only">{materialRequisitionBusyMessage}</p>
+        {modalBusy && (
+          <p role="status" className="sr-only">{modalBusyMessage}</p>
         )}
         {/* Tab 切换 */}
         <div role="tablist" className="-mx-3 mb-4 flex gap-1 overflow-x-auto border-b border-[var(--color-border)] px-3 pb-0 sm:mx-0 sm:px-0">
@@ -1097,8 +1104,8 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
               key={t.key}
               role="tab"
               aria-selected={tab === t.key}
-              disabled={materialRequisitionBusy && tab !== t.key}
-              title={materialRequisitionBusy && tab !== t.key ? materialRequisitionBusyMessage : undefined}
+              disabled={modalBusy && tab !== t.key}
+              title={modalBusy && tab !== t.key ? modalBusyMessage : undefined}
               onClick={() => setTab(t.key)}
               className={`shrink-0 px-3 py-2 text-sm font-medium border-b-2 -mb-px transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
                 tab === t.key
@@ -1147,6 +1154,16 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
                 onSaved={() => loadDetail()}
                 onSubmitComplete={handleSubmitFinalReport}
                 canSubmitComplete={isEngineer && (effectiveStatus === 'in_service' || effectiveStatus === 'pricing')}
+              />
+            )}
+            {tab === 'fieldWork' && showFieldWork && (
+              <FieldWorkPanel
+                workOrderId={workOrder.id}
+                detail={detail}
+                userType={userType}
+                userId={userId}
+                onChanged={handleFieldWorkChanged}
+                onBusyChange={handleFieldWorkBusyChange}
               />
             )}
             {tab === 'materialRequisition' && isAssignedEngineer && (
