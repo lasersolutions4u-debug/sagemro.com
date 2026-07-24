@@ -60,6 +60,31 @@ test('field-work panel provides dense plan, timeline, media, extension, exceptio
   assert.match(panel, /<section className="[^"]*break-words/);
 });
 
+test('confirmed quote replaces the normal Admin field-plan editor with a read-only allowance summary', async () => {
+  const panel = await readSource('./FieldWorkAdminPanel.jsx');
+
+  assert.match(panel, /const quoteExecution = workOrder\?\.quote_execution \|\| \{\}/);
+  assert.match(panel, /const quoteDriven = Number\(workOrder\?\.active_quote_version \|\| 0\) >= 1/);
+  assert.match(panel, /quoteDriven \? \(/);
+  assert.match(panel, /quoteExecution\.expected_service_days/);
+  assert.match(panel, /quoteExecution\.consumed_workdays/);
+  assert.match(panel, /quoteExecution\.permitted_workdays/);
+  assert.match(panel, /quoteExecution\.remaining_workdays/);
+  assert.match(panel, /quoteExecution\.allowance_exhausted/);
+  assert.match(panel, /Approved quote duration/);
+  assert.match(panel, /报价审核工期/);
+  assert.match(panel, /function savePlan\(\) \{[\s\S]*if \(quoteDriven\) return;[\s\S]*updateFieldPlan/);
+  assert.match(panel, /!quoteDriven[\s\S]*t\.savePlan/);
+
+  for (const retainedControl of [
+    'decideExtension',
+    'submitCorrection',
+    'submitOverride',
+    'openHold',
+    'resolveHold',
+  ]) assert.match(panel, new RegExp(retainedControl));
+});
+
 test('field-work panel localizes operational labels for English and Chinese consoles', async () => {
   const panel = await readSource('./FieldWorkAdminPanel.jsx');
 
@@ -92,6 +117,10 @@ test('field-work panel localizes operational labels for English and Chinese cons
   assert.match(panel, /Admin override/);
   assert.match(panel, /Admin 例外确认/);
   assert.doesNotMatch(panel, /locationLabel: day\.location_status/);
+  assert.match(panel, /现场时区/);
+  assert.match(panel, /site_timezone_display/);
+  assert.match(panel, /中国标准时间（上海）/);
+  assert.doesNotMatch(panel, /timezone: 'IANA 时区'/);
 });
 
 test('field-work mutations preserve success semantics when the detail refresh fails', async () => {

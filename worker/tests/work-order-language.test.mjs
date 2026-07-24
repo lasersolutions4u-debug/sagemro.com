@@ -2,7 +2,9 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { signJwt } from '../src/lib/auth.js';
+import { formatSiteTimezone } from '../src/lib/quoteExecution.js';
 import worker from '../src/index.js';
+import { readFile } from 'node:fs/promises';
 
 const JWT_SECRET = 'work-order-language-test-secret-32-chars';
 const HAN_RE = /[\u4e00-\u9fff]/;
@@ -156,4 +158,27 @@ test('COM work order creation writes customer and engineer service text in Engli
   assert.match(env.__state.notifications[0].body, /Service No\.:/);
   assert.doesNotMatch(JSON.stringify(env.__state.notifications), HAN_RE);
   assert.deepEqual(errors, []);
+});
+
+test('field-work role detail exposes localized display timezone while retaining the raw identifier', async () => {
+  const source = await readFile(new URL('../src/index.js', import.meta.url), 'utf8');
+
+  assert.equal(formatSiteTimezone('Asia/Shanghai', 'cn'), '中国标准时间（上海）');
+  assert.equal(formatSiteTimezone('Asia/Shanghai', 'com'), 'Asia/Shanghai');
+  assert.match(source, /site_timezone_display:\s*formatSiteTimezone\([^,]+,\s*market\)/);
+  assert.match(source, /site_timezone:\s*workOrder\?\.site_timezone \|\| null/);
+  assert.match(source, /Number\(workOrder\?\.active_quote_version \|\| 0\) >= 1[\s\S]*quote_expected_service_days/);
+});
+
+test('field-day check-in notification follows the request market', async () => {
+  const source = await readFile(new URL('../src/index.js', import.meta.url), 'utf8');
+  const start = source.indexOf('async function handleFieldDayCheckIn');
+  const end = source.indexOf('async function handleSubmitFieldDayReport', start);
+  const checkInHandler = source.slice(start, end);
+
+  assert.match(checkInHandler, /const market = getRequestMarket\(request\)/);
+  assert.match(checkInHandler, /工程师已到场签到/);
+  assert.match(checkInHandler, /工程师已为工单/);
+  assert.match(checkInHandler, /Engineer checked in/);
+  assert.match(checkInHandler, /Engineer checked in for/);
 });

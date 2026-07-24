@@ -27,6 +27,13 @@ import { toastError, toastSuccess, toastWarning } from '../../utils/feedback';
 const COPY = {
   en: {
     plan: 'On-site plan',
+    quotePlan: 'Approved quote duration',
+    quoteExpectedDays: 'expected onsite workdays',
+    quoteUsedDays: 'used',
+    quotePermittedDays: 'permitted',
+    quoteRemainingDays: 'remaining',
+    allowanceExhausted: 'The approved onsite workday allowance is used. Request more service time below before another check-in.',
+    extensionAllowanceHelp: 'An approved extension adds time allowance only and does not automatically add labor fees.',
     days: 'Planned days',
     completion: 'Expected completion',
     timezone: 'Site time zone',
@@ -98,11 +105,18 @@ const COPY = {
   },
   cn: {
     plan: '现场作业计划',
+    quotePlan: '报价审核工期',
+    quoteExpectedDays: '预计现场作业',
+    quoteUsedDays: '已使用',
+    quotePermittedDays: '可用额度',
+    quoteRemainingDays: '剩余',
+    allowanceExhausted: '已用完审核通过的现场作业日额度，请先通过下方入口申请延长服务时间，再进行下一次签到。',
+    extensionAllowanceHelp: '延期仅增加作业时间额度，不会自动增加人工费用。',
     days: '计划天数',
     completion: '预计完成日期',
     timezone: '现场时区',
     schedule: '每日计划时间',
-    noPlan: '首次现场签到前，需要由 Admin 完成现场作业计划。',
+    noPlan: '首次现场签到前，需要由运营人员完成现场作业计划。',
     legacyCheckIn: '旧工单定位签到',
     legacyChecking: '正在获取当前位置...',
     legacyHelp: '此历史工单尚未启用现场作业日计划，定位核验仅作为兼容入口保留。',
@@ -144,7 +158,7 @@ const COPY = {
     requestExtensionWithReport: '随本次日报申请延长现场服务时间',
     extensionIncomplete: '请填写延期申请的全部字段，或取消本次日报中的延期申请。',
     requestExtension: '提交延期申请',
-    extensionPending: '延期申请正在等待 Admin 审批。',
+    extensionPending: '延期申请正在等待运营审核。',
     extensionHistory: '延期记录',
     proposedCompletion: '申请完成日期',
     decisionReason: '审批意见',
@@ -155,7 +169,7 @@ const COPY = {
     loadFailed: '现场作业加载失败。',
     checkInSuccess: '今日现场作业签到已记录。',
     reportSuccess: '现场日报已提交。',
-    extensionSuccess: '延期申请已提交给 Admin。',
+    extensionSuccess: '延期申请已提交审核。',
     savedRefreshFailed: '已保存，但最新数据刷新失败，请重新加载此工单。',
     internal: '内部备注',
     locationVerified: '定位辅助证据已核验',
@@ -203,6 +217,27 @@ function siteToday(timeZone) {
   } catch {
     return '';
   }
+}
+
+function safeWorkdayCount(value) {
+  const count = Number(value);
+  return Number.isInteger(count) && count >= 0 ? count : null;
+}
+
+function expectedWorkdaysLabel(count, isCn, copy) {
+  if (count === null) return '-';
+  return isCn ? `${copy.quoteExpectedDays} ${count} 天` : `${count} ${copy.quoteExpectedDays}`;
+}
+
+function workdayCountLabel(count, isCn, suffix) {
+  if (count === null) return '-';
+  return isCn ? `${suffix} ${count} 天` : `${count} ${suffix}`;
+}
+
+function siteTimezoneLabel(fieldPlan, isCn) {
+  if (fieldPlan?.site_timezone_display) return fieldPlan.site_timezone_display;
+  if (isCn && fieldPlan?.site_timezone === 'Asia/Shanghai') return '中国标准时间（上海）';
+  return fieldPlan?.site_timezone || '-';
 }
 
 function normalizeFieldDays(fieldDays = [], media = []) {
@@ -571,9 +606,19 @@ export function FieldWorkPanel({ workOrderId, detail, userType, userId, onChange
   const checkInRetryRef = useRef(null);
   const panelBusy = checkInSubmitting || legacyArrivalSubmitting || Object.values(busyChildren).some(Boolean);
   const fieldPlan = detail?.field_plan || {};
-  const hasCompletePlan = Boolean(fieldPlan.site_timezone
+  const quoteExecution = detail?.quote_execution || {};
+  const quoteDriven = Number(detail?.active_quote_version || 0) >= 1;
+  const expectedWorkdays = safeWorkdayCount(quoteExecution.expected_service_days);
+  const consumedWorkdays = safeWorkdayCount(quoteExecution.consumed_workdays);
+  const permittedWorkdays = safeWorkdayCount(quoteExecution.permitted_workdays);
+  const remainingWorkdays = safeWorkdayCount(quoteExecution.remaining_workdays);
+  const allowanceExhausted = quoteExecution.allowance_exhausted === true;
+  const hasLegacyPlan = Boolean(fieldPlan.site_timezone
     && fieldPlan.expected_service_days
     && fieldPlan.expected_completion_date);
+  const hasExecutionBaseline = quoteDriven
+    ? Boolean(fieldPlan.site_timezone && expectedWorkdays !== null && expectedWorkdays > 0)
+    : hasLegacyPlan;
 
   const stopCamera = useCallback(() => {
     const stream = streamRef.current;
@@ -769,11 +814,23 @@ export function FieldWorkPanel({ workOrderId, detail, userType, userId, onChange
           <CalendarDays size={18} className="text-[var(--color-primary)]" />
           <h3 className="text-sm font-semibold text-[var(--color-text-primary)]">{t.plan}</h3>
         </div>
-        {hasCompletePlan ? (
+        {quoteDriven ? (
+          <div className="space-y-3">
+            <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm sm:grid-cols-5">
+              <div><span className="block text-xs text-[var(--color-text-muted)]">{t.quotePlan}</span><span className="text-[var(--color-text-primary)]">{expectedWorkdaysLabel(expectedWorkdays, isCn, t)}</span></div>
+              <div><span className="block text-xs text-[var(--color-text-muted)]">{t.quoteUsedDays}</span><span className="text-[var(--color-text-primary)]">{workdayCountLabel(consumedWorkdays, isCn, t.quoteUsedDays)}</span></div>
+              <div><span className="block text-xs text-[var(--color-text-muted)]">{t.quotePermittedDays}</span><span className="text-[var(--color-text-primary)]">{workdayCountLabel(permittedWorkdays, isCn, t.quotePermittedDays)}</span></div>
+              <div><span className="block text-xs text-[var(--color-text-muted)]">{t.quoteRemainingDays}</span><span className="text-[var(--color-text-primary)]">{workdayCountLabel(remainingWorkdays, isCn, t.quoteRemainingDays)}</span></div>
+              <div><span className="block text-xs text-[var(--color-text-muted)]">{t.timezone}</span><span className="text-[var(--color-text-primary)]">{siteTimezoneLabel(fieldPlan, isCn)}</span></div>
+            </div>
+            <p className="text-xs leading-5 text-[var(--color-text-secondary)]">{t.extensionAllowanceHelp}</p>
+            {allowanceExhausted && <p className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-700">{t.allowanceExhausted}</p>}
+          </div>
+        ) : hasLegacyPlan ? (
           <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm sm:grid-cols-4">
             <div><span className="block text-xs text-[var(--color-text-muted)]">{t.days}</span><span className="text-[var(--color-text-primary)]">{fieldPlan.expected_service_days}</span></div>
             <div><span className="block text-xs text-[var(--color-text-muted)]">{t.completion}</span><span className="text-[var(--color-text-primary)]">{fieldPlan.expected_completion_date}</span></div>
-            <div><span className="block text-xs text-[var(--color-text-muted)]">{t.timezone}</span><span className="break-all text-[var(--color-text-primary)]">{fieldPlan.site_timezone}</span></div>
+            <div><span className="block text-xs text-[var(--color-text-muted)]">{t.timezone}</span><span className="text-[var(--color-text-primary)]">{siteTimezoneLabel(fieldPlan, isCn)}</span></div>
             <div><span className="block text-xs text-[var(--color-text-muted)]">{t.schedule}</span><span className="text-[var(--color-text-primary)]">{fieldPlan.planned_daily_start_time || '-'} - {fieldPlan.planned_daily_end_time || '-'}</span></div>
           </div>
         ) : (
@@ -784,7 +841,7 @@ export function FieldWorkPanel({ workOrderId, detail, userType, userId, onChange
         )}
       </section>
 
-      {isAssignedEngineer && !hasCompletePlan
+      {isAssignedEngineer && !quoteDriven && !hasLegacyPlan
         && detail?.status === 'in_service'
         && detail?.arrival_verification_required
         && !detail?.arrival_verified_at && (
@@ -797,7 +854,7 @@ export function FieldWorkPanel({ workOrderId, detail, userType, userId, onChange
         </section>
       )}
 
-      {isAssignedEngineer && detail?.status === 'in_service' && hasCompletePlan && !todayFieldDay && (
+      {isAssignedEngineer && detail?.status === 'in_service' && hasExecutionBaseline && !allowanceExhausted && !todayFieldDay && (
         <section data-field-work-check-in className="space-y-3 border-b border-[var(--color-border)] pb-5">
           {!cameraOpen ? (
             <button type="button" onClick={startCamera} className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-[var(--color-primary)] px-4 py-3 text-sm font-medium text-white hover:bg-[var(--color-primary-hover)]">
@@ -868,7 +925,7 @@ export function FieldWorkPanel({ workOrderId, detail, userType, userId, onChange
         </section>
       )}
 
-      {isAssignedEngineer && detail?.status === 'in_service' && hasCompletePlan && (
+      {isAssignedEngineer && detail?.status === 'in_service' && hasExecutionBaseline && (
         <ExtensionForm workOrderId={workOrderId} isCn={isCn} pending={pendingExtension} onSaved={refresh} onBusyChange={handleStandaloneExtensionBusy} />
       )}
 

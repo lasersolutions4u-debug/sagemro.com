@@ -127,6 +127,52 @@ test('customer timeline is allowlisted and never renders private field evidence'
   assert.doesNotMatch(panel, /revisedCompletion\}: \{extension\.proposed_completion_date\}/);
 });
 
+test('quote-driven field work uses the confirmed quote allowance without a legacy completion plan', () => {
+  const panel = read('frontend/src/components/WorkOrder/FieldWorkPanel.jsx');
+  const planSection = section(panel, '<section className="border-b border-[var(--color-border)] pb-4">', '{isAssignedEngineer &&');
+
+  assert.match(panel, /const quoteExecution = detail\?\.quote_execution \|\| \{\}/);
+  assert.match(panel, /const quoteDriven = Number\(detail\?\.active_quote_version \|\| 0\) >= 1/);
+  assert.match(panel, /expected_service_days/);
+  assert.match(panel, /consumed_workdays/);
+  assert.match(panel, /permitted_workdays/);
+  assert.match(panel, /remaining_workdays/);
+  assert.match(panel, /allowance_exhausted/);
+  assert.match(panel, /const hasExecutionBaseline = quoteDriven[\s\S]*fieldPlan\.site_timezone/);
+  assert.doesNotMatch(panel, /const hasExecutionBaseline =[^;]*expected_completion_date/);
+
+  for (const copy of [
+    'Approved quote duration',
+    'expected onsite workdays',
+    'used',
+    'remaining',
+    '报价审核工期',
+    '预计现场作业',
+    '已使用',
+    '剩余',
+  ]) assert.match(panel, new RegExp(copy));
+
+  assert.match(planSection, /quoteDriven \?/);
+  assert.match(planSection, /expectedWorkdaysLabel\(expectedWorkdays/);
+  assert.match(planSection, /workdayCountLabel\(consumedWorkdays/);
+  assert.match(planSection, /workdayCountLabel\(remainingWorkdays/);
+  assert.match(panel, /time allowance only/);
+  assert.match(panel, /不会自动增加人工费用/);
+  assert.match(panel, /allowanceExhausted/);
+  assert.match(panel, /<ExtensionForm/);
+  assert.match(panel, /!quoteDriven[\s\S]*handleLegacyArrivalCheck/);
+});
+
+test('China field-work plan and timeline use the display timezone label', () => {
+  const panel = read('frontend/src/components/WorkOrder/FieldWorkPanel.jsx');
+  const planSection = section(panel, '<section className="border-b border-[var(--color-border)] pb-4">', '{isAssignedEngineer &&');
+
+  assert.match(panel, /现场时区/);
+  assert.match(panel, /site_timezone_display/);
+  assert.match(planSection, /siteTimezoneLabel\(fieldPlan, isCn\)/);
+  assert.doesNotMatch(planSection, />\{fieldPlan\.site_timezone\}<\/span>/);
+});
+
 test('work-order details integrate field work and keep legacy arrival secondary', () => {
   const modal = read('frontend/src/components/WorkOrder/WorkOrderDetailModal.jsx');
   const panel = read('frontend/src/components/WorkOrder/FieldWorkPanel.jsx');
@@ -141,7 +187,7 @@ test('work-order details integrate field work and keep legacy arrival secondary'
   assert.match(modal, /Legacy arrival record|历史到场记录/);
   assert.doesNotMatch(modal, /onClick=\{handleArrivalCheck\}/);
   assert.match(panel, /checkInWorkOrder/);
-  assert.match(panel, /!hasCompletePlan[\s\S]*arrival_verification_required[\s\S]*handleLegacyArrivalCheck/);
+  assert.match(panel, /!quoteDriven && !hasLegacyPlan[\s\S]*arrival_verification_required[\s\S]*handleLegacyArrivalCheck/);
   assert.match(panel, /Legacy location check-in|旧工单定位签到/);
   assert.match(modal, /Complete every field-day report before submitting the final service report|提交最终服务报告前，请先完成所有现场日报/);
 });

@@ -30,6 +30,15 @@ const COPY = {
     subtitle: 'Plan onsite work, review daily evidence, and control audited exceptions.',
     readOnly: 'Read-only',
     plan: 'Field plan',
+    quotePlan: 'Approved quote duration',
+    quoteExpectedDays: 'expected onsite workdays',
+    quoteUsedDays: 'used',
+    quotePermittedDays: 'permitted',
+    quoteRemainingDays: 'remaining',
+    quoteAllowanceExhausted: 'Allowance exhausted',
+    quoteAllowanceAvailable: 'Allowance available',
+    extensionAllowanceHelp: 'Approved extensions add time allowance only and do not automatically add labor fees.',
+    status: 'Status',
     timezone: 'IANA time zone',
     days: 'Expected days',
     completion: 'Expected completion',
@@ -151,13 +160,22 @@ const COPY = {
     subtitle: '规划现场服务、审核每日证据，并管理有审计记录的例外操作。',
     readOnly: '只读',
     plan: '现场计划',
-    timezone: 'IANA 时区',
+    quotePlan: '报价审核工期',
+    quoteExpectedDays: '预计现场作业',
+    quoteUsedDays: '已使用',
+    quotePermittedDays: '可用额度',
+    quoteRemainingDays: '剩余',
+    quoteAllowanceExhausted: '额度已用完',
+    quoteAllowanceAvailable: '额度可用',
+    extensionAllowanceHelp: '批准延期只增加作业时间额度，不会自动增加人工费用。',
+    status: '状态',
+    timezone: '现场时区',
     days: '预计作业天数',
     completion: '预计完成日期',
     start: '每日开始时间',
     end: '每日结束时间',
     savePlan: '保存计划',
-    invalidTimezone: '请输入有效的 IANA 时区，例如 Asia/Shanghai。',
+    invalidTimezone: '请输入有效的现场时区。',
     required: '请完整填写必填字段。',
     saving: '保存中...',
     daysWorked: '已记录天数',
@@ -310,6 +328,27 @@ function formatDateTime(value, locale, timeZone) {
   return formatApiDateTime(value, locale, timeZone ? { timeZone } : undefined);
 }
 
+function safeWorkdayCount(value) {
+  const count = Number(value);
+  return Number.isInteger(count) && count >= 0 ? count : null;
+}
+
+function expectedWorkdaysLabel(count, isCn, copy) {
+  if (count === null) return '-';
+  return isCn ? `${copy.quoteExpectedDays} ${count} 天` : `${count} ${copy.quoteExpectedDays}`;
+}
+
+function workdayCountLabel(count, isCn, suffix) {
+  if (count === null) return '-';
+  return isCn ? `${suffix} ${count} 天` : `${count} ${suffix}`;
+}
+
+function siteTimezoneLabel(rawTimezone, displayTimezone, isCn) {
+  if (displayTimezone) return displayTimezone;
+  if (isCn && rawTimezone === 'Asia/Shanghai') return '中国标准时间（上海）';
+  return rawTimezone || '-';
+}
+
 function statusTone(status) {
   if (status === 'report_overdue') return 'border-[var(--color-error)]/50 text-[var(--color-error)]';
   if (['report_submitted', 'late_report_submitted', 'admin_closed'].includes(status)) return 'border-[var(--color-success)]/40 text-[var(--color-success)]';
@@ -384,6 +423,13 @@ export function FieldWorkAdminPanel({ workOrder, readOnly = false, onRefresh }) 
 
   const fieldDays = workOrder?.field_days || [];
   const summary = workOrder?.field_work_summary || {};
+  const quoteExecution = workOrder?.quote_execution || {};
+  const quoteDriven = Number(workOrder?.active_quote_version || 0) >= 1;
+  const isCn = runtimeConfig.locale === 'zh-CN';
+  const quoteExpectedDays = safeWorkdayCount(quoteExecution.expected_service_days);
+  const quoteConsumedDays = safeWorkdayCount(quoteExecution.consumed_workdays);
+  const quotePermittedDays = safeWorkdayCount(quoteExecution.permitted_workdays);
+  const quoteRemainingDays = safeWorkdayCount(quoteExecution.remaining_workdays);
   const pendingExtensions = workOrder?.pending_extension_requests || [];
   const holds = localHolds.length ? localHolds : (workOrder?.field_evidence_holds || []);
   const revisions = workOrder?.field_day_revisions || [];
@@ -468,6 +514,7 @@ export function FieldWorkAdminPanel({ workOrder, readOnly = false, onRefresh }) 
   }
 
   function savePlan() {
+    if (quoteDriven) return;
     if (!plan.expected_service_days || !plan.expected_completion_date) {
       setMessage(t.required);
       return;
@@ -588,14 +635,30 @@ export function FieldWorkAdminPanel({ workOrder, readOnly = false, onRefresh }) 
 
       <div className="border-b border-[var(--color-border)] p-4">
         <h5 className="mb-3 text-sm font-medium">{t.plan}</h5>
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-          <label className="text-xs text-[var(--color-text-muted)] sm:col-span-2 lg:col-span-1">{t.timezone}<input value={plan.site_timezone} onChange={(event) => updatePlanField('site_timezone', event.target.value)} disabled={readOnly} placeholder="Asia/Shanghai" className="mt-1 min-h-10 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-3 text-sm disabled:opacity-60" /></label>
-          <label className="text-xs text-[var(--color-text-muted)]">{t.days}<input type="number" min="1" max="365" value={plan.expected_service_days} onChange={(event) => updatePlanField('expected_service_days', event.target.value)} disabled={readOnly} className="mt-1 min-h-10 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-3 text-sm disabled:opacity-60" /></label>
-          <label className="text-xs text-[var(--color-text-muted)]">{t.completion}<input type="date" value={plan.expected_completion_date} onChange={(event) => updatePlanField('expected_completion_date', event.target.value)} disabled={readOnly} className="mt-1 min-h-10 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-3 text-sm disabled:opacity-60" /></label>
-          <label className="text-xs text-[var(--color-text-muted)]">{t.start}<input type="time" value={plan.planned_daily_start_time} onChange={(event) => updatePlanField('planned_daily_start_time', event.target.value)} disabled={readOnly} className="mt-1 min-h-10 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-3 text-sm disabled:opacity-60" /></label>
-          <label className="text-xs text-[var(--color-text-muted)]">{t.end}<input type="time" value={plan.planned_daily_end_time} onChange={(event) => updatePlanField('planned_daily_end_time', event.target.value)} disabled={readOnly} className="mt-1 min-h-10 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-3 text-sm disabled:opacity-60" /></label>
-        </div>
-        {!readOnly && <div className="mt-3 flex justify-end"><button type="button" onClick={savePlan} disabled={busy === 'plan'} className="min-h-10 whitespace-nowrap rounded-lg bg-[var(--color-primary)] px-4 text-sm font-medium text-white disabled:opacity-50">{busy === 'plan' ? t.saving : t.savePlan}</button></div>}
+        {quoteDriven ? (
+          <div className="space-y-3">
+            <div className="grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-6">
+              <div><span className="block text-xs text-[var(--color-text-muted)]">{t.quotePlan}</span><span className="font-medium">{expectedWorkdaysLabel(quoteExpectedDays, isCn, t)}</span></div>
+              <div><span className="block text-xs text-[var(--color-text-muted)]">{t.quoteUsedDays}</span><span className="font-medium">{workdayCountLabel(quoteConsumedDays, isCn, t.quoteUsedDays)}</span></div>
+              <div><span className="block text-xs text-[var(--color-text-muted)]">{t.quotePermittedDays}</span><span className="font-medium">{workdayCountLabel(quotePermittedDays, isCn, t.quotePermittedDays)}</span></div>
+              <div><span className="block text-xs text-[var(--color-text-muted)]">{t.quoteRemainingDays}</span><span className="font-medium">{workdayCountLabel(quoteRemainingDays, isCn, t.quoteRemainingDays)}</span></div>
+              <div><span className="block text-xs text-[var(--color-text-muted)]">{t.timezone}</span><span className="font-medium">{siteTimezoneLabel(workOrder?.field_plan?.site_timezone, workOrder?.field_plan?.site_timezone_display, isCn)}</span></div>
+              <div><span className="block text-xs text-[var(--color-text-muted)]">{t.status}</span><span className="font-medium">{quoteExecution.allowance_exhausted ? t.quoteAllowanceExhausted : t.quoteAllowanceAvailable}</span></div>
+            </div>
+            <p className="text-xs text-[var(--color-text-muted)]">{t.extensionAllowanceHelp}</p>
+          </div>
+        ) : (
+          <>
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+              <label className="text-xs text-[var(--color-text-muted)] sm:col-span-2 lg:col-span-1">{t.timezone}<input value={plan.site_timezone} onChange={(event) => updatePlanField('site_timezone', event.target.value)} disabled={readOnly} className="mt-1 min-h-10 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-3 text-sm disabled:opacity-60" /></label>
+              <label className="text-xs text-[var(--color-text-muted)]">{t.days}<input type="number" min="1" max="365" value={plan.expected_service_days} onChange={(event) => updatePlanField('expected_service_days', event.target.value)} disabled={readOnly} className="mt-1 min-h-10 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-3 text-sm disabled:opacity-60" /></label>
+              <label className="text-xs text-[var(--color-text-muted)]">{t.completion}<input type="date" value={plan.expected_completion_date} onChange={(event) => updatePlanField('expected_completion_date', event.target.value)} disabled={readOnly} className="mt-1 min-h-10 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-3 text-sm disabled:opacity-60" /></label>
+              <label className="text-xs text-[var(--color-text-muted)]">{t.start}<input type="time" value={plan.planned_daily_start_time} onChange={(event) => updatePlanField('planned_daily_start_time', event.target.value)} disabled={readOnly} className="mt-1 min-h-10 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-3 text-sm disabled:opacity-60" /></label>
+              <label className="text-xs text-[var(--color-text-muted)]">{t.end}<input type="time" value={plan.planned_daily_end_time} onChange={(event) => updatePlanField('planned_daily_end_time', event.target.value)} disabled={readOnly} className="mt-1 min-h-10 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-3 text-sm disabled:opacity-60" /></label>
+            </div>
+            {!readOnly && !quoteDriven && <div className="mt-3 flex justify-end"><button type="button" onClick={savePlan} disabled={busy === 'plan'} className="min-h-10 whitespace-nowrap rounded-lg bg-[var(--color-primary)] px-4 text-sm font-medium text-white disabled:opacity-50">{busy === 'plan' ? t.saving : t.savePlan}</button></div>}
+          </>
+        )}
       </div>
 
       <div className="border-b border-[var(--color-border)] p-4">
@@ -607,7 +670,7 @@ export function FieldWorkAdminPanel({ workOrder, readOnly = false, onRefresh }) 
             const locationOutcome = fieldDayLocationOutcome(day, t, locationStatusLabels);
             return <article key={day.id} className="min-w-0 py-4 first:pt-3 last:pb-3 [overflow-wrap:anywhere]">
               <div className="flex flex-wrap items-start justify-between gap-2">
-                <div><div className="font-mono text-sm font-semibold">{day.site_local_date}</div><div className="mt-1 text-xs text-[var(--color-text-muted)]">{day.site_timezone}</div></div>
+                <div><div className="font-mono text-sm font-semibold">{day.site_local_date}</div><div className="mt-1 text-xs text-[var(--color-text-muted)]">{siteTimezoneLabel(day.site_timezone, day.site_timezone_display, isCn)}</div></div>
                 <div className="flex flex-wrap items-center gap-2"><span className={`rounded-lg border px-2 py-1 text-xs ${statusTone(day.status)}`}>{statusLabels[day.status] || day.status}</span>{!readOnly && ['report_submitted', 'late_report_submitted'].includes(day.status) && <button type="button" onClick={() => setCorrectionDayId(day.id)} className="inline-flex items-center gap-1 rounded-lg border border-[var(--color-border)] px-2 py-1 text-xs"><FilePenLine className="h-3.5 w-3.5" />{t.correctReport}</button>}</div>
               </div>
               <div className="mt-3 grid gap-2 text-xs text-[var(--color-text-secondary)] sm:grid-cols-2 lg:grid-cols-5"><div>{t.checkIn}: {formatDateTime(day.check_in_at, runtimeConfig.locale, day.site_timezone)}</div><div>{t.reportAt}: {formatDateTime(day.report_submitted_at, runtimeConfig.locale, day.site_timezone)}</div><div>{t.labor}: {day.labor_hours ?? '-'} </div><div>{t.location}: <span className={locationOutcome.tone}>{locationOutcome.locationLabel}</span></div><div>{t.geofence}: <span className={locationOutcome.tone}>{locationOutcome.geofenceLabel}{locationOutcome.allowed ? ` · ${t.locationAllowed}` : ''}</span></div></div>

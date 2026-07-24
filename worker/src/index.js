@@ -42,7 +42,7 @@ import {
   validateDailyReport,
   validateFieldPlan,
 } from './lib/field-work.js';
-import { summarizeQuoteExecution, validateQuoteExecution } from './lib/quoteExecution.js';
+import { formatSiteTimezone, summarizeQuoteExecution, validateQuoteExecution } from './lib/quoteExecution.js';
 import { normalizeLocationQuery, searchLocationProvider } from './lib/location-search.js';
 import {
   identityDeleteStatement,
@@ -5397,6 +5397,7 @@ async function handleGetWorkOrders(request, env) {
 // 获取工单详情
 async function handleGetWorkOrder(request, env) {
   const id = new URL(request.url).pathname.split('/').pop();
+  const market = getRequestMarket(request);
 
   try {
     const workOrder = await env.DB.prepare(`
@@ -5459,7 +5460,7 @@ async function handleGetWorkOrder(request, env) {
     const detailPricing = pricingView?.pricing || null;
     const pricingSchedule = pricingView?.payment_schedule || [];
     const quoteExecution = await getWorkOrderQuoteExecution(
-      env, workOrder, pricing, request._auth, getRequestMarket(request),
+      env, workOrder, pricing, request._auth, market,
     );
 
     const paymentRecords = await env.DB.prepare(
@@ -5529,7 +5530,7 @@ async function handleGetWorkOrder(request, env) {
       mediaByDay.set(media.field_day_id, list);
     }
     const fieldDays = visibleFieldDayRecords.map((fieldDay) => ({
-      ...publicFieldDay(fieldDay, { customerView: customerFieldView }),
+      ...publicFieldDay(fieldDay, { customerView: customerFieldView, market }),
       media: mediaByDay.get(fieldDay.id) || [],
     }));
     const fieldWorkSummary = fieldDays.reduce((summary, fieldDay) => ({
@@ -5593,6 +5594,7 @@ async function handleGetWorkOrder(request, env) {
 
     const detail = {
       ...safeWorkOrder,
+      site_timezone_display: formatSiteTimezone(workOrder?.site_timezone, market),
       sla_status: getSlaStatus(workOrder.sla_deadline, workOrder.urgency),
       logs: logs.results,
       rating: rating || null,
@@ -5620,7 +5622,7 @@ async function handleGetWorkOrder(request, env) {
       material_items: materialItems,
       attachments: attachments.results,
       arrival_checks: arrivalChecks,
-      field_plan: fieldPlanSnapshot(workOrder),
+      field_plan: fieldPlanSnapshot(workOrder, market),
       field_days: fieldDays,
       field_work_summary: fieldWorkSummary,
       field_extension_requests: fieldExtensionRequests,
@@ -5863,9 +5865,12 @@ function publicFieldMedia(media, workOrderId) {
   };
 }
 
-function publicFieldDay(fieldDay, { customerView = false } = {}) {
+function publicFieldDay(fieldDay, { customerView = false, market = 'com' } = {}) {
   if (!fieldDay) return fieldDay;
-  const safe = { ...fieldDay };
+  const safe = {
+    ...fieldDay,
+    site_timezone_display: formatSiteTimezone(fieldDay.site_timezone, market),
+  };
   if (safe.location_source === 'admin_override') safe.capture_source = 'admin_override';
   delete safe.check_in_idempotency_key;
   delete safe.report_idempotency_key;
@@ -5897,9 +5902,10 @@ function withoutPrivateFieldLocation(workOrder) {
   return safe;
 }
 
-function fieldPlanSnapshot(workOrder) {
+function fieldPlanSnapshot(workOrder, market = 'com') {
   return {
     site_timezone: workOrder?.site_timezone || null,
+    site_timezone_display: formatSiteTimezone(workOrder?.site_timezone, market),
     expected_service_days: workOrder?.expected_service_days == null ? null : Number(workOrder.expected_service_days),
     expected_completion_date: workOrder?.expected_completion_date || null,
     planned_daily_start_time: workOrder?.planned_daily_start_time || null,
@@ -6366,11 +6372,14 @@ async function listConsumedFieldDayDates(env, workOrderId) {
 }
 
 function hasCompleteFieldPlan(workOrder) {
-  return Boolean(
-    workOrder?.site_timezone
-    && Number.isInteger(Number(workOrder.expected_service_days)) && Number(workOrder.expected_service_days) > 0
-    && workOrder.expected_completion_date
-  );
+  if (!workOrder?.site_timezone) return false;
+  if (Number(workOrder?.active_quote_version || 0) >= 1) {
+    return Number.isInteger(Number(workOrder.quote_expected_service_days))
+      && Number(workOrder.quote_expected_service_days) > 0;
+  }
+  return Number.isInteger(Number(workOrder.expected_service_days))
+    && Number(workOrder.expected_service_days) > 0
+    && Boolean(workOrder.expected_completion_date);
 }
 
 function quoteDrivenFieldDayAllowanceSql(statuses = ['report_submitted', 'late_report_submitted', 'checked_in']) {
@@ -6402,6 +6411,7 @@ async function handleFieldDayCheckIn(request, env) {
   let objectKey = null;
   try {
     const auth = request._auth;
+    const market = getRequestMarket(request);
     if (auth?.userType !== 'engineer') return errorResponse('仅工程师可以拍照签到', 403);
     if (!env.FIELD_EVIDENCE) return errorResponse('现场证据服务未配置', 503);
 
@@ -6447,7 +6457,6 @@ async function handleFieldDayCheckIn(request, env) {
       const permittedDays = Number(workOrder.quote_expected_service_days || 0)
         + Number(workOrder.approved_extension_days || 0);
       if (consumedDays >= permittedDays) {
-        const market = getRequestMarket(request);
         return jsonResponse({
           error: market === 'cn' ? '现场工作日额度已用完，请先申请延期' : 'The onsite workday allowance is exhausted. Request an extension before checking in again.',
           code: 'workday_allowance_exhausted',
@@ -6488,7 +6497,7 @@ async function handleFieldDayCheckIn(request, env) {
     const fieldDayId = generateId();
     const mediaId = generateId();
     const extension = FIELD_EVIDENCE_MIME_TYPES.get(photo.type);
-    objectKey = `field-evidence/${getRequestMarket(request)}/${workOrderId}/${fieldDayId}/check-in.${extension}`;
+    objectKey = `field-evidence/${market}/${workOrderId}/${fieldDayId}/check-in.${extension}`;
     await env.FIELD_EVIDENCE.put(objectKey, photoBytes, { httpMetadata: { contentType: photo.type } });
 
     const fieldDay = {
@@ -6579,7 +6588,6 @@ async function handleFieldDayCheckIn(request, env) {
       await cleanupFieldEvidenceObjects(env, [objectKey], 'check_in_persistence_failed');
       objectKey = null;
       if (/workday allowance exhausted/i.test(String(error?.message || error))) {
-        const market = getRequestMarket(request);
         return jsonResponse({
           error: market === 'cn' ? '现场工作日额度已用完，请先申请延期' : 'The onsite workday allowance is exhausted. Request an extension before checking in again.',
           code: 'workday_allowance_exhausted',
@@ -6587,7 +6595,6 @@ async function handleFieldDayCheckIn(request, env) {
       }
       if (/field check-in concurrent update|malformed json/i.test(String(error?.message || error))) {
         if (await quoteDrivenFieldDayAllowanceExhausted(env, workOrderId)) {
-          const market = getRequestMarket(request);
           return jsonResponse({
             error: market === 'cn' ? '现场工作日额度已用完，请先申请延期' : 'The onsite workday allowance is exhausted. Request an extension before checking in again.',
             code: 'workday_allowance_exhausted',
@@ -6607,7 +6614,10 @@ async function handleFieldDayCheckIn(request, env) {
 
     await createNotification(env, {
       user_id: workOrder.customer_id, user_type: 'customer', type: 'field_day_checked_in',
-      title: 'Engineer checked in', body: `Engineer checked in for ${workOrder.order_no}.`,
+      title: market === 'cn' ? '工程师已到场签到' : 'Engineer checked in',
+      body: market === 'cn'
+        ? `工程师已为工单 ${workOrder.order_no} 完成现场签到。`
+        : `Engineer checked in for ${workOrder.order_no}.`,
       data: { work_order_id: workOrderId, field_day_id: fieldDayId },
     });
     return jsonResponse(fieldDayResponse(fieldDay, media), 201);
@@ -6870,6 +6880,7 @@ async function resolveFieldWorkAccessMode(env, auth, workOrder, workOrderId) {
 async function handleGetFieldDays(request, env) {
   try {
     const auth = request._auth;
+    const market = getRequestMarket(request);
     const workOrderId = new URL(request.url).pathname.split('/')[3];
     const workOrder = await getFieldWorkOrder(env, workOrderId);
     if (!workOrder) return errorResponse('工单不存在', 404);
@@ -6885,7 +6896,7 @@ async function handleGetFieldDays(request, env) {
       ? (fieldDayRecords.results || []).filter((fieldDay) => fieldDay.engineer_id === auth.userId)
       : (fieldDayRecords.results || []);
     const visibleFieldDayIds = new Set(visibleFieldDayRecords.map((fieldDay) => fieldDay.id));
-    const fieldDays = visibleFieldDayRecords.map((fieldDay) => publicFieldDay(fieldDay, { customerView }));
+    const fieldDays = visibleFieldDayRecords.map((fieldDay) => publicFieldDay(fieldDay, { customerView, market }));
     const mediaRecords = await env.DB.prepare(customerView ? `
       SELECT * FROM work_order_field_day_media
       WHERE work_order_id = ? AND customer_visible = 1 AND deleted_at IS NULL ORDER BY created_at ASC
