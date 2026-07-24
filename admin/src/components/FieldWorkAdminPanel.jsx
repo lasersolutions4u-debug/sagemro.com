@@ -331,8 +331,11 @@ function formatDateTime(value, locale, timeZone) {
 }
 
 function safeWorkdayCount(value) {
+  if (value === null || value === undefined) return null;
+  if (typeof value !== 'number' && typeof value !== 'string') return null;
+  if (typeof value === 'string' && value.trim() === '') return null;
   const count = Number(value);
-  return Number.isInteger(count) && count >= 0 ? count : null;
+  return Number.isSafeInteger(count) && count >= 0 ? count : null;
 }
 
 function expectedWorkdaysLabel(count, isCn, copy) {

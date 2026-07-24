@@ -105,6 +105,30 @@ test('quote execution exceptions show an unavailable summary instead of usable a
   assert.match(panel, /\{t\.executionUnavailable\}<\/p> : \(\s*<>/);
 });
 
+test('quote allowance counters reject blank, fractional, negative, and unsafe canonical values', async () => {
+  const panel = await readSource('./FieldWorkAdminPanel.jsx');
+  const start = panel.indexOf('function safeWorkdayCount');
+  const end = panel.indexOf('function siteTimezoneLabel', start);
+  assert.notEqual(start, -1, 'missing allowance validators');
+  const validators = Function(`${panel.slice(start, end).trim()}; return { safeWorkdayCount, hasValidQuoteAllowance };`)();
+  const validAllowance = {
+    payment_state: 'settled',
+    expected_service_days: 3,
+    consumed_workdays: 1,
+    permitted_workdays: 3,
+    remaining_workdays: 2,
+    allowance_exhausted: false,
+  };
+
+  assert.equal(validators.hasValidQuoteAllowance(validAllowance), true);
+  for (const invalidValue of [null, undefined, '', '   ', 1.5, -1, Number.MAX_SAFE_INTEGER + 1]) {
+    assert.equal(validators.safeWorkdayCount(invalidValue), null);
+    for (const field of ['expected_service_days', 'consumed_workdays', 'permitted_workdays', 'remaining_workdays']) {
+      assert.equal(validators.hasValidQuoteAllowance({ ...validAllowance, [field]: invalidValue }), false);
+    }
+  }
+});
+
 test('field-work panel localizes operational labels for English and Chinese consoles', async () => {
   const panel = await readSource('./FieldWorkAdminPanel.jsx');
   const siteTimezoneLabel = loadFunction(panel, 'function siteTimezoneLabel', 'function statusTone');

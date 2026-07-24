@@ -183,6 +183,27 @@ test('quote execution exceptions fail closed without usable counters or engineer
   assert.match(planSection, /\{t\.executionUnavailable\}<\/p> : hasLegacyPlan \? \(/);
 });
 
+test('quote allowance counters reject blank, fractional, negative, and unsafe canonical values', () => {
+  const panel = read('frontend/src/components/WorkOrder/FieldWorkPanel.jsx');
+  const validators = Function(`${section(panel, 'function safeWorkdayCount', 'function siteTimezoneLabel')}; return { safeWorkdayCount, hasValidQuoteAllowance };`)();
+  const validAllowance = {
+    payment_state: 'settled',
+    expected_service_days: 3,
+    consumed_workdays: 1,
+    permitted_workdays: 3,
+    remaining_workdays: 2,
+    allowance_exhausted: false,
+  };
+
+  assert.equal(validators.hasValidQuoteAllowance(validAllowance), true);
+  for (const invalidValue of [null, undefined, '', '   ', 1.5, -1, Number.MAX_SAFE_INTEGER + 1]) {
+    assert.equal(validators.safeWorkdayCount(invalidValue), null);
+    for (const field of ['expected_service_days', 'consumed_workdays', 'permitted_workdays', 'remaining_workdays']) {
+      assert.equal(validators.hasValidQuoteAllowance({ ...validAllowance, [field]: invalidValue }), false);
+    }
+  }
+});
+
 test('China field-work plan and timeline use the display timezone label', () => {
   const panel = read('frontend/src/components/WorkOrder/FieldWorkPanel.jsx');
   const planSection = section(panel, '<section className="border-b border-[var(--color-border)] pb-4">', '{isAssignedEngineer &&');
