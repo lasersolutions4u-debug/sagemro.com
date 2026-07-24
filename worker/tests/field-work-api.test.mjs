@@ -24,6 +24,7 @@ function createEnv() {
       expected_service_days: 2, expected_completion_date: '2026-07-24', planned_daily_start_time: '08:30',
       planned_daily_end_time: '17:30', service_latitude: 31.2304, service_longitude: 121.4737,
       service_coordinate_system: 'wgs84', service_accuracy_m: 25, arrival_verified_at: null,
+      active_quote_version: null, quote_expected_service_days: null, approved_extension_days: 0,
     }],
     __fieldDays: [],
     __media: [],
@@ -45,6 +46,7 @@ function createEnv() {
     __deleteAttempts: [],
     __kv: new Map(),
     __queries: [],
+    __writes: [],
     KV: {
       async get(key) { return env.__kv.get(key) ?? null; },
       async put(key, value) { env.__kv.set(key, value); },
@@ -313,6 +315,7 @@ function createStatement(env, sql) {
     },
     async run() {
       const normalized = normalizeSql(sql);
+      env.__writes.push({ sql: normalized, args: [...this.args] });
       let changes = 1;
       if (/SELECT CASE WHEN changes\(\) = 1 THEN 1 ELSE json\(/i.test(normalized)) {
         if (env.__lastChanges !== 1) throw new Error('D1_ERROR: malformed JSON');
@@ -408,6 +411,11 @@ function createStatement(env, sql) {
         const [days, completionDate, workOrderId] = this.args;
         const record = env.__workOrders.find((item) => item.id === workOrderId);
         if (record) Object.assign(record, { expected_service_days: days, expected_completion_date: completionDate });
+      }
+      if (/UPDATE work_orders SET approved_extension_days = approved_extension_days \+ \?/i.test(normalized)) {
+        const [days, workOrderId] = this.args;
+        const record = env.__workOrders.find((item) => item.id === workOrderId);
+        if (record) record.approved_extension_days = Number(record.approved_extension_days || 0) + Number(days);
       }
       if (/UPDATE work_orders SET arrival_verified_at/i.test(normalized)) {
         const record = env.__workOrders.find((item) => item.id === this.args.at(-1));
@@ -701,6 +709,43 @@ test('check-in rejects an unrelated engineer and requests a real photo', async (
   const missingPhoto = await api(env, '/api/workorders/wo-onsite-1/field-days/check-in', { userType: 'engineer', userId: 'engineer-1', method: 'POST', formData: new FormData() });
   assert.equal(missingPhoto.response.status, 400);
   assert.equal(env.__objects.size, 0);
+});
+
+test('quote-driven normal check-in blocks when submitted workdays consume the allowance', async () => {
+  const env = createEnv();
+  Object.assign(env.__workOrders[0], {
+    active_quote_version: 1,
+    quote_expected_service_days: 2,
+    approved_extension_days: 1,
+  });
+  seedFieldDay(env, {
+    id: 'submitted-1', site_local_date: '2026-07-21', status: 'report_submitted',
+    check_in_at: '2026-07-21T01:00:00Z',
+  });
+  seedFieldDay(env, {
+    id: 'submitted-2', site_local_date: '2026-07-22', status: 'late_report_submitted',
+    check_in_at: '2026-07-22T01:00:00Z',
+  });
+  seedFieldDay(env, {
+    id: 'duplicate-date', site_local_date: '2026-07-22', status: 'report_submitted',
+    check_in_at: '2026-07-22T02:00:00Z',
+  });
+  seedFieldDay(env, {
+    id: 'submitted-3', site_local_date: '2026-07-23', status: 'report_submitted',
+    check_in_at: '2026-07-23T01:00:00Z',
+  });
+  seedFieldDay(env, {
+    id: 'missing-check-in', site_local_date: '2026-07-20', status: 'report_submitted', check_in_at: null,
+  });
+
+  const result = await api(env, '/api/workorders/wo-onsite-1/field-days/check-in', {
+    userType: 'engineer', userId: 'engineer-1', method: 'POST', formData: checkInForm(),
+  });
+
+  assert.equal(result.response.status, 409);
+  assert.equal(result.json.code, 'workday_allowance_exhausted');
+  assert.equal(env.__objects.size, 0);
+  assert.equal(env.__fieldDays.length, 5);
 });
 
 test('zero location accuracy is unavailable and a D1 persistence failure deletes the private object', async () => {
@@ -1357,6 +1402,27 @@ test('Admin field plan validates ownership, role, and writes an audited before/a
   assert.match(env.__auditLogs[0].args[7], /America\/Los_Angeles/);
 });
 
+test('active quote field plan is immutable through the normal Admin plan route', async () => {
+  const env = createEnv();
+  Object.assign(env.__workOrders[0], {
+    active_quote_version: 1,
+    quote_expected_service_days: 2,
+  });
+
+  const result = await api(env, '/api/admin/workorders/wo-onsite-1/field-plan', {
+    userType: 'admin', userId: 'admin', method: 'PATCH', body: {
+      site_timezone: 'America/Los_Angeles', expected_service_days: 4,
+      expected_completion_date: '2026-07-30', planned_daily_start_time: '09:00', planned_daily_end_time: '18:00',
+    },
+  });
+
+  assert.equal(result.response.status, 409);
+  assert.equal(result.json.code, 'quote_driven_field_plan');
+  assert.equal(env.__workOrders[0].site_timezone, 'Asia/Shanghai');
+  assert.equal(env.__workOrders[0].expected_service_days, 2);
+  assert.equal(env.__auditLogs.length, 0);
+});
+
 test('daily report enforces required fields, progress evidence, positive hours, and overdue reason', async () => {
   for (const [overrides, expectedError] of [
     [{ completed_work: '' }, 'daily_report_incomplete'],
@@ -1531,6 +1597,31 @@ test('extension request cannot persist after a concurrent final closure', async 
   assert.equal(result.response.status, 409);
   assert.equal(env.__workOrders[0].status, 'resolved');
   assert.equal(env.__extensions.length, 0);
+});
+
+test('quote-driven extension approval increments time allowance without mutating quote or payment rows', async () => {
+  const env = createEnv();
+  Object.assign(env.__workOrders[0], {
+    active_quote_version: 1,
+    quote_expected_service_days: 2,
+    approved_extension_days: 1,
+  });
+  env.__extensions.push({
+    id: 'quote-extension', work_order_id: 'wo-onsite-1', engineer_id: 'engineer-1',
+    requested_additional_days: 2, proposed_completion_date: '2026-07-30', status: 'pending',
+  });
+
+  const result = await api(env, '/api/admin/workorders/wo-onsite-1/extension-requests/quote-extension/decision', {
+    userType: 'admin', userId: 'admin', method: 'POST',
+    body: { decision: 'approved', decision_reason: 'Two additional onsite days approved.' },
+  });
+
+  assert.equal(result.response.status, 200);
+  assert.equal(env.__workOrders[0].approved_extension_days, 3);
+  assert.equal(env.__workOrders[0].expected_service_days, 2);
+  assert.equal(env.__workOrders[0].quote_expected_service_days, 2);
+  assert.equal(env.__workOrders[0].expected_completion_date, '2026-07-24');
+  assert.equal(env.__writes.some(({ sql }) => /work_order_(?:pricing|payment_schedule|installments|receipt_claims|payments)/i.test(sql)), false);
 });
 
 for (const decision of ['approved', 'rejected']) {

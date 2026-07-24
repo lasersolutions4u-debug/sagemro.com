@@ -319,6 +319,13 @@ async function confirmQuote(ctx, quoteVersion, options = {}) {
   });
 }
 
+async function activateBaseline(ctx, body = quotePayload()) {
+  await submitQuote(ctx, body);
+  await reviewQuote(ctx, 'approve', 1);
+  const confirmed = await confirmQuote(ctx, 1);
+  assert.equal(confirmed.response.status, 200, JSON.stringify(confirmed.json));
+}
+
 async function confirmBaselineForReceiptTests(ctx) {
   // Test fixture only: Task 4 owns customer activation and installment creation.
   const currency = ctx.host.endsWith('.cn') ? 'CNY' : 'USD';
@@ -346,6 +353,14 @@ function installment(ctx) {
     SELECT * FROM work_order_installments
     WHERE work_order_id = 'wo-quote-1' AND sequence = 1
   `).get();
+}
+
+function installments(ctx) {
+  return ctx.db.prepare(`
+    SELECT * FROM work_order_installments
+    WHERE work_order_id = 'wo-quote-1'
+    ORDER BY sequence
+  `).all();
 }
 
 async function startCollection(ctx, options = {}) {
@@ -2106,4 +2121,125 @@ test('Admin review messages follow the request market', async () => {
   assert.equal(response.status, 200);
   assert.match(json.message, /报价/);
   assert.doesNotMatch(json.message, /Quote/);
+});
+
+test('versioned start request waits for every required installment and keeps final Admin approval', async () => {
+  const ctx = createQuoteExecutionEnv();
+  await activateBaseline(ctx);
+  const [startInstallment, laterInstallment] = installments(ctx);
+  ctx.db.prepare(`
+    UPDATE work_order_installments
+    SET received_amount = ?, status = 'partially_received'
+    WHERE id = ?
+  `).run(startInstallment.amount - 1, startInstallment.id);
+
+  const blocked = await api(ctx, '/api/workorders/wo-quote-1/payment/start-request', {
+    body: { note: 'Ready to mobilize.' },
+  });
+
+  assert.equal(blocked.response.status, 409);
+  assert.equal(ctx.db.prepare("SELECT status FROM work_orders WHERE id = 'wo-quote-1'").get().status, 'pending_payment');
+
+  ctx.db.prepare(`
+    UPDATE work_order_installments
+    SET received_amount = amount, status = 'received'
+    WHERE id = ?
+  `).run(startInstallment.id);
+  const prematureApproval = await api(ctx, '/api/admin/workorders/wo-quote-1/payment/approve-start', {
+    body: { note: 'Tried to skip engineer request.' }, userType: 'admin', userId: 'admin',
+  });
+  assert.equal(prematureApproval.response.status, 409);
+  assert.equal(ctx.db.prepare("SELECT status FROM work_orders WHERE id = 'wo-quote-1'").get().status, 'pending_payment');
+
+  const requested = await api(ctx, '/api/workorders/wo-quote-1/payment/start-request', {
+    body: { note: 'Prerequisite received.' },
+  });
+  assert.equal(requested.response.status, 200, JSON.stringify(requested.json));
+  assert.equal(requested.json.status, 'payment_review');
+  assert.equal(ctx.db.prepare("SELECT status FROM work_orders WHERE id = 'wo-quote-1'").get().status, 'payment_review');
+
+  const approved = await api(ctx, '/api/admin/workorders/wo-quote-1/payment/approve-start', {
+    body: { note: 'Start approved.' }, userType: 'admin', userId: 'admin',
+  });
+  assert.equal(approved.response.status, 200, JSON.stringify(approved.json));
+  assert.equal(approved.json.status, 'in_service');
+  assert.equal(ctx.db.prepare("SELECT status FROM work_orders WHERE id = 'wo-quote-1'").get().status, 'in_service');
+  assert.equal(ctx.db.prepare('SELECT received_amount FROM work_order_installments WHERE id = ?').get(laterInstallment.id).received_amount, 0);
+});
+
+test('versioned service completion allows a later unpaid installment but archive waits for settlement', async () => {
+  const ctx = createQuoteExecutionEnv();
+  ctx.db.exec("UPDATE work_orders SET service_mode = 'remote' WHERE id = 'wo-quote-1'");
+  await activateBaseline(ctx, quotePayload({ expected_service_days: null }));
+  const [startInstallment, laterInstallment] = installments(ctx);
+  ctx.db.prepare(`
+    UPDATE work_order_installments SET received_amount = amount, status = 'received' WHERE id = ?
+  `).run(startInstallment.id);
+  ctx.db.exec(`
+    UPDATE work_orders SET status = 'in_service' WHERE id = 'wo-quote-1';
+    INSERT INTO work_order_repair_records (
+      id, work_order_id, symptom, diagnosis, solution, parts_used, labor_hours
+    ) VALUES ('repair-quote-1', 'wo-quote-1', 'Low output', 'Dirty lens', 'Cleaned lens', '[]', 2);
+  `);
+
+  const resolved = await api(ctx, '/api/workorders/wo-quote-1/resolve', { body: {} });
+  assert.equal(resolved.response.status, 200, JSON.stringify(resolved.json));
+  assert.equal(ctx.db.prepare("SELECT status FROM work_orders WHERE id = 'wo-quote-1'").get().status, 'resolved');
+
+  const blockedArchive = await api(ctx, '/api/admin/workorders/wo-quote-1/archive', {
+    method: 'PATCH', body: {}, userType: 'admin', userId: 'admin',
+  });
+  assert.equal(blockedArchive.response.status, 409);
+  assert.equal(ctx.db.prepare("SELECT status FROM work_orders WHERE id = 'wo-quote-1'").get().status, 'resolved');
+
+  ctx.db.prepare(`
+    UPDATE work_order_installments SET received_amount = amount, status = 'received' WHERE id = ?
+  `).run(laterInstallment.id);
+  const archived = await api(ctx, '/api/admin/workorders/wo-quote-1/archive', {
+    method: 'PATCH', body: {}, userType: 'admin', userId: 'admin',
+  });
+  assert.equal(archived.response.status, 200, JSON.stringify(archived.json));
+  assert.equal(archived.json.status, 'completed');
+});
+
+test('detail and work-order lists expose payment state independently from service status', async () => {
+  const ctx = createQuoteExecutionEnv();
+  await activateBaseline(ctx);
+  const [startInstallment] = installments(ctx);
+  ctx.db.prepare(`
+    UPDATE work_order_installments SET received_amount = 1000, status = 'partially_received' WHERE id = ?
+  `).run(startInstallment.id);
+
+  const detail = await api(ctx, '/api/workorders/wo-quote-1', {
+    method: 'GET', userType: 'customer', userId: 'customer-1',
+  });
+  assert.equal(detail.response.status, 200);
+  assert.equal(detail.json.status, 'pending_payment');
+  assert.equal(detail.json.payment_state, 'partially_received');
+  assert.equal(detail.json.received_amount, 1000);
+  assert.equal(detail.json.outstanding_amount, 11000);
+
+  const customerList = await api(ctx, '/api/workorders', {
+    method: 'GET', userType: 'customer', userId: 'customer-1',
+  });
+  assert.equal(customerList.response.status, 200);
+  assert.equal(customerList.json.work_orders[0].status, 'pending_payment');
+  assert.equal(customerList.json.work_orders[0].payment_state, 'partially_received');
+  assert.equal(customerList.json.work_orders[0].received_amount, 1000);
+  assert.equal(customerList.json.work_orders[0].outstanding_amount, 11000);
+
+  const engineerList = await api(ctx, '/api/engineers/tickets', {
+    method: 'GET', userType: 'engineer', userId: 'engineer-1',
+  });
+  assert.equal(engineerList.response.status, 200);
+  assert.equal(engineerList.json.work_orders[0].payment_state, 'partially_received');
+
+  const adminList = await api(ctx, '/api/admin/workorders', {
+    method: 'GET', userType: 'admin', userId: 'admin',
+  });
+  assert.equal(adminList.response.status, 200);
+  assert.equal(adminList.json.list[0].status, 'pending_payment');
+  assert.equal(adminList.json.list[0].payment_state, 'partially_received');
+  assert.equal(adminList.json.list[0].received_amount, 1000);
+  assert.equal(adminList.json.list[0].outstanding_amount, 11000);
 });

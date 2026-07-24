@@ -2,12 +2,25 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  countConsumedFieldDays,
   fieldDayBlocksFinalReport,
   fieldDayLocalDate,
   mediaRetentionEligible,
   validateDailyReport,
   validateFieldPlan,
 } from '../src/lib/field-work.js';
+
+test('consumed field days count distinct submitted local dates with valid check-ins only', () => {
+  assert.equal(countConsumedFieldDays([
+    { site_local_date: '2026-07-21', status: 'report_submitted', check_in_at: '2026-07-21T01:00:00Z' },
+    { site_local_date: '2026-07-21', status: 'late_report_submitted', check_in_at: '2026-07-21T02:00:00Z' },
+    { site_local_date: '2026-07-22', status: 'late_report_submitted', check_in_at: '2026-07-22T01:00:00Z' },
+    { site_local_date: '2026-07-23', status: 'checked_in', check_in_at: '2026-07-23T01:00:00Z' },
+    { site_local_date: '2026-07-24', status: 'report_overdue', check_in_at: '2026-07-24T01:00:00Z' },
+    { site_local_date: '2026-07-25', status: 'report_submitted', check_in_at: null },
+    { site_local_date: 'invalid', status: 'report_submitted', check_in_at: '2026-07-26T01:00:00Z' },
+  ]), 2);
+});
 
 test('uses the approved site time zone for the legal field-work day', () => {
   assert.equal(fieldDayLocalDate('2026-07-23T16:30:00Z', 'Asia/Shanghai'), '2026-07-24');

@@ -35,6 +35,7 @@ import {
 } from './lib/location.js';
 import { normalizeServiceMode, requiresArrivalVerification } from './lib/service-mode.js';
 import {
+  countConsumedFieldDays,
   fieldDayBlocksFinalReport,
   fieldDayLocalDate,
   siteLocalDateTimeToUtc,
@@ -5379,12 +5380,13 @@ async function handleGetWorkOrders(request, env) {
 
     const { results } = await env.DB.prepare(query).bind(...params).all();
 
-    const workOrders = results.map(wo => ({
-      ...wo,
-      description: redactContactInfoForWorkOrder(wo.description),
-      customer_phone: '',
-      sla_status: getSlaStatus(wo.sla_deadline, wo.urgency),
-    }));
+    const paymentProjections = await listWorkOrderPaymentProjections(env, results);
+    const workOrders = results.map((wo) => withPaymentProjection({
+        ...wo,
+        description: redactContactInfoForWorkOrder(wo.description),
+        customer_phone: '',
+        sla_status: getSlaStatus(wo.sla_deadline, wo.urgency),
+      }, paymentProjections.get(wo.id)));
 
     return jsonResponse({ work_orders: workOrders });
   } catch (error) {
@@ -5606,6 +5608,9 @@ async function handleGetWorkOrder(request, env) {
         payment_schedule: pricingSchedule,
       } : null,
       quote_execution: quoteExecution,
+      payment_state: quoteExecution?.payment_state ?? null,
+      received_amount: quoteExecution?.received_amount ?? null,
+      outstanding_amount: quoteExecution?.outstanding_amount ?? null,
       payment_policy: paymentPolicy,
       payments,
       advance_payment: payments.find((payment) => payment.payment_stage === 'advance') || null,
@@ -6346,7 +6351,8 @@ async function getFieldWorkOrder(env, workOrderId) {
   return env.DB.prepare(`
     SELECT id, order_no, customer_id, engineer_id, status, service_mode, site_timezone,
       expected_service_days, expected_completion_date, planned_daily_start_time, planned_daily_end_time,
-      service_latitude, service_longitude, service_accuracy_m, service_coordinate_system, arrival_verified_at
+      service_latitude, service_longitude, service_accuracy_m, service_coordinate_system, arrival_verified_at,
+      active_quote_version, quote_expected_service_days, approved_extension_days
     FROM work_orders WHERE id = ?
   `).bind(workOrderId).first();
 }
@@ -6401,6 +6407,23 @@ async function handleFieldDayCheckIn(request, env) {
         SELECT * FROM work_order_field_day_media WHERE field_day_id = ? AND purpose = 'check_in' AND deleted_at IS NULL
       `).bind(existingFieldDay.id).first();
       return jsonResponse(fieldDayResponse(existingFieldDay, media));
+    }
+
+    if (Number(workOrder.active_quote_version || 0) >= 1) {
+      const fieldDayRecords = await env.DB.prepare(`
+        SELECT site_local_date, status, check_in_at
+        FROM work_order_field_days WHERE work_order_id = ?
+      `).bind(workOrderId).all();
+      const consumedDays = countConsumedFieldDays(fieldDayRecords.results || []);
+      const permittedDays = Number(workOrder.quote_expected_service_days || 0)
+        + Number(workOrder.approved_extension_days || 0);
+      if (consumedDays >= permittedDays) {
+        const market = getRequestMarket(request);
+        return jsonResponse({
+          error: market === 'cn' ? '现场工作日额度已用完，请先申请延期' : 'The onsite workday allowance is exhausted. Request an extension before checking in again.',
+          code: 'workday_allowance_exhausted',
+        }, 409);
+      }
     }
 
     const formData = await request.formData();
@@ -7377,10 +7400,11 @@ async function handleGetEngineerTickets(request, env) {
 
     const { results } = await env.DB.prepare(query).bind(...params).all();
 
-    const workOrders = results.map(wo => ({
-      ...wo,
-      sla_status: getSlaStatus(wo.sla_deadline, wo.urgency),
-    }));
+    const paymentProjections = await listWorkOrderPaymentProjections(env, results);
+    const workOrders = results.map((wo) => withPaymentProjection({
+        ...wo,
+        sla_status: getSlaStatus(wo.sla_deadline, wo.urgency),
+      }, paymentProjections.get(wo.id)));
 
     return jsonResponse({ work_orders: workOrders });
   } catch (error) {
@@ -12023,6 +12047,8 @@ async function handleAdminWorkOrders(request, env) {
       SELECT w.id, w.order_no, w.type, w.description, w.urgency, w.status, w.created_at,
              w.assigned_regional_lead_id, w.conflict_status, w.conflict_reason,
              w.quote_review_status, w.customer_confirmation_method,
+             w.customer_id, w.service_mode, w.active_quote_version,
+             w.quote_expected_service_days, w.approved_extension_days,
              c.name as customer_name, c.company as customer_company, c.user_no as customer_no,
              rl.name as regional_lead_name, rl.user_no as regional_lead_no,
              e.id as engineer_id, e.name as engineer_name, e.company as engineer_company, e.user_no as engineer_no,
@@ -12063,6 +12089,7 @@ async function handleAdminWorkOrders(request, env) {
         fieldDaysByOrder.set(fieldDay.work_order_id, days);
       }
       const pendingOrders = new Set((extensionResult.results || []).map((item) => item.work_order_id));
+      const paymentProjections = await listWorkOrderPaymentProjections(env, rows);
       for (const row of rows) {
         const days = fieldDaysByOrder.get(row.id) || [];
         row.field_checked_in_today = days.some((day) => {
@@ -12070,6 +12097,8 @@ async function handleAdminWorkOrders(request, env) {
         });
         row.field_report_overdue_count = days.filter((day) => day.status === 'report_overdue').length;
         row.field_extension_pending = pendingOrders.has(row.id);
+        const paymentProjection = paymentProjections.get(row.id);
+        if (paymentProjection) Object.assign(row, withPaymentProjection({}, paymentProjection));
       }
     }
     return jsonResponse({
@@ -12085,13 +12114,110 @@ function canMutateFieldWorkAdmin(auth) {
   return auth?.userType === 'admin' && (!auth.staffId || auth.staffRole === 'admin');
 }
 
+function withPaymentProjection(workOrder, quoteExecution) {
+  if (!quoteExecution) return workOrder;
+  return {
+    ...workOrder,
+    payment_state: quoteExecution.payment_state,
+    received_amount: quoteExecution.received_amount,
+    outstanding_amount: quoteExecution.outstanding_amount,
+  };
+}
+
+async function listWorkOrderPaymentProjections(env, workOrders) {
+  const ids = [...new Set((workOrders || []).map((row) => row.id).filter(Boolean))];
+  const projections = new Map();
+  if (ids.length === 0) return projections;
+  const placeholders = ids.map(() => '?').join(', ');
+  const [pricingRecords, installmentRecords, paymentRecords] = await Promise.all([
+    env.DB.prepare(`
+      SELECT * FROM work_order_pricing WHERE work_order_id IN (${placeholders})
+    `).bind(...ids).all(),
+    env.DB.prepare(`
+      SELECT installment.*,
+        SUM(CASE WHEN claim.status = 'pending' THEN 1 ELSE 0 END) AS pending_claim_count
+      FROM work_order_installments installment
+      JOIN work_orders active_order ON active_order.id = installment.work_order_id
+      JOIN work_order_pricing active_pricing ON active_pricing.work_order_id = active_order.id
+      JOIN work_order_pricing_history history
+        ON history.pricing_id = active_pricing.id
+       AND history.version = installment.quote_version
+      LEFT JOIN work_order_receipt_claims claim
+        ON claim.installment_id = installment.id
+       AND claim.work_order_id = installment.work_order_id
+      WHERE installment.work_order_id IN (${placeholders})
+        AND history.status = 'confirmed'
+        AND (
+          (history.version = active_order.active_quote_version AND history.quote_kind = 'baseline')
+          OR (
+            history.quote_kind = 'supplemental'
+            AND history.parent_quote_version = active_order.active_quote_version
+          )
+        )
+      GROUP BY installment.id
+      ORDER BY installment.work_order_id, installment.quote_version, installment.sequence
+    `).bind(...ids).all(),
+    env.DB.prepare(`
+      SELECT * FROM work_order_payments
+      WHERE work_order_id IN (${placeholders}) ORDER BY created_at ASC
+    `).bind(...ids).all(),
+  ]);
+  const pricingByOrder = new Map((pricingRecords.results || []).map((row) => [row.work_order_id, row]));
+  const installmentsByOrder = new Map();
+  for (const installment of installmentRecords.results || []) {
+    const rows = installmentsByOrder.get(installment.work_order_id) || [];
+    rows.push({ ...installment, required_before_start: Boolean(installment.required_before_start) });
+    installmentsByOrder.set(installment.work_order_id, rows);
+  }
+  const paymentsByOrder = new Map();
+  for (const payment of paymentRecords.results || []) {
+    const rows = paymentsByOrder.get(payment.work_order_id) || [];
+    rows.push(payment);
+    paymentsByOrder.set(payment.work_order_id, rows);
+  }
+
+  for (const workOrder of workOrders || []) {
+    const pricing = pricingByOrder.get(workOrder.id);
+    if (!pricing) continue;
+    if (isVersionedQuote(pricing)) {
+      const installments = installmentsByOrder.get(workOrder.id) || [];
+      if (Number(workOrder.active_quote_version || 0) < 1 || installments.length === 0) continue;
+      const totalAmount = installments.reduce((sum, installment) => sum + Number(installment.amount || 0), 0);
+      projections.set(workOrder.id, summarizeQuoteExecution({ total_amount: totalAmount, installments }));
+      continue;
+    }
+    if (pricing.status !== 'confirmed') continue;
+    const totalAmount = Number(pricing.total_amount || pricing.subtotal || 0);
+    const completedPayments = new Map();
+    for (const payment of paymentsByOrder.get(workOrder.id) || []) {
+      if (payment.status !== 'completed') continue;
+      const transactionId = String(payment.transaction_id || '').trim();
+      const key = transactionId ? `transaction:${transactionId}` : `row:${payment.id}`;
+      if (!completedPayments.has(key)) completedPayments.set(key, Number(payment.amount || 0));
+    }
+    const receivedAmount = [...completedPayments.values()].reduce((sum, amount) => sum + amount, 0);
+    const installment = {
+      amount: totalAmount,
+      received_amount: receivedAmount,
+      required_before_start: true,
+      status: receivedAmount >= totalAmount ? 'received' : 'due',
+    };
+    projections.set(workOrder.id, summarizeQuoteExecution({ total_amount: totalAmount, installments: [installment] }));
+  }
+  return projections;
+}
+
 async function handleAdminFieldPlan(request, env) {
   try {
     if (!canMutateFieldWorkAdmin(request._auth)) return errorResponse('当前员工角色无权修改现场计划', 403);
     const workOrderId = new URL(request.url).pathname.split('/')[4];
     const workOrder = await getFieldWorkOrder(env, workOrderId);
     if (!workOrder) return errorResponse('工单不存在', 404);
-    const validation = validateFieldPlan(await request.json().catch(() => ({})));
+    const body = await request.json().catch(() => ({}));
+    if (Number(workOrder.active_quote_version || 0) >= 1) {
+      return fieldWorkError('quote_driven_field_plan', 409);
+    }
+    const validation = validateFieldPlan(body);
     if (validation.error) return fieldWorkError(validation.error);
     const beforePlan = fieldPlanSnapshot(workOrder);
     const plan = validation.value;
@@ -12136,9 +12262,15 @@ async function handleAdminExtensionDecision(request, env) {
       return jsonResponse({ extension_request: extension });
     }
     if (extension.status !== 'pending') return errorResponse('延期申请已处理', 409);
+    const quoteDriven = Number(workOrder.active_quote_version || 0) >= 1;
     const approvedPlan = decision === 'approved' ? {
       ...fieldPlanSnapshot(workOrder),
-      expected_service_days: Number(workOrder.expected_service_days || 0) + Number(extension.requested_additional_days),
+      expected_service_days: quoteDriven
+        ? Number(workOrder.expected_service_days || 0)
+        : Number(workOrder.expected_service_days || 0) + Number(extension.requested_additional_days),
+      approved_extension_days: quoteDriven
+        ? Number(workOrder.approved_extension_days || 0) + Number(extension.requested_additional_days)
+        : Number(workOrder.approved_extension_days || 0),
       expected_completion_date: extension.proposed_completion_date,
     } : null;
     const statements = [env.DB.prepare(`
@@ -12152,9 +12284,17 @@ async function handleAdminExtensionDecision(request, env) {
       SELECT CASE WHEN changes() = 1 THEN 1 ELSE json('field extension concurrent update') END
     `)];
     if (approvedPlan) {
-      statements.push(env.DB.prepare(`
-        UPDATE work_orders SET expected_service_days = ?, expected_completion_date = ?, updated_at = datetime('now') WHERE id = ?
-      `).bind(approvedPlan.expected_service_days, approvedPlan.expected_completion_date, workOrderId));
+      if (quoteDriven) {
+        statements.push(env.DB.prepare(`
+          UPDATE work_orders
+          SET approved_extension_days = approved_extension_days + ?, updated_at = datetime('now')
+          WHERE id = ?
+        `).bind(extension.requested_additional_days, workOrderId));
+      } else {
+        statements.push(env.DB.prepare(`
+          UPDATE work_orders SET expected_service_days = ?, expected_completion_date = ?, updated_at = datetime('now') WHERE id = ?
+        `).bind(approvedPlan.expected_service_days, approvedPlan.expected_completion_date, workOrderId));
+      }
     }
     statements.push(buildAuditLogStatement(env, request, {
       targetType: 'work_order_extension_request', targetId: requestId, action: `field_extension_${decision}`,
@@ -12184,7 +12324,10 @@ async function handleAdminExtensionDecision(request, env) {
     if (approvedPlan) {
       await notifyFieldWorkBestEffort(env, {
         user_id: workOrder.customer_id, user_type: 'customer', type: 'field_extension_approved',
-        title: 'Service plan updated', body: `The expected completion date is now ${approvedPlan.expected_completion_date}.`,
+        title: quoteDriven ? 'Workday extension approved' : 'Service plan updated',
+        body: quoteDriven
+          ? `${extension.requested_additional_days} additional onsite workday(s) approved.`
+          : `The expected completion date is now ${approvedPlan.expected_completion_date}.`,
         data: { work_order_id: workOrderId, extension_request_id: requestId },
       });
     }
@@ -12719,12 +12862,27 @@ async function handleAdminArchiveWorkOrder(request, env) {
     const workOrderId = new URL(request.url).pathname.split('/')[4];
     if (!workOrderId) return errorResponse('缺少服务申请 ID');
 
+    const market = getRequestMarket(request);
     const wo = await env.DB.prepare(
-      'SELECT id, status, order_no FROM work_orders WHERE id = ?'
+      'SELECT * FROM work_orders WHERE id = ?'
     ).bind(workOrderId).first();
     if (!wo) return errorResponse('服务申请不存在', 404);
     if (!['resolved', 'pending_review', 'completed'].includes(wo.status)) {
       return errorResponse('当前服务申请尚不适合归档', 409);
+    }
+    const pricing = await env.DB.prepare(
+      'SELECT * FROM work_order_pricing WHERE work_order_id = ?'
+    ).bind(workOrderId).first();
+    if (isVersionedQuote(pricing)) {
+      const quoteExecution = await getWorkOrderQuoteExecution(env, wo, pricing, request._auth, market);
+      if (!quoteExecution?.financially_settled) {
+        return errorResponse(
+          market === 'cn'
+            ? '仍有未结清分期，暂不能完成财务归档'
+            : 'Financial archive requires every active installment to be fully received.',
+          409,
+        );
+      }
     }
 
     await env.DB.prepare(
@@ -15816,11 +15974,48 @@ async function handleEngineerRequestPaymentStart(request, env) {
     ).bind(workOrderId).first();
     if (!wo) return errorResponse(market === 'cn' ? '工单不存在' : 'Work order not found', 404);
     if (wo.engineer_id !== auth.userId) return errorResponse(market === 'cn' ? '您未被指派到此工单' : 'You are not assigned to this work order', 403);
-    if (await hasVersionedWorkOrderPricing(env, workOrderId)) {
-      return legacyPaymentConflictResponse(market);
-    }
     if (wo.status !== 'pending_payment' && wo.status !== 'payment_review') {
       return errorResponse(market === 'cn' ? '工单当前状态不允许申请开工' : 'Work order is not waiting for payment follow-up', 400);
+    }
+
+    const pricing = await env.DB.prepare(
+      'SELECT * FROM work_order_pricing WHERE work_order_id = ?'
+    ).bind(workOrderId).first();
+    if (isVersionedQuote(pricing)) {
+      const executionWorkOrder = await env.DB.prepare(`
+        SELECT * FROM work_orders WHERE id = ?
+      `).bind(workOrderId).first();
+      if (!executionWorkOrder || Number(executionWorkOrder.active_quote_version || 0) < 1) {
+        return legacyPaymentConflictResponse(market);
+      }
+      const quoteExecution = await getWorkOrderQuoteExecution(env, executionWorkOrder, pricing, auth, market);
+      if (!quoteExecution?.start_ready) {
+        return errorResponse(
+          market === 'cn'
+            ? '所有开工前必付分期到账后才能申请开工'
+            : 'All installments required before start must be fully received before requesting service start.',
+          409,
+        );
+      }
+      if (wo.status !== 'payment_review') {
+        await env.DB.prepare(
+          "UPDATE work_orders SET status = 'payment_review' WHERE id = ?"
+        ).bind(workOrderId).run();
+      }
+      const internalNote = market === 'cn'
+        ? `工程师在开工前必付分期全部到账后申请管理员确认开工。${note ? ` 备注：${note}` : ''}`
+        : `Engineer requested Admin approval after all required-before-start installments were received.${note ? ` Note: ${note}` : ''}`;
+      await env.DB.prepare(
+        "INSERT INTO work_order_messages (id, work_order_id, sender_type, sender_id, sender_name, content, message_type, is_internal_note, is_customer_visible) VALUES (?, ?, 'engineer', ?, 'Engineer', ?, 'payment_update', 1, 0)"
+      ).bind(generateId(), workOrderId, auth.userId, internalNote).run();
+      await writeAuditLog(env, request, {
+        targetType: 'work_order',
+        targetId: workOrderId,
+        action: 'payment_start_requested',
+        beforeState: { status: wo.status, payment_state: quoteExecution.payment_state },
+        afterState: { status: 'payment_review', payment_state: quoteExecution.payment_state, note },
+      });
+      return jsonResponse({ success: true, status: 'payment_review' });
     }
 
     const payment = await env.DB.prepare(
@@ -15873,11 +16068,54 @@ async function handleAdminApprovePaymentStart(request, env) {
       'SELECT id, status, order_no FROM work_orders WHERE id = ?'
     ).bind(workOrderId).first();
     if (!wo) return errorResponse(market === 'cn' ? '工单不存在' : 'Work order not found', 404);
-    if (await hasVersionedWorkOrderPricing(env, workOrderId)) {
-      return legacyPaymentConflictResponse(market);
-    }
     if (wo.status !== 'payment_review' && wo.status !== 'pending_payment') {
       return errorResponse(market === 'cn' ? '工单当前状态不允许管理员确认付款' : 'Work order is not waiting for payment approval', 400);
+    }
+
+    const pricing = await env.DB.prepare(
+      'SELECT * FROM work_order_pricing WHERE work_order_id = ?'
+    ).bind(workOrderId).first();
+    if (isVersionedQuote(pricing)) {
+      const executionWorkOrder = await env.DB.prepare(`
+        SELECT * FROM work_orders WHERE id = ?
+      `).bind(workOrderId).first();
+      if (!executionWorkOrder || Number(executionWorkOrder.active_quote_version || 0) < 1) {
+        return legacyPaymentConflictResponse(market);
+      }
+      if (wo.status !== 'payment_review') {
+        return errorResponse(
+          market === 'cn'
+            ? '请先由工程师提交开工申请'
+            : 'The assigned engineer must request service start before Admin approval.',
+          409,
+        );
+      }
+      const quoteExecution = await getWorkOrderQuoteExecution(env, executionWorkOrder, pricing, request._auth, market);
+      if (!quoteExecution?.start_ready) {
+        return errorResponse(
+          market === 'cn'
+            ? '开工前必付分期尚未全部到账'
+            : 'Required-before-start installments are not fully received.',
+          409,
+        );
+      }
+      await env.DB.prepare(
+        "UPDATE work_orders SET status = 'in_service' WHERE id = ?"
+      ).bind(workOrderId).run();
+      const confirmMsg = market === 'cn'
+        ? `SAGEMRO 已完成最终开工审批，工单可开始服务。${note ? ` 备注：${note}` : ''}`
+        : `SAGEMRO completed final start approval. The work order may begin service.${note ? ` Note: ${note}` : ''}`;
+      await env.DB.prepare(
+        "INSERT INTO work_order_messages (id, work_order_id, sender_type, sender_id, sender_name, content, message_type, is_internal_note, is_customer_visible) VALUES (?, ?, 'system', '', 'System', ?, 'payment_update', 0, 1)"
+      ).bind(generateId(), workOrderId, confirmMsg).run();
+      await writeAuditLog(env, request, {
+        targetType: 'work_order',
+        targetId: workOrderId,
+        action: 'payment_start_approved',
+        beforeState: { status: wo.status, payment_state: quoteExecution.payment_state },
+        afterState: { status: 'in_service', payment_state: quoteExecution.payment_state, note },
+      });
+      return jsonResponse({ success: true, status: 'in_service' });
     }
 
     const payment = await env.DB.prepare(
