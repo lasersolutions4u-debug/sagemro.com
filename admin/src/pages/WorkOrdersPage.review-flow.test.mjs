@@ -11,7 +11,42 @@ test('pending quote approval is only available inside the full order drawer', as
 
   assert.equal(tableSource.includes('handleApprovePricing(wo)'), false);
   assert.match(tableSource, /openDetail\(wo\)/);
-  assert.match(drawerSource, /handleApprovePricing\(detail\)/);
+  assert.match(drawerSource, /<QuoteExecutionAdminPanel[\s\S]*detail=\{detail\}[\s\S]*readOnly=\{readOnly\}[\s\S]*onOpenDialog=\{openOperationDialog\}/);
+  assert.doesNotMatch(tableSource, /pricing\/approve/);
+});
+
+test('versioned quote and receipt decisions use the controlled operation dialog with exact version and stable retry key', async () => {
+  const source = await readFile(new URL('./WorkOrdersPage.jsx', import.meta.url), 'utf8');
+
+  assert.match(source, /reviewWorkOrderQuote/);
+  assert.match(source, /decideInstallmentReceipt/);
+  assert.match(source, /'quote-approve'/);
+  assert.match(source, /'quote-return'/);
+  assert.match(source, /'receipt-confirm-full'/);
+  assert.match(source, /'receipt-confirm-partial'/);
+  assert.match(source, /'receipt-reject'/);
+  assert.match(source, /reviewWorkOrderQuote\(wo\.id, action, quoteVersion, note\)/);
+  assert.match(source, /confirmed_amount/);
+  assert.match(source, /idempotency_key/);
+  assert.match(source, /crypto\.randomUUID\(\)/);
+  assert.match(source, /setOperationDialog\(null\)/);
+  assert.match(source, /!values\.reason\.trim\(\)/);
+  assert.match(source, /operationDialog\.type === 'receipt-confirm-partial'/);
+  assert.match(source, /operationDialog\.type === 'receipt-reject'/);
+  assert.doesNotMatch(source, /window\.prompt/);
+});
+
+test('payment indicators retain the service status and render list/detail payment projections', async () => {
+  const source = await readFile(new URL('./WorkOrdersPage.jsx', import.meta.url), 'utf8');
+
+  assert.match(source, /function PaymentIndicators/);
+  assert.match(source, /workOrder\.payment_state/);
+  assert.match(source, /workOrder\.received_amount/);
+  assert.match(source, /workOrder\.outstanding_amount/);
+  assert.match(source, /pending_claim_count/);
+  assert.match(source, /<PaymentIndicators workOrder=\{wo\} t=\{t\} \/>/);
+  assert.match(source, /<PaymentIndicators workOrder=\{detail\} t=\{t\} \/>/);
+  assert.match(source, /t\.statuses\[wo\.status\]/);
 });
 
 test('admin drawer supports onsite confirmation, arrival audit, and manual override', async () => {
@@ -59,6 +94,7 @@ test('operations staff receive a read-only service-order view', async () => {
   assert.match(source, /if \(readOnly\) return;/);
   assert.match(source, /\{!readOnly && wo\.status === 'payment_review'/);
   assert.match(source, /\{!readOnly && detail\.pricing\?\.status === 'pending_review'/);
+  assert.match(source, /<QuoteExecutionAdminPanel[\s\S]*readOnly=\{readOnly\}/);
   assert.match(source, /\{!readOnly && \([\s\S]*submitInternalNote/);
 });
 

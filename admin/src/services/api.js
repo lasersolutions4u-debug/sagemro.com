@@ -318,6 +318,20 @@ export async function rejectAdminWorkOrderPricing(workOrderId, note = '') {
   });
 }
 
+export async function reviewWorkOrderQuote(workOrderId, action, quoteVersion, note = '') {
+  return request(`/api/admin/workorders/${workOrderId}/pricing/${action}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ quote_version: quoteVersion, note }),
+  });
+}
+
+export async function decideInstallmentReceipt(workOrderId, installmentId, claimId, payload) {
+  return request(`/api/admin/workorders/${workOrderId}/installments/${installmentId}/receipt-claims/${claimId}/decision`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
 
 export async function approveAdminWorkOrderPaymentStart(workOrderId, note = '') {
   return request(`/api/admin/workorders/${workOrderId}/payment/approve-start`, {
