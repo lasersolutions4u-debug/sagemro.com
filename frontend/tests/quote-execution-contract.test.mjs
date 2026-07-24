@@ -103,3 +103,77 @@ test('pricing copy is bilingual and explains extension days do not add labor fee
   assert.match(source, /获批延期只增加可用作业日，不会自动增加人工费。/);
   assert.doesNotMatch(source, /get cn\(\) \{\s*return this\.en/);
 });
+
+test('installment APIs use installment ids and multipart receipt claims', async () => {
+  const source = await readSource('../src/services/api.js');
+
+  assert.match(source, /export async function startInstallmentCollection\(workOrderId, installmentId/);
+  assert.match(source, /installments\/\$\{installmentId\}\/collect/);
+  assert.match(source, /export async function selectInstallmentPaymentMethod\(workOrderId, installmentId/);
+  assert.match(source, /installments\/\$\{installmentId\}\/payment-method/);
+  assert.match(source, /JSON\.stringify\(\{ payment_method/);
+  assert.match(source, /export async function submitInstallmentReceiptClaim\(workOrderId, installmentId, payload\)/);
+  assert.match(source, /installments\/\$\{installmentId\}\/receipt-claims/);
+  assert.match(source, /formData\.append\('claimed_amount'/);
+  assert.match(source, /formData\.append\('idempotency_key'/);
+  assert.match(source, /formData\.append\('transaction_reference'/);
+  assert.match(source, /formData\.append\('note'/);
+  assert.match(source, /formData\.append\('evidence'/);
+  assert.doesNotMatch(source, /startInstallmentCollection[\s\S]{0,500}payment_stage/);
+  assert.doesNotMatch(source, /selectInstallmentPaymentMethod[\s\S]{0,500}payment_stage/);
+});
+
+test('collection panel renders normalized installment states and guarded engineer actions', async () => {
+  const source = await readSource('../src/components/WorkOrder/CollectionPanel.jsx');
+
+  assert.match(source, /quoteExecution/);
+  assert.match(source, /quoteExecution\?\.installments/);
+  assert.match(source, /scheduled_amount/);
+  assert.match(source, /received_amount/);
+  assert.match(source, /outstanding_amount/);
+  assert.match(source, /\['due', 'partially_received', 'overdue'\]/);
+  assert.match(source, /\['collecting', 'partially_received', 'overdue'\]/);
+  assert.match(source, /pending_confirmation/);
+  assert.match(source, /pending_claim_count/);
+  assert.match(source, /installment\.source === 'legacy'/);
+  assert.match(source, /Start this installment collection/);
+  assert.match(source, /发起本期收款/);
+  assert.match(source, /Request receipt confirmation/);
+  assert.match(source, /申请 Admin 确认到账/);
+  assert.match(source, /accept="image\/jpeg,image\/png,application\/pdf"/);
+  assert.match(source, /Number\.isSafeInteger/);
+  assert.match(source, /remainingAmount/);
+  assert.match(source, /idempotency/);
+  assert.match(source, /whitespace-nowrap/);
+});
+
+test('customer installment payment mode uses the exact installment amount and trigger', async () => {
+  const source = await readSource('../src/components/Payment/PaymentModal.jsx');
+
+  assert.match(source, /installmentId/);
+  assert.match(source, /amount/);
+  assert.match(source, /trigger/);
+  assert.match(source, /selectInstallmentPaymentMethod/);
+  assert.match(source, /isInstallmentMode/);
+  assert.match(source, /isInstallmentMode \? Promise\.resolve/);
+  assert.match(source, /isInstallmentMode\s*\?\s*installmentAmount/);
+  const installmentRequest = source.match(/if \(isInstallmentMode\) \{([\s\S]*?)\} else/)?.[1] || '';
+  assert.match(installmentRequest, /selectInstallmentPaymentMethod/);
+  assert.doesNotMatch(installmentRequest, /payment_stage/);
+});
+
+test('work order detail keeps independent collection visible through financial closure', async () => {
+  const source = await readSource('../src/components/WorkOrder/WorkOrderDetailModal.jsx');
+
+  assert.match(source, /CollectionPanel/);
+  assert.match(source, /quote_execution/);
+  assert.match(source, /financially_settled/);
+  assert.match(source, /\['resolved', 'pending_review', 'completed'\]/);
+  assert.match(source, /Service complete/);
+  assert.match(source, /Payment outstanding/);
+  assert.match(source, /服务已完成/);
+  assert.match(source, /待收尾款/);
+  assert.match(source, /tab === 'collection'/);
+  assert.match(source, /installmentId=/);
+  assert.match(source, /trigger=/);
+});
