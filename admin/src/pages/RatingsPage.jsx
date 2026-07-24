@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { getAdminRatings, replyToRating, getAdminPlatformRatings, getAdminCustomerRatings } from '../services/api';
 import { runtimeConfig } from '../config/runtime';
 
@@ -120,17 +120,25 @@ function WorkOrderRatings({ t }) {
   const [replying, setReplying] = useState(false);
   const [loadError, setLoadError] = useState('');
   const [loadAttempt, setLoadAttempt] = useState(0);
+  const loadRequestId = useRef(0);
   const pageSize = 20;
 
   const load = () => {
+    const requestId = ++loadRequestId.current;
     setLoading(true);
     setLoadError('');
     const filters = { sort };
     if (lowScore) filters.lowScore = 'true';
     getAdminRatings(page, pageSize, filters)
-      .then(setData)
-      .catch((error) => setLoadError(error.message || t.loadFailed))
-      .finally(() => setLoading(false));
+      .then((response) => {
+        if (loadRequestId.current === requestId) setData(response);
+      })
+      .catch((error) => {
+        if (loadRequestId.current === requestId) setLoadError(error.message || t.loadFailed);
+      })
+      .finally(() => {
+        if (loadRequestId.current === requestId) setLoading(false);
+      });
   };
 
   useEffect(() => { load(); }, [page, lowScore, sort, loadAttempt]);
@@ -296,12 +304,23 @@ function PlatformRatings({ t }) {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [loadAttempt, setLoadAttempt] = useState(0);
+  const loadRequestId = useRef(0);
   const pageSize = 20;
 
   useEffect(() => {
+    const requestId = ++loadRequestId.current;
     setLoading(true);
     setLoadError('');
-    getAdminPlatformRatings(page, pageSize).then(setData).catch((error) => setLoadError(error.message || t.loadFailed)).finally(() => setLoading(false));
+    getAdminPlatformRatings(page, pageSize)
+      .then((response) => {
+        if (loadRequestId.current === requestId) setData(response);
+      })
+      .catch((error) => {
+        if (loadRequestId.current === requestId) setLoadError(error.message || t.loadFailed);
+      })
+      .finally(() => {
+        if (loadRequestId.current === requestId) setLoading(false);
+      });
   }, [page, loadAttempt]);
 
   const totalPages = Math.max(1, Math.ceil(data.total / pageSize));
@@ -363,12 +382,23 @@ function CustomerRatings({ t }) {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [loadAttempt, setLoadAttempt] = useState(0);
+  const loadRequestId = useRef(0);
   const pageSize = 20;
 
   useEffect(() => {
+    const requestId = ++loadRequestId.current;
     setLoading(true);
     setLoadError('');
-    getAdminCustomerRatings(page, pageSize).then(setData).catch((error) => setLoadError(error.message || t.loadFailed)).finally(() => setLoading(false));
+    getAdminCustomerRatings(page, pageSize)
+      .then((response) => {
+        if (loadRequestId.current === requestId) setData(response);
+      })
+      .catch((error) => {
+        if (loadRequestId.current === requestId) setLoadError(error.message || t.loadFailed);
+      })
+      .finally(() => {
+        if (loadRequestId.current === requestId) setLoading(false);
+      });
   }, [page, loadAttempt]);
 
   const totalPages = Math.max(1, Math.ceil(data.total / pageSize));
