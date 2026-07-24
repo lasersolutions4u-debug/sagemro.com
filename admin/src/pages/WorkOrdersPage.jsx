@@ -188,6 +188,9 @@ const TEXT = {
     subtitle: 'The main flow is Admin to regional lead, then regional lead to engineer. Direct engineer dispatch remains as a compatibility operation and is restricted by conflict checks.',
     loading: 'Loading...',
     empty: 'No data',
+    loadFailed: 'Failed to load service orders.',
+    engineerLoadFailed: 'Failed to load available engineers and regional leads.',
+    retry: 'Retry',
     selectRegionalLead: 'Please select a regional lead first',
     assignedRegionalLead: (orderNo) => `Regional lead assigned: ${orderNo}`,
     assignRegionalLeadFailed: 'Failed to assign regional lead',
@@ -196,7 +199,8 @@ const TEXT = {
     assignEngineerFailed: 'Dispatch failed',
     quoteSent: (orderNo) => `Reviewed quote sent to customer: ${orderNo}`,
     quoteReviewFailed: 'Quote review failed',
-    rejectPrompt: 'Reason for return (optional, visible to engineer as an internal note):',
+    quoteReturnTitle: 'Return quote for revision',
+    quoteReturnReason: 'Reason for return (required, visible to engineer as an internal note)',
     quoteReturned: (orderNo) => `Quote returned for revision: ${orderNo}`,
     quoteReturnFailed: 'Failed to return quote',
     paymentStartApproved: (orderNo) => `Payment confirmed. Service can start: ${orderNo}`,
@@ -346,12 +350,28 @@ const TEXT = {
     invoiceNumber: 'Invoice No.',
     noInvoice: 'No invoice request',
     invoiceConfirmLabel: 'Invoice number (required):',
+    invoiceProcessFailed: 'Failed to process the invoice request',
+    invoiceLoadFailed: 'Failed to load the invoice request.',
     arrivalLocationUnavailable: 'Location unavailable · photo evidence accepted',
     arrivalPassed: 'Passed',
     arrivalOutsideGeofence: 'Outside geofence',
     fieldToday: 'Checked in today',
     fieldOverdue: (count) => `${count} report overdue`,
     fieldExtension: 'Extension pending',
+    paymentNoteTitle: 'Confirm payment and start service',
+    paymentNoteLabel: 'Payment confirmation note (optional)',
+    balanceNoteTitle: 'Confirm service balance received',
+    balanceNoteLabel: 'Balance payment confirmation note (optional)',
+    payoutTitle: 'Update engineer service payment',
+    arrivalOverrideTitle: 'Manually approve engineer arrival',
+    arrivalOverrideReason: 'Reason for manual approval (required)',
+    invoiceDialogTitle: 'Mark invoice as issued',
+    requiredReason: 'Enter a reason before continuing.',
+    requiredInvoiceNumber: 'Enter the invoice number before continuing.',
+    invalidPayoutAmount: 'Payment amount must be empty or a non-negative number.',
+    cancel: 'Cancel',
+    confirm: 'Confirm',
+    saving: 'Saving...',
   },
   'zh-CN': {
     statuses: {
@@ -396,6 +416,9 @@ const TEXT = {
     subtitle: '常规流程：Admin → 区域负责人 → 工程师。直接派给工程师仅作为备用方式，受冲突检查限制。',
     loading: '加载中...',
     empty: '暂无数据',
+    loadFailed: '服务工单加载失败。',
+    engineerLoadFailed: '可派工程师和区域负责人加载失败。',
+    retry: '重试',
     selectRegionalLead: '请先选择区域负责人',
     assignedRegionalLead: (orderNo) => `已分配区域负责人：${orderNo}`,
     assignRegionalLeadFailed: '区域负责人分配失败',
@@ -404,7 +427,8 @@ const TEXT = {
     assignEngineerFailed: '派工失败',
     quoteSent: (orderNo) => `审核后的报价已发送给客户：${orderNo}`,
     quoteReviewFailed: '报价审核失败',
-    rejectPrompt: '退回原因（可选，将作为内部备注给工程师查看）：',
+    quoteReturnTitle: '退回报价修改',
+    quoteReturnReason: '退回原因（必填，工程师可见的内部备注）',
     quoteReturned: (orderNo) => `报价已退回修改：${orderNo}`,
     quoteReturnFailed: '报价退回失败',
     paymentStartApproved: (orderNo) => `付款已确认，可以开始服务：${orderNo}`,
@@ -554,12 +578,28 @@ const TEXT = {
     invoiceNumber: '发票号码',
     noInvoice: '暂无发票申请',
     invoiceConfirmLabel: '发票号码（必填）：',
+    invoiceProcessFailed: '处理发票失败',
+    invoiceLoadFailed: '发票申请加载失败。',
     arrivalLocationUnavailable: '无法定位 · 已接受照片证据',
     arrivalPassed: '已通过',
     arrivalOutsideGeofence: '位于围栏外',
     fieldToday: '今日已签到',
     fieldOverdue: (count) => `${count} 份日报逾期`,
     fieldExtension: '延期待审批',
+    paymentNoteTitle: '确认收款并开始服务',
+    paymentNoteLabel: '收款确认备注（选填）',
+    balanceNoteTitle: '确认已收到服务尾款',
+    balanceNoteLabel: '尾款确认备注（选填）',
+    payoutTitle: '更新工程师服务费结算',
+    arrivalOverrideTitle: '人工确认工程师已到场',
+    arrivalOverrideReason: '人工确认原因（必填）',
+    invoiceDialogTitle: '标记发票为已开具',
+    requiredReason: '请填写原因后再继续。',
+    requiredInvoiceNumber: '请填写发票号码后再继续。',
+    invalidPayoutAmount: '结算金额应留空或填写非负数。',
+    cancel: '取消',
+    confirm: '确认',
+    saving: '保存中...',
   },
 };
 
@@ -609,6 +649,13 @@ export function WorkOrdersPage({ readOnly = false }) {
   const [loading, setLoading] = useState(true);
   const [detailInvoice, setDetailInvoice] = useState(null);
   const [invoiceProcessing, setInvoiceProcessing] = useState(false);
+  const [invoiceLoadError, setInvoiceLoadError] = useState('');
+  const [loadError, setLoadError] = useState('');
+  const [loadAttempt, setLoadAttempt] = useState(0);
+  const [engineerLoadError, setEngineerLoadError] = useState('');
+  const [engineerLoadAttempt, setEngineerLoadAttempt] = useState(0);
+  const [operationDialog, setOperationDialog] = useState(null);
+  const [operationSubmitting, setOperationSubmitting] = useState(false);
   const pageSize = 20;
 
   useEffect(() => {
@@ -617,25 +664,28 @@ export function WorkOrdersPage({ readOnly = false }) {
 
   useEffect(() => {
     setLoading(true);
+    setLoadError('');
     getAdminWorkOrders(status, page, pageSize)
       .then(setData)
-      .catch(() => {})
+      .catch((error) => setLoadError(error.message || t.loadFailed))
       .finally(() => setLoading(false));
-  }, [status, page]);
+  }, [status, page, loadAttempt]);
 
   useEffect(() => {
     if (readOnly) return;
+    setEngineerLoadError('');
     getAdminUsers('engineer', 1, 50, { status: 'available' })
       .then((res) => {
         const list = res.list || [];
         setEngineers(list.filter((engineer) => engineer.engineer_role !== 'regional_lead'));
         setRegionalLeads(list.filter((engineer) => engineer.engineer_role === 'regional_lead'));
       })
-      .catch(() => {
+      .catch((error) => {
         setEngineers([]);
         setRegionalLeads([]);
+        setEngineerLoadError(error.message || t.engineerLoadFailed);
       });
-  }, [readOnly]);
+  }, [readOnly, engineerLoadAttempt]);
 
   const totalPages = Math.max(1, Math.ceil(data.total / pageSize));
 
@@ -752,9 +802,52 @@ export function WorkOrdersPage({ readOnly = false }) {
     }
   }
 
-  async function handleRejectPricing(wo) {
+  function openOperationDialog(type, workOrder, values = {}) {
+    const currentPayout = workOrder.payout || {};
+    const configs = {
+      'quote-return': {
+        title: t.quoteReturnTitle,
+        values: { reason: values.reason || '' },
+      },
+      'payment-start': {
+        title: t.paymentNoteTitle,
+        values: { note: values.note || '' },
+      },
+      'balance-payment': {
+        title: t.balanceNoteTitle,
+        values: { note: values.note || '' },
+      },
+      payout: {
+        title: t.payoutTitle,
+        values: {
+          amount: values.amount ?? currentPayout.amount ?? '',
+          transaction_reference: values.transaction_reference ?? currentPayout.transaction_reference ?? '',
+          internal_note: values.internal_note ?? currentPayout.internal_note ?? '',
+        },
+      },
+      'arrival-override': {
+        title: t.arrivalOverrideTitle,
+        values: { reason: values.reason || '' },
+      },
+      invoice: {
+        title: t.invoiceDialogTitle,
+        values: { invoice_number: values.invoice_number || '' },
+      },
+    };
+    setOperationDialog({ type, workOrder, status: values.status, error: '', ...configs[type] });
+  }
+
+  function updateOperationValue(event) {
+    const { name, value } = event.target;
+    setOperationDialog((current) => ({
+      ...current,
+      error: '',
+      values: { ...current.values, [name]: value },
+    }));
+  }
+
+  async function handleRejectPricing(wo, note) {
     if (readOnly) return;
-    const note = window.prompt(t.rejectPrompt) || '';
     setAssigningId(`${wo.id}:reject`);
     setMessage('');
     try {
@@ -778,16 +871,17 @@ export function WorkOrdersPage({ readOnly = false }) {
           : prev
       ));
       setMessage(t.quoteReturned(wo.order_no));
+      return true;
     } catch (err) {
       setMessage(err.message || t.quoteReturnFailed);
+      return false;
     } finally {
       setAssigningId('');
     }
   }
 
-  async function handleApprovePaymentStart(wo) {
+  async function handleApprovePaymentStart(wo, note) {
     if (readOnly) return;
-    const note = window.prompt(t.paymentConfirmationNote) || '';
     setAssigningId(`${wo.id}:payment-start`);
     setMessage('');
     try {
@@ -806,16 +900,17 @@ export function WorkOrdersPage({ readOnly = false }) {
           : prev
       ));
       setMessage(t.paymentStartApproved(wo.order_no));
+      return true;
     } catch (err) {
       setMessage(err.message || t.paymentStartApproveFailed);
+      return false;
     } finally {
       setAssigningId('');
     }
   }
 
-  async function handleApproveBalancePayment(wo) {
+  async function handleApproveBalancePayment(wo, note) {
     if (readOnly) return;
-    const note = window.prompt(t.balancePaymentPrompt) || '';
     setAssigningId(`${wo.id}:balance-payment`);
     setMessage('');
     try {
@@ -826,8 +921,10 @@ export function WorkOrdersPage({ readOnly = false }) {
           : prev
       ));
       setMessage(t.balancePaymentApproved(wo.order_no));
+      return true;
     } catch (err) {
       setMessage(err.message || t.balancePaymentApproveFailed);
+      return false;
     } finally {
       setAssigningId('');
     }
@@ -853,23 +950,19 @@ export function WorkOrdersPage({ readOnly = false }) {
     }
   }
 
-  async function handleUpdatePayout(wo, status) {
+  async function handleUpdatePayout(wo, status, values) {
     if (readOnly) return;
     const currentPayout = wo.payout || {};
-    const amountInput = window.prompt(t.payoutPrompts.amount, currentPayout.amount || '');
-    if (amountInput === null) return;
-    const reference = window.prompt(t.payoutPrompts.reference, currentPayout.transaction_reference || '') || '';
-    const note = window.prompt(t.payoutPrompts.note, currentPayout.internal_note || '') || '';
     setAssigningId(`${wo.id}:payout:${status}`);
     setMessage('');
     try {
       const response = await updateAdminWorkOrderPayout(wo.id, {
         status,
-        amount: amountInput,
+        amount: values.amount,
         currency: currentPayout.currency || CURRENCY,
         method: currentPayout.method || 'paypal',
-        transaction_reference: reference,
-        internal_note: note,
+        transaction_reference: values.transaction_reference,
+        internal_note: values.internal_note,
       });
       setDetail((prev) => (
         prev?.id === wo.id
@@ -877,8 +970,10 @@ export function WorkOrdersPage({ readOnly = false }) {
           : prev
       ));
       setMessage(t.payoutUpdated(payoutLabel(response.payout_status)));
+      return true;
     } catch (err) {
       setMessage(err.message || t.payoutUpdateFailed);
+      return false;
     } finally {
       setAssigningId('');
     }
@@ -889,6 +984,8 @@ export function WorkOrdersPage({ readOnly = false }) {
     setDetailLoading(true);
     setDetail(null);
     setDetailMessages([]);
+    setDetailInvoice(null);
+    setInvoiceLoadError('');
     if (wo.pricing_status === 'pending_review') {
       setReviewedQuoteIds((prev) => ({ ...prev, [wo.id]: true }));
     }
@@ -910,11 +1007,22 @@ export function WorkOrdersPage({ readOnly = false }) {
         reason: '',
       });
       setAdminLocationResults([]);
-      getAdminInvoiceRequest(wo.id).then(setDetailInvoice).catch(() => setDetailInvoice(null));
+      loadDetailInvoice(wo.id);
     } catch (err) {
       setMessage(err.message || t.detailLoadFailed);
     } finally {
       setDetailLoading(false);
+    }
+  }
+
+  async function loadDetailInvoice(workOrderId) {
+    setInvoiceLoadError('');
+    try {
+      setDetailInvoice(await getAdminInvoiceRequest(workOrderId));
+    } catch (error) {
+      setDetailInvoice(null);
+      if (error?.status === 404) return;
+      setInvoiceLoadError(error.message || t.invoiceLoadFailed);
     }
   }
 
@@ -1006,28 +1114,24 @@ export function WorkOrdersPage({ readOnly = false }) {
     }
   }
 
-  async function handleAdminArrivalOverride(wo) {
+  async function handleAdminArrivalOverride(wo, reason) {
     if (readOnly) return;
-    const reason = window.prompt(runtimeConfig.locale === 'zh-CN'
-      ? '请填写人工批准工程师到场核验的原因：'
-      : 'Reason for manually approving the engineer arrival check:') || '';
-    if (!reason.trim()) return;
     setAssigningId(`${wo.id}:arrival-override`);
     setMessage('');
     try {
       await overrideAdminArrival(wo.id, reason.trim());
       setMessage(runtimeConfig.locale === 'zh-CN' ? `已人工批准工程师到场：${wo.order_no}` : `Engineer arrival manually approved: ${wo.order_no}`);
       await openDetail(wo);
+      return true;
     } catch (err) {
       setMessage(err.message || (runtimeConfig.locale === 'zh-CN' ? '人工批准到场失败。' : 'Failed to approve the engineer arrival.'));
+      return false;
     } finally {
       setAssigningId('');
     }
   }
 
-  async function handleProcessInvoice() {
-    const invoiceNumber = window.prompt(t.invoiceConfirmLabel);
-    if (!invoiceNumber) return;
+  async function handleProcessInvoice(invoiceNumber) {
     setInvoiceProcessing(true);
     try {
       await processAdminInvoiceRequest(detail.id, {
@@ -1038,11 +1142,44 @@ export function WorkOrdersPage({ readOnly = false }) {
         prev ? { ...prev, status: 'issued', invoice_number: invoiceNumber } : prev
       ));
       setMessage(t.invoiceStatus('issued'));
+      return true;
     } catch (err) {
-      setMessage(err.message || '处理发票失败');
+      setMessage(err.message || t.invoiceProcessFailed);
+      return false;
     } finally {
       setInvoiceProcessing(false);
     }
+  }
+
+  async function submitOperationDialog() {
+    if (!operationDialog || operationSubmitting) return;
+    const { type, workOrder, status: payoutStatus, values } = operationDialog;
+    if (['quote-return', 'arrival-override'].includes(type) && !values.reason.trim()) {
+      setOperationDialog((current) => ({ ...current, error: t.requiredReason }));
+      return;
+    }
+    if (type === 'invoice' && !values.invoice_number.trim()) {
+      setOperationDialog((current) => ({ ...current, error: t.requiredInvoiceNumber }));
+      return;
+    }
+    if (type === 'payout' && values.amount !== '') {
+      const amount = Number(values.amount);
+      if (!Number.isFinite(amount) || amount < 0) {
+        setOperationDialog((current) => ({ ...current, error: t.invalidPayoutAmount }));
+        return;
+      }
+    }
+
+    setOperationSubmitting(true);
+    let succeeded = false;
+    if (type === 'quote-return') succeeded = await handleRejectPricing(workOrder, values.reason.trim());
+    if (type === 'payment-start') succeeded = await handleApprovePaymentStart(workOrder, values.note.trim());
+    if (type === 'balance-payment') succeeded = await handleApproveBalancePayment(workOrder, values.note.trim());
+    if (type === 'payout') succeeded = await handleUpdatePayout(workOrder, payoutStatus, values);
+    if (type === 'arrival-override') succeeded = await handleAdminArrivalOverride(workOrder, values.reason.trim());
+    if (type === 'invoice') succeeded = await handleProcessInvoice(values.invoice_number.trim());
+    setOperationSubmitting(false);
+    if (succeeded) setOperationDialog(null);
   }
 
   return (
@@ -1058,6 +1195,18 @@ export function WorkOrdersPage({ readOnly = false }) {
       {message && (
         <div className="mb-4 rounded-lg bg-[var(--color-surface-elevated)] px-4 py-3 text-sm text-[var(--color-text-secondary)]">
           {message}
+        </div>
+      )}
+      {loadError && (
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-[var(--color-error)]/40 bg-[var(--color-error)]/5 px-4 py-3 text-sm text-[var(--color-text-secondary)]">
+          <span>{loadError}</span>
+          <button onClick={() => setLoadAttempt((current) => current + 1)} className="whitespace-nowrap rounded-lg border border-[var(--color-error)]/40 px-3 py-1.5 text-xs font-medium text-[var(--color-error)]">{t.retry}</button>
+        </div>
+      )}
+      {engineerLoadError && (
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-[var(--color-warning)]/40 bg-[var(--color-warning)]/5 px-4 py-3 text-sm text-[var(--color-text-secondary)]">
+          <span>{engineerLoadError}</span>
+          <button onClick={() => setEngineerLoadAttempt((current) => current + 1)} className="whitespace-nowrap rounded-lg border border-[var(--color-warning)]/40 px-3 py-1.5 text-xs font-medium text-[var(--color-warning)]">{t.retry}</button>
         </div>
       )}
 
@@ -1136,7 +1285,7 @@ export function WorkOrdersPage({ readOnly = false }) {
                     </button>
                     {!readOnly && wo.status === 'payment_review' && (
                       <button
-                        onClick={() => handleApprovePaymentStart(wo)}
+                        onClick={() => openOperationDialog('payment-start', wo)}
                         disabled={assigningId === `${wo.id}:payment-start`}
                         className="min-h-10 rounded-lg bg-[var(--color-primary)] px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
                       >
@@ -1246,7 +1395,7 @@ export function WorkOrdersPage({ readOnly = false }) {
                             )}
                             {!readOnly && wo.status === 'payment_review' && (
                               <button
-                                onClick={() => handleApprovePaymentStart(wo)}
+                                onClick={() => openOperationDialog('payment-start', wo)}
                                 disabled={assigningId === `${wo.id}:payment-start`}
                                 className="rounded-lg border border-[var(--color-primary)] bg-[var(--color-primary)]/10 px-2 py-1 text-xs text-[var(--color-primary)] disabled:opacity-50"
                               >
@@ -1340,7 +1489,7 @@ export function WorkOrdersPage({ readOnly = false }) {
                       </div>
                       <div className="flex flex-wrap gap-2">
                         <button
-                          onClick={() => handleRejectPricing(detail)}
+                          onClick={() => openOperationDialog('quote-return', detail)}
                           disabled={assigningId === `${detail.id}:reject`}
                           className="rounded-lg border border-[var(--color-border)] px-3 py-2 text-sm text-[var(--color-text-secondary)] disabled:opacity-50"
                         >
@@ -1365,7 +1514,7 @@ export function WorkOrdersPage({ readOnly = false }) {
                         <p className="mt-1 text-sm text-[var(--color-text-secondary)]">{t.paymentReviewHint}</p>
                       </div>
                       <button
-                        onClick={() => handleApprovePaymentStart(detail)}
+                        onClick={() => openOperationDialog('payment-start', detail)}
                         disabled={assigningId === `${detail.id}:payment-start`}
                         className="rounded-lg bg-[var(--color-primary)] px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
                       >
@@ -1385,7 +1534,7 @@ export function WorkOrdersPage({ readOnly = false }) {
                         </p>
                       </div>
                       <button
-                        onClick={() => handleApproveBalancePayment(detail)}
+                        onClick={() => openOperationDialog('balance-payment', detail)}
                         disabled={assigningId === `${detail.id}:balance-payment`}
                         className="rounded-lg bg-amber-500 px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
                       >
@@ -1516,7 +1665,7 @@ export function WorkOrdersPage({ readOnly = false }) {
                       {!readOnly && detail.arrival_verification_required && !detail.arrival_verified_at && (
                         <button
                           type="button"
-                          onClick={() => handleAdminArrivalOverride(detail)}
+                          onClick={() => openOperationDialog('arrival-override', detail)}
                           disabled={assigningId === `${detail.id}:arrival-override`}
                           className="shrink-0 rounded-lg border border-red-500/40 px-3 py-2 text-sm font-medium text-red-600 disabled:opacity-50"
                         >
@@ -1626,21 +1775,21 @@ export function WorkOrdersPage({ readOnly = false }) {
                       {!readOnly && detail.payout_status !== 'completed' && (
                         <div className="flex flex-wrap gap-2">
                           <button
-                            onClick={() => handleUpdatePayout(detail, 'processing')}
+                            onClick={() => openOperationDialog('payout', detail, { status: 'processing' })}
                             disabled={assigningId === `${detail.id}:payout:processing`}
                             className="rounded-lg border border-[var(--color-border)] px-3 py-2 text-sm text-[var(--color-text-secondary)] disabled:opacity-50"
                           >
                             {t.payoutActions.processing}
                           </button>
                           <button
-                            onClick={() => handleUpdatePayout(detail, 'completed')}
+                            onClick={() => openOperationDialog('payout', detail, { status: 'completed' })}
                             disabled={assigningId === `${detail.id}:payout:completed`}
                             className="rounded-lg bg-[var(--color-primary)] px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
                           >
                             {t.payoutActions.completed}
                           </button>
                           <button
-                            onClick={() => handleUpdatePayout(detail, 'exception')}
+                            onClick={() => openOperationDialog('payout', detail, { status: 'exception' })}
                             disabled={assigningId === `${detail.id}:payout:exception`}
                             className="rounded-lg border border-red-500/40 px-3 py-2 text-sm text-red-500 disabled:opacity-50"
                           >
@@ -1655,7 +1804,12 @@ export function WorkOrdersPage({ readOnly = false }) {
                 {runtimeConfig.locale === 'zh-CN' && (
                   <section className="rounded-xl border border-[var(--color-border)] p-4">
                     <h4 className="mb-2 font-medium">{t.invoiceTitle}</h4>
-                    {detailInvoice ? (
+                    {invoiceLoadError ? (
+                      <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-[var(--color-error)]/40 bg-[var(--color-error)]/5 px-3 py-2 text-sm text-[var(--color-text-secondary)]">
+                        <span>{invoiceLoadError}</span>
+                        <button onClick={() => loadDetailInvoice(detail.id)} className="whitespace-nowrap rounded-lg border border-[var(--color-error)]/40 px-3 py-1.5 text-xs font-medium text-[var(--color-error)]">{t.retry}</button>
+                      </div>
+                    ) : detailInvoice ? (
                       <div className="space-y-3 text-sm">
                         <div className="flex items-center justify-between">
                           <span className="text-[var(--color-text-secondary)]">
@@ -1673,7 +1827,7 @@ export function WorkOrdersPage({ readOnly = false }) {
                         </div>
                         {detailInvoice.status === 'pending' && (
                           <button
-                            onClick={handleProcessInvoice}
+                            onClick={() => openOperationDialog('invoice', detail)}
                             disabled={invoiceProcessing}
                             className="rounded-lg bg-[var(--color-primary)] px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
                           >
@@ -1934,6 +2088,57 @@ export function WorkOrdersPage({ readOnly = false }) {
             ) : (
               <div className="py-12 text-center text-sm text-[var(--color-text-muted)]">{t.noDetail}</div>
             )}
+            </div>
+          </div>
+        </div>
+      )}
+      {operationDialog && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center px-4">
+          <div className="absolute inset-0 bg-black/50" onClick={() => !operationSubmitting && setOperationDialog(null)} />
+          <div role="dialog" aria-modal="true" aria-label={operationDialog.title} className="relative w-full max-w-md rounded-lg bg-[var(--color-surface)] shadow-2xl">
+            <div className="border-b border-[var(--color-border)] px-5 py-4">
+              <h3 className="text-base font-semibold text-[var(--color-text)]">{operationDialog.title}</h3>
+              <p className="mt-1 text-sm text-[var(--color-text-muted)]">{operationDialog.workOrder.order_no}</p>
+            </div>
+            <div className="space-y-3 p-5">
+              {operationDialog.error && <div className="rounded-lg bg-[var(--color-error)]/10 px-3 py-2 text-sm text-[var(--color-error)]">{operationDialog.error}</div>}
+              {operationDialog.type === 'quote-return' && (
+                <label className="block text-sm text-[var(--color-text-secondary)]">{t.quoteReturnReason}
+                  <textarea name="reason" value={operationDialog.values.reason} onChange={updateOperationValue} rows={3} className="mt-1 w-full resize-none rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-3 py-2 text-sm text-[var(--color-text)]" />
+                </label>
+              )}
+              {['payment-start', 'balance-payment'].includes(operationDialog.type) && (
+                <label className="block text-sm text-[var(--color-text-secondary)]">{operationDialog.type === 'payment-start' ? t.paymentNoteLabel : t.balanceNoteLabel}
+                  <textarea name="note" value={operationDialog.values.note} onChange={updateOperationValue} rows={3} className="mt-1 w-full resize-none rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-3 py-2 text-sm text-[var(--color-text)]" />
+                </label>
+              )}
+              {operationDialog.type === 'payout' && (
+                <>
+                  <label className="block text-sm text-[var(--color-text-secondary)]">{t.payoutPrompts.amount}
+                    <input name="amount" inputMode="decimal" value={operationDialog.values.amount} onChange={updateOperationValue} className="mt-1 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-3 py-2 text-sm text-[var(--color-text)]" />
+                  </label>
+                  <label className="block text-sm text-[var(--color-text-secondary)]">{t.payoutPrompts.reference}
+                    <input name="transaction_reference" value={operationDialog.values.transaction_reference} onChange={updateOperationValue} className="mt-1 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-3 py-2 text-sm text-[var(--color-text)]" />
+                  </label>
+                  <label className="block text-sm text-[var(--color-text-secondary)]">{t.payoutPrompts.note}
+                    <textarea name="internal_note" value={operationDialog.values.internal_note} onChange={updateOperationValue} rows={3} className="mt-1 w-full resize-none rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-3 py-2 text-sm text-[var(--color-text)]" />
+                  </label>
+                </>
+              )}
+              {operationDialog.type === 'arrival-override' && (
+                <label className="block text-sm text-[var(--color-text-secondary)]">{t.arrivalOverrideReason}
+                  <textarea name="reason" value={operationDialog.values.reason} onChange={updateOperationValue} rows={3} className="mt-1 w-full resize-none rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-3 py-2 text-sm text-[var(--color-text)]" />
+                </label>
+              )}
+              {operationDialog.type === 'invoice' && (
+                <label className="block text-sm text-[var(--color-text-secondary)]">{t.invoiceConfirmLabel}
+                  <input name="invoice_number" value={operationDialog.values.invoice_number} onChange={updateOperationValue} className="mt-1 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-3 py-2 text-sm text-[var(--color-text)]" />
+                </label>
+              )}
+            </div>
+            <div className="flex justify-end gap-2 border-t border-[var(--color-border)] px-5 py-4">
+              <button onClick={() => setOperationDialog(null)} disabled={operationSubmitting} className="min-h-10 whitespace-nowrap rounded-lg border border-[var(--color-border)] px-4 text-sm disabled:opacity-50">{t.cancel}</button>
+              <button onClick={submitOperationDialog} disabled={operationSubmitting} className="min-h-10 whitespace-nowrap rounded-lg bg-[var(--color-primary)] px-4 text-sm font-medium text-white disabled:opacity-50">{operationSubmitting ? t.saving : t.confirm}</button>
             </div>
           </div>
         </div>
