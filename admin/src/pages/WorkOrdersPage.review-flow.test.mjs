@@ -43,6 +43,10 @@ test('payment indicators retain the service status and render list/detail paymen
   assert.match(source, /workOrder\.payment_state/);
   assert.match(source, /workOrder\.received_amount/);
   assert.match(source, /workOrder\.outstanding_amount/);
+  assert.match(source, /workOrder\?\.payment_currency/);
+  assert.match(source, /workOrder\?\.pending_receipt_claim_count/);
+  assert.match(source, /pendingCount \?\? t\.paymentUnknown/);
+  assert.doesNotMatch(source, /pricing_total_amount \|\| wo\.pricing_subtotal\)\} USD/);
   assert.match(source, /pending_claim_count/);
   assert.match(source, /<PaymentIndicators workOrder=\{wo\} t=\{t\} \/>/);
   assert.match(source, /<PaymentIndicators workOrder=\{detail\} t=\{t\} \/>/);

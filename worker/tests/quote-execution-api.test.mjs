@@ -2543,6 +2543,63 @@ test('detail and work-order lists expose payment state independently from servic
   assert.equal(adminList.json.list[0].payment_state, 'partially_received');
   assert.equal(adminList.json.list[0].received_amount, 1000);
   assert.equal(adminList.json.list[0].outstanding_amount, 11000);
+  assert.equal(adminList.json.list[0].payment_currency, 'USD');
+  assert.equal(adminList.json.list[0].pending_receipt_claim_count, 0);
+});
+
+test('Admin list projects active receipt-review counts and currency across CN supplements without N+1 claim reads', async () => {
+  const ctx = createQuoteExecutionEnv({ market: 'cn' });
+  await activateBaseline(ctx, quotePayload({
+    payment_schedule: quotePayload().payment_schedule.map((row) => ({ ...row, currency: 'CNY' })),
+  }));
+  const pricing = ctx.db.prepare('SELECT * FROM work_order_pricing WHERE work_order_id = ?').get('wo-quote-1');
+  ctx.db.exec(`
+    INSERT INTO work_order_pricing_history (
+      id, pricing_id, labor_fee, parts_fee, travel_fee, other_fee, subtotal, total_amount,
+      platform_fee, deposit_withhold, version, expected_service_days, payment_plan_mode,
+      quote_kind, parent_quote_version, status, confirmed_at
+    ) VALUES
+      ('history-active-supplement-v2', '${pricing.id}', 500, 100, 0, 0, 600, 600,
+        90, 30, 2, 3, 'single', 'supplemental', 1, 'confirmed', datetime('now')),
+      ('history-active-supplement-v3', '${pricing.id}', 400, 0, 0, 0, 400, 400,
+        60, 20, 3, 3, 'single', 'supplemental', 1, 'confirmed', datetime('now'));
+    INSERT INTO work_order_payment_schedule (
+      id, pricing_id, work_order_id, quote_version, sequence, amount, currency,
+      trigger_type, description, required_before_start
+    ) VALUES
+      ('schedule-active-supplement-v2', '${pricing.id}', 'wo-quote-1', 2, 1, 600, 'CNY',
+        'on_acceptance', 'Confirmed supplemental 2', 0),
+      ('schedule-active-supplement-v3', '${pricing.id}', 'wo-quote-1', 3, 1, 400, 'CNY',
+        'on_acceptance', 'Confirmed supplemental 3', 0);
+    INSERT INTO work_order_installments (
+      id, schedule_id, work_order_id, quote_version, sequence, amount, currency,
+      trigger_type, description, required_before_start, status, received_amount
+    ) VALUES
+      ('installment-active-supplement-v2', 'schedule-active-supplement-v2', 'wo-quote-1', 2, 1,
+        600, 'CNY', 'on_acceptance', 'Confirmed supplemental 2', 0, 'scheduled', 0),
+      ('installment-active-supplement-v3', 'schedule-active-supplement-v3', 'wo-quote-1', 3, 1,
+        400, 'CNY', 'on_acceptance', 'Confirmed supplemental 3', 0, 'pending_confirmation', 0);
+    INSERT INTO work_order_receipt_claims (
+      id, installment_id, work_order_id, engineer_id, claimed_amount, status, idempotency_key
+    ) VALUES
+      ('claim-active-supplement-pending', 'installment-active-supplement-v3', 'wo-quote-1', 'engineer-1', 400, 'pending', 'claim-supplement-pending'),
+      ('claim-active-supplement-confirmed', 'installment-active-supplement-v2', 'wo-quote-1', 'engineer-1', 600, 'confirmed', 'claim-supplement-confirmed');
+    UPDATE work_order_pricing
+    SET quote_version = 3, labor_fee = 9900, parts_fee = 2100, travel_fee = 1000,
+      subtotal = 13000, total_amount = 13000, platform_fee = 1950, deposit_withhold = 650,
+      expected_service_days = 3, payment_plan_mode = 'installments', status = 'submitted'
+    WHERE work_order_id = 'wo-quote-1';
+  `);
+  ctx.resetQueries();
+
+  const adminList = await api(ctx, '/api/admin/workorders', {
+    method: 'GET', userType: 'admin', userId: 'admin',
+  });
+
+  assert.equal(adminList.response.status, 200, JSON.stringify(adminList.json));
+  assert.equal(adminList.json.list[0].payment_currency, 'CNY');
+  assert.equal(adminList.json.list[0].pending_receipt_claim_count, 1);
+  assert.equal(ctx.queries().filter((sql) => /work_order_receipt_claims/i.test(sql)).length, 1);
 });
 
 test('all work-order lists fail closed on a malformed active installment schedule', async () => {
@@ -2575,5 +2632,64 @@ test('all work-order lists fail closed on a malformed active installment schedul
     assert.equal(row.payment_state, 'exception');
     assert.equal(row.received_amount, null);
     assert.equal(row.outstanding_amount, null);
+    assert.equal(row.payment_currency, null);
+    assert.equal(row.pending_receipt_claim_count, null);
+  }
+});
+
+test('all work-order lists fail closed when an active execution mixes currencies', async () => {
+  const ctx = createQuoteExecutionEnv({ market: 'cn' });
+  await activateBaseline(ctx, quotePayload({
+    payment_schedule: quotePayload().payment_schedule.map((row) => ({ ...row, currency: 'CNY' })),
+  }));
+  const pricing = ctx.db.prepare('SELECT * FROM work_order_pricing WHERE work_order_id = ?').get('wo-quote-1');
+  ctx.db.exec(`
+    INSERT INTO work_order_pricing_history (
+      id, pricing_id, labor_fee, parts_fee, travel_fee, other_fee, subtotal, total_amount,
+      platform_fee, deposit_withhold, version, expected_service_days, payment_plan_mode,
+      quote_kind, parent_quote_version, status, confirmed_at
+    ) VALUES (
+      'history-mixed-currency-v2', '${pricing.id}', 500, 0, 0, 0, 500, 500,
+      75, 25, 2, 3, 'single', 'supplemental', 1, 'confirmed', datetime('now')
+    );
+    INSERT INTO work_order_payment_schedule (
+      id, pricing_id, work_order_id, quote_version, sequence, amount, currency,
+      trigger_type, description, required_before_start
+    ) VALUES (
+      'schedule-mixed-currency-v2', '${pricing.id}', 'wo-quote-1', 2, 1, 500, 'USD',
+      'on_acceptance', 'Mixed currency supplemental', 0
+    );
+    INSERT INTO work_order_installments (
+      id, schedule_id, work_order_id, quote_version, sequence, amount, currency,
+      trigger_type, description, required_before_start, status, received_amount
+    ) VALUES (
+      'installment-mixed-currency-v2', 'schedule-mixed-currency-v2', 'wo-quote-1', 2, 1,
+      500, 'USD', 'on_acceptance', 'Mixed currency supplemental', 0, 'scheduled', 0
+    );
+    UPDATE work_order_pricing
+    SET quote_version = 2, labor_fee = 9500, parts_fee = 2000, travel_fee = 1000,
+      subtotal = 12500, total_amount = 12500, platform_fee = 1875, deposit_withhold = 625,
+      expected_service_days = 3, payment_plan_mode = 'installments', status = 'submitted'
+    WHERE work_order_id = 'wo-quote-1';
+  `);
+
+  const customerList = await api(ctx, '/api/workorders', {
+    method: 'GET', userType: 'customer', userId: 'customer-1',
+  });
+  const engineerList = await api(ctx, '/api/engineers/tickets', {
+    method: 'GET', userType: 'engineer', userId: 'engineer-1',
+  });
+  const adminList = await api(ctx, '/api/admin/workorders', {
+    method: 'GET', userType: 'admin', userId: 'admin',
+  });
+
+  for (const row of [
+    customerList.json.work_orders[0],
+    engineerList.json.work_orders[0],
+    adminList.json.list[0],
+  ]) {
+    assert.equal(row.payment_state, 'exception');
+    assert.equal(row.payment_currency, null);
+    assert.equal(row.pending_receipt_claim_count, null);
   }
 });

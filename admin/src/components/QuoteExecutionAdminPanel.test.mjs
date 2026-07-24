@@ -9,6 +9,7 @@ test('quote execution Admin APIs send an exact quote version and receipt decisio
 
   assert.match(api, /export async function reviewWorkOrderQuote\(workOrderId, action, quoteVersion, note = ''\)[\s\S]*pricing\/\$\{action\}[\s\S]*method: 'PATCH'[\s\S]*quote_version: quoteVersion, note/);
   assert.match(api, /export async function decideInstallmentReceipt\(workOrderId, installmentId, claimId, payload\)[\s\S]*receipt-claims\/\$\{claimId\}\/decision[\s\S]*method: 'POST'[\s\S]*body: JSON\.stringify\(payload\)/);
+  assert.match(api, /export async function getAuthenticatedReceiptEvidenceUrl\(workOrderId, evidenceId\)[\s\S]*receipt-evidence\/\$\{evidenceId\}[\s\S]*credentials: 'include'[\s\S]*headers: authHeaders\(\)[\s\S]*URL\.createObjectURL/);
 });
 
 test('quote execution panel renders the complete versioned commercial package before review', async () => {
@@ -43,6 +44,18 @@ test('quote execution panel renders pending receipt evidence and distinct decisi
   assert.match(panel, /claim\.claimed_amount/);
   assert.match(panel, /remainingAmount/);
   assert.match(panel, /claim\.evidence\?\.url/);
+  assert.match(panel, /getAuthenticatedReceiptEvidenceUrl/);
+  assert.match(panel, /type="button"/);
+  assert.match(panel, /window\.open\('', '_blank'\)/);
+  assert.ok(panel.indexOf("window.open('', '_blank')") < panel.indexOf('await getAuthenticatedReceiptEvidenceUrl'));
+  assert.match(panel, /opened\.location\.replace\(objectUrl\)/);
+  assert.match(panel, /opened\.close\(\)/);
+  assert.match(panel, /URL\.revokeObjectURL\(objectUrl\)/);
+  assert.match(panel, /Loading evidence/);
+  assert.match(panel, /正在加载凭证/);
+  assert.match(panel, /Could not load evidence/);
+  assert.match(panel, /凭证加载失败/);
+  assert.doesNotMatch(panel, /href=\{`\$\{runtimeConfig\.apiBase\}\$\{claim\.evidence\.url\}`\}/);
   assert.match(panel, /claim\.transaction_reference/);
   assert.match(panel, /claim\.engineer_note/);
   assert.match(panel, /'receipt-confirm-full'/);
@@ -75,4 +88,13 @@ test('quote execution panel exposes no mutation controls to read-only operations
   assert.match(panel, /!readOnly && pendingClaims\.length > 0/);
   assert.match(panel, /Read-only/);
   assert.match(panel, /只读/);
+});
+
+test('quote execution panel places versioned approval controls after the complete commercial package', async () => {
+  const panel = await readSource('./QuoteExecutionAdminPanel.jsx');
+
+  const controls = panel.indexOf("onOpenDialog?.('quote-approve'");
+  assert.ok(controls > panel.indexOf('pricing.expected_service_days'));
+  assert.ok(controls > panel.indexOf('pricing.labor_fee'));
+  assert.ok(controls > panel.indexOf('reviewSchedule.map'));
 });

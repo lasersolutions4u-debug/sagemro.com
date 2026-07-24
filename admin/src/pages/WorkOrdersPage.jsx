@@ -432,7 +432,8 @@ function pendingReceiptReviewCount(workOrder) {
 }
 
 function paymentCurrency(workOrder) {
-  return workOrder?.quote_execution?.installments?.[0]?.currency
+  return workOrder?.payment_currency
+    || workOrder?.quote_execution?.installments?.[0]?.currency
     || workOrder?.pricing?.payment_schedule?.[0]?.currency
     || workOrder?.pricing?.currency
     || '';
@@ -1151,7 +1152,7 @@ export function WorkOrdersPage({ readOnly = false }) {
                     <div>{t.headers.engineer}: {wo.engineer_name || '-'}</div>
                     <div>
                       {t.headers.quoteArchive}: {wo.pricing_status
-                        ? `${t.pricing[wo.pricing_status] || wo.pricing_status}${wo.pricing_total_amount || wo.pricing_subtotal ? ` / ${money(wo.pricing_total_amount || wo.pricing_subtotal)} USD` : ''}`
+                        ? `${t.pricing[wo.pricing_status] || wo.pricing_status}${wo.pricing_total_amount || wo.pricing_subtotal ? ` / ${money(wo.pricing_total_amount || wo.pricing_subtotal)}${wo.payment_currency ? ` ${wo.payment_currency}` : ''}` : ''}`
                         : t.noQuote}
                     </div>
                   </div>
@@ -1265,7 +1266,7 @@ export function WorkOrdersPage({ readOnly = false }) {
                           <div className="min-w-[170px] space-y-2">
                             <div className="text-xs text-[var(--color-text-secondary)]">
                               {wo.pricing_status
-                                ? `${t.pricing[wo.pricing_status] || wo.pricing_status}${wo.pricing_total_amount || wo.pricing_subtotal ? ` · ${money(wo.pricing_total_amount || wo.pricing_subtotal)} USD` : ''}`
+                                ? `${t.pricing[wo.pricing_status] || wo.pricing_status}${wo.pricing_total_amount || wo.pricing_subtotal ? ` · ${money(wo.pricing_total_amount || wo.pricing_subtotal)}${wo.payment_currency ? ` ${wo.payment_currency}` : ''}` : ''}`
                                 : t.noQuote}
                             </div>
                             {wo.pricing_status === 'pending_review' && (

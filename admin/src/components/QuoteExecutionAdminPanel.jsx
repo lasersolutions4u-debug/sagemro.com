@@ -1,6 +1,8 @@
 import { Check, ExternalLink, LockKeyhole, ReceiptText, RotateCcw, Split, X } from 'lucide-react';
+import { useState } from 'react';
 import { runtimeConfig } from '../config/runtime';
 import { money } from '../pages/workOrderDisplay';
+import { getAuthenticatedReceiptEvidenceUrl } from '../services/api';
 
 const TEXT = {
   en: {
@@ -31,6 +33,8 @@ const TEXT = {
     remaining: 'Remaining',
     evidence: 'Evidence',
     openEvidence: 'Open evidence',
+    evidenceLoading: 'Loading evidence...',
+    evidenceLoadFailed: 'Could not load evidence',
     noEvidence: 'No evidence file',
     reference: 'Transaction reference',
     engineerNote: 'Engineer note',
@@ -89,6 +93,8 @@ const TEXT = {
     remaining: '本期剩余',
     evidence: '到账凭证',
     openEvidence: '查看凭证',
+    evidenceLoading: '正在加载凭证...',
+    evidenceLoadFailed: '凭证加载失败',
     noEvidence: '未上传凭证',
     reference: '交易流水号',
     engineerNote: '工程师备注',
@@ -136,6 +142,7 @@ function SummaryItem({ label, value }) {
 
 export function QuoteExecutionAdminPanel({ detail, readOnly = false, onRefresh, onOpenDialog }) {
   const t = { ...TEXT.en, ...(TEXT[runtimeConfig.locale] || {}) };
+  const [evidenceState, setEvidenceState] = useState({ loadingId: '', errorId: '' });
   const pricing = detail?.pricing;
   const execution = detail?.quote_execution;
   const quoteVersion = Number(pricing?.quote_version || 0);
@@ -160,6 +167,28 @@ export function QuoteExecutionAdminPanel({ detail, readOnly = false, onRefresh, 
     onOpenDialog?.(type, detail, { claim, installment, remainingAmount, fullAmount, onRefresh });
   }
 
+  async function openEvidence(claim) {
+    if (!claim.evidence?.id || evidenceState.loadingId) return;
+    const opened = window.open('', '_blank');
+    if (!opened) {
+      setEvidenceState({ loadingId: '', errorId: claim.evidence.id });
+      return;
+    }
+    opened.opener = null;
+    setEvidenceState({ loadingId: claim.evidence.id, errorId: '' });
+    let objectUrl = '';
+    try {
+      objectUrl = await getAuthenticatedReceiptEvidenceUrl(detail.id, claim.evidence.id);
+      opened.location.replace(objectUrl);
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
+      setEvidenceState({ loadingId: '', errorId: '' });
+    } catch {
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+      if (!opened.closed) opened.close();
+      setEvidenceState({ loadingId: '', errorId: claim.evidence.id });
+    }
+  }
+
   return (
     <section className="break-words rounded-lg border border-[var(--color-border)]">
       <div className="flex flex-col gap-3 border-b border-[var(--color-border)] p-4 sm:flex-row sm:items-start sm:justify-between">
@@ -171,12 +200,6 @@ export function QuoteExecutionAdminPanel({ detail, readOnly = false, onRefresh, 
           </div>
           <p className="mt-1 text-sm text-[var(--color-text-secondary)]">{t.subtitle}</p>
         </div>
-        {!readOnly && pricing.status === 'pending_review' && (
-          <div className="flex flex-col gap-2 sm:flex-row">
-            <button type="button" onClick={() => onOpenDialog?.('quote-return', detail, { quoteVersion })} className="inline-flex min-h-10 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg border border-[var(--color-border)] px-3 text-sm text-[var(--color-text-secondary)]"><RotateCcw className="h-4 w-4" />{t.returnQuote}</button>
-            <button type="button" onClick={() => onOpenDialog?.('quote-approve', detail, { quoteVersion })} className="inline-flex min-h-10 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg bg-[var(--color-primary)] px-3 text-sm font-medium text-white"><Check className="h-4 w-4" />{t.approveQuote}</button>
-          </div>
-        )}
       </div>
 
       <div className="border-b border-[var(--color-border)] p-4">
@@ -225,6 +248,13 @@ export function QuoteExecutionAdminPanel({ detail, readOnly = false, onRefresh, 
         )}
       </div>
 
+      {!readOnly && pricing.status === 'pending_review' && (
+        <div className="flex flex-col gap-2 border-b border-[var(--color-border)] p-4 sm:flex-row sm:justify-end">
+          <button type="button" onClick={() => onOpenDialog?.('quote-return', detail, { quoteVersion })} className="inline-flex min-h-10 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg border border-[var(--color-border)] px-3 text-sm text-[var(--color-text-secondary)]"><RotateCcw className="h-4 w-4" />{t.returnQuote}</button>
+          <button type="button" onClick={() => onOpenDialog?.('quote-approve', detail, { quoteVersion })} className="inline-flex min-h-10 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg bg-[var(--color-primary)] px-3 text-sm font-medium text-white"><Check className="h-4 w-4" />{t.approveQuote}</button>
+        </div>
+      )}
+
       {execution && (
         <div className="border-b border-[var(--color-border)] p-4">
           <dl className="grid gap-3 sm:grid-cols-4">
@@ -267,7 +297,7 @@ export function QuoteExecutionAdminPanel({ detail, readOnly = false, onRefresh, 
                     )}
                   </div>
                   <dl className="mt-3 grid gap-2 text-xs text-[var(--color-text-secondary)] sm:grid-cols-3">
-                    <div><dt className="text-[var(--color-text-muted)]">{t.evidence}</dt><dd className="mt-1">{claim.evidence?.url ? <a href={`${runtimeConfig.apiBase}${claim.evidence.url}`} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-[var(--color-primary)] hover:underline"><ExternalLink className="h-3.5 w-3.5" />{claim.evidence.file_name || t.openEvidence}</a> : t.noEvidence}</dd></div>
+                    <div><dt className="text-[var(--color-text-muted)]">{t.evidence}</dt><dd className="mt-1">{claim.evidence?.url ? <><button type="button" onClick={() => openEvidence(claim)} disabled={evidenceState.loadingId === claim.evidence.id} className="inline-flex items-center gap-1 text-[var(--color-primary)] hover:underline disabled:opacity-60"><ExternalLink className="h-3.5 w-3.5" />{evidenceState.loadingId === claim.evidence.id ? t.evidenceLoading : claim.evidence.file_name || t.openEvidence}</button>{evidenceState.errorId === claim.evidence.id && <span className="ml-2 text-[var(--color-error)]">{t.evidenceLoadFailed}</span>}</> : t.noEvidence}</dd></div>
                     <div><dt className="text-[var(--color-text-muted)]">{t.reference}</dt><dd className="mt-1">{claim.transaction_reference || '-'}</dd></div>
                     <div><dt className="text-[var(--color-text-muted)]">{t.engineerNote}</dt><dd className="mt-1">{claim.engineer_note || '-'}</dd></div>
                   </dl>

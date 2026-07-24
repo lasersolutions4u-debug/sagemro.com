@@ -12173,11 +12173,17 @@ function canMutateFieldWorkAdmin(auth) {
 
 function withPaymentProjection(workOrder, quoteExecution) {
   if (!quoteExecution) return workOrder;
+  const validExecution = quoteExecution.valid !== false;
+  const installments = quoteExecution.installments || [];
   return {
     ...workOrder,
     payment_state: quoteExecution.payment_state,
     received_amount: quoteExecution.received_amount,
     outstanding_amount: quoteExecution.outstanding_amount,
+    payment_currency: validExecution ? (installments[0]?.currency || quoteExecution.paymentSchedule?.[0]?.currency || null) : null,
+    pending_receipt_claim_count: validExecution
+      ? installments.reduce((count, installment) => count + Number(installment.pending_claim_count || 0), 0)
+      : null,
   };
 }
 
@@ -14960,6 +14966,8 @@ function buildCanonicalVersionedQuoteExecution({
   const activeInstallments = installments.filter((row) => activeVersions.has(Number(row.quote_version)));
   const scheduleById = new Map();
   let scheduleValid = activeSchedules.length > 0 && activeInstallments.length === activeSchedules.length;
+  const activeCurrencies = new Set(activeSchedules.map((row) => String(row.currency || '').trim()));
+  if (activeCurrencies.size !== 1 || activeCurrencies.has('')) scheduleValid = false;
   for (const history of activeRows) {
     const versionSchedules = activeSchedules
       .filter((row) => Number(row.quote_version) === Number(history.version))
