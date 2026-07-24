@@ -455,28 +455,6 @@ export async function streamChat({ conversationId, message, images, onChunk, onD
   }
 }
 
-/**
- * 上传聊天图片
- */
-export async function uploadChatImage(file) {
-  const token = localStorage.getItem('sagemro_token');
-  const formData = new FormData();
-  formData.append('image', file);
-
-  const response = await fetch(`${API_BASE}/api/chat/upload-image`, {
-    method: 'POST',
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-    body: formData,
-  });
-
-  if (!response.ok) {
-    const err = await response.json().catch(() => ({}));
-    throw new Error(err.error || `Upload failed (${response.status})`);
-  }
-
-  return response.json();
-}
-
 export async function transcribeVoiceInput(audioBlob) {
   const formData = new FormData();
   formData.append('audio', audioBlob, 'voice.webm');
@@ -606,19 +584,6 @@ export async function getWorkOrderMaterialItems(workOrderId, purpose = '') {
     headers: authHeaders(),
   });
   if (!response.ok) throw new Error(`HTTP ${response.status}`);
-  return response.json();
-}
-
-export async function addWorkOrderMaterialItem(workOrderId, data) {
-  const response = await fetch(`${API_BASE}/api/workorders/${workOrderId}/material-items`, {
-    method: 'POST',
-    headers: authHeaders(),
-    body: JSON.stringify(data),
-  });
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({}));
-    throw new Error(error.error || `HTTP ${response.status}`);
-  }
   return response.json();
 }
 
@@ -915,17 +880,6 @@ export async function rejectTicket({ work_order_id, engineer_id, reason }) {
 }
 
 /**
- * 获取工单推荐的工程师列表
- */
-export async function getRecommendedEngineers(workOrderId) {
-  const response = await fetch(`${API_BASE}/api/engineers/recommend?work_order_id=${workOrderId}`, {
-    headers: authHeaders(),
-  });
-  if (!response.ok) throw new Error(`HTTP ${response.status}`);
-  return response.json();
-}
-
-/**
  * 更新工程师派工状态
  */
 export async function updateEngineerStatus({ engineer_id, status }) {
@@ -1087,38 +1041,6 @@ export async function cancelWorkOrder(workOrderId) {
   if (!response.ok) {
     const data = await response.json().catch(() => ({}));
     throw new Error(data.error || 'Cancellation failed');
-  }
-  return response.json();
-}
-
-// ============ SERVICE_OS_LEGACY: 工程师钱包与保证金 ============
-
-/**
- * 获取工程师钱包信息（已停用，服务端返回 410）
- */
-export async function getEngineerWallet(engineerId) {
-  const url = engineerId
-    ? `${API_BASE}/api/engineers/wallet?engineer_id=${engineerId}`
-    : `${API_BASE}/api/engineers/wallet`;
-  const response = await fetch(url, {
-    headers: authHeaders(),
-  });
-  if (!response.ok) throw new Error(`HTTP ${response.status}`);
-  return response.json();
-}
-
-/**
- * 申请提现（已停用，服务端返回 410）
- */
-export async function applyWithdraw(amount) {
-  const response = await fetch(`${API_BASE}/api/engineers/wallet/withdraw`, {
-    method: 'POST',
-    headers: authHeaders(),
-    body: JSON.stringify({ amount }),
-  });
-  if (!response.ok) {
-    const d = await response.json();
-    throw new Error(d.error || `HTTP ${response.status}`);
   }
   return response.json();
 }
@@ -1408,26 +1330,7 @@ export async function getEngineerReview(workOrderId) {
   return response.json();
 }
 
-/**
- * 获取客户的所有工程师评价（仅工程师/平台可见）
- */
-export async function getCustomerReviews(customerId) {
-  const response = await fetch(`${API_BASE}/api/customers/${customerId}/reviews`, {
-    headers: authHeaders(),
-  });
-  if (!response.ok) throw new Error(`HTTP ${response.status}`);
-  return response.json();
-}
-
 // ============ 维修记录 ============
-
-export async function getRepairRecord(workOrderId) {
-  const response = await fetch(`${API_BASE}/api/workorders/${workOrderId}/repair-record`, {
-    headers: authHeaders(),
-  });
-  if (!response.ok) throw new Error(`HTTP ${response.status}`);
-  return response.json();
-}
 
 export async function saveRepairRecord(workOrderId, data) {
   const response = await fetch(`${API_BASE}/api/workorders/${workOrderId}/repair-record`, {

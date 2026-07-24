@@ -99,8 +99,10 @@ test('customer, Admin, and engineer complete a service order lifecycle', async (
   await adminPage.getByRole('button', { name: 'Service Orders', exact: true }).click();
   await adminPage.locator('tr').filter({ hasText: orderNo }).getByRole('button', { name: 'View', exact: true }).click();
   const paymentDialog = adminPage.getByRole('dialog', { name: 'Service Control View' });
-  adminPage.once('dialog', (dialog) => dialog.accept('E2E advance payment confirmed'));
   await paymentDialog.getByRole('button', { name: 'Confirm payment & start', exact: true }).click();
+  const paymentConfirmationDialog = adminPage.getByRole('dialog', { name: 'Confirm payment and start service' });
+  await paymentConfirmationDialog.getByLabel('Payment confirmation note (optional)').fill('E2E advance payment confirmed');
+  await paymentConfirmationDialog.getByRole('button', { name: 'Confirm', exact: true }).click();
   await paymentDialog.getByRole('button', { name: 'Close', exact: true }).click();
 
   await engineerPage.reload();
@@ -126,9 +128,12 @@ test('customer, Admin, and engineer complete a service order lifecycle', async (
   await adminPage.reload();
   await adminPage.getByRole('button', { name: 'Service Orders', exact: true }).click();
   await adminPage.locator('tr').filter({ hasText: orderNo }).getByRole('button', { name: 'View', exact: true }).click();
-  const promptAnswers = ['720', `E2E-${customer.runId}`, 'Lifecycle payout verification'];
-  adminPage.on('dialog', (dialog) => dialog.accept(promptAnswers.shift() || ''));
   await adminPage.getByRole('button', { name: 'Mark payout completed', exact: true }).click();
+  const payoutDialog = adminPage.getByRole('dialog', { name: 'Update engineer service payment' });
+  await payoutDialog.getByLabel('Payment amount in USD (optional)').fill('720');
+  await payoutDialog.getByLabel('Payment reference / transaction ID (optional)').fill(`E2E-${customer.runId}`);
+  await payoutDialog.getByLabel('Internal payout note (optional)').fill('Lifecycle payout verification');
+  await payoutDialog.getByRole('button', { name: 'Confirm', exact: true }).click();
   await expect(adminPage.getByText('Engineer service payment updated: Completed', { exact: true })).toBeVisible();
   await expect(adminPage.getByText('Status: Completed', { exact: true })).toBeVisible();
 

@@ -4,12 +4,12 @@ import { readFile } from 'node:fs/promises';
 
 const read = (path) => readFile(new URL(`../${path}`, import.meta.url), 'utf8');
 
-test('engineer settings do not expose the retired wallet or internal settlement form', async () => {
-  const source = await read('src/components/Settings/SettingsModal.jsx');
+test('current engineer settings do not expose the retired wallet or internal settlement form', async () => {
+  const source = await read('src/components/Engineer/EngineerProfileModal.jsx');
 
   assert.doesNotMatch(source, /Bank Account \(internal settlement\)/);
   assert.doesNotMatch(source, /bank_branch/);
-  assert.doesNotMatch(source, /bank_account/);
+  assert.doesNotMatch(source, /wallet_balance|deposit_balance|commission_rate/);
 });
 
 test('retired wallet endpoints remain explicitly unavailable', async () => {

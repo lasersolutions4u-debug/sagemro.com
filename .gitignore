@@ -62,3 +62,6 @@ e2e/.generated/
 e2e/.state/
 e2e/test-results/
 e2e/playwright-report/
+
+# Generated acceptance screenshots
+reports/**/screenshots/*.png

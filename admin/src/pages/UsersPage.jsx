@@ -17,6 +17,8 @@ const TEXT = {
     regionPlaceholder: 'Customer region',
     clearFilters: 'Clear filters',
     loading: 'Loading...',
+    loadFailed: 'Failed to load customers.',
+    retry: 'Retry',
     total: (count) => `${count} record(s)`,
     headers: {
       no: 'No.',
@@ -59,6 +61,8 @@ const TEXT = {
     regionPlaceholder: '客户地区',
     clearFilters: '清除筛选',
     loading: '加载中...',
+    loadFailed: '客户列表加载失败。',
+    retry: '重试',
     total: (count) => `共 ${count} 条记录`,
     headers: {
       no: '编号',
@@ -124,16 +128,18 @@ export function UsersPage() {
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [deleteNotice, setDeleteNotice] = useState('');
+  const [loadError, setLoadError] = useState('');
   const pageSize = 20;
 
   const loadUsers = () => {
     setLoading(true);
+    setLoadError('');
     const filters = {};
     if (search) filters.search = search;
     if (region) filters.region = region;
     return getAdminUsers('customer', page, pageSize, filters)
       .then(setData)
-      .catch(() => {})
+      .catch((error) => setLoadError(error.message || t.loadFailed))
       .finally(() => setLoading(false));
   };
 
@@ -219,6 +225,7 @@ export function UsersPage() {
       )}
 
       {deleteNotice && <div className="mb-3 flex items-start justify-between gap-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-3 py-2 text-sm text-[var(--color-text-secondary)]"><span>{deleteNotice}</span><button onClick={() => setDeleteNotice('')} aria-label={t.dismissNotice}><X size={15} /></button></div>}
+      {loadError && <div className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-[var(--color-error)]/40 bg-[var(--color-error)]/5 px-3 py-2 text-sm text-[var(--color-text-secondary)]"><span>{loadError}</span><button onClick={loadUsers} className="whitespace-nowrap rounded-lg border border-[var(--color-error)]/40 px-3 py-1.5 text-xs font-medium text-[var(--color-error)]">{t.retry}</button></div>}
 
       {loading ? <div className="py-12 text-center text-[var(--color-text-muted)]">{t.loading}</div> : (
         <>
