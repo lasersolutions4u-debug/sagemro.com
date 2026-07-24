@@ -161,30 +161,37 @@ export function deriveInstallmentState(installment = {}, now) {
 
 export function summarizeQuoteExecution(input = {}) {
   const installments = Array.isArray(input.installments) ? input.installments : [];
-  const totalAmountValid = isNonnegativeSafeInteger(input.total_amount)
-    && (installments.length === 0 || input.total_amount > 0);
-  const installmentsValid = installments.every((installment) => (
-    installment !== null
-    && typeof installment === 'object'
-    && !Array.isArray(installment)
-    && isPositiveSafeInteger(installment.amount)
-    && isNonnegativeSafeInteger(installment.received_amount)
-  ));
+  const totalAmountValid = isNonnegativeSafeInteger(input.total_amount);
+  let scheduledAmount = 0;
   let receivedAmount = 0;
-  let aggregateValid = totalAmountValid && installmentsValid;
+  let aggregateValid = totalAmountValid;
   if (aggregateValid) {
     for (const installment of installments) {
+      if (
+        installment === null
+        || typeof installment !== 'object'
+        || Array.isArray(installment)
+        || !isPositiveSafeInteger(installment.amount)
+        || !isNonnegativeSafeInteger(installment.received_amount)
+      ) {
+        aggregateValid = false;
+        break;
+      }
+      scheduledAmount += installment.amount;
       receivedAmount += Math.min(installment.amount, installment.received_amount);
-      if (!Number.isSafeInteger(receivedAmount)) {
+      if (!Number.isSafeInteger(scheduledAmount) || !Number.isSafeInteger(receivedAmount)) {
         aggregateValid = false;
         break;
       }
     }
   }
+  aggregateValid = aggregateValid && scheduledAmount === input.total_amount;
   const outstandingAmount = aggregateValid
     ? Math.max(0, input.total_amount - receivedAmount)
     : null;
-  const requiredInstallments = installments.filter((installment) => Boolean(installment.required_before_start));
+  const requiredInstallments = aggregateValid
+    ? installments.filter((installment) => Boolean(installment.required_before_start))
+    : [];
   const startReady = aggregateValid
     && requiredInstallments.length > 0
     && requiredInstallments.every((installment) => (
@@ -219,6 +226,7 @@ export function summarizeQuoteExecution(input = {}) {
   else if (receivedAmount > 0) paymentState = 'partially_received';
 
   return {
+    scheduled_amount: aggregateValid ? scheduledAmount : null,
     received_amount: aggregateValid ? receivedAmount : null,
     outstanding_amount: outstandingAmount,
     start_ready: startReady,

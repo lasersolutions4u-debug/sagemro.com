@@ -392,11 +392,12 @@ test('summary caps receipts and requires every start prerequisite to be fully re
   assert.equal(ready.start_ready, true);
 });
 
-test('empty installments are neither start-ready nor financially settled', () => {
+test('empty installments cannot project a positive quote total', () => {
   const summary = summarizeQuoteExecution({ total_amount: 100, installments: [] });
+  assert.equal(summary.scheduled_amount, null);
   assert.equal(summary.start_ready, false);
   assert.equal(summary.financially_settled, false);
-  assert.equal(summary.payment_state, 'unpaid');
+  assert.equal(summary.payment_state, 'exception');
 });
 
 test('a schedule without a start prerequisite is not start-ready', () => {
@@ -418,12 +419,26 @@ test('financial settlement requires every installment to be fully received', () 
       { amount: 60, received_amount: 40 },
     ],
   });
-  assert.equal(summary.outstanding_amount, 0);
+  assert.equal(summary.scheduled_amount, null);
+  assert.equal(summary.outstanding_amount, null);
   assert.equal(summary.financially_settled, false);
-  assert.equal(summary.payment_state, 'partially_received');
+  assert.equal(summary.payment_state, 'exception');
 });
 
-test('fully received installments totaling less than the quote remain financially unsettled', () => {
+test('scheduled installment total must equal the quote total exactly', () => {
+  const overScheduled = summarizeQuoteExecution({
+    total_amount: 100,
+    installments: [
+      { amount: 60, received_amount: 60 },
+      { amount: 60, received_amount: 60 },
+    ],
+  });
+  assert.equal(overScheduled.scheduled_amount, null);
+  assert.equal(overScheduled.start_ready, false);
+  assert.equal(overScheduled.financially_settled, false);
+  assert.equal(overScheduled.payment_state, 'exception');
+  assert.equal(canFinanciallyArchive(overScheduled), false);
+
   const summary = summarizeQuoteExecution({
     total_amount: 100,
     installments: [
@@ -431,10 +446,24 @@ test('fully received installments totaling less than the quote remain financiall
       { amount: 40, received_amount: 40 },
     ],
   });
-  assert.equal(summary.outstanding_amount, 20);
+  assert.equal(summary.scheduled_amount, null);
+  assert.equal(summary.outstanding_amount, null);
   assert.equal(summary.financially_settled, false);
-  assert.equal(summary.payment_state, 'partially_received');
+  assert.equal(summary.payment_state, 'exception');
   assert.equal(canFinanciallyArchive(summary), false);
+
+  const exact = summarizeQuoteExecution({
+    total_amount: 100,
+    installments: [
+      { amount: 40, received_amount: 40 },
+      { amount: 60, received_amount: 60 },
+    ],
+  });
+  assert.equal(exact.scheduled_amount, 100);
+  assert.equal(exact.received_amount, 100);
+  assert.equal(exact.outstanding_amount, 0);
+  assert.equal(exact.financially_settled, true);
+  assert.equal(exact.payment_state, 'settled');
 });
 
 test('summary fails closed for malformed monetary projections', () => {
@@ -444,6 +473,7 @@ test('summary fails closed for malformed monetary projections', () => {
     { total_amount: -1, installments: [] },
     { total_amount: Number.NaN, installments: [] },
     { total_amount: Number.MAX_SAFE_INTEGER + 1, installments: [] },
+    { total_amount: 100, installments: [null] },
     { total_amount: 100, installments: [{}] },
     { total_amount: 100, installments: [{ received_amount: 0 }] },
     { total_amount: 100, installments: [{ amount: Number.MAX_SAFE_INTEGER + 1, received_amount: 0 }] },
@@ -454,6 +484,7 @@ test('summary fails closed for malformed monetary projections', () => {
 
   for (const input of malformedInputs) {
     const summary = summarizeQuoteExecution(input);
+    assert.equal(summary.scheduled_amount, null);
     assert.equal(summary.received_amount, null);
     assert.equal(summary.outstanding_amount, null);
     assert.equal(summary.start_ready, false);
@@ -461,6 +492,23 @@ test('summary fails closed for malformed monetary projections', () => {
     assert.equal(summary.payment_state, 'exception');
     assert.equal(canFinanciallyArchive(summary), false);
   }
+});
+
+test('unsafe scheduled amount aggregation fails closed', () => {
+  const summary = summarizeQuoteExecution({
+    total_amount: Number.MAX_SAFE_INTEGER,
+    installments: [
+      { amount: Number.MAX_SAFE_INTEGER, received_amount: 0 },
+      { amount: 1, received_amount: 0 },
+    ],
+  });
+  assert.equal(summary.scheduled_amount, null);
+  assert.equal(summary.received_amount, null);
+  assert.equal(summary.outstanding_amount, null);
+  assert.equal(summary.start_ready, false);
+  assert.equal(summary.financially_settled, false);
+  assert.equal(summary.payment_state, 'exception');
+  assert.equal(canFinanciallyArchive(summary), false);
 });
 
 test('a nonempty schedule with zero total fails closed', () => {
