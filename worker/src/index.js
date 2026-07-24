@@ -7980,7 +7980,7 @@ async function handleUpdateEngineerProfile(request, env) {
     await env.DB.prepare(`UPDATE engineers SET ${updates.join(', ')} WHERE id = ?`).bind(...values).run();
 
     const updated = await env.DB.prepare(
-      'SELECT id, user_no, name, phone, specialties, brands, services, service_region, bio, status, level, commission_rate, credit_score, rating_timeliness, rating_technical, rating_communication, rating_professional, rating_count, payout_method, paypal_account, bank_country, bank_name, bank_account, bank_branch, bank_swift_code, account_holder, payout_notes FROM engineers WHERE id = ?'
+      'SELECT id, user_no, name, phone, specialties, brands, services, service_region, bio, status, level, credit_score, rating_timeliness, rating_technical, rating_communication, rating_professional, rating_count, payout_method, paypal_account, bank_country, bank_name, bank_account, bank_branch, bank_swift_code, account_holder, payout_notes FROM engineers WHERE id = ?'
     ).bind(engineerId).first();
 
     if (!updated) return errorResponse('工程师不存在', 404);
