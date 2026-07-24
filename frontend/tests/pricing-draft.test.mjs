@@ -479,6 +479,37 @@ test('quote terms normalize canonical server integers and reject malformed or un
   }
 });
 
+test('remote quote terms require expected service days to be cleared', () => {
+  const pricing = {
+    quote_version: 2,
+    total_amount: 10000,
+    payment_plan_mode: 'single',
+    payment_schedule: [{
+      sequence: 1,
+      amount: 10000,
+      currency: 'USD',
+      trigger_type: 'before_start',
+      due_date: null,
+      description: '',
+      required_before_start: true,
+    }],
+  };
+
+  assert.equal(isQuoteTermsValid({ pricing, serviceMode: 'remote', currency: 'USD' }), true);
+  assert.equal(isQuoteTermsValid({
+    pricing: { ...pricing, expected_service_days: null },
+    serviceMode: 'remote',
+    currency: 'USD',
+  }), true);
+  for (const value of [3, '3', '', '1e3', 'onsite']) {
+    assert.equal(isQuoteTermsValid({
+      pricing: { ...pricing, expected_service_days: value },
+      serviceMode: 'remote',
+      currency: 'USD',
+    }), false, String(value));
+  }
+});
+
 test('strictly validates installment trigger currency and contiguous sequence terms', () => {
   const valid = {
     paymentPlanMode: 'installments',

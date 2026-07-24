@@ -55,3 +55,12 @@ test('CN pricing copy does not fall back to visible English runtime messages', a
   assert.doesNotMatch(source, />Advance payment before service</);
   assert.doesNotMatch(source, />Service balance after completion</);
 });
+
+test('counteroffer validation copy is localized for both markets', async () => {
+  const source = await readFile(new URL('../src/components/WorkOrder/PricingPanels.jsx', import.meta.url), 'utf8');
+  const cnCopy = source.match(/cn: \{([\s\S]*?)\n  \},\n\};/)?.[1] || '';
+
+  assert.match(source, /Enter a whole-number counteroffer without spaces, signs, or decimals\./);
+  assert.match(cnCopy, /期望价格须为不含空格、正负号或小数点的整数。/);
+  assert.equal(cnCopy.includes('Enter a whole-number counteroffer'), false);
+});

@@ -103,6 +103,7 @@ const PRICING_COPY = {
       confirmationFailed: 'Quote confirmation failed',
       operationFailed: 'Negotiation request failed',
       negotiationRequired: 'Please enter a reason for negotiation',
+      counterOfferInvalid: 'Enter a whole-number counteroffer without spaces, signs, or decimals.',
       negotiationToast: 'Negotiation initiated. Operations will review and submit a revised quote.',
       preparingQuote: 'SAGEMRO is preparing a formal quote. You will be notified after diagnosis, scope, and safety requirements are reviewed.',
       loading: 'Loading quote...',
@@ -202,6 +203,7 @@ const PRICING_COPY = {
       confirmationFailed: '报价确认失败',
       operationFailed: '议价请求失败',
       negotiationRequired: '请输入议价原因',
+      counterOfferInvalid: '期望价格须为不含空格、正负号或小数点的整数。',
       negotiationToast: '已发起议价，运营团队将审核并提交修订报价。',
       preparingQuote: 'SAGEMRO 正在准备正式报价。完成诊断、范围和安全要求审核后将通知您。',
       loading: '正在加载报价...',
@@ -501,13 +503,20 @@ export function CustomerPricingPanel({ workOrderId, customerId, serviceMode = 'r
 
   const handleReject = async () => {
     if (!rejectReason.trim()) { toastWarning(t.customer.negotiationRequired); return; }
+    const normalizedCounterOffer = counterOffer === ''
+      ? null
+      : parseCanonicalDecimalInteger(counterOffer);
+    if (counterOffer !== '' && normalizedCounterOffer === null) {
+      toastWarning(t.customer.counterOfferInvalid);
+      return;
+    }
     setSubmitting(true);
     try {
       await rejectWorkOrderPricing(
         workOrderId,
         customerId,
         rejectReason,
-        counterOffer ? parseCanonicalDecimalInteger(counterOffer) : null
+        normalizedCounterOffer
       );
       toastSuccess(t.customer.negotiationToast);
       onConfirmed?.();

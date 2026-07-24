@@ -70,6 +70,15 @@ test('customer confirmation shows localized invalid server terms and disables co
   assert.match(source, /报价付款条款无效/);
 });
 
+test('customer negotiation blocks malformed nonempty counteroffers', async () => {
+  const source = await readSource('../src/components/WorkOrder/PricingPanels.jsx');
+
+  assert.match(source, /const normalizedCounterOffer = counterOffer === ''/);
+  assert.match(source, /counterOffer !== '' && normalizedCounterOffer === null/);
+  assert.match(source, /toastWarning\(t\.customer\.counterOfferInvalid\)/);
+  assert.match(source, /rejectReason,\s*normalizedCounterOffer/);
+});
+
 test('customer summary presents the complete quote version without raw enum labels', async () => {
   const source = await readSource('../src/components/WorkOrder/PaymentScheduleSummary.jsx');
 

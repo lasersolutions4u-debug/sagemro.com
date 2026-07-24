@@ -229,8 +229,12 @@ export function isQuoteTermsValid({ pricing, serviceMode, currency }) {
     && totalAmount !== null
     && totalAmount > 0
     && (
-      !['onsite', 'hybrid'].includes(serviceMode)
-      || (expectedServiceDays !== null && expectedServiceDays > 0)
+      serviceMode === 'remote'
+        ? pricing?.expected_service_days == null
+        : (
+          !['onsite', 'hybrid'].includes(serviceMode)
+          || (expectedServiceDays !== null && expectedServiceDays > 0)
+        )
     )
     && isPaymentScheduleValid({
       schedule: paymentSchedule,
