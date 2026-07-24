@@ -81,6 +81,8 @@ test('confirmed quote replaces the normal Admin field-plan editor with a read-on
   assert.match(panel, /quoteExecution\.allowance_exhausted/);
   assert.match(panel, /Approved quote duration/);
   assert.match(panel, /报价审核工期/);
+  assert.match(panel, /siteTimezoneLabel\(workOrder\?\.field_plan\?\.site_timezone, workOrder\?\.field_plan\?\.site_timezone_display, isCn\)/);
+  assert.match(panel, /siteTimezoneLabel\(day\.site_timezone, day\.site_timezone_display, isCn\)/);
   assert.match(panel, /function savePlan\(\) \{[\s\S]*if \(quoteDriven\) return;[\s\S]*updateFieldPlan/);
   assert.match(panel, /!quoteDriven[\s\S]*t\.savePlan/);
 
@@ -168,6 +170,8 @@ test('field-work panel localizes operational labels for English and Chinese cons
   assert.doesNotMatch(panel, /timezone: 'IANA 时区'/);
   assert.match(panel, /Intl\.DateTimeFormat\('zh-CN',[\s\S]*timeZoneName: 'long'/);
   assert.match(panel, /现场当地时间/);
+  assert.equal(siteTimezoneLabel('Asia/Shanghai', '', true), '中国标准时间（上海）');
+  assert.equal(siteTimezoneLabel('Asia/Shanghai', '', false), 'China Standard Time (Shanghai)');
   const newYorkLabel = siteTimezoneLabel('America/New_York', '', true);
   assert.notEqual(newYorkLabel, 'America/New_York');
   assert.doesNotMatch(newYorkLabel, /\//);

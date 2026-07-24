@@ -362,6 +362,7 @@ function hasValidQuoteAllowance(execution) {
 function siteTimezoneLabel(rawTimezone, displayTimezone, isCn) {
   if (displayTimezone && !displayTimezone.includes('/')) return displayTimezone;
   if (isCn && rawTimezone === 'Asia/Shanghai') return '中国标准时间（上海）';
+  if (!isCn && rawTimezone === 'Asia/Shanghai') return 'China Standard Time (Shanghai)';
   if (isCn) {
     try {
       const name = new Intl.DateTimeFormat('zh-CN', {
