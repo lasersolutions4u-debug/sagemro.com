@@ -66,7 +66,15 @@ function createD1Database(db, hooks) {
 
 function createQuoteExecutionEnv({ market = 'com', filename = ':memory:', initialize = true } = {}) {
   const db = new DatabaseSync(filename);
-  const hooks = { beforeNextBatch: null, queries: [], binds: [], waitUntil: [] };
+  const evidenceObjects = new Map();
+  const hooks = {
+    beforeNextBatch: null,
+    queries: [],
+    binds: [],
+    waitUntil: [],
+    failEvidencePut: false,
+    failEvidenceDelete: false,
+  };
   db.exec('PRAGMA foreign_keys = ON;');
   db.exec('PRAGMA busy_timeout = 5000;');
   if (initialize) {
@@ -96,6 +104,30 @@ function createQuoteExecutionEnv({ market = 'com', filename = ':memory:', initia
         async put() {},
         async delete() {},
       },
+      FIELD_EVIDENCE: {
+        async put(key, value, options = {}) {
+          if (hooks.failEvidencePut) throw new Error('evidence upload failed');
+          const bytes = value instanceof Uint8Array
+            ? value
+            : new Uint8Array(await new Response(value).arrayBuffer());
+          evidenceObjects.set(key, {
+            bytes,
+            httpMetadata: options.httpMetadata || {},
+          });
+        },
+        async get(key) {
+          const object = evidenceObjects.get(key);
+          if (!object) return null;
+          return { body: object.bytes };
+        },
+        async head(key) {
+          return evidenceObjects.has(key) ? {} : null;
+        },
+        async delete(key) {
+          if (hooks.failEvidenceDelete) throw new Error('evidence delete failed');
+          evidenceObjects.delete(key);
+        },
+      },
     },
     origin: market === 'cn' ? 'https://sagemro.cn' : 'https://sagemro.com',
     host: market === 'cn' ? 'https://api.sagemro.cn' : 'https://api.sagemro.com',
@@ -120,6 +152,15 @@ function createQuoteExecutionEnv({ market = 'com', filename = ':memory:', initia
     },
     setLegacyPaymentRows(rows) {
       hooks.legacyPaymentRows = rows;
+    },
+    failEvidencePut(value = true) {
+      hooks.failEvidencePut = value;
+    },
+    failEvidenceDelete(value = true) {
+      hooks.failEvidenceDelete = value;
+    },
+    evidenceKeys() {
+      return [...evidenceObjects.keys()];
     },
     close() {
       db.close();
@@ -160,6 +201,7 @@ async function api(ctx, path, {
   body,
   userType = 'engineer',
   userId = 'engineer-1',
+  headers = {},
 } = {}) {
   const market = ctx.host.endsWith('.cn') ? 'cn' : 'com';
   const jwt = await token(ctx.env, userType, userId, market);
@@ -169,8 +211,31 @@ async function api(ctx, path, {
       Authorization: `Bearer ${jwt}`,
       'Content-Type': 'application/json',
       Origin: ctx.origin,
+      ...headers,
     },
     body: body === undefined ? undefined : JSON.stringify(body),
+  }), ctx.env, { waitUntil(promise) { ctx.captureWaitUntil(promise); } });
+  const json = await response.json().catch(() => ({}));
+  return { response, json };
+}
+
+async function multipartApi(ctx, path, fields, {
+  userType = 'engineer',
+  userId = 'engineer-1',
+} = {}) {
+  const market = ctx.host.endsWith('.cn') ? 'cn' : 'com';
+  const jwt = await token(ctx.env, userType, userId, market);
+  const body = new FormData();
+  for (const [key, value] of Object.entries(fields)) {
+    if (value !== undefined && value !== null) body.set(key, value);
+  }
+  const response = await worker.fetch(new Request(`${ctx.host}${path}`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${jwt}`,
+      Origin: ctx.origin,
+    },
+    body,
   }), ctx.env, { waitUntil(promise) { ctx.captureWaitUntil(promise); } });
   const json = await response.json().catch(() => ({}));
   return { response, json };
@@ -229,7 +294,10 @@ async function confirmQuote(ctx, quoteVersion, options = {}) {
 
 async function confirmBaselineForReceiptTests(ctx) {
   // Test fixture only: Task 4 owns customer activation and installment creation.
-  await submitQuote(ctx);
+  const currency = ctx.host.endsWith('.cn') ? 'CNY' : 'USD';
+  await submitQuote(ctx, quotePayload({
+    payment_schedule: quotePayload().payment_schedule.map((row) => ({ ...row, currency })),
+  }));
   await reviewQuote(ctx, 'approve', 1);
   ctx.db.exec(`
     UPDATE work_orders SET active_quote_version = 1 WHERE id = 'wo-quote-1';
@@ -244,6 +312,55 @@ async function confirmBaselineForReceiptTests(ctx) {
       trigger_type, due_date, description, required_before_start, 'due', 0
     FROM work_order_payment_schedule WHERE work_order_id = 'wo-quote-1' AND sequence = 1;
   `);
+}
+
+function installment(ctx) {
+  return ctx.db.prepare(`
+    SELECT * FROM work_order_installments
+    WHERE work_order_id = 'wo-quote-1' AND sequence = 1
+  `).get();
+}
+
+async function startCollection(ctx, options = {}) {
+  const row = installment(ctx);
+  return api(ctx, `/api/workorders/wo-quote-1/installments/${row.id}/collect`, options);
+}
+
+async function selectPaymentMethod(ctx, paymentMethod = 'bank_transfer', options = {}) {
+  const row = installment(ctx);
+  return api(ctx, `/api/workorders/wo-quote-1/installments/${row.id}/payment-method`, {
+    body: { payment_method: paymentMethod },
+    userType: 'customer',
+    userId: 'customer-1',
+    ...options,
+  });
+}
+
+async function submitReceiptClaim(ctx, fields = {}, options = {}) {
+  const row = installment(ctx);
+  return multipartApi(ctx, `/api/workorders/wo-quote-1/installments/${row.id}/receipt-claims`, {
+    claimed_amount: '2000',
+    transaction_reference: 'TX-RECEIPT-1',
+    note: 'Bank receipt submitted',
+    idempotency_key: 'claim-key-1',
+    ...fields,
+  }, options);
+}
+
+async function decideReceiptClaim(ctx, claimId, fields = {}, options = {}) {
+  const row = installment(ctx);
+  return api(ctx, `/api/admin/workorders/wo-quote-1/installments/${row.id}/receipt-claims/${claimId}/decision`, {
+    body: {
+      decision: 'confirmed',
+      confirmed_amount: 2000,
+      reason: 'Matched bank receipt',
+      idempotency_key: 'decision-key-1',
+      ...fields,
+    },
+    userType: 'admin',
+    userId: 'admin',
+    ...options,
+  });
 }
 
 test('quote submission persists one pending immutable version and its complete schedule atomically', async () => {
@@ -900,6 +1017,231 @@ test('receipt claims use role-facing allowlists without idempotency or Admin ide
       assert.equal(claim.decision_reason, 'Matched bank receipt');
     }
   }
+});
+
+test('assigned engineer opens only collectible installments and owning customer controls payment method', async () => {
+  const ctx = createQuoteExecutionEnv();
+  await confirmBaselineForReceiptTests(ctx);
+  const row = installment(ctx);
+
+  const wrongEngineer = await startCollection(ctx, { userId: 'engineer-2' });
+  assert.equal(wrongEngineer.response.status, 403);
+
+  ctx.db.prepare("UPDATE work_order_installments SET status = 'scheduled' WHERE id = ?").run(row.id);
+  const scheduled = await startCollection(ctx);
+  assert.equal(scheduled.response.status, 409);
+
+  for (const state of ['due', 'partially_received', 'overdue']) {
+    ctx.db.prepare(`
+      UPDATE work_order_installments
+      SET status = ?, received_amount = ?, collection_started_at = NULL
+      WHERE id = ?
+    `).run(state, state === 'partially_received' ? 1000 : 0, row.id);
+    const opened = await startCollection(ctx);
+    assert.equal(opened.response.status, 200, state);
+    assert.equal(opened.json.installment.id, row.id);
+    assert.equal(opened.json.installment.status, state === 'partially_received' ? 'partially_received' : 'collecting');
+    assert.ok(ctx.db.prepare('SELECT collection_started_at FROM work_order_installments WHERE id = ?').get(row.id).collection_started_at);
+  }
+
+  const engineerMethod = await selectPaymentMethod(ctx, 'bank_transfer', { userType: 'engineer', userId: 'engineer-1' });
+  assert.equal(engineerMethod.response.status, 403);
+  const wrongCustomer = await selectPaymentMethod(ctx, 'bank_transfer', { userId: 'customer-2' });
+  assert.equal(wrongCustomer.response.status, 403);
+
+  const selected = await selectPaymentMethod(ctx, 'bank_transfer');
+  assert.equal(selected.response.status, 200);
+  assert.equal(selected.json.installment.payment_method, 'bank_transfer');
+  const changed = await selectPaymentMethod(ctx, 'wire_transfer');
+  assert.equal(changed.response.status, 200);
+  assert.equal(changed.json.installment.payment_method, 'wire_transfer');
+
+  ctx.db.prepare("UPDATE work_order_installments SET status = 'received', received_amount = amount WHERE id = ?").run(row.id);
+  const closed = await selectPaymentMethod(ctx, 'bank_transfer');
+  assert.equal(closed.response.status, 409);
+
+  assert.equal(ctx.db.prepare("SELECT COUNT(*) AS count FROM audit_logs WHERE action = 'installment_collection_started'").get().count, 3);
+  assert.equal(ctx.db.prepare("SELECT COUNT(*) AS count FROM audit_logs WHERE action = 'installment_payment_method_selected'").get().count, 2);
+  assert.ok(ctx.db.prepare("SELECT COUNT(*) AS count FROM notifications WHERE type = 'installment_collection_started'").get().count >= 1);
+});
+
+test('receipt claim validates input, stores private PDF evidence, streams by work-order access, and retries idempotently', async () => {
+  const ctx = createQuoteExecutionEnv();
+  await confirmBaselineForReceiptTests(ctx);
+  await startCollection(ctx);
+
+  const nonPositive = await submitReceiptClaim(ctx, { claimed_amount: '0' });
+  assert.equal(nonPositive.response.status, 400);
+  const missingKey = await submitReceiptClaim(ctx, { idempotency_key: '' });
+  assert.equal(missingKey.response.status, 400);
+
+  const evidence = new File([
+    new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x2d, 0x31, 0x2e, 0x34, 0x0a]),
+  ], 'receipt.pdf', { type: 'application/pdf' });
+  const submitted = await submitReceiptClaim(ctx, { evidence });
+  assert.equal(submitted.response.status, 201);
+  assert.equal(submitted.json.claim.status, 'pending');
+  assert.equal(Object.hasOwn(submitted.json.claim, 'idempotency_key'), false);
+  assert.equal(Object.hasOwn(submitted.json.evidence, 'object_key'), false);
+  assert.match(submitted.json.evidence.url, /^\/api\/workorders\/wo-quote-1\/receipt-evidence\//);
+  assert.equal(ctx.evidenceKeys().length, 1);
+  assert.match(ctx.evidenceKeys()[0], /^field-evidence\/com\/wo-quote-1\/receipt-claims\//);
+  assert.equal(installment(ctx).status, 'pending_confirmation');
+
+  const repeated = await submitReceiptClaim(ctx, { evidence });
+  assert.equal(repeated.response.status, 200);
+  assert.equal(repeated.json.claim.id, submitted.json.claim.id);
+  assert.equal(ctx.db.prepare('SELECT COUNT(*) AS count FROM work_order_receipt_claims').get().count, 1);
+  assert.equal(ctx.db.prepare('SELECT COUNT(*) AS count FROM work_order_receipt_evidence').get().count, 1);
+  assert.equal(ctx.evidenceKeys().length, 1);
+
+  const evidencePath = submitted.json.evidence.url;
+  for (const [userType, userId] of [
+    ['customer', 'customer-1'],
+    ['engineer', 'engineer-1'],
+    ['admin', 'admin'],
+  ]) {
+    const streamed = await api(ctx, evidencePath, { method: 'GET', userType, userId });
+    assert.equal(streamed.response.status, 200, `${userType}:${userId}`);
+    assert.equal(streamed.response.headers.get('content-type'), 'application/pdf');
+    assert.equal(streamed.response.headers.get('cache-control'), 'private, no-store');
+    assert.equal(streamed.response.headers.has('location'), false);
+  }
+  for (const [userType, userId] of [
+    ['customer', 'customer-2'],
+    ['engineer', 'engineer-2'],
+  ]) {
+    const denied = await api(ctx, evidencePath, { method: 'GET', userType, userId });
+    assert.equal(denied.response.status, 403, `${userType}:${userId}`);
+  }
+  assert.equal(ctx.db.prepare("SELECT COUNT(*) AS count FROM audit_logs WHERE action = 'installment_receipt_claim_submitted'").get().count, 1);
+});
+
+test('receipt evidence failures leave no new claim and enqueue cleanup when rollback deletion fails', async () => {
+  {
+    const ctx = createQuoteExecutionEnv();
+    await confirmBaselineForReceiptTests(ctx);
+    await startCollection(ctx);
+    ctx.failEvidencePut();
+
+    const failed = await submitReceiptClaim(ctx, {
+      evidence: new File([new Uint8Array([0xff, 0xd8, 0xff, 0xd9])], 'receipt.jpg', { type: 'image/jpeg' }),
+    });
+
+    assert.equal(failed.response.status, 500);
+    assert.equal(ctx.db.prepare('SELECT COUNT(*) AS count FROM work_order_receipt_claims').get().count, 0);
+    assert.equal(ctx.evidenceKeys().length, 0);
+  }
+
+  {
+    const ctx = createQuoteExecutionEnv();
+    await confirmBaselineForReceiptTests(ctx);
+    await startCollection(ctx);
+    const originalBatch = ctx.env.DB.batch;
+    ctx.env.DB.batch = async () => { throw new Error('receipt persistence failed'); };
+
+    const failed = await submitReceiptClaim(ctx, {
+      evidence: new File([new Uint8Array([0xff, 0xd8, 0xff, 0xd9])], 'receipt.jpg', { type: 'image/jpeg' }),
+    });
+
+    assert.equal(failed.response.status, 500);
+    assert.equal(ctx.db.prepare('SELECT COUNT(*) AS count FROM work_order_receipt_claims').get().count, 0);
+    assert.equal(ctx.evidenceKeys().length, 0);
+    ctx.env.DB.batch = originalBatch;
+  }
+
+  {
+    const ctx = createQuoteExecutionEnv();
+    await confirmBaselineForReceiptTests(ctx);
+    await startCollection(ctx);
+    ctx.failEvidenceDelete();
+    ctx.env.DB.batch = async () => { throw new Error('receipt persistence failed'); };
+
+    const failed = await submitReceiptClaim(ctx, {
+      evidence: new File([new Uint8Array([0xff, 0xd8, 0xff, 0xd9])], 'receipt.jpg', { type: 'image/jpeg' }),
+    });
+
+    assert.equal(failed.response.status, 500);
+    assert.equal(ctx.db.prepare('SELECT COUNT(*) AS count FROM work_order_receipt_claims').get().count, 0);
+    assert.equal(ctx.evidenceKeys().length, 1);
+    assert.equal(ctx.db.prepare('SELECT COUNT(*) AS count FROM field_evidence_cleanup_queue').get().count, 1);
+  }
+});
+
+test('Admin receipt decisions are atomic, partial-aware, idempotent, and cannot over-confirm', async () => {
+  const ctx = createQuoteExecutionEnv();
+  await confirmBaselineForReceiptTests(ctx);
+  await startCollection(ctx);
+  const firstClaim = await submitReceiptClaim(ctx);
+
+  const partial = await decideReceiptClaim(ctx, firstClaim.json.claim.id);
+  assert.equal(partial.response.status, 200);
+  assert.equal(partial.json.claim.status, 'confirmed');
+  assert.equal(partial.json.installment.received_amount, 2000);
+  assert.equal(partial.json.installment.status, 'partially_received');
+
+  const duplicate = await decideReceiptClaim(ctx, firstClaim.json.claim.id);
+  assert.equal(duplicate.response.status, 200);
+  assert.equal(duplicate.json.installment.received_amount, 2000);
+  const stale = await decideReceiptClaim(ctx, firstClaim.json.claim.id, { idempotency_key: 'decision-key-stale' });
+  assert.equal(stale.response.status, 409);
+  assert.equal(installment(ctx).received_amount, 2000);
+
+  const secondClaim = await submitReceiptClaim(ctx, {
+    claimed_amount: '5000',
+    idempotency_key: 'claim-key-2',
+  });
+  assert.equal(secondClaim.response.status, 201);
+  const over = await decideReceiptClaim(ctx, secondClaim.json.claim.id, {
+    confirmed_amount: 5000,
+    idempotency_key: 'decision-key-2',
+  });
+  assert.equal(over.response.status, 409);
+  assert.equal(installment(ctx).received_amount, 2000);
+  assert.equal(ctx.db.prepare('SELECT status FROM work_order_receipt_claims WHERE id = ?').get(secondClaim.json.claim.id).status, 'pending');
+
+  const missingReason = await decideReceiptClaim(ctx, secondClaim.json.claim.id, {
+    decision: 'rejected', reason: '', idempotency_key: 'decision-reject-2',
+  });
+  assert.equal(missingReason.response.status, 400);
+  const rejected = await decideReceiptClaim(ctx, secondClaim.json.claim.id, {
+    decision: 'rejected', confirmed_amount: undefined, reason: 'Amount does not match', idempotency_key: 'decision-reject-2',
+  });
+  assert.equal(rejected.response.status, 200);
+  assert.equal(rejected.json.installment.status, 'partially_received');
+  assert.equal(rejected.json.installment.received_amount, 2000);
+
+  const finalClaim = await submitReceiptClaim(ctx, {
+    claimed_amount: '4000',
+    idempotency_key: 'claim-key-3',
+  });
+  const full = await decideReceiptClaim(ctx, finalClaim.json.claim.id, {
+    confirmed_amount: 4000,
+    idempotency_key: 'decision-key-3',
+  });
+  assert.equal(full.response.status, 200);
+  assert.equal(full.json.installment.received_amount, 6000);
+  assert.equal(full.json.installment.status, 'received');
+  assert.ok(full.json.installment.completed_at);
+
+  assert.equal(ctx.db.prepare("SELECT COUNT(*) AS count FROM audit_logs WHERE action = 'installment_receipt_confirmed'").get().count, 2);
+  assert.equal(ctx.db.prepare("SELECT COUNT(*) AS count FROM audit_logs WHERE action = 'installment_receipt_rejected'").get().count, 1);
+  assert.ok(ctx.db.prepare("SELECT COUNT(*) AS count FROM notifications WHERE type IN ('installment_receipt_confirmed', 'installment_receipt_rejected')").get().count >= 3);
+});
+
+test('collection workflow errors and notifications follow the CN request market', async () => {
+  const ctx = createQuoteExecutionEnv({ market: 'cn' });
+  await confirmBaselineForReceiptTests(ctx);
+
+  const denied = await startCollection(ctx, { userId: 'engineer-2' });
+  assert.equal(denied.response.status, 403);
+  assert.match(denied.json.error, /工程师|工单|指派/);
+
+  const opened = await startCollection(ctx);
+  assert.equal(opened.response.status, 200);
+  const notification = ctx.db.prepare("SELECT title, body FROM notifications WHERE type = 'installment_collection_started' ORDER BY created_at DESC").get();
+  assert.match(`${notification.title}${notification.body}`, /收款|付款|工单/);
+  assert.doesNotMatch(`${notification.title}${notification.body}`, /collection|payment|work order/i);
 });
 
 test('historical quotes project a read-only legacy installment without creating execution rows', async () => {

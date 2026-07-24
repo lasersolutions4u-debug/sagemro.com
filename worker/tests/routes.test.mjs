@@ -22,7 +22,12 @@ test('protected route classifier covers exact and parameterized authenticated pa
   assert.equal(isKnownProtectedRoute('/api/workorders/work-order-1/field-days/day-1/report'), true);
   assert.equal(isKnownProtectedRoute('/api/workorders/work-order-1/extension-requests'), true);
   assert.equal(isKnownProtectedRoute('/api/workorders/work-order-1/field-media/media-1'), true);
+  assert.equal(isKnownProtectedRoute('/api/workorders/work-order-1/installments/installment-1/collect'), true);
+  assert.equal(isKnownProtectedRoute('/api/workorders/work-order-1/installments/installment-1/payment-method'), true);
+  assert.equal(isKnownProtectedRoute('/api/workorders/work-order-1/installments/installment-1/receipt-claims'), true);
+  assert.equal(isKnownProtectedRoute('/api/workorders/work-order-1/receipt-evidence/evidence-1'), true);
   assert.equal(isKnownProtectedRoute('/api/admin/workorders/work-order-1/field-plan'), true);
+  assert.equal(isKnownProtectedRoute('/api/admin/workorders/work-order-1/installments/installment-1/receipt-claims/claim-1/decision'), true);
   assert.equal(isKnownProtectedRoute('/api/admin/workorders/work-order-1/extension-requests/request-1/decision'), true);
   assert.equal(isKnownProtectedRoute('/api/admin/workorders/work-order-1/field-days/override'), true);
   assert.equal(isKnownProtectedRoute('/api/admin/workorders/work-order-1/field-days/day-1/report'), true);

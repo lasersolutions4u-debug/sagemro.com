@@ -5752,6 +5752,10 @@ const FIELD_EVIDENCE_MIME_TYPES = new Map([
   ['image/png', 'png'],
   ['image/webp', 'webp'],
 ]);
+const RECEIPT_EVIDENCE_MIME_TYPES = new Map([
+  ...FIELD_EVIDENCE_MIME_TYPES,
+  ['application/pdf', 'pdf'],
+]);
 const FIELD_EVIDENCE_MAX_BYTES = 10 * 1024 * 1024;
 const FIELD_WORK_SCHEDULER_BATCH_SIZE = 100;
 const FIELD_EVIDENCE_RETENTION_CLAIM_MS = 60 * 60 * 1000;
@@ -5780,6 +5784,8 @@ function hasFieldEvidenceSignature(bytes, mimeType) {
   if (mimeType === 'image/webp') return bytes.length >= 12
     && String.fromCharCode(...bytes.slice(0, 4)) === 'RIFF'
     && String.fromCharCode(...bytes.slice(8, 12)) === 'WEBP';
+  if (mimeType === 'application/pdf') return bytes.length >= 5
+    && String.fromCharCode(...bytes.slice(0, 5)) === '%PDF-';
   return false;
 }
 
@@ -14875,6 +14881,520 @@ async function quoteVersionSnapshot(env, workOrderId, history) {
   };
 }
 
+function installmentCollectionCopy(market = 'com') {
+  if (market === 'cn') {
+    return {
+      workOrderNotFound: '工单或分期不存在',
+      engineerOnly: '仅指派工程师可发起本期收款',
+      customerOnly: '仅工单客户可选择支付方式',
+      customerDenied: '您无权操作此工单',
+      notCollectible: '当前分期状态不允许发起收款',
+      paymentMethodRequired: '请选择支付方式',
+      paymentMethodClosed: '当前分期不能修改支付方式',
+      claimNotAllowed: '当前分期不能提交到账申请',
+      claimAmountInvalid: '到账申请金额必须为正整数',
+      idempotencyRequired: '缺少幂等键',
+      evidenceInvalid: '到账凭证仅支持图片或 PDF',
+      evidenceTooLarge: '到账凭证不能超过 10MB',
+      evidenceSignatureInvalid: '到账凭证文件签名无效',
+      evidenceUnavailable: '到账凭证服务未配置',
+      evidenceNotFound: '到账凭证不存在',
+      evidenceDenied: '您无权查看此到账凭证',
+      decisionInvalid: '到账处理结果无效',
+      decisionReasonRequired: '拒绝到账申请时必须填写原因',
+      confirmedAmountInvalid: '确认到账金额必须为正整数',
+      decisionConflict: '到账申请已处理，请刷新后重试',
+      overConfirmation: '确认到账金额不能超过本期剩余金额',
+      serverError: '服务器内部错误',
+      collectionTitle: '本期收款已发起',
+      collectionBody: (orderNo) => `工单 ${orderNo} 已发起本期收款，请选择支付方式。`,
+      methodTitle: '客户已选择支付方式',
+      methodBody: (orderNo) => `工单 ${orderNo} 的客户已选择本期支付方式。`,
+      claimTitle: '到账申请已提交',
+      claimBody: (orderNo) => `工单 ${orderNo} 已提交到账申请，等待 Admin 核验。`,
+      confirmedTitle: '到账已确认',
+      confirmedBody: (orderNo, amount) => `工单 ${orderNo} 已确认到账 ${amount}。`,
+      rejectedTitle: '到账申请已退回',
+      rejectedBody: (orderNo) => `工单 ${orderNo} 的到账申请已退回，请核对后重新提交。`,
+    };
+  }
+  return {
+    workOrderNotFound: 'Work order or installment not found',
+    engineerOnly: 'Only the assigned engineer can start installment collection',
+    customerOnly: 'Only the work-order customer can select a payment method',
+    customerDenied: 'You do not have permission for this work order',
+    notCollectible: 'This installment cannot be opened for collection',
+    paymentMethodRequired: 'Payment method is required',
+    paymentMethodClosed: 'The payment method cannot be changed for this installment',
+    claimNotAllowed: 'A receipt claim cannot be submitted for this installment',
+    claimAmountInvalid: 'Claimed amount must be a positive whole amount',
+    idempotencyRequired: 'Idempotency key is required',
+    evidenceInvalid: 'Receipt evidence must be an image or PDF',
+    evidenceTooLarge: 'Receipt evidence must not exceed 10MB',
+    evidenceSignatureInvalid: 'Receipt evidence file signature is invalid',
+    evidenceUnavailable: 'Receipt evidence storage is not configured',
+    evidenceNotFound: 'Receipt evidence not found',
+    evidenceDenied: 'You do not have permission to view this receipt evidence',
+    decisionInvalid: 'Invalid receipt decision',
+    decisionReasonRequired: 'A reason is required when rejecting a receipt claim',
+    confirmedAmountInvalid: 'Confirmed amount must be a positive whole amount',
+    decisionConflict: 'The receipt claim was already decided. Refresh and try again.',
+    overConfirmation: 'Confirmed amount cannot exceed the installment balance',
+    serverError: 'Internal Server Error',
+    collectionTitle: 'Installment collection started',
+    collectionBody: (orderNo) => `Collection started for work order ${orderNo}. Select a payment method for this installment.`,
+    methodTitle: 'Payment method selected',
+    methodBody: (orderNo) => `The customer selected a payment method for work order ${orderNo}.`,
+    claimTitle: 'Receipt claim submitted',
+    claimBody: (orderNo) => `A receipt claim for work order ${orderNo} is awaiting Admin review.`,
+    confirmedTitle: 'Receipt confirmed',
+    confirmedBody: (orderNo, amount) => `A receipt of ${amount} was confirmed for work order ${orderNo}.`,
+    rejectedTitle: 'Receipt claim rejected',
+    rejectedBody: (orderNo) => `The receipt claim for work order ${orderNo} was rejected. Review it and submit again.`,
+  };
+}
+
+async function getActiveInstallment(env, workOrderId, installmentId) {
+  return env.DB.prepare(`
+    SELECT installment.*, work_order.customer_id, work_order.engineer_id, work_order.order_no
+    FROM work_order_installments installment
+    JOIN work_orders work_order ON work_order.id = installment.work_order_id
+    JOIN work_order_pricing pricing ON pricing.work_order_id = work_order.id
+    JOIN work_order_pricing_history history
+      ON history.pricing_id = pricing.id AND history.version = installment.quote_version
+    WHERE installment.id = ? AND installment.work_order_id = ?
+      AND history.status = 'confirmed'
+      AND (
+        (history.version = work_order.active_quote_version AND history.quote_kind = 'baseline')
+        OR (history.quote_kind = 'supplemental' AND history.parent_quote_version = work_order.active_quote_version)
+      )
+  `).bind(installmentId, workOrderId).first();
+}
+
+function publicInstallment(installment) {
+  if (!installment) return installment;
+  const { customer_id, engineer_id, order_no, ...visible } = installment;
+  return visible;
+}
+
+function publicReceiptEvidence(evidence) {
+  if (!evidence) return null;
+  return {
+    id: evidence.id,
+    claim_id: evidence.claim_id,
+    work_order_id: evidence.work_order_id,
+    file_name: evidence.file_name,
+    mime_type: evidence.mime_type,
+    file_size: evidence.file_size,
+    uploader_type: evidence.uploader_type,
+    created_at: evidence.created_at,
+    url: `/api/workorders/${evidence.work_order_id}/receipt-evidence/${evidence.id}`,
+  };
+}
+
+async function getReceiptEvidenceForClaim(env, claimId) {
+  return env.DB.prepare(`
+    SELECT * FROM work_order_receipt_evidence WHERE claim_id = ?
+  `).bind(claimId).first();
+}
+
+async function notifyQuoteExecutionBestEffort(env, payload) {
+  try {
+    const notifier = env.QUOTE_EXECUTION_NOTIFIER || createNotification;
+    await notifier(env, payload);
+  } catch (error) {
+    console.warn('[quote execution] notification failed:', error?.message || error);
+  }
+}
+
+async function handleStartInstallmentCollection(request, env) {
+  const market = getRequestMarket(request);
+  const copy = installmentCollectionCopy(market);
+  try {
+    const [, , , workOrderId, , installmentId] = new URL(request.url).pathname.split('/');
+    const auth = request._auth;
+    if (auth?.userType !== 'engineer') return errorResponse(copy.engineerOnly, 403);
+    const installment = await getActiveInstallment(env, workOrderId, installmentId);
+    if (!installment) return errorResponse(copy.workOrderNotFound, 404);
+    if (installment.engineer_id !== auth.userId) return errorResponse(copy.engineerOnly, 403);
+    if (!['due', 'partially_received', 'overdue'].includes(installment.status)) {
+      return errorResponse(copy.notCollectible, 409);
+    }
+    const nextStatus = installment.status === 'partially_received' ? 'partially_received' : 'collecting';
+    await env.DB.batch([
+      env.DB.prepare(`
+        UPDATE work_order_installments
+        SET status = ?, collection_started_at = COALESCE(collection_started_at, datetime('now')),
+          updated_at = datetime('now')
+        WHERE id = ? AND work_order_id = ? AND status = ?
+          AND EXISTS (SELECT 1 FROM work_orders WHERE id = ? AND engineer_id = ?)
+      `).bind(nextStatus, installmentId, workOrderId, installment.status, workOrderId, auth.userId),
+      env.DB.prepare(`SELECT CASE WHEN changes() = 1 THEN 1 ELSE json('installment collection conflict') END`),
+      buildAuditLogStatement(env, request, {
+        targetType: 'work_order_installment', targetId: installmentId, action: 'installment_collection_started',
+        beforeState: { status: installment.status, collection_started_at: installment.collection_started_at },
+        afterState: { status: nextStatus, collection_started: true },
+      }),
+    ]);
+    const saved = await getActiveInstallment(env, workOrderId, installmentId);
+    await notifyQuoteExecutionBestEffort(env, {
+      user_id: installment.customer_id, user_type: 'customer', type: 'installment_collection_started',
+      title: copy.collectionTitle, body: copy.collectionBody(installment.order_no),
+      data: { work_order_id: workOrderId, installment_id: installmentId },
+    });
+    return jsonResponse({ installment: publicInstallment(saved) });
+  } catch (error) {
+    if (/installment collection conflict|malformed json/i.test(String(error?.message || error))) {
+      return errorResponse(copy.notCollectible, 409);
+    }
+    return errorResponse(copy.serverError, 500);
+  }
+}
+
+async function handleSelectInstallmentPaymentMethod(request, env) {
+  const market = getRequestMarket(request);
+  const copy = installmentCollectionCopy(market);
+  try {
+    const [, , , workOrderId, , installmentId] = new URL(request.url).pathname.split('/');
+    const auth = request._auth;
+    if (auth?.userType !== 'customer') return errorResponse(copy.customerOnly, 403);
+    const installment = await getActiveInstallment(env, workOrderId, installmentId);
+    if (!installment) return errorResponse(copy.workOrderNotFound, 404);
+    if (installment.customer_id !== auth.userId) return errorResponse(copy.customerDenied, 403);
+    const paymentMethod = cleanText((await request.json().catch(() => ({}))).payment_method, 80);
+    if (!paymentMethod) return errorResponse(copy.paymentMethodRequired, 400);
+    if (!['due', 'collecting', 'pending_confirmation', 'partially_received', 'overdue'].includes(installment.status)
+      || Number(installment.received_amount) >= Number(installment.amount)) {
+      return errorResponse(copy.paymentMethodClosed, 409);
+    }
+    await env.DB.batch([
+      env.DB.prepare(`
+        UPDATE work_order_installments SET payment_method = ?, updated_at = datetime('now')
+        WHERE id = ? AND work_order_id = ? AND received_amount < amount
+          AND status IN ('due', 'collecting', 'pending_confirmation', 'partially_received', 'overdue')
+          AND EXISTS (SELECT 1 FROM work_orders WHERE id = ? AND customer_id = ?)
+      `).bind(paymentMethod, installmentId, workOrderId, workOrderId, auth.userId),
+      env.DB.prepare(`SELECT CASE WHEN changes() = 1 THEN 1 ELSE json('installment payment method conflict') END`),
+      buildAuditLogStatement(env, request, {
+        targetType: 'work_order_installment', targetId: installmentId, action: 'installment_payment_method_selected',
+        beforeState: { payment_method: installment.payment_method || null },
+        afterState: { payment_method: paymentMethod },
+      }),
+    ]);
+    const saved = await getActiveInstallment(env, workOrderId, installmentId);
+    await notifyQuoteExecutionBestEffort(env, {
+      user_id: installment.engineer_id, user_type: 'engineer', type: 'installment_payment_method_selected',
+      title: copy.methodTitle, body: copy.methodBody(installment.order_no),
+      data: { work_order_id: workOrderId, installment_id: installmentId },
+    });
+    return jsonResponse({ installment: publicInstallment(saved) });
+  } catch (error) {
+    if (/installment payment method conflict|malformed json/i.test(String(error?.message || error))) {
+      return errorResponse(copy.paymentMethodClosed, 409);
+    }
+    return errorResponse(copy.serverError, 500);
+  }
+}
+
+async function handleSubmitReceiptClaim(request, env) {
+  const market = getRequestMarket(request);
+  const copy = installmentCollectionCopy(market);
+  const uploadedKeys = [];
+  try {
+    const [, , , workOrderId, , installmentId] = new URL(request.url).pathname.split('/');
+    const auth = request._auth;
+    if (auth?.userType !== 'engineer') return errorResponse(copy.engineerOnly, 403);
+    const installment = await getActiveInstallment(env, workOrderId, installmentId);
+    if (!installment) return errorResponse(copy.workOrderNotFound, 404);
+    if (installment.engineer_id !== auth.userId) return errorResponse(copy.engineerOnly, 403);
+    const formData = await request.formData();
+    const claimedAmount = Number(formData.get('claimed_amount'));
+    const idempotencyKey = cleanText(formData.get('idempotency_key'), 200);
+    if (!Number.isSafeInteger(claimedAmount) || claimedAmount <= 0) return errorResponse(copy.claimAmountInvalid, 400);
+    if (!idempotencyKey) return errorResponse(copy.idempotencyRequired, 400);
+    const existing = await env.DB.prepare(`
+      SELECT * FROM work_order_receipt_claims WHERE idempotency_key = ?
+    `).bind(idempotencyKey).first();
+    if (existing) {
+      if (existing.work_order_id !== workOrderId || existing.installment_id !== installmentId || existing.engineer_id !== auth.userId) {
+        return errorResponse(copy.decisionConflict, 409);
+      }
+      if (Number(existing.claimed_amount) !== claimedAmount) return errorResponse(copy.decisionConflict, 409);
+      return jsonResponse({
+        claim: visibleReceiptClaim(existing, auth),
+        evidence: publicReceiptEvidence(await getReceiptEvidenceForClaim(env, existing.id)),
+        installment: publicInstallment(installment),
+      });
+    }
+    if (!['collecting', 'partially_received', 'overdue'].includes(installment.status)) {
+      return errorResponse(copy.claimNotAllowed, 409);
+    }
+
+    const evidenceFile = formData.get('evidence');
+    let evidence = null;
+    const claimId = generateId();
+    if (evidenceFile && typeof evidenceFile !== 'string') {
+      if (!env.FIELD_EVIDENCE) return errorResponse(copy.evidenceUnavailable, 503);
+      if (!RECEIPT_EVIDENCE_MIME_TYPES.has(evidenceFile.type)) return errorResponse(copy.evidenceInvalid, 400);
+      if (evidenceFile.size <= 0 || evidenceFile.size > FIELD_EVIDENCE_MAX_BYTES) {
+        return errorResponse(copy.evidenceTooLarge, 413);
+      }
+      const bytes = new Uint8Array(await evidenceFile.arrayBuffer());
+      if (!hasFieldEvidenceSignature(bytes, evidenceFile.type)) return errorResponse(copy.evidenceSignatureInvalid, 400);
+      const evidenceId = generateId();
+      const extension = RECEIPT_EVIDENCE_MIME_TYPES.get(evidenceFile.type);
+      const objectKey = `field-evidence/${market}/${workOrderId}/receipt-claims/${claimId}/${evidenceId}.${extension}`;
+      await env.FIELD_EVIDENCE.put(objectKey, bytes, { httpMetadata: { contentType: evidenceFile.type } });
+      uploadedKeys.push(objectKey);
+      evidence = {
+        id: evidenceId, claim_id: claimId, work_order_id: workOrderId, object_key: objectKey,
+        file_name: sanitizeFilename(evidenceFile.name || `receipt.${extension}`),
+        mime_type: evidenceFile.type, file_size: evidenceFile.size,
+        uploader_type: 'engineer', uploader_id: auth.userId,
+      };
+    }
+
+    const transactionReference = cleanText(formData.get('transaction_reference'), 200) || null;
+    const engineerNote = cleanText(formData.get('note'), 1000);
+    const statements = [
+      env.DB.prepare(`
+        INSERT INTO work_order_receipt_claims (
+          id, installment_id, work_order_id, engineer_id, claimed_amount,
+          transaction_reference, engineer_note, status, idempotency_key
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?)
+      `).bind(
+        claimId, installmentId, workOrderId, auth.userId, claimedAmount,
+        transactionReference, engineerNote, idempotencyKey,
+      ),
+    ];
+    if (evidence) {
+      statements.push(env.DB.prepare(`
+        INSERT INTO work_order_receipt_evidence (
+          id, claim_id, work_order_id, object_key, file_name, mime_type, file_size,
+          uploader_type, uploader_id
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).bind(
+        evidence.id, evidence.claim_id, evidence.work_order_id, evidence.object_key,
+        evidence.file_name, evidence.mime_type, evidence.file_size,
+        evidence.uploader_type, evidence.uploader_id,
+      ));
+    }
+    statements.push(
+      env.DB.prepare(`
+        UPDATE work_order_installments SET status = 'pending_confirmation', updated_at = datetime('now')
+        WHERE id = ? AND work_order_id = ? AND status IN ('collecting', 'partially_received', 'overdue')
+          AND EXISTS (SELECT 1 FROM work_orders WHERE id = ? AND engineer_id = ?)
+      `).bind(installmentId, workOrderId, workOrderId, auth.userId),
+      env.DB.prepare(`SELECT CASE WHEN changes() = 1 THEN 1 ELSE json('receipt claim conflict') END`),
+      buildAuditLogStatement(env, request, {
+        targetType: 'work_order_receipt_claim', targetId: claimId, action: 'installment_receipt_claim_submitted',
+        beforeState: { installment_status: installment.status, received_amount: installment.received_amount },
+        afterState: { status: 'pending', claimed_amount: claimedAmount, evidence_id: evidence?.id || null },
+      }),
+    );
+    try {
+      await env.DB.batch(statements);
+    } catch (error) {
+      await cleanupFieldEvidenceObjects(env, uploadedKeys, 'receipt_claim_persistence_failed');
+      uploadedKeys.length = 0;
+      if (isD1ConstraintError(error) || /receipt claim conflict|malformed json/i.test(String(error?.message || error))) {
+        const recovered = await env.DB.prepare(`SELECT * FROM work_order_receipt_claims WHERE idempotency_key = ?`).bind(idempotencyKey).first();
+        if (recovered?.work_order_id === workOrderId && recovered.installment_id === installmentId && recovered.engineer_id === auth.userId) {
+          return jsonResponse({
+            claim: visibleReceiptClaim(recovered, auth),
+            evidence: publicReceiptEvidence(await getReceiptEvidenceForClaim(env, recovered.id)),
+            installment: publicInstallment(await getActiveInstallment(env, workOrderId, installmentId)),
+          });
+        }
+        return errorResponse(copy.claimNotAllowed, 409);
+      }
+      throw error;
+    }
+    uploadedKeys.length = 0;
+    const claim = await env.DB.prepare(`SELECT * FROM work_order_receipt_claims WHERE id = ?`).bind(claimId).first();
+    const savedInstallment = await getActiveInstallment(env, workOrderId, installmentId);
+    await notifyQuoteExecutionBestEffort(env, {
+      user_id: installment.customer_id, user_type: 'customer', type: 'installment_receipt_claim_submitted',
+      title: copy.claimTitle, body: copy.claimBody(installment.order_no),
+      data: { work_order_id: workOrderId, installment_id: installmentId, claim_id: claimId },
+    });
+    return jsonResponse({
+      claim: visibleReceiptClaim(claim, auth),
+      evidence: publicReceiptEvidence(evidence),
+      installment: publicInstallment(savedInstallment),
+    }, 201);
+  } catch (error) {
+    await cleanupFieldEvidenceObjects(env, uploadedKeys, 'receipt_claim_request_failed');
+    return errorResponse(copy.serverError, 500);
+  }
+}
+
+async function handleGetReceiptEvidence(request, env) {
+  const market = getRequestMarket(request);
+  const copy = installmentCollectionCopy(market);
+  try {
+    const [, , , workOrderId, , evidenceId] = new URL(request.url).pathname.split('/');
+    const evidence = await env.DB.prepare(`
+      SELECT evidence.*, work_order.customer_id, work_order.engineer_id
+      FROM work_order_receipt_evidence evidence
+      JOIN work_orders work_order ON work_order.id = evidence.work_order_id
+      WHERE evidence.id = ? AND evidence.work_order_id = ?
+    `).bind(evidenceId, workOrderId).first();
+    if (!evidence) return errorResponse(copy.evidenceNotFound, 404);
+    const auth = request._auth;
+    const allowed = auth?.userType === 'admin'
+      || (auth?.userType === 'customer' && evidence.customer_id === auth.userId)
+      || (auth?.userType === 'engineer' && evidence.engineer_id === auth.userId);
+    if (!allowed) return errorResponse(copy.evidenceDenied, 403);
+    if (!env.FIELD_EVIDENCE) return errorResponse(copy.evidenceUnavailable, 503);
+    const object = await env.FIELD_EVIDENCE.get(evidence.object_key);
+    if (!object) return errorResponse(copy.evidenceNotFound, 404);
+    return new Response(object.body, {
+      headers: {
+        'Content-Type': evidence.mime_type,
+        'Content-Disposition': `inline; filename="${sanitizeFilename(evidence.file_name)}"`,
+        'X-Content-Type-Options': 'nosniff',
+        'Cache-Control': 'private, no-store',
+      },
+    });
+  } catch (error) {
+    return errorResponse(copy.serverError, 500);
+  }
+}
+
+async function handleAdminDecideReceiptClaim(request, env) {
+  const market = getRequestMarket(request);
+  const copy = installmentCollectionCopy(market);
+  try {
+    const [, , , , workOrderId, , installmentId, , claimId] = new URL(request.url).pathname.split('/');
+    const body = await request.json().catch(() => ({}));
+    const decision = body.decision;
+    const reason = cleanText(body.reason, 1000);
+    const idempotencyKey = cleanText(body.idempotency_key, 200);
+    if (!['confirmed', 'rejected'].includes(decision)) return errorResponse(copy.decisionInvalid, 400);
+    if (!idempotencyKey) return errorResponse(copy.idempotencyRequired, 400);
+    if (decision === 'rejected' && !reason) return errorResponse(copy.decisionReasonRequired, 400);
+    const installment = await getActiveInstallment(env, workOrderId, installmentId);
+    if (!installment) return errorResponse(copy.workOrderNotFound, 404);
+    const claim = await env.DB.prepare(`
+      SELECT * FROM work_order_receipt_claims
+      WHERE id = ? AND installment_id = ? AND work_order_id = ?
+    `).bind(claimId, installmentId, workOrderId).first();
+    if (!claim) return errorResponse(copy.workOrderNotFound, 404);
+    if (claim.decision_idempotency_key === idempotencyKey) {
+      return jsonResponse({ claim: visibleReceiptClaim(claim, request._auth), installment: publicInstallment(installment) });
+    }
+    if (claim.status !== 'pending') return errorResponse(copy.decisionConflict, 409);
+
+    const statements = [];
+    let confirmedAmount = null;
+    let nextInstallmentStatus;
+    if (decision === 'confirmed') {
+      confirmedAmount = Number(body.confirmed_amount);
+      if (!Number.isSafeInteger(confirmedAmount) || confirmedAmount <= 0) {
+        return errorResponse(copy.confirmedAmountInvalid, 400);
+      }
+      if (confirmedAmount > Number(installment.amount) - Number(installment.received_amount)) {
+        return errorResponse(copy.overConfirmation, 409);
+      }
+      nextInstallmentStatus = Number(installment.received_amount) + confirmedAmount === Number(installment.amount)
+        ? 'received'
+        : 'partially_received';
+      statements.push(
+        env.DB.prepare(`
+          UPDATE work_order_receipt_claims
+          SET status = 'confirmed', confirmed_amount = ?, decision_reason = ?, decided_by = ?,
+            decided_at = datetime('now'), decision_idempotency_key = ?
+          WHERE id = ? AND installment_id = ? AND work_order_id = ? AND status = 'pending'
+        `).bind(confirmedAmount, reason || null, request._auth.userId, idempotencyKey, claimId, installmentId, workOrderId),
+        env.DB.prepare(`SELECT CASE WHEN changes() = 1 THEN 1 ELSE json('receipt decision conflict') END`),
+        env.DB.prepare(`
+          UPDATE work_order_installments
+          SET received_amount = received_amount + ?,
+            status = CASE WHEN received_amount + ? = amount THEN 'received' ELSE 'partially_received' END,
+            completed_at = CASE WHEN received_amount + ? = amount THEN datetime('now') ELSE NULL END,
+            updated_at = datetime('now')
+          WHERE id = ? AND work_order_id = ? AND received_amount + ? <= amount
+        `).bind(confirmedAmount, confirmedAmount, confirmedAmount, installmentId, workOrderId, confirmedAmount),
+        env.DB.prepare(`SELECT CASE WHEN changes() = 1 THEN 1 ELSE json('receipt over confirmation') END`),
+      );
+    } else {
+      const submissionAudit = await env.DB.prepare(`
+        SELECT before_state FROM audit_logs
+        WHERE target_type = 'work_order_receipt_claim' AND target_id = ?
+          AND action = 'installment_receipt_claim_submitted'
+        ORDER BY created_at DESC LIMIT 1
+      `).bind(claimId).first();
+      let priorStatus = '';
+      try { priorStatus = JSON.parse(submissionAudit?.before_state || '{}').installment_status || ''; } catch {}
+      nextInstallmentStatus = ['collecting', 'partially_received', 'overdue'].includes(priorStatus)
+        ? priorStatus
+        : (Number(installment.received_amount) > 0 ? 'partially_received' : 'collecting');
+      statements.push(
+        env.DB.prepare(`
+          UPDATE work_order_receipt_claims
+          SET status = 'rejected', confirmed_amount = NULL, decision_reason = ?, decided_by = ?,
+            decided_at = datetime('now'), decision_idempotency_key = ?
+          WHERE id = ? AND installment_id = ? AND work_order_id = ? AND status = 'pending'
+        `).bind(reason, request._auth.userId, idempotencyKey, claimId, installmentId, workOrderId),
+        env.DB.prepare(`SELECT CASE WHEN changes() = 1 THEN 1 ELSE json('receipt decision conflict') END`),
+        env.DB.prepare(`
+          UPDATE work_order_installments
+          SET status = ?, updated_at = datetime('now')
+          WHERE id = ? AND work_order_id = ? AND status = 'pending_confirmation'
+        `).bind(nextInstallmentStatus, installmentId, workOrderId),
+        env.DB.prepare(`SELECT CASE WHEN changes() = 1 THEN 1 ELSE json('receipt decision conflict') END`),
+      );
+    }
+    statements.push(buildAuditLogStatement(env, request, {
+      targetType: 'work_order_receipt_claim', targetId: claimId,
+      action: decision === 'confirmed' ? 'installment_receipt_confirmed' : 'installment_receipt_rejected',
+      beforeState: { claim_status: claim.status, installment_status: installment.status, received_amount: installment.received_amount },
+      afterState: {
+        claim_status: decision, confirmed_amount: confirmedAmount,
+        installment_status: nextInstallmentStatus,
+        received_amount: Number(installment.received_amount) + (confirmedAmount || 0),
+      },
+    }));
+    try {
+      await env.DB.batch(statements);
+    } catch (error) {
+      if (/receipt decision conflict|receipt over confirmation|malformed json/i.test(String(error?.message || error)) || isD1ConstraintError(error)) {
+        const recovered = await env.DB.prepare(`SELECT * FROM work_order_receipt_claims WHERE id = ?`).bind(claimId).first();
+        if (recovered?.decision_idempotency_key === idempotencyKey) {
+          return jsonResponse({
+            claim: visibleReceiptClaim(recovered, request._auth),
+            installment: publicInstallment(await getActiveInstallment(env, workOrderId, installmentId)),
+          });
+        }
+        if (/receipt over confirmation/i.test(String(error?.message || error))) return errorResponse(copy.overConfirmation, 409);
+        return errorResponse(copy.decisionConflict, 409);
+      }
+      throw error;
+    }
+    const savedClaim = await env.DB.prepare(`SELECT * FROM work_order_receipt_claims WHERE id = ?`).bind(claimId).first();
+    const savedInstallment = await getActiveInstallment(env, workOrderId, installmentId);
+    const notificationType = decision === 'confirmed' ? 'installment_receipt_confirmed' : 'installment_receipt_rejected';
+    const title = decision === 'confirmed' ? copy.confirmedTitle : copy.rejectedTitle;
+    const bodyText = decision === 'confirmed'
+      ? copy.confirmedBody(installment.order_no, confirmedAmount)
+      : copy.rejectedBody(installment.order_no);
+    await Promise.all([
+      notifyQuoteExecutionBestEffort(env, {
+        user_id: installment.customer_id, user_type: 'customer', type: notificationType,
+        title, body: bodyText, data: { work_order_id: workOrderId, installment_id: installmentId, claim_id: claimId },
+      }),
+      notifyQuoteExecutionBestEffort(env, {
+        user_id: installment.engineer_id, user_type: 'engineer', type: notificationType,
+        title, body: bodyText, data: { work_order_id: workOrderId, installment_id: installmentId, claim_id: claimId },
+      }),
+    ]);
+    return jsonResponse({ claim: visibleReceiptClaim(savedClaim, request._auth), installment: publicInstallment(savedInstallment) });
+  } catch (error) {
+    return errorResponse(copy.serverError, 500);
+  }
+}
+
 function paymentInstructionId(stage) {
   const prefix = stage === 'balance' ? 'BALREQ' : 'ADVREQ';
   return prefix + Date.now().toString(36).toUpperCase() + Math.random().toString(36).slice(2, 6).toUpperCase();
@@ -15903,6 +16423,9 @@ async function routeRequest(request, env, ctx) {
       if (path.match(/^\/api\/admin\/workorders\/[^/]+\/pricing\/(approve|reject)$/) && request.method === 'PATCH') {
         return handleAdminReviewWorkOrderPricing(request, env);
       }
+      if (path.match(/^\/api\/admin\/workorders\/[^/]+\/installments\/[^/]+\/receipt-claims\/[^/]+\/decision$/) && request.method === 'POST') {
+        return handleAdminDecideReceiptClaim(request, env);
+      }
       if (path.match(/^\/api\/admin\/workorders\/[^/]+\/payment\/approve-start$/) && request.method === 'POST') {
         return handleAdminApprovePaymentStart(request, env);
       }
@@ -16078,6 +16601,18 @@ async function routeRequest(request, env, ctx) {
     }
     if (path.match(/^\/api\/workorders\/[^/]+\/field-media\/[^/]+$/) && request.method === 'GET') {
       return handleGetFieldMedia(request, env);
+    }
+    if (path.match(/^\/api\/workorders\/[^/]+\/receipt-evidence\/[^/]+$/) && request.method === 'GET') {
+      return handleGetReceiptEvidence(request, env);
+    }
+    if (path.match(/^\/api\/workorders\/[^/]+\/installments\/[^/]+\/collect$/) && request.method === 'POST') {
+      return handleStartInstallmentCollection(request, env);
+    }
+    if (path.match(/^\/api\/workorders\/[^/]+\/installments\/[^/]+\/payment-method$/) && request.method === 'POST') {
+      return handleSelectInstallmentPaymentMethod(request, env);
+    }
+    if (path.match(/^\/api\/workorders\/[^/]+\/installments\/[^/]+\/receipt-claims$/) && request.method === 'POST') {
+      return handleSubmitReceiptClaim(request, env);
     }
     if (path.match(/^\/api\/workorders\/[^/]+\/attachments\/[^/]+$/) && request.method === 'DELETE') {
       return handleDeleteAttachment(request, env);
