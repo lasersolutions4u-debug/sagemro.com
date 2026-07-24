@@ -30,6 +30,10 @@ function createPaymentFlowEnv() {
       customer_id: 'customer-1',
       engineer_id: 'engineer-1',
       status: 'pending_payment',
+      active_quote_version: null,
+      service_mode: 'remote',
+      quote_expected_service_days: null,
+      approved_extension_days: 0,
     }],
     __pricing: [{
       id: 'price-1',
@@ -125,6 +129,11 @@ function createStatement(env, sql) {
       if (/SELECT id, engineer_id, status, order_no FROM work_orders WHERE id = \?/i.test(normalized)) {
         const order = env.__workOrders.find((item) => item.id === this.args[0]);
         return order ? { id: order.id, engineer_id: order.engineer_id, status: order.status, order_no: order.order_no } : null;
+      }
+
+      if (/SELECT id, engineer_id, status, order_no, customer_id, service_mode, active_quote_version, quote_expected_service_days, approved_extension_days FROM work_orders WHERE id = \?/i.test(normalized)) {
+        const order = env.__workOrders.find((item) => item.id === this.args[0]);
+        return order ? { ...order } : null;
       }
 
       if (/SELECT id, order_no, engineer_id, status FROM work_orders WHERE id = \?/i.test(normalized)) {
@@ -569,6 +578,9 @@ test('versioned quotes reject every legacy payment and start route without readi
   for (const item of cases) {
     const env = createPaymentFlowEnv();
     env.__pricing[0].quote_version = 1;
+    if (['engineer start request', 'Admin start confirmation'].includes(item.name)) {
+      env.__workOrders[0].active_quote_version = 1;
+    }
     env.__pricing[0].status = item.pricingStatus || 'confirmed';
     env.__workOrders[0].status = item.workOrderStatus;
     env.__payments.push({
@@ -584,7 +596,7 @@ test('versioned quotes reject every legacy payment and start route without readi
     const result = await api(env, item.path, item.options);
 
     assert.equal(result.response.status, 409, item.name);
-    assert.match(result.json.error, /installment|schedule/i, item.name);
+    assert.match(result.json.error, /installment|schedule|active quote execution/i, item.name);
     assert.equal(env.__paymentReads, 0, item.name);
     assert.equal(env.__invoiceReads, 0, item.name);
     assert.equal(env.__invoiceWrites, 0, item.name);

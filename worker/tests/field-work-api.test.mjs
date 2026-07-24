@@ -317,7 +317,7 @@ function createStatement(env, sql) {
       const normalized = normalizeSql(sql);
       env.__writes.push({ sql: normalized, args: [...this.args] });
       let changes = 1;
-      if (/SELECT CASE WHEN changes\(\) = 1 THEN 1 ELSE json\(/i.test(normalized)) {
+      if (/SELECT CASE WHEN changes\(\) = 1 THEN 1 .*json\(/i.test(normalized)) {
         if (env.__lastChanges !== 1) throw new Error('D1_ERROR: malformed JSON');
         return { success: true, meta: { changes: 0 } };
       }

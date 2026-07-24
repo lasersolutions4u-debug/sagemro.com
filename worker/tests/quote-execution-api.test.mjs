@@ -2203,6 +2203,271 @@ test('versioned start request waits for every required installment and keeps fin
   assert.equal(ctx.db.prepare('SELECT received_amount FROM work_order_installments WHERE id = ?').get(laterInstallment.id).received_amount, 0);
 });
 
+test('active quote gates fail closed when the authoritative execution graph is incomplete', async () => {
+  const corruptions = [
+    ['missing pricing', (ctx) => ctx.db.exec(`
+      PRAGMA foreign_keys = OFF;
+      DELETE FROM work_order_pricing WHERE work_order_id = 'wo-quote-1';
+      PRAGMA foreign_keys = ON;
+    `)],
+    ['projection version mismatch', (ctx) => ctx.db.exec(`
+      UPDATE work_order_pricing SET quote_version = 99 WHERE work_order_id = 'wo-quote-1';
+    `)],
+    ['missing active history', (ctx) => ctx.db.exec(`
+      DELETE FROM work_order_pricing_history WHERE version = 1;
+    `)],
+    ['missing active schedule', (ctx) => ctx.db.exec(`
+      DELETE FROM work_order_installments WHERE quote_version = 1;
+      DROP TRIGGER quote_execution_schedule_delete_guard;
+      DELETE FROM work_order_payment_schedule WHERE quote_version = 1;
+    `)],
+  ];
+
+  for (const [label, corrupt] of corruptions) {
+    for (const gate of ['start', 'archive']) {
+      const ctx = createQuoteExecutionEnv();
+      await activateBaseline(ctx);
+      ctx.db.exec(`
+        UPDATE work_order_installments SET received_amount = amount, status = 'received';
+        UPDATE work_orders SET status = '${gate === 'archive' ? 'resolved' : 'pending_payment'}'
+        WHERE id = 'wo-quote-1';
+      `);
+      corrupt(ctx);
+
+      const result = gate === 'start'
+        ? await api(ctx, '/api/workorders/wo-quote-1/payment/start-request', {
+          body: { note: 'Ready.' }, userType: 'engineer', userId: 'engineer-1',
+        })
+        : await api(ctx, '/api/admin/workorders/wo-quote-1/archive', {
+          method: 'PATCH', body: {}, userType: 'admin', userId: 'admin',
+        });
+
+      assert.equal(result.response.status, 409, `${label} ${gate}`);
+      assert.equal(result.json.code, 'quote_execution_inconsistent', `${label} ${gate}`);
+      assert.equal(
+        ctx.db.prepare("SELECT status FROM work_orders WHERE id = 'wo-quote-1'").get().status,
+        gate === 'archive' ? 'resolved' : 'pending_payment',
+        `${label} ${gate}`,
+      );
+      ctx.close();
+    }
+  }
+});
+
+test('versioned start and archive transitions roll back when any mandatory lifecycle write fails', async () => {
+  const transitions = [
+    {
+      name: 'engineer start request',
+      priorStatus: 'pending_payment',
+      action: 'payment_start_requested',
+      logAction: 'payment_start_requested',
+      request: (ctx) => api(ctx, '/api/workorders/wo-quote-1/payment/start-request', {
+        body: { note: 'Ready.' }, userType: 'engineer', userId: 'engineer-1',
+      }),
+    },
+    {
+      name: 'Admin start approval',
+      priorStatus: 'payment_review',
+      action: 'payment_start_approved',
+      logAction: 'payment_start_approved',
+      request: (ctx) => api(ctx, '/api/admin/workorders/wo-quote-1/payment/approve-start', {
+        body: { note: 'Approved.' }, userType: 'admin', userId: 'admin',
+      }),
+    },
+    {
+      name: 'financial archive',
+      priorStatus: 'resolved',
+      action: 'work_order_archived',
+      logAction: 'archived',
+      request: (ctx) => api(ctx, '/api/admin/workorders/wo-quote-1/archive', {
+        method: 'PATCH', body: {}, userType: 'admin', userId: 'admin',
+      }),
+    },
+  ];
+
+  for (const transition of transitions) {
+    for (const [table, triggerName] of [
+      ['work_order_messages', 'fail_mandatory_message'],
+      ['work_order_logs', 'fail_mandatory_log'],
+      ['audit_logs', 'fail_mandatory_audit'],
+    ]) {
+      const ctx = createQuoteExecutionEnv();
+      await activateBaseline(ctx);
+      ctx.db.exec(`
+        UPDATE work_order_installments SET received_amount = amount, status = 'received';
+        UPDATE work_orders SET status = '${transition.priorStatus}' WHERE id = 'wo-quote-1';
+        CREATE TRIGGER ${triggerName} BEFORE INSERT ON ${table}
+        BEGIN SELECT RAISE(ABORT, 'forced mandatory lifecycle failure'); END;
+      `);
+
+      const result = await transition.request(ctx);
+
+      assert.equal(result.response.status, 500, `${transition.name} ${table}`);
+      assert.equal(
+        ctx.db.prepare("SELECT status FROM work_orders WHERE id = 'wo-quote-1'").get().status,
+        transition.priorStatus,
+        `${transition.name} ${table}`,
+      );
+      assert.equal(ctx.db.prepare(`
+        SELECT COUNT(*) AS count FROM work_order_messages
+        WHERE work_order_id = 'wo-quote-1' AND message_type = 'payment_update'
+      `).get().count, 0, `${transition.name} ${table}`);
+      assert.equal(ctx.db.prepare(`
+        SELECT COUNT(*) AS count FROM work_order_logs
+        WHERE work_order_id = 'wo-quote-1' AND action = ?
+      `).get(transition.logAction).count, 0, `${transition.name} ${table}`);
+      assert.equal(ctx.db.prepare(`
+        SELECT COUNT(*) AS count FROM audit_logs
+        WHERE target_id = 'wo-quote-1' AND action = ?
+      `).get(transition.action).count, 0, `${transition.name} ${table}`);
+      ctx.close();
+    }
+  }
+});
+
+test('concurrent versioned lifecycle transitions persist mandatory writes exactly once', async () => {
+  const transitions = [
+    {
+      name: 'engineer start request',
+      priorStatus: 'pending_payment',
+      targetStatus: 'payment_review',
+      logAction: 'payment_start_requested',
+      auditAction: 'payment_start_requested',
+      request: (ctx) => api(ctx, '/api/workorders/wo-quote-1/payment/start-request', {
+        body: { note: 'Ready.' }, userType: 'engineer', userId: 'engineer-1',
+      }),
+    },
+    {
+      name: 'Admin start approval',
+      priorStatus: 'payment_review',
+      targetStatus: 'in_service',
+      logAction: 'payment_start_approved',
+      auditAction: 'payment_start_approved',
+      request: (ctx) => api(ctx, '/api/admin/workorders/wo-quote-1/payment/approve-start', {
+        body: { note: 'Approved.' }, userType: 'admin', userId: 'admin',
+      }),
+    },
+    {
+      name: 'financial archive',
+      priorStatus: 'resolved',
+      targetStatus: 'completed',
+      logAction: 'archived',
+      auditAction: 'work_order_archived',
+      request: (ctx) => api(ctx, '/api/admin/workorders/wo-quote-1/archive', {
+        method: 'PATCH', body: {}, userType: 'admin', userId: 'admin',
+      }),
+    },
+  ];
+
+  for (const transition of transitions) {
+    const directory = mkdtempSync(join(tmpdir(), 'sagemro-lifecycle-race-'));
+    const filename = join(directory, 'quote-execution.sqlite');
+    const first = createQuoteExecutionEnv({ filename });
+    const second = createQuoteExecutionEnv({ filename, initialize: false });
+    let releaseFirst;
+    let firstPaused;
+    const paused = new Promise((resolve) => { firstPaused = resolve; });
+    const release = new Promise((resolve) => { releaseFirst = resolve; });
+    try {
+      await activateBaseline(first);
+      first.db.exec(`
+        UPDATE work_order_installments SET received_amount = amount, status = 'received';
+        UPDATE work_orders SET status = '${transition.priorStatus}' WHERE id = 'wo-quote-1';
+      `);
+      first.beforeNextBatch(async () => {
+        firstPaused();
+        await release;
+      });
+      const firstRequest = transition.request(first);
+      await paused;
+      const secondResult = await transition.request(second);
+      releaseFirst();
+      const firstResult = await firstRequest;
+      const results = [firstResult, secondResult];
+
+      assert.deepEqual(results.map((result) => result.response.status), [200, 200], transition.name);
+      assert.equal(first.db.prepare("SELECT status FROM work_orders WHERE id = 'wo-quote-1'").get().status, transition.targetStatus, transition.name);
+      assert.equal(first.db.prepare(`
+        SELECT COUNT(*) AS count FROM work_order_messages
+        WHERE work_order_id = 'wo-quote-1' AND message_type = 'payment_update'
+      `).get().count, 1, transition.name);
+      assert.equal(first.db.prepare(`
+        SELECT COUNT(*) AS count FROM work_order_logs
+        WHERE work_order_id = 'wo-quote-1' AND action = ?
+      `).get(transition.logAction).count, 1, transition.name);
+      assert.equal(first.db.prepare(`
+        SELECT COUNT(*) AS count FROM audit_logs
+        WHERE target_id = 'wo-quote-1' AND action = ?
+      `).get(transition.auditAction).count, 1, transition.name);
+    } finally {
+      first.close();
+      second.close();
+      rmSync(directory, { recursive: true, force: true });
+    }
+  }
+});
+
+test('concurrent quote-driven check-ins reserve the final workday allowance atomically', async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'sagemro-workday-race-'));
+  const filename = join(directory, 'quote-execution.sqlite');
+  const sharedEvidenceObjects = new Map();
+  const first = createQuoteExecutionEnv({ filename, sharedEvidenceObjects });
+  const second = createQuoteExecutionEnv({ filename, initialize: false, sharedEvidenceObjects });
+  let releaseFirst;
+  let firstPaused;
+  const paused = new Promise((resolve) => { firstPaused = resolve; });
+  const release = new Promise((resolve) => { releaseFirst = resolve; });
+  try {
+    await activateBaseline(first);
+    first.db.exec(`
+      UPDATE work_order_installments SET received_amount = amount, status = 'received';
+      UPDATE work_orders SET
+        status = 'in_service', site_timezone = 'UTC', expected_service_days = 3,
+        expected_completion_date = '2026-07-31', planned_daily_end_time = '17:30'
+      WHERE id = 'wo-quote-1';
+      INSERT INTO work_order_field_days (
+        id, work_order_id, engineer_id, site_local_date, site_timezone, status, check_in_at
+      ) VALUES
+        ('reported-1', 'wo-quote-1', 'engineer-1', '2026-07-20', 'UTC', 'report_submitted', '2026-07-20T08:00:00Z'),
+        ('reported-2', 'wo-quote-1', 'engineer-1', '2026-07-21', 'UTC', 'late_report_submitted', '2026-07-21T08:00:00Z');
+    `);
+    first.env.FIELD_WORK_NOW = '2026-07-22T08:00:00Z';
+    second.env.FIELD_WORK_NOW = '2026-07-23T08:00:00Z';
+    first.beforeNextBatch(async () => {
+      firstPaused();
+      await release;
+    });
+    const photo = new File([new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10])], 'check-in.jpg', { type: 'image/jpeg' });
+
+    const firstRequest = multipartApi(
+      first,
+      '/api/workorders/wo-quote-1/field-days/check-in',
+      { photo, expected_checkout_time: '17:30' },
+    );
+    await paused;
+    const secondResult = await multipartApi(
+      second,
+      '/api/workorders/wo-quote-1/field-days/check-in',
+      { photo, expected_checkout_time: '17:30' },
+    );
+    releaseFirst();
+    const firstResult = await firstRequest;
+    const results = [firstResult, secondResult];
+    const statuses = results.map((result) => result.response.status).sort();
+
+    assert.deepEqual(statuses, [201, 409]);
+    const rejected = results.find((result) => result.response.status === 409);
+    assert.equal(rejected.json.code, 'workday_allowance_exhausted');
+    assert.equal(first.db.prepare("SELECT COUNT(*) AS count FROM work_order_field_days WHERE status = 'checked_in'").get().count, 1);
+    assert.equal(first.db.prepare("SELECT COUNT(*) AS count FROM work_order_field_day_media WHERE purpose = 'check_in'").get().count, 1);
+    assert.equal(sharedEvidenceObjects.size, 1);
+  } finally {
+    first.close();
+    second.close();
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
 test('versioned service completion allows a later unpaid installment but archive waits for settlement', async () => {
   const ctx = createQuoteExecutionEnv();
   ctx.db.exec("UPDATE work_orders SET service_mode = 'remote' WHERE id = 'wo-quote-1'");
@@ -2278,4 +2543,37 @@ test('detail and work-order lists expose payment state independently from servic
   assert.equal(adminList.json.list[0].payment_state, 'partially_received');
   assert.equal(adminList.json.list[0].received_amount, 1000);
   assert.equal(adminList.json.list[0].outstanding_amount, 11000);
+});
+
+test('all work-order lists fail closed on a malformed active installment schedule', async () => {
+  const ctx = createQuoteExecutionEnv();
+  await activateBaseline(ctx);
+  const [firstInstallment, secondInstallment] = installments(ctx);
+  ctx.db.prepare(`
+    UPDATE work_order_installments SET received_amount = amount, status = 'received' WHERE id = ?
+  `).run(firstInstallment.id);
+  ctx.db.prepare('DELETE FROM work_order_installments WHERE id = ?').run(secondInstallment.id);
+
+  const customerList = await api(ctx, '/api/workorders', {
+    method: 'GET', userType: 'customer', userId: 'customer-1',
+  });
+  const engineerList = await api(ctx, '/api/engineers/tickets', {
+    method: 'GET', userType: 'engineer', userId: 'engineer-1',
+  });
+  const adminList = await api(ctx, '/api/admin/workorders', {
+    method: 'GET', userType: 'admin', userId: 'admin',
+  });
+
+  assert.equal(customerList.response.status, 200);
+  assert.equal(engineerList.response.status, 200);
+  assert.equal(adminList.response.status, 200);
+  for (const row of [
+    customerList.json.work_orders[0],
+    engineerList.json.work_orders[0],
+    adminList.json.list[0],
+  ]) {
+    assert.equal(row.payment_state, 'exception');
+    assert.equal(row.received_amount, null);
+    assert.equal(row.outstanding_amount, null);
+  }
 });

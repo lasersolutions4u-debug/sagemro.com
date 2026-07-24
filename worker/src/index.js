@@ -6373,6 +6373,31 @@ function hasCompleteFieldPlan(workOrder) {
   );
 }
 
+function quoteDrivenFieldDayAllowanceSql(statuses = ['report_submitted', 'late_report_submitted', 'checked_in']) {
+  const statusList = statuses.map((status) => `'${status}'`).join(', ');
+  return `
+    COALESCE(work_orders.active_quote_version, 0) >= 1
+    AND (
+      SELECT COUNT(DISTINCT field_day.site_local_date)
+      FROM work_order_field_days field_day
+      WHERE field_day.work_order_id = work_orders.id
+        AND field_day.status IN (${statusList})
+        AND field_day.site_local_date GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'
+        AND strftime('%Y-%m-%d', field_day.site_local_date) = field_day.site_local_date
+        AND field_day.check_in_at IS NOT NULL
+        AND julianday(field_day.check_in_at) IS NOT NULL
+    ) >= COALESCE(work_orders.quote_expected_service_days, 0) + COALESCE(work_orders.approved_extension_days, 0)
+  `;
+}
+
+async function quoteDrivenFieldDayAllowanceExhausted(env, workOrderId) {
+  const row = await env.DB.prepare(`
+    SELECT CASE WHEN (${quoteDrivenFieldDayAllowanceSql()}) THEN 1 ELSE 0 END AS exhausted
+    FROM work_orders WHERE id = ?
+  `).bind(workOrderId).first();
+  return Boolean(row?.exhausted);
+}
+
 async function handleFieldDayCheckIn(request, env) {
   let objectKey = null;
   try {
@@ -6495,6 +6520,10 @@ async function handleFieldDayCheckIn(request, env) {
         WHERE EXISTS (
           SELECT 1 FROM work_orders
           WHERE id = ? AND engineer_id = ? AND service_mode = 'onsite' AND status = 'in_service'
+            AND (
+              COALESCE(active_quote_version, 0) < 1
+              OR NOT (${quoteDrivenFieldDayAllowanceSql()})
+            )
         )
       `).bind(
         fieldDay.id, fieldDay.work_order_id, fieldDay.engineer_id, fieldDay.site_local_date, fieldDay.site_timezone,
@@ -6503,7 +6532,17 @@ async function handleFieldDayCheckIn(request, env) {
         fieldDay.radius_m, fieldDay.within_geofence, fieldDay.check_in_idempotency_key,
         workOrderId, auth.userId,
       ),
-      env.DB.prepare(`SELECT CASE WHEN changes() = 1 THEN 1 ELSE json('field check-in concurrent update') END`),
+      env.DB.prepare(`
+        SELECT CASE
+          WHEN changes() = 1 THEN 1
+          WHEN EXISTS (
+            SELECT 1 FROM work_orders
+            WHERE id = ? AND engineer_id = ? AND service_mode = 'onsite' AND status = 'in_service'
+              AND (${quoteDrivenFieldDayAllowanceSql()})
+          ) THEN json('workday allowance exhausted')
+          ELSE json('field check-in concurrent update')
+        END
+      `).bind(workOrderId, auth.userId),
       env.DB.prepare(`
         INSERT INTO work_order_field_day_media (
           id, work_order_id, field_day_id, purpose, object_key, mime_type, file_size,
@@ -6539,7 +6578,21 @@ async function handleFieldDayCheckIn(request, env) {
     } catch (error) {
       await cleanupFieldEvidenceObjects(env, [objectKey], 'check_in_persistence_failed');
       objectKey = null;
+      if (/workday allowance exhausted/i.test(String(error?.message || error))) {
+        const market = getRequestMarket(request);
+        return jsonResponse({
+          error: market === 'cn' ? '现场工作日额度已用完，请先申请延期' : 'The onsite workday allowance is exhausted. Request an extension before checking in again.',
+          code: 'workday_allowance_exhausted',
+        }, 409);
+      }
       if (/field check-in concurrent update|malformed json/i.test(String(error?.message || error))) {
+        if (await quoteDrivenFieldDayAllowanceExhausted(env, workOrderId)) {
+          const market = getRequestMarket(request);
+          return jsonResponse({
+            error: market === 'cn' ? '现场工作日额度已用完，请先申请延期' : 'The onsite workday allowance is exhausted. Request an extension before checking in again.',
+            code: 'workday_allowance_exhausted',
+          }, 409);
+        }
         return errorResponse('工单状态已变更，无法完成现场签到', 409);
       }
       if (isD1ConstraintError(error)) {
@@ -12133,31 +12186,30 @@ async function listWorkOrderPaymentProjections(env, workOrders) {
   const projections = new Map();
   if (ids.length === 0) return projections;
   const placeholders = ids.map(() => '?').join(', ');
-  const [pricingRecords, installmentRecords, paymentRecords] = await Promise.all([
+  const [pricingRecords, historyRecords, scheduleRecords, installmentRecords, paymentRecords] = await Promise.all([
     env.DB.prepare(`
       SELECT * FROM work_order_pricing WHERE work_order_id IN (${placeholders})
+    `).bind(...ids).all(),
+    env.DB.prepare(`
+      SELECT history.*, pricing.work_order_id
+      FROM work_order_pricing_history history
+      JOIN work_order_pricing pricing ON pricing.id = history.pricing_id
+      WHERE pricing.work_order_id IN (${placeholders})
+      ORDER BY pricing.work_order_id, history.version
+    `).bind(...ids).all(),
+    env.DB.prepare(`
+      SELECT * FROM work_order_payment_schedule
+      WHERE work_order_id IN (${placeholders})
+      ORDER BY work_order_id, quote_version, sequence
     `).bind(...ids).all(),
     env.DB.prepare(`
       SELECT installment.*,
         SUM(CASE WHEN claim.status = 'pending' THEN 1 ELSE 0 END) AS pending_claim_count
       FROM work_order_installments installment
-      JOIN work_orders active_order ON active_order.id = installment.work_order_id
-      JOIN work_order_pricing active_pricing ON active_pricing.work_order_id = active_order.id
-      JOIN work_order_pricing_history history
-        ON history.pricing_id = active_pricing.id
-       AND history.version = installment.quote_version
       LEFT JOIN work_order_receipt_claims claim
         ON claim.installment_id = installment.id
        AND claim.work_order_id = installment.work_order_id
       WHERE installment.work_order_id IN (${placeholders})
-        AND history.status = 'confirmed'
-        AND (
-          (history.version = active_order.active_quote_version AND history.quote_kind = 'baseline')
-          OR (
-            history.quote_kind = 'supplemental'
-            AND history.parent_quote_version = active_order.active_quote_version
-          )
-        )
       GROUP BY installment.id
       ORDER BY installment.work_order_id, installment.quote_version, installment.sequence
     `).bind(...ids).all(),
@@ -12167,10 +12219,22 @@ async function listWorkOrderPaymentProjections(env, workOrders) {
     `).bind(...ids).all(),
   ]);
   const pricingByOrder = new Map((pricingRecords.results || []).map((row) => [row.work_order_id, row]));
+  const historiesByOrder = new Map();
+  for (const history of historyRecords.results || []) {
+    const rows = historiesByOrder.get(history.work_order_id) || [];
+    rows.push(history);
+    historiesByOrder.set(history.work_order_id, rows);
+  }
+  const schedulesByOrder = new Map();
+  for (const schedule of scheduleRecords.results || []) {
+    const rows = schedulesByOrder.get(schedule.work_order_id) || [];
+    rows.push(schedule);
+    schedulesByOrder.set(schedule.work_order_id, rows);
+  }
   const installmentsByOrder = new Map();
   for (const installment of installmentRecords.results || []) {
     const rows = installmentsByOrder.get(installment.work_order_id) || [];
-    rows.push({ ...installment, required_before_start: Boolean(installment.required_before_start) });
+    rows.push(installment);
     installmentsByOrder.set(installment.work_order_id, rows);
   }
   const paymentsByOrder = new Map();
@@ -12182,14 +12246,18 @@ async function listWorkOrderPaymentProjections(env, workOrders) {
 
   for (const workOrder of workOrders || []) {
     const pricing = pricingByOrder.get(workOrder.id);
-    if (!pricing) continue;
-    if (isVersionedQuote(pricing)) {
-      const installments = installmentsByOrder.get(workOrder.id) || [];
-      if (Number(workOrder.active_quote_version || 0) < 1 || installments.length === 0) continue;
-      const totalAmount = installments.reduce((sum, installment) => sum + Number(installment.amount || 0), 0);
-      projections.set(workOrder.id, summarizeQuoteExecution({ total_amount: totalAmount, installments }));
+    if (Number(workOrder.active_quote_version || 0) >= 1) {
+      const canonical = buildCanonicalVersionedQuoteExecution({
+        workOrder,
+        pricing,
+        histories: historiesByOrder.get(workOrder.id) || [],
+        schedules: schedulesByOrder.get(workOrder.id) || [],
+        installments: installmentsByOrder.get(workOrder.id) || [],
+      });
+      projections.set(workOrder.id, canonical);
       continue;
     }
+    if (!pricing || isVersionedQuote(pricing)) continue;
     if (pricing.status !== 'confirmed') continue;
     const totalAmount = Number(pricing.total_amount || pricing.subtotal || 0);
     const completedPayments = new Map();
@@ -12877,8 +12945,14 @@ async function handleAdminArchiveWorkOrder(request, env) {
     const pricing = await env.DB.prepare(
       'SELECT * FROM work_order_pricing WHERE work_order_id = ?'
     ).bind(workOrderId).first();
-    if (isVersionedQuote(pricing)) {
+    if (Number(wo.active_quote_version || 0) >= 1) {
       const quoteExecution = await getWorkOrderQuoteExecution(env, wo, pricing, request._auth, market);
+      if (!quoteExecution || quoteExecution.payment_state === 'exception') {
+        return quoteExecutionConflictResponse(market);
+      }
+      if (wo.status === 'completed') {
+        return jsonResponse({ success: true, status: 'completed' });
+      }
       if (!quoteExecution?.financially_settled) {
         return errorResponse(
           market === 'cn'
@@ -12887,6 +12961,46 @@ async function handleAdminArchiveWorkOrder(request, env) {
           409,
         );
       }
+      const archiveMessage = market === 'cn'
+        ? 'SAGEMRO 运营已完成服务及财务归档。'
+        : 'SAGEMRO completed the service and financial archive.';
+      try {
+        await env.DB.batch([
+          env.DB.prepare(`
+            UPDATE work_orders
+            SET status = 'completed', completed_at = COALESCE(completed_at, datetime('now'))
+            WHERE id = ? AND status = ? AND active_quote_version = ?
+              ${versionedExecutionSqlGuard('installment.received_amount < installment.amount')}
+          `).bind(
+            workOrderId, wo.status, Number(wo.active_quote_version),
+            ...versionedExecutionGuardBindings(pricing),
+          ),
+          env.DB.prepare(`SELECT CASE WHEN changes() = 1 THEN 1 ELSE json('quote lifecycle concurrent update') END`),
+          env.DB.prepare(
+            "INSERT INTO work_order_messages (id, work_order_id, sender_type, sender_id, sender_name, content, message_type, is_internal_note, is_customer_visible) VALUES (?, ?, 'system', '', 'System', ?, 'payment_update', 0, 1)"
+          ).bind(generateId(), workOrderId, archiveMessage),
+          env.DB.prepare(`
+            INSERT INTO work_order_logs (id, work_order_id, action, actor_type, actor_id, content)
+            VALUES (?, ?, 'archived', 'admin', ?, ?)
+          `).bind(generateId(), workOrderId, request._auth?.userId || 'admin', archiveMessage),
+          buildAuditLogStatement(env, request, {
+            targetType: 'work_order',
+            targetId: workOrderId,
+            action: 'work_order_archived',
+            beforeState: { status: wo.status, payment_state: quoteExecution.payment_state },
+            afterState: { status: 'completed', payment_state: quoteExecution.payment_state },
+          }),
+        ]);
+      } catch (error) {
+        if (/quote lifecycle concurrent update|malformed json/i.test(String(error?.message || error))) {
+          if (await recoverLifecycleTransition(env, workOrderId, 'completed')) {
+            return jsonResponse({ success: true, status: 'completed' });
+          }
+          return quoteExecutionConflictResponse(market);
+        }
+        throw error;
+      }
+      return jsonResponse({ success: true, status: 'completed' });
     }
 
     await env.DB.prepare(
@@ -14774,6 +14888,140 @@ function isVersionedQuote(pricing) {
   return Number(pricing?.quote_version || 0) >= 1;
 }
 
+function quoteExecutionException(workOrder, totalAmount = null) {
+  const initialWorkdays = workOrder?.service_mode === 'hybrid'
+    ? 0
+    : Number(workOrder?.quote_expected_service_days || 0);
+  return {
+    valid: false,
+    quote_version: Number(workOrder?.active_quote_version || 0) || null,
+    active_quote_version: Number(workOrder?.active_quote_version || 0) || null,
+    total_amount: Number.isSafeInteger(totalAmount) ? totalAmount : null,
+    initial_workdays: initialWorkdays,
+    approved_extension_days: Number(workOrder?.approved_extension_days || 0),
+    scheduled_amount: null,
+    received_amount: null,
+    outstanding_amount: null,
+    start_ready: false,
+    financially_settled: false,
+    consumed_workdays: 0,
+    permitted_workdays: initialWorkdays + Number(workOrder?.approved_extension_days || 0),
+    remaining_workdays: initialWorkdays + Number(workOrder?.approved_extension_days || 0),
+    allowance_exhausted: false,
+    payment_state: 'exception',
+  };
+}
+
+function quoteRowsAggregateMatchesProjection(pricing, rows) {
+  if (!pricing || rows.length === 0) return false;
+  const aggregate = aggregateCommercialQuoteVersions(rows);
+  return [
+    'labor_fee', 'parts_fee', 'travel_fee', 'other_fee', 'subtotal',
+    'total_amount', 'platform_fee', 'deposit_withhold',
+  ].every((field) => Number(pricing[field] || 0) === aggregate[field])
+    && Number(pricing.expected_service_days || 0) === Number(aggregate.expected_service_days || 0)
+    && (pricing.payment_plan_mode || 'single') === (rows.length > 1 ? 'installments' : (rows[0].payment_plan_mode || 'single'));
+}
+
+function buildCanonicalVersionedQuoteExecution({
+  workOrder, pricing, histories = [], schedules = [], installments = [], reportedDates = [],
+}) {
+  const activeVersion = Number(workOrder?.active_quote_version || 0);
+  if (activeVersion < 1 || !pricing || !isVersionedQuote(pricing)) {
+    return quoteExecutionException(workOrder, Number(pricing?.total_amount));
+  }
+  const pricingVersion = Number(pricing.quote_version || 0);
+  const currentHistory = histories.find((row) => Number(row.version) === pricingVersion);
+  const activeRows = histories.filter((row) => (
+    row.status === 'confirmed'
+    && ((Number(row.version) === activeVersion && row.quote_kind === 'baseline')
+      || (row.quote_kind === 'supplemental' && Number(row.parent_quote_version) === activeVersion))
+  )).sort((left, right) => Number(left.version) - Number(right.version));
+  const baselineRows = activeRows.filter((row) => (
+    Number(row.version) === activeVersion && row.quote_kind === 'baseline'
+  ));
+  if (!currentHistory || baselineRows.length !== 1) {
+    return quoteExecutionException(workOrder, Number(pricing.total_amount));
+  }
+  const projectionRows = [...activeRows];
+  if (!projectionRows.some((row) => Number(row.version) === pricingVersion)) {
+    if (currentHistory.quote_kind !== 'supplemental'
+      || Number(currentHistory.parent_quote_version) !== activeVersion) {
+      return quoteExecutionException(workOrder, Number(pricing.total_amount));
+    }
+    projectionRows.push(currentHistory);
+  }
+  if (!quoteRowsAggregateMatchesProjection(pricing, projectionRows)) {
+    return quoteExecutionException(workOrder, Number(pricing.total_amount));
+  }
+
+  const activeVersions = new Set(activeRows.map((row) => Number(row.version)));
+  const activeSchedules = schedules.filter((row) => activeVersions.has(Number(row.quote_version)));
+  const activeInstallments = installments.filter((row) => activeVersions.has(Number(row.quote_version)));
+  const scheduleById = new Map();
+  let scheduleValid = activeSchedules.length > 0 && activeInstallments.length === activeSchedules.length;
+  for (const history of activeRows) {
+    const versionSchedules = activeSchedules
+      .filter((row) => Number(row.quote_version) === Number(history.version))
+      .sort((left, right) => Number(left.sequence) - Number(right.sequence));
+    let total = 0;
+    if (versionSchedules.length < 1 || versionSchedules.length > 6) scheduleValid = false;
+    for (let index = 0; index < versionSchedules.length; index += 1) {
+      const row = versionSchedules[index];
+      if (Number(row.sequence) !== index + 1
+        || !Number.isSafeInteger(Number(row.amount)) || Number(row.amount) <= 0
+        || scheduleById.has(row.id)) scheduleValid = false;
+      total += Number(row.amount || 0);
+      scheduleById.set(row.id, row);
+    }
+    if (!Number.isSafeInteger(total) || total !== Number(history.total_amount)) scheduleValid = false;
+  }
+  if (!activeSchedules.some((row) => Boolean(row.required_before_start))) scheduleValid = false;
+  for (const installment of activeInstallments) {
+    const schedule = scheduleById.get(installment.schedule_id);
+    if (!schedule || [
+      'work_order_id', 'quote_version', 'sequence', 'amount', 'currency', 'trigger_type',
+      'due_date', 'description', 'required_before_start',
+    ].some((field) => String(installment[field] ?? '') !== String(schedule[field] ?? ''))) {
+      scheduleValid = false;
+    }
+  }
+  const activeQuote = aggregateCommercialQuoteVersions(activeRows);
+  const normalizedInstallments = activeInstallments.map((row) => ({
+    ...row,
+    required_before_start: Boolean(row.required_before_start),
+  }));
+  const initialWorkdays = workOrder.service_mode === 'hybrid'
+    ? 0
+    : Number(workOrder.quote_expected_service_days || 0);
+  const summary = summarizeQuoteExecution({
+    total_amount: activeQuote.total_amount,
+    installments: normalizedInstallments,
+    initial_workdays: initialWorkdays,
+    extension_days: Number(workOrder.approved_extension_days || 0),
+    reported_dates: reportedDates,
+  });
+  if (!scheduleValid || summary.payment_state === 'exception') {
+    return quoteExecutionException(workOrder, activeQuote.total_amount);
+  }
+  return {
+    valid: true,
+    activeRows,
+    activeVersions: [...activeVersions],
+    activeQuote,
+    paymentSchedule: activeSchedules,
+    installments: normalizedInstallments,
+    quote_version: Number(activeRows.at(-1)?.version || activeVersion),
+    active_quote_version: activeVersion,
+    payment_plan_mode: activeRows.length > 1 ? 'installments' : (activeRows[0]?.payment_plan_mode || 'single'),
+    expected_service_days: activeQuote.expected_service_days,
+    initial_workdays: initialWorkdays,
+    approved_extension_days: Number(workOrder.approved_extension_days || 0),
+    total_amount: activeQuote.total_amount,
+    ...summary,
+  };
+}
+
 function canViewReceiptEvidence(auth, workOrder) {
   return auth?.userType === 'admin'
     || (auth?.userType === 'customer' && workOrder?.customer_id === auth.userId)
@@ -14813,29 +15061,48 @@ function visibleReceiptClaim(row, auth, workOrder = null) {
 
 async function getWorkOrderQuoteExecution(env, workOrder, pricing, auth, market = 'com') {
   const customerView = auth?.userType === 'customer';
-  if (!pricing) return null;
-  if (isVersionedQuote(pricing)) {
-    const activeBaselineVersion = Number(workOrder.active_quote_version || 0);
-    if (activeBaselineVersion < 1) return null;
-    const activeRows = await listConfirmedCommercialQuoteVersions(
-      env, pricing.id, activeBaselineVersion,
-    );
-    if (!activeRows.some((row) => (
-      Number(row.version) === activeBaselineVersion && row.quote_kind === 'baseline'
-    ))) return null;
-    const activeVersions = activeRows.map((row) => Number(row.version));
-    const activeQuote = aggregateCommercialQuoteVersions(activeRows);
-    const paymentSchedule = await listQuotePaymentSchedules(env, workOrder.id, activeVersions);
-    const placeholders = activeVersions.map(() => '?').join(', ');
-    const installmentRecords = activeVersions.length > 0
-      ? await env.DB.prepare(`
-          SELECT * FROM work_order_installments
-          WHERE work_order_id = ? AND quote_version IN (${placeholders})
-          ORDER BY quote_version, sequence
-        `).bind(workOrder.id, ...activeVersions).all()
-      : { results: [] };
-    const installments = installmentRecords.results || [];
-    const claimRecords = installments.length > 0
+  const activeBaselineVersion = Number(workOrder?.active_quote_version || 0);
+  if (activeBaselineVersion >= 1) {
+    if (!pricing) return quoteExecutionException(workOrder);
+    const [historyRecords, scheduleRecords, installmentRecords, reportedDates] = await Promise.all([
+      env.DB.prepare(`
+        SELECT * FROM work_order_pricing_history WHERE pricing_id = ? ORDER BY version
+      `).bind(pricing.id).all(),
+      env.DB.prepare(`
+        SELECT id, pricing_id, work_order_id, quote_version, sequence, amount, currency,
+          trigger_type, due_date, description, required_before_start, created_at
+        FROM work_order_payment_schedule WHERE work_order_id = ? ORDER BY quote_version, sequence
+      `).bind(workOrder.id).all(),
+      env.DB.prepare(`
+        SELECT installment.*,
+          SUM(CASE WHEN claim.status = 'pending' THEN 1 ELSE 0 END) AS pending_claim_count
+        FROM work_order_installments installment
+        LEFT JOIN work_order_receipt_claims claim
+          ON claim.installment_id = installment.id
+         AND claim.work_order_id = installment.work_order_id
+        WHERE installment.work_order_id = ?
+        GROUP BY installment.id
+        ORDER BY installment.quote_version, installment.sequence
+      `).bind(workOrder.id).all(),
+      listConsumedFieldDayDates(env, workOrder.id),
+    ]);
+    const canonical = buildCanonicalVersionedQuoteExecution({
+      workOrder,
+      pricing,
+      histories: historyRecords.results || [],
+      schedules: scheduleRecords.results || [],
+      installments: installmentRecords.results || [],
+      reportedDates,
+    });
+    if (!canonical.valid) return canonical;
+    const activeRows = canonical.activeRows;
+    const activeVersions = canonical.activeVersions;
+    const paymentSchedule = canonical.paymentSchedule.map((row) => ({
+      ...row,
+      required_before_start: Boolean(row.required_before_start),
+    }));
+    const normalizedInstallments = canonical.installments;
+    const claimRecords = normalizedInstallments.length > 0
       ? await env.DB.prepare(`
           SELECT claim.*,
             evidence.id AS evidence_id,
@@ -14869,44 +15136,23 @@ async function getWorkOrderQuoteExecution(env, workOrder, pricing, auth, market 
         `).bind(workOrder.id).all()
       : { results: [] };
     const claims = claimRecords.results || [];
-    const pendingClaimsByInstallment = claims.reduce((counts, claim) => {
-      if (claim.status === 'pending') counts[claim.installment_id] = (counts[claim.installment_id] || 0) + 1;
-      return counts;
-    }, {});
-    const normalizedInstallments = installments.map((row) => ({
-      ...row,
-      required_before_start: Boolean(row.required_before_start),
-      pending_claim_count: pendingClaimsByInstallment[row.id] || 0,
-    }));
-    const initialWorkdays = workOrder.service_mode === 'hybrid'
-      ? 0
-      : Number(workOrder.quote_expected_service_days || 0);
-    const reportedDates = await listConsumedFieldDayDates(env, workOrder.id);
-    const totalAmount = activeQuote.total_amount;
-    const latestActiveRow = activeRows.at(-1);
-    const summary = summarizeQuoteExecution({
-      total_amount: totalAmount,
-      installments: normalizedInstallments,
-      initial_workdays: initialWorkdays,
-      extension_days: Number(workOrder.approved_extension_days || 0),
-      reported_dates: reportedDates,
-    });
+    const {
+      valid: _valid,
+      activeRows: _activeRows,
+      activeVersions: _activeVersions,
+      activeQuote: _activeQuote,
+      paymentSchedule: _paymentSchedule,
+      ...execution
+    } = canonical;
     return {
-      quote_version: Number(latestActiveRow?.version || activeBaselineVersion),
-      active_quote_version: activeBaselineVersion,
-      payment_plan_mode: activeRows.length > 1
-        ? 'installments'
-        : (activeRows[0]?.payment_plan_mode || 'single'),
-      expected_service_days: activeQuote.expected_service_days,
-      initial_workdays: initialWorkdays,
-      approved_extension_days: Number(workOrder.approved_extension_days || 0),
-      total_amount: totalAmount,
+      ...execution,
       payment_schedule: paymentSchedule,
       installments: normalizedInstallments,
       receipt_claims: claims.map((claim) => visibleReceiptClaim(claim, auth, workOrder)),
-      ...summary,
     };
   }
+
+  if (!pricing || isVersionedQuote(pricing)) return null;
 
   const pricingView = await getWorkOrderPricingView(env, workOrder, pricing, customerView);
   const visiblePricing = pricingView?.pricing || null;
@@ -15761,6 +16007,81 @@ function legacyPaymentConflictResponse(market = 'com') {
   );
 }
 
+function quoteExecutionConflictResponse(market = 'com') {
+  return jsonResponse({
+    error: market === 'cn'
+      ? '当前生效报价执行数据不完整，请联系管理员处理'
+      : 'The active quote execution data is incomplete. Contact an administrator.',
+    code: 'quote_execution_inconsistent',
+  }, 409);
+}
+
+function versionedExecutionSqlGuard(receiptCondition) {
+  return `
+    AND EXISTS (
+      SELECT 1
+      FROM work_order_pricing pricing
+      JOIN work_order_pricing_history baseline
+        ON baseline.pricing_id = pricing.id
+       AND baseline.version = work_orders.active_quote_version
+       AND baseline.quote_kind = 'baseline'
+       AND baseline.status = 'confirmed'
+      WHERE pricing.work_order_id = work_orders.id
+        AND pricing.id = ? AND pricing.quote_version = ?
+        AND pricing.total_amount = ? AND pricing.subtotal = ?
+    )
+    AND EXISTS (
+      SELECT 1 FROM work_order_payment_schedule schedule
+      JOIN work_order_pricing pricing ON pricing.id = schedule.pricing_id
+      JOIN work_order_pricing_history history
+        ON history.pricing_id = pricing.id AND history.version = schedule.quote_version
+      WHERE schedule.work_order_id = work_orders.id AND history.status = 'confirmed'
+        AND ((history.version = work_orders.active_quote_version AND history.quote_kind = 'baseline')
+          OR (history.quote_kind = 'supplemental' AND history.parent_quote_version = work_orders.active_quote_version))
+    )
+    AND NOT EXISTS (
+      SELECT 1 FROM work_order_payment_schedule schedule
+      JOIN work_order_pricing pricing ON pricing.id = schedule.pricing_id
+      JOIN work_order_pricing_history history
+        ON history.pricing_id = pricing.id AND history.version = schedule.quote_version
+      LEFT JOIN work_order_installments installment
+        ON installment.schedule_id = schedule.id
+       AND installment.work_order_id = schedule.work_order_id
+       AND installment.quote_version = schedule.quote_version
+       AND installment.sequence = schedule.sequence
+       AND installment.amount = schedule.amount
+       AND installment.currency = schedule.currency
+       AND installment.trigger_type = schedule.trigger_type
+       AND installment.due_date IS schedule.due_date
+       AND installment.description = schedule.description
+       AND installment.required_before_start = schedule.required_before_start
+      WHERE schedule.work_order_id = work_orders.id AND history.status = 'confirmed'
+        AND ((history.version = work_orders.active_quote_version AND history.quote_kind = 'baseline')
+          OR (history.quote_kind = 'supplemental' AND history.parent_quote_version = work_orders.active_quote_version))
+        AND installment.id IS NULL
+    )
+    AND NOT EXISTS (
+      SELECT 1 FROM work_order_installments installment
+      JOIN work_order_pricing pricing ON pricing.work_order_id = installment.work_order_id
+      JOIN work_order_pricing_history history
+        ON history.pricing_id = pricing.id AND history.version = installment.quote_version
+      WHERE installment.work_order_id = work_orders.id AND history.status = 'confirmed'
+        AND ((history.version = work_orders.active_quote_version AND history.quote_kind = 'baseline')
+          OR (history.quote_kind = 'supplemental' AND history.parent_quote_version = work_orders.active_quote_version))
+        AND (${receiptCondition})
+    )
+  `;
+}
+
+function versionedExecutionGuardBindings(pricing) {
+  return [pricing.id, Number(pricing.quote_version), Number(pricing.total_amount), Number(pricing.subtotal)];
+}
+
+async function recoverLifecycleTransition(env, workOrderId, targetStatus) {
+  const latest = await env.DB.prepare('SELECT status FROM work_orders WHERE id = ?').bind(workOrderId).first();
+  return latest?.status === targetStatus;
+}
+
 async function hasVersionedWorkOrderPricing(env, workOrderId) {
   const pricing = await env.DB.prepare(
     'SELECT quote_version FROM work_order_pricing WHERE work_order_id = ?'
@@ -15975,9 +16296,11 @@ async function handleEngineerRequestPaymentStart(request, env) {
     const body = await request.json().catch(() => ({}));
     const note = String(body.note || '').trim();
 
-    const wo = await env.DB.prepare(
-      'SELECT id, engineer_id, status, order_no FROM work_orders WHERE id = ?'
-    ).bind(workOrderId).first();
+    const wo = await env.DB.prepare(`
+      SELECT id, engineer_id, status, order_no, customer_id, service_mode,
+        active_quote_version, quote_expected_service_days, approved_extension_days
+      FROM work_orders WHERE id = ?
+    `).bind(workOrderId).first();
     if (!wo) return errorResponse(market === 'cn' ? '工单不存在' : 'Work order not found', 404);
     if (wo.engineer_id !== auth.userId) return errorResponse(market === 'cn' ? '您未被指派到此工单' : 'You are not assigned to this work order', 403);
     if (wo.status !== 'pending_payment' && wo.status !== 'payment_review') {
@@ -15987,14 +16310,11 @@ async function handleEngineerRequestPaymentStart(request, env) {
     const pricing = await env.DB.prepare(
       'SELECT * FROM work_order_pricing WHERE work_order_id = ?'
     ).bind(workOrderId).first();
-    if (isVersionedQuote(pricing)) {
-      const executionWorkOrder = await env.DB.prepare(`
-        SELECT * FROM work_orders WHERE id = ?
-      `).bind(workOrderId).first();
-      if (!executionWorkOrder || Number(executionWorkOrder.active_quote_version || 0) < 1) {
-        return legacyPaymentConflictResponse(market);
+    if (Number(wo.active_quote_version || 0) >= 1) {
+      const quoteExecution = await getWorkOrderQuoteExecution(env, wo, pricing, auth, market);
+      if (!quoteExecution || quoteExecution.payment_state === 'exception') {
+        return quoteExecutionConflictResponse(market);
       }
-      const quoteExecution = await getWorkOrderQuoteExecution(env, executionWorkOrder, pricing, auth, market);
       if (!quoteExecution?.start_ready) {
         return errorResponse(
           market === 'cn'
@@ -16003,24 +16323,45 @@ async function handleEngineerRequestPaymentStart(request, env) {
           409,
         );
       }
-      if (wo.status !== 'payment_review') {
-        await env.DB.prepare(
-          "UPDATE work_orders SET status = 'payment_review' WHERE id = ?"
-        ).bind(workOrderId).run();
-      }
+      if (wo.status === 'payment_review') return jsonResponse({ success: true, status: 'payment_review' });
       const internalNote = market === 'cn'
         ? `工程师在开工前必付分期全部到账后申请管理员确认开工。${note ? ` 备注：${note}` : ''}`
         : `Engineer requested Admin approval after all required-before-start installments were received.${note ? ` Note: ${note}` : ''}`;
-      await env.DB.prepare(
-        "INSERT INTO work_order_messages (id, work_order_id, sender_type, sender_id, sender_name, content, message_type, is_internal_note, is_customer_visible) VALUES (?, ?, 'engineer', ?, 'Engineer', ?, 'payment_update', 1, 0)"
-      ).bind(generateId(), workOrderId, auth.userId, internalNote).run();
-      await writeAuditLog(env, request, {
-        targetType: 'work_order',
-        targetId: workOrderId,
-        action: 'payment_start_requested',
-        beforeState: { status: wo.status, payment_state: quoteExecution.payment_state },
-        afterState: { status: 'payment_review', payment_state: quoteExecution.payment_state, note },
-      });
+      try {
+        await env.DB.batch([
+          env.DB.prepare(`
+            UPDATE work_orders SET status = 'payment_review'
+            WHERE id = ? AND status = 'pending_payment' AND active_quote_version = ?
+              ${versionedExecutionSqlGuard("installment.required_before_start = 1 AND installment.received_amount < installment.amount")}
+          `).bind(
+            workOrderId, Number(wo.active_quote_version),
+            ...versionedExecutionGuardBindings(pricing),
+          ),
+          env.DB.prepare(`SELECT CASE WHEN changes() = 1 THEN 1 ELSE json('quote lifecycle concurrent update') END`),
+          env.DB.prepare(
+            "INSERT INTO work_order_messages (id, work_order_id, sender_type, sender_id, sender_name, content, message_type, is_internal_note, is_customer_visible) VALUES (?, ?, 'engineer', ?, 'Engineer', ?, 'payment_update', 1, 0)"
+          ).bind(generateId(), workOrderId, auth.userId, internalNote),
+          env.DB.prepare(`
+            INSERT INTO work_order_logs (id, work_order_id, action, actor_type, actor_id, content)
+            VALUES (?, ?, 'payment_start_requested', 'engineer', ?, ?)
+          `).bind(generateId(), workOrderId, auth.userId, internalNote),
+          buildAuditLogStatement(env, request, {
+            targetType: 'work_order',
+            targetId: workOrderId,
+            action: 'payment_start_requested',
+            beforeState: { status: wo.status, payment_state: quoteExecution.payment_state },
+            afterState: { status: 'payment_review', payment_state: quoteExecution.payment_state, note },
+          }),
+        ]);
+      } catch (error) {
+        if (/quote lifecycle concurrent update|malformed json/i.test(String(error?.message || error))) {
+          if (await recoverLifecycleTransition(env, workOrderId, 'payment_review')) {
+            return jsonResponse({ success: true, status: 'payment_review' });
+          }
+          return quoteExecutionConflictResponse(market);
+        }
+        throw error;
+      }
       return jsonResponse({ success: true, status: 'payment_review' });
     }
 
@@ -16070,9 +16411,11 @@ async function handleAdminApprovePaymentStart(request, env) {
     const body = await request.json().catch(() => ({}));
     const note = String(body.note || '').trim();
 
-    const wo = await env.DB.prepare(
-      'SELECT id, status, order_no FROM work_orders WHERE id = ?'
-    ).bind(workOrderId).first();
+    const wo = await env.DB.prepare(`
+      SELECT id, engineer_id, status, order_no, customer_id, service_mode,
+        active_quote_version, quote_expected_service_days, approved_extension_days
+      FROM work_orders WHERE id = ?
+    `).bind(workOrderId).first();
     if (!wo) return errorResponse(market === 'cn' ? '工单不存在' : 'Work order not found', 404);
     if (wo.status !== 'payment_review' && wo.status !== 'pending_payment') {
       return errorResponse(market === 'cn' ? '工单当前状态不允许管理员确认付款' : 'Work order is not waiting for payment approval', 400);
@@ -16081,12 +16424,10 @@ async function handleAdminApprovePaymentStart(request, env) {
     const pricing = await env.DB.prepare(
       'SELECT * FROM work_order_pricing WHERE work_order_id = ?'
     ).bind(workOrderId).first();
-    if (isVersionedQuote(pricing)) {
-      const executionWorkOrder = await env.DB.prepare(`
-        SELECT * FROM work_orders WHERE id = ?
-      `).bind(workOrderId).first();
-      if (!executionWorkOrder || Number(executionWorkOrder.active_quote_version || 0) < 1) {
-        return legacyPaymentConflictResponse(market);
+    if (Number(wo.active_quote_version || 0) >= 1) {
+      const quoteExecution = await getWorkOrderQuoteExecution(env, wo, pricing, request._auth, market);
+      if (!quoteExecution || quoteExecution.payment_state === 'exception') {
+        return quoteExecutionConflictResponse(market);
       }
       if (wo.status !== 'payment_review') {
         return errorResponse(
@@ -16096,7 +16437,6 @@ async function handleAdminApprovePaymentStart(request, env) {
           409,
         );
       }
-      const quoteExecution = await getWorkOrderQuoteExecution(env, executionWorkOrder, pricing, request._auth, market);
       if (!quoteExecution?.start_ready) {
         return errorResponse(
           market === 'cn'
@@ -16105,22 +16445,44 @@ async function handleAdminApprovePaymentStart(request, env) {
           409,
         );
       }
-      await env.DB.prepare(
-        "UPDATE work_orders SET status = 'in_service' WHERE id = ?"
-      ).bind(workOrderId).run();
       const confirmMsg = market === 'cn'
         ? `SAGEMRO 已完成最终开工审批，工单可开始服务。${note ? ` 备注：${note}` : ''}`
         : `SAGEMRO completed final start approval. The work order may begin service.${note ? ` Note: ${note}` : ''}`;
-      await env.DB.prepare(
-        "INSERT INTO work_order_messages (id, work_order_id, sender_type, sender_id, sender_name, content, message_type, is_internal_note, is_customer_visible) VALUES (?, ?, 'system', '', 'System', ?, 'payment_update', 0, 1)"
-      ).bind(generateId(), workOrderId, confirmMsg).run();
-      await writeAuditLog(env, request, {
-        targetType: 'work_order',
-        targetId: workOrderId,
-        action: 'payment_start_approved',
-        beforeState: { status: wo.status, payment_state: quoteExecution.payment_state },
-        afterState: { status: 'in_service', payment_state: quoteExecution.payment_state, note },
-      });
+      try {
+        await env.DB.batch([
+          env.DB.prepare(`
+            UPDATE work_orders SET status = 'in_service'
+            WHERE id = ? AND status = 'payment_review' AND active_quote_version = ?
+              ${versionedExecutionSqlGuard("installment.required_before_start = 1 AND installment.received_amount < installment.amount")}
+          `).bind(
+            workOrderId, Number(wo.active_quote_version),
+            ...versionedExecutionGuardBindings(pricing),
+          ),
+          env.DB.prepare(`SELECT CASE WHEN changes() = 1 THEN 1 ELSE json('quote lifecycle concurrent update') END`),
+          env.DB.prepare(
+            "INSERT INTO work_order_messages (id, work_order_id, sender_type, sender_id, sender_name, content, message_type, is_internal_note, is_customer_visible) VALUES (?, ?, 'system', '', 'System', ?, 'payment_update', 0, 1)"
+          ).bind(generateId(), workOrderId, confirmMsg),
+          env.DB.prepare(`
+            INSERT INTO work_order_logs (id, work_order_id, action, actor_type, actor_id, content)
+            VALUES (?, ?, 'payment_start_approved', 'admin', ?, ?)
+          `).bind(generateId(), workOrderId, request._auth?.userId || 'admin', confirmMsg),
+          buildAuditLogStatement(env, request, {
+            targetType: 'work_order',
+            targetId: workOrderId,
+            action: 'payment_start_approved',
+            beforeState: { status: wo.status, payment_state: quoteExecution.payment_state },
+            afterState: { status: 'in_service', payment_state: quoteExecution.payment_state, note },
+          }),
+        ]);
+      } catch (error) {
+        if (/quote lifecycle concurrent update|malformed json/i.test(String(error?.message || error))) {
+          if (await recoverLifecycleTransition(env, workOrderId, 'in_service')) {
+            return jsonResponse({ success: true, status: 'in_service' });
+          }
+          return quoteExecutionConflictResponse(market);
+        }
+        throw error;
+      }
       return jsonResponse({ success: true, status: 'in_service' });
     }
 
