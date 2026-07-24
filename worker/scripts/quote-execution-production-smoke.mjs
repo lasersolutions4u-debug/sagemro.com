@@ -133,6 +133,9 @@ export function buildQuoteExecutionSmokeContext({
   const quoteHistoryId = id('QUOTE_HISTORY_1');
   const scheduleIds = [id('SCHEDULE_1'), id('SCHEDULE_2')];
   const installmentIds = scheduleIds.map((scheduleId) => `installment-${scheduleId}`);
+  const partialClaimId = id('RECEIPT_CLAIM_PARTIAL');
+  const requiredFinalClaimId = id('RECEIPT_CLAIM_REQUIRED_FINAL');
+  const laterFinalClaimId = id('RECEIPT_CLAIM_LATER_FINAL');
   return {
     market: selectedMarket,
     stamp: nowStamp,
@@ -155,7 +158,10 @@ export function buildQuoteExecutionSmokeContext({
     quoteHistoryIds: [quoteHistoryId],
     scheduleIds,
     installmentIds,
-    receiptClaimScope: id('RECEIPT_CLAIM'),
+    partialClaimId,
+    requiredFinalClaimId,
+    laterFinalClaimId,
+    receiptClaimIds: [partialClaimId, requiredFinalClaimId, laterFinalClaimId],
     fieldDayScope: id('FIELD_DAY'),
     repairRecordId: id('REPAIR_RECORD'),
     orderNo: `WO-SMOKE-QE-${selectedMarket.toUpperCase()}-${nowStamp}`,
@@ -291,14 +297,6 @@ async function api(context, path, init = {}) {
   }
 }
 
-function receiptClaimForm({ amount, note, idempotencyKey }) {
-  const form = new FormData();
-  form.set('claimed_amount', String(amount));
-  form.set('note', note);
-  form.set('idempotency_key', idempotencyKey);
-  return form;
-}
-
 async function step(report, name, fn) {
   const item = { name, ok: false };
   try {
@@ -364,10 +362,35 @@ function responseFailure(label, response) {
   return `${label} failed HTTP ${response.status}`;
 }
 
+export function buildPendingReceiptClaimSql({
+  context,
+  claimId,
+  installmentId,
+  claimedAmount,
+  idempotencyKey,
+}) {
+  return `
+INSERT INTO work_order_receipt_claims (
+  id, installment_id, work_order_id, engineer_id, claimed_amount,
+  transaction_reference, engineer_note, status, idempotency_key
+)
+VALUES (
+  ${quoteSql(claimId)}, ${quoteSql(installmentId)}, ${quoteSql(context.workOrderId)},
+  ${quoteSql(context.engineerId)}, ${claimedAmount}, NULL, ${quoteSql(context.runId)},
+  'pending', ${quoteSql(idempotencyKey)}
+);
+UPDATE work_order_installments
+SET status = 'pending_confirmation', updated_at = datetime('now')
+WHERE id = ${quoteSql(installmentId)}
+  AND work_order_id = ${quoteSql(context.workOrderId)}
+  AND status IN ('collecting', 'partially_received', 'overdue');
+SELECT CASE WHEN changes() = 1 THEN 1 ELSE json('receipt claim seed conflict') END;
+`;
+}
+
 async function collectCleanupIds(context, ids, workerDir) {
   const sql = `
-SELECT id, 'claim' AS kind FROM work_order_receipt_claims WHERE work_order_id=${quoteSql(context.workOrderId)}
-UNION ALL SELECT id, 'field_day' FROM work_order_field_days WHERE work_order_id=${quoteSql(context.workOrderId)}
+SELECT id, 'field_day' AS kind FROM work_order_field_days WHERE work_order_id=${quoteSql(context.workOrderId)}
 UNION ALL SELECT id, 'repair' FROM work_order_repair_records WHERE work_order_id=${quoteSql(context.workOrderId)}
 UNION ALL SELECT id, 'message' FROM work_order_messages WHERE work_order_id=${quoteSql(context.workOrderId)}
 UNION ALL SELECT id, 'work_order_log' FROM work_order_logs WHERE work_order_id=${quoteSql(context.workOrderId)}
@@ -380,9 +403,9 @@ WHERE audit.target_id=${quoteSql(context.workOrderId)}
   OR audit.target_id IN (SELECT id FROM work_order_field_days WHERE work_order_id=${quoteSql(context.workOrderId)});
 `;
   const rows = parseWranglerRows(runWranglerSql({ context, sql, label: 'collect-cleanup-ids', workerDir, command: true }));
-  for (const key of ['receiptClaimIds', 'fieldDayIds', 'repairRecordIds', 'messageIds', 'workOrderLogIds', 'notificationIds', 'auditLogIds']) ids[key] ||= [];
+  for (const key of ['fieldDayIds', 'repairRecordIds', 'messageIds', 'workOrderLogIds', 'notificationIds', 'auditLogIds']) ids[key] ||= [];
   const map = {
-    claim: 'receiptClaimIds', field_day: 'fieldDayIds', repair: 'repairRecordIds', message: 'messageIds', work_order_log: 'workOrderLogIds',
+    field_day: 'fieldDayIds', repair: 'repairRecordIds', message: 'messageIds', work_order_log: 'workOrderLogIds',
     notification: 'notificationIds', audit: 'auditLogIds',
   };
   for (const row of rows) if (map[row.kind]) ids[map[row.kind]].push(row.id);
@@ -403,6 +426,7 @@ export async function runQuoteExecutionSmoke({ context, options, workerDir, repo
     quoteHistoryIds: [...context.quoteHistoryIds],
     scheduleIds: [...context.scheduleIds],
     installmentIds: [...context.installmentIds],
+    receiptClaimIds: [...context.receiptClaimIds],
   };
 
   try {
@@ -475,13 +499,21 @@ export async function runQuoteExecutionSmoke({ context, options, workerDir, repo
       return response;
     });
 
-    const partialClaim = await step(report, 'engineer submits partial receipt claim', async () => {
-      const response = await api(context, `/api/workorders/${context.workOrderId}/installments/${firstInstallment.id}/receipt-claims`, { method: 'POST', token: engineerToken, form: true, body: receiptClaimForm({ amount: 300, note: context.receiptClaimScope, idempotencyKey: `${context.receiptClaimScope}_PARTIAL` }) });
-      assert(response.status === 201 && response.body?.claim?.id, responseFailure('partial receipt claim', response));
-      return response;
+    await step(report, 'seed exact pending partial receipt claim', async () => {
+      runWranglerSql({
+        context, workerDir, tempDir, label: 'seed-partial-receipt-claim',
+        sql: buildPendingReceiptClaimSql({
+          context,
+          claimId: context.partialClaimId,
+          installmentId: context.installmentIds[0],
+          claimedAmount: 300,
+          idempotencyKey: `${context.partialClaimId}_SUBMISSION`,
+        }),
+      });
+      return { status: 0, durationMs: 0, path: 'wrangler d1 seed exact pending claim' };
     });
     await step(report, 'Admin confirms partial receipt decision', async () => {
-      const response = await api(context, `/api/admin/workorders/${context.workOrderId}/installments/${firstInstallment.id}/receipt-claims/${partialClaim.body.claim.id}/decision`, { method: 'POST', admin: true, token: adminToken, body: JSON.stringify({ decision: 'confirmed', confirmed_amount: 300, reason: context.receiptClaimScope, idempotency_key: `${context.receiptClaimScope}_PARTIAL_DECISION` }) });
+      const response = await api(context, `/api/admin/workorders/${context.workOrderId}/installments/${firstInstallment.id}/receipt-claims/${context.partialClaimId}/decision`, { method: 'POST', admin: true, token: adminToken, body: JSON.stringify({ decision: 'confirmed', confirmed_amount: 300, reason: context.partialClaimId, idempotency_key: `${context.partialClaimId}_DECISION` }) });
       assert(response.ok, responseFailure('partial receipt decision', response));
       return response;
     });
@@ -496,13 +528,21 @@ export async function runQuoteExecutionSmoke({ context, options, workerDir, repo
       assert(response.status === 409, `expected partial-receipt start gate HTTP 409, got ${response.status}`);
       return response;
     });
-    const finalFirstClaim = await step(report, 'engineer submits remaining required receipt claim', async () => {
-      const response = await api(context, `/api/workorders/${context.workOrderId}/installments/${firstInstallment.id}/receipt-claims`, { method: 'POST', token: engineerToken, form: true, body: receiptClaimForm({ amount: 300, note: context.receiptClaimScope, idempotencyKey: `${context.receiptClaimScope}_FINAL_FIRST` }) });
-      assert(response.status === 201 && response.body?.claim?.id, responseFailure('final required receipt claim', response));
-      return response;
+    await step(report, 'seed exact pending remaining required receipt claim', async () => {
+      runWranglerSql({
+        context, workerDir, tempDir, label: 'seed-required-final-receipt-claim',
+        sql: buildPendingReceiptClaimSql({
+          context,
+          claimId: context.requiredFinalClaimId,
+          installmentId: context.installmentIds[0],
+          claimedAmount: 300,
+          idempotencyKey: `${context.requiredFinalClaimId}_SUBMISSION`,
+        }),
+      });
+      return { status: 0, durationMs: 0, path: 'wrangler d1 seed exact pending claim' };
     });
     await step(report, 'Admin confirms final required receipt decision', async () => {
-      const response = await api(context, `/api/admin/workorders/${context.workOrderId}/installments/${firstInstallment.id}/receipt-claims/${finalFirstClaim.body.claim.id}/decision`, { method: 'POST', admin: true, token: adminToken, body: JSON.stringify({ decision: 'confirmed', confirmed_amount: 300, reason: context.receiptClaimScope, idempotency_key: `${context.receiptClaimScope}_FINAL_FIRST_DECISION` }) });
+      const response = await api(context, `/api/admin/workorders/${context.workOrderId}/installments/${firstInstallment.id}/receipt-claims/${context.requiredFinalClaimId}/decision`, { method: 'POST', admin: true, token: adminToken, body: JSON.stringify({ decision: 'confirmed', confirmed_amount: 300, reason: context.requiredFinalClaimId, idempotency_key: `${context.requiredFinalClaimId}_DECISION` }) });
       assert(response.ok, responseFailure('final required receipt decision', response));
       return response;
     });
@@ -555,13 +595,21 @@ VALUES (${quoteSql(fieldDayId)}, ${quoteSql(context.workOrderId)}, ${quoteSql(co
       assert(response.ok, responseFailure('later payment method', response));
       return response;
     });
-    const finalClaim = await step(report, 'engineer submits final installment receipt claim', async () => {
-      const response = await api(context, `/api/workorders/${context.workOrderId}/installments/${finalInstallment.id}/receipt-claims`, { method: 'POST', token: engineerToken, form: true, body: receiptClaimForm({ amount: 400, note: context.receiptClaimScope, idempotencyKey: `${context.receiptClaimScope}_FINAL` }) });
-      assert(response.status === 201 && response.body?.claim?.id, responseFailure('final installment claim', response));
-      return response;
+    await step(report, 'seed exact pending later installment receipt claim', async () => {
+      runWranglerSql({
+        context, workerDir, tempDir, label: 'seed-later-final-receipt-claim',
+        sql: buildPendingReceiptClaimSql({
+          context,
+          claimId: context.laterFinalClaimId,
+          installmentId: context.installmentIds[1],
+          claimedAmount: 400,
+          idempotencyKey: `${context.laterFinalClaimId}_SUBMISSION`,
+        }),
+      });
+      return { status: 0, durationMs: 0, path: 'wrangler d1 seed exact pending claim' };
     });
     await step(report, 'Admin confirms final installment receipt', async () => {
-      const response = await api(context, `/api/admin/workorders/${context.workOrderId}/installments/${finalInstallment.id}/receipt-claims/${finalClaim.body.claim.id}/decision`, { method: 'POST', admin: true, token: adminToken, body: JSON.stringify({ decision: 'confirmed', confirmed_amount: 400, reason: context.receiptClaimScope, idempotency_key: `${context.receiptClaimScope}_FINAL_DECISION` }) });
+      const response = await api(context, `/api/admin/workorders/${context.workOrderId}/installments/${finalInstallment.id}/receipt-claims/${context.laterFinalClaimId}/decision`, { method: 'POST', admin: true, token: adminToken, body: JSON.stringify({ decision: 'confirmed', confirmed_amount: 400, reason: context.laterFinalClaimId, idempotency_key: `${context.laterFinalClaimId}_DECISION` }) });
       assert(response.ok, responseFailure('final installment decision', response));
       return response;
     });

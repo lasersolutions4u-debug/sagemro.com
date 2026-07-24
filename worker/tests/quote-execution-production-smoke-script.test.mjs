@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
 import {
+  buildPendingReceiptClaimSql,
   buildQuoteExecutionCleanupSql,
   buildQuoteExecutionResidueSql,
   buildQuoteExecutionSmokeContext,
@@ -75,7 +76,9 @@ test('quote execution context gives every temporary record a unique run scope', 
     'workOrderId',
     'pricingId',
     'quoteHistoryId',
-    'receiptClaimScope',
+    'partialClaimId',
+    'requiredFinalClaimId',
+    'laterFinalClaimId',
     'fieldDayScope',
   ]) {
     assert.match(context[key], /^SAGEMRO_SMOKE_QUOTE_EXECUTION_cn_20260725123045_/);
@@ -87,6 +90,11 @@ test('quote execution context gives every temporary record a unique run scope', 
     'SAGEMRO_SMOKE_QUOTE_EXECUTION_cn_20260725123045_SCHEDULE_2',
   ]);
   assert.deepEqual(context.installmentIds, context.scheduleIds.map((id) => `installment-${id}`));
+  assert.deepEqual(context.receiptClaimIds, [
+    'SAGEMRO_SMOKE_QUOTE_EXECUTION_cn_20260725123045_RECEIPT_CLAIM_PARTIAL',
+    'SAGEMRO_SMOKE_QUOTE_EXECUTION_cn_20260725123045_RECEIPT_CLAIM_REQUIRED_FINAL',
+    'SAGEMRO_SMOKE_QUOTE_EXECUTION_cn_20260725123045_RECEIPT_CLAIM_LATER_FINAL',
+  ]);
 });
 
 test('cleanup is child-first, exact-ID-only, and followed by a zero-residue query', () => {
@@ -129,6 +137,38 @@ test('cleanup is child-first, exact-ID-only, and followed by a zero-residue quer
   assert.match(residue, /SAGEMRO_SMOKE_QUOTE_EXECUTION_com_20260725123045_WORK_ORDER/);
 });
 
+test('pending receipt claim seed uses exact provenance and immediately enters Admin review', () => {
+  const context = buildQuoteExecutionSmokeContext({
+    market: 'com',
+    baseUrl: 'https://api.sagemro.com',
+    database: 'sagemro-db',
+    stamp: '20260725123045',
+    customerIdentity: 'customer-smoke@example.invalid',
+    engineerIdentity: 'engineer-smoke@example.invalid',
+  });
+  const sql = buildPendingReceiptClaimSql({
+    context,
+    claimId: context.partialClaimId,
+    installmentId: context.installmentIds[0],
+    claimedAmount: 300,
+    idempotencyKey: `${context.partialClaimId}_SUBMISSION`,
+  });
+
+  assert.match(sql, /INSERT INTO work_order_receipt_claims \(/);
+  for (const exactValue of [
+    context.partialClaimId,
+    context.installmentIds[0],
+    context.workOrderId,
+    context.engineerId,
+    `${context.partialClaimId}_SUBMISSION`,
+  ]) assert.match(sql, new RegExp(exactValue));
+  assert.match(sql, /300, NULL/);
+  assert.match(sql, /'pending'/);
+  assert.match(sql, /SET status = 'pending_confirmation'/);
+  assert.match(sql, /status IN \('collecting', 'partially_received', 'overdue'\)/);
+  assert.doesNotMatch(sql, /WHERE\s+(?:email|phone|name|status)\s*=|LIKE|GLOB/i);
+});
+
 test('smoke source exercises the complete quote execution lifecycle and guaranteed cleanup', () => {
   for (const marker of [
     '/pricing/approve',
@@ -164,8 +204,17 @@ test('smoke source exercises the complete quote execution lifecycle and guarante
   assert.match(scriptSource, /context\.quoteHistoryId/);
   assert.match(scriptSource, /context\.scheduleIds\[0\]/);
   assert.match(scriptSource, /context\.scheduleIds\[1\]/);
+  assert.match(scriptSource, /INSERT INTO work_order_receipt_claims \(/);
+  assert.match(scriptSource, /context\.partialClaimId/);
+  assert.match(scriptSource, /context\.requiredFinalClaimId/);
+  assert.match(scriptSource, /context\.laterFinalClaimId/);
+  assert.match(scriptSource, /status = 'pending_confirmation'/);
+  assert.match(scriptSource, /receiptClaimIds:\s*\[\.\.\.context\.receiptClaimIds\]/);
   assert.doesNotMatch(scriptSource, /ids\.installmentIds\s*=\s*\(execution\.installments/);
   assert.doesNotMatch(scriptSource, /ids\.scheduleIds\s*=\s*\(execution\.payment_schedule/);
+  assert.doesNotMatch(scriptSource, /response\.body\?*\.claim\?*\.id|response\.body\.claim\.id/);
+  assert.doesNotMatch(scriptSource, /method:\s*'POST'[^\n]*\/receipt-claims/);
+  assert.doesNotMatch(scriptSource, /SELECT id, 'claim' AS kind FROM work_order_receipt_claims/);
   assert.match(scriptSource, /required installment blocks service start after partial receipt/);
   assert.match(scriptSource, /response\.status === 409/);
   assert.doesNotMatch(scriptSource, /DELETE[\s\S]{0,100}WHERE\s+(?:email|phone|name|status)\s*=|DELETE[\s\S]{0,100}(?:LIKE|GLOB)/i);
