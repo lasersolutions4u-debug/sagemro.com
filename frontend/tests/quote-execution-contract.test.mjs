@@ -147,6 +147,34 @@ test('collection panel renders normalized installment states and guarded enginee
   assert.match(source, /whitespace-nowrap/);
 });
 
+test('receipt claim success locks stale actions until detail refresh succeeds', async () => {
+  const [source, detail] = await Promise.all([
+    readSource('../src/components/WorkOrder/CollectionPanel.jsx'),
+    readSource('../src/components/WorkOrder/WorkOrderDetailModal.jsx'),
+  ]);
+  const claimHandler = source.match(/const handleClaim = async[\s\S]*?\n  \};/)?.[0] || '';
+
+  assert.match(source, /submittedClaimIds/);
+  assert.match(source, /submittedClaimIds\.has\(installment\.id\)/);
+  assert.match(source, /claimRefreshFailed/);
+  assert.match(claimHandler, /const response = await submitInstallmentReceiptClaim/);
+  assert.match(claimHandler, /setSubmittedClaimIds/);
+  assert.match(claimHandler, /if \(typeof onChanged !== 'function'\) throw new Error/);
+  assert.match(claimHandler, /await onChanged\(response\)/);
+  assert.match(claimHandler, /toastWarning\(copy\.claimRefreshFailed\)/);
+
+  const localLock = claimHandler.indexOf('setSubmittedClaimIds');
+  const refresh = claimHandler.indexOf('await onChanged(response)');
+  const clearForm = claimHandler.indexOf('setClaimForms');
+  assert.ok(localLock >= 0 && localLock < refresh);
+  assert.ok(refresh >= 0 && refresh < clearForm);
+  assert.match(detail, /const handleCollectionChanged = useCallback\(async \(response\) =>/);
+  assert.match(detail, /response\?\.installment/);
+  assert.match(detail, /status: 'pending_confirmation'/);
+  assert.match(detail, /await loadDetail\(\{ throwOnError: true \}\)/);
+  assert.match(detail, /onChanged=\{handleCollectionChanged\}/);
+});
+
 test('customer installment payment mode uses the exact installment amount and trigger', async () => {
   const source = await readSource('../src/components/Payment/PaymentModal.jsx');
 
@@ -168,6 +196,20 @@ test('installment payment result keeps the passed remaining amount after method 
   assert.match(source, /const submittedAmount = isInstallmentMode\s*\? normalizedAmount\s*:\s*Number\(result\?\.amount \?\? normalizedAmount\)/);
   assert.match(source, />\{submittedAmount\.toLocaleString\(\)\} \{currency\}</);
   assert.doesNotMatch(source, />\{Number\(result\?\.amount \?\? normalizedAmount\)\.toLocaleString\(\)\} \{currency\}</);
+});
+
+test('installment currency flows from collection row into payment modal', async () => {
+  const [collection, detail, payment] = await Promise.all([
+    readSource('../src/components/WorkOrder/CollectionPanel.jsx'),
+    readSource('../src/components/WorkOrder/WorkOrderDetailModal.jsx'),
+    readSource('../src/components/Payment/PaymentModal.jsx'),
+  ]);
+
+  assert.match(collection, /onSelectPayment\?\.\(\{ installmentId: installment\.id, amount: remainingAmount, trigger: installment\.trigger_type, currency: installmentCurrency \}\)/);
+  assert.match(detail, /currency=\{installmentPayment\?\.currency\}/);
+  assert.match(payment, /currency: installmentCurrency = null/);
+  assert.match(payment, /const localeCurrency = isCnLocale\(\) \? 'CNY' : 'USD'/);
+  assert.match(payment, /const currency = isInstallmentMode\s*\? \(installmentCurrency \|\| localeCurrency\)\s*:\s*localeCurrency/);
 });
 
 test('work order detail keeps independent collection visible through financial closure', async () => {

@@ -35,6 +35,7 @@ const COPY = {
     evidenceInvalid: 'Evidence must be a JPG, PNG, or PDF file no larger than 10 MB.',
     started: 'Installment collection started.',
     claimSubmitted: 'Receipt claim submitted for Admin confirmation.',
+    claimRefreshFailed: 'The receipt claim was submitted, but the latest work-order details could not be loaded. The submitted claim remains locked to prevent a duplicate. Refresh the work order to recover.',
     empty: 'No active payment schedule is available.',
     states: {
       scheduled: 'Scheduled', due: 'Due', collecting: 'Collecting', pending_confirmation: 'Pending confirmation',
@@ -75,6 +76,7 @@ const COPY = {
     evidenceInvalid: '凭证须为不超过 10 MB 的 JPG、PNG 或 PDF 文件。',
     started: '已发起本期收款。',
     claimSubmitted: '到账申请已提交，等待 Admin 确认。',
+    claimRefreshFailed: '到账申请已提交，但未能加载最新工单详情。为避免重复提交，本次申请已锁定，请刷新工单后继续。',
     empty: '暂无可执行的付款计划。',
     states: {
       scheduled: '未到付款节点', due: '待发起收款', collecting: '收款中', pending_confirmation: '待确认到账',
@@ -110,6 +112,7 @@ export function CollectionPanel({ workOrderId, quoteExecution, userType, onChang
   const [startingId, setStartingId] = useState(null);
   const [submittingId, setSubmittingId] = useState(null);
   const [claimForms, setClaimForms] = useState({});
+  const [submittedClaimIds, setSubmittedClaimIds] = useState(() => new Set());
 
   if (installments.length === 0) {
     return <p className="py-6 text-sm text-[var(--color-text-secondary)]">{copy.empty}</p>;
@@ -158,16 +161,27 @@ export function CollectionPanel({ workOrderId, quoteExecution, userType, onChang
 
     setSubmittingId(installment.id);
     try {
-      await submitInstallmentReceiptClaim(workOrderId, installment.id, {
+      const response = await submitInstallmentReceiptClaim(workOrderId, installment.id, {
         claimed_amount: claimedAmount,
         transaction_reference: form.reference.trim(),
         note: form.note.trim(),
         evidence: form.evidence,
         idempotency_key: form.idempotency,
       });
-      setClaimForms((current) => ({ ...current, [installment.id]: emptyClaimForm() }));
+      setSubmittedClaimIds((current) => new Set(current).add(installment.id));
       toastSuccess(copy.claimSubmitted);
-      await onChanged?.();
+      try {
+        if (typeof onChanged !== 'function') throw new Error('Work-order refresh is unavailable.');
+        await onChanged(response);
+        setClaimForms((current) => ({ ...current, [installment.id]: emptyClaimForm() }));
+        setSubmittedClaimIds((current) => {
+          const next = new Set(current);
+          next.delete(installment.id);
+          return next;
+        });
+      } catch {
+        toastWarning(copy.claimRefreshFailed);
+      }
     } catch (error) {
       toastError(error.message);
     } finally {
@@ -198,7 +212,9 @@ export function CollectionPanel({ workOrderId, quoteExecution, userType, onChang
         {installments.map((installment, index) => {
           const installmentCurrency = installment.currency || currency;
           const remainingAmount = Math.max(0, Number(installment.amount || 0) - Number(installment.received_amount || 0));
-          const pendingClaim = installment.status === 'pending_confirmation' || Number(installment.pending_claim_count || 0) > 0;
+          const pendingClaim = installment.status === 'pending_confirmation'
+            || Number(installment.pending_claim_count || 0) > 0
+            || submittedClaimIds.has(installment.id);
           const canStart = userType === 'engineer'
             && installment.source !== 'legacy'
             && ['due', 'partially_received', 'overdue'].includes(installment.status);
@@ -258,7 +274,7 @@ export function CollectionPanel({ workOrderId, quoteExecution, userType, onChang
                 {canChooseMethod && (
                   <button
                     type="button"
-                    onClick={() => onSelectPayment?.({ installmentId: installment.id, amount: remainingAmount, trigger: installment.trigger_type })}
+                    onClick={() => onSelectPayment?.({ installmentId: installment.id, amount: remainingAmount, trigger: installment.trigger_type, currency: installmentCurrency })}
                     className="inline-flex h-10 shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-lg bg-[var(--color-primary)] px-3 text-sm font-semibold text-white hover:bg-[var(--color-primary-hover)]"
                   >
                     <WalletCards size={16} />

@@ -128,11 +128,15 @@ export function PaymentModal({
   installmentId = null,
   amount: installmentAmount = null,
   trigger = null,
+  currency: installmentCurrency = null,
   onPaid,
 }) {
   const copy = isCnLocale() ? COPY.cn : COPY.en;
-  const currency = isCnLocale() ? 'CNY' : 'USD';
+  const localeCurrency = isCnLocale() ? 'CNY' : 'USD';
   const isInstallmentMode = Boolean(installmentId);
+  const currency = isInstallmentMode
+    ? (installmentCurrency || localeCurrency)
+    : localeCurrency;
   const [step, setStep] = useState('pay');
   const [pricing, setPricing] = useState(null);
   const [order, setOrder] = useState(null);

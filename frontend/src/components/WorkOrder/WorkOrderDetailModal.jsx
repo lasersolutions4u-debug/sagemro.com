@@ -156,6 +156,36 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
     }
   }, [workOrderId, userType]);
   const handleFieldWorkChanged = useCallback(() => loadDetail({ throwOnError: true }), [loadDetail]);
+  const handleCollectionChanged = useCallback(async (response) => {
+    const savedInstallment = response?.installment;
+    if (savedInstallment?.id) {
+      setDetail((current) => {
+        if (!current?.quote_execution) return current;
+        const receiptClaims = current.quote_execution.receipt_claims || [];
+        const nextReceiptClaims = response.claim && !receiptClaims.some((claim) => claim.id === response.claim.id)
+          ? [...receiptClaims, { ...response.claim, evidence: response.evidence || response.claim.evidence || null }]
+          : receiptClaims;
+        return {
+          ...current,
+          quote_execution: {
+            ...current.quote_execution,
+            installments: (current.quote_execution.installments || []).map((installment) => (
+              installment.id === savedInstallment.id
+                ? {
+                    ...installment,
+                    ...savedInstallment,
+                    status: 'pending_confirmation',
+                    pending_claim_count: Math.max(1, Number(savedInstallment.pending_claim_count || installment.pending_claim_count || 0)),
+                  }
+                : installment
+            )),
+            receipt_claims: nextReceiptClaims,
+          },
+        };
+      });
+    }
+    await loadDetail({ throwOnError: true });
+  }, [loadDetail]);
 
   useEffect(() => {
     if (isOpen && workOrderId) {
@@ -1184,7 +1214,7 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
                 workOrderId={workOrder.id}
                 quoteExecution={quoteExecution}
                 userType={userType}
-                onChanged={() => loadDetail({ throwOnError: true })}
+                onChanged={handleCollectionChanged}
                 onSelectPayment={setInstallmentPayment}
               />
             )}
@@ -1236,6 +1266,7 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
       installmentId={installmentPayment?.installmentId}
       amount={installmentPayment?.amount}
       trigger={installmentPayment?.trigger}
+      currency={installmentPayment?.currency}
       onPaid={() => { loadDetail(); onConfirmed?.(); }}
     />
     </>
