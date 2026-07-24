@@ -21,12 +21,17 @@ function createD1Database(db, hooks) {
       args: [],
       bind(...args) {
         this.args = args;
+        hooks.binds.push({ sql: normalizeSql(sql), count: args.length });
         return this;
       },
       async first() {
         return db.prepare(sql).get(...this.args) || null;
       },
       async all() {
+        if (/SELECT \* FROM work_order_payments WHERE work_order_id = \?/i.test(normalizeSql(sql))
+          && hooks.legacyPaymentRows) {
+          return { results: hooks.legacyPaymentRows };
+        }
         return { results: db.prepare(sql).all(...this.args) };
       },
       async run() {
@@ -61,7 +66,7 @@ function createD1Database(db, hooks) {
 
 function createQuoteExecutionEnv({ market = 'com', filename = ':memory:', initialize = true } = {}) {
   const db = new DatabaseSync(filename);
-  const hooks = { beforeNextBatch: null, queries: [] };
+  const hooks = { beforeNextBatch: null, queries: [], binds: [], waitUntil: [] };
   db.exec('PRAGMA foreign_keys = ON;');
   db.exec('PRAGMA busy_timeout = 5000;');
   if (initialize) {
@@ -99,9 +104,22 @@ function createQuoteExecutionEnv({ market = 'com', filename = ':memory:', initia
     },
     resetQueries() {
       hooks.queries.length = 0;
+      hooks.binds.length = 0;
     },
     queries() {
       return [...hooks.queries];
+    },
+    binds() {
+      return [...hooks.binds];
+    },
+    waitUntilPromises() {
+      return [...hooks.waitUntil];
+    },
+    captureWaitUntil(promise) {
+      hooks.waitUntil.push(promise);
+    },
+    setLegacyPaymentRows(rows) {
+      hooks.legacyPaymentRows = rows;
     },
     close() {
       db.close();
@@ -153,7 +171,7 @@ async function api(ctx, path, {
       Origin: ctx.origin,
     },
     body: body === undefined ? undefined : JSON.stringify(body),
-  }), ctx.env, { waitUntil() {} });
+  }), ctx.env, { waitUntil(promise) { ctx.captureWaitUntil(promise); } });
   const json = await response.json().catch(() => ({}));
   return { response, json };
 }
@@ -699,6 +717,42 @@ test('onsite conversion rolls back its update and log when the audit insert fail
   assert.equal(ctx.db.prepare("SELECT COUNT(*) AS count FROM work_order_logs WHERE action = 'onsite_conversion_confirmed'").get().count, 0);
 });
 
+test('onsite conversion remains successful when its post-commit notification fails', async () => {
+  const ctx = createQuoteExecutionEnv();
+  ctx.db.exec(`
+    UPDATE work_orders
+    SET service_mode = 'hybrid', onsite_conversion_status = 'requested',
+      active_quote_version = 1, quote_expected_service_days = 4
+    WHERE id = 'wo-quote-1';
+    CREATE TRIGGER fail_onsite_conversion_notification
+    BEFORE INSERT ON notifications
+    WHEN NEW.type = 'onsite_conversion_confirmed'
+    BEGIN
+      SELECT RAISE(ABORT, 'forced onsite conversion notification failure');
+    END;
+  `);
+
+  const converted = await api(ctx, '/api/workorders/wo-quote-1/onsite-conversion/confirm', {
+    userType: 'customer',
+    userId: 'customer-1',
+    body: {
+      service_address: '88 Test Road, Jinan',
+      service_latitude: 36.6512,
+      service_longitude: 117.1201,
+      service_accuracy_m: 20,
+      service_coordinate_system: 'gcj02',
+      service_location_source: 'customer_map',
+    },
+  });
+  await Promise.allSettled(ctx.waitUntilPromises());
+
+  assert.equal(converted.response.status, 200);
+  assert.equal(ctx.waitUntilPromises().length, 1);
+  assert.equal(ctx.db.prepare('SELECT service_mode FROM work_orders').get().service_mode, 'onsite');
+  assert.equal(ctx.db.prepare("SELECT COUNT(*) AS count FROM work_order_logs WHERE action = 'onsite_conversion_confirmed'").get().count, 1);
+  assert.equal(ctx.db.prepare("SELECT COUNT(*) AS count FROM audit_logs WHERE action = 'onsite_conversion_confirmed'").get().count, 1);
+});
+
 test('supplemental activation preserves the baseline and prior supplementals while adding installments', async () => {
   const ctx = createQuoteExecutionEnv();
   await submitQuote(ctx);
@@ -747,12 +801,12 @@ test('supplemental activation preserves the baseline and prior supplementals whi
   );
 });
 
-test('active execution loads all schedules with one parameterized IN query', async () => {
+test('active execution keeps receipt-claim query binds fixed across many supplementals', async () => {
   const ctx = createQuoteExecutionEnv();
   await submitQuote(ctx);
   await reviewQuote(ctx, 'approve', 1);
   await confirmQuote(ctx, 1);
-  for (const [version, amount] of [[2, 1500], [3, 700]]) {
+  for (const [version, amount] of [[2, 1500], [3, 700], [4, 600], [5, 500], [6, 400]]) {
     await submitQuote(ctx, quotePayload({
       labor_fee: amount,
       parts_fee: 0,
@@ -766,6 +820,15 @@ test('active execution loads all schedules with one parameterized IN query', asy
     await reviewQuote(ctx, 'approve', version);
     await confirmQuote(ctx, version);
   }
+  const latestInstallment = ctx.db.prepare(
+    'SELECT id FROM work_order_installments WHERE quote_version = 6'
+  ).get();
+  ctx.db.prepare(`
+    INSERT INTO work_order_receipt_claims (
+      id, installment_id, work_order_id, engineer_id, claimed_amount,
+      status, idempotency_key
+    ) VALUES ('claim-v6', ?, 'wo-quote-1', 'engineer-1', 400, 'pending', 'claim-v6')
+  `).run(latestInstallment.id);
   ctx.resetQueries();
 
   const detail = await api(ctx, '/api/workorders/wo-quote-1', {
@@ -773,9 +836,11 @@ test('active execution loads all schedules with one parameterized IN query', asy
   });
 
   assert.equal(detail.response.status, 200);
-  const scheduleQueries = ctx.queries().filter((sql) => /FROM work_order_payment_schedule/i.test(sql));
-  assert.equal(scheduleQueries.length, 2);
-  assert.equal(scheduleQueries.every((sql) => /quote_version IN \(\?, \?, \?\)/i.test(sql)), true);
+  assert.deepEqual(detail.json.quote_execution.installments.map((row) => row.quote_version), [1, 1, 2, 3, 4, 5, 6]);
+  assert.deepEqual(detail.json.quote_execution.receipt_claims.map((row) => row.id), ['claim-v6']);
+  const claimBinds = ctx.binds().filter(({ sql }) => /FROM work_order_receipt_claims/i.test(sql));
+  assert.equal(claimBinds.length, 1);
+  assert.equal(claimBinds[0].count, 1);
 });
 
 test('receipt claims use role-facing allowlists without idempotency or Admin identity leaks', async () => {
@@ -867,22 +932,23 @@ test('historical quotes project a read-only legacy installment without creating 
   assert.equal(ctx.db.prepare('SELECT COUNT(*) AS count FROM work_order_payment_schedule').get().count, 0);
 });
 
-test('legacy projection counts each completed stage once and ignores pending or failed rows', async () => {
+test('legacy projection sums unique completed transactions and records across the same stage', async () => {
   const ctx = createQuoteExecutionEnv({ market: 'cn' });
   ctx.db.exec(`
     INSERT INTO work_order_pricing (
       id, work_order_id, engineer_id, labor_fee, parts_fee, travel_fee, other_fee,
       subtotal, total_amount, status
     ) VALUES ('legacy-pricing', 'wo-quote-1', 'engineer-1', 3600, 1200, 400, 200, 5400, 5400, 'confirmed');
-    INSERT INTO work_order_payments (
-      id, work_order_id, customer_id, amount, status, payment_stage, transaction_id, created_at
-    ) VALUES
-      ('advance-complete', 'wo-quote-1', 'customer-1', 3500, 'completed', 'advance', 'TX-A', '2026-01-01 00:00:00'),
-      ('advance-duplicate', 'wo-quote-1', 'customer-1', 3500, 'completed', 'advance', 'TX-A-DUP', '2026-01-02 00:00:00'),
-      ('advance-pending', 'wo-quote-1', 'customer-1', 3500, 'pending', 'advance', 'TX-P', '2026-01-03 00:00:00'),
-      ('balance-failed', 'wo-quote-1', 'customer-1', 1900, 'failed', 'balance', 'TX-F', '2026-01-04 00:00:00'),
-      ('balance-complete', 'wo-quote-1', 'customer-1', 1900, 'completed', 'balance', 'TX-B', '2026-01-05 00:00:00');
   `);
+  ctx.setLegacyPaymentRows([
+    { id: 'advance-partial-1', amount: 1200, status: 'completed', payment_stage: 'advance', transaction_id: 'TX-A' },
+    { id: 'advance-duplicate', amount: 1200, status: 'completed', payment_stage: 'advance', transaction_id: 'TX-A' },
+    { id: 'advance-partial-2', amount: 800, status: 'completed', payment_stage: 'advance', transaction_id: null },
+    { id: 'advance-partial-3', amount: 600, status: 'completed', payment_stage: 'advance', transaction_id: null },
+    { id: 'advance-pending', amount: 1000, status: 'pending', payment_stage: 'advance', transaction_id: 'TX-P' },
+    { id: 'balance-failed', amount: 1000, status: 'failed', payment_stage: 'balance', transaction_id: 'TX-F' },
+    { id: 'balance-complete', amount: 2800, status: 'completed', payment_stage: 'balance', transaction_id: 'TX-B' },
+  ]);
 
   const detail = await api(ctx, '/api/workorders/wo-quote-1', {
     method: 'GET', userType: 'admin', userId: 'admin',

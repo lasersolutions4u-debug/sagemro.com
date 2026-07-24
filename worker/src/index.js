@@ -13260,7 +13260,7 @@ async function handleConfirmOnsiteConversion(request, env, { admin = false } = {
     }
 
     if (workOrder.engineer_id) {
-      await createNotification(env, {
+      const notificationTask = createNotification(env, {
         user_id: workOrder.engineer_id,
         user_type: 'engineer',
         type: 'onsite_conversion_confirmed',
@@ -13269,7 +13269,14 @@ async function handleConfirmOnsiteConversion(request, env, { admin = false } = {
           ? `工单 ${workOrder.order_no || workOrderId} 已转为上门服务，到达现场后请完成定位打卡。`
           : `${workOrder.order_no || workOrderId} is now an on-site service order. Check in after arriving at the customer site.`,
         data: { work_order_id: workOrderId },
+      }).catch((error) => {
+        console.warn('[onsite conversion] notification failed:', error?.message || error);
       });
+      if (request._ctx && typeof request._ctx.waitUntil === 'function') {
+        request._ctx.waitUntil(notificationTask);
+      } else {
+        await notificationTask;
+      }
     }
 
     return jsonResponse({
@@ -14643,13 +14650,30 @@ async function getWorkOrderQuoteExecution(env, workOrder, pricing, auth, market 
         `).bind(workOrder.id, ...activeVersions).all()
       : { results: [] };
     const installments = installmentRecords.results || [];
-    const installmentIds = installments.map((row) => row.id);
-    const claimRecords = installmentIds.length > 0
+    const claimRecords = installments.length > 0
       ? await env.DB.prepare(`
-          SELECT * FROM work_order_receipt_claims
-          WHERE work_order_id = ? AND installment_id IN (${installmentIds.map(() => '?').join(', ')})
-          ORDER BY created_at, id
-        `).bind(workOrder.id, ...installmentIds).all()
+          SELECT claim.*
+          FROM work_order_receipt_claims claim
+          JOIN work_order_installments installment
+            ON installment.id = claim.installment_id
+           AND installment.work_order_id = claim.work_order_id
+          JOIN work_orders active_order ON active_order.id = claim.work_order_id
+          JOIN work_order_pricing active_pricing
+            ON active_pricing.work_order_id = active_order.id
+          JOIN work_order_pricing_history history
+            ON history.pricing_id = active_pricing.id
+           AND history.version = installment.quote_version
+          WHERE claim.work_order_id = ?
+            AND history.status = 'confirmed'
+            AND (
+              (history.version = active_order.active_quote_version AND history.quote_kind = 'baseline')
+              OR (
+                history.quote_kind = 'supplemental'
+                AND history.parent_quote_version = active_order.active_quote_version
+              )
+            )
+          ORDER BY claim.created_at, claim.id
+        `).bind(workOrder.id).all()
       : { results: [] };
     const claims = claimRecords.results || [];
     const pendingClaimsByInstallment = claims.reduce((counts, claim) => {
@@ -14696,7 +14720,7 @@ async function getWorkOrderQuoteExecution(env, workOrder, pricing, auth, market 
     SELECT * FROM work_order_payments WHERE work_order_id = ? ORDER BY created_at ASC
   `).bind(workOrder.id).all();
   const totalAmount = Number(visiblePricing.total_amount || visiblePricing.subtotal || 0);
-  const completedByTransaction = new Map();
+  const completedPayments = new Map();
   for (const payment of paymentRecords.results || []) {
     if (payment.status !== 'completed') continue;
     const amount = Number(payment.amount);
@@ -14704,24 +14728,17 @@ async function getWorkOrderQuoteExecution(env, workOrder, pricing, auth, market 
     if (!Number.isSafeInteger(amount) || amount <= 0 || !['advance', 'balance'].includes(stage)) {
       throw new Error('Legacy payment history is inconsistent.');
     }
-    const transactionKey = payment.transaction_id
-      ? `transaction:${payment.transaction_id}`
-      : `row:${payment.id}`;
-    const duplicate = completedByTransaction.get(transactionKey);
+    const transactionId = String(payment.transaction_id || '').trim();
+    const recordId = String(payment.id || '').trim();
+    if (!transactionId && !recordId) throw new Error('Legacy payment history is inconsistent.');
+    const paymentKey = transactionId ? `transaction:${transactionId}` : `row:${recordId}`;
+    const duplicate = completedPayments.get(paymentKey);
     if (duplicate && (duplicate.amount !== amount || duplicate.stage !== stage)) {
       throw new Error('Legacy payment history is inconsistent.');
     }
-    if (!duplicate) completedByTransaction.set(transactionKey, { amount, stage });
+    if (!duplicate) completedPayments.set(paymentKey, { amount, stage });
   }
-  const amountsByStage = new Map();
-  for (const payment of completedByTransaction.values()) {
-    const existingAmount = amountsByStage.get(payment.stage);
-    if (existingAmount !== undefined && existingAmount !== payment.amount) {
-      throw new Error('Legacy payment history is inconsistent.');
-    }
-    amountsByStage.set(payment.stage, payment.amount);
-  }
-  const receivedAmount = [...amountsByStage.values()].reduce((sum, amount) => sum + amount, 0);
+  const receivedAmount = [...completedPayments.values()].reduce((sum, payment) => sum + payment.amount, 0);
   if (receivedAmount > totalAmount) throw new Error('Legacy payment history is inconsistent.');
   const installment = {
     id: null,
