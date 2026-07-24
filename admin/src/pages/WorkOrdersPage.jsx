@@ -53,6 +53,7 @@ import {
   money,
   parseJsonValue,
 } from './workOrderDisplay';
+import { createOperationKey } from './materialRequisitionOperations';
 
 const STATUS_MAP = {
   pending: { color: 'var(--color-info)' },
@@ -657,7 +658,7 @@ export function WorkOrdersPage({ readOnly = false }) {
           installment: values.installment,
           confirmed_amount: values.fullAmount,
           reason: values.reason || '',
-          idempotency_key: values.idempotency_key || crypto.randomUUID(),
+          idempotency_key: values.idempotency_key || createOperationKey(),
         },
       },
       'receipt-confirm-partial': {
@@ -667,7 +668,7 @@ export function WorkOrdersPage({ readOnly = false }) {
           installment: values.installment,
           confirmed_amount: '',
           reason: values.reason || '',
-          idempotency_key: values.idempotency_key || crypto.randomUUID(),
+          idempotency_key: values.idempotency_key || createOperationKey(),
         },
       },
       'receipt-reject': {
@@ -676,7 +677,7 @@ export function WorkOrdersPage({ readOnly = false }) {
           claim: values.claim,
           installment: values.installment,
           reason: values.reason || '',
-          idempotency_key: values.idempotency_key || crypto.randomUUID(),
+          idempotency_key: values.idempotency_key || createOperationKey(),
         },
       },
       'payment-start': {

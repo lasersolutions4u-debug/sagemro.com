@@ -204,9 +204,15 @@ function createStatement(env, sql) {
         return order ? { customer_id: order.customer_id, order_no: order.order_no } : null;
       }
 
-      if (/SELECT id, engineer_id, customer_id, status FROM work_orders WHERE id = \?/i.test(normalized)) {
+      if (/SELECT id, engineer_id, customer_id, status(?:, active_quote_version)? FROM work_orders WHERE id = \?/i.test(normalized)) {
         const order = env.__workOrders.find((item) => item.id === this.args[0]);
-        return order ? { id: order.id, engineer_id: order.engineer_id, customer_id: order.customer_id, status: order.status } : null;
+        return order ? {
+          id: order.id,
+          engineer_id: order.engineer_id,
+          customer_id: order.customer_id,
+          status: order.status,
+          active_quote_version: order.active_quote_version,
+        } : null;
       }
 
       if (/SELECT id FROM ratings WHERE work_order_id = \?/i.test(normalized)) {
@@ -771,6 +777,29 @@ test('final service report opens customer review and creates admin service revie
   assert.equal(reviews.json.total, 1);
   assert.equal(reviews.json.list[0].order_no, 'WO-PAY-1');
   assert.equal(reviews.json.list[0].comment, 'Service report received and accepted.');
+});
+
+test('customer cannot rate or accept a service order before final review opens', async () => {
+  const env = createPaymentFlowEnv();
+  env.__workOrders[0].status = 'in_service';
+
+  const rated = await api(env, '/api/workorders/rating', {
+    userType: 'customer',
+    userId: 'customer-1',
+    body: {
+      work_order_id: 'wo-pay-1',
+      rating_timeliness: 5,
+      rating_technical: 5,
+      rating_communication: 5,
+      rating_professional: 5,
+      comment: 'Submitted too early.',
+    },
+  });
+
+  assert.equal(rated.response.status, 409);
+  assert.equal(env.__workOrders[0].status, 'in_service');
+  assert.equal(env.__ratings.length, 0);
+  assert.equal(env.__payouts.length, 0);
 });
 
 test('Admin payout completion requires a completed work order and positive amount', async () => {

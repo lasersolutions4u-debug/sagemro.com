@@ -365,7 +365,14 @@ function installments(ctx) {
 
 async function startCollection(ctx, options = {}) {
   const row = installment(ctx);
-  return api(ctx, `/api/workorders/wo-quote-1/installments/${row.id}/collect`, options);
+  return api(ctx, `/api/workorders/wo-quote-1/installments/${row.id}/collect`, {
+    body: options.body || {},
+    ...options,
+  });
+}
+
+async function startCollectionFor(ctx, installmentId, body = {}) {
+  return api(ctx, `/api/workorders/wo-quote-1/installments/${installmentId}/collect`, { body });
 }
 
 async function selectPaymentMethod(ctx, paymentMethod = 'bank_transfer', options = {}) {
@@ -1140,7 +1147,7 @@ test('quote execution detail shares valid consumed field days across customer, e
   }
 });
 
-test('assigned engineer opens scheduled trigger installments and owning customer controls payment method', async () => {
+test('assigned engineer opens trigger-ready installments and owning customer controls payment method', async () => {
   const ctx = createQuoteExecutionEnv();
   await confirmBaselineForReceiptTests(ctx);
   const row = installment(ctx);
@@ -1185,6 +1192,190 @@ test('assigned engineer opens scheduled trigger installments and owning customer
   assert.equal(ctx.db.prepare("SELECT COUNT(*) AS count FROM audit_logs WHERE action = 'installment_collection_started'").get().count, 4);
   assert.equal(ctx.db.prepare("SELECT COUNT(*) AS count FROM audit_logs WHERE action = 'installment_payment_method_selected'").get().count, 2);
   assert.ok(ctx.db.prepare("SELECT COUNT(*) AS count FROM notifications WHERE type = 'installment_collection_started'").get().count >= 1);
+});
+
+test('scheduled collection enforces system triggers and audits milestone confirmation', async () => {
+  const cases = [
+    ['fixed_date', '2999-01-01', {}, 409],
+    ['fixed_date', '2020-01-01', {}, 200],
+    ['on_arrival', null, {}, 409],
+    ['on_completion', null, {}, 409],
+    ['on_acceptance', null, {}, 409],
+    ['milestone', null, {}, 400],
+    ['milestone', null, { milestone_confirmation: 'Customer confirmed commissioning milestone.' }, 200],
+  ];
+
+  for (const [triggerType, dueDate, body, expectedStatus] of cases) {
+    const ctx = createQuoteExecutionEnv();
+    if (triggerType === 'fixed_date') {
+      ctx.db.exec("UPDATE work_orders SET site_timezone = 'UTC' WHERE id = 'wo-quote-1'");
+    }
+    await activateBaseline(ctx, quotePayload({
+      payment_schedule: [
+        quotePayload().payment_schedule[0],
+        {
+          ...quotePayload().payment_schedule[1],
+          trigger_type: triggerType,
+          due_date: dueDate,
+          description: triggerType === 'milestone' ? 'Commissioning milestone' : 'Second payment',
+        },
+      ],
+    }));
+    const row = ctx.db.prepare(`
+      SELECT * FROM work_order_installments
+      WHERE work_order_id = 'wo-quote-1' AND sequence = 2
+    `).get();
+
+    const detail = await api(ctx, '/api/workorders/wo-quote-1', {
+      method: 'GET', userType: 'engineer', userId: 'engineer-1',
+    });
+    assert.equal(
+      detail.json.quote_execution.installments.find((item) => item.id === row.id).collection_start_ready,
+      expectedStatus === 200 || triggerType === 'milestone',
+      `${triggerType}:projection`,
+    );
+
+    const result = await startCollectionFor(ctx, row.id, body);
+
+    assert.equal(result.response.status, expectedStatus, triggerType);
+    assert.equal(
+      ctx.db.prepare('SELECT status FROM work_order_installments WHERE id = ?').get(row.id).status,
+      expectedStatus === 200 ? 'collecting' : 'scheduled',
+      triggerType,
+    );
+    if (triggerType === 'milestone' && expectedStatus === 200) {
+      const audit = ctx.db.prepare(`
+        SELECT after_state FROM audit_logs
+        WHERE action = 'installment_collection_started' ORDER BY created_at DESC LIMIT 1
+      `).get();
+      assert.equal(JSON.parse(audit.after_state).milestone_confirmation, body.milestone_confirmation);
+    }
+  }
+
+  const arrival = createQuoteExecutionEnv();
+  await activateBaseline(arrival, quotePayload({
+    payment_schedule: [
+      quotePayload().payment_schedule[0],
+      { ...quotePayload().payment_schedule[1], trigger_type: 'on_arrival' },
+    ],
+  }));
+  const arrivalRow = arrival.db.prepare("SELECT * FROM work_order_installments WHERE sequence = 2").get();
+  arrival.db.prepare("UPDATE work_orders SET arrival_verified_at = datetime('now') WHERE id = 'wo-quote-1'").run();
+  assert.equal((await startCollectionFor(arrival, arrivalRow.id)).response.status, 200);
+
+  const completion = createQuoteExecutionEnv();
+  await activateBaseline(completion, quotePayload({
+    payment_schedule: [
+      quotePayload().payment_schedule[0],
+      { ...quotePayload().payment_schedule[1], trigger_type: 'on_completion' },
+    ],
+  }));
+  const completionRow = completion.db.prepare("SELECT * FROM work_order_installments WHERE sequence = 2").get();
+  completion.db.prepare("UPDATE work_orders SET status = 'resolved', resolved_at = datetime('now') WHERE id = 'wo-quote-1'").run();
+  assert.equal((await startCollectionFor(completion, completionRow.id)).response.status, 200);
+
+  const acceptance = createQuoteExecutionEnv();
+  await activateBaseline(acceptance);
+  const acceptanceRow = acceptance.db.prepare("SELECT * FROM work_order_installments WHERE sequence = 2").get();
+  acceptance.db.exec(`
+    INSERT INTO ratings (
+      id, work_order_id, engineer_id, customer_id,
+      rating_timeliness, rating_technical, rating_communication, rating_professional
+    ) VALUES ('rating-acceptance', 'wo-quote-1', 'engineer-1', 'customer-1', 5, 5, 5, 5);
+  `);
+  assert.equal((await startCollectionFor(acceptance, acceptanceRow.id)).response.status, 200);
+});
+
+test('fixed-date collection uses the service-site calendar day', async () => {
+  for (const [siteTimezone, expectedStatus] of [
+    ['America/Los_Angeles', 409],
+    ['Asia/Shanghai', 200],
+  ]) {
+    const ctx = createQuoteExecutionEnv();
+    ctx.env.QUOTE_EXECUTION_NOW = '2026-07-24T00:30:00Z';
+    ctx.db.prepare("UPDATE work_orders SET site_timezone = ? WHERE id = 'wo-quote-1'").run(siteTimezone);
+    await activateBaseline(ctx, quotePayload({
+      payment_schedule: [
+        quotePayload().payment_schedule[0],
+        {
+          ...quotePayload().payment_schedule[1],
+          trigger_type: 'fixed_date',
+          due_date: '2026-07-24',
+        },
+      ],
+    }));
+    const row = ctx.db.prepare("SELECT * FROM work_order_installments WHERE sequence = 2").get();
+
+    const detail = await api(ctx, '/api/workorders/wo-quote-1', {
+      method: 'GET', userType: 'engineer', userId: 'engineer-1',
+    });
+    assert.equal(
+      detail.json.quote_execution.installments.find((item) => item.id === row.id).collection_start_ready,
+      expectedStatus === 200,
+      `${siteTimezone}:projection`,
+    );
+    assert.equal((await startCollectionFor(ctx, row.id)).response.status, expectedStatus, siteTimezone);
+  }
+});
+
+test('fixed-date collection fails closed when the service-site timezone is missing or invalid', async () => {
+  for (const siteTimezone of [null, 'Not/A_Timezone']) {
+    const ctx = createQuoteExecutionEnv();
+    ctx.env.QUOTE_EXECUTION_NOW = '2026-07-24T00:30:00Z';
+    ctx.db.prepare("UPDATE work_orders SET site_timezone = ? WHERE id = 'wo-quote-1'").run(siteTimezone);
+    await activateBaseline(ctx, quotePayload({
+      payment_schedule: [
+        quotePayload().payment_schedule[0],
+        {
+          ...quotePayload().payment_schedule[1],
+          trigger_type: 'fixed_date',
+          due_date: '2026-07-24',
+        },
+      ],
+    }));
+    const row = ctx.db.prepare("SELECT * FROM work_order_installments WHERE sequence = 2").get();
+
+    const detail = await api(ctx, '/api/workorders/wo-quote-1', {
+      method: 'GET', userType: 'engineer', userId: 'engineer-1',
+    });
+    assert.equal(detail.response.status, 200, String(siteTimezone));
+    assert.equal(
+      detail.json.quote_execution.installments.find((item) => item.id === row.id).collection_start_ready,
+      false,
+      String(siteTimezone),
+    );
+
+    const started = await startCollectionFor(ctx, row.id);
+    assert.equal(started.response.status, 409, String(siteTimezone));
+    assert.equal(ctx.db.prepare('SELECT status FROM work_order_installments WHERE id = ?').get(row.id).status, 'scheduled');
+  }
+});
+
+test('collection start loses a race with baseline replacement activation', async () => {
+  const ctx = createQuoteExecutionEnv();
+  await activateBaseline(ctx);
+  await submitQuote(ctx, quotePayload({ expected_service_days: 4 }));
+  await reviewQuote(ctx, 'approve', 2);
+  const activeInstallment = ctx.db.prepare(`
+    SELECT id FROM work_order_installments
+    WHERE work_order_id = 'wo-quote-1' AND quote_version = 1 ORDER BY sequence LIMIT 1
+  `).get();
+  ctx.beforeNextBatch(() => confirmQuote(ctx, 2).then(({ response }) => {
+    assert.equal(response.status, 200);
+  }));
+
+  const started = await startCollectionFor(ctx, activeInstallment.id);
+
+  assert.equal(started.response.status, 409);
+  assert.equal(ctx.db.prepare('SELECT active_quote_version FROM work_orders').get().active_quote_version, 2);
+  assert.equal(
+    ctx.db.prepare('SELECT status FROM work_order_installments WHERE id = ?').get(activeInstallment.id).status,
+    'due',
+  );
+  assert.equal(
+    ctx.db.prepare("SELECT COUNT(*) AS count FROM notifications WHERE type = 'installment_collection_started'").get().count,
+    0,
+  );
 });
 
 test('customer selects payment method only after collection opens and outside Admin review', async () => {
@@ -1948,6 +2139,59 @@ test('pending baseline replacement preserves the active execution projection', a
   );
 });
 
+test('baseline activation rolls back when an active-version receipt claim appears after replacement submission', async () => {
+  const ctx = createQuoteExecutionEnv();
+  await activateBaseline(ctx);
+  const replacement = await submitQuote(ctx, quotePayload({ expected_service_days: 4 }));
+  assert.equal(replacement.response.status, 200);
+  assert.equal((await reviewQuote(ctx, 'approve', 2)).response.status, 200);
+
+  const activeInstallment = ctx.db.prepare(`
+    SELECT id FROM work_order_installments
+    WHERE work_order_id = 'wo-quote-1' AND quote_version = 1 ORDER BY sequence LIMIT 1
+  `).get();
+  ctx.db.prepare(`
+    INSERT INTO work_order_receipt_claims (
+      id, installment_id, work_order_id, engineer_id, claimed_amount, status, idempotency_key
+    ) VALUES ('claim-before-activation', ?, 'wo-quote-1', 'engineer-1', 1000, 'pending', 'claim-before-activation')
+  `).run(activeInstallment.id);
+
+  const confirmation = await confirmQuote(ctx, 2);
+
+  assert.equal(confirmation.response.status, 409);
+  assert.equal(ctx.db.prepare('SELECT active_quote_version FROM work_orders').get().active_quote_version, 1);
+  assert.equal(ctx.db.prepare('SELECT status FROM work_order_pricing_history WHERE version = 2').get().status, 'approved');
+  assert.equal(ctx.db.prepare('SELECT COUNT(*) AS count FROM work_order_installments WHERE quote_version = 2').get().count, 0);
+});
+
+test('active-version receipt claim loses a race with baseline replacement activation', async () => {
+  const ctx = createQuoteExecutionEnv();
+  await activateBaseline(ctx);
+  await submitQuote(ctx, quotePayload({ expected_service_days: 4 }));
+  await reviewQuote(ctx, 'approve', 2);
+  const activeInstallment = ctx.db.prepare(`
+    SELECT id FROM work_order_installments
+    WHERE work_order_id = 'wo-quote-1' AND quote_version = 1 ORDER BY sequence LIMIT 1
+  `).get();
+  ctx.db.prepare(`
+    UPDATE work_order_installments SET status = 'collecting' WHERE id = ?
+  `).run(activeInstallment.id);
+  ctx.beforeNextBatch(() => confirmQuote(ctx, 2).then(({ response }) => {
+    assert.equal(response.status, 200);
+  }));
+
+  const claim = await multipartApi(ctx, `/api/workorders/wo-quote-1/installments/${activeInstallment.id}/receipt-claims`, {
+    claimed_amount: '1000',
+    transaction_reference: 'RACE-ACTIVATION',
+    note: 'Must not survive activation',
+    idempotency_key: 'claim-after-activation-race',
+  });
+
+  assert.equal(claim.response.status, 409);
+  assert.equal(ctx.db.prepare('SELECT active_quote_version FROM work_orders').get().active_quote_version, 2);
+  assert.equal(ctx.db.prepare("SELECT COUNT(*) AS count FROM work_order_receipt_claims WHERE idempotency_key = 'claim-after-activation-race'").get().count, 0);
+});
+
 test('supplemental projection keeps the confirmed baseline visible to customers while staff sees review terms', async () => {
   const ctx = createQuoteExecutionEnv();
   await confirmBaselineForReceiptTests(ctx);
@@ -2591,6 +2835,59 @@ test('versioned service completion allows a later unpaid installment but archive
   });
   assert.equal(archived.response.status, 200, JSON.stringify(archived.json));
   assert.equal(archived.json.status, 'completed');
+});
+
+test('customer acceptance does not financially archive a versioned order with unpaid installments', async () => {
+  const ctx = createQuoteExecutionEnv();
+  ctx.db.exec("UPDATE work_orders SET service_mode = 'remote' WHERE id = 'wo-quote-1'");
+  await activateBaseline(ctx, quotePayload({ expected_service_days: null }));
+  const [startInstallment] = installments(ctx);
+  ctx.db.prepare(`
+    UPDATE work_order_installments SET received_amount = amount, status = 'received' WHERE id = ?
+  `).run(startInstallment.id);
+  ctx.db.exec(`
+    UPDATE work_orders SET status = 'resolved' WHERE id = 'wo-quote-1';
+    INSERT INTO work_order_repair_records (
+      id, work_order_id, symptom, diagnosis, solution, parts_used, labor_hours
+    ) VALUES ('repair-rating-1', 'wo-quote-1', 'Low output', 'Dirty lens', 'Cleaned lens', '[]', 2);
+  `);
+
+  const rated = await api(ctx, '/api/workorders/rating', {
+    userType: 'customer',
+    userId: 'customer-1',
+    body: {
+      work_order_id: 'wo-quote-1',
+      rating_timeliness: 5,
+      rating_technical: 5,
+      rating_communication: 5,
+      rating_professional: 5,
+      comment: 'Service accepted; final installment remains unpaid.',
+    },
+  });
+
+  assert.equal(rated.response.status, 200, JSON.stringify(rated.json));
+  const workOrder = ctx.db.prepare("SELECT status, completed_at FROM work_orders WHERE id = 'wo-quote-1'").get();
+  assert.equal(workOrder.status, 'resolved');
+  assert.equal(workOrder.completed_at, null);
+  assert.equal(ctx.db.prepare("SELECT COUNT(*) AS count FROM ratings WHERE work_order_id = 'wo-quote-1'").get().count, 1);
+
+  const blockedArchive = await api(ctx, '/api/admin/workorders/wo-quote-1/archive', {
+    method: 'PATCH', body: {}, userType: 'admin', userId: 'admin',
+  });
+  assert.equal(blockedArchive.response.status, 409);
+  assert.equal(ctx.db.prepare("SELECT status FROM work_orders WHERE id = 'wo-quote-1'").get().status, 'resolved');
+});
+
+test('Admin archive rechecks settlement for previously completed versioned orders', async () => {
+  const ctx = createQuoteExecutionEnv();
+  await activateBaseline(ctx);
+  ctx.db.exec("UPDATE work_orders SET status = 'completed', completed_at = datetime('now') WHERE id = 'wo-quote-1'");
+
+  const archived = await api(ctx, '/api/admin/workorders/wo-quote-1/archive', {
+    method: 'PATCH', body: {}, userType: 'admin', userId: 'admin',
+  });
+
+  assert.equal(archived.response.status, 409);
 });
 
 test('detail and work-order lists expose payment state independently from service status', async () => {

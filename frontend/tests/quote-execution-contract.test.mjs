@@ -136,7 +136,10 @@ test('installment APIs use installment ids and multipart receipt claims', async 
 });
 
 test('collection panel renders normalized installment states and guarded engineer actions', async () => {
-  const source = await readSource('../src/components/WorkOrder/CollectionPanel.jsx');
+  const [source, api] = await Promise.all([
+    readSource('../src/components/WorkOrder/CollectionPanel.jsx'),
+    readSource('../src/services/api.js'),
+  ]);
 
   assert.match(source, /quoteExecution/);
   assert.match(source, /quoteExecution\?\.installments/);
@@ -147,6 +150,10 @@ test('collection panel renders normalized installment states and guarded enginee
   assert.match(source, /\['collecting', 'partially_received', 'overdue'\]/);
   assert.match(source, /pending_confirmation/);
   assert.match(source, /pending_claim_count/);
+  assert.match(source, /collection_start_ready/);
+  assert.match(source, /milestone_confirmation/);
+  assert.match(source, /Confirm the agreed milestone/);
+  assert.match(source, /确认约定里程碑/);
   assert.match(source, /installment\.source === 'legacy'/);
   assert.match(source, /Start this installment collection/);
   assert.match(source, /发起本期收款/);
@@ -157,6 +164,7 @@ test('collection panel renders normalized installment states and guarded enginee
   assert.match(source, /remainingAmount/);
   assert.match(source, /idempotency/);
   assert.match(source, /whitespace-nowrap/);
+  assert.match(api, /startInstallmentCollection[\s\S]*milestone_confirmation/);
 });
 
 test('receipt claim success locks stale actions until detail refresh succeeds', async () => {

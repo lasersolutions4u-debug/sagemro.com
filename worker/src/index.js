@@ -2309,6 +2309,10 @@ const QUOTE_EXECUTION_ERRORS = {
     com: 'Payment start prerequisite flags must be boolean values.',
     cn: '开工前付款标记必须为布尔值。',
   },
+  payment_schedule_start_prerequisite_trigger_invalid: {
+    com: 'Only payments triggered before service starts can be required before service starts.',
+    cn: '只有“服务开始前”触发的付款才能设为开工前必须到账。',
+  },
   payment_schedule_milestone_description_required: {
     com: 'Milestone payments require a description.',
     cn: '里程碑付款必须填写说明。',
@@ -7204,6 +7208,7 @@ async function ensureWorkOrderPayout(env, workOrderId, engineerId, status = 'pen
 
 async function handleSubmitRating(request, env) {
   try {
+    const market = getRequestMarket(request);
     const body = await request.json();
     const { work_order_id, rating_timeliness, rating_technical, rating_communication, rating_professional, comment } = body;
 
@@ -7228,7 +7233,7 @@ async function handleSubmitRating(request, env) {
 
     // 验证工单归属 + 查出真正的 engineer_id
     const wo = await env.DB.prepare(
-      'SELECT id, engineer_id, customer_id, status FROM work_orders WHERE id = ?'
+      'SELECT id, engineer_id, customer_id, status, active_quote_version FROM work_orders WHERE id = ?'
     ).bind(work_order_id).first();
 
     if (!wo) return errorResponse('工单不存在', 404);
@@ -7237,6 +7242,14 @@ async function handleSubmitRating(request, env) {
     }
     if (!wo.engineer_id) {
       return errorResponse('工单尚未分配工程师', 400);
+    }
+    if (!['resolved', 'pending_review'].includes(wo.status)) {
+      return errorResponse(
+        market === 'cn'
+          ? '服务尚未进入客户验收阶段'
+          : 'The service is not ready for customer acceptance.',
+        409,
+      );
     }
     const engineer_id = wo.engineer_id;
 
@@ -7272,10 +7285,12 @@ async function handleSubmitRating(request, env) {
       WHERE id = ?
     `).bind(avgTimeliness, avgTechnical, avgCommunication, avgProfessional, count, engineer_id).run();
 
-    // 更新工单状态
-    await env.DB.prepare(
-      'UPDATE work_orders SET status = ?, completed_at = datetime("now") WHERE id = ?'
-    ).bind('completed', work_order_id).run();
+    // Versioned quotes keep service acceptance separate from financial archive.
+    if (Number(wo.active_quote_version || 0) < 1) {
+      await env.DB.prepare(
+        "UPDATE work_orders SET status = ?, completed_at = datetime('now') WHERE id = ?"
+      ).bind('completed', work_order_id).run();
+    }
 
     // 正式口径：客户评价只完成服务闭环；工程师服务款由 Admin 在逐单记录中人工确认。
     // 旧钱包结算函数保留用于历史兼容，但不再由新工单流程自动调用。
@@ -12967,9 +12982,6 @@ async function handleAdminArchiveWorkOrder(request, env) {
       if (!quoteExecution || quoteExecution.payment_state === 'exception') {
         return quoteExecutionConflictResponse(market);
       }
-      if (wo.status === 'completed') {
-        return jsonResponse({ success: true, status: 'completed' });
-      }
       if (!quoteExecution?.financially_settled) {
         return errorResponse(
           market === 'cn'
@@ -12977,6 +12989,9 @@ async function handleAdminArchiveWorkOrder(request, env) {
             : 'Financial archive requires every active installment to be fully received.',
           409,
         );
+      }
+      if (wo.status === 'completed') {
+        return jsonResponse({ success: true, status: 'completed' });
       }
       const archiveMessage = market === 'cn'
         ? 'SAGEMRO 运营已完成服务及财务归档。'
@@ -14692,6 +14707,33 @@ async function handleConfirmWorkOrderPricing(request, env) {
       SELECT CASE WHEN changes() = 1 THEN 1 ELSE json('quote activation concurrent update') END
     `)];
 
+    if (!supplemental && Number(wo.active_quote_version || 0) >= 1) {
+      statements.unshift(env.DB.prepare(`
+        SELECT CASE WHEN NOT EXISTS (
+          SELECT 1
+          FROM work_order_receipt_claims claim
+          JOIN work_order_installments installment
+            ON installment.id = claim.installment_id
+           AND installment.work_order_id = claim.work_order_id
+          JOIN work_order_pricing active_pricing
+            ON active_pricing.work_order_id = claim.work_order_id
+          JOIN work_order_pricing_history active_history
+            ON active_history.pricing_id = active_pricing.id
+           AND active_history.version = installment.quote_version
+          WHERE claim.work_order_id = ?
+            AND claim.status IN ('pending', 'confirmed')
+            AND active_history.status = 'confirmed'
+            AND (
+              (active_history.version = ? AND active_history.quote_kind = 'baseline')
+              OR (
+                active_history.quote_kind = 'supplemental'
+                AND active_history.parent_quote_version = ?
+              )
+            )
+        ) THEN 1 ELSE json('quote activation receipt conflict') END
+      `).bind(workOrderId, Number(wo.active_quote_version), Number(wo.active_quote_version)));
+    }
+
     if (supplemental) {
       statements.push(env.DB.prepare(`
         UPDATE work_orders
@@ -14715,10 +14757,11 @@ async function handleConfirmWorkOrderPricing(request, env) {
             WHEN service_mode = 'remote' THEN NULL
             ELSE expected_service_days
           END
-        WHERE id = ? AND customer_id = ?
+        WHERE id = ? AND customer_id = ? AND active_quote_version IS ?
       `).bind(
         quoteVersion, history.expected_service_days ?? null,
         history.expected_service_days ?? null, workOrderId, customer_id,
+        wo.active_quote_version ?? null,
       ));
     }
     statements.push(env.DB.prepare(`
@@ -14785,7 +14828,7 @@ async function handleConfirmWorkOrderPricing(request, env) {
 
     return jsonResponse({ success: true, quote_version: quoteVersion });
   } catch (error) {
-    if (/quote activation concurrent update|malformed json|UNIQUE constraint failed:\s*work_order_installments/i.test(String(error?.message || error))) {
+    if (/quote activation (?:concurrent update|receipt conflict)|malformed json|UNIQUE constraint failed:\s*work_order_installments/i.test(String(error?.message || error))) {
       return errorResponse(
         getRequestMarket(request) === 'cn' ? '报价版本已更新，请刷新后重试' : 'The quote version changed. Refresh and try again.',
         409,
@@ -15087,7 +15130,7 @@ async function getWorkOrderQuoteExecution(env, workOrder, pricing, auth, market 
   const activeBaselineVersion = Number(workOrder?.active_quote_version || 0);
   if (activeBaselineVersion >= 1) {
     if (!pricing) return quoteExecutionException(workOrder);
-    const [historyRecords, scheduleRecords, installmentRecords, reportedDates] = await Promise.all([
+    const [historyRecords, scheduleRecords, installmentRecords, reportedDates, acceptanceRecord] = await Promise.all([
       env.DB.prepare(`
         SELECT * FROM work_order_pricing_history WHERE pricing_id = ? ORDER BY version
       `).bind(pricing.id).all(),
@@ -15108,6 +15151,7 @@ async function getWorkOrderQuoteExecution(env, workOrder, pricing, auth, market 
         ORDER BY installment.quote_version, installment.sequence
       `).bind(workOrder.id).all(),
       listConsumedFieldDayDates(env, workOrder.id),
+      env.DB.prepare('SELECT id FROM ratings WHERE work_order_id = ? LIMIT 1').bind(workOrder.id).first(),
     ]);
     const canonical = buildCanonicalVersionedQuoteExecution({
       workOrder,
@@ -15124,7 +15168,15 @@ async function getWorkOrderQuoteExecution(env, workOrder, pricing, auth, market 
       ...row,
       required_before_start: Boolean(row.required_before_start),
     }));
-    const normalizedInstallments = canonical.installments;
+    const normalizedInstallments = canonical.installments.map((installment) => ({
+      ...installment,
+      collection_start_ready: installmentCollectionStartReady(
+        installment,
+        workOrder,
+        Boolean(acceptanceRecord),
+        quoteExecutionNow(env),
+      ),
+    }));
     const claimRecords = normalizedInstallments.length > 0
       ? await env.DB.prepare(`
           SELECT claim.*,
@@ -15347,6 +15399,7 @@ function installmentCollectionCopy(market = 'com') {
       customerOnly: '仅工单客户可选择支付方式',
       customerDenied: '您无权操作此工单',
       notCollectible: '当前分期状态不允许发起收款',
+      milestoneConfirmationRequired: '请先确认约定里程碑已经达成',
       paymentMethodRequired: '请选择支付方式',
       paymentMethodClosed: '当前分期不能修改支付方式',
       claimNotAllowed: '当前分期不能提交到账申请',
@@ -15384,6 +15437,7 @@ function installmentCollectionCopy(market = 'com') {
     customerOnly: 'Only the work-order customer can select a payment method',
     customerDenied: 'You do not have permission for this work order',
     notCollectible: 'This installment cannot be opened for collection',
+    milestoneConfirmationRequired: 'Confirm that the agreed milestone has been reached',
     paymentMethodRequired: 'Payment method is required',
     paymentMethodClosed: 'The payment method cannot be changed for this installment',
     claimNotAllowed: 'A receipt claim cannot be submitted for this installment',
@@ -15418,7 +15472,13 @@ function installmentCollectionCopy(market = 'com') {
 
 async function getActiveInstallment(env, workOrderId, installmentId) {
   return env.DB.prepare(`
-    SELECT installment.*, work_order.customer_id, work_order.engineer_id, work_order.order_no
+    SELECT installment.*, work_order.customer_id, work_order.engineer_id, work_order.order_no,
+      work_order.status AS work_order_status,
+      work_order.arrival_verified_at,
+      work_order.site_timezone,
+      EXISTS (
+        SELECT 1 FROM ratings rating WHERE rating.work_order_id = work_order.id
+      ) AS customer_acceptance_recorded
     FROM work_order_installments installment
     JOIN work_orders work_order ON work_order.id = installment.work_order_id
     JOIN work_order_pricing pricing ON pricing.work_order_id = work_order.id
@@ -15433,10 +15493,58 @@ async function getActiveInstallment(env, workOrderId, installmentId) {
   `).bind(installmentId, workOrderId).first();
 }
 
-function publicInstallment(installment) {
+function quoteExecutionNow(env) {
+  return new Date(env?.QUOTE_EXECUTION_NOW || Date.now());
+}
+
+function installmentCollectionStartReady(
+  installment,
+  workOrder = null,
+  customerAcceptanceRecorded = false,
+  now = new Date(),
+) {
+  if (!installment) return false;
+  if (['due', 'partially_received', 'overdue'].includes(installment.status)) return true;
+  if (installment.status !== 'scheduled') return false;
+  switch (installment.trigger_type) {
+    case 'before_start':
+    case 'milestone':
+      return true;
+    case 'fixed_date': {
+      if (!workOrder?.site_timezone) return false;
+      try {
+        const currentDate = fieldDayLocalDate(now, workOrder.site_timezone);
+        return Boolean(installment.due_date) && installment.due_date <= currentDate;
+      } catch {
+        return false;
+      }
+    }
+    case 'on_arrival':
+      return Boolean(workOrder?.arrival_verified_at);
+    case 'on_completion':
+      return ['resolved', 'pending_review', 'completed'].includes(workOrder?.status);
+    case 'on_acceptance':
+      return Boolean(customerAcceptanceRecorded);
+    default:
+      return false;
+  }
+}
+
+function publicInstallment(installment, now = new Date()) {
   if (!installment) return installment;
-  const { customer_id, engineer_id, order_no, ...visible } = installment;
-  return visible;
+  const {
+    customer_id, engineer_id, order_no, work_order_status,
+    arrival_verified_at, site_timezone, customer_acceptance_recorded, ...visible
+  } = installment;
+  return {
+    ...visible,
+    collection_start_ready: installmentCollectionStartReady(
+      installment,
+      { status: work_order_status, arrival_verified_at, site_timezone },
+      Boolean(customer_acceptance_recorded),
+      now,
+    ),
+  };
 }
 
 function publicReceiptEvidence(evidence) {
@@ -15577,8 +15685,22 @@ async function handleStartInstallmentCollection(request, env) {
     const installment = await getActiveInstallment(env, workOrderId, installmentId);
     if (!installment) return errorResponse(copy.workOrderNotFound, 404);
     if (installment.engineer_id !== auth.userId) return errorResponse(copy.engineerOnly, 403);
-    if (!['scheduled', 'due', 'partially_received', 'overdue'].includes(installment.status)) {
+    if (!installmentCollectionStartReady(
+      installment,
+      {
+        status: installment.work_order_status,
+        arrival_verified_at: installment.arrival_verified_at,
+        site_timezone: installment.site_timezone,
+      },
+      Boolean(installment.customer_acceptance_recorded),
+      quoteExecutionNow(env),
+    )) {
       return errorResponse(copy.notCollectible, 409);
+    }
+    const body = await request.json().catch(() => ({}));
+    const milestoneConfirmation = cleanText(body.milestone_confirmation, 500);
+    if (installment.trigger_type === 'milestone' && !milestoneConfirmation) {
+      return errorResponse(copy.milestoneConfirmationRequired, 400);
     }
     const nextStatus = installment.status === 'partially_received' ? 'partially_received' : 'collecting';
     await env.DB.batch([
@@ -15587,13 +15709,35 @@ async function handleStartInstallmentCollection(request, env) {
         SET status = ?, collection_started_at = COALESCE(collection_started_at, datetime('now')),
           updated_at = datetime('now')
         WHERE id = ? AND work_order_id = ? AND status = ?
-          AND EXISTS (SELECT 1 FROM work_orders WHERE id = ? AND engineer_id = ?)
-      `).bind(nextStatus, installmentId, workOrderId, installment.status, workOrderId, auth.userId),
+          AND EXISTS (
+            SELECT 1
+            FROM work_orders active_order
+            JOIN work_order_pricing active_pricing
+              ON active_pricing.work_order_id = active_order.id
+            JOIN work_order_pricing_history active_history
+              ON active_history.pricing_id = active_pricing.id
+             AND active_history.version = work_order_installments.quote_version
+            WHERE active_order.id = work_order_installments.work_order_id
+              AND active_order.engineer_id = ?
+              AND active_history.status = 'confirmed'
+              AND (
+                (active_history.version = active_order.active_quote_version AND active_history.quote_kind = 'baseline')
+                OR (
+                  active_history.quote_kind = 'supplemental'
+                  AND active_history.parent_quote_version = active_order.active_quote_version
+                )
+              )
+          )
+      `).bind(nextStatus, installmentId, workOrderId, installment.status, auth.userId),
       env.DB.prepare(`SELECT CASE WHEN changes() = 1 THEN 1 ELSE json('installment collection conflict') END`),
       buildAuditLogStatement(env, request, {
         targetType: 'work_order_installment', targetId: installmentId, action: 'installment_collection_started',
         beforeState: { status: installment.status, collection_started_at: installment.collection_started_at },
-        afterState: { status: nextStatus, collection_started: true },
+        afterState: {
+          status: nextStatus,
+          collection_started: true,
+          milestone_confirmation: milestoneConfirmation || null,
+        },
       }),
     ]);
     const saved = await getActiveInstallment(env, workOrderId, installmentId);
@@ -15602,7 +15746,7 @@ async function handleStartInstallmentCollection(request, env) {
       title: copy.collectionTitle, body: copy.collectionBody(installment.order_no),
       data: { work_order_id: workOrderId, installment_id: installmentId },
     });
-    return jsonResponse({ installment: publicInstallment(saved) });
+    return jsonResponse({ installment: publicInstallment(saved, quoteExecutionNow(env)) });
   } catch (error) {
     if (/installment collection conflict|malformed json/i.test(String(error?.message || error))) {
       return errorResponse(copy.notCollectible, 409);
@@ -15753,6 +15897,31 @@ async function handleSubmitReceiptClaim(request, env) {
     }))];
     const statements = [
       env.DB.prepare(`
+        SELECT CASE WHEN EXISTS (
+          SELECT 1
+          FROM work_order_installments active_installment
+          JOIN work_orders active_order
+            ON active_order.id = active_installment.work_order_id
+          JOIN work_order_pricing active_pricing
+            ON active_pricing.work_order_id = active_order.id
+          JOIN work_order_pricing_history active_history
+            ON active_history.pricing_id = active_pricing.id
+           AND active_history.version = active_installment.quote_version
+          WHERE active_installment.id = ?
+            AND active_installment.work_order_id = ?
+            AND active_installment.status IN ('collecting', 'partially_received', 'overdue')
+            AND active_order.engineer_id = ?
+            AND active_history.status = 'confirmed'
+            AND (
+              (active_history.version = active_order.active_quote_version AND active_history.quote_kind = 'baseline')
+              OR (
+                active_history.quote_kind = 'supplemental'
+                AND active_history.parent_quote_version = active_order.active_quote_version
+              )
+            )
+        ) THEN 1 ELSE json('receipt claim active installment conflict') END
+      `).bind(installmentId, workOrderId, auth.userId),
+      env.DB.prepare(`
         INSERT INTO work_order_receipt_claims (
           id, installment_id, work_order_id, engineer_id, claimed_amount,
           transaction_reference, engineer_note, status, idempotency_key
@@ -15805,7 +15974,7 @@ async function handleSubmitReceiptClaim(request, env) {
       }
       await cleanupFieldEvidenceObjects(env, uploadedKeys, 'receipt_claim_persistence_failed');
       uploadedKeys.length = 0;
-      if (recovered || isD1ConstraintError(error) || /receipt claim conflict|malformed json/i.test(String(error?.message || error))) {
+      if (recovered || isD1ConstraintError(error) || /receipt claim (?:conflict|active installment conflict)|malformed json/i.test(String(error?.message || error))) {
         return errorResponse(copy.claimNotAllowed, 409);
       }
       throw error;

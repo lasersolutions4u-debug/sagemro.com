@@ -28,7 +28,8 @@ test('versioned quote and receipt decisions use the controlled operation dialog 
   assert.match(source, /reviewWorkOrderQuote\(wo\.id, action, quoteVersion, note\)/);
   assert.match(source, /confirmed_amount/);
   assert.match(source, /idempotency_key/);
-  assert.match(source, /crypto\.randomUUID\(\)/);
+  assert.match(source, /createOperationKey\(\)/);
+  assert.doesNotMatch(source, /crypto\.randomUUID\(\)/);
   assert.match(source, /setOperationDialog\(null\)/);
   assert.match(source, /!values\.reason\.trim\(\)/);
   assert.match(source, /operationDialog\.type === 'receipt-confirm-partial'/);

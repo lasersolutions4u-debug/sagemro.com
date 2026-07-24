@@ -393,6 +393,30 @@ test('requires milestone descriptions and valid fixed dates', () => {
   }), false);
 });
 
+test('only before-start installments can be required before service starts', () => {
+  const form = {
+    ...createDefaultPricingForm(),
+    labor_fee: '10000',
+    payment_plan_mode: 'installments',
+    payment_schedule: [
+      { ...createDefaultInstallment(1), amount: '6000' },
+      {
+        ...createDefaultInstallment(2),
+        amount: '4000',
+        trigger_type: 'on_completion',
+        required_before_start: true,
+      },
+    ],
+  };
+
+  assert.equal(isPricingFormValid({
+    form,
+    totalAmount: 10000,
+    serviceMode: 'onsite',
+    currency: 'USD',
+  }), false);
+});
+
 test('strictly validates the complete single-payment terms returned by the API', () => {
   const valid = {
     paymentPlanMode: 'single',

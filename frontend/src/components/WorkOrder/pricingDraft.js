@@ -162,6 +162,7 @@ export function isPaymentScheduleValid({ schedule, paymentPlanMode, totalAmount,
   if (schedule.some((row) => !Number.isSafeInteger(row.amount) || row.amount < 1)) return false;
   if (schedule.some((row) => typeof row.description !== 'string')) return false;
   if (schedule.some((row) => typeof row.required_before_start !== 'boolean')) return false;
+  if (schedule.some((row) => row.required_before_start && row.trigger_type !== 'before_start')) return false;
   if (schedule.some((row) => row.trigger_type === 'milestone' && !String(row.description || '').trim())) {
     return false;
   }

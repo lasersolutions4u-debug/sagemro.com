@@ -115,6 +115,9 @@ export function PaymentScheduleEditor({ form, onChange, totalAmount, currency, c
                     onChange={(event) => updateRow(index, {
                       trigger_type: event.target.value,
                       due_date: event.target.value === 'fixed_date' ? installment.due_date : '',
+                      required_before_start: event.target.value === 'before_start'
+                        ? installment.required_before_start
+                        : false,
                     })}
                     className="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
                   >
@@ -165,8 +168,9 @@ export function PaymentScheduleEditor({ form, onChange, totalAmount, currency, c
                   <input
                     type="checkbox"
                     checked={installment.required_before_start}
+                    disabled={installment.trigger_type !== 'before_start'}
                     onChange={(event) => updateRow(index, { required_before_start: event.target.checked })}
-                    className="h-4 w-4 rounded border-[var(--color-border)] text-[var(--color-primary)]"
+                    className="h-4 w-4 rounded border-[var(--color-border)] text-[var(--color-primary)] disabled:opacity-40"
                   />
                   {copy.requiredBeforeStart}
                 </label>

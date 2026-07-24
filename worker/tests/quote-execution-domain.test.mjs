@@ -265,6 +265,25 @@ test('schedule total must match exactly and at least one row must gate service s
   });
 });
 
+test('only before-start triggers can block service start', () => {
+  for (const triggerType of ['on_arrival', 'milestone', 'on_completion', 'on_acceptance', 'fixed_date']) {
+    const result = validatePaymentSchedule([
+      { sequence: 1, amount: 40, currency: 'CNY', trigger_type: 'before_start', required_before_start: true },
+      {
+        sequence: 2,
+        amount: 60,
+        currency: 'CNY',
+        trigger_type: triggerType,
+        due_date: triggerType === 'fixed_date' ? '2026-07-24' : null,
+        description: triggerType === 'milestone' ? 'Commissioning milestone' : '',
+        required_before_start: true,
+      },
+    ], { totalAmount: 100, currency: 'CNY' });
+
+    assert.deepEqual(result, { code: 'payment_schedule_start_prerequisite_trigger_invalid' }, triggerType);
+  }
+});
+
 test('start prerequisite flags accept only booleans and integer boolean values', () => {
   const start = { sequence: 1, amount: 40, currency: 'CNY', trigger_type: 'before_start', required_before_start: true };
   for (const value of ['false', '1', null, undefined, 2]) {

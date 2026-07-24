@@ -19,6 +19,9 @@ const COPY = {
     description: 'Payment term',
     start: 'Start this installment collection',
     starting: 'Starting...',
+    milestoneConfirmation: 'Confirm the agreed milestone',
+    milestoneConfirmationPlaceholder: 'Briefly describe the milestone reached',
+    milestoneConfirmationRequired: 'Confirm the agreed milestone before starting collection.',
     chooseMethod: 'Choose payment method',
     waiting: 'Waiting for Admin confirmation',
     receivedReadOnly: 'Receipt confirmed. This installment is read-only.',
@@ -60,6 +63,9 @@ const COPY = {
     description: '付款说明',
     start: '发起本期收款',
     starting: '正在发起...',
+    milestoneConfirmation: '确认约定里程碑',
+    milestoneConfirmationPlaceholder: '简要说明已达成的里程碑',
+    milestoneConfirmationRequired: '请先确认已达成约定里程碑。',
     chooseMethod: '选择本期付款方式',
     waiting: '等待 Admin 确认到账',
     receivedReadOnly: '本期已确认到账，仅供查看。',
@@ -111,6 +117,7 @@ export function CollectionPanel({ workOrderId, quoteExecution, userType, onChang
   const currency = isCnLocale() ? 'CNY' : 'USD';
   const [startingId, setStartingId] = useState(null);
   const [submittingId, setSubmittingId] = useState(null);
+  const [milestoneConfirmations, setMilestoneConfirmations] = useState({});
   const [claimForms, setClaimForms] = useState({});
   const [submittedClaimIds, setSubmittedClaimIds] = useState(() => new Set());
 
@@ -128,9 +135,17 @@ export function CollectionPanel({ workOrderId, quoteExecution, userType, onChang
 
   const handleStart = async (installment) => {
     if (startingId) return;
+    const requiresMilestoneConfirmation = installment.trigger_type === 'milestone';
+    const milestoneConfirmation = (milestoneConfirmations[installment.id] || '').trim();
+    if (requiresMilestoneConfirmation && !milestoneConfirmation) {
+      toastWarning(copy.milestoneConfirmationRequired);
+      return;
+    }
     setStartingId(installment.id);
     try {
-      await startInstallmentCollection(workOrderId, installment.id);
+      await startInstallmentCollection(workOrderId, installment.id, requiresMilestoneConfirmation
+        ? { milestone_confirmation: milestoneConfirmation }
+        : {});
       toastSuccess(copy.started);
       await onChanged?.();
     } catch (error) {
@@ -217,7 +232,10 @@ export function CollectionPanel({ workOrderId, quoteExecution, userType, onChang
             || submittedClaimIds.has(installment.id);
           const canStart = userType === 'engineer'
             && installment.source !== 'legacy'
-            && ['scheduled', 'due', 'partially_received', 'overdue'].includes(installment.status);
+            && ['scheduled', 'due', 'partially_received', 'overdue'].includes(installment.status)
+            && (installment.status !== 'scheduled' || installment.collection_start_ready === true);
+          const requiresMilestoneConfirmation = canStart
+            && installment.trigger_type === 'milestone';
           const canClaim = userType === 'engineer'
             && installment.source !== 'legacy'
             && !pendingClaim
@@ -260,11 +278,28 @@ export function CollectionPanel({ workOrderId, quoteExecution, userType, onChang
               </div>
 
               <div className="mt-3 flex flex-wrap items-center gap-2">
+                {requiresMilestoneConfirmation && (
+                  <label className="w-full text-xs text-[var(--color-text-secondary)]">
+                    {copy.milestoneConfirmation}
+                    <input
+                      type="text"
+                      required
+                      value={milestoneConfirmations[installment.id] || ''}
+                      onChange={(event) => setMilestoneConfirmations((current) => ({
+                        ...current,
+                        [installment.id]: event.target.value,
+                      }))}
+                      placeholder={copy.milestoneConfirmationPlaceholder}
+                      className="mt-1 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text-primary)]"
+                    />
+                  </label>
+                )}
                 {canStart && (
                   <button
                     type="button"
                     onClick={() => handleStart(installment)}
-                    disabled={Boolean(startingId)}
+                    disabled={Boolean(startingId)
+                      || (requiresMilestoneConfirmation && !(milestoneConfirmations[installment.id] || '').trim())}
                     className="inline-flex h-10 shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-lg bg-[var(--color-primary)] px-3 text-sm font-semibold text-white hover:bg-[var(--color-primary-hover)] disabled:opacity-50"
                   >
                     {startingId === installment.id ? <Loader2 size={16} className="animate-spin" /> : <WalletCards size={16} />}

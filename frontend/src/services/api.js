@@ -1063,11 +1063,11 @@ export async function payWorkOrder(workOrderId, { payment_method, payment_stage 
   return response.json();
 }
 
-export async function startInstallmentCollection(workOrderId, installmentId, { note } = {}) {
+export async function startInstallmentCollection(workOrderId, installmentId, { milestone_confirmation } = {}) {
   const response = await fetch(`${API_BASE}/api/workorders/${workOrderId}/installments/${installmentId}/collect`, {
     method: 'POST',
     headers: authHeaders(),
-    body: JSON.stringify(note ? { note } : {}),
+    body: JSON.stringify(milestone_confirmation ? { milestone_confirmation } : {}),
   });
   const data = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);

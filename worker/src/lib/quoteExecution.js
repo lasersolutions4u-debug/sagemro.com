@@ -70,6 +70,9 @@ export function validatePaymentSchedule(schedule, { totalAmount, currency }) {
   ))) {
     return { code: 'payment_schedule_start_prerequisite_invalid' };
   }
+  if (schedule.some((row) => Boolean(row.required_before_start) && row.trigger_type !== 'before_start')) {
+    return { code: 'payment_schedule_start_prerequisite_trigger_invalid' };
+  }
   if (schedule.some((row) => row.trigger_type === 'milestone' && !String(row.description || '').trim())) {
     return { code: 'payment_schedule_milestone_description_required' };
   }
