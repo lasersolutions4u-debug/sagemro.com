@@ -973,7 +973,9 @@ test('receipt claims use role-facing allowlists without idempotency or Admin ide
   const ctx = createQuoteExecutionEnv();
   ctx.db.exec(`
     INSERT INTO engineers (id, user_no, name, phone, password_hash, engineer_role)
-    VALUES ('lead-1', 'E000002', 'Regional Lead', '13800000002', 'hash', 'regional_lead');
+    VALUES
+      ('lead-1', 'E000002', 'Assigned Regional Lead', '13800000002', 'hash', 'regional_lead'),
+      ('lead-2', 'E000003', 'Unassigned Regional Lead', '13800000003', 'hash', 'regional_lead');
     INSERT INTO admin_staff_accounts (
       id, normalized_login, password_hash, salt, role, display_name, market_scope, must_change_password
     ) VALUES (
@@ -1013,7 +1015,6 @@ test('receipt claims use role-facing allowlists without idempotency or Admin ide
   for (const [userType, userId, auth] of [
     ['customer', 'customer-1', {}],
     ['engineer', 'engineer-1', {}],
-    ['engineer', 'lead-1', {}],
     ['admin', 'admin', {}],
     ['admin', 'operations-1', { staffId: 'operations-1', staffRole: 'operations' }],
   ]) {
@@ -1054,6 +1055,20 @@ test('receipt claims use role-facing allowlists without idempotency or Admin ide
       assert.equal(claim.decision_reason, 'Matched bank receipt');
     }
   }
+
+  const regionalLeadDetail = await api(ctx, '/api/workorders/wo-quote-1', {
+    method: 'GET', userType: 'engineer', userId: 'lead-1',
+  });
+  assert.equal(regionalLeadDetail.response.status, 200);
+  assert.equal(Object.hasOwn(regionalLeadDetail.json.quote_execution.receipt_claims[0], 'evidence'), false);
+  assert.equal(JSON.stringify(regionalLeadDetail.json).includes('evidence-detail-1'), false);
+  assert.equal(JSON.stringify(regionalLeadDetail.json).includes('private/receipt-detail.pdf'), false);
+
+  const unassignedLeadDetail = await api(ctx, '/api/workorders/wo-quote-1', {
+    method: 'GET', userType: 'engineer', userId: 'lead-2',
+  });
+  assert.equal(unassignedLeadDetail.response.status, 403);
+  assert.equal(JSON.stringify(unassignedLeadDetail.json).includes('evidence-detail-1'), false);
 });
 
 test('assigned engineer opens only collectible installments and owning customer controls payment method', async () => {
@@ -1177,7 +1192,6 @@ test('receipt claim validates input, stores private PDF evidence, streams by wor
   for (const [userType, userId] of [
     ['customer', 'customer-1'],
     ['engineer', 'engineer-1'],
-    ['engineer', 'lead-1'],
     ['admin', 'admin'],
   ]) {
     const streamed = await api(ctx, evidencePath, { method: 'GET', userType, userId });
@@ -1205,6 +1219,7 @@ test('receipt claim validates input, stores private PDF evidence, streams by wor
   for (const [userType, userId] of [
     ['customer', 'customer-2'],
     ['engineer', 'engineer-2'],
+    ['engineer', 'lead-1'],
     ['engineer', 'lead-2'],
   ]) {
     const denied = await api(ctx, evidencePath, { method: 'GET', userType, userId });

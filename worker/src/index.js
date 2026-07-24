@@ -14612,7 +14612,13 @@ function isVersionedQuote(pricing) {
   return Number(pricing?.quote_version || 0) >= 1;
 }
 
-function visibleReceiptClaim(row, auth) {
+function canViewReceiptEvidence(auth, workOrder) {
+  return auth?.userType === 'admin'
+    || (auth?.userType === 'customer' && workOrder?.customer_id === auth.userId)
+    || (auth?.userType === 'engineer' && workOrder?.engineer_id === auth.userId);
+}
+
+function visibleReceiptClaim(row, auth, workOrder = null) {
   const visible = {
     id: row.id,
     installment_id: row.installment_id,
@@ -14623,15 +14629,17 @@ function visibleReceiptClaim(row, auth) {
     confirmed_amount: row.confirmed_amount,
     decided_at: row.decided_at,
     created_at: row.created_at,
-    evidence: row.evidence_id ? {
+  };
+  if (canViewReceiptEvidence(auth, workOrder)) {
+    visible.evidence = row.evidence_id ? {
       id: row.evidence_id,
       file_name: row.evidence_file_name,
       mime_type: row.evidence_mime_type,
       file_size: row.evidence_file_size,
       created_at: row.evidence_created_at,
       url: `/api/workorders/${row.work_order_id}/receipt-evidence/${row.evidence_id}`,
-    } : null,
-  };
+    } : null;
+  }
   if (auth?.userType !== 'customer') {
     visible.transaction_reference = row.transaction_reference;
     visible.engineer_note = row.engineer_note;
@@ -14731,7 +14739,7 @@ async function getWorkOrderQuoteExecution(env, workOrder, pricing, auth, market 
       total_amount: totalAmount,
       payment_schedule: paymentSchedule,
       installments: normalizedInstallments,
-      receipt_claims: claims.map((claim) => visibleReceiptClaim(claim, auth)),
+      receipt_claims: claims.map((claim) => visibleReceiptClaim(claim, auth, workOrder)),
       ...summary,
     };
   }
@@ -15282,19 +15290,14 @@ async function handleGetReceiptEvidence(request, env) {
   try {
     const [, , , workOrderId, , evidenceId] = new URL(request.url).pathname.split('/');
     const evidence = await env.DB.prepare(`
-      SELECT evidence.*, work_order.customer_id, work_order.engineer_id,
-        work_order.assigned_regional_lead_id
+      SELECT evidence.*, work_order.customer_id, work_order.engineer_id
       FROM work_order_receipt_evidence evidence
       JOIN work_orders work_order ON work_order.id = evidence.work_order_id
       WHERE evidence.id = ? AND evidence.work_order_id = ?
     `).bind(evidenceId, workOrderId).first();
     if (!evidence) return errorResponse(copy.evidenceNotFound, 404);
     const auth = request._auth;
-    const allowed = auth?.userType === 'admin'
-      || (auth?.userType === 'customer' && evidence.customer_id === auth.userId)
-      || (auth?.userType === 'engineer' && (
-        evidence.engineer_id === auth.userId || evidence.assigned_regional_lead_id === auth.userId
-      ));
+    const allowed = canViewReceiptEvidence(auth, evidence);
     if (!allowed) return errorResponse(copy.evidenceDenied, 403);
     if (!env.FIELD_EVIDENCE) return errorResponse(copy.evidenceUnavailable, 503);
     const object = await env.FIELD_EVIDENCE.get(evidence.object_key);
