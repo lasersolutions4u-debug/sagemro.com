@@ -1,10 +1,12 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { getAdminRatings, replyToRating, getAdminPlatformRatings, getAdminCustomerRatings } from '../services/api';
 import { runtimeConfig } from '../config/runtime';
 
 const TEXT = {
   en: {
     loading: 'Loading...',
+    loadFailed: 'Failed to load reviews.',
+    retry: 'Retry',
     total: (count) => `${count} total`,
     totalReviews: (count) => `${count} review(s)`,
     totalInternalReviews: (count) => `${count} review(s), admin only`,
@@ -46,6 +48,8 @@ const TEXT = {
   },
   'zh-CN': {
     loading: '加载中...',
+    loadFailed: '评价数据加载失败。',
+    retry: '重试',
     total: (count) => `共 ${count} 条`,
     totalReviews: (count) => `共 ${count} 条评价`,
     totalInternalReviews: (count) => `共 ${count} 条评价（仅管理员可见）`,
@@ -114,19 +118,30 @@ function WorkOrderRatings({ t }) {
   const [expandedId, setExpandedId] = useState(null);
   const [replyText, setReplyText] = useState('');
   const [replying, setReplying] = useState(false);
+  const [loadError, setLoadError] = useState('');
+  const [loadAttempt, setLoadAttempt] = useState(0);
+  const loadRequestId = useRef(0);
   const pageSize = 20;
 
   const load = () => {
+    const requestId = ++loadRequestId.current;
     setLoading(true);
+    setLoadError('');
     const filters = { sort };
     if (lowScore) filters.lowScore = 'true';
     getAdminRatings(page, pageSize, filters)
-      .then(setData)
-      .catch(() => {})
-      .finally(() => setLoading(false));
+      .then((response) => {
+        if (loadRequestId.current === requestId) setData(response);
+      })
+      .catch((error) => {
+        if (loadRequestId.current === requestId) setLoadError(error.message || t.loadFailed);
+      })
+      .finally(() => {
+        if (loadRequestId.current === requestId) setLoading(false);
+      });
   };
 
-  useEffect(() => { load(); }, [page, lowScore, sort]);
+  useEffect(() => { load(); }, [page, lowScore, sort, loadAttempt]);
 
   const handleReply = async (ratingId) => {
     if (!replyText.trim()) return;
@@ -166,6 +181,7 @@ function WorkOrderRatings({ t }) {
         </select>
         <span className="text-xs text-[var(--color-text-muted)] ml-auto">{t.total(data.total)}</span>
       </div>
+      {loadError && <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-[var(--color-error)]/40 bg-[var(--color-error)]/5 px-4 py-3 text-sm text-[var(--color-text-secondary)]"><span>{loadError}</span><button onClick={() => setLoadAttempt((current) => current + 1)} className="whitespace-nowrap rounded-lg border border-[var(--color-error)]/40 px-3 py-1.5 text-xs font-medium text-[var(--color-error)]">{t.retry}</button></div>}
 
       {loading ? (
         <div className="text-center py-12 text-[var(--color-text-muted)]">{t.loading}</div>
@@ -286,18 +302,33 @@ function PlatformRatings({ t }) {
   const [data, setData] = useState({ total: 0, list: [] });
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
+  const [loadAttempt, setLoadAttempt] = useState(0);
+  const loadRequestId = useRef(0);
   const pageSize = 20;
 
   useEffect(() => {
+    const requestId = ++loadRequestId.current;
     setLoading(true);
-    getAdminPlatformRatings(page, pageSize).then(setData).catch(() => {}).finally(() => setLoading(false));
-  }, [page]);
+    setLoadError('');
+    getAdminPlatformRatings(page, pageSize)
+      .then((response) => {
+        if (loadRequestId.current === requestId) setData(response);
+      })
+      .catch((error) => {
+        if (loadRequestId.current === requestId) setLoadError(error.message || t.loadFailed);
+      })
+      .finally(() => {
+        if (loadRequestId.current === requestId) setLoading(false);
+      });
+  }, [page, loadAttempt]);
 
   const totalPages = Math.max(1, Math.ceil(data.total / pageSize));
 
   return (
     <div>
       <div className="text-xs text-[var(--color-text-muted)] mb-4">{t.totalReviews(data.total)}</div>
+      {loadError && <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-[var(--color-error)]/40 bg-[var(--color-error)]/5 px-4 py-3 text-sm text-[var(--color-text-secondary)]"><span>{loadError}</span><button onClick={() => setLoadAttempt((current) => current + 1)} className="whitespace-nowrap rounded-lg border border-[var(--color-error)]/40 px-3 py-1.5 text-xs font-medium text-[var(--color-error)]">{t.retry}</button></div>}
       {loading ? (
         <div className="text-center py-12 text-[var(--color-text-muted)]">{t.loading}</div>
       ) : (
@@ -349,18 +380,33 @@ function CustomerRatings({ t }) {
   const [data, setData] = useState({ total: 0, list: [] });
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
+  const [loadAttempt, setLoadAttempt] = useState(0);
+  const loadRequestId = useRef(0);
   const pageSize = 20;
 
   useEffect(() => {
+    const requestId = ++loadRequestId.current;
     setLoading(true);
-    getAdminCustomerRatings(page, pageSize).then(setData).catch(() => {}).finally(() => setLoading(false));
-  }, [page]);
+    setLoadError('');
+    getAdminCustomerRatings(page, pageSize)
+      .then((response) => {
+        if (loadRequestId.current === requestId) setData(response);
+      })
+      .catch((error) => {
+        if (loadRequestId.current === requestId) setLoadError(error.message || t.loadFailed);
+      })
+      .finally(() => {
+        if (loadRequestId.current === requestId) setLoading(false);
+      });
+  }, [page, loadAttempt]);
 
   const totalPages = Math.max(1, Math.ceil(data.total / pageSize));
 
   return (
     <div>
       <div className="text-xs text-[var(--color-text-muted)] mb-4">{t.totalInternalReviews(data.total)}</div>
+      {loadError && <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-[var(--color-error)]/40 bg-[var(--color-error)]/5 px-4 py-3 text-sm text-[var(--color-text-secondary)]"><span>{loadError}</span><button onClick={() => setLoadAttempt((current) => current + 1)} className="whitespace-nowrap rounded-lg border border-[var(--color-error)]/40 px-3 py-1.5 text-xs font-medium text-[var(--color-error)]">{t.retry}</button></div>}
       {loading ? (
         <div className="text-center py-12 text-[var(--color-text-muted)]">{t.loading}</div>
       ) : (

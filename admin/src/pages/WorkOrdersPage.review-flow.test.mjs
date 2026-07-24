@@ -26,7 +26,25 @@ test('admin drawer supports onsite confirmation, arrival audit, and manual overr
   assert.match(source, /onsite_conversion_status/);
   assert.match(source, /adminSiteLocation\.service_latitude === ''/);
   assert.match(source, /adminSiteLocation\.service_longitude === ''/);
-  assert.match(source, /window\.prompt/);
+  assert.doesNotMatch(source, /window\.prompt/);
+  assert.match(source, /role="dialog" aria-modal="true" aria-label=\{operationDialog\.title\}/);
+  assert.match(source, /operationDialog\.type === 'arrival-override'/);
+  assert.match(source, /!values\.reason\.trim\(\)/);
+});
+
+test('service-order actions and China invoice processing use one controlled operation dialog', async () => {
+  const source = await readFile(new URL('./WorkOrdersPage.jsx', import.meta.url), 'utf8');
+
+  assert.match(source, /const \[operationDialog, setOperationDialog\] = useState\(null\)/);
+  assert.match(source, /operationDialog\.type === 'payout'/);
+  assert.match(source, /name="amount"/);
+  assert.match(source, /name="transaction_reference"/);
+  assert.match(source, /name="internal_note"/);
+  assert.match(source, /operationDialog\.type === 'invoice'/);
+  assert.match(source, /name="invoice_number"/);
+  assert.match(source, /!values\.invoice_number\.trim\(\)/);
+  assert.match(source, /setOperationDialog\(\(current\) => \(current \? \{ \.\.\.current, error: operationError \} : current\)\)/);
+  assert.match(source, /!readOnly && detailInvoice\.status === 'pending'/);
 });
 
 test('admin drawer can confirm the completed service balance payment', async () => {
@@ -43,7 +61,7 @@ test('engineer payout controls are limited to completed work orders and lock aft
   const source = await readFile(new URL('./WorkOrdersPage.jsx', import.meta.url), 'utf8');
 
   assert.match(source, /detail\.status === 'completed'[\s\S]*t\.engineerPayoutTitle/);
-  assert.match(source, /detail\.payout_status !== 'completed'[\s\S]*handleUpdatePayout\(detail, 'processing'\)/);
+  assert.match(source, /detail\.payout_status !== 'completed'[\s\S]*openOperationDialog\('payout', detail, \{ status: 'processing' \}\)/);
 });
 
 test('operations staff receive a read-only service-order view', async () => {
