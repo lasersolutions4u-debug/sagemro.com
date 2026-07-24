@@ -1,0 +1,370 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+
+import {
+  PAYMENT_TRIGGER_TYPES,
+  buildDefaultPaymentSchedule,
+  canCreateFieldDay,
+  canFinanciallyArchive,
+  deriveInstallmentState,
+  formatSiteTimezone,
+  summarizeQuoteExecution,
+  validatePaymentSchedule,
+  validateQuoteExecution,
+} from '../src/lib/quoteExecution.js';
+
+test('builds the exact default payment schedule', () => {
+  assert.deepEqual(buildDefaultPaymentSchedule(12000, 'CNY'), [{
+    sequence: 1,
+    amount: 12000,
+    currency: 'CNY',
+    trigger_type: 'before_start',
+    due_date: null,
+    description: '',
+    required_before_start: true,
+  }]);
+});
+
+test('onsite and hybrid quotes require positive integer expected service days', () => {
+  for (const serviceMode of ['onsite', 'hybrid']) {
+    assert.deepEqual(validateQuoteExecution({
+      service_mode: serviceMode,
+      expected_service_days: 0,
+      total_amount: 12000,
+      currency: 'CNY',
+    }), { code: 'expected_service_days_required' });
+    assert.deepEqual(validateQuoteExecution({
+      service_mode: serviceMode,
+      expected_service_days: 1.5,
+      total_amount: 12000,
+      currency: 'CNY',
+    }), { code: 'expected_service_days_required' });
+  }
+});
+
+test('valid onsite service days normalize to an integer number', () => {
+  const result = validateQuoteExecution({
+    service_mode: 'onsite',
+    expected_service_days: '2',
+    total_amount: 12000,
+    currency: 'CNY',
+  });
+  assert.equal(result.value.expected_service_days, 2);
+});
+
+test('installment schedules require two to six rows', () => {
+  assert.deepEqual([...PAYMENT_TRIGGER_TYPES], [
+    'before_start',
+    'on_arrival',
+    'milestone',
+    'on_completion',
+    'on_acceptance',
+    'fixed_date',
+  ]);
+  assert.deepEqual(validatePaymentSchedule([], { totalAmount: 100, currency: 'CNY' }), {
+    code: 'payment_schedule_count_invalid',
+  });
+  assert.deepEqual(validatePaymentSchedule([{
+    sequence: 1,
+    amount: 100,
+    currency: 'CNY',
+    trigger_type: 'before_start',
+    required_before_start: true,
+  }], { totalAmount: 100, currency: 'CNY' }), {
+    code: 'payment_schedule_count_invalid',
+  });
+  const sevenRows = Array.from({ length: 7 }, (_, index) => ({
+    sequence: index + 1,
+    amount: 10,
+    currency: 'CNY',
+    trigger_type: 'before_start',
+    required_before_start: index === 0,
+  }));
+  assert.deepEqual(validatePaymentSchedule(sevenRows, { totalAmount: 70, currency: 'CNY' }), {
+    code: 'payment_schedule_count_invalid',
+  });
+});
+
+test('installment amounts must be positive integer minor units', () => {
+  const base = [
+    { sequence: 1, amount: 40, currency: 'CNY', trigger_type: 'before_start', required_before_start: true },
+    { sequence: 2, amount: 60, currency: 'CNY', trigger_type: 'on_completion' },
+  ];
+  for (const amount of [0, -1, 1.5]) {
+    const schedule = base.map((row) => ({ ...row }));
+    schedule[0].amount = amount;
+    assert.deepEqual(validatePaymentSchedule(schedule, { totalAmount: 100, currency: 'CNY' }), {
+      code: 'payment_schedule_amount_invalid',
+    });
+  }
+});
+
+test('duplicate sequences fail while unique gapped and unsorted sequences normalize to 1..N', () => {
+  const duplicate = [
+    { sequence: 2, amount: 40, currency: 'CNY', trigger_type: 'before_start', required_before_start: true },
+    { sequence: 2, amount: 60, currency: 'CNY', trigger_type: 'on_completion' },
+  ];
+  assert.deepEqual(validatePaymentSchedule(duplicate, { totalAmount: 100, currency: 'CNY' }), {
+    code: 'payment_schedule_sequence_duplicate',
+  });
+
+  const unsorted = [
+    { sequence: 9, amount: 60, currency: 'CNY', trigger_type: 'on_completion', description: ' Final ' },
+    { sequence: 3, amount: 40, currency: 'CNY', trigger_type: 'before_start', required_before_start: 1 },
+  ];
+  assert.deepEqual(validatePaymentSchedule(unsorted, { totalAmount: 100, currency: 'CNY' }), {
+    value: [
+      {
+        sequence: 1,
+        amount: 40,
+        currency: 'CNY',
+        trigger_type: 'before_start',
+        due_date: null,
+        description: '',
+        required_before_start: true,
+      },
+      {
+        sequence: 2,
+        amount: 60,
+        currency: 'CNY',
+        trigger_type: 'on_completion',
+        due_date: null,
+        description: 'Final',
+        required_before_start: false,
+      },
+    ],
+  });
+});
+
+test('schedule currency and triggers must match the quote contract', () => {
+  const base = [
+    { sequence: 1, amount: 40, currency: 'CNY', trigger_type: 'before_start', required_before_start: true },
+    { sequence: 2, amount: 60, currency: 'CNY', trigger_type: 'on_completion' },
+  ];
+  assert.deepEqual(validatePaymentSchedule([
+    base[0],
+    { ...base[1], currency: 'USD' },
+  ], { totalAmount: 100, currency: 'CNY' }), { code: 'payment_schedule_currency_mismatch' });
+  assert.deepEqual(validatePaymentSchedule([
+    base[0],
+    { ...base[1], trigger_type: 'after_lunch' },
+  ], { totalAmount: 100, currency: 'CNY' }), { code: 'payment_schedule_trigger_invalid' });
+});
+
+test('milestones require descriptions and fixed dates require real YYYY-MM-DD dates', () => {
+  const start = { sequence: 1, amount: 40, currency: 'CNY', trigger_type: 'before_start', required_before_start: true };
+  assert.deepEqual(validatePaymentSchedule([
+    start,
+    { sequence: 2, amount: 60, currency: 'CNY', trigger_type: 'milestone', description: '   ' },
+  ], { totalAmount: 100, currency: 'CNY' }), { code: 'payment_schedule_milestone_description_required' });
+
+  for (const dueDate of [null, '2026-02-30', '24-07-2026']) {
+    assert.deepEqual(validatePaymentSchedule([
+      start,
+      { sequence: 2, amount: 60, currency: 'CNY', trigger_type: 'fixed_date', due_date: dueDate },
+    ], { totalAmount: 100, currency: 'CNY' }), { code: 'payment_schedule_due_date_invalid' });
+  }
+  assert.equal(validatePaymentSchedule([
+    start,
+    { sequence: 2, amount: 60, currency: 'CNY', trigger_type: 'fixed_date', due_date: '2026-07-24' },
+  ], { totalAmount: 100, currency: 'CNY' }).value[1].due_date, '2026-07-24');
+});
+
+test('schedule total must match exactly and at least one row must gate service start', () => {
+  const noStartGate = [
+    { sequence: 1, amount: 40, currency: 'CNY', trigger_type: 'on_arrival' },
+    { sequence: 2, amount: 60, currency: 'CNY', trigger_type: 'on_completion' },
+  ];
+  assert.deepEqual(validatePaymentSchedule(noStartGate, { totalAmount: 101, currency: 'CNY' }), {
+    code: 'payment_schedule_total_mismatch',
+  });
+  assert.deepEqual(validatePaymentSchedule(noStartGate, { totalAmount: 100, currency: 'CNY' }), {
+    code: 'payment_schedule_start_prerequisite_required',
+  });
+});
+
+test('quote validation uses normalized installment schedules without mutating input', () => {
+  const input = {
+    service_mode: 'onsite',
+    expected_service_days: 2,
+    payment_plan_mode: 'installments',
+    total_amount: 100,
+    currency: 'CNY',
+    payment_schedule: [
+      { sequence: 9, amount: 60, currency: 'CNY', trigger_type: 'on_completion', description: ' Final ' },
+      { sequence: 3, amount: 40, currency: 'CNY', trigger_type: 'before_start', required_before_start: 1 },
+    ],
+  };
+  const original = structuredClone(input);
+  const result = validateQuoteExecution(input);
+
+  assert.deepEqual(input, original);
+  assert.deepEqual(result.value.payment_schedule.map((row) => row.sequence), [1, 2]);
+  assert.equal(result.value.payment_schedule[1].description, 'Final');
+});
+
+test('installment state follows the documented deterministic priority', () => {
+  const now = '2026-07-25T00:00:00Z';
+  assert.equal(deriveInstallmentState({ amount: 100, received_amount: 100, pending_claim_count: 2 }, now), 'received');
+  assert.equal(deriveInstallmentState({ amount: 100, received_amount: 0, pending_claim_count: 1, due_date: '2026-07-20' }, now), 'pending_confirmation');
+  assert.equal(deriveInstallmentState({ amount: 100, received_amount: 40, pending_claim_count: 0, due_date: '2026-07-20' }, now), 'partially_received');
+  assert.equal(deriveInstallmentState({ amount: 100, received_amount: 0, due_date: '2026-07-24' }, now), 'overdue');
+  assert.equal(deriveInstallmentState({ amount: 100, received_amount: 0, collection_started_at: '2026-07-20T00:00:00Z' }, now), 'collecting');
+  assert.equal(deriveInstallmentState({ amount: 100, received_amount: 0, status: 'due' }, now), 'due');
+  assert.equal(deriveInstallmentState({ amount: 100, received_amount: 0, source: 'due' }, now), 'due');
+  assert.equal(deriveInstallmentState({ amount: 100, received_amount: 0 }, now), 'scheduled');
+});
+
+test('overdue begins only after the end of the due date', () => {
+  const installment = { amount: 100, received_amount: 0, due_date: '2026-07-24' };
+  assert.equal(deriveInstallmentState(installment, '2026-07-24T23:59:59.999Z'), 'scheduled');
+  assert.equal(deriveInstallmentState(installment, '2026-07-25T00:00:00.000Z'), 'overdue');
+});
+
+test('deriving installment state does not mutate input', () => {
+  const installment = {
+    amount: 100,
+    received_amount: 40,
+    pending_claim_count: 0,
+    due_date: '2026-07-24',
+  };
+  const original = structuredClone(installment);
+  deriveInstallmentState(installment, '2026-07-25T00:00:00Z');
+  assert.deepEqual(installment, original);
+});
+
+test('summary caps receipts and requires every start prerequisite to be fully received', () => {
+  const summary = summarizeQuoteExecution({
+    total_amount: 10000,
+    installments: [
+      { amount: 3000, received_amount: 4000, required_before_start: 1 },
+      { amount: 2000, received_amount: 1999, required_before_start: true },
+      { amount: 5000, received_amount: 1000, required_before_start: false },
+    ],
+    initial_workdays: 3,
+    extension_days: 1,
+    reported_dates: [],
+  });
+
+  assert.equal(summary.received_amount, 5999);
+  assert.equal(summary.outstanding_amount, 4001);
+  assert.equal(summary.start_ready, false);
+  assert.equal(summary.financially_settled, false);
+  assert.equal(summary.payment_state, 'partially_received');
+  assert.equal(canFinanciallyArchive(summary), false);
+
+  const ready = summarizeQuoteExecution({
+    total_amount: 10000,
+    installments: [
+      { amount: 3000, received_amount: 3000, required_before_start: true },
+      { amount: 2000, received_amount: 2000, required_before_start: true },
+      { amount: 5000, received_amount: 0, required_before_start: false },
+    ],
+  });
+  assert.equal(ready.start_ready, true);
+});
+
+test('empty installments are neither start-ready nor financially settled', () => {
+  const summary = summarizeQuoteExecution({ total_amount: 100, installments: [] });
+  assert.equal(summary.start_ready, false);
+  assert.equal(summary.financially_settled, false);
+  assert.equal(summary.payment_state, 'unpaid');
+});
+
+test('financial settlement requires every installment to be fully received', () => {
+  const summary = summarizeQuoteExecution({
+    total_amount: 100,
+    installments: [
+      { amount: 60, received_amount: 60 },
+      { amount: 60, received_amount: 40 },
+    ],
+  });
+  assert.equal(summary.outstanding_amount, 0);
+  assert.equal(summary.financially_settled, false);
+  assert.equal(summary.payment_state, 'partially_received');
+});
+
+test('payment state priority is settled, pending confirmation, overdue, partial, unpaid', () => {
+  assert.equal(summarizeQuoteExecution({
+    total_amount: 200,
+    installments: [
+      { amount: 100, received_amount: 0, pending_claim_count: 1 },
+      { amount: 100, received_amount: 0, status: 'overdue' },
+    ],
+  }).payment_state, 'pending_confirmation');
+
+  assert.equal(summarizeQuoteExecution({
+    total_amount: 200,
+    installments: [
+      { amount: 100, received_amount: 20 },
+      { amount: 100, received_amount: 0, status: 'overdue' },
+    ],
+  }).payment_state, 'overdue');
+
+  const settled = summarizeQuoteExecution({
+    total_amount: 200,
+    installments: [
+      { amount: 100, received_amount: 100, pending_claim_count: 1 },
+      { amount: 100, received_amount: 150, status: 'overdue' },
+    ],
+  });
+  assert.equal(settled.payment_state, 'settled');
+  assert.equal(canFinanciallyArchive(settled), true);
+});
+
+test('workday summary counts distinct nonblank dates and exhausts the nonnegative allowance', () => {
+  const summary = summarizeQuoteExecution({
+    total_amount: 100,
+    installments: [{ amount: 100, received_amount: 100, required_before_start: true }],
+    initial_workdays: 2,
+    extension_days: 1,
+    reported_dates: ['2026-07-24', ' 2026-07-24 ', '', null, '2026-07-25', '2026-07-26'],
+  });
+  assert.equal(summary.consumed_workdays, 3);
+  assert.equal(summary.permitted_workdays, 3);
+  assert.equal(summary.remaining_workdays, 0);
+  assert.equal(summary.allowance_exhausted, true);
+  assert.equal(canCreateFieldDay(summary), false);
+
+  const zeroAllowance = summarizeQuoteExecution({
+    total_amount: 0,
+    installments: [],
+    initial_workdays: -2,
+    extension_days: -1,
+    reported_dates: ['2026-07-24'],
+  });
+  assert.equal(zeroAllowance.permitted_workdays, 0);
+  assert.equal(zeroAllowance.remaining_workdays, 0);
+  assert.equal(zeroAllowance.allowance_exhausted, false);
+  assert.equal(canCreateFieldDay(zeroAllowance), true);
+});
+
+test('site timezone localizes only Asia/Shanghai for the CN market', () => {
+  assert.equal(formatSiteTimezone('Asia/Shanghai', 'cn'), '中国标准时间（上海）');
+  assert.equal(formatSiteTimezone('Asia/Shanghai', 'CN'), '中国标准时间（上海）');
+  assert.equal(formatSiteTimezone('Asia/Shanghai', 'com'), 'Asia/Shanghai');
+  assert.equal(formatSiteTimezone('America/Los_Angeles', 'cn'), 'America/Los_Angeles');
+  assert.equal(formatSiteTimezone('Unknown/Zone', 'cn'), 'Unknown/Zone');
+  assert.equal(formatSiteTimezone('', 'cn'), '');
+  assert.equal(formatSiteTimezone(null, 'cn'), '');
+});
+
+test('remote quotes clear expected days and non-installment modes normalize to single', () => {
+  assert.deepEqual(validateQuoteExecution({
+    service_mode: 'remote',
+    expected_service_days: 4,
+    payment_plan_mode: 'custom',
+    total_amount: 12000,
+    currency: 'CNY',
+    payment_schedule: [{ amount: 1 }],
+  }), {
+    value: {
+      service_mode: 'remote',
+      expected_service_days: null,
+      payment_plan_mode: 'single',
+      total_amount: 12000,
+      currency: 'CNY',
+      payment_schedule: buildDefaultPaymentSchedule(12000, 'CNY'),
+    },
+  });
+});
