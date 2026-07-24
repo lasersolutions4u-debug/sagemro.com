@@ -506,7 +506,7 @@ export function CustomerPricingPanel({ workOrderId, customerId, serviceMode = 'r
     const normalizedCounterOffer = counterOffer === ''
       ? null
       : parseCanonicalDecimalInteger(counterOffer);
-    if (counterOffer !== '' && normalizedCounterOffer === null) {
+    if (counterOffer !== '' && (normalizedCounterOffer === null || normalizedCounterOffer <= 0)) {
       toastWarning(t.customer.counterOfferInvalid);
       return;
     }

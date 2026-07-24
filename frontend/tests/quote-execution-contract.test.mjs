@@ -70,11 +70,11 @@ test('customer confirmation shows localized invalid server terms and disables co
   assert.match(source, /报价付款条款无效/);
 });
 
-test('customer negotiation blocks malformed nonempty counteroffers', async () => {
+test('customer negotiation blocks malformed and zero nonempty counteroffers', async () => {
   const source = await readSource('../src/components/WorkOrder/PricingPanels.jsx');
 
   assert.match(source, /const normalizedCounterOffer = counterOffer === ''/);
-  assert.match(source, /counterOffer !== '' && normalizedCounterOffer === null/);
+  assert.match(source, /counterOffer !== '' && \(normalizedCounterOffer === null \|\| normalizedCounterOffer <= 0\)/);
   assert.match(source, /toastWarning\(t\.customer\.counterOfferInvalid\)/);
   assert.match(source, /rejectReason,\s*normalizedCounterOffer/);
 });
