@@ -1,6 +1,6 @@
 export async function handleDiagnosticRoute(request, env, deps) {
   const {
-    checkPricing合理性, computeSlaDeadline, errorResponse, findMatchingEngineers,
+    checkPricingReasonableness, computeSlaDeadline, errorResponse, findMatchingEngineers,
     generateId, generateUserNo, generateWorkOrderSummary, getRequestMarket,
     hashPasswordLegacy, jsonResponse, sendPushToEngineer,
   } = deps;
@@ -411,7 +411,7 @@ export async function handleDiagnosticRoute(request, env, deps) {
       const engineerPayout = Math.round(subtotal * commissionRate);     // 工程师实得
 
       // AI 审核报价
-      const aiCheck = await checkPricing合理性({ labor_fee: laborFee, parts_fee: partsFee, travel_fee: travelFee, other_fee: otherFee, total_amount: subtotal }, workOrderId, env);
+      const aiCheck = await checkPricingReasonableness({ labor_fee: laborFee, parts_fee: partsFee, travel_fee: travelFee, other_fee: otherFee, total_amount: subtotal }, workOrderId, env);
 
       const pricingId = generateId();
       await env.DB.prepare(`

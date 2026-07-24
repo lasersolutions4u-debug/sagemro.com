@@ -52,6 +52,8 @@ const TEXT = {
     all: 'All',
     total: (count) => `${count} total`,
     loading: 'Loading...',
+    loadFailed: 'Failed to load machine leads.',
+    retry: 'Retry',
     updateFailed: 'Update failed: ',
     salesFollowUp: 'Admin sales routing',
     engineerAssisted: 'Engineer-assisted',
@@ -112,6 +114,8 @@ const TEXT = {
     all: '全部',
     total: (count) => `共 ${count} 条`,
     loading: '加载中...',
+    loadFailed: '整机线索加载失败。',
+    retry: '重试',
     updateFailed: '更新失败：',
     salesFollowUp: 'Admin 销售流转',
     engineerAssisted: '工程师协同',
@@ -147,13 +151,15 @@ export function LeadsPage() {
   const [statusFilter, setStatusFilter] = useState('all');
   const [updatingId, setUpdatingId] = useState(null);
   const [message, setMessage] = useState('');
+  const [loadError, setLoadError] = useState('');
   const pageSize = 20;
 
   const load = () => {
     setLoading(true);
+    setLoadError('');
     getAdminLeads(page, pageSize, statusFilter)
       .then(setData)
-      .catch(() => {})
+      .catch((error) => setLoadError(error.message || t.loadFailed))
       .finally(() => setLoading(false));
   };
 
@@ -186,6 +192,12 @@ export function LeadsPage() {
       {message && (
         <div className="mb-4 rounded-lg bg-[var(--color-surface-elevated)] px-4 py-3 text-sm text-[var(--color-text-secondary)]">
           {message}
+        </div>
+      )}
+      {loadError && (
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-[var(--color-error)]/40 bg-[var(--color-error)]/5 px-4 py-3 text-sm text-[var(--color-text-secondary)]">
+          <span>{loadError}</span>
+          <button onClick={load} className="whitespace-nowrap rounded-lg border border-[var(--color-error)]/40 px-3 py-1.5 text-xs font-medium text-[var(--color-error)]">{t.retry}</button>
         </div>
       )}
 

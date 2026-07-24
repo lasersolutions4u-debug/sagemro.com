@@ -10,8 +10,6 @@ import {
   hashPasswordLegacy,
   verifyPassword,
   generateOrderNo,
-  base64UrlEncode,
-  base64UrlDecode,
   signJwt,
 } from './lib/auth.js';
 import {
@@ -2836,83 +2834,6 @@ async function handleRegisterCustomer(request, env) {
     return jsonResponse({
       success: true,
       customer: { id, user_no: userNo, name, phone, email: normalizedEmail || '' }
-    });
-  } catch (error) {
-    return errorResponse(error.message, 500);
-  }
-}
-
-// 工程师注册
-async function handleRegisterEngineer(request, env) {
-  try {
-    const {
-      name, phone, password, code,
-      specialties, brands, services, service_region, bio,
-      company
-    } = await request.json();
-
-    if (!name || !phone || !password || !company) {
-      return localizedErrorResponse('name_phone_company_password_required', request);
-    }
-    if (isPasswordTooShort(password)) {
-      return passwordTooShortResponse(request);
-    }
-
-    // 验证验证码（开发环境支持 bypass 码 "888888" + DEV_BYPASS_CODE 用于自动化测试）
-    const storedCode = await env.KV.get(`verify_code_${phone}`);
-    const bypassCode = await env.KV.get(`verify_code_${phone}_bypass`);
-    const devBypass = env.DEV_BYPASS_CODE;
-    const isValid = (storedCode && storedCode === code)
-      || (bypassCode && bypassCode === code)
-      || (devBypass && devBypass === code);
-    if (!isValid) {
-      return errorResponse('验证码错误或已过期');
-    }
-
-    // 检查手机号是否已在任意角色注册（跨表去重）
-    const existingEngineer = await env.DB.prepare(
-      'SELECT id FROM engineers WHERE phone = ?'
-    ).bind(phone).first();
-    const existingCustomer = await env.DB.prepare(
-      'SELECT id FROM customers WHERE phone = ?'
-    ).bind(phone).first();
-
-    if (existingEngineer || existingCustomer) {
-      return errorResponse('该手机号已注册', 409);
-    }
-
-    // 创建工程师
-    const id = generateId();
-    const userNo = await generateUserNo(env, 'E');
-    const salt = generateSalt();
-    const passwordHash = await hashPasswordNew(password, salt);
-
-    await env.DB.prepare(`
-      INSERT INTO engineers (id, user_no, name, phone, password_hash, salt, specialties, brands, services, service_region, bio, level, commission_rate, credit_score, wallet_balance, deposit_balance, company, auth_status)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).bind(
-      id, userNo, name, phone, passwordHash, salt,
-      JSON.stringify(specialties || []),
-      JSON.stringify(brands || {}),
-      JSON.stringify(services || []),
-      JSON.stringify(service_region || []),
-      bio || '',
-      'junior',   // 默认初级工程师
-      0.80,       // 默认提成80%
-      100,        // 初始信用分100
-      0,          // 初始钱包余额0
-      0,          // 初始保证金余额0
-      company || '',
-      'authenticated'  // 工程师注册时已完成认证
-    ).run();
-
-    // 删除已使用的验证码
-    await env.KV.delete(`verify_code_${phone}`);
-    await incrementApiCounter(env, "register_engineer");
-
-    return jsonResponse({
-      success: true,
-      engineer: { id, user_no: userNo, name, phone }
     });
   } catch (error) {
     return errorResponse(error.message, 500);
@@ -7893,110 +7814,6 @@ async function handleChangePassword(request, env) {
     await env.DB.prepare(`UPDATE ${table} SET password_hash = ?, salt = ? WHERE id = ?`).bind(newHash, newSalt, auth.userId).run();
 
     return jsonResponse({ success: true });
-  } catch (error) {
-    return errorResponse(error.message, 500);
-  }
-}
-
-// ============ 工程师钱包与保证金 API ============
-// SERVICE_OS_LEGACY: old marketplace wallet/withdrawal model. Do not expose as a customer-facing capability.
-
-// 获取工程师钱包信息（余额 + 摘要）
-async function handleGetEngineerWallet(request, env) {
-  try {
-    const engineerId = request._auth?.userId || new URL(request.url).searchParams.get('engineer_id');
-    if (!engineerId) return errorResponse('缺少工程师ID');
-
-    const engineer = await env.DB.prepare(
-      'SELECT id, wallet_balance, deposit_balance, level, commission_rate, credit_score FROM engineers WHERE id = ?'
-    ).bind(engineerId).first();
-
-    if (!engineer) return errorResponse('工程师不存在', 404);
-
-    // 最近10条钱包流水
-    const walletHistory = await env.DB.prepare(
-      'SELECT * FROM engineer_wallets WHERE engineer_id = ? ORDER BY created_at DESC LIMIT 10'
-    ).bind(engineerId).all();
-
-    // 最近10条保证金流水
-    const depositHistory = await env.DB.prepare(
-      'SELECT * FROM engineer_deposits WHERE engineer_id = ? ORDER BY created_at DESC LIMIT 10'
-    ).bind(engineerId).all();
-
-    return jsonResponse({
-      wallet_balance: engineer.wallet_balance || 0,
-      deposit_balance: engineer.deposit_balance || 0,
-      level: engineer.level || 'junior',
-      commission_rate: engineer.commission_rate || 0.80,
-      credit_score: engineer.credit_score || 100,
-      wallet_history: walletHistory.results || [],
-      deposit_history: depositHistory.results || [],
-    });
-  } catch (error) {
-    return errorResponse(error.message, 500);
-  }
-}
-
-// SERVICE_OS_LEGACY: old marketplace withdrawal model. Replace with internal payroll/settlement before deletion.
-// 申请提现
-async function handleWithdrawRequest(request, env) {
-  try {
-    const engineerId = request._auth?.userId;
-    if (!engineerId) return errorResponse('未登录或登录已过期', 401);
-
-    const { amount } = await request.json();
-    if (!amount || amount <= 0) return errorResponse('请输入正确的提现金额');
-    if (amount < 100) return errorResponse('提现金额不能低于100元');
-    if (amount > 50000) return errorResponse('单次提现金额不能超过50000元');
-
-    const engineer = await env.DB.prepare(
-      'SELECT wallet_balance, bank_account, bank_name FROM engineers WHERE id = ?'
-    ).bind(engineerId).first();
-
-    if (!engineer) return errorResponse('工程师不存在', 404);
-    if (!engineer.bank_account || !engineer.bank_name) {
-      return errorResponse('请先在档案中绑定银行卡信息');
-    }
-    if ((engineer.wallet_balance || 0) < amount) {
-      return errorResponse('钱包余额不足');
-    }
-
-    // 检查是否有处理中的提现申请
-    const pending = await env.DB.prepare(
-      "SELECT id FROM engineer_withdrawals WHERE engineer_id = ? AND status = 'pending'"
-    ).bind(engineerId).first();
-    if (pending) return errorResponse('您有待处理的提现申请，请等待处理完成后再申请');
-
-    const id = generateId();
-    // 事务性：先从钱包余额扣款冻结，再创建提现记录，再写入钱包流水（withdraw_pending）。
-    // 若提现被拒，运营侧需对应回写钱包余额 + 补冲流水。
-    const newBalance = (engineer.wallet_balance || 0) - amount;
-    await env.DB.prepare(
-      'UPDATE engineers SET wallet_balance = ? WHERE id = ?'
-    ).bind(newBalance, engineerId).run();
-
-    await env.DB.prepare(`
-      INSERT INTO engineer_withdrawals (id, engineer_id, amount, status)
-      VALUES (?, ?, ?, 'pending')
-    `).bind(id, engineerId, amount).run();
-
-    await env.DB.prepare(`
-      INSERT INTO engineer_wallets (id, engineer_id, work_order_id, type, amount, balance_after, status, note)
-      VALUES (?, ?, NULL, 'withdraw', ?, ?, 'pending', ?)
-    `).bind(
-      generateId(),
-      engineerId,
-      -amount,
-      newBalance,
-      `提现申请 ${id}`
-    ).run();
-
-    return jsonResponse({
-      success: true,
-      withdrawal_id: id,
-      wallet_balance: newBalance,
-      message: `提现申请已提交，预计 T+1 工作日到账至 ${engineer.bank_name}（${engineer.bank_account.slice(-4).padStart(engineer.bank_account.length, '*')}）`
-    });
   } catch (error) {
     return errorResponse(error.message, 500);
   }
@@ -13879,9 +13696,6 @@ async function checkPricingReasonableness(pricing, workOrderId, env) {
   }
 }
 
-// 旧名兼容（其他调用处仍在用中文函数名，等 Task #12 统一重命名再去掉）
-const checkPricing合理性 = checkPricingReasonableness;
-
 // 调用 LLM 生成报价解读。失败返回 null，不影响主流程。
 async function generatePricingAINote(ctx, env) {
   // 后台系统调用，计入全平台日配额
@@ -14020,7 +13834,7 @@ async function handleSubmitWorkOrderPricing(request, env) {
     const engineerPayout = Math.round(subtotal * commissionRate);
 
     // AI 审核
-    const aiCheck = await checkPricing合理性({ labor_fee, parts_fee, travel_fee, other_fee, total_amount: subtotal }, workOrderId, env);
+    const aiCheck = await checkPricingReasonableness({ labor_fee, parts_fee, travel_fee, other_fee, total_amount: subtotal }, workOrderId, env);
 
     // 检查是否已有报价
     const existing = await env.DB.prepare(
@@ -14973,6 +14787,14 @@ async function routeRequest(request, env, ctx) {
     // Sentry 端到端冒烟测试。匹配 path 就拦下——要么抛错触发 Sentry，要么返回诊断
     // 响应说明为什么没触发，避免 fall through 到后面的认证守卫让人以为路由没生效。
     if (path === '/api/__sentry-test') {
+      const testSecret = request.headers.get('X-Sentry-Test-Secret');
+      if (
+        env.ENVIRONMENT !== 'development'
+        || !env.SENTRY_TEST_SECRET
+        || testSecret !== env.SENTRY_TEST_SECRET
+      ) {
+        return errorResponse(getRequestMarket(request) === 'cn' ? '未找到' : 'Not found', 404);
+      }
       const method = request.method;
       const header = request.headers.get('X-Sentry-Test');
       const hasDsn = Boolean(env?.SENTRY_DSN);
@@ -14998,7 +14820,7 @@ async function routeRequest(request, env, ctx) {
       if (!admin) return errorResponse('需要管理员权限', 403);
       const { handleDiagnosticRoute } = await import('./dev/diagnostics.js');
       const response = await handleDiagnosticRoute(request, env, {
-        checkPricing合理性, computeSlaDeadline, errorResponse, findMatchingEngineers,
+        checkPricingReasonableness, computeSlaDeadline, errorResponse, findMatchingEngineers,
         generateId, generateUserNo, generateWorkOrderSummary, getRequestMarket,
         hashPasswordLegacy, jsonResponse, sendPushToEngineer,
       });

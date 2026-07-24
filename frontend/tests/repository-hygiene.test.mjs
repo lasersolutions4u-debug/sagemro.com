@@ -29,6 +29,16 @@ const retiredFrontendFiles = [
   'frontend/src/styles/tokens.css',
 ];
 
+const retiredFrontendApiFunctions = [
+  'addWorkOrderMaterialItem',
+  'applyWithdraw',
+  'getCustomerReviews',
+  'getEngineerWallet',
+  'getRecommendedEngineers',
+  'getRepairRecord',
+  'uploadChatImage',
+];
+
 function collectFiles(directory) {
   if (!existsSync(directory)) return [];
   return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
@@ -51,4 +61,11 @@ test('generated acceptance screenshots stay outside Git-tracked report folders',
     .filter((file) => /\/screenshots\/.*\.png$/i.test(file));
 
   assert.deepEqual(screenshots, []);
+});
+
+test('retired frontend API clients stay out of the application bundle', () => {
+  const api = readFileSync(path.join(root, 'frontend/src/services/api.js'), 'utf8');
+  for (const functionName of retiredFrontendApiFunctions) {
+    assert.doesNotMatch(api, new RegExp(`export async function ${functionName}\\b`), functionName);
+  }
 });
