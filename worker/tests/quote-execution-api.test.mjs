@@ -35,6 +35,9 @@ function createD1Database(db, hooks) {
       const beforeBatch = hooks.beforeNextBatch;
       hooks.beforeNextBatch = null;
       if (beforeBatch) await beforeBatch();
+      const batchError = hooks.nextBatchError;
+      hooks.nextBatchError = null;
+      if (batchError) throw batchError;
       db.exec('BEGIN IMMEDIATE');
       try {
         const results = [];
@@ -51,7 +54,7 @@ function createD1Database(db, hooks) {
 
 function createQuoteExecutionEnv({ market = 'com' } = {}) {
   const db = new DatabaseSync(':memory:');
-  const hooks = { beforeNextBatch: null };
+  const hooks = { beforeNextBatch: null, nextBatchError: null };
   db.exec('PRAGMA foreign_keys = ON;');
   db.exec(schemaSql);
   db.exec(`
@@ -83,6 +86,9 @@ function createQuoteExecutionEnv({ market = 'com' } = {}) {
     host: market === 'cn' ? 'https://api.sagemro.cn' : 'https://api.sagemro.com',
     beforeNextBatch(callback) {
       hooks.beforeNextBatch = callback;
+    },
+    failNextBatch(error) {
+      hooks.nextBatchError = error;
     },
   };
 }
@@ -163,6 +169,7 @@ async function reviewQuote(ctx, action, quoteVersion, note = '') {
 }
 
 async function confirmBaselineForReceiptTests(ctx) {
+  // Test fixture only: Task 4 owns customer activation and installment creation.
   await submitQuote(ctx);
   await reviewQuote(ctx, 'approve', 1);
   ctx.db.exec(`
@@ -227,9 +234,17 @@ test('quote submission persists one pending immutable version and its complete s
   ]);
 
   const audit = ctx.db.prepare(`
-    SELECT after_state FROM audit_logs
+    SELECT before_state, after_state FROM audit_logs
     WHERE target_id = ? AND action = 'pricing_submitted_for_review'
   `).get('wo-quote-1');
+  assert.deepEqual(JSON.parse(audit.before_state), {
+    pricing_projection: null,
+    quote_review: {
+      status: 'not_required',
+      quote_version: null,
+      pricing_status: null,
+    },
+  });
   assert.deepEqual(JSON.parse(audit.after_state), {
     quote_review_status: 'pending_review',
     quote_version: 1,
@@ -404,6 +419,9 @@ test('confirmed receipts block baseline replacement but allow a linked supplemen
   const baselineScheduleBefore = ctx.db.prepare(`
     SELECT * FROM work_order_payment_schedule WHERE quote_version = 1 ORDER BY sequence
   `).all();
+  const baselineHistoryBefore = {
+    ...ctx.db.prepare('SELECT * FROM work_order_pricing_history WHERE version = 1').get(),
+  };
 
   const blocked = await submitQuote(ctx, quotePayload());
   assert.equal(blocked.response.status, 409);
@@ -428,12 +446,122 @@ test('confirmed receipts block baseline replacement but allow a linked supplemen
     ctx.db.prepare('SELECT * FROM work_order_payment_schedule WHERE quote_version = 1 ORDER BY sequence').all(),
     baselineScheduleBefore,
   );
+  const projection = ctx.db.prepare('SELECT * FROM work_order_pricing WHERE work_order_id = ?').get('wo-quote-1');
+  assert.equal(projection.quote_version, 2);
+  assert.equal(projection.labor_fee, 10000);
+  assert.equal(projection.parts_fee, 2500);
+  assert.equal(projection.travel_fee, 1000);
+  assert.equal(projection.total_amount, 13500);
+  assert.equal(projection.expected_service_days, 3);
+  assert.equal(projection.payment_plan_mode, 'installments');
+  assert.deepEqual(
+    { ...ctx.db.prepare('SELECT * FROM work_order_pricing_history WHERE version = 1').get() },
+    baselineHistoryBefore,
+  );
+  const audit = ctx.db.prepare(`
+    SELECT before_state, after_state FROM audit_logs
+    WHERE action = 'pricing_submitted_for_review' ORDER BY created_at DESC, id DESC LIMIT 1
+  `).get();
+  assert.deepEqual(JSON.parse(audit.before_state), {
+    pricing_projection: {
+      quote_version: 1,
+      status: 'submitted',
+      labor_fee: 9000,
+      parts_fee: 2000,
+      travel_fee: 1000,
+      other_fee: 0,
+      subtotal: 12000,
+      total_amount: 12000,
+      platform_fee: 1800,
+      deposit_withhold: 600,
+      expected_service_days: 3,
+      payment_plan_mode: 'installments',
+    },
+    quote_review: {
+      status: 'approved',
+      quote_version: 1,
+      pricing_status: 'submitted',
+    },
+  });
+  assert.equal(JSON.parse(audit.after_state).quote_version, 2);
+  assert.equal(JSON.parse(audit.after_state).payment_schedule.length, 1);
 
   const approval = await reviewQuote(ctx, 'approve', 2);
   assert.equal(approval.response.status, 200);
   assert.equal(approval.json.quote.quote_kind, 'supplemental');
   assert.equal(approval.json.quote.parent_quote_version, 1);
   assert.equal(ctx.db.prepare('SELECT status FROM work_order_pricing_history WHERE version = 1').get().status, 'confirmed');
+});
+
+test('supplemental projection keeps the confirmed baseline visible to customers while staff sees review terms', async () => {
+  const ctx = createQuoteExecutionEnv();
+  await confirmBaselineForReceiptTests(ctx);
+  await submitQuote(ctx, quotePayload({
+    labor_fee: 1000,
+    parts_fee: 500,
+    travel_fee: 0,
+    expected_service_days: 1,
+    quote_kind: 'supplemental',
+    parent_quote_version: 1,
+    payment_plan_mode: 'single',
+    payment_schedule: undefined,
+  }));
+
+  const customer = await api(ctx, '/api/workorders/wo-quote-1', {
+    method: 'GET', userType: 'customer', userId: 'customer-1',
+  });
+  assert.equal(customer.response.status, 200);
+  assert.equal(customer.json.pricing.quote_version, 1);
+  assert.equal(customer.json.pricing.total_amount, 12000);
+  assert.equal(customer.json.pricing.payment_schedule.length, 2);
+  const customerPricing = await api(ctx, '/api/workorders/wo-quote-1/pricing', {
+    method: 'GET', userType: 'customer', userId: 'customer-1',
+  });
+  assert.equal(customerPricing.response.status, 200);
+  assert.equal(customerPricing.json.pricing.quote_version, 1);
+  assert.equal(customerPricing.json.pricing.total_amount, 12000);
+  assert.equal(customerPricing.json.pricing.payment_schedule.length, 2);
+
+  const engineer = await api(ctx, '/api/workorders/wo-quote-1', {
+    method: 'GET', userType: 'engineer', userId: 'engineer-1',
+  });
+  assert.equal(engineer.response.status, 200);
+  assert.equal(engineer.json.pricing.quote_version, 2);
+  assert.equal(engineer.json.pricing.total_amount, 13500);
+  assert.equal(engineer.json.pricing.payment_schedule.reduce((sum, row) => sum + row.amount, 0), 13500);
+});
+
+test('generic detail hides pending and rejected review schedules from customers', async () => {
+  const ctx = createQuoteExecutionEnv();
+  await submitQuote(ctx);
+
+  const pendingCustomer = await api(ctx, '/api/workorders/wo-quote-1', {
+    method: 'GET', userType: 'customer', userId: 'customer-1',
+  });
+  assert.equal(pendingCustomer.response.status, 200);
+  assert.equal(pendingCustomer.json.pricing, null);
+
+  const engineer = await api(ctx, '/api/workorders/wo-quote-1', {
+    method: 'GET', userType: 'engineer', userId: 'engineer-1',
+  });
+  assert.equal(engineer.json.pricing.payment_schedule.length, 2);
+
+  await reviewQuote(ctx, 'reject', 1, 'Clarify the acceptance trigger.');
+  const rejectedCustomer = await api(ctx, '/api/workorders/wo-quote-1', {
+    method: 'GET', userType: 'customer', userId: 'customer-1',
+  });
+  assert.equal(rejectedCustomer.response.status, 200);
+  assert.equal(rejectedCustomer.json.pricing, null);
+});
+
+test('first-quote uniqueness constraint is returned as a localized conflict', async () => {
+  const ctx = createQuoteExecutionEnv();
+  ctx.failNextBatch(new Error('D1_ERROR: UNIQUE constraint failed: work_order_pricing.work_order_id: SQLITE_CONSTRAINT'));
+
+  const result = await submitQuote(ctx);
+
+  assert.equal(result.response.status, 409);
+  assert.equal(result.json.error, 'The quote changed. Refresh and try again.');
 });
 
 test('baseline replacement fails when a receipt is confirmed between eligibility read and batch write', async () => {

@@ -5451,15 +5451,17 @@ async function handleGetWorkOrder(request, env) {
     const pricing = await env.DB.prepare(
       'SELECT * FROM work_order_pricing WHERE work_order_id = ?'
     ).bind(id).first();
-    const pricingSchedule = pricing
-      ? await listQuotePaymentSchedule(env, id, pricing.quote_version)
-      : [];
+    const pricingView = await getWorkOrderPricingView(
+      env, workOrder, pricing, request._auth?.userType === 'customer',
+    );
+    const detailPricing = pricingView?.pricing || null;
+    const pricingSchedule = pricingView?.payment_schedule || [];
 
     const paymentRecords = await env.DB.prepare(
       'SELECT * FROM work_order_payments WHERE work_order_id = ? ORDER BY created_at ASC'
     ).bind(id).all();
     const payments = paymentRecords.results || [];
-    const paymentPolicy = pricing ? computeServicePaymentPolicy(pricing) : null;
+    const paymentPolicy = detailPricing ? computeServicePaymentPolicy(detailPricing) : null;
 
     let payout = await env.DB.prepare(
       'SELECT * FROM work_order_payouts WHERE work_order_id = ?'
@@ -5592,8 +5594,8 @@ async function handleGetWorkOrder(request, env) {
       repair_record: repairRecord
         ? { ...repairRecord, material_items: materialItems.filter((item) => item.purpose === 'service_report') }
         : null,
-      pricing: pricing ? {
-        ...pricing,
+      pricing: detailPricing ? {
+        ...detailPricing,
         material_items: quoteMaterialItems,
         payment_policy: paymentPolicy,
         payment_schedule: pricingSchedule,
@@ -13751,20 +13753,18 @@ async function handleGetWorkOrderPricing(request, env) {
       'SELECT * FROM work_order_pricing WHERE work_order_id = ?'
     ).bind(workOrderId).first();
     const materialItems = await listWorkOrderMaterialItems(env, workOrderId, { purpose: 'quote' });
-    const paymentPolicy = pricing ? computeServicePaymentPolicy(pricing) : null;
-    const paymentSchedule = pricing
-      ? await listQuotePaymentSchedule(env, workOrderId, pricing.quote_version)
-      : [];
-    if (
-      request._auth?.userType === 'customer' &&
-      pricing &&
-      !['submitted', 'confirmed'].includes(pricing.status)
-    ) {
+    const pricingView = await getWorkOrderPricingView(
+      env, wo, pricing, request._auth?.userType === 'customer',
+    );
+    const visiblePricing = pricingView?.pricing || null;
+    if (request._auth?.userType === 'customer' && pricing && !visiblePricing) {
       return jsonResponse({ pricing: null, quote_review_status: wo.quote_review_status || 'pending_review' });
     }
+    const paymentPolicy = visiblePricing ? computeServicePaymentPolicy(visiblePricing) : null;
+    const paymentSchedule = pricingView?.payment_schedule || [];
     return jsonResponse({
-      pricing: pricing ? {
-        ...pricing,
+      pricing: visiblePricing ? {
+        ...visiblePricing,
         material_items: materialItems,
         payment_policy: paymentPolicy,
         payment_schedule: paymentSchedule,
@@ -14064,6 +14064,37 @@ async function handleSubmitWorkOrderPricing(request, env) {
     const existing = await env.DB.prepare(
       'SELECT * FROM work_order_pricing WHERE work_order_id = ?'
     ).bind(workOrderId).first();
+    const activeBaseline = quoteKind === 'supplemental'
+      ? await env.DB.prepare(`
+        SELECT history.*
+        FROM work_order_pricing_history history
+        WHERE history.pricing_id = ? AND history.version = ?
+          AND history.quote_kind = 'baseline' AND history.status = 'confirmed'
+      `).bind(existing?.id || '', parentQuoteVersion).first()
+      : null;
+    const projectionFees = activeBaseline ? {
+      labor_fee: (activeBaseline.labor_fee || 0) + (labor_fee || 0),
+      parts_fee: (activeBaseline.parts_fee || 0) + (parts_fee || 0),
+      travel_fee: (activeBaseline.travel_fee || 0) + (travel_fee || 0),
+      other_fee: (activeBaseline.other_fee || 0) + (other_fee || 0),
+      subtotal: (activeBaseline.subtotal || 0) + subtotal,
+      total_amount: (activeBaseline.total_amount || 0) + subtotal,
+      platform_fee: (activeBaseline.platform_fee || 0) + platformFee,
+      deposit_withhold: (activeBaseline.deposit_withhold || 0) + depositWithhold,
+      expected_service_days: activeBaseline.expected_service_days ?? quoteExecution.expected_service_days,
+      payment_plan_mode: 'installments',
+    } : {
+      labor_fee: labor_fee || 0,
+      parts_fee: parts_fee || 0,
+      travel_fee: travel_fee || 0,
+      other_fee: other_fee || 0,
+      subtotal,
+      total_amount: subtotal,
+      platform_fee: platformFee,
+      deposit_withhold: depositWithhold,
+      expected_service_days: quoteExecution.expected_service_days,
+      payment_plan_mode: quoteExecution.payment_plan_mode,
+    };
     const pricingId = existing?.id || generateId();
     const latestVersion = existing
       ? Number((await env.DB.prepare(
@@ -14134,10 +14165,13 @@ async function handleSubmitWorkOrderPricing(request, env) {
           status = 'pending_review', submitted_at = datetime('now'),
           quote_version = ?, expected_service_days = ?, payment_plan_mode = ?
         WHERE work_order_id = ? AND quote_version = ?
-      `).bind(labor_fee || 0, parts_fee || 0, travel_fee || 0, other_fee || 0,
-           JSON.stringify(parts_detail || []), subtotal, platformFee, depositWithhold, subtotal,
-           JSON.stringify(aiCheck), nextVersion, quoteExecution.expected_service_days,
-           quoteExecution.payment_plan_mode, workOrderId, Number(existing.quote_version || 0)));
+      `).bind(
+        projectionFees.labor_fee, projectionFees.parts_fee, projectionFees.travel_fee,
+        projectionFees.other_fee, JSON.stringify(parts_detail || []), projectionFees.subtotal,
+        projectionFees.platform_fee, projectionFees.deposit_withhold, projectionFees.total_amount,
+        JSON.stringify(aiCheck), nextVersion, projectionFees.expected_service_days,
+        projectionFees.payment_plan_mode, workOrderId, Number(existing.quote_version || 0),
+      ));
       statements.push(env.DB.prepare(`
         SELECT CASE WHEN changes() = 1 THEN 1 ELSE json('quote version concurrent update') END
       `));
@@ -14187,6 +14221,14 @@ async function handleSubmitWorkOrderPricing(request, env) {
       targetType: 'work_order',
       targetId: workOrderId,
       action: 'pricing_submitted_for_review',
+      beforeState: {
+        pricing_projection: quoteProjectionAuditSnapshot(existing),
+        quote_review: {
+          status: wo.quote_review_status || null,
+          quote_version: existing ? Number(existing.quote_version || 0) : null,
+          pricing_status: existing?.status || null,
+        },
+      },
       afterState: {
         quote_review_status: 'pending_review',
         quote_version: nextVersion,
@@ -14230,7 +14272,7 @@ async function handleSubmitWorkOrderPricing(request, env) {
       total_amount: subtotal,  // 客户应付 = subtotal
     });
   } catch (error) {
-    if (/quote (?:version concurrent update|baseline receipt conflict|supplemental parent conflict|retry history protected)|protected quote payment schedule|malformed json/i.test(String(error?.message || error))) {
+    if (/quote (?:version concurrent update|baseline receipt conflict|supplemental parent conflict|retry history protected)|protected quote payment schedule|malformed json|UNIQUE constraint failed:\s*work_order_pricing\.work_order_id/i.test(String(error?.message || error))) {
       return errorResponse(
         getRequestMarket(request) === 'cn' ? '报价已被更新，请刷新后重试' : 'The quote changed. Refresh and try again.',
         409,
@@ -14351,6 +14393,74 @@ async function listQuotePaymentSchedule(env, workOrderId, quoteVersion) {
     ...row,
     required_before_start: Boolean(row.required_before_start),
   }));
+}
+
+function quoteProjectionAuditSnapshot(pricing) {
+  if (!pricing) return null;
+  return {
+    quote_version: Number(pricing.quote_version || 0),
+    status: pricing.status || null,
+    labor_fee: pricing.labor_fee || 0,
+    parts_fee: pricing.parts_fee || 0,
+    travel_fee: pricing.travel_fee || 0,
+    other_fee: pricing.other_fee || 0,
+    subtotal: pricing.subtotal || 0,
+    total_amount: pricing.total_amount || 0,
+    platform_fee: pricing.platform_fee || 0,
+    deposit_withhold: pricing.deposit_withhold || 0,
+    expected_service_days: pricing.expected_service_days ?? null,
+    payment_plan_mode: pricing.payment_plan_mode || 'single',
+  };
+}
+
+async function getWorkOrderPricingView(env, workOrder, pricing, customerView = false) {
+  if (!pricing) return null;
+  const currentHistory = await env.DB.prepare(`
+    SELECT quote_kind, parent_quote_version, status
+    FROM work_order_pricing_history
+    WHERE pricing_id = ? AND version = ?
+  `).bind(pricing.id, Number(pricing.quote_version || 0)).first();
+  let activeVersion = Number(workOrder.active_quote_version || 0);
+  if (currentHistory?.quote_kind === 'supplemental' && !activeVersion) {
+    activeVersion = Number((await env.DB.prepare(
+      'SELECT active_quote_version FROM work_orders WHERE id = ?'
+    ).bind(workOrder.id).first())?.active_quote_version || 0);
+  }
+  const supplemental = currentHistory?.quote_kind === 'supplemental' && activeVersion > 0;
+  if (supplemental) {
+    const active = await env.DB.prepare(`
+      SELECT history.*
+      FROM work_order_pricing_history history
+      WHERE history.pricing_id = ? AND history.version = ?
+        AND history.quote_kind = 'baseline' AND history.status = 'confirmed'
+    `).bind(pricing.id, activeVersion).first();
+    if (active && customerView && !['submitted', 'confirmed'].includes(pricing.status)) {
+      return {
+        pricing: {
+          ...pricing,
+          ...active,
+          id: pricing.id,
+          work_order_id: pricing.work_order_id,
+          engineer_id: pricing.engineer_id,
+          quote_version: active.version,
+          status: 'confirmed',
+        },
+        payment_schedule: await listQuotePaymentSchedule(env, workOrder.id, activeVersion),
+      };
+    }
+    if (active) {
+      const [baselineSchedule, supplementalSchedule] = await Promise.all([
+        listQuotePaymentSchedule(env, workOrder.id, activeVersion),
+        listQuotePaymentSchedule(env, workOrder.id, pricing.quote_version),
+      ]);
+      return { pricing, payment_schedule: [...baselineSchedule, ...supplementalSchedule] };
+    }
+  }
+  if (customerView && !['submitted', 'confirmed'].includes(pricing.status)) return null;
+  return {
+    pricing,
+    payment_schedule: await listQuotePaymentSchedule(env, workOrder.id, pricing.quote_version),
+  };
 }
 
 async function quoteVersionSnapshot(env, workOrderId, history) {
