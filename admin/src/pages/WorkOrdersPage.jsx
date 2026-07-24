@@ -1,4 +1,4 @@
-import { Component, useState, useEffect } from 'react';
+import { Component, useState, useEffect, useRef } from 'react';
 
 class DetailErrorBoundary extends Component {
   constructor(props) {
@@ -650,10 +650,13 @@ export function WorkOrdersPage({ readOnly = false }) {
   const [detailInvoice, setDetailInvoice] = useState(null);
   const [invoiceProcessing, setInvoiceProcessing] = useState(false);
   const [invoiceLoadError, setInvoiceLoadError] = useState('');
+  const invoiceRequestId = useRef(0);
   const [loadError, setLoadError] = useState('');
   const [loadAttempt, setLoadAttempt] = useState(0);
+  const loadRequestId = useRef(0);
   const [engineerLoadError, setEngineerLoadError] = useState('');
   const [engineerLoadAttempt, setEngineerLoadAttempt] = useState(0);
+  const engineerRequestId = useRef(0);
   const [operationDialog, setOperationDialog] = useState(null);
   const [operationSubmitting, setOperationSubmitting] = useState(false);
   const pageSize = 20;
@@ -663,24 +666,34 @@ export function WorkOrdersPage({ readOnly = false }) {
   }, [status]);
 
   useEffect(() => {
+    const requestId = ++loadRequestId.current;
     setLoading(true);
     setLoadError('');
     getAdminWorkOrders(status, page, pageSize)
-      .then(setData)
-      .catch((error) => setLoadError(error.message || t.loadFailed))
-      .finally(() => setLoading(false));
+      .then((response) => {
+        if (loadRequestId.current === requestId) setData(response);
+      })
+      .catch((error) => {
+        if (loadRequestId.current === requestId) setLoadError(error.message || t.loadFailed);
+      })
+      .finally(() => {
+        if (loadRequestId.current === requestId) setLoading(false);
+      });
   }, [status, page, loadAttempt]);
 
   useEffect(() => {
     if (readOnly) return;
+    const requestId = ++engineerRequestId.current;
     setEngineerLoadError('');
     getAdminUsers('engineer', 1, 50, { status: 'available' })
       .then((res) => {
+        if (engineerRequestId.current !== requestId) return;
         const list = res.list || [];
         setEngineers(list.filter((engineer) => engineer.engineer_role !== 'regional_lead'));
         setRegionalLeads(list.filter((engineer) => engineer.engineer_role === 'regional_lead'));
       })
       .catch((error) => {
+        if (engineerRequestId.current !== requestId) return;
         setEngineers([]);
         setRegionalLeads([]);
         setEngineerLoadError(error.message || t.engineerLoadFailed);
@@ -873,7 +886,9 @@ export function WorkOrdersPage({ readOnly = false }) {
       setMessage(t.quoteReturned(wo.order_no));
       return true;
     } catch (err) {
-      setMessage(err.message || t.quoteReturnFailed);
+      const operationError = err.message || t.quoteReturnFailed;
+      setMessage(operationError);
+      setOperationDialog((current) => (current ? { ...current, error: operationError } : current));
       return false;
     } finally {
       setAssigningId('');
@@ -902,7 +917,9 @@ export function WorkOrdersPage({ readOnly = false }) {
       setMessage(t.paymentStartApproved(wo.order_no));
       return true;
     } catch (err) {
-      setMessage(err.message || t.paymentStartApproveFailed);
+      const operationError = err.message || t.paymentStartApproveFailed;
+      setMessage(operationError);
+      setOperationDialog((current) => (current ? { ...current, error: operationError } : current));
       return false;
     } finally {
       setAssigningId('');
@@ -923,7 +940,9 @@ export function WorkOrdersPage({ readOnly = false }) {
       setMessage(t.balancePaymentApproved(wo.order_no));
       return true;
     } catch (err) {
-      setMessage(err.message || t.balancePaymentApproveFailed);
+      const operationError = err.message || t.balancePaymentApproveFailed;
+      setMessage(operationError);
+      setOperationDialog((current) => (current ? { ...current, error: operationError } : current));
       return false;
     } finally {
       setAssigningId('');
@@ -972,7 +991,9 @@ export function WorkOrdersPage({ readOnly = false }) {
       setMessage(t.payoutUpdated(payoutLabel(response.payout_status)));
       return true;
     } catch (err) {
-      setMessage(err.message || t.payoutUpdateFailed);
+      const operationError = err.message || t.payoutUpdateFailed;
+      setMessage(operationError);
+      setOperationDialog((current) => (current ? { ...current, error: operationError } : current));
       return false;
     } finally {
       setAssigningId('');
@@ -1016,12 +1037,15 @@ export function WorkOrdersPage({ readOnly = false }) {
   }
 
   async function loadDetailInvoice(workOrderId) {
+    const requestId = ++invoiceRequestId.current;
     setInvoiceLoadError('');
     try {
-      setDetailInvoice(await getAdminInvoiceRequest(workOrderId));
+      const response = await getAdminInvoiceRequest(workOrderId);
+      if (invoiceRequestId.current !== requestId) return;
+      setDetailInvoice(response.invoice_request || null);
     } catch (error) {
+      if (invoiceRequestId.current !== requestId) return;
       setDetailInvoice(null);
-      if (error?.status === 404) return;
       setInvoiceLoadError(error.message || t.invoiceLoadFailed);
     }
   }
@@ -1124,7 +1148,9 @@ export function WorkOrdersPage({ readOnly = false }) {
       await openDetail(wo);
       return true;
     } catch (err) {
-      setMessage(err.message || (runtimeConfig.locale === 'zh-CN' ? '人工批准到场失败。' : 'Failed to approve the engineer arrival.'));
+      const operationError = err.message || (runtimeConfig.locale === 'zh-CN' ? '人工批准到场失败。' : 'Failed to approve the engineer arrival.');
+      setMessage(operationError);
+      setOperationDialog((current) => (current ? { ...current, error: operationError } : current));
       return false;
     } finally {
       setAssigningId('');
@@ -1144,7 +1170,9 @@ export function WorkOrdersPage({ readOnly = false }) {
       setMessage(t.invoiceStatus('issued'));
       return true;
     } catch (err) {
-      setMessage(err.message || t.invoiceProcessFailed);
+      const operationError = err.message || t.invoiceProcessFailed;
+      setMessage(operationError);
+      setOperationDialog((current) => (current ? { ...current, error: operationError } : current));
       return false;
     } finally {
       setInvoiceProcessing(false);
@@ -1825,7 +1853,7 @@ export function WorkOrdersPage({ readOnly = false }) {
                           <div>{detailInvoice.company_name}</div>
                           <div>税号: {detailInvoice.tax_id}</div>
                         </div>
-                        {detailInvoice.status === 'pending' && (
+                        {!readOnly && detailInvoice.status === 'pending' && (
                           <button
                             onClick={() => openOperationDialog('invoice', detail)}
                             disabled={invoiceProcessing}
