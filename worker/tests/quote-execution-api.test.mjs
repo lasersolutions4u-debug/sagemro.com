@@ -50,11 +50,14 @@ function createD1Database(db, hooks) {
       const beforeBatch = hooks.beforeNextBatch;
       hooks.beforeNextBatch = null;
       if (beforeBatch) await beforeBatch();
+      const afterCommit = hooks.afterNextBatchCommit;
+      hooks.afterNextBatchCommit = null;
       db.exec('BEGIN IMMEDIATE');
       try {
         const results = [];
         for (const prepared of statements) results.push(prepared.runSync());
         db.exec('COMMIT');
+        if (afterCommit) await afterCommit();
         return results;
       } catch (error) {
         db.exec('ROLLBACK');
@@ -64,11 +67,14 @@ function createD1Database(db, hooks) {
   };
 }
 
-function createQuoteExecutionEnv({ market = 'com', filename = ':memory:', initialize = true } = {}) {
+function createQuoteExecutionEnv({
+  market = 'com', filename = ':memory:', initialize = true, sharedEvidenceObjects = null,
+} = {}) {
   const db = new DatabaseSync(filename);
-  const evidenceObjects = new Map();
+  const evidenceObjects = sharedEvidenceObjects || new Map();
   const hooks = {
     beforeNextBatch: null,
+    afterNextBatchCommit: null,
     queries: [],
     binds: [],
     waitUntil: [],
@@ -135,6 +141,9 @@ function createQuoteExecutionEnv({ market = 'com', filename = ':memory:', initia
     host: market === 'cn' ? 'https://api.sagemro.cn' : 'https://api.sagemro.com',
     beforeNextBatch(callback) {
       hooks.beforeNextBatch = callback;
+    },
+    afterNextBatchCommit(callback) {
+      hooks.afterNextBatchCommit = callback;
     },
     resetQueries() {
       hooks.queries.length = 0;
@@ -1228,6 +1237,122 @@ test('receipt claim validates input, stores private PDF evidence, streams by wor
   assert.equal(ctx.db.prepare("SELECT COUNT(*) AS count FROM audit_logs WHERE action = 'installment_receipt_claim_submitted'").get().count, 1);
 });
 
+test('receipt claim recovers an ambiguous committed batch without deleting evidence or notifications', async () => {
+  const ctx = createQuoteExecutionEnv();
+  ctx.db.exec(`
+    INSERT INTO admin_staff_accounts (
+      id, normalized_login, password_hash, salt, role, display_name, market_scope, must_change_password
+    ) VALUES (
+      'operations-1', 'operations@example.com', 'hash', 'salt', 'operations', 'Operations', 'all', 0
+    );
+  `);
+  await confirmBaselineForReceiptTests(ctx);
+  await startCollection(ctx);
+  ctx.afterNextBatchCommit(() => { throw new Error('D1 outcome unknown after commit'); });
+  const evidence = new File([
+    new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x2d, 0x31, 0x2e, 0x34, 0x0a]),
+  ], 'committed.pdf', { type: 'application/pdf' });
+
+  const submitted = await submitReceiptClaim(ctx, { evidence, idempotency_key: 'claim-ambiguous-commit' });
+
+  assert.equal(submitted.response.status, 200);
+  assert.equal(ctx.evidenceKeys().length, 1);
+  assert.equal(ctx.db.prepare('SELECT COUNT(*) AS count FROM field_evidence_cleanup_queue').get().count, 0);
+  assert.equal(ctx.db.prepare(`
+    SELECT COUNT(*) AS count FROM notifications
+    WHERE type IN ('installment_receipt_claim_submitted', 'installment_receipt_review_requested')
+  `).get().count, 2);
+  const streamed = await api(ctx, submitted.json.evidence.url, {
+    method: 'GET', userType: 'customer', userId: 'customer-1',
+  });
+  assert.equal(streamed.response.status, 200);
+});
+
+test('receipt claim idempotency matches the full canonical payload across shared D1 and R2', async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'sagemro-receipt-idempotency-'));
+  const filename = join(directory, 'quote-execution.sqlite');
+  const sharedEvidenceObjects = new Map();
+  const first = createQuoteExecutionEnv({ filename, sharedEvidenceObjects });
+  const second = createQuoteExecutionEnv({ filename, initialize: false, sharedEvidenceObjects });
+  const exactEvidence = new File([
+    new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x2d, 0x31, 0x2e, 0x34, 0x0a]),
+  ], 'receipt.pdf', { type: 'application/pdf' });
+  const changedEvidence = new File([
+    new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x2d, 0x31, 0x2e, 0x35, 0x0a]),
+  ], 'receipt.pdf', { type: 'application/pdf' });
+
+  try {
+    await confirmBaselineForReceiptTests(first);
+    await startCollection(first);
+    const created = await submitReceiptClaim(first, {
+      evidence: exactEvidence,
+      claimed_amount: '2000',
+      transaction_reference: '  TX-CANONICAL  ',
+      note: '  Bank receipt submitted  ',
+      idempotency_key: 'claim-shared-exact',
+    });
+    assert.equal(created.response.status, 201);
+    const objectKey = first.evidenceKeys()[0];
+    assert.match(objectKey, /sha256-[a-f0-9]{64}/);
+
+    const exactRetry = await submitReceiptClaim(second, {
+      evidence: exactEvidence,
+      claimed_amount: '2000',
+      transaction_reference: 'TX-CANONICAL',
+      note: 'Bank receipt submitted',
+      idempotency_key: 'claim-shared-exact',
+    });
+    assert.equal(exactRetry.response.status, 200);
+    assert.equal(second.evidenceKeys().length, 1);
+    assert.equal(exactRetry.json.claim.id, created.json.claim.id);
+
+    for (const fields of [
+      { claimed_amount: '2001', evidence: exactEvidence },
+      { transaction_reference: 'TX-DIFFERENT', evidence: exactEvidence },
+      { note: 'Different note', evidence: exactEvidence },
+      { evidence: changedEvidence },
+      { evidence: undefined },
+    ]) {
+      const conflict = await submitReceiptClaim(second, {
+        claimed_amount: '2000',
+        transaction_reference: 'TX-CANONICAL',
+        note: 'Bank receipt submitted',
+        idempotency_key: 'claim-shared-exact',
+        ...fields,
+      });
+      assert.equal(conflict.response.status, 409, JSON.stringify(Object.keys(fields)));
+      assert.deepEqual(second.evidenceKeys(), [objectKey]);
+    }
+  } finally {
+    first.close();
+    second.close();
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test('receipt evidence Content-Disposition safely represents quotes controls and Unicode', async () => {
+  for (const [name, expected] of [
+    ['bank "receipt".pdf', /filename="bank \\"receipt\\"\.pdf"/],
+    ['bank\r\nX-Injected: yes.pdf', /filename="bankX-Injected: yes\.pdf"/],
+    ['银行回单.pdf', /filename\*=UTF-8''%E9%93%B6%E8%A1%8C%E5%9B%9E%E5%8D%95\.pdf/],
+  ]) {
+    const ctx = createQuoteExecutionEnv();
+    await confirmBaselineForReceiptTests(ctx);
+    await startCollection(ctx);
+    const evidence = new File([
+      new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x2d, 0x31, 0x2e, 0x34, 0x0a]),
+    ], name, { type: 'application/pdf' });
+    const submitted = await submitReceiptClaim(ctx, { evidence, idempotency_key: `filename-${name}` });
+    const streamed = await api(ctx, submitted.json.evidence.url, {
+      method: 'GET', userType: 'customer', userId: 'customer-1',
+    });
+    const disposition = streamed.response.headers.get('content-disposition');
+    assert.equal(streamed.response.status, 200);
+    assert.match(disposition, expected);
+    assert.equal(/[\r\n]/.test(disposition), false);
+  }
+});
+
 test('receipt evidence failures leave no new claim and enqueue cleanup when rollback deletion fails', async () => {
   {
     const ctx = createQuoteExecutionEnv();
@@ -1451,6 +1576,41 @@ test('Admin decision key retries require an exact normalized decision payload', 
   assert.equal(stored.confirmed_amount, 2000);
   assert.equal(stored.decision_reason, 'Matched bank receipt');
   assert.equal(stored.decision_idempotency_key, 'decision-exact-1');
+});
+
+test('Admin decision recovers an ambiguous committed batch with deterministic notifications', async () => {
+  const ctx = createQuoteExecutionEnv();
+  await confirmBaselineForReceiptTests(ctx);
+  await startCollection(ctx);
+  const submitted = await submitReceiptClaim(ctx, {
+    claimed_amount: '2500', idempotency_key: 'claim-decision-ambiguous',
+  });
+  ctx.afterNextBatchCommit(() => { throw new Error('D1 decision outcome unknown after commit'); });
+
+  const decided = await decideReceiptClaim(ctx, submitted.json.claim.id, {
+    confirmed_amount: 2000,
+    reason: 'Matched bank receipt',
+    idempotency_key: 'decision-ambiguous-commit',
+  });
+
+  assert.equal(decided.response.status, 200);
+  assert.equal(decided.json.installment.received_amount, 2000);
+  const notificationIds = ctx.db.prepare(`
+    SELECT id FROM notifications
+    WHERE type = 'installment_receipt_confirmed' ORDER BY id
+  `).all().map((row) => row.id);
+  assert.deepEqual(notificationIds, [
+    `receipt-decision:${submitted.json.claim.id}:confirmed:customer:customer-1`,
+    `receipt-decision:${submitted.json.claim.id}:confirmed:engineer:engineer-1`,
+  ]);
+
+  const retry = await decideReceiptClaim(ctx, submitted.json.claim.id, {
+    confirmed_amount: 2000,
+    reason: 'Matched bank receipt',
+    idempotency_key: 'decision-ambiguous-commit',
+  });
+  assert.equal(retry.response.status, 200);
+  assert.equal(ctx.db.prepare("SELECT COUNT(*) AS count FROM notifications WHERE type = 'installment_receipt_confirmed'").get().count, 2);
 });
 
 test('collection workflow errors and notifications follow the CN request market', async () => {

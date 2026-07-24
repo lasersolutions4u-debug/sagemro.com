@@ -211,7 +211,7 @@ export function validateChatImageSize(size) {
  */
 export function sanitizeFilename(name) {
   if (typeof name !== 'string' || name.trim().length === 0) return 'untitled';
-  let s = name.replace(/[/\\]/g, '_').replace(/\.\./g, '_').replace(/\x00/g, '');
+  let s = name.replace(/[\x00-\x1f\x7f]/g, '').replace(/[/\\]/g, '_').replace(/\.\./g, '_');
   if (s.length > 255) {
     const dot = s.lastIndexOf('.');
     if (dot > 0 && dot < 250) {

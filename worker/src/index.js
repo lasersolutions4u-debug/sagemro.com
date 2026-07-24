@@ -15021,10 +15021,87 @@ function publicReceiptEvidence(evidence) {
   };
 }
 
-async function getReceiptEvidenceForClaim(env, claimId) {
+async function getReceiptClaimWithEvidenceByIdempotencyKey(env, idempotencyKey) {
   return env.DB.prepare(`
-    SELECT * FROM work_order_receipt_evidence WHERE claim_id = ?
-  `).bind(claimId).first();
+    SELECT claim.*,
+      evidence.id AS evidence_id,
+      evidence.object_key AS evidence_object_key,
+      evidence.file_name AS evidence_file_name,
+      evidence.mime_type AS evidence_mime_type,
+      evidence.file_size AS evidence_file_size,
+      evidence.uploader_type AS evidence_uploader_type,
+      evidence.uploader_id AS evidence_uploader_id,
+      evidence.created_at AS evidence_created_at
+    FROM work_order_receipt_claims claim
+    LEFT JOIN work_order_receipt_evidence evidence
+      ON evidence.claim_id = claim.id AND evidence.work_order_id = claim.work_order_id
+    WHERE claim.idempotency_key = ?
+  `).bind(idempotencyKey).first();
+}
+
+function evidenceFromJoinedReceiptClaim(claim) {
+  if (!claim?.evidence_id) return null;
+  return {
+    id: claim.evidence_id,
+    claim_id: claim.id,
+    work_order_id: claim.work_order_id,
+    object_key: claim.evidence_object_key,
+    file_name: claim.evidence_file_name,
+    mime_type: claim.evidence_mime_type,
+    file_size: claim.evidence_file_size,
+    uploader_type: claim.evidence_uploader_type,
+    uploader_id: claim.evidence_uploader_id,
+    created_at: claim.evidence_created_at,
+  };
+}
+
+async function sha256BytesHex(bytes) {
+  const digest = await crypto.subtle.digest('SHA-256', bytes);
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+
+function receiptEvidenceHash(objectKey) {
+  return String(objectKey || '').match(/sha256-([a-f0-9]{64})(?:\.|\/|$)/i)?.[1]?.toLowerCase() || '';
+}
+
+function isExactReceiptClaimRetry(claim, requestValue) {
+  if (!claim) return false;
+  if (claim.work_order_id !== requestValue.workOrderId
+    || claim.installment_id !== requestValue.installmentId
+    || claim.engineer_id !== requestValue.engineerId
+    || Number(claim.claimed_amount) !== requestValue.claimedAmount
+    || (claim.transaction_reference || null) !== requestValue.transactionReference
+    || (claim.engineer_note || '') !== requestValue.engineerNote) return false;
+  const evidence = evidenceFromJoinedReceiptClaim(claim);
+  if (!requestValue.evidenceDescriptor) return !evidence;
+  return Boolean(evidence)
+    && evidence.mime_type === requestValue.evidenceDescriptor.mimeType
+    && Number(evidence.file_size) === requestValue.evidenceDescriptor.size
+    && receiptEvidenceHash(evidence.object_key) === requestValue.evidenceDescriptor.sha256;
+}
+
+function receiptEvidenceContentDisposition(fileName) {
+  const original = sanitizeFilename(fileName).replace(/[\x00-\x1f\x7f]/g, '') || 'receipt';
+  const ascii = Array.from(original, (character) => {
+    const code = character.charCodeAt(0);
+    return code >= 0x20 && code <= 0x7e ? character : '_';
+  }).join('').replace(/(["\\])/g, '\\$1') || 'receipt';
+  const encoded = encodeURIComponent(original).replace(/['()*]/g, (character) => (
+    `%${character.charCodeAt(0).toString(16).toUpperCase()}`
+  ));
+  return `inline; filename="${ascii}"; filename*=UTF-8''${encoded}`;
+}
+
+function quoteExecutionNotificationStatement(env, notification) {
+  return scheduledNotificationStatement(env, {
+    id: notification.id,
+    userId: notification.user_id,
+    userType: notification.user_type,
+    type: notification.type,
+    title: notification.title,
+    body: notification.body,
+    data: notification.data,
+  });
 }
 
 async function notifyQuoteExecutionBestEffort(env, payload) {
@@ -15033,31 +15110,6 @@ async function notifyQuoteExecutionBestEffort(env, payload) {
     await notifier(env, payload);
   } catch (error) {
     console.warn('[quote execution] notification failed:', error?.message || error);
-  }
-}
-
-async function notifyReceiptClaimAdminReview(env, request, installment, claimId) {
-  try {
-    const market = getRequestMarket(request);
-    const copy = installmentCollectionCopy(market);
-    const staffRecords = await env.DB.prepare(`
-      SELECT id FROM admin_staff_accounts
-      WHERE is_active = 1 AND role IN ('admin', 'operations') AND market_scope IN ('all', ?)
-    `).bind(market).all();
-    await Promise.all((staffRecords.results || []).map((staff) => notifyQuoteExecutionBestEffort(env, {
-      user_id: staff.id,
-      user_type: 'admin',
-      type: 'installment_receipt_review_requested',
-      title: copy.reviewTitle,
-      body: copy.reviewBody(installment.order_no),
-      data: {
-        work_order_id: installment.work_order_id,
-        installment_id: installment.id,
-        claim_id: claimId,
-      },
-    })));
-  } catch (error) {
-    console.warn('[quote execution] Admin review notification failed:', error?.message || error);
   }
 }
 
@@ -15166,17 +15218,40 @@ async function handleSubmitReceiptClaim(request, env) {
     const idempotencyKey = cleanText(formData.get('idempotency_key'), 200);
     if (!Number.isSafeInteger(claimedAmount) || claimedAmount <= 0) return errorResponse(copy.claimAmountInvalid, 400);
     if (!idempotencyKey) return errorResponse(copy.idempotencyRequired, 400);
-    const existing = await env.DB.prepare(`
-      SELECT * FROM work_order_receipt_claims WHERE idempotency_key = ?
-    `).bind(idempotencyKey).first();
-    if (existing) {
-      if (existing.work_order_id !== workOrderId || existing.installment_id !== installmentId || existing.engineer_id !== auth.userId) {
-        return errorResponse(copy.decisionConflict, 409);
+    const transactionReference = cleanText(formData.get('transaction_reference'), 200) || null;
+    const engineerNote = cleanText(formData.get('note'), 1000);
+    const evidenceFile = formData.get('evidence');
+    let evidenceBytes = null;
+    let evidenceDescriptor = null;
+    if (evidenceFile && typeof evidenceFile !== 'string') {
+      if (!env.FIELD_EVIDENCE) return errorResponse(copy.evidenceUnavailable, 503);
+      if (!RECEIPT_EVIDENCE_MIME_TYPES.has(evidenceFile.type)) return errorResponse(copy.evidenceInvalid, 400);
+      if (evidenceFile.size <= 0 || evidenceFile.size > FIELD_EVIDENCE_MAX_BYTES) {
+        return errorResponse(copy.evidenceTooLarge, 413);
       }
-      if (Number(existing.claimed_amount) !== claimedAmount) return errorResponse(copy.decisionConflict, 409);
+      evidenceBytes = new Uint8Array(await evidenceFile.arrayBuffer());
+      if (!hasFieldEvidenceSignature(evidenceBytes, evidenceFile.type)) return errorResponse(copy.evidenceSignatureInvalid, 400);
+      evidenceDescriptor = {
+        mimeType: evidenceFile.type,
+        size: evidenceFile.size,
+        sha256: await sha256BytesHex(evidenceBytes),
+      };
+    }
+    const requestValue = {
+      workOrderId,
+      installmentId,
+      engineerId: auth.userId,
+      claimedAmount,
+      transactionReference,
+      engineerNote,
+      evidenceDescriptor,
+    };
+    const existing = await getReceiptClaimWithEvidenceByIdempotencyKey(env, idempotencyKey);
+    if (existing) {
+      if (!isExactReceiptClaimRetry(existing, requestValue)) return errorResponse(copy.decisionConflict, 409);
       return jsonResponse({
         claim: visibleReceiptClaim(existing, auth),
-        evidence: publicReceiptEvidence(await getReceiptEvidenceForClaim(env, existing.id)),
+        evidence: publicReceiptEvidence(evidenceFromJoinedReceiptClaim(existing)),
         installment: publicInstallment(installment),
       });
     }
@@ -15184,32 +15259,44 @@ async function handleSubmitReceiptClaim(request, env) {
       return errorResponse(copy.claimNotAllowed, 409);
     }
 
-    const evidenceFile = formData.get('evidence');
     let evidence = null;
     const claimId = generateId();
-    if (evidenceFile && typeof evidenceFile !== 'string') {
-      if (!env.FIELD_EVIDENCE) return errorResponse(copy.evidenceUnavailable, 503);
-      if (!RECEIPT_EVIDENCE_MIME_TYPES.has(evidenceFile.type)) return errorResponse(copy.evidenceInvalid, 400);
-      if (evidenceFile.size <= 0 || evidenceFile.size > FIELD_EVIDENCE_MAX_BYTES) {
-        return errorResponse(copy.evidenceTooLarge, 413);
-      }
-      const bytes = new Uint8Array(await evidenceFile.arrayBuffer());
-      if (!hasFieldEvidenceSignature(bytes, evidenceFile.type)) return errorResponse(copy.evidenceSignatureInvalid, 400);
+    if (evidenceDescriptor) {
       const evidenceId = generateId();
-      const extension = RECEIPT_EVIDENCE_MIME_TYPES.get(evidenceFile.type);
-      const objectKey = `field-evidence/${market}/${workOrderId}/receipt-claims/${claimId}/${evidenceId}.${extension}`;
+      const extension = RECEIPT_EVIDENCE_MIME_TYPES.get(evidenceDescriptor.mimeType);
+      const objectKey = `field-evidence/${market}/${workOrderId}/receipt-claims/${claimId}/${evidenceId}-sha256-${evidenceDescriptor.sha256}.${extension}`;
       uploadedKeys.push(objectKey);
-      await env.FIELD_EVIDENCE.put(objectKey, bytes, { httpMetadata: { contentType: evidenceFile.type } });
+      await env.FIELD_EVIDENCE.put(objectKey, evidenceBytes, { httpMetadata: { contentType: evidenceDescriptor.mimeType } });
       evidence = {
         id: evidenceId, claim_id: claimId, work_order_id: workOrderId, object_key: objectKey,
         file_name: sanitizeFilename(evidenceFile.name || `receipt.${extension}`),
-        mime_type: evidenceFile.type, file_size: evidenceFile.size,
+        mime_type: evidenceDescriptor.mimeType, file_size: evidenceDescriptor.size,
         uploader_type: 'engineer', uploader_id: auth.userId,
       };
     }
 
-    const transactionReference = cleanText(formData.get('transaction_reference'), 200) || null;
-    const engineerNote = cleanText(formData.get('note'), 1000);
+    const notificationData = { work_order_id: workOrderId, installment_id: installmentId, claim_id: claimId };
+    const staffRecords = await env.DB.prepare(`
+      SELECT id FROM admin_staff_accounts
+      WHERE is_active = 1 AND role IN ('admin', 'operations') AND market_scope IN ('all', ?)
+    `).bind(market).all();
+    const notifications = [{
+      id: `receipt-claim:${claimId}:submitted:customer:${installment.customer_id}`,
+      user_id: installment.customer_id,
+      user_type: 'customer',
+      type: 'installment_receipt_claim_submitted',
+      title: copy.claimTitle,
+      body: copy.claimBody(installment.order_no),
+      data: notificationData,
+    }, ...(staffRecords.results || []).map((staff) => ({
+      id: `receipt-claim:${claimId}:review:admin:${staff.id}`,
+      user_id: staff.id,
+      user_type: 'admin',
+      type: 'installment_receipt_review_requested',
+      title: copy.reviewTitle,
+      body: copy.reviewBody(installment.order_no),
+      data: notificationData,
+    }))];
     const statements = [
       env.DB.prepare(`
         INSERT INTO work_order_receipt_claims (
@@ -15245,21 +15332,26 @@ async function handleSubmitReceiptClaim(request, env) {
         beforeState: { installment_status: installment.status, received_amount: installment.received_amount },
         afterState: { status: 'pending', claimed_amount: claimedAmount, evidence_id: evidence?.id || null },
       }),
+      ...notifications.map((notification) => quoteExecutionNotificationStatement(env, notification)),
     );
     try {
       await env.DB.batch(statements);
     } catch (error) {
+      const recovered = await getReceiptClaimWithEvidenceByIdempotencyKey(env, idempotencyKey);
+      if (isExactReceiptClaimRetry(recovered, requestValue)) {
+        const recoveredEvidence = evidenceFromJoinedReceiptClaim(recovered);
+        if (!evidence || recoveredEvidence?.object_key === evidence.object_key) uploadedKeys.length = 0;
+        await cleanupFieldEvidenceObjects(env, uploadedKeys, 'receipt_claim_persistence_failed');
+        uploadedKeys.length = 0;
+        return jsonResponse({
+          claim: visibleReceiptClaim(recovered, auth),
+          evidence: publicReceiptEvidence(recoveredEvidence),
+          installment: publicInstallment(await getActiveInstallment(env, workOrderId, installmentId)),
+        });
+      }
       await cleanupFieldEvidenceObjects(env, uploadedKeys, 'receipt_claim_persistence_failed');
       uploadedKeys.length = 0;
-      if (isD1ConstraintError(error) || /receipt claim conflict|malformed json/i.test(String(error?.message || error))) {
-        const recovered = await env.DB.prepare(`SELECT * FROM work_order_receipt_claims WHERE idempotency_key = ?`).bind(idempotencyKey).first();
-        if (recovered?.work_order_id === workOrderId && recovered.installment_id === installmentId && recovered.engineer_id === auth.userId) {
-          return jsonResponse({
-            claim: visibleReceiptClaim(recovered, auth),
-            evidence: publicReceiptEvidence(await getReceiptEvidenceForClaim(env, recovered.id)),
-            installment: publicInstallment(await getActiveInstallment(env, workOrderId, installmentId)),
-          });
-        }
+      if (recovered || isD1ConstraintError(error) || /receipt claim conflict|malformed json/i.test(String(error?.message || error))) {
         return errorResponse(copy.claimNotAllowed, 409);
       }
       throw error;
@@ -15267,12 +15359,6 @@ async function handleSubmitReceiptClaim(request, env) {
     uploadedKeys.length = 0;
     const claim = await env.DB.prepare(`SELECT * FROM work_order_receipt_claims WHERE id = ?`).bind(claimId).first();
     const savedInstallment = await getActiveInstallment(env, workOrderId, installmentId);
-    await notifyQuoteExecutionBestEffort(env, {
-      user_id: installment.customer_id, user_type: 'customer', type: 'installment_receipt_claim_submitted',
-      title: copy.claimTitle, body: copy.claimBody(installment.order_no),
-      data: { work_order_id: workOrderId, installment_id: installmentId, claim_id: claimId },
-    });
-    await notifyReceiptClaimAdminReview(env, request, installment, claimId);
     return jsonResponse({
       claim: visibleReceiptClaim(claim, auth),
       evidence: publicReceiptEvidence(evidence),
@@ -15305,7 +15391,7 @@ async function handleGetReceiptEvidence(request, env) {
     return new Response(object.body, {
       headers: {
         'Content-Type': evidence.mime_type,
-        'Content-Disposition': `inline; filename="${sanitizeFilename(evidence.file_name)}"`,
+        'Content-Disposition': receiptEvidenceContentDisposition(evidence.file_name),
         'X-Content-Type-Options': 'nosniff',
         'Cache-Control': 'private, no-store',
       },
@@ -15412,6 +15498,32 @@ async function handleAdminDecideReceiptClaim(request, env) {
         env.DB.prepare(`SELECT CASE WHEN changes() = 1 THEN 1 ELSE json('receipt decision conflict') END`),
       );
     }
+    const notificationType = decision === 'confirmed' ? 'installment_receipt_confirmed' : 'installment_receipt_rejected';
+    const title = decision === 'confirmed' ? copy.confirmedTitle : copy.rejectedTitle;
+    const bodyText = decision === 'confirmed'
+      ? copy.confirmedBody(installment.order_no, confirmedAmount)
+      : copy.rejectedBody(installment.order_no);
+    const notificationData = { work_order_id: workOrderId, installment_id: installmentId, claim_id: claimId };
+    const notifications = [
+      {
+        id: `receipt-decision:${claimId}:${decision}:customer:${installment.customer_id}`,
+        user_id: installment.customer_id,
+        user_type: 'customer',
+        type: notificationType,
+        title,
+        body: bodyText,
+        data: notificationData,
+      },
+      {
+        id: `receipt-decision:${claimId}:${decision}:engineer:${installment.engineer_id}`,
+        user_id: installment.engineer_id,
+        user_type: 'engineer',
+        type: notificationType,
+        title,
+        body: bodyText,
+        data: notificationData,
+      },
+    ];
     statements.push(buildAuditLogStatement(env, request, {
       targetType: 'work_order_receipt_claim', targetId: claimId,
       action: decision === 'confirmed' ? 'installment_receipt_confirmed' : 'installment_receipt_rejected',
@@ -15421,44 +15533,29 @@ async function handleAdminDecideReceiptClaim(request, env) {
         installment_status: nextInstallmentStatus,
         received_amount: Number(installment.received_amount) + (confirmedAmount || 0),
       },
-    }));
+    }), ...notifications.map((notification) => quoteExecutionNotificationStatement(env, notification)));
     try {
       await env.DB.batch(statements);
     } catch (error) {
-      if (/receipt decision conflict|receipt over confirmation|malformed json/i.test(String(error?.message || error)) || isD1ConstraintError(error)) {
-        const recovered = await env.DB.prepare(`SELECT * FROM work_order_receipt_claims WHERE id = ?`).bind(claimId).first();
-        if (recovered?.decision_idempotency_key === idempotencyKey) {
-          const exactRetry = recovered.status === decision
-            && (decision === 'rejected' || Number(recovered.confirmed_amount) === normalizedConfirmedAmount)
-            && (recovered.decision_reason || null) === normalizedReason;
-          if (!exactRetry) return errorResponse(copy.decisionConflict, 409);
-          return jsonResponse({
-            claim: visibleReceiptClaim(recovered, request._auth),
-            installment: publicInstallment(await getActiveInstallment(env, workOrderId, installmentId)),
-          });
-        }
-        if (/receipt over confirmation/i.test(String(error?.message || error))) return errorResponse(copy.overConfirmation, 409);
+      const recovered = await env.DB.prepare(`SELECT * FROM work_order_receipt_claims WHERE id = ?`).bind(claimId).first();
+      if (recovered?.decision_idempotency_key === idempotencyKey) {
+        const exactRetry = recovered.status === decision
+          && (decision === 'rejected' || Number(recovered.confirmed_amount) === normalizedConfirmedAmount)
+          && (recovered.decision_reason || null) === normalizedReason;
+        if (!exactRetry) return errorResponse(copy.decisionConflict, 409);
+        return jsonResponse({
+          claim: visibleReceiptClaim(recovered, request._auth),
+          installment: publicInstallment(await getActiveInstallment(env, workOrderId, installmentId)),
+        });
+      }
+      if (/receipt over confirmation/i.test(String(error?.message || error))) return errorResponse(copy.overConfirmation, 409);
+      if (/receipt decision conflict|malformed json/i.test(String(error?.message || error)) || isD1ConstraintError(error)) {
         return errorResponse(copy.decisionConflict, 409);
       }
       throw error;
     }
     const savedClaim = await env.DB.prepare(`SELECT * FROM work_order_receipt_claims WHERE id = ?`).bind(claimId).first();
     const savedInstallment = await getActiveInstallment(env, workOrderId, installmentId);
-    const notificationType = decision === 'confirmed' ? 'installment_receipt_confirmed' : 'installment_receipt_rejected';
-    const title = decision === 'confirmed' ? copy.confirmedTitle : copy.rejectedTitle;
-    const bodyText = decision === 'confirmed'
-      ? copy.confirmedBody(installment.order_no, confirmedAmount)
-      : copy.rejectedBody(installment.order_no);
-    await Promise.all([
-      notifyQuoteExecutionBestEffort(env, {
-        user_id: installment.customer_id, user_type: 'customer', type: notificationType,
-        title, body: bodyText, data: { work_order_id: workOrderId, installment_id: installmentId, claim_id: claimId },
-      }),
-      notifyQuoteExecutionBestEffort(env, {
-        user_id: installment.engineer_id, user_type: 'engineer', type: notificationType,
-        title, body: bodyText, data: { work_order_id: workOrderId, installment_id: installmentId, claim_id: claimId },
-      }),
-    ]);
     return jsonResponse({ claim: visibleReceiptClaim(savedClaim, request._auth), installment: publicInstallment(savedInstallment) });
   } catch (error) {
     return errorResponse(copy.serverError, 500);
