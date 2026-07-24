@@ -637,6 +637,78 @@ CREATE INDEX IF NOT EXISTS idx_installments_order_status
 CREATE INDEX IF NOT EXISTS idx_installments_status_due_date
   ON work_order_installments(status, due_date);
 
+CREATE TRIGGER IF NOT EXISTS quote_execution_installment_snapshot_insert
+BEFORE INSERT ON work_order_installments
+WHEN NOT EXISTS (
+  SELECT 1 FROM work_order_payment_schedule schedule
+  WHERE schedule.id = NEW.schedule_id
+    AND schedule.work_order_id = NEW.work_order_id
+    AND schedule.quote_version = NEW.quote_version
+    AND schedule.sequence = NEW.sequence
+    AND schedule.amount = NEW.amount
+    AND schedule.currency = NEW.currency
+    AND schedule.trigger_type = NEW.trigger_type
+    AND schedule.due_date IS NEW.due_date
+    AND schedule.description = NEW.description
+    AND schedule.required_before_start = NEW.required_before_start
+)
+BEGIN
+  SELECT RAISE(ABORT, 'installment schedule snapshot mismatch');
+END;
+
+CREATE TRIGGER IF NOT EXISTS quote_execution_installment_snapshot_update
+BEFORE UPDATE ON work_order_installments
+WHEN NOT EXISTS (
+  SELECT 1 FROM work_order_payment_schedule schedule
+  WHERE schedule.id = NEW.schedule_id
+    AND schedule.work_order_id = NEW.work_order_id
+    AND schedule.quote_version = NEW.quote_version
+    AND schedule.sequence = NEW.sequence
+    AND schedule.amount = NEW.amount
+    AND schedule.currency = NEW.currency
+    AND schedule.trigger_type = NEW.trigger_type
+    AND schedule.due_date IS NEW.due_date
+    AND schedule.description = NEW.description
+    AND schedule.required_before_start = NEW.required_before_start
+)
+BEGIN
+  SELECT RAISE(ABORT, 'installment schedule snapshot mismatch');
+END;
+
+CREATE TRIGGER IF NOT EXISTS quote_execution_schedule_update_guard
+BEFORE UPDATE ON work_order_payment_schedule
+WHEN EXISTS (
+  SELECT 1 FROM work_order_pricing_history history
+  WHERE history.status IN ('approved', 'confirmed')
+    AND (
+      (history.pricing_id = OLD.pricing_id AND history.version = OLD.quote_version)
+      OR (history.pricing_id = NEW.pricing_id AND history.version = NEW.quote_version)
+    )
+)
+OR EXISTS (
+  SELECT 1 FROM work_order_installments installment
+  WHERE installment.schedule_id = OLD.id
+)
+BEGIN
+  SELECT RAISE(ABORT, 'protected quote payment schedule');
+END;
+
+CREATE TRIGGER IF NOT EXISTS quote_execution_schedule_delete_guard
+BEFORE DELETE ON work_order_payment_schedule
+WHEN EXISTS (
+  SELECT 1 FROM work_order_pricing_history history
+  WHERE history.pricing_id = OLD.pricing_id
+    AND history.version = OLD.quote_version
+    AND history.status IN ('approved', 'confirmed')
+)
+OR EXISTS (
+  SELECT 1 FROM work_order_installments installment
+  WHERE installment.schedule_id = OLD.id
+)
+BEGIN
+  SELECT RAISE(ABORT, 'protected quote payment schedule');
+END;
+
 CREATE TABLE IF NOT EXISTS work_order_receipt_claims (
   id TEXT PRIMARY KEY,
   installment_id TEXT NOT NULL,
@@ -659,8 +731,7 @@ CREATE TABLE IF NOT EXISTS work_order_receipt_claims (
   UNIQUE (id, work_order_id),
   FOREIGN KEY (installment_id, work_order_id)
     REFERENCES work_order_installments(id, work_order_id),
-  FOREIGN KEY (work_order_id) REFERENCES work_orders(id),
-  FOREIGN KEY (engineer_id) REFERENCES engineers(id)
+  FOREIGN KEY (work_order_id) REFERENCES work_orders(id)
 );
 CREATE INDEX IF NOT EXISTS idx_receipt_claims_installment_status
   ON work_order_receipt_claims(installment_id, status, created_at);

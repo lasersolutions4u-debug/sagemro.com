@@ -131,6 +131,53 @@ function tableColumns(db, table) {
   return db.prepare(`PRAGMA table_info(${table})`).all().map((column) => column.name);
 }
 
+function normalizeTableInfo(db, table, columns = null) {
+  return db.prepare(`PRAGMA table_info(${table})`).all()
+    .filter((column) => columns === null || columns.includes(column.name))
+    .map(({ name, type, notnull, dflt_value, pk }) => ({ name, type, notnull, dflt_value, pk }))
+    .sort((left, right) => left.name.localeCompare(right.name));
+}
+
+function normalizeForeignKeys(db, table) {
+  return db.prepare(`PRAGMA foreign_key_list(${table})`).all()
+    .map((foreignKey) => ({
+      table: foreignKey.table,
+      from: foreignKey.from,
+      to: foreignKey.to,
+      on_update: foreignKey.on_update,
+      on_delete: foreignKey.on_delete,
+      match: foreignKey.match,
+    }))
+    .sort((left, right) => JSON.stringify(left).localeCompare(JSON.stringify(right)));
+}
+
+function normalizeIndexes(db, table) {
+  return db.prepare(`PRAGMA index_list(${table})`).all()
+    .map(({ name, unique, origin, partial }) => ({
+      name: origin === 'c' ? name : null,
+      unique,
+      origin,
+      partial,
+      columns: db.prepare(`PRAGMA index_info(${JSON.stringify(name)})`).all()
+        .sort((left, right) => left.seqno - right.seqno)
+        .map(({ name: columnName }) => columnName),
+    }))
+    .sort((left, right) => JSON.stringify(left).localeCompare(JSON.stringify(right)));
+}
+
+function normalizeTriggers(db) {
+  return db.prepare(`
+    SELECT name, tbl_name, sql FROM sqlite_master
+    WHERE type = 'trigger' AND name LIKE 'quote_execution_%'
+  `).all()
+    .map(({ name, tbl_name, sql }) => ({
+      name,
+      table: tbl_name,
+      sql: sql.replace(/\s+/g, ' ').trim(),
+    }))
+    .sort((left, right) => left.name.localeCompare(right.name));
+}
+
 function assertConstraint(db, sql, pattern = /constraint/i) {
   assert.throws(() => db.exec(sql), pattern);
 }
@@ -258,6 +305,48 @@ const databaseFactories = [
   }],
   ['schema snapshot', schemaDatabase],
 ];
+
+test('migration 041 and schema snapshot keep quote execution metadata in parity', () => {
+  const migrationDb = preMigrationDatabase();
+  migrationDb.exec(migrationSql);
+  const snapshotDb = schemaDatabase();
+  const newTables = [
+    'work_order_payment_schedule',
+    'work_order_installments',
+    'work_order_receipt_claims',
+    'work_order_receipt_evidence',
+  ];
+
+  for (const table of newTables) {
+    assert.deepEqual(normalizeTableInfo(migrationDb, table), normalizeTableInfo(snapshotDb, table), table);
+    assert.deepEqual(normalizeForeignKeys(migrationDb, table), normalizeForeignKeys(snapshotDb, table), table);
+    assert.deepEqual(normalizeIndexes(migrationDb, table), normalizeIndexes(snapshotDb, table), table);
+  }
+
+  for (const [table, columns] of [
+    ['work_order_pricing', ['quote_version', 'expected_service_days', 'payment_plan_mode']],
+    ['work_order_pricing_history', [
+      'expected_service_days', 'payment_plan_mode', 'quote_kind', 'parent_quote_version',
+      'status', 'approved_at', 'confirmed_at',
+    ]],
+    ['work_orders', ['quote_expected_service_days', 'approved_extension_days', 'active_quote_version']],
+  ]) {
+    assert.deepEqual(
+      normalizeTableInfo(migrationDb, table, columns),
+      normalizeTableInfo(snapshotDb, table, columns),
+      table,
+    );
+  }
+
+  const migrationTriggers = normalizeTriggers(migrationDb);
+  assert.deepEqual(migrationTriggers.map((trigger) => trigger.name), [
+    'quote_execution_installment_snapshot_insert',
+    'quote_execution_installment_snapshot_update',
+    'quote_execution_schedule_delete_guard',
+    'quote_execution_schedule_update_guard',
+  ]);
+  assert.deepEqual(migrationTriggers, normalizeTriggers(snapshotDb));
+});
 
 for (const [label, createDatabase] of databaseFactories) {
   test(`${label} preserves a confirmed legacy quote without fabricating execution records`, () => {
@@ -417,32 +506,29 @@ for (const [label, createDatabase] of databaseFactories) {
 
     assertConstraint(db, `
       INSERT INTO work_order_installments (
-        id, schedule_id, work_order_id, quote_version, sequence, amount, currency, trigger_type
-      ) VALUES ('installment-schedule-duplicate', 'schedule-1', 'wo-1', 2, 2, 1000, 'CNY', 'before_start')
+        id, schedule_id, work_order_id, quote_version, sequence, amount, currency,
+        trigger_type, required_before_start
+      ) VALUES ('installment-schedule-duplicate', 'schedule-1', 'wo-1', 1, 1,
+        4000, 'CNY', 'before_start', 1)
     `, /unique/i);
 
     insertSchedule(db, { id: 'schedule-2', quoteVersion: 2 });
-    assertConstraint(db, `
-      INSERT INTO work_order_installments (
-        id, schedule_id, work_order_id, quote_version, sequence, amount, currency, trigger_type
-      ) VALUES ('installment-version-duplicate', 'schedule-2', 'wo-1', 1, 1, 1000, 'CNY', 'before_start')
-    `, /unique/i);
 
     for (const receivedAmount of [-1, 4001]) {
       assertConstraint(db, `
         INSERT INTO work_order_installments (
           id, schedule_id, work_order_id, quote_version, sequence, amount, currency,
-          trigger_type, received_amount
+          trigger_type, required_before_start, received_amount
         ) VALUES ('installment-received-${receivedAmount}', 'schedule-2', 'wo-1', 2, 1,
-          4000, 'CNY', 'before_start', ${receivedAmount})
+          4000, 'CNY', 'before_start', 1, ${receivedAmount})
       `);
     }
     assertConstraint(db, `
-      INSERT INTO work_order_installments (
-        id, schedule_id, work_order_id, quote_version, sequence, amount, currency,
-        trigger_type, status
+        INSERT INTO work_order_installments (
+          id, schedule_id, work_order_id, quote_version, sequence, amount, currency,
+          trigger_type, required_before_start, status
       ) VALUES ('installment-status', 'schedule-2', 'wo-1', 2, 1, 4000, 'CNY',
-        'before_start', 'refunded')
+        'before_start', 1, 'refunded')
     `);
     insertSchedule(db, { id: 'schedule-3', quoteVersion: 3 });
     for (const [suffix, columns, values] of [
@@ -458,13 +544,161 @@ for (const [label, createDatabase] of databaseFactories) {
           id, schedule_id, work_order_id, quote_version, sequence, amount, currency,
           trigger_type${columns}
         ) VALUES ('installment-${suffix}', ${values})
-      `);
+      `, /installment schedule snapshot mismatch/i);
     }
     assertConstraint(db, `
       INSERT INTO work_order_installments (
         id, schedule_id, work_order_id, quote_version, sequence, amount, currency, trigger_type
       ) VALUES ('installment-cross-order', 'schedule-2', 'wo-2', 2, 1, 4000, 'CNY', 'before_start')
-    `, /foreign key/i);
+    `, /installment schedule snapshot mismatch/i);
+  });
+
+  test(`${label} rejects installment snapshot mismatches on insert and update`, () => {
+    const db = createDatabase();
+    insertSchedule(db, {
+      triggerType: 'fixed_date',
+      dueDate: '2026-07-30',
+      description: 'Scheduled deposit',
+    });
+
+    const insertMismatches = [
+      { workOrderId: 'wo-2' },
+      { quoteVersion: 2 },
+      { sequence: 2 },
+      { amount: 3999 },
+      { currency: 'USD' },
+      { triggerType: 'on_completion', dueDate: null },
+      { dueDate: '2026-07-31' },
+      { description: 'Changed deposit' },
+      { requiredBeforeStart: 0 },
+    ];
+    for (const [index, mismatch] of insertMismatches.entries()) {
+      assert.throws(() => insertInstallment(db, {
+        id: `installment-mismatch-${index}`,
+        triggerType: 'fixed_date',
+        dueDate: '2026-07-30',
+        description: 'Scheduled deposit',
+        ...mismatch,
+      }), /installment schedule snapshot mismatch/i);
+    }
+
+    insertInstallment(db, {
+      triggerType: 'fixed_date',
+      dueDate: '2026-07-30',
+      description: 'Scheduled deposit',
+    });
+    for (const [column, value] of [
+      ['work_order_id', "'wo-2'"],
+      ['quote_version', '2'],
+      ['sequence', '2'],
+      ['amount', '3999'],
+      ['currency', "'USD'"],
+      ['trigger_type', "'on_completion'"],
+      ['due_date', "'2026-07-31'"],
+      ['description', "'Changed deposit'"],
+      ['required_before_start', '0'],
+    ]) {
+      assertConstraint(
+        db,
+        `UPDATE work_order_installments SET ${column} = ${value} WHERE id = 'installment-1'`,
+        /installment schedule snapshot mismatch/i,
+      );
+    }
+
+    db.exec(`
+      UPDATE work_order_installments SET
+        status = 'collecting',
+        payment_method = 'bank_transfer',
+        collection_started_at = '2026-07-30 08:00:00',
+        received_amount = 100,
+        completed_at = NULL,
+        updated_at = '2026-07-30 08:00:01'
+      WHERE id = 'installment-1';
+    `);
+    assert.deepEqual({ ...db.prepare(`
+      SELECT status, payment_method, collection_started_at, received_amount,
+        completed_at, updated_at
+      FROM work_order_installments WHERE id = 'installment-1'
+    `).get() }, {
+      status: 'collecting',
+      payment_method: 'bank_transfer',
+      collection_started_at: '2026-07-30 08:00:00',
+      received_amount: 100,
+      completed_at: null,
+      updated_at: '2026-07-30 08:00:01',
+    });
+  });
+
+  test(`${label} protects approved, confirmed, and activated schedules while allowing safe retries`, () => {
+    const db = createDatabase();
+    db.exec(`
+      INSERT INTO work_order_pricing_history (
+        id, pricing_id, total_amount, version, status
+      ) VALUES
+        ('history-pending', 'pricing-1', 10000, 2, 'pending_review'),
+        ('history-approved', 'pricing-1', 10000, 3, 'approved'),
+        ('history-confirmed', 'pricing-1', 10000, 4, 'confirmed'),
+        ('history-activated', 'pricing-1', 10000, 5, 'pending_review');
+    `);
+
+    insertSchedule(db, { id: 'schedule-pending-edit', quoteVersion: 2 });
+    db.exec("UPDATE work_order_payment_schedule SET amount = 4100 WHERE id = 'schedule-pending-edit'");
+    assert.equal(
+      db.prepare("SELECT amount FROM work_order_payment_schedule WHERE id = 'schedule-pending-edit'").get().amount,
+      4100,
+    );
+    insertSchedule(db, { id: 'schedule-pending-delete', quoteVersion: 2, sequence: 2 });
+    db.exec("DELETE FROM work_order_payment_schedule WHERE id = 'schedule-pending-delete'");
+    assert.equal(
+      db.prepare("SELECT COUNT(*) AS count FROM work_order_payment_schedule WHERE id = 'schedule-pending-delete'").get().count,
+      0,
+    );
+    insertSchedule(db, { id: 'schedule-draft-edit', quoteVersion: 6 });
+    db.exec("UPDATE work_order_payment_schedule SET amount = 4200 WHERE id = 'schedule-draft-edit'");
+    assert.equal(
+      db.prepare("SELECT amount FROM work_order_payment_schedule WHERE id = 'schedule-draft-edit'").get().amount,
+      4200,
+    );
+    insertSchedule(db, { id: 'schedule-draft-delete', quoteVersion: 6, sequence: 2 });
+    db.exec("DELETE FROM work_order_payment_schedule WHERE id = 'schedule-draft-delete'");
+    assert.equal(
+      db.prepare("SELECT COUNT(*) AS count FROM work_order_payment_schedule WHERE id = 'schedule-draft-delete'").get().count,
+      0,
+    );
+
+    for (const [id, quoteVersion] of [
+      ['schedule-approved', 3],
+      ['schedule-confirmed', 4],
+    ]) {
+      insertSchedule(db, { id, quoteVersion });
+      assertConstraint(
+        db,
+        `UPDATE work_order_payment_schedule SET amount = 4100 WHERE id = '${id}'`,
+        /protected quote payment schedule/i,
+      );
+      assertConstraint(
+        db,
+        `DELETE FROM work_order_payment_schedule WHERE id = '${id}'`,
+        /protected quote payment schedule/i,
+      );
+    }
+
+    insertSchedule(db, { id: 'schedule-activated', quoteVersion: 5 });
+    insertInstallment(db, {
+      id: 'installment-activated',
+      scheduleId: 'schedule-activated',
+      quoteVersion: 5,
+    });
+    assertConstraint(
+      db,
+      "UPDATE work_order_payment_schedule SET amount = 4100 WHERE id = 'schedule-activated'",
+      /protected quote payment schedule/i,
+    );
+    assertConstraint(
+      db,
+      "DELETE FROM work_order_payment_schedule WHERE id = 'schedule-activated'",
+      /protected quote payment schedule/i,
+    );
   });
 
   test(`${label} enforces receipt claim and private evidence integrity`, () => {
@@ -563,18 +797,35 @@ for (const [label, createDatabase] of databaseFactories) {
     `, /foreign key/i);
   });
 
+  test(`${label} retains receipt engineer identity as an immutable audit snapshot`, () => {
+    const db = createDatabase();
+    insertSchedule(db);
+    insertInstallment(db);
+    insertClaim(db);
+
+    db.exec("DELETE FROM engineers WHERE id = 'eng-1'");
+    assert.deepEqual({ ...db.prepare(`
+      SELECT engineer_id, status, claimed_amount
+      FROM work_order_receipt_claims WHERE id = 'claim-1'
+    `).get() }, {
+      engineer_id: 'eng-1',
+      status: 'pending',
+      claimed_amount: 4000,
+    });
+  });
+
   test(`${label} blocks parent deletion while commercial receipt evidence exists`, () => {
     const db = createDatabase();
     seedExecutionGraph(db);
 
-    for (const [table, id] of [
-      ['work_orders', 'wo-1'],
-      ['work_order_pricing', 'pricing-1'],
-      ['work_order_payment_schedule', 'schedule-1'],
-      ['work_order_installments', 'installment-1'],
-      ['work_order_receipt_claims', 'claim-1'],
+    for (const [table, id, pattern] of [
+      ['work_orders', 'wo-1', /foreign key/i],
+      ['work_order_pricing', 'pricing-1', /foreign key/i],
+      ['work_order_payment_schedule', 'schedule-1', /protected quote payment schedule/i],
+      ['work_order_installments', 'installment-1', /foreign key/i],
+      ['work_order_receipt_claims', 'claim-1', /foreign key/i],
     ]) {
-      assertConstraint(db, `DELETE FROM ${table} WHERE id = '${id}'`, /foreign key/i);
+      assertConstraint(db, `DELETE FROM ${table} WHERE id = '${id}'`, pattern);
     }
     assert.equal(db.prepare('SELECT COUNT(*) AS count FROM work_order_receipt_evidence').get().count, 1);
     assert.equal(db.prepare('SELECT COUNT(*) AS count FROM work_order_receipt_claims').get().count, 1);

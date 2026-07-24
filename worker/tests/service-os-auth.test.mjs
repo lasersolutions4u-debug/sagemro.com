@@ -24,6 +24,7 @@ function createTestEnv(overrides = {}) {
     engineerActivations: [],
     workOrders: [],
     materialRequisitions: [],
+    quoteExecutionWorkOrderIds: new Set(),
     batches: [],
     batchError: null,
   };
@@ -54,6 +55,13 @@ function createTestEnv(overrides = {}) {
             return this;
           },
           async first() {
+            if (/FROM work_orders wo[\s\S]*work_order_payment_schedule/i.test(sql)) {
+              const [customerId, engineerId] = this.args;
+              return dbState.workOrders.find((order) => (
+                (order.customer_id === customerId || order.engineer_id === engineerId)
+                && dbState.quoteExecutionWorkOrderIds.has(order.id)
+              )) || null;
+            }
             if (/FROM material_requisitions mr\s+JOIN work_orders wo/i.test(sql)) {
               const [customerId, engineerId] = this.args;
               const workOrderIds = new Set(dbState.workOrders
@@ -896,6 +904,26 @@ test('Admin deletion preserves material requisition history for customers and en
     env.__dbState[type === 'customer' ? 'customers' : 'engineers'].push({ id: userId });
     env.__dbState.workOrders.push({ id: 'wo-linked', [ownerField]: userId });
     env.__dbState.materialRequisitions.push({ id: 'req-linked', work_order_id: 'wo-linked' });
+
+    const response = await worker.fetch(await adminRequest(
+      `https://api.sagemro.com/api/admin/users/${userId}?type=${type}`,
+      { method: 'DELETE' },
+    ), env, { waitUntil() {} });
+
+    assert.equal(response.status, 409, type);
+    assert.equal(env.__dbState.batches.length, 0, type);
+  }
+});
+
+test('Admin deletion preserves quote execution history for customers and engineers', async () => {
+  for (const [type, userId, ownerField] of [
+    ['customer', 'cust-quote-linked', 'customer_id'],
+    ['engineer', 'eng-quote-linked', 'engineer_id'],
+  ]) {
+    const env = createTestEnv();
+    env.__dbState[type === 'customer' ? 'customers' : 'engineers'].push({ id: userId });
+    env.__dbState.workOrders.push({ id: 'wo-quote-linked', [ownerField]: userId });
+    env.__dbState.quoteExecutionWorkOrderIds.add('wo-quote-linked');
 
     const response = await worker.fetch(await adminRequest(
       `https://api.sagemro.com/api/admin/users/${userId}?type=${type}`,

@@ -11327,6 +11327,36 @@ async function handleAdminDeleteUser(request, env) {
     }
 
     if (userType === 'customer' || userType === 'engineer') {
+      const linkedQuoteExecution = await env.DB.prepare(`
+        SELECT wo.id FROM work_orders wo
+        WHERE (wo.customer_id = ? OR wo.engineer_id = ?)
+          AND (
+            EXISTS (
+              SELECT 1 FROM work_order_payment_schedule schedule
+              WHERE schedule.work_order_id = wo.id
+            )
+            OR EXISTS (
+              SELECT 1 FROM work_order_installments installment
+              WHERE installment.work_order_id = wo.id
+            )
+            OR EXISTS (
+              SELECT 1 FROM work_order_receipt_claims claim
+              WHERE claim.work_order_id = wo.id
+            )
+            OR EXISTS (
+              SELECT 1 FROM work_order_receipt_evidence evidence
+              WHERE evidence.work_order_id = wo.id
+            )
+          )
+        LIMIT 1
+      `).bind(
+        userType === 'customer' ? userId : null,
+        userType === 'engineer' ? userId : null,
+      ).first();
+      if (linkedQuoteExecution) {
+        return errorResponse('该用户关联报价执行或收款历史，不能删除', 409);
+      }
+
       const linkedRequisition = await env.DB.prepare(`
         SELECT mr.id FROM material_requisitions mr
         JOIN work_orders wo ON wo.id = mr.work_order_id
