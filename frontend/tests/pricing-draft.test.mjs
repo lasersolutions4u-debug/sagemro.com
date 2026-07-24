@@ -12,8 +12,34 @@ import {
   isPricingFormValid,
   isQuoteTermsValid,
   normalizePricingFormForServiceMode,
+  parseCanonicalDecimalInteger,
   scheduleTotals,
 } from '../src/components/WorkOrder/pricingDraft.js';
+
+test('parses only canonical unsigned decimal integers within the safe range', () => {
+  for (const value of [0, 10, Number.MAX_SAFE_INTEGER, '0', '10', String(Number.MAX_SAFE_INTEGER)]) {
+    assert.equal(parseCanonicalDecimalInteger(value), Number(value));
+  }
+
+  for (const value of [
+    '',
+    '00',
+    '0010',
+    '1e3',
+    '10.5',
+    '100abc',
+    ' 10',
+    '10 ',
+    '+10',
+    '-10',
+    -0,
+    10.5,
+    Number.MAX_SAFE_INTEGER + 1,
+    String(BigInt(Number.MAX_SAFE_INTEGER) + 1n),
+  ]) {
+    assert.equal(parseCanonicalDecimalInteger(value), null, String(value));
+  }
+});
 
 test('creates the complete quote execution form with string values', () => {
   assert.deepEqual(createDefaultPricingForm(), {
@@ -40,6 +66,15 @@ test('creates editable installments and calculates their difference from the quo
   assert.deepEqual(scheduleTotals([{ amount: '6000' }, { amount: '4000' }], 10000), {
     scheduled: 10000,
     difference: 0,
+  });
+  assert.deepEqual(scheduleTotals([
+    { amount: '1e3' },
+    { amount: '10.5' },
+    { amount: '100abc' },
+    { amount: String(BigInt(Number.MAX_SAFE_INTEGER) + 1n) },
+  ], 10000), {
+    scheduled: 0,
+    difference: 10000,
   });
 });
 
@@ -228,6 +263,40 @@ test('builds normalized integer installment payloads and clears remote days', ()
   assert.equal(payload.payment_schedule[1].due_date, '2026-08-15');
 });
 
+test('refuses malformed quote integers when building payloads', () => {
+  const base = {
+    ...createDefaultPricingForm(),
+    labor_fee: '10000',
+    expected_service_days: '3',
+  };
+  const options = {
+    partsFee: 0,
+    materialItems: [],
+    engineerId: 'engineer-1',
+    serviceMode: 'onsite',
+    currency: 'USD',
+  };
+
+  for (const value of ['1e3', '10.5', '100abc', '0010', String(BigInt(Number.MAX_SAFE_INTEGER) + 1n)]) {
+    for (const key of ['labor_fee', 'travel_fee', 'other_fee']) {
+      assert.equal(buildPricingPayload({ form: { ...base, [key]: value }, ...options }), null, `${key}: ${value}`);
+    }
+    assert.equal(buildPricingPayload({ form: base, ...options, partsFee: value }), null, `parts_fee: ${value}`);
+    assert.equal(buildPricingPayload({ form: { ...base, expected_service_days: value }, ...options }), null, value);
+    assert.equal(buildPricingPayload({
+      form: {
+        ...base,
+        payment_plan_mode: 'installments',
+        payment_schedule: [
+          { ...createDefaultInstallment(1), amount: value },
+          { ...createDefaultInstallment(2), amount: '10000' },
+        ],
+      },
+      ...options,
+    }), null, `schedule: ${value}`);
+  }
+});
+
 test('validates onsite days and installment schedule invariants before submission', () => {
   const form = {
     ...createDefaultPricingForm(),
@@ -241,6 +310,31 @@ test('validates onsite days and installment schedule invariants before submissio
   };
 
   assert.equal(isPricingFormValid({ form, totalAmount: 10000, serviceMode: 'onsite', currency: 'USD' }), true);
+  for (const value of ['1e3', '10.5', '100abc', '0010', String(BigInt(Number.MAX_SAFE_INTEGER) + 1n)]) {
+    for (const key of ['labor_fee', 'parts_fee', 'travel_fee', 'other_fee']) {
+      assert.equal(isPricingFormValid({
+        form: { ...form, [key]: value },
+        totalAmount: 10000,
+        serviceMode: 'onsite',
+        currency: 'USD',
+      }), false, `${key}: ${value}`);
+    }
+    assert.equal(isPricingFormValid({
+      form: { ...form, expected_service_days: value },
+      totalAmount: 10000,
+      serviceMode: 'onsite',
+      currency: 'USD',
+    }), false, value);
+    assert.equal(isPricingFormValid({
+      form: {
+        ...form,
+        payment_schedule: [{ ...form.payment_schedule[0], amount: value }, form.payment_schedule[1]],
+      },
+      totalAmount: 10000,
+      serviceMode: 'onsite',
+      currency: 'USD',
+    }), false, `schedule: ${value}`);
+  }
   assert.equal(isPricingFormValid({
     form: { ...form, expected_service_days: '' },
     totalAmount: 10000,
@@ -335,7 +429,7 @@ test('strictly validates the complete single-payment terms returned by the API',
   assert.equal(isPaymentScheduleValid({ ...valid, schedule: [...valid.schedule, valid.schedule[0]] }), false);
 });
 
-test('quote terms require numeric server totals and onsite days', () => {
+test('quote terms normalize canonical server integers and reject malformed or unsafe values', () => {
   const pricing = {
     quote_version: 2,
     total_amount: 10000,
@@ -357,12 +451,32 @@ test('quote terms require numeric server totals and onsite days', () => {
     pricing: { ...pricing, total_amount: '10000' },
     serviceMode: 'onsite',
     currency: 'USD',
-  }), false);
+  }), true);
   assert.equal(isQuoteTermsValid({
     pricing: { ...pricing, expected_service_days: '3' },
     serviceMode: 'onsite',
     currency: 'USD',
-  }), false);
+  }), true);
+  for (const value of ['1e3', '10.5', '100abc', '0010', String(BigInt(Number.MAX_SAFE_INTEGER) + 1n)]) {
+    assert.equal(isQuoteTermsValid({
+      pricing: { ...pricing, total_amount: value },
+      serviceMode: 'onsite',
+      currency: 'USD',
+    }), false, value);
+    assert.equal(isQuoteTermsValid({
+      pricing: { ...pricing, expected_service_days: value },
+      serviceMode: 'onsite',
+      currency: 'USD',
+    }), false, value);
+    assert.equal(isQuoteTermsValid({
+      pricing: {
+        ...pricing,
+        payment_schedule: [{ ...pricing.payment_schedule[0], amount: value }],
+      },
+      serviceMode: 'onsite',
+      currency: 'USD',
+    }), false, value);
+  }
 });
 
 test('strictly validates installment trigger currency and contiguous sequence terms', () => {

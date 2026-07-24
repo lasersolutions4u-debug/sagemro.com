@@ -20,6 +20,7 @@ import {
   isPricingFormValid,
   isQuoteTermsValid,
   normalizePricingFormForServiceMode,
+  parseCanonicalDecimalInteger,
 } from './pricingDraft';
 
 const PRICING_COPY = {
@@ -350,16 +351,18 @@ export function EngineerPricingPanel({ workOrderId, engineerId, pricing, service
   });
 
   const handleSubmit = async () => {
+    const payload = buildPricingPayload({
+      form,
+      partsFee,
+      materialItems,
+      engineerId,
+      serviceMode,
+      currency,
+    });
+    if (!payload) return;
     setSubmitting(true);
     try {
-      await submitWorkOrderPricing(workOrderId, buildPricingPayload({
-        form,
-        partsFee,
-        materialItems,
-        engineerId,
-        serviceMode,
-        currency,
-      }));
+      await submitWorkOrderPricing(workOrderId, payload);
       clearEngineerPricingDraft(workOrderId);
       toastSuccess(t.engineer.submitted);
       onSubmitted?.();
@@ -500,7 +503,12 @@ export function CustomerPricingPanel({ workOrderId, customerId, serviceMode = 'r
     if (!rejectReason.trim()) { toastWarning(t.customer.negotiationRequired); return; }
     setSubmitting(true);
     try {
-      await rejectWorkOrderPricing(workOrderId, customerId, rejectReason, counterOffer ? parseInt(counterOffer) : null);
+      await rejectWorkOrderPricing(
+        workOrderId,
+        customerId,
+        rejectReason,
+        counterOffer ? parseCanonicalDecimalInteger(counterOffer) : null
+      );
       toastSuccess(t.customer.negotiationToast);
       onConfirmed?.();
       load();

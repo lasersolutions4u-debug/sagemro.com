@@ -13,6 +13,15 @@ export function createDefaultPricingForm() {
 
 export const EMPTY_ENGINEER_PRICING_FORM = createDefaultPricingForm();
 
+export function parseCanonicalDecimalInteger(value) {
+  if (typeof value === 'number') {
+    return Number.isSafeInteger(value) && value >= 0 && !Object.is(value, -0) ? value : null;
+  }
+  if (typeof value !== 'string' || !/^(0|[1-9]\d*)$/.test(value)) return null;
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) ? parsed : null;
+}
+
 export function createDefaultInstallment(sequence) {
   return {
     sequence,
@@ -83,10 +92,15 @@ export function createEngineerPricingDraftFromPricing(pricing = {}) {
 }
 
 export function scheduleTotals(schedule = [], totalAmount = 0) {
-  const scheduled = schedule.reduce((sum, row) => sum + (parseInt(row.amount, 10) || 0), 0);
+  const scheduled = schedule.reduce((sum, row) => {
+    const amount = parseCanonicalDecimalInteger(row?.amount);
+    if (amount === null || !Number.isSafeInteger(sum + amount)) return sum;
+    return sum + amount;
+  }, 0);
+  const total = parseCanonicalDecimalInteger(totalAmount) ?? 0;
   return {
     scheduled,
-    difference: Number(totalAmount || 0) - scheduled,
+    difference: total - scheduled,
   };
 }
 
@@ -107,8 +121,18 @@ const PAYMENT_TRIGGER_TYPES = new Set([
 
 function isExpectedServiceDaysValid(value, serviceMode) {
   if (!['onsite', 'hybrid'].includes(serviceMode)) return true;
-  const expectedDays = Number(value);
-  return Number.isInteger(expectedDays) && expectedDays > 0;
+  const expectedDays = parseCanonicalDecimalInteger(value);
+  return expectedDays !== null && expectedDays > 0;
+}
+
+function parseOptionalQuoteInteger(value) {
+  if (value === '' || value == null) return 0;
+  return parseCanonicalDecimalInteger(value);
+}
+
+function arePricingFeesValid(form) {
+  return ['labor_fee', 'parts_fee', 'travel_fee', 'other_fee']
+    .every((key) => parseOptionalQuoteInteger(form[key]) !== null);
 }
 
 export function isPaymentScheduleValid({ schedule, paymentPlanMode, totalAmount, currency }) {
@@ -168,7 +192,7 @@ function buildFormPaymentSchedule(form, totalAmount, currency) {
   }
   return form.payment_schedule.map((row, index) => ({
     sequence: index + 1,
-    amount: Number(row.amount),
+    amount: parseCanonicalDecimalInteger(row.amount),
     currency,
     trigger_type: row.trigger_type,
     due_date: row.trigger_type === 'fixed_date' ? row.due_date || null : null,
@@ -178,27 +202,38 @@ function buildFormPaymentSchedule(form, totalAmount, currency) {
 }
 
 export function isPricingFormValid({ form, totalAmount, serviceMode, currency }) {
+  if (!arePricingFeesValid(form)) return false;
   if (!isExpectedServiceDaysValid(form.expected_service_days, serviceMode)) return false;
+  const normalizedTotal = parseCanonicalDecimalInteger(totalAmount);
+  if (normalizedTotal === null) return false;
   return isPaymentScheduleValid({
-    schedule: buildFormPaymentSchedule(form, totalAmount, currency),
+    schedule: buildFormPaymentSchedule(form, normalizedTotal, currency),
     paymentPlanMode: form.payment_plan_mode,
-    totalAmount,
+    totalAmount: normalizedTotal,
     currency,
   });
 }
 
 export function isQuoteTermsValid({ pricing, serviceMode, currency }) {
-  const totalAmount = pricing?.total_amount ?? pricing?.subtotal;
-  return Number.isInteger(Number(pricing?.quote_version))
-    && Number(pricing.quote_version) > 0
-    && Number.isSafeInteger(totalAmount)
+  const quoteVersion = parseCanonicalDecimalInteger(pricing?.quote_version);
+  const totalAmount = parseCanonicalDecimalInteger(pricing?.total_amount ?? pricing?.subtotal);
+  const expectedServiceDays = parseCanonicalDecimalInteger(pricing?.expected_service_days);
+  const paymentSchedule = Array.isArray(pricing?.payment_schedule)
+    ? pricing.payment_schedule.map((row) => ({
+      ...row,
+      amount: parseCanonicalDecimalInteger(row?.amount),
+    }))
+    : pricing?.payment_schedule;
+  return quoteVersion !== null
+    && quoteVersion > 0
+    && totalAmount !== null
     && totalAmount > 0
     && (
       !['onsite', 'hybrid'].includes(serviceMode)
-      || (Number.isInteger(pricing.expected_service_days) && pricing.expected_service_days > 0)
+      || (expectedServiceDays !== null && expectedServiceDays > 0)
     )
     && isPaymentScheduleValid({
-      schedule: pricing.payment_schedule,
+      schedule: paymentSchedule,
       paymentPlanMode: pricing.payment_plan_mode,
       totalAmount,
       currency,
@@ -210,10 +245,6 @@ export function normalizePricingFormForServiceMode(form, serviceMode) {
   return { ...form, expected_service_days: '' };
 }
 
-function integerValue(value) {
-  return parseInt(value, 10) || 0;
-}
-
 export function buildPricingPayload({
   form,
   partsFee,
@@ -222,14 +253,25 @@ export function buildPricingPayload({
   serviceMode,
   currency,
 }) {
-  const laborFee = integerValue(form.labor_fee);
-  const normalizedPartsFee = integerValue(partsFee);
-  const travelFee = integerValue(form.travel_fee);
-  const otherFee = integerValue(form.other_fee);
+  const laborFee = parseOptionalQuoteInteger(form.labor_fee);
+  const normalizedPartsFee = parseOptionalQuoteInteger(partsFee);
+  const travelFee = parseOptionalQuoteInteger(form.travel_fee);
+  const otherFee = parseOptionalQuoteInteger(form.other_fee);
+  if ([laborFee, normalizedPartsFee, travelFee, otherFee].includes(null)) return null;
   const totalAmount = laborFee + normalizedPartsFee + travelFee + otherFee;
+  if (!Number.isSafeInteger(totalAmount) || totalAmount < 1) return null;
   const paymentPlanMode = form.payment_plan_mode === 'installments' ? 'installments' : 'single';
-  const paymentSchedule = buildFormPaymentSchedule(form, totalAmount, currency)
-    .map((row) => ({ ...row, amount: integerValue(row.amount) }));
+  const paymentSchedule = buildFormPaymentSchedule(form, totalAmount, currency);
+  const expectedServiceDays = serviceMode === 'remote'
+    ? null
+    : parseCanonicalDecimalInteger(form.expected_service_days);
+  if (serviceMode !== 'remote' && (expectedServiceDays === null || expectedServiceDays < 1)) return null;
+  if (!isPaymentScheduleValid({
+    schedule: paymentSchedule,
+    paymentPlanMode,
+    totalAmount,
+    currency,
+  })) return null;
 
   return {
     labor_fee: laborFee,
@@ -239,9 +281,7 @@ export function buildPricingPayload({
     parts_detail: form.other_fee_note,
     material_items: materialItems,
     engineer_id: engineerId,
-    expected_service_days: serviceMode === 'remote'
-      ? null
-      : integerValue(form.expected_service_days),
+    expected_service_days: expectedServiceDays,
     payment_plan_mode: paymentPlanMode,
     payment_schedule: paymentSchedule,
   };
@@ -254,12 +294,12 @@ export function getEngineerPricingTotals({ form = {}, materialItems = [] }) {
   );
   const partsFee = materialItems.length > 0
     ? Math.round(structuredPartsFee * 100) / 100
-    : (parseInt(form.parts_fee, 10) || 0);
+    : (parseOptionalQuoteInteger(form.parts_fee) ?? 0);
   const subtotal = (
-    (parseInt(form.labor_fee, 10) || 0) +
+    (parseOptionalQuoteInteger(form.labor_fee) ?? 0) +
     partsFee +
-    (parseInt(form.travel_fee, 10) || 0) +
-    (parseInt(form.other_fee, 10) || 0)
+    (parseOptionalQuoteInteger(form.travel_fee) ?? 0) +
+    (parseOptionalQuoteInteger(form.other_fee) ?? 0)
   );
 
   return {
