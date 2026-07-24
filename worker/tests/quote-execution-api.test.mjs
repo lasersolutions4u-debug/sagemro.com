@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { test } from 'node:test';
 import { DatabaseSync } from 'node:sqlite';
 
@@ -23,6 +25,9 @@ function createD1Database(db, hooks) {
         return { results: db.prepare(sql).all(...this.args) };
       },
       async run() {
+        return this.runSync();
+      },
+      runSync() {
         const result = db.prepare(sql).run(...this.args);
         return { success: true, meta: { changes: result.changes } };
       },
@@ -35,13 +40,10 @@ function createD1Database(db, hooks) {
       const beforeBatch = hooks.beforeNextBatch;
       hooks.beforeNextBatch = null;
       if (beforeBatch) await beforeBatch();
-      const batchError = hooks.nextBatchError;
-      hooks.nextBatchError = null;
-      if (batchError) throw batchError;
       db.exec('BEGIN IMMEDIATE');
       try {
         const results = [];
-        for (const prepared of statements) results.push(await prepared.run());
+        for (const prepared of statements) results.push(prepared.runSync());
         db.exec('COMMIT');
         return results;
       } catch (error) {
@@ -52,24 +54,27 @@ function createD1Database(db, hooks) {
   };
 }
 
-function createQuoteExecutionEnv({ market = 'com' } = {}) {
-  const db = new DatabaseSync(':memory:');
-  const hooks = { beforeNextBatch: null, nextBatchError: null };
+function createQuoteExecutionEnv({ market = 'com', filename = ':memory:', initialize = true } = {}) {
+  const db = new DatabaseSync(filename);
+  const hooks = { beforeNextBatch: null };
   db.exec('PRAGMA foreign_keys = ON;');
-  db.exec(schemaSql);
-  db.exec(`
-    INSERT INTO customers (id, user_no, name, phone, password_hash)
-    VALUES ('customer-1', 'U000001', 'Customer', '13900000001', 'hash');
-    INSERT INTO engineers (id, user_no, name, phone, password_hash, level, commission_rate)
-    VALUES ('engineer-1', 'E000001', 'Engineer', '13800000001', 'hash', 'senior', 0.85);
-    INSERT INTO work_orders (
-      id, order_no, customer_id, engineer_id, type, description, status,
-      quote_review_status, service_mode, active_quote_version
-    ) VALUES (
-      'wo-quote-1', 'WO-QUOTE-1', 'customer-1', 'engineer-1', 'maintenance',
-      'Quote execution request', 'in_progress', 'not_required', 'onsite', NULL
-    );
-  `);
+  db.exec('PRAGMA busy_timeout = 5000;');
+  if (initialize) {
+    db.exec(schemaSql);
+    db.exec(`
+      INSERT INTO customers (id, user_no, name, phone, password_hash)
+      VALUES ('customer-1', 'U000001', 'Customer', '13900000001', 'hash');
+      INSERT INTO engineers (id, user_no, name, phone, password_hash, level, commission_rate)
+      VALUES ('engineer-1', 'E000001', 'Engineer', '13800000001', 'hash', 'senior', 0.85);
+      INSERT INTO work_orders (
+        id, order_no, customer_id, engineer_id, type, description, status,
+        quote_review_status, service_mode, active_quote_version
+      ) VALUES (
+        'wo-quote-1', 'WO-QUOTE-1', 'customer-1', 'engineer-1', 'maintenance',
+        'Quote execution request', 'in_progress', 'not_required', 'onsite', NULL
+      );
+    `);
+  }
 
   return {
     db,
@@ -87,9 +92,26 @@ function createQuoteExecutionEnv({ market = 'com' } = {}) {
     beforeNextBatch(callback) {
       hooks.beforeNextBatch = callback;
     },
-    failNextBatch(error) {
-      hooks.nextBatchError = error;
+    close() {
+      db.close();
     },
+  };
+}
+
+function createBatchBarrier(expected) {
+  let arrived = 0;
+  let release;
+  let allArrived;
+  const released = new Promise((resolve) => { release = resolve; });
+  const ready = new Promise((resolve) => { allArrived = resolve; });
+  return {
+    async wait() {
+      arrived += 1;
+      if (arrived === expected) allArrived();
+      await released;
+    },
+    ready,
+    release,
   };
 }
 
@@ -531,6 +553,84 @@ test('supplemental projection keeps the confirmed baseline visible to customers 
   assert.equal(engineer.json.pricing.payment_schedule.reduce((sum, row) => sum + row.amount, 0), 13500);
 });
 
+test('supplemental projection includes prior confirmed supplements but hides the pending schedule from customers', async () => {
+  const ctx = createQuoteExecutionEnv();
+  await confirmBaselineForReceiptTests(ctx);
+  const pricingId = ctx.db.prepare('SELECT id FROM work_order_pricing').get().id;
+  ctx.db.exec(`
+    INSERT INTO work_order_pricing_history (
+      id, pricing_id, labor_fee, parts_fee, travel_fee, other_fee, subtotal,
+      total_amount, platform_fee, deposit_withhold, version, expected_service_days,
+      payment_plan_mode, quote_kind, parent_quote_version, status, confirmed_at
+    ) VALUES (
+      'history-supplemental-v2', '${pricingId}', 500, 100, 0, 0, 600, 600, 90, 30,
+      2, 3, 'single', 'supplemental', 1, 'confirmed', datetime('now')
+    );
+    INSERT INTO work_order_payment_schedule (
+      id, pricing_id, work_order_id, quote_version, sequence, amount, currency,
+      trigger_type, description, required_before_start
+    ) VALUES (
+      'schedule-supplemental-v2', '${pricingId}', 'wo-quote-1', 2, 1, 600, 'USD',
+      'on_acceptance', 'Confirmed supplemental', 0
+    );
+  `);
+  ctx.db.exec("UPDATE work_order_pricing SET quote_version = 2, labor_fee = 9500, parts_fee = 2100, travel_fee = 1000, subtotal = 12600, total_amount = 12600, platform_fee = 1890, deposit_withhold = 630, status = 'submitted' WHERE work_order_id = 'wo-quote-1'");
+
+  const pending = await submitQuote(ctx, quotePayload({
+    labor_fee: 300,
+    parts_fee: 200,
+    travel_fee: 0,
+    expected_service_days: 1,
+    quote_kind: 'supplemental',
+    parent_quote_version: 1,
+    payment_plan_mode: 'single',
+    payment_schedule: undefined,
+  }));
+  assert.equal(pending.response.status, 200);
+  assert.equal(pending.json.quote_version, 3);
+
+  ctx.db.exec(`
+    INSERT INTO work_order_pricing_history (
+      id, pricing_id, labor_fee, parts_fee, travel_fee, other_fee, subtotal,
+      total_amount, platform_fee, deposit_withhold, version, expected_service_days,
+      payment_plan_mode, quote_kind, parent_quote_version, status
+    ) VALUES
+      ('history-rejected-v4', '${pricingId}', 900, 0, 0, 0, 900, 900, 135, 45,
+       4, 3, 'single', 'supplemental', 1, 'rejected'),
+      ('history-draft-v5', '${pricingId}', 800, 0, 0, 0, 800, 800, 120, 40,
+       5, 3, 'single', 'supplemental', 1, 'draft');
+    INSERT INTO work_order_payment_schedule (
+      id, pricing_id, work_order_id, quote_version, sequence, amount, currency,
+      trigger_type, description, required_before_start
+    ) VALUES
+      ('schedule-rejected-v4', '${pricingId}', 'wo-quote-1', 4, 1, 900, 'USD',
+       'on_acceptance', 'Rejected supplemental', 0),
+      ('schedule-draft-v5', '${pricingId}', 'wo-quote-1', 5, 1, 800, 'USD',
+       'on_acceptance', 'Draft supplemental', 0);
+  `);
+
+  const projection = ctx.db.prepare('SELECT * FROM work_order_pricing WHERE work_order_id = ?').get('wo-quote-1');
+  assert.equal(projection.labor_fee, 9800);
+  assert.equal(projection.parts_fee, 2300);
+  assert.equal(projection.travel_fee, 1000);
+  assert.equal(projection.total_amount, 13100);
+
+  const customer = await api(ctx, '/api/workorders/wo-quote-1/pricing', {
+    method: 'GET', userType: 'customer', userId: 'customer-1',
+  });
+  assert.equal(customer.response.status, 200);
+  assert.equal(customer.json.pricing.total_amount, 12600);
+  assert.deepEqual(customer.json.pricing.payment_schedule.map((row) => row.quote_version), [1, 1, 2]);
+
+  const engineer = await api(ctx, '/api/workorders/wo-quote-1/pricing', {
+    method: 'GET', userType: 'engineer', userId: 'engineer-1',
+  });
+  assert.equal(engineer.response.status, 200);
+  assert.equal(engineer.json.pricing.total_amount, 13100);
+  assert.deepEqual(engineer.json.pricing.payment_schedule.map((row) => row.quote_version), [1, 1, 2, 3]);
+  assert.equal(engineer.json.pricing.payment_schedule.reduce((sum, row) => sum + row.amount, 0), 13100);
+});
+
 test('generic detail hides pending and rejected review schedules from customers', async () => {
   const ctx = createQuoteExecutionEnv();
   await submitQuote(ctx);
@@ -554,14 +654,32 @@ test('generic detail hides pending and rejected review schedules from customers'
   assert.equal(rejectedCustomer.json.pricing, null);
 });
 
-test('first-quote uniqueness constraint is returned as a localized conflict', async () => {
-  const ctx = createQuoteExecutionEnv();
-  ctx.failNextBatch(new Error('D1_ERROR: UNIQUE constraint failed: work_order_pricing.work_order_id: SQLITE_CONSTRAINT'));
+test('first-quote race maps SQLite uniqueness to 409 and rolls back the losing batch', async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'sagemro-quote-race-'));
+  const filename = join(directory, 'quote-execution.sqlite');
+  const first = createQuoteExecutionEnv({ filename });
+  const second = createQuoteExecutionEnv({ filename, initialize: false });
+  const barrier = createBatchBarrier(2);
+  first.beforeNextBatch(() => barrier.wait());
+  second.beforeNextBatch(() => barrier.wait());
 
-  const result = await submitQuote(ctx);
-
-  assert.equal(result.response.status, 409);
-  assert.equal(result.json.error, 'The quote changed. Refresh and try again.');
+  try {
+    const firstRequest = submitQuote(first);
+    const secondRequest = submitQuote(second);
+    await barrier.ready;
+    barrier.release();
+    const results = await Promise.all([firstRequest, secondRequest]);
+    const statuses = results.map(({ response }) => response.status).sort();
+    assert.deepEqual(statuses, [200, 409]);
+    assert.equal(results.find(({ response }) => response.status === 409).json.error, 'The quote changed. Refresh and try again.');
+    assert.equal(first.db.prepare('SELECT COUNT(*) AS count FROM work_order_pricing').get().count, 1);
+    assert.equal(first.db.prepare('SELECT COUNT(*) AS count FROM work_order_pricing_history').get().count, 1);
+    assert.equal(first.db.prepare('SELECT COUNT(*) AS count FROM work_order_payment_schedule').get().count, 2);
+  } finally {
+    first.close();
+    second.close();
+    rmSync(directory, { recursive: true, force: true });
+  }
 });
 
 test('baseline replacement fails when a receipt is confirmed between eligibility read and batch write', async () => {

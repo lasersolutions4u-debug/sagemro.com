@@ -14064,24 +14064,20 @@ async function handleSubmitWorkOrderPricing(request, env) {
     const existing = await env.DB.prepare(
       'SELECT * FROM work_order_pricing WHERE work_order_id = ?'
     ).bind(workOrderId).first();
-    const activeBaseline = quoteKind === 'supplemental'
-      ? await env.DB.prepare(`
-        SELECT history.*
-        FROM work_order_pricing_history history
-        WHERE history.pricing_id = ? AND history.version = ?
-          AND history.quote_kind = 'baseline' AND history.status = 'confirmed'
-      `).bind(existing?.id || '', parentQuoteVersion).first()
-      : null;
-    const projectionFees = activeBaseline ? {
-      labor_fee: (activeBaseline.labor_fee || 0) + (labor_fee || 0),
-      parts_fee: (activeBaseline.parts_fee || 0) + (parts_fee || 0),
-      travel_fee: (activeBaseline.travel_fee || 0) + (travel_fee || 0),
-      other_fee: (activeBaseline.other_fee || 0) + (other_fee || 0),
-      subtotal: (activeBaseline.subtotal || 0) + subtotal,
-      total_amount: (activeBaseline.total_amount || 0) + subtotal,
-      platform_fee: (activeBaseline.platform_fee || 0) + platformFee,
-      deposit_withhold: (activeBaseline.deposit_withhold || 0) + depositWithhold,
-      expected_service_days: activeBaseline.expected_service_days ?? quoteExecution.expected_service_days,
+    const confirmedCommercialRows = quoteKind === 'supplemental'
+      ? await listConfirmedCommercialQuoteVersions(env, existing?.id || '', parentQuoteVersion)
+      : [];
+    const confirmedCommercial = aggregateCommercialQuoteVersions(confirmedCommercialRows);
+    const projectionFees = quoteKind === 'supplemental' ? {
+      labor_fee: confirmedCommercial.labor_fee + (labor_fee || 0),
+      parts_fee: confirmedCommercial.parts_fee + (parts_fee || 0),
+      travel_fee: confirmedCommercial.travel_fee + (travel_fee || 0),
+      other_fee: confirmedCommercial.other_fee + (other_fee || 0),
+      subtotal: confirmedCommercial.subtotal + subtotal,
+      total_amount: confirmedCommercial.total_amount + subtotal,
+      platform_fee: confirmedCommercial.platform_fee + platformFee,
+      deposit_withhold: confirmedCommercial.deposit_withhold + depositWithhold,
+      expected_service_days: confirmedCommercial.expected_service_days ?? quoteExecution.expected_service_days,
       payment_plan_mode: 'installments',
     } : {
       labor_fee: labor_fee || 0,
@@ -14413,10 +14409,54 @@ function quoteProjectionAuditSnapshot(pricing) {
   };
 }
 
+async function listConfirmedCommercialQuoteVersions(env, pricingId, baselineVersion) {
+  if (!pricingId || !Number.isInteger(Number(baselineVersion)) || Number(baselineVersion) < 1) return [];
+  const rows = await env.DB.prepare(`
+    SELECT * FROM work_order_pricing_history
+    WHERE pricing_id = ? AND status = 'confirmed' AND (
+      (version = ? AND quote_kind = 'baseline')
+      OR (quote_kind = 'supplemental' AND parent_quote_version = ?)
+    )
+    ORDER BY version
+  `).bind(pricingId, Number(baselineVersion), Number(baselineVersion)).all();
+  return rows.results || [];
+}
+
+function aggregateCommercialQuoteVersions(rows) {
+  return rows.reduce((total, row) => ({
+    labor_fee: total.labor_fee + Number(row.labor_fee || 0),
+    parts_fee: total.parts_fee + Number(row.parts_fee || 0),
+    travel_fee: total.travel_fee + Number(row.travel_fee || 0),
+    other_fee: total.other_fee + Number(row.other_fee || 0),
+    subtotal: total.subtotal + Number(row.subtotal || 0),
+    total_amount: total.total_amount + Number(row.total_amount || 0),
+    platform_fee: total.platform_fee + Number(row.platform_fee || 0),
+    deposit_withhold: total.deposit_withhold + Number(row.deposit_withhold || 0),
+    expected_service_days: total.expected_service_days ?? row.expected_service_days ?? null,
+  }), {
+    labor_fee: 0,
+    parts_fee: 0,
+    travel_fee: 0,
+    other_fee: 0,
+    subtotal: 0,
+    total_amount: 0,
+    platform_fee: 0,
+    deposit_withhold: 0,
+    expected_service_days: null,
+  });
+}
+
+async function listQuotePaymentSchedules(env, workOrderId, quoteVersions) {
+  const schedules = await Promise.all(quoteVersions.map((version) => (
+    listQuotePaymentSchedule(env, workOrderId, version)
+  )));
+  return schedules.flat();
+}
+
 async function getWorkOrderPricingView(env, workOrder, pricing, customerView = false) {
   if (!pricing) return null;
   const currentHistory = await env.DB.prepare(`
-    SELECT quote_kind, parent_quote_version, status
+    SELECT *
     FROM work_order_pricing_history
     WHERE pricing_id = ? AND version = ?
   `).bind(pricing.id, Number(pricing.quote_version || 0)).first();
@@ -14428,32 +14468,37 @@ async function getWorkOrderPricingView(env, workOrder, pricing, customerView = f
   }
   const supplemental = currentHistory?.quote_kind === 'supplemental' && activeVersion > 0;
   if (supplemental) {
-    const active = await env.DB.prepare(`
-      SELECT history.*
-      FROM work_order_pricing_history history
-      WHERE history.pricing_id = ? AND history.version = ?
-        AND history.quote_kind = 'baseline' AND history.status = 'confirmed'
-    `).bind(pricing.id, activeVersion).first();
-    if (active && customerView && !['submitted', 'confirmed'].includes(pricing.status)) {
+    const confirmedRows = await listConfirmedCommercialQuoteVersions(env, pricing.id, activeVersion);
+    const active = confirmedRows.find((row) => (
+      Number(row.version) === activeVersion && row.quote_kind === 'baseline'
+    ));
+    if (active) {
+      const visibleRows = customerView && !['submitted', 'confirmed'].includes(pricing.status)
+        ? confirmedRows
+        : [
+          ...confirmedRows,
+          ...(['pending_review', 'approved'].includes(currentHistory.status) ? [currentHistory] : []),
+        ];
+      const aggregate = aggregateCommercialQuoteVersions(visibleRows);
+      const visibleVersions = visibleRows.map((row) => Number(row.version));
       return {
         pricing: {
           ...pricing,
-          ...active,
+          ...aggregate,
           id: pricing.id,
           work_order_id: pricing.work_order_id,
           engineer_id: pricing.engineer_id,
-          quote_version: active.version,
-          status: 'confirmed',
+          quote_version: customerView && !['submitted', 'confirmed'].includes(pricing.status)
+            ? Math.max(...visibleVersions)
+            : pricing.quote_version,
+          status: customerView && !['submitted', 'confirmed'].includes(pricing.status)
+            ? 'confirmed'
+            : pricing.status,
+          expected_service_days: aggregate.expected_service_days,
+          payment_plan_mode: 'installments',
         },
-        payment_schedule: await listQuotePaymentSchedule(env, workOrder.id, activeVersion),
+        payment_schedule: await listQuotePaymentSchedules(env, workOrder.id, visibleVersions),
       };
-    }
-    if (active) {
-      const [baselineSchedule, supplementalSchedule] = await Promise.all([
-        listQuotePaymentSchedule(env, workOrder.id, activeVersion),
-        listQuotePaymentSchedule(env, workOrder.id, pricing.quote_version),
-      ]);
-      return { pricing, payment_schedule: [...baselineSchedule, ...supplementalSchedule] };
     }
   }
   if (customerView && !['submitted', 'confirmed'].includes(pricing.status)) return null;
