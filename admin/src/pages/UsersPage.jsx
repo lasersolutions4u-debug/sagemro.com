@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Download, Filter, Plus, Search, Trash2, X } from 'lucide-react';
 import { createAdminUser, deleteAdminUser, getAdminUsers } from '../services/api';
 import { runtimeConfig } from '../config/runtime';
@@ -129,18 +129,26 @@ export function UsersPage() {
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [deleteNotice, setDeleteNotice] = useState('');
   const [loadError, setLoadError] = useState('');
+  const loadRequestId = useRef(0);
   const pageSize = 20;
 
   const loadUsers = () => {
+    const requestId = ++loadRequestId.current;
     setLoading(true);
     setLoadError('');
     const filters = {};
     if (search) filters.search = search;
     if (region) filters.region = region;
     return getAdminUsers('customer', page, pageSize, filters)
-      .then(setData)
-      .catch((error) => setLoadError(error.message || t.loadFailed))
-      .finally(() => setLoading(false));
+      .then((response) => {
+        if (loadRequestId.current === requestId) setData(response);
+      })
+      .catch((error) => {
+        if (loadRequestId.current === requestId) setLoadError(error.message || t.loadFailed);
+      })
+      .finally(() => {
+        if (loadRequestId.current === requestId) setLoading(false);
+      });
   };
 
   useEffect(() => {
