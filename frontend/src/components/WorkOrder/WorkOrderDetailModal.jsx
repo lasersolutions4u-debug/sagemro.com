@@ -1131,6 +1131,7 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
                 workOrderId={workOrder.id}
                 engineerId={userId}
                 pricing={detail?.pricing || null}
+                serviceMode={detail?.service_mode || workOrder.service_mode || 'remote'}
                 onSubmitted={() => { loadDetail(); onConfirmed?.(); }}
               />
             )}
@@ -1138,6 +1139,7 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
               <CustomerPricingPanel
                 workOrderId={workOrder.id}
                 customerId={userId}
+                serviceMode={detail?.service_mode || workOrder.service_mode || 'remote'}
                 onConfirmed={(nextTab) => {
                   if (nextTab) setTab(nextTab);
                   loadDetail();

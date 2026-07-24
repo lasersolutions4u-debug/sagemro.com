@@ -10,13 +10,16 @@ import { PaymentModal } from '../Payment/PaymentModal';
 import { toastSuccess, toastError, toastWarning } from '../../utils/feedback';
 import { isCnLocale } from '../../utils/locale';
 import { MaterialPicker } from './MaterialPicker';
+import { PaymentScheduleEditor } from './PaymentScheduleEditor';
+import { PaymentScheduleSummary } from './PaymentScheduleSummary';
 import {
+  buildPricingPayload,
   createEngineerPricingDraft,
   createEngineerPricingDraftFromPricing,
   getEngineerPricingTotals,
+  isPricingFormValid,
+  normalizePricingFormForServiceMode,
 } from './pricingDraft';
-
-const CURRENCY = 'USD';
 
 const PRICING_COPY = {
   en: {
@@ -45,8 +48,52 @@ const PRICING_COPY = {
       partsDetail: 'Other Fee Note (Optional)',
       partsDetailPlaceholder: 'e.g. special access, weekend support, crane, overtime',
       quoteSubtotal: 'Quote Subtotal Price',
+      expectedDays: 'Expected onsite workdays',
+      expectedDaysPlaceholder: 'Positive whole days',
+      extensionNotice: 'Approved extensions increase the workday allowance only and do not automatically add labor fees.',
       submitting: 'Submitting...',
       submit: 'Submit for Operations Review',
+    },
+    schedule: {
+      paymentPlanLabel: 'Payment plan',
+      single: '100% before service starts',
+      installments: 'Installments',
+      singleHelp: 'The full quote total is due before service starts.',
+      installmentsHelp: 'Add 2 to 6 installments. Scheduled amounts must equal the quote total.',
+      installment: 'Installment',
+      amount: 'Amount',
+      trigger: 'Payment trigger',
+      dueDate: 'Due date',
+      description: 'Customer-visible description',
+      descriptionPlaceholder: 'Optional payment term detail',
+      milestonePlaceholder: 'Describe the milestone',
+      requiredBeforeStart: 'Required before service starts',
+      addInstallment: 'Add installment',
+      remove: 'Remove installment',
+      moveUp: 'Move installment up',
+      moveDown: 'Move installment down',
+      total: 'Quote total',
+      scheduled: 'Scheduled',
+      difference: 'Difference',
+      percent: 'Scheduled percent',
+      paymentSchedule: 'Payment schedule',
+      expectedDays: 'Expected onsite workdays',
+      days: 'days',
+      version: 'Version',
+      completeQuote: 'Complete quote version',
+      laborFee: 'Labor Fee',
+      partsFee: 'Parts Fee',
+      travelFee: 'Travel Fee',
+      otherFee: 'Other Fees',
+      otherFeeNote: 'Other Fee Note',
+      triggerLabels: {
+        before_start: 'Before service starts',
+        on_arrival: 'On arrival',
+        milestone: 'At agreed milestone',
+        on_completion: 'On service completion',
+        on_acceptance: 'On customer acceptance',
+        fixed_date: 'On fixed date',
+      },
     },
     customer: {
       confirmedToast: 'Quote confirmed. Please choose a payment method so SAGEMRO can send instructions.',
@@ -54,20 +101,110 @@ const PRICING_COPY = {
       negotiationToast: 'Negotiation initiated. Operations will review and submit a revised quote.',
       preparingQuote: 'SAGEMRO is preparing a formal quote. You will be notified after diagnosis, scope, and safety requirements are reviewed.',
       totalPayable: 'Quote Subtotal Price',
-      confirmQuote: 'Confirm Quote',
+      confirmQuote: 'Confirm Complete Quote',
+      reviewQuote: 'Review Complete Quote',
       negotiate: 'Negotiate',
       negotiationPlaceholder: 'Please explain your reason for negotiation...',
       counterOfferPlaceholder: 'Your expected price (USD, optional)',
       cancel: 'Cancel',
       submitting: 'Submitting...',
-      confirmNotice: 'After confirmation, please choose a payment method. The engineer follows up collection and Admin approves service start after receipt.',
+      confirmNotice: 'Confirm this complete quote version, including all fees, onsite workdays, and payment installments. Partial confirmation is not available.',
       confirming: 'Confirming...',
       quoteConfirmed: 'Quote Confirmed',
       payment: (amount) => `Request Payment Instructions (${amount} USD)`,
     },
   },
-  get cn() {
-    return this.en;
+  cn: {
+    status: {
+      draft: '草稿 / 协商中',
+      pending_review: '运营审核中',
+      submitted: '已提交，待确认',
+      confirmed: '已确认',
+    },
+    priceCheck: {
+      reasonable: '根据当前市场参考数据，此报价处于预期范围内。',
+      high: '报价偏高',
+      low: '报价偏低',
+    },
+    engineer: {
+      submitted: '报价已提交运营审核。',
+      helper: '请填写内部报价方案。运营团队将在客户看到正式报价前审核服务范围、费用和安全要求。',
+      laborFee: '人工费',
+      laborPlaceholder: '工时 × 单价',
+      partsFee: '配件费',
+      partsPlaceholder: '配件总费用',
+      travelFee: '差旅费',
+      travelPlaceholder: '交通 + 住宿',
+      otherFee: '其他费用',
+      otherPlaceholder: '其他费用',
+      partsDetail: '其他费用说明（选填）',
+      partsDetailPlaceholder: '例如特殊进场、周末支持、吊装、加班',
+      quoteSubtotal: '报价总额',
+      expectedDays: '预计现场作业日',
+      expectedDaysPlaceholder: '请输入正整数天数',
+      extensionNotice: '获批延期只增加可用作业日，不会自动增加人工费。',
+      submitting: '提交中...',
+      submit: '提交运营审核',
+    },
+    schedule: {
+      paymentPlanLabel: '付款计划',
+      single: '开工前一次付清',
+      installments: '分次付款',
+      singleHelp: '服务开始前支付全部报价金额。',
+      installmentsHelp: '可设置 2 至 6 期，计划金额合计必须等于报价总额。',
+      installment: '分期',
+      amount: '金额',
+      trigger: '付款节点',
+      dueDate: '到期日期',
+      description: '客户可见说明',
+      descriptionPlaceholder: '选填付款条款说明',
+      milestonePlaceholder: '请说明具体里程碑',
+      requiredBeforeStart: '开工前必须到账',
+      addInstallment: '添加一期',
+      remove: '删除本期',
+      moveUp: '上移本期',
+      moveDown: '下移本期',
+      total: '报价总额',
+      scheduled: '计划金额',
+      difference: '差额',
+      percent: '计划占比',
+      paymentSchedule: '付款计划',
+      expectedDays: '预计现场作业日',
+      days: '天',
+      version: '版本',
+      completeQuote: '完整报价版本',
+      laborFee: '人工费',
+      partsFee: '配件费',
+      travelFee: '差旅费',
+      otherFee: '其他费用',
+      otherFeeNote: '其他费用说明',
+      triggerLabels: {
+        before_start: '服务开始前',
+        on_arrival: '工程师到场时',
+        milestone: '约定里程碑完成时',
+        on_completion: '服务完成时',
+        on_acceptance: '客户验收时',
+        fixed_date: '指定日期',
+      },
+    },
+    customer: {
+      confirmedToast: '报价已确认。请选择付款方式以获取付款指引。',
+      negotiationRequired: '请输入议价原因',
+      negotiationToast: '已发起议价，运营团队将审核并提交修订报价。',
+      preparingQuote: 'SAGEMRO 正在准备正式报价。完成诊断、范围和安全要求审核后将通知您。',
+      totalPayable: '报价总额',
+      confirmQuote: '确认完整报价',
+      reviewQuote: '查看并确认完整报价',
+      negotiate: '发起议价',
+      negotiationPlaceholder: '请说明议价原因...',
+      counterOfferPlaceholder: '您的期望价格（USD，选填）',
+      cancel: '取消',
+      submitting: '提交中...',
+      confirmNotice: '请确认此完整报价版本，包括全部费用、预计现场作业日和各期付款安排。不支持部分确认。',
+      confirming: '确认中...',
+      quoteConfirmed: '报价已确认',
+      payment: (amount) => `获取付款指引（${amount} USD）`,
+    },
   },
 };
 
@@ -159,8 +296,9 @@ export function AIPriceCheck({ check }) {
 }
 
 // ========== 閺嶉晲鐜崠鐚寸礄瀹搞儳鈻肩敮鍫濓綖閸愭瑱绱?==========
-export function EngineerPricingPanel({ workOrderId, engineerId, pricing, onSubmitted }) {
+export function EngineerPricingPanel({ workOrderId, engineerId, pricing, serviceMode = 'remote', onSubmitted }) {
   const t = getPricingCopy();
+  const currency = isCnLocale() ? 'CNY' : 'USD';
   const initialDraft = readEngineerPricingDraft(workOrderId, pricing);
   const [form, setForm] = useState(initialDraft.form);
   const [materialItems, setMaterialItems] = useState(initialDraft.materialItems);
@@ -169,6 +307,10 @@ export function EngineerPricingPanel({ workOrderId, engineerId, pricing, onSubmi
   useEffect(() => {
     writeEngineerPricingDraft(workOrderId, { form, materialItems });
   }, [form, materialItems, workOrderId]);
+
+  useEffect(() => {
+    setForm((current) => normalizePricingFormForServiceMode(current, serviceMode));
+  }, [serviceMode]);
 
   useEffect(() => {
     const saved = typeof window !== 'undefined'
@@ -185,19 +327,19 @@ export function EngineerPricingPanel({ workOrderId, engineerId, pricing, onSubmi
     form,
     materialItems,
   });
+  const scheduleIsValid = isPricingFormValid({ form, totalAmount: subtotal, serviceMode });
 
   const handleSubmit = async () => {
     setSubmitting(true);
     try {
-      await submitWorkOrderPricing(workOrderId, {
-        labor_fee: parseInt(form.labor_fee) || 0,
-        parts_fee: partsFee,
-        travel_fee: parseInt(form.travel_fee) || 0,
-        other_fee: parseInt(form.other_fee) || 0,
-        parts_detail: form.other_fee_note,
-        material_items: materialItems,
-        engineer_id: engineerId,
-      });
+      await submitWorkOrderPricing(workOrderId, buildPricingPayload({
+        form,
+        partsFee,
+        materialItems,
+        engineerId,
+        serviceMode,
+        currency,
+      }));
       clearEngineerPricingDraft(workOrderId);
       toastSuccess(t.engineer.submitted);
       onSubmitted?.();
@@ -220,7 +362,7 @@ export function EngineerPricingPanel({ workOrderId, engineerId, pricing, onSubmi
           placeholder={placeholder}
           className="w-full px-3 py-2 text-sm border border-[var(--color-border)] rounded-xl bg-[var(--color-surface)] text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
         />
-        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-[var(--color-text-muted)]">{CURRENCY}</span>
+        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-[var(--color-text-muted)]">{currency}</span>
       </div>
     </div>
   );
@@ -234,7 +376,7 @@ export function EngineerPricingPanel({ workOrderId, engineerId, pricing, onSubmi
           <div>
             <label className="block text-xs text-[var(--color-text-secondary)] mb-1">{t.engineer.partsFee}</label>
             <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-3 py-2 text-sm text-[var(--color-text-primary)]">
-              {partsFee} {CURRENCY}
+              {partsFee} {currency}
             </div>
           </div>
         ) : field('parts_fee', t.engineer.partsFee, t.engineer.partsPlaceholder)}
@@ -255,19 +397,42 @@ export function EngineerPricingPanel({ workOrderId, engineerId, pricing, onSubmi
         />
       </div>
       <MaterialPicker purpose="quote" workOrderId={workOrderId} items={materialItems} onChange={setMaterialItems} />
+      {['onsite', 'hybrid'].includes(serviceMode) && (
+        <div>
+          <label className="mb-1 block text-xs text-[var(--color-text-secondary)]">{t.engineer.expectedDays}</label>
+          <input
+            aria-label={t.engineer.expectedDays}
+            type="number"
+            min="1"
+            step="1"
+            value={form.expected_service_days}
+            onChange={(event) => setForm({ ...form, expected_service_days: event.target.value })}
+            placeholder={t.engineer.expectedDaysPlaceholder}
+            className="w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
+          />
+          <p className="mt-1.5 text-xs text-[var(--color-text-muted)]">{t.engineer.extensionNotice}</p>
+        </div>
+      )}
       {/* 鐠愬湱鏁ゅЧ鍥ㄢ偓?*/}
       <div className="p-3 bg-[var(--color-surface-elevated)] rounded-xl space-y-1.5 text-sm">
-        <div className="flex justify-between"><span className="text-[var(--color-text-secondary)]">{t.engineer.laborFee}</span><span>{form.labor_fee || 0} {CURRENCY}</span></div>
-        <div className="flex justify-between"><span className="text-[var(--color-text-secondary)]">{t.engineer.partsFee}</span><span>{partsFee} {CURRENCY}</span></div>
-        <div className="flex justify-between"><span className="text-[var(--color-text-secondary)]">{t.engineer.travelFee}</span><span>{form.travel_fee || 0} {CURRENCY}</span></div>
-        <div className="flex justify-between"><span className="text-[var(--color-text-secondary)]">{t.engineer.otherFee}</span><span>{form.other_fee || 0} {CURRENCY}</span></div>
-        <div className="flex justify-between border-t border-[var(--color-border)] pt-1.5 font-semibold text-[var(--color-primary)]"><span>{t.engineer.quoteSubtotal}</span><span>{subtotal} {CURRENCY}</span></div>
+        <div className="flex justify-between"><span className="text-[var(--color-text-secondary)]">{t.engineer.laborFee}</span><span>{form.labor_fee || 0} {currency}</span></div>
+        <div className="flex justify-between"><span className="text-[var(--color-text-secondary)]">{t.engineer.partsFee}</span><span>{partsFee} {currency}</span></div>
+        <div className="flex justify-between"><span className="text-[var(--color-text-secondary)]">{t.engineer.travelFee}</span><span>{form.travel_fee || 0} {currency}</span></div>
+        <div className="flex justify-between"><span className="text-[var(--color-text-secondary)]">{t.engineer.otherFee}</span><span>{form.other_fee || 0} {currency}</span></div>
+        <div className="flex justify-between border-t border-[var(--color-border)] pt-1.5 font-semibold text-[var(--color-primary)]"><span>{t.engineer.quoteSubtotal}</span><span>{subtotal} {currency}</span></div>
       </div>
+      <PaymentScheduleEditor
+        form={form}
+        onChange={setForm}
+        totalAmount={subtotal}
+        currency={currency}
+        copy={t.schedule}
+      />
       <button
         data-testid="submit-pricing-button"
         onClick={handleSubmit}
-        disabled={submitting || subtotal === 0}
-        className="w-full py-2.5 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] disabled:opacity-50 text-white rounded-xl font-medium"
+        disabled={submitting || !scheduleIsValid}
+        className="w-full whitespace-nowrap py-2.5 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] disabled:opacity-50 text-white rounded-xl font-medium"
       >
         {submitting ? t.engineer.submitting : t.engineer.submit}
       </button>
@@ -276,8 +441,9 @@ export function EngineerPricingPanel({ workOrderId, engineerId, pricing, onSubmi
 }
 
 // ========== 閹躲儰鐜涵顔款吇閸栫尨绱欑€广垺鍩涢弻銉ф箙閿?==========
-export function CustomerPricingPanel({ workOrderId, customerId, onConfirmed }) {
+export function CustomerPricingPanel({ workOrderId, customerId, serviceMode = 'remote', onConfirmed }) {
   const t = getPricingCopy();
+  const currency = isCnLocale() ? 'CNY' : 'USD';
   const [pricing, setPricing] = useState(null);
   const [loading, setLoading] = useState(true);
   const [action, setAction] = useState(null); // 'confirm' | 'reject'
@@ -298,7 +464,7 @@ export function CustomerPricingPanel({ workOrderId, customerId, onConfirmed }) {
   const handleConfirm = async () => {
     setSubmitting(true);
     try {
-      await confirmWorkOrderPricing(workOrderId, customerId);
+      await confirmWorkOrderPricing(workOrderId, customerId, pricing.quote_version);
       toastSuccess(t.customer.confirmedToast);
       onConfirmed?.();
       load();
@@ -335,6 +501,13 @@ export function CustomerPricingPanel({ workOrderId, customerId, onConfirmed }) {
       </div>
     );
   }
+  const totalAmount = Number(pricing.total_amount || pricing.subtotal || 0);
+  const scheduleForm = createEngineerPricingDraftFromPricing(pricing).form;
+  const scheduleIsValid = Number.isInteger(Number(pricing.quote_version))
+    && Number(pricing.quote_version) > 0
+    && Array.isArray(pricing.payment_schedule)
+    && pricing.payment_schedule.length > 0
+    && isPricingFormValid({ form: scheduleForm, totalAmount, serviceMode });
 
   return (
     <div className="space-y-3">
@@ -342,30 +515,23 @@ export function CustomerPricingPanel({ workOrderId, customerId, onConfirmed }) {
         <PricingStatusBadge status={pricing.status} />
       </div>
 
-      {/* 鐠愬湱鏁ら弰搴ｇ矎 */}
-      <div className="p-3 bg-[var(--color-surface-elevated)] rounded-xl space-y-1.5 text-sm">
-        <div className="flex justify-between"><span className="text-[var(--color-text-secondary)]">{t.engineer.laborFee}</span><span>{pricing.labor_fee || 0} {CURRENCY}</span></div>
-        <div className="flex justify-between"><span className="text-[var(--color-text-secondary)]">{t.engineer.partsFee}</span><span>{pricing.parts_fee || 0} {CURRENCY}</span></div>
-        <div className="flex justify-between"><span className="text-[var(--color-text-secondary)]">{t.engineer.travelFee}</span><span>{pricing.travel_fee || 0} {CURRENCY}</span></div>
-        <div className="flex justify-between"><span className="text-[var(--color-text-secondary)]">{t.engineer.otherFee}</span><span>{pricing.other_fee || 0} {CURRENCY}</span></div>
-        {formatQuoteNote(pricing.parts_detail) && (
-          <div className="text-xs text-[var(--color-text-secondary)] pt-1 border-t border-[var(--color-border)]">
-            Other Fee Note: {formatQuoteNote(pricing.parts_detail)}
-          </div>
-        )}
+      <PaymentScheduleSummary
+        pricing={pricing}
+        currency={currency}
+        copy={t.schedule}
+        note={formatQuoteNote(pricing.parts_detail)}
+      />
+      <div>
         {pricing.material_items?.length > 0 && (
-          <div className="pt-2 border-t border-[var(--color-border)]">
-            <div className="mb-2 text-xs font-medium text-[var(--color-text-secondary)]">{isCnLocale() ? '闁板秳娆㈠〒鍛礋' : 'Parts List'}</div>
+          <div className="border-t border-[var(--color-border)] pt-2">
+            <div className="mb-2 text-xs font-medium text-[var(--color-text-secondary)]">{isCnLocale() ? '配件清单' : 'Parts List'}</div>
             <MaterialPicker items={pricing.material_items} readonly />
           </div>
         )}
-        <div className="flex justify-between border-t border-[var(--color-border)] pt-1.5 font-semibold text-base text-[var(--color-primary)]">
-          <span>{t.engineer.quoteSubtotal}</span><span>{pricing.total_amount || pricing.subtotal || 0} {CURRENCY}</span>
-        </div>
         {pricing.payment_policy && (
           <div className="border-t border-[var(--color-border)] pt-2 text-xs text-[var(--color-text-secondary)]">
-            <div className="flex justify-between"><span>Advance payment before service</span><span>{pricing.payment_policy.advance_amount || 0} {CURRENCY}</span></div>
-            <div className="mt-1 flex justify-between"><span>Service balance after completion</span><span>{pricing.payment_policy.balance_amount || 0} {CURRENCY}</span></div>
+            <div className="flex justify-between"><span>Advance payment before service</span><span>{pricing.payment_policy.advance_amount || 0} {currency}</span></div>
+            <div className="mt-1 flex justify-between"><span>Service balance after completion</span><span>{pricing.payment_policy.balance_amount || 0} {currency}</span></div>
           </div>
         )}
       </div>
@@ -379,9 +545,10 @@ export function CustomerPricingPanel({ workOrderId, customerId, onConfirmed }) {
           <button
             data-testid="open-confirm-pricing-button"
             onClick={() => setAction('confirm')}
-            className="flex-1 py-2.5 bg-green-500 hover:bg-green-600 text-white rounded-xl font-medium"
+            disabled={!scheduleIsValid}
+            className="flex-1 whitespace-nowrap py-2.5 bg-green-500 hover:bg-green-600 disabled:opacity-50 text-white rounded-xl font-medium"
           >
-            {t.customer.confirmQuote}
+            {t.customer.reviewQuote}
           </button>
           <button
             onClick={() => setAction('reject')}
@@ -423,7 +590,7 @@ export function CustomerPricingPanel({ workOrderId, customerId, onConfirmed }) {
           <div className="text-sm text-[var(--color-text-primary)]">{t.customer.confirmNotice}</div>
           <div className="flex gap-2">
             <button onClick={() => setAction(null)} className="flex-1 py-2 bg-[var(--color-surface-elevated)] text-[var(--color-text-secondary)] rounded-xl text-sm">{t.customer.cancel}</button>
-            <button data-testid="confirm-pricing-button" onClick={handleConfirm} disabled={submitting} className="flex-1 py-2 bg-green-500 hover:bg-green-600 disabled:opacity-50 text-white rounded-xl text-sm">
+            <button data-testid="confirm-pricing-button" onClick={handleConfirm} disabled={submitting || !scheduleIsValid} className="flex-1 whitespace-nowrap py-2 bg-green-500 hover:bg-green-600 disabled:opacity-50 text-white rounded-xl text-sm">
               {submitting ? t.customer.confirming : t.customer.confirmQuote}
             </button>
           </div>

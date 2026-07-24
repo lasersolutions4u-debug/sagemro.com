@@ -739,11 +739,11 @@ export async function submitWorkOrderPricing(workOrderId, data) {
 /**
  * 客户确认报价
  */
-export async function confirmWorkOrderPricing(workOrderId, customerId) {
+export async function confirmWorkOrderPricing(workOrderId, customerId, quoteVersion) {
   const response = await fetch(`${API_BASE}/api/workorders/${workOrderId}/pricing/confirm`, {
     method: 'POST',
     headers: authHeaders(),
-    body: JSON.stringify({ customer_id: customerId }),
+    body: JSON.stringify({ customer_id: customerId, quote_version: quoteVersion }),
   });
   if (!response.ok) throw new Error(`HTTP ${response.status}`);
   return response.json();
