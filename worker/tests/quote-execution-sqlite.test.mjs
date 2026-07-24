@@ -121,8 +121,9 @@ function seedParents(db) {
     VALUES (?, ?, 'maintenance', 'Second quote execution test')
   `).run('wo-2', 'WO-2');
   db.prepare(`
-    INSERT INTO work_order_pricing (id, work_order_id, engineer_id, total_amount)
-    VALUES ('pricing-1', 'wo-1', 'eng-1', 10000)
+    INSERT INTO work_order_pricing (
+      id, work_order_id, engineer_id, total_amount, status
+    ) VALUES ('pricing-1', 'wo-1', 'eng-1', 10000, 'confirmed')
   `).run();
 }
 
@@ -258,35 +259,45 @@ const databaseFactories = [
   ['schema snapshot', schemaDatabase],
 ];
 
-test('migration 041 preserves legacy history and payment rows without invented metadata', () => {
-  assert.notEqual(migrationSql, '', 'migration 041 must exist');
-  const db = preMigrationDatabase();
-  db.exec(migrationSql);
-
-  assert.deepEqual({ ...db.prepare(`
-    SELECT status, approved_at, confirmed_at
-    FROM work_order_pricing_history WHERE id = 'history-legacy'
-  `).get() }, {
-    status: 'legacy',
-    approved_at: null,
-    confirmed_at: null,
-  });
-  assert.deepEqual({ ...db.prepare(`
-    SELECT payment_stage, amount, quote_total_amount, advance_amount,
-      balance_amount, transaction_id
-    FROM work_order_payments WHERE id = 'payment-legacy'
-  `).get() }, {
-    payment_stage: 'advance',
-    amount: 4000,
-    quote_total_amount: 10000,
-    advance_amount: 4000,
-    balance_amount: 6000,
-    transaction_id: 'legacy-transaction',
-  });
-  assert.equal(db.prepare('SELECT COUNT(*) AS count FROM work_order_receipt_claims').get().count, 0);
-});
-
 for (const [label, createDatabase] of databaseFactories) {
+  test(`${label} preserves a confirmed legacy quote without fabricating execution records`, () => {
+    assert.notEqual(migrationSql, '', 'migration 041 must exist');
+    const db = createDatabase();
+
+    assert.equal(
+      db.prepare("SELECT status FROM work_order_pricing WHERE id = 'pricing-1'").get().status,
+      'confirmed',
+    );
+    assert.deepEqual({ ...db.prepare(`
+      SELECT status, approved_at, confirmed_at
+      FROM work_order_pricing_history WHERE id = 'history-legacy'
+    `).get() }, {
+      status: 'legacy',
+      approved_at: null,
+      confirmed_at: null,
+    });
+    assert.deepEqual({ ...db.prepare(`
+      SELECT payment_stage, amount, quote_total_amount, advance_amount,
+        balance_amount, transaction_id
+      FROM work_order_payments WHERE id = 'payment-legacy'
+    `).get() }, {
+      payment_stage: 'advance',
+      amount: 4000,
+      quote_total_amount: 10000,
+      advance_amount: 4000,
+      balance_amount: 6000,
+      transaction_id: 'legacy-transaction',
+    });
+    for (const table of [
+      'work_order_payment_schedule',
+      'work_order_installments',
+      'work_order_receipt_claims',
+      'work_order_receipt_evidence',
+    ]) {
+      assert.equal(db.prepare(`SELECT COUNT(*) AS count FROM ${table}`).get().count, 0);
+    }
+  });
+
   test(`${label} exposes quote execution columns, tables, and migration metadata`, () => {
     const db = createDatabase();
     assert.deepEqual(
