@@ -587,7 +587,31 @@ for (const [label, createDatabase] of databaseFactories) {
       dueDate: '2026-07-30',
       description: 'Scheduled deposit',
     });
+    insertSchedule(db, {
+      id: 'schedule-replacement',
+      quoteVersion: 2,
+      sequence: 2,
+      amount: 5000,
+      currency: 'USD',
+      triggerType: 'milestone',
+      description: 'Replacement milestone',
+      requiredBeforeStart: 0,
+    });
+    assertConstraint(db, `
+      UPDATE work_order_installments SET
+        schedule_id = 'schedule-replacement',
+        quote_version = 2,
+        sequence = 2,
+        amount = 5000,
+        currency = 'USD',
+        trigger_type = 'milestone',
+        due_date = NULL,
+        description = 'Replacement milestone',
+        required_before_start = 0
+      WHERE id = 'installment-1'
+    `, /installment schedule snapshot immutable/i);
     for (const [column, value] of [
+      ['id', "'installment-reassigned'"],
       ['work_order_id', "'wo-2'"],
       ['quote_version', '2'],
       ['sequence', '2'],
@@ -597,11 +621,12 @@ for (const [label, createDatabase] of databaseFactories) {
       ['due_date', "'2026-07-31'"],
       ['description', "'Changed deposit'"],
       ['required_before_start', '0'],
+      ['created_at', "'2026-07-30 07:59:59'"],
     ]) {
       assertConstraint(
         db,
         `UPDATE work_order_installments SET ${column} = ${value} WHERE id = 'installment-1'`,
-        /installment schedule snapshot mismatch/i,
+        /installment schedule snapshot immutable/i,
       );
     }
 

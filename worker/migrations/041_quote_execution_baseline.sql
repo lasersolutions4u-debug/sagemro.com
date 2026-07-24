@@ -118,21 +118,20 @@ END;
 
 CREATE TRIGGER IF NOT EXISTS quote_execution_installment_snapshot_update
 BEFORE UPDATE ON work_order_installments
-WHEN NOT EXISTS (
-  SELECT 1 FROM work_order_payment_schedule schedule
-  WHERE schedule.id = NEW.schedule_id
-    AND schedule.work_order_id = NEW.work_order_id
-    AND schedule.quote_version = NEW.quote_version
-    AND schedule.sequence = NEW.sequence
-    AND schedule.amount = NEW.amount
-    AND schedule.currency = NEW.currency
-    AND schedule.trigger_type = NEW.trigger_type
-    AND schedule.due_date IS NEW.due_date
-    AND schedule.description = NEW.description
-    AND schedule.required_before_start = NEW.required_before_start
-)
+WHEN NEW.id IS NOT OLD.id
+  OR NEW.schedule_id IS NOT OLD.schedule_id
+  OR NEW.work_order_id IS NOT OLD.work_order_id
+  OR NEW.quote_version IS NOT OLD.quote_version
+  OR NEW.sequence IS NOT OLD.sequence
+  OR NEW.amount IS NOT OLD.amount
+  OR NEW.currency IS NOT OLD.currency
+  OR NEW.trigger_type IS NOT OLD.trigger_type
+  OR NEW.due_date IS NOT OLD.due_date
+  OR NEW.description IS NOT OLD.description
+  OR NEW.required_before_start IS NOT OLD.required_before_start
+  OR NEW.created_at IS NOT OLD.created_at
 BEGIN
-  SELECT RAISE(ABORT, 'installment schedule snapshot mismatch');
+  SELECT RAISE(ABORT, 'installment schedule snapshot immutable');
 END;
 
 CREATE TRIGGER IF NOT EXISTS quote_execution_schedule_update_guard
