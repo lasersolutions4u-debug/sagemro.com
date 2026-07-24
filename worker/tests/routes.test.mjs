@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { isKnownProtectedRoute, isTestRoute } from '../src/lib/routes.js';
+import { isOperationsReadRoute } from '../src/index.js';
 
 test('test route classifier covers development-only diagnostics', () => {
   assert.equal(isTestRoute('/api/test-full-flow'), true);
@@ -37,4 +38,12 @@ test('protected route classifier covers exact and parameterized authenticated pa
   assert.equal(isKnownProtectedRoute('/api/auth/change-password'), true);
   assert.equal(isKnownProtectedRoute('/api/chat'), false);
   assert.equal(isKnownProtectedRoute('/api/not-a-route'), false);
+});
+
+test('operations read gateway allows only the exact receipt evidence GET route', () => {
+  const path = '/api/workorders/work-order-1/receipt-evidence/evidence-1';
+  assert.equal(isOperationsReadRoute(path, 'GET'), true);
+  assert.equal(isOperationsReadRoute(path, 'POST'), false);
+  assert.equal(isOperationsReadRoute(`${path}/extra`, 'GET'), false);
+  assert.equal(isOperationsReadRoute('/api/workorders/work-order-1/installments/installment-1/collect', 'GET'), false);
 });

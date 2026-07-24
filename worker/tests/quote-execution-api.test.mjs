@@ -190,11 +190,13 @@ function createBatchBarrier(expected) {
   };
 }
 
-async function token(env, userType, userId, market = 'com') {
+async function token(env, userType, userId, market = 'com', { staffId, staffRole } = {}) {
   return signJwt({
     userId,
     userType,
     market,
+    staffId,
+    staffRole,
     phone: '13800000000',
     iat: 1,
     exp: Math.floor(Date.now() / 1000) + 3600,
@@ -206,10 +208,12 @@ async function api(ctx, path, {
   body,
   userType = 'engineer',
   userId = 'engineer-1',
+  staffId,
+  staffRole,
   headers = {},
 } = {}) {
   const market = ctx.host.endsWith('.cn') ? 'cn' : 'com';
-  const jwt = await token(ctx.env, userType, userId, market);
+  const jwt = await token(ctx.env, userType, userId, market, { staffId, staffRole });
   const response = await worker.fetch(new Request(`${ctx.host}${path}`, {
     method,
     headers: {
@@ -970,6 +974,13 @@ test('receipt claims use role-facing allowlists without idempotency or Admin ide
   ctx.db.exec(`
     INSERT INTO engineers (id, user_no, name, phone, password_hash, engineer_role)
     VALUES ('lead-1', 'E000002', 'Regional Lead', '13800000002', 'hash', 'regional_lead');
+    INSERT INTO admin_staff_accounts (
+      id, normalized_login, password_hash, salt, role, display_name, market_scope, must_change_password
+    ) VALUES (
+      'operations-1', 'operations@example.com', 'hash', 'salt', 'operations', 'Operations', 'all', 0
+    ), (
+      'warehouse-1', 'warehouse@example.com', 'hash', 'salt', 'warehouse', 'Warehouse', 'all', 0
+    );
     UPDATE work_orders SET assigned_regional_lead_id = 'lead-1' WHERE id = 'wo-quote-1';
   `);
   await submitQuote(ctx);
@@ -989,14 +1000,24 @@ test('receipt claims use role-facing allowlists without idempotency or Admin ide
       'TX-PRIVATE-1', 'confirmed', 6000, 'Matched bank receipt', 'admin-1',
       datetime('now'), 'claim-detail-1', 'decision-detail-1')
   `).run('claim-detail-1', firstInstallment.id);
+  ctx.db.prepare(`
+    INSERT INTO work_order_receipt_evidence (
+      id, claim_id, work_order_id, object_key, file_name, mime_type, file_size,
+      uploader_type, uploader_id, created_at
+    ) VALUES (
+      'evidence-detail-1', 'claim-detail-1', 'wo-quote-1', 'private/receipt-detail.pdf',
+      'bank receipt.pdf', 'application/pdf', 321, 'engineer', 'engineer-1', '2026-07-24 12:00:00'
+    )
+  `).run();
 
-  for (const [userType, userId] of [
-    ['customer', 'customer-1'],
-    ['engineer', 'engineer-1'],
-    ['engineer', 'lead-1'],
-    ['admin', 'admin'],
+  for (const [userType, userId, auth] of [
+    ['customer', 'customer-1', {}],
+    ['engineer', 'engineer-1', {}],
+    ['engineer', 'lead-1', {}],
+    ['admin', 'admin', {}],
+    ['admin', 'operations-1', { staffId: 'operations-1', staffRole: 'operations' }],
   ]) {
-    const detail = await api(ctx, '/api/workorders/wo-quote-1', { method: 'GET', userType, userId });
+    const detail = await api(ctx, '/api/workorders/wo-quote-1', { method: 'GET', userType, userId, ...auth });
     assert.equal(detail.response.status, 200);
     const execution = detail.json.quote_execution;
     assert.equal(execution.quote_version, 1);
@@ -1010,6 +1031,17 @@ test('receipt claims use role-facing allowlists without idempotency or Admin ide
     const claim = execution.receipt_claims[0];
     assert.equal(Object.hasOwn(claim, 'idempotency_key'), false);
     assert.equal(Object.hasOwn(claim, 'decision_idempotency_key'), false);
+    assert.deepEqual(claim.evidence, {
+      id: 'evidence-detail-1',
+      file_name: 'bank receipt.pdf',
+      mime_type: 'application/pdf',
+      file_size: 321,
+      created_at: '2026-07-24 12:00:00',
+      url: '/api/workorders/wo-quote-1/receipt-evidence/evidence-detail-1',
+    });
+    assert.equal(Object.hasOwn(claim.evidence, 'object_key'), false);
+    assert.equal(Object.hasOwn(claim.evidence, 'uploader_id'), false);
+    assert.equal(Object.hasOwn(claim.evidence, 'uploader_type'), false);
     if (userType === 'admin') assert.equal(claim.decided_by, 'admin-1');
     else assert.equal(Object.hasOwn(claim, 'decided_by'), false);
     if (userType === 'customer') {
@@ -1099,6 +1131,20 @@ test('customer selects payment method only after collection opens and outside Ad
 
 test('receipt claim validates input, stores private PDF evidence, streams by work-order access, and retries idempotently', async () => {
   const ctx = createQuoteExecutionEnv();
+  ctx.db.exec(`
+    INSERT INTO engineers (id, user_no, name, phone, password_hash, engineer_role)
+    VALUES
+      ('lead-1', 'E000002', 'Assigned Regional Lead', '13800000002', 'hash', 'regional_lead'),
+      ('lead-2', 'E000003', 'Unassigned Regional Lead', '13800000003', 'hash', 'regional_lead');
+    INSERT INTO admin_staff_accounts (
+      id, normalized_login, password_hash, salt, role, display_name, market_scope, must_change_password
+    ) VALUES (
+      'operations-1', 'operations@example.com', 'hash', 'salt', 'operations', 'Operations', 'all', 0
+    ), (
+      'warehouse-1', 'warehouse@example.com', 'hash', 'salt', 'warehouse', 'Warehouse', 'all', 0
+    );
+    UPDATE work_orders SET assigned_regional_lead_id = 'lead-1' WHERE id = 'wo-quote-1';
+  `);
   await confirmBaselineForReceiptTests(ctx);
   await startCollection(ctx);
 
@@ -1131,6 +1177,7 @@ test('receipt claim validates input, stores private PDF evidence, streams by wor
   for (const [userType, userId] of [
     ['customer', 'customer-1'],
     ['engineer', 'engineer-1'],
+    ['engineer', 'lead-1'],
     ['admin', 'admin'],
   ]) {
     const streamed = await api(ctx, evidencePath, { method: 'GET', userType, userId });
@@ -1139,9 +1186,26 @@ test('receipt claim validates input, stores private PDF evidence, streams by wor
     assert.equal(streamed.response.headers.get('cache-control'), 'private, no-store');
     assert.equal(streamed.response.headers.has('location'), false);
   }
+  const operations = await api(ctx, evidencePath, {
+    method: 'GET', userType: 'admin', userId: 'operations-1',
+    staffId: 'operations-1', staffRole: 'operations',
+  });
+  assert.equal(operations.response.status, 200);
+  assert.equal(operations.response.headers.get('cache-control'), 'private, no-store');
+  const operationsWrite = await api(ctx, evidencePath, {
+    method: 'POST', userType: 'admin', userId: 'operations-1',
+    staffId: 'operations-1', staffRole: 'operations',
+  });
+  assert.equal(operationsWrite.response.status, 403);
+  const warehouse = await api(ctx, evidencePath, {
+    method: 'GET', userType: 'admin', userId: 'warehouse-1',
+    staffId: 'warehouse-1', staffRole: 'warehouse',
+  });
+  assert.equal(warehouse.response.status, 403);
   for (const [userType, userId] of [
     ['customer', 'customer-2'],
     ['engineer', 'engineer-2'],
+    ['engineer', 'lead-2'],
   ]) {
     const denied = await api(ctx, evidencePath, { method: 'GET', userType, userId });
     assert.equal(denied.response.status, 403, `${userType}:${userId}`);
