@@ -43,6 +43,8 @@ test('service-order actions and China invoice processing use one controlled oper
   assert.match(source, /operationDialog\.type === 'invoice'/);
   assert.match(source, /name="invoice_number"/);
   assert.match(source, /!values\.invoice_number\.trim\(\)/);
+  assert.match(source, /setOperationDialog\(\(current\) => \(current \? \{ \.\.\.current, error: operationError \} : current\)\)/);
+  assert.match(source, /!readOnly && detailInvoice\.status === 'pending'/);
 });
 
 test('admin drawer can confirm the completed service balance payment', async () => {
