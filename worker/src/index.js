@@ -15064,6 +15064,27 @@ function receiptEvidenceHash(objectKey) {
   return String(objectKey || '').match(/sha256-([a-f0-9]{64})(?:\.|\/|$)/i)?.[1]?.toLowerCase() || '';
 }
 
+function replaceLoneSurrogates(value) {
+  let result = '';
+  for (let index = 0; index < value.length; index += 1) {
+    const codeUnit = value.charCodeAt(index);
+    if (codeUnit >= 0xd800 && codeUnit <= 0xdbff) {
+      const next = value.charCodeAt(index + 1);
+      if (next >= 0xdc00 && next <= 0xdfff) {
+        result += value[index] + value[index + 1];
+        index += 1;
+      } else {
+        result += '\ufffd';
+      }
+    } else if (codeUnit >= 0xdc00 && codeUnit <= 0xdfff) {
+      result += '\ufffd';
+    } else {
+      result += value[index];
+    }
+  }
+  return result;
+}
+
 function isExactReceiptClaimRetry(claim, requestValue) {
   if (!claim) return false;
   if (claim.work_order_id !== requestValue.workOrderId
@@ -15081,7 +15102,7 @@ function isExactReceiptClaimRetry(claim, requestValue) {
 }
 
 function receiptEvidenceContentDisposition(fileName) {
-  const original = sanitizeFilename(fileName).replace(/[\x00-\x1f\x7f]/g, '') || 'receipt';
+  const original = replaceLoneSurrogates(sanitizeFilename(fileName)) || 'receipt';
   const ascii = Array.from(original, (character) => {
     const code = character.charCodeAt(0);
     return code >= 0x20 && code <= 0x7e ? character : '_';

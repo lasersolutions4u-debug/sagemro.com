@@ -25,7 +25,12 @@ function createD1Database(db, hooks) {
         return this;
       },
       async first() {
-        return db.prepare(sql).get(...this.args) || null;
+        const row = db.prepare(sql).get(...this.args) || null;
+        if (row && hooks.receiptEvidenceFileName !== undefined
+          && /FROM work_order_receipt_evidence evidence/i.test(normalizeSql(sql))) {
+          row.file_name = hooks.receiptEvidenceFileName;
+        }
+        return row;
       },
       async all() {
         if (/SELECT \* FROM work_order_payments WHERE work_order_id = \?/i.test(normalizeSql(sql))
@@ -81,6 +86,7 @@ function createQuoteExecutionEnv({
     failEvidencePut: false,
     evidencePutStoresThenThrows: false,
     failEvidenceDelete: false,
+    receiptEvidenceFileName: undefined,
   };
   db.exec('PRAGMA foreign_keys = ON;');
   db.exec('PRAGMA busy_timeout = 5000;');
@@ -172,6 +178,9 @@ function createQuoteExecutionEnv({
     },
     failEvidenceDelete(value = true) {
       hooks.failEvidenceDelete = value;
+    },
+    setReceiptEvidenceFileName(value) {
+      hooks.receiptEvidenceFileName = value;
     },
     evidenceKeys() {
       return [...evidenceObjects.keys()];
@@ -1335,6 +1344,7 @@ test('receipt evidence Content-Disposition safely represents quotes controls and
     ['bank "receipt".pdf', /filename="bank \\"receipt\\"\.pdf"/],
     ['bank\r\nX-Injected: yes.pdf', /filename="bankX-Injected: yes\.pdf"/],
     ['银行回单.pdf', /filename\*=UTF-8''%E9%93%B6%E8%A1%8C%E5%9B%9E%E5%8D%95\.pdf/],
+    [`${'a'.repeat(254)}😀.pdf`, /filename\*=UTF-8''a+%F0%9F%98%80/],
   ]) {
     const ctx = createQuoteExecutionEnv();
     await confirmBaselineForReceiptTests(ctx);
@@ -1351,6 +1361,25 @@ test('receipt evidence Content-Disposition safely represents quotes controls and
     assert.match(disposition, expected);
     assert.equal(/[\r\n]/.test(disposition), false);
   }
+});
+
+test('receipt evidence Content-Disposition replaces malformed legacy surrogates', async () => {
+  const ctx = createQuoteExecutionEnv();
+  await confirmBaselineForReceiptTests(ctx);
+  await startCollection(ctx);
+  const evidence = new File([
+    new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x2d, 0x31, 0x2e, 0x34, 0x0a]),
+  ], 'receipt.pdf', { type: 'application/pdf' });
+  const submitted = await submitReceiptClaim(ctx, { evidence, idempotency_key: 'legacy-surrogate' });
+  ctx.setReceiptEvidenceFileName('legacy-\ud800.pdf');
+
+  const streamed = await api(ctx, submitted.json.evidence.url, {
+    method: 'GET', userType: 'customer', userId: 'customer-1',
+  });
+  const disposition = streamed.response.headers.get('content-disposition');
+  assert.equal(streamed.response.status, 200);
+  assert.match(disposition, /filename\*=UTF-8''legacy-%EF%BF%BD\.pdf/);
+  assert.equal(/[\r\n]/.test(disposition), false);
 });
 
 test('receipt evidence failures leave no new claim and enqueue cleanup when rollback deletion fails', async () => {

@@ -94,6 +94,13 @@ test('sanitizeFilename 移除控制字符', () => {
   assert.equal(sanitizeFilename('bank\r\n\x00receipt.pdf'), 'bankreceipt.pdf');
 });
 
+test('sanitizeFilename 截断时不拆分代理对', () => {
+  const sanitized = sanitizeFilename(`${'a'.repeat(254)}😀.pdf`);
+  assert.equal(Array.from(sanitized).length, 255);
+  assert.equal(sanitized.endsWith('😀'), true);
+  assert.equal(/[\uD800-\uDFFF]/u.test(sanitized.replace('😀', '')), false);
+});
+
 // ============ validateImageUrl ============
 
 test('validateImageUrl null 返回 null', () => {
