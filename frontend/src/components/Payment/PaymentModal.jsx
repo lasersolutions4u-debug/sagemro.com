@@ -209,6 +209,9 @@ export function PaymentModal({
       : isInstallmentMode ? copy.confirmInstallment : isBalancePayment ? copy.confirmBalance : copy.confirmAdvance;
   const submittedNotice = isInstallmentMode ? copy.installmentNotice : isBalancePayment ? copy.balanceSubmitted : copy.advanceSubmitted;
   const paymentNotice = isInstallmentMode ? copy.installmentNotice : isBalancePayment ? copy.balanceNotice : copy.advanceNotice;
+  const submittedAmount = isInstallmentMode
+    ? normalizedAmount
+    : Number(result?.amount ?? normalizedAmount);
 
   return (
     <div className="fixed inset-0 z-[120] flex items-center justify-center p-2 sm:p-4">
@@ -231,7 +234,7 @@ export function PaymentModal({
               <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-blue-500/10"><CheckCircle size={36} className="text-blue-500" /></div>
               <h3 className="text-lg font-semibold text-slate-950">{copy.methodReceived}</h3>
               <div className="space-y-1.5 rounded-lg bg-slate-50 p-3 text-left text-sm">
-                <div className="flex justify-between gap-3"><span className="text-slate-500">{paymentLabel}</span><span className="font-semibold text-slate-950">{Number(result?.amount ?? normalizedAmount).toLocaleString()} {currency}</span></div>
+                <div className="flex justify-between gap-3"><span className="text-slate-500">{paymentLabel}</span><span className="font-semibold text-slate-950">{submittedAmount.toLocaleString()} {currency}</span></div>
                 {!isInstallmentMode && (
                   <div className="flex justify-between gap-3"><span className="text-slate-500">{isBalancePayment ? copy.quoteTotal : copy.serviceBalance}</span><span className="text-right text-slate-950">{Number(isBalancePayment ? (result?.quote_total_amount ?? paymentPolicy.subtotal ?? 0) : (result?.balance_amount ?? balanceAmount)).toLocaleString()} {currency}</span></div>
                 )}

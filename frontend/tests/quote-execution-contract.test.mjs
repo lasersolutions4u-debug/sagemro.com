@@ -162,6 +162,14 @@ test('customer installment payment mode uses the exact installment amount and tr
   assert.doesNotMatch(installmentRequest, /payment_stage/);
 });
 
+test('installment payment result keeps the passed remaining amount after method selection', async () => {
+  const source = await readSource('../src/components/Payment/PaymentModal.jsx');
+
+  assert.match(source, /const submittedAmount = isInstallmentMode\s*\? normalizedAmount\s*:\s*Number\(result\?\.amount \?\? normalizedAmount\)/);
+  assert.match(source, />\{submittedAmount\.toLocaleString\(\)\} \{currency\}</);
+  assert.doesNotMatch(source, />\{Number\(result\?\.amount \?\? normalizedAmount\)\.toLocaleString\(\)\} \{currency\}</);
+});
+
 test('work order detail keeps independent collection visible through financial closure', async () => {
   const source = await readSource('../src/components/WorkOrder/WorkOrderDetailModal.jsx');
 
