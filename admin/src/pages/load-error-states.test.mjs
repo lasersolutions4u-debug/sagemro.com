@@ -9,6 +9,8 @@ for (const page of ['UsersPage.jsx', 'LeadsPage.jsx', 'RatingsPage.jsx', 'WorkOr
     assert.match(source, /loadError/);
     assert.match(source, /Retry|重试/);
     assert.doesNotMatch(source, /\.catch\(\(\) => \{\}\)/);
+    assert.match(source, /useRef|loadRequestId/);
+    assert.match(source, /requestId/);
   });
 }
 
@@ -23,6 +25,7 @@ test('WorkOrdersPage distinguishes a missing invoice request from an invoice loa
   const source = await readFile(new URL('./WorkOrdersPage.jsx', import.meta.url), 'utf8');
 
   assert.match(source, /invoiceLoadError/);
-  assert.match(source, /error\?\.status === 404/);
+  assert.match(source, /response\.invoice_request \|\| null/);
   assert.match(source, /loadDetailInvoice\(detail\.id\)/);
+  assert.match(source, /invoiceRequestId\.current !== requestId/);
 });
