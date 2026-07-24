@@ -29,6 +29,7 @@ import {
   approveAdminWorkOrderPaymentStart,
   archiveAdminWorkOrder,
   confirmAdminOnsiteConversion,
+  decideInstallmentReceipt,
   getAdminInvoiceRequest,
   getAdminWorkOrder,
   getAdminWorkOrderMessages,
@@ -38,11 +39,13 @@ import {
   postAdminWorkOrderMessage,
   processAdminInvoiceRequest,
   rejectAdminWorkOrderPricing,
+  reviewWorkOrderQuote,
   searchAdminServiceLocations,
   updateAdminWorkOrderPayout,
 } from '../services/api';
 import { runtimeConfig } from '../config/runtime';
 import { FieldWorkAdminPanel } from '../components/FieldWorkAdminPanel';
+import { QuoteExecutionAdminPanel } from '../components/QuoteExecutionAdminPanel';
 import { formatApiDateTime } from '../utils/dateTime';
 import {
   formatAiSummary,
@@ -52,6 +55,7 @@ import {
   money,
   parseJsonValue,
 } from './workOrderDisplay';
+import { createOperationKey } from './materialRequisitionOperations';
 
 const STATUS_MAP = {
   pending: { color: 'var(--color-info)' },
@@ -360,6 +364,33 @@ const TEXT = {
     fieldExtension: 'Extension pending',
     paymentNoteTitle: 'Confirm payment and start service',
     paymentNoteLabel: 'Payment confirmation note (optional)',
+    quoteApproveTitle: 'Approve quote version',
+    quoteApproveNote: 'Review note (optional)',
+    receiptFullTitle: 'Confirm full receipt',
+    receiptPartialTitle: 'Confirm partial receipt',
+    receiptRejectTitle: 'Reject receipt claim',
+    receiptAmount: 'Confirmed amount',
+    receiptReasonOptional: 'Decision note (optional)',
+    receiptAdjustmentReason: 'Adjustment reason (required)',
+    receiptRejectReason: 'Rejection reason (required)',
+    invalidReceiptAmount: 'Enter a positive whole-number amount within the claim and remaining balance.',
+    quoteVersionReviewed: (orderNo) => `Quote version reviewed: ${orderNo}`,
+    receiptDecided: (orderNo) => `Receipt decision saved: ${orderNo}`,
+    receiptDecisionFailed: 'Failed to save receipt decision',
+    paymentState: 'Payment',
+    receivedAmount: 'Received',
+    outstandingAmount: 'Outstanding',
+    pendingReceiptReviews: 'Pending receipt reviews',
+    paymentUnknown: '-',
+    paymentStates: {
+      unpaid: 'Unpaid',
+      pending_confirmation: 'Pending confirmation',
+      partially_received: 'Partially received',
+      overdue: 'Overdue',
+      settled: 'Settled',
+      financially_settled: 'Financially settled',
+      exception: 'Exception review',
+    },
     balanceNoteTitle: 'Confirm service balance received',
     balanceNoteLabel: 'Balance payment confirmation note (optional)',
     payoutTitle: 'Update engineer service payment',
@@ -586,6 +617,33 @@ const TEXT = {
     fieldToday: '今日已签到',
     fieldOverdue: (count) => `${count} 份日报逾期`,
     fieldExtension: '延期待审批',
+    quoteApproveTitle: '批准报价版本',
+    quoteApproveNote: '审核备注（选填）',
+    receiptFullTitle: '确认全额到账',
+    receiptPartialTitle: '确认部分到账',
+    receiptRejectTitle: '驳回到账申请',
+    receiptAmount: '确认到账金额',
+    receiptReasonOptional: '审核备注（选填）',
+    receiptAdjustmentReason: '调整原因（必填）',
+    receiptRejectReason: '驳回原因（必填）',
+    invalidReceiptAmount: '请输入正整数金额，且不得超过申请金额和本期剩余金额。',
+    quoteVersionReviewed: (orderNo) => `报价版本审核完成：${orderNo}`,
+    receiptDecided: (orderNo) => `到账审核已保存：${orderNo}`,
+    receiptDecisionFailed: '到账审核保存失败',
+    paymentState: '收款',
+    receivedAmount: '累计到账',
+    outstandingAmount: '待收金额',
+    pendingReceiptReviews: '待审核到账',
+    paymentUnknown: '-',
+    paymentStates: {
+      unpaid: '未收款',
+      pending_confirmation: '待确认到账',
+      partially_received: '部分到账',
+      overdue: '已逾期',
+      settled: '已结清',
+      financially_settled: '财务已结清',
+      exception: '异常待核查',
+    },
     paymentNoteTitle: '确认收款并开始服务',
     paymentNoteLabel: '收款确认备注（选填）',
     balanceNoteTitle: '确认已收到服务尾款',
@@ -610,6 +668,44 @@ function FieldWorkIndicators({ workOrder, t }) {
       {workOrder.field_checked_in_today && <span className="rounded-lg border border-[var(--color-success)]/40 px-2 py-1 text-xs text-[var(--color-success)]">{t.fieldToday}</span>}
       {workOrder.field_report_overdue_count > 0 && <span className="rounded-lg border border-[var(--color-error)]/40 px-2 py-1 text-xs text-[var(--color-error)]">{t.fieldOverdue(workOrder.field_report_overdue_count)}</span>}
       {workOrder.field_extension_pending && <span className="rounded-lg border border-[var(--color-warning)]/40 px-2 py-1 text-xs text-[var(--color-warning)]">{t.fieldExtension}</span>}
+    </div>
+  );
+}
+
+function pendingReceiptReviewCount(workOrder) {
+  const directCount = workOrder?.pending_receipt_claim_count ?? workOrder?.pending_claim_count;
+  if (Number.isSafeInteger(Number(directCount)) && Number(directCount) >= 0) return Number(directCount);
+  const claims = workOrder?.quote_execution?.receipt_claims;
+  if (Array.isArray(claims)) return claims.filter((claim) => claim.status === 'pending').length;
+  const installments = workOrder?.quote_execution?.installments;
+  if (Array.isArray(installments) && installments.every((installment) => installment.pending_claim_count != null)) {
+    return installments.reduce((sum, installment) => sum + Number(installment.pending_claim_count || 0), 0);
+  }
+  return null;
+}
+
+function paymentCurrency(workOrder) {
+  return workOrder?.payment_currency
+    || workOrder?.quote_execution?.installments?.[0]?.currency
+    || workOrder?.pricing?.payment_schedule?.[0]?.currency
+    || workOrder?.pricing?.currency
+    || '';
+}
+
+function PaymentIndicators({ workOrder, t }) {
+  if (!workOrder?.payment_state && !workOrder?.quote_execution?.payment_state) return null;
+  const paymentState = workOrder.payment_state || workOrder.quote_execution.payment_state;
+  const receivedAmount = workOrder.received_amount ?? workOrder.quote_execution?.received_amount;
+  const outstandingAmount = workOrder.outstanding_amount ?? workOrder.quote_execution?.outstanding_amount;
+  const pendingCount = pendingReceiptReviewCount(workOrder);
+  const currency = paymentCurrency(workOrder);
+  const amount = (value) => `${money(value)}${currency ? ` ${currency}` : ''}`;
+  return (
+    <div className="mt-2 flex flex-wrap gap-1.5 text-xs">
+      <span className="rounded-lg border border-[var(--color-info)]/40 px-2 py-1 text-[var(--color-info)]">{t.paymentState}: {t.paymentStates[paymentState] || t.paymentUnknown}</span>
+      {receivedAmount != null && <span className="rounded-lg border border-[var(--color-success)]/40 px-2 py-1 text-[var(--color-success)]">{t.receivedAmount}: {amount(receivedAmount)}</span>}
+      {outstandingAmount != null && <span className="rounded-lg border border-[var(--color-warning)]/40 px-2 py-1 text-[var(--color-warning)]">{t.outstandingAmount}: {amount(outstandingAmount)}</span>}
+      <span className="rounded-lg border border-[var(--color-border)] px-2 py-1 text-[var(--color-text-secondary)]">{t.pendingReceiptReviews}: {pendingCount ?? t.paymentUnknown}</span>
     </div>
   );
 }
@@ -818,9 +914,42 @@ export function WorkOrdersPage({ readOnly = false }) {
   function openOperationDialog(type, workOrder, values = {}) {
     const currentPayout = workOrder.payout || {};
     const configs = {
+      'quote-approve': {
+        title: t.quoteApproveTitle,
+        values: { quoteVersion: values.quoteVersion, note: values.note || '' },
+      },
       'quote-return': {
         title: t.quoteReturnTitle,
-        values: { reason: values.reason || '' },
+        values: { quoteVersion: values.quoteVersion, reason: values.reason || '' },
+      },
+      'receipt-confirm-full': {
+        title: t.receiptFullTitle,
+        values: {
+          claim: values.claim,
+          installment: values.installment,
+          confirmed_amount: values.fullAmount,
+          reason: values.reason || '',
+          idempotency_key: values.idempotency_key || createOperationKey(),
+        },
+      },
+      'receipt-confirm-partial': {
+        title: t.receiptPartialTitle,
+        values: {
+          claim: values.claim,
+          installment: values.installment,
+          confirmed_amount: '',
+          reason: values.reason || '',
+          idempotency_key: values.idempotency_key || createOperationKey(),
+        },
+      },
+      'receipt-reject': {
+        title: t.receiptRejectTitle,
+        values: {
+          claim: values.claim,
+          installment: values.installment,
+          reason: values.reason || '',
+          idempotency_key: values.idempotency_key || createOperationKey(),
+        },
       },
       'payment-start': {
         title: t.paymentNoteTitle,
@@ -859,6 +988,23 @@ export function WorkOrdersPage({ readOnly = false }) {
     }));
   }
 
+  async function handleReviewQuote(wo, action, quoteVersion, note) {
+    if (readOnly) return;
+    setAssigningId(`${wo.id}:${action}`);
+    setMessage('');
+    try {
+      await reviewWorkOrderQuote(wo.id, action, quoteVersion, note);
+      await refreshOpenDetail(wo.id);
+      setMessage(action === 'approve' ? t.quoteVersionReviewed(wo.order_no) : t.quoteReturned(wo.order_no));
+      return true;
+    } catch (err) {
+      setMessage(err.message || (action === 'approve' ? t.quoteReviewFailed : t.quoteReturnFailed));
+      return false;
+    } finally {
+      setAssigningId('');
+    }
+  }
+
   async function handleRejectPricing(wo, note) {
     if (readOnly) return;
     setAssigningId(`${wo.id}:reject`);
@@ -889,6 +1035,30 @@ export function WorkOrdersPage({ readOnly = false }) {
       const operationError = err.message || t.quoteReturnFailed;
       setMessage(operationError);
       setOperationDialog((current) => (current ? { ...current, error: operationError } : current));
+      return false;
+    } finally {
+      setAssigningId('');
+    }
+  }
+
+  async function handleReceiptDecision(wo, type, values) {
+    if (readOnly) return;
+    const decision = type === 'receipt-reject' ? 'rejected' : 'confirmed';
+    const payload = {
+      decision,
+      reason: values.reason.trim(),
+      idempotency_key: values.idempotency_key,
+    };
+    if (decision === 'confirmed') payload.confirmed_amount = Number(values.confirmed_amount);
+    setAssigningId(`${wo.id}:${type}:${values.claim.id}`);
+    setMessage('');
+    try {
+      await decideInstallmentReceipt(wo.id, values.installment.id, values.claim.id, payload);
+      await refreshOpenDetail(wo.id);
+      setMessage(t.receiptDecided(wo.order_no));
+      return true;
+    } catch (err) {
+      setMessage(err.message || t.receiptDecisionFailed);
       return false;
     } finally {
       setAssigningId('');
@@ -1182,13 +1352,23 @@ export function WorkOrdersPage({ readOnly = false }) {
   async function submitOperationDialog() {
     if (!operationDialog || operationSubmitting) return;
     const { type, workOrder, status: payoutStatus, values } = operationDialog;
-    if (['quote-return', 'arrival-override'].includes(type) && !values.reason.trim()) {
+    if (['quote-return', 'arrival-override', 'receipt-confirm-partial', 'receipt-reject'].includes(type) && !values.reason.trim()) {
       setOperationDialog((current) => ({ ...current, error: t.requiredReason }));
       return;
     }
     if (type === 'invoice' && !values.invoice_number.trim()) {
       setOperationDialog((current) => ({ ...current, error: t.requiredInvoiceNumber }));
       return;
+    }
+    if (['receipt-confirm-full', 'receipt-confirm-partial'].includes(type)) {
+      const confirmedAmount = Number(values.confirmed_amount);
+      const remainingAmount = Number(values.installment.amount) - Number(values.installment.received_amount);
+      if (!Number.isSafeInteger(confirmedAmount) || confirmedAmount <= 0
+        || confirmedAmount > Number(values.claim.claimed_amount) || confirmedAmount > remainingAmount
+        || (type === 'receipt-confirm-partial' && confirmedAmount >= Math.min(Number(values.claim.claimed_amount), remainingAmount))) {
+        setOperationDialog((current) => ({ ...current, error: t.invalidReceiptAmount }));
+        return;
+      }
     }
     if (type === 'payout' && values.amount !== '') {
       const amount = Number(values.amount);
@@ -1200,7 +1380,15 @@ export function WorkOrdersPage({ readOnly = false }) {
 
     setOperationSubmitting(true);
     let succeeded = false;
-    if (type === 'quote-return') succeeded = await handleRejectPricing(workOrder, values.reason.trim());
+    if (type === 'quote-approve') succeeded = await handleReviewQuote(workOrder, 'approve', values.quoteVersion, values.note.trim());
+    if (type === 'quote-return') {
+      succeeded = values.quoteVersion
+        ? await handleReviewQuote(workOrder, 'reject', values.quoteVersion, values.reason.trim())
+        : await handleRejectPricing(workOrder, values.reason.trim());
+    }
+    if (['receipt-confirm-full', 'receipt-confirm-partial', 'receipt-reject'].includes(type)) {
+      succeeded = await handleReceiptDecision(workOrder, type, values);
+    }
     if (type === 'payment-start') succeeded = await handleApprovePaymentStart(workOrder, values.note.trim());
     if (type === 'balance-payment') succeeded = await handleApproveBalancePayment(workOrder, values.note.trim());
     if (type === 'payout') succeeded = await handleUpdatePayout(workOrder, payoutStatus, values);
@@ -1294,11 +1482,12 @@ export function WorkOrdersPage({ readOnly = false }) {
                     <div>{t.headers.engineer}: {wo.engineer_name || '-'}</div>
                     <div>
                       {t.headers.quoteArchive}: {wo.pricing_status
-                        ? `${t.pricing[wo.pricing_status] || wo.pricing_status}${wo.pricing_total_amount || wo.pricing_subtotal ? ` / ${money(wo.pricing_total_amount || wo.pricing_subtotal)} ${CURRENCY}` : ''}`
+                        ? `${t.pricing[wo.pricing_status] || wo.pricing_status}${wo.pricing_total_amount || wo.pricing_subtotal ? ` / ${money(wo.pricing_total_amount || wo.pricing_subtotal)} ${wo.payment_currency || CURRENCY}` : ''}`
                         : t.noQuote}
                     </div>
                   </div>
                   <FieldWorkIndicators workOrder={wo} t={t} />
+                  <PaymentIndicators workOrder={wo} t={t} />
                   {wo.conflict_status === 'blocked' && (
                     <div className="mt-3 rounded-lg border border-[var(--color-error)]/30 bg-[var(--color-error)]/10 px-3 py-2 text-xs text-[var(--color-error)]">
                       {wo.conflict_reason || t.conflictFallback}
@@ -1401,12 +1590,13 @@ export function WorkOrdersPage({ readOnly = false }) {
                             {t.statuses[wo.status] || wo.status}
                           </span>
                           <FieldWorkIndicators workOrder={wo} t={t} />
+                          <PaymentIndicators workOrder={wo} t={t} />
                         </td>
                         <td className="py-3 px-2">
                           <div className="min-w-[170px] space-y-2">
                             <div className="text-xs text-[var(--color-text-secondary)]">
                               {wo.pricing_status
-                                ? `${t.pricing[wo.pricing_status] || wo.pricing_status}${wo.pricing_total_amount || wo.pricing_subtotal ? ` · ${money(wo.pricing_total_amount || wo.pricing_subtotal)} ${CURRENCY}` : ''}`
+                                ? `${t.pricing[wo.pricing_status] || wo.pricing_status}${wo.pricing_total_amount || wo.pricing_subtotal ? ` · ${money(wo.pricing_total_amount || wo.pricing_subtotal)} ${wo.payment_currency || CURRENCY}` : ''}`
                                 : t.noQuote}
                             </div>
                             {wo.pricing_status === 'pending_review' && (
@@ -1508,7 +1698,7 @@ export function WorkOrdersPage({ readOnly = false }) {
             ) : detail ? (
               <DetailErrorBoundary>
               <div className="space-y-4">
-                {!readOnly && detail.pricing?.status === 'pending_review' && (
+                {!readOnly && detail.pricing?.status === 'pending_review' && !detail.pricing?.quote_version && (
                   <section className="rounded-xl border border-[var(--color-primary)]/40 bg-[var(--color-primary)]/5 p-4">
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                       <div>
@@ -1533,6 +1723,14 @@ export function WorkOrdersPage({ readOnly = false }) {
                       </div>
                     </div>
                   </section>
+                )}
+                {detail.pricing?.quote_version >= 1 && (
+                  <QuoteExecutionAdminPanel
+                    detail={detail}
+                    readOnly={readOnly}
+                    onRefresh={refreshOpenDetail}
+                    onOpenDialog={openOperationDialog}
+                  />
                 )}
                 {!readOnly && detail.status === 'payment_review' && (
                   <section className="rounded-xl border border-[var(--color-primary)]/40 bg-[var(--color-primary)]/5 p-4">
@@ -1735,6 +1933,7 @@ export function WorkOrdersPage({ readOnly = false }) {
                     <div>{t.quoteReviewLabel}: {detail.quote_review_status || '-'}</div>
                     <div>{t.riskControlLabel}: {detail.conflict_status || t.clearRisk}</div>
                   </div>
+                  <PaymentIndicators workOrder={detail} t={t} />
                 </section>
 
                 {!readOnly && (
@@ -1876,7 +2075,7 @@ export function WorkOrdersPage({ readOnly = false }) {
                   </div>
                 </section>
 
-                <section className="rounded-xl border border-[var(--color-border)] p-4">
+                {!detail.pricing?.quote_version && <section className="rounded-xl border border-[var(--color-border)] p-4">
                   <div className="mb-3 flex items-center justify-between gap-3">
                     <h4 className="font-medium">{t.quoteDetailTitle || 'Quote Details'}</h4>
                     {detail.pricing?.status && (
@@ -1947,7 +2146,7 @@ export function WorkOrdersPage({ readOnly = false }) {
                   })() : (
                     <div className="text-sm text-[var(--color-text-muted)]">{t.noQuoteDetail || t.noQuote}</div>
                   )}
-                </section>
+                </section>}
 
                 <section className="rounded-xl border border-[var(--color-border)] p-4">
                   <div className="mb-3 flex items-center justify-between gap-3">
@@ -2130,10 +2329,27 @@ export function WorkOrdersPage({ readOnly = false }) {
             </div>
             <div className="space-y-3 p-5">
               {operationDialog.error && <div className="rounded-lg bg-[var(--color-error)]/10 px-3 py-2 text-sm text-[var(--color-error)]">{operationDialog.error}</div>}
+              {operationDialog.type === 'quote-approve' && (
+                <label className="block text-sm text-[var(--color-text-secondary)]">{t.quoteApproveNote}
+                  <textarea name="note" value={operationDialog.values.note} onChange={updateOperationValue} rows={3} className="mt-1 w-full resize-none rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-3 py-2 text-sm text-[var(--color-text)]" />
+                </label>
+              )}
               {operationDialog.type === 'quote-return' && (
                 <label className="block text-sm text-[var(--color-text-secondary)]">{t.quoteReturnReason}
                   <textarea name="reason" value={operationDialog.values.reason} onChange={updateOperationValue} rows={3} className="mt-1 w-full resize-none rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-3 py-2 text-sm text-[var(--color-text)]" />
                 </label>
+              )}
+              {['receipt-confirm-full', 'receipt-confirm-partial', 'receipt-reject'].includes(operationDialog.type) && (
+                <>
+                  {operationDialog.type !== 'receipt-reject' && (
+                    <label className="block text-sm text-[var(--color-text-secondary)]">{t.receiptAmount}
+                      <input name="confirmed_amount" inputMode="numeric" value={operationDialog.values.confirmed_amount} onChange={updateOperationValue} disabled={operationDialog.type === 'receipt-confirm-full'} className="mt-1 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-3 py-2 text-sm text-[var(--color-text)] disabled:opacity-60" />
+                    </label>
+                  )}
+                  <label className="block text-sm text-[var(--color-text-secondary)]">{operationDialog.type === 'receipt-reject' ? t.receiptRejectReason : operationDialog.type === 'receipt-confirm-partial' ? t.receiptAdjustmentReason : t.receiptReasonOptional}
+                    <textarea name="reason" value={operationDialog.values.reason} onChange={updateOperationValue} rows={3} className="mt-1 w-full resize-none rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-3 py-2 text-sm text-[var(--color-text)]" />
+                  </label>
+                </>
               )}
               {['payment-start', 'balance-payment'].includes(operationDialog.type) && (
                 <label className="block text-sm text-[var(--color-text-secondary)]">{operationDialog.type === 'payment-start' ? t.paymentNoteLabel : t.balanceNoteLabel}

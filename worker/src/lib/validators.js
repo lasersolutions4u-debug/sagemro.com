@@ -211,13 +211,15 @@ export function validateChatImageSize(size) {
  */
 export function sanitizeFilename(name) {
   if (typeof name !== 'string' || name.trim().length === 0) return 'untitled';
-  let s = name.replace(/[/\\]/g, '_').replace(/\.\./g, '_').replace(/\x00/g, '');
-  if (s.length > 255) {
-    const dot = s.lastIndexOf('.');
+  let s = name.replace(/[\x00-\x1f\x7f]/g, '').replace(/[/\\]/g, '_').replace(/\.\./g, '_');
+  const codePoints = Array.from(s);
+  if (codePoints.length > 255) {
+    const dot = codePoints.lastIndexOf('.');
     if (dot > 0 && dot < 250) {
-      s = s.substring(0, 250 - (s.length - dot)) + s.substring(dot);
+      const extension = codePoints.slice(dot);
+      s = codePoints.slice(0, 250 - extension.length).concat(extension).join('');
     } else {
-      s = s.substring(0, 255);
+      s = codePoints.slice(0, 255).join('');
     }
   }
   return s || 'untitled';

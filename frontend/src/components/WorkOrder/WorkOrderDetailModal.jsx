@@ -35,6 +35,7 @@ import { RepairRecordPanel } from './RepairRecordPanel';
 import { AttachmentsPanel } from './AttachmentsPanel';
 import { MaterialRequisitionPanel } from './MaterialRequisitionPanel';
 import { FieldWorkPanel } from './FieldWorkPanel';
+import { CollectionPanel } from './CollectionPanel';
 import { PaymentModal } from '../Payment/PaymentModal';
 import { formatCustomerDeviceLine, formatServiceTextForLocale } from '../../utils/workOrderDisplay';
 import { canEngineerViewCustomerContact, redactContactInfo } from '../../utils/contactRedaction';
@@ -349,6 +350,7 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
   });
   const [machineLeadSubmitting, setMachineLeadSubmitting] = useState(false);
   const [balancePaymentOpen, setBalancePaymentOpen] = useState(false);
+  const [installmentPayment, setInstallmentPayment] = useState(null);
   const [materialRequisitionBusy, setMaterialRequisitionBusy] = useState(false);
   const [fieldWorkBusy, setFieldWorkBusy] = useState(false);
   const workOrderId = workOrder?.id;
@@ -399,6 +401,36 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
     }
   }, [workOrderId, userType]);
   const handleFieldWorkChanged = useCallback(() => loadDetail({ throwOnError: true }), [loadDetail]);
+  const handleCollectionChanged = useCallback(async (response) => {
+    const savedInstallment = response?.installment;
+    if (savedInstallment?.id) {
+      setDetail((current) => {
+        if (!current?.quote_execution) return current;
+        const receiptClaims = current.quote_execution.receipt_claims || [];
+        const nextReceiptClaims = response.claim && !receiptClaims.some((claim) => claim.id === response.claim.id)
+          ? [...receiptClaims, { ...response.claim, evidence: response.evidence || response.claim.evidence || null }]
+          : receiptClaims;
+        return {
+          ...current,
+          quote_execution: {
+            ...current.quote_execution,
+            installments: (current.quote_execution.installments || []).map((installment) => (
+              installment.id === savedInstallment.id
+                ? {
+                    ...installment,
+                    ...savedInstallment,
+                    status: 'pending_confirmation',
+                    pending_claim_count: Math.max(1, Number(savedInstallment.pending_claim_count || installment.pending_claim_count || 0)),
+                  }
+                : installment
+            )),
+            receipt_claims: nextReceiptClaims,
+          },
+        };
+      });
+    }
+    await loadDetail({ throwOnError: true });
+  }, [loadDetail]);
 
   useEffect(() => {
     if (isOpen && workOrderId) {
@@ -652,6 +684,12 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
     && String(assignedEngineerId) === String(userId);
   const shouldShowCustomerContact = !isEngineer || canEngineerViewCustomerContact(effectiveStatus);
   const customerPhoneDisplay = shouldShowCustomerContact ? detail?.customer_phone : detail?.customer_phone ? 'XXX' : '';
+  const quoteExecution = detail?.quote_execution || null;
+  const hasVersionedExecution = Boolean(quoteExecution && !quoteExecution.legacy && quoteExecution.quote_version);
+  const showCollection = hasVersionedExecution && (
+    ['pending_payment', 'payment_review', 'in_service', 'resolved', 'pending_review', 'completed', 'pricing'].includes(effectiveStatus)
+    || !quoteExecution.financially_settled
+  );
 
   const tabs = [
     { key: 'info', label: copy.tabs.info },
@@ -660,8 +698,13 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
 
   // 核价Tab：工程师看表单，客户看报价确认（含待付款状态）
   const pricingStatuses = ['assigned', 'in_progress', 'pricing', 'pending_payment', 'payment_review', 'in_service'];
-  if (pricingStatuses.includes(effectiveStatus)) {
+  if (pricingStatuses.includes(effectiveStatus) && (
+    isEngineer || !hasVersionedExecution || detail?.pricing?.status === 'submitted'
+  )) {
     tabs.push({ key: 'pricing', label: isEngineer ? copy.tabs.submitQuote : copy.tabs.confirmQuote });
+  }
+  if (showCollection) {
+    tabs.push({ key: 'collection', label: isCnLocale() ? '付款与到账' : 'Payments & receipts' });
   }
 
   // 评价Tab：客户对服务进行评价（resolved/pending_review 可评价，completed 查看已有评价）
@@ -692,6 +735,24 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
 
   const renderInfoTab = () => (
     <div className="space-y-4">
+      {hasVersionedExecution && (
+        <div className="flex flex-wrap items-center gap-2 border-b border-[var(--color-border)] pb-3 text-sm font-semibold text-[var(--color-text-primary)]">
+          <span>{(() => {
+            const serviceState = quoteExecution.service_state || effectiveStatus;
+            if (['resolved', 'pending_review', 'completed'].includes(serviceState)) {
+              return isCn ? '服务已完成' : 'Service complete';
+            }
+            if (serviceState === 'in_service') return isCn ? '服务进行中' : 'Service in progress';
+            return isCn ? '服务待开始' : 'Service pending';
+          })()}</span>
+          <span aria-hidden="true" className="text-[var(--color-text-muted)]">·</span>
+          <span className={quoteExecution.financially_settled ? 'text-green-600' : 'text-amber-600'}>
+            {quoteExecution.financially_settled
+              ? (isCn ? '款项已结清' : 'Payment settled')
+              : (isCn ? '待收尾款' : 'Payment outstanding')}
+          </span>
+        </div>
+      )}
       {isEngineer && ['resolved', 'pending_review', 'completed'].includes(effectiveStatus) && (
         <div className="rounded-xl border border-[var(--color-primary)]/30 bg-[var(--color-primary)]/5 p-4">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
@@ -1390,6 +1451,7 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
                 workOrderId={workOrder.id}
                 engineerId={userId}
                 pricing={detail?.pricing || null}
+                serviceMode={detail?.service_mode || workOrder.service_mode || 'remote'}
                 onSubmitted={() => { loadDetail(); onConfirmed?.(); }}
               />
             )}
@@ -1397,11 +1459,22 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
               <CustomerPricingPanel
                 workOrderId={workOrder.id}
                 customerId={userId}
+                serviceMode={detail?.service_mode || workOrder.service_mode || 'remote'}
                 onConfirmed={(nextTab) => {
                   if (nextTab) setTab(nextTab);
+                  else if (hasVersionedExecution || detail?.pricing?.quote_version) setTab('collection');
                   loadDetail();
                   onConfirmed?.();
                 }}
+              />
+            )}
+            {tab === 'collection' && showCollection && (
+              <CollectionPanel
+                workOrderId={workOrder.id}
+                quoteExecution={quoteExecution}
+                userType={userType}
+                onChanged={handleCollectionChanged}
+                onSelectPayment={setInstallmentPayment}
               />
             )}
             {tab === 'rating' && renderRatingTab()}
@@ -1443,6 +1516,17 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
       customerId={userId}
       paymentStage="balance"
       onPaid={() => { setBalancePaymentOpen(false); setTab('messages'); loadDetail(); onConfirmed?.(); }}
+    />
+    <PaymentModal
+      isOpen={Boolean(installmentPayment)}
+      onClose={() => setInstallmentPayment(null)}
+      workOrderId={workOrderId}
+      customerId={userId}
+      installmentId={installmentPayment?.installmentId}
+      amount={installmentPayment?.amount}
+      trigger={installmentPayment?.trigger}
+      currency={installmentPayment?.currency}
+      onPaid={() => { loadDetail(); onConfirmed?.(); }}
     />
     </>
   );

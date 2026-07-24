@@ -31,9 +31,19 @@
 | `026_material_master_data.sql` | Admin 物料主数据与库存手动调整记录 |
 | `027_work_order_material_items.sql` | 工单物料引用：报价、备件准备和服务报告 |
 | `028_material_requests.sql` | 工程师新增物料申请与 Admin 审核入库 |
+| `029_upsell_requests.sql` | 工程师增购与设备改造需求记录 |
+| `030_add_customer_email.sql` | customers 增加国际版邮箱登录字段 |
+| `031_engineer_payouts.sql` | 工程师收款设置与工单结算记录 |
+| `032_invoice_requests.sql` | 中国版客户发票申请流程 |
+| `032_payment_stages.sql` | 预付款与尾款阶段字段 |
 | `033_work_order_location_verification.sql` | 客户现场地址、工程师到场定位和地理围栏核验 |
 | `034_add_service_mode.sql` | 远程、上门和混合服务方式及对应完工规则 |
+| `035_onsite_conversion_workflow.sql` | 远程工单转上门、客户位置确认和 Admin 到场人工放行 |
+| `036_create_funnel_events.sql` | 注册漏斗事件与会话归因记录 |
 | `037_engineer_account_activation.sql` | 工程师邮箱激活与客户/工程师跨角色登录身份唯一性 |
+| `038_material_requisitions_and_staff.sql` | 内部员工账号与工单领料申请、库存预留、幂等采购/出入库和签收流程 |
+| `039_field_workdays.sql` | 现场作业日、拍照签到、日报、延期审批与私有证据保留 |
+| `040_field_evidence_cleanup_queue.sql` | 私有现场证据回滚删除失败后的定时清理队列 |
 
 > 约定：文件名格式 `NNN_*.sql`，按字典序顺序执行；历史命名中出现过 `001_partner_upgrade.sql`（已删除，是 `001_add_engineer_fields.sql + 002_pricing_and_new_tables.sql` 的合并版本，避免重复执行）。
 

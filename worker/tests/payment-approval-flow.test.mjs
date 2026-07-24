@@ -14,6 +14,9 @@ function createPaymentFlowEnv() {
     ADMIN_PHONE: '13800000000',
     ADMIN_PASSWORD: 'admin-pass',
     __payments: [],
+    __paymentReads: 0,
+    __invoiceReads: 0,
+    __invoiceWrites: 0,
     __messages: [],
     __notifications: [],
     __auditLogs: [],
@@ -27,6 +30,10 @@ function createPaymentFlowEnv() {
       customer_id: 'customer-1',
       engineer_id: 'engineer-1',
       status: 'pending_payment',
+      active_quote_version: null,
+      service_mode: 'remote',
+      quote_expected_service_days: null,
+      approved_extension_days: 0,
     }],
     __pricing: [{
       id: 'price-1',
@@ -93,6 +100,11 @@ function createStatement(env, sql) {
         return order ? { ...order } : null;
       }
 
+      if (/SELECT id, customer_id, status FROM work_orders WHERE id = \?/i.test(normalized)) {
+        const order = env.__workOrders.find((item) => item.id === this.args[0]);
+        return order ? { id: order.id, customer_id: order.customer_id, status: order.status } : null;
+      }
+
       if (/SELECT id, customer_id, engineer_id, assigned_regional_lead_id, quote_review_status FROM work_orders WHERE id = \?/i.test(normalized)) {
         const order = env.__workOrders.find((item) => item.id === this.args[0]);
         return order ? {
@@ -104,9 +116,24 @@ function createStatement(env, sql) {
         } : null;
       }
 
+      if (/SELECT id, customer_id, engineer_id, assigned_regional_lead_id FROM work_orders WHERE id = \?/i.test(normalized)) {
+        const order = env.__workOrders.find((item) => item.id === this.args[0]);
+        return order ? {
+          id: order.id,
+          customer_id: order.customer_id,
+          engineer_id: order.engineer_id,
+          assigned_regional_lead_id: order.assigned_regional_lead_id,
+        } : null;
+      }
+
       if (/SELECT id, engineer_id, status, order_no FROM work_orders WHERE id = \?/i.test(normalized)) {
         const order = env.__workOrders.find((item) => item.id === this.args[0]);
         return order ? { id: order.id, engineer_id: order.engineer_id, status: order.status, order_no: order.order_no } : null;
+      }
+
+      if (/SELECT id, engineer_id, status, order_no, customer_id, service_mode, active_quote_version, quote_expected_service_days, approved_extension_days FROM work_orders WHERE id = \?/i.test(normalized)) {
+        const order = env.__workOrders.find((item) => item.id === this.args[0]);
+        return order ? { ...order } : null;
       }
 
       if (/SELECT id, order_no, engineer_id, status FROM work_orders WHERE id = \?/i.test(normalized)) {
@@ -123,7 +150,7 @@ function createStatement(env, sql) {
         return env.__pricing.find((item) => item.work_order_id === this.args[0] && item.status === this.args[1]) || null;
       }
 
-      if (/SELECT subtotal, total_amount, labor_fee, parts_fee, travel_fee, other_fee FROM work_order_pricing WHERE work_order_id = \? AND status = \?/i.test(normalized)) {
+      if (/SELECT subtotal, total_amount, labor_fee, parts_fee, travel_fee, other_fee(?:, quote_version)? FROM work_order_pricing WHERE work_order_id = \? AND status = \?/i.test(normalized)) {
         return env.__pricing.find((item) => item.work_order_id === this.args[0] && item.status === this.args[1]) || null;
       }
 
@@ -131,11 +158,28 @@ function createStatement(env, sql) {
         return env.__pricing.find((item) => item.work_order_id === this.args[0]) || null;
       }
 
+      if (/SELECT quote_version FROM work_order_pricing WHERE work_order_id = \?/i.test(normalized)) {
+        const pricing = env.__pricing.find((item) => item.work_order_id === this.args[0]);
+        return pricing ? { quote_version: pricing.quote_version } : null;
+      }
+
       if (/SELECT \* FROM work_order_payments WHERE work_order_id = \? AND payment_stage = \?/i.test(normalized)) {
+        env.__paymentReads += 1;
         return env.__payments.filter((item) => item.work_order_id === this.args[0] && (item.payment_stage || 'advance') === this.args[1]).at(-1) || null;
       }
 
+      if (/FROM invoice_requests WHERE work_order_id = \?/i.test(normalized)) {
+        env.__invoiceReads += 1;
+        return null;
+      }
+
+      if (/SELECT amount FROM work_order_payments WHERE work_order_id = \?/i.test(normalized)) {
+        env.__paymentReads += 1;
+        return null;
+      }
+
       if (/SELECT id, status, payment_method, payment_stage FROM work_order_payments WHERE work_order_id = \? AND payment_stage = \?/i.test(normalized)) {
+        env.__paymentReads += 1;
         const payment = env.__payments.filter((item) => item.work_order_id === this.args[0] && (item.payment_stage || 'advance') === this.args[1]).at(-1);
         return payment ? { id: payment.id, status: payment.status, payment_method: payment.payment_method, payment_stage: payment.payment_stage || 'advance' } : null;
       }
@@ -160,9 +204,15 @@ function createStatement(env, sql) {
         return order ? { customer_id: order.customer_id, order_no: order.order_no } : null;
       }
 
-      if (/SELECT id, engineer_id, customer_id, status FROM work_orders WHERE id = \?/i.test(normalized)) {
+      if (/SELECT id, engineer_id, customer_id, status(?:, active_quote_version)? FROM work_orders WHERE id = \?/i.test(normalized)) {
         const order = env.__workOrders.find((item) => item.id === this.args[0]);
-        return order ? { id: order.id, engineer_id: order.engineer_id, customer_id: order.customer_id, status: order.status } : null;
+        return order ? {
+          id: order.id,
+          engineer_id: order.engineer_id,
+          customer_id: order.customer_id,
+          status: order.status,
+          active_quote_version: order.active_quote_version,
+        } : null;
       }
 
       if (/SELECT id FROM ratings WHERE work_order_id = \?/i.test(normalized)) {
@@ -256,6 +306,8 @@ function createStatement(env, sql) {
         const [id, work_order_id, customer_id, amount, payment_method, transaction_id, status, payment_stage, quote_total_amount, advance_amount, balance_amount] = this.args;
         env.__payments.push({ id, work_order_id, customer_id, amount, payment_method, transaction_id, status, payment_stage: payment_stage || 'advance', quote_total_amount, advance_amount, balance_amount });
       }
+
+      if (/INSERT INTO invoice_requests/i.test(normalized)) env.__invoiceWrites += 1;
 
       if (/UPDATE work_order_payments SET status = 'pending_admin_confirmation' WHERE id =/i.test(normalized)) {
         const payment = env.__payments.find((item) => item.id === this.args[0]);
@@ -380,6 +432,7 @@ async function token(env, userType, userId) {
   return signJwt({
     userId,
     userType,
+    market: 'com',
     phone: '13800000000',
     iat: 1,
     exp: Math.floor(Date.now() / 1000) + 3600,
@@ -434,6 +487,128 @@ test('payment quote exposes advance and balance amounts for service orders', asy
     travel_fee: 400,
     other_fee: 200,
   });
+});
+
+test('versioned quotes never use the legacy advance and balance policy', async () => {
+  const env = createPaymentFlowEnv();
+  env.__pricing[0].quote_version = 1;
+  env.__pricing[0].total_amount = {
+    valueOf() { throw new Error('legacy payment policy was called'); },
+    toJSON() { return 5400; },
+  };
+
+  const pricing = await api(env, '/api/workorders/wo-pay-1/pricing', {
+    method: 'GET',
+    userType: 'customer',
+    userId: 'customer-1',
+  });
+  assert.equal(pricing.response.status, 200);
+  assert.equal(pricing.json.pricing.payment_policy, null);
+
+  const payment = await api(env, '/api/workorders/wo-pay-1/pay', {
+    body: { payment_method: 'bank_transfer' },
+  });
+  assert.equal(payment.response.status, 409);
+  assert.equal(env.__payments.length, 0);
+});
+
+test('versioned quotes reject every legacy payment and start route without reading or mutating legacy payments', async () => {
+  const cases = [
+    {
+      name: 'customer advance payment',
+      path: '/api/workorders/wo-pay-1/pay',
+      options: { body: { payment_method: 'bank_transfer' } },
+      workOrderStatus: 'pending_payment',
+      paymentStage: 'advance',
+      paymentStatus: 'instructions_requested',
+    },
+    {
+      name: 'customer balance payment',
+      path: '/api/workorders/wo-pay-1/pay',
+      options: { body: { payment_method: 'bank_transfer', payment_stage: 'balance' } },
+      workOrderStatus: 'resolved',
+      paymentStage: 'balance',
+      paymentStatus: 'awaiting_customer',
+    },
+    {
+      name: 'customer payment while a supplemental is pending review',
+      path: '/api/workorders/wo-pay-1/pay',
+      options: { body: { payment_method: 'bank_transfer' } },
+      workOrderStatus: 'pending_payment',
+      pricingStatus: 'pending_review',
+      paymentStage: 'advance',
+      paymentStatus: 'instructions_requested',
+    },
+    {
+      name: 'legacy payment status read',
+      path: '/api/workorders/wo-pay-1/payment?payment_stage=advance',
+      options: { method: 'GET' },
+      workOrderStatus: 'pending_payment',
+      paymentStage: 'advance',
+      paymentStatus: 'instructions_requested',
+    },
+    {
+      name: 'customer invoice request',
+      path: '/api/workorders/wo-pay-1/invoice-request',
+      options: { body: { company_name: 'Test Metal Works', tax_id: 'TAX-1' } },
+      workOrderStatus: 'resolved',
+      paymentStage: 'balance',
+      paymentStatus: 'completed',
+    },
+    {
+      name: 'engineer start request',
+      path: '/api/workorders/wo-pay-1/payment/start-request',
+      options: { userType: 'engineer', userId: 'engineer-1', body: { note: 'Legacy receipt.' } },
+      workOrderStatus: 'pending_payment',
+      paymentStage: 'advance',
+      paymentStatus: 'instructions_requested',
+    },
+    {
+      name: 'Admin start confirmation',
+      path: '/api/admin/workorders/wo-pay-1/payment/approve-start',
+      options: { userType: 'admin', userId: 'admin-1', body: { note: 'Legacy receipt confirmed.' } },
+      workOrderStatus: 'pending_payment',
+      paymentStage: 'advance',
+      paymentStatus: 'instructions_requested',
+    },
+    {
+      name: 'Admin balance confirmation',
+      path: '/api/admin/workorders/wo-pay-1/payment/approve-balance',
+      options: { userType: 'admin', userId: 'admin-1', body: { note: 'Legacy balance confirmed.' } },
+      workOrderStatus: 'resolved',
+      paymentStage: 'balance',
+      paymentStatus: 'instructions_requested',
+    },
+  ];
+
+  for (const item of cases) {
+    const env = createPaymentFlowEnv();
+    env.__pricing[0].quote_version = 1;
+    if (['engineer start request', 'Admin start confirmation'].includes(item.name)) {
+      env.__workOrders[0].active_quote_version = 1;
+    }
+    env.__pricing[0].status = item.pricingStatus || 'confirmed';
+    env.__workOrders[0].status = item.workOrderStatus;
+    env.__payments.push({
+      id: `legacy-${item.paymentStage}`,
+      work_order_id: 'wo-pay-1',
+      payment_stage: item.paymentStage,
+      payment_method: 'bank_transfer',
+      status: item.paymentStatus,
+      amount: item.paymentStage === 'advance' ? 3500 : 1900,
+    });
+    const beforePayments = structuredClone(env.__payments);
+
+    const result = await api(env, item.path, item.options);
+
+    assert.equal(result.response.status, 409, item.name);
+    assert.match(result.json.error, /installment|schedule|active quote execution/i, item.name);
+    assert.equal(env.__paymentReads, 0, item.name);
+    assert.equal(env.__invoiceReads, 0, item.name);
+    assert.equal(env.__invoiceWrites, 0, item.name);
+    assert.deepEqual(env.__payments, beforePayments, item.name);
+    assert.equal(env.__workOrders[0].status, item.workOrderStatus, item.name);
+  }
 });
 
 test('customer payment request uses the advance amount rather than the full quote', async () => {
@@ -602,6 +777,29 @@ test('final service report opens customer review and creates admin service revie
   assert.equal(reviews.json.total, 1);
   assert.equal(reviews.json.list[0].order_no, 'WO-PAY-1');
   assert.equal(reviews.json.list[0].comment, 'Service report received and accepted.');
+});
+
+test('customer cannot rate or accept a service order before final review opens', async () => {
+  const env = createPaymentFlowEnv();
+  env.__workOrders[0].status = 'in_service';
+
+  const rated = await api(env, '/api/workorders/rating', {
+    userType: 'customer',
+    userId: 'customer-1',
+    body: {
+      work_order_id: 'wo-pay-1',
+      rating_timeliness: 5,
+      rating_technical: 5,
+      rating_communication: 5,
+      rating_professional: 5,
+      comment: 'Submitted too early.',
+    },
+  });
+
+  assert.equal(rated.response.status, 409);
+  assert.equal(env.__workOrders[0].status, 'in_service');
+  assert.equal(env.__ratings.length, 0);
+  assert.equal(env.__payouts.length, 0);
 });
 
 test('Admin payout completion requires a completed work order and positive amount', async () => {

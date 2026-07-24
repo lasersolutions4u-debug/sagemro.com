@@ -116,6 +116,7 @@ async function adminRequest(path, options = {}) {
   const token = await signJwt({
     userId: 'admin',
     userType: 'admin',
+    market: 'com',
     exp: Math.floor(Date.now() / 1000) + 60,
   }, JWT_SECRET);
 

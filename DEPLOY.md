@@ -362,6 +362,98 @@ GitHub Actions → Deploy China Edition to Aliyun ECS → Run workflow
 
 不要为了日常部署手动添加 `SSH(22) -> 0.0.0.0/0`。这种规则只允许在排障时短时间使用，排障结束必须立即删除。
 
+### 3.2 Quote Execution Baseline (Migration 041) Rollout
+
+`migrations/041_quote_execution_baseline.sql` adds immutable quote schedules, installments, receipt claims, and receipt-evidence metadata. It must be applied to **both** production D1 databases before any Worker code that reads these tables is deployed. `china-edition` does not deploy the shared Worker, so pushing it never substitutes for this migration gate.
+
+1. Confirm current backups for both databases are available and recorded.
+2. Apply migration 041 to COM and CN before deploying the shared Worker.
+3. Verify the migration row and all four tables in both databases.
+4. Push `main`; after the test job and production gate, `deploy.yml` starts the Worker, international frontend, and Admin jobs in parallel.
+5. Require all three deployment jobs to succeed, then run the COM production smoke.
+6. Sync client changes to `china-edition`, push, then manually run `aliyun-cn-deploy.yml`.
+7. Run the CN production smoke.
+
+```bash
+cd worker
+
+# Apply to both databases before any Worker deployment.
+npx wrangler d1 execute sagemro-db --env production --remote --file migrations/041_quote_execution_baseline.sql
+npx wrangler d1 execute sagemro-db-cn --env production --remote --file migrations/041_quote_execution_baseline.sql
+```
+
+Run the following exact verification queries against **each** database. Each migration query must return `041_quote_execution_baseline`; each table query must return exactly the four listed names.
+
+```bash
+npx wrangler d1 execute sagemro-db --env production --remote --command "SELECT version FROM _migrations WHERE version = '041_quote_execution_baseline';"
+npx wrangler d1 execute sagemro-db --env production --remote --command "SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('work_order_payment_schedule','work_order_installments','work_order_receipt_claims','work_order_receipt_evidence') ORDER BY name;"
+
+npx wrangler d1 execute sagemro-db-cn --env production --remote --command "SELECT version FROM _migrations WHERE version = '041_quote_execution_baseline';"
+npx wrangler d1 execute sagemro-db-cn --env production --remote --command "SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('work_order_payment_schedule','work_order_installments','work_order_receipt_claims','work_order_receipt_evidence') ORDER BY name;"
+```
+
+Do not deploy Worker code that reads the new tables until both verification sets are complete. The coordinated release order is: back up both databases, migrate both first, verify both, then push `main`. After the test job and production environment gate, `deploy.yml` runs the shared Worker, international frontend, and international Admin deployment jobs in parallel. Require all three to succeed before the COM smoke. Then sync client-only changes to `china-edition`, push, manually run `aliyun-cn-deploy.yml --ref china-edition`, and run the CN smoke. `china-edition` does not deploy the Worker.
+
+The production smoke is manual and is intentionally absent from CI. Identities remain explicit CLI parameters, but passwords are accepted only through the three documented environment variables. Read passwords without terminal echo and inject them into only the smoke child process; do not put secret values in argv, paste them into command history, or print them in reports or logs.
+
+```bash
+cd worker
+
+# Read temporary passwords without echo. The history records variable names, not values.
+printf 'Temporary Admin password: ' >&2
+IFS= read -rs SAGEMRO_SMOKE_ADMIN_PASSWORD
+printf '\nTemporary customer password: ' >&2
+IFS= read -rs SAGEMRO_SMOKE_CUSTOMER_PASSWORD
+printf '\nTemporary engineer password: ' >&2
+IFS= read -rs SAGEMRO_SMOKE_ENGINEER_PASSWORD
+printf '\n' >&2
+
+# COM placeholders: replace identities only; passwords never enter argv.
+SAGEMRO_QUOTE_EXECUTION_ADMIN_PASSWORD="$SAGEMRO_SMOKE_ADMIN_PASSWORD" \
+SAGEMRO_QUOTE_EXECUTION_CUSTOMER_PASSWORD="$SAGEMRO_SMOKE_CUSTOMER_PASSWORD" \
+SAGEMRO_QUOTE_EXECUTION_ENGINEER_PASSWORD="$SAGEMRO_SMOKE_ENGINEER_PASSWORD" \
+npm run smoke:production:quote-execution -- \
+  --market com --base-url https://api.sagemro.com --database sagemro-db \
+  --confirm-target com:sagemro-db:api.sagemro.com \
+  --admin-identity '<admin identity>' \
+  --customer-identity '<temporary customer email>' \
+  --engineer-identity '<temporary engineer email>' \
+  --allow-write
+
+# CN placeholders: reuse the non-echoed shell variables or read a separate temporary set.
+SAGEMRO_QUOTE_EXECUTION_ADMIN_PASSWORD="$SAGEMRO_SMOKE_ADMIN_PASSWORD" \
+SAGEMRO_QUOTE_EXECUTION_CUSTOMER_PASSWORD="$SAGEMRO_SMOKE_CUSTOMER_PASSWORD" \
+SAGEMRO_QUOTE_EXECUTION_ENGINEER_PASSWORD="$SAGEMRO_SMOKE_ENGINEER_PASSWORD" \
+npm run smoke:production:quote-execution -- \
+  --market cn --base-url https://api.sagemro.cn --database sagemro-db-cn \
+  --confirm-target cn:sagemro-db-cn:api.sagemro.cn \
+  --admin-identity '<admin identity>' \
+  --customer-identity '<temporary customer email>' \
+  --engineer-identity '<temporary engineer email>' \
+  --allow-write
+
+unset SAGEMRO_SMOKE_ADMIN_PASSWORD SAGEMRO_SMOKE_CUSTOMER_PASSWORD SAGEMRO_SMOKE_ENGINEER_PASSWORD
+```
+
+**Go/no-go checklist**
+
+- Backups for COM and CN exist and are verified.
+- Both migration commands succeeded and both verification query pairs returned the required results.
+- All three parallel `main` deployment jobs (Worker, international frontend, and international Admin) completed successfully before COM smoke.
+- COM smoke reports `PASS` and its residue check reports zero.
+- Client-only changes are synchronized to `china-edition`; the Aliyun workflow completed successfully before CN smoke.
+- CN smoke reports `PASS` and its residue check reports zero.
+
+**Stop conditions**
+
+- Stop before Worker deployment if either database does not show migration `041_quote_execution_baseline` and all four tables.
+- Stop the rollout if any deployment, smoke lifecycle action, cleanup action, or residue-zero check fails.
+- Stop if a smoke report contains unexpected production records; preserve the report and investigate before retrying.
+
+**Rollback boundary**
+
+Stop rollout or roll back Worker/client code to the last known-good release. Do not down-migrate or drop immutable financial records, schedules, installments, receipt claims, or evidence metadata. Restore production data only under the incident plan using verified backups and explicit approval.
+
 部署运行中不要手动 cancel workflow。GitHub 在强制取消时不保证后续清理步骤一定执行；如确需取消，取消后必须立刻到阿里云安全组确认没有遗留的 GitHub runner `/32` SSH 规则。
 
 ### ⚠️ 不会自动做的事

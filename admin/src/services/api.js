@@ -283,6 +283,24 @@ export async function getAuthenticatedFieldMediaUrl(workOrderId, mediaId) {
   return URL.createObjectURL(await res.blob());
 }
 
+export async function getAuthenticatedReceiptEvidenceUrl(workOrderId, evidenceId) {
+  const res = await fetch(`${API_BASE}/api/workorders/${workOrderId}/receipt-evidence/${evidenceId}`, {
+    credentials: 'include',
+    headers: authHeaders(),
+  });
+  if (!res.ok) {
+    let message = `请求失败 (${res.status})`;
+    try {
+      const data = await res.json();
+      message = data.error || message;
+    } catch {
+      // The protected evidence endpoint may return a non-JSON transport error.
+    }
+    throw new Error(message);
+  }
+  return URL.createObjectURL(await res.blob());
+}
+
 export async function postAdminWorkOrderMessage(workOrderId, content, isInternalNote = true) {
   return request(`/api/workorders/${workOrderId}/messages`, {
     method: 'POST',
@@ -315,6 +333,20 @@ export async function rejectAdminWorkOrderPricing(workOrderId, note = '') {
   return request(`/api/admin/workorders/${workOrderId}/pricing/reject`, {
     method: 'PATCH',
     body: JSON.stringify({ note }),
+  });
+}
+
+export async function reviewWorkOrderQuote(workOrderId, action, quoteVersion, note = '') {
+  return request(`/api/admin/workorders/${workOrderId}/pricing/${action}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ quote_version: quoteVersion, note }),
+  });
+}
+
+export async function decideInstallmentReceipt(workOrderId, installmentId, claimId, payload) {
+  return request(`/api/admin/workorders/${workOrderId}/installments/${installmentId}/receipt-claims/${claimId}/decision`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
   });
 }
 

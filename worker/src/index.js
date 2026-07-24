@@ -10,11 +10,20 @@ import {
   hashPasswordLegacy,
   verifyPassword,
   generateOrderNo,
-  base64UrlEncode,
-  base64UrlDecode,
   signJwt,
-  verifyJwt,
 } from './lib/auth.js';
+import {
+  buildSessionCookie,
+  clearSessionCookie,
+  generateCsrfToken,
+  sessionResponsePayload,
+} from './lib/session.js';
+import {
+  authenticateRequest,
+  hasValidCsrf,
+  isProductionSession,
+  requestPortalRole,
+} from './lib/requestAuth.js';
 
 // 通用小工具（generateId / truncateStr）
 import { generateId, truncateStr } from './lib/util.js';
@@ -25,6 +34,15 @@ import {
   normalizeCoordinate,
 } from './lib/location.js';
 import { normalizeServiceMode, requiresArrivalVerification } from './lib/service-mode.js';
+import {
+  consumedFieldDayDates,
+  fieldDayBlocksFinalReport,
+  fieldDayLocalDate,
+  siteLocalDateTimeToUtc,
+  validateDailyReport,
+  validateFieldPlan,
+} from './lib/field-work.js';
+import { formatSiteTimezone, summarizeQuoteExecution, validateQuoteExecution } from './lib/quoteExecution.js';
 import { normalizeLocationQuery, searchLocationProvider } from './lib/location-search.js';
 import {
   identityDeleteStatement,
@@ -73,6 +91,15 @@ import {
 
 // Sentry 错误上报（零依赖 envelope 客户端）
 import { captureException } from './lib/sentry.js';
+import { isKnownProtectedRoute, isTestRoute } from './lib/routes.js';
+import { handlePublicRoute } from './lib/publicRoutes.js';
+import {
+  canCloseMaterialRequisition,
+  canManageMaterialRequisition,
+  deriveItemStatus,
+  validateFulfillmentQuantities,
+} from './lib/materialRequisitions.js';
+import { getRequisitionOperationsMetrics } from './lib/requisitionMetrics.js';
 
 // AI 工具调用确定性日志（Phase 0.1）
 import { logToolCall, measureAndLogToolCall, PermissionError } from './lib/trace.js';
@@ -396,7 +423,9 @@ function buildAuditLogStatement(env, request, {
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).bind(
     generateId(),
-    actorType || request?._auth?.userType || 'system',
+    actorType || (request?._auth?.userType === 'admin'
+      ? request._auth.staffRole || 'admin'
+      : request?._auth?.userType) || 'system',
     actorId || request?._auth?.userId || '',
     targetType,
     targetId,
@@ -1667,12 +1696,16 @@ async function attachConversationImagesToWorkOrder(env, {
     }
   }
 
+  const existingRows = await env.DB.prepare(`
+    SELECT r2_url
+    FROM work_order_attachments
+    WHERE work_order_id = ?
+  `).bind(workOrderId).all();
+  const existingUrls = new Set((existingRows.results || []).map((row) => row.r2_url).filter(Boolean));
+  const statements = [];
   let attached = 0;
   for (const url of urls.slice(0, limit)) {
-    const existing = await env.DB.prepare(
-      'SELECT id FROM work_order_attachments WHERE work_order_id = ? AND r2_url = ?'
-    ).bind(workOrderId, url).first();
-    if (existing) continue;
+    if (existingUrls.has(url)) continue;
 
     let path = '';
     try {
@@ -1689,7 +1722,7 @@ async function attachConversationImagesToWorkOrder(env, {
       webp: 'image/webp',
     }[ext] || 'image/jpeg';
 
-    await env.DB.prepare(`
+    statements.push(env.DB.prepare(`
       INSERT INTO work_order_attachments (id, work_order_id, uploader_type, uploader_id, file_name, file_type, file_size, r2_key, r2_url)
       VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?)
     `).bind(
@@ -1701,12 +1734,13 @@ async function attachConversationImagesToWorkOrder(env, {
       fileType,
       path || url,
       url
-    ).run();
+    ));
+    existingUrls.add(url);
     attached++;
   }
 
   if (attached > 0) {
-    await env.DB.prepare(`
+    statements.push(env.DB.prepare(`
       INSERT INTO work_order_logs (id, work_order_id, action, actor_type, actor_id, content)
       VALUES (?, ?, 'chat_images_attached', ?, ?, ?)
     `).bind(
@@ -1715,7 +1749,8 @@ async function attachConversationImagesToWorkOrder(env, {
       uploaderType,
       uploaderId || '',
       serviceCopy(market).attachmentLog(attached)
-    ).run();
+    ));
+    await env.DB.batch(statements);
   }
 
   return attached;
@@ -1923,24 +1958,37 @@ async function generateUserNo(env, prefix) {
   return `${prefix}${nextNum.toString().padStart(6, '0')}`;
 }
 
-// 从请求头中提取并验证 token
-async function authenticateRequest(request, env) {
-  const authHeader = request.headers.get('Authorization');
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return null;
-  }
-  const token = authHeader.slice(7);
-  const payload = await verifyJwt(token, env.JWT_SECRET);
-  return payload; // { userId, userType, iat, exp }
+function addSessionCookie(response, request, env, role, token) {
+  const headers = new Headers(response.headers);
+  headers.append('Set-Cookie', buildSessionCookie(role, token, {
+    production: isProductionSession(request, env),
+  }));
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+}
+
+function clearPortalSession(response, request, env) {
+  const role = requestPortalRole(request);
+  if (!role) return response;
+  const headers = new Headers(response.headers);
+  headers.append('Set-Cookie', clearSessionCookie(role, {
+    production: isProductionSession(request, env),
+  }));
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
 }
 
 // 验证是否为管理员（用于保护测试接口）
 async function authenticateAdmin(request, env) {
-  const authHeader = request.headers.get('Authorization');
-  if (!authHeader || !authHeader.startsWith('Bearer ')) return null;
   try {
-    const payload = await verifyJwt(authHeader.slice(7), env.JWT_SECRET);
-    return payload.userType === 'admin' ? payload : null;
+    const payload = await authenticateRequest(request, env);
+    return payload?.userType === 'admin' ? payload : null;
   } catch {
     return null;
   }
@@ -1963,12 +2011,17 @@ const ALLOWED_ORIGINS_DEV = [
   'http://localhost:5174',
   'http://localhost:3000',
   'http://localhost:4173',
+  'http://engineer.localhost:4173',
+  'http://localhost:4174',
+  'http://localhost:4273',
+  'http://engineer.localhost:4273',
+  'http://localhost:4274',
+  'http://customer.127.0.0.1.nip.io:4273',
+  'http://engineer.127.0.0.1.nip.io:4273',
+  'http://admin.127.0.0.1.nip.io:4274',
   'http://127.0.0.1:5173',
   'http://127.0.0.1:5174',
   'http://127.0.0.1:3000',
-  'http://local.sagemro-test.cn:5175',
-  'http://engineer.local.sagemro-test.cn:3001',
-  'http://admin.local.sagemro-test.cn:5176',
 ];
 
 function getAllowedOrigin(origin, env) {
@@ -1984,7 +2037,7 @@ function getCorsHeaders(request, env) {
     'Access-Control-Allow-Origin': getAllowedOrigin(origin, env),
     'Vary': 'Origin',
     'Access-Control-Allow-Methods': 'GET, POST, PATCH, DELETE, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-CSRF-Token, Idempotency-Key',
     'Access-Control-Allow-Credentials': 'true',
   };
 }
@@ -2010,7 +2063,7 @@ const corsHeaders = {
   'Access-Control-Allow-Origin': ALLOWED_ORIGINS_PRODUCTION[0],
   'Vary': 'Origin',
   'Access-Control-Allow-Methods': 'GET, POST, PATCH, DELETE, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-CSRF-Token, Idempotency-Key',
 };
 
 // 处理 OPTIONS 预检请求
@@ -2215,6 +2268,111 @@ function systemSenderName(market = 'com') {
   return market === 'cn' ? '系统' : 'System';
 }
 
+const QUOTE_EXECUTION_ERRORS = {
+  quote_total_amount_invalid: {
+    com: 'Quote total must be a positive whole amount.',
+    cn: '报价总额必须为正整数。',
+  },
+  expected_service_days_required: {
+    com: 'Expected onsite service days must be a positive integer.',
+    cn: '预计上门服务天数必须为正整数。',
+  },
+  payment_schedule_count_invalid: {
+    com: 'Installment plans must contain 2 to 6 payments.',
+    cn: '分期付款计划必须包含 2 至 6 期。',
+  },
+  payment_schedule_row_invalid: {
+    com: 'Payment schedule contains an invalid row.',
+    cn: '付款计划包含无效条目。',
+  },
+  payment_schedule_amount_invalid: {
+    com: 'Each scheduled payment must be a positive whole amount.',
+    cn: '每期付款金额必须为正整数。',
+  },
+  payment_schedule_sequence_invalid: {
+    com: 'Payment schedule sequence must use whole numbers.',
+    cn: '付款计划顺序必须为整数。',
+  },
+  payment_schedule_sequence_duplicate: {
+    com: 'Payment schedule sequence values must be unique.',
+    cn: '付款计划顺序不能重复。',
+  },
+  payment_schedule_currency_mismatch: {
+    com: 'Payment schedule currency must match the quote currency.',
+    cn: '付款计划币种必须与报价币种一致。',
+  },
+  payment_schedule_trigger_invalid: {
+    com: 'Payment schedule contains an invalid trigger.',
+    cn: '付款计划包含无效触发条件。',
+  },
+  payment_schedule_start_prerequisite_invalid: {
+    com: 'Payment start prerequisite flags must be boolean values.',
+    cn: '开工前付款标记必须为布尔值。',
+  },
+  payment_schedule_start_prerequisite_trigger_invalid: {
+    com: 'Only payments triggered before service starts can be required before service starts.',
+    cn: '只有“服务开始前”触发的付款才能设为开工前必须到账。',
+  },
+  payment_schedule_milestone_description_required: {
+    com: 'Milestone payments require a description.',
+    cn: '里程碑付款必须填写说明。',
+  },
+  payment_schedule_due_date_invalid: {
+    com: 'Fixed-date payments require a valid date.',
+    cn: '固定日期付款必须填写有效日期。',
+  },
+  payment_schedule_total_mismatch: {
+    com: 'Payment schedule must total the quote amount.',
+    cn: '付款计划总额必须等于报价总额。',
+  },
+  payment_schedule_start_prerequisite_required: {
+    com: 'At least one payment must be required before service starts.',
+    cn: '至少一期付款必须在服务开始前完成。',
+  },
+};
+
+function quoteExecutionError(code, market, status = 400) {
+  const messages = QUOTE_EXECUTION_ERRORS[code] || { com: code, cn: code };
+  return errorResponse(messages[market] || messages.com, status);
+}
+
+function quoteReviewCopy(market = 'com') {
+  if (market === 'cn') {
+    return {
+      invalidAction: '无效报价审核操作',
+      workOrderNotFound: '服务申请不存在',
+      quoteNotFound: '报价不存在',
+      versionRequired: '必须提供有效的报价版本',
+      staleVersion: '报价版本已更新，请刷新后重试',
+      rejectionReasonRequired: '退回报价必须填写原因',
+      approvedMessage: 'SAGEMRO 已完成报价审核，请查看报价明细并确认。',
+      approvedTitle: 'SAGEMRO 报价已确认',
+      approvedBody: (orderNo) => `服务编号 ${orderNo} 的报价已完成审核，请查看并确认。`,
+      rejectedMessage: (note) => `内部报价审核未通过，请工程师修改后重新提交。原因：${note}`,
+      rejectedTitle: '报价需修改',
+      rejectedBody: (orderNo) => `服务编号 ${orderNo} 的报价未通过运营复核，请修改后重新提交。`,
+      approvedResponse: '报价审核通过，等待客户确认。',
+      rejectedResponse: '报价已退回工程师修改。',
+    };
+  }
+  return {
+    invalidAction: 'Invalid quote review action',
+    workOrderNotFound: 'Service request not found',
+    quoteNotFound: 'Quote not found',
+    versionRequired: 'A valid quote version is required',
+    staleVersion: 'The quote version changed. Refresh and try again.',
+    rejectionReasonRequired: 'A reason is required to return the quote',
+    approvedMessage: 'SAGEMRO approved the quote. Review the complete terms and confirm.',
+    approvedTitle: 'SAGEMRO quote ready',
+    approvedBody: (orderNo) => `The quote for service request ${orderNo} is ready for your confirmation.`,
+    rejectedMessage: (note) => `The quote was returned for correction. Reason: ${note}`,
+    rejectedTitle: 'Quote needs correction',
+    rejectedBody: (orderNo) => `The quote for service request ${orderNo} was returned for correction.`,
+    approvedResponse: 'Quote approved and ready for customer confirmation.',
+    rejectedResponse: 'Quote returned to the engineer for correction.',
+  };
+}
+
 function internalEngineerLabel(market = 'com') {
   return market === 'cn' ? '内部工程师' : 'internal engineer';
 }
@@ -2353,6 +2511,18 @@ export async function sendEngineerActivationEmail(env, { to, subject, text, html
   const errorMessage = market === 'cn'
     ? '激活邮件发送失败，请稍后再试'
     : 'Failed to send activation email. Please try again later.';
+  if (
+    env.ENVIRONMENT === 'development'
+    && env.E2E_TEST_MODE === 'true'
+    && env.E2E_TEST_SECRET
+    && env.KV?.put
+  ) {
+    const mailboxKey = `e2e_mailbox_activation_email_${normalizeEmail(to)}`;
+    await env.KV.put(mailboxKey, JSON.stringify({ to, subject, text, html }), {
+      expirationTtl: 3600,
+    });
+    return { sent: true, provider: 'e2e_mailbox' };
+  }
   if (!env.VERIFICATION_EMAIL_FROM) {
     return { error: errorMessage };
   }
@@ -2429,6 +2599,30 @@ export async function sendEngineerActivationEmail(env, { to, subject, text, html
       emailSuffix: String(to || '').split('@').pop(),
     });
     return { error: errorMessage };
+  }
+}
+
+async function handleE2EActivationMailbox(request, env) {
+  const denied = () => errorResponse('Not found', 404);
+  if (
+    env.ENVIRONMENT !== 'development'
+    || env.E2E_TEST_MODE !== 'true'
+    || !env.E2E_TEST_SECRET
+    || request.headers.get('X-E2E-Test-Secret') !== env.E2E_TEST_SECRET
+    || !env.KV?.get
+  ) {
+    return denied();
+  }
+
+  const email = normalizeEmail(new URL(request.url).searchParams.get('email'));
+  if (!email || !isValidEmail(email)) return denied();
+  const message = await env.KV.get(`e2e_mailbox_activation_email_${email}`);
+  if (!message) return denied();
+
+  try {
+    return jsonResponse(JSON.parse(message));
+  } catch {
+    return denied();
   }
 }
 
@@ -2753,83 +2947,6 @@ async function handleRegisterCustomer(request, env) {
   }
 }
 
-// 工程师注册
-async function handleRegisterEngineer(request, env) {
-  try {
-    const {
-      name, phone, password, code,
-      specialties, brands, services, service_region, bio,
-      company
-    } = await request.json();
-
-    if (!name || !phone || !password || !company) {
-      return localizedErrorResponse('name_phone_company_password_required', request);
-    }
-    if (isPasswordTooShort(password)) {
-      return passwordTooShortResponse(request);
-    }
-
-    // 验证验证码（开发环境支持 bypass 码 "888888" + DEV_BYPASS_CODE 用于自动化测试）
-    const storedCode = await env.KV.get(`verify_code_${phone}`);
-    const bypassCode = await env.KV.get(`verify_code_${phone}_bypass`);
-    const devBypass = env.DEV_BYPASS_CODE;
-    const isValid = (storedCode && storedCode === code)
-      || (bypassCode && bypassCode === code)
-      || (devBypass && devBypass === code);
-    if (!isValid) {
-      return errorResponse('验证码错误或已过期');
-    }
-
-    // 检查手机号是否已在任意角色注册（跨表去重）
-    const existingEngineer = await env.DB.prepare(
-      'SELECT id FROM engineers WHERE phone = ?'
-    ).bind(phone).first();
-    const existingCustomer = await env.DB.prepare(
-      'SELECT id FROM customers WHERE phone = ?'
-    ).bind(phone).first();
-
-    if (existingEngineer || existingCustomer) {
-      return errorResponse('该手机号已注册', 409);
-    }
-
-    // 创建工程师
-    const id = generateId();
-    const userNo = await generateUserNo(env, 'E');
-    const salt = generateSalt();
-    const passwordHash = await hashPasswordNew(password, salt);
-
-    await env.DB.prepare(`
-      INSERT INTO engineers (id, user_no, name, phone, password_hash, salt, specialties, brands, services, service_region, bio, level, commission_rate, credit_score, wallet_balance, deposit_balance, company, auth_status)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).bind(
-      id, userNo, name, phone, passwordHash, salt,
-      JSON.stringify(specialties || []),
-      JSON.stringify(brands || {}),
-      JSON.stringify(services || []),
-      JSON.stringify(service_region || []),
-      bio || '',
-      'junior',   // 默认初级工程师
-      0.80,       // 默认提成80%
-      100,        // 初始信用分100
-      0,          // 初始钱包余额0
-      0,          // 初始保证金余额0
-      company || '',
-      'authenticated'  // 工程师注册时已完成认证
-    ).run();
-
-    // 删除已使用的验证码
-    await env.KV.delete(`verify_code_${phone}`);
-    await incrementApiCounter(env, "register_engineer");
-
-    return jsonResponse({
-      success: true,
-      engineer: { id, user_no: userNo, name, phone }
-    });
-  } catch (error) {
-    return errorResponse(error.message, 500);
-  }
-}
-
 // 登录
 async function handleLogin(request, env) {
   try {
@@ -2896,6 +3013,20 @@ async function handleLogin(request, env) {
       return localizedErrorResponse('wrong_password', request);
     }
 
+    const portalRole = requestPortalRole(request);
+    if (portalRole && portalRole !== userType) {
+      const market = getRequestMarket(request);
+      const target = userType === 'engineer'
+        ? (market === 'cn' ? 'https://engineer.sagemro.cn' : 'https://engineer.sagemro.com')
+        : (market === 'cn' ? 'https://sagemro.cn' : 'https://sagemro.com');
+      return errorResponse(
+        market === 'cn'
+          ? `该账号请前往 ${target} 登录`
+          : `Sign in to this account at ${target}.`,
+        403,
+      );
+    }
+
     // 登录成功：清除失败计数
     await env.KV.delete(failKey);
 
@@ -2914,18 +3045,20 @@ async function handleLogin(request, env) {
     }
 
     // 签发 JWT token（有效期 7 天）
+    const csrfToken = generateCsrfToken();
     const token = await signJwt({
       userId: user.id,
       userType,
       phone: user.phone,
+      csrf: csrfToken,
       iat: Math.floor(Date.now() / 1000),
       exp: Math.floor(Date.now() / 1000) + 7 * 24 * 60 * 60,
     }, env.JWT_SECRET);
     await incrementApiCounter(env, "login");
 
-    return jsonResponse({
+    return addSessionCookie(jsonResponse(sessionResponsePayload({
       success: true,
-      token,
+      csrfToken,
       userType,
       user: {
         id: user.id,
@@ -2948,10 +3081,98 @@ async function handleLogin(request, env) {
           team_name: user.team_name || null,
         } : {})
       }
-    });
+    }, token, portalRole)), request, env, userType, token);
 } catch (error) {
     return errorResponse(error.message, 500);
   }
+}
+
+async function handleAuthSession(request, env) {
+  const auth = await authenticateRequest(request, env);
+  if (!auth) return jsonResponse({ authenticated: false });
+
+  let sessionAuth = auth;
+  let response;
+  const rotateLegacyBearer = auth.authMethod === 'bearer' && !auth.csrf;
+  if (rotateLegacyBearer) {
+    sessionAuth = { ...auth, csrf: generateCsrfToken() };
+  }
+
+  if (sessionAuth.userType === 'admin') {
+    if (sessionAuth.staffId) {
+      const staff = await env.DB.prepare('SELECT * FROM admin_staff_accounts WHERE id = ?').bind(sessionAuth.staffId).first();
+      const requestMarket = getRequestMarket(request);
+      const marketAllowed = sessionAuth.market === requestMarket
+        && (staff?.market_scope === 'all' || staff?.market_scope === requestMarket);
+      if (!staff?.is_active || !marketAllowed) {
+        return clearPortalSession(jsonResponse({ authenticated: false }), request, env);
+      }
+      response = jsonResponse({
+        authenticated: true,
+        csrfToken: sessionAuth.csrf,
+        userType: 'admin',
+        user: {
+          id: staff.id,
+          name: staff.display_name,
+          phone: staff.normalized_phone || '',
+          type: 'admin',
+          market: sessionAuth.market || getRequestMarket(request),
+          staffRole: staff.role,
+          staffId: staff.id,
+          mustChangePassword: Boolean(staff.must_change_password),
+        },
+      });
+      return rotateLegacyBearer ? addSessionCookie(response, request, env, 'admin', await signJwt({
+        ...sessionAuth,
+        staffRole: staff.role,
+        mustChangePassword: Boolean(staff.must_change_password),
+      }, env.JWT_SECRET)) : response;
+    }
+    const credentials = resolveAdminCredentials(request, env);
+    response = jsonResponse({
+      authenticated: true,
+      csrfToken: sessionAuth.csrf,
+      userType: 'admin',
+      user: {
+        id: 'admin', name: '超级管理员', phone: credentials.phone, type: 'admin', market: credentials.market,
+        staffRole: 'admin', staffId: null, mustChangePassword: false,
+      },
+    });
+    return rotateLegacyBearer ? addSessionCookie(response, request, env, 'admin', await signJwt(sessionAuth, env.JWT_SECRET)) : response;
+  }
+
+  const table = sessionAuth.userType === 'engineer' ? 'engineers' : 'customers';
+  const user = await env.DB.prepare(`SELECT * FROM ${table} WHERE id = ?`).bind(sessionAuth.userId).first();
+  if (!user) return clearPortalSession(jsonResponse({ authenticated: false }), request, env);
+  response = jsonResponse({
+    authenticated: true,
+    csrfToken: sessionAuth.csrf,
+    userType: sessionAuth.userType,
+    user: {
+      id: user.id,
+      user_no: user.user_no,
+      name: user.name,
+      phone: user.phone,
+      email: user.email || '',
+      company: user.company || '',
+      region: user.region || '',
+      city: user.city || '',
+      address: user.address || '',
+      company_description: user.company_description || '',
+      business_scope: user.business_scope || '',
+      logo_url: user.logo_url || '',
+      auth_status: user.auth_status || 'pending',
+      ...(sessionAuth.userType === 'engineer' ? {
+        engineer_role: user.engineer_role || 'engineer',
+        regional_lead_id: user.regional_lead_id || null,
+        responsible_region: user.responsible_region || user.service_region || null,
+        team_name: user.team_name || null,
+      } : {}),
+    },
+  });
+  if (!rotateLegacyBearer) return response;
+  const rotatedToken = await signJwt(sessionAuth, env.JWT_SECRET);
+  return addSessionCookie(response, request, env, sessionAuth.userType, rotatedToken);
 }
 
 async function incrementEngineerActivationAttemptCounters(env, request, tokenHash) {
@@ -3582,6 +3803,9 @@ export async function handleChatTranscribe(request, env) {
     } catch {
       auth = null;
     }
+    if (auth && !hasValidCsrf(request, auth)) {
+      return errorResponse('Invalid CSRF token', 403);
+    }
     const clientIP = getRequestIp(request) || 'unknown';
     const voiceUserKey = auth?.userId ? `${auth.userType}:${auth.userId}` : `guest:${clientIP}`;
     const hourlyLimit = parseInt(env.DEEPGRAM_HOURLY_PER_USER || '20', 10);
@@ -3661,6 +3885,9 @@ export async function handleChat(request, env) {
       chatAuth = await authenticateRequest(request, env);
     } catch {
       chatAuth = null;
+    }
+    if (chatAuth && !hasValidCsrf(request, chatAuth)) {
+      return errorResponse('Invalid CSRF token', 403);
     }
     const trustedRole = chatAuth?.userType || 'guest';
     const trustedEngineerId =
@@ -4348,6 +4575,8 @@ Return JSON fields in English only. Return valid JSON only, with no markdown and
 
 // 生成工单 AI 摘要
 async function generateWorkOrderSummary(type, description, urgency, env, { market = 'com' } = {}) {
+  if (!env.OPENAI_API_ENDPOINT || !env.OPENAI_API_KEY) return null;
+
   // 后台系统调用，计入全平台日配额（不占用任何用户个人配额）
   try {
     await enforceOpenAIBudget(env, { userKey: 'system:summary', tag: 'summary' });
@@ -4752,9 +4981,7 @@ async function findMatchingEngineers(workOrder, env) {
         engineerBrands = typeof engineer.brands === 'string'
           ? JSON.parse(engineer.brands)
           : (engineer.brands || {});
-        engRegions = typeof engineer.service_region === 'string'
-          ? JSON.parse(engineer.service_region)
-          : (engineer.service_region || []);
+        engRegions = cleanTextArray(engineer.service_region);
       } catch (e) {
         console.error('Failed to parse engineer data:', e);
       }
@@ -5157,12 +5384,13 @@ async function handleGetWorkOrders(request, env) {
 
     const { results } = await env.DB.prepare(query).bind(...params).all();
 
-    const workOrders = results.map(wo => ({
-      ...wo,
-      description: redactContactInfoForWorkOrder(wo.description),
-      customer_phone: '',
-      sla_status: getSlaStatus(wo.sla_deadline, wo.urgency),
-    }));
+    const paymentProjections = await listWorkOrderPaymentProjections(env, results);
+    const workOrders = results.map((wo) => withPaymentProjection({
+        ...wo,
+        description: redactContactInfoForWorkOrder(wo.description),
+        customer_phone: '',
+        sla_status: getSlaStatus(wo.sla_deadline, wo.urgency),
+      }, paymentProjections.get(wo.id)));
 
     return jsonResponse({ work_orders: workOrders });
   } catch (error) {
@@ -5173,6 +5401,7 @@ async function handleGetWorkOrders(request, env) {
 // 获取工单详情
 async function handleGetWorkOrder(request, env) {
   const id = new URL(request.url).pathname.split('/').pop();
+  const market = getRequestMarket(request);
 
   try {
     const workOrder = await env.DB.prepare(`
@@ -5191,7 +5420,9 @@ async function handleGetWorkOrder(request, env) {
       WHERE w.id = ?
     `).bind(id).first();
 
-    assertWorkOrderAccess(request._auth, workOrder);
+    const fieldWorkAccessMode = await resolveFieldWorkAccessMode(env, request._auth, workOrder, id);
+    const historicalEngineerView = fieldWorkAccessMode === 'historical_engineer';
+    const noFieldWorkView = fieldWorkAccessMode === 'none';
 
     const logs = await env.DB.prepare(
       'SELECT * FROM work_order_logs WHERE work_order_id = ? ORDER BY created_at ASC'
@@ -5227,17 +5458,27 @@ async function handleGetWorkOrder(request, env) {
     const pricing = await env.DB.prepare(
       'SELECT * FROM work_order_pricing WHERE work_order_id = ?'
     ).bind(id).first();
+    const pricingView = await getWorkOrderPricingView(
+      env, workOrder, pricing, request._auth?.userType === 'customer',
+    );
+    const detailPricing = pricingView?.pricing || null;
+    const pricingSchedule = pricingView?.payment_schedule || [];
+    const quoteExecution = await getWorkOrderQuoteExecution(
+      env, workOrder, pricing, request._auth, market,
+    );
 
     const paymentRecords = await env.DB.prepare(
       'SELECT * FROM work_order_payments WHERE work_order_id = ? ORDER BY created_at ASC'
     ).bind(id).all();
     const payments = paymentRecords.results || [];
-    const paymentPolicy = pricing ? computeServicePaymentPolicy(pricing) : null;
+    const paymentPolicy = detailPricing && !isVersionedQuote(detailPricing)
+      ? computeServicePaymentPolicy(detailPricing)
+      : null;
 
     let payout = await env.DB.prepare(
       'SELECT * FROM work_order_payouts WHERE work_order_id = ?'
     ).bind(id).first();
-    if (!payout && workOrder?.status === 'completed' && workOrder?.engineer_id) {
+    if (!payout && request._auth?.staffRole !== 'operations' && workOrder?.status === 'completed' && workOrder?.engineer_id) {
       payout = await ensureWorkOrderPayout(env, id, workOrder.engineer_id, 'pending');
     }
 
@@ -5245,28 +5486,119 @@ async function handleGetWorkOrder(request, env) {
       'SELECT * FROM work_order_attachments WHERE work_order_id = ? ORDER BY created_at DESC'
     ).bind(id).all();
 
+    const fieldDayRecords = await env.DB.prepare(`
+      SELECT * FROM work_order_field_days WHERE work_order_id = ? ORDER BY site_local_date DESC, created_at DESC
+    `).bind(id).all();
+    const fieldMediaRecords = await env.DB.prepare(`
+      SELECT * FROM work_order_field_day_media WHERE work_order_id = ? AND deleted_at IS NULL ORDER BY created_at ASC
+    `).bind(id).all();
+    const extensionRecords = await env.DB.prepare(`
+      SELECT * FROM work_order_extension_requests WHERE work_order_id = ? ORDER BY created_at DESC
+    `).bind(id).all();
+    const adminFieldWorkRecords = request._auth?.userType === 'admin'
+      ? await Promise.all([
+        env.DB.prepare(`
+          SELECT * FROM work_order_field_evidence_holds WHERE work_order_id = ? ORDER BY opened_at DESC, id DESC
+        `).bind(id).all(),
+        env.DB.prepare(`
+          SELECT * FROM work_order_field_day_revisions WHERE work_order_id = ? ORDER BY created_at DESC, id DESC
+        `).bind(id).all(),
+        env.DB.prepare(`
+          SELECT * FROM audit_logs
+          WHERE (target_type = 'work_order' AND target_id = ? AND action LIKE 'field_%')
+          OR (target_type = 'work_order_field_day' AND target_id IN (
+            SELECT id FROM work_order_field_days WHERE work_order_id = ?
+          )) OR (target_type = 'work_order_field_evidence_hold' AND target_id IN (
+            SELECT id FROM work_order_field_evidence_holds WHERE work_order_id = ?
+          )) OR (target_type = 'work_order_extension_request' AND target_id IN (
+            SELECT id FROM work_order_extension_requests WHERE work_order_id = ?
+          ))
+          ORDER BY created_at DESC, id DESC
+        `).bind(id, id, id, id).all(),
+      ])
+      : null;
+    const customerFieldView = fieldWorkAccessMode === 'customer';
+    const visibleFieldDayRecords = noFieldWorkView
+      ? []
+      : historicalEngineerView
+      ? (fieldDayRecords.results || []).filter((fieldDay) => fieldDay.engineer_id === request._auth.userId)
+      : (fieldDayRecords.results || []);
+    const visibleFieldDayIds = new Set(visibleFieldDayRecords.map((fieldDay) => fieldDay.id));
+    const mediaByDay = new Map();
+    for (const media of fieldMediaRecords.results || []) {
+      if (noFieldWorkView) continue;
+      if (customerFieldView && !media.customer_visible) continue;
+      if (historicalEngineerView && !visibleFieldDayIds.has(media.field_day_id)) continue;
+      const list = mediaByDay.get(media.field_day_id) || [];
+      list.push(publicFieldMedia(media, id));
+      mediaByDay.set(media.field_day_id, list);
+    }
+    const fieldDays = visibleFieldDayRecords.map((fieldDay) => ({
+      ...publicFieldDay(fieldDay, { customerView: customerFieldView, market }),
+      media: mediaByDay.get(fieldDay.id) || [],
+    }));
+    const fieldWorkSummary = fieldDays.reduce((summary, fieldDay) => ({
+      total_days: summary.total_days + 1,
+      total_labor_hours: summary.total_labor_hours + Number(fieldDay.labor_hours || 0),
+      overdue_count: summary.overdue_count + (fieldDay.status === 'report_overdue' ? 1 : 0),
+    }), { total_days: 0, total_labor_hours: 0, overdue_count: 0 });
+    if (historicalEngineerView) {
+      return jsonResponse({
+        id: workOrder.id,
+        order_no: workOrder.order_no,
+        status: workOrder.status,
+        service_mode: workOrder.service_mode,
+        field_days: fieldDays,
+        field_work_summary: fieldWorkSummary,
+      });
+    }
+    const visibleExtensionRecords = noFieldWorkView
+      ? []
+      : customerFieldView
+      ? (extensionRecords.results || []).filter((extension) => ['approved', 'rejected'].includes(extension.status))
+      : (extensionRecords.results || []);
+    const fieldExtensionRequests = visibleExtensionRecords.map((extension) => {
+      if (!customerFieldView) return extension;
+      return {
+        status: extension.status,
+        requested_additional_days: extension.requested_additional_days,
+        proposed_completion_date: extension.proposed_completion_date,
+        customer_explanation: extension.customer_explanation,
+        decision_reason: extension.decision_reason || null,
+        approved_plan: extension.approved_plan || null,
+        decided_at: extension.decided_at || null,
+      };
+    });
+    const pendingExtensionRequests = customerFieldView
+      ? []
+      : fieldExtensionRequests.filter((extension) => extension.status === 'pending');
+
     let arrivalChecks = [];
-    if (request._auth?.userType === 'admin' || request._auth?.userType === 'engineer') {
+    if (request._auth?.userType === 'admin' || ['assigned_engineer', 'historical_engineer'].includes(fieldWorkAccessMode)) {
       const arrivalCheckRecords = await env.DB.prepare(`
         SELECT * FROM work_order_arrival_checks
         WHERE work_order_id = ?
         ORDER BY created_at DESC
         LIMIT 20
       `).bind(id).all();
-      arrivalChecks = arrivalCheckRecords.results || [];
+      arrivalChecks = historicalEngineerView
+        ? (arrivalCheckRecords.results || []).filter((check) => check.engineer_id === request._auth.userId)
+        : (arrivalCheckRecords.results || []);
     }
 
     const materialItems = await listWorkOrderMaterialItems(env, id);
     const quoteMaterialItems = materialItems.filter((item) => item.purpose === 'quote');
     const isEngineerDetailView = request._auth?.userType === 'engineer';
-    const safeWorkOrder = {
+    let safeWorkOrder = {
       ...workOrder,
       description: isEngineerDetailView ? redactContactInfoForWorkOrder(workOrder.description) : workOrder.description,
       customer_phone: isEngineerDetailView && !canEngineerViewCustomerContact(workOrder.status) ? '' : workOrder.customer_phone,
     };
+    if (customerFieldView || noFieldWorkView) safeWorkOrder = withoutPrivateFieldLocation(safeWorkOrder);
 
-    return jsonResponse({
+    const detail = {
       ...safeWorkOrder,
+      site_timezone_display: formatSiteTimezone(workOrder?.site_timezone, market),
       sla_status: getSlaStatus(workOrder.sla_deadline, workOrder.urgency),
       logs: logs.results,
       rating: rating || null,
@@ -5275,7 +5607,16 @@ async function handleGetWorkOrder(request, env) {
       repair_record: repairRecord
         ? { ...repairRecord, material_items: materialItems.filter((item) => item.purpose === 'service_report') }
         : null,
-      pricing: pricing ? { ...pricing, material_items: quoteMaterialItems, payment_policy: paymentPolicy } : null,
+      pricing: detailPricing ? {
+        ...detailPricing,
+        material_items: quoteMaterialItems,
+        payment_policy: paymentPolicy,
+        payment_schedule: pricingSchedule,
+      } : null,
+      quote_execution: quoteExecution,
+      payment_state: quoteExecution?.payment_state ?? null,
+      received_amount: quoteExecution?.received_amount ?? null,
+      outstanding_amount: quoteExecution?.outstanding_amount ?? null,
       payment_policy: paymentPolicy,
       payments,
       advance_payment: payments.find((payment) => payment.payment_stage === 'advance') || null,
@@ -5285,7 +5626,18 @@ async function handleGetWorkOrder(request, env) {
       material_items: materialItems,
       attachments: attachments.results,
       arrival_checks: arrivalChecks,
-    });
+      field_plan: fieldPlanSnapshot(workOrder, market),
+      field_days: fieldDays,
+      field_work_summary: fieldWorkSummary,
+      field_extension_requests: fieldExtensionRequests,
+      pending_extension_requests: pendingExtensionRequests,
+    };
+    if (adminFieldWorkRecords) {
+      detail.field_evidence_holds = adminFieldWorkRecords[0].results || [];
+      detail.field_day_revisions = adminFieldWorkRecords[1].results || [];
+      detail.field_work_audit_logs = adminFieldWorkRecords[2].results || [];
+    }
+    return jsonResponse(detail);
   } catch (error) {
     if (error instanceof GuardError) return errorResponse(error.message, error.status);
     return errorResponse(error.message, 500);
@@ -5405,6 +5757,1205 @@ async function handleSaveRepairRecord(request, env) {
 }
 
 // ============ 工单附件 ============
+
+const FIELD_EVIDENCE_MIME_TYPES = new Map([
+  ['image/jpeg', 'jpg'],
+  ['image/png', 'png'],
+  ['image/webp', 'webp'],
+]);
+const RECEIPT_EVIDENCE_MIME_TYPES = new Map([
+  ...FIELD_EVIDENCE_MIME_TYPES,
+  ['application/pdf', 'pdf'],
+]);
+const FIELD_EVIDENCE_MAX_BYTES = 10 * 1024 * 1024;
+const FIELD_WORK_SCHEDULER_BATCH_SIZE = 100;
+const FIELD_EVIDENCE_RETENTION_CLAIM_MS = 60 * 60 * 1000;
+const FIELD_WORK_SCHEDULER_CURSOR_PREFIX = 'field-work:scheduler-cursor:';
+
+function subtractUtcMonths(date, months) {
+  const result = new Date(date);
+  const originalDay = result.getUTCDate();
+  result.setUTCDate(1);
+  result.setUTCMonth(result.getUTCMonth() - months);
+  const lastDay = new Date(Date.UTC(result.getUTCFullYear(), result.getUTCMonth() + 1, 0)).getUTCDate();
+  result.setUTCDate(Math.min(originalDay, lastDay));
+  return result;
+}
+
+function sqliteUtcTimestamp(date) {
+  return date.toISOString().slice(0, 19).replace('T', ' ');
+}
+const EVIDENCE_HOLD_REASON_CATEGORIES = new Set(['complaint', 'warranty', 'safety_review', 'legal_hold', 'dispute']);
+
+function hasFieldEvidenceSignature(bytes, mimeType) {
+  if (mimeType === 'image/jpeg') return bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
+  if (mimeType === 'image/png') return bytes.length >= 8
+    && bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47
+    && bytes[4] === 0x0d && bytes[5] === 0x0a && bytes[6] === 0x1a && bytes[7] === 0x0a;
+  if (mimeType === 'image/webp') return bytes.length >= 12
+    && String.fromCharCode(...bytes.slice(0, 4)) === 'RIFF'
+    && String.fromCharCode(...bytes.slice(8, 12)) === 'WEBP';
+  if (mimeType === 'application/pdf') return bytes.length >= 5
+    && String.fromCharCode(...bytes.slice(0, 5)) === '%PDF-';
+  return false;
+}
+
+function parseFieldDayLocation(rawLocation, workOrder) {
+  let input = rawLocation;
+  if (typeof rawLocation === 'string' && rawLocation.trim()) {
+    try { input = JSON.parse(rawLocation); } catch { return { location_status: 'unavailable' }; }
+  }
+  if (!input || typeof input !== 'object') return { location_status: 'unavailable' };
+
+  const latitude = normalizeCoordinate(input.latitude);
+  const longitude = normalizeCoordinate(input.longitude);
+  const accuracy = normalizeCoordinate(input.accuracy_m ?? input.accuracy);
+  const coordinateSystem = String(input.coordinate_system || 'wgs84').trim().toLowerCase();
+  const locationSource = String(input.location_source || 'browser').trim().slice(0, 40) || 'browser';
+  if (!isValidCoordinatePair(latitude, longitude)
+    || accuracy === null || accuracy <= 0 || accuracy > 500
+    || !SUPPORTED_COORDINATE_SYSTEMS.has(coordinateSystem)) {
+    return { location_status: 'unavailable' };
+  }
+
+  if (!isValidCoordinatePair(workOrder.service_latitude, workOrder.service_longitude)) {
+    return { location_status: 'unavailable', latitude, longitude, accuracy, coordinateSystem, locationSource };
+  }
+  const evaluation = evaluateArrivalCheck({
+    targetLatitude: workOrder.service_latitude,
+    targetLongitude: workOrder.service_longitude,
+    targetCoordinateSystem: workOrder.service_coordinate_system || 'wgs84',
+    currentLatitude: latitude,
+    currentLongitude: longitude,
+    currentAccuracyMeters: accuracy,
+    currentCoordinateSystem: coordinateSystem,
+  });
+  if (!evaluation.valid) return { location_status: 'unavailable', latitude, longitude, accuracy, coordinateSystem, locationSource };
+  return {
+    location_status: evaluation.withinGeofence ? 'verified' : 'outside_geofence',
+    latitude,
+    longitude,
+    accuracy,
+    coordinateSystem,
+    locationSource,
+    distance: evaluation.distanceMeters,
+    radius: evaluation.radiusMeters,
+    withinGeofence: evaluation.withinGeofence ? 1 : 0,
+  };
+}
+
+function fieldDayResponse(fieldDay, media) {
+  return {
+    field_day: publicFieldDay(fieldDay),
+    media: media ? publicFieldMedia(media, fieldDay.work_order_id) : null,
+    location_status: fieldDay.location_status,
+  };
+}
+
+function fieldWorkNow(env) {
+  return new Date(env.FIELD_WORK_NOW || Date.now());
+}
+
+function fieldWorkError(code, status = 400) {
+  return jsonResponse({ error: code, code }, status);
+}
+
+function publicFieldMedia(media, workOrderId) {
+  if (!media) return media;
+  const { object_key, ...safeMedia } = media;
+  return {
+    ...safeMedia,
+    url: `/api/workorders/${workOrderId}/field-media/${media.id}`,
+  };
+}
+
+function publicFieldDay(fieldDay, { customerView = false, market = 'com' } = {}) {
+  if (!fieldDay) return fieldDay;
+  const safe = {
+    ...fieldDay,
+    site_timezone_display: formatSiteTimezone(fieldDay.site_timezone, market),
+  };
+  if (safe.location_source === 'admin_override') safe.capture_source = 'admin_override';
+  delete safe.check_in_idempotency_key;
+  delete safe.report_idempotency_key;
+  if (customerView) {
+    delete safe.internal_note;
+    delete safe.location_status;
+    delete safe.latitude;
+    delete safe.longitude;
+    delete safe.accuracy_m;
+    delete safe.coordinate_system;
+    delete safe.location_source;
+    delete safe.distance_m;
+    delete safe.radius_m;
+    delete safe.within_geofence;
+    delete safe.admin_override_reason;
+    delete safe.capture_source;
+  }
+  return safe;
+}
+
+function withoutPrivateFieldLocation(workOrder) {
+  const safe = { ...workOrder };
+  for (const field of [
+    'service_latitude', 'service_longitude', 'service_accuracy_m', 'service_coordinate_system',
+    'service_location_source', 'service_location_confirmed_at', 'arrival_distance_m', 'arrival_radius_m',
+    'arrival_accuracy_m', 'arrival_latitude', 'arrival_longitude', 'arrival_coordinate_system',
+    'arrival_location_source',
+  ]) delete safe[field];
+  return safe;
+}
+
+function fieldPlanSnapshot(workOrder, market = 'com') {
+  return {
+    site_timezone: workOrder?.site_timezone || null,
+    site_timezone_display: formatSiteTimezone(workOrder?.site_timezone, market),
+    expected_service_days: workOrder?.expected_service_days == null ? null : Number(workOrder.expected_service_days),
+    expected_completion_date: workOrder?.expected_completion_date || null,
+    planned_daily_start_time: workOrder?.planned_daily_start_time || null,
+    planned_daily_end_time: workOrder?.planned_daily_end_time || null,
+  };
+}
+
+function isValidFieldDate(value) {
+  const text = String(value || '').trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) return false;
+  const date = new Date(`${text}T00:00:00Z`);
+  return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === text;
+}
+
+function validateExtensionRequest(input = {}, currentCompletionDate = null) {
+  const reason = String(input.reason || '').trim();
+  const customerExplanation = String(input.customer_explanation || '').trim();
+  const requestedAdditionalDays = Number(input.requested_additional_days);
+  const proposedCompletionDate = String(input.proposed_completion_date || '').trim();
+  if (!reason || !customerExplanation) return { error: 'extension_request_incomplete' };
+  if (!Number.isInteger(requestedAdditionalDays) || requestedAdditionalDays < 1 || requestedAdditionalDays > 365) {
+    return { error: 'requested_additional_days_invalid' };
+  }
+  if (!isValidFieldDate(proposedCompletionDate)) return { error: 'proposed_completion_date_invalid' };
+  if (isValidFieldDate(currentCompletionDate) && proposedCompletionDate <= currentCompletionDate) {
+    return { error: 'proposed_completion_date_not_extended' };
+  }
+  return {
+    value: {
+      reason,
+      customer_explanation: customerExplanation,
+      requested_additional_days: requestedAdditionalDays,
+      proposed_completion_date: proposedCompletionDate,
+      internal_note: String(input.internal_note || '').trim() || null,
+    },
+  };
+}
+
+function extensionRequestStatement(env, { id, workOrder, engineerId, fieldDayId = null, value }) {
+  return env.DB.prepare(`
+    INSERT INTO work_order_extension_requests (
+      id, work_order_id, field_day_id, engineer_id, reason, customer_explanation,
+      internal_note, requested_additional_days, proposed_completion_date, original_plan
+    ) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+    WHERE EXISTS (
+      SELECT 1 FROM work_orders
+      WHERE id = ? AND engineer_id = ? AND service_mode = 'onsite' AND status = 'in_service'
+    )
+  `).bind(
+    id, workOrder.id, fieldDayId, engineerId, value.reason, value.customer_explanation,
+    value.internal_note, value.requested_additional_days, value.proposed_completion_date,
+    JSON.stringify(fieldPlanSnapshot(workOrder)), workOrder.id, engineerId,
+  );
+}
+
+async function getFieldDayReportMedia(env, fieldDayId) {
+  const records = await env.DB.prepare(`
+    SELECT * FROM work_order_field_day_media
+    WHERE field_day_id = ? AND purpose IN ('progress', 'internal') AND deleted_at IS NULL
+    ORDER BY created_at ASC
+  `).bind(fieldDayId).all();
+  return records.results || [];
+}
+
+function reportResponse(fieldDay, media, status = 200) {
+  return jsonResponse({
+    field_day: publicFieldDay(fieldDay),
+    media: media.map((item) => publicFieldMedia(item, fieldDay.work_order_id)),
+  }, status);
+}
+
+async function notifyFieldWorkBestEffort(env, payload) {
+  try {
+    const notifier = env.FIELD_WORK_NOTIFIER || createNotification;
+    await notifier(env, payload);
+  } catch (error) {
+    console.warn('[field-work] notification failed:', error?.message || error);
+  }
+}
+
+function scheduledNotificationStatement(env, { id, userId, userType, type, title, body, data }, claim = null) {
+  if (claim) {
+    return env.DB.prepare(`
+      INSERT OR IGNORE INTO notifications (id, user_id, user_type, type, title, body, data)
+      SELECT ?, ?, ?, ?, ?, ?, ?
+      WHERE EXISTS (
+        SELECT 1 FROM work_order_field_days
+        WHERE id = ? AND ${claim.column} = ?
+      )
+    `).bind(
+      id, userId, userType, type, title, body, data ? JSON.stringify(data) : null,
+      claim.fieldDayId, claim.timestamp,
+    );
+  }
+  return env.DB.prepare(`
+    INSERT OR IGNORE INTO notifications (id, user_id, user_type, type, title, body, data)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `).bind(id, userId, userType, type, title, body, data ? JSON.stringify(data) : null);
+}
+
+async function pushScheduledNotification(env, notification) {
+  try {
+    const pusher = env.FIELD_WORK_PUSHER || sendPushToUser;
+    await pusher(notification.userId, notification.userType, env, {
+      title: notification.title,
+      message: notification.body,
+      data: { ...(notification.data || {}), notification_type: notification.type },
+    });
+  } catch (error) {
+    console.warn('[field-work] scheduled push failed:', error?.message || error);
+  }
+}
+
+function schedulerCopy(market) {
+  if (market === 'cn') {
+    return {
+      reminderTitle: '现场日报提醒',
+      reminderBody: (orderNo) => `工单 ${orderNo} 距预计签退时间还有 30 分钟，请及时完成当日现场日报。`,
+      overdueTitle: '现场日报已逾期',
+      overdueBody: (orderNo) => `工单 ${orderNo} 的现场工作日已结束，但日报尚未提交。`,
+    };
+  }
+  return {
+    reminderTitle: 'Field report reminder',
+    reminderBody: (orderNo) => `${orderNo} is 30 minutes from expected checkout. Please complete today's field report.`,
+    overdueTitle: 'Field report overdue',
+    overdueBody: (orderNo) => `${orderNo} has a field day without a submitted daily report.`,
+  };
+}
+
+async function claimCheckoutReminder(env, fieldDay, now, market) {
+  if (!fieldDay.expected_check_out_at || fieldDay.checkout_reminder_sent_at) return;
+  const expectedCheckout = siteLocalDateTimeToUtc(fieldDay.expected_check_out_at, fieldDay.site_timezone);
+  const reminderAt = expectedCheckout.getTime() - (30 * 60 * 1000);
+  if (now.getTime() < reminderAt || now.getTime() >= expectedCheckout.getTime()) return;
+
+  const copy = schedulerCopy(market);
+  const notification = {
+    id: `field-checkout-reminder:${fieldDay.id}`,
+    userId: fieldDay.engineer_id,
+    userType: 'engineer',
+    type: 'field_checkout_reminder',
+    title: copy.reminderTitle,
+    body: copy.reminderBody(fieldDay.order_no || fieldDay.work_order_id),
+    data: { work_order_id: fieldDay.work_order_id, field_day_id: fieldDay.id },
+  };
+  const timestamp = now.toISOString();
+  const results = await env.DB.batch([
+    env.DB.prepare(`
+      UPDATE work_order_field_days
+      SET checkout_reminder_sent_at = ?, updated_at = ?
+      WHERE id = ? AND status = 'checked_in' AND checkout_reminder_sent_at IS NULL
+    `).bind(timestamp, timestamp, fieldDay.id),
+    scheduledNotificationStatement(env, notification, {
+      column: 'checkout_reminder_sent_at', fieldDayId: fieldDay.id, timestamp,
+    }),
+  ]);
+  if (Number(results?.[0]?.meta?.changes || 0) > 0) await pushScheduledNotification(env, notification);
+}
+
+async function claimOverdueFieldDay(env, fieldDay, now, market) {
+  if (fieldDay.overdue_notification_sent_at) return;
+  const currentLocalDate = fieldDayLocalDate(now, fieldDay.site_timezone);
+  if (currentLocalDate <= fieldDay.site_local_date) return;
+
+  const copy = schedulerCopy(market);
+  const recipients = [{ userId: fieldDay.engineer_id, userType: 'engineer' }];
+  const staffRecords = await env.DB.prepare(`
+    SELECT id FROM admin_staff_accounts
+    WHERE is_active = 1 AND role IN ('admin', 'operations') AND market_scope IN ('all', ?)
+  `).bind(market).all();
+  for (const staff of staffRecords.results || []) recipients.push({ userId: staff.id, userType: 'admin' });
+
+  const notifications = recipients.map((recipient) => ({
+    id: `field-report-overdue:${fieldDay.id}:${recipient.userType}:${recipient.userId}`,
+    ...recipient,
+    type: 'field_report_overdue',
+    title: copy.overdueTitle,
+    body: copy.overdueBody(fieldDay.order_no || fieldDay.work_order_id),
+    data: { work_order_id: fieldDay.work_order_id, field_day_id: fieldDay.id },
+  }));
+  const timestamp = now.toISOString();
+  const results = await env.DB.batch([
+    env.DB.prepare(`
+      UPDATE work_order_field_days
+      SET status = 'report_overdue', overdue_notification_sent_at = ?, updated_at = ?
+      WHERE id = ? AND status = 'checked_in' AND overdue_notification_sent_at IS NULL
+    `).bind(timestamp, timestamp, fieldDay.id),
+    ...notifications.map((notification) => scheduledNotificationStatement(env, notification, {
+      column: 'overdue_notification_sent_at', fieldDayId: fieldDay.id, timestamp,
+    })),
+  ]);
+  if (Number(results?.[0]?.meta?.changes || 0) > 0) {
+    await Promise.all(notifications.map((notification) => pushScheduledNotification(env, notification)));
+  }
+}
+
+async function processFieldDayScheduler(env, now, market) {
+  const cursorKey = `${FIELD_WORK_SCHEDULER_CURSOR_PREFIX}${market}`;
+  let cursor = null;
+  try {
+    cursor = env.KV ? await env.KV.get(cursorKey) : null;
+  } catch (error) {
+    console.warn(`[field-work] scheduler cursor read failed for ${market}:`, error?.message || error);
+  }
+  const records = await env.DB.prepare(cursor ? `
+    SELECT fd.*, wo.order_no
+    FROM work_order_field_days fd
+    JOIN work_orders wo ON wo.id = fd.work_order_id
+    WHERE fd.status = 'checked_in'
+      AND fd.id > ?
+    ORDER BY fd.id ASC
+    LIMIT ?
+  ` : `
+    SELECT fd.*, wo.order_no
+    FROM work_order_field_days fd
+    JOIN work_orders wo ON wo.id = fd.work_order_id
+    WHERE fd.status = 'checked_in'
+    ORDER BY fd.id ASC
+    LIMIT ?
+  `).bind(...(cursor ? [cursor, FIELD_WORK_SCHEDULER_BATCH_SIZE] : [FIELD_WORK_SCHEDULER_BATCH_SIZE])).all();
+  let fieldDays = records.results || [];
+  if (cursor && fieldDays.length < FIELD_WORK_SCHEDULER_BATCH_SIZE) {
+    const wrapped = await env.DB.prepare(`
+      SELECT fd.*, wo.order_no
+      FROM work_order_field_days fd
+      JOIN work_orders wo ON wo.id = fd.work_order_id
+      WHERE fd.status = 'checked_in' AND fd.id <= ?
+      ORDER BY fd.id ASC
+      LIMIT ?
+    `).bind(cursor, FIELD_WORK_SCHEDULER_BATCH_SIZE - fieldDays.length).all();
+    fieldDays = [...fieldDays, ...(wrapped.results || [])];
+  }
+  for (const fieldDay of fieldDays) {
+    try {
+      const currentLocalDate = fieldDayLocalDate(now, fieldDay.site_timezone);
+      if (currentLocalDate > fieldDay.site_local_date) {
+        await claimOverdueFieldDay(env, fieldDay, now, market);
+      } else {
+        await claimCheckoutReminder(env, fieldDay, now, market);
+      }
+    } catch (error) {
+      console.error(`[field-work] scheduler failed for field day ${fieldDay.id}:`, error?.message || error);
+    }
+  }
+  if (env.KV) {
+    try {
+      if (fieldDays.length) await env.KV.put(cursorKey, fieldDays.at(-1).id);
+      else await env.KV.delete(cursorKey);
+    } catch (error) {
+      console.warn(`[field-work] scheduler cursor write failed for ${market}:`, error?.message || error);
+    }
+  }
+}
+
+async function processFieldEvidenceRetention(env, now) {
+  if (!env.FIELD_EVIDENCE) {
+    console.warn('[field-work] FIELD_EVIDENCE binding missing; retention cleanup skipped');
+    return;
+  }
+  const completedBefore = sqliteUtcTimestamp(subtractUtcMonths(now, 12));
+  const staleClaimBefore = new Date(now.getTime() - FIELD_EVIDENCE_RETENTION_CLAIM_MS).toISOString();
+  const records = await env.DB.prepare(`
+    SELECT m.*, wo.status AS work_order_status, wo.completed_at
+    FROM work_order_field_day_media m
+    JOIN work_orders wo ON wo.id = m.work_order_id
+    WHERE m.deleted_at IS NULL
+      AND wo.status = 'completed'
+      AND wo.completed_at <= ?
+      AND (m.retention_claim_token IS NULL OR m.retention_claimed_at <= ?)
+      AND NOT EXISTS (
+        SELECT 1 FROM work_order_field_evidence_holds h
+        WHERE h.work_order_id = m.work_order_id AND h.status = 'open'
+      )
+    ORDER BY wo.completed_at ASC, m.id ASC
+    LIMIT ?
+  `).bind(completedBefore, staleClaimBefore, FIELD_WORK_SCHEDULER_BATCH_SIZE).all();
+
+  for (const media of records.results || []) {
+    const claimToken = generateId();
+    let objectDeleted = false;
+    try {
+      const claim = await env.DB.prepare(`
+        UPDATE work_order_field_day_media
+        SET retention_claim_token = ?, retention_claimed_at = ?
+        WHERE id = ? AND deleted_at IS NULL
+          AND (
+            retention_claim_token IS NULL
+            OR (retention_claim_token = ? AND retention_claimed_at <= ?)
+          )
+          AND NOT EXISTS (
+            SELECT 1 FROM work_order_field_evidence_holds h
+            WHERE h.work_order_id = work_order_field_day_media.work_order_id AND h.status = 'open'
+          )
+      `).bind(claimToken, now.toISOString(), media.id, media.retention_claim_token, staleClaimBefore).run();
+      if (Number(claim?.meta?.changes || 0) !== 1) continue;
+    } catch (error) {
+      console.error(`[field-work] retention claim failed for media ${media.id}:`, error?.message || error);
+      continue;
+    }
+    try {
+      await env.FIELD_EVIDENCE.delete(media.object_key);
+      objectDeleted = true;
+    } catch (error) {
+      try {
+        objectDeleted = !(await env.FIELD_EVIDENCE.head(media.object_key));
+      } catch (headError) {
+        console.error(`[field-work] retention delete state unknown for media ${media.id}:`, headError?.message || headError);
+        continue;
+      }
+      if (!objectDeleted) {
+        await env.DB.prepare(`
+          UPDATE work_order_field_day_media
+          SET retention_claim_token = NULL, retention_claimed_at = NULL
+          WHERE id = ? AND deleted_at IS NULL AND retention_claim_token = ?
+        `).bind(media.id, claimToken).run().catch(() => {});
+        console.error(`[field-work] retention delete failed for media ${media.id}:`, error?.message || error);
+        continue;
+      }
+    }
+    try {
+      const marked = await env.DB.prepare(`
+        UPDATE work_order_field_day_media
+        SET deleted_at = ?, retention_claim_token = NULL, retention_claimed_at = NULL
+        WHERE id = ? AND deleted_at IS NULL AND retention_claim_token = ?
+      `).bind(now.toISOString(), media.id, claimToken).run();
+      if (Number(marked?.meta?.changes || 0) !== 1) {
+        throw new Error('Retention delete mark lost its claim');
+      }
+    } catch (error) {
+      console.error(`[field-work] retention mark failed for media ${media.id}:`, error?.message || error);
+    }
+  }
+}
+
+async function processFieldEvidenceCleanupQueue(env) {
+  if (!env.FIELD_EVIDENCE) return;
+  const records = await env.DB.prepare(`
+    SELECT object_key FROM field_evidence_cleanup_queue ORDER BY created_at ASC LIMIT ?
+  `).bind(FIELD_WORK_SCHEDULER_BATCH_SIZE).all();
+  for (const record of records.results || []) {
+    try {
+      await env.FIELD_EVIDENCE.delete(record.object_key);
+      await env.DB.prepare(`DELETE FROM field_evidence_cleanup_queue WHERE object_key = ?`).bind(record.object_key).run();
+    } catch (error) {
+      console.error(`[field-work] cleanup queue delete failed for ${record.object_key}:`, error?.message || error);
+    }
+  }
+}
+
+async function cleanupFieldEvidenceObjects(env, objectKeys, failureReason) {
+  for (const objectKey of objectKeys.filter(Boolean)) {
+    try {
+      await env.FIELD_EVIDENCE.delete(objectKey);
+    } catch (error) {
+      console.error(`[field-work] rollback delete failed for ${objectKey}:`, error?.message || error);
+      try {
+        await env.DB.prepare(`
+          INSERT OR IGNORE INTO field_evidence_cleanup_queue (object_key, failure_reason, updated_at)
+          VALUES (?, ?, datetime('now'))
+        `).bind(objectKey, failureReason).run();
+      } catch (queueError) {
+        console.error(`[field-work] cleanup queue write failed for ${objectKey}:`, queueError?.message || queueError);
+      }
+    }
+  }
+}
+
+async function processFieldWorkDatabase(env, now, market) {
+  try {
+    await processFieldDayScheduler(env, now, market);
+  } catch (error) {
+    console.error(`[field-work] ${market} field-day scan failed:`, error?.message || error);
+  }
+  try {
+    await processFieldEvidenceRetention(env, now);
+  } catch (error) {
+    console.error(`[field-work] ${market} retention scan failed:`, error?.message || error);
+  }
+  try {
+    await processFieldEvidenceCleanupQueue(env);
+  } catch (error) {
+    console.error(`[field-work] ${market} cleanup queue scan failed:`, error?.message || error);
+  }
+}
+
+async function processFieldWorkScheduled(env, scheduledTime) {
+  const now = new Date(Number.isFinite(Number(scheduledTime)) ? Number(scheduledTime) : Date.now());
+  const databases = [{ DB: env.DB, market: 'com' }];
+  if (env.DB_CN && env.DB_CN !== env.DB) databases.push({ DB: env.DB_CN, market: 'cn' });
+  for (const database of databases) {
+    if (!database.DB) continue;
+    try {
+      await processFieldWorkDatabase({ ...env, DB: database.DB }, now, database.market);
+    } catch (error) {
+      console.error(`[field-work] scheduled ${database.market} database failed:`, error?.message || error);
+    }
+  }
+}
+
+async function notifyFieldExtensionRequested(env, request, workOrder, extensionId, value) {
+  try {
+    const market = getRequestMarket(request);
+    const staffRecords = await env.DB.prepare(`
+      SELECT id FROM admin_staff_accounts
+      WHERE is_active = 1 AND role IN ('admin', 'operations') AND market_scope IN ('all', ?)
+    `).bind(market).all();
+    await Promise.all((staffRecords.results || []).map((staff) => notifyFieldWorkBestEffort(env, {
+      user_id: staff.id,
+      user_type: 'admin',
+      type: 'extension_requested',
+      title: market === 'cn' ? '现场延期申请待审批' : 'Field extension request pending',
+      body: `${workOrder.order_no}: ${value.customer_explanation}`,
+      data: { work_order_id: workOrder.id, extension_request_id: extensionId },
+    })));
+  } catch (error) {
+    console.warn('[field-work] extension notification lookup failed:', error?.message || error);
+  }
+}
+
+function isD1ConstraintError(error) {
+  return /(?:unique\s+constraint|constraint\s+failed|sqlite_constraint)/i.test(String(error?.message || error || ''));
+}
+
+async function recoverConcurrentFieldDayCheckIn(env, { idempotencyKey, workOrderId, engineerId, siteLocalDate }) {
+  let winner = null;
+  if (idempotencyKey) {
+    winner = await env.DB.prepare(`
+      SELECT * FROM work_order_field_days WHERE check_in_idempotency_key = ?
+    `).bind(idempotencyKey).first();
+    if (winner && (winner.work_order_id !== workOrderId || winner.engineer_id !== engineerId)) {
+      return { conflict: true };
+    }
+  }
+  if (!winner) {
+    winner = await env.DB.prepare(`
+      SELECT * FROM work_order_field_days
+      WHERE work_order_id = ? AND engineer_id = ? AND site_local_date = ?
+    `).bind(workOrderId, engineerId, siteLocalDate).first();
+  }
+  if (!winner || winner.work_order_id !== workOrderId || winner.engineer_id !== engineerId) return null;
+  const media = await env.DB.prepare(`
+    SELECT * FROM work_order_field_day_media WHERE field_day_id = ? AND purpose = 'check_in' AND deleted_at IS NULL
+  `).bind(winner.id).first();
+  return { winner, media };
+}
+
+async function getFieldWorkOrder(env, workOrderId) {
+  return env.DB.prepare(`
+    SELECT id, order_no, customer_id, engineer_id, status, service_mode, site_timezone,
+      expected_service_days, expected_completion_date, planned_daily_start_time, planned_daily_end_time,
+      service_latitude, service_longitude, service_accuracy_m, service_coordinate_system, arrival_verified_at,
+      active_quote_version, quote_expected_service_days, approved_extension_days
+    FROM work_orders WHERE id = ?
+  `).bind(workOrderId).first();
+}
+
+async function listConsumedFieldDayDates(env, workOrderId) {
+  const records = await env.DB.prepare(`
+    SELECT site_local_date, status, check_in_at
+    FROM work_order_field_days WHERE work_order_id = ?
+  `).bind(workOrderId).all();
+  return consumedFieldDayDates(records.results || []);
+}
+
+function hasCompleteFieldPlan(workOrder) {
+  if (!workOrder?.site_timezone) return false;
+  if (Number(workOrder?.active_quote_version || 0) >= 1) {
+    return Number.isInteger(Number(workOrder.quote_expected_service_days))
+      && Number(workOrder.quote_expected_service_days) > 0;
+  }
+  return Number.isInteger(Number(workOrder.expected_service_days))
+    && Number(workOrder.expected_service_days) > 0
+    && Boolean(workOrder.expected_completion_date);
+}
+
+function quoteDrivenFieldDayAllowanceSql(statuses = ['report_submitted', 'late_report_submitted', 'checked_in']) {
+  const statusList = statuses.map((status) => `'${status}'`).join(', ');
+  return `
+    COALESCE(work_orders.active_quote_version, 0) >= 1
+    AND (
+      SELECT COUNT(DISTINCT field_day.site_local_date)
+      FROM work_order_field_days field_day
+      WHERE field_day.work_order_id = work_orders.id
+        AND field_day.status IN (${statusList})
+        AND field_day.site_local_date GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'
+        AND strftime('%Y-%m-%d', field_day.site_local_date) = field_day.site_local_date
+        AND field_day.check_in_at IS NOT NULL
+        AND julianday(field_day.check_in_at) IS NOT NULL
+    ) >= COALESCE(work_orders.quote_expected_service_days, 0) + COALESCE(work_orders.approved_extension_days, 0)
+  `;
+}
+
+async function quoteDrivenFieldDayAllowanceExhausted(env, workOrderId) {
+  const row = await env.DB.prepare(`
+    SELECT CASE WHEN (${quoteDrivenFieldDayAllowanceSql()}) THEN 1 ELSE 0 END AS exhausted
+    FROM work_orders WHERE id = ?
+  `).bind(workOrderId).first();
+  return Boolean(row?.exhausted);
+}
+
+async function handleFieldDayCheckIn(request, env) {
+  let objectKey = null;
+  try {
+    const auth = request._auth;
+    const market = getRequestMarket(request);
+    if (auth?.userType !== 'engineer') return errorResponse('仅工程师可以拍照签到', 403);
+    if (!env.FIELD_EVIDENCE) return errorResponse('现场证据服务未配置', 503);
+
+    const workOrderId = new URL(request.url).pathname.split('/')[3];
+    const workOrder = await getFieldWorkOrder(env, workOrderId);
+    if (!workOrder) return errorResponse('工单不存在', 404);
+    if (workOrder.engineer_id !== auth.userId) return errorResponse('您未被指派到此工单', 403);
+    if (workOrder.service_mode !== 'onsite' || workOrder.status !== 'in_service') {
+      return errorResponse('仅服务中的现场工单可以签到', 409);
+    }
+    if (!hasCompleteFieldPlan(workOrder)) return errorResponse('现场服务计划不完整', 409);
+
+    const siteLocalDate = fieldDayLocalDate(fieldWorkNow(env), workOrder.site_timezone);
+    const idempotencyKey = String(request.headers.get('Idempotency-Key') || '').trim().slice(0, 200) || null;
+    if (idempotencyKey) {
+      const existingByKey = await env.DB.prepare(`
+        SELECT * FROM work_order_field_days WHERE check_in_idempotency_key = ?
+      `).bind(idempotencyKey).first();
+      if (existingByKey) {
+        if (existingByKey.work_order_id !== workOrderId || existingByKey.engineer_id !== auth.userId) {
+          return errorResponse('Idempotency-Key 已用于其他签到', 409);
+        }
+        const media = await env.DB.prepare(`
+          SELECT * FROM work_order_field_day_media WHERE field_day_id = ? AND purpose = 'check_in' AND deleted_at IS NULL
+        `).bind(existingByKey.id).first();
+        return jsonResponse(fieldDayResponse(existingByKey, media));
+      }
+    }
+
+    const existingFieldDay = await env.DB.prepare(`
+      SELECT * FROM work_order_field_days
+      WHERE work_order_id = ? AND engineer_id = ? AND site_local_date = ?
+    `).bind(workOrderId, auth.userId, siteLocalDate).first();
+    if (existingFieldDay) {
+      const media = await env.DB.prepare(`
+        SELECT * FROM work_order_field_day_media WHERE field_day_id = ? AND purpose = 'check_in' AND deleted_at IS NULL
+      `).bind(existingFieldDay.id).first();
+      return jsonResponse(fieldDayResponse(existingFieldDay, media));
+    }
+
+    if (Number(workOrder.active_quote_version || 0) >= 1) {
+      const consumedDays = (await listConsumedFieldDayDates(env, workOrderId)).length;
+      const permittedDays = Number(workOrder.quote_expected_service_days || 0)
+        + Number(workOrder.approved_extension_days || 0);
+      if (consumedDays >= permittedDays) {
+        return jsonResponse({
+          error: market === 'cn' ? '现场工作日额度已用完，请先申请延期' : 'The onsite workday allowance is exhausted. Request an extension before checking in again.',
+          code: 'workday_allowance_exhausted',
+        }, 409);
+      }
+    }
+
+    const formData = await request.formData();
+    const photo = formData.get('photo');
+    if (!photo || typeof photo === 'string' || !FIELD_EVIDENCE_MIME_TYPES.has(photo.type)) {
+      return errorResponse('请上传 JPEG、PNG 或 WebP 格式的签到照片', 400);
+    }
+    if (!photo.size) return errorResponse('签到照片不能为空', 400);
+    if (photo.size > FIELD_EVIDENCE_MAX_BYTES) return errorResponse('签到照片不能超过 10MB', 413);
+    const photoBytes = new Uint8Array(await photo.arrayBuffer());
+    if (!hasFieldEvidenceSignature(photoBytes, photo.type)) return errorResponse('签到照片文件签名无效', 400);
+
+    const expectedCheckoutTime = String(
+      formData.get('expected_checkout_time') || workOrder.planned_daily_end_time || ''
+    ).trim();
+    if (!/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(expectedCheckoutTime)) {
+      return errorResponse('预计签退时间无效', 400);
+    }
+    const expectedCheckoutAt = `${siteLocalDate}T${expectedCheckoutTime}:00`;
+    try {
+      siteLocalDateTimeToUtc(expectedCheckoutAt, workOrder.site_timezone);
+    } catch {
+      return errorResponse('预计签退时间在现场时区不存在', 400);
+    }
+
+    const location = parseFieldDayLocation(formData.get('location') || {
+      latitude: formData.get('latitude'),
+      longitude: formData.get('longitude'),
+      accuracy_m: formData.get('accuracy_m'),
+      coordinate_system: formData.get('coordinate_system'),
+      location_source: formData.get('location_source'),
+    }, workOrder);
+    const fieldDayId = generateId();
+    const mediaId = generateId();
+    const extension = FIELD_EVIDENCE_MIME_TYPES.get(photo.type);
+    objectKey = `field-evidence/${market}/${workOrderId}/${fieldDayId}/check-in.${extension}`;
+    await env.FIELD_EVIDENCE.put(objectKey, photoBytes, { httpMetadata: { contentType: photo.type } });
+
+    const fieldDay = {
+      id: fieldDayId, work_order_id: workOrderId, engineer_id: auth.userId, site_local_date: siteLocalDate,
+      site_timezone: workOrder.site_timezone, status: 'checked_in', expected_check_out_at: expectedCheckoutAt,
+      location_status: location.location_status, latitude: location.latitude ?? null, longitude: location.longitude ?? null,
+      accuracy_m: location.accuracy ?? null, coordinate_system: location.coordinateSystem ?? null,
+      location_source: location.locationSource ?? null, distance_m: location.distance ?? null,
+      radius_m: location.radius ?? null, within_geofence: location.withinGeofence ?? null,
+      check_in_idempotency_key: idempotencyKey,
+    };
+    const media = {
+      id: mediaId, work_order_id: workOrderId, field_day_id: fieldDayId, purpose: 'check_in', object_key: objectKey,
+      mime_type: photo.type, file_size: photo.size, uploader_type: 'engineer', uploader_id: auth.userId,
+      customer_visible: 1, capture_source: 'check_in',
+    };
+    if (typeof env.DB.batch !== 'function') {
+      await cleanupFieldEvidenceObjects(env, [objectKey], 'check_in_persistence_failed');
+      objectKey = null;
+      return errorResponse('现场签到存储暂不可用', 503);
+    }
+    const persistenceStatements = [
+      env.DB.prepare(`
+        INSERT INTO work_order_field_days (
+          id, work_order_id, engineer_id, site_local_date, site_timezone, expected_check_out_at,
+          location_status, latitude, longitude, accuracy_m, coordinate_system, location_source,
+          distance_m, radius_m, within_geofence, check_in_idempotency_key
+        ) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+        WHERE EXISTS (
+          SELECT 1 FROM work_orders
+          WHERE id = ? AND engineer_id = ? AND service_mode = 'onsite' AND status = 'in_service'
+            AND (
+              COALESCE(active_quote_version, 0) < 1
+              OR NOT (${quoteDrivenFieldDayAllowanceSql()})
+            )
+        )
+      `).bind(
+        fieldDay.id, fieldDay.work_order_id, fieldDay.engineer_id, fieldDay.site_local_date, fieldDay.site_timezone,
+        fieldDay.expected_check_out_at, fieldDay.location_status, fieldDay.latitude, fieldDay.longitude,
+        fieldDay.accuracy_m, fieldDay.coordinate_system, fieldDay.location_source, fieldDay.distance_m,
+        fieldDay.radius_m, fieldDay.within_geofence, fieldDay.check_in_idempotency_key,
+        workOrderId, auth.userId,
+      ),
+      env.DB.prepare(`
+        SELECT CASE
+          WHEN changes() = 1 THEN 1
+          WHEN EXISTS (
+            SELECT 1 FROM work_orders
+            WHERE id = ? AND engineer_id = ? AND service_mode = 'onsite' AND status = 'in_service'
+              AND (${quoteDrivenFieldDayAllowanceSql()})
+          ) THEN json('workday allowance exhausted')
+          ELSE json('field check-in concurrent update')
+        END
+      `).bind(workOrderId, auth.userId),
+      env.DB.prepare(`
+        INSERT INTO work_order_field_day_media (
+          id, work_order_id, field_day_id, purpose, object_key, mime_type, file_size,
+          uploader_type, uploader_id, customer_visible, capture_source
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).bind(
+        media.id, media.work_order_id, media.field_day_id, media.purpose, media.object_key, media.mime_type,
+        media.file_size, media.uploader_type, media.uploader_id, media.customer_visible, media.capture_source,
+      ),
+    ];
+    persistenceStatements.push(env.DB.prepare(`
+      INSERT INTO work_order_arrival_checks (
+        id, work_order_id, engineer_id, latitude, longitude, accuracy_m, coordinate_system,
+        location_source, distance_m, radius_m, within_geofence, failure_reason
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).bind(
+      generateId(), workOrderId, auth.userId, fieldDay.latitude, fieldDay.longitude,
+      fieldDay.accuracy_m, fieldDay.coordinate_system, fieldDay.location_source || 'field_day_check_in',
+      fieldDay.distance_m, fieldDay.radius_m, fieldDay.within_geofence,
+      fieldDay.location_status === 'outside_geofence' ? 'outside_geofence' : fieldDay.location_status === 'unavailable' ? 'unavailable' : null,
+    ));
+    if (!workOrder.arrival_verified_at) {
+      persistenceStatements.push(env.DB.prepare(`
+          UPDATE work_orders SET arrival_verified_at = datetime('now') WHERE id = ? AND arrival_verified_at IS NULL
+      `).bind(workOrderId));
+    }
+    persistenceStatements.push(buildAuditLogStatement(env, request, {
+      targetType: 'work_order_field_day', targetId: fieldDayId, action: 'field_day_checked_in',
+      afterState: { work_order_id: workOrderId, site_local_date: siteLocalDate, location_status: fieldDay.location_status },
+    }));
+    try {
+      await env.DB.batch(persistenceStatements);
+    } catch (error) {
+      await cleanupFieldEvidenceObjects(env, [objectKey], 'check_in_persistence_failed');
+      objectKey = null;
+      if (/workday allowance exhausted/i.test(String(error?.message || error))) {
+        return jsonResponse({
+          error: market === 'cn' ? '现场工作日额度已用完，请先申请延期' : 'The onsite workday allowance is exhausted. Request an extension before checking in again.',
+          code: 'workday_allowance_exhausted',
+        }, 409);
+      }
+      if (/field check-in concurrent update|malformed json/i.test(String(error?.message || error))) {
+        if (await quoteDrivenFieldDayAllowanceExhausted(env, workOrderId)) {
+          return jsonResponse({
+            error: market === 'cn' ? '现场工作日额度已用完，请先申请延期' : 'The onsite workday allowance is exhausted. Request an extension before checking in again.',
+            code: 'workday_allowance_exhausted',
+          }, 409);
+        }
+        return errorResponse('工单状态已变更，无法完成现场签到', 409);
+      }
+      if (isD1ConstraintError(error)) {
+        const recovered = await recoverConcurrentFieldDayCheckIn(env, {
+          idempotencyKey, workOrderId, engineerId: auth.userId, siteLocalDate,
+        });
+        if (recovered?.conflict) return errorResponse('Idempotency-Key 已用于其他签到', 409);
+        if (recovered) return jsonResponse(fieldDayResponse(recovered.winner, recovered.media));
+      }
+      throw error;
+    }
+
+    await createNotification(env, {
+      user_id: workOrder.customer_id, user_type: 'customer', type: 'field_day_checked_in',
+      title: market === 'cn' ? '工程师已到场签到' : 'Engineer checked in',
+      body: market === 'cn'
+        ? `工程师已为工单 ${workOrder.order_no} 完成现场签到。`
+        : `Engineer checked in for ${workOrder.order_no}.`,
+      data: { work_order_id: workOrderId, field_day_id: fieldDayId },
+    });
+    return jsonResponse(fieldDayResponse(fieldDay, media), 201);
+  } catch (error) {
+    if (error instanceof GuardError) return errorResponse(error.message, error.status);
+    return errorResponse(error.message, 500);
+  }
+}
+
+async function handleSubmitFieldDayReport(request, env) {
+  const uploadedKeys = [];
+  let persistenceCommitted = false;
+  try {
+    const auth = request._auth;
+    if (auth?.userType !== 'engineer') return errorResponse('仅工程师可以提交现场日报', 403);
+    if (!env.FIELD_EVIDENCE) return errorResponse('现场证据服务未配置', 503);
+    const [, , , workOrderId, , fieldDayId] = new URL(request.url).pathname.split('/');
+    const workOrder = await getFieldWorkOrder(env, workOrderId);
+    if (!workOrder) return errorResponse('工单不存在', 404);
+    if (workOrder.engineer_id !== auth.userId) return errorResponse('您未被指派到此工单', 403);
+    if (workOrder.service_mode !== 'onsite' || workOrder.status !== 'in_service') {
+      return errorResponse('仅服务中的现场工单可以提交日报', 409);
+    }
+    const fieldDay = await env.DB.prepare(`
+      SELECT * FROM work_order_field_days WHERE id = ? AND work_order_id = ?
+    `).bind(fieldDayId, workOrderId).first();
+    if (!fieldDay) return errorResponse('现场工作日不存在', 404);
+    if (fieldDay.engineer_id !== auth.userId) return errorResponse('您无权提交此现场日报', 403);
+
+    const idempotencyKey = String(request.headers.get('Idempotency-Key') || '').trim().slice(0, 200) || null;
+    if (idempotencyKey) {
+      const existing = await env.DB.prepare(`
+        SELECT * FROM work_order_field_days WHERE report_idempotency_key = ?
+      `).bind(idempotencyKey).first();
+      if (existing) {
+        if (existing.id !== fieldDayId || existing.work_order_id !== workOrderId || existing.engineer_id !== auth.userId) {
+          return errorResponse('Idempotency-Key 已用于其他日报', 409);
+        }
+        return reportResponse(existing, await getFieldDayReportMedia(env, existing.id));
+      }
+    }
+    if (['report_submitted', 'late_report_submitted'].includes(fieldDay.status)) {
+      return reportResponse(fieldDay, await getFieldDayReportMedia(env, fieldDay.id));
+    }
+    if (!['checked_in', 'report_overdue'].includes(fieldDay.status)) return errorResponse('当前现场工作日不能提交日报', 409);
+
+    const formData = await request.formData();
+    const progressPhotos = formData.getAll('progress_photos');
+    const internalPhotos = formData.getAll('internal_photos');
+    const reportValidation = validateDailyReport({
+      completed_work: formData.get('completed_work'),
+      issues_risks: formData.get('issues_risks'),
+      next_plan: formData.get('next_plan'),
+      customer_support_needed: formData.get('customer_support_needed'),
+      labor_hours: formData.get('labor_hours'),
+      internal_note: formData.get('internal_note'),
+      late_reason: formData.get('late_reason'),
+      progress_media_count: progressPhotos.length,
+    }, { overdue: fieldDay.status === 'report_overdue' });
+    if (reportValidation.error) return fieldWorkError(reportValidation.error);
+
+    const extensionFields = ['extension_reason', 'extension_customer_explanation', 'requested_additional_days', 'proposed_completion_date', 'extension_internal_note'];
+    const hasExtension = extensionFields.some((name) => String(formData.get(name) || '').trim());
+    let extensionValue = null;
+    if (hasExtension) {
+      const extensionValidation = validateExtensionRequest({
+        reason: formData.get('extension_reason'),
+        customer_explanation: formData.get('extension_customer_explanation'),
+        requested_additional_days: formData.get('requested_additional_days'),
+        proposed_completion_date: formData.get('proposed_completion_date'),
+        internal_note: formData.get('extension_internal_note'),
+      }, workOrder.expected_completion_date);
+      if (extensionValidation.error) return fieldWorkError(extensionValidation.error);
+      const pending = await env.DB.prepare(`
+        SELECT * FROM work_order_extension_requests WHERE work_order_id = ? AND status = 'pending'
+      `).bind(workOrderId).first();
+      if (pending) return errorResponse('该工单已有待审批延期申请', 409);
+      extensionValue = extensionValidation.value;
+    }
+
+    const allUploads = [
+      ...progressPhotos.map((file) => ({ file, purpose: 'progress', customerVisible: 1 })),
+      ...internalPhotos.map((file) => ({ file, purpose: 'internal', customerVisible: 0 })),
+    ];
+    const preparedUploads = [];
+    for (const upload of allUploads) {
+      const file = upload.file;
+      if (!file || typeof file === 'string' || !FIELD_EVIDENCE_MIME_TYPES.has(file.type)) {
+        return errorResponse('现场日报照片仅支持 JPEG、PNG 或 WebP', 400);
+      }
+      if (!file.size) return errorResponse('现场日报照片不能为空', 400);
+      if (file.size > FIELD_EVIDENCE_MAX_BYTES) return errorResponse('现场日报照片不能超过 10MB', 413);
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      if (!hasFieldEvidenceSignature(bytes, file.type)) return errorResponse('现场日报照片文件签名无效', 400);
+      preparedUploads.push({ ...upload, bytes });
+    }
+
+    const mediaRows = [];
+    for (const upload of preparedUploads) {
+      const file = upload.file;
+      const mediaId = generateId();
+      const extension = FIELD_EVIDENCE_MIME_TYPES.get(file.type);
+      const objectKey = `field-evidence/${getRequestMarket(request)}/${workOrderId}/${fieldDayId}/${upload.purpose}/${mediaId}.${extension}`;
+      await env.FIELD_EVIDENCE.put(objectKey, upload.bytes, { httpMetadata: { contentType: file.type } });
+      uploadedKeys.push(objectKey);
+      mediaRows.push({
+        id: mediaId, work_order_id: workOrderId, field_day_id: fieldDayId, purpose: upload.purpose,
+        object_key: objectKey, mime_type: file.type, file_size: file.size, uploader_type: 'engineer',
+        uploader_id: auth.userId, customer_visible: upload.customerVisible, capture_source: 'daily_report',
+      });
+    }
+
+    const nextStatus = fieldDay.status === 'report_overdue' ? 'late_report_submitted' : 'report_submitted';
+    const value = reportValidation.value;
+    const statements = [env.DB.prepare(`
+      UPDATE work_order_field_days SET
+        status = ?, labor_hours = ?, completed_work = ?, issues_risks = ?, next_plan = ?,
+        customer_support_needed = ?, internal_note = ?, late_reason = ?, report_idempotency_key = ?,
+        report_submitted_at = datetime('now'), updated_at = datetime('now')
+      WHERE id = ? AND work_order_id = ? AND status = ?
+    `).bind(
+      nextStatus, value.labor_hours, value.completed_work, value.issues_risks, value.next_plan,
+      value.customer_support_needed, value.internal_note, value.late_reason, idempotencyKey, fieldDayId, workOrderId, fieldDay.status,
+    ), env.DB.prepare(`
+      SELECT CASE WHEN changes() = 1 THEN 1 ELSE json('field report concurrent update') END
+    `)];
+    for (const media of mediaRows) {
+      statements.push(env.DB.prepare(`
+        INSERT INTO work_order_field_day_media (
+          id, work_order_id, field_day_id, purpose, object_key, mime_type, file_size,
+          uploader_type, uploader_id, customer_visible, capture_source
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).bind(
+        media.id, media.work_order_id, media.field_day_id, media.purpose, media.object_key, media.mime_type,
+        media.file_size, media.uploader_type, media.uploader_id, media.customer_visible, media.capture_source,
+      ));
+    }
+    let extensionId = null;
+    if (extensionValue) {
+      extensionId = generateId();
+      statements.push(extensionRequestStatement(env, {
+        id: extensionId, workOrder, engineerId: auth.userId, fieldDayId, value: extensionValue,
+      }));
+      statements.push(env.DB.prepare(`
+        SELECT CASE WHEN changes() = 1 THEN 1 ELSE json('field extension concurrent update') END
+      `));
+      statements.push(env.DB.prepare(`
+        INSERT INTO work_order_logs (id, work_order_id, action, actor_type, actor_id, content)
+        VALUES (?, ?, 'extension_requested', 'engineer', ?, ?)
+      `).bind(generateId(), workOrderId, auth.userId, extensionValue.customer_explanation));
+    }
+    statements.push(buildAuditLogStatement(env, request, {
+      targetType: 'work_order_field_day', targetId: fieldDayId, action: 'field_day_report_submitted',
+      beforeState: { status: fieldDay.status },
+      afterState: { status: nextStatus, labor_hours: value.labor_hours, media_count: mediaRows.length, extension_request_id: extensionId },
+    }));
+    try {
+      await env.DB.batch(statements);
+    } catch (error) {
+      await cleanupFieldEvidenceObjects(env, uploadedKeys, 'field_report_persistence_failed');
+      uploadedKeys.length = 0;
+      if (isD1ConstraintError(error) || /field report concurrent update|malformed json/i.test(String(error?.message || error))) {
+        if (idempotencyKey) {
+          const recovered = await env.DB.prepare(`SELECT * FROM work_order_field_days WHERE report_idempotency_key = ?`).bind(idempotencyKey).first();
+          if (recovered?.id === fieldDayId && recovered.work_order_id === workOrderId) {
+            return reportResponse(recovered, await getFieldDayReportMedia(env, recovered.id));
+          }
+        }
+        return errorResponse('该工单已有待审批延期申请或日报已提交', 409);
+      }
+      throw error;
+    }
+    persistenceCommitted = true;
+    uploadedKeys.length = 0;
+    const savedFieldDay = { ...fieldDay, ...value, status: nextStatus, report_idempotency_key: idempotencyKey, report_submitted_at: new Date().toISOString() };
+    await notifyFieldWorkBestEffort(env, {
+      user_id: workOrder.customer_id, user_type: 'customer', type: 'field_day_report_submitted',
+      title: 'Field work update', body: `A field work update was submitted for ${workOrder.order_no}.`,
+      data: { work_order_id: workOrderId, field_day_id: fieldDayId },
+    });
+    if (extensionValue) {
+      await notifyFieldExtensionRequested(env, request, workOrder, extensionId, extensionValue);
+    }
+    return reportResponse(savedFieldDay, mediaRows, 201);
+  } catch (error) {
+    if (!persistenceCommitted) {
+      await cleanupFieldEvidenceObjects(env, uploadedKeys, 'field_report_request_failed');
+    }
+    return errorResponse(error.message, 500);
+  }
+}
+
+async function handleCreateExtensionRequest(request, env) {
+  try {
+    const auth = request._auth;
+    if (auth?.userType !== 'engineer') return errorResponse('仅工程师可以申请延期', 403);
+    const workOrderId = new URL(request.url).pathname.split('/')[3];
+    const workOrder = await getFieldWorkOrder(env, workOrderId);
+    if (!workOrder) return errorResponse('工单不存在', 404);
+    if (workOrder.engineer_id !== auth.userId) return errorResponse('您未被指派到此工单', 403);
+    if (workOrder.service_mode !== 'onsite' || workOrder.status !== 'in_service') return errorResponse('当前工单不能申请延期', 409);
+    const validation = validateExtensionRequest(await request.json().catch(() => ({})), workOrder.expected_completion_date);
+    if (validation.error) return fieldWorkError(validation.error);
+    const pending = await env.DB.prepare(`
+      SELECT * FROM work_order_extension_requests WHERE work_order_id = ? AND status = 'pending'
+    `).bind(workOrderId).first();
+    if (pending) return errorResponse('该工单已有待审批延期申请', 409);
+    const extensionId = generateId();
+    const value = validation.value;
+    try {
+      await env.DB.batch([
+        extensionRequestStatement(env, { id: extensionId, workOrder, engineerId: auth.userId, value }),
+        env.DB.prepare(`SELECT CASE WHEN changes() = 1 THEN 1 ELSE json('field extension concurrent update') END`),
+        env.DB.prepare(`
+          INSERT INTO work_order_logs (id, work_order_id, action, actor_type, actor_id, content)
+          VALUES (?, ?, 'extension_requested', 'engineer', ?, ?)
+        `).bind(generateId(), workOrderId, auth.userId, value.customer_explanation),
+        buildAuditLogStatement(env, request, {
+          targetType: 'work_order_extension_request', targetId: extensionId, action: 'field_extension_requested',
+          afterState: { work_order_id: workOrderId, requested_additional_days: value.requested_additional_days, proposed_completion_date: value.proposed_completion_date },
+        }),
+      ]);
+    } catch (error) {
+      if (/field extension concurrent update|malformed json/i.test(String(error?.message || error))) {
+        return errorResponse('工单状态已变更，无法提交延期申请', 409);
+      }
+      if (isD1ConstraintError(error)) return errorResponse('该工单已有待审批延期申请', 409);
+      throw error;
+    }
+    await notifyFieldExtensionRequested(env, request, workOrder, extensionId, value);
+    return jsonResponse({ extension_request: { id: extensionId, work_order_id: workOrderId, engineer_id: auth.userId, status: 'pending', ...value } }, 201);
+  } catch (error) {
+    return errorResponse(error.message, 500);
+  }
+}
+
+async function hasHistoricalFieldDayAccess(env, auth, workOrderId) {
+  if (auth?.userType !== 'engineer') return false;
+  const fieldDay = await env.DB.prepare(`
+    SELECT id FROM work_order_field_days WHERE work_order_id = ? AND engineer_id = ? LIMIT 1
+  `).bind(workOrderId, auth.userId).first();
+  return Boolean(fieldDay);
+}
+
+async function resolveFieldWorkAccessMode(env, auth, workOrder, workOrderId) {
+  try {
+    assertWorkOrderAccess(auth, workOrder);
+  } catch (error) {
+    if (!(error instanceof GuardError) || !await hasHistoricalFieldDayAccess(env, auth, workOrderId)) throw error;
+    return 'historical_engineer';
+  }
+  if (auth?.userType === 'admin') return 'admin';
+  if (auth?.userType === 'customer') return 'customer';
+  if (auth?.userType !== 'engineer') return 'none';
+  if (workOrder.engineer_id === auth.userId) return 'assigned_engineer';
+  if (await hasHistoricalFieldDayAccess(env, auth, workOrderId)) return 'historical_engineer';
+  return 'none';
+}
+
+async function handleGetFieldDays(request, env) {
+  try {
+    const auth = request._auth;
+    const market = getRequestMarket(request);
+    const workOrderId = new URL(request.url).pathname.split('/')[3];
+    const workOrder = await getFieldWorkOrder(env, workOrderId);
+    if (!workOrder) return errorResponse('工单不存在', 404);
+    const fieldWorkAccessMode = await resolveFieldWorkAccessMode(env, auth, workOrder, workOrderId);
+    if (fieldWorkAccessMode === 'none') return errorResponse('您无权访问现场作业记录', 403);
+    const historicalEngineerView = fieldWorkAccessMode === 'historical_engineer';
+
+    const fieldDayRecords = await env.DB.prepare(`
+      SELECT * FROM work_order_field_days WHERE work_order_id = ? ORDER BY site_local_date DESC
+    `).bind(workOrderId).all();
+    const customerView = fieldWorkAccessMode === 'customer';
+    const visibleFieldDayRecords = historicalEngineerView
+      ? (fieldDayRecords.results || []).filter((fieldDay) => fieldDay.engineer_id === auth.userId)
+      : (fieldDayRecords.results || []);
+    const visibleFieldDayIds = new Set(visibleFieldDayRecords.map((fieldDay) => fieldDay.id));
+    const fieldDays = visibleFieldDayRecords.map((fieldDay) => publicFieldDay(fieldDay, { customerView, market }));
+    const mediaRecords = await env.DB.prepare(customerView ? `
+      SELECT * FROM work_order_field_day_media
+      WHERE work_order_id = ? AND customer_visible = 1 AND deleted_at IS NULL ORDER BY created_at ASC
+    ` : `
+      SELECT * FROM work_order_field_day_media
+      WHERE work_order_id = ? AND deleted_at IS NULL ORDER BY created_at ASC
+    `).bind(workOrderId).all();
+    return jsonResponse({
+      field_days: fieldDays,
+      media: (mediaRecords.results || [])
+        .filter((media) => !historicalEngineerView || visibleFieldDayIds.has(media.field_day_id))
+        .map((media) => publicFieldMedia(media, workOrderId)),
+    });
+  } catch (error) {
+    if (error instanceof GuardError) return errorResponse(error.message, error.status);
+    return errorResponse(error.message, 500);
+  }
+}
+
+async function handleGetFieldMedia(request, env) {
+  try {
+    const auth = request._auth;
+    const [, , , workOrderId, , mediaId] = new URL(request.url).pathname.split('/');
+    const workOrder = await getFieldWorkOrder(env, workOrderId);
+    if (!workOrder) return errorResponse('工单不存在', 404);
+    const fieldWorkAccessMode = await resolveFieldWorkAccessMode(env, auth, workOrder, workOrderId);
+    if (fieldWorkAccessMode === 'none') return errorResponse('您无权查看此现场证据', 403);
+    const historicalEngineerView = fieldWorkAccessMode === 'historical_engineer';
+    const media = await env.DB.prepare(`
+      SELECT * FROM work_order_field_day_media WHERE id = ? AND work_order_id = ? AND deleted_at IS NULL
+    `).bind(mediaId, workOrderId).first();
+    if (!media) return errorResponse('现场证据不存在', 404);
+    if (fieldWorkAccessMode === 'customer' && !media.customer_visible) return errorResponse('您无权查看此现场证据', 403);
+    if (historicalEngineerView) {
+      const fieldDay = await env.DB.prepare(`
+        SELECT * FROM work_order_field_days WHERE id = ? AND work_order_id = ?
+      `).bind(media.field_day_id, workOrderId).first();
+      if (!fieldDay || fieldDay.engineer_id !== auth.userId) return errorResponse('您无权查看此现场证据', 403);
+    }
+    if (!env.FIELD_EVIDENCE) return errorResponse('现场证据服务未配置', 503);
+    const object = await env.FIELD_EVIDENCE.get(media.object_key);
+    if (!object) return errorResponse('现场证据文件不存在', 404);
+    return new Response(object.body, {
+      headers: {
+        'Content-Type': media.mime_type,
+        'Content-Disposition': 'inline',
+        'X-Content-Type-Options': 'nosniff',
+        'Cache-Control': 'private, no-store',
+      },
+    });
+  } catch (error) {
+    if (error instanceof GuardError) return errorResponse(error.message, error.status);
+    return errorResponse(error.message, 500);
+  }
+}
 
 async function handleUploadAttachment(request, env) {
   try {
@@ -5657,6 +7208,7 @@ async function ensureWorkOrderPayout(env, workOrderId, engineerId, status = 'pen
 
 async function handleSubmitRating(request, env) {
   try {
+    const market = getRequestMarket(request);
     const body = await request.json();
     const { work_order_id, rating_timeliness, rating_technical, rating_communication, rating_professional, comment } = body;
 
@@ -5681,7 +7233,7 @@ async function handleSubmitRating(request, env) {
 
     // 验证工单归属 + 查出真正的 engineer_id
     const wo = await env.DB.prepare(
-      'SELECT id, engineer_id, customer_id, status FROM work_orders WHERE id = ?'
+      'SELECT id, engineer_id, customer_id, status, active_quote_version FROM work_orders WHERE id = ?'
     ).bind(work_order_id).first();
 
     if (!wo) return errorResponse('工单不存在', 404);
@@ -5690,6 +7242,14 @@ async function handleSubmitRating(request, env) {
     }
     if (!wo.engineer_id) {
       return errorResponse('工单尚未分配工程师', 400);
+    }
+    if (!['resolved', 'pending_review'].includes(wo.status)) {
+      return errorResponse(
+        market === 'cn'
+          ? '服务尚未进入客户验收阶段'
+          : 'The service is not ready for customer acceptance.',
+        409,
+      );
     }
     const engineer_id = wo.engineer_id;
 
@@ -5725,10 +7285,12 @@ async function handleSubmitRating(request, env) {
       WHERE id = ?
     `).bind(avgTimeliness, avgTechnical, avgCommunication, avgProfessional, count, engineer_id).run();
 
-    // 更新工单状态
-    await env.DB.prepare(
-      'UPDATE work_orders SET status = ?, completed_at = datetime("now") WHERE id = ?'
-    ).bind('completed', work_order_id).run();
+    // Versioned quotes keep service acceptance separate from financial archive.
+    if (Number(wo.active_quote_version || 0) < 1) {
+      await env.DB.prepare(
+        "UPDATE work_orders SET status = ?, completed_at = datetime('now') WHERE id = ?"
+      ).bind('completed', work_order_id).run();
+    }
 
     // 正式口径：客户评价只完成服务闭环；工程师服务款由 Admin 在逐单记录中人工确认。
     // 旧钱包结算函数保留用于历史兼容，但不再由新工单流程自动调用。
@@ -5745,6 +7307,9 @@ async function handleSubmitRating(request, env) {
       body: `工单 ${woRating?.order_no || ''} 的客户给您评分 ${avgAll} 分${comment ? '："' + comment.slice(0, 30) + '"' : ''}`,
       data: { work_order_id },
     });
+
+    // SERVICE_OS_LEGACY: settlement is kept for historical accounting compatibility,
+    // but Service OS no longer exposes wallet/commission notifications to engineers.
 
     return jsonResponse({ success: true, payout });
   } catch (error) {
@@ -5918,10 +7483,11 @@ async function handleGetEngineerTickets(request, env) {
 
     const { results } = await env.DB.prepare(query).bind(...params).all();
 
-    const workOrders = results.map(wo => ({
-      ...wo,
-      sla_status: getSlaStatus(wo.sla_deadline, wo.urgency),
-    }));
+    const paymentProjections = await listWorkOrderPaymentProjections(env, results);
+    const workOrders = results.map((wo) => withPaymentProjection({
+        ...wo,
+        sla_status: getSlaStatus(wo.sla_deadline, wo.urgency),
+      }, paymentProjections.get(wo.id)));
 
     return jsonResponse({ work_orders: workOrders });
   } catch (error) {
@@ -6444,6 +8010,29 @@ async function handleChangePassword(request, env) {
     if (!oldPassword || !newPassword) return errorResponse('旧密码和新密码不能为空');
     if (isPasswordTooShort(newPassword)) return passwordTooShortResponse(request);
 
+    if (auth.userType === 'admin') {
+      if (!auth.staffId) return errorResponse('超级管理员密码由环境变量管理', 403);
+      const staff = await env.DB.prepare('SELECT * FROM admin_staff_accounts WHERE id = ?').bind(auth.staffId).first();
+      if (!staff?.is_active) return errorResponse('员工账号不存在或已停用', 404);
+      const ok = await verifyPassword(oldPassword, staff.password_hash, staff.salt);
+      if (!ok) return errorResponse('旧密码错误');
+      const newSalt = generateSalt();
+      const newHash = await hashPasswordNew(newPassword, newSalt);
+      const mutation = env.DB.prepare(`
+        UPDATE admin_staff_accounts
+        SET password_hash = ?, salt = ?, must_change_password = 0, updated_at = datetime('now')
+        WHERE id = ?
+      `).bind(newHash, newSalt, auth.staffId);
+      await runAuditedWorkflowBatch(env, request, guardedWorkflowMutation(env, mutation), {
+        targetType: 'admin_staff_account',
+        targetId: auth.staffId,
+        action: 'staff_password_changed',
+        beforeState: { must_change_password: Boolean(staff.must_change_password) },
+        afterState: { must_change_password: false },
+      });
+      return jsonResponse({ success: true, mustChangePassword: false });
+    }
+
     const table = auth.userType === 'engineer' ? 'engineers' : 'customers';
     const user = await env.DB.prepare(`SELECT id, password_hash, salt FROM ${table} WHERE id = ?`).bind(auth.userId).first();
     if (!user) return errorResponse('用户不存在', 404);
@@ -6456,110 +8045,6 @@ async function handleChangePassword(request, env) {
     await env.DB.prepare(`UPDATE ${table} SET password_hash = ?, salt = ? WHERE id = ?`).bind(newHash, newSalt, auth.userId).run();
 
     return jsonResponse({ success: true });
-  } catch (error) {
-    return errorResponse(error.message, 500);
-  }
-}
-
-// ============ 工程师钱包与保证金 API ============
-// SERVICE_OS_LEGACY: old marketplace wallet/withdrawal model. Do not expose as a customer-facing capability.
-
-// 获取工程师钱包信息（余额 + 摘要）
-async function handleGetEngineerWallet(request, env) {
-  try {
-    const engineerId = request._auth?.userId || new URL(request.url).searchParams.get('engineer_id');
-    if (!engineerId) return errorResponse('缺少工程师ID');
-
-    const engineer = await env.DB.prepare(
-      'SELECT id, wallet_balance, deposit_balance, level, commission_rate, credit_score FROM engineers WHERE id = ?'
-    ).bind(engineerId).first();
-
-    if (!engineer) return errorResponse('工程师不存在', 404);
-
-    // 最近10条钱包流水
-    const walletHistory = await env.DB.prepare(
-      'SELECT * FROM engineer_wallets WHERE engineer_id = ? ORDER BY created_at DESC LIMIT 10'
-    ).bind(engineerId).all();
-
-    // 最近10条保证金流水
-    const depositHistory = await env.DB.prepare(
-      'SELECT * FROM engineer_deposits WHERE engineer_id = ? ORDER BY created_at DESC LIMIT 10'
-    ).bind(engineerId).all();
-
-    return jsonResponse({
-      wallet_balance: engineer.wallet_balance || 0,
-      deposit_balance: engineer.deposit_balance || 0,
-      level: engineer.level || 'junior',
-      commission_rate: engineer.commission_rate || 0.80,
-      credit_score: engineer.credit_score || 100,
-      wallet_history: walletHistory.results || [],
-      deposit_history: depositHistory.results || [],
-    });
-  } catch (error) {
-    return errorResponse(error.message, 500);
-  }
-}
-
-// SERVICE_OS_LEGACY: old marketplace withdrawal model. Replace with internal payroll/settlement before deletion.
-// 申请提现
-async function handleWithdrawRequest(request, env) {
-  try {
-    const engineerId = request._auth?.userId;
-    if (!engineerId) return errorResponse('未登录或登录已过期', 401);
-
-    const { amount } = await request.json();
-    if (!amount || amount <= 0) return errorResponse('请输入正确的提现金额');
-    if (amount < 100) return errorResponse('提现金额不能低于100元');
-    if (amount > 50000) return errorResponse('单次提现金额不能超过50000元');
-
-    const engineer = await env.DB.prepare(
-      'SELECT wallet_balance, bank_account, bank_name FROM engineers WHERE id = ?'
-    ).bind(engineerId).first();
-
-    if (!engineer) return errorResponse('工程师不存在', 404);
-    if (!engineer.bank_account || !engineer.bank_name) {
-      return errorResponse('请先在档案中绑定银行卡信息');
-    }
-    if ((engineer.wallet_balance || 0) < amount) {
-      return errorResponse('钱包余额不足');
-    }
-
-    // 检查是否有处理中的提现申请
-    const pending = await env.DB.prepare(
-      "SELECT id FROM engineer_withdrawals WHERE engineer_id = ? AND status = 'pending'"
-    ).bind(engineerId).first();
-    if (pending) return errorResponse('您有待处理的提现申请，请等待处理完成后再申请');
-
-    const id = generateId();
-    // 事务性：先从钱包余额扣款冻结，再创建提现记录，再写入钱包流水（withdraw_pending）。
-    // 若提现被拒，运营侧需对应回写钱包余额 + 补冲流水。
-    const newBalance = (engineer.wallet_balance || 0) - amount;
-    await env.DB.prepare(
-      'UPDATE engineers SET wallet_balance = ? WHERE id = ?'
-    ).bind(newBalance, engineerId).run();
-
-    await env.DB.prepare(`
-      INSERT INTO engineer_withdrawals (id, engineer_id, amount, status)
-      VALUES (?, ?, ?, 'pending')
-    `).bind(id, engineerId, amount).run();
-
-    await env.DB.prepare(`
-      INSERT INTO engineer_wallets (id, engineer_id, work_order_id, type, amount, balance_after, status, note)
-      VALUES (?, ?, NULL, 'withdraw', ?, ?, 'pending', ?)
-    `).bind(
-      generateId(),
-      engineerId,
-      -amount,
-      newBalance,
-      `提现申请 ${id}`
-    ).run();
-
-    return jsonResponse({
-      success: true,
-      withdrawal_id: id,
-      wallet_balance: newBalance,
-      message: `提现申请已提交，预计 T+1 工作日到账至 ${engineer.bank_name}（${engineer.bank_account.slice(-4).padStart(engineer.bank_account.length, '*')}）`
-    });
   } catch (error) {
     return errorResponse(error.message, 500);
   }
@@ -6906,6 +8391,10 @@ function toSafeNumber(value, fallback = 0) {
 function toSafeInteger(value, fallback = 0) {
   const num = parseInt(value, 10);
   return Number.isFinite(num) ? num : fallback;
+}
+
+function toPositiveQuantity(value) {
+  return typeof value === 'number' && Number.isInteger(value) && value > 0 ? value : null;
 }
 
 function cleanTextArray(value, maxItems = 12, maxItemLength = 80) {
@@ -7935,15 +9424,19 @@ async function handleAdminMaterialInventoryAdjustment(request, env) {
     if (!delta) return errorResponse('库存调整数量不能为 0', 400);
 
     const beforeQuantity = Number(material.stock_quantity || 0);
+    const beforeReserved = Number(material.reserved_quantity || 0);
     const afterQuantity = beforeQuantity + delta;
     if (afterQuantity < 0) return errorResponse('库存不能调整为负数', 400);
-
-    await env.DB.prepare(
-      "UPDATE materials SET stock_quantity = stock_quantity + ?, updated_at = datetime('now') WHERE id = ?"
-    ).bind(delta, materialId).run();
+    if (afterQuantity < beforeReserved) return errorResponse('库存调整不能占用已预留库存', 409);
 
     const adjustmentId = generateId();
-    await env.DB.prepare(`
+    const stockMutation = env.DB.prepare(`
+      UPDATE materials
+      SET stock_quantity = stock_quantity + ?, updated_at = datetime('now')
+      WHERE id = ? AND stock_quantity = ? AND reserved_quantity = ?
+        AND stock_quantity + ? >= reserved_quantity
+    `).bind(delta, materialId, beforeQuantity, beforeReserved, delta);
+    const adjustment = env.DB.prepare(`
       INSERT INTO material_inventory_adjustments (
         id, material_id, change_type, delta, before_quantity, after_quantity, reason, created_by
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
@@ -7956,16 +9449,25 @@ async function handleAdminMaterialInventoryAdjustment(request, env) {
       afterQuantity,
       reason || null,
       request._auth?.userId || 'admin'
-    ).run();
-
-    const updated = await env.DB.prepare('SELECT * FROM materials WHERE id = ?').bind(materialId).first();
-    await writeAuditLog(env, request, {
+    );
+    await runAuditedWorkflowBatch(env, request, [
+      ...guardedWorkflowMutation(env, stockMutation),
+      adjustment,
+    ], {
       targetType: 'material',
       targetId: materialId,
       action: 'material_inventory_adjusted',
-      beforeState: { stock_quantity: beforeQuantity },
-      afterState: { stock_quantity: afterQuantity, delta, change_type: changeType, reason },
+      beforeState: { stock_quantity: beforeQuantity, reserved_quantity: beforeReserved },
+      afterState: {
+        stock_quantity: afterQuantity,
+        reserved_quantity: beforeReserved,
+        delta,
+        change_type: changeType,
+        reason,
+      },
     });
+
+    const updated = await env.DB.prepare('SELECT * FROM materials WHERE id = ?').bind(materialId).first();
 
     return jsonResponse({
       success: true,
@@ -7973,7 +9475,1077 @@ async function handleAdminMaterialInventoryAdjustment(request, env) {
       material: normalizeMaterial(updated || { ...material, stock_quantity: afterQuantity }),
     });
   } catch (error) {
+    if (isWorkflowConcurrencyError(error)) return workflowErrorResponse(error);
     return errorResponse(error.message, 500);
+  }
+}
+
+const STAFF_ROLES = new Set(['admin', 'operations', 'warehouse', 'procurement']);
+const STAFF_MARKETS = new Set(['all', 'com', 'cn']);
+const REQUISITION_URGENCIES = new Set(['normal', 'urgent', 'critical']);
+const REQUISITION_TERMINAL_STATUSES = new Set(['rejected', 'cancelled', 'closed']);
+const REQUISITION_ITEM_CONCURRENCY_COLUMNS = [
+  'requested_quantity',
+  'stock_allocated_quantity',
+  'procurement_ordered_quantity',
+  'procurement_received_quantity',
+  'issued_quantity',
+  'stock_issued_quantity',
+  'returned_quantity',
+  'engineer_received_quantity',
+  'status',
+];
+
+function workflowMutationGuardStatement(env) {
+  return env.DB.prepare(`
+    SELECT CASE WHEN changes() = 1 THEN 1 ELSE json('material requisition concurrent update') END
+  `);
+}
+
+function guardedWorkflowMutation(env, statement) {
+  return [statement, workflowMutationGuardStatement(env)];
+}
+
+async function runAuditedWorkflowBatch(env, request, statements, auditData) {
+  if (typeof env.DB.batch !== 'function') throw new Error('Transactional D1 batch is required');
+  return env.DB.batch([...statements, buildAuditLogStatement(env, request, auditData)]);
+}
+
+function isWorkflowConcurrencyError(error) {
+  return /material requisition concurrent update|malformed json/i.test(String(error?.message || error));
+}
+
+function workflowErrorResponse(error, fallbackStatus = 500) {
+  if (isWorkflowConcurrencyError(error)) return errorResponse('数据已被更新，请刷新后重试', 409);
+  return errorResponse(error.message, fallbackStatus);
+}
+
+function conditionalItemUpdateStatements(env, item, next) {
+  const columns = Object.keys(next);
+  const statement = env.DB.prepare(`
+    UPDATE material_requisition_items
+    SET ${columns.map((column) => `${column} = ?`).join(', ')}, updated_at = datetime('now')
+    WHERE id = ? AND requisition_id = ?
+      ${REQUISITION_ITEM_CONCURRENCY_COLUMNS.map((column) => `AND ${column} = ?`).join('\n      ')}
+  `).bind(
+    ...columns.map((column) => next[column]),
+    item.id,
+    item.requisition_id,
+    ...REQUISITION_ITEM_CONCURRENCY_COLUMNS.map((column) => item[column]),
+  );
+  return guardedWorkflowMutation(env, statement);
+}
+
+function itemSnapshotGuardStatements(env, item) {
+  const statement = env.DB.prepare(`
+    UPDATE material_requisition_items
+    SET updated_at = updated_at
+    WHERE id = ? AND requisition_id = ?
+      ${REQUISITION_ITEM_CONCURRENCY_COLUMNS.map((column) => `AND ${column} = ?`).join('\n      ')}
+  `).bind(
+    item.id,
+    item.requisition_id,
+    ...REQUISITION_ITEM_CONCURRENCY_COLUMNS.map((column) => item[column]),
+  );
+  return guardedWorkflowMutation(env, statement);
+}
+
+function requisitionStatusGuardStatements(env, requisition) {
+  const statement = env.DB.prepare(`
+    UPDATE material_requisitions SET status = status WHERE id = ? AND status = ?
+  `).bind(requisition.id, requisition.status);
+  return guardedWorkflowMutation(env, statement);
+}
+
+function isBootstrapAdmin(auth) {
+  return auth?.userType === 'admin' && !auth.staffId && auth.userId === 'admin';
+}
+
+function requisitionRole(auth) {
+  if (auth?.userType === 'engineer') return 'engineer';
+  if (auth?.userType !== 'admin') return '';
+  return auth.staffRole || (isBootstrapAdmin(auth) ? 'admin' : '');
+}
+
+export function isOperationsReadRoute(path, method) {
+  if (method !== 'GET') return false;
+  return path === '/api/admin/workorders'
+    || path === '/api/admin/materials'
+    || path === '/api/notifications'
+    || path === '/api/notifications/unread-count'
+    || /^\/api\/workorders\/[^/]+$/.test(path)
+    || /^\/api\/workorders\/[^/]+\/messages$/.test(path)
+    || /^\/api\/workorders\/[^/]+\/field-media\/[^/]+$/.test(path)
+    || /^\/api\/workorders\/[^/]+\/receipt-evidence\/[^/]+$/.test(path);
+}
+
+function publicStaffAccount(staff) {
+  if (!staff) return staff;
+  const { password_hash, salt, ...safe } = staff;
+  return safe;
+}
+
+function generateTemporaryPassword() {
+  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
+  const bytes = new Uint8Array(12);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (byte) => alphabet[byte % alphabet.length]).join('');
+}
+
+async function handleAdminStaffList(request, env) {
+  if (!isBootstrapAdmin(request._auth)) return errorResponse('仅超级管理员可管理员工账号', 403);
+  const { results } = await env.DB.prepare(`
+    SELECT id, normalized_login, normalized_phone, role, is_active, display_name,
+           market_scope, must_change_password, created_by, created_at, updated_at
+    FROM admin_staff_accounts ORDER BY created_at DESC
+  `).all();
+  return jsonResponse({ staff: results || [] });
+}
+
+async function handleAdminStaffCreate(request, env) {
+  try {
+    if (!isBootstrapAdmin(request._auth)) return errorResponse('仅超级管理员可管理员工账号', 403);
+    const body = await request.json().catch(() => ({}));
+    const normalizedLogin = normalizeIdentityEmail(body.login);
+    const normalizedPhone = normalizeIdentityPhone(body.phone);
+    const role = cleanText(body.role, 30);
+    const displayName = cleanText(body.display_name, 100);
+    const marketScope = cleanText(body.market_scope, 10) || 'all';
+    if (!normalizedLogin || !displayName || !STAFF_ROLES.has(role) || !STAFF_MARKETS.has(marketScope)) {
+      return errorResponse('员工账号信息不完整或无效', 400);
+    }
+
+    const existing = normalizedPhone
+      ? await env.DB.prepare(`
+          SELECT * FROM admin_staff_accounts WHERE normalized_login = ? OR normalized_phone = ?
+        `).bind(normalizedLogin, normalizedPhone).first()
+      : await env.DB.prepare(`
+          SELECT * FROM admin_staff_accounts WHERE normalized_login = ?
+        `).bind(normalizedLogin).first();
+    if (existing) return errorResponse('员工登录名或手机号已存在', 409);
+
+    const id = generateId();
+    const temporaryPassword = generateTemporaryPassword();
+    const salt = generateSalt();
+    const passwordHash = await hashPasswordNew(temporaryPassword, salt);
+    const staff = {
+      id,
+      normalized_login: normalizedLogin,
+      normalized_phone: normalizedPhone || null,
+      role,
+      is_active: 1,
+      display_name: displayName,
+      market_scope: marketScope,
+      must_change_password: 1,
+      created_by: request._auth.userId,
+    };
+    const insert = env.DB.prepare(`
+      INSERT INTO admin_staff_accounts (
+        id, normalized_login, normalized_phone, password_hash, salt, role,
+        display_name, market_scope, created_by
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).bind(
+      id, normalizedLogin, normalizedPhone || null, passwordHash, salt, role,
+      displayName, marketScope, request._auth.userId,
+    );
+    await runAuditedWorkflowBatch(env, request, [insert], {
+      targetType: 'admin_staff_account', targetId: id, action: 'staff_created',
+      beforeState: null, afterState: publicStaffAccount(staff),
+    });
+    return jsonResponse({ staff: publicStaffAccount(staff), temporary_password: temporaryPassword }, 201);
+  } catch (error) {
+    if (/UNIQUE/i.test(String(error?.message || ''))) return errorResponse('员工登录名或手机号已存在', 409);
+    return errorResponse(error.message, 500);
+  }
+}
+
+async function handleAdminStaffDeactivate(request, env) {
+  try {
+    if (!isBootstrapAdmin(request._auth)) return errorResponse('仅超级管理员可管理员工账号', 403);
+    const staffId = new URL(request.url).pathname.split('/')[4];
+    const staff = await env.DB.prepare('SELECT * FROM admin_staff_accounts WHERE id = ?').bind(staffId).first();
+    if (!staff) return errorResponse('员工账号不存在', 404);
+    const updated = { ...staff, is_active: 0 };
+    const mutation = env.DB.prepare(`
+      UPDATE admin_staff_accounts SET is_active = 0, updated_at = datetime('now') WHERE id = ?
+    `).bind(staffId);
+    await runAuditedWorkflowBatch(env, request, guardedWorkflowMutation(env, mutation), {
+      targetType: 'admin_staff_account', targetId: staffId, action: 'staff_deactivated',
+      beforeState: publicStaffAccount(staff), afterState: publicStaffAccount(updated),
+    });
+    return jsonResponse({ staff: publicStaffAccount(updated) });
+  } catch (error) {
+    return workflowErrorResponse(error);
+  }
+}
+
+async function handleAdminStaffResetPassword(request, env) {
+  try {
+    if (!isBootstrapAdmin(request._auth)) return errorResponse('仅超级管理员可管理员工账号', 403);
+    const staffId = new URL(request.url).pathname.split('/')[4];
+    const staff = await env.DB.prepare('SELECT * FROM admin_staff_accounts WHERE id = ?').bind(staffId).first();
+    if (!staff) return errorResponse('员工账号不存在', 404);
+    const temporaryPassword = generateTemporaryPassword();
+    const salt = generateSalt();
+    const passwordHash = await hashPasswordNew(temporaryPassword, salt);
+    const mutation = env.DB.prepare(`
+      UPDATE admin_staff_accounts
+      SET password_hash = ?, salt = ?, must_change_password = 1, updated_at = datetime('now')
+      WHERE id = ?
+    `).bind(passwordHash, salt, staffId);
+    await runAuditedWorkflowBatch(env, request, guardedWorkflowMutation(env, mutation), {
+      targetType: 'admin_staff_account', targetId: staffId, action: 'staff_temporary_password_reset',
+      beforeState: { must_change_password: Boolean(staff.must_change_password) },
+      afterState: { must_change_password: true },
+    });
+    return jsonResponse({ success: true, temporary_password: temporaryPassword });
+  } catch (error) {
+    return workflowErrorResponse(error);
+  }
+}
+
+async function requireActiveStaff(env, auth) {
+  if (!auth?.staffId) return isBootstrapAdmin(auth) ? { role: 'admin' } : null;
+  const staff = await env.DB.prepare('SELECT * FROM admin_staff_accounts WHERE id = ?').bind(auth.staffId).first();
+  return staff?.is_active ? staff : null;
+}
+
+async function getRequisitionWithItems(env, requisitionId) {
+  const requisition = await env.DB.prepare('SELECT * FROM material_requisitions WHERE id = ?').bind(requisitionId).first();
+  if (!requisition) return null;
+  const itemsResult = await env.DB.prepare(`
+    SELECT * FROM material_requisition_items WHERE requisition_id = ? ORDER BY created_at ASC
+  `).bind(requisitionId).all();
+  return {
+    ...requisition,
+    items: itemsResult.results || [],
+  };
+}
+
+async function getAdminRequisitionDetail(env, requisitionId) {
+  const requisition = await getRequisitionWithItems(env, requisitionId);
+  if (!requisition) return null;
+  const historyResult = await env.DB.prepare(`
+    SELECT actor_type, action, json_extract(after_state, '$.status') AS status, created_at
+    FROM audit_logs
+    WHERE (target_type = 'material_requisition' AND target_id = ?)
+       OR (target_type = 'material_requisition_item' AND target_id IN (
+         SELECT id FROM material_requisition_items WHERE requisition_id = ?
+       ))
+    ORDER BY created_at ASC, id ASC
+  `).bind(requisitionId, requisitionId).all();
+  return { ...requisition, history: historyResult.results || [] };
+}
+
+async function canAccessRequisition(env, auth, requisition) {
+  if (auth?.userType === 'admin') return true;
+  if (auth?.userType !== 'engineer') return false;
+  const workOrder = await env.DB.prepare(`
+    SELECT id, customer_id, engineer_id, assigned_regional_lead_id, status FROM work_orders WHERE id = ?
+  `).bind(requisition.work_order_id).first();
+  return workOrder?.engineer_id === auth.userId;
+}
+
+function generateRequisitionNumber(id) {
+  const date = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+  return `MR-${date}-${String(id).replace(/[^a-z0-9]/gi, '').toUpperCase()}`;
+}
+
+async function normalizeRequisitionLine(env, input) {
+  const requestedQuantity = toPositiveQuantity(input?.requested_quantity);
+  if (!requestedQuantity) throw new Error('Requested quantity must be a positive integer');
+  const materialId = cleanText(input.material_id, 100) || null;
+  const material = materialId
+    ? await env.DB.prepare('SELECT * FROM materials WHERE id = ?').bind(materialId).first()
+    : null;
+  if (materialId && !material) throw new Error('Material not found');
+  const name = cleanText(input.name || material?.name, 200);
+  if (!name) throw new Error('Material name is required');
+  return {
+    materialId,
+    materialCode: cleanText(input.material_code || material?.material_code, 100) || null,
+    name,
+    nameEn: cleanText(input.name_en || material?.name_en, 200) || null,
+    spec: cleanText(input.spec || material?.spec, 300) || null,
+    brand: cleanText(input.brand || material?.brand, 100) || null,
+    unit: cleanText(input.unit || material?.unit, 30) || 'pcs',
+    requestedQuantity,
+    notes: cleanText(input.notes, 600) || null,
+  };
+}
+
+function canonicalCreateDraftLine(input) {
+  const requestedQuantity = toPositiveQuantity(input?.requested_quantity);
+  if (!requestedQuantity) throw new Error('Requested quantity must be a positive integer');
+  return {
+    material_id: cleanText(input?.material_id, 100) || null,
+    material_code: cleanText(input?.material_code, 100) || null,
+    name: cleanText(input?.name, 200) || null,
+    name_en: cleanText(input?.name_en, 200) || null,
+    spec: cleanText(input?.spec, 300) || null,
+    brand: cleanText(input?.brand, 100) || null,
+    unit: cleanText(input?.unit, 30) || null,
+    requested_quantity: requestedQuantity,
+    notes: cleanText(input?.notes, 600) || null,
+  };
+}
+
+async function handleCreateMaterialRequisition(request, env) {
+  let operationKey = '';
+  let requestFingerprint = '';
+  try {
+    const auth = request._auth;
+    const role = requisitionRole(auth);
+    if (!canManageMaterialRequisition(role, 'create_draft') && auth.userType !== 'admin') {
+      return errorResponse('无权创建领料申请', 403);
+    }
+    operationKey = workflowOperationKey(request);
+    if (!operationKey) return errorResponse('Idempotency-Key header is required', 400);
+    const body = await request.json().catch(() => ({}));
+    const workOrderId = cleanText(body.work_order_id, 100);
+    const workOrder = await env.DB.prepare(`
+      SELECT id, customer_id, engineer_id, assigned_regional_lead_id, status FROM work_orders WHERE id = ?
+    `).bind(workOrderId).first();
+    if (!workOrder) return errorResponse('工单不存在', 404);
+    if (auth.userType === 'engineer' && workOrder.engineer_id !== auth.userId) {
+      return errorResponse('仅指派工程师可创建领料申请', 403);
+    }
+    if (!Array.isArray(body.items) || body.items.length === 0) return errorResponse('领料申请至少需要一条物料', 400);
+    const urgency = cleanText(body.urgency, 20) || 'normal';
+    if (!REQUISITION_URGENCIES.has(urgency)) return errorResponse('无效紧急程度', 400);
+    const market = getRequestMarket(request);
+    const requiredDate = cleanText(body.required_date, 30) || null;
+    const purpose = cleanText(body.purpose, 600) || null;
+    const fingerprintLines = body.items.map(canonicalCreateDraftLine);
+    requestFingerprint = await createDraftRequestFingerprint({
+      market,
+      workOrderId,
+      requestedByType: auth.userType,
+      requestedById: auth.userId,
+      urgency,
+      requiredDate,
+      purpose,
+      lines: fingerprintLines,
+    });
+    const replay = await idempotentCreateDraftResponse(env, operationKey, requestFingerprint);
+    if (replay) return replay;
+    const lines = [];
+    for (const item of body.items) lines.push(await normalizeRequisitionLine(env, item));
+    let id;
+    let requisitionNo;
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      id = generateId();
+      requisitionNo = generateRequisitionNumber(id);
+      const header = env.DB.prepare(`
+        INSERT INTO material_requisitions (
+          id, requisition_no, market, work_order_id, requested_by_type, requested_by_id,
+          status, urgency, required_date, purpose
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).bind(
+        id, requisitionNo, market, workOrderId, auth.userType, auth.userId, 'draft', urgency,
+        requiredDate, purpose,
+      );
+      const itemStatements = lines.map((line) => env.DB.prepare(`
+        INSERT INTO material_requisition_items (
+          id, requisition_id, material_id, material_code, name, name_en, spec, brand,
+          unit, requested_quantity, notes
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).bind(
+        generateId(), id, line.materialId, line.materialCode, line.name, line.nameEn, line.spec,
+        line.brand, line.unit, line.requestedQuantity, line.notes,
+      ));
+      const auditAfterState = {
+        id,
+        requisition_no: requisitionNo,
+        market,
+        work_order_id: workOrderId,
+        requested_by_type: auth.userType,
+        requested_by_id: auth.userId,
+        status: 'draft',
+        urgency,
+        required_date: requiredDate,
+        purpose,
+        items: lines,
+      };
+      try {
+        await runAuditedWorkflowBatch(env, request, [
+          header,
+          ...itemStatements,
+          workflowOperationStatement(env, operationKey, 'create_draft', id, null, requestFingerprint),
+        ], {
+          targetType: 'material_requisition', targetId: id, action: 'material_requisition_created',
+          beforeState: null, afterState: auditAfterState,
+        });
+        break;
+      } catch (error) {
+        if (/UNIQUE constraint failed: material_requisition_operations\.operation_key/i.test(String(error?.message || ''))) {
+          const operationReplay = await idempotentCreateDraftResponse(env, operationKey, requestFingerprint);
+          if (operationReplay) return operationReplay;
+        }
+        if (!/UNIQUE constraint failed: material_requisitions\.requisition_no/i.test(String(error?.message || '')) || attempt === 2) {
+          throw error;
+        }
+      }
+    }
+    const requisition = await getRequisitionWithItems(env, id);
+    return jsonResponse({ requisition }, 201);
+  } catch (error) {
+    return errorResponse(error.message, /required|positive|not found/i.test(error.message) ? 400 : 500);
+  }
+}
+
+async function handleListMaterialRequisitions(request, env) {
+  const auth = request._auth;
+  const workOrderId = cleanText(new URL(request.url).searchParams.get('work_order_id'), 100);
+  const market = getRequestMarket(request);
+  let statement;
+  if (auth.userType === 'engineer') {
+    statement = env.DB.prepare(`
+      SELECT mr.* FROM material_requisitions mr
+      JOIN work_orders wo ON wo.id = mr.work_order_id
+      WHERE wo.engineer_id = ? AND mr.market = ?
+        ${workOrderId ? 'AND mr.work_order_id = ?' : ''}
+      ORDER BY mr.created_at DESC
+    `).bind(auth.userId, market, ...(workOrderId ? [workOrderId] : []));
+  } else if (auth.userType === 'admin') {
+    statement = env.DB.prepare(`
+      SELECT * FROM material_requisitions
+      WHERE market = ? ${workOrderId ? 'AND work_order_id = ?' : ''}
+      ORDER BY created_at DESC
+    `).bind(market, ...(workOrderId ? [workOrderId] : []));
+  } else {
+    return errorResponse('无权查看领料申请', 403);
+  }
+  const { results } = await statement.all();
+  return jsonResponse({ requisitions: results || [] });
+}
+
+async function handleGetMaterialRequisition(request, env) {
+  const requisitionId = new URL(request.url).pathname.split('/')[3];
+  const requisition = request._auth.userType === 'admin'
+    ? await getAdminRequisitionDetail(env, requisitionId)
+    : await getRequisitionWithItems(env, requisitionId);
+  if (!requisition) return errorResponse('领料申请不存在', 404);
+  if (!await canAccessRequisition(env, request._auth, requisition)) return errorResponse('无权查看该领料申请', 403);
+  return jsonResponse({ requisition });
+}
+
+async function handleSubmitMaterialRequisition(request, env) {
+  try {
+    const requisitionId = new URL(request.url).pathname.split('/')[3];
+    const requisition = await getRequisitionWithItems(env, requisitionId);
+    if (!requisition) return errorResponse('领料申请不存在', 404);
+    const workOrder = await env.DB.prepare(`
+      SELECT id, customer_id, engineer_id, assigned_regional_lead_id, status FROM work_orders WHERE id = ?
+    `).bind(requisition.work_order_id).first();
+    if (request._auth.userType !== 'engineer' || workOrder?.engineer_id !== request._auth.userId) {
+      return errorResponse('仅创建申请的工程师可提交', 403);
+    }
+    if (requisition.status !== 'draft') return errorResponse('仅草稿可提交', 409);
+    if (!requisition.items.length || requisition.items.some((item) => Number(item.requested_quantity) <= 0)) {
+      return errorResponse('提交的领料申请必须包含正数数量物料', 400);
+    }
+    const mutation = env.DB.prepare(`
+      UPDATE material_requisitions
+      SET status = ?, submitted_at = datetime('now'), updated_at = datetime('now')
+      WHERE id = ? AND status = ?
+    `).bind('submitted', requisitionId, requisition.status);
+    await runAuditedWorkflowBatch(env, request, guardedWorkflowMutation(env, mutation), {
+      targetType: 'material_requisition', targetId: requisitionId, action: 'material_requisition_submitted',
+      beforeState: { status: requisition.status }, afterState: { status: 'submitted' },
+    });
+    return jsonResponse({ requisition: await getRequisitionWithItems(env, requisitionId) });
+  } catch (error) {
+    return workflowErrorResponse(error);
+  }
+}
+
+async function handleRequisitionDecision(request, env, action) {
+  const role = requisitionRole(request._auth);
+  if (!canManageMaterialRequisition(role, action)) return errorResponse('当前员工角色无权执行该操作', 403);
+  const requisitionId = new URL(request.url).pathname.split('/')[3];
+  const requisition = await getRequisitionWithItems(env, requisitionId);
+  if (!requisition) return errorResponse('领料申请不存在', 404);
+  const body = await request.json().catch(() => ({}));
+  let nextStatus;
+  if (action === 'approve') {
+    if (requisition.status !== 'submitted') return errorResponse('仅已提交申请可审批', 409);
+    nextStatus = 'approved';
+  } else if (action === 'reject') {
+    if (requisition.status !== 'submitted') return errorResponse('仅已提交申请可驳回', 409);
+    nextStatus = 'rejected';
+  } else {
+    if (REQUISITION_TERMINAL_STATUSES.has(requisition.status)) return errorResponse('当前申请不可取消', 409);
+    if (requisition.items.some((item) => Number(item.issued_quantity || 0) > 0
+      || Number(item.engineer_received_quantity || 0) > 0)) {
+      return errorResponse('已发料或签收的申请不能取消，请先完成允许的退库处理', 409);
+    }
+    nextStatus = 'cancelled';
+  }
+  const reason = cleanText(body.reason, 600) || null;
+  let mutation;
+  const reservationStatements = [];
+  if (action === 'approve') {
+    mutation = env.DB.prepare(`
+      UPDATE material_requisitions
+      SET status = ?, approved_by = ?, approved_at = datetime('now'), updated_at = datetime('now')
+      WHERE id = ? AND status = ?
+    `).bind(nextStatus, request._auth.staffId || request._auth.userId, requisitionId, requisition.status);
+  } else if (action === 'reject') {
+    mutation = env.DB.prepare(`
+      UPDATE material_requisitions
+      SET status = ?, rejection_reason = ?, updated_at = datetime('now')
+      WHERE id = ? AND status = ?
+    `).bind(nextStatus, reason, requisitionId, requisition.status);
+  } else {
+    const reservationsByMaterial = new Map();
+    for (const item of requisition.items) {
+      reservationStatements.push(...itemSnapshotGuardStatements(env, item));
+      if (!item.material_id) continue;
+      const outstandingReservation = outstandingItemReservation(item);
+      if (outstandingReservation > 0) {
+        reservationsByMaterial.set(
+          item.material_id,
+          (reservationsByMaterial.get(item.material_id) || 0) + outstandingReservation,
+        );
+      }
+    }
+    for (const [materialId, quantity] of reservationsByMaterial) {
+      reservationStatements.push(...guardedWorkflowMutation(env, env.DB.prepare(`
+        UPDATE materials
+        SET reserved_quantity = reserved_quantity - ?, updated_at = datetime('now')
+        WHERE id = ? AND reserved_quantity >= ?
+      `).bind(quantity, materialId, quantity)));
+    }
+    mutation = env.DB.prepare(`
+      UPDATE material_requisitions
+      SET status = ?, cancellation_reason = ?, cancelled_at = datetime('now'), updated_at = datetime('now')
+      WHERE id = ? AND status = ?
+        AND NOT EXISTS (
+          SELECT 1 FROM material_requisition_items
+          WHERE requisition_id = material_requisitions.id
+            AND (issued_quantity > 0 OR engineer_received_quantity > 0)
+        )
+    `).bind(nextStatus, reason, requisitionId, requisition.status);
+  }
+  try {
+    await runAuditedWorkflowBatch(env, request, [
+      ...reservationStatements,
+      ...guardedWorkflowMutation(env, mutation),
+    ], {
+      targetType: 'material_requisition', targetId: requisitionId,
+      action: `material_requisition_${{ approve: 'approved', reject: 'rejected', cancel: 'cancelled' }[action]}`,
+      beforeState: { status: requisition.status },
+      afterState: { status: nextStatus, reason },
+    });
+    return jsonResponse({ requisition: await getRequisitionWithItems(env, requisitionId) });
+  } catch (error) {
+    return workflowErrorResponse(error);
+  }
+}
+
+function fulfillmentValues(item, overrides = {}) {
+  return {
+    requested: Number(item.requested_quantity),
+    stockAllocated: Number(overrides.stock_allocated_quantity ?? item.stock_allocated_quantity ?? 0),
+    procurementOrdered: Number(overrides.procurement_ordered_quantity ?? item.procurement_ordered_quantity ?? 0),
+    procurementReceived: Number(overrides.procurement_received_quantity ?? item.procurement_received_quantity ?? 0),
+    issued: Number(overrides.issued_quantity ?? item.issued_quantity ?? 0),
+    engineerReceived: Number(overrides.engineer_received_quantity ?? item.engineer_received_quantity ?? 0),
+  };
+}
+
+function deriveApiItemStatus(item, overrides = {}) {
+  const values = fulfillmentValues(item, overrides);
+  return deriveItemStatus(values);
+}
+
+function fulfillmentSource(stockAllocated, procurementOrdered) {
+  if (stockAllocated > 0 && procurementOrdered > 0) return 'mixed';
+  if (procurementOrdered > 0) return 'procurement';
+  if (stockAllocated > 0) return 'stock';
+  return 'unassigned';
+}
+
+function outstandingItemReservation(item, overrides = {}) {
+  return Math.max(
+    0,
+    Number(overrides.stock_allocated_quantity ?? item.stock_allocated_quantity ?? 0)
+      + Number(overrides.procurement_received_quantity ?? item.procurement_received_quantity ?? 0)
+      - Number(overrides.issued_quantity ?? item.issued_quantity ?? 0)
+      - Number(overrides.returned_quantity ?? item.returned_quantity ?? 0),
+  );
+}
+
+async function buildInventoryMovementStatements(env, request, item, {
+  stockDelta,
+  reservedDelta = 0,
+  requiredUnreserved = 0,
+  requiredReserved = 0,
+  changeType,
+  action,
+}) {
+  if (!item.material_id) return [];
+  const material = await env.DB.prepare('SELECT * FROM materials WHERE id = ?').bind(item.material_id).first();
+  if (!material) throw new Error('Material not found');
+  const beforeQuantity = Number(material.stock_quantity || 0);
+  const beforeReserved = Number(material.reserved_quantity || 0);
+  const afterQuantity = beforeQuantity + stockDelta;
+  const afterReserved = beforeReserved + reservedDelta;
+  if (afterQuantity < 0) throw new Error('Insufficient material stock');
+  if (afterReserved < 0) throw new Error('Insufficient material reservation');
+  const stockMutation = env.DB.prepare(`
+    UPDATE materials
+    SET stock_quantity = stock_quantity + ?, reserved_quantity = reserved_quantity + ?,
+        updated_at = datetime('now')
+    WHERE id = ? AND stock_quantity = ? AND reserved_quantity = ?
+      AND stock_quantity + ? >= 0 AND reserved_quantity + ? >= 0
+      AND stock_quantity - reserved_quantity >= ? AND reserved_quantity >= ?
+  `).bind(
+    stockDelta, reservedDelta, item.material_id, beforeQuantity, beforeReserved,
+    stockDelta, reservedDelta, requiredUnreserved, requiredReserved,
+  );
+  return [
+    ...guardedWorkflowMutation(env, stockMutation),
+    env.DB.prepare(`
+      INSERT INTO material_inventory_adjustments (
+        id, material_id, change_type, delta, before_quantity, after_quantity, reason, created_by
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).bind(
+      generateId(), item.material_id, changeType, stockDelta, beforeQuantity, afterQuantity,
+      `${action}:${item.requisition_id}:${item.id}`, request._auth.staffId || request._auth.userId,
+    ),
+  ];
+}
+
+function requisitionHeaderMutationStatements(env, requisition, action, actorId) {
+  const assignments = [`status = CASE
+    WHEN NOT EXISTS (
+      SELECT 1 FROM material_requisition_items
+      WHERE requisition_id = material_requisitions.id AND status != 'cancelled'
+    ) THEN status
+    WHEN NOT EXISTS (
+      SELECT 1 FROM material_requisition_items
+      WHERE requisition_id = material_requisitions.id AND status != 'cancelled' AND status != 'received'
+    ) THEN 'received'
+    WHEN NOT EXISTS (
+      SELECT 1 FROM material_requisition_items
+      WHERE requisition_id = material_requisitions.id AND status != 'cancelled' AND status NOT IN ('received', 'issued')
+    ) THEN 'issued'
+    WHEN NOT EXISTS (
+      SELECT 1 FROM material_requisition_items
+      WHERE requisition_id = material_requisitions.id AND status != 'cancelled' AND status NOT IN ('received', 'issued', 'ready')
+    ) THEN 'ready'
+    WHEN EXISTS (
+      SELECT 1 FROM material_requisition_items
+      WHERE requisition_id = material_requisitions.id AND status IN ('stock_allocated', 'purchasing', 'partially_ready', 'ready', 'issued', 'received')
+    ) THEN 'partially_fulfilled'
+    ELSE 'processing'
+  END`, 'updated_at = datetime(\'now\')'];
+  const values = [];
+  if (['allocate_stock', 'issue', 'return'].includes(action)
+    || (action === 'receive_purchase' && actorId.role === 'warehouse')) {
+    assignments.push('assigned_warehouse_staff_id = ?');
+    values.push(actorId.id);
+    if (action === 'issue') assignments.push("issued_at = COALESCE(issued_at, datetime('now'))");
+  }
+  if (action === 'record_purchase' || (action === 'receive_purchase' && actorId.role !== 'warehouse')) {
+    assignments.push('assigned_procurement_staff_id = ?');
+    values.push(actorId.id);
+  }
+  assignments.push(`received_at = CASE WHEN EXISTS (
+    SELECT 1 FROM material_requisition_items
+    WHERE requisition_id = material_requisitions.id AND status != 'cancelled'
+  ) AND NOT EXISTS (
+    SELECT 1 FROM material_requisition_items
+    WHERE requisition_id = material_requisitions.id AND status != 'cancelled' AND status != 'received'
+  ) THEN COALESCE(received_at, datetime('now')) ELSE received_at END`);
+  const mutation = env.DB.prepare(`
+    UPDATE material_requisitions
+    SET ${assignments.join(', ')}
+    WHERE id = ? AND status NOT IN ('rejected', 'cancelled', 'closed')
+  `).bind(...values, requisition.id);
+  return guardedWorkflowMutation(env, mutation);
+}
+
+function workflowOperationKey(request) {
+  return cleanText(request.headers.get('Idempotency-Key'), 200);
+}
+
+async function workflowRequestFingerprint(action, requisitionId, itemId, quantity, body = {}) {
+  const canonicalPayload = JSON.stringify({
+    action,
+    requisition_id: requisitionId,
+    item_id: itemId,
+    quantity,
+    supplier_reference: action === 'record_purchase' ? cleanText(body.supplier_reference, 200) || null : null,
+    expected_arrival: action === 'record_purchase' ? cleanText(body.expected_arrival, 30) || null : null,
+  });
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(canonicalPayload));
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+
+async function createDraftRequestFingerprint({
+  market,
+  workOrderId,
+  requestedByType,
+  requestedById,
+  urgency,
+  requiredDate,
+  purpose,
+  lines,
+}) {
+  return sha256Hex(JSON.stringify({
+    action: 'create_draft',
+    market,
+    work_order_id: workOrderId,
+    requested_by_type: requestedByType,
+    requested_by_id: requestedById,
+    urgency,
+    required_date: requiredDate,
+    purpose,
+    items: lines,
+  }));
+}
+
+async function existingWorkflowOperation(env, operationKey) {
+  if (!operationKey) return null;
+  return env.DB.prepare(`
+    SELECT * FROM material_requisition_operations WHERE operation_key = ?
+  `).bind(operationKey).first();
+}
+
+function operationMatches(operation, action, requisitionId, itemId, requestFingerprint) {
+  return operation?.action === action
+    && operation?.requisition_id === requisitionId
+    && operation?.item_id === itemId
+    && operation?.request_fingerprint === requestFingerprint;
+}
+
+async function idempotentCreateDraftResponse(env, operationKey, requestFingerprint) {
+  const operation = await existingWorkflowOperation(env, operationKey);
+  if (!operation) return null;
+  if (operation.action !== 'create_draft'
+    || operation.item_id !== null
+    || operation.request_fingerprint !== requestFingerprint) {
+    return errorResponse('Idempotency key is already used for a different request', 409);
+  }
+  return jsonResponse({ requisition: await getRequisitionWithItems(env, operation.requisition_id) });
+}
+
+function workflowOperationStatement(env, operationKey, action, requisitionId, itemId, requestFingerprint) {
+  return env.DB.prepare(`
+    INSERT INTO material_requisition_operations (
+      operation_key, action, requisition_id, item_id, request_fingerprint
+    ) VALUES (?, ?, ?, ?, ?)
+  `).bind(operationKey, action, requisitionId, itemId, requestFingerprint);
+}
+
+async function idempotentWorkflowResponse(env, operationKey, action, requisitionId, itemId, requestFingerprint) {
+  const operation = await existingWorkflowOperation(env, operationKey);
+  if (!operation) return null;
+  if (!operationMatches(operation, action, requisitionId, itemId, requestFingerprint)) {
+    return errorResponse('Idempotency key is already used for a different request', 409);
+  }
+  return jsonResponse({ requisition: await getRequisitionWithItems(env, requisitionId) });
+}
+
+async function handleRequisitionLineAction(request, env, action) {
+  let body = {};
+  let itemId = '';
+  let operationKey = '';
+  let requestFingerprint = '';
+  let requisitionId = '';
+  try {
+    const role = requisitionRole(request._auth);
+    if (!canManageMaterialRequisition(role, action)) return errorResponse('当前员工角色无权执行该操作', 403);
+    requisitionId = new URL(request.url).pathname.split('/')[3];
+    const requisition = await getRequisitionWithItems(env, requisitionId);
+    if (!requisition) return errorResponse('领料申请不存在', 404);
+    body = await request.json().catch(() => ({}));
+    itemId = cleanText(body.item_id, 100);
+    const quantity = toPositiveQuantity(body.quantity);
+    if (!itemId || !quantity) return errorResponse('物料明细和正数数量为必填项', 400);
+    operationKey = workflowOperationKey(request);
+    if (!operationKey) return errorResponse('Idempotency-Key header is required', 400);
+    requestFingerprint = await workflowRequestFingerprint(action, requisitionId, itemId, quantity, body);
+    const replay = await idempotentWorkflowResponse(
+      env, operationKey, action, requisitionId, itemId, requestFingerprint,
+    );
+    if (replay) return replay;
+    if (!['approved', 'processing', 'partially_fulfilled', 'ready', 'issued'].includes(requisition.status)) {
+      return errorResponse('当前申请状态不可执行履约操作', 409);
+    }
+    const item = await env.DB.prepare(`
+      SELECT * FROM material_requisition_items WHERE id = ? AND requisition_id = ?
+    `).bind(itemId, requisitionId).first();
+    if (!item || item.status === 'cancelled') return errorResponse('领料明细不存在或已取消', 404);
+    if (action === 'allocate_stock' && !item.material_id) {
+      return errorResponse('自由录入物料不能分配台账库存，请走采购流程', 400);
+    }
+    const next = {};
+    if (action === 'allocate_stock') {
+      next.stock_allocated_quantity = Number(item.stock_allocated_quantity || 0) + quantity;
+    } else if (action === 'record_purchase') {
+      next.procurement_ordered_quantity = Number(item.procurement_ordered_quantity || 0) + quantity;
+      next.supplier_reference = cleanText(body.supplier_reference, 200) || item.supplier_reference || null;
+      next.expected_arrival = cleanText(body.expected_arrival, 30) || item.expected_arrival || null;
+    } else if (action === 'receive_purchase') {
+      next.procurement_received_quantity = Number(item.procurement_received_quantity || 0) + quantity;
+    } else if (action === 'issue') {
+      next.issued_quantity = Number(item.issued_quantity || 0) + quantity;
+      if (item.material_id) {
+        const remainingAllocatedStock = Math.max(
+          0,
+          Number(item.stock_allocated_quantity || 0)
+            - Number(item.stock_issued_quantity || 0),
+        );
+        next.stock_issued_quantity = Number(item.stock_issued_quantity || 0)
+          + Math.min(quantity, remainingAllocatedStock);
+      }
+    } else if (action === 'return') {
+      if (quantity > Number(item.issued_quantity || 0) - Number(item.engineer_received_quantity || 0)) {
+        return errorResponse('退库数量不能超过未签收发料数量', 400);
+      }
+      next.issued_quantity = Number(item.issued_quantity || 0) - quantity;
+      next.returned_quantity = Number(item.returned_quantity || 0) + quantity;
+    }
+
+    validateFulfillmentQuantities(fulfillmentValues(item, next));
+    next.fulfillment_source = fulfillmentSource(
+      Number(next.stock_allocated_quantity ?? item.stock_allocated_quantity ?? 0),
+      Number(next.procurement_ordered_quantity ?? item.procurement_ordered_quantity ?? 0),
+    );
+    next.status = deriveApiItemStatus(item, next);
+
+    let inventoryStatements = [];
+    if (action === 'allocate_stock') {
+      const allocationGuard = env.DB.prepare(`
+        UPDATE materials
+        SET reserved_quantity = reserved_quantity + ?, updated_at = datetime('now')
+        WHERE id = ? AND stock_quantity - reserved_quantity >= ?
+      `).bind(quantity, item.material_id, quantity);
+      inventoryStatements = guardedWorkflowMutation(env, allocationGuard);
+    } else if (action === 'receive_purchase') {
+      inventoryStatements = await buildInventoryMovementStatements(env, request, item, {
+        stockDelta: quantity, reservedDelta: quantity, changeType: 'procurement_receipt', action,
+      });
+    } else if (action === 'issue') {
+      const reservedIssueQuantity = Math.min(quantity, outstandingItemReservation(item));
+      inventoryStatements = await buildInventoryMovementStatements(env, request, item, {
+        stockDelta: -quantity,
+        reservedDelta: -reservedIssueQuantity,
+        requiredUnreserved: quantity - reservedIssueQuantity,
+        requiredReserved: reservedIssueQuantity,
+        changeType: 'requisition_issue',
+        action,
+      });
+    } else if (action === 'return') {
+      inventoryStatements = await buildInventoryMovementStatements(env, request, item, {
+        stockDelta: quantity, changeType: 'requisition_return', action,
+      });
+    }
+    const headerStatements = requisitionHeaderMutationStatements(env, requisition, action, {
+      id: request._auth.staffId || request._auth.userId,
+      role,
+    });
+    await runAuditedWorkflowBatch(env, request, [
+      ...requisitionStatusGuardStatements(env, requisition),
+      ...inventoryStatements,
+      ...conditionalItemUpdateStatements(env, item, next),
+      ...headerStatements,
+      workflowOperationStatement(env, operationKey, action, requisitionId, itemId, requestFingerprint),
+    ], {
+      targetType: 'material_requisition_item', targetId: itemId,
+      action: `material_requisition_${action}`,
+      beforeState: item, afterState: { ...item, ...next },
+    });
+    return jsonResponse({ requisition: await getRequisitionWithItems(env, requisitionId) });
+  } catch (error) {
+    if (/UNIQUE constraint failed: material_requisition_operations\.operation_key/i.test(String(error?.message || ''))) {
+      const replay = await idempotentWorkflowResponse(
+        env, operationKey, action, requisitionId, itemId, requestFingerprint,
+      );
+      if (replay) return replay;
+    }
+    if (isWorkflowConcurrencyError(error)) return workflowErrorResponse(error);
+    return errorResponse(error.message, /stock|quantity|requested|ordered|available|issued|aggregate/i.test(error.message) ? 400 : 500);
+  }
+}
+
+async function handleEngineerRequisitionReceipt(request, env) {
+  let operationKey = '';
+  let requestFingerprint = '';
+  let requisitionId = '';
+  let itemId = '';
+  try {
+    requisitionId = new URL(request.url).pathname.split('/')[3];
+    const requisition = await getRequisitionWithItems(env, requisitionId);
+    if (!requisition) return errorResponse('领料申请不存在', 404);
+    const workOrder = await env.DB.prepare(`
+      SELECT id, customer_id, engineer_id, assigned_regional_lead_id, status FROM work_orders WHERE id = ?
+    `).bind(requisition.work_order_id).first();
+    if (request._auth.userType !== 'engineer' || workOrder?.engineer_id !== request._auth.userId) {
+      return errorResponse('仅创建申请的工程师可确认签收', 403);
+    }
+    const body = await request.json().catch(() => ({}));
+    operationKey = workflowOperationKey(request);
+    if (!operationKey) return errorResponse('Idempotency-Key header is required', 400);
+    itemId = cleanText(body.item_id, 100);
+    const quantity = toPositiveQuantity(body.quantity);
+    if (!itemId || !quantity) return errorResponse('物料明细和正数数量为必填项', 400);
+    requestFingerprint = await workflowRequestFingerprint(
+      'engineer_receipt', requisitionId, itemId, quantity, body,
+    );
+    const replay = await idempotentWorkflowResponse(
+      env, operationKey, 'engineer_receipt', requisitionId, itemId, requestFingerprint,
+    );
+    if (replay) return replay;
+    if (REQUISITION_TERMINAL_STATUSES.has(requisition.status)) {
+      return errorResponse('当前申请状态不可确认签收', 409);
+    }
+    const item = await env.DB.prepare(`
+      SELECT * FROM material_requisition_items WHERE id = ? AND requisition_id = ?
+    `).bind(itemId, requisitionId).first();
+    if (!item) return errorResponse('领料明细不存在', 404);
+    const engineerReceived = Number(item.engineer_received_quantity || 0) + quantity;
+    const issuedAvailable = Number(item.issued_quantity || 0);
+    if (engineerReceived > issuedAvailable) return errorResponse('签收数量不能超过净发料数量', 400);
+    const next = {
+      engineer_received_quantity: engineerReceived,
+      status: deriveApiItemStatus(item, { engineer_received_quantity: engineerReceived }),
+    };
+    await runAuditedWorkflowBatch(env, request, [
+      ...requisitionStatusGuardStatements(env, requisition),
+      ...conditionalItemUpdateStatements(env, item, next),
+      ...requisitionHeaderMutationStatements(env, requisition, 'engineer_receipt', {
+        id: request._auth.userId,
+        role: 'engineer',
+      }),
+      workflowOperationStatement(
+        env, operationKey, 'engineer_receipt', requisitionId, item.id, requestFingerprint,
+      ),
+    ], {
+      targetType: 'material_requisition_item', targetId: item.id,
+      action: 'material_requisition_engineer_receipt', beforeState: item, afterState: { ...item, ...next },
+    });
+    return jsonResponse({ requisition: await getRequisitionWithItems(env, requisitionId) });
+  } catch (error) {
+    if (/UNIQUE constraint failed: material_requisition_operations\.operation_key/i.test(String(error?.message || ''))) {
+      const replay = await idempotentWorkflowResponse(
+        env, operationKey, 'engineer_receipt', requisitionId, itemId, requestFingerprint,
+      );
+      if (replay) return replay;
+    }
+    return workflowErrorResponse(error);
+  }
+}
+
+async function handleUpdateRequisitionProcurement(request, env) {
+  const role = requisitionRole(request._auth);
+  if (!canManageMaterialRequisition(role, 'record_purchase')) {
+    return errorResponse('当前员工角色无权更新采购信息', 403);
+  }
+  const requisitionId = new URL(request.url).pathname.split('/')[3];
+  const requisition = await getRequisitionWithItems(env, requisitionId);
+  if (!requisition) return errorResponse('领料申请不存在', 404);
+  if (!['approved', 'processing', 'partially_fulfilled', 'ready'].includes(requisition.status)) {
+    return errorResponse('当前申请状态不可更新采购信息', 409);
+  }
+  const body = await request.json().catch(() => ({}));
+  const item = await env.DB.prepare(`
+    SELECT * FROM material_requisition_items WHERE id = ? AND requisition_id = ?
+  `).bind(cleanText(body.item_id, 100), requisitionId).first();
+  if (!item) return errorResponse('领料明细不存在', 404);
+  const supplierReference = cleanText(body.supplier_reference, 200) || null;
+  const expectedArrival = cleanText(body.expected_arrival, 30) || null;
+  try {
+    const next = { supplier_reference: supplierReference, expected_arrival: expectedArrival };
+    await runAuditedWorkflowBatch(env, request, [
+      ...conditionalItemUpdateStatements(env, item, next),
+      ...requisitionStatusGuardStatements(env, requisition),
+    ], {
+      targetType: 'material_requisition_item', targetId: item.id,
+      action: 'material_requisition_procurement_updated', beforeState: item,
+      afterState: { ...item, ...next },
+    });
+    return jsonResponse({ requisition: await getRequisitionWithItems(env, requisitionId) });
+  } catch (error) {
+    return workflowErrorResponse(error);
+  }
+}
+
+async function handleCloseMaterialRequisition(request, env) {
+  const role = requisitionRole(request._auth);
+  if (!canManageMaterialRequisition(role, 'close')) return errorResponse('当前员工角色无权关闭申请', 403);
+  const requisitionId = new URL(request.url).pathname.split('/')[3];
+  const requisition = await getRequisitionWithItems(env, requisitionId);
+  if (!requisition) return errorResponse('领料申请不存在', 404);
+  if (REQUISITION_TERMINAL_STATUSES.has(requisition.status)) return errorResponse('当前申请不可关闭', 409);
+  if (!canCloseMaterialRequisition(requisition.items)) return errorResponse('仅全部签收或取消的申请可关闭', 409);
+  try {
+    const mutation = env.DB.prepare(`
+      UPDATE material_requisitions
+      SET status = 'closed', closed_at = datetime('now'), updated_at = datetime('now')
+      WHERE id = ? AND status = ?
+    `).bind(requisitionId, requisition.status);
+    await runAuditedWorkflowBatch(env, request, guardedWorkflowMutation(env, mutation), {
+      targetType: 'material_requisition', targetId: requisitionId, action: 'material_requisition_closed',
+      beforeState: { status: requisition.status }, afterState: { status: 'closed' },
+    });
+    return jsonResponse({ requisition: await getRequisitionWithItems(env, requisitionId) });
+  } catch (error) {
+    return workflowErrorResponse(error);
+  }
+}
+
+async function handleCancelRequisitionItem(request, env) {
+  const role = requisitionRole(request._auth);
+  if (!canManageMaterialRequisition(role, 'cancel')) return errorResponse('当前员工角色无权取消领料明细', 403);
+  const parts = new URL(request.url).pathname.split('/');
+  const requisitionId = parts[3];
+  const itemId = parts[5];
+  const requisition = await getRequisitionWithItems(env, requisitionId);
+  if (!requisition) return errorResponse('领料申请不存在', 404);
+  if (REQUISITION_TERMINAL_STATUSES.has(requisition.status)) return errorResponse('当前申请不可取消明细', 409);
+  const item = await env.DB.prepare(`
+    SELECT * FROM material_requisition_items WHERE id = ? AND requisition_id = ?
+  `).bind(itemId, requisitionId).first();
+  if (!item) return errorResponse('领料明细不存在', 404);
+  if (Number(item.issued_quantity || 0) > 0
+    || Number(item.engineer_received_quantity || 0) > 0) {
+    return errorResponse('已发料或签收的明细不能取消', 409);
+  }
+  const body = await request.json().catch(() => ({}));
+  const reason = cleanText(body.reason, 600);
+  const notes = [cleanText(item.notes, 600), reason].filter(Boolean).join('\n').slice(0, 600) || null;
+  try {
+    const next = { status: 'cancelled', notes };
+    let reservationStatements = [];
+    const outstandingReservation = outstandingItemReservation(item);
+    if (item.material_id && outstandingReservation > 0) {
+      const releaseReservation = env.DB.prepare(`
+        UPDATE materials
+        SET reserved_quantity = reserved_quantity - ?, updated_at = datetime('now')
+        WHERE id = ? AND reserved_quantity >= ?
+      `).bind(outstandingReservation, item.material_id, outstandingReservation);
+      reservationStatements = guardedWorkflowMutation(env, releaseReservation);
+    }
+    await runAuditedWorkflowBatch(env, request, [
+      ...reservationStatements,
+      ...conditionalItemUpdateStatements(env, item, next),
+      ...requisitionHeaderMutationStatements(env, requisition, 'cancel_item', {
+        id: request._auth.staffId || request._auth.userId,
+        role,
+      }),
+    ], {
+      targetType: 'material_requisition_item', targetId: itemId,
+      action: 'material_requisition_item_cancelled', beforeState: item,
+      afterState: { ...item, ...next },
+    });
+    return jsonResponse({ requisition: await getRequisitionWithItems(env, requisitionId) });
+  } catch (error) {
+    return workflowErrorResponse(error);
   }
 }
 
@@ -8472,21 +11044,34 @@ async function listWorkOrderMaterialItems(env, workOrderId, { purpose } = {}) {
 
 async function replaceWorkOrderMaterialItems(env, request, workOrderId, purpose, items = []) {
   if (!WORK_ORDER_MATERIAL_PURPOSES.has(purpose)) throw new Error('无效物料用途');
-  await env.DB.prepare(
-    "UPDATE work_order_material_items SET status = 'removed', updated_at = datetime('now') WHERE work_order_id = ? AND purpose = ?"
-  ).bind(workOrderId, purpose).run();
-
+  const payloads = [];
   for (const rawItem of Array.isArray(items) ? items : []) {
     const payload = readWorkOrderMaterialItemPayload({ ...rawItem, purpose });
     if (payload.error) throw new Error(payload.error);
-    await insertWorkOrderMaterialItem(env, request, workOrderId, payload);
+    payloads.push(payload);
   }
+
+  const materialIds = [...new Set(payloads.map((payload) => payload.material_id).filter(Boolean))];
+  const materialsById = new Map();
+  if (materialIds.length > 0) {
+    const placeholders = materialIds.map(() => '?').join(', ');
+    const materialRows = await env.DB.prepare(
+      `SELECT * FROM materials WHERE id IN (${placeholders})`
+    ).bind(...materialIds).all();
+    for (const material of materialRows.results || []) materialsById.set(material.id, material);
+  }
+
+  const statements = [env.DB.prepare(
+    "UPDATE work_order_material_items SET status = 'removed', updated_at = datetime('now') WHERE work_order_id = ? AND purpose = ?"
+  ).bind(workOrderId, purpose)];
+  for (const payload of payloads) {
+    const material = payload.material_id ? materialsById.get(payload.material_id) : null;
+    statements.push(buildWorkOrderMaterialItemInsert(env, request, workOrderId, payload, material).statement);
+  }
+  await env.DB.batch(statements);
 }
 
-async function insertWorkOrderMaterialItem(env, request, workOrderId, payload) {
-  const material = payload.material_id
-    ? await env.DB.prepare('SELECT * FROM materials WHERE id = ?').bind(payload.material_id).first()
-    : null;
+function buildWorkOrderMaterialItemInsert(env, request, workOrderId, payload, material) {
   if (payload.material_id && !material) throw new Error('物料不存在');
   if (material?.status && material.status !== 'active') throw new Error('物料未启用');
 
@@ -8495,7 +11080,7 @@ async function insertWorkOrderMaterialItem(env, request, workOrderId, payload) {
   if (!name) throw new Error('请填写物料名称');
 
   const id = generateId();
-  await env.DB.prepare(`
+  const statement = env.DB.prepare(`
     INSERT INTO work_order_material_items (
       id, work_order_id, material_id, purpose, material_code, name, name_en,
       spec, brand, unit, quantity, unit_price, line_total, note, status,
@@ -8519,10 +11104,8 @@ async function insertWorkOrderMaterialItem(env, request, workOrderId, payload) {
     payload.status,
     request._auth?.userType || 'system',
     request._auth?.userId || ''
-  ).run();
-
-  const row = await env.DB.prepare('SELECT * FROM work_order_material_items WHERE id = ?').bind(id).first();
-  return normalizeWorkOrderMaterialItem(row || {
+  );
+  const fallback = normalizeWorkOrderMaterialItem({
     id,
     work_order_id: workOrderId,
     material_id: payload.material_id,
@@ -8541,6 +11124,17 @@ async function insertWorkOrderMaterialItem(env, request, workOrderId, payload) {
     created_by_type: request._auth?.userType || 'system',
     created_by_id: request._auth?.userId || '',
   });
+  return { id, statement, fallback };
+}
+
+async function insertWorkOrderMaterialItem(env, request, workOrderId, payload) {
+  const material = payload.material_id
+    ? await env.DB.prepare('SELECT * FROM materials WHERE id = ?').bind(payload.material_id).first()
+    : null;
+  const insert = buildWorkOrderMaterialItemInsert(env, request, workOrderId, payload, material);
+  await insert.statement.run();
+  const row = await env.DB.prepare('SELECT * FROM work_order_material_items WHERE id = ?').bind(insert.id).first();
+  return normalizeWorkOrderMaterialItem(row || insert.fallback);
 }
 
 async function handleGetWorkOrderMaterialItems(request, env) {
@@ -8964,6 +11558,51 @@ async function handleAdminDeleteUser(request, env) {
       return errorResponse('缺少用户ID或类型');
     }
 
+    if (userType === 'customer' || userType === 'engineer') {
+      const linkedQuoteExecution = await env.DB.prepare(`
+        SELECT wo.id FROM work_orders wo
+        WHERE (wo.customer_id = ? OR wo.engineer_id = ?)
+          AND (
+            EXISTS (
+              SELECT 1 FROM work_order_payment_schedule schedule
+              WHERE schedule.work_order_id = wo.id
+            )
+            OR EXISTS (
+              SELECT 1 FROM work_order_installments installment
+              WHERE installment.work_order_id = wo.id
+            )
+            OR EXISTS (
+              SELECT 1 FROM work_order_receipt_claims claim
+              WHERE claim.work_order_id = wo.id
+            )
+            OR EXISTS (
+              SELECT 1 FROM work_order_receipt_evidence evidence
+              WHERE evidence.work_order_id = wo.id
+            )
+          )
+        LIMIT 1
+      `).bind(
+        userType === 'customer' ? userId : null,
+        userType === 'engineer' ? userId : null,
+      ).first();
+      if (linkedQuoteExecution) {
+        return errorResponse('该用户关联报价执行或收款历史，不能删除', 409);
+      }
+
+      const linkedRequisition = await env.DB.prepare(`
+        SELECT mr.id FROM material_requisitions mr
+        JOIN work_orders wo ON wo.id = mr.work_order_id
+        WHERE wo.customer_id = ? OR wo.engineer_id = ?
+        LIMIT 1
+      `).bind(
+        userType === 'customer' ? userId : null,
+        userType === 'engineer' ? userId : null,
+      ).first();
+      if (linkedRequisition) {
+        return errorResponse('该用户关联领料申请历史，不能删除', 409);
+      }
+    }
+
     if (userType === 'customer') {
       const user = await env.DB.prepare('SELECT id FROM customers WHERE id = ?').bind(userId).first();
       if (!user) {
@@ -9049,9 +11688,6 @@ async function handleAdminLogin(request, env) {
     const adminCredentials = resolveAdminCredentials(request, env);
     const adminPhone = adminCredentials.phone;
     const adminPassword = adminCredentials.password;
-    if (!adminPhone || !adminPassword) {
-      return errorResponse('管理员账号未配置，请联系系统管理员', 500);
-    }
     if (!phone || !password) {
       return errorResponse('手机号、密码不能为空');
     }
@@ -9075,7 +11711,26 @@ async function handleAdminLogin(request, env) {
       return errorResponse('登录失败次数过多，请 15 分钟后再试', 429);
     }
 
-    if (phone !== adminPhone || password !== adminPassword) {
+    const bootstrapMatch = Boolean(adminPhone && adminPassword && phone === adminPhone && password === adminPassword);
+    let staff = null;
+    if (!bootstrapMatch) {
+      const normalizedLogin = normalizeIdentityEmail(phone);
+      const normalizedPhone = normalizeIdentityPhone(phone);
+      staff = await env.DB.prepare(`
+        SELECT * FROM admin_staff_accounts
+        WHERE normalized_login = ? OR normalized_phone = ?
+      `).bind(normalizedLogin, normalizedPhone).first();
+      const staffPasswordValid = staff?.is_active
+        ? await verifyPassword(password, staff.password_hash, staff.salt)
+        : false;
+      const marketAllowed = staff?.market_scope === 'all' || staff?.market_scope === adminCredentials.market;
+      if (!staffPasswordValid || !marketAllowed) staff = null;
+    }
+
+    if (!bootstrapMatch && !staff) {
+      if (!adminPhone || !adminPassword) {
+        return errorResponse('管理员账号未配置，请联系系统管理员', 500);
+      }
       await Promise.all([
         env.KV.put(phoneKey, String(phoneFail + 1), { expirationTtl: FAIL_TTL }),
         env.KV.put(ipKey, String(ipFail + 1), { expirationTtl: FAIL_TTL }),
@@ -9090,19 +11745,39 @@ async function handleAdminLogin(request, env) {
     ]);
 
     const now = Math.floor(Date.now() / 1000);
+    const csrfToken = generateCsrfToken();
+    const staffClaims = staff ? {
+      staffId: staff.id,
+      staffRole: staff.role,
+      mustChangePassword: Boolean(staff.must_change_password),
+    } : {};
     const token = await signJwt({
-      userId: 'admin',
+      userId: staff?.id || 'admin',
       userType: 'admin',
-      phone: adminPhone,
+      phone: staff?.normalized_phone || adminPhone,
       market: adminCredentials.market,
+      ...staffClaims,
+      csrf: csrfToken,
       iat: now,
       exp: now + 86400 * 7,
     }, env.JWT_SECRET);
 
-    return jsonResponse({
-      token,
-      user: { id: 'admin', name: '超级管理员', phone: adminPhone, type: 'admin', market: adminCredentials.market },
-    });
+    return addSessionCookie(jsonResponse(sessionResponsePayload({
+      csrfToken,
+      user: staff ? {
+        id: staff.id,
+        name: staff.display_name,
+        phone: staff.normalized_phone || '',
+        type: 'admin',
+        market: adminCredentials.market,
+        staffRole: staff.role,
+        staffId: staff.id,
+        mustChangePassword: Boolean(staff.must_change_password),
+      } : {
+        id: 'admin', name: '超级管理员', phone: adminPhone, type: 'admin', market: adminCredentials.market,
+        staffRole: 'admin', staffId: null, mustChangePassword: false,
+      },
+    }, token, requestPortalRole(request))), request, env, 'admin', token);
   } catch (error) {
     return errorResponse(error.message, 500);
   }
@@ -9134,6 +11809,8 @@ async function handleAdminStats(request, env) {
     const valueAddedRequests = await env.DB.prepare(
       "SELECT COUNT(*) as count FROM upsell_requests WHERE status NOT IN ('completed', 'lost')"
     ).first();
+
+    const requisitionOperations = await getRequisitionOperationsMetrics(env);
 
     // 最近7天注册数
     const recentCustomers = await env.DB.prepare(
@@ -9172,6 +11849,7 @@ async function handleAdminStats(request, env) {
         valueAddedRequests: valueAddedRequests?.count || 0,
         euchioMachineLeads: machineLeads?.count || 0,
       },
+      requisitionOperations,
       recentRegistrations: (recentCustomers?.count || 0) + (recentEngineers?.count || 0),
       apiCalls: {
         send_code: apiStats.send_code || 0,
@@ -9180,6 +11858,18 @@ async function handleAdminStats(request, env) {
         login: apiStats.login || 0,
       },
     });
+  } catch (error) {
+    return errorResponse(error.message, 500);
+  }
+}
+
+async function handleMaterialRequisitionMetrics(request, env) {
+  const role = requisitionRole(request._auth);
+  if (!['admin', 'operations', 'warehouse', 'procurement'].includes(role)) {
+    return errorResponse('当前角色无权查看领料运营指标', 403);
+  }
+  try {
+    return jsonResponse({ requisitionOperations: await getRequisitionOperationsMetrics(env) });
   } catch (error) {
     return errorResponse(error.message, 500);
   }
@@ -9440,6 +12130,8 @@ async function handleAdminWorkOrders(request, env) {
       SELECT w.id, w.order_no, w.type, w.description, w.urgency, w.status, w.created_at,
              w.assigned_regional_lead_id, w.conflict_status, w.conflict_reason,
              w.quote_review_status, w.customer_confirmation_method,
+             w.customer_id, w.service_mode, w.active_quote_version,
+             w.quote_expected_service_days, w.approved_extension_days,
              c.name as customer_name, c.company as customer_company, c.user_no as customer_no,
              rl.name as regional_lead_name, rl.user_no as regional_lead_no,
              e.id as engineer_id, e.name as engineer_name, e.company as engineer_company, e.user_no as engineer_no,
@@ -9459,10 +12151,483 @@ async function handleAdminWorkOrders(request, env) {
       LIMIT ? OFFSET ?
     `).bind(...params, pageSize, offset).all();
 
+    const rows = list.results || [];
+    if (rows.length) {
+      const workOrderIds = rows.map((item) => item.id);
+      const placeholders = workOrderIds.map(() => '?').join(', ');
+      const [fieldDayResult, extensionResult] = await Promise.all([
+        env.DB.prepare(`
+          SELECT work_order_id, site_local_date, site_timezone, status
+          FROM work_order_field_days WHERE work_order_id IN (${placeholders})
+        `).bind(...workOrderIds).all(),
+        env.DB.prepare(`
+          SELECT work_order_id FROM work_order_extension_requests
+          WHERE work_order_id IN (${placeholders}) AND status = 'pending'
+        `).bind(...workOrderIds).all(),
+      ]);
+      const fieldDaysByOrder = new Map();
+      for (const fieldDay of fieldDayResult.results || []) {
+        const days = fieldDaysByOrder.get(fieldDay.work_order_id) || [];
+        days.push(fieldDay);
+        fieldDaysByOrder.set(fieldDay.work_order_id, days);
+      }
+      const pendingOrders = new Set((extensionResult.results || []).map((item) => item.work_order_id));
+      const paymentProjections = await listWorkOrderPaymentProjections(env, rows);
+      for (const row of rows) {
+        const days = fieldDaysByOrder.get(row.id) || [];
+        row.field_checked_in_today = days.some((day) => {
+          try { return day.site_local_date === fieldDayLocalDate(new Date(), day.site_timezone); } catch { return false; }
+        });
+        row.field_report_overdue_count = days.filter((day) => day.status === 'report_overdue').length;
+        row.field_extension_pending = pendingOrders.has(row.id);
+        const paymentProjection = paymentProjections.get(row.id);
+        if (paymentProjection) Object.assign(row, withPaymentProjection({}, paymentProjection));
+      }
+    }
     return jsonResponse({
       total: total?.count || 0,
-      list: list.results || [],
+      list: rows,
     });
+  } catch (error) {
+    return errorResponse(error.message, 500);
+  }
+}
+
+function canMutateFieldWorkAdmin(auth) {
+  return auth?.userType === 'admin' && (!auth.staffId || auth.staffRole === 'admin');
+}
+
+function withPaymentProjection(workOrder, quoteExecution) {
+  if (!quoteExecution) return workOrder;
+  const validExecution = quoteExecution.valid !== false;
+  const installments = quoteExecution.installments || [];
+  return {
+    ...workOrder,
+    payment_state: quoteExecution.payment_state,
+    received_amount: quoteExecution.received_amount,
+    outstanding_amount: quoteExecution.outstanding_amount,
+    payment_currency: validExecution ? (installments[0]?.currency || quoteExecution.paymentSchedule?.[0]?.currency || null) : null,
+    pending_receipt_claim_count: validExecution
+      ? installments.reduce((count, installment) => count + Number(installment.pending_claim_count || 0), 0)
+      : null,
+  };
+}
+
+async function listWorkOrderPaymentProjections(env, workOrders) {
+  const ids = [...new Set((workOrders || []).map((row) => row.id).filter(Boolean))];
+  const projections = new Map();
+  if (ids.length === 0) return projections;
+  const placeholders = ids.map(() => '?').join(', ');
+  const [pricingRecords, historyRecords, scheduleRecords, installmentRecords, paymentRecords] = await Promise.all([
+    env.DB.prepare(`
+      SELECT * FROM work_order_pricing WHERE work_order_id IN (${placeholders})
+    `).bind(...ids).all(),
+    env.DB.prepare(`
+      SELECT history.*, pricing.work_order_id
+      FROM work_order_pricing_history history
+      JOIN work_order_pricing pricing ON pricing.id = history.pricing_id
+      WHERE pricing.work_order_id IN (${placeholders})
+      ORDER BY pricing.work_order_id, history.version
+    `).bind(...ids).all(),
+    env.DB.prepare(`
+      SELECT * FROM work_order_payment_schedule
+      WHERE work_order_id IN (${placeholders})
+      ORDER BY work_order_id, quote_version, sequence
+    `).bind(...ids).all(),
+    env.DB.prepare(`
+      SELECT installment.*,
+        SUM(CASE WHEN claim.status = 'pending' THEN 1 ELSE 0 END) AS pending_claim_count
+      FROM work_order_installments installment
+      LEFT JOIN work_order_receipt_claims claim
+        ON claim.installment_id = installment.id
+       AND claim.work_order_id = installment.work_order_id
+      WHERE installment.work_order_id IN (${placeholders})
+      GROUP BY installment.id
+      ORDER BY installment.work_order_id, installment.quote_version, installment.sequence
+    `).bind(...ids).all(),
+    env.DB.prepare(`
+      SELECT * FROM work_order_payments
+      WHERE work_order_id IN (${placeholders}) ORDER BY created_at ASC
+    `).bind(...ids).all(),
+  ]);
+  const pricingByOrder = new Map((pricingRecords.results || []).map((row) => [row.work_order_id, row]));
+  const historiesByOrder = new Map();
+  for (const history of historyRecords.results || []) {
+    const rows = historiesByOrder.get(history.work_order_id) || [];
+    rows.push(history);
+    historiesByOrder.set(history.work_order_id, rows);
+  }
+  const schedulesByOrder = new Map();
+  for (const schedule of scheduleRecords.results || []) {
+    const rows = schedulesByOrder.get(schedule.work_order_id) || [];
+    rows.push(schedule);
+    schedulesByOrder.set(schedule.work_order_id, rows);
+  }
+  const installmentsByOrder = new Map();
+  for (const installment of installmentRecords.results || []) {
+    const rows = installmentsByOrder.get(installment.work_order_id) || [];
+    rows.push(installment);
+    installmentsByOrder.set(installment.work_order_id, rows);
+  }
+  const paymentsByOrder = new Map();
+  for (const payment of paymentRecords.results || []) {
+    const rows = paymentsByOrder.get(payment.work_order_id) || [];
+    rows.push(payment);
+    paymentsByOrder.set(payment.work_order_id, rows);
+  }
+
+  for (const workOrder of workOrders || []) {
+    const pricing = pricingByOrder.get(workOrder.id);
+    if (Number(workOrder.active_quote_version || 0) >= 1) {
+      const canonical = buildCanonicalVersionedQuoteExecution({
+        workOrder,
+        pricing,
+        histories: historiesByOrder.get(workOrder.id) || [],
+        schedules: schedulesByOrder.get(workOrder.id) || [],
+        installments: installmentsByOrder.get(workOrder.id) || [],
+      });
+      projections.set(workOrder.id, canonical);
+      continue;
+    }
+    if (!pricing || isVersionedQuote(pricing)) continue;
+    if (pricing.status !== 'confirmed') continue;
+    const totalAmount = Number(pricing.total_amount || pricing.subtotal || 0);
+    const completedPayments = new Map();
+    for (const payment of paymentsByOrder.get(workOrder.id) || []) {
+      if (payment.status !== 'completed') continue;
+      const transactionId = String(payment.transaction_id || '').trim();
+      const key = transactionId ? `transaction:${transactionId}` : `row:${payment.id}`;
+      if (!completedPayments.has(key)) completedPayments.set(key, Number(payment.amount || 0));
+    }
+    const receivedAmount = [...completedPayments.values()].reduce((sum, amount) => sum + amount, 0);
+    const installment = {
+      amount: totalAmount,
+      received_amount: receivedAmount,
+      required_before_start: true,
+      status: receivedAmount >= totalAmount ? 'received' : 'due',
+    };
+    projections.set(workOrder.id, summarizeQuoteExecution({ total_amount: totalAmount, installments: [installment] }));
+  }
+  return projections;
+}
+
+async function handleAdminFieldPlan(request, env) {
+  try {
+    if (!canMutateFieldWorkAdmin(request._auth)) return errorResponse('当前员工角色无权修改现场计划', 403);
+    const workOrderId = new URL(request.url).pathname.split('/')[4];
+    const workOrder = await getFieldWorkOrder(env, workOrderId);
+    if (!workOrder) return errorResponse('工单不存在', 404);
+    const body = await request.json().catch(() => ({}));
+    if (Number(workOrder.active_quote_version || 0) >= 1) {
+      return fieldWorkError('quote_driven_field_plan', 409);
+    }
+    const validation = validateFieldPlan(body);
+    if (validation.error) return fieldWorkError(validation.error);
+    const beforePlan = fieldPlanSnapshot(workOrder);
+    const plan = validation.value;
+    await env.DB.batch([
+      env.DB.prepare(`
+        UPDATE work_orders SET site_timezone = ?, expected_service_days = ?, expected_completion_date = ?,
+          planned_daily_start_time = ?, planned_daily_end_time = ?, updated_at = datetime('now')
+        WHERE id = ?
+      `).bind(
+        plan.site_timezone, plan.expected_service_days, plan.expected_completion_date,
+        plan.planned_daily_start_time, plan.planned_daily_end_time, workOrderId,
+      ),
+      buildAuditLogStatement(env, request, {
+        targetType: 'work_order', targetId: workOrderId, action: 'field_plan_updated',
+        beforeState: beforePlan, afterState: plan,
+      }),
+    ]);
+    return jsonResponse({ field_plan: plan });
+  } catch (error) {
+    return errorResponse(error.message, 500);
+  }
+}
+
+async function handleAdminExtensionDecision(request, env) {
+  try {
+    if (!canMutateFieldWorkAdmin(request._auth)) return errorResponse('当前员工角色无权审批延期', 403);
+    const segments = new URL(request.url).pathname.split('/');
+    const workOrderId = segments[4];
+    const requestId = segments[6];
+    const body = await request.json().catch(() => ({}));
+    const decision = String(body.decision || '').trim();
+    const decisionReason = String(body.decision_reason || '').trim();
+    if (!['approved', 'rejected'].includes(decision)) return fieldWorkError('extension_decision_invalid');
+    if (!decisionReason) return fieldWorkError('decision_reason_required');
+    const workOrder = await getFieldWorkOrder(env, workOrderId);
+    if (!workOrder) return errorResponse('工单不存在', 404);
+    const extension = await env.DB.prepare(`
+      SELECT * FROM work_order_extension_requests WHERE id = ? AND work_order_id = ?
+    `).bind(requestId, workOrderId).first();
+    if (!extension) return errorResponse('延期申请不存在', 404);
+    if (extension.status === decision) {
+      return jsonResponse({ extension_request: extension });
+    }
+    if (extension.status !== 'pending') return errorResponse('延期申请已处理', 409);
+    const quoteDriven = Number(workOrder.active_quote_version || 0) >= 1;
+    const approvedPlan = decision === 'approved' ? {
+      ...fieldPlanSnapshot(workOrder),
+      expected_service_days: quoteDriven
+        ? Number(workOrder.expected_service_days || 0)
+        : Number(workOrder.expected_service_days || 0) + Number(extension.requested_additional_days),
+      approved_extension_days: quoteDriven
+        ? Number(workOrder.approved_extension_days || 0) + Number(extension.requested_additional_days)
+        : Number(workOrder.approved_extension_days || 0),
+      expected_completion_date: extension.proposed_completion_date,
+    } : null;
+    const statements = [env.DB.prepare(`
+      UPDATE work_order_extension_requests SET status = ?, decided_by = ?, decision_reason = ?, approved_plan = ?,
+        decided_at = datetime('now'), updated_at = datetime('now')
+      WHERE id = ? AND work_order_id = ? AND status = 'pending'
+    `).bind(
+      decision, request._auth.staffId || request._auth.userId, decisionReason,
+      approvedPlan ? JSON.stringify(approvedPlan) : null, requestId, workOrderId,
+    ), env.DB.prepare(`
+      SELECT CASE WHEN changes() = 1 THEN 1 ELSE json('field extension concurrent update') END
+    `)];
+    if (approvedPlan) {
+      if (quoteDriven) {
+        statements.push(env.DB.prepare(`
+          UPDATE work_orders
+          SET approved_extension_days = approved_extension_days + ?, updated_at = datetime('now')
+          WHERE id = ?
+        `).bind(extension.requested_additional_days, workOrderId));
+      } else {
+        statements.push(env.DB.prepare(`
+          UPDATE work_orders SET expected_service_days = ?, expected_completion_date = ?, updated_at = datetime('now') WHERE id = ?
+        `).bind(approvedPlan.expected_service_days, approvedPlan.expected_completion_date, workOrderId));
+      }
+    }
+    statements.push(buildAuditLogStatement(env, request, {
+      targetType: 'work_order_extension_request', targetId: requestId, action: `field_extension_${decision}`,
+      beforeState: { status: extension.status, plan: fieldPlanSnapshot(workOrder) },
+      afterState: { status: decision, decision_reason: decisionReason, approved_plan: approvedPlan },
+    }));
+    try {
+      await env.DB.batch(statements);
+    } catch (error) {
+      if (!/field extension concurrent update|malformed json/i.test(String(error?.message || error))) throw error;
+      const storedExtension = await env.DB.prepare(`
+        SELECT * FROM work_order_extension_requests WHERE id = ? AND work_order_id = ?
+      `).bind(requestId, workOrderId).first();
+      if (storedExtension?.status === decision) {
+        return jsonResponse({ extension_request: storedExtension });
+      }
+      if (storedExtension && storedExtension.status !== 'pending') {
+        return errorResponse('延期申请已处理', 409);
+      }
+      throw error;
+    }
+    await notifyFieldWorkBestEffort(env, {
+      user_id: extension.engineer_id, user_type: 'engineer', type: `field_extension_${decision}`,
+      title: decision === 'approved' ? 'Extension approved' : 'Extension rejected', body: decisionReason,
+      data: { work_order_id: workOrderId, extension_request_id: requestId },
+    });
+    if (approvedPlan) {
+      await notifyFieldWorkBestEffort(env, {
+        user_id: workOrder.customer_id, user_type: 'customer', type: 'field_extension_approved',
+        title: quoteDriven ? 'Workday extension approved' : 'Service plan updated',
+        body: quoteDriven
+          ? `${extension.requested_additional_days} additional onsite workday(s) approved.`
+          : `The expected completion date is now ${approvedPlan.expected_completion_date}.`,
+        data: { work_order_id: workOrderId, extension_request_id: requestId },
+      });
+    }
+    return jsonResponse({ extension_request: { ...extension, status: decision, decision_reason: decisionReason, approved_plan: approvedPlan } });
+  } catch (error) {
+    return errorResponse(error.message, 500);
+  }
+}
+
+async function handleAdminFieldDayOverride(request, env) {
+  try {
+    if (!canMutateFieldWorkAdmin(request._auth)) return errorResponse('当前员工角色无权执行现场例外操作', 403);
+    const workOrderId = new URL(request.url).pathname.split('/')[4];
+    const workOrder = await getFieldWorkOrder(env, workOrderId);
+    if (!workOrder) return errorResponse('工单不存在', 404);
+    const body = await request.json().catch(() => ({}));
+    const action = String(body.action || '').trim();
+    const reason = String(body.reason || '').trim();
+    if (!reason) return fieldWorkError('override_reason_required');
+    if (action === 'create_day') {
+      const engineerId = String(body.engineer_id || workOrder.engineer_id || '').trim();
+      const siteLocalDate = String(body.site_local_date || '').trim();
+      const siteTimezone = String(body.site_timezone || workOrder.site_timezone || '').trim();
+      const checkInAt = String(body.check_in_at || '').trim();
+      const timezoneValidation = validateFieldPlan({
+        site_timezone: siteTimezone, expected_service_days: 1,
+        expected_completion_date: siteLocalDate, planned_daily_start_time: '', planned_daily_end_time: '',
+      });
+      if (!engineerId || !isValidFieldDate(siteLocalDate) || timezoneValidation.error || !Number.isFinite(new Date(checkInAt).getTime())) {
+        return fieldWorkError('field_day_override_invalid');
+      }
+      const fieldDayId = generateId();
+      await env.DB.batch([
+        env.DB.prepare(`
+          INSERT INTO work_order_field_days (
+            id, work_order_id, engineer_id, site_local_date, site_timezone, status, check_in_at,
+            location_status, location_source, internal_note
+          ) VALUES (?, ?, ?, ?, ?, 'admin_override_open', ?, 'admin_override', 'admin_override', ?)
+        `).bind(fieldDayId, workOrderId, engineerId, siteLocalDate, siteTimezone, checkInAt, reason),
+        env.DB.prepare(`
+          INSERT INTO work_order_logs (id, work_order_id, action, actor_type, actor_id, content)
+          VALUES (?, ?, 'field_day_admin_override_created', 'admin', ?, ?)
+        `).bind(generateId(), workOrderId, request._auth.staffId || request._auth.userId, reason),
+        buildAuditLogStatement(env, request, {
+          targetType: 'work_order_field_day', targetId: fieldDayId, action: 'field_day_admin_override_created',
+          afterState: { work_order_id: workOrderId, engineer_id: engineerId, site_local_date: siteLocalDate, capture_source: 'admin_override', reason },
+        }),
+      ]);
+      return jsonResponse({ field_day: publicFieldDay({
+        id: fieldDayId, work_order_id: workOrderId, engineer_id: engineerId, site_local_date: siteLocalDate,
+        site_timezone: siteTimezone, status: 'admin_override_open', check_in_at: checkInAt, location_status: 'admin_override',
+        location_source: 'admin_override', capture_source: 'admin_override', internal_note: reason,
+      }) }, 201);
+    }
+    if (action === 'close_day') {
+      const fieldDayId = String(body.field_day_id || '').trim();
+      const fieldDay = await env.DB.prepare(`SELECT * FROM work_order_field_days WHERE id = ? AND work_order_id = ?`).bind(fieldDayId, workOrderId).first();
+      if (!fieldDay) return errorResponse('现场工作日不存在', 404);
+      await env.DB.batch([
+        env.DB.prepare(`
+          UPDATE work_order_field_days SET status = 'admin_closed', internal_note = ?, updated_at = datetime('now')
+          WHERE id = ? AND work_order_id = ?
+        `).bind(reason, fieldDayId, workOrderId),
+        env.DB.prepare(`
+          INSERT INTO work_order_logs (id, work_order_id, action, actor_type, actor_id, content)
+          VALUES (?, ?, 'field_day_admin_override_closed', 'admin', ?, ?)
+        `).bind(generateId(), workOrderId, request._auth.staffId || request._auth.userId, reason),
+        buildAuditLogStatement(env, request, {
+          targetType: 'work_order_field_day', targetId: fieldDayId, action: 'field_day_admin_override_closed',
+          beforeState: { status: fieldDay.status }, afterState: { status: 'admin_closed', reason },
+        }),
+      ]);
+      return jsonResponse({ field_day: publicFieldDay({ ...fieldDay, status: 'admin_closed', internal_note: reason }) });
+    }
+    return fieldWorkError('field_day_override_action_invalid');
+  } catch (error) {
+    if (isD1ConstraintError(error)) return errorResponse('该日期已有现场工作日', 409);
+    return errorResponse(error.message, 500);
+  }
+}
+
+async function handleAdminCorrectFieldDayReport(request, env) {
+  try {
+    if (!canMutateFieldWorkAdmin(request._auth)) return errorResponse('当前员工角色无权修正现场日报', 403);
+    const segments = new URL(request.url).pathname.split('/');
+    const workOrderId = segments[4];
+    const fieldDayId = segments[6];
+    const fieldDay = await env.DB.prepare(`SELECT * FROM work_order_field_days WHERE id = ? AND work_order_id = ?`).bind(fieldDayId, workOrderId).first();
+    if (!fieldDay) return errorResponse('现场工作日不存在', 404);
+    if (!['report_submitted', 'late_report_submitted'].includes(fieldDay.status)) return errorResponse('现场日报尚未提交', 409);
+    const body = await request.json().catch(() => ({}));
+    const reason = String(body.reason || '').trim();
+    if (!reason) return fieldWorkError('correction_reason_required');
+    const validation = validateDailyReport({ ...body, progress_media_count: 1 }, { overdue: fieldDay.status === 'late_report_submitted' });
+    if (validation.error) return fieldWorkError(validation.error);
+    const previousReport = {
+      status: fieldDay.status, labor_hours: fieldDay.labor_hours, completed_work: fieldDay.completed_work,
+      issues_risks: fieldDay.issues_risks, next_plan: fieldDay.next_plan,
+      customer_support_needed: fieldDay.customer_support_needed, internal_note: fieldDay.internal_note,
+      late_reason: fieldDay.late_reason, report_submitted_at: fieldDay.report_submitted_at,
+    };
+    const value = validation.value;
+    await env.DB.batch([
+      env.DB.prepare(`
+        INSERT INTO work_order_field_day_revisions (
+          id, work_order_id, field_day_id, previous_report, changed_by_type, changed_by_id, reason
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+      `).bind(
+        generateId(), workOrderId, fieldDayId, JSON.stringify(previousReport),
+        request._auth.staffRole || 'admin', request._auth.staffId || request._auth.userId, reason,
+      ),
+      env.DB.prepare(`
+        UPDATE work_order_field_days SET labor_hours = ?, completed_work = ?, issues_risks = ?, next_plan = ?,
+          customer_support_needed = ?, internal_note = ?, late_reason = ?, updated_at = datetime('now')
+        WHERE id = ? AND work_order_id = ?
+      `).bind(
+        value.labor_hours, value.completed_work, value.issues_risks, value.next_plan,
+        value.customer_support_needed, value.internal_note, value.late_reason, fieldDayId, workOrderId,
+      ),
+      buildAuditLogStatement(env, request, {
+        targetType: 'work_order_field_day', targetId: fieldDayId, action: 'field_day_report_corrected',
+        beforeState: previousReport, afterState: { ...value, reason },
+      }),
+    ]);
+    return jsonResponse({ field_day: publicFieldDay({ ...fieldDay, ...value }) });
+  } catch (error) {
+    return errorResponse(error.message, 500);
+  }
+}
+
+async function handleAdminOpenEvidenceHold(request, env) {
+  try {
+    if (!canMutateFieldWorkAdmin(request._auth)) return errorResponse('当前员工角色无权管理证据保全', 403);
+    const workOrderId = new URL(request.url).pathname.split('/')[4];
+    if (!await getFieldWorkOrder(env, workOrderId)) return errorResponse('工单不存在', 404);
+    const body = await request.json().catch(() => ({}));
+    const reasonCategory = String(body.reason_category || '').trim();
+    const reason = String(body.reason || '').trim();
+    if (!reasonCategory || !reason) return fieldWorkError('evidence_hold_reason_required');
+    if (!EVIDENCE_HOLD_REASON_CATEGORIES.has(reasonCategory)) return fieldWorkError('evidence_hold_reason_category_invalid');
+    const holdId = generateId();
+    const openedBy = request._auth.staffId || request._auth.userId;
+    try {
+      await env.DB.batch([
+        env.DB.prepare(`
+          INSERT INTO work_order_field_evidence_holds (id, work_order_id, reason_category, reason, opened_by)
+          SELECT ?, ?, ?, ?, ?
+          WHERE NOT EXISTS (
+            SELECT 1 FROM work_order_field_day_media
+            WHERE work_order_id = ? AND deleted_at IS NULL AND retention_claim_token IS NOT NULL
+          )
+        `).bind(holdId, workOrderId, reasonCategory, reason, openedBy, workOrderId),
+        env.DB.prepare(`SELECT CASE WHEN changes() = 1 THEN 1 ELSE json('field evidence retention active') END`),
+        buildAuditLogStatement(env, request, {
+          targetType: 'work_order_field_evidence_hold', targetId: holdId, action: 'field_evidence_hold_opened',
+          afterState: { work_order_id: workOrderId, reason_category: reasonCategory, reason },
+        }),
+      ]);
+    } catch (error) {
+      if (/field evidence retention active|malformed json/i.test(String(error?.message || error))) {
+        return errorResponse('现场证据正在执行保留期清理，请稍后重试', 409);
+      }
+      throw error;
+    }
+    return jsonResponse({ evidence_hold: { id: holdId, work_order_id: workOrderId, reason_category: reasonCategory, reason, status: 'open', opened_by: openedBy } }, 201);
+  } catch (error) {
+    return errorResponse(error.message, 500);
+  }
+}
+
+async function handleAdminResolveEvidenceHold(request, env) {
+  try {
+    if (!canMutateFieldWorkAdmin(request._auth)) return errorResponse('当前员工角色无权管理证据保全', 403);
+    const segments = new URL(request.url).pathname.split('/');
+    const workOrderId = segments[4];
+    const holdId = segments[6];
+    const hold = await env.DB.prepare(`
+      SELECT * FROM work_order_field_evidence_holds WHERE id = ? AND work_order_id = ?
+    `).bind(holdId, workOrderId).first();
+    if (!hold) return errorResponse('证据保全记录不存在', 404);
+    if (hold.status !== 'open') return errorResponse('证据保全记录已处理', 409);
+    const body = await request.json().catch(() => ({}));
+    const resolutionReason = String(body.resolution_reason || '').trim();
+    if (!resolutionReason) return fieldWorkError('resolution_reason_required');
+    const resolvedBy = request._auth.staffId || request._auth.userId;
+    await env.DB.batch([
+      env.DB.prepare(`
+        UPDATE work_order_field_evidence_holds SET status = 'resolved', resolved_by = ?, resolution_reason = ?, resolved_at = datetime('now')
+        WHERE id = ? AND work_order_id = ? AND status = 'open'
+      `).bind(resolvedBy, resolutionReason, holdId, workOrderId),
+      buildAuditLogStatement(env, request, {
+        targetType: 'work_order_field_evidence_hold', targetId: holdId, action: 'field_evidence_hold_resolved',
+        beforeState: { status: hold.status }, afterState: { status: 'resolved', resolution_reason: resolutionReason },
+      }),
+    ]);
+    return jsonResponse({ evidence_hold: { ...hold, status: 'resolved', resolved_by: resolvedBy, resolution_reason: resolutionReason } });
   } catch (error) {
     return errorResponse(error.message, 500);
   }
@@ -9660,106 +12825,138 @@ async function handleAdminAssignWorkOrder(request, env) {
 
 async function handleAdminReviewWorkOrderPricing(request, env) {
   try {
+    const market = getRequestMarket(request);
+    const copy = quoteReviewCopy(market);
     const url = new URL(request.url);
     const parts = url.pathname.split('/');
     const workOrderId = parts[4];
     const action = parts[6]; // approve / reject
     const body = await request.json().catch(() => ({}));
     const reviewNote = (body.note || '').trim();
+    const quoteVersion = Number(body.quote_version);
 
     if (!workOrderId || !['approve', 'reject'].includes(action)) {
-      return errorResponse('无效报价审核操作', 400);
+      return errorResponse(copy.invalidAction, 400);
+    }
+    if (!Number.isInteger(quoteVersion) || quoteVersion < 1) {
+      return errorResponse(copy.versionRequired, 400);
+    }
+    if (action === 'reject' && !reviewNote) {
+      return errorResponse(copy.rejectionReasonRequired, 400);
     }
 
     const wo = await env.DB.prepare(
       'SELECT id, order_no, customer_id, engineer_id, quote_review_status FROM work_orders WHERE id = ?'
     ).bind(workOrderId).first();
-    if (!wo) return errorResponse('服务申请不存在', 404);
+    if (!wo) return errorResponse(copy.workOrderNotFound, 404);
 
     const pricing = await env.DB.prepare(
       'SELECT * FROM work_order_pricing WHERE work_order_id = ?'
     ).bind(workOrderId).first();
-    if (!pricing) return errorResponse('报价不存在', 404);
-    if (!['pending_review', 'submitted'].includes(pricing.status)) {
-      return errorResponse('当前报价状态不允许审核', 409);
+    if (!pricing) return errorResponse(copy.quoteNotFound, 404);
+    if (Number(pricing.quote_version) !== quoteVersion) return errorResponse(copy.staleVersion, 409);
+    const history = await env.DB.prepare(`
+      SELECT * FROM work_order_pricing_history
+      WHERE pricing_id = ? AND version = ?
+    `).bind(pricing.id, quoteVersion).first();
+    if (!history || history.status !== 'pending_review' || pricing.status !== 'pending_review') {
+      return errorResponse(copy.staleVersion, 409);
     }
-
-    if (action === 'approve') {
-      await env.DB.prepare(
-        "UPDATE work_order_pricing SET status = 'submitted' WHERE work_order_id = ?"
-      ).bind(workOrderId).run();
-      await env.DB.prepare(
-        "UPDATE work_orders SET status = 'pricing', quote_review_status = 'approved' WHERE id = ?"
-      ).bind(workOrderId).run();
-
-      await env.DB.prepare(`
-        INSERT INTO work_order_messages (id, work_order_id, sender_type, sender_id, sender_name, content, message_type, is_internal_note, is_customer_visible)
-        VALUES (?, ?, 'system', '', '系统', ?, 'pricing_update', 0, 1)
-      `).bind(
-        generateId(),
-        workOrderId,
-        'SAGEMRO 已完成报价审核，请查看报价明细并确认。'
-      ).run();
-
-      await writeAuditLog(env, request, {
-        targetType: 'work_order',
-        targetId: workOrderId,
-        action: 'pricing_review_approved',
-        beforeState: { quote_review_status: wo.quote_review_status, pricing_status: pricing.status },
-        afterState: { quote_review_status: 'approved', pricing_status: 'submitted' },
-      });
-
-      if (wo.customer_id) {
-        await createNotification(env, {
-          user_id: wo.customer_id,
-          user_type: 'customer',
-          type: 'official_quote_ready',
-          title: 'SAGEMRO 报价已确认',
-          body: `服务编号 ${wo.order_no} 的报价已完成审核，请查看并确认。`,
-          data: { work_order_id: workOrderId },
-        });
-      }
-
-      return jsonResponse({ success: true, status: 'approved' });
-    }
-
-    await env.DB.prepare(
-      "UPDATE work_order_pricing SET status = 'draft' WHERE work_order_id = ?"
-    ).bind(workOrderId).run();
-    await env.DB.prepare(
-      "UPDATE work_orders SET status = 'in_progress', quote_review_status = 'rejected' WHERE id = ?"
-    ).bind(workOrderId).run();
-
-    await env.DB.prepare(`
-      INSERT INTO work_order_messages (id, work_order_id, sender_type, sender_id, sender_name, content, message_type, is_internal_note, is_customer_visible)
-      VALUES (?, ?, 'system', '', '系统', ?, 'system', 1, 0)
+    const beforeQuote = await quoteVersionSnapshot(env, workOrderId, history);
+    const nextHistoryStatus = action === 'approve' ? 'approved' : 'rejected';
+    const nextPricingStatus = action === 'approve' ? 'submitted' : 'draft';
+    const nextReviewStatus = action === 'approve' ? 'approved' : 'rejected';
+    const supplemental = history.quote_kind === 'supplemental';
+    const nextWorkOrderStatus = action === 'approve' ? 'pricing' : 'in_progress';
+    const afterQuote = {
+      ...beforeQuote,
+      status: nextHistoryStatus,
+      approved_at: action === 'approve' ? 'now' : beforeQuote.approved_at,
+    };
+    const reviewBeforeState = {
+      quote_review_status: wo.quote_review_status,
+      pricing_status: pricing.status,
+      ...beforeQuote,
+      quote: beforeQuote,
+    };
+    const reviewAfterState = {
+      quote_review_status: nextReviewStatus,
+      pricing_status: nextPricingStatus,
+      note: reviewNote || null,
+      ...afterQuote,
+      quote: afterQuote,
+    };
+    const message = action === 'approve' ? copy.approvedMessage : copy.rejectedMessage(reviewNote);
+    const statements = [env.DB.prepare(`
+      UPDATE work_order_pricing_history
+      SET status = ?, approved_at = CASE WHEN ? = 'approved' THEN datetime('now') ELSE approved_at END
+      WHERE pricing_id = ? AND version = ? AND status = 'pending_review'
+    `).bind(nextHistoryStatus, nextHistoryStatus, pricing.id, quoteVersion), env.DB.prepare(`
+      SELECT CASE WHEN changes() = 1 THEN 1 ELSE json('quote review concurrent update') END
+    `), env.DB.prepare(`
+      UPDATE work_order_pricing SET status = ?
+      WHERE work_order_id = ? AND quote_version = ? AND status = 'pending_review'
+    `).bind(nextPricingStatus, workOrderId, quoteVersion), env.DB.prepare(`
+      SELECT CASE WHEN changes() = 1 THEN 1 ELSE json('quote review concurrent update') END
+    `), env.DB.prepare(supplemental
+      ? 'UPDATE work_orders SET quote_review_status = ? WHERE id = ?'
+      : 'UPDATE work_orders SET status = ?, quote_review_status = ? WHERE id = ?'
+    ).bind(...(supplemental
+      ? [nextReviewStatus, workOrderId]
+      : [nextWorkOrderStatus, nextReviewStatus, workOrderId]
+    )), env.DB.prepare(`
+      INSERT INTO work_order_messages (
+        id, work_order_id, sender_type, sender_id, sender_name, content,
+        message_type, is_internal_note, is_customer_visible
+      ) VALUES (?, ?, 'system', '', ?, ?, ?, ?, ?)
     `).bind(
-      generateId(),
-      workOrderId,
-      `内部报价审核未通过，请工程师修改后重新提交。${reviewNote ? `原因：${reviewNote}` : ''}`
-    ).run();
-
-    await writeAuditLog(env, request, {
+      generateId(), workOrderId, systemSenderName(market), message,
+      action === 'approve' ? 'pricing_update' : 'system',
+      action === 'approve' ? 0 : 1,
+      action === 'approve' ? 1 : 0,
+    ), buildAuditLogStatement(env, request, {
       targetType: 'work_order',
       targetId: workOrderId,
-      action: 'pricing_review_rejected',
-      beforeState: { quote_review_status: wo.quote_review_status, pricing_status: pricing.status },
-      afterState: { quote_review_status: 'rejected', pricing_status: 'draft', note: reviewNote },
-    });
+      action: action === 'approve' ? 'pricing_review_approved' : 'pricing_review_rejected',
+      beforeState: reviewBeforeState,
+      afterState: reviewAfterState,
+    })];
 
-    if (wo.engineer_id) {
+    if (typeof env.DB.batch !== 'function') throw new Error('Transactional D1 batch is required');
+    await env.DB.batch(statements);
+
+    if (action === 'approve' && wo.customer_id) {
+      await createNotification(env, {
+        user_id: wo.customer_id,
+        user_type: 'customer',
+        type: 'official_quote_ready',
+        title: copy.approvedTitle,
+        body: copy.approvedBody(wo.order_no),
+        data: { work_order_id: workOrderId, quote_version: quoteVersion },
+      });
+    }
+    if (action === 'reject' && wo.engineer_id) {
       await createNotification(env, {
         user_id: wo.engineer_id,
         user_type: 'engineer',
         type: 'quote_review_rejected',
-        title: '报价需修改',
-        body: `服务编号 ${wo.order_no} 的报价未通过运营复核，请修改后重新提交。`,
-        data: { work_order_id: workOrderId },
+        title: copy.rejectedTitle,
+        body: copy.rejectedBody(wo.order_no),
+        data: { work_order_id: workOrderId, quote_version: quoteVersion },
       });
     }
 
-    return jsonResponse({ success: true, status: 'rejected' });
+    return jsonResponse({
+      success: true,
+      status: nextHistoryStatus,
+      message: action === 'approve' ? copy.approvedResponse : copy.rejectedResponse,
+      ...afterQuote,
+      quote: afterQuote,
+    });
   } catch (error) {
+    if (/quote review concurrent update|malformed json/i.test(String(error?.message || error))) {
+      return errorResponse(quoteReviewCopy(getRequestMarket(request)).staleVersion, 409);
+    }
     return errorResponse(error.message, 500);
   }
 }
@@ -9769,12 +12966,73 @@ async function handleAdminArchiveWorkOrder(request, env) {
     const workOrderId = new URL(request.url).pathname.split('/')[4];
     if (!workOrderId) return errorResponse('缺少服务申请 ID');
 
+    const market = getRequestMarket(request);
     const wo = await env.DB.prepare(
-      'SELECT id, status, order_no FROM work_orders WHERE id = ?'
+      'SELECT * FROM work_orders WHERE id = ?'
     ).bind(workOrderId).first();
     if (!wo) return errorResponse('服务申请不存在', 404);
     if (!['resolved', 'pending_review', 'completed'].includes(wo.status)) {
       return errorResponse('当前服务申请尚不适合归档', 409);
+    }
+    const pricing = await env.DB.prepare(
+      'SELECT * FROM work_order_pricing WHERE work_order_id = ?'
+    ).bind(workOrderId).first();
+    if (Number(wo.active_quote_version || 0) >= 1) {
+      const quoteExecution = await getWorkOrderQuoteExecution(env, wo, pricing, request._auth, market);
+      if (!quoteExecution || quoteExecution.payment_state === 'exception') {
+        return quoteExecutionConflictResponse(market);
+      }
+      if (!quoteExecution?.financially_settled) {
+        return errorResponse(
+          market === 'cn'
+            ? '仍有未结清分期，暂不能完成财务归档'
+            : 'Financial archive requires every active installment to be fully received.',
+          409,
+        );
+      }
+      if (wo.status === 'completed') {
+        return jsonResponse({ success: true, status: 'completed' });
+      }
+      const archiveMessage = market === 'cn'
+        ? 'SAGEMRO 运营已完成服务及财务归档。'
+        : 'SAGEMRO completed the service and financial archive.';
+      try {
+        await env.DB.batch([
+          env.DB.prepare(`
+            UPDATE work_orders
+            SET status = 'completed', completed_at = COALESCE(completed_at, datetime('now'))
+            WHERE id = ? AND status = ? AND active_quote_version = ?
+              ${versionedExecutionSqlGuard('installment.received_amount < installment.amount')}
+          `).bind(
+            workOrderId, wo.status, Number(wo.active_quote_version),
+            ...versionedExecutionGuardBindings(pricing),
+          ),
+          env.DB.prepare(`SELECT CASE WHEN changes() = 1 THEN 1 ELSE json('quote lifecycle concurrent update') END`),
+          env.DB.prepare(
+            "INSERT INTO work_order_messages (id, work_order_id, sender_type, sender_id, sender_name, content, message_type, is_internal_note, is_customer_visible) VALUES (?, ?, 'system', '', 'System', ?, 'payment_update', 0, 1)"
+          ).bind(generateId(), workOrderId, archiveMessage),
+          env.DB.prepare(`
+            INSERT INTO work_order_logs (id, work_order_id, action, actor_type, actor_id, content)
+            VALUES (?, ?, 'archived', 'admin', ?, ?)
+          `).bind(generateId(), workOrderId, request._auth?.userId || 'admin', archiveMessage),
+          buildAuditLogStatement(env, request, {
+            targetType: 'work_order',
+            targetId: workOrderId,
+            action: 'work_order_archived',
+            beforeState: { status: wo.status, payment_state: quoteExecution.payment_state },
+            afterState: { status: 'completed', payment_state: quoteExecution.payment_state },
+          }),
+        ]);
+      } catch (error) {
+        if (/quote lifecycle concurrent update|malformed json/i.test(String(error?.message || error))) {
+          if (await recoverLifecycleTransition(env, workOrderId, 'completed')) {
+            return jsonResponse({ success: true, status: 'completed' });
+          }
+          return quoteExecutionConflictResponse(market);
+        }
+        throw error;
+      }
+      return jsonResponse({ success: true, status: 'completed' });
     }
 
     await env.DB.prepare(
@@ -9961,513 +13219,6 @@ async function handleAdminCustomerRatings(request, env) {
     });
   } catch (error) {
     return errorResponse(error.message, 500);
-  }
-}
-
-// ============ 临时建表接口（仅供开发测试使用）============
-async function handleInitDb(env) {
-  try {
-    const tables = [
-      `CREATE TABLE IF NOT EXISTS work_order_pricing (
-        id TEXT PRIMARY KEY,
-        work_order_id TEXT NOT NULL UNIQUE,
-        labor_fee INTEGER DEFAULT 0,
-        parts_fee INTEGER DEFAULT 0,
-        travel_fee INTEGER DEFAULT 0,
-        other_fee INTEGER DEFAULT 0,
-        parts_detail TEXT DEFAULT '',
-        commission_rate REAL DEFAULT 0.05,
-        commission_amount INTEGER DEFAULT 0,
-        subtotal INTEGER DEFAULT 0,
-        total_amount INTEGER DEFAULT 0,
-        ai_price_check TEXT DEFAULT '',
-        status TEXT DEFAULT 'draft',
-        submitted_at TEXT,
-        confirmed_at TEXT,
-        created_at TEXT DEFAULT (datetime('now')),
-        FOREIGN KEY (work_order_id) REFERENCES work_orders(id)
-      )`,
-      `CREATE TABLE IF NOT EXISTS work_order_messages (
-        id TEXT PRIMARY KEY,
-        work_order_id TEXT NOT NULL,
-        sender_type TEXT NOT NULL,
-        sender_id TEXT NOT NULL,
-        sender_name TEXT DEFAULT '',
-        content TEXT NOT NULL,
-        message_type TEXT DEFAULT 'text',
-        attachment_urls TEXT DEFAULT '[]',
-        is_internal_note INTEGER DEFAULT 0,
-        is_customer_visible INTEGER DEFAULT 1,
-        created_at TEXT DEFAULT (datetime('now')),
-        FOREIGN KEY (work_order_id) REFERENCES work_orders(id)
-      )`,
-      `CREATE TABLE IF NOT EXISTS work_order_pricing_history (
-        id TEXT PRIMARY KEY,
-        pricing_id TEXT NOT NULL,
-        labor_fee INTEGER DEFAULT 0,
-        parts_fee INTEGER DEFAULT 0,
-        travel_fee INTEGER DEFAULT 0,
-        other_fee INTEGER DEFAULT 0,
-        parts_detail TEXT DEFAULT '',
-        subtotal INTEGER DEFAULT 0,
-        total_amount INTEGER DEFAULT 0,
-        commission_amount INTEGER DEFAULT 0,
-        version INTEGER DEFAULT 1,
-        created_at TEXT DEFAULT (datetime('now')),
-        FOREIGN KEY (pricing_id) REFERENCES work_order_pricing(id)
-      )`,
-    ];
-
-    for (const sql of tables) {
-      await env.DB.prepare(sql).run();
-    }
-
-    // 添加工单新状态列（SQLite 不支持 DROP COLUMN，如果列已存在会报错，忽略）
-    try {
-      await env.DB.prepare("ALTER TABLE work_orders ADD COLUMN pricing_status TEXT DEFAULT 'none'").run();
-    } catch (e) {
-      // 列可能已存在，忽略
-    }
-
-    return jsonResponse({ success: true, message: 'Tables created successfully' });
-  } catch (error) {
-    return errorResponse(error.message, 500);
-  }
-}
-
-// ============ 临时测试数据初始化（仅供测试使用）============
-async function handleInitTestData(env) {
-  try {
-    const created = { customers: [], engineers: [], workOrders: [], ratings: [] };
-
-    // 创建客户
-    const customerData = [
-      { name: '张伟', phone: '13900001001', region: '华东', password: 'test1234' },
-      { name: '李强', phone: '13900001002', region: '华南', password: 'test1234' },
-      { name: '王磊', phone: '13900001003', region: '华北', password: 'test1234' },
-      { name: '赵明', phone: '13900001004', region: '华东', password: 'test1234' },
-      { name: '陈刚', phone: '13900001005', region: '华中', password: 'test1234' },
-      { name: '刘洋', phone: '13900001006', region: '西南', password: 'test1234' },
-      { name: '周涛', phone: '13900001007', region: '华南', password: 'test1234' },
-      { name: '吴鹏', phone: '13900001008', region: '华北', password: 'test1234' },
-      { name: '孙斌', phone: '13900001009', region: '东北', password: 'test1234' },
-    ];
-
-    for (const c of customerData) {
-      const existing = await env.DB.prepare('SELECT id FROM customers WHERE phone = ?').bind(c.phone).first();
-      if (existing) { created.customers.push({ ...c, note: '已存在' }); continue; }
-      const id = generateId();
-      const userNo = await generateUserNo(env, 'U');
-      const hash = await hashPasswordLegacy(c.password);
-      await env.DB.prepare(
-        'INSERT INTO customers (id, user_no, name, phone, password_hash, region) VALUES (?, ?, ?, ?, ?, ?)'
-      ).bind(id, userNo, c.name, c.phone, hash, c.region).run();
-      created.customers.push({ id, user_no: userNo, name: c.name, phone: c.phone, region: c.region });
-    }
-
-    // 创建工程师
-    const engineerData = [
-      { name: '李师傅', phone: '13900011001', status: 'available', specialties: '["激光切割机","折弯机"]', brands: '{"激光切割机":["大族","通快"],"折弯机":["通快","百超"]}', services: '["激光器维修","切割头维护","参数调试"]', service_region: '华东', bio: '15年激光设备维修经验', password: 'test1234' },
-      { name: '张工', phone: '13900011002', status: 'paused', specialties: '["焊接机","激光焊接"]', brands: '{"焊接机":["福尼斯","林肯"],"激光焊接":["大族","华工"]}', services: '["电气排查","液压维修"]', service_region: '华南', bio: '专注焊接设备维修', password: 'test1234' },
-      { name: '王技师', phone: '13900011003', status: 'available', specialties: '["冲床","剪板机"]', brands: '{"冲床":["通快","村田"],"剪板机":["黄石","扬力"]}', services: '["设备保养","参数调试"]', service_region: '华北', bio: '', password: 'test1234' },
-      { name: '赵师傅', phone: '13900011004', status: 'offline', specialties: '["折弯机","卷板机"]', brands: '{"折弯机":["亚威","普玛宝"],"卷板机":["华工","扬力"]}', services: '["激光器维修","液压维修"]', service_region: '华中', bio: '', password: 'test1234' },
-      { name: '刘工', phone: '13900011005', status: 'available', specialties: '["等离子切割","水刀切割"]', brands: '{"等离子切割":["飞博","瑞凌"],"水刀切割":["华臻"]}', services: '["切割头维护","设备保养"]', service_region: '西南', bio: '专业切割设备维修', password: 'test1234' },
-      { name: '周工', phone: '13900011006', status: 'available', specialties: '["激光切割机","焊接机"]', brands: '{"激光切割机":["邦德","宏山"],"焊接机":["米勒","松下"]}', services: '["激光器维修","参数调试","电气排查"]', service_region: '全国', bio: '', password: 'test1234' },
-    ];
-
-    for (const e of engineerData) {
-      const existing = await env.DB.prepare('SELECT id FROM engineers WHERE phone = ?').bind(e.phone).first();
-      if (existing) { created.engineers.push({ ...e, note: '已存在' }); continue; }
-      const id = generateId();
-      const userNo = await generateUserNo(env, 'E');
-      const hash = await hashPasswordLegacy(e.password);
-      await env.DB.prepare(
-        'INSERT INTO engineers (id, user_no, name, phone, password_hash, status, specialties, brands, services, service_region, bio) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
-      ).bind(id, userNo, e.name, e.phone, hash, e.status, e.specialties, e.brands, e.services, e.service_region, e.bio).run();
-      created.engineers.push({ id, user_no: userNo, name: e.name, phone: e.phone, status: e.status, service_region: e.service_region });
-    }
-
-    // 创建工单（利用已有的客户和工程师）
-    const customers = await env.DB.prepare('SELECT id FROM customers').all();
-    const engineers = await env.DB.prepare('SELECT id FROM engineers').all();
-    if (customers.results.length > 0 && engineers.results.length > 0) {
-      const workOrderData = [
-        { type: 'fault', urgency: 'critical', status: 'pending', description: '激光切割机切割时出现异响，突然停止工作' },
-        { type: 'maintenance', urgency: 'normal', status: 'in_progress', description: '定期保养，导轨润滑，切割头校准' },
-        { type: 'parameter', urgency: 'urgent', status: 'assigned', description: '切割参数异常，断面质量差，需要重新调参' },
-        { type: 'other', urgency: 'normal', status: 'resolved', description: '设备搬迁后重新安装调试' },
-        { type: 'fault', urgency: 'urgent', status: 'completed', description: '折弯机液压系统漏油，已修复' },
-        { type: 'maintenance', urgency: 'normal', status: 'pending', description: '焊机电极磨损严重，需要更换并调试' },
-        { type: 'parameter', urgency: 'normal', status: 'in_progress', description: '激光焊接机焦点偏移，需要校准' },
-        { type: 'fault', urgency: 'critical', status: 'pending', description: '数控冲床冲头无法抬起，设备停机' },
-      ];
-
-      for (let i = 0; i < workOrderData.length; i++) {
-        const wo = workOrderData[i];
-        const cid = customers.results[i % customers.results.length].id;
-        const eid = (wo.status !== 'pending') ? engineers.results[i % engineers.results.length].id : null;
-        const id = generateId();
-        const orderNo = `WO-TEST-${(i + 1).toString().padStart(3, '0')}`;
-        const assignedAt = eid ? `datetime('now', '-${Math.floor(Math.random() * 3)} days')` : null;
-        await env.DB.prepare(
-          'INSERT INTO work_orders (id, order_no, customer_id, engineer_id, type, description, urgency, status, assigned_at, sla_deadline, category_l1, category_l2) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
-        ).bind(id, orderNo, cid, eid, wo.type, wo.description, wo.urgency, wo.status, assignedAt, computeSlaDeadline(wo.urgency), 'other', 'other').run();
-
-        // 部分已完成工单添加日志
-        if (wo.status === 'resolved' || wo.status === 'completed') {
-          await env.DB.prepare(
-            'INSERT INTO work_order_logs (id, work_order_id, action, actor_type, content) VALUES (?, ?, ?, ?, ?)'
-          ).bind(generateId(), id, '工单已解决', 'engineer', '问题已修复，客户确认').run();
-        }
-
-        created.workOrders.push({ id, order_no: orderNo, status: wo.status, customer_id: cid, engineer_id: eid });
-      }
-
-      // 创建评价（针对已完成/已解决的工单）
-      const ratedWorkOrders = created.workOrders.filter(w => w.status === 'resolved' || w.status === 'completed');
-      const ratingData = [
-        { timeliness: 5, technical: 5, communication: 5, professional: 5, comment: '李师傅非常专业，问题很快就解决了，非常满意！', avg: 5.0 },
-        { timeliness: 3, technical: 2, communication: 3, professional: 2, comment: '响应速度一般，技术水平有待提高。', avg: 2.5 },
-        { timeliness: 4, technical: 4, communication: 5, professional: 4, comment: '沟通很顺畅，工程师很有耐心，给个好评！', avg: 4.25 },
-        { timeliness: 1, technical: 1, communication: 1, professional: 2, comment: '等了两天才来，而且修完没过多久又出问题了，非常失望。', avg: 1.25 },
-        { timeliness: 4, technical: 3, communication: 4, professional: 4, comment: '整体不错，就是价格稍微贵了点。', avg: 3.75 },
-      ];
-
-      for (let i = 0; i < Math.min(ratedWorkOrders.length, ratingData.length); i++) {
-        const wo = ratedWorkOrders[i];
-        const rd = ratingData[i];
-        const existingRating = await env.DB.prepare('SELECT id FROM ratings WHERE work_order_id = ?').bind(wo.id).first();
-        if (existingRating) continue;
-
-        // 找一个对应的工程师ID
-        const woData = await env.DB.prepare('SELECT engineer_id FROM work_orders WHERE id = ?').bind(wo.id).first();
-        if (!woData?.engineer_id) continue;
-        const rid = generateId();
-        await env.DB.prepare(
-          'INSERT INTO ratings (id, work_order_id, engineer_id, customer_id, rating_timeliness, rating_technical, rating_communication, rating_professional, comment) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
-        ).bind(rid, wo.id, woData.engineer_id, wo.customer_id, rd.timeliness, rd.technical, rd.communication, rd.professional, rd.comment).run();
-
-        // 更新工程师评分
-        const allRatings = await env.DB.prepare('SELECT * FROM ratings WHERE engineer_id = ?').bind(woData.engineer_id).all();
-        const count = allRatings.results.length;
-        if (count > 0) {
-          const avgT = allRatings.results.reduce((s, r) => s + r.rating_timeliness, 0) / count;
-          const avgTech = allRatings.results.reduce((s, r) => s + r.rating_technical, 0) / count;
-          const avgC = allRatings.results.reduce((s, r) => s + r.rating_communication, 0) / count;
-          const avgP = allRatings.results.reduce((s, r) => s + r.rating_professional, 0) / count;
-          await env.DB.prepare(
-            'UPDATE engineers SET rating_timeliness = ?, rating_technical = ?, rating_communication = ?, rating_professional = ?, rating_count = ? WHERE id = ?'
-          ).bind(avgT, avgTech, avgC, avgP, count, woData.engineer_id).run();
-        }
-
-        // 添加管理员回复（部分评价）
-        if (i === 1 || i === 3) {
-          const replyId = generateId();
-          const replyContent = i === 1 ? '非常抱歉给您带来不好的体验，我们会跟进工程师的服务质量，感谢您的反馈。'
-            : '对不起，这种情况是不应该发生的。我们已将此问题反馈给工程师团队，会尽快安排复检。如有需要请联系客服。';
-          await env.DB.prepare('INSERT INTO admin_replies (id, rating_id, content) VALUES (?, ?, ?)').bind(replyId, rid, replyContent).run();
-        }
-
-        created.ratings.push({ work_order_id: wo.id, avg: rd.avg, comment: rd.comment });
-      }
-
-      // 平台评价
-      const platformRatings = [
-        { rating: 5, comment: '平台很好用，SAGEMRO AI 很专业，解决了我的很多问题！' },
-        { rating: 4, comment: '整体满意，希望能覆盖更多地区。' },
-        { rating: 3, comment: '还行，希望后续能增加更多工程师。' },
-      ];
-      for (let i = 0; i < Math.min(platformRatings.length, customers.results.length); i++) {
-        const pr = platformRatings[i];
-        const cid = customers.results[i].id;
-        const existingPR = await env.DB.prepare('SELECT id FROM platform_ratings WHERE customer_id = ?').bind(cid).first();
-        if (existingPR) continue;
-        const pid = generateId();
-        await env.DB.prepare('INSERT INTO platform_ratings (id, customer_id, rating, comment) VALUES (?, ?, ?, ?)').bind(pid, cid, pr.rating, pr.comment).run();
-        created.ratings.push({ type: 'platform', customer_id: cid, rating: pr.rating });
-      }
-
-      // 工程师对客户的评价（内部）
-      if (ratedWorkOrders.length >= 2) {
-        for (let i = 0; i < 2; i++) {
-          const wo = ratedWorkOrders[i];
-          const woData = await env.DB.prepare('SELECT engineer_id, customer_id FROM work_orders WHERE id = ?').bind(wo.id).first();
-          if (!woData?.engineer_id) continue;
-          const existingCR = await env.DB.prepare('SELECT id FROM customer_ratings WHERE work_order_id = ? AND engineer_id = ?').bind(wo.id, woData.engineer_id).first();
-          if (existingCR) continue;
-          const crid = generateId();
-          const crRating = 3 + Math.floor(Math.random() * 3);
-          const crComment = crRating >= 4 ? '客户配合度高，沟通顺畅。' : '客户描述不够清楚，耽误了一些时间。';
-          await env.DB.prepare('INSERT INTO customer_ratings (id, work_order_id, engineer_id, customer_id, rating, comment) VALUES (?, ?, ?, ?, ?, ?)').bind(crid, wo.id, woData.engineer_id, woData.customer_id, crRating, crComment).run();
-          created.ratings.push({ type: 'customer_rating', work_order_id: wo.id, rating: crRating });
-        }
-      }
-    }
-
-    return jsonResponse({ success: true, created });
-  } catch (error) {
-    return errorResponse(error.message, 500);
-  }
-}
-
-// ============ 完整核价流程测试 ============
-async function handleTestFullPricingFlow(env) {
-  const results = { flow: [] };
-
-  const log = (step, data) => results.flow.push({ step, ...data });
-
-  try {
-    // ====== 第1步：创建3个不同专长的工程师 ======
-    log('step1_create_engineers', { message: '创建3个专长不同的工程师' });
-
-    const engineers = [
-      {
-        id: generateId(),
-        user_no: 'E' + String(100 + Math.floor(Math.random() * 900000)).padStart(6, '0'),
-        name: '李师傅',
-        phone: '18800001001',
-        password_hash: 'test',
-        specialties: JSON.stringify(['激光切割机', '等离子切割机']),
-        brands: JSON.stringify({ '激光切割机': ['大族', '通快', '百超'], '等离子切割机': ['林德', '凯尔尼'] }),
-        services: JSON.stringify(['激光器维修', '切割头维护', '导轨润滑', '参数调试']),
-        service_region: '华东地区',
-        bio: '专注激光设备15年，擅长通快、大族设备',
-        rating_timeliness: 4.8,
-        rating_technical: 4.9,
-        rating_communication: 4.7,
-        rating_professional: 4.9,
-        rating_count: 48,
-      },
-      {
-        id: generateId(),
-        user_no: 'E' + String(100 + Math.floor(Math.random() * 900000)).padStart(6, '0'),
-        name: '王师傅',
-        phone: '18800001002',
-        password_hash: 'test',
-        specialties: JSON.stringify(['折弯机', '剪板机', '卷板机']),
-        brands: JSON.stringify({ '折弯机': ['通快', '百超', 'Amada'], '剪板机': ['金方圆', '扬力'] }),
-        services: JSON.stringify(['液压维修', '同步精度校准', '模具维护', '参数调试']),
-        service_region: '华东地区',
-        bio: '擅长激光和成型设备，10年经验',
-        rating_timeliness: 4.5,
-        rating_technical: 4.7,
-        rating_communication: 4.6,
-        rating_professional: 4.5,
-        rating_count: 32,
-      },
-      {
-        id: generateId(),
-        user_no: 'E' + String(100 + Math.floor(Math.random() * 900000)).padStart(6, '0'),
-        name: '张师傅',
-        phone: '18800001003',
-        password_hash: 'test',
-        specialties: JSON.stringify(['激光焊接', 'MIG焊接', 'TIG焊接']),
-        brands: JSON.stringify({ '激光焊接': ['通快', 'IPG'], 'MIG焊接': ['福尼斯', '林肯'] }),
-        services: JSON.stringify(['焊接参数调优', '焊缝质量排查', '送丝机构维护']),
-        service_region: '华南地区',
-        bio: '焊接专家，精通各类焊接设备调试',
-        rating_timeliness: 4.3,
-        rating_technical: 4.6,
-        rating_communication: 4.8,
-        rating_professional: 4.4,
-        rating_count: 25,
-      },
-    ];
-
-    for (const eng of engineers) {
-      const existing = await env.DB.prepare('SELECT id FROM engineers WHERE phone = ?').bind(eng.phone).first();
-      if (!existing) {
-        await env.DB.prepare(`
-          INSERT INTO engineers (id, user_no, name, phone, password_hash, specialties, brands, services, service_region, bio, rating_timeliness, rating_technical, rating_communication, rating_professional, rating_count, status)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'available')
-        `).bind(eng.id, eng.user_no, eng.name, eng.phone, eng.password_hash, eng.specialties, eng.brands, eng.services, eng.service_region, eng.bio, eng.rating_timeliness, eng.rating_technical, eng.rating_communication, eng.rating_professional, eng.rating_count).run();
-      }
-      eng.created = !existing;
-    }
-    log('step1_done', { engineers: engineers.map(e => ({ name: e.name, phone: e.phone, specialties: JSON.parse(e.specialties), created: e.created })) });
-
-    // ====== 第2步：创建一个测试客户 ======
-    log('step2_create_customer', { message: '创建测试客户' });
-    const customerId = generateId();
-    const customerPhone = '18900001001';
-    const customerName = '张伟';
-
-    const existingCust = await env.DB.prepare('SELECT id FROM customers WHERE phone = ?').bind(customerPhone).first();
-    const finalCustomerId = existingCust ? existingCust.id : customerId;
-    if (!existingCust) {
-      await env.DB.prepare(`
-        INSERT INTO customers (id, user_no, name, phone, password_hash, salt, region)
-        VALUES (?, 'C' || substr(?, 10), ?, ?, 'test', '', '华东地区')
-      `).bind(customerId, customerId, customerName, customerPhone).run();
-    }
-    log('step2_done', { customer_id: finalCustomerId, name: customerName, phone: customerPhone });
-
-    // ====== 第3步：客户提交工单 ======
-    log('step3_submit_workorder', { message: '客户提交工单' });
-    const workOrderId = generateId();
-    const orderNo = 'WO-TEST-' + generateId().slice(0, 8).toUpperCase();
-
-    await env.DB.prepare(`
-      INSERT INTO work_orders (id, order_no, customer_id, type, description, urgency, status, sla_deadline, category_l1, category_l2)
-      VALUES (?, ?, ?, 'fault', '光纤激光切割机（3000W大族）切割时出现毛刺，切面不光洁，侧壁有挂渣。已经更换过辅助气体（氮气），问题仍然存在。设备使用3年，近期未做保养。', 'urgent', 'pending', ?, 'laser_cutting', 'optical_fault')
-    `).bind(workOrderId, orderNo, finalCustomerId, computeSlaDeadline('urgent')).run();
-
-    // 生成 AI 摘要
-    const aiSummary = await generateWorkOrderSummary('fault', '光纤激光切割机（3000W大族）切割时出现毛刺，切面不光洁，侧壁有挂渣。已经更换过辅助气体（氮气），问题仍然存在。设备使用3年，近期未做保养。', 'urgent', env, { market: 'cn' });
-    await env.DB.prepare('UPDATE work_orders SET ai_summary = ? WHERE id = ?').bind(JSON.stringify(aiSummary), workOrderId).run();
-
-    log('step3_done', { work_order_id: workOrderId, order_no: orderNo, ai_summary: aiSummary });
-
-    // ====== 第4步：AI 推荐工程师 ======
-    log('step4_ai_recommend', { message: 'AI 分析工单并推荐工程师' });
-    const workOrder = await env.DB.prepare('SELECT * FROM work_orders WHERE id = ?').bind(workOrderId).first();
-    const recommended = await findMatchingEngineers(workOrder, env);
-    log('step4_done', {
-      recommended_engineers: recommended.map(e => ({
-        name: e.name,
-        total_score: e.totalScore,
-        specialty_score: e.specialtyScore,
-        skill_score: e.skillScore,
-        brand_bonus: e.brandBonus,
-        avg_rating: ((e.rating_timeliness + e.rating_technical + e.rating_communication + e.rating_professional) / 4).toFixed(1),
-        specialties: e.specialties,
-      }))
-    });
-
-    // ====== 第5步：第1名工程师接单 ======
-    log('step5_engineer_accept', { message: '最优推荐工程师接单' });
-    const topEngineer = recommended[0];
-    await env.DB.prepare(`
-      UPDATE work_orders SET status = 'in_progress', engineer_id = ?, assigned_at = datetime('now')
-      WHERE id = ?
-    `).bind(topEngineer.id, workOrderId).run();
-
-    await env.DB.prepare(`
-      INSERT INTO work_order_logs (id, work_order_id, action, actor_type, actor_id, content)
-      VALUES (?, ?, 'accepted', 'engineer', ?, ?)
-    `).bind(generateId(), workOrderId, topEngineer.id, `${topEngineer.name} 接单`).run();
-
-    log('step5_done', { engineer_name: topEngineer.name, status: 'in_progress' });
-
-    // ====== 第6步：工程师提交核价 ======
-    log('step6_engineer_pricing', { message: '工程师提交核价' });
-
-    // 读取工程师佣金比例（按等级：Junior 80% / Senior 85% / Expert 88%）
-    const engineerData = await env.DB.prepare(
-      'SELECT commission_rate, level FROM engineers WHERE id = ?'
-    ).bind(topEngineer.id).first();
-    const commissionRate = engineerData?.commission_rate || 0.80;
-
-    const laborFee = 800; // 工时费
-    const partsFee = 200; // 配件费（保护镜片等）
-    const travelFee = 200; // 差旅费
-    const otherFee = 0;
-    const subtotal = laborFee + partsFee + travelFee + otherFee;
-    // V2佣金体系：客户支付 subtotal（工程师报的全包价），平台从工程师端抽佣
-    const platformFee = Math.round(subtotal * (1 - commissionRate));  // 平台服务费
-    const depositWithhold = Math.round(subtotal * 0.05);             // 动态保证金 5%
-    const engineerPayout = Math.round(subtotal * commissionRate);     // 工程师实得
-
-    // AI 审核报价
-    const aiCheck = await checkPricing合理性({ labor_fee: laborFee, parts_fee: partsFee, travel_fee: travelFee, other_fee: otherFee, total_amount: subtotal }, workOrderId, env);
-
-    const pricingId = generateId();
-    await env.DB.prepare(`
-      INSERT INTO work_order_pricing (id, work_order_id, engineer_id, labor_fee, parts_fee, travel_fee, other_fee, subtotal, platform_fee, deposit_withhold, total_amount, ai_price_check, status, submitted_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'submitted', datetime('now'))
-    `).bind(pricingId, workOrderId, topEngineer.id, laborFee, partsFee, travelFee, otherFee, subtotal, platformFee, depositWithhold, subtotal, JSON.stringify(aiCheck)).run();
-
-    // 更新工单状态
-    await env.DB.prepare("UPDATE work_orders SET status = 'pricing' WHERE id = ?").bind(workOrderId).run();
-
-    // 发送系统消息
-    await env.DB.prepare(`
-      INSERT INTO work_order_messages (id, work_order_id, sender_type, sender_id, sender_name, content, message_type)
-      VALUES (?, ?, 'system', '', '系统', '工程师已提交报价，请查看报价明细并确认。', 'pricing_update')
-    `).bind(generateId(), workOrderId).run();
-
-    log('step6_done', {
-      pricing: { laborFee, partsFee, travelFee, otherFee, subtotal, commissionRate, platformFee, depositWithhold, engineerPayout },
-      ai_check: aiCheck,
-      work_order_status: 'pricing'
-    });
-
-    // ====== 第7步：客户确认报价 ======
-    log('step7_customer_confirm', { message: '客户确认报价' });
-    await env.DB.prepare(`
-      UPDATE work_order_pricing SET status = 'confirmed', confirmed_at = datetime('now') WHERE id = ?
-    `).bind(pricingId).run();
-
-    await env.DB.prepare(`
-      UPDATE work_orders SET status = 'in_service' WHERE id = ?
-    `).bind(workOrderId).run();
-
-    await env.DB.prepare(`
-      INSERT INTO work_order_messages (id, work_order_id, sender_type, sender_id, sender_name, content, message_type)
-      VALUES (?, ?, 'system', '', '系统', '客户已确认报价，工程师将上门服务。', 'system')
-    `).bind(generateId(), workOrderId).run();
-
-    log('step7_done', { work_order_status: 'in_service' });
-
-    // ====== 第8步：工程师标记服务完成 ======
-    log('step8_resolve', { message: '工程师上门服务完成' });
-    await env.DB.prepare(`
-      UPDATE work_orders SET status = 'resolved', resolved_at = datetime('now') WHERE id = ?
-    `).bind(workOrderId).run();
-
-    await env.DB.prepare(`
-      INSERT INTO work_order_messages (id, work_order_id, sender_type, sender_id, sender_name, content, message_type)
-      VALUES (?, ?, 'system', '', '系统', '服务已完成，请客户确认并评价。', 'system')
-    `).bind(generateId(), workOrderId).run();
-
-    log('step8_done', { work_order_status: 'resolved' });
-
-    // ====== 第9步：客户提交评价 ======
-    log('step9_customer_rating', { message: '客户提交评价' });
-    const ratingId = generateId();
-    await env.DB.prepare(`
-      INSERT INTO ratings (id, work_order_id, engineer_id, customer_id, rating_timeliness, rating_technical, rating_communication, rating_professional, comment)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).bind(ratingId, workOrderId, topEngineer.id, finalCustomerId, 5, 5, 4, 5, '服务很专业，准时到达，问题解决了，满意！').run();
-
-    // 更新工程师评分
-    const newTimeliness = ((topEngineer.rating_timeliness * topEngineer.rating_count) + 5) / (topEngineer.rating_count + 1);
-    const newTechnical = ((topEngineer.rating_technical * topEngineer.rating_count) + 5) / (topEngineer.rating_count + 1);
-    const newComm = ((topEngineer.rating_communication * topEngineer.rating_count) + 4) / (topEngineer.rating_count + 1);
-    const newProf = ((topEngineer.rating_professional * topEngineer.rating_count) + 5) / (topEngineer.rating_count + 1);
-    await env.DB.prepare(`
-      UPDATE engineers SET rating_timeliness = ?, rating_technical = ?, rating_communication = ?, rating_professional = ?, rating_count = ? WHERE id = ?
-    `).bind(newTimeliness.toFixed(1), newTechnical.toFixed(1), newComm.toFixed(1), newProf.toFixed(1), topEngineer.rating_count + 1, topEngineer.id).run();
-
-    // 工单标记完成
-    await env.DB.prepare(`
-      UPDATE work_orders SET status = 'completed', completed_at = datetime('now') WHERE id = ?
-    `).bind(workOrderId).run();
-
-    log('step9_done', { rating_submitted: true, work_order_status: 'completed' });
-
-    // 保存结果到D1
-    try {
-      await env.DB.prepare(`
-        CREATE TABLE IF NOT EXISTS test_flow_results (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          step TEXT,
-          data TEXT,
-          created_at TEXT DEFAULT (datetime('now'))
-        )
-      `).run();
-      for (const item of results.flow) {
-        await env.DB.prepare(
-          'INSERT INTO test_flow_results (step, data) VALUES (?, ?)'
-        ).bind(item.step, JSON.stringify(item)).run();
-      }
-    } catch (e) {
-      console.error('保存结果失败:', e);
-    }
-
-    return jsonResponse({ success: true, flow: results.flow });
-  } catch (error) {
-    return errorResponse('测试流程出错: ' + error.message, 500);
   }
 }
 
@@ -10723,7 +13474,8 @@ async function handleConfirmOnsiteConversion(request, env, { admin = false } = {
 
     const workOrder = await env.DB.prepare(`
       SELECT id, order_no, customer_id, engineer_id, service_mode, onsite_conversion_status,
-        service_address, service_latitude, service_longitude
+        service_address, service_latitude, service_longitude, active_quote_version,
+        quote_expected_service_days, expected_service_days
       FROM work_orders WHERE id = ?
     `).bind(workOrderId).first();
     if (!workOrder) return errorResponse(market === 'cn' ? '工单不存在' : 'Work order not found', 404);
@@ -10737,7 +13489,9 @@ async function handleConfirmOnsiteConversion(request, env, { admin = false } = {
     const confirmationNote = admin
       ? `${note}${note ? '\n' : ''}${market === 'cn' ? '管理员代确认原因' : 'Admin reason'}: ${adminReason}`
       : note;
-    await env.DB.prepare(`
+    const actorType = admin ? 'admin' : 'customer';
+    const auditAction = admin ? 'onsite_conversion_admin_confirmed' : 'onsite_conversion_confirmed';
+    const conversionStatements = [env.DB.prepare(`
       UPDATE work_orders SET
         service_address = ?,
         service_latitude = ?,
@@ -10752,8 +13506,13 @@ async function handleConfirmOnsiteConversion(request, env, { admin = false } = {
         onsite_conversion_status = 'confirmed',
         onsite_conversion_confirmed_at = datetime('now'),
         onsite_conversion_confirmation_note = ?,
-        onsite_conversion_confirmed_by = ?
-      WHERE id = ?
+        onsite_conversion_confirmed_by = ?,
+        expected_service_days = CASE
+          WHEN active_quote_version IS NOT NULL AND quote_expected_service_days IS NOT NULL
+            THEN quote_expected_service_days
+          ELSE expected_service_days
+        END
+      WHERE id = ? AND service_mode = 'hybrid' AND onsite_conversion_status = 'requested'
     `).bind(
       location.address,
       location.latitude,
@@ -10764,10 +13523,9 @@ async function handleConfirmOnsiteConversion(request, env, { admin = false } = {
       confirmationNote,
       auth.userId,
       workOrderId,
-    ).run();
-
-    const actorType = admin ? 'admin' : 'customer';
-    await env.DB.prepare(`
+    ), env.DB.prepare(`
+      SELECT CASE WHEN changes() = 1 THEN 1 ELSE json('onsite conversion concurrent update') END
+    `), env.DB.prepare(`
       INSERT INTO work_order_logs (id, work_order_id, action, actor_type, actor_id, content)
       VALUES (?, ?, 'onsite_conversion_confirmed', ?, ?, ?)
     `).bind(
@@ -10776,31 +13534,48 @@ async function handleConfirmOnsiteConversion(request, env, { admin = false } = {
       actorType,
       auth.userId,
       admin ? adminReason : (note || location.address),
-    ).run();
-
-    await writeAuditLog(env, request, {
-      targetType: 'work_order',
-      targetId: workOrderId,
-      action: admin ? 'onsite_conversion_admin_confirmed' : 'onsite_conversion_confirmed',
-      beforeState: {
+    ), env.DB.prepare(`
+      INSERT INTO audit_logs (
+        id, actor_type, actor_id, target_type, target_id, action,
+        before_state, after_state, ip, device_info
+      )
+      SELECT ?, ?, ?, 'work_order', id, ?, ?, json_object(
+        'service_mode', service_mode,
+        'onsite_conversion_status', onsite_conversion_status,
+        'service_address', service_address,
+        'service_latitude', service_latitude,
+        'service_longitude', service_longitude,
+        'expected_service_days', expected_service_days,
+        'reason', ?
+      ), ?, ?
+      FROM work_orders WHERE id = ?
+    `).bind(
+      generateId(), actorType, auth.userId, auditAction,
+      JSON.stringify({
         service_mode: workOrder.service_mode,
         onsite_conversion_status: workOrder.onsite_conversion_status,
         service_address: workOrder.service_address,
         service_latitude: workOrder.service_latitude,
         service_longitude: workOrder.service_longitude,
-      },
-      afterState: {
-        service_mode: 'onsite',
-        onsite_conversion_status: 'confirmed',
-        service_address: location.address,
-        service_latitude: location.latitude,
-        service_longitude: location.longitude,
-        reason: adminReason || undefined,
-      },
-    });
+      }),
+      adminReason || null,
+      getRequestIp(request), request.headers.get('user-agent') || '', workOrderId,
+    )];
+    if (typeof env.DB.batch !== 'function') throw new Error('Transactional D1 batch is required');
+    try {
+      await env.DB.batch(conversionStatements);
+    } catch (error) {
+      if (/onsite conversion concurrent update|malformed json/i.test(String(error?.message || error))) {
+        return errorResponse(
+          market === 'cn' ? '上门服务状态已变更，请刷新后重试' : 'The onsite conversion changed. Refresh and try again.',
+          409,
+        );
+      }
+      throw error;
+    }
 
     if (workOrder.engineer_id) {
-      await createNotification(env, {
+      const notificationTask = createNotification(env, {
         user_id: workOrder.engineer_id,
         user_type: 'engineer',
         type: 'onsite_conversion_confirmed',
@@ -10809,7 +13584,14 @@ async function handleConfirmOnsiteConversion(request, env, { admin = false } = {
           ? `工单 ${workOrder.order_no || workOrderId} 已转为上门服务，到达现场后请完成定位打卡。`
           : `${workOrder.order_no || workOrderId} is now an on-site service order. Check in after arriving at the customer site.`,
         data: { work_order_id: workOrderId },
+      }).catch((error) => {
+        console.warn('[onsite conversion] notification failed:', error?.message || error);
       });
+      if (request._ctx && typeof request._ctx.waitUntil === 'function') {
+        request._ctx.waitUntil(notificationTask);
+      } else {
+        await notificationTask;
+      }
     }
 
     return jsonResponse({
@@ -10877,10 +13659,11 @@ async function handleAdminArrivalOverride(request, env) {
 
 async function handleResolveWorkOrder(request, env) {
   try {
+    const market = getRequestMarket(request);
     // 认证：engineer_id 从 token 取
     const auth = request._auth;
     if (!auth || auth.userType !== 'engineer') {
-      return errorResponse('仅工程师可标记完成', 403);
+      return errorResponse(market === 'cn' ? '仅工程师可标记完成' : 'Only engineers can complete service', 403);
     }
     const engineer_id = auth.userId;
 
@@ -10888,12 +13671,53 @@ async function handleResolveWorkOrder(request, env) {
     const wo = await env.DB.prepare(
       'SELECT status, engineer_id, customer_id, arrival_verification_required, arrival_verified_at FROM work_orders WHERE id = ?'
     ).bind(workOrderId).first();
-    if (!wo) return errorResponse('工单不存在', 404);
+    if (!wo) return errorResponse(market === 'cn' ? '工单不存在' : 'Work order not found', 404);
     if (wo.engineer_id !== engineer_id) {
-      return errorResponse('您无权操作该工单', 403);
+      return errorResponse(market === 'cn' ? '您无权操作该工单' : 'You do not have permission to update this work order', 403);
     }
     if (wo.arrival_verification_required && !wo.arrival_verified_at) {
-      return errorResponse('请先完成到场定位核验，再提交服务完成', 400);
+      return errorResponse(market === 'cn' ? '请先完成到场定位核验，再提交服务完成' : 'Complete the onsite arrival check before completing service', 400);
+    }
+
+    const fieldPlan = await env.DB.prepare(`
+      SELECT service_mode, site_timezone, expected_service_days, expected_completion_date
+      FROM work_orders WHERE id = ?
+    `).bind(workOrderId).first();
+    if (fieldPlan?.service_mode === 'onsite' && hasCompleteFieldPlan(fieldPlan)) {
+      const fieldDayRecords = await env.DB.prepare(`
+        SELECT * FROM work_order_field_days
+        WHERE work_order_id = ?
+        ORDER BY site_local_date DESC, created_at DESC
+      `).bind(workOrderId).all();
+      const fieldDays = fieldDayRecords.results || [];
+      if (!fieldDays.length) {
+        return errorResponse(
+          market === 'cn' ? '请至少完成一个现场工作日并提交日报' : 'Complete at least one field day before completing service',
+          409,
+        );
+      }
+      if (fieldDays.some((fieldDay) => fieldDayBlocksFinalReport(fieldDay.status))) {
+        return errorResponse(
+          market === 'cn' ? '请先提交所有未完成或逾期的现场日报' : 'Submit every open or overdue daily report before completing service',
+          409,
+        );
+      }
+      if (!['report_submitted', 'late_report_submitted'].includes(fieldDays[0].status)) {
+        return errorResponse(
+          market === 'cn' ? '最终现场工作日必须先提交日报' : 'Submit the final field day report before completing service',
+          409,
+        );
+      }
+      const pendingExtension = await env.DB.prepare(`
+        SELECT id FROM work_order_extension_requests
+        WHERE work_order_id = ? AND status = 'pending'
+      `).bind(workOrderId).first();
+      if (pendingExtension) {
+        return errorResponse(
+          market === 'cn' ? '请先完成待审批的延期申请' : 'Resolve the pending field extension before completing service',
+          409,
+        );
+      }
     }
 
     const repairRecord = await env.DB.prepare(
@@ -10916,14 +13740,45 @@ async function handleResolveWorkOrder(request, env) {
       hasParts
     );
     if (!hasServiceReport) {
-      return errorResponse('请先填写服务报告，再标记服务完成', 400);
+      return errorResponse(market === 'cn' ? '请先填写服务报告，再标记服务完成' : 'Complete the service report before completing service', 400);
     }
 
     // 仅允许 in_service 或 pricing 状态时标记完成
     if (['in_service', 'pricing'].includes(wo.status)) {
-      await env.DB.prepare(
-        "UPDATE work_orders SET status = 'resolved', resolved_at = datetime('now') WHERE id = ?"
-      ).bind(workOrderId).run();
+      const resolved = await env.DB.prepare(`
+        UPDATE work_orders
+        SET status = 'resolved', resolved_at = datetime('now')
+        WHERE id = ? AND engineer_id = ? AND status IN ('in_service', 'pricing')
+          AND (
+            service_mode <> 'onsite'
+            OR site_timezone IS NULL
+            OR expected_service_days IS NULL
+            OR expected_service_days < 1
+            OR expected_completion_date IS NULL
+            OR (
+              EXISTS (SELECT 1 FROM work_order_field_days WHERE work_order_id = work_orders.id)
+              AND NOT EXISTS (
+                SELECT 1 FROM work_order_field_days
+                WHERE work_order_id = work_orders.id AND status IN ('checked_in', 'report_overdue', 'admin_override_open')
+              )
+              AND (
+                SELECT status FROM work_order_field_days
+                WHERE work_order_id = work_orders.id
+                ORDER BY site_local_date DESC, created_at DESC LIMIT 1
+              ) IN ('report_submitted', 'late_report_submitted')
+              AND NOT EXISTS (
+                SELECT 1 FROM work_order_extension_requests
+                WHERE work_order_id = work_orders.id AND status = 'pending'
+              )
+            )
+          )
+      `).bind(workOrderId, engineer_id).run();
+      if (Number(resolved?.meta?.changes || 0) !== 1) {
+        return errorResponse(
+          market === 'cn' ? '工单状态或现场记录已变更，请刷新后重试' : 'The work order or field records changed. Refresh and try again',
+          409,
+        );
+      }
 
       await ensureBalancePayment(env, workOrderId, wo.customer_id);
 
@@ -11255,16 +14110,24 @@ async function handleGetWorkOrderPricing(request, env) {
       'SELECT * FROM work_order_pricing WHERE work_order_id = ?'
     ).bind(workOrderId).first();
     const materialItems = await listWorkOrderMaterialItems(env, workOrderId, { purpose: 'quote' });
-    const paymentPolicy = pricing ? computeServicePaymentPolicy(pricing) : null;
-    if (
-      request._auth?.userType === 'customer' &&
-      pricing &&
-      !['submitted', 'confirmed'].includes(pricing.status)
-    ) {
+    const pricingView = await getWorkOrderPricingView(
+      env, wo, pricing, request._auth?.userType === 'customer',
+    );
+    const visiblePricing = pricingView?.pricing || null;
+    if (request._auth?.userType === 'customer' && pricing && !visiblePricing) {
       return jsonResponse({ pricing: null, quote_review_status: wo.quote_review_status || 'pending_review' });
     }
+    const paymentPolicy = visiblePricing && !isVersionedQuote(visiblePricing)
+      ? computeServicePaymentPolicy(visiblePricing)
+      : null;
+    const paymentSchedule = pricingView?.payment_schedule || [];
     return jsonResponse({
-      pricing: pricing ? { ...pricing, material_items: materialItems, payment_policy: paymentPolicy } : null,
+      pricing: visiblePricing ? {
+        ...visiblePricing,
+        material_items: materialItems,
+        payment_policy: paymentPolicy,
+        payment_schedule: paymentSchedule,
+      } : null,
       material_items: materialItems,
     });
   } catch (error) {
@@ -11367,9 +14230,6 @@ async function checkPricingReasonableness(pricing, workOrderId, env) {
   }
 }
 
-// 旧名兼容（其他调用处仍在用中文函数名，等 Task #12 统一重命名再去掉）
-const checkPricing合理性 = checkPricingReasonableness;
-
 // 调用 LLM 生成报价解读。失败返回 null，不影响主流程。
 async function generatePricingAINote(ctx, env) {
   // 后台系统调用，计入全平台日配额
@@ -11457,7 +14317,7 @@ async function handleSubmitWorkOrderPricing(request, env) {
     const copy = serviceCopy(market);
     const workOrderId = new URL(request.url).pathname.split('/')[3];
     const body = await request.json();
-    const { labor_fee, travel_fee, other_fee, parts_detail } = body;
+    const { parts_detail } = body;
     const materialItems = Array.isArray(body.material_items) ? body.material_items : null;
     const structuredPartsFee = materialItems
       ? materialItems.reduce((sum, item) => {
@@ -11466,9 +14326,18 @@ async function handleSubmitWorkOrderPricing(request, env) {
           return sum + quantity * unitPrice;
         }, 0)
       : null;
-    const parts_fee = structuredPartsFee !== null
+    const fees = {
+      labor_fee: body.labor_fee ?? 0,
+      parts_fee: structuredPartsFee !== null
       ? Math.round(structuredPartsFee * 100) / 100
-      : (body.parts_fee || 0);
+      : (body.parts_fee ?? 0),
+      travel_fee: body.travel_fee ?? 0,
+      other_fee: body.other_fee ?? 0,
+    };
+    if (Object.values(fees).some((fee) => !Number.isSafeInteger(fee) || fee < 0)) {
+      return quoteExecutionError('quote_total_amount_invalid', market);
+    }
+    const { labor_fee, parts_fee, travel_fee, other_fee } = fees;
 
     try {
       assertMaxLength(parts_detail, 'parts_detail', LIMITS.parts_detail);
@@ -11481,15 +14350,15 @@ async function handleSubmitWorkOrderPricing(request, env) {
     // 认证：仅工程师可提交报价；engineer_id 从 token 取
     const auth = request._auth;
     if (!auth || auth.userType !== 'engineer') {
-      return errorResponse('仅工程师可提交报价', 403);
+      return errorResponse(market === 'cn' ? '仅工程师可提交报价' : 'Only engineers can submit quotes', 403);
     }
     const targetEngineerId = auth.userId;
 
     // 验证工单 + 校验工单归属该工程师
     const wo = await env.DB.prepare('SELECT * FROM work_orders WHERE id = ?').bind(workOrderId).first();
-    if (!wo) return errorResponse('工单不存在', 404);
+    if (!wo) return errorResponse(market === 'cn' ? '工单不存在' : 'Work order not found', 404);
     if (wo.engineer_id !== targetEngineerId) {
-      return errorResponse('您无权对该工单报价', 403);
+      return errorResponse(market === 'cn' ? '您无权对该工单报价' : 'You cannot quote this work order', 403);
     }
 
     // 读取工程师佣金比例（按等级：Junior 80% / Senior 85% / Expert 88%）
@@ -11500,6 +14369,46 @@ async function handleSubmitWorkOrderPricing(request, env) {
     const engineerLevel = engineerRow?.level || 'junior';
 
     const subtotal = (labor_fee || 0) + (parts_fee || 0) + (travel_fee || 0) + (other_fee || 0);
+    const currency = market === 'cn' ? 'CNY' : 'USD';
+    const validation = validateQuoteExecution({
+      service_mode: wo.service_mode,
+      total_amount: subtotal,
+      expected_service_days: body.expected_service_days,
+      payment_plan_mode: body.payment_plan_mode,
+      payment_schedule: body.payment_schedule,
+      currency,
+    });
+    if (validation.code) return quoteExecutionError(validation.code, market);
+    const quoteExecution = validation.value;
+    const quoteKind = body.quote_kind === 'supplemental' ? 'supplemental' : 'baseline';
+    const parentQuoteVersion = quoteKind === 'supplemental'
+      ? Number(body.parent_quote_version)
+      : null;
+    const blockingReceiptClaim = await env.DB.prepare(`
+      SELECT id FROM work_order_receipt_claims
+      WHERE work_order_id = ? AND status IN ('pending', 'confirmed')
+      LIMIT 1
+    `).bind(workOrderId).first();
+    if (blockingReceiptClaim && quoteKind !== 'supplemental') {
+      return errorResponse(
+        market === 'cn'
+          ? '存在待审核或已确认的到账记录时不能替换基准报价，请先完成审核或提交补充报价。'
+          : 'The baseline quote cannot be replaced while a receipt claim is pending or confirmed. Complete the review or submit a supplemental quote.',
+        409,
+      );
+    }
+    if (quoteKind === 'supplemental' && (
+      !Number.isInteger(parentQuoteVersion)
+      || parentQuoteVersion < 1
+      || parentQuoteVersion !== Number(wo.active_quote_version)
+    )) {
+      return errorResponse(
+        market === 'cn'
+          ? '补充报价必须关联当前生效的基准报价版本。'
+          : 'A supplemental quote must reference the active baseline quote version.',
+        409,
+      );
+    }
     // 代收代付模式：subtotal = 客户支付总额（平台代收）
     // platformFee = 平台技术服务费（平台营收，6%信息技术服务税率）
     // engineerPayout = 维修服务费（代收代付，转付工程师）
@@ -11508,48 +14417,191 @@ async function handleSubmitWorkOrderPricing(request, env) {
     const engineerPayout = Math.round(subtotal * commissionRate);
 
     // AI 审核
-    const aiCheck = await checkPricing合理性({ labor_fee, parts_fee, travel_fee, other_fee, total_amount: subtotal }, workOrderId, env);
+    const aiCheck = await checkPricingReasonableness({ labor_fee, parts_fee, travel_fee, other_fee, total_amount: subtotal }, workOrderId, env);
 
     // 检查是否已有报价
     const existing = await env.DB.prepare(
-      'SELECT id FROM work_order_pricing WHERE work_order_id = ?'
+      'SELECT * FROM work_order_pricing WHERE work_order_id = ?'
     ).bind(workOrderId).first();
+    const confirmedCommercialRows = quoteKind === 'supplemental'
+      ? await listConfirmedCommercialQuoteVersions(env, existing?.id || '', parentQuoteVersion)
+      : [];
+    const confirmedCommercial = aggregateCommercialQuoteVersions(confirmedCommercialRows);
+    const projectionFees = quoteKind === 'supplemental' ? {
+      labor_fee: confirmedCommercial.labor_fee + (labor_fee || 0),
+      parts_fee: confirmedCommercial.parts_fee + (parts_fee || 0),
+      travel_fee: confirmedCommercial.travel_fee + (travel_fee || 0),
+      other_fee: confirmedCommercial.other_fee + (other_fee || 0),
+      subtotal: confirmedCommercial.subtotal + subtotal,
+      total_amount: confirmedCommercial.total_amount + subtotal,
+      platform_fee: confirmedCommercial.platform_fee + platformFee,
+      deposit_withhold: confirmedCommercial.deposit_withhold + depositWithhold,
+      expected_service_days: confirmedCommercial.expected_service_days ?? quoteExecution.expected_service_days,
+      payment_plan_mode: 'installments',
+    } : {
+      labor_fee: labor_fee || 0,
+      parts_fee: parts_fee || 0,
+      travel_fee: travel_fee || 0,
+      other_fee: other_fee || 0,
+      subtotal,
+      total_amount: subtotal,
+      platform_fee: platformFee,
+      deposit_withhold: depositWithhold,
+      expected_service_days: quoteExecution.expected_service_days,
+      payment_plan_mode: quoteExecution.payment_plan_mode,
+    };
+    const pricingId = existing?.id || generateId();
+    const latestVersion = existing
+      ? Number((await env.DB.prepare(
+        'SELECT MAX(version) as version FROM work_order_pricing_history WHERE pricing_id = ?'
+      ).bind(pricingId).first())?.version || 0)
+      : 0;
+    const nextVersion = latestVersion + 1;
+    const historyId = generateId();
+    const statements = [];
+
+    if (quoteKind === 'baseline') {
+      statements.push(env.DB.prepare(`
+        SELECT CASE WHEN NOT EXISTS (
+          SELECT 1 FROM work_order_receipt_claims
+          WHERE work_order_id = ? AND status IN ('pending', 'confirmed')
+        ) THEN 1 ELSE json('quote baseline receipt conflict') END
+      `).bind(workOrderId));
+    } else {
+      statements.push(env.DB.prepare(`
+        SELECT CASE WHEN EXISTS (
+          SELECT 1
+          FROM work_orders work_order
+          JOIN work_order_pricing parent_pricing
+            ON parent_pricing.work_order_id = work_order.id
+          JOIN work_order_pricing_history parent_history
+            ON parent_history.pricing_id = parent_pricing.id
+           AND parent_history.version = work_order.active_quote_version
+          WHERE work_order.id = ?
+            AND work_order.active_quote_version = ?
+            AND parent_history.quote_kind = 'baseline'
+            AND parent_history.status = 'confirmed'
+        ) THEN 1 ELSE json('quote supplemental parent conflict') END
+      `).bind(workOrderId, parentQuoteVersion));
+    }
+    statements.push(env.DB.prepare(`
+      SELECT CASE WHEN NOT EXISTS (
+        SELECT 1 FROM work_order_pricing_history
+        WHERE pricing_id = ? AND version = ?
+          AND status NOT IN ('draft', 'pending_review')
+      ) THEN 1 ELSE json('quote retry history protected') END
+    `).bind(pricingId, nextVersion));
+    statements.push(env.DB.prepare(`
+      DELETE FROM work_order_payment_schedule
+      WHERE pricing_id = ? AND quote_version = ?
+        AND (
+          NOT EXISTS (
+            SELECT 1 FROM work_order_pricing_history history
+            WHERE history.pricing_id = ? AND history.version = ?
+          )
+          OR EXISTS (
+          SELECT 1 FROM work_order_pricing_history history
+          WHERE history.pricing_id = ? AND history.version = ?
+              AND history.status IN ('draft', 'pending_review')
+          )
+        )
+    `).bind(
+      pricingId, nextVersion,
+      pricingId, nextVersion,
+      pricingId, nextVersion,
+    ));
 
     if (existing) {
-      // 更新报价
-      await env.DB.prepare(`
+      statements.push(env.DB.prepare(`
         UPDATE work_order_pricing SET
           labor_fee = ?, parts_fee = ?, travel_fee = ?, other_fee = ?,
           parts_detail = ?, subtotal = ?, platform_fee = ?,
           deposit_withhold = ?, total_amount = ?, ai_price_check = ?,
-          status = 'pending_review', submitted_at = datetime('now')
-        WHERE work_order_id = ?
-      `).bind(labor_fee || 0, parts_fee || 0, travel_fee || 0, other_fee || 0,
-           JSON.stringify(parts_detail || []), subtotal, platformFee, depositWithhold, subtotal,
-           JSON.stringify(aiCheck), workOrderId).run();
-
-      // 记录历史
-      const historyId = generateId();
-      await env.DB.prepare(
-        'INSERT INTO work_order_pricing_history (id, pricing_id, labor_fee, parts_fee, travel_fee, other_fee, parts_detail, subtotal, total_amount, platform_fee, deposit_withhold, version) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
-      ).bind(historyId, existing.id, labor_fee || 0, parts_fee || 0, travel_fee || 0, other_fee || 0, JSON.stringify(parts_detail || []), subtotal, subtotal, platformFee, depositWithhold, (await env.DB.prepare('SELECT MAX(version) as v FROM work_order_pricing_history WHERE pricing_id = ?').bind(existing.id).first())?.v + 1 || 1).run();
+          status = 'pending_review', submitted_at = datetime('now'),
+          quote_version = ?, expected_service_days = ?, payment_plan_mode = ?
+        WHERE work_order_id = ? AND quote_version = ?
+      `).bind(
+        projectionFees.labor_fee, projectionFees.parts_fee, projectionFees.travel_fee,
+        projectionFees.other_fee, JSON.stringify(parts_detail || []), projectionFees.subtotal,
+        projectionFees.platform_fee, projectionFees.deposit_withhold, projectionFees.total_amount,
+        JSON.stringify(aiCheck), nextVersion, projectionFees.expected_service_days,
+        projectionFees.payment_plan_mode, workOrderId, Number(existing.quote_version || 0),
+      ));
+      statements.push(env.DB.prepare(`
+        SELECT CASE WHEN changes() = 1 THEN 1 ELSE json('quote version concurrent update') END
+      `));
     } else {
-      // 新建报价
-      const id = generateId();
-      await env.DB.prepare(`
-        INSERT INTO work_order_pricing (id, work_order_id, engineer_id, labor_fee, parts_fee, travel_fee, other_fee, parts_detail, subtotal, platform_fee, deposit_withhold, total_amount, ai_price_check, status, submitted_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending_review', datetime('now'))
-      `).bind(id, workOrderId, targetEngineerId, labor_fee || 0, parts_fee || 0, travel_fee || 0, other_fee || 0, JSON.stringify(parts_detail || []), subtotal, platformFee, depositWithhold, subtotal, JSON.stringify(aiCheck)).run();
+      statements.push(env.DB.prepare(`
+        INSERT INTO work_order_pricing (
+          id, work_order_id, engineer_id, labor_fee, parts_fee, travel_fee, other_fee,
+          parts_detail, subtotal, platform_fee, deposit_withhold, total_amount,
+          ai_price_check, status, submitted_at, quote_version, expected_service_days, payment_plan_mode
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending_review', datetime('now'), ?, ?, ?)
+      `).bind(
+        pricingId, workOrderId, targetEngineerId, labor_fee || 0, parts_fee || 0,
+        travel_fee || 0, other_fee || 0, JSON.stringify(parts_detail || []), subtotal,
+        platformFee, depositWithhold, subtotal, JSON.stringify(aiCheck), nextVersion,
+        quoteExecution.expected_service_days, quoteExecution.payment_plan_mode,
+      ));
     }
+
+    statements.push(env.DB.prepare(`
+      INSERT INTO work_order_pricing_history (
+        id, pricing_id, labor_fee, parts_fee, travel_fee, other_fee, parts_detail,
+        subtotal, total_amount, platform_fee, deposit_withhold, version,
+        expected_service_days, payment_plan_mode, quote_kind, parent_quote_version, status
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending_review')
+    `).bind(
+      historyId, pricingId, labor_fee || 0, parts_fee || 0, travel_fee || 0, other_fee || 0,
+      JSON.stringify(parts_detail || []), subtotal, subtotal, platformFee, depositWithhold,
+      nextVersion, quoteExecution.expected_service_days, quoteExecution.payment_plan_mode,
+      quoteKind, parentQuoteVersion,
+    ));
+    for (const installment of quoteExecution.payment_schedule) {
+      statements.push(env.DB.prepare(`
+        INSERT INTO work_order_payment_schedule (
+          id, pricing_id, work_order_id, quote_version, sequence, amount, currency,
+          trigger_type, due_date, description, required_before_start
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).bind(
+        generateId(), pricingId, workOrderId, nextVersion, installment.sequence,
+        installment.amount, installment.currency, installment.trigger_type,
+        installment.due_date, installment.description, installment.required_before_start ? 1 : 0,
+      ));
+    }
+    statements.push(env.DB.prepare(quoteKind === 'supplemental'
+      ? "UPDATE work_orders SET quote_review_status = 'pending_review' WHERE id = ?"
+      : "UPDATE work_orders SET status = 'pricing', quote_review_status = 'pending_review' WHERE id = ?"
+    ).bind(workOrderId));
+    statements.push(buildAuditLogStatement(env, request, {
+      targetType: 'work_order',
+      targetId: workOrderId,
+      action: 'pricing_submitted_for_review',
+      beforeState: {
+        pricing_projection: quoteProjectionAuditSnapshot(existing),
+        quote_review: {
+          status: wo.quote_review_status || null,
+          quote_version: existing ? Number(existing.quote_version || 0) : null,
+          pricing_status: existing?.status || null,
+        },
+      },
+      afterState: {
+        quote_review_status: 'pending_review',
+        quote_version: nextVersion,
+        quote_kind: quoteKind,
+        parent_quote_version: parentQuoteVersion,
+        subtotal,
+        expected_service_days: quoteExecution.expected_service_days,
+        payment_plan_mode: quoteExecution.payment_plan_mode,
+        payment_schedule: quoteExecution.payment_schedule,
+      },
+    }));
+    if (typeof env.DB.batch !== 'function') throw new Error('Transactional D1 batch is required');
+    await env.DB.batch(statements);
 
     if (materialItems) {
       await replaceWorkOrderMaterialItems(env, request, workOrderId, 'quote', materialItems);
     }
-
-    // 更新工单状态为 pricing
-    await env.DB.prepare(
-      "UPDATE work_orders SET status = 'pricing', quote_review_status = 'pending_review' WHERE id = ?"
-    ).bind(workOrderId).run();
 
     // 发送内部系统消息：工程师报价建议需要运营复核后才对客户可见。
     const msgId = generateId();
@@ -11557,15 +14609,15 @@ async function handleSubmitWorkOrderPricing(request, env) {
       "INSERT INTO work_order_messages (id, work_order_id, sender_type, sender_id, sender_name, content, message_type, is_internal_note, is_customer_visible) VALUES (?, ?, 'system', '', ?, ?, 'pricing_update', 1, 0)"
     ).bind(msgId, workOrderId, systemSenderName(market), copy.quoteSubmittedInternal).run();
 
-    await writeAuditLog(env, request, {
-      targetType: 'work_order',
-      targetId: workOrderId,
-      action: 'pricing_submitted_for_review',
-      afterState: { quote_review_status: 'pending_review', subtotal },
-    });
-
     return jsonResponse({
       success: true,
+      status: 'pending_review',
+      quote_version: nextVersion,
+      quote_kind: quoteKind,
+      parent_quote_version: parentQuoteVersion,
+      expected_service_days: quoteExecution.expected_service_days,
+      payment_plan_mode: quoteExecution.payment_plan_mode,
+      payment_schedule: quoteExecution.payment_schedule,
       ai_check: aiCheck,
       subtotal,
       commission_rate: commissionRate,
@@ -11576,6 +14628,12 @@ async function handleSubmitWorkOrderPricing(request, env) {
       total_amount: subtotal,  // 客户应付 = subtotal
     });
   } catch (error) {
+    if (/quote (?:version concurrent update|baseline receipt conflict|supplemental parent conflict|retry history protected)|protected quote payment schedule|malformed json|UNIQUE constraint failed:\s*work_order_pricing\.work_order_id/i.test(String(error?.message || error))) {
+      return errorResponse(
+        getRequestMarket(request) === 'cn' ? '报价已被更新，请刷新后重试' : 'The quote changed. Refresh and try again.',
+        409,
+      );
+    }
     return errorResponse(error.message, 500);
   }
 }
@@ -11586,6 +14644,8 @@ async function handleConfirmWorkOrderPricing(request, env) {
     const market = getRequestMarket(request);
     const copy = serviceCopy(market);
     const workOrderId = new URL(request.url).pathname.split('/')[3];
+    const body = await request.json().catch(() => ({}));
+    const quoteVersion = Number(body.quote_version);
 
     // 认证：仅客户可确认报价；customer_id 从 token 取
     const auth = request._auth;
@@ -11593,10 +14653,13 @@ async function handleConfirmWorkOrderPricing(request, env) {
       return errorResponse(market === 'cn' ? '仅客户可确认报价' : 'Only the customer can confirm the quote', 403);
     }
     const customer_id = auth.userId;
+    if (!Number.isInteger(quoteVersion) || quoteVersion < 1) {
+      return errorResponse(market === 'cn' ? '必须提供有效的报价版本' : 'A valid quote version is required', 400);
+    }
 
     // 校验工单归属
     const wo = await env.DB.prepare(
-      'SELECT customer_id FROM work_orders WHERE id = ?'
+      'SELECT * FROM work_orders WHERE id = ?'
     ).bind(workOrderId).first();
     if (!wo) return errorResponse(market === 'cn' ? '工单不存在' : 'Work order not found', 404);
     if (wo.customer_id !== customer_id) {
@@ -11607,25 +14670,145 @@ async function handleConfirmWorkOrderPricing(request, env) {
       'SELECT * FROM work_order_pricing WHERE work_order_id = ?'
     ).bind(workOrderId).first();
     if (!pricing) return errorResponse(market === 'cn' ? '报价不存在' : 'Quote not found', 404);
-    if (pricing.status !== 'submitted') return errorResponse(market === 'cn' ? '报价状态不正确，无法确认' : 'Quote status does not allow customer confirmation');
+    if (pricing.status !== 'submitted' || Number(pricing.quote_version) !== quoteVersion) {
+      return errorResponse(market === 'cn' ? '报价版本已更新，请刷新后重试' : 'The quote version changed. Refresh and try again.', 409);
+    }
+    const history = await env.DB.prepare(`
+      SELECT * FROM work_order_pricing_history
+      WHERE pricing_id = ? AND version = ?
+    `).bind(pricing.id, quoteVersion).first();
+    if (!history || history.status !== 'approved') {
+      return errorResponse(market === 'cn' ? '报价版本已更新，请刷新后重试' : 'The quote version changed. Refresh and try again.', 409);
+    }
+    const schedule = await listQuotePaymentSchedule(env, workOrderId, quoteVersion);
+    if (!schedule.length) {
+      return errorResponse(market === 'cn' ? '报价付款计划不完整' : 'The quote payment schedule is incomplete.', 409);
+    }
+    const scheduleTotal = schedule.reduce((sum, row) => sum + Number(row.amount || 0), 0);
+    if (scheduleTotal !== Number(history.total_amount || 0)) {
+      return errorResponse(market === 'cn' ? '报价付款计划不完整' : 'The quote payment schedule is incomplete.', 409);
+    }
+    const supplemental = history.quote_kind === 'supplemental';
+    if (supplemental && Number(history.parent_quote_version) !== Number(wo.active_quote_version)) {
+      return errorResponse(market === 'cn' ? '报价版本已更新，请刷新后重试' : 'The quote version changed. Refresh and try again.', 409);
+    }
 
-    await env.DB.prepare(
-      "UPDATE work_order_pricing SET status = 'confirmed', confirmed_at = datetime('now') WHERE work_order_id = ?"
-    ).bind(workOrderId).run();
+    const statements = [env.DB.prepare(`
+      UPDATE work_order_pricing_history
+      SET status = 'confirmed', confirmed_at = datetime('now')
+      WHERE pricing_id = ? AND version = ? AND status = 'approved'
+    `).bind(pricing.id, quoteVersion), env.DB.prepare(`
+      SELECT CASE WHEN changes() = 1 THEN 1 ELSE json('quote activation concurrent update') END
+    `), env.DB.prepare(`
+      UPDATE work_order_pricing
+      SET status = 'confirmed', confirmed_at = datetime('now')
+      WHERE work_order_id = ? AND quote_version = ? AND status = 'submitted'
+    `).bind(workOrderId, quoteVersion), env.DB.prepare(`
+      SELECT CASE WHEN changes() = 1 THEN 1 ELSE json('quote activation concurrent update') END
+    `)];
 
-    await env.DB.prepare(
-      "UPDATE work_orders SET status = 'pending_payment' WHERE id = ?"
-    ).bind(workOrderId).run();
+    if (!supplemental && Number(wo.active_quote_version || 0) >= 1) {
+      statements.unshift(env.DB.prepare(`
+        SELECT CASE WHEN NOT EXISTS (
+          SELECT 1
+          FROM work_order_receipt_claims claim
+          JOIN work_order_installments installment
+            ON installment.id = claim.installment_id
+           AND installment.work_order_id = claim.work_order_id
+          JOIN work_order_pricing active_pricing
+            ON active_pricing.work_order_id = claim.work_order_id
+          JOIN work_order_pricing_history active_history
+            ON active_history.pricing_id = active_pricing.id
+           AND active_history.version = installment.quote_version
+          WHERE claim.work_order_id = ?
+            AND claim.status IN ('pending', 'confirmed')
+            AND active_history.status = 'confirmed'
+            AND (
+              (active_history.version = ? AND active_history.quote_kind = 'baseline')
+              OR (
+                active_history.quote_kind = 'supplemental'
+                AND active_history.parent_quote_version = ?
+              )
+            )
+        ) THEN 1 ELSE json('quote activation receipt conflict') END
+      `).bind(workOrderId, Number(wo.active_quote_version), Number(wo.active_quote_version)));
+    }
 
-    // 系统消息
-    const msgId = generateId();
-    await env.DB.prepare(
-      "INSERT INTO work_order_messages (id, work_order_id, sender_type, sender_id, sender_name, content, message_type) VALUES (?, ?, 'system', '', ?, ?, 'system')"
-    ).bind(msgId, workOrderId, systemSenderName(market), copy.quoteConfirmedMessage).run();
+    if (supplemental) {
+      statements.push(env.DB.prepare(`
+        UPDATE work_orders
+        SET quote_review_status = 'confirmed'
+        WHERE id = ? AND customer_id = ? AND active_quote_version = ? AND EXISTS (
+          SELECT 1 FROM work_order_pricing_history baseline
+          WHERE baseline.pricing_id = ? AND baseline.version = ?
+            AND baseline.quote_kind = 'baseline' AND baseline.status = 'confirmed'
+        )
+      `).bind(
+        workOrderId, customer_id, Number(history.parent_quote_version), pricing.id,
+        Number(history.parent_quote_version),
+      ));
+    } else {
+      statements.push(env.DB.prepare(`
+        UPDATE work_orders
+        SET status = 'pending_payment', quote_review_status = 'confirmed',
+          active_quote_version = ?, quote_expected_service_days = ?,
+          expected_service_days = CASE
+            WHEN service_mode = 'onsite' THEN ?
+            WHEN service_mode = 'remote' THEN NULL
+            ELSE expected_service_days
+          END
+        WHERE id = ? AND customer_id = ? AND active_quote_version IS ?
+      `).bind(
+        quoteVersion, history.expected_service_days ?? null,
+        history.expected_service_days ?? null, workOrderId, customer_id,
+        wo.active_quote_version ?? null,
+      ));
+    }
+    statements.push(env.DB.prepare(`
+      SELECT CASE WHEN changes() = 1 THEN 1 ELSE json('quote activation concurrent update') END
+    `));
+    for (const row of schedule) {
+      statements.push(env.DB.prepare(`
+        INSERT INTO work_order_installments (
+          id, schedule_id, work_order_id, quote_version, sequence, amount, currency,
+          trigger_type, due_date, description, required_before_start, status
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).bind(
+        `installment-${row.id}`, row.id, workOrderId, quoteVersion, row.sequence,
+        row.amount, row.currency, row.trigger_type, row.due_date, row.description,
+        row.required_before_start ? 1 : 0,
+        row.trigger_type === 'before_start' ? 'due' : 'scheduled',
+      ));
+    }
+    statements.push(env.DB.prepare(`
+      INSERT INTO work_order_messages (
+        id, work_order_id, sender_type, sender_id, sender_name, content, message_type
+      ) VALUES (?, ?, 'system', '', ?, ?, 'system')
+    `).bind(generateId(), workOrderId, systemSenderName(market), copy.quoteConfirmedMessage));
+    statements.push(buildAuditLogStatement(env, request, {
+      targetType: 'work_order',
+      targetId: workOrderId,
+      action: 'pricing_customer_confirmed',
+      beforeState: {
+        active_quote_version: wo.active_quote_version || null,
+        quote: await quoteVersionSnapshot(env, workOrderId, history),
+      },
+      afterState: {
+        active_quote_version: supplemental ? Number(wo.active_quote_version) : quoteVersion,
+        quote_version: quoteVersion,
+        quote_kind: history.quote_kind || 'baseline',
+        installment_count: schedule.length,
+      },
+    }));
+    if (typeof env.DB.batch !== 'function') throw new Error('Transactional D1 batch is required');
+    await env.DB.batch(statements);
 
     // 通知工程师：报价已确认，等待付款
-    const woConfirm = await env.DB.prepare('SELECT engineer_id, order_no FROM work_orders WHERE id = ?').bind(workOrderId).first();
-    if (woConfirm?.engineer_id) {
+    const notificationTask = (async () => {
+      const woConfirm = await env.DB.prepare(
+        'SELECT engineer_id, order_no FROM work_orders WHERE id = ?'
+      ).bind(workOrderId).first();
+      if (!woConfirm?.engineer_id) return;
       await createNotification(env, {
         user_id: woConfirm.engineer_id,
         user_type: 'engineer',
@@ -11634,10 +14817,23 @@ async function handleConfirmWorkOrderPricing(request, env) {
         body: copy.quoteConfirmedBody(woConfirm.order_no),
         data: { work_order_id: workOrderId },
       });
+    })().catch((error) => {
+      console.warn('[quote activation] notification failed:', error?.message || error);
+    });
+    if (request._ctx && typeof request._ctx.waitUntil === 'function') {
+      request._ctx.waitUntil(notificationTask);
+    } else {
+      await notificationTask;
     }
 
-    return jsonResponse({ success: true });
+    return jsonResponse({ success: true, quote_version: quoteVersion });
   } catch (error) {
+    if (/quote activation (?:concurrent update|receipt conflict)|malformed json|UNIQUE constraint failed:\s*work_order_installments/i.test(String(error?.message || error))) {
+      return errorResponse(
+        getRequestMarket(request) === 'cn' ? '报价版本已更新，请刷新后重试' : 'The quote version changed. Refresh and try again.',
+        409,
+      );
+    }
     return errorResponse(error.message, 500);
   }
 }
@@ -11678,9 +14874,1411 @@ function computeServicePaymentPolicy(pricing = {}) {
   };
 }
 
+async function listQuotePaymentSchedule(env, workOrderId, quoteVersion) {
+  if (!Number.isInteger(Number(quoteVersion)) || Number(quoteVersion) < 1) return [];
+  const schedule = await env.DB.prepare(`
+    SELECT id, pricing_id, work_order_id, quote_version, sequence, amount, currency,
+      trigger_type, due_date, description, required_before_start, created_at
+    FROM work_order_payment_schedule
+    WHERE work_order_id = ? AND quote_version = ?
+    ORDER BY sequence
+  `).bind(workOrderId, Number(quoteVersion)).all();
+  return (schedule.results || []).map((row) => ({
+    ...row,
+    required_before_start: Boolean(row.required_before_start),
+  }));
+}
+
+function quoteProjectionAuditSnapshot(pricing) {
+  if (!pricing) return null;
+  return {
+    quote_version: Number(pricing.quote_version || 0),
+    status: pricing.status || null,
+    labor_fee: pricing.labor_fee || 0,
+    parts_fee: pricing.parts_fee || 0,
+    travel_fee: pricing.travel_fee || 0,
+    other_fee: pricing.other_fee || 0,
+    subtotal: pricing.subtotal || 0,
+    total_amount: pricing.total_amount || 0,
+    platform_fee: pricing.platform_fee || 0,
+    deposit_withhold: pricing.deposit_withhold || 0,
+    expected_service_days: pricing.expected_service_days ?? null,
+    payment_plan_mode: pricing.payment_plan_mode || 'single',
+  };
+}
+
+async function listConfirmedCommercialQuoteVersions(env, pricingId, baselineVersion) {
+  if (!pricingId || !Number.isInteger(Number(baselineVersion)) || Number(baselineVersion) < 1) return [];
+  const rows = await env.DB.prepare(`
+    SELECT * FROM work_order_pricing_history
+    WHERE pricing_id = ? AND status = 'confirmed' AND (
+      (version = ? AND quote_kind = 'baseline')
+      OR (quote_kind = 'supplemental' AND parent_quote_version = ?)
+    )
+    ORDER BY version
+  `).bind(pricingId, Number(baselineVersion), Number(baselineVersion)).all();
+  return rows.results || [];
+}
+
+function aggregateCommercialQuoteVersions(rows) {
+  return rows.reduce((total, row) => ({
+    labor_fee: total.labor_fee + Number(row.labor_fee || 0),
+    parts_fee: total.parts_fee + Number(row.parts_fee || 0),
+    travel_fee: total.travel_fee + Number(row.travel_fee || 0),
+    other_fee: total.other_fee + Number(row.other_fee || 0),
+    subtotal: total.subtotal + Number(row.subtotal || 0),
+    total_amount: total.total_amount + Number(row.total_amount || 0),
+    platform_fee: total.platform_fee + Number(row.platform_fee || 0),
+    deposit_withhold: total.deposit_withhold + Number(row.deposit_withhold || 0),
+    expected_service_days: total.expected_service_days ?? row.expected_service_days ?? null,
+  }), {
+    labor_fee: 0,
+    parts_fee: 0,
+    travel_fee: 0,
+    other_fee: 0,
+    subtotal: 0,
+    total_amount: 0,
+    platform_fee: 0,
+    deposit_withhold: 0,
+    expected_service_days: null,
+  });
+}
+
+function isVersionedQuote(pricing) {
+  return Number(pricing?.quote_version || 0) >= 1;
+}
+
+function quoteExecutionException(workOrder, totalAmount = null) {
+  const initialWorkdays = workOrder?.service_mode === 'hybrid'
+    ? 0
+    : Number(workOrder?.quote_expected_service_days || 0);
+  return {
+    valid: false,
+    quote_version: Number(workOrder?.active_quote_version || 0) || null,
+    active_quote_version: Number(workOrder?.active_quote_version || 0) || null,
+    total_amount: Number.isSafeInteger(totalAmount) ? totalAmount : null,
+    initial_workdays: initialWorkdays,
+    approved_extension_days: Number(workOrder?.approved_extension_days || 0),
+    scheduled_amount: null,
+    received_amount: null,
+    outstanding_amount: null,
+    start_ready: false,
+    financially_settled: false,
+    consumed_workdays: 0,
+    permitted_workdays: initialWorkdays + Number(workOrder?.approved_extension_days || 0),
+    remaining_workdays: initialWorkdays + Number(workOrder?.approved_extension_days || 0),
+    allowance_exhausted: false,
+    payment_state: 'exception',
+  };
+}
+
+function quoteRowsAggregateMatchesProjection(pricing, rows) {
+  if (!pricing || rows.length === 0) return false;
+  const aggregate = aggregateCommercialQuoteVersions(rows);
+  return [
+    'labor_fee', 'parts_fee', 'travel_fee', 'other_fee', 'subtotal',
+    'total_amount', 'platform_fee', 'deposit_withhold',
+  ].every((field) => Number(pricing[field] || 0) === aggregate[field])
+    && Number(pricing.expected_service_days || 0) === Number(aggregate.expected_service_days || 0)
+    && (pricing.payment_plan_mode || 'single') === (rows.length > 1 ? 'installments' : (rows[0].payment_plan_mode || 'single'));
+}
+
+function buildCanonicalVersionedQuoteExecution({
+  workOrder, pricing, histories = [], schedules = [], installments = [], reportedDates = [],
+}) {
+  const activeVersion = Number(workOrder?.active_quote_version || 0);
+  if (activeVersion < 1 || !pricing || !isVersionedQuote(pricing)) {
+    return quoteExecutionException(workOrder, Number(pricing?.total_amount));
+  }
+  const pricingVersion = Number(pricing.quote_version || 0);
+  const currentHistory = histories.find((row) => Number(row.version) === pricingVersion);
+  const activeRows = histories.filter((row) => (
+    row.status === 'confirmed'
+    && ((Number(row.version) === activeVersion && row.quote_kind === 'baseline')
+      || (row.quote_kind === 'supplemental' && Number(row.parent_quote_version) === activeVersion))
+  )).sort((left, right) => Number(left.version) - Number(right.version));
+  const baselineRows = activeRows.filter((row) => (
+    Number(row.version) === activeVersion && row.quote_kind === 'baseline'
+  ));
+  if (!currentHistory || baselineRows.length !== 1) {
+    return quoteExecutionException(workOrder, Number(pricing.total_amount));
+  }
+  let projectionRows = [...activeRows];
+  if (!projectionRows.some((row) => Number(row.version) === pricingVersion)) {
+    if (currentHistory.quote_kind !== 'supplemental'
+      || Number(currentHistory.parent_quote_version) !== activeVersion) {
+      if (currentHistory.quote_kind !== 'baseline' || pricingVersion <= activeVersion) {
+        return quoteExecutionException(workOrder, Number(pricing.total_amount));
+      }
+      projectionRows = [currentHistory];
+    } else {
+      projectionRows.push(currentHistory);
+    }
+  }
+  if (!quoteRowsAggregateMatchesProjection(pricing, projectionRows)) {
+    return quoteExecutionException(workOrder, Number(pricing.total_amount));
+  }
+
+  const activeVersions = new Set(activeRows.map((row) => Number(row.version)));
+  const activeSchedules = schedules.filter((row) => activeVersions.has(Number(row.quote_version)));
+  const activeInstallments = installments.filter((row) => activeVersions.has(Number(row.quote_version)));
+  const scheduleById = new Map();
+  let scheduleValid = activeSchedules.length > 0 && activeInstallments.length === activeSchedules.length;
+  const activeCurrencies = new Set(activeSchedules.map((row) => String(row.currency || '').trim()));
+  if (activeCurrencies.size !== 1 || activeCurrencies.has('')) scheduleValid = false;
+  for (const history of activeRows) {
+    const versionSchedules = activeSchedules
+      .filter((row) => Number(row.quote_version) === Number(history.version))
+      .sort((left, right) => Number(left.sequence) - Number(right.sequence));
+    let total = 0;
+    if (versionSchedules.length < 1 || versionSchedules.length > 6) scheduleValid = false;
+    for (let index = 0; index < versionSchedules.length; index += 1) {
+      const row = versionSchedules[index];
+      if (Number(row.sequence) !== index + 1
+        || !Number.isSafeInteger(Number(row.amount)) || Number(row.amount) <= 0
+        || scheduleById.has(row.id)) scheduleValid = false;
+      total += Number(row.amount || 0);
+      scheduleById.set(row.id, row);
+    }
+    if (!Number.isSafeInteger(total) || total !== Number(history.total_amount)) scheduleValid = false;
+  }
+  if (!activeSchedules.some((row) => Boolean(row.required_before_start))) scheduleValid = false;
+  for (const installment of activeInstallments) {
+    const schedule = scheduleById.get(installment.schedule_id);
+    if (!schedule || [
+      'work_order_id', 'quote_version', 'sequence', 'amount', 'currency', 'trigger_type',
+      'due_date', 'description', 'required_before_start',
+    ].some((field) => String(installment[field] ?? '') !== String(schedule[field] ?? ''))) {
+      scheduleValid = false;
+    }
+  }
+  const activeQuote = aggregateCommercialQuoteVersions(activeRows);
+  const normalizedInstallments = activeInstallments.map((row) => ({
+    ...row,
+    required_before_start: Boolean(row.required_before_start),
+  }));
+  const initialWorkdays = workOrder.service_mode === 'hybrid'
+    ? 0
+    : Number(workOrder.quote_expected_service_days || 0);
+  const summary = summarizeQuoteExecution({
+    total_amount: activeQuote.total_amount,
+    installments: normalizedInstallments,
+    initial_workdays: initialWorkdays,
+    extension_days: Number(workOrder.approved_extension_days || 0),
+    reported_dates: reportedDates,
+  });
+  if (!scheduleValid || summary.payment_state === 'exception') {
+    return quoteExecutionException(workOrder, activeQuote.total_amount);
+  }
+  return {
+    valid: true,
+    activeRows,
+    activeVersions: [...activeVersions],
+    activeQuote,
+    paymentSchedule: activeSchedules,
+    installments: normalizedInstallments,
+    quote_version: Number(activeRows.at(-1)?.version || activeVersion),
+    active_quote_version: activeVersion,
+    payment_plan_mode: activeRows.length > 1 ? 'installments' : (activeRows[0]?.payment_plan_mode || 'single'),
+    expected_service_days: activeQuote.expected_service_days,
+    initial_workdays: initialWorkdays,
+    approved_extension_days: Number(workOrder.approved_extension_days || 0),
+    total_amount: activeQuote.total_amount,
+    ...summary,
+  };
+}
+
+function canViewReceiptEvidence(auth, workOrder) {
+  return auth?.userType === 'admin'
+    || (auth?.userType === 'customer' && workOrder?.customer_id === auth.userId)
+    || (auth?.userType === 'engineer' && workOrder?.engineer_id === auth.userId);
+}
+
+function visibleReceiptClaim(row, auth, workOrder = null) {
+  const visible = {
+    id: row.id,
+    installment_id: row.installment_id,
+    work_order_id: row.work_order_id,
+    engineer_id: row.engineer_id,
+    claimed_amount: row.claimed_amount,
+    status: row.status,
+    confirmed_amount: row.confirmed_amount,
+    decided_at: row.decided_at,
+    created_at: row.created_at,
+  };
+  if (canViewReceiptEvidence(auth, workOrder)) {
+    visible.evidence = row.evidence_id ? {
+      id: row.evidence_id,
+      file_name: row.evidence_file_name,
+      mime_type: row.evidence_mime_type,
+      file_size: row.evidence_file_size,
+      created_at: row.evidence_created_at,
+      url: `/api/workorders/${row.work_order_id}/receipt-evidence/${row.evidence_id}`,
+    } : null;
+  }
+  if (auth?.userType !== 'customer') {
+    visible.transaction_reference = row.transaction_reference;
+    visible.engineer_note = row.engineer_note;
+    visible.decision_reason = row.decision_reason;
+  }
+  if (auth?.userType === 'admin') visible.decided_by = row.decided_by;
+  return visible;
+}
+
+async function getWorkOrderQuoteExecution(env, workOrder, pricing, auth, market = 'com') {
+  const customerView = auth?.userType === 'customer';
+  const activeBaselineVersion = Number(workOrder?.active_quote_version || 0);
+  if (activeBaselineVersion >= 1) {
+    if (!pricing) return quoteExecutionException(workOrder);
+    const [historyRecords, scheduleRecords, installmentRecords, reportedDates, acceptanceRecord] = await Promise.all([
+      env.DB.prepare(`
+        SELECT * FROM work_order_pricing_history WHERE pricing_id = ? ORDER BY version
+      `).bind(pricing.id).all(),
+      env.DB.prepare(`
+        SELECT id, pricing_id, work_order_id, quote_version, sequence, amount, currency,
+          trigger_type, due_date, description, required_before_start, created_at
+        FROM work_order_payment_schedule WHERE work_order_id = ? ORDER BY quote_version, sequence
+      `).bind(workOrder.id).all(),
+      env.DB.prepare(`
+        SELECT installment.*,
+          SUM(CASE WHEN claim.status = 'pending' THEN 1 ELSE 0 END) AS pending_claim_count
+        FROM work_order_installments installment
+        LEFT JOIN work_order_receipt_claims claim
+          ON claim.installment_id = installment.id
+         AND claim.work_order_id = installment.work_order_id
+        WHERE installment.work_order_id = ?
+        GROUP BY installment.id
+        ORDER BY installment.quote_version, installment.sequence
+      `).bind(workOrder.id).all(),
+      listConsumedFieldDayDates(env, workOrder.id),
+      env.DB.prepare('SELECT id FROM ratings WHERE work_order_id = ? LIMIT 1').bind(workOrder.id).first(),
+    ]);
+    const canonical = buildCanonicalVersionedQuoteExecution({
+      workOrder,
+      pricing,
+      histories: historyRecords.results || [],
+      schedules: scheduleRecords.results || [],
+      installments: installmentRecords.results || [],
+      reportedDates,
+    });
+    if (!canonical.valid) return canonical;
+    const activeRows = canonical.activeRows;
+    const activeVersions = canonical.activeVersions;
+    const paymentSchedule = canonical.paymentSchedule.map((row) => ({
+      ...row,
+      required_before_start: Boolean(row.required_before_start),
+    }));
+    const normalizedInstallments = canonical.installments.map((installment) => ({
+      ...installment,
+      collection_start_ready: installmentCollectionStartReady(
+        installment,
+        workOrder,
+        Boolean(acceptanceRecord),
+        quoteExecutionNow(env),
+      ),
+    }));
+    const claimRecords = normalizedInstallments.length > 0
+      ? await env.DB.prepare(`
+          SELECT claim.*,
+            evidence.id AS evidence_id,
+            evidence.file_name AS evidence_file_name,
+            evidence.mime_type AS evidence_mime_type,
+            evidence.file_size AS evidence_file_size,
+            evidence.created_at AS evidence_created_at
+          FROM work_order_receipt_claims claim
+          LEFT JOIN work_order_receipt_evidence evidence
+            ON evidence.claim_id = claim.id
+           AND evidence.work_order_id = claim.work_order_id
+          JOIN work_order_installments installment
+            ON installment.id = claim.installment_id
+           AND installment.work_order_id = claim.work_order_id
+          JOIN work_orders active_order ON active_order.id = claim.work_order_id
+          JOIN work_order_pricing active_pricing
+            ON active_pricing.work_order_id = active_order.id
+          JOIN work_order_pricing_history history
+            ON history.pricing_id = active_pricing.id
+           AND history.version = installment.quote_version
+          WHERE claim.work_order_id = ?
+            AND history.status = 'confirmed'
+            AND (
+              (history.version = active_order.active_quote_version AND history.quote_kind = 'baseline')
+              OR (
+                history.quote_kind = 'supplemental'
+                AND history.parent_quote_version = active_order.active_quote_version
+              )
+            )
+          ORDER BY claim.created_at, claim.id
+        `).bind(workOrder.id).all()
+      : { results: [] };
+    const claims = claimRecords.results || [];
+    const {
+      valid: _valid,
+      activeRows: _activeRows,
+      activeVersions: _activeVersions,
+      activeQuote: _activeQuote,
+      paymentSchedule: _paymentSchedule,
+      ...execution
+    } = canonical;
+    return {
+      ...execution,
+      payment_schedule: paymentSchedule,
+      installments: normalizedInstallments,
+      receipt_claims: claims.map((claim) => visibleReceiptClaim(claim, auth, workOrder)),
+    };
+  }
+
+  if (!pricing || isVersionedQuote(pricing)) return null;
+
+  const pricingView = await getWorkOrderPricingView(env, workOrder, pricing, customerView);
+  const visiblePricing = pricingView?.pricing || null;
+  if (!visiblePricing || visiblePricing.status !== 'confirmed') return null;
+  const paymentRecords = await env.DB.prepare(`
+    SELECT * FROM work_order_payments WHERE work_order_id = ? ORDER BY created_at ASC
+  `).bind(workOrder.id).all();
+  const totalAmount = Number(visiblePricing.total_amount || visiblePricing.subtotal || 0);
+  const completedPayments = new Map();
+  for (const payment of paymentRecords.results || []) {
+    if (payment.status !== 'completed') continue;
+    const amount = Number(payment.amount);
+    const stage = payment.payment_stage || 'advance';
+    if (!Number.isSafeInteger(amount) || amount <= 0 || !['advance', 'balance'].includes(stage)) {
+      throw new Error('Legacy payment history is inconsistent.');
+    }
+    const transactionId = String(payment.transaction_id || '').trim();
+    const recordId = String(payment.id || '').trim();
+    if (!transactionId && !recordId) throw new Error('Legacy payment history is inconsistent.');
+    const paymentKey = transactionId ? `transaction:${transactionId}` : `row:${recordId}`;
+    const duplicate = completedPayments.get(paymentKey);
+    if (duplicate && (duplicate.amount !== amount || duplicate.stage !== stage)) {
+      throw new Error('Legacy payment history is inconsistent.');
+    }
+    if (!duplicate) completedPayments.set(paymentKey, { amount, stage });
+  }
+  const receivedAmount = [...completedPayments.values()].reduce((sum, payment) => sum + payment.amount, 0);
+  if (receivedAmount > totalAmount) throw new Error('Legacy payment history is inconsistent.');
+  const installment = {
+    id: null,
+    schedule_id: null,
+    work_order_id: workOrder.id,
+    quote_version: null,
+    sequence: 1,
+    amount: totalAmount,
+    currency: market === 'cn' ? 'CNY' : 'USD',
+    trigger_type: 'before_start',
+    due_date: null,
+    description: '',
+    required_before_start: true,
+    status: receivedAmount >= totalAmount ? 'received' : 'due',
+    received_amount: receivedAmount,
+    source: 'legacy',
+  };
+  const summary = summarizeQuoteExecution({
+    total_amount: totalAmount,
+    installments: [installment],
+    initial_workdays: Number(workOrder.expected_service_days || 0),
+    extension_days: Number(workOrder.approved_extension_days || 0),
+  });
+  return {
+    legacy: true,
+    quote_version: null,
+    active_quote_version: null,
+    payment_plan_mode: 'single',
+    expected_service_days: workOrder.expected_service_days ?? null,
+    initial_workdays: Number(workOrder.expected_service_days || 0),
+    approved_extension_days: Number(workOrder.approved_extension_days || 0),
+    total_amount: totalAmount,
+    payment_schedule: [],
+    installments: [installment],
+    receipt_claims: [],
+    ...summary,
+  };
+}
+
+async function listQuotePaymentSchedules(env, workOrderId, quoteVersions) {
+  const versions = [...new Set(quoteVersions.map(Number).filter((version) => (
+    Number.isInteger(version) && version >= 1
+  )))];
+  if (versions.length === 0) return [];
+  const schedule = await env.DB.prepare(`
+    SELECT id, pricing_id, work_order_id, quote_version, sequence, amount, currency,
+      trigger_type, due_date, description, required_before_start, created_at
+    FROM work_order_payment_schedule
+    WHERE work_order_id = ? AND quote_version IN (${versions.map(() => '?').join(', ')})
+    ORDER BY quote_version, sequence
+  `).bind(workOrderId, ...versions).all();
+  return (schedule.results || []).map((row) => ({
+    ...row,
+    required_before_start: Boolean(row.required_before_start),
+  }));
+}
+
+async function getWorkOrderPricingView(env, workOrder, pricing, customerView = false) {
+  if (!pricing) return null;
+  const currentHistory = await env.DB.prepare(`
+    SELECT *
+    FROM work_order_pricing_history
+    WHERE pricing_id = ? AND version = ?
+  `).bind(pricing.id, Number(pricing.quote_version || 0)).first();
+  let activeVersion = Number(workOrder.active_quote_version || 0);
+  if (currentHistory?.quote_kind === 'supplemental' && !activeVersion) {
+    activeVersion = Number((await env.DB.prepare(
+      'SELECT active_quote_version FROM work_orders WHERE id = ?'
+    ).bind(workOrder.id).first())?.active_quote_version || 0);
+  }
+  const supplemental = currentHistory?.quote_kind === 'supplemental' && activeVersion > 0;
+  if (supplemental) {
+    const confirmedRows = await listConfirmedCommercialQuoteVersions(env, pricing.id, activeVersion);
+    const active = confirmedRows.find((row) => (
+      Number(row.version) === activeVersion && row.quote_kind === 'baseline'
+    ));
+    if (active) {
+      const visibleRows = customerView && !['submitted', 'confirmed'].includes(pricing.status)
+        ? confirmedRows
+        : [
+          ...confirmedRows,
+          ...(['pending_review', 'approved'].includes(currentHistory.status) ? [currentHistory] : []),
+        ];
+      const aggregate = aggregateCommercialQuoteVersions(visibleRows);
+      const visibleVersions = visibleRows.map((row) => Number(row.version));
+      return {
+        pricing: {
+          ...pricing,
+          ...aggregate,
+          id: pricing.id,
+          work_order_id: pricing.work_order_id,
+          engineer_id: pricing.engineer_id,
+          quote_version: customerView && !['submitted', 'confirmed'].includes(pricing.status)
+            ? Math.max(...visibleVersions)
+            : pricing.quote_version,
+          status: customerView && !['submitted', 'confirmed'].includes(pricing.status)
+            ? 'confirmed'
+            : pricing.status,
+          expected_service_days: aggregate.expected_service_days,
+          payment_plan_mode: 'installments',
+        },
+        payment_schedule: await listQuotePaymentSchedules(env, workOrder.id, visibleVersions),
+      };
+    }
+  }
+  if (customerView && !['submitted', 'confirmed'].includes(pricing.status)) return null;
+  return {
+    pricing,
+    payment_schedule: await listQuotePaymentSchedule(env, workOrder.id, pricing.quote_version),
+  };
+}
+
+async function quoteVersionSnapshot(env, workOrderId, history) {
+  const paymentSchedule = await listQuotePaymentSchedule(env, workOrderId, history.version);
+  return {
+    quote_version: history.version,
+    status: history.status,
+    quote_kind: history.quote_kind || 'baseline',
+    parent_quote_version: history.parent_quote_version ?? null,
+    labor_fee: history.labor_fee || 0,
+    parts_fee: history.parts_fee || 0,
+    travel_fee: history.travel_fee || 0,
+    other_fee: history.other_fee || 0,
+    parts_detail: history.parts_detail || '[]',
+    subtotal: history.subtotal || 0,
+    total_amount: history.total_amount || 0,
+    platform_fee: history.platform_fee || 0,
+    deposit_withhold: history.deposit_withhold || 0,
+    expected_service_days: history.expected_service_days ?? null,
+    payment_plan_mode: history.payment_plan_mode || 'single',
+    approved_at: history.approved_at || null,
+    confirmed_at: history.confirmed_at || null,
+    payment_schedule: paymentSchedule,
+  };
+}
+
+function installmentCollectionCopy(market = 'com') {
+  if (market === 'cn') {
+    return {
+      workOrderNotFound: '工单或分期不存在',
+      engineerOnly: '仅指派工程师可发起本期收款',
+      customerOnly: '仅工单客户可选择支付方式',
+      customerDenied: '您无权操作此工单',
+      notCollectible: '当前分期状态不允许发起收款',
+      milestoneConfirmationRequired: '请先确认约定里程碑已经达成',
+      paymentMethodRequired: '请选择支付方式',
+      paymentMethodClosed: '当前分期不能修改支付方式',
+      claimNotAllowed: '当前分期不能提交到账申请',
+      claimAmountInvalid: '到账申请金额必须为正整数',
+      idempotencyRequired: '缺少幂等键',
+      evidenceInvalid: '到账凭证仅支持图片或 PDF',
+      evidenceTooLarge: '到账凭证不能超过 10MB',
+      evidenceSignatureInvalid: '到账凭证文件签名无效',
+      evidenceUnavailable: '到账凭证服务未配置',
+      evidenceNotFound: '到账凭证不存在',
+      evidenceDenied: '您无权查看此到账凭证',
+      decisionInvalid: '到账处理结果无效',
+      decisionReasonRequired: '拒绝到账申请时必须填写原因',
+      confirmedAmountInvalid: '确认到账金额必须为正整数',
+      decisionConflict: '到账申请已处理，请刷新后重试',
+      overConfirmation: '确认到账金额不能超过本期剩余金额',
+      serverError: '服务器内部错误',
+      collectionTitle: '本期收款已发起',
+      collectionBody: (orderNo) => `工单 ${orderNo} 已发起本期收款，请选择支付方式。`,
+      methodTitle: '客户已选择支付方式',
+      methodBody: (orderNo) => `工单 ${orderNo} 的客户已选择本期支付方式。`,
+      claimTitle: '到账申请已提交',
+      claimBody: (orderNo) => `工单 ${orderNo} 已提交到账申请，等待 Admin 核验。`,
+      reviewTitle: '到账申请待核验',
+      reviewBody: (orderNo) => `工单 ${orderNo} 有新的到账申请，请及时核验。`,
+      confirmedTitle: '到账已确认',
+      confirmedBody: (orderNo, amount) => `工单 ${orderNo} 已确认到账 ${amount}。`,
+      rejectedTitle: '到账申请已退回',
+      rejectedBody: (orderNo) => `工单 ${orderNo} 的到账申请已退回，请核对后重新提交。`,
+    };
+  }
+  return {
+    workOrderNotFound: 'Work order or installment not found',
+    engineerOnly: 'Only the assigned engineer can start installment collection',
+    customerOnly: 'Only the work-order customer can select a payment method',
+    customerDenied: 'You do not have permission for this work order',
+    notCollectible: 'This installment cannot be opened for collection',
+    milestoneConfirmationRequired: 'Confirm that the agreed milestone has been reached',
+    paymentMethodRequired: 'Payment method is required',
+    paymentMethodClosed: 'The payment method cannot be changed for this installment',
+    claimNotAllowed: 'A receipt claim cannot be submitted for this installment',
+    claimAmountInvalid: 'Claimed amount must be a positive whole amount',
+    idempotencyRequired: 'Idempotency key is required',
+    evidenceInvalid: 'Receipt evidence must be an image or PDF',
+    evidenceTooLarge: 'Receipt evidence must not exceed 10MB',
+    evidenceSignatureInvalid: 'Receipt evidence file signature is invalid',
+    evidenceUnavailable: 'Receipt evidence storage is not configured',
+    evidenceNotFound: 'Receipt evidence not found',
+    evidenceDenied: 'You do not have permission to view this receipt evidence',
+    decisionInvalid: 'Invalid receipt decision',
+    decisionReasonRequired: 'A reason is required when rejecting a receipt claim',
+    confirmedAmountInvalid: 'Confirmed amount must be a positive whole amount',
+    decisionConflict: 'The receipt claim was already decided. Refresh and try again.',
+    overConfirmation: 'Confirmed amount cannot exceed the installment balance',
+    serverError: 'Internal Server Error',
+    collectionTitle: 'Installment collection started',
+    collectionBody: (orderNo) => `Collection started for work order ${orderNo}. Select a payment method for this installment.`,
+    methodTitle: 'Payment method selected',
+    methodBody: (orderNo) => `The customer selected a payment method for work order ${orderNo}.`,
+    claimTitle: 'Receipt claim submitted',
+    claimBody: (orderNo) => `A receipt claim for work order ${orderNo} is awaiting Admin review.`,
+    reviewTitle: 'Receipt claim pending review',
+    reviewBody: (orderNo) => `A new receipt claim for work order ${orderNo} requires review.`,
+    confirmedTitle: 'Receipt confirmed',
+    confirmedBody: (orderNo, amount) => `A receipt of ${amount} was confirmed for work order ${orderNo}.`,
+    rejectedTitle: 'Receipt claim rejected',
+    rejectedBody: (orderNo) => `The receipt claim for work order ${orderNo} was rejected. Review it and submit again.`,
+  };
+}
+
+async function getActiveInstallment(env, workOrderId, installmentId) {
+  return env.DB.prepare(`
+    SELECT installment.*, work_order.customer_id, work_order.engineer_id, work_order.order_no,
+      work_order.status AS work_order_status,
+      work_order.arrival_verified_at,
+      work_order.site_timezone,
+      EXISTS (
+        SELECT 1 FROM ratings rating WHERE rating.work_order_id = work_order.id
+      ) AS customer_acceptance_recorded
+    FROM work_order_installments installment
+    JOIN work_orders work_order ON work_order.id = installment.work_order_id
+    JOIN work_order_pricing pricing ON pricing.work_order_id = work_order.id
+    JOIN work_order_pricing_history history
+      ON history.pricing_id = pricing.id AND history.version = installment.quote_version
+    WHERE installment.id = ? AND installment.work_order_id = ?
+      AND history.status = 'confirmed'
+      AND (
+        (history.version = work_order.active_quote_version AND history.quote_kind = 'baseline')
+        OR (history.quote_kind = 'supplemental' AND history.parent_quote_version = work_order.active_quote_version)
+      )
+  `).bind(installmentId, workOrderId).first();
+}
+
+function quoteExecutionNow(env) {
+  return new Date(env?.QUOTE_EXECUTION_NOW || Date.now());
+}
+
+function installmentCollectionStartReady(
+  installment,
+  workOrder = null,
+  customerAcceptanceRecorded = false,
+  now = new Date(),
+) {
+  if (!installment) return false;
+  if (['due', 'partially_received', 'overdue'].includes(installment.status)) return true;
+  if (installment.status !== 'scheduled') return false;
+  switch (installment.trigger_type) {
+    case 'before_start':
+    case 'milestone':
+      return true;
+    case 'fixed_date': {
+      if (!workOrder?.site_timezone) return false;
+      try {
+        const currentDate = fieldDayLocalDate(now, workOrder.site_timezone);
+        return Boolean(installment.due_date) && installment.due_date <= currentDate;
+      } catch {
+        return false;
+      }
+    }
+    case 'on_arrival':
+      return Boolean(workOrder?.arrival_verified_at);
+    case 'on_completion':
+      return ['resolved', 'pending_review', 'completed'].includes(workOrder?.status);
+    case 'on_acceptance':
+      return Boolean(customerAcceptanceRecorded);
+    default:
+      return false;
+  }
+}
+
+function publicInstallment(installment, now = new Date()) {
+  if (!installment) return installment;
+  const {
+    customer_id, engineer_id, order_no, work_order_status,
+    arrival_verified_at, site_timezone, customer_acceptance_recorded, ...visible
+  } = installment;
+  return {
+    ...visible,
+    collection_start_ready: installmentCollectionStartReady(
+      installment,
+      { status: work_order_status, arrival_verified_at, site_timezone },
+      Boolean(customer_acceptance_recorded),
+      now,
+    ),
+  };
+}
+
+function publicReceiptEvidence(evidence) {
+  if (!evidence) return null;
+  return {
+    id: evidence.id,
+    claim_id: evidence.claim_id,
+    work_order_id: evidence.work_order_id,
+    file_name: evidence.file_name,
+    mime_type: evidence.mime_type,
+    file_size: evidence.file_size,
+    uploader_type: evidence.uploader_type,
+    created_at: evidence.created_at,
+    url: `/api/workorders/${evidence.work_order_id}/receipt-evidence/${evidence.id}`,
+  };
+}
+
+async function getReceiptClaimWithEvidenceByIdempotencyKey(env, idempotencyKey) {
+  return env.DB.prepare(`
+    SELECT claim.*,
+      evidence.id AS evidence_id,
+      evidence.object_key AS evidence_object_key,
+      evidence.file_name AS evidence_file_name,
+      evidence.mime_type AS evidence_mime_type,
+      evidence.file_size AS evidence_file_size,
+      evidence.uploader_type AS evidence_uploader_type,
+      evidence.uploader_id AS evidence_uploader_id,
+      evidence.created_at AS evidence_created_at
+    FROM work_order_receipt_claims claim
+    LEFT JOIN work_order_receipt_evidence evidence
+      ON evidence.claim_id = claim.id AND evidence.work_order_id = claim.work_order_id
+    WHERE claim.idempotency_key = ?
+  `).bind(idempotencyKey).first();
+}
+
+function evidenceFromJoinedReceiptClaim(claim) {
+  if (!claim?.evidence_id) return null;
+  return {
+    id: claim.evidence_id,
+    claim_id: claim.id,
+    work_order_id: claim.work_order_id,
+    object_key: claim.evidence_object_key,
+    file_name: claim.evidence_file_name,
+    mime_type: claim.evidence_mime_type,
+    file_size: claim.evidence_file_size,
+    uploader_type: claim.evidence_uploader_type,
+    uploader_id: claim.evidence_uploader_id,
+    created_at: claim.evidence_created_at,
+  };
+}
+
+async function sha256BytesHex(bytes) {
+  const digest = await crypto.subtle.digest('SHA-256', bytes);
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+
+function receiptEvidenceHash(objectKey) {
+  return String(objectKey || '').match(/sha256-([a-f0-9]{64})(?:\.|\/|$)/i)?.[1]?.toLowerCase() || '';
+}
+
+function replaceLoneSurrogates(value) {
+  let result = '';
+  for (let index = 0; index < value.length; index += 1) {
+    const codeUnit = value.charCodeAt(index);
+    if (codeUnit >= 0xd800 && codeUnit <= 0xdbff) {
+      const next = value.charCodeAt(index + 1);
+      if (next >= 0xdc00 && next <= 0xdfff) {
+        result += value[index] + value[index + 1];
+        index += 1;
+      } else {
+        result += '\ufffd';
+      }
+    } else if (codeUnit >= 0xdc00 && codeUnit <= 0xdfff) {
+      result += '\ufffd';
+    } else {
+      result += value[index];
+    }
+  }
+  return result;
+}
+
+function isExactReceiptClaimRetry(claim, requestValue) {
+  if (!claim) return false;
+  if (claim.work_order_id !== requestValue.workOrderId
+    || claim.installment_id !== requestValue.installmentId
+    || claim.engineer_id !== requestValue.engineerId
+    || Number(claim.claimed_amount) !== requestValue.claimedAmount
+    || (claim.transaction_reference || null) !== requestValue.transactionReference
+    || (claim.engineer_note || '') !== requestValue.engineerNote) return false;
+  const evidence = evidenceFromJoinedReceiptClaim(claim);
+  if (!requestValue.evidenceDescriptor) return !evidence;
+  return Boolean(evidence)
+    && evidence.mime_type === requestValue.evidenceDescriptor.mimeType
+    && Number(evidence.file_size) === requestValue.evidenceDescriptor.size
+    && receiptEvidenceHash(evidence.object_key) === requestValue.evidenceDescriptor.sha256;
+}
+
+function receiptEvidenceContentDisposition(fileName) {
+  const original = replaceLoneSurrogates(sanitizeFilename(fileName)) || 'receipt';
+  const ascii = Array.from(original, (character) => {
+    const code = character.charCodeAt(0);
+    return code >= 0x20 && code <= 0x7e ? character : '_';
+  }).join('').replace(/(["\\])/g, '\\$1') || 'receipt';
+  const encoded = encodeURIComponent(original).replace(/['()*]/g, (character) => (
+    `%${character.charCodeAt(0).toString(16).toUpperCase()}`
+  ));
+  return `inline; filename="${ascii}"; filename*=UTF-8''${encoded}`;
+}
+
+function quoteExecutionNotificationStatement(env, notification) {
+  return scheduledNotificationStatement(env, {
+    id: notification.id,
+    userId: notification.user_id,
+    userType: notification.user_type,
+    type: notification.type,
+    title: notification.title,
+    body: notification.body,
+    data: notification.data,
+  });
+}
+
+async function notifyQuoteExecutionBestEffort(env, payload) {
+  try {
+    const notifier = env.QUOTE_EXECUTION_NOTIFIER || createNotification;
+    await notifier(env, payload);
+  } catch (error) {
+    console.warn('[quote execution] notification failed:', error?.message || error);
+  }
+}
+
+async function handleStartInstallmentCollection(request, env) {
+  const market = getRequestMarket(request);
+  const copy = installmentCollectionCopy(market);
+  try {
+    const [, , , workOrderId, , installmentId] = new URL(request.url).pathname.split('/');
+    const auth = request._auth;
+    if (auth?.userType !== 'engineer') return errorResponse(copy.engineerOnly, 403);
+    const installment = await getActiveInstallment(env, workOrderId, installmentId);
+    if (!installment) return errorResponse(copy.workOrderNotFound, 404);
+    if (installment.engineer_id !== auth.userId) return errorResponse(copy.engineerOnly, 403);
+    if (!installmentCollectionStartReady(
+      installment,
+      {
+        status: installment.work_order_status,
+        arrival_verified_at: installment.arrival_verified_at,
+        site_timezone: installment.site_timezone,
+      },
+      Boolean(installment.customer_acceptance_recorded),
+      quoteExecutionNow(env),
+    )) {
+      return errorResponse(copy.notCollectible, 409);
+    }
+    const body = await request.json().catch(() => ({}));
+    const milestoneConfirmation = cleanText(body.milestone_confirmation, 500);
+    if (installment.trigger_type === 'milestone' && !milestoneConfirmation) {
+      return errorResponse(copy.milestoneConfirmationRequired, 400);
+    }
+    const nextStatus = installment.status === 'partially_received' ? 'partially_received' : 'collecting';
+    await env.DB.batch([
+      env.DB.prepare(`
+        UPDATE work_order_installments
+        SET status = ?, collection_started_at = COALESCE(collection_started_at, datetime('now')),
+          updated_at = datetime('now')
+        WHERE id = ? AND work_order_id = ? AND status = ?
+          AND EXISTS (
+            SELECT 1
+            FROM work_orders active_order
+            JOIN work_order_pricing active_pricing
+              ON active_pricing.work_order_id = active_order.id
+            JOIN work_order_pricing_history active_history
+              ON active_history.pricing_id = active_pricing.id
+             AND active_history.version = work_order_installments.quote_version
+            WHERE active_order.id = work_order_installments.work_order_id
+              AND active_order.engineer_id = ?
+              AND active_history.status = 'confirmed'
+              AND (
+                (active_history.version = active_order.active_quote_version AND active_history.quote_kind = 'baseline')
+                OR (
+                  active_history.quote_kind = 'supplemental'
+                  AND active_history.parent_quote_version = active_order.active_quote_version
+                )
+              )
+          )
+      `).bind(nextStatus, installmentId, workOrderId, installment.status, auth.userId),
+      env.DB.prepare(`SELECT CASE WHEN changes() = 1 THEN 1 ELSE json('installment collection conflict') END`),
+      buildAuditLogStatement(env, request, {
+        targetType: 'work_order_installment', targetId: installmentId, action: 'installment_collection_started',
+        beforeState: { status: installment.status, collection_started_at: installment.collection_started_at },
+        afterState: {
+          status: nextStatus,
+          collection_started: true,
+          milestone_confirmation: milestoneConfirmation || null,
+        },
+      }),
+    ]);
+    const saved = await getActiveInstallment(env, workOrderId, installmentId);
+    await notifyQuoteExecutionBestEffort(env, {
+      user_id: installment.customer_id, user_type: 'customer', type: 'installment_collection_started',
+      title: copy.collectionTitle, body: copy.collectionBody(installment.order_no),
+      data: { work_order_id: workOrderId, installment_id: installmentId },
+    });
+    return jsonResponse({ installment: publicInstallment(saved, quoteExecutionNow(env)) });
+  } catch (error) {
+    if (/installment collection conflict|malformed json/i.test(String(error?.message || error))) {
+      return errorResponse(copy.notCollectible, 409);
+    }
+    return errorResponse(copy.serverError, 500);
+  }
+}
+
+async function handleSelectInstallmentPaymentMethod(request, env) {
+  const market = getRequestMarket(request);
+  const copy = installmentCollectionCopy(market);
+  try {
+    const [, , , workOrderId, , installmentId] = new URL(request.url).pathname.split('/');
+    const auth = request._auth;
+    if (auth?.userType !== 'customer') return errorResponse(copy.customerOnly, 403);
+    const installment = await getActiveInstallment(env, workOrderId, installmentId);
+    if (!installment) return errorResponse(copy.workOrderNotFound, 404);
+    if (installment.customer_id !== auth.userId) return errorResponse(copy.customerDenied, 403);
+    const paymentMethod = cleanText((await request.json().catch(() => ({}))).payment_method, 80);
+    if (!paymentMethod) return errorResponse(copy.paymentMethodRequired, 400);
+    if (!['collecting', 'partially_received', 'overdue'].includes(installment.status)
+      || Number(installment.received_amount) >= Number(installment.amount)) {
+      return errorResponse(copy.paymentMethodClosed, 409);
+    }
+    await env.DB.batch([
+      env.DB.prepare(`
+        UPDATE work_order_installments SET payment_method = ?, updated_at = datetime('now')
+        WHERE id = ? AND work_order_id = ? AND received_amount < amount
+          AND status IN ('collecting', 'partially_received', 'overdue')
+          AND EXISTS (SELECT 1 FROM work_orders WHERE id = ? AND customer_id = ?)
+      `).bind(paymentMethod, installmentId, workOrderId, workOrderId, auth.userId),
+      env.DB.prepare(`SELECT CASE WHEN changes() = 1 THEN 1 ELSE json('installment payment method conflict') END`),
+      buildAuditLogStatement(env, request, {
+        targetType: 'work_order_installment', targetId: installmentId, action: 'installment_payment_method_selected',
+        beforeState: { payment_method: installment.payment_method || null },
+        afterState: { payment_method: paymentMethod },
+      }),
+    ]);
+    const saved = await getActiveInstallment(env, workOrderId, installmentId);
+    await notifyQuoteExecutionBestEffort(env, {
+      user_id: installment.engineer_id, user_type: 'engineer', type: 'installment_payment_method_selected',
+      title: copy.methodTitle, body: copy.methodBody(installment.order_no),
+      data: { work_order_id: workOrderId, installment_id: installmentId },
+    });
+    return jsonResponse({ installment: publicInstallment(saved) });
+  } catch (error) {
+    if (/installment payment method conflict|malformed json/i.test(String(error?.message || error))) {
+      return errorResponse(copy.paymentMethodClosed, 409);
+    }
+    return errorResponse(copy.serverError, 500);
+  }
+}
+
+async function handleSubmitReceiptClaim(request, env) {
+  const market = getRequestMarket(request);
+  const copy = installmentCollectionCopy(market);
+  const uploadedKeys = [];
+  try {
+    const [, , , workOrderId, , installmentId] = new URL(request.url).pathname.split('/');
+    const auth = request._auth;
+    if (auth?.userType !== 'engineer') return errorResponse(copy.engineerOnly, 403);
+    const installment = await getActiveInstallment(env, workOrderId, installmentId);
+    if (!installment) return errorResponse(copy.workOrderNotFound, 404);
+    if (installment.engineer_id !== auth.userId) return errorResponse(copy.engineerOnly, 403);
+    const formData = await request.formData();
+    const claimedAmount = Number(formData.get('claimed_amount'));
+    const idempotencyKey = cleanText(formData.get('idempotency_key'), 200);
+    if (!Number.isSafeInteger(claimedAmount) || claimedAmount <= 0) return errorResponse(copy.claimAmountInvalid, 400);
+    if (!idempotencyKey) return errorResponse(copy.idempotencyRequired, 400);
+    const transactionReference = cleanText(formData.get('transaction_reference'), 200) || null;
+    const engineerNote = cleanText(formData.get('note'), 1000);
+    const evidenceFile = formData.get('evidence');
+    let evidenceBytes = null;
+    let evidenceDescriptor = null;
+    if (evidenceFile && typeof evidenceFile !== 'string') {
+      if (!env.FIELD_EVIDENCE) return errorResponse(copy.evidenceUnavailable, 503);
+      if (!RECEIPT_EVIDENCE_MIME_TYPES.has(evidenceFile.type)) return errorResponse(copy.evidenceInvalid, 400);
+      if (evidenceFile.size <= 0 || evidenceFile.size > FIELD_EVIDENCE_MAX_BYTES) {
+        return errorResponse(copy.evidenceTooLarge, 413);
+      }
+      evidenceBytes = new Uint8Array(await evidenceFile.arrayBuffer());
+      if (!hasFieldEvidenceSignature(evidenceBytes, evidenceFile.type)) return errorResponse(copy.evidenceSignatureInvalid, 400);
+      evidenceDescriptor = {
+        mimeType: evidenceFile.type,
+        size: evidenceFile.size,
+        sha256: await sha256BytesHex(evidenceBytes),
+      };
+    }
+    const requestValue = {
+      workOrderId,
+      installmentId,
+      engineerId: auth.userId,
+      claimedAmount,
+      transactionReference,
+      engineerNote,
+      evidenceDescriptor,
+    };
+    const existing = await getReceiptClaimWithEvidenceByIdempotencyKey(env, idempotencyKey);
+    if (existing) {
+      if (!isExactReceiptClaimRetry(existing, requestValue)) return errorResponse(copy.decisionConflict, 409);
+      return jsonResponse({
+        claim: visibleReceiptClaim(existing, auth),
+        evidence: publicReceiptEvidence(evidenceFromJoinedReceiptClaim(existing)),
+        installment: publicInstallment(installment),
+      });
+    }
+    if (!['collecting', 'partially_received', 'overdue'].includes(installment.status)) {
+      return errorResponse(copy.claimNotAllowed, 409);
+    }
+
+    let evidence = null;
+    const claimId = generateId();
+    if (evidenceDescriptor) {
+      const evidenceId = generateId();
+      const extension = RECEIPT_EVIDENCE_MIME_TYPES.get(evidenceDescriptor.mimeType);
+      const objectKey = `field-evidence/${market}/${workOrderId}/receipt-claims/${claimId}/${evidenceId}-sha256-${evidenceDescriptor.sha256}.${extension}`;
+      uploadedKeys.push(objectKey);
+      await env.FIELD_EVIDENCE.put(objectKey, evidenceBytes, { httpMetadata: { contentType: evidenceDescriptor.mimeType } });
+      evidence = {
+        id: evidenceId, claim_id: claimId, work_order_id: workOrderId, object_key: objectKey,
+        file_name: sanitizeFilename(evidenceFile.name || `receipt.${extension}`),
+        mime_type: evidenceDescriptor.mimeType, file_size: evidenceDescriptor.size,
+        uploader_type: 'engineer', uploader_id: auth.userId,
+      };
+    }
+
+    const notificationData = { work_order_id: workOrderId, installment_id: installmentId, claim_id: claimId };
+    const staffRecords = await env.DB.prepare(`
+      SELECT id FROM admin_staff_accounts
+      WHERE is_active = 1 AND role IN ('admin', 'operations') AND market_scope IN ('all', ?)
+    `).bind(market).all();
+    const notifications = [{
+      id: `receipt-claim:${claimId}:submitted:customer:${installment.customer_id}`,
+      user_id: installment.customer_id,
+      user_type: 'customer',
+      type: 'installment_receipt_claim_submitted',
+      title: copy.claimTitle,
+      body: copy.claimBody(installment.order_no),
+      data: notificationData,
+    }, ...(staffRecords.results || []).map((staff) => ({
+      id: `receipt-claim:${claimId}:review:admin:${staff.id}`,
+      user_id: staff.id,
+      user_type: 'admin',
+      type: 'installment_receipt_review_requested',
+      title: copy.reviewTitle,
+      body: copy.reviewBody(installment.order_no),
+      data: notificationData,
+    }))];
+    const statements = [
+      env.DB.prepare(`
+        SELECT CASE WHEN EXISTS (
+          SELECT 1
+          FROM work_order_installments active_installment
+          JOIN work_orders active_order
+            ON active_order.id = active_installment.work_order_id
+          JOIN work_order_pricing active_pricing
+            ON active_pricing.work_order_id = active_order.id
+          JOIN work_order_pricing_history active_history
+            ON active_history.pricing_id = active_pricing.id
+           AND active_history.version = active_installment.quote_version
+          WHERE active_installment.id = ?
+            AND active_installment.work_order_id = ?
+            AND active_installment.status IN ('collecting', 'partially_received', 'overdue')
+            AND active_order.engineer_id = ?
+            AND active_history.status = 'confirmed'
+            AND (
+              (active_history.version = active_order.active_quote_version AND active_history.quote_kind = 'baseline')
+              OR (
+                active_history.quote_kind = 'supplemental'
+                AND active_history.parent_quote_version = active_order.active_quote_version
+              )
+            )
+        ) THEN 1 ELSE json('receipt claim active installment conflict') END
+      `).bind(installmentId, workOrderId, auth.userId),
+      env.DB.prepare(`
+        INSERT INTO work_order_receipt_claims (
+          id, installment_id, work_order_id, engineer_id, claimed_amount,
+          transaction_reference, engineer_note, status, idempotency_key
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?)
+      `).bind(
+        claimId, installmentId, workOrderId, auth.userId, claimedAmount,
+        transactionReference, engineerNote, idempotencyKey,
+      ),
+    ];
+    if (evidence) {
+      statements.push(env.DB.prepare(`
+        INSERT INTO work_order_receipt_evidence (
+          id, claim_id, work_order_id, object_key, file_name, mime_type, file_size,
+          uploader_type, uploader_id
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).bind(
+        evidence.id, evidence.claim_id, evidence.work_order_id, evidence.object_key,
+        evidence.file_name, evidence.mime_type, evidence.file_size,
+        evidence.uploader_type, evidence.uploader_id,
+      ));
+    }
+    statements.push(
+      env.DB.prepare(`
+        UPDATE work_order_installments SET status = 'pending_confirmation', updated_at = datetime('now')
+        WHERE id = ? AND work_order_id = ? AND status IN ('collecting', 'partially_received', 'overdue')
+          AND EXISTS (SELECT 1 FROM work_orders WHERE id = ? AND engineer_id = ?)
+      `).bind(installmentId, workOrderId, workOrderId, auth.userId),
+      env.DB.prepare(`SELECT CASE WHEN changes() = 1 THEN 1 ELSE json('receipt claim conflict') END`),
+      buildAuditLogStatement(env, request, {
+        targetType: 'work_order_receipt_claim', targetId: claimId, action: 'installment_receipt_claim_submitted',
+        beforeState: { installment_status: installment.status, received_amount: installment.received_amount },
+        afterState: { status: 'pending', claimed_amount: claimedAmount, evidence_id: evidence?.id || null },
+      }),
+      ...notifications.map((notification) => quoteExecutionNotificationStatement(env, notification)),
+    );
+    try {
+      await env.DB.batch(statements);
+    } catch (error) {
+      const recovered = await getReceiptClaimWithEvidenceByIdempotencyKey(env, idempotencyKey);
+      if (isExactReceiptClaimRetry(recovered, requestValue)) {
+        const recoveredEvidence = evidenceFromJoinedReceiptClaim(recovered);
+        if (!evidence || recoveredEvidence?.object_key === evidence.object_key) uploadedKeys.length = 0;
+        await cleanupFieldEvidenceObjects(env, uploadedKeys, 'receipt_claim_persistence_failed');
+        uploadedKeys.length = 0;
+        return jsonResponse({
+          claim: visibleReceiptClaim(recovered, auth),
+          evidence: publicReceiptEvidence(recoveredEvidence),
+          installment: publicInstallment(await getActiveInstallment(env, workOrderId, installmentId)),
+        });
+      }
+      await cleanupFieldEvidenceObjects(env, uploadedKeys, 'receipt_claim_persistence_failed');
+      uploadedKeys.length = 0;
+      if (recovered || isD1ConstraintError(error) || /receipt claim (?:conflict|active installment conflict)|malformed json/i.test(String(error?.message || error))) {
+        return errorResponse(copy.claimNotAllowed, 409);
+      }
+      throw error;
+    }
+    uploadedKeys.length = 0;
+    const claim = await env.DB.prepare(`SELECT * FROM work_order_receipt_claims WHERE id = ?`).bind(claimId).first();
+    const savedInstallment = await getActiveInstallment(env, workOrderId, installmentId);
+    return jsonResponse({
+      claim: visibleReceiptClaim(claim, auth),
+      evidence: publicReceiptEvidence(evidence),
+      installment: publicInstallment(savedInstallment),
+    }, 201);
+  } catch (error) {
+    await cleanupFieldEvidenceObjects(env, uploadedKeys, 'receipt_claim_request_failed');
+    return errorResponse(copy.serverError, 500);
+  }
+}
+
+async function handleGetReceiptEvidence(request, env) {
+  const market = getRequestMarket(request);
+  const copy = installmentCollectionCopy(market);
+  try {
+    const [, , , workOrderId, , evidenceId] = new URL(request.url).pathname.split('/');
+    const evidence = await env.DB.prepare(`
+      SELECT evidence.*, work_order.customer_id, work_order.engineer_id
+      FROM work_order_receipt_evidence evidence
+      JOIN work_orders work_order ON work_order.id = evidence.work_order_id
+      WHERE evidence.id = ? AND evidence.work_order_id = ?
+    `).bind(evidenceId, workOrderId).first();
+    if (!evidence) return errorResponse(copy.evidenceNotFound, 404);
+    const auth = request._auth;
+    const allowed = canViewReceiptEvidence(auth, evidence);
+    if (!allowed) return errorResponse(copy.evidenceDenied, 403);
+    if (!env.FIELD_EVIDENCE) return errorResponse(copy.evidenceUnavailable, 503);
+    const object = await env.FIELD_EVIDENCE.get(evidence.object_key);
+    if (!object) return errorResponse(copy.evidenceNotFound, 404);
+    return new Response(object.body, {
+      headers: {
+        'Content-Type': evidence.mime_type,
+        'Content-Disposition': receiptEvidenceContentDisposition(evidence.file_name),
+        'X-Content-Type-Options': 'nosniff',
+        'Cache-Control': 'private, no-store',
+      },
+    });
+  } catch (error) {
+    return errorResponse(copy.serverError, 500);
+  }
+}
+
+async function handleAdminDecideReceiptClaim(request, env) {
+  const market = getRequestMarket(request);
+  const copy = installmentCollectionCopy(market);
+  try {
+    const [, , , , workOrderId, , installmentId, , claimId] = new URL(request.url).pathname.split('/');
+    const body = await request.json().catch(() => ({}));
+    const decision = body.decision;
+    const reason = cleanText(body.reason, 1000);
+    const idempotencyKey = cleanText(body.idempotency_key, 200);
+    if (!['confirmed', 'rejected'].includes(decision)) return errorResponse(copy.decisionInvalid, 400);
+    if (!idempotencyKey) return errorResponse(copy.idempotencyRequired, 400);
+    if (decision === 'rejected' && !reason) return errorResponse(copy.decisionReasonRequired, 400);
+    const installment = await getActiveInstallment(env, workOrderId, installmentId);
+    if (!installment) return errorResponse(copy.workOrderNotFound, 404);
+    const claim = await env.DB.prepare(`
+      SELECT * FROM work_order_receipt_claims
+      WHERE id = ? AND installment_id = ? AND work_order_id = ?
+    `).bind(claimId, installmentId, workOrderId).first();
+    if (!claim) return errorResponse(copy.workOrderNotFound, 404);
+    const normalizedConfirmedAmount = decision === 'confirmed' ? Number(body.confirmed_amount) : null;
+    const normalizedReason = reason || null;
+    if (claim.decision_idempotency_key === idempotencyKey) {
+      const exactRetry = claim.status === decision
+        && (decision === 'rejected' || Number(claim.confirmed_amount) === normalizedConfirmedAmount)
+        && (claim.decision_reason || null) === normalizedReason;
+      if (!exactRetry) return errorResponse(copy.decisionConflict, 409);
+      return jsonResponse({ claim: visibleReceiptClaim(claim, request._auth), installment: publicInstallment(installment) });
+    }
+    if (claim.status !== 'pending') return errorResponse(copy.decisionConflict, 409);
+
+    const statements = [];
+    let confirmedAmount = null;
+    let nextInstallmentStatus;
+    if (decision === 'confirmed') {
+      confirmedAmount = normalizedConfirmedAmount;
+      if (!Number.isSafeInteger(confirmedAmount) || confirmedAmount <= 0) {
+        return errorResponse(copy.confirmedAmountInvalid, 400);
+      }
+      if (confirmedAmount > Number(installment.amount) - Number(installment.received_amount)) {
+        return errorResponse(copy.overConfirmation, 409);
+      }
+      if (confirmedAmount > Number(claim.claimed_amount)) {
+        return errorResponse(copy.overConfirmation, 409);
+      }
+      nextInstallmentStatus = Number(installment.received_amount) + confirmedAmount === Number(installment.amount)
+        ? 'received'
+        : 'partially_received';
+      statements.push(
+        env.DB.prepare(`
+          UPDATE work_order_receipt_claims
+          SET status = 'confirmed', confirmed_amount = ?, decision_reason = ?, decided_by = ?,
+            decided_at = datetime('now'), decision_idempotency_key = ?
+          WHERE id = ? AND installment_id = ? AND work_order_id = ? AND status = 'pending'
+            AND ? <= claimed_amount
+        `).bind(
+          confirmedAmount, normalizedReason, request._auth.userId, idempotencyKey,
+          claimId, installmentId, workOrderId, confirmedAmount,
+        ),
+        env.DB.prepare(`SELECT CASE WHEN changes() = 1 THEN 1 ELSE json('receipt decision conflict') END`),
+        env.DB.prepare(`
+          UPDATE work_order_installments
+          SET received_amount = received_amount + ?,
+            status = CASE WHEN received_amount + ? = amount THEN 'received' ELSE 'partially_received' END,
+            completed_at = CASE WHEN received_amount + ? = amount THEN datetime('now') ELSE NULL END,
+            updated_at = datetime('now')
+          WHERE id = ? AND work_order_id = ? AND received_amount + ? <= amount
+        `).bind(confirmedAmount, confirmedAmount, confirmedAmount, installmentId, workOrderId, confirmedAmount),
+        env.DB.prepare(`SELECT CASE WHEN changes() = 1 THEN 1 ELSE json('receipt over confirmation') END`),
+      );
+    } else {
+      const submissionAudit = await env.DB.prepare(`
+        SELECT before_state FROM audit_logs
+        WHERE target_type = 'work_order_receipt_claim' AND target_id = ?
+          AND action = 'installment_receipt_claim_submitted'
+        ORDER BY created_at DESC LIMIT 1
+      `).bind(claimId).first();
+      let priorStatus = '';
+      try { priorStatus = JSON.parse(submissionAudit?.before_state || '{}').installment_status || ''; } catch {}
+      nextInstallmentStatus = ['collecting', 'partially_received', 'overdue'].includes(priorStatus)
+        ? priorStatus
+        : (Number(installment.received_amount) > 0 ? 'partially_received' : 'collecting');
+      statements.push(
+        env.DB.prepare(`
+          UPDATE work_order_receipt_claims
+          SET status = 'rejected', confirmed_amount = NULL, decision_reason = ?, decided_by = ?,
+            decided_at = datetime('now'), decision_idempotency_key = ?
+          WHERE id = ? AND installment_id = ? AND work_order_id = ? AND status = 'pending'
+        `).bind(normalizedReason, request._auth.userId, idempotencyKey, claimId, installmentId, workOrderId),
+        env.DB.prepare(`SELECT CASE WHEN changes() = 1 THEN 1 ELSE json('receipt decision conflict') END`),
+        env.DB.prepare(`
+          UPDATE work_order_installments
+          SET status = ?, updated_at = datetime('now')
+          WHERE id = ? AND work_order_id = ? AND status = 'pending_confirmation'
+        `).bind(nextInstallmentStatus, installmentId, workOrderId),
+        env.DB.prepare(`SELECT CASE WHEN changes() = 1 THEN 1 ELSE json('receipt decision conflict') END`),
+      );
+    }
+    const notificationType = decision === 'confirmed' ? 'installment_receipt_confirmed' : 'installment_receipt_rejected';
+    const title = decision === 'confirmed' ? copy.confirmedTitle : copy.rejectedTitle;
+    const bodyText = decision === 'confirmed'
+      ? copy.confirmedBody(installment.order_no, confirmedAmount)
+      : copy.rejectedBody(installment.order_no);
+    const notificationData = { work_order_id: workOrderId, installment_id: installmentId, claim_id: claimId };
+    const notifications = [
+      {
+        id: `receipt-decision:${claimId}:${decision}:customer:${installment.customer_id}`,
+        user_id: installment.customer_id,
+        user_type: 'customer',
+        type: notificationType,
+        title,
+        body: bodyText,
+        data: notificationData,
+      },
+      {
+        id: `receipt-decision:${claimId}:${decision}:engineer:${installment.engineer_id}`,
+        user_id: installment.engineer_id,
+        user_type: 'engineer',
+        type: notificationType,
+        title,
+        body: bodyText,
+        data: notificationData,
+      },
+    ];
+    statements.push(buildAuditLogStatement(env, request, {
+      targetType: 'work_order_receipt_claim', targetId: claimId,
+      action: decision === 'confirmed' ? 'installment_receipt_confirmed' : 'installment_receipt_rejected',
+      beforeState: { claim_status: claim.status, installment_status: installment.status, received_amount: installment.received_amount },
+      afterState: {
+        claim_status: decision, confirmed_amount: confirmedAmount,
+        installment_status: nextInstallmentStatus,
+        received_amount: Number(installment.received_amount) + (confirmedAmount || 0),
+      },
+    }), ...notifications.map((notification) => quoteExecutionNotificationStatement(env, notification)));
+    try {
+      await env.DB.batch(statements);
+    } catch (error) {
+      const recovered = await env.DB.prepare(`SELECT * FROM work_order_receipt_claims WHERE id = ?`).bind(claimId).first();
+      if (recovered?.decision_idempotency_key === idempotencyKey) {
+        const exactRetry = recovered.status === decision
+          && (decision === 'rejected' || Number(recovered.confirmed_amount) === normalizedConfirmedAmount)
+          && (recovered.decision_reason || null) === normalizedReason;
+        if (!exactRetry) return errorResponse(copy.decisionConflict, 409);
+        return jsonResponse({
+          claim: visibleReceiptClaim(recovered, request._auth),
+          installment: publicInstallment(await getActiveInstallment(env, workOrderId, installmentId)),
+        });
+      }
+      if (/receipt over confirmation/i.test(String(error?.message || error))) return errorResponse(copy.overConfirmation, 409);
+      if (/receipt decision conflict|malformed json/i.test(String(error?.message || error)) || isD1ConstraintError(error)) {
+        return errorResponse(copy.decisionConflict, 409);
+      }
+      throw error;
+    }
+    const savedClaim = await env.DB.prepare(`SELECT * FROM work_order_receipt_claims WHERE id = ?`).bind(claimId).first();
+    const savedInstallment = await getActiveInstallment(env, workOrderId, installmentId);
+    return jsonResponse({ claim: visibleReceiptClaim(savedClaim, request._auth), installment: publicInstallment(savedInstallment) });
+  } catch (error) {
+    return errorResponse(copy.serverError, 500);
+  }
+}
+
 function paymentInstructionId(stage) {
   const prefix = stage === 'balance' ? 'BALREQ' : 'ADVREQ';
   return prefix + Date.now().toString(36).toUpperCase() + Math.random().toString(36).slice(2, 6).toUpperCase();
+}
+
+function legacyPaymentConflictResponse(market = 'com') {
+  return errorResponse(
+    market === 'cn'
+      ? '新版报价请按分期付款计划操作'
+      : 'Use the quote installment schedule for this payment.',
+    409,
+  );
+}
+
+function quoteExecutionConflictResponse(market = 'com') {
+  return jsonResponse({
+    error: market === 'cn'
+      ? '当前生效报价执行数据不完整，请联系管理员处理'
+      : 'The active quote execution data is incomplete. Contact an administrator.',
+    code: 'quote_execution_inconsistent',
+  }, 409);
+}
+
+function versionedExecutionSqlGuard(receiptCondition) {
+  return `
+    AND EXISTS (
+      SELECT 1
+      FROM work_order_pricing pricing
+      JOIN work_order_pricing_history baseline
+        ON baseline.pricing_id = pricing.id
+       AND baseline.version = work_orders.active_quote_version
+       AND baseline.quote_kind = 'baseline'
+       AND baseline.status = 'confirmed'
+      WHERE pricing.work_order_id = work_orders.id
+        AND pricing.id = ? AND pricing.quote_version = ?
+        AND pricing.total_amount = ? AND pricing.subtotal = ?
+    )
+    AND EXISTS (
+      SELECT 1 FROM work_order_payment_schedule schedule
+      JOIN work_order_pricing pricing ON pricing.id = schedule.pricing_id
+      JOIN work_order_pricing_history history
+        ON history.pricing_id = pricing.id AND history.version = schedule.quote_version
+      WHERE schedule.work_order_id = work_orders.id AND history.status = 'confirmed'
+        AND ((history.version = work_orders.active_quote_version AND history.quote_kind = 'baseline')
+          OR (history.quote_kind = 'supplemental' AND history.parent_quote_version = work_orders.active_quote_version))
+    )
+    AND NOT EXISTS (
+      SELECT 1 FROM work_order_payment_schedule schedule
+      JOIN work_order_pricing pricing ON pricing.id = schedule.pricing_id
+      JOIN work_order_pricing_history history
+        ON history.pricing_id = pricing.id AND history.version = schedule.quote_version
+      LEFT JOIN work_order_installments installment
+        ON installment.schedule_id = schedule.id
+       AND installment.work_order_id = schedule.work_order_id
+       AND installment.quote_version = schedule.quote_version
+       AND installment.sequence = schedule.sequence
+       AND installment.amount = schedule.amount
+       AND installment.currency = schedule.currency
+       AND installment.trigger_type = schedule.trigger_type
+       AND installment.due_date IS schedule.due_date
+       AND installment.description = schedule.description
+       AND installment.required_before_start = schedule.required_before_start
+      WHERE schedule.work_order_id = work_orders.id AND history.status = 'confirmed'
+        AND ((history.version = work_orders.active_quote_version AND history.quote_kind = 'baseline')
+          OR (history.quote_kind = 'supplemental' AND history.parent_quote_version = work_orders.active_quote_version))
+        AND installment.id IS NULL
+    )
+    AND NOT EXISTS (
+      SELECT 1 FROM work_order_installments installment
+      JOIN work_order_pricing pricing ON pricing.work_order_id = installment.work_order_id
+      JOIN work_order_pricing_history history
+        ON history.pricing_id = pricing.id AND history.version = installment.quote_version
+      WHERE installment.work_order_id = work_orders.id AND history.status = 'confirmed'
+        AND ((history.version = work_orders.active_quote_version AND history.quote_kind = 'baseline')
+          OR (history.quote_kind = 'supplemental' AND history.parent_quote_version = work_orders.active_quote_version))
+        AND (${receiptCondition})
+    )
+  `;
+}
+
+function versionedExecutionGuardBindings(pricing) {
+  return [pricing.id, Number(pricing.quote_version), Number(pricing.total_amount), Number(pricing.subtotal)];
+}
+
+async function recoverLifecycleTransition(env, workOrderId, targetStatus) {
+  const latest = await env.DB.prepare('SELECT status FROM work_orders WHERE id = ?').bind(workOrderId).first();
+  return latest?.status === targetStatus;
+}
+
+async function hasVersionedWorkOrderPricing(env, workOrderId) {
+  const pricing = await env.DB.prepare(
+    'SELECT quote_version FROM work_order_pricing WHERE work_order_id = ?'
+  ).bind(workOrderId).first();
+  return isVersionedQuote(pricing);
 }
 
 async function getPaymentByStage(env, workOrderId, paymentStage) {
@@ -11690,13 +16288,13 @@ async function getPaymentByStage(env, workOrderId, paymentStage) {
 }
 
 async function ensureBalancePayment(env, workOrderId, customerId) {
-  const existing = await getPaymentByStage(env, workOrderId, 'balance');
-  if (existing) return existing;
-
   const pricing = await env.DB.prepare(
-    'SELECT subtotal, total_amount, labor_fee, parts_fee, travel_fee, other_fee FROM work_order_pricing WHERE work_order_id = ? AND status = ?'
+    'SELECT subtotal, total_amount, labor_fee, parts_fee, travel_fee, other_fee, quote_version FROM work_order_pricing WHERE work_order_id = ? AND status = ?'
   ).bind(workOrderId, 'confirmed').first();
   if (!pricing) return null;
+  if (isVersionedQuote(pricing)) return null;
+  const existing = await getPaymentByStage(env, workOrderId, 'balance');
+  if (existing) return existing;
 
   const policy = computeServicePaymentPolicy(pricing);
   if (policy.balance_amount <= 0) return null;
@@ -11745,17 +16343,20 @@ async function handlePayWorkOrder(request, env) {
     if (wo.customer_id !== customer_id) {
       return errorResponse(getRequestMarket(request) === 'cn' ? '您无权操作此工单' : 'You do not have permission for this work order', 403);
     }
+    if (await hasVersionedWorkOrderPricing(env, workOrderId)) {
+      return legacyPaymentConflictResponse(getRequestMarket(request));
+    }
+
+    const pricing = await env.DB.prepare(
+      'SELECT subtotal, total_amount, labor_fee, parts_fee, travel_fee, other_fee, quote_version FROM work_order_pricing WHERE work_order_id = ? AND status = ?'
+    ).bind(workOrderId, 'confirmed').first();
+    if (!pricing) return errorResponse(getRequestMarket(request) === 'cn' ? '报价未找到或未确认' : 'Quote not found or not confirmed', 404);
     if (paymentStage === 'balance' && !['resolved', 'pending_review', 'completed'].includes(wo.status)) {
       return errorResponse('Work order is not ready for balance payment', 400);
     }
     if (paymentStage === 'advance' && wo.status !== 'pending_payment') {
       return errorResponse(getRequestMarket(request) === 'cn' ? '工单当前状态不允许确认支付方式' : 'Work order is not waiting for payment method confirmation', 400);
     }
-
-    const pricing = await env.DB.prepare(
-      'SELECT subtotal, total_amount, labor_fee, parts_fee, travel_fee, other_fee FROM work_order_pricing WHERE work_order_id = ? AND status = ?'
-    ).bind(workOrderId, 'confirmed').first();
-    if (!pricing) return errorResponse(getRequestMarket(request) === 'cn' ? '报价未找到或未确认' : 'Quote not found or not confirmed', 404);
 
     const paymentPolicy = computeServicePaymentPolicy(pricing);
     const amount = paymentStage === 'balance' ? paymentPolicy.balance_amount : paymentPolicy.advance_amount;
@@ -11887,13 +16488,73 @@ async function handleEngineerRequestPaymentStart(request, env) {
     const body = await request.json().catch(() => ({}));
     const note = String(body.note || '').trim();
 
-    const wo = await env.DB.prepare(
-      'SELECT id, engineer_id, status, order_no FROM work_orders WHERE id = ?'
-    ).bind(workOrderId).first();
+    const wo = await env.DB.prepare(`
+      SELECT id, engineer_id, status, order_no, customer_id, service_mode,
+        active_quote_version, quote_expected_service_days, approved_extension_days
+      FROM work_orders WHERE id = ?
+    `).bind(workOrderId).first();
     if (!wo) return errorResponse(market === 'cn' ? '工单不存在' : 'Work order not found', 404);
     if (wo.engineer_id !== auth.userId) return errorResponse(market === 'cn' ? '您未被指派到此工单' : 'You are not assigned to this work order', 403);
     if (wo.status !== 'pending_payment' && wo.status !== 'payment_review') {
       return errorResponse(market === 'cn' ? '工单当前状态不允许申请开工' : 'Work order is not waiting for payment follow-up', 400);
+    }
+
+    const pricing = await env.DB.prepare(
+      'SELECT * FROM work_order_pricing WHERE work_order_id = ?'
+    ).bind(workOrderId).first();
+    if (Number(wo.active_quote_version || 0) >= 1) {
+      const quoteExecution = await getWorkOrderQuoteExecution(env, wo, pricing, auth, market);
+      if (!quoteExecution || quoteExecution.payment_state === 'exception') {
+        return quoteExecutionConflictResponse(market);
+      }
+      if (!quoteExecution?.start_ready) {
+        return errorResponse(
+          market === 'cn'
+            ? '所有开工前必付分期到账后才能申请开工'
+            : 'All installments required before start must be fully received before requesting service start.',
+          409,
+        );
+      }
+      if (wo.status === 'payment_review') return jsonResponse({ success: true, status: 'payment_review' });
+      const internalNote = market === 'cn'
+        ? `工程师在开工前必付分期全部到账后申请管理员确认开工。${note ? ` 备注：${note}` : ''}`
+        : `Engineer requested Admin approval after all required-before-start installments were received.${note ? ` Note: ${note}` : ''}`;
+      try {
+        await env.DB.batch([
+          env.DB.prepare(`
+            UPDATE work_orders SET status = 'payment_review'
+            WHERE id = ? AND status = 'pending_payment' AND active_quote_version = ?
+              ${versionedExecutionSqlGuard("installment.required_before_start = 1 AND installment.received_amount < installment.amount")}
+          `).bind(
+            workOrderId, Number(wo.active_quote_version),
+            ...versionedExecutionGuardBindings(pricing),
+          ),
+          env.DB.prepare(`SELECT CASE WHEN changes() = 1 THEN 1 ELSE json('quote lifecycle concurrent update') END`),
+          env.DB.prepare(
+            "INSERT INTO work_order_messages (id, work_order_id, sender_type, sender_id, sender_name, content, message_type, is_internal_note, is_customer_visible) VALUES (?, ?, 'engineer', ?, 'Engineer', ?, 'payment_update', 1, 0)"
+          ).bind(generateId(), workOrderId, auth.userId, internalNote),
+          env.DB.prepare(`
+            INSERT INTO work_order_logs (id, work_order_id, action, actor_type, actor_id, content)
+            VALUES (?, ?, 'payment_start_requested', 'engineer', ?, ?)
+          `).bind(generateId(), workOrderId, auth.userId, internalNote),
+          buildAuditLogStatement(env, request, {
+            targetType: 'work_order',
+            targetId: workOrderId,
+            action: 'payment_start_requested',
+            beforeState: { status: wo.status, payment_state: quoteExecution.payment_state },
+            afterState: { status: 'payment_review', payment_state: quoteExecution.payment_state, note },
+          }),
+        ]);
+      } catch (error) {
+        if (/quote lifecycle concurrent update|malformed json/i.test(String(error?.message || error))) {
+          if (await recoverLifecycleTransition(env, workOrderId, 'payment_review')) {
+            return jsonResponse({ success: true, status: 'payment_review' });
+          }
+          return quoteExecutionConflictResponse(market);
+        }
+        throw error;
+      }
+      return jsonResponse({ success: true, status: 'payment_review' });
     }
 
     const payment = await env.DB.prepare(
@@ -11942,12 +16603,79 @@ async function handleAdminApprovePaymentStart(request, env) {
     const body = await request.json().catch(() => ({}));
     const note = String(body.note || '').trim();
 
-    const wo = await env.DB.prepare(
-      'SELECT id, status, order_no FROM work_orders WHERE id = ?'
-    ).bind(workOrderId).first();
+    const wo = await env.DB.prepare(`
+      SELECT id, engineer_id, status, order_no, customer_id, service_mode,
+        active_quote_version, quote_expected_service_days, approved_extension_days
+      FROM work_orders WHERE id = ?
+    `).bind(workOrderId).first();
     if (!wo) return errorResponse(market === 'cn' ? '工单不存在' : 'Work order not found', 404);
     if (wo.status !== 'payment_review' && wo.status !== 'pending_payment') {
       return errorResponse(market === 'cn' ? '工单当前状态不允许管理员确认付款' : 'Work order is not waiting for payment approval', 400);
+    }
+
+    const pricing = await env.DB.prepare(
+      'SELECT * FROM work_order_pricing WHERE work_order_id = ?'
+    ).bind(workOrderId).first();
+    if (Number(wo.active_quote_version || 0) >= 1) {
+      const quoteExecution = await getWorkOrderQuoteExecution(env, wo, pricing, request._auth, market);
+      if (!quoteExecution || quoteExecution.payment_state === 'exception') {
+        return quoteExecutionConflictResponse(market);
+      }
+      if (wo.status !== 'payment_review') {
+        return errorResponse(
+          market === 'cn'
+            ? '请先由工程师提交开工申请'
+            : 'The assigned engineer must request service start before Admin approval.',
+          409,
+        );
+      }
+      if (!quoteExecution?.start_ready) {
+        return errorResponse(
+          market === 'cn'
+            ? '开工前必付分期尚未全部到账'
+            : 'Required-before-start installments are not fully received.',
+          409,
+        );
+      }
+      const confirmMsg = market === 'cn'
+        ? `SAGEMRO 已完成最终开工审批，工单可开始服务。${note ? ` 备注：${note}` : ''}`
+        : `SAGEMRO completed final start approval. The work order may begin service.${note ? ` Note: ${note}` : ''}`;
+      try {
+        await env.DB.batch([
+          env.DB.prepare(`
+            UPDATE work_orders SET status = 'in_service'
+            WHERE id = ? AND status = 'payment_review' AND active_quote_version = ?
+              ${versionedExecutionSqlGuard("installment.required_before_start = 1 AND installment.received_amount < installment.amount")}
+          `).bind(
+            workOrderId, Number(wo.active_quote_version),
+            ...versionedExecutionGuardBindings(pricing),
+          ),
+          env.DB.prepare(`SELECT CASE WHEN changes() = 1 THEN 1 ELSE json('quote lifecycle concurrent update') END`),
+          env.DB.prepare(
+            "INSERT INTO work_order_messages (id, work_order_id, sender_type, sender_id, sender_name, content, message_type, is_internal_note, is_customer_visible) VALUES (?, ?, 'system', '', 'System', ?, 'payment_update', 0, 1)"
+          ).bind(generateId(), workOrderId, confirmMsg),
+          env.DB.prepare(`
+            INSERT INTO work_order_logs (id, work_order_id, action, actor_type, actor_id, content)
+            VALUES (?, ?, 'payment_start_approved', 'admin', ?, ?)
+          `).bind(generateId(), workOrderId, request._auth?.userId || 'admin', confirmMsg),
+          buildAuditLogStatement(env, request, {
+            targetType: 'work_order',
+            targetId: workOrderId,
+            action: 'payment_start_approved',
+            beforeState: { status: wo.status, payment_state: quoteExecution.payment_state },
+            afterState: { status: 'in_service', payment_state: quoteExecution.payment_state, note },
+          }),
+        ]);
+      } catch (error) {
+        if (/quote lifecycle concurrent update|malformed json/i.test(String(error?.message || error))) {
+          if (await recoverLifecycleTransition(env, workOrderId, 'in_service')) {
+            return jsonResponse({ success: true, status: 'in_service' });
+          }
+          return quoteExecutionConflictResponse(market);
+        }
+        throw error;
+      }
+      return jsonResponse({ success: true, status: 'in_service' });
     }
 
     const payment = await env.DB.prepare(
@@ -12007,6 +16735,9 @@ async function handleSubmitInvoiceRequest(request, env) {
     if (!wo) return errorResponse(market === 'cn' ? '工单不存在' : 'Work order not found', 404);
     if (wo.customer_id !== customer_id) {
       return errorResponse(market === 'cn' ? '您无权操作此工单' : 'You do not have permission for this work order', 403);
+    }
+    if (await hasVersionedWorkOrderPricing(env, workOrderId)) {
+      return legacyPaymentConflictResponse(market);
     }
 
     // 检查是否已有发票申请
@@ -12081,6 +16812,7 @@ async function handleGetInvoiceRequest(request, env) {
 async function handleAdminApproveWorkOrderBalance(request, env) {
   try {
     const workOrderId = new URL(request.url).pathname.split('/')[4];
+    const market = getRequestMarket(request);
     const body = await request.json().catch(() => ({}));
     const note = String(body.note || '').trim();
 
@@ -12088,6 +16820,9 @@ async function handleAdminApproveWorkOrderBalance(request, env) {
       'SELECT id, status, order_no FROM work_orders WHERE id = ?'
     ).bind(workOrderId).first();
     if (!wo) return errorResponse('Work order not found', 404);
+    if (await hasVersionedWorkOrderPricing(env, workOrderId)) {
+      return legacyPaymentConflictResponse(market);
+    }
     if (!['resolved', 'pending_review', 'completed'].includes(wo.status)) {
       return errorResponse('Work order is not waiting for balance payment', 400);
     }
@@ -12234,6 +16969,9 @@ async function handleGetWorkOrderPayment(request, env) {
       'SELECT id, customer_id, engineer_id, assigned_regional_lead_id FROM work_orders WHERE id = ?'
     ).bind(workOrderId).first();
     assertWorkOrderAccess(request._auth, workOrder);
+    if (await hasVersionedWorkOrderPricing(env, workOrderId)) {
+      return legacyPaymentConflictResponse(getRequestMarket(request));
+    }
 
     const requestedStage = new URL(request.url).searchParams.get('payment_stage');
     const paymentStage = requestedStage === 'balance' ? 'balance' : 'advance';
@@ -12386,6 +17124,9 @@ async function handleFunnelEvent(request, env) {
     } catch {
       auth = null;
     }
+    if (auth && !hasValidCsrf(request, auth)) {
+      return errorResponse('Invalid CSRF token', 403);
+    }
 
     const properties = sanitizeFunnelProperties(body.properties);
     const ip = getRequestIp(request);
@@ -12429,64 +17170,43 @@ async function routeRequest(request, env, ctx) {
     // 暂存 ctx 供需要 waitUntil 的处理函数使用（如 AI 摘要异步生成）
     request._ctx = ctx;
 
-    // 处理 CORS 预检
-    if (request.method === 'OPTIONS') {
-      return handleOptions(request, env);
-    }
-
-    // 认证相关（无需 token）
-    if (path === '/api/auth/send-code' && request.method === 'POST') {
-      return handleSendCode(request, env);
-    }
-    if (path === '/api/auth/register/customer' && request.method === 'POST') {
-      return handleRegisterCustomer(request, env);
-    }
-    if (path === '/api/auth/register/engineer' && request.method === 'POST') {
-      return localizedErrorResponse('public_engineer_registration_closed', request, 410);
-    }
-    if (path === '/api/auth/login' && request.method === 'POST') {
-      return handleLogin(request, env);
-    }
-    if (path === '/api/auth/engineer/activate' && request.method === 'POST') {
-      return handleEngineerActivation(request, env);
-    }
-    if (path === '/api/auth/reset-password' && request.method === 'POST') {
-      return handleResetPassword(request, env);
-    }
-    if (path === '/api/auth/send-reset-code' && request.method === 'POST') {
-      return handleSendResetCode(request, env);
-    }
-
-    // 聊天相关（允许未登录用户使用 AI 对话）
-    if (path === '/api/chat/upload-image' && request.method === 'POST') {
-      return handleChatUploadImage(request, env);
-    }
-    if (path === '/api/chat/transcribe' && request.method === 'POST') {
-      return handleChatTranscribe(request, env);
-    }
-    if (path === '/api/chat' && request.method === 'POST') {
-      return handleChat(request, env);
-    }
-
-    // 商机线索提交（无需登录）
-    if (path === '/api/leads' && request.method === 'POST') {
-      return handleSubmitLead(request, env);
-    }
-    if (path === '/api/engineer-applications' && request.method === 'POST') {
-      return handleSubmitEngineerApplication(request, env);
-    }
-    if (path === '/api/analytics/funnel' && request.method === 'POST') {
-      return handleFunnelEvent(request, env);
-    }
-
-    // 健康检查（无需 token）
-    if (path === '/health') {
-      return jsonResponse({ status: 'ok' });
-    }
+    const publicResponse = await handlePublicRoute(request, env, ctx, {
+      handleOptions,
+      handleE2EActivationMailbox,
+      handleSendCode,
+      handleRegisterCustomer,
+      handlePublicEngineerRegistrationClosed: (publicRequest) => (
+        localizedErrorResponse('public_engineer_registration_closed', publicRequest, 410)
+      ),
+      handleLogin,
+      handleAuthSession,
+      handleLogout: (publicRequest) => (
+        clearPortalSession(jsonResponse({ success: true }), publicRequest, env)
+      ),
+      handleEngineerActivation,
+      handleResetPassword,
+      handleSendResetCode,
+      handleChatUploadImage,
+      handleChatTranscribe,
+      handleChat,
+      handleSubmitLead,
+      handleSubmitEngineerApplication,
+      handleFunnelEvent,
+      handleHealth: () => jsonResponse({ status: 'ok' }),
+    });
+    if (publicResponse) return publicResponse;
 
     // Sentry 端到端冒烟测试。匹配 path 就拦下——要么抛错触发 Sentry，要么返回诊断
     // 响应说明为什么没触发，避免 fall through 到后面的认证守卫让人以为路由没生效。
     if (path === '/api/__sentry-test') {
+      const testSecret = request.headers.get('X-Sentry-Test-Secret');
+      if (
+        env.ENVIRONMENT !== 'development'
+        || !env.SENTRY_TEST_SECRET
+        || testSecret !== env.SENTRY_TEST_SECRET
+      ) {
+        return errorResponse(getRequestMarket(request) === 'cn' ? '未找到' : 'Not found', 404);
+      }
       const method = request.method;
       const header = request.headers.get('X-Sentry-Test');
       const hasDsn = Boolean(env?.SENTRY_DSN);
@@ -12503,155 +17223,20 @@ async function routeRequest(request, env, ctx) {
     }
 
     // ============ 测试/调试接口保护（默认拒绝）============
-    // 任何 /api/test-*, /api/debug-*, /api/init-*, /api/clear-test-data
-    // 只在 ENVIRONMENT === 'development' 且管理员认证通过时才开放，其他情况一律 404。
-    // 默认拒绝策略：env 缺失或值非预期时（例如 staging、空字符串）也视作生产锁定，避免误暴露。
-    const isTestRoute = (
-      path.startsWith('/api/test-') ||
-      path.startsWith('/api/debug-') ||
-      path === '/api/init-test-data' ||
-      path === '/api/init-db' ||
-      path === '/api/clear-test-data'
-    );
-    if (isTestRoute) {
+    // 生产和非预期环境在加载开发模块前返回 404；开发环境仍要求管理员认证。
+    if (isTestRoute(path)) {
       if (env.ENVIRONMENT !== 'development') {
         return errorResponse(getRequestMarket(request) === 'cn' ? '未找到' : 'Not found', 404);
       }
       const admin = await authenticateAdmin(request, env);
       if (!admin) return errorResponse('需要管理员权限', 403);
-    }
-
-    if (path === '/api/init-test-data' && request.method === 'GET') {
-      return handleInitTestData(env);
-    }
-    if (path === '/api/test-full-flow' && request.method === 'GET') {
-      return handleTestFullPricingFlow(env);
-    }
-    if (path === '/api/debug-engineers' && request.method === 'GET') {
-      // 调试：查看所有可用工程师的onesignal_player_id
-      const engineers = await env.DB.prepare(
-        'SELECT id, name, onesignal_player_id FROM engineers WHERE status = ?'
-      ).bind('available').all();
-      return jsonResponse({ count: engineers.results.length, engineers: engineers.results });
-    }
-    if (path === '/api/test-create-workorder' && request.method === 'POST') {
-      const body = await request.json().catch(() => ({}));
-      const customerId = body.customer_id || 'mnyj09v0pa0kfz0lenf'; // 张伟
-      const id = generateId();
-      const order_no = 'WO-TEST-' + Date.now();
-      const type = body.type || 'fault';
-      const description = body.description || '激光切割机激光器不出光';
-      const urgency = body.urgency || 'urgent';
-
-      // 直接查数据库看onesignal_player_id
-      const allEngineers = await env.DB.prepare('SELECT id, name, onesignal_player_id FROM engineers WHERE status = ?').bind('available').all();
-
-      // 创建工单
-      await env.DB.prepare(`
-        INSERT INTO work_orders (id, order_no, customer_id, type, description, urgency, status, sla_deadline, category_l1, category_l2)
-        VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)
-      `).bind(id, order_no, customerId, type, description, urgency, computeSlaDeadline(urgency), 'other', 'other').run();
-
-      // 生成AI摘要
-      const aiSummary = await generateWorkOrderSummary(type, description, urgency, env, { market: getRequestMarket(request) });
-
-      const workOrderData = { id, order_no, type, description, urgency, ai_summary: aiSummary };
-
-      // 查找匹配的工程师
-      const matchingEngineers = await findMatchingEngineers(workOrderData, env);
-
-      // 发送推送
-      const typeLabels = { fault: '设备故障', maintenance: '维护保养', parameter: '参数调试' };
-      const urgencyLabels = { normal: '普通', urgent: '紧急', critical: '非常紧急' };
-      let sent = 0;
-      for (const engineer of matchingEngineers) {
-        if (engineer.onesignal_player_id) {
-          await sendPushToEngineer(engineer.id, env, {
-            title: '📋 New Service Assignment',
-            titleZh: '📋 新服务任务待确认',
-            message: `Service: ${order_no} | Type: ${typeLabels[type] || type} | Urgency: ${urgencyLabels[urgency] || urgency}`,
-            messageZh: `服务编号：${order_no} | 类型：${typeLabels[type] || type} | 紧急程度：${urgencyLabels[urgency] || urgency}`,
-            data: { work_order_id: id, type: 'new_ticket' }
-          });
-          sent++;
-        }
-      }
-
-      return jsonResponse({
-        workOrder: { id, order_no },
-        allEngineers: allEngineers.results.length,
-        allEngineersSample: allEngineers.results.slice(0,2).map(e => ({ id: e.id, name: e.name, playerId: e.onesignal_player_id })),
-        matched: matchingEngineers.length,
-        sent,
-        firstEngineer: matchingEngineers[0] ? JSON.stringify(matchingEngineers[0]) : null
+      const { handleDiagnosticRoute } = await import('./dev/diagnostics.js');
+      const response = await handleDiagnosticRoute(request, env, {
+        checkPricingReasonableness, computeSlaDeadline, errorResponse, findMatchingEngineers,
+        generateId, generateUserNo, generateWorkOrderSummary, getRequestMarket,
+        hashPasswordLegacy, jsonResponse, sendPushToEngineer,
       });
-    }
-    if (path === '/api/test-push' && request.method === 'POST') {
-      // 测试推送，直接发给李师傅
-      const engineerId = 'mnyj0ab5bzrrfkvrppo';
-      const result = await sendPushToEngineer(engineerId, env, {
-        title: '📋 Test Push',
-        titleZh: '📋 测试推送',
-        message: 'Test message from worker',
-        messageZh: '这是来自 Worker 的测试消息',
-        data: { type: 'test' }
-      });
-      return jsonResponse({ success: result, engineerId });
-    }
-    if (path === '/api/test-workorder-push' && request.method === 'POST') {
-      // 模拟工单创建流程，测试推送
-      const body = await request.json().catch(() => ({}));
-      const workOrderData = {
-        id: 'test-wo-' + Date.now(),
-        order_no: 'WO-TEST-' + Date.now(),
-        type: body.type || 'fault',
-        description: body.description || '激光切割机激光器不出光',
-        urgency: body.urgency || 'urgent',
-        ai_summary: JSON.stringify({
-          summary: '激光切割机激光器不出光',
-          required_specialties: ['激光切割机'],
-          suggested_skills: ['激光器维修'],
-        })
-      };
-      const matchingEngineers = await findMatchingEngineers(workOrderData, env);
-      const typeLabels = { fault: '设备故障', maintenance: '维护保养', parameter: '参数调试', urgent: '紧急' };
-      const urgencyLabels = { normal: '普通', urgent: '紧急', critical: '非常紧急' };
-      let sent = 0;
-      for (const engineer of matchingEngineers) {
-        if (engineer.onesignal_player_id) {
-          await sendPushToEngineer(engineer.id, env, {
-            title: '📋 New Service Assignment',
-            titleZh: '📋 新服务任务待确认',
-            message: `Service: ${workOrderData.order_no} | Type: ${typeLabels[workOrderData.type] || workOrderData.type} | Urgency: ${urgencyLabels[workOrderData.urgency] || workOrderData.urgency}`,
-            messageZh: `服务编号：${workOrderData.order_no} | 类型：${typeLabels[workOrderData.type] || workOrderData.type} | 紧急程度：${urgencyLabels[workOrderData.urgency] || workOrderData.urgency}`,
-            data: { work_order_id: workOrderData.id, type: 'new_ticket' }
-          });
-          sent++;
-        }
-      }
-      return jsonResponse({ matched: matchingEngineers.length, sent, engineers: matchingEngineers.map(e => ({ id: e.id, name: e.name, playerId: e.onesignal_player_id })) });
-    }
-    if (path === '/api/test-results' && request.method === 'GET') {
-      try {
-        const results = await env.DB.prepare('SELECT * FROM test_flow_results ORDER BY id ASC').all();
-        return jsonResponse({ results: results.results });
-      } catch (e) {
-        return errorResponse('读取失败: ' + e.message, 500);
-      }
-    }
-    if (path === '/api/clear-test-data' && request.method === 'GET') {
-      try {
-        await env.DB.prepare('DELETE FROM test_flow_results').run();
-        await env.DB.prepare('DELETE FROM work_orders WHERE order_no LIKE ?').bind('WO-TEST-%').run();
-        return jsonResponse({ success: true, message: '测试数据已清理' });
-      } catch (e) {
-        return errorResponse('清理失败: ' + e.message, 500);
-      }
-    }
-
-    // 临时建表接口（生产 404；非生产需管理员）
-    if (path === '/api/init-db' && request.method === 'GET') {
-      return handleInitDb(env);
+      return response || errorResponse(getRequestMarket(request) === 'cn' ? '未找到' : 'Not found', 404);
     }
 
     // 管理员登录（无需 token）
@@ -12663,32 +17248,7 @@ async function routeRequest(request, env, ctx) {
     // 先判断 path 是否匹配任一已知受保护路由。不匹配则直接 404，
     // 避免未登录用户 GET /api/random-typo 拿到 401 泄露"此路径需要 token"。
     // 白名单必须与下方已登录路由列表保持同步。
-    const isKnownProtectedRoute = (
-      path.startsWith('/api/admin/') ||
-      path === '/api/material-requests' ||
-      path === '/api/upsell-requests' ||
-      path === '/api/upsell-requests/mine' ||
-      path === '/api/leads/machine' ||
-      path === '/api/conversations' ||
-      path.startsWith('/api/conversations/') ||
-      path === '/api/materials' ||
-      path === '/api/location/search' ||
-      path === '/api/workorders' ||
-      path.startsWith('/api/workorders/') ||
-      path === '/api/devices' ||
-      path.startsWith('/api/devices/') ||
-      path === '/api/notifications' ||
-      path.startsWith('/api/notifications/') ||
-      path.startsWith('/api/engineers/') ||
-      path === '/api/push-subscription' ||
-      path === '/api/platform-ratings' ||
-      path === '/api/customer-ratings' ||
-      path === '/api/customers/profile' ||
-      path === '/api/customers/push-subscription' ||
-      /^\/api\/customers\/[^/]+\/reviews$/.test(path) ||
-      path === '/api/auth/change-password'
-    );
-    if (!isKnownProtectedRoute) {
+    if (!isKnownProtectedRoute(path)) {
       return errorResponse(getRequestMarket(request) === 'cn' ? '未找到' : 'Not found', 404);
     }
 
@@ -12696,14 +17256,56 @@ async function routeRequest(request, env, ctx) {
     if (!auth) {
       return localizedErrorResponse('sign_in_required', request, 401);
     }
+    if (!hasValidCsrf(request, auth)) {
+      return errorResponse('Invalid CSRF token', 403);
+    }
 
     // 将认证信息挂到 request 上，供 handler 使用。Admin handler 也需要它写审计日志。
     request._auth = auth;
+
+    if (auth.userType === 'admin' && auth.market !== getRequestMarket(request)) {
+      return errorResponse('管理员会话无权访问当前市场', 403);
+    }
+
+    if (auth.userType === 'admin' && auth.staffId) {
+      const staff = await requireActiveStaff(env, auth);
+      const requestMarket = getRequestMarket(request);
+      const marketAllowed = auth.market === requestMarket
+        && (staff?.market_scope === 'all' || staff?.market_scope === requestMarket);
+      if (!staff || !marketAllowed) return errorResponse('员工账号不存在、已停用或无权访问当前市场', 403);
+      request._auth = {
+        ...auth,
+        staffRole: staff.role,
+        mustChangePassword: Boolean(staff.must_change_password),
+      };
+      if (staff.must_change_password && path !== '/api/auth/change-password') {
+        return errorResponse('请先修改临时密码', 403);
+      }
+      const operationalRoute = path === '/api/material-requisitions'
+        || path.startsWith('/api/material-requisitions/')
+        || path === '/api/auth/change-password'
+        || (staff.role === 'operations' && isOperationsReadRoute(path, request.method));
+      if (staff.role !== 'admin' && !operationalRoute) {
+        return errorResponse('当前员工角色无权访问该管理接口', 403);
+      }
+    }
 
     // 管理后台 API（需要管理员权限）
     if (path.startsWith('/api/admin/')) {
       if (auth.userType !== 'admin') {
         return errorResponse('需要管理员权限', 403);
+      }
+      if (path === '/api/admin/staff' && request.method === 'GET') {
+        return handleAdminStaffList(request, env);
+      }
+      if (path === '/api/admin/staff' && request.method === 'POST') {
+        return handleAdminStaffCreate(request, env);
+      }
+      if (path.match(/^\/api\/admin\/staff\/[^/]+\/deactivate$/) && request.method === 'POST') {
+        return handleAdminStaffDeactivate(request, env);
+      }
+      if (path.match(/^\/api\/admin\/staff\/[^/]+\/reset-password$/) && request.method === 'POST') {
+        return handleAdminStaffResetPassword(request, env);
       }
       if (path === '/api/admin/stats' && request.method === 'GET') {
         return handleAdminStats(request, env);
@@ -12774,6 +17376,24 @@ async function routeRequest(request, env, ctx) {
       if (path === '/api/admin/workorders' && request.method === 'GET') {
         return handleAdminWorkOrders(request, env);
       }
+      if (path.match(/^\/api\/admin\/workorders\/[^/]+\/field-plan$/) && request.method === 'PATCH') {
+        return handleAdminFieldPlan(request, env);
+      }
+      if (path.match(/^\/api\/admin\/workorders\/[^/]+\/extension-requests\/[^/]+\/decision$/) && request.method === 'POST') {
+        return handleAdminExtensionDecision(request, env);
+      }
+      if (path.match(/^\/api\/admin\/workorders\/[^/]+\/field-days\/override$/) && request.method === 'POST') {
+        return handleAdminFieldDayOverride(request, env);
+      }
+      if (path.match(/^\/api\/admin\/workorders\/[^/]+\/field-days\/[^/]+\/report$/) && request.method === 'PATCH') {
+        return handleAdminCorrectFieldDayReport(request, env);
+      }
+      if (path.match(/^\/api\/admin\/workorders\/[^/]+\/evidence-holds$/) && request.method === 'POST') {
+        return handleAdminOpenEvidenceHold(request, env);
+      }
+      if (path.match(/^\/api\/admin\/workorders\/[^/]+\/evidence-holds\/[^/]+\/resolve$/) && request.method === 'POST') {
+        return handleAdminResolveEvidenceHold(request, env);
+      }
       if (path.match(/^\/api\/admin\/workorders\/[^/]+\/onsite-conversion\/confirm$/) && request.method === 'POST') {
         return handleConfirmOnsiteConversion(request, env, { admin: true });
       }
@@ -12788,6 +17408,9 @@ async function routeRequest(request, env, ctx) {
       }
       if (path.match(/^\/api\/admin\/workorders\/[^/]+\/pricing\/(approve|reject)$/) && request.method === 'PATCH') {
         return handleAdminReviewWorkOrderPricing(request, env);
+      }
+      if (path.match(/^\/api\/admin\/workorders\/[^/]+\/installments\/[^/]+\/receipt-claims\/[^/]+\/decision$/) && request.method === 'POST') {
+        return handleAdminDecideReceiptClaim(request, env);
       }
       if (path.match(/^\/api\/admin\/workorders\/[^/]+\/payment\/approve-start$/) && request.method === 'POST') {
         return handleAdminApprovePaymentStart(request, env);
@@ -12851,6 +17474,57 @@ async function routeRequest(request, env, ctx) {
     if (path === '/api/material-requests' && request.method === 'POST') {
       return handleCreateMaterialRequest(request, env);
     }
+    if (path === '/api/material-requisitions' && request.method === 'GET') {
+      return handleListMaterialRequisitions(request, env);
+    }
+    if (path === '/api/material-requisitions' && request.method === 'POST') {
+      return handleCreateMaterialRequisition(request, env);
+    }
+    if (path === '/api/material-requisitions/metrics' && request.method === 'GET') {
+      return handleMaterialRequisitionMetrics(request, env);
+    }
+    if (path.match(/^\/api\/material-requisitions\/[^/]+$/) && request.method === 'GET') {
+      return handleGetMaterialRequisition(request, env);
+    }
+    if (path.match(/^\/api\/material-requisitions\/[^/]+\/submit$/) && request.method === 'POST') {
+      return handleSubmitMaterialRequisition(request, env);
+    }
+    if (path.match(/^\/api\/material-requisitions\/[^/]+\/approve$/) && request.method === 'POST') {
+      return handleRequisitionDecision(request, env, 'approve');
+    }
+    if (path.match(/^\/api\/material-requisitions\/[^/]+\/reject$/) && request.method === 'POST') {
+      return handleRequisitionDecision(request, env, 'reject');
+    }
+    if (path.match(/^\/api\/material-requisitions\/[^/]+\/cancel$/) && request.method === 'POST') {
+      return handleRequisitionDecision(request, env, 'cancel');
+    }
+    if (path.match(/^\/api\/material-requisitions\/[^/]+\/items\/[^/]+\/cancel$/) && request.method === 'POST') {
+      return handleCancelRequisitionItem(request, env);
+    }
+    if (path.match(/^\/api\/material-requisitions\/[^/]+\/stock-allocation$/) && request.method === 'POST') {
+      return handleRequisitionLineAction(request, env, 'allocate_stock');
+    }
+    if (path.match(/^\/api\/material-requisitions\/[^/]+\/procurement$/) && request.method === 'POST') {
+      return handleRequisitionLineAction(request, env, 'record_purchase');
+    }
+    if (path.match(/^\/api\/material-requisitions\/[^/]+\/procurement$/) && request.method === 'PATCH') {
+      return handleUpdateRequisitionProcurement(request, env);
+    }
+    if (path.match(/^\/api\/material-requisitions\/[^/]+\/procurement-receipt$/) && request.method === 'POST') {
+      return handleRequisitionLineAction(request, env, 'receive_purchase');
+    }
+    if (path.match(/^\/api\/material-requisitions\/[^/]+\/issue$/) && request.method === 'POST') {
+      return handleRequisitionLineAction(request, env, 'issue');
+    }
+    if (path.match(/^\/api\/material-requisitions\/[^/]+\/return$/) && request.method === 'POST') {
+      return handleRequisitionLineAction(request, env, 'return');
+    }
+    if (path.match(/^\/api\/material-requisitions\/[^/]+\/engineer-receipt$/) && request.method === 'POST') {
+      return handleEngineerRequisitionReceipt(request, env);
+    }
+    if (path.match(/^\/api\/material-requisitions\/[^/]+\/close$/) && request.method === 'POST') {
+      return handleCloseMaterialRequisition(request, env);
+    }
     if (path === '/api/upsell-requests' && request.method === 'POST') {
       return handleCreateUpsellRequest(request, env);
     }
@@ -12899,6 +17573,33 @@ async function routeRequest(request, env, ctx) {
       return handleSubmitRating(request, env);
     }
     // 工单附件（必须在 catch-all GET 之前）
+    if (path.match(/^\/api\/workorders\/[^/]+\/field-days\/check-in$/) && request.method === 'POST') {
+      return handleFieldDayCheckIn(request, env);
+    }
+    if (path.match(/^\/api\/workorders\/[^/]+\/field-days\/[^/]+\/report$/) && request.method === 'POST') {
+      return handleSubmitFieldDayReport(request, env);
+    }
+    if (path.match(/^\/api\/workorders\/[^/]+\/extension-requests$/) && request.method === 'POST') {
+      return handleCreateExtensionRequest(request, env);
+    }
+    if (path.match(/^\/api\/workorders\/[^/]+\/field-days$/) && request.method === 'GET') {
+      return handleGetFieldDays(request, env);
+    }
+    if (path.match(/^\/api\/workorders\/[^/]+\/field-media\/[^/]+$/) && request.method === 'GET') {
+      return handleGetFieldMedia(request, env);
+    }
+    if (path.match(/^\/api\/workorders\/[^/]+\/receipt-evidence\/[^/]+$/) && request.method === 'GET') {
+      return handleGetReceiptEvidence(request, env);
+    }
+    if (path.match(/^\/api\/workorders\/[^/]+\/installments\/[^/]+\/collect$/) && request.method === 'POST') {
+      return handleStartInstallmentCollection(request, env);
+    }
+    if (path.match(/^\/api\/workorders\/[^/]+\/installments\/[^/]+\/payment-method$/) && request.method === 'POST') {
+      return handleSelectInstallmentPaymentMethod(request, env);
+    }
+    if (path.match(/^\/api\/workorders\/[^/]+\/installments\/[^/]+\/receipt-claims$/) && request.method === 'POST') {
+      return handleSubmitReceiptClaim(request, env);
+    }
     if (path.match(/^\/api\/workorders\/[^/]+\/attachments\/[^/]+$/) && request.method === 'DELETE') {
       return handleDeleteAttachment(request, env);
     }
@@ -13136,6 +17837,9 @@ export function resolveAdminCredentials(request, env) {
 }
 
 export default {
+  async scheduled(controller, env, ctx) {
+    ctx.waitUntil(processFieldWorkScheduled(env, controller?.scheduledTime));
+  },
   async fetch(request, env, ctx) {
     // 按 API 域名或来源域名路由数据库：CN 站点走 CN 库，其他走 EN 库。
     const requestEnv = env.DB_CN && shouldUseCnDatabase(request)

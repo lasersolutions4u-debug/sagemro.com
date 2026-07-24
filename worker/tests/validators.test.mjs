@@ -5,6 +5,7 @@ import {
   LIMITS,
   assertMaxLength,
   assertFieldLimits,
+  sanitizeFilename,
   validateImageUrl,
   validationErrorToResponse,
 } from '../src/lib/validators.js';
@@ -87,6 +88,17 @@ test('assertFieldLimits 跳过 body 里未定义的字段', () => {
   assert.doesNotThrow(() =>
     assertFieldLimits({ name: 'abc' }, { name: 50, bio: 2000 })
   );
+});
+
+test('sanitizeFilename 移除控制字符', () => {
+  assert.equal(sanitizeFilename('bank\r\n\x00receipt.pdf'), 'bankreceipt.pdf');
+});
+
+test('sanitizeFilename 截断时不拆分代理对', () => {
+  const sanitized = sanitizeFilename(`${'a'.repeat(254)}😀.pdf`);
+  assert.equal(Array.from(sanitized).length, 255);
+  assert.equal(sanitized.endsWith('😀'), true);
+  assert.equal(/[\uD800-\uDFFF]/u.test(sanitized.replace('😀', '')), false);
 });
 
 // ============ validateImageUrl ============

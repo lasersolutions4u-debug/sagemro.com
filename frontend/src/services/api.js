@@ -747,11 +747,11 @@ export async function submitWorkOrderPricing(workOrderId, data) {
 /**
  * 客户确认报价
  */
-export async function confirmWorkOrderPricing(workOrderId, customerId) {
+export async function confirmWorkOrderPricing(workOrderId, customerId, quoteVersion) {
   const response = await fetch(`${API_BASE}/api/workorders/${workOrderId}/pricing/confirm`, {
     method: 'POST',
     headers: authHeaders(),
-    body: JSON.stringify({ customer_id: customerId }),
+    body: JSON.stringify({ customer_id: customerId, quote_version: quoteVersion }),
   });
   if (!response.ok) throw new Error(`HTTP ${response.status}`);
   return response.json();
@@ -1069,6 +1069,46 @@ export async function payWorkOrder(workOrderId, { payment_method, payment_stage 
     throw new Error(d.error || `HTTP ${response.status}`);
   }
   return response.json();
+}
+
+export async function startInstallmentCollection(workOrderId, installmentId, { milestone_confirmation } = {}) {
+  const response = await fetch(`${API_BASE}/api/workorders/${workOrderId}/installments/${installmentId}/collect`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify(milestone_confirmation ? { milestone_confirmation } : {}),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+  return data;
+}
+
+export async function selectInstallmentPaymentMethod(workOrderId, installmentId, { payment_method }) {
+  const response = await fetch(`${API_BASE}/api/workorders/${workOrderId}/installments/${installmentId}/payment-method`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({ payment_method }),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+  return data;
+}
+
+export async function submitInstallmentReceiptClaim(workOrderId, installmentId, payload) {
+  const formData = new FormData();
+  formData.append('claimed_amount', String(payload.claimed_amount));
+  formData.append('idempotency_key', payload.idempotency_key);
+  if (payload.transaction_reference) formData.append('transaction_reference', payload.transaction_reference);
+  if (payload.note) formData.append('note', payload.note);
+  if (payload.evidence) formData.append('evidence', payload.evidence);
+
+  const response = await fetch(`${API_BASE}/api/workorders/${workOrderId}/installments/${installmentId}/receipt-claims`, {
+    method: 'POST',
+    headers: authHeadersNoContentType(),
+    body: formData,
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+  return data;
 }
 
 export async function requestWorkOrderPaymentStart(workOrderId, note = '') {

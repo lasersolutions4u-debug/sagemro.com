@@ -6,6 +6,14 @@ import { safeAuditEntries } from '../utils/fieldWorkAudit.js';
 
 const readSource = (path) => readFile(new URL(path, import.meta.url), 'utf8');
 
+function loadFunction(source, start, end) {
+  const startIndex = source.indexOf(start);
+  const endIndex = source.indexOf(end, startIndex + start.length);
+  assert.notEqual(startIndex, -1, `missing function: ${start}`);
+  const functionSource = source.slice(startIndex, endIndex === -1 ? source.length : endIndex).trim();
+  return Function(`return (${functionSource});`)();
+}
+
 test('field-work Admin APIs use the protected Worker routes and authenticated media fetch', async () => {
   const api = await readSource('../services/api.js');
 
@@ -60,8 +68,72 @@ test('field-work panel provides dense plan, timeline, media, extension, exceptio
   assert.match(panel, /<section className="[^"]*break-words/);
 });
 
+test('confirmed quote replaces the normal Admin field-plan editor with a read-only allowance summary', async () => {
+  const panel = await readSource('./FieldWorkAdminPanel.jsx');
+
+  assert.match(panel, /const quoteExecution = workOrder\?\.quote_execution \|\| \{\}/);
+  assert.match(panel, /const quoteDriven = Number\(workOrder\?\.active_quote_version \|\| 0\) >= 1/);
+  assert.match(panel, /quoteDriven \? quoteExecutionAvailable \? \(/);
+  assert.match(panel, /quoteExecution\.expected_service_days/);
+  assert.match(panel, /quoteExecution\.consumed_workdays/);
+  assert.match(panel, /quoteExecution\.permitted_workdays/);
+  assert.match(panel, /quoteExecution\.remaining_workdays/);
+  assert.match(panel, /quoteExecution\.allowance_exhausted/);
+  assert.match(panel, /Approved quote duration/);
+  assert.match(panel, /报价审核工期/);
+  assert.match(panel, /siteTimezoneLabel\(workOrder\?\.field_plan\?\.site_timezone, workOrder\?\.field_plan\?\.site_timezone_display, isCn\)/);
+  assert.match(panel, /siteTimezoneLabel\(day\.site_timezone, day\.site_timezone_display, isCn\)/);
+  assert.match(panel, /function savePlan\(\) \{[\s\S]*if \(quoteDriven\) return;[\s\S]*updateFieldPlan/);
+  assert.match(panel, /!quoteDriven[\s\S]*t\.savePlan/);
+
+  for (const retainedControl of [
+    'decideExtension',
+    'submitCorrection',
+    'submitOverride',
+    'openHold',
+    'resolveHold',
+  ]) assert.match(panel, new RegExp(retainedControl));
+});
+
+test('quote execution exceptions show an unavailable summary instead of usable allowance', async () => {
+  const panel = await readSource('./FieldWorkAdminPanel.jsx');
+
+  assert.match(panel, /function hasValidQuoteAllowance\(execution\)/);
+  assert.match(panel, /execution\.payment_state === 'exception'/);
+  assert.match(panel, /const quoteExecutionAvailable = quoteDriven && hasValidQuoteAllowance\(quoteExecution\)/);
+  assert.match(panel, /Execution data unavailable/);
+  assert.match(panel, /执行数据暂不可用/);
+  assert.match(panel, /quoteDriven \? quoteExecutionAvailable \? \(/);
+  assert.match(panel, /\{t\.executionUnavailable\}<\/p> : \(\s*<>/);
+});
+
+test('quote allowance counters reject blank, fractional, negative, and unsafe canonical values', async () => {
+  const panel = await readSource('./FieldWorkAdminPanel.jsx');
+  const start = panel.indexOf('function safeWorkdayCount');
+  const end = panel.indexOf('function siteTimezoneLabel', start);
+  assert.notEqual(start, -1, 'missing allowance validators');
+  const validators = Function(`${panel.slice(start, end).trim()}; return { safeWorkdayCount, hasValidQuoteAllowance };`)();
+  const validAllowance = {
+    payment_state: 'settled',
+    expected_service_days: 3,
+    consumed_workdays: 1,
+    permitted_workdays: 3,
+    remaining_workdays: 2,
+    allowance_exhausted: false,
+  };
+
+  assert.equal(validators.hasValidQuoteAllowance(validAllowance), true);
+  for (const invalidValue of [null, undefined, '', '   ', 1.5, -1, Number.MAX_SAFE_INTEGER + 1]) {
+    assert.equal(validators.safeWorkdayCount(invalidValue), null);
+    for (const field of ['expected_service_days', 'consumed_workdays', 'permitted_workdays', 'remaining_workdays']) {
+      assert.equal(validators.hasValidQuoteAllowance({ ...validAllowance, [field]: invalidValue }), false);
+    }
+  }
+});
+
 test('field-work panel localizes operational labels for English and Chinese consoles', async () => {
   const panel = await readSource('./FieldWorkAdminPanel.jsx');
+  const siteTimezoneLabel = loadFunction(panel, 'function siteTimezoneLabel', 'function statusTone');
 
   assert.match(panel, /Field operations/);
   assert.match(panel, /现场作业运营/);
@@ -92,6 +164,17 @@ test('field-work panel localizes operational labels for English and Chinese cons
   assert.match(panel, /Admin override/);
   assert.match(panel, /Admin 例外确认/);
   assert.doesNotMatch(panel, /locationLabel: day\.location_status/);
+  assert.match(panel, /现场时区/);
+  assert.match(panel, /site_timezone_display/);
+  assert.match(panel, /中国标准时间（上海）/);
+  assert.doesNotMatch(panel, /timezone: 'IANA 时区'/);
+  assert.match(panel, /Intl\.DateTimeFormat\('zh-CN',[\s\S]*timeZoneName: 'long'/);
+  assert.match(panel, /现场当地时间/);
+  assert.equal(siteTimezoneLabel('Asia/Shanghai', '', true), '中国标准时间（上海）');
+  assert.equal(siteTimezoneLabel('Asia/Shanghai', '', false), 'China Standard Time (Shanghai)');
+  const newYorkLabel = siteTimezoneLabel('America/New_York', '', true);
+  assert.notEqual(newYorkLabel, 'America/New_York');
+  assert.doesNotMatch(newYorkLabel, /\//);
 });
 
 test('field-work mutations preserve success semantics when the detail refresh fails', async () => {

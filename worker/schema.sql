@@ -21,17 +21,19 @@ CREATE TABLE IF NOT EXISTS _migrations (
     note TEXT
 );
 
--- 对话表（000 + 010）
+-- 对话表（000 + 010 + 015）
 CREATE TABLE IF NOT EXISTS conversations (
     id TEXT PRIMARY KEY,
     title TEXT DEFAULT '新对话',
     last_message TEXT,
     customer_id TEXT,                          -- 010: 归属客户，IDOR 校验依赖此列
+    engineer_id TEXT,                          -- 015: 归属工程师，工程师对话查询依赖此列
     created_at TEXT DEFAULT (datetime('now')),
     updated_at TEXT DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_conversations_updated_at ON conversations(updated_at);
 CREATE INDEX IF NOT EXISTS idx_conversations_customer_id ON conversations(customer_id);
+CREATE INDEX IF NOT EXISTS idx_conversations_engineer_id ON conversations(engineer_id);
 
 -- 消息表（000 + 020）
 CREATE TABLE IF NOT EXISTS messages (
@@ -235,6 +237,15 @@ CREATE TABLE IF NOT EXISTS work_orders (
     arrival_override_at TEXT,
     arrival_override_by TEXT,
     arrival_override_reason TEXT,
+    site_timezone TEXT,
+    expected_service_days INTEGER,
+    expected_completion_date TEXT,
+    planned_daily_start_time TEXT,
+    planned_daily_end_time TEXT,
+    updated_at TEXT,
+    quote_expected_service_days INTEGER,
+    approved_extension_days INTEGER NOT NULL DEFAULT 0,
+    active_quote_version INTEGER,
 
     FOREIGN KEY (customer_id) REFERENCES customers(id),
     FOREIGN KEY (engineer_id) REFERENCES engineers(id),
@@ -250,14 +261,14 @@ CREATE TABLE IF NOT EXISTS work_order_arrival_checks (
     id TEXT PRIMARY KEY,
     work_order_id TEXT NOT NULL,
     engineer_id TEXT NOT NULL,
-    latitude REAL NOT NULL,
-    longitude REAL NOT NULL,
+    latitude REAL,
+    longitude REAL,
     accuracy_m REAL,
-    coordinate_system TEXT NOT NULL DEFAULT 'wgs84',
+    coordinate_system TEXT,
     location_source TEXT NOT NULL DEFAULT 'browser',
     distance_m REAL,
     radius_m REAL,
-    within_geofence INTEGER NOT NULL DEFAULT 0,
+    within_geofence INTEGER,
     failure_reason TEXT,
     created_at TEXT DEFAULT (datetime('now')),
     FOREIGN KEY (work_order_id) REFERENCES work_orders(id),
@@ -265,6 +276,134 @@ CREATE TABLE IF NOT EXISTS work_order_arrival_checks (
 );
 CREATE INDEX IF NOT EXISTS idx_arrival_checks_work_order ON work_order_arrival_checks(work_order_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_arrival_checks_engineer ON work_order_arrival_checks(engineer_id, created_at);
+
+-- 现场作业日与私有证据（039）
+CREATE TABLE IF NOT EXISTS work_order_field_days (
+  id TEXT PRIMARY KEY,
+  work_order_id TEXT NOT NULL,
+  engineer_id TEXT NOT NULL,
+  site_local_date TEXT NOT NULL,
+  site_timezone TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'checked_in',
+  check_in_at TEXT NOT NULL DEFAULT (datetime('now')),
+  expected_check_out_at TEXT,
+  report_submitted_at TEXT,
+  labor_hours REAL,
+  completed_work TEXT,
+  issues_risks TEXT,
+  next_plan TEXT,
+  customer_support_needed TEXT,
+  internal_note TEXT,
+  late_reason TEXT,
+  location_status TEXT NOT NULL DEFAULT 'unavailable',
+  latitude REAL,
+  longitude REAL,
+  accuracy_m REAL,
+  coordinate_system TEXT,
+  location_source TEXT,
+  distance_m REAL,
+  radius_m REAL,
+  within_geofence INTEGER,
+  check_in_idempotency_key TEXT,
+  report_idempotency_key TEXT,
+  checkout_reminder_sent_at TEXT,
+  overdue_notification_sent_at TEXT,
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now')),
+  UNIQUE(id, work_order_id),
+  UNIQUE(work_order_id, engineer_id, site_local_date),
+  FOREIGN KEY (work_order_id) REFERENCES work_orders(id),
+  FOREIGN KEY (engineer_id) REFERENCES engineers(id)
+);
+CREATE INDEX IF NOT EXISTS idx_field_days_work_order_date ON work_order_field_days(work_order_id, site_local_date DESC);
+CREATE INDEX IF NOT EXISTS idx_field_days_status ON work_order_field_days(status, expected_check_out_at);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_field_days_check_in_idempotency ON work_order_field_days(check_in_idempotency_key) WHERE check_in_idempotency_key IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_field_days_report_idempotency ON work_order_field_days(report_idempotency_key) WHERE report_idempotency_key IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS work_order_field_day_media (
+  id TEXT PRIMARY KEY,
+  work_order_id TEXT NOT NULL,
+  field_day_id TEXT NOT NULL,
+  purpose TEXT NOT NULL,
+  object_key TEXT NOT NULL UNIQUE,
+  mime_type TEXT NOT NULL,
+  file_size INTEGER NOT NULL,
+  uploader_type TEXT NOT NULL,
+  uploader_id TEXT NOT NULL,
+  customer_visible INTEGER NOT NULL DEFAULT 1,
+  capture_source TEXT NOT NULL,
+  privacy_retention_due_at TEXT,
+  retention_claim_token TEXT,
+  retention_claimed_at TEXT,
+  deleted_at TEXT,
+  created_at TEXT DEFAULT (datetime('now')),
+  FOREIGN KEY (work_order_id) REFERENCES work_orders(id),
+  FOREIGN KEY (field_day_id, work_order_id) REFERENCES work_order_field_days(id, work_order_id)
+);
+CREATE INDEX IF NOT EXISTS idx_field_day_media_day ON work_order_field_day_media(field_day_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_field_day_media_retention ON work_order_field_day_media(privacy_retention_due_at, deleted_at);
+CREATE INDEX IF NOT EXISTS idx_field_day_media_retention_claim ON work_order_field_day_media(retention_claim_token, retention_claimed_at);
+
+CREATE TABLE IF NOT EXISTS work_order_extension_requests (
+  id TEXT PRIMARY KEY,
+  work_order_id TEXT NOT NULL,
+  field_day_id TEXT,
+  engineer_id TEXT NOT NULL,
+  reason TEXT NOT NULL,
+  customer_explanation TEXT NOT NULL,
+  internal_note TEXT,
+  requested_additional_days INTEGER NOT NULL,
+  proposed_completion_date TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending',
+  original_plan TEXT NOT NULL,
+  approved_plan TEXT,
+  decided_by TEXT,
+  decision_reason TEXT,
+  decided_at TEXT,
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now')),
+  FOREIGN KEY (work_order_id) REFERENCES work_orders(id),
+  FOREIGN KEY (field_day_id, work_order_id) REFERENCES work_order_field_days(id, work_order_id),
+  FOREIGN KEY (engineer_id) REFERENCES engineers(id)
+);
+CREATE INDEX IF NOT EXISTS idx_extension_requests_work_order ON work_order_extension_requests(work_order_id, created_at DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_extension_requests_one_pending ON work_order_extension_requests(work_order_id) WHERE status = 'pending';
+
+CREATE TABLE IF NOT EXISTS work_order_field_day_revisions (
+  id TEXT PRIMARY KEY,
+  work_order_id TEXT NOT NULL,
+  field_day_id TEXT NOT NULL,
+  previous_report TEXT NOT NULL,
+  changed_by_type TEXT NOT NULL,
+  changed_by_id TEXT NOT NULL,
+  reason TEXT NOT NULL,
+  created_at TEXT DEFAULT (datetime('now')),
+  FOREIGN KEY (work_order_id) REFERENCES work_orders(id),
+  FOREIGN KEY (field_day_id, work_order_id) REFERENCES work_order_field_days(id, work_order_id)
+);
+CREATE INDEX IF NOT EXISTS idx_field_day_revisions_day ON work_order_field_day_revisions(field_day_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS work_order_field_evidence_holds (
+  id TEXT PRIMARY KEY,
+  work_order_id TEXT NOT NULL,
+  reason_category TEXT NOT NULL CHECK (reason_category IN ('complaint', 'warranty', 'safety_review', 'legal_hold', 'dispute')),
+  reason TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'open',
+  opened_by TEXT NOT NULL,
+  opened_at TEXT DEFAULT (datetime('now')),
+  resolved_by TEXT,
+  resolution_reason TEXT,
+  resolved_at TEXT,
+  FOREIGN KEY (work_order_id) REFERENCES work_orders(id)
+);
+CREATE INDEX IF NOT EXISTS idx_field_evidence_holds_work_order ON work_order_field_evidence_holds(work_order_id, status, opened_at DESC);
+
+CREATE TABLE IF NOT EXISTS field_evidence_cleanup_queue (
+  object_key TEXT PRIMARY KEY,
+  failure_reason TEXT NOT NULL,
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now'))
+);
 
 -- 工单进度日志（000）
 CREATE TABLE IF NOT EXISTS work_order_logs (
@@ -367,9 +506,14 @@ CREATE TABLE IF NOT EXISTS work_order_pricing (
     submitted_at TEXT,
     confirmed_at TEXT,
     created_at TEXT DEFAULT (datetime('now')),
+    quote_version INTEGER NOT NULL DEFAULT 0,
+    expected_service_days INTEGER,
+    payment_plan_mode TEXT NOT NULL DEFAULT 'single'
+      CHECK (payment_plan_mode IN ('single', 'installments')),
     FOREIGN KEY (work_order_id) REFERENCES work_orders(id)
 );
 CREATE INDEX IF NOT EXISTS idx_work_order_pricing_wo ON work_order_pricing(work_order_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_work_order_pricing_id_order ON work_order_pricing(id, work_order_id);
 
 -- 工单消息表（008）
 CREATE TABLE IF NOT EXISTS work_order_messages (
@@ -404,9 +548,212 @@ CREATE TABLE IF NOT EXISTS work_order_pricing_history (
     deposit_withhold INTEGER DEFAULT 0,
     version INTEGER DEFAULT 1,
     created_at TEXT DEFAULT (datetime('now')),
+    expected_service_days INTEGER,
+    payment_plan_mode TEXT NOT NULL DEFAULT 'single'
+      CHECK (payment_plan_mode IN ('single', 'installments')),
+    quote_kind TEXT NOT NULL DEFAULT 'baseline',
+    parent_quote_version INTEGER,
+    status TEXT NOT NULL DEFAULT 'legacy',
+    approved_at TEXT,
+    confirmed_at TEXT,
     FOREIGN KEY (pricing_id) REFERENCES work_order_pricing(id)
 );
 CREATE INDEX IF NOT EXISTS idx_work_order_pricing_history_pricing ON work_order_pricing_history(pricing_id);
+
+-- 报价执行计划、收款进度与私有凭证元数据（041）
+CREATE TABLE IF NOT EXISTS work_order_payment_schedule (
+  id TEXT PRIMARY KEY,
+  pricing_id TEXT NOT NULL,
+  work_order_id TEXT NOT NULL,
+  quote_version INTEGER NOT NULL CHECK (quote_version >= 1 AND typeof(quote_version) = 'integer'),
+  sequence INTEGER NOT NULL CHECK (sequence BETWEEN 1 AND 6 AND typeof(sequence) = 'integer'),
+  amount INTEGER NOT NULL CHECK (amount > 0 AND typeof(amount) = 'integer'),
+  currency TEXT NOT NULL,
+  trigger_type TEXT NOT NULL CHECK (trigger_type IN (
+    'before_start', 'on_arrival', 'milestone', 'on_completion', 'on_acceptance', 'fixed_date'
+  )),
+  due_date TEXT,
+  description TEXT NOT NULL DEFAULT '',
+  required_before_start INTEGER NOT NULL DEFAULT 0
+    CHECK (required_before_start IN (0, 1) AND typeof(required_before_start) = 'integer'),
+  created_at TEXT DEFAULT (datetime('now')),
+  UNIQUE (id, work_order_id),
+  UNIQUE (pricing_id, quote_version, sequence),
+  CHECK (
+    (trigger_type = 'fixed_date'
+      AND due_date IS NOT NULL
+      AND due_date GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]')
+    OR (trigger_type <> 'fixed_date' AND due_date IS NULL)
+  ),
+  CHECK (trigger_type <> 'milestone' OR trim(description) <> ''),
+  FOREIGN KEY (pricing_id, work_order_id) REFERENCES work_order_pricing(id, work_order_id),
+  FOREIGN KEY (work_order_id) REFERENCES work_orders(id)
+);
+CREATE INDEX IF NOT EXISTS idx_payment_schedule_order_version
+  ON work_order_payment_schedule(work_order_id, quote_version, sequence);
+
+CREATE TABLE IF NOT EXISTS work_order_installments (
+  id TEXT PRIMARY KEY,
+  schedule_id TEXT NOT NULL UNIQUE,
+  work_order_id TEXT NOT NULL,
+  quote_version INTEGER NOT NULL CHECK (quote_version >= 1 AND typeof(quote_version) = 'integer'),
+  sequence INTEGER NOT NULL CHECK (sequence BETWEEN 1 AND 6 AND typeof(sequence) = 'integer'),
+  amount INTEGER NOT NULL CHECK (amount > 0 AND typeof(amount) = 'integer'),
+  currency TEXT NOT NULL,
+  trigger_type TEXT NOT NULL CHECK (trigger_type IN (
+    'before_start', 'on_arrival', 'milestone', 'on_completion', 'on_acceptance', 'fixed_date'
+  )),
+  due_date TEXT,
+  description TEXT NOT NULL DEFAULT '',
+  required_before_start INTEGER NOT NULL DEFAULT 0
+    CHECK (required_before_start IN (0, 1) AND typeof(required_before_start) = 'integer'),
+  status TEXT NOT NULL DEFAULT 'scheduled' CHECK (status IN (
+    'scheduled', 'due', 'collecting', 'pending_confirmation',
+    'partially_received', 'received', 'overdue', 'exception'
+  )),
+  payment_method TEXT,
+  collection_started_at TEXT,
+  received_amount INTEGER NOT NULL DEFAULT 0 CHECK (
+    received_amount >= 0 AND received_amount <= amount AND typeof(received_amount) = 'integer'
+  ),
+  completed_at TEXT,
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now')),
+  UNIQUE (id, work_order_id),
+  UNIQUE (work_order_id, quote_version, sequence),
+  CHECK (
+    (trigger_type = 'fixed_date'
+      AND due_date IS NOT NULL
+      AND due_date GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]')
+    OR (trigger_type <> 'fixed_date' AND due_date IS NULL)
+  ),
+  CHECK (trigger_type <> 'milestone' OR trim(description) <> ''),
+  FOREIGN KEY (schedule_id, work_order_id)
+    REFERENCES work_order_payment_schedule(id, work_order_id),
+  FOREIGN KEY (work_order_id) REFERENCES work_orders(id)
+);
+CREATE INDEX IF NOT EXISTS idx_installments_order_status
+  ON work_order_installments(work_order_id, status, sequence);
+CREATE INDEX IF NOT EXISTS idx_installments_status_due_date
+  ON work_order_installments(status, due_date);
+
+CREATE TRIGGER IF NOT EXISTS quote_execution_installment_snapshot_insert
+BEFORE INSERT ON work_order_installments
+WHEN NOT EXISTS (
+  SELECT 1 FROM work_order_payment_schedule schedule
+  WHERE schedule.id = NEW.schedule_id
+    AND schedule.work_order_id = NEW.work_order_id
+    AND schedule.quote_version = NEW.quote_version
+    AND schedule.sequence = NEW.sequence
+    AND schedule.amount = NEW.amount
+    AND schedule.currency = NEW.currency
+    AND schedule.trigger_type = NEW.trigger_type
+    AND schedule.due_date IS NEW.due_date
+    AND schedule.description = NEW.description
+    AND schedule.required_before_start = NEW.required_before_start
+)
+BEGIN
+  SELECT RAISE(ABORT, 'installment schedule snapshot mismatch');
+END;
+
+CREATE TRIGGER IF NOT EXISTS quote_execution_installment_snapshot_update
+BEFORE UPDATE ON work_order_installments
+WHEN NEW.id IS NOT OLD.id
+  OR NEW.schedule_id IS NOT OLD.schedule_id
+  OR NEW.work_order_id IS NOT OLD.work_order_id
+  OR NEW.quote_version IS NOT OLD.quote_version
+  OR NEW.sequence IS NOT OLD.sequence
+  OR NEW.amount IS NOT OLD.amount
+  OR NEW.currency IS NOT OLD.currency
+  OR NEW.trigger_type IS NOT OLD.trigger_type
+  OR NEW.due_date IS NOT OLD.due_date
+  OR NEW.description IS NOT OLD.description
+  OR NEW.required_before_start IS NOT OLD.required_before_start
+  OR NEW.created_at IS NOT OLD.created_at
+BEGIN
+  SELECT RAISE(ABORT, 'installment schedule snapshot immutable');
+END;
+
+CREATE TRIGGER IF NOT EXISTS quote_execution_schedule_update_guard
+BEFORE UPDATE ON work_order_payment_schedule
+WHEN EXISTS (
+  SELECT 1 FROM work_order_pricing_history history
+  WHERE history.status IN ('approved', 'confirmed')
+    AND (
+      (history.pricing_id = OLD.pricing_id AND history.version = OLD.quote_version)
+      OR (history.pricing_id = NEW.pricing_id AND history.version = NEW.quote_version)
+    )
+)
+OR EXISTS (
+  SELECT 1 FROM work_order_installments installment
+  WHERE installment.schedule_id = OLD.id
+)
+BEGIN
+  SELECT RAISE(ABORT, 'protected quote payment schedule');
+END;
+
+CREATE TRIGGER IF NOT EXISTS quote_execution_schedule_delete_guard
+BEFORE DELETE ON work_order_payment_schedule
+WHEN EXISTS (
+  SELECT 1 FROM work_order_pricing_history history
+  WHERE history.pricing_id = OLD.pricing_id
+    AND history.version = OLD.quote_version
+    AND history.status IN ('approved', 'confirmed')
+)
+OR EXISTS (
+  SELECT 1 FROM work_order_installments installment
+  WHERE installment.schedule_id = OLD.id
+)
+BEGIN
+  SELECT RAISE(ABORT, 'protected quote payment schedule');
+END;
+
+CREATE TABLE IF NOT EXISTS work_order_receipt_claims (
+  id TEXT PRIMARY KEY,
+  installment_id TEXT NOT NULL,
+  work_order_id TEXT NOT NULL,
+  engineer_id TEXT NOT NULL,
+  claimed_amount INTEGER NOT NULL CHECK (claimed_amount > 0 AND typeof(claimed_amount) = 'integer'),
+  transaction_reference TEXT,
+  engineer_note TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'confirmed', 'rejected')),
+  confirmed_amount INTEGER CHECK (
+    confirmed_amount IS NULL
+    OR (confirmed_amount >= 0 AND typeof(confirmed_amount) = 'integer')
+  ),
+  decision_reason TEXT,
+  decided_by TEXT,
+  decided_at TEXT,
+  idempotency_key TEXT NOT NULL UNIQUE,
+  decision_idempotency_key TEXT UNIQUE,
+  created_at TEXT DEFAULT (datetime('now')),
+  UNIQUE (id, work_order_id),
+  FOREIGN KEY (installment_id, work_order_id)
+    REFERENCES work_order_installments(id, work_order_id),
+  FOREIGN KEY (work_order_id) REFERENCES work_orders(id)
+);
+CREATE INDEX IF NOT EXISTS idx_receipt_claims_installment_status
+  ON work_order_receipt_claims(installment_id, status, created_at);
+CREATE INDEX IF NOT EXISTS idx_receipt_claims_order_status
+  ON work_order_receipt_claims(work_order_id, status, created_at);
+
+CREATE TABLE IF NOT EXISTS work_order_receipt_evidence (
+  id TEXT PRIMARY KEY,
+  claim_id TEXT NOT NULL UNIQUE,
+  work_order_id TEXT NOT NULL,
+  object_key TEXT NOT NULL UNIQUE,
+  file_name TEXT NOT NULL,
+  mime_type TEXT NOT NULL,
+  file_size INTEGER NOT NULL CHECK (file_size > 0 AND typeof(file_size) = 'integer'),
+  uploader_type TEXT NOT NULL CHECK (uploader_type IN ('engineer', 'customer', 'admin')),
+  uploader_id TEXT NOT NULL,
+  created_at TEXT DEFAULT (datetime('now')),
+  FOREIGN KEY (claim_id, work_order_id)
+    REFERENCES work_order_receipt_claims(id, work_order_id),
+  FOREIGN KEY (work_order_id) REFERENCES work_orders(id)
+);
+CREATE INDEX IF NOT EXISTS idx_receipt_evidence_order
+  ON work_order_receipt_evidence(work_order_id, created_at);
 
 -- 工单支付记录表（012）
 CREATE TABLE IF NOT EXISTS work_order_payments (
@@ -617,6 +964,7 @@ CREATE TABLE IF NOT EXISTS materials (
     reference_cost REAL DEFAULT 0,
     reference_price REAL DEFAULT 0,
     stock_quantity INTEGER DEFAULT 0,
+    reserved_quantity INTEGER NOT NULL DEFAULT 0 CHECK (reserved_quantity >= 0 AND typeof(reserved_quantity) = 'integer'),
     safety_stock INTEGER DEFAULT 0,
     status TEXT DEFAULT 'active',
     notes TEXT,
@@ -644,6 +992,100 @@ CREATE TABLE IF NOT EXISTS material_inventory_adjustments (
 );
 CREATE INDEX IF NOT EXISTS idx_material_adjustments_material ON material_inventory_adjustments(material_id);
 CREATE INDEX IF NOT EXISTS idx_material_adjustments_created_at ON material_inventory_adjustments(created_at);
+
+-- 内部员工账号与工单领料流程（038）
+CREATE TABLE IF NOT EXISTS admin_staff_accounts (
+    id TEXT PRIMARY KEY,
+    normalized_login TEXT NOT NULL UNIQUE,
+    normalized_phone TEXT UNIQUE,
+    password_hash TEXT NOT NULL,
+    salt TEXT NOT NULL,
+    role TEXT NOT NULL CHECK (role IN ('admin', 'operations', 'warehouse', 'procurement')),
+    is_active INTEGER NOT NULL DEFAULT 1 CHECK (is_active IN (0, 1)),
+    display_name TEXT NOT NULL,
+    market_scope TEXT NOT NULL DEFAULT 'all' CHECK (market_scope IN ('all', 'com', 'cn')),
+    must_change_password INTEGER NOT NULL DEFAULT 1 CHECK (must_change_password IN (0, 1)),
+    created_by TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_admin_staff_active_role ON admin_staff_accounts(is_active, role);
+CREATE INDEX IF NOT EXISTS idx_admin_staff_market ON admin_staff_accounts(market_scope, is_active);
+
+CREATE TABLE IF NOT EXISTS material_requisitions (
+    id TEXT PRIMARY KEY,
+    requisition_no TEXT NOT NULL UNIQUE,
+    market TEXT NOT NULL DEFAULT 'com',
+    work_order_id TEXT NOT NULL,
+    requested_by_type TEXT NOT NULL CHECK (requested_by_type IN ('engineer', 'admin')),
+    requested_by_id TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft', 'submitted', 'approved', 'processing', 'partially_fulfilled', 'ready', 'issued', 'received', 'closed', 'rejected', 'cancelled')),
+    urgency TEXT NOT NULL DEFAULT 'normal' CHECK (urgency IN ('normal', 'urgent', 'critical')),
+    required_date TEXT,
+    purpose TEXT,
+    submitted_at TEXT,
+    approved_by TEXT,
+    approved_at TEXT,
+    rejection_reason TEXT,
+    assigned_warehouse_staff_id TEXT,
+    assigned_procurement_staff_id TEXT,
+    issued_at TEXT,
+    received_at TEXT,
+    closed_at TEXT,
+    cancelled_at TEXT,
+    cancellation_reason TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY (work_order_id) REFERENCES work_orders(id)
+);
+CREATE INDEX IF NOT EXISTS idx_material_requisitions_market_status ON material_requisitions(market, status, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_material_requisitions_work_order ON material_requisitions(work_order_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_material_requisitions_requester ON material_requisitions(requested_by_type, requested_by_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS material_requisition_items (
+    id TEXT PRIMARY KEY,
+    requisition_id TEXT NOT NULL,
+    material_id TEXT,
+    material_code TEXT,
+    name TEXT NOT NULL,
+    name_en TEXT,
+    spec TEXT,
+    brand TEXT,
+    unit TEXT NOT NULL DEFAULT 'pcs',
+    requested_quantity INTEGER NOT NULL CHECK (requested_quantity > 0 AND typeof(requested_quantity) = 'integer'),
+    stock_allocated_quantity INTEGER NOT NULL DEFAULT 0 CHECK (stock_allocated_quantity >= 0 AND typeof(stock_allocated_quantity) = 'integer'),
+    procurement_ordered_quantity INTEGER NOT NULL DEFAULT 0 CHECK (procurement_ordered_quantity >= 0 AND typeof(procurement_ordered_quantity) = 'integer'),
+    procurement_received_quantity INTEGER NOT NULL DEFAULT 0 CHECK (procurement_received_quantity >= 0 AND typeof(procurement_received_quantity) = 'integer'),
+    issued_quantity INTEGER NOT NULL DEFAULT 0 CHECK (issued_quantity >= 0 AND typeof(issued_quantity) = 'integer'),
+    stock_issued_quantity INTEGER NOT NULL DEFAULT 0 CHECK (stock_issued_quantity >= 0 AND typeof(stock_issued_quantity) = 'integer'),
+    returned_quantity INTEGER NOT NULL DEFAULT 0 CHECK (returned_quantity >= 0 AND typeof(returned_quantity) = 'integer'),
+    engineer_received_quantity INTEGER NOT NULL DEFAULT 0 CHECK (engineer_received_quantity >= 0 AND typeof(engineer_received_quantity) = 'integer'),
+    fulfillment_source TEXT NOT NULL DEFAULT 'unassigned' CHECK (fulfillment_source IN ('unassigned', 'stock', 'procurement', 'mixed')),
+    expected_arrival TEXT,
+    supplier_reference TEXT,
+    notes TEXT,
+    status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'stock_allocated', 'purchasing', 'partially_ready', 'ready', 'issued', 'received', 'cancelled')),
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY (requisition_id) REFERENCES material_requisitions(id) ON DELETE CASCADE,
+    FOREIGN KEY (material_id) REFERENCES materials(id)
+);
+CREATE INDEX IF NOT EXISTS idx_material_requisition_items_requisition ON material_requisition_items(requisition_id);
+CREATE INDEX IF NOT EXISTS idx_material_requisition_items_material ON material_requisition_items(material_id);
+CREATE INDEX IF NOT EXISTS idx_material_requisition_items_status ON material_requisition_items(status);
+
+CREATE TABLE IF NOT EXISTS material_requisition_operations (
+    operation_key TEXT PRIMARY KEY,
+    action TEXT NOT NULL,
+    requisition_id TEXT NOT NULL,
+    item_id TEXT,
+    request_fingerprint TEXT NOT NULL,
+    completed_at TEXT NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY (requisition_id) REFERENCES material_requisitions(id),
+    FOREIGN KEY (item_id) REFERENCES material_requisition_items(id)
+);
+CREATE INDEX IF NOT EXISTS idx_material_requisition_operations_target
+  ON material_requisition_operations(requisition_id, item_id, action);
 
 -- 工单物料引用（027）
 CREATE TABLE IF NOT EXISTS work_order_material_items (
@@ -1069,4 +1511,8 @@ INSERT OR IGNORE INTO _migrations (version, note) VALUES
     ('034_add_service_mode',            'Add remote, onsite, and hybrid service modes'),
     ('035_onsite_conversion_workflow',  'Add audited remote-to-onsite conversion and arrival override workflow'),
     ('036_create_funnel_events',         'Controlled beta funnel event tracking'),
-    ('037_engineer_account_activation', 'Engineer email activation and cross-role identity registry');
+    ('037_engineer_account_activation', 'Engineer email activation and cross-role identity registry'),
+    ('038_material_requisitions_and_staff', 'Internal staff accounts and material requisition operations'),
+    ('039_field_workdays',              'Photo-first multi-day onsite work records and protected evidence'),
+    ('040_field_evidence_cleanup_queue', 'Retry private field evidence cleanup after failed rollback'),
+    ('041_quote_execution_baseline',    'Immutable quote schedules, installments, and private receipt evidence metadata');
