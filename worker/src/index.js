@@ -13154,7 +13154,8 @@ async function handleConfirmOnsiteConversion(request, env, { admin = false } = {
 
     const workOrder = await env.DB.prepare(`
       SELECT id, order_no, customer_id, engineer_id, service_mode, onsite_conversion_status,
-        service_address, service_latitude, service_longitude
+        service_address, service_latitude, service_longitude, active_quote_version,
+        quote_expected_service_days, expected_service_days
       FROM work_orders WHERE id = ?
     `).bind(workOrderId).first();
     if (!workOrder) return errorResponse(market === 'cn' ? '工单不存在' : 'Work order not found', 404);
@@ -13168,7 +13169,7 @@ async function handleConfirmOnsiteConversion(request, env, { admin = false } = {
     const confirmationNote = admin
       ? `${note}${note ? '\n' : ''}${market === 'cn' ? '管理员代确认原因' : 'Admin reason'}: ${adminReason}`
       : note;
-    await env.DB.prepare(`
+    const converted = await env.DB.prepare(`
       UPDATE work_orders SET
         service_address = ?,
         service_latitude = ?,
@@ -13183,8 +13184,13 @@ async function handleConfirmOnsiteConversion(request, env, { admin = false } = {
         onsite_conversion_status = 'confirmed',
         onsite_conversion_confirmed_at = datetime('now'),
         onsite_conversion_confirmation_note = ?,
-        onsite_conversion_confirmed_by = ?
-      WHERE id = ?
+        onsite_conversion_confirmed_by = ?,
+        expected_service_days = CASE
+          WHEN active_quote_version IS NOT NULL AND quote_expected_service_days IS NOT NULL
+            THEN quote_expected_service_days
+          ELSE expected_service_days
+        END
+      WHERE id = ? AND service_mode = 'hybrid' AND onsite_conversion_status = 'requested'
     `).bind(
       location.address,
       location.latitude,
@@ -13196,6 +13202,12 @@ async function handleConfirmOnsiteConversion(request, env, { admin = false } = {
       auth.userId,
       workOrderId,
     ).run();
+    if (Number(converted?.meta?.changes || 0) !== 1) {
+      return errorResponse(
+        market === 'cn' ? '上门服务状态已变更，请刷新后重试' : 'The onsite conversion changed. Refresh and try again.',
+        409,
+      );
+    }
 
     const actorType = admin ? 'admin' : 'customer';
     await env.DB.prepare(`
@@ -13226,6 +13238,9 @@ async function handleConfirmOnsiteConversion(request, env, { admin = false } = {
         service_address: location.address,
         service_latitude: location.latitude,
         service_longitude: location.longitude,
+        expected_service_days: workOrder.active_quote_version
+          ? workOrder.quote_expected_service_days
+          : workOrder.expected_service_days,
         reason: adminReason || undefined,
       },
     });
@@ -14572,15 +14587,18 @@ function visibleReceiptClaim(row, customerView) {
 
 async function getWorkOrderQuoteExecution(env, workOrder, pricing, customerView = false) {
   if (!pricing) return null;
-  const pricingView = await getWorkOrderPricingView(env, workOrder, pricing, customerView);
-  const visiblePricing = pricingView?.pricing || null;
   if (isVersionedQuote(pricing)) {
-    if (!visiblePricing) return null;
-    const paymentSchedule = pricingView.payment_schedule || [];
-    const visibleVersions = [...new Set(paymentSchedule.map((row) => Number(row.quote_version)))];
-    const activeVersions = visibleVersions.length > 0
-      ? visibleVersions
-      : [Number(visiblePricing.quote_version)].filter((version) => version >= 1);
+    const activeBaselineVersion = Number(workOrder.active_quote_version || 0);
+    if (activeBaselineVersion < 1) return null;
+    const activeRows = await listConfirmedCommercialQuoteVersions(
+      env, pricing.id, activeBaselineVersion,
+    );
+    if (!activeRows.some((row) => (
+      Number(row.version) === activeBaselineVersion && row.quote_kind === 'baseline'
+    ))) return null;
+    const activeVersions = activeRows.map((row) => Number(row.version));
+    const activeQuote = aggregateCommercialQuoteVersions(activeRows);
+    const paymentSchedule = await listQuotePaymentSchedules(env, workOrder.id, activeVersions);
     const placeholders = activeVersions.map(() => '?').join(', ');
     const installmentRecords = activeVersions.length > 0
       ? await env.DB.prepare(`
@@ -14611,7 +14629,8 @@ async function getWorkOrderQuoteExecution(env, workOrder, pricing, customerView 
     const initialWorkdays = workOrder.service_mode === 'hybrid'
       ? 0
       : Number(workOrder.quote_expected_service_days || 0);
-    const totalAmount = Number(visiblePricing.total_amount || 0);
+    const totalAmount = activeQuote.total_amount;
+    const latestActiveRow = activeRows.at(-1);
     const summary = summarizeQuoteExecution({
       total_amount: totalAmount,
       installments: normalizedInstallments,
@@ -14619,10 +14638,12 @@ async function getWorkOrderQuoteExecution(env, workOrder, pricing, customerView 
       extension_days: Number(workOrder.approved_extension_days || 0),
     });
     return {
-      quote_version: Number(visiblePricing.quote_version),
-      active_quote_version: Number(workOrder.active_quote_version || 0) || null,
-      payment_plan_mode: visiblePricing.payment_plan_mode || 'single',
-      expected_service_days: visiblePricing.expected_service_days ?? null,
+      quote_version: Number(latestActiveRow?.version || activeBaselineVersion),
+      active_quote_version: activeBaselineVersion,
+      payment_plan_mode: activeRows.length > 1
+        ? 'installments'
+        : (activeRows[0]?.payment_plan_mode || 'single'),
+      expected_service_days: activeQuote.expected_service_days,
       initial_workdays: initialWorkdays,
       approved_extension_days: Number(workOrder.approved_extension_days || 0),
       total_amount: totalAmount,
@@ -14633,6 +14654,8 @@ async function getWorkOrderQuoteExecution(env, workOrder, pricing, customerView 
     };
   }
 
+  const pricingView = await getWorkOrderPricingView(env, workOrder, pricing, customerView);
+  const visiblePricing = pricingView?.pricing || null;
   if (!visiblePricing || visiblePricing.status !== 'confirmed') return null;
   const paymentRecords = await env.DB.prepare(`
     SELECT * FROM work_order_payments WHERE work_order_id = ? ORDER BY created_at ASC
@@ -14771,6 +14794,22 @@ function paymentInstructionId(stage) {
   return prefix + Date.now().toString(36).toUpperCase() + Math.random().toString(36).slice(2, 6).toUpperCase();
 }
 
+function legacyPaymentConflictResponse(market = 'com') {
+  return errorResponse(
+    market === 'cn'
+      ? '新版报价请按分期付款计划操作'
+      : 'Use the quote installment schedule for this payment.',
+    409,
+  );
+}
+
+async function hasVersionedWorkOrderPricing(env, workOrderId) {
+  const pricing = await env.DB.prepare(
+    'SELECT quote_version FROM work_order_pricing WHERE work_order_id = ?'
+  ).bind(workOrderId).first();
+  return isVersionedQuote(pricing);
+}
+
 async function getPaymentByStage(env, workOrderId, paymentStage) {
   return env.DB.prepare(
     'SELECT * FROM work_order_payments WHERE work_order_id = ? AND payment_stage = ? ORDER BY created_at DESC LIMIT 1'
@@ -14778,14 +14817,13 @@ async function getPaymentByStage(env, workOrderId, paymentStage) {
 }
 
 async function ensureBalancePayment(env, workOrderId, customerId) {
-  const existing = await getPaymentByStage(env, workOrderId, 'balance');
-  if (existing) return existing;
-
   const pricing = await env.DB.prepare(
     'SELECT subtotal, total_amount, labor_fee, parts_fee, travel_fee, other_fee, quote_version FROM work_order_pricing WHERE work_order_id = ? AND status = ?'
   ).bind(workOrderId, 'confirmed').first();
   if (!pricing) return null;
   if (isVersionedQuote(pricing)) return null;
+  const existing = await getPaymentByStage(env, workOrderId, 'balance');
+  if (existing) return existing;
 
   const policy = computeServicePaymentPolicy(pricing);
   if (policy.balance_amount <= 0) return null;
@@ -14834,22 +14872,19 @@ async function handlePayWorkOrder(request, env) {
     if (wo.customer_id !== customer_id) {
       return errorResponse(getRequestMarket(request) === 'cn' ? '您无权操作此工单' : 'You do not have permission for this work order', 403);
     }
-    if (paymentStage === 'balance' && !['resolved', 'pending_review', 'completed'].includes(wo.status)) {
-      return errorResponse('Work order is not ready for balance payment', 400);
-    }
-    if (paymentStage === 'advance' && wo.status !== 'pending_payment') {
-      return errorResponse(getRequestMarket(request) === 'cn' ? '工单当前状态不允许确认支付方式' : 'Work order is not waiting for payment method confirmation', 400);
+    if (await hasVersionedWorkOrderPricing(env, workOrderId)) {
+      return legacyPaymentConflictResponse(getRequestMarket(request));
     }
 
     const pricing = await env.DB.prepare(
       'SELECT subtotal, total_amount, labor_fee, parts_fee, travel_fee, other_fee, quote_version FROM work_order_pricing WHERE work_order_id = ? AND status = ?'
     ).bind(workOrderId, 'confirmed').first();
     if (!pricing) return errorResponse(getRequestMarket(request) === 'cn' ? '报价未找到或未确认' : 'Quote not found or not confirmed', 404);
-    if (isVersionedQuote(pricing)) {
-      return errorResponse(
-        getRequestMarket(request) === 'cn' ? '新版报价请按分期付款计划操作' : 'Use the quote installment schedule for this payment.',
-        409,
-      );
+    if (paymentStage === 'balance' && !['resolved', 'pending_review', 'completed'].includes(wo.status)) {
+      return errorResponse('Work order is not ready for balance payment', 400);
+    }
+    if (paymentStage === 'advance' && wo.status !== 'pending_payment') {
+      return errorResponse(getRequestMarket(request) === 'cn' ? '工单当前状态不允许确认支付方式' : 'Work order is not waiting for payment method confirmation', 400);
     }
 
     const paymentPolicy = computeServicePaymentPolicy(pricing);
@@ -14987,6 +15022,9 @@ async function handleEngineerRequestPaymentStart(request, env) {
     ).bind(workOrderId).first();
     if (!wo) return errorResponse(market === 'cn' ? '工单不存在' : 'Work order not found', 404);
     if (wo.engineer_id !== auth.userId) return errorResponse(market === 'cn' ? '您未被指派到此工单' : 'You are not assigned to this work order', 403);
+    if (await hasVersionedWorkOrderPricing(env, workOrderId)) {
+      return legacyPaymentConflictResponse(market);
+    }
     if (wo.status !== 'pending_payment' && wo.status !== 'payment_review') {
       return errorResponse(market === 'cn' ? '工单当前状态不允许申请开工' : 'Work order is not waiting for payment follow-up', 400);
     }
@@ -15041,6 +15079,9 @@ async function handleAdminApprovePaymentStart(request, env) {
       'SELECT id, status, order_no FROM work_orders WHERE id = ?'
     ).bind(workOrderId).first();
     if (!wo) return errorResponse(market === 'cn' ? '工单不存在' : 'Work order not found', 404);
+    if (await hasVersionedWorkOrderPricing(env, workOrderId)) {
+      return legacyPaymentConflictResponse(market);
+    }
     if (wo.status !== 'payment_review' && wo.status !== 'pending_payment') {
       return errorResponse(market === 'cn' ? '工单当前状态不允许管理员确认付款' : 'Work order is not waiting for payment approval', 400);
     }
@@ -15176,6 +15217,7 @@ async function handleGetInvoiceRequest(request, env) {
 async function handleAdminApproveWorkOrderBalance(request, env) {
   try {
     const workOrderId = new URL(request.url).pathname.split('/')[4];
+    const market = getRequestMarket(request);
     const body = await request.json().catch(() => ({}));
     const note = String(body.note || '').trim();
 
@@ -15183,6 +15225,9 @@ async function handleAdminApproveWorkOrderBalance(request, env) {
       'SELECT id, status, order_no FROM work_orders WHERE id = ?'
     ).bind(workOrderId).first();
     if (!wo) return errorResponse('Work order not found', 404);
+    if (await hasVersionedWorkOrderPricing(env, workOrderId)) {
+      return legacyPaymentConflictResponse(market);
+    }
     if (!['resolved', 'pending_review', 'completed'].includes(wo.status)) {
       return errorResponse('Work order is not waiting for balance payment', 400);
     }
@@ -15329,6 +15374,9 @@ async function handleGetWorkOrderPayment(request, env) {
       'SELECT id, customer_id, engineer_id, assigned_regional_lead_id FROM work_orders WHERE id = ?'
     ).bind(workOrderId).first();
     assertWorkOrderAccess(request._auth, workOrder);
+    if (await hasVersionedWorkOrderPricing(env, workOrderId)) {
+      return legacyPaymentConflictResponse(getRequestMarket(request));
+    }
 
     const requestedStage = new URL(request.url).searchParams.get('payment_stage');
     const paymentStage = requestedStage === 'balance' ? 'balance' : 'advance';

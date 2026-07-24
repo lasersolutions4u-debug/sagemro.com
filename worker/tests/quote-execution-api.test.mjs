@@ -527,6 +527,48 @@ test('hybrid activation stores the reviewed allowance but keeps field execution 
   assert.equal(detail.json.quote_execution.permitted_workdays, 0);
 });
 
+test('confirmed onsite conversion activates the exact stored hybrid quote allowance', async () => {
+  const ctx = createQuoteExecutionEnv();
+  ctx.db.exec("UPDATE work_orders SET service_mode = 'hybrid' WHERE id = 'wo-quote-1'");
+  await submitQuote(ctx, quotePayload({ expected_service_days: 4 }));
+  await reviewQuote(ctx, 'approve', 1);
+  await confirmQuote(ctx, 1);
+  ctx.db.exec(`
+    UPDATE work_orders
+    SET onsite_conversion_status = 'requested'
+    WHERE id = 'wo-quote-1'
+  `);
+
+  const before = ctx.db.prepare('SELECT * FROM work_orders WHERE id = ?').get('wo-quote-1');
+  assert.equal(before.service_mode, 'hybrid');
+  assert.equal(before.quote_expected_service_days, 4);
+  assert.equal(before.expected_service_days, null);
+
+  const converted = await api(ctx, '/api/workorders/wo-quote-1/onsite-conversion/confirm', {
+    userType: 'customer',
+    userId: 'customer-1',
+    body: {
+      service_address: '88 Test Road, Jinan',
+      service_latitude: 36.6512,
+      service_longitude: 117.1201,
+      service_accuracy_m: 20,
+      service_coordinate_system: 'gcj02',
+      service_location_source: 'customer_map',
+    },
+  });
+
+  assert.equal(converted.response.status, 200);
+  const after = ctx.db.prepare('SELECT * FROM work_orders WHERE id = ?').get('wo-quote-1');
+  assert.equal(after.service_mode, 'onsite');
+  assert.equal(after.quote_expected_service_days, 4);
+  assert.equal(after.expected_service_days, 4);
+  const detail = await api(ctx, '/api/workorders/wo-quote-1', {
+    method: 'GET', userType: 'customer', userId: 'customer-1',
+  });
+  assert.equal(detail.json.quote_execution.initial_workdays, 4);
+  assert.equal(detail.json.quote_execution.permitted_workdays, 4);
+});
+
 test('supplemental activation preserves the baseline and prior supplementals while adding installments', async () => {
   const ctx = createQuoteExecutionEnv();
   await submitQuote(ctx);
@@ -770,6 +812,37 @@ test('supplemental projection keeps the confirmed baseline visible to customers 
   assert.equal(engineer.json.pricing.quote_version, 2);
   assert.equal(engineer.json.pricing.total_amount, 13500);
   assert.equal(engineer.json.pricing.payment_schedule.reduce((sum, row) => sum + row.amount, 0), 13500);
+});
+
+test('pending supplemental review terms do not change active quote execution for staff or Admin', async () => {
+  const ctx = createQuoteExecutionEnv();
+  await submitQuote(ctx);
+  await reviewQuote(ctx, 'approve', 1);
+  await confirmQuote(ctx, 1);
+  await submitQuote(ctx, quotePayload({
+    labor_fee: 1000,
+    parts_fee: 500,
+    travel_fee: 0,
+    expected_service_days: 1,
+    quote_kind: 'supplemental',
+    parent_quote_version: 1,
+    payment_plan_mode: 'single',
+    payment_schedule: undefined,
+  }));
+
+  for (const [userType, userId] of [['engineer', 'engineer-1'], ['admin', 'admin']]) {
+    const detail = await api(ctx, '/api/workorders/wo-quote-1', { method: 'GET', userType, userId });
+    assert.equal(detail.response.status, 200);
+    assert.equal(detail.json.pricing.quote_version, 2);
+    assert.equal(detail.json.pricing.total_amount, 13500);
+    assert.deepEqual(detail.json.pricing.payment_schedule.map((row) => row.quote_version), [1, 1, 2]);
+    assert.equal(detail.json.quote_execution.quote_version, 1);
+    assert.equal(detail.json.quote_execution.total_amount, 12000);
+    assert.equal(detail.json.quote_execution.scheduled_amount, 12000);
+    assert.equal(detail.json.quote_execution.outstanding_amount, 12000);
+    assert.equal(detail.json.quote_execution.payment_state, 'unpaid');
+    assert.deepEqual(detail.json.quote_execution.installments.map((row) => row.quote_version), [1, 1]);
+  }
 });
 
 test('supplemental projection includes prior confirmed supplements but hides the pending schedule from customers', async () => {
