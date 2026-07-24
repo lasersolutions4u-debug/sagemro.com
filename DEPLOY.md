@@ -443,8 +443,8 @@ GitHub Actions → Deploy China Edition to Aliyun ECS → Run workflow
 1. Confirm current backups for both databases are available and recorded.
 2. Apply migration 041 to COM and CN before deploying the shared Worker.
 3. Verify the migration row and all four tables in both databases.
-4. Deploy the shared Worker from `main`, then the international frontend and Admin.
-5. Run the COM production smoke.
+4. Push `main`; after the test job and production gate, `deploy.yml` starts the Worker, international frontend, and Admin jobs in parallel.
+5. Require all three deployment jobs to succeed, then run the COM production smoke.
 6. Sync client changes to `china-edition`, push, then manually run `aliyun-cn-deploy.yml`.
 7. Run the CN production smoke.
 
@@ -466,7 +466,7 @@ npx wrangler d1 execute sagemro-db-cn --env production --remote --command "SELEC
 npx wrangler d1 execute sagemro-db-cn --env production --remote --command "SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('work_order_payment_schedule','work_order_installments','work_order_receipt_claims','work_order_receipt_evidence') ORDER BY name;"
 ```
 
-Do not deploy Worker code that reads the new tables until both verification sets are complete. The coordinated release order is: back up both databases, migrate both first, verify both, deploy the shared Worker from `main`, deploy international frontend/Admin, run COM smoke, sync client-only changes to `china-edition`, push, manually run `aliyun-cn-deploy.yml --ref china-edition`, then run CN smoke. `china-edition` does not deploy the Worker.
+Do not deploy Worker code that reads the new tables until both verification sets are complete. The coordinated release order is: back up both databases, migrate both first, verify both, then push `main`. After the test job and production environment gate, `deploy.yml` runs the shared Worker, international frontend, and international Admin deployment jobs in parallel. Require all three to succeed before the COM smoke. Then sync client-only changes to `china-edition`, push, manually run `aliyun-cn-deploy.yml --ref china-edition`, and run the CN smoke. `china-edition` does not deploy the Worker.
 
 The production smoke is manual and is intentionally absent from CI. Provide temporary test identities and credentials through the shell or a secure secret manager; do not paste credentials into this document, a command history intended for sharing, reports, or logs.
 
@@ -496,7 +496,7 @@ npm run smoke:production:quote-execution -- \
 
 - Backups for COM and CN exist and are verified.
 - Both migration commands succeeded and both verification query pairs returned the required results.
-- The `main` Worker and international client deployment completed successfully before COM smoke.
+- All three parallel `main` deployment jobs (Worker, international frontend, and international Admin) completed successfully before COM smoke.
 - COM smoke reports `PASS` and its residue check reports zero.
 - Client-only changes are synchronized to `china-edition`; the Aliyun workflow completed successfully before CN smoke.
 - CN smoke reports `PASS` and its residue check reports zero.

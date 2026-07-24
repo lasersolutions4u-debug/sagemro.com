@@ -129,6 +129,10 @@ export function buildQuoteExecutionSmokeContext({
   const nowStamp = stamp || `${new Date().toISOString().replace(/[-:.TZ]/g, '').slice(0, 14)}_${randomBytes(4).toString('hex')}`;
   const runId = `SAGEMRO_SMOKE_QUOTE_EXECUTION_${selectedMarket}_${nowStamp}`;
   const id = (suffix) => `${runId}_${suffix}`;
+  const pricingId = id('PRICING');
+  const quoteHistoryId = id('QUOTE_HISTORY_1');
+  const scheduleIds = [id('SCHEDULE_1'), id('SCHEDULE_2')];
+  const installmentIds = scheduleIds.map((scheduleId) => `installment-${scheduleId}`);
   return {
     market: selectedMarket,
     stamp: nowStamp,
@@ -145,10 +149,12 @@ export function buildQuoteExecutionSmokeContext({
     customerId: id('CUSTOMER'),
     engineerId: id('ENGINEER'),
     workOrderId: id('WORK_ORDER'),
-    pricingId: id('PRICING'),
-    quoteHistoryScope: id('QUOTE_HISTORY'),
-    scheduleScope: id('SCHEDULE'),
-    installmentScope: id('INSTALLMENT'),
+    pricingId,
+    quoteHistoryId,
+    pricingIds: [pricingId],
+    quoteHistoryIds: [quoteHistoryId],
+    scheduleIds,
+    installmentIds,
     receiptClaimScope: id('RECEIPT_CLAIM'),
     fieldDayScope: id('FIELD_DAY'),
     repairRecordId: id('REPAIR_RECORD'),
@@ -325,7 +331,32 @@ VALUES (${quoteSql(context.engineerId)}, ${quoteSql(`E${context.stamp.slice(-6)}
 INSERT INTO account_identities (identity_type, normalized_value, owner_type, owner_id)
 VALUES ('email', ${quoteSql(context.engineerIdentity)}, 'engineer', ${quoteSql(context.engineerId)});
 INSERT INTO work_orders (id, order_no, customer_id, engineer_id, type, description, urgency, status, category_l1, category_l2, quote_review_status, service_mode, site_timezone, expected_completion_date, planned_daily_end_time, assigned_at, started_at)
-VALUES (${quoteSql(context.workOrderId)}, ${quoteSql(context.orderNo)}, ${quoteSql(context.customerId)}, ${quoteSql(context.engineerId)}, 'fault', ${quoteSql(context.runId)}, 'normal', 'in_progress', 'other', 'other', 'not_required', 'onsite', 'Asia/Shanghai', '2099-12-31', '17:00', datetime('now'), datetime('now'));
+VALUES (${quoteSql(context.workOrderId)}, ${quoteSql(context.orderNo)}, ${quoteSql(context.customerId)}, ${quoteSql(context.engineerId)}, 'fault', ${quoteSql(context.runId)}, 'normal', 'pricing', 'other', 'other', 'pending_review', 'onsite', 'Asia/Shanghai', '2099-12-31', '17:00', datetime('now'), NULL);
+INSERT INTO work_order_pricing (
+  id, work_order_id, engineer_id, labor_fee, parts_fee, travel_fee, other_fee,
+  subtotal, total_amount, platform_fee, deposit_withhold, status, submitted_at,
+  quote_version, expected_service_days, payment_plan_mode
+)
+VALUES (
+  ${quoteSql(context.pricingId)}, ${quoteSql(context.workOrderId)}, ${quoteSql(context.engineerId)},
+  1000, 0, 0, 0, 1000, 1000, 200, 50, 'pending_review', datetime('now'), 1, 1, 'installments'
+);
+INSERT INTO work_order_pricing_history (
+  id, pricing_id, labor_fee, parts_fee, travel_fee, other_fee, subtotal, total_amount,
+  platform_fee, deposit_withhold, version, expected_service_days, payment_plan_mode,
+  quote_kind, parent_quote_version, status
+)
+VALUES (
+  ${quoteSql(context.quoteHistoryId)}, ${quoteSql(context.pricingId)},
+  1000, 0, 0, 0, 1000, 1000, 200, 50, 1, 1, 'installments', 'baseline', NULL, 'pending_review'
+);
+INSERT INTO work_order_payment_schedule (
+  id, pricing_id, work_order_id, quote_version, sequence, amount, currency,
+  trigger_type, due_date, description, required_before_start
+)
+VALUES
+  (${quoteSql(context.scheduleIds[0])}, ${quoteSql(context.pricingId)}, ${quoteSql(context.workOrderId)}, 1, 1, 600, ${quoteSql(context.currency)}, 'before_start', NULL, ${quoteSql(context.runId)}, 1),
+  (${quoteSql(context.scheduleIds[1])}, ${quoteSql(context.pricingId)}, ${quoteSql(context.workOrderId)}, 1, 2, 400, ${quoteSql(context.currency)}, 'on_completion', NULL, ${quoteSql(context.runId)}, 0);
 `;
 }
 
@@ -333,24 +364,9 @@ function responseFailure(label, response) {
   return `${label} failed HTTP ${response.status}`;
 }
 
-function generatedIdsFromDetail(context, detail, ids) {
-  const execution = detail.body?.quote_execution || {};
-  ids.installmentIds = (execution.installments || []).map((row) => row.id);
-  ids.receiptClaimIds = (execution.receipt_claims || []).map((row) => row.id);
-  ids.fieldDayIds = (detail.body?.field_days || []).map((row) => row.id);
-  ids.scheduleIds = (execution.payment_schedule || []).map((row) => row.id);
-}
-
 async function collectCleanupIds(context, ids, workerDir) {
   const sql = `
-SELECT history.id, 'history' AS kind
-FROM work_order_pricing_history history
-JOIN work_order_pricing pricing ON pricing.id = history.pricing_id
-WHERE pricing.work_order_id=${quoteSql(context.workOrderId)}
-UNION ALL SELECT id, 'pricing' FROM work_order_pricing WHERE work_order_id=${quoteSql(context.workOrderId)}
-UNION ALL SELECT id, 'schedule' FROM work_order_payment_schedule WHERE work_order_id=${quoteSql(context.workOrderId)}
-UNION ALL SELECT id, 'installment' FROM work_order_installments WHERE work_order_id=${quoteSql(context.workOrderId)}
-UNION ALL SELECT id, 'claim' FROM work_order_receipt_claims WHERE work_order_id=${quoteSql(context.workOrderId)}
+SELECT id, 'claim' AS kind FROM work_order_receipt_claims WHERE work_order_id=${quoteSql(context.workOrderId)}
 UNION ALL SELECT id, 'field_day' FROM work_order_field_days WHERE work_order_id=${quoteSql(context.workOrderId)}
 UNION ALL SELECT id, 'repair' FROM work_order_repair_records WHERE work_order_id=${quoteSql(context.workOrderId)}
 UNION ALL SELECT id, 'message' FROM work_order_messages WHERE work_order_id=${quoteSql(context.workOrderId)}
@@ -364,10 +380,9 @@ WHERE audit.target_id=${quoteSql(context.workOrderId)}
   OR audit.target_id IN (SELECT id FROM work_order_field_days WHERE work_order_id=${quoteSql(context.workOrderId)});
 `;
   const rows = parseWranglerRows(runWranglerSql({ context, sql, label: 'collect-cleanup-ids', workerDir, command: true }));
-  for (const key of ['pricingIds', 'quoteHistoryIds', 'scheduleIds', 'installmentIds', 'receiptClaimIds', 'fieldDayIds', 'repairRecordIds', 'messageIds', 'workOrderLogIds', 'notificationIds', 'auditLogIds']) ids[key] ||= [];
+  for (const key of ['receiptClaimIds', 'fieldDayIds', 'repairRecordIds', 'messageIds', 'workOrderLogIds', 'notificationIds', 'auditLogIds']) ids[key] ||= [];
   const map = {
-    pricing: 'pricingIds', history: 'quoteHistoryIds', schedule: 'scheduleIds', installment: 'installmentIds', claim: 'receiptClaimIds',
-    field_day: 'fieldDayIds', repair: 'repairRecordIds', message: 'messageIds', work_order_log: 'workOrderLogIds',
+    claim: 'receiptClaimIds', field_day: 'fieldDayIds', repair: 'repairRecordIds', message: 'messageIds', work_order_log: 'workOrderLogIds',
     notification: 'notificationIds', audit: 'auditLogIds',
   };
   for (const row of rows) if (map[row.kind]) ids[map[row.kind]].push(row.id);
@@ -383,7 +398,12 @@ export async function runQuoteExecutionSmoke({ context, options, workerDir, repo
     cleanup: [],
     passed: false,
   };
-  const ids = {};
+  const ids = {
+    pricingIds: [...context.pricingIds],
+    quoteHistoryIds: [...context.quoteHistoryIds],
+    scheduleIds: [...context.scheduleIds],
+    installmentIds: [...context.installmentIds],
+  };
 
   try {
     await step(report, 'seed exact temporary identities and work order', async () => {
@@ -410,25 +430,10 @@ export async function runQuoteExecutionSmoke({ context, options, workerDir, repo
     const engineerToken = engineerLogin.body.token;
     const adminToken = adminLogin.body.token;
 
-    const submitted = await step(report, 'engineer submits two-installment onsite quote', async () => {
-      const response = await api(context, `/api/workorders/${context.workOrderId}/pricing`, {
-        method: 'POST', token: engineerToken,
-        body: JSON.stringify({
-          labor_fee: 1000, parts_fee: 0, travel_fee: 0, other_fee: 0,
-          expected_service_days: 1, payment_plan_mode: 'installments',
-          payment_schedule: [
-            { sequence: 1, amount: 600, currency: context.currency, trigger_type: 'before_start', description: context.scheduleScope, required_before_start: true },
-            { sequence: 2, amount: 400, currency: context.currency, trigger_type: 'on_completion', description: context.scheduleScope, required_before_start: false },
-          ],
-        }),
-      });
-      assert(response.ok && response.body?.quote_version === 1, responseFailure('quote submission', response));
-      return response;
-    });
-    const quoteVersion = submitted.body.quote_version;
+    const quoteVersion = 1;
 
     await step(report, 'Admin approves exact quote version', async () => {
-      const response = await api(context, `/api/admin/workorders/${context.workOrderId}/pricing/approve`, { method: 'PATCH', admin: true, token: adminToken, body: JSON.stringify({ quote_version: quoteVersion, note: context.quoteHistoryScope }) });
+      const response = await api(context, `/api/admin/workorders/${context.workOrderId}/pricing/approve`, { method: 'PATCH', admin: true, token: adminToken, body: JSON.stringify({ quote_version: quoteVersion, note: context.quoteHistoryId }) });
       assert(response.ok, responseFailure('Admin quote approval', response));
       return response;
     });
@@ -440,13 +445,24 @@ export async function runQuoteExecutionSmoke({ context, options, workerDir, repo
 
     const afterConfirmation = await step(report, 'read activated installment baseline', async () => {
       const response = await api(context, `/api/workorders/${context.workOrderId}`, { method: 'GET', token: engineerToken });
-      assert(response.ok && response.body?.quote_execution?.installments?.length === 2, responseFailure('activated baseline read', response));
-      generatedIdsFromDetail(context, response, ids);
+      const execution = response.body?.quote_execution;
+      const scheduleIds = (execution?.payment_schedule || []).map((row) => row.id).sort();
+      const installmentIds = (execution?.installments || []).map((row) => row.id).sort();
+      assert(
+        response.ok
+          && JSON.stringify(scheduleIds) === JSON.stringify([...context.scheduleIds].sort())
+          && JSON.stringify(installmentIds) === JSON.stringify([...context.installmentIds].sort()),
+        responseFailure('activated exact baseline read', response),
+      );
       return response;
     });
-    const firstInstallment = afterConfirmation.body.quote_execution.installments.find((row) => row.sequence === 1);
-    const finalInstallment = afterConfirmation.body.quote_execution.installments.find((row) => row.sequence === 2);
-    assert(firstInstallment?.id && finalInstallment?.id, 'activated installment IDs are missing');
+    const firstInstallment = afterConfirmation.body.quote_execution.installments.find((row) => row.id === context.installmentIds[0]);
+    const finalInstallment = afterConfirmation.body.quote_execution.installments.find((row) => row.id === context.installmentIds[1]);
+    assert(
+      firstInstallment?.schedule_id === context.scheduleIds[0]
+        && finalInstallment?.schedule_id === context.scheduleIds[1],
+      'activated installments do not match the exact seeded schedule IDs',
+    );
 
     await step(report, 'engineer opens required-before-start installment', async () => {
       const response = await api(context, `/api/workorders/${context.workOrderId}/installments/${firstInstallment.id}/collect`, { method: 'POST', token: engineerToken, body: '{}' });
@@ -473,6 +489,11 @@ export async function runQuoteExecutionSmoke({ context, options, workerDir, repo
       const response = await api(context, `/api/workorders/${context.workOrderId}`, { method: 'GET', token: engineerToken });
       const installment = response.body?.quote_execution?.installments?.find((row) => row.id === firstInstallment.id);
       assert(response.ok && installment?.status === 'partially_received' && installment?.received_amount === 300, responseFailure('partial receipt state', response));
+      return response;
+    });
+    await step(report, 'required installment blocks service start after partial receipt', async () => {
+      const response = await api(context, `/api/workorders/${context.workOrderId}/payment/start-request`, { method: 'POST', token: engineerToken, body: JSON.stringify({ note: context.runId }) });
+      assert(response.status === 409, `expected partial-receipt start gate HTTP 409, got ${response.status}`);
       return response;
     });
     const finalFirstClaim = await step(report, 'engineer submits remaining required receipt claim', async () => {

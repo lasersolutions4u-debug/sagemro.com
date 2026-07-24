@@ -14,6 +14,7 @@ const scriptSource = readFileSync(
   new URL('../scripts/quote-execution-production-smoke.mjs', import.meta.url),
   'utf8',
 );
+const deploySource = readFileSync(new URL('../../DEPLOY.md', import.meta.url), 'utf8');
 
 const requiredArgs = [
   '--base-url', 'https://api.sagemro.com',
@@ -73,14 +74,19 @@ test('quote execution context gives every temporary record a unique run scope', 
     'engineerId',
     'workOrderId',
     'pricingId',
-    'quoteHistoryScope',
-    'scheduleScope',
-    'installmentScope',
+    'quoteHistoryId',
     'receiptClaimScope',
     'fieldDayScope',
   ]) {
     assert.match(context[key], /^SAGEMRO_SMOKE_QUOTE_EXECUTION_cn_20260725123045_/);
   }
+  assert.deepEqual(context.pricingIds, [context.pricingId]);
+  assert.deepEqual(context.quoteHistoryIds, [context.quoteHistoryId]);
+  assert.deepEqual(context.scheduleIds, [
+    'SAGEMRO_SMOKE_QUOTE_EXECUTION_cn_20260725123045_SCHEDULE_1',
+    'SAGEMRO_SMOKE_QUOTE_EXECUTION_cn_20260725123045_SCHEDULE_2',
+  ]);
+  assert.deepEqual(context.installmentIds, context.scheduleIds.map((id) => `installment-${id}`));
 });
 
 test('cleanup is child-first, exact-ID-only, and followed by a zero-residue query', () => {
@@ -151,7 +157,24 @@ test('smoke source exercises the complete quote execution lifecycle and guarante
   assert.match(scriptSource, /audit\.target_id IN \(SELECT id FROM work_order_field_days WHERE work_order_id=/);
   assert.match(scriptSource, /init\.customer\s*\?\s*context\.customerOrigin\s*:\s*context\.engineerOrigin/);
   assert.match(scriptSource, /cleanup-late/);
+  assert.match(scriptSource, /INSERT INTO work_order_pricing \(/);
+  assert.match(scriptSource, /INSERT INTO work_order_pricing_history \(/);
+  assert.match(scriptSource, /INSERT INTO work_order_payment_schedule \(/);
+  assert.match(scriptSource, /context\.pricingId/);
+  assert.match(scriptSource, /context\.quoteHistoryId/);
+  assert.match(scriptSource, /context\.scheduleIds\[0\]/);
+  assert.match(scriptSource, /context\.scheduleIds\[1\]/);
+  assert.doesNotMatch(scriptSource, /ids\.installmentIds\s*=\s*\(execution\.installments/);
+  assert.doesNotMatch(scriptSource, /ids\.scheduleIds\s*=\s*\(execution\.payment_schedule/);
+  assert.match(scriptSource, /required installment blocks service start after partial receipt/);
+  assert.match(scriptSource, /response\.status === 409/);
   assert.doesNotMatch(scriptSource, /DELETE[\s\S]{0,100}WHERE\s+(?:email|phone|name|status)\s*=|DELETE[\s\S]{0,100}(?:LIKE|GLOB)/i);
+});
+
+test('deployment runbook reflects parallel main deployment jobs before COM smoke', () => {
+  assert.match(deploySource, /deploy\.yml[^\n]*Worker[^\n]*international frontend[^\n]*Admin[^\n]*parallel/i);
+  assert.match(deploySource, /all three[^\n]*succeed[^\n]*COM smoke/i);
+  assert.doesNotMatch(deploySource, /deploy the shared Worker from `main`, then the international frontend and Admin/i);
 });
 
 test('sanitized results and summaries do not retain credentials or tokens', () => {
