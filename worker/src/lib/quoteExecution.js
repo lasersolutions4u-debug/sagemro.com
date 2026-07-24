@@ -19,6 +19,14 @@ function isValidStartPrerequisite(value) {
   return value === true || value === false || value === 1 || value === 0;
 }
 
+function isPositiveSafeInteger(value) {
+  return Number.isSafeInteger(value) && value > 0;
+}
+
+function isNonnegativeSafeInteger(value) {
+  return Number.isSafeInteger(value) && value >= 0;
+}
+
 export function buildDefaultPaymentSchedule(totalAmount, currency) {
   return [{
     sequence: 1,
@@ -38,8 +46,11 @@ export function validatePaymentSchedule(schedule, { totalAmount, currency }) {
   if (schedule.some((row) => row === null || typeof row !== 'object' || Array.isArray(row))) {
     return { code: 'payment_schedule_row_invalid' };
   }
-  if (schedule.some((row) => !Number.isInteger(row.amount) || row.amount <= 0)) {
+  if (schedule.some((row) => !isPositiveSafeInteger(row.amount))) {
     return { code: 'payment_schedule_amount_invalid' };
+  }
+  if (!isPositiveSafeInteger(totalAmount)) {
+    return { code: 'quote_total_amount_invalid' };
   }
   if (schedule.some((row) => !Number.isInteger(row.sequence))) {
     return { code: 'payment_schedule_sequence_invalid' };
@@ -65,7 +76,12 @@ export function validatePaymentSchedule(schedule, { totalAmount, currency }) {
   if (schedule.some((row) => row.trigger_type === 'fixed_date' && !isValidDate(row.due_date))) {
     return { code: 'payment_schedule_due_date_invalid' };
   }
-  if (schedule.reduce((sum, row) => sum + row.amount, 0) !== totalAmount) {
+  let scheduleTotal = 0;
+  for (const row of schedule) {
+    scheduleTotal += row.amount;
+    if (!Number.isSafeInteger(scheduleTotal)) return { code: 'payment_schedule_total_mismatch' };
+  }
+  if (scheduleTotal !== totalAmount) {
     return { code: 'payment_schedule_total_mismatch' };
   }
   if (!schedule.some((row) => Boolean(row.required_before_start))) {
@@ -87,7 +103,7 @@ export function validatePaymentSchedule(schedule, { totalAmount, currency }) {
 }
 
 export function validateQuoteExecution(input = {}) {
-  if (!Number.isInteger(input.total_amount) || input.total_amount <= 0) {
+  if (!isPositiveSafeInteger(input.total_amount)) {
     return { code: 'quote_total_amount_invalid' };
   }
   const expectedServiceDays = Number(input.expected_service_days);
@@ -118,8 +134,16 @@ export function validateQuoteExecution(input = {}) {
 }
 
 export function deriveInstallmentState(installment = {}, now) {
-  const amount = Number(installment.amount) || 0;
-  const receivedAmount = Number(installment.received_amount) || 0;
+  if (
+    installment === null
+    || typeof installment !== 'object'
+    || Array.isArray(installment)
+    || !isPositiveSafeInteger(installment.amount)
+    || !isNonnegativeSafeInteger(installment.received_amount)
+  ) return 'exception';
+
+  const amount = installment.amount;
+  const receivedAmount = installment.received_amount;
   if (receivedAmount >= amount) return 'received';
   if (installment.status === 'exception') return 'exception';
   if ((Number(installment.pending_claim_count) || 0) > 0) return 'pending_confirmation';
@@ -137,22 +161,40 @@ export function deriveInstallmentState(installment = {}, now) {
 
 export function summarizeQuoteExecution(input = {}) {
   const installments = Array.isArray(input.installments) ? input.installments : [];
-  const receivedAmount = installments.reduce((sum, installment) => {
-    const amount = Math.max(0, Number(installment.amount) || 0);
-    const received = Math.max(0, Number(installment.received_amount) || 0);
-    return sum + Math.min(amount, received);
-  }, 0);
-  const totalAmount = Math.max(0, Number(input.total_amount) || 0);
-  const outstandingAmount = Math.max(0, totalAmount - receivedAmount);
+  const totalAmountValid = isNonnegativeSafeInteger(input.total_amount)
+    && (installments.length === 0 || input.total_amount > 0);
+  const installmentsValid = installments.every((installment) => (
+    installment !== null
+    && typeof installment === 'object'
+    && !Array.isArray(installment)
+    && isPositiveSafeInteger(installment.amount)
+    && isNonnegativeSafeInteger(installment.received_amount)
+  ));
+  let receivedAmount = 0;
+  let aggregateValid = totalAmountValid && installmentsValid;
+  if (aggregateValid) {
+    for (const installment of installments) {
+      receivedAmount += Math.min(installment.amount, installment.received_amount);
+      if (!Number.isSafeInteger(receivedAmount)) {
+        aggregateValid = false;
+        break;
+      }
+    }
+  }
+  const outstandingAmount = aggregateValid
+    ? Math.max(0, input.total_amount - receivedAmount)
+    : null;
   const requiredInstallments = installments.filter((installment) => Boolean(installment.required_before_start));
-  const startReady = requiredInstallments.length > 0
+  const startReady = aggregateValid
+    && requiredInstallments.length > 0
     && requiredInstallments.every((installment) => (
-      (Number(installment.received_amount) || 0) >= (Number(installment.amount) || 0)
+      installment.received_amount >= installment.amount
     ));
-  const financiallySettled = installments.length > 0
+  const financiallySettled = aggregateValid
+    && installments.length > 0
     && outstandingAmount === 0
     && installments.every((installment) => (
-      (Number(installment.received_amount) || 0) >= (Number(installment.amount) || 0)
+      installment.received_amount >= installment.amount
     ));
 
   const reportedDates = Array.isArray(input.reported_dates) ? input.reported_dates : [];
@@ -165,8 +207,9 @@ export function summarizeQuoteExecution(input = {}) {
   const remainingWorkdays = Math.max(0, permittedWorkdays - consumedWorkdays);
   const allowanceExhausted = permittedWorkdays > 0 && consumedWorkdays >= permittedWorkdays;
 
-  let paymentState = 'unpaid';
+  let paymentState = aggregateValid ? 'unpaid' : 'exception';
   if (financiallySettled) paymentState = 'settled';
+  else if (!aggregateValid) paymentState = 'exception';
   else if (installments.some((installment) => (Number(installment.pending_claim_count) || 0) > 0 || installment.status === 'pending_confirmation')) {
     paymentState = 'pending_confirmation';
   } else if (installments.some((installment) => (
@@ -176,7 +219,7 @@ export function summarizeQuoteExecution(input = {}) {
   else if (receivedAmount > 0) paymentState = 'partially_received';
 
   return {
-    received_amount: receivedAmount,
+    received_amount: aggregateValid ? receivedAmount : null,
     outstanding_amount: outstandingAmount,
     start_ready: startReady,
     financially_settled: financiallySettled,

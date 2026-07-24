@@ -53,7 +53,7 @@ test('valid onsite service days normalize to an integer number', () => {
 });
 
 test('quote totals must be positive integer minor-unit number primitives', () => {
-  const invalidTotals = ['100', 1.5, undefined, Number.NaN, 0, -1];
+  const invalidTotals = ['100', 1.5, undefined, Number.NaN, 0, -1, Number.MAX_SAFE_INTEGER + 1];
   for (const paymentPlanMode of ['single', 'installments']) {
     for (const totalAmount of invalidTotals) {
       assert.deepEqual(validateQuoteExecution({
@@ -68,6 +68,16 @@ test('quote totals must be positive integer minor-unit number primitives', () =>
       }), { code: 'quote_total_amount_invalid' });
     }
   }
+});
+
+test('quote totals allow the maximum safe integer', () => {
+  const result = validateQuoteExecution({
+    service_mode: 'remote',
+    total_amount: Number.MAX_SAFE_INTEGER,
+    currency: 'CNY',
+  });
+  assert.equal(result.value.total_amount, Number.MAX_SAFE_INTEGER);
+  assert.equal(result.value.payment_schedule[0].amount, Number.MAX_SAFE_INTEGER);
 });
 
 test('installment schedules require two to six rows', () => {
@@ -115,6 +125,42 @@ test('installment amounts must be positive integer minor units', () => {
       code: 'payment_schedule_amount_invalid',
     });
   }
+});
+
+test('installment amounts enforce safe-integer boundaries without precision loss', () => {
+  const maximumSafeSchedule = [
+    {
+      sequence: 1,
+      amount: Number.MAX_SAFE_INTEGER - 1,
+      currency: 'CNY',
+      trigger_type: 'before_start',
+      required_before_start: true,
+    },
+    { sequence: 2, amount: 1, currency: 'CNY', trigger_type: 'on_completion' },
+  ];
+  assert.equal(validatePaymentSchedule(maximumSafeSchedule, {
+    totalAmount: Number.MAX_SAFE_INTEGER,
+    currency: 'CNY',
+  }).value[0].amount, Number.MAX_SAFE_INTEGER - 1);
+
+  assert.deepEqual(validatePaymentSchedule([
+    { ...maximumSafeSchedule[0], amount: Number.MAX_SAFE_INTEGER + 1 },
+    maximumSafeSchedule[1],
+  ], { totalAmount: Number.MAX_SAFE_INTEGER, currency: 'CNY' }), {
+    code: 'payment_schedule_amount_invalid',
+  });
+  assert.deepEqual(validatePaymentSchedule([
+    { ...maximumSafeSchedule[0], amount: 2 ** 53 },
+    maximumSafeSchedule[1],
+  ], { totalAmount: 2 ** 53, currency: 'CNY' }), {
+    code: 'payment_schedule_amount_invalid',
+  });
+  assert.deepEqual(validatePaymentSchedule(maximumSafeSchedule, {
+    totalAmount: Number.MAX_SAFE_INTEGER + 1,
+    currency: 'CNY',
+  }), {
+    code: 'quote_total_amount_invalid',
+  });
 });
 
 test('malformed schedule rows return a deterministic validation code', () => {
@@ -283,6 +329,20 @@ test('installment state does not derive overdue without a valid explicit now', (
   assert.equal(deriveInstallmentState({ ...installment, source: 'due' }), 'due');
 });
 
+test('installment state returns exception for malformed monetary projections', () => {
+  for (const installment of [
+    {},
+    { received_amount: 0 },
+    { amount: Number.MAX_SAFE_INTEGER + 1, received_amount: 0 },
+    { amount: 100 },
+    { amount: 100, received_amount: -1 },
+    { amount: 100, received_amount: Number.NaN },
+    { amount: 100, received_amount: Number.MAX_SAFE_INTEGER + 1 },
+  ]) {
+    assert.equal(deriveInstallmentState(installment, '2026-07-25T00:00:00Z'), 'exception');
+  }
+});
+
 test('overdue begins only after the end of the due date', () => {
   const installment = { amount: 100, received_amount: 0, due_date: '2026-07-24' };
   assert.equal(deriveInstallmentState(installment, '2026-07-24T23:59:59.999Z'), 'scheduled');
@@ -374,6 +434,43 @@ test('fully received installments totaling less than the quote remain financiall
   assert.equal(summary.outstanding_amount, 20);
   assert.equal(summary.financially_settled, false);
   assert.equal(summary.payment_state, 'partially_received');
+  assert.equal(canFinanciallyArchive(summary), false);
+});
+
+test('summary fails closed for malformed monetary projections', () => {
+  const malformedInputs = [
+    {},
+    { total_amount: undefined, installments: [] },
+    { total_amount: -1, installments: [] },
+    { total_amount: Number.NaN, installments: [] },
+    { total_amount: Number.MAX_SAFE_INTEGER + 1, installments: [] },
+    { total_amount: 100, installments: [{}] },
+    { total_amount: 100, installments: [{ received_amount: 0 }] },
+    { total_amount: 100, installments: [{ amount: Number.MAX_SAFE_INTEGER + 1, received_amount: 0 }] },
+    { total_amount: 100, installments: [{ amount: 100 }] },
+    { total_amount: 100, installments: [{ amount: 100, received_amount: -1 }] },
+    { total_amount: 100, installments: [{ amount: 100, received_amount: Number.NaN }] },
+  ];
+
+  for (const input of malformedInputs) {
+    const summary = summarizeQuoteExecution(input);
+    assert.equal(summary.received_amount, null);
+    assert.equal(summary.outstanding_amount, null);
+    assert.equal(summary.start_ready, false);
+    assert.equal(summary.financially_settled, false);
+    assert.equal(summary.payment_state, 'exception');
+    assert.equal(canFinanciallyArchive(summary), false);
+  }
+});
+
+test('a nonempty schedule with zero total fails closed', () => {
+  const summary = summarizeQuoteExecution({
+    total_amount: 0,
+    installments: [{ amount: 100, received_amount: 100, required_before_start: true }],
+  });
+  assert.equal(summary.payment_state, 'exception');
+  assert.equal(summary.start_ready, false);
+  assert.equal(summary.financially_settled, false);
   assert.equal(canFinanciallyArchive(summary), false);
 });
 
