@@ -14074,15 +14074,56 @@ async function handleSubmitWorkOrderPricing(request, env) {
     const historyId = generateId();
     const statements = [];
 
+    if (quoteKind === 'baseline') {
+      statements.push(env.DB.prepare(`
+        SELECT CASE WHEN NOT EXISTS (
+          SELECT 1 FROM work_order_receipt_claims
+          WHERE work_order_id = ? AND status = 'confirmed'
+        ) THEN 1 ELSE json('quote baseline receipt conflict') END
+      `).bind(workOrderId));
+    } else {
+      statements.push(env.DB.prepare(`
+        SELECT CASE WHEN EXISTS (
+          SELECT 1
+          FROM work_orders work_order
+          JOIN work_order_pricing parent_pricing
+            ON parent_pricing.work_order_id = work_order.id
+          JOIN work_order_pricing_history parent_history
+            ON parent_history.pricing_id = parent_pricing.id
+           AND parent_history.version = work_order.active_quote_version
+          WHERE work_order.id = ?
+            AND work_order.active_quote_version = ?
+            AND parent_history.quote_kind = 'baseline'
+            AND parent_history.status = 'confirmed'
+        ) THEN 1 ELSE json('quote supplemental parent conflict') END
+      `).bind(workOrderId, parentQuoteVersion));
+    }
+    statements.push(env.DB.prepare(`
+      SELECT CASE WHEN NOT EXISTS (
+        SELECT 1 FROM work_order_pricing_history
+        WHERE pricing_id = ? AND version = ?
+          AND status NOT IN ('draft', 'pending_review')
+      ) THEN 1 ELSE json('quote retry history protected') END
+    `).bind(pricingId, nextVersion));
     statements.push(env.DB.prepare(`
       DELETE FROM work_order_payment_schedule
       WHERE pricing_id = ? AND quote_version = ?
-        AND NOT EXISTS (
+        AND (
+          NOT EXISTS (
+            SELECT 1 FROM work_order_pricing_history history
+            WHERE history.pricing_id = ? AND history.version = ?
+          )
+          OR EXISTS (
           SELECT 1 FROM work_order_pricing_history history
           WHERE history.pricing_id = ? AND history.version = ?
-            AND history.status IN ('approved', 'confirmed')
+              AND history.status IN ('draft', 'pending_review')
+          )
         )
-    `).bind(pricingId, nextVersion, pricingId, nextVersion));
+    `).bind(
+      pricingId, nextVersion,
+      pricingId, nextVersion,
+      pricingId, nextVersion,
+    ));
 
     if (existing) {
       statements.push(env.DB.prepare(`
@@ -14189,7 +14230,7 @@ async function handleSubmitWorkOrderPricing(request, env) {
       total_amount: subtotal,  // 客户应付 = subtotal
     });
   } catch (error) {
-    if (/quote version concurrent update|protected quote payment schedule|malformed json/i.test(String(error?.message || error))) {
+    if (/quote (?:version concurrent update|baseline receipt conflict|supplemental parent conflict|retry history protected)|protected quote payment schedule|malformed json/i.test(String(error?.message || error))) {
       return errorResponse(
         getRequestMarket(request) === 'cn' ? '报价已被更新，请刷新后重试' : 'The quote changed. Refresh and try again.',
         409,

@@ -8,7 +8,7 @@ import { signJwt } from '../src/lib/auth.js';
 
 const schemaSql = readFileSync(new URL('../schema.sql', import.meta.url), 'utf8');
 
-function createD1Database(db) {
+function createD1Database(db, hooks) {
   function statement(sql) {
     return {
       args: [],
@@ -32,6 +32,9 @@ function createD1Database(db) {
   return {
     prepare: statement,
     async batch(statements) {
+      const beforeBatch = hooks.beforeNextBatch;
+      hooks.beforeNextBatch = null;
+      if (beforeBatch) await beforeBatch();
       db.exec('BEGIN IMMEDIATE');
       try {
         const results = [];
@@ -48,6 +51,7 @@ function createD1Database(db) {
 
 function createQuoteExecutionEnv({ market = 'com' } = {}) {
   const db = new DatabaseSync(':memory:');
+  const hooks = { beforeNextBatch: null };
   db.exec('PRAGMA foreign_keys = ON;');
   db.exec(schemaSql);
   db.exec(`
@@ -68,7 +72,7 @@ function createQuoteExecutionEnv({ market = 'com' } = {}) {
     db,
     env: {
       JWT_SECRET: 'test-secret-with-enough-length',
-      DB: createD1Database(db),
+      DB: createD1Database(db, hooks),
       KV: {
         async get() { return null; },
         async put() {},
@@ -77,6 +81,9 @@ function createQuoteExecutionEnv({ market = 'com' } = {}) {
     },
     origin: market === 'cn' ? 'https://sagemro.cn' : 'https://sagemro.com',
     host: market === 'cn' ? 'https://api.sagemro.cn' : 'https://api.sagemro.com',
+    beforeNextBatch(callback) {
+      hooks.beforeNextBatch = callback;
+    },
   };
 }
 
@@ -153,6 +160,24 @@ async function reviewQuote(ctx, action, quoteVersion, note = '') {
     userType: 'admin',
     userId: 'admin',
   });
+}
+
+async function confirmBaselineForReceiptTests(ctx) {
+  await submitQuote(ctx);
+  await reviewQuote(ctx, 'approve', 1);
+  ctx.db.exec(`
+    UPDATE work_orders SET active_quote_version = 1 WHERE id = 'wo-quote-1';
+    UPDATE work_order_pricing_history
+    SET status = 'confirmed', confirmed_at = datetime('now')
+    WHERE version = 1;
+    INSERT INTO work_order_installments (
+      id, schedule_id, work_order_id, quote_version, sequence, amount, currency,
+      trigger_type, due_date, description, required_before_start, status, received_amount
+    ) SELECT
+      'installment-baseline-1', id, work_order_id, quote_version, sequence, amount, currency,
+      trigger_type, due_date, description, required_before_start, 'due', 0
+    FROM work_order_payment_schedule WHERE work_order_id = 'wo-quote-1' AND sequence = 1;
+  `);
 }
 
 test('quote submission persists one pending immutable version and its complete schedule atomically', async () => {
@@ -271,6 +296,40 @@ test('safe retry clears only the new unprotected schedule version', async () => 
   assert.equal(schedule.some((row) => row.description === 'Orphan retry row'), false);
 });
 
+test('safe retry does not clear a rejected history version schedule', async () => {
+  const ctx = createQuoteExecutionEnv();
+  await submitQuote(ctx);
+  await reviewQuote(ctx, 'approve', 1);
+  const pricingId = ctx.db.prepare('SELECT id FROM work_order_pricing').get().id;
+  ctx.beforeNextBatch(() => {
+    ctx.db.exec(`
+      INSERT INTO work_order_pricing_history (
+        id, pricing_id, labor_fee, parts_fee, travel_fee, other_fee, subtotal,
+        total_amount, version, expected_service_days, payment_plan_mode, quote_kind, status
+      ) VALUES (
+        'history-rejected-v2', '${pricingId}', 9000, 2000, 1000, 0, 12000,
+        12000, 2, 3, 'single', 'baseline', 'rejected'
+      );
+      INSERT INTO work_order_payment_schedule (
+        id, pricing_id, work_order_id, quote_version, sequence, amount, currency,
+        trigger_type, description, required_before_start
+      ) VALUES (
+        'schedule-rejected-v2', '${pricingId}', 'wo-quote-1', 2, 1, 12000,
+        'USD', 'before_start', 'Rejected version schedule', 1
+      );
+    `);
+  });
+
+  const retry = await submitQuote(ctx);
+
+  assert.equal(retry.response.status, 409);
+  assert.equal(
+    ctx.db.prepare('SELECT COUNT(*) AS count FROM work_order_payment_schedule WHERE id = ?').get('schedule-rejected-v2').count,
+    1,
+  );
+  assert.equal(ctx.db.prepare('SELECT COUNT(*) AS count FROM work_order_pricing_history').get().count, 2);
+});
+
 test('Admin approval targets the exact version and returns all reviewed terms', async () => {
   const ctx = createQuoteExecutionEnv();
   await submitQuote(ctx);
@@ -329,19 +388,11 @@ test('Admin stale version action returns 409', async () => {
 
 test('confirmed receipts block baseline replacement but allow a linked supplemental quote', async () => {
   const ctx = createQuoteExecutionEnv();
-  await submitQuote(ctx);
-  await reviewQuote(ctx, 'approve', 1);
+  await confirmBaselineForReceiptTests(ctx);
   ctx.db.exec(`
-    UPDATE work_orders SET active_quote_version = 1 WHERE id = 'wo-quote-1';
-    UPDATE work_order_pricing_history SET status = 'confirmed', confirmed_at = datetime('now')
-    WHERE version = 1;
-    INSERT INTO work_order_installments (
-      id, schedule_id, work_order_id, quote_version, sequence, amount, currency,
-      trigger_type, due_date, description, required_before_start, status, received_amount
-    ) SELECT
-      'installment-baseline-1', id, work_order_id, quote_version, sequence, amount, currency,
-      trigger_type, due_date, description, required_before_start, 'received', amount
-    FROM work_order_payment_schedule WHERE work_order_id = 'wo-quote-1' AND sequence = 1;
+    UPDATE work_order_installments
+    SET status = 'received', received_amount = amount
+    WHERE id = 'installment-baseline-1';
     INSERT INTO work_order_receipt_claims (
       id, installment_id, work_order_id, engineer_id, claimed_amount, status,
       confirmed_amount, decided_by, decided_at, idempotency_key
@@ -383,6 +434,55 @@ test('confirmed receipts block baseline replacement but allow a linked supplemen
   assert.equal(approval.json.quote.quote_kind, 'supplemental');
   assert.equal(approval.json.quote.parent_quote_version, 1);
   assert.equal(ctx.db.prepare('SELECT status FROM work_order_pricing_history WHERE version = 1').get().status, 'confirmed');
+});
+
+test('baseline replacement fails when a receipt is confirmed between eligibility read and batch write', async () => {
+  const ctx = createQuoteExecutionEnv();
+  await confirmBaselineForReceiptTests(ctx);
+  ctx.beforeNextBatch(() => {
+    ctx.db.exec(`
+      INSERT INTO work_order_receipt_claims (
+        id, installment_id, work_order_id, engineer_id, claimed_amount, status,
+        confirmed_amount, decided_by, decided_at, idempotency_key
+      ) VALUES (
+        'claim-race', 'installment-baseline-1', 'wo-quote-1', 'engineer-1', 6000,
+        'confirmed', 6000, 'admin', datetime('now'), 'claim-race'
+      );
+    `);
+  });
+
+  const replacement = await submitQuote(ctx);
+
+  assert.equal(replacement.response.status, 409);
+  assert.equal(ctx.db.prepare('SELECT quote_version FROM work_order_pricing').get().quote_version, 1);
+  assert.equal(ctx.db.prepare('SELECT COUNT(*) AS count FROM work_order_pricing_history').get().count, 1);
+  assert.equal(ctx.db.prepare('SELECT COUNT(*) AS count FROM work_order_payment_schedule WHERE quote_version = 2').get().count, 0);
+});
+
+test('supplemental submission requires the active parent history to be a confirmed baseline', async () => {
+  for (const parentMutation of [
+    "UPDATE work_order_pricing_history SET quote_kind = 'supplemental' WHERE version = 1",
+    "UPDATE work_order_pricing_history SET status = 'approved', confirmed_at = NULL WHERE version = 1",
+  ]) {
+    const ctx = createQuoteExecutionEnv();
+    await confirmBaselineForReceiptTests(ctx);
+    ctx.db.exec(parentMutation);
+
+    const supplemental = await submitQuote(ctx, quotePayload({
+      labor_fee: 1000,
+      parts_fee: 500,
+      travel_fee: 0,
+      expected_service_days: 1,
+      quote_kind: 'supplemental',
+      parent_quote_version: 1,
+      payment_plan_mode: 'single',
+      payment_schedule: undefined,
+    }));
+
+    assert.equal(supplemental.response.status, 409);
+    assert.equal(ctx.db.prepare('SELECT quote_version FROM work_order_pricing').get().quote_version, 1);
+    assert.equal(ctx.db.prepare('SELECT COUNT(*) AS count FROM work_order_pricing_history').get().count, 1);
+  }
 });
 
 test('Admin detail includes the complete immutable schedule', async () => {
