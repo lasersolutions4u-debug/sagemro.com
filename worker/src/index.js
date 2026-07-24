@@ -35,7 +35,7 @@ import {
 } from './lib/location.js';
 import { normalizeServiceMode, requiresArrivalVerification } from './lib/service-mode.js';
 import {
-  countConsumedFieldDays,
+  consumedFieldDayDates,
   fieldDayBlocksFinalReport,
   fieldDayLocalDate,
   siteLocalDateTimeToUtc,
@@ -6357,6 +6357,14 @@ async function getFieldWorkOrder(env, workOrderId) {
   `).bind(workOrderId).first();
 }
 
+async function listConsumedFieldDayDates(env, workOrderId) {
+  const records = await env.DB.prepare(`
+    SELECT site_local_date, status, check_in_at
+    FROM work_order_field_days WHERE work_order_id = ?
+  `).bind(workOrderId).all();
+  return consumedFieldDayDates(records.results || []);
+}
+
 function hasCompleteFieldPlan(workOrder) {
   return Boolean(
     workOrder?.site_timezone
@@ -6410,11 +6418,7 @@ async function handleFieldDayCheckIn(request, env) {
     }
 
     if (Number(workOrder.active_quote_version || 0) >= 1) {
-      const fieldDayRecords = await env.DB.prepare(`
-        SELECT site_local_date, status, check_in_at
-        FROM work_order_field_days WHERE work_order_id = ?
-      `).bind(workOrderId).all();
-      const consumedDays = countConsumedFieldDays(fieldDayRecords.results || []);
+      const consumedDays = (await listConsumedFieldDayDates(env, workOrderId)).length;
       const permittedDays = Number(workOrder.quote_expected_service_days || 0)
         + Number(workOrder.approved_extension_days || 0);
       if (consumedDays >= permittedDays) {
@@ -14877,6 +14881,7 @@ async function getWorkOrderQuoteExecution(env, workOrder, pricing, auth, market 
     const initialWorkdays = workOrder.service_mode === 'hybrid'
       ? 0
       : Number(workOrder.quote_expected_service_days || 0);
+    const reportedDates = await listConsumedFieldDayDates(env, workOrder.id);
     const totalAmount = activeQuote.total_amount;
     const latestActiveRow = activeRows.at(-1);
     const summary = summarizeQuoteExecution({
@@ -14884,6 +14889,7 @@ async function getWorkOrderQuoteExecution(env, workOrder, pricing, auth, market 
       installments: normalizedInstallments,
       initial_workdays: initialWorkdays,
       extension_days: Number(workOrder.approved_extension_days || 0),
+      reported_dates: reportedDates,
     });
     return {
       quote_version: Number(latestActiveRow?.version || activeBaselineVersion),

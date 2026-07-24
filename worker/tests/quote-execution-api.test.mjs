@@ -1104,6 +1104,42 @@ test('receipt claims use role-facing allowlists without idempotency or Admin ide
   assert.equal(JSON.stringify(unassignedLeadDetail.json).includes('evidence-detail-1'), false);
 });
 
+test('quote execution detail shares valid consumed field days across customer, engineer, and Admin views', async () => {
+  const ctx = createQuoteExecutionEnv();
+  await activateBaseline(ctx, quotePayload({ expected_service_days: 2 }));
+  ctx.db.exec(`
+    INSERT INTO engineers (id, user_no, name, phone, password_hash, level, commission_rate)
+    VALUES ('engineer-2', 'E000002', 'Second Engineer', '13800000002', 'hash', 'senior', 0.85);
+    INSERT INTO work_order_field_days (
+      id, work_order_id, engineer_id, site_local_date, site_timezone, status, check_in_at
+    ) VALUES
+      ('field-valid-1', 'wo-quote-1', 'engineer-1', '2026-07-21', 'Asia/Shanghai', 'report_submitted', '2026-07-21T01:00:00Z'),
+      ('field-duplicate', 'wo-quote-1', 'engineer-2', '2026-07-21', 'Asia/Shanghai', 'late_report_submitted', '2026-07-21T02:00:00Z'),
+      ('field-valid-2', 'wo-quote-1', 'engineer-1', '2026-07-22', 'Asia/Shanghai', 'late_report_submitted', '2026-07-22T01:00:00Z'),
+      ('field-checked-in', 'wo-quote-1', 'engineer-1', '2026-07-23', 'Asia/Shanghai', 'checked_in', '2026-07-23T01:00:00Z'),
+      ('field-overdue', 'wo-quote-1', 'engineer-1', '2026-07-24', 'Asia/Shanghai', 'report_overdue', '2026-07-24T01:00:00Z'),
+      ('field-invalid-check-in', 'wo-quote-1', 'engineer-1', '2026-07-25', 'Asia/Shanghai', 'report_submitted', 'invalid'),
+      ('field-invalid-date', 'wo-quote-1', 'engineer-1', 'invalid', 'Asia/Shanghai', 'report_submitted', '2026-07-26T01:00:00Z');
+  `);
+
+  for (const [userType, userId] of [
+    ['customer', 'customer-1'],
+    ['engineer', 'engineer-1'],
+    ['admin', 'admin'],
+  ]) {
+    ctx.resetQueries();
+    const detail = await api(ctx, '/api/workorders/wo-quote-1', { method: 'GET', userType, userId });
+
+    assert.equal(detail.response.status, 200);
+    assert.equal(detail.json.quote_execution.consumed_workdays, 2);
+    assert.equal(detail.json.quote_execution.remaining_workdays, 0);
+    assert.equal(detail.json.quote_execution.allowance_exhausted, true);
+    assert.equal(ctx.queries().filter((sql) => (
+      /SELECT site_local_date, status, check_in_at FROM work_order_field_days WHERE work_order_id = \?/i.test(sql)
+    )).length, 1);
+  }
+});
+
 test('assigned engineer opens only collectible installments and owning customer controls payment method', async () => {
   const ctx = createQuoteExecutionEnv();
   await confirmBaselineForReceiptTests(ctx);

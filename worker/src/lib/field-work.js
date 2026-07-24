@@ -152,16 +152,21 @@ export function fieldDayBlocksFinalReport(status) {
   return FINAL_REPORT_BLOCKING_STATUSES.has(String(status || '').trim());
 }
 
-export function countConsumedFieldDays(fieldDays = []) {
+export function consumedFieldDayDates(fieldDays = []) {
   const consumedDates = new Set();
   for (const fieldDay of Array.isArray(fieldDays) ? fieldDays : []) {
     if (!['report_submitted', 'late_report_submitted'].includes(fieldDay?.status)) continue;
-    if (!isValidDate(String(fieldDay.site_local_date || '').trim())) continue;
+    const siteLocalDate = String(fieldDay.site_local_date || '').trim();
+    if (!isValidDate(siteLocalDate)) continue;
     const checkInAt = new Date(fieldDay.check_in_at);
     if (!fieldDay.check_in_at || !Number.isFinite(checkInAt.getTime())) continue;
-    consumedDates.add(fieldDay.site_local_date);
+    consumedDates.add(siteLocalDate);
   }
-  return consumedDates.size;
+  return [...consumedDates];
+}
+
+export function countConsumedFieldDays(fieldDays = []) {
+  return consumedFieldDayDates(fieldDays).length;
 }
 
 export function mediaRetentionEligible({ completedAt, now = new Date(), hasOpenHold = false } = {}) {
