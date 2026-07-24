@@ -37,6 +37,7 @@ const COPY = {
     quoteRemainingDays: 'remaining',
     quoteAllowanceExhausted: 'Allowance exhausted',
     quoteAllowanceAvailable: 'Allowance available',
+    executionUnavailable: 'Execution data unavailable. Check the confirmed quote before allowing field work.',
     extensionAllowanceHelp: 'Approved extensions add time allowance only and do not automatically add labor fees.',
     status: 'Status',
     timezone: 'IANA time zone',
@@ -167,6 +168,7 @@ const COPY = {
     quoteRemainingDays: '剩余',
     quoteAllowanceExhausted: '额度已用完',
     quoteAllowanceAvailable: '额度可用',
+    executionUnavailable: '执行数据暂不可用，请先核对已确认报价后再继续现场作业。',
     extensionAllowanceHelp: '批准延期只增加作业时间额度，不会自动增加人工费用。',
     status: '状态',
     timezone: '现场时区',
@@ -343,9 +345,32 @@ function workdayCountLabel(count, isCn, suffix) {
   return isCn ? `${suffix} ${count} 天` : `${count} ${suffix}`;
 }
 
+function hasValidQuoteAllowance(execution) {
+  if (!execution || execution.payment_state === 'exception') return false;
+  const expected = safeWorkdayCount(execution.expected_service_days);
+  const consumed = safeWorkdayCount(execution.consumed_workdays);
+  const permitted = safeWorkdayCount(execution.permitted_workdays);
+  const remaining = safeWorkdayCount(execution.remaining_workdays);
+  if (expected === null || expected < 1 || consumed === null || permitted === null || remaining === null) return false;
+  if (permitted < expected || consumed > permitted || remaining !== permitted - consumed) return false;
+  return execution.allowance_exhausted === (consumed >= permitted);
+}
+
 function siteTimezoneLabel(rawTimezone, displayTimezone, isCn) {
-  if (displayTimezone) return displayTimezone;
+  if (displayTimezone && !displayTimezone.includes('/')) return displayTimezone;
   if (isCn && rawTimezone === 'Asia/Shanghai') return '中国标准时间（上海）';
+  if (isCn) {
+    try {
+      const name = new Intl.DateTimeFormat('zh-CN', {
+        timeZone: rawTimezone,
+        timeZoneName: 'long',
+      }).formatToParts(new Date()).find((part) => part.type === 'timeZoneName')?.value;
+      if (name && !name.includes('/')) return name;
+    } catch {
+      return '现场当地时间';
+    }
+    return '现场当地时间';
+  }
   return rawTimezone || '-';
 }
 
@@ -425,6 +450,7 @@ export function FieldWorkAdminPanel({ workOrder, readOnly = false, onRefresh }) 
   const summary = workOrder?.field_work_summary || {};
   const quoteExecution = workOrder?.quote_execution || {};
   const quoteDriven = Number(workOrder?.active_quote_version || 0) >= 1;
+  const quoteExecutionAvailable = quoteDriven && hasValidQuoteAllowance(quoteExecution);
   const isCn = runtimeConfig.locale === 'zh-CN';
   const quoteExpectedDays = safeWorkdayCount(quoteExecution.expected_service_days);
   const quoteConsumedDays = safeWorkdayCount(quoteExecution.consumed_workdays);
@@ -635,7 +661,7 @@ export function FieldWorkAdminPanel({ workOrder, readOnly = false, onRefresh }) 
 
       <div className="border-b border-[var(--color-border)] p-4">
         <h5 className="mb-3 text-sm font-medium">{t.plan}</h5>
-        {quoteDriven ? (
+        {quoteDriven ? quoteExecutionAvailable ? (
           <div className="space-y-3">
             <div className="grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-6">
               <div><span className="block text-xs text-[var(--color-text-muted)]">{t.quotePlan}</span><span className="font-medium">{expectedWorkdaysLabel(quoteExpectedDays, isCn, t)}</span></div>
@@ -647,7 +673,7 @@ export function FieldWorkAdminPanel({ workOrder, readOnly = false, onRefresh }) 
             </div>
             <p className="text-xs text-[var(--color-text-muted)]">{t.extensionAllowanceHelp}</p>
           </div>
-        ) : (
+        ) : <p className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-700">{t.executionUnavailable}</p> : (
           <>
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
               <label className="text-xs text-[var(--color-text-muted)] sm:col-span-2 lg:col-span-1">{t.timezone}<input value={plan.site_timezone} onChange={(event) => updatePlanField('site_timezone', event.target.value)} disabled={readOnly} className="mt-1 min-h-10 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-3 text-sm disabled:opacity-60" /></label>

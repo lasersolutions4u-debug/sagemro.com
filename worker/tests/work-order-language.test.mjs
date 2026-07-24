@@ -165,6 +165,11 @@ test('field-work role detail exposes localized display timezone while retaining 
 
   assert.equal(formatSiteTimezone('Asia/Shanghai', 'cn'), '中国标准时间（上海）');
   assert.equal(formatSiteTimezone('Asia/Shanghai', 'com'), 'Asia/Shanghai');
+  const newYorkLabel = formatSiteTimezone('America/New_York', 'cn');
+  assert.notEqual(newYorkLabel, 'America/New_York');
+  assert.doesNotMatch(newYorkLabel, /\//);
+  assert.ok(newYorkLabel.length > 0);
+  assert.equal(formatSiteTimezone('Invalid/Timezone', 'cn'), '现场当地时间');
   assert.match(source, /site_timezone_display:\s*formatSiteTimezone\([^,]+,\s*market\)/);
   assert.match(source, /site_timezone:\s*workOrder\?\.site_timezone \|\| null/);
   assert.match(source, /Number\(workOrder\?\.active_quote_version \|\| 0\) >= 1[\s\S]*quote_expected_service_days/);

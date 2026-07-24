@@ -16,6 +16,11 @@ function section(source, start, end) {
   return source.slice(startIndex, endIndex === -1 ? source.length : endIndex);
 }
 
+function loadFunction(source, start, end, name) {
+  const functionSource = section(source, start, end).trim();
+  return Function(`return (${functionSource});`)();
+}
+
 test('field-work API uses authenticated multipart requests and stable idempotency keys', () => {
   const api = read('frontend/src/services/api.js');
   const checkInApi = section(api, 'export async function checkInFieldDay', 'export async function getFieldDays');
@@ -163,14 +168,35 @@ test('quote-driven field work uses the confirmed quote allowance without a legac
   assert.match(panel, /!quoteDriven[\s\S]*handleLegacyArrivalCheck/);
 });
 
+test('quote execution exceptions fail closed without usable counters or engineer actions', () => {
+  const panel = read('frontend/src/components/WorkOrder/FieldWorkPanel.jsx');
+  const planSection = section(panel, '<section className="border-b border-[var(--color-border)] pb-4">', '{isAssignedEngineer &&');
+
+  assert.match(panel, /function hasValidQuoteAllowance\(execution\)/);
+  assert.match(panel, /execution\.payment_state === 'exception'/);
+  assert.match(panel, /const quoteExecutionAvailable = quoteDriven && hasValidQuoteAllowance\(quoteExecution\)/);
+  assert.match(panel, /Execution data unavailable/);
+  assert.match(panel, /执行数据暂不可用/);
+  assert.match(planSection, /quoteDriven \?[\s\S]*quoteExecutionAvailable \?/);
+  assert.match(panel, /hasExecutionBaseline && !allowanceExhausted[\s\S]*data-field-work-check-in/);
+  assert.match(panel, /hasExecutionBaseline && \([\s\S]*<ExtensionForm/);
+  assert.match(planSection, /\{t\.executionUnavailable\}<\/p> : hasLegacyPlan \? \(/);
+});
+
 test('China field-work plan and timeline use the display timezone label', () => {
   const panel = read('frontend/src/components/WorkOrder/FieldWorkPanel.jsx');
   const planSection = section(panel, '<section className="border-b border-[var(--color-border)] pb-4">', '{isAssignedEngineer &&');
+  const siteTimezoneLabel = loadFunction(panel, 'function siteTimezoneLabel', 'function normalizeFieldDays', 'siteTimezoneLabel');
 
   assert.match(panel, /现场时区/);
   assert.match(panel, /site_timezone_display/);
   assert.match(planSection, /siteTimezoneLabel\(fieldPlan, isCn\)/);
   assert.doesNotMatch(planSection, />\{fieldPlan\.site_timezone\}<\/span>/);
+  assert.match(panel, /Intl\.DateTimeFormat\('zh-CN',[\s\S]*timeZoneName: 'long'/);
+  assert.match(panel, /现场当地时间/);
+  const newYorkLabel = siteTimezoneLabel({ site_timezone: 'America/New_York' }, true);
+  assert.notEqual(newYorkLabel, 'America/New_York');
+  assert.doesNotMatch(newYorkLabel, /\//);
 });
 
 test('work-order details integrate field work and keep legacy arrival secondary', () => {

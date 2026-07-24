@@ -249,8 +249,19 @@ export function canFinanciallyArchive(summary = {}) {
 
 export function formatSiteTimezone(timezone, market) {
   const identifier = String(timezone || '');
-  if (identifier === 'Asia/Shanghai' && String(market || '').toLowerCase() === 'cn') {
-    return '中国标准时间（上海）';
+  if (String(market || '').toLowerCase() === 'cn') {
+    if (identifier === 'Asia/Shanghai') return '中国标准时间（上海）';
+    try {
+      const parts = new Intl.DateTimeFormat('zh-CN', {
+        timeZone: identifier,
+        timeZoneName: 'long',
+      }).formatToParts(new Date());
+      const name = parts.find((part) => part.type === 'timeZoneName')?.value;
+      if (name && !name.includes('/')) return name;
+    } catch {
+      // Normal role-facing views fall back to a localized generic label.
+    }
+    return '现场当地时间';
   }
   return identifier;
 }

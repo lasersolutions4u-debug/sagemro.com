@@ -586,14 +586,14 @@ test('workday summary counts distinct nonblank dates and exhausts the nonnegativ
   assert.equal(canCreateFieldDay(zeroAllowance), true);
 });
 
-test('site timezone localizes only Asia/Shanghai for the CN market', () => {
+test('site timezone uses human-readable labels for every CN timezone', () => {
   assert.equal(formatSiteTimezone('Asia/Shanghai', 'cn'), '中国标准时间（上海）');
   assert.equal(formatSiteTimezone('Asia/Shanghai', 'CN'), '中国标准时间（上海）');
   assert.equal(formatSiteTimezone('Asia/Shanghai', 'com'), 'Asia/Shanghai');
-  assert.equal(formatSiteTimezone('America/Los_Angeles', 'cn'), 'America/Los_Angeles');
-  assert.equal(formatSiteTimezone('Unknown/Zone', 'cn'), 'Unknown/Zone');
-  assert.equal(formatSiteTimezone('', 'cn'), '');
-  assert.equal(formatSiteTimezone(null, 'cn'), '');
+  assert.doesNotMatch(formatSiteTimezone('America/Los_Angeles', 'cn'), /\//);
+  assert.equal(formatSiteTimezone('Unknown/Zone', 'cn'), '现场当地时间');
+  assert.equal(formatSiteTimezone('', 'cn'), '现场当地时间');
+  assert.equal(formatSiteTimezone(null, 'cn'), '现场当地时间');
 });
 
 test('remote quotes clear expected days and non-installment modes normalize to single', () => {

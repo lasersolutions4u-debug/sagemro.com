@@ -32,6 +32,7 @@ const COPY = {
     quoteUsedDays: 'used',
     quotePermittedDays: 'permitted',
     quoteRemainingDays: 'remaining',
+    executionUnavailable: 'Execution data unavailable. Check the confirmed quote before continuing field work.',
     allowanceExhausted: 'The approved onsite workday allowance is used. Request more service time below before another check-in.',
     extensionAllowanceHelp: 'An approved extension adds time allowance only and does not automatically add labor fees.',
     days: 'Planned days',
@@ -110,6 +111,7 @@ const COPY = {
     quoteUsedDays: '已使用',
     quotePermittedDays: '可用额度',
     quoteRemainingDays: '剩余',
+    executionUnavailable: '执行数据暂不可用，请先核对已确认报价后再继续现场作业。',
     allowanceExhausted: '已用完审核通过的现场作业日额度，请先通过下方入口申请延长服务时间，再进行下一次签到。',
     extensionAllowanceHelp: '延期仅增加作业时间额度，不会自动增加人工费用。',
     days: '计划天数',
@@ -234,9 +236,32 @@ function workdayCountLabel(count, isCn, suffix) {
   return isCn ? `${suffix} ${count} 天` : `${count} ${suffix}`;
 }
 
+function hasValidQuoteAllowance(execution) {
+  if (!execution || execution.payment_state === 'exception') return false;
+  const expected = safeWorkdayCount(execution.expected_service_days);
+  const consumed = safeWorkdayCount(execution.consumed_workdays);
+  const permitted = safeWorkdayCount(execution.permitted_workdays);
+  const remaining = safeWorkdayCount(execution.remaining_workdays);
+  if (expected === null || expected < 1 || consumed === null || permitted === null || remaining === null) return false;
+  if (permitted < expected || consumed > permitted || remaining !== permitted - consumed) return false;
+  return execution.allowance_exhausted === (consumed >= permitted);
+}
+
 function siteTimezoneLabel(fieldPlan, isCn) {
-  if (fieldPlan?.site_timezone_display) return fieldPlan.site_timezone_display;
+  if (fieldPlan?.site_timezone_display && !fieldPlan.site_timezone_display.includes('/')) return fieldPlan.site_timezone_display;
   if (isCn && fieldPlan?.site_timezone === 'Asia/Shanghai') return '中国标准时间（上海）';
+  if (isCn) {
+    try {
+      const name = new Intl.DateTimeFormat('zh-CN', {
+        timeZone: fieldPlan?.site_timezone,
+        timeZoneName: 'long',
+      }).formatToParts(new Date()).find((part) => part.type === 'timeZoneName')?.value;
+      if (name && !name.includes('/')) return name;
+    } catch {
+      return '现场当地时间';
+    }
+    return '现场当地时间';
+  }
   return fieldPlan?.site_timezone || '-';
 }
 
@@ -323,7 +348,7 @@ function FieldMedia({ workOrderId, media, label }) {
   );
 }
 
-function ReportForm({ workOrderId, fieldDay, isCn, extensionPending, onSaved, onBusyChange }) {
+function ReportForm({ workOrderId, fieldDay, isCn, extensionAvailable = true, extensionPending, onSaved, onBusyChange }) {
   const t = isCn ? COPY.cn : COPY.en;
   const fieldDayId = fieldDay.id;
   const draftKey = `sagemro_field_report_${fieldDayId}`;
@@ -357,7 +382,7 @@ function ReportForm({ workOrderId, fieldDay, isCn, extensionPending, onSaved, on
   const update = (field, value) => setReport((current) => ({ ...current, [field]: value }));
 
   const submit = async () => {
-    const requestExtension = report.request_extension && !extensionPending;
+    const requestExtension = extensionAvailable && report.request_extension && !extensionPending;
     const requiredText = [report.completed_work, report.issues_risks, report.next_plan, report.customer_support_needed];
     const laborHours = Number(report.labor_hours);
     if (requiredText.some((value) => !value.trim())
@@ -468,7 +493,7 @@ function ReportForm({ workOrderId, fieldDay, isCn, extensionPending, onSaved, on
         </label>
       </div>
 
-      {extensionPending ? (
+      {!extensionAvailable ? null : extensionPending ? (
         <p className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-700">{t.extensionPending}</p>
       ) : (
         <div className="space-y-3 rounded-lg border border-[var(--color-border)] p-3">
@@ -612,12 +637,13 @@ export function FieldWorkPanel({ workOrderId, detail, userType, userId, onChange
   const consumedWorkdays = safeWorkdayCount(quoteExecution.consumed_workdays);
   const permittedWorkdays = safeWorkdayCount(quoteExecution.permitted_workdays);
   const remainingWorkdays = safeWorkdayCount(quoteExecution.remaining_workdays);
-  const allowanceExhausted = quoteExecution.allowance_exhausted === true;
+  const quoteExecutionAvailable = quoteDriven && hasValidQuoteAllowance(quoteExecution);
+  const allowanceExhausted = quoteExecutionAvailable && quoteExecution.allowance_exhausted === true;
   const hasLegacyPlan = Boolean(fieldPlan.site_timezone
     && fieldPlan.expected_service_days
     && fieldPlan.expected_completion_date);
   const hasExecutionBaseline = quoteDriven
-    ? Boolean(fieldPlan.site_timezone && expectedWorkdays !== null && expectedWorkdays > 0)
+    ? Boolean(quoteExecutionAvailable && fieldPlan.site_timezone)
     : hasLegacyPlan;
 
   const stopCamera = useCallback(() => {
@@ -814,7 +840,7 @@ export function FieldWorkPanel({ workOrderId, detail, userType, userId, onChange
           <CalendarDays size={18} className="text-[var(--color-primary)]" />
           <h3 className="text-sm font-semibold text-[var(--color-text-primary)]">{t.plan}</h3>
         </div>
-        {quoteDriven ? (
+        {quoteDriven ? quoteExecutionAvailable ? (
           <div className="space-y-3">
             <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm sm:grid-cols-5">
               <div><span className="block text-xs text-[var(--color-text-muted)]">{t.quotePlan}</span><span className="text-[var(--color-text-primary)]">{expectedWorkdaysLabel(expectedWorkdays, isCn, t)}</span></div>
@@ -826,7 +852,7 @@ export function FieldWorkPanel({ workOrderId, detail, userType, userId, onChange
             <p className="text-xs leading-5 text-[var(--color-text-secondary)]">{t.extensionAllowanceHelp}</p>
             {allowanceExhausted && <p className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-700">{t.allowanceExhausted}</p>}
           </div>
-        ) : hasLegacyPlan ? (
+        ) : <p className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-700">{t.executionUnavailable}</p> : hasLegacyPlan ? (
           <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm sm:grid-cols-4">
             <div><span className="block text-xs text-[var(--color-text-muted)]">{t.days}</span><span className="text-[var(--color-text-primary)]">{fieldPlan.expected_service_days}</span></div>
             <div><span className="block text-xs text-[var(--color-text-muted)]">{t.completion}</span><span className="text-[var(--color-text-primary)]">{fieldPlan.expected_completion_date}</span></div>
@@ -903,6 +929,7 @@ export function FieldWorkPanel({ workOrderId, detail, userType, userId, onChange
           workOrderId={workOrderId}
           fieldDay={todayReportDay}
           isCn={isCn}
+          extensionAvailable={!quoteDriven || quoteExecutionAvailable}
           extensionPending={pendingExtension}
           onSaved={refresh}
           onBusyChange={handleTodayReportBusy}
@@ -921,7 +948,7 @@ export function FieldWorkPanel({ workOrderId, detail, userType, userId, onChange
               ))}
             </div>
           )}
-          {selectedOverdueDay && <ReportForm workOrderId={workOrderId} fieldDay={selectedOverdueDay} isCn={isCn} extensionPending={pendingExtension} onSaved={refresh} onBusyChange={handleOverdueReportBusy} />}
+          {selectedOverdueDay && <ReportForm workOrderId={workOrderId} fieldDay={selectedOverdueDay} isCn={isCn} extensionAvailable={!quoteDriven || quoteExecutionAvailable} extensionPending={pendingExtension} onSaved={refresh} onBusyChange={handleOverdueReportBusy} />}
         </section>
       )}
 
