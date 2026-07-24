@@ -99,6 +99,24 @@ test('installment amounts must be positive integer minor units', () => {
   }
 });
 
+test('malformed schedule rows return a deterministic validation code', () => {
+  assert.deepEqual(validatePaymentSchedule([
+    null,
+    { sequence: 2, amount: 100, currency: 'CNY', trigger_type: 'before_start', required_before_start: true },
+  ], { totalAmount: 100, currency: 'CNY' }), {
+    code: 'payment_schedule_row_invalid',
+  });
+});
+
+test('installment sequences must be integers', () => {
+  assert.deepEqual(validatePaymentSchedule([
+    { sequence: 1.5, amount: 40, currency: 'CNY', trigger_type: 'before_start', required_before_start: true },
+    { sequence: 2, amount: 60, currency: 'CNY', trigger_type: 'on_completion' },
+  ], { totalAmount: 100, currency: 'CNY' }), {
+    code: 'payment_schedule_sequence_invalid',
+  });
+});
+
 test('duplicate sequences fail while unique gapped and unsorted sequences normalize to 1..N', () => {
   const duplicate = [
     { sequence: 2, amount: 40, currency: 'CNY', trigger_type: 'before_start', required_before_start: true },
@@ -284,6 +302,20 @@ test('financial settlement requires every installment to be fully received', () 
   assert.equal(summary.payment_state, 'partially_received');
 });
 
+test('fully received installments totaling less than the quote remain financially unsettled', () => {
+  const summary = summarizeQuoteExecution({
+    total_amount: 100,
+    installments: [
+      { amount: 40, received_amount: 40 },
+      { amount: 40, received_amount: 40 },
+    ],
+  });
+  assert.equal(summary.outstanding_amount, 20);
+  assert.equal(summary.financially_settled, false);
+  assert.equal(summary.payment_state, 'partially_received');
+  assert.equal(canFinanciallyArchive(summary), false);
+});
+
 test('payment state priority is settled, pending confirmation, overdue, partial, unpaid', () => {
   assert.equal(summarizeQuoteExecution({
     total_amount: 200,
@@ -310,6 +342,15 @@ test('payment state priority is settled, pending confirmation, overdue, partial,
   });
   assert.equal(settled.payment_state, 'settled');
   assert.equal(canFinanciallyArchive(settled), true);
+});
+
+test('payment state derives overdue from a passed due date without persisted status', () => {
+  const summary = summarizeQuoteExecution({
+    total_amount: 100,
+    installments: [{ amount: 100, received_amount: 0, due_date: '2026-07-24' }],
+    now: '2026-07-25T00:00:00Z',
+  });
+  assert.equal(summary.payment_state, 'overdue');
 });
 
 test('workday summary counts distinct nonblank dates and exhausts the nonnegative allowance', () => {

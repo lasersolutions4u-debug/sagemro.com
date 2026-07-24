@@ -31,6 +31,9 @@ export function validatePaymentSchedule(schedule, { totalAmount, currency }) {
   if (!Array.isArray(schedule) || schedule.length < 2 || schedule.length > 6) {
     return { code: 'payment_schedule_count_invalid' };
   }
+  if (schedule.some((row) => row === null || typeof row !== 'object' || Array.isArray(row))) {
+    return { code: 'payment_schedule_row_invalid' };
+  }
   if (schedule.some((row) => !Number.isInteger(row.amount) || row.amount <= 0)) {
     return { code: 'payment_schedule_amount_invalid' };
   }
@@ -132,9 +135,11 @@ export function summarizeQuoteExecution(input = {}) {
     && requiredInstallments.every((installment) => (
       (Number(installment.received_amount) || 0) >= (Number(installment.amount) || 0)
     ));
-  const financiallySettled = installments.length > 0 && installments.every((installment) => (
-    (Number(installment.received_amount) || 0) >= (Number(installment.amount) || 0)
-  ));
+  const financiallySettled = installments.length > 0
+    && outstandingAmount === 0
+    && installments.every((installment) => (
+      (Number(installment.received_amount) || 0) >= (Number(installment.amount) || 0)
+    ));
 
   const reportedDates = Array.isArray(input.reported_dates) ? input.reported_dates : [];
   const consumedWorkdays = new Set(
@@ -150,7 +155,10 @@ export function summarizeQuoteExecution(input = {}) {
   if (financiallySettled) paymentState = 'settled';
   else if (installments.some((installment) => (Number(installment.pending_claim_count) || 0) > 0 || installment.status === 'pending_confirmation')) {
     paymentState = 'pending_confirmation';
-  } else if (installments.some((installment) => installment.status === 'overdue')) paymentState = 'overdue';
+  } else if (installments.some((installment) => (
+    installment.status === 'overdue'
+    || deriveInstallmentState(installment, input.now) === 'overdue'
+  ))) paymentState = 'overdue';
   else if (receivedAmount > 0) paymentState = 'partially_received';
 
   return {
