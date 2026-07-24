@@ -123,7 +123,7 @@ function createStatement(env, sql) {
         return env.__pricing.find((item) => item.work_order_id === this.args[0] && item.status === this.args[1]) || null;
       }
 
-      if (/SELECT subtotal, total_amount, labor_fee, parts_fee, travel_fee, other_fee FROM work_order_pricing WHERE work_order_id = \? AND status = \?/i.test(normalized)) {
+      if (/SELECT subtotal, total_amount, labor_fee, parts_fee, travel_fee, other_fee(?:, quote_version)? FROM work_order_pricing WHERE work_order_id = \? AND status = \?/i.test(normalized)) {
         return env.__pricing.find((item) => item.work_order_id === this.args[0] && item.status === this.args[1]) || null;
       }
 
@@ -435,6 +435,29 @@ test('payment quote exposes advance and balance amounts for service orders', asy
     travel_fee: 400,
     other_fee: 200,
   });
+});
+
+test('versioned quotes never use the legacy advance and balance policy', async () => {
+  const env = createPaymentFlowEnv();
+  env.__pricing[0].quote_version = 1;
+  env.__pricing[0].total_amount = {
+    valueOf() { throw new Error('legacy payment policy was called'); },
+    toJSON() { return 5400; },
+  };
+
+  const pricing = await api(env, '/api/workorders/wo-pay-1/pricing', {
+    method: 'GET',
+    userType: 'customer',
+    userId: 'customer-1',
+  });
+  assert.equal(pricing.response.status, 200);
+  assert.equal(pricing.json.pricing.payment_policy, null);
+
+  const payment = await api(env, '/api/workorders/wo-pay-1/pay', {
+    body: { payment_method: 'bank_transfer' },
+  });
+  assert.equal(payment.response.status, 409);
+  assert.equal(env.__payments.length, 0);
 });
 
 test('customer payment request uses the advance amount rather than the full quote', async () => {

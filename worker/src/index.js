@@ -41,7 +41,7 @@ import {
   validateDailyReport,
   validateFieldPlan,
 } from './lib/field-work.js';
-import { validateQuoteExecution } from './lib/quoteExecution.js';
+import { summarizeQuoteExecution, validateQuoteExecution } from './lib/quoteExecution.js';
 import { normalizeLocationQuery, searchLocationProvider } from './lib/location-search.js';
 import {
   identityDeleteStatement,
@@ -5456,12 +5456,17 @@ async function handleGetWorkOrder(request, env) {
     );
     const detailPricing = pricingView?.pricing || null;
     const pricingSchedule = pricingView?.payment_schedule || [];
+    const quoteExecution = await getWorkOrderQuoteExecution(
+      env, workOrder, pricing, request._auth?.userType === 'customer',
+    );
 
     const paymentRecords = await env.DB.prepare(
       'SELECT * FROM work_order_payments WHERE work_order_id = ? ORDER BY created_at ASC'
     ).bind(id).all();
     const payments = paymentRecords.results || [];
-    const paymentPolicy = detailPricing ? computeServicePaymentPolicy(detailPricing) : null;
+    const paymentPolicy = detailPricing && !isVersionedQuote(detailPricing)
+      ? computeServicePaymentPolicy(detailPricing)
+      : null;
 
     let payout = await env.DB.prepare(
       'SELECT * FROM work_order_payouts WHERE work_order_id = ?'
@@ -5600,6 +5605,7 @@ async function handleGetWorkOrder(request, env) {
         payment_policy: paymentPolicy,
         payment_schedule: pricingSchedule,
       } : null,
+      quote_execution: quoteExecution,
       payment_policy: paymentPolicy,
       payments,
       advance_payment: payments.find((payment) => payment.payment_stage === 'advance') || null,
@@ -13760,7 +13766,9 @@ async function handleGetWorkOrderPricing(request, env) {
     if (request._auth?.userType === 'customer' && pricing && !visiblePricing) {
       return jsonResponse({ pricing: null, quote_review_status: wo.quote_review_status || 'pending_review' });
     }
-    const paymentPolicy = visiblePricing ? computeServicePaymentPolicy(visiblePricing) : null;
+    const paymentPolicy = visiblePricing && !isVersionedQuote(visiblePricing)
+      ? computeServicePaymentPolicy(visiblePricing)
+      : null;
     const paymentSchedule = pricingView?.payment_schedule || [];
     return jsonResponse({
       pricing: visiblePricing ? {
@@ -14284,6 +14292,8 @@ async function handleConfirmWorkOrderPricing(request, env) {
     const market = getRequestMarket(request);
     const copy = serviceCopy(market);
     const workOrderId = new URL(request.url).pathname.split('/')[3];
+    const body = await request.json().catch(() => ({}));
+    const quoteVersion = Number(body.quote_version);
 
     // 认证：仅客户可确认报价；customer_id 从 token 取
     const auth = request._auth;
@@ -14291,10 +14301,13 @@ async function handleConfirmWorkOrderPricing(request, env) {
       return errorResponse(market === 'cn' ? '仅客户可确认报价' : 'Only the customer can confirm the quote', 403);
     }
     const customer_id = auth.userId;
+    if (!Number.isInteger(quoteVersion) || quoteVersion < 1) {
+      return errorResponse(market === 'cn' ? '必须提供有效的报价版本' : 'A valid quote version is required', 400);
+    }
 
     // 校验工单归属
     const wo = await env.DB.prepare(
-      'SELECT customer_id FROM work_orders WHERE id = ?'
+      'SELECT * FROM work_orders WHERE id = ?'
     ).bind(workOrderId).first();
     if (!wo) return errorResponse(market === 'cn' ? '工单不存在' : 'Work order not found', 404);
     if (wo.customer_id !== customer_id) {
@@ -14305,21 +14318,110 @@ async function handleConfirmWorkOrderPricing(request, env) {
       'SELECT * FROM work_order_pricing WHERE work_order_id = ?'
     ).bind(workOrderId).first();
     if (!pricing) return errorResponse(market === 'cn' ? '报价不存在' : 'Quote not found', 404);
-    if (pricing.status !== 'submitted') return errorResponse(market === 'cn' ? '报价状态不正确，无法确认' : 'Quote status does not allow customer confirmation');
+    if (pricing.status !== 'submitted' || Number(pricing.quote_version) !== quoteVersion) {
+      return errorResponse(market === 'cn' ? '报价版本已更新，请刷新后重试' : 'The quote version changed. Refresh and try again.', 409);
+    }
+    const history = await env.DB.prepare(`
+      SELECT * FROM work_order_pricing_history
+      WHERE pricing_id = ? AND version = ?
+    `).bind(pricing.id, quoteVersion).first();
+    if (!history || history.status !== 'approved') {
+      return errorResponse(market === 'cn' ? '报价版本已更新，请刷新后重试' : 'The quote version changed. Refresh and try again.', 409);
+    }
+    const schedule = await listQuotePaymentSchedule(env, workOrderId, quoteVersion);
+    if (!schedule.length) {
+      return errorResponse(market === 'cn' ? '报价付款计划不完整' : 'The quote payment schedule is incomplete.', 409);
+    }
+    const scheduleTotal = schedule.reduce((sum, row) => sum + Number(row.amount || 0), 0);
+    if (scheduleTotal !== Number(history.total_amount || 0)) {
+      return errorResponse(market === 'cn' ? '报价付款计划不完整' : 'The quote payment schedule is incomplete.', 409);
+    }
+    const supplemental = history.quote_kind === 'supplemental';
+    if (supplemental && Number(history.parent_quote_version) !== Number(wo.active_quote_version)) {
+      return errorResponse(market === 'cn' ? '报价版本已更新，请刷新后重试' : 'The quote version changed. Refresh and try again.', 409);
+    }
 
-    await env.DB.prepare(
-      "UPDATE work_order_pricing SET status = 'confirmed', confirmed_at = datetime('now') WHERE work_order_id = ?"
-    ).bind(workOrderId).run();
+    const statements = [env.DB.prepare(`
+      UPDATE work_order_pricing_history
+      SET status = 'confirmed', confirmed_at = datetime('now')
+      WHERE pricing_id = ? AND version = ? AND status = 'approved'
+    `).bind(pricing.id, quoteVersion), env.DB.prepare(`
+      SELECT CASE WHEN changes() = 1 THEN 1 ELSE json('quote activation concurrent update') END
+    `), env.DB.prepare(`
+      UPDATE work_order_pricing
+      SET status = 'confirmed', confirmed_at = datetime('now')
+      WHERE work_order_id = ? AND quote_version = ? AND status = 'submitted'
+    `).bind(workOrderId, quoteVersion), env.DB.prepare(`
+      SELECT CASE WHEN changes() = 1 THEN 1 ELSE json('quote activation concurrent update') END
+    `)];
 
-    await env.DB.prepare(
-      "UPDATE work_orders SET status = 'pending_payment' WHERE id = ?"
-    ).bind(workOrderId).run();
-
-    // 系统消息
-    const msgId = generateId();
-    await env.DB.prepare(
-      "INSERT INTO work_order_messages (id, work_order_id, sender_type, sender_id, sender_name, content, message_type) VALUES (?, ?, 'system', '', ?, ?, 'system')"
-    ).bind(msgId, workOrderId, systemSenderName(market), copy.quoteConfirmedMessage).run();
+    if (supplemental) {
+      statements.push(env.DB.prepare(`
+        UPDATE work_orders
+        SET quote_review_status = 'confirmed'
+        WHERE id = ? AND customer_id = ? AND active_quote_version = ? AND EXISTS (
+          SELECT 1 FROM work_order_pricing_history baseline
+          WHERE baseline.pricing_id = ? AND baseline.version = ?
+            AND baseline.quote_kind = 'baseline' AND baseline.status = 'confirmed'
+        )
+      `).bind(
+        workOrderId, customer_id, Number(history.parent_quote_version), pricing.id,
+        Number(history.parent_quote_version),
+      ));
+    } else {
+      statements.push(env.DB.prepare(`
+        UPDATE work_orders
+        SET status = 'pending_payment', quote_review_status = 'confirmed',
+          active_quote_version = ?, quote_expected_service_days = ?,
+          expected_service_days = CASE
+            WHEN service_mode = 'onsite' THEN ?
+            WHEN service_mode = 'remote' THEN NULL
+            ELSE expected_service_days
+          END
+        WHERE id = ? AND customer_id = ?
+      `).bind(
+        quoteVersion, history.expected_service_days ?? null,
+        history.expected_service_days ?? null, workOrderId, customer_id,
+      ));
+    }
+    statements.push(env.DB.prepare(`
+      SELECT CASE WHEN changes() = 1 THEN 1 ELSE json('quote activation concurrent update') END
+    `));
+    for (const row of schedule) {
+      statements.push(env.DB.prepare(`
+        INSERT INTO work_order_installments (
+          id, schedule_id, work_order_id, quote_version, sequence, amount, currency,
+          trigger_type, due_date, description, required_before_start, status
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).bind(
+        `installment-${row.id}`, row.id, workOrderId, quoteVersion, row.sequence,
+        row.amount, row.currency, row.trigger_type, row.due_date, row.description,
+        row.required_before_start ? 1 : 0,
+        row.trigger_type === 'before_start' ? 'due' : 'scheduled',
+      ));
+    }
+    statements.push(env.DB.prepare(`
+      INSERT INTO work_order_messages (
+        id, work_order_id, sender_type, sender_id, sender_name, content, message_type
+      ) VALUES (?, ?, 'system', '', ?, ?, 'system')
+    `).bind(generateId(), workOrderId, systemSenderName(market), copy.quoteConfirmedMessage));
+    statements.push(buildAuditLogStatement(env, request, {
+      targetType: 'work_order',
+      targetId: workOrderId,
+      action: 'pricing_customer_confirmed',
+      beforeState: {
+        active_quote_version: wo.active_quote_version || null,
+        quote: await quoteVersionSnapshot(env, workOrderId, history),
+      },
+      afterState: {
+        active_quote_version: supplemental ? Number(wo.active_quote_version) : quoteVersion,
+        quote_version: quoteVersion,
+        quote_kind: history.quote_kind || 'baseline',
+        installment_count: schedule.length,
+      },
+    }));
+    if (typeof env.DB.batch !== 'function') throw new Error('Transactional D1 batch is required');
+    await env.DB.batch(statements);
 
     // 通知工程师：报价已确认，等待付款
     const woConfirm = await env.DB.prepare('SELECT engineer_id, order_no FROM work_orders WHERE id = ?').bind(workOrderId).first();
@@ -14334,8 +14436,14 @@ async function handleConfirmWorkOrderPricing(request, env) {
       });
     }
 
-    return jsonResponse({ success: true });
+    return jsonResponse({ success: true, quote_version: quoteVersion });
   } catch (error) {
+    if (/quote activation concurrent update|malformed json|UNIQUE constraint failed:\s*work_order_installments/i.test(String(error?.message || error))) {
+      return errorResponse(
+        getRequestMarket(request) === 'cn' ? '报价版本已更新，请刷新后重试' : 'The quote version changed. Refresh and try again.',
+        409,
+      );
+    }
     return errorResponse(error.message, 500);
   }
 }
@@ -14446,6 +14554,132 @@ function aggregateCommercialQuoteVersions(rows) {
   });
 }
 
+function isVersionedQuote(pricing) {
+  return Number(pricing?.quote_version || 0) >= 1;
+}
+
+function visibleReceiptClaim(row, customerView) {
+  if (!customerView) return row;
+  const {
+    engineer_note: _engineerNote,
+    decision_reason: _decisionReason,
+    decided_by: _decidedBy,
+    decision_idempotency_key: _decisionIdempotencyKey,
+    ...visible
+  } = row;
+  return visible;
+}
+
+async function getWorkOrderQuoteExecution(env, workOrder, pricing, customerView = false) {
+  if (!pricing) return null;
+  const pricingView = await getWorkOrderPricingView(env, workOrder, pricing, customerView);
+  const visiblePricing = pricingView?.pricing || null;
+  if (isVersionedQuote(pricing)) {
+    if (!visiblePricing) return null;
+    const paymentSchedule = pricingView.payment_schedule || [];
+    const visibleVersions = [...new Set(paymentSchedule.map((row) => Number(row.quote_version)))];
+    const activeVersions = visibleVersions.length > 0
+      ? visibleVersions
+      : [Number(visiblePricing.quote_version)].filter((version) => version >= 1);
+    const placeholders = activeVersions.map(() => '?').join(', ');
+    const installmentRecords = activeVersions.length > 0
+      ? await env.DB.prepare(`
+          SELECT * FROM work_order_installments
+          WHERE work_order_id = ? AND quote_version IN (${placeholders})
+          ORDER BY quote_version, sequence
+        `).bind(workOrder.id, ...activeVersions).all()
+      : { results: [] };
+    const installments = installmentRecords.results || [];
+    const installmentIds = installments.map((row) => row.id);
+    const claimRecords = installmentIds.length > 0
+      ? await env.DB.prepare(`
+          SELECT * FROM work_order_receipt_claims
+          WHERE work_order_id = ? AND installment_id IN (${installmentIds.map(() => '?').join(', ')})
+          ORDER BY created_at, id
+        `).bind(workOrder.id, ...installmentIds).all()
+      : { results: [] };
+    const claims = claimRecords.results || [];
+    const pendingClaimsByInstallment = claims.reduce((counts, claim) => {
+      if (claim.status === 'pending') counts[claim.installment_id] = (counts[claim.installment_id] || 0) + 1;
+      return counts;
+    }, {});
+    const normalizedInstallments = installments.map((row) => ({
+      ...row,
+      required_before_start: Boolean(row.required_before_start),
+      pending_claim_count: pendingClaimsByInstallment[row.id] || 0,
+    }));
+    const initialWorkdays = workOrder.service_mode === 'hybrid'
+      ? 0
+      : Number(workOrder.quote_expected_service_days || 0);
+    const totalAmount = Number(visiblePricing.total_amount || 0);
+    const summary = summarizeQuoteExecution({
+      total_amount: totalAmount,
+      installments: normalizedInstallments,
+      initial_workdays: initialWorkdays,
+      extension_days: Number(workOrder.approved_extension_days || 0),
+    });
+    return {
+      quote_version: Number(visiblePricing.quote_version),
+      active_quote_version: Number(workOrder.active_quote_version || 0) || null,
+      payment_plan_mode: visiblePricing.payment_plan_mode || 'single',
+      expected_service_days: visiblePricing.expected_service_days ?? null,
+      initial_workdays: initialWorkdays,
+      approved_extension_days: Number(workOrder.approved_extension_days || 0),
+      total_amount: totalAmount,
+      payment_schedule: paymentSchedule,
+      installments: normalizedInstallments,
+      receipt_claims: claims.map((claim) => visibleReceiptClaim(claim, customerView)),
+      ...summary,
+    };
+  }
+
+  if (!visiblePricing || visiblePricing.status !== 'confirmed') return null;
+  const paymentRecords = await env.DB.prepare(`
+    SELECT * FROM work_order_payments WHERE work_order_id = ? ORDER BY created_at ASC
+  `).bind(workOrder.id).all();
+  const completedPayments = (paymentRecords.results || []).filter((payment) => payment.status === 'completed');
+  const totalAmount = Number(visiblePricing.total_amount || visiblePricing.subtotal || 0);
+  const receivedAmount = Math.min(totalAmount, completedPayments.reduce(
+    (sum, payment) => sum + Math.max(0, Number(payment.amount || 0)), 0,
+  ));
+  const installment = {
+    id: null,
+    schedule_id: null,
+    work_order_id: workOrder.id,
+    quote_version: null,
+    sequence: 1,
+    amount: totalAmount,
+    currency: completedPayments.find((payment) => payment.currency)?.currency || null,
+    trigger_type: 'before_start',
+    due_date: null,
+    description: '',
+    required_before_start: true,
+    status: receivedAmount >= totalAmount ? 'received' : 'due',
+    received_amount: receivedAmount,
+    source: 'legacy',
+  };
+  const summary = summarizeQuoteExecution({
+    total_amount: totalAmount,
+    installments: [installment],
+    initial_workdays: Number(workOrder.expected_service_days || 0),
+    extension_days: Number(workOrder.approved_extension_days || 0),
+  });
+  return {
+    legacy: true,
+    quote_version: null,
+    active_quote_version: null,
+    payment_plan_mode: 'single',
+    expected_service_days: workOrder.expected_service_days ?? null,
+    initial_workdays: Number(workOrder.expected_service_days || 0),
+    approved_extension_days: Number(workOrder.approved_extension_days || 0),
+    total_amount: totalAmount,
+    payment_schedule: [],
+    installments: [installment],
+    receipt_claims: [],
+    ...summary,
+  };
+}
+
 async function listQuotePaymentSchedules(env, workOrderId, quoteVersions) {
   const schedules = await Promise.all(quoteVersions.map((version) => (
     listQuotePaymentSchedule(env, workOrderId, version)
@@ -14548,9 +14782,10 @@ async function ensureBalancePayment(env, workOrderId, customerId) {
   if (existing) return existing;
 
   const pricing = await env.DB.prepare(
-    'SELECT subtotal, total_amount, labor_fee, parts_fee, travel_fee, other_fee FROM work_order_pricing WHERE work_order_id = ? AND status = ?'
+    'SELECT subtotal, total_amount, labor_fee, parts_fee, travel_fee, other_fee, quote_version FROM work_order_pricing WHERE work_order_id = ? AND status = ?'
   ).bind(workOrderId, 'confirmed').first();
   if (!pricing) return null;
+  if (isVersionedQuote(pricing)) return null;
 
   const policy = computeServicePaymentPolicy(pricing);
   if (policy.balance_amount <= 0) return null;
@@ -14607,9 +14842,15 @@ async function handlePayWorkOrder(request, env) {
     }
 
     const pricing = await env.DB.prepare(
-      'SELECT subtotal, total_amount, labor_fee, parts_fee, travel_fee, other_fee FROM work_order_pricing WHERE work_order_id = ? AND status = ?'
+      'SELECT subtotal, total_amount, labor_fee, parts_fee, travel_fee, other_fee, quote_version FROM work_order_pricing WHERE work_order_id = ? AND status = ?'
     ).bind(workOrderId, 'confirmed').first();
     if (!pricing) return errorResponse(getRequestMarket(request) === 'cn' ? '报价未找到或未确认' : 'Quote not found or not confirmed', 404);
+    if (isVersionedQuote(pricing)) {
+      return errorResponse(
+        getRequestMarket(request) === 'cn' ? '新版报价请按分期付款计划操作' : 'Use the quote installment schedule for this payment.',
+        409,
+      );
+    }
 
     const paymentPolicy = computeServicePaymentPolicy(pricing);
     const amount = paymentStage === 'balance' ? paymentPolicy.balance_amount : paymentPolicy.advance_amount;

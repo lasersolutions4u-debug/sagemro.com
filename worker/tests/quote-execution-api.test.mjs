@@ -190,6 +190,14 @@ async function reviewQuote(ctx, action, quoteVersion, note = '') {
   });
 }
 
+async function confirmQuote(ctx, quoteVersion, options = {}) {
+  return api(ctx, '/api/workorders/wo-quote-1/pricing/confirm', {
+    body: { quote_version: quoteVersion },
+    userType: options.userType || 'customer',
+    userId: options.userId || 'customer-1',
+  });
+}
+
 async function confirmBaselineForReceiptTests(ctx) {
   // Test fixture only: Task 4 owns customer activation and installment creation.
   await submitQuote(ctx);
@@ -421,6 +429,217 @@ test('Admin stale version action returns 409', async () => {
 
   assert.equal(response.status, 409);
   assert.equal(ctx.db.prepare('SELECT status FROM work_order_pricing_history WHERE version = 1').get().status, 'pending_review');
+});
+
+test('customer activates the exact approved baseline and its immutable schedule atomically', async () => {
+  const ctx = createQuoteExecutionEnv();
+  await submitQuote(ctx);
+  await reviewQuote(ctx, 'approve', 1);
+
+  const stale = await confirmQuote(ctx, 2);
+  assert.equal(stale.response.status, 409);
+  assert.equal(ctx.db.prepare('SELECT COUNT(*) AS count FROM work_order_installments').get().count, 0);
+
+  const forbidden = await confirmQuote(ctx, 1, { userId: 'customer-2' });
+  assert.equal(forbidden.response.status, 403);
+  assert.equal(ctx.db.prepare('SELECT COUNT(*) AS count FROM work_order_installments').get().count, 0);
+
+  const confirmed = await confirmQuote(ctx, 1);
+  assert.equal(confirmed.response.status, 200);
+  assert.equal(confirmed.json.quote_version, 1);
+
+  const workOrder = ctx.db.prepare('SELECT * FROM work_orders WHERE id = ?').get('wo-quote-1');
+  assert.equal(workOrder.active_quote_version, 1);
+  assert.equal(workOrder.quote_expected_service_days, 3);
+  assert.equal(workOrder.expected_service_days, 3);
+  assert.equal(workOrder.status, 'pending_payment');
+  assert.equal(ctx.db.prepare('SELECT status FROM work_order_pricing').get().status, 'confirmed');
+  assert.equal(ctx.db.prepare('SELECT status FROM work_order_pricing_history WHERE version = 1').get().status, 'confirmed');
+
+  const installments = ctx.db.prepare(`
+    SELECT quote_version, sequence, amount, trigger_type, status, received_amount
+    FROM work_order_installments ORDER BY quote_version, sequence
+  `).all().map((row) => ({ ...row }));
+  assert.deepEqual(installments, [
+    { quote_version: 1, sequence: 1, amount: 6000, trigger_type: 'before_start', status: 'due', received_amount: 0 },
+    { quote_version: 1, sequence: 2, amount: 6000, trigger_type: 'on_acceptance', status: 'scheduled', received_amount: 0 },
+  ]);
+
+  const repeated = await confirmQuote(ctx, 1);
+  assert.equal(repeated.response.status, 409);
+  assert.equal(ctx.db.prepare('SELECT COUNT(*) AS count FROM work_order_installments').get().count, 2);
+});
+
+test('customer activation guard rolls back projection and installment writes on a stale approval race', async () => {
+  const ctx = createQuoteExecutionEnv();
+  await submitQuote(ctx);
+  await reviewQuote(ctx, 'approve', 1);
+  ctx.beforeNextBatch(() => {
+    ctx.db.exec("UPDATE work_order_pricing_history SET status = 'confirmed' WHERE version = 1");
+  });
+
+  const result = await confirmQuote(ctx, 1);
+
+  assert.equal(result.response.status, 409);
+  assert.equal(ctx.db.prepare('SELECT status FROM work_order_pricing').get().status, 'submitted');
+  assert.equal(ctx.db.prepare('SELECT active_quote_version FROM work_orders').get().active_quote_version, null);
+  assert.equal(ctx.db.prepare('SELECT COUNT(*) AS count FROM work_order_installments').get().count, 0);
+});
+
+test('customer activation guard rolls back when work-order ownership changes before the batch', async () => {
+  const ctx = createQuoteExecutionEnv();
+  await submitQuote(ctx);
+  await reviewQuote(ctx, 'approve', 1);
+  ctx.db.exec(`
+    INSERT INTO customers (id, user_no, name, phone, password_hash)
+    VALUES ('customer-2', 'U000002', 'Other Customer', '13900000002', 'hash');
+  `);
+  ctx.beforeNextBatch(() => {
+    ctx.db.exec("UPDATE work_orders SET customer_id = 'customer-2' WHERE id = 'wo-quote-1'");
+  });
+
+  const result = await confirmQuote(ctx, 1);
+
+  assert.equal(result.response.status, 409);
+  assert.equal(ctx.db.prepare('SELECT status FROM work_order_pricing').get().status, 'submitted');
+  assert.equal(ctx.db.prepare('SELECT status FROM work_order_pricing_history').get().status, 'approved');
+  assert.equal(ctx.db.prepare('SELECT active_quote_version FROM work_orders').get().active_quote_version, null);
+  assert.equal(ctx.db.prepare('SELECT COUNT(*) AS count FROM work_order_installments').get().count, 0);
+});
+
+test('hybrid activation stores the reviewed allowance but keeps field execution dormant', async () => {
+  const ctx = createQuoteExecutionEnv();
+  ctx.db.exec("UPDATE work_orders SET service_mode = 'hybrid' WHERE id = 'wo-quote-1'");
+  await submitQuote(ctx);
+  await reviewQuote(ctx, 'approve', 1);
+
+  const confirmed = await confirmQuote(ctx, 1);
+
+  assert.equal(confirmed.response.status, 200);
+  const workOrder = ctx.db.prepare('SELECT * FROM work_orders WHERE id = ?').get('wo-quote-1');
+  assert.equal(workOrder.quote_expected_service_days, 3);
+  assert.equal(workOrder.expected_service_days, null);
+  const detail = await api(ctx, '/api/workorders/wo-quote-1', {
+    method: 'GET', userType: 'customer', userId: 'customer-1',
+  });
+  assert.equal(detail.json.quote_execution.expected_service_days, 3);
+  assert.equal(detail.json.quote_execution.initial_workdays, 0);
+  assert.equal(detail.json.quote_execution.permitted_workdays, 0);
+});
+
+test('supplemental activation preserves the baseline and prior supplementals while adding installments', async () => {
+  const ctx = createQuoteExecutionEnv();
+  await submitQuote(ctx);
+  await reviewQuote(ctx, 'approve', 1);
+  await confirmQuote(ctx, 1);
+
+  for (const [version, amount] of [[2, 1500], [3, 700]]) {
+    const submitted = await submitQuote(ctx, quotePayload({
+      labor_fee: amount,
+      parts_fee: 0,
+      travel_fee: 0,
+      expected_service_days: 1,
+      quote_kind: 'supplemental',
+      parent_quote_version: 1,
+      payment_plan_mode: 'single',
+      payment_schedule: undefined,
+    }));
+    assert.equal(submitted.response.status, 200);
+    assert.equal(submitted.json.quote_version, version);
+    assert.equal((await reviewQuote(ctx, 'approve', version)).response.status, 200);
+    assert.equal((await confirmQuote(ctx, version)).response.status, 200);
+  }
+
+  assert.equal(ctx.db.prepare('SELECT active_quote_version FROM work_orders').get().active_quote_version, 1);
+  assert.deepEqual(
+    ctx.db.prepare("SELECT version FROM work_order_pricing_history WHERE status = 'confirmed' ORDER BY version").all().map((row) => row.version),
+    [1, 2, 3],
+  );
+  assert.deepEqual(
+    ctx.db.prepare('SELECT quote_version FROM work_order_installments ORDER BY quote_version, sequence').all().map((row) => row.quote_version),
+    [1, 1, 2, 3],
+  );
+  const projection = ctx.db.prepare('SELECT * FROM work_order_pricing').get();
+  assert.equal(projection.quote_version, 3);
+  assert.equal(projection.total_amount, 14200);
+  assert.equal(projection.status, 'confirmed');
+  const detail = await api(ctx, '/api/workorders/wo-quote-1', {
+    method: 'GET', userType: 'customer', userId: 'customer-1',
+  });
+  assert.equal(detail.json.quote_execution.active_quote_version, 1);
+  assert.equal(detail.json.quote_execution.total_amount, 14200);
+  assert.equal(detail.json.quote_execution.scheduled_amount, 14200);
+  assert.deepEqual(
+    detail.json.quote_execution.installments.map((row) => row.quote_version),
+    [1, 1, 2, 3],
+  );
+});
+
+test('normalized quote execution detail is coherent for customer, engineer, and Admin', async () => {
+  const ctx = createQuoteExecutionEnv();
+  await submitQuote(ctx);
+  await reviewQuote(ctx, 'approve', 1);
+  await confirmQuote(ctx, 1);
+  const firstInstallment = ctx.db.prepare('SELECT id FROM work_order_installments WHERE sequence = 1').get();
+  ctx.db.prepare(`
+    UPDATE work_order_installments SET received_amount = amount, status = 'received', completed_at = datetime('now')
+    WHERE id = ?
+  `).run(firstInstallment.id);
+  ctx.db.prepare(`
+    INSERT INTO work_order_receipt_claims (
+      id, installment_id, work_order_id, engineer_id, claimed_amount, engineer_note,
+      status, confirmed_amount, decided_by, decided_at, idempotency_key
+    ) VALUES (?, ?, 'wo-quote-1', 'engineer-1', 6000, 'Internal collection note',
+      'confirmed', 6000, 'admin-1', datetime('now'), 'claim-detail-1')
+  `).run('claim-detail-1', firstInstallment.id);
+
+  for (const [userType, userId] of [['customer', 'customer-1'], ['engineer', 'engineer-1'], ['admin', 'admin']]) {
+    const detail = await api(ctx, '/api/workorders/wo-quote-1', { method: 'GET', userType, userId });
+    assert.equal(detail.response.status, 200);
+    const execution = detail.json.quote_execution;
+    assert.equal(execution.quote_version, 1);
+    assert.equal(execution.total_amount, 12000);
+    assert.equal(execution.received_amount, 6000);
+    assert.equal(execution.outstanding_amount, 6000);
+    assert.equal(execution.payment_state, 'partially_received');
+    assert.equal(execution.payment_schedule.length, 2);
+    assert.equal(execution.installments.length, 2);
+    assert.equal(execution.receipt_claims.length, 1);
+  }
+
+  const customer = await api(ctx, '/api/workorders/wo-quote-1', {
+    method: 'GET', userType: 'customer', userId: 'customer-1',
+  });
+  assert.equal(Object.hasOwn(customer.json.quote_execution.receipt_claims[0], 'engineer_note'), false);
+});
+
+test('historical quotes project a read-only legacy installment without creating execution rows', async () => {
+  const ctx = createQuoteExecutionEnv();
+  ctx.db.exec(`
+    INSERT INTO work_order_pricing (
+      id, work_order_id, engineer_id, labor_fee, parts_fee, travel_fee, other_fee,
+      subtotal, total_amount, status
+    ) VALUES ('legacy-pricing', 'wo-quote-1', 'engineer-1', 3600, 1200, 400, 200, 5400, 5400, 'confirmed');
+    INSERT INTO work_order_payments (
+      id, work_order_id, customer_id, amount, status, payment_stage
+    ) VALUES ('legacy-payment', 'wo-quote-1', 'customer-1', 3500, 'completed', 'advance');
+  `);
+
+  const detail = await api(ctx, '/api/workorders/wo-quote-1', {
+    method: 'GET', userType: 'admin', userId: 'admin',
+  });
+
+  assert.equal(detail.response.status, 200);
+  assert.equal(detail.json.quote_execution.legacy, true);
+  assert.equal(detail.json.quote_execution.total_amount, 5400);
+  assert.equal(detail.json.quote_execution.received_amount, 3500);
+  assert.equal(detail.json.quote_execution.outstanding_amount, 1900);
+  assert.equal(detail.json.quote_execution.installments.length, 1);
+  assert.equal(detail.json.quote_execution.installments[0].source, 'legacy');
+  assert.equal(Object.hasOwn(detail.json.quote_execution.installments[0], 'decided_by'), false);
+  assert.equal(Object.hasOwn(detail.json.quote_execution.installments[0], 'decided_at'), false);
+  assert.equal(ctx.db.prepare('SELECT COUNT(*) AS count FROM work_order_installments').get().count, 0);
+  assert.equal(ctx.db.prepare('SELECT COUNT(*) AS count FROM work_order_payment_schedule').get().count, 0);
 });
 
 test('confirmed receipts block baseline replacement but allow a linked supplemental quote', async () => {
