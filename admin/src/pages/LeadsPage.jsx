@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { getAdminLeads, updateAdminLead } from '../services/api';
 import { runtimeConfig } from '../config/runtime';
 
@@ -152,15 +152,23 @@ export function LeadsPage() {
   const [updatingId, setUpdatingId] = useState(null);
   const [message, setMessage] = useState('');
   const [loadError, setLoadError] = useState('');
+  const loadRequestId = useRef(0);
   const pageSize = 20;
 
   const load = () => {
+    const requestId = ++loadRequestId.current;
     setLoading(true);
     setLoadError('');
     getAdminLeads(page, pageSize, statusFilter)
-      .then(setData)
-      .catch((error) => setLoadError(error.message || t.loadFailed))
-      .finally(() => setLoading(false));
+      .then((response) => {
+        if (loadRequestId.current === requestId) setData(response);
+      })
+      .catch((error) => {
+        if (loadRequestId.current === requestId) setLoadError(error.message || t.loadFailed);
+      })
+      .finally(() => {
+        if (loadRequestId.current === requestId) setLoading(false);
+      });
   };
 
   useEffect(() => { load(); }, [page, statusFilter]);
