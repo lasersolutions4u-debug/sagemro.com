@@ -166,12 +166,6 @@ test('quote execution lifecycle renders and operates correctly on desktop and mo
     await expect(customerPage.getByRole('heading', { name: 'Collection workspace', exact: true })).toBeVisible();
     await expect(customerPage.getByRole('heading', { name: 'Installment 6', exact: true })).toBeVisible();
 
-    localD1(`
-      UPDATE work_order_installments
-      SET status = 'due', updated_at = datetime('now')
-      WHERE work_order_id = ${sqlText(workOrderId)} AND sequence = 2;
-    `);
-
     await engineerPage.getByRole('button', { name: 'Close', exact: true }).click();
     await openEngineerOrder(engineerPage, orderNo);
     await engineerPage.getByRole('tab', { name: 'Payments & receipts', exact: true }).click();

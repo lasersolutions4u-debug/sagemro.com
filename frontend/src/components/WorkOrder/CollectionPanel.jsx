@@ -217,7 +217,7 @@ export function CollectionPanel({ workOrderId, quoteExecution, userType, onChang
             || submittedClaimIds.has(installment.id);
           const canStart = userType === 'engineer'
             && installment.source !== 'legacy'
-            && ['due', 'partially_received', 'overdue'].includes(installment.status);
+            && ['scheduled', 'due', 'partially_received', 'overdue'].includes(installment.status);
           const canClaim = userType === 'engineer'
             && installment.source !== 'legacy'
             && !pendingClaim

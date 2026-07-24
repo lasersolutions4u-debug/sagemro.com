@@ -14369,16 +14369,16 @@ async function handleSubmitWorkOrderPricing(request, env) {
     const parentQuoteVersion = quoteKind === 'supplemental'
       ? Number(body.parent_quote_version)
       : null;
-    const confirmedReceipt = await env.DB.prepare(`
+    const blockingReceiptClaim = await env.DB.prepare(`
       SELECT id FROM work_order_receipt_claims
-      WHERE work_order_id = ? AND status = 'confirmed'
+      WHERE work_order_id = ? AND status IN ('pending', 'confirmed')
       LIMIT 1
     `).bind(workOrderId).first();
-    if (confirmedReceipt && quoteKind !== 'supplemental') {
+    if (blockingReceiptClaim && quoteKind !== 'supplemental') {
       return errorResponse(
         market === 'cn'
-          ? '已有确认收款后不能替换基准报价，请提交补充报价。'
-          : 'The baseline quote cannot be replaced after a confirmed receipt. Submit a supplemental quote.',
+          ? '存在待审核或已确认的到账记录时不能替换基准报价，请先完成审核或提交补充报价。'
+          : 'The baseline quote cannot be replaced while a receipt claim is pending or confirmed. Complete the review or submit a supplemental quote.',
         409,
       );
     }
@@ -14449,7 +14449,7 @@ async function handleSubmitWorkOrderPricing(request, env) {
       statements.push(env.DB.prepare(`
         SELECT CASE WHEN NOT EXISTS (
           SELECT 1 FROM work_order_receipt_claims
-          WHERE work_order_id = ? AND status = 'confirmed'
+          WHERE work_order_id = ? AND status IN ('pending', 'confirmed')
         ) THEN 1 ELSE json('quote baseline receipt conflict') END
       `).bind(workOrderId));
     } else {
@@ -14960,13 +14960,17 @@ function buildCanonicalVersionedQuoteExecution({
   if (!currentHistory || baselineRows.length !== 1) {
     return quoteExecutionException(workOrder, Number(pricing.total_amount));
   }
-  const projectionRows = [...activeRows];
+  let projectionRows = [...activeRows];
   if (!projectionRows.some((row) => Number(row.version) === pricingVersion)) {
     if (currentHistory.quote_kind !== 'supplemental'
       || Number(currentHistory.parent_quote_version) !== activeVersion) {
-      return quoteExecutionException(workOrder, Number(pricing.total_amount));
+      if (currentHistory.quote_kind !== 'baseline' || pricingVersion <= activeVersion) {
+        return quoteExecutionException(workOrder, Number(pricing.total_amount));
+      }
+      projectionRows = [currentHistory];
+    } else {
+      projectionRows.push(currentHistory);
     }
-    projectionRows.push(currentHistory);
   }
   if (!quoteRowsAggregateMatchesProjection(pricing, projectionRows)) {
     return quoteExecutionException(workOrder, Number(pricing.total_amount));
@@ -15573,7 +15577,7 @@ async function handleStartInstallmentCollection(request, env) {
     const installment = await getActiveInstallment(env, workOrderId, installmentId);
     if (!installment) return errorResponse(copy.workOrderNotFound, 404);
     if (installment.engineer_id !== auth.userId) return errorResponse(copy.engineerOnly, 403);
-    if (!['due', 'partially_received', 'overdue'].includes(installment.status)) {
+    if (!['scheduled', 'due', 'partially_received', 'overdue'].includes(installment.status)) {
       return errorResponse(copy.notCollectible, 409);
     }
     const nextStatus = installment.status === 'partially_received' ? 'partially_received' : 'collecting';

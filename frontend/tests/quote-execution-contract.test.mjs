@@ -143,7 +143,7 @@ test('collection panel renders normalized installment states and guarded enginee
   assert.match(source, /scheduled_amount/);
   assert.match(source, /received_amount/);
   assert.match(source, /outstanding_amount/);
-  assert.match(source, /\['due', 'partially_received', 'overdue'\]/);
+  assert.match(source, /\['scheduled', 'due', 'partially_received', 'overdue'\]/);
   assert.match(source, /\['collecting', 'partially_received', 'overdue'\]/);
   assert.match(source, /pending_confirmation/);
   assert.match(source, /pending_claim_count/);

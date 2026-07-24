@@ -1140,7 +1140,7 @@ test('quote execution detail shares valid consumed field days across customer, e
   }
 });
 
-test('assigned engineer opens only collectible installments and owning customer controls payment method', async () => {
+test('assigned engineer opens scheduled trigger installments and owning customer controls payment method', async () => {
   const ctx = createQuoteExecutionEnv();
   await confirmBaselineForReceiptTests(ctx);
   const row = installment(ctx);
@@ -1150,7 +1150,8 @@ test('assigned engineer opens only collectible installments and owning customer 
 
   ctx.db.prepare("UPDATE work_order_installments SET status = 'scheduled' WHERE id = ?").run(row.id);
   const scheduled = await startCollection(ctx);
-  assert.equal(scheduled.response.status, 409);
+  assert.equal(scheduled.response.status, 200);
+  assert.equal(scheduled.json.installment.status, 'collecting');
 
   for (const state of ['due', 'partially_received', 'overdue']) {
     ctx.db.prepare(`
@@ -1181,7 +1182,7 @@ test('assigned engineer opens only collectible installments and owning customer 
   const closed = await selectPaymentMethod(ctx, 'bank_transfer');
   assert.equal(closed.response.status, 409);
 
-  assert.equal(ctx.db.prepare("SELECT COUNT(*) AS count FROM audit_logs WHERE action = 'installment_collection_started'").get().count, 3);
+  assert.equal(ctx.db.prepare("SELECT COUNT(*) AS count FROM audit_logs WHERE action = 'installment_collection_started'").get().count, 4);
   assert.equal(ctx.db.prepare("SELECT COUNT(*) AS count FROM audit_logs WHERE action = 'installment_payment_method_selected'").get().count, 2);
   assert.ok(ctx.db.prepare("SELECT COUNT(*) AS count FROM notifications WHERE type = 'installment_collection_started'").get().count >= 1);
 });
@@ -1881,6 +1882,72 @@ test('confirmed receipts block baseline replacement but allow a linked supplemen
   assert.equal(ctx.db.prepare('SELECT status FROM work_order_pricing_history WHERE version = 1').get().status, 'confirmed');
 });
 
+test('pending receipt claims block baseline replacement until Admin decides them', async () => {
+  const ctx = createQuoteExecutionEnv();
+  await confirmBaselineForReceiptTests(ctx);
+  ctx.db.exec(`
+    INSERT INTO work_order_receipt_claims (
+      id, installment_id, work_order_id, engineer_id, claimed_amount, status,
+      idempotency_key
+    ) VALUES (
+      'claim-pending-replacement', 'installment-baseline-1', 'wo-quote-1',
+      'engineer-1', 6000, 'pending', 'claim-pending-replacement'
+    );
+  `);
+
+  const replacement = await submitQuote(ctx);
+
+  assert.equal(replacement.response.status, 409);
+  assert.equal(ctx.db.prepare('SELECT quote_version FROM work_order_pricing').get().quote_version, 1);
+  assert.equal(ctx.db.prepare('SELECT COUNT(*) AS count FROM work_order_pricing_history').get().count, 1);
+  assert.equal(ctx.db.prepare('SELECT COUNT(*) AS count FROM work_order_payment_schedule WHERE quote_version = 2').get().count, 0);
+});
+
+test('pending baseline replacement preserves the active execution projection', async () => {
+  const ctx = createQuoteExecutionEnv();
+  await activateBaseline(ctx);
+
+  const replacement = await submitQuote(ctx, quotePayload({
+    labor_fee: 10000,
+    parts_fee: 2000,
+    travel_fee: 1000,
+    expected_service_days: 4,
+    payment_schedule: [
+      {
+        sequence: 1,
+        amount: 7000,
+        currency: 'USD',
+        trigger_type: 'before_start',
+        required_before_start: true,
+        description: 'Replacement start payment',
+      },
+      {
+        sequence: 2,
+        amount: 6000,
+        currency: 'USD',
+        trigger_type: 'on_acceptance',
+        required_before_start: false,
+        description: 'Replacement acceptance payment',
+      },
+    ],
+  }));
+  assert.equal(replacement.response.status, 200);
+
+  const detail = await api(ctx, '/api/workorders/wo-quote-1', {
+    method: 'GET', userType: 'customer', userId: 'customer-1',
+  });
+
+  assert.equal(detail.response.status, 200);
+  assert.equal(detail.json.quote_execution.payment_state, 'unpaid');
+  assert.equal(detail.json.quote_execution.active_quote_version, 1);
+  assert.equal(detail.json.quote_execution.total_amount, 12000);
+  assert.equal(detail.json.quote_execution.expected_service_days, 3);
+  assert.deepEqual(
+    detail.json.quote_execution.installments.map((row) => row.quote_version),
+    [1, 1],
+  );
+});
+
 test('supplemental projection keeps the confirmed baseline visible to customers while staff sees review terms', async () => {
   const ctx = createQuoteExecutionEnv();
   await confirmBaselineForReceiptTests(ctx);
@@ -2090,6 +2157,29 @@ test('baseline replacement fails when a receipt is confirmed between eligibility
       ) VALUES (
         'claim-race', 'installment-baseline-1', 'wo-quote-1', 'engineer-1', 6000,
         'confirmed', 6000, 'admin', datetime('now'), 'claim-race'
+      );
+    `);
+  });
+
+  const replacement = await submitQuote(ctx);
+
+  assert.equal(replacement.response.status, 409);
+  assert.equal(ctx.db.prepare('SELECT quote_version FROM work_order_pricing').get().quote_version, 1);
+  assert.equal(ctx.db.prepare('SELECT COUNT(*) AS count FROM work_order_pricing_history').get().count, 1);
+  assert.equal(ctx.db.prepare('SELECT COUNT(*) AS count FROM work_order_payment_schedule WHERE quote_version = 2').get().count, 0);
+});
+
+test('baseline replacement fails when a receipt claim becomes pending between eligibility read and batch write', async () => {
+  const ctx = createQuoteExecutionEnv();
+  await confirmBaselineForReceiptTests(ctx);
+  ctx.beforeNextBatch(() => {
+    ctx.db.exec(`
+      INSERT INTO work_order_receipt_claims (
+        id, installment_id, work_order_id, engineer_id, claimed_amount, status,
+        idempotency_key
+      ) VALUES (
+        'claim-pending-race', 'installment-baseline-1', 'wo-quote-1', 'engineer-1',
+        6000, 'pending', 'claim-pending-race'
       );
     `);
   });
