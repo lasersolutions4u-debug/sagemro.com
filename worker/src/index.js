@@ -14912,6 +14912,8 @@ function installmentCollectionCopy(market = 'com') {
       methodBody: (orderNo) => `工单 ${orderNo} 的客户已选择本期支付方式。`,
       claimTitle: '到账申请已提交',
       claimBody: (orderNo) => `工单 ${orderNo} 已提交到账申请，等待 Admin 核验。`,
+      reviewTitle: '到账申请待核验',
+      reviewBody: (orderNo) => `工单 ${orderNo} 有新的到账申请，请及时核验。`,
       confirmedTitle: '到账已确认',
       confirmedBody: (orderNo, amount) => `工单 ${orderNo} 已确认到账 ${amount}。`,
       rejectedTitle: '到账申请已退回',
@@ -14947,6 +14949,8 @@ function installmentCollectionCopy(market = 'com') {
     methodBody: (orderNo) => `The customer selected a payment method for work order ${orderNo}.`,
     claimTitle: 'Receipt claim submitted',
     claimBody: (orderNo) => `A receipt claim for work order ${orderNo} is awaiting Admin review.`,
+    reviewTitle: 'Receipt claim pending review',
+    reviewBody: (orderNo) => `A new receipt claim for work order ${orderNo} requires review.`,
     confirmedTitle: 'Receipt confirmed',
     confirmedBody: (orderNo, amount) => `A receipt of ${amount} was confirmed for work order ${orderNo}.`,
     rejectedTitle: 'Receipt claim rejected',
@@ -15007,6 +15011,31 @@ async function notifyQuoteExecutionBestEffort(env, payload) {
   }
 }
 
+async function notifyReceiptClaimAdminReview(env, request, installment, claimId) {
+  try {
+    const market = getRequestMarket(request);
+    const copy = installmentCollectionCopy(market);
+    const staffRecords = await env.DB.prepare(`
+      SELECT id FROM admin_staff_accounts
+      WHERE is_active = 1 AND role IN ('admin', 'operations') AND market_scope IN ('all', ?)
+    `).bind(market).all();
+    await Promise.all((staffRecords.results || []).map((staff) => notifyQuoteExecutionBestEffort(env, {
+      user_id: staff.id,
+      user_type: 'admin',
+      type: 'installment_receipt_review_requested',
+      title: copy.reviewTitle,
+      body: copy.reviewBody(installment.order_no),
+      data: {
+        work_order_id: installment.work_order_id,
+        installment_id: installment.id,
+        claim_id: claimId,
+      },
+    })));
+  } catch (error) {
+    console.warn('[quote execution] Admin review notification failed:', error?.message || error);
+  }
+}
+
 async function handleStartInstallmentCollection(request, env) {
   const market = getRequestMarket(request);
   const copy = installmentCollectionCopy(market);
@@ -15063,7 +15092,7 @@ async function handleSelectInstallmentPaymentMethod(request, env) {
     if (installment.customer_id !== auth.userId) return errorResponse(copy.customerDenied, 403);
     const paymentMethod = cleanText((await request.json().catch(() => ({}))).payment_method, 80);
     if (!paymentMethod) return errorResponse(copy.paymentMethodRequired, 400);
-    if (!['due', 'collecting', 'pending_confirmation', 'partially_received', 'overdue'].includes(installment.status)
+    if (!['collecting', 'partially_received', 'overdue'].includes(installment.status)
       || Number(installment.received_amount) >= Number(installment.amount)) {
       return errorResponse(copy.paymentMethodClosed, 409);
     }
@@ -15071,7 +15100,7 @@ async function handleSelectInstallmentPaymentMethod(request, env) {
       env.DB.prepare(`
         UPDATE work_order_installments SET payment_method = ?, updated_at = datetime('now')
         WHERE id = ? AND work_order_id = ? AND received_amount < amount
-          AND status IN ('due', 'collecting', 'pending_confirmation', 'partially_received', 'overdue')
+          AND status IN ('collecting', 'partially_received', 'overdue')
           AND EXISTS (SELECT 1 FROM work_orders WHERE id = ? AND customer_id = ?)
       `).bind(paymentMethod, installmentId, workOrderId, workOrderId, auth.userId),
       env.DB.prepare(`SELECT CASE WHEN changes() = 1 THEN 1 ELSE json('installment payment method conflict') END`),
@@ -15144,8 +15173,8 @@ async function handleSubmitReceiptClaim(request, env) {
       const evidenceId = generateId();
       const extension = RECEIPT_EVIDENCE_MIME_TYPES.get(evidenceFile.type);
       const objectKey = `field-evidence/${market}/${workOrderId}/receipt-claims/${claimId}/${evidenceId}.${extension}`;
-      await env.FIELD_EVIDENCE.put(objectKey, bytes, { httpMetadata: { contentType: evidenceFile.type } });
       uploadedKeys.push(objectKey);
+      await env.FIELD_EVIDENCE.put(objectKey, bytes, { httpMetadata: { contentType: evidenceFile.type } });
       evidence = {
         id: evidenceId, claim_id: claimId, work_order_id: workOrderId, object_key: objectKey,
         file_name: sanitizeFilename(evidenceFile.name || `receipt.${extension}`),
@@ -15218,6 +15247,7 @@ async function handleSubmitReceiptClaim(request, env) {
       title: copy.claimTitle, body: copy.claimBody(installment.order_no),
       data: { work_order_id: workOrderId, installment_id: installmentId, claim_id: claimId },
     });
+    await notifyReceiptClaimAdminReview(env, request, installment, claimId);
     return jsonResponse({
       claim: visibleReceiptClaim(claim, auth),
       evidence: publicReceiptEvidence(evidence),
@@ -15281,7 +15311,13 @@ async function handleAdminDecideReceiptClaim(request, env) {
       WHERE id = ? AND installment_id = ? AND work_order_id = ?
     `).bind(claimId, installmentId, workOrderId).first();
     if (!claim) return errorResponse(copy.workOrderNotFound, 404);
+    const normalizedConfirmedAmount = decision === 'confirmed' ? Number(body.confirmed_amount) : null;
+    const normalizedReason = reason || null;
     if (claim.decision_idempotency_key === idempotencyKey) {
+      const exactRetry = claim.status === decision
+        && (decision === 'rejected' || Number(claim.confirmed_amount) === normalizedConfirmedAmount)
+        && (claim.decision_reason || null) === normalizedReason;
+      if (!exactRetry) return errorResponse(copy.decisionConflict, 409);
       return jsonResponse({ claim: visibleReceiptClaim(claim, request._auth), installment: publicInstallment(installment) });
     }
     if (claim.status !== 'pending') return errorResponse(copy.decisionConflict, 409);
@@ -15290,11 +15326,14 @@ async function handleAdminDecideReceiptClaim(request, env) {
     let confirmedAmount = null;
     let nextInstallmentStatus;
     if (decision === 'confirmed') {
-      confirmedAmount = Number(body.confirmed_amount);
+      confirmedAmount = normalizedConfirmedAmount;
       if (!Number.isSafeInteger(confirmedAmount) || confirmedAmount <= 0) {
         return errorResponse(copy.confirmedAmountInvalid, 400);
       }
       if (confirmedAmount > Number(installment.amount) - Number(installment.received_amount)) {
+        return errorResponse(copy.overConfirmation, 409);
+      }
+      if (confirmedAmount > Number(claim.claimed_amount)) {
         return errorResponse(copy.overConfirmation, 409);
       }
       nextInstallmentStatus = Number(installment.received_amount) + confirmedAmount === Number(installment.amount)
@@ -15306,7 +15345,11 @@ async function handleAdminDecideReceiptClaim(request, env) {
           SET status = 'confirmed', confirmed_amount = ?, decision_reason = ?, decided_by = ?,
             decided_at = datetime('now'), decision_idempotency_key = ?
           WHERE id = ? AND installment_id = ? AND work_order_id = ? AND status = 'pending'
-        `).bind(confirmedAmount, reason || null, request._auth.userId, idempotencyKey, claimId, installmentId, workOrderId),
+            AND ? <= claimed_amount
+        `).bind(
+          confirmedAmount, normalizedReason, request._auth.userId, idempotencyKey,
+          claimId, installmentId, workOrderId, confirmedAmount,
+        ),
         env.DB.prepare(`SELECT CASE WHEN changes() = 1 THEN 1 ELSE json('receipt decision conflict') END`),
         env.DB.prepare(`
           UPDATE work_order_installments
@@ -15336,7 +15379,7 @@ async function handleAdminDecideReceiptClaim(request, env) {
           SET status = 'rejected', confirmed_amount = NULL, decision_reason = ?, decided_by = ?,
             decided_at = datetime('now'), decision_idempotency_key = ?
           WHERE id = ? AND installment_id = ? AND work_order_id = ? AND status = 'pending'
-        `).bind(reason, request._auth.userId, idempotencyKey, claimId, installmentId, workOrderId),
+        `).bind(normalizedReason, request._auth.userId, idempotencyKey, claimId, installmentId, workOrderId),
         env.DB.prepare(`SELECT CASE WHEN changes() = 1 THEN 1 ELSE json('receipt decision conflict') END`),
         env.DB.prepare(`
           UPDATE work_order_installments
@@ -15362,6 +15405,10 @@ async function handleAdminDecideReceiptClaim(request, env) {
       if (/receipt decision conflict|receipt over confirmation|malformed json/i.test(String(error?.message || error)) || isD1ConstraintError(error)) {
         const recovered = await env.DB.prepare(`SELECT * FROM work_order_receipt_claims WHERE id = ?`).bind(claimId).first();
         if (recovered?.decision_idempotency_key === idempotencyKey) {
+          const exactRetry = recovered.status === decision
+            && (decision === 'rejected' || Number(recovered.confirmed_amount) === normalizedConfirmedAmount)
+            && (recovered.decision_reason || null) === normalizedReason;
+          if (!exactRetry) return errorResponse(copy.decisionConflict, 409);
           return jsonResponse({
             claim: visibleReceiptClaim(recovered, request._auth),
             installment: publicInstallment(await getActiveInstallment(env, workOrderId, installmentId)),

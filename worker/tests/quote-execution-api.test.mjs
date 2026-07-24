@@ -73,6 +73,7 @@ function createQuoteExecutionEnv({ market = 'com', filename = ':memory:', initia
     binds: [],
     waitUntil: [],
     failEvidencePut: false,
+    evidencePutStoresThenThrows: false,
     failEvidenceDelete: false,
   };
   db.exec('PRAGMA foreign_keys = ON;');
@@ -114,6 +115,7 @@ function createQuoteExecutionEnv({ market = 'com', filename = ':memory:', initia
             bytes,
             httpMetadata: options.httpMetadata || {},
           });
+          if (hooks.evidencePutStoresThenThrows) throw new Error('evidence upload outcome unknown');
         },
         async get(key) {
           const object = evidenceObjects.get(key);
@@ -155,6 +157,9 @@ function createQuoteExecutionEnv({ market = 'com', filename = ':memory:', initia
     },
     failEvidencePut(value = true) {
       hooks.failEvidencePut = value;
+    },
+    evidencePutStoresThenThrows(value = true) {
+      hooks.evidencePutStoresThenThrows = value;
     },
     failEvidenceDelete(value = true) {
       hooks.failEvidenceDelete = value;
@@ -1065,6 +1070,33 @@ test('assigned engineer opens only collectible installments and owning customer 
   assert.ok(ctx.db.prepare("SELECT COUNT(*) AS count FROM notifications WHERE type = 'installment_collection_started'").get().count >= 1);
 });
 
+test('customer selects payment method only after collection opens and outside Admin review', async () => {
+  const ctx = createQuoteExecutionEnv();
+  await confirmBaselineForReceiptTests(ctx);
+  const row = installment(ctx);
+  const allowed = new Set(['collecting', 'partially_received', 'overdue']);
+
+  for (const state of ['scheduled', 'due', 'collecting', 'pending_confirmation', 'partially_received', 'overdue', 'received']) {
+    ctx.db.prepare(`
+      UPDATE work_order_installments
+      SET status = ?, received_amount = ?, payment_method = NULL
+      WHERE id = ?
+    `).run(
+      state,
+      state === 'partially_received' ? 1000 : state === 'received' ? row.amount : 0,
+      row.id,
+    );
+
+    const result = await selectPaymentMethod(ctx, 'bank_transfer');
+    assert.equal(result.response.status, allowed.has(state) ? 200 : 409, state);
+    assert.equal(
+      ctx.db.prepare('SELECT payment_method FROM work_order_installments WHERE id = ?').get(row.id).payment_method,
+      allowed.has(state) ? 'bank_transfer' : null,
+      state,
+    );
+  }
+});
+
 test('receipt claim validates input, stores private PDF evidence, streams by work-order access, and retries idempotently', async () => {
   const ctx = createQuoteExecutionEnv();
   await confirmBaselineForReceiptTests(ctx);
@@ -1168,6 +1200,59 @@ test('receipt evidence failures leave no new claim and enqueue cleanup when roll
   }
 });
 
+test('uncertain R2 put outcomes are deleted or queued without persisting receipt rows', async () => {
+  for (const deleteFails of [false, true]) {
+    const ctx = createQuoteExecutionEnv();
+    await confirmBaselineForReceiptTests(ctx);
+    await startCollection(ctx);
+    ctx.evidencePutStoresThenThrows();
+    ctx.failEvidenceDelete(deleteFails);
+
+    const failed = await submitReceiptClaim(ctx, {
+      evidence: new File([new Uint8Array([0xff, 0xd8, 0xff, 0xd9])], 'receipt.jpg', { type: 'image/jpeg' }),
+      idempotency_key: `uncertain-put-${deleteFails}`,
+    });
+
+    assert.equal(failed.response.status, 500, String(deleteFails));
+    assert.equal(ctx.db.prepare('SELECT COUNT(*) AS count FROM work_order_receipt_claims').get().count, 0);
+    assert.equal(ctx.db.prepare('SELECT COUNT(*) AS count FROM work_order_receipt_evidence').get().count, 0);
+    assert.equal(ctx.evidenceKeys().length, deleteFails ? 1 : 0);
+    assert.equal(
+      ctx.db.prepare('SELECT COUNT(*) AS count FROM field_evidence_cleanup_queue').get().count,
+      deleteFails ? 1 : 0,
+    );
+  }
+});
+
+test('receipt claims notify active Admin staff in the request market after commit', async () => {
+  const ctx = createQuoteExecutionEnv({ market: 'cn' });
+  ctx.db.exec(`
+    INSERT INTO admin_staff_accounts (
+      id, normalized_login, password_hash, salt, role, display_name, market_scope, must_change_password
+    ) VALUES
+      ('admin-cn', 'admin-cn@example.com', 'hash', 'salt', 'admin', 'CN Admin', 'cn', 0),
+      ('ops-all', 'ops-all@example.com', 'hash', 'salt', 'operations', 'Global Ops', 'all', 0),
+      ('admin-com', 'admin-com@example.com', 'hash', 'salt', 'admin', 'COM Admin', 'com', 0),
+      ('admin-disabled', 'disabled@example.com', 'hash', 'salt', 'admin', 'Disabled', 'cn', 0);
+    UPDATE admin_staff_accounts SET is_active = 0 WHERE id = 'admin-disabled';
+  `);
+  await confirmBaselineForReceiptTests(ctx);
+  await startCollection(ctx);
+
+  const submitted = await submitReceiptClaim(ctx);
+
+  assert.equal(submitted.response.status, 201);
+  const alerts = ctx.db.prepare(`
+    SELECT user_id, user_type, title, body, data FROM notifications
+    WHERE type = 'installment_receipt_review_requested' ORDER BY user_id
+  `).all().map((row) => ({ ...row }));
+  assert.deepEqual(alerts.map((row) => row.user_id), ['admin-cn', 'ops-all']);
+  assert.ok(alerts.every((row) => row.user_type === 'admin'));
+  assert.ok(alerts.every((row) => /到账|收款|工单/.test(`${row.title}${row.body}`)));
+  assert.ok(alerts.every((row) => !/receipt|work order|review/i.test(`${row.title}${row.body}`)));
+  assert.ok(alerts.every((row) => JSON.parse(row.data).claim_id === submitted.json.claim.id));
+});
+
 test('Admin receipt decisions are atomic, partial-aware, idempotent, and cannot over-confirm', async () => {
   const ctx = createQuoteExecutionEnv();
   await confirmBaselineForReceiptTests(ctx);
@@ -1188,15 +1273,15 @@ test('Admin receipt decisions are atomic, partial-aware, idempotent, and cannot 
   assert.equal(installment(ctx).received_amount, 2000);
 
   const secondClaim = await submitReceiptClaim(ctx, {
-    claimed_amount: '5000',
+    claimed_amount: '3000',
     idempotency_key: 'claim-key-2',
   });
   assert.equal(secondClaim.response.status, 201);
-  const over = await decideReceiptClaim(ctx, secondClaim.json.claim.id, {
-    confirmed_amount: 5000,
+  const aboveClaim = await decideReceiptClaim(ctx, secondClaim.json.claim.id, {
+    confirmed_amount: 3500,
     idempotency_key: 'decision-key-2',
   });
-  assert.equal(over.response.status, 409);
+  assert.equal(aboveClaim.response.status, 409);
   assert.equal(installment(ctx).received_amount, 2000);
   assert.equal(ctx.db.prepare('SELECT status FROM work_order_receipt_claims WHERE id = ?').get(secondClaim.json.claim.id).status, 'pending');
 
@@ -1210,6 +1295,23 @@ test('Admin receipt decisions are atomic, partial-aware, idempotent, and cannot 
   assert.equal(rejected.response.status, 200);
   assert.equal(rejected.json.installment.status, 'partially_received');
   assert.equal(rejected.json.installment.received_amount, 2000);
+
+  const remainingBoundClaim = await submitReceiptClaim(ctx, {
+    claimed_amount: '5000',
+    idempotency_key: 'claim-key-remaining-bound',
+  });
+  const aboveRemaining = await decideReceiptClaim(ctx, remainingBoundClaim.json.claim.id, {
+    confirmed_amount: 4500,
+    idempotency_key: 'decision-key-over-remaining',
+  });
+  assert.equal(aboveRemaining.response.status, 409);
+  assert.equal(installment(ctx).received_amount, 2000);
+  const rejectRemainingBound = await decideReceiptClaim(ctx, remainingBoundClaim.json.claim.id, {
+    decision: 'rejected', confirmed_amount: undefined,
+    reason: 'Exceeds the remaining installment amount',
+    idempotency_key: 'decision-reject-remaining-bound',
+  });
+  assert.equal(rejectRemainingBound.response.status, 200);
 
   const finalClaim = await submitReceiptClaim(ctx, {
     claimed_amount: '4000',
@@ -1225,8 +1327,51 @@ test('Admin receipt decisions are atomic, partial-aware, idempotent, and cannot 
   assert.ok(full.json.installment.completed_at);
 
   assert.equal(ctx.db.prepare("SELECT COUNT(*) AS count FROM audit_logs WHERE action = 'installment_receipt_confirmed'").get().count, 2);
-  assert.equal(ctx.db.prepare("SELECT COUNT(*) AS count FROM audit_logs WHERE action = 'installment_receipt_rejected'").get().count, 1);
-  assert.ok(ctx.db.prepare("SELECT COUNT(*) AS count FROM notifications WHERE type IN ('installment_receipt_confirmed', 'installment_receipt_rejected')").get().count >= 3);
+  assert.equal(ctx.db.prepare("SELECT COUNT(*) AS count FROM audit_logs WHERE action = 'installment_receipt_rejected'").get().count, 2);
+  assert.ok(ctx.db.prepare("SELECT COUNT(*) AS count FROM notifications WHERE type IN ('installment_receipt_confirmed', 'installment_receipt_rejected')").get().count >= 4);
+});
+
+test('Admin decision key retries require an exact normalized decision payload', async () => {
+  const ctx = createQuoteExecutionEnv();
+  await confirmBaselineForReceiptTests(ctx);
+  await startCollection(ctx);
+  const submitted = await submitReceiptClaim(ctx, { claimed_amount: '2500' });
+  const claimId = submitted.json.claim.id;
+
+  const decided = await decideReceiptClaim(ctx, claimId, {
+    confirmed_amount: 2000,
+    reason: '  Matched bank receipt  ',
+    idempotency_key: 'decision-exact-1',
+  });
+  assert.equal(decided.response.status, 200);
+  assert.equal(installment(ctx).received_amount, 2000);
+
+  const exactRetry = await decideReceiptClaim(ctx, claimId, {
+    confirmed_amount: 2000,
+    reason: 'Matched bank receipt',
+    idempotency_key: 'decision-exact-1',
+  });
+  assert.equal(exactRetry.response.status, 200);
+  assert.equal(installment(ctx).received_amount, 2000);
+
+  for (const payload of [
+    { decision: 'rejected', confirmed_amount: undefined, reason: 'Matched bank receipt' },
+    { decision: 'confirmed', confirmed_amount: 1500, reason: 'Matched bank receipt' },
+    { decision: 'confirmed', confirmed_amount: 2000, reason: 'Different reason' },
+  ]) {
+    const conflict = await decideReceiptClaim(ctx, claimId, {
+      ...payload,
+      idempotency_key: 'decision-exact-1',
+    });
+    assert.equal(conflict.response.status, 409, JSON.stringify(payload));
+    assert.equal(installment(ctx).received_amount, 2000);
+  }
+
+  const stored = ctx.db.prepare('SELECT * FROM work_order_receipt_claims WHERE id = ?').get(claimId);
+  assert.equal(stored.status, 'confirmed');
+  assert.equal(stored.confirmed_amount, 2000);
+  assert.equal(stored.decision_reason, 'Matched bank receipt');
+  assert.equal(stored.decision_idempotency_key, 'decision-exact-1');
 });
 
 test('collection workflow errors and notifications follow the CN request market', async () => {
