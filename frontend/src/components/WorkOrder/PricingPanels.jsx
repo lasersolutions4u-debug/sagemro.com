@@ -18,6 +18,7 @@ import {
   createEngineerPricingDraftFromPricing,
   getEngineerPricingTotals,
   isPricingFormValid,
+  isQuoteTermsValid,
   normalizePricingFormForServiceMode,
 } from './pricingDraft';
 
@@ -51,6 +52,7 @@ const PRICING_COPY = {
       expectedDays: 'Expected onsite workdays',
       expectedDaysPlaceholder: 'Positive whole days',
       extensionNotice: 'Approved extensions increase the workday allowance only and do not automatically add labor fees.',
+      submissionFailed: 'Quote submission failed',
       submitting: 'Submitting...',
       submit: 'Submit for Operations Review',
     },
@@ -97,9 +99,15 @@ const PRICING_COPY = {
     },
     customer: {
       confirmedToast: 'Quote confirmed. Please choose a payment method so SAGEMRO can send instructions.',
+      confirmationFailed: 'Quote confirmation failed',
+      operationFailed: 'Negotiation request failed',
       negotiationRequired: 'Please enter a reason for negotiation',
       negotiationToast: 'Negotiation initiated. Operations will review and submit a revised quote.',
       preparingQuote: 'SAGEMRO is preparing a formal quote. You will be notified after diagnosis, scope, and safety requirements are reviewed.',
+      loading: 'Loading quote...',
+      invalidTerms: 'The quote payment terms are invalid. Confirmation is unavailable until SAGEMRO corrects the quote.',
+      advancePayment: 'Advance payment before service',
+      serviceBalance: 'Service balance after completion',
       totalPayable: 'Quote Subtotal Price',
       confirmQuote: 'Confirm Complete Quote',
       reviewQuote: 'Review Complete Quote',
@@ -143,6 +151,7 @@ const PRICING_COPY = {
       expectedDays: '预计现场作业日',
       expectedDaysPlaceholder: '请输入正整数天数',
       extensionNotice: '获批延期只增加可用作业日，不会自动增加人工费。',
+      submissionFailed: '报价提交失败',
       submitting: '提交中...',
       submit: '提交运营审核',
     },
@@ -189,21 +198,27 @@ const PRICING_COPY = {
     },
     customer: {
       confirmedToast: '报价已确认。请选择付款方式以获取付款指引。',
+      confirmationFailed: '报价确认失败',
+      operationFailed: '议价请求失败',
       negotiationRequired: '请输入议价原因',
       negotiationToast: '已发起议价，运营团队将审核并提交修订报价。',
       preparingQuote: 'SAGEMRO 正在准备正式报价。完成诊断、范围和安全要求审核后将通知您。',
+      loading: '正在加载报价...',
+      invalidTerms: '报价付款条款无效。在 SAGEMRO 修正报价前无法确认。',
+      advancePayment: '服务前预付款',
+      serviceBalance: '服务完成后尾款',
       totalPayable: '报价总额',
       confirmQuote: '确认完整报价',
       reviewQuote: '查看并确认完整报价',
       negotiate: '发起议价',
       negotiationPlaceholder: '请说明议价原因...',
-      counterOfferPlaceholder: '您的期望价格（USD，选填）',
+      counterOfferPlaceholder: '您的期望价格（CNY，选填）',
       cancel: '取消',
       submitting: '提交中...',
       confirmNotice: '请确认此完整报价版本，包括全部费用、预计现场作业日和各期付款安排。不支持部分确认。',
       confirming: '确认中...',
       quoteConfirmed: '报价已确认',
-      payment: (amount) => `获取付款指引（${amount} USD）`,
+      payment: (amount) => `获取付款指引（${amount} CNY）`,
     },
   },
 };
@@ -327,7 +342,12 @@ export function EngineerPricingPanel({ workOrderId, engineerId, pricing, service
     form,
     materialItems,
   });
-  const scheduleIsValid = isPricingFormValid({ form, totalAmount: subtotal, serviceMode });
+  const scheduleIsValid = isPricingFormValid({
+    form,
+    totalAmount: subtotal,
+    serviceMode,
+    currency,
+  });
 
   const handleSubmit = async () => {
     setSubmitting(true);
@@ -344,7 +364,7 @@ export function EngineerPricingPanel({ workOrderId, engineerId, pricing, service
       toastSuccess(t.engineer.submitted);
       onSubmitted?.();
     } catch (e) {
-      toastError('Submission failed: ' + e.message);
+      toastError(`${t.engineer.submissionFailed}: ${e.message}`);
     } finally {
       setSubmitting(false);
     }
@@ -469,7 +489,7 @@ export function CustomerPricingPanel({ workOrderId, customerId, serviceMode = 'r
       onConfirmed?.();
       load();
     } catch (e) {
-      toastError('Confirmation failed: ' + e.message);
+      toastError(`${t.customer.confirmationFailed}: ${e.message}`);
     } finally {
       setSubmitting(false);
       setAction(null);
@@ -485,14 +505,14 @@ export function CustomerPricingPanel({ workOrderId, customerId, serviceMode = 'r
       onConfirmed?.();
       load();
     } catch (e) {
-      toastError('Operation failed: ' + e.message);
+      toastError(`${t.customer.operationFailed}: ${e.message}`);
     } finally {
       setSubmitting(false);
       setAction(null);
     }
   };
 
-  if (loading) return <div className="text-center py-4 text-sm text-[var(--color-text-muted)]">Loading...</div>;
+  if (loading) return <div className="text-center py-4 text-sm text-[var(--color-text-muted)]">{t.customer.loading}</div>;
 
   if (!pricing) {
     return (
@@ -501,13 +521,7 @@ export function CustomerPricingPanel({ workOrderId, customerId, serviceMode = 'r
       </div>
     );
   }
-  const totalAmount = Number(pricing.total_amount || pricing.subtotal || 0);
-  const scheduleForm = createEngineerPricingDraftFromPricing(pricing).form;
-  const scheduleIsValid = Number.isInteger(Number(pricing.quote_version))
-    && Number(pricing.quote_version) > 0
-    && Array.isArray(pricing.payment_schedule)
-    && pricing.payment_schedule.length > 0
-    && isPricingFormValid({ form: scheduleForm, totalAmount, serviceMode });
+  const scheduleIsValid = isQuoteTermsValid({ pricing, serviceMode, currency });
 
   return (
     <div className="space-y-3">
@@ -530,14 +544,20 @@ export function CustomerPricingPanel({ workOrderId, customerId, serviceMode = 'r
         )}
         {pricing.payment_policy && (
           <div className="border-t border-[var(--color-border)] pt-2 text-xs text-[var(--color-text-secondary)]">
-            <div className="flex justify-between"><span>Advance payment before service</span><span>{pricing.payment_policy.advance_amount || 0} {currency}</span></div>
-            <div className="mt-1 flex justify-between"><span>Service balance after completion</span><span>{pricing.payment_policy.balance_amount || 0} {currency}</span></div>
+            <div className="flex justify-between"><span>{t.customer.advancePayment}</span><span>{pricing.payment_policy.advance_amount || 0} {currency}</span></div>
+            <div className="mt-1 flex justify-between"><span>{t.customer.serviceBalance}</span><span>{pricing.payment_policy.balance_amount || 0} {currency}</span></div>
           </div>
         )}
       </div>
 
       {/* AI 鐎光剝鐗?*/}
       {pricing.status === 'submitted' && <AIPriceCheck check={pricing.ai_price_check} />}
+
+      {pricing.status === 'submitted' && !scheduleIsValid && (
+        <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-500">
+          {t.customer.invalidTerms}
+        </div>
+      )}
 
       {/* 閹垮秳缍旈崠?*/}
       {pricing.status === 'submitted' && action !== 'reject' && (

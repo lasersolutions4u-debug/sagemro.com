@@ -178,7 +178,9 @@ export function PaymentScheduleEditor({ form, onChange, totalAmount, currency, c
             type="button"
             onClick={addRow}
             disabled={form.payment_schedule.length >= 6}
-            className="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-lg border border-[var(--color-border)] px-3 py-2 text-sm text-[var(--color-text-primary)] hover:border-[var(--color-primary)] disabled:opacity-50"
+            aria-label={copy.addInstallment}
+            title={copy.addInstallment}
+            className="inline-flex min-h-9 items-center justify-center gap-2 whitespace-nowrap rounded-lg border border-[var(--color-border)] px-3 py-2 text-sm text-[var(--color-text-primary)] hover:border-[var(--color-primary)] disabled:opacity-50"
           >
             <Plus size={16} />
             {copy.addInstallment}

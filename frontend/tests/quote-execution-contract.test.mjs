@@ -19,6 +19,8 @@ test('payment schedule editor exposes bounded installment editing with stable co
   assert.match(source, /Plus/);
   assert.match(source, /aria-label=/);
   assert.match(source, /title=/);
+  assert.match(source, /aria-label=\{copy\.addInstallment\}/);
+  assert.match(source, /title=\{copy\.addInstallment\}/);
   assert.match(source, /md:grid-cols-\[/);
   assert.match(source, /whitespace-nowrap/);
   assert.match(source, /required_before_start/);
@@ -51,10 +53,21 @@ test('pricing panels integrate onsite days schedules validation and versioned co
   assert.match(panels, /\['onsite', 'hybrid'\]\.includes\(serviceMode\)/);
   assert.match(panels, /buildPricingPayload/);
   assert.match(panels, /isCnLocale\(\) \? 'CNY' : 'USD'/);
-  assert.match(panels, /scheduleIsValid/);
+  assert.match(panels, /isQuoteTermsValid/);
+  assert.match(panels, /invalidTerms/);
   assert.match(panels, /pricing\.quote_version/);
   assert.match(detail, /serviceMode=\{detail\?\.service_mode/);
   assert.match(api, /quote_version: quoteVersion/);
+});
+
+test('customer confirmation shows localized invalid server terms and disables confirmation', async () => {
+  const source = await readSource('../src/components/WorkOrder/PricingPanels.jsx');
+
+  assert.match(source, /t\.customer\.invalidTerms/);
+  assert.match(source, /disabled=\{!scheduleIsValid\}/);
+  assert.match(source, /disabled=\{submitting \|\| !scheduleIsValid\}/);
+  assert.match(source, /The quote payment terms are invalid/);
+  assert.match(source, /报价付款条款无效/);
 });
 
 test('customer summary presents the complete quote version without raw enum labels', async () => {

@@ -8,7 +8,9 @@ import {
   createEngineerPricingDraft,
   getEngineerPricingTotals,
   createEngineerPricingDraftFromPricing,
+  isPaymentScheduleValid,
   isPricingFormValid,
+  isQuoteTermsValid,
   normalizePricingFormForServiceMode,
   scheduleTotals,
 } from '../src/components/WorkOrder/pricingDraft.js';
@@ -101,16 +103,18 @@ test('hydrates quote execution fields as editable string values', () => {
     payment_plan_mode: 'installments',
     payment_schedule: [
       {
-        sequence: 1,
+        sequence: 3,
         amount: 6000,
+        currency: 'USD',
         trigger_type: 'before_start',
         due_date: null,
         description: 'Deposit',
         required_before_start: 1,
       },
       {
-        sequence: 2,
+        sequence: 7,
         amount: 4000,
+        currency: 'USD',
         trigger_type: 'fixed_date',
         due_date: '2026-08-15',
         description: 'Balance',
@@ -125,16 +129,18 @@ test('hydrates quote execution fields as editable string values', () => {
     ...row,
   })), [
     {
-      sequence: 1,
+      sequence: 3,
       amount: '6000',
+      currency: 'USD',
       trigger_type: 'before_start',
       due_date: '',
       description: 'Deposit',
       required_before_start: true,
     },
     {
-      sequence: 2,
+      sequence: 7,
       amount: '4000',
+      currency: 'USD',
       trigger_type: 'fixed_date',
       due_date: '2026-08-15',
       description: 'Balance',
@@ -234,21 +240,24 @@ test('validates onsite days and installment schedule invariants before submissio
     ],
   };
 
-  assert.equal(isPricingFormValid({ form, totalAmount: 10000, serviceMode: 'onsite' }), true);
+  assert.equal(isPricingFormValid({ form, totalAmount: 10000, serviceMode: 'onsite', currency: 'USD' }), true);
   assert.equal(isPricingFormValid({
     form: { ...form, expected_service_days: '' },
     totalAmount: 10000,
     serviceMode: 'onsite',
+    currency: 'USD',
   }), false);
   assert.equal(isPricingFormValid({
     form: { ...form, payment_schedule: [{ ...form.payment_schedule[0], amount: '5999' }, form.payment_schedule[1]] },
     totalAmount: 10000,
     serviceMode: 'onsite',
+    currency: 'USD',
   }), false);
   assert.equal(isPricingFormValid({
     form: { ...form, payment_schedule: form.payment_schedule.map((row) => ({ ...row, required_before_start: false })) },
     totalAmount: 10000,
     serviceMode: 'onsite',
+    currency: 'USD',
   }), false);
 });
 
@@ -273,6 +282,7 @@ test('requires milestone descriptions and valid fixed dates', () => {
     },
     totalAmount: 10000,
     serviceMode: 'remote',
+    currency: 'USD',
   }), false);
   assert.equal(isPricingFormValid({
     form: {
@@ -285,6 +295,119 @@ test('requires milestone descriptions and valid fixed dates', () => {
     },
     totalAmount: 10000,
     serviceMode: 'remote',
+    currency: 'USD',
+  }), false);
+});
+
+test('strictly validates the complete single-payment terms returned by the API', () => {
+  const valid = {
+    paymentPlanMode: 'single',
+    totalAmount: 10000,
+    currency: 'USD',
+    schedule: [{
+      sequence: 1,
+      amount: 10000,
+      currency: 'USD',
+      trigger_type: 'before_start',
+      due_date: null,
+      description: '',
+      required_before_start: true,
+    }],
+  };
+
+  assert.equal(isPaymentScheduleValid(valid), true);
+  for (const patch of [
+    { sequence: 2 },
+    { amount: 9999 },
+    { amount: '10000' },
+    { currency: 'CNY' },
+    { trigger_type: 'on_completion' },
+    { due_date: '' },
+    { description: null },
+    { required_before_start: false },
+  ]) {
+    assert.equal(isPaymentScheduleValid({
+      ...valid,
+      schedule: [{ ...valid.schedule[0], ...patch }],
+    }), false);
+  }
+  assert.equal(isPaymentScheduleValid({ ...valid, schedule: [] }), false);
+  assert.equal(isPaymentScheduleValid({ ...valid, schedule: [...valid.schedule, valid.schedule[0]] }), false);
+});
+
+test('quote terms require numeric server totals and onsite days', () => {
+  const pricing = {
+    quote_version: 2,
+    total_amount: 10000,
+    expected_service_days: 3,
+    payment_plan_mode: 'single',
+    payment_schedule: [{
+      sequence: 1,
+      amount: 10000,
+      currency: 'USD',
+      trigger_type: 'before_start',
+      due_date: null,
+      description: '',
+      required_before_start: true,
+    }],
+  };
+
+  assert.equal(isQuoteTermsValid({ pricing, serviceMode: 'onsite', currency: 'USD' }), true);
+  assert.equal(isQuoteTermsValid({
+    pricing: { ...pricing, total_amount: '10000' },
+    serviceMode: 'onsite',
+    currency: 'USD',
+  }), false);
+  assert.equal(isQuoteTermsValid({
+    pricing: { ...pricing, expected_service_days: '3' },
+    serviceMode: 'onsite',
+    currency: 'USD',
+  }), false);
+});
+
+test('strictly validates installment trigger currency and contiguous sequence terms', () => {
+  const valid = {
+    paymentPlanMode: 'installments',
+    totalAmount: 10000,
+    currency: 'USD',
+    schedule: [
+      {
+        sequence: 1,
+        amount: 6000,
+        currency: 'USD',
+        trigger_type: 'before_start',
+        due_date: null,
+        description: 'Deposit',
+        required_before_start: true,
+      },
+      {
+        sequence: 2,
+        amount: 4000,
+        currency: 'USD',
+        trigger_type: 'on_completion',
+        due_date: null,
+        description: 'Balance',
+        required_before_start: false,
+      },
+    ],
+  };
+
+  assert.equal(isPaymentScheduleValid(valid), true);
+  assert.equal(isPaymentScheduleValid({
+    ...valid,
+    schedule: [valid.schedule[0], { ...valid.schedule[1], trigger_type: 'after_lunch' }],
+  }), false);
+  assert.equal(isPaymentScheduleValid({
+    ...valid,
+    schedule: [valid.schedule[0], { ...valid.schedule[1], currency: 'CNY' }],
+  }), false);
+  assert.equal(isPaymentScheduleValid({
+    ...valid,
+    schedule: [valid.schedule[0], { ...valid.schedule[1], sequence: 3 }],
+  }), false);
+  assert.equal(isPaymentScheduleValid({
+    ...valid,
+    schedule: [valid.schedule[0], { ...valid.schedule[1], sequence: 1 }],
   }), false);
 });
 

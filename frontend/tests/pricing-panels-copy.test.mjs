@@ -35,3 +35,23 @@ test('customer confirms one complete quote version with all commercial terms vis
   assert.match(source, /complete quote version/i);
   assert.equal((source.match(/data-testid="confirm-pricing-button"/g) || []).length, 1);
 });
+
+test('CN pricing copy does not fall back to visible English runtime messages', async () => {
+  const source = await readFile(new URL('../src/components/WorkOrder/PricingPanels.jsx', import.meta.url), 'utf8');
+  const cnCopy = source.match(/cn: \{([\s\S]*?)\n  \},\n\};/)?.[1] || '';
+
+  for (const english of [
+    'Submission failed',
+    'Confirmation failed',
+    'Operation failed',
+    'Loading...',
+    'Advance payment before service',
+    'Service balance after completion',
+  ]) {
+    assert.equal(cnCopy.includes(english), false);
+  }
+  assert.doesNotMatch(source, /toastError\('(?:Submission|Confirmation|Operation) failed:/);
+  assert.doesNotMatch(source, />Loading\.\.\.</);
+  assert.doesNotMatch(source, />Advance payment before service</);
+  assert.doesNotMatch(source, />Service balance after completion</);
+});
