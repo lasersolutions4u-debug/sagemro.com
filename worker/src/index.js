@@ -41,6 +41,7 @@ import {
   validateDailyReport,
   validateFieldPlan,
 } from './lib/field-work.js';
+import { validateQuoteExecution } from './lib/quoteExecution.js';
 import { normalizeLocationQuery, searchLocationProvider } from './lib/location-search.js';
 import {
   identityDeleteStatement,
@@ -2264,6 +2265,107 @@ function serviceCopy(market = 'com') {
 
 function systemSenderName(market = 'com') {
   return market === 'cn' ? '系统' : 'System';
+}
+
+const QUOTE_EXECUTION_ERRORS = {
+  quote_total_amount_invalid: {
+    com: 'Quote total must be a positive whole amount.',
+    cn: '报价总额必须为正整数。',
+  },
+  expected_service_days_required: {
+    com: 'Expected onsite service days must be a positive integer.',
+    cn: '预计上门服务天数必须为正整数。',
+  },
+  payment_schedule_count_invalid: {
+    com: 'Installment plans must contain 2 to 6 payments.',
+    cn: '分期付款计划必须包含 2 至 6 期。',
+  },
+  payment_schedule_row_invalid: {
+    com: 'Payment schedule contains an invalid row.',
+    cn: '付款计划包含无效条目。',
+  },
+  payment_schedule_amount_invalid: {
+    com: 'Each scheduled payment must be a positive whole amount.',
+    cn: '每期付款金额必须为正整数。',
+  },
+  payment_schedule_sequence_invalid: {
+    com: 'Payment schedule sequence must use whole numbers.',
+    cn: '付款计划顺序必须为整数。',
+  },
+  payment_schedule_sequence_duplicate: {
+    com: 'Payment schedule sequence values must be unique.',
+    cn: '付款计划顺序不能重复。',
+  },
+  payment_schedule_currency_mismatch: {
+    com: 'Payment schedule currency must match the quote currency.',
+    cn: '付款计划币种必须与报价币种一致。',
+  },
+  payment_schedule_trigger_invalid: {
+    com: 'Payment schedule contains an invalid trigger.',
+    cn: '付款计划包含无效触发条件。',
+  },
+  payment_schedule_start_prerequisite_invalid: {
+    com: 'Payment start prerequisite flags must be boolean values.',
+    cn: '开工前付款标记必须为布尔值。',
+  },
+  payment_schedule_milestone_description_required: {
+    com: 'Milestone payments require a description.',
+    cn: '里程碑付款必须填写说明。',
+  },
+  payment_schedule_due_date_invalid: {
+    com: 'Fixed-date payments require a valid date.',
+    cn: '固定日期付款必须填写有效日期。',
+  },
+  payment_schedule_total_mismatch: {
+    com: 'Payment schedule must total the quote amount.',
+    cn: '付款计划总额必须等于报价总额。',
+  },
+  payment_schedule_start_prerequisite_required: {
+    com: 'At least one payment must be required before service starts.',
+    cn: '至少一期付款必须在服务开始前完成。',
+  },
+};
+
+function quoteExecutionError(code, market, status = 400) {
+  const messages = QUOTE_EXECUTION_ERRORS[code] || { com: code, cn: code };
+  return errorResponse(messages[market] || messages.com, status);
+}
+
+function quoteReviewCopy(market = 'com') {
+  if (market === 'cn') {
+    return {
+      invalidAction: '无效报价审核操作',
+      workOrderNotFound: '服务申请不存在',
+      quoteNotFound: '报价不存在',
+      versionRequired: '必须提供有效的报价版本',
+      staleVersion: '报价版本已更新，请刷新后重试',
+      rejectionReasonRequired: '退回报价必须填写原因',
+      approvedMessage: 'SAGEMRO 已完成报价审核，请查看报价明细并确认。',
+      approvedTitle: 'SAGEMRO 报价已确认',
+      approvedBody: (orderNo) => `服务编号 ${orderNo} 的报价已完成审核，请查看并确认。`,
+      rejectedMessage: (note) => `内部报价审核未通过，请工程师修改后重新提交。原因：${note}`,
+      rejectedTitle: '报价需修改',
+      rejectedBody: (orderNo) => `服务编号 ${orderNo} 的报价未通过运营复核，请修改后重新提交。`,
+      approvedResponse: '报价审核通过，等待客户确认。',
+      rejectedResponse: '报价已退回工程师修改。',
+    };
+  }
+  return {
+    invalidAction: 'Invalid quote review action',
+    workOrderNotFound: 'Service request not found',
+    quoteNotFound: 'Quote not found',
+    versionRequired: 'A valid quote version is required',
+    staleVersion: 'The quote version changed. Refresh and try again.',
+    rejectionReasonRequired: 'A reason is required to return the quote',
+    approvedMessage: 'SAGEMRO approved the quote. Review the complete terms and confirm.',
+    approvedTitle: 'SAGEMRO quote ready',
+    approvedBody: (orderNo) => `The quote for service request ${orderNo} is ready for your confirmation.`,
+    rejectedMessage: (note) => `The quote was returned for correction. Reason: ${note}`,
+    rejectedTitle: 'Quote needs correction',
+    rejectedBody: (orderNo) => `The quote for service request ${orderNo} was returned for correction.`,
+    approvedResponse: 'Quote approved and ready for customer confirmation.',
+    rejectedResponse: 'Quote returned to the engineer for correction.',
+  };
 }
 
 function internalEngineerLabel(market = 'com') {
@@ -5349,6 +5451,9 @@ async function handleGetWorkOrder(request, env) {
     const pricing = await env.DB.prepare(
       'SELECT * FROM work_order_pricing WHERE work_order_id = ?'
     ).bind(id).first();
+    const pricingSchedule = pricing
+      ? await listQuotePaymentSchedule(env, id, pricing.quote_version)
+      : [];
 
     const paymentRecords = await env.DB.prepare(
       'SELECT * FROM work_order_payments WHERE work_order_id = ? ORDER BY created_at ASC'
@@ -5487,7 +5592,12 @@ async function handleGetWorkOrder(request, env) {
       repair_record: repairRecord
         ? { ...repairRecord, material_items: materialItems.filter((item) => item.purpose === 'service_report') }
         : null,
-      pricing: pricing ? { ...pricing, material_items: quoteMaterialItems, payment_policy: paymentPolicy } : null,
+      pricing: pricing ? {
+        ...pricing,
+        material_items: quoteMaterialItems,
+        payment_policy: paymentPolicy,
+        payment_schedule: pricingSchedule,
+      } : null,
       payment_policy: paymentPolicy,
       payments,
       advance_payment: payments.find((payment) => payment.payment_stage === 'advance') || null,
@@ -12453,106 +12563,133 @@ async function handleAdminAssignWorkOrder(request, env) {
 
 async function handleAdminReviewWorkOrderPricing(request, env) {
   try {
+    const market = getRequestMarket(request);
+    const copy = quoteReviewCopy(market);
     const url = new URL(request.url);
     const parts = url.pathname.split('/');
     const workOrderId = parts[4];
     const action = parts[6]; // approve / reject
     const body = await request.json().catch(() => ({}));
     const reviewNote = (body.note || '').trim();
+    const quoteVersion = Number(body.quote_version);
 
     if (!workOrderId || !['approve', 'reject'].includes(action)) {
-      return errorResponse('无效报价审核操作', 400);
+      return errorResponse(copy.invalidAction, 400);
+    }
+    if (!Number.isInteger(quoteVersion) || quoteVersion < 1) {
+      return errorResponse(copy.versionRequired, 400);
+    }
+    if (action === 'reject' && !reviewNote) {
+      return errorResponse(copy.rejectionReasonRequired, 400);
     }
 
     const wo = await env.DB.prepare(
       'SELECT id, order_no, customer_id, engineer_id, quote_review_status FROM work_orders WHERE id = ?'
     ).bind(workOrderId).first();
-    if (!wo) return errorResponse('服务申请不存在', 404);
+    if (!wo) return errorResponse(copy.workOrderNotFound, 404);
 
     const pricing = await env.DB.prepare(
       'SELECT * FROM work_order_pricing WHERE work_order_id = ?'
     ).bind(workOrderId).first();
-    if (!pricing) return errorResponse('报价不存在', 404);
-    if (!['pending_review', 'submitted'].includes(pricing.status)) {
-      return errorResponse('当前报价状态不允许审核', 409);
+    if (!pricing) return errorResponse(copy.quoteNotFound, 404);
+    if (Number(pricing.quote_version) !== quoteVersion) return errorResponse(copy.staleVersion, 409);
+    const history = await env.DB.prepare(`
+      SELECT * FROM work_order_pricing_history
+      WHERE pricing_id = ? AND version = ?
+    `).bind(pricing.id, quoteVersion).first();
+    if (!history || history.status !== 'pending_review' || pricing.status !== 'pending_review') {
+      return errorResponse(copy.staleVersion, 409);
     }
-
-    if (action === 'approve') {
-      await env.DB.prepare(
-        "UPDATE work_order_pricing SET status = 'submitted' WHERE work_order_id = ?"
-      ).bind(workOrderId).run();
-      await env.DB.prepare(
-        "UPDATE work_orders SET status = 'pricing', quote_review_status = 'approved' WHERE id = ?"
-      ).bind(workOrderId).run();
-
-      await env.DB.prepare(`
-        INSERT INTO work_order_messages (id, work_order_id, sender_type, sender_id, sender_name, content, message_type, is_internal_note, is_customer_visible)
-        VALUES (?, ?, 'system', '', '系统', ?, 'pricing_update', 0, 1)
-      `).bind(
-        generateId(),
-        workOrderId,
-        'SAGEMRO 已完成报价审核，请查看报价明细并确认。'
-      ).run();
-
-      await writeAuditLog(env, request, {
-        targetType: 'work_order',
-        targetId: workOrderId,
-        action: 'pricing_review_approved',
-        beforeState: { quote_review_status: wo.quote_review_status, pricing_status: pricing.status },
-        afterState: { quote_review_status: 'approved', pricing_status: 'submitted' },
-      });
-
-      if (wo.customer_id) {
-        await createNotification(env, {
-          user_id: wo.customer_id,
-          user_type: 'customer',
-          type: 'official_quote_ready',
-          title: 'SAGEMRO 报价已确认',
-          body: `服务编号 ${wo.order_no} 的报价已完成审核，请查看并确认。`,
-          data: { work_order_id: workOrderId },
-        });
-      }
-
-      return jsonResponse({ success: true, status: 'approved' });
-    }
-
-    await env.DB.prepare(
-      "UPDATE work_order_pricing SET status = 'draft' WHERE work_order_id = ?"
-    ).bind(workOrderId).run();
-    await env.DB.prepare(
-      "UPDATE work_orders SET status = 'in_progress', quote_review_status = 'rejected' WHERE id = ?"
-    ).bind(workOrderId).run();
-
-    await env.DB.prepare(`
-      INSERT INTO work_order_messages (id, work_order_id, sender_type, sender_id, sender_name, content, message_type, is_internal_note, is_customer_visible)
-      VALUES (?, ?, 'system', '', '系统', ?, 'system', 1, 0)
+    const beforeQuote = await quoteVersionSnapshot(env, workOrderId, history);
+    const nextHistoryStatus = action === 'approve' ? 'approved' : 'rejected';
+    const nextPricingStatus = action === 'approve' ? 'submitted' : 'draft';
+    const nextReviewStatus = action === 'approve' ? 'approved' : 'rejected';
+    const nextWorkOrderStatus = action === 'approve' ? 'pricing' : 'in_progress';
+    const afterQuote = {
+      ...beforeQuote,
+      status: nextHistoryStatus,
+      approved_at: action === 'approve' ? 'now' : beforeQuote.approved_at,
+    };
+    const reviewBeforeState = {
+      quote_review_status: wo.quote_review_status,
+      pricing_status: pricing.status,
+      ...beforeQuote,
+      quote: beforeQuote,
+    };
+    const reviewAfterState = {
+      quote_review_status: nextReviewStatus,
+      pricing_status: nextPricingStatus,
+      note: reviewNote || null,
+      ...afterQuote,
+      quote: afterQuote,
+    };
+    const message = action === 'approve' ? copy.approvedMessage : copy.rejectedMessage(reviewNote);
+    const statements = [env.DB.prepare(`
+      UPDATE work_order_pricing_history
+      SET status = ?, approved_at = CASE WHEN ? = 'approved' THEN datetime('now') ELSE approved_at END
+      WHERE pricing_id = ? AND version = ? AND status = 'pending_review'
+    `).bind(nextHistoryStatus, nextHistoryStatus, pricing.id, quoteVersion), env.DB.prepare(`
+      SELECT CASE WHEN changes() = 1 THEN 1 ELSE json('quote review concurrent update') END
+    `), env.DB.prepare(`
+      UPDATE work_order_pricing SET status = ?
+      WHERE work_order_id = ? AND quote_version = ? AND status = 'pending_review'
+    `).bind(nextPricingStatus, workOrderId, quoteVersion), env.DB.prepare(`
+      SELECT CASE WHEN changes() = 1 THEN 1 ELSE json('quote review concurrent update') END
+    `), env.DB.prepare(`
+      UPDATE work_orders SET status = ?, quote_review_status = ? WHERE id = ?
+    `).bind(nextWorkOrderStatus, nextReviewStatus, workOrderId), env.DB.prepare(`
+      INSERT INTO work_order_messages (
+        id, work_order_id, sender_type, sender_id, sender_name, content,
+        message_type, is_internal_note, is_customer_visible
+      ) VALUES (?, ?, 'system', '', ?, ?, ?, ?, ?)
     `).bind(
-      generateId(),
-      workOrderId,
-      `内部报价审核未通过，请工程师修改后重新提交。${reviewNote ? `原因：${reviewNote}` : ''}`
-    ).run();
-
-    await writeAuditLog(env, request, {
+      generateId(), workOrderId, systemSenderName(market), message,
+      action === 'approve' ? 'pricing_update' : 'system',
+      action === 'approve' ? 0 : 1,
+      action === 'approve' ? 1 : 0,
+    ), buildAuditLogStatement(env, request, {
       targetType: 'work_order',
       targetId: workOrderId,
-      action: 'pricing_review_rejected',
-      beforeState: { quote_review_status: wo.quote_review_status, pricing_status: pricing.status },
-      afterState: { quote_review_status: 'rejected', pricing_status: 'draft', note: reviewNote },
-    });
+      action: action === 'approve' ? 'pricing_review_approved' : 'pricing_review_rejected',
+      beforeState: reviewBeforeState,
+      afterState: reviewAfterState,
+    })];
 
-    if (wo.engineer_id) {
+    if (typeof env.DB.batch !== 'function') throw new Error('Transactional D1 batch is required');
+    await env.DB.batch(statements);
+
+    if (action === 'approve' && wo.customer_id) {
+      await createNotification(env, {
+        user_id: wo.customer_id,
+        user_type: 'customer',
+        type: 'official_quote_ready',
+        title: copy.approvedTitle,
+        body: copy.approvedBody(wo.order_no),
+        data: { work_order_id: workOrderId, quote_version: quoteVersion },
+      });
+    }
+    if (action === 'reject' && wo.engineer_id) {
       await createNotification(env, {
         user_id: wo.engineer_id,
         user_type: 'engineer',
         type: 'quote_review_rejected',
-        title: '报价需修改',
-        body: `服务编号 ${wo.order_no} 的报价未通过运营复核，请修改后重新提交。`,
-        data: { work_order_id: workOrderId },
+        title: copy.rejectedTitle,
+        body: copy.rejectedBody(wo.order_no),
+        data: { work_order_id: workOrderId, quote_version: quoteVersion },
       });
     }
 
-    return jsonResponse({ success: true, status: 'rejected' });
+    return jsonResponse({
+      success: true,
+      status: nextHistoryStatus,
+      message: action === 'approve' ? copy.approvedResponse : copy.rejectedResponse,
+      ...afterQuote,
+      quote: afterQuote,
+    });
   } catch (error) {
+    if (/quote review concurrent update|malformed json/i.test(String(error?.message || error))) {
+      return errorResponse(quoteReviewCopy(getRequestMarket(request)).staleVersion, 409);
+    }
     return errorResponse(error.message, 500);
   }
 }
@@ -13615,6 +13752,9 @@ async function handleGetWorkOrderPricing(request, env) {
     ).bind(workOrderId).first();
     const materialItems = await listWorkOrderMaterialItems(env, workOrderId, { purpose: 'quote' });
     const paymentPolicy = pricing ? computeServicePaymentPolicy(pricing) : null;
+    const paymentSchedule = pricing
+      ? await listQuotePaymentSchedule(env, workOrderId, pricing.quote_version)
+      : [];
     if (
       request._auth?.userType === 'customer' &&
       pricing &&
@@ -13623,7 +13763,12 @@ async function handleGetWorkOrderPricing(request, env) {
       return jsonResponse({ pricing: null, quote_review_status: wo.quote_review_status || 'pending_review' });
     }
     return jsonResponse({
-      pricing: pricing ? { ...pricing, material_items: materialItems, payment_policy: paymentPolicy } : null,
+      pricing: pricing ? {
+        ...pricing,
+        material_items: materialItems,
+        payment_policy: paymentPolicy,
+        payment_schedule: paymentSchedule,
+      } : null,
       material_items: materialItems,
     });
   } catch (error) {
@@ -13813,7 +13958,7 @@ async function handleSubmitWorkOrderPricing(request, env) {
     const copy = serviceCopy(market);
     const workOrderId = new URL(request.url).pathname.split('/')[3];
     const body = await request.json();
-    const { labor_fee, travel_fee, other_fee, parts_detail } = body;
+    const { parts_detail } = body;
     const materialItems = Array.isArray(body.material_items) ? body.material_items : null;
     const structuredPartsFee = materialItems
       ? materialItems.reduce((sum, item) => {
@@ -13822,9 +13967,18 @@ async function handleSubmitWorkOrderPricing(request, env) {
           return sum + quantity * unitPrice;
         }, 0)
       : null;
-    const parts_fee = structuredPartsFee !== null
+    const fees = {
+      labor_fee: body.labor_fee ?? 0,
+      parts_fee: structuredPartsFee !== null
       ? Math.round(structuredPartsFee * 100) / 100
-      : (body.parts_fee || 0);
+      : (body.parts_fee ?? 0),
+      travel_fee: body.travel_fee ?? 0,
+      other_fee: body.other_fee ?? 0,
+    };
+    if (Object.values(fees).some((fee) => !Number.isSafeInteger(fee) || fee < 0)) {
+      return quoteExecutionError('quote_total_amount_invalid', market);
+    }
+    const { labor_fee, parts_fee, travel_fee, other_fee } = fees;
 
     try {
       assertMaxLength(parts_detail, 'parts_detail', LIMITS.parts_detail);
@@ -13837,15 +13991,15 @@ async function handleSubmitWorkOrderPricing(request, env) {
     // 认证：仅工程师可提交报价；engineer_id 从 token 取
     const auth = request._auth;
     if (!auth || auth.userType !== 'engineer') {
-      return errorResponse('仅工程师可提交报价', 403);
+      return errorResponse(market === 'cn' ? '仅工程师可提交报价' : 'Only engineers can submit quotes', 403);
     }
     const targetEngineerId = auth.userId;
 
     // 验证工单 + 校验工单归属该工程师
     const wo = await env.DB.prepare('SELECT * FROM work_orders WHERE id = ?').bind(workOrderId).first();
-    if (!wo) return errorResponse('工单不存在', 404);
+    if (!wo) return errorResponse(market === 'cn' ? '工单不存在' : 'Work order not found', 404);
     if (wo.engineer_id !== targetEngineerId) {
-      return errorResponse('您无权对该工单报价', 403);
+      return errorResponse(market === 'cn' ? '您无权对该工单报价' : 'You cannot quote this work order', 403);
     }
 
     // 读取工程师佣金比例（按等级：Junior 80% / Senior 85% / Expert 88%）
@@ -13856,6 +14010,46 @@ async function handleSubmitWorkOrderPricing(request, env) {
     const engineerLevel = engineerRow?.level || 'junior';
 
     const subtotal = (labor_fee || 0) + (parts_fee || 0) + (travel_fee || 0) + (other_fee || 0);
+    const currency = market === 'cn' ? 'CNY' : 'USD';
+    const validation = validateQuoteExecution({
+      service_mode: wo.service_mode,
+      total_amount: subtotal,
+      expected_service_days: body.expected_service_days,
+      payment_plan_mode: body.payment_plan_mode,
+      payment_schedule: body.payment_schedule,
+      currency,
+    });
+    if (validation.code) return quoteExecutionError(validation.code, market);
+    const quoteExecution = validation.value;
+    const quoteKind = body.quote_kind === 'supplemental' ? 'supplemental' : 'baseline';
+    const parentQuoteVersion = quoteKind === 'supplemental'
+      ? Number(body.parent_quote_version)
+      : null;
+    const confirmedReceipt = await env.DB.prepare(`
+      SELECT id FROM work_order_receipt_claims
+      WHERE work_order_id = ? AND status = 'confirmed'
+      LIMIT 1
+    `).bind(workOrderId).first();
+    if (confirmedReceipt && quoteKind !== 'supplemental') {
+      return errorResponse(
+        market === 'cn'
+          ? '已有确认收款后不能替换基准报价，请提交补充报价。'
+          : 'The baseline quote cannot be replaced after a confirmed receipt. Submit a supplemental quote.',
+        409,
+      );
+    }
+    if (quoteKind === 'supplemental' && (
+      !Number.isInteger(parentQuoteVersion)
+      || parentQuoteVersion < 1
+      || parentQuoteVersion !== Number(wo.active_quote_version)
+    )) {
+      return errorResponse(
+        market === 'cn'
+          ? '补充报价必须关联当前生效的基准报价版本。'
+          : 'A supplemental quote must reference the active baseline quote version.',
+        409,
+      );
+    }
     // 代收代付模式：subtotal = 客户支付总额（平台代收）
     // platformFee = 平台技术服务费（平台营收，6%信息技术服务税率）
     // engineerPayout = 维修服务费（代收代付，转付工程师）
@@ -13868,44 +14062,107 @@ async function handleSubmitWorkOrderPricing(request, env) {
 
     // 检查是否已有报价
     const existing = await env.DB.prepare(
-      'SELECT id FROM work_order_pricing WHERE work_order_id = ?'
+      'SELECT * FROM work_order_pricing WHERE work_order_id = ?'
     ).bind(workOrderId).first();
+    const pricingId = existing?.id || generateId();
+    const latestVersion = existing
+      ? Number((await env.DB.prepare(
+        'SELECT MAX(version) as version FROM work_order_pricing_history WHERE pricing_id = ?'
+      ).bind(pricingId).first())?.version || 0)
+      : 0;
+    const nextVersion = latestVersion + 1;
+    const historyId = generateId();
+    const statements = [];
+
+    statements.push(env.DB.prepare(`
+      DELETE FROM work_order_payment_schedule
+      WHERE pricing_id = ? AND quote_version = ?
+        AND NOT EXISTS (
+          SELECT 1 FROM work_order_pricing_history history
+          WHERE history.pricing_id = ? AND history.version = ?
+            AND history.status IN ('approved', 'confirmed')
+        )
+    `).bind(pricingId, nextVersion, pricingId, nextVersion));
 
     if (existing) {
-      // 更新报价
-      await env.DB.prepare(`
+      statements.push(env.DB.prepare(`
         UPDATE work_order_pricing SET
           labor_fee = ?, parts_fee = ?, travel_fee = ?, other_fee = ?,
           parts_detail = ?, subtotal = ?, platform_fee = ?,
           deposit_withhold = ?, total_amount = ?, ai_price_check = ?,
-          status = 'pending_review', submitted_at = datetime('now')
-        WHERE work_order_id = ?
+          status = 'pending_review', submitted_at = datetime('now'),
+          quote_version = ?, expected_service_days = ?, payment_plan_mode = ?
+        WHERE work_order_id = ? AND quote_version = ?
       `).bind(labor_fee || 0, parts_fee || 0, travel_fee || 0, other_fee || 0,
            JSON.stringify(parts_detail || []), subtotal, platformFee, depositWithhold, subtotal,
-           JSON.stringify(aiCheck), workOrderId).run();
-
-      // 记录历史
-      const historyId = generateId();
-      await env.DB.prepare(
-        'INSERT INTO work_order_pricing_history (id, pricing_id, labor_fee, parts_fee, travel_fee, other_fee, parts_detail, subtotal, total_amount, platform_fee, deposit_withhold, version) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
-      ).bind(historyId, existing.id, labor_fee || 0, parts_fee || 0, travel_fee || 0, other_fee || 0, JSON.stringify(parts_detail || []), subtotal, subtotal, platformFee, depositWithhold, (await env.DB.prepare('SELECT MAX(version) as v FROM work_order_pricing_history WHERE pricing_id = ?').bind(existing.id).first())?.v + 1 || 1).run();
+           JSON.stringify(aiCheck), nextVersion, quoteExecution.expected_service_days,
+           quoteExecution.payment_plan_mode, workOrderId, Number(existing.quote_version || 0)));
+      statements.push(env.DB.prepare(`
+        SELECT CASE WHEN changes() = 1 THEN 1 ELSE json('quote version concurrent update') END
+      `));
     } else {
-      // 新建报价
-      const id = generateId();
-      await env.DB.prepare(`
-        INSERT INTO work_order_pricing (id, work_order_id, engineer_id, labor_fee, parts_fee, travel_fee, other_fee, parts_detail, subtotal, platform_fee, deposit_withhold, total_amount, ai_price_check, status, submitted_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending_review', datetime('now'))
-      `).bind(id, workOrderId, targetEngineerId, labor_fee || 0, parts_fee || 0, travel_fee || 0, other_fee || 0, JSON.stringify(parts_detail || []), subtotal, platformFee, depositWithhold, subtotal, JSON.stringify(aiCheck)).run();
+      statements.push(env.DB.prepare(`
+        INSERT INTO work_order_pricing (
+          id, work_order_id, engineer_id, labor_fee, parts_fee, travel_fee, other_fee,
+          parts_detail, subtotal, platform_fee, deposit_withhold, total_amount,
+          ai_price_check, status, submitted_at, quote_version, expected_service_days, payment_plan_mode
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending_review', datetime('now'), ?, ?, ?)
+      `).bind(
+        pricingId, workOrderId, targetEngineerId, labor_fee || 0, parts_fee || 0,
+        travel_fee || 0, other_fee || 0, JSON.stringify(parts_detail || []), subtotal,
+        platformFee, depositWithhold, subtotal, JSON.stringify(aiCheck), nextVersion,
+        quoteExecution.expected_service_days, quoteExecution.payment_plan_mode,
+      ));
     }
+
+    statements.push(env.DB.prepare(`
+      INSERT INTO work_order_pricing_history (
+        id, pricing_id, labor_fee, parts_fee, travel_fee, other_fee, parts_detail,
+        subtotal, total_amount, platform_fee, deposit_withhold, version,
+        expected_service_days, payment_plan_mode, quote_kind, parent_quote_version, status
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending_review')
+    `).bind(
+      historyId, pricingId, labor_fee || 0, parts_fee || 0, travel_fee || 0, other_fee || 0,
+      JSON.stringify(parts_detail || []), subtotal, subtotal, platformFee, depositWithhold,
+      nextVersion, quoteExecution.expected_service_days, quoteExecution.payment_plan_mode,
+      quoteKind, parentQuoteVersion,
+    ));
+    for (const installment of quoteExecution.payment_schedule) {
+      statements.push(env.DB.prepare(`
+        INSERT INTO work_order_payment_schedule (
+          id, pricing_id, work_order_id, quote_version, sequence, amount, currency,
+          trigger_type, due_date, description, required_before_start
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).bind(
+        generateId(), pricingId, workOrderId, nextVersion, installment.sequence,
+        installment.amount, installment.currency, installment.trigger_type,
+        installment.due_date, installment.description, installment.required_before_start ? 1 : 0,
+      ));
+    }
+    statements.push(env.DB.prepare(
+      "UPDATE work_orders SET status = 'pricing', quote_review_status = 'pending_review' WHERE id = ?"
+    ).bind(workOrderId));
+    statements.push(buildAuditLogStatement(env, request, {
+      targetType: 'work_order',
+      targetId: workOrderId,
+      action: 'pricing_submitted_for_review',
+      afterState: {
+        quote_review_status: 'pending_review',
+        quote_version: nextVersion,
+        quote_kind: quoteKind,
+        parent_quote_version: parentQuoteVersion,
+        subtotal,
+        expected_service_days: quoteExecution.expected_service_days,
+        payment_plan_mode: quoteExecution.payment_plan_mode,
+        payment_schedule: quoteExecution.payment_schedule,
+      },
+    }));
+    if (typeof env.DB.batch !== 'function') throw new Error('Transactional D1 batch is required');
+    await env.DB.batch(statements);
 
     if (materialItems) {
       await replaceWorkOrderMaterialItems(env, request, workOrderId, 'quote', materialItems);
     }
-
-    // 更新工单状态为 pricing
-    await env.DB.prepare(
-      "UPDATE work_orders SET status = 'pricing', quote_review_status = 'pending_review' WHERE id = ?"
-    ).bind(workOrderId).run();
 
     // 发送内部系统消息：工程师报价建议需要运营复核后才对客户可见。
     const msgId = generateId();
@@ -13913,15 +14170,15 @@ async function handleSubmitWorkOrderPricing(request, env) {
       "INSERT INTO work_order_messages (id, work_order_id, sender_type, sender_id, sender_name, content, message_type, is_internal_note, is_customer_visible) VALUES (?, ?, 'system', '', ?, ?, 'pricing_update', 1, 0)"
     ).bind(msgId, workOrderId, systemSenderName(market), copy.quoteSubmittedInternal).run();
 
-    await writeAuditLog(env, request, {
-      targetType: 'work_order',
-      targetId: workOrderId,
-      action: 'pricing_submitted_for_review',
-      afterState: { quote_review_status: 'pending_review', subtotal },
-    });
-
     return jsonResponse({
       success: true,
+      status: 'pending_review',
+      quote_version: nextVersion,
+      quote_kind: quoteKind,
+      parent_quote_version: parentQuoteVersion,
+      expected_service_days: quoteExecution.expected_service_days,
+      payment_plan_mode: quoteExecution.payment_plan_mode,
+      payment_schedule: quoteExecution.payment_schedule,
       ai_check: aiCheck,
       subtotal,
       commission_rate: commissionRate,
@@ -13932,6 +14189,12 @@ async function handleSubmitWorkOrderPricing(request, env) {
       total_amount: subtotal,  // 客户应付 = subtotal
     });
   } catch (error) {
+    if (/quote version concurrent update|protected quote payment schedule|malformed json/i.test(String(error?.message || error))) {
+      return errorResponse(
+        getRequestMarket(request) === 'cn' ? '报价已被更新，请刷新后重试' : 'The quote changed. Refresh and try again.',
+        409,
+      );
+    }
     return errorResponse(error.message, 500);
   }
 }
@@ -14031,6 +14294,45 @@ function computeServicePaymentPolicy(pricing = {}) {
     parts_fee: partsFee,
     travel_fee: travelFee,
     other_fee: otherFee,
+  };
+}
+
+async function listQuotePaymentSchedule(env, workOrderId, quoteVersion) {
+  if (!Number.isInteger(Number(quoteVersion)) || Number(quoteVersion) < 1) return [];
+  const schedule = await env.DB.prepare(`
+    SELECT id, pricing_id, work_order_id, quote_version, sequence, amount, currency,
+      trigger_type, due_date, description, required_before_start, created_at
+    FROM work_order_payment_schedule
+    WHERE work_order_id = ? AND quote_version = ?
+    ORDER BY sequence
+  `).bind(workOrderId, Number(quoteVersion)).all();
+  return (schedule.results || []).map((row) => ({
+    ...row,
+    required_before_start: Boolean(row.required_before_start),
+  }));
+}
+
+async function quoteVersionSnapshot(env, workOrderId, history) {
+  const paymentSchedule = await listQuotePaymentSchedule(env, workOrderId, history.version);
+  return {
+    quote_version: history.version,
+    status: history.status,
+    quote_kind: history.quote_kind || 'baseline',
+    parent_quote_version: history.parent_quote_version ?? null,
+    labor_fee: history.labor_fee || 0,
+    parts_fee: history.parts_fee || 0,
+    travel_fee: history.travel_fee || 0,
+    other_fee: history.other_fee || 0,
+    parts_detail: history.parts_detail || '[]',
+    subtotal: history.subtotal || 0,
+    total_amount: history.total_amount || 0,
+    platform_fee: history.platform_fee || 0,
+    deposit_withhold: history.deposit_withhold || 0,
+    expected_service_days: history.expected_service_days ?? null,
+    payment_plan_mode: history.payment_plan_mode || 'single',
+    approved_at: history.approved_at || null,
+    confirmed_at: history.confirmed_at || null,
+    payment_schedule: paymentSchedule,
   };
 }
 
