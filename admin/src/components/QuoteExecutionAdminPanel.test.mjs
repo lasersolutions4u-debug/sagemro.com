@@ -80,6 +80,18 @@ test('quote execution panel localizes review and payment states without raw enum
   assert.doesNotMatch(panel, /\{execution\.payment_state\}/);
 });
 
+test('quote execution panel renders nullable execution balances as localized not applicable', async () => {
+  const panel = await readSource('./QuoteExecutionAdminPanel.jsx');
+
+  assert.match(panel, /function formatNullableAmount\(value, currency, fallback\)/);
+  assert.match(panel, /if \(value == null\) return fallback/);
+  assert.match(panel, /formatNullableAmount\(execution\.received_amount, [^,]+, t\.notApplicable\)/);
+  assert.match(panel, /formatNullableAmount\(execution\.outstanding_amount, [^,]+, t\.notApplicable\)/);
+  assert.match(panel, /notApplicable: 'Not applicable'/);
+  assert.match(panel, /notApplicable: '不适用'/);
+  assert.doesNotMatch(panel, /formatAmount\(execution\.(?:received_amount|outstanding_amount)/);
+});
+
 test('quote execution panel exposes no mutation controls to read-only operations staff', async () => {
   const panel = await readSource('./QuoteExecutionAdminPanel.jsx');
 

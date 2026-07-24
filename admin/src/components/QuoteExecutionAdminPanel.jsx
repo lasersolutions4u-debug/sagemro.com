@@ -131,6 +131,11 @@ function formatAmount(value, currency) {
   return `${money(value)}${currency ? ` ${currency}` : ''}`;
 }
 
+function formatNullableAmount(value, currency, fallback) {
+  if (value == null) return fallback;
+  return formatAmount(value, currency);
+}
+
 function SummaryItem({ label, value }) {
   return (
     <div className="min-w-0 border-l-2 border-[var(--color-border)] pl-3">
@@ -259,8 +264,8 @@ export function QuoteExecutionAdminPanel({ detail, readOnly = false, onRefresh, 
         <div className="border-b border-[var(--color-border)] p-4">
           <dl className="grid gap-3 sm:grid-cols-4">
             <SummaryItem label={t.paymentState} value={paymentStateLabels[execution.payment_state] || t.notApplicable} />
-            <SummaryItem label={t.received} value={formatAmount(execution.received_amount, installments[0]?.currency || currency)} />
-            <SummaryItem label={t.outstanding} value={formatAmount(execution.outstanding_amount, installments[0]?.currency || currency)} />
+            <SummaryItem label={t.received} value={formatNullableAmount(execution.received_amount, installments[0]?.currency || currency, t.notApplicable)} />
+            <SummaryItem label={t.outstanding} value={formatNullableAmount(execution.outstanding_amount, installments[0]?.currency || currency, t.notApplicable)} />
             <SummaryItem label={t.financiallySettled} value={execution.financially_settled ? t.yes : t.no} />
           </dl>
         </div>
