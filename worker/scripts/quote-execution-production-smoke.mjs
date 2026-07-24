@@ -39,6 +39,7 @@ const PASSWORD_ENV = {
   customerPassword: 'SAGEMRO_QUOTE_EXECUTION_CUSTOMER_PASSWORD',
   engineerPassword: 'SAGEMRO_QUOTE_EXECUTION_ENGINEER_PASSWORD',
 };
+const MIN_SMOKE_PASSWORD_LENGTH = 10;
 
 export const QUOTE_EXECUTION_SMOKE_USAGE = `Usage:
   npm run smoke:production:quote-execution -- \\
@@ -52,6 +53,7 @@ Required password environment variables:
   SAGEMRO_QUOTE_EXECUTION_ADMIN_PASSWORD
   SAGEMRO_QUOTE_EXECUTION_CUSTOMER_PASSWORD
   SAGEMRO_QUOTE_EXECUTION_ENGINEER_PASSWORD
+  Each password must be at least 10 characters.
 
 Options:
   --json       Print the concise summary as JSON.
@@ -117,6 +119,9 @@ export function parseQuoteExecutionSmokeArgs(argv = [], env = process.env) {
   }
   for (const envName of Object.values(PASSWORD_ENV)) {
     if (!env[envName]) throw new Error(`quote execution production smoke requires environment variable ${envName}`);
+    if (String(env[envName]).length < MIN_SMOKE_PASSWORD_LENGTH) {
+      throw new Error(`${envName} must be at least ${MIN_SMOKE_PASSWORD_LENGTH} characters`);
+    }
   }
 
   return {
@@ -137,7 +142,9 @@ export function parseQuoteExecutionSmokeArgs(argv = [], env = process.env) {
 function redactSensitiveText(value, sensitiveValues = []) {
   let output = String(value ?? '');
   for (const sensitiveValue of sensitiveValues) {
-    if (sensitiveValue) output = output.replaceAll(String(sensitiveValue), '[redacted]');
+    if (String(sensitiveValue || '').length >= MIN_SMOKE_PASSWORD_LENGTH) {
+      output = output.replaceAll(String(sensitiveValue), '[redacted]');
+    }
   }
   return output.replace(/Bearer\s+[^\s]+/gi, 'Bearer [redacted]');
 }

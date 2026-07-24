@@ -25,6 +25,11 @@ const secretEnv = {
   SAGEMRO_QUOTE_EXECUTION_CUSTOMER_PASSWORD: 'customer-env-secret-sentinel',
   SAGEMRO_QUOTE_EXECUTION_ENGINEER_PASSWORD: 'engineer-env-secret-sentinel',
 };
+const shortSecretEnv = {
+  SAGEMRO_QUOTE_EXECUTION_ADMIN_PASSWORD: 'a',
+  SAGEMRO_QUOTE_EXECUTION_CUSTOMER_PASSWORD: 'b',
+  SAGEMRO_QUOTE_EXECUTION_ENGINEER_PASSWORD: 'c',
+};
 
 const requiredArgs = [
   '--base-url', 'https://api.sagemro.com',
@@ -70,6 +75,12 @@ test('quote execution smoke requires an explicit known target, identities, and w
     () => parseQuoteExecutionSmokeArgs(requiredArgs, {}),
     /SAGEMRO_QUOTE_EXECUTION_ADMIN_PASSWORD/,
   );
+  for (const [envName, shortValue] of Object.entries(shortSecretEnv)) {
+    assert.throws(
+      () => parseQuoteExecutionSmokeArgs(requiredArgs, { ...secretEnv, [envName]: shortValue }),
+      new RegExp(`${envName} must be at least 10 characters`),
+    );
+  }
 
   const parsed = parseQuoteExecutionSmokeArgs(requiredArgs, secretEnv);
   assert.equal(parsed.market, 'com');
@@ -105,6 +116,13 @@ test('real CLI provides help and sanitized actionable validation errors', () => 
     assert.match(output, /--help/);
     assert.doesNotMatch(output, /admin-env-secret-sentinel|customer-env-secret-sentinel|engineer-env-secret-sentinel|argv-secret-sentinel/);
   }
+
+  const shortSecretFailure = runCli([], shortSecretEnv);
+  const shortSecretOutput = `${shortSecretFailure.stdout}\n${shortSecretFailure.stderr}`;
+  assert.equal(shortSecretFailure.status, 1);
+  assert.match(shortSecretOutput, /Error: quote execution production smoke requires --base-url/);
+  assert.match(shortSecretOutput, /Run with --help for usage/);
+  assert.doesNotMatch(shortSecretOutput, /\[redacted\]/);
 });
 
 test('quote execution context gives every temporary record a unique run scope', () => {
