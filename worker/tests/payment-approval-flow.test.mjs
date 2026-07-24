@@ -15,6 +15,8 @@ function createPaymentFlowEnv() {
     ADMIN_PASSWORD: 'admin-pass',
     __payments: [],
     __paymentReads: 0,
+    __invoiceReads: 0,
+    __invoiceWrites: 0,
     __messages: [],
     __notifications: [],
     __auditLogs: [],
@@ -94,6 +96,11 @@ function createStatement(env, sql) {
         return order ? { ...order } : null;
       }
 
+      if (/SELECT id, customer_id, status FROM work_orders WHERE id = \?/i.test(normalized)) {
+        const order = env.__workOrders.find((item) => item.id === this.args[0]);
+        return order ? { id: order.id, customer_id: order.customer_id, status: order.status } : null;
+      }
+
       if (/SELECT id, customer_id, engineer_id, assigned_regional_lead_id, quote_review_status FROM work_orders WHERE id = \?/i.test(normalized)) {
         const order = env.__workOrders.find((item) => item.id === this.args[0]);
         return order ? {
@@ -150,6 +157,16 @@ function createStatement(env, sql) {
       if (/SELECT \* FROM work_order_payments WHERE work_order_id = \? AND payment_stage = \?/i.test(normalized)) {
         env.__paymentReads += 1;
         return env.__payments.filter((item) => item.work_order_id === this.args[0] && (item.payment_stage || 'advance') === this.args[1]).at(-1) || null;
+      }
+
+      if (/FROM invoice_requests WHERE work_order_id = \?/i.test(normalized)) {
+        env.__invoiceReads += 1;
+        return null;
+      }
+
+      if (/SELECT amount FROM work_order_payments WHERE work_order_id = \?/i.test(normalized)) {
+        env.__paymentReads += 1;
+        return null;
       }
 
       if (/SELECT id, status, payment_method, payment_stage FROM work_order_payments WHERE work_order_id = \? AND payment_stage = \?/i.test(normalized)) {
@@ -274,6 +291,8 @@ function createStatement(env, sql) {
         const [id, work_order_id, customer_id, amount, payment_method, transaction_id, status, payment_stage, quote_total_amount, advance_amount, balance_amount] = this.args;
         env.__payments.push({ id, work_order_id, customer_id, amount, payment_method, transaction_id, status, payment_stage: payment_stage || 'advance', quote_total_amount, advance_amount, balance_amount });
       }
+
+      if (/INSERT INTO invoice_requests/i.test(normalized)) env.__invoiceWrites += 1;
 
       if (/UPDATE work_order_payments SET status = 'pending_admin_confirmation' WHERE id =/i.test(normalized)) {
         const payment = env.__payments.find((item) => item.id === this.args[0]);
@@ -514,6 +533,14 @@ test('versioned quotes reject every legacy payment and start route without readi
       paymentStatus: 'instructions_requested',
     },
     {
+      name: 'customer invoice request',
+      path: '/api/workorders/wo-pay-1/invoice-request',
+      options: { body: { company_name: 'Test Metal Works', tax_id: 'TAX-1' } },
+      workOrderStatus: 'resolved',
+      paymentStage: 'balance',
+      paymentStatus: 'completed',
+    },
+    {
       name: 'engineer start request',
       path: '/api/workorders/wo-pay-1/payment/start-request',
       options: { userType: 'engineer', userId: 'engineer-1', body: { note: 'Legacy receipt.' } },
@@ -559,6 +586,8 @@ test('versioned quotes reject every legacy payment and start route without readi
     assert.equal(result.response.status, 409, item.name);
     assert.match(result.json.error, /installment|schedule/i, item.name);
     assert.equal(env.__paymentReads, 0, item.name);
+    assert.equal(env.__invoiceReads, 0, item.name);
+    assert.equal(env.__invoiceWrites, 0, item.name);
     assert.deepEqual(env.__payments, beforePayments, item.name);
     assert.equal(env.__workOrders[0].status, item.workOrderStatus, item.name);
   }

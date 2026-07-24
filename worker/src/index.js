@@ -5457,7 +5457,7 @@ async function handleGetWorkOrder(request, env) {
     const detailPricing = pricingView?.pricing || null;
     const pricingSchedule = pricingView?.payment_schedule || [];
     const quoteExecution = await getWorkOrderQuoteExecution(
-      env, workOrder, pricing, request._auth?.userType === 'customer',
+      env, workOrder, pricing, request._auth, getRequestMarket(request),
     );
 
     const paymentRecords = await env.DB.prepare(
@@ -12612,6 +12612,7 @@ async function handleAdminReviewWorkOrderPricing(request, env) {
     const nextHistoryStatus = action === 'approve' ? 'approved' : 'rejected';
     const nextPricingStatus = action === 'approve' ? 'submitted' : 'draft';
     const nextReviewStatus = action === 'approve' ? 'approved' : 'rejected';
+    const supplemental = history.quote_kind === 'supplemental';
     const nextWorkOrderStatus = action === 'approve' ? 'pricing' : 'in_progress';
     const afterQuote = {
       ...beforeQuote,
@@ -12643,9 +12644,13 @@ async function handleAdminReviewWorkOrderPricing(request, env) {
       WHERE work_order_id = ? AND quote_version = ? AND status = 'pending_review'
     `).bind(nextPricingStatus, workOrderId, quoteVersion), env.DB.prepare(`
       SELECT CASE WHEN changes() = 1 THEN 1 ELSE json('quote review concurrent update') END
-    `), env.DB.prepare(`
-      UPDATE work_orders SET status = ?, quote_review_status = ? WHERE id = ?
-    `).bind(nextWorkOrderStatus, nextReviewStatus, workOrderId), env.DB.prepare(`
+    `), env.DB.prepare(supplemental
+      ? 'UPDATE work_orders SET quote_review_status = ? WHERE id = ?'
+      : 'UPDATE work_orders SET status = ?, quote_review_status = ? WHERE id = ?'
+    ).bind(...(supplemental
+      ? [nextReviewStatus, workOrderId]
+      : [nextWorkOrderStatus, nextReviewStatus, workOrderId]
+    )), env.DB.prepare(`
       INSERT INTO work_order_messages (
         id, work_order_id, sender_type, sender_id, sender_name, content,
         message_type, is_internal_note, is_customer_visible
@@ -13169,7 +13174,9 @@ async function handleConfirmOnsiteConversion(request, env, { admin = false } = {
     const confirmationNote = admin
       ? `${note}${note ? '\n' : ''}${market === 'cn' ? '管理员代确认原因' : 'Admin reason'}: ${adminReason}`
       : note;
-    const converted = await env.DB.prepare(`
+    const actorType = admin ? 'admin' : 'customer';
+    const auditAction = admin ? 'onsite_conversion_admin_confirmed' : 'onsite_conversion_confirmed';
+    const conversionStatements = [env.DB.prepare(`
       UPDATE work_orders SET
         service_address = ?,
         service_latitude = ?,
@@ -13201,16 +13208,9 @@ async function handleConfirmOnsiteConversion(request, env, { admin = false } = {
       confirmationNote,
       auth.userId,
       workOrderId,
-    ).run();
-    if (Number(converted?.meta?.changes || 0) !== 1) {
-      return errorResponse(
-        market === 'cn' ? '上门服务状态已变更，请刷新后重试' : 'The onsite conversion changed. Refresh and try again.',
-        409,
-      );
-    }
-
-    const actorType = admin ? 'admin' : 'customer';
-    await env.DB.prepare(`
+    ), env.DB.prepare(`
+      SELECT CASE WHEN changes() = 1 THEN 1 ELSE json('onsite conversion concurrent update') END
+    `), env.DB.prepare(`
       INSERT INTO work_order_logs (id, work_order_id, action, actor_type, actor_id, content)
       VALUES (?, ?, 'onsite_conversion_confirmed', ?, ?, ?)
     `).bind(
@@ -13219,31 +13219,45 @@ async function handleConfirmOnsiteConversion(request, env, { admin = false } = {
       actorType,
       auth.userId,
       admin ? adminReason : (note || location.address),
-    ).run();
-
-    await writeAuditLog(env, request, {
-      targetType: 'work_order',
-      targetId: workOrderId,
-      action: admin ? 'onsite_conversion_admin_confirmed' : 'onsite_conversion_confirmed',
-      beforeState: {
+    ), env.DB.prepare(`
+      INSERT INTO audit_logs (
+        id, actor_type, actor_id, target_type, target_id, action,
+        before_state, after_state, ip, device_info
+      )
+      SELECT ?, ?, ?, 'work_order', id, ?, ?, json_object(
+        'service_mode', service_mode,
+        'onsite_conversion_status', onsite_conversion_status,
+        'service_address', service_address,
+        'service_latitude', service_latitude,
+        'service_longitude', service_longitude,
+        'expected_service_days', expected_service_days,
+        'reason', ?
+      ), ?, ?
+      FROM work_orders WHERE id = ?
+    `).bind(
+      generateId(), actorType, auth.userId, auditAction,
+      JSON.stringify({
         service_mode: workOrder.service_mode,
         onsite_conversion_status: workOrder.onsite_conversion_status,
         service_address: workOrder.service_address,
         service_latitude: workOrder.service_latitude,
         service_longitude: workOrder.service_longitude,
-      },
-      afterState: {
-        service_mode: 'onsite',
-        onsite_conversion_status: 'confirmed',
-        service_address: location.address,
-        service_latitude: location.latitude,
-        service_longitude: location.longitude,
-        expected_service_days: workOrder.active_quote_version
-          ? workOrder.quote_expected_service_days
-          : workOrder.expected_service_days,
-        reason: adminReason || undefined,
-      },
-    });
+      }),
+      adminReason || null,
+      getRequestIp(request), request.headers.get('user-agent') || '', workOrderId,
+    )];
+    if (typeof env.DB.batch !== 'function') throw new Error('Transactional D1 batch is required');
+    try {
+      await env.DB.batch(conversionStatements);
+    } catch (error) {
+      if (/onsite conversion concurrent update|malformed json/i.test(String(error?.message || error))) {
+        return errorResponse(
+          market === 'cn' ? '上门服务状态已变更，请刷新后重试' : 'The onsite conversion changed. Refresh and try again.',
+          409,
+        );
+      }
+      throw error;
+    }
 
     if (workOrder.engineer_id) {
       await createNotification(env, {
@@ -14233,8 +14247,9 @@ async function handleSubmitWorkOrderPricing(request, env) {
         installment.due_date, installment.description, installment.required_before_start ? 1 : 0,
       ));
     }
-    statements.push(env.DB.prepare(
-      "UPDATE work_orders SET status = 'pricing', quote_review_status = 'pending_review' WHERE id = ?"
+    statements.push(env.DB.prepare(quoteKind === 'supplemental'
+      ? "UPDATE work_orders SET quote_review_status = 'pending_review' WHERE id = ?"
+      : "UPDATE work_orders SET status = 'pricing', quote_review_status = 'pending_review' WHERE id = ?"
     ).bind(workOrderId));
     statements.push(buildAuditLogStatement(env, request, {
       targetType: 'work_order',
@@ -14439,8 +14454,11 @@ async function handleConfirmWorkOrderPricing(request, env) {
     await env.DB.batch(statements);
 
     // 通知工程师：报价已确认，等待付款
-    const woConfirm = await env.DB.prepare('SELECT engineer_id, order_no FROM work_orders WHERE id = ?').bind(workOrderId).first();
-    if (woConfirm?.engineer_id) {
+    const notificationTask = (async () => {
+      const woConfirm = await env.DB.prepare(
+        'SELECT engineer_id, order_no FROM work_orders WHERE id = ?'
+      ).bind(workOrderId).first();
+      if (!woConfirm?.engineer_id) return;
       await createNotification(env, {
         user_id: woConfirm.engineer_id,
         user_type: 'engineer',
@@ -14449,6 +14467,13 @@ async function handleConfirmWorkOrderPricing(request, env) {
         body: copy.quoteConfirmedBody(woConfirm.order_no),
         data: { work_order_id: workOrderId },
       });
+    })().catch((error) => {
+      console.warn('[quote activation] notification failed:', error?.message || error);
+    });
+    if (request._ctx && typeof request._ctx.waitUntil === 'function') {
+      request._ctx.waitUntil(notificationTask);
+    } else {
+      await notificationTask;
     }
 
     return jsonResponse({ success: true, quote_version: quoteVersion });
@@ -14573,19 +14598,29 @@ function isVersionedQuote(pricing) {
   return Number(pricing?.quote_version || 0) >= 1;
 }
 
-function visibleReceiptClaim(row, customerView) {
-  if (!customerView) return row;
-  const {
-    engineer_note: _engineerNote,
-    decision_reason: _decisionReason,
-    decided_by: _decidedBy,
-    decision_idempotency_key: _decisionIdempotencyKey,
-    ...visible
-  } = row;
+function visibleReceiptClaim(row, auth) {
+  const visible = {
+    id: row.id,
+    installment_id: row.installment_id,
+    work_order_id: row.work_order_id,
+    engineer_id: row.engineer_id,
+    claimed_amount: row.claimed_amount,
+    status: row.status,
+    confirmed_amount: row.confirmed_amount,
+    decided_at: row.decided_at,
+    created_at: row.created_at,
+  };
+  if (auth?.userType !== 'customer') {
+    visible.transaction_reference = row.transaction_reference;
+    visible.engineer_note = row.engineer_note;
+    visible.decision_reason = row.decision_reason;
+  }
+  if (auth?.userType === 'admin') visible.decided_by = row.decided_by;
   return visible;
 }
 
-async function getWorkOrderQuoteExecution(env, workOrder, pricing, customerView = false) {
+async function getWorkOrderQuoteExecution(env, workOrder, pricing, auth, market = 'com') {
+  const customerView = auth?.userType === 'customer';
   if (!pricing) return null;
   if (isVersionedQuote(pricing)) {
     const activeBaselineVersion = Number(workOrder.active_quote_version || 0);
@@ -14649,7 +14684,7 @@ async function getWorkOrderQuoteExecution(env, workOrder, pricing, customerView 
       total_amount: totalAmount,
       payment_schedule: paymentSchedule,
       installments: normalizedInstallments,
-      receipt_claims: claims.map((claim) => visibleReceiptClaim(claim, customerView)),
+      receipt_claims: claims.map((claim) => visibleReceiptClaim(claim, auth)),
       ...summary,
     };
   }
@@ -14660,11 +14695,34 @@ async function getWorkOrderQuoteExecution(env, workOrder, pricing, customerView 
   const paymentRecords = await env.DB.prepare(`
     SELECT * FROM work_order_payments WHERE work_order_id = ? ORDER BY created_at ASC
   `).bind(workOrder.id).all();
-  const completedPayments = (paymentRecords.results || []).filter((payment) => payment.status === 'completed');
   const totalAmount = Number(visiblePricing.total_amount || visiblePricing.subtotal || 0);
-  const receivedAmount = Math.min(totalAmount, completedPayments.reduce(
-    (sum, payment) => sum + Math.max(0, Number(payment.amount || 0)), 0,
-  ));
+  const completedByTransaction = new Map();
+  for (const payment of paymentRecords.results || []) {
+    if (payment.status !== 'completed') continue;
+    const amount = Number(payment.amount);
+    const stage = payment.payment_stage || 'advance';
+    if (!Number.isSafeInteger(amount) || amount <= 0 || !['advance', 'balance'].includes(stage)) {
+      throw new Error('Legacy payment history is inconsistent.');
+    }
+    const transactionKey = payment.transaction_id
+      ? `transaction:${payment.transaction_id}`
+      : `row:${payment.id}`;
+    const duplicate = completedByTransaction.get(transactionKey);
+    if (duplicate && (duplicate.amount !== amount || duplicate.stage !== stage)) {
+      throw new Error('Legacy payment history is inconsistent.');
+    }
+    if (!duplicate) completedByTransaction.set(transactionKey, { amount, stage });
+  }
+  const amountsByStage = new Map();
+  for (const payment of completedByTransaction.values()) {
+    const existingAmount = amountsByStage.get(payment.stage);
+    if (existingAmount !== undefined && existingAmount !== payment.amount) {
+      throw new Error('Legacy payment history is inconsistent.');
+    }
+    amountsByStage.set(payment.stage, payment.amount);
+  }
+  const receivedAmount = [...amountsByStage.values()].reduce((sum, amount) => sum + amount, 0);
+  if (receivedAmount > totalAmount) throw new Error('Legacy payment history is inconsistent.');
   const installment = {
     id: null,
     schedule_id: null,
@@ -14672,7 +14730,7 @@ async function getWorkOrderQuoteExecution(env, workOrder, pricing, customerView 
     quote_version: null,
     sequence: 1,
     amount: totalAmount,
-    currency: completedPayments.find((payment) => payment.currency)?.currency || null,
+    currency: market === 'cn' ? 'CNY' : 'USD',
     trigger_type: 'before_start',
     due_date: null,
     description: '',
@@ -14704,10 +14762,21 @@ async function getWorkOrderQuoteExecution(env, workOrder, pricing, customerView 
 }
 
 async function listQuotePaymentSchedules(env, workOrderId, quoteVersions) {
-  const schedules = await Promise.all(quoteVersions.map((version) => (
-    listQuotePaymentSchedule(env, workOrderId, version)
-  )));
-  return schedules.flat();
+  const versions = [...new Set(quoteVersions.map(Number).filter((version) => (
+    Number.isInteger(version) && version >= 1
+  )))];
+  if (versions.length === 0) return [];
+  const schedule = await env.DB.prepare(`
+    SELECT id, pricing_id, work_order_id, quote_version, sequence, amount, currency,
+      trigger_type, due_date, description, required_before_start, created_at
+    FROM work_order_payment_schedule
+    WHERE work_order_id = ? AND quote_version IN (${versions.map(() => '?').join(', ')})
+    ORDER BY quote_version, sequence
+  `).bind(workOrderId, ...versions).all();
+  return (schedule.results || []).map((row) => ({
+    ...row,
+    required_before_start: Boolean(row.required_before_start),
+  }));
 }
 
 async function getWorkOrderPricingView(env, workOrder, pricing, customerView = false) {
@@ -15143,6 +15212,9 @@ async function handleSubmitInvoiceRequest(request, env) {
     if (!wo) return errorResponse(market === 'cn' ? '工单不存在' : 'Work order not found', 404);
     if (wo.customer_id !== customer_id) {
       return errorResponse(market === 'cn' ? '您无权操作此工单' : 'You do not have permission for this work order', 403);
+    }
+    if (await hasVersionedWorkOrderPricing(env, workOrderId)) {
+      return legacyPaymentConflictResponse(market);
     }
 
     // 检查是否已有发票申请

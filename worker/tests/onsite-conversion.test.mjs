@@ -45,6 +45,21 @@ function createEnv() {
     prepare(sql) {
       return createStatement(env, sql);
     },
+    async batch(statements) {
+      const snapshot = {
+        workOrders: structuredClone(env.__workOrders),
+        logs: structuredClone(env.__logs),
+        auditLogs: structuredClone(env.__auditLogs),
+      };
+      try {
+        return await Promise.all(statements.map((statement) => statement.run()));
+      } catch (error) {
+        env.__workOrders = snapshot.workOrders;
+        env.__logs = snapshot.logs;
+        env.__auditLogs = snapshot.auditLogs;
+        throw error;
+      }
+    },
   };
   return env;
 }
