@@ -31,10 +31,31 @@ const TARGETS = {
 
 const REQUIRED_OPTIONS = [
   'base-url', 'market', 'database', 'confirm-target',
-  'admin-identity', 'admin-password',
-  'customer-identity', 'customer-password',
-  'engineer-identity', 'engineer-password',
+  'admin-identity', 'customer-identity', 'engineer-identity',
 ];
+
+const PASSWORD_ENV = {
+  adminPassword: 'SAGEMRO_QUOTE_EXECUTION_ADMIN_PASSWORD',
+  customerPassword: 'SAGEMRO_QUOTE_EXECUTION_CUSTOMER_PASSWORD',
+  engineerPassword: 'SAGEMRO_QUOTE_EXECUTION_ENGINEER_PASSWORD',
+};
+
+export const QUOTE_EXECUTION_SMOKE_USAGE = `Usage:
+  npm run smoke:production:quote-execution -- \\
+    --market <com|cn> --base-url <known production API URL> \\
+    --database <known production D1 name> --confirm-target <market:database:host> \\
+    --admin-identity <temporary Admin identity> \\
+    --customer-identity <temporary customer email> \\
+    --engineer-identity <temporary engineer email> --allow-write
+
+Required password environment variables:
+  SAGEMRO_QUOTE_EXECUTION_ADMIN_PASSWORD
+  SAGEMRO_QUOTE_EXECUTION_CUSTOMER_PASSWORD
+  SAGEMRO_QUOTE_EXECUTION_ENGINEER_PASSWORD
+
+Options:
+  --json       Print the concise summary as JSON.
+  --help       Show this usage and exit without making production requests or writes.`;
 
 function normalizeCliPath(value) {
   const normalized = String(value || '')
@@ -55,7 +76,7 @@ function parseNamedOptions(argv) {
       values[arg.slice(2)] = true;
       continue;
     }
-    if (!arg.startsWith('--')) throw new Error(`Unexpected positional argument: ${arg}`);
+    if (!arg.startsWith('--')) throw new Error('Unexpected positional argument. Options must use --name value syntax.');
     const key = arg.slice(2);
     if (!REQUIRED_OPTIONS.includes(key)) throw new Error(`Unknown option: --${key}`);
     const value = argv[index + 1];
@@ -67,7 +88,7 @@ function parseNamedOptions(argv) {
   return values;
 }
 
-export function parseQuoteExecutionSmokeArgs(argv = []) {
+export function parseQuoteExecutionSmokeArgs(argv = [], env = process.env) {
   const values = parseNamedOptions(argv);
   for (const key of REQUIRED_OPTIONS) {
     if (!values[key]) throw new Error(`quote execution production smoke requires --${key}`);
@@ -78,7 +99,12 @@ export function parseQuoteExecutionSmokeArgs(argv = []) {
   if (!['com', 'cn'].includes(values.market)) throw new Error('--market must be com or cn');
 
   const target = TARGETS[values.market];
-  const baseUrl = new URL(values['base-url']);
+  let baseUrl;
+  try {
+    baseUrl = new URL(values['base-url']);
+  } catch {
+    throw new Error('--base-url must be a valid URL for a known production target.');
+  }
   if (values['base-url'].replace(/\/$/, '') !== target.baseUrl || values.database !== target.database) {
     throw new Error('Refusing unknown production target: --market, --base-url, and --database must match a known production target.');
   }
@@ -89,6 +115,9 @@ export function parseQuoteExecutionSmokeArgs(argv = []) {
   if (!values['customer-identity'].includes('@') || !values['engineer-identity'].includes('@')) {
     throw new Error('Temporary customer and engineer identities must be email addresses.');
   }
+  for (const envName of Object.values(PASSWORD_ENV)) {
+    if (!env[envName]) throw new Error(`quote execution production smoke requires environment variable ${envName}`);
+  }
 
   return {
     market: values.market,
@@ -97,12 +126,20 @@ export function parseQuoteExecutionSmokeArgs(argv = []) {
     allowWrite: true,
     json: Boolean(values.json),
     adminIdentity: values['admin-identity'],
-    adminPassword: values['admin-password'],
+    adminPassword: env[PASSWORD_ENV.adminPassword],
     customerIdentity: values['customer-identity'].trim().toLowerCase(),
-    customerPassword: values['customer-password'],
+    customerPassword: env[PASSWORD_ENV.customerPassword],
     engineerIdentity: values['engineer-identity'].trim().toLowerCase(),
-    engineerPassword: values['engineer-password'],
+    engineerPassword: env[PASSWORD_ENV.engineerPassword],
   };
+}
+
+function redactSensitiveText(value, sensitiveValues = []) {
+  let output = String(value ?? '');
+  for (const sensitiveValue of sensitiveValues) {
+    if (sensitiveValue) output = output.replaceAll(String(sensitiveValue), '[redacted]');
+  }
+  return output.replace(/Bearer\s+[^\s]+/gi, 'Bearer [redacted]');
 }
 
 export function quoteSql(value) {
@@ -305,7 +342,7 @@ async function step(report, name, fn) {
     item.result = sanitizeQuoteExecutionStepResult(result);
     return result;
   } catch (error) {
-    item.error = String(error?.message || error).replace(/Bearer\s+[^\s]+/gi, 'Bearer [redacted]');
+    item.error = redactSensitiveText(error?.message || error, report.sensitiveValues);
     throw error;
   } finally {
     report.steps.push(item);
@@ -421,6 +458,13 @@ export async function runQuoteExecutionSmoke({ context, options, workerDir, repo
     cleanup: [],
     passed: false,
   };
+  Object.defineProperty(report, 'sensitiveValues', {
+    value: [
+      options.adminPassword, options.customerPassword, options.engineerPassword,
+      options.adminIdentity, options.customerIdentity, options.engineerIdentity,
+    ].filter(Boolean),
+    enumerable: false,
+  });
   const ids = {
     pricingIds: [...context.pricingIds],
     quoteHistoryIds: [...context.quoteHistoryIds],
@@ -625,7 +669,7 @@ VALUES (${quoteSql(fieldDayId)}, ${quoteSql(context.workOrderId)}, ${quoteSql(co
     });
     report.passed = true;
   } catch (error) {
-    report.error = String(error?.message || error).replace(/Bearer\s+[^\s]+/gi, 'Bearer [redacted]');
+    report.error = redactSensitiveText(error?.message || error, report.sensitiveValues);
   } finally {
     try {
       await new Promise((resolveDelay) => setTimeout(resolveDelay, 500));
@@ -636,7 +680,7 @@ VALUES (${quoteSql(fieldDayId)}, ${quoteSql(context.workOrderId)}, ${quoteSql(co
       runWranglerSql({ context, sql: buildQuoteExecutionCleanupSql(context, ids), label: 'cleanup-late', workerDir, tempDir });
       report.cleanup.push({ ok: true, action: 'exact-ID child-first cleanup' });
     } catch (error) {
-      report.cleanup.push({ ok: false, action: 'exact-ID child-first cleanup', error: String(error?.message || error).replace(/Bearer\s+[^\s]+/gi, 'Bearer [redacted]') });
+      report.cleanup.push({ ok: false, action: 'exact-ID child-first cleanup', error: redactSensitiveText(error?.message || error, report.sensitiveValues) });
       report.passed = false;
     }
     try {
@@ -645,7 +689,7 @@ VALUES (${quoteSql(fieldDayId)}, ${quoteSql(context.workOrderId)}, ${quoteSql(co
       report.cleanup.push({ ok: totalResidue === 0, action: 'residue zero check', totalResidue });
       if (totalResidue !== 0) report.passed = false;
     } catch (error) {
-      report.cleanup.push({ ok: false, action: 'residue zero check', error: String(error?.message || error) });
+      report.cleanup.push({ ok: false, action: 'residue zero check', error: redactSensitiveText(error?.message || error, report.sensitiveValues) });
       report.passed = false;
     }
     mkdirSync(dirname(reportPath), { recursive: true });
@@ -655,7 +699,12 @@ VALUES (${quoteSql(fieldDayId)}, ${quoteSql(context.workOrderId)}, ${quoteSql(co
 }
 
 async function main() {
-  const options = parseQuoteExecutionSmokeArgs(process.argv.slice(2));
+  const argv = process.argv.slice(2);
+  if (argv.length === 1 && argv[0] === '--help') {
+    console.log(QUOTE_EXECUTION_SMOKE_USAGE);
+    return;
+  }
+  const options = parseQuoteExecutionSmokeArgs(argv, process.env);
   const context = buildQuoteExecutionSmokeContext(options);
   const scriptDir = dirname(fileURLToPath(import.meta.url));
   const workerDir = resolve(scriptDir, '..');
@@ -683,7 +732,9 @@ async function main() {
 
 if (isCliEntry(import.meta.url, process.argv[1])) {
   main().catch((error) => {
-    console.error('Quote execution production smoke failed before execution.');
+    const sensitiveValues = Object.values(PASSWORD_ENV).map((name) => process.env[name]).filter(Boolean);
+    console.error(`Error: ${redactSensitiveText(error?.message || error, sensitiveValues)}`);
+    console.error('Run with --help for usage.');
     process.exitCode = 1;
   });
 }

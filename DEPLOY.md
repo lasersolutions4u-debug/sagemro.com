@@ -468,28 +468,45 @@ npx wrangler d1 execute sagemro-db-cn --env production --remote --command "SELEC
 
 Do not deploy Worker code that reads the new tables until both verification sets are complete. The coordinated release order is: back up both databases, migrate both first, verify both, then push `main`. After the test job and production environment gate, `deploy.yml` runs the shared Worker, international frontend, and international Admin deployment jobs in parallel. Require all three to succeed before the COM smoke. Then sync client-only changes to `china-edition`, push, manually run `aliyun-cn-deploy.yml --ref china-edition`, and run the CN smoke. `china-edition` does not deploy the Worker.
 
-The production smoke is manual and is intentionally absent from CI. Provide temporary test identities and credentials through the shell or a secure secret manager; do not paste credentials into this document, a command history intended for sharing, reports, or logs.
+The production smoke is manual and is intentionally absent from CI. Identities remain explicit CLI parameters, but passwords are accepted only through the three documented environment variables. Read passwords without terminal echo and inject them into only the smoke child process; do not put secret values in argv, paste them into command history, or print them in reports or logs.
 
 ```bash
 cd worker
 
-# COM placeholders: replace only in a secure shell; no production credentials are shown here.
+# Read temporary passwords without echo. The history records variable names, not values.
+printf 'Temporary Admin password: ' >&2
+IFS= read -rs SAGEMRO_SMOKE_ADMIN_PASSWORD
+printf '\nTemporary customer password: ' >&2
+IFS= read -rs SAGEMRO_SMOKE_CUSTOMER_PASSWORD
+printf '\nTemporary engineer password: ' >&2
+IFS= read -rs SAGEMRO_SMOKE_ENGINEER_PASSWORD
+printf '\n' >&2
+
+# COM placeholders: replace identities only; passwords never enter argv.
+SAGEMRO_QUOTE_EXECUTION_ADMIN_PASSWORD="$SAGEMRO_SMOKE_ADMIN_PASSWORD" \
+SAGEMRO_QUOTE_EXECUTION_CUSTOMER_PASSWORD="$SAGEMRO_SMOKE_CUSTOMER_PASSWORD" \
+SAGEMRO_QUOTE_EXECUTION_ENGINEER_PASSWORD="$SAGEMRO_SMOKE_ENGINEER_PASSWORD" \
 npm run smoke:production:quote-execution -- \
   --market com --base-url https://api.sagemro.com --database sagemro-db \
   --confirm-target com:sagemro-db:api.sagemro.com \
-  --admin-identity '<admin identity>' --admin-password '<admin password>' \
-  --customer-identity '<temporary customer email>' --customer-password '<temporary customer password>' \
-  --engineer-identity '<temporary engineer email>' --engineer-password '<temporary engineer password>' \
+  --admin-identity '<admin identity>' \
+  --customer-identity '<temporary customer email>' \
+  --engineer-identity '<temporary engineer email>' \
   --allow-write
 
-# CN placeholders: replace only in a secure shell; no production credentials are shown here.
+# CN placeholders: reuse the non-echoed shell variables or read a separate temporary set.
+SAGEMRO_QUOTE_EXECUTION_ADMIN_PASSWORD="$SAGEMRO_SMOKE_ADMIN_PASSWORD" \
+SAGEMRO_QUOTE_EXECUTION_CUSTOMER_PASSWORD="$SAGEMRO_SMOKE_CUSTOMER_PASSWORD" \
+SAGEMRO_QUOTE_EXECUTION_ENGINEER_PASSWORD="$SAGEMRO_SMOKE_ENGINEER_PASSWORD" \
 npm run smoke:production:quote-execution -- \
   --market cn --base-url https://api.sagemro.cn --database sagemro-db-cn \
   --confirm-target cn:sagemro-db-cn:api.sagemro.cn \
-  --admin-identity '<admin identity>' --admin-password '<admin password>' \
-  --customer-identity '<temporary customer email>' --customer-password '<temporary customer password>' \
-  --engineer-identity '<temporary engineer email>' --engineer-password '<temporary engineer password>' \
+  --admin-identity '<admin identity>' \
+  --customer-identity '<temporary customer email>' \
+  --engineer-identity '<temporary engineer email>' \
   --allow-write
+
+unset SAGEMRO_SMOKE_ADMIN_PASSWORD SAGEMRO_SMOKE_CUSTOMER_PASSWORD SAGEMRO_SMOKE_ENGINEER_PASSWORD
 ```
 
 **Go/no-go checklist**

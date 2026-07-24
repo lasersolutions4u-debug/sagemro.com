@@ -1,6 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 
 import {
   buildPendingReceiptClaimSql,
@@ -15,7 +17,14 @@ const scriptSource = readFileSync(
   new URL('../scripts/quote-execution-production-smoke.mjs', import.meta.url),
   'utf8',
 );
+const scriptPath = fileURLToPath(new URL('../scripts/quote-execution-production-smoke.mjs', import.meta.url));
 const deploySource = readFileSync(new URL('../../DEPLOY.md', import.meta.url), 'utf8');
+
+const secretEnv = {
+  SAGEMRO_QUOTE_EXECUTION_ADMIN_PASSWORD: 'admin-env-secret-sentinel',
+  SAGEMRO_QUOTE_EXECUTION_CUSTOMER_PASSWORD: 'customer-env-secret-sentinel',
+  SAGEMRO_QUOTE_EXECUTION_ENGINEER_PASSWORD: 'engineer-env-secret-sentinel',
+};
 
 const requiredArgs = [
   '--base-url', 'https://api.sagemro.com',
@@ -23,38 +32,79 @@ const requiredArgs = [
   '--database', 'sagemro-db',
   '--confirm-target', 'com:sagemro-db:api.sagemro.com',
   '--admin-identity', 'admin-smoke@example.invalid',
-  '--admin-password', 'admin-secret',
   '--customer-identity', 'customer-smoke@example.invalid',
-  '--customer-password', 'customer-secret',
   '--engineer-identity', 'engineer-smoke@example.invalid',
-  '--engineer-password', 'engineer-secret',
   '--allow-write',
 ];
 
+function runCli(args, env = secretEnv) {
+  return spawnSync(process.execPath, [scriptPath, ...args], {
+    encoding: 'utf8',
+    env: { ...process.env, ...env },
+  });
+}
+
 test('quote execution smoke requires an explicit known target, identities, and write confirmation', () => {
-  assert.throws(() => parseQuoteExecutionSmokeArgs([]), /--base-url/);
+  assert.throws(() => parseQuoteExecutionSmokeArgs([], secretEnv), /--base-url/);
   assert.throws(
-    () => parseQuoteExecutionSmokeArgs(requiredArgs.filter((arg) => arg !== '--allow-write')),
+    () => parseQuoteExecutionSmokeArgs(requiredArgs.filter((arg) => arg !== '--allow-write'), secretEnv),
     /--allow-write/,
   );
   assert.throws(
     () => parseQuoteExecutionSmokeArgs(requiredArgs.map((arg) => (
       arg === 'https://api.sagemro.com' ? 'https://api.example.com' : arg
-    ))),
+    )), secretEnv),
     /known production target/,
   );
   assert.throws(
     () => parseQuoteExecutionSmokeArgs(requiredArgs.map((arg) => (
       arg === 'com:sagemro-db:api.sagemro.com' ? 'cn:sagemro-db-cn:api.sagemro.cn' : arg
-    ))),
+    )), secretEnv),
     /--confirm-target/,
   );
+  assert.throws(
+    () => parseQuoteExecutionSmokeArgs([...requiredArgs, '--admin-password', 'argv-secret'], secretEnv),
+    /Unknown option: --admin-password/,
+  );
+  assert.throws(
+    () => parseQuoteExecutionSmokeArgs(requiredArgs, {}),
+    /SAGEMRO_QUOTE_EXECUTION_ADMIN_PASSWORD/,
+  );
 
-  const parsed = parseQuoteExecutionSmokeArgs(requiredArgs);
+  const parsed = parseQuoteExecutionSmokeArgs(requiredArgs, secretEnv);
   assert.equal(parsed.market, 'com');
   assert.equal(parsed.baseUrl, 'https://api.sagemro.com');
   assert.equal(parsed.database, 'sagemro-db');
   assert.equal(parsed.allowWrite, true);
+  assert.equal(parsed.adminPassword, secretEnv.SAGEMRO_QUOTE_EXECUTION_ADMIN_PASSWORD);
+  assert.equal(parsed.customerPassword, secretEnv.SAGEMRO_QUOTE_EXECUTION_CUSTOMER_PASSWORD);
+  assert.equal(parsed.engineerPassword, secretEnv.SAGEMRO_QUOTE_EXECUTION_ENGINEER_PASSWORD);
+});
+
+test('real CLI provides help and sanitized actionable validation errors', () => {
+  const help = runCli(['--help'], {});
+  assert.equal(help.status, 0);
+  assert.match(help.stdout, /Usage:/);
+  assert.match(help.stdout, /--base-url/);
+  assert.match(help.stdout, /SAGEMRO_QUOTE_EXECUTION_ADMIN_PASSWORD/);
+  assert.equal(help.stderr, '');
+
+  const cases = [
+    { args: [], expected: /requires --base-url/ },
+    { args: ['--unknown-option', 'argv-secret-sentinel'], expected: /Unknown option: --unknown-option/ },
+    {
+      args: requiredArgs.map((arg) => (arg === 'https://api.sagemro.com' ? 'https://api.example.com' : arg)),
+      expected: /Refusing unknown production target/,
+    },
+  ];
+  for (const entry of cases) {
+    const result = runCli(entry.args);
+    const output = `${result.stdout}\n${result.stderr}`;
+    assert.equal(result.status, 1);
+    assert.match(output, entry.expected);
+    assert.match(output, /--help/);
+    assert.doesNotMatch(output, /admin-env-secret-sentinel|customer-env-secret-sentinel|engineer-env-secret-sentinel|argv-secret-sentinel/);
+  }
 });
 
 test('quote execution context gives every temporary record a unique run scope', () => {
@@ -224,6 +274,14 @@ test('deployment runbook reflects parallel main deployment jobs before COM smoke
   assert.match(deploySource, /deploy\.yml[^\n]*Worker[^\n]*international frontend[^\n]*Admin[^\n]*parallel/i);
   assert.match(deploySource, /all three[^\n]*succeed[^\n]*COM smoke/i);
   assert.doesNotMatch(deploySource, /deploy the shared Worker from `main`, then the international frontend and Admin/i);
+});
+
+test('deployment runbook keeps smoke passwords out of argv and shell history', () => {
+  assert.doesNotMatch(deploySource, /--(?:admin|customer|engineer)-password/);
+  assert.match(deploySource, /read\s+-r?s\s+/);
+  assert.match(deploySource, /SAGEMRO_QUOTE_EXECUTION_ADMIN_PASSWORD/);
+  assert.match(deploySource, /SAGEMRO_QUOTE_EXECUTION_CUSTOMER_PASSWORD/);
+  assert.match(deploySource, /SAGEMRO_QUOTE_EXECUTION_ENGINEER_PASSWORD/);
 });
 
 test('sanitized results and summaries do not retain credentials or tokens', () => {
