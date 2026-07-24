@@ -70,6 +70,18 @@ test('customer confirmation shows localized invalid server terms and disables co
   assert.match(source, /报价付款条款无效/);
 });
 
+test('customer quote action buttons stack on mobile and stay compact on desktop', async () => {
+  const source = await readSource('../src/components/WorkOrder/PricingPanels.jsx');
+  const initialActions = source.match(/\{pricing\.status === 'submitted' && action !== 'reject' && \(([\s\S]*?)\n      \)\}/)?.[1] || '';
+  const confirmationActions = source.match(/\{action === 'confirm' && \(([\s\S]*?)\n      \)\}/)?.[1] || '';
+
+  for (const actions of [initialActions, confirmationActions]) {
+    assert.match(actions, /className="flex flex-col gap-2 sm:flex-row sm:justify-end"/);
+    assert.equal((actions.match(/w-full sm:w-auto/g) || []).length, 2);
+    assert.equal((actions.match(/whitespace-nowrap/g) || []).length, 2);
+  }
+});
+
 test('customer negotiation blocks malformed and zero nonempty counteroffers', async () => {
   const source = await readSource('../src/components/WorkOrder/PricingPanels.jsx');
 

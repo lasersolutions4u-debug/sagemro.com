@@ -578,18 +578,18 @@ export function CustomerPricingPanel({ workOrderId, customerId, serviceMode = 'r
 
       {/* 閹垮秳缍旈崠?*/}
       {pricing.status === 'submitted' && action !== 'reject' && (
-        <div className="flex gap-2">
+        <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
           <button
             data-testid="open-confirm-pricing-button"
             onClick={() => setAction('confirm')}
             disabled={!scheduleIsValid}
-            className="flex-1 whitespace-nowrap py-2.5 bg-green-500 hover:bg-green-600 disabled:opacity-50 text-white rounded-xl font-medium"
+            className="w-full sm:w-auto whitespace-nowrap px-4 py-2.5 bg-green-500 hover:bg-green-600 disabled:opacity-50 text-white rounded-xl font-medium"
           >
             {t.customer.reviewQuote}
           </button>
           <button
             onClick={() => setAction('reject')}
-            className="flex-1 py-2.5 bg-[var(--color-surface-elevated)] hover:bg-[var(--color-border)] text-[var(--color-text-secondary)] rounded-xl font-medium"
+            className="w-full sm:w-auto whitespace-nowrap px-4 py-2.5 bg-[var(--color-surface-elevated)] hover:bg-[var(--color-border)] text-[var(--color-text-secondary)] rounded-xl font-medium"
           >
             {t.customer.negotiate}
           </button>
@@ -625,9 +625,9 @@ export function CustomerPricingPanel({ workOrderId, customerId, serviceMode = 'r
       {action === 'confirm' && (
         <div className="p-3 bg-green-500/10 border border-green-500/30 rounded-xl space-y-2">
           <div className="text-sm text-[var(--color-text-primary)]">{t.customer.confirmNotice}</div>
-          <div className="flex gap-2">
-            <button onClick={() => setAction(null)} className="flex-1 py-2 bg-[var(--color-surface-elevated)] text-[var(--color-text-secondary)] rounded-xl text-sm">{t.customer.cancel}</button>
-            <button data-testid="confirm-pricing-button" onClick={handleConfirm} disabled={submitting || !scheduleIsValid} className="flex-1 whitespace-nowrap py-2 bg-green-500 hover:bg-green-600 disabled:opacity-50 text-white rounded-xl text-sm">
+          <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
+            <button onClick={() => setAction(null)} className="w-full sm:w-auto whitespace-nowrap px-4 py-2 bg-[var(--color-surface-elevated)] text-[var(--color-text-secondary)] rounded-xl text-sm">{t.customer.cancel}</button>
+            <button data-testid="confirm-pricing-button" onClick={handleConfirm} disabled={submitting || !scheduleIsValid} className="w-full sm:w-auto whitespace-nowrap px-4 py-2 bg-green-500 hover:bg-green-600 disabled:opacity-50 text-white rounded-xl text-sm">
               {submitting ? t.customer.confirming : t.customer.confirmQuote}
             </button>
           </div>
