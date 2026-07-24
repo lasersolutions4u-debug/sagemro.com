@@ -15,6 +15,10 @@ function isValidDate(value) {
   return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value;
 }
 
+function isValidStartPrerequisite(value) {
+  return value === true || value === false || value === 1 || value === 0;
+}
+
 export function buildDefaultPaymentSchedule(totalAmount, currency) {
   return [{
     sequence: 1,
@@ -49,6 +53,12 @@ export function validatePaymentSchedule(schedule, { totalAmount, currency }) {
   if (schedule.some((row) => !PAYMENT_TRIGGER_TYPES.has(row.trigger_type))) {
     return { code: 'payment_schedule_trigger_invalid' };
   }
+  if (schedule.some((row) => (
+    Object.hasOwn(row, 'required_before_start')
+    && !isValidStartPrerequisite(row.required_before_start)
+  ))) {
+    return { code: 'payment_schedule_start_prerequisite_invalid' };
+  }
   if (schedule.some((row) => row.trigger_type === 'milestone' && !String(row.description || '').trim())) {
     return { code: 'payment_schedule_milestone_description_required' };
   }
@@ -77,6 +87,9 @@ export function validatePaymentSchedule(schedule, { totalAmount, currency }) {
 }
 
 export function validateQuoteExecution(input = {}) {
+  if (!Number.isInteger(input.total_amount) || input.total_amount <= 0) {
+    return { code: 'quote_total_amount_invalid' };
+  }
   const expectedServiceDays = Number(input.expected_service_days);
   if (
     ['onsite', 'hybrid'].includes(input.service_mode)
@@ -104,14 +117,15 @@ export function validateQuoteExecution(input = {}) {
   };
 }
 
-export function deriveInstallmentState(installment = {}, now = new Date()) {
+export function deriveInstallmentState(installment = {}, now) {
   const amount = Number(installment.amount) || 0;
   const receivedAmount = Number(installment.received_amount) || 0;
   if (receivedAmount >= amount) return 'received';
+  if (installment.status === 'exception') return 'exception';
   if ((Number(installment.pending_claim_count) || 0) > 0) return 'pending_confirmation';
   if (receivedAmount > 0) return 'partially_received';
 
-  if (installment.due_date) {
+  if (installment.due_date && now !== undefined && now !== null) {
     const current = new Date(now);
     const dueDateEnd = new Date(`${installment.due_date}T23:59:59.999Z`);
     if (Number.isFinite(current.getTime()) && current.getTime() > dueDateEnd.getTime()) return 'overdue';
@@ -131,7 +145,7 @@ export function summarizeQuoteExecution(input = {}) {
   const totalAmount = Math.max(0, Number(input.total_amount) || 0);
   const outstandingAmount = Math.max(0, totalAmount - receivedAmount);
   const requiredInstallments = installments.filter((installment) => Boolean(installment.required_before_start));
-  const startReady = installments.length > 0
+  const startReady = requiredInstallments.length > 0
     && requiredInstallments.every((installment) => (
       (Number(installment.received_amount) || 0) >= (Number(installment.amount) || 0)
     ));

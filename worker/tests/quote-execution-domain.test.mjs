@@ -52,6 +52,24 @@ test('valid onsite service days normalize to an integer number', () => {
   assert.equal(result.value.expected_service_days, 2);
 });
 
+test('quote totals must be positive integer minor-unit number primitives', () => {
+  const invalidTotals = ['100', 1.5, undefined, Number.NaN, 0, -1];
+  for (const paymentPlanMode of ['single', 'installments']) {
+    for (const totalAmount of invalidTotals) {
+      assert.deepEqual(validateQuoteExecution({
+        service_mode: 'remote',
+        payment_plan_mode: paymentPlanMode,
+        total_amount: totalAmount,
+        currency: 'CNY',
+        payment_schedule: [
+          { sequence: 1, amount: 40, currency: 'CNY', trigger_type: 'before_start', required_before_start: true },
+          { sequence: 2, amount: 60, currency: 'CNY', trigger_type: 'on_completion' },
+        ],
+      }), { code: 'quote_total_amount_invalid' });
+    }
+  }
+});
+
 test('installment schedules require two to six rows', () => {
   assert.deepEqual([...PAYMENT_TRIGGER_TYPES], [
     'before_start',
@@ -201,6 +219,26 @@ test('schedule total must match exactly and at least one row must gate service s
   });
 });
 
+test('start prerequisite flags accept only booleans and integer boolean values', () => {
+  const start = { sequence: 1, amount: 40, currency: 'CNY', trigger_type: 'before_start', required_before_start: true };
+  for (const value of ['false', '1', null, undefined, 2]) {
+    assert.deepEqual(validatePaymentSchedule([
+      start,
+      { sequence: 2, amount: 60, currency: 'CNY', trigger_type: 'on_completion', required_before_start: value },
+    ], { totalAmount: 100, currency: 'CNY' }), {
+      code: 'payment_schedule_start_prerequisite_invalid',
+    });
+  }
+
+  for (const value of [false, 0]) {
+    const result = validatePaymentSchedule([
+      start,
+      { sequence: 2, amount: 60, currency: 'CNY', trigger_type: 'on_completion', required_before_start: value },
+    ], { totalAmount: 100, currency: 'CNY' });
+    assert.equal(result.value[1].required_before_start, false);
+  }
+});
+
 test('quote validation uses normalized installment schedules without mutating input', () => {
   const input = {
     service_mode: 'onsite',
@@ -223,7 +261,8 @@ test('quote validation uses normalized installment schedules without mutating in
 
 test('installment state follows the documented deterministic priority', () => {
   const now = '2026-07-25T00:00:00Z';
-  assert.equal(deriveInstallmentState({ amount: 100, received_amount: 100, pending_claim_count: 2 }, now), 'received');
+  assert.equal(deriveInstallmentState({ amount: 100, received_amount: 100, status: 'exception', pending_claim_count: 2 }, now), 'received');
+  assert.equal(deriveInstallmentState({ amount: 100, received_amount: 0, status: 'exception', pending_claim_count: 2 }, now), 'exception');
   assert.equal(deriveInstallmentState({ amount: 100, received_amount: 0, pending_claim_count: 1, due_date: '2026-07-20' }, now), 'pending_confirmation');
   assert.equal(deriveInstallmentState({ amount: 100, received_amount: 40, pending_claim_count: 0, due_date: '2026-07-20' }, now), 'partially_received');
   assert.equal(deriveInstallmentState({ amount: 100, received_amount: 0, due_date: '2026-07-24' }, now), 'overdue');
@@ -231,6 +270,17 @@ test('installment state follows the documented deterministic priority', () => {
   assert.equal(deriveInstallmentState({ amount: 100, received_amount: 0, status: 'due' }, now), 'due');
   assert.equal(deriveInstallmentState({ amount: 100, received_amount: 0, source: 'due' }, now), 'due');
   assert.equal(deriveInstallmentState({ amount: 100, received_amount: 0 }, now), 'scheduled');
+});
+
+test('installment state does not derive overdue without a valid explicit now', () => {
+  const installment = { amount: 100, received_amount: 0, due_date: '2000-01-01' };
+  assert.deepEqual([
+    deriveInstallmentState(installment),
+    deriveInstallmentState(installment),
+    deriveInstallmentState(installment, 'invalid'),
+  ], ['scheduled', 'scheduled', 'scheduled']);
+  assert.equal(deriveInstallmentState({ ...installment, collection_started_at: '2026-07-20T00:00:00Z' }), 'collecting');
+  assert.equal(deriveInstallmentState({ ...installment, source: 'due' }), 'due');
 });
 
 test('overdue begins only after the end of the due date', () => {
@@ -287,6 +337,17 @@ test('empty installments are neither start-ready nor financially settled', () =>
   assert.equal(summary.start_ready, false);
   assert.equal(summary.financially_settled, false);
   assert.equal(summary.payment_state, 'unpaid');
+});
+
+test('a schedule without a start prerequisite is not start-ready', () => {
+  const summary = summarizeQuoteExecution({
+    total_amount: 100,
+    installments: [
+      { amount: 40, received_amount: 40 },
+      { amount: 60, received_amount: 60, required_before_start: false },
+    ],
+  });
+  assert.equal(summary.start_ready, false);
 });
 
 test('financial settlement requires every installment to be fully received', () => {
