@@ -16,12 +16,14 @@ import {
   getEngineerCalendarEvents,
   getEngineerTeam,
   getEngineerTickets,
+  getInbox,
   rejectTicket,
   updateEngineerStatus,
 } from '../../services/api';
 import { WorkOrderDetailModal } from '../WorkOrder/WorkOrderDetailModal';
 import { Modal } from '../common/Modal';
 import { EngineerAvailabilityCalendar } from './EngineerAvailabilityCalendar';
+import { InboxPanel } from './InboxPanel';
 import { categoryConfig, categoryL2Labels, typeLabels } from '../../data/workOrderConfig';
 import { redactContactInfo } from '../../utils/contactRedaction';
 
@@ -256,6 +258,21 @@ export function EngineerWorkspace({ currentUser, onLogout, onOpenProfile }) {
   const [isCalendarOpen, setIsCalendarOpen] = useState(false);
   const [calendarPreviewEvents, setCalendarPreviewEvents] = useState([]);
   const [calendarPreviewLoading, setCalendarPreviewLoading] = useState(false);
+  const [inboxOpen, setInboxOpen] = useState(false);
+  const [inboxUnread, setInboxUnread] = useState(0);
+
+  const loadInboxUnread = useCallback(async () => {
+    try {
+      const data = await getInbox();
+      setInboxUnread(data.unread?.total || 0);
+    } catch {
+      setInboxUnread(0);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadInboxUnread();
+  }, [loadInboxUnread]);
 
   const loadTickets = useCallback(async () => {
     if (!engineerId) return;
@@ -425,6 +442,13 @@ export function EngineerWorkspace({ currentUser, onLogout, onOpenProfile }) {
             <p className="text-sm text-[var(--color-text-muted)]">SAGEMRO Service Console</p>
           </div>
           <div className="grid grid-cols-2 gap-2 sm:flex sm:items-center sm:gap-3">
+            <button
+              onClick={() => setInboxOpen(true)}
+              className="relative min-h-10 rounded-xl border border-[var(--color-border)] px-3 py-2 text-sm text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]"
+            >
+              Inbox
+              {inboxUnread > 0 && <span className="ml-1.5 rounded-full bg-[var(--color-primary)] px-1.5 py-0.5 text-xs text-white">{inboxUnread}</span>}
+            </button>
             <button
               onClick={onOpenProfile}
               className="min-h-10 rounded-xl border border-[var(--color-border)] px-3 py-2 text-sm text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]"
@@ -736,6 +760,13 @@ export function EngineerWorkspace({ currentUser, onLogout, onOpenProfile }) {
     >
       <EngineerAvailabilityCalendar />
     </Modal>
+    <InboxPanel
+      isOpen={inboxOpen}
+      onClose={() => {
+        setInboxOpen(false);
+        loadInboxUnread();
+      }}
+    />
     </>
   );
 }
