@@ -748,71 +748,50 @@ test('work orders expose engineer payout as internal closure after service compl
   assert.match(migration, /status TEXT DEFAULT 'not_ready'/);
 });
 
-test('engineer task overview uses two columns on mobile', () => {
+test('engineer workspace delegates localized next steps and selected task context', () => {
   const workspace = read('frontend/src/components/Engineer/EngineerWorkspace.jsx');
-
-  assert.match(workspace, /grid grid-cols-2 gap-3 sm:grid-cols-2 lg:grid-cols-5/);
-});
-
-test('engineer task overview shows 8 personal metrics and 2 regional metrics', () => {
-  const workspace = read('frontend/src/components/Engineer/EngineerWorkspace.jsx');
-
-  assert.match(workspace, /quotePending: tickets\.filter/);
-  assert.match(workspace, /paymentFollowUp: tickets\.filter/);
-  assert.match(workspace, /regionalQueue: tickets\.filter/);
-  assert.match(workspace, /label: 'Quote Pending'/);
-  assert.match(workspace, /label: 'Scheduled Dates'/);
-  assert.match(workspace, /label: 'Regional Queue'/);
-  assert.match(workspace, /label: 'Payment Follow-up'/);
-  assert.match(workspace, /scheduledPreviewCount/);
-  assert.match(workspace, /const personalMetrics = \[/);
-  assert.match(workspace, /const regionalMetrics = isRegionalLead/);
-  assert.match(workspace, /const metrics = \[\.\.\.regionalMetrics, \.\.\.personalMetrics\]/);
-  assert.doesNotMatch(workspace, /label: 'Payment Follow-up'[\s\S]*const personalMetrics = \[/);
-});
-
-test('engineer workspace gives English next steps and selected task context', () => {
-  const workspace = read('frontend/src/components/Engineer/EngineerWorkspace.jsx');
+  const detail = read('frontend/src/components/Engineer/EngineerWorkOrderDetail.jsx');
 
   assert.match(workspace, /getNextAction/);
-  assert.match(workspace, /Needs action/);
-  assert.match(workspace, /Next step:/);
-  assert.match(workspace, /const activeTicket = selectedTicket \|\| tickets\[0\] \|\| null/);
-  assert.match(workspace, /Current Task Context/);
-  assert.match(workspace, /Customer \/ Region/);
-  assert.match(workspace, /Machine \/ Service Type/);
-  assert.match(workspace, /Job Preparation/);
-  assert.match(workspace, /Service Request Summary/);
-  assert.doesNotMatch(workspace, / 路 |澶囦欢|閰嶄欢/);
+  assert.match(workspace, /getNextAction=\{\(ticket\) => getNextAction\(ticket, copy\)\}/);
+  assert.match(detail, /context: 'Current Task Context'/);
+  assert.match(detail, /context: '当前任务上下文'/);
+  assert.match(detail, /region: '客户 \/ 地区'/);
+  assert.match(detail, /preparation: '服务准备'/);
+  assert.doesNotMatch(`${workspace}\n${detail}`, / 路 |澶囦欢|閰嶄欢/);
 });
 
-test('engineer workspace formats AI intake JSON and hides internal category codes', () => {
+test('engineer detail formats AI intake JSON and workspace hides internal category codes', () => {
   const workspace = read('frontend/src/components/Engineer/EngineerWorkspace.jsx');
+  const detail = read('frontend/src/components/Engineer/EngineerWorkOrderDetail.jsx');
 
-  assert.match(workspace, /formatAiIntakeSummary/);
-  assert.match(workspace, /tryParseAiSummary/);
-  assert.match(workspace, /summary\.required_specialties/);
-  assert.match(workspace, /summary\.suggested_skills/);
-  assert.match(workspace, /summary\.urgency_notes/);
+  assert.match(detail, /JSON\.parse\(raw\)/);
+  assert.match(detail, /summary\.summary/);
+  assert.match(detail, /summary\.required_specialties/);
+  assert.match(detail, /summary\.suggested_skills/);
+  assert.match(detail, /summary\.urgency_notes/);
+  assert.match(detail, /aiSummary\.tags\.map/);
+  assert.match(detail, /aiSummary\.notes/);
   assert.match(workspace, /getDeviceLabel/);
   assert.match(workspace, /getIssueLabel/);
-  assert.doesNotMatch(workspace, /<p>\{activeAiSummary \|\| activeTicket\.description/);
   assert.doesNotMatch(workspace, /formatCustomerDeviceLine\(ticket \|\| \{\}\)/);
 });
 
-test('engineer workspace keeps task context and scheduling display fully English', () => {
+test('engineer workspace keeps task context and scheduling display localized', () => {
   const workspace = read('frontend/src/components/Engineer/EngineerWorkspace.jsx');
+  const detail = read('frontend/src/components/Engineer/EngineerWorkOrderDetail.jsx');
   const calendar = read('frontend/src/components/Engineer/EngineerAvailabilityCalendar.jsx');
 
   assert.match(workspace, /formatEngineerDescription/);
   assert.match(workspace, /replaceChineseDeviceLabels/);
+  assert.match(workspace, /isCn \? WORKSPACE_COPY\.cn : WORKSPACE_COPY\.en/);
   assert.match(workspace, /CHINESE_ENGINEER_DESCRIPTION_TERMS/);
   assert.match(workspace, /\['客户', 'Customer'\]/);
   assert.match(workspace, /\['故障', 'Fault'\]/);
   assert.match(workspace, /\['激光切割头', 'laser cutting head'\]/);
-  assert.match(workspace, /ticket\.description \? formatEngineerDescription\(ticket\.description\)/);
-  assert.match(workspace, /Preparation for/);
-  assert.match(workspace, /\{activeTicket\.order_no \|\| activeTicket\.id\}/);
+  assert.match(workspace, /formatDescription=\{\(value\) => formatEngineerDescription\(value, isCn\)\}/);
+  assert.match(detail, /Job Preparation/);
+  assert.match(detail, /服务准备/);
   assert.doesNotMatch(workspace, /\{ticket\.description \|\| 'No service description yet'\}/);
 
   assert.match(calendar, /type="text"/);
@@ -822,38 +801,28 @@ test('engineer workspace keeps task context and scheduling display fully English
   assert.doesNotMatch(calendar, /type="datetime-local"/);
 });
 
-test('engineer workspace pairs compact task overview with a prominent calendar launcher', () => {
+test('engineer workspace keeps availability and calendar compact above delegated work orders', () => {
   const workspace = read('frontend/src/components/Engineer/EngineerWorkspace.jsx');
 
-  const taskOverviewIndex = workspace.indexOf('Task Overview');
-  const splitOverviewIndex = workspace.indexOf('mb-6 grid items-stretch gap-4');
-  const splitColumnsIndex = workspace.indexOf('lg:grid-cols-[minmax(0,2fr)_minmax(280px,1fr)]');
-  const calendarLauncherIndex = workspace.indexOf('Scheduling Calendar');
+  const toolbarIndex = workspace.indexOf('mb-4 rounded-2xl');
   const calendarIndex = workspace.indexOf('<EngineerAvailabilityCalendar />');
-  const serviceTasksIndex = workspace.indexOf('Service Tasks');
-  const contextIndex = workspace.indexOf('Current Task Context');
-  const preparationIndex = workspace.indexOf('Job Preparation');
-  const checklistIndex = workspace.indexOf('Service Standard Checklist');
+  const calendarLauncherIndex = workspace.indexOf('{copy.calendarTitle}');
+  const delegatedContentIndex = workspace.indexOf('{selectedTicket ? (');
 
-  assert.ok(taskOverviewIndex > -1);
-  assert.ok(splitOverviewIndex > -1);
-  assert.ok(splitColumnsIndex > splitOverviewIndex);
-  assert.ok(taskOverviewIndex > splitOverviewIndex);
-  assert.ok(calendarLauncherIndex > taskOverviewIndex);
+  assert.ok(toolbarIndex > -1);
+  assert.ok(calendarLauncherIndex > toolbarIndex);
+  assert.ok(delegatedContentIndex > calendarLauncherIndex);
   assert.match(workspace, /const \[isCalendarOpen, setIsCalendarOpen\] = useState\(false\)/);
   assert.match(workspace, /Update availability, blocked dates, and service windows/);
-  assert.match(workspace, /lg:grid-cols-5/);
-  assert.match(workspace, /bg-\[var\(--color-surface-elevated\)\] p-4/);
-  assert.match(workspace, /size=\{18\}/);
-  assert.match(workspace, /text-2xl font-semibold/);
-  assert.match(workspace, /h-full rounded-2xl/);
+  assert.match(workspace, /维护可服务时间、不可服务日期和现场服务窗口/);
+  assert.match(workspace, /EngineerWorkOrderList/);
+  assert.match(workspace, /EngineerWorkOrderDetail/);
+  assert.doesNotMatch(workspace, /lg:grid-cols-5|personalMetrics|regionalMetrics/);
   assert.doesNotMatch(workspace, /Visit windows/);
   assert.doesNotMatch(workspace, /Blocked dates/);
-  assert.match(workspace, /title="My Scheduling Calendar"/);
+  assert.match(workspace, /title=\{copy\.modalCalendarTitle\}/);
   assert.match(workspace, /size="2xl"/);
-  assert.ok(calendarIndex > checklistIndex);
-  assert.ok(contextIndex < preparationIndex);
-  assert.ok(preparationIndex < checklistIndex);
+  assert.ok(calendarIndex > delegatedContentIndex);
 });
 
 test('engineer workspace calendar launcher previews the next 30 days with scheduled dates highlighted', () => {

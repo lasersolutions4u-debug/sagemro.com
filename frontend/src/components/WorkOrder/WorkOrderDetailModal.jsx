@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Modal } from '../common/Modal';
 import {
   getWorkOrder,
@@ -67,11 +67,41 @@ function createEmptyEquipmentNeed() {
   return { type: '', quantity: '1', specification: '', note: '' };
 }
 
-// ========== 主组件 ==========
-export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess, onConfirmed, userType, userId }) {
+const INCOMING_SUMMARY_FIELDS = [
+  'status',
+  'engineer_id',
+  'engineer_name',
+  'assigned_regional_lead_id',
+  'conflict_status',
+  'conflict_reason',
+  'quote_review_status',
+];
+
+function getChangedIncomingSummary(previousSummary, incomingSummary) {
+  return Object.fromEntries(INCOMING_SUMMARY_FIELDS.flatMap((field) => (
+    previousSummary[field] !== incomingSummary[field] && incomingSummary[field] !== undefined
+      ? [[field, incomingSummary[field]]]
+      : []
+  )));
+}
+
+// ========== Shared work-order content ==========
+export function WorkOrderDetailContent({
+  workOrder,
+  onRateSuccess,
+  onConfirmed,
+  userType,
+  userId,
+  initialTab = 'info',
+  showInfoTab = true,
+  isActive = true,
+  renderModal = false,
+  isOpen = true,
+  onClose,
+}) {
   const [detail, setDetail] = useState(null);
   const [loading, setLoading] = useState(false);
-  const [tab, setTab] = useState('info');
+  const [tab, setTab] = useState(initialTab);
   const [ratings, setRatings] = useState({ timeliness: 5, technical: 5, communication: 5, professional: 5 });
   const [comment, setComment] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -109,6 +139,32 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
   const [materialRequisitionBusy, setMaterialRequisitionBusy] = useState(false);
   const [fieldWorkBusy, setFieldWorkBusy] = useState(false);
   const workOrderId = workOrder?.id;
+  const incomingStatus = workOrder?.status;
+  const incomingEngineerId = workOrder?.engineer_id;
+  const incomingEngineerName = workOrder?.engineer_name;
+  const incomingRegionalLeadId = workOrder?.assigned_regional_lead_id;
+  const incomingConflictStatus = workOrder?.conflict_status;
+  const incomingConflictReason = workOrder?.conflict_reason;
+  const incomingQuoteReviewStatus = workOrder?.quote_review_status;
+  const incomingSummary = useMemo(() => ({
+    status: incomingStatus,
+    engineer_id: incomingEngineerId,
+    engineer_name: incomingEngineerName,
+    assigned_regional_lead_id: incomingRegionalLeadId,
+    conflict_status: incomingConflictStatus,
+    conflict_reason: incomingConflictReason,
+    quote_review_status: incomingQuoteReviewStatus,
+  }), [
+    incomingStatus,
+    incomingEngineerId,
+    incomingEngineerName,
+    incomingRegionalLeadId,
+    incomingConflictStatus,
+    incomingConflictReason,
+    incomingQuoteReviewStatus,
+  ]);
+  const incomingSummaryRef = useRef(incomingSummary);
+  const previousIncomingSummaryRef = useRef(incomingSummary);
   const materialRequisitionBusyMessage = isCnLocale()
     ? '请等待物料申请操作完成后再离开。'
     : 'Wait for the material requisition operation to finish before leaving.';
@@ -124,12 +180,27 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
     setFieldWorkBusy(busy);
   }, []);
 
+  useEffect(() => {
+    const previousSummary = previousIncomingSummaryRef.current;
+    const changes = getChangedIncomingSummary(previousSummary, incomingSummary);
+    previousIncomingSummaryRef.current = incomingSummary;
+    incomingSummaryRef.current = incomingSummary;
+    if (Object.keys(changes).length > 0) {
+      setDetail((current) => (current ? { ...current, ...changes } : current));
+    }
+  }, [incomingSummary]);
+
+  const previousIsActiveRef = useRef(false);
+  const initializedWorkOrderId = useRef(null);
+
   const loadDetail = useCallback(async ({ throwOnError = false } = {}) => {
     if (!workOrderId) return;
     setLoading(true);
+    const requestSummary = incomingSummaryRef.current;
     try {
       const data = await getWorkOrder(workOrderId);
-      setDetail(data);
+      const summaryChanges = getChangedIncomingSummary(requestSummary, incomingSummaryRef.current);
+      setDetail({ ...data, ...summaryChanges });
       setSiteLocation({
         service_address: data.service_address || '',
         service_latitude: data.service_latitude ?? null,
@@ -188,16 +259,28 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
   }, [loadDetail]);
 
   useEffect(() => {
-    if (isOpen && workOrderId) {
+    if (isActive && workOrderId) {
       loadDetail();
-      // 客户侧：待评价/已解决状态自动跳转到评价 tab
-      const initialStatus = workOrder.status;
-      const autoTab = (userType === 'customer' &&
-        (initialStatus === 'pending_review' || initialStatus === 'resolved'))
-        ? 'rating' : 'info';
-      setTab(autoTab);
     }
-  }, [isOpen, workOrder, workOrderId, userType, loadDetail]);
+  }, [isActive, workOrderId, userType, loadDetail]);
+
+  useEffect(() => {
+    const becameActive = isActive && !previousIsActiveRef.current;
+    const changedWorkOrder = initializedWorkOrderId.current !== workOrderId;
+    if (isActive && workOrderId && (changedWorkOrder || becameActive)) {
+      const shouldAutoRate = userType === 'customer'
+        && (incomingStatus === 'pending_review' || incomingStatus === 'resolved');
+      setTab(shouldAutoRate ? 'rating' : initialTab);
+      initializedWorkOrderId.current = workOrderId;
+    }
+    previousIsActiveRef.current = isActive;
+  }, [incomingStatus, initialTab, isActive, userType, workOrderId]);
+
+  useEffect(() => {
+    if (!showInfoTab) {
+      setTab((currentTab) => (currentTab === 'info' ? 'messages' : currentTab));
+    }
+  }, [showInfoTab, tab]);
 
   const handleSubmitRating = async () => {
     if (!detail?.engineer_id || !detail?.customer_id) { toastWarning('Work order information is incomplete'); return; }
@@ -415,12 +498,10 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
     }
   };
 
-  if (!workOrder) return null;
-
   // 使用 detail 中的最新状态（loadDetail 刷新后），回退到 prop 中的初始状态
-  const effectiveStatus = detail?.status || workOrder.status;
+  const effectiveStatus = detail?.status ?? workOrder?.status;
   const status = statusConfig[effectiveStatus] || { text: effectiveStatus, color: 'bg-gray-500' };
-  const urgency = urgencyConfig[workOrder.urgency] || urgencyConfig.normal;
+  const urgency = urgencyConfig[workOrder?.urgency] || urgencyConfig.normal;
   const isEngineer = userType === 'engineer';
   const isCustomer = userType === 'customer';
   const assignedEngineerId = detail?.id === workOrder.id
@@ -439,7 +520,7 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
   );
 
   const tabs = [
-    { key: 'info', label: 'Details' },
+    ...(showInfoTab ? [{ key: 'info', label: 'Details' }] : []),
     { key: 'messages', label: 'Messages' },
   ];
 
@@ -478,6 +559,44 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
   if (isEngineer) {
     tabs.push({ key: 'machineLead', label: 'Machine Lead' });
   }
+  const allowedTabKeyString = tabs.map((item) => item.key).join('|');
+
+  useEffect(() => {
+    if (loading || !detail) return;
+    const allowedTabKeys = allowedTabKeyString.split('|').filter(Boolean);
+    if (!allowedTabKeys.includes(tab)) {
+      setTab(allowedTabKeys.includes('messages') ? 'messages' : allowedTabKeys[0]);
+    }
+  }, [allowedTabKeyString, detail, loading, tab]);
+
+  if (!workOrder) return null;
+
+  const renderPaymentStartAction = () => (
+    isEngineer && ['pending_payment', 'payment_review'].includes(effectiveStatus) ? (
+      <button
+        onClick={async () => {
+          if (!(await confirmDialog('Request Admin approval to start service after advance payment follow-up?'))) return;
+          setPaymentStartSubmitting(true);
+          try {
+            await requestWorkOrderPaymentStart(workOrder.id, 'Engineer confirmed advance payment follow-up with the customer.');
+            toastSuccess('Start request sent to Admin for advance payment confirmation.');
+            loadDetail();
+            onConfirmed?.();
+          } catch (e) {
+            toastError('Start request failed: ' + e.message);
+          } finally {
+            setPaymentStartSubmitting(false);
+          }
+        }}
+        disabled={paymentStartSubmitting || effectiveStatus === 'payment_review'}
+        className="w-full py-3 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] disabled:opacity-50 text-white rounded-xl font-medium"
+      >
+        {effectiveStatus === 'payment_review'
+          ? 'Waiting for Admin Advance Payment Confirmation'
+          : paymentStartSubmitting ? 'Submitting...' : 'Request Admin Approval to Start'}
+      </button>
+    ) : null
+  );
 
   const renderInfoTab = () => (
     <div className="space-y-4">
@@ -816,30 +935,7 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
         </button>
       )}
 
-      {isEngineer && ['pending_payment', 'payment_review'].includes(effectiveStatus) && (
-        <button
-          onClick={async () => {
-            if (!(await confirmDialog('Request Admin approval to start service after advance payment follow-up?'))) return;
-            setPaymentStartSubmitting(true);
-            try {
-              await requestWorkOrderPaymentStart(workOrder.id, 'Engineer confirmed advance payment follow-up with the customer.');
-              toastSuccess('Start request sent to Admin for advance payment confirmation.');
-              loadDetail();
-              onConfirmed?.();
-            } catch (e) {
-              toastError('Start request failed: ' + e.message);
-            } finally {
-              setPaymentStartSubmitting(false);
-            }
-          }}
-          disabled={paymentStartSubmitting || effectiveStatus === 'payment_review'}
-          className="w-full py-3 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] disabled:opacity-50 text-white rounded-xl font-medium"
-        >
-          {effectiveStatus === 'payment_review'
-            ? 'Waiting for Admin Advance Payment Confirmation'
-            : paymentStartSubmitting ? 'Submitting...' : 'Request Admin Approval to Start'}
-        </button>
-      )}
+      {renderPaymentStartAction()}
 
       {detail?.logs?.length > 0 && (
         <div>
@@ -1144,17 +1240,8 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
     </div>
   );
 
-  return (
-    <>
-    <Modal
-      isOpen={isOpen}
-      onClose={onClose}
-      title="Work Order Details"
-      size="2xl"
-      closeDisabled={modalBusy}
-      closeDisabledTitle={modalBusyMessage}
-    >
-      <div className="min-h-0">
+  const content = (
+    <div className="min-h-0">
         {modalBusy && (
           <p role="status" className="sr-only">{modalBusyMessage}</p>
         )}
@@ -1179,7 +1266,9 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
           ))}
         </div>
 
-        {loading ? (
+        {!showInfoTab && renderPaymentStartAction()}
+
+        {isActive && (loading ? (
           <div className="text-center py-8 text-[var(--color-text-muted)]">Loading...</div>
         ) : (
           <>
@@ -1247,28 +1336,74 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
             )}
             {tab === 'machineLead' && renderMachineLeadTab()}
           </>
-        )}
-      </div>
-    </Modal>
-    <PaymentModal
-      isOpen={balancePaymentOpen}
-      onClose={() => setBalancePaymentOpen(false)}
-      workOrderId={workOrderId}
-      customerId={userId}
-      paymentStage="balance"
-      onPaid={() => { setBalancePaymentOpen(false); loadDetail(); onConfirmed?.(); }}
-    />
-    <PaymentModal
-      isOpen={Boolean(installmentPayment)}
-      onClose={() => setInstallmentPayment(null)}
-      workOrderId={workOrderId}
-      customerId={userId}
-      installmentId={installmentPayment?.installmentId}
-      amount={installmentPayment?.amount}
-      trigger={installmentPayment?.trigger}
-      currency={installmentPayment?.currency}
-      onPaid={() => { loadDetail(); onConfirmed?.(); }}
-    />
+        ))}
+    </div>
+  );
+
+  const paymentModals = (
+    <>
+      <PaymentModal
+        isOpen={balancePaymentOpen}
+        onClose={() => setBalancePaymentOpen(false)}
+        workOrderId={workOrderId}
+        customerId={userId}
+        paymentStage="balance"
+        onPaid={() => { setBalancePaymentOpen(false); loadDetail(); onConfirmed?.(); }}
+      />
+      <PaymentModal
+        isOpen={Boolean(installmentPayment)}
+        onClose={() => setInstallmentPayment(null)}
+        workOrderId={workOrderId}
+        customerId={userId}
+        installmentId={installmentPayment?.installmentId}
+        amount={installmentPayment?.amount}
+        trigger={installmentPayment?.trigger}
+        currency={installmentPayment?.currency}
+        onPaid={() => { loadDetail(); onConfirmed?.(); }}
+      />
     </>
+  );
+
+  if (!renderModal) {
+    return (
+      <>
+        {content}
+        {paymentModals}
+      </>
+    );
+  }
+
+  return (
+    <>
+      <Modal
+        isOpen={isOpen}
+        onClose={onClose}
+        title="Work Order Details"
+        size="2xl"
+        keepMounted
+        closeDisabled={modalBusy}
+        closeDisabledTitle={modalBusyMessage}
+      >
+        {content}
+      </Modal>
+      {paymentModals}
+    </>
+  );
+}
+
+export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess, onConfirmed, userType, userId }) {
+  if (!workOrder) return null;
+  return (
+    <WorkOrderDetailContent
+      isOpen={isOpen}
+      isActive={isOpen}
+      renderModal
+      onClose={onClose}
+      workOrder={workOrder}
+      onRateSuccess={onRateSuccess}
+      onConfirmed={onConfirmed}
+      userType={userType}
+      userId={userId}
+    />
   );
 }
