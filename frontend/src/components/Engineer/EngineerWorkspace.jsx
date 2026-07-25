@@ -16,14 +16,12 @@ import {
   getEngineerCalendarEvents,
   getEngineerTeam,
   getEngineerTickets,
-  getInbox,
   rejectTicket,
   updateEngineerStatus,
 } from '../../services/api';
 import { WorkOrderDetailModal } from '../WorkOrder/WorkOrderDetailModal';
 import { Modal } from '../common/Modal';
 import { EngineerAvailabilityCalendar } from './EngineerAvailabilityCalendar';
-import { InboxPanel } from './InboxPanel';
 import {
   categoryConfig,
   categoryConfigCn,
@@ -88,7 +86,6 @@ const WORKSPACE_COPY = {
     subtitle: 'SAGEMRO Service Console',
     profileFallback: 'Engineer Profile',
     signOut: 'Sign Out',
-    inbox: 'Inbox',
     loadTasksFailed: 'Failed to load service tasks',
     loadTeamFailed: 'Failed to load team engineers',
     updateAvailabilityFailed: 'Failed to update availability',
@@ -183,7 +180,6 @@ const WORKSPACE_COPY = {
     subtitle: 'SAGEMRO 服务工作台',
     profileFallback: '工程师资料',
     signOut: '退出登录',
-    inbox: '收件箱',
     loadTasksFailed: '服务任务加载失败',
     loadTeamFailed: '团队工程师加载失败',
     updateAvailabilityFailed: '可服务状态更新失败',
@@ -478,8 +474,6 @@ export function EngineerWorkspace({ currentUser, onLogout, onOpenProfile }) {
   const [isCalendarOpen, setIsCalendarOpen] = useState(false);
   const [calendarPreviewEvents, setCalendarPreviewEvents] = useState([]);
   const [calendarPreviewLoading, setCalendarPreviewLoading] = useState(false);
-  const [inboxOpen, setInboxOpen] = useState(false);
-  const [inboxUnread, setInboxUnread] = useState(0);
 
   const loadTickets = useCallback(async () => {
     if (!engineerId) return;
@@ -521,15 +515,6 @@ export function EngineerWorkspace({ currentUser, onLogout, onOpenProfile }) {
     }
   }, []);
 
-  const loadInboxUnread = useCallback(async () => {
-    try {
-      const data = await getInbox();
-      setInboxUnread(data.unread?.total || 0);
-    } catch {
-      setInboxUnread(0);
-    }
-  }, []);
-
   useEffect(() => {
     loadTickets();
   }, [loadTickets]);
@@ -541,10 +526,6 @@ export function EngineerWorkspace({ currentUser, onLogout, onOpenProfile }) {
   useEffect(() => {
     loadCalendarPreview();
   }, [loadCalendarPreview]);
-
-  useEffect(() => {
-    loadInboxUnread();
-  }, [loadInboxUnread]);
 
   const updateStatus = async (nextStatus) => {
     setStatus(nextStatus);
@@ -662,13 +643,6 @@ export function EngineerWorkspace({ currentUser, onLogout, onOpenProfile }) {
             <p className="text-sm text-[var(--color-text-muted)]">{copy.subtitle}</p>
           </div>
           <div className="grid grid-cols-2 gap-2 sm:flex sm:items-center sm:gap-3">
-            <button
-              onClick={() => setInboxOpen(true)}
-              className="relative min-h-10 rounded-xl border border-[var(--color-border)] px-3 py-2 text-sm text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]"
-            >
-              {copy.inbox}
-              {inboxUnread > 0 && <span className="ml-1.5 rounded-full bg-[var(--color-primary)] px-1.5 py-0.5 text-xs text-white">{inboxUnread}</span>}
-            </button>
             <button
               onClick={onOpenProfile}
               className="min-h-10 rounded-xl border border-[var(--color-border)] px-3 py-2 text-sm text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]"
@@ -980,13 +954,6 @@ export function EngineerWorkspace({ currentUser, onLogout, onOpenProfile }) {
     >
       <EngineerAvailabilityCalendar />
     </Modal>
-    <InboxPanel
-      isOpen={inboxOpen}
-      onClose={() => {
-        setInboxOpen(false);
-        loadInboxUnread();
-      }}
-    />
     </>
   );
 }
