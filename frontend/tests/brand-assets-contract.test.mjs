@@ -525,7 +525,7 @@ test('engineer recruiting page leads with engineer leverage and a bounded servic
   assert.doesNotMatch(recruiting, /max-h-\[calc\(92dvh-96px\)\]/);
   assert.match(recruiting, /networkLabel: '工程师工作台'/);
   assert.match(recruiting, /networkLabel: 'Engineer Workspace'/);
-  assert.match(recruiting, /title: '设备维保最佳方案：AI知识飞轮\+工程师技能实践'/);
+  assert.match(recruiting, /title: '让好技术，得到应有的价值'/);
   assert.match(recruiting, /title: 'A better equipment service model: AI knowledge flywheel \+ engineer expertise'/);
   assert.match(recruiting, /scaleTitle: '把个人经验，变成团队可以复用的服务能力'/);
   assert.match(recruiting, /finalTitle: '让工程师把时间用在真正需要技术的地方'/);
@@ -533,7 +533,7 @@ test('engineer recruiting page leads with engineer leverage and a bounded servic
   assert.match(recruiting, /scaleTitle: 'Turn individual expertise into a service capability the team can reuse'/);
   assert.match(recruiting, /finalTitle: 'Put engineer time where technical skill is truly needed'/);
   assert.doesNotMatch(recruiting, /networkLabel: 'SAGEMRO 工程师工作台'|networkLabel: 'SAGEMRO Engineer Workspace'/);
-  assert.doesNotMatch(recruiting, /title: '设备维保最佳方案：AI知识飞轮\+工程师技能实践。'|title: 'A better equipment service model: AI knowledge flywheel \+ engineer expertise\.'/);
+  assert.doesNotMatch(recruiting, /title: '让好技术，得到应有的价值。'|title: 'A better equipment service model: AI knowledge flywheel \+ engineer expertise\.'/);
   assert.doesNotMatch(recruiting, /(?:^|\n)\s+(?:title|benefitsTitle|audienceTitle|problemTitle|workflowTitle|scaleTitle|sharedTitle|standardTitle|joinTitle|lookForTitle|leadTitle|processTitle|faqTitle|finalTitle|modalTitle): '[^'\n]*[。.。]'/m);
   assert.doesNotMatch(recruiting, /safetyLabel:|safetyTitle:|safetyText:|copy\.safetyTitle|ShieldCheck/);
   assert.match(recruiting, /让优秀的维保工程师体现价值/);
@@ -548,12 +548,13 @@ test('engineer recruiting page leads with engineer leverage and a bounded servic
   assert.match(recruiting, /Keep customer context, decision rationale, and service records in one workflow/);
   assert.match(recruiting, /能在线处理的先在线处理/);
   assert.match(recruiting, /Resolve online or escalate to an engineer/);
-  assert.match(recruiting, /AI 系统/);
-  assert.match(recruiting, /运营管理/);
+  assert.match(recruiting, /好技术，被看见/);
+  assert.match(recruiting, /接好活，少折腾/);
+  assert.match(recruiting, /越专业，越值钱/);
   assert.match(recruiting, /AI system/);
   assert.match(recruiting, /Engineer/);
   assert.match(recruiting, /Operations management/);
-  assert.match(recruiting, /协调派工、报价审核、付款确认和服务跟进/);
+  assert.match(recruiting, /任务合不合适，你看明白再决定/);
   assert.match(recruiting, /一个越来越懂客户的AI，让技术服务更高效/);
   assert.match(recruiting, /知识技能持续进化，服务能力无限增长/);
   assert.match(recruiting, /从单打独斗，到共享规模化能力/);
