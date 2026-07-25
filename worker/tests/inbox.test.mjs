@@ -7,10 +7,17 @@ test('unified operations inbox migration defines the conversation, membership, a
 
   assert.match(migration, /CREATE TABLE IF NOT EXISTS inbox_conversations/);
   assert.match(migration, /kind TEXT NOT NULL CHECK \(kind IN \('direct', 'work_order'\)\)/);
+  assert.match(migration, /created_by_type TEXT NOT NULL CHECK \(created_by_type IN \('admin', 'engineer'\)\)/);
+  assert.match(migration, /last_message_at TEXT NOT NULL DEFAULT \(datetime\('now'\)\)/);
   assert.match(migration, /CREATE TABLE IF NOT EXISTS inbox_participants/);
+  assert.match(migration, /user_type TEXT NOT NULL CHECK \(user_type IN \('admin', 'engineer'\)\)/);
+  assert.doesNotMatch(migration, /is_active/);
   assert.match(migration, /CREATE TABLE IF NOT EXISTS inbox_messages/);
+  assert.match(migration, /sender_type TEXT NOT NULL CHECK \(sender_type IN \('admin', 'engineer'\)\)/);
+  assert.match(migration, /sender_name TEXT NOT NULL/);
   assert.match(migration, /CREATE INDEX IF NOT EXISTS idx_inbox_conversations_work_order/);
-  assert.match(migration, /CREATE INDEX IF NOT EXISTS idx_inbox_participants_user/);
+  assert.match(migration, /CREATE INDEX IF NOT EXISTS idx_inbox_conversations_recent ON inbox_conversations\(kind, last_message_at DESC\)/);
+  assert.match(migration, /CREATE INDEX IF NOT EXISTS idx_inbox_participants_user ON inbox_participants\(user_id, user_type, left_at\)/);
   assert.match(migration, /CREATE INDEX IF NOT EXISTS idx_inbox_messages_conversation_created/);
   assert.match(migration, /CREATE UNIQUE INDEX IF NOT EXISTS idx_inbox_conversations_unique_work_order[\s\S]*WHERE kind = 'work_order'/);
   assert.match(migration, /\('034_unified_operations_inbox', 'Unified operations inbox tables'\)/);
