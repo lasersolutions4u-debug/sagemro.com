@@ -298,7 +298,7 @@ const INCOMING_SUMMARY_FIELDS = [
 
 function getChangedIncomingSummary(previousSummary, incomingSummary) {
   return Object.fromEntries(INCOMING_SUMMARY_FIELDS.flatMap((field) => (
-    previousSummary[field] !== incomingSummary[field] && incomingSummary[field] != null
+    previousSummary[field] !== incomingSummary[field] && incomingSummary[field] !== undefined
       ? [[field, incomingSummary[field]]]
       : []
   )));
@@ -525,10 +525,8 @@ export function WorkOrderDetailContent({
     }
   };
 
-  if (!workOrder) return null;
-
   // 使用 detail 中的最新状态（loadDetail 刷新后），回退到 prop 中的初始状态
-  const effectiveStatus = detail?.status ?? workOrder.status;
+  const effectiveStatus = detail?.status ?? workOrder?.status;
   const statusSet = isCn ? statusConfigCn : statusConfig;
   const urgencySet = isCn ? urgencyConfigCn : urgencyConfig;
   const typeSet = isCn ? typeLabelsCn : typeLabels;
@@ -536,7 +534,7 @@ export function WorkOrderDetailContent({
   const categoryL2Set = isCn ? categoryL2LabelsCn : categoryL2Labels;
   const formatSla = isCn ? formatSlaRemainingCn : formatSlaRemaining;
   const status = statusSet[effectiveStatus] || { text: effectiveStatus, color: 'bg-gray-500' };
-  const urgency = urgencySet[workOrder.urgency] || urgencySet.normal;
+  const urgency = urgencySet[workOrder?.urgency] || urgencySet.normal;
   const isEngineer = userType === 'engineer';
   const isCustomer = userType === 'customer';
   const shouldShowCustomerContact = !isEngineer || canEngineerViewCustomerContact(effectiveStatus);
@@ -570,6 +568,16 @@ export function WorkOrderDetailContent({
   if (isEngineer) {
     tabs.push({ key: 'machineLead', label: copy.tabs.machineLead });
   }
+  const allowedTabKeyString = tabs.map((item) => item.key).join('|');
+
+  useEffect(() => {
+    const allowedTabKeys = allowedTabKeyString.split('|').filter(Boolean);
+    if (!allowedTabKeys.includes(tab)) {
+      setTab(allowedTabKeys.includes('messages') ? 'messages' : allowedTabKeys[0]);
+    }
+  }, [allowedTabKeyString, tab]);
+
+  if (!workOrder) return null;
 
   const renderInfoTab = () => (
     <div className="space-y-4">

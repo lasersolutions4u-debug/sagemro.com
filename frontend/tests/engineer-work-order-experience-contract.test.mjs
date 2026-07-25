@@ -139,10 +139,21 @@ test('incoming work-order summary sync updates detail without changing the activ
   assert.match(detail, /conflict_reason: incomingConflictReason/);
   assert.match(detail, /quote_review_status: incomingQuoteReviewStatus/);
   assert.match(detail, /previousSummary\[field\] !== incomingSummary\[field\]/);
-  assert.match(detail, /incomingSummary\[field\] != null/);
+  assert.match(detail, /incomingSummary\[field\] !== undefined/);
+  assert.doesNotMatch(detail, /incomingSummary\[field\] != null/);
   assert.match(syncSection, /setDetail\(\(current\) => \(current \? \{ \.\.\.current, \.\.\.changes \} : current\)\)/);
   assert.doesNotMatch(syncSection, /setTab/);
-  assert.match(detail, /const effectiveStatus = detail\?\.status \?\? workOrder\.status/);
+  assert.match(detail, /const effectiveStatus = detail\?\.status \?\? workOrder\?\.status/);
+});
+
+test('status transitions move invalid tool tabs to an allowed fallback', () => {
+  const detail = read('frontend/src/components/WorkOrder/WorkOrderDetailModal.jsx');
+
+  assert.match(detail, /const allowedTabKeyString = tabs\.map\(\(item\) => item\.key\)\.join\('\|'\)/);
+  assert.match(detail, /const allowedTabKeys = allowedTabKeyString\.split\('\|'\)\.filter\(Boolean\)/);
+  assert.match(detail, /if \(!allowedTabKeys\.includes\(tab\)\)/);
+  assert.match(detail, /allowedTabKeys\.includes\('messages'\) \? 'messages' : allowedTabKeys\[0\]/);
+  assert.match(detail, /\}, \[allowedTabKeyString, tab\]\);/);
 });
 
 test('engineer detail uses the approved three-section reading order and inline tools', () => {
