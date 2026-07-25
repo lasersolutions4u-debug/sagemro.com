@@ -582,6 +582,7 @@ export function WorkOrderDetailContent({
   const renderPaymentStartAction = () => (
     isAssignedEngineer && ['pending_payment', 'payment_review'].includes(effectiveStatus) ? (
       <button
+        aria-label="Request Admin Approval to Start"
         onClick={async () => {
           if (!(await confirmDialog('Request Admin approval to start service after advance payment follow-up?'))) return;
           setPaymentStartSubmitting(true);
@@ -601,7 +602,7 @@ export function WorkOrderDetailContent({
       >
         {effectiveStatus === 'payment_review'
           ? 'Waiting for Admin Advance Payment Confirmation'
-          : paymentStartSubmitting ? 'Submitting...' : 'Request Admin Approval to Start'}
+          : paymentStartSubmitting ? 'Submitting...' : 'Request Start Approval'}
       </button>
     ) : null
   );
