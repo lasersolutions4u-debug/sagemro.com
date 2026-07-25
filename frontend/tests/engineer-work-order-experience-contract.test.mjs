@@ -102,3 +102,30 @@ test('work-order modal preserves drafts while inactive without background detail
   assert.match(detail, /isActive=\{isOpen\}/);
   assert.match(detail, /\{isActive && \([\s\S]*<MessagePanel[\s\S]*<EngineerPricingPanel[\s\S]*<CustomerPricingPanel[\s\S]*renderRatingTab\(\)[\s\S]*<RepairRecordPanel[\s\S]*renderMachineLeadTab\(\)/);
 });
+
+test('engineer detail uses the approved three-section reading order and inline tools', () => {
+  const detail = read('frontend/src/components/Engineer/EngineerWorkOrderDetail.jsx');
+  const contextIndex = detail.indexOf('Current Task Context');
+  const preparationIndex = detail.indexOf('Job Preparation');
+  const checklistIndex = detail.indexOf('Service Standard Checklist');
+
+  assert.ok(contextIndex > -1 && contextIndex < preparationIndex && preparationIndex < checklistIndex);
+  assert.match(detail, /当前任务上下文/);
+  assert.match(detail, /服务准备/);
+  assert.match(detail, /服务标准检查清单/);
+  assert.match(detail, /WorkOrderDetailContent/);
+  assert.match(detail, /sticky/);
+  assert.match(detail, /lg:grid-cols-\[minmax\(0,1fr\)_/);
+  assert.match(detail, /href="mailto:support@sagemro\.com"/);
+});
+
+test('engineer checklist is read-only and detail failures are recoverable', () => {
+  const detail = read('frontend/src/components/Engineer/EngineerWorkOrderDetail.jsx');
+
+  assert.doesNotMatch(detail, /type="checkbox"/);
+  assert.doesNotMatch(detail, /onChange=.*checklist|setChecklist|saveChecklist/);
+  assert.match(detail, /getWorkOrder\(ticket\.id\)/);
+  assert.match(detail, /onClick=\{loadDetail\}/);
+  assert.match(detail, /Back to Work Orders/);
+  assert.match(detail, /返回工单/);
+});
