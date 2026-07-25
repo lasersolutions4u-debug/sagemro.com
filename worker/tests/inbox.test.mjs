@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { canStartDirectConversation } from '../src/lib/inbox.js';
+import { canStartDirectConversation, isConversationParticipant, isInboxIdentity } from '../src/lib/inbox.js';
 
 test('unified operations inbox migration defines the conversation, membership, and message schema', async () => {
   const migration = await readFile(new URL('../migrations/034_unified_operations_inbox.sql', import.meta.url), 'utf8');
@@ -43,4 +43,16 @@ test('direct-message permission matrix is limited to operations relationships', 
   assert.equal(canStartDirectConversation(engineer, outsider), false);
   assert.equal(canStartDirectConversation(lead, outsider), false);
   assert.equal(canStartDirectConversation({ userType: 'customer', userId: 'cust-1' }, engineer), false);
+});
+
+test('inbox identity and active participant helpers reject customers and departed members', () => {
+  assert.equal(isInboxIdentity(admin), true);
+  assert.equal(isInboxIdentity(engineer), true);
+  assert.equal(isInboxIdentity({ userId: 'cust-1', userType: 'customer' }), false);
+  assert.equal(isConversationParticipant([
+    { user_id: 'eng-1', user_type: 'engineer', left_at: null },
+  ], engineer), true);
+  assert.equal(isConversationParticipant([
+    { user_id: 'eng-1', user_type: 'engineer', left_at: '2026-07-25T00:00:00Z' },
+  ], engineer), false);
 });
