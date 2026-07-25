@@ -20,6 +20,11 @@ export function isKnownProtectedRoute(path) {
     || path === '/api/leads/machine'
     || path === '/api/conversations'
     || path.startsWith('/api/conversations/')
+    || path === '/api/inbox'
+    || path === '/api/inbox/contacts'
+    || path === '/api/inbox/conversations'
+    || path.startsWith('/api/inbox/conversations/')
+    || /^\/api\/inbox\/work-orders\/[^/]+$/.test(path)
     || path === '/api/materials'
     || path === '/api/location/search'
     || path === '/api/workorders'
