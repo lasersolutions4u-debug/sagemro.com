@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { X } from 'lucide-react';
 import { motion as Motion, AnimatePresence } from 'framer-motion';
 
@@ -16,25 +17,35 @@ export function Modal({
   title,
   children,
   size = 'md',
+  keepMounted = false,
   closeDisabled = false,
   closeDisabledTitle = '',
 }) {
+  const [hasBeenOpened, setHasBeenOpened] = useState(isOpen);
+
+  useEffect(() => {
+    if (isOpen) setHasBeenOpened(true);
+  }, [isOpen]);
+
   return (
     <AnimatePresence>
-      {isOpen && (
+      {(isOpen || (keepMounted && hasBeenOpened)) && (
         <>
           {/* 遮罩 */}
-          <Motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            onClick={closeDisabled ? undefined : onClose}
-            aria-disabled={closeDisabled}
-            title={closeDisabled ? closeDisabledTitle : undefined}
-            className="fixed inset-0 bg-black/50 z-40"
-          />
+          {isOpen && (
+            <Motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={closeDisabled ? undefined : onClose}
+              aria-disabled={closeDisabled}
+              title={closeDisabled ? closeDisabledTitle : undefined}
+              className="fixed inset-0 bg-black/50 z-40"
+            />
+          )}
           {/* 弹窗 */}
           <Motion.div
+            hidden={!isOpen}
             initial={{ opacity: 0, scale: 0.95, y: 20 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.95, y: 20 }}
