@@ -584,7 +584,12 @@ test('engineer detail formats AI intake JSON and workspace hides internal catego
   const detail = read('frontend/src/components/Engineer/EngineerWorkOrderDetail.jsx');
 
   assert.match(detail, /JSON\.parse\(raw\)/);
-  assert.match(detail, /parsed\.summary/);
+  assert.match(detail, /summary\.summary/);
+  assert.match(detail, /summary\.required_specialties/);
+  assert.match(detail, /summary\.suggested_skills/);
+  assert.match(detail, /summary\.urgency_notes/);
+  assert.match(detail, /aiSummary\.tags\.map/);
+  assert.match(detail, /aiSummary\.notes/);
   assert.match(workspace, /getDeviceLabel/);
   assert.match(workspace, /getIssueLabel/);
   assert.doesNotMatch(workspace, /formatCustomerDeviceLine\(ticket \|\| \{\}\)/);

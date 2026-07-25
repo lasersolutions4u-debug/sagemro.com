@@ -72,6 +72,18 @@ test('engineer work-order list exposes retry, empty, and localized labels', () =
   assert.match(list, /查看详情/);
 });
 
+test('engineer workspace preserves the controlled work-order filter across detail navigation', () => {
+  const workspace = read('frontend/src/components/Engineer/EngineerWorkspace.jsx');
+  const list = read('frontend/src/components/Engineer/EngineerWorkOrderList.jsx');
+
+  assert.match(workspace, /const \[workOrderFilter, setWorkOrderFilter\] = useState\('all'\)/);
+  assert.match(workspace, /filter=\{workOrderFilter\}/);
+  assert.match(workspace, /onFilterChange=\{setWorkOrderFilter\}/);
+  assert.match(list, /filter, onFilterChange/);
+  assert.match(list, /onClick=\{\(\) => onFilterChange\(value\)\}/);
+  assert.doesNotMatch(list, /useState\('all'\)|setFilter/);
+});
+
 test('existing work-order tools can render inline while the customer modal wrapper remains', () => {
   const detail = read('frontend/src/components/WorkOrder/WorkOrderDetailModal.jsx');
 
@@ -212,4 +224,14 @@ test('engineer detail localizes urgency instead of rendering raw enum values', (
   assert.match(detail, /urgencyLabels: \{ normal: '常规', urgent: '优先处理', critical: '高风险' \}/);
   assert.match(detail, /copy\.urgencyLabels\[detail\?\.urgency \|\| 'normal'\]/);
   assert.doesNotMatch(detail, /\{detail\?\.urgency \|\| 'normal'\}/);
+});
+
+test('engineer detail preserves AI specialties, skills, and urgency notes', () => {
+  const detail = read('frontend/src/components/Engineer/EngineerWorkOrderDetail.jsx');
+
+  assert.match(detail, /summary\.required_specialties/);
+  assert.match(detail, /summary\.suggested_skills/);
+  assert.match(detail, /summary\.urgency_notes/);
+  assert.match(detail, /aiSummary\.tags\.map/);
+  assert.match(detail, /aiSummary\.notes/);
 });

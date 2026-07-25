@@ -96,12 +96,20 @@ export function EngineerWorkOrderDetail(props) {
   const effectiveStatus = ticket.status ?? detail?.status;
   const aiSummary = useMemo(() => {
     const raw = detail?.ai_summary;
-    if (!raw) return detail?.description || ticket.description || '-';
+    const fallback = detail?.description || ticket.description || '-';
+    if (!raw) return { text: fallback, tags: [], notes: '' };
     try {
-      const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
-      return parsed.summary || detail?.description || ticket.description || '-';
+      const summary = typeof raw === 'string' ? JSON.parse(raw) : raw;
+      return {
+        text: summary.summary || fallback,
+        tags: [
+          ...(Array.isArray(summary.required_specialties) ? summary.required_specialties : []),
+          ...(Array.isArray(summary.suggested_skills) ? summary.suggested_skills : []),
+        ].filter(Boolean),
+        notes: summary.urgency_notes || '',
+      };
     } catch {
-      return String(raw);
+      return { text: String(raw), tags: [], notes: '' };
     }
   }, [detail, ticket.description]);
 
@@ -219,7 +227,19 @@ export function EngineerWorkOrderDetail(props) {
             <div className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
               <div className="rounded-xl bg-[var(--color-surface-elevated)] p-3">
                 <div className="text-xs text-[var(--color-text-muted)]">{copy.intake}</div>
-                <p className="mt-1">{formatDescription(aiSummary)}</p>
+                <p className="mt-1">{formatDescription(aiSummary.text)}</p>
+                {aiSummary.tags.length > 0 && (
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {aiSummary.tags.map((tag) => (
+                      <span key={tag} className="rounded-full bg-[var(--color-primary)]/10 px-2 py-0.5 text-xs text-[var(--color-primary)]">
+                        {tag}
+                      </span>
+                    ))}
+                  </div>
+                )}
+                {aiSummary.notes && (
+                  <p className="mt-2 text-xs text-[var(--color-text-muted)]">{formatDescription(aiSummary.notes)}</p>
+                )}
               </div>
               <div className="rounded-xl bg-[var(--color-surface-elevated)] p-3">
                 <div className="text-xs text-[var(--color-text-muted)]">{copy.equipment}</div>

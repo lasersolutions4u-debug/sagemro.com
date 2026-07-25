@@ -1,5 +1,5 @@
 import { ChevronRight, RefreshCw } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import {
   getEngineerScheduleLabel,
   getEngineerWorkOrderTitle,
@@ -31,10 +31,9 @@ const FILTERS = {
 
 export function EngineerWorkOrderList({
   tickets, loading, error, isCn, statusLabels, getNextAction, getMachineLine,
-  formatDescription, onSelectTicket, onRetry,
+  formatDescription, filter, onFilterChange, onSelectTicket, onRetry,
 }) {
   const copy = isCn ? COPY.cn : COPY.en;
-  const [filter, setFilter] = useState('all');
   const visibleTickets = useMemo(() => {
     const sorted = sortEngineerWorkOrders(tickets);
     return filter === 'all' ? sorted : sorted.filter((ticket) => FILTERS[filter].has(ticket.status));
@@ -84,7 +83,7 @@ export function EngineerWorkOrderList({
         <div><h2 className="text-lg font-semibold">{copy.title}</h2><p className="text-sm text-[var(--color-text-muted)]">{copy.note}</p></div>
         <div className="mt-3 flex flex-wrap gap-2 sm:mt-0">
           {['all', 'needsAction', 'active', 'completed'].map((value) => (
-            <button key={value} onClick={() => setFilter(value)} className={`rounded-lg px-3 py-1.5 text-xs font-medium ${filter === value ? 'bg-[var(--color-primary)] text-white' : 'bg-[var(--color-surface-elevated)] text-[var(--color-text-secondary)]'}`}>{copy[value]}</button>
+            <button key={value} onClick={() => onFilterChange(value)} className={`rounded-lg px-3 py-1.5 text-xs font-medium ${filter === value ? 'bg-[var(--color-primary)] text-white' : 'bg-[var(--color-surface-elevated)] text-[var(--color-text-secondary)]'}`}>{copy[value]}</button>
           ))}
         </div>
       </div>

@@ -290,6 +290,7 @@ export function EngineerWorkspace({ currentUser, onLogout, onOpenProfile }) {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [message, setMessage] = useState('');
+  const [workOrderFilter, setWorkOrderFilter] = useState('all');
   const [selectedTicket, setSelectedTicket] = useState(null);
   const [isCalendarOpen, setIsCalendarOpen] = useState(false);
   const [calendarPreviewEvents, setCalendarPreviewEvents] = useState([]);
@@ -564,6 +565,8 @@ export function EngineerWorkspace({ currentUser, onLogout, onOpenProfile }) {
             getNextAction={(ticket) => getNextAction(ticket, copy)}
             getMachineLine={(ticket) => getMachineLine(ticket, isCn, copy)}
             formatDescription={(value) => formatEngineerDescription(value, isCn)}
+            filter={workOrderFilter}
+            onFilterChange={setWorkOrderFilter}
             onSelectTicket={setSelectedTicket}
             onRetry={loadTickets}
           />
