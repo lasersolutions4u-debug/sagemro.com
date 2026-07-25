@@ -136,6 +136,7 @@ export function EngineerWorkOrderDetail(props) {
         <ArrowLeft size={16} />{copy.back}
       </button>
       <div className="sm:text-right">
+        <div className="text-xs font-medium uppercase tracking-wide text-[var(--color-text-muted)]">Work Order Details</div>
         <div className="font-semibold">{getEngineerWorkOrderTitle(detail || ticket, isCn, isCn ? '服务任务' : 'Service task')}</div>
         <div className="text-xs text-[var(--color-text-muted)]">{detail?.order_no || ticket.order_no || ticket.id}</div>
         <div className="text-xs text-[var(--color-text-muted)]">{statusLabels[effectiveStatus] || effectiveStatus}</div>
