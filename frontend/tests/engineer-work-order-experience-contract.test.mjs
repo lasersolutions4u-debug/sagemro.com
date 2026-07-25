@@ -79,6 +79,7 @@ test('inline customer review routing keeps the automatic rating tab when info is
   assert.match(detail, /initialStatus === 'pending_review' \|\| initialStatus === 'resolved'/);
   assert.match(detail, /\? 'rating' : 'info'/);
   assert.match(detail, /setTab\(\(currentTab\) => \(currentTab === 'info' \? 'messages' : currentTab\)\)/);
+  assert.match(detail, /\}, \[showInfoTab, tab\]\);/);
 });
 
 test('work-order modal retains detail content while closed after it has opened', () => {
@@ -90,4 +91,14 @@ test('work-order modal retains detail content while closed after it has opened',
   assert.match(modal, /hasBeenOpened/);
   assert.match(modal, /isOpen \|\| \(keepMounted && hasBeenOpened\)/);
   assert.match(modal, /hidden=\{!isOpen\}/);
+});
+
+test('work-order modal preserves drafts while inactive without background detail panels', () => {
+  const detail = read('frontend/src/components/WorkOrder/WorkOrderDetailModal.jsx');
+
+  assert.match(detail, /isActive = true/);
+  assert.match(detail, /if \(isActive && workOrderId\)/);
+  assert.match(detail, /\}, \[isActive, workOrder, workOrderId, userType, loadDetail\]\);/);
+  assert.match(detail, /isActive=\{isOpen\}/);
+  assert.match(detail, /\{isActive && \([\s\S]*<MessagePanel[\s\S]*<EngineerPricingPanel[\s\S]*<CustomerPricingPanel[\s\S]*renderRatingTab\(\)[\s\S]*<RepairRecordPanel[\s\S]*renderMachineLeadTab\(\)/);
 });

@@ -295,6 +295,7 @@ export function WorkOrderDetailContent({
   onConfirmed,
   initialTab = 'info',
   showInfoTab = true,
+  isActive = true,
 }) {
   const isCn = isCnLocale();
   const copy = isCn ? COPY.cn : COPY.en;
@@ -344,7 +345,7 @@ export function WorkOrderDetailContent({
   }, [workOrderId, userType]);
 
   useEffect(() => {
-    if (workOrderId) {
+    if (isActive && workOrderId) {
       loadDetail();
       // 客户侧：待评价/已解决状态自动跳转到评价 tab
       const initialStatus = workOrder.status;
@@ -353,11 +354,11 @@ export function WorkOrderDetailContent({
         ? 'rating' : 'info';
       setTab(autoTab);
     }
-  }, [workOrder, workOrderId, userType, loadDetail]);
+  }, [isActive, workOrder, workOrderId, userType, loadDetail]);
 
   useEffect(() => {
     if (!showInfoTab) setTab((currentTab) => (currentTab === 'info' ? 'messages' : currentTab));
-  }, [showInfoTab]);
+  }, [showInfoTab, tab]);
 
   const handleSubmitRating = async () => {
     if (!detail?.engineer_id || !detail?.customer_id) { toastWarning(copy.incomplete); return; }
@@ -1005,7 +1006,7 @@ export function WorkOrderDetailContent({
           ))}
         </div>
 
-        {loading ? (
+        {isActive && (loading ? (
           <div className="text-center py-8 text-[var(--color-text-muted)]">{copy.loading}</div>
         ) : (
           <>
@@ -1045,7 +1046,7 @@ export function WorkOrderDetailContent({
             )}
             {tab === 'machineLead' && renderMachineLeadTab()}
           </>
-        )}
+        ))}
     </div>
   );
 }
@@ -1068,6 +1069,7 @@ export function WorkOrderDetailModal({
         userId={userId}
         onRateSuccess={onRateSuccess}
         onConfirmed={onConfirmed}
+        isActive={isOpen}
       />
     </Modal>
   );
