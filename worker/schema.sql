@@ -927,6 +927,51 @@ CREATE TABLE IF NOT EXISTS notifications (
 CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id, user_type);
 CREATE INDEX IF NOT EXISTS idx_notifications_unread ON notifications(user_id, is_read);
 
+CREATE TABLE IF NOT EXISTS inbox_conversations (
+    id TEXT PRIMARY KEY,
+    kind TEXT NOT NULL CHECK (kind IN ('direct', 'work_order')),
+    work_order_id TEXT,
+    subject TEXT,
+    created_by_type TEXT NOT NULL CHECK (created_by_type IN ('admin', 'engineer')),
+    created_by_id TEXT NOT NULL,
+    last_message_at TEXT NOT NULL DEFAULT (datetime('now')),
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    archived_at TEXT,
+    FOREIGN KEY (work_order_id) REFERENCES work_orders(id)
+);
+CREATE INDEX IF NOT EXISTS idx_inbox_conversations_work_order ON inbox_conversations(work_order_id);
+CREATE INDEX IF NOT EXISTS idx_inbox_conversations_recent ON inbox_conversations(kind, last_message_at DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_inbox_conversations_unique_work_order
+    ON inbox_conversations(work_order_id)
+    WHERE kind = 'work_order' AND work_order_id IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS inbox_participants (
+    conversation_id TEXT NOT NULL,
+    user_type TEXT NOT NULL CHECK (user_type IN ('admin', 'engineer')),
+    user_id TEXT NOT NULL,
+    last_read_message_id TEXT,
+    last_read_at TEXT,
+    joined_at TEXT NOT NULL DEFAULT (datetime('now')),
+    left_at TEXT,
+    PRIMARY KEY (conversation_id, user_type, user_id),
+    FOREIGN KEY (conversation_id) REFERENCES inbox_conversations(id)
+);
+CREATE INDEX IF NOT EXISTS idx_inbox_participants_user ON inbox_participants(user_id, user_type, left_at);
+
+CREATE TABLE IF NOT EXISTS inbox_messages (
+    id TEXT PRIMARY KEY,
+    conversation_id TEXT NOT NULL,
+    sender_type TEXT NOT NULL CHECK (sender_type IN ('admin', 'engineer')),
+    sender_id TEXT NOT NULL,
+    sender_name TEXT NOT NULL,
+    content TEXT NOT NULL,
+    attachment_urls TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT,
+    FOREIGN KEY (conversation_id) REFERENCES inbox_conversations(id)
+);
+CREATE INDEX IF NOT EXISTS idx_inbox_messages_conversation_created ON inbox_messages(conversation_id, created_at);
+
 -- 工程师对客户评价（007）
 CREATE TABLE IF NOT EXISTS engineer_reviews (
     id TEXT PRIMARY KEY,
@@ -1515,4 +1560,5 @@ INSERT OR IGNORE INTO _migrations (version, note) VALUES
     ('038_material_requisitions_and_staff', 'Internal staff accounts and material requisition operations'),
     ('039_field_workdays',              'Photo-first multi-day onsite work records and protected evidence'),
     ('040_field_evidence_cleanup_queue', 'Retry private field evidence cleanup after failed rollback'),
-    ('041_quote_execution_baseline',    'Immutable quote schedules, installments, and private receipt evidence metadata');
+    ('041_quote_execution_baseline',    'Immutable quote schedules, installments, and private receipt evidence metadata'),
+    ('034_unified_operations_inbox',    'Unified operations inbox tables');
