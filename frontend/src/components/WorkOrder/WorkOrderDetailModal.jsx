@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Modal } from '../common/Modal';
 import {
   getWorkOrder,
@@ -321,6 +321,15 @@ export function WorkOrderDetailContent({
   });
   const [machineLeadSubmitting, setMachineLeadSubmitting] = useState(false);
   const workOrderId = workOrder?.id;
+  const workOrderStatus = workOrder?.status;
+  const initializedWorkOrderId = useRef(null);
+  const initialWorkOrderStatus = useRef(workOrderStatus);
+
+  useEffect(() => {
+    if (initializedWorkOrderId.current !== workOrderId) {
+      initialWorkOrderStatus.current = workOrderStatus;
+    }
+  }, [workOrderId, workOrderStatus]);
 
   const loadDetail = useCallback(async () => {
     if (!workOrderId) return;
@@ -347,14 +356,17 @@ export function WorkOrderDetailContent({
   useEffect(() => {
     if (isActive && workOrderId) {
       loadDetail();
-      // 客户侧：待评价/已解决状态自动跳转到评价 tab
-      const initialStatus = workOrder.status;
-      const autoTab = (userType === 'customer' &&
-        (initialStatus === 'pending_review' || initialStatus === 'resolved'))
-        ? 'rating' : 'info';
-      setTab(autoTab);
+      if (initializedWorkOrderId.current !== workOrderId) {
+        // 客户侧：待评价/已解决状态自动跳转到评价 tab
+        const initialStatus = initialWorkOrderStatus.current;
+        const autoTab = (userType === 'customer' &&
+          (initialStatus === 'pending_review' || initialStatus === 'resolved'))
+          ? 'rating' : 'info';
+        setTab(autoTab);
+        initializedWorkOrderId.current = workOrderId;
+      }
     }
-  }, [isActive, workOrder, workOrderId, userType, loadDetail]);
+  }, [isActive, workOrderId, userType, loadDetail]);
 
   useEffect(() => {
     if (!showInfoTab) setTab((currentTab) => (currentTab === 'info' ? 'messages' : currentTab));

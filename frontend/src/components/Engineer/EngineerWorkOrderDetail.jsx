@@ -1,5 +1,5 @@
 import { ArrowLeft, ShieldCheck } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { getWorkOrder } from '../../services/api';
 import { WorkOrderDetailContent } from '../WorkOrder/WorkOrderDetailModal';
 
@@ -22,6 +22,17 @@ const CHECKLIST = {
   ],
 };
 
+function mergeTicketSummary(detail, ticket) {
+  return {
+    ...detail,
+    ...(ticket.status !== undefined ? { status: ticket.status } : {}),
+    ...(ticket.engineer_id !== undefined ? { engineer_id: ticket.engineer_id } : {}),
+    ...(ticket.engineer_name !== undefined ? { engineer_name: ticket.engineer_name } : {}),
+    ...(ticket.conflict_status !== undefined ? { conflict_status: ticket.conflict_status } : {}),
+    ...(ticket.conflict_reason !== undefined ? { conflict_reason: ticket.conflict_reason } : {}),
+  };
+}
+
 export function EngineerWorkOrderDetail(props) {
   const {
     ticket, engineerId, isCn, isRegionalLead, team, selectedEngineer,
@@ -32,12 +43,14 @@ export function EngineerWorkOrderDetail(props) {
   const [detail, setDetail] = useState(ticket);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const ticketSummaryRef = useRef(ticket);
 
   const loadDetail = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
-      setDetail(await getWorkOrder(ticket.id));
+      const loadedDetail = await getWorkOrder(ticket.id);
+      setDetail(mergeTicketSummary(loadedDetail, ticketSummaryRef.current));
     } catch (requestError) {
       setError(requestError.message || (isCn ? '工单详情加载失败' : 'Failed to load work-order details'));
     } finally {
@@ -46,6 +59,18 @@ export function EngineerWorkOrderDetail(props) {
   }, [isCn, ticket.id]);
 
   useEffect(() => { loadDetail(); }, [loadDetail]);
+
+  useEffect(() => {
+    const ticketSummary = {
+      status: ticket.status,
+      engineer_id: ticket.engineer_id,
+      engineer_name: ticket.engineer_name,
+      conflict_status: ticket.conflict_status,
+      conflict_reason: ticket.conflict_reason,
+    };
+    ticketSummaryRef.current = ticketSummary;
+    setDetail((current) => mergeTicketSummary(current, ticketSummary));
+  }, [ticket.status, ticket.engineer_id, ticket.engineer_name, ticket.conflict_status, ticket.conflict_reason]);
 
   const copy = isCn ? {
     back: '返回工单', context: '当前任务上下文', preparation: '服务准备',
@@ -56,6 +81,7 @@ export function EngineerWorkOrderDetail(props) {
     confirm: '确认派工', returning: '退回中', returnDispatch: '填写原因并退回',
     assign: '分配工程师', assigning: '派工中', selectEngineer: '选择团队工程师',
     support: '需要 Admin 协助？', loadFailed: '工单详情加载失败',
+    urgencyLabels: { normal: '常规', urgent: '优先处理', critical: '高风险' },
   } : {
     back: 'Back to Work Orders', context: 'Current Task Context', preparation: 'Job Preparation',
     checklist: 'Service Standard Checklist', tools: 'Work-Order Tools', nextStep: 'Current next step',
@@ -65,8 +91,9 @@ export function EngineerWorkOrderDetail(props) {
     confirm: 'Confirm Assignment', returning: 'Returning', returnDispatch: 'Return with a reason',
     assign: 'Assign Engineer', assigning: 'Assigning', selectEngineer: 'Select team engineer',
     support: 'Need Admin support?', loadFailed: 'Failed to load work-order details',
+    urgencyLabels: { normal: 'Standard', urgent: 'Priority', critical: 'High risk' },
   };
-  const effectiveStatus = detail?.status || ticket.status;
+  const effectiveStatus = ticket.status ?? detail?.status;
   const aiSummary = useMemo(() => {
     const raw = detail?.ai_summary;
     if (!raw) return detail?.description || ticket.description || '-';
@@ -182,7 +209,7 @@ export function EngineerWorkOrderDetail(props) {
               </div>
               <div>
                 <div className="text-xs text-[var(--color-text-muted)]">{copy.risk}</div>
-                <p className="mt-1">{detail?.urgency || 'normal'}</p>
+                <p className="mt-1">{copy.urgencyLabels[detail?.urgency || 'normal'] || copy.urgencyLabels.normal}</p>
               </div>
             </div>
           </section>

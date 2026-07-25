@@ -98,9 +98,18 @@ test('work-order modal preserves drafts while inactive without background detail
 
   assert.match(detail, /isActive = true/);
   assert.match(detail, /if \(isActive && workOrderId\)/);
-  assert.match(detail, /\}, \[isActive, workOrder, workOrderId, userType, loadDetail\]\);/);
+  assert.match(detail, /\}, \[isActive, workOrderId, userType, loadDetail\]\);/);
   assert.match(detail, /isActive=\{isOpen\}/);
   assert.match(detail, /\{isActive && \([\s\S]*<MessagePanel[\s\S]*<EngineerPricingPanel[\s\S]*<CustomerPricingPanel[\s\S]*renderRatingTab\(\)[\s\S]*<RepairRecordPanel[\s\S]*renderMachineLeadTab\(\)/);
+});
+
+test('same-id work-order refreshes do not reinitialize the active tool tab', () => {
+  const detail = read('frontend/src/components/WorkOrder/WorkOrderDetailModal.jsx');
+
+  assert.match(detail, /const initializedWorkOrderId = useRef\(null\)/);
+  assert.match(detail, /initializedWorkOrderId\.current !== workOrderId/);
+  assert.match(detail, /const initialStatus = initialWorkOrderStatus\.current/);
+  assert.doesNotMatch(detail, /\[isActive, workOrder, workOrderId, userType, loadDetail\]/);
 });
 
 test('engineer detail uses the approved three-section reading order and inline tools', () => {
@@ -128,4 +137,23 @@ test('engineer checklist is read-only and detail failures are recoverable', () =
   assert.match(detail, /onClick=\{loadDetail\}/);
   assert.match(detail, /Back to Work Orders/);
   assert.match(detail, /返回工单/);
+});
+
+test('engineer detail merges current parent status and assignment into fetched detail', () => {
+  const detail = read('frontend/src/components/Engineer/EngineerWorkOrderDetail.jsx');
+
+  assert.match(detail, /function mergeTicketSummary\(detail, ticket\)[\s\S]*\.\.\.detail,[\s\S]*ticket\.status !== undefined \? \{ status: ticket\.status \}/);
+  assert.match(detail, /ticket\.engineer_id !== undefined \? \{ engineer_id: ticket\.engineer_id \}/);
+  assert.match(detail, /\[ticket\.status, ticket\.engineer_id, ticket\.engineer_name, ticket\.conflict_status, ticket\.conflict_reason\]/);
+  assert.match(detail, /setDetail\(mergeTicketSummary\(loadedDetail, ticketSummaryRef\.current\)\)/);
+  assert.match(detail, /const effectiveStatus = ticket\.status \?\? detail\?\.status/);
+});
+
+test('engineer detail localizes urgency instead of rendering raw enum values', () => {
+  const detail = read('frontend/src/components/Engineer/EngineerWorkOrderDetail.jsx');
+
+  assert.match(detail, /urgencyLabels: \{ normal: 'Standard', urgent: 'Priority', critical: 'High risk' \}/);
+  assert.match(detail, /urgencyLabels: \{ normal: '常规', urgent: '优先处理', critical: '高风险' \}/);
+  assert.match(detail, /copy\.urgencyLabels\[detail\?\.urgency \|\| 'normal'\]/);
+  assert.doesNotMatch(detail, /\{detail\?\.urgency \|\| 'normal'\}/);
 });
