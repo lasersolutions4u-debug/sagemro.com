@@ -35,6 +35,18 @@ test('engineer work-order redesign stays frontend-only', () => {
   assert.doesNotMatch(workspace, /saveChecklist|updateChecklist|checklist_progress/);
 });
 
+test('engineer workspace switches between focused list and detail without a modal', () => {
+  const workspace = read('frontend/src/components/Engineer/EngineerWorkspace.jsx');
+
+  assert.match(workspace, /EngineerWorkOrderList/);
+  assert.match(workspace, /EngineerWorkOrderDetail/);
+  assert.match(workspace, /selectedTicket \?/);
+  assert.match(workspace, /setSelectedTicket\(null\)/);
+  assert.doesNotMatch(workspace, /<WorkOrderDetailModal/);
+  assert.doesNotMatch(workspace, /personalMetrics|regionalMetrics|const metrics/);
+  assert.doesNotMatch(workspace, /type="checkbox"/);
+});
+
 test('engineer work-order list is a structured action-first list with support contact', () => {
   const list = read('frontend/src/components/Engineer/EngineerWorkOrderList.jsx');
 
