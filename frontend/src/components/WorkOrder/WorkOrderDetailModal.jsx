@@ -287,12 +287,20 @@ function createEmptyEquipmentNeed() {
 }
 
 // ========== 主组件 ==========
-export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess, onConfirmed, userType, userId }) {
+export function WorkOrderDetailContent({
+  workOrder,
+  userType,
+  userId,
+  onRateSuccess,
+  onConfirmed,
+  initialTab = 'info',
+  showInfoTab = true,
+}) {
   const isCn = isCnLocale();
   const copy = isCn ? COPY.cn : COPY.en;
   const [detail, setDetail] = useState(null);
   const [loading, setLoading] = useState(false);
-  const [tab, setTab] = useState('info');
+  const [tab, setTab] = useState(initialTab);
   const [ratings, setRatings] = useState({ timeliness: 5, technical: 5, communication: 5, professional: 5 });
   const [comment, setComment] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -336,7 +344,7 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
   }, [workOrderId, userType]);
 
   useEffect(() => {
-    if (isOpen && workOrderId) {
+    if (workOrderId) {
       loadDetail();
       // 客户侧：待评价/已解决状态自动跳转到评价 tab
       const initialStatus = workOrder.status;
@@ -345,7 +353,11 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
         ? 'rating' : 'info';
       setTab(autoTab);
     }
-  }, [isOpen, workOrder, workOrderId, userType, loadDetail]);
+  }, [workOrder, workOrderId, userType, loadDetail]);
+
+  useEffect(() => {
+    if (!showInfoTab && tab === 'info') setTab('messages');
+  }, [showInfoTab, tab]);
 
   const handleSubmitRating = async () => {
     if (!detail?.engineer_id || !detail?.customer_id) { toastWarning(copy.incomplete); return; }
@@ -470,7 +482,7 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
   const customerPhoneDisplay = shouldShowCustomerContact ? detail?.customer_phone : detail?.customer_phone ? 'XXX' : '';
 
   const tabs = [
-    { key: 'info', label: copy.tabs.info },
+    ...(showInfoTab ? [{ key: 'info', label: copy.tabs.info }] : []),
     { key: 'messages', label: copy.tabs.messages },
   ];
 
@@ -975,8 +987,7 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
   );
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title={copy.modalTitle} size="2xl">
-      <div className="min-h-0">
+    <div className="min-h-0">
         {/* Tab 切换 */}
         <div className="-mx-3 mb-4 flex gap-1 overflow-x-auto border-b border-[var(--color-border)] px-3 pb-0 sm:mx-0 sm:px-0">
           {tabs.map((t) => (
@@ -1035,7 +1046,29 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
             {tab === 'machineLead' && renderMachineLeadTab()}
           </>
         )}
-      </div>
+    </div>
+  );
+}
+
+export function WorkOrderDetailModal({
+  isOpen,
+  onClose,
+  workOrder,
+  userType,
+  userId,
+  onRateSuccess,
+  onConfirmed,
+}) {
+  if (!workOrder) return null;
+  return (
+    <Modal isOpen={isOpen} onClose={onClose} title={isCnLocale() ? '工单详情' : 'Work Order Details'} size="2xl">
+      <WorkOrderDetailContent
+        workOrder={workOrder}
+        userType={userType}
+        userId={userId}
+        onRateSuccess={onRateSuccess}
+        onConfirmed={onConfirmed}
+      />
     </Modal>
   );
 }

@@ -59,3 +59,16 @@ test('engineer work-order list exposes retry, empty, and localized labels', () =
   assert.match(list, /View Details/);
   assert.match(list, /查看详情/);
 });
+
+test('existing work-order tools can render inline while the customer modal wrapper remains', () => {
+  const detail = read('frontend/src/components/WorkOrder/WorkOrderDetailModal.jsx');
+
+  assert.match(detail, /export function WorkOrderDetailContent/);
+  assert.match(detail, /export function WorkOrderDetailModal/);
+  assert.match(detail, /<WorkOrderDetailContent/);
+  assert.match(detail, /<Modal isOpen=\{isOpen\}/);
+  assert.match(detail, /showInfoTab/);
+  assert.match(detail, /MessagePanel/);
+  assert.match(detail, /EngineerPricingPanel/);
+  assert.match(detail, /RepairRecordPanel/);
+});
