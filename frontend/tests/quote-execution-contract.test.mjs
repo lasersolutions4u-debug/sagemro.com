@@ -243,7 +243,7 @@ test('work order detail keeps independent collection visible through financial c
   assert.match(source, /Payment outstanding/);
   assert.match(source, /服务已完成/);
   assert.match(source, /待收尾款/);
-  assert.match(source, /tab === 'collection'/);
+  assert.match(source, /activeTab === 'collection'/);
   assert.match(source, /installmentId=/);
   assert.match(source, /trigger=/);
 });

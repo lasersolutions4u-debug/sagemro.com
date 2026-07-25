@@ -42,8 +42,15 @@ function makeEnv() {
             return null;
           },
           async all() {
-            if (/FROM work_order_messages WHERE work_order_id = \?/i.test(sql)) {
-              return { results: state.messages.filter((row) => row.work_order_id === this.args[0]) };
+            if (/FROM work_order_messages\s+WHERE work_order_id = \?/i.test(sql)) {
+              let results = state.messages.filter((row) => row.work_order_id === this.args[0]);
+              if (/COALESCE\(is_customer_visible, 1\) = 1/i.test(sql)) {
+                results = results.filter((row) => Number(row.is_customer_visible ?? 1) === 1);
+              }
+              if (/COALESCE\(is_internal_note, 0\) = 0/i.test(sql)) {
+                results = results.filter((row) => Number(row.is_internal_note || 0) === 0);
+              }
+              return { results };
             }
             return { results: [] };
           },

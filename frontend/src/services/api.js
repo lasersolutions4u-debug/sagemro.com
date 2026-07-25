@@ -776,12 +776,11 @@ export async function rejectWorkOrderPricing(workOrderId, customerId, reason, co
 
 /**
  * 获取工程师的服务任务列表。
- * Service OS 默认只返回后台已派给当前工程师的服务任务。
+ * Service OS 默认返回当前工程师个人任务；区域负责人可请求团队范围。
  */
-export async function getEngineerTickets(engineerId) {
-  const url = engineerId
-    ? `${API_BASE}/api/engineers/tickets?engineer_id=${engineerId}`
-    : `${API_BASE}/api/engineers/tickets`;
+export async function getEngineerTickets(options = {}) {
+  const scope = typeof options === 'string' ? 'personal' : options.scope || 'personal';
+  const url = `${API_BASE}/api/engineers/tickets?scope=${encodeURIComponent(scope)}`;
   const response = await fetch(url, {
     headers: authHeaders(),
   });
@@ -825,6 +824,19 @@ export async function getEngineerCalendarEvents(params = {}) {
 export async function createEngineerCalendarEvent(data) {
   const response = await fetch(`${API_BASE}/api/engineers/calendar-events`, {
     method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify(data),
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.error || `HTTP ${response.status}`);
+  }
+  return response.json();
+}
+
+export async function updateEngineerCalendarEvent(eventId, data) {
+  const response = await fetch(`${API_BASE}/api/engineers/calendar-events/${eventId}`, {
+    method: 'PATCH',
     headers: authHeaders(),
     body: JSON.stringify(data),
   });
