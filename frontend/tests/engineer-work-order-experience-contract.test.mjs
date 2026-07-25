@@ -34,3 +34,28 @@ test('engineer work-order redesign stays frontend-only', () => {
   const workspace = read('frontend/src/components/Engineer/EngineerWorkspace.jsx');
   assert.doesNotMatch(workspace, /saveChecklist|updateChecklist|checklist_progress/);
 });
+
+test('engineer work-order list is a structured action-first list with support contact', () => {
+  const list = read('frontend/src/components/Engineer/EngineerWorkOrderList.jsx');
+
+  assert.match(list, /sortEngineerWorkOrders\(tickets\)/);
+  assert.match(list, /getEngineerWorkOrderTitle/);
+  assert.match(list, /getEngineerScheduleLabel/);
+  assert.match(list, /copy\.nextStep/);
+  assert.match(list, /onSelectTicket\(ticket\)/);
+  assert.match(list, /href="mailto:support@sagemro\.com"/);
+  assert.match(list, /support@sagemro\.com/);
+  assert.doesNotMatch(list, /grid-cols-5|personalMetrics|regionalMetrics/);
+});
+
+test('engineer work-order list exposes retry, empty, and localized labels', () => {
+  const list = read('frontend/src/components/Engineer/EngineerWorkOrderList.jsx');
+
+  assert.match(list, /onRetry/);
+  assert.match(list, /Failed to load service tasks/);
+  assert.match(list, /服务任务加载失败/);
+  assert.match(list, /No assigned service tasks yet/);
+  assert.match(list, /暂无已分配服务任务/);
+  assert.match(list, /View Details/);
+  assert.match(list, /查看详情/);
+});
