@@ -32,6 +32,7 @@ const FILTERS = {
 export function EngineerWorkOrderList({
   tickets, loading, error, isCn, statusLabels, getNextAction, getMachineLine,
   formatDescription, filter, onFilterChange, onSelectTicket, onRetry,
+  onConfirmAssignment,
 }) {
   const copy = isCn ? COPY.cn : COPY.en;
   const visibleTickets = useMemo(() => {
@@ -67,9 +68,19 @@ export function EngineerWorkOrderList({
                 <p className="mt-2 line-clamp-2 text-sm text-[var(--color-text-secondary)]">{formatDescription(ticket.description || '')}</p>
                 <p className="mt-3 text-sm"><span className="font-semibold text-[var(--color-primary)]">{copy.nextStep}:</span> {getNextAction(ticket)}</p>
               </div>
-              <button onClick={() => onSelectTicket(ticket)} className="mt-3 inline-flex min-h-10 shrink-0 items-center gap-1 rounded-lg border border-[var(--color-border)] px-3 py-2 text-sm font-medium sm:mt-0">
-                {copy.view}<ChevronRight size={15} />
-              </button>
+              <div className="mt-3 flex shrink-0 flex-wrap gap-2 sm:mt-0 sm:justify-end">
+                {ticket.status === 'assigned' && onConfirmAssignment && (
+                  <button
+                    onClick={(event) => { event.stopPropagation(); onConfirmAssignment(ticket); }}
+                    className="inline-flex min-h-10 items-center rounded-lg bg-[var(--color-primary)] px-3 py-2 text-sm font-medium text-white"
+                  >
+                    {isCn ? '确认派工' : 'Confirm Assignment'}
+                  </button>
+                )}
+                <button onClick={() => onSelectTicket(ticket)} className="inline-flex min-h-10 items-center gap-1 rounded-lg border border-[var(--color-border)] px-3 py-2 text-sm font-medium">
+                  {copy.view}<ChevronRight size={15} />
+                </button>
+              </div>
             </div>
           </article>
         );

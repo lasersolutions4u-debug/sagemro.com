@@ -565,6 +565,7 @@ export function EngineerWorkspace({ currentUser, onLogout, onOpenProfile }) {
             filter={workOrderFilter}
             onFilterChange={setWorkOrderFilter}
             onSelectTicket={setSelectedTicket}
+            onConfirmAssignment={confirmAssignment}
             onRetry={loadTickets}
           />
         )}
