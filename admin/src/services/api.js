@@ -505,33 +505,3 @@ export async function adjustAdminMaterialInventory(materialId, adjustment) {
     body: JSON.stringify(adjustment),
   });
 }
-
-export async function getInbox(filter = 'all') {
-  return request(`/api/inbox?filter=${filter}`);
-}
-
-export async function getInboxContacts() {
-  return request('/api/inbox/contacts');
-}
-
-export async function createInboxDirectConversation(recipientId, recipientType) {
-  return request('/api/inbox/conversations', {
-    method: 'POST',
-    body: JSON.stringify({ recipient_id: recipientId, recipient_type: recipientType }),
-  });
-}
-
-export async function getInboxConversation(conversationId) {
-  return request(`/api/inbox/conversations/${conversationId}`);
-}
-
-export async function postInboxMessage(conversationId, content) {
-  return request(`/api/inbox/conversations/${conversationId}/messages`, {
-    method: 'POST',
-    body: JSON.stringify({ content }),
-  });
-}
-
-export async function markInboxConversationRead(conversationId) {
-  return request(`/api/inbox/conversations/${conversationId}/read`, { method: 'POST' });
-}
