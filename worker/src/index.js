@@ -5423,7 +5423,7 @@ async function handleGetWorkOrder(request, env) {
 
     const fieldWorkAccessMode = await resolveFieldWorkAccessMode(env, request._auth, workOrder, id);
     const historicalEngineerView = fieldWorkAccessMode === 'historical_engineer';
-    const noFieldWorkView = fieldWorkAccessMode === 'none';
+    const noFieldWorkView = ['none', 'regional_management'].includes(fieldWorkAccessMode);
 
     const logs = await env.DB.prepare(
       'SELECT * FROM work_order_logs WHERE work_order_id = ? ORDER BY created_at ASC'
@@ -5654,9 +5654,9 @@ async function handleGetRepairRecord(request, env) {
     const workOrderId = new URL(request.url).pathname.split('/')[3];
 
     const workOrder = await env.DB.prepare(
-      'SELECT id, customer_id, engineer_id FROM work_orders WHERE id = ?'
+      'SELECT id, customer_id, engineer_id, assigned_regional_lead_id FROM work_orders WHERE id = ?'
     ).bind(workOrderId).first();
-    assertWorkOrderAccess(auth, workOrder);
+    await assertWorkOrderReadAccess(env, auth, workOrder);
 
     const record = await env.DB.prepare(
       'SELECT * FROM work_order_repair_records WHERE work_order_id = ?'
@@ -6867,11 +6867,44 @@ async function hasHistoricalFieldDayAccess(env, auth, workOrderId) {
   return Boolean(fieldDay);
 }
 
+async function getEngineerWorkOrderReadRelation(env, auth, workOrder) {
+  if (auth?.userType !== 'engineer' || !workOrder) return null;
+  if (workOrder.engineer_id === auth.userId) return 'personal';
+  if (!workOrder.engineer_id && workOrder.assigned_regional_lead_id === auth.userId) {
+    return 'regional_queue';
+  }
+
+  const lead = await env.DB.prepare(
+    "SELECT id FROM engineers WHERE id = ? AND engineer_role = 'regional_lead'"
+  ).bind(auth.userId).first();
+  if (lead && workOrder.engineer_id) {
+    const member = await env.DB.prepare(
+      'SELECT id FROM engineers WHERE id = ? AND regional_lead_id = ?'
+    ).bind(workOrder.engineer_id, auth.userId).first();
+    if (member) return 'current_team_member';
+  }
+  return workOrder.assigned_regional_lead_id === auth.userId
+    ? 'historical_supervision'
+    : null;
+}
+
+async function assertWorkOrderReadAccess(env, auth, workOrder) {
+  try {
+    assertWorkOrderAccess(auth, workOrder);
+  } catch (error) {
+    if (!(error instanceof GuardError)) throw error;
+    if (await getEngineerWorkOrderReadRelation(env, auth, workOrder)) return;
+    throw error;
+  }
+}
+
 async function resolveFieldWorkAccessMode(env, auth, workOrder, workOrderId) {
   try {
     assertWorkOrderAccess(auth, workOrder);
   } catch (error) {
-    if (!(error instanceof GuardError) || !await hasHistoricalFieldDayAccess(env, auth, workOrderId)) throw error;
+    if (!(error instanceof GuardError)) throw error;
+    if (await getEngineerWorkOrderReadRelation(env, auth, workOrder)) return 'regional_management';
+    if (!await hasHistoricalFieldDayAccess(env, auth, workOrderId)) throw error;
     return 'historical_engineer';
   }
   if (auth?.userType === 'admin') return 'admin';
@@ -7435,18 +7468,44 @@ async function handleGetCustomerReviews(request, env) {
 // ============ 工程师相关 ============
 
 // 获取工程师服务任务
-// Service OS 默认只返回后台已派给该工程师的服务任务。
-// SERVICE_OS_LEGACY: include_pending_legacy=1 时才返回旧 pending 队列。
+// Service OS 默认返回当前工程师个人任务；区域负责人可显式请求团队范围。
 async function handleGetEngineerTickets(request, env) {
   const url = new URL(request.url);
-  const engineerId = request._auth?.userId || url.searchParams.get('engineer_id');
-  const includePendingLegacy = url.searchParams.get('include_pending_legacy') === '1';
+  const auth = request._auth;
 
   try {
-    const engineer = engineerId
-      ? await env.DB.prepare('SELECT id, engineer_role FROM engineers WHERE id = ?').bind(engineerId).first()
-      : null;
+    if (!auth || auth.userType !== 'engineer') {
+      return errorResponse('需要工程师权限', 403);
+    }
+
+    const requestedScope = url.searchParams.get('scope') === 'team' ? 'team' : 'personal';
+    const engineer = await env.DB.prepare(
+      'SELECT id, name, engineer_role FROM engineers WHERE id = ?'
+    ).bind(auth.userId).first();
+    if (!engineer) return errorResponse('工程师不存在', 404);
     const isRegionalLead = engineer?.engineer_role === 'regional_lead';
+    if (requestedScope === 'team' && !isRegionalLead) {
+      return errorResponse('仅区域负责人可查看团队工单', 403);
+    }
+
+    let team = [];
+    if (requestedScope === 'team') {
+      const teamResult = await env.DB.prepare(`
+        SELECT id, user_no, name, service_region, status, specialties,
+               rating_technical, rating_count, workload_status, certification_status
+        FROM engineers
+        WHERE regional_lead_id = ? AND engineer_role = 'engineer'
+        ORDER BY name COLLATE NOCASE ASC, id ASC
+        LIMIT 100
+      `).bind(auth.userId).all();
+      team = (teamResult.results || []).map((member) => ({
+        ...member,
+        specialties: typeof member.specialties === 'string'
+          ? JSON.parse(member.specialties || '[]')
+          : (member.specialties || []),
+      }));
+    }
+    const currentTeamIds = new Set(team.map((member) => member.id));
 
     let query = `
       SELECT
@@ -7460,24 +7519,15 @@ async function handleGetEngineerTickets(request, env) {
       LEFT JOIN engineers e ON w.engineer_id = e.id
       WHERE `;
 
-    let params = [];
-
-    if (engineerId) {
-      if (isRegionalLead) {
-        query += `(w.assigned_regional_lead_id = ? OR w.engineer_id = ?)`;
-        params.push(engineerId, engineerId);
-      } else {
-        query += `w.engineer_id = ?`;
-        params.push(engineerId);
-      }
-      if (includePendingLegacy) {
-        query += ` OR (w.status IN ('pending', 'assigned') AND NOT EXISTS (
-          SELECT 1 FROM json_each(COALESCE(w.rejected_engineers, '[]')) WHERE value = ?
-        ))`;
-        params.push(engineerId);
-      }
+    let params;
+    if (requestedScope === 'team') {
+      query += `(w.engineer_id = ? OR w.assigned_regional_lead_id = ? OR w.engineer_id IN (
+        SELECT id FROM engineers WHERE regional_lead_id = ? AND engineer_role = 'engineer'
+      ))`;
+      params = [auth.userId, auth.userId, auth.userId];
     } else {
-      query += includePendingLegacy ? `w.status IN ('pending', 'assigned')` : `1=0`;
+      query += 'w.engineer_id = ?';
+      params = [auth.userId];
     }
 
     query += ' ORDER BY w.created_at DESC LIMIT 100';
@@ -7487,10 +7537,23 @@ async function handleGetEngineerTickets(request, env) {
     const paymentProjections = await listWorkOrderPaymentProjections(env, results);
     const workOrders = results.map((wo) => withPaymentProjection({
         ...wo,
+        ownership_relation: wo.engineer_id === auth.userId
+          ? 'personal'
+          : !wo.engineer_id && wo.assigned_regional_lead_id === auth.userId
+          ? 'regional_queue'
+          : currentTeamIds.has(wo.engineer_id)
+          ? 'current_team_member'
+          : 'historical_supervision',
         sla_status: getSlaStatus(wo.sla_deadline, wo.urgency),
       }, paymentProjections.get(wo.id)));
 
-    return jsonResponse({ work_orders: workOrders });
+    return jsonResponse({
+      scope: requestedScope,
+      is_regional_lead: isRegionalLead,
+      engineer: { id: engineer.id, name: engineer.name, engineer_role: engineer.engineer_role },
+      team,
+      work_orders: workOrders,
+    });
   } catch (error) {
     return errorResponse(error.message, 500);
   }
@@ -9744,7 +9807,7 @@ async function canAccessRequisition(env, auth, requisition) {
   const workOrder = await env.DB.prepare(`
     SELECT id, customer_id, engineer_id, assigned_regional_lead_id, status FROM work_orders WHERE id = ?
   `).bind(requisition.work_order_id).first();
-  return workOrder?.engineer_id === auth.userId;
+  return Boolean(await getEngineerWorkOrderReadRelation(env, auth, workOrder));
 }
 
 function generateRequisitionNumber(id) {
@@ -9901,13 +9964,27 @@ async function handleListMaterialRequisitions(request, env) {
   const market = getRequestMarket(request);
   let statement;
   if (auth.userType === 'engineer') {
-    statement = env.DB.prepare(`
-      SELECT mr.* FROM material_requisitions mr
-      JOIN work_orders wo ON wo.id = mr.work_order_id
-      WHERE wo.engineer_id = ? AND mr.market = ?
-        ${workOrderId ? 'AND mr.work_order_id = ?' : ''}
-      ORDER BY mr.created_at DESC
-    `).bind(auth.userId, market, ...(workOrderId ? [workOrderId] : []));
+    if (workOrderId) {
+      const workOrder = await env.DB.prepare(`
+        SELECT id, customer_id, engineer_id, assigned_regional_lead_id, status
+        FROM work_orders WHERE id = ?
+      `).bind(workOrderId).first();
+      if (!await getEngineerWorkOrderReadRelation(env, auth, workOrder)) {
+        return errorResponse('无权查看领料申请', 403);
+      }
+      statement = env.DB.prepare(`
+        SELECT * FROM material_requisitions
+        WHERE market = ? AND work_order_id = ?
+        ORDER BY created_at DESC
+      `).bind(market, workOrderId);
+    } else {
+      statement = env.DB.prepare(`
+        SELECT mr.* FROM material_requisitions mr
+        JOIN work_orders wo ON wo.id = mr.work_order_id
+        WHERE wo.engineer_id = ? AND mr.market = ?
+        ORDER BY mr.created_at DESC
+      `).bind(auth.userId, market);
+    }
   } else if (auth.userType === 'admin') {
     statement = env.DB.prepare(`
       SELECT * FROM material_requisitions
@@ -11144,7 +11221,7 @@ async function handleGetWorkOrderMaterialItems(request, env) {
     const workOrderId = url.pathname.split('/')[3];
     const purpose = cleanText(url.searchParams.get('purpose'), 40);
     const workOrder = await getWorkOrderForMaterialAccess(env, workOrderId);
-    assertWorkOrderAccess(request._auth, workOrder);
+    await assertWorkOrderReadAccess(env, request._auth, workOrder);
 
     let list = await listWorkOrderMaterialItems(env, workOrderId, {
       purpose: WORK_ORDER_MATERIAL_PURPOSES.has(purpose) ? purpose : undefined,
@@ -11334,16 +11411,70 @@ async function handleCreateEngineerCalendarEvent(request, env) {
   }
 }
 
+async function handleUpdateEngineerCalendarEvent(request, env) {
+  try {
+    await assertCurrentEngineer(request, env);
+    const eventId = new URL(request.url).pathname.split('/')[4];
+    if (!eventId) return errorResponse('缺少日历事件 ID');
+
+    const existing = await env.DB.prepare(
+      'SELECT * FROM engineer_calendar_events WHERE id = ? AND engineer_id = ?'
+    ).bind(eventId, request._auth.userId).first();
+    if (!existing) return errorResponse('日历事件不存在', 404);
+    if (existing.work_order_id) return errorResponse('工单排期请通过工单流程修改', 409);
+
+    const body = await request.json().catch(() => ({}));
+    const eventType = cleanText(body.event_type, 60);
+    const title = cleanText(body.title, 160);
+    const startAt = cleanText(body.start_at, 40);
+    const endAt = cleanText(body.end_at, 40);
+    if (!ENGINEER_CALENDAR_EVENT_TYPES.has(eventType)) return errorResponse('无效日历类型');
+    if (!title || !startAt || !endAt) return errorResponse('请填写日历标题、开始时间和结束时间');
+    if (new Date(startAt).getTime() >= new Date(endAt).getTime()) {
+      return errorResponse('结束时间必须晚于开始时间');
+    }
+
+    await env.DB.prepare(`
+      UPDATE engineer_calendar_events
+      SET event_type = ?, title = ?, start_at = ?, end_at = ?, timezone = ?,
+          region = ?, city = ?, notes = ?, updated_at = datetime('now')
+      WHERE id = ? AND engineer_id = ? AND work_order_id IS NULL
+    `).bind(
+      eventType,
+      title,
+      startAt,
+      endAt,
+      cleanText(body.timezone, 80) || existing.timezone || 'UTC',
+      cleanText(body.region, 120) || null,
+      cleanText(body.city, 120) || null,
+      cleanText(body.notes, 1200) || null,
+      eventId,
+      request._auth.userId
+    ).run();
+    const event = await env.DB.prepare(
+      'SELECT * FROM engineer_calendar_events WHERE id = ? AND engineer_id = ?'
+    ).bind(eventId, request._auth.userId).first();
+    return jsonResponse({ success: true, event });
+  } catch (error) {
+    if (error instanceof GuardError) return errorResponse(error.message, error.status);
+    return errorResponse(error.message, 500);
+  }
+}
+
 async function handleDeleteEngineerCalendarEvent(request, env) {
   try {
     await assertCurrentEngineer(request, env);
     const eventId = new URL(request.url).pathname.split('/')[4];
     if (!eventId) return errorResponse('缺少日历事件 ID');
 
-    const result = await env.DB.prepare(
-      'DELETE FROM engineer_calendar_events WHERE id = ? AND engineer_id = ?'
+    const existing = await env.DB.prepare(
+      'SELECT id, work_order_id FROM engineer_calendar_events WHERE id = ? AND engineer_id = ?'
+    ).bind(eventId, request._auth.userId).first();
+    if (!existing) return errorResponse('日历事件不存在', 404);
+    if (existing.work_order_id) return errorResponse('工单排期请通过工单流程修改', 409);
+    await env.DB.prepare(
+      'DELETE FROM engineer_calendar_events WHERE id = ? AND engineer_id = ? AND work_order_id IS NULL'
     ).bind(eventId, request._auth.userId).run();
-    if (result.meta?.changes === 0) return errorResponse('日历事件不存在', 404);
     return jsonResponse({ success: true });
   } catch (error) {
     if (error instanceof GuardError) return errorResponse(error.message, error.status);
@@ -13957,7 +14088,7 @@ async function handleGetWorkOrderMessages(request, env) {
     const wo = await env.DB.prepare(
       'SELECT id, customer_id, engineer_id, assigned_regional_lead_id FROM work_orders WHERE id = ?'
     ).bind(workOrderId).first();
-    assertWorkOrderAccess(request._auth, wo);
+    await assertWorkOrderReadAccess(env, request._auth, wo);
 
     const isCustomer = request._auth?.userType === 'customer';
     const messages = isCustomer
@@ -14105,7 +14236,7 @@ async function handleGetWorkOrderPricing(request, env) {
     const wo = await env.DB.prepare(
       'SELECT id, customer_id, engineer_id, assigned_regional_lead_id, quote_review_status FROM work_orders WHERE id = ?'
     ).bind(workOrderId).first();
-    assertWorkOrderAccess(request._auth, wo);
+    await assertWorkOrderReadAccess(env, request._auth, wo);
 
     const pricing = await env.DB.prepare(
       'SELECT * FROM work_order_pricing WHERE work_order_id = ?'
@@ -17927,6 +18058,9 @@ async function routeRequest(request, env, ctx) {
     }
     if (path === '/api/engineers/calendar-events' && request.method === 'POST') {
       return handleCreateEngineerCalendarEvent(request, env);
+    }
+    if (path.startsWith('/api/engineers/calendar-events/') && request.method === 'PATCH') {
+      return handleUpdateEngineerCalendarEvent(request, env);
     }
     if (path.startsWith('/api/engineers/calendar-events/') && request.method === 'DELETE') {
       return handleDeleteEngineerCalendarEvent(request, env);
