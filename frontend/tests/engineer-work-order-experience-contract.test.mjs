@@ -95,3 +95,18 @@ test('work-order modal syncs parent status without resetting the active tool tab
   assert.match(modal.slice(syncStart, syncEnd), /setDetail\(\(current\) =>/);
   assert.doesNotMatch(modal.slice(syncStart, syncEnd), /setTab/);
 });
+
+test('work-order modal waits for refreshed detail before clearing a requested collection tab', () => {
+  const modal = read('frontend/src/components/WorkOrder/WorkOrderDetailModal.jsx');
+  const tabGuardStart = modal.indexOf('const allowedTabKeyString');
+  const tabGuardEnd = modal.indexOf('if (!workOrder) return null;', tabGuardStart);
+  assert.ok(tabGuardStart > -1 && tabGuardEnd > tabGuardStart);
+  const tabGuard = modal.slice(tabGuardStart, tabGuardEnd);
+  assert.match(tabGuard, /if \(loading \|\| !detail\) return;/);
+});
+
+test('engineer inline tools retain the payment start approval action when details are hidden', () => {
+  const modal = read('frontend/src/components/WorkOrder/WorkOrderDetailModal.jsx');
+  assert.match(modal, /!showInfoTab && renderPaymentStartAction\(\)/);
+  assert.match(modal, /Request Admin Approval to Start/);
+});
