@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
@@ -41,4 +42,14 @@ test('E2E runtime requires a nontrivial mailbox secret', () => {
 
 test('E2E Chromium bypasses system proxies for the loopback nip.io topology', () => {
   assert.match(playwrightConfig, /--no-proxy-server/);
+});
+
+test('regional lead E2E covers the approved team workspace boundaries', () => {
+  const source = readFileSync(new URL('./regional-lead-workspace.spec.mjs', import.meta.url), 'utf8');
+  assert.match(source, /Team metrics/);
+  assert.match(source, /Regional team work orders/);
+  assert.match(source, /Assign \/ Reassign/);
+  assert.match(source, /Team progress view/);
+  assert.match(source, /Open calendar/);
+  assert.match(source, /SAGEMRO Engineer Profile/);
 });

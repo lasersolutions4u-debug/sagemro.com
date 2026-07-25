@@ -72,11 +72,14 @@ test('engineer and Admin complete the material requisition lifecycle', async ({ 
   });
 
   await engineerPage.reload();
-  const task = engineerPage.locator('article').filter({ hasText: orderNo });
+  const task = engineerPage.getByRole('button').filter({ hasText: orderNo });
   await expect(task).toBeVisible();
-  await task.getByRole('button', { name: 'Confirm Assignment', exact: true }).click();
-  await task.getByRole('button', { name: 'View / Handle Task', exact: true }).click();
-  await engineerPage.getByRole('tab', { name: 'Material Requisition', exact: true }).click();
+  await task.click();
+  await expect(engineerPage).toHaveURL(new RegExp(`/work-orders/${workOrder.id}$`));
+  await engineerPage.getByRole('button', { name: 'Confirm Assignment', exact: true }).click();
+  await engineerPage.reload();
+  await expect(engineerPage.getByText(`Work order · ${orderNo}`, { exact: true })).toBeVisible();
+  await engineerPage.getByRole('tab', { name: 'Material request', exact: true }).click();
   await engineerPage.getByRole('button', { name: 'Copy preparation lines', exact: true }).click();
   await expect(engineerPage.getByLabel('Material name').first()).toHaveValue(STOCK_MATERIAL.name);
   await engineerPage.getByRole('button', { name: 'Add line', exact: true }).click();
@@ -134,9 +137,8 @@ test('engineer and Admin complete the material requisition lifecycle', async ({ 
   await expect(drawer.getByText('Issued', { exact: true }).first()).toBeVisible();
 
   await engineerPage.reload();
-  const issuedTask = engineerPage.locator('article').filter({ hasText: orderNo });
-  await issuedTask.getByRole('button', { name: 'View / Handle Task', exact: true }).click();
-  await engineerPage.getByRole('tab', { name: 'Material Requisition', exact: true }).click();
+  await expect(engineerPage).toHaveURL(new RegExp(`/work-orders/${workOrder.id}$`));
+  await engineerPage.getByRole('tab', { name: 'Material request', exact: true }).click();
   await engineerPage.getByRole('button', { name: `Open requisition ${requisitionNo}`, exact: true }).click();
   const receiptDetail = engineerPage.locator('section[aria-live="polite"]');
   await expect(receiptDetail.getByText('Status: Issued', { exact: true })).toBeVisible();
@@ -158,6 +160,9 @@ test('engineer and Admin complete the material requisition lifecycle', async ({ 
   await expect(receivedDrawer.getByText('Received', { exact: true }).first()).toBeVisible();
   await receivedDrawer.getByRole('button', { name: 'Close', exact: true }).click();
   await expect(receivedDrawer.getByText('Closed', { exact: true }).first()).toBeVisible();
+
+  await engineerPage.goBack();
+  await expect(engineerPage.getByText('My work orders', { exact: true })).toBeVisible();
 
   await adminContext.close();
   await customerContext.close();

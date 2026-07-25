@@ -1100,9 +1100,16 @@ test('receipt claims use role-facing allowlists without idempotency or Admin ide
     method: 'GET', userType: 'engineer', userId: 'lead-1',
   });
   assert.equal(regionalLeadDetail.response.status, 200);
-  assert.equal(Object.hasOwn(regionalLeadDetail.json.quote_execution.receipt_claims[0], 'evidence'), false);
+  const regionalExecution = regionalLeadDetail.json.quote_execution;
+  for (const field of ['payment_state', 'received_amount', 'outstanding_amount', 'financially_settled', 'start_ready']) {
+    assert.equal(Object.hasOwn(regionalExecution, field), false);
+  }
+  assert.deepEqual(regionalExecution.receipt_claims, []);
   assert.equal(JSON.stringify(regionalLeadDetail.json).includes('evidence-detail-1'), false);
   assert.equal(JSON.stringify(regionalLeadDetail.json).includes('private/receipt-detail.pdf'), false);
+  assert.equal(JSON.stringify(regionalLeadDetail.json).includes('Internal collection note'), false);
+  assert.equal(JSON.stringify(regionalLeadDetail.json).includes('TX-PRIVATE-1'), false);
+  assert.equal(JSON.stringify(regionalLeadDetail.json).includes('Matched bank receipt'), false);
 
   const unassignedLeadDetail = await api(ctx, '/api/workorders/wo-quote-1', {
     method: 'GET', userType: 'engineer', userId: 'lead-2',

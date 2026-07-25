@@ -1,7 +1,7 @@
 # Engineer Workspace Correction Design
 
-Date: 2026-07-25  
-Scope: International and China engineer workspaces  
+Date: 2026-07-25
+Scope: International and China engineer workspaces
 Status: Approved visual direction; written specification awaiting final user review
 
 ## 1. Objective
