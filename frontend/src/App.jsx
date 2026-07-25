@@ -72,6 +72,8 @@ function App() {
   const [authReady, setAuthReady] = useState(false);
   const [currentPath, setCurrentPath] = useState(() => window.location.pathname);
   const authVersionRef = useRef(0);
+  const engineerWorkOrderMatch = currentPath.match(/^\/work-orders\/([^/]+)$/);
+  const engineerWorkOrderId = engineerWorkOrderMatch ? decodeURIComponent(engineerWorkOrderMatch[1]) : '';
 
   useEffect(() => {
     const isToolsOrInsights = currentPath === '/tools'
@@ -460,6 +462,7 @@ function App() {
             currentUser={currentUser}
             onLogout={handleLogout}
             onOpenProfile={() => setEngineerProfileOpen(true)}
+            workOrderId={engineerWorkOrderId}
           />
           {engineerProfileOpen && (
             <EngineerProfileModal

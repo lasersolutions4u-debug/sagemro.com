@@ -125,9 +125,10 @@ test('multi-day onsite work preserves protected evidence and closes only after d
     await dispatchWorkOrder({ page: adminPage, orderNo, engineer });
 
     await engineerPage.reload();
-    const assignedTask = engineerPage.locator('article').filter({ hasText: orderNo });
+    const assignedTask = engineerPage.getByRole('button').filter({ hasText: orderNo });
     await expect(assignedTask).toBeVisible();
-    await assignedTask.getByRole('button', { name: 'Confirm Assignment', exact: true }).click();
+    await assignedTask.click();
+    await engineerPage.getByRole('button', { name: 'Confirm Assignment', exact: true }).click();
 
     const customerOrders = await browserJsonApi(customerPage, '/api/workorders');
     expect(customerOrders.ok).toBe(true);

@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
-import { CalendarDays, Trash2 } from 'lucide-react';
+import { CalendarDays, Pencil, Trash2, X } from 'lucide-react';
 import {
   createEngineerCalendarEvent,
   deleteEngineerCalendarEvent,
   getEngineerCalendarEvents,
+  updateEngineerCalendarEvent,
 } from '../../services/api';
 
 const COPY = {
@@ -17,6 +18,11 @@ const COPY = {
     region: '区域',
     notes: '备注',
     add: '发布排单信号',
+    save: '保存修改',
+    saving: '正在保存...',
+    cancel: '取消编辑',
+    edit: '编辑',
+    scheduled: '工单排期',
     adding: '正在添加...',
     loading: '加载中...',
     empty: '暂无日历记录',
@@ -24,6 +30,7 @@ const COPY = {
     loadError: '日历加载失败',
     createError: '日历记录保存失败',
     deleteError: '日历记录删除失败',
+    loading: '正在加载日历...',
     defaultTitle: {
       engineer_available: '可安排现场服务',
       engineer_unavailable: '暂不可安排',
@@ -32,7 +39,6 @@ const COPY = {
     eventTypes: [
       ['engineer_available', '可服务'],
       ['engineer_unavailable', '不可服务'],
-      ['reserved_for_service', '已预留'],
     ],
   },
   en: {
@@ -45,6 +51,11 @@ const COPY = {
     region: 'Region',
     notes: 'Notes',
     add: 'Publish Scheduling Signal',
+    save: 'Save changes',
+    saving: 'Saving...',
+    cancel: 'Cancel edit',
+    edit: 'Edit',
+    scheduled: 'Scheduled from work order',
     adding: 'Adding...',
     loading: 'Loading...',
     empty: 'No calendar entries yet',
@@ -52,6 +63,7 @@ const COPY = {
     loadError: 'Failed to load calendar',
     createError: 'Failed to save calendar entry',
     deleteError: 'Failed to delete calendar entry',
+    loading: 'Loading calendar...',
     defaultTitle: {
       engineer_available: 'Available for field service',
       engineer_unavailable: 'Unavailable',
@@ -60,7 +72,6 @@ const COPY = {
     eventTypes: [
       ['engineer_available', 'Available'],
       ['engineer_unavailable', 'Unavailable'],
-      ['reserved_for_service', 'Reserved'],
     ],
   },
 };
@@ -108,10 +119,10 @@ function localDateTimeToIso(value) {
   return parseLocalDateTimeInput(value);
 }
 
-function formatDateTime(value) {
+function formatDateTime(value, locale) {
   if (!value) return '-';
   try {
-    return new Intl.DateTimeFormat('en-US', {
+    return new Intl.DateTimeFormat(locale === 'cn' ? 'zh-CN' : 'en-US', {
       month: 'short',
       day: 'numeric',
       hour: '2-digit',
@@ -142,6 +153,7 @@ export function EngineerAvailabilityCalendar() {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [deletingId, setDeletingId] = useState('');
+  const [editingId, setEditingId] = useState('');
   const [form, setForm] = useState({
     event_type: 'engineer_available',
     title: '',
@@ -172,12 +184,37 @@ export function EngineerAvailabilityCalendar() {
     setForm((prev) => ({ ...prev, [field]: value }));
   };
 
-  const addEvent = async (event) => {
+  const resetForm = () => {
+    setEditingId('');
+    setForm({
+      event_type: 'engineer_available',
+      title: '',
+      start_at: defaultLocalDateTime(24),
+      end_at: defaultLocalDateTime(32),
+      region: '',
+      notes: '',
+    });
+  };
+
+  const editEvent = (item) => {
+    if (item.work_order_id) return;
+    setEditingId(item.id);
+    setForm({
+      event_type: item.event_type,
+      title: item.title || '',
+      start_at: formatLocalDateTimeInput(item.start_at),
+      end_at: formatLocalDateTimeInput(item.end_at),
+      region: item.region || '',
+      notes: item.notes || '',
+    });
+  };
+
+  const saveEvent = async (event) => {
     event.preventDefault();
     setSubmitting(true);
     setMessage('');
     try {
-      await createEngineerCalendarEvent({
+      const payload = {
         event_type: form.event_type,
         title: form.title.trim() || copy.defaultTitle[form.event_type],
         start_at: localDateTimeToIso(form.start_at),
@@ -185,8 +222,10 @@ export function EngineerAvailabilityCalendar() {
         timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
         region: form.region,
         notes: form.notes,
-      });
-      setForm((prev) => ({ ...prev, title: '', notes: '' }));
+      };
+      if (editingId) await updateEngineerCalendarEvent(editingId, payload);
+      else await createEngineerCalendarEvent(payload);
+      resetForm();
       await loadEvents();
     } catch (error) {
       setMessage(error.message || copy.createError);
@@ -222,7 +261,7 @@ export function EngineerAvailabilityCalendar() {
         </div>
       </div>
 
-      <form onSubmit={addEvent} className="space-y-3 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface-elevated)] p-3 shadow-inner">
+      <form onSubmit={saveEvent} className="space-y-3 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface-elevated)] p-3 shadow-inner">
         <div className="grid gap-3 sm:grid-cols-2">
           <label className="text-xs font-medium text-[var(--color-text-secondary)]">
             {copy.type}
@@ -286,13 +325,16 @@ export function EngineerAvailabilityCalendar() {
             {message}
           </div>
         )}
-        <button
-          type="submit"
-          disabled={submitting}
-          className="w-full rounded-xl bg-[var(--color-primary)] px-3 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-[var(--color-primary-hover)] disabled:opacity-50"
-        >
-          {submitting ? copy.adding : copy.add}
-        </button>
+        <div className="flex gap-2">
+          {editingId && (
+            <button type="button" onClick={resetForm} className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl border border-[var(--color-border)] px-3 py-2.5 text-sm font-semibold">
+              <X size={15} />{copy.cancel}
+            </button>
+          )}
+          <button type="submit" disabled={submitting} className="flex-1 rounded-xl bg-[var(--color-primary)] px-3 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-[var(--color-primary-hover)] disabled:opacity-50">
+            {submitting ? (editingId ? copy.saving : copy.adding) : (editingId ? copy.save : copy.add)}
+          </button>
+        </div>
       </form>
 
       <div className="mt-4 space-y-2">
@@ -312,19 +354,19 @@ export function EngineerAvailabilityCalendar() {
                   </span>
                   <h3 className="mt-2 text-sm font-medium text-[var(--color-text-primary)]">{item.title}</h3>
                   <p className="mt-1 text-xs text-[var(--color-text-muted)]">
-                    {formatDateTime(item.start_at)} - {formatDateTime(item.end_at)}
+                    {formatDateTime(item.start_at, locale)} - {formatDateTime(item.end_at, locale)}
                     {item.region ? ` · ${item.region}` : ''}
                   </p>
                   {item.notes && <p className="mt-2 text-xs text-[var(--color-text-secondary)]">{item.notes}</p>}
                 </div>
-                <button
-                  onClick={() => removeEvent(item.id)}
-                  disabled={deletingId === item.id}
-                  className="rounded-lg border border-[var(--color-border)] p-2 text-[var(--color-text-muted)] hover:text-[var(--color-error)] disabled:opacity-50"
-                  title={copy.delete}
-                >
-                  <Trash2 size={15} />
-                </button>
+                {item.work_order_id ? (
+                  <span className="rounded-lg border border-amber-200 bg-amber-50 px-2 py-1 text-[10px] font-semibold text-amber-700">{copy.scheduled}</span>
+                ) : (
+                  <div className="flex gap-1">
+                    <button type="button" onClick={() => editEvent(item)} aria-label={copy.edit} className="rounded-lg border border-[var(--color-border)] p-2 text-[var(--color-text-muted)] hover:text-[var(--color-primary)]" title={copy.edit}><Pencil size={15} /></button>
+                    <button type="button" onClick={() => removeEvent(item.id)} aria-label={copy.delete} disabled={deletingId === item.id} className="rounded-lg border border-[var(--color-border)] p-2 text-[var(--color-text-muted)] hover:text-[var(--color-error)] disabled:opacity-50" title={copy.delete}><Trash2 size={15} /></button>
+                  </div>
+                )}
                 </div>
               </div>
             </article>

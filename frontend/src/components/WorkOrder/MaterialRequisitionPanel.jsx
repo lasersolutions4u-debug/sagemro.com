@@ -189,7 +189,7 @@ function statusTone(status) {
   return 'border-[var(--color-border)] bg-[var(--color-surface-elevated)] text-[var(--color-text-secondary)]';
 }
 
-export function MaterialRequisitionPanel({ workOrderId, onBusyChange }) {
+export function MaterialRequisitionPanel({ workOrderId, onBusyChange, readOnly = false }) {
   const isCn = isCnLocale();
   const t = isCn ? COPY.cn : COPY.en;
   const [requisitions, setRequisitions] = useState([]);
@@ -269,49 +269,43 @@ export function MaterialRequisitionPanel({ workOrderId, onBusyChange }) {
 
   useEffect(() => () => onBusyChange?.(false), [onBusyChange]);
 
-  const clearDraftRetry = () => {
-    if (creating || draftInFlightRef.current) return;
+  useEffect(() => {
     draftRetryRef.current = null;
-  };
+  }, [draftItems]);
 
   const updateDraftItem = (index, field, value) => {
-    if (creating || draftInFlightRef.current) return;
-    clearDraftRetry();
+    if (creating) return;
     setDraftItems((current) => current.map((item, itemIndex) => (
       itemIndex === index ? { ...item, [field]: value } : item
     )));
   };
 
   const addDraftItem = () => {
-    if (creating || draftInFlightRef.current) return;
-    clearDraftRetry();
+    if (creating) return;
     setDraftItems((current) => [...current, emptyDraftLine()]);
   };
 
   const removeDraftItem = (index) => {
-    if (creating || draftInFlightRef.current) return;
-    clearDraftRetry();
+    if (creating) return;
     setDraftItems((current) => current.filter((_, itemIndex) => itemIndex !== index));
   };
 
   const copyPreparationItems = () => {
-    if (creating || draftInFlightRef.current) return;
+    if (creating) return;
     if (!preparationItems.length) {
       setError(t.noPreparation);
       return;
     }
-    clearDraftRetry();
     setDraftItems(mapMaterialItemsToDraft(preparationItems));
     setError('');
   };
 
   const copyQuoteItems = () => {
-    if (creating || draftInFlightRef.current) return;
+    if (creating) return;
     if (!quoteItems.length) {
       setError(t.noQuote);
       return;
     }
-    clearDraftRetry();
     setDraftItems(mapMaterialItemsToDraft(quoteItems));
     setError('');
   };
@@ -422,7 +416,7 @@ export function MaterialRequisitionPanel({ workOrderId, onBusyChange }) {
   };
 
   const updateReceiptQuantity = (item, value) => {
-    if (receiptInFlightRef.current?.itemId === item.id) return;
+    if (pendingReceiptId === item.id) return;
     setReceiptQuantities((current) => ({ ...current, [item.id]: value }));
     delete receiptRetryRef.current[item.id];
   };
@@ -669,7 +663,7 @@ export function MaterialRequisitionPanel({ workOrderId, onBusyChange }) {
         </div>
       )}
 
-      {renderDraft()}
+      {!readOnly && renderDraft()}
 
       <section className="space-y-3" aria-labelledby="material-requisition-list-title">
         <h3 id="material-requisition-list-title" className="text-sm font-semibold text-[var(--color-text-primary)]">{t.listTitle}</h3>
@@ -737,7 +731,7 @@ export function MaterialRequisitionPanel({ workOrderId, onBusyChange }) {
                 <span className={`w-fit whitespace-nowrap rounded-full border px-2.5 py-1 text-xs font-medium ${statusTone(selectedRequisition.status)}`}>
                   {t.status}: {statusLabel(selectedRequisition.status, isCn)}
                 </span>
-                {selectedRequisition.status === 'draft' && (
+                {!readOnly && selectedRequisition.status === 'draft' && (
                   <button
                     type="button"
                     onClick={submitDraft}
