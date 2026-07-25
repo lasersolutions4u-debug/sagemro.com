@@ -72,8 +72,8 @@ const COPY = {
     laborHours: '工时',
     hours: '小时',
     reportUpdated: '报告更新时间',
-    submitFinal: '提交最终服务报告给客户',
-    sopTitle: 'SAGEMRO 服务报告 SOP',
+    submitFinal: '提交最终报告给客户',
+    sopTitle: 'SAGEMRO 服务报告标准流程',
     sopSteps: [
       '1. 记录客户描述和设备当前状态。',
       '2. 写清原因分析、现场处理、调整参数、使用配件和后续维护建议。',
@@ -118,16 +118,16 @@ function hasRepairRecordContent(record) {
   return hasText || hasLabor || hasParts || hasMaterialItems;
 }
 
-export function RepairRecordPanel({ workOrderId, userType, repairRecord, onSaved, onSubmitComplete, canSubmitComplete = false }) {
+export function RepairRecordPanel({ workOrderId, userType, repairRecord, onSaved, onSubmitComplete, canSubmitComplete = false, readOnly = false }) {
   const isCn = isCnLocale();
   const copy = isCn ? COPY.cn : COPY.en;
-  const isEngineer = userType === 'engineer';
+  const isEngineer = userType === 'engineer' && !readOnly;
   const [isEditing, setIsEditing] = useState(false);
 
   const [symptom, setSymptom] = useState('');
   const [diagnosis, setDiagnosis] = useState('');
   const [solution, setSolution] = useState('');
-  const [partsUsed, setPartsUsed] = useState([{ ...emptyPart }]);
+  const [partsUsed, setPartsUsed] = useState([{ ...emptyPart, unit: isCn ? '件' : 'pcs' }]);
   const [materialItems, setMaterialItems] = useState([]);
   const [laborHours, setLaborHours] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -139,13 +139,13 @@ export function RepairRecordPanel({ workOrderId, userType, repairRecord, onSaved
       setSolution(repairRecord.solution || '');
       setLaborHours(repairRecord.labor_hours ? String(repairRecord.labor_hours) : '');
       const parts = parseParts(repairRecord.parts_used);
-      setPartsUsed(parts.length > 0 ? parts : [{ ...emptyPart }]);
+      setPartsUsed(parts.length > 0 ? parts : [{ ...emptyPart, unit: isCn ? '件' : 'pcs' }]);
       setMaterialItems(Array.isArray(repairRecord.material_items) ? repairRecord.material_items : []);
       setIsEditing(isEngineer && !hasRepairRecordContent(repairRecord));
     } else if (isEngineer) {
       setIsEditing(true);
     }
-  }, [repairRecord, isEngineer]);
+  }, [isCn, repairRecord, isEngineer]);
 
   const handleSave = async () => {
     setSubmitting(true);
@@ -175,7 +175,7 @@ export function RepairRecordPanel({ workOrderId, userType, repairRecord, onSaved
     setPartsUsed(next);
   };
 
-  const addPart = () => setPartsUsed([...partsUsed, { ...emptyPart }]);
+  const addPart = () => setPartsUsed([...partsUsed, { ...emptyPart, unit: isCn ? '件' : 'pcs' }]);
 
   const removePart = (i) => {
     if (partsUsed.length <= 1) return;
@@ -273,7 +273,7 @@ export function RepairRecordPanel({ workOrderId, userType, repairRecord, onSaved
                     <tr key={i} className="border-t border-[var(--color-border)]">
                       <td className="py-2 px-3 text-[var(--color-text-primary)]">{p.name}</td>
                       <td className="py-2 px-3 text-center text-[var(--color-text-primary)]">{p.qty || 1}</td>
-                      <td className="py-2 px-3 text-[var(--color-text-primary)]">{p.unit || 'pcs'}</td>
+                      <td className="py-2 px-3 text-[var(--color-text-primary)]">{p.unit || (isCn ? '件' : 'pcs')}</td>
                       <td className="py-2 px-3 text-[var(--color-text-secondary)]">{p.specs || '-'}</td>
                     </tr>
                   ))}
@@ -290,7 +290,7 @@ export function RepairRecordPanel({ workOrderId, userType, repairRecord, onSaved
         )}
         {repairRecord?.updated_at && repairRecord.symptom && (
           <div className="text-xs text-[var(--color-text-muted)]">
-            {copy.reportUpdated}: {new Date(repairRecord.updated_at).toLocaleString(isCn ? 'zh-CN' : undefined)}
+            {copy.reportUpdated}: {new Date(repairRecord.updated_at).toLocaleString(isCn ? 'zh-CN' : 'en-US')}
           </div>
         )}
         {/* 工程师可以继续编辑已有记录 */}
