@@ -1276,6 +1276,61 @@ export async function getUnreadNotificationCount() {
   return response.json();
 }
 
+// ============ 内部协作收件箱 ============
+
+export async function getInbox(filter = 'all') {
+  const response = await fetch(`${API_BASE}/api/inbox?filter=${filter}`, {
+    headers: authHeaders(),
+  });
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  return response.json();
+}
+
+export async function getInboxContacts() {
+  const response = await fetch(`${API_BASE}/api/inbox/contacts`, {
+    headers: authHeaders(),
+  });
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  return response.json();
+}
+
+export async function createInboxConversation(recipientId, recipientType) {
+  const response = await fetch(`${API_BASE}/api/inbox/conversations`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({ recipient_id: recipientId, recipient_type: recipientType }),
+  });
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  return response.json();
+}
+
+export async function getInboxConversation(conversationId) {
+  const response = await fetch(`${API_BASE}/api/inbox/conversations/${conversationId}`, {
+    headers: authHeaders(),
+  });
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  return response.json();
+}
+
+export async function sendInboxMessage(conversationId, content) {
+  const response = await fetch(`${API_BASE}/api/inbox/conversations/${conversationId}/messages`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({ content }),
+  });
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  return response.json();
+}
+
+export async function markInboxConversationRead(conversationId) {
+  const response = await fetch(`${API_BASE}/api/inbox/conversations/${conversationId}/read`, {
+    method: 'POST',
+    headers: authHeaders(),
+  });
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  return response.json();
+}
+
 /**
  * 标记单条通知为已读
  */
