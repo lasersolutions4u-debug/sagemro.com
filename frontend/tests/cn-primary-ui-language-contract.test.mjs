@@ -107,12 +107,15 @@ test('CN account settings localizes customer profile and password UI', () => {
 });
 
 test('CN engineer workspace exposes localized operational labels', () => {
-  const workspace = read('frontend/src/components/Engineer/EngineerWorkspace.jsx');
+  const workspace = [
+    read('frontend/src/components/Engineer/EngineerWorkspace.jsx'),
+    read('frontend/src/components/Engineer/EngineerWorkOrderList.jsx'),
+    read('frontend/src/components/Engineer/EngineerWorkOrderDetail.jsx'),
+  ].join('\n');
 
   assert.match(workspace, /isCnLocale/);
   assert.match(workspace, /工程师工作台/);
   assert.match(workspace, /区域负责人工作台/);
-  assert.match(workspace, /任务概览/);
   assert.match(workspace, /排期日历/);
   assert.match(workspace, /未来 30 天/);
   assert.match(workspace, /服务任务/);

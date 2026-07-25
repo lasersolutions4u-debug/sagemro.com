@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Modal } from '../common/Modal';
 import {
   getWorkOrder,
@@ -286,13 +286,40 @@ function createEmptyEquipmentNeed() {
   return { type: '', quantity: '1', specification: '', note: '' };
 }
 
+const INCOMING_SUMMARY_FIELDS = [
+  'status',
+  'engineer_id',
+  'engineer_name',
+  'assigned_regional_lead_id',
+  'conflict_status',
+  'conflict_reason',
+  'quote_review_status',
+];
+
+function getChangedIncomingSummary(previousSummary, incomingSummary) {
+  return Object.fromEntries(INCOMING_SUMMARY_FIELDS.flatMap((field) => (
+    previousSummary[field] !== incomingSummary[field] && incomingSummary[field] !== undefined
+      ? [[field, incomingSummary[field]]]
+      : []
+  )));
+}
+
 // ========== 主组件 ==========
-export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess, onConfirmed, userType, userId }) {
+export function WorkOrderDetailContent({
+  workOrder,
+  userType,
+  userId,
+  onRateSuccess,
+  onConfirmed,
+  initialTab = 'info',
+  showInfoTab = true,
+  isActive = true,
+}) {
   const isCn = isCnLocale();
   const copy = isCn ? COPY.cn : COPY.en;
   const [detail, setDetail] = useState(null);
   const [loading, setLoading] = useState(false);
-  const [tab, setTab] = useState('info');
+  const [tab, setTab] = useState(initialTab);
   const [ratings, setRatings] = useState({ timeliness: 5, technical: 5, communication: 5, professional: 5 });
   const [comment, setComment] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -312,13 +339,49 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
   });
   const [machineLeadSubmitting, setMachineLeadSubmitting] = useState(false);
   const workOrderId = workOrder?.id;
+  const incomingStatus = workOrder?.status;
+  const incomingEngineerId = workOrder?.engineer_id;
+  const incomingEngineerName = workOrder?.engineer_name;
+  const incomingRegionalLeadId = workOrder?.assigned_regional_lead_id;
+  const incomingConflictStatus = workOrder?.conflict_status;
+  const incomingConflictReason = workOrder?.conflict_reason;
+  const incomingQuoteReviewStatus = workOrder?.quote_review_status;
+  const incomingSummary = useMemo(() => ({
+    status: incomingStatus,
+    engineer_id: incomingEngineerId,
+    engineer_name: incomingEngineerName,
+    assigned_regional_lead_id: incomingRegionalLeadId,
+    conflict_status: incomingConflictStatus,
+    conflict_reason: incomingConflictReason,
+    quote_review_status: incomingQuoteReviewStatus,
+  }), [
+    incomingStatus, incomingEngineerId, incomingEngineerName, incomingRegionalLeadId,
+    incomingConflictStatus, incomingConflictReason, incomingQuoteReviewStatus,
+  ]);
+  const incomingSummaryRef = useRef(incomingSummary);
+  const previousIncomingSummaryRef = useRef(incomingSummary);
+
+  useEffect(() => {
+    const previousSummary = previousIncomingSummaryRef.current;
+    const changes = getChangedIncomingSummary(previousSummary, incomingSummary);
+    previousIncomingSummaryRef.current = incomingSummary;
+    incomingSummaryRef.current = incomingSummary;
+    if (Object.keys(changes).length > 0) {
+      setDetail((current) => (current ? { ...current, ...changes } : current));
+    }
+  }, [incomingSummary]);
+
+  const previousIsActiveRef = useRef(false);
+  const initializedWorkOrderId = useRef(null);
 
   const loadDetail = useCallback(async () => {
     if (!workOrderId) return;
     setLoading(true);
+    const requestSummary = incomingSummaryRef.current;
     try {
       const data = await getWorkOrder(workOrderId);
-      setDetail(data);
+      const summaryChanges = getChangedIncomingSummary(requestSummary, incomingSummaryRef.current);
+      setDetail({ ...data, ...summaryChanges });
       // 加载工程师评价
       if (userType === 'engineer') {
         try {
@@ -336,16 +399,26 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
   }, [workOrderId, userType]);
 
   useEffect(() => {
-    if (isOpen && workOrderId) {
+    if (isActive && workOrderId) {
       loadDetail();
-      // 客户侧：待评价/已解决状态自动跳转到评价 tab
-      const initialStatus = workOrder.status;
-      const autoTab = (userType === 'customer' &&
-        (initialStatus === 'pending_review' || initialStatus === 'resolved'))
-        ? 'rating' : 'info';
-      setTab(autoTab);
     }
-  }, [isOpen, workOrder, workOrderId, userType, loadDetail]);
+  }, [isActive, workOrderId, userType, loadDetail]);
+
+  useEffect(() => {
+    const becameActive = isActive && !previousIsActiveRef.current;
+    const changedWorkOrder = initializedWorkOrderId.current !== workOrderId;
+    if (isActive && workOrderId && (changedWorkOrder || becameActive)) {
+      const shouldAutoRate = userType === 'customer' &&
+        (incomingStatus === 'pending_review' || incomingStatus === 'resolved');
+      setTab(shouldAutoRate ? 'rating' : initialTab);
+      initializedWorkOrderId.current = workOrderId;
+    }
+    previousIsActiveRef.current = isActive;
+  }, [incomingStatus, initialTab, isActive, userType, workOrderId]);
+
+  useEffect(() => {
+    if (!showInfoTab) setTab((currentTab) => (currentTab === 'info' ? 'messages' : currentTab));
+  }, [showInfoTab, tab]);
 
   const handleSubmitRating = async () => {
     if (!detail?.engineer_id || !detail?.customer_id) { toastWarning(copy.incomplete); return; }
@@ -452,10 +525,8 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
     }
   };
 
-  if (!workOrder) return null;
-
   // 使用 detail 中的最新状态（loadDetail 刷新后），回退到 prop 中的初始状态
-  const effectiveStatus = detail?.status || workOrder.status;
+  const effectiveStatus = detail?.status ?? workOrder?.status;
   const statusSet = isCn ? statusConfigCn : statusConfig;
   const urgencySet = isCn ? urgencyConfigCn : urgencyConfig;
   const typeSet = isCn ? typeLabelsCn : typeLabels;
@@ -463,14 +534,14 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
   const categoryL2Set = isCn ? categoryL2LabelsCn : categoryL2Labels;
   const formatSla = isCn ? formatSlaRemainingCn : formatSlaRemaining;
   const status = statusSet[effectiveStatus] || { text: effectiveStatus, color: 'bg-gray-500' };
-  const urgency = urgencySet[workOrder.urgency] || urgencySet.normal;
+  const urgency = urgencySet[workOrder?.urgency] || urgencySet.normal;
   const isEngineer = userType === 'engineer';
   const isCustomer = userType === 'customer';
   const shouldShowCustomerContact = !isEngineer || canEngineerViewCustomerContact(effectiveStatus);
   const customerPhoneDisplay = shouldShowCustomerContact ? detail?.customer_phone : detail?.customer_phone ? 'XXX' : '';
 
   const tabs = [
-    { key: 'info', label: copy.tabs.info },
+    ...(showInfoTab ? [{ key: 'info', label: copy.tabs.info }] : []),
     { key: 'messages', label: copy.tabs.messages },
   ];
 
@@ -497,6 +568,16 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
   if (isEngineer) {
     tabs.push({ key: 'machineLead', label: copy.tabs.machineLead });
   }
+  const allowedTabKeyString = tabs.map((item) => item.key).join('|');
+
+  useEffect(() => {
+    const allowedTabKeys = allowedTabKeyString.split('|').filter(Boolean);
+    if (!allowedTabKeys.includes(tab)) {
+      setTab(allowedTabKeys.includes('messages') ? 'messages' : allowedTabKeys[0]);
+    }
+  }, [allowedTabKeyString, tab]);
+
+  if (!workOrder) return null;
 
   const renderInfoTab = () => (
     <div className="space-y-4">
@@ -975,8 +1056,7 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
   );
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title={copy.modalTitle} size="2xl">
-      <div className="min-h-0">
+    <div className="min-h-0">
         {/* Tab 切换 */}
         <div className="-mx-3 mb-4 flex gap-1 overflow-x-auto border-b border-[var(--color-border)] px-3 pb-0 sm:mx-0 sm:px-0">
           {tabs.map((t) => (
@@ -994,7 +1074,7 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
           ))}
         </div>
 
-        {loading ? (
+        {isActive && (loading ? (
           <div className="text-center py-8 text-[var(--color-text-muted)]">{copy.loading}</div>
         ) : (
           <>
@@ -1034,8 +1114,31 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
             )}
             {tab === 'machineLead' && renderMachineLeadTab()}
           </>
-        )}
-      </div>
+        ))}
+    </div>
+  );
+}
+
+export function WorkOrderDetailModal({
+  isOpen,
+  onClose,
+  workOrder,
+  userType,
+  userId,
+  onRateSuccess,
+  onConfirmed,
+}) {
+  if (!workOrder) return null;
+  return (
+    <Modal isOpen={isOpen} onClose={onClose} title={isCnLocale() ? '工单详情' : 'Work Order Details'} size="2xl" keepMounted>
+      <WorkOrderDetailContent
+        workOrder={workOrder}
+        userType={userType}
+        userId={userId}
+        onRateSuccess={onRateSuccess}
+        onConfirmed={onConfirmed}
+        isActive={isOpen}
+      />
     </Modal>
   );
 }
