@@ -10,7 +10,7 @@ const COPY = {
   en: {
     title: 'Service Work Orders', note: 'Ordered by the next action you need to take.',
     all: 'All', needsAction: 'Needs action', active: 'Active', completed: 'Completed',
-    nextStep: 'Next step', view: 'View Details', loading: 'Loading service tasks...',
+    nextStep: 'Next step', view: 'View / Handle Task', loading: 'Loading service tasks...',
     loadFailed: 'Failed to load service tasks', retry: 'Retry', empty: 'No assigned service tasks yet',
     support: 'Need Admin support?', regionFallback: 'Region pending', taskFallback: 'Service task',
   },
