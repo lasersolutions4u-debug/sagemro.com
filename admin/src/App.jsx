@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Boxes, ClipboardList, LayoutDashboard, Users, UserCog, FileText, Star, LogOut, Target, BookOpenText, Menu, PackageSearch, ShieldCheck, Inbox } from 'lucide-react';
+import { Boxes, ClipboardList, LayoutDashboard, Users, UserCog, FileText, Star, LogOut, Target, BookOpenText, Menu, PackageSearch, ShieldCheck } from 'lucide-react';
 import { LoginPage } from './pages/LoginPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { UsersPage } from './pages/UsersPage';
@@ -12,10 +12,9 @@ import { MaterialsPage } from './pages/MaterialsPage';
 import { KnowledgePage } from './pages/KnowledgePage';
 import { MaterialRequisitionsPage } from './pages/MaterialRequisitionsPage';
 import { StaffAccountsPage } from './pages/StaffAccountsPage';
-import { InboxPage } from './pages/InboxPage';
 import { runtimeConfig } from './config/runtime';
 import { BrandMark } from './components/BrandMark';
-import { adminLogout, changeAdminPassword, getInbox, restoreAdminSession } from './services/api';
+import { adminLogout, changeAdminPassword, restoreAdminSession } from './services/api';
 
 const TEXT = {
   en: {
@@ -35,7 +34,6 @@ const TEXT = {
       engineers: 'Engineers',
       users: 'Customers',
       ratings: 'Service Reviews',
-      inbox: 'Operations Inbox',
     },
   },
   'zh-CN': {
@@ -55,7 +53,6 @@ const TEXT = {
       staffAccounts: '内部员工账号',
       users: '客户',
       ratings: '评价管理',
-      inbox: '运营收件箱',
     },
   },
 };
@@ -67,7 +64,6 @@ const NAV_ITEMS = [
   { key: 'leads', label: t.nav.leads, icon: Target },
   { key: 'knowledge', label: t.nav.knowledge, icon: BookOpenText },
   { key: 'workorders', label: t.nav.workorders, icon: FileText },
-  { key: 'inbox', label: t.nav.inbox, icon: Inbox },
   { key: 'materials', label: t.nav.materials, icon: Boxes },
   { key: 'materialRequisitions', label: t.nav.materialRequisitions, icon: PackageSearch },
   { key: 'engineerApplications', label: t.nav.engineerApplications, icon: ClipboardList },
@@ -141,15 +137,12 @@ export default function App() {
   const [activePage, setActivePage] = useState('dashboard');
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [selectedEngineerId, setSelectedEngineerId] = useState('');
-  const [unreadCount, setUnreadCount] = useState(0);
-  const isBootstrapAdmin = user?.staffRole === 'admin' && user.staffId == null;
   const visibleNavItems = useMemo(() => {
     if (!user) return [];
     const isBootstrapAdmin = user.staffRole === 'admin' && user.staffId == null;
     const isOperationalStaff = user.staffId != null && user.staffRole !== 'admin';
     return NAV_ITEMS.filter((item) => {
       if (item.key === 'staffAccounts') return isBootstrapAdmin;
-      if (item.key === 'inbox') return isBootstrapAdmin;
       if (item.key === 'materialRequisitions') return REQUISITION_ROLES.includes(user.staffRole);
       if (isOperationalStaff) {
         return user.staffRole === 'operations'
@@ -187,14 +180,6 @@ export default function App() {
       setActivePage('dashboard');
     }
   }, [activePage, user, visibleNavItems]);
-
-  useEffect(() => {
-    if (!user || !isBootstrapAdmin) return undefined;
-    const refreshUnread = () => getInbox().then((data) => setUnreadCount(data.unread?.total || 0)).catch(() => {});
-    refreshUnread();
-    const interval = setInterval(refreshUnread, 30000);
-    return () => clearInterval(interval);
-  }, [user, isBootstrapAdmin]);
 
   if (window.location.pathname !== '/') {
     const isCn = runtimeConfig.locale === 'zh-CN';
@@ -242,6 +227,7 @@ export default function App() {
     return <MandatoryPasswordChange user={user} onChanged={setUser} />;
   }
 
+  const isBootstrapAdmin = user.staffRole === 'admin' && user.staffId == null;
   const currentPage = visibleNavItems.some((item) => item.key === activePage) ? activePage : 'dashboard';
 
   const renderPage = () => {
@@ -250,7 +236,6 @@ export default function App() {
       case 'users': return <UsersPage />;
       case 'engineers': return <EngineersPage initialEngineerId={selectedEngineerId} onEngineerOpened={() => setSelectedEngineerId('')} />;
       case 'workorders': return <WorkOrdersPage readOnly={user.staffRole === 'operations'} />;
-      case 'inbox': return <InboxPage onUnreadChange={setUnreadCount} />;
       case 'materials': return <MaterialsPage readOnly={user.staffRole === 'operations'} />;
       case 'materialRequisitions': return <MaterialRequisitionsPage staffRole={user.staffRole} />;
       case 'staffAccounts': return isBootstrapAdmin ? <StaffAccountsPage /> : <DashboardPage staffRole={user.staffRole} staffId={user.staffId} />;
@@ -299,7 +284,6 @@ export default function App() {
             >
               <item.icon size={18} />
               <span>{item.label}</span>
-              {item.key === 'inbox' && unreadCount > 0 && <span className="ml-auto rounded-full bg-[var(--color-primary)] px-2 py-0.5 text-xs text-white">{unreadCount}</span>}
             </button>
           ))}
         </nav>
