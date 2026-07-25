@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { canStartDirectConversation, isConversationParticipant, isInboxIdentity } from '../src/lib/inbox.js';
+import { createNotification } from '../src/lib/push.js';
 import { signJwt } from '../src/lib/auth.js';
 import worker from '../src/index.js';
 
@@ -64,9 +65,9 @@ const JWT_SECRET = 'inbox-api-test-secret-at-least-16';
 function createInboxEnv() {
   const state = {
     engineers: [
-      { id: 'lead-1', name: 'Lead', role: 'regional_lead', status: 'active', regional_lead_id: null },
-      { id: 'eng-1', name: 'Engineer', role: 'engineer', status: 'active', regional_lead_id: 'lead-1' },
-      { id: 'eng-2', name: 'Outsider', role: 'engineer', status: 'active', regional_lead_id: 'lead-2' },
+      { id: 'lead-1', name: 'Lead', engineer_role: 'regional_lead', status: 'available', regional_lead_id: null },
+      { id: 'eng-1', name: 'Engineer', engineer_role: 'engineer', status: 'available', regional_lead_id: 'lead-1' },
+      { id: 'eng-2', name: 'Outsider', engineer_role: 'engineer', status: 'available', regional_lead_id: 'lead-2' },
     ],
     workOrders: [{ id: 'wo-1', order_no: 'WO-1', engineer_id: 'eng-1', assigned_regional_lead_id: 'lead-1' }],
     conversations: [], participants: [], messages: [], notifications: [],
@@ -75,22 +76,48 @@ function createInboxEnv() {
     if (/FROM engineers WHERE id = \?/i.test(sql)) return state.engineers.find((x) => x.id === this.args[0]) || null;
     if (/FROM work_orders WHERE id = \?/i.test(sql)) return state.workOrders.find((x) => x.id === this.args[0]) || null;
     if (/FROM inbox_conversations WHERE id = \?/i.test(sql)) return state.conversations.find((x) => x.id === this.args[0]) || null;
+    if (/SELECT id FROM inbox_messages WHERE conversation_id = \?/i.test(sql)) {
+      return state.messages.filter((message) => message.conversation_id === this.args[0]).at(-1) || null;
+    }
     if (/FROM inbox_conversations c[\s\S]*inbox_participants/i.test(sql)) {
       const [aType, aId, bType, bId] = this.args;
       return state.conversations.find((c) => c.kind === 'direct' && state.participants.filter((p) => p.conversation_id === c.id && !p.left_at).some((p) => p.user_type === aType && p.user_id === aId) && state.participants.filter((p) => p.conversation_id === c.id && !p.left_at).some((p) => p.user_type === bType && p.user_id === bId)) || null;
     }
     return null;
   }, async all() {
-    if (/SELECT id, name, role, regional_lead_id FROM engineers/i.test(sql)) {
+    if (/SELECT id, name, engineer_role, regional_lead_id FROM engineers/i.test(sql)) {
       const [leadId, memberId] = this.args;
-      return { results: state.engineers.filter((x) => x.status === 'active' && (x.id === leadId || x.regional_lead_id === memberId)) };
+      return { results: state.engineers.filter((x) => x.status === 'available' && (x.id === leadId || x.regional_lead_id === memberId)) };
     }
     if (/FROM inbox_participants WHERE conversation_id/i.test(sql)) return { results: state.participants.filter((x) => x.conversation_id === this.args[0]) };
+    if (/FROM inbox_conversations c JOIN inbox_participants p/i.test(sql)) {
+      const [userId, userType] = this.args;
+      return { results: state.conversations
+        .filter((conversation) => state.participants.some((participant) => participant.conversation_id === conversation.id && participant.user_id === userId && participant.user_type === userType && !participant.left_at))
+        .map((conversation) => {
+          const participant = state.participants.find((item) => item.conversation_id === conversation.id && item.user_id === userId && item.user_type === userType);
+          const latest = state.messages.filter((message) => message.conversation_id === conversation.id).at(-1);
+          return { ...conversation, last_read_message_id: participant.last_read_message_id || null, latest_message_id: latest?.id || null };
+        }) };
+    }
+    if (/FROM notifications WHERE user_id = \? AND user_type = \?/i.test(sql)) {
+      return { results: state.notifications.filter((notification) => notification.user_id === this.args[0] && notification.user_type === this.args[1]) };
+    }
     return { results: [] };
   }, async run() {
     if (/INSERT INTO inbox_conversations/i.test(sql)) state.conversations.push({ id: this.args[0], kind: 'direct' });
     if (/INSERT INTO inbox_participants/i.test(sql)) {
       state.participants.push({ conversation_id: this.args[0], user_type: this.args[1], user_id: this.args[2], left_at: null }, { conversation_id: this.args[3], user_type: this.args[4], user_id: this.args[5], left_at: null });
+    }
+    if (/INSERT INTO inbox_messages/i.test(sql)) {
+      state.messages.push({ id: this.args[0], conversation_id: this.args[1], sender_type: this.args[2], sender_id: this.args[3], sender_name: this.args[4], content: this.args[5] });
+    }
+    if (/INSERT INTO notifications/i.test(sql)) {
+      state.notifications.push({ id: this.args[0], user_id: this.args[1], user_type: this.args[2], type: this.args[3], title: this.args[4], body: this.args[5], data: this.args[6], is_read: 0 });
+    }
+    if (/UPDATE inbox_participants SET last_read_message_id/i.test(sql)) {
+      const participant = state.participants.find((item) => item.conversation_id === this.args[1] && item.user_type === this.args[2] && item.user_id === this.args[3]);
+      participant.last_read_message_id = this.args[0];
     }
     return { success: true };
   } }; } };
@@ -112,6 +139,13 @@ test('inbox API exposes allowed contacts and rejects customers', async () => {
   assert.equal(denied.response.status, 403);
 });
 
+test('inbox API uses engineer_role and available status for contacts', async () => {
+  const env = createInboxEnv();
+  env.__state.engineers[0].status = 'paused';
+  const contacts = await inboxRequest(env, 'engineer', 'eng-1', '/api/inbox/contacts');
+  assert.deepEqual(contacts.json.contacts.map((x) => x.id), ['admin']);
+});
+
 test('inbox API reuses a direct conversation and protects membership', async () => {
   const env = createInboxEnv();
   const first = await inboxRequest(env, 'engineer', 'eng-1', '/api/inbox/conversations', 'POST', { recipient_id: 'lead-1', recipient_type: 'engineer' });
@@ -120,4 +154,59 @@ test('inbox API reuses a direct conversation and protects membership', async () 
   assert.equal(second.json.conversation.id, first.json.conversation.id);
   const denied = await inboxRequest(env, 'engineer', 'eng-2', `/api/inbox/conversations/${first.json.conversation.id}`);
   assert.equal(denied.response.status, 403);
+});
+
+test('inbox list aggregates system notifications, unread counters, and supported filters', async () => {
+  const env = createInboxEnv();
+  const created = await inboxRequest(env, 'engineer', 'eng-1', '/api/inbox/conversations', 'POST', { recipient_id: 'lead-1', recipient_type: 'engineer' });
+  await inboxRequest(env, 'engineer', 'eng-1', `/api/inbox/conversations/${created.json.conversation.id}/messages`, 'POST', { content: 'Need help' });
+  env.__state.notifications.push({ id: 'system-1', user_id: 'lead-1', user_type: 'engineer', is_read: 0, title: 'Dispatch' });
+  const all = await inboxRequest(env, 'engineer', 'lead-1', '/api/inbox?filter=all');
+  assert.equal(all.json.unread.conversations, 1);
+  assert.equal(all.json.unread.notifications, 2);
+  assert.equal(all.json.unread.total, 3);
+  assert.equal(all.json.notifications.some((item) => item.kind === 'system'), true);
+  const direct = await inboxRequest(env, 'engineer', 'lead-1', '/api/inbox?filter=direct');
+  assert.equal(direct.json.conversations.length, 1);
+  assert.equal(direct.json.notifications.length, 0);
+  const system = await inboxRequest(env, 'engineer', 'lead-1', '/api/inbox?filter=system');
+  assert.equal(system.json.conversations.length, 0);
+  assert.equal(system.json.notifications.length, 2);
+});
+
+test('direct messages recheck the current reporting relationship before delivery', async () => {
+  const env = createInboxEnv();
+  const created = await inboxRequest(env, 'engineer', 'eng-1', '/api/inbox/conversations', 'POST', { recipient_id: 'lead-1', recipient_type: 'engineer' });
+  env.__state.engineers[1].regional_lead_id = 'lead-2';
+  const sent = await inboxRequest(env, 'engineer', 'eng-1', `/api/inbox/conversations/${created.json.conversation.id}/messages`, 'POST', { content: 'Should fail' });
+  assert.equal(sent.response.status, 403);
+});
+
+test('marking an inbox conversation read always advances to its newest message', async () => {
+  const env = createInboxEnv();
+  const created = await inboxRequest(env, 'engineer', 'eng-1', '/api/inbox/conversations', 'POST', { recipient_id: 'lead-1', recipient_type: 'engineer' });
+  const id = created.json.conversation.id;
+  env.__state.messages.push({ id: 'message-1', conversation_id: id }, { id: 'message-2', conversation_id: id });
+  const marked = await inboxRequest(env, 'engineer', 'lead-1', `/api/inbox/conversations/${id}/read`, 'POST', { message_id: 'arbitrary-id' });
+  assert.equal(marked.response.status, 200);
+  assert.equal(env.__state.participants.find((item) => item.conversation_id === id && item.user_id === 'lead-1').last_read_message_id, 'message-2');
+});
+
+test('notification persistence can skip OneSignal dispatch for the CN market', async () => {
+  let inserts = 0;
+  const env = {
+    DB: { prepare() { return { bind() { return this; }, async run() { inserts += 1; } }; } },
+    ONESIGNAL_APP_ID: 'app-id',
+    ONESIGNAL_REST_API_KEY: 'rest-key',
+  };
+  const originalFetch = globalThis.fetch;
+  let pushCalls = 0;
+  globalThis.fetch = async () => { pushCalls += 1; return new Response('{}', { status: 200 }); };
+  try {
+    await createNotification(env, { user_id: 'eng-1', user_type: 'engineer', type: 'inbox_message', title: '新协作消息', body: 'CN message', push: false });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+  assert.equal(inserts, 1);
+  assert.equal(pushCalls, 0);
 });

@@ -17095,10 +17095,10 @@ async function getInboxIdentity(auth, env) {
   if (auth?.userType === 'admin') return { userId: auth.userId, userType: 'admin', name: '运营 Joe' };
   if (auth?.userType !== 'engineer') return null;
   const engineer = await env.DB.prepare(
-    'SELECT id, name, role, regional_lead_id, status FROM engineers WHERE id = ?'
+    'SELECT id, name, engineer_role, regional_lead_id, status FROM engineers WHERE id = ?'
   ).bind(auth.userId).first();
-  if (!engineer || engineer.status !== 'active') return null;
-  return { userId: engineer.id, userType: 'engineer', name: engineer.name, engineerRole: engineer.role, regionalLeadId: engineer.regional_lead_id };
+  if (!engineer || engineer.status !== 'available') return null;
+  return { userId: engineer.id, userType: 'engineer', name: engineer.name, engineerRole: engineer.engineer_role, regionalLeadId: engineer.regional_lead_id };
 }
 
 async function requireInboxIdentity(request, env) {
@@ -17112,13 +17112,13 @@ async function handleInboxContacts(request, env) {
   if (!identity) return errorResponse('仅运营与工程师可访问协作收件箱', 403);
   const contacts = [{ id: 'admin', type: 'admin', name: '运营 Joe' }];
   if (identity.userType === 'admin') {
-    const { results } = await env.DB.prepare("SELECT id, name, role, regional_lead_id FROM engineers WHERE status = 'active'").all();
-    contacts.push(...results.map((row) => ({ id: row.id, type: 'engineer', name: row.name, role: row.role })));
+    const { results } = await env.DB.prepare("SELECT id, name, engineer_role, regional_lead_id FROM engineers WHERE status = 'available'").all();
+    contacts.push(...results.map((row) => ({ id: row.id, type: 'engineer', name: row.name, role: row.engineer_role })));
   } else {
     const { results } = await env.DB.prepare(
-      "SELECT id, name, role, regional_lead_id FROM engineers WHERE status = 'active' AND (id = ? OR regional_lead_id = ?)"
+      "SELECT id, name, engineer_role, regional_lead_id FROM engineers WHERE status = 'available' AND (id = ? OR regional_lead_id = ?)"
     ).bind(identity.regionalLeadId, identity.userId).all();
-    contacts.push(...results.filter((row) => canStartDirectConversation(identity, { userId: row.id, userType: 'engineer', engineerRole: row.role, regionalLeadId: row.regional_lead_id })).map((row) => ({ id: row.id, type: 'engineer', name: row.name, role: row.role })));
+    contacts.push(...results.filter((row) => canStartDirectConversation(identity, { userId: row.id, userType: 'engineer', engineerRole: row.engineer_role, regionalLeadId: row.regional_lead_id })).map((row) => ({ id: row.id, type: 'engineer', name: row.name, role: row.engineer_role })));
   }
   return jsonResponse({ contacts });
 }
@@ -17167,6 +17167,16 @@ async function handleGetInboxConversation(request, env) {
 async function handlePostInboxMessage(request, env) {
   const loaded = await loadInboxConversation(request, env);
   if (loaded.error) return loaded.error;
+  if (loaded.conversation.kind === 'direct') {
+    const activeParticipants = loaded.participants.filter((participant) => !participant.left_at);
+    if (activeParticipants.length !== 2) return errorResponse('私信参与者无效', 403);
+    const identities = await Promise.all(activeParticipants.map((participant) => (
+      getInboxIdentity({ userId: participant.user_id, userType: participant.user_type }, env)
+    )));
+    if (!identities.every(Boolean) || !canStartDirectConversation(identities[0], identities[1])) {
+      return errorResponse('您当前无权发送该私信', 403);
+    }
+  }
   const { content } = await request.json();
   try { assertMaxLength(content, 'content', LIMITS.content); } catch (error) { return validationErrorToResponse(error, errorResponse) || errorResponse(error.message, 400); }
   if (!content?.trim()) return errorResponse('content 不能为空', 400);
@@ -17175,7 +17185,15 @@ async function handlePostInboxMessage(request, env) {
   await env.DB.prepare('UPDATE inbox_conversations SET last_message_at = datetime(\'now\') WHERE id = ?').bind(loaded.id).run();
   for (const participant of loaded.participants) {
     if (participant.user_id === loaded.identity.userId && participant.user_type === loaded.identity.userType) continue;
-    await createNotification(env, { user_id: participant.user_id, user_type: participant.user_type, type: 'inbox_message', title: '新协作消息', body: content.trim(), data: { conversation_id: loaded.id } });
+    await createNotification(env, {
+      user_id: participant.user_id,
+      user_type: participant.user_type,
+      type: 'inbox_message',
+      title: '新协作消息',
+      body: content.trim(),
+      data: { conversation_id: loaded.id, work_order_id: loaded.conversation.work_order_id || null },
+      push: getRequestMarket(request) !== 'cn',
+    });
   }
   return jsonResponse({ message: { id, content: content.trim() } });
 }
@@ -17183,9 +17201,53 @@ async function handlePostInboxMessage(request, env) {
 async function handleMarkInboxRead(request, env) {
   const loaded = await loadInboxConversation(request, env);
   if (loaded.error) return loaded.error;
-  const { message_id } = await request.json();
-  await env.DB.prepare('UPDATE inbox_participants SET last_read_message_id = ?, last_read_at = datetime(\'now\') WHERE conversation_id = ? AND user_type = ? AND user_id = ?').bind(message_id || null, loaded.id, loaded.identity.userType, loaded.identity.userId).run();
+  const newestMessage = await env.DB.prepare(
+    'SELECT id FROM inbox_messages WHERE conversation_id = ? ORDER BY created_at DESC, rowid DESC LIMIT 1'
+  ).bind(loaded.id).first();
+  await env.DB.prepare('UPDATE inbox_participants SET last_read_message_id = ?, last_read_at = datetime(\'now\') WHERE conversation_id = ? AND user_type = ? AND user_id = ?').bind(newestMessage?.id || null, loaded.id, loaded.identity.userType, loaded.identity.userId).run();
   return jsonResponse({ success: true });
+}
+
+async function handleGetInbox(request, env) {
+  const identity = await requireInboxIdentity(request, env);
+  if (!identity) return errorResponse('仅运营与工程师可访问协作收件箱', 403);
+  const filter = new URL(request.url).searchParams.get('filter') || 'all';
+  if (!['all', 'action', 'required', 'work_order', 'direct', 'system'].includes(filter)) {
+    return errorResponse('无效的收件箱筛选条件', 400);
+  }
+  const { results: allConversations } = await env.DB.prepare(`SELECT c.*, p.last_read_message_id,
+      (SELECT m.id FROM inbox_messages m WHERE m.conversation_id = c.id ORDER BY m.created_at DESC, m.rowid DESC LIMIT 1) AS latest_message_id
+    FROM inbox_conversations c JOIN inbox_participants p ON p.conversation_id = c.id
+    WHERE p.user_id = ? AND p.user_type = ? AND p.left_at IS NULL ORDER BY c.last_message_at DESC`).bind(identity.userId, identity.userType).all();
+  const { results: notifications } = await env.DB.prepare(
+    'SELECT * FROM notifications WHERE user_id = ? AND user_type = ? ORDER BY created_at DESC'
+  ).bind(identity.userId, identity.userType).all();
+  const conversations = allConversations.map((conversation) => ({
+    ...conversation,
+    unread: Boolean(conversation.latest_message_id && conversation.latest_message_id !== conversation.last_read_message_id),
+  }));
+  const unreadConversations = conversations.filter((conversation) => conversation.unread).length;
+  const unreadNotifications = notifications.filter((notification) => !notification.is_read).length;
+  const withSystemKind = notifications.map((notification) => ({ ...notification, kind: 'system' }));
+  let visibleConversations = conversations;
+  let visibleNotifications = withSystemKind;
+  if (filter === 'work_order' || filter === 'direct') {
+    visibleConversations = conversations.filter((conversation) => conversation.kind === filter);
+    visibleNotifications = [];
+  } else if (filter === 'system') {
+    visibleConversations = [];
+  } else if (filter === 'action') {
+    visibleConversations = conversations.filter((conversation) => conversation.unread);
+    visibleNotifications = withSystemKind.filter((notification) => !notification.is_read);
+  } else if (filter === 'required') {
+    visibleConversations = [];
+    visibleNotifications = withSystemKind.filter((notification) => !notification.is_read);
+  }
+  return jsonResponse({
+    conversations: visibleConversations,
+    notifications: visibleNotifications,
+    unread: { conversations: unreadConversations, notifications: unreadNotifications, total: unreadConversations + unreadNotifications },
+  });
 }
 
 async function handleCreateWorkOrderInboxConversation(request, env) {
@@ -17587,10 +17649,7 @@ async function routeRequest(request, env, ctx) {
       return handleCreateWorkOrderInboxConversation(request, env);
     }
     if (path === '/api/inbox' && request.method === 'GET') {
-      const identity = await requireInboxIdentity(request, env);
-      if (!identity) return errorResponse('仅运营与工程师可访问协作收件箱', 403);
-      const { results: conversations } = await env.DB.prepare(`SELECT c.* FROM inbox_conversations c JOIN inbox_participants p ON p.conversation_id = c.id WHERE p.user_id = ? AND p.user_type = ? AND p.left_at IS NULL ORDER BY c.last_message_at DESC`).bind(identity.userId, identity.userType).all();
-      return jsonResponse({ conversations });
+      return handleGetInbox(request, env);
     }
     if (path === '/api/conversations' && request.method === 'GET') {
       return handleGetConversations(request, env);

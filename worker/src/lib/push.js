@@ -10,7 +10,7 @@ import { generateId } from './util.js';
 const ONESIGNAL_API = 'https://onesignal.com/api/v1/notifications';
 
 // 写一条站内通知，并尝试推送（两者相互独立）
-export async function createNotification(env, { user_id, user_type, type, title, body, data }) {
+export async function createNotification(env, { user_id, user_type, type, title, body, data, push = true }) {
   try {
     const id = generateId();
     await env.DB.prepare(
@@ -20,7 +20,7 @@ export async function createNotification(env, { user_id, user_type, type, title,
     console.error('[Notification] Failed to create:', e.message);
   }
 
-  if (user_type === 'admin') return;
+  if (!push || user_type === 'admin') return;
 
   try {
     await sendPushToUser(user_id, user_type, env, {
