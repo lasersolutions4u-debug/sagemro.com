@@ -17128,6 +17128,25 @@ async function inboxParticipants(env, conversationId) {
   return results;
 }
 
+async function syncWorkOrderInboxParticipants(env, conversation, workOrder) {
+  const members = [{ userType: 'admin', userId: 'admin' }];
+  if (workOrder.assigned_regional_lead_id) members.push({ userType: 'engineer', userId: workOrder.assigned_regional_lead_id });
+  if (workOrder.engineer_id) members.push({ userType: 'engineer', userId: workOrder.engineer_id });
+  const memberKeys = new Set(members.map((member) => `${member.userType}:${member.userId}`));
+  const participants = await inboxParticipants(env, conversation.id);
+  for (const participant of participants) {
+    if (!memberKeys.has(`${participant.user_type}:${participant.user_id}`) && !participant.left_at) {
+      await env.DB.prepare("UPDATE inbox_participants SET left_at = datetime('now') WHERE conversation_id = ? AND user_type = ? AND user_id = ?")
+        .bind(conversation.id, participant.user_type, participant.user_id).run();
+    }
+  }
+  for (const member of members) {
+    await env.DB.prepare("INSERT INTO inbox_participants (conversation_id, user_type, user_id, left_at) VALUES (?, ?, ?, NULL) ON CONFLICT(conversation_id, user_type, user_id) DO UPDATE SET left_at = NULL")
+      .bind(conversation.id, member.userType, member.userId).run();
+  }
+  return inboxParticipants(env, conversation.id);
+}
+
 async function handleCreateInboxConversation(request, env) {
   const sender = await requireInboxIdentity(request, env);
   if (!sender) return errorResponse('仅运营与工程师可访问协作收件箱', 403);
@@ -17155,7 +17174,12 @@ async function loadInboxConversation(request, env) {
   const id = new URL(request.url).pathname.split('/')[4];
   const conversation = await env.DB.prepare('SELECT * FROM inbox_conversations WHERE id = ?').bind(id).first();
   if (!conversation) return { error: errorResponse('对话不存在', 404) };
-  const participants = await inboxParticipants(env, id);
+  let participants = await inboxParticipants(env, id);
+  if (conversation.kind === 'work_order') {
+    const workOrder = await env.DB.prepare('SELECT id, engineer_id, assigned_regional_lead_id FROM work_orders WHERE id = ?').bind(conversation.work_order_id).first();
+    if (!workOrder) return { error: errorResponse('工单不存在', 404) };
+    participants = await syncWorkOrderInboxParticipants(env, conversation, workOrder);
+  }
   if (!isConversationParticipant(participants, identity)) return { error: errorResponse('您无权访问该对话', 403) };
   return { identity, id, conversation, participants };
 }
@@ -17261,15 +17285,14 @@ async function handleCreateWorkOrderInboxConversation(request, env) {
   if (!workOrder) return errorResponse('工单不存在', 404);
   const allowed = identity.userType === 'admin' || identity.userId === workOrder.engineer_id || identity.userId === workOrder.assigned_regional_lead_id;
   if (!allowed) return errorResponse('您无权创建该工单协作对话', 403);
-  const existing = await env.DB.prepare("SELECT * FROM inbox_conversations WHERE work_order_id = ? AND kind = 'work_order' LIMIT 1").bind(workOrderId).first();
-  if (existing) return jsonResponse({ conversation: existing });
-  const id = generateId();
-  await env.DB.prepare("INSERT INTO inbox_conversations (id, kind, work_order_id, subject, created_by_type, created_by_id) VALUES (?, 'work_order', ?, ?, ?, ?)").bind(id, workOrderId, workOrder.order_no || null, identity.userType, identity.userId).run();
-  const members = [{ userType: 'admin', userId: 'admin' }];
-  if (workOrder.assigned_regional_lead_id) members.push({ userType: 'engineer', userId: workOrder.assigned_regional_lead_id });
-  if (workOrder.engineer_id) members.push({ userType: 'engineer', userId: workOrder.engineer_id });
-  for (const member of members) await env.DB.prepare('INSERT OR IGNORE INTO inbox_participants (conversation_id, user_type, user_id) VALUES (?, ?, ?)').bind(id, member.userType, member.userId).run();
-  return jsonResponse({ conversation: { id, kind: 'work_order', work_order_id: workOrderId } });
+  let conversation = await env.DB.prepare("SELECT * FROM inbox_conversations WHERE work_order_id = ? AND kind = 'work_order' LIMIT 1").bind(workOrderId).first();
+  if (!conversation) {
+    const id = generateId();
+    await env.DB.prepare("INSERT INTO inbox_conversations (id, kind, work_order_id, subject, created_by_type, created_by_id) VALUES (?, 'work_order', ?, ?, ?, ?)").bind(id, workOrderId, workOrder.order_no || null, identity.userType, identity.userId).run();
+    conversation = { id, kind: 'work_order', work_order_id: workOrderId };
+  }
+  await syncWorkOrderInboxParticipants(env, conversation, workOrder);
+  return jsonResponse({ conversation });
 }
 
 function cleanFunnelValue(value, max = 160) {
