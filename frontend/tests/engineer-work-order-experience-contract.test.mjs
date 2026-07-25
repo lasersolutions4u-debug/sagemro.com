@@ -72,3 +72,22 @@ test('existing work-order tools can render inline while the customer modal wrapp
   assert.match(detail, /EngineerPricingPanel/);
   assert.match(detail, /RepairRecordPanel/);
 });
+
+test('inline customer review routing keeps the automatic rating tab when info is hidden', () => {
+  const detail = read('frontend/src/components/WorkOrder/WorkOrderDetailModal.jsx');
+
+  assert.match(detail, /initialStatus === 'pending_review' \|\| initialStatus === 'resolved'/);
+  assert.match(detail, /\? 'rating' : 'info'/);
+  assert.match(detail, /setTab\(\(currentTab\) => \(currentTab === 'info' \? 'messages' : currentTab\)\)/);
+});
+
+test('work-order modal retains detail content while closed after it has opened', () => {
+  const detail = read('frontend/src/components/WorkOrder/WorkOrderDetailModal.jsx');
+  const modal = read('frontend/src/components/common/Modal.jsx');
+
+  assert.match(detail, /<Modal isOpen=\{isOpen\}[^>]*keepMounted/);
+  assert.match(modal, /keepMounted = false/);
+  assert.match(modal, /hasBeenOpened/);
+  assert.match(modal, /isOpen \|\| \(keepMounted && hasBeenOpened\)/);
+  assert.match(modal, /hidden=\{!isOpen\}/);
+});

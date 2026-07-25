@@ -356,8 +356,8 @@ export function WorkOrderDetailContent({
   }, [workOrder, workOrderId, userType, loadDetail]);
 
   useEffect(() => {
-    if (!showInfoTab && tab === 'info') setTab('messages');
-  }, [showInfoTab, tab]);
+    if (!showInfoTab) setTab((currentTab) => (currentTab === 'info' ? 'messages' : currentTab));
+  }, [showInfoTab]);
 
   const handleSubmitRating = async () => {
     if (!detail?.engineer_id || !detail?.customer_id) { toastWarning(copy.incomplete); return; }
@@ -1061,7 +1061,7 @@ export function WorkOrderDetailModal({
 }) {
   if (!workOrder) return null;
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title={isCnLocale() ? '工单详情' : 'Work Order Details'} size="2xl">
+    <Modal isOpen={isOpen} onClose={onClose} title={isCnLocale() ? '工单详情' : 'Work Order Details'} size="2xl" keepMounted>
       <WorkOrderDetailContent
         workOrder={workOrder}
         userType={userType}
