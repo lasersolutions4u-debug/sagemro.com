@@ -58,7 +58,8 @@ test('engineer recruiting page adds the overview after the hero without replacin
   assert.match(source, /copy\.workflowTitle/);
   assert.match(source, /copy\.faqTitle/);
   assert.match(source, /title: '设备维保最佳方案：AI知识飞轮\+工程师技能实践'/);
-  assert.match(source, /title: 'A better equipment service model: AI knowledge flywheel \+ engineer expertise'/);
+  assert.match(source, /title: 'Make Your Expertise Count'/);
+  assert.match(source, /Spend less time chasing incomplete details and making avoidable visits/);
   assert.match(source, /scaleTitle: '把个人经验，变成团队可以复用的服务能力'/);
   assert.match(source, /finalTitle: '让工程师把时间用在真正需要技术的地方'/);
   assert.match(source, /problemTitle: 'The hidden cost in field service is fragmented engineer time'/);

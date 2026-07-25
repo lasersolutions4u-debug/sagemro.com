@@ -165,8 +165,8 @@ const COPY = {
   en: {
     badge: 'SAGEMRO Engineer Service Network',
     networkLabel: 'Engineer Workspace',
-    title: 'A better equipment service model: AI knowledge flywheel + engineer expertise',
-    subtitle: 'AI handles the early conversation and prepares a detailed service request; engineers take over for technical execution. Less repeated communication and fewer avoidable visits make service work more focused and efficient, while structured knowledge helps the AI understand customers better over time.',
+    title: 'Make Your Expertise Count',
+    subtitle: 'Spend less time chasing incomplete details and making avoidable visits. SAGEMRO helps clarify each job, match you with the right work, and turn every successful service into proof of your expertise.',
     primary: 'Apply to the Service Network',
     applyNow: 'Apply to Join',
     howItWorks: 'See How Cooperation Works',
@@ -175,9 +175,9 @@ const COPY = {
     customerHomeHref: 'https://sagemro.com',
     overviewLabel: 'The model in 20 seconds',
     heroFlow: [
-      { role: 'AI system', title: 'Intake and task preparation', text: 'Collect machine details, alarms, symptoms, site conditions, and service history, then identify missing information and potential risks.' },
-      { role: 'Engineer', title: 'Confirm the plan and solve the problem', text: 'Make the final technical judgment, prepare the quote, choose the service approach, assess risk, and carry out remote or on-site work.' },
-      { role: 'Operations management', title: 'Coordinate the workflow and retain records', text: 'Coordinate dispatch, quote review, payment confirmation, and follow-up while keeping messages, work-order files, reports, and next actions together.' },
+      { role: 'Proven Expertise', title: 'Be Known for What You Can Solve', text: 'Your completed work and customer recognition become credible proof of your expertise.' },
+      { role: 'Better-Matched Work', title: 'Better Jobs. Less Hassle.', text: 'Review the equipment, fault, location, and service requirements before deciding whether the job is right for you.' },
+      { role: 'Lasting Reputation', title: 'Build a Reputation That Compounds', text: 'Every sound decision and successful service strengthens your record and helps you earn better-matched opportunities.' },
     ],
     benefitsTitle: 'An AI that learns the customer makes technical service more efficient',
     benefitsIntro: 'AI does not replace engineers. It takes on basic technical inquiries, repeated questions, work-order preparation, and workflow records so limited engineer time stays focused on professional judgment.',
