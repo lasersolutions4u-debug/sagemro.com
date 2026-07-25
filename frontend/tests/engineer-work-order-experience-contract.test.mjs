@@ -273,6 +273,8 @@ test('work-order modal retains existing operational panels in controlled mode', 
   assert.match(modal, /MessagePanel/);
   assert.match(modal, /RepairRecordPanel/);
   assert.match(modal, /Request Admin Approval to Start/);
+  assert.match(modal, /aria-label="Request Admin Approval to Start"/);
+  assert.match(modal, /Request Start Approval/);
   assert.match(modal, /userType === 'engineer' && !managementReadOnly/);
 });
 

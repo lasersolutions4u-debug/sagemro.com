@@ -142,7 +142,7 @@ const COPY = {
     paymentStartFailed: 'Start request failed: ',
     waitingPaymentConfirmation: 'Waiting for Admin Payment Confirmation',
     submitting: 'Submitting...',
-    requestAdminStart: 'Request Admin Approval to Start',
+    requestAdminStart: 'Request Start Approval',
     progress: 'Progress',
     confirmReview: 'Confirm Service & Review',
     viewReview: 'View Review →',
@@ -732,7 +732,6 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
   if (isEngineer) {
     tabs.push({ key: 'machineLead', label: copy.tabs.machineLead });
   }
-
   const renderInfoTab = () => (
     <div className="space-y-4">
       {hasVersionedExecution && (
@@ -1077,6 +1076,7 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
 
       {isEngineer && ['pending_payment', 'payment_review'].includes(effectiveStatus) && (
         <button
+          aria-label="Request Admin Approval to Start"
           onClick={async () => {
             if (!(await confirmDialog(copy.paymentStartConfirm))) return;
             setPaymentStartSubmitting(true);
