@@ -2,6 +2,7 @@ import { ArrowLeft, ShieldCheck } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { getWorkOrder } from '../../services/api';
 import { WorkOrderDetailContent } from '../WorkOrder/WorkOrderDetailModal';
+import { getEngineerScheduleLabel, getEngineerWorkOrderTitle } from './engineerWorkOrderDisplay';
 
 const CHECKLIST = {
   en: [
@@ -33,6 +34,13 @@ function mergeTicketSummary(detail, ticket) {
   };
 }
 
+function mergeFetchedDetail(detail, ticket) {
+  const merged = mergeTicketSummary(detail, { ...ticket, status: undefined });
+  return detail?.status === undefined && ticket.status !== undefined
+    ? { ...merged, status: ticket.status }
+    : merged;
+}
+
 export function EngineerWorkOrderDetail(props) {
   const {
     ticket, engineerId, isCn, isRegionalLead, team, selectedEngineer,
@@ -43,6 +51,7 @@ export function EngineerWorkOrderDetail(props) {
   const [detail, setDetail] = useState(ticket);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const detailLoadedRef = useRef(false);
   const ticketSummaryRef = useRef(ticket);
 
   const loadDetail = useCallback(async () => {
@@ -50,7 +59,8 @@ export function EngineerWorkOrderDetail(props) {
     setError('');
     try {
       const loadedDetail = await getWorkOrder(ticket.id);
-      setDetail(mergeTicketSummary(loadedDetail, ticketSummaryRef.current));
+      setDetail(mergeFetchedDetail(loadedDetail, ticketSummaryRef.current));
+      detailLoadedRef.current = true;
     } catch (requestError) {
       setError(requestError.message || (isCn ? '工单详情加载失败' : 'Failed to load work-order details'));
     } finally {
@@ -69,7 +79,7 @@ export function EngineerWorkOrderDetail(props) {
       conflict_reason: ticket.conflict_reason,
     };
     ticketSummaryRef.current = ticketSummary;
-    setDetail((current) => mergeTicketSummary(current, ticketSummary));
+    setDetail((current) => (detailLoadedRef.current ? mergeTicketSummary(current, ticketSummary) : current));
   }, [ticket.status, ticket.engineer_id, ticket.engineer_name, ticket.conflict_status, ticket.conflict_reason]);
 
   const copy = isCn ? {
@@ -81,6 +91,8 @@ export function EngineerWorkOrderDetail(props) {
     confirm: '确认派工', returning: '退回中', returnDispatch: '填写原因并退回',
     assign: '分配工程师', assigning: '派工中', selectEngineer: '选择团队工程师',
     support: '需要 Admin 协助？', loadFailed: '工单详情加载失败',
+    conflictWarning: '冲突检查：', conflictFallback: '该工程师暂不能接收这个工单',
+    scheduled: '到场 / 服务时间', schedulePending: '时间待安排',
     urgencyLabels: { normal: '常规', urgent: '优先处理', critical: '高风险' },
   } : {
     back: 'Back to Work Orders', context: 'Current Task Context', preparation: 'Job Preparation',
@@ -91,9 +103,15 @@ export function EngineerWorkOrderDetail(props) {
     confirm: 'Confirm Assignment', returning: 'Returning', returnDispatch: 'Return with a reason',
     assign: 'Assign Engineer', assigning: 'Assigning', selectEngineer: 'Select team engineer',
     support: 'Need Admin support?', loadFailed: 'Failed to load work-order details',
+    conflictWarning: 'Conflict check:', conflictFallback: 'This engineer cannot receive this work order',
+    scheduled: 'Arrival / service time', schedulePending: 'Schedule pending',
     urgencyLabels: { normal: 'Standard', urgent: 'Priority', critical: 'High risk' },
   };
-  const effectiveStatus = ticket.status ?? detail?.status;
+  const effectiveStatus = detail?.status ?? ticket.status;
+  const scheduledTime = getEngineerScheduleLabel(detail || ticket, isCn ? 'zh-CN' : 'en-US');
+  const conflictWarning = detail?.conflict_status === 'blocked'
+    ? `${copy.conflictWarning} ${detail.conflict_reason || copy.conflictFallback}`
+    : '';
   const aiSummary = useMemo(() => {
     const raw = detail?.ai_summary;
     const fallback = detail?.description || ticket.description || '-';
@@ -119,7 +137,8 @@ export function EngineerWorkOrderDetail(props) {
         <ArrowLeft size={16} />{copy.back}
       </button>
       <div className="sm:text-right">
-        <div className="font-semibold">{detail?.order_no || ticket.order_no || ticket.id}</div>
+        <div className="font-semibold">{getEngineerWorkOrderTitle(detail || ticket, isCn, isCn ? '服务任务' : 'Service task')}</div>
+        <div className="text-xs text-[var(--color-text-muted)]">{detail?.order_no || ticket.order_no || ticket.id}</div>
         <div className="text-xs text-[var(--color-text-muted)]">{statusLabels[effectiveStatus] || effectiveStatus}</div>
       </div>
     </header>
@@ -179,7 +198,7 @@ export function EngineerWorkOrderDetail(props) {
             <option value="">{copy.selectEngineer}</option>
             {team.map((engineer) => (
               <option key={engineer.id} value={engineer.id}>
-                {engineer.name}{engineer.service_region ? ` / ${engineer.service_region}` : ''}
+                {engineer.name}{engineer.service_region ? ` / ${engineer.service_region}` : ''}{engineer.status ? ` / ${engineer.status}` : ''}
               </option>
             ))}
           </select>
@@ -218,6 +237,10 @@ export function EngineerWorkOrderDetail(props) {
               <div>
                 <div className="text-xs text-[var(--color-text-muted)]">{copy.risk}</div>
                 <p className="mt-1">{copy.urgencyLabels[detail?.urgency || 'normal'] || copy.urgencyLabels.normal}</p>
+              </div>
+              <div>
+                <div className="text-xs text-[var(--color-text-muted)]">{copy.scheduled}</div>
+                <p className="mt-1">{scheduledTime || copy.schedulePending}</p>
               </div>
             </div>
           </section>
@@ -283,6 +306,7 @@ export function EngineerWorkOrderDetail(props) {
         <aside className="self-start rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4 lg:sticky lg:top-4">
           <div className="text-xs text-[var(--color-text-muted)]">{copy.nextStep}</div>
           <p className="mt-1 text-sm font-semibold">{getNextAction(detail)}</p>
+          {conflictWarning && <div className="mt-4 rounded-lg border border-amber-400/50 bg-amber-50 px-3 py-2 text-xs text-amber-800">{conflictWarning}</div>}
           {actionPanel}
           <div className="mt-4 border-t border-[var(--color-border)] pt-4 text-sm text-[var(--color-text-muted)]">
             {copy.support} <a className="font-medium text-[var(--color-primary)]" href="mailto:support@sagemro.com">support@sagemro.com</a>

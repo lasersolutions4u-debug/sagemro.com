@@ -1,3 +1,5 @@
+import { redactContactInfo } from '../../utils/contactRedaction.js';
+
 export const ACTION_PRIORITY = {
   assigned: 0,
   pending_dispatch: 1,
@@ -21,8 +23,8 @@ export function sortEngineerWorkOrders(tickets = []) {
 }
 
 export function getEngineerWorkOrderTitle(ticket = {}, isCn = false, fallback = '') {
-  const description = String(ticket.description || '').match(/^[^。.!?\n]+[。.!?]?/)?.[0].trim();
-  return ticket.issue_title || ticket.title || description || fallback || (isCn ? '服务任务' : 'Service task');
+  const description = redactContactInfo(String(ticket.description || '')).match(/^[^。.!?\n]+[。.!?]?/)?.[0].trim();
+  return redactContactInfo(ticket.issue_title || ticket.title || description || fallback || (isCn ? '服务任务' : 'Service task'));
 }
 
 export function getEngineerScheduleLabel(ticket = {}, locale = 'en-US') {

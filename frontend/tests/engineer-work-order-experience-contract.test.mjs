@@ -30,6 +30,19 @@ test('engineer work-order title and schedule helpers use existing fields only', 
   assert.equal(getEngineerScheduleLabel({}, 'en-US'), '');
 });
 
+test('engineer work-order titles redact contact data before extracting descriptions', async () => {
+  const { getEngineerWorkOrderTitle } = await import('../src/components/Engineer/engineerWorkOrderDisplay.js');
+
+  assert.equal(
+    getEngineerWorkOrderTitle({ description: 'Call jane@example.com about the laser fault.' }, false, 'Service task'),
+    'Call XXX about the laser fault.',
+  );
+  assert.equal(
+    getEngineerWorkOrderTitle({ description: '现场联系人 13800138000，设备无法启动。' }, true, '服务任务'),
+    '现场联系人 XXX，设备无法启动。',
+  );
+});
+
 test('engineer work-order redesign stays frontend-only', () => {
   const workspace = read('frontend/src/components/Engineer/EngineerWorkspace.jsx');
   assert.doesNotMatch(workspace, /saveChecklist|updateChecklist|checklist_progress/);
@@ -213,8 +226,34 @@ test('engineer detail merges current parent status and assignment into fetched d
   assert.match(detail, /function mergeTicketSummary\(detail, ticket\)[\s\S]*\.\.\.detail,[\s\S]*ticket\.status !== undefined \? \{ status: ticket\.status \}/);
   assert.match(detail, /ticket\.engineer_id !== undefined \? \{ engineer_id: ticket\.engineer_id \}/);
   assert.match(detail, /\[ticket\.status, ticket\.engineer_id, ticket\.engineer_name, ticket\.conflict_status, ticket\.conflict_reason\]/);
-  assert.match(detail, /setDetail\(mergeTicketSummary\(loadedDetail, ticketSummaryRef\.current\)\)/);
-  assert.match(detail, /const effectiveStatus = ticket\.status \?\? detail\?\.status/);
+  assert.match(detail, /setDetail\(mergeFetchedDetail\(loadedDetail, ticketSummaryRef\.current\)\)/);
+  assert.match(detail, /const effectiveStatus = detail\?\.status \?\? ticket\.status/);
+});
+
+test('engineer detail treats fetched status as authoritative while syncing later parent mutations', () => {
+  const detail = read('frontend/src/components/Engineer/EngineerWorkOrderDetail.jsx');
+
+  assert.match(detail, /const detailLoadedRef = useRef\(false\)/);
+  assert.match(detail, /function mergeFetchedDetail/);
+  assert.match(detail, /detailLoadedRef\.current = true/);
+  assert.match(detail, /const effectiveStatus = detail\?\.status \?\? ticket\.status/);
+  assert.match(detail, /detailLoadedRef\.current \? mergeTicketSummary\(current, ticketSummary\) : current/);
+});
+
+test('engineer detail restores conflict-blocked warning and scheduled context', () => {
+  const detail = read('frontend/src/components/Engineer/EngineerWorkOrderDetail.jsx');
+
+  assert.match(detail, /conflictWarning/);
+  assert.match(detail, /conflict_status === 'blocked'/);
+  assert.match(detail, /conflict_reason/);
+  assert.match(detail, /getEngineerScheduleLabel/);
+  assert.match(detail, /scheduledTime/);
+});
+
+test('regional lead engineer options include current engineer status', () => {
+  const detail = read('frontend/src/components/Engineer/EngineerWorkOrderDetail.jsx');
+
+  assert.match(detail, /engineer\.status/);
 });
 
 test('engineer detail localizes urgency instead of rendering raw enum values', () => {
