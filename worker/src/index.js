@@ -17132,13 +17132,16 @@ async function handleCreateInboxConversation(request, env) {
   const sender = await requireInboxIdentity(request, env);
   if (!sender) return errorResponse('仅运营与工程师可访问协作收件箱', 403);
   const { recipient_id, recipient_type } = await request.json();
-  let recipient = recipient_type === 'admin' ? { userId: recipient_id, userType: 'admin', name: '运营 Joe' } : null;
+  let recipient = recipient_type === 'admin' && recipient_id === 'admin'
+    ? { userId: 'admin', userType: 'admin', name: '运营 Joe' }
+    : null;
   if (recipient_type === 'engineer') recipient = await getInboxIdentity({ userId: recipient_id, userType: 'engineer' }, env);
   if (!canStartDirectConversation(sender, recipient)) return errorResponse('您无权与该用户发起对话', 403);
   const existing = await env.DB.prepare(`SELECT c.* FROM inbox_conversations c
     JOIN inbox_participants a ON a.conversation_id = c.id AND a.user_type = ? AND a.user_id = ? AND a.left_at IS NULL
     JOIN inbox_participants b ON b.conversation_id = c.id AND b.user_type = ? AND b.user_id = ? AND b.left_at IS NULL
-    WHERE c.kind = 'direct' LIMIT 1`).bind(sender.userType, sender.userId, recipient.userType, recipient.userId).first();
+    WHERE c.kind = 'direct' AND 2 = (SELECT COUNT(*) FROM inbox_participants p WHERE p.conversation_id = c.id AND p.left_at IS NULL)
+    LIMIT 1`).bind(sender.userType, sender.userId, recipient.userType, recipient.userId).first();
   if (existing) return jsonResponse({ conversation: existing });
   const id = generateId();
   await env.DB.prepare("INSERT INTO inbox_conversations (id, kind, created_by_type, created_by_id) VALUES (?, 'direct', ?, ?)").bind(id, sender.userType, sender.userId).run();
@@ -17183,7 +17186,7 @@ async function handlePostInboxMessage(request, env) {
   const id = generateId();
   await env.DB.prepare('INSERT INTO inbox_messages (id, conversation_id, sender_type, sender_id, sender_name, content) VALUES (?, ?, ?, ?, ?, ?)').bind(id, loaded.id, loaded.identity.userType, loaded.identity.userId, loaded.identity.name, content.trim()).run();
   await env.DB.prepare('UPDATE inbox_conversations SET last_message_at = datetime(\'now\') WHERE id = ?').bind(loaded.id).run();
-  for (const participant of loaded.participants) {
+  for (const participant of loaded.participants.filter((participant) => !participant.left_at)) {
     if (participant.user_id === loaded.identity.userId && participant.user_type === loaded.identity.userType) continue;
     await createNotification(env, {
       user_id: participant.user_id,
