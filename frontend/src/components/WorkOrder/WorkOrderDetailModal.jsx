@@ -562,13 +562,41 @@ export function WorkOrderDetailContent({
   const allowedTabKeyString = tabs.map((item) => item.key).join('|');
 
   useEffect(() => {
+    if (loading || !detail) return;
     const allowedTabKeys = allowedTabKeyString.split('|').filter(Boolean);
     if (!allowedTabKeys.includes(tab)) {
       setTab(allowedTabKeys.includes('messages') ? 'messages' : allowedTabKeys[0]);
     }
-  }, [allowedTabKeyString, tab]);
+  }, [allowedTabKeyString, detail, loading, tab]);
 
   if (!workOrder) return null;
+
+  const renderPaymentStartAction = () => (
+    isEngineer && ['pending_payment', 'payment_review'].includes(effectiveStatus) ? (
+      <button
+        onClick={async () => {
+          if (!(await confirmDialog('Request Admin approval to start service after advance payment follow-up?'))) return;
+          setPaymentStartSubmitting(true);
+          try {
+            await requestWorkOrderPaymentStart(workOrder.id, 'Engineer confirmed advance payment follow-up with the customer.');
+            toastSuccess('Start request sent to Admin for advance payment confirmation.');
+            loadDetail();
+            onConfirmed?.();
+          } catch (e) {
+            toastError('Start request failed: ' + e.message);
+          } finally {
+            setPaymentStartSubmitting(false);
+          }
+        }}
+        disabled={paymentStartSubmitting || effectiveStatus === 'payment_review'}
+        className="w-full py-3 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] disabled:opacity-50 text-white rounded-xl font-medium"
+      >
+        {effectiveStatus === 'payment_review'
+          ? 'Waiting for Admin Advance Payment Confirmation'
+          : paymentStartSubmitting ? 'Submitting...' : 'Request Admin Approval to Start'}
+      </button>
+    ) : null
+  );
 
   const renderInfoTab = () => (
     <div className="space-y-4">
@@ -907,30 +935,7 @@ export function WorkOrderDetailContent({
         </button>
       )}
 
-      {isEngineer && ['pending_payment', 'payment_review'].includes(effectiveStatus) && (
-        <button
-          onClick={async () => {
-            if (!(await confirmDialog('Request Admin approval to start service after advance payment follow-up?'))) return;
-            setPaymentStartSubmitting(true);
-            try {
-              await requestWorkOrderPaymentStart(workOrder.id, 'Engineer confirmed advance payment follow-up with the customer.');
-              toastSuccess('Start request sent to Admin for advance payment confirmation.');
-              loadDetail();
-              onConfirmed?.();
-            } catch (e) {
-              toastError('Start request failed: ' + e.message);
-            } finally {
-              setPaymentStartSubmitting(false);
-            }
-          }}
-          disabled={paymentStartSubmitting || effectiveStatus === 'payment_review'}
-          className="w-full py-3 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] disabled:opacity-50 text-white rounded-xl font-medium"
-        >
-          {effectiveStatus === 'payment_review'
-            ? 'Waiting for Admin Advance Payment Confirmation'
-            : paymentStartSubmitting ? 'Submitting...' : 'Request Admin Approval to Start'}
-        </button>
-      )}
+      {renderPaymentStartAction()}
 
       {detail?.logs?.length > 0 && (
         <div>
@@ -1260,6 +1265,8 @@ export function WorkOrderDetailContent({
             </button>
           ))}
         </div>
+
+        {!showInfoTab && renderPaymentStartAction()}
 
         {isActive && (loading ? (
           <div className="text-center py-8 text-[var(--color-text-muted)]">Loading...</div>
