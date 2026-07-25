@@ -76,8 +76,8 @@ test('existing work-order tools can render inline while the customer modal wrapp
 test('inline customer review routing keeps the automatic rating tab when info is hidden', () => {
   const detail = read('frontend/src/components/WorkOrder/WorkOrderDetailModal.jsx');
 
-  assert.match(detail, /initialStatus === 'pending_review' \|\| initialStatus === 'resolved'/);
-  assert.match(detail, /\? 'rating' : 'info'/);
+  assert.match(detail, /incomingStatus === 'pending_review' \|\| incomingStatus === 'resolved'/);
+  assert.match(detail, /\? 'rating' : initialTab/);
   assert.match(detail, /setTab\(\(currentTab\) => \(currentTab === 'info' \? 'messages' : currentTab\)\)/);
   assert.match(detail, /\}, \[showInfoTab, tab\]\);/);
 });
@@ -107,9 +107,42 @@ test('same-id work-order refreshes do not reinitialize the active tool tab', () 
   const detail = read('frontend/src/components/WorkOrder/WorkOrderDetailModal.jsx');
 
   assert.match(detail, /const initializedWorkOrderId = useRef\(null\)/);
-  assert.match(detail, /initializedWorkOrderId\.current !== workOrderId/);
-  assert.match(detail, /const initialStatus = initialWorkOrderStatus\.current/);
+  assert.match(detail, /const previousIsActiveRef = useRef\(false\)/);
+  assert.match(detail, /const becameActive = isActive && !previousIsActiveRef\.current/);
+  assert.match(detail, /const changedWorkOrder = initializedWorkOrderId\.current !== workOrderId/);
+  assert.match(detail, /if \(isActive && workOrderId && \(changedWorkOrder \|\| becameActive\)\)/);
+  assert.match(detail, /setTab\(shouldAutoRate \? 'rating' : initialTab\)/);
+  assert.match(detail, /previousIsActiveRef\.current = isActive/);
   assert.doesNotMatch(detail, /\[isActive, workOrder, workOrderId, userType, loadDetail\]/);
+});
+
+test('customer modal reapplies automatic rating routing when the same order reopens', () => {
+  const detail = read('frontend/src/components/WorkOrder/WorkOrderDetailModal.jsx');
+
+  assert.match(detail, /const becameActive = isActive && !previousIsActiveRef\.current/);
+  assert.match(detail, /userType === 'customer' &&[\s\S]*incomingStatus === 'pending_review'[\s\S]*incomingStatus === 'resolved'/);
+  assert.match(detail, /setTab\(shouldAutoRate \? 'rating' : initialTab\)/);
+});
+
+test('incoming work-order summary sync updates detail without changing the active tab', () => {
+  const detail = read('frontend/src/components/WorkOrder/WorkOrderDetailModal.jsx');
+  const syncStart = detail.indexOf('const previousIncomingSummaryRef');
+  const syncEnd = detail.indexOf('const previousIsActiveRef');
+  const syncSection = detail.slice(syncStart, syncEnd);
+
+  assert.ok(syncStart > -1 && syncEnd > syncStart);
+  assert.match(detail, /status: incomingStatus/);
+  assert.match(detail, /engineer_id: incomingEngineerId/);
+  assert.match(detail, /engineer_name: incomingEngineerName/);
+  assert.match(detail, /assigned_regional_lead_id: incomingRegionalLeadId/);
+  assert.match(detail, /conflict_status: incomingConflictStatus/);
+  assert.match(detail, /conflict_reason: incomingConflictReason/);
+  assert.match(detail, /quote_review_status: incomingQuoteReviewStatus/);
+  assert.match(detail, /previousSummary\[field\] !== incomingSummary\[field\]/);
+  assert.match(detail, /incomingSummary\[field\] != null/);
+  assert.match(syncSection, /setDetail\(\(current\) => \(current \? \{ \.\.\.current, \.\.\.changes \} : current\)\)/);
+  assert.doesNotMatch(syncSection, /setTab/);
+  assert.match(detail, /const effectiveStatus = detail\?\.status \?\? workOrder\.status/);
 });
 
 test('engineer detail uses the approved three-section reading order and inline tools', () => {

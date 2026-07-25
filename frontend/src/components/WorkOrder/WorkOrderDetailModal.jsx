@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Modal } from '../common/Modal';
 import {
   getWorkOrder,
@@ -286,6 +286,24 @@ function createEmptyEquipmentNeed() {
   return { type: '', quantity: '1', specification: '', note: '' };
 }
 
+const INCOMING_SUMMARY_FIELDS = [
+  'status',
+  'engineer_id',
+  'engineer_name',
+  'assigned_regional_lead_id',
+  'conflict_status',
+  'conflict_reason',
+  'quote_review_status',
+];
+
+function getChangedIncomingSummary(previousSummary, incomingSummary) {
+  return Object.fromEntries(INCOMING_SUMMARY_FIELDS.flatMap((field) => (
+    previousSummary[field] !== incomingSummary[field] && incomingSummary[field] != null
+      ? [[field, incomingSummary[field]]]
+      : []
+  )));
+}
+
 // ========== 主组件 ==========
 export function WorkOrderDetailContent({
   workOrder,
@@ -321,22 +339,49 @@ export function WorkOrderDetailContent({
   });
   const [machineLeadSubmitting, setMachineLeadSubmitting] = useState(false);
   const workOrderId = workOrder?.id;
-  const workOrderStatus = workOrder?.status;
-  const initializedWorkOrderId = useRef(null);
-  const initialWorkOrderStatus = useRef(workOrderStatus);
+  const incomingStatus = workOrder?.status;
+  const incomingEngineerId = workOrder?.engineer_id;
+  const incomingEngineerName = workOrder?.engineer_name;
+  const incomingRegionalLeadId = workOrder?.assigned_regional_lead_id;
+  const incomingConflictStatus = workOrder?.conflict_status;
+  const incomingConflictReason = workOrder?.conflict_reason;
+  const incomingQuoteReviewStatus = workOrder?.quote_review_status;
+  const incomingSummary = useMemo(() => ({
+    status: incomingStatus,
+    engineer_id: incomingEngineerId,
+    engineer_name: incomingEngineerName,
+    assigned_regional_lead_id: incomingRegionalLeadId,
+    conflict_status: incomingConflictStatus,
+    conflict_reason: incomingConflictReason,
+    quote_review_status: incomingQuoteReviewStatus,
+  }), [
+    incomingStatus, incomingEngineerId, incomingEngineerName, incomingRegionalLeadId,
+    incomingConflictStatus, incomingConflictReason, incomingQuoteReviewStatus,
+  ]);
+  const incomingSummaryRef = useRef(incomingSummary);
+  const previousIncomingSummaryRef = useRef(incomingSummary);
 
   useEffect(() => {
-    if (initializedWorkOrderId.current !== workOrderId) {
-      initialWorkOrderStatus.current = workOrderStatus;
+    const previousSummary = previousIncomingSummaryRef.current;
+    const changes = getChangedIncomingSummary(previousSummary, incomingSummary);
+    previousIncomingSummaryRef.current = incomingSummary;
+    incomingSummaryRef.current = incomingSummary;
+    if (Object.keys(changes).length > 0) {
+      setDetail((current) => (current ? { ...current, ...changes } : current));
     }
-  }, [workOrderId, workOrderStatus]);
+  }, [incomingSummary]);
+
+  const previousIsActiveRef = useRef(false);
+  const initializedWorkOrderId = useRef(null);
 
   const loadDetail = useCallback(async () => {
     if (!workOrderId) return;
     setLoading(true);
+    const requestSummary = incomingSummaryRef.current;
     try {
       const data = await getWorkOrder(workOrderId);
-      setDetail(data);
+      const summaryChanges = getChangedIncomingSummary(requestSummary, incomingSummaryRef.current);
+      setDetail({ ...data, ...summaryChanges });
       // 加载工程师评价
       if (userType === 'engineer') {
         try {
@@ -356,17 +401,20 @@ export function WorkOrderDetailContent({
   useEffect(() => {
     if (isActive && workOrderId) {
       loadDetail();
-      if (initializedWorkOrderId.current !== workOrderId) {
-        // 客户侧：待评价/已解决状态自动跳转到评价 tab
-        const initialStatus = initialWorkOrderStatus.current;
-        const autoTab = (userType === 'customer' &&
-          (initialStatus === 'pending_review' || initialStatus === 'resolved'))
-          ? 'rating' : 'info';
-        setTab(autoTab);
-        initializedWorkOrderId.current = workOrderId;
-      }
     }
   }, [isActive, workOrderId, userType, loadDetail]);
+
+  useEffect(() => {
+    const becameActive = isActive && !previousIsActiveRef.current;
+    const changedWorkOrder = initializedWorkOrderId.current !== workOrderId;
+    if (isActive && workOrderId && (changedWorkOrder || becameActive)) {
+      const shouldAutoRate = userType === 'customer' &&
+        (incomingStatus === 'pending_review' || incomingStatus === 'resolved');
+      setTab(shouldAutoRate ? 'rating' : initialTab);
+      initializedWorkOrderId.current = workOrderId;
+    }
+    previousIsActiveRef.current = isActive;
+  }, [incomingStatus, initialTab, isActive, userType, workOrderId]);
 
   useEffect(() => {
     if (!showInfoTab) setTab((currentTab) => (currentTab === 'info' ? 'messages' : currentTab));
@@ -480,7 +528,7 @@ export function WorkOrderDetailContent({
   if (!workOrder) return null;
 
   // 使用 detail 中的最新状态（loadDetail 刷新后），回退到 prop 中的初始状态
-  const effectiveStatus = detail?.status || workOrder.status;
+  const effectiveStatus = detail?.status ?? workOrder.status;
   const statusSet = isCn ? statusConfigCn : statusConfig;
   const urgencySet = isCn ? urgencyConfigCn : urgencyConfig;
   const typeSet = isCn ? typeLabelsCn : typeLabels;
