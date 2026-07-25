@@ -20,6 +20,8 @@ export async function createNotification(env, { user_id, user_type, type, title,
     console.error('[Notification] Failed to create:', e.message);
   }
 
+  if (user_type === 'admin') return;
+
   try {
     await sendPushToUser(user_id, user_type, env, {
       title,

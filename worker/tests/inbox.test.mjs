@@ -2,6 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { canStartDirectConversation, isConversationParticipant, isInboxIdentity } from '../src/lib/inbox.js';
+import { signJwt } from '../src/lib/auth.js';
+import worker from '../src/index.js';
 
 test('unified operations inbox migration defines the conversation, membership, and message schema', async () => {
   const migration = await readFile(new URL('../migrations/034_unified_operations_inbox.sql', import.meta.url), 'utf8');
@@ -55,4 +57,67 @@ test('inbox identity and active participant helpers reject customers and departe
   assert.equal(isConversationParticipant([
     { user_id: 'eng-1', user_type: 'engineer', left_at: '2026-07-25T00:00:00Z' },
   ], engineer), false);
+});
+
+const JWT_SECRET = 'inbox-api-test-secret-at-least-16';
+
+function createInboxEnv() {
+  const state = {
+    engineers: [
+      { id: 'lead-1', name: 'Lead', role: 'regional_lead', status: 'active', regional_lead_id: null },
+      { id: 'eng-1', name: 'Engineer', role: 'engineer', status: 'active', regional_lead_id: 'lead-1' },
+      { id: 'eng-2', name: 'Outsider', role: 'engineer', status: 'active', regional_lead_id: 'lead-2' },
+    ],
+    workOrders: [{ id: 'wo-1', order_no: 'WO-1', engineer_id: 'eng-1', assigned_regional_lead_id: 'lead-1' }],
+    conversations: [], participants: [], messages: [], notifications: [],
+  };
+  const DB = { prepare(sql) { return { args: [], bind(...args) { this.args = args; return this; }, async first() {
+    if (/FROM engineers WHERE id = \?/i.test(sql)) return state.engineers.find((x) => x.id === this.args[0]) || null;
+    if (/FROM work_orders WHERE id = \?/i.test(sql)) return state.workOrders.find((x) => x.id === this.args[0]) || null;
+    if (/FROM inbox_conversations WHERE id = \?/i.test(sql)) return state.conversations.find((x) => x.id === this.args[0]) || null;
+    if (/FROM inbox_conversations c[\s\S]*inbox_participants/i.test(sql)) {
+      const [aType, aId, bType, bId] = this.args;
+      return state.conversations.find((c) => c.kind === 'direct' && state.participants.filter((p) => p.conversation_id === c.id && !p.left_at).some((p) => p.user_type === aType && p.user_id === aId) && state.participants.filter((p) => p.conversation_id === c.id && !p.left_at).some((p) => p.user_type === bType && p.user_id === bId)) || null;
+    }
+    return null;
+  }, async all() {
+    if (/SELECT id, name, role, regional_lead_id FROM engineers/i.test(sql)) {
+      const [leadId, memberId] = this.args;
+      return { results: state.engineers.filter((x) => x.status === 'active' && (x.id === leadId || x.regional_lead_id === memberId)) };
+    }
+    if (/FROM inbox_participants WHERE conversation_id/i.test(sql)) return { results: state.participants.filter((x) => x.conversation_id === this.args[0]) };
+    return { results: [] };
+  }, async run() {
+    if (/INSERT INTO inbox_conversations/i.test(sql)) state.conversations.push({ id: this.args[0], kind: 'direct' });
+    if (/INSERT INTO inbox_participants/i.test(sql)) {
+      state.participants.push({ conversation_id: this.args[0], user_type: this.args[1], user_id: this.args[2], left_at: null }, { conversation_id: this.args[3], user_type: this.args[4], user_id: this.args[5], left_at: null });
+    }
+    return { success: true };
+  } }; } };
+  return { JWT_SECRET, DB, __state: state };
+}
+
+async function inboxRequest(env, userType, userId, path, method = 'GET', body) {
+  const token = await signJwt({ userType, userId, exp: Math.floor(Date.now() / 1000) + 3600 }, JWT_SECRET);
+  const response = await worker.fetch(new Request(`https://api.sagemro.com${path}`, { method, headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: body && JSON.stringify(body) }), env, { waitUntil() {} });
+  return { response, json: await response.json() };
+}
+
+test('inbox API exposes allowed contacts and rejects customers', async () => {
+  const env = createInboxEnv();
+  const contacts = await inboxRequest(env, 'engineer', 'eng-1', '/api/inbox/contacts');
+  assert.equal(contacts.response.status, 200);
+  assert.deepEqual(contacts.json.contacts.map((x) => x.id), ['admin', 'lead-1']);
+  const denied = await inboxRequest(env, 'customer', 'cust-1', '/api/inbox');
+  assert.equal(denied.response.status, 403);
+});
+
+test('inbox API reuses a direct conversation and protects membership', async () => {
+  const env = createInboxEnv();
+  const first = await inboxRequest(env, 'engineer', 'eng-1', '/api/inbox/conversations', 'POST', { recipient_id: 'lead-1', recipient_type: 'engineer' });
+  assert.equal(first.response.status, 200);
+  const second = await inboxRequest(env, 'engineer', 'eng-1', '/api/inbox/conversations', 'POST', { recipient_id: 'lead-1', recipient_type: 'engineer' });
+  assert.equal(second.json.conversation.id, first.json.conversation.id);
+  const denied = await inboxRequest(env, 'engineer', 'eng-2', `/api/inbox/conversations/${first.json.conversation.id}`);
+  assert.equal(denied.response.status, 403);
 });
