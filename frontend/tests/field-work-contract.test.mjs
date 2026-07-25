@@ -229,7 +229,7 @@ test('work-order details integrate field work and keep legacy arrival secondary'
   assert.match(modal, /detail\?\.field_days\?\.length/);
   assert.match(modal, /key: 'fieldWork'/);
   assert.match(modal, /isCnLocale\(\) \? '现场作业' : 'Field work'/);
-  assert.match(modal, /tab === 'fieldWork'/);
+  assert.match(modal, /activeTab === 'fieldWork'/);
   assert.match(modal, /<FieldWorkPanel[\s\S]*workOrderId=\{workOrder\.id\}[\s\S]*onBusyChange=/);
   assert.match(modal, /Legacy arrival record|历史到场记录/);
   assert.doesNotMatch(modal, /onClick=\{handleArrivalCheck\}/);
@@ -247,8 +247,8 @@ test('field-work mutations lock modal close and tab switches with localized guid
   assert.match(modal, /const modalBusyMessage = fieldWorkBusy \? fieldWorkBusyMessage : materialRequisitionBusyMessage/);
   assert.match(modal, /closeDisabled=\{modalBusy\}/);
   assert.match(modal, /closeDisabledTitle=\{modalBusyMessage\}/);
-  assert.match(modal, /disabled=\{modalBusy && tab !== t\.key\}/);
-  assert.match(modal, /title=\{modalBusy && tab !== t\.key \? modalBusyMessage : undefined\}/);
+  assert.match(modal, /disabled=\{modalBusy && activeTab !== t\.key\}/);
+  assert.match(modal, /title=\{modalBusy && activeTab !== t\.key \? modalBusyMessage : undefined\}/);
 });
 
 test('successful field-work mutations do not become retry failures when refresh fails', () => {

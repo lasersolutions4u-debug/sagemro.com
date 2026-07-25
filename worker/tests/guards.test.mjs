@@ -43,6 +43,17 @@ test('assertWorkOrderAccess 工单工程师本人放行', () => {
   );
 });
 
+test('assertWorkOrderAccess 区域负责人关系不等于工单参与权限', () => {
+  const err = catching(() =>
+    assertWorkOrderAccess(
+      { userId: 'lead-1', userType: 'engineer' },
+      { customer_id: 'c1', engineer_id: 'e1', assigned_regional_lead_id: 'lead-1' },
+    )
+  );
+  assert.ok(err instanceof GuardError);
+  assert.equal(err.status, 403);
+});
+
 test('assertWorkOrderAccess 非本工单的其他客户抛 403', () => {
   const err = catching(() =>
     assertWorkOrderAccess({ userId: 'c2', userType: 'customer' }, { customer_id: 'c1', engineer_id: 'e1' })

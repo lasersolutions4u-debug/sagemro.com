@@ -71,11 +71,14 @@ test('customer, Admin, and engineer complete a service order lifecycle', async (
   await dispatchDialog.getByRole('button', { name: 'Close', exact: true }).click();
 
   await engineerPage.reload();
-  const engineerTask = engineerPage.locator('article').filter({ hasText: orderNo });
+  const engineerTask = engineerPage.getByRole('button').filter({ hasText: orderNo });
   await expect(engineerTask).toBeVisible();
-  await engineerTask.getByRole('button', { name: 'Confirm Assignment', exact: true }).click();
-  await engineerTask.getByRole('button', { name: 'View / Handle Task', exact: true }).click();
-  await engineerPage.getByRole('tab', { name: 'Submit Quote', exact: true }).click();
+  await engineerTask.click();
+  await expect(engineerPage).toHaveURL(new RegExp(`/work-orders/${workOrderId}$`));
+  await engineerPage.getByRole('button', { name: 'Confirm Assignment', exact: true }).click();
+  await engineerPage.reload();
+  await expect(engineerPage.getByText(`Work order · ${orderNo}`, { exact: true })).toBeVisible();
+  await engineerPage.getByRole('tab', { name: 'Quote', exact: true }).click();
   await engineerPage.getByLabel('Labor Fee').fill('800');
   await engineerPage.getByLabel('Travel Fee').fill('100');
   await engineerPage.getByTestId('submit-pricing-button').click();
@@ -101,9 +104,9 @@ test('customer, Admin, and engineer complete a service order lifecycle', async (
   await expect(customerPage.getByRole('heading', { name: 'Collection workspace', exact: true })).toBeVisible();
 
   await engineerPage.reload();
-  const collectionTask = engineerPage.locator('article').filter({ hasText: orderNo });
-  await collectionTask.getByRole('button', { name: 'View / Handle Task', exact: true }).click();
-  await engineerPage.getByRole('tab', { name: 'Payments & receipts', exact: true }).click();
+  await expect(engineerPage).toHaveURL(new RegExp(`/work-orders/${workOrderId}$`));
+  await engineerPage.getByRole('tab', { name: 'Quote', exact: true }).click();
+  await engineerPage.getByRole('button', { name: 'Payments & receipts', exact: true }).click();
   const engineerInstallment = engineerPage.locator('article').filter({
     has: engineerPage.getByRole('heading', { name: 'Installment 1', exact: true }),
   });
@@ -124,9 +127,8 @@ test('customer, Admin, and engineer complete a service order lifecycle', async (
   await customerPage.getByRole('button', { name: 'Go to Messages', exact: true }).click();
 
   await engineerPage.reload();
-  const receiptTask = engineerPage.locator('article').filter({ hasText: orderNo });
-  await receiptTask.getByRole('button', { name: 'View / Handle Task', exact: true }).click();
-  await engineerPage.getByRole('tab', { name: 'Payments & receipts', exact: true }).click();
+  await engineerPage.getByRole('tab', { name: 'Quote', exact: true }).click();
+  await engineerPage.getByRole('button', { name: 'Payments & receipts', exact: true }).click();
   const receiptInstallment = engineerPage.locator('article').filter({
     has: engineerPage.getByRole('heading', { name: 'Installment 1', exact: true }),
   });
@@ -148,8 +150,7 @@ test('customer, Admin, and engineer complete a service order lifecycle', async (
   await receiptDialog.getByRole('button', { name: 'Close', exact: true }).click();
 
   await engineerPage.reload();
-  const paymentTask = engineerPage.locator('article').filter({ hasText: orderNo });
-  await paymentTask.getByRole('button', { name: 'View / Handle Task', exact: true }).click();
+  await engineerPage.getByRole('tab', { name: 'Quote', exact: true }).click();
   await engineerPage.getByRole('button', { name: 'Request Admin Approval to Start', exact: true }).click();
   await confirmFeedback(engineerPage);
 
@@ -164,9 +165,7 @@ test('customer, Admin, and engineer complete a service order lifecycle', async (
   await paymentDialog.getByRole('button', { name: 'Close', exact: true }).click();
 
   await engineerPage.reload();
-  const serviceTask = engineerPage.locator('article').filter({ hasText: orderNo });
-  await serviceTask.getByRole('button', { name: 'View / Handle Task', exact: true }).click();
-  await engineerPage.getByRole('tab', { name: 'Service Report', exact: true }).click();
+  await engineerPage.getByRole('tab', { name: 'Service report', exact: true }).click();
   await engineerPage.getByLabel('Customer Symptom').fill('Laser power dropped during continuous cutting.');
   await engineerPage.getByLabel('Root Cause / Diagnosis').fill('Protective lens contamination reduced delivered power.');
   await engineerPage.getByLabel('Service Actions / Next Advice').fill('Cleaned optical path and replaced the protective lens.');
@@ -199,6 +198,9 @@ test('customer, Admin, and engineer complete a service order lifecycle', async (
   await payoutDialog.getByRole('button', { name: 'Confirm', exact: true }).click();
   await expect(adminPage.getByText('Engineer service payment updated: Completed', { exact: true })).toBeVisible();
   await expect(adminPage.getByText('Status: Completed', { exact: true })).toBeVisible();
+
+  await engineerPage.goBack();
+  await expect(engineerPage.getByText('My work orders', { exact: true })).toBeVisible();
 
   await adminContext.close();
   await customerContext.close();

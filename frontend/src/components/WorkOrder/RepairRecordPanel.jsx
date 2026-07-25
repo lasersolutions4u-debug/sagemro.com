@@ -7,6 +7,63 @@ import { MaterialPicker } from './MaterialPicker';
 
 const emptyPart = { name: '', qty: 1, unit: 'pcs', specs: '' };
 
+const COPY = {
+  en: {
+    noReport: 'No service report yet',
+    reportRequired: 'Please complete and save this service report before submitting it to the customer.',
+    createReport: 'Create Service Report',
+    summary: 'SAGEMRO Service Report: diagnosis, actions, parts, labor time, and follow-up notes for customer acceptance and equipment history.',
+    editAria: 'Edit service report', edit: 'Edit', symptom: 'Customer Symptom',
+    diagnosis: 'Root Cause / Diagnosis', solution: 'Service Actions / Next Advice',
+    materialItems: 'Material Items', partsUsed: 'Parts Used', partName: 'Part Name',
+    qty: 'Qty', unit: 'Unit', specs: 'Specs', laborHours: 'Labor hours', hours: 'hrs',
+    reportUpdated: 'Report updated', submitFinal: 'Submit Final Report to Customer',
+    sopTitle: 'SAGEMRO Service Report SOP',
+    sopSteps: [
+      'Record customer symptom and current machine condition.',
+      'Write root cause, on-site actions, parameters adjusted, parts used, and next maintenance advice.',
+      'Share on-site photos or acceptance files in Messages when available; existing files remain visible in Details.',
+      'Save this report before marking the service complete.',
+    ],
+    symptomPlaceholder: 'Describe the specific issue, e.g. laser power dropped or severe dross appeared on a 3 mm stainless-steel cut.',
+    diagnosisPlaceholder: 'Record inspection findings, e.g. a contaminated protective lens or low assist-gas pressure.',
+    solutionPlaceholder: 'Record actions taken, adjusted parameters, replaced parts, and recommended follow-up.',
+    manualParts: 'Parts Used (manual entry)',
+    manualPartsNote: 'Use this only for parts actually consumed or replaced on site. If you already selected the same item in Material lines, do not enter it again here.',
+    partNameLabel: 'Part name', qtyLabel: 'Qty', unitLabel: 'Unit', specLabel: 'Spec / note',
+    partNamePlaceholder: 'Protective lens', unitPlaceholder: 'pcs', specPlaceholder: 'D28 / BM110',
+    removePart: 'Remove part', addPart: 'Add Part', laborPlaceholder: 'e.g. 2.5',
+    cancel: 'Cancel', saving: 'Saving...', save: 'Save Service Report',
+  },
+  cn: {
+    noReport: '暂无服务报告',
+    reportRequired: '提交给客户前，请先填写并保存服务报告。',
+    createReport: '创建服务报告',
+    summary: 'SAGEMRO 服务报告用于记录诊断、服务措施、使用配件、工时及后续建议，供客户验收和设备档案留存。',
+    editAria: '编辑服务报告', edit: '编辑', symptom: '客户反馈的故障现象',
+    diagnosis: '根因与诊断', solution: '服务措施与后续建议',
+    materialItems: '配件引用清单', partsUsed: '已使用配件', partName: '配件名称',
+    qty: '数量', unit: '单位', specs: '规格', laborHours: '服务工时', hours: '小时',
+    reportUpdated: '报告更新时间', submitFinal: '提交最终报告给客户',
+    sopTitle: 'SAGEMRO 服务报告标准流程',
+    sopSteps: [
+      '记录客户反馈的故障现象和设备当前状态。',
+      '填写根因、现场措施、调整参数、使用配件及后续维护建议。',
+      '如有现场照片或验收文件，请在消息中共享；已有文件可在详情中查看。',
+      '标记服务完成前，请先保存本报告。',
+    ],
+    symptomPlaceholder: '描述具体故障，例如激光功率下降、3 mm 不锈钢切割挂渣严重等。',
+    diagnosisPlaceholder: '填写检查结果，例如保护镜污染、聚焦镜热透镜效应、辅助气压偏低等。',
+    solutionPlaceholder: '填写已采取的措施、调整参数、更换配件及后续维护建议。',
+    manualParts: '已使用配件（手动填写）',
+    manualPartsNote: '仅填写现场实际消耗或更换的配件；如同一配件已在物料行中选择，请勿重复填写。',
+    partNameLabel: '配件名称', qtyLabel: '数量', unitLabel: '单位', specLabel: '规格 / 备注',
+    partNamePlaceholder: '保护镜', unitPlaceholder: '件', specPlaceholder: 'D28 / BM110',
+    removePart: '删除配件', addPart: '添加配件', laborPlaceholder: '例如 2.5',
+    cancel: '取消', saving: '保存中...', save: '保存服务报告',
+  },
+};
+
 function parseParts(partsUsed) {
   try {
     return JSON.parse(partsUsed || '[]');
@@ -25,15 +82,16 @@ function hasRepairRecordContent(record) {
   return hasText || hasLabor || hasParts || hasMaterialItems;
 }
 
-export function RepairRecordPanel({ workOrderId, userType, repairRecord, onSaved, onSubmitComplete, canSubmitComplete = false }) {
+export function RepairRecordPanel({ workOrderId, userType, repairRecord, onSaved, onSubmitComplete, canSubmitComplete = false, readOnly = false }) {
   const isCn = isCnLocale();
-  const isEngineer = userType === 'engineer';
+  const copy = isCn ? COPY.cn : COPY.en;
+  const isEngineer = userType === 'engineer' && !readOnly;
   const [isEditing, setIsEditing] = useState(false);
 
   const [symptom, setSymptom] = useState('');
   const [diagnosis, setDiagnosis] = useState('');
   const [solution, setSolution] = useState('');
-  const [partsUsed, setPartsUsed] = useState([{ ...emptyPart }]);
+  const [partsUsed, setPartsUsed] = useState([{ ...emptyPart, unit: isCn ? '件' : 'pcs' }]);
   const [materialItems, setMaterialItems] = useState([]);
   const [laborHours, setLaborHours] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -45,13 +103,13 @@ export function RepairRecordPanel({ workOrderId, userType, repairRecord, onSaved
       setSolution(repairRecord.solution || '');
       setLaborHours(repairRecord.labor_hours ? String(repairRecord.labor_hours) : '');
       const parts = parseParts(repairRecord.parts_used);
-      setPartsUsed(parts.length > 0 ? parts : [{ ...emptyPart }]);
+      setPartsUsed(parts.length > 0 ? parts : [{ ...emptyPart, unit: isCn ? '件' : 'pcs' }]);
       setMaterialItems(Array.isArray(repairRecord.material_items) ? repairRecord.material_items : []);
       setIsEditing(isEngineer && !hasRepairRecordContent(repairRecord));
     } else if (isEngineer) {
       setIsEditing(true);
     }
-  }, [repairRecord, isEngineer]);
+  }, [isCn, repairRecord, isEngineer]);
 
   const handleSave = async () => {
     setSubmitting(true);
@@ -81,7 +139,7 @@ export function RepairRecordPanel({ workOrderId, userType, repairRecord, onSaved
     setPartsUsed(next);
   };
 
-  const addPart = () => setPartsUsed([...partsUsed, { ...emptyPart }]);
+  const addPart = () => setPartsUsed([...partsUsed, { ...emptyPart, unit: isCn ? '件' : 'pcs' }]);
 
   const removePart = (i) => {
     if (partsUsed.length <= 1) return;
@@ -96,17 +154,17 @@ export function RepairRecordPanel({ workOrderId, userType, repairRecord, onSaved
     if (!hasContent) {
       return (
         <div className="space-y-3 text-center py-8">
-          <div className="text-sm text-[var(--color-text-muted)]">No service report yet</div>
+          <div className="text-sm text-[var(--color-text-muted)]">{copy.noReport}</div>
           {isEngineer && (
             <>
               <div className="mx-auto max-w-sm text-xs text-[var(--color-text-secondary)]">
-                Please complete and save this service report before submitting it to the customer.
+                {copy.reportRequired}
               </div>
               <button
                 onClick={() => setIsEditing(true)}
                 className="rounded-xl bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-white hover:bg-[var(--color-primary-hover)]"
               >
-                Create Service Report
+                {copy.createReport}
               </button>
             </>
           )}
@@ -120,55 +178,55 @@ export function RepairRecordPanel({ workOrderId, userType, repairRecord, onSaved
       <div className="space-y-4">
         <div className="flex items-start justify-between gap-3 rounded-xl border border-[var(--color-primary)]/20 bg-[var(--color-primary)]/10 p-3 text-sm text-[var(--color-text-primary)]">
           <div>
-            SAGEMRO Service Report: diagnosis, actions, parts, labor time, and follow-up notes for customer acceptance and equipment history.
+            {copy.summary}
           </div>
           {isEngineer && (
             <button
               type="button"
               onClick={() => setIsEditing(true)}
-              aria-label="Edit service report"
+              aria-label={copy.editAria}
               className="inline-flex shrink-0 items-center gap-1.5 self-start rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-xs font-medium text-[var(--color-text-secondary)] shadow-sm hover:border-[var(--color-primary)] hover:text-[var(--color-primary)]"
             >
               <Pencil size={14} />
-              Edit
+              {copy.edit}
             </button>
           )}
         </div>
         {symptom && (
           <div>
-            <h3 className="text-xs font-medium text-[var(--color-text-secondary)] mb-1">Customer Symptom</h3>
+            <h3 className="text-xs font-medium text-[var(--color-text-secondary)] mb-1">{copy.symptom}</h3>
             <div className="p-3 bg-[var(--color-surface-elevated)] rounded-xl text-sm text-[var(--color-text-primary)]">{symptom}</div>
           </div>
         )}
         {diagnosis && (
           <div>
-            <h3 className="text-xs font-medium text-[var(--color-text-secondary)] mb-1">Root Cause / Diagnosis</h3>
+            <h3 className="text-xs font-medium text-[var(--color-text-secondary)] mb-1">{copy.diagnosis}</h3>
             <div className="p-3 bg-[var(--color-surface-elevated)] rounded-xl text-sm text-[var(--color-text-primary)]">{diagnosis}</div>
           </div>
         )}
         {solution && (
           <div>
-            <h3 className="text-xs font-medium text-[var(--color-text-secondary)] mb-1">Service Actions / Next Advice</h3>
+            <h3 className="text-xs font-medium text-[var(--color-text-secondary)] mb-1">{copy.solution}</h3>
             <div className="p-3 bg-[var(--color-surface-elevated)] rounded-xl text-sm text-[var(--color-text-primary)]">{solution}</div>
           </div>
         )}
         {structuredParts.length > 0 && (
           <div>
-            <h3 className="text-xs font-medium text-[var(--color-text-secondary)] mb-1">{isCn ? '配件引用清单' : 'Material Items'}</h3>
+            <h3 className="text-xs font-medium text-[var(--color-text-secondary)] mb-1">{copy.materialItems}</h3>
             <MaterialPicker items={structuredParts} readonly />
           </div>
         )}
         {parts.length > 0 && parts[0]?.name && (
           <div>
-            <h3 className="text-xs font-medium text-[var(--color-text-secondary)] mb-1">Parts Used</h3>
+            <h3 className="text-xs font-medium text-[var(--color-text-secondary)] mb-1">{copy.partsUsed}</h3>
             <div className="overflow-hidden rounded-xl border border-[var(--color-border)]">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="bg-[var(--color-surface-elevated)] text-xs text-[var(--color-text-secondary)]">
-                    <th className="py-2 px-3 text-left font-medium">Part Name</th>
-                    <th className="py-2 px-3 text-center font-medium w-16">Qty</th>
-                    <th className="py-2 px-3 text-left font-medium w-16">Unit</th>
-                    <th className="py-2 px-3 text-left font-medium">Specs</th>
+                    <th className="py-2 px-3 text-left font-medium">{copy.partName}</th>
+                    <th className="py-2 px-3 text-center font-medium w-16">{copy.qty}</th>
+                    <th className="py-2 px-3 text-left font-medium w-16">{copy.unit}</th>
+                    <th className="py-2 px-3 text-left font-medium">{copy.specs}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -176,7 +234,7 @@ export function RepairRecordPanel({ workOrderId, userType, repairRecord, onSaved
                     <tr key={i} className="border-t border-[var(--color-border)]">
                       <td className="py-2 px-3 text-[var(--color-text-primary)]">{p.name}</td>
                       <td className="py-2 px-3 text-center text-[var(--color-text-primary)]">{p.qty || 1}</td>
-                      <td className="py-2 px-3 text-[var(--color-text-primary)]">{p.unit || 'pcs'}</td>
+                      <td className="py-2 px-3 text-[var(--color-text-primary)]">{p.unit || (isCn ? '件' : 'pcs')}</td>
                       <td className="py-2 px-3 text-[var(--color-text-secondary)]">{p.specs || '-'}</td>
                     </tr>
                   ))}
@@ -187,13 +245,13 @@ export function RepairRecordPanel({ workOrderId, userType, repairRecord, onSaved
         )}
         {repairRecord?.labor_hours > 0 && (
           <div className="flex items-center gap-2 text-sm text-[var(--color-text-secondary)]">
-            <span>Labor hours:</span>
-            <span className="text-[var(--color-text-primary)] font-medium">{repairRecord.labor_hours} hrs</span>
+            <span>{copy.laborHours}:</span>
+            <span className="text-[var(--color-text-primary)] font-medium">{repairRecord.labor_hours} {copy.hours}</span>
           </div>
         )}
         {repairRecord?.updated_at && repairRecord.symptom && (
           <div className="text-xs text-[var(--color-text-muted)]">
-            Report updated: {new Date(repairRecord.updated_at).toLocaleString()}
+            {copy.reportUpdated}: {new Date(repairRecord.updated_at).toLocaleString(isCn ? 'zh-CN' : 'en-US')}
           </div>
         )}
         {/* 工程师可以继续编辑已有记录 */}
@@ -203,7 +261,7 @@ export function RepairRecordPanel({ workOrderId, userType, repairRecord, onSaved
               onClick={onSubmitComplete}
               className="w-full py-2.5 text-sm bg-green-500 hover:bg-green-600 text-white rounded-xl"
             >
-              Submit Final Report to Customer
+              {copy.submitFinal}
             </button>
           </div>
         )}
@@ -215,44 +273,41 @@ export function RepairRecordPanel({ workOrderId, userType, repairRecord, onSaved
   return (
     <div className="space-y-3">
       <div className="p-3 bg-[var(--color-surface-elevated)] border border-[var(--color-border)] rounded-xl text-xs text-[var(--color-text-secondary)] space-y-1">
-        <div className="font-medium text-[var(--color-text-primary)]">SAGEMRO Service Report SOP</div>
-        <div>1. Record customer symptom and current machine condition.</div>
-        <div>2. Write root cause, on-site actions, parameters adjusted, parts used, and next maintenance advice.</div>
-        <div>3. Share on-site photos or acceptance files in Messages when available; existing files remain visible in Details.</div>
-        <div>4. Save this report before marking the service complete.</div>
+        <div className="font-medium text-[var(--color-text-primary)]">{copy.sopTitle}</div>
+        {copy.sopSteps.map((step, index) => <div key={step}>{index + 1}. {step}</div>)}
       </div>
 
       <div>
-        <label className="block text-xs text-[var(--color-text-secondary)] mb-1">Customer Symptom</label>
+        <label className="block text-xs text-[var(--color-text-secondary)] mb-1">{copy.symptom}</label>
         <textarea
-          aria-label="Customer Symptom"
+          aria-label={copy.symptom}
           value={symptom}
           onChange={(e) => setSymptom(e.target.value)}
-          placeholder="Describe the specific issue, e.g. Laser power dropped, severe dross on 3mm stainless steel cut..."
+          placeholder={copy.symptomPlaceholder}
           rows={2}
           className={inputClass + ' resize-none'}
         />
       </div>
 
       <div>
-        <label className="block text-xs text-[var(--color-text-secondary)] mb-1">Root Cause / Diagnosis</label>
+        <label className="block text-xs text-[var(--color-text-secondary)] mb-1">{copy.diagnosis}</label>
         <textarea
-          aria-label="Root Cause / Diagnosis"
+          aria-label={copy.diagnosis}
           value={diagnosis}
           onChange={(e) => setDiagnosis(e.target.value)}
-          placeholder="Issues found during inspection, e.g. Contaminated protective lens, thermal lensing on focus lens, low assist gas pressure..."
+          placeholder={copy.diagnosisPlaceholder}
           rows={2}
           className={inputClass + ' resize-none'}
         />
       </div>
 
       <div>
-        <label className="block text-xs text-[var(--color-text-secondary)] mb-1">Service Actions / Next Advice</label>
+        <label className="block text-xs text-[var(--color-text-secondary)] mb-1">{copy.solution}</label>
         <textarea
-          aria-label="Service Actions / Next Advice"
+          aria-label={copy.solution}
           value={solution}
           onChange={(e) => setSolution(e.target.value)}
-          placeholder="Actions taken, e.g. Replaced protective lens and focus lens, cleaned optical path, adjusted gas pressure to 1.2MPa..."
+          placeholder={copy.solutionPlaceholder}
           rows={3}
           className={inputClass + ' resize-none'}
         />
@@ -261,25 +316,25 @@ export function RepairRecordPanel({ workOrderId, userType, repairRecord, onSaved
       {/* 配件清单 */}
       <div>
         <div className="mb-2">
-          <label className="block text-xs font-medium text-[var(--color-text-primary)]">Parts Used (manual entry)</label>
+          <label className="block text-xs font-medium text-[var(--color-text-primary)]">{copy.manualParts}</label>
           <p className="mt-1 text-xs leading-relaxed text-[var(--color-text-muted)]">
-            Use this only for parts actually consumed or replaced on site. If you already selected the same item in Material lines, do not enter it again here.
+            {copy.manualPartsNote}
           </p>
         </div>
         <div className="space-y-2">
           {partsUsed.map((part, i) => (
             <div key={i} className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(180px,1fr)_80px_90px_minmax(160px,0.8fr)_auto] sm:items-end">
               <label className="block text-[11px] font-medium text-[var(--color-text-secondary)]">
-                Part name
+                {copy.partNameLabel}
                 <input
                   value={part.name}
                   onChange={(e) => updatePart(i, 'name', e.target.value)}
-                  placeholder="Protective lens"
+                  placeholder={copy.partNamePlaceholder}
                   className={inputClass + ' mt-1'}
                 />
               </label>
               <label className="block text-[11px] font-medium text-[var(--color-text-secondary)]">
-                Qty
+                {copy.qtyLabel}
                 <input
                   type="number"
                   value={part.qty}
@@ -290,20 +345,20 @@ export function RepairRecordPanel({ workOrderId, userType, repairRecord, onSaved
                 />
               </label>
               <label className="block text-[11px] font-medium text-[var(--color-text-secondary)]">
-                Unit
+                {copy.unitLabel}
                 <input
                   value={part.unit}
                   onChange={(e) => updatePart(i, 'unit', e.target.value)}
-                  placeholder="pcs"
+                  placeholder={copy.unitPlaceholder}
                   className={inputClass + ' mt-1'}
                 />
               </label>
               <label className="block text-[11px] font-medium text-[var(--color-text-secondary)]">
-                Spec / note
+                {copy.specLabel}
                 <input
                   value={part.specs}
                   onChange={(e) => updatePart(i, 'specs', e.target.value)}
-                  placeholder="D28 / BM110"
+                  placeholder={copy.specPlaceholder}
                   className={inputClass + ' mt-1'}
                 />
               </label>
@@ -311,7 +366,7 @@ export function RepairRecordPanel({ workOrderId, userType, repairRecord, onSaved
                 onClick={() => removePart(i)}
                 disabled={partsUsed.length <= 1}
                 className="flex h-10 w-10 items-center justify-center rounded-xl text-[var(--color-text-muted)] hover:bg-red-50 hover:text-red-500 disabled:opacity-30"
-                aria-label="Remove part"
+                aria-label={copy.removePart}
               >
                 <Trash2 size={16} />
               </button>
@@ -323,20 +378,20 @@ export function RepairRecordPanel({ workOrderId, userType, repairRecord, onSaved
           className="mt-2 flex items-center gap-1 text-xs text-[var(--color-primary)] hover:underline"
         >
           <Plus size={14} />
-          Add Part
+          {copy.addPart}
         </button>
       </div>
 
       <MaterialPicker purpose="service_report" workOrderId={workOrderId} items={materialItems} onChange={setMaterialItems} />
 
       <div>
-        <label className="block text-xs text-[var(--color-text-secondary)] mb-1">Labor Hours</label>
+        <label className="block text-xs text-[var(--color-text-secondary)] mb-1">{copy.laborHours}</label>
         <input
-          aria-label="Labor Hours"
+          aria-label={copy.laborHours}
           type="number"
           value={laborHours}
           onChange={(e) => setLaborHours(e.target.value)}
-          placeholder="e.g. 2.5"
+          placeholder={copy.laborPlaceholder}
           min="0"
           step="0.5"
           className={inputClass + ' w-32'}
@@ -348,14 +403,14 @@ export function RepairRecordPanel({ workOrderId, userType, repairRecord, onSaved
           onClick={() => setIsEditing(false)}
           className="flex-1 py-2.5 bg-[var(--color-border)] text-[var(--color-text-secondary)] rounded-xl font-medium text-sm"
         >
-          Cancel
+          {copy.cancel}
         </button>
         <button
           onClick={handleSave}
           disabled={submitting}
           className="flex-1 py-2.5 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] disabled:opacity-50 text-white rounded-xl font-medium text-sm"
         >
-          {submitting ? 'Saving...' : 'Save Service Report'}
+          {submitting ? copy.saving : copy.save}
         </button>
       </div>
     </div>

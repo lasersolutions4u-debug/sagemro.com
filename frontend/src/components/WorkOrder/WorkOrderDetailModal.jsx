@@ -94,6 +94,9 @@ export function WorkOrderDetailContent({
   userId,
   initialTab = 'info',
   showInfoTab = true,
+  controlledTab,
+  showTabNavigation = true,
+  managementReadOnly = false,
   isActive = true,
   renderModal = false,
   isOpen = true,
@@ -102,6 +105,7 @@ export function WorkOrderDetailContent({
   const [detail, setDetail] = useState(null);
   const [loading, setLoading] = useState(false);
   const [tab, setTab] = useState(initialTab);
+  const activeTab = controlledTab || tab;
   const [ratings, setRatings] = useState({ timeliness: 5, technical: 5, communication: 5, professional: 5 });
   const [comment, setComment] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -211,7 +215,7 @@ export function WorkOrderDetailContent({
         note: '',
       });
       // 加载工程师评价
-      if (userType === 'engineer') {
+      if (userType === 'engineer' && !managementReadOnly) {
         try {
           const revData = await getEngineerReview(workOrderId);
           setEngineerReview(revData.review);
@@ -225,7 +229,7 @@ export function WorkOrderDetailContent({
     } finally {
       setLoading(false);
     }
-  }, [workOrderId, userType]);
+  }, [managementReadOnly, workOrderId, userType]);
   const handleFieldWorkChanged = useCallback(() => loadDetail({ throwOnError: true }), [loadDetail]);
   const handleCollectionChanged = useCallback(async (response) => {
     const savedInstallment = response?.installment;
@@ -562,18 +566,23 @@ export function WorkOrderDetailContent({
   const allowedTabKeyString = tabs.map((item) => item.key).join('|');
 
   useEffect(() => {
+    if (controlledTab) setTab(controlledTab);
+  }, [controlledTab]);
+
+  useEffect(() => {
     if (loading || !detail) return;
     const allowedTabKeys = allowedTabKeyString.split('|').filter(Boolean);
-    if (!allowedTabKeys.includes(tab)) {
+    if (!controlledTab && !allowedTabKeys.includes(tab)) {
       setTab(allowedTabKeys.includes('messages') ? 'messages' : allowedTabKeys[0]);
     }
-  }, [allowedTabKeyString, detail, loading, tab]);
+  }, [allowedTabKeyString, controlledTab, detail, loading, tab]);
 
   if (!workOrder) return null;
 
   const renderPaymentStartAction = () => (
-    isEngineer && ['pending_payment', 'payment_review'].includes(effectiveStatus) ? (
+    isAssignedEngineer && ['pending_payment', 'payment_review'].includes(effectiveStatus) ? (
       <button
+        aria-label="Request Admin Approval to Start"
         onClick={async () => {
           if (!(await confirmDialog('Request Admin approval to start service after advance payment follow-up?'))) return;
           setPaymentStartSubmitting(true);
@@ -593,7 +602,7 @@ export function WorkOrderDetailContent({
       >
         {effectiveStatus === 'payment_review'
           ? 'Waiting for Admin Advance Payment Confirmation'
-          : paymentStartSubmitting ? 'Submitting...' : 'Request Admin Approval to Start'}
+          : paymentStartSubmitting ? 'Submitting...' : 'Request Start Approval'}
       </button>
     ) : null
   );
@@ -1246,17 +1255,17 @@ export function WorkOrderDetailContent({
           <p role="status" className="sr-only">{modalBusyMessage}</p>
         )}
         {/* Tab 切换 */}
-        <div role="tablist" className="-mx-3 mb-4 flex gap-1 overflow-x-auto border-b border-[var(--color-border)] px-3 pb-0 sm:mx-0 sm:px-0">
+        {showTabNavigation && <div role="tablist" className="-mx-3 mb-4 flex gap-1 overflow-x-auto border-b border-[var(--color-border)] px-3 pb-0 sm:mx-0 sm:px-0">
           {tabs.map((t) => (
             <button
               key={t.key}
               role="tab"
-              aria-selected={tab === t.key}
-              disabled={modalBusy && tab !== t.key}
-              title={modalBusy && tab !== t.key ? modalBusyMessage : undefined}
+              aria-selected={activeTab === t.key}
+              disabled={modalBusy && activeTab !== t.key}
+              title={modalBusy && activeTab !== t.key ? modalBusyMessage : undefined}
               onClick={() => setTab(t.key)}
               className={`shrink-0 px-3 py-2 text-sm font-medium border-b-2 -mb-px transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
-                tab === t.key
+                activeTab === t.key
                   ? 'border-[var(--color-primary)] text-[var(--color-primary)]'
                   : 'border-transparent text-[var(--color-text-secondary)] hover:text-[var(--color-text)]'
               }`}
@@ -1264,7 +1273,7 @@ export function WorkOrderDetailContent({
               {t.label}
             </button>
           ))}
-        </div>
+        </div>}
 
         {!showInfoTab && renderPaymentStartAction()}
 
@@ -1272,11 +1281,11 @@ export function WorkOrderDetailContent({
           <div className="text-center py-8 text-[var(--color-text-muted)]">Loading...</div>
         ) : (
           <>
-            {tab === 'info' && renderInfoTab()}
-            {tab === 'messages' && (
-              <MessagePanel workOrderId={workOrder.id} userType={userType} userId={userId} />
+            {activeTab === 'info' && renderInfoTab()}
+            {activeTab === 'messages' && (
+              <MessagePanel workOrderId={workOrder.id} userType={userType} userId={userId} readOnly={managementReadOnly} />
             )}
-            {tab === 'pricing' && isEngineer && (
+            {activeTab === 'pricing' && isEngineer && (
               <EngineerPricingPanel
                 workOrderId={workOrder.id}
                 engineerId={userId}
@@ -1285,7 +1294,7 @@ export function WorkOrderDetailContent({
                 onSubmitted={() => { loadDetail(); onConfirmed?.(); }}
               />
             )}
-            {tab === 'pricing' && isCustomer && (
+            {activeTab === 'pricing' && isCustomer && (
               <CustomerPricingPanel
                 workOrderId={workOrder.id}
                 customerId={userId}
@@ -1298,7 +1307,7 @@ export function WorkOrderDetailContent({
                 }}
               />
             )}
-            {tab === 'collection' && showCollection && (
+            {activeTab === 'collection' && showCollection && (
               <CollectionPanel
                 workOrderId={workOrder.id}
                 quoteExecution={quoteExecution}
@@ -1307,8 +1316,8 @@ export function WorkOrderDetailContent({
                 onSelectPayment={setInstallmentPayment}
               />
             )}
-            {tab === 'rating' && renderRatingTab()}
-            {tab === 'repairRecord' && (
+            {activeTab === 'rating' && renderRatingTab()}
+            {activeTab === 'repairRecord' && (
               <RepairRecordPanel
                 workOrderId={workOrder.id}
                 userType={userType}
@@ -1316,9 +1325,10 @@ export function WorkOrderDetailContent({
                 onSaved={() => loadDetail()}
                 onSubmitComplete={handleSubmitFinalReport}
                 canSubmitComplete={isEngineer && (effectiveStatus === 'in_service' || effectiveStatus === 'pricing')}
+                readOnly={managementReadOnly}
               />
             )}
-            {tab === 'fieldWork' && showFieldWork && (
+            {activeTab === 'fieldWork' && showFieldWork && (
               <FieldWorkPanel
                 workOrderId={workOrder.id}
                 detail={detail}
@@ -1328,13 +1338,14 @@ export function WorkOrderDetailContent({
                 onBusyChange={handleFieldWorkBusyChange}
               />
             )}
-            {tab === 'materialRequisition' && isAssignedEngineer && (
+            {activeTab === 'materialRequisition' && isEngineer && (
               <MaterialRequisitionPanel
                 workOrderId={workOrder.id}
                 onBusyChange={handleMaterialRequisitionBusyChange}
+                readOnly={!isAssignedEngineer}
               />
             )}
-            {tab === 'machineLead' && renderMachineLeadTab()}
+            {activeTab === 'machineLead' && renderMachineLeadTab()}
           </>
         ))}
     </div>

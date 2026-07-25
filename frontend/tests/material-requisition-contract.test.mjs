@@ -103,7 +103,7 @@ test('receipt confirmation is line-scoped and clears a stable retry key only for
   assert.match(panel, /receiptInFlightRef\.current = receiptRequest/);
   assert.match(panel, /confirmMaterialRequisitionReceipt\([\s\S]*receiptRequest\.payload[\s\S]*receiptRequest\.key/);
   assert.match(panel, /disabled=\{pendingReceiptId === item\.id\}/);
-  assert.match(panel, /if \(receiptInFlightRef\.current\?\.itemId === item\.id\) return/);
+  assert.match(panel, /if \(pendingReceiptId === item\.id\) return/);
   assert.match(panel, /if \(!shouldPreserveReceiptRetryKey\(error\)\)[\s\S]*delete receiptRetryRef\.current\[item\.id\]/);
   assert.match(panel, /delete receiptRetryRef\.current\[item\.id\][\s\S]*applyRequisitionUpdate/);
 });
@@ -117,7 +117,7 @@ test('draft creation keeps one retry operation per payload and locks draft contr
   assert.match(panel, /const draftRequest = \{[\s\S]*payload[\s\S]*key:\s*operation\.key/);
   assert.match(panel, /createMaterialRequisition\(draftRequest\.payload, draftRequest\.key\)/);
   assert.match(panel, /if \(!shouldPreserveReceiptRetryKey\(createError\)\)[\s\S]*draftRetryRef\.current = null/);
-  assert.match(panel, /const clearDraftRetry = \(\) => \{[\s\S]*if \(creating \|\| draftInFlightRef\.current\) return/);
+  assert.match(panel, /useEffect\(\(\) => \{[\s\S]*draftRetryRef\.current = null;[\s\S]*\}, \[draftItems\]\)/);
   assert.match(panel, /onChange=\{\(event\) => updateDraftItem[\s\S]*disabled=\{creating\}/);
 });
 
@@ -141,8 +141,8 @@ test('work-order details place the panel in an assigned-engineer-only tab', () =
   assert.match(modal, /isCnLocale\(\) \? '物料领用申请' : 'Material Requisition'/);
   assert.match(modal, /role="tablist"/);
   assert.match(modal, /role="tab"/);
-  assert.match(modal, /aria-selected=\{tab === t\.key\}/);
-  assert.match(modal, /tab === 'materialRequisition' && isAssignedEngineer/);
+  assert.match(modal, /aria-selected=\{activeTab === t\.key\}/);
+  assert.match(modal, /activeTab === 'materialRequisition' && isEngineer/);
   assert.match(modal, /<MaterialRequisitionPanel[\s\S]*workOrderId=\{workOrder\.id\}/);
   assert.doesNotMatch(modal, /isCustomer[\s\S]{0,120}<MaterialRequisitionPanel/);
 });
@@ -152,7 +152,7 @@ test('requisition mutations keep the panel mounted by locking tabs and modal clo
   const detailModal = read('frontend/src/components/WorkOrder/WorkOrderDetailModal.jsx');
   const modal = read('frontend/src/components/common/Modal.jsx');
 
-  assert.match(panel, /export function MaterialRequisitionPanel\(\{ workOrderId, onBusyChange \}\)/);
+  assert.match(panel, /export function MaterialRequisitionPanel\(\{ workOrderId, onBusyChange, readOnly = false \}\)/);
   assert.match(panel, /const panelBusy = creating \|\| submitting \|\| Boolean\(pendingReceiptId\)/);
   assert.match(panel, /onBusyChange\?\.\(panelBusy\)/);
   assert.match(panel, /draftInFlightRef\.current = draftRequest;[\s\S]*onBusyChange\?\.\(true\)/);
@@ -162,8 +162,8 @@ test('requisition mutations keep the panel mounted by locking tabs and modal clo
   assert.match(detailModal, /const \[materialRequisitionBusy, setMaterialRequisitionBusy\] = useState\(false\)/);
   assert.match(detailModal, /onBusyChange=\{handleMaterialRequisitionBusyChange\}/);
   assert.match(detailModal, /const modalBusy = materialRequisitionBusy \|\| fieldWorkBusy/);
-  assert.match(detailModal, /disabled=\{modalBusy && tab !== t\.key\}/);
-  assert.match(detailModal, /title=\{modalBusy && tab !== t\.key \? modalBusyMessage : undefined\}/);
+  assert.match(detailModal, /disabled=\{modalBusy && activeTab !== t\.key\}/);
+  assert.match(detailModal, /title=\{modalBusy && activeTab !== t\.key \? modalBusyMessage : undefined\}/);
   assert.match(detailModal, /closeDisabled=\{modalBusy\}/);
   assert.match(detailModal, /closeDisabledTitle=\{modalBusyMessage\}/);
   assert.match(detailModal, /isCnLocale\(\)[\s\S]*请等待物料申请操作完成[\s\S]*Wait for the material requisition operation to finish/);

@@ -8,18 +8,20 @@ import {
 
 const COPY = {
   en: {
-    title: 'Service Work Orders', note: 'Ordered by the next action you need to take.',
+    title: 'My work orders', note: 'Only work orders where you are the executing engineer.',
     all: 'All', needsAction: 'Needs action', active: 'Active', completed: 'Completed',
-    nextStep: 'Next step', view: 'View / Handle Task', loading: 'Loading service tasks...',
+    nextStep: 'Next step', view: 'View details', loading: 'Loading service tasks...',
     loadFailed: 'Failed to load service tasks', retry: 'Retry', empty: 'No assigned service tasks yet',
     support: 'Need Admin support?', regionFallback: 'Region pending', taskFallback: 'Service task',
+    machineFallback: 'Machine details pending', updated: 'Updated',
   },
   cn: {
-    title: '服务工单', note: '按照你需要处理的下一步排序。',
+    title: '我的工单', note: '仅显示由你负责执行的工单。',
     all: '全部', needsAction: '待处理', active: '进行中', completed: '已完成',
     nextStep: '下一步', view: '查看详情', loading: '正在加载服务任务...',
     loadFailed: '服务任务加载失败', retry: '重试', empty: '暂无已分配服务任务',
     support: '需要 Admin 协助？', regionFallback: '地区待补充', taskFallback: '服务任务',
+    machineFallback: '设备信息待补充', updated: '更新于',
   },
 };
 
@@ -29,10 +31,17 @@ const FILTERS = {
   completed: new Set(['completed']),
 };
 
+function formatUpdated(value, isCn) {
+  if (!value) return '—';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '—';
+  return new Intl.DateTimeFormat(isCn ? 'zh-CN' : 'en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }).format(date);
+}
+
 export function EngineerWorkOrderList({
   tickets, loading, error, isCn, statusLabels, getNextAction, getMachineLine,
-  formatDescription, filter, onFilterChange, onSelectTicket, onRetry,
-  onConfirmAssignment,
+  filter, onFilterChange, onSelectTicket, onRetry,
+  embedded = false,
 }) {
   const copy = isCn ? COPY.cn : COPY.en;
   const visibleTickets = useMemo(() => {
@@ -41,66 +50,64 @@ export function EngineerWorkOrderList({
   }, [filter, tickets]);
 
   const content = loading ? (
-    <div className="py-10 text-center text-sm text-[var(--color-text-muted)]">{copy.loading}</div>
+    <div className="py-10 text-center text-sm text-[#697386]">{copy.loading}</div>
   ) : error ? (
-    <div className="rounded-xl border border-[var(--color-error)]/30 p-5 text-center">
-      <p className="text-sm text-[var(--color-error)]">{error || copy.loadFailed}</p>
-      <button onClick={onRetry} className="mt-3 inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm">
-        <RefreshCw size={14} />{copy.retry}
-      </button>
+    <div className="m-4 rounded-xl border border-red-200 p-5 text-center">
+      <p className="text-sm text-red-600">{error || copy.loadFailed}</p>
+      <button onClick={onRetry} className="mt-3 inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm"><RefreshCw size={14} />{copy.retry}</button>
     </div>
   ) : visibleTickets.length === 0 ? (
-    <div className="py-10 text-center text-sm text-[var(--color-text-muted)]">{copy.empty}</div>
+    <div className="py-9 text-center text-sm text-[#697386]">{copy.empty}</div>
   ) : (
-    <div className="space-y-2">
+    <div>
+      <div className="hidden grid-cols-[1.05fr_2.1fr_.9fr_1.5fr_.8fr_36px] gap-3 px-5 py-2 text-[9px] font-extrabold uppercase tracking-wider text-[#929baa] lg:grid">
+        <span>{isCn ? '工单' : 'Work order'}</span><span>{isCn ? '客户与设备' : 'Customer & machine'}</span><span>{isCn ? '状态' : 'Status'}</span><span>{copy.nextStep}</span><span>{copy.updated}</span><span />
+      </div>
       {visibleTickets.map((ticket) => {
         const schedule = getEngineerScheduleLabel(ticket, isCn ? 'zh-CN' : 'en-US');
         return (
-          <article key={ticket.id} className="rounded-xl border border-l-2 border-[var(--color-border)] border-l-[var(--color-primary)] bg-[var(--color-surface)] p-4">
-            <div className="gap-4 sm:flex sm:items-start sm:justify-between">
-              <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-2">
-                  <h3 className="font-semibold">{getEngineerWorkOrderTitle(ticket, isCn, copy.taskFallback)}</h3>
-                  <span className="rounded-full bg-[var(--color-primary)]/10 px-2 py-1 text-xs text-[var(--color-primary)]">{statusLabels[ticket.status] || ticket.status}</span>
-                </div>
-                <p className="mt-1 text-xs text-[var(--color-text-muted)]">{ticket.order_no || ticket.id} · {getMachineLine(ticket)} · {ticket.customer_region || copy.regionFallback}</p>
-                {schedule && <p className="mt-1 text-xs text-[var(--color-text-muted)]">{schedule}</p>}
-                <p className="mt-2 line-clamp-2 text-sm text-[var(--color-text-secondary)]">{formatDescription(ticket.description || '')}</p>
-                <p className="mt-3 text-sm"><span className="font-semibold text-[var(--color-primary)]">{copy.nextStep}:</span> {getNextAction(ticket)}</p>
-              </div>
-              <div className="mt-3 flex shrink-0 flex-wrap gap-2 sm:mt-0 sm:justify-end">
-                {ticket.status === 'assigned' && onConfirmAssignment && (
-                  <button
-                    onClick={(event) => { event.stopPropagation(); onConfirmAssignment(ticket); }}
-                    className="inline-flex min-h-10 items-center rounded-lg bg-[var(--color-primary)] px-3 py-2 text-sm font-medium text-white"
-                  >
-                    {isCn ? '确认派工' : 'Confirm Assignment'}
-                  </button>
-                )}
-                <button onClick={() => onSelectTicket(ticket)} className="inline-flex min-h-10 items-center gap-1 rounded-lg border border-[var(--color-border)] px-3 py-2 text-sm font-medium">
-                  {copy.view}<ChevronRight size={15} />
-                </button>
-              </div>
-            </div>
-          </article>
+          <button
+            key={ticket.id}
+            type="button"
+            onClick={() => onSelectTicket(ticket)}
+            className="grid w-full gap-2 border-t border-[#eef0f3] bg-white px-4 py-4 text-left transition hover:bg-[#fffaf2] lg:grid-cols-[1.05fr_2.1fr_.9fr_1.5fr_.8fr_36px] lg:items-center lg:gap-3 lg:px-5 lg:py-3"
+          >
+            <span>
+              <strong className="block text-xs text-[#18202b]">{ticket.order_no || ticket.id}</strong>
+              <span className="mt-1 block text-[10px] text-[#929baa]">{formatUpdated(ticket.created_at, isCn)}</span>
+            </span>
+            <span className="min-w-0">
+              <strong className="block truncate text-xs text-[#18202b]">{getEngineerWorkOrderTitle(ticket, isCn, copy.taskFallback)}</strong>
+              {ticket.customer_name && <span className="mt-1 block truncate text-[10px] text-[#929baa]">{ticket.customer_name}</span>}
+              <span className="mt-1 block truncate text-[10px] text-[#697386]">{getMachineLine(ticket) || copy.machineFallback}{schedule ? ` · ${schedule}` : ''}</span>
+            </span>
+            <span><span className="inline-flex rounded-full bg-orange-50 px-2 py-1 text-[10px] font-bold text-orange-700">{statusLabels[ticket.status] || ticket.status}</span></span>
+            <span className="min-w-0">
+              <strong className="block text-[11px] text-[#18202b]">{getNextAction(ticket)}</strong>
+              <span className="mt-1 block truncate text-[10px] text-[#929baa]">{ticket.customer_region || copy.regionFallback}</span>
+            </span>
+            <span className="text-[10px] text-[#697386]">{formatUpdated(ticket.updated_at || ticket.created_at, isCn)}</span>
+            <span className="grid size-8 place-items-center rounded-lg border border-[#e5e8ed] text-orange-600"><ChevronRight size={15} /></span>
+          </button>
         );
       })}
     </div>
   );
 
+  if (embedded) return content;
   return (
-    <section className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4 sm:p-5">
-      <div className="mb-4 gap-3 sm:flex sm:items-end sm:justify-between">
-        <div><h2 className="text-lg font-semibold">{copy.title}</h2><p className="text-sm text-[var(--color-text-muted)]">{copy.note}</p></div>
-        <div className="mt-3 flex flex-wrap gap-2 sm:mt-0">
+    <section className="overflow-hidden rounded-2xl border border-[#e5e8ed] bg-white">
+      <div className="flex flex-col gap-3 border-b border-[#e5e8ed] px-4 py-4 sm:flex-row sm:items-end sm:justify-between sm:px-5">
+        <div><h2 className="text-base font-semibold text-[#18202b]">{copy.title}</h2><p className="mt-1 text-xs text-[#697386]">{copy.note}</p></div>
+        <div className="flex flex-wrap gap-2">
           {['all', 'needsAction', 'active', 'completed'].map((value) => (
-            <button key={value} onClick={() => onFilterChange(value)} className={`rounded-lg px-3 py-1.5 text-xs font-medium ${filter === value ? 'bg-[var(--color-primary)] text-white' : 'bg-[var(--color-surface-elevated)] text-[var(--color-text-secondary)]'}`}>{copy[value]}</button>
+            <button key={value} type="button" onClick={() => onFilterChange(value)} className={`rounded-lg px-3 py-2 text-[11px] font-bold ${filter === value ? 'bg-[#18202b] text-white' : 'bg-[#f7f8fa] text-[#697386]'}`}>{copy[value]}</button>
           ))}
         </div>
       </div>
       {content}
-      <footer className="mt-5 border-t border-[var(--color-border)] pt-4 text-sm text-[var(--color-text-muted)]">
-        {copy.support} <a className="font-medium text-[var(--color-primary)]" href="mailto:support@sagemro.com">support@sagemro.com</a>
+      <footer className="border-t border-[#e5e8ed] bg-[#fbfcfd] px-5 py-3 text-[11px] text-[#697386]">
+        {copy.support} <a className="font-semibold text-orange-600" href="mailto:support@sagemro.com">support@sagemro.com</a>
       </footer>
     </section>
   );

@@ -5408,22 +5408,35 @@ async function handleGetWorkOrder(request, env) {
     const workOrder = await env.DB.prepare(`
       SELECT
         w.*,
+        (
+          SELECT MAX(calendar.start_at)
+          FROM engineer_calendar_events calendar
+          WHERE calendar.work_order_id = w.id
+        ) as scheduled_at,
         e.name as engineer_name,
         e.phone as engineer_phone,
         e.level as engineer_level,
         e.commission_rate as engineer_commission_rate,
         e.credit_score as engineer_credit_score,
         c.name as customer_name,
-        c.phone as customer_phone
+        c.phone as customer_phone,
+        c.region as customer_region,
+        d.brand as device_brand,
+        d.model as device_model
       FROM work_orders w
       LEFT JOIN engineers e ON w.engineer_id = e.id
       LEFT JOIN customers c ON w.customer_id = c.id
+      LEFT JOIN devices d ON w.device_id = d.id
       WHERE w.id = ?
     `).bind(id).first();
 
     const fieldWorkAccessMode = await resolveFieldWorkAccessMode(env, request._auth, workOrder, id);
+    const engineerReadRelation = request._auth?.userType === 'engineer'
+      ? await getEngineerWorkOrderReadRelation(env, request._auth, workOrder)
+      : null;
     const historicalEngineerView = fieldWorkAccessMode === 'historical_engineer';
-    const noFieldWorkView = fieldWorkAccessMode === 'none';
+    const regionalManagementView = fieldWorkAccessMode === 'regional_management';
+    const noFieldWorkView = ['none', 'regional_management'].includes(fieldWorkAccessMode);
 
     const logs = await env.DB.prepare(
       'SELECT * FROM work_order_logs WHERE work_order_id = ? ORDER BY created_at ASC'
@@ -5595,35 +5608,44 @@ async function handleGetWorkOrder(request, env) {
       description: isEngineerDetailView ? redactContactInfoForWorkOrder(workOrder.description) : workOrder.description,
       customer_phone: isEngineerDetailView && !canEngineerViewCustomerContact(workOrder.status) ? '' : workOrder.customer_phone,
     };
+    if (regionalManagementView) safeWorkOrder = sanitizeRegionalManagementWorkOrder(safeWorkOrder);
     if (customerFieldView || noFieldWorkView) safeWorkOrder = withoutPrivateFieldLocation(safeWorkOrder);
 
     const detail = {
       ...safeWorkOrder,
+      ownership_relation: engineerReadRelation,
       site_timezone_display: formatSiteTimezone(workOrder?.site_timezone, market),
       sla_status: getSlaStatus(workOrder.sla_deadline, workOrder.urgency),
-      logs: logs.results,
-      rating: rating || null,
-      admin_reply: adminReply || null,
-      engineer_review: engineerReview || null,
+      logs: regionalManagementView ? [] : logs.results,
+      ...(regionalManagementView ? {} : {
+        rating: rating || null,
+        admin_reply: adminReply || null,
+        engineer_review: engineerReview || null,
+      }),
       repair_record: repairRecord
         ? { ...repairRecord, material_items: materialItems.filter((item) => item.purpose === 'service_report') }
         : null,
       pricing: detailPricing ? {
-        ...detailPricing,
+        ...(regionalManagementView
+          ? sanitizeRegionalManagementPricing(detailPricing)
+          : detailPricing),
         material_items: quoteMaterialItems,
-        payment_policy: paymentPolicy,
+        ...(regionalManagementView ? {} : { payment_policy: paymentPolicy }),
         payment_schedule: pricingSchedule,
       } : null,
-      quote_execution: quoteExecution,
-      payment_state: quoteExecution?.payment_state ?? null,
-      received_amount: quoteExecution?.received_amount ?? null,
-      outstanding_amount: quoteExecution?.outstanding_amount ?? null,
-      payment_policy: paymentPolicy,
-      payments,
-      advance_payment: payments.find((payment) => payment.payment_stage === 'advance') || null,
-      balance_payment: payments.find((payment) => payment.payment_stage === 'balance') || null,
-      payout_status: payout?.status || 'not_ready',
-      payout: sanitizePayoutForUser(payout, request._auth),
+      ...(regionalManagementView ? {
+        quote_execution: sanitizeRegionalManagementQuoteExecution(quoteExecution),
+        payments: [],
+      } : {
+        quote_execution: quoteExecution,
+        payment_state: quoteExecution?.payment_state ?? null,
+        received_amount: quoteExecution?.received_amount ?? null,
+        outstanding_amount: quoteExecution?.outstanding_amount ?? null,
+        payment_policy: paymentPolicy,
+        payments,
+        advance_payment: payments.find((payment) => payment.payment_stage === 'advance') || null,
+        balance_payment: payments.find((payment) => payment.payment_stage === 'balance') || null,
+      }),
       material_items: materialItems,
       attachments: attachments.results,
       arrival_checks: arrivalChecks,
@@ -5633,6 +5655,10 @@ async function handleGetWorkOrder(request, env) {
       field_extension_requests: fieldExtensionRequests,
       pending_extension_requests: pendingExtensionRequests,
     };
+    if (!regionalManagementView) {
+      detail.payout_status = payout?.status || 'not_ready';
+      detail.payout = sanitizePayoutForUser(payout, request._auth);
+    }
     if (adminFieldWorkRecords) {
       detail.field_evidence_holds = adminFieldWorkRecords[0].results || [];
       detail.field_day_revisions = adminFieldWorkRecords[1].results || [];
@@ -5654,9 +5680,9 @@ async function handleGetRepairRecord(request, env) {
     const workOrderId = new URL(request.url).pathname.split('/')[3];
 
     const workOrder = await env.DB.prepare(
-      'SELECT id, customer_id, engineer_id FROM work_orders WHERE id = ?'
+      'SELECT id, customer_id, engineer_id, assigned_regional_lead_id FROM work_orders WHERE id = ?'
     ).bind(workOrderId).first();
-    assertWorkOrderAccess(auth, workOrder);
+    await assertWorkOrderReadAccess(env, auth, workOrder);
 
     const record = await env.DB.prepare(
       'SELECT * FROM work_order_repair_records WHERE work_order_id = ?'
@@ -6867,11 +6893,48 @@ async function hasHistoricalFieldDayAccess(env, auth, workOrderId) {
   return Boolean(fieldDay);
 }
 
-async function resolveFieldWorkAccessMode(env, auth, workOrder, workOrderId) {
+async function getEngineerWorkOrderReadRelation(env, auth, workOrder) {
+  if (auth?.userType !== 'engineer' || !workOrder) return null;
+  if (workOrder.engineer_id === auth.userId) return 'personal';
+  if (!workOrder.engineer_id && workOrder.assigned_regional_lead_id === auth.userId) {
+    return 'regional_queue';
+  }
+
+  const lead = await env.DB.prepare(
+    "SELECT id FROM engineers WHERE id = ? AND engineer_role = 'regional_lead'"
+  ).bind(auth.userId).first();
+  if (lead && workOrder.engineer_id) {
+    const member = await env.DB.prepare(
+      'SELECT id FROM engineers WHERE id = ? AND regional_lead_id = ?'
+    ).bind(workOrder.engineer_id, auth.userId).first();
+    if (member) return 'current_team_member';
+  }
+  return workOrder.assigned_regional_lead_id === auth.userId
+    ? 'historical_supervision'
+    : null;
+}
+
+async function assertWorkOrderReadAccess(env, auth, workOrder) {
   try {
     assertWorkOrderAccess(auth, workOrder);
   } catch (error) {
-    if (!(error instanceof GuardError) || !await hasHistoricalFieldDayAccess(env, auth, workOrderId)) throw error;
+    if (!(error instanceof GuardError)) throw error;
+    if (await getEngineerWorkOrderReadRelation(env, auth, workOrder)) return;
+    throw error;
+  }
+}
+
+async function resolveFieldWorkAccessMode(env, auth, workOrder, workOrderId) {
+  if (auth?.userType === 'engineer' && workOrder?.engineer_id !== auth.userId) {
+    const relation = await getEngineerWorkOrderReadRelation(env, auth, workOrder);
+    if (relation) return 'regional_management';
+  }
+  try {
+    assertWorkOrderAccess(auth, workOrder);
+  } catch (error) {
+    if (!(error instanceof GuardError)) throw error;
+    if (await getEngineerWorkOrderReadRelation(env, auth, workOrder)) return 'regional_management';
+    if (!await hasHistoricalFieldDayAccess(env, auth, workOrderId)) throw error;
     return 'historical_engineer';
   }
   if (auth?.userType === 'admin') return 'admin';
@@ -6891,6 +6954,9 @@ async function handleGetFieldDays(request, env) {
     if (!workOrder) return errorResponse('工单不存在', 404);
     const fieldWorkAccessMode = await resolveFieldWorkAccessMode(env, auth, workOrder, workOrderId);
     if (fieldWorkAccessMode === 'none') return errorResponse('您无权访问现场作业记录', 403);
+    if (fieldWorkAccessMode === 'regional_management') {
+      return jsonResponse({ field_days: [], media: [] });
+    }
     const historicalEngineerView = fieldWorkAccessMode === 'historical_engineer';
 
     const fieldDayRecords = await env.DB.prepare(`
@@ -6928,7 +6994,9 @@ async function handleGetFieldMedia(request, env) {
     const workOrder = await getFieldWorkOrder(env, workOrderId);
     if (!workOrder) return errorResponse('工单不存在', 404);
     const fieldWorkAccessMode = await resolveFieldWorkAccessMode(env, auth, workOrder, workOrderId);
-    if (fieldWorkAccessMode === 'none') return errorResponse('您无权查看此现场证据', 403);
+    if (['none', 'regional_management'].includes(fieldWorkAccessMode)) {
+      return errorResponse('您无权查看此现场证据', 403);
+    }
     const historicalEngineerView = fieldWorkAccessMode === 'historical_engineer';
     const media = await env.DB.prepare(`
       SELECT * FROM work_order_field_day_media WHERE id = ? AND work_order_id = ? AND deleted_at IS NULL
@@ -7382,9 +7450,18 @@ async function handleSubmitEngineerReview(request, env) {
 // 获取工单的工程师评价（仅工程师/平台可见，客户不可见）
 async function handleGetEngineerReview(request, env) {
   try {
-    assertEngineerOrAdmin(request._auth);
-
+    const auth = request._auth;
+    assertEngineerOrAdmin(auth);
     const workOrderId = new URL(request.url).pathname.split('/')[3];
+    if (auth.userType === 'engineer') {
+      const workOrder = await env.DB.prepare(
+        'SELECT id, engineer_id FROM work_orders WHERE id = ?'
+      ).bind(workOrderId).first();
+      if (!workOrder) return errorResponse('工单不存在', 404);
+      if (workOrder.engineer_id !== auth.userId) {
+        return errorResponse('仅执行工程师可查看该评价', 403);
+      }
+    }
     const review = await env.DB.prepare(
       'SELECT * FROM engineer_reviews WHERE work_order_id = ?'
     ).bind(workOrderId).first();
@@ -7434,63 +7511,163 @@ async function handleGetCustomerReviews(request, env) {
 
 // ============ 工程师相关 ============
 
+const ENGINEER_WORKSPACE_ERRORS = {
+  engineer_required: { com: 'Engineer access is required.', cn: '需要工程师权限' },
+  engineer_not_found: { com: 'Engineer not found.', cn: '工程师不存在' },
+  team_tickets_forbidden: { com: 'Only Regional Leads can view team work orders.', cn: '仅区域负责人可查看团队工单' },
+  team_engineers_forbidden: { com: 'Only Regional Leads can view team engineers.', cn: '仅区域负责人可查看团队工程师' },
+  assignment_forbidden: { com: 'Only Regional Leads can assign work orders.', cn: '仅区域负责人可二次分配' },
+  assignment_ids_required: { com: 'Work order ID and engineer ID are required.', cn: '缺少工单或工程师 ID' },
+  work_order_not_found: { com: 'Service task not found.', cn: '服务申请不存在' },
+  assignment_source_forbidden: { com: 'This service task is outside your regional assignment scope.', cn: '该服务申请不属于当前区域团队的可派工范围' },
+  assignment_status_invalid: { com: 'This service task cannot be assigned in its current status.', cn: '该服务申请当前状态不允许分配' },
+  concrete_engineer_required: { com: 'Select an individual engineer account.', cn: '请选择具体工程师账号' },
+  assignment_target_forbidden: { com: 'Work orders can only be assigned to engineers in your regional team.', cn: '只能分配给本区域团队内的工程师' },
+  assignment_conflict: { com: 'A conflict of interest prevents this assignment.', cn: '存在利益冲突，禁止派工' },
+  assignment_changed: { com: 'This service task changed. Refresh and try again.', cn: '该服务申请已发生变化，请刷新后重试' },
+  calendar_schedule_create_forbidden: { com: 'Work-order schedules can only be created through the work-order workflow.', cn: '工单排期只能通过工单流程创建' },
+  calendar_schedule_update_forbidden: { com: 'Work-order schedules must be changed through the work-order workflow.', cn: '工单排期请通过工单流程修改' },
+  calendar_fields_required: { com: 'Calendar title, start time, and end time are required.', cn: '请填写日历标题、开始时间和结束时间' },
+  calendar_end_invalid: { com: 'End time must be later than start time.', cn: '结束时间必须晚于开始时间' },
+  calendar_id_required: { com: 'Calendar event ID is required.', cn: '缺少日历事件 ID' },
+  calendar_not_found: { com: 'Calendar event not found.', cn: '日历事件不存在' },
+};
+
+function engineerWorkspaceMessage(request, key) {
+  const messages = ENGINEER_WORKSPACE_ERRORS[key] || { com: key, cn: key };
+  return messages[getRequestMarket(request)] || messages.com;
+}
+
 // 获取工程师服务任务
-// Service OS 默认只返回后台已派给该工程师的服务任务。
-// SERVICE_OS_LEGACY: include_pending_legacy=1 时才返回旧 pending 队列。
+// Service OS 默认返回当前工程师个人任务；区域负责人可显式请求团队范围。
 async function handleGetEngineerTickets(request, env) {
   const url = new URL(request.url);
-  const engineerId = request._auth?.userId || url.searchParams.get('engineer_id');
-  const includePendingLegacy = url.searchParams.get('include_pending_legacy') === '1';
+  const auth = request._auth;
 
   try {
-    const engineer = engineerId
-      ? await env.DB.prepare('SELECT id, engineer_role FROM engineers WHERE id = ?').bind(engineerId).first()
-      : null;
+    if (!auth || auth.userType !== 'engineer') {
+      return errorResponse(engineerWorkspaceMessage(request, 'engineer_required'), 403);
+    }
+
+    const requestedScope = url.searchParams.get('scope') === 'team' ? 'team' : 'personal';
+    const engineer = await env.DB.prepare(
+      'SELECT id, name, engineer_role FROM engineers WHERE id = ?'
+    ).bind(auth.userId).first();
+    if (!engineer) return errorResponse(engineerWorkspaceMessage(request, 'engineer_not_found'), 404);
     const isRegionalLead = engineer?.engineer_role === 'regional_lead';
+    if (requestedScope === 'team' && !isRegionalLead) {
+      return errorResponse(engineerWorkspaceMessage(request, 'team_tickets_forbidden'), 403);
+    }
+
+    let team = [];
+    if (requestedScope === 'team') {
+      const teamResult = await env.DB.prepare(`
+        SELECT id, user_no, name, service_region, status, specialties,
+               rating_technical, rating_count, workload_status, certification_status
+        FROM engineers
+        WHERE regional_lead_id = ? AND engineer_role = 'engineer'
+        ORDER BY name COLLATE NOCASE ASC, id ASC
+        LIMIT 100
+      `).bind(auth.userId).all();
+      team = (teamResult.results || []).map((member) => ({
+        ...member,
+        specialties: typeof member.specialties === 'string'
+          ? JSON.parse(member.specialties || '[]')
+          : (member.specialties || []),
+      }));
+    }
+    const currentTeamIds = new Set(team.map((member) => member.id));
 
     let query = `
       SELECT
         w.*,
+        (
+          SELECT MAX(calendar.start_at)
+          FROM engineer_calendar_events calendar
+          WHERE calendar.work_order_id = w.id
+        ) AS scheduled_at,
         c.name as customer_name,
         c.phone as customer_phone,
         c.region as customer_region,
-        e.name as engineer_name
+        e.name as engineer_name,
+        (
+          SELECT COUNT(*)
+          FROM material_requisitions mr
+          WHERE mr.work_order_id = w.id
+            AND mr.status IN (
+              'submitted', 'approved', 'processing',
+              'partially_fulfilled', 'ready', 'issued'
+            )
+        ) AS material_requisition_count
       FROM work_orders w
       LEFT JOIN customers c ON w.customer_id = c.id
       LEFT JOIN engineers e ON w.engineer_id = e.id
       WHERE `;
 
-    let params = [];
-
-    if (engineerId) {
-      if (isRegionalLead) {
-        query += `(w.assigned_regional_lead_id = ? OR w.engineer_id = ?)`;
-        params.push(engineerId, engineerId);
-      } else {
-        query += `w.engineer_id = ?`;
-        params.push(engineerId);
-      }
-      if (includePendingLegacy) {
-        query += ` OR (w.status IN ('pending', 'assigned') AND NOT EXISTS (
-          SELECT 1 FROM json_each(COALESCE(w.rejected_engineers, '[]')) WHERE value = ?
-        ))`;
-        params.push(engineerId);
-      }
+    let params;
+    if (requestedScope === 'team') {
+      query += `(w.engineer_id = ? OR w.assigned_regional_lead_id = ? OR w.engineer_id IN (
+        SELECT id FROM engineers WHERE regional_lead_id = ? AND engineer_role = 'engineer'
+      ))`;
+      params = [auth.userId, auth.userId, auth.userId];
     } else {
-      query += includePendingLegacy ? `w.status IN ('pending', 'assigned')` : `1=0`;
+      query += 'w.engineer_id = ?';
+      params = [auth.userId];
     }
 
     query += ' ORDER BY w.created_at DESC LIMIT 100';
 
     const { results } = await env.DB.prepare(query).bind(...params).all();
 
-    const paymentProjections = await listWorkOrderPaymentProjections(env, results);
-    const workOrders = results.map((wo) => withPaymentProjection({
-        ...wo,
+    let workOrders;
+    if (requestedScope === 'team') {
+      workOrders = results.map((wo) => ({
+        id: wo.id,
+        order_no: wo.order_no,
+        engineer_id: wo.engineer_id,
+        assigned_regional_lead_id: wo.assigned_regional_lead_id,
+        type: wo.type,
+        description: redactContactInfoForWorkOrder(wo.description),
+        urgency: wo.urgency,
+        status: wo.status,
+        created_at: wo.created_at,
+        updated_at: wo.updated_at,
+        scheduled_at: wo.scheduled_at,
+        assigned_at: wo.assigned_at,
+        sla_deadline: wo.sla_deadline,
+        category_l1: wo.category_l1,
+        category_l2: wo.category_l2,
+        service_mode: wo.service_mode,
+        expected_completion_date: wo.expected_completion_date,
+        customer_name: wo.customer_name,
+        customer_region: wo.customer_region,
+        engineer_name: wo.engineer_name,
+        material_requisition_count: Number(wo.material_requisition_count || 0),
+        ownership_relation: wo.engineer_id === auth.userId
+          ? 'personal'
+          : !wo.engineer_id && wo.assigned_regional_lead_id === auth.userId
+          ? 'regional_queue'
+          : currentTeamIds.has(wo.engineer_id)
+          ? 'current_team_member'
+          : 'historical_supervision',
         sla_status: getSlaStatus(wo.sla_deadline, wo.urgency),
-      }, paymentProjections.get(wo.id)));
+      }));
+    } else {
+      const paymentProjections = await listWorkOrderPaymentProjections(env, results);
+      workOrders = results.map((wo) => withPaymentProjection({
+          ...wo,
+          ownership_relation: 'personal',
+          sla_status: getSlaStatus(wo.sla_deadline, wo.urgency),
+        }, paymentProjections.get(wo.id)));
+    }
 
-    return jsonResponse({ work_orders: workOrders });
+    return jsonResponse({
+      scope: requestedScope,
+      is_regional_lead: isRegionalLead,
+      engineer: { id: engineer.id, name: engineer.name, engineer_role: engineer.engineer_role },
+      team,
+      work_orders: workOrders,
+    });
   } catch (error) {
     return errorResponse(error.message, 500);
   }
@@ -7500,14 +7677,14 @@ async function handleGetEngineerTeam(request, env) {
   try {
     const auth = request._auth;
     if (!auth || auth.userType !== 'engineer') {
-      return errorResponse('需要工程师权限', 403);
+      return errorResponse(engineerWorkspaceMessage(request, 'engineer_required'), 403);
     }
 
     const regionalLead = await env.DB.prepare(
       "SELECT id, engineer_role FROM engineers WHERE id = ?"
     ).bind(auth.userId).first();
     if (!regionalLead || regionalLead.engineer_role !== 'regional_lead') {
-      return errorResponse('仅区域负责人可查看团队工程师', 403);
+      return errorResponse(engineerWorkspaceMessage(request, 'team_engineers_forbidden'), 403);
     }
 
     const team = await env.DB.prepare(`
@@ -7534,43 +7711,62 @@ async function handleRegionalLeadAssignEngineer(request, env) {
   try {
     const auth = request._auth;
     if (!auth || auth.userType !== 'engineer') {
-      return errorResponse('需要工程师权限', 403);
+      return errorResponse(engineerWorkspaceMessage(request, 'engineer_required'), 403);
     }
     const { work_order_id, engineer_id } = await request.json();
-    if (!work_order_id || !engineer_id) return errorResponse('缺少工单或工程师 ID');
+    if (!work_order_id || !engineer_id) return errorResponse(engineerWorkspaceMessage(request, 'assignment_ids_required'));
 
     const lead = await env.DB.prepare(
       "SELECT id, engineer_role FROM engineers WHERE id = ?"
     ).bind(auth.userId).first();
     if (!lead || lead.engineer_role !== 'regional_lead') {
-      return errorResponse('仅区域负责人可二次分配', 403);
+      return errorResponse(engineerWorkspaceMessage(request, 'assignment_forbidden'), 403);
     }
 
     const wo = await env.DB.prepare(
       'SELECT id, order_no, status, customer_id, engineer_id, assigned_regional_lead_id, conflict_status FROM work_orders WHERE id = ?'
     ).bind(work_order_id).first();
-    if (!wo) return errorResponse('服务申请不存在', 404);
-    if (wo.assigned_regional_lead_id !== auth.userId) {
-      return errorResponse('该服务申请未分配给当前区域负责人', 403);
+    if (!wo) return errorResponse(engineerWorkspaceMessage(request, 'work_order_not_found'), 404);
+    const currentSourceMember = wo.engineer_id
+      ? await env.DB.prepare(
+          "SELECT id FROM engineers WHERE id = ? AND regional_lead_id = ? AND engineer_role = 'engineer'"
+        ).bind(wo.engineer_id, auth.userId).first()
+      : null;
+    const isRegionalQueue = !wo.engineer_id && wo.assigned_regional_lead_id === auth.userId;
+    if (!isRegionalQueue && !currentSourceMember) {
+      return errorResponse(engineerWorkspaceMessage(request, 'assignment_source_forbidden'), 403);
     }
-    if (['completed', 'cancelled', 'rejected'].includes(wo.status)) {
-      return errorResponse('该服务申请当前状态不允许分配', 409);
+    if (!['pending', 'pending_dispatch', 'assigned'].includes(wo.status)) {
+      return errorResponse(engineerWorkspaceMessage(request, 'assignment_status_invalid'), 409);
     }
 
     const engineer = await env.DB.prepare(
       "SELECT id, name, regional_lead_id, status, engineer_role FROM engineers WHERE id = ?"
     ).bind(engineer_id).first();
-    if (!engineer) return errorResponse('工程师不存在', 404);
-    if (engineer.engineer_role === 'regional_lead') return errorResponse('请选择具体工程师账号', 400);
+    if (!engineer) return errorResponse(engineerWorkspaceMessage(request, 'engineer_not_found'), 404);
+    if (engineer.engineer_role === 'regional_lead') return errorResponse(engineerWorkspaceMessage(request, 'concrete_engineer_required'), 400);
     if (engineer.regional_lead_id !== auth.userId) {
-      return errorResponse('只能分配给本区域团队内的工程师', 403);
+      return errorResponse(engineerWorkspaceMessage(request, 'assignment_target_forbidden'), 403);
     }
 
     const conflict = await evaluateDispatchConflict(env, work_order_id, engineer_id);
     if (conflict.status === 'blocked') {
-      await env.DB.prepare(
-        "UPDATE work_orders SET conflict_status = 'blocked', conflict_reason = ? WHERE id = ?"
-      ).bind(conflict.reason, work_order_id).run();
+      const conflictUpdate = await env.DB.prepare(`
+        UPDATE work_orders SET conflict_status = 'blocked', conflict_reason = ? WHERE id = ?
+          AND status = ?
+          AND status IN ('pending', 'pending_dispatch', 'assigned')
+          AND engineer_id IS ?
+          AND assigned_regional_lead_id IS ?
+      `).bind(
+        conflict.reason,
+        work_order_id,
+        wo.status,
+        wo.engineer_id,
+        wo.assigned_regional_lead_id,
+      ).run();
+      if (Number(conflictUpdate.meta?.changes || 0) === 0) {
+        return errorResponse(engineerWorkspaceMessage(request, 'assignment_changed'), 409);
+      }
       await writeAuditLog(env, request, {
         targetType: 'work_order',
         targetId: work_order_id,
@@ -7578,15 +7774,38 @@ async function handleRegionalLeadAssignEngineer(request, env) {
         beforeState: { engineer_id: wo.engineer_id, conflict_status: wo.conflict_status },
         afterState: { engineer_id, conflict_status: 'blocked', conflict_reason: conflict.reason },
       });
-      return errorResponse(`存在利益冲突，禁止派工：${conflict.reason}`, 409);
+      return errorResponse(
+        getRequestMarket(request) === 'cn'
+          ? `${engineerWorkspaceMessage(request, 'assignment_conflict')}：${conflict.reason}`
+          : engineerWorkspaceMessage(request, 'assignment_conflict'),
+        409,
+      );
     }
 
     const nextStatus = ['pending', 'pending_dispatch'].includes(wo.status) ? 'assigned' : wo.status;
-    await env.DB.prepare(`
+    const assignmentUpdate = await env.DB.prepare(`
       UPDATE work_orders
-      SET engineer_id = ?, status = ?, assigned_at = datetime('now'), conflict_status = 'clear', conflict_reason = NULL
+      SET engineer_id = ?, assigned_regional_lead_id = ?, status = ?, assigned_at = datetime('now'),
+          conflict_status = 'clear', conflict_reason = NULL
       WHERE id = ?
-    `).bind(engineer_id, nextStatus, work_order_id).run();
+        AND status = ?
+        AND status IN ('pending', 'pending_dispatch', 'assigned')
+        AND engineer_id IS ?
+        AND assigned_regional_lead_id IS ?
+    `).bind(
+      engineer_id,
+      auth.userId,
+      nextStatus,
+      work_order_id,
+      wo.status,
+      wo.engineer_id,
+      wo.assigned_regional_lead_id,
+    ).run();
+    if (Number(assignmentUpdate.meta?.changes || 0) === 0) {
+      return errorResponse(engineerWorkspaceMessage(request, 'assignment_changed'), 409);
+    }
+
+    const isCn = getRequestMarket(request) === 'cn';
 
     await env.DB.prepare(`
       INSERT INTO work_order_logs (id, work_order_id, action, actor_type, actor_id, content)
@@ -7595,16 +7814,21 @@ async function handleRegionalLeadAssignEngineer(request, env) {
       generateId(),
       work_order_id,
       auth.userId,
-      `区域负责人已分配给 ${engineer.name || '内部工程师'}`
+      isCn
+        ? `区域负责人已分配给 ${engineer.name || '内部工程师'}`
+        : `The Regional Lead assigned this task to ${engineer.name || 'a team engineer'}.`
     ).run();
 
     await env.DB.prepare(`
       INSERT INTO work_order_messages (id, work_order_id, sender_type, sender_id, sender_name, content, message_type, is_internal_note, is_customer_visible)
-      VALUES (?, ?, 'system', '', '系统', ?, 'system', 0, 1)
+      VALUES (?, ?, 'system', '', 'SAGEMRO', ?, ?, 0, 1)
     `).bind(
       generateId(),
       work_order_id,
-      `SAGEMRO 已安排 ${engineer.name || '内部工程师'} 跟进该服务申请。`
+      isCn
+        ? `SAGEMRO 已安排 ${engineer.name || '内部工程师'} 跟进该服务申请。`
+        : `SAGEMRO assigned ${engineer.name || 'a team engineer'} to this service task.`,
+      'service_assignment'
     ).run();
 
     await writeAuditLog(env, request, {
@@ -7620,8 +7844,10 @@ async function handleRegionalLeadAssignEngineer(request, env) {
         user_id: wo.customer_id,
         user_type: 'customer',
         type: 'service_assigned',
-        title: '服务申请已安排工程师',
-        body: `服务编号 ${wo.order_no} 已由 SAGEMRO 安排内部工程师跟进。`,
+        title: isCn ? '服务申请已安排工程师' : 'Engineer assigned to service task',
+        body: isCn
+          ? `服务编号 ${wo.order_no} 已由 SAGEMRO 安排内部工程师跟进。`
+          : `SAGEMRO assigned a team engineer to service task ${wo.order_no}.`,
         data: { work_order_id, engineer_id },
       });
     }
@@ -7630,8 +7856,10 @@ async function handleRegionalLeadAssignEngineer(request, env) {
       user_id: engineer_id,
       user_type: 'engineer',
       type: 'service_assignment',
-      title: '新的服务任务',
-      body: `服务编号 ${wo.order_no} 已分配给你，请确认客户现场信息。`,
+      title: isCn ? '新的服务任务' : 'New service task',
+      body: isCn
+        ? `服务编号 ${wo.order_no} 已分配给你，请确认客户现场信息。`
+        : `Service task ${wo.order_no} was assigned to you. Review the customer and site details.`,
       data: { work_order_id },
     });
 
@@ -7686,7 +7914,10 @@ async function handleAcceptTicket(request, env) {
     await env.DB.prepare(`
       INSERT INTO work_order_logs (id, work_order_id, action, actor_type, actor_id, content)
       VALUES (?, ?, ?, ?, ?, ?)
-    `).bind(generateId(), work_order_id, 'accepted', 'engineer', engineer_id, '工程师已确认派工').run();
+    `).bind(
+      generateId(), work_order_id, 'accepted', 'engineer', engineer_id,
+      getRequestMarket(request) === 'cn' ? '工程师已确认派工' : 'The engineer confirmed the assignment.'
+    ).run();
 
     // 通知客户：工程师已确认派工
     const eng = await env.DB.prepare('SELECT name FROM engineers WHERE id = ?').bind(engineer_id).first();
@@ -7695,8 +7926,10 @@ async function handleAcceptTicket(request, env) {
         user_id: wo.customer_id,
         user_type: 'customer',
         type: 'ticket_accepted',
-        title: '服务任务已确认',
-        body: `服务编号 ${wo.order_no} 已由 ${eng?.name || 'SAGEMRO 工程师'} 确认跟进。`,
+        title: getRequestMarket(request) === 'cn' ? '服务任务已确认' : 'Service task confirmed',
+        body: getRequestMarket(request) === 'cn'
+          ? `服务编号 ${wo.order_no} 已由 ${eng?.name || 'SAGEMRO 工程师'} 确认跟进。`
+          : `${eng?.name || 'The SAGEMRO engineer'} confirmed service task ${wo.order_no}.`,
         data: { work_order_id },
       });
     }
@@ -7762,12 +7995,18 @@ async function handleRejectTicket(request, env) {
     await env.DB.prepare(`
       INSERT INTO work_order_logs (id, work_order_id, action, actor_type, actor_id, content)
       VALUES (?, ?, ?, ?, ?, ?)
-    `).bind(generateId(), work_order_id, 'rejected', 'engineer', engineer_id, '工程师已退回派工').run();
+    `).bind(
+      generateId(), work_order_id, 'rejected', 'engineer', engineer_id,
+      getRequestMarket(request) === 'cn' ? '工程师已退回派工' : 'The engineer returned the assignment to dispatch.'
+    ).run();
 
     await env.DB.prepare(`
       INSERT INTO work_order_messages (id, work_order_id, sender_type, sender_id, sender_name, content, message_type, is_internal_note, is_customer_visible)
       VALUES (?, ?, 'engineer', ?, '工程师', ?, 'internal_note', 1, 0)
-    `).bind(generateId(), work_order_id, engineer_id, `退回派工理由：${rejectReason}`).run();
+    `).bind(
+      generateId(), work_order_id, engineer_id,
+      getRequestMarket(request) === 'cn' ? `退回派工理由：${rejectReason}` : `Assignment return reason: ${rejectReason}`
+    ).run();
 
     // 通知客户服务任务已退回调度
     const woForReject = await env.DB.prepare(
@@ -7778,8 +8017,10 @@ async function handleRejectTicket(request, env) {
         user_id: woForReject.customer_id,
         user_type: 'customer',
         type: 'ticket_rejected',
-        title: '服务任务已退回调度',
-        body: `服务编号 ${woForReject.order_no} 已退回 SAGEMRO 运营调度，团队会继续安排合适工程师。`,
+        title: getRequestMarket(request) === 'cn' ? '服务任务已退回调度' : 'Service task returned to dispatch',
+        body: getRequestMarket(request) === 'cn'
+          ? `服务编号 ${woForReject.order_no} 已退回 SAGEMRO 运营调度，团队会继续安排合适工程师。`
+          : `Service task ${woForReject.order_no} was returned to SAGEMRO dispatch for reassignment.`,
         data: { work_order_id },
       });
     }
@@ -8277,10 +8518,9 @@ const ENGINEER_APPLICATION_STATUSES = new Set([
   'archived',
 ]);
 
-const ENGINEER_CALENDAR_EVENT_TYPES = new Set([
+const ENGINEER_PERSONAL_CALENDAR_EVENT_TYPES = new Set([
   'engineer_available',
   'engineer_unavailable',
-  'reserved_for_service',
 ]);
 
 const MATERIAL_STATUSES = new Set(['active', 'inactive', 'pending']);
@@ -9744,7 +9984,7 @@ async function canAccessRequisition(env, auth, requisition) {
   const workOrder = await env.DB.prepare(`
     SELECT id, customer_id, engineer_id, assigned_regional_lead_id, status FROM work_orders WHERE id = ?
   `).bind(requisition.work_order_id).first();
-  return workOrder?.engineer_id === auth.userId;
+  return Boolean(await getEngineerWorkOrderReadRelation(env, auth, workOrder));
 }
 
 function generateRequisitionNumber(id) {
@@ -9901,13 +10141,27 @@ async function handleListMaterialRequisitions(request, env) {
   const market = getRequestMarket(request);
   let statement;
   if (auth.userType === 'engineer') {
-    statement = env.DB.prepare(`
-      SELECT mr.* FROM material_requisitions mr
-      JOIN work_orders wo ON wo.id = mr.work_order_id
-      WHERE wo.engineer_id = ? AND mr.market = ?
-        ${workOrderId ? 'AND mr.work_order_id = ?' : ''}
-      ORDER BY mr.created_at DESC
-    `).bind(auth.userId, market, ...(workOrderId ? [workOrderId] : []));
+    if (workOrderId) {
+      const workOrder = await env.DB.prepare(`
+        SELECT id, customer_id, engineer_id, assigned_regional_lead_id, status
+        FROM work_orders WHERE id = ?
+      `).bind(workOrderId).first();
+      if (!await getEngineerWorkOrderReadRelation(env, auth, workOrder)) {
+        return errorResponse('无权查看领料申请', 403);
+      }
+      statement = env.DB.prepare(`
+        SELECT * FROM material_requisitions
+        WHERE market = ? AND work_order_id = ?
+        ORDER BY created_at DESC
+      `).bind(market, workOrderId);
+    } else {
+      statement = env.DB.prepare(`
+        SELECT mr.* FROM material_requisitions mr
+        JOIN work_orders wo ON wo.id = mr.work_order_id
+        WHERE wo.engineer_id = ? AND mr.market = ?
+        ORDER BY mr.created_at DESC
+      `).bind(auth.userId, market);
+    }
   } else if (auth.userType === 'admin') {
     statement = env.DB.prepare(`
       SELECT * FROM material_requisitions
@@ -11144,7 +11398,7 @@ async function handleGetWorkOrderMaterialItems(request, env) {
     const workOrderId = url.pathname.split('/')[3];
     const purpose = cleanText(url.searchParams.get('purpose'), 40);
     const workOrder = await getWorkOrderForMaterialAccess(env, workOrderId);
-    assertWorkOrderAccess(request._auth, workOrder);
+    await assertWorkOrderReadAccess(env, request._auth, workOrder);
 
     let list = await listWorkOrderMaterialItems(env, workOrderId, {
       purpose: WORK_ORDER_MATERIAL_PURPOSES.has(purpose) ? purpose : undefined,
@@ -11247,12 +11501,12 @@ async function handleUpdateWorkOrderMaterialItem(request, env) {
 async function assertCurrentEngineer(request, env) {
   const auth = request._auth;
   if (!auth || auth.userType !== 'engineer') {
-    throw new GuardError('需要工程师权限', 403);
+    throw new GuardError(engineerWorkspaceMessage(request, 'engineer_required'), 403);
   }
   const engineer = await env.DB.prepare(
     'SELECT id, engineer_role FROM engineers WHERE id = ?'
   ).bind(auth.userId).first();
-  if (!engineer) throw new GuardError('工程师不存在', 404);
+  if (!engineer) throw new GuardError(engineerWorkspaceMessage(request, 'engineer_not_found'), 404);
   return engineer;
 }
 
@@ -11297,10 +11551,12 @@ async function handleCreateEngineerCalendarEvent(request, env) {
     const startAt = cleanText(body.start_at, 40);
     const endAt = cleanText(body.end_at, 40);
 
-    if (!ENGINEER_CALENDAR_EVENT_TYPES.has(eventType)) return errorResponse('无效日历类型');
-    if (!title || !startAt || !endAt) return errorResponse('请填写日历标题、开始时间和结束时间');
+    if (!ENGINEER_PERSONAL_CALENDAR_EVENT_TYPES.has(eventType) || cleanText(body.work_order_id, 80)) {
+      return errorResponse(engineerWorkspaceMessage(request, 'calendar_schedule_create_forbidden'));
+    }
+    if (!title || !startAt || !endAt) return errorResponse(engineerWorkspaceMessage(request, 'calendar_fields_required'));
     if (new Date(startAt).getTime() >= new Date(endAt).getTime()) {
-      return errorResponse('结束时间必须晚于开始时间');
+      return errorResponse(engineerWorkspaceMessage(request, 'calendar_end_invalid'));
     }
 
     const id = generateId();
@@ -11319,7 +11575,7 @@ async function handleCreateEngineerCalendarEvent(request, env) {
       startAt,
       endAt,
       cleanText(body.timezone, 80) || 'UTC',
-      cleanText(body.work_order_id, 80) || null,
+      null,
       cleanText(body.region, 120) || null,
       cleanText(body.city, 120) || null,
       cleanText(body.engineer_response, 1200) || null,
@@ -11334,16 +11590,70 @@ async function handleCreateEngineerCalendarEvent(request, env) {
   }
 }
 
+async function handleUpdateEngineerCalendarEvent(request, env) {
+  try {
+    await assertCurrentEngineer(request, env);
+    const eventId = new URL(request.url).pathname.split('/')[4];
+    if (!eventId) return errorResponse(engineerWorkspaceMessage(request, 'calendar_id_required'));
+
+    const existing = await env.DB.prepare(
+      'SELECT * FROM engineer_calendar_events WHERE id = ? AND engineer_id = ?'
+    ).bind(eventId, request._auth.userId).first();
+    if (!existing) return errorResponse(engineerWorkspaceMessage(request, 'calendar_not_found'), 404);
+    if (existing.work_order_id) return errorResponse(engineerWorkspaceMessage(request, 'calendar_schedule_update_forbidden'), 409);
+
+    const body = await request.json().catch(() => ({}));
+    const eventType = cleanText(body.event_type, 60);
+    const title = cleanText(body.title, 160);
+    const startAt = cleanText(body.start_at, 40);
+    const endAt = cleanText(body.end_at, 40);
+    if (!ENGINEER_PERSONAL_CALENDAR_EVENT_TYPES.has(eventType)) return errorResponse(engineerWorkspaceMessage(request, 'calendar_schedule_update_forbidden'));
+    if (!title || !startAt || !endAt) return errorResponse(engineerWorkspaceMessage(request, 'calendar_fields_required'));
+    if (new Date(startAt).getTime() >= new Date(endAt).getTime()) {
+      return errorResponse(engineerWorkspaceMessage(request, 'calendar_end_invalid'));
+    }
+
+    await env.DB.prepare(`
+      UPDATE engineer_calendar_events
+      SET event_type = ?, title = ?, start_at = ?, end_at = ?, timezone = ?,
+          region = ?, city = ?, notes = ?, updated_at = datetime('now')
+      WHERE id = ? AND engineer_id = ? AND work_order_id IS NULL
+    `).bind(
+      eventType,
+      title,
+      startAt,
+      endAt,
+      cleanText(body.timezone, 80) || existing.timezone || 'UTC',
+      cleanText(body.region, 120) || null,
+      cleanText(body.city, 120) || null,
+      cleanText(body.notes, 1200) || null,
+      eventId,
+      request._auth.userId
+    ).run();
+    const event = await env.DB.prepare(
+      'SELECT * FROM engineer_calendar_events WHERE id = ? AND engineer_id = ?'
+    ).bind(eventId, request._auth.userId).first();
+    return jsonResponse({ success: true, event });
+  } catch (error) {
+    if (error instanceof GuardError) return errorResponse(error.message, error.status);
+    return errorResponse(error.message, 500);
+  }
+}
+
 async function handleDeleteEngineerCalendarEvent(request, env) {
   try {
     await assertCurrentEngineer(request, env);
     const eventId = new URL(request.url).pathname.split('/')[4];
-    if (!eventId) return errorResponse('缺少日历事件 ID');
+    if (!eventId) return errorResponse(engineerWorkspaceMessage(request, 'calendar_id_required'));
 
-    const result = await env.DB.prepare(
-      'DELETE FROM engineer_calendar_events WHERE id = ? AND engineer_id = ?'
+    const existing = await env.DB.prepare(
+      'SELECT id, work_order_id FROM engineer_calendar_events WHERE id = ? AND engineer_id = ?'
+    ).bind(eventId, request._auth.userId).first();
+    if (!existing) return errorResponse(engineerWorkspaceMessage(request, 'calendar_not_found'), 404);
+    if (existing.work_order_id) return errorResponse(engineerWorkspaceMessage(request, 'calendar_schedule_update_forbidden'), 409);
+    await env.DB.prepare(
+      'DELETE FROM engineer_calendar_events WHERE id = ? AND engineer_id = ? AND work_order_id IS NULL'
     ).bind(eventId, request._auth.userId).run();
-    if (result.meta?.changes === 0) return errorResponse('日历事件不存在', 404);
     return jsonResponse({ success: true });
   } catch (error) {
     if (error instanceof GuardError) return errorResponse(error.message, error.status);
@@ -12212,6 +12522,64 @@ function withPaymentProjection(workOrder, quoteExecution) {
       ? installments.reduce((count, installment) => count + Number(installment.pending_claim_count || 0), 0)
       : null,
   };
+}
+
+function sanitizeRegionalManagementWorkOrder(workOrder) {
+  if (!workOrder) return null;
+  const visibleFields = [
+    'id', 'order_no', 'engineer_id', 'assigned_regional_lead_id',
+    'type', 'description', 'urgency', 'status', 'ai_summary',
+    'created_at', 'assigned_at', 'started_at', 'resolved_at', 'completed_at',
+    'sla_deadline', 'category_l1', 'category_l2', 'conflict_status',
+    'quote_review_status', 'service_mode', 'onsite_conversion_status',
+    'site_timezone', 'expected_service_days', 'expected_completion_date',
+    'planned_daily_start_time', 'planned_daily_end_time', 'updated_at',
+    'quote_expected_service_days', 'approved_extension_days', 'active_quote_version',
+    'scheduled_at', 'engineer_name', 'customer_name', 'customer_region',
+    'device_brand', 'device_model',
+  ];
+  return Object.fromEntries(visibleFields.flatMap((field) => (
+    workOrder[field] === undefined ? [] : [[field, workOrder[field]]]
+  )));
+}
+
+function sanitizeRegionalManagementPricing(pricing) {
+  if (!pricing) return null;
+  const {
+    platform_fee: _platformFee,
+    deposit_withhold: _depositWithhold,
+    ai_price_check: _aiPriceCheck,
+    payment_policy: _paymentPolicy,
+    ...visible
+  } = pricing;
+  return visible;
+}
+
+function sanitizeRegionalManagementQuoteExecution(quoteExecution) {
+  if (!quoteExecution) return null;
+  const {
+    payment_state: _paymentState,
+    received_amount: _receivedAmount,
+    outstanding_amount: _outstandingAmount,
+    financially_settled: _FinanciallySettled,
+    start_ready: _startReady,
+    ...visible
+  } = quoteExecution;
+  visible.installments = (quoteExecution.installments || []).map((installment) => {
+    const {
+      received_amount: _installmentReceivedAmount,
+      payment_method: _paymentMethod,
+      collection_started_at: _collectionStartedAt,
+      completed_at: _completedAt,
+      pending_claim_count: _pendingClaimCount,
+      collection_start_ready: _collectionStartReady,
+      status: _installmentStatus,
+      ...safeInstallment
+    } = installment;
+    return safeInstallment;
+  });
+  visible.receipt_claims = [];
+  return visible;
 }
 
 async function listWorkOrderPaymentProjections(env, workOrders) {
@@ -13957,12 +14325,21 @@ async function handleGetWorkOrderMessages(request, env) {
     const wo = await env.DB.prepare(
       'SELECT id, customer_id, engineer_id, assigned_regional_lead_id FROM work_orders WHERE id = ?'
     ).bind(workOrderId).first();
-    assertWorkOrderAccess(request._auth, wo);
+    await assertWorkOrderReadAccess(env, request._auth, wo);
 
     const isCustomer = request._auth?.userType === 'customer';
-    const messages = isCustomer
+    const engineerRelation = request._auth?.userType === 'engineer'
+      ? await getEngineerWorkOrderReadRelation(env, request._auth, wo)
+      : null;
+    const regionalManagementView = Boolean(engineerRelation && engineerRelation !== 'personal');
+    const messages = isCustomer || regionalManagementView
       ? await env.DB.prepare(
-          'SELECT * FROM work_order_messages WHERE work_order_id = ? AND COALESCE(is_customer_visible, 1) = 1 AND COALESCE(is_internal_note, 0) = 0 ORDER BY created_at ASC'
+          `SELECT * FROM work_order_messages
+           WHERE work_order_id = ?
+             AND COALESCE(is_customer_visible, 1) = 1
+             AND COALESCE(is_internal_note, 0) = 0
+             ${regionalManagementView ? "AND COALESCE(message_type, 'text') NOT IN ('payment_update', 'invoice_update', 'pricing_update')" : ''}
+           ORDER BY created_at ASC`
         ).bind(workOrderId).all()
       : await env.DB.prepare(
           'SELECT * FROM work_order_messages WHERE work_order_id = ? ORDER BY created_at ASC'
@@ -14010,7 +14387,7 @@ async function handlePostWorkOrderMessage(request, env) {
       const row = await env.DB.prepare('SELECT name FROM customers WHERE id = ?').bind(sender_id).first();
       sender_name = row?.name || '客户';
     } else if (auth.userType === 'engineer') {
-      if (wo.engineer_id !== auth.userId && wo.assigned_regional_lead_id !== auth.userId) return errorResponse('您无权在该工单留言', 403);
+      if (wo.engineer_id !== auth.userId) return errorResponse('仅执行工程师可在该工单留言', 403);
       sender_type = 'engineer';
       sender_id = auth.userId;
       const row = await env.DB.prepare('SELECT name FROM engineers WHERE id = ?').bind(sender_id).first();
@@ -14105,7 +14482,11 @@ async function handleGetWorkOrderPricing(request, env) {
     const wo = await env.DB.prepare(
       'SELECT id, customer_id, engineer_id, assigned_regional_lead_id, quote_review_status FROM work_orders WHERE id = ?'
     ).bind(workOrderId).first();
-    assertWorkOrderAccess(request._auth, wo);
+    await assertWorkOrderReadAccess(env, request._auth, wo);
+    const engineerRelation = request._auth?.userType === 'engineer'
+      ? await getEngineerWorkOrderReadRelation(env, request._auth, wo)
+      : null;
+    const regionalManagementView = Boolean(engineerRelation && engineerRelation !== 'personal');
 
     const pricing = await env.DB.prepare(
       'SELECT * FROM work_order_pricing WHERE work_order_id = ?'
@@ -14124,9 +14505,11 @@ async function handleGetWorkOrderPricing(request, env) {
     const paymentSchedule = pricingView?.payment_schedule || [];
     return jsonResponse({
       pricing: visiblePricing ? {
-        ...visiblePricing,
+        ...(regionalManagementView
+          ? sanitizeRegionalManagementPricing(visiblePricing)
+          : visiblePricing),
         material_items: materialItems,
-        payment_policy: paymentPolicy,
+        ...(regionalManagementView ? {} : { payment_policy: paymentPolicy }),
         payment_schedule: paymentSchedule,
       } : null,
       material_items: materialItems,
@@ -17927,6 +18310,9 @@ async function routeRequest(request, env, ctx) {
     }
     if (path === '/api/engineers/calendar-events' && request.method === 'POST') {
       return handleCreateEngineerCalendarEvent(request, env);
+    }
+    if (path.startsWith('/api/engineers/calendar-events/') && request.method === 'PATCH') {
+      return handleUpdateEngineerCalendarEvent(request, env);
     }
     if (path.startsWith('/api/engineers/calendar-events/') && request.method === 'DELETE') {
       return handleDeleteEngineerCalendarEvent(request, env);

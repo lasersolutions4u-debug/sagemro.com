@@ -1288,7 +1288,9 @@ test('nonparticipating regional lead keeps work-order access without receiving p
   assert.equal(JSON.stringify(leadDetail.json).includes('lead-internal.jpg'), false);
 
   const leadList = await api(env, '/api/workorders/wo-onsite-1/field-days', { userType: 'engineer', userId: 'lead-1' });
-  assert.equal(leadList.response.status, 403);
+  assert.equal(leadList.response.status, 200);
+  assert.deepEqual(leadList.json.field_days, []);
+  assert.deepEqual(leadList.json.media, []);
 
   for (const mediaId of ['lead-public-media', 'lead-internal-media']) {
     const denied = await api(env, `/api/workorders/wo-onsite-1/field-media/${mediaId}`, { userType: 'engineer', userId: 'lead-1' });

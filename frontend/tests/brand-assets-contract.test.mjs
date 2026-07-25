@@ -402,7 +402,9 @@ test('service report edit action is a compact top action instead of a bottom blo
   const repairRecord = read('frontend/src/components/WorkOrder/RepairRecordPanel.jsx');
 
   assert.match(repairRecord, /Pencil/);
-  assert.match(repairRecord, /aria-label="Edit service report"/);
+  assert.match(repairRecord, /editAria: 'Edit service report'/);
+  assert.match(repairRecord, /editAria: '编辑服务报告'/);
+  assert.match(repairRecord, /aria-label=\{copy\.editAria\}/);
   assert.match(repairRecord, /<Pencil size=\{14\}/);
   assert.match(repairRecord, /self-start rounded-lg border border-\[var\(--color-border\)\] bg-\[var\(--color-surface\)\] px-3 py-2 text-xs/);
   assert.doesNotMatch(repairRecord, /grid gap-2 sm:grid-cols-2/);
@@ -756,7 +758,7 @@ test('engineer workspace delegates localized next steps and selected task contex
   assert.match(workspace, /getNextAction=\{\(ticket\) => getNextAction\(ticket, copy\)\}/);
   assert.match(detail, /context: 'Current Task Context'/);
   assert.match(detail, /context: '当前任务上下文'/);
-  assert.match(detail, /region: '客户 \/ 地区'/);
+  assert.match(detail, /region: '地区'/);
   assert.match(detail, /preparation: '服务准备'/);
   assert.doesNotMatch(`${workspace}\n${detail}`, / 路 |澶囦欢|閰嶄欢/);
 });
@@ -764,16 +766,20 @@ test('engineer workspace delegates localized next steps and selected task contex
 test('engineer detail formats AI intake JSON and workspace hides internal category codes', () => {
   const workspace = read('frontend/src/components/Engineer/EngineerWorkspace.jsx');
   const detail = read('frontend/src/components/Engineer/EngineerWorkOrderDetail.jsx');
+  const display = read('frontend/src/components/Engineer/engineerWorkOrderDisplay.js');
 
-  assert.match(detail, /JSON\.parse\(raw\)/);
+  assert.match(detail, /JSON\.parse\(detail\.ai_summary\)/);
   assert.match(detail, /summary\.summary/);
   assert.match(detail, /summary\.required_specialties/);
   assert.match(detail, /summary\.suggested_skills/);
   assert.match(detail, /summary\.urgency_notes/);
   assert.match(detail, /aiSummary\.tags\.map/);
   assert.match(detail, /aiSummary\.notes/);
-  assert.match(workspace, /getDeviceLabel/);
-  assert.match(workspace, /getIssueLabel/);
+  assert.match(workspace, /getEngineerMachineLine/);
+  assert.match(display, /CATEGORY_LABELS_CN/);
+  assert.match(display, /CATEGORY_L2_LABELS_CN/);
+  assert.match(display, /categoryConfig\[ticket\.category_l1\]\?\.label/);
+  assert.match(display, /categoryL2Labels\[ticket\.category_l2\]/);
   assert.doesNotMatch(workspace, /formatCustomerDeviceLine\(ticket \|\| \{\}\)/);
 });
 
@@ -782,14 +788,11 @@ test('engineer workspace keeps task context and scheduling display localized', (
   const detail = read('frontend/src/components/Engineer/EngineerWorkOrderDetail.jsx');
   const calendar = read('frontend/src/components/Engineer/EngineerAvailabilityCalendar.jsx');
 
-  assert.match(workspace, /formatEngineerDescription/);
-  assert.match(workspace, /replaceChineseDeviceLabels/);
-  assert.match(workspace, /isCn \? WORKSPACE_COPY\.cn : WORKSPACE_COPY\.en/);
-  assert.match(workspace, /CHINESE_ENGINEER_DESCRIPTION_TERMS/);
-  assert.match(workspace, /\['客户', 'Customer'\]/);
-  assert.match(workspace, /\['故障', 'Fault'\]/);
-  assert.match(workspace, /\['激光切割头', 'laser cutting head'\]/);
-  assert.match(workspace, /formatDescription=\{\(value\) => formatEngineerDescription\(value, isCn\)\}/);
+  assert.match(workspace, /const copy = isCn \? COPY\.cn : COPY\.en/);
+  assert.match(workspace, /function formatDescription\(value\)/);
+  assert.match(workspace, /return redactContactInfo/);
+  assert.match(detail, /getLocalizedCustomerContent/);
+  assert.doesNotMatch(workspace, /CHINESE_ENGINEER_DESCRIPTION_TERMS|replaceChineseDeviceLabels/);
   assert.match(detail, /Job Preparation/);
   assert.match(detail, /服务准备/);
   assert.doesNotMatch(workspace, /\{ticket\.description \|\| 'No service description yet'\}/);
@@ -804,42 +807,40 @@ test('engineer workspace keeps task context and scheduling display localized', (
 test('engineer workspace keeps availability and calendar compact above delegated work orders', () => {
   const workspace = read('frontend/src/components/Engineer/EngineerWorkspace.jsx');
 
-  const toolbarIndex = workspace.indexOf('mb-4 rounded-2xl');
-  const calendarIndex = workspace.indexOf('<EngineerAvailabilityCalendar />');
+  const metricsIndex = workspace.indexOf('<EngineerMetricOverview');
   const calendarLauncherIndex = workspace.indexOf('{copy.calendarTitle}');
-  const delegatedContentIndex = workspace.indexOf('{selectedTicket ? (');
+  const personalListIndex = workspace.indexOf('<EngineerWorkOrderList');
 
-  assert.ok(toolbarIndex > -1);
-  assert.ok(calendarLauncherIndex > toolbarIndex);
-  assert.ok(delegatedContentIndex > calendarLauncherIndex);
+  assert.ok(metricsIndex > -1);
+  assert.ok(calendarLauncherIndex > metricsIndex);
+  assert.ok(personalListIndex > calendarLauncherIndex);
   assert.match(workspace, /const \[isCalendarOpen, setIsCalendarOpen\] = useState\(false\)/);
-  assert.match(workspace, /Update availability, blocked dates, and service windows/);
-  assert.match(workspace, /维护可服务时间、不可服务日期和现场服务窗口/);
+  assert.match(workspace, /Availability, blocked dates and service windows/);
+  assert.match(workspace, /可服务时间、不可服务日期和现场服务窗口/);
   assert.match(workspace, /EngineerWorkOrderList/);
-  assert.match(workspace, /EngineerWorkOrderDetail/);
-  assert.doesNotMatch(workspace, /lg:grid-cols-5|personalMetrics|regionalMetrics/);
+  assert.match(workspace, /EngineerTeamWorkOrderList/);
+  assert.match(workspace, /EngineerMetricOverview/);
+  assert.doesNotMatch(workspace, /selectedTicket|personalMetrics|regionalMetrics/);
   assert.doesNotMatch(workspace, /Visit windows/);
   assert.doesNotMatch(workspace, /Blocked dates/);
   assert.match(workspace, /title=\{copy\.modalCalendarTitle\}/);
   assert.match(workspace, /size="2xl"/);
-  assert.ok(calendarIndex > delegatedContentIndex);
+  assert.match(workspace, /<EngineerAvailabilityCalendar \/>/);
 });
 
-test('engineer workspace calendar launcher previews the next 30 days with scheduled dates highlighted', () => {
+test('engineer workspace calendar launcher previews the next 28 days with scheduled dates highlighted', () => {
   const workspace = read('frontend/src/components/Engineer/EngineerWorkspace.jsx');
 
   assert.match(workspace, /getEngineerCalendarEvents/);
   assert.match(workspace, /buildCalendarPreviewDays/);
   assert.match(workspace, /getScheduledDateKeys/);
-  assert.match(workspace, /calendarPreviewDays/);
-  assert.match(workspace, /scheduledDateKeys/);
-  assert.match(workspace, /Future 30 days/);
-  assert.match(workspace, /Scheduled dates/);
-  assert.match(workspace, /bg-amber-100/);
-  assert.match(workspace, /text-amber-700/);
+  assert.match(workspace, /CALENDAR_PREVIEW_DAYS = 28/);
+  assert.match(workspace, /calendarRange: 'Next 28 days'/);
+  assert.match(workspace, /scheduledCount:/);
+  assert.match(workspace, /bg-orange-50/);
+  assert.match(workspace, /text-orange-700/);
   assert.match(workspace, /grid-cols-7/);
-  assert.match(workspace, /gap-0\.5/);
-  assert.match(workspace, /min-h-6/);
+  assert.match(workspace, /scheduledKeys\.has\(day\.key\)/);
 });
 
 test('engineer machine lead form captures multiple equipment needs and submits to admin', () => {
@@ -870,11 +871,11 @@ test('engineer work order views redact customer contact before service and insid
   assert.match(redaction, /return 'XXX'/);
   assert.match(detailModal, /import \{ canEngineerViewCustomerContact, redactContactInfo \}/);
   assert.match(messagePanel, /import \{ redactContactInfo \}/);
-  assert.match(read('frontend/src/components/Engineer/EngineerWorkspace.jsx'), /redactContactInfo\(replaceChineseDeviceLabels\(description\)\)/);
+  assert.match(read('frontend/src/components/Engineer/EngineerWorkspace.jsx'), /return redactContactInfo\(String\(value \|\| ''\)\)/);
   assert.match(detailModal, /canEngineerViewCustomerContact\(effectiveStatus\)/);
   assert.match(detailModal, /redactContactInfo\(workOrder\.description\)/);
   assert.match(detailModal, /const customerPhoneDisplay = shouldShowCustomerContact \? detail\?\.customer_phone : detail\?\.customer_phone \? 'XXX' : ''/);
-  assert.match(messagePanel, /redactContactInfo\(msg\.content\)/);
+  assert.match(messagePanel, /redactContactInfo\(message\.content\)/);
   assert.match(messagePanel, /content: redactContactInfo\(input\.trim\(\)\)/);
   assert.match(worker, /function redactContactInfoForWorkOrder/);
   assert.match(worker, /customer_phone: ''/);
