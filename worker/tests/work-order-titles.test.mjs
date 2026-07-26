@@ -25,6 +25,17 @@ test('normalizes whitespace and removes contact information', () => {
     normalizeWorkOrderShortTitle('Field repair 415-555-0100'),
     'Field repair',
   );
+  assert.equal(
+    normalizeWorkOrderShortTitle('Field repair (415)555-0100'),
+    'Field repair',
+  );
+  assert.equal(
+    normalizeWorkOrderShortTitle('Field repair 4155550100'),
+    'Field repair',
+  );
+  assert.equal(normalizeWorkOrderShortTitle('G3015H'), 'G3015H');
+  assert.equal(normalizeWorkOrderShortTitle('TruBend 8170'), 'TruBend 8170');
+  assert.equal(normalizeWorkOrderShortTitle('WO-20260726-123'), 'WO-20260726-123');
 });
 
 test('builds deterministic localized titles without AI text', () => {

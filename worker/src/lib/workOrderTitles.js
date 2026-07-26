@@ -3,7 +3,7 @@ import { redactPII } from './redact.js';
 const TITLE_LIMIT = 100;
 const CHINESE_TEXT = /[\u3400-\u9fff]/u;
 const INTERNATIONAL_PHONE = /\+\d[\d\s().-]{6,}\d/g;
-const UNPREFIXED_INTERNATIONAL_PHONE = /(?<![\w-])(?:\(?\d{3}\)?[\s.-])\d{3}[\s.-]\d{4}(?![\w-])/g;
+const UNPREFIXED_INTERNATIONAL_PHONE = /(?<![\w-])(?:\(\d{3}\)|\d{3})[\s.-]?\d{3}[\s.-]?\d{4}(?![\w-])/g;
 
 const COPY = {
   com: {
