@@ -61,7 +61,7 @@ export function EngineerWorkOrderList({
     <div className="py-9 text-center text-sm text-[#697386]">{copy.empty}</div>
   ) : (
     <div>
-      <div className="hidden gap-3 px-4 py-2 text-[11px] font-extrabold uppercase tracking-wider text-[#929baa] min-[1280px]:grid min-[1280px]:grid-cols-[132px_minmax(210px,1.35fr)_minmax(120px,.85fr)_minmax(220px,1.4fr)_minmax(120px,.8fr)_132px_36px]">
+      <div className="hidden gap-3 px-4 py-2 text-[11px] font-extrabold uppercase tracking-wider text-[#929baa] min-[1280px]:grid min-[1280px]:grid-cols-[132px_minmax(240px,1.55fr)_minmax(110px,.75fr)_minmax(260px,1.55fr)_minmax(120px,.8fr)_minmax(150px,.9fr)_118px_36px]">
         <span>{isCn ? '工单号' : 'Work order'}</span>
         <span>{isCn ? '工单名称' : 'Task name'}</span>
         <span>{isCn ? '客户' : 'Customer'}</span>
@@ -101,16 +101,16 @@ export function EngineerWorkOrderList({
           <button
             type="button"
             onClick={() => onSelectTicket(ticket)}
-            className="relative hidden min-h-[76px] w-full items-center gap-3 overflow-hidden border-t border-[#eef0f3] bg-white px-4 py-3 text-left transition hover:bg-[#fffaf2] min-[1280px]:grid min-[1280px]:grid-cols-[132px_minmax(210px,1.35fr)_minmax(120px,.85fr)_minmax(220px,1.4fr)_minmax(120px,.8fr)_132px_36px]"
+            className="relative hidden min-h-[84px] w-full items-center gap-3 overflow-hidden border-t border-[#eef0f3] bg-white px-4 py-3 text-left transition hover:bg-[#fffaf2] min-[1280px]:grid min-[1280px]:grid-cols-[132px_minmax(240px,1.55fr)_minmax(110px,.75fr)_minmax(260px,1.55fr)_minmax(120px,.8fr)_minmax(150px,.9fr)_118px_36px]"
           >
             <span className="absolute inset-y-0 left-0 w-[3px]" style={{ backgroundColor: `var(--status-${ticket.status})` }} />
             <strong className="whitespace-nowrap text-sm text-[#18202b]">{ticket.order_no || ticket.id}</strong>
-            <strong className="min-w-0 truncate text-[15px] text-[#18202b]">{getEngineerWorkOrderTitle(ticket, isCn, copy.taskFallback)}</strong>
+            <strong className="min-w-0 line-clamp-2 text-[15px] leading-5 text-[#18202b]">{getEngineerWorkOrderTitle(ticket, isCn, copy.taskFallback)}</strong>
             <span className="min-w-0 truncate text-xs text-[#697386]">{ticket.customer_name || '—'}</span>
             <span className="min-w-0 line-clamp-2 text-[13px] leading-5 text-[#697386]">{getMachineLine(ticket) || copy.machineFallback}</span>
             <span className="min-w-0 truncate text-xs text-[#697386]">{ticket.customer_region || copy.regionFallback}</span>
-            <span><span className="inline-flex items-center gap-1.5 rounded-full px-2 py-1 text-xs font-bold" style={{ backgroundColor: `var(--status-${ticket.status}-bg)`, color: `var(--status-${ticket.status}-text)` }}><span className="size-1.5 rounded-full" style={{ backgroundColor: `var(--status-${ticket.status})` }} />{statusLabels[ticket.status] || ticket.status}</span></span>
-            <span className="text-xs text-[#697386]">{formatUpdated(ticket.updated_at || ticket.created_at, isCn)}</span>
+            <span className="min-w-0"><span className="inline-flex max-w-full items-center gap-1.5 rounded-full px-2 py-1 text-xs font-bold leading-4" style={{ backgroundColor: `var(--status-${ticket.status}-bg)`, color: `var(--status-${ticket.status}-text)` }}><span className="size-1.5 shrink-0 rounded-full" style={{ backgroundColor: `var(--status-${ticket.status})` }} /><span className="line-clamp-2">{statusLabels[ticket.status] || ticket.status}</span></span></span>
+            <span className="whitespace-nowrap text-xs text-[#697386]">{formatUpdated(ticket.updated_at || ticket.created_at, isCn)}</span>
             <span aria-hidden="true" className="grid size-8 place-items-center rounded-lg border border-[#e5e8ed] text-orange-600"><ChevronRight size={15} /></span>
           </button>
         </Fragment>
