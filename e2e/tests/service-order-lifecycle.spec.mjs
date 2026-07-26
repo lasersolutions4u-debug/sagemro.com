@@ -150,8 +150,13 @@ test('customer, Admin, and engineer complete a service order lifecycle', async (
   await receiptDialog.getByRole('button', { name: 'Close', exact: true }).click();
 
   await engineerPage.reload();
+  const requestStartApproval = engineerPage.getByRole('button', { name: 'Request Start Approval', exact: true });
+  await engineerPage.getByRole('tab', { name: 'Messages', exact: true }).click();
+  await expect(requestStartApproval).toHaveCount(0);
   await engineerPage.getByRole('tab', { name: 'Quote', exact: true }).click();
-  await engineerPage.getByRole('button', { name: 'Request Admin Approval to Start', exact: true }).click();
+  await expect(requestStartApproval).toHaveCount(0);
+  await engineerPage.getByRole('tab', { name: 'Overview', exact: true }).click();
+  await requestStartApproval.click();
   await confirmFeedback(engineerPage);
 
   await adminPage.reload();
