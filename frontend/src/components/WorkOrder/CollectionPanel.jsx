@@ -36,7 +36,6 @@ const COPY = {
     amountInvalid: 'Enter a positive whole amount.',
     amountTooHigh: 'The claimed amount cannot exceed the installment balance.',
     evidenceInvalid: 'Evidence must be a JPG, PNG, or PDF file no larger than 10 MB.',
-    started: 'Installment collection started.',
     claimSubmitted: 'Receipt claim submitted for Admin confirmation.',
     claimRefreshFailed: 'The receipt claim was submitted, but the latest work-order details could not be loaded. The submitted claim remains locked to prevent a duplicate. Refresh the work order to recover.',
     empty: 'No active payment schedule is available.',
@@ -80,7 +79,6 @@ const COPY = {
     amountInvalid: '请输入正整数金额。',
     amountTooHigh: '申请确认金额不能超过本期待到账金额。',
     evidenceInvalid: '凭证须为不超过 10 MB 的 JPG、PNG 或 PDF 文件。',
-    started: '已发起本期收款。',
     claimSubmitted: '到账申请已提交，等待 Admin 确认。',
     claimRefreshFailed: '到账申请已提交，但未能加载最新工单详情。为避免重复提交，本次申请已锁定，请刷新工单后继续。',
     empty: '暂无可执行的付款计划。',
@@ -146,7 +144,6 @@ export function CollectionPanel({ workOrderId, quoteExecution, userType, onChang
       await startInstallmentCollection(workOrderId, installment.id, requiresMilestoneConfirmation
         ? { milestone_confirmation: milestoneConfirmation }
         : {});
-      toastSuccess(copy.started);
       await onChanged?.();
     } catch (error) {
       toastError(error.message);
