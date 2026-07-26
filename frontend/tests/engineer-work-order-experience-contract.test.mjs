@@ -339,13 +339,32 @@ test('work-order messages localize system copy and label foreign customer origin
   const messages = read('frontend/src/components/WorkOrder/MessagePanel.jsx');
 
   assert.match(messages, /isCnLocale/);
-  assert.match(messages, /localizeWorkOrderSystemMessage/);
   assert.match(messages, /getLocalizedCustomerContent/);
   assert.match(messages, /Customer original/);
   assert.match(messages, /客户原文/);
   assert.match(messages, /No messages yet/);
   assert.match(messages, /暂无消息/);
   assert.match(messages, /toLocaleTimeString\(isCn \? 'zh-CN' : 'en-US'/);
+});
+
+test('work-order system messages show their full content without an original-message toggle', () => {
+  const messages = read('frontend/src/components/WorkOrder/MessagePanel.jsx');
+  const systemMessage = messages.match(/function SystemMessage[\s\S]*?\n}\n\nfunction isNearMessageBottom/)?.[0] || '';
+
+  assert.match(systemMessage, /redactContactInfo\(message\.content \|\| ''\)/);
+  assert.match(systemMessage, /whitespace-pre-wrap/);
+  assert.doesNotMatch(systemMessage, /<details|<summary|viewSystemOriginal|systemOriginal|localizeWorkOrderSystemMessage/);
+});
+
+test('work-order messages preserve manual history scrolling during polling', () => {
+  const messages = read('frontend/src/components/WorkOrder/MessagePanel.jsx');
+
+  assert.match(messages, /messagesContainerRef/);
+  assert.match(messages, /isNearMessageBottom/);
+  assert.match(messages, /showNewMessages/);
+  assert.match(messages, /onScroll=\{handleMessageScroll\}/);
+  assert.match(messages, /scrollMessageListToBottom/);
+  assert.doesNotMatch(messages, /bottomRef\.current\?\.scrollIntoView\(\{ behavior: 'smooth' \}\);\s*\}, \[messages\]\)/);
 });
 
 test('work-order modal retains existing operational panels in controlled mode', () => {
@@ -361,6 +380,15 @@ test('work-order modal retains existing operational panels in controlled mode', 
   assert.match(modal, /aria-label="Request Admin Approval to Start"/);
   assert.match(modal, /Request Start Approval/);
   assert.match(modal, /userType === 'engineer' && !managementReadOnly/);
+});
+
+test('start approval is an overview action instead of a shared tab banner', () => {
+  const detail = read('frontend/src/components/Engineer/EngineerWorkOrderDetail.jsx');
+  const modal = read('frontend/src/components/WorkOrder/WorkOrderDetailModal.jsx');
+
+  assert.match(detail, /Request Start Approval/);
+  assert.match(detail, /requestWorkOrderPaymentStart/);
+  assert.doesNotMatch(modal, /!showInfoTab && renderPaymentStartAction\(\)/);
 });
 
 test('service report copy follows the engineer host locale', () => {
