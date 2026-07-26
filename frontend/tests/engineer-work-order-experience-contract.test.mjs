@@ -158,6 +158,7 @@ test('engineer detail exposes only one of six high-level sections at a time', ()
   assert.match(modal, /showTabNavigation/);
   assert.match(detail, /Quote details/);
   assert.match(detail, /Payments & receipts/);
+  assert.match(detail, /className=\{`rounded-md px-3 py-2 whitespace-nowrap text-xs font-bold/);
   assert.match(detail, /activeTab === 'quote' \? commercialView : tabMap\[activeTab\]/);
   assert.match(detail, /refreshAfter\(onAssignEngineer\)/);
   assert.match(detail, /refreshAfter\(onConfirmAssignment\)/);

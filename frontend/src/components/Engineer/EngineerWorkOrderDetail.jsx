@@ -189,7 +189,7 @@ export function EngineerWorkOrderDetail({
                       ['pricing', copy.quoteDetails],
                       ['collection', copy.payments],
                     ].map(([value, label]) => (
-                      <button key={value} type="button" onClick={() => setCommercialView(value)} aria-pressed={commercialView === value} className={`rounded-md px-3 py-2 text-xs font-bold ${commercialView === value ? 'bg-[#18202b] text-white' : 'text-[#697386]'}`}>{label}</button>
+                      <button key={value} type="button" onClick={() => setCommercialView(value)} aria-pressed={commercialView === value} className={`rounded-md px-3 py-2 whitespace-nowrap text-xs font-bold ${commercialView === value ? 'bg-[#18202b] text-white' : 'text-[#697386]'}`}>{label}</button>
                     ))}
                   </div>
                 )}
