@@ -1461,7 +1461,8 @@ Report the China PR URL and local test evidence, then obtain explicit user appro
 
 ```bash
 cn_pr_number="$(gh pr view codex/engineer-density-title-cn --json number --jq .number)"
-gh pr diff "$cn_pr_number" --stat
+gh pr view "$cn_pr_number" --json files \
+  --jq '.files[] | [.path, .additions, .deletions] | @tsv'
 gh pr merge "$cn_pr_number" --merge --delete-branch
 ```
 
