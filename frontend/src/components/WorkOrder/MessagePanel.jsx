@@ -1,14 +1,11 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Image, Loader2, Paperclip, Send, Video, X } from 'lucide-react';
+import { ChevronDown, Image, Loader2, Paperclip, Send, Video, X } from 'lucide-react';
 import { getWorkOrderMessages, postWorkOrderMessage, uploadWorkOrderAttachment } from '../../services/api';
 import { toastError } from '../../utils/feedback';
 import { redactContactInfo } from '../../utils/contactRedaction';
 import { isCnLocale } from '../../utils/locale';
 import { formatServiceTextForLocale } from '../../utils/workOrderDisplay';
-import {
-  getLocalizedCustomerContent,
-  localizeWorkOrderSystemMessage,
-} from '../Engineer/engineerWorkOrderContent';
+import { getLocalizedCustomerContent } from '../Engineer/engineerWorkOrderContent';
 
 const ALLOWED_TYPES = [
   'image/jpeg',
@@ -31,9 +28,8 @@ const COPY = {
     placeholder: 'Type a message...',
     original: 'Customer original',
     viewOriginal: 'View customer original',
-    systemOriginal: 'Original system message',
-    viewSystemOriginal: 'View original system message',
     readOnly: 'Team progress view · Only the executing engineer can reply.',
+    newMessages: 'New messages',
   },
   cn: {
     unsupportedType: '暂不支持的文件类型：',
@@ -45,9 +41,8 @@ const COPY = {
     placeholder: '输入消息...',
     original: '客户原文',
     viewOriginal: '查看客户原文',
-    systemOriginal: '系统消息原文',
-    viewSystemOriginal: '查看系统消息原文',
     readOnly: '团队进度查看模式 · 仅执行工程师可以回复。',
+    newMessages: '有新消息',
   },
 };
 
@@ -111,23 +106,32 @@ function MessageText({ message, isCn }) {
   );
 }
 
-function SystemMessage({ message, isCn }) {
-  const copy = isCn ? COPY.cn : COPY.en;
-  const localized = localizeWorkOrderSystemMessage(message, isCn ? 'cn' : 'en');
-  const original = redactContactInfo(message.content || '');
-  const showOriginal = Boolean(original && original !== localized);
+function SystemMessage({ message }) {
+  const content = redactContactInfo(message.content || '');
 
   return (
     <div className="text-xs text-[var(--color-text-muted)] bg-[var(--color-surface-elevated)] px-3 py-1 rounded-xl text-center">
-      <div>{localized}</div>
-      {showOriginal && (
-        <details className="mt-1">
-          <summary className="cursor-pointer font-semibold">{copy.viewSystemOriginal}</summary>
-          <div className="mt-1 opacity-75"><span className="font-semibold">{copy.systemOriginal}: </span>{original}</div>
-        </details>
-      )}
+      <div className="whitespace-pre-wrap">{content}</div>
     </div>
   );
+}
+
+function isNearMessageBottom(element) {
+  if (!element) return true;
+  return element.scrollHeight - element.scrollTop - element.clientHeight <= 48;
+}
+
+function messagesMatch(current, next) {
+  if (current.length !== next.length) return false;
+  return current.every((message, index) => {
+    const nextMessage = next[index];
+    return message.id === nextMessage?.id
+      && message.updated_at === nextMessage?.updated_at
+      && message.content === nextMessage?.content
+      && message.content_en === nextMessage?.content_en
+      && message.content_zh === nextMessage?.content_zh
+      && JSON.stringify(message.attachment_urls || []) === JSON.stringify(nextMessage?.attachment_urls || []);
+  });
 }
 
 export function MessagePanel({ workOrderId, userType, userId, readOnly = false }) {
@@ -138,12 +142,37 @@ export function MessagePanel({ workOrderId, userType, userId, readOnly = false }
   const [sending, setSending] = useState(false);
   const [pendingFiles, setPendingFiles] = useState([]);
   const [uploadingLabel, setUploadingLabel] = useState('');
+  const [showNewMessages, setShowNewMessages] = useState(false);
   const fileInputRef = useRef(null);
-  const bottomRef = useRef(null);
+  const messagesContainerRef = useRef(null);
+  const messagesRef = useRef([]);
+  const initializedRef = useRef(false);
+  const pinnedToBottomRef = useRef(true);
+  const shouldAutoScrollRef = useRef(false);
+
+  const scrollMessageListToBottom = useCallback((behavior = 'smooth') => {
+    const container = messagesContainerRef.current;
+    if (!container) return;
+    container.scrollTo({ top: container.scrollHeight, behavior });
+    pinnedToBottomRef.current = true;
+    setShowNewMessages(false);
+  }, []);
 
   const load = useCallback(() => {
     getWorkOrderMessages(workOrderId).then(d => {
-      setMessages(d.list || []);
+      const nextMessages = d.list || [];
+      const currentMessages = messagesRef.current;
+      if (messagesMatch(currentMessages, nextMessages)) return;
+
+      const wasInitialized = initializedRef.current;
+      const hasNewLastMessage = wasInitialized
+        && nextMessages.at(-1)?.id !== currentMessages.at(-1)?.id;
+      shouldAutoScrollRef.current = !wasInitialized || pinnedToBottomRef.current;
+      if (hasNewLastMessage && !pinnedToBottomRef.current) setShowNewMessages(true);
+
+      messagesRef.current = nextMessages;
+      initializedRef.current = true;
+      setMessages(nextMessages);
     }).catch(() => {});
   }, [workOrderId]);
 
@@ -154,8 +183,17 @@ export function MessagePanel({ workOrderId, userType, userId, readOnly = false }
   }, [load]);
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+    if (!shouldAutoScrollRef.current) return;
+    shouldAutoScrollRef.current = false;
+    const frame = requestAnimationFrame(() => scrollMessageListToBottom('smooth'));
+    return () => cancelAnimationFrame(frame);
+  }, [messages, scrollMessageListToBottom]);
+
+  const handleMessageScroll = () => {
+    const nearBottom = isNearMessageBottom(messagesContainerRef.current);
+    pinnedToBottomRef.current = nearBottom;
+    if (nearBottom) setShowNewMessages(false);
+  };
 
   const handleFileSelect = (e) => {
     const files = [...(e.target.files || [])];
@@ -200,6 +238,7 @@ export function MessagePanel({ workOrderId, userType, userId, readOnly = false }
       });
       setInput('');
       setPendingFiles([]);
+      pinnedToBottomRef.current = true;
       load();
     } catch (e) {
       toastError(copy.sendFailed + e.message);
@@ -211,7 +250,12 @@ export function MessagePanel({ workOrderId, userType, userId, readOnly = false }
 
   return (
     <div className="space-y-3">
-      <div className="max-h-[52dvh] min-h-72 overflow-y-auto space-y-2 p-2 bg-[var(--color-surface-elevated)] rounded-xl sm:max-h-80">
+      <div className="relative">
+      <div
+        ref={messagesContainerRef}
+        onScroll={handleMessageScroll}
+        className="max-h-[52dvh] min-h-72 overflow-y-auto space-y-2 p-2 bg-[var(--color-surface-elevated)] rounded-xl sm:max-h-80"
+      >
         {messages.length === 0 ? (
           <div className="text-center py-6 text-xs text-[var(--color-text-muted)]">{copy.empty}</div>
         ) : (
@@ -223,7 +267,7 @@ export function MessagePanel({ workOrderId, userType, userId, readOnly = false }
             if (isSystem) {
               return (
                 <div key={msg.id} className="flex justify-center">
-                  <SystemMessage message={msg} isCn={isCn} />
+                  <SystemMessage message={msg} />
                 </div>
               );
             }
@@ -251,7 +295,13 @@ export function MessagePanel({ workOrderId, userType, userId, readOnly = false }
             );
           })
         )}
-        <div ref={bottomRef} />
+      </div>
+      {showNewMessages && (
+        <button type="button" onClick={() => scrollMessageListToBottom()} className="absolute bottom-3 left-1/2 inline-flex -translate-x-1/2 items-center gap-1 rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-xs font-semibold text-[var(--color-primary)] shadow-sm">
+          <ChevronDown size={14} />
+          {copy.newMessages}
+        </button>
+      )}
       </div>
 
       {!readOnly && pendingFiles.length > 0 && (

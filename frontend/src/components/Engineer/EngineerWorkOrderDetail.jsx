@@ -1,6 +1,7 @@
 import { ArrowLeft, ShieldCheck } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { getWorkOrder } from '../../services/api';
+import { getWorkOrder, requestWorkOrderPaymentStart } from '../../services/api';
+import { confirmDialog, toastError, toastSuccess } from '../../utils/feedback';
 import { WorkOrderDetailContent } from '../WorkOrder/WorkOrderDetailModal';
 import { getEngineerScheduleLabel, getEngineerWorkOrderTitle } from './engineerWorkOrderDisplay';
 import { getLocalizedCustomerContent } from './engineerWorkOrderContent';
@@ -40,6 +41,10 @@ const COPY = {
     quoteStatus: 'Quote status', quoteTotal: 'Quoted total', quoteDetails: 'Quote details',
     payments: 'Payments & receipts', fieldRestricted: 'Field-service evidence remains private to the executing engineer and Admin.',
     unavailable: 'Unavailable for this work-order stage.',
+    requestStart: 'Request Start Approval', waitingStart: 'Waiting for Admin Advance Payment Confirmation',
+    submittingStart: 'Submitting...', confirmStart: 'Request Admin approval to start service after advance payment follow-up?',
+    startNote: 'Engineer confirmed advance payment follow-up with the customer.',
+    startSent: 'Start request sent to Admin for advance payment confirmation.', startFailed: 'Start request failed: ',
     statusNames: { available: 'Available', paused: 'Paused', offline: 'Offline' },
   },
   cn: {
@@ -56,6 +61,9 @@ const COPY = {
     quoteStatus: '报价状态', quoteTotal: '报价总额', quoteDetails: '报价详情',
     payments: '付款与到账', fieldRestricted: '现场作业证据仅对执行工程师和 Admin 开放。',
     unavailable: '当前工单阶段暂不可使用此功能。',
+    requestStart: '请求开始服务审批', waitingStart: '等待 Admin 确认预付款', submittingStart: '提交中...',
+    confirmStart: '确认已跟进预付款，并请求 Admin 批准开始服务吗？', startNote: '工程师已与客户确认预付款跟进。',
+    startSent: '开始服务请求已提交给 Admin 确认预付款。', startFailed: '开始服务请求失败：',
     statusNames: { available: '可接单', paused: '暂停接单', offline: '离线' },
   },
 };
@@ -91,6 +99,7 @@ export function EngineerWorkOrderDetail({
   const [activeTab, setActiveTab] = useState('overview');
   const [commercialView, setCommercialView] = useState('pricing');
   const [actionRefresh, setActionRefresh] = useState(0);
+  const [paymentStartSubmitting, setPaymentStartSubmitting] = useState(false);
   const [checkedChecklistItems, setCheckedChecklistItems] = useState(() => new Set());
 
   const loadDetail = useCallback(async () => {
@@ -157,6 +166,21 @@ export function EngineerWorkOrderDetail({
       return next;
     });
   };
+  const handleRequestPaymentStart = async () => {
+    if (detail.status === 'payment_review' || paymentStartSubmitting) return;
+    if (!(await confirmDialog(copy.confirmStart))) return;
+    setPaymentStartSubmitting(true);
+    try {
+      await requestWorkOrderPaymentStart(detail.id, copy.startNote);
+      toastSuccess(copy.startSent);
+      await loadDetail();
+      onWorkOrderChanged?.();
+    } catch (requestError) {
+      toastError(copy.startFailed + requestError.message);
+    } finally {
+      setPaymentStartSubmitting(false);
+    }
+  };
 
   return (
     <section>
@@ -182,6 +206,11 @@ export function EngineerWorkOrderDetail({
               <div className="grid gap-3 md:grid-cols-[1.15fr_.85fr]">
                 <section className="rounded-xl border border-[#e5e8ed] p-4"><div className="text-xs font-extrabold uppercase tracking-wide text-orange-600">{copy.context}</div><h2 className="mt-2 text-sm font-semibold">{copy.machine}</h2><p className="mt-2 text-sm text-[#394455]">{getMachineLine(detail)}</p><div className="mt-4"><CustomerContent record={{ description: formatDescription(detail.description), description_en: detail.description_en, description_zh: detail.description_zh }} isCn={isCn} /></div></section>
                 <section className="rounded-xl border border-[#e5e8ed] p-4"><div className="text-xs font-extrabold uppercase tracking-wide text-orange-600">{copy.preparation}</div><h2 className="mt-2 text-sm font-semibold">{copy.intake}</h2><CustomerContent record={{ description: formatDescription(aiSummary.summary), description_en: detail.ai_summary_en }} isCn={isCn} />{aiSummary.tags.length > 0 && <div className="mt-3 flex flex-wrap gap-1">{aiSummary.tags.map((tag) => <span key={tag} className="rounded-full bg-orange-50 px-2 py-1 text-xs font-bold text-orange-700">{tag}</span>)}</div>}{aiSummary.notes && <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-800">{formatDescription(aiSummary.notes)}</p>}<p className="mt-3 text-xs text-[#697386]">{copy.attachments}: {detail.attachments?.length || 0}</p></section>
+                {isExecutingEngineer && ['pending_payment', 'payment_review'].includes(detail.status) && (
+                  <button type="button" onClick={handleRequestPaymentStart} disabled={paymentStartSubmitting || detail.status === 'payment_review'} className="rounded-lg bg-orange-500 px-4 py-3 text-sm font-bold text-white disabled:opacity-50 md:col-span-2">
+                    {detail.status === 'payment_review' ? copy.waitingStart : paymentStartSubmitting ? copy.submittingStart : copy.requestStart}
+                  </button>
+                )}
                 <section className="rounded-xl border border-[#e5e8ed] p-4 md:col-span-2"><div className="flex items-center gap-2 text-xs font-extrabold uppercase tracking-wide text-orange-600"><ShieldCheck size={15} />{copy.checklist}</div><ol className="mt-3 grid gap-2 sm:grid-cols-2">{CHECKLIST[isCn ? 'cn' : 'en'].map((item, index) => <li key={item}><label className="flex cursor-pointer gap-2 rounded-lg bg-[#f7f8fa] p-3 text-sm leading-6 text-[#697386]"><input type="checkbox" checked={checkedChecklistItems.has(index)} onChange={() => toggleChecklistItem(index)} className="mt-1 size-4 shrink-0 accent-orange-500" /><span className={checkedChecklistItems.has(index) ? 'text-[#929baa] line-through' : ''}>{item}</span></label></li>)}</ol></section>
               </div>
             ) : activeTab === 'quote' && !isExecutingEngineer ? (
