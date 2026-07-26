@@ -21,6 +21,10 @@ test('normalizes whitespace and removes contact information', () => {
     normalizeWorkOrderShortTitle('Field repair +1 (415) 555-0100'),
     'Field repair',
   );
+  assert.equal(
+    normalizeWorkOrderShortTitle('Field repair 415-555-0100'),
+    'Field repair',
+  );
 });
 
 test('builds deterministic localized titles without AI text', () => {
