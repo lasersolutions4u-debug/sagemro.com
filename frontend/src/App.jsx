@@ -630,6 +630,7 @@ function App() {
       <div className="flex-1 flex flex-col min-w-0 min-h-0">
         <ChatArea
           messages={messages}
+          conversationId={conversationId}
           isStreaming={isStreaming}
           onSendMessage={handleSendMessage}
           onStopGeneration={stopGeneration}

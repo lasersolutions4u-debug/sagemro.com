@@ -1,13 +1,19 @@
-import { useEffect, useRef } from 'react';
-import { Menu, Info, Home } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { ChevronDown, Menu, Info, Home } from 'lucide-react';
 import { MessageBubble } from './MessageBubble';
 import { WelcomePage } from './WelcomePage';
 import { InputArea } from './InputArea';
 import { Footer } from '../common/Footer';
 import { isCnLocale } from '../../utils/locale';
 
+function isNearChatBottom(element) {
+  if (!element) return true;
+  return element.scrollHeight - element.scrollTop - element.clientHeight <= 48;
+}
+
 export function ChatArea({
   messages,
+  conversationId,
   isStreaming,
   onSendMessage,
   onStopGeneration,
@@ -17,17 +23,48 @@ export function ChatArea({
   onOpenLegal,
   onOpenAbout,
 }) {
-  const messagesEndRef = useRef(null);
   const messagesContainerRef = useRef(null);
-
-  // 自动滚动到底部
-  useEffect(() => {
-    if (messagesEndRef.current) {
-      messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
-    }
-  }, [messages]);
-
+  const pinnedToBottomRef = useRef(true);
+  const viewedConversationRef = useRef(conversationId);
+  const [showNewMessages, setShowNewMessages] = useState(false);
   const hasMessages = messages.length > 0;
+
+  const scrollChatToBottom = useCallback((behavior = 'smooth') => {
+    const container = messagesContainerRef.current;
+    if (!container) return;
+    container.scrollTo({ top: container.scrollHeight, behavior });
+    pinnedToBottomRef.current = true;
+    setShowNewMessages(false);
+  }, []);
+
+  useEffect(() => {
+    if (viewedConversationRef.current === conversationId) return;
+    viewedConversationRef.current = conversationId;
+    pinnedToBottomRef.current = true;
+    setShowNewMessages(false);
+  }, [conversationId]);
+
+  useEffect(() => {
+    if (!hasMessages) {
+      setShowNewMessages(false);
+      return undefined;
+    }
+    if (pinnedToBottomRef.current) {
+      const frame = requestAnimationFrame(() => {
+        if (pinnedToBottomRef.current) scrollChatToBottom('auto');
+      });
+      return () => cancelAnimationFrame(frame);
+    }
+    setShowNewMessages(true);
+    return undefined;
+  }, [hasMessages, messages, scrollChatToBottom]);
+
+  const handleChatScroll = () => {
+    const nearBottom = isNearChatBottom(messagesContainerRef.current);
+    pinnedToBottomRef.current = nearBottom;
+    if (nearBottom) setShowNewMessages(false);
+  };
+
   const isCn = isCnLocale();
   const serviceName = isCn ? 'SAGEMRO AI 设备服务平台' : 'SAGEMRO AI Equipment Service';
   const pageTitle = hasMessages
@@ -42,6 +79,7 @@ export function ChatArea({
     ? '内容由 AI 生成，仅供参考。最终诊断、报价和现场安全需经 SAGEMRO 服务流程确认。'
     : 'AI-generated content is for reference only. Final diagnosis, pricing, and safety decisions follow the SAGEMRO service process.';
   const detailsLabel = isCn ? '详情' : 'Details';
+  const newMessagesLabel = isCn ? '有新消息' : 'New messages';
 
   return (
     <div className="flex flex-col h-full bg-[var(--color-chat-bg)]">
@@ -101,19 +139,31 @@ export function ChatArea({
       )}
 
       {/* 消息区域 */}
-      <div
-        ref={messagesContainerRef}
-        className="flex-1 overflow-y-auto px-4 py-6"
-      >
-        {hasMessages ? (
-          <div className="max-w-4xl mx-auto space-y-6">
-            {messages.map((message) => (
-              <MessageBubble key={message.id} message={message} />
-            ))}
-            <div ref={messagesEndRef} />
-          </div>
-        ) : (
-          <WelcomePage />
+      <div className="relative flex-1 min-h-0">
+        <div
+          ref={messagesContainerRef}
+          onScroll={handleChatScroll}
+          className="h-full overflow-y-auto px-4 py-6"
+        >
+          {hasMessages ? (
+            <div className="max-w-4xl mx-auto space-y-6">
+              {messages.map((message) => (
+                <MessageBubble key={message.id} message={message} />
+              ))}
+            </div>
+          ) : (
+            <WelcomePage />
+          )}
+        </div>
+        {showNewMessages && (
+          <button
+            type="button"
+            onClick={() => scrollChatToBottom()}
+            className="absolute bottom-4 left-1/2 inline-flex -translate-x-1/2 items-center gap-1 rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-xs font-semibold text-[var(--color-primary)] shadow-sm"
+          >
+            <ChevronDown size={14} />
+            {newMessagesLabel}
+          </button>
         )}
       </div>
 

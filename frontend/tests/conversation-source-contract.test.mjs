@@ -30,3 +30,14 @@ test('authenticated conversations do not persist message history to localStorage
   assert.match(app, /const handleDeleteConversation = useCallback\(async \(id\)/);
   assert.match(app, /await deleteConversation\(id\)/);
 });
+
+test('streamed chat updates preserve a reader\'s manual history position', async () => {
+  const chatArea = await read('src/components/Chat/ChatArea.jsx');
+
+  assert.match(chatArea, /function isNearChatBottom/);
+  assert.match(chatArea, /const pinnedToBottomRef = useRef\(true\)/);
+  assert.match(chatArea, /onScroll=\{handleChatScroll\}/);
+  assert.match(chatArea, /if \(pinnedToBottomRef\.current\) \{[\s\S]*scrollChatToBottom\('auto'\)/);
+  assert.match(chatArea, /setShowNewMessages\(true\)/);
+  assert.doesNotMatch(chatArea, /messagesEndRef\.current\.scrollIntoView/);
+});

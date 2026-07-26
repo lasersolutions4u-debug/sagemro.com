@@ -367,6 +367,16 @@ test('work-order messages preserve manual history scrolling during polling', () 
   assert.doesNotMatch(messages, /bottomRef\.current\?\.scrollIntoView\(\{ behavior: 'smooth' \}\);\s*\}, \[messages\]\)/);
 });
 
+test('work-order message polling samples the live scroll position before following updates', () => {
+  const messages = read('frontend/src/components/WorkOrder/MessagePanel.jsx');
+
+  assert.match(messages, /const isAtBottom = isNearMessageBottom\(messagesContainerRef\.current\);/);
+  assert.match(messages, /pinnedToBottomRef\.current = isAtBottom;/);
+  assert.match(messages, /shouldAutoScrollRef\.current = !wasInitialized \|\| isAtBottom;/);
+  assert.match(messages, /hasNewLastMessage && !isAtBottom/);
+  assert.match(messages, /requestAnimationFrame\(\(\) => \{\s*if \(pinnedToBottomRef\.current\) scrollMessageListToBottom\('auto'\);/);
+});
+
 test('work-order modal retains existing operational panels in controlled mode', () => {
   const modal = read('frontend/src/components/WorkOrder/WorkOrderDetailModal.jsx');
 

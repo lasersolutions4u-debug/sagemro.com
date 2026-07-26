@@ -167,8 +167,10 @@ export function MessagePanel({ workOrderId, userType, userId, readOnly = false }
       const wasInitialized = initializedRef.current;
       const hasNewLastMessage = wasInitialized
         && nextMessages.at(-1)?.id !== currentMessages.at(-1)?.id;
-      shouldAutoScrollRef.current = !wasInitialized || pinnedToBottomRef.current;
-      if (hasNewLastMessage && !pinnedToBottomRef.current) setShowNewMessages(true);
+      const isAtBottom = isNearMessageBottom(messagesContainerRef.current);
+      pinnedToBottomRef.current = isAtBottom;
+      shouldAutoScrollRef.current = !wasInitialized || isAtBottom;
+      if (hasNewLastMessage && !isAtBottom) setShowNewMessages(true);
 
       messagesRef.current = nextMessages;
       initializedRef.current = true;
@@ -185,7 +187,9 @@ export function MessagePanel({ workOrderId, userType, userId, readOnly = false }
   useEffect(() => {
     if (!shouldAutoScrollRef.current) return;
     shouldAutoScrollRef.current = false;
-    const frame = requestAnimationFrame(() => scrollMessageListToBottom('smooth'));
+    const frame = requestAnimationFrame(() => {
+      if (pinnedToBottomRef.current) scrollMessageListToBottom('auto');
+    });
     return () => cancelAnimationFrame(frame);
   }, [messages, scrollMessageListToBottom]);
 
