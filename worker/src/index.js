@@ -35,6 +35,10 @@ import {
 } from './lib/location.js';
 import { normalizeServiceMode, requiresArrivalVerification } from './lib/service-mode.js';
 import {
+  buildWorkOrderShortTitle,
+  resolveWorkOrderShortTitle,
+} from './lib/workOrderTitles.js';
+import {
   consumedFieldDayDates,
   fieldDayBlocksFinalReport,
   fieldDayLocalDate,
@@ -1815,6 +1819,15 @@ async function toolCreateWorkOrder({ customerId, env, ctx, args, conversationId,
   try {
     // PII 脱敏
     const safeDescription = redactPII(description);
+    const titleDevice = await getWorkOrderTitleDevice(env, device_id, customerId);
+    const shortTitle = buildWorkOrderShortTitle({
+      type,
+      service_mode: serviceMode,
+      category_l1: catL1,
+      category_l2: category_l2 || 'other',
+      device_brand: titleDevice?.brand,
+      device_model: titleDevice?.model,
+    }, market);
 
     const id = generateId();
     const order_no = generateOrderNo();
@@ -1823,17 +1836,18 @@ async function toolCreateWorkOrder({ customerId, env, ctx, args, conversationId,
 
     await env.DB.prepare(`
       INSERT INTO work_orders (
-        id, order_no, customer_id, type, description, urgency, device_id, status,
+        id, order_no, customer_id, type, description, short_title, urgency, device_id, status,
         sla_deadline, category_l1, category_l2, service_mode, arrival_verification_required,
         service_address, service_latitude, service_longitude, service_accuracy_m,
         service_coordinate_system, service_location_source, service_location_confirmed_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).bind(
       id,
       order_no,
       customerId,
       type,
       safeDescription,
+      shortTitle,
       urgency || 'normal',
       device_id || null,
       slaDeadline2,
@@ -1909,6 +1923,8 @@ async function toolCreateWorkOrder({ customerId, env, ctx, args, conversationId,
         status: 'pending',
         type: serviceTypeLabel(type, market),
         urgency: serviceUrgencyLabel(urgency, market),
+        short_title: shortTitle,
+        display_title: shortTitle,
       },
       matching_engineers_count: matchingEngineers.length,
       attached_images_count: attachedImages,
@@ -1917,6 +1933,15 @@ async function toolCreateWorkOrder({ customerId, env, ctx, args, conversationId,
     console.error('[toolCreateWorkOrder] error:', error);
     return { error: 'tool_failed', reason: copy.toolFailedReason(error.message) };
   }
+}
+
+async function getWorkOrderTitleDevice(env, deviceId, customerId) {
+  if (!deviceId) return null;
+  return env.DB.prepare(`
+    SELECT type, brand, model
+    FROM devices
+    WHERE id = ? AND customer_id = ?
+  `).bind(deviceId, customerId).first();
 }
 
 // 辅助函数：格式化日期
@@ -4717,6 +4742,15 @@ async function handleCreateWorkOrder(request, env) {
     // PII 脱敏（Phase 0.5）：手机号/邮箱/身份证/银行卡/车牌等在入库前替换为占位符
     // 注：device_id / type / urgency 是枚举/引用，不脱敏。只洗用户自由输入的 description
     const safeDescription = redactPII(description);
+    const titleDevice = await getWorkOrderTitleDevice(env, device_id, customer_id);
+    const shortTitle = buildWorkOrderShortTitle({
+      type,
+      service_mode: serviceMode,
+      category_l1: catL1,
+      category_l2: category_l2 || 'other',
+      device_brand: titleDevice?.brand,
+      device_model: titleDevice?.model,
+    }, market);
 
     const id = generateId();
     const order_no = generateOrderNo();
@@ -4725,17 +4759,18 @@ async function handleCreateWorkOrder(request, env) {
 
     await env.DB.prepare(`
       INSERT INTO work_orders (
-        id, order_no, customer_id, type, description, urgency, device_id, status,
+        id, order_no, customer_id, type, description, short_title, urgency, device_id, status,
         sla_deadline, category_l1, category_l2, service_mode, arrival_verification_required,
         service_address, service_latitude, service_longitude, service_accuracy_m,
         service_coordinate_system, service_location_source, service_location_confirmed_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).bind(
       id,
       order_no,
       customer_id,
       type,
       safeDescription,
+      shortTitle,
       urgency || 'normal',
       device_id || null,
       slaDeadline,
@@ -4827,7 +4862,15 @@ async function handleCreateWorkOrder(request, env) {
 
     return jsonResponse({
       success: true,
-      work_order: { id, order_no, status: 'pending', ai_summary: null, ai_summary_pending: true },
+      work_order: {
+        id,
+        order_no,
+        status: 'pending',
+        short_title: shortTitle,
+        display_title: shortTitle,
+        ai_summary: null,
+        ai_summary_pending: true,
+      },
       attached_images_count: attachedImages,
     });
   } catch (error) {
@@ -5360,6 +5403,7 @@ async function handleDeleteDevice(request, env) {
 async function handleGetWorkOrders(request, env) {
   // 优先使用认证信息中的 userId，其次使用查询参数
   const customerId = request._auth?.userId || new URL(request.url).searchParams.get('customer_id');
+  const market = getRequestMarket(request);
 
   try {
     let query = `
@@ -5388,6 +5432,7 @@ async function handleGetWorkOrders(request, env) {
     const paymentProjections = await listWorkOrderPaymentProjections(env, results);
     const workOrders = results.map((wo) => withPaymentProjection({
         ...wo,
+        display_title: resolveWorkOrderShortTitle(wo, market),
         description: redactContactInfoForWorkOrder(wo.description),
         customer_phone: '',
         sla_status: getSlaStatus(wo.sla_deadline, wo.urgency),
@@ -5560,6 +5605,8 @@ async function handleGetWorkOrder(request, env) {
       return jsonResponse({
         id: workOrder.id,
         order_no: workOrder.order_no,
+        short_title: workOrder.short_title,
+        display_title: resolveWorkOrderShortTitle(workOrder, market),
         status: workOrder.status,
         service_mode: workOrder.service_mode,
         field_days: fieldDays,
@@ -5605,6 +5652,7 @@ async function handleGetWorkOrder(request, env) {
     const isEngineerDetailView = request._auth?.userType === 'engineer';
     let safeWorkOrder = {
       ...workOrder,
+      display_title: resolveWorkOrderShortTitle(workOrder, market),
       description: isEngineerDetailView ? redactContactInfoForWorkOrder(workOrder.description) : workOrder.description,
       customer_phone: isEngineerDetailView && !canEngineerViewCustomerContact(workOrder.status) ? '' : workOrder.customer_phone,
     };
@@ -7543,6 +7591,7 @@ function engineerWorkspaceMessage(request, key) {
 async function handleGetEngineerTickets(request, env) {
   const url = new URL(request.url);
   const auth = request._auth;
+  const market = getRequestMarket(request);
 
   try {
     if (!auth || auth.userType !== 'engineer') {
@@ -7624,6 +7673,8 @@ async function handleGetEngineerTickets(request, env) {
       workOrders = results.map((wo) => ({
         id: wo.id,
         order_no: wo.order_no,
+        short_title: wo.short_title,
+        display_title: resolveWorkOrderShortTitle(wo, market),
         engineer_id: wo.engineer_id,
         assigned_regional_lead_id: wo.assigned_regional_lead_id,
         type: wo.type,
@@ -7656,6 +7707,7 @@ async function handleGetEngineerTickets(request, env) {
       const paymentProjections = await listWorkOrderPaymentProjections(env, results);
       workOrders = results.map((wo) => withPaymentProjection({
           ...wo,
+          display_title: resolveWorkOrderShortTitle(wo, market),
           ownership_relation: 'personal',
           sla_status: getSlaStatus(wo.sla_deadline, wo.urgency),
         }, paymentProjections.get(wo.id)));
@@ -12292,6 +12344,7 @@ async function handleAdminUsers(request, env) {
 // 工单列表
 async function handleAdminEngineerDetail(request, env) {
   try {
+    const market = getRequestMarket(request);
     const engineerId = new URL(request.url).pathname.split('/').pop();
     if (!engineerId) return errorResponse('缺少工程师 ID', 400);
 
@@ -12312,7 +12365,7 @@ async function handleAdminEngineerDetail(request, env) {
 
     const workOrders = await env.DB.prepare(`
       SELECT
-        w.id, w.order_no, w.type, w.urgency, w.status, w.created_at,
+        w.id, w.order_no, w.short_title, w.type, w.urgency, w.status, w.created_at,
         c.name as customer_name, c.company as customer_company, c.user_no as customer_no,
         p.status as pricing_status, p.total_amount as pricing_total_amount, p.subtotal as pricing_subtotal
       FROM work_orders w
@@ -12323,7 +12376,10 @@ async function handleAdminEngineerDetail(request, env) {
       LIMIT 50
     `).bind(engineerId).all();
 
-    const rows = workOrders.results || [];
+    const rows = (workOrders.results || []).map((wo) => ({
+      ...wo,
+      display_title: resolveWorkOrderShortTitle(wo, market),
+    }));
     const calendarEvents = await env.DB.prepare(`
       SELECT
         id, title, event_type, start_at, end_at,
@@ -12422,6 +12478,7 @@ async function handleAdminUpdateEngineer(request, env) {
 
 async function handleAdminWorkOrders(request, env) {
   try {
+    const market = getRequestMarket(request);
     const url = new URL(request.url);
     const status = url.searchParams.get('status');
     const page = Math.max(1, parseInt(url.searchParams.get('page') || '1'));
@@ -12438,7 +12495,7 @@ async function handleAdminWorkOrders(request, env) {
     const total = await env.DB.prepare(`SELECT COUNT(*) as count FROM work_orders w ${where}`).bind(...params).first();
 
     const list = await env.DB.prepare(`
-      SELECT w.id, w.order_no, w.type, w.description, w.urgency, w.status, w.created_at,
+      SELECT w.id, w.order_no, w.short_title, w.type, w.description, w.urgency, w.status, w.created_at,
              w.assigned_regional_lead_id, w.conflict_status, w.conflict_reason,
              w.quote_review_status, w.customer_confirmation_method,
              w.customer_id, w.service_mode, w.active_quote_version,
@@ -12463,6 +12520,9 @@ async function handleAdminWorkOrders(request, env) {
     `).bind(...params, pageSize, offset).all();
 
     const rows = list.results || [];
+    for (const row of rows) {
+      row.display_title = resolveWorkOrderShortTitle(row, market);
+    }
     if (rows.length) {
       const workOrderIds = rows.map((item) => item.id);
       const placeholders = workOrderIds.map(() => '?').join(', ');
@@ -12528,6 +12588,7 @@ function sanitizeRegionalManagementWorkOrder(workOrder) {
   if (!workOrder) return null;
   const visibleFields = [
     'id', 'order_no', 'engineer_id', 'assigned_regional_lead_id',
+    'short_title', 'display_title',
     'type', 'description', 'urgency', 'status', 'ai_summary',
     'created_at', 'assigned_at', 'started_at', 'resolved_at', 'completed_at',
     'sla_deadline', 'category_l1', 'category_l2', 'conflict_status',

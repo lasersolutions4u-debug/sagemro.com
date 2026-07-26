@@ -87,3 +87,17 @@ test('schema and migration contain the nullable short title column', () => {
   assert.match(migration, /'042_work_order_short_title'/);
   assert.match(schema, /short_title TEXT/);
 });
+
+test('both work-order creation paths persist deterministic short titles', () => {
+  const source = readFileSync(new URL('../src/index.js', import.meta.url), 'utf8');
+  const httpStart = source.indexOf('async function handleCreateWorkOrder');
+  const toolStart = source.indexOf('async function toolCreateWorkOrder');
+  const matchingStart = source.indexOf('const SPECIALTY_ALIASES');
+  const httpBody = source.slice(httpStart, matchingStart);
+  const toolBody = source.slice(toolStart, httpStart);
+
+  assert.match(httpBody, /buildWorkOrderShortTitle/);
+  assert.match(httpBody, /short_title/);
+  assert.match(toolBody, /buildWorkOrderShortTitle/);
+  assert.match(toolBody, /short_title/);
+});
