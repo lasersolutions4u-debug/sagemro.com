@@ -86,6 +86,7 @@ test('schema and migration contain the nullable short title column', () => {
   assert.match(migration, /ALTER TABLE work_orders ADD COLUMN short_title TEXT/);
   assert.match(migration, /'042_work_order_short_title'/);
   assert.match(schema, /short_title TEXT/);
+  assert.match(schema, /'042_work_order_short_title'/);
 });
 
 test('both work-order creation paths persist deterministic short titles', () => {

@@ -24,7 +24,13 @@ function createD1Database(t) {
           return this;
         },
         async first() {
-          return sqlite.prepare(sql).get(...args) || null;
+          const row = sqlite.prepare(sql).get(...args) || null;
+          if (DB.__afterWorkOrderTitleRead && /SELECT id, short_title, updated_at FROM work_orders/i.test(sql)) {
+            const afterRead = DB.__afterWorkOrderTitleRead;
+            DB.__afterWorkOrderTitleRead = null;
+            await afterRead();
+          }
+          return row;
         },
         async all() {
           return { results: sqlite.prepare(sql).all(...args) };
@@ -106,18 +112,20 @@ async function api(env, path, {
   userType,
   userId,
   staffId,
+  market = 'com',
 } = {}) {
   const token = await signJwt({
     userId,
     userType,
-    market: 'com',
+    market,
     staffId,
     exp: Math.floor(Date.now() / 1000) + 3600,
   }, JWT_SECRET);
+  const suffix = market === 'cn' ? '.cn' : '.com';
   const origin = userType === 'admin'
-    ? 'https://admin.sagemro.com'
-    : 'https://engineer.sagemro.com';
-  const response = await worker.fetch(new Request(`https://api.sagemro.com${path}`, {
+    ? `https://admin.sagemro${suffix}`
+    : `https://engineer.sagemro${suffix}`;
+  const response = await worker.fetch(new Request(`https://api.sagemro${suffix}${path}`, {
     method,
     headers: {
       Authorization: `Bearer ${token}`,
@@ -231,6 +239,43 @@ test('missing work orders are rejected without changing titles or writing audit 
   );
   assert.deepEqual(titleAuditRows(env.DB.__sqlite), []);
 });
+
+for (const [market, conflictMessage] of [
+  ['com', 'The work-order title was changed by another admin. Refresh and try again.'],
+  ['cn', '工单标题已被其他管理员更新，请刷新后重试'],
+]) {
+  test(`stale ${market.toUpperCase()} Admin title updates are rejected without a false audit`, async (t) => {
+    const env = createEnv(t);
+    env.DB.__afterWorkOrderTitleRead = async () => {
+      const winning = await api(env, '/api/admin/workorders/wo-title/short-title', {
+        method: 'PATCH', userType: 'admin', userId: 'winning-admin', market,
+        body: { short_title: 'Winning title' },
+      });
+      assert.equal(winning.response.status, 200);
+    };
+
+    const stale = await api(env, '/api/admin/workorders/wo-title/short-title', {
+      method: 'PATCH', userType: 'admin', userId: 'stale-admin', market,
+      body: { short_title: 'Stale title' },
+    });
+
+    assert.equal(stale.response.status, 409);
+    assert.equal(stale.json.error, conflictMessage);
+    assert.equal(
+      env.DB.__sqlite.prepare('SELECT short_title FROM work_orders WHERE id = ?').get('wo-title').short_title,
+      'Winning title',
+    );
+    assert.deepEqual(titleAuditRows(env.DB.__sqlite), [{
+      target_type: 'work_order',
+      target_id: 'wo-title',
+      actor_type: 'admin',
+      actor_id: 'winning-admin',
+      action: 'work_order_short_title_updated',
+      before_state: JSON.stringify({ short_title: null }),
+      after_state: JSON.stringify({ short_title: 'Winning title' }),
+    }]);
+  });
+}
 
 test('audit insertion failure rolls back the title and does not return success', async (t) => {
   const env = createEnv(t);

@@ -12600,8 +12600,11 @@ async function handleAdminUpdateWorkOrderTitle(request, env) {
       env.DB.prepare(`
         UPDATE work_orders
         SET short_title = ?, updated_at = datetime('now')
-        WHERE id = ?
-      `).bind(shortTitle, workOrderId),
+        WHERE id = ? AND short_title IS ?
+      `).bind(shortTitle, workOrderId, existing.short_title),
+      env.DB.prepare(`
+        SELECT CASE WHEN changes() = 1 THEN 1 ELSE json('work order title concurrent update') END
+      `),
       buildAuditLogStatement(env, request, {
         targetType: 'work_order',
         targetId: workOrderId,
@@ -12625,6 +12628,11 @@ async function handleAdminUpdateWorkOrderTitle(request, env) {
   } catch (error) {
     const validation = validationErrorToResponse(error, errorResponse);
     if (validation) return validation;
+    if (/work order title concurrent update|malformed json/i.test(String(error?.message || error))) {
+      return errorResponse(getRequestMarket(request) === 'cn'
+        ? '工单标题已被其他管理员更新，请刷新后重试'
+        : 'The work-order title was changed by another admin. Refresh and try again.', 409);
+    }
     return errorResponse(error.message, 500);
   }
 }
