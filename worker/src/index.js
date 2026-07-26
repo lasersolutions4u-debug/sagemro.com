@@ -7604,7 +7604,7 @@ function teamTicketStatusSql(filter) {
 }
 
 function encodeTeamTicketCursor(row) {
-  const bytes = new TextEncoder().encode(JSON.stringify({ created_at: row.created_at, id: row.id }));
+  const bytes = new TextEncoder().encode(JSON.stringify({ sort_created_at: row.sort_created_at, id: row.id }));
   let binary = '';
   for (const byte of bytes) binary += String.fromCharCode(byte);
   return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
@@ -7617,15 +7617,34 @@ function decodeTeamTicketCursor(value) {
     const binary = atob(value.replace(/-/g, '+').replace(/_/g, '/') + padding);
     const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
     const decoded = JSON.parse(new TextDecoder().decode(bytes));
-    if (!decoded || typeof decoded.created_at !== 'string' || !decoded.created_at
-      || typeof decoded.id !== 'string' || !decoded.id
-      || Object.keys(decoded).some((key) => !['created_at', 'id'].includes(key))) {
+    if (!decoded || !isValidTeamTicketSortTimestamp(decoded.sort_created_at)
+      || typeof decoded.id !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/.test(decoded.id)
+      || Object.keys(decoded).some((key) => !['sort_created_at', 'id'].includes(key))) {
       return null;
     }
     return decoded;
   } catch {
     return null;
   }
+}
+
+function isValidTeamTicketSortTimestamp(value) {
+  if (value === '') return true;
+  if (typeof value !== 'string') return false;
+  const match = value.match(
+    /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2}):(\d{2})(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})?$/,
+  );
+  if (!match || Number.isNaN(Date.parse(value.includes('T') ? value : `${value.replace(' ', 'T')}Z`))) return false;
+  const [, year, month, day, hour, minute, second] = match;
+  const probe = new Date(Date.UTC(
+    Number(year), Number(month) - 1, Number(day), Number(hour), Number(minute), Number(second),
+  ));
+  return probe.getUTCFullYear() === Number(year)
+    && probe.getUTCMonth() + 1 === Number(month)
+    && probe.getUTCDate() === Number(day)
+    && probe.getUTCHours() === Number(hour)
+    && probe.getUTCMinutes() === Number(minute)
+    && probe.getUTCSeconds() === Number(second);
 }
 
 function mapTeamWorkOrder(wo, { leadId, currentTeamIds, market }) {
@@ -7668,6 +7687,7 @@ function teamWorkOrderSelectSql() {
   return `
     SELECT
       w.*,
+      COALESCE(w.created_at, '') AS sort_created_at,
       (
         SELECT MAX(calendar.start_at)
         FROM engineer_calendar_events calendar
@@ -7688,7 +7708,7 @@ function teamWorkOrderSelectSql() {
   `;
 }
 
-async function getTeamTicketSummary(env, { engineer, team, filter }) {
+async function getTeamTicketSummary(env, { engineer, team, filter, timezoneOffsetMinutes }) {
   const leadId = engineer.id;
   const currentTeamIds = new Set(team.map((member) => member.id));
   const statusSql = teamTicketStatusSql(filter);
@@ -7715,10 +7735,29 @@ async function getTeamTicketSummary(env, { engineer, team, filter }) {
     else historicalTotal += total;
   }
 
+  const historicalRow = await env.DB.prepare(`
+    SELECT EXISTS (
+      SELECT 1 FROM work_orders w
+      WHERE w.assigned_regional_lead_id = ?
+        AND w.engineer_id IS NOT NULL
+        AND w.engineer_id != ?
+        AND NOT EXISTS (
+          SELECT 1 FROM engineers member
+          WHERE member.id = w.engineer_id AND member.regional_lead_id = ? AND member.engineer_role = 'engineer'
+        )
+    ) AS has_historical
+  `).bind(leadId, leadId, leadId).first();
+
   const openMaterialStatuses = OPEN_MATERIAL_REQUISITION_STATUSES.map((status) => `'${status}'`).join(', ');
+  const timezoneModifier = `${timezoneOffsetMinutes >= 0 ? '+' : ''}${timezoneOffsetMinutes} minutes`;
   const metricsRow = await env.DB.prepare(`
     WITH authorized AS (
-      SELECT w.*
+      SELECT w.*,
+        (
+          SELECT MAX(calendar.start_at)
+          FROM engineer_calendar_events calendar
+          WHERE calendar.work_order_id = w.id
+        ) AS scheduled_at
       FROM work_orders w
       WHERE w.engineer_id = ? OR w.assigned_regional_lead_id = ? OR w.engineer_id IN (
         SELECT id FROM engineers WHERE regional_lead_id = ? AND engineer_role = 'engineer'
@@ -7726,17 +7765,14 @@ async function getTeamTicketSummary(env, { engineer, team, filter }) {
     )
     SELECT
       SUM(CASE WHEN status IN ('assigned', 'pending_dispatch', 'pricing', 'pending_payment') THEN 1 ELSE 0 END) AS needs_action,
-      SUM(CASE WHEN date((
-        SELECT MAX(calendar.start_at) FROM engineer_calendar_events calendar WHERE calendar.work_order_id = authorized.id
-      )) = date('now') THEN 1 ELSE 0 END) AS today_tasks,
+      SUM(CASE WHEN date(scheduled_at, ?) = date('now', ?) THEN 1 ELSE 0 END) AS today_tasks,
       SUM(CASE WHEN engineer_id IS NULL AND assigned_regional_lead_id = ? THEN 1 ELSE 0 END) AS pending_confirmation,
       SUM(CASE WHEN status IN ('in_progress', 'in_service', 'payment_review') THEN 1 ELSE 0 END) AS in_service,
       SUM(CASE WHEN status = 'pricing' THEN 1 ELSE 0 END) AS quote_pending,
       (
-        SELECT COUNT(DISTINCT date(calendar.start_at))
-        FROM engineer_calendar_events calendar
-        JOIN authorized work_order ON work_order.id = calendar.work_order_id
-        WHERE date(calendar.start_at) >= date('now')
+        SELECT COUNT(DISTINCT date(scheduled_at, ?))
+        FROM authorized scheduled_order
+        WHERE scheduled_at IS NOT NULL AND date(scheduled_at, ?) >= date('now', ?)
       ) AS scheduled_dates,
       SUM(CASE WHEN status IN ('in_service', 'resolved', 'pending_review') THEN 1 ELSE 0 END) AS reports_due,
       SUM(CASE WHEN EXISTS (
@@ -7744,14 +7780,19 @@ async function getTeamTicketSummary(env, { engineer, team, filter }) {
         WHERE mr.work_order_id = authorized.id AND mr.status IN (${openMaterialStatuses})
       ) THEN 1 ELSE 0 END) AS parts_needs
     FROM authorized
-  `).bind(leadId, leadId, leadId, leadId).first();
+  `).bind(
+    leadId, leadId, leadId,
+    timezoneModifier, timezoneModifier,
+    leadId,
+    timezoneModifier, timezoneModifier, timezoneModifier,
+  ).first();
 
   const groups = [
     { key: 'regional_queue', type: 'queue', engineer: null, total: queueTotal },
     { key: leadId, type: 'lead', engineer, total: leadTotal },
     ...team.map((member) => ({ key: member.id, type: 'member', engineer: member, total: memberTotals.get(member.id) || 0 })),
   ];
-  if (historicalTotal > 0) {
+  if (Number(historicalRow?.has_historical || 0) === 1) {
     groups.push({
       key: 'historical_supervision',
       type: 'historical',
@@ -7812,13 +7853,16 @@ async function getTeamTicketGroupPage(env, {
   let cursorSql = '';
   const pageParams = [...groupParams];
   if (cursor) {
-    cursorSql = ' AND (w.created_at < ? OR (w.created_at = ? AND w.id < ?))';
-    pageParams.push(cursor.created_at, cursor.created_at, cursor.id);
+    cursorSql = ` AND (
+      COALESCE(w.created_at, '') < ?
+      OR (COALESCE(w.created_at, '') = ? AND w.id < ?)
+    )`;
+    pageParams.push(cursor.sort_created_at, cursor.sort_created_at, cursor.id);
   }
   const { results } = await env.DB.prepare(`
     ${teamWorkOrderSelectSql()}
     WHERE ${groupSql}${statusSql}${cursorSql}
-    ORDER BY w.created_at DESC, w.id DESC
+    ORDER BY COALESCE(w.created_at, '') DESC, w.id DESC
     LIMIT ${limit + 1}
   `).bind(...pageParams).all();
   const hasMore = (results || []).length > limit;
@@ -7861,6 +7905,16 @@ async function handleGetEngineerTickets(request, env) {
     if (hasRequestedView && requestedScope !== 'team') return errorResponse('Invalid team view.', 400);
     if (hasRequestedView && !['summary', 'group'].includes(requestedView)) return errorResponse('Invalid team view.', 400);
     if (hasRequestedView && !Object.hasOwn(TEAM_TICKET_FILTERS, filter)) return errorResponse('Invalid work-order filter.', 400);
+    const rawTimezoneOffset = url.searchParams.get('timezone_offset_minutes');
+    const timezoneOffsetMinutes = rawTimezoneOffset === null ? 0 : Number(rawTimezoneOffset);
+    if (requestedView === 'summary' && (
+      !Number.isInteger(timezoneOffsetMinutes)
+      || timezoneOffsetMinutes < -840
+      || timezoneOffsetMinutes > 840
+      || (rawTimezoneOffset !== null && String(timezoneOffsetMinutes) !== rawTimezoneOffset)
+    )) {
+      return errorResponse('Invalid timezone offset.', 400);
+    }
 
     let team = [];
     if (requestedScope === 'team') {
@@ -7882,7 +7936,12 @@ async function handleGetEngineerTickets(request, env) {
     const currentTeamIds = new Set(team.map((member) => member.id));
 
     if (requestedView === 'summary') {
-      const summary = await getTeamTicketSummary(env, { engineer, team, filter });
+      const summary = await getTeamTicketSummary(env, {
+        engineer,
+        team,
+        filter,
+        timezoneOffsetMinutes,
+      });
       return jsonResponse({
         scope: requestedScope,
         view: requestedView,

@@ -228,10 +228,21 @@ test('team work-order summary and group pagination', async (t) => {
     INSERT INTO engineer_calendar_events (
       id, engineer_id, event_type, title, start_at, end_at, work_order_id
     ) VALUES
-      ('event-today', 'eng-1', 'reserved_for_service', 'Today', datetime('now', '+2 hours'), datetime('now', '+3 hours'), 'wo-member'),
-      ('event-tomorrow-a', 'eng-1', 'reserved_for_service', 'Tomorrow A', datetime('now', '+1 day'), datetime('now', '+1 day', '+1 hour'), 'wo-member-3'),
-      ('event-tomorrow-b', 'eng-1', 'reserved_for_service', 'Tomorrow B', datetime('now', '+1 day', '+2 hours'), datetime('now', '+1 day', '+3 hours'), 'wo-member-2'),
-      ('event-outsider', 'eng-2', 'reserved_for_service', 'Outside', datetime('now', '+2 days'), datetime('now', '+2 days', '+1 hour'), 'wo-outsider');
+      ('event-local-today', 'eng-1', 'reserved_for_service', 'Local today',
+       datetime(date('now', '+840 minutes'), '-840 minutes', '+1 hour'),
+       datetime(date('now', '+840 minutes'), '-840 minutes', '+2 hours'), 'wo-member'),
+      ('event-local-tomorrow-latest', 'eng-1', 'reserved_for_service', 'Local tomorrow latest',
+       datetime(date('now', '+840 minutes'), '-840 minutes', '+1 day', '+1 hour'),
+       datetime(date('now', '+840 minutes'), '-840 minutes', '+1 day', '+2 hours'), 'wo-member'),
+      ('event-tomorrow-a', 'eng-1', 'reserved_for_service', 'Tomorrow A',
+       datetime(date('now', '+840 minutes'), '-840 minutes', '+1 day', '+3 hours'),
+       datetime(date('now', '+840 minutes'), '-840 minutes', '+1 day', '+4 hours'), 'wo-member-3'),
+      ('event-day-two', 'eng-1', 'reserved_for_service', 'Day two',
+       datetime(date('now', '+840 minutes'), '-840 minutes', '+2 days', '+1 hour'),
+       datetime(date('now', '+840 minutes'), '-840 minutes', '+2 days', '+2 hours'), 'wo-member-2'),
+      ('event-outsider', 'eng-2', 'reserved_for_service', 'Outside',
+       datetime(date('now', '+840 minutes'), '-840 minutes', '+3 days', '+1 hour'),
+       datetime(date('now', '+840 minutes'), '-840 minutes', '+3 days', '+2 hours'), 'wo-outsider');
 
     INSERT INTO material_requisitions (
       id, requisition_no, work_order_id, requested_by_type, requested_by_id,
@@ -241,7 +252,7 @@ test('team work-order summary and group pagination', async (t) => {
       ('mr-closed', 'MR-CLOSED', 'wo-member-3', 'engineer', 'eng-1', 'closed', 'normal', 'Closed need');
   `);
 
-  const summary = await api(env, '/api/engineers/tickets?scope=team&view=summary&filter=all');
+  const summary = await api(env, '/api/engineers/tickets?scope=team&view=summary&filter=all&timezone_offset_minutes=840');
   assert.equal(summary.response.status, 200);
   assert.equal(summary.json.scope, 'team');
   assert.deepEqual(summary.json.work_orders, []);
@@ -257,7 +268,7 @@ test('team work-order summary and group pagination', async (t) => {
   );
   assert.deepEqual(summary.json.metrics, {
     needsAction: 5,
-    todayTasks: 1,
+    todayTasks: 0,
     pendingConfirmation: 1,
     inService: 2,
     quotePending: 1,
@@ -266,13 +277,41 @@ test('team work-order summary and group pagination', async (t) => {
     partsNeeds: 1,
   });
 
-  const filtered = await api(env, '/api/engineers/tickets?scope=team&view=summary&filter=needsAction');
+  const filtered = await api(
+    env,
+    '/api/engineers/tickets?scope=team&view=summary&filter=needsAction&timezone_offset_minutes=840',
+  );
   assert.equal(filtered.response.status, 200);
   assert.deepEqual(
     filtered.json.groups.map((group) => [group.key, group.total]),
-    [['regional_queue', 1], ['lead-1', 1], ['eng-1', 3]],
+    [['regional_queue', 1], ['lead-1', 1], ['eng-1', 3], ['historical_supervision', 0]],
   );
   assert.deepEqual(filtered.json.metrics, summary.json.metrics);
+
+  const boundaryNow = new Date();
+  const localBoundaryClock = boundaryNow.getUTCHours() < 10 ? 1 : 23;
+  const localDate = new Date(boundaryNow.getTime() + (840 * 60 * 1000));
+  const boundaryStart = new Date(Date.UTC(
+    localDate.getUTCFullYear(), localDate.getUTCMonth(), localDate.getUTCDate(),
+    localBoundaryClock - 14, 0, 0,
+  )).toISOString();
+  sqlite.prepare('DELETE FROM engineer_calendar_events').run();
+  sqlite.prepare(`
+    INSERT INTO engineer_calendar_events (
+      id, engineer_id, event_type, title, start_at, end_at, work_order_id
+    ) VALUES ('event-timezone-boundary', 'eng-1', 'reserved_for_service', 'Boundary', ?, ?, 'wo-member')
+  `).run(boundaryStart, new Date(Date.parse(boundaryStart) + 3600000).toISOString());
+  const localBoundarySummary = await api(
+    env,
+    '/api/engineers/tickets?scope=team&view=summary&filter=all&timezone_offset_minutes=840',
+  );
+  const utcBoundarySummary = await api(
+    env,
+    '/api/engineers/tickets?scope=team&view=summary&filter=all&timezone_offset_minutes=0',
+  );
+  assert.equal(localBoundarySummary.json.metrics.todayTasks, 1);
+  assert.equal(localBoundarySummary.json.metrics.scheduledDates, 1);
+  assert.equal(utcBoundarySummary.json.metrics.todayTasks, 0);
 
   const firstPage = await api(
     env,
@@ -287,10 +326,14 @@ test('team work-order summary and group pagination', async (t) => {
     ['wo-member-6', 'wo-member-5', 'wo-member-4', 'wo-member-3', 'wo-member-2'],
   );
   for (const row of firstPage.json.work_orders) {
-    assert.equal(Object.hasOwn(row, 'customer_phone'), false);
-    assert.equal(Object.hasOwn(row, 'payment_state'), false);
-    assert.equal(Object.hasOwn(row, 'received_amount'), false);
-    assert.equal(Object.hasOwn(row, 'outstanding_amount'), false);
+    assert.deepEqual(Object.keys(row).sort(), [
+      'assigned_at', 'assigned_regional_lead_id', 'category_l1', 'category_l2',
+      'created_at', 'customer_name', 'customer_region', 'description', 'display_title',
+      'engineer_id', 'engineer_name', 'expected_completion_date', 'id',
+      'material_requisition_count', 'order_no', 'ownership_relation', 'scheduled_at',
+      'service_mode', 'short_title', 'sla_deadline', 'sla_status', 'status', 'type',
+      'updated_at', 'urgency',
+    ].sort());
   }
 
   const secondPage = await api(
@@ -302,6 +345,14 @@ test('team work-order summary and group pagination', async (t) => {
   assert.equal(secondPage.json.has_more, false);
   assert.equal(secondPage.json.next_cursor, null);
   assert.deepEqual(secondPage.json.work_orders.map((row) => row.id), ['wo-member-1', 'wo-member']);
+
+  const activeMember = await api(
+    env,
+    '/api/engineers/tickets?scope=team&view=group&group_type=member&group_id=eng-1&filter=active&limit=5',
+  );
+  assert.equal(activeMember.response.status, 200);
+  assert.equal(activeMember.json.total, 3);
+  assert.deepEqual(activeMember.json.work_orders.map((row) => row.id), ['wo-member-3', 'wo-member-2', 'wo-member']);
 
   const historical = await api(
     env,
@@ -315,6 +366,9 @@ test('team work-order summary and group pagination', async (t) => {
     '/api/engineers/tickets?scope=team&view=unknown&filter=all',
     '/api/engineers/tickets?scope=team&view=summary&filter=',
     '/api/engineers/tickets?scope=team&view=summary&filter=pending',
+    '/api/engineers/tickets?scope=team&view=summary&filter=all&timezone_offset_minutes=841',
+    '/api/engineers/tickets?scope=team&view=summary&filter=all&timezone_offset_minutes=-841',
+    '/api/engineers/tickets?scope=team&view=summary&filter=all&timezone_offset_minutes=1.5',
     '/api/engineers/tickets?scope=team&view=group&group_type=unknown&filter=all&limit=5',
     '/api/engineers/tickets?scope=team&view=group&group_type=member&group_id=eng-1&filter=all&limit=0',
     '/api/engineers/tickets?scope=team&view=group&group_type=member&group_id=eng-1&filter=all&limit=21',
@@ -336,6 +390,89 @@ test('team work-order summary and group pagination', async (t) => {
     { userId: 'eng-1' },
   );
   assert.equal(ordinaryEngineer.response.status, 403);
+
+  const encodeCursor = (payload) => Buffer.from(JSON.stringify(payload)).toString('base64url');
+  for (const payload of [
+    { sort_created_at: 'not-a-timestamp', id: 'wo-member' },
+    { sort_created_at: '2026-02-30 10:00:00', id: 'wo-member' },
+    { sort_created_at: '2026-07-25 10:00:00', id: '../wo-member' },
+    { sort_created_at: '2026-07-25 10:00:00', id: 'wo-member', extra: true },
+  ]) {
+    const invalid = await api(
+      env,
+      `/api/engineers/tickets?scope=team&view=group&group_type=member&group_id=eng-1&filter=all&limit=5&cursor=${encodeCursor(payload)}`,
+    );
+    assert.equal(invalid.response.status, 400, JSON.stringify(payload));
+  }
+
+  sqlite.exec(`
+    INSERT INTO work_orders (
+      id, order_no, customer_id, engineer_id, type, description, status,
+      assigned_regional_lead_id, created_at
+    ) VALUES
+      ('wo-queue-6', 'WO-QUEUE-6', 'customer-1', NULL, 'maintenance', 'Queue 6', 'assigned', 'lead-1', '2026-07-25 18:00:00'),
+      ('wo-queue-5', 'WO-QUEUE-5', 'customer-1', NULL, 'maintenance', 'Queue 5', 'assigned', 'lead-1', '2026-07-25 17:00:00'),
+      ('wo-queue-4', 'WO-QUEUE-4', 'customer-1', NULL, 'maintenance', 'Queue 4', 'assigned', 'lead-1', '2026-07-25 16:00:00'),
+      ('wo-queue-3', 'WO-QUEUE-3', 'customer-1', NULL, 'maintenance', 'Queue 3', 'assigned', 'lead-1', '2026-07-25 15:00:00'),
+      ('wo-queue-2', 'WO-QUEUE-2', 'customer-1', NULL, 'maintenance', 'Queue 2', 'assigned', 'lead-1', '2026-07-25 14:00:00'),
+      ('wo-queue-1', 'WO-QUEUE-1', 'customer-1', NULL, 'maintenance', 'Queue 1', 'assigned', 'lead-1', '2026-07-25 13:00:00'),
+      ('wo-lead-6', 'WO-LEAD-6', 'customer-1', 'lead-1', 'maintenance', 'Lead 6', 'assigned', 'lead-1', '2026-07-25 18:00:00'),
+      ('wo-lead-5', 'WO-LEAD-5', 'customer-1', 'lead-1', 'maintenance', 'Lead 5', 'assigned', 'lead-1', '2026-07-25 17:00:00'),
+      ('wo-lead-4', 'WO-LEAD-4', 'customer-1', 'lead-1', 'maintenance', 'Lead 4', 'assigned', 'lead-1', '2026-07-25 16:00:00'),
+      ('wo-lead-3', 'WO-LEAD-3', 'customer-1', 'lead-1', 'maintenance', 'Lead 3', 'assigned', 'lead-1', '2026-07-25 15:00:00'),
+      ('wo-lead-2', 'WO-LEAD-2', 'customer-1', 'lead-1', 'maintenance', 'Lead 2', 'assigned', 'lead-1', '2026-07-25 14:00:00'),
+      ('wo-lead-1', 'WO-LEAD-1', 'customer-1', 'lead-1', 'maintenance', 'Lead 1', 'assigned', 'lead-1', '2026-07-25 13:00:00');
+  `);
+
+  for (const [groupType, expectedFirst, expectedSecond] of [
+    ['queue', ['wo-queue-6', 'wo-queue-5', 'wo-queue-4', 'wo-queue-3', 'wo-queue-2'], ['wo-queue-1', 'wo-queue']],
+    ['lead', ['wo-lead-6', 'wo-lead-5', 'wo-lead-4', 'wo-lead-3', 'wo-lead-2'], ['wo-lead-1', 'wo-lead']],
+  ]) {
+    const pageOne = await api(
+      env,
+      `/api/engineers/tickets?scope=team&view=group&group_type=${groupType}&filter=all&limit=5`,
+    );
+    assert.equal(pageOne.response.status, 200);
+    assert.equal(pageOne.json.total, 7);
+    assert.equal(pageOne.json.has_more, true);
+    assert.deepEqual(pageOne.json.work_orders.map((row) => row.id), expectedFirst);
+    const pageTwo = await api(
+      env,
+      `/api/engineers/tickets?scope=team&view=group&group_type=${groupType}&filter=all&limit=10&cursor=${encodeURIComponent(pageOne.json.next_cursor)}`,
+    );
+    assert.equal(pageTwo.response.status, 200);
+    assert.equal(pageTwo.json.has_more, false);
+    assert.deepEqual(pageTwo.json.work_orders.map((row) => row.id), expectedSecond);
+  }
+
+  sqlite.exec(`
+    INSERT INTO work_orders (
+      id, order_no, customer_id, engineer_id, type, description, status, created_at
+    ) VALUES
+      ('wo-null-6', 'WO-NULL-6', 'customer-1', 'eng-1', 'maintenance', 'Null 6', 'completed', NULL),
+      ('wo-null-5', 'WO-NULL-5', 'customer-1', 'eng-1', 'maintenance', 'Null 5', 'completed', NULL),
+      ('wo-null-4', 'WO-NULL-4', 'customer-1', 'eng-1', 'maintenance', 'Null 4', 'completed', NULL),
+      ('wo-null-3', 'WO-NULL-3', 'customer-1', 'eng-1', 'maintenance', 'Null 3', 'completed', NULL),
+      ('wo-null-2', 'WO-NULL-2', 'customer-1', 'eng-1', 'maintenance', 'Null 2', 'completed', NULL),
+      ('wo-null-1', 'WO-NULL-1', 'customer-1', 'eng-1', 'maintenance', 'Null 1', 'completed', NULL);
+  `);
+  const nullPageOne = await api(
+    env,
+    '/api/engineers/tickets?scope=team&view=group&group_type=member&group_id=eng-1&filter=completed&limit=5',
+  );
+  assert.equal(nullPageOne.response.status, 200);
+  assert.equal(nullPageOne.json.total, 7);
+  assert.deepEqual(
+    nullPageOne.json.work_orders.map((row) => row.id),
+    ['wo-member-1', 'wo-null-6', 'wo-null-5', 'wo-null-4', 'wo-null-3'],
+  );
+  const nullPageTwo = await api(
+    env,
+    `/api/engineers/tickets?scope=team&view=group&group_type=member&group_id=eng-1&filter=completed&limit=5&cursor=${encodeURIComponent(nullPageOne.json.next_cursor)}`,
+  );
+  assert.equal(nullPageTwo.response.status, 200);
+  assert.equal(nullPageTwo.json.has_more, false);
+  assert.deepEqual(nullPageTwo.json.work_orders.map((row) => row.id), ['wo-null-2', 'wo-null-1']);
 
   for (let index = 0; index < 100; index += 1) {
     insertEngineer(sqlite, {
