@@ -231,6 +231,41 @@ test('engineer work-order titles never use foreign-language customer text as int
   assert.equal(getEngineerWorkOrderTitle({ description: 'Laser output dropped.' }, true, '服务任务'), '服务任务');
 });
 
+test('saved and Worker-resolved titles precede legacy customer text', async () => {
+  const { getEngineerWorkOrderTitle } = await import('../src/components/Engineer/engineerWorkOrderDisplay.js');
+
+  assert.equal(getEngineerWorkOrderTitle({
+    short_title: '济南 3015 维修',
+    description: 'English customer description.',
+  }, false, 'Service task'), '济南 3015 维修');
+  assert.equal(getEngineerWorkOrderTitle({
+    display_title: "Han's Laser 3015 on-site repair",
+    description: '设备类型：激光切割机。',
+  }, false, 'Service task'), "Han's Laser 3015 on-site repair");
+});
+
+test('engineer list uses eight desktop information columns and a separate mobile card', () => {
+  const list = read('frontend/src/components/Engineer/EngineerWorkOrderList.jsx');
+
+  for (const label of ['Work order', 'Task name', 'Customer', 'Equipment / issue', 'Region', 'Status', 'Next step', 'Updated']) {
+    assert.match(list, new RegExp(label.replace('/', '\\/')));
+  }
+  assert.match(list, /min-\[1280px\]:grid/);
+  assert.match(list, /min-\[1280px\]:hidden/);
+  assert.match(list, /line-clamp-2/);
+  assert.match(list, /grid-cols-\[132px_minmax\(160px,1\.05fr\)_92px_minmax\(175px,1\.1fr\)_96px_120px_minmax\(190px,1\.25fr\)_104px_36px\]/);
+  assert.doesNotMatch(list, /grid-cols-\[1\.05fr_2\.1fr_\.9fr_1\.5fr_\.8fr_36px\]/);
+});
+
+test('regional team operational labels use the approved readable scale', () => {
+  const teamList = read('frontend/src/components/Engineer/EngineerTeamWorkOrderList.jsx');
+
+  assert.match(teamList, /truncate text-\[15px\]/);
+  assert.match(teamList, /mt-0\.5 block text-xs/);
+  assert.match(teamList, /rounded-full[^"\n]*text-xs/);
+  assert.match(teamList, /rounded-lg px-3 py-2 text-xs/);
+});
+
 test('engineer work-order machine summaries follow the host language', async () => {
   const { getEngineerMachineLine } = await import('../src/components/Engineer/engineerWorkOrderDisplay.js');
   const ticket = {
