@@ -91,6 +91,7 @@ export function EngineerWorkOrderDetail({
   const [activeTab, setActiveTab] = useState('overview');
   const [commercialView, setCommercialView] = useState('pricing');
   const [actionRefresh, setActionRefresh] = useState(0);
+  const [checkedChecklistItems, setCheckedChecklistItems] = useState(() => new Set());
 
   const loadDetail = useCallback(async () => {
     setLoading(true); setError('');
@@ -148,6 +149,14 @@ export function EngineerWorkOrderDetail({
     field: detail.service_mode === 'onsite' || Boolean(detail.field_days?.length),
     report: ['in_service', 'pricing', 'resolved', 'pending_review', 'completed'].includes(detail.status) || Boolean(detail.repair_record),
   };
+  const toggleChecklistItem = (index) => {
+    setCheckedChecklistItems((current) => {
+      const next = new Set(current);
+      if (next.has(index)) next.delete(index);
+      else next.add(index);
+      return next;
+    });
+  };
 
   return (
     <section>
@@ -155,7 +164,7 @@ export function EngineerWorkOrderDetail({
       <section className="grid gap-5 rounded-2xl border border-[#e5e8ed] bg-white p-5 shadow-[0_14px_36px_rgba(24,32,43,.07)] lg:grid-cols-[minmax(0,1.7fr)_minmax(270px,.7fr)]">
         <div>
           <div className="text-xs font-extrabold uppercase tracking-[.12em] text-orange-600">{copy.kicker} · {detail.order_no || detail.id}</div>
-          <div className="mt-2 flex flex-wrap items-center gap-3"><h1 className="text-2xl font-bold tracking-tight">{getEngineerWorkOrderTitle(detail, isCn, isCn ? '服务任务' : 'Service task')}</h1><span className="rounded-full bg-orange-50 px-2 py-1 text-xs font-bold text-orange-700">{statusLabels[detail.status] || detail.status}</span></div>
+          <div className="mt-2 flex flex-wrap items-center gap-3"><h1 className="text-2xl font-bold tracking-tight">{getEngineerWorkOrderTitle(detail, isCn, isCn ? '服务任务' : 'Service task')}</h1><span className="inline-flex items-center gap-1.5 rounded-full px-2 py-1 text-xs font-bold" style={{ backgroundColor: `var(--status-${detail.status}-bg)`, color: `var(--status-${detail.status}-text)` }}><span className="size-1.5 rounded-full" style={{ backgroundColor: `var(--status-${detail.status})` }} />{statusLabels[detail.status] || detail.status}</span></div>
           <div className="mt-5 grid grid-cols-2 border-t border-[#e5e8ed] sm:grid-cols-4">
             {[[copy.customer, detail.customer_name || '—'], [copy.region, detail.customer_region || '—'], [copy.engineer, detail.engineer_name || copy.unassigned], [copy.schedule, scheduledTime]].map(([label, value]) => <div key={label} className="pr-3 pt-4"><span className="block text-xs font-extrabold uppercase tracking-wide text-[#929baa]">{label}</span><strong className="mt-1 block text-sm">{value}</strong></div>)}
           </div>
@@ -173,7 +182,7 @@ export function EngineerWorkOrderDetail({
               <div className="grid gap-3 md:grid-cols-[1.15fr_.85fr]">
                 <section className="rounded-xl border border-[#e5e8ed] p-4"><div className="text-xs font-extrabold uppercase tracking-wide text-orange-600">{copy.context}</div><h2 className="mt-2 text-sm font-semibold">{copy.machine}</h2><p className="mt-2 text-sm text-[#394455]">{getMachineLine(detail)}</p><div className="mt-4"><CustomerContent record={{ description: formatDescription(detail.description), description_en: detail.description_en, description_zh: detail.description_zh }} isCn={isCn} /></div></section>
                 <section className="rounded-xl border border-[#e5e8ed] p-4"><div className="text-xs font-extrabold uppercase tracking-wide text-orange-600">{copy.preparation}</div><h2 className="mt-2 text-sm font-semibold">{copy.intake}</h2><CustomerContent record={{ description: formatDescription(aiSummary.summary), description_en: detail.ai_summary_en }} isCn={isCn} />{aiSummary.tags.length > 0 && <div className="mt-3 flex flex-wrap gap-1">{aiSummary.tags.map((tag) => <span key={tag} className="rounded-full bg-orange-50 px-2 py-1 text-xs font-bold text-orange-700">{tag}</span>)}</div>}{aiSummary.notes && <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-800">{formatDescription(aiSummary.notes)}</p>}<p className="mt-3 text-xs text-[#697386]">{copy.attachments}: {detail.attachments?.length || 0}</p></section>
-                <section className="rounded-xl border border-[#e5e8ed] p-4 md:col-span-2"><div className="flex items-center gap-2 text-xs font-extrabold uppercase tracking-wide text-orange-600"><ShieldCheck size={15} />{copy.checklist}</div><ol className="mt-3 grid gap-2 sm:grid-cols-2">{CHECKLIST[isCn ? 'cn' : 'en'].map((item, index) => <li key={item} className="flex gap-2 rounded-lg bg-[#f7f8fa] p-3 text-sm leading-6 text-[#697386]"><span className="grid size-5 shrink-0 place-items-center rounded-md bg-orange-50 text-xs font-bold text-orange-700">{index + 1}</span>{item}</li>)}</ol></section>
+                <section className="rounded-xl border border-[#e5e8ed] p-4 md:col-span-2"><div className="flex items-center gap-2 text-xs font-extrabold uppercase tracking-wide text-orange-600"><ShieldCheck size={15} />{copy.checklist}</div><ol className="mt-3 grid gap-2 sm:grid-cols-2">{CHECKLIST[isCn ? 'cn' : 'en'].map((item, index) => <li key={item}><label className="flex cursor-pointer gap-2 rounded-lg bg-[#f7f8fa] p-3 text-sm leading-6 text-[#697386]"><input type="checkbox" checked={checkedChecklistItems.has(index)} onChange={() => toggleChecklistItem(index)} className="mt-1 size-4 shrink-0 accent-orange-500" /><span className={checkedChecklistItems.has(index) ? 'text-[#929baa] line-through' : ''}>{item}</span></label></li>)}</ol></section>
               </div>
             ) : activeTab === 'quote' && !isExecutingEngineer ? (
               <section className="rounded-xl border border-[#e5e8ed] p-5"><h2 className="font-semibold">{copy.managementQuote}</h2>{detail.pricing ? <dl className="mt-4 grid gap-3 sm:grid-cols-2"><div><dt className="text-xs text-[#697386]">{copy.quoteStatus}</dt><dd className="mt-1 font-semibold">{detail.pricing.status || '—'}</dd></div><div><dt className="text-xs text-[#697386]">{copy.quoteTotal}</dt><dd className="mt-1 font-semibold">{detail.pricing.currency || ''} {detail.pricing.total_amount ?? detail.pricing.subtotal ?? '—'}</dd></div></dl> : <p className="mt-3 text-sm text-[#697386]">{copy.noQuote}</p>}</section>

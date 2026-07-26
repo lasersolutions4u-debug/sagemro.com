@@ -49,14 +49,14 @@ const METRIC_COPY = {
 };
 
 const METRICS = [
-  ['needsAction', Clock3, '#c2413b'],
-  ['todayTasks', CalendarDays, '#245f93'],
-  ['pendingConfirmation', ClipboardCheck, '#a86600'],
-  ['inService', Wrench, '#27865c'],
-  ['quotePending', ReceiptText, '#6653a5'],
-  ['scheduledDates', CheckCircle2, '#16728c'],
-  ['reportsDue', FileCheck2, '#9b5a25'],
-  ['partsNeeds', PackageSearch, '#526173'],
+  ['needsAction', Clock3, '#c2413b', true],
+  ['todayTasks', CalendarDays, '#245f93', true],
+  ['pendingConfirmation', ClipboardCheck, '#a86600', false],
+  ['inService', Wrench, '#27865c', false],
+  ['quotePending', ReceiptText, '#6653a5', false],
+  ['scheduledDates', CheckCircle2, '#16728c', false],
+  ['reportsDue', FileCheck2, '#9b5a25', false],
+  ['partsNeeds', PackageSearch, '#526173', false],
 ];
 
 export function EngineerMetricOverview({ metrics, scope, onScopeChange, isRegionalLead, isCn, loading }) {
@@ -88,8 +88,8 @@ export function EngineerMetricOverview({ metrics, scope, onScopeChange, isRegion
         )}
       </div>
       <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
-        {METRICS.map(([key, Icon, color]) => (
-          <article key={key} className="relative min-h-[92px] overflow-hidden rounded-xl border border-[#e5e8ed] bg-white px-4 py-3">
+        {METRICS.map(([key, Icon, color, primary]) => (
+          <article key={key} className={`relative min-h-[92px] overflow-hidden rounded-xl border px-4 py-3 transition-shadow hover:shadow-md ${primary ? 'border-orange-200 bg-orange-50/40 lg:col-span-2' : 'border-[#e5e8ed] bg-white'}`}>
             <span className="absolute inset-y-0 left-0 w-[3px]" style={{ backgroundColor: color }} />
             <div className="flex items-center justify-between gap-2">
               <span className="text-xs font-bold leading-4 tracking-wide text-[#697386]">{key === 'pendingConfirmation' && scope === 'team' ? copy.labels.unassignedQueue : copy.labels[key]}</span>
