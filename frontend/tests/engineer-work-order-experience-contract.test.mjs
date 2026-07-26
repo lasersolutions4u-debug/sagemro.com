@@ -349,6 +349,8 @@ test('engineer workspace constrains mobile header and metric controls to the vie
 
   assert.match(workspace, /flex min-w-0 flex-col items-start gap-2 sm:flex-row sm:items-center sm:gap-4/);
   assert.match(workspace, /flex w-full min-w-0 flex-wrap items-center gap-2 md:w-auto/);
+  assert.match(workspace, /onClick=\{onOpenProfile\} title=\{currentUser\?\.name \|\| copy\.profileFallback\}/);
+  assert.match(workspace, /className="min-w-0 max-w-\[calc\(100%_-_5\.5rem\)\] truncate[^"\n]*text-xs[^"\n]*md:max-w-none"/);
   assert.match(workspace, /mb-4 grid min-w-0 gap-4 xl:grid-cols/);
   assert.match(metrics, /section className="min-w-0 rounded-2xl/);
   assert.match(metrics, /grid w-full min-w-0 grid-cols-2[^"\n]*sm:inline-flex sm:w-fit/);

@@ -228,7 +228,7 @@ export function EngineerWorkspace({ currentUser, onLogout, onOpenProfile, workOr
             </div>
             <div className="flex w-full min-w-0 flex-wrap items-center gap-2 md:w-auto">
               <span className="rounded-[10px] border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-bold text-emerald-700">{copy.locale}</span>
-              <button type="button" onClick={onOpenProfile} className="rounded-[10px] border border-[#e5e8ed] bg-white px-3 py-2 text-xs font-bold">{currentUser?.name || copy.profileFallback}</button>
+              <button type="button" onClick={onOpenProfile} title={currentUser?.name || copy.profileFallback} className="min-w-0 max-w-[calc(100%_-_5.5rem)] truncate rounded-[10px] border border-[#e5e8ed] bg-white px-3 py-2 text-xs font-bold md:max-w-none">{currentUser?.name || copy.profileFallback}</button>
               <button type="button" onClick={onLogout} className="rounded-[10px] bg-orange-500 px-4 py-2 text-xs font-bold text-white">{copy.signOut}</button>
             </div>
           </div>
