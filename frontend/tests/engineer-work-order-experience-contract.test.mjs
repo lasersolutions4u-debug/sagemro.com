@@ -236,7 +236,7 @@ test('work-order rows use a single interactive element without nested buttons', 
 test('team failures clear stale records before rendering scoped metrics', () => {
   const workspace = read('frontend/src/components/Engineer/EngineerWorkspace.jsx');
 
-  assert.match(workspace, /catch \(error\) \{\s*setTickets\(\[\]\)/);
+  assert.match(workspace, /catch \(error\) \{\s*if \(requestGeneration !== ticketRequestGeneration\.current\) return;\s*setTickets\(\[\]\)/);
   assert.match(workspace, /setTeam\(\[\]\)/);
   assert.match(workspace, /catch \(error\) \{ setStatus\(previousStatus\)/);
 });
