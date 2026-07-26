@@ -36,6 +36,10 @@ test('normalizes whitespace and removes contact information', () => {
   assert.equal(normalizeWorkOrderShortTitle('G3015H'), 'G3015H');
   assert.equal(normalizeWorkOrderShortTitle('TruBend 8170'), 'TruBend 8170');
   assert.equal(normalizeWorkOrderShortTitle('WO-20260726-123'), 'WO-20260726-123');
+  assert.equal(normalizeWorkOrderShortTitle('SN 1234567890'), 'SN 1234567890');
+  assert.equal(normalizeWorkOrderShortTitle('Model 1234567890'), 'Model 1234567890');
+  assert.equal(normalizeWorkOrderShortTitle('序列号：1234567890'), '序列号：1234567890');
+  assert.equal(normalizeWorkOrderShortTitle('型号 1234567890'), '型号 1234567890');
 });
 
 test('builds deterministic localized titles without AI text', () => {

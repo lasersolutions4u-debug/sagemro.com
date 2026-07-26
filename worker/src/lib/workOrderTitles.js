@@ -4,6 +4,7 @@ const TITLE_LIMIT = 100;
 const CHINESE_TEXT = /[\u3400-\u9fff]/u;
 const INTERNATIONAL_PHONE = /\+\d[\d\s().-]{6,}\d/g;
 const UNPREFIXED_INTERNATIONAL_PHONE = /(?<![\w-])(?:\(\d{3}\)|\d{3})[\s.-]?\d{3}[\s.-]?\d{4}(?![\w-])/g;
+const TECHNICAL_IDENTIFIER_LABEL = /(?:\b(?:sn|serial|model)|(?:序列号|型号))\s*[:：]?\s*$/i;
 
 const COPY = {
   com: {
@@ -38,7 +39,9 @@ export function normalizeWorkOrderShortTitle(value) {
   if (typeof value !== 'string') return '';
   return redactPII(value)
     .replace(INTERNATIONAL_PHONE, ' ')
-    .replace(UNPREFIXED_INTERNATIONAL_PHONE, ' ')
+    .replace(UNPREFIXED_INTERNATIONAL_PHONE, (match, offset, text) => (
+      TECHNICAL_IDENTIFIER_LABEL.test(text.slice(0, offset)) ? match : ' '
+    ))
     .replace(/\[(?:手机号|身份证|邮箱|银行卡|车牌|URL)\]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()
