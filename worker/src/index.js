@@ -12596,22 +12596,24 @@ async function handleAdminUpdateWorkOrderTitle(request, env) {
         : 'Work order not found', 404);
     }
 
-    await env.DB.prepare(`
-      UPDATE work_orders
-      SET short_title = ?, updated_at = datetime('now')
-      WHERE id = ?
-    `).bind(shortTitle, workOrderId).run();
+    await env.DB.batch([
+      env.DB.prepare(`
+        UPDATE work_orders
+        SET short_title = ?, updated_at = datetime('now')
+        WHERE id = ?
+      `).bind(shortTitle, workOrderId),
+      buildAuditLogStatement(env, request, {
+        targetType: 'work_order',
+        targetId: workOrderId,
+        action: 'work_order_short_title_updated',
+        beforeState: { short_title: existing.short_title },
+        afterState: { short_title: shortTitle },
+      }),
+    ]);
 
     const updated = await env.DB.prepare(
       'SELECT id, short_title, updated_at FROM work_orders WHERE id = ?'
     ).bind(workOrderId).first();
-    await writeAuditLog(env, request, {
-      targetType: 'work_order',
-      targetId: workOrderId,
-      action: 'work_order_short_title_updated',
-      beforeState: { short_title: existing.short_title },
-      afterState: { short_title: updated.short_title },
-    });
 
     return jsonResponse({
       success: true,

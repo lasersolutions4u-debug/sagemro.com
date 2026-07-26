@@ -15,7 +15,7 @@ function createD1Database(t) {
   sqlite.exec(schemaSql);
   t.after(() => sqlite.close());
 
-  return {
+  const DB = {
     prepare(sql) {
       let args = [];
       return {
@@ -30,16 +30,40 @@ function createD1Database(t) {
           return { results: sqlite.prepare(sql).all(...args) };
         },
         async run() {
+          return this.runSync();
+        },
+        runSync() {
+          if (DB.__failNextAudit && /INSERT INTO audit_logs/i.test(sql)) {
+            DB.__failNextAudit = false;
+            throw new Error('audit insert failed');
+          }
           const result = sqlite.prepare(sql).run(...args);
           return { success: true, meta: { changes: Number(result.changes) } };
         },
       };
     },
     async batch(statements) {
-      return Promise.all(statements.map((statement) => statement.run()));
+      sqlite.exec('BEGIN IMMEDIATE');
+      try {
+        const results = statements.map((statement) => statement.runSync());
+        sqlite.exec('COMMIT');
+        return results;
+      } catch (error) {
+        sqlite.exec('ROLLBACK');
+        throw error;
+      }
     },
     __sqlite: sqlite,
   };
+  return DB;
+}
+
+function titleAuditRows(sqlite) {
+  return sqlite.prepare(`
+    SELECT target_type, target_id, actor_type, actor_id, action, before_state, after_state
+    FROM audit_logs WHERE action = 'work_order_short_title_updated'
+    ORDER BY created_at, rowid
+  `).all().map((row) => ({ ...row }));
 }
 
 function insertStaff(sqlite, { id, role }) {
@@ -122,28 +146,48 @@ test('Admin persists a normalized short title and writes an audit record', async
     env.DB.__sqlite.prepare('SELECT short_title FROM work_orders WHERE id = ?').get('wo-title').short_title,
     "Han's Laser 3015 repair",
   );
-  assert.equal(
-    env.DB.__sqlite.prepare("SELECT COUNT(*) AS count FROM audit_logs WHERE action = 'work_order_short_title_updated'").get().count,
-    1,
-  );
+  assert.deepEqual(titleAuditRows(env.DB.__sqlite), [{
+    target_type: 'work_order',
+    target_id: 'wo-title',
+    actor_type: 'admin',
+    actor_id: 'admin',
+    action: 'work_order_short_title_updated',
+    before_state: JSON.stringify({ short_title: null }),
+    after_state: JSON.stringify({ short_title: "Han's Laser 3015 repair" }),
+  }]);
 });
 
 test('Admin-role staff can edit but operations staff cannot', async (t) => {
-  const env = createEnv(t);
-  insertStaff(env.DB.__sqlite, { id: 'staff-admin', role: 'admin' });
-  insertStaff(env.DB.__sqlite, { id: 'staff-operations', role: 'operations' });
+  const allowedEnv = createEnv(t);
+  insertStaff(allowedEnv.DB.__sqlite, { id: 'staff-admin', role: 'admin' });
 
-  const allowed = await api(env, '/api/admin/workorders/wo-title/short-title', {
+  const allowed = await api(allowedEnv, '/api/admin/workorders/wo-title/short-title', {
     method: 'PATCH', userType: 'admin', userId: 'staff-admin', staffId: 'staff-admin',
     body: { short_title: 'Admin staff title' },
   });
   assert.equal(allowed.response.status, 200);
+  assert.deepEqual(titleAuditRows(allowedEnv.DB.__sqlite), [{
+    target_type: 'work_order',
+    target_id: 'wo-title',
+    actor_type: 'admin',
+    actor_id: 'staff-admin',
+    action: 'work_order_short_title_updated',
+    before_state: JSON.stringify({ short_title: null }),
+    after_state: JSON.stringify({ short_title: 'Admin staff title' }),
+  }]);
 
-  const forbidden = await api(env, '/api/admin/workorders/wo-title/short-title', {
+  const forbiddenEnv = createEnv(t);
+  insertStaff(forbiddenEnv.DB.__sqlite, { id: 'staff-operations', role: 'operations' });
+  const forbidden = await api(forbiddenEnv, '/api/admin/workorders/wo-title/short-title', {
     method: 'PATCH', userType: 'admin', userId: 'staff-operations', staffId: 'staff-operations',
     body: { short_title: 'Operations title' },
   });
   assert.equal(forbidden.response.status, 403);
+  assert.equal(
+    forbiddenEnv.DB.__sqlite.prepare('SELECT short_title FROM work_orders WHERE id = ?').get('wo-title').short_title,
+    null,
+  );
+  assert.deepEqual(titleAuditRows(forbiddenEnv.DB.__sqlite), []);
 });
 
 test('empty and over-limit titles are rejected without changing the row', async (t) => {
@@ -158,6 +202,7 @@ test('empty and over-limit titles are rejected without changing the row', async 
     env.DB.__sqlite.prepare('SELECT short_title FROM work_orders WHERE id = ?').get('wo-title').short_title,
     null,
   );
+  assert.deepEqual(titleAuditRows(env.DB.__sqlite), []);
 });
 
 test('Regional Leads cannot edit work-order titles', async (t) => {
@@ -166,4 +211,40 @@ test('Regional Leads cannot edit work-order titles', async (t) => {
     method: 'PATCH', userType: 'engineer', userId: 'lead-1', body: { short_title: 'Unauthorized edit' },
   });
   assert.equal(response.status, 403);
+  assert.equal(
+    env.DB.__sqlite.prepare('SELECT short_title FROM work_orders WHERE id = ?').get('wo-title').short_title,
+    null,
+  );
+  assert.deepEqual(titleAuditRows(env.DB.__sqlite), []);
+});
+
+test('missing work orders are rejected without changing titles or writing audit records', async (t) => {
+  const env = createEnv(t);
+  const { response } = await api(env, '/api/admin/workorders/wo-missing/short-title', {
+    method: 'PATCH', userType: 'admin', userId: 'admin', body: { short_title: 'Missing title' },
+  });
+
+  assert.equal(response.status, 404);
+  assert.equal(
+    env.DB.__sqlite.prepare('SELECT short_title FROM work_orders WHERE id = ?').get('wo-title').short_title,
+    null,
+  );
+  assert.deepEqual(titleAuditRows(env.DB.__sqlite), []);
+});
+
+test('audit insertion failure rolls back the title and does not return success', async (t) => {
+  const env = createEnv(t);
+  env.DB.__failNextAudit = true;
+
+  const { response, json } = await api(env, '/api/admin/workorders/wo-title/short-title', {
+    method: 'PATCH', userType: 'admin', userId: 'admin', body: { short_title: 'Atomic title' },
+  });
+
+  assert.equal(response.status, 500);
+  assert.notEqual(json.success, true);
+  assert.equal(
+    env.DB.__sqlite.prepare('SELECT short_title FROM work_orders WHERE id = ?').get('wo-title').short_title,
+    null,
+  );
+  assert.deepEqual(titleAuditRows(env.DB.__sqlite), []);
 });
