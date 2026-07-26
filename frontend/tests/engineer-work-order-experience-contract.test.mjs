@@ -118,11 +118,15 @@ test('regional team pagination keeps per-group pages and retry state', () => {
   assert.match(teamList, /limit: MORE_GROUP_LIMIT/);
   assert.match(teamList, /setGroupPages\(\{\}\)/);
   assert.match(teamList, /if \(loading\) return/);
+  assert.match(teamList, /!groupErrors\[group\.key\]/);
   assert.match(teamList, /\[filter, refreshVersion\]/);
   assert.match(teamList, /aria-expanded=\{!closed\}/);
   assert.match(workspace, /const \[teamRefreshVersion, setTeamRefreshVersion\] = useState\(0\)/);
   assert.match(workspace, /setTeamRefreshVersion\(\(current\) => current \+ 1\)/);
   assert.match(workspace, /refreshVersion=\{teamRefreshVersion\}/);
+  assert.match(workspace, /const ticketRequestGeneration = useRef\(0\)/);
+  assert.match(workspace, /const requestGeneration = \+\+ticketRequestGeneration\.current/);
+  assert.match(workspace, /if \(requestGeneration !== ticketRequestGeneration\.current\) return/);
   assert.match(teamList, /Load 10 more/);
   assert.match(teamList, /再加载 10 条/);
   assert.match(teamList, /page\?\.rows/);
@@ -292,6 +296,7 @@ test('engineer list keeps key fields readable without a next-step column', () =>
   assert.match(list, /min-\[1280px\]:grid/);
   assert.match(list, /min-\[1280px\]:hidden/);
   assert.match(list, /whitespace-nowrap/);
+  assert.match(list, /mt-2 block whitespace-nowrap text-sm/);
   assert.match(list, /line-clamp-2/);
   assert.match(list, /grid-cols-\[132px_minmax\(240px,1\.55fr\)_minmax\(110px,\.75fr\)_minmax\(260px,1\.55fr\)_minmax\(120px,\.8fr\)_minmax\(150px,\.9fr\)_118px_36px\]/);
   assert.match(list, /break-words text-\[15px\]/);
