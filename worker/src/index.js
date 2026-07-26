@@ -36,6 +36,7 @@ import {
 import { normalizeServiceMode, requiresArrivalVerification } from './lib/service-mode.js';
 import {
   buildWorkOrderShortTitle,
+  normalizeWorkOrderShortTitle,
   resolveWorkOrderShortTitle,
 } from './lib/workOrderTitles.js';
 import {
@@ -12568,6 +12569,64 @@ function canMutateFieldWorkAdmin(auth) {
   return auth?.userType === 'admin' && (!auth.staffId || auth.staffRole === 'admin');
 }
 
+async function handleAdminUpdateWorkOrderTitle(request, env) {
+  try {
+    if (!canMutateFieldWorkAdmin(request._auth)) {
+      return errorResponse(getRequestMarket(request) === 'cn'
+        ? '当前员工角色无权修改工单标题'
+        : 'Your staff role cannot edit work-order titles', 403);
+    }
+
+    const workOrderId = new URL(request.url).pathname.split('/')[4];
+    const body = await request.json().catch(() => ({}));
+    assertMaxLength(body.short_title, 'short_title', LIMITS.title);
+    const shortTitle = normalizeWorkOrderShortTitle(body.short_title);
+    if (!shortTitle) {
+      return errorResponse(getRequestMarket(request) === 'cn'
+        ? '请填写工单标题'
+        : 'Enter a work-order title', 400);
+    }
+
+    const existing = await env.DB.prepare(
+      'SELECT id, short_title, updated_at FROM work_orders WHERE id = ?'
+    ).bind(workOrderId).first();
+    if (!existing) {
+      return errorResponse(getRequestMarket(request) === 'cn'
+        ? '服务工单不存在'
+        : 'Work order not found', 404);
+    }
+
+    await env.DB.prepare(`
+      UPDATE work_orders
+      SET short_title = ?, updated_at = datetime('now')
+      WHERE id = ?
+    `).bind(shortTitle, workOrderId).run();
+
+    const updated = await env.DB.prepare(
+      'SELECT id, short_title, updated_at FROM work_orders WHERE id = ?'
+    ).bind(workOrderId).first();
+    await writeAuditLog(env, request, {
+      targetType: 'work_order',
+      targetId: workOrderId,
+      action: 'work_order_short_title_updated',
+      beforeState: { short_title: existing.short_title },
+      afterState: { short_title: updated.short_title },
+    });
+
+    return jsonResponse({
+      success: true,
+      work_order: {
+        ...updated,
+        display_title: updated.short_title,
+      },
+    });
+  } catch (error) {
+    const validation = validationErrorToResponse(error, errorResponse);
+    if (validation) return validation;
+    return errorResponse(error.message, 500);
+  }
+}
+
 function withPaymentProjection(workOrder, quoteExecution) {
   if (!quoteExecution) return workOrder;
   const validExecution = quoteExecution.valid !== false;
@@ -18024,6 +18083,9 @@ async function routeRequest(request, env, ctx) {
       }
       if (path === '/api/admin/workorders' && request.method === 'GET') {
         return handleAdminWorkOrders(request, env);
+      }
+      if (path.match(/^\/api\/admin\/workorders\/[^/]+\/short-title$/) && request.method === 'PATCH') {
+        return handleAdminUpdateWorkOrderTitle(request, env);
       }
       if (path.match(/^\/api\/admin\/workorders\/[^/]+\/field-plan$/) && request.method === 'PATCH') {
         return handleAdminFieldPlan(request, env);
