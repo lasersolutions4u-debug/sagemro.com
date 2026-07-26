@@ -183,6 +183,7 @@ CREATE TABLE IF NOT EXISTS work_orders (
 
     type TEXT NOT NULL,                        -- fault / maintenance / parameter / other
     description TEXT NOT NULL,
+    short_title TEXT,
     urgency TEXT DEFAULT 'normal',             -- normal / urgent / critical
 
     status TEXT DEFAULT 'pending',             -- pending / assigned / in_progress / pricing / in_service / resolved / pending_review / completed / rejected / cancelled
