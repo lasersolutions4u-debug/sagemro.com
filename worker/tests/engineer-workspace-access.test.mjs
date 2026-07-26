@@ -63,14 +63,15 @@ function insertWorkOrder(sqlite, {
   orderNo,
   engineerId = null,
   regionalLeadId = null,
+  shortTitle = null,
   createdAt,
 }) {
   sqlite.prepare(`
     INSERT INTO work_orders (
       id, order_no, customer_id, engineer_id, type, description, status,
-      assigned_regional_lead_id, created_at
-    ) VALUES (?, ?, 'customer-1', ?, 'maintenance', ?, 'assigned', ?, ?)
-  `).run(id, orderNo, engineerId, `${orderNo} service task`, regionalLeadId, createdAt);
+      assigned_regional_lead_id, short_title, created_at
+    ) VALUES (?, ?, 'customer-1', ?, 'maintenance', ?, 'assigned', ?, ?, ?)
+  `).run(id, orderNo, engineerId, `${orderNo} service task`, regionalLeadId, shortTitle, createdAt);
 }
 
 function createEnv(t) {
@@ -99,7 +100,8 @@ function createEnv(t) {
     id: 'wo-lead', orderNo: 'WO-LEAD', engineerId: 'lead-1', regionalLeadId: 'lead-1', createdAt: '2026-07-25 11:00:00',
   });
   insertWorkOrder(sqlite, {
-    id: 'wo-member', orderNo: 'WO-MEMBER', engineerId: 'eng-1', createdAt: '2026-07-25 10:00:00',
+    id: 'wo-member', orderNo: 'WO-MEMBER', engineerId: 'eng-1',
+    shortTitle: "Han's Laser 3015 on-site repair", createdAt: '2026-07-25 10:00:00',
   });
   insertWorkOrder(sqlite, {
     id: 'wo-outsider', orderNo: 'WO-OUTSIDER', engineerId: 'eng-2', regionalLeadId: 'lead-2', createdAt: '2026-07-25 09:00:00',
@@ -164,6 +166,7 @@ test('engineer ticket scopes use authenticated identity and include direct regio
   assert.equal(personal.json.scope, 'personal');
   assert.deepEqual(personal.json.work_orders.map((row) => row.id), ['wo-lead']);
   assert.equal(personal.json.work_orders[0].ownership_relation, 'personal');
+  assert.match(personal.json.work_orders[0].display_title, /^[\x20-\x7e]+$/);
 
   const team = await api(env, '/api/engineers/tickets?scope=team');
   assert.equal(team.response.status, 200);
@@ -189,12 +192,37 @@ test('engineer ticket scopes use authenticated identity and include direct regio
   assert.equal(memberTicket.scheduled_at, '2026-07-27T09:00:00Z');
   assert.equal(memberTicket.expected_completion_date, '2026-07-28');
   assert.equal(memberTicket.material_requisition_count, 1);
+  assert.equal(memberTicket.short_title, "Han's Laser 3015 on-site repair");
+  assert.equal(memberTicket.display_title, "Han's Laser 3015 on-site repair");
+
+  const memberDetail = await api(env, '/api/workorders/wo-member');
+  assert.equal(memberDetail.json.short_title, "Han's Laser 3015 on-site repair");
+  assert.equal(memberDetail.json.display_title, "Han's Laser 3015 on-site repair");
 
   const ordinaryEngineerTeam = await api(env, '/api/engineers/tickets?scope=team', { userId: 'eng-1' });
   assert.equal(ordinaryEngineerTeam.response.status, 403);
 
   const spoofedIdentity = await api(env, '/api/engineers/tickets?scope=personal&engineer_id=eng-2');
   assert.deepEqual(spoofedIdentity.json.work_orders.map((row) => row.id), ['wo-lead']);
+});
+
+test('historical engineer compact detail includes work-order titles', async (t) => {
+  const env = createEnv(t);
+  env.DB.__sqlite.exec(`
+    UPDATE work_orders SET engineer_id = 'eng-2' WHERE id = 'wo-member';
+    INSERT INTO work_order_field_days (
+      id, work_order_id, engineer_id, site_local_date, site_timezone, status
+    ) VALUES (
+      'field-historical-member', 'wo-member', 'eng-1', '2026-07-24', 'Asia/Shanghai', 'reported'
+    );
+  `);
+
+  const detail = await api(env, '/api/workorders/wo-member', { userId: 'eng-1' });
+  assert.equal(detail.response.status, 200);
+  assert.equal(detail.json.short_title, "Han's Laser 3015 on-site repair");
+  assert.equal(detail.json.display_title, "Han's Laser 3015 on-site repair");
+  assert.deepEqual(detail.json.field_days.map((row) => row.id), ['field-historical-member']);
+  assert.equal(Object.hasOwn(detail.json, 'description'), false);
 });
 
 test('regional lead can read a direct subordinate work order but cannot send messages as a participant', async (t) => {

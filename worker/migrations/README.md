@@ -45,6 +45,7 @@
 | `039_field_workdays.sql` | 现场作业日、拍照签到、日报、延期审批与私有证据保留 |
 | `040_field_evidence_cleanup_queue.sql` | 私有现场证据回滚删除失败后的定时清理队列 |
 | `034_unified_operations_inbox.sql` | 统一运营收件箱：会话、参与者和消息 |
+| `042_work_order_short_title.sql` | 工单短标题：系统自动生成，Admin 可修正，工程师端只读 |
 
 > 约定：文件名格式 `NNN_*.sql`，按字典序顺序执行；历史命名中出现过 `001_partner_upgrade.sql`（已删除，是 `001_add_engineer_fields.sql + 002_pricing_and_new_tables.sql` 的合并版本，避免重复执行）。
 

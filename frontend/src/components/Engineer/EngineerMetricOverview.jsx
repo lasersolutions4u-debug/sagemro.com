@@ -62,14 +62,14 @@ const METRICS = [
 export function EngineerMetricOverview({ metrics, scope, onScopeChange, isRegionalLead, isCn, loading }) {
   const copy = isCn ? METRIC_COPY.cn : METRIC_COPY.en;
   return (
-    <section className="rounded-2xl border border-[#e5e8ed] bg-white p-4 shadow-[0_2px_0_rgba(24,32,43,0.02)] sm:p-5">
+    <section className="min-w-0 rounded-2xl border border-[#e5e8ed] bg-white p-4 shadow-[0_2px_0_rgba(24,32,43,0.02)] sm:p-5">
       <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <h2 className="text-[15px] font-semibold text-[#18202b]">{copy.title}</h2>
-          <p className="mt-1 text-xs text-[#697386]">{scope === 'team' ? copy.teamNote : copy.personalNote}</p>
+          <h2 className="text-base font-semibold text-[#18202b]">{copy.title}</h2>
+          <p className="mt-1 text-[13px] leading-5 text-[#697386]">{scope === 'team' ? copy.teamNote : copy.personalNote}</p>
         </div>
         {isRegionalLead && (
-          <div className="inline-flex w-fit gap-1 rounded-[10px] border border-[#e5e8ed] bg-[#f7f8fa] p-1" aria-label={copy.title}>
+          <div className="grid w-full min-w-0 grid-cols-2 gap-1 rounded-[10px] border border-[#e5e8ed] bg-[#f7f8fa] p-1 sm:inline-flex sm:w-fit" aria-label={copy.title}>
             {[
               ['personal', copy.personal],
               ['team', copy.team],
@@ -79,7 +79,7 @@ export function EngineerMetricOverview({ metrics, scope, onScopeChange, isRegion
                 type="button"
                 onClick={() => onScopeChange(value)}
                 aria-pressed={scope === value}
-                className={`rounded-[7px] px-3 py-2 text-[11px] font-bold transition ${scope === value ? 'bg-[#18202b] text-white shadow-sm' : 'text-[#697386] hover:text-[#18202b]'}`}
+                className={`min-w-0 rounded-[7px] px-2 py-2 text-xs font-bold transition sm:px-3 ${scope === value ? 'bg-[#18202b] text-white shadow-sm' : 'text-[#697386] hover:text-[#18202b]'}`}
               >
                 {label}
               </button>
@@ -92,10 +92,10 @@ export function EngineerMetricOverview({ metrics, scope, onScopeChange, isRegion
           <article key={key} className="relative min-h-[92px] overflow-hidden rounded-xl border border-[#e5e8ed] bg-white px-4 py-3">
             <span className="absolute inset-y-0 left-0 w-[3px]" style={{ backgroundColor: color }} />
             <div className="flex items-center justify-between gap-2">
-              <span className="text-[10px] font-bold tracking-wide text-[#697386]">{key === 'pendingConfirmation' && scope === 'team' ? copy.labels.unassignedQueue : copy.labels[key]}</span>
+              <span className="text-xs font-bold leading-4 tracking-wide text-[#697386]">{key === 'pendingConfirmation' && scope === 'team' ? copy.labels.unassignedQueue : copy.labels[key]}</span>
               <span className="grid size-7 place-items-center rounded-lg" style={{ color, backgroundColor: `${color}12` }}><Icon size={14} /></span>
             </div>
-            <div className="mt-3 text-2xl font-extrabold tracking-tight text-[#18202b]">{loading ? '—' : metrics[key] ?? 0}</div>
+            <div className="mt-3 text-[30px] font-extrabold leading-none tracking-tight text-[#18202b]">{loading ? '—' : metrics[key] ?? 0}</div>
           </article>
         ))}
       </div>

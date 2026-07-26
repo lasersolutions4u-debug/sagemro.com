@@ -164,6 +164,7 @@ test('collection panel renders normalized installment states and guarded enginee
   assert.match(source, /remainingAmount/);
   assert.match(source, /idempotency/);
   assert.match(source, /whitespace-nowrap/);
+  assert.doesNotMatch(source, /toastSuccess\(copy\.started\)/);
   assert.match(api, /startInstallmentCollection[\s\S]*milestone_confirmation/);
 });
 

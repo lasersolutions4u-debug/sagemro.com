@@ -183,6 +183,7 @@ CREATE TABLE IF NOT EXISTS work_orders (
 
     type TEXT NOT NULL,                        -- fault / maintenance / parameter / other
     description TEXT NOT NULL,
+    short_title TEXT,
     urgency TEXT DEFAULT 'normal',             -- normal / urgent / critical
 
     status TEXT DEFAULT 'pending',             -- pending / assigned / in_progress / pricing / in_service / resolved / pending_review / completed / rejected / cancelled
@@ -1561,4 +1562,5 @@ INSERT OR IGNORE INTO _migrations (version, note) VALUES
     ('039_field_workdays',              'Photo-first multi-day onsite work records and protected evidence'),
     ('040_field_evidence_cleanup_queue', 'Retry private field evidence cleanup after failed rollback'),
     ('041_quote_execution_baseline',    'Immutable quote schedules, installments, and private receipt evidence metadata'),
+    ('042_work_order_short_title',      'Persisted short titles for service work orders'),
     ('034_unified_operations_inbox',    'Unified operations inbox tables');
