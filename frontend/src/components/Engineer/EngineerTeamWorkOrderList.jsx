@@ -45,7 +45,7 @@ function filteredCount(tickets, filter) {
 }
 
 export function EngineerTeamWorkOrderList({
-  tickets, team, lead, loading, error, isCn, statusLabels, getNextAction,
+  tickets, team, lead, loading, error, isCn, statusLabels,
   getMachineLine, filter, onFilterChange, onSelectTicket, onRetry,
 }) {
   const copy = isCn ? COPY.cn : COPY.en;
@@ -99,7 +99,6 @@ export function EngineerTeamWorkOrderList({
                 error={error}
                 isCn={isCn}
                 statusLabels={statusLabels}
-                getNextAction={getNextAction}
                 getMachineLine={getMachineLine}
                 filter={filter}
                 onFilterChange={onFilterChange}
