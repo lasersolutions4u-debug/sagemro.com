@@ -57,6 +57,10 @@ import {
   parseJsonValue,
 } from './workOrderDisplay';
 import { createOperationKey } from './materialRequisitionOperations';
+import {
+  createLatestWorkOrderTitleSaveRunner,
+  issueWorkOrderInvoice,
+} from './workOrderMutations';
 
 const STATUS_MAP = {
   pending: { color: 'var(--color-info)' },
@@ -751,7 +755,7 @@ export function WorkOrdersPage({ readOnly = false }) {
     saving: false,
     error: '',
   });
-  const latestTitleSaveByWorkOrder = useRef(new Map());
+  const latestTitleSaveRunner = useRef(createLatestWorkOrderTitleSaveRunner());
   const [internalNote, setInternalNote] = useState('');
   const [adminSiteLocation, setAdminSiteLocation] = useState({
     service_address: '',
@@ -1280,44 +1284,40 @@ export function WorkOrdersPage({ readOnly = false }) {
     if (readOnly || !detail?.id || titleEditor.workOrderId !== detail.id || !titleEditor.value.trim()) return;
     const editorId = titleEditor.editorId;
     const workOrderId = titleEditor.workOrderId;
-    const saveToken = Symbol('title-save');
-    latestTitleSaveByWorkOrder.current.set(workOrderId, saveToken);
     setTitleEditor((current) => ({ ...current, saving: true, error: '' }));
-    try {
-      const response = await updateAdminWorkOrderTitle(workOrderId, titleEditor.value);
-      if (latestTitleSaveByWorkOrder.current.get(workOrderId) !== saveToken) return;
-      const saved = response.work_order;
-      setDetail((current) => current?.id === workOrderId ? { ...current, ...saved } : current);
-      setData((current) => ({
-        ...current,
-        list: current.list.map((item) => item.id === workOrderId ? {
-          ...item,
-          ...saved,
-          short_title: saved.short_title,
-          display_title: saved.display_title,
-        } : item),
-      }));
-      setMessage(t.workOrderTitleUpdated);
-      setTitleEditor((current) => current.editorId === editorId && current.workOrderId === workOrderId ? {
-        open: false,
-        workOrderId: null,
-        editorId: current.editorId + 1,
-        value: '',
-        saving: false,
-        error: '',
-      } : current);
-    } catch (error) {
-      if (latestTitleSaveByWorkOrder.current.get(workOrderId) !== saveToken) return;
-      setTitleEditor((current) => current.editorId === editorId && current.workOrderId === workOrderId ? {
-        ...current,
-        saving: false,
-        error: error.message || t.workOrderTitleUpdateFailed,
-      } : current);
-    } finally {
-      if (latestTitleSaveByWorkOrder.current.get(workOrderId) === saveToken) {
-        latestTitleSaveByWorkOrder.current.delete(workOrderId);
-      }
-    }
+    await latestTitleSaveRunner.current(
+      workOrderId,
+      () => updateAdminWorkOrderTitle(workOrderId, titleEditor.value),
+      (response) => {
+        const saved = response.work_order;
+        setDetail((current) => current?.id === workOrderId ? { ...current, ...saved } : current);
+        setData((current) => ({
+          ...current,
+          list: current.list.map((item) => item.id === workOrderId ? {
+            ...item,
+            ...saved,
+            short_title: saved.short_title,
+            display_title: saved.display_title,
+          } : item),
+        }));
+        setMessage(t.workOrderTitleUpdated);
+        setTitleEditor((current) => current.editorId === editorId && current.workOrderId === workOrderId ? {
+          open: false,
+          workOrderId: null,
+          editorId: current.editorId + 1,
+          value: '',
+          saving: false,
+          error: '',
+        } : current);
+      },
+      (error) => {
+        setTitleEditor((current) => current.editorId === editorId && current.workOrderId === workOrderId ? {
+          ...current,
+          saving: false,
+          error: error.message || t.workOrderTitleUpdateFailed,
+        } : current);
+      },
+    );
   }
 
   async function refreshOpenDetail(expectedWorkOrderId) {
@@ -1430,12 +1430,13 @@ export function WorkOrdersPage({ readOnly = false }) {
   async function handleProcessInvoice(invoiceNumber) {
     setInvoiceProcessing(true);
     try {
-      await processAdminInvoiceRequest(detail.id, {
-        action: 'issue',
-        invoice_number: invoiceNumber,
+      const issuedInvoice = await issueWorkOrderInvoice({
+        workOrderId: detail.id,
+        invoiceNumber,
+        processInvoice: processAdminInvoiceRequest,
       });
       setDetailInvoice((prev) => (
-        prev ? { ...prev, status: 'issued', invoice_number: invoiceNumber } : prev
+        prev ? { ...prev, ...issuedInvoice } : prev
       ));
       setMessage(t.invoiceStatus('issued'));
       return true;
