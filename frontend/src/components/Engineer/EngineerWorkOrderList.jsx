@@ -59,7 +59,7 @@ export function EngineerWorkOrderList({
     <div className="py-9 text-center text-sm text-[#697386]">{copy.empty}</div>
   ) : (
     <div>
-      <div className="hidden gap-3 px-4 py-2 text-[9px] font-extrabold uppercase tracking-wider text-[#929baa] min-[1280px]:grid min-[1280px]:grid-cols-[132px_minmax(160px,1.05fr)_92px_minmax(175px,1.1fr)_96px_120px_minmax(190px,1.25fr)_104px_36px]">
+      <div className="hidden gap-3 px-4 py-2 text-[11px] font-extrabold uppercase tracking-wider text-[#929baa] min-[1280px]:grid min-[1280px]:grid-cols-[132px_minmax(160px,1.05fr)_92px_minmax(175px,1.1fr)_96px_120px_minmax(190px,1.25fr)_104px_36px]">
         <span>{isCn ? '工单号' : 'Work order'}</span>
         <span>{isCn ? '工单名称' : 'Task name'}</span>
         <span>{isCn ? '客户' : 'Customer'}</span>
@@ -79,19 +79,19 @@ export function EngineerWorkOrderList({
             className="w-full border-t border-[#eef0f3] bg-white px-4 py-4 text-left transition hover:bg-[#fffaf2] min-[1280px]:hidden"
           >
             <span className="flex items-start justify-between gap-3">
-              <strong className="min-w-0 text-sm text-[#18202b]">{getEngineerWorkOrderTitle(ticket, isCn, copy.taskFallback)}</strong>
-              <span className="inline-flex shrink-0 rounded-full bg-orange-50 px-2 py-1 text-[10px] font-bold text-orange-700">{statusLabels[ticket.status] || ticket.status}</span>
+              <strong className="min-w-0 text-[15px] text-[#18202b]">{getEngineerWorkOrderTitle(ticket, isCn, copy.taskFallback)}</strong>
+              <span className="inline-flex shrink-0 rounded-full bg-orange-50 px-2 py-1 text-xs font-bold text-orange-700">{statusLabels[ticket.status] || ticket.status}</span>
             </span>
-            <strong className="mt-2 block text-xs text-[#18202b]">{ticket.order_no || ticket.id}</strong>
+            <strong className="mt-2 block text-sm text-[#18202b]">{ticket.order_no || ticket.id}</strong>
             <span className="mt-2 block truncate text-xs text-[#697386]">{ticket.customer_name || '—'}</span>
-            <span className="mt-1 flex min-w-0 items-center gap-2 text-[11px] text-[#697386]">
+            <span className="mt-1 flex min-w-0 items-center gap-2 text-xs text-[#697386]">
               <span className="min-w-0 flex-1 truncate">{getMachineLine(ticket) || copy.machineFallback}</span>
               <span aria-hidden="true">·</span>
               <span className="max-w-[40%] truncate">{ticket.customer_region || copy.regionFallback}</span>
             </span>
-            <span className="mt-3 block text-[10px] font-extrabold uppercase tracking-wider text-[#929baa]">{copy.nextStep}</span>
-            <strong className="mt-1 line-clamp-2 text-[11px] leading-5 text-[#18202b]">{getNextAction(ticket)}</strong>
-            <span className="mt-3 flex items-center justify-between gap-3 text-[10px] text-[#697386]">
+            <span className="mt-3 block text-xs font-extrabold uppercase tracking-wider text-[#929baa]">{copy.nextStep}</span>
+            <strong className="mt-1 line-clamp-2 text-[13px] leading-5 text-[#18202b]">{getNextAction(ticket)}</strong>
+            <span className="mt-3 flex items-center justify-between gap-3 text-xs text-[#697386]">
               <span>{copy.updated} {formatUpdated(ticket.updated_at || ticket.created_at, isCn)}</span>
               <span className="inline-flex items-center gap-1 font-semibold text-orange-600">
                 {copy.view}<ChevronRight aria-hidden="true" size={15} />
@@ -103,14 +103,14 @@ export function EngineerWorkOrderList({
             onClick={() => onSelectTicket(ticket)}
             className="hidden min-h-[76px] w-full items-center gap-3 border-t border-[#eef0f3] bg-white px-4 py-3 text-left transition hover:bg-[#fffaf2] min-[1280px]:grid min-[1280px]:grid-cols-[132px_minmax(160px,1.05fr)_92px_minmax(175px,1.1fr)_96px_120px_minmax(190px,1.25fr)_104px_36px]"
           >
-            <strong className="text-xs text-[#18202b]">{ticket.order_no || ticket.id}</strong>
-            <strong className="truncate text-xs text-[#18202b]">{getEngineerWorkOrderTitle(ticket, isCn, copy.taskFallback)}</strong>
-            <span className="truncate text-[10px] text-[#697386]">{ticket.customer_name || '—'}</span>
-            <span className="truncate text-[10px] text-[#697386]">{getMachineLine(ticket) || copy.machineFallback}</span>
-            <span className="truncate text-[10px] text-[#697386]">{ticket.customer_region || copy.regionFallback}</span>
-            <span><span className="inline-flex rounded-full bg-orange-50 px-2 py-1 text-[10px] font-bold text-orange-700">{statusLabels[ticket.status] || ticket.status}</span></span>
-            <strong className="line-clamp-2 text-[11px] leading-4 text-[#18202b]">{getNextAction(ticket)}</strong>
-            <span className="text-[10px] text-[#697386]">{formatUpdated(ticket.updated_at || ticket.created_at, isCn)}</span>
+            <strong className="text-sm text-[#18202b]">{ticket.order_no || ticket.id}</strong>
+            <strong className="truncate text-[15px] text-[#18202b]">{getEngineerWorkOrderTitle(ticket, isCn, copy.taskFallback)}</strong>
+            <span className="truncate text-xs text-[#697386]">{ticket.customer_name || '—'}</span>
+            <span className="truncate text-[13px] text-[#697386]">{getMachineLine(ticket) || copy.machineFallback}</span>
+            <span className="truncate text-xs text-[#697386]">{ticket.customer_region || copy.regionFallback}</span>
+            <span><span className="inline-flex rounded-full bg-orange-50 px-2 py-1 text-xs font-bold text-orange-700">{statusLabels[ticket.status] || ticket.status}</span></span>
+            <strong className="line-clamp-2 text-[13px] leading-5 text-[#18202b]">{getNextAction(ticket)}</strong>
+            <span className="text-xs text-[#697386]">{formatUpdated(ticket.updated_at || ticket.created_at, isCn)}</span>
             <span aria-hidden="true" className="grid size-8 place-items-center rounded-lg border border-[#e5e8ed] text-orange-600"><ChevronRight size={15} /></span>
           </button>
         </Fragment>
@@ -122,15 +122,15 @@ export function EngineerWorkOrderList({
   return (
     <section className="overflow-hidden rounded-2xl border border-[#e5e8ed] bg-white">
       <div className="flex flex-col gap-3 border-b border-[#e5e8ed] px-4 py-4 sm:flex-row sm:items-end sm:justify-between sm:px-5">
-        <div><h2 className="text-base font-semibold text-[#18202b]">{copy.title}</h2><p className="mt-1 text-xs text-[#697386]">{copy.note}</p></div>
+        <div><h2 className="text-xl font-semibold text-[#18202b]">{copy.title}</h2><p className="mt-1 text-[13px] text-[#697386]">{copy.note}</p></div>
         <div className="flex flex-wrap gap-2">
           {['all', 'needsAction', 'active', 'completed'].map((value) => (
-            <button key={value} type="button" onClick={() => onFilterChange(value)} className={`rounded-lg px-3 py-2 text-[11px] font-bold ${filter === value ? 'bg-[#18202b] text-white' : 'bg-[#f7f8fa] text-[#697386]'}`}>{copy[value]}</button>
+            <button key={value} type="button" onClick={() => onFilterChange(value)} className={`rounded-lg px-3 py-2 text-xs font-bold ${filter === value ? 'bg-[#18202b] text-white' : 'bg-[#f7f8fa] text-[#697386]'}`}>{copy[value]}</button>
           ))}
         </div>
       </div>
       {content}
-      <footer className="border-t border-[#e5e8ed] bg-[#fbfcfd] px-5 py-3 text-[11px] text-[#697386]">
+      <footer className="border-t border-[#e5e8ed] bg-[#fbfcfd] px-5 py-3 text-xs text-[#697386]">
         {copy.support} <a className="font-semibold text-orange-600" href="mailto:support@sagemro.com">support@sagemro.com</a>
       </footer>
     </section>

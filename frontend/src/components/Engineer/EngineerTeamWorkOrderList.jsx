@@ -54,7 +54,7 @@ export function EngineerTeamWorkOrderList({
   return (
     <section className="overflow-hidden rounded-2xl border border-[#e5e8ed] bg-white">
       <div className="flex flex-col gap-3 border-b border-[#e5e8ed] px-4 py-4 sm:flex-row sm:items-end sm:justify-between sm:px-5">
-        <div><h2 className="text-base font-semibold text-[#18202b]">{copy.title}</h2><p className="mt-1 text-xs text-[#697386]">{copy.note}</p></div>
+        <div><h2 className="text-xl font-semibold text-[#18202b]">{copy.title}</h2><p className="mt-1 text-[13px] text-[#697386]">{copy.note}</p></div>
         <div className="flex flex-wrap gap-2">
           {['all', 'needsAction', 'active', 'completed'].map((value) => (
             <button key={value} type="button" onClick={() => onFilterChange(value)} className={`rounded-lg px-3 py-2 text-xs font-bold ${filter === value ? 'bg-[#18202b] text-white' : 'bg-[#f7f8fa] text-[#697386]'}`}>

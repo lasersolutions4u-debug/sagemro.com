@@ -322,3 +322,22 @@ test('service report copy follows the engineer host locale', () => {
   assert.match(report, /提交最终报告给客户/);
   assert.match(report, /toLocaleString\(isCn \? 'zh-CN' : 'en-US'\)/);
 });
+
+test('engineer workspace no longer uses 9px or 10px operational text', () => {
+  const files = [
+    'frontend/src/components/Engineer/EngineerMetricOverview.jsx',
+    'frontend/src/components/Engineer/EngineerWorkspace.jsx',
+    'frontend/src/components/Engineer/EngineerWorkOrderList.jsx',
+    'frontend/src/components/Engineer/EngineerTeamWorkOrderList.jsx',
+    'frontend/src/components/Engineer/EngineerWorkOrderDetail.jsx',
+  ];
+  for (const file of files) {
+    const source = read(file);
+    assert.doesNotMatch(source, /text-\[(?:9|10)px\]/, `${file} still uses undersized operational text`);
+  }
+
+  const metrics = read(files[0]);
+  const list = read(files[2]);
+  assert.match(metrics, /text-\[30px\]/);
+  assert.match(list, /text-\[(?:15|16)px\]/);
+});
