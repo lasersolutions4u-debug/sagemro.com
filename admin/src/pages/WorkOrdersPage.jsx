@@ -1,4 +1,4 @@
-import { Component, useState, useEffect } from 'react';
+import { Component, useState, useEffect, useRef } from 'react';
 
 class DetailErrorBoundary extends Component {
   constructor(props) {
@@ -497,6 +497,7 @@ export function WorkOrdersPage({ readOnly = false }) {
     saving: false,
     error: '',
   });
+  const latestTitleSaveByWorkOrder = useRef(new Map());
   const [internalNote, setInternalNote] = useState('');
   const [adminSiteLocation, setAdminSiteLocation] = useState({
     service_address: '',
@@ -980,9 +981,12 @@ export function WorkOrdersPage({ readOnly = false }) {
     if (readOnly || !detail?.id || titleEditor.workOrderId !== detail.id || !titleEditor.value.trim()) return;
     const editorId = titleEditor.editorId;
     const workOrderId = titleEditor.workOrderId;
+    const saveToken = Symbol('title-save');
+    latestTitleSaveByWorkOrder.current.set(workOrderId, saveToken);
     setTitleEditor((current) => ({ ...current, saving: true, error: '' }));
     try {
       const response = await updateAdminWorkOrderTitle(workOrderId, titleEditor.value);
+      if (latestTitleSaveByWorkOrder.current.get(workOrderId) !== saveToken) return;
       const saved = response.work_order;
       setDetail((current) => current?.id === workOrderId ? { ...current, ...saved } : current);
       setData((current) => ({
@@ -1004,11 +1008,16 @@ export function WorkOrdersPage({ readOnly = false }) {
         error: '',
       } : current);
     } catch (error) {
+      if (latestTitleSaveByWorkOrder.current.get(workOrderId) !== saveToken) return;
       setTitleEditor((current) => current.editorId === editorId && current.workOrderId === workOrderId ? {
         ...current,
         saving: false,
         error: error.message || t.workOrderTitleUpdateFailed,
       } : current);
+    } finally {
+      if (latestTitleSaveByWorkOrder.current.get(workOrderId) === saveToken) {
+        latestTitleSaveByWorkOrder.current.delete(workOrderId);
+      }
     }
   }
 
