@@ -771,8 +771,12 @@ export async function rejectWorkOrderPricing(workOrderId, customerId, reason, co
  * Service OS 默认返回当前工程师个人任务；区域负责人可请求团队范围。
  */
 export async function getEngineerTickets(options = {}) {
-  const scope = typeof options === 'string' ? 'personal' : options.scope || 'personal';
-  const url = `${API_BASE}/api/engineers/tickets?scope=${encodeURIComponent(scope)}`;
+  const params = typeof options === 'string' ? { scope: options } : options;
+  const search = new URLSearchParams({ scope: params.scope || 'personal' });
+  for (const key of ['view', 'filter', 'group_type', 'group_id', 'limit', 'cursor', 'timezone_offset_minutes']) {
+    if (params[key] !== undefined && params[key] !== null && params[key] !== '') search.set(key, String(params[key]));
+  }
+  const url = `${API_BASE}/api/engineers/tickets?${search.toString()}`;
   const response = await fetch(url, {
     headers: authHeaders(),
   });

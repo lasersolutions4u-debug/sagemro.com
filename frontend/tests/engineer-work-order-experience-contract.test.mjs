@@ -91,6 +91,36 @@ test('regional team groups are ordered by queue, lead, then engineer name', asyn
   assert.deepEqual(groups.map((group) => group.tickets.length), [1, 1, 0, 1]);
 });
 
+test('regional team pagination serializes summary and group requests', () => {
+  const api = read('frontend/src/services/api.js');
+  const workspace = read('frontend/src/components/Engineer/EngineerWorkspace.jsx');
+
+  assert.match(api, /for \(const key of \['view', 'filter', 'group_type', 'group_id', 'limit', 'cursor', 'timezone_offset_minutes'\]\)/);
+  assert.match(api, /params\[key\]/);
+  assert.match(workspace, /const \[teamSummary, setTeamSummary\] = useState/);
+  assert.match(workspace, /view: 'summary', filter: workOrderFilter, timezone_offset_minutes:/);
+  assert.match(workspace, /const metrics = useMemo\([\s\S]*scope === 'team' \? teamSummary\.metrics/);
+  assert.match(workspace, /onLoadGroup=/);
+  assert.match(workspace, /groups=\{teamSummary\.groups\}/);
+});
+
+test('regional team pagination keeps per-group pages and retry state', () => {
+  const teamList = read('frontend/src/components/Engineer/EngineerTeamWorkOrderList.jsx');
+
+  assert.match(teamList, /const INITIAL_GROUP_LIMIT = 5/);
+  assert.match(teamList, /const MORE_GROUP_LIMIT = 10/);
+  assert.match(teamList, /const \[groupPages, setGroupPages\] = useState\(\{\}\)/);
+  assert.match(teamList, /const \[groupErrors, setGroupErrors\] = useState\(\{\}\)/);
+  assert.match(teamList, /group\.type === 'member' \|\| group\.type === 'historical'/);
+  assert.match(teamList, /loadGroup\(group, \{ limit: INITIAL_GROUP_LIMIT \}\)/);
+  assert.match(teamList, /cursor: page\.nextCursor/);
+  assert.match(teamList, /limit: MORE_GROUP_LIMIT/);
+  assert.match(teamList, /setGroupPages\(\{\}\)/);
+  assert.match(teamList, /Load 10 more/);
+  assert.match(teamList, /再加载 10 条/);
+  assert.match(teamList, /page\?\.rows/);
+});
+
 test('historical supervision keeps a distinct read-only group', async () => {
   const { groupRegionalTeamWorkOrders } = await import('../src/components/Engineer/engineerWorkOrderMetrics.js');
   const groups = groupRegionalTeamWorkOrders([
