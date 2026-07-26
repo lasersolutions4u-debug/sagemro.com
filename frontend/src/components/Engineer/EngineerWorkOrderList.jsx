@@ -105,7 +105,7 @@ export function EngineerWorkOrderList({
           >
             <span className="absolute inset-y-0 left-0 w-[3px]" style={{ backgroundColor: `var(--status-${ticket.status})` }} />
             <strong className="whitespace-nowrap text-sm text-[#18202b]">{ticket.order_no || ticket.id}</strong>
-            <strong className="min-w-0 line-clamp-2 text-[15px] leading-5 text-[#18202b]">{getEngineerWorkOrderTitle(ticket, isCn, copy.taskFallback)}</strong>
+            <strong className="min-w-0 break-words text-[15px] leading-5 text-[#18202b]">{getEngineerWorkOrderTitle(ticket, isCn, copy.taskFallback)}</strong>
             <span className="min-w-0 truncate text-xs text-[#697386]">{ticket.customer_name || '—'}</span>
             <span className="min-w-0 line-clamp-2 text-[13px] leading-5 text-[#697386]">{getMachineLine(ticket) || copy.machineFallback}</span>
             <span className="min-w-0 truncate text-xs text-[#697386]">{ticket.customer_region || copy.regionFallback}</span>
