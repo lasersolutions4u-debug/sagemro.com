@@ -256,7 +256,9 @@ test('engineer list keeps key fields readable without a next-step column', () =>
   assert.match(list, /min-\[1280px\]:hidden/);
   assert.match(list, /whitespace-nowrap/);
   assert.match(list, /line-clamp-2/);
-  assert.match(list, /grid-cols-\[132px_minmax\(210px,1\.35fr\)_minmax\(120px,\.85fr\)_minmax\(220px,1\.4fr\)_minmax\(120px,\.8fr\)_132px_36px\]/);
+  assert.match(list, /grid-cols-\[132px_minmax\(240px,1\.55fr\)_minmax\(110px,\.75fr\)_minmax\(260px,1\.55fr\)_minmax\(120px,\.8fr\)_minmax\(150px,\.9fr\)_118px_36px\]/);
+  assert.match(list, /line-clamp-2 text-\[15px\]/);
+  assert.match(list, /whitespace-nowrap text-xs text-\[#697386\]/);
   assert.doesNotMatch(list, /getNextAction\(ticket\)/);
 });
 
