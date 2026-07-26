@@ -24,12 +24,33 @@ test('Admin can edit the persisted short title while operations stays read-only'
   assert.match(source, /updateAdminWorkOrderTitle/);
   assert.match(source, /const \[titleEditor, setTitleEditor\]/);
   assert.match(source, /maxLength=\{100\}/);
-  assert.match(source, /await updateAdminWorkOrderTitle\(detail\.id, titleEditor\.value\)/);
-  assert.match(source, /setDetail\(\(current\) => current\?\.id === detail\.id/);
+  assert.match(source, /await updateAdminWorkOrderTitle\(workOrderId, titleEditor\.value\)/);
+  assert.match(source, /setDetail\(\(current\) => current\?\.id === workOrderId/);
   assert.match(source, /setData\(\(current\) => \(\{[\s\S]*short_title/);
   assert.match(source, /\{!readOnly && [\s\S]*titleEditor\.open/);
   assert.match(source, /titleEditor\.error/);
   assert.doesNotMatch(source, /window\.prompt/);
+});
+
+test('title save completion only mutates the editor instance that initiated it', async () => {
+  const source = await readFile(new URL('./WorkOrdersPage.jsx', import.meta.url), 'utf8');
+
+  assert.match(source, /workOrderId: null/);
+  assert.match(source, /editorId: 0/);
+  assert.match(source, /const editorId = titleEditor\.editorId/);
+  assert.match(source, /const workOrderId = titleEditor\.workOrderId/);
+  assert.match(source, /await updateAdminWorkOrderTitle\(workOrderId, titleEditor\.value\)/);
+  assert.equal(
+    source.match(/current\.editorId === editorId && current\.workOrderId === workOrderId/g)?.length,
+    2,
+  );
+});
+
+test('the complete title editor branch is structurally hidden from read-only operations', async () => {
+  const source = await readFile(new URL('./WorkOrdersPage.jsx', import.meta.url), 'utf8');
+
+  assert.match(source, /\{!readOnly && detail && titleEditor\.open \? \([\s\S]*<input/);
+  assert.doesNotMatch(source, /\{detail && titleEditor\.open \? \([\s\S]*<input/);
 });
 
 test('versioned quote and receipt decisions use the controlled operation dialog with exact version and stable retry key', async () => {

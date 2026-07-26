@@ -491,6 +491,8 @@ export function WorkOrdersPage({ readOnly = false }) {
   const [detailMessages, setDetailMessages] = useState([]);
   const [titleEditor, setTitleEditor] = useState({
     open: false,
+    workOrderId: null,
+    editorId: 0,
     value: '',
     saving: false,
     error: '',
@@ -915,7 +917,14 @@ export function WorkOrdersPage({ readOnly = false }) {
     setDetailLoading(true);
     setDetail(null);
     setDetailMessages([]);
-    setTitleEditor({ open: false, value: '', saving: false, error: '' });
+    setTitleEditor((current) => ({
+      open: false,
+      workOrderId: null,
+      editorId: current.editorId + 1,
+      value: '',
+      saving: false,
+      error: '',
+    }));
     if (wo.pricing_status === 'pending_review') {
       setReviewedQuoteIds((prev) => ({ ...prev, [wo.id]: true }));
     }
@@ -946,28 +955,39 @@ export function WorkOrdersPage({ readOnly = false }) {
 
   function beginTitleEdit() {
     if (readOnly || !detail) return;
-    setTitleEditor({
+    setTitleEditor((current) => ({
       open: true,
+      workOrderId: detail.id,
+      editorId: current.editorId + 1,
       value: detail.short_title || detail.display_title || '',
       saving: false,
       error: '',
-    });
+    }));
   }
 
   function cancelTitleEdit() {
-    setTitleEditor({ open: false, value: '', saving: false, error: '' });
+    setTitleEditor((current) => ({
+      open: false,
+      workOrderId: null,
+      editorId: current.editorId + 1,
+      value: '',
+      saving: false,
+      error: '',
+    }));
   }
 
   async function saveTitleEdit() {
-    if (readOnly || !detail?.id || !titleEditor.value.trim()) return;
+    if (readOnly || !detail?.id || titleEditor.workOrderId !== detail.id || !titleEditor.value.trim()) return;
+    const editorId = titleEditor.editorId;
+    const workOrderId = titleEditor.workOrderId;
     setTitleEditor((current) => ({ ...current, saving: true, error: '' }));
     try {
-      const response = await updateAdminWorkOrderTitle(detail.id, titleEditor.value);
+      const response = await updateAdminWorkOrderTitle(workOrderId, titleEditor.value);
       const saved = response.work_order;
-      setDetail((current) => current?.id === detail.id ? { ...current, ...saved } : current);
+      setDetail((current) => current?.id === workOrderId ? { ...current, ...saved } : current);
       setData((current) => ({
         ...current,
-        list: current.list.map((item) => item.id === detail.id ? {
+        list: current.list.map((item) => item.id === workOrderId ? {
           ...item,
           ...saved,
           short_title: saved.short_title,
@@ -975,13 +995,20 @@ export function WorkOrdersPage({ readOnly = false }) {
         } : item),
       }));
       setMessage(t.workOrderTitleUpdated);
-      cancelTitleEdit();
+      setTitleEditor((current) => current.editorId === editorId && current.workOrderId === workOrderId ? {
+        open: false,
+        workOrderId: null,
+        editorId: current.editorId + 1,
+        value: '',
+        saving: false,
+        error: '',
+      } : current);
     } catch (error) {
-      setTitleEditor((current) => ({
+      setTitleEditor((current) => current.editorId === editorId && current.workOrderId === workOrderId ? {
         ...current,
         saving: false,
         error: error.message || t.workOrderTitleUpdateFailed,
-      }));
+      } : current);
     }
   }
 
@@ -1417,7 +1444,7 @@ export function WorkOrdersPage({ readOnly = false }) {
             <div className="sticky top-0 z-10 flex shrink-0 items-start justify-between gap-3 border-b border-[var(--color-border)] bg-[var(--color-surface)] p-3 sm:p-5">
               <div className="min-w-0 flex-1">
                 <div className="text-xs uppercase tracking-[0.18em] text-[var(--color-primary)]">{t.serviceRecord}</div>
-                {detail && titleEditor.open ? (
+                {!readOnly && detail && titleEditor.open ? (
                   <div className="mt-1">
                     <input
                       value={titleEditor.value}
