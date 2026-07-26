@@ -46,7 +46,7 @@ function initials(name) {
 
 export function EngineerTeamWorkOrderList({
   groups = [], loading, error, isCn, statusLabels,
-  getMachineLine, filter, onFilterChange, onSelectTicket, onRetry, onLoadGroup,
+  getMachineLine, filter, refreshVersion, onFilterChange, onSelectTicket, onRetry, onLoadGroup,
 }) {
   const copy = isCn ? COPY.cn : COPY.en;
   const [collapsed, setCollapsed] = useState({});
@@ -85,13 +85,14 @@ export function EngineerTeamWorkOrderList({
     setGroupPages({});
     setGroupLoading({});
     setGroupErrors({});
-  }, [filter]);
+  }, [filter, refreshVersion]);
   useEffect(() => {
+    if (loading) return;
     groups.filter((group) => !isCollapsed(group) && group.total > 0)
       .forEach((group) => {
         if (!groupPages[group.key] && !groupLoading[group.key]) loadGroup(group, { limit: INITIAL_GROUP_LIMIT });
       });
-  }, [collapsed, groupLoading, groupPages, groups, isCollapsed, loadGroup]);
+  }, [collapsed, groupLoading, groupPages, groups, isCollapsed, loadGroup, loading]);
   const toggleGroup = (group) => {
     const closed = isCollapsed(group);
     setCollapsed((current) => ({ ...current, [group.key]: !closed }));
@@ -134,6 +135,7 @@ export function EngineerTeamWorkOrderList({
           <section key={group.key} className="border-b border-[#e5e8ed] last:border-b-0">
             <button
               type="button"
+              aria-expanded={!closed}
               onClick={() => toggleGroup(group)}
               className="flex w-full items-center justify-between gap-3 bg-[#fbfcfd] px-4 py-3 text-left sm:px-5"
             >

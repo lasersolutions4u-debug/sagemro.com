@@ -106,6 +106,7 @@ test('regional team pagination serializes summary and group requests', () => {
 
 test('regional team pagination keeps per-group pages and retry state', () => {
   const teamList = read('frontend/src/components/Engineer/EngineerTeamWorkOrderList.jsx');
+  const workspace = read('frontend/src/components/Engineer/EngineerWorkspace.jsx');
 
   assert.match(teamList, /const INITIAL_GROUP_LIMIT = 5/);
   assert.match(teamList, /const MORE_GROUP_LIMIT = 10/);
@@ -116,6 +117,12 @@ test('regional team pagination keeps per-group pages and retry state', () => {
   assert.match(teamList, /cursor: page\.nextCursor/);
   assert.match(teamList, /limit: MORE_GROUP_LIMIT/);
   assert.match(teamList, /setGroupPages\(\{\}\)/);
+  assert.match(teamList, /if \(loading\) return/);
+  assert.match(teamList, /\[filter, refreshVersion\]/);
+  assert.match(teamList, /aria-expanded=\{!closed\}/);
+  assert.match(workspace, /const \[teamRefreshVersion, setTeamRefreshVersion\] = useState\(0\)/);
+  assert.match(workspace, /setTeamRefreshVersion\(\(current\) => current \+ 1\)/);
+  assert.match(workspace, /refreshVersion=\{teamRefreshVersion\}/);
   assert.match(teamList, /Load 10 more/);
   assert.match(teamList, /再加载 10 条/);
   assert.match(teamList, /page\?\.rows/);

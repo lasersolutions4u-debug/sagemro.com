@@ -123,6 +123,7 @@ export function EngineerWorkspace({ currentUser, onLogout, onOpenProfile, workOr
   const [tickets, setTickets] = useState([]);
   const [team, setTeam] = useState([]);
   const [teamSummary, setTeamSummary] = useState({ groups: [], metrics: null });
+  const [teamRefreshVersion, setTeamRefreshVersion] = useState(0);
   const [selectedEngineer, setSelectedEngineer] = useState({});
   const [assigningId, setAssigningId] = useState('');
   const [status, setStatus] = useState(currentUser?.status || 'available');
@@ -143,6 +144,7 @@ export function EngineerWorkspace({ currentUser, onLogout, onOpenProfile, workOr
       if (scope === 'team') {
         setTeam(data.team || []);
         setTeamSummary({ groups: data.groups || [], metrics: data.metrics || null });
+        setTeamRefreshVersion((current) => current + 1);
       }
     } catch (error) {
       setTickets([]);
@@ -285,7 +287,7 @@ export function EngineerWorkspace({ currentUser, onLogout, onOpenProfile, workOr
                 </section>
               </div>
               {scope === 'team' && isRegionalLead ? (
-                <EngineerTeamWorkOrderList groups={teamSummary.groups} loading={loading} error={loadError} isCn={isCn} statusLabels={statusLabels} getMachineLine={(ticket) => getEngineerMachineLine(ticket, isCn, copy.machinePending)} filter={workOrderFilter} onFilterChange={setWorkOrderFilter} onSelectTicket={openWorkOrder} onRetry={loadTickets} onLoadGroup={loadTeamGroup} />
+                <EngineerTeamWorkOrderList groups={teamSummary.groups} loading={loading} error={loadError} isCn={isCn} statusLabels={statusLabels} getMachineLine={(ticket) => getEngineerMachineLine(ticket, isCn, copy.machinePending)} filter={workOrderFilter} refreshVersion={teamRefreshVersion} onFilterChange={setWorkOrderFilter} onSelectTicket={openWorkOrder} onRetry={loadTickets} onLoadGroup={loadTeamGroup} />
               ) : (
                 <EngineerWorkOrderList tickets={tickets} loading={loading} error={loadError} isCn={isCn} statusLabels={statusLabels} getMachineLine={(ticket) => getEngineerMachineLine(ticket, isCn, copy.machinePending)} filter={workOrderFilter} onFilterChange={setWorkOrderFilter} onSelectTicket={openWorkOrder} onRetry={loadTickets} />
               )}
