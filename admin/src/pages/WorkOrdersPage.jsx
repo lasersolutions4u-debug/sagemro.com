@@ -39,6 +39,7 @@ import {
   rejectAdminWorkOrderPricing,
   reviewWorkOrderQuote,
   searchAdminServiceLocations,
+  updateAdminWorkOrderTitle,
   updateAdminWorkOrderPayout,
 } from '../services/api';
 import { runtimeConfig } from '../config/runtime';
@@ -219,6 +220,13 @@ const TEXT = {
     archiveFailed: 'Archive failed',
     detailLoadFailed: 'Failed to load service order detail',
     noteSaveFailed: 'Failed to save internal note',
+    workOrderTitle: 'Work-order title',
+    editWorkOrderTitle: 'Edit title',
+    saveWorkOrderTitle: 'Save title',
+    cancelWorkOrderTitle: 'Cancel',
+    workOrderTitlePlaceholder: 'Short task title',
+    workOrderTitleUpdated: 'Work-order title updated.',
+    workOrderTitleUpdateFailed: 'Failed to update the work-order title',
     headers: {
       orderNo: 'Service No.',
       customer: 'Customer',
@@ -256,6 +264,7 @@ const TEXT = {
     next: 'Next',
     drawerTitle: 'Service Control View',
     drawerSubtitle: 'Review customer communication, internal notes, AI summary, service report, and two-way reviews.',
+    serviceRecord: 'Service Record',
     close: 'Close',
     customerLabel: 'Customer',
     engineerLabel: 'Engineer',
@@ -362,6 +371,14 @@ const TEXT = {
     fieldToday: '今日已签到',
     fieldOverdue: (count) => `${count} 份日报逾期`,
     fieldExtension: '延期待审批',
+    workOrderTitle: '工单标题',
+    editWorkOrderTitle: '编辑标题',
+    saveWorkOrderTitle: '保存标题',
+    cancelWorkOrderTitle: '取消',
+    workOrderTitlePlaceholder: '简短任务标题',
+    workOrderTitleUpdated: '工单标题已更新。',
+    workOrderTitleUpdateFailed: '工单标题更新失败',
+    serviceRecord: '服务记录',
     quoteReturnTitle: '退回报价修改',
     quoteReturnReason: '退回原因（必填，工程师可见的内部备注）',
     quoteApproveTitle: '批准报价版本',
@@ -472,6 +489,12 @@ export function WorkOrdersPage({ readOnly = false }) {
   const [detailLoading, setDetailLoading] = useState(false);
   const [detail, setDetail] = useState(null);
   const [detailMessages, setDetailMessages] = useState([]);
+  const [titleEditor, setTitleEditor] = useState({
+    open: false,
+    value: '',
+    saving: false,
+    error: '',
+  });
   const [internalNote, setInternalNote] = useState('');
   const [adminSiteLocation, setAdminSiteLocation] = useState({
     service_address: '',
@@ -892,6 +915,7 @@ export function WorkOrdersPage({ readOnly = false }) {
     setDetailLoading(true);
     setDetail(null);
     setDetailMessages([]);
+    setTitleEditor({ open: false, value: '', saving: false, error: '' });
     if (wo.pricing_status === 'pending_review') {
       setReviewedQuoteIds((prev) => ({ ...prev, [wo.id]: true }));
     }
@@ -917,6 +941,47 @@ export function WorkOrdersPage({ readOnly = false }) {
       setMessage(err.message || t.detailLoadFailed);
     } finally {
       setDetailLoading(false);
+    }
+  }
+
+  function beginTitleEdit() {
+    if (readOnly || !detail) return;
+    setTitleEditor({
+      open: true,
+      value: detail.short_title || detail.display_title || '',
+      saving: false,
+      error: '',
+    });
+  }
+
+  function cancelTitleEdit() {
+    setTitleEditor({ open: false, value: '', saving: false, error: '' });
+  }
+
+  async function saveTitleEdit() {
+    if (readOnly || !detail?.id || !titleEditor.value.trim()) return;
+    setTitleEditor((current) => ({ ...current, saving: true, error: '' }));
+    try {
+      const response = await updateAdminWorkOrderTitle(detail.id, titleEditor.value);
+      const saved = response.work_order;
+      setDetail((current) => current?.id === detail.id ? { ...current, ...saved } : current);
+      setData((current) => ({
+        ...current,
+        list: current.list.map((item) => item.id === detail.id ? {
+          ...item,
+          ...saved,
+          short_title: saved.short_title,
+          display_title: saved.display_title,
+        } : item),
+      }));
+      setMessage(t.workOrderTitleUpdated);
+      cancelTitleEdit();
+    } catch (error) {
+      setTitleEditor((current) => ({
+        ...current,
+        saving: false,
+        error: error.message || t.workOrderTitleUpdateFailed,
+      }));
     }
   }
 
@@ -1350,10 +1415,63 @@ export function WorkOrdersPage({ readOnly = false }) {
           <div className="absolute inset-0 bg-black/40" onClick={() => setDetailOpen(false)} />
           <div role="dialog" aria-modal="true" aria-label={t.drawerTitle} className="relative flex h-full w-full max-w-4xl flex-col overflow-hidden bg-[var(--color-surface)] shadow-2xl">
             <div className="sticky top-0 z-10 flex shrink-0 items-start justify-between gap-3 border-b border-[var(--color-border)] bg-[var(--color-surface)] p-3 sm:p-5">
-              <div className="min-w-0">
-                <div className="text-xs uppercase tracking-[0.18em] text-[var(--color-primary)]">Service Record</div>
-                <h3 className="text-lg font-semibold">{t.drawerTitle}</h3>
-                <p className="mt-1 text-sm text-[var(--color-text-muted)]">{t.drawerSubtitle}</p>
+              <div className="min-w-0 flex-1">
+                <div className="text-xs uppercase tracking-[0.18em] text-[var(--color-primary)]">{t.serviceRecord}</div>
+                {detail && titleEditor.open ? (
+                  <div className="mt-1">
+                    <input
+                      value={titleEditor.value}
+                      onChange={(event) => setTitleEditor((current) => ({ ...current, value: event.target.value }))}
+                      maxLength={100}
+                      aria-label={t.workOrderTitle}
+                      placeholder={t.workOrderTitlePlaceholder}
+                      className="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-base font-semibold"
+                    />
+                    {titleEditor.error && <p className="mt-1 text-sm text-[var(--color-error)]">{titleEditor.error}</p>}
+                  </div>
+                ) : (
+                  <h3 className="text-lg font-semibold">{detail?.display_title || t.drawerTitle}</h3>
+                )}
+                {detail ? (
+                  <div className="mt-1 space-y-1">
+                    <div className="flex flex-wrap items-center gap-2 text-sm text-[var(--color-text-muted)]">
+                      <span className="font-mono">{detail.order_no}</span>
+                      <span className="rounded-full bg-[var(--color-primary)]/10 px-2 py-0.5 text-xs text-[var(--color-primary)]">{t.statuses[detail.status] || detail.status}</span>
+                    </div>
+                    <p className="text-sm text-[var(--color-text-secondary)]">{detail.description}</p>
+                  </div>
+                ) : (
+                  <p className="mt-1 text-sm text-[var(--color-text-muted)]">{t.drawerSubtitle}</p>
+                )}
+                {!readOnly && detail && (
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {titleEditor.open ? (
+                      <>
+                        <button
+                          onClick={saveTitleEdit}
+                          disabled={titleEditor.saving || !titleEditor.value.trim()}
+                          className="rounded-lg bg-[var(--color-primary)] px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50"
+                        >
+                          {titleEditor.saving ? t.saving : t.saveWorkOrderTitle}
+                        </button>
+                        <button
+                          onClick={cancelTitleEdit}
+                          disabled={titleEditor.saving}
+                          className="rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-sm disabled:opacity-50"
+                        >
+                          {t.cancelWorkOrderTitle}
+                        </button>
+                      </>
+                    ) : (
+                      <button
+                        onClick={beginTitleEdit}
+                        className="rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-sm"
+                      >
+                        {t.editWorkOrderTitle}
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
               <button
                 onClick={() => setDetailOpen(false)}
