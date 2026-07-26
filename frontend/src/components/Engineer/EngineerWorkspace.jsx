@@ -218,9 +218,9 @@ export function EngineerWorkspace({ currentUser, onLogout, onOpenProfile, workOr
   const scheduledKeys = getScheduledDateKeys(calendarEvents);
 
   return (
-    <>
+    <div className="engineer-workspace">
       <div className="h-[100dvh] overflow-y-auto bg-[#f2f4f7] text-[#18202b]">
-        <header className="border-b border-[#e5e8ed] bg-white">
+        <header className="border-b border-[#e5e8ed] bg-gradient-to-r from-orange-50/80 via-white to-white">
           <div className="mx-auto flex max-w-[1540px] flex-col gap-4 px-4 py-5 md:flex-row md:items-center md:justify-between md:px-7">
             <div className="flex min-w-0 flex-col items-start gap-2 sm:flex-row sm:items-center sm:gap-4">
               <div className="text-sm font-extrabold tracking-[.25em] text-orange-600 sm:border-r sm:border-[#e5e8ed] sm:pr-4">SAGEMRO</div>
@@ -228,14 +228,14 @@ export function EngineerWorkspace({ currentUser, onLogout, onOpenProfile, workOr
             </div>
             <div className="flex w-full min-w-0 flex-wrap items-center gap-2 md:w-auto">
               <span className="rounded-[10px] border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-bold text-emerald-700">{copy.locale}</span>
-              <button type="button" onClick={onOpenProfile} title={currentUser?.name || copy.profileFallback} className="min-w-0 max-w-[calc(100%_-_5.5rem)] truncate rounded-[10px] border border-[#e5e8ed] bg-white px-3 py-2 text-xs font-bold md:max-w-none">{currentUser?.name || copy.profileFallback}</button>
-              <button type="button" onClick={onLogout} className="rounded-[10px] bg-orange-500 px-4 py-2 text-xs font-bold text-white">{copy.signOut}</button>
+              <button type="button" onClick={onOpenProfile} title={currentUser?.name || copy.profileFallback} className="min-w-0 max-w-[calc(100%_-_5.5rem)] truncate rounded-[10px] border border-[#e5e8ed] bg-white px-3 py-2 text-xs font-bold transition active:scale-[0.98] md:max-w-none">{currentUser?.name || copy.profileFallback}</button>
+              <button type="button" onClick={onLogout} className="rounded-[10px] bg-orange-500 px-4 py-2 text-xs font-bold text-white transition active:scale-[0.98]">{copy.signOut}</button>
             </div>
           </div>
         </header>
 
         <main className="mx-auto max-w-[1540px] px-3 py-4 sm:px-5 sm:py-6">
-          {message && <div className="mb-4 rounded-xl border border-[#e5e8ed] bg-white px-4 py-3 text-sm text-[#697386]">{message}</div>}
+          {message && <div className="mb-4 animate-[fadeInSlide_0.25s_ease-out] rounded-xl border border-[#e5e8ed] bg-white px-4 py-3 text-sm text-[#697386]">{message}</div>}
           {workOrderId ? (
             <EngineerWorkOrderDetail
               workOrderId={workOrderId}
@@ -260,10 +260,10 @@ export function EngineerWorkspace({ currentUser, onLogout, onOpenProfile, workOr
             <>
               <div className="mb-4 grid min-w-0 gap-4 xl:grid-cols-[minmax(0,2.15fr)_minmax(330px,.85fr)]">
                 <EngineerMetricOverview metrics={metrics} scope={scope} onScopeChange={setScope} isRegionalLead={isRegionalLead} isCn={isCn} loading={loading} />
-                <section className="min-w-0 rounded-2xl border border-[#e5e8ed] bg-white p-4 sm:p-5">
+                <section className="min-w-0 rounded-2xl border border-orange-200 bg-white p-4 shadow-sm transition-shadow hover:shadow-md sm:p-5">
                   <div className="flex items-start justify-between gap-3"><div><h2 className="text-base font-semibold">{copy.calendarTitle}</h2><p className="mt-1 text-[13px] leading-5 text-[#697386]">{copy.calendarNote}</p></div><button type="button" onClick={() => setIsCalendarOpen(true)} className="text-xs font-bold text-orange-600">{copy.openCalendar}</button></div>
                   <div className="mt-4 grid grid-cols-7 gap-1 text-center text-xs font-bold text-[#929baa]">{weekdayLabels.map((label, index) => <span key={`${label}-${index}`}>{label}</span>)}</div>
-                  <div className="mt-2 grid grid-cols-7 gap-1">{previewDays.map((day) => <span key={day.key} className={`grid h-7 place-items-center rounded-md text-xs font-bold ${scheduledKeys.has(day.key) ? 'bg-orange-50 text-orange-700' : day.isToday ? 'bg-[#18202b] text-white' : 'text-[#697386]'}`}>{day.day}</span>)}</div>
+                  <div className="mt-2 grid grid-cols-7 gap-1">{previewDays.map((day) => <span key={day.key} className={`grid h-7 place-items-center rounded-md text-xs font-bold ${day.isToday ? 'bg-[#18202b] text-white' : scheduledKeys.has(day.key) ? 'text-orange-700' : 'text-[#697386]'}`}><span>{day.day}</span>{scheduledKeys.has(day.key) && <span className={`mt-0.5 size-1 rounded-full ${day.isToday ? 'bg-white' : 'bg-orange-500'}`} />}</span>)}</div>
                   <div className="mt-4 flex justify-between text-xs text-[#929baa]"><span>{copy.calendarRange}</span><strong>{copy.scheduledCount(scheduledKeys.size)}</strong></div>
                   <div className="mt-4 flex flex-wrap gap-2">{Object.entries(copy.statuses).map(([value, label]) => <button key={value} type="button" onClick={() => updateStatus(value)} className={`rounded-lg px-3 py-2 text-xs font-bold ${status === value ? 'bg-emerald-600 text-white' : 'bg-[#f7f8fa] text-[#697386]'}`}>{label}</button>)}</div>
                 </section>
@@ -278,6 +278,6 @@ export function EngineerWorkspace({ currentUser, onLogout, onOpenProfile, workOr
         </main>
       </div>
       <Modal isOpen={isCalendarOpen} onClose={() => { setIsCalendarOpen(false); loadCalendar(); }} title={copy.modalCalendarTitle} size="2xl"><EngineerAvailabilityCalendar /></Modal>
-    </>
+    </div>
   );
 }

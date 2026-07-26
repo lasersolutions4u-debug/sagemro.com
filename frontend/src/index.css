@@ -116,6 +116,35 @@ html {
   font-size: 20px;
 }
 
+@keyframes fadeInSlide {
+  from { opacity: 0; transform: translateY(-8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.engineer-workspace {
+  font-size: 16px;
+  --status-pending: #3b82f6; --status-pending-bg: #dbeafe; --status-pending-text: #1d4ed8;
+  --status-pending_dispatch: #6366f1; --status-pending_dispatch-bg: #e0e7ff; --status-pending_dispatch-text: #4338ca;
+  --status-assigned: #eab308; --status-assigned-bg: #fef9c3; --status-assigned-text: #854d0e;
+  --status-in_progress: #f97316; --status-in_progress-bg: #ffedd5; --status-in_progress-text: #9a3412;
+  --status-pricing: #a855f7; --status-pricing-bg: #f3e8ff; --status-pricing-text: #7e22ce;
+  --status-pending_payment: #ec4899; --status-pending_payment-bg: #fce7f3; --status-pending_payment-text: #9d174d;
+  --status-payment_review: #f59e0b; --status-payment_review-bg: #fef3c7; --status-payment_review-text: #92400e;
+  --status-in_service: #06b6d4; --status-in_service-bg: #cffafe; --status-in_service-text: #0e7490;
+  --status-resolved: #22c55e; --status-resolved-bg: #dcfce7; --status-resolved-text: #166534;
+  --status-pending_review: #14b8a6; --status-pending_review-bg: #ccfbf1; --status-pending_review-text: #0f766e;
+  --status-completed: #6b7280; --status-completed-bg: #f3f4f6; --status-completed-text: #374151;
+  --status-rejected: #ef4444; --status-rejected-bg: #fee2e2; --status-rejected-text: #991b1b;
+  --status-cancelled: #9ca3af; --status-cancelled-bg: #f5f5f5; --status-cancelled-text: #4b5563;
+}
+
+.engineer-workspace .text-xs { font-size: 12px; }
+.engineer-workspace .text-sm { font-size: 14px; }
+.engineer-workspace .text-base { font-size: 16px; }
+.engineer-workspace .text-lg { font-size: 18px; }
+.engineer-workspace .text-xl { font-size: 20px; }
+.engineer-workspace .text-2xl { font-size: 24px; }
+
 body {
   margin: 0;
   font-family: var(--font-sans);

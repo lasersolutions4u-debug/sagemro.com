@@ -49,7 +49,9 @@ export function EngineerWorkOrderList({
   }, [filter, tickets]);
 
   const content = loading ? (
-    <div className="py-10 text-center text-sm text-[#697386]">{copy.loading}</div>
+    <div className="space-y-3 p-4" aria-label={copy.loading}>
+      {[1, 2, 3].map((item) => <div key={item} className="animate-pulse rounded-xl border border-[#e5e8ed] p-4"><div className="h-4 w-36 rounded bg-[#e5e8ed]" /><div className="mt-3 h-3 w-2/3 rounded bg-[#eef0f3]" /><div className="mt-4 h-8 rounded-lg bg-[#eef0f3]" /></div>)}
+    </div>
   ) : error ? (
     <div className="m-4 rounded-xl border border-red-200 p-5 text-center">
       <p className="text-sm text-red-600">{error || copy.loadFailed}</p>
@@ -76,11 +78,12 @@ export function EngineerWorkOrderList({
             key={ticket.id}
             type="button"
             onClick={() => onSelectTicket(ticket)}
-            className="w-full border-t border-[#eef0f3] bg-white px-4 py-4 text-left transition hover:bg-[#fffaf2] min-[1280px]:hidden"
+            className="relative w-full overflow-hidden border-t border-[#eef0f3] bg-white px-4 py-4 text-left transition hover:bg-[#fffaf2] min-[1280px]:hidden"
           >
+            <span className="absolute inset-y-0 left-0 w-[3px]" style={{ backgroundColor: `var(--status-${ticket.status})` }} />
             <span className="flex items-start justify-between gap-3">
               <strong className="min-w-0 text-[15px] text-[#18202b]">{getEngineerWorkOrderTitle(ticket, isCn, copy.taskFallback)}</strong>
-              <span className="inline-flex shrink-0 rounded-full bg-orange-50 px-2 py-1 text-xs font-bold text-orange-700">{statusLabels[ticket.status] || ticket.status}</span>
+              <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full px-2 py-1 text-xs font-bold" style={{ backgroundColor: `var(--status-${ticket.status}-bg)`, color: `var(--status-${ticket.status}-text)` }}><span className="size-1.5 rounded-full" style={{ backgroundColor: `var(--status-${ticket.status})` }} />{statusLabels[ticket.status] || ticket.status}</span>
             </span>
             <strong className="mt-2 block text-sm text-[#18202b]">{ticket.order_no || ticket.id}</strong>
             <span className="mt-2 block truncate text-xs text-[#697386]">{ticket.customer_name || '—'}</span>
@@ -101,14 +104,15 @@ export function EngineerWorkOrderList({
           <button
             type="button"
             onClick={() => onSelectTicket(ticket)}
-            className="hidden min-h-[76px] w-full items-center gap-3 border-t border-[#eef0f3] bg-white px-4 py-3 text-left transition hover:bg-[#fffaf2] min-[1280px]:grid min-[1280px]:grid-cols-[132px_minmax(160px,1.05fr)_92px_minmax(175px,1.1fr)_96px_120px_minmax(190px,1.25fr)_104px_36px]"
+            className="relative hidden min-h-[76px] w-full items-center gap-3 overflow-hidden border-t border-[#eef0f3] bg-white px-4 py-3 text-left transition hover:bg-[#fffaf2] min-[1280px]:grid min-[1280px]:grid-cols-[132px_minmax(160px,1.05fr)_92px_minmax(175px,1.1fr)_96px_120px_minmax(190px,1.25fr)_104px_36px]"
           >
+            <span className="absolute inset-y-0 left-0 w-[3px]" style={{ backgroundColor: `var(--status-${ticket.status})` }} />
             <strong className="text-sm text-[#18202b]">{ticket.order_no || ticket.id}</strong>
             <strong className="truncate text-[15px] text-[#18202b]">{getEngineerWorkOrderTitle(ticket, isCn, copy.taskFallback)}</strong>
             <span className="truncate text-xs text-[#697386]">{ticket.customer_name || '—'}</span>
             <span className="truncate text-[13px] text-[#697386]">{getMachineLine(ticket) || copy.machineFallback}</span>
             <span className="truncate text-xs text-[#697386]">{ticket.customer_region || copy.regionFallback}</span>
-            <span><span className="inline-flex rounded-full bg-orange-50 px-2 py-1 text-xs font-bold text-orange-700">{statusLabels[ticket.status] || ticket.status}</span></span>
+            <span><span className="inline-flex items-center gap-1.5 rounded-full px-2 py-1 text-xs font-bold" style={{ backgroundColor: `var(--status-${ticket.status}-bg)`, color: `var(--status-${ticket.status}-text)` }}><span className="size-1.5 rounded-full" style={{ backgroundColor: `var(--status-${ticket.status})` }} />{statusLabels[ticket.status] || ticket.status}</span></span>
             <strong className="line-clamp-2 text-[13px] leading-5 text-[#18202b]">{getNextAction(ticket)}</strong>
             <span className="text-xs text-[#697386]">{formatUpdated(ticket.updated_at || ticket.created_at, isCn)}</span>
             <span aria-hidden="true" className="grid size-8 place-items-center rounded-lg border border-[#e5e8ed] text-orange-600"><ChevronRight size={15} /></span>
