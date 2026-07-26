@@ -1275,8 +1275,6 @@ export function WorkOrderDetailContent({
           ))}
         </div>}
 
-        {!showInfoTab && renderPaymentStartAction()}
-
         {isActive && (loading ? (
           <div className="text-center py-8 text-[var(--color-text-muted)]">Loading...</div>
         ) : (
