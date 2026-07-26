@@ -566,10 +566,56 @@ test('work orders expose engineer payout as internal closure after service compl
   assert.match(migration, /status TEXT DEFAULT 'not_ready'/);
 });
 
-test('engineer task overview uses two columns on mobile', () => {
+test('engineer task overview emphasizes primary metrics on mobile', () => {
   const workspace = read('frontend/src/components/Engineer/EngineerWorkspace.jsx');
 
-  assert.match(workspace, /grid grid-cols-2 gap-3 sm:grid-cols-2 lg:grid-cols-5/);
+  assert.match(workspace, /grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5/);
+  assert.match(workspace, /primary: true/);
+  assert.match(workspace, /metric\.primary/);
+  assert.match(workspace, /col-span-2 bg-\[var\(--color-primary\)\]\/5/);
+});
+
+test('engineer workspace uses portal-specific pixel typography', () => {
+  const styles = read('frontend/src/index.css');
+  const workspace = read('frontend/src/components/Engineer/EngineerWorkspace.jsx');
+
+  assert.match(styles, /\.engineer-workspace \.text-xs \{ font-size: 12px; \}/);
+  assert.match(styles, /\.engineer-workspace \.text-sm \{ font-size: 14px; \}/);
+  assert.match(styles, /\.engineer-workspace \.text-base \{ font-size: 16px; \}/);
+  assert.match(styles, /\.engineer-workspace \.text-lg \{ font-size: 18px; \}/);
+  assert.match(styles, /\.engineer-workspace \.text-xl \{ font-size: 20px; \}/);
+  assert.match(styles, /\.engineer-workspace \.text-2xl \{ font-size: 24px; \}/);
+  assert.match(workspace, /return \(\s*<div className="engineer-workspace">/);
+  assert.doesNotMatch(workspace, /<div className="engineer-workspace h-\[100dvh\]/);
+});
+
+test('engineer workspace status palette covers the regional dispatch queue', () => {
+  const config = read('frontend/src/data/workOrderConfig.js');
+  const styles = read('frontend/src/index.css');
+  const workspace = read('frontend/src/components/Engineer/EngineerWorkspace.jsx');
+
+  assert.match(config, /pending_dispatch: \{ text: 'Pending Regional Dispatch'/);
+  assert.match(config, /pending_dispatch: \{ text: '待区域派工'/);
+  assert.match(config, /payment_review: \{ text: '付款审核中'/);
+  assert.match(styles, /--status-pending_dispatch:/);
+  assert.match(styles, /--status-pending_dispatch-bg:/);
+  assert.match(styles, /--status-assigned-text:/);
+  assert.match(styles, /--status-in_service-text:/);
+  assert.match(workspace, /var\(--status-\$\{ticket\.status\}-text\)/);
+  assert.match(workspace, /text-\[var\(--color-warning\)\]/);
+  assert.doesNotMatch(workspace, /--color-status-progress/);
+});
+
+test('engineer workspace checklist retains checked items across accessible tab switches', () => {
+  const workspace = read('frontend/src/components/Engineer/EngineerWorkspace.jsx');
+
+  assert.match(workspace, /const \[checkedChecklistItems, setCheckedChecklistItems\] = useState\(\(\) => new Set\(\)\)/);
+  assert.match(workspace, /checked=\{checkedChecklistItems\.has\(index\)\}/);
+  assert.match(workspace, /onChange=\{\(\) => toggleChecklistItem\(index\)\}/);
+  assert.match(workspace, /role="tablist"/);
+  assert.match(workspace, /role="tab"/);
+  assert.match(workspace, /aria-selected=\{selectedContextTab === tab\}/);
+  assert.match(workspace, /role="tabpanel"/);
 });
 
 test('engineer task overview shows 8 personal metrics and 2 regional metrics', () => {
@@ -585,10 +631,10 @@ test('engineer task overview shows 8 personal metrics and 2 regional metrics', (
   assert.match(workspace, /quotePending: '待报价'/);
   assert.match(workspace, /scheduledDates: '已排期日期'/);
   assert.match(workspace, /scheduledPreviewCount/);
-  assert.match(workspace, /const personalMetrics = \[/);
-  assert.match(workspace, /const regionalMetrics = isRegionalLead/);
-  assert.match(workspace, /const metrics = \[\.\.\.regionalMetrics, \.\.\.personalMetrics\]/);
-  assert.doesNotMatch(workspace, /label: copy\.paymentFollowUp[\s\S]*const personalMetrics = \[/);
+  assert.match(workspace, /const allMetrics = \[/);
+  assert.match(workspace, /if \(isRegionalLead\)/);
+  assert.match(workspace, /allMetrics\.unshift/);
+  assert.doesNotMatch(workspace, /const personalMetrics = \[/);
 });
 
 test('engineer workspace gives localized next steps and selected task context', () => {
@@ -655,9 +701,9 @@ test('engineer workspace pairs compact task overview with a prominent calendar l
   const overviewHeadingIndex = workspace.indexOf('{copy.taskOverview}');
   const calendarLauncherIndex = workspace.indexOf('{copy.calendarTitle}');
   const serviceTasksIndex = workspace.indexOf('{copy.serviceTasks}');
-  const contextIndex = workspace.indexOf('{copy.contextTitle}');
-  const preparationIndex = workspace.indexOf('{copy.preparationTitle}');
-  const checklistIndex = workspace.indexOf('{copy.checklistTitle}');
+  const contextIndex = workspace.indexOf("tab === 'summary'");
+  const preparationIndex = workspace.indexOf("tab === 'preparation'");
+  const checklistIndex = workspace.indexOf('copy.checklistTitle');
 
   assert.ok(overviewHeadingIndex > -1);
   assert.ok(splitOverviewIndex > -1);
@@ -667,18 +713,21 @@ test('engineer workspace pairs compact task overview with a prominent calendar l
   assert.match(workspace, /const \[isCalendarOpen, setIsCalendarOpen\] = useState\(false\)/);
   assert.match(workspace, /Update availability, blocked dates, and service windows/);
   assert.match(workspace, /维护可服务时间、不可服务日期和现场服务窗口/);
-  assert.match(workspace, /lg:grid-cols-5/);
-  assert.match(workspace, /bg-\[var\(--color-surface-elevated\)\] p-4/);
-  assert.match(workspace, /size=\{18\}/);
+  assert.match(workspace, /sm:grid-cols-3 lg:grid-cols-5/);
+  assert.match(workspace, /metric\.primary/);
+  assert.match(workspace, /size=\{metric\.primary \? 22 : 18\}/);
   assert.match(workspace, /text-2xl font-semibold/);
   assert.match(workspace, /h-full rounded-2xl/);
+  assert.match(workspace, /selectedContextTab/);
+  assert.match(workspace, /\['summary', 'preparation', 'checklist'\]/);
   assert.doesNotMatch(workspace, /Visit windows/);
   assert.doesNotMatch(workspace, /Blocked dates/);
   assert.match(workspace, /title=\{copy\.modalCalendarTitle\}/);
   assert.match(workspace, /size="2xl"/);
   assert.ok(calendarIndex > checklistIndex);
-  assert.ok(contextIndex < preparationIndex);
-  assert.ok(preparationIndex < checklistIndex);
+  assert.ok(contextIndex > -1);
+  assert.ok(preparationIndex > -1);
+  assert.ok(checklistIndex > -1);
 });
 
 test('engineer workspace calendar launcher previews the next 30 days with scheduled dates highlighted', () => {
@@ -691,8 +740,8 @@ test('engineer workspace calendar launcher previews the next 30 days with schedu
   assert.match(workspace, /scheduledDateKeys/);
   assert.match(workspace, /Future 30 days/);
   assert.match(workspace, /Scheduled dates/);
-  assert.match(workspace, /bg-amber-100/);
-  assert.match(workspace, /text-amber-700/);
+  assert.match(workspace, /isScheduled && <span/);
+  assert.match(workspace, /rounded-full bg-\[var\(--color-primary\)\]/);
   assert.match(workspace, /grid-cols-7/);
   assert.match(workspace, /gap-0\.5/);
   assert.match(workspace, /min-h-6/);

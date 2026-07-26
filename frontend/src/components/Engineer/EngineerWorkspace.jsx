@@ -29,33 +29,11 @@ import {
   categoryL2LabelsCn,
   typeLabels,
   typeLabelsCn,
+  statusConfig,
+  statusConfigCn,
 } from '../../data/workOrderConfig';
 import { redactContactInfo } from '../../utils/contactRedaction';
 import { isCnLocale } from '../../utils/locale';
-
-const STATUS_LABELS = {
-  pending: 'Pending Confirmation',
-  pending_dispatch: 'Pending Regional Dispatch',
-  assigned: 'Pending Confirmation',
-  in_progress: 'In Service',
-  pricing: 'Pending Quote',
-  in_service: 'In Service',
-  resolved: 'Awaiting Customer Confirmation',
-  pending_review: 'Pending Archive',
-  completed: 'Completed',
-};
-
-const STATUS_LABELS_CN = {
-  pending: '待确认',
-  pending_dispatch: '待区域派工',
-  assigned: '待确认派工',
-  in_progress: '服务处理中',
-  pricing: '待报价',
-  in_service: '服务中',
-  resolved: '待客户确认',
-  pending_review: '待归档',
-  completed: '已完成',
-};
 
 const CHECKLIST = [
   'Confirm customer issue, machine model, site contact, and arrival window',
@@ -455,7 +433,7 @@ function getScheduledDateKeys(events, referenceDate = new Date(), length = CALEN
 export function EngineerWorkspace({ currentUser, onLogout, onOpenProfile }) {
   const isCn = isCnLocale();
   const copy = isCn ? WORKSPACE_COPY.cn : WORKSPACE_COPY.en;
-  const statusLabels = isCn ? STATUS_LABELS_CN : STATUS_LABELS;
+  const statusLabels = isCn ? statusConfigCn : statusConfig;
   const checklist = isCn ? CHECKLIST_CN : CHECKLIST;
   const weekdayLabels = isCn ? WEEKDAY_LABELS_CN : WEEKDAY_LABELS;
   const engineerId = localStorage.getItem('sagemro_engineer_id');
@@ -471,6 +449,8 @@ export function EngineerWorkspace({ currentUser, onLogout, onOpenProfile }) {
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState('');
   const [selectedTicket, setSelectedTicket] = useState(null);
+  const [selectedContextTab, setSelectedContextTab] = useState('summary');
+  const [checkedChecklistItems, setCheckedChecklistItems] = useState(() => new Set());
   const [isCalendarOpen, setIsCalendarOpen] = useState(false);
   const [calendarPreviewEvents, setCalendarPreviewEvents] = useState([]);
   const [calendarPreviewLoading, setCalendarPreviewLoading] = useState(false);
@@ -606,34 +586,42 @@ export function EngineerWorkspace({ currentUser, onLogout, onOpenProfile }) {
     }
   };
 
+  const toggleChecklistItem = (index) => {
+    setCheckedChecklistItems((current) => {
+      const next = new Set(current);
+      if (next.has(index)) next.delete(index);
+      else next.add(index);
+      return next;
+    });
+  };
+
   const grouped = groupTickets(tickets);
   const activeTicket = selectedTicket || tickets[0] || null;
   const activeAiSummary = formatAiIntakeSummary(activeTicket, copy);
   const calendarPreviewDays = buildCalendarPreviewDays();
   const scheduledDateKeys = getScheduledDateKeys(calendarPreviewEvents, calendarPreviewDays[0]?.date);
   const scheduledPreviewCount = calendarPreviewDays.filter((day) => scheduledDateKeys.has(day.key)).length;
-  const personalMetrics = [
-    { icon: AlertTriangle, label: copy.needsAction, value: grouped.needsAction.length },
-    { icon: ClipboardCheck, label: copy.todayTasks, value: grouped.today.length },
-    { icon: AlertTriangle, label: copy.pendingConfirmation, value: grouped.pending.length },
-    { icon: Wrench, label: copy.inService, value: grouped.active.length },
-    { icon: ReceiptText, label: copy.quotePending, value: grouped.quotePending.length },
-    { icon: CalendarDays, label: copy.scheduledDates, value: scheduledPreviewCount },
-    { icon: FileText, label: copy.reportsDue, value: grouped.reports.length },
-    { icon: Package, label: copy.partsNeeds, value: grouped.parts.length },
+  const allMetrics = [
+    { key: 'needsAction', icon: AlertTriangle, label: copy.needsAction, value: grouped.needsAction.length, primary: true },
+    { key: 'todayTasks', icon: ClipboardCheck, label: copy.todayTasks, value: grouped.today.length, primary: true },
+    { key: 'pendingConfirmation', icon: AlertTriangle, label: copy.pendingConfirmation, value: grouped.pending.length, primary: false },
+    { key: 'inService', icon: Wrench, label: copy.inService, value: grouped.active.length, primary: false },
+    { key: 'quotePending', icon: ReceiptText, label: copy.quotePending, value: grouped.quotePending.length, primary: false },
+    { key: 'scheduledDates', icon: CalendarDays, label: copy.scheduledDates, value: scheduledPreviewCount, primary: false },
+    { key: 'reportsDue', icon: FileText, label: copy.reportsDue, value: grouped.reports.length, primary: false },
+    { key: 'partsNeeds', icon: Package, label: copy.partsNeeds, value: grouped.parts.length, primary: false },
   ];
-  const regionalMetrics = isRegionalLead
-    ? [
-        { icon: ClipboardCheck, label: copy.regionalQueue, value: grouped.regionalQueue.length },
-        { icon: CreditCard, label: copy.paymentFollowUp, value: grouped.paymentFollowUp.length },
-      ]
-    : [];
-  const metrics = [...regionalMetrics, ...personalMetrics];
+  if (isRegionalLead) {
+    allMetrics.unshift(
+      { key: 'regionalQueue', icon: ClipboardCheck, label: copy.regionalQueue, value: grouped.regionalQueue.length, primary: false },
+      { key: 'paymentFollowUp', icon: CreditCard, label: copy.paymentFollowUp, value: grouped.paymentFollowUp.length, primary: false },
+    );
+  }
 
   return (
-    <>
+    <div className="engineer-workspace">
     <div className="h-[100dvh] overflow-y-auto bg-[var(--color-bg)] text-[var(--color-text-primary)]">
-      <header className="border-b border-[var(--color-border)] bg-[var(--color-surface)]">
+      <header className="border-b border-[var(--color-border)] bg-gradient-to-r from-[var(--color-primary)]/8 via-[var(--color-surface)] to-[var(--color-surface)]">
         <div className="mx-auto flex max-w-7xl flex-col gap-3 px-3 py-4 sm:px-5 md:flex-row md:items-center md:justify-between">
           <div className="min-w-0">
             <div className="text-xs uppercase tracking-[0.24em] text-[var(--color-primary)]">SAGEMRO</div>
@@ -645,13 +633,13 @@ export function EngineerWorkspace({ currentUser, onLogout, onOpenProfile }) {
           <div className="grid grid-cols-2 gap-2 sm:flex sm:items-center sm:gap-3">
             <button
               onClick={onOpenProfile}
-              className="min-h-10 rounded-xl border border-[var(--color-border)] px-3 py-2 text-sm text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]"
+              className="min-h-10 rounded-xl border border-[var(--color-border)] px-3 py-2 text-sm text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] active:scale-[0.98] transition-all duration-150"
             >
               {currentUser?.name || copy.profileFallback}
             </button>
             <button
               onClick={onLogout}
-              className="min-h-10 rounded-xl bg-[var(--color-primary)] px-3 py-2 text-sm font-medium text-white"
+              className="min-h-10 rounded-xl bg-[var(--color-primary)] px-3 py-2 text-sm font-medium text-white active:scale-[0.98] transition-all duration-150"
             >
               {copy.signOut}
             </button>
@@ -661,7 +649,7 @@ export function EngineerWorkspace({ currentUser, onLogout, onOpenProfile }) {
 
       <main className="mx-auto max-w-7xl px-3 py-4 sm:px-5 sm:py-6">
         {message && (
-          <div className="mb-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3 text-sm text-[var(--color-text-secondary)]">
+          <div className="mb-4 animate-[fadeInSlide_0.25s_ease-out] rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3 text-sm text-[var(--color-text-secondary)]">
             {message}
           </div>
         )}
@@ -682,7 +670,7 @@ export function EngineerWorkspace({ currentUser, onLogout, onOpenProfile }) {
                   <button
                     key={item.value}
                     onClick={() => updateStatus(item.value)}
-                    className={`min-h-8 rounded-lg px-3 py-1.5 text-xs font-medium ${
+                    className={`min-h-8 rounded-lg px-3 py-1.5 text-xs font-medium active:scale-[0.98] transition-all duration-150 ${
                       status === item.value
                         ? 'bg-[var(--color-primary)] text-white'
                         : 'bg-[var(--color-surface-elevated)] text-[var(--color-text-secondary)]'
@@ -693,10 +681,17 @@ export function EngineerWorkspace({ currentUser, onLogout, onOpenProfile }) {
                 ))}
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-2 lg:grid-cols-5">
-              {metrics.map((metric) => (
-                <div key={metric.label} className="rounded-xl bg-[var(--color-surface-elevated)] p-4">
-                  <metric.icon size={18} className="mb-2 text-[var(--color-primary)]" />
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+              {allMetrics.map((metric) => (
+                <div
+                  key={metric.key}
+                  className={`rounded-xl p-4 transition-shadow duration-200 hover:shadow-md ${
+                    metric.primary
+                      ? 'col-span-2 bg-[var(--color-primary)]/5 ring-1 ring-[var(--color-primary)]/15'
+                      : 'col-span-1 bg-[var(--color-surface-elevated)]'
+                  }`}
+                >
+                  <metric.icon size={metric.primary ? 22 : 18} className={`mb-2 ${metric.primary ? 'text-[var(--color-primary)]' : 'text-[var(--color-primary)]'}`} />
                   <div className="text-2xl font-semibold">{metric.value}</div>
                   <div className="text-xs text-[var(--color-text-muted)]">{metric.label}</div>
                 </div>
@@ -706,7 +701,7 @@ export function EngineerWorkspace({ currentUser, onLogout, onOpenProfile }) {
 
           <button
             onClick={() => setIsCalendarOpen(true)}
-            className="group flex h-full flex-col gap-3 rounded-2xl border border-[var(--color-primary)]/30 bg-[var(--color-surface)] p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-[var(--color-primary)] hover:shadow-md focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
+            className="group flex h-full flex-col gap-3 rounded-2xl border border-[var(--color-primary)]/30 bg-[var(--color-surface)] p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-[var(--color-primary)] hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
           >
             <div className="flex items-start justify-between gap-4">
               <div>
@@ -736,15 +731,16 @@ export function EngineerWorkspace({ currentUser, onLogout, onOpenProfile }) {
                   return (
                     <div
                       key={day.key}
-                      className={`flex aspect-square min-h-6 items-center justify-center rounded-md text-[10px] font-semibold ${
+                      className={`flex aspect-square min-h-6 flex-col items-center justify-center rounded-md text-[10px] font-semibold ${
                         isScheduled
-                          ? 'bg-amber-100 text-amber-700 ring-1 ring-amber-200'
+                          ? 'text-[var(--color-primary)]'
                           : day.isToday
                             ? 'bg-[var(--color-primary)]/10 text-[var(--color-primary)]'
                             : 'bg-[var(--color-surface)] text-[var(--color-text-secondary)]'
                       }`}
                     >
                       {day.day}
+                      {isScheduled && <span className="mt-0.5 h-1 w-1 rounded-full bg-[var(--color-primary)]" />}
                     </div>
                   );
                 })}
@@ -757,39 +753,66 @@ export function EngineerWorkspace({ currentUser, onLogout, onOpenProfile }) {
           <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5">
             <h2 className="mb-4 font-semibold">{copy.serviceTasks}</h2>
             {loading ? (
-              <div className="py-10 text-center text-sm text-[var(--color-text-muted)]">{copy.loading}</div>
+              <div className="space-y-3">
+                {[1, 2, 3].map((i) => (
+                  <div key={i} className="animate-pulse rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-elevated)] p-4">
+                    <div className="mb-3 flex items-start justify-between">
+                      <div className="space-y-2">
+                        <div className="h-4 w-32 rounded bg-[var(--color-border)]" />
+                        <div className="h-3 w-48 rounded bg-[var(--color-border)]" />
+                      </div>
+                      <div className="h-5 w-16 rounded-full bg-[var(--color-border)]" />
+                    </div>
+                    <div className="h-3 w-full rounded bg-[var(--color-border)]" />
+                    <div className="mt-3 h-8 w-full rounded-lg bg-[var(--color-border)]" />
+                  </div>
+                ))}
+              </div>
             ) : tickets.length === 0 ? (
               <div className="py-10 text-center text-sm text-[var(--color-text-muted)]">{copy.emptyTasks}</div>
             ) : (
               <div className="space-y-3">
                 {tickets.map((ticket) => (
-                  <article key={ticket.id} className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-elevated)] p-4">
+                  <article key={ticket.id} className={`relative overflow-hidden rounded-xl border bg-[var(--color-surface-elevated)] p-4 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md ${
+                    selectedTicket?.id === ticket.id
+                      ? 'border-[var(--color-primary)]/40 shadow-sm ring-1 ring-[var(--color-primary)]/25'
+                      : 'border-[var(--color-border)] shadow-sm'
+                  }`}>
+                    {/* Left status accent bar */}
+                    <div
+                      className="absolute left-0 top-0 bottom-0 w-[3px]"
+                      style={{ backgroundColor: `var(--status-${ticket.status})` }}
+                    />
                     <div className="mb-2 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
                       <div>
-                        <div className="font-medium">{ticket.order_no || ticket.id}</div>
+                        <div className="font-semibold">{ticket.order_no || ticket.id}</div>
                         <div className="text-sm text-[var(--color-text-muted)]">
                           {ticket.customer_name || copy.customerFallback} / {ticket.customer_region || copy.regionFallback}
                         </div>
                       </div>
-                      <span className="rounded-lg bg-[var(--color-primary)]/10 px-2 py-1 text-xs text-[var(--color-primary)]">
-                        {statusLabels[ticket.status] || ticket.status}
+                      <span className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium"
+                        style={{ backgroundColor: `var(--status-${ticket.status}-bg)`, color: `var(--status-${ticket.status}-text)` }}
+                      >
+                        <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: `var(--status-${ticket.status})` }} />
+                        {statusLabels[ticket.status]?.text || ticket.status}
                       </span>
                     </div>
                     <p className="text-sm text-[var(--color-text-secondary)]">
                       {ticket.description ? formatEngineerDescription(ticket.description, isCn) : copy.descriptionFallback}
                     </p>
-                    <div className="mt-3 rounded-lg border border-[var(--color-primary)]/20 bg-[var(--color-primary)]/5 px-3 py-2 text-xs text-[var(--color-text-primary)]">
-                      <span className="font-semibold text-[var(--color-primary)]">{copy.nextStep}:</span> {getNextAction(ticket, copy)}
+                    <div className="mt-3 flex items-start gap-2 rounded-lg border border-[var(--color-primary)]/20 bg-[var(--color-primary)]/5 px-3 py-2 text-xs text-[var(--color-text-primary)]">
+                      <span className="mt-0.5 shrink-0">→</span>
+                      <div><span className="font-semibold text-[var(--color-primary)]">{copy.nextStep}:</span> {getNextAction(ticket, copy)}</div>
                     </div>
                     <div className="mt-3 grid gap-2 text-xs text-[var(--color-text-muted)] sm:grid-cols-3">
                       <div>{copy.customerIssue}: {ticket.type || '-'}</div>
-                      <div>{copy.safetyRisk}: {ticket.urgency === 'critical' ? copy.highRisk : ticket.urgency === 'urgent' ? copy.priority : copy.standard}</div>
+                      <div>{copy.safetyRisk}: <span className={ticket.urgency === 'critical' ? 'font-semibold text-[var(--color-error)]' : ticket.urgency === 'urgent' ? 'font-medium text-[var(--color-warning)]' : ''}>{ticket.urgency === 'critical' ? copy.highRisk : ticket.urgency === 'urgent' ? copy.priority : copy.standard}</span></div>
                       <div>{copy.currentEngineer}: {ticket.engineer_name || copy.pendingRegionalAssignment}</div>
                     </div>
                     <div className="mt-3 grid gap-2 sm:flex sm:flex-wrap">
                       <button
                         onClick={() => setSelectedTicket(ticket)}
-                        className="min-h-10 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm font-medium text-[var(--color-text-primary)] hover:border-[var(--color-primary)]"
+                        className="min-h-10 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm font-medium text-[var(--color-text-primary)] transition-all duration-150 hover:border-[var(--color-primary)] hover:bg-[var(--color-primary)]/5 active:scale-[0.98]"
                       >
                         {copy.viewTask}
                       </button>
@@ -798,14 +821,14 @@ export function EngineerWorkspace({ currentUser, onLogout, onOpenProfile }) {
                           <button
                             onClick={() => confirmAssignment(ticket)}
                             disabled={assigningId === `${ticket.id}:accept`}
-                            className="min-h-10 rounded-lg bg-[var(--color-primary)] px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
+                            className="min-h-10 rounded-lg bg-[var(--color-primary)] px-3 py-2 text-sm font-medium text-white active:scale-[0.98] transition-all duration-150 disabled:opacity-50"
                           >
                             {assigningId === `${ticket.id}:accept` ? copy.confirming : copy.confirmAssignment}
                           </button>
                           <button
                             onClick={() => returnAssignment(ticket)}
                             disabled={assigningId === `${ticket.id}:reject`}
-                            className="min-h-10 rounded-lg border border-[var(--color-border)] px-3 py-2 text-sm font-medium text-[var(--color-text-secondary)] disabled:opacity-50"
+                            className="min-h-10 rounded-lg border border-[var(--color-border)] px-3 py-2 text-sm font-medium text-[var(--color-text-secondary)] active:scale-[0.98] transition-all duration-150 disabled:opacity-50"
                           >
                             {assigningId === `${ticket.id}:reject` ? copy.returning : copy.returnToDispatch}
                           </button>
@@ -836,7 +859,7 @@ export function EngineerWorkspace({ currentUser, onLogout, onOpenProfile }) {
                           <button
                             onClick={() => assignToEngineer(ticket)}
                             disabled={assigningId === ticket.id}
-                            className="rounded-lg bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+                            className="rounded-lg bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-white active:scale-[0.98] transition-all duration-150 disabled:opacity-50"
                           >
                             {assigningId === ticket.id ? copy.assigning : copy.assignEngineer}
                           </button>
@@ -853,81 +876,123 @@ export function EngineerWorkspace({ currentUser, onLogout, onOpenProfile }) {
           </div>
 
           <aside className="space-y-4">
-            <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5">
-              <h2 className="mb-3 font-semibold">{copy.contextTitle}</h2>
-              {activeTicket ? (
-                <div className="space-y-3 text-sm">
-                  <div>
-                    <div className="text-xs uppercase text-[var(--color-text-muted)]">{copy.workOrder}</div>
-                    <div className="font-medium text-[var(--color-text-primary)]">{activeTicket.order_no || activeTicket.id}</div>
-                  </div>
-                  <div>
-                    <div className="text-xs uppercase text-[var(--color-text-muted)]">{copy.customerRegion}</div>
-                    <div className="text-[var(--color-text-secondary)]">{activeTicket.customer_name || copy.customerFallback} / {activeTicket.customer_region || copy.regionFallback}</div>
-                  </div>
-                  <div>
-                    <div className="text-xs uppercase text-[var(--color-text-muted)]">{copy.machineServiceType}</div>
-                    <div className="text-[var(--color-text-secondary)]">{getMachineLine(activeTicket, isCn, copy)}</div>
-                  </div>
-                  <div>
-                    <div className="text-xs uppercase text-[var(--color-text-muted)]">{copy.nextStepLabel}</div>
-                    <div className="text-[var(--color-text-secondary)]">{getNextAction(activeTicket, copy)}</div>
-                  </div>
-                </div>
-              ) : (
-                <p className="text-sm text-[var(--color-text-secondary)]">{copy.noActiveTask}</p>
-              )}
-            </div>
-            <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5">
-              <div className="mb-3">
-                <h2 className="font-semibold">{copy.preparationTitle}</h2>
-                {activeTicket && (
-                  <p className="mt-1 text-xs text-[var(--color-text-muted)]">
-                    {copy.preparationFor(activeTicket.order_no || activeTicket.id)}
-                  </p>
-                )}
-              </div>
-              {activeTicket ? (
-                <div className="space-y-3 text-sm text-[var(--color-text-secondary)]">
-                  <div>
-                    <div className="mb-1 text-xs uppercase text-[var(--color-text-muted)]">{copy.aiIntakeSummary}</div>
-                    <p>{formatEngineerDescription(activeAiSummary.text, isCn)}</p>
-                    {activeAiSummary.tags.length > 0 && (
-                      <div className="mt-2 flex flex-wrap gap-1.5">
-                        {activeAiSummary.tags.map((tag) => (
-                          <span key={tag} className="rounded-full bg-[var(--color-primary)]/10 px-2 py-0.5 text-xs text-[var(--color-primary)]">
-                            {tag}
-                          </span>
-                        ))}
-                      </div>
-                    )}
-                    {activeAiSummary.notes && (
-                      <p className="mt-2 text-xs text-[var(--color-text-muted)]">{activeAiSummary.notes}</p>
-                    )}
-                  </div>
-                  <div>
-                    <div className="mb-1 text-xs uppercase text-[var(--color-text-muted)]">{copy.equipmentRecord}</div>
-                    <p>{getMachineLine(activeTicket, isCn, copy)}</p>
-                  </div>
-                </div>
-              ) : (
-                <p className="text-sm text-[var(--color-text-secondary)]">
-                  {copy.selectTaskHint}
-                </p>
-              )}
-            </div>
-            <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5">
-              <div className="mb-3 flex items-center gap-2">
-                <ShieldCheck size={18} className="text-[var(--color-primary)]" />
-                <h2 className="font-semibold">{copy.checklistTitle}</h2>
-              </div>
-              <div className="space-y-2">
-                {checklist.map((item) => (
-                  <label key={item} className="flex gap-2 text-sm text-[var(--color-text-secondary)]">
-                    <input type="checkbox" className="mt-1" />
-                    <span>{item}</span>
-                  </label>
+            <div className="overflow-hidden rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)]">
+              {/* Tab navigation */}
+              <div className="flex border-b border-[var(--color-border)]" role="tablist" aria-label={copy.contextTitle}>
+                {(['summary', 'preparation', 'checklist']).map((tab) => (
+                  <button
+                    key={tab}
+                    id={`engineer-context-tab-${tab}`}
+                    type="button"
+                    role="tab"
+                    aria-selected={selectedContextTab === tab}
+                    aria-controls={`engineer-context-panel-${tab}`}
+                    onClick={() => setSelectedContextTab(tab)}
+                    className={`flex-1 px-3 py-2.5 text-xs font-medium transition-colors ${
+                      selectedContextTab === tab
+                        ? 'border-b-2 border-[var(--color-primary)] text-[var(--color-primary)]'
+                        : 'text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)]'
+                    }`}
+                  >
+                    {tab === 'summary'
+                      ? copy.contextTitle
+                      : tab === 'preparation'
+                        ? copy.preparationTitle
+                        : copy.checklistTitle}
+                  </button>
                 ))}
+              </div>
+              <div
+                id={`engineer-context-panel-${selectedContextTab}`}
+                role="tabpanel"
+                aria-labelledby={`engineer-context-tab-${selectedContextTab}`}
+                className="p-5"
+              >
+                {/* Summary tab */}
+                {selectedContextTab === 'summary' && (
+                  activeTicket ? (
+                    <div className="space-y-3 text-sm">
+                      <div>
+                        <div className="text-xs uppercase text-[var(--color-text-muted)]">{copy.workOrder}</div>
+                        <div className="font-medium text-[var(--color-text-primary)]">{activeTicket.order_no || activeTicket.id}</div>
+                      </div>
+                      <div>
+                        <div className="text-xs uppercase text-[var(--color-text-muted)]">{copy.customerRegion}</div>
+                        <div className="text-[var(--color-text-secondary)]">{activeTicket.customer_name || copy.customerFallback} / {activeTicket.customer_region || copy.regionFallback}</div>
+                      </div>
+                      <div>
+                        <div className="text-xs uppercase text-[var(--color-text-muted)]">{copy.machineServiceType}</div>
+                        <div className="text-[var(--color-text-secondary)]">{getMachineLine(activeTicket, isCn, copy)}</div>
+                      </div>
+                      <div>
+                        <div className="text-xs uppercase text-[var(--color-text-muted)]">{copy.nextStepLabel}</div>
+                        <div className="text-[var(--color-text-secondary)]">{getNextAction(activeTicket, copy)}</div>
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="text-sm text-[var(--color-text-secondary)]">{copy.noActiveTask}</p>
+                  )
+                )}
+
+                {/* Preparation tab */}
+                {selectedContextTab === 'preparation' && (
+                  <>
+                    {activeTicket && (
+                      <p className="mb-3 text-xs text-[var(--color-text-muted)]">
+                        {copy.preparationFor(activeTicket.order_no || activeTicket.id)}
+                      </p>
+                    )}
+                    {activeTicket ? (
+                      <div className="space-y-3 text-sm text-[var(--color-text-secondary)]">
+                        <div>
+                          <div className="mb-1 text-xs uppercase text-[var(--color-text-muted)]">{copy.aiIntakeSummary}</div>
+                          <p>{formatEngineerDescription(activeAiSummary.text, isCn)}</p>
+                          {activeAiSummary.tags.length > 0 && (
+                            <div className="mt-2 flex flex-wrap gap-1.5">
+                              {activeAiSummary.tags.map((tag) => (
+                                <span key={tag} className="rounded-full bg-[var(--color-primary)]/10 px-2 py-0.5 text-xs text-[var(--color-primary)]">
+                                  {tag}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                          {activeAiSummary.notes && (
+                            <p className="mt-2 text-xs text-[var(--color-text-muted)]">{activeAiSummary.notes}</p>
+                          )}
+                        </div>
+                        <div>
+                          <div className="mb-1 text-xs uppercase text-[var(--color-text-muted)]">{copy.equipmentRecord}</div>
+                          <p>{getMachineLine(activeTicket, isCn, copy)}</p>
+                        </div>
+                      </div>
+                    ) : (
+                      <p className="text-sm text-[var(--color-text-secondary)]">{copy.selectTaskHint}</p>
+                    )}
+                  </>
+                )}
+
+                {/* Checklist tab */}
+                {selectedContextTab === 'checklist' && (
+                  <>
+                    <div className="mb-3 flex items-center gap-2">
+                      <ShieldCheck size={18} className="text-[var(--color-primary)]" />
+                      <h2 className="font-semibold">{copy.checklistTitle}</h2>
+                    </div>
+                    <div className="space-y-2">
+                      {checklist.map((item, index) => (
+                        <label key={item} className="flex gap-2 text-sm text-[var(--color-text-secondary)]">
+                          <input
+                            type="checkbox"
+                            checked={checkedChecklistItems.has(index)}
+                            onChange={() => toggleChecklistItem(index)}
+                            className="mt-1"
+                          />
+                          <span>{item}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </>
+                )}
               </div>
             </div>
           </aside>
@@ -954,6 +1019,6 @@ export function EngineerWorkspace({ currentUser, onLogout, onOpenProfile }) {
     >
       <EngineerAvailabilityCalendar />
     </Modal>
-    </>
+    </div>
   );
 }
