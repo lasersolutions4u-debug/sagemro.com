@@ -15,6 +15,23 @@ test('pending quote approval is only available inside the full order drawer', as
   assert.doesNotMatch(tableSource, /pricing\/approve/);
 });
 
+test('Admin can edit the persisted short title while operations stays read-only', async () => {
+  const source = await readFile(new URL('./WorkOrdersPage.jsx', import.meta.url), 'utf8');
+  const api = await readFile(new URL('../services/api.js', import.meta.url), 'utf8');
+
+  assert.match(api, /export async function updateAdminWorkOrderTitle/);
+  assert.match(api, /workorders\/\$\{workOrderId\}\/short-title/);
+  assert.match(source, /updateAdminWorkOrderTitle/);
+  assert.match(source, /const \[titleEditor, setTitleEditor\]/);
+  assert.match(source, /maxLength=\{100\}/);
+  assert.match(source, /await updateAdminWorkOrderTitle\(detail\.id, titleEditor\.value\)/);
+  assert.match(source, /setDetail\(\(current\) => current\?\.id === detail\.id/);
+  assert.match(source, /setData\(\(current\) => \(\{[\s\S]*short_title/);
+  assert.match(source, /\{!readOnly && [\s\S]*titleEditor\.open/);
+  assert.match(source, /titleEditor\.error/);
+  assert.doesNotMatch(source, /window\.prompt/);
+});
+
 test('versioned quote and receipt decisions use the controlled operation dialog with exact version and stable retry key', async () => {
   const source = await readFile(new URL('./WorkOrdersPage.jsx', import.meta.url), 'utf8');
 

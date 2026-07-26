@@ -383,6 +383,13 @@ export async function processAdminInvoiceRequest(workOrderId, data) {
   });
 }
 
+export async function updateAdminWorkOrderTitle(workOrderId, shortTitle) {
+  return request(`/api/admin/workorders/${workOrderId}/short-title`, {
+    method: 'PATCH',
+    body: JSON.stringify({ short_title: shortTitle }),
+  });
+}
+
 export async function archiveAdminWorkOrder(workOrderId) {
   return request(`/api/admin/workorders/${workOrderId}/archive`, {
     method: 'PATCH',
