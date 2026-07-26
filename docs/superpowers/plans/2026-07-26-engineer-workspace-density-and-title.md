@@ -1220,9 +1220,14 @@ cd ../admin
 npm install --no-audit --no-fund
 npm test
 npm run build
+
+cd ../e2e
+npm install --no-audit --no-fund
+npx playwright install chromium
+npm test
 ```
 
-Expected: every command exits 0; Worker golden set reports no failures; frontend/Admin builds complete.
+Expected: every command exits 0; Worker golden set reports no failures; frontend/Admin builds complete; all E2E contracts and browser lifecycle tests pass.
 
 - [ ] **Step 2: Re-run the focused security and behavior tests**
 
