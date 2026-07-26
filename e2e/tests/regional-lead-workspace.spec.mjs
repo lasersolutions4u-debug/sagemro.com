@@ -51,7 +51,9 @@ test('regional lead switches team scope, reviews subordinate work, and reassigns
 
   await leadJourney.page.getByRole('button', { name: 'Team metrics', exact: true }).click();
   await expect(leadJourney.page.getByRole('heading', { name: 'Regional team work orders', exact: true })).toBeVisible();
-  await expect(leadJourney.page.getByRole('button', { name: new RegExp(firstMember.name) })).toBeVisible();
+  const firstMemberGroup = leadJourney.page.getByRole('button', { name: new RegExp(firstMember.name) });
+  await expect(firstMemberGroup).toBeVisible();
+  await firstMemberGroup.click();
 
   await leadJourney.page.getByRole('button').filter({ hasText: orderNo }).click();
   await expect(leadJourney.page).toHaveURL(new RegExp(`/work-orders/${workOrderId}$`));

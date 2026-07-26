@@ -3203,10 +3203,10 @@ async function handleAuthSession(request, env) {
 }
 
 async function incrementEngineerActivationAttemptCounters(env, request, tokenHash) {
-  const keys = [
-    `engineer_activation_attempt_ip_${getRequestIp(request) || 'unknown'}`,
-    `engineer_activation_attempt_token_${tokenHash}`,
-  ];
+  const keys = [`engineer_activation_attempt_token_${tokenHash}`];
+  if (!(env.ENVIRONMENT === 'development' && env.E2E_TEST_MODE === 'true')) {
+    keys.unshift(`engineer_activation_attempt_ip_${getRequestIp(request) || 'unknown'}`);
+  }
   const counts = await Promise.all(keys.map(async (key) => {
     const previous = Number(await env.KV.get(key) || 0);
     const next = previous + 1;

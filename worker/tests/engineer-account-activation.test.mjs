@@ -68,6 +68,8 @@ function makeActivationEnv(options = {}) {
   }
   const env = {
     JWT_SECRET,
+    ENVIRONMENT: options.ENVIRONMENT,
+    E2E_TEST_MODE: options.E2E_TEST_MODE,
     VERIFICATION_EMAIL_FROM: 'SAGEMRO <verify@example.com>',
     __EmailMessage: TestEmailMessage,
     __options: options,
@@ -830,4 +832,18 @@ test('activation attempts increment IP and token counters and rate limit generic
   assert.equal(env.__kvPuts.length, 2);
   assert.ok(env.__kvPuts.every((entry) => entry.settings.expirationTtl === 900));
   assert.ok(env.__kvPuts.every((entry) => entry.value === '11'));
+});
+
+test('local E2E activations do not share the loopback IP attempt counter', async () => {
+  const env = makeActivationEnv({
+    validToken: true,
+    authStatus: 'pending_activation',
+    ENVIRONMENT: 'development',
+    E2E_TEST_MODE: 'true',
+  });
+  const response = await postActivation(env, { token: 'valid-token', password: 'secret12345' });
+
+  assert.equal(response.status, 200);
+  assert.equal(env.__kvPuts.length, 1);
+  assert.match(env.__kvPuts[0].key, /^engineer_activation_attempt_token_/);
 });
