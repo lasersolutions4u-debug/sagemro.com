@@ -341,3 +341,14 @@ test('engineer workspace no longer uses 9px or 10px operational text', () => {
   assert.match(metrics, /text-\[30px\]/);
   assert.match(list, /text-\[(?:15|16)px\]/);
 });
+
+test('engineer workspace constrains mobile header and metric controls to the viewport', () => {
+  const workspace = read('frontend/src/components/Engineer/EngineerWorkspace.jsx');
+  const metrics = read('frontend/src/components/Engineer/EngineerMetricOverview.jsx');
+
+  assert.match(workspace, /flex min-w-0 flex-col items-start gap-2 sm:flex-row sm:items-center sm:gap-4/);
+  assert.match(workspace, /flex w-full min-w-0 flex-wrap items-center gap-2 md:w-auto/);
+  assert.match(workspace, /mb-4 grid min-w-0 gap-4 xl:grid-cols/);
+  assert.match(metrics, /section className="min-w-0 rounded-2xl/);
+  assert.match(metrics, /grid w-full min-w-0 grid-cols-2[^"\n]*sm:inline-flex sm:w-fit/);
+});
