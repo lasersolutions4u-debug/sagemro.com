@@ -406,6 +406,21 @@ test('team work-order summary and group pagination', async (t) => {
   }
 
   sqlite.exec(`
+    UPDATE work_orders SET created_at = '2026-07-25 16:00:00+08:00' WHERE id = 'wo-member-6';
+    UPDATE work_orders SET created_at = '2026-07-25 15:00:00Z' WHERE id = 'wo-member-5';
+  `);
+  const timezoneCursorPage = await api(
+    env,
+    '/api/engineers/tickets?scope=team&view=group&group_type=member&group_id=eng-1&filter=all&limit=1',
+  );
+  assert.equal(timezoneCursorPage.response.status, 200);
+  const timezoneCursorNextPage = await api(
+    env,
+    `/api/engineers/tickets?scope=team&view=group&group_type=member&group_id=eng-1&filter=all&limit=1&cursor=${encodeURIComponent(timezoneCursorPage.json.next_cursor)}`,
+  );
+  assert.equal(timezoneCursorNextPage.response.status, 200);
+
+  sqlite.exec(`
     INSERT INTO work_orders (
       id, order_no, customer_id, engineer_id, type, description, status,
       assigned_regional_lead_id, created_at
