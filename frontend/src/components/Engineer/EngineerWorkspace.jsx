@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   acceptTicket,
   assignEngineerWorkOrder,
@@ -133,13 +133,16 @@ export function EngineerWorkspace({ currentUser, onLogout, onOpenProfile, workOr
   const [workOrderFilter, setWorkOrderFilter] = useState('all');
   const [isCalendarOpen, setIsCalendarOpen] = useState(false);
   const [calendarEvents, setCalendarEvents] = useState([]);
+  const ticketRequestGeneration = useRef(0);
 
   const loadTickets = useCallback(async () => {
+    const requestGeneration = ++ticketRequestGeneration.current;
     setLoading(true); setLoadError('');
     try {
       const data = await getEngineerTickets(scope === 'team'
         ? { scope, view: 'summary', filter: workOrderFilter, timezone_offset_minutes: -new Date().getTimezoneOffset() }
         : { scope });
+      if (requestGeneration !== ticketRequestGeneration.current) return;
       setTickets(data.work_orders || []);
       if (scope === 'team') {
         setTeam(data.team || []);
@@ -147,13 +150,16 @@ export function EngineerWorkspace({ currentUser, onLogout, onOpenProfile, workOr
         setTeamRefreshVersion((current) => current + 1);
       }
     } catch (error) {
+      if (requestGeneration !== ticketRequestGeneration.current) return;
       setTickets([]);
       if (scope === 'team') {
         setTeam([]);
         setTeamSummary({ groups: [], metrics: null });
       }
       setLoadError(error.message || copy.loadTasksFailed);
-    } finally { setLoading(false); }
+    } finally {
+      if (requestGeneration === ticketRequestGeneration.current) setLoading(false);
+    }
   }, [copy.loadTasksFailed, scope, workOrderFilter]);
 
   const loadCalendar = useCallback(async () => {

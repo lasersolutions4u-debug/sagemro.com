@@ -90,9 +90,9 @@ export function EngineerTeamWorkOrderList({
     if (loading) return;
     groups.filter((group) => !isCollapsed(group) && group.total > 0)
       .forEach((group) => {
-        if (!groupPages[group.key] && !groupLoading[group.key]) loadGroup(group, { limit: INITIAL_GROUP_LIMIT });
+        if (!groupPages[group.key] && !groupLoading[group.key] && !groupErrors[group.key]) loadGroup(group, { limit: INITIAL_GROUP_LIMIT });
       });
-  }, [collapsed, groupLoading, groupPages, groups, isCollapsed, loadGroup, loading]);
+  }, [collapsed, groupErrors, groupLoading, groupPages, groups, isCollapsed, loadGroup, loading]);
   const toggleGroup = (group) => {
     const closed = isCollapsed(group);
     setCollapsed((current) => ({ ...current, [group.key]: !closed }));
