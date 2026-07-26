@@ -1,7 +1,6 @@
 import { ChevronRight, RefreshCw } from 'lucide-react';
-import { useMemo } from 'react';
+import { Fragment, useMemo } from 'react';
 import {
-  getEngineerScheduleLabel,
   getEngineerWorkOrderTitle,
   sortEngineerWorkOrders,
 } from './engineerWorkOrderDisplay';
@@ -60,37 +59,62 @@ export function EngineerWorkOrderList({
     <div className="py-9 text-center text-sm text-[#697386]">{copy.empty}</div>
   ) : (
     <div>
-      <div className="hidden grid-cols-[1.05fr_2.1fr_.9fr_1.5fr_.8fr_36px] gap-3 px-5 py-2 text-[9px] font-extrabold uppercase tracking-wider text-[#929baa] lg:grid">
-        <span>{isCn ? '工单' : 'Work order'}</span><span>{isCn ? '客户与设备' : 'Customer & machine'}</span><span>{isCn ? '状态' : 'Status'}</span><span>{copy.nextStep}</span><span>{copy.updated}</span><span />
+      <div className="hidden gap-3 px-4 py-2 text-[9px] font-extrabold uppercase tracking-wider text-[#929baa] min-[1280px]:grid min-[1280px]:grid-cols-[132px_minmax(160px,1.05fr)_92px_minmax(175px,1.1fr)_96px_120px_minmax(190px,1.25fr)_104px_36px]">
+        <span>{isCn ? '工单号' : 'Work order'}</span>
+        <span>{isCn ? '工单名称' : 'Task name'}</span>
+        <span>{isCn ? '客户' : 'Customer'}</span>
+        <span>{isCn ? '设备 / 故障' : 'Equipment / issue'}</span>
+        <span>{isCn ? '地区' : 'Region'}</span>
+        <span>{isCn ? '状态' : 'Status'}</span>
+        <span>{copy.nextStep}</span>
+        <span>{copy.updated}</span>
+        <span />
       </div>
-      {visibleTickets.map((ticket) => {
-        const schedule = getEngineerScheduleLabel(ticket, isCn ? 'zh-CN' : 'en-US');
-        return (
+      {visibleTickets.map((ticket) => (
+        <Fragment key={ticket.id}>
           <button
             key={ticket.id}
             type="button"
             onClick={() => onSelectTicket(ticket)}
-            className="grid w-full gap-2 border-t border-[#eef0f3] bg-white px-4 py-4 text-left transition hover:bg-[#fffaf2] lg:grid-cols-[1.05fr_2.1fr_.9fr_1.5fr_.8fr_36px] lg:items-center lg:gap-3 lg:px-5 lg:py-3"
+            className="w-full border-t border-[#eef0f3] bg-white px-4 py-4 text-left transition hover:bg-[#fffaf2] min-[1280px]:hidden"
           >
-            <span>
-              <strong className="block text-xs text-[#18202b]">{ticket.order_no || ticket.id}</strong>
-              <span className="mt-1 block text-[10px] text-[#929baa]">{formatUpdated(ticket.created_at, isCn)}</span>
+            <span className="flex items-start justify-between gap-3">
+              <strong className="min-w-0 text-sm text-[#18202b]">{getEngineerWorkOrderTitle(ticket, isCn, copy.taskFallback)}</strong>
+              <span className="inline-flex shrink-0 rounded-full bg-orange-50 px-2 py-1 text-[10px] font-bold text-orange-700">{statusLabels[ticket.status] || ticket.status}</span>
             </span>
-            <span className="min-w-0">
-              <strong className="block truncate text-xs text-[#18202b]">{getEngineerWorkOrderTitle(ticket, isCn, copy.taskFallback)}</strong>
-              {ticket.customer_name && <span className="mt-1 block truncate text-[10px] text-[#929baa]">{ticket.customer_name}</span>}
-              <span className="mt-1 block truncate text-[10px] text-[#697386]">{getMachineLine(ticket) || copy.machineFallback}{schedule ? ` · ${schedule}` : ''}</span>
+            <strong className="mt-2 block text-xs text-[#18202b]">{ticket.order_no || ticket.id}</strong>
+            <span className="mt-2 block truncate text-xs text-[#697386]">{ticket.customer_name || '—'}</span>
+            <span className="mt-1 flex min-w-0 items-center gap-2 text-[11px] text-[#697386]">
+              <span className="min-w-0 flex-1 truncate">{getMachineLine(ticket) || copy.machineFallback}</span>
+              <span aria-hidden="true">·</span>
+              <span className="max-w-[40%] truncate">{ticket.customer_region || copy.regionFallback}</span>
             </span>
-            <span><span className="inline-flex rounded-full bg-orange-50 px-2 py-1 text-[10px] font-bold text-orange-700">{statusLabels[ticket.status] || ticket.status}</span></span>
-            <span className="min-w-0">
-              <strong className="block text-[11px] text-[#18202b]">{getNextAction(ticket)}</strong>
-              <span className="mt-1 block truncate text-[10px] text-[#929baa]">{ticket.customer_region || copy.regionFallback}</span>
+            <span className="mt-3 block text-[10px] font-extrabold uppercase tracking-wider text-[#929baa]">{copy.nextStep}</span>
+            <strong className="mt-1 line-clamp-2 text-[11px] leading-5 text-[#18202b]">{getNextAction(ticket)}</strong>
+            <span className="mt-3 flex items-center justify-between gap-3 text-[10px] text-[#697386]">
+              <span>{copy.updated} {formatUpdated(ticket.updated_at || ticket.created_at, isCn)}</span>
+              <span className="inline-flex items-center gap-1 font-semibold text-orange-600">
+                {copy.view}<ChevronRight aria-hidden="true" size={15} />
+              </span>
             </span>
-            <span className="text-[10px] text-[#697386]">{formatUpdated(ticket.updated_at || ticket.created_at, isCn)}</span>
-            <span className="grid size-8 place-items-center rounded-lg border border-[#e5e8ed] text-orange-600"><ChevronRight size={15} /></span>
           </button>
-        );
-      })}
+          <button
+            type="button"
+            onClick={() => onSelectTicket(ticket)}
+            className="hidden min-h-[76px] w-full items-center gap-3 border-t border-[#eef0f3] bg-white px-4 py-3 text-left transition hover:bg-[#fffaf2] min-[1280px]:grid min-[1280px]:grid-cols-[132px_minmax(160px,1.05fr)_92px_minmax(175px,1.1fr)_96px_120px_minmax(190px,1.25fr)_104px_36px]"
+          >
+            <strong className="text-xs text-[#18202b]">{ticket.order_no || ticket.id}</strong>
+            <strong className="truncate text-xs text-[#18202b]">{getEngineerWorkOrderTitle(ticket, isCn, copy.taskFallback)}</strong>
+            <span className="truncate text-[10px] text-[#697386]">{ticket.customer_name || '—'}</span>
+            <span className="truncate text-[10px] text-[#697386]">{getMachineLine(ticket) || copy.machineFallback}</span>
+            <span className="truncate text-[10px] text-[#697386]">{ticket.customer_region || copy.regionFallback}</span>
+            <span><span className="inline-flex rounded-full bg-orange-50 px-2 py-1 text-[10px] font-bold text-orange-700">{statusLabels[ticket.status] || ticket.status}</span></span>
+            <strong className="line-clamp-2 text-[11px] leading-4 text-[#18202b]">{getNextAction(ticket)}</strong>
+            <span className="text-[10px] text-[#697386]">{formatUpdated(ticket.updated_at || ticket.created_at, isCn)}</span>
+            <span aria-hidden="true" className="grid size-8 place-items-center rounded-lg border border-[#e5e8ed] text-orange-600"><ChevronRight size={15} /></span>
+          </button>
+        </Fragment>
+      ))}
     </div>
   );
 
