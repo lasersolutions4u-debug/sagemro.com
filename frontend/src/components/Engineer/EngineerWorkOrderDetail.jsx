@@ -66,12 +66,12 @@ function CustomerContent({ record, isCn }) {
   const content = getLocalizedCustomerContent(record, isCn ? 'cn' : 'en');
   return (
     <div>
-      {content.primaryLabel && <div className="mb-2 text-[10px] font-bold uppercase tracking-wide text-blue-700">{content.primaryLabel}</div>}
+      {content.primaryLabel && <div className="mb-2 text-xs font-bold uppercase tracking-wide text-blue-700">{content.primaryLabel}</div>}
       {content.primaryText && <p className="whitespace-pre-wrap text-sm leading-6 text-[#394455]">{content.primaryText}</p>}
       {content.originalText && (
         <div className="mt-3">
-          <button type="button" onClick={() => setShowOriginal((value) => !value)} className="text-[11px] font-bold text-blue-700">{showOriginal ? copy.hideOriginal : copy.original}</button>
-          {showOriginal && <div className="mt-2 rounded-lg bg-[#f7f8fa] p-3"><div className="mb-1 text-[10px] font-bold text-[#697386]">{content.originalLabel || copy.noTranslation}</div><p className="whitespace-pre-wrap text-sm text-[#394455]">{content.originalText}</p></div>}
+          <button type="button" onClick={() => setShowOriginal((value) => !value)} className="text-xs font-bold text-blue-700">{showOriginal ? copy.hideOriginal : copy.original}</button>
+          {showOriginal && <div className="mt-2 rounded-lg bg-[#f7f8fa] p-3"><div className="mb-1 text-xs font-bold text-[#697386]">{content.originalLabel || copy.noTranslation}</div><p className="whitespace-pre-wrap text-sm text-[#394455]">{content.originalText}</p></div>}
         </div>
       )}
       {!content.primaryText && !content.originalText && <span className="text-sm text-[#929baa]">—</span>}
@@ -132,7 +132,7 @@ export function EngineerWorkOrderDetail({
     <div className="mt-4 grid gap-2 border-t border-white/15 pt-4"><button type="button" onClick={() => refreshAfter(onConfirmAssignment)} className="rounded-lg bg-orange-500 px-3 py-2 text-xs font-bold text-white">{copy.confirm}</button><button type="button" onClick={() => refreshAfter(onReturnAssignment)} className="rounded-lg border border-white/25 px-3 py-2 text-xs font-bold text-white">{copy.returnDispatch}</button></div>
   ) : canReassignTeamWork ? (
     <div className="mt-4 border-t border-white/15 pt-4">
-      <label className="mb-2 block text-[10px] font-bold text-slate-300">{copy.engineer}</label>
+      <label className="mb-2 block text-xs font-bold text-slate-300">{copy.engineer}</label>
       <select value={selectedEngineer[detail.id] || detail.engineer_id || ''} onChange={(event) => onEngineerSelectionChange(detail.id, event.target.value)} className="w-full rounded-lg border-0 bg-white px-3 py-2 text-xs text-[#18202b]">
         <option value="">{copy.selectEngineer}</option>
         {team.map((engineer) => <option key={engineer.id} value={engineer.id}>{engineer.name}{engineer.status ? ` · ${copy.statusNames[engineer.status] || engineer.status}` : ''}</option>)}
@@ -154,26 +154,26 @@ export function EngineerWorkOrderDetail({
       <button type="button" onClick={onBack} className="mb-4 inline-flex items-center gap-2 text-sm font-bold text-orange-600"><ArrowLeft size={16} />{copy.back}</button>
       <section className="grid gap-5 rounded-2xl border border-[#e5e8ed] bg-white p-5 shadow-[0_14px_36px_rgba(24,32,43,.07)] lg:grid-cols-[minmax(0,1.7fr)_minmax(270px,.7fr)]">
         <div>
-          <div className="text-[10px] font-extrabold uppercase tracking-[.12em] text-orange-600">{copy.kicker} · {detail.order_no || detail.id}</div>
-          <div className="mt-2 flex flex-wrap items-center gap-3"><h1 className="text-2xl font-bold tracking-tight">{getEngineerWorkOrderTitle(detail, isCn, isCn ? '服务任务' : 'Service task')}</h1><span className="rounded-full bg-orange-50 px-2 py-1 text-[10px] font-bold text-orange-700">{statusLabels[detail.status] || detail.status}</span></div>
+          <div className="text-xs font-extrabold uppercase tracking-[.12em] text-orange-600">{copy.kicker} · {detail.order_no || detail.id}</div>
+          <div className="mt-2 flex flex-wrap items-center gap-3"><h1 className="text-2xl font-bold tracking-tight">{getEngineerWorkOrderTitle(detail, isCn, isCn ? '服务任务' : 'Service task')}</h1><span className="rounded-full bg-orange-50 px-2 py-1 text-xs font-bold text-orange-700">{statusLabels[detail.status] || detail.status}</span></div>
           <div className="mt-5 grid grid-cols-2 border-t border-[#e5e8ed] sm:grid-cols-4">
-            {[[copy.customer, detail.customer_name || '—'], [copy.region, detail.customer_region || '—'], [copy.engineer, detail.engineer_name || copy.unassigned], [copy.schedule, scheduledTime]].map(([label, value]) => <div key={label} className="pr-3 pt-4"><span className="block text-[9px] font-extrabold uppercase tracking-wide text-[#929baa]">{label}</span><strong className="mt-1 block text-xs">{value}</strong></div>)}
+            {[[copy.customer, detail.customer_name || '—'], [copy.region, detail.customer_region || '—'], [copy.engineer, detail.engineer_name || copy.unassigned], [copy.schedule, scheduledTime]].map(([label, value]) => <div key={label} className="pr-3 pt-4"><span className="block text-xs font-extrabold uppercase tracking-wide text-[#929baa]">{label}</span><strong className="mt-1 block text-sm">{value}</strong></div>)}
           </div>
         </div>
-        <aside className="rounded-xl bg-[#18202b] p-4 text-white"><span className="text-[9px] font-bold uppercase tracking-wider text-slate-300">{copy.nextStep}</span><strong className="mt-2 block text-sm leading-6">{getNextAction(detail)}</strong>{actionPanel}</aside>
+        <aside className="rounded-xl bg-[#18202b] p-4 text-white"><span className="text-xs font-bold uppercase tracking-wider text-slate-300">{copy.nextStep}</span><strong className="mt-2 block text-sm leading-6">{getNextAction(detail)}</strong>{actionPanel}</aside>
       </section>
 
       <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_280px]">
         <main className="min-w-0 overflow-hidden rounded-2xl border border-[#e5e8ed] bg-white">
           <nav role="tablist" className="flex overflow-x-auto border-b border-[#e5e8ed] bg-[#fbfcfd] px-3">
-            {tabs.map(([key, label]) => <button id={`engineer-tab-${key}`} aria-controls={`engineer-panel-${key}`} key={key} type="button" role="tab" aria-selected={activeTab === key} onClick={() => setActiveTab(key)} className={`h-12 shrink-0 border-b-2 px-3 text-[11px] font-bold ${activeTab === key ? 'border-orange-500 text-orange-600' : 'border-transparent text-[#697386]'}`}>{label}</button>)}
+            {tabs.map(([key, label]) => <button id={`engineer-tab-${key}`} aria-controls={`engineer-panel-${key}`} key={key} type="button" role="tab" aria-selected={activeTab === key} onClick={() => setActiveTab(key)} className={`h-12 shrink-0 border-b-2 px-3 text-[13px] font-bold ${activeTab === key ? 'border-orange-500 text-orange-600' : 'border-transparent text-[#697386]'}`}>{label}</button>)}
           </nav>
           <div id={`engineer-panel-${activeTab}`} role="tabpanel" aria-labelledby={`engineer-tab-${activeTab}`} className="p-4 sm:p-5">
             {activeTab === 'overview' ? (
               <div className="grid gap-3 md:grid-cols-[1.15fr_.85fr]">
-                <section className="rounded-xl border border-[#e5e8ed] p-4"><div className="text-[10px] font-extrabold uppercase tracking-wide text-orange-600">{copy.context}</div><h2 className="mt-2 text-sm font-semibold">{copy.machine}</h2><p className="mt-2 text-sm text-[#394455]">{getMachineLine(detail)}</p><div className="mt-4"><CustomerContent record={{ description: formatDescription(detail.description), description_en: detail.description_en, description_zh: detail.description_zh }} isCn={isCn} /></div></section>
-                <section className="rounded-xl border border-[#e5e8ed] p-4"><div className="text-[10px] font-extrabold uppercase tracking-wide text-orange-600">{copy.preparation}</div><h2 className="mt-2 text-sm font-semibold">{copy.intake}</h2><CustomerContent record={{ description: formatDescription(aiSummary.summary), description_en: detail.ai_summary_en }} isCn={isCn} />{aiSummary.tags.length > 0 && <div className="mt-3 flex flex-wrap gap-1">{aiSummary.tags.map((tag) => <span key={tag} className="rounded-full bg-orange-50 px-2 py-1 text-[10px] font-bold text-orange-700">{tag}</span>)}</div>}{aiSummary.notes && <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-800">{formatDescription(aiSummary.notes)}</p>}<p className="mt-3 text-xs text-[#697386]">{copy.attachments}: {detail.attachments?.length || 0}</p></section>
-                <section className="rounded-xl border border-[#e5e8ed] p-4 md:col-span-2"><div className="flex items-center gap-2 text-[10px] font-extrabold uppercase tracking-wide text-orange-600"><ShieldCheck size={15} />{copy.checklist}</div><ol className="mt-3 grid gap-2 sm:grid-cols-2">{CHECKLIST[isCn ? 'cn' : 'en'].map((item, index) => <li key={item} className="flex gap-2 rounded-lg bg-[#f7f8fa] p-3 text-xs leading-5 text-[#697386]"><span className="grid size-5 shrink-0 place-items-center rounded-md bg-orange-50 text-[9px] font-bold text-orange-700">{index + 1}</span>{item}</li>)}</ol></section>
+                <section className="rounded-xl border border-[#e5e8ed] p-4"><div className="text-xs font-extrabold uppercase tracking-wide text-orange-600">{copy.context}</div><h2 className="mt-2 text-sm font-semibold">{copy.machine}</h2><p className="mt-2 text-sm text-[#394455]">{getMachineLine(detail)}</p><div className="mt-4"><CustomerContent record={{ description: formatDescription(detail.description), description_en: detail.description_en, description_zh: detail.description_zh }} isCn={isCn} /></div></section>
+                <section className="rounded-xl border border-[#e5e8ed] p-4"><div className="text-xs font-extrabold uppercase tracking-wide text-orange-600">{copy.preparation}</div><h2 className="mt-2 text-sm font-semibold">{copy.intake}</h2><CustomerContent record={{ description: formatDescription(aiSummary.summary), description_en: detail.ai_summary_en }} isCn={isCn} />{aiSummary.tags.length > 0 && <div className="mt-3 flex flex-wrap gap-1">{aiSummary.tags.map((tag) => <span key={tag} className="rounded-full bg-orange-50 px-2 py-1 text-xs font-bold text-orange-700">{tag}</span>)}</div>}{aiSummary.notes && <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-800">{formatDescription(aiSummary.notes)}</p>}<p className="mt-3 text-xs text-[#697386]">{copy.attachments}: {detail.attachments?.length || 0}</p></section>
+                <section className="rounded-xl border border-[#e5e8ed] p-4 md:col-span-2"><div className="flex items-center gap-2 text-xs font-extrabold uppercase tracking-wide text-orange-600"><ShieldCheck size={15} />{copy.checklist}</div><ol className="mt-3 grid gap-2 sm:grid-cols-2">{CHECKLIST[isCn ? 'cn' : 'en'].map((item, index) => <li key={item} className="flex gap-2 rounded-lg bg-[#f7f8fa] p-3 text-sm leading-6 text-[#697386]"><span className="grid size-5 shrink-0 place-items-center rounded-md bg-orange-50 text-xs font-bold text-orange-700">{index + 1}</span>{item}</li>)}</ol></section>
               </div>
             ) : activeTab === 'quote' && !isExecutingEngineer ? (
               <section className="rounded-xl border border-[#e5e8ed] p-5"><h2 className="font-semibold">{copy.managementQuote}</h2>{detail.pricing ? <dl className="mt-4 grid gap-3 sm:grid-cols-2"><div><dt className="text-xs text-[#697386]">{copy.quoteStatus}</dt><dd className="mt-1 font-semibold">{detail.pricing.status || '—'}</dd></div><div><dt className="text-xs text-[#697386]">{copy.quoteTotal}</dt><dd className="mt-1 font-semibold">{detail.pricing.currency || ''} {detail.pricing.total_amount ?? detail.pricing.subtotal ?? '—'}</dd></div></dl> : <p className="mt-3 text-sm text-[#697386]">{copy.noQuote}</p>}</section>
@@ -189,7 +189,7 @@ export function EngineerWorkOrderDetail({
                       ['pricing', copy.quoteDetails],
                       ['collection', copy.payments],
                     ].map(([value, label]) => (
-                      <button key={value} type="button" onClick={() => setCommercialView(value)} aria-pressed={commercialView === value} className={`rounded-md px-3 py-2 text-[11px] font-bold ${commercialView === value ? 'bg-[#18202b] text-white' : 'text-[#697386]'}`}>{label}</button>
+                      <button key={value} type="button" onClick={() => setCommercialView(value)} aria-pressed={commercialView === value} className={`rounded-md px-3 py-2 whitespace-nowrap text-xs font-bold ${commercialView === value ? 'bg-[#18202b] text-white' : 'text-[#697386]'}`}>{label}</button>
                     ))}
                   </div>
                 )}

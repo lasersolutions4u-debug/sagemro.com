@@ -1,6 +1,20 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { test } from 'node:test';
+import {
+  createLatestWorkOrderTitleSaveRunner,
+  issueWorkOrderInvoice,
+} from './workOrderMutations.js';
+
+function createDeferred() {
+  let resolve;
+  let reject;
+  const promise = new Promise((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+}
 
 test('pending quote approval is only available inside the full order drawer', async () => {
   const source = await readFile(new URL('./WorkOrdersPage.jsx', import.meta.url), 'utf8');
@@ -13,6 +27,116 @@ test('pending quote approval is only available inside the full order drawer', as
   assert.match(tableSource, /openDetail\(wo\)/);
   assert.match(drawerSource, /<QuoteExecutionAdminPanel[\s\S]*detail=\{detail\}[\s\S]*readOnly=\{readOnly\}[\s\S]*onOpenDialog=\{openOperationDialog\}/);
   assert.doesNotMatch(tableSource, /pricing\/approve/);
+});
+
+test('Admin can edit the persisted short title while operations stays read-only', async () => {
+  const source = await readFile(new URL('./WorkOrdersPage.jsx', import.meta.url), 'utf8');
+  const api = await readFile(new URL('../services/api.js', import.meta.url), 'utf8');
+
+  assert.match(api, /export async function updateAdminWorkOrderTitle/);
+  assert.match(api, /workorders\/\$\{workOrderId\}\/short-title/);
+  assert.match(source, /updateAdminWorkOrderTitle/);
+  assert.match(source, /const \[titleEditor, setTitleEditor\]/);
+  assert.match(source, /maxLength=\{100\}/);
+  assert.match(source, /\(\) => updateAdminWorkOrderTitle\(workOrderId, titleEditor\.value\)/);
+  assert.match(source, /setDetail\(\(current\) => current\?\.id === workOrderId/);
+  assert.match(source, /setData\(\(current\) => \(\{[\s\S]*short_title/);
+  assert.match(source, /\{!readOnly && [\s\S]*titleEditor\.open/);
+  assert.match(source, /titleEditor\.error/);
+  assert.doesNotMatch(source, /window\.prompt/);
+});
+
+test('title save completion only mutates the editor instance that initiated it', async () => {
+  const source = await readFile(new URL('./WorkOrdersPage.jsx', import.meta.url), 'utf8');
+
+  assert.match(source, /workOrderId: null/);
+  assert.match(source, /editorId: 0/);
+  assert.match(source, /const editorId = titleEditor\.editorId/);
+  assert.match(source, /const workOrderId = titleEditor\.workOrderId/);
+  assert.match(source, /\(\) => updateAdminWorkOrderTitle\(workOrderId, titleEditor\.value\)/);
+  assert.equal(
+    source.match(/current\.editorId === editorId && current\.workOrderId === workOrderId/g)?.length,
+    2,
+  );
+});
+
+test('same-order title saves only apply the latest response when requests finish out of order', async () => {
+  const source = await readFile(new URL('./WorkOrdersPage.jsx', import.meta.url), 'utf8');
+  const runLatestSave = createLatestWorkOrderTitleSaveRunner();
+  const first = createDeferred();
+  const second = createDeferred();
+  const applied = [];
+  const errors = [];
+
+  const firstSave = runLatestSave(
+    42,
+    () => first.promise,
+    (value) => applied.push(value),
+    (error) => errors.push(error),
+  );
+  const secondSave = runLatestSave(
+    42,
+    () => second.promise,
+    (value) => applied.push(value),
+    (error) => errors.push(error),
+  );
+
+  second.resolve({ short_title: '最新标题' });
+  await secondSave;
+  first.resolve({ short_title: '旧标题' });
+  await firstSave;
+
+  assert.deepEqual(applied, [{ short_title: '最新标题' }]);
+  assert.deepEqual(errors, []);
+  assert.match(source, /createLatestWorkOrderTitleSaveRunner/);
+  assert.match(source, /latestTitleSaveRunner\.current\(\s*workOrderId/);
+});
+
+test('China invoice issuing remains independent while a title save is pending', async () => {
+  const source = await readFile(new URL('./WorkOrdersPage.jsx', import.meta.url), 'utf8');
+  const runLatestSave = createLatestWorkOrderTitleSaveRunner();
+  const titleRequest = createDeferred();
+  const invoiceRequest = createDeferred();
+  const appliedTitles = [];
+  const invoiceCalls = [];
+
+  const titleSave = runLatestSave(
+    42,
+    () => titleRequest.promise,
+    (value) => appliedTitles.push(value),
+    () => {},
+  );
+  const invoiceIssue = issueWorkOrderInvoice({
+    workOrderId: 42,
+    invoiceNumber: 'CN-2026-001',
+    processInvoice: (workOrderId, payload) => {
+      invoiceCalls.push({ workOrderId, payload });
+      return invoiceRequest.promise;
+    },
+  });
+
+  invoiceRequest.resolve({ ok: true });
+  assert.deepEqual(await invoiceIssue, {
+    status: 'issued',
+    invoice_number: 'CN-2026-001',
+  });
+  assert.deepEqual(invoiceCalls, [{
+    workOrderId: 42,
+    payload: { action: 'issue', invoice_number: 'CN-2026-001' },
+  }]);
+  assert.deepEqual(appliedTitles, []);
+
+  titleRequest.resolve({ short_title: '泵站年度检修' });
+  await titleSave;
+  assert.deepEqual(appliedTitles, [{ short_title: '泵站年度检修' }]);
+  assert.match(source, /issueWorkOrderInvoice\(\{/);
+});
+
+test('the complete title editor branch is structurally hidden from read-only operations', async () => {
+  const source = await readFile(new URL('./WorkOrdersPage.jsx', import.meta.url), 'utf8');
+
+  assert.match(source, /\{!readOnly && detail && titleEditor\.open \? \([\s\S]*<input/);
+  assert.doesNotMatch(source, /\{detail && titleEditor\.open \? \([\s\S]*<input/);
 });
 
 test('versioned quote and receipt decisions use the controlled operation dialog with exact version and stable retry key', async () => {

@@ -79,6 +79,9 @@ export function sortEngineerWorkOrders(tickets = []) {
   });
 }
 export function getEngineerWorkOrderTitle(ticket = {}, isCn = false, fallback = '') {
+  const persisted = redactContactInfo(String(ticket.short_title || ticket.display_title || '')).trim();
+  if (persisted) return persisted;
+
   const candidates = [ticket.issue_title, ticket.title, ticket.description]
     .map((value) => redactContactInfo(String(value || '')).match(/^[^。.!?\n]+[。.!?]?/)?.[0].trim())
     .filter(Boolean);

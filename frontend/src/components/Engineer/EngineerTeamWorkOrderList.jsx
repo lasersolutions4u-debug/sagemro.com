@@ -54,10 +54,10 @@ export function EngineerTeamWorkOrderList({
   return (
     <section className="overflow-hidden rounded-2xl border border-[#e5e8ed] bg-white">
       <div className="flex flex-col gap-3 border-b border-[#e5e8ed] px-4 py-4 sm:flex-row sm:items-end sm:justify-between sm:px-5">
-        <div><h2 className="text-base font-semibold text-[#18202b]">{copy.title}</h2><p className="mt-1 text-xs text-[#697386]">{copy.note}</p></div>
+        <div><h2 className="text-xl font-semibold text-[#18202b]">{copy.title}</h2><p className="mt-1 text-[13px] text-[#697386]">{copy.note}</p></div>
         <div className="flex flex-wrap gap-2">
           {['all', 'needsAction', 'active', 'completed'].map((value) => (
-            <button key={value} type="button" onClick={() => onFilterChange(value)} className={`rounded-lg px-3 py-2 text-[11px] font-bold ${filter === value ? 'bg-[#18202b] text-white' : 'bg-[#f7f8fa] text-[#697386]'}`}>
+            <button key={value} type="button" onClick={() => onFilterChange(value)} className={`rounded-lg px-3 py-2 text-xs font-bold ${filter === value ? 'bg-[#18202b] text-white' : 'bg-[#f7f8fa] text-[#697386]'}`}>
               {isCn ? ({ all: '全部', needsAction: '待处理', active: '进行中', completed: '已完成' })[value] : ({ all: 'All', needsAction: 'Needs action', active: 'Active', completed: 'Completed' })[value]}
             </button>
           ))}
@@ -82,12 +82,12 @@ export function EngineerTeamWorkOrderList({
               <span className="flex min-w-0 items-center gap-3">
                 <span className={`grid size-9 shrink-0 place-items-center rounded-[10px] text-xs font-extrabold ${group.type === 'queue' ? 'bg-red-50 text-red-600' : 'bg-orange-50 text-orange-700'}`}>{group.type === 'queue' || group.type === 'historical' ? '—' : initials(group.engineer.name)}</span>
                 <span className="min-w-0">
-                  <strong className="block truncate text-sm text-[#18202b]">{name}</strong>
-                  <span className="mt-0.5 block text-[11px] text-[#697386]">{detail}</span>
+                  <strong className="block truncate text-[15px] text-[#18202b]">{name}</strong>
+                  <span className="mt-0.5 block text-xs text-[#697386]">{detail}</span>
                 </span>
               </span>
               <span className="flex shrink-0 items-center gap-3">
-                <span className="rounded-full bg-[#f2f4f7] px-2 py-1 text-[10px] font-bold text-[#697386]">{copy.orders(visibleCount)}</span>
+                <span className="rounded-full bg-[#f2f4f7] px-2 py-1 text-xs font-bold text-[#697386]">{copy.orders(visibleCount)}</span>
                 <ChevronDown size={15} className={`text-[#929baa] transition ${closed ? '-rotate-90' : ''}`} />
               </span>
             </button>

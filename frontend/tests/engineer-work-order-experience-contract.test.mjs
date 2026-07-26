@@ -158,6 +158,7 @@ test('engineer detail exposes only one of six high-level sections at a time', ()
   assert.match(modal, /showTabNavigation/);
   assert.match(detail, /Quote details/);
   assert.match(detail, /Payments & receipts/);
+  assert.match(detail, /className=\{`rounded-md px-3 py-2 whitespace-nowrap text-xs font-bold/);
   assert.match(detail, /activeTab === 'quote' \? commercialView : tabMap\[activeTab\]/);
   assert.match(detail, /refreshAfter\(onAssignEngineer\)/);
   assert.match(detail, /refreshAfter\(onConfirmAssignment\)/);
@@ -231,6 +232,41 @@ test('engineer work-order titles never use foreign-language customer text as int
   assert.equal(getEngineerWorkOrderTitle({ description: 'Laser output dropped.' }, true, '服务任务'), '服务任务');
 });
 
+test('saved and Worker-resolved titles precede legacy customer text', async () => {
+  const { getEngineerWorkOrderTitle } = await import('../src/components/Engineer/engineerWorkOrderDisplay.js');
+
+  assert.equal(getEngineerWorkOrderTitle({
+    short_title: '济南 3015 维修',
+    description: 'English customer description.',
+  }, false, 'Service task'), '济南 3015 维修');
+  assert.equal(getEngineerWorkOrderTitle({
+    display_title: "Han's Laser 3015 on-site repair",
+    description: '设备类型：激光切割机。',
+  }, false, 'Service task'), "Han's Laser 3015 on-site repair");
+});
+
+test('engineer list uses eight desktop information columns and a separate mobile card', () => {
+  const list = read('frontend/src/components/Engineer/EngineerWorkOrderList.jsx');
+
+  for (const label of ['Work order', 'Task name', 'Customer', 'Equipment / issue', 'Region', 'Status', 'Next step', 'Updated']) {
+    assert.match(list, new RegExp(label.replace('/', '\\/')));
+  }
+  assert.match(list, /min-\[1280px\]:grid/);
+  assert.match(list, /min-\[1280px\]:hidden/);
+  assert.match(list, /line-clamp-2/);
+  assert.match(list, /grid-cols-\[132px_minmax\(160px,1\.05fr\)_92px_minmax\(175px,1\.1fr\)_96px_120px_minmax\(190px,1\.25fr\)_104px_36px\]/);
+  assert.doesNotMatch(list, /grid-cols-\[1\.05fr_2\.1fr_\.9fr_1\.5fr_\.8fr_36px\]/);
+});
+
+test('regional team operational labels use the approved readable scale', () => {
+  const teamList = read('frontend/src/components/Engineer/EngineerTeamWorkOrderList.jsx');
+
+  assert.match(teamList, /truncate text-\[15px\]/);
+  assert.match(teamList, /mt-0\.5 block text-xs/);
+  assert.match(teamList, /rounded-full[^"\n]*text-xs/);
+  assert.match(teamList, /rounded-lg px-3 py-2 text-xs/);
+});
+
 test('engineer work-order machine summaries follow the host language', async () => {
   const { getEngineerMachineLine } = await import('../src/components/Engineer/engineerWorkOrderDisplay.js');
   const ticket = {
@@ -286,4 +322,36 @@ test('service report copy follows the engineer host locale', () => {
   assert.match(report, /服务报告标准流程/);
   assert.match(report, /提交最终报告给客户/);
   assert.match(report, /toLocaleString\(isCn \? 'zh-CN' : 'en-US'\)/);
+});
+
+test('engineer workspace no longer uses 9px or 10px operational text', () => {
+  const files = [
+    'frontend/src/components/Engineer/EngineerMetricOverview.jsx',
+    'frontend/src/components/Engineer/EngineerWorkspace.jsx',
+    'frontend/src/components/Engineer/EngineerWorkOrderList.jsx',
+    'frontend/src/components/Engineer/EngineerTeamWorkOrderList.jsx',
+    'frontend/src/components/Engineer/EngineerWorkOrderDetail.jsx',
+  ];
+  for (const file of files) {
+    const source = read(file);
+    assert.doesNotMatch(source, /text-\[(?:9|10)px\]/, `${file} still uses undersized operational text`);
+  }
+
+  const metrics = read(files[0]);
+  const list = read(files[2]);
+  assert.match(metrics, /text-\[30px\]/);
+  assert.match(list, /text-\[(?:15|16)px\]/);
+});
+
+test('engineer workspace constrains mobile header and metric controls to the viewport', () => {
+  const workspace = read('frontend/src/components/Engineer/EngineerWorkspace.jsx');
+  const metrics = read('frontend/src/components/Engineer/EngineerMetricOverview.jsx');
+
+  assert.match(workspace, /flex min-w-0 flex-col items-start gap-2 sm:flex-row sm:items-center sm:gap-4/);
+  assert.match(workspace, /flex w-full min-w-0 flex-wrap items-center gap-2 md:w-auto/);
+  assert.match(workspace, /onClick=\{onOpenProfile\} title=\{currentUser\?\.name \|\| copy\.profileFallback\}/);
+  assert.match(workspace, /className="min-w-0 max-w-\[calc\(100%_-_5\.5rem\)\] truncate[^"\n]*text-xs[^"\n]*md:max-w-none"/);
+  assert.match(workspace, /mb-4 grid min-w-0 gap-4 xl:grid-cols/);
+  assert.match(metrics, /section className="min-w-0 rounded-2xl/);
+  assert.match(metrics, /grid w-full min-w-0 grid-cols-2[^"\n]*sm:inline-flex sm:w-fit/);
 });

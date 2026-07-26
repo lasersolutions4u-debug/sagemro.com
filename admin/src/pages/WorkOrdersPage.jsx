@@ -41,6 +41,7 @@ import {
   rejectAdminWorkOrderPricing,
   reviewWorkOrderQuote,
   searchAdminServiceLocations,
+  updateAdminWorkOrderTitle,
   updateAdminWorkOrderPayout,
 } from '../services/api';
 import { runtimeConfig } from '../config/runtime';
@@ -56,6 +57,10 @@ import {
   parseJsonValue,
 } from './workOrderDisplay';
 import { createOperationKey } from './materialRequisitionOperations';
+import {
+  createLatestWorkOrderTitleSaveRunner,
+  issueWorkOrderInvoice,
+} from './workOrderMutations';
 
 const STATUS_MAP = {
   pending: { color: 'var(--color-info)' },
@@ -222,6 +227,13 @@ const TEXT = {
     archiveFailed: 'Archive failed',
     detailLoadFailed: 'Failed to load service order detail',
     noteSaveFailed: 'Failed to save internal note',
+    workOrderTitle: 'Work-order title',
+    editWorkOrderTitle: 'Edit title',
+    saveWorkOrderTitle: 'Save title',
+    cancelWorkOrderTitle: 'Cancel',
+    workOrderTitlePlaceholder: 'Short task title',
+    workOrderTitleUpdated: 'Work-order title updated.',
+    workOrderTitleUpdateFailed: 'Failed to update the work-order title',
     headers: {
       orderNo: 'Service No.',
       customer: 'Customer',
@@ -259,6 +271,7 @@ const TEXT = {
     next: 'Next',
     drawerTitle: 'Service Control View',
     drawerSubtitle: 'Review customer communication, internal notes, AI summary, service report, and two-way reviews.',
+    serviceRecord: 'Service Record',
     close: 'Close',
     customerLabel: 'Customer',
     engineerLabel: 'Engineer',
@@ -617,6 +630,13 @@ const TEXT = {
     fieldToday: '今日已签到',
     fieldOverdue: (count) => `${count} 份日报逾期`,
     fieldExtension: '延期待审批',
+    workOrderTitle: '工单标题',
+    editWorkOrderTitle: '编辑标题',
+    saveWorkOrderTitle: '保存标题',
+    cancelWorkOrderTitle: '取消',
+    workOrderTitlePlaceholder: '简短任务标题',
+    workOrderTitleUpdated: '工单标题已更新。',
+    workOrderTitleUpdateFailed: '工单标题更新失败',
     quoteApproveTitle: '批准报价版本',
     quoteApproveNote: '审核备注（选填）',
     receiptFullTitle: '确认全额到账',
@@ -727,6 +747,15 @@ export function WorkOrdersPage({ readOnly = false }) {
   const [detailLoading, setDetailLoading] = useState(false);
   const [detail, setDetail] = useState(null);
   const [detailMessages, setDetailMessages] = useState([]);
+  const [titleEditor, setTitleEditor] = useState({
+    open: false,
+    workOrderId: null,
+    editorId: 0,
+    value: '',
+    saving: false,
+    error: '',
+  });
+  const latestTitleSaveRunner = useRef(createLatestWorkOrderTitleSaveRunner());
   const [internalNote, setInternalNote] = useState('');
   const [adminSiteLocation, setAdminSiteLocation] = useState({
     service_address: '',
@@ -1177,6 +1206,14 @@ export function WorkOrdersPage({ readOnly = false }) {
     setDetailMessages([]);
     setDetailInvoice(null);
     setInvoiceLoadError('');
+    setTitleEditor((current) => ({
+      open: false,
+      workOrderId: null,
+      editorId: current.editorId + 1,
+      value: '',
+      saving: false,
+      error: '',
+    }));
     if (wo.pricing_status === 'pending_review') {
       setReviewedQuoteIds((prev) => ({ ...prev, [wo.id]: true }));
     }
@@ -1218,6 +1255,69 @@ export function WorkOrdersPage({ readOnly = false }) {
       setDetailInvoice(null);
       setInvoiceLoadError(error.message || t.invoiceLoadFailed);
     }
+  }
+
+  function beginTitleEdit() {
+    if (readOnly || !detail) return;
+    setTitleEditor((current) => ({
+      open: true,
+      workOrderId: detail.id,
+      editorId: current.editorId + 1,
+      value: detail.short_title || detail.display_title || '',
+      saving: false,
+      error: '',
+    }));
+  }
+
+  function cancelTitleEdit() {
+    setTitleEditor((current) => ({
+      open: false,
+      workOrderId: null,
+      editorId: current.editorId + 1,
+      value: '',
+      saving: false,
+      error: '',
+    }));
+  }
+
+  async function saveTitleEdit() {
+    if (readOnly || !detail?.id || titleEditor.workOrderId !== detail.id || !titleEditor.value.trim()) return;
+    const editorId = titleEditor.editorId;
+    const workOrderId = titleEditor.workOrderId;
+    setTitleEditor((current) => ({ ...current, saving: true, error: '' }));
+    await latestTitleSaveRunner.current(
+      workOrderId,
+      () => updateAdminWorkOrderTitle(workOrderId, titleEditor.value),
+      (response) => {
+        const saved = response.work_order;
+        setDetail((current) => current?.id === workOrderId ? { ...current, ...saved } : current);
+        setData((current) => ({
+          ...current,
+          list: current.list.map((item) => item.id === workOrderId ? {
+            ...item,
+            ...saved,
+            short_title: saved.short_title,
+            display_title: saved.display_title,
+          } : item),
+        }));
+        setMessage(t.workOrderTitleUpdated);
+        setTitleEditor((current) => current.editorId === editorId && current.workOrderId === workOrderId ? {
+          open: false,
+          workOrderId: null,
+          editorId: current.editorId + 1,
+          value: '',
+          saving: false,
+          error: '',
+        } : current);
+      },
+      (error) => {
+        setTitleEditor((current) => current.editorId === editorId && current.workOrderId === workOrderId ? {
+          ...current,
+          saving: false,
+          error: error.message || t.workOrderTitleUpdateFailed,
+        } : current);
+      },
+    );
   }
 
   async function refreshOpenDetail(expectedWorkOrderId) {
@@ -1330,12 +1430,13 @@ export function WorkOrdersPage({ readOnly = false }) {
   async function handleProcessInvoice(invoiceNumber) {
     setInvoiceProcessing(true);
     try {
-      await processAdminInvoiceRequest(detail.id, {
-        action: 'issue',
-        invoice_number: invoiceNumber,
+      const issuedInvoice = await issueWorkOrderInvoice({
+        workOrderId: detail.id,
+        invoiceNumber,
+        processInvoice: processAdminInvoiceRequest,
       });
       setDetailInvoice((prev) => (
-        prev ? { ...prev, status: 'issued', invoice_number: invoiceNumber } : prev
+        prev ? { ...prev, ...issuedInvoice } : prev
       ));
       setMessage(t.invoiceStatus('issued'));
       return true;
@@ -1679,10 +1780,63 @@ export function WorkOrdersPage({ readOnly = false }) {
           <div className="absolute inset-0 bg-black/40" onClick={() => setDetailOpen(false)} />
           <div className="relative flex h-full w-full max-w-4xl flex-col overflow-hidden bg-[var(--color-surface)] shadow-2xl">
             <div className="sticky top-0 z-10 flex shrink-0 items-start justify-between gap-3 border-b border-[var(--color-border)] bg-[var(--color-surface)] p-3 sm:p-5">
-              <div className="min-w-0">
+              <div className="min-w-0 flex-1">
                 <div className="text-xs uppercase tracking-[0.18em] text-[var(--color-primary)]">{t.serviceRecordLabel}</div>
-                <h3 className="text-lg font-semibold">{t.drawerTitle}</h3>
-                <p className="mt-1 text-sm text-[var(--color-text-muted)]">{t.drawerSubtitle}</p>
+                {!readOnly && detail && titleEditor.open ? (
+                  <div className="mt-1">
+                    <input
+                      value={titleEditor.value}
+                      onChange={(event) => setTitleEditor((current) => ({ ...current, value: event.target.value }))}
+                      maxLength={100}
+                      aria-label={t.workOrderTitle}
+                      placeholder={t.workOrderTitlePlaceholder}
+                      className="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-base font-semibold"
+                    />
+                    {titleEditor.error && <p className="mt-1 text-sm text-[var(--color-error)]">{titleEditor.error}</p>}
+                  </div>
+                ) : (
+                  <h3 className="text-lg font-semibold">{detail?.display_title || t.drawerTitle}</h3>
+                )}
+                {detail ? (
+                  <div className="mt-1 space-y-1">
+                    <div className="flex flex-wrap items-center gap-2 text-sm text-[var(--color-text-muted)]">
+                      <span className="font-mono">{detail.order_no}</span>
+                      <span className="rounded-full bg-[var(--color-primary)]/10 px-2 py-0.5 text-xs text-[var(--color-primary)]">{t.statuses[detail.status] || detail.status}</span>
+                    </div>
+                    <p className="text-sm text-[var(--color-text-secondary)]">{detail.description}</p>
+                  </div>
+                ) : (
+                  <p className="mt-1 text-sm text-[var(--color-text-muted)]">{t.drawerSubtitle}</p>
+                )}
+                {!readOnly && detail && (
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {titleEditor.open ? (
+                      <>
+                        <button
+                          onClick={saveTitleEdit}
+                          disabled={titleEditor.saving || !titleEditor.value.trim()}
+                          className="rounded-lg bg-[var(--color-primary)] px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50"
+                        >
+                          {titleEditor.saving ? t.saving : t.saveWorkOrderTitle}
+                        </button>
+                        <button
+                          onClick={cancelTitleEdit}
+                          disabled={titleEditor.saving}
+                          className="rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-sm disabled:opacity-50"
+                        >
+                          {t.cancelWorkOrderTitle}
+                        </button>
+                      </>
+                    ) : (
+                      <button
+                        onClick={beginTitleEdit}
+                        className="rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-sm"
+                      >
+                        {t.editWorkOrderTitle}
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
               <button
                 onClick={() => setDetailOpen(false)}
