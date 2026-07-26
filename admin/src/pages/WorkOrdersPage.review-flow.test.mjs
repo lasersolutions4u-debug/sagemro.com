@@ -46,6 +46,21 @@ test('title save completion only mutates the editor instance that initiated it',
   );
 });
 
+test('same-order title saves only apply the latest response to UI state', async () => {
+  const source = await readFile(new URL('./WorkOrdersPage.jsx', import.meta.url), 'utf8');
+
+  assert.match(source, /import \{ Component, useState, useEffect, useRef \} from 'react'/);
+  assert.match(source, /const latestTitleSaveByWorkOrder = useRef\(new Map\(\)\)/);
+  assert.match(source, /const saveToken = Symbol\('title-save'\)/);
+  assert.match(source, /latestTitleSaveByWorkOrder\.current\.set\(workOrderId, saveToken\)/);
+  assert.equal(
+    source.match(/if \(latestTitleSaveByWorkOrder\.current\.get\(workOrderId\) !== saveToken\) return/g)?.length,
+    2,
+  );
+  assert.match(source, /await updateAdminWorkOrderTitle\(workOrderId, titleEditor\.value\);[\s\S]*if \(latestTitleSaveByWorkOrder\.current\.get\(workOrderId\) !== saveToken\) return;[\s\S]*setDetail/);
+  assert.match(source, /if \(latestTitleSaveByWorkOrder\.current\.get\(workOrderId\) === saveToken\)/);
+});
+
 test('the complete title editor branch is structurally hidden from read-only operations', async () => {
   const source = await readFile(new URL('./WorkOrdersPage.jsx', import.meta.url), 'utf8');
 
