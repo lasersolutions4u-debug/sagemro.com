@@ -245,17 +245,19 @@ test('saved and Worker-resolved titles precede legacy customer text', async () =
   }, false, 'Service task'), "Han's Laser 3015 on-site repair");
 });
 
-test('engineer list uses eight desktop information columns and a separate mobile card', () => {
+test('engineer list keeps key fields readable without a next-step column', () => {
   const list = read('frontend/src/components/Engineer/EngineerWorkOrderList.jsx');
 
-  for (const label of ['Work order', 'Task name', 'Customer', 'Equipment / issue', 'Region', 'Status', 'Next step', 'Updated']) {
+  for (const label of ['Work order', 'Task name', 'Customer', 'Equipment / issue', 'Region', 'Status', 'Updated']) {
     assert.match(list, new RegExp(label.replace('/', '\\/')));
   }
+  assert.doesNotMatch(list, /Next step/);
   assert.match(list, /min-\[1280px\]:grid/);
   assert.match(list, /min-\[1280px\]:hidden/);
+  assert.match(list, /whitespace-nowrap/);
   assert.match(list, /line-clamp-2/);
-  assert.match(list, /grid-cols-\[132px_minmax\(160px,1\.05fr\)_92px_minmax\(175px,1\.1fr\)_96px_120px_minmax\(190px,1\.25fr\)_104px_36px\]/);
-  assert.doesNotMatch(list, /grid-cols-\[1\.05fr_2\.1fr_\.9fr_1\.5fr_\.8fr_36px\]/);
+  assert.match(list, /grid-cols-\[132px_minmax\(210px,1\.35fr\)_minmax\(120px,\.85fr\)_minmax\(220px,1\.4fr\)_minmax\(120px,\.8fr\)_132px_36px\]/);
+  assert.doesNotMatch(list, /getNextAction\(ticket\)/);
 });
 
 test('regional team operational labels use the approved readable scale', () => {

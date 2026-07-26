@@ -269,9 +269,9 @@ export function EngineerWorkspace({ currentUser, onLogout, onOpenProfile, workOr
                 </section>
               </div>
               {scope === 'team' && isRegionalLead ? (
-                <EngineerTeamWorkOrderList tickets={tickets} team={team} lead={{ ...engineerSummary, id: engineerId, status }} loading={loading} error={loadError} isCn={isCn} statusLabels={statusLabels} getNextAction={(ticket) => getNextAction(ticket, copy)} getMachineLine={(ticket) => getEngineerMachineLine(ticket, isCn, copy.machinePending)} filter={workOrderFilter} onFilterChange={setWorkOrderFilter} onSelectTicket={openWorkOrder} onRetry={loadTickets} />
+                <EngineerTeamWorkOrderList tickets={tickets} team={team} lead={{ ...engineerSummary, id: engineerId, status }} loading={loading} error={loadError} isCn={isCn} statusLabels={statusLabels} getMachineLine={(ticket) => getEngineerMachineLine(ticket, isCn, copy.machinePending)} filter={workOrderFilter} onFilterChange={setWorkOrderFilter} onSelectTicket={openWorkOrder} onRetry={loadTickets} />
               ) : (
-                <EngineerWorkOrderList tickets={tickets} loading={loading} error={loadError} isCn={isCn} statusLabels={statusLabels} getNextAction={(ticket) => getNextAction(ticket, copy)} getMachineLine={(ticket) => getEngineerMachineLine(ticket, isCn, copy.machinePending)} filter={workOrderFilter} onFilterChange={setWorkOrderFilter} onSelectTicket={openWorkOrder} onRetry={loadTickets} />
+                <EngineerWorkOrderList tickets={tickets} loading={loading} error={loadError} isCn={isCn} statusLabels={statusLabels} getMachineLine={(ticket) => getEngineerMachineLine(ticket, isCn, copy.machinePending)} filter={workOrderFilter} onFilterChange={setWorkOrderFilter} onSelectTicket={openWorkOrder} onRetry={loadTickets} />
               )}
             </>
           )}
