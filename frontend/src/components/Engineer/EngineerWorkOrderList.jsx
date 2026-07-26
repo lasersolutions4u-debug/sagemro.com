@@ -81,13 +81,13 @@ export function EngineerWorkOrderList({
           >
             <span className="absolute inset-y-0 left-0 w-[3px]" style={{ backgroundColor: `var(--status-${ticket.status})` }} />
             <span className="flex items-start justify-between gap-3">
-              <strong className="min-w-0 line-clamp-2 text-[15px] leading-5 text-[#18202b]">{getEngineerWorkOrderTitle(ticket, isCn, copy.taskFallback)}</strong>
+              <strong className="min-w-0 break-words text-[15px] leading-5 text-[#18202b]">{getEngineerWorkOrderTitle(ticket, isCn, copy.taskFallback)}</strong>
               <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full px-2 py-1 text-xs font-bold" style={{ backgroundColor: `var(--status-${ticket.status}-bg)`, color: `var(--status-${ticket.status}-text)` }}><span className="size-1.5 rounded-full" style={{ backgroundColor: `var(--status-${ticket.status})` }} />{statusLabels[ticket.status] || ticket.status}</span>
             </span>
             <strong className="mt-2 block text-sm text-[#18202b]">{ticket.order_no || ticket.id}</strong>
             <span className="mt-2 block truncate text-xs text-[#697386]">{ticket.customer_name || '—'}</span>
             <span className="mt-1 flex min-w-0 items-center gap-2 text-xs text-[#697386]">
-              <span className="min-w-0 flex-1 truncate">{getMachineLine(ticket) || copy.machineFallback}</span>
+              <span className="min-w-0 flex-1 line-clamp-2 leading-5">{getMachineLine(ticket) || copy.machineFallback}</span>
               <span aria-hidden="true">·</span>
               <span className="max-w-[40%] truncate">{ticket.customer_region || copy.regionFallback}</span>
             </span>

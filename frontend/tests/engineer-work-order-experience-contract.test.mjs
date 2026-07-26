@@ -295,6 +295,8 @@ test('engineer list keeps key fields readable without a next-step column', () =>
   assert.match(list, /line-clamp-2/);
   assert.match(list, /grid-cols-\[132px_minmax\(240px,1\.55fr\)_minmax\(110px,\.75fr\)_minmax\(260px,1\.55fr\)_minmax\(120px,\.8fr\)_minmax\(150px,\.9fr\)_118px_36px\]/);
   assert.match(list, /break-words text-\[15px\]/);
+  assert.doesNotMatch(list, /line-clamp-2 text-\[15px\]/);
+  assert.doesNotMatch(list, /flex-1 truncate/);
   assert.match(list, /line-clamp-2 text-\[13px\]/);
   assert.match(list, /whitespace-nowrap text-xs text-\[#697386\]/);
   assert.doesNotMatch(list, /getNextAction\(ticket\)/);
