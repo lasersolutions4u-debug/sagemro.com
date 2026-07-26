@@ -206,6 +206,152 @@ test('engineer ticket scopes use authenticated identity and include direct regio
   assert.deepEqual(spoofedIdentity.json.work_orders.map((row) => row.id), ['wo-lead']);
 });
 
+test('team work-order summary and group pagination', async (t) => {
+  const env = createEnv(t);
+  const sqlite = env.DB.__sqlite;
+  sqlite.exec(`
+    UPDATE work_orders SET status = 'in_progress' WHERE id = 'wo-member';
+    UPDATE work_orders
+    SET assigned_regional_lead_id = 'lead-1', status = 'completed'
+    WHERE id = 'wo-outsider';
+
+    INSERT INTO work_orders (
+      id, order_no, customer_id, engineer_id, type, description, status, created_at
+    ) VALUES
+      ('wo-member-6', 'WO-MEMBER-6', 'customer-1', 'eng-1', 'maintenance', 'Member task 6', 'assigned', '2026-07-25 16:00:00'),
+      ('wo-member-5', 'WO-MEMBER-5', 'customer-1', 'eng-1', 'maintenance', 'Member task 5', 'pending_dispatch', '2026-07-25 15:00:00'),
+      ('wo-member-4', 'WO-MEMBER-4', 'customer-1', 'eng-1', 'maintenance', 'Member task 4', 'pricing', '2026-07-25 14:00:00'),
+      ('wo-member-3', 'WO-MEMBER-3', 'customer-1', 'eng-1', 'maintenance', 'Member task 3', 'in_service', '2026-07-25 13:00:00'),
+      ('wo-member-2', 'WO-MEMBER-2', 'customer-1', 'eng-1', 'maintenance', 'Member task 2', 'pending_review', '2026-07-25 10:00:00'),
+      ('wo-member-1', 'WO-MEMBER-1', 'customer-1', 'eng-1', 'maintenance', 'Member task 1', 'completed', '2026-07-25 10:00:00');
+
+    INSERT INTO engineer_calendar_events (
+      id, engineer_id, event_type, title, start_at, end_at, work_order_id
+    ) VALUES
+      ('event-today', 'eng-1', 'reserved_for_service', 'Today', datetime('now', '+2 hours'), datetime('now', '+3 hours'), 'wo-member'),
+      ('event-tomorrow-a', 'eng-1', 'reserved_for_service', 'Tomorrow A', datetime('now', '+1 day'), datetime('now', '+1 day', '+1 hour'), 'wo-member-3'),
+      ('event-tomorrow-b', 'eng-1', 'reserved_for_service', 'Tomorrow B', datetime('now', '+1 day', '+2 hours'), datetime('now', '+1 day', '+3 hours'), 'wo-member-2'),
+      ('event-outsider', 'eng-2', 'reserved_for_service', 'Outside', datetime('now', '+2 days'), datetime('now', '+2 days', '+1 hour'), 'wo-outsider');
+
+    INSERT INTO material_requisitions (
+      id, requisition_no, work_order_id, requested_by_type, requested_by_id,
+      status, urgency, purpose
+    ) VALUES
+      ('mr-open', 'MR-OPEN', 'wo-member', 'engineer', 'eng-1', 'submitted', 'normal', 'Open need'),
+      ('mr-closed', 'MR-CLOSED', 'wo-member-3', 'engineer', 'eng-1', 'closed', 'normal', 'Closed need');
+  `);
+
+  const summary = await api(env, '/api/engineers/tickets?scope=team&view=summary&filter=all');
+  assert.equal(summary.response.status, 200);
+  assert.equal(summary.json.scope, 'team');
+  assert.deepEqual(summary.json.work_orders, []);
+  assert.deepEqual(summary.json.team.map((row) => row.id), ['eng-1']);
+  assert.deepEqual(
+    summary.json.groups.map((group) => [group.key, group.type, group.total]),
+    [
+      ['regional_queue', 'queue', 1],
+      ['lead-1', 'lead', 1],
+      ['eng-1', 'member', 7],
+      ['historical_supervision', 'historical', 1],
+    ],
+  );
+  assert.deepEqual(summary.json.metrics, {
+    needsAction: 5,
+    todayTasks: 1,
+    pendingConfirmation: 1,
+    inService: 2,
+    quotePending: 1,
+    scheduledDates: 3,
+    reportsDue: 2,
+    partsNeeds: 1,
+  });
+
+  const filtered = await api(env, '/api/engineers/tickets?scope=team&view=summary&filter=needsAction');
+  assert.equal(filtered.response.status, 200);
+  assert.deepEqual(
+    filtered.json.groups.map((group) => [group.key, group.total]),
+    [['regional_queue', 1], ['lead-1', 1], ['eng-1', 3]],
+  );
+  assert.deepEqual(filtered.json.metrics, summary.json.metrics);
+
+  const firstPage = await api(
+    env,
+    '/api/engineers/tickets?scope=team&view=group&group_type=member&group_id=eng-1&filter=all&limit=5',
+  );
+  assert.equal(firstPage.response.status, 200);
+  assert.equal(firstPage.json.total, 7);
+  assert.equal(firstPage.json.has_more, true);
+  assert.equal(typeof firstPage.json.next_cursor, 'string');
+  assert.deepEqual(
+    firstPage.json.work_orders.map((row) => row.id),
+    ['wo-member-6', 'wo-member-5', 'wo-member-4', 'wo-member-3', 'wo-member-2'],
+  );
+  for (const row of firstPage.json.work_orders) {
+    assert.equal(Object.hasOwn(row, 'customer_phone'), false);
+    assert.equal(Object.hasOwn(row, 'payment_state'), false);
+    assert.equal(Object.hasOwn(row, 'received_amount'), false);
+    assert.equal(Object.hasOwn(row, 'outstanding_amount'), false);
+  }
+
+  const secondPage = await api(
+    env,
+    `/api/engineers/tickets?scope=team&view=group&group_type=member&group_id=eng-1&filter=all&limit=10&cursor=${encodeURIComponent(firstPage.json.next_cursor)}`,
+  );
+  assert.equal(secondPage.response.status, 200);
+  assert.equal(secondPage.json.total, 7);
+  assert.equal(secondPage.json.has_more, false);
+  assert.equal(secondPage.json.next_cursor, null);
+  assert.deepEqual(secondPage.json.work_orders.map((row) => row.id), ['wo-member-1', 'wo-member']);
+
+  const historical = await api(
+    env,
+    '/api/engineers/tickets?scope=team&view=group&group_type=historical&filter=completed&limit=5',
+  );
+  assert.equal(historical.response.status, 200);
+  assert.deepEqual(historical.json.work_orders.map((row) => row.id), ['wo-outsider']);
+
+  for (const path of [
+    '/api/engineers/tickets?scope=team&view=&filter=all',
+    '/api/engineers/tickets?scope=team&view=unknown&filter=all',
+    '/api/engineers/tickets?scope=team&view=summary&filter=',
+    '/api/engineers/tickets?scope=team&view=summary&filter=pending',
+    '/api/engineers/tickets?scope=team&view=group&group_type=unknown&filter=all&limit=5',
+    '/api/engineers/tickets?scope=team&view=group&group_type=member&group_id=eng-1&filter=all&limit=0',
+    '/api/engineers/tickets?scope=team&view=group&group_type=member&group_id=eng-1&filter=all&limit=21',
+    '/api/engineers/tickets?scope=team&view=group&group_type=member&group_id=eng-1&filter=all&limit=5&cursor=not-a-cursor',
+  ]) {
+    const invalid = await api(env, path);
+    assert.equal(invalid.response.status, 400, path);
+  }
+
+  const outsideMember = await api(
+    env,
+    '/api/engineers/tickets?scope=team&view=group&group_type=member&group_id=eng-2&filter=all&limit=5',
+  );
+  assert.equal(outsideMember.response.status, 404);
+
+  const ordinaryEngineer = await api(
+    env,
+    '/api/engineers/tickets?scope=team&view=summary&filter=all',
+    { userId: 'eng-1' },
+  );
+  assert.equal(ordinaryEngineer.response.status, 403);
+
+  for (let index = 0; index < 100; index += 1) {
+    insertEngineer(sqlite, {
+      id: `eng-extra-${String(index).padStart(3, '0')}`,
+      userNo: `E1${String(index).padStart(5, '0')}`,
+      name: `Extra Engineer ${String(index).padStart(3, '0')}`,
+      phone: `+15551${String(index).padStart(6, '0')}`,
+      regionalLeadId: 'lead-1',
+    });
+  }
+  const fullRoster = await api(env, '/api/engineers/tickets?scope=team&view=summary&filter=all');
+  assert.equal(fullRoster.response.status, 200);
+  assert.equal(fullRoster.json.team.length, 101);
+  assert.equal(fullRoster.json.groups.some((group) => group.key === 'eng-extra-099'), true);
+});
+
 test('historical engineer compact detail includes work-order titles', async (t) => {
   const env = createEnv(t);
   env.DB.__sqlite.exec(`

@@ -7587,6 +7587,251 @@ function engineerWorkspaceMessage(request, key) {
   return messages[getRequestMarket(request)] || messages.com;
 }
 
+const TEAM_TICKET_FILTERS = {
+  all: null,
+  needsAction: ['assigned', 'pending_dispatch', 'pricing', 'pending_payment'],
+  active: ['in_progress', 'in_service', 'payment_review', 'resolved', 'pending_review'],
+  completed: ['completed'],
+};
+
+const OPEN_MATERIAL_REQUISITION_STATUSES = [
+  'submitted', 'approved', 'processing', 'partially_fulfilled', 'ready', 'issued',
+];
+
+function teamTicketStatusSql(filter) {
+  const statuses = TEAM_TICKET_FILTERS[filter];
+  return statuses ? ` AND w.status IN (${statuses.map((status) => `'${status}'`).join(', ')})` : '';
+}
+
+function encodeTeamTicketCursor(row) {
+  const bytes = new TextEncoder().encode(JSON.stringify({ created_at: row.created_at, id: row.id }));
+  let binary = '';
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+}
+
+function decodeTeamTicketCursor(value) {
+  try {
+    if (!value || !/^[A-Za-z0-9_-]+$/.test(value)) return null;
+    const padding = '='.repeat((4 - (value.length % 4)) % 4);
+    const binary = atob(value.replace(/-/g, '+').replace(/_/g, '/') + padding);
+    const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
+    const decoded = JSON.parse(new TextDecoder().decode(bytes));
+    if (!decoded || typeof decoded.created_at !== 'string' || !decoded.created_at
+      || typeof decoded.id !== 'string' || !decoded.id
+      || Object.keys(decoded).some((key) => !['created_at', 'id'].includes(key))) {
+      return null;
+    }
+    return decoded;
+  } catch {
+    return null;
+  }
+}
+
+function mapTeamWorkOrder(wo, { leadId, currentTeamIds, market }) {
+  return {
+    id: wo.id,
+    order_no: wo.order_no,
+    short_title: wo.short_title,
+    display_title: resolveWorkOrderShortTitle(wo, market),
+    engineer_id: wo.engineer_id,
+    assigned_regional_lead_id: wo.assigned_regional_lead_id,
+    type: wo.type,
+    description: redactContactInfoForWorkOrder(wo.description),
+    urgency: wo.urgency,
+    status: wo.status,
+    created_at: wo.created_at,
+    updated_at: wo.updated_at,
+    scheduled_at: wo.scheduled_at,
+    assigned_at: wo.assigned_at,
+    sla_deadline: wo.sla_deadline,
+    category_l1: wo.category_l1,
+    category_l2: wo.category_l2,
+    service_mode: wo.service_mode,
+    expected_completion_date: wo.expected_completion_date,
+    customer_name: wo.customer_name,
+    customer_region: wo.customer_region,
+    engineer_name: wo.engineer_name,
+    material_requisition_count: Number(wo.material_requisition_count || 0),
+    ownership_relation: wo.engineer_id === leadId
+      ? 'personal'
+      : !wo.engineer_id && wo.assigned_regional_lead_id === leadId
+      ? 'regional_queue'
+      : currentTeamIds.has(wo.engineer_id)
+      ? 'current_team_member'
+      : 'historical_supervision',
+    sla_status: getSlaStatus(wo.sla_deadline, wo.urgency),
+  };
+}
+
+function teamWorkOrderSelectSql() {
+  return `
+    SELECT
+      w.*,
+      (
+        SELECT MAX(calendar.start_at)
+        FROM engineer_calendar_events calendar
+        WHERE calendar.work_order_id = w.id
+      ) AS scheduled_at,
+      c.name as customer_name,
+      c.region as customer_region,
+      e.name as engineer_name,
+      (
+        SELECT COUNT(*)
+        FROM material_requisitions mr
+        WHERE mr.work_order_id = w.id
+          AND mr.status IN (${OPEN_MATERIAL_REQUISITION_STATUSES.map((status) => `'${status}'`).join(', ')})
+      ) AS material_requisition_count
+    FROM work_orders w
+    LEFT JOIN customers c ON w.customer_id = c.id
+    LEFT JOIN engineers e ON w.engineer_id = e.id
+  `;
+}
+
+async function getTeamTicketSummary(env, { engineer, team, filter }) {
+  const leadId = engineer.id;
+  const currentTeamIds = new Set(team.map((member) => member.id));
+  const statusSql = teamTicketStatusSql(filter);
+  const { results: countRows } = await env.DB.prepare(`
+    SELECT w.engineer_id, w.assigned_regional_lead_id, COUNT(*) AS total
+    FROM work_orders w
+    WHERE (
+      w.engineer_id = ? OR w.assigned_regional_lead_id = ? OR w.engineer_id IN (
+        SELECT id FROM engineers WHERE regional_lead_id = ? AND engineer_role = 'engineer'
+      )
+    )${statusSql}
+    GROUP BY w.engineer_id, w.assigned_regional_lead_id
+  `).bind(leadId, leadId, leadId).all();
+
+  let queueTotal = 0;
+  let leadTotal = 0;
+  let historicalTotal = 0;
+  const memberTotals = new Map(team.map((member) => [member.id, 0]));
+  for (const row of countRows || []) {
+    const total = Number(row.total || 0);
+    if (!row.engineer_id && row.assigned_regional_lead_id === leadId) queueTotal += total;
+    else if (row.engineer_id === leadId) leadTotal += total;
+    else if (currentTeamIds.has(row.engineer_id)) memberTotals.set(row.engineer_id, (memberTotals.get(row.engineer_id) || 0) + total);
+    else historicalTotal += total;
+  }
+
+  const openMaterialStatuses = OPEN_MATERIAL_REQUISITION_STATUSES.map((status) => `'${status}'`).join(', ');
+  const metricsRow = await env.DB.prepare(`
+    WITH authorized AS (
+      SELECT w.*
+      FROM work_orders w
+      WHERE w.engineer_id = ? OR w.assigned_regional_lead_id = ? OR w.engineer_id IN (
+        SELECT id FROM engineers WHERE regional_lead_id = ? AND engineer_role = 'engineer'
+      )
+    )
+    SELECT
+      SUM(CASE WHEN status IN ('assigned', 'pending_dispatch', 'pricing', 'pending_payment') THEN 1 ELSE 0 END) AS needs_action,
+      SUM(CASE WHEN date((
+        SELECT MAX(calendar.start_at) FROM engineer_calendar_events calendar WHERE calendar.work_order_id = authorized.id
+      )) = date('now') THEN 1 ELSE 0 END) AS today_tasks,
+      SUM(CASE WHEN engineer_id IS NULL AND assigned_regional_lead_id = ? THEN 1 ELSE 0 END) AS pending_confirmation,
+      SUM(CASE WHEN status IN ('in_progress', 'in_service', 'payment_review') THEN 1 ELSE 0 END) AS in_service,
+      SUM(CASE WHEN status = 'pricing' THEN 1 ELSE 0 END) AS quote_pending,
+      (
+        SELECT COUNT(DISTINCT date(calendar.start_at))
+        FROM engineer_calendar_events calendar
+        JOIN authorized work_order ON work_order.id = calendar.work_order_id
+        WHERE date(calendar.start_at) >= date('now')
+      ) AS scheduled_dates,
+      SUM(CASE WHEN status IN ('in_service', 'resolved', 'pending_review') THEN 1 ELSE 0 END) AS reports_due,
+      SUM(CASE WHEN EXISTS (
+        SELECT 1 FROM material_requisitions mr
+        WHERE mr.work_order_id = authorized.id AND mr.status IN (${openMaterialStatuses})
+      ) THEN 1 ELSE 0 END) AS parts_needs
+    FROM authorized
+  `).bind(leadId, leadId, leadId, leadId).first();
+
+  const groups = [
+    { key: 'regional_queue', type: 'queue', engineer: null, total: queueTotal },
+    { key: leadId, type: 'lead', engineer, total: leadTotal },
+    ...team.map((member) => ({ key: member.id, type: 'member', engineer: member, total: memberTotals.get(member.id) || 0 })),
+  ];
+  if (historicalTotal > 0) {
+    groups.push({
+      key: 'historical_supervision',
+      type: 'historical',
+      engineer: { name: 'Historical supervision', status: '' },
+      total: historicalTotal,
+    });
+  }
+
+  return {
+    groups,
+    metrics: {
+      needsAction: Number(metricsRow?.needs_action || 0),
+      todayTasks: Number(metricsRow?.today_tasks || 0),
+      pendingConfirmation: Number(metricsRow?.pending_confirmation || 0),
+      inService: Number(metricsRow?.in_service || 0),
+      quotePending: Number(metricsRow?.quote_pending || 0),
+      scheduledDates: Number(metricsRow?.scheduled_dates || 0),
+      reportsDue: Number(metricsRow?.reports_due || 0),
+      partsNeeds: Number(metricsRow?.parts_needs || 0),
+    },
+  };
+}
+
+async function getTeamTicketGroupPage(env, {
+  engineer, team, groupType, groupId, filter, limit, cursor, market,
+}) {
+  const leadId = engineer.id;
+  const currentTeamIds = new Set(team.map((member) => member.id));
+  let groupSql;
+  let groupParams;
+  if (groupType === 'queue') {
+    groupSql = 'w.engineer_id IS NULL AND w.assigned_regional_lead_id = ?';
+    groupParams = [leadId];
+  } else if (groupType === 'lead') {
+    groupSql = 'w.engineer_id = ?';
+    groupParams = [leadId];
+  } else if (groupType === 'member') {
+    if (!groupId) return { error: errorResponse('Team member is required.', 400) };
+    if (!currentTeamIds.has(groupId)) return { error: errorResponse('Team member not found.', 404) };
+    groupSql = 'w.engineer_id = ?';
+    groupParams = [groupId];
+  } else {
+    groupSql = `w.assigned_regional_lead_id = ?
+      AND w.engineer_id IS NOT NULL
+      AND w.engineer_id != ?
+      AND NOT EXISTS (
+        SELECT 1 FROM engineers member
+        WHERE member.id = w.engineer_id AND member.regional_lead_id = ? AND member.engineer_role = 'engineer'
+      )`;
+    groupParams = [leadId, leadId, leadId];
+  }
+
+  const statusSql = teamTicketStatusSql(filter);
+  const totalRow = await env.DB.prepare(`
+    SELECT COUNT(*) AS total FROM work_orders w WHERE ${groupSql}${statusSql}
+  `).bind(...groupParams).first();
+
+  let cursorSql = '';
+  const pageParams = [...groupParams];
+  if (cursor) {
+    cursorSql = ' AND (w.created_at < ? OR (w.created_at = ? AND w.id < ?))';
+    pageParams.push(cursor.created_at, cursor.created_at, cursor.id);
+  }
+  const { results } = await env.DB.prepare(`
+    ${teamWorkOrderSelectSql()}
+    WHERE ${groupSql}${statusSql}${cursorSql}
+    ORDER BY w.created_at DESC, w.id DESC
+    LIMIT ${limit + 1}
+  `).bind(...pageParams).all();
+  const hasMore = (results || []).length > limit;
+  const pageRows = (results || []).slice(0, limit);
+  const workOrders = pageRows.map((row) => mapTeamWorkOrder(row, { leadId, currentTeamIds, market }));
+  return {
+    work_orders: workOrders,
+    total: Number(totalRow?.total || 0),
+    has_more: hasMore,
+    next_cursor: hasMore ? encodeTeamTicketCursor(pageRows[pageRows.length - 1]) : null,
+  };
+}
+
 // 获取工程师服务任务
 // Service OS 默认返回当前工程师个人任务；区域负责人可显式请求团队范围。
 async function handleGetEngineerTickets(request, env) {
@@ -7609,6 +7854,14 @@ async function handleGetEngineerTickets(request, env) {
       return errorResponse(engineerWorkspaceMessage(request, 'team_tickets_forbidden'), 403);
     }
 
+    const hasRequestedView = url.searchParams.has('view');
+    const requestedView = url.searchParams.get('view');
+    const hasRequestedFilter = url.searchParams.has('filter');
+    const filter = hasRequestedFilter ? url.searchParams.get('filter') : 'all';
+    if (hasRequestedView && requestedScope !== 'team') return errorResponse('Invalid team view.', 400);
+    if (hasRequestedView && !['summary', 'group'].includes(requestedView)) return errorResponse('Invalid team view.', 400);
+    if (hasRequestedView && !Object.hasOwn(TEAM_TICKET_FILTERS, filter)) return errorResponse('Invalid work-order filter.', 400);
+
     let team = [];
     if (requestedScope === 'team') {
       const teamResult = await env.DB.prepare(`
@@ -7617,7 +7870,7 @@ async function handleGetEngineerTickets(request, env) {
         FROM engineers
         WHERE regional_lead_id = ? AND engineer_role = 'engineer'
         ORDER BY name COLLATE NOCASE ASC, id ASC
-        LIMIT 100
+        ${requestedView ? '' : 'LIMIT 100'}
       `).bind(auth.userId).all();
       team = (teamResult.results || []).map((member) => ({
         ...member,
@@ -7627,6 +7880,46 @@ async function handleGetEngineerTickets(request, env) {
       }));
     }
     const currentTeamIds = new Set(team.map((member) => member.id));
+
+    if (requestedView === 'summary') {
+      const summary = await getTeamTicketSummary(env, { engineer, team, filter });
+      return jsonResponse({
+        scope: requestedScope,
+        view: requestedView,
+        is_regional_lead: true,
+        engineer,
+        team,
+        work_orders: [],
+        ...summary,
+      });
+    }
+
+    if (requestedView === 'group') {
+      const groupType = url.searchParams.get('group_type');
+      if (!['queue', 'lead', 'member', 'historical'].includes(groupType)) {
+        return errorResponse('Invalid work-order group.', 400);
+      }
+      const rawLimit = url.searchParams.get('limit');
+      const limit = rawLimit === null ? 5 : Number(rawLimit);
+      if (!Number.isInteger(limit) || limit < 1 || limit > 20 || (rawLimit !== null && String(limit) !== rawLimit)) {
+        return errorResponse('Invalid page limit.', 400);
+      }
+      const rawCursor = url.searchParams.get('cursor');
+      const cursor = rawCursor === null ? null : decodeTeamTicketCursor(rawCursor);
+      if (rawCursor !== null && !cursor) return errorResponse('Invalid page cursor.', 400);
+      const page = await getTeamTicketGroupPage(env, {
+        engineer,
+        team,
+        groupType,
+        groupId: url.searchParams.get('group_id'),
+        filter,
+        limit,
+        cursor,
+        market,
+      });
+      if (page.error) return page.error;
+      return jsonResponse({ scope: requestedScope, view: requestedView, group_type: groupType, ...page });
+    }
 
     let query = `
       SELECT
@@ -7671,38 +7964,10 @@ async function handleGetEngineerTickets(request, env) {
 
     let workOrders;
     if (requestedScope === 'team') {
-      workOrders = results.map((wo) => ({
-        id: wo.id,
-        order_no: wo.order_no,
-        short_title: wo.short_title,
-        display_title: resolveWorkOrderShortTitle(wo, market),
-        engineer_id: wo.engineer_id,
-        assigned_regional_lead_id: wo.assigned_regional_lead_id,
-        type: wo.type,
-        description: redactContactInfoForWorkOrder(wo.description),
-        urgency: wo.urgency,
-        status: wo.status,
-        created_at: wo.created_at,
-        updated_at: wo.updated_at,
-        scheduled_at: wo.scheduled_at,
-        assigned_at: wo.assigned_at,
-        sla_deadline: wo.sla_deadline,
-        category_l1: wo.category_l1,
-        category_l2: wo.category_l2,
-        service_mode: wo.service_mode,
-        expected_completion_date: wo.expected_completion_date,
-        customer_name: wo.customer_name,
-        customer_region: wo.customer_region,
-        engineer_name: wo.engineer_name,
-        material_requisition_count: Number(wo.material_requisition_count || 0),
-        ownership_relation: wo.engineer_id === auth.userId
-          ? 'personal'
-          : !wo.engineer_id && wo.assigned_regional_lead_id === auth.userId
-          ? 'regional_queue'
-          : currentTeamIds.has(wo.engineer_id)
-          ? 'current_team_member'
-          : 'historical_supervision',
-        sla_status: getSlaStatus(wo.sla_deadline, wo.urgency),
+      workOrders = results.map((wo) => mapTeamWorkOrder(wo, {
+        leadId: auth.userId,
+        currentTeamIds,
+        market,
       }));
     } else {
       const paymentProjections = await listWorkOrderPaymentProjections(env, results);
