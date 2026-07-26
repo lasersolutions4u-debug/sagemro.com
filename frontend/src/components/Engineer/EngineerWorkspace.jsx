@@ -122,7 +122,7 @@ export function EngineerWorkspace({ currentUser, onLogout, onOpenProfile, workOr
   const [scope, setScope] = useState('personal');
   const [tickets, setTickets] = useState([]);
   const [team, setTeam] = useState([]);
-  const [engineerSummary, setEngineerSummary] = useState({ id: engineerId, name: currentUser?.name || '', status: 'available' });
+  const [teamSummary, setTeamSummary] = useState({ groups: [], metrics: null });
   const [selectedEngineer, setSelectedEngineer] = useState({});
   const [assigningId, setAssigningId] = useState('');
   const [status, setStatus] = useState(currentUser?.status || 'available');
@@ -136,16 +136,23 @@ export function EngineerWorkspace({ currentUser, onLogout, onOpenProfile, workOr
   const loadTickets = useCallback(async () => {
     setLoading(true); setLoadError('');
     try {
-      const data = await getEngineerTickets({ scope });
+      const data = await getEngineerTickets(scope === 'team'
+        ? { scope, view: 'summary', filter: workOrderFilter, timezone_offset_minutes: -new Date().getTimezoneOffset() }
+        : { scope });
       setTickets(data.work_orders || []);
-      if (scope === 'team') setTeam(data.team || []);
-      setEngineerSummary((current) => ({ ...current, ...(data.engineer || {}) }));
+      if (scope === 'team') {
+        setTeam(data.team || []);
+        setTeamSummary({ groups: data.groups || [], metrics: data.metrics || null });
+      }
     } catch (error) {
       setTickets([]);
-      if (scope === 'team') setTeam([]);
+      if (scope === 'team') {
+        setTeam([]);
+        setTeamSummary({ groups: [], metrics: null });
+      }
       setLoadError(error.message || copy.loadTasksFailed);
     } finally { setLoading(false); }
-  }, [copy.loadTasksFailed, scope]);
+  }, [copy.loadTasksFailed, scope, workOrderFilter]);
 
   const loadCalendar = useCallback(async () => {
     try {
@@ -211,9 +218,18 @@ export function EngineerWorkspace({ currentUser, onLogout, onOpenProfile, workOr
   };
 
   const metrics = useMemo(
-    () => buildEngineerMetrics(tickets, scope === 'team' ? [] : calendarEvents, new Date(), scope),
-    [calendarEvents, scope, tickets],
+    () => scope === 'team' ? teamSummary.metrics || buildEngineerMetrics([], [], new Date(), scope) : buildEngineerMetrics(tickets, scope === 'team' ? [] : calendarEvents, new Date(), scope),
+    [calendarEvents, scope, teamSummary.metrics, tickets],
   );
+  const loadTeamGroup = useCallback(async (group, { limit, cursor } = {}) => getEngineerTickets({
+    scope: 'team',
+    view: 'group',
+    group_type: group.type,
+    group_id: group.type === 'member' ? group.key : undefined,
+    filter: workOrderFilter,
+    limit,
+    cursor,
+  }), [workOrderFilter]);
   const previewDays = buildCalendarPreviewDays();
   const scheduledKeys = getScheduledDateKeys(calendarEvents);
 
@@ -269,7 +285,7 @@ export function EngineerWorkspace({ currentUser, onLogout, onOpenProfile, workOr
                 </section>
               </div>
               {scope === 'team' && isRegionalLead ? (
-                <EngineerTeamWorkOrderList tickets={tickets} team={team} lead={{ ...engineerSummary, id: engineerId, status }} loading={loading} error={loadError} isCn={isCn} statusLabels={statusLabels} getMachineLine={(ticket) => getEngineerMachineLine(ticket, isCn, copy.machinePending)} filter={workOrderFilter} onFilterChange={setWorkOrderFilter} onSelectTicket={openWorkOrder} onRetry={loadTickets} />
+                <EngineerTeamWorkOrderList groups={teamSummary.groups} loading={loading} error={loadError} isCn={isCn} statusLabels={statusLabels} getMachineLine={(ticket) => getEngineerMachineLine(ticket, isCn, copy.machinePending)} filter={workOrderFilter} onFilterChange={setWorkOrderFilter} onSelectTicket={openWorkOrder} onRetry={loadTickets} onLoadGroup={loadTeamGroup} />
               ) : (
                 <EngineerWorkOrderList tickets={tickets} loading={loading} error={loadError} isCn={isCn} statusLabels={statusLabels} getMachineLine={(ticket) => getEngineerMachineLine(ticket, isCn, copy.machinePending)} filter={workOrderFilter} onFilterChange={setWorkOrderFilter} onSelectTicket={openWorkOrder} onRetry={loadTickets} />
               )}
