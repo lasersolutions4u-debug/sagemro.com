@@ -16,6 +16,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 
 import { executeTool, consumeLlmStream } from '../src/index.js';
 
@@ -204,6 +205,14 @@ test('customer 调 get_customer_devices → ok + ok trace', async () => {
   assert.equal(traceRows[0].tool_name, 'get_customer_devices');
   assert.ok(traceRows[0].latency_ms >= 0, 'latency_ms 应存在且 >= 0');
   assert.ok(traceRows[0].result_size_bytes > 0, '应记录返回体字节数');
+});
+
+test('device-related tool queries constrain work orders to the same customer as the device', async () => {
+  // This source-level contract covers legacy rows created before device
+  // ownership was validated at write time.
+  const source = await readFile(new URL('../src/index.js', import.meta.url), 'utf8');
+  assert.match(source, /LEFT JOIN work_orders w ON w\.device_id = d\.id AND w\.customer_id = d\.customer_id/);
+  assert.match(source, /WHERE w\.device_id = \? AND w\.customer_id = \?/);
 });
 
 test('customer 提供设备信息时只生成待确认候选，不直接写入设备档案', async () => {

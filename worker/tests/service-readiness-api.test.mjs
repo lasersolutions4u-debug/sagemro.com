@@ -242,6 +242,99 @@ test('foreign conversation IDs are not linked or copied into a customer work ord
   ).get(workOrderId).count, 0);
 });
 
+test('foreign device IDs are not persisted on a customer work order', async (t) => {
+  const env = createEnv(t);
+  env.DB.__sqlite.exec(`
+    INSERT INTO devices (id, customer_id, type, brand, model) VALUES
+      ('device-customer-2', 'customer-2', 'laser', 'Other customer brand', 'Private model');
+  `);
+
+  const created = await api(env, '/api/workorders', {
+    method: 'POST', userType: 'customer', userId: 'customer-1',
+    body: {
+      device_id: 'device-customer-2',
+      type: 'fault', description: 'Machine stops intermittently.', urgency: 'normal',
+    },
+  });
+
+  assert.equal(created.response.status, 200);
+  assert.equal(env.DB.__sqlite.prepare(
+    'SELECT device_id FROM work_orders WHERE id = ?',
+  ).get(created.json.work_order.id).device_id, null);
+});
+
+test('AI work-order creation does not persist a foreign device ID', async (t) => {
+  const env = createEnv(t);
+  env.DB.__sqlite.exec(`
+    INSERT INTO devices (id, customer_id, type, brand, model) VALUES
+      ('device-customer-2', 'customer-2', 'laser', 'Other customer brand', 'Private model');
+  `);
+
+  const result = await executeTool({
+    toolName: 'create_work_order',
+    args: {
+      device_id: 'device-customer-2',
+      type: 'fault', description: 'AI-created request with an invalid device reference.', urgency: 'normal',
+    },
+    env,
+    ctx: { waitUntil(promise) { env.__pending.push(promise); } },
+    userRole: 'customer',
+    customerId: 'customer-1',
+    conversationId: 'conversation-customer-1',
+    market: 'com',
+    iteration: 0,
+  });
+
+  assert.equal(result.success, true);
+  assert.equal(env.DB.__sqlite.prepare(
+    'SELECT device_id FROM work_orders WHERE id = ?',
+  ).get(result.work_order.id).device_id, null);
+});
+
+test('readiness evidence does not load a device owned by a different customer', async (t) => {
+  const env = createEnv(t);
+  env.DB.__sqlite.exec(`
+    INSERT INTO devices (id, customer_id, type, brand, model) VALUES
+      ('device-customer-2', 'customer-2', 'laser', 'Other customer brand', 'Private model');
+    UPDATE work_orders SET device_id = 'device-customer-2' WHERE id = 'wo-assigned';
+  `);
+  const restoreFetch = mockReadinessFetch(Promise.resolve(validReadinessJson({ service_mode: 'remote' })));
+  try {
+    const started = await api(env, '/api/workorders/wo-assigned/service-readiness/refresh', {
+      method: 'POST', userType: 'engineer', userId: 'engineer-1', body: { force: false },
+    });
+    assert.equal(started.response.status, 202);
+    await env.__waitUntil.flush();
+    assert.doesNotMatch(env.__fetchBodies[0], /Other customer brand|Private model/);
+  } finally {
+    restoreFetch();
+  }
+});
+
+test('work-order detail omits a device owned by a different customer', async (t) => {
+  const env = createEnv(t);
+  env.DB.__sqlite.exec(`
+    INSERT INTO devices (id, customer_id, type, brand, model) VALUES
+      ('device-customer-2', 'customer-2', 'laser', 'Other customer brand', 'Private model');
+    UPDATE work_orders SET device_id = 'device-customer-2' WHERE id = 'wo-assigned';
+  `);
+
+  const detail = await api(env, '/api/workorders/wo-assigned', {
+    userType: 'engineer', userId: 'engineer-1',
+  });
+  assert.equal(detail.response.status, 200);
+  assert.equal(detail.json.device_brand, null);
+  assert.equal(detail.json.device_model, null);
+});
+
+test('work-order detail denies an unrelated customer', async (t) => {
+  const env = createEnv(t);
+  const detail = await api(env, '/api/workorders/wo-assigned', {
+    userType: 'customer', userId: 'customer-2',
+  });
+  assert.equal(detail.response.status, 403);
+});
+
 test('schema keeps the readiness cache out of work_orders and enforces its state set', (t) => {
   const env = createEnv(t);
   const tableSql = env.DB.__sqlite.prepare(

@@ -1382,7 +1382,7 @@ async function toolGetPendingTickets({ limit, engineerId, env }) {
              d.type as device_type, d.brand as device_brand, d.model as device_model,
              c.name as customer_name
       FROM work_orders wo
-      LEFT JOIN devices d ON d.id = wo.device_id
+      LEFT JOIN devices d ON d.id = wo.device_id AND d.customer_id = wo.customer_id
       LEFT JOIN customers c ON c.id = wo.customer_id
       WHERE wo.engineer_id = ?
       ORDER BY
@@ -1444,7 +1444,7 @@ async function toolGetCustomerDevices(customerId, env) {
              SUM(CASE WHEN w.status = 'completed' THEN 1 ELSE 0 END) as completed_orders,
              MAX(w.created_at) as last_order_date
       FROM devices d
-      LEFT JOIN work_orders w ON w.device_id = d.id
+      LEFT JOIN work_orders w ON w.device_id = d.id AND w.customer_id = d.customer_id
       WHERE d.customer_id = ?
       GROUP BY d.id
       ORDER BY d.created_at DESC
@@ -1493,10 +1493,10 @@ async function toolGetDeviceDetail(customerId, deviceId, env) {
       FROM work_orders w
       LEFT JOIN engineers e ON w.engineer_id = e.id
       LEFT JOIN ratings r ON r.work_order_id = w.id
-      WHERE w.device_id = ?
+      WHERE w.device_id = ? AND w.customer_id = ?
       ORDER BY w.created_at DESC
       LIMIT 20
-    `).bind(deviceId).all();
+    `).bind(deviceId, customerId).all();
 
     const typeText = { fault: '设备故障', maintenance: '维护保养', parameter: '参数调试', other: '其他' };
     const urgencyText = { normal: '普通', urgent: '紧急', critical: '非常紧急' };
@@ -1873,7 +1873,7 @@ async function toolCreateWorkOrder({ customerId, env, ctx, args, conversationId,
       safeDescription,
       shortTitle,
       urgency || 'normal',
-      device_id || null,
+      titleDevice?.id || null,
       slaDeadline2,
       catL1,
       category_l2 || 'other',
@@ -1966,7 +1966,7 @@ async function toolCreateWorkOrder({ customerId, env, ctx, args, conversationId,
 async function getWorkOrderTitleDevice(env, deviceId, customerId) {
   if (!deviceId) return null;
   return env.DB.prepare(`
-    SELECT type, brand, model
+    SELECT id, type, brand, model
     FROM devices
     WHERE id = ? AND customer_id = ?
   `).bind(deviceId, customerId).first();
@@ -4811,7 +4811,7 @@ async function handleCreateWorkOrder(request, env) {
       safeDescription,
       shortTitle,
       urgency || 'normal',
-      device_id || null,
+      titleDevice?.id || null,
       slaDeadline,
       catL1,
       category_l2 || 'other',
@@ -5212,7 +5212,7 @@ async function handleGetDevices(request, env) {
              SUM(CASE WHEN w.status = 'completed' THEN 1 ELSE 0 END) as completed_orders,
              MAX(w.created_at) as last_order_date
       FROM devices d
-      LEFT JOIN work_orders w ON w.device_id = d.id
+      LEFT JOIN work_orders w ON w.device_id = d.id AND w.customer_id = d.customer_id
       WHERE d.customer_id = ?
       GROUP BY d.id
       ORDER BY d.created_at DESC
@@ -5252,10 +5252,10 @@ async function handleGetDevice(request, env) {
       FROM work_orders w
       LEFT JOIN engineers e ON w.engineer_id = e.id
       LEFT JOIN ratings r ON r.work_order_id = w.id
-      WHERE w.device_id = ?
+      WHERE w.device_id = ? AND w.customer_id = ?
       ORDER BY w.created_at DESC
       LIMIT 20
-    `).bind(id).all();
+    `).bind(id, customerId).all();
 
     // 计算费用明细（从工单消息中提取，需要单独查询 pricing）
     const workOrdersWithCost = await Promise.all((workOrders.results || []).map(async (wo) => {
@@ -5558,7 +5558,9 @@ function extractReadinessConversationSummary(summaryJson) {
 // 存储的来源会话每次读取都重新校验归属；被删除或非该客户所有时本次按无来源处理。
 async function loadServiceReadinessInput(env, workOrder, cacheRow) {
   const device = workOrder.device_id
-    ? await env.DB.prepare('SELECT brand, model FROM devices WHERE id = ?').bind(workOrder.device_id).first()
+    ? await env.DB.prepare(
+      'SELECT brand, model FROM devices WHERE id = ? AND customer_id = ?',
+    ).bind(workOrder.device_id, workOrder.customer_id).first()
     : null;
 
   let sourceConversationId = null;
@@ -5846,9 +5848,11 @@ async function handleGetWorkOrder(request, env) {
       FROM work_orders w
       LEFT JOIN engineers e ON w.engineer_id = e.id
       LEFT JOIN customers c ON w.customer_id = c.id
-      LEFT JOIN devices d ON w.device_id = d.id
+      LEFT JOIN devices d ON w.device_id = d.id AND d.customer_id = w.customer_id
       WHERE w.id = ?
     `).bind(id).first();
+
+    await assertWorkOrderReadAccess(env, request._auth, workOrder);
 
     const fieldWorkAccessMode = await resolveFieldWorkAccessMode(env, request._auth, workOrder, id);
     const engineerReadRelation = request._auth?.userType === 'engineer'
