@@ -198,6 +198,7 @@ export function EngineerWorkOrderDetail({
     && ['assigned', 'in_progress', 'pricing', 'pending_payment', 'payment_review', 'in_service'].includes(detail.status);
   const canGenerateServiceReadiness = isExecutingEngineer
     && ['assigned', 'in_progress', 'pricing', 'pending_payment', 'payment_review'].includes(detail.status);
+  const shouldRenderServiceReadiness = canGenerateServiceReadiness || Boolean(serviceReadiness?.review);
   const handleRefreshServiceReadiness = () => {
     if (!canGenerateServiceReadiness) return;
     pollAttemptsRef.current = 0;
@@ -319,7 +320,7 @@ export function EngineerWorkOrderDetail({
           </div>
         </main>
         <aside className="space-y-3 self-start lg:sticky lg:top-4">
-          {isExecutingEngineer && canViewServiceReadiness && (
+          {isExecutingEngineer && canViewServiceReadiness && shouldRenderServiceReadiness && (
             <EngineerServiceReadinessCard
               isCn={isCn}
               state={serviceReadiness?.state || 'missing'}

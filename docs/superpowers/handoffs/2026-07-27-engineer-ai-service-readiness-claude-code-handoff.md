@@ -4,7 +4,7 @@
 
 ## Status
 
-The Engineer AI Service Readiness Review has an approved product design and a task-by-task implementation plan. No feature implementation has started. Do not describe the feature as partially built or deployed.
+The Engineer AI Service Readiness Review implementation is complete locally in the isolated release worktrees. Production release is still pending: complete the final release review, verify and apply migration 043 on both production D1 databases as needed, push both release branches, wait for CI/deployments, run the Aliyun China deployment, and record the required smoke checks. Do not describe the feature as production deployed until that release gate has passed.
 
 Read these documents in order before editing code:
 
@@ -15,14 +15,14 @@ Read these documents in order before editing code:
 
 The plan is the source of exact test cases, APIs, file edits, and commit boundaries. This handoff records the decisions that must not drift while implementing it.
 
-## Start In The Correct Worktree
+## Continue In The Correct Release Worktree
 
-| Purpose | Path | Branch | Starting HEAD | State |
-| --- | --- | --- | --- | --- |
-| Main implementation | `/private/tmp/sagemro-workorder-density.6koyaz/main` | `codex/workorder-list-density-main` | `a30a557d829d7f0b5e6ef377a6be59c3f3662a73` | Clean; five commits ahead of `origin/main` |
-| China synchronization | `/private/tmp/sagemro-workorder-density.6koyaz/cn` | `codex/workorder-list-density-cn` | `661db737f6fadfcf58dc6b6b1e5993a2545c7a47` | Clean; two commits ahead of `origin/china-edition` |
+| Purpose | Path | Branch | State |
+| --- | --- | --- | --- |
+| Main release candidate | `/private/tmp/sagemro-workorder-density.6koyaz/main` | `codex/workorder-list-density-main` | Local implementation complete; production release pending |
+| China release candidate | `/private/tmp/sagemro-workorder-density.6koyaz/cn` | `codex/workorder-list-density-cn` | Local candidate exists; production release pending |
 
-The design and plan were committed as `59247b8`, `fbb0eb9`, and `a30a557` on the main implementation worktree. The China worktree intentionally has no readiness implementation yet.
+The next operator should inspect the current release-candidate diffs and complete the remaining Task 5 release gate rather than restarting Tasks 1-4.
 
 Do not implement from `/Users/joe/Projects/sagemro.com`. It is the user's dirty worktree and contains unrelated edits and reports. Do not reset, clean, overwrite, or fold those changes into this feature.
 
@@ -71,9 +71,9 @@ Customer AI and Engineer AI are different roles. They use the existing Worker-he
 - `Insert into message` only switches to the existing Messages tab and pre-fills the existing composer once. It never sends automatically.
 - A non-empty unsent draft requires confirmation before replacement. Cancel preserves the existing draft. Preserve the recently fixed manual chat-history scroll behavior.
 
-## Required Execution Order
+## Remaining Execution Order
 
-Follow all five plan tasks in order. Each task has its own failing tests, implementation detail, and intended commit boundary.
+Tasks 1-4 are implemented locally. Follow the remaining Task 5 review, synchronization, migration, deployment, and evidence steps in the plan; do not treat local commits as production release evidence.
 
 1. **Trusted source linkage and schema**: add migration 043 and the internal cache row; derive manual creation identity from JWT; validate source conversation ownership; cover manual and AI-tool creation.
 2. **Worker evidence, cache, and routes**: build bounded/redacted evidence and fingerprinting; add direct executing-engineer guards; implement non-blocking `GET /service-readiness` and `POST /service-readiness/refresh` with leases, stale behavior, provider timeout, and tagged usage accounting.
@@ -126,7 +126,7 @@ Release sequence:
 1. Confirm COM and CN backups, then apply and verify migration 043 on both databases.
 2. Push reviewed `main`; wait for the full test job, production gate, Worker, international frontend, and international Admin deployments.
 3. Verify the executing-engineer workflow on `engineer.sagemro.com`.
-4. Cherry-pick the reviewed task commits into the clean China worktree; run its frontend checks.
+4. Verify the reviewed source and any scoped release fixes are present in the China release worktree; run its required checks.
 5. Push `china-edition`. It must not deploy a second Worker.
 6. Manually run `gh workflow run aliyun-cn-deploy.yml --ref china-edition`, wait for success, then verify the Chinese engineer flow on `engineer.sagemro.cn`.
 
@@ -140,7 +140,8 @@ At final release, record migration verification output, deployment workflow URLs
 
 ```text
 Read docs/superpowers/handoffs/2026-07-27-engineer-ai-service-readiness-claude-code-handoff.md,
-the linked approved design, and the full implementation plan. Work only in the clean
-codex/workorder-list-density-main worktree. Begin Task 1 with its specified failing tests.
-Do not implement later tasks, deploy, or modify the user's root worktree until Task 1 is verified.
+the linked approved design, and the full implementation plan. Work only in the isolated
+release worktrees, inspect the current diffs, and complete the remaining Task 5 release gate.
+Do not modify the user's root worktree or describe the feature as production released until
+migration, deployment, and smoke evidence is recorded.
 ```

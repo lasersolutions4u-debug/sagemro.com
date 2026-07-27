@@ -29,6 +29,18 @@ test('engineer detail renders the readiness card above Admin support in a 320px 
   assert.doesNotMatch(detail, /await refreshWorkOrderServiceReadiness[\s\S]*loadDetail/);
 });
 
+test('in-service work orders show readiness only after a saved review is available', () => {
+  const detail = read('frontend/src/components/Engineer/EngineerWorkOrderDetail.jsx');
+  assert.match(
+    detail,
+    /const shouldRenderServiceReadiness = canGenerateServiceReadiness \|\| Boolean\(serviceReadiness\?\.review\);/,
+  );
+  assert.match(
+    detail,
+    /isExecutingEngineer && canViewServiceReadiness && shouldRenderServiceReadiness/,
+  );
+});
+
 test('draft handoff uses the existing message composer and never sends automatically', () => {
   const detail = read('frontend/src/components/Engineer/EngineerWorkOrderDetail.jsx');
   const modal = read('frontend/src/components/WorkOrder/WorkOrderDetailModal.jsx');

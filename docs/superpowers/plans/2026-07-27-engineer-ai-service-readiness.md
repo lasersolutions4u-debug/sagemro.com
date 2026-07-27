@@ -1006,6 +1006,8 @@ git commit -m "test(engineer): verify service readiness draft handoff"
 
 ### Task 5: Integrate, review, synchronize China source, and release
 
+**Current release status:** Local implementation is complete, but production release is pending. Do not mark the remaining Task 5 steps complete until the final release review, both production D1 migration checks, branch pushes/CI deployments, the Aliyun China deployment, and the required smoke checks have succeeded.
+
 **Files:**
 
 - Modify: all Task 1-4 files only if review fixes are required.
@@ -1016,7 +1018,7 @@ git commit -m "test(engineer): verify service readiness draft handoff"
 - Consumes: three cohesive commits from Tasks 1-4.
 - Produces: a reviewed `main` implementation and a source-parity `china-edition` synchronization ready for the explicitly ordered release.
 
-- [x] **Step 1: Inspect the final diff and run targeted security checks**
+- [ ] **Step 1: Inspect the final diff and run targeted security checks**
 
 Run:
 
@@ -1028,7 +1030,7 @@ git status --short --branch
 
 Verify manually that no `review_json`/`source_conversation_id` field was added to `work_orders`, no card renders for `!isExecutingEngineer`, no readiness route calls `assertWorkOrderReadAccess`, and no browser code contains `OPENAI_API_KEY` or provider endpoint secrets.
 
-- [x] **Step 2: Request code review and resolve only readiness-scope findings**
+- [ ] **Step 2: Request code review and resolve only readiness-scope findings**
 
 Ask a fresh reviewer to inspect the final diff with these explicit questions:
 
@@ -1041,7 +1043,7 @@ Ask a fresh reviewer to inspect the final diff with these explicit questions:
 
 Apply only fixes required to answer those questions, rerun the affected commands from Task 4, and commit each fix separately using `fix(engineer): ...`.
 
-- [x] **Step 3: Synchronize the reviewed feature source to the China release worktree**
+- [ ] **Step 3: Synchronize the reviewed feature source to the China release worktree**
 
 From the clean China worktree, cherry-pick the reviewed Task 1-4 commits (and any scoped fix commits), then verify the frontend there:
 
@@ -1051,13 +1053,13 @@ git cherry-pick <task-1-commit> <task-2-commit> <task-3-commit> <task-4-commit>
 cd frontend && npm test && npm run lint && npm run build
 ```
 
-The production Worker remains the `main` deployment even after source synchronization. Do **not** run a Worker deployment from `china-edition`; migration 043 has already been applied directly to both production D1 databases before the `main` Worker deployment.
+The production Worker remains the `main` deployment even after source synchronization. Do **not** run a Worker deployment from `china-edition`; before the `main` Worker deployment, migration 043 must be applied directly to and verified on both production D1 databases.
 
-- [x] **Step 4: Commit/push only after the required tests are green**
+- [ ] **Step 4: Commit/push only after the required tests are green**
 
 On `main`, stage the already task-scoped commits only after the full checks pass. Push `main`, wait for the GitHub test/production gate, then follow the migration and smoke sequence in Task 4. Push the synchronized `china-edition` source commits only after the shared Worker has deployed successfully from `main`.
 
-- [x] **Step 5: Record release evidence**
+- [ ] **Step 5: Record release evidence**
 
 Capture the two migration verification outputs, GitHub deployment run URLs/statuses, Aliyun run status, and the two manual engineer checks in the release handoff. Do not include provider keys, JWTs, cookies, passwords, raw contact data, or complete review evidence in the handoff.
 

@@ -2,7 +2,7 @@
 
 > 📖 配套文档：项目协作规则见 [CLAUDE.md](./CLAUDE.md)
 > 本文件聚焦"如何部署 / 如何排查部署故障"
-> ⚠️ 唯一事实来源是 `.github/workflows/deploy.yml`。本文与 yml 不一致时，以 yml 为准并修正本文。
+> ⚠️ Cloudflare 发布以 `.github/workflows/deploy.yml` 为准；中国版真实生产发布以 `.github/workflows/aliyun-cn-deploy.yml` 为准。本文与 workflow 不一致时，以对应 workflow 为准并修正本文。
 
 ---
 
