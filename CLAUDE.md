@@ -84,3 +84,7 @@ Claude Code（本地）
 - 文案必须中英文同步。英文使用专业 B2B 工业服务语气；中文直接说明“AI 设备问题分析 / AI 先整理服务简报”。
 - 不夸大 AI 能力。最终诊断、报价、采购、现场安全和维修决策仍需合格人员或 SAGEMRO 服务流程确认。
 - 避免把客户端描述成单纯的“设备服务平台”“工单入口”或“公开资源集合”。这些可以存在，但不能盖过 AI 核心体验。
+
+## 九、Current Handoff (2026-07-27)
+
+- Before implementing Engineer AI Service Readiness Review, read [the Claude Code handoff](docs/superpowers/handoffs/2026-07-27-engineer-ai-service-readiness-claude-code-handoff.md), its linked approved design, and its executable plan. The handoff contains the authoritative feature-specific access, privacy, cache, migration, and COM/CN release constraints.
