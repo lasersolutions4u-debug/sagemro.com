@@ -70,7 +70,7 @@ The readiness card never calls `postWorkOrderMessage`. The engineer edits and ma
 
 ## Data Model
 
-Add migration `042_engineer_service_readiness.sql` and update `worker/schema.sql` in the same change. The migration creates an internal one-row-per-work-order table:
+Add migration `043_engineer_service_readiness.sql` and update `worker/schema.sql` in the same change. The migration creates an internal one-row-per-work-order table:
 
 ```sql
 CREATE TABLE work_order_service_readiness (
@@ -223,7 +223,7 @@ The full Worker test suite, frontend lint and tests, frontend production build, 
 
 ## Release Sequence
 
-1. Apply migration `042_engineer_service_readiness.sql` manually to both production D1 databases, `sagemro-db` and `sagemro-db-cn`.
+1. Apply migration `043_engineer_service_readiness.sql` manually to both production D1 databases, `sagemro-db` and `sagemro-db-cn`.
 2. Deploy the backward-compatible Worker from `main`.
 3. Deploy the international frontend from `main` to Cloudflare Pages.
 4. Deploy the China frontend from `china-edition` through `aliyun-cn-deploy.yml`; this is the real release path for `engineer.sagemro.cn`.
