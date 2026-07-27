@@ -2,6 +2,7 @@ import { expect, test } from '@playwright/test';
 
 import { adminApi, loginAdmin, onboardEngineer, uniqueIdentity } from '../support/journeys.mjs';
 import { e2eRuntime } from '../support/runtime.mjs';
+import { localD1Rows, sqlText } from '../support/visual.mjs';
 
 const runtime = e2eRuntime();
 
@@ -78,6 +79,13 @@ test('customer, Admin, and engineer complete a service order lifecycle', async (
   await engineerPage.getByRole('button', { name: 'Confirm Assignment', exact: true }).click();
   await engineerPage.reload();
   await expect(engineerPage.getByText(`Work order · ${orderNo}`, { exact: true })).toBeVisible();
+  await engineerPage.getByRole('tab', { name: 'Messages', exact: true }).click();
+  const manualMessage = `E2E manual update ${customer.runId}`;
+  const messageCountBefore = localD1Rows(`SELECT COUNT(*) AS count FROM work_order_messages WHERE work_order_id = ${sqlText(workOrderId)}`)[0].count;
+  await engineerPage.getByPlaceholder('Type a message...').fill(manualMessage);
+  await engineerPage.getByPlaceholder('Type a message...').press('Enter');
+  await expect(engineerPage.getByText(manualMessage, { exact: true })).toBeVisible();
+  expect(localD1Rows(`SELECT COUNT(*) AS count FROM work_order_messages WHERE work_order_id = ${sqlText(workOrderId)}`)[0].count).toBe(messageCountBefore + 1);
   await engineerPage.getByRole('tab', { name: 'Quote', exact: true }).click();
   await engineerPage.getByLabel('Labor Fee').fill('800');
   await engineerPage.getByLabel('Travel Fee').fill('100');
