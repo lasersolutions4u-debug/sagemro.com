@@ -75,6 +75,16 @@ import {
   assertEngineerOrAdmin,
 } from './lib/guards.js';
 
+// 工程师 AI 服务前核查：纯逻辑（脱敏/证据规范化/提示词/响应校验/状态集合）
+import {
+  READINESS_VISIBLE_STATUSES,
+  READINESS_GENERATION_STATUSES,
+  buildServiceReadinessInput,
+  buildServiceReadinessPrompt,
+  canonicalizeReadinessInput,
+  parseServiceReadinessReview,
+} from './lib/serviceReadiness.js';
+
 // 输入校验：文本长度上限 + 图片 URL 白名单
 import {
   ValidationError,
@@ -3617,13 +3627,17 @@ async function enforceOpenAIBudget(env, { userKey, tag = 'chat' }) {
 
   const userBudgetKey = `openai_quota_user_${bucket}_${userKey}`;
   const totalKey = `openai_quota_total_${bucket}`;
+  // tag 维度只用于观测（不按 tag 限流），全平台/每用户上限保持不变
+  const tagKey = `openai_quota_tag_${bucket}_${tag}`;
 
-  const [userStr, totalStr] = await Promise.all([
+  const [userStr, totalStr, tagStr] = await Promise.all([
     env.KV.get(userBudgetKey),
     env.KV.get(totalKey),
+    env.KV.get(tagKey),
   ]);
   const userCount = userStr ? parseInt(userStr, 10) : 0;
   const totalCount = totalStr ? parseInt(totalStr, 10) : 0;
+  const tagCount = tagStr ? parseInt(tagStr, 10) : 0;
 
   if (totalCount >= platformLimit) {
     throw new BudgetError('平台 AI 服务今日已达使用上限，请明天再试', 429);
@@ -3636,6 +3650,7 @@ async function enforceOpenAIBudget(env, { userKey, tag = 'chat' }) {
   await Promise.all([
     env.KV.put(userBudgetKey, String(userCount + 1), { expirationTtl: ttl }),
     env.KV.put(totalKey, String(totalCount + 1), { expirationTtl: ttl }),
+    env.KV.put(tagKey, String(tagCount + 1), { expirationTtl: ttl }),
   ]);
 }
 
@@ -3661,6 +3676,7 @@ const MAX_TOKENS = {
   chat_tool_followup: 2000,
   summary: 500,
   note: 400,
+  service_readiness: 650,
 };
 
 // Phase 0.3：多轮 tool call 循环上限
@@ -5467,6 +5483,336 @@ async function handleGetWorkOrders(request, env) {
 
     return jsonResponse({ work_orders: workOrders });
   } catch (error) {
+    return errorResponse(error.message, 500);
+  }
+}
+
+// ============ 工程师 AI 服务前核查（Service Readiness） ============
+// 访问边界：仅当前执行工程师（auth.userType === 'engineer' 且工单 engineer_id 匹配）。
+// 故意不复用 assertWorkOrderReadAccess —— 它放行区域团队/历史工程师，范围过大。
+function assertExecutingEngineerReadinessAccess(auth, workOrder) {
+  if (!auth) throw new GuardError('请先登录', 401);
+  if (!workOrder) throw new GuardError('工单不存在', 404);
+  if (auth.userType !== 'engineer' || workOrder.engineer_id !== auth.userId) {
+    throw new GuardError('仅当前执行工程师可访问服务前核查', 403);
+  }
+}
+
+async function ensureServiceReadinessRow(env, workOrderId) {
+  await env.DB.prepare(
+    'INSERT OR IGNORE INTO work_order_service_readiness (work_order_id) VALUES (?)',
+  ).bind(workOrderId).run();
+  return env.DB.prepare(
+    'SELECT * FROM work_order_service_readiness WHERE work_order_id = ?',
+  ).bind(workOrderId).first();
+}
+
+function safeParseStoredReadinessReview(reviewJson) {
+  if (typeof reviewJson !== 'string' || !reviewJson) return null;
+  try {
+    const parsed = JSON.parse(reviewJson);
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+// 唯一的 payload 构建入口，保证 GET/POST 状态优先级一致。
+// stale 只在此处派生（指纹比对），永不落库。
+function readinessPayload(cacheRow, currentFingerprint) {
+  const review = safeParseStoredReadinessReview(cacheRow?.review_json);
+  const stored = cacheRow?.generation_state || 'missing';
+  const state = stored === 'generating' || stored === 'failed'
+    ? stored
+    : !review ? 'missing'
+    : cacheRow.input_fingerprint === currentFingerprint ? 'ready' : 'stale';
+  return { state, review, generated_at: cacheRow?.generated_at || null };
+}
+
+function countJsonArrayItems(value) {
+  if (typeof value !== 'string' || !value) return 0;
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed.length : 0;
+  } catch {
+    return 0;
+  }
+}
+
+// 从 SummaryProtocol v1 摘要 JSON 中取可发送的摘要文本
+function extractReadinessConversationSummary(summaryJson) {
+  if (typeof summaryJson !== 'string' || !summaryJson) return '';
+  try {
+    const parsed = JSON.parse(summaryJson);
+    if (parsed && typeof parsed === 'object') {
+      if (typeof parsed.summary_text === 'string') return parsed.summary_text;
+      if (typeof parsed.raw_text_preview === 'string') return parsed.raw_text_preview;
+    }
+  } catch {
+    // 摘要不是 JSON 时按原文使用（仍会经过脱敏与限长）
+  }
+  return summaryJson;
+}
+
+// Worker 侧证据装载：只做 D1 查询，规范化/脱敏全部委托给 lib 纯函数。
+// 存储的来源会话每次读取都重新校验归属；被删除或非该客户所有时本次按无来源处理。
+async function loadServiceReadinessInput(env, workOrder, cacheRow) {
+  const device = workOrder.device_id
+    ? await env.DB.prepare('SELECT brand, model FROM devices WHERE id = ?').bind(workOrder.device_id).first()
+    : null;
+
+  let sourceConversationId = null;
+  let sourceSummary = '';
+  let sourceMessages = [];
+  let sourceImageCount = 0;
+  if (cacheRow?.source_conversation_id) {
+    const conversation = await env.DB.prepare(
+      'SELECT id FROM conversations WHERE id = ? AND customer_id = ?',
+    ).bind(cacheRow.source_conversation_id, workOrder.customer_id).first();
+    if (conversation) {
+      sourceConversationId = conversation.id;
+      const summaryRow = await env.DB.prepare(
+        'SELECT summary_json FROM conversation_summaries WHERE conversation_id = ? ORDER BY generated_at DESC LIMIT 1',
+      ).bind(conversation.id).first();
+      sourceSummary = extractReadinessConversationSummary(summaryRow?.summary_json);
+      const messageRows = await env.DB.prepare(
+        "SELECT role, content FROM messages WHERE conversation_id = ? AND role IN ('user', 'assistant') ORDER BY created_at DESC LIMIT 12",
+      ).bind(conversation.id).all();
+      sourceMessages = messageRows.results || [];
+      const imageRows = await env.DB.prepare(
+        "SELECT image_urls FROM messages WHERE conversation_id = ? AND image_urls IS NOT NULL AND image_urls != ''",
+      ).bind(conversation.id).all();
+      sourceImageCount = (imageRows.results || [])
+        .reduce((count, row) => count + countJsonArrayItems(row.image_urls), 0);
+    }
+  }
+
+  // 公开工单消息：排除内部备注与客户不可见消息；只发送文本，附件只计数
+  const publicMessageRows = await env.DB.prepare(
+    `SELECT sender_type, content FROM work_order_messages
+     WHERE work_order_id = ? AND is_internal_note = 0 AND is_customer_visible = 1
+       AND sender_type IN ('customer', 'engineer')
+     ORDER BY created_at DESC LIMIT 12`,
+  ).bind(workOrder.id).all();
+  const attachmentUrlRows = await env.DB.prepare(
+    `SELECT attachment_urls FROM work_order_messages
+     WHERE work_order_id = ? AND is_internal_note = 0 AND is_customer_visible = 1
+       AND attachment_urls IS NOT NULL AND attachment_urls != ''`,
+  ).bind(workOrder.id).all();
+  const messageAttachmentCount = (attachmentUrlRows.results || [])
+    .reduce((count, row) => count + countJsonArrayItems(row.attachment_urls), 0);
+  const attachmentCountRow = await env.DB.prepare(
+    'SELECT COUNT(*) AS count FROM work_order_attachments WHERE work_order_id = ?',
+  ).bind(workOrder.id).first();
+
+  return buildServiceReadinessInput({
+    workOrder,
+    device,
+    sourceConversationId,
+    sourceSummary,
+    sourceMessages,
+    publicMessages: publicMessageRows.results || [],
+    mediaCounts: {
+      source_conversation_image_count: sourceImageCount,
+      work_order_attachment_count: Number(attachmentCountRow?.count || 0),
+      work_order_message_attachment_count: messageAttachmentCount,
+    },
+  });
+}
+
+const SERVICE_READINESS_LEASE_MS = 30000;
+
+// generating 租约超过 30 秒视为过期：按原始 generation_started_at 条件更新为 failed，
+// 防止并发场景覆盖一个更新的任务。
+async function expireServiceReadinessLeaseIfNeeded(env, cacheRow) {
+  if (cacheRow?.generation_state !== 'generating' || !cacheRow.generation_started_at) return cacheRow;
+  const startedAt = Date.parse(cacheRow.generation_started_at);
+  if (!Number.isFinite(startedAt) || Date.now() - startedAt <= SERVICE_READINESS_LEASE_MS) return cacheRow;
+  await env.DB.prepare(
+    `UPDATE work_order_service_readiness
+     SET generation_state = 'failed', last_error = 'generation_lease_expired', updated_at = datetime('now')
+     WHERE work_order_id = ? AND generation_state = 'generating' AND generation_started_at = ?`,
+  ).bind(cacheRow.work_order_id, cacheRow.generation_started_at).run();
+  return env.DB.prepare(
+    'SELECT * FROM work_order_service_readiness WHERE work_order_id = ?',
+  ).bind(cacheRow.work_order_id).first();
+}
+
+// 后台生成：8 秒 provider 超时；任何失败只影响 readiness 行状态，
+// 不发消息、不改工单，且保留上一份有效 review。
+async function generateServiceReadiness(env, {
+  workOrder, input, fingerprint, market, engineerId, leaseStartedAt,
+}) {
+  const failGeneration = (errorCode) => env.DB.prepare(
+    `UPDATE work_order_service_readiness
+     SET generation_state = 'failed', last_error = ?, updated_at = datetime('now')
+     WHERE work_order_id = ? AND generation_state = 'generating' AND generation_started_at = ?`,
+  ).bind(errorCode, workOrder.id, leaseStartedAt).run();
+
+  try {
+    const { systemPrompt, userPrompt } = buildServiceReadinessPrompt({ market, input });
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 8000);
+    let response;
+    try {
+      await enforceOpenAIBudget(env, {
+        userKey: `engineer:${engineerId}:service_readiness`,
+        tag: 'service_readiness',
+      });
+      response = await fetch(env.OPENAI_API_ENDPOINT, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${env.OPENAI_API_KEY}` },
+        body: JSON.stringify({
+          model: getJsonModel(env),
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userPrompt },
+          ],
+          stream: false,
+          temperature: 0.2,
+          max_tokens: MAX_TOKENS.service_readiness,
+        }),
+        signal: controller.signal,
+      });
+    } finally {
+      clearTimeout(timeoutId);
+    }
+
+    if (!response.ok) {
+      await failGeneration('provider_http_error');
+      return;
+    }
+    const data = await response.json();
+    const review = parseServiceReadinessReview(data?.choices?.[0]?.message?.content, workOrder.service_mode);
+    if (!review) {
+      await failGeneration('invalid_model_output');
+      return;
+    }
+    // 只更新仍持有本次租约的行：迟到的过期任务不能覆盖更新的结果
+    await env.DB.prepare(
+      `UPDATE work_order_service_readiness
+       SET review_json = ?, input_fingerprint = ?, generation_state = 'ready',
+           generated_at = datetime('now'), last_error = NULL, updated_at = datetime('now')
+       WHERE work_order_id = ? AND generation_state = 'generating' AND generation_started_at = ?`,
+    ).bind(JSON.stringify(review), fingerprint, workOrder.id, leaseStartedAt).run();
+  } catch (error) {
+    const errorCode = error instanceof BudgetError
+      ? 'budget_exhausted'
+      : !env.OPENAI_API_ENDPOINT || !env.OPENAI_API_KEY
+        ? 'provider_unconfigured'
+        : error?.name === 'AbortError' ? 'provider_timeout' : 'provider_request_failed';
+    await failGeneration(errorCode).catch(() => {});
+  }
+}
+
+// GET /api/workorders/:id/service-readiness —— 只读缓存，绝不触发模型调用
+async function handleGetWorkOrderServiceReadiness(request, env) {
+  const id = new URL(request.url).pathname.match(/^\/api\/workorders\/([^/]+)\/service-readiness$/)?.[1];
+  try {
+    const workOrder = await env.DB.prepare(
+      'SELECT * FROM work_orders WHERE id = ?',
+    ).bind(id).first();
+    assertExecutingEngineerReadinessAccess(request._auth, workOrder);
+    if (!READINESS_VISIBLE_STATUSES.has(workOrder.status)) {
+      return errorResponse(getRequestMarket(request) === 'cn' ? '未找到' : 'Not found', 404);
+    }
+    let cacheRow = await env.DB.prepare(
+      'SELECT * FROM work_order_service_readiness WHERE work_order_id = ?',
+    ).bind(workOrder.id).first();
+    cacheRow = await expireServiceReadinessLeaseIfNeeded(env, cacheRow);
+    const input = await loadServiceReadinessInput(env, workOrder, cacheRow);
+    const fingerprint = await sha256Hex(canonicalizeReadinessInput(input));
+    return jsonResponse(readinessPayload(cacheRow, fingerprint));
+  } catch (error) {
+    if (error instanceof GuardError) return errorResponse(error.message, error.status);
+    return errorResponse(error.message, 500);
+  }
+}
+
+// POST /api/workorders/:id/service-readiness/refresh —— 非阻塞生成入口
+async function handleRefreshWorkOrderServiceReadiness(request, env) {
+  const id = new URL(request.url).pathname.match(/^\/api\/workorders\/([^/]+)\/service-readiness\/refresh$/)?.[1];
+  try {
+    const workOrder = await env.DB.prepare(
+      'SELECT * FROM work_orders WHERE id = ?',
+    ).bind(id).first();
+    assertExecutingEngineerReadinessAccess(request._auth, workOrder);
+    if (!READINESS_VISIBLE_STATUSES.has(workOrder.status)) {
+      return errorResponse(getRequestMarket(request) === 'cn' ? '未找到' : 'Not found', 404);
+    }
+    let body = {};
+    try {
+      body = await request.json();
+    } catch {
+      body = {};
+    }
+    const force = body?.force === undefined ? false : body.force;
+    if (typeof force !== 'boolean') {
+      return errorResponse(
+        getRequestMarket(request) === 'cn' ? 'force 必须是布尔值' : 'force must be a boolean',
+        400,
+      );
+    }
+
+    const cacheRow = await ensureServiceReadinessRow(env, workOrder.id);
+    const input = await loadServiceReadinessInput(env, workOrder, cacheRow);
+    const fingerprint = await sha256Hex(canonicalizeReadinessInput(input));
+    const payload = readinessPayload(cacheRow, fingerprint);
+
+    // force=false：只有 missing/failed 可生成；ready/generating/stale 原样返回。
+    // force=true：任何非 generating 行都可显式重新生成。
+    const isCandidate = force
+      ? cacheRow.generation_state !== 'generating'
+      : payload.state === 'missing' || payload.state === 'failed';
+    if (!isCandidate) return jsonResponse(payload);
+
+    if (!READINESS_GENERATION_STATUSES.has(workOrder.status)) {
+      return errorResponse(
+        getRequestMarket(request) === 'cn'
+          ? '当前工单状态不可生成服务前核查'
+          : 'A readiness review cannot be generated in the current work order status',
+        409,
+      );
+    }
+
+    // 单条条件 UPDATE 抢占租约：已存在 generating 行时拒绝
+    const leaseStartedAt = new Date().toISOString();
+    const lease = await env.DB.prepare(
+      `UPDATE work_order_service_readiness
+       SET generation_state = 'generating', generation_started_at = ?, last_error = NULL, updated_at = datetime('now')
+       WHERE work_order_id = ?
+         AND generation_state <> 'generating'
+         AND (? = 1 OR generation_state IN ('missing', 'failed'))`,
+    ).bind(leaseStartedAt, workOrder.id, force ? 1 : 0).run();
+
+    if (lease.meta?.changes !== 1) {
+      const latest = await env.DB.prepare(
+        'SELECT * FROM work_order_service_readiness WHERE work_order_id = ?',
+      ).bind(workOrder.id).first();
+      return jsonResponse(readinessPayload(latest, fingerprint));
+    }
+
+    const task = generateServiceReadiness(env, {
+      workOrder,
+      input,
+      fingerprint,
+      market: getRequestMarket(request),
+      engineerId: request._auth.userId,
+      leaseStartedAt,
+    });
+    if (request._ctx && typeof request._ctx.waitUntil === 'function') {
+      request._ctx.waitUntil(task);
+    } else {
+      // 无 ctx 的测试降级：后台执行但绝不阻塞 HTTP 响应
+      void task.catch((error) => console.error('service readiness generation failed', error));
+    }
+    return jsonResponse({
+      state: 'generating',
+      review: payload.review,
+      generated_at: payload.generated_at,
+    }, 202);
+  } catch (error) {
+    if (error instanceof GuardError) return errorResponse(error.message, error.status);
     return errorResponse(error.message, 500);
   }
 }
@@ -18702,6 +19048,13 @@ async function routeRequest(request, env, ctx) {
     }
     if (path.match(/^\/api\/workorders\/[^/]+\/attachments$/) && request.method === 'GET') {
       return handleGetAttachments(request, env);
+    }
+    // 工程师 AI 服务前核查（必须在 catch-all GET 之前）
+    if (path.match(/^\/api\/workorders\/[^/]+\/service-readiness$/) && request.method === 'GET') {
+      return handleGetWorkOrderServiceReadiness(request, env);
+    }
+    if (path.match(/^\/api\/workorders\/[^/]+\/service-readiness\/refresh$/) && request.method === 'POST') {
+      return handleRefreshWorkOrderServiceReadiness(request, env);
     }
     // 工单详情 catch-all（必须在所有子路由之后）
     if (path.match(/^\/api\/workorders\/[^/]+$/) && request.method === 'GET') {
