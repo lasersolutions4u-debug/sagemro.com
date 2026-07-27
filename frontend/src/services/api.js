@@ -566,6 +566,26 @@ export async function getWorkOrder(id) {
   return response.json();
 }
 
+export async function getWorkOrderServiceReadiness(workOrderId) {
+  const response = await fetch(`${API_BASE}/api/workorders/${workOrderId}/service-readiness`, {
+    headers: authHeaders(),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+  return data;
+}
+
+export async function refreshWorkOrderServiceReadiness(workOrderId, { force = false } = {}) {
+  const response = await fetch(`${API_BASE}/api/workorders/${workOrderId}/service-readiness/refresh`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({ force }),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+  return data;
+}
+
 export async function searchMaterials({ search = '', category = 'all', pageSize = 20 } = {}) {
   const params = new URLSearchParams({ search, category, pageSize });
   const response = await fetch(`${API_BASE}/api/materials?${params}`, {

@@ -1,10 +1,16 @@
 import { ArrowLeft, ShieldCheck } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { getWorkOrder, requestWorkOrderPaymentStart } from '../../services/api';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  getWorkOrder,
+  getWorkOrderServiceReadiness,
+  refreshWorkOrderServiceReadiness,
+  requestWorkOrderPaymentStart,
+} from '../../services/api';
 import { confirmDialog, toastError, toastSuccess } from '../../utils/feedback';
 import { WorkOrderDetailContent } from '../WorkOrder/WorkOrderDetailModal';
 import { getEngineerScheduleLabel, getEngineerWorkOrderTitle } from './engineerWorkOrderDisplay';
 import { getLocalizedCustomerContent } from './engineerWorkOrderContent';
+import { EngineerServiceReadinessCard } from './EngineerServiceReadinessCard';
 
 const CHECKLIST = {
   en: [
@@ -45,6 +51,7 @@ const COPY = {
     submittingStart: 'Submitting...', confirmStart: 'Request Admin approval to start service after advance payment follow-up?',
     startNote: 'Engineer confirmed advance payment follow-up with the customer.',
     startSent: 'Start request sent to Admin for advance payment confirmation.', startFailed: 'Start request failed: ',
+    readinessRefreshFailed: 'Service review update failed. Please try again.',
     statusNames: { available: 'Available', paused: 'Paused', offline: 'Offline' },
   },
   cn: {
@@ -64,6 +71,7 @@ const COPY = {
     requestStart: '请求开始服务审批', waitingStart: '等待 Admin 确认预付款', submittingStart: '提交中...',
     confirmStart: '确认已跟进预付款，并请求 Admin 批准开始服务吗？', startNote: '工程师已与客户确认预付款跟进。',
     startSent: '开始服务请求已提交给 Admin 确认预付款。', startFailed: '开始服务请求失败：',
+    readinessRefreshFailed: '服务前核查更新失败，请稍后重试。',
     statusNames: { available: '可接单', paused: '暂停接单', offline: '离线' },
   },
 };
@@ -101,6 +109,11 @@ export function EngineerWorkOrderDetail({
   const [actionRefresh, setActionRefresh] = useState(0);
   const [paymentStartSubmitting, setPaymentStartSubmitting] = useState(false);
   const [checkedChecklistItems, setCheckedChecklistItems] = useState(() => new Set());
+  const [serviceReadiness, setServiceReadiness] = useState(null);
+  const [serviceReadinessExpanded, setServiceReadinessExpanded] = useState(false);
+  const [serviceReadinessPollingExpired, setServiceReadinessPollingExpired] = useState(false);
+  const [messageDraftRequest, setMessageDraftRequest] = useState(null);
+  const pollAttemptsRef = useRef(0);
 
   const loadDetail = useCallback(async () => {
     setLoading(true); setError('');
@@ -109,6 +122,50 @@ export function EngineerWorkOrderDetail({
     finally { setLoading(false); }
   }, [copy.failed, workOrderId]);
   useEffect(() => { loadDetail(); }, [loadDetail]);
+
+  // 服务前核查独立于主详情加载：不参与 loading，不触发 loadDetail。
+  const readinessWorkOrderId = detail?.id;
+  const readinessIsExecuting = String(detail?.engineer_id || '') === String(engineerId || '');
+  const readinessCanGenerate = readinessIsExecuting
+    && ['assigned', 'in_progress', 'pricing', 'pending_payment', 'payment_review'].includes(detail?.status);
+
+  useEffect(() => {
+    if (!readinessWorkOrderId || !readinessIsExecuting) return undefined;
+    let cancelled = false;
+    setServiceReadiness(null);
+    setServiceReadinessExpanded(false);
+    setServiceReadinessPollingExpired(false);
+    pollAttemptsRef.current = 0;
+    getWorkOrderServiceReadiness(readinessWorkOrderId)
+      .then((data) => {
+        if (cancelled) return;
+        setServiceReadiness(data);
+        if (data?.state === 'missing' && readinessCanGenerate) {
+          return refreshWorkOrderServiceReadiness(readinessWorkOrderId, { force: false })
+            .then((started) => {
+              if (!cancelled && started?.state) setServiceReadiness(started);
+            });
+        }
+        return null;
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [readinessWorkOrderId, readinessIsExecuting, readinessCanGenerate]);
+
+  // 仅在 generating 期间轮询：每 2 秒一次，最多 10 次（20 秒）后停止并暴露重试。
+  useEffect(() => {
+    if (serviceReadiness?.state !== 'generating' || serviceReadinessPollingExpired) return undefined;
+    if (!readinessWorkOrderId || !readinessIsExecuting) return undefined;
+    const loadServiceReadiness = () => {
+      pollAttemptsRef.current += 1;
+      if (pollAttemptsRef.current >= 10) setServiceReadinessPollingExpired(true);
+      getWorkOrderServiceReadiness(readinessWorkOrderId)
+        .then((data) => setServiceReadiness(data))
+        .catch(() => {});
+    };
+    const interval = setInterval(loadServiceReadiness, 2000);
+    return () => clearInterval(interval);
+  }, [serviceReadiness?.state, serviceReadinessPollingExpired, readinessWorkOrderId, readinessIsExecuting]);
 
   const aiSummary = useMemo(() => {
     const fallback = detail?.description || '';
@@ -129,6 +186,23 @@ export function EngineerWorkOrderDetail({
   );
 
   const isExecutingEngineer = String(detail.engineer_id || '') === String(engineerId || '');
+  const canViewServiceReadiness = isExecutingEngineer
+    && ['assigned', 'in_progress', 'pricing', 'pending_payment', 'payment_review', 'in_service'].includes(detail.status);
+  const canGenerateServiceReadiness = isExecutingEngineer
+    && ['assigned', 'in_progress', 'pricing', 'pending_payment', 'payment_review'].includes(detail.status);
+  const handleRefreshServiceReadiness = () => {
+    if (!canGenerateServiceReadiness) return;
+    pollAttemptsRef.current = 0;
+    setServiceReadinessPollingExpired(false);
+    refreshWorkOrderServiceReadiness(detail.id, { force: true })
+      .then((result) => {
+        if (result?.state) setServiceReadiness(result);
+      })
+      .catch(() => {
+        // 保留屏幕上的既有核查结果，只提示失败
+        toastError(copy.readinessRefreshFailed);
+      });
+  };
   const isCurrentTeamWork = detail.ownership_relation === 'current_team_member' || detail.ownership_relation === 'regional_queue';
   const canReassignTeamWork = isRegionalLead && isCurrentTeamWork && ['pending', 'pending_dispatch', 'assigned'].includes(detail.status);
   const scheduledTime = getEngineerScheduleLabel(detail, isCn ? 'zh-CN' : 'en-US') || copy.schedulePending;
@@ -196,7 +270,7 @@ export function EngineerWorkOrderDetail({
         <aside className="rounded-xl bg-[#18202b] p-4 text-white"><span className="text-xs font-bold uppercase tracking-wider text-slate-300">{copy.nextStep}</span><strong className="mt-2 block text-sm leading-6">{getNextAction(detail)}</strong>{actionPanel}</aside>
       </section>
 
-      <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_280px]">
+      <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
         <main className="min-w-0 overflow-hidden rounded-2xl border border-[#e5e8ed] bg-white">
           <nav role="tablist" className="flex overflow-x-auto border-b border-[#e5e8ed] bg-[#fbfcfd] px-3">
             {tabs.map(([key, label]) => <button id={`engineer-tab-${key}`} aria-controls={`engineer-panel-${key}`} key={key} type="button" role="tab" aria-selected={activeTab === key} onClick={() => setActiveTab(key)} className={`h-12 shrink-0 border-b-2 px-3 text-[13px] font-bold ${activeTab === key ? 'border-orange-500 text-orange-600' : 'border-transparent text-[#697386]'}`}>{label}</button>)}
@@ -231,12 +305,30 @@ export function EngineerWorkOrderDetail({
                     ))}
                   </div>
                 )}
-                <WorkOrderDetailContent key={`${detail.id}:${actionRefresh}`} workOrder={detail} userType="engineer" userId={engineerId} controlledTab={activeTab === 'quote' ? commercialView : tabMap[activeTab]} showInfoTab={false} showTabNavigation={false} managementReadOnly={!isExecutingEngineer} isActive onConfirmed={() => { loadDetail(); onWorkOrderChanged?.(); }} onRateSuccess={() => { loadDetail(); onWorkOrderChanged?.(); }} />
+                <WorkOrderDetailContent key={`${detail.id}:${actionRefresh}`} workOrder={detail} userType="engineer" userId={engineerId} controlledTab={activeTab === 'quote' ? commercialView : tabMap[activeTab]} showInfoTab={false} showTabNavigation={false} managementReadOnly={!isExecutingEngineer} isActive onConfirmed={() => { loadDetail(); onWorkOrderChanged?.(); }} onRateSuccess={() => { loadDetail(); onWorkOrderChanged?.(); }} messageDraftRequest={messageDraftRequest} onMessageDraftApplied={(requestId) => { setMessageDraftRequest((current) => (current?.id === requestId ? null : current)); }} />
               </>
             )}
           </div>
         </main>
-        <aside className="space-y-3 self-start lg:sticky lg:top-4"><section className="rounded-xl border border-[#e5e8ed] bg-white p-4"><h2 className="text-sm font-semibold">{copy.support}</h2><a href="mailto:support@sagemro.com" className="mt-2 block text-sm font-bold text-orange-600">support@sagemro.com</a></section></aside>
+        <aside className="space-y-3 self-start lg:sticky lg:top-4">
+          {isExecutingEngineer && canViewServiceReadiness && (
+            <EngineerServiceReadinessCard
+              isCn={isCn}
+              state={serviceReadiness?.state || 'missing'}
+              review={serviceReadiness?.review || null}
+              expanded={serviceReadinessExpanded}
+              pollingExpired={serviceReadinessPollingExpired}
+              canRefresh={canGenerateServiceReadiness}
+              onToggle={() => setServiceReadinessExpanded((value) => !value)}
+              onRefresh={handleRefreshServiceReadiness}
+              onInsertQuestion={(question) => {
+                setMessageDraftRequest({ id: `${detail.id}:${Date.now()}`, text: question.draft });
+                setActiveTab('messages');
+              }}
+            />
+          )}
+          <section className="rounded-xl border border-[#e5e8ed] bg-white p-4"><h2 className="text-sm font-semibold">{copy.support}</h2><a href="mailto:support@sagemro.com" className="mt-2 block text-sm font-bold text-orange-600">support@sagemro.com</a></section>
+        </aside>
       </div>
     </section>
   );

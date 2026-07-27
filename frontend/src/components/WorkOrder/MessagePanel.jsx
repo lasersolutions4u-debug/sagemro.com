@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { ChevronDown, Image, Loader2, Paperclip, Send, Video, X } from 'lucide-react';
 import { getWorkOrderMessages, postWorkOrderMessage, uploadWorkOrderAttachment } from '../../services/api';
-import { toastError } from '../../utils/feedback';
+import { confirmDialog, toastError } from '../../utils/feedback';
 import { redactContactInfo } from '../../utils/contactRedaction';
 import { isCnLocale } from '../../utils/locale';
 import { getLocalizedCustomerContent } from '../Engineer/engineerWorkOrderContent';
@@ -29,6 +29,10 @@ const COPY = {
     viewOriginal: 'View customer original',
     readOnly: 'Team progress view · Only the executing engineer can reply.',
     newMessages: 'New messages',
+    replaceDraftTitle: 'Replace current draft?',
+    replaceDraft: 'Replace the message you are writing with this suggested question?',
+    keepDraft: 'Keep my draft',
+    replace: 'Replace',
   },
   cn: {
     empty: '暂无消息，可以从这里开始沟通。',
@@ -42,6 +46,10 @@ const COPY = {
     viewOriginal: '查看客户原文',
     readOnly: '团队进度查看模式 · 仅执行工程师可以回复。',
     newMessages: '有新消息',
+    replaceDraftTitle: '替换当前草稿？',
+    replaceDraft: '用建议的问题替换正在输入的消息吗？',
+    keepDraft: '保留我的草稿',
+    replace: '替换',
   },
 };
 
@@ -131,7 +139,7 @@ function messagesMatch(current, next) {
   });
 }
 
-export function MessagePanel({ workOrderId, userType, userId, readOnly = false }) {
+export function MessagePanel({ workOrderId, userType, userId, readOnly = false, draftRequest = null, onDraftRequestApplied }) {
   const isCn = isCnLocale();
   const copy = isCn ? COPY.cn : COPY.en;
   const [messages, setMessages] = useState([]);
@@ -146,6 +154,36 @@ export function MessagePanel({ workOrderId, userType, userId, readOnly = false }
   const initializedRef = useRef(false);
   const pinnedToBottomRef = useRef(true);
   const shouldAutoScrollRef = useRef(false);
+  const composerInputRef = useRef(null);
+  const inputValueRef = useRef('');
+  const handledDraftIdsRef = useRef(new Set());
+
+  useEffect(() => {
+    inputValueRef.current = input;
+  }, [input]);
+
+  // 一次性草稿请求：每个 id 只处理一次；已有未发送草稿时先询问，取消则保留草稿。
+  useEffect(() => {
+    if (!draftRequest?.id || handledDraftIdsRef.current.has(draftRequest.id)) return;
+    handledDraftIdsRef.current.add(draftRequest.id);
+    const applyDraft = async () => {
+      if (inputValueRef.current.trim()) {
+        const replace = await confirmDialog(copy.replaceDraft, {
+          title: copy.replaceDraftTitle,
+          confirmText: copy.replace,
+          cancelText: copy.keepDraft,
+        });
+        if (!replace) {
+          onDraftRequestApplied?.(draftRequest.id);
+          return;
+        }
+      }
+      setInput(draftRequest.text);
+      requestAnimationFrame(() => composerInputRef.current?.focus());
+      onDraftRequestApplied?.(draftRequest.id);
+    };
+    void applyDraft();
+  }, [draftRequest, onDraftRequestApplied, copy]);
 
   const scrollMessageListToBottom = useCallback((behavior = 'smooth') => {
     const container = messagesContainerRef.current;
@@ -338,6 +376,7 @@ export function MessagePanel({ workOrderId, userType, userId, readOnly = false }
           <Paperclip size={16} />
         </button>
         <input
+          ref={composerInputRef}
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && handleSend()}

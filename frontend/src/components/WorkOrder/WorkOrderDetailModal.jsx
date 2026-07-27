@@ -101,6 +101,8 @@ export function WorkOrderDetailContent({
   renderModal = false,
   isOpen = true,
   onClose,
+  messageDraftRequest = null,
+  onMessageDraftApplied,
 }) {
   const [detail, setDetail] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -1281,7 +1283,7 @@ export function WorkOrderDetailContent({
           <>
             {activeTab === 'info' && renderInfoTab()}
             {activeTab === 'messages' && (
-              <MessagePanel workOrderId={workOrder.id} userType={userType} userId={userId} readOnly={managementReadOnly} />
+              <MessagePanel workOrderId={workOrder.id} userType={userType} userId={userId} readOnly={managementReadOnly} draftRequest={messageDraftRequest} onDraftRequestApplied={onMessageDraftApplied} />
             )}
             {activeTab === 'pricing' && isEngineer && (
               <EngineerPricingPanel
