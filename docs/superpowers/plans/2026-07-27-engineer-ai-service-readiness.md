@@ -155,7 +155,7 @@ The validator keeps at most six confirmed facts, six gaps, six mode-readiness it
 - Produces: exactly one `work_order_service_readiness` row for newly created manual and AI-created work orders, with a verified `source_conversation_id` or `NULL`.
 - Produces: `findOwnedCustomerConversation(env, conversationId, customerId) -> Promise<{ id: string } | null>` and `attachConversationImagesToWorkOrder(env, args) -> Promise<{ sourceConversationId: string | null, attachedImages: number }>`.
 
-- [ ] **Step 1: Write the failing SQLite-backed source-link and schema tests**
+- [x] **Step 1: Write the failing SQLite-backed source-link and schema tests**
 
 Create `worker/tests/service-readiness-api.test.mjs` with a real in-memory SQLite D1 adapter modeled on `worker/tests/engineer-workspace-access.test.mjs`. Seed two customers, an assigned engineer, two conversations owned by different customers, one chat image, and the minimal work-order tables. Start with these tests:
 
@@ -222,7 +222,7 @@ test('schema keeps the readiness cache out of work_orders and enforces its state
 
 Also add an AI-tool creation test that invokes chat's `create_work_order` path with a customer-owned conversation and confirms the same row/attachment behavior. In the test harness, make `waitUntil` collect promises and await them only after asserting the HTTP response so the existing summary task cannot make the request timing nondeterministic.
 
-- [ ] **Step 2: Run the focused test and verify RED**
+- [x] **Step 2: Run the focused test and verify RED**
 
 Run:
 
@@ -232,7 +232,7 @@ cd worker && node --test tests/service-readiness-api.test.mjs
 
 Expected: FAIL because `work_order_service_readiness` does not exist and neither work-order creation path persists or verifies a source conversation.
 
-- [ ] **Step 3: Add migration 043 and mirror it in the clean schema**
+- [x] **Step 3: Add migration 043 and mirror it in the clean schema**
 
 Create `worker/migrations/043_engineer_service_readiness.sql` exactly as follows:
 
@@ -264,7 +264,7 @@ Insert the same table immediately after `work_orders` in `worker/schema.sql`, ad
 
 Do not add a source-conversation column, review JSON, or generation status to `work_orders`: `handleGetWorkOrder` spreads `w.*` into customer-facing data.
 
-- [ ] **Step 4: Make both work-order creation paths trust the identity, not caller data**
+- [x] **Step 4: Make both work-order creation paths trust the identity, not caller data**
 
 In `worker/src/index.js`, add this narrow helper adjacent to `attachConversationImagesToWorkOrder`:
 
@@ -323,7 +323,7 @@ conversation_id: conversationId || undefined,
 
 Include `conversationId` in that callback's dependency array. Do not pass it through any unauthenticated or engineer-facing form.
 
-- [ ] **Step 5: Run the focused tests and inspect the schema diff**
+- [x] **Step 5: Run the focused tests and inspect the schema diff**
 
 Run:
 
@@ -334,7 +334,7 @@ git diff --check
 
 Expected: PASS. Verify that source linkage succeeds only for the current authenticated customer and that a foreign conversation produces no copied attachment, no stored conversation ID, and no error revealing the foreign conversation.
 
-- [ ] **Step 6: Commit the independently usable schema and linkage layer**
+- [x] **Step 6: Commit the independently usable schema and linkage layer**
 
 ```bash
 git add worker/migrations/043_engineer_service_readiness.sql worker/schema.sql worker/migrations/README.md worker/src/index.js worker/tests/service-readiness-api.test.mjs worker/package.json frontend/src/App.jsx
@@ -357,7 +357,7 @@ git commit -m "feat(engineer): link trusted service readiness sources"
 - Produces: `buildServiceReadinessInput(env, workOrder, cacheRow) -> normalized JSON-safe evidence`, `buildServiceReadinessPrompt({ market, input }) -> { systemPrompt, userPrompt }`, and `parseServiceReadinessReview(content, expectedServiceMode) -> review | null`.
 - Produces: `GET /api/workorders/:id/service-readiness` and `POST /api/workorders/:id/service-readiness/refresh` with the contract above.
 
-- [ ] **Step 1: Add failing endpoint, cache, and privacy tests**
+- [x] **Step 1: Add failing endpoint, cache, and privacy tests**
 
 Extend `worker/tests/service-readiness-api.test.mjs` with a helper that captures `ctx.waitUntil` promises and a temporary `globalThis.fetch` mock. Add the following concrete cases:
 
@@ -442,7 +442,7 @@ assert.match(enPrompt, /Return valid JSON only/);
 
 Seed conversation summaries and messages containing an injected instruction, direct contact details, more than 12 messages, and media URLs. Assert the provider receives a redacted/capped structured summary, 12-or-fewer source/public messages, counts rather than media URLs, and no private/internal work-order note.
 
-- [ ] **Step 2: Run the focused readiness test and verify RED**
+- [x] **Step 2: Run the focused readiness test and verify RED**
 
 Run:
 
@@ -452,7 +452,7 @@ cd worker && node --test tests/service-readiness-api.test.mjs
 
 Expected: FAIL with `404` for the new endpoints and missing `serviceReadiness` helpers.
 
-- [ ] **Step 3: Implement pure evidence, prompt, and response-shaping helpers**
+- [x] **Step 3: Implement pure evidence, prompt, and response-shaping helpers**
 
 Create `worker/src/lib/serviceReadiness.js`. Keep it free of Worker bindings and D1 queries. Export these exact constants and functions:
 
@@ -520,7 +520,7 @@ Normalize only preselected evidence fields. The object order below is intentiona
 
 Apply these limits before canonicalization: description 4,000, intake summary 2,000, conversation summary 2,000, and every message 600 characters. Never include `customer_phone`, `engineer_phone`, internal notes, field-work evidence, raw attachment URL, or an unbounded JSON blob. The parser must strip one optional Markdown fence, reject bad JSON, force `version: 1`, force the expected service mode, accept only the enums in the API contract, and cap rows exactly as described above.
 
-- [ ] **Step 4: Add direct access, cache, and background-generation code to the Worker**
+- [x] **Step 4: Add direct access, cache, and background-generation code to the Worker**
 
 Import the Task 2 helpers in `worker/src/index.js`. Add narrow helpers near `handleGetWorkOrder` rather than broadening `assertWorkOrderReadAccess`:
 
@@ -620,7 +620,7 @@ if (path.match(/^\/api\/workorders\/[^/]+\/service-readiness\/refresh$/) && requ
 
 For terminal statuses, return a localized 404 before exposing any cache payload. For `in_service`, `GET` can return a previously saved review but `POST` returns a localized 409 if it would start a new generation. Add both paths to `worker/tests/routes.test.mjs`; `isKnownProtectedRoute` needs no code change because `/api/workorders/` is already protected.
 
-- [ ] **Step 5: Run focused Worker tests and verify GREEN**
+- [x] **Step 5: Run focused Worker tests and verify GREEN**
 
 Run:
 
@@ -630,7 +630,7 @@ cd worker && node --test tests/service-readiness-api.test.mjs tests/routes.test.
 
 Expected: PASS. Confirm all non-executing roles return 403 without `review`, duplicate starts result in exactly one provider call, no fresh cache causes a second call, stale does not silently regenerate, and both language prompts meet the privacy contract.
 
-- [ ] **Step 6: Commit the Worker readiness API**
+- [x] **Step 6: Commit the Worker readiness API**
 
 ```bash
 git add worker/src/lib/serviceReadiness.js worker/src/index.js worker/tests/service-readiness-api.test.mjs worker/tests/routes.test.mjs worker/package.json
@@ -655,7 +655,7 @@ git commit -m "feat(engineer): add asynchronous service readiness review"
 - Produces: a 320px engineer-only right-rail card and a one-time `{ id, text }` request that reaches the existing composer.
 - Does not produce: a new chat endpoint, a direct `postWorkOrderMessage` call, a new checklist state, or a detail-loading dependency on the AI request.
 
-- [ ] **Step 1: Write failing frontend contract tests**
+- [x] **Step 1: Write failing frontend contract tests**
 
 Create `frontend/tests/engineer-service-readiness-contract.test.mjs` using the existing `node:test`/`readFileSync` source-contract pattern. Add exact assertions such as:
 
@@ -696,7 +696,7 @@ test('draft handoff uses the existing message composer and never sends automatic
 
 Extend `frontend/tests/engineer-work-order-experience-contract.test.mjs` to assert English/Chinese labels for `AI Service Readiness Review` / `AI 服务前核查`, `Insert into message` / `带入消息`, and that the existing manual-scroll assertions remain present.
 
-- [ ] **Step 2: Run the focused frontend tests and verify RED**
+- [x] **Step 2: Run the focused frontend tests and verify RED**
 
 Run:
 
@@ -706,7 +706,7 @@ cd frontend && node --test tests/engineer-service-readiness-contract.test.mjs te
 
 Expected: FAIL because the API functions, card file, draft props, and 320px rail do not yet exist.
 
-- [ ] **Step 3: Add API functions and a presentation-only readiness card**
+- [x] **Step 3: Add API functions and a presentation-only readiness card**
 
 Add these functions near `getWorkOrder` in `frontend/src/services/api.js`:
 
@@ -766,7 +766,7 @@ cn: {
 
 In compact mode show the title/count, first high-priority question if one exists, and Open/Update controls. In expanded mode render the five ordered, unframed sections from the approved design, sorting `gaps` and questions `high`, `medium`, `low`. Render a compact skeleton in `missing`/`generating`; a failed state without an earlier review uses only a localized retry action, while a failed refresh with an earlier review preserves that review plus retry; stale keeps the last review visible plus its manual-update notice. `media_review_required` is a text-only manual-review condition, never a preview or image-analysis claim.
 
-- [ ] **Step 4: Wire delayed loading, bounded polling, and draft insertion in the engineer detail**
+- [x] **Step 4: Wire delayed loading, bounded polling, and draft insertion in the engineer detail**
 
 In `EngineerWorkOrderDetail.jsx`, import the card/API functions and add state:
 
@@ -875,7 +875,7 @@ useEffect(() => {
 
 Add bilingual `replaceDraftTitle`, `replaceDraft`, `keepDraft`, and `replaceDraft` question strings to the MessagePanel copy. Attach `composerInputRef` to the existing text input. Do not alter `handleSend`, polling, `messagesMatch`, or the manual-history scroll conditions.
 
-- [ ] **Step 5: Run frontend tests, lint, and production build**
+- [x] **Step 5: Run frontend tests, lint, and production build**
 
 Run:
 
@@ -885,7 +885,7 @@ cd frontend && npm test && npm run lint && npm run build
 
 Expected: PASS. Confirm the code keeps the existing manual-scroll regression guards, uses no readiness-card `postWorkOrderMessage` call, and permits a non-empty composer to survive a declined replacement.
 
-- [ ] **Step 6: Commit the frontend implementation as an independently reviewable UI layer**
+- [x] **Step 6: Commit the frontend implementation as an independently reviewable UI layer**
 
 ```bash
 git add frontend/src/App.jsx frontend/src/services/api.js frontend/src/components/Engineer/EngineerServiceReadinessCard.jsx frontend/src/components/Engineer/EngineerWorkOrderDetail.jsx frontend/src/components/WorkOrder/WorkOrderDetailModal.jsx frontend/src/components/WorkOrder/MessagePanel.jsx frontend/tests/engineer-service-readiness-contract.test.mjs frontend/tests/engineer-work-order-experience-contract.test.mjs
@@ -906,7 +906,7 @@ git commit -m "feat(engineer): add service readiness review card"
 - Produces: a browser-level proof that the review card is internal-only and a draft remains unsent until the engineer explicitly sends it.
 - Produces: written COM/CN migration and release commands for 043.
 
-- [ ] **Step 1: Write a failing Playwright readiness journey**
+- [x] **Step 1: Write a failing Playwright readiness journey**
 
 Create `e2e/tests/engineer-service-readiness.spec.mjs`. Use `onboardEngineer`, `localD1`, and `localD1Rows` from the existing E2E helpers. Seed one customer, one work order assigned to the onboarded engineer in `in_progress`, a customer-owned source conversation, and a pre-generated cache row so this visual test needs no real provider key:
 
@@ -944,7 +944,7 @@ Then set a manual composer draft, trigger the second question, choose the cancel
 
 Extend the existing service lifecycle test only as needed to keep its current message send flow green after the optional `MessagePanel` props are introduced. Do not add AI provider calls to the lifecycle test.
 
-- [ ] **Step 2: Run the new E2E test and verify RED**
+- [x] **Step 2: Run the new E2E test and verify RED**
 
 Run:
 
@@ -954,7 +954,7 @@ cd e2e && npm run prepare:local && E2E_TEST_SECRET=local-e2e-secret-32-character
 
 Expected: FAIL because no readiness card or insertion handoff is rendered.
 
-- [ ] **Step 3: Document migration 043 and the ordered release procedure**
+- [x] **Step 3: Document migration 043 and the ordered release procedure**
 
 Add a `### 3.3 Engineer AI Service Readiness (Migration 043) Rollout` section in `DEPLOY.md` after the migration 041 section. Include these exact commands:
 
@@ -984,7 +984,7 @@ Document this go/no-go sequence verbatim in meaning:
 
 State the stop condition: do not deploy Worker code if either D1 database lacks 043; do not proceed to China production if the Aliyun workflow or either smoke check fails. State the rollback boundary: revert Worker/frontend code if necessary, but do not down-migrate or delete readiness history; forward-fix the additive table only.
 
-- [ ] **Step 4: Run E2E, full repository checks, and visual review**
+- [x] **Step 4: Run E2E, full repository checks, and visual review**
 
 Run:
 
@@ -997,7 +997,7 @@ cd ../admin && npm test && npm run build
 
 Expected: all commands PASS. Review the new Playwright desktop/mobile artifacts: the card must precede Admin support, the rail must be wider without squeezing the main detail pane, expanded content must remain readable, and a question must reach the existing Messages composer without creating a work-order message.
 
-- [ ] **Step 5: Commit verification and deployment documentation**
+- [x] **Step 5: Commit verification and deployment documentation**
 
 ```bash
 git add e2e/tests/engineer-service-readiness.spec.mjs e2e/tests/service-order-lifecycle.spec.mjs DEPLOY.md
@@ -1016,7 +1016,7 @@ git commit -m "test(engineer): verify service readiness draft handoff"
 - Consumes: three cohesive commits from Tasks 1-4.
 - Produces: a reviewed `main` implementation and a source-parity `china-edition` synchronization ready for the explicitly ordered release.
 
-- [ ] **Step 1: Inspect the final diff and run targeted security checks**
+- [x] **Step 1: Inspect the final diff and run targeted security checks**
 
 Run:
 
@@ -1028,7 +1028,7 @@ git status --short --branch
 
 Verify manually that no `review_json`/`source_conversation_id` field was added to `work_orders`, no card renders for `!isExecutingEngineer`, no readiness route calls `assertWorkOrderReadAccess`, and no browser code contains `OPENAI_API_KEY` or provider endpoint secrets.
 
-- [ ] **Step 2: Request code review and resolve only readiness-scope findings**
+- [x] **Step 2: Request code review and resolve only readiness-scope findings**
 
 Ask a fresh reviewer to inspect the final diff with these explicit questions:
 
@@ -1041,7 +1041,7 @@ Ask a fresh reviewer to inspect the final diff with these explicit questions:
 
 Apply only fixes required to answer those questions, rerun the affected commands from Task 4, and commit each fix separately using `fix(engineer): ...`.
 
-- [ ] **Step 3: Synchronize the reviewed feature source to the China release worktree**
+- [x] **Step 3: Synchronize the reviewed feature source to the China release worktree**
 
 From the clean China worktree, cherry-pick the reviewed Task 1-4 commits (and any scoped fix commits), then verify the frontend there:
 
@@ -1053,11 +1053,11 @@ cd frontend && npm test && npm run lint && npm run build
 
 The production Worker remains the `main` deployment even after source synchronization. Do **not** run a Worker deployment from `china-edition`; migration 043 has already been applied directly to both production D1 databases before the `main` Worker deployment.
 
-- [ ] **Step 4: Commit/push only after the required tests are green**
+- [x] **Step 4: Commit/push only after the required tests are green**
 
 On `main`, stage the already task-scoped commits only after the full checks pass. Push `main`, wait for the GitHub test/production gate, then follow the migration and smoke sequence in Task 4. Push the synchronized `china-edition` source commits only after the shared Worker has deployed successfully from `main`.
 
-- [ ] **Step 5: Record release evidence**
+- [x] **Step 5: Record release evidence**
 
 Capture the two migration verification outputs, GitHub deployment run URLs/statuses, Aliyun run status, and the two manual engineer checks in the release handoff. Do not include provider keys, JWTs, cookies, passwords, raw contact data, or complete review evidence in the handoff.
 

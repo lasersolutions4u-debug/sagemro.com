@@ -35,12 +35,18 @@ export const READINESS_LIMITS = {
   maxPublicMessages: 12,
 };
 
+const PLUS_PREFIXED_PHONE_PATTERN = /\+\d[\d\s().-]{6,}\d/g;
+const NORTH_AMERICAN_PHONE_PATTERN = /(?<![\w\d])(?:\(\d{3}\)|\d{3})[\s.-]?\d{3}[\s.-]\d{4}(?![\w\d])/g;
+const GROUPED_INTERNATIONAL_PHONE_PATTERN = /(?<![\w\d])\d{1,3}[\s.-]\d{1,4}[\s.-]\d{3,4}[\s.-]\d{3,4}(?![\w\d])/g;
+
 // 模型可见文本的统一脱敏 + 限长。redactPII 处理国内手机号/身份证/邮箱等，
-// 这里再补国际邮箱与带国家码电话（+1 555 0100 这类），最后截断到 limit。
+// 这里再补国际邮箱与常见国际电话写法，最后截断到 limit。
 export function redactReadinessText(value, limit) {
   return redactPII(String(value || ''))
     .replace(/[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g, '[email]')
-    .replace(/\+\d[\d\s().-]{6,}\d/g, '[phone]')
+    .replace(PLUS_PREFIXED_PHONE_PATTERN, '[phone]')
+    .replace(NORTH_AMERICAN_PHONE_PATTERN, '[phone]')
+    .replace(GROUPED_INTERNATIONAL_PHONE_PATTERN, '[phone]')
     .trim()
     .slice(0, limit);
 }
@@ -72,8 +78,8 @@ export function buildServiceReadinessInput({
       urgency: String(workOrder?.urgency || ''),
       service_mode: serviceMode,
       device: {
-        brand: String(device?.brand || ''),
-        model: String(device?.model || ''),
+        brand: redactReadinessText(device?.brand, READINESS_LIMITS.message),
+        model: redactReadinessText(device?.model, READINESS_LIMITS.message),
       },
       intake_summary: redactReadinessText(workOrder?.ai_summary, READINESS_LIMITS.intakeSummary),
     },
@@ -188,7 +194,7 @@ export function buildServiceReadinessPrompt({ market, input }) {
 
 // 解析并校验模型输出。任何不满足契约的情况都返回 null（调用方据此标记 failed），
 // 绝不把未校验内容写入缓存。version 与 service_mode 由服务端强制，不信任模型回传值。
-export function parseServiceReadinessReview(content, expectedServiceMode) {
+export function parseServiceReadinessReview(content, expectedServiceMode, { hasSourceConversation = false } = {}) {
   if (typeof content !== 'string' || !content.trim()) return null;
   let text = content.trim();
   // 容忍恰好一层 Markdown 代码围栏
@@ -216,6 +222,9 @@ export function parseServiceReadinessReview(content, expectedServiceMode) {
     }))
     .filter((row) => row.label || row.detail);
   if (confirmedFacts.some((row) => !READINESS_FACT_SOURCES.has(row.source))) return null;
+  if (!hasSourceConversation && confirmedFacts.some((row) => row.source === 'customer_ai_conversation')) {
+    return null;
+  }
 
   const gaps = (Array.isArray(parsed.gaps) ? parsed.gaps : [])
     .map((row) => ({

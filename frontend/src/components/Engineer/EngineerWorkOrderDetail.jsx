@@ -148,7 +148,12 @@ export function EngineerWorkOrderDetail({
         }
         return null;
       })
-      .catch(() => {});
+      .catch(() => {
+        if (!cancelled) setServiceReadiness((current) => ({
+          ...current,
+          state: 'failed',
+        }));
+      });
     return () => { cancelled = true; };
   }, [readinessWorkOrderId, readinessIsExecuting, readinessCanGenerate]);
 
@@ -161,7 +166,10 @@ export function EngineerWorkOrderDetail({
       if (pollAttemptsRef.current >= 10) setServiceReadinessPollingExpired(true);
       getWorkOrderServiceReadiness(readinessWorkOrderId)
         .then((data) => setServiceReadiness(data))
-        .catch(() => {});
+        .catch(() => setServiceReadiness((current) => ({
+          ...current,
+          state: 'failed',
+        })));
     };
     const interval = setInterval(loadServiceReadiness, 2000);
     return () => clearInterval(interval);

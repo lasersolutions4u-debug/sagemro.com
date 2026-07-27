@@ -22,6 +22,10 @@ test('engineer detail renders the readiness card above Admin support in a 320px 
   assert.match(detail, /<EngineerServiceReadinessCard[\s\S]*copy\.support/);
   assert.match(detail, /setInterval\(loadServiceReadiness, 2000\)/);
   assert.match(detail, /pollAttempts.*>= 10/);
+  assert.match(
+    detail,
+    /getWorkOrderServiceReadiness\(readinessWorkOrderId\)[\s\S]*?\.catch\(\(\) => \{\s*if \(!cancelled\) setServiceReadiness\(\(current\) => \(\{\s*\.\.\.current,\s*state: 'failed'/,
+  );
   assert.doesNotMatch(detail, /await refreshWorkOrderServiceReadiness[\s\S]*loadDetail/);
 });
 

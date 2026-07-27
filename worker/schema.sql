@@ -28,12 +28,28 @@ CREATE TABLE IF NOT EXISTS conversations (
     last_message TEXT,
     customer_id TEXT,                          -- 010: 归属客户，IDOR 校验依赖此列
     engineer_id TEXT,                          -- 015: 归属工程师，工程师对话查询依赖此列
+    summary_message_count INTEGER DEFAULT 0,   -- 014: 已纳入摘要的消息数
     created_at TEXT DEFAULT (datetime('now')),
     updated_at TEXT DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_conversations_updated_at ON conversations(updated_at);
 CREATE INDEX IF NOT EXISTS idx_conversations_customer_id ON conversations(customer_id);
 CREATE INDEX IF NOT EXISTS idx_conversations_engineer_id ON conversations(engineer_id);
+
+-- 对话摘要表（014）
+CREATE TABLE IF NOT EXISTS conversation_summaries (
+    id TEXT PRIMARY KEY,
+    conversation_id TEXT NOT NULL,
+    protocol_version INTEGER NOT NULL DEFAULT 1,
+    summary_json TEXT NOT NULL,
+    source_message_count INTEGER NOT NULL,
+    generated_at TEXT DEFAULT (datetime('now')),
+    FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_conv_summaries_conv_generated
+  ON conversation_summaries(conversation_id, generated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_conv_summaries_generated_at
+  ON conversation_summaries(generated_at);
 
 -- 消息表（000 + 020）
 CREATE TABLE IF NOT EXISTS messages (

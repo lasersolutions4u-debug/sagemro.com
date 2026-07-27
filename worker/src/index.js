@@ -5683,7 +5683,9 @@ async function generateServiceReadiness(env, {
       return;
     }
     const data = await response.json();
-    const review = parseServiceReadinessReview(data?.choices?.[0]?.message?.content, workOrder.service_mode);
+    const review = parseServiceReadinessReview(data?.choices?.[0]?.message?.content, workOrder.service_mode, {
+      hasSourceConversation: Boolean(input.source_conversation),
+    });
     if (!review) {
       await failGeneration('invalid_model_output');
       return;
