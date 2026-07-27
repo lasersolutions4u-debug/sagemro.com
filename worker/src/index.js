@@ -5432,9 +5432,18 @@ async function handleDeleteDevice(request, env) {
       return errorResponse('设备不存在', 404);
     }
 
+    const staleLink = await env.DB.prepare(
+      'SELECT 1 FROM work_orders WHERE device_id = ? AND customer_id != ? LIMIT 1'
+    ).bind(id, customerId).first();
+    if (staleLink) {
+      return errorResponse('设备关联存在数据异常，无法删除', 409);
+    }
+
     // 删除设备（工单关联的外键设为 NULL，而非 cascade delete）
-    await env.DB.prepare('UPDATE work_orders SET device_id = NULL WHERE device_id = ?').bind(id).run();
-    await env.DB.prepare('DELETE FROM devices WHERE id = ?').bind(id).run();
+    await env.DB.batch([
+      env.DB.prepare('UPDATE work_orders SET device_id = NULL WHERE device_id = ? AND customer_id = ?').bind(id, customerId),
+      env.DB.prepare('DELETE FROM devices WHERE id = ?').bind(id),
+    ]);
 
     return jsonResponse({ success: true });
   } catch (error) {
@@ -5852,9 +5861,15 @@ async function handleGetWorkOrder(request, env) {
       WHERE w.id = ?
     `).bind(id).first();
 
-    await assertWorkOrderReadAccess(env, request._auth, workOrder);
-
-    const fieldWorkAccessMode = await resolveFieldWorkAccessMode(env, request._auth, workOrder, id);
+    let fieldWorkAccessMode;
+    try {
+      await assertWorkOrderReadAccess(env, request._auth, workOrder);
+    } catch (error) {
+      if (!(error instanceof GuardError)) throw error;
+      fieldWorkAccessMode = await resolveFieldWorkAccessMode(env, request._auth, workOrder, id);
+      if (fieldWorkAccessMode !== 'historical_engineer') throw error;
+    }
+    fieldWorkAccessMode ||= await resolveFieldWorkAccessMode(env, request._auth, workOrder, id);
     const engineerReadRelation = request._auth?.userType === 'engineer'
       ? await getEngineerWorkOrderReadRelation(env, request._auth, workOrder)
       : null;

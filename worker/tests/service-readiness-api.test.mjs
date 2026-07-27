@@ -327,6 +327,57 @@ test('work-order detail omits a device owned by a different customer', async (t)
   assert.equal(detail.json.device_model, null);
 });
 
+test('deleting a device with a cross-customer stale link rejects without mutation', async (t) => {
+  const env = createEnv(t);
+  env.DB.__sqlite.exec(`
+    INSERT INTO devices (id, customer_id, type, brand, model) VALUES
+      ('device-customer-1', 'customer-1', 'laser', 'Customer One brand', 'Owned model');
+    UPDATE work_orders SET device_id = 'device-customer-1' WHERE id = 'wo-assigned';
+    INSERT INTO work_orders (
+      id, order_no, customer_id, type, description, urgency, status, service_mode, device_id
+    ) VALUES (
+      'wo-stale-foreign-device', 'WO-R007', 'customer-2', 'fault',
+      'Stale cross-customer device link.', 'normal', 'assigned', 'remote', 'device-customer-1'
+    );
+  `);
+
+  const deleted = await api(env, '/api/devices/device-customer-1', {
+    method: 'DELETE', userType: 'customer', userId: 'customer-1',
+  });
+
+  assert.equal(deleted.response.status, 409);
+  assert.equal(env.DB.__sqlite.prepare(
+    'SELECT id FROM devices WHERE id = ?',
+  ).get('device-customer-1').id, 'device-customer-1');
+  assert.equal(env.DB.__sqlite.prepare(
+    'SELECT device_id FROM work_orders WHERE id = ?',
+  ).get('wo-assigned').device_id, 'device-customer-1');
+  assert.equal(env.DB.__sqlite.prepare(
+    'SELECT device_id FROM work_orders WHERE id = ?',
+  ).get('wo-stale-foreign-device').device_id, 'device-customer-1');
+});
+
+test('deleting a customer device clears its owned link and deletes the device', async (t) => {
+  const env = createEnv(t);
+  env.DB.__sqlite.exec(`
+    INSERT INTO devices (id, customer_id, type, brand, model) VALUES
+      ('device-customer-1', 'customer-1', 'laser', 'Customer One brand', 'Owned model');
+    UPDATE work_orders SET device_id = 'device-customer-1' WHERE id = 'wo-assigned';
+  `);
+
+  const deleted = await api(env, '/api/devices/device-customer-1', {
+    method: 'DELETE', userType: 'customer', userId: 'customer-1',
+  });
+
+  assert.equal(deleted.response.status, 200);
+  assert.equal(env.DB.__sqlite.prepare(
+    'SELECT id FROM devices WHERE id = ?',
+  ).get('device-customer-1'), undefined);
+  assert.equal(env.DB.__sqlite.prepare(
+    'SELECT device_id FROM work_orders WHERE id = ?',
+  ).get('wo-assigned').device_id, null);
+});
+
 test('work-order detail denies an unrelated customer', async (t) => {
   const env = createEnv(t);
   const detail = await api(env, '/api/workorders/wo-assigned', {
@@ -422,6 +473,17 @@ test('readiness redaction removes common unprefixed phone formats without removi
   assert.match(redacted, /2026-07-27/);
   assert.match(redacted, /2026\.07\.27/);
   assert.match(redacted, /1234567890/);
+});
+
+test('readiness redaction removes UK local phone formats without removing dates or serials', () => {
+  const redacted = redactReadinessText(
+    'Call 020 1234 5678 or 020-1234-5678. Scheduled 2026-07-28; serial SN 1234567890.',
+    600,
+  );
+
+  assert.doesNotMatch(redacted, /020 1234 5678|020-1234-5678/);
+  assert.match(redacted, /2026-07-28/);
+  assert.match(redacted, /SN 1234567890/);
 });
 
 test('unlinked work orders do not store a review that claims customer AI evidence', async (t) => {

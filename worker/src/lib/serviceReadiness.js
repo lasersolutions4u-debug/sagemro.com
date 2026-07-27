@@ -38,6 +38,7 @@ export const READINESS_LIMITS = {
 const PLUS_PREFIXED_PHONE_PATTERN = /\+\d[\d\s().-]{6,}\d/g;
 const NORTH_AMERICAN_PHONE_PATTERN = /(?<![\w\d])(?:\(\d{3}\)|\d{3})[\s.-]?\d{3}[\s.-]\d{4}(?![\w\d])/g;
 const GROUPED_INTERNATIONAL_PHONE_PATTERN = /(?<![\w\d])\d{1,3}[\s.-]\d{1,4}[\s.-]\d{3,4}[\s.-]\d{3,4}(?![\w\d])/g;
+const UK_LONDON_LOCAL_PHONE_PATTERN = /(?<![\w\d])020[\s.-]\d{4}[\s.-]\d{4}(?![\w\d])/g;
 
 // 模型可见文本的统一脱敏 + 限长。redactPII 处理国内手机号/身份证/邮箱等，
 // 这里再补国际邮箱与常见国际电话写法，最后截断到 limit。
@@ -47,6 +48,7 @@ export function redactReadinessText(value, limit) {
     .replace(PLUS_PREFIXED_PHONE_PATTERN, '[phone]')
     .replace(NORTH_AMERICAN_PHONE_PATTERN, '[phone]')
     .replace(GROUPED_INTERNATIONAL_PHONE_PATTERN, '[phone]')
+    .replace(UK_LONDON_LOCAL_PHONE_PATTERN, '[phone]')
     .trim()
     .slice(0, limit);
 }
