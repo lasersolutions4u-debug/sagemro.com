@@ -258,6 +258,24 @@ CREATE INDEX IF NOT EXISTS idx_work_orders_status ON work_orders(status);
 CREATE INDEX IF NOT EXISTS idx_work_orders_regional_lead ON work_orders(assigned_regional_lead_id);
 CREATE INDEX IF NOT EXISTS idx_work_orders_conflict_status ON work_orders(conflict_status);
 
+-- 工程师 AI 服务前核查：受信任来源会话关联与内部缓存（043）
+-- 注意：审查 JSON 与生成状态只允许落在这张内部表，禁止加回 work_orders
+-- （handleGetWorkOrder 会把 w.* 直接展开进客户可见响应）。
+CREATE TABLE IF NOT EXISTS work_order_service_readiness (
+  work_order_id TEXT PRIMARY KEY,
+  source_conversation_id TEXT,
+  input_fingerprint TEXT,
+  review_json TEXT,
+  generation_state TEXT NOT NULL DEFAULT 'missing'
+    CHECK (generation_state IN ('missing', 'generating', 'ready', 'failed')),
+  generation_started_at TEXT,
+  generated_at TEXT,
+  last_error TEXT,
+  updated_at TEXT DEFAULT (datetime('now')),
+  FOREIGN KEY (work_order_id) REFERENCES work_orders(id) ON DELETE CASCADE,
+  FOREIGN KEY (source_conversation_id) REFERENCES conversations(id) ON DELETE SET NULL
+);
+
 CREATE TABLE IF NOT EXISTS work_order_arrival_checks (
     id TEXT PRIMARY KEY,
     work_order_id TEXT NOT NULL,
@@ -1563,4 +1581,5 @@ INSERT OR IGNORE INTO _migrations (version, note) VALUES
     ('040_field_evidence_cleanup_queue', 'Retry private field evidence cleanup after failed rollback'),
     ('041_quote_execution_baseline',    'Immutable quote schedules, installments, and private receipt evidence metadata'),
     ('042_work_order_short_title',      'Persisted short titles for service work orders'),
+    ('043_engineer_service_readiness',  'Internal engineer AI service-readiness cache and verified source conversation link'),
     ('034_unified_operations_inbox',    'Unified operations inbox tables');

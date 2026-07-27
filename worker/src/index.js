@@ -1668,15 +1668,28 @@ async function toolGetConversationHistory({
   }
 }
 
+// 会话归属校验：只有确认 conversation 属于当前认证客户后才允许把它作为
+// 工单的受信任来源（IDOR 防线，body 里的 conversation_id 不可信）。
+async function findOwnedCustomerConversation(env, conversationId, customerId) {
+  if (!conversationId || !customerId) return null;
+  return env.DB.prepare(
+    'SELECT id FROM conversations WHERE id = ? AND customer_id = ?',
+  ).bind(conversationId, customerId).first();
+}
+
 async function attachConversationImagesToWorkOrder(env, {
   workOrderId,
   conversationId,
+  customerId,
   uploaderType = 'customer',
   uploaderId = '',
   limit = 12,
   market = 'com',
 }) {
-  if (!workOrderId || !conversationId) return 0;
+  if (!workOrderId || !conversationId) return { sourceConversationId: null, attachedImages: 0 };
+
+  const ownedConversation = await findOwnedCustomerConversation(env, conversationId, customerId);
+  if (!ownedConversation) return { sourceConversationId: null, attachedImages: 0 };
 
   const rows = await env.DB.prepare(`
     SELECT image_urls
@@ -1684,7 +1697,7 @@ async function attachConversationImagesToWorkOrder(env, {
     WHERE conversation_id = ? AND role = 'user' AND image_urls IS NOT NULL
     ORDER BY created_at DESC
     LIMIT 10
-  `).bind(conversationId).all();
+  `).bind(ownedConversation.id).all();
 
   const urls = [];
   for (const row of rows.results || []) {
@@ -1759,7 +1772,7 @@ async function attachConversationImagesToWorkOrder(env, {
     await env.DB.batch(statements);
   }
 
-  return attached;
+  return { sourceConversationId: ownedConversation.id, attachedImages: attached };
 }
 
 // 工具：AI 创建工单（function calling）
@@ -1871,13 +1884,17 @@ async function toolCreateWorkOrder({ customerId, env, ctx, args, conversationId,
       VALUES (?, ?, ?, ?, ?, ?)
     `).bind(generateId(), id, 'created', 'customer', customerId, copy.aiCreatedLog).run();
 
-    const attachedImages = await attachConversationImagesToWorkOrder(env, {
+    const { sourceConversationId, attachedImages } = await attachConversationImagesToWorkOrder(env, {
       workOrderId: id,
       conversationId,
+      customerId,
       uploaderType: 'customer',
       uploaderId: customerId,
       market,
     });
+    await env.DB.prepare(
+      'INSERT INTO work_order_service_readiness (work_order_id, source_conversation_id) VALUES (?, ?)',
+    ).bind(id, sourceConversationId).run();
 
     // AI 摘要异步生成
     const aiSummaryPromise = generateWorkOrderSummary(type, safeDescription, urgency, env, { market })
@@ -4685,6 +4702,11 @@ async function handleCreateWorkOrder(request, env) {
   try {
     const market = getRequestMarket(request);
     const copy = serviceCopy(market);
+    const auth = request._auth;
+    if (!auth || auth.userType !== 'customer') {
+      return localizedErrorResponse('sign_in_required', request, 401);
+    }
+    const trustedCustomerId = auth.userId;
     const {
       customer_id,
       type,
@@ -4703,7 +4725,7 @@ async function handleCreateWorkOrder(request, env) {
       service_location_source,
     } = await request.json();
 
-    if (!customer_id || !type || !description) {
+    if (!type || !description) {
       return localizedErrorResponse('missing_required_fields', request);
     }
 
@@ -4743,7 +4765,7 @@ async function handleCreateWorkOrder(request, env) {
     // PII 脱敏（Phase 0.5）：手机号/邮箱/身份证/银行卡/车牌等在入库前替换为占位符
     // 注：device_id / type / urgency 是枚举/引用，不脱敏。只洗用户自由输入的 description
     const safeDescription = redactPII(description);
-    const titleDevice = await getWorkOrderTitleDevice(env, device_id, customer_id);
+    const titleDevice = await getWorkOrderTitleDevice(env, device_id, trustedCustomerId);
     const shortTitle = buildWorkOrderShortTitle({
       type,
       service_mode: serviceMode,
@@ -4768,7 +4790,7 @@ async function handleCreateWorkOrder(request, env) {
     `).bind(
       id,
       order_no,
-      customer_id,
+      trustedCustomerId,
       type,
       safeDescription,
       shortTitle,
@@ -4791,15 +4813,19 @@ async function handleCreateWorkOrder(request, env) {
     await env.DB.prepare(`
       INSERT INTO work_order_logs (id, work_order_id, action, actor_type, actor_id, content)
       VALUES (?, ?, ?, ?, ?, ?)
-    `).bind(generateId(), id, 'created', 'customer', customer_id, copy.createdLog).run();
+    `).bind(generateId(), id, 'created', 'customer', trustedCustomerId, copy.createdLog).run();
 
-    const attachedImages = await attachConversationImagesToWorkOrder(env, {
+    const { sourceConversationId, attachedImages } = await attachConversationImagesToWorkOrder(env, {
       workOrderId: id,
       conversationId: conversation_id,
+      customerId: trustedCustomerId,
       uploaderType: 'customer',
-      uploaderId: customer_id,
+      uploaderId: trustedCustomerId,
       market,
     });
+    await env.DB.prepare(
+      'INSERT INTO work_order_service_readiness (work_order_id, source_conversation_id) VALUES (?, ?)',
+    ).bind(id, sourceConversationId).run();
 
     // AI 摘要异步生成：不阻塞响应，生成完成后回写 ai_summary
     // 使用 ctx.waitUntil 保证 Worker 在返回响应后仍会完成该任务
@@ -4826,7 +4852,7 @@ async function handleCreateWorkOrder(request, env) {
       description,
       urgency,
       ai_summary: null,
-      customer_id,
+      customer_id: trustedCustomerId,
     };
 
     // 查找匹配的工程师并发送推送通知

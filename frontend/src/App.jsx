@@ -326,6 +326,7 @@ function App() {
       device_id: data.device_id,
       category_l1: data.category_l1 || 'other',
       category_l2: data.category_l2 || 'other',
+      conversation_id: conversationId || undefined,
       service_mode: data.service_mode,
       service_address: data.service_address,
       service_latitude: data.service_latitude,
@@ -342,7 +343,7 @@ function App() {
     });
 
     return result.work_order;
-  }, []);
+  }, [conversationId]);
 
   // 删除对话
   const handleDeleteConversation = useCallback(async (id) => {
