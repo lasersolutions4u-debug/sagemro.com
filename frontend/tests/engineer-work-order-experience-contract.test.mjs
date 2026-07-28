@@ -365,17 +365,6 @@ test('service readiness card ships English and Chinese labels', () => {
   assert.match(card, /带入消息/);
 });
 
-test('message draft insertion keeps manual history scrolling behavior', () => {
-  const messages = read('frontend/src/components/WorkOrder/MessagePanel.jsx');
-
-  assert.match(messages, /messagesContainerRef/);
-  assert.match(messages, /isNearMessageBottom/);
-  assert.match(messages, /showNewMessages/);
-  assert.match(messages, /onScroll=\{handleMessageScroll\}/);
-  assert.match(messages, /scrollMessageListToBottom/);
-  assert.doesNotMatch(messages, /bottomRef\.current\?\.scrollIntoView\(\{ behavior: 'smooth' \}\);\s*\}, \[messages\]\)/);
-});
-
 test('work-order messages preserve manual history scrolling during polling', () => {
   const messages = read('frontend/src/components/WorkOrder/MessagePanel.jsx');
 
