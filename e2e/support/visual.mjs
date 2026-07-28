@@ -16,6 +16,32 @@ export function sqlText(value) {
   return `'${String(value).replaceAll("'", "''")}'`;
 }
 
+function waitSync(delayMs) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, delayMs);
+}
+
+export function runWithSqliteBusyRetry(
+  operation,
+  { delays = [100, 250, 500, 1_000, 2_000], wait = waitSync } = {},
+) {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      return operation();
+    } catch (error) {
+      const errorText = [
+        error?.message,
+        error?.stderr,
+        error?.stdout,
+        error?.cause?.message,
+      ].filter(Boolean).join('\n');
+      if (!/SQLITE_BUSY|database is locked/i.test(errorText) || attempt >= delays.length) {
+        throw error;
+      }
+      wait(delays[attempt]);
+    }
+  }
+}
+
 export function localD1(command, { json = false } = {}) {
   const args = [
     'wrangler', 'd1', 'execute', 'sagemro-db',
@@ -24,11 +50,11 @@ export function localD1(command, { json = false } = {}) {
     '--yes',
   ];
   if (json) args.push('--json');
-  const output = execFileSync('npx', args, {
+  const output = runWithSqliteBusyRetry(() => execFileSync('npx', args, {
     cwd: workerDir,
     encoding: 'utf8',
     stdio: ['ignore', 'pipe', 'pipe'],
-  });
+  }));
   return json ? JSON.parse(output) : output;
 }
 
