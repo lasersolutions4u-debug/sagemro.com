@@ -552,17 +552,14 @@ function createStatement(env, sql) {
         if (/FROM work_order_service_standard_progress/i.test(normalized)) {
           const [
             id, actorType, actorId, targetId, beforeState, afterState, ip, device,
-            workOrderId, itemKey, confirmedByType, confirmedById, evidenceType, evidenceId,
+            workOrderId, itemKey, ownerType,
           ] = this.args;
           const item = env.__progress.find((row) =>
             row.work_order_id === workOrderId
             && row.standard_version === 1
             && row.item_key === itemKey
-            && row.state === 'confirmed'
-            && row.confirmed_by_type === confirmedByType
-            && row.confirmed_by_id === confirmedById
-            && row.evidence_type === evidenceType
-            && row.evidence_id === evidenceId);
+            && [ownerType, 'system'].includes(row.owner_type)
+            && row.state === 'pending');
           if (item) {
             env.__auditLogs.push({
               args: [
@@ -941,6 +938,41 @@ test('admin start approval atomically confirms and audits its pending event item
   assert.equal(
     rollbackEnv.__progress.find((item) => item.item_key === 'ready.start_conditions').state,
     'pending',
+  );
+});
+
+test('admin start approval does not re-audit an already-confirmed matching event item', async () => {
+  const env = createPaymentFlowEnv();
+  env.__workOrders[0].status = 'payment_review';
+  env.__payments.push({
+    id: 'payment-start-replay',
+    work_order_id: 'wo-pay-1',
+    payment_stage: 'advance',
+    payment_method: 'bank_transfer',
+    status: 'pending_admin_confirmation',
+  });
+  Object.assign(
+    env.__progress.find((item) => item.item_key === 'ready.start_conditions'),
+    {
+      state: 'confirmed',
+      confirmed_by_type: 'admin',
+      confirmed_by_id: 'admin',
+      evidence_type: 'start_approval',
+      evidence_id: 'wo-pay-1',
+    },
+  );
+
+  const approved = await api(env, '/api/admin/workorders/wo-pay-1/payment/approve-start', {
+    userType: 'admin',
+    userId: 'admin',
+    body: { note: 'Payment received.' },
+  });
+
+  assert.equal(approved.response.status, 200);
+  assert.equal(
+    env.__auditLogs.filter((entry) =>
+      entry.args[5] === 'service_standard_item_confirmed').length,
+    0,
   );
 });
 

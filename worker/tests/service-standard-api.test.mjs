@@ -482,6 +482,54 @@ test('resolve gate returns deterministic blockers before mutating the work order
   assert.equal(env.__workOrders[0].status, 'in_service');
 });
 
+test('real SQLite blocked gate is read-only for missing and pending progress rows', async () => {
+  const env = createSqliteEnv();
+  try {
+    env.__sqlite.exec(`
+      INSERT INTO work_order_repair_records (
+        id, work_order_id, symptom, diagnosis, solution, parts_used, labor_hours
+      ) VALUES (
+        'repair-read-only', 'wo-1', 'Low output', 'Loose cable',
+        'Reseated cable', '[]', 1
+      );
+      INSERT INTO work_order_service_standard_progress (
+        work_order_id, standard_version, step_key, item_key, state,
+        is_required, owner_type, updated_at
+      ) VALUES (
+        'wo-1', 1, 'task_alignment', 'task.device_identity', 'pending',
+        1, 'engineer', '2000-01-01 00:00:00'
+      );
+    `);
+
+    const blocked = await api(env, '/api/workorders/wo-1/resolve', {
+      method: 'POST',
+      userType: 'engineer',
+      userId: 'engineer-1',
+    });
+
+    assert.equal(blocked.response.status, 409);
+    assert.equal(blocked.json.code, 'service_standard_gate_blocked');
+    assert.equal(
+      env.__sqlite.prepare(`
+        SELECT COUNT(*) AS count
+        FROM work_order_service_standard_progress
+        WHERE work_order_id = 'wo-1'
+      `).get().count,
+      1,
+    );
+    assert.equal(
+      env.__sqlite.prepare(`
+        SELECT updated_at
+        FROM work_order_service_standard_progress
+        WHERE work_order_id = 'wo-1' AND item_key = 'task.device_identity'
+      `).get().updated_at,
+      '2000-01-01 00:00:00',
+    );
+  } finally {
+    env.__sqlite.close();
+  }
+});
+
 test('generic confirmation enforces state validation and item ownership', async () => {
   const env = createEnv();
   await api(env, '/api/workorders/wo-1/service-standard');

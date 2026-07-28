@@ -423,17 +423,14 @@ function createStatement(env, sql) {
         if (/FROM work_order_service_standard_progress/i.test(normalized)) {
           const [
             id, actorType, actorId, targetId, beforeState, afterState, ip, device,
-            workOrderId, itemKey, confirmedByType, confirmedById, evidenceType, evidenceId,
+            workOrderId, itemKey, ownerType,
           ] = this.args;
           const item = env.__progress.find((row) =>
             row.work_order_id === workOrderId
             && row.standard_version === 1
             && row.item_key === itemKey
-            && row.state === 'confirmed'
-            && row.confirmed_by_type === confirmedByType
-            && row.confirmed_by_id === confirmedById
-            && row.evidence_type === evidenceType
-            && row.evidence_id === evidenceId);
+            && [ownerType, 'system'].includes(row.owner_type)
+            && row.state === 'pending');
           if (item) {
             env.__auditLogs.push({
               args: [
