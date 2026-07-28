@@ -7,11 +7,23 @@ import { DatabaseSync } from 'node:sqlite';
 
 import worker from '../src/index.js';
 import { signJwt } from '../src/lib/auth.js';
+import { buildServiceStandardDefinition } from '../src/lib/serviceStandard.js';
 
 const schemaSql = readFileSync(new URL('../schema.sql', import.meta.url), 'utf8');
 
 function normalizeSql(sql) {
   return sql.replace(/\s+/g, ' ').trim();
+}
+
+function seedLegacyServiceStandard(db, workOrderId, serviceMode) {
+  const insert = db.prepare(`
+    INSERT INTO work_order_service_standard_progress (
+      work_order_id, standard_version, step_key, item_key, state, is_required, owner_type
+    ) VALUES (?, 1, ?, ?, 'legacy_not_recorded', ?, ?)
+  `);
+  for (const item of buildServiceStandardDefinition({ serviceMode }).items) {
+    insert.run(workOrderId, item.stepKey, item.key, item.required ? 1 : 0, item.owner);
+  }
 }
 
 function createD1Database(db, hooks) {
@@ -105,6 +117,7 @@ function createQuoteExecutionEnv({
         'Quote execution request', 'in_progress', 'not_required', 'onsite', NULL
       );
     `);
+    seedLegacyServiceStandard(db, 'wo-quote-1', 'onsite');
   }
 
   return {

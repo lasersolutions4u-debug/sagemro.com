@@ -113,6 +113,7 @@ import { getRequisitionOperationsMetrics } from './lib/requisitionMetrics.js';
 import {
   buildServiceStandardDefinition,
   deriveServiceStandardSnapshot,
+  getBlockingItems,
 } from './lib/serviceStandard.js';
 
 // AI 工具调用确定性日志（Phase 0.1）
@@ -5745,6 +5746,104 @@ export async function loadServiceStandardSnapshot(env, workOrder) {
   });
 }
 
+async function getServiceStandardGateBlock(
+  env,
+  workOrder,
+  gateKey,
+  satisfiedItemKeys = [],
+) {
+  const snapshot = await loadServiceStandardSnapshot(env, workOrder);
+  const blocking = getBlockingItems(snapshot, gateKey, satisfiedItemKeys);
+  if (!blocking.length) return null;
+  return {
+    gate: gateKey,
+    blocking_items: blocking.map((item) => item.key),
+  };
+}
+
+function serviceStandardGateBlockedResponse(block, market) {
+  return jsonResponse({
+    error: market === 'cn'
+      ? '请先完成当前服务标准必做项'
+      : 'Complete the required service-standard items first',
+    code: 'service_standard_gate_blocked',
+    ...block,
+  }, 409);
+}
+
+function buildServiceStandardEventConfirmationStatement(
+  env,
+  workOrderId,
+  itemKey,
+  actorType,
+  actorId,
+  evidenceType,
+  evidenceId = null,
+) {
+  return env.DB.prepare(`
+    UPDATE work_order_service_standard_progress
+    SET state = 'confirmed', confirmed_by_type = ?, confirmed_by_id = ?,
+        confirmed_at = datetime('now'), evidence_type = ?, evidence_id = ?,
+        updated_at = datetime('now')
+    WHERE work_order_id = ? AND standard_version = 1 AND item_key = ?
+      AND owner_type IN (?, 'system') AND state = 'pending'
+  `).bind(
+    actorType,
+    actorId,
+    evidenceType,
+    evidenceId,
+    workOrderId,
+    itemKey,
+    actorType,
+  );
+}
+
+function buildServiceStandardEventConfirmationAuditStatement(
+  env,
+  request,
+  {
+    workOrderId,
+    itemKey,
+    actorType,
+    actorId,
+    evidenceType,
+    evidenceId = null,
+  },
+) {
+  return env.DB.prepare(`
+    INSERT INTO audit_logs (
+      id, actor_type, actor_id, target_type, target_id, action,
+      before_state, after_state, ip, device_info
+    )
+    SELECT ?, ?, ?, 'work_order', ?, 'service_standard_item_confirmed',
+      ?, ?, ?, ?
+    FROM work_order_service_standard_progress
+    WHERE work_order_id = ? AND standard_version = 1 AND item_key = ?
+      AND state = 'confirmed' AND confirmed_by_type = ? AND confirmed_by_id = ?
+      AND evidence_type = ? AND evidence_id IS ?
+  `).bind(
+    generateId(),
+    actorType,
+    actorId,
+    workOrderId,
+    JSON.stringify({ item_key: itemKey, state: 'pending' }),
+    JSON.stringify({
+      item_key: itemKey,
+      state: 'confirmed',
+      evidence_type: evidenceType,
+      evidence_id: evidenceId,
+    }),
+    request ? getRequestIp(request) : '',
+    request?.headers?.get('user-agent') || '',
+    workOrderId,
+    itemKey,
+    actorType,
+    actorId,
+    evidenceType,
+    evidenceId,
+  );
+}
+
 function serviceStandardResponse(snapshot) {
   return {
     standard_version: snapshot.standardVersion,
@@ -8072,7 +8171,9 @@ async function handleSubmitRating(request, env) {
 
     // 验证工单归属 + 查出真正的 engineer_id
     const wo = await env.DB.prepare(
-      'SELECT id, engineer_id, customer_id, status, active_quote_version FROM work_orders WHERE id = ?'
+      `SELECT id, engineer_id, customer_id, status, active_quote_version,
+        service_mode, arrival_verification_required
+      FROM work_orders WHERE id = ?`
     ).bind(work_order_id).first();
 
     if (!wo) return errorResponse('工单不存在', 404);
@@ -8101,35 +8202,88 @@ async function handleSubmitRating(request, env) {
       return errorResponse('该工单已评价');
     }
 
-    // 创建评价
-    const id = generateId();
-    await env.DB.prepare(`
-      INSERT INTO ratings (id, work_order_id, engineer_id, customer_id, rating_timeliness, rating_technical, rating_communication, rating_professional, comment)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).bind(id, work_order_id, engineer_id, customer_id, rating_timeliness, rating_technical, rating_communication, rating_professional, comment || '').run();
+    const handoverGateBlock = await getServiceStandardGateBlock(
+      env,
+      wo,
+      'handover',
+      ['handover.customer_confirmation'],
+    );
+    if (handoverGateBlock) {
+      return serviceStandardGateBlockedResponse(handoverGateBlock, market);
+    }
 
-    // 更新工程师评分
-    const ratings = await env.DB.prepare(
+    const id = generateId();
+    const existingRatings = await env.DB.prepare(
       'SELECT * FROM ratings WHERE engineer_id = ?'
     ).bind(engineer_id).all();
-
-    const count = ratings.results.length;
-    const avgTimeliness = ratings.results.reduce((sum, r) => sum + r.rating_timeliness, 0) / count;
-    const avgTechnical = ratings.results.reduce((sum, r) => sum + r.rating_technical, 0) / count;
-    const avgCommunication = ratings.results.reduce((sum, r) => sum + r.rating_communication, 0) / count;
-    const avgProfessional = ratings.results.reduce((sum, r) => sum + r.rating_professional, 0) / count;
-
-    await env.DB.prepare(`
-      UPDATE engineers SET rating_timeliness = ?, rating_technical = ?, rating_communication = ?, rating_professional = ?, rating_count = ?
-      WHERE id = ?
-    `).bind(avgTimeliness, avgTechnical, avgCommunication, avgProfessional, count, engineer_id).run();
+    const ratings = [
+      ...(existingRatings.results || []),
+      {
+        rating_timeliness,
+        rating_technical,
+        rating_communication,
+        rating_professional,
+      },
+    ];
+    const count = ratings.length;
+    const avgTimeliness = ratings.reduce((sum, r) => sum + r.rating_timeliness, 0) / count;
+    const avgTechnical = ratings.reduce((sum, r) => sum + r.rating_technical, 0) / count;
+    const avgCommunication = ratings.reduce((sum, r) => sum + r.rating_communication, 0) / count;
+    const avgProfessional = ratings.reduce((sum, r) => sum + r.rating_professional, 0) / count;
+    const statements = [];
 
     // Versioned quotes keep service acceptance separate from financial archive.
     if (Number(wo.active_quote_version || 0) < 1) {
-      await env.DB.prepare(
-        "UPDATE work_orders SET status = ?, completed_at = datetime('now') WHERE id = ?"
-      ).bind('completed', work_order_id).run();
+      statements.push(
+        env.DB.prepare(`
+          UPDATE work_orders
+          SET status = 'completed', completed_at = datetime('now')
+          WHERE id = ? AND customer_id = ? AND status IN ('resolved', 'pending_review')
+        `).bind(work_order_id, customer_id),
+        env.DB.prepare(`
+          SELECT CASE WHEN changes() = 1
+            THEN 1 ELSE json('rating lifecycle concurrent update') END
+        `),
+      );
     }
+    statements.push(env.DB.prepare(`
+      INSERT INTO ratings (id, work_order_id, engineer_id, customer_id, rating_timeliness, rating_technical, rating_communication, rating_professional, comment)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).bind(
+      id,
+      work_order_id,
+      engineer_id,
+      customer_id,
+      rating_timeliness,
+      rating_technical,
+      rating_communication,
+      rating_professional,
+      comment || '',
+    ));
+    statements.push(env.DB.prepare(`
+      UPDATE engineers SET rating_timeliness = ?, rating_technical = ?, rating_communication = ?, rating_professional = ?, rating_count = ?
+      WHERE id = ?
+    `).bind(avgTimeliness, avgTechnical, avgCommunication, avgProfessional, count, engineer_id));
+    statements.push(
+      buildServiceStandardEventConfirmationStatement(
+        env,
+        work_order_id,
+        'handover.customer_confirmation',
+        'customer',
+        customer_id,
+        'customer_rating',
+        id,
+      ),
+      buildServiceStandardEventConfirmationAuditStatement(env, request, {
+        workOrderId: work_order_id,
+        itemKey: 'handover.customer_confirmation',
+        actorType: 'customer',
+        actorId: customer_id,
+        evidenceType: 'customer_rating',
+        evidenceId: id,
+      }),
+    );
+    await env.DB.batch(statements);
 
     // 正式口径：客户评价只完成服务闭环；工程师服务款由 Admin 在逐单记录中人工确认。
     // 旧钱包结算函数保留用于历史兼容，但不再由新工单流程自动调用。
@@ -14856,7 +15010,9 @@ async function handleResolveWorkOrder(request, env) {
 
     const workOrderId = new URL(request.url).pathname.split('/')[3];
     const wo = await env.DB.prepare(
-      'SELECT status, engineer_id, customer_id, arrival_verification_required, arrival_verified_at FROM work_orders WHERE id = ?'
+      `SELECT id, status, engineer_id, customer_id, service_mode, active_quote_version,
+        arrival_verification_required, arrival_verified_at
+      FROM work_orders WHERE id = ?`
     ).bind(workOrderId).first();
     if (!wo) return errorResponse(market === 'cn' ? '工单不存在' : 'Work order not found', 404);
     if (wo.engineer_id !== engineer_id) {
@@ -14930,37 +15086,81 @@ async function handleResolveWorkOrder(request, env) {
       return errorResponse(market === 'cn' ? '请先填写服务报告，再标记服务完成' : 'Complete the service report before completing service', 400);
     }
 
+    const resolveGateBlock = await getServiceStandardGateBlock(
+      env,
+      { id: workOrderId, ...wo },
+      'resolve',
+    );
+    if (resolveGateBlock) {
+      return serviceStandardGateBlockedResponse(resolveGateBlock, market);
+    }
+
     // 仅允许 in_service 或 pricing 状态时标记完成
     if (['in_service', 'pricing'].includes(wo.status)) {
-      const resolved = await env.DB.prepare(`
-        UPDATE work_orders
-        SET status = 'resolved', resolved_at = datetime('now')
-        WHERE id = ? AND engineer_id = ? AND status IN ('in_service', 'pricing')
-          AND (
-            service_mode <> 'onsite'
-            OR site_timezone IS NULL
-            OR expected_service_days IS NULL
-            OR expected_service_days < 1
-            OR expected_completion_date IS NULL
-            OR (
-              EXISTS (SELECT 1 FROM work_order_field_days WHERE work_order_id = work_orders.id)
-              AND NOT EXISTS (
-                SELECT 1 FROM work_order_field_days
-                WHERE work_order_id = work_orders.id AND status IN ('checked_in', 'report_overdue', 'admin_override_open')
-              )
+      try {
+        await env.DB.batch([
+          env.DB.prepare(`
+            UPDATE work_orders
+            SET status = 'resolved', resolved_at = datetime('now')
+            WHERE id = ? AND engineer_id = ? AND status IN ('in_service', 'pricing')
               AND (
-                SELECT status FROM work_order_field_days
-                WHERE work_order_id = work_orders.id
-                ORDER BY site_local_date DESC, created_at DESC LIMIT 1
-              ) IN ('report_submitted', 'late_report_submitted')
-              AND NOT EXISTS (
-                SELECT 1 FROM work_order_extension_requests
-                WHERE work_order_id = work_orders.id AND status = 'pending'
+                service_mode <> 'onsite'
+                OR site_timezone IS NULL
+                OR expected_service_days IS NULL
+                OR expected_service_days < 1
+                OR expected_completion_date IS NULL
+                OR (
+                  EXISTS (SELECT 1 FROM work_order_field_days WHERE work_order_id = work_orders.id)
+                  AND NOT EXISTS (
+                    SELECT 1 FROM work_order_field_days
+                    WHERE work_order_id = work_orders.id AND status IN ('checked_in', 'report_overdue', 'admin_override_open')
+                  )
+                  AND (
+                    SELECT status FROM work_order_field_days
+                    WHERE work_order_id = work_orders.id
+                    ORDER BY site_local_date DESC, created_at DESC LIMIT 1
+                  ) IN ('report_submitted', 'late_report_submitted')
+                  AND NOT EXISTS (
+                    SELECT 1 FROM work_order_extension_requests
+                    WHERE work_order_id = work_orders.id AND status = 'pending'
+                  )
+                )
               )
-            )
-          )
-      `).bind(workOrderId, engineer_id).run();
-      if (Number(resolved?.meta?.changes || 0) !== 1) {
+          `).bind(workOrderId, engineer_id),
+          env.DB.prepare(`
+            SELECT CASE WHEN changes() = 1
+              THEN 1 ELSE json('resolve lifecycle concurrent update') END
+          `),
+          buildServiceStandardEventConfirmationStatement(
+            env,
+            workOrderId,
+            'handover.service_report',
+            'system',
+            'system',
+            'service_report',
+            workOrderId,
+          ),
+          env.DB.prepare(`
+            INSERT INTO work_order_logs (id, work_order_id, action, actor_type, actor_id, content)
+            VALUES (?, ?, 'resolved', 'engineer', ?, '工程师标记服务完成，等待客户确认。')
+          `).bind(generateId(), workOrderId, engineer_id || ''),
+          env.DB.prepare(`
+            INSERT INTO work_order_messages (id, work_order_id, sender_type, sender_id, sender_name, content, message_type)
+            VALUES (?, ?, 'system', '', '系统', '服务已完成，请客户确认并评价。', 'system')
+          `).bind(generateId(), workOrderId),
+          buildServiceStandardEventConfirmationAuditStatement(env, request, {
+            workOrderId,
+            itemKey: 'handover.service_report',
+            actorType: 'system',
+            actorId: 'system',
+            evidenceType: 'service_report',
+            evidenceId: workOrderId,
+          }),
+        ]);
+      } catch (error) {
+        if (!/resolve lifecycle concurrent update|malformed json/i.test(String(error?.message || error))) {
+          throw error;
+        }
         return errorResponse(
           market === 'cn' ? '工单状态或现场记录已变更，请刷新后重试' : 'The work order or field records changed. Refresh and try again',
           409,
@@ -14968,16 +15168,6 @@ async function handleResolveWorkOrder(request, env) {
       }
 
       await ensureBalancePayment(env, workOrderId, wo.customer_id);
-
-      await env.DB.prepare(`
-        INSERT INTO work_order_logs (id, work_order_id, action, actor_type, actor_id, content)
-        VALUES (?, ?, 'resolved', 'engineer', ?, '工程师标记服务完成，等待客户确认。')
-      `).bind(generateId(), workOrderId, engineer_id || '').run();
-
-      await env.DB.prepare(`
-        INSERT INTO work_order_messages (id, work_order_id, sender_type, sender_id, sender_name, content, message_type)
-        VALUES (?, ?, 'system', '', '系统', '服务已完成，请客户确认并评价。', 'system')
-      `).bind(generateId(), workOrderId).run();
 
       // 通知客户：服务已完成
       const woResolve = await env.DB.prepare('SELECT customer_id, order_no FROM work_orders WHERE id = ?').bind(workOrderId).first();
@@ -17839,6 +18029,15 @@ async function handleAdminApprovePaymentStart(request, env) {
           409,
         );
       }
+      const startGateBlock = await getServiceStandardGateBlock(
+        env,
+        wo,
+        'start',
+        ['ready.start_conditions'],
+      );
+      if (startGateBlock) {
+        return serviceStandardGateBlockedResponse(startGateBlock, market);
+      }
       const confirmMsg = market === 'cn'
         ? `SAGEMRO 已完成最终开工审批，工单可开始服务。${note ? ` 备注：${note}` : ''}`
         : `SAGEMRO completed final start approval. The work order may begin service.${note ? ` Note: ${note}` : ''}`;
@@ -17860,12 +18059,29 @@ async function handleAdminApprovePaymentStart(request, env) {
             INSERT INTO work_order_logs (id, work_order_id, action, actor_type, actor_id, content)
             VALUES (?, ?, 'payment_start_approved', 'admin', ?, ?)
           `).bind(generateId(), workOrderId, request._auth?.userId || 'admin', confirmMsg),
+          buildServiceStandardEventConfirmationStatement(
+            env,
+            workOrderId,
+            'ready.start_conditions',
+            'admin',
+            request._auth?.userId || 'admin',
+            'start_approval',
+            workOrderId,
+          ),
           buildAuditLogStatement(env, request, {
             targetType: 'work_order',
             targetId: workOrderId,
             action: 'payment_start_approved',
             beforeState: { status: wo.status, payment_state: quoteExecution.payment_state },
             afterState: { status: 'in_service', payment_state: quoteExecution.payment_state, note },
+          }),
+          buildServiceStandardEventConfirmationAuditStatement(env, request, {
+            workOrderId,
+            itemKey: 'ready.start_conditions',
+            actorType: 'admin',
+            actorId: request._auth?.userId || 'admin',
+            evidenceType: 'start_approval',
+            evidenceId: workOrderId,
           }),
         ]);
       } catch (error) {
@@ -17888,32 +18104,70 @@ async function handleAdminApprovePaymentStart(request, env) {
       return errorResponse(market === 'cn' ? '付款状态不允许管理员确认' : 'Payment is not ready for Admin confirmation', 400);
     }
 
-    await env.DB.prepare(
-      "UPDATE work_order_payments SET status = 'completed', paid_at = datetime('now') WHERE id = ?"
-    ).bind(payment.id).run();
-    await env.DB.prepare(
-      "UPDATE work_orders SET status = 'in_service' WHERE id = ?"
-    ).bind(workOrderId).run();
+    const startGateBlock = await getServiceStandardGateBlock(
+      env,
+      wo,
+      'start',
+      ['ready.start_conditions'],
+    );
+    if (startGateBlock) {
+      return serviceStandardGateBlockedResponse(startGateBlock, market);
+    }
 
     const confirmMsg = market === 'cn'
       ? `SAGEMRO 已确认收款，工单已获批准可开始服务。${note ? ` 备注：${note}` : ''}`
       : `SAGEMRO confirmed payment receipt. The work order is approved to start service.${note ? ` Note: ${note}` : ''}`;
 
-    await env.DB.prepare(
-      "INSERT INTO work_order_messages (id, work_order_id, sender_type, sender_id, sender_name, content, message_type, is_internal_note, is_customer_visible) VALUES (?, ?, 'system', '', 'System', ?, 'payment_update', 0, 1)"
-    ).bind(
-      generateId(),
-      workOrderId,
-      confirmMsg
-    ).run();
-
-    await writeAuditLog(env, request, {
-      targetType: 'work_order',
-      targetId: workOrderId,
-      action: 'payment_start_approved',
-      beforeState: { status: wo.status, payment_status: payment.status },
-      afterState: { status: 'in_service', payment_status: 'completed', note },
-    });
+    await env.DB.batch([
+      env.DB.prepare(`
+        UPDATE work_order_payments
+        SET status = 'completed', paid_at = datetime('now')
+        WHERE id = ? AND status IN ('pending_admin_confirmation', 'instructions_requested')
+      `).bind(payment.id),
+      env.DB.prepare(`
+        SELECT CASE WHEN changes() = 1
+          THEN 1 ELSE json('payment approval concurrent update') END
+      `),
+      env.DB.prepare(`
+        UPDATE work_orders SET status = 'in_service'
+        WHERE id = ? AND status IN ('payment_review', 'pending_payment')
+      `).bind(workOrderId),
+      env.DB.prepare(`
+        SELECT CASE WHEN changes() = 1
+          THEN 1 ELSE json('service start concurrent update') END
+      `),
+      buildServiceStandardEventConfirmationStatement(
+        env,
+        workOrderId,
+        'ready.start_conditions',
+        'admin',
+        request._auth?.userId || 'admin',
+        'start_approval',
+        workOrderId,
+      ),
+      env.DB.prepare(
+        "INSERT INTO work_order_messages (id, work_order_id, sender_type, sender_id, sender_name, content, message_type, is_internal_note, is_customer_visible) VALUES (?, ?, 'system', '', 'System', ?, 'payment_update', 0, 1)"
+      ).bind(
+        generateId(),
+        workOrderId,
+        confirmMsg
+      ),
+      buildAuditLogStatement(env, request, {
+        targetType: 'work_order',
+        targetId: workOrderId,
+        action: 'payment_start_approved',
+        beforeState: { status: wo.status, payment_status: payment.status },
+        afterState: { status: 'in_service', payment_status: 'completed', note },
+      }),
+      buildServiceStandardEventConfirmationAuditStatement(env, request, {
+        workOrderId,
+        itemKey: 'ready.start_conditions',
+        actorType: 'admin',
+        actorId: request._auth?.userId || 'admin',
+        evidenceType: 'start_approval',
+        evidenceId: workOrderId,
+      }),
+    ]);
 
     return jsonResponse({ success: true, status: 'in_service' });
   } catch (error) {

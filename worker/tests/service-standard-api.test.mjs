@@ -47,6 +47,14 @@ function createEnv() {
     __auditLogs: [],
     __logs: [],
     __notifications: [],
+    __repairRecords: [{
+      work_order_id: 'wo-1',
+      symptom: 'Intermittent output',
+      diagnosis: 'Loose signal cable',
+      solution: 'Reseated and secured the cable',
+      parts_used: '[]',
+      labor_hours: 1,
+    }],
     __lastChanges: 0,
     __failNextAudit: false,
     __nextAuditError: null,
@@ -202,6 +210,9 @@ function createStatement(env, sql) {
           && item.standard_version === this.args[1]
           && item.item_key === 'risk.ppe_and_access') || null);
       }
+      if (/FROM work_order_repair_records WHERE work_order_id = \?/i.test(normalized)) {
+        return clone(env.__repairRecords.find((item) => item.work_order_id === this.args[0]) || null);
+      }
       return null;
     },
     async all() {
@@ -330,6 +341,14 @@ function createStatement(env, sql) {
           });
           env.__lastChanges = 1;
         }
+      } else if (/UPDATE work_orders SET status = 'resolved'/i.test(normalized)) {
+        const workOrder = env.__workOrders.find((item) => item.id === this.args[0]);
+        if (workOrder && ['in_service', 'pricing'].includes(workOrder.status)) {
+          workOrder.status = 'resolved';
+          env.__lastChanges = 1;
+        } else {
+          env.__lastChanges = 0;
+        }
       } else if (/SELECT CASE WHEN changes\(\) = 1/i.test(normalized)) {
         if (env.__lastChanges !== 1) throw new Error('onsite conversion concurrent update');
       } else if (/INSERT INTO work_order_logs/i.test(normalized)) {
@@ -441,6 +460,26 @@ test('service-standard snapshot is visible to assigned and management readers bu
   assert.equal(customer.response.status, 403);
   assert.equal(customer.json.standard_version, undefined);
   assert.equal(customer.json.items, undefined);
+});
+
+test('resolve gate returns deterministic blockers before mutating the work order', async () => {
+  const env = createEnv();
+
+  const result = await api(env, '/api/workorders/wo-1/resolve', {
+    method: 'POST',
+    userType: 'engineer',
+    userId: 'engineer-1',
+  });
+
+  assert.equal(result.response.status, 409);
+  assert.equal(result.json.code, 'service_standard_gate_blocked');
+  assert.equal(result.json.gate, 'resolve');
+  assert.deepEqual(result.json.blocking_items.slice(0, 3), [
+    'task.device_identity',
+    'task.problem_and_goal',
+    'task.contact_and_window',
+  ]);
+  assert.equal(env.__workOrders[0].status, 'in_service');
 });
 
 test('generic confirmation enforces state validation and item ownership', async () => {
