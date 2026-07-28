@@ -3,9 +3,28 @@ import assert from 'node:assert/strict';
 
 import worker from '../src/index.js';
 import { signJwt } from '../src/lib/auth.js';
+import { buildServiceStandardDefinition } from '../src/lib/serviceStandard.js';
 
 function normalizeSql(sql) {
   return sql.replace(/\s+/g, ' ').trim();
+}
+
+function serviceStandardRows(state = 'legacy_not_recorded') {
+  return buildServiceStandardDefinition({ serviceMode: 'remote' }).items.map((item) => ({
+    work_order_id: 'wo-pay-1',
+    standard_version: 1,
+    step_key: item.stepKey,
+    item_key: item.key,
+    state,
+    is_required: item.required ? 1 : 0,
+    owner_type: item.owner,
+    confirmed_by_type: null,
+    confirmed_by_id: null,
+    confirmed_at: null,
+    evidence_type: null,
+    evidence_id: null,
+    not_applicable_reason: null,
+  }));
 }
 
 function createPaymentFlowEnv() {
@@ -24,6 +43,9 @@ function createPaymentFlowEnv() {
     __ratings: [],
     __wallets: [],
     __payouts: [],
+    __progress: serviceStandardRows(),
+    __overrides: [],
+    __failNextAudit: false,
     __workOrders: [{
       id: 'wo-pay-1',
       order_no: 'WO-PAY-1',
@@ -79,6 +101,37 @@ function createPaymentFlowEnv() {
   env.DB = {
     prepare(sql) {
       return createStatement(env, sql);
+    },
+    async batch(statements) {
+      const snapshot = structuredClone({
+        payments: env.__payments,
+        messages: env.__messages,
+        notifications: env.__notifications,
+        auditLogs: env.__auditLogs,
+        logs: env.__logs,
+        ratings: env.__ratings,
+        payouts: env.__payouts,
+        progress: env.__progress,
+        workOrders: env.__workOrders,
+        engineers: env.__engineers,
+      });
+      try {
+        const results = [];
+        for (const statement of statements) results.push(await statement.run());
+        return results;
+      } catch (error) {
+        env.__payments = snapshot.payments;
+        env.__messages = snapshot.messages;
+        env.__notifications = snapshot.notifications;
+        env.__auditLogs = snapshot.auditLogs;
+        env.__logs = snapshot.logs;
+        env.__ratings = snapshot.ratings;
+        env.__payouts = snapshot.payouts;
+        env.__progress = snapshot.progress;
+        env.__workOrders = snapshot.workOrders;
+        env.__engineers = snapshot.engineers;
+        throw error;
+      }
     },
   };
 
@@ -184,12 +237,15 @@ function createStatement(env, sql) {
         return payment ? { id: payment.id, status: payment.status, payment_method: payment.payment_method, payment_stage: payment.payment_stage || 'advance' } : null;
       }
 
-      if (/SELECT status, engineer_id, customer_id, arrival_verification_required, arrival_verified_at FROM work_orders WHERE id = \?/i.test(normalized)) {
+      if (/SELECT id, status, engineer_id, customer_id, service_mode, active_quote_version, arrival_verification_required, arrival_verified_at FROM work_orders WHERE id = \?/i.test(normalized)) {
         const order = env.__workOrders.find((item) => item.id === this.args[0]);
         return order ? {
+          id: order.id,
           status: order.status,
           engineer_id: order.engineer_id,
           customer_id: order.customer_id,
+          service_mode: order.service_mode,
+          active_quote_version: order.active_quote_version,
           arrival_verification_required: order.arrival_verification_required || 0,
           arrival_verified_at: order.arrival_verified_at || null,
         } : null;
@@ -204,7 +260,7 @@ function createStatement(env, sql) {
         return order ? { customer_id: order.customer_id, order_no: order.order_no } : null;
       }
 
-      if (/SELECT id, engineer_id, customer_id, status(?:, active_quote_version)? FROM work_orders WHERE id = \?/i.test(normalized)) {
+      if (/SELECT id, engineer_id, customer_id, status, active_quote_version, service_mode, arrival_verification_required FROM work_orders WHERE id = \?/i.test(normalized)) {
         const order = env.__workOrders.find((item) => item.id === this.args[0]);
         return order ? {
           id: order.id,
@@ -212,6 +268,8 @@ function createStatement(env, sql) {
           customer_id: order.customer_id,
           status: order.status,
           active_quote_version: order.active_quote_version,
+          service_mode: order.service_mode,
+          arrival_verification_required: order.arrival_verification_required || 0,
         } : null;
       }
 
@@ -249,6 +307,13 @@ function createStatement(env, sql) {
 
       if (/SELECT \* FROM work_order_payments WHERE work_order_id = \?/i.test(normalized)) {
         return env.__payments.filter((item) => item.work_order_id === this.args[0]).at(-1) || null;
+      }
+
+      if (/FROM work_order_service_standard_progress/i.test(normalized) && /item_key = \?/i.test(normalized)) {
+        return env.__progress.find((item) =>
+          item.work_order_id === this.args[0]
+          && item.standard_version === this.args[1]
+          && item.item_key === this.args[2]) || null;
       }
 
       if (/SELECT order_no FROM work_orders WHERE id = \?/i.test(normalized)) {
@@ -297,6 +362,20 @@ function createStatement(env, sql) {
         return { results: env.__payments.filter((item) => item.work_order_id === this.args[0]) };
       }
 
+      if (/FROM work_order_service_standard_progress/i.test(normalized)) {
+        return {
+          results: env.__progress.filter((item) =>
+            item.work_order_id === this.args[0] && item.standard_version === this.args[1]),
+        };
+      }
+
+      if (/FROM work_order_service_gate_overrides/i.test(normalized)) {
+        return {
+          results: env.__overrides.filter((item) =>
+            item.work_order_id === this.args[0] && !item.revoked_at),
+        };
+      }
+
       return { results: [] };
     },
     async run() {
@@ -305,6 +384,24 @@ function createStatement(env, sql) {
       if (/INSERT INTO work_order_payments/i.test(normalized)) {
         const [id, work_order_id, customer_id, amount, payment_method, transaction_id, status, payment_stage, quote_total_amount, advance_amount, balance_amount] = this.args;
         env.__payments.push({ id, work_order_id, customer_id, amount, payment_method, transaction_id, status, payment_stage: payment_stage || 'advance', quote_total_amount, advance_amount, balance_amount });
+      }
+
+      if (/INSERT OR IGNORE INTO work_order_service_standard_progress/i.test(normalized)) {
+        const [workOrderId, standardVersion, stepKey, itemKey, isRequired, ownerType] = this.args;
+        if (!env.__progress.some((item) =>
+          item.work_order_id === workOrderId
+          && item.standard_version === standardVersion
+          && item.item_key === itemKey)) {
+          env.__progress.push({
+            work_order_id: workOrderId,
+            standard_version: standardVersion,
+            step_key: stepKey,
+            item_key: itemKey,
+            state: 'pending',
+            is_required: isRequired,
+            owner_type: ownerType,
+          });
+        }
       }
 
       if (/INSERT INTO invoice_requests/i.test(normalized)) env.__invoiceWrites += 1;
@@ -346,6 +443,14 @@ function createStatement(env, sql) {
       if (/UPDATE work_orders SET status = 'resolved'/i.test(normalized)) {
         const order = env.__workOrders.find((item) => item.id === this.args[0]);
         if (order) order.status = 'resolved';
+      }
+
+      if (/UPDATE work_orders SET status = 'completed', completed_at = datetime\('now'\)/i.test(normalized)) {
+        const order = env.__workOrders.find((item) =>
+          item.id === this.args[0]
+          && item.customer_id === this.args[1]
+          && ['resolved', 'pending_review'].includes(item.status));
+        if (order) order.status = 'completed';
       }
 
       if (/UPDATE work_orders SET status = \?/i.test(normalized)) {
@@ -415,12 +520,60 @@ function createStatement(env, sql) {
         env.__messages.push({ args: this.args });
       }
 
+      if (/UPDATE work_order_service_standard_progress SET state = 'confirmed'/i.test(normalized)) {
+        const [actorType, actorId, evidenceType, evidenceId, workOrderId, itemKey, ownerType] = this.args;
+        const item = env.__progress.find((row) =>
+          row.work_order_id === workOrderId
+          && row.standard_version === 1
+          && row.item_key === itemKey
+          && [ownerType, 'system'].includes(row.owner_type)
+          && row.state === 'pending');
+        if (item) {
+          Object.assign(item, {
+            state: 'confirmed',
+            confirmed_by_type: actorType,
+            confirmed_by_id: actorId,
+            confirmed_at: '2026-07-29 00:00:00',
+            evidence_type: evidenceType,
+            evidence_id: evidenceId,
+          });
+        }
+      }
+
       if (/INSERT INTO notifications/i.test(normalized)) {
         env.__notifications.push({ args: this.args });
       }
 
       if (/INSERT INTO audit_logs/i.test(normalized)) {
-        env.__auditLogs.push({ args: this.args });
+        if (env.__failNextAudit) {
+          env.__failNextAudit = false;
+          throw new Error('audit insert failed');
+        }
+        if (/FROM work_order_service_standard_progress/i.test(normalized)) {
+          const [
+            id, actorType, actorId, targetId, beforeState, afterState, ip, device,
+            workOrderId, itemKey, confirmedByType, confirmedById, evidenceType, evidenceId,
+          ] = this.args;
+          const item = env.__progress.find((row) =>
+            row.work_order_id === workOrderId
+            && row.standard_version === 1
+            && row.item_key === itemKey
+            && row.state === 'confirmed'
+            && row.confirmed_by_type === confirmedByType
+            && row.confirmed_by_id === confirmedById
+            && row.evidence_type === evidenceType
+            && row.evidence_id === evidenceId);
+          if (item) {
+            env.__auditLogs.push({
+              args: [
+                id, actorType, actorId, 'work_order', targetId,
+                'service_standard_item_confirmed', beforeState, afterState, ip, device,
+              ],
+            });
+          }
+        } else {
+          env.__auditLogs.push({ args: this.args });
+        }
       }
 
       return { success: true, meta: { changes: 1 } };
@@ -684,6 +837,111 @@ test('admin confirms payment before work order enters service', async () => {
   assert.equal(json.status, 'in_service');
   assert.equal(env.__payments.at(-1).status, 'completed');
   assert.equal(env.__workOrders[0].status, 'in_service');
+  assert.equal(
+    env.__progress.find((item) => item.item_key === 'ready.start_conditions').state,
+    'legacy_not_recorded',
+  );
+  assert.equal(
+    env.__auditLogs.some((entry) => entry.args[5] === 'service_standard_item_confirmed'),
+    false,
+  );
+});
+
+test('admin start approval is blocked by deterministic service-standard items', async () => {
+  const env = createPaymentFlowEnv();
+  env.__workOrders[0].status = 'payment_review';
+  env.__payments.push({
+    id: 'payment-start-blocked',
+    work_order_id: 'wo-pay-1',
+    payment_stage: 'advance',
+    payment_method: 'bank_transfer',
+    status: 'pending_admin_confirmation',
+  });
+  for (const itemKey of [
+    'task.device_identity',
+    'task.problem_and_goal',
+    'task.contact_and_window',
+    'ready.start_conditions',
+  ]) {
+    env.__progress.find((item) => item.item_key === itemKey).state = 'pending';
+  }
+
+  const blocked = await api(env, '/api/admin/workorders/wo-pay-1/payment/approve-start', {
+    userType: 'admin',
+    userId: 'admin',
+    body: { note: 'Payment received.' },
+  });
+
+  assert.equal(blocked.response.status, 409);
+  assert.equal(blocked.json.code, 'service_standard_gate_blocked');
+  assert.deepEqual(blocked.json.blocking_items, [
+    'task.device_identity',
+    'task.problem_and_goal',
+    'task.contact_and_window',
+  ]);
+  assert.equal(env.__workOrders[0].status, 'payment_review');
+  assert.equal(
+    env.__progress.find((item) => item.item_key === 'ready.start_conditions').state,
+    'pending',
+  );
+});
+
+test('admin start approval atomically confirms and audits its pending event item', async () => {
+  const env = createPaymentFlowEnv();
+  env.__workOrders[0].status = 'payment_review';
+  env.__payments.push({
+    id: 'payment-start-ready',
+    work_order_id: 'wo-pay-1',
+    payment_stage: 'advance',
+    payment_method: 'bank_transfer',
+    status: 'pending_admin_confirmation',
+  });
+  env.__progress.find((item) => item.item_key === 'ready.start_conditions').state = 'pending';
+
+  const approved = await api(env, '/api/admin/workorders/wo-pay-1/payment/approve-start', {
+    userType: 'admin',
+    userId: 'admin',
+    body: { note: 'Payment received.' },
+  });
+
+  assert.equal(approved.response.status, 200);
+  assert.deepEqual(
+    {
+      state: env.__progress.find((item) => item.item_key === 'ready.start_conditions').state,
+      confirmedBy: env.__progress.find((item) => item.item_key === 'ready.start_conditions').confirmed_by_type,
+      evidenceType: env.__progress.find((item) => item.item_key === 'ready.start_conditions').evidence_type,
+    },
+    { state: 'confirmed', confirmedBy: 'admin', evidenceType: 'start_approval' },
+  );
+  const eventAudit = env.__auditLogs.find((entry) =>
+    entry.args[5] === 'service_standard_item_confirmed'
+    && JSON.parse(entry.args[7]).item_key === 'ready.start_conditions');
+  assert.ok(eventAudit);
+
+  const rollbackEnv = createPaymentFlowEnv();
+  rollbackEnv.__workOrders[0].status = 'payment_review';
+  rollbackEnv.__payments.push({
+    id: 'payment-start-rollback',
+    work_order_id: 'wo-pay-1',
+    payment_stage: 'advance',
+    payment_method: 'bank_transfer',
+    status: 'pending_admin_confirmation',
+  });
+  rollbackEnv.__progress.find((item) => item.item_key === 'ready.start_conditions').state = 'pending';
+  rollbackEnv.__failNextAudit = true;
+
+  const failed = await api(rollbackEnv, '/api/admin/workorders/wo-pay-1/payment/approve-start', {
+    userType: 'admin',
+    userId: 'admin',
+    body: { note: 'Payment received.' },
+  });
+  assert.equal(failed.response.status, 500);
+  assert.equal(rollbackEnv.__workOrders[0].status, 'payment_review');
+  assert.equal(rollbackEnv.__payments[0].status, 'pending_admin_confirmation');
+  assert.equal(
+    rollbackEnv.__progress.find((item) => item.item_key === 'ready.start_conditions').state,
+    'pending',
+  );
 });
 
 test('service completion creates a separate balance payment record', async () => {
@@ -766,6 +1024,14 @@ test('final service report opens customer review and creates admin service revie
   assert.equal(env.__engineers[0].wallet_balance, 0, 'customer rating must not change the legacy wallet balance');
   assert.equal(env.__payouts.length, 1, 'completion should create one admin-managed per-order payout record');
   assert.equal(env.__payouts[0].status, 'pending');
+  assert.equal(
+    env.__progress.find((item) => item.item_key === 'handover.customer_confirmation').state,
+    'legacy_not_recorded',
+  );
+  assert.equal(
+    env.__auditLogs.some((entry) => entry.args[5] === 'service_standard_item_confirmed'),
+    false,
+  );
 
   const reviews = await api(env, '/api/admin/ratings?page=1&pageSize=20', {
     method: 'GET',
@@ -800,6 +1066,94 @@ test('customer cannot rate or accept a service order before final review opens',
   assert.equal(env.__workOrders[0].status, 'in_service');
   assert.equal(env.__ratings.length, 0);
   assert.equal(env.__payouts.length, 0);
+});
+
+test('customer completion is blocked until handover requirements are satisfied', async () => {
+  const env = createPaymentFlowEnv();
+  env.__workOrders[0].status = 'resolved';
+  env.__progress.find((item) => item.item_key === 'handover.service_report').state = 'pending';
+  env.__progress.find((item) => item.item_key === 'handover.customer_confirmation').state = 'pending';
+
+  const completed = await api(env, '/api/workorders/rating', {
+    userType: 'customer',
+    userId: 'customer-1',
+    body: {
+      work_order_id: 'wo-pay-1',
+      rating_timeliness: 5,
+      rating_technical: 5,
+      rating_communication: 5,
+      rating_professional: 5,
+      comment: 'Accepted.',
+    },
+  });
+
+  assert.equal(completed.response.status, 409);
+  assert.equal(completed.json.code, 'service_standard_gate_blocked');
+  assert.equal(completed.json.gate, 'handover');
+  assert.deepEqual(completed.json.blocking_items, ['handover.service_report']);
+  assert.equal(env.__ratings.length, 0);
+  assert.equal(env.__workOrders[0].status, 'resolved');
+  assert.equal(
+    env.__progress.find((item) => item.item_key === 'handover.customer_confirmation').state,
+    'pending',
+  );
+});
+
+test('accepted customer completion atomically confirms and audits its pending event item', async () => {
+  const env = createPaymentFlowEnv();
+  env.__workOrders[0].status = 'resolved';
+  env.__progress.find((item) => item.item_key === 'handover.customer_confirmation').state = 'pending';
+
+  const body = {
+    work_order_id: 'wo-pay-1',
+    rating_timeliness: 5,
+    rating_technical: 4,
+    rating_communication: 5,
+    rating_professional: 5,
+    comment: 'Accepted.',
+  };
+  const completed = await api(env, '/api/workorders/rating', {
+    userType: 'customer',
+    userId: 'customer-1',
+    body,
+  });
+
+  assert.equal(completed.response.status, 200);
+  assert.equal(env.__workOrders[0].status, 'completed');
+  assert.equal(env.__ratings.length, 1);
+  const confirmation = env.__progress.find((item) =>
+    item.item_key === 'handover.customer_confirmation');
+  assert.deepEqual(
+    {
+      state: confirmation.state,
+      confirmedBy: confirmation.confirmed_by_type,
+      evidenceType: confirmation.evidence_type,
+    },
+    { state: 'confirmed', confirmedBy: 'customer', evidenceType: 'customer_rating' },
+  );
+  assert.ok(env.__auditLogs.some((entry) =>
+    entry.args[5] === 'service_standard_item_confirmed'
+    && JSON.parse(entry.args[7]).item_key === 'handover.customer_confirmation'));
+
+  const rollbackEnv = createPaymentFlowEnv();
+  rollbackEnv.__workOrders[0].status = 'resolved';
+  rollbackEnv.__progress.find((item) =>
+    item.item_key === 'handover.customer_confirmation').state = 'pending';
+  rollbackEnv.__failNextAudit = true;
+  const failed = await api(rollbackEnv, '/api/workorders/rating', {
+    userType: 'customer',
+    userId: 'customer-1',
+    body,
+  });
+
+  assert.equal(failed.response.status, 500);
+  assert.equal(rollbackEnv.__workOrders[0].status, 'resolved');
+  assert.equal(rollbackEnv.__ratings.length, 0);
+  assert.equal(
+    rollbackEnv.__progress.find((item) =>
+      item.item_key === 'handover.customer_confirmation').state,
+    'pending',
+  );
 });
 
 test('Admin payout completion requires a completed work order and positive amount', async () => {
