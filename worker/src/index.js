@@ -5728,6 +5728,17 @@ async function ensureServiceStandardRows(env, workOrder) {
 
 export async function loadServiceStandardSnapshot(env, workOrder) {
   const definition = await ensureServiceStandardRows(env, workOrder);
+  return loadServiceStandardSnapshotReadOnly(env, workOrder, definition);
+}
+
+async function loadServiceStandardSnapshotReadOnly(
+  env,
+  workOrder,
+  definition = buildServiceStandardDefinition({
+    serviceMode: workOrder.service_mode,
+    arrivalVerificationRequired: Boolean(workOrder.arrival_verification_required),
+  }),
+) {
   const [progress, overrides] = await Promise.all([
     env.DB.prepare(`
       SELECT * FROM work_order_service_standard_progress
@@ -5752,7 +5763,7 @@ async function getServiceStandardGateBlock(
   gateKey,
   satisfiedItemKeys = [],
 ) {
-  const snapshot = await loadServiceStandardSnapshot(env, workOrder);
+  const snapshot = await loadServiceStandardSnapshotReadOnly(env, workOrder);
   const blocking = getBlockingItems(snapshot, gateKey, satisfiedItemKeys);
   if (!blocking.length) return null;
   return {
@@ -5819,8 +5830,7 @@ function buildServiceStandardEventConfirmationAuditStatement(
       ?, ?, ?, ?
     FROM work_order_service_standard_progress
     WHERE work_order_id = ? AND standard_version = 1 AND item_key = ?
-      AND state = 'confirmed' AND confirmed_by_type = ? AND confirmed_by_id = ?
-      AND evidence_type = ? AND evidence_id IS ?
+      AND owner_type IN (?, 'system') AND state = 'pending'
   `).bind(
     generateId(),
     actorType,
@@ -5838,9 +5848,6 @@ function buildServiceStandardEventConfirmationAuditStatement(
     workOrderId,
     itemKey,
     actorType,
-    actorId,
-    evidenceType,
-    evidenceId,
   );
 }
 
@@ -8245,6 +8252,25 @@ async function handleSubmitRating(request, env) {
             THEN 1 ELSE json('rating lifecycle concurrent update') END
         `),
       );
+    } else {
+      statements.push(
+        env.DB.prepare(`
+          UPDATE work_orders SET updated_at = updated_at
+          WHERE id = ? AND customer_id = ? AND engineer_id = ?
+            AND status = ? AND status IN ('resolved', 'pending_review')
+            AND active_quote_version = ?
+        `).bind(
+          work_order_id,
+          customer_id,
+          engineer_id,
+          wo.status,
+          Number(wo.active_quote_version),
+        ),
+        env.DB.prepare(`
+          SELECT CASE WHEN changes() = 1
+            THEN 1 ELSE json('rating lifecycle concurrent update') END
+        `),
+      );
     }
     statements.push(env.DB.prepare(`
       INSERT INTO ratings (id, work_order_id, engineer_id, customer_id, rating_timeliness, rating_technical, rating_communication, rating_professional, comment)
@@ -8265,6 +8291,14 @@ async function handleSubmitRating(request, env) {
       WHERE id = ?
     `).bind(avgTimeliness, avgTechnical, avgCommunication, avgProfessional, count, engineer_id));
     statements.push(
+      buildServiceStandardEventConfirmationAuditStatement(env, request, {
+        workOrderId: work_order_id,
+        itemKey: 'handover.customer_confirmation',
+        actorType: 'customer',
+        actorId: customer_id,
+        evidenceType: 'customer_rating',
+        evidenceId: id,
+      }),
       buildServiceStandardEventConfirmationStatement(
         env,
         work_order_id,
@@ -8274,16 +8308,20 @@ async function handleSubmitRating(request, env) {
         'customer_rating',
         id,
       ),
-      buildServiceStandardEventConfirmationAuditStatement(env, request, {
-        workOrderId: work_order_id,
-        itemKey: 'handover.customer_confirmation',
-        actorType: 'customer',
-        actorId: customer_id,
-        evidenceType: 'customer_rating',
-        evidenceId: id,
-      }),
     );
-    await env.DB.batch(statements);
+    try {
+      await env.DB.batch(statements);
+    } catch (error) {
+      if (/rating lifecycle concurrent update|malformed json/i.test(String(error?.message || error))) {
+        return errorResponse(
+          market === 'cn'
+            ? '工单验收状态已变更，请刷新后重试'
+            : 'The work order acceptance state changed. Refresh and try again.',
+          409,
+        );
+      }
+      throw error;
+    }
 
     // 正式口径：客户评价只完成服务闭环；工程师服务款由 Admin 在逐单记录中人工确认。
     // 旧钱包结算函数保留用于历史兼容，但不再由新工单流程自动调用。
@@ -15131,15 +15169,6 @@ async function handleResolveWorkOrder(request, env) {
             SELECT CASE WHEN changes() = 1
               THEN 1 ELSE json('resolve lifecycle concurrent update') END
           `),
-          buildServiceStandardEventConfirmationStatement(
-            env,
-            workOrderId,
-            'handover.service_report',
-            'system',
-            'system',
-            'service_report',
-            workOrderId,
-          ),
           env.DB.prepare(`
             INSERT INTO work_order_logs (id, work_order_id, action, actor_type, actor_id, content)
             VALUES (?, ?, 'resolved', 'engineer', ?, '工程师标记服务完成，等待客户确认。')
@@ -15156,6 +15185,15 @@ async function handleResolveWorkOrder(request, env) {
             evidenceType: 'service_report',
             evidenceId: workOrderId,
           }),
+          buildServiceStandardEventConfirmationStatement(
+            env,
+            workOrderId,
+            'handover.service_report',
+            'system',
+            'system',
+            'service_report',
+            workOrderId,
+          ),
         ]);
       } catch (error) {
         if (!/resolve lifecycle concurrent update|malformed json/i.test(String(error?.message || error))) {
@@ -18059,15 +18097,6 @@ async function handleAdminApprovePaymentStart(request, env) {
             INSERT INTO work_order_logs (id, work_order_id, action, actor_type, actor_id, content)
             VALUES (?, ?, 'payment_start_approved', 'admin', ?, ?)
           `).bind(generateId(), workOrderId, request._auth?.userId || 'admin', confirmMsg),
-          buildServiceStandardEventConfirmationStatement(
-            env,
-            workOrderId,
-            'ready.start_conditions',
-            'admin',
-            request._auth?.userId || 'admin',
-            'start_approval',
-            workOrderId,
-          ),
           buildAuditLogStatement(env, request, {
             targetType: 'work_order',
             targetId: workOrderId,
@@ -18083,6 +18112,15 @@ async function handleAdminApprovePaymentStart(request, env) {
             evidenceType: 'start_approval',
             evidenceId: workOrderId,
           }),
+          buildServiceStandardEventConfirmationStatement(
+            env,
+            workOrderId,
+            'ready.start_conditions',
+            'admin',
+            request._auth?.userId || 'admin',
+            'start_approval',
+            workOrderId,
+          ),
         ]);
       } catch (error) {
         if (/quote lifecycle concurrent update|malformed json/i.test(String(error?.message || error))) {
@@ -18136,15 +18174,6 @@ async function handleAdminApprovePaymentStart(request, env) {
         SELECT CASE WHEN changes() = 1
           THEN 1 ELSE json('service start concurrent update') END
       `),
-      buildServiceStandardEventConfirmationStatement(
-        env,
-        workOrderId,
-        'ready.start_conditions',
-        'admin',
-        request._auth?.userId || 'admin',
-        'start_approval',
-        workOrderId,
-      ),
       env.DB.prepare(
         "INSERT INTO work_order_messages (id, work_order_id, sender_type, sender_id, sender_name, content, message_type, is_internal_note, is_customer_visible) VALUES (?, ?, 'system', '', 'System', ?, 'payment_update', 0, 1)"
       ).bind(
@@ -18167,6 +18196,15 @@ async function handleAdminApprovePaymentStart(request, env) {
         evidenceType: 'start_approval',
         evidenceId: workOrderId,
       }),
+      buildServiceStandardEventConfirmationStatement(
+        env,
+        workOrderId,
+        'ready.start_conditions',
+        'admin',
+        request._auth?.userId || 'admin',
+        'start_approval',
+        workOrderId,
+      ),
     ]);
 
     return jsonResponse({ success: true, status: 'in_service' });
