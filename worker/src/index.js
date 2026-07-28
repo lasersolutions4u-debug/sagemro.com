@@ -5795,42 +5795,78 @@ function serviceStandardResponse(snapshot) {
   };
 }
 
+class InvalidServiceStandardRouteEncoding extends Error {}
+
+function decodeServiceStandardRouteSegment(segment) {
+  try {
+    return decodeURIComponent(segment);
+  } catch {
+    throw new InvalidServiceStandardRouteEncoding();
+  }
+}
+
+function serviceStandardRouteEncodingError(market) {
+  return errorResponse(
+    market === 'cn' ? '路由参数编码无效' : 'Invalid route encoding',
+    400,
+  );
+}
+
+function serviceStandardInternalErrorResponse(request, env, error) {
+  console.error('[service-standard] request failed:', error);
+  captureException(error, env, {
+    request,
+    ctx: request._ctx,
+    extra: { feature: 'service_standard' },
+  });
+  return errorResponse(
+    getRequestMarket(request) === 'cn'
+      ? '服务标准请求失败，请稍后重试'
+      : 'The service-standard request failed. Try again later.',
+    500,
+  );
+}
+
 async function handleGetWorkOrderServiceStandard(request, env) {
   const market = getRequestMarket(request);
-  const workOrderId = new URL(request.url).pathname.match(
-    /^\/api\/workorders\/([^/]+)\/service-standard$/,
-  )?.[1];
   try {
-    const workOrder = await env.DB.prepare(
-      'SELECT * FROM work_orders WHERE id = ?',
-    ).bind(workOrderId).first();
-    if (!workOrder) {
-      return errorResponse(market === 'cn' ? '工单不存在' : 'Work order not found', 404);
-    }
     if (request._auth?.userType === 'customer') {
       return errorResponse(
         market === 'cn' ? '客户无权查看内部服务标准' : 'Customers cannot view the internal service standard',
         403,
       );
     }
+    const rawWorkOrderId = new URL(request.url).pathname.match(
+      /^\/api\/workorders\/([^/]+)\/service-standard$/,
+    )?.[1] || '';
+    const workOrderId = decodeServiceStandardRouteSegment(rawWorkOrderId);
+    const workOrder = await env.DB.prepare(
+      'SELECT * FROM work_orders WHERE id = ?',
+    ).bind(workOrderId).first();
+    if (!workOrder) {
+      return errorResponse(market === 'cn' ? '工单不存在' : 'Work order not found', 404);
+    }
     await assertWorkOrderReadAccess(env, request._auth, workOrder);
     const snapshot = await loadServiceStandardSnapshot(env, workOrder);
     return jsonResponse(serviceStandardResponse(snapshot));
   } catch (error) {
+    if (error instanceof InvalidServiceStandardRouteEncoding) {
+      return serviceStandardRouteEncodingError(market);
+    }
     if (error instanceof GuardError) return errorResponse(error.message, error.status);
-    return errorResponse(error.message, 500);
+    return serviceStandardInternalErrorResponse(request, env, error);
   }
 }
 
 async function handleConfirmWorkOrderServiceStandardItem(request, env) {
   const market = getRequestMarket(request);
-  const match = new URL(request.url).pathname.match(
-    /^\/api\/workorders\/([^/]+)\/service-standard\/items\/([^/]+)\/confirm$/,
-  );
-  const workOrderId = match?.[1];
-  const itemKey = match?.[2] ? decodeURIComponent(match[2]) : '';
   try {
     const auth = request._auth;
+    const match = new URL(request.url).pathname.match(
+      /^\/api\/workorders\/([^/]+)\/service-standard\/items\/([^/]+)\/confirm$/,
+    );
+    const workOrderId = decodeServiceStandardRouteSegment(match?.[1] || '');
+    const itemKey = decodeServiceStandardRouteSegment(match?.[2] || '');
     const workOrder = await env.DB.prepare(
       'SELECT * FROM work_orders WHERE id = ?',
     ).bind(workOrderId).first();
@@ -5889,7 +5925,8 @@ async function handleConfirmWorkOrderServiceStandardItem(request, env) {
         403,
       );
     }
-    if (requestedItem.owner === 'engineer' && workOrder.engineer_id !== auth.userId) {
+    if (requestedItem.owner === 'engineer'
+      && (auth.userType !== 'engineer' || workOrder.engineer_id !== auth.userId)) {
       return errorResponse(
         market === 'cn' ? '仅工单指派工程师可以确认此项目' : 'Only the assigned engineer can confirm this item',
         403,
@@ -5964,15 +6001,15 @@ async function handleConfirmWorkOrderServiceStandardItem(request, env) {
     `).bind(workOrderId, definition.version, itemKey).first();
     return jsonResponse({ item: updated });
   } catch (error) {
-    return errorResponse(error.message, 500);
+    if (error instanceof InvalidServiceStandardRouteEncoding) {
+      return serviceStandardRouteEncodingError(market);
+    }
+    return serviceStandardInternalErrorResponse(request, env, error);
   }
 }
 
 async function handleAdminOverrideServiceStandardGate(request, env) {
   const market = getRequestMarket(request);
-  const workOrderId = new URL(request.url).pathname.match(
-    /^\/api\/admin\/workorders\/([^/]+)\/service-standard\/override$/,
-  )?.[1];
   try {
     const auth = request._auth;
     if (!canMutateFieldWorkAdmin(auth)) {
@@ -5981,6 +6018,10 @@ async function handleAdminOverrideServiceStandardGate(request, env) {
         403,
       );
     }
+    const rawWorkOrderId = new URL(request.url).pathname.match(
+      /^\/api\/admin\/workorders\/([^/]+)\/service-standard\/override$/,
+    )?.[1] || '';
+    const workOrderId = decodeServiceStandardRouteSegment(rawWorkOrderId);
     const body = await request.json().catch(() => ({}));
     const gate = String(body.gate || '').trim();
     const reason = String(body.reason || '').trim();
@@ -6021,7 +6062,7 @@ async function handleAdminOverrideServiceStandardGate(request, env) {
         }),
       ]);
     } catch (error) {
-      if (/UNIQUE constraint failed|idx_service_gate_active_override/i.test(String(error?.message || error))) {
+      if (/UNIQUE constraint failed:\s*work_order_service_gate_overrides\.work_order_id,\s*work_order_service_gate_overrides\.gate_key|idx_service_gate_active_override/i.test(String(error?.message || error))) {
         return errorResponse(
           market === 'cn' ? '此关卡已有生效中的放行记录' : 'This gate already has an active override',
           409,
@@ -6039,7 +6080,10 @@ async function handleAdminOverrideServiceStandardGate(request, env) {
       },
     }, 201);
   } catch (error) {
-    return errorResponse(error.message, 500);
+    if (error instanceof InvalidServiceStandardRouteEncoding) {
+      return serviceStandardRouteEncodingError(market);
+    }
+    return serviceStandardInternalErrorResponse(request, env, error);
   }
 }
 
@@ -15039,45 +15083,6 @@ async function handleConfirmOnsiteConversion(request, env, { admin = false } = {
       serviceMode: 'onsite',
       arrivalVerificationRequired: true,
     });
-    const ppeProgress = await env.DB.prepare(`
-      SELECT * FROM work_order_service_standard_progress
-      WHERE work_order_id = ? AND standard_version = ?
-        AND item_key = 'risk.ppe_and_access'
-    `).bind(workOrderId, onsiteDefinition.version).first();
-    const revalidationStatements = ppeProgress?.state === 'not_applicable'
-      && Number(ppeProgress.is_required) === 0
-      ? [env.DB.prepare(`
-          UPDATE work_order_service_standard_progress
-          SET state = 'pending', is_required = 1,
-              confirmed_by_type = NULL, confirmed_by_id = NULL, confirmed_at = NULL,
-              evidence_type = NULL, evidence_id = NULL, not_applicable_reason = NULL,
-              updated_at = datetime('now')
-          WHERE work_order_id = ? AND standard_version = ?
-            AND item_key = 'risk.ppe_and_access'
-            AND state = 'not_applicable' AND is_required = 0
-        `).bind(workOrderId, onsiteDefinition.version), env.DB.prepare(`
-          SELECT CASE WHEN changes() = 1
-            THEN 1
-            ELSE json('service standard revalidation concurrent update')
-          END
-        `), buildAuditLogStatement(env, request, {
-          actorId: auth.staffId || auth.userId,
-          targetType: 'work_order',
-          targetId: workOrderId,
-          action: 'service_standard_item_revalidated',
-          beforeState: {
-            item_key: 'risk.ppe_and_access',
-            state: 'not_applicable',
-            is_required: false,
-          },
-          afterState: {
-            item_key: 'risk.ppe_and_access',
-            state: 'pending',
-            is_required: true,
-            reason: 'remote_to_onsite_conversion',
-          },
-        })]
-      : [];
     const conversionStatements = [env.DB.prepare(`
       UPDATE work_orders SET
         service_address = ?,
@@ -15114,7 +15119,47 @@ async function handleConfirmOnsiteConversion(request, env, { admin = false } = {
       SELECT CASE WHEN changes() = 1 THEN 1 ELSE json('onsite conversion concurrent update') END
     `),
     ...buildServiceStandardEnsureStatements(env, workOrder, onsiteDefinition),
-    ...revalidationStatements,
+    env.DB.prepare(`
+      INSERT INTO audit_logs (
+        id, actor_type, actor_id, target_type, target_id, action,
+        before_state, after_state, ip, device_info
+      )
+      SELECT ?, ?, ?, 'work_order', ?, 'service_standard_item_revalidated', ?, ?, ?, ?
+      FROM work_order_service_standard_progress
+      WHERE work_order_id = ? AND standard_version = ?
+        AND item_key = 'risk.ppe_and_access'
+        AND state = 'not_applicable' AND is_required = 0
+    `).bind(
+      generateId(),
+      actorType,
+      auth.staffId || auth.userId,
+      workOrderId,
+      JSON.stringify({
+        item_key: 'risk.ppe_and_access',
+        state: 'not_applicable',
+        is_required: false,
+      }),
+      JSON.stringify({
+        item_key: 'risk.ppe_and_access',
+        state: 'pending',
+        is_required: true,
+        reason: 'remote_to_onsite_conversion',
+      }),
+      getRequestIp(request),
+      request.headers.get('user-agent') || '',
+      workOrderId,
+      onsiteDefinition.version,
+    ),
+    env.DB.prepare(`
+      UPDATE work_order_service_standard_progress
+      SET state = 'pending', is_required = 1,
+          confirmed_by_type = NULL, confirmed_by_id = NULL, confirmed_at = NULL,
+          evidence_type = NULL, evidence_id = NULL, not_applicable_reason = NULL,
+          updated_at = datetime('now')
+      WHERE work_order_id = ? AND standard_version = ?
+        AND item_key = 'risk.ppe_and_access'
+        AND state = 'not_applicable' AND is_required = 0
+    `).bind(workOrderId, onsiteDefinition.version),
     env.DB.prepare(`
       INSERT INTO work_order_logs (id, work_order_id, action, actor_type, actor_id, content)
       VALUES (?, ?, 'onsite_conversion_confirmed', ?, ?, ?)
