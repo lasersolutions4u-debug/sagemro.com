@@ -1,8 +1,12 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
+import { DatabaseSync } from 'node:sqlite';
 
 import worker from '../src/index.js';
 import { signJwt } from '../src/lib/auth.js';
+
+const schemaSql = readFileSync(new URL('../schema.sql', import.meta.url), 'utf8');
 
 function normalizeSql(sql) {
   return sql.replace(/\s+/g, ' ').trim();
@@ -45,6 +49,9 @@ function createEnv() {
     __notifications: [],
     __lastChanges: 0,
     __failNextAudit: false,
+    __nextAuditError: null,
+    __failWorkOrderLookup: false,
+    __workOrderLookups: 0,
     KV: {
       async get() { return null; },
       async put() {},
@@ -81,6 +88,79 @@ function createEnv() {
   return env;
 }
 
+function createSqliteEnv() {
+  const sqlite = new DatabaseSync(':memory:');
+  sqlite.exec(schemaSql);
+  sqlite.prepare(`
+    INSERT INTO customers (id, user_no, name, phone, password_hash, salt)
+    VALUES ('customer-1', 'U900001', 'Test Customer', '13800000001', 'hash', 'salt')
+  `).run();
+  sqlite.prepare(`
+    INSERT INTO engineers (id, user_no, name, phone, password_hash, salt)
+    VALUES ('engineer-1', 'E900001', 'Test Engineer', '13800000002', 'hash', 'salt')
+  `).run();
+  sqlite.prepare(`
+    INSERT INTO work_orders (
+      id, order_no, customer_id, engineer_id, type, description, status,
+      service_mode, arrival_verification_required, onsite_conversion_status
+    ) VALUES (
+      'wo-1', 'WO-1', 'customer-1', 'engineer-1', 'maintenance', 'Test order',
+      'in_service', 'remote', 0, 'not_requested'
+    )
+  `).run();
+
+  const env = {
+    JWT_SECRET: 'test-secret-with-enough-length',
+    __sqlite: sqlite,
+    __conversionBatchHook: null,
+    KV: {
+      async get() { return null; },
+      async put() {},
+      async delete() {},
+    },
+  };
+  env.DB = {
+    prepare(sql) {
+      return {
+        normalizedSql: normalizeSql(sql),
+        args: [],
+        bind(...args) {
+          this.args = args;
+          return this;
+        },
+        async first() {
+          return sqlite.prepare(sql).get(...this.args) || null;
+        },
+        async all() {
+          return { results: sqlite.prepare(sql).all(...this.args) };
+        },
+        async run() {
+          const result = sqlite.prepare(sql).run(...this.args);
+          return { success: true, meta: { changes: Number(result.changes) } };
+        },
+      };
+    },
+    async batch(statements) {
+      sqlite.exec('BEGIN IMMEDIATE');
+      try {
+        if (statements.some((statement) =>
+          /UPDATE work_orders SET service_address = \?/i.test(statement.normalizedSql))) {
+          env.__conversionBatchHook?.(sqlite);
+          env.__conversionBatchHook = null;
+        }
+        const results = [];
+        for (const statement of statements) results.push(await statement.run());
+        sqlite.exec('COMMIT');
+        return results;
+      } catch (error) {
+        sqlite.exec('ROLLBACK');
+        throw error;
+      }
+    },
+  };
+  return env;
+}
+
 function createStatement(env, sql) {
   return {
     args: [],
@@ -94,6 +174,10 @@ function createStatement(env, sql) {
         return clone(env.__staff.find((item) => item.id === this.args[0]) || null);
       }
       if (/FROM work_orders WHERE id = \?/i.test(normalized)) {
+        env.__workOrderLookups += 1;
+        if (env.__failWorkOrderLookup) {
+          throw new Error('SQLITE_SECRET work_orders lookup exploded');
+        }
         return clone(env.__workOrders.find((item) => item.id === this.args[0]) || null);
       }
       if (/SELECT id FROM engineers WHERE id = \? AND engineer_role = 'regional_lead'/i.test(normalized)) {
@@ -255,6 +339,11 @@ function createStatement(env, sql) {
         env.__notifications.push({ args: this.args });
         env.__lastChanges = 1;
       } else if (/INSERT INTO audit_logs/i.test(normalized)) {
+        if (env.__nextAuditError) {
+          const error = env.__nextAuditError;
+          env.__nextAuditError = null;
+          throw new Error(error);
+        }
         if (env.__failNextAudit) {
           env.__failNextAudit = false;
           throw new Error('audit insert failed');
@@ -292,12 +381,13 @@ async function api(env, path, {
   userId = 'engineer-1',
   staffId,
   method = 'GET',
+  market = 'com',
 } = {}) {
   const jwt = await signJwt({
     userId,
     userType,
     staffId,
-    market: 'com',
+    market,
     phone: '13800000000',
     iat: 1,
     exp: Math.floor(Date.now() / 1000) + 3600,
@@ -307,12 +397,12 @@ async function api(env, path, {
     headers: {
       Authorization: `Bearer ${jwt}`,
       'Content-Type': 'application/json',
-      Origin: 'https://sagemro.com',
+      Origin: market === 'cn' ? 'https://sagemro.cn' : 'https://sagemro.com',
     },
   };
   if (!['GET', 'HEAD'].includes(method)) requestOptions.body = JSON.stringify(body || {});
   const response = await worker.fetch(
-    new Request(`https://api.sagemro.com${path}`, requestOptions),
+    new Request(`https://api.sagemro.${market}${path}`, requestOptions),
     env,
     { waitUntil() {} },
   );
@@ -464,11 +554,18 @@ test('confirmation and audit writes are atomic', async () => {
   await api(env, '/api/workorders/wo-1/service-standard');
   env.__failNextAudit = true;
 
-  const failed = await api(
-    env,
-    '/api/workorders/wo-1/service-standard/items/task.device_identity/confirm',
-    { method: 'POST', body: { state: 'confirmed' } },
-  );
+  const originalError = console.error;
+  console.error = () => {};
+  let failed;
+  try {
+    failed = await api(
+      env,
+      '/api/workorders/wo-1/service-standard/items/task.device_identity/confirm',
+      { method: 'POST', body: { state: 'confirmed' } },
+    );
+  } finally {
+    console.error = originalError;
+  }
 
   assert.equal(failed.response.status, 500);
   assert.equal(
@@ -485,6 +582,25 @@ test('read-only regional management cannot initialize progress through confirmat
     env,
     '/api/workorders/wo-1/service-standard/items/task.device_identity/confirm',
     { method: 'POST', userId: 'lead-1', body: { state: 'confirmed' } },
+  );
+
+  assert.equal(denied.response.status, 403);
+  assert.equal(env.__progress.length, 0);
+  assert.equal(env.__auditLogs.length, 0);
+});
+
+test('Admin identity cannot confirm engineer-owned items even when its user id matches the assignment', async () => {
+  const env = createEnv();
+
+  const denied = await api(
+    env,
+    '/api/workorders/wo-1/service-standard/items/task.device_identity/confirm',
+    {
+      method: 'POST',
+      userType: 'admin',
+      userId: 'engineer-1',
+      body: { state: 'confirmed' },
+    },
   );
 
   assert.equal(denied.response.status, 403);
@@ -532,6 +648,141 @@ test('onsite conversion atomically revalidates remote PPE without a GET side eff
   );
 });
 
+async function confirmConversion(env) {
+  return api(env, '/api/workorders/wo-1/onsite-conversion/confirm', {
+    method: 'POST',
+    userType: 'customer',
+    userId: 'customer-1',
+    body: {
+      service_address: '88 Test Road, Jinan',
+      service_latitude: 36.6512,
+      service_longitude: 117.1201,
+      service_accuracy_m: 20,
+      service_coordinate_system: 'gcj02',
+      service_location_source: 'customer_map',
+    },
+  });
+}
+
+test('real SQLite conversion batch couples conditional PPE audit and reset after race-state changes', async () => {
+  const becameIneligible = createSqliteEnv();
+  const becameEligible = createSqliteEnv();
+  const pending = createSqliteEnv();
+  try {
+    await api(becameIneligible, '/api/workorders/wo-1/service-standard');
+    await api(
+      becameIneligible,
+      '/api/workorders/wo-1/service-standard/items/risk.ppe_and_access/confirm',
+      {
+        method: 'POST',
+        body: {
+          state: 'not_applicable',
+          reason: 'Remote service does not require site PPE.',
+        },
+      },
+    );
+    becameIneligible.__sqlite.prepare(`
+      UPDATE work_orders
+      SET service_mode = 'hybrid', onsite_conversion_status = 'requested'
+      WHERE id = 'wo-1'
+    `).run();
+    becameIneligible.__conversionBatchHook = (sqlite) => sqlite.prepare(`
+      UPDATE work_order_service_standard_progress
+      SET state = 'confirmed', confirmed_by_type = 'engineer',
+          confirmed_by_id = 'engineer-race', not_applicable_reason = NULL
+      WHERE work_order_id = 'wo-1' AND item_key = 'risk.ppe_and_access'
+    `).run();
+
+    const skipped = await confirmConversion(becameIneligible);
+    assert.equal(skipped.response.status, 200);
+    assert.equal(
+      becameIneligible.__sqlite.prepare(`
+        SELECT state FROM work_order_service_standard_progress
+        WHERE work_order_id = 'wo-1' AND item_key = 'risk.ppe_and_access'
+      `).get().state,
+      'confirmed',
+    );
+    assert.equal(
+      becameIneligible.__sqlite.prepare(`
+        SELECT COUNT(*) AS count FROM audit_logs
+        WHERE action = 'service_standard_item_revalidated'
+      `).get().count,
+      0,
+    );
+
+    await api(becameEligible, '/api/workorders/wo-1/service-standard');
+    await api(
+      becameEligible,
+      '/api/workorders/wo-1/service-standard/items/risk.ppe_and_access/confirm',
+      { method: 'POST', body: { state: 'confirmed' } },
+    );
+    becameEligible.__sqlite.prepare(`
+      UPDATE work_orders
+      SET service_mode = 'hybrid', onsite_conversion_status = 'requested'
+      WHERE id = 'wo-1'
+    `).run();
+    becameEligible.__conversionBatchHook = (sqlite) => sqlite.prepare(`
+      UPDATE work_order_service_standard_progress
+      SET state = 'not_applicable', is_required = 0,
+          confirmed_by_type = 'engineer', confirmed_by_id = 'engineer-race',
+          not_applicable_reason = 'Concurrent remote-only decision.'
+      WHERE work_order_id = 'wo-1' AND item_key = 'risk.ppe_and_access'
+    `).run();
+
+    const reset = await confirmConversion(becameEligible);
+    assert.equal(reset.response.status, 200);
+    assert.deepEqual(
+      { ...becameEligible.__sqlite.prepare(`
+        SELECT state, is_required, confirmed_by_id, not_applicable_reason
+        FROM work_order_service_standard_progress
+        WHERE work_order_id = 'wo-1' AND item_key = 'risk.ppe_and_access'
+      `).get() },
+      {
+        state: 'pending',
+        is_required: 1,
+        confirmed_by_id: null,
+        not_applicable_reason: null,
+      },
+    );
+    assert.equal(
+      becameEligible.__sqlite.prepare(`
+        SELECT COUNT(*) AS count FROM audit_logs
+        WHERE action = 'service_standard_item_revalidated'
+      `).get().count,
+      1,
+    );
+
+    await api(pending, '/api/workorders/wo-1/service-standard');
+    pending.__sqlite.prepare(`
+      UPDATE work_orders
+      SET service_mode = 'hybrid', onsite_conversion_status = 'requested'
+      WHERE id = 'wo-1'
+    `).run();
+
+    const required = await confirmConversion(pending);
+    assert.equal(required.response.status, 200);
+    assert.deepEqual(
+      { ...pending.__sqlite.prepare(`
+        SELECT state, is_required
+        FROM work_order_service_standard_progress
+        WHERE work_order_id = 'wo-1' AND item_key = 'risk.ppe_and_access'
+      `).get() },
+      { state: 'pending', is_required: 1 },
+    );
+    assert.equal(
+      pending.__sqlite.prepare(`
+        SELECT COUNT(*) AS count FROM audit_logs
+        WHERE action = 'service_standard_item_revalidated'
+      `).get().count,
+      0,
+    );
+  } finally {
+    becameIneligible.__sqlite.close();
+    becameEligible.__sqlite.close();
+    pending.__sqlite.close();
+  }
+});
+
 test('only full Admin can create an override and duplicate active overrides return localized 409', async () => {
   const env = createEnv();
 
@@ -575,4 +826,117 @@ test('only full Admin can create an override and duplicate active overrides retu
     env.__auditLogs.filter((entry) => entry.args[5] === 'service_standard_gate_overridden').length,
     1,
   );
+});
+
+test('service-standard handlers decode valid route segments and reject malformed encodings', async () => {
+  const getEnv = createEnv();
+  const encodedGet = await api(getEnv, '/api/workorders/wo%2D1/service-standard');
+  assert.equal(encodedGet.response.status, 200);
+
+  const confirmEnv = createEnv();
+  const encodedConfirm = await api(
+    confirmEnv,
+    '/api/workorders/wo%2D1/service-standard/items/task%2Edevice_identity/confirm',
+    { method: 'POST', body: { state: 'confirmed' } },
+  );
+  assert.equal(encodedConfirm.response.status, 200);
+
+  const overrideEnv = createEnv();
+  const encodedOverride = await api(
+    overrideEnv,
+    '/api/admin/workorders/wo%2D1/service-standard/override',
+    {
+      method: 'POST',
+      userType: 'admin',
+      userId: 'admin',
+      body: { gate: 'start', reason: 'Encoded route validation.' },
+    },
+  );
+  assert.equal(encodedOverride.response.status, 201);
+
+  for (const malformed of [
+    {
+      path: '/api/workorders/%E0%A4%A/service-standard',
+      options: {},
+    },
+    {
+      path: '/api/workorders/wo-1/service-standard/items/%E0%A4%A/confirm',
+      options: { method: 'POST', body: { state: 'confirmed' } },
+    },
+    {
+      path: '/api/admin/workorders/%E0%A4%A/service-standard/override',
+      options: {
+        method: 'POST',
+        userType: 'admin',
+        userId: 'admin',
+        body: { gate: 'start', reason: 'Malformed route validation.' },
+      },
+    },
+  ]) {
+    const result = await api(createEnv(), malformed.path, malformed.options);
+    assert.equal(result.response.status, 400);
+    assert.match(result.json.error, /route encoding/i);
+    assert.doesNotMatch(result.json.error, /uri|malformed|percent/i);
+  }
+
+  const cnMalformed = await api(
+    createEnv(),
+    '/api/workorders/%E0%A4%A/service-standard',
+    { market: 'cn' },
+  );
+  assert.equal(cnMalformed.response.status, 400);
+  assert.equal(cnMalformed.json.error, '路由参数编码无效');
+});
+
+test('customer snapshot denial precedes lookup and internal DB errors are redacted from 500 responses', async () => {
+  const customerEnv = createEnv();
+  customerEnv.__failWorkOrderLookup = true;
+  const customer = await api(customerEnv, '/api/workorders/missing/service-standard', {
+    userType: 'customer',
+    userId: 'customer-1',
+  });
+  assert.equal(customer.response.status, 403);
+  assert.equal(customerEnv.__workOrderLookups, 0);
+
+  const originalError = console.error;
+  const logged = [];
+  console.error = (...args) => logged.push(args.map(String).join(' '));
+  try {
+    const getEnv = createEnv();
+    getEnv.__failWorkOrderLookup = true;
+    const failedGet = await api(getEnv, '/api/workorders/wo-1/service-standard');
+    assert.equal(failedGet.response.status, 500);
+    assert.doesNotMatch(failedGet.json.error, /SQLITE_SECRET|work_orders|lookup exploded/i);
+
+    const confirmEnv = createEnv();
+    await api(confirmEnv, '/api/workorders/wo-1/service-standard');
+    confirmEnv.__failNextAudit = true;
+    const failedConfirm = await api(
+      confirmEnv,
+      '/api/workorders/wo-1/service-standard/items/task.device_identity/confirm',
+      { method: 'POST', body: { state: 'confirmed' } },
+    );
+    assert.equal(failedConfirm.response.status, 500);
+    assert.doesNotMatch(failedConfirm.json.error, /audit insert failed|sqlite|constraint/i);
+
+    const overrideEnv = createEnv();
+    overrideEnv.__nextAuditError = 'UNIQUE constraint failed: audit_logs.id';
+    const failedOverride = await api(
+      overrideEnv,
+      '/api/admin/workorders/wo-1/service-standard/override',
+      {
+        method: 'POST',
+        userType: 'admin',
+        userId: 'admin',
+        body: { gate: 'resolve', reason: 'Audit failure test.' },
+      },
+    );
+    assert.equal(failedOverride.response.status, 500);
+    assert.doesNotMatch(failedOverride.json.error, /audit_logs|unique|sqlite|constraint/i);
+    assert.equal(overrideEnv.__overrides.length, 0);
+  } finally {
+    console.error = originalError;
+  }
+  assert.equal(logged.some((entry) => entry.includes('SQLITE_SECRET')), true);
+  assert.equal(logged.some((entry) => entry.includes('audit insert failed')), true);
 });
