@@ -291,6 +291,43 @@ CREATE TABLE IF NOT EXISTS work_order_service_readiness (
   FOREIGN KEY (source_conversation_id) REFERENCES conversations(id) ON DELETE SET NULL
 );
 
+CREATE TABLE IF NOT EXISTS work_order_service_standard_progress (
+  work_order_id TEXT NOT NULL,
+  standard_version INTEGER NOT NULL DEFAULT 1,
+  step_key TEXT NOT NULL,
+  item_key TEXT NOT NULL,
+  state TEXT NOT NULL DEFAULT 'pending'
+    CHECK (state IN ('pending', 'confirmed', 'not_applicable', 'legacy_not_recorded')),
+  is_required INTEGER NOT NULL DEFAULT 0 CHECK (is_required IN (0, 1)),
+  owner_type TEXT NOT NULL CHECK (owner_type IN ('engineer', 'admin', 'customer', 'system')),
+  confirmed_by_type TEXT,
+  confirmed_by_id TEXT,
+  confirmed_at TEXT,
+  evidence_type TEXT,
+  evidence_id TEXT,
+  not_applicable_reason TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (work_order_id, standard_version, item_key),
+  FOREIGN KEY (work_order_id) REFERENCES work_orders(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_service_standard_work_order_step
+  ON work_order_service_standard_progress(work_order_id, standard_version, step_key);
+
+CREATE TABLE IF NOT EXISTS work_order_service_gate_overrides (
+  id TEXT PRIMARY KEY,
+  work_order_id TEXT NOT NULL,
+  gate_key TEXT NOT NULL CHECK (gate_key IN ('start', 'resolve', 'handover')),
+  reason TEXT NOT NULL,
+  overridden_by TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  revoked_at TEXT,
+  FOREIGN KEY (work_order_id) REFERENCES work_orders(id) ON DELETE CASCADE
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_service_gate_active_override
+  ON work_order_service_gate_overrides(work_order_id, gate_key)
+  WHERE revoked_at IS NULL;
+
 CREATE TABLE IF NOT EXISTS work_order_arrival_checks (
     id TEXT PRIMARY KEY,
     work_order_id TEXT NOT NULL,
@@ -1550,4 +1587,5 @@ INSERT OR IGNORE INTO _migrations (version, note) VALUES
     ('039_field_workdays',              'Photo-first multi-day onsite work records and protected evidence'),
     ('040_field_evidence_cleanup_queue', 'Retry private field evidence cleanup after failed rollback'),
     ('041_quote_execution_baseline',    'Immutable quote schedules, installments, and private receipt evidence metadata'),
-    ('043_engineer_service_readiness',  'Internal engineer AI service-readiness cache and verified source conversation link');
+    ('043_engineer_service_readiness',  'Internal engineer AI service-readiness cache and verified source conversation link'),
+    ('044_service_standard_progress',   'Persisted SAGEMRO six-step service standard progress and audited gate overrides');
