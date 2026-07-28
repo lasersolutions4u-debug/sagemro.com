@@ -28,12 +28,28 @@ CREATE TABLE IF NOT EXISTS conversations (
     last_message TEXT,
     customer_id TEXT,                          -- 010: 归属客户，IDOR 校验依赖此列
     engineer_id TEXT,                          -- 015: 归属工程师，工程师对话查询依赖此列
+    summary_message_count INTEGER DEFAULT 0,   -- 014: 已纳入摘要的消息数
     created_at TEXT DEFAULT (datetime('now')),
     updated_at TEXT DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_conversations_updated_at ON conversations(updated_at);
 CREATE INDEX IF NOT EXISTS idx_conversations_customer_id ON conversations(customer_id);
 CREATE INDEX IF NOT EXISTS idx_conversations_engineer_id ON conversations(engineer_id);
+
+-- 对话摘要表（014）
+CREATE TABLE IF NOT EXISTS conversation_summaries (
+    id TEXT PRIMARY KEY,
+    conversation_id TEXT NOT NULL,
+    protocol_version INTEGER NOT NULL DEFAULT 1,
+    summary_json TEXT NOT NULL,
+    source_message_count INTEGER NOT NULL,
+    generated_at TEXT DEFAULT (datetime('now')),
+    FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_conv_summaries_conv_generated
+  ON conversation_summaries(conversation_id, generated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_conv_summaries_generated_at
+  ON conversation_summaries(generated_at);
 
 -- 消息表（000 + 020）
 CREATE TABLE IF NOT EXISTS messages (
@@ -256,6 +272,24 @@ CREATE INDEX IF NOT EXISTS idx_work_orders_engineer ON work_orders(engineer_id);
 CREATE INDEX IF NOT EXISTS idx_work_orders_status ON work_orders(status);
 CREATE INDEX IF NOT EXISTS idx_work_orders_regional_lead ON work_orders(assigned_regional_lead_id);
 CREATE INDEX IF NOT EXISTS idx_work_orders_conflict_status ON work_orders(conflict_status);
+
+-- 工程师 AI 服务前核查：受信任来源会话关联与内部缓存（043）
+-- 注意：审查 JSON 与生成状态只允许落在这张内部表，禁止加回 work_orders
+-- （handleGetWorkOrder 会把 w.* 直接展开进客户可见响应）。
+CREATE TABLE IF NOT EXISTS work_order_service_readiness (
+  work_order_id TEXT PRIMARY KEY,
+  source_conversation_id TEXT,
+  input_fingerprint TEXT,
+  review_json TEXT,
+  generation_state TEXT NOT NULL DEFAULT 'missing'
+    CHECK (generation_state IN ('missing', 'generating', 'ready', 'failed')),
+  generation_started_at TEXT,
+  generated_at TEXT,
+  last_error TEXT,
+  updated_at TEXT DEFAULT (datetime('now')),
+  FOREIGN KEY (work_order_id) REFERENCES work_orders(id) ON DELETE CASCADE,
+  FOREIGN KEY (source_conversation_id) REFERENCES conversations(id) ON DELETE SET NULL
+);
 
 CREATE TABLE IF NOT EXISTS work_order_arrival_checks (
     id TEXT PRIMARY KEY,
@@ -1515,4 +1549,5 @@ INSERT OR IGNORE INTO _migrations (version, note) VALUES
     ('038_material_requisitions_and_staff', 'Internal staff accounts and material requisition operations'),
     ('039_field_workdays',              'Photo-first multi-day onsite work records and protected evidence'),
     ('040_field_evidence_cleanup_queue', 'Retry private field evidence cleanup after failed rollback'),
-    ('041_quote_execution_baseline',    'Immutable quote schedules, installments, and private receipt evidence metadata');
+    ('041_quote_execution_baseline',    'Immutable quote schedules, installments, and private receipt evidence metadata'),
+    ('043_engineer_service_readiness',  'Internal engineer AI service-readiness cache and verified source conversation link');

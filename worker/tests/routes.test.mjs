@@ -40,6 +40,11 @@ test('protected route classifier covers exact and parameterized authenticated pa
   assert.equal(isKnownProtectedRoute('/api/not-a-route'), false);
 });
 
+test('engineer service readiness endpoints are protected work-order subroutes', () => {
+  assert.equal(isKnownProtectedRoute('/api/workorders/work-order-1/service-readiness'), true);
+  assert.equal(isKnownProtectedRoute('/api/workorders/work-order-1/service-readiness/refresh'), true);
+});
+
 test('operations read gateway allows only the exact receipt evidence GET route', () => {
   const path = '/api/workorders/work-order-1/receipt-evidence/evidence-1';
   assert.equal(isOperationsReadRoute(path, 'GET'), true);

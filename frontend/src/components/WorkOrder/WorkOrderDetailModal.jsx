@@ -325,12 +325,16 @@ export function WorkOrderDetailContent({
   managementReadOnly = false,
   isActive = true,
   renderModal = false,
+  messageDraftRequest = null,
+  onMessageDraftApplied,
 }) {
   const isCn = isCnLocale();
   const allowAddressSearch = !isCn;
   const copy = isCn ? COPY.cn : COPY.en;
   const [detail, setDetail] = useState(null);
-  const [loading, setLoading] = useState(false);
+  // 首次挂载即会触发 loadDetail；初始 loading 跟随 isActive，避免内容区先挂载后被 Loading 卸载
+  // （MessagePanel 的一次性草稿请求会因此丢失）。
+  const [loading, setLoading] = useState(isActive);
   const [tab, setTab] = useState(initialTab);
   const activeTab = controlledTab || tab;
   const [ratings, setRatings] = useState({ timeliness: 5, technical: 5, communication: 5, professional: 5 });
@@ -1468,7 +1472,7 @@ export function WorkOrderDetailContent({
           <>
             {activeTab === 'info' && renderInfoTab()}
             {activeTab === 'messages' && (
-              <MessagePanel workOrderId={workOrder.id} userType={userType} userId={userId} readOnly={managementReadOnly} />
+              <MessagePanel workOrderId={workOrder.id} userType={userType} userId={userId} readOnly={managementReadOnly} draftRequest={messageDraftRequest} onDraftRequestApplied={onMessageDraftApplied} />
             )}
             {activeTab === 'pricing' && isEngineer && !managementReadOnly && (
               <EngineerPricingPanel
