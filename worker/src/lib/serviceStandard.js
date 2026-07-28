@@ -7,7 +7,7 @@ export const SERVICE_STANDARD_STEPS = Object.freeze([
   { key: 'evidence_execution', index: 3, gate: 'execution' },
   { key: 'recovery_verification', index: 4, gate: 'resolve' },
   { key: 'transparent_handover', index: 5, gate: 'handover' },
-]);
+].map(Object.freeze));
 
 const BASE_ITEMS = Object.freeze([
   ['task.device_identity', 0, 'engineer', true],
@@ -43,20 +43,33 @@ export function buildServiceStandardDefinition(context = {}) {
     const ppe = items.find((item) => item.key === 'risk.ppe_and_access');
     ppe.required = false;
   }
-  return { version: SERVICE_STANDARD_VERSION, items };
+  return Object.freeze({
+    version: SERVICE_STANDARD_VERSION,
+    items: Object.freeze(items.map(Object.freeze)),
+  });
+}
+
+function isValidReason(value) {
+  return typeof value === 'string' && value.trim().length > 0 && value.trim().length <= 500;
+}
+
+function isNonBlockingItem(item) {
+  return item.state === 'confirmed'
+    || item.state === 'legacy_not_recorded'
+    || (item.state === 'not_applicable' && isValidReason(item.notApplicableReason));
 }
 
 export function deriveServiceStandardSnapshot({ definition, progressRows = [], overrides = [] }) {
-  const nonBlockingStates = new Set(['confirmed', 'not_applicable', 'legacy_not_recorded']);
   const progress = new Map(progressRows.map((row) => [row.item_key, row]));
   const items = definition.items.map((item) => ({
     ...item,
     state: progress.get(item.key)?.state || 'pending',
     confirmedAt: progress.get(item.key)?.confirmed_at || null,
+    notApplicableReason: progress.get(item.key)?.not_applicable_reason ?? null,
   }));
   const completedThrough = SERVICE_STANDARD_STEPS.findIndex((step) =>
     items.some((item) => item.stepIndex === step.index && item.required
-      && !nonBlockingStates.has(item.state)));
+      && !isNonBlockingItem(item)));
   const snapshot = {
     standardVersion: definition.version,
     currentStepIndex: completedThrough === -1 ? 5 : completedThrough,
@@ -81,12 +94,18 @@ const GATE_MAX_STEP = Object.freeze({ start: 2, resolve: 4, handover: 5 });
 export function getBlockingItems(snapshot, gateKey, satisfiedItemKeys = []) {
   const maxStep = GATE_MAX_STEP[gateKey];
   if (!Number.isInteger(maxStep)) throw new TypeError(`Unknown service-standard gate: ${gateKey}`);
-  if (snapshot.overrides.some((override) => override.gate_key === gateKey && !override.revoked_at)) return [];
+  if (snapshot.overrides.some((override) => (
+    override.gate_key === gateKey
+    && !override.revoked_at
+    && isValidReason(override.reason)
+    && typeof override.overridden_by === 'string'
+    && override.overridden_by.trim().length > 0
+  ))) return [];
   const satisfied = new Set(satisfiedItemKeys);
   return snapshot.items.filter((item) =>
     item.required && item.stepIndex <= maxStep
       && !satisfied.has(item.key)
-      && !['confirmed', 'not_applicable', 'legacy_not_recorded'].includes(item.state));
+      && !isNonBlockingItem(item));
 }
 
 export function buildPublicServiceMilestones(snapshot) {
@@ -95,7 +114,8 @@ export function buildPublicServiceMilestones(snapshot) {
     state: step.items.some((item) => item.state === 'legacy_not_recorded')
       ? 'legacy_not_recorded'
       : step.items.filter((item) => item.required)
-        .every((item) => ['confirmed', 'not_applicable'].includes(item.state))
+        .every((item) => item.state === 'confirmed'
+          || (item.state === 'not_applicable' && isValidReason(item.notApplicableReason)))
         ? 'completed'
         : step.index === snapshot.currentStepIndex ? 'current' : 'upcoming',
   }));
