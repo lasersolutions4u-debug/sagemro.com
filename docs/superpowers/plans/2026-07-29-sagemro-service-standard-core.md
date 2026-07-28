@@ -46,7 +46,7 @@
 - Modify: `worker/package.json`
 
 **Interfaces:**
-- Produces: `SERVICE_STANDARD_VERSION`, `SERVICE_STANDARD_STEPS`, `buildServiceStandardDefinition(context)`, `deriveServiceStandardSnapshot({ definition, progressRows, overrides })`, `getBlockingItems(snapshot, gateKey)`, and `buildPublicServiceMilestones(snapshot)`.
+- Produces: `SERVICE_STANDARD_VERSION`, `SERVICE_STANDARD_STEPS`, `buildServiceStandardDefinition(context)`, `deriveServiceStandardSnapshot({ definition, progressRows, overrides })`, `getBlockingItems(snapshot, gateKey, satisfiedItemKeys)`, and `buildPublicServiceMilestones(snapshot)`.
 - Consumes: only plain objects; no environment bindings or requests.
 
 - [ ] **Step 1: Write failing definition and gate tests**
@@ -151,10 +151,6 @@ export function buildServiceStandardDefinition(context = {}) {
     const ppe = items.find((item) => item.key === 'risk.ppe_and_access');
     ppe.required = false;
   }
-  if (!context.requiresPaymentBeforeStart) {
-    const start = items.find((item) => item.key === 'ready.start_conditions');
-    start.owner = 'engineer';
-  }
   return { version: SERVICE_STANDARD_VERSION, items };
 }
 
@@ -169,7 +165,7 @@ export function deriveServiceStandardSnapshot({ definition, progressRows = [], o
   const completedThrough = SERVICE_STANDARD_STEPS.findIndex((step) =>
     items.some((item) => item.stepIndex === step.index && item.required
       && !nonBlockingStates.has(item.state)));
-  return {
+  const snapshot = {
     standardVersion: definition.version,
     currentStepIndex: completedThrough === -1 ? 5 : completedThrough,
     steps: SERVICE_STANDARD_STEPS.map((step) => ({
@@ -179,6 +175,13 @@ export function deriveServiceStandardSnapshot({ definition, progressRows = [], o
     items,
     overrides,
   };
+  snapshot.gates = Object.fromEntries(
+    ['start', 'resolve', 'handover'].map((gateKey) => [
+      gateKey,
+      { blocking_items: getBlockingItems(snapshot, gateKey).map((item) => item.key) },
+    ]),
+  );
+  return snapshot;
 }
 
 const GATE_MAX_STEP = Object.freeze({ start: 2, resolve: 4, handover: 5 });
@@ -443,7 +446,6 @@ Add imports from `./lib/serviceStandard.js`, then add:
 async function ensureServiceStandardRows(env, workOrder) {
   const definition = buildServiceStandardDefinition({
     serviceMode: workOrder.service_mode,
-    requiresPaymentBeforeStart: Number(workOrder.active_quote_version || 0) >= 1,
     arrivalVerificationRequired: Boolean(workOrder.arrival_verification_required),
   });
   const statements = definition.items.map((item) => env.DB.prepare(`
@@ -451,6 +453,22 @@ async function ensureServiceStandardRows(env, workOrder) {
       work_order_id, standard_version, step_key, item_key, state,
       is_required, owner_type
     ) VALUES (?, ?, ?, ?, 'pending', ?, ?)
+    ON CONFLICT (work_order_id, standard_version, item_key) DO UPDATE SET
+      is_required = CASE
+        WHEN work_order_service_standard_progress.state = 'pending'
+          THEN excluded.is_required
+        ELSE work_order_service_standard_progress.is_required
+      END,
+      owner_type = CASE
+        WHEN work_order_service_standard_progress.state = 'pending'
+          THEN excluded.owner_type
+        ELSE work_order_service_standard_progress.owner_type
+      END,
+      updated_at = CASE
+        WHEN work_order_service_standard_progress.state = 'pending'
+          THEN datetime('now')
+        ELSE work_order_service_standard_progress.updated_at
+      END
   `).bind(
     workOrder.id, definition.version, item.stepKey, item.key,
     item.required ? 1 : 0, item.owner,
@@ -492,11 +510,17 @@ if (body.state === 'not_applicable' && !reason) return errorResponse(localizedRe
 if (reason.length > 500) return errorResponse(localizedReasonTooLong, 400);
 if (item.owner_type === 'admin' && auth.userType !== 'admin') return errorResponse(localizedAdminOnly, 403);
 if (item.owner_type === 'engineer' && workOrder.engineer_id !== auth.userId) return errorResponse(localizedAssignedOnly, 403);
+if (['customer', 'system'].includes(item.owner_type)) return errorResponse(localizedBusinessEventOnly, 403);
+if (!['admin', 'engineer'].includes(auth.userType)) return errorResponse(localizedReadOnlyRole, 403);
 ```
 
-Persist the item update and a `service_standard_item_confirmed` or `service_standard_item_not_applicable` audit statement in one `env.DB.batch`.
+Persist `state`, confirmation actor/time, evidence fields, and `not_applicable_reason` together with a `service_standard_item_confirmed` or `service_standard_item_not_applicable` audit statement in one `env.DB.batch`. A customer-owned or system-owned item can change only through its named business event, never through this generic confirmation route.
 
-- [ ] **Step 5: Implement Admin override handler**
+- [ ] **Step 5: Revalidate newly applicable safety items**
+
+When the existing remote-to-onsite conversion is confirmed, re-run the definition for onsite mode. If `risk.ppe_and_access` was optional and `not_applicable`, reset it to `pending`, clear its confirmation/reason/evidence fields, set `is_required = 1`, and write a `service_standard_item_revalidated` audit row in the same conversion batch. A read-only GET must never silently erase a prior confirmation.
+
+- [ ] **Step 6: Implement Admin override handler**
 
 Accept only `{ gate: 'start' | 'resolve' | 'handover', reason }`; require an Admin role and a reason of 1–500 characters. Insert the active override and an audit log in the same batch:
 
@@ -516,7 +540,7 @@ await env.DB.batch([
 ]);
 ```
 
-- [ ] **Step 6: Register routes and test the permission matrix**
+- [ ] **Step 7: Register routes and test the permission matrix**
 
 Register exact routes before the generic `/api/workorders/:id` handler:
 
@@ -534,9 +558,9 @@ if (path.match(/^\/api\/admin\/workorders\/[^/]+\/service-standard\/override$/)
 }
 ```
 
-Test assigned engineer, foreign engineer, regional management read-only access, Admin confirmation, customer rejection with no internal snapshot, duplicate active override, and audit row creation. Return a localized `409` for a duplicate active gate override instead of leaking the SQLite unique-index error.
+Test assigned engineer, foreign engineer, regional management read-only access, Admin confirmation, customer rejection with no internal snapshot, business-event-only item rejection, remote-to-onsite revalidation, duplicate active override, and audit row creation. Return a localized `409` for a duplicate active gate override instead of leaking the SQLite unique-index error.
 
-- [ ] **Step 7: Run focused tests and commit**
+- [ ] **Step 8: Run focused tests and commit**
 
 ```bash
 cd worker
