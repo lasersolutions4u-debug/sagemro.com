@@ -63,6 +63,11 @@ function createEnv() {
       item.owner,
     );
   }
+  sqlite.prepare(`
+    UPDATE work_order_service_standard_progress
+    SET updated_at = '2000-01-01 00:00:00'
+    WHERE work_order_id = 'wo-legacy' AND state = 'pending'
+  `).run();
 
   const env = {
     JWT_SECRET: 'test-secret-with-enough-length',
@@ -151,8 +156,24 @@ function collectKeys(value, keys = new Set()) {
 
 function assertPublicMilestoneShape(detail) {
   assert.equal(detail.public_service_milestones.length, 6);
+  assert.deepEqual(
+    detail.public_service_milestones.map((milestone) => milestone.key),
+    [
+      'task_alignment',
+      'risk_control',
+      'one_visit_readiness',
+      'evidence_execution',
+      'recovery_verification',
+      'transparent_handover',
+    ],
+  );
   for (const milestone of detail.public_service_milestones) {
     assert.deepEqual(Object.keys(milestone).sort(), ['key', 'state']);
+    assert.equal(
+      ['completed', 'current', 'upcoming', 'legacy_not_recorded'].includes(milestone.state),
+      true,
+      `unexpected public milestone state: ${milestone.state}`,
+    );
   }
 }
 
@@ -176,6 +197,11 @@ function assertNoInternalServiceStandardData(detail) {
 test('customer detail exposes only six public service milestone key/state pairs', async (t) => {
   const env = createEnv();
   t.after(() => env.__sqlite.close());
+  const progressCountBefore = env.__sqlite.prepare(`
+    SELECT COUNT(*) AS count
+    FROM work_order_service_standard_progress
+    WHERE work_order_id = 'wo-active'
+  `).get().count;
 
   const detail = await api(env, '/api/workorders/wo-active');
 
@@ -187,11 +213,26 @@ test('customer detail exposes only six public service milestone key/state pairs'
     1,
   );
   assert.equal(detail.json.public_service_milestones[0].state, 'current');
+  assert.equal(progressCountBefore, 0);
+  assert.equal(
+    env.__sqlite.prepare(`
+      SELECT COUNT(*) AS count
+      FROM work_order_service_standard_progress
+      WHERE work_order_id = 'wo-active'
+    `).get().count,
+    progressCountBefore,
+  );
 });
 
 test('legacy prior stages stay legacy_not_recorded and are never presented as completed', async (t) => {
   const env = createEnv();
   t.after(() => env.__sqlite.close());
+  const pendingBefore = env.__sqlite.prepare(`
+    SELECT item_key, updated_at
+    FROM work_order_service_standard_progress
+    WHERE work_order_id = 'wo-legacy' AND state = 'pending'
+    ORDER BY item_key
+  `).all();
 
   const detail = await api(env, '/api/workorders/wo-legacy');
 
@@ -199,6 +240,15 @@ test('legacy prior stages stay legacy_not_recorded and are never presented as co
   assertPublicMilestoneShape(detail.json);
   assert.equal(detail.json.public_service_milestones[0].state, 'legacy_not_recorded');
   assert.notEqual(detail.json.public_service_milestones[0].state, 'completed');
+  assert.deepEqual(
+    env.__sqlite.prepare(`
+      SELECT item_key, updated_at
+      FROM work_order_service_standard_progress
+      WHERE work_order_id = 'wo-legacy' AND state = 'pending'
+      ORDER BY item_key
+    `).all(),
+    pendingBefore,
+  );
 });
 
 test('completed historical work orders do not fabricate recovery verification', async (t) => {
