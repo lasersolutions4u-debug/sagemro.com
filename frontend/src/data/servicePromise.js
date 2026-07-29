@@ -49,6 +49,7 @@ export function getServicePromiseCopy(isCn) {
 
   return {
     ...copy,
+    values: copy.values.map((value) => ({ ...value })),
     steps: copy.steps.map(([title, detail], index) => ({
       key: STEP_KEYS[index],
       number: index + 1,
