@@ -3,7 +3,7 @@
 // 该契约只提供建议；六步服务标准的进度及闸门始终由服务端标准快照决定。
 
 import { READINESS_LIMITS, redactReadinessText } from './serviceReadiness.js';
-import { SERVICE_STANDARD_STEPS } from './serviceStandard.js';
+import { buildServiceStandardDefinition, SERVICE_STANDARD_STEPS } from './serviceStandard.js';
 
 export const GUIDANCE_VISIBLE_STATUSES = new Set([
   'assigned', 'in_progress', 'pricing', 'pending_payment',
@@ -21,27 +21,34 @@ const SOURCES = new Set([
   'service_standard', 'payment', 'material', 'field_work', 'service_report',
 ]);
 const STEP_KEYS = new Set(SERVICE_STANDARD_STEPS.map((step) => step.key));
+const CANONICAL_ITEM_KEYS = new Set(buildServiceStandardDefinition().items.map((item) => item.key));
 const MAX_COUNT = 999999;
+const ROOT_KEYS = [
+  'version', 'step_key', 'headline', 'risk_level', 'observations', 'next_actions',
+  'customer_questions', 'evidence_needed',
+];
+const OBSERVATION_KEYS = ['priority', 'detail', 'source'];
+const ACTION_KEYS = ['priority', 'action', 'rationale', 'related_item_key'];
+const QUESTION_KEYS = ['priority', 'draft'];
 
 function cleanText(value, limit = READINESS_LIMITS.message) {
-  return redactReadinessText(value, limit);
+  return typeof value === 'string' ? redactReadinessText(value, limit) : '';
 }
 
 function cleanCount(value) {
-  const count = Number(value);
-  return Number.isFinite(count) && count > 0 ? Math.min(Math.floor(count), MAX_COUNT) : 0;
+  return Number.isFinite(value) && value > 0 ? Math.min(Math.floor(value), MAX_COUNT) : 0;
 }
 
 function cleanItemKeys(value) {
   return Array.isArray(value)
-    ? value.slice(0, 24).map((key) => cleanText(key, 120)).filter(Boolean)
+    ? value.slice(0, 24).filter((key) => typeof key === 'string' && CANONICAL_ITEM_KEYS.has(key))
     : [];
 }
 
 function currentStepKey(serviceStandard = {}) {
   const explicit = serviceStandard.currentStepKey ?? serviceStandard.current_step_key;
   if (STEP_KEYS.has(explicit)) return explicit;
-  const index = Number(serviceStandard.currentStepIndex ?? serviceStandard.current_step_index);
+  const index = serviceStandard.currentStepIndex ?? serviceStandard.current_step_index;
   return Number.isInteger(index) && SERVICE_STANDARD_STEPS[index]
     ? SERVICE_STANDARD_STEPS[index].key
     : '';
@@ -72,20 +79,34 @@ export function buildServiceGuidanceInput({
       },
       intake_summary: cleanText(workOrder.ai_summary, READINESS_LIMITS.intakeSummary),
     },
-    source_conversation: sourceConversationId ? {
+    source_conversation: typeof sourceConversationId === 'string' && sourceConversationId.trim() ? {
       summary: cleanText(sourceSummary, READINESS_LIMITS.conversationSummary),
       messages: (Array.isArray(sourceMessages) ? sourceMessages : [])
+        .filter((message) => (
+          isPlainObject(message)
+          && (message.role === 'user' || message.role === 'assistant')
+          && typeof message.content === 'string'
+          && cleanText(message.content)
+        ))
         .slice(0, READINESS_LIMITS.maxSourceMessages)
         .map((message) => ({
-          role: message?.role === 'assistant' ? 'assistant' : 'user',
-          content: cleanText(message?.content),
+          role: message.role,
+          content: cleanText(message.content),
         })),
     } : null,
     public_work_order_messages: (Array.isArray(publicMessages) ? publicMessages : [])
+      .filter((message) => (
+        isPlainObject(message)
+        && (message.sender_type === 'customer' || message.sender_type === 'engineer')
+        && (message.is_internal_note === 0 || message.is_internal_note === false)
+        && (message.is_customer_visible === 1 || message.is_customer_visible === true)
+        && typeof message.content === 'string'
+        && cleanText(message.content)
+      ))
       .slice(0, READINESS_LIMITS.maxPublicMessages)
       .map((message) => ({
-        sender_type: message?.sender_type === 'engineer' ? 'engineer' : 'customer',
-        content: cleanText(message?.content),
+        sender_type: message.sender_type,
+        content: cleanText(message.content),
       })),
     service_standard: {
       current_step_key: currentStepKey(serviceStandard),
@@ -175,6 +196,42 @@ export function buildServiceGuidancePrompt({ market, input } = {}) {
   };
 }
 
+function isPlainObject(value) {
+  return value !== null && typeof value === 'object' && Object.getPrototypeOf(value) === Object.prototype;
+}
+
+function hasExactKeys(value, keys) {
+  return isPlainObject(value)
+    && Object.keys(value).length === keys.length
+    && keys.every((key) => Object.hasOwn(value, key));
+}
+
+function isBoundedString(value, limit = READINESS_LIMITS.message) {
+  return typeof value === 'string' && value.trim().length > 0 && value.length <= limit;
+}
+
+function isValidObservation(row) {
+  return hasExactKeys(row, OBSERVATION_KEYS)
+    && PRIORITIES.has(row.priority)
+    && isBoundedString(row.detail)
+    && SOURCES.has(row.source);
+}
+
+function isValidAction(row, allowedItemKeys) {
+  return hasExactKeys(row, ACTION_KEYS)
+    && PRIORITIES.has(row.priority)
+    && isBoundedString(row.action)
+    && isBoundedString(row.rationale)
+    && typeof row.related_item_key === 'string'
+    && allowedItemKeys.has(row.related_item_key);
+}
+
+function isValidQuestion(row) {
+  return hasExactKeys(row, QUESTION_KEYS)
+    && PRIORITIES.has(row.priority)
+    && isBoundedString(row.draft);
+}
+
 // 不信任模型返回的任意字段。上限外的内容不进入契约，任何上限内的枚举越界均拒绝。
 export function parseServiceGuidance(content, allowedItemKeys = new Set()) {
   if (typeof content !== 'string' || !content.trim()) return null;
@@ -187,45 +244,43 @@ export function parseServiceGuidance(content, allowedItemKeys = new Set()) {
   } catch {
     return null;
   }
-  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed) || parsed.version !== 2) return null;
+  if (!hasExactKeys(parsed, ROOT_KEYS) || parsed.version !== 2
+    || !STEP_KEYS.has(parsed.step_key) || !isBoundedString(parsed.headline)
+    || !RISK_LEVELS.has(parsed.risk_level)
+    || !Array.isArray(parsed.observations) || !Array.isArray(parsed.next_actions)
+    || !Array.isArray(parsed.customer_questions) || !Array.isArray(parsed.evidence_needed)) return null;
 
-  const stepKey = cleanText(parsed.step_key, 120);
-  const headline = cleanText(parsed.headline, READINESS_LIMITS.message);
-  const riskLevel = cleanText(parsed.risk_level, 20);
-  if (!STEP_KEYS.has(stepKey) || !headline || !RISK_LEVELS.has(riskLevel)) return null;
+  const allowedKeys = new Set(
+    [...(allowedItemKeys instanceof Set ? allowedItemKeys : [])]
+      .filter((key) => typeof key === 'string' && CANONICAL_ITEM_KEYS.has(key)),
+  );
+  if (!parsed.observations.every(isValidObservation)
+    || !parsed.next_actions.every((row) => isValidAction(row, allowedKeys))
+    || !parsed.customer_questions.every(isValidQuestion)
+    || !parsed.evidence_needed.every((item) => isBoundedString(item))) return null;
 
-  const observations = (Array.isArray(parsed.observations) ? parsed.observations : []).slice(0, 6).map((row) => ({
-    priority: cleanText(row?.priority, 20),
-    detail: cleanText(row?.detail),
-    source: cleanText(row?.source, 80),
+  const observations = parsed.observations.slice(0, 6).map((row) => ({
+    priority: row.priority,
+    detail: cleanText(row.detail),
+    source: row.source,
   }));
-  if (observations.some((row) => !PRIORITIES.has(row.priority) || !row.detail || !SOURCES.has(row.source))) return null;
-
-  const allowedKeys = allowedItemKeys instanceof Set ? allowedItemKeys : new Set();
-  const nextActions = (Array.isArray(parsed.next_actions) ? parsed.next_actions : []).slice(0, 3).map((row) => ({
-    priority: cleanText(row?.priority, 20),
-    action: cleanText(row?.action),
-    rationale: cleanText(row?.rationale),
-    related_item_key: cleanText(row?.related_item_key, 120),
+  const nextActions = parsed.next_actions.slice(0, 3).map((row) => ({
+    priority: row.priority,
+    action: cleanText(row.action),
+    rationale: cleanText(row.rationale),
+    related_item_key: row.related_item_key,
   }));
-  if (nextActions.some((row) => (
-    !PRIORITIES.has(row.priority) || !row.action || !row.rationale || !allowedKeys.has(row.related_item_key)
-  ))) return null;
-
-  const questions = (Array.isArray(parsed.customer_questions) ? parsed.customer_questions : []).slice(0, 2).map((row) => ({
-    priority: cleanText(row?.priority, 20),
-    draft: cleanText(row?.draft),
+  const questions = parsed.customer_questions.slice(0, 2).map((row) => ({
+    priority: row.priority,
+    draft: cleanText(row.draft),
   }));
-  if (questions.some((row) => !PRIORITIES.has(row.priority) || !row.draft)) return null;
-
-  const evidenceNeeded = (Array.isArray(parsed.evidence_needed) ? parsed.evidence_needed : []).slice(0, 6)
-    .map((item) => cleanText(item)).filter(Boolean);
+  const evidenceNeeded = parsed.evidence_needed.slice(0, 6).map((item) => cleanText(item));
 
   return {
     version: 2,
-    step_key: stepKey,
-    headline,
-    risk_level: riskLevel,
+    step_key: parsed.step_key,
+    headline: cleanText(parsed.headline),
+    risk_level: parsed.risk_level,
     observations,
     next_actions: nextActions,
     customer_questions: questions,

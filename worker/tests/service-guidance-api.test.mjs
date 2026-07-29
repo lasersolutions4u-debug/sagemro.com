@@ -41,7 +41,7 @@ test('v2 guidance clamps actions and customer questions', () => {
       { priority: 'high', action: 'Confirm isolation.', rationale: 'Required before work.', related_item_key: 'risk.isolation_permission' },
       { priority: 'medium', action: 'Request alarm photo.', rationale: 'Narrows diagnosis.', related_item_key: 'task.problem_and_goal' },
       { priority: 'low', action: 'Pack cleaning kit.', rationale: 'Likely useful.', related_item_key: 'ready.parts_and_consumables' },
-      { priority: 'low', action: 'Extra action.', rationale: 'Must be removed.', related_item_key: '' },
+      { priority: 'low', action: 'Extra action.', rationale: 'Must be removed.', related_item_key: 'risk.isolation_permission' },
     ],
     customer_questions: [
       { priority: 'high', draft: 'Can the machine be isolated?' },
@@ -54,6 +54,38 @@ test('v2 guidance clamps actions and customer questions', () => {
   assert.equal(result.customer_questions.length, 2);
 });
 
+test('v2 guidance rejects malformed JSON, wrong scalar types, and missing collections', () => {
+  assert.equal(parseServiceGuidance('{not-json}', itemKeys), null);
+  assert.equal(parseServiceGuidance(JSON.stringify(validGuidance({ headline: 42 })), itemKeys), null);
+  assert.equal(parseServiceGuidance(JSON.stringify(validGuidance({ risk_level: {} })), itemKeys), null);
+  assert.equal(parseServiceGuidance(JSON.stringify(validGuidance({ observations: {} })), itemKeys), null);
+
+  const missingQuestions = validGuidance();
+  delete missingQuestions.customer_questions;
+  assert.equal(parseServiceGuidance(JSON.stringify(missingQuestions), itemKeys), null);
+});
+
+test('v2 guidance rejects invalid nested shapes before clamping', () => {
+  assert.equal(parseServiceGuidance(JSON.stringify(validGuidance({
+    observations: [{ priority: 'high', detail: 'Missing source.' }],
+  })), itemKeys), null);
+  assert.equal(parseServiceGuidance(JSON.stringify(validGuidance({
+    next_actions: [{ priority: 'high', action: 'Confirm.', rationale: 'Needed.' }],
+  })), itemKeys), null);
+  assert.equal(parseServiceGuidance(JSON.stringify(validGuidance({
+    customer_questions: [{ priority: 'medium', draft: { text: 'Not a string' } }],
+  })), itemKeys), null);
+  assert.equal(parseServiceGuidance(JSON.stringify(validGuidance({ evidence_needed: ['alarm', { name: 'photo' }] })), itemKeys), null);
+  assert.equal(parseServiceGuidance(JSON.stringify(validGuidance({
+    next_actions: [
+      { priority: 'high', action: 'Confirm.', rationale: 'Needed.', related_item_key: 'risk.isolation_permission' },
+      { priority: 'medium', action: 'Request.', rationale: 'Needed.', related_item_key: 'task.problem_and_goal' },
+      { priority: 'low', action: 'Pack.', rationale: 'Needed.', related_item_key: 'ready.parts_and_consumables' },
+      { priority: 'low', action: 'Invalid tail.', rationale: 'Needed.', related_item_key: 'invented.item' },
+    ],
+  })), itemKeys), null);
+});
+
 test('v2 guidance rejects values outside the strict schema', () => {
   assert.equal(parseServiceGuidance(JSON.stringify(validGuidance({ risk_level: 'critical' })), itemKeys), null);
   assert.equal(parseServiceGuidance(JSON.stringify(validGuidance({ step_key: 'invented_step' })), itemKeys), null);
@@ -63,6 +95,17 @@ test('v2 guidance rejects values outside the strict schema', () => {
   assert.equal(parseServiceGuidance(JSON.stringify(validGuidance({
     next_actions: [{ priority: 'high', action: 'Confirm.', rationale: 'Needed.', related_item_key: 'invented.item' }],
   })), itemKeys), null);
+});
+
+test('v2 guidance projects exact keys and rejects unexpected prototype-shaped JSON', () => {
+  const parsed = parseServiceGuidance(JSON.stringify(validGuidance()), itemKeys);
+  assert.deepEqual(Object.keys(parsed), [
+    'version', 'step_key', 'headline', 'risk_level', 'observations', 'next_actions',
+    'customer_questions', 'evidence_needed',
+  ]);
+  const prototypePayload = `${JSON.stringify(validGuidance()).slice(0, -1)},"__proto__":{"polluted":true}}`;
+  assert.equal(parseServiceGuidance(prototypePayload, itemKeys), null);
+  assert.equal({}.polluted, undefined);
 });
 
 test('guidance lifecycle exposes completed read-only and never generates it', () => {
@@ -87,7 +130,9 @@ test('guidance input is bounded, redacted, and contains no private evidence', ()
     sourceConversationId: 'conversation-1',
     sourceSummary: 'Email jane@example.com',
     sourceMessages: Array.from({ length: 13 }, () => ({ role: 'user', content: 'Call 415-555-0123' })),
-    publicMessages: Array.from({ length: 13 }, () => ({ sender_type: 'customer', content: 'Email jane@example.com' })),
+    publicMessages: Array.from({ length: 13 }, () => ({
+      sender_type: 'customer', content: 'Email jane@example.com', is_internal_note: 0, is_customer_visible: 1,
+    })),
     serviceStandard: {
       currentStepKey: 'one_visit_readiness',
       blockingItemKeys: ['risk.isolation_permission'],
@@ -120,15 +165,56 @@ test('guidance input is bounded, redacted, and contains no private evidence', ()
   });
 });
 
-test('guidance prompt confines the model to advisory output', () => {
-  const { systemPrompt, userPrompt } = buildServiceGuidancePrompt({
-    market: 'com',
-    input: buildServiceGuidanceInput({ workOrder: {}, serviceStandard: {} }),
+test('guidance input accepts only canonical public evidence and standard item keys', () => {
+  const input = buildServiceGuidanceInput({
+    workOrder: { description: { private: 'must not stringify' } },
+    sourceConversationId: 'conversation-1',
+    sourceMessages: [
+      { role: 'user', content: 'Customer report' },
+      { role: 'system', content: 'SYSTEM-SECRET' },
+      { role: 'tool', content: 'TOOL-SECRET' },
+      { role: 'assistant', content: { secret: 'OBJECT-SECRET' } },
+    ],
+    publicMessages: [
+      { sender_type: 'customer', content: 'Visible customer message', is_internal_note: 0, is_customer_visible: 1 },
+      { sender_type: 'engineer', content: 'Visible engineer message', is_internal_note: false, is_customer_visible: true },
+      { sender_type: 'admin', content: 'ADMIN-SECRET', is_internal_note: 0, is_customer_visible: 1 },
+      { sender_type: 'customer', content: 'INTERNAL-SECRET', is_internal_note: 1, is_customer_visible: 1 },
+      { sender_type: 'engineer', content: 'HIDDEN-SECRET', is_internal_note: 0, is_customer_visible: 0 },
+      { sender_type: 'customer', content: { secret: 'OBJECT-SECRET' }, is_internal_note: 0, is_customer_visible: 1 },
+    ],
+    serviceStandard: {
+      blockingItemKeys: ['risk.isolation_permission', 'invented.item'],
+      pendingItemKeys: ['ready.parts_and_consumables', 'not.a.standard.item'],
+    },
   });
 
-  assert.match(systemPrompt, /Do not.*complete.*service-standard/i);
-  assert.match(userPrompt, /at most 3/i);
-  assert.match(userPrompt, /at most 2/i);
+  assert.deepEqual(input.source_conversation.messages, [{ role: 'user', content: 'Customer report' }]);
+  assert.deepEqual(input.public_work_order_messages, [
+    { sender_type: 'customer', content: 'Visible customer message' },
+    { sender_type: 'engineer', content: 'Visible engineer message' },
+  ]);
+  assert.deepEqual(input.service_standard.blocking_item_keys, ['risk.isolation_permission']);
+  assert.deepEqual(input.service_standard.pending_item_keys, ['ready.parts_and_consumables']);
+  assert.doesNotMatch(JSON.stringify(input), /SECRET|\[object Object\]|invented\.item|not\.a\.standard\.item/);
+});
+
+test('guidance prompts prohibit completion authority in both languages', () => {
+  const input = buildServiceGuidanceInput({ workOrder: {}, serviceStandard: {} });
+  const english = buildServiceGuidancePrompt({
+    market: 'com',
+    input,
+  });
+  const chinese = buildServiceGuidancePrompt({ market: 'cn', input });
+
+  assert.match(english.systemPrompt, /Do not confirm/i);
+  assert.match(english.systemPrompt, /clear a gate/i);
+  assert.match(english.systemPrompt, /customer-visible completion/i);
+  assert.match(english.userPrompt, /at most 3/i);
+  assert.match(english.userPrompt, /at most 2/i);
+  assert.match(chinese.systemPrompt, /不得确认/);
+  assert.match(chinese.systemPrompt, /清除闸门/);
+  assert.match(chinese.systemPrompt, /面向客户的完成状态/);
 });
 
 test('v1 readiness adaptation uses the first high-priority gap without creating standard progress', () => {
