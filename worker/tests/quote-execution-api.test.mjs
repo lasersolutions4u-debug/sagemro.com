@@ -2547,6 +2547,11 @@ test('versioned start request waits for every required installment and keeps fin
   assert.equal(requested.response.status, 200, JSON.stringify(requested.json));
   assert.equal(requested.json.status, 'payment_review');
   assert.equal(ctx.db.prepare("SELECT status FROM work_orders WHERE id = 'wo-quote-1'").get().status, 'payment_review');
+  ctx.db.exec(`
+    DELETE FROM work_order_service_standard_progress
+    WHERE work_order_id = 'wo-quote-1'
+      AND item_key = 'ready.start_conditions';
+  `);
 
   const approved = await api(ctx, '/api/admin/workorders/wo-quote-1/payment/approve-start', {
     body: { note: 'Start approved.' }, userType: 'admin', userId: 'admin',
@@ -2555,6 +2560,26 @@ test('versioned start request waits for every required installment and keeps fin
   assert.equal(approved.json.status, 'in_service');
   assert.equal(ctx.db.prepare("SELECT status FROM work_orders WHERE id = 'wo-quote-1'").get().status, 'in_service');
   assert.equal(ctx.db.prepare('SELECT received_amount FROM work_order_installments WHERE id = ?').get(laterInstallment.id).received_amount, 0);
+  assert.deepEqual(
+    { ...ctx.db.prepare(`
+      SELECT standard_version, step_key, state, is_required, owner_type,
+        confirmed_by_type, confirmed_by_id, evidence_type, evidence_id
+      FROM work_order_service_standard_progress
+      WHERE work_order_id = 'wo-quote-1'
+        AND item_key = 'ready.start_conditions'
+    `).get() },
+    {
+      standard_version: 1,
+      step_key: 'one_visit_readiness',
+      state: 'confirmed',
+      is_required: 1,
+      owner_type: 'admin',
+      confirmed_by_type: 'admin',
+      confirmed_by_id: 'admin',
+      evidence_type: 'start_approval',
+      evidence_id: 'wo-quote-1',
+    },
+  );
 });
 
 test('active quote gates fail closed when the authoritative execution graph is incomplete', async () => {

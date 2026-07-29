@@ -46,6 +46,7 @@ function createPaymentFlowEnv() {
     __progress: serviceStandardRows(),
     __overrides: [],
     __failNextAudit: false,
+    __failServiceStandardEventAudit: false,
     __workOrders: [{
       id: 'wo-pay-1',
       order_no: 'WO-PAY-1',
@@ -550,6 +551,10 @@ function createStatement(env, sql) {
           throw new Error('audit insert failed');
         }
         if (/FROM work_order_service_standard_progress/i.test(normalized)) {
+          if (env.__failServiceStandardEventAudit) {
+            env.__failServiceStandardEventAudit = false;
+            throw new Error('service-standard event audit insert failed');
+          }
           const [
             id, actorType, actorId, targetId, beforeState, afterState, ip, device,
             workOrderId, itemKey, ownerType,
@@ -941,6 +946,77 @@ test('admin start approval atomically confirms and audits its pending event item
   );
 });
 
+test('admin start approval creates and confirms only its missing immutable event row', async () => {
+  const env = createPaymentFlowEnv();
+  env.__workOrders[0].status = 'payment_review';
+  env.__payments.push({
+    id: 'payment-start-missing-row',
+    work_order_id: 'wo-pay-1',
+    payment_stage: 'advance',
+    payment_method: 'bank_transfer',
+    status: 'pending_admin_confirmation',
+  });
+  env.__progress = env.__progress.filter((item) =>
+    item.item_key !== 'ready.start_conditions');
+
+  const approved = await api(env, '/api/admin/workorders/wo-pay-1/payment/approve-start', {
+    userType: 'admin',
+    userId: 'admin',
+    body: { note: 'Payment received.' },
+  });
+
+  assert.equal(approved.response.status, 200);
+  assert.deepEqual(
+    {
+      ...env.__progress.find((item) => item.item_key === 'ready.start_conditions'),
+      confirmed_at: null,
+    },
+    {
+      work_order_id: 'wo-pay-1',
+      standard_version: 1,
+      step_key: 'one_visit_readiness',
+      item_key: 'ready.start_conditions',
+      state: 'confirmed',
+      is_required: 1,
+      owner_type: 'admin',
+      confirmed_by_type: 'admin',
+      confirmed_by_id: 'admin',
+      confirmed_at: null,
+      evidence_type: 'start_approval',
+      evidence_id: 'wo-pay-1',
+    },
+  );
+  assert.ok(env.__auditLogs.some((entry) =>
+    entry.args[5] === 'service_standard_item_confirmed'));
+
+  const rollbackEnv = createPaymentFlowEnv();
+  rollbackEnv.__workOrders[0].status = 'payment_review';
+  rollbackEnv.__payments.push({
+    id: 'payment-start-missing-row-rollback',
+    work_order_id: 'wo-pay-1',
+    payment_stage: 'advance',
+    payment_method: 'bank_transfer',
+    status: 'pending_admin_confirmation',
+  });
+  rollbackEnv.__progress = rollbackEnv.__progress.filter((item) =>
+    item.item_key !== 'ready.start_conditions');
+  rollbackEnv.__failServiceStandardEventAudit = true;
+
+  const failed = await api(rollbackEnv, '/api/admin/workorders/wo-pay-1/payment/approve-start', {
+    userType: 'admin',
+    userId: 'admin',
+    body: { note: 'Payment received.' },
+  });
+
+  assert.equal(failed.response.status, 500);
+  assert.equal(
+    rollbackEnv.__progress.some((item) => item.item_key === 'ready.start_conditions'),
+    false,
+  );
+  assert.equal(rollbackEnv.__workOrders[0].status, 'payment_review');
+  assert.equal(rollbackEnv.__payments[0].status, 'pending_admin_confirmation');
+});
+
 test('admin start approval does not re-audit an already-confirmed matching event item', async () => {
   const env = createPaymentFlowEnv();
   env.__workOrders[0].status = 'payment_review';
@@ -1185,6 +1261,74 @@ test('accepted customer completion atomically confirms and audits its pending ev
     rollbackEnv.__progress.find((item) =>
       item.item_key === 'handover.customer_confirmation').state,
     'pending',
+  );
+});
+
+test('accepted customer completion creates and confirms its missing immutable event row', async () => {
+  const env = createPaymentFlowEnv();
+  env.__workOrders[0].status = 'resolved';
+  env.__progress = env.__progress.filter((item) =>
+    item.item_key !== 'handover.customer_confirmation');
+
+  const completed = await api(env, '/api/workorders/rating', {
+    userType: 'customer',
+    userId: 'customer-1',
+    body: {
+      work_order_id: 'wo-pay-1',
+      rating_timeliness: 5,
+      rating_technical: 5,
+      rating_communication: 5,
+      rating_professional: 5,
+      comment: 'Accepted.',
+    },
+  });
+
+  assert.equal(completed.response.status, 200);
+  const confirmation = env.__progress.find((item) =>
+    item.item_key === 'handover.customer_confirmation');
+  assert.deepEqual(
+    {
+      stepKey: confirmation?.step_key,
+      state: confirmation?.state,
+      required: confirmation?.is_required,
+      owner: confirmation?.owner_type,
+      confirmedBy: confirmation?.confirmed_by_type,
+    },
+    {
+      stepKey: 'transparent_handover',
+      state: 'confirmed',
+      required: 1,
+      owner: 'customer',
+      confirmedBy: 'customer',
+    },
+  );
+
+  const rollbackEnv = createPaymentFlowEnv();
+  rollbackEnv.__workOrders[0].status = 'resolved';
+  rollbackEnv.__progress = rollbackEnv.__progress.filter((item) =>
+    item.item_key !== 'handover.customer_confirmation');
+  rollbackEnv.__failServiceStandardEventAudit = true;
+
+  const failed = await api(rollbackEnv, '/api/workorders/rating', {
+    userType: 'customer',
+    userId: 'customer-1',
+    body: {
+      work_order_id: 'wo-pay-1',
+      rating_timeliness: 5,
+      rating_technical: 5,
+      rating_communication: 5,
+      rating_professional: 5,
+      comment: 'Accepted.',
+    },
+  });
+
+  assert.equal(failed.response.status, 500);
+  assert.equal(rollbackEnv.__workOrders[0].status, 'resolved');
+  assert.equal(rollbackEnv.__ratings.length, 0);
+  assert.equal(
+    rollbackEnv.__progress.some((item) =>
+      item.item_key === 'handover.customer_confirmation'),
+    false,
   );
 });
 
