@@ -343,6 +343,14 @@ test('customer sidebar tools stay expanded without a More overflow menu', () => 
     toolbar.indexOf('Notifications') < toolbar.indexOf('My Equipment'),
     'Notifications should appear before My Equipment for logged-in customers'
   );
+  assert.match(
+    toolbar,
+    /tool\.badge > 0[\s\S]*className="ml-auto flex h-4 min-w-4 shrink-0 items-center justify-center/,
+  );
+  assert.doesNotMatch(
+    toolbar,
+    /className="absolute -right-1 -top-1 flex h-4 min-w-4/,
+  );
   assert.doesNotMatch(toolbar, /MoreHorizontal|sidebar-more-button|showCollapsed|setCollapsed|showMore|moreMenuRef/);
 });
 
