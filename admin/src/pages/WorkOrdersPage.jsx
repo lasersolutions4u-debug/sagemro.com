@@ -47,6 +47,7 @@ import {
 import { runtimeConfig } from '../config/runtime';
 import { FieldWorkAdminPanel } from '../components/FieldWorkAdminPanel';
 import { QuoteExecutionAdminPanel } from '../components/QuoteExecutionAdminPanel';
+import { ServiceStandardAdminPanel } from '../components/ServiceStandardAdminPanel';
 import { formatApiDateTime } from '../utils/dateTime';
 import {
   formatAiSummary,
@@ -1852,6 +1853,11 @@ export function WorkOrdersPage({ readOnly = false }) {
             ) : detail ? (
               <DetailErrorBoundary>
               <div className="space-y-4">
+                <ServiceStandardAdminPanel
+                  workOrderId={detail.id}
+                  readOnly={readOnly}
+                  onRefresh={refreshOpenDetail}
+                />
                 {!readOnly && detail.pricing?.status === 'pending_review' && !detail.pricing?.quote_version && (
                   <section className="rounded-xl border border-[var(--color-primary)]/40 bg-[var(--color-primary)]/5 p-4">
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
