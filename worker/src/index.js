@@ -19592,6 +19592,38 @@ async function handleRejectWorkOrderPricing(request, env) {
 
 // ============ 通知相关 API ============
 
+function localizeKnownNotificationForMarket(notification, market) {
+  if (market !== 'cn' || !notification) return notification;
+
+  if (notification.type === 'field_day_checked_in') {
+    const bodyMatch = String(notification.body || '').match(/^Engineer checked in for (.+)\.$/);
+    return {
+      ...notification,
+      title: notification.title === 'Engineer checked in'
+        ? '工程师已到场签到'
+        : notification.title,
+      body: bodyMatch
+        ? `工程师已为工单 ${bodyMatch[1]} 完成现场签到。`
+        : notification.body,
+    };
+  }
+
+  if (notification.type === 'field_day_report_submitted') {
+    const bodyMatch = String(notification.body || '').match(/^A field work update was submitted for (.+)\.$/);
+    return {
+      ...notification,
+      title: notification.title === 'Field work update'
+        ? '现场作业更新'
+        : notification.title,
+      body: bodyMatch
+        ? `工单 ${bodyMatch[1]} 已提交现场作业更新。`
+        : notification.body,
+    };
+  }
+
+  return notification;
+}
+
 async function handleGetNotifications(request, env) {
   try {
     const auth = request._auth;
@@ -19602,8 +19634,12 @@ async function handleGetNotifications(request, env) {
     const { results } = await env.DB.prepare(
       'SELECT * FROM notifications WHERE user_id = ? AND user_type = ? ORDER BY created_at DESC LIMIT ? OFFSET ?'
     ).bind(auth.userId, auth.userType, limit, offset).all();
+    const market = getRequestMarket(request);
+    const notifications = (results || []).map((notification) =>
+      localizeKnownNotificationForMarket(notification, market)
+    );
 
-    return jsonResponse({ notifications: results });
+    return jsonResponse({ notifications });
   } catch (error) {
     return errorResponse(error.message, 500);
   }
