@@ -79,7 +79,8 @@ test('main site first-impression copy keeps CN and COM market language separate'
   const engineerRecruiting = read('frontend/src/components/Engineer/EngineerRecruitingPage.jsx');
 
   assert.match(welcome, /eyebrow: 'SAGEMRO Service OS'/);
-  assert.match(welcome, /Issues with laser and metal forming equipment\? Ask AI first\./);
+  assert.match(welcome, /Equipment trouble\? Chat now\. Get answers instantly\./);
+  assert.doesNotMatch(welcome, /Issues with laser and metal forming equipment\? Ask AI first\./);
   assert.match(welcome, /Cutting issue, bending problem, or welding alarm\? Describe what you are seeing on site, and let SAGEMRO AI analyze it and offer suggestions\./);
   assert.doesNotMatch(welcome, /AI assistant specialized for laser and metal forming equipment/);
   assert.doesNotMatch(welcome, /AI-generated content is for reference only/);
@@ -93,9 +94,10 @@ test('main site first-impression copy keeps CN and COM market language separate'
   assert.doesNotMatch(welcome, /supports international customers with independent after-sales service, spare parts, consumables/);
   assert.doesNotMatch(welcome, /purchasing decision|Clear facts first|BM111 alarm|burrs on stainless steel/i);
   assert.match(welcome, /eyebrow: 'SAGEMRO 智能服务系统'/);
-  assert.match(welcome, /激光和成型设备问题，先问AI试试/);
-  assert.match(welcome, /切割出了什么问题、折弯哪里不对、焊接报了什么警/);
-  assert.match(welcome, /让SAGEMRO AI 给你分析和建议/);
+  assert.match(welcome, /设备问题不求人，即时交谈，马上就有答案/);
+  assert.doesNotMatch(welcome, /激光和成型设备问题，先问AI试试/);
+  assert.match(welcome, /描述现场情况/);
+  assert.doesNotMatch(welcome, /描述现场遇到的情况/);
   assert.doesNotMatch(welcome, /专为激光和成型设备打造的智能服务助手/);
   assert.doesNotMatch(welcome, /内容由 AI 生成，仅供参考/);
   assert.doesNotMatch(welcome, /钣金设备故障，先用 AI 看看/);
@@ -342,6 +344,14 @@ test('customer sidebar tools stay expanded without a More overflow menu', () => 
   assert.ok(
     toolbar.indexOf('Notifications') < toolbar.indexOf('My Equipment'),
     'Notifications should appear before My Equipment for logged-in customers'
+  );
+  assert.match(
+    toolbar,
+    /tool\.badge > 0[\s\S]*className="ml-auto flex h-4 min-w-4 shrink-0 items-center justify-center/,
+  );
+  assert.doesNotMatch(
+    toolbar,
+    /className="absolute -right-1 -top-1 flex h-4 min-w-4/,
   );
   assert.doesNotMatch(toolbar, /MoreHorizontal|sidebar-more-button|showCollapsed|setCollapsed|showMore|moreMenuRef/);
 });

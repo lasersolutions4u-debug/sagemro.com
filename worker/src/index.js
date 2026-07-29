@@ -8158,6 +8158,7 @@ async function handleFieldDayCheckIn(request, env) {
 }
 
 async function handleSubmitFieldDayReport(request, env) {
+  const market = getRequestMarket(request);
   const uploadedKeys = [];
   let persistenceCommitted = false;
   try {
@@ -8250,7 +8251,7 @@ async function handleSubmitFieldDayReport(request, env) {
       const file = upload.file;
       const mediaId = generateId();
       const extension = FIELD_EVIDENCE_MIME_TYPES.get(file.type);
-      const objectKey = `field-evidence/${getRequestMarket(request)}/${workOrderId}/${fieldDayId}/${upload.purpose}/${mediaId}.${extension}`;
+      const objectKey = `field-evidence/${market}/${workOrderId}/${fieldDayId}/${upload.purpose}/${mediaId}.${extension}`;
       await env.FIELD_EVIDENCE.put(objectKey, upload.bytes, { httpMetadata: { contentType: file.type } });
       uploadedKeys.push(objectKey);
       mediaRows.push({
@@ -8325,7 +8326,10 @@ async function handleSubmitFieldDayReport(request, env) {
     const savedFieldDay = { ...fieldDay, ...value, status: nextStatus, report_idempotency_key: idempotencyKey, report_submitted_at: new Date().toISOString() };
     await notifyFieldWorkBestEffort(env, {
       user_id: workOrder.customer_id, user_type: 'customer', type: 'field_day_report_submitted',
-      title: 'Field work update', body: `A field work update was submitted for ${workOrder.order_no}.`,
+      title: market === 'cn' ? '现场作业更新' : 'Field work update',
+      body: market === 'cn'
+        ? `工单 ${workOrder.order_no} 已提交现场作业更新。`
+        : `A field work update was submitted for ${workOrder.order_no}.`,
       data: { work_order_id: workOrderId, field_day_id: fieldDayId },
     });
     if (extensionValue) {
@@ -19592,6 +19596,38 @@ async function handleRejectWorkOrderPricing(request, env) {
 
 // ============ 通知相关 API ============
 
+function localizeKnownNotificationForMarket(notification, market) {
+  if (market !== 'cn' || !notification) return notification;
+
+  if (notification.type === 'field_day_checked_in') {
+    const bodyMatch = String(notification.body || '').match(/^Engineer checked in for (.+)\.$/);
+    return {
+      ...notification,
+      title: notification.title === 'Engineer checked in'
+        ? '工程师已到场签到'
+        : notification.title,
+      body: bodyMatch
+        ? `工程师已为工单 ${bodyMatch[1]} 完成现场签到。`
+        : notification.body,
+    };
+  }
+
+  if (notification.type === 'field_day_report_submitted') {
+    const bodyMatch = String(notification.body || '').match(/^A field work update was submitted for (.+)\.$/);
+    return {
+      ...notification,
+      title: notification.title === 'Field work update'
+        ? '现场作业更新'
+        : notification.title,
+      body: bodyMatch
+        ? `工单 ${bodyMatch[1]} 已提交现场作业更新。`
+        : notification.body,
+    };
+  }
+
+  return notification;
+}
+
 async function handleGetNotifications(request, env) {
   try {
     const auth = request._auth;
@@ -19602,8 +19638,12 @@ async function handleGetNotifications(request, env) {
     const { results } = await env.DB.prepare(
       'SELECT * FROM notifications WHERE user_id = ? AND user_type = ? ORDER BY created_at DESC LIMIT ? OFFSET ?'
     ).bind(auth.userId, auth.userType, limit, offset).all();
+    const market = getRequestMarket(request);
+    const notifications = (results || []).map((notification) =>
+      localizeKnownNotificationForMarket(notification, market)
+    );
 
-    return jsonResponse({ notifications: results });
+    return jsonResponse({ notifications });
   } catch (error) {
     return errorResponse(error.message, 500);
   }

@@ -594,15 +594,27 @@ function createStatement(env, sql) {
   };
 }
 
-async function api(env, path, { userType, userId, method = 'GET', formData, body, idempotencyKey, staffRole, staffId } = {}) {
+async function api(env, path, {
+  userType,
+  userId,
+  method = 'GET',
+  formData,
+  body,
+  idempotencyKey,
+  staffRole,
+  staffId,
+  market = 'com',
+} = {}) {
   if (staffId && !env.__staff.some((item) => item.id === staffId)) {
     env.__staff.push({ id: staffId, role: staffRole, is_active: 1, market_scope: 'all', must_change_password: 0 });
   }
-  const jwt = await signJwt({ userId, userType, market: 'com', staffRole, staffId, phone: '13800000000', iat: 1, exp: Math.floor(Date.now() / 1000) + 3600 }, env.JWT_SECRET);
-  const headers = { Authorization: `Bearer ${jwt}`, Origin: 'https://sagemro.com' };
+  const hostname = market === 'cn' ? 'api.sagemro.cn' : 'api.sagemro.com';
+  const origin = market === 'cn' ? 'https://sagemro.cn' : 'https://sagemro.com';
+  const jwt = await signJwt({ userId, userType, market, staffRole, staffId, phone: '13800000000', iat: 1, exp: Math.floor(Date.now() / 1000) + 3600 }, env.JWT_SECRET);
+  const headers = { Authorization: `Bearer ${jwt}`, Origin: origin };
   if (idempotencyKey) headers['Idempotency-Key'] = idempotencyKey;
   if (body !== undefined) headers['Content-Type'] = 'application/json';
-  const response = await worker.fetch(new Request(`https://api.sagemro.com${path}`, { method, headers, body: formData || (body === undefined ? undefined : JSON.stringify(body)) }), env, { waitUntil() {} });
+  const response = await worker.fetch(new Request(`https://${hostname}${path}`, { method, headers, body: formData || (body === undefined ? undefined : JSON.stringify(body)) }), env, { waitUntil() {} });
   return { response, json: await response.clone().json().catch(() => ({})) };
 }
 
@@ -1289,6 +1301,116 @@ test('operations staff can read their overdue notification list and unread count
   assert.equal(unread.json.count, 1);
 });
 
+test('notification list localizes legacy field-work records', async () => {
+  const env = createEnv();
+  env.__notifications.push(
+    {
+      args: [
+        'legacy-check-in',
+        'customer-1',
+        'customer',
+        'field_day_checked_in',
+        'Engineer checked in',
+        'Engineer checked in for WO-20260715-489.',
+        null,
+      ],
+    },
+    {
+      args: [
+        'legacy-report',
+        'customer-1',
+        'customer',
+        'field_day_report_submitted',
+        'Field work update',
+        'A field work update was submitted for WO-20260715-489.',
+        null,
+      ],
+    },
+    {
+      args: [
+        'unknown-system-message',
+        'customer-1',
+        'customer',
+        'custom_notice',
+        'Keep this title',
+        'Keep this body',
+        null,
+      ],
+    },
+    {
+      args: [
+        'already-chinese',
+        'customer-1',
+        'customer',
+        'field_day_checked_in',
+        '工程师已到场签到',
+        '工程师已为工单 WO-CN-EXISTING 完成现场签到。',
+        null,
+      ],
+    },
+    {
+      args: [
+        'unmatched-known-template',
+        'customer-1',
+        'customer',
+        'field_day_report_submitted',
+        'Custom report title',
+        'Report uploaded without a work-order reference',
+        null,
+      ],
+    },
+  );
+
+  const auth = { userType: 'customer', userId: 'customer-1' };
+  const cn = await api(env, '/api/notifications', { ...auth, market: 'cn' });
+  const com = await api(env, '/api/notifications', auth);
+
+  assert.deepEqual(
+    cn.json.notifications.map(({ title, body }) => ({ title, body })),
+    [
+      {
+        title: '工程师已到场签到',
+        body: '工程师已为工单 WO-20260715-489 完成现场签到。',
+      },
+      {
+        title: '现场作业更新',
+        body: '工单 WO-20260715-489 已提交现场作业更新。',
+      },
+      { title: 'Keep this title', body: 'Keep this body' },
+      {
+        title: '工程师已到场签到',
+        body: '工程师已为工单 WO-CN-EXISTING 完成现场签到。',
+      },
+      {
+        title: 'Custom report title',
+        body: 'Report uploaded without a work-order reference',
+      },
+    ],
+  );
+  assert.deepEqual(
+    com.json.notifications.map(({ title, body }) => ({ title, body })),
+    [
+      {
+        title: 'Engineer checked in',
+        body: 'Engineer checked in for WO-20260715-489.',
+      },
+      {
+        title: 'Field work update',
+        body: 'A field work update was submitted for WO-20260715-489.',
+      },
+      { title: 'Keep this title', body: 'Keep this body' },
+      {
+        title: '工程师已到场签到',
+        body: '工程师已为工单 WO-CN-EXISTING 完成现场签到。',
+      },
+      {
+        title: 'Custom report title',
+        body: 'Report uploaded without a work-order reference',
+      },
+    ],
+  );
+});
+
 test('check-in rejects a nonexistent site-local DST checkout time before persisting evidence', async () => {
   const env = createEnv();
   Object.assign(env.__workOrders[0], { site_timezone: 'America/New_York' });
@@ -1574,6 +1696,11 @@ test('daily report stores public and internal photos once, notifies customer, an
   assert.deepEqual(env.__media.map((item) => item.customer_visible), [1, 1, 0]);
   assert.equal(env.__objects.size, 3);
   assert.equal(env.__notifications.length, 1);
+  assert.equal(env.__notifications[0].args[4], 'Field work update');
+  assert.equal(
+    env.__notifications[0].args[5],
+    'A field work update was submitted for WO-ONSITE-1.',
+  );
   assert.equal(first.json.media.every((item) => item.object_key === undefined && item.url.includes(item.id)), true);
 
   const retry = await api(env, '/api/workorders/wo-onsite-1/field-days/field-day-1/report', {
@@ -1592,6 +1719,31 @@ test('daily report stores public and internal photos once, notifies customer, an
   assert.equal(failed.response.status, 500);
   assert.equal(failedEnv.__objects.size, 0);
   assert.equal(failedEnv.__fieldDays[0].status, 'checked_in');
+});
+
+test('Chinese daily report writes a Chinese customer notification', async () => {
+  const env = createEnv();
+  seedFieldDay(env);
+
+  const result = await api(
+    env,
+    '/api/workorders/wo-onsite-1/field-days/field-day-1/report',
+    {
+      userType: 'engineer',
+      userId: 'engineer-1',
+      method: 'POST',
+      formData: reportForm(),
+      idempotencyKey: 'cn-report-1',
+      market: 'cn',
+    },
+  );
+
+  assert.equal(result.response.status, 201, JSON.stringify(result.json));
+  const notification = env.__notifications.find(
+    (item) => item.args[3] === 'field_day_report_submitted',
+  );
+  assert.equal(notification.args[4], '现场作业更新');
+  assert.equal(notification.args[5], '工单 WO-ONSITE-1 已提交现场作业更新。');
 });
 
 test('post-commit notification failure keeps the submitted report and R2 evidence', async () => {

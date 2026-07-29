@@ -21,7 +21,7 @@ const runtime = e2eRuntime();
 const HOME_COPY = {
   en: {
     url: runtime.customerBase,
-    heading: 'Issues with laser and metal forming equipment? Ask AI first.',
+    heading: 'Equipment trouble? Chat now. Get answers instantly.',
     input: 'Describe the problem — or just start talking',
     tools: 'Calculators',
     insights: 'Insights',
@@ -40,7 +40,7 @@ const HOME_COPY = {
   },
   zh: {
     url: 'http://sagemro.cn:4273',
-    heading: '激光和成型设备问题，先问AI试试',
+    heading: '设备问题不求人，即时交谈，马上就有答案',
     input: '描述设备问题，或直接开始说...',
     tools: '计算工具',
     insights: '行业观察',

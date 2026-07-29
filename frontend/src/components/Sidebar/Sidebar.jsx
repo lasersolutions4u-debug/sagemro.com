@@ -154,7 +154,7 @@ function RailButton({ tool, onClick }) {
       <Icon size={20} className="shrink-0" />
       <span className="min-w-0 truncate whitespace-nowrap text-xs">{tool.label}</span>
       {tool.badge > 0 && (
-        <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-medium text-white">
+        <span className="ml-auto flex h-4 min-w-4 shrink-0 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-medium text-white">
           {tool.badge > 99 ? '99+' : tool.badge}
         </span>
       )}
