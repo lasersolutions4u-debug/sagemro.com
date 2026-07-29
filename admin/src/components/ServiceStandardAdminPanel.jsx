@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { AlertTriangle, CheckCircle2, LockKeyhole, RefreshCw } from 'lucide-react';
 import { runtimeConfig } from '../config/runtime';
 import {
@@ -94,28 +94,48 @@ function stateTone(state) {
 export function ServiceStandardAdminPanel({ workOrderId, readOnly = false, onRefresh }) {
   const t = TEXT[runtimeConfig.locale] || TEXT.en;
   const [snapshot, setSnapshot] = useState(null);
+  const [snapshotWorkOrderId, setSnapshotWorkOrderId] = useState(workOrderId);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState('');
   const [gate, setGate] = useState('start');
   const [reason, setReason] = useState('');
   const [saving, setSaving] = useState(false);
+  const operationEpoch = useRef(0);
+
+  useLayoutEffect(() => {
+    const epoch = ++operationEpoch.current;
+    return () => {
+      if (operationEpoch.current === epoch) operationEpoch.current += 1;
+    };
+  }, [workOrderId]);
 
   useEffect(() => {
-    let active = true;
+    const epoch = operationEpoch.current;
+    const isCurrent = () => operationEpoch.current === epoch;
+    setSnapshot(null);
+    setSnapshotWorkOrderId(workOrderId);
     setLoading(true);
     setMessage('');
+    setReason('');
+    setSaving(false);
     getAdminWorkOrderServiceStandard(workOrderId)
-      .then((nextSnapshot) => active && setSnapshot(nextSnapshot))
-      .catch((error) => active && setMessage(error.message || t.loadFailed))
-      .finally(() => active && setLoading(false));
-    return () => { active = false; };
+      .then((nextSnapshot) => {
+        if (isCurrent()) setSnapshot(nextSnapshot);
+      })
+      .catch((error) => {
+        if (isCurrent()) setMessage(error.message || t.loadFailed);
+      })
+      .finally(() => {
+        if (isCurrent()) setLoading(false);
+      });
   }, [workOrderId, t.loadFailed]);
 
+  const currentSnapshot = snapshotWorkOrderId === workOrderId ? snapshot : null;
   const blockers = useMemo(() => GATE_KEYS.flatMap((gateKey) => (
-    (snapshot?.gates?.[gateKey]?.blocking_items || []).map((item) => ({ gate: gateKey, item }))
-  )), [snapshot]);
-  const steps = Array.isArray(snapshot?.steps) ? snapshot.steps : [];
-  const overrides = Array.isArray(snapshot?.overrides) ? snapshot.overrides : [];
+    (currentSnapshot?.gates?.[gateKey]?.blocking_items || []).map((item) => ({ gate: gateKey, item }))
+  )), [currentSnapshot]);
+  const steps = Array.isArray(currentSnapshot?.steps) ? currentSnapshot.steps : [];
+  const overrides = Array.isArray(currentSnapshot?.overrides) ? currentSnapshot.overrides : [];
 
   async function submitOverride(event) {
     event.preventDefault();
@@ -125,20 +145,25 @@ export function ServiceStandardAdminPanel({ workOrderId, readOnly = false, onRef
       setMessage(t.reasonRequired);
       return;
     }
+    const operationEpochAtStart = operationEpoch.current;
+    const isCurrent = () => operationEpoch.current === operationEpochAtStart;
     setSaving(true);
     setMessage('');
     try {
       await overrideAdminWorkOrderServiceStandardGate(workOrderId, gate, trimmedReason);
     } catch (error) {
+      if (!isCurrent()) return;
       setMessage(error.message || t.actionFailed);
       setSaving(false);
       return;
     }
+    if (!isCurrent()) return;
 
     const [snapshotResult, detailResult] = await Promise.allSettled([
       getAdminWorkOrderServiceStandard(workOrderId),
-      onRefresh?.(workOrderId),
+      Promise.resolve().then(() => isCurrent() && onRefresh?.(workOrderId)),
     ]);
+    if (!isCurrent()) return;
     if (snapshotResult.status === 'fulfilled') setSnapshot(snapshotResult.value);
     if (snapshotResult.status === 'rejected' || detailResult.status === 'rejected') setMessage(t.savedRefreshFailed);
     else setReason('');
