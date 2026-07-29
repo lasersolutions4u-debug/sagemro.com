@@ -5560,15 +5560,27 @@ function safeParseStoredGuidance(guidanceJson) {
   return parseServiceGuidance(guidanceJson, SERVICE_GUIDANCE_ITEM_KEYS);
 }
 
+function serviceGuidanceLeaseExpired(cacheRow) {
+  if (cacheRow?.generation_state !== 'generating' || !cacheRow.generation_started_at) return false;
+  const startedAt = Date.parse(cacheRow.generation_started_at);
+  return !Number.isFinite(startedAt) || Date.now() - startedAt > SERVICE_READINESS_LEASE_MS;
+}
+
 function serviceGuidancePayload(cacheRow, currentFingerprint) {
   const storedGuidance = safeParseStoredGuidance(cacheRow?.guidance_json);
   const legacyReview = safeParseStoredReadinessReview(cacheRow?.review_json);
   const guidance = storedGuidance || (legacyReview ? adaptReadinessV1(legacyReview) : null);
   const stored = cacheRow?.generation_state || 'missing';
-  const state = stored === 'generating' || stored === 'failed'
-    ? stored
-    : !guidance ? 'missing'
-    : cacheRow.input_fingerprint === currentFingerprint ? 'ready' : 'stale';
+  let state;
+  if (stored === 'generating') {
+    state = serviceGuidanceLeaseExpired(cacheRow) ? 'failed' : 'generating';
+  } else if (stored === 'failed') {
+    state = 'failed';
+  } else if (!guidance) {
+    state = 'missing';
+  } else {
+    state = cacheRow.input_fingerprint === currentFingerprint ? 'ready' : 'stale';
+  }
   return {
     state,
     guidance,
@@ -5768,6 +5780,8 @@ async function loadServiceGuidanceInput(env, workOrder, cacheRow) {
       pendingItemKeys,
     },
     operationalState: {
+      // 工单状态是所有付款模式都具备的持久化生命周期投影；避免为只读指引装载完整报价执行视图。
+      paymentState: workOrder.status,
       materialRequestCount: Number(materialRequestCountRow?.count || 0),
       fieldDayCount: Number(fieldStateRow?.day_count || 0),
       fieldReportCount: Number(fieldStateRow?.report_count || 0),
@@ -5801,9 +5815,7 @@ const SERVICE_READINESS_LEASE_MS = 30000;
 // generating 租约超过 30 秒视为过期：按原始 generation_started_at 条件更新为 failed，
 // 防止并发场景覆盖一个更新的任务。
 async function expireServiceReadinessLeaseIfNeeded(env, cacheRow) {
-  if (cacheRow?.generation_state !== 'generating' || !cacheRow.generation_started_at) return cacheRow;
-  const startedAt = Date.parse(cacheRow.generation_started_at);
-  if (!Number.isFinite(startedAt) || Date.now() - startedAt <= SERVICE_READINESS_LEASE_MS) return cacheRow;
+  if (!serviceGuidanceLeaseExpired(cacheRow)) return cacheRow;
   await env.DB.prepare(
     `UPDATE work_order_service_readiness
      SET generation_state = 'failed', last_error = 'generation_lease_expired', updated_at = datetime('now')
@@ -5870,7 +5882,11 @@ async function generateServiceReadiness(env, {
     await env.DB.prepare(
       `UPDATE work_order_service_readiness
        SET review_json = ?, input_fingerprint = ?, generation_state = 'ready',
-           generated_at = datetime('now'), last_error = NULL, updated_at = datetime('now')
+           generated_at = CASE
+             WHEN guidance_json IS NULL THEN datetime('now')
+             ELSE generated_at
+           END,
+           last_error = NULL, updated_at = datetime('now')
        WHERE work_order_id = ? AND generation_state = 'generating' AND generation_started_at = ?`,
     ).bind(JSON.stringify(review), fingerprint, workOrder.id, leaseStartedAt).run();
   } catch (error) {
@@ -5945,13 +5961,14 @@ async function generateServiceGuidance(env, {
       `UPDATE work_order_service_readiness
        SET guidance_version = 2, current_step_key = ?, trigger_reason = ?,
            guidance_json = ?, input_fingerprint = ?, generation_state = 'ready',
-           generated_at = datetime('now'), last_error = NULL, updated_at = datetime('now')
+           generated_at = ?, last_error = NULL, updated_at = datetime('now')
        WHERE work_order_id = ? AND generation_state = 'generating' AND generation_started_at = ?`,
     ).bind(
       currentStepKey,
       triggerReason,
       JSON.stringify(guidance),
       fingerprint,
+      leaseStartedAt,
       workOrder.id,
       leaseStartedAt,
     ).run();
@@ -6533,8 +6550,13 @@ async function handleRefreshWorkOrderServiceReadiness(request, env) {
        SET generation_state = 'generating', generation_started_at = ?, last_error = NULL, updated_at = datetime('now')
        WHERE work_order_id = ?
          AND generation_state <> 'generating'
-         AND (? = 1 OR generation_state IN ('missing', 'failed'))`,
-    ).bind(leaseStartedAt, workOrder.id, force ? 1 : 0).run();
+         AND (? = 1 OR generation_state IN ('missing', 'failed') OR ? = 1)`,
+    ).bind(
+      leaseStartedAt,
+      workOrder.id,
+      force ? 1 : 0,
+      payload.state === 'missing' ? 1 : 0,
+    ).run();
 
     if (lease.meta?.changes !== 1) {
       const latest = await env.DB.prepare(
@@ -6580,10 +6602,9 @@ async function handleGetWorkOrderServiceGuidance(request, env) {
     if (!GUIDANCE_VISIBLE_STATUSES.has(workOrder.status)) {
       return errorResponse(getRequestMarket(request) === 'cn' ? '未找到' : 'Not found', 404);
     }
-    let cacheRow = await env.DB.prepare(
+    const cacheRow = await env.DB.prepare(
       'SELECT * FROM work_order_service_readiness WHERE work_order_id = ?',
     ).bind(workOrder.id).first();
-    cacheRow = await expireServiceReadinessLeaseIfNeeded(env, cacheRow);
     const { input } = await loadServiceGuidanceInput(env, workOrder, cacheRow);
     const fingerprint = await sha256Hex(canonicalizeReadinessInput(input));
     return jsonResponse(serviceGuidancePayload(cacheRow, fingerprint));
@@ -6604,6 +6625,14 @@ async function handleRefreshWorkOrderServiceGuidance(request, env) {
     assertExecutingEngineerReadinessAccess(request._auth, workOrder);
     if (!GUIDANCE_VISIBLE_STATUSES.has(workOrder.status)) {
       return errorResponse(getRequestMarket(request) === 'cn' ? '未找到' : 'Not found', 404);
+    }
+    if (!GUIDANCE_GENERATION_STATUSES.has(workOrder.status)) {
+      return errorResponse(
+        getRequestMarket(request) === 'cn'
+          ? '当前工单状态不可生成服务指引'
+          : 'Service guidance cannot be generated in the current work order status',
+        409,
+      );
     }
     let body = {};
     try {
@@ -6633,16 +6662,11 @@ async function handleRefreshWorkOrderServiceGuidance(request, env) {
       : payload.state === 'missing' || payload.state === 'failed';
     if (!isCandidate) return jsonResponse(payload);
 
-    if (!GUIDANCE_GENERATION_STATUSES.has(workOrder.status)) {
-      return errorResponse(
-        getRequestMarket(request) === 'cn'
-          ? '当前工单状态不可生成服务指引'
-          : 'Service guidance cannot be generated in the current work order status',
-        409,
-      );
-    }
-
-    const leaseStartedAt = new Date().toISOString();
+    const previousLeaseTime = Math.max(
+      Date.parse(cacheRow.generation_started_at) || 0,
+      Date.parse(cacheRow.generated_at) || 0,
+    );
+    const leaseStartedAt = new Date(Math.max(Date.now(), previousLeaseTime + 1)).toISOString();
     const lease = await env.DB.prepare(
       `UPDATE work_order_service_readiness
        SET generation_state = 'generating', generation_started_at = ?,
