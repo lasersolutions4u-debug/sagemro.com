@@ -339,14 +339,14 @@ test('Cloudflare deploy gate runs frontend tests before production deploy jobs',
 });
 
 test('customer sidebar tools stay expanded without a More overflow menu', () => {
-  const toolbar = read('frontend/src/components/Sidebar/ToolBar.jsx');
+  const toolbar = read('frontend/src/components/Sidebar/Sidebar.jsx');
 
-  assert.match(toolbar, /requestService: 'Request Service'/);
-  assert.match(toolbar, /myServices: 'My Services'/);
-  assert.match(toolbar, /notifications: 'Notifications'/);
-  assert.match(toolbar, /myEquipment: 'My Equipment'/);
+  assert.match(toolbar, /Request Service/);
+  assert.match(toolbar, /My Services/);
+  assert.match(toolbar, /Notifications/);
+  assert.match(toolbar, /My Equipment/);
   assert.ok(
-    toolbar.indexOf("notifications: 'Notifications'") < toolbar.indexOf("myEquipment: 'My Equipment'"),
+    toolbar.indexOf('Notifications') < toolbar.indexOf('My Equipment'),
     'Notifications should appear before My Equipment for logged-in customers'
   );
   assert.match(
