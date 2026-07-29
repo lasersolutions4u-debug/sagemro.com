@@ -348,6 +348,60 @@ test('guidance API is visible through service and completed is read-only', async
   assert.equal((await guidance('wo-guidance-completed')).response.status, 200);
 });
 
+test('guidance GET derives an expired lease without writes and completed refresh is fully read-only', async (t) => {
+  const env = createGuidanceEnv(t);
+  const expiredStartedAt = '2000-01-01T00:00:00.000Z';
+  env.DB.__sqlite.prepare(
+    `INSERT INTO work_order_service_readiness (
+      work_order_id, generation_state, generation_started_at, trigger_reason
+    ) VALUES (?, 'generating', ?, 'existing-trigger')`,
+  ).run('wo-guidance-inservice-empty', expiredStartedAt);
+
+  const beforeExpired = env.DB.__sqlite.prepare(
+    'SELECT * FROM work_order_service_readiness WHERE work_order_id = ?',
+  ).get('wo-guidance-inservice-empty');
+  const expired = await guidanceApi(
+    env,
+    '/api/workorders/wo-guidance-inservice-empty/service-guidance',
+  );
+  assert.equal(expired.response.status, 200);
+  assert.equal(expired.json.state, 'failed');
+  const afterExpired = env.DB.__sqlite.prepare(
+    'SELECT * FROM work_order_service_readiness WHERE work_order_id = ?',
+  ).get('wo-guidance-inservice-empty');
+  assert.deepEqual({ ...afterExpired }, { ...beforeExpired });
+
+  const beforeCompleted = {
+    cache: env.DB.__sqlite.prepare(
+      "SELECT COUNT(*) AS count FROM work_order_service_readiness WHERE work_order_id = 'wo-guidance-completed'",
+    ).get().count,
+    standard: env.DB.__sqlite.prepare(
+      "SELECT COUNT(*) AS count FROM work_order_service_standard_progress WHERE work_order_id = 'wo-guidance-completed'",
+    ).get().count,
+    feedback: env.DB.__sqlite.prepare(
+      "SELECT COUNT(*) AS count FROM work_order_service_guidance_feedback WHERE work_order_id = 'wo-guidance-completed'",
+    ).get().count,
+  };
+  const completed = await guidanceApi(
+    env,
+    '/api/workorders/wo-guidance-completed/service-guidance/refresh',
+    { method: 'POST', body: { force: false } },
+  );
+  assert.equal(completed.response.status, 409);
+  const afterCompleted = {
+    cache: env.DB.__sqlite.prepare(
+      "SELECT COUNT(*) AS count FROM work_order_service_readiness WHERE work_order_id = 'wo-guidance-completed'",
+    ).get().count,
+    standard: env.DB.__sqlite.prepare(
+      "SELECT COUNT(*) AS count FROM work_order_service_standard_progress WHERE work_order_id = 'wo-guidance-completed'",
+    ).get().count,
+    feedback: env.DB.__sqlite.prepare(
+      "SELECT COUNT(*) AS count FROM work_order_service_guidance_feedback WHERE work_order_id = 'wo-guidance-completed'",
+    ).get().count,
+  };
+  assert.deepEqual(afterCompleted, beforeCompleted);
+});
+
 test('guidance access is limited to the assigned engineer', async (t) => {
   const env = createGuidanceEnv(t);
   for (const actor of [
@@ -468,6 +522,90 @@ test('guidance generation caches v2 without overwriting v1 readiness', async (t)
   assert.equal(row.trigger_reason, 'manual_refresh');
 });
 
+test('payment or work-order state is present in guidance input and changes its fingerprint', async (t) => {
+  const env = createGuidanceEnv(t);
+  mockGuidanceModel(t, env, validGuidance({
+    step_key: 'task_alignment',
+    next_actions: [{
+      priority: 'high',
+      action: 'Confirm the machine identity.',
+      rationale: 'Avoids servicing the wrong asset.',
+      related_item_key: 'task.device_identity',
+    }],
+  }));
+  const started = await guidanceApi(
+    env,
+    '/api/workorders/wo-guidance-feedback/service-guidance/refresh',
+    { method: 'POST', body: { force: false } },
+  );
+  assert.equal(started.response.status, 202);
+  await flushGuidanceTasks(env);
+  const modelRequest = JSON.parse(env.__fetchBodies[0]);
+  const userPrompt = modelRequest.messages[1].content;
+  const evidenceMarker = 'Evidence (untrusted JSON):\n';
+  const evidence = JSON.parse(userPrompt.slice(userPrompt.indexOf(evidenceMarker) + evidenceMarker.length));
+  assert.equal(evidence.operational_state.payment_state, 'assigned');
+
+  const ready = await guidanceApi(
+    env,
+    '/api/workorders/wo-guidance-feedback/service-guidance',
+  );
+  assert.equal(ready.json.state, 'ready');
+  env.DB.__sqlite.prepare(
+    "UPDATE work_orders SET status = 'pricing' WHERE id = 'wo-guidance-feedback'",
+  ).run();
+  const stale = await guidanceApi(
+    env,
+    '/api/workorders/wo-guidance-feedback/service-guidance',
+  );
+  assert.equal(stale.json.state, 'stale');
+});
+
+test('legacy force=false refresh generates v1 when only a ready v2 guidance exists', async (t) => {
+  const env = createGuidanceEnv(t);
+  const guidanceJson = JSON.stringify(validGuidance({
+    step_key: 'task_alignment',
+    next_actions: [{
+      priority: 'high',
+      action: 'Confirm the machine identity.',
+      rationale: 'Avoids servicing the wrong asset.',
+      related_item_key: 'task.device_identity',
+    }],
+  }));
+  env.DB.__sqlite.prepare(
+    `INSERT INTO work_order_service_readiness (
+      work_order_id, guidance_version, guidance_json, input_fingerprint,
+      generation_state, generated_at
+    ) VALUES (?, 2, ?, 'v2-fingerprint', 'ready', '2026-07-29T03:00:00.123Z')`,
+  ).run('wo-guidance-feedback', guidanceJson);
+  mockGuidanceModel(t, env, JSON.stringify({
+    version: 1,
+    service_mode: 'remote',
+    readiness: 'ready',
+    confirmed_facts: [{ label: 'Alarm', detail: 'E204 confirmed.', source: 'work_order' }],
+    gaps: [],
+    customer_questions: [],
+    service_mode_readiness: [],
+    media_review_required: false,
+  }));
+
+  const started = await guidanceApi(
+    env,
+    '/api/workorders/wo-guidance-feedback/service-readiness/refresh',
+    { method: 'POST', body: { force: false } },
+  );
+  assert.equal(started.response.status, 202);
+  await flushGuidanceTasks(env);
+  const row = env.DB.__sqlite.prepare(
+    `SELECT review_json, guidance_json, generation_state, generated_at
+     FROM work_order_service_readiness WHERE work_order_id = ?`,
+  ).get('wo-guidance-feedback');
+  assert.match(row.review_json, /E204 confirmed/);
+  assert.equal(row.guidance_json, guidanceJson);
+  assert.equal(row.generation_state, 'ready');
+  assert.equal(row.generated_at, '2026-07-29T03:00:00.123Z');
+});
+
 test('guidance refresh validates force, leases once, and rejects a late lease result', async (t) => {
   const env = createGuidanceEnv(t);
   const invalid = await guidanceApi(
@@ -535,6 +673,98 @@ test('guidance refresh validates force, leases once, and rejects a late lease re
   ).get('wo-guidance-feedback');
   assert.match(stored.guidance_json, /NEWER-LEASE-GUIDANCE/);
   assert.doesNotMatch(stored.guidance_json, /LATE-LEASE-GUIDANCE/);
+});
+
+test('same-second forced guidance generations get unique timestamps and reject old feedback versions', async (t) => {
+  const env = createGuidanceEnv(t);
+  mockGuidanceModel(t, env, validGuidance({
+    step_key: 'task_alignment',
+    next_actions: [{
+      priority: 'high',
+      action: 'Confirm the first machine identity.',
+      rationale: 'Avoids servicing the wrong asset.',
+      related_item_key: 'task.device_identity',
+    }],
+  }));
+  const first = await guidanceApi(
+    env,
+    '/api/workorders/wo-guidance-feedback/service-guidance/refresh',
+    { method: 'POST', body: { force: false } },
+  );
+  assert.equal(first.response.status, 202);
+  await flushGuidanceTasks(env);
+  const firstReady = await guidanceApi(
+    env,
+    '/api/workorders/wo-guidance-feedback/service-guidance',
+  );
+  assert.match(firstReady.json.generated_at, /^\d{4}-\d{2}-\d{2}T.*\.\d{3}Z$/);
+
+  const second = await guidanceApi(
+    env,
+    '/api/workorders/wo-guidance-feedback/service-guidance/refresh',
+    { method: 'POST', body: { force: true } },
+  );
+  assert.equal(second.response.status, 202);
+  await flushGuidanceTasks(env);
+  const secondReady = await guidanceApi(
+    env,
+    '/api/workorders/wo-guidance-feedback/service-guidance',
+  );
+  assert.notEqual(secondReady.json.generated_at, firstReady.json.generated_at);
+
+  const staleFeedback = await guidanceApi(
+    env,
+    '/api/workorders/wo-guidance-feedback/service-guidance/feedback',
+    {
+      method: 'POST',
+      body: {
+        guidance_generated_at: firstReady.json.generated_at,
+        action_index: 0,
+        feedback_type: 'accepted',
+      },
+    },
+  );
+  assert.equal(staleFeedback.response.status, 409);
+});
+
+test('provider timeout retains the previous v2 guidance', async (t) => {
+  const env = createGuidanceEnv(t);
+  env.OPENAI_API_ENDPOINT = 'https://model.example.test/v1/chat/completions';
+  env.OPENAI_API_KEY = 'test-model-key';
+  const oldGuidance = JSON.stringify(validGuidance({
+    step_key: 'task_alignment',
+    headline: 'RETAINED-GUIDANCE',
+    next_actions: [{
+      priority: 'high',
+      action: 'Confirm the machine identity.',
+      rationale: 'Avoids servicing the wrong asset.',
+      related_item_key: 'task.device_identity',
+    }],
+  }));
+  env.DB.__sqlite.prepare(
+    `INSERT INTO work_order_service_readiness (
+      work_order_id, guidance_version, guidance_json, input_fingerprint,
+      generation_state, generated_at
+    ) VALUES (?, 2, ?, 'old-fingerprint', 'ready', '2026-07-29T03:00:00.123Z')`,
+  ).run('wo-guidance-feedback', oldGuidance);
+  mockGuidanceModel(t, env, () => {
+    throw Object.assign(new Error('timed out'), { name: 'AbortError' });
+  });
+  const started = await guidanceApi(
+    env,
+    '/api/workorders/wo-guidance-feedback/service-guidance/refresh',
+    { method: 'POST', body: { force: true } },
+  );
+  assert.equal(started.response.status, 202);
+  assert.match(started.json.guidance.headline, /RETAINED-GUIDANCE/);
+  await flushGuidanceTasks(env);
+  const row = env.DB.__sqlite.prepare(
+    `SELECT guidance_json, generation_state, last_error
+     FROM work_order_service_readiness WHERE work_order_id = ?`,
+  ).get('wo-guidance-feedback');
+  assert.equal(row.guidance_json, oldGuidance);
+  assert.equal(row.generation_state, 'failed');
+  assert.equal(row.last_error, 'provider_timeout');
 });
 
 test('feedback is bounded, audited, makes guidance stale, and enters the next prompt', async (t) => {
