@@ -36,6 +36,7 @@ import { AttachmentsPanel } from './AttachmentsPanel';
 import { MaterialRequisitionPanel } from './MaterialRequisitionPanel';
 import { FieldWorkPanel } from './FieldWorkPanel';
 import { CollectionPanel } from './CollectionPanel';
+import { CustomerServiceMilestones } from './CustomerServiceMilestones';
 import { PaymentModal } from '../Payment/PaymentModal';
 import { formatCustomerDeviceLine, formatServiceTextForLocale } from '../../utils/workOrderDisplay';
 import { canEngineerViewCustomerContact, redactContactInfo } from '../../utils/contactRedaction';
@@ -1445,6 +1446,16 @@ export function WorkOrderDetailContent({
         {modalBusy && (
           <p role="status" className="sr-only">{modalBusyMessage}</p>
         )}
+        {isActive
+          && !loading
+          && userType === 'customer'
+          && detail?.id === workOrder.id
+          && (
+            <CustomerServiceMilestones
+              isCn={isCnLocale()}
+              milestones={detail.public_service_milestones || []}
+            />
+          )}
         {/* Tab 切换 */}
         {showTabNavigation && <div role="tablist" className="-mx-3 mb-4 flex gap-1 overflow-x-auto border-b border-[var(--color-border)] px-3 pb-0 sm:mx-0 sm:px-0">
           {tabs.map((t) => (
