@@ -522,8 +522,14 @@ test('guidance generation caches v2 without overwriting v1 readiness', async (t)
   assert.equal(row.trigger_reason, 'manual_refresh');
 });
 
-test('payment or work-order state is present in guidance input and changes its fingerprint', async (t) => {
+test('authoritative quote payment state enters guidance input and changes its fingerprint', async (t) => {
   const env = createGuidanceEnv(t);
+  env.DB.__sqlite.prepare(
+    `INSERT INTO work_order_pricing (
+      id, work_order_id, engineer_id, total_amount, subtotal, status, quote_version
+    ) VALUES ('pricing-guidance', 'wo-guidance-feedback', 'guidance-engineer',
+      10000, 10000, 'confirmed', 0)`,
+  ).run();
   mockGuidanceModel(t, env, validGuidance({
     step_key: 'task_alignment',
     next_actions: [{
@@ -544,21 +550,43 @@ test('payment or work-order state is present in guidance input and changes its f
   const userPrompt = modelRequest.messages[1].content;
   const evidenceMarker = 'Evidence (untrusted JSON):\n';
   const evidence = JSON.parse(userPrompt.slice(userPrompt.indexOf(evidenceMarker) + evidenceMarker.length));
-  assert.equal(evidence.operational_state.payment_state, 'assigned');
+  assert.equal(evidence.operational_state.payment_state, 'unpaid');
 
   const ready = await guidanceApi(
     env,
     '/api/workorders/wo-guidance-feedback/service-guidance',
   );
   assert.equal(ready.json.state, 'ready');
+  assert.equal(env.DB.__sqlite.prepare(
+    "SELECT status FROM work_orders WHERE id = 'wo-guidance-feedback'",
+  ).get().status, 'assigned');
   env.DB.__sqlite.prepare(
-    "UPDATE work_orders SET status = 'pricing' WHERE id = 'wo-guidance-feedback'",
+    `INSERT INTO work_order_payments (
+      id, work_order_id, customer_id, amount, transaction_id, status, payment_stage
+    ) VALUES ('payment-guidance', 'wo-guidance-feedback', 'guidance-customer',
+      4000, 'txn-guidance', 'completed', 'advance')`,
   ).run();
   const stale = await guidanceApi(
     env,
     '/api/workorders/wo-guidance-feedback/service-guidance',
   );
   assert.equal(stale.json.state, 'stale');
+  const refreshed = await guidanceApi(
+    env,
+    '/api/workorders/wo-guidance-feedback/service-guidance/refresh',
+    { method: 'POST', body: { force: true } },
+  );
+  assert.equal(refreshed.response.status, 202);
+  await flushGuidanceTasks(env);
+  const nextModelRequest = JSON.parse(env.__fetchBodies[1]);
+  const nextUserPrompt = nextModelRequest.messages[1].content;
+  const nextEvidence = JSON.parse(
+    nextUserPrompt.slice(nextUserPrompt.indexOf(evidenceMarker) + evidenceMarker.length),
+  );
+  assert.equal(nextEvidence.operational_state.payment_state, 'partially_received');
+  assert.equal(env.DB.__sqlite.prepare(
+    "SELECT status FROM work_orders WHERE id = 'wo-guidance-feedback'",
+  ).get().status, 'assigned');
 });
 
 test('legacy force=false refresh generates v1 when only a ready v2 guidance exists', async (t) => {

@@ -5723,6 +5723,7 @@ async function loadServiceGuidanceInput(env, workOrder, cacheRow) {
     fieldStateRow,
     serviceReportRow,
     feedbackRows,
+    paymentProjections,
     serviceStandard,
   ] = await Promise.all([
     env.DB.prepare(
@@ -5757,6 +5758,7 @@ async function loadServiceGuidanceInput(env, workOrder, cacheRow) {
        WHERE work_order_id = ?
        ORDER BY created_at DESC, id DESC LIMIT 10`,
     ).bind(workOrder.id).all(),
+    listWorkOrderPaymentProjections(env, [workOrder]),
     loadServiceStandardSnapshotReadOnly(env, workOrder),
   ]);
   const messageAttachmentCount = (attachmentUrlRows.results || [])
@@ -5780,8 +5782,7 @@ async function loadServiceGuidanceInput(env, workOrder, cacheRow) {
       pendingItemKeys,
     },
     operationalState: {
-      // 工单状态是所有付款模式都具备的持久化生命周期投影；避免为只读指引装载完整报价执行视图。
-      paymentState: workOrder.status,
+      paymentState: paymentProjections.get(workOrder.id)?.payment_state || '',
       materialRequestCount: Number(materialRequestCountRow?.count || 0),
       fieldDayCount: Number(fieldStateRow?.day_count || 0),
       fieldReportCount: Number(fieldStateRow?.report_count || 0),
