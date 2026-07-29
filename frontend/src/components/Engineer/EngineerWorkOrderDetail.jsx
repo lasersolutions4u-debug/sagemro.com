@@ -366,7 +366,7 @@ export function EngineerWorkOrderDetail({
       </div>
 
       <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px] lg:[grid-template-areas:'main_rail']">
-        <div className="[grid-area:rail]">
+        <div className="lg:[grid-area:rail]">
           <aside className="space-y-3 self-start lg:sticky lg:top-4">
             {guidanceEnabled && (
               <EngineerServiceGuidanceCard
@@ -387,7 +387,7 @@ export function EngineerWorkOrderDetail({
             <section className="rounded-xl border border-[#e5e8ed] bg-white p-4"><h2 className="text-sm font-semibold">{copy.support}</h2><a href="mailto:support@sagemro.com" className="mt-2 block text-sm font-bold text-orange-600">support@sagemro.com</a></section>
           </aside>
         </div>
-        <main className="min-w-0 overflow-hidden rounded-2xl border border-[#e5e8ed] bg-white [grid-area:main]">
+        <main className="min-w-0 overflow-hidden rounded-2xl border border-[#e5e8ed] bg-white lg:[grid-area:main]">
           <nav role="tablist" className="flex overflow-x-auto border-b border-[#e5e8ed] bg-[#fbfcfd] px-3">
             {tabs.map(([key, label]) => <button id={`engineer-tab-${key}`} aria-controls={`engineer-panel-${key}`} key={key} type="button" role="tab" aria-selected={activeTab === key} onClick={() => setActiveTab(key)} className={`h-12 shrink-0 border-b-2 px-3 text-[13px] font-bold ${activeTab === key ? 'border-orange-500 text-orange-600' : 'border-transparent text-[#697386]'}`}>{label}</button>)}
           </nav>

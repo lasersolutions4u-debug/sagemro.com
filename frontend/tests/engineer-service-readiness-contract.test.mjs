@@ -44,8 +44,9 @@ test('mobile source order is summary, progress, AI rail, then tabbed content', (
     detail,
     /copy\.nextStep[\s\S]*<EngineerServiceStandardProgress[\s\S]*<aside className="space-y-3 self-start lg:sticky lg:top-4"[\s\S]*<EngineerServiceGuidanceCard[\s\S]*role="tablist"/,
   );
-  assert.match(detail, /\[grid-area:rail\]/);
-  assert.match(detail, /\[grid-area:main\]/);
+  assert.match(detail, /lg:\[grid-area:rail\]/);
+  assert.match(detail, /lg:\[grid-area:main\]/);
+  assert.doesNotMatch(detail, /className="[^"]*(?<!lg:)\[grid-area:(?:rail|main)\]/);
   assert.match(detail, /lg:\[grid-template-areas:'main_rail'\]/);
 });
 
