@@ -6,6 +6,31 @@ import test from 'node:test';
 const root = path.resolve(import.meta.dirname, '../..');
 const read = (relativePath) => readFileSync(path.join(root, relativePath), 'utf8');
 
+async function importGuidanceCoordinator() {
+  const hook = read('frontend/src/hooks/useServiceGuidance.js');
+  const startMarker = '// TESTABLE_GUIDANCE_COORDINATOR_START';
+  const endMarker = '// TESTABLE_GUIDANCE_COORDINATOR_END';
+  const start = hook.indexOf(startMarker);
+  const end = hook.indexOf(endMarker);
+  assert.notEqual(start, -1, 'guidance coordinator start marker is missing');
+  assert.notEqual(end, -1, 'guidance coordinator end marker is missing');
+  const source = hook
+    .slice(start + startMarker.length, end)
+    .replace('export function', 'function')
+    .concat('\nexport { createGuidanceRequestCoordinator };');
+  return import(`data:text/javascript,${encodeURIComponent(source)}`);
+}
+
+function deferred() {
+  let resolve;
+  let reject;
+  const promise = new Promise((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+}
+
 test('service-standard and guidance clients preserve authenticated API errors', () => {
   const api = read('frontend/src/services/api.js');
 
@@ -30,10 +55,67 @@ test('guidance hook separates read-only checks from bounded generation polling',
   assert.match(hook, /refreshWorkOrderServiceGuidance/);
   assert.match(hook, /setInterval\(checkGuidance, 15000\)/);
   assert.match(hook, /setInterval\(pollGuidance, 2000\)/);
-  assert.match(hook, /pollAttemptsRef\.current >= 10/);
+  assert.match(hook, /requestCoordinatorRef\.current\.beginPoll\(\)/);
+  assert.match(hook, /poll\.attempt >= 10/);
   assert.match(hook, /data\?\.state === 'stale' && canGenerate/);
   assert.match(hook, /\.\.\.current,\s*state: 'failed'/);
   assert.match(hook, /guidance: guidanceState\?\.guidance \|\| null/);
+});
+
+test('guidance request coordinator rejects out-of-order results and prior work-order epochs', async () => {
+  const { createGuidanceRequestCoordinator } = await importGuidanceCoordinator();
+  const coordinator = createGuidanceRequestCoordinator();
+  const applied = [];
+  const slow = deferred();
+  const fast = deferred();
+  const slowToken = coordinator.beginRequest();
+  const slowOperation = slow.promise.then((value) => {
+    if (coordinator.isLatest(slowToken)) applied.push(value);
+  });
+  const fastToken = coordinator.beginRequest();
+  const fastOperation = fast.promise.then((value) => {
+    if (coordinator.isLatest(fastToken)) applied.push(value);
+  });
+
+  fast.resolve('ready:new');
+  await fastOperation;
+  slow.resolve('generating:old');
+  await slowOperation;
+  assert.deepEqual(applied, ['ready:new']);
+
+  const previousWorkOrderToken = coordinator.beginRequest();
+  coordinator.reset();
+  const oldFailure = deferred();
+  const markFailed = oldFailure.promise.catch(() => {
+    if (coordinator.isLatest(previousWorkOrderToken)) applied.push('failed:old-work-order');
+  });
+  oldFailure.reject(new Error('late failure'));
+  await markFailed;
+  assert.deepEqual(applied, ['ready:new']);
+});
+
+test('guidance request coordinator bounds each generation round to ten poll requests', async () => {
+  const { createGuidanceRequestCoordinator } = await importGuidanceCoordinator();
+  const coordinator = createGuidanceRequestCoordinator();
+
+  coordinator.beginGenerationRound();
+  const firstRound = Array.from({ length: 10 }, () => coordinator.beginPoll());
+  assert.deepEqual(firstRound.map((poll) => poll.attempt), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+  assert.equal(coordinator.beginPoll(), null);
+
+  coordinator.beginGenerationRound();
+  assert.equal(coordinator.beginPoll().attempt, 1);
+});
+
+test('a refresh request cannot be superseded by a cached read from the same generation round', async () => {
+  const { createGuidanceRequestCoordinator } = await importGuidanceCoordinator();
+  const coordinator = createGuidanceRequestCoordinator();
+  const refreshToken = coordinator.beginRefresh();
+
+  assert.equal(coordinator.beginRequest(), null);
+  assert.equal(coordinator.isLatest(refreshToken), true);
+  coordinator.finish(refreshToken);
+  assert.notEqual(coordinator.beginRequest(), null);
 });
 
 test('six-step progress is a meaningful bilingual process rail', () => {
@@ -69,6 +151,14 @@ test('AI guidance is advisory, bilingual, and hands customer questions to an uns
   assert.match(guidanceCard, /onInsertQuestion\(question\)/);
   assert.match(guidanceCard, /submitFeedback\(index, 'corrected', note\.trim\(\)\)/);
   assert.match(guidanceCard, /note\.trim\(\)\.length/);
+  assert.match(guidanceCard, /none: '无'/);
+  assert.match(guidanceCard, /none: 'None'/);
+  assert.match(guidanceCard, /PRIORITY_STYLES\[guidance\.risk_level\] \|\| PRIORITY_STYLES\.low/);
+  assert.match(guidanceCard, /copy\.priorities\[guidance\.risk_level\] \|\| copy\.priorities\.low/);
+  assert.match(guidanceCard, /catch \{/);
+  assert.match(guidanceCard, /setFeedbackError\(copy\.feedbackFailed\)/);
+  assert.match(guidanceCard, /role="alert"/);
+  assert.match(guidanceCard, /motion-reduce:animate-none/);
   assert.doesNotMatch(guidanceCard, /postWorkOrderMessage/);
   assert.doesNotMatch(guidanceCard, /confirmWorkOrderServiceStandardItem/);
 });
