@@ -6,9 +6,49 @@ import { localD1Rows, sqlText } from '../support/visual.mjs';
 
 const runtime = e2eRuntime();
 
+const ENGINEER_STANDARD_ITEMS = {
+  'Task alignment': [
+    'Confirm machine identity and configuration',
+    'Align on the problem and service goal',
+    'Confirm site contact and service window',
+  ],
+  'Risk control': [
+    'Review site and machine hazards',
+    'Confirm isolation and work permission',
+  ],
+  'One-visit readiness': [
+    'Prepare tools and technical documents',
+  ],
+  'Evidence-led work': [
+    'Record baseline evidence',
+    'Record service actions as work proceeds',
+    'Keep work within the authorized scope',
+  ],
+  'Recovery check': [
+    'Complete the functional test',
+    'Verify safety protections are restored',
+    'Record residual risks and next steps',
+  ],
+};
+
 async function confirmFeedback(page) {
   const confirm = page.getByRole('button', { name: /^(Confirm|OK)$/ });
   if (await confirm.isVisible().catch(() => false)) await confirm.click();
+}
+
+async function confirmEngineerStandardItems(page, stageName) {
+  const stage = page.getByRole('heading', { name: stageName, exact: true })
+    .locator('xpath=ancestor::section[1]');
+  await expect(stage).toBeVisible();
+  for (const itemName of ENGINEER_STANDARD_ITEMS[stageName] || []) {
+    const item = page.getByRole('heading', { name: itemName, exact: true })
+      .locator('xpath=ancestor::li[1]');
+    await expect(item).toBeVisible();
+    const confirm = item.getByRole('button', { name: 'Confirm complete', exact: true });
+    await expect(confirm).toBeVisible();
+    await confirm.click();
+    await expect(confirm).toHaveCount(0);
+  }
 }
 
 test('customer, Admin, and engineer complete a service order lifecycle', async ({ browser }) => {
@@ -79,6 +119,7 @@ test('customer, Admin, and engineer complete a service order lifecycle', async (
   await engineerPage.getByRole('button', { name: 'Confirm Assignment', exact: true }).click();
   await engineerPage.reload();
   await expect(engineerPage.getByText(`Work order · ${orderNo}`, { exact: true })).toBeVisible();
+  await confirmEngineerStandardItems(engineerPage, 'Task alignment');
   await engineerPage.getByRole('tab', { name: 'Messages', exact: true }).click();
   const manualMessage = `E2E manual update ${customer.runId}`;
   const messageCountBefore = localD1Rows(`SELECT COUNT(*) AS count FROM work_order_messages WHERE work_order_id = ${sqlText(workOrderId)}`)[0].count;
@@ -175,9 +216,27 @@ test('customer, Admin, and engineer complete a service order lifecycle', async (
   const paymentConfirmationDialog = adminPage.getByRole('dialog', { name: 'Confirm payment and start service' });
   await paymentConfirmationDialog.getByLabel('Payment confirmation note (optional)').fill('E2E advance payment confirmed');
   await paymentConfirmationDialog.getByRole('button', { name: 'Confirm', exact: true }).click();
+  await expect(adminPage.getByText(
+    'Complete the required service-standard items first',
+    { exact: true },
+  )).toBeVisible();
+
+  await engineerPage.reload();
+  const navigationCountBeforeStandards = await engineerPage.evaluate(
+    () => performance.getEntriesByType('navigation').length,
+  );
+  await confirmEngineerStandardItems(engineerPage, 'Risk control');
+  await confirmEngineerStandardItems(engineerPage, 'One-visit readiness');
+  expect(await engineerPage.evaluate(
+    () => performance.getEntriesByType('navigation').length,
+  )).toBe(navigationCountBeforeStandards);
+
+  await paymentConfirmationDialog.getByRole('button', { name: 'Confirm', exact: true }).click();
   await paymentDialog.getByRole('button', { name: 'Close', exact: true }).click();
 
   await engineerPage.reload();
+  await confirmEngineerStandardItems(engineerPage, 'Evidence-led work');
+  await confirmEngineerStandardItems(engineerPage, 'Recovery check');
   await engineerPage.getByRole('tab', { name: 'Service report', exact: true }).click();
   await engineerPage.getByLabel('Customer Symptom').fill('Laser power dropped during continuous cutting.');
   await engineerPage.getByLabel('Root Cause / Diagnosis').fill('Protective lens contamination reduced delivered power.');
