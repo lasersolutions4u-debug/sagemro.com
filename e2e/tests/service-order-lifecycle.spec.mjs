@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test';
 
 import { adminApi, loginAdmin, onboardEngineer, uniqueIdentity } from '../support/journeys.mjs';
 import { e2eRuntime } from '../support/runtime.mjs';
-import { localD1Rows, sqlText } from '../support/visual.mjs';
+import { captureBothViewports, localD1Rows, sqlText } from '../support/visual.mjs';
 
 const runtime = e2eRuntime();
 
@@ -36,6 +36,111 @@ const ENGINEER_STANDARD_ITEMS = {
     'Record residual risks and next steps',
   ],
 };
+
+const CUSTOMER_MILESTONE_STEPS = [
+  { key: 'task_alignment', title: 'Task Alignment' },
+  { key: 'risk_control', title: 'Risk Control' },
+  { key: 'one_visit_readiness', title: 'One-Visit Readiness' },
+  { key: 'evidence_execution', title: 'Evidence-Based Execution' },
+  { key: 'recovery_verification', title: 'Recovery Verification' },
+  { key: 'transparent_handover', title: 'Transparent Handover' },
+];
+
+const CUSTOMER_FORBIDDEN_DETAIL_FIELDS = [
+  'blocking_items',
+  'confirmed_by_id',
+  'not_applicable_reason',
+  'trigger_reason',
+  'guidance_json',
+  'review_json',
+];
+
+function persistedCustomerMilestones(workOrderId) {
+  const rows = localD1Rows(`
+    SELECT step_key, item_key, state, is_required, not_applicable_reason
+    FROM work_order_service_standard_progress
+    WHERE work_order_id = ${sqlText(workOrderId)} AND standard_version = 1
+    ORDER BY step_key, item_key
+  `);
+  expect(rows).toHaveLength(18);
+  const rowsByStep = new Map(CUSTOMER_MILESTONE_STEPS.map(({ key }) => [key, []]));
+  for (const row of rows) rowsByStep.get(row.step_key)?.push(row);
+  const stepComplete = CUSTOMER_MILESTONE_STEPS.map(({ key }) => {
+    const stepRows = rowsByStep.get(key);
+    const requiredRows = stepRows.filter((row) => Number(row.is_required) === 1);
+    return requiredRows.every((row) => (
+      row.state === 'confirmed'
+      || (row.state === 'not_applicable' && String(row.not_applicable_reason || '').trim())
+    ));
+  });
+  const firstIncomplete = stepComplete.findIndex((complete) => !complete);
+  const currentIndex = firstIncomplete === -1 ? CUSTOMER_MILESTONE_STEPS.length - 1 : firstIncomplete;
+  return CUSTOMER_MILESTONE_STEPS.map((step, index) => ({
+    key: step.key,
+    state: rowsByStep.get(step.key).some((row) => row.state === 'legacy_not_recorded')
+      ? 'legacy_not_recorded'
+      : stepComplete[index]
+        ? 'completed'
+        : index === currentIndex ? 'current' : 'upcoming',
+  }));
+}
+
+function assertCustomerDetailSerialization(detail, expectedMilestones) {
+  const serialized = JSON.stringify(detail);
+  for (const field of CUSTOMER_FORBIDDEN_DETAIL_FIELDS) {
+    expect(serialized).not.toContain(`"${field}"`);
+  }
+  expect(detail.public_service_milestones).toEqual(expectedMilestones);
+  for (const milestone of detail.public_service_milestones) {
+    expect(Object.keys(milestone).sort()).toEqual(['key', 'state']);
+  }
+}
+
+async function openCustomerMilestonesFromD1(page, orderNo, workOrderId, { screenshot } = {}) {
+  await page.reload();
+  await page.getByRole('button', { name: 'My Services', exact: true }).click();
+  const detailResponsePromise = page.waitForResponse((response) => (
+    response.request().method() === 'GET'
+    && new URL(response.url()).pathname === `/api/workorders/${workOrderId}`
+  ));
+  await page.getByText(orderNo, { exact: true }).click();
+  const detailResponse = await detailResponsePromise;
+  expect(detailResponse.status()).toBe(200);
+
+  const expectedMilestones = persistedCustomerMilestones(workOrderId);
+  const detail = await detailResponse.json();
+  assertCustomerDetailSerialization(detail, expectedMilestones);
+
+  const milestoneSection = page.getByRole('heading', { name: 'Your service progress', exact: true })
+    .locator('xpath=ancestor::section[1]');
+  await expect(milestoneSection).toBeVisible();
+  const stateLabels = {
+    completed: 'Verified',
+    current: 'Current stage',
+    upcoming: 'Upcoming',
+    legacy_not_recorded: 'Earlier service records were not itemized',
+  };
+  for (const step of CUSTOMER_MILESTONE_STEPS) {
+    const persisted = expectedMilestones.find((milestone) => milestone.key === step.key);
+    const item = milestoneSection.getByText(step.title, { exact: true }).locator('xpath=ancestor::li[1]');
+    await expect(item).toContainText(stateLabels[persisted.state]);
+    if (persisted.state === 'current') {
+      await expect(item).toHaveAttribute('aria-current', 'step');
+    } else {
+      await expect(item).not.toHaveAttribute('aria-current', 'step');
+    }
+  }
+  if (screenshot) {
+    await captureBothViewports(page, screenshot, { scope: milestoneSection });
+  }
+  return { detail, expectedMilestones, milestoneSection };
+}
+
+async function closeCustomerWorkOrder(page) {
+  const title = page.getByRole('heading', { name: 'Work Order Details', exact: true });
+  const modal = title.locator('xpath=ancestor::div[contains(@class, "fixed")][1]');
+  await modal.getByRole('button', { name: 'Close', exact: true }).click();
+}
 
 async function confirmFeedback(page) {
   const confirm = page.getByRole('button', { name: /^(Confirm|OK)$/ });
@@ -126,6 +231,21 @@ test('customer, Admin, and engineer complete a service order lifecycle', async (
   await engineerPage.reload();
   await expect(engineerPage.getByText(`Work order · ${orderNo}`, { exact: true })).toBeVisible();
   await confirmEngineerStandardItems(engineerPage, 'Task alignment');
+  let customerMilestones = await openCustomerMilestonesFromD1(
+    customerPage,
+    orderNo,
+    workOrderId,
+  );
+  expect(customerMilestones.expectedMilestones.map(({ state }) => state)).toEqual([
+    'completed',
+    'current',
+    'upcoming',
+    'upcoming',
+    'upcoming',
+    'upcoming',
+  ]);
+  await closeCustomerWorkOrder(customerPage);
+
   await engineerPage.getByRole('tab', { name: 'Messages', exact: true }).click();
   const manualMessage = `E2E manual update ${customer.runId}`;
   const messageCountBefore = localD1Rows(`SELECT COUNT(*) AS count FROM work_order_messages WHERE work_order_id = ${sqlText(workOrderId)}`)[0].count;
@@ -149,7 +269,7 @@ test('customer, Admin, and engineer complete a service order lifecycle', async (
   expect(approval.success).toBe(true);
   await adminPage.getByRole('button', { name: 'Close', exact: true }).click();
 
-  await customerPage.getByRole('button', { name: 'My Services', exact: true }).click();
+  await expect(customerPage.getByText(orderNo, { exact: true })).toBeVisible();
   await customerPage.getByText(orderNo, { exact: true }).click();
   await customerPage.getByRole('tab', { name: 'Confirm Quote', exact: true }).click();
   await expect(customerPage.getByTestId('open-confirm-pricing-button')).toBeVisible();
@@ -265,9 +385,40 @@ test('customer, Admin, and engineer complete a service order lifecycle', async (
   `)[0].status).toBe('in_service');
   await paymentDialog.getByRole('button', { name: 'Close', exact: true }).click();
 
+  customerMilestones = await openCustomerMilestonesFromD1(
+    customerPage,
+    orderNo,
+    workOrderId,
+    { screenshot: 'customer-active-service-milestones' },
+  );
+  expect(customerMilestones.expectedMilestones.map(({ state }) => state)).toEqual([
+    'completed',
+    'completed',
+    'completed',
+    'current',
+    'upcoming',
+    'upcoming',
+  ]);
+  await closeCustomerWorkOrder(customerPage);
+
   await engineerPage.reload();
   await confirmEngineerStandardItems(engineerPage, 'Evidence-led work');
   await confirmEngineerStandardItems(engineerPage, 'Recovery check');
+  customerMilestones = await openCustomerMilestonesFromD1(
+    customerPage,
+    orderNo,
+    workOrderId,
+  );
+  expect(customerMilestones.expectedMilestones.map(({ state }) => state)).toEqual([
+    'completed',
+    'completed',
+    'completed',
+    'completed',
+    'completed',
+    'current',
+  ]);
+  await closeCustomerWorkOrder(customerPage);
+
   await engineerPage.getByRole('tab', { name: 'Service report', exact: true }).click();
   await engineerPage.getByLabel('Customer Symptom').fill('Laser power dropped during continuous cutting.');
   await engineerPage.getByLabel('Root Cause / Diagnosis').fill('Protective lens contamination reduced delivered power.');
@@ -277,13 +428,36 @@ test('customer, Admin, and engineer complete a service order lifecycle', async (
   await engineerPage.getByRole('button', { name: 'Submit Final Report to Customer', exact: true }).click();
   await confirmFeedback(engineerPage);
 
-  await customerPage.reload();
-  await customerPage.getByRole('button', { name: 'My Services', exact: true }).click();
-  await customerPage.getByText(orderNo, { exact: true }).click();
+  customerMilestones = await openCustomerMilestonesFromD1(
+    customerPage,
+    orderNo,
+    workOrderId,
+  );
+  expect(customerMilestones.expectedMilestones.map(({ state }) => state)).toEqual([
+    'completed',
+    'completed',
+    'completed',
+    'completed',
+    'completed',
+    'current',
+  ]);
   await expect(customerPage.getByRole('heading', { name: 'Service Review', exact: true })).toBeVisible();
   await customerPage.getByPlaceholder('Share your service experience (optional)...').fill('E2E service completed successfully.');
   await customerPage.getByTestId('submit-rating-button').click();
   await expect(customerPage.getByRole('heading', { name: 'Your Review', exact: true })).toBeVisible();
+  customerMilestones = await openCustomerMilestonesFromD1(
+    customerPage,
+    orderNo,
+    workOrderId,
+  );
+  expect(customerMilestones.expectedMilestones.map(({ state }) => state)).toEqual([
+    'completed',
+    'completed',
+    'completed',
+    'completed',
+    'completed',
+    'completed',
+  ]);
 
   await adminPage.reload();
   await adminPage.getByRole('button', { name: 'Service Orders', exact: true }).click();
