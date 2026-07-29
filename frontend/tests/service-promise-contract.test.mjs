@@ -52,3 +52,15 @@ test('service promise exposes one approved bilingual six-step framework', async 
   assert.deepEqual(en.steps.map((step) => step.key), expectedStepKeys);
   assert.deepEqual(zh.values.map((value) => value.key), en.values.map((value) => value.key));
 });
+
+test('service promise calls return isolated values and steps', async () => {
+  const { getServicePromiseCopy } = await import('../src/data/servicePromise.js');
+  const first = getServicePromiseCopy(true);
+
+  first.values[0].title = 'mutated value';
+  first.steps[0].title = 'mutated step';
+
+  const fresh = getServicePromiseCopy(true);
+  assert.equal(fresh.values[0].title, '更早发现风险');
+  assert.equal(fresh.steps[0].title, '任务对齐');
+});
