@@ -15,6 +15,9 @@ import {
 } from '../src/lib/serviceGuidance.js';
 
 const GUIDANCE_JWT_SECRET = 'service-guidance-api-test-secret';
+const GUIDANCE_JPEG = new Uint8Array([
+  0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46,
+]);
 const guidanceSchemaSql = readFileSync(new URL('../schema.sql', import.meta.url), 'utf8');
 const guidanceMigrationSql = readFileSync(
   new URL('../migrations/045_service_guidance_cache.sql', import.meta.url),
@@ -25,7 +28,6 @@ function createGuidanceD1(t) {
   const sqlite = new DatabaseSync(':memory:');
   sqlite.exec('PRAGMA foreign_keys = ON;');
   sqlite.exec(guidanceSchemaSql);
-  t.after(() => sqlite.close());
   return {
     prepare(sql) {
       let args = [];
@@ -50,6 +52,9 @@ function createGuidanceD1(t) {
       return Promise.all(statements.map((statement) => statement.run()));
     },
     __sqlite: sqlite,
+    __close() {
+      sqlite.close();
+    },
   };
 }
 
@@ -76,6 +81,7 @@ function createGuidanceEnv(t) {
   const pending = [];
   t.after(async () => {
     await Promise.all(pending.splice(0));
+    DB.__close();
   });
   return {
     JWT_SECRET: GUIDANCE_JWT_SECRET,
@@ -99,17 +105,23 @@ async function guidanceToken(userId, userType = 'engineer') {
 async function guidanceApi(env, path, {
   method = 'GET',
   body,
+  rawBody,
+  headers = {},
   userId = 'guidance-engineer',
   userType = 'engineer',
 } = {}) {
+  const requestHeaders = {
+    Authorization: `Bearer ${await guidanceToken(userId, userType)}`,
+    Origin: 'https://sagemro.com',
+    ...headers,
+  };
+  if (rawBody === undefined) requestHeaders['Content-Type'] = 'application/json';
   const response = await worker.fetch(new Request(`https://api.sagemro.com${path}`, {
     method,
-    headers: {
-      Authorization: `Bearer ${await guidanceToken(userId, userType)}`,
-      'Content-Type': 'application/json',
-      Origin: 'https://sagemro.com',
-    },
-    body: body === undefined ? undefined : JSON.stringify(body),
+    headers: requestHeaders,
+    body: rawBody === undefined
+      ? body === undefined ? undefined : JSON.stringify(body)
+      : rawBody,
   }), env, {
     waitUntil(promise) {
       env.__pending.push(promise);
@@ -146,6 +158,21 @@ function createGuidanceDeferred() {
 
 async function flushGuidanceTasks(env) {
   await Promise.all(env.__pending.splice(0));
+}
+
+function guidanceReportForm() {
+  const form = new FormData();
+  form.set('completed_work', 'Inspected the optical path and restored alignment.');
+  form.set('issues_risks', 'No remaining safety risks.');
+  form.set('next_plan', 'Monitor output stability.');
+  form.set('customer_support_needed', 'Keep the machine available for verification.');
+  form.set('labor_hours', '1.5');
+  form.append(
+    'progress_photos',
+    new Blob([GUIDANCE_JPEG], { type: 'image/jpeg' }),
+    'progress.jpg',
+  );
+  return form;
 }
 
 const itemKeys = new Set([
@@ -795,7 +822,7 @@ test('provider timeout retains the previous v2 guidance', async (t) => {
   assert.equal(row.last_error, 'provider_timeout');
 });
 
-test('feedback is bounded, audited, makes guidance stale, and enters the next prompt', async (t) => {
+test('feedback is bounded, audited, refreshes guidance, and enters the next prompt', async (t) => {
   const env = createGuidanceEnv(t);
   mockGuidanceModel(t, env, validGuidance({
     step_key: 'task_alignment',
@@ -840,11 +867,13 @@ test('feedback is bounded, audited, makes guidance stale, and enters the next pr
     "SELECT COUNT(*) AS count FROM audit_logs WHERE target_id = ? AND action = 'service_guidance_feedback_recorded'",
   ).get('wo-guidance-feedback').count, 1);
 
-  const stale = await guidanceApi(
+  await flushGuidanceTasks(env);
+  const refreshedFromFeedback = await guidanceApi(
     env,
     '/api/workorders/wo-guidance-feedback/service-guidance',
   );
-  assert.equal(stale.json.state, 'stale');
+  assert.equal(refreshedFromFeedback.json.state, 'ready');
+  assert.equal(env.__fetchCalls, 2);
   for (let index = 1; index <= 11; index += 1) {
     env.DB.__sqlite.prepare(
       `INSERT INTO work_order_service_guidance_feedback (
@@ -866,8 +895,8 @@ test('feedback is bounded, audited, makes guidance stale, and enters the next pr
   );
   assert.equal(refreshed.response.status, 202);
   await flushGuidanceTasks(env);
-  assert.equal(env.__fetchCalls, 2);
-  const modelRequest = JSON.parse(env.__fetchBodies[1]);
+  assert.equal(env.__fetchCalls, 3);
+  const modelRequest = JSON.parse(env.__fetchBodies[2]);
   const userPrompt = modelRequest.messages[1].content;
   const evidenceMarker = 'Evidence (untrusted JSON):\n';
   const evidence = JSON.parse(userPrompt.slice(userPrompt.indexOf(evidenceMarker) + evidenceMarker.length));
@@ -876,7 +905,7 @@ test('feedback is bounded, audited, makes guidance stale, and enters the next pr
   assert.equal(evidence.recent_guidance_feedback.some(
     (row) => row.correction_note.includes('marker-1 '),
   ), false);
-  assert.doesNotMatch(env.__fetchBodies[1], /jane@example\.com/);
+  assert.doesNotMatch(env.__fetchBodies[2], /jane@example\.com/);
 });
 
 test('feedback rejects unauthorized, stale, invalid, and completed submissions', async (t) => {
@@ -943,6 +972,189 @@ test('feedback rejects unauthorized, stale, invalid, and completed submissions',
     `SELECT correction_note FROM work_order_service_guidance_feedback
      WHERE id = ?`,
   ).get(accepted.json.feedback_id).correction_note, null);
+});
+
+test('public-message events refresh once for changed normalized evidence and skip internal notes and GETs', async (t) => {
+  const env = createGuidanceEnv(t);
+  const insertMessage = env.DB.__sqlite.prepare(`
+    INSERT INTO work_order_messages (
+      id, work_order_id, sender_type, sender_id, sender_name, content,
+      message_type, attachment_urls, is_internal_note, is_customer_visible, created_at
+    ) VALUES (?, 'wo-guidance-feedback', 'customer', 'guidance-customer',
+      'Guidance Customer', 'Same public evidence', 'text', '[]', 0, 1, ?)
+  `);
+  for (let index = 0; index < 11; index += 1) {
+    insertMessage.run(`seed-public-${index}`, `2020-01-${String(index + 1).padStart(2, '0')} 00:00:00`);
+  }
+  mockGuidanceModel(t, env, validGuidance({
+    step_key: 'task_alignment',
+    next_actions: [{
+      priority: 'high',
+      action: 'Confirm the machine identity.',
+      rationale: 'Avoids servicing the wrong asset.',
+      related_item_key: 'task.device_identity',
+    }],
+  }));
+
+  const initial = await guidanceApi(
+    env,
+    '/api/workorders/wo-guidance-feedback/service-guidance/refresh',
+    { method: 'POST', body: { force: false } },
+  );
+  assert.equal(initial.response.status, 202);
+  await flushGuidanceTasks(env);
+  const initialModelRequest = JSON.parse(env.__fetchBodies[0]);
+  const initialPrompt = initialModelRequest.messages[1].content;
+  const initialEvidenceMarker = 'Evidence (untrusted JSON):\n';
+  const initialEvidence = JSON.parse(
+    initialPrompt.slice(initialPrompt.indexOf(initialEvidenceMarker) + initialEvidenceMarker.length),
+  );
+  assert.equal(initialEvidence.public_work_order_messages.length, 11);
+  env.__fetchCalls = 0;
+  env.__fetchBodies.length = 0;
+
+  for (let index = 0; index < 2; index += 1) {
+    const posted = await guidanceApi(env, '/api/workorders/wo-guidance-feedback/messages', {
+      method: 'POST',
+      body: { content: 'Same public evidence', message_type: 'text' },
+      userId: 'guidance-customer',
+      userType: 'customer',
+    });
+    assert.equal(posted.response.status, 200);
+    await flushGuidanceTasks(env);
+  }
+  assert.equal(env.__fetchCalls, 1);
+  const cache = env.DB.__sqlite.prepare(
+    `SELECT trigger_reason, guidance_version
+     FROM work_order_service_readiness WHERE work_order_id = ?`,
+  ).get('wo-guidance-feedback');
+  assert.equal(cache.trigger_reason, 'public_message');
+  assert.equal(cache.guidance_version, 2);
+
+  const internal = await guidanceApi(env, '/api/workorders/wo-guidance-feedback/messages', {
+    method: 'POST',
+    body: { content: 'Internal dispatch note', is_internal_note: true },
+  });
+  assert.equal(internal.response.status, 200);
+  const listed = await guidanceApi(env, '/api/workorders/wo-guidance-feedback/messages');
+  assert.equal(listed.response.status, 200);
+  const guidance = await guidanceApi(
+    env,
+    '/api/workorders/wo-guidance-feedback/service-guidance',
+  );
+  assert.equal(guidance.response.status, 200);
+  await flushGuidanceTasks(env);
+  assert.equal(env.__fetchCalls, 1);
+});
+
+test('event refresh skips completed work orders and active generation leases', async (t) => {
+  const env = createGuidanceEnv(t);
+  mockGuidanceModel(t, env, validGuidance());
+  env.DB.__sqlite.prepare(`
+    INSERT INTO work_order_service_readiness (
+      work_order_id, generation_state, generation_started_at, trigger_reason
+    ) VALUES (
+      'wo-guidance-feedback', 'generating', ?, 'manual_refresh'
+    )
+  `).run(new Date().toISOString());
+
+  const activeLeaseEvent = await guidanceApi(
+    env,
+    '/api/workorders/wo-guidance-feedback/messages',
+    { method: 'POST', body: { content: 'New evidence during an active lease.' } },
+  );
+  const completedEvent = await guidanceApi(
+    env,
+    '/api/workorders/wo-guidance-completed/messages',
+    { method: 'POST', body: { content: 'Read-only lifecycle evidence.' } },
+  );
+  assert.equal(activeLeaseEvent.response.status, 200);
+  assert.equal(completedEvent.response.status, 200);
+  await flushGuidanceTasks(env);
+  assert.equal(env.__fetchCalls, 0);
+  assert.equal(env.DB.__sqlite.prepare(
+    'SELECT generation_state FROM work_order_service_readiness WHERE work_order_id = ?',
+  ).get('wo-guidance-feedback').generation_state, 'generating');
+});
+
+test('provider failures do not roll back public messages, repair records, or field reports', async (t) => {
+  const env = createGuidanceEnv(t);
+  env.OPENAI_API_ENDPOINT = 'https://model.example.test/v1/chat/completions';
+  env.OPENAI_API_KEY = 'test-model-key';
+  mockGuidanceModel(t, env, () => {
+    throw new Error('provider unavailable');
+  });
+
+  const message = await guidanceApi(env, '/api/workorders/wo-guidance-feedback/messages', {
+    method: 'POST',
+    body: { content: 'Alarm E204 remains active.' },
+    userId: 'guidance-customer',
+    userType: 'customer',
+  });
+  assert.equal(message.response.status, 200);
+  await flushGuidanceTasks(env);
+  assert.equal(env.DB.__sqlite.prepare(
+    `SELECT COUNT(*) AS count FROM work_order_messages
+     WHERE work_order_id = ? AND content = ?`,
+  ).get('wo-guidance-feedback', 'Alarm E204 remains active.').count, 1);
+  assert.equal(env.DB.__sqlite.prepare(
+    'SELECT generation_state FROM work_order_service_readiness WHERE work_order_id = ?',
+  ).get('wo-guidance-feedback').generation_state, 'failed');
+
+  const repair = await guidanceApi(
+    env,
+    '/api/workorders/wo-guidance-feedback/repair-record',
+    {
+      method: 'POST',
+      body: {
+        symptom: 'Unstable laser output',
+        diagnosis: 'Contaminated protective lens',
+        solution: 'Replaced and aligned the lens',
+        labor_hours: 1.25,
+      },
+    },
+  );
+  assert.equal(repair.response.status, 200);
+  await flushGuidanceTasks(env);
+  assert.equal(env.DB.__sqlite.prepare(
+    'SELECT diagnosis FROM work_order_repair_records WHERE work_order_id = ?',
+  ).get('wo-guidance-feedback').diagnosis, 'Contaminated protective lens');
+  assert.equal(env.DB.__sqlite.prepare(
+    'SELECT generation_state FROM work_order_service_readiness WHERE work_order_id = ?',
+  ).get('wo-guidance-feedback').generation_state, 'failed');
+
+  env.DB.__sqlite.exec(`
+    UPDATE work_orders
+    SET site_timezone = 'Asia/Shanghai', expected_service_days = 1,
+        expected_completion_date = '2026-07-30',
+        planned_daily_start_time = '08:30', planned_daily_end_time = '17:30'
+    WHERE id = 'wo-guidance-inservice-empty';
+    INSERT INTO work_order_field_days (
+      id, work_order_id, engineer_id, site_local_date, site_timezone,
+      status, expected_check_out_at
+    ) VALUES (
+      'guidance-field-day', 'wo-guidance-inservice-empty', 'guidance-engineer',
+      '2026-07-29', 'Asia/Shanghai', 'checked_in', '2026-07-29T17:30:00'
+    );
+  `);
+  env.FIELD_EVIDENCE = {
+    async put() {},
+    async delete() {},
+  };
+  const report = await guidanceApi(
+    env,
+    '/api/workorders/wo-guidance-inservice-empty/field-days/guidance-field-day/report',
+    { method: 'POST', rawBody: guidanceReportForm() },
+  );
+  assert.equal(report.response.status, 201);
+  await flushGuidanceTasks(env);
+  assert.equal(env.DB.__sqlite.prepare(
+    'SELECT status FROM work_order_field_days WHERE id = ?',
+  ).get('guidance-field-day').status, 'report_submitted');
+  assert.equal(env.DB.__sqlite.prepare(
+    'SELECT generation_state FROM work_order_service_readiness WHERE work_order_id = ?',
+  ).get('wo-guidance-inservice-empty').generation_state, 'failed');
+  assert.equal(env.__fetchCalls, 3);
 });
 
 test('guidance input is bounded, redacted, and contains no private evidence', () => {

@@ -5421,6 +5421,12 @@ async function handleUpdateDevice(request, env) {
 
     const updated = await env.DB.prepare('SELECT * FROM devices WHERE id = ?').bind(id).first();
 
+    const relatedWorkOrders = await env.DB.prepare(
+      'SELECT id FROM work_orders WHERE device_id = ? AND customer_id = ?',
+    ).bind(id, customerId).all();
+    for (const workOrder of relatedWorkOrders.results || []) {
+      scheduleServiceGuidanceRefresh(request, env, workOrder.id, 'evidence_changed');
+    }
     return jsonResponse({ device: updated });
   } catch (error) {
     return errorResponse(error.message, 500);
@@ -5706,7 +5712,7 @@ async function loadServiceGuidanceInput(env, workOrder, cacheRow) {
       const messageRows = await env.DB.prepare(
         "SELECT role, content FROM messages WHERE conversation_id = ? AND role IN ('user', 'assistant') ORDER BY created_at DESC LIMIT 12",
       ).bind(conversation.id).all();
-      sourceMessages = messageRows.results || [];
+      sourceMessages = (messageRows.results || []).map((row) => ({ ...row }));
       const imageRows = await env.DB.prepare(
         "SELECT image_urls FROM messages WHERE conversation_id = ? AND image_urls IS NOT NULL AND image_urls != ''",
       ).bind(conversation.id).all();
@@ -5773,7 +5779,7 @@ async function loadServiceGuidanceInput(env, workOrder, cacheRow) {
     sourceConversationId,
     sourceSummary,
     sourceMessages,
-    publicMessages: publicMessageRows.results || [],
+    publicMessages: (publicMessageRows.results || []).map((row) => ({ ...row })),
     serviceStandard: {
       currentStepKey: currentStep?.key,
       blockingItemKeys: currentStep?.items
@@ -5981,6 +5987,74 @@ async function generateServiceGuidance(env, {
         : error?.name === 'AbortError' ? 'provider_timeout' : 'provider_request_failed';
     await failGeneration(errorCode).catch(() => {});
   }
+}
+
+async function refreshServiceGuidanceIfChanged(env, {
+  workOrderId,
+  triggerReason,
+  market,
+}) {
+  const workOrder = await env.DB.prepare(
+    'SELECT * FROM work_orders WHERE id = ?',
+  ).bind(workOrderId).first();
+  if (!workOrder || !GUIDANCE_GENERATION_STATUSES.has(workOrder.status)) return;
+
+  let cacheRow = await ensureServiceReadinessRow(env, workOrder.id);
+  if (!cacheRow) return;
+  cacheRow = await expireServiceReadinessLeaseIfNeeded(env, cacheRow);
+  if (cacheRow.generation_state === 'generating') return;
+
+  const {
+    input,
+    allowedItemKeys,
+    currentStepKey,
+  } = await loadServiceGuidanceInput(env, workOrder, cacheRow);
+  const fingerprint = await sha256Hex(canonicalizeReadinessInput(input));
+  if (cacheRow.input_fingerprint === fingerprint) return;
+
+  const previousLeaseTime = Math.max(
+    Date.parse(cacheRow.generation_started_at) || 0,
+    Date.parse(cacheRow.generated_at) || 0,
+  );
+  const leaseStartedAt = new Date(Math.max(Date.now(), previousLeaseTime + 1)).toISOString();
+  const lease = await env.DB.prepare(
+    `UPDATE work_order_service_readiness
+     SET generation_state = 'generating', generation_started_at = ?,
+         trigger_reason = ?, last_error = NULL, updated_at = datetime('now')
+     WHERE work_order_id = ?
+       AND generation_state <> 'generating'
+       AND (input_fingerprint IS NULL OR input_fingerprint <> ?)`,
+  ).bind(
+    leaseStartedAt,
+    triggerReason,
+    workOrder.id,
+    fingerprint,
+  ).run();
+  if (lease.meta?.changes !== 1) return;
+
+  await generateServiceGuidance(env, {
+    workOrder,
+    input,
+    allowedItemKeys,
+    currentStepKey,
+    fingerprint,
+    market,
+    engineerId: workOrder.engineer_id,
+    leaseStartedAt,
+    triggerReason,
+  });
+}
+
+function scheduleServiceGuidanceRefresh(request, env, workOrderId, triggerReason) {
+  const task = refreshServiceGuidanceIfChanged(env, {
+    workOrderId,
+    triggerReason,
+    market: getRequestMarket(request),
+  }).catch((error) => {
+    console.error('service guidance refresh failed', error);
+  });
+  if (request._ctx?.waitUntil) request._ctx.waitUntil(task);
+  else void task;
 }
 
 function buildServiceStandardEnsureStatements(env, workOrder, definition) {
@@ -6386,6 +6460,7 @@ async function handleConfirmWorkOrderServiceStandardItem(request, env) {
       SELECT * FROM work_order_service_standard_progress
       WHERE work_order_id = ? AND standard_version = ? AND item_key = ?
     `).bind(workOrderId, definition.version, itemKey).first();
+    scheduleServiceGuidanceRefresh(request, env, workOrderId, 'service_standard');
     return jsonResponse({ item: updated });
   } catch (error) {
     if (error instanceof InvalidServiceStandardRouteEncoding) {
@@ -6796,6 +6871,7 @@ async function handleServiceGuidanceFeedback(request, env) {
         },
       }),
     ]);
+    scheduleServiceGuidanceRefresh(request, env, workOrder.id, 'engineer_feedback');
     return jsonResponse({ accepted: true, feedback_id: feedbackId }, 202);
   } catch (error) {
     if (error instanceof GuardError) return errorResponse(error.message, error.status);
@@ -7185,6 +7261,7 @@ async function handleSaveRepairRecord(request, env) {
       await replaceWorkOrderMaterialItems(env, request, workOrderId, 'service_report', body.material_items);
     }
 
+    scheduleServiceGuidanceRefresh(request, env, workOrderId, 'service_report');
     return jsonResponse({ success: true });
   } catch (error) {
     if (error instanceof ValidationError) {
@@ -8066,6 +8143,7 @@ async function handleFieldDayCheckIn(request, env) {
         : `Engineer checked in for ${workOrder.order_no}.`,
       data: { work_order_id: workOrderId, field_day_id: fieldDayId },
     });
+    scheduleServiceGuidanceRefresh(request, env, workOrderId, 'field_work');
     return jsonResponse(fieldDayResponse(fieldDay, media), 201);
   } catch (error) {
     if (error instanceof GuardError) return errorResponse(error.message, error.status);
@@ -8247,6 +8325,7 @@ async function handleSubmitFieldDayReport(request, env) {
     if (extensionValue) {
       await notifyFieldExtensionRequested(env, request, workOrder, extensionId, extensionValue);
     }
+    scheduleServiceGuidanceRefresh(request, env, workOrderId, 'field_work');
     return reportResponse(savedFieldDay, mediaRows, 201);
   } catch (error) {
     if (!persistenceCommitted) {
@@ -8492,6 +8571,7 @@ async function handleUploadAttachment(request, env) {
       'SELECT * FROM work_order_attachments WHERE id = ?'
     ).bind(attachmentId).first();
 
+    scheduleServiceGuidanceRefresh(request, env, workOrderId, 'evidence_changed');
     return jsonResponse({ success: true, attachment }, 201);
   } catch (error) {
     if (error instanceof ValidationError) {
@@ -8567,6 +8647,7 @@ async function handleDeleteAttachment(request, env) {
       VALUES (?, ?, ?, ?, ?, ?)
     `).bind(generateId(), workOrderId, 'attachment_deleted', auth.userType, auth.userId, `删除附件: ${attachment.file_name}`).run();
 
+    scheduleServiceGuidanceRefresh(request, env, workOrderId, 'evidence_changed');
     return jsonResponse({ success: true });
   } catch (error) {
     if (error instanceof GuardError) return errorResponse(error.message, error.status);
@@ -12747,6 +12828,9 @@ async function handleCreateMaterialRequest(request, env) {
       afterState: materialRequest,
     });
 
+    if (payload.work_order_id) {
+      scheduleServiceGuidanceRefresh(request, env, payload.work_order_id, 'material');
+    }
     return jsonResponse({ success: true, request: materialRequest }, 201);
   } catch (error) {
     if (error instanceof GuardError) return errorResponse(error.message, error.status);
@@ -12894,6 +12978,9 @@ async function handleAdminReviewMaterialRequest(request, env) {
       afterState: updated,
     });
 
+    if (existing.work_order_id) {
+      scheduleServiceGuidanceRefresh(request, env, existing.work_order_id, 'material');
+    }
     return jsonResponse({ success: true, request: updated, material });
   } catch (error) {
     if (/UNIQUE/i.test(String(error?.message || ''))) {
@@ -16162,6 +16249,7 @@ async function handleResolveWorkOrder(request, env) {
       }
 
       await ensureBalancePayment(env, workOrderId, wo.customer_id);
+      scheduleServiceGuidanceRefresh(request, env, workOrderId, 'status_change');
 
       // 通知客户：服务已完成
       const woResolve = await env.DB.prepare('SELECT customer_id, order_no FROM work_orders WHERE id = ?').bind(workOrderId).first();
@@ -16420,6 +16508,9 @@ async function handlePostWorkOrderMessage(request, env) {
       action: internalNote ? 'internal_note_created' : 'work_order_message_created',
       afterState: { message_id: id, sender_type, is_internal_note: internalNote },
     });
+    if (!internalNote) {
+      scheduleServiceGuidanceRefresh(request, env, workOrderId, 'public_message');
+    }
 
     // 工单消息推送通知
     if (!internalNote && sender_type !== 'system') {
@@ -18940,6 +19031,7 @@ async function handleEngineerRequestPaymentStart(request, env) {
         }
         throw error;
       }
+      scheduleServiceGuidanceRefresh(request, env, workOrderId, 'payment');
       return jsonResponse({ success: true, status: 'payment_review' });
     }
 
@@ -18976,6 +19068,7 @@ async function handleEngineerRequestPaymentStart(request, env) {
       afterState: { status: 'payment_review', payment_status: 'pending_admin_confirmation', note },
     });
 
+    scheduleServiceGuidanceRefresh(request, env, workOrderId, 'payment');
     return jsonResponse({ success: true, status: 'payment_review' });
   } catch (error) {
     return errorResponse(error.message, 500);
@@ -19092,6 +19185,7 @@ async function handleAdminApprovePaymentStart(request, env) {
         }
         throw error;
       }
+      scheduleServiceGuidanceRefresh(request, env, workOrderId, 'payment');
       return jsonResponse({ success: true, status: 'in_service' });
     }
 
@@ -19173,6 +19267,7 @@ async function handleAdminApprovePaymentStart(request, env) {
       ),
     ]);
 
+    scheduleServiceGuidanceRefresh(request, env, workOrderId, 'payment');
     return jsonResponse({ success: true, status: 'in_service' });
   } catch (error) {
     return errorResponse(error.message, 500);
