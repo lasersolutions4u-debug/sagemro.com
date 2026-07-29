@@ -25,6 +25,27 @@ const GUIDANCE_GENERATION_STATUSES = new Set([
   'in_service', 'resolved', 'pending_review',
 ]);
 
+// TESTABLE_SERVICE_STANDARD_COORDINATOR_START
+function matchesServiceStandardDetail(state, detailWorkOrderId) {
+  return state?.status === 'loaded'
+    && state.workOrderId === detailWorkOrderId
+    && Boolean(state.snapshot);
+}
+
+function createServiceStandardRequestCoordinator() {
+  let sequence = 0;
+  return {
+    begin(workOrderId) {
+      sequence += 1;
+      return { sequence, workOrderId };
+    },
+    isLatest(token, activeWorkOrderId) {
+      return token?.sequence === sequence && token?.workOrderId === activeWorkOrderId;
+    },
+  };
+}
+// TESTABLE_SERVICE_STANDARD_COORDINATOR_END
+
 const COPY = {
   en: {
     back: 'Back to work orders', kicker: 'Work order', loading: 'Loading work-order details...',
@@ -104,16 +125,24 @@ export function EngineerWorkOrderDetail({
   const [commercialView, setCommercialView] = useState('pricing');
   const [actionRefresh, setActionRefresh] = useState(0);
   const [paymentStartSubmitting, setPaymentStartSubmitting] = useState(false);
-  const [serviceStandard, setServiceStandard] = useState(null);
-  const [serviceStandardStatus, setServiceStandardStatus] = useState('idle');
-  const [serviceStandardError, setServiceStandardError] = useState('');
+  const [serviceStandardState, setServiceStandardState] = useState(() => ({
+    status: 'idle',
+    workOrderId: null,
+    snapshot: null,
+    error: '',
+  }));
   const [savingStandardItemKey, setSavingStandardItemKey] = useState('');
   const [messageDraftRequest, setMessageDraftRequest] = useState(null);
-  const serviceStandardRequestRef = useRef(0);
+  const serviceStandardRequestRef = useRef(createServiceStandardRequestCoordinator());
+  const activeServiceStandardWorkOrderIdRef = useRef(null);
 
   const loadDetail = useCallback(async () => {
     setLoading(true); setError('');
-    try { setDetail(await getWorkOrder(workOrderId)); }
+    try {
+      const nextDetail = await getWorkOrder(workOrderId);
+      activeServiceStandardWorkOrderIdRef.current = nextDetail.id;
+      setDetail(nextDetail);
+    }
     catch (requestError) { setError(requestError.message || copy.failed); }
     finally { setLoading(false); }
   }, [copy.failed, workOrderId]);
@@ -134,31 +163,48 @@ export function EngineerWorkOrderDetail({
     canGenerate: canGenerateGuidance,
   });
 
-  const serviceStandardWorkOrderId = detail?.id;
+  const serviceStandardWorkOrderId = detail?.id || null;
   const loadServiceStandard = useCallback(async () => {
-    const requestId = serviceStandardRequestRef.current + 1;
-    serviceStandardRequestRef.current = requestId;
+    if (serviceStandardWorkOrderId !== activeServiceStandardWorkOrderIdRef.current) return;
     if (!serviceStandardWorkOrderId) {
-      setServiceStandard(null);
-      setServiceStandardStatus('idle');
-      setServiceStandardError('');
+      setServiceStandardState({
+        status: 'idle',
+        workOrderId: null,
+        snapshot: null,
+        error: '',
+      });
       return;
     }
-    setServiceStandard(null);
-    setServiceStandardStatus('loading');
-    setServiceStandardError('');
+    const requestToken = serviceStandardRequestRef.current.begin(serviceStandardWorkOrderId);
+    setServiceStandardState({
+      status: 'loading',
+      workOrderId: serviceStandardWorkOrderId,
+      snapshot: null,
+      error: '',
+    });
     try {
       const snapshot = await getWorkOrderServiceStandard(serviceStandardWorkOrderId);
-      if (serviceStandardRequestRef.current !== requestId) return;
-      setServiceStandard(snapshot);
-      setServiceStandardStatus('loaded');
+      if (!serviceStandardRequestRef.current.isLatest(
+        requestToken,
+        activeServiceStandardWorkOrderIdRef.current,
+      )) return;
+      setServiceStandardState({
+        status: 'loaded',
+        workOrderId: serviceStandardWorkOrderId,
+        snapshot,
+        error: '',
+      });
     } catch (requestError) {
-      if (serviceStandardRequestRef.current !== requestId) return;
-      setServiceStandard(null);
-      setServiceStandardStatus('failed');
-      setServiceStandardError(
-        requestError.data?.error || requestError.message || copy.standardFailed,
-      );
+      if (!serviceStandardRequestRef.current.isLatest(
+        requestToken,
+        activeServiceStandardWorkOrderIdRef.current,
+      )) return;
+      setServiceStandardState({
+        status: 'failed',
+        workOrderId: serviceStandardWorkOrderId,
+        snapshot: null,
+        error: requestError.data?.error || requestError.message || copy.standardFailed,
+      });
     }
   }, [copy.standardFailed, serviceStandardWorkOrderId]);
 
@@ -185,7 +231,22 @@ export function EngineerWorkOrderDetail({
   );
 
   const isExecutingEngineer = String(detail.engineer_id || '') === String(engineerId || '');
-  const currentServiceStep = serviceStandardStatus === 'loaded'
+  const {
+    status: serviceStandardStatus,
+    workOrderId: serviceStandardSnapshotWorkOrderId,
+    snapshot: serviceStandard,
+    error: serviceStandardError,
+  } = serviceStandardState;
+  const serviceStandardMatchesDetail = matchesServiceStandardDetail(
+    serviceStandardState,
+    detail.id,
+  );
+  const serviceStandardLoadFailed = serviceStandardStatus === 'failed'
+    && serviceStandardSnapshotWorkOrderId === detail.id;
+  const serviceStandardIsLoading = serviceStandardSnapshotWorkOrderId !== detail.id
+    || serviceStandardStatus === 'idle'
+    || serviceStandardStatus === 'loading';
+  const currentServiceStep = serviceStandardMatchesDetail
     ? serviceStandard.steps?.[serviceStandard.current_step_index] || null
     : null;
   const isCurrentTeamWork = detail.ownership_relation === 'current_team_member' || detail.ownership_relation === 'regional_queue';
@@ -219,13 +280,22 @@ export function EngineerWorkOrderDetail({
   };
   const updateServiceStandardItem = async (item, payload) => {
     setSavingStandardItemKey(item.key);
-    setServiceStandardError('');
+    setServiceStandardState((current) => (
+      matchesServiceStandardDetail(current, detail.id)
+        ? { ...current, error: '' }
+        : current
+    ));
     try {
       await confirmWorkOrderServiceStandardItem(detail.id, item.key, payload);
       await loadServiceStandard();
     } catch (requestError) {
+      if (activeServiceStandardWorkOrderIdRef.current !== detail.id) return;
       const serverMessage = requestError.data?.error || requestError.message || copy.standardFailed;
-      setServiceStandardError(serverMessage);
+      setServiceStandardState((current) => (
+        matchesServiceStandardDetail(current, detail.id)
+          ? { ...current, error: serverMessage }
+          : current
+      ));
     } finally {
       setSavingStandardItemKey('');
     }
@@ -276,17 +346,17 @@ export function EngineerWorkOrderDetail({
       </section>
 
       <div className="mt-4">
-        {serviceStandardStatus === 'loading' && (
+        {serviceStandardIsLoading && (
           <p role="status" className="rounded-2xl border border-[#e5e8ed] bg-white px-5 py-4 text-sm text-[#697386]">
             {copy.standardLoading}
           </p>
         )}
-        {serviceStandardStatus === 'failed' && serviceStandardError && (
+        {serviceStandardLoadFailed && serviceStandardError && (
           <p role="alert" className="rounded-2xl border border-red-200 bg-red-50 px-5 py-4 text-sm leading-6 text-red-800">
             {serviceStandardError}
           </p>
         )}
-        {serviceStandardStatus === 'loaded' && serviceStandard && (
+        {serviceStandardMatchesDetail && (
           <EngineerServiceStandardProgress
             isCn={isCn}
             steps={serviceStandard.steps}
@@ -331,12 +401,12 @@ export function EngineerWorkOrderDetail({
                     {detail.status === 'payment_review' ? copy.waitingStart : paymentStartSubmitting ? copy.submittingStart : copy.requestStart}
                   </button>
                 )}
-                {serviceStandardStatus === 'loaded' && serviceStandardError && (
+                {serviceStandardMatchesDetail && serviceStandardError && (
                   <p role="alert" className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm leading-6 text-red-800 md:col-span-2">
                     {serviceStandardError}
                   </p>
                 )}
-                {isExecutingEngineer && currentServiceStep && (
+                {isExecutingEngineer && serviceStandardMatchesDetail && currentServiceStep && (
                   <div className="md:col-span-2">
                     <EngineerServiceStageChecklist
                       isCn={isCn}
