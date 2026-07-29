@@ -38,12 +38,36 @@ test('service-standard state is server-backed and reloads after confirmation', (
   const detail = read('frontend/src/components/Engineer/EngineerWorkOrderDetail.jsx');
 
   assert.match(detail, /getWorkOrderServiceStandard/);
-  assert.match(detail, /currentStepIndex=\{serviceStandard\?\.current_step_index \?\? 0\}/);
-  assert.match(detail, /serviceStandard\?\.steps\?\.\[serviceStandard\?\.current_step_index \?\? 0\]/);
+  assert.match(detail, /currentStepIndex=\{serviceStandard\.current_step_index\}/);
+  assert.match(detail, /serviceStandard\.steps\?\.\[serviceStandard\.current_step_index\]/);
   assert.match(detail, /await confirmWorkOrderServiceStandardItem\(detail\.id, item\.key, payload\)/);
   assert.match(detail, /await loadServiceStandard\(\)/);
   assert.match(detail, /requestError\.data\?\.error \|\| requestError\.message/);
   assert.doesNotMatch(detail, /checkedChecklistItems|toggleChecklistItem/);
+});
+
+test('service-standard loading and failures never invent a current first stage', () => {
+  const detail = read('frontend/src/components/Engineer/EngineerWorkOrderDetail.jsx');
+
+  assert.match(detail, /const \[serviceStandardStatus, setServiceStandardStatus\] = useState\('idle'\)/);
+  assert.match(
+    detail,
+    /setServiceStandard\(null\)[\s\S]*setServiceStandardStatus\('loading'\)[\s\S]*getWorkOrderServiceStandard/,
+  );
+  assert.match(
+    detail,
+    /serviceStandardStatus === 'loaded' && serviceStandard && \([\s\S]*<EngineerServiceStandardProgress/,
+  );
+  assert.match(
+    detail,
+    /serviceStandardStatus === 'loading'[\s\S]*role="status"[\s\S]*copy\.standardLoading/,
+  );
+  assert.match(
+    detail,
+    /serviceStandardStatus === 'failed' && serviceStandardError[\s\S]*role="alert"/,
+  );
+  assert.doesNotMatch(detail, /steps=\{serviceStandard\?\.steps \|\| \[\]\}/);
+  assert.doesNotMatch(detail, /currentStepIndex=\{serviceStandard\?\.current_step_index \?\? 0\}/);
 });
 
 test('guidance feedback refreshes AI without confirming fixed standard items', () => {
