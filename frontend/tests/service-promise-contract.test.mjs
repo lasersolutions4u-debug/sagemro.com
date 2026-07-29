@@ -81,3 +81,40 @@ test('About explains the approved service loop without exposing internal workflo
   assert.ok(about.indexOf('servicePromise.steps.map') < about.indexOf('t.capabilities.map'));
   assert.doesNotMatch(about, /engineer_role|blocking_items|override_reason/);
 });
+
+test('customer work-order detail renders only the public milestone projection before its tabs', () => {
+  const detailModal = readFileSync(
+    new URL('../src/components/WorkOrder/WorkOrderDetailModal.jsx', import.meta.url),
+    'utf8',
+  );
+
+  assert.match(detailModal, /import \{ CustomerServiceMilestones \}/);
+  assert.match(
+    detailModal,
+    /userType === 'customer'[\s\S]*<CustomerServiceMilestones[\s\S]*milestones=\{detail\.public_service_milestones \|\| \[\]\}/,
+  );
+  assert.match(detailModal, /detail\?\.id === workOrder\.id/);
+  assert.ok(
+    detailModal.indexOf('<CustomerServiceMilestones') < detailModal.indexOf('role="tablist"'),
+    'customer milestones should appear before the detail tabs',
+  );
+});
+
+test('customer milestones render the six approved states without internal fields or status inference', () => {
+  const milestones = readFileSync(
+    new URL('../src/components/WorkOrder/CustomerServiceMilestones.jsx', import.meta.url),
+    'utf8',
+  );
+
+  assert.match(milestones, /getServicePromiseCopy/);
+  assert.match(milestones, /servicePromise\.steps\.map/);
+  assert.match(milestones, /<ol/);
+  assert.match(milestones, /<li/);
+  assert.match(milestones, /aria-current=\{state === 'current' \? 'step' : undefined\}/);
+  assert.match(milestones, /Earlier service records were not itemized/);
+  assert.match(milestones, /早期服务记录未按步骤逐项记录/);
+  assert.match(milestones, /Check Messages for any information SAGEMRO needs from you/);
+  assert.match(milestones, /请在“消息”中查看 SAGEMRO 是否需要您补充信息/);
+  assert.doesNotMatch(milestones, /blocking_items|owner_type|guidance/);
+  assert.doesNotMatch(milestones, /workOrder|effectiveStatus|statusConfig/);
+});

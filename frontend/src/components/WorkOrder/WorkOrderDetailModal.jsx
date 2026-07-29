@@ -23,6 +23,7 @@ import { AttachmentsPanel } from './AttachmentsPanel';
 import { MaterialRequisitionPanel } from './MaterialRequisitionPanel';
 import { FieldWorkPanel } from './FieldWorkPanel';
 import { CollectionPanel } from './CollectionPanel';
+import { CustomerServiceMilestones } from './CustomerServiceMilestones';
 import { PaymentModal } from '../Payment/PaymentModal';
 import { formatCustomerDeviceLine } from '../../utils/workOrderDisplay';
 import { canEngineerViewCustomerContact, redactContactInfo } from '../../utils/contactRedaction';
@@ -200,13 +201,16 @@ export function WorkOrderDetailContent({
 
   const previousIsActiveRef = useRef(false);
   const initializedWorkOrderId = useRef(null);
+  const detailRequestSequenceRef = useRef(0);
 
   const loadDetail = useCallback(async ({ throwOnError = false } = {}) => {
     if (!workOrderId) return;
+    const requestSequence = ++detailRequestSequenceRef.current;
     setLoading(true);
     const requestSummary = incomingSummaryRef.current;
     try {
       const data = await getWorkOrder(workOrderId);
+      if (requestSequence !== detailRequestSequenceRef.current) return;
       const summaryChanges = getChangedIncomingSummary(requestSummary, incomingSummaryRef.current);
       setDetail({ ...data, ...summaryChanges });
       setSiteLocation({
@@ -228,10 +232,14 @@ export function WorkOrderDetailContent({
         }
       }
     } catch (e) {
-      console.error('加载工单详情失败:', e);
+      if (requestSequence === detailRequestSequenceRef.current) {
+        console.error('加载工单详情失败:', e);
+      }
       if (throwOnError) throw e;
     } finally {
-      setLoading(false);
+      if (requestSequence === detailRequestSequenceRef.current) {
+        setLoading(false);
+      }
     }
   }, [managementReadOnly, workOrderId, userType]);
   const handleFieldWorkChanged = useCallback(() => loadDetail({ throwOnError: true }), [loadDetail]);
@@ -1258,6 +1266,16 @@ export function WorkOrderDetailContent({
         {modalBusy && (
           <p role="status" className="sr-only">{modalBusyMessage}</p>
         )}
+        {isActive
+          && !loading
+          && userType === 'customer'
+          && detail?.id === workOrder.id
+          && (
+            <CustomerServiceMilestones
+              isCn={isCnLocale()}
+              milestones={detail.public_service_milestones || []}
+            />
+          )}
         {/* Tab 切换 */}
         {showTabNavigation && <div role="tablist" className="-mx-3 mb-4 flex gap-1 overflow-x-auto border-b border-[var(--color-border)] px-3 pb-0 sm:mx-0 sm:px-0">
           {tabs.map((t) => (
