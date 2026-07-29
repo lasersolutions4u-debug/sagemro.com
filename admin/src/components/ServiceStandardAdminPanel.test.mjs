@@ -15,3 +15,22 @@ test('Admin service-standard panel exposes progress, blockers, and reasoned gate
   assert.match(panel, /readOnly/);
   assert.doesNotMatch(panel, /confirmWorkOrderServiceStandardItem/);
 });
+
+test('service-standard override ignores stale work-order operations and resets prior snapshots', async () => {
+  const panel = await readSource('./ServiceStandardAdminPanel.jsx');
+
+  assert.match(panel, /import \{ useEffect, useLayoutEffect, useMemo, useRef, useState \} from 'react'/);
+  assert.match(panel, /const operationEpoch = useRef\(0\)/);
+  assert.match(panel, /useLayoutEffect\(\(\) => \{[\s\S]*const epoch = \+\+operationEpoch\.current/);
+  assert.match(panel, /setSnapshot\(null\)/);
+  assert.match(panel, /const isCurrent = \(\) => operationEpoch\.current === operationEpochAtStart/);
+  assert.match(panel, /await overrideAdminWorkOrderServiceStandardGate[\s\S]*if \(!isCurrent\(\)\) return;/);
+  assert.match(panel, /await Promise\.allSettled[\s\S]*if \(!isCurrent\(\)\) return;[\s\S]*setSnapshot/);
+  assert.match(panel, /return \(\) => \{[\s\S]*operationEpoch\.current \+= 1/);
+});
+
+test('work-order changes invalidate an in-flight override before the next effect runs', async () => {
+  const panel = await readSource('./ServiceStandardAdminPanel.jsx');
+
+  assert.match(panel, /useLayoutEffect\(\(\) => \{[\s\S]*operationEpoch\.current \+= 1[\s\S]*\}, \[workOrderId\]\)/);
+});
