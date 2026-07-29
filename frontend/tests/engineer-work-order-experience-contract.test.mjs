@@ -193,7 +193,10 @@ test('engineer detail exposes only one of six high-level sections at a time', ()
   assert.match(detail, /showTabNavigation=\{false\}/);
   assert.match(detail, /Current Task Context/);
   assert.match(detail, /Job Preparation/);
-  assert.match(detail, /Service Standard Checklist/);
+  assert.match(detail, /<EngineerServiceStandardProgress[\s\S]*role="tablist"/);
+  assert.match(detail, /<EngineerServiceStageChecklist/);
+  assert.doesNotMatch(detail, /const CHECKLIST =/);
+  assert.doesNotMatch(detail, /checkedChecklistItems|toggleChecklistItem/);
   assert.doesNotMatch(detail, /Work-Order Tools/);
   assert.match(modal, /controlledTab/);
   assert.match(modal, /showTabNavigation/);

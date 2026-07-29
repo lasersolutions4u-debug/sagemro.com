@@ -14,38 +14,55 @@ test('readiness API preserves authenticated status and explicit refresh semantic
   assert.match(api, /body: JSON\.stringify\(\{ force \}\)/);
 });
 
-test('engineer detail renders the readiness card above Admin support in a 320px rail', () => {
+test('engineer detail places one guidance card above Admin support in a sticky 320px rail', () => {
   const detail = read('frontend/src/components/Engineer/EngineerWorkOrderDetail.jsx');
   assert.match(detail, /lg:grid-cols-\[minmax\(0,1fr\)_320px\]/);
-  assert.match(detail, /isExecutingEngineer && canViewServiceReadiness/);
-  assert.match(detail, /<EngineerServiceReadinessCard/);
-  assert.match(detail, /<EngineerServiceReadinessCard[\s\S]*copy\.support/);
-  assert.match(detail, /setInterval\(loadServiceReadiness, 2000\)/);
-  assert.match(detail, /pollAttempts.*>= 10/);
-  assert.match(
-    detail,
-    /getWorkOrderServiceReadiness\(readinessWorkOrderId\)[\s\S]*?\.catch\(\(\) => \{\s*if \(!cancelled\) setServiceReadiness\(\(current\) => \(\{\s*\.\.\.current,\s*state: 'failed'/,
-  );
-  assert.doesNotMatch(detail, /await refreshWorkOrderServiceReadiness[\s\S]*loadDetail/);
+  assert.match(detail, /<aside className="space-y-3 self-start lg:sticky lg:top-4"/);
+  assert.match(detail, /<EngineerServiceGuidanceCard[\s\S]*copy\.support/);
+  assert.equal(detail.match(/<EngineerServiceGuidanceCard/g)?.length, 1);
+  assert.doesNotMatch(detail, /<EngineerServiceReadinessCard/);
 });
 
-test('in-service work orders show readiness only after a saved review is available', () => {
+test('mobile source order is summary, progress, AI rail, then tabbed content', () => {
   const detail = read('frontend/src/components/Engineer/EngineerWorkOrderDetail.jsx');
   assert.match(
     detail,
-    /const shouldRenderServiceReadiness = canGenerateServiceReadiness \|\| Boolean\(serviceReadiness\?\.review\);/,
+    /copy\.nextStep[\s\S]*<EngineerServiceStandardProgress[\s\S]*<aside className="space-y-3 self-start lg:sticky lg:top-4"[\s\S]*<EngineerServiceGuidanceCard[\s\S]*role="tablist"/,
   );
-  assert.match(
-    detail,
-    /isExecutingEngineer && canViewServiceReadiness && shouldRenderServiceReadiness/,
-  );
+  assert.match(detail, /\[grid-area:rail\]/);
+  assert.match(detail, /\[grid-area:main\]/);
+  assert.match(detail, /lg:\[grid-template-areas:'main_rail'\]/);
+});
+
+test('service-standard state is server-backed and reloads after confirmation', () => {
+  const detail = read('frontend/src/components/Engineer/EngineerWorkOrderDetail.jsx');
+
+  assert.match(detail, /getWorkOrderServiceStandard/);
+  assert.match(detail, /currentStepIndex=\{serviceStandard\?\.current_step_index \?\? 0\}/);
+  assert.match(detail, /serviceStandard\?\.steps\?\.\[serviceStandard\?\.current_step_index \?\? 0\]/);
+  assert.match(detail, /await confirmWorkOrderServiceStandardItem\(detail\.id, item\.key, payload\)/);
+  assert.match(detail, /await loadServiceStandard\(\)/);
+  assert.match(detail, /requestError\.data\?\.error \|\| requestError\.message/);
+  assert.doesNotMatch(detail, /checkedChecklistItems|toggleChecklistItem/);
+});
+
+test('guidance feedback refreshes AI without confirming fixed standard items', () => {
+  const detail = read('frontend/src/components/Engineer/EngineerWorkOrderDetail.jsx');
+
+  assert.match(detail, /submitWorkOrderServiceGuidanceFeedback/);
+  assert.match(detail, /guidance_generated_at: generatedAt/);
+  assert.match(detail, /action_index: actionIndex/);
+  assert.match(detail, /feedback_type: feedbackType/);
+  assert.match(detail, /await refreshGuidance\(\)/);
+  const feedbackHandler = detail.match(/const handleGuidanceFeedback[\s\S]*?\n  };/)?.[0] || '';
+  assert.doesNotMatch(feedbackHandler, /confirmWorkOrderServiceStandardItem/);
 });
 
 test('draft handoff uses the existing message composer and never sends automatically', () => {
   const detail = read('frontend/src/components/Engineer/EngineerWorkOrderDetail.jsx');
   const modal = read('frontend/src/components/WorkOrder/WorkOrderDetailModal.jsx');
   const messages = read('frontend/src/components/WorkOrder/MessagePanel.jsx');
-  const card = read('frontend/src/components/Engineer/EngineerServiceReadinessCard.jsx');
+  const card = read('frontend/src/components/Engineer/EngineerServiceGuidanceCard.jsx');
   assert.match(detail, /setMessageDraftRequest\(\{ id: .*text: question\.draft \}\)/);
   assert.match(detail, /setActiveTab\('messages'\)/);
   assert.match(modal, /messageDraftRequest/);

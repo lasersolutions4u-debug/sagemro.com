@@ -28,12 +28,13 @@ test('engineer work orders use readable status accents and skeleton loading', ()
   assert.match(detail, /var\(--status-\$\{detail\.status\}-text\)/);
 });
 
-test('engineer checklist keeps checked state while routed detail tabs change', () => {
+test('engineer checklist reloads server state while routed detail tabs keep semantic roles', () => {
   const detail = read('src/components/Engineer/EngineerWorkOrderDetail.jsx');
 
-  assert.match(detail, /useState\(\(\) => new Set\(\)\)/);
-  assert.match(detail, /setCheckedChecklistItems\(\(current\) =>/);
-  assert.match(detail, /checked=\{checkedChecklistItems\.has\(index\)\}/);
+  assert.match(detail, /getWorkOrderServiceStandard/);
+  assert.match(detail, /confirmWorkOrderServiceStandardItem/);
+  assert.match(detail, /await loadServiceStandard\(\)/);
+  assert.doesNotMatch(detail, /checkedChecklistItems/);
   assert.match(detail, /role="tablist"/);
   assert.match(detail, /role="tab"/);
   assert.match(detail, /role="tabpanel"/);
