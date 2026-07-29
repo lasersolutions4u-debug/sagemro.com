@@ -346,8 +346,9 @@ test('customer sidebar tools stay expanded without a More overflow menu', () => 
   assert.match(toolbar, /Notifications/);
   assert.match(toolbar, /My Equipment/);
   assert.ok(
-    toolbar.indexOf('Notifications') < toolbar.indexOf('My Equipment'),
-    'Notifications should appear before My Equipment for logged-in customers'
+    toolbar.indexOf("label: isCn ? '设备' : 'My Equipment'") <
+      toolbar.indexOf("label: isCn ? '通知' : 'Notifications'"),
+    'My Equipment should remain before Notifications for logged-in customers'
   );
   assert.match(
     toolbar,
