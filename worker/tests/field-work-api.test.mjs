@@ -6,6 +6,7 @@ import { DatabaseSync } from 'node:sqlite';
 import worker from '../src/index.js';
 import { signJwt } from '../src/lib/auth.js';
 import { fieldDayLocalDate, siteLocalDateTimeToUtc } from '../src/lib/field-work.js';
+import { buildServiceStandardDefinition } from '../src/lib/serviceStandard.js';
 
 const JPEG = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46]);
 const arrivalMigrationSql = readFileSync(new URL('../migrations/033_work_order_location_verification.sql', import.meta.url), 'utf8');
@@ -13,6 +14,24 @@ const fieldWorkMigrationSql = readFileSync(new URL('../migrations/039_field_work
 
 function normalizeSql(sql) {
   return sql.replace(/\s+/g, ' ').trim();
+}
+
+function serviceStandardRows(state = 'legacy_not_recorded') {
+  return buildServiceStandardDefinition({ serviceMode: 'onsite' }).items.map((item) => ({
+    work_order_id: 'wo-onsite-1',
+    standard_version: 1,
+    step_key: item.stepKey,
+    item_key: item.key,
+    state,
+    is_required: item.required ? 1 : 0,
+    owner_type: item.owner,
+    confirmed_by_type: null,
+    confirmed_by_id: null,
+    confirmed_at: null,
+    evidence_type: null,
+    evidence_id: null,
+    not_applicable_reason: null,
+  }));
 }
 
 function createEnv() {
@@ -47,6 +66,9 @@ function createEnv() {
     __kv: new Map(),
     __queries: [],
     __writes: [],
+    __progress: serviceStandardRows(),
+    __overrides: [],
+    __failServiceStandardEventAudit: false,
     KV: {
       async get(key) { return env.__kv.get(key) ?? null; },
       async put(key, value) { env.__kv.set(key, value); },
@@ -121,6 +143,7 @@ function createEnv() {
         holds: structuredClone(env.__holds),
         logs: structuredClone(env.__logs),
         notifications: structuredClone(env.__notifications),
+        progress: structuredClone(env.__progress),
       };
       try {
         const results = [];
@@ -137,6 +160,7 @@ function createEnv() {
         env.__holds = snapshot.holds;
         env.__logs = snapshot.logs;
         env.__notifications = snapshot.notifications;
+        env.__progress = snapshot.progress;
         throw error;
       }
     },
@@ -204,6 +228,13 @@ function createStatement(env, sql) {
       }
       if (/FROM work_order_repair_records WHERE work_order_id = \?/i.test(normalized)) {
         const record = env.__repairRecords.find((item) => item.work_order_id === this.args[0]);
+        return record ? { ...record } : null;
+      }
+      if (/FROM work_order_service_standard_progress/i.test(normalized) && /item_key = \?/i.test(normalized)) {
+        const record = env.__progress.find((item) =>
+          item.work_order_id === this.args[0]
+          && item.standard_version === this.args[1]
+          && item.item_key === this.args[2]);
         return record ? { ...record } : null;
       }
       if (/SELECT COUNT\(\*\) as count FROM notifications WHERE user_id = \?/i.test(normalized)) {
@@ -288,6 +319,20 @@ function createStatement(env, sql) {
       if (/FROM work_order_field_days/i.test(normalized)) {
         return { results: env.__fieldDays.filter((item) => item.work_order_id === this.args[0]).map((item) => ({ ...item })) };
       }
+      if (/FROM work_order_service_standard_progress/i.test(normalized)) {
+        return {
+          results: env.__progress.filter((item) =>
+            item.work_order_id === this.args[0] && item.standard_version === this.args[1])
+            .map((item) => ({ ...item })),
+        };
+      }
+      if (/FROM work_order_service_gate_overrides/i.test(normalized)) {
+        return {
+          results: env.__overrides.filter((item) =>
+            item.work_order_id === this.args[0] && !item.revoked_at)
+            .map((item) => ({ ...item })),
+        };
+      }
       if (/FROM work_order_field_day_media/i.test(normalized)) {
         const dayIds = new Set(env.__fieldDays.filter((item) => item.work_order_id === this.args[0]).map((item) => item.id));
         const customerOnly = /customer_visible = 1/i.test(normalized);
@@ -333,6 +378,23 @@ function createStatement(env, sql) {
           env.__fieldDays.push({ id, work_order_id: workOrderId, engineer_id: engineerId, site_local_date: localDate, site_timezone: timezone, status: 'checked_in', expected_check_out_at: expectedCheckout, location_status: locationStatus, latitude, longitude, accuracy_m: accuracy, coordinate_system: coordinateSystem, location_source: locationSource, distance_m: distance, radius_m: radius, within_geofence: within, check_in_idempotency_key: idempotency });
         }
       }
+      if (/INSERT OR IGNORE INTO work_order_service_standard_progress/i.test(normalized)) {
+        const [workOrderId, standardVersion, stepKey, itemKey, isRequired, ownerType] = this.args;
+        if (!env.__progress.some((item) =>
+          item.work_order_id === workOrderId
+          && item.standard_version === standardVersion
+          && item.item_key === itemKey)) {
+          env.__progress.push({
+            work_order_id: workOrderId,
+            standard_version: standardVersion,
+            step_key: stepKey,
+            item_key: itemKey,
+            state: 'pending',
+            is_required: isRequired,
+            owner_type: ownerType,
+          });
+        }
+      }
       if (/UPDATE work_order_field_days SET status = \?/i.test(normalized)) {
         const [status, laborHours, completedWork, issuesRisks, nextPlan, customerSupportNeeded, internalNote, lateReason, idempotencyKey, fieldDayId, workOrderId] = this.args;
         const record = env.__fieldDays.find((item) => item.id === fieldDayId && item.work_order_id === workOrderId);
@@ -358,7 +420,55 @@ function createStatement(env, sql) {
         env.__cleanupQueue = env.__cleanupQueue.filter((item) => item.object_key !== this.args[0]);
       }
       if (/INSERT INTO work_order_arrival_checks/i.test(normalized)) env.__arrivalChecks.push({ args: this.args });
-      if (/INSERT INTO audit_logs/i.test(normalized)) env.__auditLogs.push({ args: this.args });
+      if (/INSERT INTO audit_logs/i.test(normalized)) {
+        if (/FROM work_order_service_standard_progress/i.test(normalized)) {
+          if (env.__failServiceStandardEventAudit) {
+            env.__failServiceStandardEventAudit = false;
+            throw new Error('service-standard event audit insert failed');
+          }
+          const [
+            id, actorType, actorId, targetId, beforeState, afterState, ip, device,
+            workOrderId, itemKey, ownerType,
+          ] = this.args;
+          const item = env.__progress.find((row) =>
+            row.work_order_id === workOrderId
+            && row.standard_version === 1
+            && row.item_key === itemKey
+            && [ownerType, 'system'].includes(row.owner_type)
+            && row.state === 'pending');
+          if (item) {
+            env.__auditLogs.push({
+              args: [
+                id, actorType, actorId, 'work_order', targetId,
+                'service_standard_item_confirmed', beforeState, afterState, ip, device,
+              ],
+            });
+          }
+        } else {
+          env.__auditLogs.push({ args: this.args });
+        }
+      }
+      if (/UPDATE work_order_service_standard_progress SET state = 'confirmed'/i.test(normalized)) {
+        const [actorType, actorId, evidenceType, evidenceId, workOrderId, itemKey, ownerType] = this.args;
+        const item = env.__progress.find((row) =>
+          row.work_order_id === workOrderId
+          && row.standard_version === 1
+          && row.item_key === itemKey
+          && [ownerType, 'system'].includes(row.owner_type)
+          && row.state === 'pending');
+        if (item) {
+          Object.assign(item, {
+            state: 'confirmed',
+            confirmed_by_type: actorType,
+            confirmed_by_id: actorId,
+            confirmed_at: '2026-07-29 00:00:00',
+            evidence_type: evidenceType,
+            evidence_id: evidenceId,
+          });
+        } else {
+          changes = 0;
+        }
+      }
       if (/INSERT(?: OR IGNORE)? INTO notifications/i.test(normalized)) {
         const fieldDay = env.__fieldDays.find((item) => item.id === this.args.at(-2));
         const claimColumn = /checkout_reminder_sent_at/i.test(normalized)
@@ -1920,6 +2030,27 @@ test('final service completion rejects a pending field extension', async () => {
   assert.equal(env.__workOrders[0].status, 'in_service');
 });
 
+test('final service completion applies the resolve gate after field-work validation', async () => {
+  const env = createEnv();
+  env.__workOrders[0].arrival_verified_at = '2026-07-24T00:00:00Z';
+  seedFieldDay(env, { status: 'report_submitted' });
+  env.__progress.find((item) => item.item_key === 'verify.functional_test').state = 'pending';
+
+  const result = await api(env, '/api/workorders/wo-onsite-1/resolve', {
+    userType: 'engineer', userId: 'engineer-1', method: 'POST', body: {},
+  });
+
+  assert.equal(result.response.status, 409);
+  assert.equal(result.json.code, 'service_standard_gate_blocked');
+  assert.equal(result.json.gate, 'resolve');
+  assert.deepEqual(result.json.blocking_items, ['verify.functional_test']);
+  assert.equal(env.__workOrders[0].status, 'in_service');
+  assert.equal(
+    env.__progress.find((item) => item.item_key === 'handover.service_report').state,
+    'legacy_not_recorded',
+  );
+});
+
 test('final service completion allows submitted and late-submitted field reports', async () => {
   const env = createEnv();
   env.__workOrders[0].arrival_verified_at = '2026-07-24T00:00:00Z';
@@ -1932,6 +2063,91 @@ test('final service completion allows submitted and late-submitted field reports
 
   assert.equal(result.response.status, 200);
   assert.equal(env.__workOrders[0].status, 'resolved');
+  assert.equal(
+    env.__progress.find((item) => item.item_key === 'handover.service_report').state,
+    'legacy_not_recorded',
+  );
+  assert.equal(
+    env.__auditLogs.some((entry) => entry.args[5] === 'service_standard_item_confirmed'),
+    false,
+  );
+});
+
+test('successful resolution confirms and audits only a pending system service-report item', async () => {
+  const env = createEnv();
+  env.__workOrders[0].arrival_verified_at = '2026-07-24T00:00:00Z';
+  seedFieldDay(env, { status: 'report_submitted' });
+  env.__progress.find((item) => item.item_key === 'handover.service_report').state = 'pending';
+
+  const result = await api(env, '/api/workorders/wo-onsite-1/resolve', {
+    userType: 'engineer', userId: 'engineer-1', method: 'POST', body: {},
+  });
+
+  assert.equal(result.response.status, 200);
+  const confirmation = env.__progress.find((item) => item.item_key === 'handover.service_report');
+  assert.deepEqual(
+    {
+      state: confirmation.state,
+      confirmedBy: confirmation.confirmed_by_type,
+      evidenceType: confirmation.evidence_type,
+    },
+    { state: 'confirmed', confirmedBy: 'system', evidenceType: 'service_report' },
+  );
+  assert.ok(env.__auditLogs.some((entry) =>
+    entry.args[5] === 'service_standard_item_confirmed'
+    && JSON.parse(entry.args[7]).item_key === 'handover.service_report'));
+});
+
+test('successful resolution creates and confirms its missing immutable system event row', async () => {
+  const env = createEnv();
+  env.__workOrders[0].arrival_verified_at = '2026-07-24T00:00:00Z';
+  seedFieldDay(env, { status: 'report_submitted' });
+  env.__progress = env.__progress.filter((item) =>
+    item.item_key !== 'handover.service_report');
+
+  const result = await api(env, '/api/workorders/wo-onsite-1/resolve', {
+    userType: 'engineer', userId: 'engineer-1', method: 'POST', body: {},
+  });
+
+  assert.equal(result.response.status, 200);
+  const confirmation = env.__progress.find((item) =>
+    item.item_key === 'handover.service_report');
+  assert.deepEqual(
+    {
+      stepKey: confirmation?.step_key,
+      state: confirmation?.state,
+      required: confirmation?.is_required,
+      owner: confirmation?.owner_type,
+      confirmedBy: confirmation?.confirmed_by_type,
+    },
+    {
+      stepKey: 'transparent_handover',
+      state: 'confirmed',
+      required: 1,
+      owner: 'system',
+      confirmedBy: 'system',
+    },
+  );
+  assert.ok(env.__auditLogs.some((entry) =>
+    entry.args[5] === 'service_standard_item_confirmed'));
+
+  const rollbackEnv = createEnv();
+  rollbackEnv.__workOrders[0].arrival_verified_at = '2026-07-24T00:00:00Z';
+  seedFieldDay(rollbackEnv, { status: 'report_submitted' });
+  rollbackEnv.__progress = rollbackEnv.__progress.filter((item) =>
+    item.item_key !== 'handover.service_report');
+  rollbackEnv.__failServiceStandardEventAudit = true;
+
+  const failed = await api(rollbackEnv, '/api/workorders/wo-onsite-1/resolve', {
+    userType: 'engineer', userId: 'engineer-1', method: 'POST', body: {},
+  });
+
+  assert.equal(failed.response.status, 500);
+  assert.equal(rollbackEnv.__workOrders[0].status, 'in_service');
+  assert.equal(
+    rollbackEnv.__progress.some((item) => item.item_key === 'handover.service_report'),
+    false,
+  );
 });
 
 for (const concurrentRecord of ['field-day', 'extension']) {
