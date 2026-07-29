@@ -151,12 +151,20 @@ test('a refresh request cannot be superseded by a cached read from the same gene
 
 test('six-step progress is a meaningful bilingual process rail', () => {
   const progress = read('frontend/src/components/Engineer/EngineerServiceStandardProgress.jsx');
+  const detail = read('frontend/src/components/Engineer/EngineerWorkOrderDetail.jsx');
 
   assert.match(progress, /Task alignment/);
   assert.match(progress, /任务对齐/);
   assert.match(progress, /currentStepIndex/);
+  assert.match(progress, /startBlockingCount/);
+  assert.match(progress, /1 required item blocks service start/);
+  assert.match(progress, /1 个必需项未完成，暂不能开始服务/);
   assert.match(progress, /aria-current=\{isCurrent \? 'step' : undefined\}/);
   assert.match(progress, /focus-visible:ring-2/);
+  assert.match(
+    detail,
+    /startBlockingCount=\{serviceStandard\.gates\?\.start\?\.blocking_items\?\.length \|\| 0\}/,
+  );
 });
 
 test('current-stage checklist supports explicit confirmation and not-applicable reasons', () => {

@@ -134,7 +134,9 @@ test('engineer follows service standards and AI guidance without automatic custo
         (${sqlText(workOrderId)}, 1, 'risk_control', 'risk.ppe_and_access',
           'confirmed', 0, 'engineer', 'engineer', ${sqlText(engineerRow.id)}, datetime('now')),
         (${sqlText(workOrderId)}, 1, 'one_visit_readiness', 'ready.tools_and_documents',
-          'confirmed', 1, 'engineer', 'engineer', ${sqlText(engineerRow.id)}, datetime('now'));
+          'confirmed', 1, 'engineer', 'engineer', ${sqlText(engineerRow.id)}, datetime('now')),
+        (${sqlText(workOrderId)}, 1, 'one_visit_readiness', 'ready.start_conditions',
+          'confirmed', 1, 'admin', 'admin', 'e2e-admin', datetime('now'));
     `);
 
     await engineerPage.route(
@@ -199,25 +201,42 @@ test('engineer follows service standards and AI guidance without automatic custo
     );
     const guidanceHeading = engineerPage.getByRole('heading', { name: 'Most important next step' });
     const guidanceCard = guidanceHeading.locator('xpath=ancestor::section[1]');
+    const progressHeading = engineerPage.getByRole('heading', { name: 'Six-step precision service track' });
+    const stageHeading = engineerPage.getByRole('heading', { name: 'Risk control', exact: true });
+    const stageSection = stageHeading.locator('xpath=ancestor::section[1]');
     await expect(guidanceHeading).toBeVisible();
     await expect(guidanceCard.getByText(guidance.headline, { exact: true })).toBeVisible();
-    await expect(engineerPage.getByRole('heading', { name: 'Six-step precision service track' })).toBeVisible();
-    await expect(engineerPage.getByRole('heading', { name: 'Risk control', exact: true })).toBeVisible();
+    await expect(progressHeading).toBeVisible();
+    await expect(stageHeading).toBeVisible();
     const currentStep = engineerPage.locator('[aria-current="step"]');
+    await expect(currentStep.getByText('02', { exact: true })).toBeVisible();
     await expect(currentStep.getByText('Risk control', { exact: true })).toBeVisible();
+    await expect(engineerPage.getByText(
+      '1 required item blocks service start',
+      { exact: true },
+    )).toBeVisible();
 
-    await captureBothViewports(engineerPage, 'engineer-standard-progress');
-    await captureBothViewports(engineerPage, 'engineer-current-stage-checklist');
-    await captureBothViewports(engineerPage, 'engineer-ai-guidance-ready');
+    await captureBothViewports(engineerPage, 'engineer-standard-progress', {
+      scope: progressHeading,
+      fullPage: false,
+    });
+    await captureBothViewports(engineerPage, 'engineer-current-stage-checklist', {
+      scope: stageHeading,
+      fullPage: false,
+    });
+    await captureBothViewports(engineerPage, 'engineer-ai-guidance-ready', {
+      scope: guidanceHeading,
+      fullPage: false,
+    });
 
     const navigationCount = await engineerPage.evaluate(
       () => performance.getEntriesByType('navigation').length,
     );
-    const riskItem = engineerPage.locator('li').filter({
-      has: engineerPage.getByRole('heading', { name: 'Review site and machine hazards', exact: true }),
-    });
+    const riskItem = stageSection
+      .getByRole('heading', { name: 'Review site and machine hazards', exact: true })
+      .locator('xpath=ancestor::li[1]');
     await riskItem.getByRole('button', { name: 'Confirm complete', exact: true }).click();
-    await expect(currentStep.getByText('One-visit readiness', { exact: true })).toBeVisible();
+    await expect(currentStep.getByText('Evidence-led work', { exact: true })).toBeVisible();
     expect(await engineerPage.evaluate(
       () => performance.getEntriesByType('navigation').length,
     )).toBe(navigationCount);
@@ -304,13 +323,19 @@ test('engineer follows service standards and AI guidance without automatic custo
       `${runtime.engineerBase}/work-orders/${failedWorkOrderId}`,
       { waitUntil: 'domcontentloaded' },
     );
-    await expect(engineerPage.getByText(
+    const failedCopy = engineerPage.getByText(
       'AI guidance is temporarily unavailable. Continue with the service standard and retry later.',
       { exact: true },
-    )).toBeVisible();
-    await expect(engineerPage.getByRole('heading', { name: 'Six-step precision service track' })).toBeVisible();
-    await expect(engineerPage.getByRole('heading', { name: 'Task alignment', exact: true })).toBeVisible();
-    await captureBothViewports(engineerPage, 'engineer-ai-guidance-failed-standard-visible');
+    );
+    const failedProgressHeading = engineerPage.getByRole('heading', { name: 'Six-step precision service track' });
+    const failedStageHeading = engineerPage.getByRole('heading', { name: 'Task alignment', exact: true });
+    await expect(failedCopy).toBeVisible();
+    await expect(failedProgressHeading).toBeVisible();
+    await expect(failedStageHeading).toBeVisible();
+    await captureBothViewports(engineerPage, 'engineer-ai-guidance-failed', {
+      scope: failedCopy,
+      fullPage: false,
+    });
   } finally {
     await engineerContext.close();
   }

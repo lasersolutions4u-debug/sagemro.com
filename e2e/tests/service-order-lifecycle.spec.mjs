@@ -6,6 +6,12 @@ import { localD1Rows, sqlText } from '../support/visual.mjs';
 
 const runtime = e2eRuntime();
 
+const START_GATE_BLOCKING_ITEMS = [
+  'risk.hazards_reviewed',
+  'risk.isolation_permission',
+  'ready.tools_and_documents',
+];
+
 const ENGINEER_STANDARD_ITEMS = {
   'Task alignment': [
     'Confirm machine identity and configuration',
@@ -41,7 +47,7 @@ async function confirmEngineerStandardItems(page, stageName) {
     .locator('xpath=ancestor::section[1]');
   await expect(stage).toBeVisible();
   for (const itemName of ENGINEER_STANDARD_ITEMS[stageName] || []) {
-    const item = page.getByRole('heading', { name: itemName, exact: true })
+    const item = stage.getByRole('heading', { name: itemName, exact: true })
       .locator('xpath=ancestor::li[1]');
     await expect(item).toBeVisible();
     const confirm = item.getByRole('button', { name: 'Confirm complete', exact: true });
@@ -215,7 +221,19 @@ test('customer, Admin, and engineer complete a service order lifecycle', async (
   await paymentDialog.getByRole('button', { name: 'Confirm payment & start', exact: true }).click();
   const paymentConfirmationDialog = adminPage.getByRole('dialog', { name: 'Confirm payment and start service' });
   await paymentConfirmationDialog.getByLabel('Payment confirmation note (optional)').fill('E2E advance payment confirmed');
+  const approveStartPath = `/api/admin/workorders/${workOrderId}/payment/approve-start`;
+  const blockedApprovalResponsePromise = adminPage.waitForResponse((response) => (
+    new URL(response.url()).pathname === approveStartPath
+    && response.request().method() === 'POST'
+  ));
   await paymentConfirmationDialog.getByRole('button', { name: 'Confirm', exact: true }).click();
+  const blockedApprovalResponse = await blockedApprovalResponsePromise;
+  expect(blockedApprovalResponse.status()).toBe(409);
+  expect(await blockedApprovalResponse.json()).toMatchObject({
+    code: 'service_standard_gate_blocked',
+    gate: 'start',
+    blocking_items: START_GATE_BLOCKING_ITEMS,
+  });
   await expect(adminPage.getByText(
     'Complete the required service-standard items first',
     { exact: true },
@@ -231,7 +249,20 @@ test('customer, Admin, and engineer complete a service order lifecycle', async (
     () => performance.getEntriesByType('navigation').length,
   )).toBe(navigationCountBeforeStandards);
 
+  const approvedStartResponsePromise = adminPage.waitForResponse((response) => (
+    new URL(response.url()).pathname === approveStartPath
+    && response.request().method() === 'POST'
+  ));
   await paymentConfirmationDialog.getByRole('button', { name: 'Confirm', exact: true }).click();
+  const approvedStartResponse = await approvedStartResponsePromise;
+  expect(approvedStartResponse.status()).toBe(200);
+  expect(await approvedStartResponse.json()).toMatchObject({
+    success: true,
+    status: 'in_service',
+  });
+  expect(localD1Rows(`
+    SELECT status FROM work_orders WHERE id = ${sqlText(workOrderId)}
+  `)[0].status).toBe('in_service');
   await paymentDialog.getByRole('button', { name: 'Close', exact: true }).click();
 
   await engineerPage.reload();
