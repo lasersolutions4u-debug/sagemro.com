@@ -9,7 +9,7 @@ import { isCnLocale } from '../../utils/locale';
 const copy = {
   en: {
     eyebrow: 'SAGEMRO Service OS',
-    headline: 'Issues with laser and metal forming equipment? Ask AI first.',
+    headline: 'Equipment trouble? Chat now. Get answers instantly.',
     intro: 'Cutting issue, bending problem, or welding alarm? Describe what you are seeing on site, and let SAGEMRO AI analyze it and offer suggestions.',
     resourceTitle: 'Useful public resources',
     resources: [
@@ -19,8 +19,8 @@ const copy = {
   },
   zh: {
     eyebrow: 'SAGEMRO 智能服务系统',
-    headline: '激光和成型设备问题，先问AI试试',
-    intro: '切割出了什么问题、折弯哪里不对、焊接报了什么警——描述现场遇到的情况，让SAGEMRO AI 给你分析和建议',
+    headline: '设备问题不求人，即时交谈，马上就有答案',
+    intro: '切割出了什么问题、折弯哪里不对、焊接报了什么警——描述现场情况，让SAGEMRO AI 给你分析和建议',
     resourceTitle: '公开资源',
     resources: [
       { icon: Calculator, label: '计算工具', desc: '重量、材料预算、激光切割成本和折弯吨位', href: '/tools' },
