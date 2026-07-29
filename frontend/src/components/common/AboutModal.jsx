@@ -11,6 +11,7 @@ import {
   ShieldCheck,
   Wrench,
 } from 'lucide-react';
+import { getServicePromiseCopy } from '../../data/servicePromise';
 import { isCnLocale } from '../../utils/locale';
 
 const copy = {
@@ -24,6 +25,9 @@ const copy = {
       { icon: ClipboardCheck, title: 'Clarify What Is Known', desc: 'The system may ask relevant follow-up questions and organize the case into a summary you can check.' },
       { icon: Wrench, title: 'Choose A Reviewed Next Step', desc: 'When diagnosis, quotation, parts, scheduling, or site safety matters, qualified review confirms what should happen next.' },
     ],
+    serviceLoopEyebrow: 'OUR SERVICE STANDARD',
+    serviceLoopTitle: 'SAGEMRO Precision Service Loop',
+    serviceResponsibility: 'AI helps organize information and flag risk; actual confirmations by engineers, Admin, and customers form the service record.',
     outcomesTitle: 'What SAGEMRO AI Can Help Clarify',
     capabilities: [
       'Observed symptoms',
@@ -60,6 +64,9 @@ const copy = {
       { icon: ClipboardCheck, title: '把已知信息整理清楚', desc: '系统会根据需要追问相关细节，并把情况整理成便于你确认的摘要。' },
       { icon: Wrench, title: '再选择需要确认的下一步', desc: '涉及诊断、报价、备件、排期或现场安全时，再由合格人员进一步确认。' },
     ],
+    serviceLoopEyebrow: 'OUR SERVICE STANDARD',
+    serviceLoopTitle: 'SAGEMRO 精准服务闭环',
+    serviceResponsibility: 'AI 帮助整理信息和提示风险；工程师、Admin 与客户的实际确认构成服务记录。',
     outcomesTitle: '对话可以帮助澄清什么',
     capabilities: [
       '现场现象',
@@ -89,7 +96,9 @@ const copy = {
 };
 
 export function AboutModal({ isOpen, onClose }) {
-  const t = isCnLocale() ? copy.zh : copy.en;
+  const isCn = isCnLocale();
+  const t = isCn ? copy.zh : copy.en;
+  const servicePromise = getServicePromiseCopy(isCn);
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} title={t.title} size="lg">
@@ -125,6 +134,45 @@ export function AboutModal({ isOpen, onClose }) {
               </div>
             ))}
           </div>
+        </section>
+
+        <section className="overflow-hidden rounded-2xl border border-[var(--color-border)]">
+          <div className="border-b border-[var(--color-border)] bg-[var(--color-surface-elevated)] p-4 sm:p-5">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--color-primary)]">
+              {t.serviceLoopEyebrow}
+            </p>
+            <h3 className="mt-1.5 text-base font-medium text-[var(--color-text-primary)]">
+              {t.serviceLoopTitle}
+            </h3>
+            <p className="mt-2 text-[13px] leading-relaxed text-[var(--color-text-secondary)]">
+              {servicePromise.promise}
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 px-4 sm:grid-cols-2 sm:px-5">
+            {servicePromise.steps.map((step) => (
+              <div
+                key={step.key}
+                className="flex items-start gap-3 border-b border-[var(--color-border)] py-3 sm:px-2"
+              >
+                <span className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md border border-[var(--color-primary)]/30 bg-[var(--color-primary)]/10 text-[10px] font-semibold tabular-nums text-[var(--color-primary)]">
+                  {String(step.number).padStart(2, '0')}
+                </span>
+                <div className="min-w-0">
+                  <h4 className="text-[13px] font-medium text-[var(--color-text-primary)]">
+                    {step.title}
+                  </h4>
+                  <p className="mt-0.5 text-[12px] leading-relaxed text-[var(--color-text-secondary)]">
+                    {step.detail}
+                  </p>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <p className="px-4 py-3 text-[11px] leading-relaxed text-[var(--color-text-secondary)] sm:px-5">
+            {t.serviceResponsibility}
+          </p>
         </section>
 
         <section>
