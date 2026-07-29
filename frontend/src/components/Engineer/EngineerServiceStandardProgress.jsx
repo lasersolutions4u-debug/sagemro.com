@@ -27,6 +27,7 @@ export function EngineerServiceStandardProgress({
   isCn,
   steps = [],
   currentStepIndex = 0,
+  startBlockingCount = 0,
   onToggleAll,
 }) {
   const locale = isCn ? 'cn' : 'en';
@@ -38,6 +39,8 @@ export function EngineerServiceStandardProgress({
       current: '当前阶段',
       complete: '已完成',
       upcoming: '待进行',
+      startBlockedOne: '1 个必需项未完成，暂不能开始服务',
+      startBlockedMany: (count) => `${count} 个必需项未完成，暂不能开始服务`,
     }
     : {
       eyebrow: 'SAGEMRO service standard',
@@ -46,6 +49,8 @@ export function EngineerServiceStandardProgress({
       current: 'Current stage',
       complete: 'Complete',
       upcoming: 'Upcoming',
+      startBlockedOne: '1 required item blocks service start',
+      startBlockedMany: (count) => `${count} required items block service start`,
     };
   const suppliedSteps = new Map(steps.map((step) => [step.key, step]));
   const processSteps = PROCESS_STEPS.map((key, index) => ({
@@ -72,6 +77,14 @@ export function EngineerServiceStandardProgress({
           </button>
         )}
       </div>
+
+      {startBlockingCount > 0 && (
+        <p className="mt-4 rounded-xl bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-800">
+          {startBlockingCount === 1
+            ? copy.startBlockedOne
+            : copy.startBlockedMany(startBlockingCount)}
+        </p>
+      )}
 
       <div className="mt-5 overflow-x-auto pb-2">
         <ol className="grid min-w-[700px] grid-cols-6" aria-label={copy.title}>

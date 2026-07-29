@@ -361,6 +361,7 @@ export function EngineerWorkOrderDetail({
             isCn={isCn}
             steps={serviceStandard.steps}
             currentStepIndex={serviceStandard.current_step_index}
+            startBlockingCount={serviceStandard.gates?.start?.blocking_items?.length || 0}
           />
         )}
       </div>
