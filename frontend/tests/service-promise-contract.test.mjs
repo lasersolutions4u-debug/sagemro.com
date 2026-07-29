@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
 const expectedStepKeys = [
@@ -63,4 +64,20 @@ test('service promise calls return isolated values and steps', async () => {
   const fresh = getServicePromiseCopy(true);
   assert.equal(fresh.values[0].title, '更早发现风险');
   assert.equal(fresh.steps[0].title, '任务对齐');
+});
+
+test('About explains the approved service loop without exposing internal workflow fields', () => {
+  const about = readFileSync(
+    new URL('../src/components/common/AboutModal.jsx', import.meta.url),
+    'utf8',
+  );
+
+  assert.match(about, /getServicePromiseCopy/);
+  assert.match(about, /servicePromise\.steps\.map/);
+  assert.match(about, /SAGEMRO Precision Service Loop/);
+  assert.match(about, /AI helps organize information and flag risk; actual confirmations by engineers, Admin, and customers form the service record\./);
+  assert.match(about, /AI 帮助整理信息和提示风险；工程师、Admin 与客户的实际确认构成服务记录。/);
+  assert.ok(about.indexOf('t.moments.map') < about.indexOf('servicePromise.steps.map'));
+  assert.ok(about.indexOf('servicePromise.steps.map') < about.indexOf('t.capabilities.map'));
+  assert.doesNotMatch(about, /engineer_role|blocking_items|override_reason/);
 });
