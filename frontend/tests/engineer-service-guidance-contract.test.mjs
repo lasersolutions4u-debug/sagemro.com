@@ -57,6 +57,7 @@ test('guidance hook separates read-only checks from bounded generation polling',
   assert.match(hook, /setInterval\(pollGuidance, 2000\)/);
   assert.match(hook, /requestCoordinatorRef\.current\.beginPoll\(\)/);
   assert.match(hook, /poll\.attempt >= 10/);
+  assert.match(hook, /acceptGuidance\(token, data\?\.state\)/);
   assert.match(hook, /data\?\.state === 'stale' && canGenerate/);
   assert.match(hook, /\.\.\.current,\s*state: 'failed'/);
   assert.match(hook, /guidance: guidanceState\?\.guidance \|\| null/);
@@ -82,6 +83,10 @@ test('guidance request coordinator rejects out-of-order results and prior work-o
   slow.resolve('generating:old');
   await slowOperation;
   assert.deepEqual(applied, ['ready:new']);
+  assert.deepEqual(
+    coordinator.acceptGuidance(slowToken, 'generating'),
+    { accepted: false, startedGeneration: false },
+  );
 
   const previousWorkOrderToken = coordinator.beginRequest();
   coordinator.reset();
@@ -94,17 +99,43 @@ test('guidance request coordinator rejects out-of-order results and prior work-o
   assert.deepEqual(applied, ['ready:new']);
 });
 
-test('guidance request coordinator bounds each generation round to ten poll requests', async () => {
+test('accepted generation transitions own the ten-request poll budget', async () => {
+  const { createGuidanceRequestCoordinator } = await importGuidanceCoordinator();
+
+  for (const settledState of ['ready', 'failed']) {
+    for (const attemptsUsed of [3, 10]) {
+      const coordinator = createGuidanceRequestCoordinator();
+      const firstGeneration = coordinator.beginRequest();
+      assert.equal(coordinator.acceptGuidance(firstGeneration, 'generating').accepted, true);
+      for (let index = 0; index < attemptsUsed; index += 1) {
+        assert.notEqual(coordinator.beginPoll(), null);
+      }
+
+      const settled = coordinator.beginRequest();
+      assert.equal(coordinator.acceptGuidance(settled, settledState).accepted, true);
+      const nextGeneration = coordinator.beginRequest();
+      assert.equal(coordinator.acceptGuidance(nextGeneration, 'generating').accepted, true);
+
+      const nextRound = Array.from({ length: 10 }, () => coordinator.beginPoll());
+      assert.deepEqual(nextRound.map((poll) => poll.attempt), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+      assert.equal(coordinator.beginPoll(), null);
+    }
+  }
+});
+
+test('another generating response in the same round does not reset consumed poll attempts', async () => {
   const { createGuidanceRequestCoordinator } = await importGuidanceCoordinator();
   const coordinator = createGuidanceRequestCoordinator();
+  const firstGeneration = coordinator.beginRequest();
+  coordinator.acceptGuidance(firstGeneration, 'generating');
+  const firstThree = Array.from({ length: 3 }, () => coordinator.beginPoll());
+  assert.deepEqual(firstThree.map((poll) => poll.attempt), [1, 2, 3]);
 
-  coordinator.beginGenerationRound();
-  const firstRound = Array.from({ length: 10 }, () => coordinator.beginPoll());
-  assert.deepEqual(firstRound.map((poll) => poll.attempt), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+  const sameGeneration = coordinator.beginRequest();
+  coordinator.acceptGuidance(sameGeneration, 'generating');
+  const remaining = Array.from({ length: 7 }, () => coordinator.beginPoll());
+  assert.deepEqual(remaining.map((poll) => poll.attempt), [4, 5, 6, 7, 8, 9, 10]);
   assert.equal(coordinator.beginPoll(), null);
-
-  coordinator.beginGenerationRound();
-  assert.equal(coordinator.beginPoll().attempt, 1);
 });
 
 test('a refresh request cannot be superseded by a cached read from the same generation round', async () => {
