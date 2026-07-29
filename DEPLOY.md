@@ -456,6 +456,76 @@ Stop rollout or roll back Worker/client code to the last known-good release. Do 
 
 部署运行中不要手动 cancel workflow。GitHub 在强制取消时不保证后续清理步骤一定执行；如确需取消，取消后必须立刻到阿里云安全组确认没有遗留的 GitHub runner `/32` SSH 规则。
 
+### 3.3 Engineer AI Service Readiness (Migration 043) Rollout
+
+`migrations/043_engineer_service_readiness.sql` adds the internal `work_order_service_readiness` table (the cached engineer AI service review plus the trusted source-conversation link). It must be applied to **both** production D1 databases before any Worker code that reads the table is deployed. `china-edition` never deploys the shared Worker, so pushing it never substitutes for this migration gate; the Chinese release ships through `aliyun-cn-deploy.yml`.
+
+```bash
+cd worker
+
+# Apply 043 to both databases before any main deployment that reads the table.
+npx wrangler d1 execute sagemro-db --env production --remote --file migrations/043_engineer_service_readiness.sql
+npx wrangler d1 execute sagemro-db-cn --env production --remote --file migrations/043_engineer_service_readiness.sql
+
+# Verify the marker and internal table in both production databases.
+npx wrangler d1 execute sagemro-db --env production --remote --command "SELECT version FROM _migrations WHERE version = '043_engineer_service_readiness';"
+npx wrangler d1 execute sagemro-db --env production --remote --command "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'work_order_service_readiness';"
+npx wrangler d1 execute sagemro-db-cn --env production --remote --command "SELECT version FROM _migrations WHERE version = '043_engineer_service_readiness';"
+npx wrangler d1 execute sagemro-db-cn --env production --remote --command "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'work_order_service_readiness';"
+```
+
+**Go/no-go sequence**
+
+1. Verify current COM and CN backups.
+2. Run and verify migration 043 on **both** D1 databases.
+3. Push `main`; wait for the full test job and production gate, then require Worker, international frontend, and international Admin deployment success.
+4. On `engineer.sagemro.com`, sign in as the executing engineer, verify the detail page paints before review generation completes, cache reuse avoids a second request, stale data only offers a manual update, and inserted text is unsent until manual send.
+5. Synchronize the reviewed feature commits to `china-edition` for branch parity; do not deploy a second Worker from that branch.
+6. Push `china-edition`, then manually run `gh workflow run aliyun-cn-deploy.yml --ref china-edition` and verify the matching workflow run completes.
+7. Repeat the executing-engineer checks on `engineer.sagemro.cn`, including Chinese generated content and the 320px desktop/mobile layout.
+
+**Stop conditions**
+
+- Do not deploy Worker code if either D1 database lacks 043.
+- Do not proceed to China production if the Aliyun workflow or either smoke check fails.
+
+**Rollback boundary**
+
+Revert Worker/frontend code if necessary, but do not down-migrate or delete readiness history; forward-fix the additive table only.
+
+### 3.4 Service Standard Progress (Migration 044) Rollout
+
+`migrations/044_service_standard_progress.sql` adds persisted six-step service-standard progress and audited service-gate overrides. It must be applied to **both** production D1 databases before any Worker code that reads these tables is deployed. `china-edition` does not deploy the shared Worker, so it never substitutes for this migration gate.
+
+```bash
+cd worker
+
+# Apply 044 to both databases before any Worker deployment that reads the new tables.
+wrangler d1 execute sagemro-db --env production --remote \
+  --file migrations/044_service_standard_progress.sql
+wrangler d1 execute sagemro-db-cn --env production --remote \
+  --file migrations/044_service_standard_progress.sql
+```
+
+Verify that both production databases record the exact migration version before deploying the Worker:
+
+```bash
+wrangler d1 execute sagemro-db --env production --remote \
+  --command "SELECT version FROM _migrations WHERE version = '044_service_standard_progress';"
+wrangler d1 execute sagemro-db-cn --env production --remote \
+  --command "SELECT version FROM _migrations WHERE version = '044_service_standard_progress';"
+```
+
+**Go/no-go sequence**
+
+1. Verify current COM and CN backups.
+2. Apply migration 044 to **both** D1 databases.
+3. Confirm both verification queries return `044_service_standard_progress`.
+4. Push `main`; wait for the full test job and production gate, then require Worker, international frontend, and international Admin deployment success.
+5. Synchronize client changes to `china-edition`, push, then manually run `gh workflow run aliyun-cn-deploy.yml --ref china-edition` for the China frontend, Admin, and engineer deployment.
+
+**Stop condition:** do not deploy Worker code if either database does not return `044_service_standard_progress`. Do not down-migrate; use a new forward migration to correct any schema issue.
+
 ### ⚠️ 不会自动做的事
 
 | 操作                               | 触发方式                                                     | 说明                                                         |
