@@ -586,6 +586,93 @@ export async function refreshWorkOrderServiceReadiness(workOrderId, { force = fa
   return data;
 }
 
+export async function getWorkOrderServiceStandard(workOrderId) {
+  const response = await fetch(
+    `${API_BASE}/api/workorders/${encodeURIComponent(workOrderId)}/service-standard`,
+    { headers: authHeaders() },
+  );
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw Object.assign(
+      new Error(data.error || `HTTP ${response.status}`),
+      { status: response.status, data },
+    );
+  }
+  return data;
+}
+
+export async function confirmWorkOrderServiceStandardItem(workOrderId, itemKey, payload) {
+  const response = await fetch(
+    `${API_BASE}/api/workorders/${encodeURIComponent(workOrderId)}/service-standard/items/${encodeURIComponent(itemKey)}/confirm`,
+    {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify(payload),
+    },
+  );
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw Object.assign(
+      new Error(data.error || `HTTP ${response.status}`),
+      { status: response.status, data },
+    );
+  }
+  return data;
+}
+
+export async function getWorkOrderServiceGuidance(workOrderId) {
+  const response = await fetch(
+    `${API_BASE}/api/workorders/${encodeURIComponent(workOrderId)}/service-guidance`,
+    { headers: authHeaders() },
+  );
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw Object.assign(
+      new Error(data.error || `HTTP ${response.status}`),
+      { status: response.status, data },
+    );
+  }
+  return data;
+}
+
+export async function refreshWorkOrderServiceGuidance(workOrderId, { force = false } = {}) {
+  const response = await fetch(
+    `${API_BASE}/api/workorders/${encodeURIComponent(workOrderId)}/service-guidance/refresh`,
+    {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify({ force }),
+    },
+  );
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw Object.assign(
+      new Error(data.error || `HTTP ${response.status}`),
+      { status: response.status, data },
+    );
+  }
+  return data;
+}
+
+export async function submitWorkOrderServiceGuidanceFeedback(workOrderId, payload) {
+  const response = await fetch(
+    `${API_BASE}/api/workorders/${encodeURIComponent(workOrderId)}/service-guidance/feedback`,
+    {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify(payload),
+    },
+  );
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw Object.assign(
+      new Error(data.error || `HTTP ${response.status}`),
+      { status: response.status, data },
+    );
+  }
+  return data;
+}
+
 export async function searchMaterials({ search = '', category = 'all', pageSize = 20 } = {}) {
   const params = new URLSearchParams({ search, category, pageSize });
   const response = await fetch(`${API_BASE}/api/materials?${params}`, {
