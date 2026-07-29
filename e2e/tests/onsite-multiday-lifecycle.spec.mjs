@@ -18,6 +18,25 @@ const e2eDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const workerDir = path.resolve(e2eDir, '../worker');
 const stateDir = path.join(e2eDir, '.state');
 
+const PRE_START_ENGINEER_STANDARD_ITEMS = [
+  'task.device_identity',
+  'task.problem_and_goal',
+  'task.contact_and_window',
+  'risk.hazards_reviewed',
+  'risk.isolation_permission',
+  'risk.ppe_and_access',
+  'ready.tools_and_documents',
+];
+
+const RESOLVE_ENGINEER_STANDARD_ITEMS = [
+  'execute.baseline_evidence',
+  'execute.actions_recorded',
+  'execute.scope_authorized',
+  'verify.functional_test',
+  'verify.safety_restored',
+  'verify.residual_risk',
+];
+
 function siteDate(timeZone, date = new Date()) {
   const parts = new Intl.DateTimeFormat('en-CA', {
     timeZone,
@@ -63,6 +82,21 @@ async function browserJsonApi(page, pathName, options = {}) {
     const data = await response.json().catch(() => ({}));
     return { status: response.status, ok: response.ok, data };
   }, { apiBase: runtime.apiBase, pathName, requestOptions: options });
+}
+
+async function confirmEngineerStandardItems(page, workOrderId, itemKeys) {
+  for (const itemKey of itemKeys) {
+    const confirmed = await browserJsonApi(
+      page,
+      `/api/workorders/${workOrderId}/service-standard/items/${itemKey}/confirm`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ state: 'confirmed' }),
+      },
+    );
+    expect(confirmed.status, JSON.stringify(confirmed)).toBe(200);
+    expect(confirmed.data.item).toMatchObject({ item_key: itemKey, state: 'confirmed' });
+  }
 }
 
 async function submitFieldMultipart(page, pathName, fields, idempotencyKey) {
@@ -142,6 +176,24 @@ test('multi-day onsite work preserves protected evidence and closes only after d
           onsite_conversion_status = 'confirmed'
       WHERE id = ${sqlText(workOrderId)};
     `);
+    await confirmEngineerStandardItems(
+      engineerPage,
+      workOrderId,
+      PRE_START_ENGINEER_STANDARD_ITEMS,
+    );
+    const startConditions = await adminApi(
+      adminPage,
+      runtime,
+      `/api/workorders/${workOrderId}/service-standard/items/ready.start_conditions/confirm`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ state: 'confirmed' }),
+      },
+    );
+    expect(startConditions.item).toMatchObject({
+      item_key: 'ready.start_conditions',
+      state: 'confirmed',
+    });
 
     const plan = await adminApi(adminPage, runtime, `/api/admin/workorders/${workOrderId}/field-plan`, {
       method: 'PATCH',
@@ -316,11 +368,34 @@ test('multi-day onsite work preserves protected evidence and closes only after d
     });
     expect(serviceReport.ok).toBe(true);
 
+    const standardBlockedClosure = await browserJsonApi(
+      engineerPage,
+      `/api/workorders/${workOrderId}/resolve`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ engineer_id: engineer.id }),
+      },
+    );
+    expect(standardBlockedClosure).toMatchObject({
+      status: 409,
+      ok: false,
+      data: {
+        code: 'service_standard_gate_blocked',
+        gate: 'resolve',
+        blocking_items: RESOLVE_ENGINEER_STANDARD_ITEMS,
+      },
+    });
+
+    await confirmEngineerStandardItems(
+      engineerPage,
+      workOrderId,
+      RESOLVE_ENGINEER_STANDARD_ITEMS,
+    );
     const resolved = await browserJsonApi(engineerPage, `/api/workorders/${workOrderId}/resolve`, {
       method: 'POST',
       body: JSON.stringify({ engineer_id: engineer.id }),
     });
-    expect(resolved.ok).toBe(true);
+    expect(resolved.ok, JSON.stringify(resolved)).toBe(true);
 
     const completed = await browserJsonApi(customerPage, '/api/workorders/rating', {
       method: 'POST',
