@@ -89,10 +89,12 @@ test('customer work-order detail renders only the public milestone projection be
   );
 
   assert.match(detailModal, /import \{ CustomerServiceMilestones \}/);
+  assert.match(detailModal, /const renderWorkOrderSummary = \(\) =>/);
   assert.match(
     detailModal,
-    /userType === 'customer'[\s\S]*<CustomerServiceMilestones[\s\S]*milestones=\{detail\.public_service_milestones \|\| \[\]\}/,
+    /userType === 'customer'[\s\S]*renderWorkOrderSummary\(\)[\s\S]*<CustomerServiceMilestones[\s\S]*milestones=\{detail\.public_service_milestones \|\| \[\]\}[\s\S]*role="tablist"/,
   );
+  assert.match(detailModal, /!isCustomer && renderWorkOrderSummary\(\)/);
   assert.match(detailModal, /detail\?\.id === workOrder\.id/);
   assert.ok(
     detailModal.indexOf('<CustomerServiceMilestones') < detailModal.indexOf('role="tablist"'),
@@ -105,16 +107,59 @@ test('customer milestones render the six approved states without internal fields
     new URL('../src/components/WorkOrder/CustomerServiceMilestones.jsx', import.meta.url),
     'utf8',
   );
+  const milestoneView = readFileSync(
+    new URL('../src/utils/customerServiceMilestoneView.js', import.meta.url),
+    'utf8',
+  );
+  const publicMilestoneSource = `${milestones}\n${milestoneView}`;
 
-  assert.match(milestones, /getServicePromiseCopy/);
-  assert.match(milestones, /servicePromise\.steps\.map/);
+  assert.match(milestones, /buildCustomerServiceMilestoneView/);
+  assert.match(milestones, /view\.steps\.map/);
   assert.match(milestones, /<ol/);
   assert.match(milestones, /<li/);
-  assert.match(milestones, /aria-current=\{state === 'current' \? 'step' : undefined\}/);
-  assert.match(milestones, /Earlier service records were not itemized/);
-  assert.match(milestones, /早期服务记录未按步骤逐项记录/);
-  assert.match(milestones, /Check Messages for any information SAGEMRO needs from you/);
-  assert.match(milestones, /请在“消息”中查看 SAGEMRO 是否需要您补充信息/);
-  assert.doesNotMatch(milestones, /blocking_items|owner_type|guidance/);
-  assert.doesNotMatch(milestones, /workOrder|effectiveStatus|statusConfig/);
+  assert.match(milestones, /aria-current=\{step\.state === 'current' \? 'step' : undefined\}/);
+  assert.match(publicMilestoneSource, /Earlier service records were not itemized/);
+  assert.match(publicMilestoneSource, /早期服务记录未按步骤逐项记录/);
+  assert.match(publicMilestoneSource, /Check Messages for any information SAGEMRO needs from you/);
+  assert.match(publicMilestoneSource, /请在“消息”中查看 SAGEMRO 是否需要您补充信息/);
+  assert.doesNotMatch(publicMilestoneSource, /blocking_items|owner_type|guidance/);
+  assert.doesNotMatch(publicMilestoneSource, /workOrder|effectiveStatus|statusConfig/);
+});
+
+test('customer milestone view model normalizes four public states in approved step order', async () => {
+  const { buildCustomerServiceMilestoneView } = await import(
+    '../src/utils/customerServiceMilestoneView.js'
+  );
+  const model = buildCustomerServiceMilestoneView(false, [
+    { key: 'transparent_handover', state: 'legacy_not_recorded' },
+    { key: 'risk_control', state: 'current' },
+    { key: 'task_alignment', state: 'completed' },
+    { key: 'one_visit_readiness', state: 'upcoming' },
+  ]);
+
+  assert.deepEqual(model.steps.map((step) => step.key), expectedStepKeys);
+  assert.deepEqual(model.steps.slice(0, 3).map((step) => step.state), [
+    'completed',
+    'current',
+    'upcoming',
+  ]);
+  assert.equal(model.steps.at(-1).state, 'legacy_not_recorded');
+  assert.equal(model.steps[0].stateLabel, 'Verified');
+  assert.equal(model.currentStep.key, 'risk_control');
+  assert.equal(model.steps.at(-1).stateLabel, 'Earlier service records were not itemized');
+});
+
+test('customer milestone view model treats missing and invalid projections as neutral upcoming steps', async () => {
+  const { buildCustomerServiceMilestoneView } = await import(
+    '../src/utils/customerServiceMilestoneView.js'
+  );
+  const model = buildCustomerServiceMilestoneView(true, [
+    { key: 'unknown_internal_stage', state: 'completed' },
+    { key: 'task_alignment', state: 'invented_state' },
+  ]);
+
+  assert.equal(model.steps.length, 6);
+  assert.equal(model.steps.every((step) => step.state === 'upcoming'), true);
+  assert.equal(model.currentStep, null);
+  assert.equal(model.steps[0].stateLabel, '待进行');
 });
