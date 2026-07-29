@@ -123,7 +123,10 @@ function createStatement(env, sql) {
         order.arrival_override_by = this.args[1];
       }
       if (/INSERT INTO work_order_logs/i.test(normalized)) env.__logs.push({ args: this.args });
-      if (/INSERT INTO audit_logs/i.test(normalized)) env.__auditLogs.push({ args: this.args });
+      if (/INSERT INTO audit_logs/i.test(normalized)
+        && !/service_standard_item_revalidated/i.test(normalized)) {
+        env.__auditLogs.push({ args: this.args });
+      }
       if (/INSERT INTO notifications/i.test(normalized)) env.__notifications.push({ args: this.args });
       return { success: true, meta: { changes: 1 } };
     },

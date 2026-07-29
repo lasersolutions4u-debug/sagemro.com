@@ -44,9 +44,22 @@
 | `038_material_requisitions_and_staff.sql` | 内部员工账号与工单领料申请、库存预留、幂等采购/出入库和签收流程 |
 | `039_field_workdays.sql` | 现场作业日、拍照签到、日报、延期审批与私有证据保留 |
 | `040_field_evidence_cleanup_queue.sql` | 私有现场证据回滚删除失败后的定时清理队列 |
-| `043_engineer_service_readiness.sql` | 工程师 AI 服务前核查内部缓存与受信任客户会话关联 |
+| `043_engineer_service_readiness.sql` | 工程师 AI 服务前核查：受信任来源会话关联与内部缓存 |
+| `044_service_standard_progress.sql` | SAGEMRO 六步服务标准进度持久化与服务关口人工覆盖审计 |
+| `045_service_guidance_cache.sql` | 全流程工程师服务指引缓存与指引动作反馈 |
 
 > 约定：文件名格式 `NNN_*.sql`，按字典序顺序执行；历史命名中出现过 `001_partner_upgrade.sql`（已删除，是 `001_add_engineer_fields.sql + 002_pricing_and_new_tables.sql` 的合并版本，避免重复执行）。
+
+### 生产执行门禁：044 → 045
+
+迁移 045 依赖迁移 044。生产环境必须按以下顺序操作：
+
+1. 先确认 COM `sagemro-db` 和 CN `sagemro-db-cn` 都已记录 `044_service_standard_progress`。
+2. 再对 COM 执行 `migrations/045_service_guidance_cache.sql`，随后对 CN 执行同一文件。
+3. 最后分别查询两库 `_migrations`，确认 `044_service_standard_progress` 和 `045_service_guidance_cache` 两个版本都存在。
+4. 只有两库都返回两个版本，才可部署 Worker；任一库缺少任一版本都必须停止。
+
+完整的 COM/CN 命令、验证 SQL 和停止条件见根目录 [`DEPLOY.md`](../../DEPLOY.md) 第 3.5 节。迁移不会由 CI 自动执行，也不能用 `china-edition` 部署代替。
 
 ## 新增一个迁移
 

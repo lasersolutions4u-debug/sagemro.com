@@ -7,11 +7,23 @@ import { DatabaseSync } from 'node:sqlite';
 
 import worker from '../src/index.js';
 import { signJwt } from '../src/lib/auth.js';
+import { buildServiceStandardDefinition } from '../src/lib/serviceStandard.js';
 
 const schemaSql = readFileSync(new URL('../schema.sql', import.meta.url), 'utf8');
 
 function normalizeSql(sql) {
   return sql.replace(/\s+/g, ' ').trim();
+}
+
+function seedLegacyServiceStandard(db, workOrderId, serviceMode) {
+  const insert = db.prepare(`
+    INSERT INTO work_order_service_standard_progress (
+      work_order_id, standard_version, step_key, item_key, state, is_required, owner_type
+    ) VALUES (?, 1, ?, ?, 'legacy_not_recorded', ?, ?)
+  `);
+  for (const item of buildServiceStandardDefinition({ serviceMode }).items) {
+    insert.run(workOrderId, item.stepKey, item.key, item.required ? 1 : 0, item.owner);
+  }
 }
 
 function createD1Database(db, hooks) {
@@ -105,6 +117,7 @@ function createQuoteExecutionEnv({
         'Quote execution request', 'in_progress', 'not_required', 'onsite', NULL
       );
     `);
+    seedLegacyServiceStandard(db, 'wo-quote-1', 'onsite');
   }
 
   return {
@@ -2534,6 +2547,11 @@ test('versioned start request waits for every required installment and keeps fin
   assert.equal(requested.response.status, 200, JSON.stringify(requested.json));
   assert.equal(requested.json.status, 'payment_review');
   assert.equal(ctx.db.prepare("SELECT status FROM work_orders WHERE id = 'wo-quote-1'").get().status, 'payment_review');
+  ctx.db.exec(`
+    DELETE FROM work_order_service_standard_progress
+    WHERE work_order_id = 'wo-quote-1'
+      AND item_key = 'ready.start_conditions';
+  `);
 
   const approved = await api(ctx, '/api/admin/workorders/wo-quote-1/payment/approve-start', {
     body: { note: 'Start approved.' }, userType: 'admin', userId: 'admin',
@@ -2542,6 +2560,26 @@ test('versioned start request waits for every required installment and keeps fin
   assert.equal(approved.json.status, 'in_service');
   assert.equal(ctx.db.prepare("SELECT status FROM work_orders WHERE id = 'wo-quote-1'").get().status, 'in_service');
   assert.equal(ctx.db.prepare('SELECT received_amount FROM work_order_installments WHERE id = ?').get(laterInstallment.id).received_amount, 0);
+  assert.deepEqual(
+    { ...ctx.db.prepare(`
+      SELECT standard_version, step_key, state, is_required, owner_type,
+        confirmed_by_type, confirmed_by_id, evidence_type, evidence_id
+      FROM work_order_service_standard_progress
+      WHERE work_order_id = 'wo-quote-1'
+        AND item_key = 'ready.start_conditions'
+    `).get() },
+    {
+      standard_version: 1,
+      step_key: 'one_visit_readiness',
+      state: 'confirmed',
+      is_required: 1,
+      owner_type: 'admin',
+      confirmed_by_type: 'admin',
+      confirmed_by_id: 'admin',
+      evidence_type: 'start_approval',
+      evidence_id: 'wo-quote-1',
+    },
+  );
 });
 
 test('active quote gates fail closed when the authoritative execution graph is incomplete', async () => {
@@ -2854,6 +2892,11 @@ test('customer acceptance does not financially archive a versioned order with un
   `).run(startInstallment.id);
   ctx.db.exec(`
     UPDATE work_orders SET status = 'resolved' WHERE id = 'wo-quote-1';
+    UPDATE work_order_service_standard_progress
+    SET state = 'pending', confirmed_by_type = NULL, confirmed_by_id = NULL,
+        confirmed_at = NULL, evidence_type = NULL, evidence_id = NULL
+    WHERE work_order_id = 'wo-quote-1'
+      AND item_key = 'handover.customer_confirmation';
     INSERT INTO work_order_repair_records (
       id, work_order_id, symptom, diagnosis, solution, parts_used, labor_hours
     ) VALUES ('repair-rating-1', 'wo-quote-1', 'Low output', 'Dirty lens', 'Cleaned lens', '[]', 2);
@@ -2877,6 +2920,20 @@ test('customer acceptance does not financially archive a versioned order with un
   assert.equal(workOrder.status, 'resolved');
   assert.equal(workOrder.completed_at, null);
   assert.equal(ctx.db.prepare("SELECT COUNT(*) AS count FROM ratings WHERE work_order_id = 'wo-quote-1'").get().count, 1);
+  assert.deepEqual(
+    { ...ctx.db.prepare(`
+      SELECT state, confirmed_by_type, confirmed_by_id, evidence_type
+      FROM work_order_service_standard_progress
+      WHERE work_order_id = 'wo-quote-1'
+        AND item_key = 'handover.customer_confirmation'
+    `).get() },
+    {
+      state: 'confirmed',
+      confirmed_by_type: 'customer',
+      confirmed_by_id: 'customer-1',
+      evidence_type: 'customer_rating',
+    },
+  );
 
   const blockedArchive = await api(ctx, '/api/admin/workorders/wo-quote-1/archive', {
     method: 'PATCH', body: {}, userType: 'admin', userId: 'admin',
@@ -2884,6 +2941,90 @@ test('customer acceptance does not financially archive a versioned order with un
   assert.equal(blockedArchive.response.status, 409);
   assert.equal(ctx.db.prepare("SELECT status FROM work_orders WHERE id = 'wo-quote-1'").get().status, 'resolved');
 });
+
+for (const race of [
+  {
+    name: 'owning customer',
+    seed: `
+      INSERT INTO customers (id, user_no, name, phone, password_hash)
+      VALUES ('customer-race', 'U-RACE', 'Race Customer', '13900000009', 'hash')
+    `,
+    mutate: "UPDATE work_orders SET customer_id = 'customer-race' WHERE id = 'wo-quote-1'",
+  },
+  {
+    name: 'assigned engineer',
+    seed: `
+      INSERT INTO engineers (id, user_no, name, phone, password_hash)
+      VALUES ('engineer-race', 'E-RACE', 'Race Engineer', '13800000009', 'hash')
+    `,
+    mutate: "UPDATE work_orders SET engineer_id = 'engineer-race' WHERE id = 'wo-quote-1'",
+  },
+  {
+    name: 'acceptable status',
+    seed: null,
+    mutate: "UPDATE work_orders SET status = 'payment_review' WHERE id = 'wo-quote-1'",
+  },
+  {
+    name: 'active quote version',
+    seed: null,
+    mutate: "UPDATE work_orders SET active_quote_version = active_quote_version + 1 WHERE id = 'wo-quote-1'",
+  },
+]) {
+  test(`versioned customer acceptance rolls back when ${race.name} changes before its batch`, async () => {
+    const ctx = createQuoteExecutionEnv();
+    ctx.db.exec("UPDATE work_orders SET service_mode = 'remote' WHERE id = 'wo-quote-1'");
+    await activateBaseline(ctx, quotePayload({ expected_service_days: null }));
+    ctx.db.exec(`
+      UPDATE work_orders SET status = 'resolved' WHERE id = 'wo-quote-1';
+      UPDATE work_order_service_standard_progress
+      SET state = 'pending', confirmed_by_type = NULL, confirmed_by_id = NULL,
+          confirmed_at = NULL, evidence_type = NULL, evidence_id = NULL
+      WHERE work_order_id = 'wo-quote-1'
+        AND item_key = 'handover.customer_confirmation';
+      ${race.seed ? `${race.seed};` : ''}
+    `);
+    ctx.beforeNextBatch(() => {
+      ctx.db.exec(race.mutate);
+    });
+
+    const rated = await api(ctx, '/api/workorders/rating', {
+      userType: 'customer',
+      userId: 'customer-1',
+      body: {
+        work_order_id: 'wo-quote-1',
+        rating_timeliness: 5,
+        rating_technical: 5,
+        rating_communication: 5,
+        rating_professional: 5,
+        comment: 'Concurrent acceptance.',
+      },
+    });
+
+    assert.equal(rated.response.status, 409, JSON.stringify(rated.json));
+    assert.equal(
+      ctx.db.prepare(`
+        SELECT COUNT(*) AS count FROM ratings WHERE work_order_id = 'wo-quote-1'
+      `).get().count,
+      0,
+    );
+    assert.equal(
+      ctx.db.prepare(`
+        SELECT state FROM work_order_service_standard_progress
+        WHERE work_order_id = 'wo-quote-1'
+          AND item_key = 'handover.customer_confirmation'
+      `).get().state,
+      'pending',
+    );
+    assert.equal(
+      ctx.db.prepare(`
+        SELECT COUNT(*) AS count FROM audit_logs
+        WHERE target_id = 'wo-quote-1'
+          AND action = 'service_standard_item_confirmed'
+      `).get().count,
+      0,
+    );
+  });
+}
 
 test('Admin archive rechecks settlement for previously completed versioned orders', async () => {
   const ctx = createQuoteExecutionEnv();

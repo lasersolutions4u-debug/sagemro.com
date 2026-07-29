@@ -1,35 +1,50 @@
-import { ArrowLeft, ShieldCheck } from 'lucide-react';
+import { ArrowLeft } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  confirmWorkOrderServiceStandardItem,
   getWorkOrder,
-  getWorkOrderServiceReadiness,
-  refreshWorkOrderServiceReadiness,
+  getWorkOrderServiceStandard,
   requestWorkOrderPaymentStart,
+  submitWorkOrderServiceGuidanceFeedback,
 } from '../../services/api';
+import { useServiceGuidance } from '../../hooks/useServiceGuidance';
 import { confirmDialog, toastError, toastSuccess } from '../../utils/feedback';
 import { WorkOrderDetailContent } from '../WorkOrder/WorkOrderDetailModal';
 import { getEngineerScheduleLabel, getEngineerWorkOrderTitle } from './engineerWorkOrderDisplay';
 import { getLocalizedCustomerContent } from './engineerWorkOrderContent';
-import { EngineerServiceReadinessCard } from './EngineerServiceReadinessCard';
+import { EngineerServiceGuidanceCard } from './EngineerServiceGuidanceCard';
+import { EngineerServiceStageChecklist } from './EngineerServiceStageChecklist';
+import { EngineerServiceStandardProgress } from './EngineerServiceStandardProgress';
 
-const CHECKLIST = {
-  en: [
-    'Confirm the customer issue, machine model, site contact, and service window.',
-    'Review the intake summary and flag safety risks.',
-    'Check tools, spare parts, consumables, and protective equipment.',
-    'Record nameplate, alarm screen, and fault-area evidence on site.',
-    'Document service actions, parts replacement, and follow-up recommendations.',
-    'Submit the service report for customer confirmation.',
-  ],
-  cn: [
-    '确认客户问题、设备型号、现场联系人和服务时间。',
-    '查看接单摘要，并标记安全风险。',
-    '检查备件、工具、耗材和防护用品。',
-    '现场记录铭牌、报警画面和故障区域资料。',
-    '记录服务动作、配件更换和后续建议。',
-    '提交服务报告给客户确认。',
-  ],
-};
+const GUIDANCE_VISIBLE_STATUSES = new Set([
+  'assigned', 'in_progress', 'pricing', 'pending_payment', 'payment_review',
+  'in_service', 'resolved', 'pending_review', 'completed',
+]);
+const GUIDANCE_GENERATION_STATUSES = new Set([
+  'assigned', 'in_progress', 'pricing', 'pending_payment', 'payment_review',
+  'in_service', 'resolved', 'pending_review',
+]);
+
+// TESTABLE_SERVICE_STANDARD_COORDINATOR_START
+function matchesServiceStandardDetail(state, detailWorkOrderId) {
+  return state?.status === 'loaded'
+    && state.workOrderId === detailWorkOrderId
+    && Boolean(state.snapshot);
+}
+
+function createServiceStandardRequestCoordinator() {
+  let sequence = 0;
+  return {
+    begin(workOrderId) {
+      sequence += 1;
+      return { sequence, workOrderId };
+    },
+    isLatest(token, activeWorkOrderId) {
+      return token?.sequence === sequence && token?.workOrderId === activeWorkOrderId;
+    },
+  };
+}
+// TESTABLE_SERVICE_STANDARD_COORDINATOR_END
 
 const COPY = {
   en: {
@@ -51,7 +66,8 @@ const COPY = {
     submittingStart: 'Submitting...', confirmStart: 'Request Admin approval to start service after advance payment follow-up?',
     startNote: 'Engineer confirmed advance payment follow-up with the customer.',
     startSent: 'Start request sent to Admin for advance payment confirmation.', startFailed: 'Start request failed: ',
-    readinessRefreshFailed: 'Service review update failed. Please try again.',
+    standardLoading: 'Loading the service standard…',
+    standardFailed: 'Service standard could not be loaded. Please try again.',
     statusNames: { available: 'Available', paused: 'Paused', offline: 'Offline' },
   },
   cn: {
@@ -71,7 +87,8 @@ const COPY = {
     requestStart: '请求开始服务审批', waitingStart: '等待 Admin 确认预付款', submittingStart: '提交中...',
     confirmStart: '确认已跟进预付款，并请求 Admin 批准开始服务吗？', startNote: '工程师已与客户确认预付款跟进。',
     startSent: '开始服务请求已提交给 Admin 确认预付款。', startFailed: '开始服务请求失败：',
-    readinessRefreshFailed: '服务前核查更新失败，请稍后重试。',
+    standardLoading: '正在加载服务标准…',
+    standardFailed: '服务标准加载失败，请稍后重试。',
     statusNames: { available: '可接单', paused: '暂停接单', offline: '离线' },
   },
 };
@@ -108,72 +125,92 @@ export function EngineerWorkOrderDetail({
   const [commercialView, setCommercialView] = useState('pricing');
   const [actionRefresh, setActionRefresh] = useState(0);
   const [paymentStartSubmitting, setPaymentStartSubmitting] = useState(false);
-  const [checkedChecklistItems, setCheckedChecklistItems] = useState(() => new Set());
-  const [serviceReadiness, setServiceReadiness] = useState(null);
-  const [serviceReadinessExpanded, setServiceReadinessExpanded] = useState(false);
-  const [serviceReadinessPollingExpired, setServiceReadinessPollingExpired] = useState(false);
+  const [serviceStandardState, setServiceStandardState] = useState(() => ({
+    status: 'idle',
+    workOrderId: null,
+    snapshot: null,
+    error: '',
+  }));
+  const [savingStandardItemKey, setSavingStandardItemKey] = useState('');
   const [messageDraftRequest, setMessageDraftRequest] = useState(null);
-  const pollAttemptsRef = useRef(0);
+  const serviceStandardRequestRef = useRef(createServiceStandardRequestCoordinator());
+  const activeServiceStandardWorkOrderIdRef = useRef(null);
 
   const loadDetail = useCallback(async () => {
     setLoading(true); setError('');
-    try { setDetail(await getWorkOrder(workOrderId)); }
+    try {
+      const nextDetail = await getWorkOrder(workOrderId);
+      activeServiceStandardWorkOrderIdRef.current = nextDetail.id;
+      setDetail(nextDetail);
+    }
     catch (requestError) { setError(requestError.message || copy.failed); }
     finally { setLoading(false); }
   }, [copy.failed, workOrderId]);
   useEffect(() => { loadDetail(); }, [loadDetail]);
 
-  // 服务前核查独立于主详情加载：不参与 loading，不触发 loadDetail。
-  const readinessWorkOrderId = detail?.id;
-  const readinessIsExecuting = String(detail?.engineer_id || '') === String(engineerId || '');
-  const readinessCanGenerate = readinessIsExecuting
-    && ['assigned', 'in_progress', 'pricing', 'pending_payment', 'payment_review'].includes(detail?.status);
+  const guidanceIsExecuting = String(detail?.engineer_id || '') === String(engineerId || '');
+  const guidanceEnabled = guidanceIsExecuting && GUIDANCE_VISIBLE_STATUSES.has(detail?.status);
+  const canGenerateGuidance = guidanceIsExecuting && GUIDANCE_GENERATION_STATUSES.has(detail?.status);
+  const {
+    guidanceState,
+    guidance,
+    generatedAt,
+    pollingExpired,
+    refresh: refreshGuidance,
+  } = useServiceGuidance({
+    workOrderId: detail?.id,
+    enabled: guidanceEnabled,
+    canGenerate: canGenerateGuidance,
+  });
 
-  useEffect(() => {
-    if (!readinessWorkOrderId || !readinessIsExecuting) return undefined;
-    let cancelled = false;
-    setServiceReadiness(null);
-    setServiceReadinessExpanded(false);
-    setServiceReadinessPollingExpired(false);
-    pollAttemptsRef.current = 0;
-    getWorkOrderServiceReadiness(readinessWorkOrderId)
-      .then((data) => {
-        if (cancelled) return;
-        setServiceReadiness(data);
-        if (data?.state === 'missing' && readinessCanGenerate) {
-          return refreshWorkOrderServiceReadiness(readinessWorkOrderId, { force: false })
-            .then((started) => {
-              if (!cancelled && started?.state) setServiceReadiness(started);
-            });
-        }
-        return null;
-      })
-      .catch(() => {
-        if (!cancelled) setServiceReadiness((current) => ({
-          ...current,
-          state: 'failed',
-        }));
+  const serviceStandardWorkOrderId = detail?.id || null;
+  const loadServiceStandard = useCallback(async () => {
+    if (serviceStandardWorkOrderId !== activeServiceStandardWorkOrderIdRef.current) return;
+    if (!serviceStandardWorkOrderId) {
+      setServiceStandardState({
+        status: 'idle',
+        workOrderId: null,
+        snapshot: null,
+        error: '',
       });
-    return () => { cancelled = true; };
-  }, [readinessWorkOrderId, readinessIsExecuting, readinessCanGenerate]);
+      return;
+    }
+    const requestToken = serviceStandardRequestRef.current.begin(serviceStandardWorkOrderId);
+    setServiceStandardState({
+      status: 'loading',
+      workOrderId: serviceStandardWorkOrderId,
+      snapshot: null,
+      error: '',
+    });
+    try {
+      const snapshot = await getWorkOrderServiceStandard(serviceStandardWorkOrderId);
+      if (!serviceStandardRequestRef.current.isLatest(
+        requestToken,
+        activeServiceStandardWorkOrderIdRef.current,
+      )) return;
+      setServiceStandardState({
+        status: 'loaded',
+        workOrderId: serviceStandardWorkOrderId,
+        snapshot,
+        error: '',
+      });
+    } catch (requestError) {
+      if (!serviceStandardRequestRef.current.isLatest(
+        requestToken,
+        activeServiceStandardWorkOrderIdRef.current,
+      )) return;
+      setServiceStandardState({
+        status: 'failed',
+        workOrderId: serviceStandardWorkOrderId,
+        snapshot: null,
+        error: requestError.data?.error || requestError.message || copy.standardFailed,
+      });
+    }
+  }, [copy.standardFailed, serviceStandardWorkOrderId]);
 
-  // 仅在 generating 期间轮询：每 2 秒一次，最多 10 次（20 秒）后停止并暴露重试。
   useEffect(() => {
-    if (serviceReadiness?.state !== 'generating' || serviceReadinessPollingExpired) return undefined;
-    if (!readinessWorkOrderId || !readinessIsExecuting) return undefined;
-    const loadServiceReadiness = () => {
-      pollAttemptsRef.current += 1;
-      if (pollAttemptsRef.current >= 10) setServiceReadinessPollingExpired(true);
-      getWorkOrderServiceReadiness(readinessWorkOrderId)
-        .then((data) => setServiceReadiness(data))
-        .catch(() => setServiceReadiness((current) => ({
-          ...current,
-          state: 'failed',
-        })));
-    };
-    const interval = setInterval(loadServiceReadiness, 2000);
-    return () => clearInterval(interval);
-  }, [serviceReadiness?.state, serviceReadinessPollingExpired, readinessWorkOrderId, readinessIsExecuting]);
+    loadServiceStandard();
+  }, [loadServiceStandard]);
 
   const aiSummary = useMemo(() => {
     const fallback = detail?.description || '';
@@ -194,24 +231,24 @@ export function EngineerWorkOrderDetail({
   );
 
   const isExecutingEngineer = String(detail.engineer_id || '') === String(engineerId || '');
-  const canViewServiceReadiness = isExecutingEngineer
-    && ['assigned', 'in_progress', 'pricing', 'pending_payment', 'payment_review', 'in_service'].includes(detail.status);
-  const canGenerateServiceReadiness = isExecutingEngineer
-    && ['assigned', 'in_progress', 'pricing', 'pending_payment', 'payment_review'].includes(detail.status);
-  const shouldRenderServiceReadiness = canGenerateServiceReadiness || Boolean(serviceReadiness?.review);
-  const handleRefreshServiceReadiness = () => {
-    if (!canGenerateServiceReadiness) return;
-    pollAttemptsRef.current = 0;
-    setServiceReadinessPollingExpired(false);
-    refreshWorkOrderServiceReadiness(detail.id, { force: true })
-      .then((result) => {
-        if (result?.state) setServiceReadiness(result);
-      })
-      .catch(() => {
-        // 保留屏幕上的既有核查结果，只提示失败
-        toastError(copy.readinessRefreshFailed);
-      });
-  };
+  const {
+    status: serviceStandardStatus,
+    workOrderId: serviceStandardSnapshotWorkOrderId,
+    snapshot: serviceStandard,
+    error: serviceStandardError,
+  } = serviceStandardState;
+  const serviceStandardMatchesDetail = matchesServiceStandardDetail(
+    serviceStandardState,
+    detail.id,
+  );
+  const serviceStandardLoadFailed = serviceStandardStatus === 'failed'
+    && serviceStandardSnapshotWorkOrderId === detail.id;
+  const serviceStandardIsLoading = serviceStandardSnapshotWorkOrderId !== detail.id
+    || serviceStandardStatus === 'idle'
+    || serviceStandardStatus === 'loading';
+  const currentServiceStep = serviceStandardMatchesDetail
+    ? serviceStandard.steps?.[serviceStandard.current_step_index] || null
+    : null;
   const isCurrentTeamWork = detail.ownership_relation === 'current_team_member' || detail.ownership_relation === 'regional_queue';
   const canReassignTeamWork = isRegionalLead && isCurrentTeamWork && ['pending', 'pending_dispatch', 'assigned'].includes(detail.status);
   const scheduledTime = getEngineerScheduleLabel(detail, isCn ? 'zh-CN' : 'en-US') || copy.schedulePending;
@@ -241,13 +278,42 @@ export function EngineerWorkOrderDetail({
     field: detail.service_mode === 'onsite' || Boolean(detail.field_days?.length),
     report: ['in_service', 'pricing', 'resolved', 'pending_review', 'completed'].includes(detail.status) || Boolean(detail.repair_record),
   };
-  const toggleChecklistItem = (index) => {
-    setCheckedChecklistItems((current) => {
-      const next = new Set(current);
-      if (next.has(index)) next.delete(index);
-      else next.add(index);
-      return next;
+  const updateServiceStandardItem = async (item, payload) => {
+    setSavingStandardItemKey(item.key);
+    setServiceStandardState((current) => (
+      matchesServiceStandardDetail(current, detail.id)
+        ? { ...current, error: '' }
+        : current
+    ));
+    try {
+      await confirmWorkOrderServiceStandardItem(detail.id, item.key, payload);
+      await loadServiceStandard();
+    } catch (requestError) {
+      if (activeServiceStandardWorkOrderIdRef.current !== detail.id) return;
+      const serverMessage = requestError.data?.error || requestError.message || copy.standardFailed;
+      setServiceStandardState((current) => (
+        matchesServiceStandardDetail(current, detail.id)
+          ? { ...current, error: serverMessage }
+          : current
+      ));
+    } finally {
+      setSavingStandardItemKey('');
+    }
+  };
+  const handleConfirmServiceStandardItem = (item) => (
+    updateServiceStandardItem(item, { state: 'confirmed' })
+  );
+  const handleMarkServiceStandardItemNotApplicable = (item, reason) => (
+    updateServiceStandardItem(item, { state: 'not_applicable', reason })
+  );
+  const handleGuidanceFeedback = async (actionIndex, feedbackType, correctionNote) => {
+    await submitWorkOrderServiceGuidanceFeedback(detail.id, {
+      guidance_generated_at: generatedAt,
+      action_index: actionIndex,
+      feedback_type: feedbackType,
+      correction_note: correctionNote || null,
     });
+    await refreshGuidance();
   };
   const handleRequestPaymentStart = async () => {
     if (detail.status === 'payment_review' || paymentStartSubmitting) return;
@@ -259,7 +325,7 @@ export function EngineerWorkOrderDetail({
       await loadDetail();
       onWorkOrderChanged?.();
     } catch (requestError) {
-      toastError(copy.startFailed + requestError.message);
+      toastError(copy.startFailed + (requestError.data?.error || requestError.message));
     } finally {
       setPaymentStartSubmitting(false);
     }
@@ -279,8 +345,50 @@ export function EngineerWorkOrderDetail({
         <aside className="rounded-xl bg-[#18202b] p-4 text-white"><span className="text-xs font-bold uppercase tracking-wider text-slate-300">{copy.nextStep}</span><strong className="mt-2 block text-sm leading-6">{getNextAction(detail)}</strong>{actionPanel}</aside>
       </section>
 
-      <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
-        <main className="min-w-0 overflow-hidden rounded-2xl border border-[#e5e8ed] bg-white">
+      <div className="mt-4">
+        {serviceStandardIsLoading && (
+          <p role="status" className="rounded-2xl border border-[#e5e8ed] bg-white px-5 py-4 text-sm text-[#697386]">
+            {copy.standardLoading}
+          </p>
+        )}
+        {serviceStandardLoadFailed && serviceStandardError && (
+          <p role="alert" className="rounded-2xl border border-red-200 bg-red-50 px-5 py-4 text-sm leading-6 text-red-800">
+            {serviceStandardError}
+          </p>
+        )}
+        {serviceStandardMatchesDetail && (
+          <EngineerServiceStandardProgress
+            isCn={isCn}
+            steps={serviceStandard.steps}
+            currentStepIndex={serviceStandard.current_step_index}
+            startBlockingCount={serviceStandard.gates?.start?.blocking_items?.length || 0}
+          />
+        )}
+      </div>
+
+      <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px] lg:[grid-template-areas:'main_rail']">
+        <div className="lg:[grid-area:rail]">
+          <aside className="space-y-3 self-start lg:sticky lg:top-4">
+            {guidanceEnabled && (
+              <EngineerServiceGuidanceCard
+                isCn={isCn}
+                state={guidanceState}
+                guidance={guidance}
+                generatedAt={generatedAt}
+                pollingExpired={pollingExpired}
+                canRefresh={canGenerateGuidance}
+                onRefresh={refreshGuidance}
+                onActionFeedback={handleGuidanceFeedback}
+                onInsertQuestion={(question) => {
+                  setMessageDraftRequest({ id: `${detail.id}:${Date.now()}`, text: question.draft });
+                  setActiveTab('messages');
+                }}
+              />
+            )}
+            <section className="rounded-xl border border-[#e5e8ed] bg-white p-4"><h2 className="text-sm font-semibold">{copy.support}</h2><a href="mailto:support@sagemro.com" className="mt-2 block text-sm font-bold text-orange-600">support@sagemro.com</a></section>
+          </aside>
+        </div>
+        <main className="min-w-0 overflow-hidden rounded-2xl border border-[#e5e8ed] bg-white lg:[grid-area:main]">
           <nav role="tablist" className="flex overflow-x-auto border-b border-[#e5e8ed] bg-[#fbfcfd] px-3">
             {tabs.map(([key, label]) => <button id={`engineer-tab-${key}`} aria-controls={`engineer-panel-${key}`} key={key} type="button" role="tab" aria-selected={activeTab === key} onClick={() => setActiveTab(key)} className={`h-12 shrink-0 border-b-2 px-3 text-[13px] font-bold ${activeTab === key ? 'border-orange-500 text-orange-600' : 'border-transparent text-[#697386]'}`}>{label}</button>)}
           </nav>
@@ -294,7 +402,25 @@ export function EngineerWorkOrderDetail({
                     {detail.status === 'payment_review' ? copy.waitingStart : paymentStartSubmitting ? copy.submittingStart : copy.requestStart}
                   </button>
                 )}
-                <section className="rounded-xl border border-[#e5e8ed] p-4 md:col-span-2"><div className="flex items-center gap-2 text-xs font-extrabold uppercase tracking-wide text-orange-600"><ShieldCheck size={15} />{copy.checklist}</div><ol className="mt-3 grid gap-2 sm:grid-cols-2">{CHECKLIST[isCn ? 'cn' : 'en'].map((item, index) => <li key={item}><label className="flex cursor-pointer gap-2 rounded-lg bg-[#f7f8fa] p-3 text-sm leading-6 text-[#697386]"><input type="checkbox" checked={checkedChecklistItems.has(index)} onChange={() => toggleChecklistItem(index)} className="mt-1 size-4 shrink-0 accent-orange-500" /><span className={checkedChecklistItems.has(index) ? 'text-[#929baa] line-through' : ''}>{item}</span></label></li>)}</ol></section>
+                {serviceStandardMatchesDetail && serviceStandardError && (
+                  <p role="alert" className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm leading-6 text-red-800 md:col-span-2">
+                    {serviceStandardError}
+                  </p>
+                )}
+                {isExecutingEngineer && serviceStandardMatchesDetail && currentServiceStep && (
+                  <div className="md:col-span-2">
+                    <p className="mb-2 text-xs font-extrabold uppercase tracking-[0.14em] text-orange-600">
+                      {copy.checklist}
+                    </p>
+                    <EngineerServiceStageChecklist
+                      isCn={isCn}
+                      step={currentServiceStep}
+                      savingItemKey={savingStandardItemKey}
+                      onConfirm={handleConfirmServiceStandardItem}
+                      onMarkNotApplicable={handleMarkServiceStandardItemNotApplicable}
+                    />
+                  </div>
+                )}
               </div>
             ) : activeTab === 'quote' && !isExecutingEngineer ? (
               <section className="rounded-xl border border-[#e5e8ed] p-5"><h2 className="font-semibold">{copy.managementQuote}</h2>{detail.pricing ? <dl className="mt-4 grid gap-3 sm:grid-cols-2"><div><dt className="text-xs text-[#697386]">{copy.quoteStatus}</dt><dd className="mt-1 font-semibold">{detail.pricing.status || '—'}</dd></div><div><dt className="text-xs text-[#697386]">{copy.quoteTotal}</dt><dd className="mt-1 font-semibold">{detail.pricing.currency || ''} {detail.pricing.total_amount ?? detail.pricing.subtotal ?? '—'}</dd></div></dl> : <p className="mt-3 text-sm text-[#697386]">{copy.noQuote}</p>}</section>
@@ -319,25 +445,6 @@ export function EngineerWorkOrderDetail({
             )}
           </div>
         </main>
-        <aside className="space-y-3 self-start lg:sticky lg:top-4">
-          {isExecutingEngineer && canViewServiceReadiness && shouldRenderServiceReadiness && (
-            <EngineerServiceReadinessCard
-              isCn={isCn}
-              state={serviceReadiness?.state || 'missing'}
-              review={serviceReadiness?.review || null}
-              expanded={serviceReadinessExpanded}
-              pollingExpired={serviceReadinessPollingExpired}
-              canRefresh={canGenerateServiceReadiness}
-              onToggle={() => setServiceReadinessExpanded((value) => !value)}
-              onRefresh={handleRefreshServiceReadiness}
-              onInsertQuestion={(question) => {
-                setMessageDraftRequest({ id: `${detail.id}:${Date.now()}`, text: question.draft });
-                setActiveTab('messages');
-              }}
-            />
-          )}
-          <section className="rounded-xl border border-[#e5e8ed] bg-white p-4"><h2 className="text-sm font-semibold">{copy.support}</h2><a href="mailto:support@sagemro.com" className="mt-2 block text-sm font-bold text-orange-600">support@sagemro.com</a></section>
-        </aside>
       </div>
     </section>
   );

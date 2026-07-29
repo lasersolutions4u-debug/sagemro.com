@@ -10,12 +10,188 @@ import {
 import { e2eRuntime } from '../support/runtime.mjs';
 import {
   captureBothViewports,
+  captureVisual,
   localD1,
   localD1Rows,
   sqlText,
 } from '../support/visual.mjs';
 
 const runtime = e2eRuntime();
+
+const HOME_COPY = {
+  en: {
+    url: runtime.customerBase,
+    heading: 'Issues with laser and metal forming equipment? Ask AI first.',
+    input: 'Describe the problem — or just start talking',
+    tools: 'Calculators',
+    insights: 'Insights',
+    about: 'About SAGEMRO',
+    aboutTitle: 'About SAGEMRO Equipment Service',
+    loopTitle: 'SAGEMRO Precision Service Loop',
+    promise: 'Every service is prepared, evidence-based, verified, and clearly delivered.',
+    steps: [
+      'Task Alignment',
+      'Risk Control',
+      'One-Visit Readiness',
+      'Evidence-Based Execution',
+      'Recovery Verification',
+      'Transparent Handover',
+    ],
+  },
+  zh: {
+    url: 'http://sagemro.cn:4273',
+    heading: '激光和成型设备问题，先问AI试试',
+    input: '描述设备问题，或直接开始说...',
+    tools: '计算工具',
+    insights: '行业观察',
+    about: '关于 SAGEMRO',
+    aboutTitle: '关于 SAGEMRO 设备服务平台',
+    loopTitle: 'SAGEMRO 精准服务闭环',
+    promise: '每一次服务，都有准备、有依据、有验证、有交付。',
+    steps: [
+      '任务对齐',
+      '风险锁定',
+      '一次备齐',
+      '循证执行',
+      '恢复验证',
+      '透明交付',
+    ],
+  },
+};
+
+async function installChineseHostProxy(page) {
+  await page.route('http://sagemro.cn:4273/**', async (route) => {
+    const localUrl = new URL(route.request().url());
+    const localOrigin = new URL(runtime.customerBase);
+    localUrl.protocol = localOrigin.protocol;
+    localUrl.hostname = localOrigin.hostname;
+    localUrl.port = localOrigin.port;
+    const response = await route.fetch({ url: localUrl.toString() });
+    await route.fulfill({ response });
+  });
+}
+
+async function expectFullyInViewport(page, locator) {
+  const box = await locator.boundingBox();
+  const viewport = page.viewportSize();
+  expect(box).not.toBeNull();
+  expect(viewport).not.toBeNull();
+  expect(box.y).toBeGreaterThanOrEqual(0);
+  expect(box.y + box.height).toBeLessThanOrEqual(viewport.height);
+}
+
+async function captureHomeEvidence(page, { homeHeading, input, resources }) {
+  const original = page.viewportSize();
+  for (const viewport of [
+    { suffix: 'desktop', width: 1440, height: 900 },
+    { suffix: 'mobile', width: 390, height: 844 },
+  ]) {
+    await page.setViewportSize(viewport);
+    await homeHeading.scrollIntoViewIfNeeded();
+    await expectFullyInViewport(page, homeHeading);
+    await expectFullyInViewport(page, input);
+    await captureVisual(page, `customer-ai-first-home-primary-${viewport.suffix}`, {
+      scope: homeHeading,
+      fullPage: false,
+    });
+
+    await resources.scrollIntoViewIfNeeded();
+    const resourceLinks = resources.getByRole('link');
+    await expect(resourceLinks).toHaveCount(2);
+    await expectFullyInViewport(page, resourceLinks.nth(0));
+    await expectFullyInViewport(page, resourceLinks.nth(1));
+    await captureVisual(page, `customer-home-tools-insights-${viewport.suffix}`, {
+      scope: resources,
+      fullPage: false,
+    });
+  }
+  if (original) await page.setViewportSize(original);
+}
+
+async function captureAboutEvidence(page, serviceLoop, firstStep, lastStep) {
+  const original = page.viewportSize();
+  for (const viewport of [
+    { suffix: 'desktop', width: 1440, height: 900 },
+    { suffix: 'mobile', width: 390, height: 844 },
+  ]) {
+    await page.setViewportSize(viewport);
+    await serviceLoop.scrollIntoViewIfNeeded();
+    const loopHeading = serviceLoop.getByRole('heading').first();
+    const promise = serviceLoop.locator('p').filter({ hasText: /Every service is prepared/ }).first();
+    await expectFullyInViewport(page, loopHeading);
+    await expectFullyInViewport(page, promise);
+    await expectFullyInViewport(page, firstStep);
+    await captureVisual(page, `customer-about-service-loop-overview-${viewport.suffix}`, {
+      scope: serviceLoop,
+      fullPage: false,
+    });
+
+    await lastStep.scrollIntoViewIfNeeded();
+    await expectFullyInViewport(page, lastStep);
+    await captureVisual(page, `customer-about-service-loop-final-steps-${viewport.suffix}`, {
+      scope: lastStep,
+      fullPage: false,
+    });
+  }
+  if (original) await page.setViewportSize(original);
+}
+
+async function assertAiFirstHomeAndAbout(page, locale) {
+  const copy = HOME_COPY[locale];
+  if (locale === 'zh') await installChineseHostProxy(page);
+  await page.goto(copy.url, { waitUntil: 'domcontentloaded' });
+  expect(await page.evaluate(() => window.location.hostname)).toBe(new URL(copy.url).hostname);
+
+  const homeHeading = page.getByRole('heading', { name: copy.heading, exact: true });
+  await expect(homeHeading).toBeVisible();
+  const welcome = homeHeading.locator('xpath=ancestor::div[contains(@class, "max-w-4xl")][1]');
+  const input = page.getByPlaceholder(copy.input, { exact: true });
+  const toolsResource = welcome.getByRole('link', { name: new RegExp(`^${copy.tools}`) });
+  const insightsResource = welcome.getByRole('link', { name: new RegExp(`^${copy.insights}`) });
+  await expect(input).toBeVisible();
+  await expect(toolsResource).toBeVisible();
+  await expect(insightsResource).toBeVisible();
+  const resources = toolsResource.locator('xpath=ancestor::div[contains(@class, "max-w-2xl")][1]');
+  await expect(page.locator('[data-testid="tool-industry-tools"]:visible')).toBeVisible();
+  await expect(page.locator('[data-testid="tool-insights"]:visible')).toBeVisible();
+  await expect(page.getByText('Why choose SAGEMRO', { exact: false })).toHaveCount(0);
+  await expect(page.getByText('为什么选择 SAGEMRO', { exact: false })).toHaveCount(0);
+  await expect(page.locator('[data-testid="ServicePromiseSection"], ServicePromiseSection')).toHaveCount(0);
+
+  if (locale === 'en') {
+    await captureHomeEvidence(page, { homeHeading, input, resources });
+  }
+
+  await page.getByRole('button', { name: copy.about, exact: true }).click();
+  const aboutTitle = page.getByRole('heading', { name: copy.aboutTitle, exact: true });
+  await expect(aboutTitle).toBeVisible();
+  const aboutModal = aboutTitle.locator('xpath=ancestor::div[contains(@class, "fixed")][1]');
+  const serviceLoop = aboutModal.getByRole('heading', { name: copy.loopTitle, exact: true })
+    .locator('xpath=ancestor::section[1]');
+  await expect(serviceLoop).toBeAttached();
+  await expect(serviceLoop.getByText(copy.promise, { exact: true })).toBeVisible();
+  const firstStep = serviceLoop.getByRole('heading', { name: copy.steps[0], exact: true });
+  const lastStep = serviceLoop.getByRole('heading', { name: copy.steps.at(-1), exact: true });
+  for (const step of copy.steps) {
+    await expect(serviceLoop.getByRole('heading', { name: step, exact: true })).toBeVisible();
+  }
+  if (locale === 'en') {
+    await captureAboutEvidence(page, serviceLoop, firstStep, lastStep);
+  }
+}
+
+test('English and Chinese home stay AI-first and explain the service loop through About', async ({ browser }) => {
+  test.setTimeout(120_000);
+  for (const locale of ['en', 'zh']) {
+    const context = await browser.newContext();
+    const page = await context.newPage();
+    try {
+      await assertAiFirstHomeAndAbout(page, locale);
+    } finally {
+      await context.close();
+    }
+  }
+});
 
 async function workOrderIdFor(page, orderNo) {
   return page.evaluate(async ({ apiBase, targetOrderNo }) => {
@@ -163,6 +339,14 @@ test('quote execution lifecycle renders and operates correctly on desktop and mo
     await customerPage.getByTestId('confirm-pricing-button').click();
     await expect(customerPage.getByRole('heading', { name: 'Collection workspace', exact: true })).toBeVisible();
     await expect(customerPage.getByRole('heading', { name: 'Installment 6', exact: true })).toBeVisible();
+    const activeMilestones = panelByHeading(workOrderModal(customerPage), 'Your service progress');
+    const activeTaskAlignment = activeMilestones.getByText('Task Alignment', { exact: true })
+      .locator('xpath=ancestor::li[1]');
+    await expect(activeTaskAlignment).toHaveAttribute('aria-current', 'step');
+    await expect(activeTaskAlignment).toContainText('Current stage');
+    await captureBothViewports(customerPage, '07-customer-active-service-milestones', {
+      scope: activeMilestones,
+    });
 
     await openEngineerOrder(engineerPage, orderNo, workOrderId);
     await engineerPage.getByRole('tab', { name: 'Quote', exact: true }).click();
@@ -224,6 +408,32 @@ test('quote execution lifecycle renders and operates correctly on desktop and mo
         (SELECT COUNT(*) FROM work_order_receipt_claims WHERE work_order_id = ${sqlText(workOrderId)} AND status = 'confirmed') AS confirmed_claim_count;
     `);
     expect(rows[0]).toMatchObject({ schedule_count: 6, installment_count: 6, confirmed_claim_count: 1 });
+
+    localD1(`
+      UPDATE work_order_service_standard_progress
+      SET state = 'legacy_not_recorded', updated_at = datetime('now')
+      WHERE work_order_id = ${sqlText(workOrderId)}
+        AND standard_version = 1
+        AND step_key = 'task_alignment';
+    `);
+    expect(localD1Rows(`
+      SELECT COUNT(*) AS count
+      FROM work_order_service_standard_progress
+      WHERE work_order_id = ${sqlText(workOrderId)}
+        AND step_key = 'task_alignment'
+        AND state = 'legacy_not_recorded'
+    `)[0].count).toBe(3);
+    await customerPage.reload();
+    await openCustomerOrder(customerPage, orderNo);
+    const legacyMilestones = panelByHeading(workOrderModal(customerPage), 'Your service progress');
+    const legacyTaskAlignment = legacyMilestones.getByText('Task Alignment', { exact: true })
+      .locator('xpath=ancestor::li[1]');
+    await expect(legacyTaskAlignment).toContainText('Earlier service records were not itemized');
+    await expect(legacyTaskAlignment).not.toHaveAttribute('aria-current', 'step');
+    await captureBothViewports(customerPage, '08-customer-legacy-service-record-explanation', {
+      scope: legacyMilestones,
+    });
+
     await engineerPage.goBack();
     await expect(engineerPage).toHaveURL(new RegExp(`${new URL(runtime.engineerBase).pathname || '/'}$`));
     await expect(engineerPage.getByText('My work orders', { exact: true })).toBeVisible();
