@@ -1,5 +1,5 @@
 import { ArrowLeft } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   confirmWorkOrderServiceStandardItem,
   getWorkOrder,
@@ -45,6 +45,7 @@ const COPY = {
     submittingStart: 'Submitting...', confirmStart: 'Request Admin approval to start service after advance payment follow-up?',
     startNote: 'Engineer confirmed advance payment follow-up with the customer.',
     startSent: 'Start request sent to Admin for advance payment confirmation.', startFailed: 'Start request failed: ',
+    standardLoading: 'Loading the service standard…',
     standardFailed: 'Service standard could not be loaded. Please try again.',
     statusNames: { available: 'Available', paused: 'Paused', offline: 'Offline' },
   },
@@ -65,6 +66,7 @@ const COPY = {
     requestStart: '请求开始服务审批', waitingStart: '等待 Admin 确认预付款', submittingStart: '提交中...',
     confirmStart: '确认已跟进预付款，并请求 Admin 批准开始服务吗？', startNote: '工程师已与客户确认预付款跟进。',
     startSent: '开始服务请求已提交给 Admin 确认预付款。', startFailed: '开始服务请求失败：',
+    standardLoading: '正在加载服务标准…',
     standardFailed: '服务标准加载失败，请稍后重试。',
     statusNames: { available: '可接单', paused: '暂停接单', offline: '离线' },
   },
@@ -103,9 +105,11 @@ export function EngineerWorkOrderDetail({
   const [actionRefresh, setActionRefresh] = useState(0);
   const [paymentStartSubmitting, setPaymentStartSubmitting] = useState(false);
   const [serviceStandard, setServiceStandard] = useState(null);
+  const [serviceStandardStatus, setServiceStandardStatus] = useState('idle');
   const [serviceStandardError, setServiceStandardError] = useState('');
   const [savingStandardItemKey, setSavingStandardItemKey] = useState('');
   const [messageDraftRequest, setMessageDraftRequest] = useState(null);
+  const serviceStandardRequestRef = useRef(0);
 
   const loadDetail = useCallback(async () => {
     setLoading(true); setError('');
@@ -132,16 +136,26 @@ export function EngineerWorkOrderDetail({
 
   const serviceStandardWorkOrderId = detail?.id;
   const loadServiceStandard = useCallback(async () => {
+    const requestId = serviceStandardRequestRef.current + 1;
+    serviceStandardRequestRef.current = requestId;
     if (!serviceStandardWorkOrderId) {
       setServiceStandard(null);
+      setServiceStandardStatus('idle');
       setServiceStandardError('');
       return;
     }
+    setServiceStandard(null);
+    setServiceStandardStatus('loading');
     setServiceStandardError('');
     try {
-      setServiceStandard(await getWorkOrderServiceStandard(serviceStandardWorkOrderId));
+      const snapshot = await getWorkOrderServiceStandard(serviceStandardWorkOrderId);
+      if (serviceStandardRequestRef.current !== requestId) return;
+      setServiceStandard(snapshot);
+      setServiceStandardStatus('loaded');
     } catch (requestError) {
+      if (serviceStandardRequestRef.current !== requestId) return;
       setServiceStandard(null);
+      setServiceStandardStatus('failed');
       setServiceStandardError(
         requestError.data?.error || requestError.message || copy.standardFailed,
       );
@@ -171,7 +185,9 @@ export function EngineerWorkOrderDetail({
   );
 
   const isExecutingEngineer = String(detail.engineer_id || '') === String(engineerId || '');
-  const currentServiceStep = serviceStandard?.steps?.[serviceStandard?.current_step_index ?? 0] || null;
+  const currentServiceStep = serviceStandardStatus === 'loaded'
+    ? serviceStandard.steps?.[serviceStandard.current_step_index] || null
+    : null;
   const isCurrentTeamWork = detail.ownership_relation === 'current_team_member' || detail.ownership_relation === 'regional_queue';
   const canReassignTeamWork = isRegionalLead && isCurrentTeamWork && ['pending', 'pending_dispatch', 'assigned'].includes(detail.status);
   const scheduledTime = getEngineerScheduleLabel(detail, isCn ? 'zh-CN' : 'en-US') || copy.schedulePending;
@@ -210,7 +226,6 @@ export function EngineerWorkOrderDetail({
     } catch (requestError) {
       const serverMessage = requestError.data?.error || requestError.message || copy.standardFailed;
       setServiceStandardError(serverMessage);
-      toastError(serverMessage);
     } finally {
       setSavingStandardItemKey('');
     }
@@ -261,11 +276,23 @@ export function EngineerWorkOrderDetail({
       </section>
 
       <div className="mt-4">
-        <EngineerServiceStandardProgress
-          isCn={isCn}
-          steps={serviceStandard?.steps || []}
-          currentStepIndex={serviceStandard?.current_step_index ?? 0}
-        />
+        {serviceStandardStatus === 'loading' && (
+          <p role="status" className="rounded-2xl border border-[#e5e8ed] bg-white px-5 py-4 text-sm text-[#697386]">
+            {copy.standardLoading}
+          </p>
+        )}
+        {serviceStandardStatus === 'failed' && serviceStandardError && (
+          <p role="alert" className="rounded-2xl border border-red-200 bg-red-50 px-5 py-4 text-sm leading-6 text-red-800">
+            {serviceStandardError}
+          </p>
+        )}
+        {serviceStandardStatus === 'loaded' && serviceStandard && (
+          <EngineerServiceStandardProgress
+            isCn={isCn}
+            steps={serviceStandard.steps}
+            currentStepIndex={serviceStandard.current_step_index}
+          />
+        )}
       </div>
 
       <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px] lg:[grid-template-areas:'main_rail']">
@@ -304,7 +331,7 @@ export function EngineerWorkOrderDetail({
                     {detail.status === 'payment_review' ? copy.waitingStart : paymentStartSubmitting ? copy.submittingStart : copy.requestStart}
                   </button>
                 )}
-                {serviceStandardError && (
+                {serviceStandardStatus === 'loaded' && serviceStandardError && (
                   <p role="alert" className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm leading-6 text-red-800 md:col-span-2">
                     {serviceStandardError}
                   </p>
