@@ -4,6 +4,7 @@ const PRIORITY_STYLES = {
   high: 'border-red-200 bg-red-50 text-red-700',
   medium: 'border-amber-200 bg-amber-50 text-amber-800',
   low: 'border-slate-200 bg-slate-50 text-slate-600',
+  none: 'border-emerald-200 bg-emerald-50 text-emerald-700',
 };
 
 export function EngineerServiceGuidanceCard({
@@ -20,6 +21,7 @@ export function EngineerServiceGuidanceCard({
   const [correctionIndex, setCorrectionIndex] = useState(null);
   const [note, setNote] = useState('');
   const [submittingIndex, setSubmittingIndex] = useState(null);
+  const [feedbackError, setFeedbackError] = useState('');
   const copy = isCn
     ? {
       eyebrow: 'AI 服务指引',
@@ -45,10 +47,11 @@ export function EngineerServiceGuidanceCard({
       refresh: '更新指引',
       retry: '重试',
       saving: '提交中…',
+      feedbackFailed: '反馈提交失败，请重试。现有 AI 指引未改变。',
       generated: '生成于',
       readOnly: '此工单阶段为只读，仍可参考现有指引。',
       noGuidance: '当前没有 AI 建议。请按服务标准继续。',
-      priorities: { high: '高', medium: '中', low: '低' },
+      priorities: { high: '高', medium: '中', low: '低', none: '无' },
     }
     : {
       eyebrow: 'AI service guidance',
@@ -74,10 +77,11 @@ export function EngineerServiceGuidanceCard({
       refresh: 'Update guidance',
       retry: 'Retry',
       saving: 'Submitting…',
+      feedbackFailed: 'Feedback was not submitted. Retry when ready; the current AI guidance is unchanged.',
       generated: 'Generated',
       readOnly: 'This work-order stage is read-only. Existing guidance remains available for reference.',
       noGuidance: 'No AI guidance is available. Continue with the service standard.',
-      priorities: { high: 'High', medium: 'Medium', low: 'Low' },
+      priorities: { high: 'High', medium: 'Medium', low: 'Low', none: 'None' },
     };
 
   const actions = guidance?.next_actions || [];
@@ -97,17 +101,21 @@ export function EngineerServiceGuidanceCard({
     setCorrectionIndex(null);
     setNote('');
     setSubmittingIndex(null);
+    setFeedbackError('');
   }, [generatedAt]);
 
   const submitFeedback = async (index, feedbackType, correctionNote = '') => {
     if (!canRefresh || submittingIndex !== null) return;
     setSubmittingIndex(index);
+    setFeedbackError('');
     try {
       await onActionFeedback(index, feedbackType, correctionNote);
       if (feedbackType === 'corrected') {
         setCorrectionIndex(null);
         setNote('');
       }
+    } catch {
+      setFeedbackError(copy.feedbackFailed);
     } finally {
       setSubmittingIndex(null);
     }
@@ -136,8 +144,8 @@ export function EngineerServiceGuidanceCard({
           <div className="rounded-xl bg-[#f7f8fa] p-4">
             <p className="text-sm leading-6 text-[#697386]">{copy.preparing}</p>
             <div className="mt-3 space-y-2" aria-hidden="true">
-              <div className="h-2.5 animate-pulse rounded-full bg-[#dfe3e9]" />
-              <div className="h-2.5 w-4/5 animate-pulse rounded-full bg-[#e8ebef]" />
+              <div className="h-2.5 animate-pulse rounded-full bg-[#dfe3e9] motion-reduce:animate-none" />
+              <div className="h-2.5 w-4/5 animate-pulse rounded-full bg-[#e8ebef] motion-reduce:animate-none" />
             </div>
             {pollingExpired && <p className="mt-3 text-xs leading-5 text-amber-800">{copy.delayed}</p>}
           </div>
@@ -167,6 +175,11 @@ export function EngineerServiceGuidanceCard({
             )}
             {!canRefresh && (
               <p className="rounded-xl bg-[#f7f8fa] px-3 py-2 text-xs leading-5 text-[#697386]">{copy.readOnly}</p>
+            )}
+            {feedbackError && (
+              <p role="alert" className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs leading-5 text-red-800">
+                {feedbackError}
+              </p>
             )}
 
             <div className="border-l-2 border-orange-500 pl-3">

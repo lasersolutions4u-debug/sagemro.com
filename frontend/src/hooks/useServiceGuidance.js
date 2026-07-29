@@ -4,6 +4,59 @@ import {
   refreshWorkOrderServiceGuidance,
 } from '../services/api';
 
+// TESTABLE_GUIDANCE_COORDINATOR_START
+export function createGuidanceRequestCoordinator(maxPollAttempts = 10) {
+  let epoch = 0;
+  let sequence = 0;
+  let pollAttempts = 0;
+  let refreshSequence = null;
+
+  const beginRequest = () => {
+    if (refreshSequence !== null) return null;
+    sequence += 1;
+    return { epoch, sequence };
+  };
+
+  return {
+    reset() {
+      epoch += 1;
+      sequence = 0;
+      pollAttempts = 0;
+      refreshSequence = null;
+    },
+    beginRequest,
+    beginRefresh() {
+      sequence += 1;
+      refreshSequence = sequence;
+      return { epoch, sequence };
+    },
+    beginGenerationRound() {
+      pollAttempts = 0;
+    },
+    beginPoll() {
+      if (refreshSequence !== null) return null;
+      if (pollAttempts >= maxPollAttempts) return null;
+      pollAttempts += 1;
+      return {
+        token: beginRequest(),
+        attempt: pollAttempts,
+      };
+    },
+    isLatest(token) {
+      return token?.epoch === epoch && token?.sequence === sequence;
+    },
+    isRefreshPending() {
+      return refreshSequence !== null;
+    },
+    finish(token) {
+      if (token?.epoch === epoch && token?.sequence === refreshSequence) {
+        refreshSequence = null;
+      }
+    },
+  };
+}
+// TESTABLE_GUIDANCE_COORDINATOR_END
+
 function mergeGuidanceState(current, data) {
   return {
     ...current,
@@ -16,20 +69,22 @@ function mergeGuidanceState(current, data) {
 export function useServiceGuidance({ workOrderId, enabled, canGenerate }) {
   const [guidanceState, setGuidanceState] = useState(null);
   const [pollingExpired, setPollingExpired] = useState(false);
-  const pollAttemptsRef = useRef(0);
   const activeWorkOrderIdRef = useRef(null);
+  const requestCoordinatorRef = useRef(createGuidanceRequestCoordinator());
 
-  const applyGuidance = useCallback((id, data) => {
-    if (activeWorkOrderIdRef.current !== id) return;
+  const applyGuidance = useCallback((id, token, data) => {
+    if (activeWorkOrderIdRef.current !== id
+      || !requestCoordinatorRef.current.isLatest(token)) return false;
     setGuidanceState((current) => mergeGuidanceState(current, data));
     if (data?.state !== 'generating') {
-      pollAttemptsRef.current = 0;
       setPollingExpired(false);
     }
+    return true;
   }, []);
 
-  const markFailed = useCallback((id) => {
-    if (activeWorkOrderIdRef.current !== id) return;
+  const markFailed = useCallback((id, token) => {
+    if (activeWorkOrderIdRef.current !== id
+      || !requestCoordinatorRef.current.isLatest(token)) return;
     setGuidanceState((current) => ({
       ...current,
       state: 'failed',
@@ -39,60 +94,72 @@ export function useServiceGuidance({ workOrderId, enabled, canGenerate }) {
   const startRefresh = useCallback(async (force) => {
     if (!enabled || !workOrderId || !canGenerate) return null;
     const id = workOrderId;
+    requestCoordinatorRef.current.beginGenerationRound();
+    const token = requestCoordinatorRef.current.beginRefresh();
+    setPollingExpired(false);
     try {
       const data = await refreshWorkOrderServiceGuidance(id, { force });
-      applyGuidance(id, data);
+      applyGuidance(id, token, data);
       return data;
     } catch {
-      markFailed(id);
+      markFailed(id, token);
       return null;
+    } finally {
+      requestCoordinatorRef.current.finish(token);
     }
   }, [applyGuidance, canGenerate, enabled, markFailed, workOrderId]);
 
   const refresh = useCallback(() => {
-    pollAttemptsRef.current = 0;
-    setPollingExpired(false);
     return startRefresh(true);
   }, [startRefresh]);
 
   useEffect(() => {
     const id = enabled && workOrderId ? workOrderId : null;
+    const coordinator = requestCoordinatorRef.current;
+    coordinator.reset();
     activeWorkOrderIdRef.current = id;
-    pollAttemptsRef.current = 0;
     setPollingExpired(false);
     setGuidanceState(null);
     if (!id) return undefined;
 
     let cancelled = false;
+    const token = coordinator.beginRequest();
     getWorkOrderServiceGuidance(id)
       .then(async (data) => {
         if (cancelled) return;
-        applyGuidance(id, data);
-        if ((data?.state === 'missing' || data?.state === 'failed') && canGenerate) {
+        const applied = applyGuidance(id, token, data);
+        if (applied
+          && (data?.state === 'missing' || data?.state === 'failed')
+          && canGenerate) {
           await startRefresh(false);
         }
       })
       .catch(() => {
-        if (!cancelled) markFailed(id);
+        if (!cancelled) markFailed(id, token);
       });
 
     return () => {
       cancelled = true;
-      if (activeWorkOrderIdRef.current === id) activeWorkOrderIdRef.current = null;
+      if (activeWorkOrderIdRef.current === id) {
+        activeWorkOrderIdRef.current = null;
+        coordinator.reset();
+      }
     };
   }, [applyGuidance, canGenerate, enabled, markFailed, startRefresh, workOrderId]);
 
   const checkGuidance = useCallback(async () => {
     if (!enabled || !workOrderId) return;
     const id = workOrderId;
+    const token = requestCoordinatorRef.current.beginRequest();
+    if (!token) return;
     try {
       const data = await getWorkOrderServiceGuidance(id);
-      applyGuidance(id, data);
-      if (data?.state === 'stale' && canGenerate) {
+      const applied = applyGuidance(id, token, data);
+      if (applied && data?.state === 'stale' && canGenerate) {
         await startRefresh(true);
       }
     } catch {
-      markFailed(id);
+      markFailed(id, token);
     }
   }, [applyGuidance, canGenerate, enabled, markFailed, startRefresh, workOrderId]);
 
@@ -103,17 +170,22 @@ export function useServiceGuidance({ workOrderId, enabled, canGenerate }) {
   }, [checkGuidance, enabled, workOrderId]);
 
   const pollGuidance = useCallback(async () => {
-    if (!enabled || !workOrderId || pollAttemptsRef.current >= 10) return;
+    if (!enabled || !workOrderId) return;
     const id = workOrderId;
-    pollAttemptsRef.current += 1;
+    if (requestCoordinatorRef.current.isRefreshPending()) return;
+    const poll = requestCoordinatorRef.current.beginPoll();
+    if (!poll) {
+      setPollingExpired(true);
+      return;
+    }
     try {
       const data = await getWorkOrderServiceGuidance(id);
-      applyGuidance(id, data);
-      if (data?.state === 'generating' && pollAttemptsRef.current >= 10) {
+      const applied = applyGuidance(id, poll.token, data);
+      if (applied && data?.state === 'generating' && poll.attempt >= 10) {
         setPollingExpired(true);
       }
     } catch {
-      markFailed(id);
+      markFailed(id, poll.token);
     }
   }, [applyGuidance, enabled, markFailed, workOrderId]);
 
