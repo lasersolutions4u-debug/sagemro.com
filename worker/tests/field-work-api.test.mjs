@@ -68,6 +68,7 @@ function createEnv() {
     __writes: [],
     __progress: serviceStandardRows(),
     __overrides: [],
+    __failServiceStandardEventAudit: false,
     KV: {
       async get(key) { return env.__kv.get(key) ?? null; },
       async put(key, value) { env.__kv.set(key, value); },
@@ -421,6 +422,10 @@ function createStatement(env, sql) {
       if (/INSERT INTO work_order_arrival_checks/i.test(normalized)) env.__arrivalChecks.push({ args: this.args });
       if (/INSERT INTO audit_logs/i.test(normalized)) {
         if (/FROM work_order_service_standard_progress/i.test(normalized)) {
+          if (env.__failServiceStandardEventAudit) {
+            env.__failServiceStandardEventAudit = false;
+            throw new Error('service-standard event audit insert failed');
+          }
           const [
             id, actorType, actorId, targetId, beforeState, afterState, ip, device,
             workOrderId, itemKey, ownerType,
@@ -2091,6 +2096,58 @@ test('successful resolution confirms and audits only a pending system service-re
   assert.ok(env.__auditLogs.some((entry) =>
     entry.args[5] === 'service_standard_item_confirmed'
     && JSON.parse(entry.args[7]).item_key === 'handover.service_report'));
+});
+
+test('successful resolution creates and confirms its missing immutable system event row', async () => {
+  const env = createEnv();
+  env.__workOrders[0].arrival_verified_at = '2026-07-24T00:00:00Z';
+  seedFieldDay(env, { status: 'report_submitted' });
+  env.__progress = env.__progress.filter((item) =>
+    item.item_key !== 'handover.service_report');
+
+  const result = await api(env, '/api/workorders/wo-onsite-1/resolve', {
+    userType: 'engineer', userId: 'engineer-1', method: 'POST', body: {},
+  });
+
+  assert.equal(result.response.status, 200);
+  const confirmation = env.__progress.find((item) =>
+    item.item_key === 'handover.service_report');
+  assert.deepEqual(
+    {
+      stepKey: confirmation?.step_key,
+      state: confirmation?.state,
+      required: confirmation?.is_required,
+      owner: confirmation?.owner_type,
+      confirmedBy: confirmation?.confirmed_by_type,
+    },
+    {
+      stepKey: 'transparent_handover',
+      state: 'confirmed',
+      required: 1,
+      owner: 'system',
+      confirmedBy: 'system',
+    },
+  );
+  assert.ok(env.__auditLogs.some((entry) =>
+    entry.args[5] === 'service_standard_item_confirmed'));
+
+  const rollbackEnv = createEnv();
+  rollbackEnv.__workOrders[0].arrival_verified_at = '2026-07-24T00:00:00Z';
+  seedFieldDay(rollbackEnv, { status: 'report_submitted' });
+  rollbackEnv.__progress = rollbackEnv.__progress.filter((item) =>
+    item.item_key !== 'handover.service_report');
+  rollbackEnv.__failServiceStandardEventAudit = true;
+
+  const failed = await api(rollbackEnv, '/api/workorders/wo-onsite-1/resolve', {
+    userType: 'engineer', userId: 'engineer-1', method: 'POST', body: {},
+  });
+
+  assert.equal(failed.response.status, 500);
+  assert.equal(rollbackEnv.__workOrders[0].status, 'in_service');
+  assert.equal(
+    rollbackEnv.__progress.some((item) => item.item_key === 'handover.service_report'),
+    false,
+  );
 });
 
 for (const concurrentRecord of ['field-day', 'extension']) {

@@ -5782,6 +5782,27 @@ function serviceStandardGateBlockedResponse(block, market) {
   }, 409);
 }
 
+function buildServiceStandardEventEnsureStatement(env, workOrderId, itemKey) {
+  const definition = buildServiceStandardDefinition();
+  const item = definition.items.find((candidate) => candidate.key === itemKey);
+  if (!item || !['admin', 'customer', 'system'].includes(item.owner)) {
+    throw new TypeError(`Unknown service-standard event item: ${itemKey}`);
+  }
+  return env.DB.prepare(`
+    INSERT OR IGNORE INTO work_order_service_standard_progress (
+      work_order_id, standard_version, step_key, item_key, state,
+      is_required, owner_type
+    ) VALUES (?, ?, ?, ?, 'pending', ?, ?)
+  `).bind(
+    workOrderId,
+    definition.version,
+    item.stepKey,
+    item.key,
+    item.required ? 1 : 0,
+    item.owner,
+  );
+}
+
 function buildServiceStandardEventConfirmationStatement(
   env,
   workOrderId,
@@ -8272,6 +8293,11 @@ async function handleSubmitRating(request, env) {
         `),
       );
     }
+    statements.push(buildServiceStandardEventEnsureStatement(
+      env,
+      work_order_id,
+      'handover.customer_confirmation',
+    ));
     statements.push(env.DB.prepare(`
       INSERT INTO ratings (id, work_order_id, engineer_id, customer_id, rating_timeliness, rating_technical, rating_communication, rating_professional, comment)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -15169,6 +15195,11 @@ async function handleResolveWorkOrder(request, env) {
             SELECT CASE WHEN changes() = 1
               THEN 1 ELSE json('resolve lifecycle concurrent update') END
           `),
+          buildServiceStandardEventEnsureStatement(
+            env,
+            workOrderId,
+            'handover.service_report',
+          ),
           env.DB.prepare(`
             INSERT INTO work_order_logs (id, work_order_id, action, actor_type, actor_id, content)
             VALUES (?, ?, 'resolved', 'engineer', ?, '工程师标记服务完成，等待客户确认。')
@@ -18090,6 +18121,11 @@ async function handleAdminApprovePaymentStart(request, env) {
             ...versionedExecutionGuardBindings(pricing),
           ),
           env.DB.prepare(`SELECT CASE WHEN changes() = 1 THEN 1 ELSE json('quote lifecycle concurrent update') END`),
+          buildServiceStandardEventEnsureStatement(
+            env,
+            workOrderId,
+            'ready.start_conditions',
+          ),
           env.DB.prepare(
             "INSERT INTO work_order_messages (id, work_order_id, sender_type, sender_id, sender_name, content, message_type, is_internal_note, is_customer_visible) VALUES (?, ?, 'system', '', 'System', ?, 'payment_update', 0, 1)"
           ).bind(generateId(), workOrderId, confirmMsg),
@@ -18174,6 +18210,11 @@ async function handleAdminApprovePaymentStart(request, env) {
         SELECT CASE WHEN changes() = 1
           THEN 1 ELSE json('service start concurrent update') END
       `),
+      buildServiceStandardEventEnsureStatement(
+        env,
+        workOrderId,
+        'ready.start_conditions',
+      ),
       env.DB.prepare(
         "INSERT INTO work_order_messages (id, work_order_id, sender_type, sender_id, sender_name, content, message_type, is_internal_note, is_customer_visible) VALUES (?, ?, 'system', '', 'System', ?, 'payment_update', 0, 1)"
       ).bind(
