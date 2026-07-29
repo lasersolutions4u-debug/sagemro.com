@@ -10,6 +10,7 @@ export function createGuidanceRequestCoordinator(maxPollAttempts = 10) {
   let sequence = 0;
   let pollAttempts = 0;
   let refreshSequence = null;
+  let lastAcceptedState = null;
 
   const beginRequest = () => {
     if (refreshSequence !== null) return null;
@@ -23,15 +24,13 @@ export function createGuidanceRequestCoordinator(maxPollAttempts = 10) {
       sequence = 0;
       pollAttempts = 0;
       refreshSequence = null;
+      lastAcceptedState = null;
     },
     beginRequest,
     beginRefresh() {
       sequence += 1;
       refreshSequence = sequence;
       return { epoch, sequence };
-    },
-    beginGenerationRound() {
-      pollAttempts = 0;
     },
     beginPoll() {
       if (refreshSequence !== null) return null;
@@ -44,6 +43,15 @@ export function createGuidanceRequestCoordinator(maxPollAttempts = 10) {
     },
     isLatest(token) {
       return token?.epoch === epoch && token?.sequence === sequence;
+    },
+    acceptGuidance(token, state) {
+      if (token?.epoch !== epoch || token?.sequence !== sequence) {
+        return { accepted: false, startedGeneration: false };
+      }
+      const startedGeneration = state === 'generating' && lastAcceptedState !== 'generating';
+      if (startedGeneration) pollAttempts = 0;
+      lastAcceptedState = state;
+      return { accepted: true, startedGeneration };
     },
     isRefreshPending() {
       return refreshSequence !== null;
@@ -73,10 +81,11 @@ export function useServiceGuidance({ workOrderId, enabled, canGenerate }) {
   const requestCoordinatorRef = useRef(createGuidanceRequestCoordinator());
 
   const applyGuidance = useCallback((id, token, data) => {
-    if (activeWorkOrderIdRef.current !== id
-      || !requestCoordinatorRef.current.isLatest(token)) return false;
+    if (activeWorkOrderIdRef.current !== id) return false;
+    const acceptance = requestCoordinatorRef.current.acceptGuidance(token, data?.state);
+    if (!acceptance.accepted) return false;
     setGuidanceState((current) => mergeGuidanceState(current, data));
-    if (data?.state !== 'generating') {
+    if (acceptance.startedGeneration || data?.state !== 'generating') {
       setPollingExpired(false);
     }
     return true;
@@ -94,9 +103,7 @@ export function useServiceGuidance({ workOrderId, enabled, canGenerate }) {
   const startRefresh = useCallback(async (force) => {
     if (!enabled || !workOrderId || !canGenerate) return null;
     const id = workOrderId;
-    requestCoordinatorRef.current.beginGenerationRound();
     const token = requestCoordinatorRef.current.beginRefresh();
-    setPollingExpired(false);
     try {
       const data = await refreshWorkOrderServiceGuidance(id, { force });
       applyGuidance(id, token, data);
