@@ -8158,6 +8158,7 @@ async function handleFieldDayCheckIn(request, env) {
 }
 
 async function handleSubmitFieldDayReport(request, env) {
+  const market = getRequestMarket(request);
   const uploadedKeys = [];
   let persistenceCommitted = false;
   try {
@@ -8250,7 +8251,7 @@ async function handleSubmitFieldDayReport(request, env) {
       const file = upload.file;
       const mediaId = generateId();
       const extension = FIELD_EVIDENCE_MIME_TYPES.get(file.type);
-      const objectKey = `field-evidence/${getRequestMarket(request)}/${workOrderId}/${fieldDayId}/${upload.purpose}/${mediaId}.${extension}`;
+      const objectKey = `field-evidence/${market}/${workOrderId}/${fieldDayId}/${upload.purpose}/${mediaId}.${extension}`;
       await env.FIELD_EVIDENCE.put(objectKey, upload.bytes, { httpMetadata: { contentType: file.type } });
       uploadedKeys.push(objectKey);
       mediaRows.push({
@@ -8325,7 +8326,10 @@ async function handleSubmitFieldDayReport(request, env) {
     const savedFieldDay = { ...fieldDay, ...value, status: nextStatus, report_idempotency_key: idempotencyKey, report_submitted_at: new Date().toISOString() };
     await notifyFieldWorkBestEffort(env, {
       user_id: workOrder.customer_id, user_type: 'customer', type: 'field_day_report_submitted',
-      title: 'Field work update', body: `A field work update was submitted for ${workOrder.order_no}.`,
+      title: market === 'cn' ? '现场作业更新' : 'Field work update',
+      body: market === 'cn'
+        ? `工单 ${workOrder.order_no} 已提交现场作业更新。`
+        : `A field work update was submitted for ${workOrder.order_no}.`,
       data: { work_order_id: workOrderId, field_day_id: fieldDayId },
     });
     if (extensionValue) {

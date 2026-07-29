@@ -1696,6 +1696,11 @@ test('daily report stores public and internal photos once, notifies customer, an
   assert.deepEqual(env.__media.map((item) => item.customer_visible), [1, 1, 0]);
   assert.equal(env.__objects.size, 3);
   assert.equal(env.__notifications.length, 1);
+  assert.equal(env.__notifications[0].args[4], 'Field work update');
+  assert.equal(
+    env.__notifications[0].args[5],
+    'A field work update was submitted for WO-ONSITE-1.',
+  );
   assert.equal(first.json.media.every((item) => item.object_key === undefined && item.url.includes(item.id)), true);
 
   const retry = await api(env, '/api/workorders/wo-onsite-1/field-days/field-day-1/report', {
@@ -1714,6 +1719,31 @@ test('daily report stores public and internal photos once, notifies customer, an
   assert.equal(failed.response.status, 500);
   assert.equal(failedEnv.__objects.size, 0);
   assert.equal(failedEnv.__fieldDays[0].status, 'checked_in');
+});
+
+test('Chinese daily report writes a Chinese customer notification', async () => {
+  const env = createEnv();
+  seedFieldDay(env);
+
+  const result = await api(
+    env,
+    '/api/workorders/wo-onsite-1/field-days/field-day-1/report',
+    {
+      userType: 'engineer',
+      userId: 'engineer-1',
+      method: 'POST',
+      formData: reportForm(),
+      idempotencyKey: 'cn-report-1',
+      market: 'cn',
+    },
+  );
+
+  assert.equal(result.response.status, 201, JSON.stringify(result.json));
+  const notification = env.__notifications.find(
+    (item) => item.args[3] === 'field_day_report_submitted',
+  );
+  assert.equal(notification.args[4], '现场作业更新');
+  assert.equal(notification.args[5], '工单 WO-ONSITE-1 已提交现场作业更新。');
 });
 
 test('post-commit notification failure keeps the submitted report and R2 evidence', async () => {
