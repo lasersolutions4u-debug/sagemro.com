@@ -254,27 +254,31 @@ export function parseServiceGuidance(content, allowedItemKeys = new Set()) {
     [...(allowedItemKeys instanceof Set ? allowedItemKeys : [])]
       .filter((key) => typeof key === 'string' && CANONICAL_ITEM_KEYS.has(key)),
   );
-  if (!parsed.observations.every(isValidObservation)
-    || !parsed.next_actions.every((row) => isValidAction(row, allowedKeys))
-    || !parsed.customer_questions.every(isValidQuestion)
-    || !parsed.evidence_needed.every((item) => isBoundedString(item))) return null;
+  const retainedObservations = parsed.observations.slice(0, 6);
+  const retainedActions = parsed.next_actions.slice(0, 3);
+  const retainedQuestions = parsed.customer_questions.slice(0, 2);
+  const retainedEvidence = parsed.evidence_needed.slice(0, 6);
+  if (!retainedObservations.every(isValidObservation)
+    || !retainedActions.every((row) => isValidAction(row, allowedKeys))
+    || !retainedQuestions.every(isValidQuestion)
+    || !retainedEvidence.every((item) => isBoundedString(item))) return null;
 
-  const observations = parsed.observations.slice(0, 6).map((row) => ({
+  const observations = retainedObservations.map((row) => ({
     priority: row.priority,
     detail: cleanText(row.detail),
     source: row.source,
   }));
-  const nextActions = parsed.next_actions.slice(0, 3).map((row) => ({
+  const nextActions = retainedActions.map((row) => ({
     priority: row.priority,
     action: cleanText(row.action),
     rationale: cleanText(row.rationale),
     related_item_key: row.related_item_key,
   }));
-  const questions = parsed.customer_questions.slice(0, 2).map((row) => ({
+  const questions = retainedQuestions.map((row) => ({
     priority: row.priority,
     draft: cleanText(row.draft),
   }));
-  const evidenceNeeded = parsed.evidence_needed.slice(0, 6).map((item) => cleanText(item));
+  const evidenceNeeded = retainedEvidence.map((item) => cleanText(item));
 
   return {
     version: 2,

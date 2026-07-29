@@ -41,7 +41,7 @@ test('v2 guidance clamps actions and customer questions', () => {
       { priority: 'high', action: 'Confirm isolation.', rationale: 'Required before work.', related_item_key: 'risk.isolation_permission' },
       { priority: 'medium', action: 'Request alarm photo.', rationale: 'Narrows diagnosis.', related_item_key: 'task.problem_and_goal' },
       { priority: 'low', action: 'Pack cleaning kit.', rationale: 'Likely useful.', related_item_key: 'ready.parts_and_consumables' },
-      { priority: 'low', action: 'Extra action.', rationale: 'Must be removed.', related_item_key: 'risk.isolation_permission' },
+      { priority: 'low', action: 'Extra action.', rationale: 'Must be removed.', related_item_key: '' },
     ],
     customer_questions: [
       { priority: 'high', draft: 'Can the machine be isolated?' },
@@ -65,7 +65,7 @@ test('v2 guidance rejects malformed JSON, wrong scalar types, and missing collec
   assert.equal(parseServiceGuidance(JSON.stringify(missingQuestions), itemKeys), null);
 });
 
-test('v2 guidance rejects invalid nested shapes before clamping', () => {
+test('v2 guidance rejects invalid nested shapes within retained caps', () => {
   assert.equal(parseServiceGuidance(JSON.stringify(validGuidance({
     observations: [{ priority: 'high', detail: 'Missing source.' }],
   })), itemKeys), null);
@@ -80,10 +80,29 @@ test('v2 guidance rejects invalid nested shapes before clamping', () => {
     next_actions: [
       { priority: 'high', action: 'Confirm.', rationale: 'Needed.', related_item_key: 'risk.isolation_permission' },
       { priority: 'medium', action: 'Request.', rationale: 'Needed.', related_item_key: 'task.problem_and_goal' },
-      { priority: 'low', action: 'Pack.', rationale: 'Needed.', related_item_key: 'ready.parts_and_consumables' },
-      { priority: 'low', action: 'Invalid tail.', rationale: 'Needed.', related_item_key: 'invented.item' },
+      { priority: 'low', action: 'Invalid retained entry.', rationale: 'Needed.', related_item_key: 'invented.item' },
+      { priority: 'low', action: 'Ignored valid overflow.', rationale: 'Needed.', related_item_key: 'ready.parts_and_consumables' },
     ],
   })), itemKeys), null);
+});
+
+test('v2 guidance ignores malformed overflow entries after retained caps', () => {
+  const result = parseServiceGuidance(JSON.stringify(validGuidance({
+    next_actions: [
+      { priority: 'high', action: 'Confirm.', rationale: 'Needed.', related_item_key: 'risk.isolation_permission' },
+      { priority: 'medium', action: 'Request.', rationale: 'Needed.', related_item_key: 'task.problem_and_goal' },
+      { priority: 'low', action: 'Pack.', rationale: 'Needed.', related_item_key: 'ready.parts_and_consumables' },
+      { priority: 'low', action: 'Ignored action.', rationale: 'Ignored.', related_item_key: '' },
+    ],
+    customer_questions: [
+      { priority: 'high', draft: 'Can the machine be isolated?' },
+      { priority: 'medium', draft: 'Please send the alarm screen.' },
+      { priority: 'low', draft: null },
+    ],
+  })), itemKeys);
+
+  assert.equal(result.next_actions.length, 3);
+  assert.equal(result.customer_questions.length, 2);
 });
 
 test('v2 guidance rejects values outside the strict schema', () => {
