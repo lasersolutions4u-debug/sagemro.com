@@ -7104,7 +7104,7 @@ async function handleGetWorkOrder(request, env) {
     if (customerFieldView || noFieldWorkView) safeWorkOrder = withoutPrivateFieldLocation(safeWorkOrder);
     const isCustomerDetail = request._auth?.userType === 'customer';
     const publicServiceMilestones = isCustomerDetail
-      ? buildPublicServiceMilestones(await loadServiceStandardSnapshot(env, workOrder))
+      ? buildPublicServiceMilestones(await loadServiceStandardSnapshotReadOnly(env, workOrder))
       : null;
 
     const detail = {
