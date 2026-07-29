@@ -200,6 +200,17 @@ export async function getAdminWorkOrder(workOrderId) {
   return request(`/api/workorders/${workOrderId}`);
 }
 
+export async function getAdminWorkOrderServiceStandard(workOrderId) {
+  return request(`/api/workorders/${encodeURIComponent(workOrderId)}/service-standard`);
+}
+
+export async function overrideAdminWorkOrderServiceStandardGate(workOrderId, gate, reason) {
+  return request(`/api/admin/workorders/${encodeURIComponent(workOrderId)}/service-standard/override`, {
+    method: 'POST',
+    body: JSON.stringify({ gate, reason }),
+  });
+}
+
 export async function getAdminWorkOrderMessages(workOrderId) {
   return request(`/api/workorders/${workOrderId}/messages`);
 }
