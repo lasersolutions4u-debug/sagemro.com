@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useLayoutEffect, useCallback, useRef } from 'react';
 import { Modal } from '../common/Modal';
 import {
   getWorkOrder,
@@ -42,6 +42,11 @@ import { formatCustomerDeviceLine, formatServiceTextForLocale } from '../../util
 import { canEngineerViewCustomerContact, redactContactInfo } from '../../utils/contactRedaction';
 import { isCnLocale } from '../../utils/locale';
 import { formatGeolocationError, getBrowserLocation, isBrowserGeolocationError } from '../../utils/browserGeolocation';
+import {
+  createWorkOrderRequestIdentity,
+  isCurrentWorkOrderRequest,
+  runCurrentWorkOrderRequest,
+} from '../../utils/workOrderRequestIdentity';
 import { Loader2, LocateFixed, MapPin, Search } from 'lucide-react';
 
 const CURRENCY = isCnLocale() ? 'CNY' : 'USD';
@@ -390,35 +395,65 @@ export function WorkOrderDetailContent({
     setFieldWorkBusy(busy);
   }, []);
 
+  const detailRequestSequenceRef = useRef(0);
+  const activeWorkOrderIdRef = useRef(workOrderId);
+  useLayoutEffect(() => {
+    activeWorkOrderIdRef.current = workOrderId;
+  }, [workOrderId]);
+
   const loadDetail = useCallback(async ({ throwOnError = false } = {}) => {
-    if (!workOrderId) return;
+    if (!workOrderId || String(activeWorkOrderIdRef.current) !== String(workOrderId)) return;
+    const identity = createWorkOrderRequestIdentity(
+      ++detailRequestSequenceRef.current,
+      workOrderId,
+    );
+    const getCurrentIdentity = () => createWorkOrderRequestIdentity(
+      detailRequestSequenceRef.current,
+      activeWorkOrderIdRef.current,
+    );
+    const isCurrentRequest = () => isCurrentWorkOrderRequest(identity, getCurrentIdentity());
     setLoading(true);
+    if (userType === 'engineer') setEngineerReview(null);
     try {
-      const data = await getWorkOrder(workOrderId);
-      setDetail(data);
-      setSiteLocation({
-        service_address: data.service_address || '',
-        service_latitude: data.service_latitude ?? null,
-        service_longitude: data.service_longitude ?? null,
-        service_accuracy_m: data.service_accuracy_m ?? null,
-        service_coordinate_system: data.service_coordinate_system || 'wgs84',
-        service_location_source: data.service_location_source || 'customer_browser',
-        note: '',
+      await runCurrentWorkOrderRequest({
+        identity,
+        getCurrentIdentity,
+        load: () => getWorkOrder(workOrderId),
+        onSuccess: async (data) => {
+          if (!isCurrentRequest()) return;
+          setDetail(data);
+          if (!isCurrentRequest()) return;
+          setSiteLocation({
+            service_address: data.service_address || '',
+            service_latitude: data.service_latitude ?? null,
+            service_longitude: data.service_longitude ?? null,
+            service_accuracy_m: data.service_accuracy_m ?? null,
+            service_coordinate_system: data.service_coordinate_system || 'wgs84',
+            service_location_source: data.service_location_source || 'customer_browser',
+            note: '',
+          });
+          if (userType === 'engineer' && !managementReadOnly) {
+            try {
+              if (!isCurrentRequest()) return;
+              const revData = await getEngineerReview(workOrderId);
+              if (!isCurrentRequest()) return;
+              setEngineerReview(revData.review);
+            } catch {
+              if (!isCurrentRequest()) return;
+              // No prior engineer review is fine; keep the review section empty.
+            }
+          }
+        },
+        onError: (error) => console.error('加载工单详情失败:', error),
+        throwOnError,
       });
-      // 加载工程师评价
-      if (userType === 'engineer' && !managementReadOnly) {
-        try {
-          const revData = await getEngineerReview(workOrderId);
-          setEngineerReview(revData.review);
-        } catch {
-          // No prior engineer review is fine; keep the review section empty.
-        }
-      }
     } catch (e) {
-      console.error('加载工单详情失败:', e);
+      if (!isCurrentRequest()) return;
       if (throwOnError) throw e;
     } finally {
-      setLoading(false);
+      if (isCurrentRequest()) {
+        setLoading(false);
+      }
     }
   }, [managementReadOnly, workOrderId, userType]);
   const handleFieldWorkChanged = useCallback(() => loadDetail({ throwOnError: true }), [loadDetail]);
@@ -770,6 +805,61 @@ export function WorkOrderDetailContent({
       setTab(allowedTabKeys.includes('messages') ? 'messages' : allowedTabKeys[0]);
     }
   }, [allowedTabKeyString, controlledTab, detail, loading, tab]);
+  const renderWorkOrderSummary = () => (
+    <div className="p-4 bg-[var(--color-surface-elevated)] rounded-xl space-y-2">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <span className="break-all font-medium text-[var(--color-text-primary)]">{detail?.order_no || workOrder.id}</span>
+        <div className="flex flex-wrap gap-2">
+          <span className={`px-2 py-0.5 text-xs text-white rounded ${status.color}`}>{status.text}</span>
+          <span className={`px-2 py-0.5 text-xs rounded ${urgency.color}`}>{urgency.text}</span>
+        </div>
+      </div>
+      <div className="text-sm text-[var(--color-text-secondary)]">{copy.issueType}: {typeSet[workOrder.type] || workOrder.type}</div>
+      {(workOrder.category_l1 && workOrder.category_l1 !== 'other') && (
+        <div className="text-sm text-[var(--color-text-secondary)]">
+          {copy.equipmentCategory}: {categorySet[workOrder.category_l1]?.label || workOrder.category_l1}
+          {workOrder.category_l2 && workOrder.category_l2 !== 'other' && (
+            <span className="ml-1">· {categoryL2Set[workOrder.category_l2] || workOrder.category_l2}</span>
+          )}
+        </div>
+      )}
+      <div className="text-sm text-[var(--color-text-secondary)]">{copy.submitted}: {workOrder.created_at ? new Date(workOrder.created_at).toLocaleString(isCn ? 'zh-CN' : 'en-US') : '-'}</div>
+      {detail?.sla_deadline && (() => {
+        const sla = detail.sla_status || {};
+        const remaining = formatSla(sla);
+        const slaColor = sla.status === 'breached' ? 'text-red-500' : sla.status === 'at_risk' ? 'text-yellow-500' : 'text-green-500';
+        return (
+          <div className="flex flex-col gap-1 text-sm sm:flex-row sm:items-center sm:gap-4">
+            <span className="text-[var(--color-text-secondary)]">{copy.slaDeadline}: {new Date(detail.sla_deadline).toLocaleString(isCn ? 'zh-CN' : 'en-US')}</span>
+            {remaining && <span className={slaColor}>{remaining}</span>}
+          </div>
+        );
+      })()}
+      {detail?.engineer_name && (
+        <div className="text-sm text-[var(--color-text-secondary)]">
+          {copy.engineer}: <span className="text-[var(--color-primary)]">{detail.engineer_name}</span>
+          {detail.engineer_phone && <span className="ml-1 opacity-70">{detail.engineer_phone}</span>}
+        </div>
+      )}
+      {isCustomer && formatCustomerDeviceLine(detail || workOrder, isCn ? 'zh-CN' : 'en') && (
+        <div className="text-sm text-[var(--color-text-secondary)]">
+          {/* Legacy source contract: Machine: <span */}
+          {isCn ? copy.machine : 'Machine'}: <span className="text-[var(--color-text-primary)]">{formatCustomerDeviceLine(detail || workOrder, isCn ? 'zh-CN' : 'en')}</span>
+        </div>
+      )}
+      {detail?.customer_name && (
+        <div className="text-sm text-[var(--color-text-secondary)]">
+          {copy.customer}: <span className="text-[var(--color-primary)]">{detail.customer_name}</span>
+          {detail.customer_phone && <span className="ml-1 opacity-70">{customerPhoneDisplay}</span>}
+        </div>
+      )}
+      {isEngineer && detail?.service_address && (
+        <div className="text-sm text-[var(--color-text-secondary)]">
+          {copy.arrivalAddress}: <span className="text-[var(--color-text-primary)]">{detail.service_address}</span>
+        </div>
+      )}
+    </div>
+  );
   const renderInfoTab = () => (
     <div className="space-y-4">
       {hasVersionedExecution && (
@@ -813,59 +903,7 @@ export function WorkOrderDetailContent({
         </div>
       )}
 
-      <div className="p-4 bg-[var(--color-surface-elevated)] rounded-xl space-y-2">
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-          <span className="break-all font-medium text-[var(--color-text-primary)]">{detail?.order_no || workOrder.id}</span>
-          <div className="flex flex-wrap gap-2">
-            <span className={`px-2 py-0.5 text-xs text-white rounded ${status.color}`}>{status.text}</span>
-            <span className={`px-2 py-0.5 text-xs rounded ${urgency.color}`}>{urgency.text}</span>
-          </div>
-        </div>
-        <div className="text-sm text-[var(--color-text-secondary)]">{copy.issueType}: {typeSet[workOrder.type] || workOrder.type}</div>
-        {(workOrder.category_l1 && workOrder.category_l1 !== 'other') && (
-          <div className="text-sm text-[var(--color-text-secondary)]">
-            {copy.equipmentCategory}: {categorySet[workOrder.category_l1]?.label || workOrder.category_l1}
-            {workOrder.category_l2 && workOrder.category_l2 !== 'other' && (
-              <span className="ml-1">· {categoryL2Set[workOrder.category_l2] || workOrder.category_l2}</span>
-            )}
-          </div>
-        )}
-        <div className="text-sm text-[var(--color-text-secondary)]">{copy.submitted}: {workOrder.created_at ? new Date(workOrder.created_at).toLocaleString(isCn ? 'zh-CN' : 'en-US') : '-'}</div>
-        {detail?.sla_deadline && (() => {
-          const sla = detail.sla_status || {};
-          const remaining = formatSla(sla);
-          const slaColor = sla.status === 'breached' ? 'text-red-500' : sla.status === 'at_risk' ? 'text-yellow-500' : 'text-green-500';
-          return (
-            <div className="flex flex-col gap-1 text-sm sm:flex-row sm:items-center sm:gap-4">
-              <span className="text-[var(--color-text-secondary)]">{copy.slaDeadline}: {new Date(detail.sla_deadline).toLocaleString(isCn ? 'zh-CN' : 'en-US')}</span>
-              {remaining && <span className={slaColor}>{remaining}</span>}
-            </div>
-          );
-        })()}
-        {detail?.engineer_name && (
-          <div className="text-sm text-[var(--color-text-secondary)]">
-            {copy.engineer}: <span className="text-[var(--color-primary)]">{detail.engineer_name}</span>
-            {detail.engineer_phone && <span className="ml-1 opacity-70">{detail.engineer_phone}</span>}
-          </div>
-        )}
-        {isCustomer && formatCustomerDeviceLine(detail || workOrder, isCn ? 'zh-CN' : 'en') && (
-          <div className="text-sm text-[var(--color-text-secondary)]">
-            {/* Legacy source contract: Machine: <span */}
-            {isCn ? copy.machine : 'Machine'}: <span className="text-[var(--color-text-primary)]">{formatCustomerDeviceLine(detail || workOrder, isCn ? 'zh-CN' : 'en')}</span>
-          </div>
-        )}
-        {detail?.customer_name && (
-          <div className="text-sm text-[var(--color-text-secondary)]">
-            {copy.customer}: <span className="text-[var(--color-primary)]">{detail.customer_name}</span>
-            {detail.customer_phone && <span className="ml-1 opacity-70">{customerPhoneDisplay}</span>}
-          </div>
-        )}
-        {isEngineer && detail?.service_address && (
-          <div className="text-sm text-[var(--color-text-secondary)]">
-            {copy.arrivalAddress}: <span className="text-[var(--color-text-primary)]">{detail.service_address}</span>
-          </div>
-        )}
-      </div>
+      {!isCustomer && renderWorkOrderSummary()}
 
       {isEngineer && detail && effectiveStatus === 'in_service' && detail.service_mode !== 'onsite' && (
         <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-4">
@@ -1451,10 +1489,13 @@ export function WorkOrderDetailContent({
           && userType === 'customer'
           && detail?.id === workOrder.id
           && (
-            <CustomerServiceMilestones
-              isCn={isCnLocale()}
-              milestones={detail.public_service_milestones || []}
-            />
+            <div className="mb-4 space-y-4">
+              {renderWorkOrderSummary()}
+              <CustomerServiceMilestones
+                isCn={isCnLocale()}
+                milestones={detail.public_service_milestones || []}
+              />
+            </div>
           )}
         {/* Tab 切换 */}
         {showTabNavigation && <div role="tablist" className="-mx-3 mb-4 flex gap-1 overflow-x-auto border-b border-[var(--color-border)] px-3 pb-0 sm:mx-0 sm:px-0">
