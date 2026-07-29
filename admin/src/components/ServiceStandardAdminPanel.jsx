@@ -161,7 +161,7 @@ export function ServiceStandardAdminPanel({ workOrderId, readOnly = false, onRef
 
     const [snapshotResult, detailResult] = await Promise.allSettled([
       getAdminWorkOrderServiceStandard(workOrderId),
-      Promise.resolve().then(() => isCurrent() && onRefresh?.(workOrderId)),
+      Promise.resolve().then(() => isCurrent() && onRefresh?.(workOrderId, isCurrent)),
     ]);
     if (!isCurrent()) return;
     if (snapshotResult.status === 'fulfilled') setSnapshot(snapshotResult.value);

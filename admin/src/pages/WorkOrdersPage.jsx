@@ -1321,13 +1321,15 @@ export function WorkOrdersPage({ readOnly = false }) {
     );
   }
 
-  async function refreshOpenDetail(expectedWorkOrderId) {
-    if (!expectedWorkOrderId) return;
+  async function refreshOpenDetail(expectedWorkOrderId, isCurrent = () => true) {
+    if (!expectedWorkOrderId || !isCurrent()) return;
     const [detailData, listData] = await Promise.all([
       getAdminWorkOrder(expectedWorkOrderId),
       getAdminWorkOrders(status, page, pageSize),
     ]);
+    if (!isCurrent()) return;
     setDetail((current) => current?.id === expectedWorkOrderId ? detailData : current);
+    if (!isCurrent()) return;
     setData(listData);
   }
 

@@ -248,7 +248,7 @@ test('service-order list and drawer integrate field operations with refreshable 
   assert.match(source, /field_checked_in_today/);
   assert.match(source, /field_report_overdue_count/);
   assert.match(source, /field_extension_pending/);
-  assert.match(source, /async function refreshOpenDetail\(expectedWorkOrderId\)/);
+  assert.match(source, /async function refreshOpenDetail\(expectedWorkOrderId, isCurrent = \(\) => true\)/);
   assert.match(source, /getAdminWorkOrder\(expectedWorkOrderId\)/);
   assert.match(source, /setDetail\(\(current\) => current\?\.id === expectedWorkOrderId \? detailData : current\)/);
   assert.match(source, /<FieldWorkAdminPanel[\s\S]*workOrder=\{detail\}[\s\S]*readOnly=\{readOnly\}[\s\S]*onRefresh=\{refreshOpenDetail\}/);

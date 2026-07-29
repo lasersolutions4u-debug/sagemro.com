@@ -34,3 +34,12 @@ test('work-order changes invalidate an in-flight override before the next effect
 
   assert.match(panel, /useLayoutEffect\(\(\) => \{[\s\S]*operationEpoch\.current \+= 1[\s\S]*\}, \[workOrderId\]\)/);
 });
+
+test('service-standard refresh passes its current-operation guard to each parent state publication', async () => {
+  const panel = await readSource('./ServiceStandardAdminPanel.jsx');
+  const page = await readSource('../pages/WorkOrdersPage.jsx');
+
+  assert.match(panel, /onRefresh\?\.\(workOrderId, isCurrent\)/);
+  assert.match(page, /async function refreshOpenDetail\(expectedWorkOrderId, isCurrent = \(\) => true\)/);
+  assert.match(page, /await Promise\.all\([\s\S]*if \(!isCurrent\(\)\) return;[\s\S]*setDetail[\s\S]*if \(!isCurrent\(\)\) return;[\s\S]*setData/);
+});
