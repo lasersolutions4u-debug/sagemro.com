@@ -126,6 +126,7 @@ import {
 } from './lib/materialRequisitions.js';
 import { getRequisitionOperationsMetrics } from './lib/requisitionMetrics.js';
 import {
+  buildPublicServiceMilestones,
   buildServiceStandardDefinition,
   deriveServiceStandardSnapshot,
   getBlockingItems,
@@ -7101,9 +7102,14 @@ async function handleGetWorkOrder(request, env) {
     };
     if (regionalManagementView) safeWorkOrder = sanitizeRegionalManagementWorkOrder(safeWorkOrder);
     if (customerFieldView || noFieldWorkView) safeWorkOrder = withoutPrivateFieldLocation(safeWorkOrder);
+    const isCustomerDetail = request._auth?.userType === 'customer';
+    const publicServiceMilestones = isCustomerDetail
+      ? buildPublicServiceMilestones(await loadServiceStandardSnapshot(env, workOrder))
+      : null;
 
     const detail = {
       ...safeWorkOrder,
+      ...(isCustomerDetail ? { public_service_milestones: publicServiceMilestones } : {}),
       ownership_relation: engineerReadRelation,
       site_timezone_display: formatSiteTimezone(workOrder?.site_timezone, market),
       sla_status: getSlaStatus(workOrder.sla_deadline, workOrder.urgency),
