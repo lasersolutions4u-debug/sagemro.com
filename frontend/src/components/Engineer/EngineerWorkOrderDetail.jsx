@@ -53,7 +53,7 @@ const COPY = {
     customer: 'Customer', region: 'Region', engineer: 'Executing engineer', schedule: 'Service window',
     schedulePending: 'Schedule pending', unassigned: 'Unassigned', support: 'Admin support',
     tabs: { overview: 'Overview', messages: 'Messages', quote: 'Quote', material: 'Material request', field: 'Field service', report: 'Service report' },
-    context: 'Current Task Context', preparation: 'Job Preparation',
+    context: 'Current Task Context', preparation: 'Job Preparation', checklist: 'Service Standard Checklist',
     machine: 'Machine / service type', priority: 'Priority', intake: 'Intake summary', attachments: 'Attachments',
     original: 'View customer original', hideOriginal: 'Hide customer original',
     noTranslation: 'Customer original', confirm: 'Confirm Assignment', returnDispatch: 'Return with a reason',
@@ -76,7 +76,7 @@ const COPY = {
     customer: '客户', region: '地区', engineer: '执行工程师', schedule: '服务时间',
     schedulePending: '时间待安排', unassigned: '待分配', support: 'Admin 支持',
     tabs: { overview: '概览', messages: '消息', quote: '报价', material: '物料申请', field: '现场服务', report: '服务报告' },
-    context: '当前任务上下文', preparation: '服务准备',
+    context: '当前任务上下文', preparation: '服务准备', checklist: '服务标准检查清单',
     machine: '设备 / 服务类型', priority: '优先级', intake: '接单摘要', attachments: '附件',
     original: '查看客户原文', hideOriginal: '收起客户原文', noTranslation: '客户原文',
     confirm: '确认派工', returnDispatch: '填写原因并退回', assign: '分配 / 重新分配', assigning: '派工中',
@@ -409,6 +409,9 @@ export function EngineerWorkOrderDetail({
                 )}
                 {isExecutingEngineer && serviceStandardMatchesDetail && currentServiceStep && (
                   <div className="md:col-span-2">
+                    <p className="mb-2 text-xs font-extrabold uppercase tracking-[0.14em] text-orange-600">
+                      {copy.checklist}
+                    </p>
                     <EngineerServiceStageChecklist
                       isCn={isCn}
                       step={currentServiceStep}
