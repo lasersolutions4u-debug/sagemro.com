@@ -567,6 +567,39 @@ npx wrangler d1 execute sagemro-db-cn --env production --remote --command "SELEC
 
 Revert Worker/frontend code if necessary, but do not down-migrate or delete readiness history; forward-fix the additive table only.
 
+### 3.4 Service Standard Progress (Migration 044) Rollout
+
+`migrations/044_service_standard_progress.sql` adds persisted six-step service-standard progress and audited service-gate overrides. It must be applied to **both** production D1 databases before any Worker code that reads these tables is deployed. `china-edition` does not deploy the shared Worker, so it never substitutes for this migration gate.
+
+```bash
+cd worker
+
+# Apply 044 to both databases before any Worker deployment that reads the new tables.
+wrangler d1 execute sagemro-db --env production --remote \
+  --file migrations/044_service_standard_progress.sql
+wrangler d1 execute sagemro-db-cn --env production --remote \
+  --file migrations/044_service_standard_progress.sql
+```
+
+Verify that both production databases record the exact migration version before deploying the Worker:
+
+```bash
+wrangler d1 execute sagemro-db --env production --remote \
+  --command "SELECT version FROM _migrations WHERE version = '044_service_standard_progress';"
+wrangler d1 execute sagemro-db-cn --env production --remote \
+  --command "SELECT version FROM _migrations WHERE version = '044_service_standard_progress';"
+```
+
+**Go/no-go sequence**
+
+1. Verify current COM and CN backups.
+2. Apply migration 044 to **both** D1 databases.
+3. Confirm both verification queries return `044_service_standard_progress`.
+4. Push `main`; wait for the full test job and production gate, then require Worker, international frontend, and international Admin deployment success.
+5. Synchronize client changes to `china-edition`, push, then manually run `gh workflow run aliyun-cn-deploy.yml --ref china-edition` for the China frontend, Admin, and engineer deployment.
+
+**Stop condition:** do not deploy Worker code if either database does not return `044_service_standard_progress`. Do not down-migrate; use a new forward migration to correct any schema issue.
+
 ### ⚠️ 不会自动做的事
 
 | 操作                               | 触发方式                                                     | 说明                                                         |
