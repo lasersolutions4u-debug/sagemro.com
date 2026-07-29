@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Make SAGEMRO's service advantage visible before selection and provable during service through the AI start page, About SAGEMRO, and customer work-order milestones.
+**Goal:** Explain SAGEMRO's service standard when customers choose to learn more and prove it during service through About SAGEMRO and customer work-order milestones, while preserving the AI-first home experience.
 
-**Architecture:** Keep one bilingual frontend copy source for the public brand framework, derive customer milestones on the Worker from verified progress only, and render a compact promise section on the start page plus a full explanation in About. Customer work-order detail receives a deliberately restricted `public_service_milestones` projection.
+**Architecture:** Keep one bilingual frontend copy source for the public brand framework, derive customer milestones on the Worker from verified progress only, and render the full explanation in About. Customer work-order detail receives a deliberately restricted `public_service_milestones` projection. The AI home page remains unchanged so trust and usage stickiness come from the AI experience, Tools, and Industry Insights rather than a promotional module.
 
 **Tech Stack:** React 19, Vite, Tailwind CSS, Cloudflare Workers/D1, Node.js 24 tests, Playwright.
 
@@ -14,7 +14,8 @@
 - Customer-visible completion state must come only from persisted progress, customer confirmation, Admin confirmation, or system business events.
 - Never send internal item ownership, blocking logic, AI observations, payment follow-up, override reasons, internal notes, or protected media references to customer clients.
 - Use the approved promise: “每一次服务，都有准备、有依据、有验证、有交付。” / “Every service is prepared, evidence-based, verified, and clearly delivered.”
-- The start-page promise module appears after the current AI hero and before public resources.
+- Preserve the existing AI-first home page, including its Tools and Industry Insights entrances.
+- Do not add a “Why SAGEMRO” or other service-promise promotional module to the home page.
 - About remains a modal; do not introduce a new router or public page in this release.
 - Use one data module for English/Chinese names and value statements.
 
@@ -23,9 +24,7 @@
 ## File Structure
 
 - Create `frontend/src/data/servicePromise.js`: bilingual six-step names, promise, and four customer values.
-- Create `frontend/src/components/Customer/ServicePromiseSection.jsx`: compact start-page “Why SAGEMRO.”
 - Create `frontend/src/components/WorkOrder/CustomerServiceMilestones.jsx`: customer six-step progress.
-- Modify `frontend/src/components/Chat/WelcomePage.jsx`: approved promise placement.
 - Modify `frontend/src/components/common/AboutModal.jsx`: complete Precision Service Loop explanation.
 - Modify `worker/src/index.js`: role-specific public milestone projection in work-order detail.
 - Create `worker/tests/service-standard-public-api.test.mjs`: customer data-minimization contract.
@@ -143,73 +142,7 @@ git add frontend/src/data/servicePromise.js frontend/tests/service-promise-contr
 git commit -m "feat(frontend): define customer service promise"
 ```
 
-### Task 2: Start-Page “Why SAGEMRO”
-
-**Files:**
-- Create: `frontend/src/components/Customer/ServicePromiseSection.jsx`
-- Modify: `frontend/src/components/Chat/WelcomePage.jsx:1-76`
-- Modify: `frontend/tests/service-promise-contract.test.mjs`
-
-**Interfaces:**
-- Consumes: `getServicePromiseCopy`.
-- Produces: compact four-value module and `onOpenAbout` action.
-
-- [ ] **Step 1: Add a failing placement contract**
-
-```js
-assert.match(welcome, /<ServicePromiseSection/);
-assert.match(welcome, /<ServicePromiseSection[\s\S]*t\.resourceTitle/);
-assert.match(chatArea, /<WelcomePage onOpenAbout=\{onOpenAbout\}/);
-```
-
-- [ ] **Step 2: Implement the compact section**
-
-Props:
-
-```js
-{ isCn, onOpenAbout }
-```
-
-Render:
-
-- heading `为什么选择 SAGEMRO` / `Why choose SAGEMRO`;
-- approved promise;
-- four value cards;
-- button `了解六步服务标准` / `Explore our six-step standard`.
-
-Use existing CSS variables and Lucide icons already installed; do not add a dependency.
-
-- [ ] **Step 3: Thread the About callback**
-
-Change:
-
-```jsx
-<WelcomePage onOpenAbout={onOpenAbout} />
-```
-
-and render `ServicePromiseSection` after the hero text and before the existing public-resource container.
-
-- [ ] **Step 4: Verify responsive layout**
-
-The four values use one column on narrow screens and two columns at `sm`. The About button must remain a native button with visible focus styles.
-
-- [ ] **Step 5: Run frontend verification and commit**
-
-```bash
-cd frontend
-npm run lint
-node --test tests/service-promise-contract.test.mjs
-npm run build
-```
-
-Expected: all commands exit 0.
-
-```bash
-git add frontend/src/components/Customer/ServicePromiseSection.jsx frontend/src/components/Chat/WelcomePage.jsx frontend/src/components/Chat/ChatArea.jsx frontend/tests/service-promise-contract.test.mjs
-git commit -m "feat(frontend): explain why customers choose SAGEMRO"
-```
-
-### Task 3: Full About SAGEMRO Explanation
+### Task 2: Full About SAGEMRO Explanation
 
 **Files:**
 - Modify: `frontend/src/components/common/AboutModal.jsx:1-175`
@@ -262,7 +195,7 @@ git add frontend/src/components/common/AboutModal.jsx frontend/tests/service-pro
 git commit -m "feat(frontend): add precision service loop to About"
 ```
 
-### Task 4: Customer-Safe Public Milestone API
+### Task 3: Customer-Safe Public Milestone API
 
 **Files:**
 - Modify: `worker/src/index.js:5834-6110`
@@ -345,7 +278,7 @@ git add worker/src/index.js worker/tests/service-standard-public-api.test.mjs wo
 git commit -m "feat(worker): expose customer-safe service milestones"
 ```
 
-### Task 5: Customer Work-Order Milestones
+### Task 4: Customer Work-Order Milestones
 
 **Files:**
 - Create: `frontend/src/components/WorkOrder/CustomerServiceMilestones.jsx`
@@ -421,7 +354,7 @@ git add frontend/src/components/WorkOrder/CustomerServiceMilestones.jsx frontend
 git commit -m "feat(frontend): show verified customer service milestones"
 ```
 
-### Task 6: Customer Journey E2E and Release Verification
+### Task 5: Customer Journey E2E and Release Verification
 
 **Files:**
 - Modify: `e2e/tests/service-order-lifecycle.spec.mjs`
@@ -429,16 +362,18 @@ git commit -m "feat(frontend): show verified customer service milestones"
 
 **Interfaces:**
 - Consumes: all previous tasks.
-- Produces: public-promise and customer-milestone release evidence.
+- Produces: About, home-page regression, and customer-milestone release evidence.
 
-- [ ] **Step 1: Test the public start-page promise**
+- [ ] **Step 1: Protect the AI-first home experience**
 
-Assert English and Chinese hosts show:
+Assert English and Chinese hosts retain:
 
-- “Why choose SAGEMRO” / “为什么选择 SAGEMRO”;
-- the approved promise;
-- four value cards;
-- About opens to the six-step section.
+- the existing AI primary experience;
+- the existing Tools entrance;
+- the existing Industry Insights entrance;
+- no `ServicePromiseSection`, “Why choose SAGEMRO,” or “为什么选择 SAGEMRO” promotional module.
+
+Open About through its existing entry and verify the approved promise and six-step section.
 
 - [ ] **Step 2: Test customer milestones through one lifecycle**
 
@@ -469,7 +404,7 @@ review_json
 
 Capture:
 
-- start-page promise section;
+- AI-first home page with Tools and Industry Insights entrances;
 - About six-step explanation;
 - active customer milestone rail;
 - legacy-work-order explanation.
