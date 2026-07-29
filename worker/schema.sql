@@ -282,6 +282,10 @@ CREATE TABLE IF NOT EXISTS work_order_service_readiness (
   source_conversation_id TEXT,
   input_fingerprint TEXT,
   review_json TEXT,
+  guidance_version INTEGER NOT NULL DEFAULT 1,
+  current_step_key TEXT,
+  trigger_reason TEXT,
+  guidance_json TEXT,
   generation_state TEXT NOT NULL DEFAULT 'missing'
     CHECK (generation_state IN ('missing', 'generating', 'ready', 'failed')),
   generation_started_at TEXT,
@@ -291,6 +295,21 @@ CREATE TABLE IF NOT EXISTS work_order_service_readiness (
   FOREIGN KEY (work_order_id) REFERENCES work_orders(id) ON DELETE CASCADE,
   FOREIGN KEY (source_conversation_id) REFERENCES conversations(id) ON DELETE SET NULL
 );
+
+CREATE TABLE IF NOT EXISTS work_order_service_guidance_feedback (
+  id TEXT PRIMARY KEY,
+  work_order_id TEXT NOT NULL,
+  guidance_generated_at TEXT NOT NULL,
+  action_index INTEGER NOT NULL CHECK (action_index BETWEEN 0 AND 2),
+  feedback_type TEXT NOT NULL
+    CHECK (feedback_type IN ('accepted', 'ignored', 'corrected')),
+  correction_note TEXT,
+  created_by TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  FOREIGN KEY (work_order_id) REFERENCES work_orders(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_service_guidance_feedback_work_order
+  ON work_order_service_guidance_feedback(work_order_id, created_at DESC);
 
 CREATE TABLE IF NOT EXISTS work_order_service_standard_progress (
   work_order_id TEXT NOT NULL,
@@ -1636,4 +1655,5 @@ INSERT OR IGNORE INTO _migrations (version, note) VALUES
     ('042_work_order_short_title',      'Persisted short titles for service work orders'),
     ('043_engineer_service_readiness',  'Internal engineer AI service-readiness cache and verified source conversation link'),
     ('044_service_standard_progress',   'Persisted SAGEMRO six-step service standard progress and audited gate overrides'),
+    ('045_service_guidance_cache',      'Full lifecycle engineer service guidance cache with v1 readiness compatibility'),
     ('034_unified_operations_inbox',    'Unified operations inbox tables');
