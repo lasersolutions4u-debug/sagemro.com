@@ -104,3 +104,15 @@ Claude Code / Cloud Code（本地）
 - 配件、易损件、维保、升级改造、自动化、工装等需求由工程师作为增值服务跟进
 - 客户面对 AI 时，推荐和判断必须中立、真实、有依据；不能为了 leads 牺牲公正性和信任
 - 客户可见文案避免显得像销售漏斗，不要把 Euchio 放进普通 AI 推荐话术
+
+## 九、当前生产基线（2026-07-26）
+
+- 工程师工作台的工单列表密度、字号层级、响应式布局和短标题功能已在国际版与中国版生产上线。
+- 工单保持“列表 → 独立详情页”结构；宽屏为 8 列密集列表，`<1280px` 切换为响应式卡片。
+- 短标题由系统生成，Admin 可编辑，工程师与区域负责人只读；完整设备信息保留在任务上下文和详情页。
+- 区域负责人同时查看个人指标和团队指标，团队工单按其负责区域内的工程师姓名分组。
+- migration `042_work_order_short_title` 已在生产 D1 `sagemro-db` 和 `sagemro-db-cn` 应用并验证，**不要重复执行**。
+- 国际版生产提交：`main@d2063fe31193158c686ba9facee839152a3e0c66`；部署 workflow `30188991595` 成功。
+- 中国版生产提交：`china-edition@1d6955c9b13f08be7beabaaa38b3e9065ad64ff8`；Cloudflare 辅助 workflow `30190110428` 和 Aliyun ECS workflow `30190158256` 均成功。
+- 中国版真实浏览器验证：`sagemro.cn`、`admin.sagemro.cn`、`engineer.sagemro.cn` 正常渲染中文界面且无控制台错误；`api.sagemro.cn/health` 返回 `{"status":"ok"}`。
+- 本次详细交接见 `.claude/memory/2026-07-26-engineer-workspace-production-release.md`。
