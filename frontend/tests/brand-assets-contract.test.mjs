@@ -94,9 +94,11 @@ test('main site first-impression copy keeps CN and COM market language separate'
   assert.doesNotMatch(welcome, /supports international customers with independent after-sales service, spare parts, consumables/);
   assert.doesNotMatch(welcome, /purchasing decision|Clear facts first|BM111 alarm|burrs on stainless steel/i);
   assert.match(welcome, /eyebrow: 'SAGEMRO 智能服务系统'/);
-  assert.match(welcome, /设备问题不求人，即时交谈，马上就有答案/);
+  assert.match(welcome, /headline: '机器的问题，难不倒有心的人。'/);
+  assert.match(welcome, /intro: '描述激光切割、折弯、焊接现场，让 SageMRO AI 助你快速拨开故障迷雾，做设备最明智的主人。'/);
+  assert.doesNotMatch(welcome, /设备问题不求人，即时交谈，马上就有答案/);
+  assert.doesNotMatch(welcome, /切割出了什么问题、折弯哪里不对、焊接报了什么警——描述现场情况，让SAGEMRO AI 给你分析和建议/);
   assert.doesNotMatch(welcome, /激光和成型设备问题，先问AI试试/);
-  assert.match(welcome, /描述现场情况/);
   assert.doesNotMatch(welcome, /描述现场遇到的情况/);
   assert.doesNotMatch(welcome, /专为激光和成型设备打造的智能服务助手/);
   assert.doesNotMatch(welcome, /内容由 AI 生成，仅供参考/);

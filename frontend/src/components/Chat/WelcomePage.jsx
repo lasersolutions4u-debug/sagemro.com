@@ -19,8 +19,8 @@ const copy = {
   },
   zh: {
     eyebrow: 'SAGEMRO 智能服务系统',
-    headline: '设备问题不求人，即时交谈，马上就有答案',
-    intro: '切割出了什么问题、折弯哪里不对、焊接报了什么警——描述现场情况，让SAGEMRO AI 给你分析和建议',
+    headline: '机器的问题，难不倒有心的人。',
+    intro: '描述激光切割、折弯、焊接现场，让 SageMRO AI 助你快速拨开故障迷雾，做设备最明智的主人。',
     resourceTitle: '公开资源',
     resources: [
       { icon: Calculator, label: '计算工具', desc: '重量、材料预算、激光切割成本和折弯吨位', href: '/tools' },
