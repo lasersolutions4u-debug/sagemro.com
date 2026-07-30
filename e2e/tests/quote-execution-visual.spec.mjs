@@ -40,7 +40,7 @@ const HOME_COPY = {
   },
   zh: {
     url: 'http://sagemro.cn:4273',
-    heading: '机器的问题，难不倒有心的人。',
+    heading: '机器的问题，难不倒有心的人',
     input: '描述设备问题，或直接开始说...',
     tools: '计算工具',
     insights: '行业观察',
