@@ -19,7 +19,7 @@ const copy = {
   },
   zh: {
     eyebrow: 'SAGEMRO 智能服务系统',
-    headline: '机器的问题，难不倒有心的人。',
+    headline: '机器的问题，难不倒有心的人',
     intro: '描述激光切割、折弯、焊接现场，让 SageMRO AI 助你快速拨开故障迷雾，做设备最明智的主人。',
     resourceTitle: '公开资源',
     resources: [
