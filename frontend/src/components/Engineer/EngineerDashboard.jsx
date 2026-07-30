@@ -2,32 +2,14 @@ import { useState, useEffect, useCallback } from 'react';
 import { Modal } from '../common/Modal';
 import { Clock } from 'lucide-react';
 import { getEngineerTickets, acceptTicket, rejectTicket, updateEngineerStatus } from '../../services/api';
-import { WorkOrderStatus } from '../../types';
 import { WorkOrderDetailModal } from '../WorkOrder/WorkOrderDetailModal';
-import { formatSlaRemaining, formatSlaRemainingCn, categoryConfig, categoryConfigCn, categoryL2Labels, categoryL2LabelsCn } from '../../data/workOrderConfig';
+import {
+  categoryConfig, categoryConfigCn,
+  categoryL2Labels, categoryL2LabelsCn,
+  formatSlaRemaining, formatSlaRemainingCn,
+  statusConfig, statusConfigCn,
+} from '../../data/workOrderConfig';
 import { isCnLocale } from '../../utils/locale';
-
-const statusConfig = {
-  [WorkOrderStatus.PENDING]: { text: 'Pending Dispatch', color: 'bg-blue-500', textColor: 'text-blue-500' },
-  [WorkOrderStatus.ASSIGNED]: { text: 'Assigned', color: 'bg-yellow-500', textColor: 'text-yellow-500' },
-  [WorkOrderStatus.IN_PROGRESS]: { text: 'In Progress', color: 'bg-orange-500', textColor: 'text-orange-500' },
-  [WorkOrderStatus.PRICING]: { text: 'Awaiting Pricing', color: 'bg-purple-500', textColor: 'text-purple-500' },
-  [WorkOrderStatus.IN_SERVICE]: { text: 'In Service', color: 'bg-cyan-500', textColor: 'text-cyan-500' },
-  [WorkOrderStatus.RESOLVED]: { text: 'Resolved', color: 'bg-green-500', textColor: 'text-green-500' },
-  [WorkOrderStatus.PENDING_REVIEW]: { text: 'Pending Review', color: 'bg-teal-500', textColor: 'text-teal-500' },
-  [WorkOrderStatus.COMPLETED]: { text: 'Completed', color: 'bg-gray-500', textColor: 'text-gray-500' },
-};
-
-const statusConfigCn = {
-  [WorkOrderStatus.PENDING]: { text: '待派工', color: 'bg-blue-500', textColor: 'text-blue-500' },
-  [WorkOrderStatus.ASSIGNED]: { text: '已派工', color: 'bg-yellow-500', textColor: 'text-yellow-500' },
-  [WorkOrderStatus.IN_PROGRESS]: { text: '处理中', color: 'bg-orange-500', textColor: 'text-orange-500' },
-  [WorkOrderStatus.PRICING]: { text: '待报价', color: 'bg-purple-500', textColor: 'text-purple-500' },
-  [WorkOrderStatus.IN_SERVICE]: { text: '服务中', color: 'bg-cyan-500', textColor: 'text-cyan-500' },
-  [WorkOrderStatus.RESOLVED]: { text: '待客户确认', color: 'bg-green-500', textColor: 'text-green-500' },
-  [WorkOrderStatus.PENDING_REVIEW]: { text: '待评价', color: 'bg-teal-500', textColor: 'text-teal-500' },
-  [WorkOrderStatus.COMPLETED]: { text: '已完成', color: 'bg-gray-500', textColor: 'text-gray-500' },
-};
 
 const COPY = {
   en: {
