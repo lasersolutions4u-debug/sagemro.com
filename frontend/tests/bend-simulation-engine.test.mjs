@@ -123,6 +123,24 @@ test('maps ordered double-bend spans to three explicit derived flanges without c
   )));
 });
 
+test('checks the short-edge threshold against derived flange lengths', () => {
+  const plan = (spanLengthMm) => calculateBendSimulation({
+    ...metricInput,
+    thicknessMm: 4,
+    lowerTool: 'v-die-40',
+    segments: [{ lengthMm: spanLengthMm, angleDeg: 90, insideRadiusMm: 4, order: 1 }],
+  });
+  const short = plan(100);
+  const atBoundary = plan(120);
+
+  assert.deepEqual(short.flangeLengthsMm, [50, 50]);
+  assert.ok(short.warnings.some((warning) => warning.code === 'short_edge'));
+  assert.equal(short.resultStatus, 'review_required');
+  assert.deepEqual(atBoundary.flangeLengthsMm, [60, 60]);
+  assert.ok(!atBoundary.warnings.some((warning) => warning.code === 'short_edge'));
+  assert.equal(atBoundary.resultStatus, 'ready');
+});
+
 test('calculates multi-segment allowance in bend order and flags planning risks', () => {
   const result = calculateBendSimulation({
     ...metricInput,
@@ -222,6 +240,7 @@ test('keeps compatible non-preferred upper and lower tools separate from recomme
     ...metricInput,
     upperTool: 'gooseneck-punch',
     lowerTool: 'v-die-32',
+    segments: metricInput.segments.map((segment) => ({ ...segment, lengthMm: 120 })),
   });
 
   assert.equal(result.tooling.recommendedUpperTool.id, 'standard-punch');

@@ -167,7 +167,7 @@ export function calculateBendSimulation(input) {
   const hasCompatibleLowerTool = Boolean(recommendedLower);
   const warnings = [];
   const addWarning = (code, message) => warnings.push({ code, message });
-  if (calculatedSegments.some((segment) => segment.lengthMm < lowerTool.vOpeningMm * 1.5)) addWarning('short_edge', 'A bend edge is short for the selected V die.');
+  if (flangeLengths.some((lengthMm) => lengthMm < lowerTool.vOpeningMm * 1.5)) addWarning('short_edge', 'A bend edge is short for the selected V die.');
   if (!lowerCompatibility.compatible) addWarning('tool_mismatch', 'The selected lower die is not compatible with this plan.');
   if (!upperCompatibility.compatible) addWarning('upper_tool_mismatch', 'The selected upper tool is not compatible with this plan.');
   if (marginTons < 0) addWarning('machine_overload', 'Required tonnage exceeds machine capacity.');
