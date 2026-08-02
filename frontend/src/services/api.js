@@ -27,6 +27,9 @@ const FUNNEL_EVENT_NAMES = [
   'signup_completed',
   'device_saved',
   'service_request_created',
+  'bend_simulator_started',
+  'bend_simulator_segment_adjusted',
+  'bend_simulator_completed',
 ];
 const FUNNEL_PROPERTY_ALLOWLIST = [
   'entry',
@@ -1587,6 +1590,42 @@ export async function createMachineLead(data) {
   if (!response.ok) {
     const err = await response.json().catch(() => ({}));
     throw new Error(err.error || `HTTP ${response.status}`);
+  }
+  return response.json();
+}
+
+export async function submitBendSimulationReview({ contact = {}, simulation = {} }) {
+  const source = simulation.input || simulation;
+  const number = (value) => Number.isFinite(Number(value)) ? Number(value) : null;
+  const payload = {
+    contact: {
+      name: typeof contact.name === 'string' ? contact.name.trim() : '',
+      company: typeof contact.company === 'string' ? contact.company.trim() : '',
+      email: typeof contact.email === 'string' ? contact.email.trim() : '',
+      phone: typeof contact.phone === 'string' ? contact.phone.trim() : '',
+    },
+    simulation: {
+      material: typeof source.material === 'string' ? source.material : source.material?.label || '',
+      thickness_mm: number(source.thicknessMm),
+      bend_length_mm: number(source.sheetWidthMm),
+      machine: typeof source.machine === 'string' ? source.machine : source.machine?.id || '',
+      upper_tool: typeof source.upperTool === 'string' ? source.upperTool : source.upperTool?.id || '',
+      lower_tool: typeof source.lowerTool === 'string' ? source.lowerTool : source.lowerTool?.id || '',
+      segments: Array.isArray(source.segments) ? source.segments.map((segment) => ({ length_mm: number(segment.lengthMm), angle_deg: number(segment.angleDeg), inside_radius_mm: number(segment.insideRadiusMm), order: number(segment.order) })) : [],
+      flat_length_mm: number(simulation.flatLengthMm),
+      bend_allowance_mm: number(simulation.totalBendAllowanceMm),
+      required_tonnage: number(simulation.tonnage?.withSafetyTons),
+    },
+  };
+  const headers = typeof localStorage === 'undefined' ? { 'Content-Type': 'application/json' } : authHeaders();
+  const response = await fetch(`${API_BASE}/api/leads/bend-simulation`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.error || `HTTP ${response.status}`);
   }
   return response.json();
 }
