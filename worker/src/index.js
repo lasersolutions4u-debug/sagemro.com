@@ -10049,6 +10049,8 @@ const BEND_SIMULATION_WARNING_CODES = new Set([
   'upper_tool_mismatch',
   'machine_overload',
   'work_length_exceeded',
+  'machine_thickness_out_of_range',
+  'no_compatible_tool',
   'tight_radius',
   'review_required',
 ]);

@@ -60,15 +60,16 @@ test('bend simulation viewport derives changing 2D geometry from the active fram
   const firstBend = buildFormedPath(result, 1);
   const secondBend = buildFormedPath(result, 2);
 
-  assert.equal(flat.points, '0,0 106.503,0 190.838,0');
+  assert.equal(flat.points, '0,0 50,0 146.503,0 190.838,0');
   assert.equal(firstBend.activeBendOrder, 1);
   assert.equal(secondBend.activeBendOrder, 2);
   assert.notEqual(start.points, firstBend.points);
-  assert.equal(start.pointList.length, result.segments.length + 1);
-  assert.equal(firstBend.pointList.length, result.segments.length + 1);
-  assert.equal(secondBend.pointList.length, result.segments.length + 1);
-  assert.equal(firstBend.points, '0,0 100,0 100,80');
-  assert.equal(secondBend.points, '0,0 100,0 100,80');
+  assert.equal(start.pointList.length, result.segments.length + 2);
+  assert.equal(firstBend.pointList.length, result.segments.length + 2);
+  assert.equal(secondBend.pointList.length, result.segments.length + 2);
+  assert.equal(firstBend.points, '0,0 50,0 50,90 50,130');
+  assert.equal(secondBend.points, '0,0 50,0 50,90 15.359,110');
+  assert.notEqual(firstBend.points, secondBend.points);
 });
 
 test('bend simulation viewport projects the same active-frame geometry into pseudo 3D', () => {

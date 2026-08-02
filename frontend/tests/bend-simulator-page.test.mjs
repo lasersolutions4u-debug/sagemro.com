@@ -9,7 +9,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { transformWithOxc } from 'vite';
 
 import { normalizeBendProfileValue } from '../src/utils/bendProfileEditorState.js';
-import { normalizeBendSimulationInput } from '../src/utils/bendSimulationEngine.js';
+import { calculateBendSimulation, normalizeBendSimulationInput } from '../src/utils/bendSimulationEngine.js';
 import { shouldPauseTimeline } from '../src/utils/bendSimulationTimeline.js';
 import {
   applyBendSimulatorEditorChange,
@@ -177,6 +177,34 @@ test('bend result panel presents planning fields and the engineer review CTA', a
   assert.match(markup, /Flat length/);
   assert.match(markup, /Planning estimate/);
   assert.match(markup, /Request engineer review/);
+  assert.match(markup, /data-plan-status="review"/);
+});
+
+test('bend result status is green only when machine and complete tooling match are ready', async () => {
+  const ready = buildBendSimulatorWorkspaceState({
+    input: {
+      ...selectedInput,
+      material: 'carbon_steel',
+      machine: 'shop-100',
+      upperTool: 'standard-punch',
+      lowerTool: 'v-die-24',
+      segments: [{ lengthMm: 100, angleDeg: 90, insideRadiusMm: 3, order: 1 }],
+    },
+  });
+  const noCompatible = calculateBendSimulation({
+    ...selectedInput,
+    machine: { id: 'american-machine', capacityTons: 100, bedLengthMm: 3000, minThicknessMm: 0.5, maxThicknessMm: 10, toolInterface: 'american' },
+    upperTool: 'standard-punch',
+    lowerTool: 'v-die-24',
+  });
+  const readyMarkup = await renderResultPanel(ready.result);
+  const noCompatibleMarkup = await renderResultPanel(noCompatible);
+
+  assert.equal(ready.result.resultStatus, 'ready');
+  assert.match(readyMarkup, /data-plan-status="ready"/);
+  assert.match(noCompatibleMarkup, /data-plan-status="review"/);
+  assert.match(noCompatibleMarkup, /No compatible tooling/);
+  assert.doesNotMatch(noCompatibleMarkup, /data-plan-status="ready"/);
 });
 
 test('Chinese result presentation localizes catalog values and warning codes', async () => {
@@ -187,6 +215,9 @@ test('Chinese result presentation localizes catalog values and warning codes', a
 
   assert.match(markup, /铝/);
   assert.match(markup, /标准上模/);
+  assert.match(markup, /200 吨通用折弯机/);
+  assert.match(markup, /折弯补偿量/);
+  assert.doesNotMatch(markup, /折弯系数/);
   assert.match(markup, /工作长度|折弯长度超过/);
   assert.doesNotMatch(markup, /Aluminum|Standard punch|Required tonnage exceeds|bend length exceeds/i);
 });

@@ -86,8 +86,8 @@ test('calculates a one-segment bend plan with flat and formed points', () => {
   ]);
   assert.equal(result.segments.length, 1);
   assert.ok(result.totalBendAllowanceMm > 6 && result.totalBendAllowanceMm < 7);
-  assert.equal(result.flatPoints.length, 2);
-  assert.equal(result.formedPoints.length, 2);
+  assert.equal(result.flatPoints.length, 3);
+  assert.equal(result.formedPoints.length, 3);
   assert.ok(Math.abs(result.flatPoints.at(-1).xMm - result.flatLengthMm) < 0.0001);
   assert.equal(result.tooling.recommendedLowerTool.id, 'v-die-24');
 });
@@ -126,6 +126,24 @@ test('requires review when bend length exceeds the machine bed length', () => {
   assert.ok(result.warnings.some((warning) => warning.code === 'review_required'));
 });
 
+test('enforces selected machine thickness reference range at inclusive boundaries', () => {
+  const atMinimum = calculateBendSimulation({ ...metricInput, thicknessMm: 0.5 });
+  const atMaximum = calculateBendSimulation({ ...metricInput, thicknessMm: 10 });
+  const belowMinimum = calculateBendSimulation({ ...metricInput, thicknessMm: 0.4 });
+  const aboveMaximum = calculateBendSimulation({ ...metricInput, thicknessMm: 10.1 });
+
+  assert.equal(atMinimum.machine.thicknessOutOfRange, false);
+  assert.equal(atMaximum.machine.thicknessOutOfRange, false);
+  assert.ok(!atMinimum.warnings.some((warning) => warning.code === 'machine_thickness_out_of_range'));
+  assert.ok(!atMaximum.warnings.some((warning) => warning.code === 'machine_thickness_out_of_range'));
+  assert.equal(belowMinimum.machine.thicknessOutOfRange, true);
+  assert.equal(aboveMaximum.machine.thicknessOutOfRange, true);
+  assert.equal(belowMinimum.resultStatus, 'review_required');
+  assert.equal(aboveMaximum.resultStatus, 'review_required');
+  assert.ok(belowMinimum.warnings.some((warning) => warning.code === 'machine_thickness_out_of_range'));
+  assert.ok(aboveMaximum.warnings.some((warning) => warning.code === 'machine_thickness_out_of_range'));
+});
+
 test('reports upper-tool radius and machine-interface incompatibility', () => {
   const radiusMismatch = calculateBendSimulation({
     ...metricInput,
@@ -144,6 +162,28 @@ test('reports upper-tool radius and machine-interface incompatibility', () => {
   assert.ok(interfaceMismatch.tooling.upperCompatibility.reasons.includes('interface'));
   assert.ok(interfaceMismatch.tooling.lowerCompatibility.reasons.includes('interface'));
   assert.ok(interfaceMismatch.warnings.some((warning) => warning.code === 'tool_mismatch'));
+});
+
+test('selects recommendations through compatibility and exposes no-compatible-tool review state', () => {
+  const compatibleAcute = calculateBendSimulation({
+    ...metricInput,
+    upperTool: 'acute-punch',
+    lowerTool: 'v-die-24',
+    segments: [{ lengthMm: 100, angleDeg: 60, insideRadiusMm: 0.5, order: 1 }],
+  });
+  const noCompatibleInterface = calculateBendSimulation({
+    ...metricInput,
+    machine: { id: 'american-machine', capacityTons: 100, bedLengthMm: 3000, minThicknessMm: 0.5, maxThicknessMm: 10, toolInterface: 'american' },
+  });
+
+  assert.equal(compatibleAcute.tooling.recommendedUpperTool.id, 'acute-punch');
+  assert.equal(compatibleAcute.tooling.isUpperMatch, true);
+  assert.equal(noCompatibleInterface.tooling.recommendedUpperTool, null);
+  assert.equal(noCompatibleInterface.tooling.recommendedLowerTool, null);
+  assert.equal(noCompatibleInterface.tooling.hasCompatibleUpperTool, false);
+  assert.equal(noCompatibleInterface.tooling.hasCompatibleLowerTool, false);
+  assert.equal(noCompatibleInterface.resultStatus, 'review_required');
+  assert.ok(noCompatibleInterface.warnings.some((warning) => warning.code === 'no_compatible_tool'));
 });
 
 test('catalog exposes stable compatibility fields for machines and both tool families', async () => {
@@ -168,14 +208,14 @@ test('uses included profile angles consistently for allowance and formed geometr
 
   assert.equal(obtuse.segments[0].bendAngleDeg, 60);
   assert.ok(Math.abs(obtuse.segments[0].bendAllowanceMm - 4.335) < 0.001);
-  assert.ok(Math.abs(obtuse.formedPoints.at(-1).xMm - 75) < 0.001);
-  assert.ok(Math.abs(obtuse.formedPoints.at(-1).yMm - 43.301) < 0.001);
+  assert.ok(Math.abs(obtuse.formedPoints.at(-1).xMm - 62.5) < 0.001);
+  assert.ok(Math.abs(obtuse.formedPoints.at(-1).yMm - 64.952) < 0.001);
   assert.equal(straight.segments[0].bendAngleDeg, 0);
   assert.equal(straight.totalBendAllowanceMm, 0);
   assert.deepEqual(straight.formedPoints.at(-1), { xMm: 100, yMm: 0 });
   assert.equal(foldedBack.segments[0].bendAngleDeg, 180);
   assert.ok(foldedBack.totalBendAllowanceMm > obtuse.totalBendAllowanceMm);
-  assert.ok(Math.abs(foldedBack.formedPoints.at(-1).xMm) < 0.001);
+  assert.ok(Math.abs(foldedBack.formedPoints.at(-1).xMm + 50) < 0.001);
   assert.ok(Math.abs(foldedBack.formedPoints.at(-1).yMm) < 0.001);
 });
 
@@ -229,7 +269,9 @@ test('creates monotonic animation frames with start, one frame per bend, and end
   assert.ok(progress.every((value, index) => index === 0 || value >= progress[index - 1]));
   assert.deepEqual(result.frames.map((frame) => frame.activeBendOrder), [null, 1, 2, null]);
   assert.deepEqual(result.frames.map((frame) => frame.activeSegmentId), [null, result.segments[0].id, result.segments[1].id, null]);
-  assert.ok(result.frames.every((frame) => frame.formedPoints.length === result.segments.length + 1));
+  assert.ok(result.frames.every((frame) => frame.formedPoints.length === result.segments.length + 2));
   assert.deepEqual(result.frames.at(-1).formedPoints, result.formedPoints);
-  assert.notDeepEqual(result.frames[0].formedPoints, result.frames[1].formedPoints);
+  result.segments.forEach((segment, index) => {
+    if (segment.bendAngleDeg !== 0) assert.notDeepEqual(result.frames[index].formedPoints, result.frames[index + 1].formedPoints);
+  });
 });
