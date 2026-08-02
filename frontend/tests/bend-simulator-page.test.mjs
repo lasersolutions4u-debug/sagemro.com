@@ -175,6 +175,8 @@ test('bend result panel presents planning fields and the engineer review CTA', a
   assert.match(markup, /Machine margin/);
   assert.match(markup, /Bend allowance/);
   assert.match(markup, /Flat length/);
+  assert.match(markup, /Derived flange lengths/);
+  assert.match(markup, /50\.00 \/ 50\.00 mm/);
   assert.match(markup, /Planning estimate/);
   assert.match(markup, /Request engineer review/);
   assert.match(markup, /data-plan-status="review"/);
@@ -205,6 +207,19 @@ test('bend result status is green only when machine and complete tooling match a
   assert.match(noCompatibleMarkup, /data-plan-status="review"/);
   assert.match(noCompatibleMarkup, /No compatible tooling/);
   assert.doesNotMatch(noCompatibleMarkup, /data-plan-status="ready"/);
+});
+
+test('bend result status stays ready for compatible non-preferred tooling', async () => {
+  const result = calculateBendSimulation({
+    unitSystem: 'metric', material: 'carbon_steel', thicknessMm: 3, sheetWidthMm: 1000, machine: 'shop-100',
+    upperTool: 'gooseneck-punch', lowerTool: 'v-die-32',
+    segments: [{ lengthMm: 100, angleDeg: 90, insideRadiusMm: 3, order: 1 }],
+  });
+  const markup = await renderResultPanel(result);
+
+  assert.equal(result.resultStatus, 'ready');
+  assert.match(markup, /data-plan-status="ready"/);
+  assert.doesNotMatch(markup, /The selected (?:upper tool|lower die) is not compatible/);
 });
 
 test('Chinese result presentation localizes catalog values and warning codes', async () => {
@@ -264,7 +279,7 @@ test('bend review helper posts only approved contact and numeric simulation fiel
     contact: { name: 'Ada', company: 'SAGE', email: 'ada@example.test', phone: '+86 123456' },
     simulation: {
       unit_system: 'metric', material: 'aluminum', thickness_mm: 3, bend_length_mm: 1000, machine: 'shop-200', upper_tool: 'gooseneck-punch', lower_tool: 'v-die-40',
-      segments: [{ length_mm: 100, angle_deg: 90, inside_radius_mm: 3, order: 1 }], result_status: workspace.result.resultStatus, warning_codes: workspace.result.warnings.map((warning) => warning.code),
+      segments: [{ span_length_mm: 100, angle_deg: 90, inside_radius_mm: 3, order: 1 }], flange_lengths_mm: [50, 50], result_status: workspace.result.resultStatus, warning_codes: workspace.result.warnings.map((warning) => warning.code),
       flat_length_mm: workspace.result.flatLengthMm, bend_allowance_mm: workspace.result.totalBendAllowanceMm, required_tonnage: workspace.result.tonnage.withSafetyTons,
     },
   });

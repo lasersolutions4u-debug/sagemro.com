@@ -21,6 +21,13 @@ const metricInput = {
   lowerTool: 'v-die-24',
 };
 
+function edgeLengths(points) {
+  return points.slice(1).map((point, index) => Math.hypot(
+    point.xMm - points[index].xMm,
+    point.yMm - points[index].yMm,
+  ));
+}
+
 test('normalizes imperial dimensions, clamps angles, and orders segments', () => {
   const normalized = normalizeBendSimulationInput({
     ...metricInput,
@@ -82,7 +89,7 @@ test('calculates a one-segment bend plan with flat and formed points', () => {
   const result = calculateBendSimulation({ ...metricInput, segments: [metricInput.segments[0]] });
 
   assert.deepEqual(Object.keys(result), [
-    'input', 'segments', 'totalBendAllowanceMm', 'flatLengthMm', 'flatPoints', 'formedPoints', 'tooling', 'tonnage', 'machine', 'warnings', 'resultStatus', 'frames',
+    'input', 'segments', 'flangeLengthsMm', 'totalBendAllowanceMm', 'flatLengthMm', 'flatPoints', 'formedPoints', 'tooling', 'tonnage', 'machine', 'warnings', 'resultStatus', 'frames',
   ]);
   assert.equal(result.segments.length, 1);
   assert.ok(result.totalBendAllowanceMm > 6 && result.totalBendAllowanceMm < 7);
@@ -90,6 +97,30 @@ test('calculates a one-segment bend plan with flat and formed points', () => {
   assert.equal(result.formedPoints.length, 3);
   assert.ok(Math.abs(result.flatPoints.at(-1).xMm - result.flatLengthMm) < 0.0001);
   assert.equal(result.tooling.recommendedLowerTool.id, 'v-die-24');
+});
+
+test('maps one bend span to two explicit derived flanges in every animation frame', () => {
+  const result = calculateBendSimulation({
+    ...metricInput,
+    segments: [{ lengthMm: 100, angleDeg: 90, insideRadiusMm: 3, order: 1 }],
+  });
+
+  assert.deepEqual(result.input.segments.map((segment) => segment.lengthMm), [100]);
+  assert.deepEqual(result.flangeLengthsMm, [50, 50]);
+  assert.ok(result.frames.every((frame) => (
+    edgeLengths(frame.formedPoints).every((lengthMm, index) => Math.abs(lengthMm - result.flangeLengthsMm[index]) < 0.0001)
+  )));
+});
+
+test('maps ordered double-bend spans to three explicit derived flanges without changing total input length', () => {
+  const result = calculateBendSimulation(metricInput);
+
+  assert.deepEqual(result.input.segments.map((segment) => segment.lengthMm), [80, 100]);
+  assert.deepEqual(result.flangeLengthsMm, [40, 90, 50]);
+  assert.ok(Math.abs(result.flangeLengthsMm.reduce((total, lengthMm) => total + lengthMm, 0) - 180) < 0.0001);
+  assert.ok(result.frames.every((frame) => (
+    edgeLengths(frame.formedPoints).every((lengthMm, index) => Math.abs(lengthMm - result.flangeLengthsMm[index]) < 0.0001)
+  )));
 });
 
 test('calculates multi-segment allowance in bend order and flags planning risks', () => {
@@ -184,6 +215,25 @@ test('selects recommendations through compatibility and exposes no-compatible-to
   assert.equal(noCompatibleInterface.tooling.hasCompatibleLowerTool, false);
   assert.equal(noCompatibleInterface.resultStatus, 'review_required');
   assert.ok(noCompatibleInterface.warnings.some((warning) => warning.code === 'no_compatible_tool'));
+});
+
+test('keeps compatible non-preferred upper and lower tools separate from recommendation equality', () => {
+  const result = calculateBendSimulation({
+    ...metricInput,
+    upperTool: 'gooseneck-punch',
+    lowerTool: 'v-die-32',
+  });
+
+  assert.equal(result.tooling.recommendedUpperTool.id, 'standard-punch');
+  assert.equal(result.tooling.recommendedLowerTool.id, 'v-die-24');
+  assert.deepEqual(result.tooling.upperCompatibility, { compatible: true, reasons: [] });
+  assert.deepEqual(result.tooling.lowerCompatibility, { compatible: true, reasons: [] });
+  assert.equal(result.tooling.isUpperRecommended, false);
+  assert.equal(result.tooling.isLowerRecommended, false);
+  assert.equal(result.tooling.isUpperMatch, true);
+  assert.equal(result.tooling.isLowerMatch, true);
+  assert.equal(result.resultStatus, 'ready');
+  assert.ok(!result.warnings.some((warning) => ['upper_tool_mismatch', 'tool_mismatch', 'review_required'].includes(warning.code)));
 });
 
 test('catalog exposes stable compatibility fields for machines and both tool families', async () => {
