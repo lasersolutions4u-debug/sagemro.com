@@ -190,7 +190,7 @@ function ToolsHub({ copy, locale, onOpenLegal }) {
       <section className="mx-auto grid max-w-7xl gap-8 px-4 py-8 sm:px-6 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)] lg:py-12">
         <div>
           <div className="flex flex-col items-start gap-4">
-            <a href="/" className="inline-flex items-center gap-2 text-sm text-[var(--color-text-secondary)] hover:text-[var(--color-primary)]">
+            <a href="/" className="mb-5 flex w-fit items-center gap-2 text-sm text-[var(--color-text-secondary)] hover:text-[var(--color-primary)]">
               <ArrowLeft size={16} />
               {copy.back}
             </a>

@@ -23,8 +23,7 @@ const HOME_COPY = {
     url: runtime.customerBase,
     heading: 'Equipment trouble? Chat now. Get answers instantly.',
     input: 'Describe the problem — or just start talking',
-    tools: 'Calculators',
-    insights: 'Insights',
+    tools: ['Bend Simulator', 'Material Weight', 'Laser Cutting Cost', 'Steel Price Budget'],
     about: 'About SAGEMRO',
     aboutTitle: 'About SAGEMRO Equipment Service',
     loopTitle: 'SAGEMRO Precision Service Loop',
@@ -42,8 +41,7 @@ const HOME_COPY = {
     url: 'http://sagemro.cn:4273',
     heading: '机器的问题，难不倒有心的人',
     input: '描述设备问题，或直接开始说...',
-    tools: '计算工具',
-    insights: '行业观察',
+    tools: ['折弯模拟器', '材料重量计算器', '激光切割成本估算', '钢材价格预算'],
     about: '关于 SAGEMRO',
     aboutTitle: '关于 SAGEMRO 设备服务平台',
     loopTitle: 'SAGEMRO 精准服务闭环',
@@ -97,10 +95,11 @@ async function captureHomeEvidence(page, { homeHeading, input, resources }) {
 
     await resources.scrollIntoViewIfNeeded();
     const resourceLinks = resources.getByRole('link');
-    await expect(resourceLinks).toHaveCount(2);
-    await expectFullyInViewport(page, resourceLinks.nth(0));
-    await expectFullyInViewport(page, resourceLinks.nth(1));
-    await captureVisual(page, `customer-home-tools-insights-${viewport.suffix}`, {
+    await expect(resourceLinks).toHaveCount(4);
+    for (let index = 0; index < 4; index += 1) {
+      await expectFullyInViewport(page, resourceLinks.nth(index));
+    }
+    await captureVisual(page, `customer-home-shop-floor-tools-${viewport.suffix}`, {
       scope: resources,
       fullPage: false,
     });
@@ -146,14 +145,13 @@ async function assertAiFirstHomeAndAbout(page, locale) {
   await expect(homeHeading).toBeVisible();
   const welcome = homeHeading.locator('xpath=ancestor::div[contains(@class, "max-w-4xl")][1]');
   const input = page.getByPlaceholder(copy.input, { exact: true });
-  const toolsResource = welcome.getByRole('link', { name: new RegExp(`^${copy.tools}`) });
-  const insightsResource = welcome.getByRole('link', { name: new RegExp(`^${copy.insights}`) });
+  const toolResources = copy.tools.map((label) => welcome.getByRole('link', { name: new RegExp(`^${label}`) }));
   await expect(input).toBeVisible();
-  await expect(toolsResource).toBeVisible();
-  await expect(insightsResource).toBeVisible();
-  const resources = toolsResource.locator('xpath=ancestor::div[contains(@class, "max-w-2xl")][1]');
+  for (const toolResource of toolResources) await expect(toolResource).toBeVisible();
+  const resources = toolResources[0].locator('xpath=ancestor::div[contains(@class, "rounded-3xl")][1]');
+  await expect(resources.getByRole('link')).toHaveCount(4);
+  await expect(welcome.getByRole('link', { name: /Insights|行业观察/ })).toHaveCount(0);
   await expect(page.locator('[data-testid="tool-industry-tools"]:visible')).toBeVisible();
-  await expect(page.locator('[data-testid="tool-insights"]:visible')).toBeVisible();
   await expect(page.getByText('Why choose SAGEMRO', { exact: false })).toHaveCount(0);
   await expect(page.getByText('为什么选择 SAGEMRO', { exact: false })).toHaveCount(0);
   await expect(page.locator('[data-testid="ServicePromiseSection"], ServicePromiseSection')).toHaveCount(0);
