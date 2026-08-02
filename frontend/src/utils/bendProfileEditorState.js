@@ -1,4 +1,5 @@
 import { bendSimulatorCatalog } from '../data/bendSimulatorCatalog.js';
+import { ensureBendSegmentIds } from './bendSegmentIdentity.js';
 
 const DEFAULT_SEGMENT = { lengthMm: 100, angleDeg: 90, insideRadiusMm: 3 };
 
@@ -36,7 +37,7 @@ export function createBendProfileDraft(value = {}) {
   return {
     ...value,
     unitSystem: value.unitSystem === 'imperial' ? 'imperial' : 'metric',
-    segments: reindex(value.segments?.length ? value.segments : [DEFAULT_SEGMENT]),
+    segments: reindex(ensureBendSegmentIds(value.segments?.length ? value.segments : [DEFAULT_SEGMENT])),
   };
 }
 
@@ -66,6 +67,7 @@ export function normalizeBendProfileValue(value = {}, catalog = bendSimulatorCat
     sheetWidthMm: positiveNumber(draft.sheetWidthMm, 1000),
     machine: catalogItem(catalog.machines, machineId(draft.machine), fallbackMachine),
     segments: draft.segments.map((segment, index) => ({
+      id: segment.id,
       lengthMm: positiveNumber(segment.lengthMm, DEFAULT_SEGMENT.lengthMm),
       angleDeg: Number(segment.angleDeg),
       insideRadiusMm: positiveNumber(segment.insideRadiusMm, positiveNumber(draft.thicknessMm, 3)),
@@ -96,7 +98,7 @@ export function updateBendProfileDraft(draft, { index, field, value }) {
 export function addBendSegment(draft) {
   return {
     ...draft,
-    segments: reindex([...draft.segments, { ...DEFAULT_SEGMENT, insideRadiusMm: positiveNumber(draft.thicknessMm, 3) }]),
+    segments: reindex(ensureBendSegmentIds([...draft.segments, { ...DEFAULT_SEGMENT, insideRadiusMm: positiveNumber(draft.thicknessMm, 3) }])),
   };
 }
 

@@ -21,6 +21,9 @@ const require = createRequire(import.meta.url);
 const reactModule = pathToFileURL(require.resolve('react')).href;
 const lucideModule = pathToFileURL(require.resolve('lucide-react')).href;
 const pageStateModule = pathToFileURL(path.join(root, 'src/utils/bendSimulatorPageState.js')).href;
+const timelineStateModule = pathToFileURL(path.join(root, 'src/utils/bendSimulationTimeline.js')).href;
+const engineModule = pathToFileURL(path.join(root, 'src/utils/bendSimulationEngine.js')).href;
+const presentationModule = pathToFileURL(path.join(root, 'src/utils/bendSimulationPresentation.js')).href;
 
 const selectedInput = {
   unitSystem: 'metric', material: 'aluminum', thicknessMm: 3, sheetWidthMm: 1000, machine: 'shop-200', upperTool: 'gooseneck-punch', lowerTool: 'v-die-40',
@@ -32,6 +35,8 @@ async function renderBendSimulatorPage() {
   const source = `
     import { createElement, useEffect, useMemo, useRef, useState } from '${reactModule}';
     import { applyBendSimulatorEditorChange, buildBendSimulatorWorkspaceState, toBendSimulatorEditorInput } from '${pageStateModule}';
+    import { calculateBendSimulation } from '${engineModule}';
+    import { advanceBendPlayback } from '${timelineStateModule}';
     const ArrowLeft = () => null;
     const Calculator = () => null;
     const BrandMark = () => null;
@@ -53,12 +58,30 @@ async function renderBendSimulatorPage() {
   }));
 }
 
-async function renderResultPanel(result) {
+async function renderResultPanel(result, locale = 'en') {
   const panel = readFileSync(path.join(root, 'src/components/Tools/BendResultPanel.jsx'), 'utf8');
-  const source = `import { createElement } from '${reactModule}';\n${panel}`.replace("from 'lucide-react'", `from '${lucideModule}'`);
+  const source = `import { createElement } from '${reactModule}';\n${panel}`
+    .replace("from 'lucide-react'", `from '${lucideModule}'`)
+    .replace("from '../../utils/bendSimulationPresentation'", `from '${presentationModule}'`);
   const transformed = await transformWithOxc(source, 'BendResultPanel.jsx', { lang: 'jsx', format: 'esm', jsx: { runtime: 'classic', pragma: 'createElement' } });
   const { BendResultPanel } = await import(`data:text/javascript;base64,${Buffer.from(transformed.code).toString('base64')}`);
-  return renderToStaticMarkup(createElement(BendResultPanel, { result, onRequestReview: () => {} }));
+  return renderToStaticMarkup(createElement(BendResultPanel, { result, locale, onRequestReview: () => {} }));
+}
+
+async function renderTimeline(locale = 'en') {
+  const source = `import { createElement } from '${reactModule}';\n${readFileSync(path.join(root, 'src/components/Tools/BendSimulationTimeline.jsx'), 'utf8')}`
+    .replace("from 'lucide-react'", `from '${lucideModule}'`)
+    .replace("from 'react'", `from '${reactModule}'`)
+    .replace("from '../../utils/bendSimulationTimeline'", `from '${timelineStateModule}'`);
+  const transformed = await transformWithOxc(source, 'BendSimulationTimeline.jsx', { lang: 'jsx', format: 'esm', jsx: { runtime: 'classic', pragma: 'createElement' } });
+  const { BendSimulationTimeline } = await import(`data:text/javascript;base64,${Buffer.from(transformed.code).toString('base64')}`);
+  return renderToStaticMarkup(createElement(BendSimulationTimeline, {
+    frames: [{ step: 0, activeBendOrder: null }, { step: 1, activeBendOrder: 1 }, { step: 2, activeBendOrder: null }],
+    activeFrame: 1,
+    playing: false,
+    simulationId: 'test',
+    locale,
+  }));
 }
 
 async function loadReviewHelper() {
@@ -115,6 +138,33 @@ test('editor changes recalculate the plan, reset animation, and keep child state
   assert.equal(shouldPauseTimeline({ previousFrames: current.timeline.frames, previousSimulationId: current.simulationId, frames: next.timeline.frames, simulationId: next.simulationId, playing: true }), true);
 });
 
+test('workspace reuses one simulation result while playback advances frames and changes views', () => {
+  const current = buildBendSimulatorWorkspaceState({ input: selectedInput, activeFrame: 0, playing: true, viewMode: '2d' });
+  const nextFrame = buildBendSimulatorWorkspaceState({
+    input: current.input,
+    result: current.result,
+    simulationId: current.simulationId,
+    activeFrame: 1,
+    playing: true,
+    viewMode: '2d',
+  });
+  const nextView = buildBendSimulatorWorkspaceState({
+    input: current.input,
+    result: current.result,
+    simulationId: current.simulationId,
+    activeFrame: 1,
+    playing: true,
+    viewMode: '3d',
+  });
+
+  assert.equal(nextFrame.result, current.result);
+  assert.equal(nextFrame.timeline.frames, current.timeline.frames);
+  assert.equal(nextFrame.playing, true);
+  assert.equal(nextView.result, current.result);
+  assert.equal(nextView.timeline.frames, current.timeline.frames);
+  assert.equal(nextView.playing, true);
+});
+
 test('bend result panel presents planning fields and the engineer review CTA', async () => {
   const workspace = buildBendSimulatorWorkspaceState({ input: selectedInput });
   const markup = await renderResultPanel(workspace.result);
@@ -127,6 +177,36 @@ test('bend result panel presents planning fields and the engineer review CTA', a
   assert.match(markup, /Flat length/);
   assert.match(markup, /Planning estimate/);
   assert.match(markup, /Request engineer review/);
+});
+
+test('Chinese result presentation localizes catalog values and warning codes', async () => {
+  const workspace = buildBendSimulatorWorkspaceState({
+    input: { ...selectedInput, sheetWidthMm: 5000, upperTool: 'standard-punch', lowerTool: 'v-die-6' },
+  });
+  const markup = await renderResultPanel(workspace.result, 'zh-CN');
+
+  assert.match(markup, /铝/);
+  assert.match(markup, /标准上模/);
+  assert.match(markup, /工作长度|折弯长度超过/);
+  assert.doesNotMatch(markup, /Aluminum|Standard punch|Required tonnage exceeds|bend length exceeds/i);
+});
+
+test('Chinese timeline localizes dynamic frame labels and accessible controls', async () => {
+  const markup = await renderTimeline('zh-CN');
+
+  assert.match(markup, /规划动画/);
+  assert.match(markup, /折弯 1/);
+  assert.match(markup, /播放动画|暂停动画/);
+  assert.doesNotMatch(markup, /Plan animation|Bend 1|Start|End|Play animation|Previous frame|Next frame/);
+});
+
+test('editor review CTA names an engineer and receives live result warnings', () => {
+  const editor = readFileSync(path.join(root, 'src/components/Tools/BendProfileEditor.jsx'), 'utf8');
+  const page = readFileSync(path.join(root, 'src/components/Tools/BendSimulatorPage.jsx'), 'utf8');
+
+  assert.doesNotMatch(editor, /SAGEMRO AI/);
+  assert.match(editor, /engineer|工程师/i);
+  assert.match(page, /warnings=\{[^}]*result\.warnings/);
 });
 
 test('bend review helper posts only approved contact and numeric simulation fields', async () => {
@@ -152,8 +232,8 @@ test('bend review helper posts only approved contact and numeric simulation fiel
   assert.deepEqual(JSON.parse(request.options.body), {
     contact: { name: 'Ada', company: 'SAGE', email: 'ada@example.test', phone: '+86 123456' },
     simulation: {
-      material: 'Aluminum', thickness_mm: 3, bend_length_mm: 1000, machine: 'shop-200', upper_tool: 'gooseneck-punch', lower_tool: 'v-die-40',
-      segments: [{ length_mm: 100, angle_deg: 90, inside_radius_mm: 3, order: 1 }],
+      unit_system: 'metric', material: 'aluminum', thickness_mm: 3, bend_length_mm: 1000, machine: 'shop-200', upper_tool: 'gooseneck-punch', lower_tool: 'v-die-40',
+      segments: [{ length_mm: 100, angle_deg: 90, inside_radius_mm: 3, order: 1 }], result_status: workspace.result.resultStatus, warning_codes: workspace.result.warnings.map((warning) => warning.code),
       flat_length_mm: workspace.result.flatLengthMm, bend_allowance_mm: workspace.result.totalBendAllowanceMm, required_tonnage: workspace.result.tonnage.withSafetyTons,
     },
   });

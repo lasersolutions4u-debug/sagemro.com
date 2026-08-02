@@ -46,6 +46,20 @@ test('normalizes imperial dimensions, clamps angles, and orders segments', () =>
   assert.ok(Math.abs(normalized.segments[1].insideRadiusMm - 3.175) < 0.0001);
 });
 
+test('preserves supplied segment IDs and generates stable unique IDs for missing ones', () => {
+  const normalized = normalizeBendSimulationInput({
+    ...metricInput,
+    segments: [
+      { ...metricInput.segments[0], id: 'customer-bend-a' },
+      { ...metricInput.segments[1] },
+    ],
+  });
+
+  assert.equal(normalized.segments.find((segment) => segment.order === 2).id, 'customer-bend-a');
+  assert.match(normalized.segments.find((segment) => segment.order === 1).id, /^segment-/);
+  assert.equal(new Set(normalized.segments.map((segment) => segment.id)).size, 2);
+});
+
 test('rejects non-positive sheet dimensions and segment lengths', () => {
   assert.throws(() => normalizeBendSimulationInput({ ...metricInput, thicknessMm: 0 }), /thickness/i);
   assert.throws(() => normalizeBendSimulationInput({ ...metricInput, sheetWidthMm: -1 }), /sheet width/i);
@@ -68,7 +82,7 @@ test('calculates a one-segment bend plan with flat and formed points', () => {
   const result = calculateBendSimulation({ ...metricInput, segments: [metricInput.segments[0]] });
 
   assert.deepEqual(Object.keys(result), [
-    'input', 'segments', 'totalBendAllowanceMm', 'flatLengthMm', 'flatPoints', 'formedPoints', 'tooling', 'tonnage', 'machine', 'warnings', 'frames',
+    'input', 'segments', 'totalBendAllowanceMm', 'flatLengthMm', 'flatPoints', 'formedPoints', 'tooling', 'tonnage', 'machine', 'warnings', 'resultStatus', 'frames',
   ]);
   assert.equal(result.segments.length, 1);
   assert.ok(result.totalBendAllowanceMm > 6 && result.totalBendAllowanceMm < 7);
@@ -93,9 +107,51 @@ test('calculates multi-segment allowance in bend order and flags planning risks'
   assert.ok(result.flatLengthMm > 95 && result.flatLengthMm < 100);
   assert.deepEqual(
     result.warnings.map((warning) => warning.code).sort(),
-    ['machine_overload', 'review_required', 'short_edge', 'tight_radius', 'tool_mismatch'],
+    ['machine_overload', 'review_required', 'short_edge', 'tight_radius', 'tool_mismatch', 'upper_tool_mismatch'],
   );
   assert.ok(result.machine.marginTons < 0);
+});
+
+test('requires review when bend length exceeds the machine bed length', () => {
+  const result = calculateBendSimulation({
+    ...metricInput,
+    sheetWidthMm: 3200,
+    machine: 'shop-100',
+  });
+
+  assert.equal(result.machine.bedLengthMm, 3000);
+  assert.equal(result.machine.workLengthExceeded, true);
+  assert.equal(result.resultStatus, 'review_required');
+  assert.ok(result.warnings.some((warning) => warning.code === 'work_length_exceeded'));
+  assert.ok(result.warnings.some((warning) => warning.code === 'review_required'));
+});
+
+test('reports upper-tool radius and machine-interface incompatibility', () => {
+  const radiusMismatch = calculateBendSimulation({
+    ...metricInput,
+    upperTool: 'standard-punch',
+    segments: [{ lengthMm: 100, angleDeg: 60, insideRadiusMm: 0.5, order: 1 }],
+  });
+  const interfaceMismatch = calculateBendSimulation({
+    ...metricInput,
+    machine: { id: 'custom-machine', capacityTons: 100, bedLengthMm: 3000, toolInterface: 'american' },
+    upperTool: 'standard-punch',
+  });
+
+  assert.ok(radiusMismatch.warnings.some((warning) => warning.code === 'upper_tool_mismatch'));
+  assert.ok(radiusMismatch.tooling.upperCompatibility.reasons.includes('radius'));
+  assert.ok(radiusMismatch.tooling.upperCompatibility.reasons.includes('angle'));
+  assert.ok(interfaceMismatch.tooling.upperCompatibility.reasons.includes('interface'));
+  assert.ok(interfaceMismatch.tooling.lowerCompatibility.reasons.includes('interface'));
+  assert.ok(interfaceMismatch.warnings.some((warning) => warning.code === 'tool_mismatch'));
+});
+
+test('catalog exposes stable compatibility fields for machines and both tool families', async () => {
+  const { bendSimulatorCatalog } = await import('../src/data/bendSimulatorCatalog.js');
+
+  assert.ok(bendSimulatorCatalog.machines.every((machine) => machine.labelKey && machine.toolInterface));
+  assert.ok(bendSimulatorCatalog.upperTools.every((tool) => tool.labelKey && tool.tipRadiusMm > 0 && tool.interfaceTypes.length > 0));
+  assert.ok(bendSimulatorCatalog.lowerTools.every((tool) => tool.labelKey && tool.minThicknessMm > 0 && tool.interfaceTypes.length > 0));
 });
 
 test('uses included profile angles consistently for allowance and formed geometry', () => {
@@ -172,4 +228,8 @@ test('creates monotonic animation frames with start, one frame per bend, and end
   assert.equal(progress.at(-1), 1);
   assert.ok(progress.every((value, index) => index === 0 || value >= progress[index - 1]));
   assert.deepEqual(result.frames.map((frame) => frame.activeBendOrder), [null, 1, 2, null]);
+  assert.deepEqual(result.frames.map((frame) => frame.activeSegmentId), [null, result.segments[0].id, result.segments[1].id, null]);
+  assert.ok(result.frames.every((frame) => frame.formedPoints.length === result.segments.length + 1));
+  assert.deepEqual(result.frames.at(-1).formedPoints, result.formedPoints);
+  assert.notDeepEqual(result.frames[0].formedPoints, result.frames[1].formedPoints);
 });

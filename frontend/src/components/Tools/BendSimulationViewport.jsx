@@ -4,6 +4,7 @@ import {
   buildBendSimulationViewportModel,
   selectBendSimulationViewportViewBox,
 } from '../../utils/bendSimulationRenderer';
+import { getBendCatalogLabel } from '../../utils/bendSimulationPresentation';
 
 const COPY = {
   en: {
@@ -52,14 +53,14 @@ export function BendSimulationViewport({ result, activeFrame = 0, viewMode = '2d
             <button type="button" onClick={() => onViewModeChange?.('2d')} aria-pressed={!is3d} className={`min-h-8 rounded-md px-3 text-xs font-semibold ${!is3d ? 'bg-[var(--color-primary)] text-white' : 'text-[var(--color-text-secondary)] hover:text-[var(--color-primary)]'}`}>{copy.twoDimensional}</button>
             <button type="button" onClick={() => onViewModeChange?.('3d')} aria-pressed={is3d} className={`min-h-8 rounded-md px-3 text-xs font-semibold ${is3d ? 'bg-[var(--color-primary)] text-white' : 'text-[var(--color-text-secondary)] hover:text-[var(--color-primary)]'}`}>{copy.threeDimensional}</button>
           </div>
-          <button type="button" onClick={() => setFitMode('fit')} disabled={fitMode === 'fit'} aria-label="Fit viewport" title={copy.fit} className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-[var(--color-border)] px-3 text-sm font-semibold text-[var(--color-text-primary)] hover:border-[var(--color-primary)] hover:text-[var(--color-primary)] disabled:opacity-50"><Maximize size={16} /><span className="hidden sm:inline">{copy.fit}</span></button>
+          <button type="button" onClick={() => setFitMode('fit')} disabled={fitMode === 'fit'} aria-label={copy.fit} title={copy.fit} className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-[var(--color-border)] px-3 text-sm font-semibold text-[var(--color-text-primary)] hover:border-[var(--color-primary)] hover:text-[var(--color-primary)] disabled:opacity-50"><Maximize size={16} /><span className="hidden sm:inline">{copy.fit}</span></button>
         </div>
       </div>
 
       <div className="mt-4 grid gap-3 text-xs sm:grid-cols-3">
-        <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-3"><span className="block text-[var(--color-text-muted)]">{copy.machine}</span><strong className="mt-1 block text-[var(--color-text-primary)]">{tooling.machineLabel}</strong></div>
-        <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-3"><span className="block text-[var(--color-text-muted)]">{copy.upperTool} / {copy.lowerTool}</span><strong className="mt-1 block text-[var(--color-text-primary)]">{tooling.upperToolLabel} · {tooling.lowerToolLabel}</strong></div>
-        <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-3"><span className="block text-[var(--color-text-muted)]">{copy.material}</span><strong className="mt-1 block text-[var(--color-text-primary)]">{tooling.materialLabel}</strong></div>
+        <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-3"><span className="block text-[var(--color-text-muted)]">{copy.machine}</span><strong className="mt-1 block text-[var(--color-text-primary)]">{getBendCatalogLabel(result.machine, locale)}</strong></div>
+        <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-3"><span className="block text-[var(--color-text-muted)]">{copy.upperTool} / {copy.lowerTool}</span><strong className="mt-1 block text-[var(--color-text-primary)]">{getBendCatalogLabel(result.tooling.selectedUpperTool, locale)} · {getBendCatalogLabel(result.tooling.selectedLowerTool, locale)}</strong></div>
+        <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-3"><span className="block text-[var(--color-text-muted)]">{copy.material}</span><strong className="mt-1 block text-[var(--color-text-primary)]">{getBendCatalogLabel(result.input.material, locale)}</strong></div>
       </div>
 
       <div className="mt-4 overflow-hidden rounded-lg border border-[var(--color-border)] bg-[#111820] p-2">
@@ -80,7 +81,7 @@ export function BendSimulationViewport({ result, activeFrame = 0, viewMode = '2d
           <polygon points={tooling.lowerTool} fill="#426d89" stroke="#a6c9dd" strokeWidth="1.5" />
         </svg>
       </div>
-      <div className="mt-3 flex items-center justify-between gap-3 text-xs text-[var(--color-text-muted)]"><span>{is3d ? copy.threeDimensional : copy.twoDimensional}</span><button type="button" onClick={() => setFitMode('reset')} disabled={fitMode === 'reset'} aria-label="Reset viewport" className="inline-flex items-center gap-1 hover:text-[var(--color-primary)] disabled:opacity-50"><RotateCcw size={13} />{copy.reset}</button></div>
+      <div className="mt-3 flex items-center justify-between gap-3 text-xs text-[var(--color-text-muted)]"><span>{is3d ? copy.threeDimensional : copy.twoDimensional}</span><button type="button" onClick={() => setFitMode('reset')} disabled={fitMode === 'reset'} aria-label={copy.reset} className="inline-flex items-center gap-1 hover:text-[var(--color-primary)] disabled:opacity-50"><RotateCcw size={13} />{copy.reset}</button></div>
       <ActiveBendDescription description={activeDescription} />
     </section>
   );

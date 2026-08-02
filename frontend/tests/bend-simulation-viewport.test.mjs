@@ -37,12 +37,14 @@ const require = createRequire(import.meta.url);
 const reactModule = pathToFileURL(require.resolve('react')).href;
 const lucideModule = pathToFileURL(require.resolve('lucide-react')).href;
 const rendererModule = pathToFileURL(path.join(root, 'src/utils/bendSimulationRenderer.js')).href;
+const presentationModule = pathToFileURL(path.join(root, 'src/utils/bendSimulationPresentation.js')).href;
 
 async function renderViewport(props) {
   const source = `import { createElement } from '${reactModule}';\n${readFileSync(path.join(root, 'src/components/Tools/BendSimulationViewport.jsx'), 'utf8')}`
     .replace("from 'lucide-react'", `from '${lucideModule}'`)
     .replace("from 'react'", `from '${reactModule}'`)
-    .replace("from '../../utils/bendSimulationRenderer'", `from '${rendererModule}'`);
+    .replace("from '../../utils/bendSimulationRenderer'", `from '${rendererModule}'`)
+    .replace("from '../../utils/bendSimulationPresentation'", `from '${presentationModule}'`);
   const transformed = await transformWithOxc(source, 'BendSimulationViewport.jsx', {
     lang: 'jsx',
     format: 'esm',
@@ -54,14 +56,18 @@ async function renderViewport(props) {
 
 test('bend simulation viewport derives changing 2D geometry from the active frame', () => {
   const flat = buildFlatPath(result);
+  const start = buildFormedPath(result, 0);
   const firstBend = buildFormedPath(result, 1);
   const secondBend = buildFormedPath(result, 2);
 
   assert.equal(flat.points, '0,0 106.503,0 190.838,0');
   assert.equal(firstBend.activeBendOrder, 1);
   assert.equal(secondBend.activeBendOrder, 2);
-  assert.notEqual(firstBend.points, secondBend.points);
-  assert.equal(firstBend.points, '0,0 100,0');
+  assert.notEqual(start.points, firstBend.points);
+  assert.equal(start.pointList.length, result.segments.length + 1);
+  assert.equal(firstBend.pointList.length, result.segments.length + 1);
+  assert.equal(secondBend.pointList.length, result.segments.length + 1);
+  assert.equal(firstBend.points, '0,0 100,0 100,80');
   assert.equal(secondBend.points, '0,0 100,0 100,80');
 });
 
@@ -129,4 +135,14 @@ test('bend simulation viewport renders its model bounds and empty state', async 
   assert.match(rendered, new RegExp(`viewBox="${model.resetViewBox}"`));
   assert.doesNotMatch(rendered, /No bend simulation is available yet/);
   assert.match(empty, /No bend simulation is available yet/);
+});
+
+test('bend simulation viewport localizes dynamic catalog labels for Chinese', async () => {
+  const rendered = await renderViewport({ result, activeFrame: 1, viewMode: '2d', locale: 'zh-CN' });
+
+  assert.match(rendered, /100 吨通用折弯机/);
+  assert.match(rendered, /标准上模/);
+  assert.match(rendered, /V 槽 24 毫米/);
+  assert.match(rendered, /碳钢/);
+  assert.doesNotMatch(rendered, /100 ton press brake|Standard punch|V die 24 mm|Carbon steel/);
 });

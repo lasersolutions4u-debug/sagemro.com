@@ -191,3 +191,22 @@ test('bend simulator funnel events retain only approved non-PII properties', asy
     });
   }
 });
+
+test('funnel property sanitization enforces enum, number, boolean, and PII-safe string types', async () => {
+  const { response, env } = await postFunnel({
+    event_name: 'bend_simulator_completed',
+    properties: {
+      material: 'buyer@example.com',
+      unit_system: '13800138000',
+      view_mode: '+1 555 123 4567',
+      bend_count: 'buyer@example.com',
+      previous_bend_count: 99,
+      authenticated: 'true',
+      conversation_id: 'buyer@example.com',
+      entry: 'buyer@example.com',
+    },
+  });
+
+  assert.equal(response.status, 202);
+  assert.deepEqual(JSON.parse(env.__rows[0].properties_json), {});
+});

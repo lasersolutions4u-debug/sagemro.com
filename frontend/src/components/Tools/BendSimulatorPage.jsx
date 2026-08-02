@@ -9,6 +9,8 @@ import { BendSimulationTimeline } from './BendSimulationTimeline';
 import { BendSimulationViewport } from './BendSimulationViewport';
 import { submitBendSimulationReview, trackFunnelEvent } from '../../services/api';
 import { applyBendSimulatorEditorChange, buildBendSimulatorWorkspaceState, toBendSimulatorEditorInput } from '../../utils/bendSimulatorPageState';
+import { calculateBendSimulation } from '../../utils/bendSimulationEngine';
+import { advanceBendPlayback } from '../../utils/bendSimulationTimeline';
 
 const INITIAL_INPUT = {
   unitSystem: 'metric', material: 'carbon_steel', thicknessMm: 3, sheetWidthMm: 1000, machine: 'shop-100', upperTool: 'standard-punch', lowerTool: 'v-die-24',
@@ -36,17 +38,23 @@ export function BendSimulatorPage({ tool, copy, onOpenLegal, locale = 'en' }) {
   const [reviewStatus, setReviewStatus] = useState('idle');
   const completedSimulation = useRef('');
   const startedProperties = useRef({ material: input.material, bend_count: input.segments.length, unit_system: input.unitSystem });
-  const workspace = useMemo(() => buildBendSimulatorWorkspaceState({ input, activeFrame, playing, viewMode }), [input, activeFrame, playing, viewMode]);
-  const { result, simulationId } = workspace;
+  const editorInput = useMemo(() => toBendSimulatorEditorInput(input), [input]);
+  const result = useMemo(() => calculateBendSimulation(editorInput), [editorInput]);
+  const simulationId = useMemo(() => JSON.stringify(editorInput), [editorInput]);
+  const workspace = useMemo(() => buildBendSimulatorWorkspaceState({ input: editorInput, result, simulationId, activeFrame, playing, viewMode }), [editorInput, result, simulationId, activeFrame, playing, viewMode]);
 
   useEffect(() => {
     trackFunnelEvent('bend_simulator_started', startedProperties.current);
   }, []);
 
   useEffect(() => {
-    if (!playing || activeFrame >= result.frames.length - 1) return undefined;
-    const timer = window.setInterval(() => setActiveFrame((frame) => Math.min(frame + 1, result.frames.length - 1)), 900);
-    return () => window.clearInterval(timer);
+    if (!playing) return undefined;
+    const timer = window.setTimeout(() => {
+      const next = advanceBendPlayback({ activeFrame, frameCount: result.frames.length, playing });
+      setActiveFrame(next.activeFrame);
+      setPlaying(next.playing);
+    }, 900);
+    return () => window.clearTimeout(timer);
   }, [activeFrame, playing, result.frames.length]);
 
   useEffect(() => {
@@ -107,8 +115,8 @@ export function BendSimulatorPage({ tool, copy, onOpenLegal, locale = 'en' }) {
           <p className="mt-3 text-sm font-medium text-[var(--color-text-secondary)]">{isCn ? '规划估算，生产前需工程复核。' : 'Planning estimate — engineer review required before production.'}</p>
         </div>
         <div className="mt-6 grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)_minmax(17rem,.8fr)]">
-          <div className="order-1"><BendProfileEditor value={workspace.input} locale={locale} onChange={handleInputChange} onRequestReview={() => setReviewOpen(true)} /></div>
-          <div className="order-2 space-y-5"><BendSimulationViewport {...workspace.viewport} onViewModeChange={setViewMode} locale={locale} /><BendSimulationTimeline {...workspace.timeline} onFrameChange={setActiveFrame} onTogglePlay={setPlaying} onStep={(direction) => setActiveFrame((frame) => Math.max(0, Math.min(result.frames.length - 1, frame + direction)))} /></div>
+          <div className="order-1"><BendProfileEditor value={workspace.input} warnings={result.warnings} locale={locale} onChange={handleInputChange} onRequestReview={() => setReviewOpen(true)} /></div>
+          <div className="order-2 space-y-5"><BendSimulationViewport {...workspace.viewport} onViewModeChange={setViewMode} locale={locale} /><BendSimulationTimeline {...workspace.timeline} locale={locale} onFrameChange={setActiveFrame} onTogglePlay={setPlaying} onStep={(direction) => setActiveFrame((frame) => Math.max(0, Math.min(result.frames.length - 1, frame + direction)))} /></div>
           <div className="order-3"><BendResultPanel {...workspace.resultPanel} locale={locale} onRequestReview={() => setReviewOpen(true)} /></div>
         </div>
       </main>

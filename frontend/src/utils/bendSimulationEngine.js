@@ -1,4 +1,5 @@
 import { bendSimulatorCatalog } from '../data/bendSimulatorCatalog.js';
+import { ensureBendSegmentIds } from './bendSegmentIdentity.js';
 
 const MM_PER_INCH = 25.4;
 
@@ -35,6 +36,16 @@ function recommendedUpperTool(segments, thicknessMm) {
   return bendSimulatorCatalog.upperTools.find((tool) => tool.id === (tightRadius ? 'acute-punch' : 'standard-punch'));
 }
 
+function toolCompatibility({ tool, machine, thicknessMm, segments, recommendedTool, includeRadius = false }) {
+  const reasons = [];
+  if (tool.id !== recommendedTool.id) reasons.push('recommendation');
+  if (thicknessMm < tool.minThicknessMm || thicknessMm > tool.maxThicknessMm) reasons.push('thickness');
+  if (segments.some((segment) => segment.angleDeg < tool.minIncludedAngleDeg || segment.angleDeg > tool.maxIncludedAngleDeg)) reasons.push('angle');
+  if (includeRadius && segments.some((segment) => segment.insideRadiusMm < tool.tipRadiusMm)) reasons.push('radius');
+  if (!tool.interfaceTypes.includes(machine.toolInterface)) reasons.push('interface');
+  return { compatible: reasons.length === 0, reasons };
+}
+
 export function normalizeBendSimulationInput(input = {}) {
   const unitSystem = input.unitSystem === 'imperial' ? 'imperial' : 'metric';
   const material = bendSimulatorCatalog.materials[input.material] || bendSimulatorCatalog.materials.carbon_steel;
@@ -43,7 +54,8 @@ export function normalizeBendSimulationInput(input = {}) {
   const machine = resolveRecord(bendSimulatorCatalog.machines, input.machine, bendSimulatorCatalog.machines[1]);
   const upperTool = resolveRecord(bendSimulatorCatalog.upperTools, input.upperTool, bendSimulatorCatalog.upperTools[1]);
   const lowerTool = resolveRecord(bendSimulatorCatalog.lowerTools, input.lowerTool, bendSimulatorCatalog.lowerTools[4]);
-  const segments = (input.segments || []).map((segment, index) => ({
+  const segments = ensureBendSegmentIds(input.segments || []).map((segment, index) => ({
+    id: segment.id,
     lengthMm: asMillimeters(segment.lengthMm, unitSystem, 'Segment length'),
     angleDeg: normalizeAngle(segment.angleDeg),
     insideRadiusMm: segment.insideRadiusMm == null
@@ -93,9 +105,23 @@ function makeFormedPoints(segments) {
   })];
 }
 
+function makeCompleteFramePoints(segments, completedBends) {
+  let x = 0;
+  let y = 0;
+  let directionDeg = 0;
+  const points = [{ xMm: 0, yMm: 0 }];
+  segments.forEach((segment, index) => {
+    x += segment.lengthMm * Math.cos((directionDeg * Math.PI) / 180);
+    y += segment.lengthMm * Math.sin((directionDeg * Math.PI) / 180);
+    points.push({ xMm: x, yMm: y });
+    if (index < completedBends) directionDeg += segment.bendAngleDeg;
+  });
+  return points;
+}
+
 export function calculateBendSimulation(input) {
   const normalized = normalizeBendSimulationInput(input);
-  const { material, thicknessMm, sheetWidthMm, machine, segments, lowerTool } = normalized;
+  const { material, thicknessMm, sheetWidthMm, machine, segments, upperTool, lowerTool } = normalized;
   const targetVOpeningMm = thicknessMm * material.recommendedVMultiplier;
   const recommendedLower = recommendedLowerTool(targetVOpeningMm);
   const recommendedUpper = recommendedUpperTool(segments, thicknessMm);
@@ -108,6 +134,21 @@ export function calculateBendSimulation(input) {
   const flatLengthMm = calculatedSegments.reduce((total, segment) => total + segment.lengthMm, 0) + totalBendAllowanceMm;
   const flatPoints = makeFlatPoints(calculatedSegments);
   const formedPoints = makeFormedPoints(calculatedSegments);
+  const upperCompatibility = toolCompatibility({
+    tool: upperTool,
+    machine,
+    thicknessMm,
+    segments: calculatedSegments,
+    recommendedTool: recommendedUpper,
+    includeRadius: true,
+  });
+  const lowerCompatibility = toolCompatibility({
+    tool: lowerTool,
+    machine,
+    thicknessMm,
+    segments: calculatedSegments,
+    recommendedTool: recommendedLower,
+  });
   const tonnage = estimateAirBendTonnage({
     thicknessMm,
     bendLengthMm: sheetWidthMm,
@@ -117,22 +158,28 @@ export function calculateBendSimulation(input) {
   });
   const capacityTons = positiveNumber(machine.capacityTons, 'Machine capacity');
   const marginTons = capacityTons - tonnage.withSafetyTons;
+  const bedLengthMm = positiveNumber(machine.bedLengthMm, 'Machine bed length');
+  const workLengthExceeded = sheetWidthMm > bedLengthMm;
   const warnings = [];
   const addWarning = (code, message) => warnings.push({ code, message });
   if (calculatedSegments.some((segment) => segment.lengthMm < lowerTool.vOpeningMm * 1.5)) addWarning('short_edge', 'A bend edge is short for the selected V die.');
-  if (lowerTool.id !== recommendedLower.id) addWarning('tool_mismatch', 'Selected V die does not match the recommended opening.');
+  if (!lowerCompatibility.compatible) addWarning('tool_mismatch', 'The selected lower die is not compatible with this plan.');
+  if (!upperCompatibility.compatible) addWarning('upper_tool_mismatch', 'The selected upper tool is not compatible with this plan.');
   if (marginTons < 0) addWarning('machine_overload', 'Required tonnage exceeds machine capacity.');
+  if (workLengthExceeded) addWarning('work_length_exceeded', 'Bend length exceeds the machine working length.');
   if (calculatedSegments.some((segment) => segment.insideRadiusMm < thicknessMm * 0.5)) addWarning('tight_radius', 'Inside radius is tight for the selected material thickness.');
   if (warnings.length > 0 || marginTons / capacityTons < 0.1) addWarning('review_required', 'Confirm tooling and bend plan with an engineer before production.');
+  const resultStatus = warnings.some((warning) => warning.code === 'review_required') ? 'review_required' : 'ready';
   const frames = [
-    { step: 0, progress: 0, activeBendOrder: null, formedPoints: [formedPoints[0]] },
+    { step: 0, progress: 0, activeBendOrder: null, activeSegmentId: null, formedPoints: makeCompleteFramePoints(calculatedSegments, 0) },
     ...calculatedSegments.map((segment, index) => ({
       step: index + 1,
       progress: (index + 1) / (calculatedSegments.length + 1),
       activeBendOrder: segment.order,
-      formedPoints: formedPoints.slice(0, index + 2),
+      activeSegmentId: segment.id,
+      formedPoints: makeCompleteFramePoints(calculatedSegments, index + 1),
     })),
-    { step: calculatedSegments.length + 1, progress: 1, activeBendOrder: null, formedPoints },
+    { step: calculatedSegments.length + 1, progress: 1, activeBendOrder: null, activeSegmentId: null, formedPoints },
   ];
 
   return {
@@ -149,10 +196,15 @@ export function calculateBendSimulation(input) {
       selectedLowerTool: lowerTool,
       targetVOpeningMm,
       isVMatch: lowerTool.id === recommendedLower.id,
+      isUpperMatch: upperCompatibility.compatible,
+      isLowerMatch: lowerCompatibility.compatible,
+      upperCompatibility,
+      lowerCompatibility,
     },
     tonnage,
-    machine: { ...machine, capacityTons, marginTons, marginPercent: (marginTons / capacityTons) * 100 },
+    machine: { ...machine, capacityTons, bedLengthMm, workLengthExceeded, marginTons, marginPercent: (marginTons / capacityTons) * 100 },
     warnings,
+    resultStatus,
     frames,
   };
 }
