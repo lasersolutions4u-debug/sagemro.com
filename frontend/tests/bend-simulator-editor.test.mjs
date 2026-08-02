@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import test from 'node:test';
 
 import { bendSimulatorCatalog } from '../src/data/bendSimulatorCatalog.js';
@@ -15,6 +17,8 @@ import {
   shouldPauseTimeline,
   stepTimelineFrame,
 } from '../src/utils/bendSimulationTimeline.js';
+
+const root = path.resolve(import.meta.dirname, '..');
 
 const profile = {
   unitSystem: 'metric',
@@ -84,4 +88,16 @@ test('bend simulation timeline clamps, steps, and pauses on a changed simulation
   assert.equal(shouldPauseTimeline({ previousFrames: frames, frames, previousSimulationId: 'a', simulationId: 'a', playing: true }), false);
   assert.equal(shouldPauseTimeline({ previousFrames: frames, frames: [...frames], previousSimulationId: 'a', simulationId: 'b', playing: true }), true);
   assert.equal(shouldPauseTimeline({ previousFrames: frames, frames: [...frames], previousSimulationId: 'a', simulationId: 'b', playing: false }), false);
+});
+
+test('bend simulation timeline effect wiring keeps playback until frames or identity change', () => {
+  const frames = [{ step: 0 }, { step: 1 }];
+  const previous = { previousFrames: frames, previousSimulationId: 'first' };
+  assert.equal(shouldPauseTimeline({ ...previous, frames, simulationId: 'first', playing: true }), false);
+  assert.equal(shouldPauseTimeline({ ...previous, frames: [...frames], simulationId: 'first', playing: true }), true);
+  assert.equal(shouldPauseTimeline({ ...previous, frames, simulationId: 'second', playing: true }), true);
+
+  const timeline = readFileSync(path.join(root, 'src/components/Tools/BendSimulationTimeline.jsx'), 'utf8');
+  assert.match(timeline, /previousFrames: previousSimulation\.current\.frames/);
+  assert.match(timeline, /previousSimulationId: previousSimulation\.current\.simulationId/);
 });
