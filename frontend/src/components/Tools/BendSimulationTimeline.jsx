@@ -10,7 +10,13 @@ export function BendSimulationTimeline({ frames = [], activeFrame = 0, playing =
   const frameLabel = frame?.activeBendOrder ? `Bend ${frame.activeBendOrder}` : safeActiveFrame === lastFrame ? 'Complete' : 'Start';
 
   useEffect(() => {
-    if (shouldPauseTimeline({ ...previousSimulation.current, frames, simulationId, playing })) onTogglePlay?.(false);
+    if (shouldPauseTimeline({
+      previousFrames: previousSimulation.current.frames,
+      previousSimulationId: previousSimulation.current.simulationId,
+      frames,
+      simulationId,
+      playing,
+    })) onTogglePlay?.(false);
     previousSimulation.current = { frames, simulationId };
   }, [frames, simulationId, playing, onTogglePlay]);
 
