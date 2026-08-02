@@ -113,7 +113,7 @@ export function IndustryToolsPage({ pathname = '/tools', onOpenLegal }) {
   }
 
   if (page === 'bend-simulator') {
-    return <BendSimulatorPage tool={selectedTool} copy={copy} onOpenLegal={onOpenLegal} />;
+    return <BendSimulatorPage tool={selectedTool} copy={copy} locale={locale} onOpenLegal={onOpenLegal} />;
   }
 
   return (
