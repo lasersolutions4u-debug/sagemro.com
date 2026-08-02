@@ -84,11 +84,13 @@ test('main site first-impression copy keeps CN and COM market language separate'
   assert.match(welcome, /Cutting issue, bending problem, or welding alarm\? Describe what you are seeing on site, and let SAGEMRO AI analyze it and offer suggestions\./);
   assert.doesNotMatch(welcome, /AI assistant specialized for laser and metal forming equipment/);
   assert.doesNotMatch(welcome, /AI-generated content is for reference only/);
-  assert.match(welcome, /Useful public resources/);
-  assert.match(welcome, /href: '\/tools'/);
-  assert.match(welcome, /href: '\/insights'/);
-  assert.match(welcome, /Calculators/);
-  assert.match(welcome, /Insights/);
+  assert.match(welcome, /Useful shop-floor tools/);
+  assert.match(welcome, /href: '\/tools\/bend-simulator'/);
+  assert.match(welcome, /href: '\/tools\/metal-weight-calculator'/);
+  assert.match(welcome, /href: '\/tools\/laser-cutting-cost-calculator'/);
+  assert.match(welcome, /href: '\/tools\/steel-price-watch'/);
+  assert.doesNotMatch(welcome, /href: '\/insights'/);
+  assert.doesNotMatch(welcome, /Insights/);
   assert.doesNotMatch(welcome, /sales form|sales shortcut/i);
   assert.doesNotMatch(welcome, /Machine selection|new-machine evaluation/);
   assert.doesNotMatch(welcome, /supports international customers with independent after-sales service, spare parts, consumables/);
@@ -105,7 +107,7 @@ test('main site first-impression copy keeps CN and COM market language separate'
   assert.doesNotMatch(welcome, /内容由 AI 生成，仅供参考/);
   assert.doesNotMatch(welcome, /钣金设备故障，先用 AI 看看/);
   assert.doesNotMatch(welcome, /报了什么警、切割出了什么问题、折弯不对了/);
-  assert.match(welcome, /max-w-2xl/);
+  assert.match(welcome, /max-w-4xl/);
   assert.match(chatArea, /SAGEMRO AI 设备服务平台/);
   assert.match(chatArea, /专为激光和成型设备打造的智能服务助手/);
   assert.match(chatArea, /SAGEMRO AI Equipment Service/);
