@@ -23,7 +23,7 @@ function read(relativePath) {
 }
 
 test('CN tools data localizes every public tool definition', () => {
-  assert.equal(industryTools.length, 9);
+  assert.equal(industryTools.length, 10);
 
   for (const tool of industryTools) {
     const cn = getLocalizedTool(tool, 'zh-CN');
