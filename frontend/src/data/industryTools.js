@@ -575,7 +575,10 @@ export function parsePositiveNumber(value, fallback = 0) {
 }
 
 export function getToolBySlug(slug) {
-  return industryTools.find((tool) => tool.slug === slug) || null;
+  const normalizedSlug = typeof slug === 'string'
+    ? slug.replace(/^\/tools\//, '').replace(/\/$/, '')
+    : '';
+  return industryTools.find((tool) => tool.slug === normalizedSlug) || null;
 }
 
 function isCn(locale) {

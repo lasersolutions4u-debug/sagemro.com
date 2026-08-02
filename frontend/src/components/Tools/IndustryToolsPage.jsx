@@ -21,9 +21,9 @@ import {
   getLocalizedMaterialDensities,
   getLocalizedShapeProfiles,
   getLocalizedTool,
-  getToolBySlug,
   industryTools,
 } from '../../data/industryTools';
+import { getIndustryToolsPageState } from '../../utils/industryToolsPage';
 import { isCnLocale } from '../../utils/locale';
 import { setSeoMetadata } from '../../utils/seo';
 
@@ -99,29 +99,27 @@ const toolsPageCopy = {
 
 export function IndustryToolsPage({ pathname = '/tools', onOpenLegal, onSendMessage, onNavigateHome }) {
   const locale = isCnLocale() ? 'zh-CN' : 'en';
-  const canonicalHost = locale === 'zh-CN' ? 'https://sagemro.cn' : 'https://sagemro.com';
+  const route = getIndustryToolsPageState(pathname, locale);
+  const { canonicalHost, canonical, page, selectedTool, slug } = route;
   const copy = toolsPageCopy[locale];
-  const slug = pathname.split('/tools/')[1]?.replace(/\/$/, '') || '';
-  const rawSelectedTool = getToolBySlug(slug);
-  const selectedTool = getLocalizedTool(rawSelectedTool, locale);
   const [forms, setForms] = useState(defaultIndustryToolForms);
+  const isMissing = Boolean(slug && !selectedTool);
   const pageTitle = selectedTool ? selectedTool.seoTitle : copy.hubTitle;
   const pageDescription = selectedTool
     ? selectedTool.seoDescription
     : copy.hubDescription;
 
   useEffect(() => {
-    const isMissing = Boolean(slug && !rawSelectedTool);
     setSeoMetadata({
       title: isMissing ? '工具未找到 | SAGEMRO' : `${pageTitle} | SAGEMRO`,
-      description: isMissing ? '找不到请求的 SAGEMRO 行业工具。' : pageDescription,
-      canonical: `${canonicalHost}${selectedTool ? `/tools/${selectedTool.slug}` : slug ? `/tools/${slug}` : '/tools'}`,
-      lang: locale,
+      description: pageDescription,
+      canonical,
+      lang: locale === 'zh-CN' ? 'zh-CN' : 'en',
       robots: isMissing ? 'noindex,nofollow,noarchive' : 'index,follow',
     });
-  }, [canonicalHost, pageDescription, pageTitle, rawSelectedTool, selectedTool, slug, locale]);
+  }, [canonical, canonicalHost, isMissing, locale, pageDescription, pageTitle, selectedTool]);
 
-  if (slug && !rawSelectedTool) {
+  if (slug && !selectedTool) {
     return <NotFoundPage isCn={locale === 'zh-CN'} />;
   }
 
@@ -129,7 +127,7 @@ export function IndustryToolsPage({ pathname = '/tools', onOpenLegal, onSendMess
     return <ToolsHub copy={copy} locale={locale} onOpenLegal={onOpenLegal} />;
   }
 
-  if (selectedTool.id === 'bend-simulator') {
+  if (page === 'bend-simulator') {
     return <BendSimulatorPage tool={selectedTool} copy={copy} locale={locale} onOpenLegal={onOpenLegal} />;
   }
 
