@@ -20207,6 +20207,7 @@ async function routeRequest(request, env, ctx) {
       handleChatTranscribe,
       handleChat,
       handleSubmitLead,
+      handleSubmitBendSimulationReview,
       handleSubmitEngineerApplication,
       handleFunnelEvent,
       handleHealth: () => jsonResponse({ status: 'ok' }),
@@ -20578,10 +20579,6 @@ async function routeRequest(request, env, ctx) {
     if (path === '/api/leads/machine' && request.method === 'POST') {
       return handleCreateMachineLead(request, env);
     }
-    if (path === '/api/leads/bend-simulation' && request.method === 'POST') {
-      return handleSubmitBendSimulationReview(request, env);
-    }
-
     // 工单相关
     if (path === '/api/location/search' && request.method === 'GET') {
       return handleLocationSearch(request, env);

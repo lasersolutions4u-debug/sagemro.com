@@ -154,7 +154,7 @@ test('AI service copy keeps service preparation neutral instead of sales routing
   const legal = read('frontend/src/components/common/LegalModal.jsx');
 
   assert.match(chatArea, /service process/i);
-  assert.match(welcomePage, /SAGEMRO Service OS|Useful public resources/i);
+  assert.match(welcomePage, /SAGEMRO Service OS|Useful shop-floor tools/i);
   assert.match(legal, /Service cost reference/);
   assert.match(legal, /服务费用参考/);
   assert.doesNotMatch(chatArea, /sales lead|Repair Estimate AI|Equipment Health Report AI|Health Report/);
@@ -688,7 +688,7 @@ test('public industry tool detail prioritizes calculator before related tools an
   const industryToolCalculator = read('frontend/src/components/Tools/IndustryToolCalculator.jsx');
 
   const calculatorIndex = industryToolsPage.indexOf('<IndustryToolCalculator');
-  const relatedToolsIndex = industryToolsPage.indexOf('Related tools');
+  const relatedToolsIndex = industryToolsPage.indexOf('<aside aria-label="Related tools"');
 
   assert.ok(calculatorIndex > -1, 'tool detail should render the calculator');
   assert.ok(relatedToolsIndex > -1, 'tool detail should render related tools');

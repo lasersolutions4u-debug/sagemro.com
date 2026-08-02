@@ -10,8 +10,8 @@ export function getIndustryToolsPageState(pathname = '/tools', locale = 'en') {
   return {
     slug,
     selectedTool,
-    page: !selectedTool ? 'hub' : selectedTool.id === 'bend-simulator' ? 'bend-simulator' : 'tool-detail',
+    page: slug && !selectedTool ? 'not-found' : !selectedTool ? 'hub' : selectedTool.id === 'bend-simulator' ? 'bend-simulator' : 'tool-detail',
     canonicalHost,
-    canonical: `${canonicalHost}${selectedTool ? `/tools/${selectedTool.slug}` : '/tools'}`,
+    canonical: `${canonicalHost}${selectedTool ? `/tools/${selectedTool.slug}` : slug ? `/tools/${slug}` : '/tools'}`,
   };
 }

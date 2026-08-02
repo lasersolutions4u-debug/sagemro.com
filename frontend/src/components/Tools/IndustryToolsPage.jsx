@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { BrandMark } from '../common/BrandMark';
 import { Footer } from '../common/Footer';
+import { NotFoundPage } from '../common/NotFoundPage';
 import { BendSimulatorPage } from './BendSimulatorPage';
 import { IndustryToolCalculator } from './IndustryToolCalculator';
 import {
@@ -88,12 +89,13 @@ const toolsPageCopy = {
   },
 };
 
-export function IndustryToolsPage({ pathname = '/tools', onOpenLegal }) {
+export function IndustryToolsPage({ pathname = '/tools', onOpenLegal, onSendMessage, onNavigateHome }) {
   const locale = isCnLocale() ? 'zh-CN' : 'en';
   const route = getIndustryToolsPageState(pathname, locale);
-  const { canonicalHost, canonical, page, selectedTool } = route;
+  const { canonicalHost, canonical, page, selectedTool, slug } = route;
   const copy = toolsPageCopy[locale];
   const [forms, setForms] = useState(defaultIndustryToolForms);
+  const isMissing = Boolean(slug && !selectedTool);
   const pageTitle = selectedTool ? selectedTool.seoTitle : copy.hubTitle;
   const pageDescription = selectedTool
     ? selectedTool.seoDescription
@@ -105,8 +107,13 @@ export function IndustryToolsPage({ pathname = '/tools', onOpenLegal }) {
       description: pageDescription,
       canonical,
       lang: locale === 'zh-CN' ? 'zh-CN' : 'en',
+      robots: isMissing ? 'noindex,nofollow,noarchive' : 'index,follow',
     });
-  }, [canonical, canonicalHost, locale, pageDescription, pageTitle, selectedTool]);
+  }, [canonical, canonicalHost, isMissing, locale, pageDescription, pageTitle, selectedTool]);
+
+  if (slug && !selectedTool) {
+    return <NotFoundPage isCn={locale === 'zh-CN'} />;
+  }
 
   if (!selectedTool) {
     return <ToolsHub copy={copy} locale={locale} onOpenLegal={onOpenLegal} />;
@@ -132,6 +139,8 @@ export function IndustryToolsPage({ pathname = '/tools', onOpenLegal }) {
         }));
       }}
       onOpenLegal={onOpenLegal}
+      onSendMessage={onSendMessage}
+      onNavigateHome={onNavigateHome}
     />
   );
 }
@@ -173,7 +182,7 @@ function ToolsHub({ copy, locale, onOpenLegal }) {
       <section className="mx-auto grid max-w-7xl gap-8 px-4 py-8 sm:px-6 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)] lg:py-12">
         <div>
           <div className="flex flex-col items-start gap-4">
-            <a href="/" className="inline-flex items-center gap-2 text-sm text-[var(--color-text-secondary)] hover:text-[var(--color-primary)]">
+            <a href="/" className="mb-5 flex w-fit items-center gap-2 text-sm text-[var(--color-text-secondary)] hover:text-[var(--color-primary)]">
               <ArrowLeft size={16} />
               {copy.back}
             </a>
@@ -241,11 +250,15 @@ function ToolReferenceItem({ item, isFirst }) {
   );
 }
 
-function ToolDetail({ tool, copy, locale, values, onChange, onOpenLegal }) {
+function ToolDetail({ tool, copy, locale, values, onChange, onOpenLegal, onSendMessage, onNavigateHome }) {
   const relatedTools = useMemo(
     () => industryTools.filter((item) => item.id !== tool.id).map((item) => getLocalizedTool(item, locale)),
     [locale, tool.id],
   );
+  const handleSendToolReview = (prompt) => {
+    onSendMessage?.(prompt);
+    onNavigateHome?.();
+  };
 
   return (
     <ToolPageShell copy={copy} onOpenLegal={onOpenLegal}>
@@ -271,7 +284,13 @@ function ToolDetail({ tool, copy, locale, values, onChange, onOpenLegal }) {
             </p>
           </div>
 
-          <aside className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-elevated)] p-4">
+        </section>
+
+        <section className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
+          <div className="min-w-0">
+            <IndustryToolCalculator tool={tool} values={values} onChange={onChange} onSendMessage={handleSendToolReview} />
+          </div>
+          <aside aria-label="Related tools" className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-elevated)] p-4">
             <div className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--color-text-muted)]">
               {copy.relatedTools}
             </div>
@@ -284,10 +303,6 @@ function ToolDetail({ tool, copy, locale, values, onChange, onOpenLegal }) {
             </div>
           </aside>
         </section>
-
-        <div className="mt-6">
-          <IndustryToolCalculator tool={tool} values={values} onChange={onChange} />
-        </div>
 
         <section className="mt-6 grid gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
           <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-elevated)] p-4">

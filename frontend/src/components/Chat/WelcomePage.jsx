@@ -20,8 +20,8 @@ const copy = {
   },
   zh: {
     eyebrow: 'SAGEMRO 智能服务系统',
-    headline: '激光和成型设备问题，先问AI试试',
-    intro: '切割出了什么问题、折弯哪里不对、焊接报了什么警——描述现场遇到的情况，让SAGEMRO AI 给你分析和建议',
+    headline: '机器的问题，难不倒有心的人',
+    intro: '描述激光切割、折弯、焊接现场，让 SageMRO AI 助你快速拨开故障迷雾，做设备最明智的主人。',
     resourceTitle: '公开工具',
     resources: [
       { icon: Calculator, label: '折弯模拟器', desc: '预览折弯顺序、模具匹配和工艺风险', href: '/tools/bend-simulator' },
