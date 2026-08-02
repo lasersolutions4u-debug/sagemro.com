@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import test from 'node:test';
 
 import {
@@ -9,6 +11,12 @@ import {
   materialDensities,
   shapeProfiles,
 } from '../src/data/industryTools.js';
+
+const root = path.resolve(import.meta.dirname, '../..');
+
+function read(relativePath) {
+  return readFileSync(path.join(root, relativePath), 'utf8');
+}
 
 test('metal weight calculator covers common sheet and structural profiles', () => {
   const profileIds = Object.keys(shapeProfiles);
@@ -73,8 +81,8 @@ test('steel price calculator uses selected material and structural profile weigh
   assert.match(result.rows.find(([label]) => label === 'Estimated material budget')?.[1], /\$/);
 });
 
-test('public tool slugs resolve to SEO-ready tool definitions', () => {
-  assert.equal(industryTools.length, 9);
+test('industry tools register bend simulator as the tenth SEO-ready public tool', () => {
+  assert.equal(industryTools.length, 10);
   assert.equal(getToolBySlug('metal-weight-calculator').id, 'metal-weight');
   assert.equal(getToolBySlug('steel-price-watch').id, 'steel-price');
   assert.equal(getToolBySlug('laser-cutting-cost-calculator').id, 'laser-cost');
@@ -84,7 +92,23 @@ test('public tool slugs resolve to SEO-ready tool definitions', () => {
   assert.equal(getToolBySlug('press-brake-v-die-bend-allowance-helper').id, 'bend-allowance');
   assert.equal(getToolBySlug('laser-cutting-machine-roi-calculator').id, 'equipment-roi');
   assert.equal(getToolBySlug('laser-chiller-dust-collector-sizing-checklist').id, 'auxiliary-sizing');
+  const bendSimulator = getToolBySlug('bend-simulator');
+  assert.equal(bendSimulator.id, 'bend-simulator');
+  assert.match(bendSimulator.label, /Bend Simulator/);
+  assert.match(bendSimulator.seoTitle, /Bend Simulator/);
+  assert.match(bendSimulator.leadAction, /engineer/i);
+  assert.equal(bendSimulator.faqs.length, 2);
   assert.equal(getToolBySlug('missing-tool'), null);
+});
+
+test('industry tools route bend simulator to its dedicated page with localized canonical SEO URLs', () => {
+  const page = read('frontend/src/components/Tools/IndustryToolsPage.jsx');
+
+  assert.match(page, /import \{ BendSimulatorPage \} from '\.\/BendSimulatorPage';/);
+  assert.match(page, /selectedTool\.id === 'bend-simulator'/);
+  assert.match(page, /<BendSimulatorPage/);
+  assert.match(page, /canonicalHost = locale === 'zh-CN' \? 'https:\/\/sagemro\.cn' : 'https:\/\/sagemro\.com'/);
+  assert.match(page, /`\$\{canonicalHost\}\$\{selectedTool \? `\/tools\/\$\{selectedTool\.slug\}` : '\/tools'\}`/);
 });
 
 test('gas consumption calculator estimates assist gas usage and cost', () => {
