@@ -1,6 +1,7 @@
 import { bendSimulatorCatalog } from '../data/bendSimulatorCatalog.js';
 import { calculateBendSimulation } from './bendSimulationEngine.js';
 import { clampTimelineFrame } from './bendSimulationTimeline.js';
+import { ensureBendSegmentIds } from './bendSegmentIdentity.js';
 
 function catalogMaterialId(material) {
   if (typeof material === 'string') return material;
@@ -19,16 +20,16 @@ export function toBendSimulatorEditorInput(value = {}) {
     machine: catalogItemId(value.machine) || 'shop-100',
     upperTool: catalogItemId(value.upperTool) || 'standard-punch',
     lowerTool: catalogItemId(value.lowerTool) || 'v-die-24',
-    segments: (value.segments || []).map((segment, index) => ({ ...segment, order: Number(segment.order) || index + 1 })),
+    segments: ensureBendSegmentIds(value.segments || []).map((segment, index) => ({ ...segment, order: Number(segment.order) || index + 1 })),
   };
 }
 
-export function buildBendSimulatorWorkspaceState({ input, activeFrame = 0, playing = false, viewMode = '2d' }) {
-  const editorInput = toBendSimulatorEditorInput(input);
-  const result = calculateBendSimulation(editorInput);
+export function buildBendSimulatorWorkspaceState({ input, result: suppliedResult, simulationId: suppliedSimulationId, activeFrame = 0, playing = false, viewMode = '2d' }) {
+  const editorInput = suppliedResult ? input : toBendSimulatorEditorInput(input);
+  const result = suppliedResult || calculateBendSimulation(editorInput);
   const normalizedInput = result.input;
   const safeActiveFrame = clampTimelineFrame(activeFrame, result.frames);
-  const simulationId = JSON.stringify(editorInput);
+  const simulationId = suppliedSimulationId || JSON.stringify(editorInput);
 
   return {
     input: editorInput,

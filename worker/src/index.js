@@ -189,6 +189,21 @@ const FUNNEL_PROPERTY_ALLOWLIST = new Set([
   'unit_system',
   'view_mode',
 ]);
+const FUNNEL_ENUM_PROPERTIES = {
+  entry: new Set(['app_loaded', 'main_chat', 'registration', 'login_modal']),
+  market: new Set(['com', 'cn']),
+  locale: new Set(['en', 'zh', 'zh-CN']),
+  user_type: new Set(['guest', 'customer', 'engineer', 'admin']),
+  response_status: new Set(['received', 'failed']),
+  urgency: new Set(['critical', 'urgent', 'normal']),
+  material: new Set(['carbon_steel', 'stainless_steel', 'aluminum', 'brass', 'copper']),
+  unit_system: new Set(['metric', 'imperial']),
+  view_mode: new Set(['2d', '3d']),
+};
+const FUNNEL_BOOLEAN_PROPERTIES = new Set(['authenticated', 'has_images']);
+const FUNNEL_COUNT_PROPERTIES = new Set(['bend_count', 'previous_bend_count']);
+const FUNNEL_IDENTIFIER_PROPERTIES = new Set(['conversation_id', 'tool_id']);
+const FUNNEL_CATEGORY_PROPERTIES = new Set(['device_type', 'service_type']);
 
 const CONTACT_EMAIL_PATTERN = /[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g;
 const CONTACT_PLUS_PHONE_PATTERN = /\+\d[\d\s().-]{6,}\d/g;
@@ -10400,6 +10415,15 @@ const BEND_SIMULATION_MACHINES = new Map([
 const BEND_SIMULATION_UPPER_TOOLS = new Set(['acute-punch', 'standard-punch', 'gooseneck-punch']);
 const BEND_SIMULATION_LOWER_TOOLS = new Set(['v-die-6', 'v-die-8', 'v-die-12', 'v-die-16', 'v-die-24', 'v-die-32', 'v-die-40', 'v-die-48', 'v-die-64']);
 const BEND_SIMULATION_RESULT_STATUSES = new Set(['ready', 'review_required', 'warning']);
+const BEND_SIMULATION_WARNING_CODES = new Set([
+  'short_edge',
+  'tool_mismatch',
+  'upper_tool_mismatch',
+  'machine_overload',
+  'work_length_exceeded',
+  'tight_radius',
+  'review_required',
+]);
 
 function readBoundedBendNumber(value, { min, max }) {
   if (value === undefined || value === null || value === '') return null;
@@ -10410,7 +10434,7 @@ function readBoundedBendNumber(value, { min, max }) {
 function normalizeBendSimulationContext(simulation) {
   if (!simulation || typeof simulation !== 'object' || Array.isArray(simulation)) return null;
 
-  const unitSystem = cleanText(simulation.unit_system || simulation.unitSystem, 20) || 'metric';
+  const unitSystem = cleanText(simulation.unit_system || simulation.unitSystem, 20);
   const material = BEND_SIMULATION_MATERIALS.get(cleanText(simulation.material, 80).toLowerCase());
   const thicknessMm = readBoundedBendNumber(simulation.thickness_mm, { min: 0.1, max: 100 });
   const bendLengthMm = readBoundedBendNumber(
@@ -10429,16 +10453,23 @@ function normalizeBendSimulationContext(simulation) {
     return null;
   }
 
-  const bendAngles = [];
+  const normalizedSegments = [];
+  const segmentOrders = new Set();
   for (const segment of segments) {
     const lengthMm = readBoundedBendNumber(segment?.length_mm, { min: 1, max: 20000 });
     const angleDeg = readBoundedBendNumber(segment?.angle_deg, { min: 0, max: 180 });
     const insideRadiusMm = readBoundedBendNumber(segment?.inside_radius_mm, { min: 0, max: 500 });
-    if (!lengthMm || angleDeg === null || insideRadiusMm === null) return null;
-    bendAngles.push(angleDeg);
+    const order = readBoundedBendNumber(segment?.order, { min: 1, max: segments.length });
+    if (!lengthMm || angleDeg === null || insideRadiusMm === null || !Number.isInteger(order) || segmentOrders.has(order)) return null;
+    segmentOrders.add(order);
+    normalizedSegments.push({ lengthMm, angleDeg, insideRadiusMm, order });
   }
 
   const resultStatus = cleanText(simulation.result_status || simulation.status, 40);
+  const warningCodes = simulation.warning_codes ?? [];
+  if (!BEND_SIMULATION_RESULT_STATUSES.has(resultStatus) || !Array.isArray(warningCodes) || warningCodes.length > 12) return null;
+  const normalizedWarningCodes = warningCodes.map((code) => cleanText(code, 60));
+  if (normalizedWarningCodes.some((code) => !BEND_SIMULATION_WARNING_CODES.has(code))) return null;
   const flatLengthMm = readBoundedBendNumber(simulation.flat_length_mm, { min: 0, max: 100000 });
   const bendAllowanceMm = readBoundedBendNumber(simulation.bend_allowance_mm, { min: 0, max: 10000 });
   const requiredTonnage = readBoundedBendNumber(simulation.required_tonnage, { min: 0, max: 10000 });
@@ -10452,8 +10483,9 @@ function normalizeBendSimulationContext(simulation) {
     machine,
     upperTool,
     lowerTool,
-    bendAngles,
-    resultStatus: BEND_SIMULATION_RESULT_STATUSES.has(resultStatus) ? resultStatus : '',
+    segments: normalizedSegments.sort((left, right) => left.order - right.order),
+    resultStatus,
+    warningCodes: [...new Set(normalizedWarningCodes)],
     flatLengthMm,
     bendAllowanceMm,
     requiredTonnage,
@@ -10465,18 +10497,23 @@ function formatBendSimulationReview(context) {
     context.flatLengthMm !== null ? `flat length ${context.flatLengthMm} mm` : '',
     context.bendAllowanceMm !== null ? `bend allowance ${context.bendAllowanceMm} mm` : '',
     context.requiredTonnage !== null ? `estimated ${context.requiredTonnage} t` : '',
-    context.resultStatus ? `status ${context.resultStatus}` : '',
   ].filter(Boolean).join(', ');
+  const segmentDetails = context.segments.map((segment, index) => (
+    `Bend ${index + 1}: order ${segment.order}, length ${segment.lengthMm} mm, angle ${segment.angleDeg}°, radius ${segment.insideRadiusMm} mm`
+  ));
+  const warningDetails = context.warningCodes.length > 0 ? `warnings ${context.warningCodes.join(', ')}` : 'warnings none';
   const summary = [
-    `Bend simulation review: ${context.unitSystem} ${context.material}; ${context.thicknessMm} mm; ${context.bendLengthMm} mm bend length`,
-    `${context.machineId} (${context.machine.capacityTons} t, ${context.machine.workLengthMm} mm); ${context.bendAngles.length} bends (${context.bendAngles.join('°, ')}°)`,
+    `Bend simulation review: unit ${context.unitSystem}; material ${context.material}; ${context.thicknessMm} mm thickness; ${context.bendLengthMm} mm bend length; status ${context.resultStatus}`,
+    `${context.machineId} (${context.machine.capacityTons} t capacity, ${context.machine.workLengthMm} mm work length); ${context.segments.length} bends`,
+    ...segmentDetails,
     `tooling ${context.upperTool} / ${context.lowerTool}`,
+    warningDetails,
     resultDetails,
   ].filter(Boolean).join('. ');
 
   return {
     message: summary,
-    aiSummary: `Engineer review requested for ${context.material}, ${context.thicknessMm} mm, ${context.bendAngles.length} bends on ${context.machineId}.`,
+    aiSummary: `Engineer review requested: status ${context.resultStatus}; ${context.material}, ${context.thicknessMm} mm, ${context.segments.length} bends on ${context.machineId}; ${warningDetails}.`,
   };
 }
 
@@ -20037,17 +20074,39 @@ function cleanFunnelValue(value, max = 160) {
   return String(value).trim().slice(0, max);
 }
 
+function piiSafeFunnelText(value, max = 120) {
+  if (typeof value !== 'string') return null;
+  const text = cleanFunnelValue(value, max);
+  if (!text || redactPII(text) !== text || /(?:\+?\d[\d\s().-]{6,}\d)/.test(text)) return null;
+  return text;
+}
+
+function sanitizeFunnelProperty(key, value) {
+  const allowedValues = FUNNEL_ENUM_PROPERTIES[key];
+  if (allowedValues) return typeof value === 'string' && allowedValues.has(value) ? value : undefined;
+  if (FUNNEL_BOOLEAN_PROPERTIES.has(key)) return typeof value === 'boolean' ? value : undefined;
+  if (FUNNEL_COUNT_PROPERTIES.has(key)) {
+    return typeof value === 'number' && Number.isInteger(value) && value >= 0 && value <= 12 ? value : undefined;
+  }
+  if (FUNNEL_IDENTIFIER_PROPERTIES.has(key)) {
+    const text = piiSafeFunnelText(value);
+    return text && /^[A-Za-z0-9_-]+$/.test(text) && !/^\d{7,}$/.test(text) ? text : undefined;
+  }
+  if (FUNNEL_CATEGORY_PROPERTIES.has(key)) {
+    const text = piiSafeFunnelText(value);
+    return text && /^[\p{L}\p{N}_ -]+$/u.test(text) ? text : undefined;
+  }
+  return undefined;
+}
+
 function sanitizeFunnelProperties(properties) {
   if (!properties || typeof properties !== 'object' || Array.isArray(properties)) return {};
   const out = {};
   for (const [key, value] of Object.entries(properties)) {
     if (!FUNNEL_PROPERTY_ALLOWLIST.has(key)) continue;
     if (value === undefined || value === null) continue;
-    if (typeof value === 'boolean' || typeof value === 'number') {
-      out[key] = value;
-    } else {
-      out[key] = cleanFunnelValue(value, 120);
-    }
+    const sanitized = sanitizeFunnelProperty(key, value);
+    if (sanitized !== undefined) out[key] = sanitized;
   }
   return out;
 }

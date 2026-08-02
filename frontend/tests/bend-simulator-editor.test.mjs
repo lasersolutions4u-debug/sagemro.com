@@ -7,6 +7,7 @@ import { bendSimulatorCatalog } from '../src/data/bendSimulatorCatalog.js';
 import {
   addBendSegment,
   commitBendProfileDraft,
+  createBendProfileDraft,
   getBendProfileUnitLabel,
   moveBendSegment,
   removeBendSegment,
@@ -35,12 +36,19 @@ const profile = {
 };
 
 test('bend simulator editor adds, removes, reorders, and normalizes segments', () => {
-  const added = addBendSegment(profile);
+  const initial = createBendProfileDraft(profile);
+  const initialIds = initial.segments.map((segment) => segment.id);
+  assert.equal(new Set(initialIds).size, initialIds.length);
+
+  const added = addBendSegment(initial);
   assert.equal(added.segments.length, 3);
   assert.equal(added.segments.at(-1).insideRadiusMm, 3);
+  assert.ok(added.segments.at(-1).id);
+  assert.equal(new Set(added.segments.map((segment) => segment.id)).size, 3);
 
   const moved = moveBendSegment(added, 2, -1);
   assert.equal(moved.segments[1].lengthMm, 100);
+  assert.equal(moved.segments[1].id, added.segments[2].id);
   assert.deepEqual(moved.segments.map((segment) => segment.order), [1, 2, 3]);
 
   const removed = removeBendSegment(moved, 1);
@@ -54,6 +62,7 @@ test('bend simulator editor adds, removes, reorders, and normalizes segments', (
   assert.equal(typeof committed.value.segments[0].lengthMm, 'number');
   assert.equal(typeof committed.value.thicknessMm, 'number');
   assert.equal(committed.value.machine.id, 'shop-100');
+  assert.deepEqual(committed.value.segments.map((segment) => segment.id), updated.segments.map((segment) => segment.id));
 });
 
 test('bend simulator editor retains invalid drafts and only emits valid numeric input', () => {
@@ -86,6 +95,7 @@ test('bend simulation timeline clamps, steps, and pauses on a changed simulation
   assert.equal(stepTimelineFrame(1, -1, frames), 0);
   assert.equal(stepTimelineFrame(2, 1, frames), 2);
   assert.equal(shouldPauseTimeline({ previousFrames: frames, frames, previousSimulationId: 'a', simulationId: 'a', playing: true }), false);
+  assert.equal(shouldPauseTimeline({ previousFrames: frames, frames: [...frames], previousSimulationId: 'a', simulationId: 'a', playing: true }), false);
   assert.equal(shouldPauseTimeline({ previousFrames: frames, frames: [...frames], previousSimulationId: 'a', simulationId: 'b', playing: true }), true);
   assert.equal(shouldPauseTimeline({ previousFrames: frames, frames: [...frames], previousSimulationId: 'a', simulationId: 'b', playing: false }), false);
 });
@@ -94,10 +104,30 @@ test('bend simulation timeline effect wiring keeps playback until frames or iden
   const frames = [{ step: 0 }, { step: 1 }];
   const previous = { previousFrames: frames, previousSimulationId: 'first' };
   assert.equal(shouldPauseTimeline({ ...previous, frames, simulationId: 'first', playing: true }), false);
-  assert.equal(shouldPauseTimeline({ ...previous, frames: [...frames], simulationId: 'first', playing: true }), true);
+  assert.equal(shouldPauseTimeline({ ...previous, frames: [...frames], simulationId: 'first', playing: true }), false);
   assert.equal(shouldPauseTimeline({ ...previous, frames, simulationId: 'second', playing: true }), true);
 
   const timeline = readFileSync(path.join(root, 'src/components/Tools/BendSimulationTimeline.jsx'), 'utf8');
   assert.match(timeline, /previousFrames: previousSimulation\.current\.frames/);
   assert.match(timeline, /previousSimulationId: previousSimulation\.current\.simulationId/);
+});
+
+test('bend playback advances across multiple frames before stopping at the end', async () => {
+  const { advanceBendPlayback } = await import('../src/utils/bendSimulationTimeline.js');
+  assert.equal(typeof advanceBendPlayback, 'function');
+  const first = advanceBendPlayback({ activeFrame: 0, frameCount: 4, playing: true });
+  const second = advanceBendPlayback({ ...first, frameCount: 4 });
+  const third = advanceBendPlayback({ ...second, frameCount: 4 });
+
+  assert.deepEqual(first, { activeFrame: 1, playing: true });
+  assert.deepEqual(second, { activeFrame: 2, playing: true });
+  assert.deepEqual(third, { activeFrame: 3, playing: false });
+});
+
+test('editor uses stable segment IDs for list identity and receives result warnings', () => {
+  const editor = readFileSync(path.join(root, 'src/components/Tools/BendProfileEditor.jsx'), 'utf8');
+
+  assert.match(editor, /key=\{segment\.id\}/);
+  assert.match(editor, /warnings\s*=\s*\[\]/);
+  assert.doesNotMatch(editor, /key=\{`\$\{segment\.order\}-\$\{index\}`\}/);
 });

@@ -1,4 +1,5 @@
 import { AlertTriangle, CheckCircle2, CircleX, Send } from 'lucide-react';
+import { getBendCatalogLabel, localizeBendWarnings } from '../../utils/bendSimulationPresentation';
 
 const COPY = {
   en: {
@@ -37,21 +38,22 @@ export function BendResultPanel({ result, locale = 'en', onRequestReview }) {
   const status = marginStatus(result);
   const StatusIcon = status.Icon;
   const isToolMatch = result.tooling.isVMatch;
+  const warnings = localizeBendWarnings(result.warnings, locale);
 
   return (
     <section className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-elevated)] p-4 sm:p-5" aria-label={copy.title}>
       <div className="flex items-start justify-between gap-3">
-        <div><h2 className="text-lg font-semibold text-[var(--color-text-primary)]">{copy.title}</h2><p className="mt-1 text-sm text-[var(--color-text-secondary)]">{result.input.material.label} · {result.segments.length} {isChinese(locale) ? '道折弯' : result.segments.length === 1 ? 'bend' : 'bends'}</p></div>
+        <div><h2 className="text-lg font-semibold text-[var(--color-text-primary)]">{copy.title}</h2><p className="mt-1 text-sm text-[var(--color-text-secondary)]">{getBendCatalogLabel(result.input.material, locale)} · {result.segments.length} {isChinese(locale) ? '道折弯' : result.segments.length === 1 ? 'bend' : 'bends'}</p></div>
         <StatusIcon size={20} className={status.className.split(' ').at(-1)} aria-hidden="true" />
       </div>
 
       <div className="mt-4 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
         <h3 className="text-sm font-semibold text-[var(--color-text-primary)]">{copy.recommendation}</h3>
         <dl className="mt-3 grid gap-3 text-sm">
-          <div><dt className="text-[var(--color-text-muted)]">{copy.recommendedUpper}</dt><dd className="font-medium text-[var(--color-text-primary)]">{result.tooling.recommendedUpperTool.label}</dd></div>
-          <div><dt className="text-[var(--color-text-muted)]">{copy.selectedUpper}</dt><dd className="font-medium text-[var(--color-text-primary)]">{result.tooling.selectedUpperTool.label}</dd></div>
-          <div><dt className="text-[var(--color-text-muted)]">{copy.recommendedV}</dt><dd className="font-medium text-[var(--color-text-primary)]">{result.tooling.recommendedLowerTool.label}</dd></div>
-          <div className={isToolMatch ? 'text-[var(--color-success)]' : 'text-[var(--color-warning)]'}><dt>{copy.selectedV}</dt><dd className="font-medium">{result.tooling.selectedLowerTool.label}</dd></div>
+          <div><dt className="text-[var(--color-text-muted)]">{copy.recommendedUpper}</dt><dd className="font-medium text-[var(--color-text-primary)]">{getBendCatalogLabel(result.tooling.recommendedUpperTool, locale)}</dd></div>
+          <div><dt className="text-[var(--color-text-muted)]">{copy.selectedUpper}</dt><dd className="font-medium text-[var(--color-text-primary)]">{getBendCatalogLabel(result.tooling.selectedUpperTool, locale)}</dd></div>
+          <div><dt className="text-[var(--color-text-muted)]">{copy.recommendedV}</dt><dd className="font-medium text-[var(--color-text-primary)]">{getBendCatalogLabel(result.tooling.recommendedLowerTool, locale)}</dd></div>
+          <div className={isToolMatch ? 'text-[var(--color-success)]' : 'text-[var(--color-warning)]'}><dt>{copy.selectedV}</dt><dd className="font-medium">{getBendCatalogLabel(result.tooling.selectedLowerTool, locale)}</dd></div>
         </dl>
       </div>
 
@@ -64,7 +66,7 @@ export function BendResultPanel({ result, locale = 'en', onRequestReview }) {
 
       <div className="mt-4 rounded-lg border border-[var(--color-warning)] bg-[var(--color-warning)]/10 p-3 text-sm text-[var(--color-text-primary)]">
         <h3 className="font-semibold">{copy.warnings}</h3>
-        {result.warnings.length > 0 ? <ul className="mt-2 space-y-1 text-[var(--color-text-secondary)]">{result.warnings.map((warning) => <li key={warning.code}>{warning.message}</li>)}</ul> : <p className="mt-2 text-[var(--color-text-secondary)]">{copy.clear}</p>}
+        {warnings.length > 0 ? <ul className="mt-2 space-y-1 text-[var(--color-text-secondary)]">{warnings.map((warning) => <li key={warning.code}>{warning.message}</li>)}</ul> : <p className="mt-2 text-[var(--color-text-secondary)]">{copy.clear}</p>}
       </div>
 
       <p className="mt-4 text-xs leading-5 text-[var(--color-text-secondary)]">{copy.disclaimer}</p>

@@ -66,6 +66,8 @@ function validRequest(overrides = {}) {
       flat_length_mm: 190.2,
       bend_allowance_mm: 10.2,
       required_tonnage: 8.4,
+      result_status: 'review_required',
+      warning_codes: ['tool_mismatch', 'review_required'],
       customer_email: 'do-not-store@example.com',
       notes: 'do not keep this free text',
     },
@@ -94,7 +96,14 @@ test('public bend simulation review accepts a valid contact and inserts a saniti
   assert.equal(env.__leads[0].email, 'ada@example.com');
   assert.match(env.__leads[0].message, /carbon_steel/);
   assert.match(env.__leads[0].message, /2 bends/);
+  assert.match(env.__leads[0].message, /unit metric/i);
+  assert.match(env.__leads[0].message, /status review_required/i);
+  assert.match(env.__leads[0].message, /bend 1: order 1, length 100 mm, angle 90°, radius 3 mm/i);
+  assert.match(env.__leads[0].message, /bend 2: order 2, length 80 mm, angle 120°, radius 3 mm/i);
+  assert.match(env.__leads[0].message, /warnings tool_mismatch, review_required/i);
   assert.match(env.__leads[0].ai_summary, /Engineer review requested/);
+  assert.match(env.__leads[0].ai_summary, /review_required/);
+  assert.match(env.__leads[0].ai_summary, /tool_mismatch/);
   assert.match(env.__leads[0].recommended_next_step, /engineer/i);
   assert.doesNotMatch(env.__leads[0].message, /do-not-store|customer_email|ada@example.com/i);
   assert.doesNotMatch(env.__leads[0].ai_summary, /do-not-store|customer_email|ada@example.com/i);
@@ -147,4 +156,35 @@ test('public bend simulation review rejects oversized or invalid segment context
 
   assert.equal(invalidResponse.status, 400);
   assert.equal(invalidEnv.__leads.length, 0);
+});
+
+test('public bend simulation review rejects invalid segment order and warning codes', async () => {
+  const source = JSON.parse(await validRequest().text()).simulation;
+  const invalidOrderEnv = createEnv();
+  const invalidOrder = await worker.fetch(validRequest({
+    simulation: { ...source, segments: [{ ...source.segments[0], order: 2 }, { ...source.segments[1], order: 2 }] },
+  }), invalidOrderEnv, { waitUntil() {} });
+  const invalidWarningEnv = createEnv();
+  const invalidWarning = await worker.fetch(validRequest({
+    simulation: { ...source, warning_codes: ['review_required', 'buyer@example.com'] },
+  }), invalidWarningEnv, { waitUntil() {} });
+
+  assert.equal(invalidOrder.status, 400);
+  assert.equal(invalidWarning.status, 400);
+  assert.equal(invalidOrderEnv.__leads.length, 0);
+  assert.equal(invalidWarningEnv.__leads.length, 0);
+});
+
+test('public bend simulation review rejects PII hidden in typed structured values', async () => {
+  const source = JSON.parse(await validRequest().text()).simulation;
+  for (const simulation of [
+    { ...source, unit_system: 'metric buyer@example.com' },
+    { ...source, material: '13800138000' },
+    { ...source, result_status: '+1 555 123 4567' },
+  ]) {
+    const env = createEnv();
+    const response = await worker.fetch(validRequest({ simulation }), env, { waitUntil() {} });
+    assert.equal(response.status, 400);
+    assert.equal(env.__leads.length, 0);
+  }
 });
