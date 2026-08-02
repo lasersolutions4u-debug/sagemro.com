@@ -1,0 +1,132 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+
+import {
+  calculateBendSimulation,
+  estimateAirBendTonnage,
+  normalizeBendSimulationInput,
+} from '../src/utils/bendSimulationEngine.js';
+
+const metricInput = {
+  unitSystem: 'metric',
+  material: 'carbon_steel',
+  thicknessMm: 3,
+  sheetWidthMm: 1000,
+  machine: { id: 'shop-100', capacityTons: 100, bedLengthMm: 3000 },
+  segments: [
+    { lengthMm: 100, angleDeg: 90, insideRadiusMm: 3, order: 2 },
+    { lengthMm: 80, angleDeg: 90, insideRadiusMm: 3, order: 1 },
+  ],
+  upperTool: 'standard-punch',
+  lowerTool: 'v-die-24',
+};
+
+test('normalizes imperial dimensions, clamps angles, and orders segments', () => {
+  const normalized = normalizeBendSimulationInput({
+    ...metricInput,
+    unitSystem: 'imperial',
+    thicknessMm: 0.125,
+    sheetWidthMm: 40,
+    segments: [
+      { lengthMm: 4, angleDeg: 200, insideRadiusMm: 0.125, order: 2 },
+      { lengthMm: 3, angleDeg: -20, insideRadiusMm: 0.125, order: 1 },
+    ],
+  });
+
+  assert.deepEqual(Object.keys(normalized), [
+    'unitSystem', 'material', 'thicknessMm', 'sheetWidthMm', 'machine', 'segments', 'upperTool', 'lowerTool',
+  ]);
+  assert.equal(normalized.thicknessMm, 3.175);
+  assert.equal(normalized.sheetWidthMm, 1016);
+  assert.deepEqual(normalized.segments.map(({ order, angleDeg }) => ({ order, angleDeg })), [
+    { order: 1, angleDeg: 0 },
+    { order: 2, angleDeg: 180 },
+  ]);
+  assert.ok(Math.abs(normalized.segments[0].lengthMm - 76.2) < 0.0001);
+  assert.ok(Math.abs(normalized.segments[1].insideRadiusMm - 3.175) < 0.0001);
+});
+
+test('rejects non-positive sheet dimensions and segment lengths', () => {
+  assert.throws(() => normalizeBendSimulationInput({ ...metricInput, thicknessMm: 0 }), /thickness/i);
+  assert.throws(() => normalizeBendSimulationInput({ ...metricInput, sheetWidthMm: -1 }), /sheet width/i);
+  assert.throws(() => normalizeBendSimulationInput({ ...metricInput, segments: [{ ...metricInput.segments[0], lengthMm: 0 }] }), /segment length/i);
+});
+
+test('uses the converted thickness as the default imperial inside radius', () => {
+  const normalized = normalizeBendSimulationInput({
+    ...metricInput,
+    unitSystem: 'imperial',
+    thicknessMm: 0.125,
+    sheetWidthMm: 40,
+    segments: [{ lengthMm: 4, angleDeg: 90, order: 1 }],
+  });
+
+  assert.ok(Math.abs(normalized.segments[0].insideRadiusMm - normalized.thicknessMm) < 0.0001);
+});
+
+test('calculates a one-segment bend plan with flat and formed points', () => {
+  const result = calculateBendSimulation({ ...metricInput, segments: [metricInput.segments[0]] });
+
+  assert.deepEqual(Object.keys(result), [
+    'input', 'segments', 'totalBendAllowanceMm', 'flatLengthMm', 'flatPoints', 'formedPoints', 'tooling', 'tonnage', 'machine', 'warnings', 'frames',
+  ]);
+  assert.equal(result.segments.length, 1);
+  assert.ok(result.totalBendAllowanceMm > 6 && result.totalBendAllowanceMm < 7);
+  assert.equal(result.flatPoints.length, 2);
+  assert.equal(result.formedPoints.length, 2);
+  assert.ok(Math.abs(result.flatPoints.at(-1).xMm - result.flatLengthMm) < 0.0001);
+  assert.equal(result.tooling.recommendedLowerTool.id, 'v-die-24');
+});
+
+test('calculates multi-segment allowance in bend order and flags planning risks', () => {
+  const result = calculateBendSimulation({
+    ...metricInput,
+    machine: { capacityTons: 1, bedLengthMm: 3000 },
+    lowerTool: 'v-die-6',
+    segments: [
+      { lengthMm: 8, angleDeg: 90, insideRadiusMm: 0.5, order: 2 },
+      { lengthMm: 80, angleDeg: 90, insideRadiusMm: 3, order: 1 },
+    ],
+  });
+
+  assert.deepEqual(result.segments.map((segment) => segment.order), [1, 2]);
+  assert.ok(result.flatLengthMm > 95 && result.flatLengthMm < 100);
+  assert.deepEqual(
+    result.warnings.map((warning) => warning.code).sort(),
+    ['machine_overload', 'review_required', 'short_edge', 'tight_radius', 'tool_mismatch'],
+  );
+  assert.ok(result.machine.marginTons < 0);
+});
+
+test('estimates air-bend tonnage with material and safety factors', () => {
+  const mildSteel = estimateAirBendTonnage({
+    thicknessMm: 6,
+    bendLengthMm: 3000,
+    vDieMm: 48,
+    materialFactor: 1,
+    safetyFactor: 1.2,
+  });
+  const stainless = estimateAirBendTonnage({
+    thicknessMm: 6,
+    bendLengthMm: 3000,
+    vDieMm: 48,
+    materialFactor: 1.5,
+    safetyFactor: 1.2,
+  });
+
+  assert.deepEqual(Object.keys(mildSteel), ['requiredTons', 'withSafetyTons']);
+  assert.ok(Math.abs(mildSteel.requiredTons - 167.2) < 0.2);
+  assert.ok(Math.abs(mildSteel.withSafetyTons - 200.6) < 0.2);
+  assert.ok(stainless.requiredTons > mildSteel.requiredTons);
+});
+
+test('creates monotonic animation frames with start, one frame per bend, and end', () => {
+  const result = calculateBendSimulation(metricInput);
+  const progress = result.frames.map((frame) => frame.progress);
+
+  assert.equal(result.frames.length, metricInput.segments.length + 2);
+  assert.equal(progress[0], 0);
+  assert.equal(progress.at(-1), 1);
+  assert.ok(progress.every((value, index) => index === 0 || value >= progress[index - 1]));
+  assert.deepEqual(result.frames.map((frame) => frame.activeBendOrder), [null, 1, 2, null]);
+});

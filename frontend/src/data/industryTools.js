@@ -1,3 +1,5 @@
+import { estimateAirBendTonnage } from '../utils/bendSimulationEngine.js';
+
 export const materialDensities = {
   carbon_steel: { label: 'Carbon steel', densityKgM3: 7850, priceUsdPerTon: 760 },
   stainless_steel: { label: 'Stainless steel 304', densityKgM3: 7930, priceUsdPerTon: 2850 },
@@ -731,11 +733,13 @@ function calculatePressBrakeTonnage(values) {
   const vDieMm = parsePositiveNumber(values.vDieMm, thicknessMm * 8);
   const materialFactor = parsePositiveNumber(values.materialFactor, 1);
   const safetyFactor = parsePositiveNumber(values.safetyFactor, 1.2);
-  const thicknessIn = thicknessMm / 25.4;
-  const lengthFt = bendLengthMm / 304.8;
-  const vDieIn = vDieMm / 25.4;
-  const requiredTons = ((575 * thicknessIn * thicknessIn * lengthFt) / vDieIn) * materialFactor;
-  const withSafety = requiredTons * safetyFactor;
+  const { requiredTons, withSafetyTons: withSafety } = estimateAirBendTonnage({
+    thicknessMm,
+    bendLengthMm,
+    vDieMm,
+    materialFactor,
+    safetyFactor,
+  });
 
   return {
     title: 'Estimated press brake tonnage',

@@ -153,6 +153,26 @@ test('bend allowance helper calculates bend allowance and flat length reference'
   assert.match(result.rows.find(([label]) => label === 'Flat length reference')?.[1], /mm/);
 });
 
+test('press brake tonnage calculator retains its planning result format', () => {
+  const result = calculateIndustryToolResult('press-brake-tonnage', {
+    ...defaultIndustryToolForms['press-brake-tonnage'],
+    thicknessMm: '6',
+    bendLengthMm: '3000',
+    vDieMm: '48',
+    materialFactor: '1',
+    safetyFactor: '1.2',
+  });
+
+  assert.equal(result.title, 'Estimated press brake tonnage');
+  assert.deepEqual(result.rows, [
+    ['Required tonnage', '167.1 tons'],
+    ['With safety margin', '200.5 tons'],
+    ['Suggested V opening', '48 mm'],
+    ['Formula basis', 'Air bending estimate for mild steel adjusted by material factor'],
+  ]);
+  assert.match(result.note, /Confirm tooling/);
+});
+
 test('equipment ROI calculator compares outsource spend and new machine cost', () => {
   const result = calculateIndustryToolResult('equipment-roi', {
     ...defaultIndustryToolForms['equipment-roi'],
