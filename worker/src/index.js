@@ -10076,24 +10076,36 @@ function normalizeBendSimulationContext(simulation) {
   const upperTool = cleanText(simulation.upper_tool || simulation.upper_tool_id, 80);
   const lowerTool = cleanText(simulation.lower_tool || simulation.lower_tool_id, 80);
   const segments = simulation.segments;
+  const flangeLengths = simulation.flange_lengths_mm;
 
   if (!['metric', 'imperial'].includes(unitSystem) || !material || !thicknessMm || !bendLengthMm ||
     !machine || !BEND_SIMULATION_UPPER_TOOLS.has(upperTool) || !BEND_SIMULATION_LOWER_TOOLS.has(lowerTool) ||
-    !Array.isArray(segments) || segments.length < 1 || segments.length > 12) {
+    !Array.isArray(segments) || segments.length < 1 || segments.length > 12 ||
+    !Array.isArray(flangeLengths) || flangeLengths.length !== segments.length + 1) {
     return null;
   }
 
   const normalizedSegments = [];
   const segmentOrders = new Set();
   for (const segment of segments) {
-    const lengthMm = readBoundedBendNumber(segment?.length_mm, { min: 1, max: 20000 });
+    const spanLengthMm = readBoundedBendNumber(segment?.span_length_mm ?? segment?.length_mm, { min: 1, max: 20000 });
     const angleDeg = readBoundedBendNumber(segment?.angle_deg, { min: 0, max: 180 });
     const insideRadiusMm = readBoundedBendNumber(segment?.inside_radius_mm, { min: 0, max: 500 });
     const order = readBoundedBendNumber(segment?.order, { min: 1, max: segments.length });
-    if (!lengthMm || angleDeg === null || insideRadiusMm === null || !Number.isInteger(order) || segmentOrders.has(order)) return null;
+    if (!spanLengthMm || angleDeg === null || insideRadiusMm === null || !Number.isInteger(order) || segmentOrders.has(order)) return null;
     segmentOrders.add(order);
-    normalizedSegments.push({ lengthMm, angleDeg, insideRadiusMm, order });
+    normalizedSegments.push({ spanLengthMm, angleDeg, insideRadiusMm, order });
   }
+  const normalizedFlangeLengths = flangeLengths.map((lengthMm) => readBoundedBendNumber(lengthMm, { min: 1, max: 20000 }));
+  if (normalizedFlangeLengths.some((lengthMm) => lengthMm === null)) return null;
+  normalizedSegments.sort((left, right) => left.order - right.order);
+  const halfSpans = normalizedSegments.map((segment) => segment.spanLengthMm / 2);
+  const expectedFlangeLengths = [
+    halfSpans[0],
+    ...halfSpans.slice(1).map((halfSpan, index) => halfSpans[index] + halfSpan),
+    halfSpans.at(-1),
+  ];
+  if (normalizedFlangeLengths.some((lengthMm, index) => Math.abs(lengthMm - expectedFlangeLengths[index]) > 0.01)) return null;
 
   const resultStatus = cleanText(simulation.result_status || simulation.status, 40);
   const warningCodes = simulation.warning_codes ?? [];
@@ -10113,7 +10125,8 @@ function normalizeBendSimulationContext(simulation) {
     machine,
     upperTool,
     lowerTool,
-    segments: normalizedSegments.sort((left, right) => left.order - right.order),
+    segments: normalizedSegments,
+    flangeLengthsMm: normalizedFlangeLengths,
     resultStatus,
     warningCodes: [...new Set(normalizedWarningCodes)],
     flatLengthMm,
@@ -10129,13 +10142,14 @@ function formatBendSimulationReview(context) {
     context.requiredTonnage !== null ? `estimated ${context.requiredTonnage} t` : '',
   ].filter(Boolean).join(', ');
   const segmentDetails = context.segments.map((segment, index) => (
-    `Bend ${index + 1}: order ${segment.order}, length ${segment.lengthMm} mm, angle ${segment.angleDeg}°, radius ${segment.insideRadiusMm} mm`
+    `Bend ${index + 1}: order ${segment.order}, span ${segment.spanLengthMm} mm, angle ${segment.angleDeg}°, radius ${segment.insideRadiusMm} mm`
   ));
   const warningDetails = context.warningCodes.length > 0 ? `warnings ${context.warningCodes.join(', ')}` : 'warnings none';
   const summary = [
     `Bend simulation review: unit ${context.unitSystem}; material ${context.material}; ${context.thicknessMm} mm thickness; ${context.bendLengthMm} mm bend length; status ${context.resultStatus}`,
     `${context.machineId} (${context.machine.capacityTons} t capacity, ${context.machine.workLengthMm} mm work length); ${context.segments.length} bends`,
     ...segmentDetails,
+    `derived flanges ${context.flangeLengthsMm.join(' mm, ')} mm`,
     `tooling ${context.upperTool} / ${context.lowerTool}`,
     warningDetails,
     resultDetails,

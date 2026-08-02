@@ -4,12 +4,12 @@ import { getBendCatalogLabel, localizeBendWarnings } from '../../utils/bendSimul
 const COPY = {
   en: {
     title: 'Bend plan result', recommendation: 'Recommendation', recommendedUpper: 'Recommended upper tool', selectedUpper: 'Selected upper tool', recommendedV: 'Recommended V die', selectedV: 'Selected V die',
-    tonnage: 'Tonnage', required: 'Required (with safety factor)', margin: 'Machine margin', bendAllowance: 'Bend allowance', flatLength: 'Flat length',
+    tonnage: 'Tonnage', required: 'Required (with safety factor)', margin: 'Machine margin', bendAllowance: 'Bend allowance', flatLength: 'Flat length', derivedFlanges: 'Derived flange lengths',
     warnings: 'Planning warnings', clear: 'No planning warnings detected.', noCompatibleTool: 'No compatible tooling in catalog', disclaimer: 'Planning estimate — engineer review required before production.', review: 'Request engineer review',
   },
   zh: {
     title: '折弯方案结果', recommendation: '推荐方案', recommendedUpper: '推荐上模', selectedUpper: '已选上模', recommendedV: '推荐 V 槽', selectedV: '已选 V 槽',
-    tonnage: '吨位', required: '需求吨位（含安全系数）', margin: '设备余量', bendAllowance: '折弯补偿量', flatLength: '展开长度',
+    tonnage: '吨位', required: '需求吨位（含安全系数）', margin: '设备余量', bendAllowance: '折弯补偿量', flatLength: '展开长度', derivedFlanges: '派生法兰长度',
     warnings: '规划提示', clear: '未发现规划预警。', noCompatibleTool: '模具库中无兼容模具', disclaimer: '规划估算，生产前需工程复核。', review: '申请工程师复核',
   },
 };
@@ -67,6 +67,7 @@ export function BendResultPanel({ result, locale = 'en', onRequestReview }) {
         <Metric label={copy.margin} value={`${result.machine.marginTons.toFixed(2)} t`} detail={`${result.machine.marginPercent.toFixed(1)}% · ${getBendCatalogLabel(result.machine, locale)}`} className={status.className} />
         <Metric label={copy.bendAllowance} value={formatMillimeters(result.totalBendAllowanceMm)} />
         <Metric label={copy.flatLength} value={formatMillimeters(result.flatLengthMm)} />
+        <Metric label={copy.derivedFlanges} value={`${result.flangeLengthsMm.map((lengthMm) => Number(lengthMm).toFixed(2)).join(' / ')} mm`} />
       </div>
 
       <div className="mt-4 rounded-lg border border-[var(--color-warning)] bg-[var(--color-warning)]/10 p-3 text-sm text-[var(--color-text-primary)]">

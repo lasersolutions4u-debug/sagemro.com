@@ -34,14 +34,6 @@ function toolCompatibility({ tool, machine, thicknessMm, segments, includeRadius
   return { compatible: reasons.length === 0, reasons };
 }
 
-function selectedToolCompatibility(options, recommendedTool) {
-  const compatibility = toolCompatibility(options);
-  const reasons = recommendedTool && options.tool.id !== recommendedTool.id
-    ? ['recommendation', ...compatibility.reasons]
-    : compatibility.reasons;
-  return { compatible: reasons.length === 0, reasons };
-}
-
 function recommendedLowerTool({ vOpeningMm, machine, thicknessMm, segments }) {
   const compatible = bendSimulatorCatalog.lowerTools.filter((tool) => (
     toolCompatibility({ tool, machine, thicknessMm, segments }).compatible
@@ -142,23 +134,23 @@ export function calculateBendSimulation(input) {
     bendAllowanceMm: (Math.PI / 180) * (180 - segment.angleDeg) * (segment.insideRadiusMm + material.kFactor * thicknessMm),
   }));
   const totalBendAllowanceMm = calculatedSegments.reduce((total, segment) => total + segment.bendAllowanceMm, 0);
-  const flatLengthMm = calculatedSegments.reduce((total, segment) => total + segment.lengthMm, 0) + totalBendAllowanceMm;
   const flangeLengths = makeFlangeLengths(calculatedSegments);
+  const flatLengthMm = flangeLengths.reduce((total, lengthMm) => total + lengthMm, 0) + totalBendAllowanceMm;
   const flatPoints = makeFlatPoints(calculatedSegments, flangeLengths);
   const formedPoints = makeFormedPoints(calculatedSegments, flangeLengths);
-  const upperCompatibility = selectedToolCompatibility({
+  const upperCompatibility = toolCompatibility({
     tool: upperTool,
     machine,
     thicknessMm,
     segments: calculatedSegments,
     includeRadius: true,
-  }, recommendedUpper);
-  const lowerCompatibility = selectedToolCompatibility({
+  });
+  const lowerCompatibility = toolCompatibility({
     tool: lowerTool,
     machine,
     thicknessMm,
     segments: calculatedSegments,
-  }, recommendedLower);
+  });
   const tonnage = estimateAirBendTonnage({
     thicknessMm,
     bendLengthMm: sheetWidthMm,
@@ -200,6 +192,7 @@ export function calculateBendSimulation(input) {
   return {
     input: normalized,
     segments: calculatedSegments,
+    flangeLengthsMm: flangeLengths,
     totalBendAllowanceMm,
     flatLengthMm,
     flatPoints,
@@ -211,6 +204,8 @@ export function calculateBendSimulation(input) {
       selectedLowerTool: lowerTool,
       targetVOpeningMm,
       isVMatch: Boolean(recommendedLower) && lowerTool.id === recommendedLower.id,
+      isUpperRecommended: Boolean(recommendedUpper) && upperTool.id === recommendedUpper.id,
+      isLowerRecommended: Boolean(recommendedLower) && lowerTool.id === recommendedLower.id,
       isUpperMatch: upperCompatibility.compatible,
       isLowerMatch: lowerCompatibility.compatible,
       hasCompatibleUpperTool,

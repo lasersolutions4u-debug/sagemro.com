@@ -48,12 +48,12 @@ export function BendProfileEditor({ value, warnings = [], catalog = bendSimulato
   const isCn = locale === 'zh-CN' || locale === 'zh';
   const copy = isCn ? {
     title: '折弯工件设置', material: '材料', thickness: '板厚', width: '折弯长度', machine: '折弯机', upperTool: '上模', lowerTool: '下模',
-    metric: '公制', imperial: '英制', segment: '折弯', length: '边长', angle: '成型角度', radius: '内 R',
+    metric: '公制', imperial: '英制', segment: '折弯', length: '折弯跨距', angle: '成型角度', radius: '内 R',
     add: '添加折弯', remove: '删除折弯', moveUp: '上移', moveDown: '下移', review: '请 SAGEMRO 工程师复核',
     invalid: '请输入大于 0 的数值。', invalidAngle: '请输入 0 到 180 之间的角度。', warning: '规划提示',
   } : {
     title: 'Bend profile', material: 'Material', thickness: 'Thickness', width: 'Bend length', machine: 'Machine', upperTool: 'Upper tool', lowerTool: 'Lower tool',
-    metric: 'Metric', imperial: 'Imperial', segment: 'Bend', length: 'Flange length', angle: 'Included angle', radius: 'Inside radius',
+    metric: 'Metric', imperial: 'Imperial', segment: 'Bend', length: 'Bend span', angle: 'Included angle', radius: 'Inside radius',
     add: 'Add bend', remove: 'Remove bend', moveUp: 'Move bend up', moveDown: 'Move bend down', review: 'Ask a SAGEMRO engineer to review',
     invalid: 'Enter a value greater than 0.', invalidAngle: 'Enter an angle from 0 to 180.', warning: 'Planning notes',
   };

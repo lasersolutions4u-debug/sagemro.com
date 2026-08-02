@@ -129,5 +129,8 @@ test('editor uses stable segment IDs for list identity and receives result warni
 
   assert.match(editor, /key=\{segment\.id\}/);
   assert.match(editor, /warnings\s*=\s*\[\]/);
+  assert.match(editor, /length: 'Bend span'/);
+  assert.match(editor, /length: '折弯跨距'/);
+  assert.doesNotMatch(editor, /Flange length/);
   assert.doesNotMatch(editor, /key=\{`\$\{segment\.order\}-\$\{index\}`\}/);
 });

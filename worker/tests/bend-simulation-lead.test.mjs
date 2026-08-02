@@ -60,9 +60,10 @@ function validRequest(overrides = {}) {
       upper_tool: 'standard-punch',
       lower_tool: 'v-die-24',
       segments: [
-        { length_mm: 100, angle_deg: 90, inside_radius_mm: 3, order: 1 },
-        { length_mm: 80, angle_deg: 120, inside_radius_mm: 3, order: 2 },
+        { span_length_mm: 100, angle_deg: 90, inside_radius_mm: 3, order: 1 },
+        { span_length_mm: 80, angle_deg: 120, inside_radius_mm: 3, order: 2 },
       ],
+      flange_lengths_mm: [50, 90, 40],
       flat_length_mm: 190.2,
       bend_allowance_mm: 10.2,
       required_tonnage: 8.4,
@@ -98,8 +99,9 @@ test('public bend simulation review accepts a valid contact and inserts a saniti
   assert.match(env.__leads[0].message, /2 bends/);
   assert.match(env.__leads[0].message, /unit metric/i);
   assert.match(env.__leads[0].message, /status review_required/i);
-  assert.match(env.__leads[0].message, /bend 1: order 1, length 100 mm, angle 90°, radius 3 mm/i);
-  assert.match(env.__leads[0].message, /bend 2: order 2, length 80 mm, angle 120°, radius 3 mm/i);
+  assert.match(env.__leads[0].message, /bend 1: order 1, span 100 mm, angle 90°, radius 3 mm/i);
+  assert.match(env.__leads[0].message, /bend 2: order 2, span 80 mm, angle 120°, radius 3 mm/i);
+  assert.match(env.__leads[0].message, /derived flanges 50 mm, 90 mm, 40 mm/i);
   assert.match(env.__leads[0].message, /warnings tool_mismatch, machine_thickness_out_of_range, no_compatible_tool, review_required/i);
   assert.match(env.__leads[0].ai_summary, /Engineer review requested/);
   assert.match(env.__leads[0].ai_summary, /review_required/);
@@ -156,6 +158,25 @@ test('public bend simulation review rejects oversized or invalid segment context
 
   assert.equal(invalidResponse.status, 400);
   assert.equal(invalidEnv.__leads.length, 0);
+});
+
+test('public bend simulation review requires a consistent derived flange mapping', async () => {
+  const source = JSON.parse(await validRequest().text()).simulation;
+  const legacySegments = source.segments.map(({ span_length_mm: length_mm, ...segment }) => ({ ...segment, length_mm }));
+  const missingFlangesEnv = createEnv();
+  const missingFlanges = { ...source, segments: legacySegments };
+  delete missingFlanges.flange_lengths_mm;
+  const missingFlangesResponse = await worker.fetch(validRequest({ simulation: missingFlanges }), missingFlangesEnv, { waitUntil() {} });
+
+  const inconsistentEnv = createEnv();
+  const inconsistentResponse = await worker.fetch(validRequest({
+    simulation: { ...source, segments: legacySegments, flange_lengths_mm: [40, 90, 50] },
+  }), inconsistentEnv, { waitUntil() {} });
+
+  assert.equal(missingFlangesResponse.status, 400);
+  assert.equal(inconsistentResponse.status, 400);
+  assert.equal(missingFlangesEnv.__leads.length, 0);
+  assert.equal(inconsistentEnv.__leads.length, 0);
 });
 
 test('public bend simulation review rejects invalid segment order and warning codes', async () => {
