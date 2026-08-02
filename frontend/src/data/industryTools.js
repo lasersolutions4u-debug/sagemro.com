@@ -309,6 +309,22 @@ export const industryTools = [
       ['Why does table area matter for dust collection?', 'Larger cutting areas and heavier dust loads usually require higher capture airflow and better duct planning.'],
     ],
   },
+  {
+    id: 'bend-simulator',
+    slug: 'bend-simulator',
+    label: 'Press Brake Bend Simulator',
+    shortLabel: 'Bend Simulator',
+    description: 'Plan a multi-bend sheet-metal sequence with material, tooling, tonnage, and machine-capacity checks.',
+    leadAction: 'Use the bend plan to prepare an engineer review before releasing a part to production.',
+    seoTitle: 'Press Brake Bend Simulator',
+    seoDescription: 'Plan sheet-metal bends with material, tooling, bend sequence, estimated tonnage, and press brake capacity checks.',
+    guideTitle: 'Review a bend plan before confirming tooling and machine capacity.',
+    guideBody: 'Build a planning reference for a sheet-metal bend sequence, then confirm tooling, material condition, and safe production parameters with a qualified engineer.',
+    faqs: [
+      ['Can this replace a production bend test?', 'No. Use it to prepare the bend plan and review assumptions; validate the setup with qualified personnel before production.'],
+      ['What should I confirm before bending?', 'Confirm the material, tooling, bend order, machine capacity, part geometry, and safe operating conditions before production.'],
+    ],
+  },
 ];
 
 const industryToolCn = {
@@ -436,6 +452,20 @@ const industryToolCn = {
     faqs: [
       ['可以替代供应商选型计算吗？', '不可以。它用于准备沟通并发现明显缺口，正式选型仍需供应商或工程人员确认。'],
       ['为什么台面面积会影响除尘？', '切割区域越大、粉尘负荷越高，通常需要更高捕集风量和更合理的管道规划。'],
+    ],
+  },
+  'bend-simulator': {
+    label: '折弯仿真工具',
+    shortLabel: '折弯仿真',
+    description: '结合材料、模具、吨位和设备能力检查，规划多道钣金折弯顺序。',
+    leadAction: '用于在零件投产前整理折弯方案，并请工程师复核。',
+    seoTitle: '折弯机折弯仿真工具',
+    seoDescription: '结合材料、模具、折弯顺序、估算吨位和折弯机能力，规划钣金折弯方案。',
+    guideTitle: '确认模具和设备能力前先复核折弯方案。',
+    guideBody: '为钣金折弯顺序建立规划参考，再由合格工程人员确认模具、材料状态和安全生产参数。',
+    faqs: [
+      ['可以替代生产前试折吗？', '不可以。它用于整理折弯方案和复核假设；生产前仍需由合格人员验证实际设置。'],
+      ['折弯前需要确认什么？', '生产前应确认材料、模具、折弯顺序、设备能力、零件几何和安全操作条件。'],
     ],
   },
 };

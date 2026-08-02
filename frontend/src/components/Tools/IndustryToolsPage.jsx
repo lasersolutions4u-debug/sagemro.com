@@ -14,6 +14,7 @@ import {
 import { BrandMark } from '../common/BrandMark';
 import { Footer } from '../common/Footer';
 import { NotFoundPage } from '../common/NotFoundPage';
+import { BendSimulatorPage } from './BendSimulatorPage';
 import { IndustryToolCalculator } from './IndustryToolCalculator';
 import {
   defaultIndustryToolForms,
@@ -36,6 +37,7 @@ const toolIcons = {
   'bend-allowance': Ruler,
   'equipment-roi': CircleDollarSign,
   'auxiliary-sizing': Snowflake,
+  'bend-simulator': Factory,
 };
 
 const toolsPageCopy = {
@@ -125,6 +127,10 @@ export function IndustryToolsPage({ pathname = '/tools', onOpenLegal, onSendMess
 
   if (!selectedTool) {
     return <ToolsHub copy={copy} locale={locale} onOpenLegal={onOpenLegal} />;
+  }
+
+  if (selectedTool.id === 'bend-simulator') {
+    return <BendSimulatorPage tool={selectedTool} copy={copy} locale={locale} onOpenLegal={onOpenLegal} />;
   }
 
   return (
