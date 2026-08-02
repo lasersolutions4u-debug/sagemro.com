@@ -67,7 +67,7 @@ function validRequest(overrides = {}) {
       bend_allowance_mm: 10.2,
       required_tonnage: 8.4,
       result_status: 'review_required',
-      warning_codes: ['tool_mismatch', 'review_required'],
+      warning_codes: ['tool_mismatch', 'machine_thickness_out_of_range', 'no_compatible_tool', 'review_required'],
       customer_email: 'do-not-store@example.com',
       notes: 'do not keep this free text',
     },
@@ -100,7 +100,7 @@ test('public bend simulation review accepts a valid contact and inserts a saniti
   assert.match(env.__leads[0].message, /status review_required/i);
   assert.match(env.__leads[0].message, /bend 1: order 1, length 100 mm, angle 90°, radius 3 mm/i);
   assert.match(env.__leads[0].message, /bend 2: order 2, length 80 mm, angle 120°, radius 3 mm/i);
-  assert.match(env.__leads[0].message, /warnings tool_mismatch, review_required/i);
+  assert.match(env.__leads[0].message, /warnings tool_mismatch, machine_thickness_out_of_range, no_compatible_tool, review_required/i);
   assert.match(env.__leads[0].ai_summary, /Engineer review requested/);
   assert.match(env.__leads[0].ai_summary, /review_required/);
   assert.match(env.__leads[0].ai_summary, /tool_mismatch/);

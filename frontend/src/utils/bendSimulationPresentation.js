@@ -4,6 +4,8 @@ const WARNING_COPY = {
   upper_tool_mismatch: { en: 'The selected upper tool is not compatible with this plan.', zh: '所选上模与当前方案不兼容。' },
   machine_overload: { en: 'Required tonnage exceeds machine capacity.', zh: '所需吨位超过设备能力。' },
   work_length_exceeded: { en: 'Bend length exceeds the machine working length.', zh: '折弯长度超过设备工作长度。' },
+  machine_thickness_out_of_range: { en: 'Material thickness is outside the selected machine reference range.', zh: '材料厚度超出所选设备的参考范围。' },
+  no_compatible_tool: { en: 'No compatible tooling is available in the planning catalog.', zh: '规划模具库中没有兼容模具。' },
   tight_radius: { en: 'Inside radius is tight for the selected material thickness.', zh: '内 R 相对当前材料厚度过小。' },
   review_required: { en: 'Confirm tooling and bend plan with an engineer before production.', zh: '生产前请由工程师确认模具和折弯方案。' },
 };
