@@ -1,6 +1,4 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
-import path from 'node:path';
 import test from 'node:test';
 
 import {
@@ -11,12 +9,7 @@ import {
   materialDensities,
   shapeProfiles,
 } from '../src/data/industryTools.js';
-
-const root = path.resolve(import.meta.dirname, '../..');
-
-function read(relativePath) {
-  return readFileSync(path.join(root, relativePath), 'utf8');
-}
+import { getIndustryToolsPageState } from '../src/utils/industryToolsPage.js';
 
 test('metal weight calculator covers common sheet and structural profiles', () => {
   const profileIds = Object.keys(shapeProfiles);
@@ -101,14 +94,22 @@ test('industry tools register bend simulator as the tenth SEO-ready public tool'
   assert.equal(getToolBySlug('missing-tool'), null);
 });
 
-test('industry tools route bend simulator to its dedicated page with localized canonical SEO URLs', () => {
-  const page = read('frontend/src/components/Tools/IndustryToolsPage.jsx');
+test('industry tools resolve hub and bend simulator routes with localized canonical SEO URLs', () => {
+  const bendSimulator = getIndustryToolsPageState('/tools/bend-simulator', 'en');
+  const bendSimulatorCn = getIndustryToolsPageState('/tools/bend-simulator', 'zh-CN');
+  const hub = getIndustryToolsPageState('/tools', 'en');
 
-  assert.match(page, /import \{ BendSimulatorPage \} from '\.\/BendSimulatorPage';/);
-  assert.match(page, /selectedTool\.id === 'bend-simulator'/);
-  assert.match(page, /<BendSimulatorPage/);
-  assert.match(page, /canonicalHost = locale === 'zh-CN' \? 'https:\/\/sagemro\.cn' : 'https:\/\/sagemro\.com'/);
-  assert.match(page, /`\$\{canonicalHost\}\$\{selectedTool \? `\/tools\/\$\{selectedTool\.slug\}` : '\/tools'\}`/);
+  assert.equal(getToolBySlug('/tools/bend-simulator').id, 'bend-simulator');
+  assert.equal(bendSimulator.page, 'bend-simulator');
+  assert.equal(bendSimulator.selectedTool.id, 'bend-simulator');
+  assert.equal(bendSimulator.canonical, 'https://sagemro.com/tools/bend-simulator');
+  assert.equal(bendSimulatorCn.page, 'bend-simulator');
+  assert.match(bendSimulatorCn.selectedTool.label, /折弯/);
+  assert.equal(bendSimulatorCn.canonical, 'https://sagemro.cn/tools/bend-simulator');
+  assert.equal(hub.slug, '');
+  assert.equal(hub.page, 'hub');
+  assert.equal(hub.selectedTool, null);
+  assert.equal(hub.canonical, 'https://sagemro.com/tools');
 });
 
 test('gas consumption calculator estimates assist gas usage and cost', () => {

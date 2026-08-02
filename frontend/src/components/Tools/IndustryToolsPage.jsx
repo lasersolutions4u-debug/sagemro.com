@@ -20,9 +20,9 @@ import {
   getLocalizedMaterialDensities,
   getLocalizedShapeProfiles,
   getLocalizedTool,
-  getToolBySlug,
   industryTools,
 } from '../../data/industryTools';
+import { getIndustryToolsPageState } from '../../utils/industryToolsPage';
 import { isCnLocale } from '../../utils/locale';
 import { setSeoMetadata } from '../../utils/seo';
 
@@ -90,11 +90,9 @@ const toolsPageCopy = {
 
 export function IndustryToolsPage({ pathname = '/tools', onOpenLegal }) {
   const locale = isCnLocale() ? 'zh-CN' : 'en';
-  const canonicalHost = locale === 'zh-CN' ? 'https://sagemro.cn' : 'https://sagemro.com';
+  const route = getIndustryToolsPageState(pathname, locale);
+  const { canonicalHost, canonical, page, selectedTool } = route;
   const copy = toolsPageCopy[locale];
-  const slug = pathname.split('/tools/')[1]?.replace(/\/$/, '') || '';
-  const rawSelectedTool = getToolBySlug(slug);
-  const selectedTool = getLocalizedTool(rawSelectedTool, locale);
   const [forms, setForms] = useState(defaultIndustryToolForms);
   const pageTitle = selectedTool ? selectedTool.seoTitle : copy.hubTitle;
   const pageDescription = selectedTool
@@ -105,16 +103,16 @@ export function IndustryToolsPage({ pathname = '/tools', onOpenLegal }) {
     setSeoMetadata({
       title: `${pageTitle} | SAGEMRO`,
       description: pageDescription,
-      canonical: `${canonicalHost}${selectedTool ? `/tools/${selectedTool.slug}` : '/tools'}`,
+      canonical,
       lang: locale === 'zh-CN' ? 'zh-CN' : 'en',
     });
-  }, [canonicalHost, locale, pageDescription, pageTitle, selectedTool]);
+  }, [canonical, canonicalHost, locale, pageDescription, pageTitle, selectedTool]);
 
   if (!selectedTool) {
     return <ToolsHub copy={copy} locale={locale} onOpenLegal={onOpenLegal} />;
   }
 
-  if (selectedTool.id === 'bend-simulator') {
+  if (page === 'bend-simulator') {
     return <BendSimulatorPage tool={selectedTool} copy={copy} onOpenLegal={onOpenLegal} />;
   }
 
