@@ -15,6 +15,15 @@ function machineId(machine) {
   return typeof machine === 'object' ? machine?.id : machine;
 }
 
+function materialId(material, catalog) {
+  if (typeof material === 'string') return material;
+  return Object.entries(catalog.materials).find(([, item]) => item === material || item.label === material?.label)?.[0];
+}
+
+function toolId(tool) {
+  return typeof tool === 'object' ? tool?.id : tool;
+}
+
 function catalogItem(items, id, fallback) {
   return items.find((item) => item.id === id) || fallback;
 }
@@ -52,7 +61,7 @@ export function normalizeBendProfileValue(value = {}, catalog = bendSimulatorCat
 
   return {
     unitSystem: draft.unitSystem,
-    material: catalog.materials[draft.material] ? draft.material : fallbackMaterial,
+    material: catalog.materials[materialId(draft.material, catalog)] ? materialId(draft.material, catalog) : fallbackMaterial,
     thicknessMm: positiveNumber(draft.thicknessMm, 3),
     sheetWidthMm: positiveNumber(draft.sheetWidthMm, 1000),
     machine: catalogItem(catalog.machines, machineId(draft.machine), fallbackMachine),
@@ -62,8 +71,8 @@ export function normalizeBendProfileValue(value = {}, catalog = bendSimulatorCat
       insideRadiusMm: positiveNumber(segment.insideRadiusMm, positiveNumber(draft.thicknessMm, 3)),
       order: index + 1,
     })),
-    upperTool: catalogItem(catalog.upperTools, draft.upperTool, fallbackUpperTool).id,
-    lowerTool: catalogItem(catalog.lowerTools, draft.lowerTool, fallbackLowerTool).id,
+    upperTool: catalogItem(catalog.upperTools, toolId(draft.upperTool), fallbackUpperTool).id,
+    lowerTool: catalogItem(catalog.lowerTools, toolId(draft.lowerTool), fallbackLowerTool).id,
   };
 }
 
