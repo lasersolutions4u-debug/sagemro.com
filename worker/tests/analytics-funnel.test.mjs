@@ -157,3 +157,37 @@ test('cookie-authenticated funnel events accept matching CSRF and trust the sess
   assert.equal(env.__rows[0].user_type, 'customer');
   assert.equal(env.__rows[0].user_id, 'customer-analytics-1');
 });
+
+test('bend simulator funnel events retain only approved non-PII properties', async () => {
+  const eventNames = [
+    'bend_simulator_started',
+    'bend_simulator_segment_adjusted',
+    'bend_simulator_completed',
+  ];
+
+  for (const event_name of eventNames) {
+    const { response, env } = await postFunnel({
+      event_name,
+      properties: {
+        material: 'carbon_steel',
+        bend_count: 2,
+        previous_bend_count: 1,
+        unit_system: 'metric',
+        view_mode: '2d',
+        email: 'buyer@example.com',
+        phone: '+15551234567',
+        arbitrary_notes: 'do not store',
+      },
+    });
+
+    assert.equal(response.status, 202);
+    const properties = JSON.parse(env.__rows[0].properties_json);
+    assert.deepEqual(properties, {
+      material: 'carbon_steel',
+      bend_count: 2,
+      previous_bend_count: 1,
+      unit_system: 'metric',
+      view_mode: '2d',
+    });
+  }
+});

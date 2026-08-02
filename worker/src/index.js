@@ -166,6 +166,9 @@ const FUNNEL_EVENTS = new Set([
   'signup_completed',
   'device_saved',
   'service_request_created',
+  'bend_simulator_started',
+  'bend_simulator_segment_adjusted',
+  'bend_simulator_completed',
 ]);
 const FUNNEL_PROPERTY_ALLOWLIST = new Set([
   'entry',
@@ -180,6 +183,11 @@ const FUNNEL_PROPERTY_ALLOWLIST = new Set([
   'service_type',
   'urgency',
   'tool_id',
+  'material',
+  'bend_count',
+  'previous_bend_count',
+  'unit_system',
+  'view_mode',
 ]);
 
 const CONTACT_EMAIL_PATTERN = /[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g;
@@ -10375,6 +10383,135 @@ async function handleSubmitLead(request, env) {
   }
 }
 
+const BEND_SIMULATION_MATERIALS = new Map([
+  ['carbon_steel', 'carbon_steel'],
+  ['carbon steel', 'carbon_steel'],
+  ['stainless_steel', 'stainless_steel'],
+  ['stainless steel', 'stainless_steel'],
+  ['aluminum', 'aluminum'],
+  ['brass', 'brass'],
+  ['copper', 'copper'],
+]);
+const BEND_SIMULATION_MACHINES = new Map([
+  ['shop-50', { capacityTons: 50, workLengthMm: 2000 }],
+  ['shop-100', { capacityTons: 100, workLengthMm: 3000 }],
+  ['shop-200', { capacityTons: 200, workLengthMm: 4000 }],
+]);
+const BEND_SIMULATION_UPPER_TOOLS = new Set(['acute-punch', 'standard-punch', 'gooseneck-punch']);
+const BEND_SIMULATION_LOWER_TOOLS = new Set(['v-die-6', 'v-die-8', 'v-die-12', 'v-die-16', 'v-die-24', 'v-die-32', 'v-die-40', 'v-die-48', 'v-die-64']);
+const BEND_SIMULATION_RESULT_STATUSES = new Set(['ready', 'review_required', 'warning']);
+
+function readBoundedBendNumber(value, { min, max }) {
+  if (value === undefined || value === null || value === '') return null;
+  const number = Number(value);
+  return Number.isFinite(number) && number >= min && number <= max ? number : null;
+}
+
+function normalizeBendSimulationContext(simulation) {
+  if (!simulation || typeof simulation !== 'object' || Array.isArray(simulation)) return null;
+
+  const unitSystem = cleanText(simulation.unit_system || simulation.unitSystem, 20) || 'metric';
+  const material = BEND_SIMULATION_MATERIALS.get(cleanText(simulation.material, 80).toLowerCase());
+  const thicknessMm = readBoundedBendNumber(simulation.thickness_mm, { min: 0.1, max: 100 });
+  const bendLengthMm = readBoundedBendNumber(
+    simulation.sheet_width_mm ?? simulation.bend_length_mm,
+    { min: 1, max: 20000 },
+  );
+  const machineId = cleanText(simulation.machine || simulation.machine_id, 80);
+  const machine = BEND_SIMULATION_MACHINES.get(machineId);
+  const upperTool = cleanText(simulation.upper_tool || simulation.upper_tool_id, 80);
+  const lowerTool = cleanText(simulation.lower_tool || simulation.lower_tool_id, 80);
+  const segments = simulation.segments;
+
+  if (!['metric', 'imperial'].includes(unitSystem) || !material || !thicknessMm || !bendLengthMm ||
+    !machine || !BEND_SIMULATION_UPPER_TOOLS.has(upperTool) || !BEND_SIMULATION_LOWER_TOOLS.has(lowerTool) ||
+    !Array.isArray(segments) || segments.length < 1 || segments.length > 12) {
+    return null;
+  }
+
+  const bendAngles = [];
+  for (const segment of segments) {
+    const lengthMm = readBoundedBendNumber(segment?.length_mm, { min: 1, max: 20000 });
+    const angleDeg = readBoundedBendNumber(segment?.angle_deg, { min: 0, max: 180 });
+    const insideRadiusMm = readBoundedBendNumber(segment?.inside_radius_mm, { min: 0, max: 500 });
+    if (!lengthMm || angleDeg === null || insideRadiusMm === null) return null;
+    bendAngles.push(angleDeg);
+  }
+
+  const resultStatus = cleanText(simulation.result_status || simulation.status, 40);
+  const flatLengthMm = readBoundedBendNumber(simulation.flat_length_mm, { min: 0, max: 100000 });
+  const bendAllowanceMm = readBoundedBendNumber(simulation.bend_allowance_mm, { min: 0, max: 10000 });
+  const requiredTonnage = readBoundedBendNumber(simulation.required_tonnage, { min: 0, max: 10000 });
+
+  return {
+    unitSystem,
+    material,
+    thicknessMm,
+    bendLengthMm,
+    machineId,
+    machine,
+    upperTool,
+    lowerTool,
+    bendAngles,
+    resultStatus: BEND_SIMULATION_RESULT_STATUSES.has(resultStatus) ? resultStatus : '',
+    flatLengthMm,
+    bendAllowanceMm,
+    requiredTonnage,
+  };
+}
+
+function formatBendSimulationReview(context) {
+  const resultDetails = [
+    context.flatLengthMm !== null ? `flat length ${context.flatLengthMm} mm` : '',
+    context.bendAllowanceMm !== null ? `bend allowance ${context.bendAllowanceMm} mm` : '',
+    context.requiredTonnage !== null ? `estimated ${context.requiredTonnage} t` : '',
+    context.resultStatus ? `status ${context.resultStatus}` : '',
+  ].filter(Boolean).join(', ');
+  const summary = [
+    `Bend simulation review: ${context.unitSystem} ${context.material}; ${context.thicknessMm} mm; ${context.bendLengthMm} mm bend length`,
+    `${context.machineId} (${context.machine.capacityTons} t, ${context.machine.workLengthMm} mm); ${context.bendAngles.length} bends (${context.bendAngles.join('°, ')}°)`,
+    `tooling ${context.upperTool} / ${context.lowerTool}`,
+    resultDetails,
+  ].filter(Boolean).join('. ');
+
+  return {
+    message: summary,
+    aiSummary: `Engineer review requested for ${context.material}, ${context.thicknessMm} mm, ${context.bendAngles.length} bends on ${context.machineId}.`,
+  };
+}
+
+async function handleSubmitBendSimulationReview(request, env) {
+  try {
+    const body = await request.json().catch(() => ({}));
+    const contact = body.contact && typeof body.contact === 'object' ? body.contact : {};
+    const name = cleanText(contact.name, 120);
+    const email = cleanText(contact.email, 160);
+    const phone = cleanText(contact.phone, 60);
+    if (!name) return errorResponse('请提供姓名');
+    if (!email && !phone) return errorResponse('请提供邮箱或手机号');
+
+    const context = normalizeBendSimulationContext(body.simulation);
+    if (!context) return errorResponse('折弯复核参数无效或超出范围');
+
+    const review = formatBendSimulationReview(context);
+    const lead = await insertMachineLead(env, {
+      name,
+      email: email || null,
+      phone: phone || null,
+      source: 'bend_simulator',
+      sourceType: 'bend_simulation_review',
+      interest: 'Press brake bend simulation review',
+      message: review.message,
+      aiSummary: review.aiSummary,
+      recommendedNextStep: 'Assign a qualified engineer to review tooling, machine capacity, and safe production parameters before release.',
+    });
+
+    return jsonResponse({ success: true, lead_id: lead.id }, 201);
+  } catch (error) {
+    return errorResponse(error.message, 500);
+  }
+}
+
 async function handleCreateMachineLead(request, env) {
   try {
     if (request._auth?.userType !== 'engineer') {
@@ -20365,6 +20502,9 @@ async function routeRequest(request, env, ctx) {
     }
     if (path === '/api/leads/machine' && request.method === 'POST') {
       return handleCreateMachineLead(request, env);
+    }
+    if (path === '/api/leads/bend-simulation' && request.method === 'POST') {
+      return handleSubmitBendSimulationReview(request, env);
     }
 
     // 工单相关
