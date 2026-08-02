@@ -1,17 +1,23 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import path from 'node:path';
 import test from 'node:test';
+import { pathToFileURL } from 'node:url';
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { transformWithOxc } from 'vite';
 
 import { calculateBendSimulation } from '../src/utils/bendSimulationEngine.js';
 import {
   buildFlatPath,
   buildFormedPath,
   buildPseudo3DProjection,
+  buildBendSimulationViewportModel,
   buildToolGeometry,
+  selectBendSimulationViewportViewBox,
 } from '../src/utils/bendSimulationRenderer.js';
 
-const root = path.resolve(import.meta.dirname, '..');
 const result = calculateBendSimulation({
   unitSystem: 'metric',
   material: 'carbon_steel',
@@ -25,6 +31,26 @@ const result = calculateBendSimulation({
     { lengthMm: 80, angleDeg: 120, insideRadiusMm: 3, order: 2 },
   ],
 });
+
+const root = path.resolve(import.meta.dirname, '..');
+const require = createRequire(import.meta.url);
+const reactModule = pathToFileURL(require.resolve('react')).href;
+const lucideModule = pathToFileURL(require.resolve('lucide-react')).href;
+const rendererModule = pathToFileURL(path.join(root, 'src/utils/bendSimulationRenderer.js')).href;
+
+async function renderViewport(props) {
+  const source = `import { createElement } from '${reactModule}';\n${readFileSync(path.join(root, 'src/components/Tools/BendSimulationViewport.jsx'), 'utf8')}`
+    .replace("from 'lucide-react'", `from '${lucideModule}'`)
+    .replace("from 'react'", `from '${reactModule}'`)
+    .replace("from '../../utils/bendSimulationRenderer'", `from '${rendererModule}'`);
+  const transformed = await transformWithOxc(source, 'BendSimulationViewport.jsx', {
+    lang: 'jsx',
+    format: 'esm',
+    jsx: { runtime: 'classic', pragma: 'createElement' },
+  });
+  const { BendSimulationViewport } = await import(`data:text/javascript;base64,${Buffer.from(transformed.code).toString('base64')}`);
+  return renderToStaticMarkup(createElement(BendSimulationViewport, props));
+}
 
 test('bend simulation viewport derives changing 2D geometry from the active frame', () => {
   const flat = buildFlatPath(result);
@@ -60,14 +86,47 @@ test('bend simulation viewport keeps machine and tool labels synchronized with i
   assert.equal(tools.materialLabel, result.input.material.label);
 });
 
-test('bend simulation viewport exposes controls and an explanatory empty state', () => {
-  const viewport = readFileSync(path.join(root, 'src/components/Tools/BendSimulationViewport.jsx'), 'utf8');
+function assertViewBoxContains(viewBox, points) {
+  const [x, y, width, height] = viewBox.split(' ').map(Number);
+  points.forEach((point) => {
+    assert.ok(point.xMm >= x && point.xMm <= x + width, `x ${point.xMm} is inside ${viewBox}`);
+    assert.ok(point.yMm >= y && point.yMm <= y + height, `y ${point.yMm} is inside ${viewBox}`);
+  });
+}
 
-  assert.match(viewport, /viewMode === '3d'/);
-  assert.match(viewport, /onViewModeChange\?\.\('2d'\)/);
-  assert.match(viewport, /onViewModeChange\?\.\('3d'\)/);
-  assert.match(viewport, /aria-label="Fit viewport"/);
-  assert.match(viewport, /No bend simulation is available yet/);
-  assert.match(viewport, /aria-live="polite"/);
-  assert.match(viewport, /ActiveBendDescription description=\{activeDescription\}/);
+test('bend simulation viewport 2D bounds include both the flat sheet and active formed path', () => {
+  const model = buildBendSimulationViewportModel(result, 1, '2d');
+
+  assert.equal(model.valid, true);
+  assertViewBoxContains(model.fitViewBox, [...model.flat.pointList, ...model.formed.pointList]);
+  assertViewBoxContains(model.resetViewBox, [...model.flat.pointList, ...model.formed.pointList]);
+});
+
+test('bend simulation viewport exposes distinct fit and reset viewBox states', () => {
+  const model = buildBendSimulationViewportModel(result, 1, '2d');
+
+  assert.notEqual(model.fitViewBox, model.resetViewBox);
+  assert.equal(selectBendSimulationViewportViewBox(model, 'fit'), model.fitViewBox);
+  assert.equal(selectBendSimulationViewportViewBox(model, 'reset'), model.resetViewBox);
+});
+
+test('bend simulation viewport rejects missing and non-numeric active geometry', () => {
+  assert.equal(buildBendSimulationViewportModel(null, 0, '2d').valid, false);
+  assert.equal(buildBendSimulationViewportModel({ ...result, flatPoints: [] }, 1, '2d').valid, false);
+  const malformedFrame = {
+    ...result,
+    frames: result.frames.map((frame, index) => (index === 1 ? { ...frame, formedPoints: [{ xMm: Number.NaN, yMm: 0 }] } : frame)),
+  };
+
+  assert.equal(buildBendSimulationViewportModel(malformedFrame, 1, '2d').valid, false);
+});
+
+test('bend simulation viewport renders its model bounds and empty state', async () => {
+  const model = buildBendSimulationViewportModel(result, 1, '2d');
+  const rendered = await renderViewport({ result, activeFrame: 1, viewMode: '2d' });
+  const empty = await renderViewport({ result: null });
+
+  assert.match(rendered, new RegExp(`viewBox="${model.resetViewBox}"`));
+  assert.doesNotMatch(rendered, /No bend simulation is available yet/);
+  assert.match(empty, /No bend simulation is available yet/);
 });
