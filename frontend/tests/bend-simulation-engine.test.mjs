@@ -98,6 +98,49 @@ test('calculates multi-segment allowance in bend order and flags planning risks'
   assert.ok(result.machine.marginTons < 0);
 });
 
+test('uses included profile angles consistently for allowance and formed geometry', () => {
+  const profile = (angleDeg) => calculateBendSimulation({
+    ...metricInput,
+    segments: [
+      { lengthMm: 50, angleDeg, insideRadiusMm: 3, order: 1 },
+      { lengthMm: 50, angleDeg: 180, insideRadiusMm: 3, order: 2 },
+    ],
+  });
+  const obtuse = profile(120);
+  const straight = profile(180);
+  const foldedBack = profile(0);
+
+  assert.equal(obtuse.segments[0].bendAngleDeg, 60);
+  assert.ok(Math.abs(obtuse.segments[0].bendAllowanceMm - 4.335) < 0.001);
+  assert.ok(Math.abs(obtuse.formedPoints.at(-1).xMm - 75) < 0.001);
+  assert.ok(Math.abs(obtuse.formedPoints.at(-1).yMm - 43.301) < 0.001);
+  assert.equal(straight.segments[0].bendAngleDeg, 0);
+  assert.equal(straight.totalBendAllowanceMm, 0);
+  assert.deepEqual(straight.formedPoints.at(-1), { xMm: 100, yMm: 0 });
+  assert.equal(foldedBack.segments[0].bendAngleDeg, 180);
+  assert.ok(foldedBack.totalBendAllowanceMm > obtuse.totalBendAllowanceMm);
+  assert.ok(Math.abs(foldedBack.formedPoints.at(-1).xMm) < 0.001);
+  assert.ok(Math.abs(foldedBack.formedPoints.at(-1).yMm) < 0.001);
+});
+
+test('changes allowance and flat length for thickness and inside-radius changes', () => {
+  const base = calculateBendSimulation({ ...metricInput, segments: [metricInput.segments[0]] });
+  const thicker = calculateBendSimulation({
+    ...metricInput,
+    thicknessMm: 6,
+    segments: [{ ...metricInput.segments[0], insideRadiusMm: 3 }],
+  });
+  const widerRadius = calculateBendSimulation({
+    ...metricInput,
+    segments: [{ ...metricInput.segments[0], insideRadiusMm: 6 }],
+  });
+
+  assert.ok(thicker.totalBendAllowanceMm > base.totalBendAllowanceMm);
+  assert.ok(thicker.flatLengthMm > base.flatLengthMm);
+  assert.ok(widerRadius.totalBendAllowanceMm > base.totalBendAllowanceMm);
+  assert.ok(widerRadius.flatLengthMm > base.flatLengthMm);
+});
+
 test('estimates air-bend tonnage with material and safety factors', () => {
   const mildSteel = estimateAirBendTonnage({
     thicknessMm: 6,

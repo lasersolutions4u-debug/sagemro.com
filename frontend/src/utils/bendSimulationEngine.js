@@ -88,7 +88,7 @@ function makeFormedPoints(segments) {
   return [{ xMm: 0, yMm: 0 }, ...segments.map((segment) => {
     x += segment.lengthMm * Math.cos((directionDeg * Math.PI) / 180);
     y += segment.lengthMm * Math.sin((directionDeg * Math.PI) / 180);
-    directionDeg += 180 - segment.angleDeg;
+    directionDeg += segment.bendAngleDeg;
     return { xMm: x, yMm: y };
   })];
 }
@@ -101,7 +101,8 @@ export function calculateBendSimulation(input) {
   const recommendedUpper = recommendedUpperTool(segments, thicknessMm);
   const calculatedSegments = segments.map((segment) => ({
     ...segment,
-    bendAllowanceMm: (Math.PI / 180) * segment.angleDeg * (segment.insideRadiusMm + material.kFactor * thicknessMm),
+    bendAngleDeg: 180 - segment.angleDeg,
+    bendAllowanceMm: (Math.PI / 180) * (180 - segment.angleDeg) * (segment.insideRadiusMm + material.kFactor * thicknessMm),
   }));
   const totalBendAllowanceMm = calculatedSegments.reduce((total, segment) => total + segment.bendAllowanceMm, 0);
   const flatLengthMm = calculatedSegments.reduce((total, segment) => total + segment.lengthMm, 0) + totalBendAllowanceMm;
