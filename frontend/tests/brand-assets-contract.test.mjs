@@ -85,7 +85,10 @@ test('main site first-impression copy keeps CN and COM market language separate'
   assert.doesNotMatch(welcome, /AI assistant specialized for laser and metal forming equipment/);
   assert.doesNotMatch(welcome, /AI-generated content is for reference only/);
   assert.match(welcome, /Useful shop-floor tools/);
-  assert.match(welcome, /href: '\/tools\/bend-simulator'/);
+  assert.doesNotMatch(welcome, /href: '\/tools\/bend-simulator'/);
+  assert.match(welcome, /href: '\/tools\/laser-cutting-speed-reference'/);
+  assert.match(welcome, /label: 'Laser Cutting Speed'/);
+  assert.match(welcome, /label: '激光切割速度参考'/);
   assert.match(welcome, /href: '\/tools\/metal-weight-calculator'/);
   assert.match(welcome, /href: '\/tools\/laser-cutting-cost-calculator'/);
   assert.match(welcome, /href: '\/tools\/steel-price-watch'/);
@@ -644,7 +647,8 @@ test('client shell moves conversation history into a modal and exposes industry 
   assert.match(industryToolsModal, /href="\/tools"/);
   assert.match(industryToolsModal, /All tools/);
   assert.match(industryToolsModal, /href="\/insights"/);
-  assert.match(industryToolsModal, /industryTools\.map/);
+  assert.match(industryToolsModal, /publicIndustryTools\.map/);
+  assert.doesNotMatch(industryToolsModal, /industryTools\.map/);
   assert.match(industryToolCalculator, /Ask SAGEMRO AI to review this result/);
   assert.match(industryToolsPage, /href=\{`\/tools\/\$\{tool\.slug\}`\}/);
   assert.match(industryToolsPage, /max-w-7xl/);
@@ -652,6 +656,10 @@ test('client shell moves conversation history into a modal and exposes industry 
   assert.doesNotMatch(industryToolsPage, /lg:grid-cols-3/);
   assert.match(industryToolsPage, /<a href="\/" className="mt-4 inline-flex rounded-lg/);
   assert.match(industryToolsPage, /setSeoMetadata\(/);
+  assert.match(industryToolsPage, /publicIndustryTools\.map/);
+  assert.match(industryToolsPage, /publicIndustryTools\.filter/);
+  assert.match(industryToolsPage, /const isPausedTool = selectedTool\?\.id === 'bend-simulator'/);
+  assert.match(industryToolsPage, /isMissing \|\| isPausedTool \? 'noindex,nofollow,noarchive'/);
   assert.match(industryToolsPage, /referenceItems/);
   assert.match(industryToolsPage, /ToolReferenceItem/);
   assert.match(industryToolsPage, /Material range/);
