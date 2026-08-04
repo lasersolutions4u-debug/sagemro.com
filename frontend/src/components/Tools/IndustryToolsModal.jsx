@@ -12,7 +12,7 @@ import {
   Snowflake,
 } from 'lucide-react';
 import { Modal } from '../common/Modal';
-import { industryTools } from '../../data/industryTools';
+import { publicIndustryTools } from '../../data/industryTools';
 
 const toolIcons = {
   'metal-weight': Scale,
@@ -59,7 +59,7 @@ export function IndustryToolsModal({ isOpen, onClose }) {
         </div>
 
         <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-          {industryTools.map((tool) => {
+          {publicIndustryTools.map((tool) => {
             const Icon = toolIcons[tool.id] || Fan;
             return (
               <a

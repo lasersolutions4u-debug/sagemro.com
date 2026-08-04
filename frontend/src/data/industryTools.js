@@ -327,6 +327,8 @@ export const industryTools = [
   },
 ];
 
+export const publicIndustryTools = industryTools.filter((tool) => tool.id !== 'bend-simulator');
+
 const industryToolCn = {
   'metal-weight': {
     label: '材料重量计算器',

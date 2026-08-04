@@ -21,7 +21,7 @@ import {
   getLocalizedMaterialDensities,
   getLocalizedShapeProfiles,
   getLocalizedTool,
-  industryTools,
+  publicIndustryTools,
 } from '../../data/industryTools';
 import { getIndustryToolsPageState } from '../../utils/industryToolsPage';
 import { isCnLocale } from '../../utils/locale';
@@ -96,6 +96,7 @@ export function IndustryToolsPage({ pathname = '/tools', onOpenLegal, onSendMess
   const copy = toolsPageCopy[locale];
   const [forms, setForms] = useState(defaultIndustryToolForms);
   const isMissing = Boolean(slug && !selectedTool);
+  const isPausedTool = selectedTool?.id === 'bend-simulator';
   const pageTitle = selectedTool ? selectedTool.seoTitle : copy.hubTitle;
   const pageDescription = selectedTool
     ? selectedTool.seoDescription
@@ -107,9 +108,9 @@ export function IndustryToolsPage({ pathname = '/tools', onOpenLegal, onSendMess
       description: pageDescription,
       canonical,
       lang: locale === 'zh-CN' ? 'zh-CN' : 'en',
-      robots: isMissing ? 'noindex,nofollow,noarchive' : 'index,follow',
+      robots: isMissing || isPausedTool ? 'noindex,nofollow,noarchive' : 'index,follow',
     });
-  }, [canonical, canonicalHost, isMissing, locale, pageDescription, pageTitle, selectedTool]);
+  }, [canonical, canonicalHost, isMissing, isPausedTool, locale, pageDescription, pageTitle, selectedTool]);
 
   if (slug && !selectedTool) {
     return <NotFoundPage isCn={locale === 'zh-CN'} />;
@@ -149,7 +150,7 @@ function ToolsHub({ copy, locale, onOpenLegal }) {
   const canonicalHost = locale === 'zh-CN' ? 'https://sagemro.cn' : 'https://sagemro.com';
   const materials = getLocalizedMaterialDensities(locale);
   const profiles = getLocalizedShapeProfiles(locale);
-  const tools = industryTools.map((tool) => getLocalizedTool(tool, locale));
+  const tools = publicIndustryTools.map((tool) => getLocalizedTool(tool, locale));
   const referenceItems = [
     {
       label: copy.materials,
@@ -252,7 +253,7 @@ function ToolReferenceItem({ item, isFirst }) {
 
 function ToolDetail({ tool, copy, locale, values, onChange, onOpenLegal, onSendMessage, onNavigateHome }) {
   const relatedTools = useMemo(
-    () => industryTools.filter((item) => item.id !== tool.id).map((item) => getLocalizedTool(item, locale)),
+    () => publicIndustryTools.filter((item) => item.id !== tool.id).map((item) => getLocalizedTool(item, locale)),
     [locale, tool.id],
   );
   const handleSendToolReview = (prompt) => {
