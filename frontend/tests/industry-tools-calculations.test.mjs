@@ -7,6 +7,7 @@ import {
   getToolBySlug,
   industryTools,
   materialDensities,
+  publicIndustryTools,
   shapeProfiles,
 } from '../src/data/industryTools.js';
 import { getIndustryToolsPageState } from '../src/utils/industryToolsPage.js';
@@ -74,8 +75,10 @@ test('steel price calculator uses selected material and structural profile weigh
   assert.match(result.rows.find(([label]) => label === 'Estimated material budget')?.[1], /\$/);
 });
 
-test('industry tools register bend simulator as the tenth SEO-ready public tool', () => {
+test('industry tools keep the paused bend simulator registered but out of public discovery', () => {
   assert.equal(industryTools.length, 10);
+  assert.equal(publicIndustryTools.length, 9);
+  assert.equal(publicIndustryTools.some((tool) => tool.id === 'bend-simulator'), false);
   assert.equal(getToolBySlug('metal-weight-calculator').id, 'metal-weight');
   assert.equal(getToolBySlug('steel-price-watch').id, 'steel-price');
   assert.equal(getToolBySlug('laser-cutting-cost-calculator').id, 'laser-cost');
