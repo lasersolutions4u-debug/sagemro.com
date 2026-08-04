@@ -38,6 +38,8 @@ test('China public pages define localized SEO metadata and structured data', asy
   assert.match(tools, /https:\/\/sagemro\.cn/);
   assert.match(tools, /setSeoMetadata\(/);
   assert.match(insights, /setSeoMetadata\(/);
+  assert.match(tools, /robots: isMissing \|\| isPausedTool \? 'noindex,nofollow,noarchive'/);
+  assert.match(insights, /robots: isMissing \? 'noindex,nofollow,noarchive'/);
 });
 
 test('China admin portal is excluded from search indexing', async () => {
