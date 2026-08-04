@@ -85,7 +85,10 @@ test('main site first-impression copy keeps CN and COM market language separate'
   assert.doesNotMatch(welcome, /AI assistant specialized for laser and metal forming equipment/);
   assert.doesNotMatch(welcome, /AI-generated content is for reference only/);
   assert.match(welcome, /Useful shop-floor tools/);
-  assert.match(welcome, /href: '\/tools\/bend-simulator'/);
+  assert.doesNotMatch(welcome, /href: '\/tools\/bend-simulator'/);
+  assert.match(welcome, /href: '\/tools\/laser-cutting-speed-reference'/);
+  assert.match(welcome, /label: 'Laser Cutting Speed'/);
+  assert.match(welcome, /label: '激光切割速度参考'/);
   assert.match(welcome, /href: '\/tools\/metal-weight-calculator'/);
   assert.match(welcome, /href: '\/tools\/laser-cutting-cost-calculator'/);
   assert.match(welcome, /href: '\/tools\/steel-price-watch'/);
