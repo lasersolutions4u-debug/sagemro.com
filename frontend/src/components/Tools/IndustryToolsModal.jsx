@@ -12,7 +12,7 @@ import {
   Snowflake,
 } from 'lucide-react';
 import { Modal } from '../common/Modal';
-import { getLocalizedTool, industryTools } from '../../data/industryTools';
+import { getLocalizedTool, publicIndustryTools } from '../../data/industryTools';
 import { isCnLocale } from '../../utils/locale';
 
 const toolIcons = {
@@ -44,7 +44,7 @@ export function IndustryToolsModal({ isOpen, onClose }) {
         allTools: 'All tools',
         insights: 'Insights',
       };
-  const tools = industryTools.map((tool) => getLocalizedTool(tool, locale));
+  const tools = publicIndustryTools.map((tool) => getLocalizedTool(tool, locale));
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} title={copy.title} size="2xl">

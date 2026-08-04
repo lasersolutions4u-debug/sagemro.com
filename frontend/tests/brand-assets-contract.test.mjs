@@ -644,7 +644,8 @@ test('client shell moves conversation history into a modal and exposes industry 
   assert.match(industryToolsModal, /href="\/tools"/);
   assert.match(industryToolsModal, /All tools/);
   assert.match(industryToolsModal, /href="\/insights"/);
-  assert.match(industryToolsModal, /industryTools\.map/);
+  assert.match(industryToolsModal, /publicIndustryTools\.map/);
+  assert.doesNotMatch(industryToolsModal, /industryTools\.map/);
   assert.match(industryToolCalculator, /Ask SAGEMRO AI to review this result/);
   assert.match(industryToolsPage, /href=\{`\/tools\/\$\{tool\.slug\}`\}/);
   assert.match(industryToolsPage, /max-w-7xl/);
@@ -652,6 +653,10 @@ test('client shell moves conversation history into a modal and exposes industry 
   assert.doesNotMatch(industryToolsPage, /lg:grid-cols-3/);
   assert.match(industryToolsPage, /<a href="\/" className="mt-4 inline-flex rounded-lg/);
   assert.match(industryToolsPage, /setSeoMetadata\(/);
+  assert.match(industryToolsPage, /publicIndustryTools\.map/);
+  assert.match(industryToolsPage, /publicIndustryTools\.filter/);
+  assert.match(industryToolsPage, /const isPausedTool = selectedTool\?\.id === 'bend-simulator'/);
+  assert.match(industryToolsPage, /isMissing \|\| isPausedTool \? 'noindex,nofollow,noarchive'/);
   assert.match(industryToolsPage, /referenceItems/);
   assert.match(industryToolsPage, /ToolReferenceItem/);
   assert.match(industryToolsPage, /Material range/);
