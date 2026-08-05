@@ -421,6 +421,51 @@ test('queryPromotionChannelsDb normalizes direct attribution and uses unique con
   assert.equal(JSON.stringify(result).match(/anonymous_id|session_id|request_id/), null);
 });
 
+test('orphan v2 AI responses do not count as successes in overview, daily, channels, or health', async (t) => {
+  const db = createD1Database();
+  t.after(() => db.close());
+  await seedEvent(db, {
+    id: 'orphan-response',
+    eventName: 'ai_response_received',
+    properties: { analytics_version: '2', request_id: 'orphan-request' },
+  });
+
+  const overview = await queryPromotionOverviewDb(db, queryFilters());
+  const channels = await queryPromotionChannelsDb(db, queryFilters());
+  const loaded = await loadPromotionOverview({ com: db }, queryFilters());
+
+  assert.equal(overview.aiRequests, 0);
+  assert.equal(overview.aiSuccesses, 0);
+  assert.equal(overview.daily[0].aiSuccesses, 0);
+  assert.equal(channels.rows.length, 0);
+  assert.equal(channels.daily[0].aiSuccesses, 0);
+  assert.deepEqual(loaded.recentAi, []);
+  assert.deepEqual(loaded.health, { level: 'normal', reasons: [] });
+  assert.equal(JSON.stringify({ overview, channels, loaded }).match(/request_id|orphan-request/), null);
+});
+
+test('channel grouping coalesces NULL and empty attribution before distinct aggregation', async (t) => {
+  const db = createD1Database();
+  t.after(() => db.close());
+  await seedEvent(db, {
+    id: 'direct-null', eventName: 'traffic_source_captured',
+    anonymousId: 'direct-anon', sessionId: 'direct-session',
+    source: null, medium: null, campaign: null,
+  });
+  await seedEvent(db, {
+    id: 'direct-empty', eventName: 'traffic_source_captured',
+    anonymousId: 'direct-anon', sessionId: 'direct-session',
+    source: '', medium: '', campaign: '',
+  });
+
+  const { rows } = await queryPromotionChannelsDb(db, queryFilters());
+
+  assert.deepEqual(rows, [{
+    source: '', medium: '', campaign: '', sessions: 1, aiRequests: 0,
+    aiSuccesses: 0, registrations: 0, serviceRequests: 0,
+  }]);
+});
+
 test('loadPromotionOverview merges market aggregates, previous period, and private recent statuses', async (t) => {
   const com = createD1Database();
   const cn = createD1Database();
@@ -464,4 +509,44 @@ test('loadPromotionChannels merges then orders and limits combined channel rows'
     registrations: 1, serviceRequests: 2,
   }]);
   assert.equal(JSON.stringify(result).match(/anonymous_id|session_id|request_id/), null);
+});
+
+test('loadPromotionChannels applies the 100-row limit only after the complete cross-market merge', async (t) => {
+  const com = createD1Database();
+  const cn = createD1Database();
+  t.after(() => com.close());
+  t.after(() => cn.close());
+
+  for (const [market, db] of [['com', com], ['cn', cn]]) {
+    for (let channel = 0; channel < 100; channel += 1) {
+      for (let visitor = 0; visitor < 2; visitor += 1) {
+        await seedEvent(db, {
+          id: `${market}-service-${channel}-${visitor}`,
+          eventName: 'service_request_created',
+          anonymousId: `${market}-anon-${channel}-${visitor}`,
+          sessionId: `${market}-session-${channel}-${visitor}`,
+          source: `${market}-${String(channel).padStart(3, '0')}`,
+        });
+      }
+    }
+    await seedEvent(db, {
+      id: `${market}-common-service`, eventName: 'service_request_created',
+      anonymousId: `${market}-common-anon`, sessionId: `${market}-common-session`, source: 'z-common',
+    });
+    await seedEvent(db, {
+      id: `${market}-common-registration`, eventName: 'signup_completed',
+      anonymousId: `${market}-common-anon`, sessionId: `${market}-common-session`, source: 'z-common',
+    });
+  }
+
+  const comRows = await queryPromotionChannelsDb(com, queryFilters());
+  const result = await loadPromotionChannels({ com, cn }, queryFilters({ markets: ['com', 'cn'] }));
+
+  assert.equal(comRows.rows.length, 101);
+  assert.equal(result.rows.length, 100);
+  assert.equal(result.rows[0].source, 'z-common');
+  assert.equal(result.rows[0].serviceRequests, 2);
+  assert.equal(result.rows[0].registrations, 2);
+  assert.equal(result.summary.bestChannel.source, 'z-common');
+  assert.equal(result.summary.attributableServiceRequests, 402);
 });
