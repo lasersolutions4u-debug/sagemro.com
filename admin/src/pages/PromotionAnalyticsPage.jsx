@@ -24,17 +24,21 @@ export function PromotionAnalyticsPage({ loadOverview = getPromotionOverview }) 
     if (activeTab !== 'overview') return undefined;
     const controller = new AbortController();
     const requestNumber = ++sequence.current;
+    let disposed = false;
     setOverviewState({ status: 'loading', data: null, error: '' });
     loadOverview(activeFilters, controller.signal)
       .then((data) => {
-        if (sequence.current === requestNumber) setOverviewState({ status: 'ready', data, error: '' });
+        if (!disposed && sequence.current === requestNumber) setOverviewState({ status: 'ready', data, error: '' });
       })
       .catch((error) => {
-        if (error?.name !== 'AbortError' && sequence.current === requestNumber) {
+        if (!disposed && error?.name !== 'AbortError' && sequence.current === requestNumber) {
           setOverviewState({ status: 'error', data: null, error: error?.message || (isCn ? '推广分析暂时不可用' : 'Promotion analytics is temporarily unavailable') });
         }
       });
-    return () => controller.abort();
+    return () => {
+      disposed = true;
+      controller.abort();
+    };
   }, [activeFilters, reloadKey, activeTab, isCn, loadOverview]);
 
   const overview = overviewState.data;

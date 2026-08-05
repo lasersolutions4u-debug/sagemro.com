@@ -19,18 +19,25 @@ function value(data, key) {
   return data && data[key] !== undefined ? data[key] : null;
 }
 
+function comparableValue(data, key) {
+  const raw = value(data, key);
+  if (raw === null || raw === undefined || raw === '') return null;
+  const number = Number(raw);
+  return Number.isFinite(number) ? number : null;
+}
+
 function changed(current, previous, key) {
-  const currentValue = Number(value(current, key));
-  const previousValue = Number(value(previous, key));
-  if (!Number.isFinite(currentValue) || !Number.isFinite(previousValue) || previousValue === 0) return null;
+  const currentValue = comparableValue(current, key);
+  const previousValue = comparableValue(previous, key);
+  if (currentValue === null || previousValue === null || previousValue === 0) return null;
   return (currentValue - previousValue) / Math.abs(previousValue);
 }
 
 function metricChange(current, previous, key, type) {
   if (type === 'percent') {
-    const now = Number(value(current, key));
-    const before = Number(value(previous, key));
-    return Number.isFinite(now) && Number.isFinite(before) ? now - before : null;
+    const now = comparableValue(current, key);
+    const before = comparableValue(previous, key);
+    return now !== null && before !== null ? now - before : null;
   }
   return changed(current, previous, key);
 }
