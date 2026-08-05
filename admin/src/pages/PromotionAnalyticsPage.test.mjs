@@ -10,8 +10,10 @@ const api = await readFile(new URL('../services/api.js', import.meta.url), 'utf8
 const { getPromotionChannels, getPromotionOverview } = await import('../services/api.js');
 const {
   buildLinePoints,
+  filterChannelRows,
   formatChange,
   formatMetric,
+  sortChannelRows,
   statusTone,
 } = await import('./promotionAnalyticsView.js');
 const vite = await createServer({
@@ -60,6 +62,31 @@ function overviewFixture({ sampleStatus = 'ready', sessions = 20 } = {}) {
   };
 }
 
+function channelsFixture({ rows = channelRows(), daily = null } = {}) {
+  return {
+    reporting_timezone: 'Asia/Shanghai',
+    allowed_markets: ['com', 'cn'],
+    filters: { from: '2026-08-01', to: '2026-08-05', markets: ['com'], source: '', medium: '', campaign: '' },
+    rows,
+    daily: daily || [{ date: '2026-08-01', sessions: 24, aiRequests: 12, serviceRequests: 3 }],
+    summary: {
+      bestChannel: { source: 'google', medium: 'cpc', sessions: 40, serviceRequests: 4 },
+      bestCampaign: { campaign: 'summer-launch', sessions: 40, serviceRequests: 4 },
+      attributableServiceRequests: 6,
+      attributionCoverage: 0.75,
+    },
+    data_quality: { attributionCoverage: 0.75 },
+  };
+}
+
+function channelRows() {
+  return [
+    { source: 'google', medium: 'cpc', campaign: 'summer-launch', sessions: 40, aiRequests: 20, aiSuccesses: 19, registrations: 6, serviceRequests: 4 },
+    { source: 'linkedin', medium: 'paid', campaign: 'industrial', sessions: 20, aiRequests: 10, aiSuccesses: 8, registrations: 4, serviceRequests: 4 },
+    { source: '', medium: '', campaign: '', sessions: 6, aiRequests: 2, aiSuccesses: 1, registrations: 0, serviceRequests: 0 },
+  ];
+}
+
 function textContent(node) {
   if (typeof node === 'string' || typeof node === 'number') return String(node);
   if (!node) return '';
@@ -104,6 +131,22 @@ test('promotion analytics view helpers format empty metrics, ratios, changes, an
   assert.equal(statusTone('normal'), 'success');
 });
 
+test('channel helpers sort stably without mutation and locally filter source, medium, and campaign', () => {
+  const rows = [
+    { source: 'zeta', medium: 'email', campaign: 'fall', sessions: 20, registrations: 2, serviceRequests: 1, aiSuccessRate: null },
+    { source: 'alpha', medium: 'cpc', campaign: 'spring', sessions: 40, registrations: 2, serviceRequests: 4, aiSuccessRate: 0.8 },
+    { source: 'beta', medium: 'paid', campaign: 'link launch', sessions: 20, registrations: 3, serviceRequests: 4, aiSuccessRate: 0.9 },
+    { source: 'gamma', medium: 'paid', campaign: 'link launch', sessions: 20, registrations: 3, serviceRequests: 4, aiSuccessRate: null },
+  ];
+  const snapshot = [...rows];
+  assert.deepEqual(sortChannelRows(rows).map((row) => row.source), ['beta', 'gamma', 'alpha', 'zeta']);
+  assert.deepEqual(rows, snapshot);
+  assert.deepEqual(sortChannelRows(rows, 'aiSuccessRate', 'desc').map((row) => row.source), ['beta', 'alpha', 'gamma', 'zeta']);
+  assert.deepEqual(sortChannelRows(rows, 'aiSuccessRate', 'asc').map((row) => row.source), ['alpha', 'beta', 'gamma', 'zeta']);
+  assert.deepEqual(filterChannelRows(rows, 'LINK').map((row) => row.source), ['beta', 'gamma']);
+  assert.deepEqual(filterChannelRows(rows, 'EMAIL').map((row) => row.source), ['zeta']);
+});
+
 test('promotion overview contracts retain safe async, filter, status, and privacy behavior', async () => {
   const [page, filters, overview] = await Promise.all([
     readFile(new URL('./PromotionAnalyticsPage.jsx', import.meta.url), 'utf8'),
@@ -117,7 +160,7 @@ test('promotion overview contracts retain safe async, filter, status, and privac
   assert.match(page, /activeFilters/);
   assert.match(page, /Channel Analysis/);
   assert.match(page, /渠道分析/);
-  assert.doesNotMatch(page, /getPromotionChannels\(/);
+  assert.match(page, /getPromotionChannels/);
   assert.match(filters, /Asia\/Shanghai/);
   assert.match(filters, /maxLength=\{100\}/);
   assert.match(filters, /maxLength=\{200\}/);
@@ -217,9 +260,10 @@ test('settled requests cannot publish state after switching tabs or unmounting',
   assert.deepEqual(consoleErrors, []);
 });
 
-test('tabs expose linked panels and support roving focus keyboard navigation without loading Channel data', async () => {
+test('tabs expose linked panels, move focus with keys, and request only the active panel', async () => {
   const request = deferred();
   const calls = [];
+  const channelCalls = [];
   let focused = '';
   const loadOverview = (filters, signal) => {
     calls.push({ filters, signal });
@@ -227,7 +271,10 @@ test('tabs expose linked panels and support roving focus keyboard navigation wit
   };
   let renderer;
   await act(async () => {
-    renderer = TestRenderer.create(React.createElement(PromotionAnalyticsPage, { loadOverview }), {
+    renderer = TestRenderer.create(React.createElement(PromotionAnalyticsPage, { loadOverview, loadChannels: (filters, signal) => {
+      channelCalls.push({ filters, signal });
+      return new Promise(() => {});
+    } }), {
       createNodeMock(element) {
         return element.props?.role === 'tab' ? { focus: () => { focused = element.props.id; } } : {};
       },
@@ -253,6 +300,7 @@ test('tabs expose linked panels and support roving focus keyboard navigation wit
   assert.equal(prevented, 1);
   assert.equal(calls.length, 1);
   assert.equal(calls[0].signal.aborted, true);
+  assert.equal(channelCalls.length, 1);
   panel = renderer.root.findByProps({ role: 'tabpanel' });
   assert.equal(panel.props.id, 'promotion-channels-panel');
   assert.equal(panel.props['aria-labelledby'], 'promotion-channels-tab');
@@ -264,6 +312,7 @@ test('tabs expose linked panels and support roving focus keyboard navigation wit
   assert.equal(focused, 'promotion-overview-tab');
   assert.equal(tabs[0].props['aria-selected'], true);
   assert.equal(calls.length, 2);
+  assert.equal(channelCalls[0].signal.aborted, true);
   await act(async () => {
     tabs[0].props.onKeyDown({ key: 'Enter', preventDefault: () => { prevented += 1; } });
   });
@@ -275,6 +324,7 @@ test('tabs expose linked panels and support roving focus keyboard navigation wit
   assert.equal(focused, 'promotion-channels-tab');
   assert.equal(tabs[1].props['aria-selected'], true);
   assert.equal(calls.length, 2);
+  assert.equal(channelCalls.length, 2);
   await act(async () => {
     tabs[1].props.onKeyDown({ key: 'ArrowLeft', preventDefault: () => { prevented += 1; } });
   });
@@ -282,8 +332,119 @@ test('tabs expose linked panels and support roving focus keyboard navigation wit
   assert.equal(focused, 'promotion-overview-tab');
   assert.equal(tabs[0].props['aria-selected'], true);
   assert.equal(calls.length, 3);
+  assert.equal(channelCalls[1].signal.aborted, true);
   assert.equal(prevented, 4);
   await act(async () => renderer.unmount());
+});
+
+test('channel analysis loads only while active, keeps local search local, and applies then clears an exact channel filter', async () => {
+  const channelRequests = [];
+  const loadChannels = (filters, signal) => {
+    channelRequests.push({ filters, signal });
+    return Promise.resolve(channelsFixture());
+  };
+  let renderer;
+  await act(async () => {
+    renderer = TestRenderer.create(React.createElement(PromotionAnalyticsPage, {
+      loadOverview: () => Promise.resolve(overviewFixture()),
+      loadChannels,
+    }));
+  });
+  assert.equal(channelRequests.length, 0);
+  await act(async () => {
+    findButton(renderer.root, 'Channel Analysis').props.onClick();
+  });
+  assert.equal(channelRequests.length, 1);
+  assert.match(textContent(renderer.toJSON()), /Best channel/);
+  assert.match(textContent(renderer.toJSON()), /Direct \/ Unattributed/);
+  assert.match(textContent(renderer.toJSON()), /Insufficient sample/);
+
+  const search = findField(renderer.root, 'Search channels');
+  await act(async () => {
+    search.props.onChange({ target: { value: 'linked' } });
+  });
+  assert.equal(channelRequests.length, 1);
+  assert.deepEqual(renderer.root.findAll((node) => node.props.role === 'button' && String(node.props['aria-label'] || '').startsWith('Select ')).map((node) => node.props['aria-label']), ['Select linkedin / paid / industrial']);
+
+  await act(async () => {
+    renderer.root.findByProps({ 'aria-label': 'Select linkedin / paid / industrial' }).props.onClick();
+  });
+  assert.equal(channelRequests.length, 2);
+  assert.deepEqual(channelRequests[1].filters, {
+    ...channelRequests[0].filters,
+    source: 'linkedin', medium: 'paid', campaign: 'industrial',
+  });
+  assert.match(textContent(renderer.toJSON()), /Active channel/);
+  await act(async () => {
+    findButton(renderer.root, 'Clear channel filter').props.onClick();
+  });
+  assert.equal(channelRequests.length, 3);
+  assert.deepEqual(channelRequests[2].filters, {
+    ...channelRequests[0].filters,
+    source: '', medium: '', campaign: '',
+  });
+  await act(async () => renderer.unmount());
+});
+
+test('channel requests abort on tab changes, ignore stale responses, and retry only the channel query', async () => {
+  const first = deferred();
+  const second = deferred();
+  const requests = [];
+  const loadChannels = (filters, signal) => {
+    requests.push({ filters, signal });
+    return requests.length === 1 ? first.promise : second.promise;
+  };
+  let renderer;
+  await act(async () => {
+    renderer = TestRenderer.create(React.createElement(PromotionAnalyticsPage, {
+      loadOverview: () => Promise.resolve(overviewFixture()),
+      loadChannels,
+    }));
+  });
+  await act(async () => findButton(renderer.root, 'Channel Analysis').props.onClick());
+  assert.equal(requests.length, 1);
+  await act(async () => findButton(renderer.root, 'Overview').props.onClick());
+  assert.equal(requests[0].signal.aborted, true);
+  await act(async () => findButton(renderer.root, 'Channel Analysis').props.onClick());
+  assert.equal(requests.length, 2);
+  await act(async () => {
+    second.resolve(channelsFixture({ rows: [{ source: 'fresh', medium: 'email', campaign: 'current', sessions: 20, aiRequests: 2, aiSuccesses: 2, registrations: 1, serviceRequests: 1 }] }));
+    await second.promise;
+  });
+  await act(async () => {
+    first.resolve(channelsFixture({ rows: [{ source: 'stale', medium: 'email', campaign: 'old', sessions: 20, aiRequests: 2, aiSuccesses: 2, registrations: 1, serviceRequests: 1 }] }));
+    await first.promise;
+  });
+  assert.match(textContent(renderer.toJSON()), /fresh/);
+  assert.doesNotMatch(textContent(renderer.toJSON()), /stale/);
+  await act(async () => renderer.unmount());
+
+  const retries = [];
+  await act(async () => {
+    renderer = TestRenderer.create(React.createElement(PromotionAnalyticsPage, {
+      loadOverview: () => Promise.resolve(overviewFixture()),
+      loadChannels: (filters, signal) => {
+        retries.push({ filters, signal });
+        return retries.length === 1 ? Promise.reject(new Error('Channel query unavailable')) : Promise.resolve(channelsFixture());
+      },
+    }));
+  });
+  await act(async () => findButton(renderer.root, 'Channel Analysis').props.onClick());
+  assert.match(textContent(renderer.toJSON()), /Channel query unavailable/);
+  await act(async () => findButton(renderer.root, 'Retry').props.onClick());
+  assert.equal(retries.length, 2);
+  await act(async () => renderer.unmount());
+});
+
+test('channel analysis source contract stays bilingual, table-first, and excludes identity and advertising-cost data', async () => {
+  const channels = await readFile(new URL('../components/promotion/ChannelAnalysis.jsx', import.meta.url), 'utf8');
+  assert.match(channels, /Source \/ medium/);
+  assert.match(channels, /来源 \/ 媒介/);
+  assert.match(channels, /Service requests/);
+  assert.match(channels, /服务请求/);
+  assert.match(channels, /aria-sort/);
+  assert.match(channels, /最多 100 聚合行/);
+  assert.doesNotMatch(channels, /anonymous_id|session_id|request_id|ip_hash|user_agent|CPA|ROAS|Ad spend|广告花费/i);
 });
 
 test('Retry reloads the active filters without applying later draft edits', async () => {

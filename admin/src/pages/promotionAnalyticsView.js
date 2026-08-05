@@ -30,6 +30,57 @@ export function buildLinePoints(values, width, height) {
   });
 }
 
+function channelNumber(row, key) {
+  const value = numeric(row?.[key]);
+  if (value !== null) return value;
+  if (key === 'aiSuccessRate') {
+    const requests = numeric(row?.aiRequests);
+    const successes = numeric(row?.aiSuccesses);
+    return requests && successes !== null ? successes / requests : null;
+  }
+  if (key === 'sessionToRequestRate') {
+    const sessions = numeric(row?.sessions);
+    const requests = numeric(row?.serviceRequests);
+    return sessions && requests !== null ? requests / sessions : null;
+  }
+  return null;
+}
+
+function channelTieBreak(left, right) {
+  return String(left?.source || '').localeCompare(String(right?.source || ''))
+    || String(left?.medium || '').localeCompare(String(right?.medium || ''))
+    || String(left?.campaign || '').localeCompare(String(right?.campaign || ''));
+}
+
+export function sortChannelRows(rows, key = 'serviceRequests', direction = 'desc') {
+  const descending = direction !== 'asc';
+  const defaultSort = key === 'serviceRequests' && descending;
+  return (rows || []).map((row, index) => ({ row, index })).sort((left, right) => {
+    if (defaultSort) {
+      const defaultDifference = channelNumber(right.row, 'serviceRequests') - channelNumber(left.row, 'serviceRequests')
+        || channelNumber(right.row, 'registrations') - channelNumber(left.row, 'registrations')
+        || channelNumber(right.row, 'sessions') - channelNumber(left.row, 'sessions');
+      return defaultDifference || channelTieBreak(left.row, right.row) || left.index - right.index;
+    }
+    const leftValue = channelNumber(left.row, key);
+    const rightValue = channelNumber(right.row, key);
+    if (leftValue === null || rightValue === null) {
+      if (leftValue !== rightValue) return leftValue === null ? 1 : -1;
+    } else if (leftValue !== rightValue) {
+      return descending ? rightValue - leftValue : leftValue - rightValue;
+    }
+    return channelTieBreak(left.row, right.row) || left.index - right.index;
+  }).map(({ row }) => row);
+}
+
+export function filterChannelRows(rows, query) {
+  const search = String(query || '').trim().toLocaleLowerCase();
+  if (!search) return [...(rows || [])];
+  return (rows || []).filter((row) => ['source', 'medium', 'campaign'].some((key) => (
+    String(row?.[key] || '').toLocaleLowerCase().includes(search)
+  )));
+}
+
 export function statusTone(level) {
   if (level === 'critical') return 'error';
   if (level === 'warning') return 'warning';

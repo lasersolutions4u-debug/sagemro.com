@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { PromotionFilters, createPromotionFilters } from '../components/promotion/PromotionFilters.jsx';
+import { ChannelAnalysis } from '../components/promotion/ChannelAnalysis.jsx';
 import { PromotionOverview } from '../components/promotion/PromotionOverview.jsx';
 import { runtimeConfig } from '../config/runtime';
-import { getPromotionOverview } from '../services/api.js';
+import { getPromotionChannels, getPromotionOverview } from '../services/api.js';
 
 const EMPTY_STATE = { status: 'loading', data: null, error: '' };
 const TAB_DEFINITIONS = [
@@ -10,14 +11,17 @@ const TAB_DEFINITIONS = [
   { key: 'channels', tabId: 'promotion-channels-tab', panelId: 'promotion-channels-panel' },
 ];
 
-export function PromotionAnalyticsPage({ loadOverview = getPromotionOverview }) {
+export function PromotionAnalyticsPage({ loadOverview = getPromotionOverview, loadChannels = getPromotionChannels }) {
   const isCn = runtimeConfig.locale === 'zh-CN';
   const [activeTab, setActiveTab] = useState('overview');
   const [draftFilters, setDraftFilters] = useState(() => createPromotionFilters(runtimeConfig.market));
   const [activeFilters, setActiveFilters] = useState(() => createPromotionFilters(runtimeConfig.market));
   const [overviewState, setOverviewState] = useState(EMPTY_STATE);
+  const [channelState, setChannelState] = useState(EMPTY_STATE);
   const [reloadKey, setReloadKey] = useState(0);
+  const [channelReloadKey, setChannelReloadKey] = useState(0);
   const sequence = useRef(0);
+  const channelSequence = useRef(0);
   const tabRefs = useRef([]);
 
   useEffect(() => {
@@ -41,15 +45,48 @@ export function PromotionAnalyticsPage({ loadOverview = getPromotionOverview }) 
     };
   }, [activeFilters, reloadKey, activeTab, isCn, loadOverview]);
 
-  const overview = overviewState.data;
-  const allowedMarkets = overview?.allowed_markets || [runtimeConfig.market];
-  const reportingTimezone = overview?.reporting_timezone || 'Asia/Shanghai';
-  const coverageStart = overview?.data_quality?.coverageStart || overview?.dataQuality?.coverageStart;
+  useEffect(() => {
+    if (activeTab !== 'channels') return undefined;
+    const controller = new AbortController();
+    const requestNumber = ++channelSequence.current;
+    let disposed = false;
+    setChannelState({ status: 'loading', data: null, error: '' });
+    loadChannels(activeFilters, controller.signal)
+      .then((data) => {
+        if (!disposed && channelSequence.current === requestNumber) setChannelState({ status: 'ready', data, error: '' });
+      })
+      .catch((error) => {
+        if (!disposed && error?.name !== 'AbortError' && channelSequence.current === requestNumber) {
+          setChannelState({ status: 'error', data: null, error: error?.message || (isCn ? '渠道分析暂时不可用' : 'Channel analysis is temporarily unavailable') });
+        }
+      });
+    return () => {
+      disposed = true;
+      controller.abort();
+    };
+  }, [activeFilters, activeTab, channelReloadKey, isCn, loadChannels]);
+
+  const activeData = activeTab === 'overview' ? overviewState.data : channelState.data;
+  const allowedMarkets = activeData?.allowed_markets || [runtimeConfig.market];
+  const reportingTimezone = activeData?.reporting_timezone || 'Asia/Shanghai';
+  const coverageStart = activeData?.data_quality?.coverageStart || activeData?.dataQuality?.coverageStart;
   const tabCopy = isCn
-    ? { overview: '推广概览', channels: '渠道分析', loading: '正在读取推广概览', retry: '重试', error: '无法读取推广概览', unavailable: '渠道分析将在下一步提供，当前不会请求渠道数据。' }
-    : { overview: 'Overview', channels: 'Channel Analysis', loading: 'Loading promotion overview', retry: 'Retry', error: 'Unable to load promotion overview', unavailable: 'Channel analysis is the next step. This tab does not request channel data yet.' };
+    ? { overview: '推广概览', channels: '渠道分析', loading: '正在读取推广概览', retry: '重试', error: '无法读取推广概览' }
+    : { overview: 'Overview', channels: 'Channel Analysis', loading: 'Loading promotion overview', retry: 'Retry', error: 'Unable to load promotion overview' };
 
   const applyFilters = () => setActiveFilters({ ...draftFilters });
+  const applyChannel = (row) => {
+    const nextFilters = { ...activeFilters, source: row.source || '', medium: row.medium || '', campaign: row.campaign || '' };
+    setDraftFilters(nextFilters);
+    setActiveFilters(nextFilters);
+    setChannelReloadKey((current) => current + 1);
+  };
+  const clearChannel = () => {
+    const nextFilters = { ...activeFilters, source: '', medium: '', campaign: '' };
+    setDraftFilters(nextFilters);
+    setActiveFilters(nextFilters);
+    setChannelReloadKey((current) => current + 1);
+  };
   const handleTabKeyDown = (event, index) => {
     let nextIndex;
     if (event.key === 'ArrowRight') nextIndex = (index + 1) % TAB_DEFINITIONS.length;
@@ -73,9 +110,19 @@ export function PromotionAnalyticsPage({ loadOverview = getPromotionOverview }) 
         {TAB_DEFINITIONS.map((tab, index) => <button key={tab.key} ref={(node) => { tabRefs.current[index] = node; }} id={tab.tabId} type="button" role="tab" aria-controls={tab.panelId} aria-selected={activeTab === tab.key} tabIndex={activeTab === tab.key ? 0 : -1} onClick={() => setActiveTab(tab.key)} onKeyDown={(event) => handleTabKeyDown(event, index)} className={`min-h-10 border-b-2 px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--color-bg)] ${activeTab === tab.key ? 'border-[var(--color-primary)] text-[var(--color-primary)]' : 'border-transparent text-[var(--color-text-secondary)] hover:text-[var(--color-text)]'}`}>{tabCopy[tab.key]}</button>)}
       </div>
       <PromotionFilters filters={draftFilters} allowedMarkets={allowedMarkets} onChange={setDraftFilters} onApply={applyFilters} isCn={isCn} reportingTimezone={reportingTimezone} coverageStart={coverageStart} />
-      {activeTab === 'overview' ? <div id="promotion-overview-panel" className="mt-4" role="tabpanel" aria-labelledby="promotion-overview-tab" aria-busy={overviewState.status === 'loading'}><OverviewState state={overviewState} isCn={isCn} retry={() => setReloadKey((current) => current + 1)} copy={tabCopy} /></div> : <div id="promotion-channels-panel" className="mt-4" role="tabpanel" aria-labelledby="promotion-channels-tab"><section className="border border-dashed border-[var(--color-border)] bg-[var(--color-surface)] p-6 text-sm text-[var(--color-text-secondary)]"><h2 className="font-semibold text-[var(--color-text)]">{tabCopy.channels}</h2><p className="mt-2">{tabCopy.unavailable}</p></section></div>}
+      {activeTab === 'overview' ? <div id="promotion-overview-panel" className="mt-4" role="tabpanel" aria-labelledby="promotion-overview-tab" aria-busy={overviewState.status === 'loading'}><OverviewState state={overviewState} isCn={isCn} retry={() => setReloadKey((current) => current + 1)} copy={tabCopy} /></div> : <div id="promotion-channels-panel" className="mt-4" role="tabpanel" aria-labelledby="promotion-channels-tab" aria-busy={channelState.status === 'loading'}><ChannelState state={channelState} isCn={isCn} activeFilters={activeFilters} retry={() => setChannelReloadKey((current) => current + 1)} onSelect={applyChannel} onClear={clearChannel} /></div>}
     </section>
   );
+}
+
+function ChannelState({ state, isCn, activeFilters, retry, onSelect, onClear }) {
+  const copy = isCn
+    ? { loading: '正在读取渠道分析', error: '无法读取渠道分析', retry: '重试', noData: '暂无样本' }
+    : { loading: 'Loading channel analysis', error: 'Unable to load channel analysis', retry: 'Retry', noData: 'No data' };
+  if (state.status === 'loading') return <div className="space-y-3" aria-label={copy.loading}><div className="h-20 border border-[var(--color-border)] bg-[var(--color-surface-elevated)]" /><div className="h-72 border border-[var(--color-border)] bg-[var(--color-surface)]" /></div>;
+  if (state.status === 'error') return <section className="border border-[var(--color-error)]/50 bg-[var(--color-error)]/10 p-4 text-[var(--color-text)]" role="alert"><h2 className="font-semibold">{copy.error}</h2><p className="mt-1 text-sm text-[var(--color-text-secondary)]">{state.error}</p><button type="button" onClick={retry} className="mt-4 rounded-md border border-[var(--color-error)]/60 px-3 py-2 text-sm outline-none hover:bg-[var(--color-error)]/10 focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]">{copy.retry}</button></section>;
+  if (!state.data?.rows?.length) return <section className="border border-dashed border-[var(--color-border)] bg-[var(--color-surface)] p-6 text-sm text-[var(--color-text-secondary)]"><h2 className="font-semibold text-[var(--color-text)]">{copy.noData}</h2></section>;
+  return <ChannelAnalysis data={state.data} activeFilters={activeFilters} isCn={isCn} onSelect={onSelect} onClear={onClear} />;
 }
 
 function OverviewState({ state, isCn, retry, copy }) {
