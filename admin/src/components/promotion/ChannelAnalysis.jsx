@@ -35,7 +35,7 @@ function hasActiveAttributionFilter(filters) {
 
 export function ChannelFilterAffordance({ activeFilters, isCn, onClear }) {
   if (!hasActiveAttributionFilter(activeFilters)) return null;
-  return <div className="flex flex-wrap items-center gap-2 border-l-2 border-[var(--color-primary)] bg-[var(--color-surface-elevated)] px-3 py-2 text-sm"><span className="text-[var(--color-text-muted)]">{isCn ? '当前渠道' : 'Active channel'}:</span><span className="font-mono text-[var(--color-text)]">{selectionLabel(activeFilters, isCn)}</span><button type="button" onClick={onClear} className="ml-auto text-sm font-semibold text-[var(--color-primary)] outline-none hover:underline focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]">{isCn ? '清除渠道筛选' : 'Clear channel filter'}</button></div>;
+  return <div className="mt-4 flex flex-wrap items-center gap-2 border-l-2 border-[var(--color-primary)] bg-[var(--color-surface-elevated)] px-3 py-2 text-sm"><span className="text-[var(--color-text-muted)]">{isCn ? '当前渠道' : 'Active channel'}:</span><span className="font-mono text-[var(--color-text)]">{selectionLabel(activeFilters, isCn)}</span><button type="button" onClick={onClear} className="ml-auto text-sm font-semibold text-[var(--color-primary)] outline-none hover:underline focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]">{isCn ? '清除渠道筛选' : 'Clear channel filter'}</button></div>;
 }
 
 function SortHeader({ label, field, sort, onSort }) {
