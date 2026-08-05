@@ -148,7 +148,14 @@ function addSnapshotRates(snapshot) {
 
 export function mergePromotionSnapshots(snapshots) {
   const merged = Object.fromEntries(COUNT_FIELDS.map((field) => [field, 0]));
-  for (const snapshot of snapshots || []) addSnapshotCounts(merged, snapshot || {});
+  let coverageStart = null;
+  for (const snapshot of snapshots || []) {
+    addSnapshotCounts(merged, snapshot || {});
+    if (snapshot?.coverageStart && (!coverageStart || snapshot.coverageStart < coverageStart)) {
+      coverageStart = snapshot.coverageStart;
+    }
+  }
+  merged.coverageStart = coverageStart;
   return addSnapshotRates(merged);
 }
 
@@ -265,4 +272,258 @@ export function evaluatePromotionHealth(current = {}, previous = {}, recentAi = 
   }
 
   return { level, reasons };
+}
+
+export function buildEventWhere(filters) {
+  const clauses = ['created_at >= ?', 'created_at < ?'];
+  const params = [filters.fromUtc, filters.effectiveToUtcExclusive];
+  for (const [column, value] of [
+    ['source', filters.source],
+    ['medium', filters.medium],
+    ['campaign', filters.campaign],
+  ]) {
+    if (!value) continue;
+    clauses.push(`${column} = ?`);
+    params.push(value);
+  }
+  return { sql: clauses.join(' AND '), params };
+}
+
+const FILTERED_EVENTS = (where) => `
+  WITH filtered AS (
+    SELECT event_name, session_id, anonymous_id, source, medium, campaign, created_at,
+           json_extract(properties_json, '$.analytics_version') AS analytics_version,
+           json_extract(properties_json, '$.request_id') AS request_id
+    FROM funnel_events
+    WHERE ${where}
+  )
+`;
+
+const OVERVIEW_SELECT = `
+  SELECT
+    COUNT(DISTINCT CASE WHEN analytics_version = '2' AND event_name = 'traffic_source_captured' THEN session_id END) AS sessions,
+    COUNT(DISTINCT CASE WHEN analytics_version = '2' AND event_name = 'ai_conversation_started' THEN request_id END) AS aiRequests,
+    COUNT(DISTINCT CASE WHEN analytics_version = '2' AND event_name = 'ai_response_received' THEN request_id END) AS aiSuccesses,
+    SUM(CASE WHEN analytics_version = '2' AND event_name = 'signup_completed' THEN 1 ELSE 0 END) AS registrationEvents,
+    SUM(CASE WHEN analytics_version = '2' AND event_name = 'service_request_created' THEN 1 ELSE 0 END) AS serviceRequestEvents,
+    COUNT(DISTINCT CASE WHEN analytics_version = '2' AND event_name = 'traffic_source_captured' AND COALESCE(anonymous_id, '') != '' THEN anonymous_id END) AS visitors,
+    COUNT(DISTINCT CASE WHEN analytics_version = '2' AND event_name = 'ai_conversation_started' AND COALESCE(anonymous_id, '') != '' THEN anonymous_id END) AS aiVisitors,
+    COUNT(DISTINCT CASE WHEN analytics_version = '2' AND event_name = 'signup_completed' AND COALESCE(anonymous_id, '') != '' THEN anonymous_id END) AS registrationVisitors,
+    COUNT(DISTINCT CASE WHEN analytics_version = '2' AND event_name = 'service_request_created' AND COALESCE(anonymous_id, '') != '' THEN anonymous_id END) AS serviceVisitors,
+    SUM(CASE WHEN analytics_version = '2' AND COALESCE(anonymous_id, '') = '' THEN 1 ELSE 0 END) AS missingAnonymousEvents,
+    COUNT(DISTINCT CASE WHEN analytics_version = '2' AND event_name = 'traffic_source_captured' AND COALESCE(source, '') = '' THEN session_id END) AS unattributedSessions,
+    MIN(CASE WHEN analytics_version = '2' THEN created_at END) AS coverageStart,
+    SUM(CASE WHEN analytics_version IS NULL OR analytics_version != '2' THEN 1 ELSE 0 END) AS legacyEvents
+  FROM filtered
+`;
+
+function dbFirst(db, sql, params) {
+  return db.prepare(sql).bind(...params).first();
+}
+
+async function dbRows(db, sql, params) {
+  const result = await db.prepare(sql).bind(...params).all();
+  return result?.results || [];
+}
+
+function normalizeSnapshot(snapshot = {}) {
+  const normalized = Object.fromEntries(COUNT_FIELDS.map((field) => [field, count(snapshot[field])]));
+  normalized.coverageStart = snapshot.coverageStart || null;
+  return addSnapshotRates(normalized);
+}
+
+function normalizeDailyRow(row = {}) {
+  return {
+    date: row.date,
+    sessions: count(row.sessions),
+    aiRequests: count(row.aiRequests),
+    aiSuccesses: count(row.aiSuccesses),
+    registrations: count(row.registrations),
+    serviceRequests: count(row.serviceRequests),
+  };
+}
+
+function normalizeChannelRow(row = {}) {
+  return {
+    source: row.source || '',
+    medium: row.medium || '',
+    campaign: row.campaign || '',
+    sessions: count(row.sessions),
+    aiRequests: count(row.aiRequests),
+    aiSuccesses: count(row.aiSuccesses),
+    registrations: count(row.registrations),
+    serviceRequests: count(row.serviceRequests),
+  };
+}
+
+function dailySql(where) {
+  return `${FILTERED_EVENTS(where)}
+    SELECT
+      date(datetime(created_at, '+8 hours')) AS date,
+      COUNT(DISTINCT CASE WHEN analytics_version = '2' AND event_name = 'traffic_source_captured' THEN session_id END) AS sessions,
+      COUNT(DISTINCT CASE WHEN analytics_version = '2' AND event_name = 'ai_conversation_started' THEN request_id END) AS aiRequests,
+      COUNT(DISTINCT CASE WHEN analytics_version = '2' AND event_name = 'ai_response_received' THEN request_id END) AS aiSuccesses,
+      COUNT(DISTINCT CASE WHEN analytics_version = '2' AND event_name = 'signup_completed' AND COALESCE(anonymous_id, '') != '' THEN anonymous_id END) AS registrations,
+      COUNT(DISTINCT CASE WHEN analytics_version = '2' AND event_name = 'service_request_created' AND COALESCE(anonymous_id, '') != '' THEN anonymous_id END) AS serviceRequests
+    FROM filtered
+    GROUP BY date
+    ORDER BY date ASC`;
+}
+
+function recentAiSql(where) {
+  return `${FILTERED_EVENTS(where)},
+    starts AS (
+      SELECT request_id, MAX(created_at) AS createdAt
+      FROM filtered
+      WHERE analytics_version = '2'
+        AND event_name = 'ai_conversation_started'
+        AND COALESCE(request_id, '') != ''
+      GROUP BY request_id
+    )
+    SELECT starts.createdAt AS createdAt,
+      CASE WHEN COUNT(responses.request_id) > 0 THEN 1 ELSE 0 END AS success
+    FROM starts
+    LEFT JOIN filtered responses
+      ON responses.analytics_version = '2'
+      AND responses.event_name = 'ai_response_received'
+      AND responses.request_id = starts.request_id
+    GROUP BY starts.request_id, starts.createdAt
+    ORDER BY starts.createdAt DESC
+    LIMIT 5`;
+}
+
+export async function queryPromotionOverviewDb(db, filters) {
+  const { sql: where, params } = buildEventWhere(filters);
+  const [snapshot, daily, recentAi] = await Promise.all([
+    dbFirst(db, `${FILTERED_EVENTS(where)}${OVERVIEW_SELECT}`, params),
+    dbRows(db, dailySql(where), params),
+    dbRows(db, recentAiSql(where), params),
+  ]);
+  return {
+    ...normalizeSnapshot(snapshot),
+    daily: daily.map(normalizeDailyRow),
+    recentAi: recentAi.map((row) => ({
+      success: Boolean(row.success),
+      createdAt: row.createdAt,
+    })),
+  };
+}
+
+function channelSql(where) {
+  return `${FILTERED_EVENTS(where)}
+    SELECT
+      COALESCE(source, '') AS source,
+      COALESCE(medium, '') AS medium,
+      COALESCE(campaign, '') AS campaign,
+      COUNT(DISTINCT CASE WHEN analytics_version = '2' AND event_name = 'traffic_source_captured' THEN session_id END) AS sessions,
+      COUNT(DISTINCT CASE WHEN analytics_version = '2' AND event_name = 'ai_conversation_started' THEN request_id END) AS aiRequests,
+      COUNT(DISTINCT CASE WHEN analytics_version = '2' AND event_name = 'ai_response_received' THEN request_id END) AS aiSuccesses,
+      COUNT(DISTINCT CASE WHEN analytics_version = '2' AND event_name = 'signup_completed' AND COALESCE(anonymous_id, '') != '' THEN anonymous_id END) AS registrations,
+      COUNT(DISTINCT CASE WHEN analytics_version = '2' AND event_name = 'service_request_created' AND COALESCE(anonymous_id, '') != '' THEN anonymous_id END) AS serviceRequests
+    FROM filtered
+    GROUP BY source, medium, campaign
+    HAVING sessions > 0 OR aiRequests > 0 OR aiSuccesses > 0 OR registrations > 0 OR serviceRequests > 0
+    ORDER BY serviceRequests DESC, registrations DESC, sessions DESC
+    LIMIT 100`;
+}
+
+export async function queryPromotionChannelsDb(db, filters) {
+  const { sql: where, params } = buildEventWhere(filters);
+  const [rows, daily] = await Promise.all([
+    dbRows(db, channelSql(where), params),
+    dbRows(db, dailySql(where), params),
+  ]);
+  return {
+    rows: rows.map(normalizeChannelRow),
+    daily: daily.map(normalizeDailyRow),
+  };
+}
+
+function previousPeriodFilters(filters) {
+  const from = Date.parse(`${filters.fromUtc.replace(' ', 'T')}Z`);
+  const to = Date.parse(`${filters.toUtcExclusive.replace(' ', 'T')}Z`);
+  const duration = to - from;
+  return {
+    ...filters,
+    fromUtc: formatUtcDateTime(from - duration),
+    effectiveToUtcExclusive: formatUtcDateTime(from),
+  };
+}
+
+function mergeDailyRows(rowsByMarket) {
+  const rows = new Map();
+  for (const marketRows of rowsByMarket || []) {
+    for (const row of marketRows || []) {
+      const target = rows.get(row.date) || {
+        date: row.date, sessions: 0, aiRequests: 0, aiSuccesses: 0, registrations: 0, serviceRequests: 0,
+      };
+      for (const field of ['sessions', 'aiRequests', 'aiSuccesses', 'registrations', 'serviceRequests']) {
+        target[field] += count(row[field]);
+      }
+      rows.set(row.date, target);
+    }
+  }
+  return [...rows.values()].sort((left, right) => left.date.localeCompare(right.date));
+}
+
+function sortChannelRows(rows) {
+  return [...rows].sort((left, right) => (
+    right.serviceRequests - left.serviceRequests
+    || right.registrations - left.registrations
+    || right.sessions - left.sessions
+    || left.source.localeCompare(right.source)
+    || left.medium.localeCompare(right.medium)
+    || left.campaign.localeCompare(right.campaign)
+  ));
+}
+
+export async function loadPromotionOverview(databases, filters) {
+  const currentByMarket = await Promise.all(filters.markets.map((market) => (
+    queryPromotionOverviewDb(databases[market], filters)
+  )));
+  const previousByMarket = await Promise.all(filters.markets.map((market) => (
+    queryPromotionOverviewDb(databases[market], previousPeriodFilters(filters))
+  )));
+  const current = mergePromotionSnapshots(currentByMarket);
+  const previous = mergePromotionSnapshots(previousByMarket);
+  const recentAi = currentByMarket
+    .flatMap((snapshot) => snapshot.recentAi)
+    .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
+    .slice(0, 5)
+    .map(({ success }) => ({ success }));
+  return {
+    current,
+    previous,
+    daily: mergeDailyRows(currentByMarket.map((snapshot) => snapshot.daily)),
+    recentAi,
+    health: evaluatePromotionHealth(current, previous, recentAi),
+    dataQuality: {
+      coverageStart: current.coverageStart,
+      legacyEvents: current.legacyEvents,
+      missingAnonymousEvents: current.missingAnonymousEvents,
+      unattributedSessions: current.unattributedSessions,
+      attributionCoverage: ratio(current.sessions - current.unattributedSessions, current.sessions),
+    },
+  };
+}
+
+export async function loadPromotionChannels(databases, filters) {
+  const results = await Promise.all(filters.markets.map((market) => (
+    queryPromotionChannelsDb(databases[market], filters)
+  )));
+  const rows = sortChannelRows(mergeChannelRows(results.map((result) => result.rows))).slice(0, 100);
+  const attributedRows = rows.filter((row) => row.source !== '');
+  return {
+    rows,
+    daily: mergeDailyRows(results.map((result) => result.daily)),
+    summary: {
+      bestChannel: rows[0] || null,
+      bestCampaign: rows[0] || null,
+      attributableServiceRequests: attributedRows.reduce((total, row) => total + row.serviceRequests, 0),
+      attributionCoverage: ratio(
+        attributedRows.reduce((total, row) => total + row.sessions, 0),
+        rows.reduce((total, row) => total + row.sessions, 0),
+      ),
+    },
+  };
 }

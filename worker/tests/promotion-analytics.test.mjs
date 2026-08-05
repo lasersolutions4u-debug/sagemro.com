@@ -1,12 +1,18 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { DatabaseSync } from 'node:sqlite';
 
 import {
   PromotionAnalyticsInputError,
+  buildEventWhere,
   evaluatePromotionHealth,
+  loadPromotionChannels,
+  loadPromotionOverview,
   mergeChannelRows,
   mergePromotionSnapshots,
   parsePromotionFilters,
+  queryPromotionChannelsDb,
+  queryPromotionOverviewDb,
   ratio,
 } from '../src/lib/promotionAnalytics.js';
 
@@ -18,6 +24,86 @@ function filters(values, options = {}) {
     now,
     ...options,
   });
+}
+
+function createD1Database() {
+  const sqlite = new DatabaseSync(':memory:');
+  sqlite.exec(`
+    CREATE TABLE funnel_events (
+      id TEXT PRIMARY KEY, event_name TEXT NOT NULL, market TEXT NOT NULL DEFAULT 'com',
+      anonymous_id TEXT, session_id TEXT, user_type TEXT, user_id TEXT,
+      source TEXT, medium TEXT, campaign TEXT, page_path TEXT, referrer TEXT,
+      properties_json TEXT, ip_hash TEXT, user_agent TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+  `);
+  return {
+    prepare(sql) {
+      let args = [];
+      return {
+        bind(...values) {
+          args = values;
+          return this;
+        },
+        async first() {
+          return sqlite.prepare(sql).get(...args) || null;
+        },
+        async all() {
+          return { results: sqlite.prepare(sql).all(...args) };
+        },
+      };
+    },
+    close() { sqlite.close(); },
+  };
+}
+
+function seedEvent(db, {
+  id,
+  eventName,
+  anonymousId = 'anon-1',
+  sessionId = 'session-1',
+  source = 'google',
+  medium = 'cpc',
+  campaign = 'summer',
+  properties = { analytics_version: '2' },
+  createdAt = '2026-08-01 00:05:00',
+}) {
+  const statement = db.prepare(`
+    INSERT INTO funnel_events (
+      id, event_name, market, anonymous_id, session_id, source, medium, campaign,
+      properties_json, created_at
+    ) VALUES (?, ?, 'com', ?, ?, ?, ?, ?, ?, ?)
+  `);
+  return statement.bind(
+    id, eventName, anonymousId, sessionId, source, medium, campaign,
+    JSON.stringify(properties), createdAt,
+  ).all();
+}
+
+async function seedComLikeEvents(db) {
+  await seedEvent(db, { id: 'before-boundary', eventName: 'traffic_source_captured', createdAt: '2026-07-31 15:59:59' });
+  await seedEvent(db, { id: 'visit-a', eventName: 'traffic_source_captured', anonymousId: 'anon-a', sessionId: 'session-a' });
+  await seedEvent(db, { id: 'visit-b', eventName: 'traffic_source_captured', anonymousId: 'anon-b', sessionId: 'session-b' });
+  await seedEvent(db, { id: 'visit-direct', eventName: 'traffic_source_captured', anonymousId: 'anon-c', sessionId: 'session-c', source: null, medium: null, campaign: null });
+  await seedEvent(db, { id: 'ai-start-1', eventName: 'ai_conversation_started', anonymousId: 'anon-a', sessionId: 'session-a', properties: { analytics_version: '2', request_id: 'request-success' }, createdAt: '2026-08-01 01:00:00' });
+  await seedEvent(db, { id: 'ai-success-1', eventName: 'ai_response_received', anonymousId: 'anon-a', sessionId: 'session-a', properties: { analytics_version: '2', request_id: 'request-success' }, createdAt: '2026-08-01 01:00:01' });
+  await seedEvent(db, { id: 'ai-start-2', eventName: 'ai_conversation_started', anonymousId: 'anon-b', sessionId: 'session-b', properties: { analytics_version: '2', request_id: 'request-failed' }, createdAt: '2026-08-01 02:00:00' });
+  await seedEvent(db, { id: 'signup-1', eventName: 'signup_completed', anonymousId: 'anon-a', sessionId: 'session-a' });
+  await seedEvent(db, { id: 'signup-repeat', eventName: 'signup_completed', anonymousId: 'anon-a', sessionId: 'session-a', createdAt: '2026-08-01 03:00:00' });
+  await seedEvent(db, { id: 'service-1', eventName: 'service_request_created', anonymousId: 'anon-b', sessionId: 'session-b' });
+  await seedEvent(db, { id: 'service-repeat', eventName: 'service_request_created', anonymousId: 'anon-b', sessionId: 'session-b', createdAt: '2026-08-01 03:30:00' });
+  await seedEvent(db, { id: 'legacy', eventName: 'traffic_source_captured', anonymousId: 'legacy-anon', sessionId: 'legacy-session', properties: {}, createdAt: '2026-08-01 04:00:00' });
+  await seedEvent(db, { id: 'after-boundary', eventName: 'traffic_source_captured', createdAt: '2026-08-01 16:00:00' });
+}
+
+function queryFilters(overrides = {}) {
+  return {
+    fromUtc: '2026-07-31 16:00:00',
+    toUtcExclusive: '2026-08-01 16:00:00',
+    effectiveToUtcExclusive: '2026-08-01 16:00:00',
+    source: '', medium: '', campaign: '', markets: ['com'],
+    ...overrides,
+  };
 }
 
 test('parsePromotionFilters uses inclusive Shanghai report days and a five-minute live cutoff', () => {
@@ -274,4 +360,108 @@ test('evaluatePromotionHealth does not miss a mathematical 30 percent drop due t
   assert.equal(health.level, 'warning');
   assert.equal(conversionReason.threshold, 0.3);
   assert.equal(conversionReason.value < 0.3, true);
+});
+
+test('buildEventWhere binds attribution filters instead of interpolating them', () => {
+  const injectedSource = "x' OR 1=1 --";
+  const where = buildEventWhere(queryFilters({ source: injectedSource, medium: 'cpc' }));
+
+  assert.equal(where.sql.includes(injectedSource), false);
+  assert.deepEqual(where.params, [
+    '2026-07-31 16:00:00', '2026-08-01 16:00:00', injectedSource, 'cpc',
+  ]);
+  assert.equal(where.sql, 'created_at >= ? AND created_at < ? AND source = ? AND medium = ?');
+});
+
+test('queryPromotionOverviewDb counts only v2 records with Shanghai report boundaries', async (t) => {
+  const db = createD1Database();
+  t.after(() => db.close());
+  await seedComLikeEvents(db);
+
+  const snapshot = await queryPromotionOverviewDb(db, queryFilters());
+
+  assert.equal(snapshot.sessions, 3);
+  assert.equal(snapshot.aiRequests, 2);
+  assert.equal(snapshot.aiSuccesses, 1);
+  assert.equal(snapshot.registrationEvents, 2);
+  assert.equal(snapshot.serviceRequestEvents, 2);
+  assert.equal(snapshot.visitors, 3);
+  assert.equal(snapshot.aiVisitors, 2);
+  assert.equal(snapshot.registrationVisitors, 1);
+  assert.equal(snapshot.serviceVisitors, 1);
+  assert.equal(snapshot.missingAnonymousEvents, 0);
+  assert.equal(snapshot.unattributedSessions, 1);
+  assert.equal(snapshot.legacyEvents, 1);
+  assert.equal(snapshot.coverageStart, '2026-08-01 00:05:00');
+  assert.equal(JSON.stringify(snapshot).match(/anonymous_id|session_id|request_id/), null);
+});
+
+test('queryPromotionChannelsDb normalizes direct attribution and uses unique converting visitors', async (t) => {
+  const db = createD1Database();
+  t.after(() => db.close());
+  await seedComLikeEvents(db);
+
+  const result = await queryPromotionChannelsDb(db, queryFilters());
+  const direct = result.rows.find((row) => row.source === '');
+  const google = result.rows.find((row) => row.source === 'google');
+
+  assert.deepEqual(direct, {
+    source: '', medium: '', campaign: '', sessions: 1, aiRequests: 0,
+    aiSuccesses: 0, registrations: 0, serviceRequests: 0,
+  });
+  assert.equal(google.sessions, 2);
+  assert.equal(google.aiRequests, 2);
+  assert.equal(google.aiSuccesses, 1);
+  assert.equal(google.registrations, 1);
+  assert.equal(google.serviceRequests, 1);
+  assert.deepEqual(result.daily, [{
+    date: '2026-08-01', sessions: 3, aiRequests: 2, aiSuccesses: 1,
+    registrations: 1, serviceRequests: 1,
+  }]);
+  assert.equal(JSON.stringify(result).match(/anonymous_id|session_id|request_id/), null);
+});
+
+test('loadPromotionOverview merges market aggregates, previous period, and private recent statuses', async (t) => {
+  const com = createD1Database();
+  const cn = createD1Database();
+  t.after(() => com.close());
+  t.after(() => cn.close());
+  await seedComLikeEvents(com);
+  await seedEvent(cn, { id: 'cn-visit', eventName: 'traffic_source_captured', anonymousId: 'cn-anon', sessionId: 'cn-session', source: 'baidu', medium: 'cpc', campaign: 'cn-campaign', createdAt: '2026-08-01 12:00:00' });
+  await seedEvent(cn, { id: 'cn-start', eventName: 'ai_conversation_started', anonymousId: 'cn-anon', sessionId: 'cn-session', source: 'baidu', medium: 'cpc', campaign: 'cn-campaign', properties: { analytics_version: '2', request_id: 'cn-failed' }, createdAt: '2026-08-01 12:01:00' });
+
+  const result = await loadPromotionOverview({ com, cn }, queryFilters({ markets: ['com', 'cn'] }));
+
+  assert.equal(result.current.sessions, 4);
+  assert.equal(result.current.aiRequests, 3);
+  assert.equal(result.current.aiSuccesses, 1);
+  assert.equal(result.previous.sessions, 1);
+  assert.deepEqual(result.daily, [{
+    date: '2026-08-01', sessions: 4, aiRequests: 3, aiSuccesses: 1,
+    registrations: 1, serviceRequests: 1,
+  }]);
+  assert.deepEqual(result.recentAi, [{ success: false }, { success: false }, { success: true }]);
+  assert.equal(JSON.stringify(result).match(/anonymous_id|session_id|request_id|created_at|createdAt/), null);
+});
+
+test('loadPromotionChannels merges then orders and limits combined channel rows', async (t) => {
+  const com = createD1Database();
+  const cn = createD1Database();
+  t.after(() => com.close());
+  t.after(() => cn.close());
+  await seedComLikeEvents(com);
+  await seedEvent(cn, { id: 'cn-visit', eventName: 'traffic_source_captured', anonymousId: 'cn-anon', sessionId: 'cn-session', source: 'google', medium: 'cpc', campaign: 'summer', createdAt: '2026-08-01 12:00:00' });
+  await seedEvent(cn, { id: 'cn-service', eventName: 'service_request_created', anonymousId: 'cn-anon', sessionId: 'cn-session', source: 'google', medium: 'cpc', campaign: 'summer', createdAt: '2026-08-01 12:01:00' });
+
+  const result = await loadPromotionChannels({ com, cn }, queryFilters({ markets: ['com', 'cn'] }));
+
+  assert.equal(result.rows[0].source, 'google');
+  assert.equal(result.rows[0].serviceRequests, 2);
+  assert.equal(result.rows[0].sessions, 3);
+  assert.equal(result.rows.length <= 100, true);
+  assert.deepEqual(result.daily, [{
+    date: '2026-08-01', sessions: 4, aiRequests: 2, aiSuccesses: 1,
+    registrations: 1, serviceRequests: 2,
+  }]);
+  assert.equal(JSON.stringify(result).match(/anonymous_id|session_id|request_id/), null);
 });
