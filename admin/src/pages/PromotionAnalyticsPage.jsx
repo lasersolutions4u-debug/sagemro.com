@@ -124,7 +124,8 @@ export function PromotionAnalyticsPage({ loadOverview = getPromotionOverview, lo
         {TAB_DEFINITIONS.map((tab, index) => <button key={tab.key} ref={(node) => { tabRefs.current[index] = node; }} id={tab.tabId} type="button" role="tab" aria-controls={tab.panelId} aria-selected={activeTab === tab.key} tabIndex={activeTab === tab.key ? 0 : -1} onClick={() => setActiveTab(tab.key)} onKeyDown={(event) => handleTabKeyDown(event, index)} className={`min-h-10 border-b-2 px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--color-bg)] ${activeTab === tab.key ? 'border-[var(--color-primary)] text-[var(--color-primary)]' : 'border-transparent text-[var(--color-text-secondary)] hover:text-[var(--color-text)]'}`}>{tabCopy[tab.key]}</button>)}
       </div>
       <PromotionFilters filters={draftFilters} allowedMarkets={allowedMarkets} onChange={setDraftFilters} onApply={applyFilters} isCn={isCn} reportingTimezone={reportingTimezone} coverageStart={coverageStart} />
-      {activeTab === 'overview' ? <div id="promotion-overview-panel" className="mt-4" role="tabpanel" aria-labelledby="promotion-overview-tab" aria-busy={overviewState.status === 'loading'}><OverviewState state={overviewState} isCn={isCn} retry={() => setReloadKey((current) => current + 1)} copy={tabCopy} /></div> : <div id="promotion-channels-panel" className="mt-4" role="tabpanel" aria-labelledby="promotion-channels-tab" aria-busy={channelState.status === 'loading'}><ChannelState state={channelState} isCn={isCn} activeFilters={activeFilters} retry={() => setChannelReloadKey((current) => current + 1)} onSelect={applyChannel} onClear={clearChannel} /></div>}
+      <ChannelFilterAffordance activeFilters={activeFilters} isCn={isCn} onClear={clearChannel} />
+      {activeTab === 'overview' ? <div id="promotion-overview-panel" className="mt-4" role="tabpanel" aria-labelledby="promotion-overview-tab" aria-busy={overviewState.status === 'loading'}><OverviewState state={overviewState} isCn={isCn} retry={() => setReloadKey((current) => current + 1)} copy={tabCopy} /></div> : <div id="promotion-channels-panel" className="mt-4" role="tabpanel" aria-labelledby="promotion-channels-tab" aria-busy={channelState.status === 'loading'}><ChannelState state={channelState} isCn={isCn} activeFilters={activeFilters} retry={() => setChannelReloadKey((current) => current + 1)} onSelect={applyChannel} /></div>}
     </section>
   );
 }
@@ -135,7 +136,7 @@ function allowedMarketsFrom(data) {
   return markets.length ? markets : null;
 }
 
-function ChannelState({ state, isCn, activeFilters, retry, onSelect, onClear }) {
+function ChannelState({ state, isCn, activeFilters, retry, onSelect }) {
   const copy = isCn
     ? { loading: '正在读取渠道分析', error: '无法读取渠道分析', retry: '重试', noData: '暂无样本' }
     : { loading: 'Loading channel analysis', error: 'Unable to load channel analysis', retry: 'Retry', noData: 'No data' };
@@ -144,7 +145,7 @@ function ChannelState({ state, isCn, activeFilters, retry, onSelect, onClear }) 
   else if (state.status === 'error') content = <section className="border border-[var(--color-error)]/50 bg-[var(--color-error)]/10 p-4 text-[var(--color-text)]" role="alert"><h2 className="font-semibold">{copy.error}</h2><p className="mt-1 text-sm text-[var(--color-text-secondary)]">{state.error}</p><button type="button" onClick={retry} className="mt-4 rounded-md border border-[var(--color-error)]/60 px-3 py-2 text-sm outline-none hover:bg-[var(--color-error)]/10 focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]">{copy.retry}</button></section>;
   else if (!state.data?.rows?.length) content = <section className="border border-dashed border-[var(--color-border)] bg-[var(--color-surface)] p-6 text-sm text-[var(--color-text-secondary)]"><h2 className="font-semibold text-[var(--color-text)]">{copy.noData}</h2></section>;
   else content = <ChannelAnalysis data={state.data} activeFilters={activeFilters} isCn={isCn} onSelect={onSelect} />;
-  return <div className="space-y-4"><ChannelFilterAffordance activeFilters={activeFilters} isCn={isCn} onClear={onClear} />{content}</div>;
+  return content;
 }
 
 function OverviewState({ state, isCn, retry, copy }) {

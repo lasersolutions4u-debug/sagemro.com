@@ -411,6 +411,52 @@ test('channel analysis loads only while active, keeps local search local, and ap
   await act(async () => renderer.unmount());
 });
 
+test('active Direct channel remains visible on Overview and clears all attribution filters there', async () => {
+  const overviewRequests = [];
+  const channelRequests = [];
+  let renderer;
+  await act(async () => {
+    renderer = TestRenderer.create(React.createElement(PromotionAnalyticsPage, {
+      loadOverview: (filters) => {
+        overviewRequests.push(filters);
+        return Promise.resolve(overviewFixture());
+      },
+      loadChannels: (filters) => {
+        channelRequests.push(filters);
+        return Promise.resolve(channelsFixture());
+      },
+    }));
+  });
+  await act(async () => findButton(renderer.root, 'Channel Analysis').props.onClick());
+  const directButton = renderer.root.findAllByType('button').find((button) => button.props['aria-label'] === 'Select direct / unattributed / unattributed');
+  assert.ok(directButton);
+  await act(async () => directButton.props.onClick());
+  assert.equal(renderer.root.findAllByType('button').filter((button) => textContent(button) === 'Clear channel filter').length, 1);
+
+  await act(async () => findButton(renderer.root, 'Overview').props.onClick());
+  assert.match(textContent(renderer.toJSON()), /Active channel:Direct \/ Unattributed/);
+  assert.doesNotMatch(textContent(renderer.toJSON()), /__sagemro_direct__/);
+  assert.equal(renderer.root.findAllByType('button').filter((button) => textContent(button) === 'Clear channel filter').length, 1);
+  assert.deepEqual(overviewRequests[1], {
+    ...overviewRequests[0],
+    source: DIRECT_SENTINEL,
+    medium: DIRECT_SENTINEL,
+    campaign: DIRECT_SENTINEL,
+  });
+
+  const channelRequestCount = channelRequests.length;
+  await act(async () => findButton(renderer.root, 'Clear channel filter').props.onClick());
+  assert.deepEqual(overviewRequests[2], {
+    ...overviewRequests[0],
+    source: '',
+    medium: '',
+    campaign: '',
+  });
+  assert.equal(channelRequests.length, channelRequestCount);
+  assert.doesNotMatch(textContent(renderer.toJSON()), /Active channel:/);
+  await act(async () => renderer.unmount());
+});
+
 test('successful market scope survives channel loading and errors with the selected market still valid', async () => {
   const channel = deferred();
   let renderer;
