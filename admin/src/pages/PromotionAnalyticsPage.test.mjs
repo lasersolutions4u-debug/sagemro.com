@@ -378,6 +378,10 @@ test('channel analysis loads only while active, keeps local search local, and ap
   assert.match(textContent(renderer.toJSON()), /Best channel/);
   assert.match(textContent(renderer.toJSON()), /Direct \/ Unattributed/);
   assert.match(textContent(renderer.toJSON()), /Insufficient sample/);
+  assert.deepEqual(
+    renderer.root.findAllByType('polyline').map((line) => line.props.points),
+    ['0,0', '0,40', '0,70'],
+  );
 
   const search = findField(renderer.root, 'Search channels');
   await act(async () => {

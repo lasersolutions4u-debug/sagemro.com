@@ -132,6 +132,21 @@ test('parsePromotionFilters uses inclusive Shanghai report days and a five-minut
   });
 });
 
+test('promotion overview accepts a live cutoff with non-zero milliseconds', async (t) => {
+  const db = createD1Database();
+  t.after(() => db.close());
+  const reportFilters = filters({
+    from: '2026-08-01',
+    to: '2026-08-05',
+    market: 'com',
+  }, { now: new Date('2026-08-05T06:00:00.123Z') });
+
+  assert.equal(reportFilters.effectiveToUtcExclusive, '2026-08-05 05:55:00');
+  const result = await loadPromotionOverview({ com: db }, reportFilters);
+  assert.equal(result.current.sessions, 0);
+  assert.equal(result.previous.sessions, 0);
+});
+
 test('parsePromotionFilters accepts exactly 90 report days and rejects a 91-day range', () => {
   assert.equal(filters({
     from: '2026-05-08',

@@ -21,10 +21,10 @@ export function formatChange(value, kind = 'number', locale = 'en') {
   return `${sign}${formatMetric(Math.abs(number), kind, locale)}`;
 }
 
-export function buildLinePoints(values, width, height) {
+export function buildLinePoints(values, width, height, scaleMax = null) {
   const safeValues = (values || []).map((value) => Math.max(0, numeric(value) ?? 0));
   if (!safeValues.length) return [];
-  const max = Math.max(...safeValues, 0);
+  const max = Math.max(...safeValues, Math.max(0, numeric(scaleMax) ?? 0));
   const horizontal = safeValues.length === 1 ? 0 : width / (safeValues.length - 1);
   return safeValues.map((value, index) => {
     const x = Math.round(index * horizontal * 100) / 100;
