@@ -52,7 +52,12 @@ function cleanFilter(value, max) {
 
 function count(value) {
   const numeric = Number(value || 0);
-  return Number.isFinite(numeric) ? numeric : 0;
+  return Number.isFinite(numeric) && numeric > 0 ? numeric : 0;
+}
+
+function sampleStatus(sessions) {
+  if (sessions === 0) return 'no_data';
+  return sessions < 20 ? 'insufficient' : 'ready';
 }
 
 function serviceRequestCount(snapshot) {
@@ -137,7 +142,7 @@ function addSnapshotRates(snapshot) {
     aiSuccessRate: ratio(snapshot.aiSuccesses, snapshot.aiRequests),
     sessionToRequestRate: ratio(serviceRequestCount(snapshot), snapshot.sessions),
     sessionToRegistrationRate: ratio(registrationCount(snapshot), snapshot.sessions),
-    sampleStatus: snapshot.sessions < 20 ? 'insufficient' : 'ready',
+    sampleStatus: sampleStatus(snapshot.sessions),
   };
 }
 
@@ -176,7 +181,7 @@ export function mergeChannelRows(rowsByMarket) {
     ...row,
     aiSuccessRate: ratio(row.aiSuccesses, row.aiRequests),
     sessionToRequestRate: ratio(row.serviceRequests, row.sessions),
-    sampleStatus: row.sessions < 20 ? 'insufficient' : 'ready',
+    sampleStatus: sampleStatus(row.sessions),
   }));
 }
 
@@ -187,6 +192,21 @@ function worstLevel(current, next) {
 
 function reason(metric, level, value, threshold, sampleCount) {
   return { metric, level, value, threshold, sampleCount };
+}
+
+function conversionDroppedAtLeastThirtyPercent(
+  currentNumerator,
+  currentDenominator,
+  previousNumerator,
+  previousDenominator,
+  calculatedDrop,
+) {
+  const counts = [currentNumerator, currentDenominator, previousNumerator, previousDenominator];
+  if (counts.every(Number.isSafeInteger)) {
+    return BigInt(currentNumerator) * BigInt(previousDenominator) * 10n
+      <= BigInt(previousNumerator) * BigInt(currentDenominator) * 7n;
+  }
+  return calculatedDrop !== null && calculatedDrop >= 0.3;
 }
 
 export function evaluatePromotionHealth(current = {}, previous = {}, recentAi = []) {
@@ -215,8 +235,10 @@ export function evaluatePromotionHealth(current = {}, previous = {}, recentAi = 
     reasons.push(reason('traffic_drop', 'warning', trafficDrop, 0.4, previousSessions));
   }
 
-  const currentConversion = ratio(serviceRequestCount(current), currentSessions);
-  const previousConversion = ratio(serviceRequestCount(previous), previousSessions);
+  const currentServiceRequests = serviceRequestCount(current);
+  const previousServiceRequests = serviceRequestCount(previous);
+  const currentConversion = ratio(currentServiceRequests, currentSessions);
+  const previousConversion = ratio(previousServiceRequests, previousSessions);
   const conversionDrop = previousConversion && currentConversion !== null
     ? (previousConversion - currentConversion) / previousConversion
     : null;
@@ -224,7 +246,13 @@ export function evaluatePromotionHealth(current = {}, previous = {}, recentAi = 
     currentSessions >= 20
     && previousSessions >= 20
     && conversionDrop !== null
-    && conversionDrop >= 0.3
+    && conversionDroppedAtLeastThirtyPercent(
+      currentServiceRequests,
+      currentSessions,
+      previousServiceRequests,
+      previousSessions,
+      conversionDrop,
+    )
   ) {
     level = worstLevel(level, 'warning');
     reasons.push(reason('conversion_drop', 'warning', conversionDrop, 0.3, Math.min(currentSessions, previousSessions)));
