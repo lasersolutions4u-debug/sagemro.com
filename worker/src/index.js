@@ -4405,6 +4405,12 @@ ${turnLanguageRule}
                 `data: ${JSON.stringify({ content: fallback, conversation_id: convId, response_status: 'failed' })}\n`,
               ),
             );
+          } else {
+            controller.enqueue(
+              encoder.encode(
+                `data: ${JSON.stringify({ conversation_id: convId, response_status: 'failed' })}\n`,
+              ),
+            );
           }
           try {
             captureException(new Error('LLM stream processing failed'), env, {

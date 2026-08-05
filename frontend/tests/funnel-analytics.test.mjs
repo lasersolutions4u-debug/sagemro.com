@@ -79,6 +79,17 @@ test('resolveAnalyticsSession rotates stored session IDs with missing or invalid
   }
 });
 
+test('resolveAnalyticsSession rotates a session with future activity', () => {
+  const now = 1_000_000;
+  const storage = new MemoryStorage({
+    sagemro_analytics_session_id: 'session_existing',
+    sagemro_analytics_last_activity_ms: String(now + 1),
+  });
+
+  assert.equal(resolveAnalyticsSession(storage, now, () => 'session_rotated'), 'session_rotated');
+  assert.equal(storage.getItem('sagemro_analytics_last_activity_ms'), String(now));
+});
+
 test('resolveAnalyticsSession returns an ephemeral ID when storage throws', () => {
   const storage = {
     getItem() { throw new Error('blocked'); },

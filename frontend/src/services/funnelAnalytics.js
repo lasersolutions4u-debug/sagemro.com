@@ -16,6 +16,7 @@ export function resolveAnalyticsSession(storage, now = Date.now(), idFactory = c
       && storedActivity !== undefined
       && storedActivity !== ''
       && Number.isFinite(activity)
+      && activity <= now
       && now - activity <= SESSION_IDLE_MS;
 
     const sessionId = canReuse ? storedId : idFactory('session');

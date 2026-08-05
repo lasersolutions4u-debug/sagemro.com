@@ -331,6 +331,58 @@ test('handleChat reports an LLM stream failure to Sentry', async () => {
   });
 });
 
+test('handleChat marks a second-round stream failure after first-round content as failed', async () => {
+  const conversationId = 'multi-round-stream-failure';
+  const { env } = makeEnv();
+  const originalFetch = globalThis.fetch;
+  let llmRequestCount = 0;
+
+  globalThis.fetch = async (url) => {
+    if (url !== env.OPENAI_API_ENDPOINT) throw new Error(`Unexpected fetch URL: ${url}`);
+    llmRequestCount++;
+    if (llmRequestCount === 1) {
+      return new Response([
+        `data: ${JSON.stringify({ choices: [{ delta: { content: 'First-round context.' } }] })}`,
+        `data: ${JSON.stringify({ choices: [{ delta: { tool_calls: [{
+          index: 0,
+          id: 'call_search',
+          type: 'function',
+          function: { name: 'search_knowledge_base', arguments: '{"query":"alarm"}' },
+        }] } }] })}`,
+        'data: [DONE]',
+        '',
+      ].join('\n'), {
+        status: 200,
+        headers: { 'Content-Type': 'text/event-stream' },
+      });
+    }
+    return new Response(new ReadableStream({
+      start(controller) {
+        controller.error(new Error('second round disconnected'));
+      },
+    }), {
+      status: 200,
+      headers: { 'Content-Type': 'text/event-stream' },
+    });
+  };
+
+  try {
+    const response = await handleChat(makeRequest({
+      conversation_id: conversationId,
+      message: 'Search for this alarm.',
+    }), env);
+    const sseText = await response.text();
+
+    assert.equal(llmRequestCount, 2);
+    assert.match(sseText, /First-round context\./);
+    assert.ok(sseText.includes(
+      `data: ${JSON.stringify({ conversation_id: conversationId, response_status: 'failed' })}\n`,
+    ));
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test('handleChat retries a transient D1 timeout while creating a guest conversation', async () => {
   const { env, insertedConversations, getConversationInsertAttempts } = makeEnv({
     conversationInsertFailures: 1,
