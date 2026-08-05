@@ -87,6 +87,7 @@ test('parsePromotionFilters rejects invalid or unauthorized markets and normaliz
 
 test('ratio returns null for zero and missing denominators', () => {
   assert.equal(ratio(3, 4), 0.75);
+  assert.equal(ratio(-3, 4), 0);
   assert.equal(ratio(3, 0), null);
   assert.equal(ratio(3, null), null);
 });
@@ -105,6 +106,7 @@ test('mergePromotionSnapshots sums raw counts and recomputes rates', () => {
   assert.equal(merged.aiSuccessRate, 0.55);
   assert.equal(merged.sessionToRequestRate, 0.07);
   assert.equal(merged.sampleStatus, 'ready');
+  assert.equal(mergePromotionSnapshots([{ sessions: 0 }]).sampleStatus, 'no_data');
   assert.equal(mergePromotionSnapshots([{ sessions: 19 }]).sampleStatus, 'insufficient');
 });
 
@@ -135,6 +137,9 @@ test('mergeChannelRows combines matching channels and recalculates rates and sam
   const direct = mergeChannelRows([
     [{ source: '', medium: '', campaign: '', sessions: 19 }],
   ])[0];
+  const empty = mergeChannelRows([
+    [{ source: 'empty', sessions: 0 }],
+  ])[0];
 
   assert.deepEqual(google, {
     source: 'google', medium: 'cpc', campaign: 'summer',
@@ -142,6 +147,46 @@ test('mergeChannelRows combines matching channels and recalculates rates and sam
     aiSuccessRate: 0.55, sessionToRequestRate: 10 / 30, sampleStatus: 'ready',
   });
   assert.equal(direct.sampleStatus, 'insufficient');
+  assert.equal(empty.sampleStatus, 'no_data');
+});
+
+test('negative and non-finite counts are clamped before rates and health evaluation', () => {
+  const snapshot = mergePromotionSnapshots([{
+    sessions: -10,
+    aiRequests: Number.POSITIVE_INFINITY,
+    aiSuccesses: -2,
+    registrationEvents: -3,
+    serviceRequestEvents: -4,
+  }]);
+  assert.equal(snapshot.sessions, 0);
+  assert.equal(snapshot.aiRequests, 0);
+  assert.equal(snapshot.aiSuccesses, 0);
+  assert.equal(snapshot.registrationEvents, 0);
+  assert.equal(snapshot.serviceRequestEvents, 0);
+  assert.equal(snapshot.aiSuccessRate, null);
+  assert.equal(snapshot.sessionToRequestRate, null);
+
+  const [channel] = mergeChannelRows([[{
+    source: 'invalid',
+    sessions: -10,
+    aiRequests: -3,
+    aiSuccesses: -2,
+    registrations: -1,
+    serviceRequests: Number.NaN,
+  }]]);
+  assert.equal(channel.sessions, 0);
+  assert.equal(channel.aiRequests, 0);
+  assert.equal(channel.aiSuccesses, 0);
+  assert.equal(channel.registrations, 0);
+  assert.equal(channel.serviceRequests, 0);
+  assert.equal(channel.sampleStatus, 'no_data');
+
+  const health = evaluatePromotionHealth(
+    { aiRequests: 20, aiSuccesses: -1, sessions: 20, serviceRequestEvents: -1, unattributedSessions: -1 },
+    { sessions: 20, serviceRequestEvents: 10 },
+    [],
+  );
+  assert.equal(health.reasons.every((item) => item.value >= 0), true);
 });
 
 test('evaluatePromotionHealth honors AI success-rate thresholds and sample minimum', () => {
@@ -216,4 +261,17 @@ test('evaluatePromotionHealth warns at an exact 30 percent conversion drop', () 
   assert.deepEqual(health.reasons, [{
     metric: 'conversion_drop', level: 'warning', value: (0.1 - 0.07) / 0.1, threshold: 0.3, sampleCount: 100,
   }]);
+});
+
+test('evaluatePromotionHealth does not miss a mathematical 30 percent drop due to floating point rounding', () => {
+  const health = evaluatePromotionHealth(
+    { sessions: 200, serviceRequestEvents: 133 },
+    { sessions: 20, serviceRequestEvents: 19 },
+    [],
+  );
+
+  const conversionReason = health.reasons.find((item) => item.metric === 'conversion_drop');
+  assert.equal(health.level, 'warning');
+  assert.equal(conversionReason.threshold, 0.3);
+  assert.equal(conversionReason.value < 0.3, true);
 });
