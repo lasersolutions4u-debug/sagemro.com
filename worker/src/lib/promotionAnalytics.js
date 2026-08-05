@@ -5,8 +5,6 @@ const COUNT_FIELDS = [
   'sessions',
   'aiRequests',
   'aiSuccesses',
-  'registrations',
-  'serviceRequests',
   'registrationEvents',
   'serviceRequestEvents',
   'visitors',
@@ -58,15 +56,15 @@ function count(value) {
 }
 
 function serviceRequestCount(snapshot) {
-  return snapshot.serviceRequests === undefined
-    ? count(snapshot.serviceRequestEvents)
-    : count(snapshot.serviceRequests);
+  return snapshot.serviceRequestEvents === undefined
+    ? count(snapshot.serviceRequests)
+    : count(snapshot.serviceRequestEvents);
 }
 
 function registrationCount(snapshot) {
-  return snapshot.registrations === undefined
-    ? count(snapshot.registrationEvents)
-    : count(snapshot.registrations);
+  return snapshot.registrationEvents === undefined
+    ? count(snapshot.registrations)
+    : count(snapshot.registrationEvents);
 }
 
 export function parsePromotionFilters(searchParams, { allowedMarkets, now = new Date() } = {}) {
@@ -126,7 +124,11 @@ export function ratio(numerator, denominator) {
 }
 
 function addSnapshotCounts(target, snapshot) {
-  for (const field of COUNT_FIELDS) target[field] += count(snapshot[field]);
+  for (const field of COUNT_FIELDS) {
+    if (field === 'registrationEvents') target[field] += registrationCount(snapshot);
+    else if (field === 'serviceRequestEvents') target[field] += serviceRequestCount(snapshot);
+    else target[field] += count(snapshot[field]);
+  }
 }
 
 function addSnapshotRates(snapshot) {
@@ -210,7 +212,7 @@ export function evaluatePromotionHealth(current = {}, previous = {}, recentAi = 
   const trafficDrop = ratio(previousSessions - currentSessions, previousSessions);
   if (previousSessions >= 20 && trafficDrop !== null && trafficDrop >= 0.4) {
     level = worstLevel(level, 'warning');
-    reasons.push(reason('traffic_drop', 'warning', currentSessions, 0.4, previousSessions));
+    reasons.push(reason('traffic_drop', 'warning', trafficDrop, 0.4, previousSessions));
   }
 
   const currentConversion = ratio(serviceRequestCount(current), currentSessions);
@@ -225,7 +227,7 @@ export function evaluatePromotionHealth(current = {}, previous = {}, recentAi = 
     && conversionDrop >= 0.3
   ) {
     level = worstLevel(level, 'warning');
-    reasons.push(reason('conversion_drop', 'warning', currentConversion, 0.3, Math.min(currentSessions, previousSessions)));
+    reasons.push(reason('conversion_drop', 'warning', conversionDrop, 0.3, Math.min(currentSessions, previousSessions)));
   }
 
   const unattributedRate = ratio(current.unattributedSessions, currentSessions);

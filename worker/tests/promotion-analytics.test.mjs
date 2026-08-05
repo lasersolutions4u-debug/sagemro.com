@@ -93,19 +93,37 @@ test('ratio returns null for zero and missing denominators', () => {
 
 test('mergePromotionSnapshots sums raw counts and recomputes rates', () => {
   const merged = mergePromotionSnapshots([
-    { sessions: 10, aiRequests: 10, aiSuccesses: 10, registrations: 2, serviceRequests: 1 },
-    { sessions: 90, aiRequests: 90, aiSuccesses: 45, registrations: 18, serviceRequests: 9 },
+    { sessions: 40, aiRequests: 10, aiSuccesses: 10, registrationEvents: 2, serviceRequestEvents: 2 },
+    { sessions: 60, aiRequests: 90, aiSuccesses: 45, registrationEvents: 18, serviceRequestEvents: 5 },
   ]);
 
   assert.equal(merged.sessions, 100);
   assert.equal(merged.aiRequests, 100);
   assert.equal(merged.aiSuccesses, 55);
-  assert.equal(merged.registrations, 20);
-  assert.equal(merged.serviceRequests, 10);
+  assert.equal(merged.registrationEvents, 20);
+  assert.equal(merged.serviceRequestEvents, 7);
   assert.equal(merged.aiSuccessRate, 0.55);
-  assert.equal(merged.sessionToRequestRate, 0.1);
+  assert.equal(merged.sessionToRequestRate, 0.07);
   assert.equal(merged.sampleStatus, 'ready');
   assert.equal(mergePromotionSnapshots([{ sessions: 19 }]).sampleStatus, 'insufficient');
+});
+
+test('mergePromotionSnapshots accepts legacy count aliases without double-counting canonical event fields', () => {
+  const merged = mergePromotionSnapshots([
+    { sessions: 50, registrations: 3, serviceRequests: 2 },
+    {
+      sessions: 50,
+      registrationEvents: 4,
+      registrations: 40,
+      serviceRequestEvents: 5,
+      serviceRequests: 50,
+    },
+  ]);
+
+  assert.equal(merged.registrationEvents, 7);
+  assert.equal(merged.serviceRequestEvents, 7);
+  assert.equal(merged.sessionToRegistrationRate, 0.07);
+  assert.equal(merged.sessionToRequestRate, 0.07);
 });
 
 test('mergeChannelRows combines matching channels and recalculates rates and sample status', () => {
@@ -163,15 +181,15 @@ test('evaluatePromotionHealth flags recent consecutive AI failures as critical',
 
 test('evaluatePromotionHealth flags traffic, conversion, and attribution quality at exact thresholds', () => {
   const health = evaluatePromotionHealth(
-    { sessions: 60, serviceRequests: 4, unattributedSessions: 18 },
-    { sessions: 100, serviceRequests: 10 },
+    { sessions: 60, serviceRequestEvents: 4, unattributedSessions: 18 },
+    { sessions: 100, serviceRequestEvents: 10 },
     [],
   );
 
   assert.equal(health.level, 'warning');
   assert.deepEqual(health.reasons.map(({ metric, level, value, threshold, sampleCount }) => ({ metric, level, value, threshold, sampleCount })), [
-    { metric: 'traffic_drop', level: 'warning', value: 60, threshold: 0.4, sampleCount: 100 },
-    { metric: 'conversion_drop', level: 'warning', value: 4 / 60, threshold: 0.3, sampleCount: 60 },
+    { metric: 'traffic_drop', level: 'warning', value: 0.4, threshold: 0.4, sampleCount: 100 },
+    { metric: 'conversion_drop', level: 'warning', value: (0.1 - (4 / 60)) / 0.1, threshold: 0.3, sampleCount: 60 },
     { metric: 'unattributed_sessions', level: 'warning', value: 0.3, threshold: 0.3, sampleCount: 60 },
   ]);
 });
@@ -190,12 +208,12 @@ test('evaluatePromotionHealth ignores conversion warnings with zero or undersize
 
 test('evaluatePromotionHealth warns at an exact 30 percent conversion drop', () => {
   const health = evaluatePromotionHealth(
-    { sessions: 100, serviceRequests: 7 },
-    { sessions: 100, serviceRequests: 10 },
+    { sessions: 100, serviceRequestEvents: 7 },
+    { sessions: 100, serviceRequestEvents: 10 },
     [],
   );
 
   assert.deepEqual(health.reasons, [{
-    metric: 'conversion_drop', level: 'warning', value: 0.07, threshold: 0.3, sampleCount: 100,
+    metric: 'conversion_drop', level: 'warning', value: (0.1 - 0.07) / 0.1, threshold: 0.3, sampleCount: 100,
   }]);
 });
