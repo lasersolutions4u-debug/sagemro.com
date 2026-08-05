@@ -102,6 +102,20 @@ function makeSseResponse(text = 'Captured.') {
   });
 }
 
+function parseSentryEnvelope(body) {
+  return JSON.parse(body.split('\n')[2]);
+}
+
+function attachWaitUntilCollector(request) {
+  const promises = [];
+  request._ctx = {
+    waitUntil(promise) {
+      promises.push(promise);
+    },
+  };
+  return promises;
+}
+
 async function captureChatPrompt({ request }) {
   const { env } = makeEnv();
   const originalFetch = globalThis.fetch;
@@ -164,6 +178,89 @@ test('handleChat creates a new conversation using caller-provided local id when 
   assert.equal(insertedConversations.length, 1);
   assert.equal(insertedConversations[0].id, 'local-conv-1');
   assert.equal(insertedConversations[0].customer_id, 'customer-a');
+});
+
+test('handleChat reports a redacted upstream LLM failure to Sentry', async () => {
+  const { env } = makeEnv();
+  env.SENTRY_DSN = 'https://public@example.ingest.sentry.io/1';
+  env.ENVIRONMENT = 'test';
+  const request = makeRequest({ message: 'My laser will not start.' });
+  const waitUntilPromises = attachWaitUntilCollector(request);
+  const originalFetch = globalThis.fetch;
+  const sentryEnvelopes = [];
+
+  globalThis.fetch = async (url, init) => {
+    if (url === env.OPENAI_API_ENDPOINT) {
+      return new Response('LLM failure for buyer@example.com', { status: 502 });
+    }
+    if (url === 'https://example.ingest.sentry.io/api/1/envelope/') {
+      sentryEnvelopes.push(init.body);
+      return new Response(null, { status: 200 });
+    }
+    throw new Error(`Unexpected fetch URL: ${url}`);
+  };
+
+  try {
+    const response = await handleChat(request, env);
+    assert.equal(response.status, 200);
+    await response.text();
+    await Promise.all(waitUntilPromises);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+
+  assert.equal(sentryEnvelopes.length, 1);
+  const event = parseSentryEnvelope(sentryEnvelopes[0]);
+  assert.equal(event.extra.feature, 'ai_chat');
+  assert.equal(event.extra.stage, 'upstream');
+  assert.equal(event.extra.status, 502);
+  assert.equal(event.extra.market, 'com');
+  assert.equal(event.extra.iteration, 0);
+  assert.doesNotMatch(JSON.stringify(event), /buyer@example\.com/);
+});
+
+test('handleChat reports an LLM stream failure to Sentry', async () => {
+  const { env } = makeEnv();
+  env.SENTRY_DSN = 'https://public@example.ingest.sentry.io/1';
+  env.ENVIRONMENT = 'test';
+  const request = makeRequest({ message: 'My laser will not start.' });
+  const waitUntilPromises = attachWaitUntilCollector(request);
+  const originalFetch = globalThis.fetch;
+  const sentryEnvelopes = [];
+
+  globalThis.fetch = async (url, init) => {
+    if (url === env.OPENAI_API_ENDPOINT) {
+      return new Response(new ReadableStream({
+        start(controller) {
+          controller.error(new Error('stream exploded'));
+        },
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'text/event-stream' },
+      });
+    }
+    if (url === 'https://example.ingest.sentry.io/api/1/envelope/') {
+      sentryEnvelopes.push(init.body);
+      return new Response(null, { status: 200 });
+    }
+    throw new Error(`Unexpected fetch URL: ${url}`);
+  };
+
+  try {
+    const response = await handleChat(request, env);
+    assert.equal(response.status, 200);
+    await response.text();
+    await Promise.all(waitUntilPromises);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+
+  assert.equal(sentryEnvelopes.length, 1);
+  const event = parseSentryEnvelope(sentryEnvelopes[0]);
+  assert.equal(event.extra.feature, 'ai_chat');
+  assert.equal(event.extra.stage, 'stream');
+  assert.equal(event.extra.market, 'com');
+  assert.equal(event.exception.values[0].value, 'stream exploded');
 });
 
 test('handleChat retries a transient D1 timeout while creating a guest conversation', async () => {
