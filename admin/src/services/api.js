@@ -1,7 +1,7 @@
-import { runtimeConfig } from '../config/runtime';
+import { runtimeConfig } from '../config/runtime.js';
 
 const API_BASE = runtimeConfig.apiBase;
-const DEBUG_API = import.meta.env.DEV;
+const DEBUG_API = import.meta.env?.DEV;
 
 function authHeaders() {
   const token = localStorage.getItem('admin_token');
@@ -42,6 +42,30 @@ async function request(path, options = {}) {
     throw error;
   }
   return data;
+}
+
+const PROMOTION_ANALYTICS_FILTER_KEYS = ['from', 'to', 'market', 'source', 'medium', 'campaign'];
+
+function promotionAnalyticsQuery(filters = {}) {
+  const params = new URLSearchParams();
+  const values = filters || {};
+  for (const key of PROMOTION_ANALYTICS_FILTER_KEYS) {
+    if (values[key]) params.set(key, values[key]);
+  }
+  return params.toString();
+}
+
+function promotionAnalyticsPath(path, filters) {
+  const query = promotionAnalyticsQuery(filters);
+  return query ? `${path}?${query}` : path;
+}
+
+export function getPromotionOverview(filters, signal) {
+  return request(promotionAnalyticsPath('/api/admin/analytics/overview', filters), { signal });
+}
+
+export function getPromotionChannels(filters, signal) {
+  return request(promotionAnalyticsPath('/api/admin/analytics/channels', filters), { signal });
 }
 
 export async function adminLogin(phone, password) {
