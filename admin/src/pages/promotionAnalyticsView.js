@@ -1,3 +1,4 @@
+// Reserved internal query marker. User-facing inputs and labels must never render it.
 export const DIRECT_ATTRIBUTION_FILTER = '__sagemro_direct__';
 
 function numeric(value) {

@@ -29,6 +29,15 @@ function visibleAttributionValue(value) {
   return value === DIRECT_ATTRIBUTION_FILTER ? '' : value;
 }
 
+function hasActiveAttributionFilter(filters) {
+  return Boolean(filters?.source || filters?.medium || filters?.campaign);
+}
+
+export function ChannelFilterAffordance({ activeFilters, isCn, onClear }) {
+  if (!hasActiveAttributionFilter(activeFilters)) return null;
+  return <div className="flex flex-wrap items-center gap-2 border-l-2 border-[var(--color-primary)] bg-[var(--color-surface-elevated)] px-3 py-2 text-sm"><span className="text-[var(--color-text-muted)]">{isCn ? '当前渠道' : 'Active channel'}:</span><span className="font-mono text-[var(--color-text)]">{selectionLabel(activeFilters, isCn)}</span><button type="button" onClick={onClear} className="ml-auto text-sm font-semibold text-[var(--color-primary)] outline-none hover:underline focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]">{isCn ? '清除渠道筛选' : 'Clear channel filter'}</button></div>;
+}
+
 function SortHeader({ label, field, sort, onSort }) {
   const direction = sort.key === field ? sort.direction : 'none';
   return <th scope="col" aria-sort={direction === 'none' ? 'none' : direction === 'asc' ? 'ascending' : 'descending'} className="whitespace-nowrap border-b border-[var(--color-border)] px-3 py-2 text-right first:text-left"><button type="button" onClick={() => onSort(field)} className="font-mono text-xs uppercase tracking-[0.08em] text-[var(--color-text-muted)] outline-none hover:text-[var(--color-primary)] focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]">{label}{direction === 'asc' ? ' ↑' : direction === 'desc' ? ' ↓' : ''}</button></th>;
@@ -53,23 +62,23 @@ function ChannelTrend({ daily, selected, isCn }) {
   </section>;
 }
 
-export function ChannelAnalysis({ data, activeFilters, isCn, onSelect, onClear }) {
+export function ChannelAnalysis({ data, activeFilters, isCn, onSelect }) {
   const [query, setQuery] = useState('');
   const [sort, setSort] = useState({ key: 'serviceRequests', direction: 'desc' });
   const locale = isCn ? 'zh-CN' : 'en';
   const copy = isCn ? {
     bestChannel: '表现最佳渠道', bestCampaign: '表现最佳活动', attributable: '可归因服务请求', quality: '归因数据质量',
     search: '搜索渠道', searchHint: '搜索来源、媒介或活动', source: '来源 / 媒介', campaign: '活动', sessions: '访问会话', aiRequests: 'AI 请求', aiRate: 'AI 成功率', registrations: '完成注册', serviceRequests: '服务请求', conversion: '会话到服务请求率',
-    insufficient: '样本不足', active: '当前渠道', clear: '清除渠道筛选', capped: '最多 100 聚合行，按当前筛选条件比较。',
+    insufficient: '样本不足', capped: '最多 100 聚合行，按当前筛选条件比较。',
     operational: '运营提示', dataQuality: '数据质量', operationalHint: '按数量与趋势判断渠道表现；比例需要足够会话样本。', qualityHint: '归因质量反映带有明确来源的访问会话比例。',
   } : {
     bestChannel: 'Best channel', bestCampaign: 'Best campaign', attributable: 'Attributable service requests', quality: 'Attribution quality',
     search: 'Search channels', searchHint: 'Search source, medium, or campaign', source: 'Source / medium', campaign: 'Campaign', sessions: 'Sessions', aiRequests: 'AI requests', aiRate: 'AI success rate', registrations: 'Registrations', serviceRequests: 'Service requests', conversion: 'Session-to-request rate',
-    insufficient: 'Insufficient sample', active: 'Active channel', clear: 'Clear channel filter', capped: 'Up to 100 aggregate rows are compared for the current filters.',
+    insufficient: 'Insufficient sample', capped: 'Up to 100 aggregate rows are compared for the current filters.',
     operational: 'Operational note', dataQuality: 'Data quality', operationalHint: 'Use counts and trend together; rates need enough session volume.', qualityHint: 'Attribution quality is the share of sessions with a known source.',
   };
   const rows = useMemo(() => sortChannelRows(filterChannelRows(data?.rows, query), sort.key, sort.direction), [data?.rows, query, sort]);
-  const selected = Boolean(activeFilters?.source || activeFilters?.medium || activeFilters?.campaign);
+  const selected = hasActiveAttributionFilter(activeFilters);
   const changeSort = (key) => setSort((current) => ({ key, direction: current.key === key && current.direction === 'desc' ? 'asc' : 'desc' }));
 
   return <div className="space-y-4">
@@ -83,8 +92,6 @@ export function ChannelAnalysis({ data, activeFilters, isCn, onSelect, onClear }
         ].map(([label, value]) => <div key={label} className="min-w-0 px-4 py-3"><p className="text-xs uppercase tracking-[0.1em] text-[var(--color-text-muted)]">{label}</p><p className="mt-1 truncate font-mono text-lg font-semibold tabular-nums text-[var(--color-text)]" title={value}>{value}</p></div>)}
       </div>
     </section>
-
-    {selected && <div className="flex flex-wrap items-center gap-2 border-l-2 border-[var(--color-primary)] bg-[var(--color-surface-elevated)] px-3 py-2 text-sm"><span className="text-[var(--color-text-muted)]">{copy.active}:</span><span className="font-mono text-[var(--color-text)]">{selectionLabel(activeFilters, isCn)}</span><button type="button" onClick={onClear} className="ml-auto text-sm font-semibold text-[var(--color-primary)] outline-none hover:underline focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]">{copy.clear}</button></div>}
 
     <section className="border border-[var(--color-border)] bg-[var(--color-surface)]">
       <div className="flex flex-wrap items-end justify-between gap-3 border-b border-[var(--color-border)] px-4 py-3"><label className="grid gap-1 text-xs text-[var(--color-text-muted)]">{copy.search}<input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={copy.searchHint} className="min-h-9 w-64 max-w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)]" /></label><p className="text-xs text-[var(--color-text-muted)]">{copy.capped}</p></div>

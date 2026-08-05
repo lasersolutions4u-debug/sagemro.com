@@ -1,6 +1,7 @@
 const REPORT_TIMEZONE_OFFSET_MS = 8 * 60 * 60 * 1000;
 const LIVE_DATA_DELAY_MS = 5 * 60 * 1000;
 const MAX_REPORT_DAYS = 90;
+// Reserved internal query marker compiled only into fixed empty-attribution SQL.
 export const DIRECT_ATTRIBUTION_FILTER = '__sagemro_direct__';
 const COUNT_FIELDS = [
   'sessions',

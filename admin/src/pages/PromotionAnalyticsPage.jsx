@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { PromotionFilters, createPromotionFilters } from '../components/promotion/PromotionFilters.jsx';
-import { ChannelAnalysis } from '../components/promotion/ChannelAnalysis.jsx';
+import { ChannelAnalysis, ChannelFilterAffordance } from '../components/promotion/ChannelAnalysis.jsx';
 import { PromotionOverview } from '../components/promotion/PromotionOverview.jsx';
 import { runtimeConfig } from '../config/runtime';
 import { getPromotionChannels, getPromotionOverview } from '../services/api.js';
@@ -139,10 +139,12 @@ function ChannelState({ state, isCn, activeFilters, retry, onSelect, onClear }) 
   const copy = isCn
     ? { loading: '正在读取渠道分析', error: '无法读取渠道分析', retry: '重试', noData: '暂无样本' }
     : { loading: 'Loading channel analysis', error: 'Unable to load channel analysis', retry: 'Retry', noData: 'No data' };
-  if (state.status === 'loading') return <div className="space-y-3" aria-label={copy.loading}><div className="h-20 border border-[var(--color-border)] bg-[var(--color-surface-elevated)]" /><div className="h-72 border border-[var(--color-border)] bg-[var(--color-surface)]" /></div>;
-  if (state.status === 'error') return <section className="border border-[var(--color-error)]/50 bg-[var(--color-error)]/10 p-4 text-[var(--color-text)]" role="alert"><h2 className="font-semibold">{copy.error}</h2><p className="mt-1 text-sm text-[var(--color-text-secondary)]">{state.error}</p><button type="button" onClick={retry} className="mt-4 rounded-md border border-[var(--color-error)]/60 px-3 py-2 text-sm outline-none hover:bg-[var(--color-error)]/10 focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]">{copy.retry}</button></section>;
-  if (!state.data?.rows?.length) return <section className="border border-dashed border-[var(--color-border)] bg-[var(--color-surface)] p-6 text-sm text-[var(--color-text-secondary)]"><h2 className="font-semibold text-[var(--color-text)]">{copy.noData}</h2></section>;
-  return <ChannelAnalysis data={state.data} activeFilters={activeFilters} isCn={isCn} onSelect={onSelect} onClear={onClear} />;
+  let content;
+  if (state.status === 'loading') content = <div className="space-y-3" aria-label={copy.loading}><div className="h-20 border border-[var(--color-border)] bg-[var(--color-surface-elevated)]" /><div className="h-72 border border-[var(--color-border)] bg-[var(--color-surface)]" /></div>;
+  else if (state.status === 'error') content = <section className="border border-[var(--color-error)]/50 bg-[var(--color-error)]/10 p-4 text-[var(--color-text)]" role="alert"><h2 className="font-semibold">{copy.error}</h2><p className="mt-1 text-sm text-[var(--color-text-secondary)]">{state.error}</p><button type="button" onClick={retry} className="mt-4 rounded-md border border-[var(--color-error)]/60 px-3 py-2 text-sm outline-none hover:bg-[var(--color-error)]/10 focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]">{copy.retry}</button></section>;
+  else if (!state.data?.rows?.length) content = <section className="border border-dashed border-[var(--color-border)] bg-[var(--color-surface)] p-6 text-sm text-[var(--color-text-secondary)]"><h2 className="font-semibold text-[var(--color-text)]">{copy.noData}</h2></section>;
+  else content = <ChannelAnalysis data={state.data} activeFilters={activeFilters} isCn={isCn} onSelect={onSelect} />;
+  return <div className="space-y-4"><ChannelFilterAffordance activeFilters={activeFilters} isCn={isCn} onClear={onClear} />{content}</div>;
 }
 
 function OverviewState({ state, isCn, retry, copy }) {

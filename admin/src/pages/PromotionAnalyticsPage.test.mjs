@@ -490,7 +490,7 @@ test('sortable channel headers reorder native table rows without refetching', as
   await act(async () => renderer.unmount());
 });
 
-test('selecting Direct sends three exact sentinels, hides internal values, and clear restores full channels', async () => {
+test('editing one Direct filter clears hidden sentinels before Apply and clear restores full channels', async () => {
   const requests = [];
   let renderer;
   await act(async () => {
@@ -521,13 +521,74 @@ test('selecting Direct sends three exact sentinels, hides internal values, and c
   assert.doesNotMatch(textContent(renderer.toJSON()), /__sagemro_direct__/);
   assert.deepEqual(renderer.root.findAllByType('button').filter((button) => String(button.props['aria-label'] || '').startsWith('Select ')).map((button) => button.props['aria-label']), ['Select direct / unattributed / unattributed']);
 
-  await act(async () => findField(renderer.root, 'Source').props.onChange({ target: { value: 'edited-source' } }));
-  assert.equal(findField(renderer.root, 'Source').props.value, 'edited-source');
+  await act(async () => findField(renderer.root, 'Source').props.onChange({ target: { value: 'google' } }));
+  assert.equal(findField(renderer.root, 'Source').props.value, 'google');
+  await act(async () => findButton(renderer.root, 'Apply filters').props.onClick());
+  assert.deepEqual(requests[2], {
+    ...requests[0], source: 'google', medium: '', campaign: '',
+  });
+  assert.match(textContent(renderer.toJSON()), /Active channel:google/);
+  assert.doesNotMatch(textContent(renderer.toJSON()), /Active channel:Direct \/ Unattributed/);
 
   await act(async () => findButton(renderer.root, 'Clear channel filter').props.onClick());
-  assert.deepEqual(requests[2], {
+  assert.deepEqual(requests[3], {
     ...requests[0], source: '', medium: '', campaign: '',
   });
+  await act(async () => renderer.unmount());
+});
+
+test('active Direct filter remains clearable while loading and after a channel error', async () => {
+  const directRequest = deferred();
+  const requests = [];
+  let renderer;
+  await act(async () => {
+    renderer = TestRenderer.create(React.createElement(PromotionAnalyticsPage, {
+      loadOverview: () => Promise.resolve(overviewFixture()),
+      loadChannels: (filters) => {
+        requests.push(filters);
+        if (requests.length === 1 || requests.length === 3) return Promise.resolve(channelsFixture());
+        return directRequest.promise;
+      },
+    }));
+  });
+  await act(async () => findButton(renderer.root, 'Channel Analysis').props.onClick());
+  const directButton = renderer.root.findAllByType('button').find((button) => button.props['aria-label'] === 'Select direct / unattributed / unattributed');
+  await act(async () => directButton.props.onClick());
+  assert.match(textContent(renderer.toJSON()), /Active channel:Direct \/ Unattributed/);
+  assert.ok(findButton(renderer.root, 'Clear channel filter'));
+  assert.doesNotMatch(textContent(renderer.toJSON()), /__sagemro_direct__/);
+
+  await act(async () => {
+    directRequest.reject(new Error('Direct channel unavailable'));
+    await directRequest.promise.catch(() => {});
+  });
+  assert.match(textContent(renderer.toJSON()), /Direct channel unavailable/);
+  assert.match(textContent(renderer.toJSON()), /Active channel:Direct \/ Unattributed/);
+  await act(async () => findButton(renderer.root, 'Clear channel filter').props.onClick());
+  assert.deepEqual(requests[2], { ...requests[0], source: '', medium: '', campaign: '' });
+  await act(async () => renderer.unmount());
+});
+
+test('active Direct filter remains clearable when its channel response has no rows', async () => {
+  const requests = [];
+  let renderer;
+  await act(async () => {
+    renderer = TestRenderer.create(React.createElement(PromotionAnalyticsPage, {
+      loadOverview: () => Promise.resolve(overviewFixture()),
+      loadChannels: (filters) => {
+        requests.push(filters);
+        return Promise.resolve(requests.length === 2 ? channelsFixture({ rows: [] }) : channelsFixture());
+      },
+    }));
+  });
+  await act(async () => findButton(renderer.root, 'Channel Analysis').props.onClick());
+  const directButton = renderer.root.findAllByType('button').find((button) => button.props['aria-label'] === 'Select direct / unattributed / unattributed');
+  await act(async () => directButton.props.onClick());
+  assert.match(textContent(renderer.toJSON()), /No data/);
+  assert.match(textContent(renderer.toJSON()), /Active channel:Direct \/ Unattributed/);
+  assert.doesNotMatch(textContent(renderer.toJSON()), /__sagemro_direct__/);
+  await act(async () => findButton(renderer.root, 'Clear channel filter').props.onClick());
+  assert.deepEqual(requests[2], { ...requests[0], source: '', medium: '', campaign: '' });
   await act(async () => renderer.unmount());
 });
 
@@ -697,12 +758,13 @@ test('promotion analytics clients send only allowed encoded filters with request
       admin_token: 'must-not-leak', arbitrary: 'must-not-leak',
     }, signal);
     await getPromotionChannels({ source: DIRECT_SENTINEL, medium: DIRECT_SENTINEL, campaign: DIRECT_SENTINEL }, signal);
+    await getPromotionChannels({ source: 'google', medium: '', campaign: '' }, signal);
   } finally {
     globalThis.fetch = originalFetch;
     globalThis.localStorage = originalLocalStorage;
   }
 
-  assert.equal(calls.length, 2);
+  assert.equal(calls.length, 3);
   const overview = new URL(calls[0].url);
   assert.equal(overview.pathname, '/api/admin/analytics/overview');
   assert.deepEqual(Object.fromEntries(overview.searchParams), {
@@ -722,5 +784,6 @@ test('promotion analytics clients send only allowed encoded filters with request
     source: DIRECT_SENTINEL, medium: DIRECT_SENTINEL, campaign: DIRECT_SENTINEL,
   });
   assert.equal(calls[1].options.signal, signal);
+  assert.deepEqual(Object.fromEntries(new URL(calls[2].url).searchParams), { source: 'google' });
   assert.match(api, /const PROMOTION_ANALYTICS_FILTER_KEYS = \['from', 'to', 'market', 'source', 'medium', 'campaign'\]/);
 });
