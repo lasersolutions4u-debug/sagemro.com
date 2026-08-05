@@ -1,3 +1,5 @@
+import { DIRECT_ATTRIBUTION_FILTER } from '../../pages/promotionAnalyticsView.js';
+
 function reportDate(date) {
   const parts = new Intl.DateTimeFormat('en-CA', {
     timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit',
@@ -48,9 +50,9 @@ export function PromotionFilters({ filters, allowedMarkets, onChange, onApply, i
             {scopedMarkets.map((market) => <option key={market} value={market}>{t[market]}</option>)}
           </select>
         </FilterField>
-        <FilterField label={t.source}><input value={filters.source} maxLength={100} onChange={(event) => onChange({ ...filters, source: event.target.value })} className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-2 py-1.5 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)]" /></FilterField>
-        <FilterField label={t.medium}><input value={filters.medium} maxLength={100} onChange={(event) => onChange({ ...filters, medium: event.target.value })} className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-2 py-1.5 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)]" /></FilterField>
-        <FilterField label={t.campaign}><input value={filters.campaign} maxLength={200} onChange={(event) => onChange({ ...filters, campaign: event.target.value })} className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-2 py-1.5 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)]" /></FilterField>
+        <FilterField label={t.source}><input value={visibleAttributionFilter(filters.source)} maxLength={100} onChange={(event) => onChange({ ...filters, source: event.target.value })} className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-2 py-1.5 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)]" /></FilterField>
+        <FilterField label={t.medium}><input value={visibleAttributionFilter(filters.medium)} maxLength={100} onChange={(event) => onChange({ ...filters, medium: event.target.value })} className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-2 py-1.5 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)]" /></FilterField>
+        <FilterField label={t.campaign}><input value={visibleAttributionFilter(filters.campaign)} maxLength={200} onChange={(event) => onChange({ ...filters, campaign: event.target.value })} className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-2 py-1.5 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)]" /></FilterField>
         <button type="button" onClick={onApply} className="min-h-9 rounded-md bg-[var(--color-primary)] px-3 text-sm font-semibold text-black outline-none hover:bg-[var(--color-primary-dark)] focus-visible:ring-2 focus-visible:ring-white">
           {t.apply}
         </button>
@@ -61,6 +63,10 @@ export function PromotionFilters({ filters, allowedMarkets, onChange, onApply, i
       </p>
     </section>
   );
+}
+
+function visibleAttributionFilter(value) {
+  return value === DIRECT_ATTRIBUTION_FILTER ? '' : value;
 }
 
 function FilterField({ label, children }) {

@@ -1,3 +1,5 @@
+export const DIRECT_ATTRIBUTION_FILTER = '__sagemro_direct__';
+
 function numeric(value) {
   if (value === null || value === undefined || value === '') return null;
   const result = Number(value);
@@ -61,6 +63,16 @@ export function sortChannelRows(rows, key = 'serviceRequests', direction = 'desc
         || channelNumber(right.row, 'registrations') - channelNumber(left.row, 'registrations')
         || channelNumber(right.row, 'sessions') - channelNumber(left.row, 'sessions');
       return defaultDifference || channelTieBreak(left.row, right.row) || left.index - right.index;
+    }
+    if (key === 'source' || key === 'campaign') {
+      const leftValue = key === 'source'
+        ? `${left.row?.source || ''}\u0000${left.row?.medium || ''}`
+        : String(left.row?.campaign || '');
+      const rightValue = key === 'source'
+        ? `${right.row?.source || ''}\u0000${right.row?.medium || ''}`
+        : String(right.row?.campaign || '');
+      const difference = leftValue.localeCompare(rightValue);
+      return (descending ? -difference : difference) || left.index - right.index;
     }
     const leftValue = channelNumber(left.row, key);
     const rightValue = channelNumber(right.row, key);

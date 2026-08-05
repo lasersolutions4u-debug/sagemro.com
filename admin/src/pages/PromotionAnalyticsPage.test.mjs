@@ -9,6 +9,7 @@ import { createServer } from 'vite';
 const api = await readFile(new URL('../services/api.js', import.meta.url), 'utf8');
 const { getPromotionChannels, getPromotionOverview } = await import('../services/api.js');
 const {
+  DIRECT_ATTRIBUTION_FILTER,
   buildLinePoints,
   filterChannelRows,
   formatChange,
@@ -16,6 +17,7 @@ const {
   sortChannelRows,
   statusTone,
 } = await import('./promotionAnalyticsView.js');
+const DIRECT_SENTINEL = DIRECT_ATTRIBUTION_FILTER;
 const vite = await createServer({
   root: fileURLToPath(new URL('../..', import.meta.url)),
   logLevel: 'silent',
@@ -149,6 +151,20 @@ test('channel helpers sort stably without mutation and locally filter source, me
   assert.deepEqual(sortChannelRows(rows, 'aiSuccessRate', 'asc').map((row) => row.source), ['alpha', 'beta', 'gamma', 'zeta']);
   assert.deepEqual(filterChannelRows(rows, 'LINK').map((row) => row.source), ['beta', 'gamma']);
   assert.deepEqual(filterChannelRows(rows, 'EMAIL').map((row) => row.source), ['zeta']);
+});
+
+test('channel text sorting honors source-medium and campaign direction with stable direct ties', () => {
+  const rows = [
+    { id: 'direct-first', source: '', medium: '', campaign: '' },
+    { id: 'alpha-z', source: 'alpha', medium: 'zeta', campaign: 'spring' },
+    { id: 'alpha-a-first', source: 'alpha', medium: 'alpha', campaign: 'winter' },
+    { id: 'alpha-a-second', source: 'alpha', medium: 'alpha', campaign: 'autumn' },
+    { id: 'beta', source: 'beta', medium: 'paid', campaign: '' },
+  ];
+  assert.deepEqual(sortChannelRows(rows, 'source', 'asc').map((row) => row.id), ['direct-first', 'alpha-a-first', 'alpha-a-second', 'alpha-z', 'beta']);
+  assert.deepEqual(sortChannelRows(rows, 'source', 'desc').map((row) => row.id), ['beta', 'alpha-z', 'alpha-a-first', 'alpha-a-second', 'direct-first']);
+  assert.deepEqual(sortChannelRows(rows, 'campaign', 'asc').map((row) => row.id), ['direct-first', 'beta', 'alpha-a-second', 'alpha-z', 'alpha-a-first']);
+  assert.deepEqual(sortChannelRows(rows, 'campaign', 'desc').map((row) => row.id), ['alpha-a-first', 'alpha-z', 'alpha-a-second', 'direct-first', 'beta']);
 });
 
 test('promotion overview contracts retain safe async, filter, status, and privacy behavior', async () => {
@@ -474,6 +490,47 @@ test('sortable channel headers reorder native table rows without refetching', as
   await act(async () => renderer.unmount());
 });
 
+test('selecting Direct sends three exact sentinels, hides internal values, and clear restores full channels', async () => {
+  const requests = [];
+  let renderer;
+  await act(async () => {
+    renderer = TestRenderer.create(React.createElement(PromotionAnalyticsPage, {
+      loadOverview: () => Promise.resolve(overviewFixture()),
+      loadChannels: (filters) => {
+        requests.push(filters);
+        return Promise.resolve(channelsFixture({
+          rows: requests.length === 1 ? channelRows() : [channelRows()[2]],
+        }));
+      },
+    }));
+  });
+  await act(async () => findButton(renderer.root, 'Channel Analysis').props.onClick());
+  const directButton = renderer.root.findAllByType('button').find((button) => button.props['aria-label'] === 'Select direct / unattributed / unattributed');
+  assert.ok(directButton);
+  await act(async () => directButton.props.onClick());
+  assert.deepEqual(requests[1], {
+    ...requests[0],
+    source: DIRECT_SENTINEL,
+    medium: DIRECT_SENTINEL,
+    campaign: DIRECT_SENTINEL,
+  });
+  assert.equal(findField(renderer.root, 'Source').props.value, '');
+  assert.equal(findField(renderer.root, 'Medium').props.value, '');
+  assert.equal(findField(renderer.root, 'Campaign').props.value, '');
+  assert.match(textContent(renderer.toJSON()), /Active channel:Direct \/ Unattributed/);
+  assert.doesNotMatch(textContent(renderer.toJSON()), /__sagemro_direct__/);
+  assert.deepEqual(renderer.root.findAllByType('button').filter((button) => String(button.props['aria-label'] || '').startsWith('Select ')).map((button) => button.props['aria-label']), ['Select direct / unattributed / unattributed']);
+
+  await act(async () => findField(renderer.root, 'Source').props.onChange({ target: { value: 'edited-source' } }));
+  assert.equal(findField(renderer.root, 'Source').props.value, 'edited-source');
+
+  await act(async () => findButton(renderer.root, 'Clear channel filter').props.onClick());
+  assert.deepEqual(requests[2], {
+    ...requests[0], source: '', medium: '', campaign: '',
+  });
+  await act(async () => renderer.unmount());
+});
+
 test('channel no-data response renders an explicit empty state', async () => {
   let renderer;
   await act(async () => {
@@ -639,7 +696,7 @@ test('promotion analytics clients send only allowed encoded filters with request
       from: '2026-08-01', to: '2026-08-05', market: 'cn', source: 'Google & Partners', medium: 'cpc/paid', campaign: '夏季 + launch',
       admin_token: 'must-not-leak', arbitrary: 'must-not-leak',
     }, signal);
-    await getPromotionChannels({}, signal);
+    await getPromotionChannels({ source: DIRECT_SENTINEL, medium: DIRECT_SENTINEL, campaign: DIRECT_SENTINEL }, signal);
   } finally {
     globalThis.fetch = originalFetch;
     globalThis.localStorage = originalLocalStorage;
@@ -659,7 +716,11 @@ test('promotion analytics clients send only allowed encoded filters with request
   assert.equal(calls[0].options.signal, signal);
   assert.equal(calls[0].options.credentials, 'include');
   assert.equal(calls[0].options.headers.Authorization, 'Bearer legacy-token');
-  assert.equal(calls[1].url.includes('/api/admin/analytics/channels?'), false);
+  const channels = new URL(calls[1].url);
+  assert.equal(channels.pathname, '/api/admin/analytics/channels');
+  assert.deepEqual(Object.fromEntries(channels.searchParams), {
+    source: DIRECT_SENTINEL, medium: DIRECT_SENTINEL, campaign: DIRECT_SENTINEL,
+  });
   assert.equal(calls[1].options.signal, signal);
   assert.match(api, /const PROMOTION_ANALYTICS_FILTER_KEYS = \['from', 'to', 'market', 'source', 'medium', 'campaign'\]/);
 });

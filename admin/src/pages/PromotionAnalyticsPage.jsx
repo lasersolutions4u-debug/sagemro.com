@@ -4,6 +4,7 @@ import { ChannelAnalysis } from '../components/promotion/ChannelAnalysis.jsx';
 import { PromotionOverview } from '../components/promotion/PromotionOverview.jsx';
 import { runtimeConfig } from '../config/runtime';
 import { getPromotionChannels, getPromotionOverview } from '../services/api.js';
+import { DIRECT_ATTRIBUTION_FILTER } from './promotionAnalyticsView.js';
 
 const EMPTY_STATE = { status: 'loading', data: null, error: '' };
 const TAB_DEFINITIONS = [
@@ -84,7 +85,12 @@ export function PromotionAnalyticsPage({ loadOverview = getPromotionOverview, lo
 
   const applyFilters = () => setActiveFilters({ ...draftFilters });
   const applyChannel = (row) => {
-    const nextFilters = { ...activeFilters, source: row.source || '', medium: row.medium || '', campaign: row.campaign || '' };
+    const nextFilters = {
+      ...activeFilters,
+      source: row.source || DIRECT_ATTRIBUTION_FILTER,
+      medium: row.medium || DIRECT_ATTRIBUTION_FILTER,
+      campaign: row.campaign || DIRECT_ATTRIBUTION_FILTER,
+    };
     setDraftFilters(nextFilters);
     setActiveFilters(nextFilters);
     setChannelReloadKey((current) => current + 1);

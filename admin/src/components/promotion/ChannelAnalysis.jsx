@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { buildLinePoints, filterChannelRows, formatMetric, sortChannelRows } from '../../pages/promotionAnalyticsView.js';
+import { DIRECT_ATTRIBUTION_FILTER, buildLinePoints, filterChannelRows, formatMetric, sortChannelRows } from '../../pages/promotionAnalyticsView.js';
 
 function rate(numerator, denominator) {
   const numeratorValue = Number(numerator);
@@ -8,8 +8,10 @@ function rate(numerator, denominator) {
 }
 
 function sourceMediumLabel(row, isCn) {
-  if (!row?.source) return isCn ? '直接访问 / 未归因' : 'Direct / Unattributed';
-  return row.medium ? `${row.source} / ${row.medium}` : row.source;
+  const source = visibleAttributionValue(row?.source);
+  const medium = visibleAttributionValue(row?.medium);
+  if (!source) return isCn ? '直接访问 / 未归因' : 'Direct / Unattributed';
+  return medium ? `${source} / ${medium}` : source;
 }
 
 function summaryLabel(summary, kind, isCn) {
@@ -19,7 +21,12 @@ function summaryLabel(summary, kind, isCn) {
 }
 
 function selectionLabel(filters, isCn) {
-  return sourceMediumLabel(filters, isCn) + (filters.campaign ? ` · ${filters.campaign}` : '');
+  const campaign = visibleAttributionValue(filters.campaign);
+  return sourceMediumLabel(filters, isCn) + (campaign ? ` · ${campaign}` : '');
+}
+
+function visibleAttributionValue(value) {
+  return value === DIRECT_ATTRIBUTION_FILTER ? '' : value;
 }
 
 function SortHeader({ label, field, sort, onSort }) {
