@@ -16,6 +16,7 @@ export function PromotionAnalyticsPage({ loadOverview = getPromotionOverview, lo
   const [activeTab, setActiveTab] = useState('overview');
   const [draftFilters, setDraftFilters] = useState(() => createPromotionFilters(runtimeConfig.market));
   const [activeFilters, setActiveFilters] = useState(() => createPromotionFilters(runtimeConfig.market));
+  const [allowedMarkets, setAllowedMarkets] = useState(() => [runtimeConfig.market]);
   const [overviewState, setOverviewState] = useState(EMPTY_STATE);
   const [channelState, setChannelState] = useState(EMPTY_STATE);
   const [reloadKey, setReloadKey] = useState(0);
@@ -32,7 +33,11 @@ export function PromotionAnalyticsPage({ loadOverview = getPromotionOverview, lo
     setOverviewState({ status: 'loading', data: null, error: '' });
     loadOverview(activeFilters, controller.signal)
       .then((data) => {
-        if (!disposed && sequence.current === requestNumber) setOverviewState({ status: 'ready', data, error: '' });
+        if (!disposed && sequence.current === requestNumber) {
+          setOverviewState({ status: 'ready', data, error: '' });
+          const responseMarkets = allowedMarketsFrom(data);
+          if (responseMarkets) setAllowedMarkets(responseMarkets);
+        }
       })
       .catch((error) => {
         if (!disposed && error?.name !== 'AbortError' && sequence.current === requestNumber) {
@@ -53,7 +58,11 @@ export function PromotionAnalyticsPage({ loadOverview = getPromotionOverview, lo
     setChannelState({ status: 'loading', data: null, error: '' });
     loadChannels(activeFilters, controller.signal)
       .then((data) => {
-        if (!disposed && channelSequence.current === requestNumber) setChannelState({ status: 'ready', data, error: '' });
+        if (!disposed && channelSequence.current === requestNumber) {
+          setChannelState({ status: 'ready', data, error: '' });
+          const responseMarkets = allowedMarketsFrom(data);
+          if (responseMarkets) setAllowedMarkets(responseMarkets);
+        }
       })
       .catch((error) => {
         if (!disposed && error?.name !== 'AbortError' && channelSequence.current === requestNumber) {
@@ -67,7 +76,6 @@ export function PromotionAnalyticsPage({ loadOverview = getPromotionOverview, lo
   }, [activeFilters, activeTab, channelReloadKey, isCn, loadChannels]);
 
   const activeData = activeTab === 'overview' ? overviewState.data : channelState.data;
-  const allowedMarkets = activeData?.allowed_markets || [runtimeConfig.market];
   const reportingTimezone = activeData?.reporting_timezone || 'Asia/Shanghai';
   const coverageStart = activeData?.data_quality?.coverageStart || activeData?.dataQuality?.coverageStart;
   const tabCopy = isCn
@@ -113,6 +121,12 @@ export function PromotionAnalyticsPage({ loadOverview = getPromotionOverview, lo
       {activeTab === 'overview' ? <div id="promotion-overview-panel" className="mt-4" role="tabpanel" aria-labelledby="promotion-overview-tab" aria-busy={overviewState.status === 'loading'}><OverviewState state={overviewState} isCn={isCn} retry={() => setReloadKey((current) => current + 1)} copy={tabCopy} /></div> : <div id="promotion-channels-panel" className="mt-4" role="tabpanel" aria-labelledby="promotion-channels-tab" aria-busy={channelState.status === 'loading'}><ChannelState state={channelState} isCn={isCn} activeFilters={activeFilters} retry={() => setChannelReloadKey((current) => current + 1)} onSelect={applyChannel} onClear={clearChannel} /></div>}
     </section>
   );
+}
+
+function allowedMarketsFrom(data) {
+  if (!Array.isArray(data?.allowed_markets)) return null;
+  const markets = [...new Set(data.allowed_markets.filter((market) => market === 'com' || market === 'cn'))];
+  return markets.length ? markets : null;
 }
 
 function ChannelState({ state, isCn, activeFilters, retry, onSelect, onClear }) {

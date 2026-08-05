@@ -102,6 +102,10 @@ function findField(root, label) {
   return root.findAllByType('label').find((field) => field.children[0] === label).findByType('input');
 }
 
+function findSelectField(root, label) {
+  return root.findAllByType('label').find((field) => field.children[0] === label).findByType('select');
+}
+
 function metricText(root, label) {
   const labelNode = root.findAllByType('p').find((node) => textContent(node) === label);
   return textContent(labelNode.parent);
@@ -364,10 +368,15 @@ test('channel analysis loads only while active, keeps local search local, and ap
     search.props.onChange({ target: { value: 'linked' } });
   });
   assert.equal(channelRequests.length, 1);
-  assert.deepEqual(renderer.root.findAll((node) => node.props.role === 'button' && String(node.props['aria-label'] || '').startsWith('Select ')).map((node) => node.props['aria-label']), ['Select linkedin / paid / industrial']);
+  const selectButtons = renderer.root.findAllByType('button').filter((node) => String(node.props['aria-label'] || '').startsWith('Select '));
+  assert.deepEqual(selectButtons.map((node) => node.props['aria-label']), ['Select linkedin / paid / industrial']);
+  assert.equal(selectButtons[0].parent.type, 'td');
+  assert.equal(selectButtons[0].parent.parent.type, 'tr');
+  assert.equal(selectButtons[0].parent.parent.props.role, undefined);
+  assert.equal(selectButtons[0].parent.parent.props.tabIndex, undefined);
 
   await act(async () => {
-    renderer.root.findByProps({ 'aria-label': 'Select linkedin / paid / industrial' }).props.onClick();
+    selectButtons[0].props.onClick();
   });
   assert.equal(channelRequests.length, 2);
   assert.deepEqual(channelRequests[1].filters, {
@@ -383,6 +392,99 @@ test('channel analysis loads only while active, keeps local search local, and ap
     ...channelRequests[0].filters,
     source: '', medium: '', campaign: '',
   });
+  await act(async () => renderer.unmount());
+});
+
+test('successful market scope survives channel loading and errors with the selected market still valid', async () => {
+  const channel = deferred();
+  let renderer;
+  await act(async () => {
+    renderer = TestRenderer.create(React.createElement(PromotionAnalyticsPage, {
+      loadOverview: () => Promise.resolve(overviewFixture()),
+      loadChannels: () => channel.promise,
+    }));
+  });
+  let market = findSelectField(renderer.root, 'Market');
+  assert.deepEqual(market.findAllByType('option').map((option) => option.props.value), ['all', 'com', 'cn']);
+  await act(async () => market.props.onChange({ target: { value: 'all' } }));
+  await act(async () => findButton(renderer.root, 'Channel Analysis').props.onClick());
+  market = findSelectField(renderer.root, 'Market');
+  assert.equal(market.props.value, 'all');
+  assert.deepEqual(market.findAllByType('option').map((option) => option.props.value), ['all', 'com', 'cn']);
+  await act(async () => {
+    channel.reject(new Error('Channel scope unavailable'));
+    await channel.promise.catch(() => {});
+  });
+  market = findSelectField(renderer.root, 'Market');
+  assert.equal(market.props.value, 'all');
+  assert.deepEqual(market.findAllByType('option').map((option) => option.props.value), ['all', 'com', 'cn']);
+  await act(async () => renderer.unmount());
+});
+
+test('market scope may come from a successful channel response but never from a rejected request', async () => {
+  const pendingOverview = deferred();
+  let renderer;
+  await act(async () => {
+    renderer = TestRenderer.create(React.createElement(PromotionAnalyticsPage, {
+      loadOverview: () => pendingOverview.promise,
+      loadChannels: () => Promise.resolve(channelsFixture()),
+    }));
+  });
+  await act(async () => findButton(renderer.root, 'Channel Analysis').props.onClick());
+  assert.deepEqual(findSelectField(renderer.root, 'Market').findAllByType('option').map((option) => option.props.value), ['all', 'com', 'cn']);
+  await act(async () => renderer.unmount());
+
+  const unauthorizedError = Object.assign(new Error('Rejected scope'), { allowed_markets: ['com', 'cn'] });
+  await act(async () => {
+    renderer = TestRenderer.create(React.createElement(PromotionAnalyticsPage, {
+      loadOverview: () => pendingOverview.promise,
+      loadChannels: () => Promise.reject(unauthorizedError),
+    }));
+  });
+  await act(async () => findButton(renderer.root, 'Channel Analysis').props.onClick());
+  assert.deepEqual(findSelectField(renderer.root, 'Market').findAllByType('option').map((option) => option.props.value), ['com']);
+  await act(async () => renderer.unmount());
+});
+
+test('sortable channel headers reorder native table rows without refetching', async () => {
+  let channelRequests = 0;
+  let renderer;
+  await act(async () => {
+    renderer = TestRenderer.create(React.createElement(PromotionAnalyticsPage, {
+      loadOverview: () => Promise.resolve(overviewFixture()),
+      loadChannels: () => {
+        channelRequests += 1;
+        return Promise.resolve(channelsFixture());
+      },
+    }));
+  });
+  await act(async () => findButton(renderer.root, 'Channel Analysis').props.onClick());
+  const sessionsHeaderButton = findButton(renderer.root, 'Sessions');
+  assert.equal(sessionsHeaderButton.parent.props['aria-sort'], 'none');
+  await act(async () => sessionsHeaderButton.props.onClick());
+  assert.equal(sessionsHeaderButton.parent.props['aria-sort'], 'descending');
+  await act(async () => sessionsHeaderButton.props.onClick());
+  assert.equal(sessionsHeaderButton.parent.props['aria-sort'], 'ascending');
+  assert.deepEqual(renderer.root.findAllByType('button').filter((button) => String(button.props['aria-label'] || '').startsWith('Select ')).map((button) => button.props['aria-label']), [
+    'Select direct / unattributed / unattributed',
+    'Select linkedin / paid / industrial',
+    'Select google / cpc / summer-launch',
+  ]);
+  assert.equal(channelRequests, 1);
+  await act(async () => renderer.unmount());
+});
+
+test('channel no-data response renders an explicit empty state', async () => {
+  let renderer;
+  await act(async () => {
+    renderer = TestRenderer.create(React.createElement(PromotionAnalyticsPage, {
+      loadOverview: () => Promise.resolve(overviewFixture()),
+      loadChannels: () => Promise.resolve(channelsFixture({ rows: [] })),
+    }));
+  });
+  await act(async () => findButton(renderer.root, 'Channel Analysis').props.onClick());
+  assert.match(textContent(renderer.toJSON()), /No data/);
+  assert.equal(renderer.root.findAllByType('table').length, 0);
   await act(async () => renderer.unmount());
 });
 
@@ -444,6 +546,7 @@ test('channel analysis source contract stays bilingual, table-first, and exclude
   assert.match(channels, /服务请求/);
   assert.match(channels, /aria-sort/);
   assert.match(channels, /最多 100 聚合行/);
+  assert.doesNotMatch(channels, /<tr[^>]+role="button"|<tr[^>]+tabIndex/);
   assert.doesNotMatch(channels, /anonymous_id|session_id|request_id|ip_hash|user_agent|CPA|ROAS|Ad spend|广告花费/i);
 });
 
