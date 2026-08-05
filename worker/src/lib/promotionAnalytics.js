@@ -296,6 +296,12 @@ const FILTERED_EVENTS = (where) => `
            json_extract(properties_json, '$.request_id') AS request_id
     FROM funnel_events
     WHERE ${where}
+  ), eligible_ai_requests AS (
+    SELECT DISTINCT request_id
+    FROM filtered
+    WHERE analytics_version = '2'
+      AND event_name = 'ai_conversation_started'
+      AND COALESCE(request_id, '') != ''
   )
 `;
 
@@ -303,7 +309,7 @@ const OVERVIEW_SELECT = `
   SELECT
     COUNT(DISTINCT CASE WHEN analytics_version = '2' AND event_name = 'traffic_source_captured' THEN session_id END) AS sessions,
     COUNT(DISTINCT CASE WHEN analytics_version = '2' AND event_name = 'ai_conversation_started' THEN request_id END) AS aiRequests,
-    COUNT(DISTINCT CASE WHEN analytics_version = '2' AND event_name = 'ai_response_received' THEN request_id END) AS aiSuccesses,
+    COUNT(DISTINCT CASE WHEN analytics_version = '2' AND event_name = 'ai_response_received' AND request_id IN (SELECT request_id FROM eligible_ai_requests) THEN request_id END) AS aiSuccesses,
     SUM(CASE WHEN analytics_version = '2' AND event_name = 'signup_completed' THEN 1 ELSE 0 END) AS registrationEvents,
     SUM(CASE WHEN analytics_version = '2' AND event_name = 'service_request_created' THEN 1 ELSE 0 END) AS serviceRequestEvents,
     COUNT(DISTINCT CASE WHEN analytics_version = '2' AND event_name = 'traffic_source_captured' AND COALESCE(anonymous_id, '') != '' THEN anonymous_id END) AS visitors,
@@ -362,7 +368,7 @@ function dailySql(where) {
       date(datetime(created_at, '+8 hours')) AS date,
       COUNT(DISTINCT CASE WHEN analytics_version = '2' AND event_name = 'traffic_source_captured' THEN session_id END) AS sessions,
       COUNT(DISTINCT CASE WHEN analytics_version = '2' AND event_name = 'ai_conversation_started' THEN request_id END) AS aiRequests,
-      COUNT(DISTINCT CASE WHEN analytics_version = '2' AND event_name = 'ai_response_received' THEN request_id END) AS aiSuccesses,
+      COUNT(DISTINCT CASE WHEN analytics_version = '2' AND event_name = 'ai_response_received' AND request_id IN (SELECT request_id FROM eligible_ai_requests) THEN request_id END) AS aiSuccesses,
       COUNT(DISTINCT CASE WHEN analytics_version = '2' AND event_name = 'signup_completed' AND COALESCE(anonymous_id, '') != '' THEN anonymous_id END) AS registrations,
       COUNT(DISTINCT CASE WHEN analytics_version = '2' AND event_name = 'service_request_created' AND COALESCE(anonymous_id, '') != '' THEN anonymous_id END) AS serviceRequests
     FROM filtered
@@ -417,14 +423,13 @@ function channelSql(where) {
       COALESCE(campaign, '') AS campaign,
       COUNT(DISTINCT CASE WHEN analytics_version = '2' AND event_name = 'traffic_source_captured' THEN session_id END) AS sessions,
       COUNT(DISTINCT CASE WHEN analytics_version = '2' AND event_name = 'ai_conversation_started' THEN request_id END) AS aiRequests,
-      COUNT(DISTINCT CASE WHEN analytics_version = '2' AND event_name = 'ai_response_received' THEN request_id END) AS aiSuccesses,
+      COUNT(DISTINCT CASE WHEN analytics_version = '2' AND event_name = 'ai_response_received' AND request_id IN (SELECT request_id FROM eligible_ai_requests) THEN request_id END) AS aiSuccesses,
       COUNT(DISTINCT CASE WHEN analytics_version = '2' AND event_name = 'signup_completed' AND COALESCE(anonymous_id, '') != '' THEN anonymous_id END) AS registrations,
       COUNT(DISTINCT CASE WHEN analytics_version = '2' AND event_name = 'service_request_created' AND COALESCE(anonymous_id, '') != '' THEN anonymous_id END) AS serviceRequests
     FROM filtered
-    GROUP BY source, medium, campaign
+    GROUP BY COALESCE(source, ''), COALESCE(medium, ''), COALESCE(campaign, '')
     HAVING sessions > 0 OR aiRequests > 0 OR aiSuccesses > 0 OR registrations > 0 OR serviceRequests > 0
-    ORDER BY serviceRequests DESC, registrations DESC, sessions DESC
-    LIMIT 100`;
+    ORDER BY serviceRequests DESC, registrations DESC, sessions DESC`;
 }
 
 export async function queryPromotionChannelsDb(db, filters) {
@@ -511,18 +516,19 @@ export async function loadPromotionChannels(databases, filters) {
   const results = await Promise.all(filters.markets.map((market) => (
     queryPromotionChannelsDb(databases[market], filters)
   )));
-  const rows = sortChannelRows(mergeChannelRows(results.map((result) => result.rows))).slice(0, 100);
-  const attributedRows = rows.filter((row) => row.source !== '');
+  const mergedRows = sortChannelRows(mergeChannelRows(results.map((result) => result.rows)));
+  const rows = mergedRows.slice(0, 100);
+  const attributedRows = mergedRows.filter((row) => row.source !== '');
   return {
     rows,
     daily: mergeDailyRows(results.map((result) => result.daily)),
     summary: {
-      bestChannel: rows[0] || null,
-      bestCampaign: rows[0] || null,
+      bestChannel: mergedRows[0] || null,
+      bestCampaign: mergedRows[0] || null,
       attributableServiceRequests: attributedRows.reduce((total, row) => total + row.serviceRequests, 0),
       attributionCoverage: ratio(
         attributedRows.reduce((total, row) => total + row.sessions, 0),
-        rows.reduce((total, row) => total + row.sessions, 0),
+        mergedRows.reduce((total, row) => total + row.sessions, 0),
       ),
     },
   };
