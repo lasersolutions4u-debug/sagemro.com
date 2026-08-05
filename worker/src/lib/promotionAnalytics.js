@@ -446,8 +446,8 @@ export async function queryPromotionChannelsDb(db, filters) {
 
 function previousPeriodFilters(filters) {
   const from = Date.parse(`${filters.fromUtc.replace(' ', 'T')}Z`);
-  const to = Date.parse(`${filters.toUtcExclusive.replace(' ', 'T')}Z`);
-  const duration = to - from;
+  const effectiveTo = Date.parse(`${filters.effectiveToUtcExclusive.replace(' ', 'T')}Z`);
+  const duration = Math.max(0, effectiveTo - from);
   return {
     ...filters,
     fromUtc: formatUtcDateTime(from - duration),
@@ -480,6 +480,27 @@ function sortChannelRows(rows) {
     || left.medium.localeCompare(right.medium)
     || left.campaign.localeCompare(right.campaign)
   ));
+}
+
+function bestChannelSummary(rows) {
+  const [best] = sortChannelRows(mergeChannelRows([
+    rows.map((row) => ({ ...row, campaign: '' })),
+  ]));
+  if (!best) return null;
+  const summary = { ...best };
+  delete summary.campaign;
+  return summary;
+}
+
+function bestCampaignSummary(rows) {
+  const [best] = sortChannelRows(mergeChannelRows([
+    rows.map((row) => ({ ...row, source: '', medium: '' })),
+  ]));
+  if (!best) return null;
+  const summary = { ...best };
+  delete summary.source;
+  delete summary.medium;
+  return summary;
 }
 
 export async function loadPromotionOverview(databases, filters) {
@@ -523,8 +544,8 @@ export async function loadPromotionChannels(databases, filters) {
     rows,
     daily: mergeDailyRows(results.map((result) => result.daily)),
     summary: {
-      bestChannel: mergedRows[0] || null,
-      bestCampaign: mergedRows[0] || null,
+      bestChannel: bestChannelSummary(mergedRows),
+      bestCampaign: bestCampaignSummary(mergedRows),
       attributableServiceRequests: attributedRows.reduce((total, row) => total + row.serviceRequests, 0),
       attributionCoverage: ratio(
         attributedRows.reduce((total, row) => total + row.sessions, 0),
