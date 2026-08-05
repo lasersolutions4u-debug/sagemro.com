@@ -4322,7 +4322,19 @@ ${turnLanguageRule}
               );
               try {
                 captureException(
-                  new Error(`LLM upstream ${apiResponse.status}: ${errText}`),
+                  new Error(`LLM upstream request failed with status ${apiResponse.status}`),
+                  env,
+                  {
+                    request,
+                    ctx: request._ctx,
+                    extra: {
+                      feature: 'ai_chat',
+                      stage: 'upstream',
+                      status: apiResponse.status,
+                      market: getRequestMarket(request),
+                      iteration,
+                    },
+                  },
                 );
               } catch {
                 /* Sentry 本身失败不影响主流程 */
@@ -4411,7 +4423,15 @@ ${turnLanguageRule}
             );
           }
           try {
-            captureException(e);
+            captureException(e, env, {
+              request,
+              ctx: request._ctx,
+              extra: {
+                feature: 'ai_chat',
+                stage: 'stream',
+                market: getRequestMarket(request),
+              },
+            });
           } catch {
             /* 吃掉 */
           }
