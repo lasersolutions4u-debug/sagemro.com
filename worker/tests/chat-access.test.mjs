@@ -157,6 +157,7 @@ async function runChatSentryFailure({ conversationId, requestUrl, referer, makeL
     const response = await handleChat(request, env);
     assert.equal(response.status, 200);
     sseText = await response.text();
+    assert.equal(waitUntilPromises.length, 1);
     await Promise.all(waitUntilPromises);
   } finally {
     globalThis.fetch = originalFetch;
