@@ -5,6 +5,8 @@ import { signJwt } from '../src/lib/auth.js';
 import { buildWorkOrderSummaryPrompt, handleChat, handleChatTranscribe } from '../src/index.js';
 
 const JWT_SECRET = 'chat-access-test-secret-32-chars';
+const AI_TEMPORARY_FALLBACK = 'SAGEMRO AI is temporarily unavailable. Please try again shortly, or leave the equipment details and SAGEMRO will follow up through the service process.';
+const SENTRY_ENVELOPE_URL = 'https://example.ingest.sentry.io/api/1/envelope/';
 
 function makeRequest(body, token, url = 'https://api.sagemro.com/api/chat', origin = 'https://sagemro.com') {
   const headers = { 'Content-Type': 'application/json', 'CF-Connecting-IP': '127.0.0.1' };
@@ -116,6 +118,58 @@ function attachWaitUntilCollector(request) {
   return promises;
 }
 
+function assertFallbackSse(sseText, { conversationId, canaries }) {
+  assert.ok(sseText.includes(
+    `data: ${JSON.stringify({ content: AI_TEMPORARY_FALLBACK, conversation_id: conversationId })}\n`,
+  ));
+  assert.ok(sseText.includes('data: [DONE]\n'));
+  for (const canary of canaries) {
+    assert.ok(!sseText.includes(canary), `SSE response leaked canary: ${canary}`);
+  }
+}
+
+async function runChatSentryFailure({ conversationId, requestUrl, referer, makeLlmResponse }) {
+  const { env } = makeEnv();
+  env.SENTRY_DSN = 'https://public@example.ingest.sentry.io/1';
+  env.ENVIRONMENT = 'test';
+  const request = makeRequest({
+    conversation_id: conversationId,
+    message: 'My laser will not start.',
+  }, null, requestUrl);
+  request.headers.set('Referer', referer);
+  request.headers.set('User-Agent', 'chat-sentry-test');
+  request.headers.set('CF-Ray', 'test-ray');
+  const waitUntilPromises = attachWaitUntilCollector(request);
+  const originalFetch = globalThis.fetch;
+  const sentryEnvelopes = [];
+
+  globalThis.fetch = async (url, init) => {
+    if (url === env.OPENAI_API_ENDPOINT) return makeLlmResponse();
+    if (url === SENTRY_ENVELOPE_URL) {
+      sentryEnvelopes.push(init.body);
+      return new Response(null, { status: 200 });
+    }
+    throw new Error(`Unexpected fetch URL: ${url}`);
+  };
+
+  let sseText;
+  try {
+    const response = await handleChat(request, env);
+    assert.equal(response.status, 200);
+    sseText = await response.text();
+    await Promise.all(waitUntilPromises);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+
+  assert.equal(sentryEnvelopes.length, 1);
+  return {
+    envelope: sentryEnvelopes[0],
+    event: parseSentryEnvelope(sentryEnvelopes[0]),
+    sseText,
+  };
+}
+
 async function captureChatPrompt({ request }) {
   const { env } = makeEnv();
   const originalFetch = globalThis.fetch;
@@ -181,86 +235,99 @@ test('handleChat creates a new conversation using caller-provided local id when 
 });
 
 test('handleChat reports a redacted upstream LLM failure to Sentry', async () => {
-  const { env } = makeEnv();
-  env.SENTRY_DSN = 'https://public@example.ingest.sentry.io/1';
-  env.ENVIRONMENT = 'test';
-  const request = makeRequest({ message: 'My laser will not start.' });
-  const waitUntilPromises = attachWaitUntilCollector(request);
-  const originalFetch = globalThis.fetch;
-  const sentryEnvelopes = [];
+  const conversationId = 'upstream-sentry-conversation';
+  const upstreamEmail = 'buyer@example.com';
+  const upstreamSecret = 'upstream-secret-canary';
+  const queryEmail = 'query-buyer@example.com';
+  const querySecret = 'query-secret-canary';
+  const refererEmail = 'referer-buyer@example.com';
+  const refererSecret = 'referer-secret-canary';
+  const { envelope, event, sseText } = await runChatSentryFailure({
+    conversationId,
+    requestUrl: `https://api.sagemro.com/api/chat?email=${queryEmail}&token=${querySecret}#query-fragment`,
+    referer: `https://sagemro.com/account?email=${refererEmail}&token=${refererSecret}#referer-fragment`,
+    makeLlmResponse: () => new Response(
+      `LLM failure for ${upstreamEmail} with ${upstreamSecret}`,
+      { status: 502 },
+    ),
+  });
 
-  globalThis.fetch = async (url, init) => {
-    if (url === env.OPENAI_API_ENDPOINT) {
-      return new Response('LLM failure for buyer@example.com', { status: 502 });
-    }
-    if (url === 'https://example.ingest.sentry.io/api/1/envelope/') {
-      sentryEnvelopes.push(init.body);
-      return new Response(null, { status: 200 });
-    }
-    throw new Error(`Unexpected fetch URL: ${url}`);
-  };
-
-  try {
-    const response = await handleChat(request, env);
-    assert.equal(response.status, 200);
-    await response.text();
-    await Promise.all(waitUntilPromises);
-  } finally {
-    globalThis.fetch = originalFetch;
-  }
-
-  assert.equal(sentryEnvelopes.length, 1);
-  const event = parseSentryEnvelope(sentryEnvelopes[0]);
   assert.equal(event.extra.feature, 'ai_chat');
   assert.equal(event.extra.stage, 'upstream');
   assert.equal(event.extra.status, 502);
   assert.equal(event.extra.market, 'com');
   assert.equal(event.extra.iteration, 0);
-  assert.doesNotMatch(JSON.stringify(event), /buyer@example\.com/);
+  assert.equal(event.exception.values[0].value, 'LLM upstream request failed with status 502');
+  assert.equal(event.request.url, 'https://api.sagemro.com/api/chat');
+  assert.equal(event.request.method, 'POST');
+  assert.equal(event.tags.route, '/api/chat');
+  assert.equal(event.tags.method, 'POST');
+  assert.equal(event.request.headers['user-agent'], 'chat-sentry-test');
+  assert.equal(event.request.headers['cf-ray'], 'test-ray');
+  assert.equal(event.request.headers.referer, undefined);
+  for (const canary of [
+    upstreamEmail,
+    upstreamSecret,
+    queryEmail,
+    querySecret,
+    refererEmail,
+    refererSecret,
+  ]) {
+    assert.ok(!envelope.includes(canary), `Sentry envelope leaked canary: ${canary}`);
+  }
+  assertFallbackSse(sseText, {
+    conversationId,
+    canaries: [upstreamEmail, upstreamSecret],
+  });
 });
 
 test('handleChat reports an LLM stream failure to Sentry', async () => {
-  const { env } = makeEnv();
-  env.SENTRY_DSN = 'https://public@example.ingest.sentry.io/1';
-  env.ENVIRONMENT = 'test';
-  const request = makeRequest({ message: 'My laser will not start.' });
-  const waitUntilPromises = attachWaitUntilCollector(request);
-  const originalFetch = globalThis.fetch;
-  const sentryEnvelopes = [];
+  const conversationId = 'stream-sentry-conversation';
+  const streamEmail = 'stream-buyer@example.com';
+  const streamSecret = 'stream-secret-canary';
+  const queryEmail = 'stream-query@example.com';
+  const querySecret = 'stream-query-secret-canary';
+  const refererEmail = 'stream-referer@example.com';
+  const refererSecret = 'stream-referer-secret-canary';
+  const { envelope, event, sseText } = await runChatSentryFailure({
+    conversationId,
+    requestUrl: `https://api.sagemro.com/api/chat?email=${queryEmail}&token=${querySecret}`,
+    referer: `https://sagemro.com/history?email=${refererEmail}&token=${refererSecret}`,
+    makeLlmResponse: () => new Response(new ReadableStream({
+      start(controller) {
+        controller.error(new Error(`stream exploded for ${streamEmail} with ${streamSecret}`));
+      },
+    }), {
+      status: 200,
+      headers: { 'Content-Type': 'text/event-stream' },
+    }),
+  });
 
-  globalThis.fetch = async (url, init) => {
-    if (url === env.OPENAI_API_ENDPOINT) {
-      return new Response(new ReadableStream({
-        start(controller) {
-          controller.error(new Error('stream exploded'));
-        },
-      }), {
-        status: 200,
-        headers: { 'Content-Type': 'text/event-stream' },
-      });
-    }
-    if (url === 'https://example.ingest.sentry.io/api/1/envelope/') {
-      sentryEnvelopes.push(init.body);
-      return new Response(null, { status: 200 });
-    }
-    throw new Error(`Unexpected fetch URL: ${url}`);
-  };
-
-  try {
-    const response = await handleChat(request, env);
-    assert.equal(response.status, 200);
-    await response.text();
-    await Promise.all(waitUntilPromises);
-  } finally {
-    globalThis.fetch = originalFetch;
-  }
-
-  assert.equal(sentryEnvelopes.length, 1);
-  const event = parseSentryEnvelope(sentryEnvelopes[0]);
   assert.equal(event.extra.feature, 'ai_chat');
   assert.equal(event.extra.stage, 'stream');
   assert.equal(event.extra.market, 'com');
-  assert.equal(event.exception.values[0].value, 'stream exploded');
+  assert.equal(event.exception.values[0].value, 'LLM stream processing failed');
+  assert.equal(event.request.url, 'https://api.sagemro.com/api/chat');
+  assert.equal(event.request.method, 'POST');
+  assert.equal(event.tags.route, '/api/chat');
+  assert.equal(event.tags.method, 'POST');
+  assert.equal(event.request.headers['user-agent'], 'chat-sentry-test');
+  assert.equal(event.request.headers['cf-ray'], 'test-ray');
+  assert.equal(event.request.headers.referer, undefined);
+  for (const canary of [
+    streamEmail,
+    streamSecret,
+    queryEmail,
+    querySecret,
+    refererEmail,
+    refererSecret,
+  ]) {
+    assert.ok(!envelope.includes(canary), `Sentry envelope leaked canary: ${canary}`);
+  }
+  assertFallbackSse(sseText, {
+    conversationId,
+    canaries: [streamEmail, streamSecret],
+  });
 });
 
 test('handleChat retries a transient D1 timeout while creating a guest conversation', async () => {
