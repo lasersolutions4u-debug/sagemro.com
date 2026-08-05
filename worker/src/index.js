@@ -4423,7 +4423,7 @@ ${turnLanguageRule}
             );
           }
           try {
-            captureException(e, env, {
+            captureException(new Error('LLM stream processing failed'), env, {
               request,
               ctx: request._ctx,
               extra: {

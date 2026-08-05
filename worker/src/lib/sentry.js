@@ -33,12 +33,21 @@ function randomEventId() {
 
 function safeHeaders(request) {
   const out = {};
-  const allowed = ['user-agent', 'referer', 'cf-ray', 'cf-ipcountry', 'accept-language'];
+  const allowed = ['user-agent', 'cf-ray', 'cf-ipcountry', 'accept-language'];
   for (const h of allowed) {
     const v = request.headers.get(h);
     if (v) out[h] = v;
   }
   return out;
+}
+
+function safeRequestUrl(request) {
+  try {
+    const url = new URL(request.url);
+    return `${url.origin}${url.pathname}`;
+  } catch {
+    return undefined;
+  }
 }
 
 // captureException(error, env, { request, ctx, extra })
@@ -85,7 +94,7 @@ export function captureException(error, env, meta = {}) {
 
   if (meta.request) {
     event.request = {
-      url: meta.request.url,
+      url: safeRequestUrl(meta.request),
       method: meta.request.method,
       headers: safeHeaders(meta.request),
     };
