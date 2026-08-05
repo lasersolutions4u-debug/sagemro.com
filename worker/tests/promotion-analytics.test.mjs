@@ -489,6 +489,56 @@ test('loadPromotionOverview merges market aggregates, previous period, and priva
   assert.equal(JSON.stringify(result).match(/anonymous_id|session_id|request_id|created_at|createdAt/), null);
 });
 
+test('loadPromotionOverview compares a partial same-day window with an equal effective interval', async (t) => {
+  const db = createD1Database();
+  t.after(() => db.close());
+  for (let index = 0; index < 20; index += 1) {
+    await seedEvent(db, {
+      id: `nominal-baseline-${index}`,
+      eventName: 'traffic_source_captured',
+      anonymousId: `nominal-anon-${index}`,
+      sessionId: `nominal-session-${index}`,
+      createdAt: '2026-08-03 20:00:00',
+    });
+  }
+  await seedEvent(db, {
+    id: 'partial-current', eventName: 'traffic_source_captured',
+    anonymousId: 'partial-current-anon', sessionId: 'partial-current-session',
+    createdAt: '2026-08-04 18:00:00',
+  });
+
+  const result = await loadPromotionOverview({ com: db }, filters({
+    from: '2026-08-05', to: '2026-08-05', market: 'com',
+  }));
+
+  assert.equal(result.current.sessions, 1);
+  assert.equal(result.previous.sessions, 0);
+  assert.equal(result.health.reasons.some((reason) => reason.metric === 'traffic_drop'), false);
+});
+
+test('loadPromotionOverview keeps future-only comparisons empty and health neutral', async (t) => {
+  const db = createD1Database();
+  t.after(() => db.close());
+  for (let index = 0; index < 20; index += 1) {
+    await seedEvent(db, {
+      id: `future-nominal-baseline-${index}`,
+      eventName: 'traffic_source_captured',
+      anonymousId: `future-nominal-anon-${index}`,
+      sessionId: `future-nominal-session-${index}`,
+      createdAt: '2026-08-04 18:00:00',
+    });
+  }
+
+  const result = await loadPromotionOverview({ com: db }, filters({
+    from: '2026-08-06', to: '2026-08-06', market: 'com',
+  }));
+
+  assert.equal(result.current.sessions, 0);
+  assert.equal(result.previous.sessions, 0);
+  assert.equal(result.previous.sampleStatus, 'no_data');
+  assert.deepEqual(result.health, { level: 'normal', reasons: [] });
+});
+
 test('loadPromotionChannels merges then orders and limits combined channel rows', async (t) => {
   const com = createD1Database();
   const cn = createD1Database();
@@ -549,4 +599,44 @@ test('loadPromotionChannels applies the 100-row limit only after the complete cr
   assert.equal(result.rows[0].registrations, 2);
   assert.equal(result.summary.bestChannel.source, 'z-common');
   assert.equal(result.summary.attributableServiceRequests, 402);
+});
+
+test('channel summary independently aggregates the best channel and best campaign', async (t) => {
+  const db = createD1Database();
+  t.after(() => db.close());
+  const channelCampaigns = [
+    { source: 'alpha', campaign: 'alpha-one', visitors: 6 },
+    { source: 'alpha', campaign: 'alpha-two', visitors: 6 },
+    { source: 'beta', campaign: 'winner', visitors: 10 },
+  ];
+  for (const { source, campaign, visitors } of channelCampaigns) {
+    for (let visitor = 0; visitor < visitors; visitor += 1) {
+      const identity = `${source}-${campaign}-${visitor}`;
+      for (const eventName of ['traffic_source_captured', 'service_request_created']) {
+        await seedEvent(db, {
+          id: `${identity}-${eventName}`,
+          eventName,
+          anonymousId: `${identity}-anon`,
+          sessionId: `${identity}-session`,
+          source,
+          medium: 'cpc',
+          campaign,
+        });
+      }
+    }
+  }
+
+  const { summary, rows } = await loadPromotionChannels({ com: db }, queryFilters());
+
+  assert.equal(rows[0].campaign, 'winner');
+  assert.deepEqual(summary.bestChannel, {
+    source: 'alpha', medium: 'cpc', sessions: 12, aiRequests: 0, aiSuccesses: 0,
+    registrations: 0, serviceRequests: 12, aiSuccessRate: null,
+    sessionToRequestRate: 1, sampleStatus: 'insufficient',
+  });
+  assert.deepEqual(summary.bestCampaign, {
+    campaign: 'winner', sessions: 10, aiRequests: 0, aiSuccesses: 0,
+    registrations: 0, serviceRequests: 10, aiSuccessRate: null,
+    sessionToRequestRate: 1, sampleStatus: 'insufficient',
+  });
 });
