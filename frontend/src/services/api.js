@@ -1,3 +1,5 @@
+import { ANALYTICS_VERSION, createAnalyticsId, resolveAnalyticsSession } from './funnelAnalytics';
+
 // API 服务层
 function resolveApiBase() {
   if (import.meta.env.VITE_API_BASE) return import.meta.env.VITE_API_BASE;
@@ -15,7 +17,6 @@ function isApiRequest(url) {
 
 const FUNNEL_STORAGE_KEYS = {
   anonymousId: 'sagemro_analytics_anonymous_id',
-  sessionId: 'sagemro_analytics_session_id',
   source: 'sagemro_analytics_source',
 };
 const FUNNEL_EVENT_NAMES = [
@@ -44,12 +45,9 @@ const FUNNEL_PROPERTY_ALLOWLIST = [
   'service_type',
   'urgency',
   'tool_id',
+  'request_id',
+  'analytics_version',
 ];
-
-function analyticsId(prefix) {
-  if (typeof crypto !== 'undefined' && crypto.randomUUID) return `${prefix}_${crypto.randomUUID()}`;
-  return `${prefix}_${Date.now().toString(36)}${Math.random().toString(36).slice(2)}`;
-}
 
 function getStoredAnalyticsValue(key, fallback) {
   try {
@@ -105,8 +103,8 @@ export function trackFunnelEvent(eventName, properties = {}) {
   const safeProperties = sanitizeFunnelProperties(properties);
   const payload = {
     event_name: eventName,
-    anonymous_id: getStoredAnalyticsValue(FUNNEL_STORAGE_KEYS.anonymousId, () => analyticsId('anon')),
-    session_id: getStoredAnalyticsValue(FUNNEL_STORAGE_KEYS.sessionId, () => analyticsId('session')),
+    anonymous_id: getStoredAnalyticsValue(FUNNEL_STORAGE_KEYS.anonymousId, () => createAnalyticsId('anon')),
+    session_id: resolveAnalyticsSession(localStorage),
     user_type: localStorage.getItem('sagemro_user_type') || 'guest',
     source: attribution.source || '',
     medium: attribution.medium || '',
@@ -115,6 +113,7 @@ export function trackFunnelEvent(eventName, properties = {}) {
     referrer: document.referrer || '',
     properties: {
       ...safeProperties,
+      analytics_version: ANALYTICS_VERSION,
       market: window.location.hostname.endsWith('.cn') ? 'cn' : 'com',
       locale: window.location.hostname.endsWith('.cn') ? 'zh-CN' : 'en',
     },
