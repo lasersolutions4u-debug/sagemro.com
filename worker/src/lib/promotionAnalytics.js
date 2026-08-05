@@ -27,7 +27,7 @@ export class PromotionAnalyticsInputError extends Error {
 }
 
 function formatUtcDateTime(timestamp) {
-  return new Date(timestamp).toISOString().replace('T', ' ').replace('.000Z', '');
+  return new Date(timestamp).toISOString().slice(0, 19).replace('T', ' ');
 }
 
 function parseReportDate(value, label) {

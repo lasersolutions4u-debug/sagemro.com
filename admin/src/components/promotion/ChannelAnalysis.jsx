@@ -47,9 +47,10 @@ function ChannelTrend({ daily, selected, isCn }) {
   const sessions = daily.map((row) => row.sessions);
   const requests = daily.map((row) => row.aiRequests);
   const serviceRequests = daily.map((row) => row.serviceRequests);
-  const sessionPoints = buildLinePoints(sessions, 360, 80).join(' ');
-  const requestPoints = buildLinePoints(requests, 360, 80).join(' ');
-  const servicePoints = buildLinePoints(serviceRequests, 360, 80).join(' ');
+  const sharedMax = Math.max(0, ...sessions, ...requests, ...serviceRequests);
+  const sessionPoints = buildLinePoints(sessions, 360, 80, sharedMax).join(' ');
+  const requestPoints = buildLinePoints(requests, 360, 80, sharedMax).join(' ');
+  const servicePoints = buildLinePoints(serviceRequests, 360, 80, sharedMax).join(' ');
   const title = selected
     ? (isCn ? '已选渠道趋势' : 'Selected channel trend')
     : (isCn ? '整体渠道趋势' : 'Overall channel trend');
