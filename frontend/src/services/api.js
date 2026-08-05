@@ -141,7 +141,7 @@ export function trackFunnelEvent(eventName, properties = {}) {
   const body = JSON.stringify(payload);
   const csrfToken = getAnalyticsStorageValue(storage, 'sagemro_csrf_token');
   try {
-    if (!csrfToken && navigator.sendBeacon) {
+    if (storageAvailable && !csrfToken && navigator.sendBeacon) {
       const blob = new Blob([body], { type: 'application/json' });
       if (navigator.sendBeacon(`${API_BASE}/api/analytics/funnel`, blob)) return;
     }

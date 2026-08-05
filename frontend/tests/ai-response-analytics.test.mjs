@@ -216,7 +216,7 @@ test('startup fetch wrapper preserves analytics fallback delivery when storage i
     installGlobal('navigator', {
       sendBeacon() {
         beaconCalls++;
-        return false;
+        return true;
       },
     }),
     installGlobal('fetch', nativeFetch),
@@ -233,7 +233,7 @@ test('startup fetch wrapper preserves analytics fallback delivery when storage i
     assert.doesNotThrow(() => api.trackFunnelEvent('traffic_source_captured', { entry: 'app_loaded' }));
     await Promise.resolve();
 
-    assert.equal(beaconCalls, 1);
+    assert.equal(beaconCalls, 0);
     assert.equal(nativeFetchCalls.length, 1);
     const [{ url, init }] = nativeFetchCalls;
     assert.equal(url, 'https://api.example.test/api/analytics/funnel');
