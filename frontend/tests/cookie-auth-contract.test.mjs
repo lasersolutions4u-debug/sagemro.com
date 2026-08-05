@@ -70,7 +70,7 @@ test('frontend session restore falls back to the legacy JWT during staggered dep
 });
 
 test('authenticated funnel events avoid sendBeacon so the CSRF header can be attached', () => {
-  assert.match(api, /const csrfToken = localStorage\.getItem\('sagemro_csrf_token'\)/);
+  assert.match(api, /const csrfToken = getAnalyticsStorageValue\(storage, 'sagemro_csrf_token'\)/);
   assert.match(api, /if \(!csrfToken && navigator\.sendBeacon\)/);
 });
 

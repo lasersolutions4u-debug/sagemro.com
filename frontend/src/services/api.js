@@ -233,9 +233,10 @@ if (typeof window !== 'undefined' && !window.__sagemroFetchPatched) {
     if (isApiRequest(url)) {
       const method = (init?.method || 'GET').toUpperCase();
       const headers = new Headers(init?.headers || {});
-      const legacyToken = localStorage.getItem('sagemro_token');
+      const storage = getAnalyticsStorage();
+      const legacyToken = getAnalyticsStorageValue(storage, 'sagemro_token');
       if (legacyToken && !headers.has('Authorization')) headers.set('Authorization', `Bearer ${legacyToken}`);
-      const csrfToken = localStorage.getItem('sagemro_csrf_token');
+      const csrfToken = getAnalyticsStorageValue(storage, 'sagemro_csrf_token');
       if (csrfToken && !['GET', 'HEAD', 'OPTIONS'].includes(method)) {
         headers.set('X-CSRF-Token', csrfToken);
       }
