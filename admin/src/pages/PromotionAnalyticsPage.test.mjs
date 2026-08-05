@@ -75,6 +75,11 @@ function findField(root, label) {
   return root.findAllByType('label').find((field) => field.children[0] === label).findByType('input');
 }
 
+function metricText(root, label) {
+  const labelNode = root.findAllByType('p').find((node) => textContent(node) === label);
+  return textContent(labelNode.parent);
+}
+
 test('promotion analytics page shell supplies bilingual accessible copy', async () => {
   const page = await readFile(new URL('./PromotionAnalyticsPage.jsx', import.meta.url), 'utf8');
 
@@ -168,6 +173,48 @@ test('draft filters wait for Apply and stale aborted responses cannot overwrite 
   });
   assert.doesNotMatch(textContent(renderer.toJSON()), /99/);
   await act(async () => renderer.unmount());
+});
+
+test('settled requests cannot publish state after switching tabs or unmounting', async () => {
+  const lateResolve = deferred();
+  let commits = 0;
+  let renderer;
+  await act(async () => {
+    renderer = TestRenderer.create(React.createElement(
+      React.Profiler,
+      { id: 'promotion-page', onRender: () => { commits += 1; } },
+      React.createElement(PromotionAnalyticsPage, { loadOverview: () => lateResolve.promise }),
+    ));
+  });
+  await act(async () => {
+    findButton(renderer.root, 'Channel Analysis').props.onClick();
+  });
+  const commitsAfterSwitch = commits;
+  await act(async () => {
+    lateResolve.resolve(overviewFixture({ sessions: 99 }));
+    await lateResolve.promise;
+  });
+  assert.equal(commits, commitsAfterSwitch);
+  assert.doesNotMatch(textContent(renderer.toJSON()), /99/);
+  await act(async () => renderer.unmount());
+
+  const lateReject = deferred();
+  const consoleErrors = [];
+  const originalConsoleError = console.error;
+  console.error = (...args) => { consoleErrors.push(args); };
+  try {
+    await act(async () => {
+      renderer = TestRenderer.create(React.createElement(PromotionAnalyticsPage, { loadOverview: () => lateReject.promise }));
+    });
+    await act(async () => renderer.unmount());
+    await act(async () => {
+      lateReject.reject(new Error('late rejection'));
+      await lateReject.promise.catch(() => {});
+    });
+  } finally {
+    console.error = originalConsoleError;
+  }
+  assert.deepEqual(consoleErrors, []);
 });
 
 test('tabs expose linked panels and support roving focus keyboard navigation without loading Channel data', async () => {
@@ -279,6 +326,29 @@ test('no-data and insufficient-sample states render their bilingual runtime copy
   assert.match(textContent(insufficient.toJSON()), /样本不足/);
   noData.unmount();
   insufficient.unmount();
+});
+
+test('metric changes preserve unavailable values while comparing meaningful zeroes', () => {
+  const unavailableData = overviewFixture();
+  unavailableData.current.sessions = 0;
+  unavailableData.current.aiSuccessRate = null;
+  delete unavailableData.current.aiRequests;
+  delete unavailableData.current.registrationEvents;
+  unavailableData.current.serviceRequestEvents = Number.POSITIVE_INFINITY;
+  const unavailable = TestRenderer.create(React.createElement(PromotionOverview, { data: unavailableData, isCn: false }));
+
+  assert.equal(metricText(unavailable.root, 'Sessions'), 'Sessions0vs prior −100.0%');
+  assert.equal(metricText(unavailable.root, 'AI requests'), 'AI requests—vs prior —');
+  assert.equal(metricText(unavailable.root, 'AI success rate'), 'AI success rate—vs prior —');
+  assert.equal(metricText(unavailable.root, 'Completed registrations'), 'Completed registrations—vs prior —');
+  assert.equal(metricText(unavailable.root, 'Service requests'), 'Service requests—vs prior —');
+
+  const zeroData = overviewFixture();
+  zeroData.current.aiSuccessRate = 0;
+  const zero = TestRenderer.create(React.createElement(PromotionOverview, { data: zeroData, isCn: false }));
+  assert.equal(metricText(zero.root, 'AI success rate'), 'AI success rate0.0%vs prior −80.0%');
+  unavailable.unmount();
+  zero.unmount();
 });
 
 test('promotion analytics clients send only allowed encoded filters with request signal and cookie auth', async () => {
