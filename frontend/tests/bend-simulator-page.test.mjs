@@ -24,6 +24,7 @@ const pageStateModule = pathToFileURL(path.join(root, 'src/utils/bendSimulatorPa
 const timelineStateModule = pathToFileURL(path.join(root, 'src/utils/bendSimulationTimeline.js')).href;
 const engineModule = pathToFileURL(path.join(root, 'src/utils/bendSimulationEngine.js')).href;
 const presentationModule = pathToFileURL(path.join(root, 'src/utils/bendSimulationPresentation.js')).href;
+const funnelAnalyticsModule = pathToFileURL(path.join(root, 'src/services/funnelAnalytics.js')).href;
 
 const selectedInput = {
   unitSystem: 'metric', material: 'aluminum', thicknessMm: 3, sheetWidthMm: 1000, machine: 'shop-200', upperTool: 'gooseneck-punch', lowerTool: 'v-die-40',
@@ -85,7 +86,9 @@ async function renderTimeline(locale = 'en') {
 }
 
 async function loadReviewHelper() {
-  const source = readFileSync(path.join(root, 'src/services/api.js'), 'utf8').replace("if (import.meta.env.VITE_API_BASE) return import.meta.env.VITE_API_BASE;", "return 'https://api.example.test';");
+  const source = readFileSync(path.join(root, 'src/services/api.js'), 'utf8')
+    .replace("from './funnelAnalytics'", `from '${funnelAnalyticsModule}'`)
+    .replace("if (import.meta.env.VITE_API_BASE) return import.meta.env.VITE_API_BASE;", "return 'https://api.example.test';");
   const transformed = await transformWithOxc(source, 'api.js', { lang: 'js', format: 'esm' });
   return import(`data:text/javascript;base64,${Buffer.from(transformed.code).toString('base64')}`);
 }
