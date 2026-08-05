@@ -11654,13 +11654,15 @@ async function handlePromotionAnalytics(request, env, endpoint) {
       : await loadPromotionChannels(databases, filters);
     const { dataQuality, ...payload } = loaded;
     delete payload.recentAi;
-    return jsonResponse({
+    const response = jsonResponse({
       reporting_timezone: 'Asia/Shanghai',
       allowed_markets: allowedMarkets,
       filters: promotionPublicFilters(filters),
       data_quality: dataQuality || { attributionCoverage: loaded.summary?.attributionCoverage ?? null },
       ...payload,
     });
+    response.headers.set('Cache-Control', 'private, no-store');
+    return response;
   } catch (error) {
     if (error instanceof PromotionAnalyticsInputError) {
       return errorResponse(error.message, error.status || 400);

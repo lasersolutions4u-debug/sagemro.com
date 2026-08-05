@@ -712,6 +712,7 @@ test('promotion analytics endpoints enforce real worker authentication, roles, e
   const post = await promotionApi(env, endpoint, { method: 'POST', auth: staffAuth('staff-operations', 'operations') });
 
   assert.equal(bootstrap.response.status, 200);
+  assert.equal(bootstrap.response.headers.get('Cache-Control'), 'private, no-store');
   assert.equal(admin.response.status, 200);
   assert.equal(operations.response.status, 200);
   assert.equal(warehouse.response.status, 403);
@@ -720,6 +721,7 @@ test('promotion analytics endpoints enforce real worker authentication, roles, e
   assert.equal(engineer.response.status, 403);
   assert.equal(anonymous.response.status, 401);
   assert.equal(channels.response.status, 200);
+  assert.equal(channels.response.headers.get('Cache-Control'), 'private, no-store');
   assert.equal(post.response.status, 403);
   assert.equal(bootstrap.json.reporting_timezone, 'Asia/Shanghai');
   assert.deepEqual(bootstrap.json.allowed_markets, ['com', 'cn']);
