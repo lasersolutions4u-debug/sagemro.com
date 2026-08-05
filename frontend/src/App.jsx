@@ -15,6 +15,7 @@ import { generateId } from './utils/helpers';
 import { isCnLocale } from './utils/locale';
 import { setSeoMetadata } from './utils/seo';
 import { submitWorkOrder as submitWorkOrderApi, getConversation as getConversationApi, getUnreadNotificationCount, trackFunnelEvent, restoreSession, logout as logoutSession } from './services/api';
+import { createAnalyticsRequestId } from './services/funnelAnalytics';
 
 // 重型 Modal 懒加载，减少首屏 bundle 体积
 // LoginModal 直接导入 — 关键的登录/注册入口，懒加载会导致 React #306（重复 React 实例）
@@ -269,15 +270,17 @@ function App() {
 
     const stored = currentUser ? null : localStorage.getItem(`sagemro_messages_${convId}`);
     const currentMessages = stored ? JSON.parse(stored) : [];
+    const requestId = createAnalyticsRequestId();
 
     trackFunnelEvent('ai_conversation_started', {
       entry: 'main_chat',
       authenticated: Boolean(currentUser),
       conversation_id: convId,
       has_images: Boolean(images && images.length > 0),
+      request_id: requestId,
     });
 
-    await sendMessage(content, images, convId);
+    await sendMessage(content, images, convId, requestId);
 
     if (!currentUser) setTimeout(() => {
       const updatedMessages = [...currentMessages, {

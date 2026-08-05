@@ -17,6 +17,7 @@ test('authenticated admin pages are lazy loaded behind one suspense boundary', (
     'KnowledgePage',
     'MaterialRequisitionsPage',
     'StaffAccountsPage',
+    'PromotionAnalyticsPage',
   ];
 
   assert.match(app, /import \{ lazy, Suspense,/);
@@ -27,4 +28,14 @@ test('authenticated admin pages are lazy loaded behind one suspense boundary', (
   }
 
   assert.match(app, /import \{ LoginPage \} from '\.\/pages\/LoginPage';/);
+});
+
+test('promotion analytics is one bilingual, role-scoped navigation entry', () => {
+  assert.match(app, /promotionAnalytics: 'Promotion Analytics'/);
+  assert.match(app, /promotionAnalytics: '推广分析'/);
+  assert.match(app, /\{ key: 'dashboard'[\s\S]*\{ key: 'promotionAnalytics'/);
+  assert.match(app, /OPERATIONS_NAV_KEYS[\s\S]*'promotionAnalytics'/);
+  assert.match(app, /case 'promotionAnalytics': return <PromotionAnalyticsPage \/>;/);
+  assert.doesNotMatch(app, /key: 'promotionOverview'/);
+  assert.doesNotMatch(app, /key: 'promotionChannels'/);
 });

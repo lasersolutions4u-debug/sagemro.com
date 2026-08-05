@@ -15,7 +15,7 @@ export function useChat() {
   const abortControllerRef = useRef(null);
 
   // 发送消息
-  const sendMessage = useCallback(async (content, images, targetConversationId) => {
+  const sendMessage = useCallback(async (content, images, targetConversationId, requestId) => {
     // 创建用户消息
     const userMessage = {
       id: generateId(),
@@ -46,6 +46,7 @@ export function useChat() {
 
     // 收集 AI 回复
     let aiContent = '';
+    let responseFailed = false;
 
     await new Promise((resolve) => {
       streamChat({
@@ -53,6 +54,9 @@ export function useChat() {
         message: content,
         images,
         onChunk: (data) => {
+          if (data.response_status === 'failed') {
+            responseFailed = true;
+          }
           if (data.content) {
             aiContent += data.content;
             // 更新 assistant 消息
@@ -69,11 +73,12 @@ export function useChat() {
             setDeviceSuggestion(data.device_suggestion);
           }
         },
-        onDone: () => {
-          if (aiContent) {
+        onDone: ({ completed = false } = {}) => {
+          if (completed && !responseFailed && aiContent && requestId) {
             trackFunnelEvent('ai_response_received', {
               conversation_id: targetConversationId || conversationId,
               response_status: 'received',
+              request_id: requestId,
             });
           }
           setIsStreaming(false);

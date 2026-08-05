@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
-import { Boxes, ClipboardList, LayoutDashboard, Users, UserCog, FileText, Star, LogOut, Target, BookOpenText, Menu, PackageSearch, ShieldCheck } from 'lucide-react';
+import { Boxes, ChartNoAxesCombined, ClipboardList, LayoutDashboard, Users, UserCog, FileText, Star, LogOut, Target, BookOpenText, Menu, PackageSearch, ShieldCheck } from 'lucide-react';
 import { LoginPage } from './pages/LoginPage';
 import { runtimeConfig } from './config/runtime';
 import { BrandMark } from './components/BrandMark';
@@ -16,6 +16,7 @@ const MaterialsPage = lazy(() => import('./pages/MaterialsPage.jsx').then(({ Mat
 const KnowledgePage = lazy(() => import('./pages/KnowledgePage.jsx').then(({ KnowledgePage }) => ({ default: KnowledgePage })));
 const MaterialRequisitionsPage = lazy(() => import('./pages/MaterialRequisitionsPage.jsx').then(({ MaterialRequisitionsPage }) => ({ default: MaterialRequisitionsPage })));
 const StaffAccountsPage = lazy(() => import('./pages/StaffAccountsPage.jsx').then(({ StaffAccountsPage }) => ({ default: StaffAccountsPage })));
+const PromotionAnalyticsPage = lazy(() => import('./pages/PromotionAnalyticsPage.jsx').then(({ PromotionAnalyticsPage }) => ({ default: PromotionAnalyticsPage })));
 
 const TEXT = {
   en: {
@@ -25,6 +26,7 @@ const TEXT = {
     logout: 'Sign out',
     nav: {
       dashboard: 'Operations Dashboard',
+      promotionAnalytics: 'Promotion Analytics',
       leads: 'Machine Leads',
       workorders: 'Service Orders',
       engineerApplications: 'Engineer Applications',
@@ -43,6 +45,7 @@ const TEXT = {
     logout: '退出登录',
     nav: {
       dashboard: '运营驾驶舱',
+      promotionAnalytics: '推广分析',
       leads: '整机线索',
       workorders: '服务工单',
       engineerApplications: '工程师申请审核',
@@ -59,6 +62,7 @@ const t = TEXT[runtimeConfig.locale] || TEXT.en;
 
 const NAV_ITEMS = [
   { key: 'dashboard', label: t.nav.dashboard, icon: LayoutDashboard },
+  { key: 'promotionAnalytics', label: t.nav.promotionAnalytics, icon: ChartNoAxesCombined },
   { key: 'leads', label: t.nav.leads, icon: Target },
   { key: 'knowledge', label: t.nav.knowledge || 'Knowledge Base', icon: BookOpenText },
   { key: 'workorders', label: t.nav.workorders, icon: FileText },
@@ -73,7 +77,7 @@ const NAV_ITEMS = [
 
 const REQUISITION_ROLES = ['admin', 'operations', 'warehouse', 'procurement'];
 const OPERATIONAL_NAV_KEYS = new Set(['dashboard', 'materialRequisitions']);
-const OPERATIONS_NAV_KEYS = new Set(['dashboard', 'workorders', 'materials', 'materialRequisitions']);
+const OPERATIONS_NAV_KEYS = new Set(['dashboard', 'promotionAnalytics', 'workorders', 'materials', 'materialRequisitions']);
 
 function normalizeAdminUser(user) {
   if (!user) return user;
@@ -238,6 +242,7 @@ export default function App() {
   const renderPage = () => {
     switch (currentPage) {
       case 'dashboard': return <DashboardPage staffRole={user.staffRole} staffId={user.staffId} />;
+      case 'promotionAnalytics': return <PromotionAnalyticsPage />;
       case 'users': return <UsersPage />;
       case 'engineers': return <EngineersPage initialEngineerId={selectedEngineerId} onEngineerOpened={() => setSelectedEngineerId('')} />;
       case 'workorders': return <WorkOrdersPage readOnly={user.staffRole === 'operations'} />;

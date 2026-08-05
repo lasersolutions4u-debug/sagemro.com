@@ -119,6 +119,12 @@ import { captureException } from './lib/sentry.js';
 import { isKnownProtectedRoute, isTestRoute } from './lib/routes.js';
 import { handlePublicRoute } from './lib/publicRoutes.js';
 import {
+  PromotionAnalyticsInputError,
+  loadPromotionChannels,
+  loadPromotionOverview,
+  parsePromotionFilters,
+} from './lib/promotionAnalytics.js';
+import {
   canCloseMaterialRequisition,
   canManageMaterialRequisition,
   deriveItemStatus,
@@ -179,6 +185,8 @@ const FUNNEL_PROPERTY_ALLOWLIST = new Set([
   'conversation_id',
   'has_images',
   'response_status',
+  'request_id',
+  'analytics_version',
   'device_type',
   'service_type',
   'urgency',
@@ -195,6 +203,7 @@ const FUNNEL_ENUM_PROPERTIES = {
   locale: new Set(['en', 'zh', 'zh-CN']),
   user_type: new Set(['guest', 'customer', 'engineer', 'admin']),
   response_status: new Set(['received', 'failed']),
+  analytics_version: new Set(['2']),
   urgency: new Set(['critical', 'urgent', 'normal']),
   material: new Set(['carbon_steel', 'stainless_steel', 'aluminum', 'brass', 'copper']),
   unit_system: new Set(['metric', 'imperial']),
@@ -202,7 +211,7 @@ const FUNNEL_ENUM_PROPERTIES = {
 };
 const FUNNEL_BOOLEAN_PROPERTIES = new Set(['authenticated', 'has_images']);
 const FUNNEL_COUNT_PROPERTIES = new Set(['bend_count', 'previous_bend_count']);
-const FUNNEL_IDENTIFIER_PROPERTIES = new Set(['conversation_id', 'tool_id']);
+const FUNNEL_IDENTIFIER_PROPERTIES = new Set(['conversation_id', 'tool_id', 'request_id']);
 const FUNNEL_CATEGORY_PROPERTIES = new Set(['device_type', 'service_type']);
 
 const CONTACT_EMAIL_PATTERN = /[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g;
@@ -4317,12 +4326,24 @@ ${turnLanguageRule}
               fullContent += fallback;
               controller.enqueue(
                 encoder.encode(
-                  `data: ${JSON.stringify({ content: fallback, conversation_id: convId })}\n`,
+                  `data: ${JSON.stringify({ content: fallback, conversation_id: convId, response_status: 'failed' })}\n`,
                 ),
               );
               try {
                 captureException(
-                  new Error(`LLM upstream ${apiResponse.status}: ${errText}`),
+                  new Error(`LLM upstream request failed with status ${apiResponse.status}`),
+                  env,
+                  {
+                    request,
+                    ctx: request._ctx,
+                    extra: {
+                      feature: 'ai_chat',
+                      stage: 'upstream',
+                      status: apiResponse.status,
+                      market: getRequestMarket(request),
+                      iteration,
+                    },
+                  },
                 );
               } catch {
                 /* Sentry 本身失败不影响主流程 */
@@ -4406,12 +4427,26 @@ ${turnLanguageRule}
             fullContent += fallback;
             controller.enqueue(
               encoder.encode(
-                `data: ${JSON.stringify({ content: fallback, conversation_id: convId })}\n`,
+                `data: ${JSON.stringify({ content: fallback, conversation_id: convId, response_status: 'failed' })}\n`,
+              ),
+            );
+          } else {
+            controller.enqueue(
+              encoder.encode(
+                `data: ${JSON.stringify({ conversation_id: convId, response_status: 'failed' })}\n`,
               ),
             );
           }
           try {
-            captureException(e);
+            captureException(new Error('LLM stream processing failed'), env, {
+              request,
+              ctx: request._ctx,
+              extra: {
+                feature: 'ai_chat',
+                stage: 'stream',
+                market: getRequestMarket(request),
+              },
+            });
           } catch {
             /* 吃掉 */
           }
@@ -11929,6 +11964,8 @@ export function isOperationsReadRoute(path, method) {
   if (method !== 'GET') return false;
   return path === '/api/admin/workorders'
     || path === '/api/admin/materials'
+    || path === '/api/admin/analytics/overview'
+    || path === '/api/admin/analytics/channels'
     || path === '/api/notifications'
     || path === '/api/notifications/unread-count'
     || /^\/api\/workorders\/[^/]+$/.test(path)
@@ -11936,6 +11973,79 @@ export function isOperationsReadRoute(path, method) {
     || /^\/api\/workorders\/[^/]+\/messages$/.test(path)
     || /^\/api\/workorders\/[^/]+\/field-media\/[^/]+$/.test(path)
     || /^\/api\/workorders\/[^/]+\/receipt-evidence\/[^/]+$/.test(path);
+}
+
+function promotionAllowedMarkets(auth) {
+  if (isBootstrapAdmin(auth)) return ['com', 'cn'];
+  if (auth?.userType !== 'admin' || !['admin', 'operations'].includes(auth.staffRole)) return [];
+  if (auth.marketScope === 'all') return ['com', 'cn'];
+  return auth.marketScope === 'com' || auth.marketScope === 'cn' ? [auth.marketScope] : [];
+}
+
+function promotionPublicFilters(filters) {
+  return {
+    from: filters.from,
+    to: filters.to,
+    markets: filters.markets,
+    source: filters.source,
+    medium: filters.medium,
+    campaign: filters.campaign,
+  };
+}
+
+function promotionPermissionError() {
+  const error = new PromotionAnalyticsInputError('Requested market is not permitted');
+  error.status = 403;
+  return error;
+}
+
+async function handlePromotionAnalytics(request, env, endpoint) {
+  const auth = request._auth;
+  const allowedMarkets = promotionAllowedMarkets(auth);
+  if (!allowedMarkets.length) return errorResponse('当前员工角色无权访问该管理接口', 403);
+
+  const searchParams = new URL(request.url).searchParams;
+  const requestedMarket = searchParams.get('market') || 'all';
+  if (
+    (requestedMarket === 'all' && allowedMarkets.length !== 2)
+    || ((requestedMarket === 'com' || requestedMarket === 'cn') && !allowedMarkets.includes(requestedMarket))
+  ) {
+    return errorResponse('Requested market is not permitted', 403);
+  }
+
+  try {
+    const filters = parsePromotionFilters(searchParams, { allowedMarkets });
+    const databases = {};
+    for (const market of filters.markets) {
+      const database = market === 'com' ? (env.DB_COM || env.DB) : env.DB_CN;
+      if (!database) throw promotionPermissionError();
+      databases[market] = database;
+    }
+    const loaded = endpoint === 'overview'
+      ? await loadPromotionOverview(databases, filters)
+      : await loadPromotionChannels(databases, filters);
+    const { dataQuality, ...payload } = loaded;
+    delete payload.recentAi;
+    const response = jsonResponse({
+      reporting_timezone: 'Asia/Shanghai',
+      allowed_markets: allowedMarkets,
+      filters: promotionPublicFilters(filters),
+      data_quality: dataQuality || { attributionCoverage: loaded.summary?.attributionCoverage ?? null },
+      ...payload,
+    });
+    response.headers.set('Cache-Control', 'private, no-store');
+    return response;
+  } catch (error) {
+    if (error instanceof PromotionAnalyticsInputError) {
+      return errorResponse(error.message, error.status || 400);
+    }
+    captureException(error, env, {
+      request,
+      ctx: request._ctx,
+      extra: { feature: 'promotion_analytics', endpoint },
+    });
+    return errorResponse('Promotion analytics is temporarily unavailable', 500);
+  }
 }
 
 function publicStaffAccount(staff) {
@@ -20294,6 +20404,7 @@ async function routeRequest(request, env, ctx) {
       request._auth = {
         ...auth,
         staffRole: staff.role,
+        marketScope: staff.market_scope,
         mustChangePassword: Boolean(staff.must_change_password),
       };
       if (staff.must_change_password && path !== '/api/auth/change-password') {
@@ -20312,6 +20423,12 @@ async function routeRequest(request, env, ctx) {
     if (path.startsWith('/api/admin/')) {
       if (auth.userType !== 'admin') {
         return errorResponse('需要管理员权限', 403);
+      }
+      if (path === '/api/admin/analytics/overview' && request.method === 'GET') {
+        return handlePromotionAnalytics(request, env, 'overview');
+      }
+      if (path === '/api/admin/analytics/channels' && request.method === 'GET') {
+        return handlePromotionAnalytics(request, env, 'channels');
       }
       if (path === '/api/admin/staff' && request.method === 'GET') {
         return handleAdminStaffList(request, env);
@@ -20915,8 +21032,8 @@ export default {
   async fetch(request, env, ctx) {
     // 按 API 域名或来源域名路由数据库：CN 站点走 CN 库，其他走 EN 库。
     const requestEnv = env.DB_CN && shouldUseCnDatabase(request)
-      ? { ...env, DB: env.DB_CN }
-      : env;
+      ? { ...env, DB_COM: env.DB, DB: env.DB_CN }
+      : { ...env, DB_COM: env.DB };
     try {
       const response = await routeRequest(request, requestEnv, ctx);
       return withCorsHeaders(response, request, requestEnv);
