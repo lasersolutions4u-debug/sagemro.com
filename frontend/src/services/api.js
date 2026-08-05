@@ -51,9 +51,11 @@ const FUNNEL_PROPERTY_ALLOWLIST = [
 
 function getAnalyticsStorage() {
   try {
-    return localStorage;
+    const storage = localStorage;
+    storage.getItem(FUNNEL_STORAGE_KEYS.anonymousId);
+    return { storage, available: true };
   } catch {
-    return null;
+    return { storage: null, available: false };
   }
 }
 
@@ -115,7 +117,7 @@ function sanitizeFunnelProperties(properties) {
 export function trackFunnelEvent(eventName, properties = {}) {
   if (typeof window === 'undefined') return;
   if (!FUNNEL_EVENT_NAMES.includes(eventName)) return;
-  const storage = getAnalyticsStorage();
+  const { storage, available: storageAvailable } = getAnalyticsStorage();
   const attribution = currentAttribution(storage);
   const safeProperties = sanitizeFunnelProperties(properties);
   const payload = {
@@ -150,6 +152,7 @@ export function trackFunnelEvent(eventName, properties = {}) {
     headers: { 'Content-Type': 'application/json' },
     body,
     keepalive: true,
+    credentials: storageAvailable ? 'include' : 'omit',
   }).catch(() => {});
 }
 
@@ -233,14 +236,21 @@ if (typeof window !== 'undefined' && !window.__sagemroFetchPatched) {
     if (isApiRequest(url)) {
       const method = (init?.method || 'GET').toUpperCase();
       const headers = new Headers(init?.headers || {});
-      const storage = getAnalyticsStorage();
+      const { storage, available: storageAvailable } = getAnalyticsStorage();
       const legacyToken = getAnalyticsStorageValue(storage, 'sagemro_token');
       if (legacyToken && !headers.has('Authorization')) headers.set('Authorization', `Bearer ${legacyToken}`);
       const csrfToken = getAnalyticsStorageValue(storage, 'sagemro_csrf_token');
       if (csrfToken && !['GET', 'HEAD', 'OPTIONS'].includes(method)) {
         headers.set('X-CSRF-Token', csrfToken);
       }
-      requestInit = { ...init, credentials: 'include', headers };
+      const isAnonymousAnalyticsFallback = url === `${API_BASE}/api/analytics/funnel`
+        && !storageAvailable
+        && init?.credentials === 'omit';
+      requestInit = {
+        ...init,
+        credentials: isAnonymousAnalyticsFallback ? 'omit' : 'include',
+        headers,
+      };
     }
     const response = await nativeFetch(input, requestInit);
     if (response.status === 401 && shouldConfirmAuthFailure(url)) {
