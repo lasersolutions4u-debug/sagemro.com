@@ -237,12 +237,59 @@ test('startup fetch wrapper preserves analytics fallback delivery when storage i
     assert.equal(nativeFetchCalls.length, 1);
     const [{ url, init }] = nativeFetchCalls;
     assert.equal(url, 'https://api.example.test/api/analytics/funnel');
+    assert.equal(init.credentials, 'omit');
     assert.equal(init.headers.has('Authorization'), false);
     assert.equal(init.headers.has('X-CSRF-Token'), false);
     const payload = JSON.parse(init.body);
     assert.equal(payload.user_type, 'guest');
     assert.match(payload.anonymous_id, /^anon_/);
     assert.match(payload.session_id, /^session_/);
+  } finally {
+    for (const restore of restoreGlobals.reverse()) restore();
+  }
+});
+
+test('startup fetch wrapper keeps credentials for normal API requests when storage is readable', async () => {
+  const nativeFetchCalls = [];
+  const nativeFetch = async (url, init = {}) => {
+    nativeFetchCalls.push({ url, init });
+    return new Response(JSON.stringify({ success: true }), { status: 200 });
+  };
+  const storage = new MemoryStorage();
+  storage.setItem('sagemro_token', 'legacy-token');
+  storage.setItem('sagemro_csrf_token', 'csrf-token');
+  const startupWindow = {
+    fetch: nativeFetch,
+    location: {
+      hostname: 'sagemro.com',
+      origin: 'https://sagemro.com',
+      pathname: '/startup',
+      search: '',
+    },
+  };
+  const restoreGlobals = [
+    installGlobal('localStorage', storage),
+    installGlobal('window', startupWindow),
+    installGlobal('document', { referrer: '' }),
+    installGlobal('navigator', {}),
+    installGlobal('fetch', nativeFetch),
+  ];
+
+  try {
+    const apiSource = `${readFileSync(path.join(root, 'src/services/api.js'), 'utf8')}\n// startup-readable-storage`
+      .replace("from './funnelAnalytics'", `from '${funnelAnalyticsModule}'`)
+      .replace("if (import.meta.env.VITE_API_BASE) return import.meta.env.VITE_API_BASE;", "return 'https://api.example.test';");
+    const transformed = await transformWithOxc(apiSource, 'api-readable-storage.js', { lang: 'js', format: 'esm' });
+    await import(asDataUrl(transformed.code));
+    globalThis.fetch = startupWindow.fetch;
+
+    await globalThis.fetch('https://api.example.test/api/devices', { method: 'POST' });
+
+    assert.equal(nativeFetchCalls.length, 1);
+    const [{ init }] = nativeFetchCalls;
+    assert.equal(init.credentials, 'include');
+    assert.equal(init.headers.get('Authorization'), 'Bearer legacy-token');
+    assert.equal(init.headers.get('X-CSRF-Token'), 'csrf-token');
   } finally {
     for (const restore of restoreGlobals.reverse()) restore();
   }
