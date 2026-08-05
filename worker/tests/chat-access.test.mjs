@@ -120,7 +120,7 @@ function attachWaitUntilCollector(request) {
 
 function assertFallbackSse(sseText, { conversationId, canaries }) {
   assert.ok(sseText.includes(
-    `data: ${JSON.stringify({ content: AI_TEMPORARY_FALLBACK, conversation_id: conversationId })}\n`,
+    `data: ${JSON.stringify({ content: AI_TEMPORARY_FALLBACK, conversation_id: conversationId, response_status: 'failed' })}\n`,
   ));
   assert.ok(sseText.includes('data: [DONE]\n'));
   for (const canary of canaries) {

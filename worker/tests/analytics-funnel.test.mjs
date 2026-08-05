@@ -100,6 +100,36 @@ test('public funnel endpoint records allowed beta conversion events with attribu
   assert.equal(properties.phone, undefined);
 });
 
+test('funnel sanitizer retains the v2 request fields but rejects invalid analytics versions and arbitrary properties', async () => {
+  const { response, env } = await postFunnel({
+    event_name: 'ai_conversation_started',
+    properties: {
+      request_id: 'request_safe-id_123',
+      analytics_version: '2',
+      arbitrary_property: 'discard',
+    },
+  });
+
+  assert.equal(response.status, 202);
+  assert.deepEqual(JSON.parse(env.__rows[0].properties_json), {
+    request_id: 'request_safe-id_123',
+    analytics_version: '2',
+  });
+
+  const invalid = await postFunnel({
+    event_name: 'ai_conversation_started',
+    properties: {
+      request_id: 'request_safe-id_123',
+      analytics_version: '1',
+      arbitrary_property: 'discard',
+    },
+  });
+
+  assert.deepEqual(JSON.parse(invalid.env.__rows[0].properties_json), {
+    request_id: 'request_safe-id_123',
+  });
+});
+
 test('public funnel endpoint rejects unknown event names', async () => {
   const { response, json, env } = await postFunnel({
     event_name: 'freeform_clicked',

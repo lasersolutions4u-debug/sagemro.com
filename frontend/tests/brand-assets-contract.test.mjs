@@ -288,6 +288,21 @@ test('public beta funnel events are tracked without collecting message or contac
   assert.match(loginModal, /trackFunnelEvent\('signup_completed'/);
 });
 
+test('AI funnel events share a request ID and do not count failed fallback content as a response', () => {
+  const app = read('frontend/src/App.jsx');
+  const useChat = read('frontend/src/hooks/useChat.js');
+
+  assert.match(app, /import \{ createAnalyticsRequestId \} from '\.\/services\/funnelAnalytics';/);
+  assert.match(app, /const requestId = createAnalyticsRequestId\(\);/);
+  assert.match(app, /ai_conversation_started', \{[\s\S]*request_id: requestId,/);
+  assert.match(app, /sendMessage\(content, images, convId, requestId\)/);
+  assert.match(useChat, /async \(content, images, targetConversationId, requestId\)/);
+  assert.match(useChat, /let responseFailed = false;/);
+  assert.match(useChat, /if \(data\.response_status === 'failed'\) \{\s*responseFailed = true;/);
+  assert.match(useChat, /if \(!responseFailed && aiContent && requestId\)/);
+  assert.match(useChat, /request_id: requestId,/);
+});
+
 test('registration and reset password copy require stronger public passwords', () => {
   const loginModal = read('frontend/src/components/Auth/LoginModal.jsx');
 

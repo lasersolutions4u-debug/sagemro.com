@@ -173,6 +173,8 @@ const FUNNEL_PROPERTY_ALLOWLIST = new Set([
   'conversation_id',
   'has_images',
   'response_status',
+  'request_id',
+  'analytics_version',
   'device_type',
   'service_type',
   'urgency',
@@ -189,6 +191,7 @@ const FUNNEL_ENUM_PROPERTIES = {
   locale: new Set(['en', 'zh', 'zh-CN']),
   user_type: new Set(['guest', 'customer', 'engineer', 'admin']),
   response_status: new Set(['received', 'failed']),
+  analytics_version: new Set(['2']),
   urgency: new Set(['critical', 'urgent', 'normal']),
   material: new Set(['carbon_steel', 'stainless_steel', 'aluminum', 'brass', 'copper']),
   unit_system: new Set(['metric', 'imperial']),
@@ -196,7 +199,7 @@ const FUNNEL_ENUM_PROPERTIES = {
 };
 const FUNNEL_BOOLEAN_PROPERTIES = new Set(['authenticated', 'has_images']);
 const FUNNEL_COUNT_PROPERTIES = new Set(['bend_count', 'previous_bend_count']);
-const FUNNEL_IDENTIFIER_PROPERTIES = new Set(['conversation_id', 'tool_id']);
+const FUNNEL_IDENTIFIER_PROPERTIES = new Set(['conversation_id', 'tool_id', 'request_id']);
 const FUNNEL_CATEGORY_PROPERTIES = new Set(['device_type', 'service_type']);
 
 const CONTACT_EMAIL_PATTERN = /[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g;
@@ -4298,7 +4301,7 @@ ${turnLanguageRule}
               fullContent += fallback;
               controller.enqueue(
                 encoder.encode(
-                  `data: ${JSON.stringify({ content: fallback, conversation_id: convId })}\n`,
+                  `data: ${JSON.stringify({ content: fallback, conversation_id: convId, response_status: 'failed' })}\n`,
                 ),
               );
               try {
@@ -4399,7 +4402,7 @@ ${turnLanguageRule}
             fullContent += fallback;
             controller.enqueue(
               encoder.encode(
-                `data: ${JSON.stringify({ content: fallback, conversation_id: convId })}\n`,
+                `data: ${JSON.stringify({ content: fallback, conversation_id: convId, response_status: 'failed' })}\n`,
               ),
             );
           }
