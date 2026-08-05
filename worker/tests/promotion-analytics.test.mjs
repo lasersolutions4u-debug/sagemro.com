@@ -1,6 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
+import worker from '../src/index.js';
+import { signJwt } from '../src/lib/auth.js';
 
 import {
   PromotionAnalyticsInputError,
@@ -35,6 +37,10 @@ function createD1Database() {
       source TEXT, medium TEXT, campaign TEXT, page_path TEXT, referrer TEXT,
       properties_json TEXT, ip_hash TEXT, user_agent TEXT,
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE TABLE admin_staff_accounts (
+      id TEXT PRIMARY KEY, role TEXT NOT NULL, is_active INTEGER NOT NULL,
+      market_scope TEXT NOT NULL, must_change_password INTEGER NOT NULL DEFAULT 0
     );
   `);
   return {
@@ -639,4 +645,159 @@ test('channel summary independently aggregates the best channel and best campaig
     registrations: 0, serviceRequests: 10, aiSuccessRate: null,
     sessionToRequestRate: 1, sampleStatus: 'insufficient',
   });
+});
+
+async function promotionApi(env, path, {
+  auth,
+  host = 'api.sagemro.com',
+  method = 'GET',
+  ctx = { waitUntil() {} },
+} = {}) {
+  const headers = { Origin: host.endsWith('.cn') ? 'https://admin.sagemro.cn' : 'https://admin.sagemro.com' };
+  if (auth) {
+    const token = await signJwt({
+      iat: 1,
+      exp: Math.floor(Date.now() / 1000) + 3600,
+      ...auth,
+    }, env.JWT_SECRET);
+    headers.Authorization = `Bearer ${token}`;
+  }
+  const response = await worker.fetch(new Request(`https://${host}${path}`, { method, headers }), env, ctx);
+  return { response, json: await response.clone().json().catch(() => ({})) };
+}
+
+function promotionEnv(com, cn = null) {
+  return {
+    DB: com,
+    ...(cn ? { DB_CN: cn } : {}),
+    JWT_SECRET: 'promotion-analytics-api-test-secret',
+  };
+}
+
+async function seedStaff(db, id, role, marketScope = 'all', mustChangePassword = 0) {
+  await db.prepare(`
+    INSERT INTO admin_staff_accounts (id, role, is_active, market_scope, must_change_password)
+    VALUES (?, ?, 1, ?, ?)
+  `).bind(id, role, marketScope, mustChangePassword).all();
+}
+
+function staffAuth(id, role, market = 'com') {
+  return { userId: id, userType: 'admin', staffId: id, staffRole: role, market };
+}
+
+test('promotion analytics endpoints enforce real worker authentication, roles, exact methods, and response privacy', async (t) => {
+  const com = createD1Database();
+  const cn = createD1Database();
+  t.after(() => com.close());
+  t.after(() => cn.close());
+  await seedComLikeEvents(com);
+  await seedEvent(cn, { id: 'cn-visit-api', eventName: 'traffic_source_captured', anonymousId: 'cn-anonymous-id', sessionId: 'cn-session-id', createdAt: '2026-08-01 12:00:00' });
+  await Promise.all([
+    seedStaff(com, 'staff-admin', 'admin'),
+    seedStaff(com, 'staff-operations', 'operations'),
+    seedStaff(com, 'staff-warehouse', 'warehouse'),
+    seedStaff(com, 'staff-procurement', 'procurement'),
+  ]);
+  const env = promotionEnv(com, cn);
+  const endpoint = '/api/admin/analytics/overview?from=2026-08-01&to=2026-08-01&market=com';
+  const bootstrap = await promotionApi(env, endpoint, { auth: { userId: 'admin', userType: 'admin', market: 'com' } });
+  const admin = await promotionApi(env, endpoint, { auth: staffAuth('staff-admin', 'admin') });
+  const operations = await promotionApi(env, endpoint, { auth: staffAuth('staff-operations', 'operations') });
+  const warehouse = await promotionApi(env, endpoint, { auth: staffAuth('staff-warehouse', 'warehouse') });
+  const procurement = await promotionApi(env, endpoint, { auth: staffAuth('staff-procurement', 'procurement') });
+  const customer = await promotionApi(env, endpoint, { auth: { userId: 'customer-1', userType: 'customer', market: 'com' } });
+  const engineer = await promotionApi(env, endpoint, { auth: { userId: 'engineer-1', userType: 'engineer', market: 'com' } });
+  const anonymous = await promotionApi(env, endpoint);
+  const channels = await promotionApi(env, endpoint.replace('/overview', '/channels'), { auth: staffAuth('staff-operations', 'operations') });
+  const post = await promotionApi(env, endpoint, { method: 'POST', auth: staffAuth('staff-operations', 'operations') });
+
+  assert.equal(bootstrap.response.status, 200);
+  assert.equal(admin.response.status, 200);
+  assert.equal(operations.response.status, 200);
+  assert.equal(warehouse.response.status, 403);
+  assert.equal(procurement.response.status, 403);
+  assert.equal(customer.response.status, 403);
+  assert.equal(engineer.response.status, 403);
+  assert.equal(anonymous.response.status, 401);
+  assert.equal(channels.response.status, 200);
+  assert.equal(post.response.status, 403);
+  assert.equal(bootstrap.json.reporting_timezone, 'Asia/Shanghai');
+  assert.deepEqual(bootstrap.json.allowed_markets, ['com', 'cn']);
+  assert.deepEqual(bootstrap.json.filters, {
+    from: '2026-08-01', to: '2026-08-01', markets: ['com'], source: '', medium: '', campaign: '',
+  });
+  assert.ok(bootstrap.json.data_quality);
+  assert.equal(/anonymous_id|session_id|request_id|user_id|createdAt|created_at|user_agent|ip_hash/i.test(JSON.stringify({ overview: bootstrap.json, channels: channels.json })), false);
+});
+
+test('promotion analytics preserves COM and CN bindings, merges all-market reads, and refuses unauthorized all-market requests', async (t) => {
+  const com = createD1Database();
+  const cn = createD1Database();
+  t.after(() => com.close());
+  t.after(() => cn.close());
+  await seedComLikeEvents(com);
+  await seedEvent(cn, { id: 'cn-visit-api', eventName: 'traffic_source_captured', anonymousId: 'cn-anon', sessionId: 'cn-session', createdAt: '2026-08-01 12:00:00' });
+  await Promise.all([
+    seedStaff(com, 'com-operations', 'operations', 'com'),
+    seedStaff(cn, 'all-operations', 'operations', 'all'),
+  ]);
+  const env = promotionEnv(com, cn);
+  const comOnly = staffAuth('com-operations', 'operations');
+  const deniedCn = await promotionApi(env, '/api/admin/analytics/overview?from=2026-08-01&to=2026-08-01&market=cn', { auth: comOnly });
+  const deniedAll = await promotionApi(env, '/api/admin/analytics/overview?from=2026-08-01&to=2026-08-01&market=all', { auth: comOnly });
+  const allMarket = await promotionApi(env, '/api/admin/analytics/overview?from=2026-08-01&to=2026-08-01&market=all', {
+    host: 'api.sagemro.cn', auth: staffAuth('all-operations', 'operations', 'cn'),
+  });
+  const cnOnly = await promotionApi(env, '/api/admin/analytics/channels?from=2026-08-01&to=2026-08-01&market=cn', {
+    host: 'api.sagemro.cn', auth: staffAuth('all-operations', 'operations', 'cn'),
+  });
+
+  assert.equal(deniedCn.response.status, 403);
+  assert.equal(deniedAll.response.status, 403);
+  assert.equal(allMarket.response.status, 200);
+  assert.deepEqual(allMarket.json.filters.markets, ['com', 'cn']);
+  assert.equal(allMarket.json.current.sessions, 4);
+  assert.equal(cnOnly.response.status, 200);
+  assert.equal(cnOnly.json.rows[0].sessions, 1);
+});
+
+test('promotion analytics maps invalid filters to 400 and reports unexpected query failures without raw query metadata', async (t) => {
+  const db = createD1Database();
+  t.after(() => db.close());
+  await seedStaff(db, 'operations-error', 'operations', 'com');
+  const env = promotionEnv(db);
+  const auth = staffAuth('operations-error', 'operations');
+  const invalidDate = await promotionApi(env, '/api/admin/analytics/overview?from=2026-8-01&to=2026-08-01&market=com', { auth });
+  const overRange = await promotionApi(env, '/api/admin/analytics/channels?from=2026-05-01&to=2026-08-01&market=com', { auth });
+  const invalidMarket = await promotionApi(env, '/api/admin/analytics/channels?from=2026-08-01&to=2026-08-01&market=de', { auth });
+  const sentryPayloads = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (_url, init) => {
+    sentryPayloads.push(String(init.body));
+    return new Response('', { status: 200 });
+  };
+  const pending = [];
+  const failingDb = {
+    prepare(sql) {
+      if (/FROM funnel_events/i.test(sql)) throw new Error('analytics database failed');
+      return db.prepare(sql);
+    },
+  };
+  try {
+    const failed = await promotionApi({ ...env, DB: failingDb, SENTRY_DSN: 'https://public@example.invalid/1' }, '/api/admin/analytics/overview?from=2026-08-01&to=2026-08-01&market=com&sensitive=secret', {
+      auth,
+      ctx: { waitUntil(promise) { pending.push(promise); } },
+    });
+    await Promise.all(pending);
+    assert.equal(failed.response.status, 500);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+  assert.equal(invalidDate.response.status, 400);
+  assert.equal(overRange.response.status, 400);
+  assert.equal(invalidMarket.response.status, 400);
+  assert.equal(sentryPayloads.length, 1);
+  assert.equal(sentryPayloads[0].includes('sensitive=secret'), false);
+  const sentryEvent = JSON.parse(sentryPayloads[0].split('\n').at(-1));
+  assert.deepEqual(sentryEvent.extra, { feature: 'promotion_analytics', endpoint: 'overview' });
 });
