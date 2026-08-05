@@ -295,7 +295,7 @@ test('AI funnel events share a request ID and do not count failed fallback conte
   assert.match(useChat, /async \(content, images, targetConversationId, requestId\)/);
   assert.match(useChat, /let responseFailed = false;/);
   assert.match(useChat, /if \(data\.response_status === 'failed'\) \{\s*responseFailed = true;/);
-  assert.match(useChat, /if \(!responseFailed && aiContent && requestId\)/);
+  assert.match(useChat, /if \(completed && !responseFailed && aiContent && requestId\)/);
   assert.match(useChat, /request_id: requestId,/);
 });
 

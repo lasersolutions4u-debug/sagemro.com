@@ -143,3 +143,48 @@ test('successful SSE content emits start and success with the same request ID', 
     'request-success-1',
   ]);
 });
+
+test('partial SSE content followed by bare EOF does not emit ai_response_received', async () => {
+  const payloads = await runChatFlow([
+    `data: ${JSON.stringify({ content: 'Partial answer.', conversation_id: 'conversation-1' })}`,
+    '',
+  ].join('\n'), 'request-incomplete-1');
+
+  assert.deepEqual(payloads.map((payload) => payload.event_name), ['ai_conversation_started']);
+});
+
+test('trackFunnelEvent safely sends guest analytics when storage reads are blocked', async () => {
+  const { api } = await loadChatModules();
+  const analyticsPayloads = [];
+  const blockedStorage = {
+    getItem() { throw new Error('storage blocked'); },
+    setItem() { throw new Error('storage blocked'); },
+  };
+  const restoreGlobals = [
+    installGlobal('localStorage', blockedStorage),
+    installGlobal('window', {
+      location: {
+        hostname: 'sagemro.com',
+        origin: 'https://sagemro.com',
+        pathname: '/blocked-storage',
+        search: '',
+      },
+    }),
+    installGlobal('document', { referrer: '' }),
+    installGlobal('navigator', {}),
+    installGlobal('fetch', async (_url, init = {}) => {
+      analyticsPayloads.push(JSON.parse(init.body));
+      return new Response(JSON.stringify({ success: true }), { status: 202 });
+    }),
+  ];
+
+  try {
+    assert.doesNotThrow(() => api.trackFunnelEvent('traffic_source_captured', { entry: 'app_loaded' }));
+    assert.equal(analyticsPayloads.length, 1);
+    assert.equal(analyticsPayloads[0].user_type, 'guest');
+    assert.match(analyticsPayloads[0].anonymous_id, /^anon_/);
+    assert.match(analyticsPayloads[0].session_id, /^session_/);
+  } finally {
+    for (const restore of restoreGlobals.reverse()) restore();
+  }
+});

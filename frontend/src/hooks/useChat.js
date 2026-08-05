@@ -73,8 +73,8 @@ export function useChat() {
             setDeviceSuggestion(data.device_suggestion);
           }
         },
-        onDone: () => {
-          if (!responseFailed && aiContent && requestId) {
+        onDone: ({ completed = false } = {}) => {
+          if (completed && !responseFailed && aiContent && requestId) {
             trackFunnelEvent('ai_response_received', {
               conversation_id: targetConversationId || conversationId,
               response_status: 'received',
