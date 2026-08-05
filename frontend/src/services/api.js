@@ -1,3 +1,5 @@
+import { ANALYTICS_VERSION, createAnalyticsId, resolveAnalyticsSession } from './funnelAnalytics';
+
 // API 服务层
 function resolveApiBase() {
   if (import.meta.env.VITE_API_BASE) return import.meta.env.VITE_API_BASE;
@@ -15,7 +17,6 @@ function isApiRequest(url) {
 
 const FUNNEL_STORAGE_KEYS = {
   anonymousId: 'sagemro_analytics_anonymous_id',
-  sessionId: 'sagemro_analytics_session_id',
   source: 'sagemro_analytics_source',
 };
 const FUNNEL_EVENT_NAMES = [
@@ -44,26 +45,41 @@ const FUNNEL_PROPERTY_ALLOWLIST = [
   'service_type',
   'urgency',
   'tool_id',
+  'request_id',
+  'analytics_version',
 ];
 
-function analyticsId(prefix) {
-  if (typeof crypto !== 'undefined' && crypto.randomUUID) return `${prefix}_${crypto.randomUUID()}`;
-  return `${prefix}_${Date.now().toString(36)}${Math.random().toString(36).slice(2)}`;
+function getAnalyticsStorage() {
+  try {
+    const storage = localStorage;
+    storage.getItem(FUNNEL_STORAGE_KEYS.anonymousId);
+    return { storage, available: true };
+  } catch {
+    return { storage: null, available: false };
+  }
 }
 
-function getStoredAnalyticsValue(key, fallback) {
+function getAnalyticsStorageValue(storage, key, fallback = null) {
   try {
-    const existing = localStorage.getItem(key);
+    return storage?.getItem(key) || fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function getStoredAnalyticsValue(storage, key, fallback) {
+  try {
+    const existing = storage?.getItem(key);
     if (existing) return existing;
     const value = typeof fallback === 'function' ? fallback() : fallback;
-    localStorage.setItem(key, value);
+    storage?.setItem(key, value);
     return value;
   } catch {
     return typeof fallback === 'function' ? fallback() : fallback;
   }
 }
 
-function currentAttribution() {
+function currentAttribution(storage) {
   if (typeof window === 'undefined') return {};
   const params = new URLSearchParams(window.location.search);
   const fromUrl = {
@@ -76,12 +92,12 @@ function currentAttribution() {
   const hasUrlAttribution = Object.values(fromUrl).some(Boolean);
   if (hasUrlAttribution) {
     try {
-      localStorage.setItem(FUNNEL_STORAGE_KEYS.source, JSON.stringify(fromUrl));
+      storage?.setItem(FUNNEL_STORAGE_KEYS.source, JSON.stringify(fromUrl));
     } catch { /* ignore */ }
     return fromUrl;
   }
   try {
-    return JSON.parse(localStorage.getItem(FUNNEL_STORAGE_KEYS.source) || '{}');
+    return JSON.parse(storage?.getItem(FUNNEL_STORAGE_KEYS.source) || '{}');
   } catch {
     return {};
   }
@@ -101,13 +117,14 @@ function sanitizeFunnelProperties(properties) {
 export function trackFunnelEvent(eventName, properties = {}) {
   if (typeof window === 'undefined') return;
   if (!FUNNEL_EVENT_NAMES.includes(eventName)) return;
-  const attribution = currentAttribution();
+  const { storage, available: storageAvailable } = getAnalyticsStorage();
+  const attribution = currentAttribution(storage);
   const safeProperties = sanitizeFunnelProperties(properties);
   const payload = {
     event_name: eventName,
-    anonymous_id: getStoredAnalyticsValue(FUNNEL_STORAGE_KEYS.anonymousId, () => analyticsId('anon')),
-    session_id: getStoredAnalyticsValue(FUNNEL_STORAGE_KEYS.sessionId, () => analyticsId('session')),
-    user_type: localStorage.getItem('sagemro_user_type') || 'guest',
+    anonymous_id: getStoredAnalyticsValue(storage, FUNNEL_STORAGE_KEYS.anonymousId, () => createAnalyticsId('anon')),
+    session_id: resolveAnalyticsSession(storage),
+    user_type: getAnalyticsStorageValue(storage, 'sagemro_user_type', 'guest'),
     source: attribution.source || '',
     medium: attribution.medium || '',
     campaign: attribution.campaign || '',
@@ -115,15 +132,16 @@ export function trackFunnelEvent(eventName, properties = {}) {
     referrer: document.referrer || '',
     properties: {
       ...safeProperties,
+      analytics_version: ANALYTICS_VERSION,
       market: window.location.hostname.endsWith('.cn') ? 'cn' : 'com',
       locale: window.location.hostname.endsWith('.cn') ? 'zh-CN' : 'en',
     },
   };
 
   const body = JSON.stringify(payload);
-  const csrfToken = localStorage.getItem('sagemro_csrf_token');
+  const csrfToken = getAnalyticsStorageValue(storage, 'sagemro_csrf_token');
   try {
-    if (!csrfToken && navigator.sendBeacon) {
+    if (storageAvailable && !csrfToken && navigator.sendBeacon) {
       const blob = new Blob([body], { type: 'application/json' });
       if (navigator.sendBeacon(`${API_BASE}/api/analytics/funnel`, blob)) return;
     }
@@ -134,6 +152,7 @@ export function trackFunnelEvent(eventName, properties = {}) {
     headers: { 'Content-Type': 'application/json' },
     body,
     keepalive: true,
+    credentials: storageAvailable ? 'include' : 'omit',
   }).catch(() => {});
 }
 
@@ -217,15 +236,21 @@ if (typeof window !== 'undefined' && !window.__sagemroFetchPatched) {
     if (isApiRequest(url)) {
       const method = (init?.method || 'GET').toUpperCase();
       const headers = new Headers(init?.headers || {});
-      const legacyToken = localStorage.getItem('sagemro_token');
-      const csrfToken = localStorage.getItem('sagemro_csrf_token');
-      if (legacyToken && !headers.has('Authorization')) {
-        headers.set('Authorization', `Bearer ${legacyToken}`);
-      }
+      const { storage, available: storageAvailable } = getAnalyticsStorage();
+      const legacyToken = getAnalyticsStorageValue(storage, 'sagemro_token');
+      if (legacyToken && !headers.has('Authorization')) headers.set('Authorization', `Bearer ${legacyToken}`);
+      const csrfToken = getAnalyticsStorageValue(storage, 'sagemro_csrf_token');
       if (csrfToken && !['GET', 'HEAD', 'OPTIONS'].includes(method)) {
         headers.set('X-CSRF-Token', csrfToken);
       }
-      requestInit = { ...init, credentials: 'include', headers };
+      const isAnonymousAnalyticsFallback = url === `${API_BASE}/api/analytics/funnel`
+        && !storageAvailable
+        && init?.credentials === 'omit';
+      requestInit = {
+        ...init,
+        credentials: isAnonymousAnalyticsFallback ? 'omit' : 'include',
+        headers,
+      };
     }
     const response = await nativeFetch(input, requestInit);
     if (response.status === 401 && shouldConfirmAuthFailure(url)) {
@@ -442,7 +467,7 @@ export async function streamChat({ conversationId, message, images, onChunk, onD
       for (const line of lines) {
         const trimmed = line.trim();
         if (trimmed === 'data: [DONE]') {
-          onDone?.();
+          onDone?.({ completed: true });
           return;
         }
         if (trimmed.startsWith('data: ')) {
@@ -456,10 +481,10 @@ export async function streamChat({ conversationId, message, images, onChunk, onD
       }
     }
 
-    onDone?.();
+    onDone?.({ completed: false });
   } catch (error) {
     if (error.name === 'AbortError') {
-      onDone?.();
+      onDone?.({ completed: false });
     } else {
       onError?.(error);
     }

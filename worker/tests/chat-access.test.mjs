@@ -5,6 +5,8 @@ import { signJwt } from '../src/lib/auth.js';
 import { buildWorkOrderSummaryPrompt, handleChat, handleChatTranscribe } from '../src/index.js';
 
 const JWT_SECRET = 'chat-access-test-secret-32-chars';
+const AI_TEMPORARY_FALLBACK = 'SAGEMRO AI is temporarily unavailable. Please try again shortly, or leave the equipment details and SAGEMRO will follow up through the service process.';
+const SENTRY_ENVELOPE_URL = 'https://example.ingest.sentry.io/api/1/envelope/';
 
 function makeRequest(body, token, url = 'https://api.sagemro.com/api/chat', origin = 'https://sagemro.com') {
   const headers = { 'Content-Type': 'application/json', 'CF-Connecting-IP': '127.0.0.1' };
@@ -102,6 +104,73 @@ function makeSseResponse(text = 'Captured.') {
   });
 }
 
+function parseSentryEnvelope(body) {
+  return JSON.parse(body.split('\n')[2]);
+}
+
+function attachWaitUntilCollector(request) {
+  const promises = [];
+  request._ctx = {
+    waitUntil(promise) {
+      promises.push(promise);
+    },
+  };
+  return promises;
+}
+
+function assertFallbackSse(sseText, { conversationId, canaries }) {
+  assert.ok(sseText.includes(
+    `data: ${JSON.stringify({ content: AI_TEMPORARY_FALLBACK, conversation_id: conversationId, response_status: 'failed' })}\n`,
+  ));
+  assert.ok(sseText.includes('data: [DONE]\n'));
+  for (const canary of canaries) {
+    assert.ok(!sseText.includes(canary), `SSE response leaked canary: ${canary}`);
+  }
+}
+
+async function runChatSentryFailure({ conversationId, requestUrl, referer, makeLlmResponse }) {
+  const { env } = makeEnv();
+  env.SENTRY_DSN = 'https://public@example.ingest.sentry.io/1';
+  env.ENVIRONMENT = 'test';
+  const request = makeRequest({
+    conversation_id: conversationId,
+    message: 'My laser will not start.',
+  }, null, requestUrl);
+  request.headers.set('Referer', referer);
+  request.headers.set('User-Agent', 'chat-sentry-test');
+  request.headers.set('CF-Ray', 'test-ray');
+  const waitUntilPromises = attachWaitUntilCollector(request);
+  const originalFetch = globalThis.fetch;
+  const sentryEnvelopes = [];
+
+  globalThis.fetch = async (url, init) => {
+    if (url === env.OPENAI_API_ENDPOINT) return makeLlmResponse();
+    if (url === SENTRY_ENVELOPE_URL) {
+      sentryEnvelopes.push(init.body);
+      return new Response(null, { status: 200 });
+    }
+    throw new Error(`Unexpected fetch URL: ${url}`);
+  };
+
+  let sseText;
+  try {
+    const response = await handleChat(request, env);
+    assert.equal(response.status, 200);
+    sseText = await response.text();
+    assert.equal(waitUntilPromises.length, 1);
+    await Promise.all(waitUntilPromises);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+
+  assert.equal(sentryEnvelopes.length, 1);
+  return {
+    envelope: sentryEnvelopes[0],
+    event: parseSentryEnvelope(sentryEnvelopes[0]),
+    sseText,
+  };
+}
+
 async function captureChatPrompt({ request }) {
   const { env } = makeEnv();
   const originalFetch = globalThis.fetch;
@@ -164,6 +233,154 @@ test('handleChat creates a new conversation using caller-provided local id when 
   assert.equal(insertedConversations.length, 1);
   assert.equal(insertedConversations[0].id, 'local-conv-1');
   assert.equal(insertedConversations[0].customer_id, 'customer-a');
+});
+
+test('handleChat reports a redacted upstream LLM failure to Sentry', async () => {
+  const conversationId = 'upstream-sentry-conversation';
+  const upstreamEmail = 'buyer@example.com';
+  const upstreamSecret = 'upstream-secret-canary';
+  const queryEmail = 'query-buyer@example.com';
+  const querySecret = 'query-secret-canary';
+  const refererEmail = 'referer-buyer@example.com';
+  const refererSecret = 'referer-secret-canary';
+  const { envelope, event, sseText } = await runChatSentryFailure({
+    conversationId,
+    requestUrl: `https://api.sagemro.com/api/chat?email=${queryEmail}&token=${querySecret}#query-fragment`,
+    referer: `https://sagemro.com/account?email=${refererEmail}&token=${refererSecret}#referer-fragment`,
+    makeLlmResponse: () => new Response(
+      `LLM failure for ${upstreamEmail} with ${upstreamSecret}`,
+      { status: 502 },
+    ),
+  });
+
+  assert.equal(event.extra.feature, 'ai_chat');
+  assert.equal(event.extra.stage, 'upstream');
+  assert.equal(event.extra.status, 502);
+  assert.equal(event.extra.market, 'com');
+  assert.equal(event.extra.iteration, 0);
+  assert.equal(event.exception.values[0].value, 'LLM upstream request failed with status 502');
+  assert.equal(event.request.url, 'https://api.sagemro.com/api/chat');
+  assert.equal(event.request.method, 'POST');
+  assert.equal(event.tags.route, '/api/chat');
+  assert.equal(event.tags.method, 'POST');
+  assert.equal(event.request.headers['user-agent'], 'chat-sentry-test');
+  assert.equal(event.request.headers['cf-ray'], 'test-ray');
+  assert.equal(event.request.headers.referer, undefined);
+  for (const canary of [
+    upstreamEmail,
+    upstreamSecret,
+    queryEmail,
+    querySecret,
+    refererEmail,
+    refererSecret,
+  ]) {
+    assert.ok(!envelope.includes(canary), `Sentry envelope leaked canary: ${canary}`);
+  }
+  assertFallbackSse(sseText, {
+    conversationId,
+    canaries: [upstreamEmail, upstreamSecret],
+  });
+});
+
+test('handleChat reports an LLM stream failure to Sentry', async () => {
+  const conversationId = 'stream-sentry-conversation';
+  const streamEmail = 'stream-buyer@example.com';
+  const streamSecret = 'stream-secret-canary';
+  const queryEmail = 'stream-query@example.com';
+  const querySecret = 'stream-query-secret-canary';
+  const refererEmail = 'stream-referer@example.com';
+  const refererSecret = 'stream-referer-secret-canary';
+  const { envelope, event, sseText } = await runChatSentryFailure({
+    conversationId,
+    requestUrl: `https://api.sagemro.com/api/chat?email=${queryEmail}&token=${querySecret}`,
+    referer: `https://sagemro.com/history?email=${refererEmail}&token=${refererSecret}`,
+    makeLlmResponse: () => new Response(new ReadableStream({
+      start(controller) {
+        controller.error(new Error(`stream exploded for ${streamEmail} with ${streamSecret}`));
+      },
+    }), {
+      status: 200,
+      headers: { 'Content-Type': 'text/event-stream' },
+    }),
+  });
+
+  assert.equal(event.extra.feature, 'ai_chat');
+  assert.equal(event.extra.stage, 'stream');
+  assert.equal(event.extra.market, 'com');
+  assert.equal(event.exception.values[0].value, 'LLM stream processing failed');
+  assert.equal(event.request.url, 'https://api.sagemro.com/api/chat');
+  assert.equal(event.request.method, 'POST');
+  assert.equal(event.tags.route, '/api/chat');
+  assert.equal(event.tags.method, 'POST');
+  assert.equal(event.request.headers['user-agent'], 'chat-sentry-test');
+  assert.equal(event.request.headers['cf-ray'], 'test-ray');
+  assert.equal(event.request.headers.referer, undefined);
+  for (const canary of [
+    streamEmail,
+    streamSecret,
+    queryEmail,
+    querySecret,
+    refererEmail,
+    refererSecret,
+  ]) {
+    assert.ok(!envelope.includes(canary), `Sentry envelope leaked canary: ${canary}`);
+  }
+  assertFallbackSse(sseText, {
+    conversationId,
+    canaries: [streamEmail, streamSecret],
+  });
+});
+
+test('handleChat marks a second-round stream failure after first-round content as failed', async () => {
+  const conversationId = 'multi-round-stream-failure';
+  const { env } = makeEnv();
+  const originalFetch = globalThis.fetch;
+  let llmRequestCount = 0;
+
+  globalThis.fetch = async (url) => {
+    if (url !== env.OPENAI_API_ENDPOINT) throw new Error(`Unexpected fetch URL: ${url}`);
+    llmRequestCount++;
+    if (llmRequestCount === 1) {
+      return new Response([
+        `data: ${JSON.stringify({ choices: [{ delta: { content: 'First-round context.' } }] })}`,
+        `data: ${JSON.stringify({ choices: [{ delta: { tool_calls: [{
+          index: 0,
+          id: 'call_search',
+          type: 'function',
+          function: { name: 'search_knowledge_base', arguments: '{"query":"alarm"}' },
+        }] } }] })}`,
+        'data: [DONE]',
+        '',
+      ].join('\n'), {
+        status: 200,
+        headers: { 'Content-Type': 'text/event-stream' },
+      });
+    }
+    return new Response(new ReadableStream({
+      start(controller) {
+        controller.error(new Error('second round disconnected'));
+      },
+    }), {
+      status: 200,
+      headers: { 'Content-Type': 'text/event-stream' },
+    });
+  };
+
+  try {
+    const response = await handleChat(makeRequest({
+      conversation_id: conversationId,
+      message: 'Search for this alarm.',
+    }), env);
+    const sseText = await response.text();
+
+    assert.equal(llmRequestCount, 2);
+    assert.match(sseText, /First-round context\./);
+    assert.ok(sseText.includes(
+      `data: ${JSON.stringify({ conversation_id: conversationId, response_status: 'failed' })}\n`,
+    ));
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
 
 test('handleChat retries a transient D1 timeout while creating a guest conversation', async () => {
