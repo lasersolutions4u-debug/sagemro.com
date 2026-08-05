@@ -3,7 +3,7 @@
 ## 状态
 
 - 日期：2026-08-05
-- 设计状态：用户已逐项确认，等待规格文档复核
+- 设计状态：用户已逐项确认并完成规格文档复核
 - 实施分支：`codex/promotion-analytics-alerting`
 - 基线：`origin/main`
 
