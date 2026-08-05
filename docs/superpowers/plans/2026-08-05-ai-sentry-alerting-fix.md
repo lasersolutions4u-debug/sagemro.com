@@ -13,7 +13,7 @@
 ## Scope boundaries
 
 - Do not change Sentry DSN storage, Worker secrets, retry behavior, chat prompts, or customer fallback copy.
-- Do not send user messages, images, API keys, or raw upstream response bodies to Sentry.
+- Do not send user messages, images, API keys, raw upstream response bodies, raw stream exception text, URL query strings, or Referer values to Sentry.
 - Do not add a third-party SDK; continue using `worker/src/lib/sentry.js`.
 - This plan can be implemented and deployed independently of the promotion dashboard plan.
 
@@ -105,14 +105,15 @@ test('handleChat reports a Sentry event when the LLM stream fails', async () => 
     env,
     request,
     llmResponse: () => new Response(new ReadableStream({
-      start(controller) { controller.error(new Error('stream exploded')); },
+      start(controller) { controller.error(new Error('stream exploded buyer@example.com stream-secret-canary')); },
     }), { status: 200, headers: { 'Content-Type': 'text/event-stream' } }),
   });
 
   assert.equal(envelopes.length, 1);
   assert.match(envelopes[0], /"feature":"ai_chat"/);
   assert.match(envelopes[0], /"stage":"stream"/);
-  assert.match(envelopes[0], /stream exploded/);
+  assert.match(envelopes[0], /LLM stream processing failed/);
+  assert.doesNotMatch(envelopes[0], /buyer@example\.com|stream-secret-canary/);
 });
 ```
 
@@ -132,6 +133,7 @@ Expected: the two new tests fail because both current call sites omit `env`, so 
 **Files:**
 - Modify: `worker/src/index.js:4307-4331`
 - Modify: `worker/src/index.js:4403-4418`
+- Modify: `worker/src/lib/sentry.js`
 
 - [ ] **Step 1: Replace the upstream alert call**
 
@@ -155,12 +157,12 @@ captureException(
 );
 ```
 
-- [ ] **Step 2: Replace the stream alert call**
+- [ ] **Step 2: Replace the stream alert call without forwarding raw exception text**
 
-Use the caught Error but add the same safe request context:
+Keep the original error only in the existing console log. Send a generic error plus the same safe request context to Sentry:
 
 ```js
-captureException(e, env, {
+captureException(new Error('LLM stream processing failed'), env, {
   request,
   ctx: request._ctx,
   extra: {
@@ -171,7 +173,11 @@ captureException(e, env, {
 });
 ```
 
-- [ ] **Step 3: Run the focused tests and verify GREEN**
+- [ ] **Step 3: Sanitize Sentry request metadata centrally**
+
+In `worker/src/lib/sentry.js`, serialize request URLs as origin plus pathname only. Exclude Referer from the allowed header list; retain the other existing safe headers. Add request query and Referer canaries to the chat tests, assert both are absent from the complete envelope, and keep assertions for the route pathname and HTTP method.
+
+- [ ] **Step 4: Run the focused tests and verify GREEN**
 
 Run:
 
@@ -182,10 +188,10 @@ node --test tests/chat-access.test.mjs
 
 Expected: all chat-access tests pass, both envelope assertions pass, and the raw upstream email is absent.
 
-- [ ] **Step 4: Commit the isolated alert repair**
+- [ ] **Step 5: Commit the isolated alert repair**
 
 ```bash
-git add worker/src/index.js worker/tests/chat-access.test.mjs
+git add worker/src/index.js worker/src/lib/sentry.js worker/tests/chat-access.test.mjs
 git commit -m "fix(worker): report caught AI failures to Sentry"
 ```
 
