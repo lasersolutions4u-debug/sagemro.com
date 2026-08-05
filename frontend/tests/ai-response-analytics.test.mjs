@@ -188,3 +188,62 @@ test('trackFunnelEvent safely sends guest analytics when storage reads are block
     for (const restore of restoreGlobals.reverse()) restore();
   }
 });
+
+test('startup fetch wrapper preserves analytics fallback delivery when storage is blocked', async () => {
+  const nativeFetchCalls = [];
+  let beaconCalls = 0;
+  const nativeFetch = async (url, init = {}) => {
+    nativeFetchCalls.push({ url, init });
+    return new Response(JSON.stringify({ success: true }), { status: 202 });
+  };
+  const blockedStorage = {
+    getItem() { throw new Error('storage blocked'); },
+    setItem() { throw new Error('storage blocked'); },
+  };
+  const startupWindow = {
+    fetch: nativeFetch,
+    location: {
+      hostname: 'sagemro.com',
+      origin: 'https://sagemro.com',
+      pathname: '/startup',
+      search: '',
+    },
+  };
+  const restoreGlobals = [
+    installGlobal('localStorage', blockedStorage),
+    installGlobal('window', startupWindow),
+    installGlobal('document', { referrer: '' }),
+    installGlobal('navigator', {
+      sendBeacon() {
+        beaconCalls++;
+        return false;
+      },
+    }),
+    installGlobal('fetch', nativeFetch),
+  ];
+
+  try {
+    const apiSource = `${readFileSync(path.join(root, 'src/services/api.js'), 'utf8')}\n// startup-storage-fallback`
+      .replace("from './funnelAnalytics'", `from '${funnelAnalyticsModule}'`)
+      .replace("if (import.meta.env.VITE_API_BASE) return import.meta.env.VITE_API_BASE;", "return 'https://api.example.test';");
+    const transformed = await transformWithOxc(apiSource, 'api-startup.js', { lang: 'js', format: 'esm' });
+    const api = await import(asDataUrl(transformed.code));
+    globalThis.fetch = startupWindow.fetch;
+
+    assert.doesNotThrow(() => api.trackFunnelEvent('traffic_source_captured', { entry: 'app_loaded' }));
+    await Promise.resolve();
+
+    assert.equal(beaconCalls, 1);
+    assert.equal(nativeFetchCalls.length, 1);
+    const [{ url, init }] = nativeFetchCalls;
+    assert.equal(url, 'https://api.example.test/api/analytics/funnel');
+    assert.equal(init.headers.has('Authorization'), false);
+    assert.equal(init.headers.has('X-CSRF-Token'), false);
+    const payload = JSON.parse(init.body);
+    assert.equal(payload.user_type, 'guest');
+    assert.match(payload.anonymous_id, /^anon_/);
+    assert.match(payload.session_id, /^session_/);
+  } finally {
+    for (const restore of restoreGlobals.reverse()) restore();
+  }
+});
