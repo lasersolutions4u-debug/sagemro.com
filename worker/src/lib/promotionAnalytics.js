@@ -1,6 +1,7 @@
 const REPORT_TIMEZONE_OFFSET_MS = 8 * 60 * 60 * 1000;
 const LIVE_DATA_DELAY_MS = 5 * 60 * 1000;
 const MAX_REPORT_DAYS = 90;
+export const DIRECT_ATTRIBUTION_FILTER = '__sagemro_direct__';
 const COUNT_FIELDS = [
   'sessions',
   'aiRequests',
@@ -283,8 +284,12 @@ export function buildEventWhere(filters) {
     ['campaign', filters.campaign],
   ]) {
     if (!value) continue;
-    clauses.push(`${column} = ?`);
-    params.push(value);
+    if (value === DIRECT_ATTRIBUTION_FILTER) {
+      clauses.push(`COALESCE(${column}, '') = ''`);
+    } else {
+      clauses.push(`${column} = ?`);
+      params.push(value);
+    }
   }
   return { sql: clauses.join(' AND '), params };
 }

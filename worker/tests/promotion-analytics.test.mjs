@@ -5,6 +5,7 @@ import worker from '../src/index.js';
 import { signJwt } from '../src/lib/auth.js';
 
 import {
+  DIRECT_ATTRIBUTION_FILTER,
   PromotionAnalyticsInputError,
   buildEventWhere,
   evaluatePromotionHealth,
@@ -19,6 +20,7 @@ import {
 } from '../src/lib/promotionAnalytics.js';
 
 const now = new Date('2026-08-05T06:00:00Z');
+const DIRECT_SENTINEL = DIRECT_ATTRIBUTION_FILTER;
 
 function filters(values, options = {}) {
   return parsePromotionFilters(new URLSearchParams(values), {
@@ -379,6 +381,23 @@ test('buildEventWhere binds attribution filters instead of interpolating them', 
   assert.equal(where.sql, 'created_at >= ? AND created_at < ? AND source = ? AND medium = ?');
 });
 
+test('direct attribution sentinel compiles to fixed COALESCE clauses without sentinel params', () => {
+  const parsed = filters({
+    from: '2026-08-01', to: '2026-08-05', market: 'com',
+    source: DIRECT_SENTINEL, medium: DIRECT_SENTINEL, campaign: DIRECT_SENTINEL,
+  });
+  assert.equal(parsed.source, DIRECT_SENTINEL);
+  assert.equal(parsed.medium, DIRECT_SENTINEL);
+  assert.equal(parsed.campaign, DIRECT_SENTINEL);
+
+  const where = buildEventWhere(queryFilters({
+    source: DIRECT_SENTINEL, medium: DIRECT_SENTINEL, campaign: DIRECT_SENTINEL,
+  }));
+  assert.equal(where.sql, "created_at >= ? AND created_at < ? AND COALESCE(source, '') = '' AND COALESCE(medium, '') = '' AND COALESCE(campaign, '') = ''");
+  assert.deepEqual(where.params, ['2026-07-31 16:00:00', '2026-08-01 16:00:00']);
+  assert.equal(where.sql.includes(DIRECT_SENTINEL), false);
+});
+
 test('queryPromotionOverviewDb counts only v2 records with Shanghai report boundaries', async (t) => {
   const db = createD1Database();
   t.after(() => db.close());
@@ -469,6 +488,39 @@ test('channel grouping coalesces NULL and empty attribution before distinct aggr
   assert.deepEqual(rows, [{
     source: '', medium: '', campaign: '', sessions: 1, aiRequests: 0,
     aiSuccesses: 0, registrations: 0, serviceRequests: 0,
+  }]);
+});
+
+test('direct attribution filters require source, medium, and campaign to all be empty', async (t) => {
+  const db = createD1Database();
+  t.after(() => db.close());
+  await seedEvent(db, {
+    id: 'direct-exact', eventName: 'traffic_source_captured',
+    anonymousId: 'direct-exact-anon', sessionId: 'direct-exact-session',
+    source: null, medium: null, campaign: null,
+  });
+  await seedEvent(db, {
+    id: 'direct-medium', eventName: 'traffic_source_captured',
+    anonymousId: 'direct-medium-anon', sessionId: 'direct-medium-session',
+    source: null, medium: 'referral', campaign: null,
+  });
+  await seedEvent(db, {
+    id: 'direct-campaign', eventName: 'traffic_source_captured',
+    anonymousId: 'direct-campaign-anon', sessionId: 'direct-campaign-session',
+    source: '', medium: '', campaign: 'brand',
+  });
+
+  const result = await queryPromotionChannelsDb(db, queryFilters({
+    source: DIRECT_SENTINEL, medium: DIRECT_SENTINEL, campaign: DIRECT_SENTINEL,
+  }));
+
+  assert.deepEqual(result.rows, [{
+    source: '', medium: '', campaign: '', sessions: 1, aiRequests: 0,
+    aiSuccesses: 0, registrations: 0, serviceRequests: 0,
+  }]);
+  assert.deepEqual(result.daily, [{
+    date: '2026-08-01', sessions: 1, aiRequests: 0, aiSuccesses: 0,
+    registrations: 0, serviceRequests: 0,
   }]);
 });
 
