@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { test } from 'node:test';
+import { after, test } from 'node:test';
+import { fileURLToPath } from 'node:url';
+import React from 'react';
+import TestRenderer, { act } from 'react-test-renderer';
+import { createServer } from 'vite';
 
 const api = await readFile(new URL('../services/api.js', import.meta.url), 'utf8');
 const { getPromotionChannels, getPromotionOverview } = await import('../services/api.js');
@@ -10,6 +14,66 @@ const {
   formatMetric,
   statusTone,
 } = await import('./promotionAnalyticsView.js');
+const vite = await createServer({
+  root: fileURLToPath(new URL('../..', import.meta.url)),
+  logLevel: 'silent',
+  server: { middlewareMode: true },
+  appType: 'custom',
+});
+const { PromotionAnalyticsPage } = await vite.ssrLoadModule('/src/pages/PromotionAnalyticsPage.jsx');
+const { PromotionOverview } = await vite.ssrLoadModule('/src/components/promotion/PromotionOverview.jsx');
+
+after(() => vite.close());
+
+function deferred() {
+  let resolve;
+  let reject;
+  const promise = new Promise((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+}
+
+function overviewFixture({ sampleStatus = 'ready', sessions = 20 } = {}) {
+  const noData = sampleStatus === 'no_data';
+  return {
+    reporting_timezone: 'Asia/Shanghai',
+    allowed_markets: ['com', 'cn'],
+    filters: { from: '2026-08-01', to: '2026-08-05', markets: ['com'], source: '', medium: '', campaign: '' },
+    health: { level: 'normal', reasons: [] },
+    current: {
+      sampleStatus,
+      sessions: noData ? 0 : sessions,
+      aiRequests: noData ? 0 : 10,
+      aiSuccessRate: noData ? null : 0.9,
+      registrationEvents: noData ? 0 : 3,
+      serviceRequestEvents: noData ? 0 : 2,
+      visitors: noData ? 0 : sessions,
+      aiVisitors: noData ? 0 : 8,
+      registrationVisitors: noData ? 0 : 3,
+      serviceVisitors: noData ? 0 : 2,
+    },
+    previous: { sessions: 10, aiRequests: 5, aiSuccessRate: 0.8, registrationEvents: 1, serviceRequestEvents: 1 },
+    daily: [{ date: '2026-08-01', sessions: noData ? 0 : sessions, serviceRequests: noData ? 0 : 2 }],
+    data_quality: { coverageStart: '2026-08-01 00:05:00', legacyEvents: 1, missingAnonymousEvents: 0, attributionCoverage: 0.8 },
+  };
+}
+
+function textContent(node) {
+  if (typeof node === 'string' || typeof node === 'number') return String(node);
+  if (!node) return '';
+  const children = Array.isArray(node) ? node : node.children;
+  return (children || []).map(textContent).join('');
+}
+
+function findButton(root, label) {
+  return root.findAllByType('button').find((button) => textContent(button) === label);
+}
+
+function findField(root, label) {
+  return root.findAllByType('label').find((field) => field.children[0] === label).findByType('input');
+}
 
 test('promotion analytics page shell supplies bilingual accessible copy', async () => {
   const page = await readFile(new URL('./PromotionAnalyticsPage.jsx', import.meta.url), 'utf8');
@@ -65,6 +129,156 @@ test('promotion overview contracts retain safe async, filter, status, and privac
   assert.match(overview, /Daily trend/);
   assert.match(overview, /每日趋势/);
   assert.doesNotMatch(`${page}\n${overview}`, /anonymous_id|session_id|ip_hash|user_agent|Ad spend|ROAS|CPA/i);
+});
+
+test('draft filters wait for Apply and stale aborted responses cannot overwrite the active result', async () => {
+  const first = deferred();
+  const second = deferred();
+  const requests = [];
+  const loadOverview = (filters, signal) => {
+    requests.push({ filters, signal });
+    return requests.length === 1 ? first.promise : second.promise;
+  };
+  let renderer;
+  await act(async () => {
+    renderer = TestRenderer.create(React.createElement(PromotionAnalyticsPage, { loadOverview }));
+  });
+
+  assert.equal(requests.length, 1);
+  await act(async () => {
+    findField(renderer.root, 'Source').props.onChange({ target: { value: 'newsletter' } });
+  });
+  assert.equal(requests.length, 1);
+
+  await act(async () => {
+    findButton(renderer.root, 'Apply filters').props.onClick();
+  });
+  assert.equal(requests.length, 2);
+  assert.equal(requests[0].signal.aborted, true);
+  assert.equal(requests[1].filters.source, 'newsletter');
+
+  await act(async () => {
+    second.resolve(overviewFixture({ sessions: 7 }));
+    await second.promise;
+  });
+  assert.match(textContent(renderer.toJSON()), /7/);
+  await act(async () => {
+    first.resolve(overviewFixture({ sessions: 99 }));
+    await first.promise;
+  });
+  assert.doesNotMatch(textContent(renderer.toJSON()), /99/);
+  await act(async () => renderer.unmount());
+});
+
+test('tabs expose linked panels and support roving focus keyboard navigation without loading Channel data', async () => {
+  const request = deferred();
+  const calls = [];
+  let focused = '';
+  const loadOverview = (filters, signal) => {
+    calls.push({ filters, signal });
+    return request.promise;
+  };
+  let renderer;
+  await act(async () => {
+    renderer = TestRenderer.create(React.createElement(PromotionAnalyticsPage, { loadOverview }), {
+      createNodeMock(element) {
+        return element.props?.role === 'tab' ? { focus: () => { focused = element.props.id; } } : {};
+      },
+    });
+  });
+
+  let tabs = renderer.root.findAll((node) => node.props.role === 'tab');
+  assert.deepEqual(tabs.map((tab) => [tab.props.id, tab.props['aria-controls'], tab.props.tabIndex]), [
+    ['promotion-overview-tab', 'promotion-overview-panel', 0],
+    ['promotion-channels-tab', 'promotion-channels-panel', -1],
+  ]);
+  let panel = renderer.root.findByProps({ role: 'tabpanel' });
+  assert.equal(panel.props.id, 'promotion-overview-panel');
+  assert.equal(panel.props['aria-labelledby'], 'promotion-overview-tab');
+
+  let prevented = 0;
+  await act(async () => {
+    tabs[0].props.onKeyDown({ key: 'ArrowRight', preventDefault: () => { prevented += 1; } });
+  });
+  tabs = renderer.root.findAll((node) => node.props.role === 'tab');
+  assert.equal(focused, 'promotion-channels-tab');
+  assert.equal(tabs[1].props['aria-selected'], true);
+  assert.equal(prevented, 1);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].signal.aborted, true);
+  panel = renderer.root.findByProps({ role: 'tabpanel' });
+  assert.equal(panel.props.id, 'promotion-channels-panel');
+  assert.equal(panel.props['aria-labelledby'], 'promotion-channels-tab');
+
+  await act(async () => {
+    tabs[1].props.onKeyDown({ key: 'Home', preventDefault: () => { prevented += 1; } });
+  });
+  tabs = renderer.root.findAll((node) => node.props.role === 'tab');
+  assert.equal(focused, 'promotion-overview-tab');
+  assert.equal(tabs[0].props['aria-selected'], true);
+  assert.equal(calls.length, 2);
+  await act(async () => {
+    tabs[0].props.onKeyDown({ key: 'Enter', preventDefault: () => { prevented += 1; } });
+  });
+  assert.equal(prevented, 2);
+  await act(async () => {
+    tabs[0].props.onKeyDown({ key: 'End', preventDefault: () => { prevented += 1; } });
+  });
+  tabs = renderer.root.findAll((node) => node.props.role === 'tab');
+  assert.equal(focused, 'promotion-channels-tab');
+  assert.equal(tabs[1].props['aria-selected'], true);
+  assert.equal(calls.length, 2);
+  await act(async () => {
+    tabs[1].props.onKeyDown({ key: 'ArrowLeft', preventDefault: () => { prevented += 1; } });
+  });
+  tabs = renderer.root.findAll((node) => node.props.role === 'tab');
+  assert.equal(focused, 'promotion-overview-tab');
+  assert.equal(tabs[0].props['aria-selected'], true);
+  assert.equal(calls.length, 3);
+  assert.equal(prevented, 4);
+  await act(async () => renderer.unmount());
+});
+
+test('Retry reloads the active filters without applying later draft edits', async () => {
+  const third = deferred();
+  const requests = [];
+  const loadOverview = (filters, signal) => {
+    requests.push({ filters, signal });
+    if (requests.length === 1) return Promise.resolve(overviewFixture());
+    if (requests.length === 2) return Promise.reject(new Error('D1 temporarily unavailable'));
+    return third.promise;
+  };
+  let renderer;
+  await act(async () => {
+    renderer = TestRenderer.create(React.createElement(PromotionAnalyticsPage, { loadOverview }));
+  });
+  await act(async () => {
+    findField(renderer.root, 'Source').props.onChange({ target: { value: 'paid' } });
+  });
+  await act(async () => {
+    findButton(renderer.root, 'Apply filters').props.onClick();
+  });
+  assert.match(textContent(renderer.toJSON()), /D1 temporarily unavailable/);
+  await act(async () => {
+    findField(renderer.root, 'Source').props.onChange({ target: { value: 'unapplied-draft' } });
+  });
+  await act(async () => {
+    findButton(renderer.root, 'Retry').props.onClick();
+  });
+  assert.equal(requests.length, 3);
+  assert.equal(requests[1].filters.source, 'paid');
+  assert.equal(requests[2].filters.source, 'paid');
+  await act(async () => renderer.unmount());
+});
+
+test('no-data and insufficient-sample states render their bilingual runtime copy', () => {
+  const noData = TestRenderer.create(React.createElement(PromotionOverview, { data: overviewFixture({ sampleStatus: 'no_data' }), isCn: false }));
+  const insufficient = TestRenderer.create(React.createElement(PromotionOverview, { data: overviewFixture({ sampleStatus: 'insufficient', sessions: 5 }), isCn: true }));
+  assert.match(textContent(noData.toJSON()), /No data/);
+  assert.match(textContent(noData.toJSON()), /—/);
+  assert.match(textContent(insufficient.toJSON()), /样本不足/);
+  noData.unmount();
+  insufficient.unmount();
 });
 
 test('promotion analytics clients send only allowed encoded filters with request signal and cookie auth', async () => {

@@ -5,8 +5,12 @@ import { runtimeConfig } from '../config/runtime';
 import { getPromotionOverview } from '../services/api.js';
 
 const EMPTY_STATE = { status: 'loading', data: null, error: '' };
+const TAB_DEFINITIONS = [
+  { key: 'overview', tabId: 'promotion-overview-tab', panelId: 'promotion-overview-panel' },
+  { key: 'channels', tabId: 'promotion-channels-tab', panelId: 'promotion-channels-panel' },
+];
 
-export function PromotionAnalyticsPage() {
+export function PromotionAnalyticsPage({ loadOverview = getPromotionOverview }) {
   const isCn = runtimeConfig.locale === 'zh-CN';
   const [activeTab, setActiveTab] = useState('overview');
   const [draftFilters, setDraftFilters] = useState(() => createPromotionFilters(runtimeConfig.market));
@@ -14,13 +18,14 @@ export function PromotionAnalyticsPage() {
   const [overviewState, setOverviewState] = useState(EMPTY_STATE);
   const [reloadKey, setReloadKey] = useState(0);
   const sequence = useRef(0);
+  const tabRefs = useRef([]);
 
   useEffect(() => {
     if (activeTab !== 'overview') return undefined;
     const controller = new AbortController();
     const requestNumber = ++sequence.current;
     setOverviewState({ status: 'loading', data: null, error: '' });
-    getPromotionOverview(activeFilters, controller.signal)
+    loadOverview(activeFilters, controller.signal)
       .then((data) => {
         if (sequence.current === requestNumber) setOverviewState({ status: 'ready', data, error: '' });
       })
@@ -30,7 +35,7 @@ export function PromotionAnalyticsPage() {
         }
       });
     return () => controller.abort();
-  }, [activeFilters, reloadKey, activeTab, isCn]);
+  }, [activeFilters, reloadKey, activeTab, isCn, loadOverview]);
 
   const overview = overviewState.data;
   const allowedMarkets = overview?.allowed_markets || [runtimeConfig.market];
@@ -41,6 +46,17 @@ export function PromotionAnalyticsPage() {
     : { overview: 'Overview', channels: 'Channel Analysis', loading: 'Loading promotion overview', retry: 'Retry', error: 'Unable to load promotion overview', unavailable: 'Channel analysis is the next step. This tab does not request channel data yet.' };
 
   const applyFilters = () => setActiveFilters({ ...draftFilters });
+  const handleTabKeyDown = (event, index) => {
+    let nextIndex;
+    if (event.key === 'ArrowRight') nextIndex = (index + 1) % TAB_DEFINITIONS.length;
+    else if (event.key === 'ArrowLeft') nextIndex = (index - 1 + TAB_DEFINITIONS.length) % TAB_DEFINITIONS.length;
+    else if (event.key === 'Home') nextIndex = 0;
+    else if (event.key === 'End') nextIndex = TAB_DEFINITIONS.length - 1;
+    else return;
+    event.preventDefault();
+    setActiveTab(TAB_DEFINITIONS[nextIndex].key);
+    tabRefs.current[nextIndex]?.focus();
+  };
 
   return (
     <section aria-label={isCn ? '推广分析工作区' : 'Promotion analytics workspace'}>
@@ -50,12 +66,10 @@ export function PromotionAnalyticsPage() {
         <p className="mt-2 max-w-2xl text-sm leading-6 text-[var(--color-text-secondary)]">{isCn ? '面向运营的流量、AI 可用性与转化测量台。' : 'An operations instrument panel for traffic, AI availability, and conversion.'}</p>
       </header>
       <div className="mt-4 border-b border-[var(--color-border)]" role="tablist" aria-label={isCn ? '推广分析视图' : 'Promotion analytics views'}>
-        {[['overview', tabCopy.overview], ['channels', tabCopy.channels]].map(([key, label]) => <button key={key} type="button" role="tab" aria-selected={activeTab === key} onClick={() => setActiveTab(key)} className={`min-h-10 border-b-2 px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)] ${activeTab === key ? 'border-[var(--color-primary)] text-[var(--color-primary)]' : 'border-transparent text-[var(--color-text-secondary)] hover:text-[var(--color-text)]'}`}>{label}</button>)}
+        {TAB_DEFINITIONS.map((tab, index) => <button key={tab.key} ref={(node) => { tabRefs.current[index] = node; }} id={tab.tabId} type="button" role="tab" aria-controls={tab.panelId} aria-selected={activeTab === tab.key} tabIndex={activeTab === tab.key ? 0 : -1} onClick={() => setActiveTab(tab.key)} onKeyDown={(event) => handleTabKeyDown(event, index)} className={`min-h-10 border-b-2 px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--color-bg)] ${activeTab === tab.key ? 'border-[var(--color-primary)] text-[var(--color-primary)]' : 'border-transparent text-[var(--color-text-secondary)] hover:text-[var(--color-text)]'}`}>{tabCopy[tab.key]}</button>)}
       </div>
       <PromotionFilters filters={draftFilters} allowedMarkets={allowedMarkets} onChange={setDraftFilters} onApply={applyFilters} isCn={isCn} reportingTimezone={reportingTimezone} coverageStart={coverageStart} />
-      <div className="mt-4" role="tabpanel" aria-busy={activeTab === 'overview' && overviewState.status === 'loading'}>
-        {activeTab === 'channels' ? <section className="border border-dashed border-[var(--color-border)] bg-[var(--color-surface)] p-6 text-sm text-[var(--color-text-secondary)]"><h2 className="font-semibold text-[var(--color-text)]">{tabCopy.channels}</h2><p className="mt-2">{tabCopy.unavailable}</p></section> : <OverviewState state={overviewState} isCn={isCn} retry={() => setReloadKey((current) => current + 1)} copy={tabCopy} />}
-      </div>
+      {activeTab === 'overview' ? <div id="promotion-overview-panel" className="mt-4" role="tabpanel" aria-labelledby="promotion-overview-tab" aria-busy={overviewState.status === 'loading'}><OverviewState state={overviewState} isCn={isCn} retry={() => setReloadKey((current) => current + 1)} copy={tabCopy} /></div> : <div id="promotion-channels-panel" className="mt-4" role="tabpanel" aria-labelledby="promotion-channels-tab"><section className="border border-dashed border-[var(--color-border)] bg-[var(--color-surface)] p-6 text-sm text-[var(--color-text-secondary)]"><h2 className="font-semibold text-[var(--color-text)]">{tabCopy.channels}</h2><p className="mt-2">{tabCopy.unavailable}</p></section></div>}
     </section>
   );
 }
