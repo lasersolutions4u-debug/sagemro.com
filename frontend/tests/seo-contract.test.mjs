@@ -90,7 +90,8 @@ test('public pages define SEO metadata and structured data', async () => {
   assert.match(recruiting, /setSeoMetadata\(/);
   assert.match(tools, /setSeoMetadata\(/);
   assert.match(insights, /setSeoMetadata\(/);
-  assert.match(tools, /robots: isMissing \|\| isPausedTool \? 'noindex,nofollow,noarchive'/);
+  assert.match(tools, /getRuntimeSeoRoute/);
+  assert.match(tools, /robots: isMissing \? 'noindex,nofollow,noarchive' : seoRoute\?\.robots/);
   assert.match(insights, /robots: isMissing \? 'noindex,nofollow,noarchive'/);
 });
 

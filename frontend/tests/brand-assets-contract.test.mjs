@@ -672,7 +672,8 @@ test('client shell moves conversation history into a modal and exposes industry 
   assert.match(industryToolsPage, /publicIndustryTools\.map/);
   assert.match(industryToolsPage, /publicIndustryTools\.filter/);
   assert.match(industryToolsPage, /const isPausedTool = selectedTool\?\.id === 'bend-simulator'/);
-  assert.match(industryToolsPage, /isMissing \|\| isPausedTool \? 'noindex,nofollow,noarchive'/);
+  assert.match(industryToolsPage, /getRuntimeSeoRoute/);
+  assert.match(industryToolsPage, /robots: isMissing \? 'noindex,nofollow,noarchive' : seoRoute\?\.robots/);
   assert.match(industryToolsPage, /referenceItems/);
   assert.match(industryToolsPage, /ToolReferenceItem/);
   assert.match(industryToolsPage, /Material range/);
