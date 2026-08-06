@@ -25,10 +25,11 @@ test('CN tool detail titles wrap on narrow screens and reject unknown slugs', ()
   const tools = read('frontend/src/components/Tools/IndustryToolsPage.jsx');
   const insights = read('frontend/src/components/Insights/InsightsPage.jsx');
 
-  assert.match(tools, /slug && !selectedTool/);
   assert.match(tools, /className="min-w-0"/);
   assert.match(tools, /break-words/);
   assert.doesNotMatch(tools, /<h1 className="mt-4 break-keep/);
+  assert.match(tools, /const isMissing = page === 'not-found'/);
+  assert.match(tools, /getIndustryToolsSeoMetadata/);
   assert.match(insights, /slug && !insight/);
 });
 

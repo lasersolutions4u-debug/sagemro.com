@@ -88,8 +88,8 @@ test('China public pages define localized SEO metadata and structured data', asy
   assert.match(tools, /https:\/\/sagemro\.cn/);
   assert.match(tools, /setSeoMetadata\(/);
   assert.match(insights, /setSeoMetadata\(/);
-  assert.match(tools, /getRuntimeSeoRoute/);
-  assert.match(tools, /robots: isMissing \? 'noindex,nofollow,noarchive' : seoRoute\?\.robots/);
+  assert.match(tools, /getIndustryToolsSeoMetadata/);
+  assert.match(tools, /robots: seoMetadata\.robots/);
   assert.match(insights, /robots: isMissing \? 'noindex,nofollow,noarchive'/);
 });
 

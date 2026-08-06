@@ -96,11 +96,11 @@ test('runtime resolves exact noindex tool metadata without exposing paused or dr
   }
 
   const page = await readFile(new URL('../src/components/Tools/IndustryToolsPage.jsx', import.meta.url), 'utf8');
-  assert.match(page, /getRuntimeSeoRoute\(selectedTool \? `\/tools\/\$\{selectedTool\.slug\}` : '\/tools', locale\)/);
-  assert.match(page, /canonical: seoRoute\?\.canonical \?\? canonical/);
-  assert.match(page, /alternates: seoRoute\?\.alternates/);
-  assert.match(page, /robots: isMissing \? 'noindex,nofollow,noarchive' : seoRoute\?\.robots/);
-  assert.match(page, /structuredData: seoRoute\?\.structuredData \?\? null/);
+  assert.match(page, /getIndustryToolsSeoMetadata\(/);
+  assert.match(page, /canonical: seoMetadata\.canonical/);
+  assert.match(page, /alternates: seoMetadata\.alternates/);
+  assert.match(page, /robots: seoMetadata\.robots/);
+  assert.match(page, /structuredData: seoMetadata\.structuredData/);
 });
 
 test('all four public tools include calculator-derived evidence in both static locales', () => {

@@ -13,7 +13,7 @@ import {
   publicIndustryTools,
   shapeProfiles,
 } from '../src/data/industryTools.js';
-import { getIndustryToolsPageState } from '../src/utils/industryToolsPage.js';
+import { getIndustryToolsPageState, getIndustryToolsSeoMetadata } from '../src/utils/industryToolsPage.js';
 
 test('metal weight calculator covers common sheet and structural profiles', () => {
   const profileIds = Object.keys(shapeProfiles);
@@ -95,9 +95,8 @@ test('evidence review CTA follows safety boundary and calculator CTA is suppress
   assert.match(calculator, /showReviewCta = true/);
   assert.match(calculator, /showReviewCta && onSendMessage/);
   assert.match(page, /showReviewCta=\{!tool\.seoEvidence\?\.formula\}/);
-  assert.match(page, /selectedTool\?\.seoEvidence\?\.indexable === false/);
-  assert.match(page, /getRuntimeSeoRoute/);
-  assert.match(page, /robots: isMissing \? 'noindex,nofollow,noarchive' : seoRoute\?\.robots/);
+  assert.match(page, /getIndustryToolsSeoMetadata/);
+  assert.match(page, /robots: seoMetadata\.robots/);
   assert.ok(page.indexOf('<ToolEvidence', 0) < page.indexOf('{copy.faq}'));
   assert.ok(safetyIndex < reviewIndex);
   assert.match(page, /Ask SAGEMRO AI to review this result/);
@@ -203,6 +202,39 @@ test('industry tools resolve hub and bend simulator routes with localized canoni
   assert.equal(hub.page, 'hub');
   assert.equal(hub.selectedTool, null);
   assert.equal(hub.canonical, 'https://sagemro.com/tools');
+});
+
+test('unknown tool metadata keeps the requested path noindex without inheriting hub schema', () => {
+  for (const [locale, host] of [['en', 'https://sagemro.com'], ['zh-CN', 'https://sagemro.cn']]) {
+    for (const path of ['/tools/not-a-tool', '/tools/not-a-tool/extra', '/tools//', '/tools/metal-weight-calculator//']) {
+      const route = getIndustryToolsPageState(path, locale);
+      const metadata = getIndustryToolsSeoMetadata(route, locale);
+
+      assert.equal(route.page, 'not-found');
+      assert.equal(metadata.canonical, `${host}${path}`);
+      assert.deepEqual(metadata.alternates, {
+        en: `https://sagemro.com${path}`,
+        'zh-CN': `https://sagemro.cn${path}`,
+        'x-default': `https://sagemro.com${path}`,
+      });
+      assert.equal(metadata.robots, 'noindex,nofollow,noarchive');
+      assert.equal(metadata.structuredData, null);
+    }
+
+    const hub = getIndustryToolsSeoMetadata(getIndustryToolsPageState('/tools', locale), locale);
+    const publicTool = getIndustryToolsSeoMetadata(getIndustryToolsPageState('/tools/metal-weight-calculator', locale), locale);
+    const noindexTool = getIndustryToolsSeoMetadata(getIndustryToolsPageState('/tools/steel-price-watch', locale), locale);
+    const pausedTool = getIndustryToolsSeoMetadata(getIndustryToolsPageState('/tools/bend-simulator', locale), locale);
+
+    assert.equal(hub.structuredData['@graph'][0]['@type'], 'CollectionPage');
+    assert.equal(hub.robots, 'index,follow');
+    assert.equal(publicTool.structuredData['@graph'][0]['@type'], 'WebApplication');
+    assert.equal(publicTool.robots, 'index,follow');
+    assert.equal(noindexTool.structuredData['@graph'][0]['@type'], 'WebApplication');
+    assert.equal(noindexTool.robots, 'noindex,nofollow,noarchive');
+    assert.equal(pausedTool.structuredData, null);
+    assert.equal(pausedTool.robots, 'noindex,nofollow,noarchive');
+  }
 });
 
 test('gas consumption calculator estimates assist gas usage and cost', () => {
