@@ -4,7 +4,6 @@ import { Footer } from './components/common/Footer';
 import { NotFoundPage } from './components/common/NotFoundPage';
 import { Sidebar } from './components/Sidebar/Sidebar';
 import { ChatHistory } from './components/Sidebar/ChatHistory';
-import { ChatArea } from './components/Chat/ChatArea';
 import { Modal } from './components/common/Modal';
 import { FeedbackHost } from './components/common/FeedbackHost';
 import { PushNotificationBanner } from './components/PushNotification/PushNotificationBanner';
@@ -35,6 +34,7 @@ const NotificationModal = lazy(() => import('./components/Notification/Notificat
 const IndustryToolsModal = lazy(() => import('./components/Tools/IndustryToolsModal').then(m => ({ default: m.IndustryToolsModal })));
 const IndustryToolsPage = lazy(() => import('./components/Tools/IndustryToolsPage').then(m => ({ default: m.IndustryToolsPage })));
 const InsightsPage = lazy(() => import('./components/Insights/InsightsPage').then(m => ({ default: m.InsightsPage })));
+const ChatArea = lazy(() => import('./components/Chat/ChatArea').then(m => ({ default: m.ChatArea })));
 
 function App() {
   const isEngineerHost = typeof window !== 'undefined'
@@ -636,17 +636,19 @@ function App() {
 
       {/* 主聊天区域 */}
       <div className="flex-1 flex flex-col min-w-0 min-h-0">
-        <ChatArea
-          messages={messages}
-          isStreaming={isStreaming}
-          onSendMessage={handleSendMessage}
-          onStopGeneration={stopGeneration}
-          onNewChat={handleNewChat}
-          currentTitle={currentTitle}
-          onToggleSidebar={() => setSidebarOpen(true)}
-          onOpenLegal={openLegal}
-          onOpenAbout={() => setAboutModalOpen(true)}
-        />
+        <Suspense fallback={null}>
+          <ChatArea
+            messages={messages}
+            isStreaming={isStreaming}
+            onSendMessage={handleSendMessage}
+            onStopGeneration={stopGeneration}
+            onNewChat={handleNewChat}
+            currentTitle={currentTitle}
+            onToggleSidebar={() => setSidebarOpen(true)}
+            onOpenLegal={openLegal}
+            onOpenAbout={() => setAboutModalOpen(true)}
+          />
+        </Suspense>
       </div>
 
       {/* Modals — 重型组件使用 Suspense 懒加载 */}
