@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { getLocalizedTool, publicIndustryTools } from '../src/data/industryTools.js';
-import { getPublicSeoRoute, getPublicSeoRoutes } from '../src/data/publicSeoRoutes.js';
+import { getDirectAccessNoindexToolRoutes, getPublicSeoRoute, getPublicSeoRoutes } from '../src/data/publicSeoRoutes.js';
 import { welcomePageCopy } from '../src/data/welcomePageCopy.js';
 import {
   escapeHtml,
@@ -47,6 +47,25 @@ test('manifest lists only indexable customer routes in both locales', () => {
     assert.equal(routes.every((route) => route.robots === 'index,follow'), true);
     assert.equal(routes.every((route) => /^https:\/\/sagemro\.(com|cn)/.test(route.canonical)), true);
     assert.equal(routes.every((route) => route.alternates.en && route.alternates['zh-CN']), true);
+  }
+});
+
+test('direct-access noindex tool routes are separate from the public manifest', () => {
+  const noindexSlugs = [
+    'steel-price-watch',
+    'laser-assist-gas-consumption-calculator',
+    'laser-cutting-speed-reference',
+    'laser-cutting-machine-roi-calculator',
+    'laser-chiller-dust-collector-sizing-checklist',
+  ];
+
+  for (const locale of ['en', 'zh-CN']) {
+    const routes = getDirectAccessNoindexToolRoutes(locale);
+
+    assert.deepEqual(routes.map((route) => route.path), noindexSlugs.map((slug) => `/tools/${slug}`));
+    assert.ok(routes.every((route) => route.robots === 'noindex,nofollow,noarchive'));
+    assert.equal(routes.some((route) => route.path === '/tools/bend-simulator'), false);
+    assert.ok(routes.every((route) => getPublicSeoRoute(route.path, locale) === null));
   }
 });
 

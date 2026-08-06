@@ -1,7 +1,7 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 
-import { getPublicSeoRoutes } from '../src/data/publicSeoRoutes.js';
+import { getDirectAccessNoindexToolRoutes, getPublicSeoRoutes } from '../src/data/publicSeoRoutes.js';
 import { renderPublicDocument, renderSitemap } from './publicPageRenderer.mjs';
 
 const hosts = { en: 'https://sagemro.com', 'zh-CN': 'https://sagemro.cn' };
@@ -79,9 +79,10 @@ export async function buildPublicPages({ distDir }) {
   const template = await readFile(join(distDir, 'index.html'), 'utf8');
   const locale = localeFromTemplate(template);
   const routes = getPublicSeoRoutes(locale);
-  validateRoutes(routes);
+  const noindexToolRoutes = getDirectAccessNoindexToolRoutes(locale);
+  validateRoutes([...routes, ...noindexToolRoutes]);
 
-  await Promise.all(routes.map((route) => writeRoute(distDir, route, template, locale)));
+  await Promise.all([...routes, ...noindexToolRoutes].map((route) => writeRoute(distDir, route, template, locale)));
   await Promise.all([
     writeFile(join(distDir, 'sitemap.xml'), renderSitemapWithDates(routes)),
     writeFile(join(distDir, 'robots.txt'), renderRobots(locale)),
