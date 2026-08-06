@@ -6,6 +6,7 @@ import {
   defaultIndustryToolForms,
   getLocalizedSteelPriceReferences,
   getToolBySlug,
+  getToolWorkedExample,
   industryTools,
   materialDensities,
   publicIndustryTools,
@@ -39,6 +40,40 @@ test('material references cover steel, stainless, aluminum, copper, red copper, 
   assert.match(materialDensities.copper.label, /Copper/);
   assert.match(materialDensities.red_copper.label, /Red copper/);
   assert.match(materialDensities.titanium_alloy.label, /Titanium alloy/);
+});
+
+test('defensible calculators disclose formula, calculator-generated example, assumptions, limits, safety, review, and references', () => {
+  const requiredTools = {
+    'metal-weight': /Metal weight = cross-section area × length × density × quantity/,
+    'laser-cost': /Laser cutting cost = total machine time × hourly rate \+ assist-gas cost/,
+    'press-brake-tonnage': /Air-bend tonnage = existing estimateAirBendTonnage inputs and material\/safety factors/,
+    'bend-allowance': /Bend allowance per bend = angle in radians × \(inside radius \+ K-factor × thickness\)/,
+  };
+
+  for (const [id, formula] of Object.entries(requiredTools)) {
+    const tool = industryTools.find((item) => item.id === id);
+    const evidence = tool?.seoEvidence;
+    const example = getToolWorkedExample(tool);
+
+    assert.equal(evidence?.indexable, true);
+    assert.match(evidence?.formula || '', formula);
+    assert.ok(evidence?.assumptions?.length >= 3);
+    assert.ok(evidence?.limitations?.length >= 2);
+    assert.match(evidence?.safetyBoundary || '', /production|purchasing|operation/i);
+    assert.match(evidence?.reviewPrompt || '', /review/i);
+    assert.ok(evidence?.references?.length >= 1);
+    assert.deepEqual(example?.result, calculateIndustryToolResult(id, evidence.workedExample.inputs));
+    assert.ok(example.result.rows.some(([, value]) => /kg|USD|tons|mm/.test(value)));
+  }
+});
+
+test('heuristic reference tools remain directly available but not indexable', () => {
+  for (const id of ['cutting-speed', 'auxiliary-sizing']) {
+    const tool = industryTools.find((item) => item.id === id);
+    assert.equal(tool?.seoEvidence?.indexable, false);
+    assert.equal(getToolBySlug(tool.slug)?.id, id);
+    assert.equal(publicIndustryTools.some((item) => item.id === id), false);
+  }
 });
 
 test('metal weight calculator computes angle steel from profile dimensions', () => {
@@ -95,7 +130,7 @@ test('CN steel price calculator uses domestic references and CNY', () => {
 
 test('industry tools keep the paused bend simulator registered but out of public discovery', () => {
   assert.equal(industryTools.length, 10);
-  assert.equal(publicIndustryTools.length, 9);
+  assert.equal(publicIndustryTools.length, 7);
   assert.equal(publicIndustryTools.some((tool) => tool.id === 'bend-simulator'), false);
   assert.equal(getToolBySlug('metal-weight-calculator').id, 'metal-weight');
   assert.equal(getToolBySlug('steel-price-watch').id, 'steel-price');

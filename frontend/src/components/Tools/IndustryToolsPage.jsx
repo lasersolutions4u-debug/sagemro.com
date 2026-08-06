@@ -20,6 +20,7 @@ import {
   getLocalizedMaterialDensities,
   getLocalizedShapeProfiles,
   getLocalizedTool,
+  getToolWorkedExample,
   publicIndustryTools,
 } from '../../data/industryTools';
 import { getIndustryToolsPageState } from '../../utils/industryToolsPage';
@@ -105,7 +106,7 @@ export function IndustryToolsPage({ pathname = '/tools', onOpenLegal, onSendMess
   const copy = toolsPageCopy[locale];
   const [forms, setForms] = useState(defaultIndustryToolForms);
   const isMissing = Boolean(slug && !selectedTool);
-  const isPausedTool = selectedTool?.id === 'bend-simulator';
+  const isPausedTool = selectedTool?.id === 'bend-simulator' || selectedTool?.seoEvidence?.indexable === false;
   const pageTitle = selectedTool ? selectedTool.seoTitle : copy.hubTitle;
   const pageDescription = selectedTool
     ? selectedTool.seoDescription
@@ -354,9 +355,57 @@ function ToolDetail({ tool, copy, locale, values, onChange, onOpenLegal, onSendM
             </div>
           </aside>
         </section>
+        <section className="mt-6">
+          <ToolEvidence tool={tool} locale={locale} />
+        </section>
       </main>
     </ToolPageShell>
   );
+}
+
+function ToolEvidence({ tool, locale }) {
+  const evidence = tool.seoEvidence;
+  const isCn = locale === 'zh-CN';
+  const copy = isCn
+    ? { formula: '公式', example: '示例结果', assumptions: '假设', limitations: '局限', safety: '安全边界', review: '工程师复核', references: '参考依据', useReview: '请使用上方“请 SAGEMRO AI 复核此结果”按钮，把当前计算结果交给工程师复核。' }
+    : { formula: 'Formula', example: 'Worked example', assumptions: 'Assumptions', limitations: 'Limitations', safety: 'Safety boundary', review: 'Engineer review', references: 'References', useReview: 'Use the “Ask SAGEMRO AI to review this result” control above to send the current calculator result for engineer review.' };
+  const example = useMemo(() => getToolWorkedExample(tool, locale), [locale, tool]);
+
+  if (!evidence?.formula || !example) return null;
+
+  return (
+    <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-elevated)] p-4">
+      <EvidenceBlock title={copy.formula}>
+        <p>{evidence.formula}</p>
+        <h3 className="mt-3 text-sm font-semibold text-[var(--color-text-primary)]">{copy.references}</h3>
+        <ul className="mt-1 list-disc space-y-1 pl-5">
+          {evidence.references.map((reference) => <li key={reference}>{reference}</li>)}
+        </ul>
+      </EvidenceBlock>
+      <EvidenceBlock title={copy.example}>
+        <p>{example.intro}</p>
+        <div className="mt-3 space-y-2">
+          {example.result.rows.map(([label, value]) => (
+            <div key={label} className="flex items-start justify-between gap-4 rounded-lg bg-[var(--color-surface)] px-3 py-2 text-sm">
+              <span>{label}</span><strong className="text-right text-[var(--color-text-primary)]">{value}</strong>
+            </div>
+          ))}
+        </div>
+      </EvidenceBlock>
+      <EvidenceBlock title={copy.assumptions}><EvidenceList items={evidence.assumptions} /></EvidenceBlock>
+      <EvidenceBlock title={copy.limitations}><EvidenceList items={evidence.limitations} /></EvidenceBlock>
+      <EvidenceBlock title={copy.safety}><p>{evidence.safetyBoundary}</p></EvidenceBlock>
+      <EvidenceBlock title={copy.review}><p>{evidence.reviewPrompt}</p><p className="mt-2">{copy.useReview}</p></EvidenceBlock>
+    </div>
+  );
+}
+
+function EvidenceBlock({ title, children }) {
+  return <section className="border-t border-[var(--color-border)] py-4 first:border-t-0 first:pt-0 text-sm leading-6 text-[var(--color-text-secondary)]"><h2 className="text-lg font-semibold text-[var(--color-text-primary)]">{title}</h2><div className="mt-2">{children}</div></section>;
+}
+
+function EvidenceList({ items }) {
+  return <ul className="list-disc space-y-1 pl-5">{items.map((item) => <li key={item}>{item}</li>)}</ul>;
 }
 
 function ToolLinkCard({ tool }) {

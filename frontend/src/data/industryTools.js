@@ -181,6 +181,19 @@ export const industryTools = [
       ['Why does theoretical weight differ from supplier weight?', 'Mills use tolerances and rounded profile geometry. Treat this result as a planning value and verify with the material certificate or supplier table.'],
       ['Can this calculate angle and channel steel?', 'Yes. Select Angle steel or Channel steel, then enter leg, flange, web, and thickness dimensions.'],
     ],
+    seoEvidence: {
+      indexable: true,
+      formula: 'Metal weight = cross-section area × length × density × quantity.',
+      workedExample: {
+        intro: 'This example uses the calculator’s returned values for one carbon-steel sheet.',
+        inputs: { material: 'carbon_steel', shape: 'sheet_plate', lengthMm: '3000', widthMm: '1500', thicknessMm: '6', quantity: '1' },
+      },
+      assumptions: ['The selected material density represents the supplied grade.', 'The entered dimensions describe the finished profile before coating or machining.', 'Length and quantity are entered in the same units used by the calculator.'],
+      limitations: ['Rolled corners and mill tolerances are not fully represented by nominal dimensions.', 'Coating, holes, cutouts, and supplier-specific profile geometry can change actual weight.'],
+      safetyBoundary: 'Use this theoretical weight only for planning; confirm lifting, machine loading, purchasing, and production decisions with verified material data.',
+      reviewPrompt: 'Ask an engineer to review the material certificate, actual profile, and handling or machine-capacity requirements.',
+      references: ['Calculator inputs: selected material density and profile dimensions.', 'Calculator output: theoretical weight returned by this tool.'],
+    },
   },
   {
     id: 'steel-price',
@@ -215,6 +228,19 @@ export const industryTools = [
       ['What matters most in laser cutting cost?', 'Cut length, cutting speed, pierce count, gas use, setup time, handling, and local hourly rate usually drive the estimate.'],
       ['Can this compare outsourcing and buying equipment?', 'It can support early comparison. For equipment investment, also check utilization, maintenance, financing, floor space, and operator capacity.'],
     ],
+    seoEvidence: {
+      indexable: true,
+      formula: 'Laser cutting cost = total machine time × hourly rate + assist-gas cost. The calculator combines machine and assist-gas hourly rates before applying total machine time.',
+      workedExample: {
+        intro: 'This example uses the calculator’s returned time and cost for a planning job.',
+        inputs: { cutLengthM: '120', cuttingSpeedMMin: '2.8', pierces: '80', pierceSeconds: '1.2', machineRateUsdHour: '55', gasRateUsdHour: '18', setupMinutes: '15' },
+      },
+      assumptions: ['Cut length and cutting speed represent the planned cutting path.', 'Pierce count and seconds per pierce represent the programmed operation.', 'Machine and assist-gas rates are hourly planning inputs.', 'Setup time is included in total machine time.'],
+      limitations: ['Nesting, handling, deburring, scrap, and local labor are outside this result.', 'Gas pressure, piercing strategy, and actual machine utilization can change cost.'],
+      safetyBoundary: 'Do not use this planning cost as a production release, purchase order, or machine operating instruction without a qualified review.',
+      reviewPrompt: 'Ask an engineer to review cycle time, material handling, gas setup, and the assumptions behind this quote.',
+      references: ['Calculator inputs: cut length, speed, pierces, time, and hourly rates.', 'Calculator output: time and cost returned by this tool.'],
+    },
   },
   {
     id: 'press-brake-tonnage',
@@ -232,6 +258,19 @@ export const industryTools = [
       ['What V die opening should I use?', 'A common starting point is about 8 times material thickness for mild steel, then adjust for radius, tooling, and material.'],
       ['When should an engineer review the bend?', 'Ask for review when the estimate is close to machine capacity, material is high strength, or the bend requires special tooling.'],
     ],
+    seoEvidence: {
+      indexable: true,
+      formula: 'Air-bend tonnage = existing estimateAirBendTonnage inputs and material/safety factors.',
+      workedExample: {
+        intro: 'This example uses the calculator’s returned tonnage and V-opening values for an air bend.',
+        inputs: { materialFactor: '1', thicknessMm: '6', bendLengthMm: '3000', vDieMm: '48', safetyFactor: '1.2' },
+      },
+      assumptions: ['The bend is an air-bending operation.', 'Material and safety factors represent the selected material and required margin.', 'Entered thickness, bend length, and V-die opening match the proposed setup.'],
+      limitations: ['The estimate does not verify actual tensile strength, tooling condition, or machine deflection.', 'Special tooling, coining, hemming, and part geometry can require a different assessment.'],
+      safetyBoundary: 'Do not operate or select a press brake from this estimate alone; confirm safe tooling, loading, guarding, and machine capacity before production.',
+      reviewPrompt: 'Ask an engineer to review the material certificate, tool set, machine rating, and safety margin before production.',
+      references: ['Calculator inputs passed to estimateAirBendTonnage.', 'Calculator output: required and safety-margin tonnage returned by this tool.'],
+    },
   },
   {
     id: 'gas-consumption',
@@ -266,6 +305,7 @@ export const industryTools = [
       ['Can I use this as the final machine parameter?', 'Use it as a rough range only. Final parameters should come from machine tests, OEM tables, and acceptable edge quality.'],
       ['Why does gas change the range?', 'Oxygen, nitrogen, and compressed air create different cutting behavior, edge quality, and heat input.'],
     ],
+    seoEvidence: { indexable: false },
   },
   {
     id: 'bend-allowance',
@@ -283,6 +323,19 @@ export const industryTools = [
       ['What K-factor should I use?', 'A common planning range is about 0.33 to 0.45 for air bending, but your shop standard or measured bend data should decide.'],
       ['Is 8x thickness always the right V opening?', 'It is a common starting point for mild steel. Radius, tonnage, tooling, and material may require a different opening.'],
     ],
+    seoEvidence: {
+      indexable: true,
+      formula: 'Bend allowance per bend = angle in radians × (inside radius + K-factor × thickness).',
+      workedExample: {
+        intro: 'This example uses the calculator’s returned allowance and flat-length reference.',
+        inputs: { thicknessMm: '3', insideRadiusMm: '3', bendAngleDeg: '90', kFactor: '0.38', bendCount: '2', flangeAMm: '100', flangeBMm: '80' },
+      },
+      assumptions: ['The entered angle is the planned bend angle.', 'Inside radius and K-factor represent the proposed material and tool combination.', 'Each bend uses the same thickness, radius, angle, and K-factor.'],
+      limitations: ['The result does not replace shop-calibrated bend tables or a production bend test.', 'Material strength, grain direction, tooling, and bend method can change the developed length.'],
+      safetyBoundary: 'Do not release a flat pattern or operate a press brake from this planning value alone; confirm the setup and safe operation before production.',
+      reviewPrompt: 'Ask an engineer to review the bend test data, tooling, material direction, and required tolerance.',
+      references: ['Calculator inputs: bend angle, inside radius, K-factor, thickness, count, and flange lengths.', 'Calculator output: bend allowance and flat-length reference returned by this tool.'],
+    },
   },
   {
     id: 'equipment-roi',
@@ -317,6 +370,7 @@ export const industryTools = [
       ['Can this replace a supplier sizing calculation?', 'No. Use it to prepare the discussion and identify obvious gaps before requesting formal sizing.'],
       ['Why does table area matter for dust collection?', 'Larger cutting areas and heavier dust loads usually require higher capture airflow and better duct planning.'],
     ],
+    seoEvidence: { indexable: false },
   },
   {
     id: 'bend-simulator',
@@ -336,7 +390,7 @@ export const industryTools = [
   },
 ];
 
-export const publicIndustryTools = industryTools.filter((tool) => tool.id !== 'bend-simulator');
+export const publicIndustryTools = industryTools.filter((tool) => tool.id !== 'bend-simulator' && tool.seoEvidence?.indexable !== false);
 
 const industryToolCn = {
   'metal-weight': {
@@ -352,6 +406,16 @@ const industryToolCn = {
       ['为什么理论重量和供应商重量会不同？', '钢厂公差、圆角和型材标准会造成差异。请把这里的结果作为规划参考，并以材质证明或供应商表格确认。'],
       ['可以计算角钢和槽钢吗？', '可以。选择角钢或槽钢后，输入边长、翼缘、腹板和厚度等尺寸即可估算。'],
     ],
+    seoEvidence: {
+      indexable: true,
+      formula: '材料重量 = 截面积 × 长度 × 密度 × 数量。',
+      workedExample: { intro: '此示例直接显示计算器对一张碳钢板返回的结果。', inputs: { material: 'carbon_steel', shape: 'sheet_plate', lengthMm: '3000', widthMm: '1500', thicknessMm: '6', quantity: '1' } },
+      assumptions: ['所选材料密度能代表实际牌号。', '输入尺寸描述未涂层、未加工前的成品型材。', '长度和数量使用计算器采用的相同单位。'],
+      limitations: ['轧制圆角和钢厂公差无法完全由名义尺寸表达。', '涂层、孔、切口和供应商型材几何会改变实际重量。'],
+      safetyBoundary: '理论重量仅用于规划；起吊、设备承载、采购和生产决定前应以已核实的材料数据确认。',
+      reviewPrompt: '请工程师复核材质证明、实际型材以及搬运或设备承载要求。',
+      references: ['计算器输入：所选材料密度和型材尺寸。', '计算器输出：本工具返回的理论重量。'],
+    },
   },
   'steel-price': {
     label: '钢材价格预算工具',
@@ -380,6 +444,16 @@ const industryToolCn = {
       ['激光切割成本主要受什么影响？', '通常由切割长度、切割速度、穿孔数量、气体使用、调机时间、搬运和本地小时费率共同决定。'],
       ['能比较外协和购买设备吗？', '可以作为早期比较参考。设备投资还需要考虑利用率、维护、融资、场地和操作人员能力。'],
     ],
+    seoEvidence: {
+      indexable: true,
+      formula: '激光切割成本 = 总机时 × 小时费率 + 辅助气体成本。计算器会先合并设备和辅助气体的小时费率。',
+      workedExample: { intro: '此示例直接显示计算器对一个规划工件返回的时间和成本。', inputs: { cutLengthM: '120', cuttingSpeedMMin: '2.8', pierces: '80', pierceSeconds: '1.2', machineRateUsdHour: '55', gasRateUsdHour: '18', setupMinutes: '15' } },
+      assumptions: ['切割长度和速度代表规划的切割路径。', '穿孔数量和每次穿孔秒数代表程序操作。', '设备与辅助气体费率是按小时输入的规划值。', '调机时间已计入总机时。'],
+      limitations: ['排版、搬运、去毛刺、废料和本地人工未包含在结果中。', '气体压力、穿孔策略和实际设备利用率会改变成本。'],
+      safetyBoundary: '未经合格人员复核，不得将此规划成本用作生产放行、采购订单或设备操作指令。',
+      reviewPrompt: '请工程师复核节拍、材料搬运、气体设置和报价假设。',
+      references: ['计算器输入：切割长度、速度、穿孔、时间和小时费率。', '计算器输出：本工具返回的时间和成本。'],
+    },
   },
   'press-brake-tonnage': {
     label: '折弯机吨位计算器',
@@ -394,6 +468,16 @@ const industryToolCn = {
       ['V 槽开口应该怎么选？', '低碳钢空气折弯常用板厚约 8 倍作为起点，再按半径、模具和材料调整。'],
       ['什么时候需要工程师复核？', '当估算值接近设备能力、材料强度较高，或需要特殊模具时，建议先复核。'],
     ],
+    seoEvidence: {
+      indexable: true,
+      formula: '空气折弯吨位 = 现有 estimateAirBendTonnage 的输入及材料/安全系数。',
+      workedExample: { intro: '此示例直接显示计算器对空气折弯返回的吨位和 V 槽开口。', inputs: { materialFactor: '1', thicknessMm: '6', bendLengthMm: '3000', vDieMm: '48', safetyFactor: '1.2' } },
+      assumptions: ['工艺为空气折弯。', '材料和安全系数代表所选材料及所需余量。', '输入的板厚、折弯长度和 V 槽开口与拟定设置一致。'],
+      limitations: ['估算不会验证实际抗拉强度、模具状态或设备挠度。', '特殊模具、压底、压平和零件几何可能需要不同评估。'],
+      safetyBoundary: '不得只按此估算操作或选择折弯机；生产前应确认模具、负载、防护和设备能力。',
+      reviewPrompt: '请工程师在生产前复核材质证明、模具组合、设备额定能力和安全余量。',
+      references: ['传入 estimateAirBendTonnage 的计算器输入。', '本工具返回的所需吨位和安全余量吨位。'],
+    },
   },
   'gas-consumption': {
     label: '辅助气体用量计算器',
@@ -436,6 +520,16 @@ const industryToolCn = {
       ['K 因子应该怎么选？', '空气折弯常用规划范围约 0.33 到 0.45，但应以车间标准或实测折弯数据为准。'],
       ['8 倍板厚一定是合适的 V 槽吗？', '它是低碳钢常见起点。半径、吨位、模具和材料可能要求不同开口。'],
     ],
+    seoEvidence: {
+      indexable: true,
+      formula: '每道折弯补偿 = 角度（弧度）×（内 R + K 因子 × 板厚）。',
+      workedExample: { intro: '此示例直接显示计算器返回的折弯补偿和展开长度参考。', inputs: { thicknessMm: '3', insideRadiusMm: '3', bendAngleDeg: '90', kFactor: '0.38', bendCount: '2', flangeAMm: '100', flangeBMm: '80' } },
+      assumptions: ['输入角度是计划的折弯角度。', '内 R 和 K 因子代表拟用材料和模具组合。', '每道折弯使用相同的板厚、半径、角度和 K 因子。'],
+      limitations: ['结果不能替代车间校准折弯表或生产前试折。', '材料强度、轧制方向、模具和折弯方法会改变展开长度。'],
+      safetyBoundary: '不得只按此规划值放行展开图或操作折弯机；生产前应确认设置和安全操作条件。',
+      reviewPrompt: '请工程师复核试折数据、模具、材料方向和所需公差。',
+      references: ['计算器输入：角度、内 R、K 因子、板厚、次数和边长。', '计算器输出：本工具返回的折弯补偿和展开长度参考。'],
+    },
   },
   'equipment-roi': {
     label: '设备投资回报计算器',
@@ -1017,6 +1111,16 @@ export function calculateIndustryToolResult(toolId, values, locale = 'en') {
   else if (toolId === 'auxiliary-sizing') result = calculateAuxiliarySizing(values, locale);
   else result = calculateMetalWeight(values, locale);
   return localizeCalculationResult(toolId, result, locale);
+}
+
+export function getToolWorkedExample(tool, locale = 'en') {
+  const workedExample = tool?.seoEvidence?.workedExample;
+  if (!workedExample?.inputs) return null;
+
+  return {
+    ...workedExample,
+    result: calculateIndustryToolResult(tool.id, workedExample.inputs, locale),
+  };
 }
 
 export function buildIndustryToolReviewPrompt(tool, result) {

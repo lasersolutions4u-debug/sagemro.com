@@ -28,12 +28,24 @@ test('manifest lists only indexable customer routes in both locales', () => {
   for (const locale of ['en', 'zh-CN']) {
     const routes = getPublicSeoRoutes(locale);
     assert.equal(routes.some((route) => route.path === '/tools/bend-simulator'), false);
+    assert.equal(routes.some((route) => route.path === '/tools/laser-cutting-speed-reference'), false);
+    assert.equal(routes.some((route) => route.path === '/tools/laser-chiller-dust-collector-sizing-checklist'), false);
     assert.equal(routes.some((route) => route.path === '/engineer'), false);
     assert.equal(new Set(routes.map((route) => route.path)).size, routes.length);
     assert.equal(routes.every((route) => route.robots === 'index,follow'), true);
     assert.equal(routes.every((route) => /^https:\/\/sagemro\.(com|cn)/.test(route.canonical)), true);
     assert.equal(routes.every((route) => route.alternates.en && route.alternates['zh-CN']), true);
   }
+});
+
+test('indexable tool routes include calculator-derived evidence in the static SEO body', () => {
+  const route = getPublicSeoRoute('/tools/metal-weight-calculator', 'en');
+
+  assert.match(route.body.sections[0].body, /Metal weight = cross-section area × length × density × quantity/);
+  assert.match(route.body.sections[1].body, /kg/);
+  assert.match(route.body.sections[2].body, /selected material density/i);
+  assert.match(route.body.sections[3].body, /not fully/i);
+  assert.match(route.body.sections[4].body, /production|purchasing/i);
 });
 
 test('manifest body mirrors visible homepage and tool headings', () => {

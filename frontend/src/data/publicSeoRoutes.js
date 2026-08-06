@@ -1,4 +1,4 @@
-import { getLocalizedTool, publicIndustryTools } from './industryTools.js';
+import { getLocalizedTool, getToolWorkedExample, publicIndustryTools } from './industryTools.js';
 import { getLocalizedInsights } from './insights.js';
 import { welcomePageCopy } from './welcomePageCopy.js';
 
@@ -79,6 +79,26 @@ function breadcrumb(routeValue) {
   };
 }
 
+function toolEvidenceSections(tool, locale) {
+  const evidence = tool.seoEvidence;
+  const example = getToolWorkedExample(tool, locale);
+  if (!evidence?.formula || !example) return [];
+
+  const headings = locale === 'zh-CN'
+    ? { formula: '公式', example: '示例结果', assumptions: '假设', limitations: '局限', safety: '安全边界', review: '工程师复核', references: '参考依据' }
+    : { formula: 'Formula', example: 'Worked example', assumptions: 'Assumptions', limitations: 'Limitations', safety: 'Safety boundary', review: 'Engineer review', references: 'References' };
+  const result = example.result.rows.map(([label, value]) => `${label}: ${value}`).join('; ');
+
+  return [
+    { heading: headings.formula, body: `${evidence.formula} ${headings.references}: ${evidence.references.join(' ')}` },
+    { heading: headings.example, body: `${example.intro} ${result}` },
+    { heading: headings.assumptions, body: evidence.assumptions.join(' ') },
+    { heading: headings.limitations, body: evidence.limitations.join(' ') },
+    { heading: headings.safety, body: evidence.safetyBoundary },
+    { heading: headings.review, body: evidence.reviewPrompt },
+  ];
+}
+
 function buildRoutes(locale) {
   const copy = pages[locale] || pages.en;
   const welcome = welcomePageCopy[locale === 'zh-CN' ? 'zh' : 'en'];
@@ -109,7 +129,7 @@ function buildRoutes(locale) {
     title: tool.seoTitle,
     description: tool.seoDescription,
     modified: tool.updatedAt,
-    body: { h1: tool.seoTitle, paragraphs: [tool.description, tool.guideBody], guideTitle: tool.guideTitle, faqs: tool.faqs },
+    body: { h1: tool.seoTitle, paragraphs: [tool.description, tool.guideBody], guideTitle: tool.guideTitle, sections: toolEvidenceSections(tool, locale), faqs: tool.faqs },
     structuredData: {
       '@type': 'WebApplication', name: tool.label, description: tool.seoDescription,
       applicationCategory: 'BusinessApplication', operatingSystem: 'Web',
