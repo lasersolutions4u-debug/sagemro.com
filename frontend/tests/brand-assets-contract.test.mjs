@@ -26,7 +26,7 @@ function extractPlaceholderExpression(source) {
   return match[1];
 }
 
-test('customer, engineer, admin, and browser icons use the exact supplied SAGEMRO logo image', () => {
+test('customer and browser icons use the compact SAGEMRO SVG mark', () => {
   const expectedAssets = [
     'frontend/public/sagemro-logo.png',
     'admin/public/sagemro-logo.png',
@@ -36,12 +36,12 @@ test('customer, engineer, admin, and browser icons use the exact supplied SAGEMR
     assert.equal(existsSync(path.join(root, assetPath)), true, `${assetPath} should exist`);
   }
 
-  assert.match(read('frontend/src/components/common/BrandMark.jsx'), /sagemro-logo\.png/);
-  assert.doesNotMatch(read('frontend/src/components/common/BrandMark.jsx'), /sagemro-brand-mark\.svg/);
+  assert.match(read('frontend/src/components/common/BrandMark.jsx'), /sagemro-brand-mark\.svg/);
+  assert.doesNotMatch(read('frontend/src/components/common/BrandMark.jsx'), /sagemro-logo\.png/);
   assert.match(read('admin/src/components/BrandMark.jsx'), /sagemro-logo\.png/);
   assert.doesNotMatch(read('admin/src/components/BrandMark.jsx'), /sagemro-brand-mark\.svg/);
 
-  assert.match(read('frontend/index.html'), /href="\/sagemro-logo\.png"/);
+  assert.match(read('frontend/index.html'), /href="\/sagemro-brand-mark\.svg"/);
   assert.match(read('admin/index.html'), /href="\/sagemro-logo\.png"/);
 });
 

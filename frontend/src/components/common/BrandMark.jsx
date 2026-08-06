@@ -5,7 +5,7 @@ export function BrandMark({
   return (
     <img
       className={className}
-      src="/sagemro-logo.png"
+      src="/sagemro-brand-mark.svg"
       alt={title}
       loading="eager"
       decoding="async"
