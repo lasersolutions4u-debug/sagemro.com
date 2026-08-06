@@ -4,6 +4,25 @@ import test from 'node:test';
 import { getLocalizedTool, publicIndustryTools } from '../src/data/industryTools.js';
 import { getPublicSeoRoute, getPublicSeoRoutes } from '../src/data/publicSeoRoutes.js';
 import { welcomePageCopy } from '../src/data/welcomePageCopy.js';
+import {
+  escapeHtml,
+  renderPublicDocument,
+  renderRedirects,
+  renderRobots,
+  renderSitemap,
+} from '../scripts/publicPageRenderer.mjs';
+
+const TEMPLATE = `<!doctype html>
+<html lang="en">
+  <head>
+    <meta name="description" content="Default description" />
+    <meta name="robots" content="index, follow" />
+    <title>Default title</title>
+  </head>
+  <body>
+    <div id="root"></div>
+  </body>
+</html>`;
 
 test('manifest lists only indexable customer routes in both locales', () => {
   for (const locale of ['en', 'zh-CN']) {
@@ -34,4 +53,58 @@ test('manifest body mirrors visible homepage and tool headings', () => {
       assert.equal(route.body.h1, getLocalizedTool(tool, locale).seoTitle);
     }
   }
+});
+
+test('rendered tool HTML contains crawlable content and safe JSON-LD', () => {
+  const route = getPublicSeoRoute('/tools/press-brake-tonnage-calculator', 'en');
+  const html = renderPublicDocument(TEMPLATE, route, 'en');
+
+  assert.match(html, /<html lang="en">/);
+  assert.match(html, /<title>Press Brake Tonnage Calculator \| SAGEMRO<\/title>/);
+  assert.match(html, /rel="canonical" href="https:\/\/sagemro\.com\/tools\/press-brake-tonnage-calculator"/);
+  assert.match(html, /hreflang="zh-CN"/);
+  assert.match(html, /<h1>Press Brake Tonnage Calculator<\/h1>/);
+  assert.match(html, /application\/ld\+json/);
+  assert.doesNotMatch(html, /<script[^>]*>.*<\/script><\/script>/s);
+});
+
+test('renderer escapes page content and protects JSON-LD script boundaries', () => {
+  const route = {
+    ...getPublicSeoRoute('/tools/press-brake-tonnage-calculator', 'en'),
+    title: 'Title <& "quote"',
+    description: 'Description <& "quote"',
+    body: { h1: '</script><script>alert(1)</script>', paragraphs: ['Intro <& "quote"'], sections: ['Body <& "quote"'] },
+    structuredData: { '@type': 'WebApplication', name: '</script><script>alert(1)</script>' },
+  };
+  const html = renderPublicDocument(TEMPLATE, route, 'en');
+
+  assert.match(html, /Title &lt;&amp; &quot;quote&quot;/);
+  assert.match(html, /&lt;\/script&gt;&lt;script&gt;alert\(1\)&lt;\/script&gt;/);
+  assert.match(html, /\\u003c\/script>\\u003cscript>alert\(1\)\\u003c\/script>/);
+  assert.doesNotMatch(html, /<script>alert\(1\)<\/script>/);
+});
+
+test('renderer serializes manifest routes as sitemap, redirects, and robots', () => {
+  const routes = getPublicSeoRoutes('en');
+  const sitemap = renderSitemap(routes);
+  const redirects = renderRedirects(routes);
+  const robots = renderRobots('en');
+
+  assert.match(sitemap, /<urlset[^>]+xmlns:xhtml=/);
+  assert.match(sitemap, /<loc>https:\/\/sagemro\.com\/tools<\/loc>/);
+  assert.match(sitemap, /hreflang="zh-CN" href="https:\/\/sagemro\.cn\/tools"/);
+  assert.match(redirects, /^\/tools\/  \/tools  301$/m);
+  assert.match(robots, /User-agent: \*/);
+  assert.match(robots, /Sitemap: https:\/\/sagemro\.com\/sitemap\.xml/);
+  assert.equal(escapeHtml(`<&>"'`), '&lt;&amp;&gt;&quot;&#39;');
+});
+
+test('renderer includes manifest FAQ and insight section copy in the static shell', () => {
+  const tool = renderPublicDocument(TEMPLATE, getPublicSeoRoute('/tools/press-brake-tonnage-calculator', 'en'), 'en');
+  const insight = renderPublicDocument(TEMPLATE, getPublicSeoRoute('/insights/laser-cutting-cost-drivers', 'en'), 'en');
+
+  assert.match(tool, /What V die opening should I use\?/);
+  assert.match(tool, /A common starting point is about 8 times material thickness/);
+  assert.match(insight, /<h2>Start with machine time<\/h2>/);
+  assert.match(insight, /Cut length and cutting speed create the base cutting time/);
 });
