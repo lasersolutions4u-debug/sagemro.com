@@ -108,3 +108,22 @@ test('renderer includes manifest FAQ and insight section copy in the static shel
   assert.match(insight, /<h2>Start with machine time<\/h2>/);
   assert.match(insight, /Cut length and cutting speed create the base cutting time/);
 });
+
+test('hub JSON-LD lists the locale manifest child canonical URLs', () => {
+  for (const locale of ['en', 'zh-CN']) {
+    const routes = getPublicSeoRoutes(locale);
+    for (const [hubPath, childPath] of [['/tools', '/tools/'], ['/insights', '/insights/']]) {
+      const hub = routes.find((route) => route.path === hubPath);
+      const expectedUrls = routes
+        .filter((route) => route.path.startsWith(childPath))
+        .map((route) => route.canonical);
+      const json = renderPublicDocument(TEMPLATE, hub, locale)
+        .match(/<script type="application\/ld\+json">(.*?)<\/script>/)?.[1];
+      const schema = JSON.parse(json);
+      const actualUrls = schema['@graph'][0].mainEntity.itemListElement.map((item) => item.url);
+
+      assert.deepEqual(hub.children?.map((child) => child.canonical), expectedUrls);
+      assert.deepEqual(actualUrls, expectedUrls);
+    }
+  }
+});

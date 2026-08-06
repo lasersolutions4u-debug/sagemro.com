@@ -90,6 +90,7 @@ function buildRoutes(locale) {
     title: content.title,
     description: content.description,
     modified: RELEASE_DATE,
+    children,
     body: { h1: content.h1, paragraphs: content.paragraphs, list: children.map((child) => child.label || child.title) },
     structuredData: { '@type': 'CollectionPage', name: content.title, description: content.description },
   });
@@ -129,8 +130,8 @@ function buildRoutes(locale) {
       image: `${HOSTS[locale]}/sagemro-logo.png`, mainEntityOfPage: `${HOSTS[locale]}/insights/${insight.slug}`,
     },
   }));
-  const toolsHub = collection('/tools', 'tools-hub', copy.tools, tools);
-  const insightsHub = collection('/insights', 'insights-hub', copy.insights, insights);
+  const toolsHub = collection('/tools', 'tools-hub', copy.tools, toolRoutes);
+  const insightsHub = collection('/insights', 'insights-hub', copy.insights, insightRoutes);
   const routes = [home, toolsHub, ...toolRoutes, insightsHub, ...insightRoutes];
 
   return routes.map((routeValue) => routeValue.path === '/' ? routeValue : {
