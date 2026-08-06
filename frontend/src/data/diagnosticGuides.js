@@ -145,7 +145,7 @@ const DIAGNOSTIC_GUIDES = {
     }),
     guide({
       slug: 'fiber-laser-burr-and-dross',
-      status: 'published',
+      status: 'draft',
       category: 'laser-cutting',
       title: 'Fiber laser burr and dross troubleshooting',
       description: 'A diagnostic-order review of visible burr or attached dross on fiber-laser-cut edges.',
@@ -163,7 +163,7 @@ const DIAGNOSTIC_GUIDES = {
     }),
     guide({
       slug: 'laser-chiller-alarm-troubleshooting',
-      status: 'published',
+      status: 'draft',
       category: 'laser-cutting',
       title: 'Laser chiller alarm troubleshooting',
       description: 'A safe external review of laser-chiller alarms before model-specific refrigeration or electrical service.',
@@ -199,7 +199,7 @@ const DIAGNOSTIC_GUIDES = {
     }),
     guide({
       slug: 'press-brake-angle-inaccuracy',
-      status: 'published',
+      status: 'draft',
       category: 'press-brake',
       title: 'Press brake angle inaccuracy troubleshooting',
       description: 'A diagnostic-order review when a measured bend angle differs from the intended result.',
@@ -217,7 +217,7 @@ const DIAGNOSTIC_GUIDES = {
     }),
     guide({
       slug: 'press-brake-angle-variation',
-      status: 'published',
+      status: 'draft',
       category: 'press-brake',
       title: 'Uneven bend angle across the part',
       description: 'A structured review when the bend angle varies along the length of a formed part.',
@@ -235,7 +235,7 @@ const DIAGNOSTIC_GUIDES = {
     }),
     guide({
       slug: 'press-brake-low-hydraulic-pressure',
-      status: 'published',
+      status: 'draft',
       category: 'press-brake',
       title: 'Press brake low hydraulic pressure checks',
       description: 'A safe evidence-collection sequence for a press brake reporting or behaving like hydraulic force is unavailable.',
@@ -303,7 +303,7 @@ const DIAGNOSTIC_GUIDES = {
       references: [TRUMPF_TECHNICAL_SERVICE, OSHA_LASER_SAFETY, OSHA_LOCKOUT],
     }),
     guide({
-      slug: 'fiber-laser-burr-and-dross', status: 'published', category: 'laser-cutting', title: '激光切割毛刺与挂渣排查',
+      slug: 'fiber-laser-burr-and-dross', status: 'draft', category: 'laser-cutting', title: '激光切割毛刺与挂渣排查',
       description: '按诊断顺序检查光纤激光切边上可见的毛刺或附着挂渣。',
       directAnswer: '毛刺或挂渣是切边观察现象，不是已经完成的诊断。先核对材料和程序，再检查可接近的喷嘴与光学状态，最后提交参数评估。',
       safety: ZH_SAFETY,
@@ -316,7 +316,7 @@ const DIAGNOSTIC_GUIDES = {
       references: [PRECITEC_OPTICS, BYSTRONIC_CUT_QUALITY, OSHA_LASER_SAFETY, OSHA_LOCKOUT],
     }),
     guide({
-      slug: 'laser-chiller-alarm-troubleshooting', status: 'published', category: 'laser-cutting', title: '激光冷水机报警排查',
+      slug: 'laser-chiller-alarm-troubleshooting', status: 'draft', category: 'laser-cutting', title: '激光冷水机报警排查',
       description: '在针对具体机型的制冷或电气服务前，对冷水机报警进行安全的外部检查。',
       directAnswer: '冷水机报警是控制器报告的现象，不是已经完成的诊断。升级前应记录完整信息、冷却液状态、通风和外部泄漏。',
       safety: ZH_SAFETY,
@@ -342,7 +342,7 @@ const DIAGNOSTIC_GUIDES = {
       references: [PRECITEC_OPTICS, OSHA_LASER_SAFETY, OSHA_LOCKOUT],
     }),
     guide({
-      slug: 'press-brake-angle-inaccuracy', status: 'published', category: 'press-brake', title: '折弯角度不准怎么排查',
+      slug: 'press-brake-angle-inaccuracy', status: 'draft', category: 'press-brake', title: '折弯角度不准怎么排查',
       description: '当实测折弯角度与目标结果不符时，按诊断顺序核对。',
       directAnswer: '折弯角度不准是测量到的现象，不是已经完成的诊断。任何修正或校准前，先确认工件、程序、模具和对中证据。',
       safety: ZH_SAFETY,
@@ -355,7 +355,7 @@ const DIAGNOSTIC_GUIDES = {
       references: [WILA_ALIGNMENT, DELEM_CONTROL, OSHA_PRESS_BRAKE_GUARDING, OSHA_LOCKOUT],
     }),
     guide({
-      slug: 'press-brake-angle-variation', status: 'published', category: 'press-brake', title: '折弯角度左右不一致怎么排查',
+      slug: 'press-brake-angle-variation', status: 'draft', category: 'press-brake', title: '折弯角度左右不一致怎么排查',
       description: '当成形件沿折弯长度方向的角度不一致时进行结构化检查。',
       directAnswer: '工件不同位置角度不一致是观察到的分布，不是已经完成的诊断。先记录分布，再依次检查模具对中和挠度补偿背景。',
       safety: ZH_SAFETY,
@@ -368,7 +368,7 @@ const DIAGNOSTIC_GUIDES = {
       references: [WILA_CROWNING, WILA_ALIGNMENT, DELEM_CONTROL, OSHA_PRESS_BRAKE_GUARDING, OSHA_LOCKOUT],
     }),
     guide({
-      slug: 'press-brake-low-hydraulic-pressure', status: 'published', category: 'press-brake', title: '折弯机液压压力不足检查',
+      slug: 'press-brake-low-hydraulic-pressure', status: 'draft', category: 'press-brake', title: '折弯机液压压力不足检查',
       description: '当折弯机报告液压力不足或表现出推力不足时，安全收集诊断证据。',
       directAnswer: '低压显示或运动无力是观察现象，不是已经完成的诊断。液压维修前应先收集外部液位、温度、泄漏和事件证据。',
       safety: ZH_SAFETY,

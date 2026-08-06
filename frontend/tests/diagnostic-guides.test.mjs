@@ -17,6 +17,15 @@ const expectedTopics = [
   ['press-brake-maintenance-checklist', 'Press brake maintenance checklist', '折弯机维护保养检查表'],
 ];
 
+const expectedPublishedSlugs = [
+  'laser-protective-lens-burning',
+  'laser-cutting-machine-maintenance-checklist',
+];
+
+const expectedDraftSlugs = expectedTopics
+  .map(([slug]) => slug)
+  .filter((slug) => !expectedPublishedSlugs.includes(slug));
+
 const prohibitedClaims = /fault code|故障代码|\bmost (?:common|likely)\b|最常见|排名|frequency|频率|OEM authorization|authorized (?:by|OEM)|授权|coverage|覆盖范围|certified|认证|case study|案例|success rate|成功率/i;
 
 function publicCopy(guide) {
@@ -103,7 +112,8 @@ test('drafts are omitted by default and never appear in the current sitemap', as
     const visibleSet = getDiagnosticGuides(locale);
     const drafts = completeSet.filter((guide) => guide.status === 'draft');
 
-    assert.ok(drafts.length > 0, 'the evidence gate should retain unsupported topics as drafts');
+    assert.deepEqual(visibleSet.map((guide) => guide.slug), expectedPublishedSlugs);
+    assert.deepEqual(drafts.map((guide) => guide.slug), expectedDraftSlugs);
     assert.deepEqual(visibleSet, completeSet.filter((guide) => guide.status === 'published'));
     drafts.forEach((draft) => {
       assert.equal(getDiagnosticGuide(draft.slug, locale), null);
