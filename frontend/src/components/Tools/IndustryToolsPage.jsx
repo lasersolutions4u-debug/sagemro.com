@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
 import {
   ArrowLeft,
   Calculator,
@@ -14,7 +14,6 @@ import {
 import { BrandMark } from '../common/BrandMark';
 import { Footer } from '../common/Footer';
 import { NotFoundPage } from '../common/NotFoundPage';
-import { BendSimulatorPage } from './BendSimulatorPage';
 import { IndustryToolCalculator } from './IndustryToolCalculator';
 import {
   defaultIndustryToolForms,
@@ -26,6 +25,8 @@ import {
 import { getIndustryToolsPageState } from '../../utils/industryToolsPage';
 import { isCnLocale } from '../../utils/locale';
 import { setSeoMetadata } from '../../utils/seo';
+
+const BendSimulatorPage = lazy(() => import('./BendSimulatorPage').then(m => ({ default: m.BendSimulatorPage })));
 
 const toolIcons = {
   'metal-weight': Scale,
@@ -129,7 +130,11 @@ export function IndustryToolsPage({ pathname = '/tools', onOpenLegal, onSendMess
   }
 
   if (page === 'bend-simulator') {
-    return <BendSimulatorPage tool={selectedTool} copy={copy} locale={locale} onOpenLegal={onOpenLegal} />;
+    return (
+      <Suspense fallback={null}>
+        <BendSimulatorPage tool={selectedTool} copy={copy} locale={locale} onOpenLegal={onOpenLegal} />
+      </Suspense>
+    );
   }
 
   return (
