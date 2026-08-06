@@ -168,6 +168,7 @@ export const industryTools = [
   {
     id: 'metal-weight',
     slug: 'metal-weight-calculator',
+    updatedAt: '2026-08-06',
     label: 'Metal Weight Calculator',
     shortLabel: 'Metal Weight',
     description: 'Estimate sheet, plate, tube, angle, channel, beam, and bar weight from material density and dimensions.',
@@ -184,6 +185,7 @@ export const industryTools = [
   {
     id: 'steel-price',
     slug: 'steel-price-watch',
+    updatedAt: '2026-08-06',
     label: 'Steel Price Watch',
     shortLabel: 'Steel Price',
     description: 'Estimate material budget from profile weight, material reference price, and market references.',
@@ -200,6 +202,7 @@ export const industryTools = [
   {
     id: 'laser-cost',
     slug: 'laser-cutting-cost-calculator',
+    updatedAt: '2026-08-06',
     label: 'Laser Cutting Cost Calculator',
     shortLabel: 'Laser Cost',
     description: 'Estimate cutting cost from cut length, pierces, machine rate, gas, and setup time.',
@@ -216,6 +219,7 @@ export const industryTools = [
   {
     id: 'press-brake-tonnage',
     slug: 'press-brake-tonnage-calculator',
+    updatedAt: '2026-08-06',
     label: 'Press Brake Tonnage Calculator',
     shortLabel: 'Brake Tonnage',
     description: 'Estimate required press brake tonnage from material, thickness, length, and V die.',
@@ -232,6 +236,7 @@ export const industryTools = [
   {
     id: 'gas-consumption',
     slug: 'laser-assist-gas-consumption-calculator',
+    updatedAt: '2026-08-06',
     label: 'Assist Gas Consumption Calculator',
     shortLabel: 'Gas Use',
     description: 'Estimate nitrogen, oxygen, or compressed air consumption from nozzle, pressure, cutting time, and duty cycle.',
@@ -248,6 +253,7 @@ export const industryTools = [
   {
     id: 'cutting-speed',
     slug: 'laser-cutting-speed-reference',
+    updatedAt: '2026-08-06',
     label: 'Laser Cutting Speed Reference',
     shortLabel: 'Cut Speed',
     description: 'Compare rough speed ranges by material, thickness, assist gas, and laser power for planning checks.',
@@ -264,6 +270,7 @@ export const industryTools = [
   {
     id: 'bend-allowance',
     slug: 'press-brake-v-die-bend-allowance-helper',
+    updatedAt: '2026-08-06',
     label: 'V-die and Bend Allowance Helper',
     shortLabel: 'Bend Allowance',
     description: 'Connect V opening, inside radius, bend angle, K-factor, and flat pattern assumptions before production.',
@@ -280,6 +287,7 @@ export const industryTools = [
   {
     id: 'equipment-roi',
     slug: 'laser-cutting-machine-roi-calculator',
+    updatedAt: '2026-08-06',
     label: 'Equipment ROI Calculator',
     shortLabel: 'Equipment ROI',
     description: 'Compare outsourcing, in-house operating cost, added revenue, upfront cost, and simple payback.',
@@ -296,6 +304,7 @@ export const industryTools = [
   {
     id: 'auxiliary-sizing',
     slug: 'laser-chiller-dust-collector-sizing-checklist',
+    updatedAt: '2026-08-06',
     label: 'Chiller and Dust Collector Sizing',
     shortLabel: 'Auxiliary Sizing',
     description: 'Estimate chiller capacity and dust collector airflow reference from laser power, table size, hours, and dust load.',
