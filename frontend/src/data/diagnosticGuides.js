@@ -1,6 +1,13 @@
 const TECHNICAL_TEAM_ID = 'sagemro-technical-service-team';
 const REVIEW_DATE = '2026-08-06';
 
+const RELATED_GUIDES_BY_SERVICE = {
+  'laser-cutting-machine-repair': ['laser-protective-lens-burning', 'laser-cutting-machine-maintenance-checklist'],
+  'press-brake-repair': [],
+  'remote-diagnostics': [],
+  'preventive-maintenance': ['laser-protective-lens-burning', 'laser-cutting-machine-maintenance-checklist'],
+};
+
 const OSHA_LOCKOUT = {
   title: 'Lockout/Tagout: Control of Hazardous Energy Lockout-Tagout',
   publisher: 'Occupational Safety and Health Administration',
@@ -433,4 +440,10 @@ export function getDiagnosticGuide(slug, locale) {
   const guideValue = (DIAGNOSTIC_GUIDES[locale] ?? DIAGNOSTIC_GUIDES.en)
     .find((value) => value.slug === slug && value.status === 'published');
   return guideValue ? cloneGuide(guideValue) : null;
+}
+
+export function getRelatedDiagnosticGuidesForService(serviceSlug, locale) {
+  const relatedSlugs = RELATED_GUIDES_BY_SERVICE[serviceSlug] ?? [];
+  const publishedGuides = new Map(getDiagnosticGuides(locale).map((guideValue) => [guideValue.slug, guideValue]));
+  return relatedSlugs.map((slug) => publishedGuides.get(slug)).filter(Boolean);
 }

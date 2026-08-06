@@ -5,6 +5,7 @@ import { Footer } from '../common/Footer';
 import { NotFoundPage } from '../common/NotFoundPage';
 import { getLocalizedInsights, insights } from '../../data/insights';
 import { getDiagnosticGuide } from '../../data/diagnosticGuides';
+import { getPublicSeoRoute } from '../../data/publicSeoRoutes';
 import { DiagnosticGuide } from './DiagnosticGuide';
 import { isCnLocale } from '../../utils/locale';
 import { setSeoMetadata } from '../../utils/seo';
@@ -23,20 +24,14 @@ export function InsightsPage({ pathname = '/insights', onOpenLegal, onStartDiagn
       : 'Practical notes, calculators, and decision guides for laser and metal forming equipment.';
     const canonicalHost = locale === 'zh-CN' ? 'https://sagemro.cn' : 'https://sagemro.com';
     const isMissing = Boolean(slug && !content);
+    const publicRoute = getPublicSeoRoute(content ? `/insights/${content.slug}` : '/insights', locale);
     setSeoMetadata({
       title: isMissing ? 'Insight Not Found | SAGEMRO' : `${title} | SAGEMRO`,
       description: isMissing ? 'The requested SAGEMRO insight could not be found.' : description,
       canonical: `${canonicalHost}${content ? `/insights/${content.slug}` : slug ? `/insights/${slug}` : '/insights'}`,
       lang: locale,
       robots: isMissing ? 'noindex,nofollow,noarchive' : 'index,follow',
-      structuredData: content ? {
-        '@context': 'https://schema.org',
-        '@type': 'Article',
-        headline: content.title,
-        description: content.description,
-        url: `${canonicalHost}/insights/${content.slug}`,
-        publisher: { '@type': 'Organization', name: 'SAGEMRO' },
-      } : null,
+      structuredData: isMissing ? null : publicRoute?.structuredData,
     });
   }, [guide, insight, locale, slug]);
 

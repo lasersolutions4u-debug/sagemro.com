@@ -2,7 +2,11 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { getLocalizedTool, publicIndustryTools } from '../src/data/industryTools.js';
+import { getDiagnosticGuides } from '../src/data/diagnosticGuides.js';
 import { getDirectAccessNoindexToolRoutes, getPublicSeoRoute, getPublicSeoRoutes } from '../src/data/publicSeoRoutes.js';
+import { getServicePages } from '../src/data/servicePages.js';
+import { getTechnicalAuthor } from '../src/data/technicalAuthors.js';
+import { getTechnicalReviewPolicy } from '../src/data/technicalReviewPolicy.js';
 import { welcomePageCopy } from '../src/data/welcomePageCopy.js';
 import {
   escapeHtml,
@@ -171,4 +175,131 @@ test('hub JSON-LD lists the locale manifest child canonical URLs', () => {
       assert.deepEqual(actualUrls, expectedUrls);
     }
   }
+});
+
+function schemaFromHtml(html) {
+  const json = html.match(/<script type="application\/ld\+json">(.*?)<\/script>/)?.[1];
+  return JSON.parse(json);
+}
+
+function countSchemaType(value, type) {
+  if (Array.isArray(value)) return value.reduce((count, item) => count + countSchemaType(item, type), 0);
+  if (!value || typeof value !== 'object') return 0;
+  return (value['@type'] === type ? 1 : 0)
+    + Object.values(value).reduce((count, item) => count + countSchemaType(item, type), 0);
+}
+
+test('manifest publishes services, evidence-approved guides, and technical review in both locales', () => {
+  for (const locale of ['en', 'zh-CN']) {
+    const host = locale === 'zh-CN' ? 'https://sagemro.cn' : 'https://sagemro.com';
+    const routes = getPublicSeoRoutes(locale);
+    const servicePaths = getServicePages(locale).map((page) => `/services/${page.slug}`);
+    const guidePaths = getDiagnosticGuides(locale).map((guide) => `/insights/${guide.slug}`);
+    const draftPaths = getDiagnosticGuides(locale, { publishedOnly: false })
+      .filter((guide) => guide.status === 'draft')
+      .map((guide) => `/insights/${guide.slug}`);
+
+    for (const path of ['/services', ...servicePaths, ...guidePaths, '/about/technical-review']) {
+      const route = routes.find((candidate) => candidate.path === path);
+      assert.ok(route, `${locale} manifest should include ${path}`);
+      assert.equal(route.canonical, `${host}${path}`);
+      assert.equal(route.alternates.en, `https://sagemro.com${path}`);
+      assert.equal(route.alternates['zh-CN'], `https://sagemro.cn${path}`);
+      assert.ok(route.body.h1.length > 0);
+    }
+
+    draftPaths.forEach((path) => assert.equal(routes.some((route) => route.path === path), false));
+  }
+});
+
+test('manifest internal links never expose draft or irrelevant diagnostic guides', () => {
+  const expectedRelations = {
+    'laser-cutting-machine-repair': ['laser-protective-lens-burning', 'laser-cutting-machine-maintenance-checklist'],
+    'press-brake-repair': [],
+    'remote-diagnostics': [],
+    'preventive-maintenance': ['laser-protective-lens-burning', 'laser-cutting-machine-maintenance-checklist'],
+  };
+
+  for (const locale of ['en', 'zh-CN']) {
+    for (const service of getServicePages(locale)) {
+      const route = getPublicSeoRoute(`/services/${service.slug}`, locale);
+      assert.deepEqual(route.body.links.map((link) => link.href), expectedRelations[service.slug].map((slug) => `/insights/${slug}`));
+      if (expectedRelations[service.slug].length === 0) assert.ok(route.body.emptyState.length > 0);
+    }
+
+    for (const guide of getDiagnosticGuides(locale)) {
+      const route = getPublicSeoRoute(`/insights/${guide.slug}`, locale);
+      assert.deepEqual(route.body.links.filter((link) => link.kind === 'service').map((link) => link.href), [`/services/${guide.relatedServiceSlug}`]);
+      assert.deepEqual(route.body.links.filter((link) => ['author', 'reviewer'].includes(link.kind)).map((link) => link.href), [
+        '/about/technical-review',
+        '/about/technical-review',
+      ]);
+    }
+  }
+});
+
+test('technical review policy covers the trust framework without unsupported claims', () => {
+  const prohibited = /independent from manufacturers|OEM[- ]authorized|authorized by (?:an )?OEM|guaranteed accuracy|complete (?:equipment )?coverage/i;
+
+  for (const locale of ['en', 'zh-CN']) {
+    const policy = getTechnicalReviewPolicy(locale);
+    const copy = [policy.title, policy.description, policy.intro, ...policy.sections.map((section) => `${section.heading} ${section.body}`), policy.errorReporting].join(' ');
+
+    assert.match(copy, locale === 'zh-CN' ? /技术服务团队/ : /Technical Service Team/);
+    assert.match(copy, locale === 'zh-CN' ? /证据/ : /evidence/i);
+    assert.match(copy, locale === 'zh-CN' ? /日期|更正/ : /date|correction/i);
+    assert.match(copy, locale === 'zh-CN' ? /OEM|合格人员/ : /OEM|qualified person/i);
+    assert.match(copy, /support@sagemro\.com/);
+    assert.doesNotMatch(copy, prohibited);
+  }
+});
+
+test('rendered public schema uses resolved records, breadcrumbs, and one Organization node', () => {
+  for (const locale of ['en', 'zh-CN']) {
+    const author = getTechnicalAuthor('sagemro-technical-service-team', locale);
+    const routes = getPublicSeoRoutes(locale);
+
+    for (const route of routes) {
+      const schema = schemaFromHtml(renderPublicDocument(TEMPLATE, route, locale));
+      assert.equal(countSchemaType(schema, 'Organization'), 1, `${locale} ${route.path} should emit Organization once`);
+      if (route.path !== '/') assert.equal(countSchemaType(schema, 'BreadcrumbList'), 1, `${locale} ${route.path} should have breadcrumbs`);
+    }
+
+    for (const service of getServicePages(locale)) {
+      const schema = schemaFromHtml(renderPublicDocument(TEMPLATE, getPublicSeoRoute(`/services/${service.slug}`, locale), locale));
+      const primary = schema['@graph'].find((item) => item['@type'] === 'Service');
+      assert.equal(primary.name, service.title);
+      assert.equal(primary.url, getPublicSeoRoute(`/services/${service.slug}`, locale).canonical);
+    }
+
+    for (const guide of getDiagnosticGuides(locale)) {
+      const schema = schemaFromHtml(renderPublicDocument(TEMPLATE, getPublicSeoRoute(`/insights/${guide.slug}`, locale), locale));
+      const article = schema['@graph'].find((item) => item['@type'] === 'Article');
+      const organization = schema['@graph'].find((item) => item['@type'] === 'Organization');
+      assert.equal(article.datePublished, guide.publishedAt);
+      assert.equal(article.dateModified, guide.reviewedAt);
+      assert.deepEqual(article.author, { '@id': organization['@id'] });
+      assert.deepEqual(article.reviewedBy, { '@id': organization['@id'] });
+      assert.equal(organization.name, author.name);
+      assert.equal(organization.url, author.url);
+    }
+
+    for (const tool of publicIndustryTools) {
+      const schema = schemaFromHtml(renderPublicDocument(TEMPLATE, getPublicSeoRoute(`/tools/${tool.slug}`, locale), locale));
+      assert.ok(schema['@graph'].some((item) => item['@type'] === 'WebApplication'));
+    }
+  }
+});
+
+test('static documents render localized policy and safe internal anchors', () => {
+  const reviewEn = renderPublicDocument(TEMPLATE, getPublicSeoRoute('/about/technical-review', 'en'), 'en');
+  const reviewCn = renderPublicDocument(TEMPLATE, getPublicSeoRoute('/about/technical-review', 'zh-CN'), 'zh-CN');
+  const service = renderPublicDocument(TEMPLATE, getPublicSeoRoute('/services/laser-cutting-machine-repair', 'en'), 'en');
+  const guide = renderPublicDocument(TEMPLATE, getPublicSeoRoute('/insights/laser-protective-lens-burning', 'en'), 'en');
+
+  assert.match(reviewEn, /How SAGEMRO technical content is prepared and reviewed/);
+  assert.match(reviewCn, /SAGEMRO 技术内容如何编写与审核/);
+  assert.match(service, /href="\/insights\/laser-protective-lens-burning"/);
+  assert.match(service, /href="\/insights\/laser-cutting-machine-maintenance-checklist"/);
+  assert.match(guide, /href="\/services\/laser-cutting-machine-repair"/);
 });
