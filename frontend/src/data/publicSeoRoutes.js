@@ -1,5 +1,6 @@
 import { getLocalizedTool, publicIndustryTools } from './industryTools.js';
 import { getLocalizedInsights } from './insights.js';
+import { welcomePageCopy } from './welcomePageCopy.js';
 
 const HOSTS = { en: 'https://sagemro.com', 'zh-CN': 'https://sagemro.cn' };
 const RELEASE_DATE = '2026-08-06';
@@ -9,8 +10,6 @@ const pages = {
     home: {
       title: 'SAGEMRO Service OS',
       description: 'SAGEMRO helps industrial equipment users organize service needs, connect with qualified field engineers, and keep service records clear.',
-      h1: 'SAGEMRO Service OS',
-      paragraphs: ['Organize industrial equipment service needs, connect with qualified field engineers, and keep service records clear.'],
     },
     tools: {
       title: 'Free Sheet Metal and Laser Cutting Calculators',
@@ -29,8 +28,6 @@ const pages = {
     home: {
       title: 'SAGEMRO 智能服务系统',
       description: 'SAGEMRO 面向激光切割与金属成型设备，帮助客户整理问题、连接合格工程师并沉淀服务记录。',
-      h1: 'SAGEMRO 智能服务系统',
-      paragraphs: ['帮助激光切割与金属成型设备用户整理服务需求、连接合格工程师，并沉淀清晰的服务记录。'],
     },
     tools: {
       title: '钣金、激光切割和折弯行业工具',
@@ -84,6 +81,7 @@ function breadcrumb(routeValue) {
 
 function buildRoutes(locale) {
   const copy = pages[locale] || pages.en;
+  const welcome = welcomePageCopy[locale === 'zh-CN' ? 'zh' : 'en'];
   const tools = publicIndustryTools.map((tool) => getLocalizedTool(tool, locale));
   const insights = getLocalizedInsights(locale);
   const collection = (path, type, content, children) => route(locale, {
@@ -101,7 +99,7 @@ function buildRoutes(locale) {
     title: copy.home.title,
     description: copy.home.description,
     modified: RELEASE_DATE,
-    body: { h1: copy.home.h1, paragraphs: copy.home.paragraphs },
+    body: { h1: welcome.headline, paragraphs: [welcome.intro] },
     structuredData: { '@graph': [organization(locale), { '@type': 'WebSite', name: 'SAGEMRO', url: `${HOSTS[locale]}/` }] },
   });
   const toolRoutes = tools.map((tool) => route(locale, {
@@ -110,7 +108,7 @@ function buildRoutes(locale) {
     title: tool.seoTitle,
     description: tool.seoDescription,
     modified: tool.updatedAt,
-    body: { h1: tool.label, paragraphs: [tool.description, tool.guideBody], guideTitle: tool.guideTitle, faqs: tool.faqs },
+    body: { h1: tool.seoTitle, paragraphs: [tool.description, tool.guideBody], guideTitle: tool.guideTitle, faqs: tool.faqs },
     structuredData: {
       '@type': 'WebApplication', name: tool.label, description: tool.seoDescription,
       applicationCategory: 'BusinessApplication', operatingSystem: 'Web',
