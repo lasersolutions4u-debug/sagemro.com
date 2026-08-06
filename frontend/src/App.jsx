@@ -13,6 +13,7 @@ import { usePushNotification } from './hooks/usePushNotification';
 import { generateId } from './utils/helpers';
 import { isCnLocale } from './utils/locale';
 import { setSeoMetadata } from './utils/seo';
+import { getServicePageRoute } from './utils/servicePageRoute';
 import { submitWorkOrder as submitWorkOrderApi, getConversation as getConversationApi, getUnreadNotificationCount, trackFunnelEvent, restoreSession, logout as logoutSession } from './services/api';
 import { createAnalyticsRequestId } from './services/funnelAnalytics';
 
@@ -532,7 +533,8 @@ function App() {
 
   const isToolsPath = currentPath === '/tools' || currentPath.startsWith('/tools/');
   const isInsightsPath = currentPath === '/insights' || currentPath.startsWith('/insights/');
-  const isServicesPath = currentPath === '/services' || currentPath.startsWith('/services/');
+  const serviceRoute = getServicePageRoute(currentPath);
+  const isServicesPath = serviceRoute !== null;
   if (currentPath !== '/' && !isToolsPath && !isInsightsPath && !isServicesPath) {
     return <NotFoundPage isCn={isCn} />;
   }
