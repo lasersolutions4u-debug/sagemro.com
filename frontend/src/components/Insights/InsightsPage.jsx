@@ -4,6 +4,8 @@ import { BrandMark } from '../common/BrandMark';
 import { Footer } from '../common/Footer';
 import { NotFoundPage } from '../common/NotFoundPage';
 import { getLocalizedInsight, getLocalizedInsights } from '../../data/insights';
+import { getDiagnosticGuide } from '../../data/diagnosticGuides';
+import { DiagnosticGuide } from './DiagnosticGuide';
 import { isCnLocale } from '../../utils/locale';
 import { setSeoMetadata } from '../../utils/seo';
 
@@ -38,40 +40,48 @@ const insightsCopy = {
   },
 };
 
-export function InsightsPage({ pathname = '/insights', onOpenLegal }) {
+export function InsightsPage({ pathname = '/insights', onOpenLegal, onStartDiagnosis, onOpenServiceRequest }) {
   const locale = isCnLocale() ? 'zh-CN' : 'en';
   const canonicalHost = locale === 'zh-CN' ? 'https://sagemro.cn' : 'https://sagemro.com';
   const copy = insightsCopy[locale];
   const slug = pathname.split('/insights/')[1]?.replace(/\/$/, '') || '';
+  const guide = getDiagnosticGuide(slug, locale);
   const insight = getLocalizedInsight(slug, locale);
   const localizedInsights = getLocalizedInsights(locale);
 
   useEffect(() => {
-    const title = insight ? insight.title : copy.hubTitle;
-    const description = insight
-      ? insight.description
+    const content = guide || insight;
+    const title = content ? content.title : copy.hubTitle;
+    const description = content
+      ? content.description
       : copy.hubDescription;
-    const isMissing = Boolean(slug && !insight);
+    const isMissing = Boolean(slug && !content);
     setSeoMetadata({
-      title: isMissing ? '洞察未找到 | SAGEMRO' : `${title} | SAGEMRO`,
-      description: isMissing ? '找不到请求的 SAGEMRO 洞察文章。' : description,
-      canonical: `${canonicalHost}${insight ? `/insights/${insight.slug}` : slug ? `/insights/${slug}` : '/insights'}`,
+      title: isMissing
+        ? locale === 'zh-CN' ? '洞察未找到 | SAGEMRO' : 'Insight Not Found | SAGEMRO'
+        : `${title} | SAGEMRO`,
+      description: isMissing
+        ? locale === 'zh-CN' ? '找不到请求的 SAGEMRO 洞察文章。' : 'The requested SAGEMRO insight could not be found.'
+        : description,
+      canonical: `${canonicalHost}${content ? `/insights/${content.slug}` : slug ? `/insights/${slug}` : '/insights'}`,
       lang: locale,
       robots: isMissing ? 'noindex,nofollow,noarchive' : 'index,follow',
-      structuredData: insight ? {
+      structuredData: content ? {
         '@context': 'https://schema.org',
         '@type': 'Article',
-        headline: insight.title,
-        description: insight.description,
-        url: `${canonicalHost}/insights/${insight.slug}`,
+        headline: content.title,
+        description: content.description,
+        url: `${canonicalHost}/insights/${content.slug}`,
         publisher: { '@type': 'Organization', name: 'SAGEMRO' },
       } : null,
     });
-  }, [canonicalHost, copy, insight, slug, locale]);
+  }, [canonicalHost, copy, guide, insight, slug, locale]);
 
-  if (slug && !insight) {
+  if (slug && !insight && !guide) {
     return <NotFoundPage isCn={locale === 'zh-CN'} />;
   }
+
+  if (guide) return <InsightShell copy={copy} onOpenLegal={onOpenLegal}><DiagnosticGuide guide={guide} locale={locale} onStartDiagnosis={onStartDiagnosis} onOpenServiceRequest={onOpenServiceRequest} /></InsightShell>;
 
   if (insight) {
     return <InsightDetail copy={copy} insight={insight} onOpenLegal={onOpenLegal} />;

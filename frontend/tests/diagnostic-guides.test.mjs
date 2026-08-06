@@ -164,3 +164,34 @@ test('callers receive copies instead of mutable diagnostic source records', () =
   assert.doesNotMatch(second[0].symptoms.join(' '), /mutation/);
   assert.doesNotMatch(JSON.stringify(second[0].references), /mutation/);
 });
+
+test('published diagnostic guides have answer-first bilingual rendering contracts', async () => {
+  const [guide, insightsPage] = await Promise.all([
+    readFile(new URL('../src/components/Insights/DiagnosticGuide.jsx', import.meta.url), 'utf8'),
+    readFile(new URL('../src/components/Insights/InsightsPage.jsx', import.meta.url), 'utf8'),
+  ]);
+
+  for (const label of [
+    'Direct answer', 'Safety boundary', 'Symptoms', 'Cause', 'Check', 'Action',
+    'Stop and escalate', 'Sources', 'Author', 'Technical review', 'Last reviewed',
+    'Related service', '直接答案', '安全边界', '症状', '原因', '检查', '行动',
+    '停止并升级', '来源', '作者', '技术审核', '最后审核日期', '相关服务',
+  ]) {
+    assert.match(guide, new RegExp(label));
+  }
+
+  assert.match(guide, /<table[\s\S]*<caption/);
+  assert.match(guide, /md:hidden/);
+  assert.match(guide, /PublicConversionPanel/);
+  assert.match(guide, /getTechnicalAuthor/);
+  assert.match(guide, /author\.url/);
+  assert.match(guide, /href=\{author\.url\}/);
+  assert.match(guide, /href=\{reviewer\.url\}/);
+  assert.match(guide, /href=\{`\/services\/\$\{relatedService\.slug\}`\}/);
+  assert.match(guide, /href=\{`\/tools\/\$\{relatedTool\.slug\}`\}/);
+  assert.match(guide, /label=\{relatedTool\.label\}/);
+  assert.match(insightsPage, /getDiagnosticGuide\(slug, locale\)/);
+  assert.match(insightsPage, /getLocalizedInsight/);
+  assert.match(insightsPage, /<DiagnosticGuide/);
+  assert.match(insightsPage, /robots: isMissing \? 'noindex,nofollow,noarchive' : 'index,follow'/);
+});
