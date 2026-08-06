@@ -341,3 +341,11 @@ export function getDirectAccessNoindexToolRoutes(locale = 'en') {
 
   return withSchemaGraphs(tools.map((tool) => toolRoute(normalizedLocale, tool, 'noindex,nofollow,noarchive')), normalizedLocale);
 }
+
+export function getRuntimeSeoRoute(pathname, locale = 'en') {
+  const publicRoute = getPublicSeoRoute(pathname, locale);
+  if (publicRoute) return publicRoute;
+
+  const path = pathname === '/' ? '/' : String(pathname || '').replace(/\/$/, '');
+  return getDirectAccessNoindexToolRoutes(locale).find((routeValue) => routeValue.path === path) || null;
+}

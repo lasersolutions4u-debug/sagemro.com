@@ -75,6 +75,8 @@ function App() {
   const [userType, setUserType] = useState(null);
   const [authReady, setAuthReady] = useState(false);
   const [currentPath, setCurrentPath] = useState(() => window.location.pathname);
+  const isTechnicalReviewPath = currentPath === '/about/technical-review'
+    || currentPath === '/about/technical-review/';
   const authVersionRef = useRef(0);
   const engineerWorkOrderMatch = currentPath.match(/^\/work-orders\/([^/]+)$/);
   const engineerWorkOrderId = engineerWorkOrderMatch ? decodeURIComponent(engineerWorkOrderMatch[1]) : '';
@@ -86,13 +88,13 @@ function App() {
       || currentPath.startsWith('/insights/')
       || currentPath === '/services'
       || currentPath.startsWith('/services/')
-      || currentPath === '/about/technical-review';
+      || isTechnicalReviewPath;
     if (isToolsOrInsights || (isEngineerHost && currentPath === '/' && !userType)) return;
 
     const isPublicPath = currentPath === '/'
       || currentPath === '/services'
       || currentPath.startsWith('/services/')
-      || currentPath === '/about/technical-review'
+      || isTechnicalReviewPath
       || (isEngineerHost && currentPath === '/');
     const isPrivateApp = Boolean(userType) || !isPublicPath;
     const title = isCn ? 'SAGEMRO 智能服务系统' : 'SAGEMRO Service OS';
@@ -119,7 +121,7 @@ function App() {
         email: 'support@sagemro.com',
       },
     });
-  }, [currentPath, isCn, isEngineerHost, userType]);
+  }, [currentPath, isCn, isEngineerHost, isTechnicalReviewPath, userType]);
 
   // 通知未读数
   const [unreadCount, setUnreadCount] = useState(0);
@@ -540,7 +542,6 @@ function App() {
   const isInsightsPath = currentPath === '/insights' || currentPath.startsWith('/insights/');
   const serviceRoute = getServicePageRoute(currentPath);
   const isServicesPath = serviceRoute !== null;
-  const isTechnicalReviewPath = currentPath === '/about/technical-review';
   if (currentPath !== '/' && !isToolsPath && !isInsightsPath && !isServicesPath && !isTechnicalReviewPath) {
     return <NotFoundPage isCn={isCn} />;
   }

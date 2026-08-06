@@ -96,7 +96,8 @@ test('evidence review CTA follows safety boundary and calculator CTA is suppress
   assert.match(calculator, /showReviewCta && onSendMessage/);
   assert.match(page, /showReviewCta=\{!tool\.seoEvidence\?\.formula\}/);
   assert.match(page, /selectedTool\?\.seoEvidence\?\.indexable === false/);
-  assert.match(page, /robots: isMissing \|\| isPausedTool \? 'noindex,nofollow,noarchive'/);
+  assert.match(page, /getRuntimeSeoRoute/);
+  assert.match(page, /robots: isMissing \? 'noindex,nofollow,noarchive' : seoRoute\?\.robots/);
   assert.ok(page.indexOf('<ToolEvidence', 0) < page.indexOf('{copy.faq}'));
   assert.ok(safetyIndex < reviewIndex);
   assert.match(page, /Ask SAGEMRO AI to review this result/);

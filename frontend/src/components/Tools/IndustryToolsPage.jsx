@@ -29,7 +29,7 @@ import {
 import { getIndustryToolsPageState } from '../../utils/industryToolsPage';
 import { isCnLocale } from '../../utils/locale';
 import { setSeoMetadata } from '../../utils/seo';
-import { getPublicSeoRoute } from '../../data/publicSeoRoutes';
+import { getRuntimeSeoRoute } from '../../data/publicSeoRoutes';
 
 const BendSimulatorPage = lazy(() => import('./BendSimulatorPage').then(m => ({ default: m.BendSimulatorPage })));
 
@@ -106,7 +106,7 @@ const toolsPageCopy = {
 export function IndustryToolsPage({ pathname = '/tools', onOpenLegal, onSendMessage, onNavigateHome }) {
   const locale = isCnLocale() ? 'zh-CN' : 'en';
   const route = getIndustryToolsPageState(pathname, locale);
-  const { canonicalHost, canonical, page, selectedTool, slug } = route;
+  const { canonical, page, selectedTool, slug } = route;
   const copy = toolsPageCopy[locale];
   const [forms, setForms] = useState(defaultIndustryToolForms);
   const isMissing = Boolean(slug && !selectedTool);
@@ -117,16 +117,17 @@ export function IndustryToolsPage({ pathname = '/tools', onOpenLegal, onSendMess
     : copy.hubDescription;
 
   useEffect(() => {
-    const publicRoute = getPublicSeoRoute(selectedTool ? `/tools/${selectedTool.slug}` : '/tools', locale);
+    const seoRoute = getRuntimeSeoRoute(selectedTool ? `/tools/${selectedTool.slug}` : '/tools', locale);
     setSeoMetadata({
       title: isMissing ? '工具未找到 | SAGEMRO' : `${pageTitle} | SAGEMRO`,
       description: pageDescription,
-      canonical,
+      canonical: seoRoute?.canonical ?? canonical,
+      alternates: seoRoute?.alternates,
       lang: locale === 'zh-CN' ? 'zh-CN' : 'en',
-      robots: isMissing || isPausedTool ? 'noindex,nofollow,noarchive' : 'index,follow',
-      structuredData: publicRoute?.structuredData ?? null,
+      robots: isMissing ? 'noindex,nofollow,noarchive' : seoRoute?.robots ?? (isPausedTool ? 'noindex,nofollow,noarchive' : 'index,follow'),
+      structuredData: seoRoute?.structuredData ?? null,
     });
-  }, [canonical, canonicalHost, isMissing, isPausedTool, locale, pageDescription, pageTitle, selectedTool]);
+  }, [canonical, isMissing, isPausedTool, locale, pageDescription, pageTitle, selectedTool]);
 
   if (slug && !selectedTool) {
     return <NotFoundPage isCn={locale === 'zh-CN'} />;

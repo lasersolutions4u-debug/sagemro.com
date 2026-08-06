@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
 import { getLocalizedTool, publicIndustryTools } from '../src/data/industryTools.js';
 import { getDiagnosticGuides } from '../src/data/diagnosticGuides.js';
-import { getDirectAccessNoindexToolRoutes, getPublicSeoRoute, getPublicSeoRoutes } from '../src/data/publicSeoRoutes.js';
+import { getDirectAccessNoindexToolRoutes, getPublicSeoRoute, getPublicSeoRoutes, getRuntimeSeoRoute } from '../src/data/publicSeoRoutes.js';
 import { getServicePages } from '../src/data/servicePages.js';
 import { getTechnicalAuthor } from '../src/data/technicalAuthors.js';
 import { getTechnicalReviewPolicy } from '../src/data/technicalReviewPolicy.js';
@@ -71,6 +72,35 @@ test('direct-access noindex tool routes are separate from the public manifest', 
     assert.equal(routes.some((route) => route.path === '/tools/bend-simulator'), false);
     assert.ok(routes.every((route) => getPublicSeoRoute(route.path, locale) === null));
   }
+});
+
+test('runtime resolves exact noindex tool metadata without exposing paused or draft routes', async () => {
+  for (const locale of ['en', 'zh-CN']) {
+    const directRoutes = getDirectAccessNoindexToolRoutes(locale);
+    assert.equal(directRoutes.length, 5);
+
+    for (const staticRoute of directRoutes) {
+      const runtimeRoute = getRuntimeSeoRoute(staticRoute.path, locale);
+      assert.deepEqual(runtimeRoute, staticRoute);
+      assert.equal(runtimeRoute.robots, 'noindex,nofollow,noarchive');
+      assert.equal(countSchemaType(runtimeRoute.structuredData, 'WebApplication'), 1);
+      assert.equal(countSchemaType(runtimeRoute.structuredData, 'BreadcrumbList'), 1);
+      assert.equal(countSchemaType(runtimeRoute.structuredData, 'Organization'), 1);
+      assert.equal(getPublicSeoRoute(staticRoute.path, locale), null);
+    }
+
+    assert.equal(getRuntimeSeoRoute('/tools/bend-simulator', locale), null);
+    for (const draft of getDiagnosticGuides(locale, { publishedOnly: false }).filter((guide) => guide.status === 'draft')) {
+      assert.equal(getRuntimeSeoRoute(`/insights/${draft.slug}`, locale), null);
+    }
+  }
+
+  const page = await readFile(new URL('../src/components/Tools/IndustryToolsPage.jsx', import.meta.url), 'utf8');
+  assert.match(page, /getRuntimeSeoRoute\(selectedTool \? `\/tools\/\$\{selectedTool\.slug\}` : '\/tools', locale\)/);
+  assert.match(page, /canonical: seoRoute\?\.canonical \?\? canonical/);
+  assert.match(page, /alternates: seoRoute\?\.alternates/);
+  assert.match(page, /robots: isMissing \? 'noindex,nofollow,noarchive' : seoRoute\?\.robots/);
+  assert.match(page, /structuredData: seoRoute\?\.structuredData \?\? null/);
 });
 
 test('all four public tools include calculator-derived evidence in both static locales', () => {
@@ -209,6 +239,11 @@ test('manifest publishes services, evidence-approved guides, and technical revie
     }
 
     draftPaths.forEach((path) => assert.equal(routes.some((route) => route.path === path), false));
+
+    const reviewRoute = getRuntimeSeoRoute('/about/technical-review', locale);
+    const reviewRouteWithSlash = getRuntimeSeoRoute('/about/technical-review/', locale);
+    assert.deepEqual(reviewRouteWithSlash, reviewRoute);
+    assert.equal(reviewRouteWithSlash.canonical, `${host}/about/technical-review`);
   }
 });
 

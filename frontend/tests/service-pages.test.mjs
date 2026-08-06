@@ -199,12 +199,14 @@ test('the public technical-review route and footer entry are bilingual runtime c
   ]);
 
   assert.match(app, /const TechnicalReviewPage = lazy/);
-  assert.match(app, /currentPath === '\/about\/technical-review'/);
+  assert.match(app, /const isTechnicalReviewPath = currentPath === '\/about\/technical-review'\s*\|\| currentPath === '\/about\/technical-review\/'/);
+  assert.ok((app.match(/isTechnicalReviewPath/g) || []).length >= 4);
   assert.match(app, /<TechnicalReviewPage/);
   assert.match(footer, /href="\/about\/technical-review"/);
   assert.match(footer, /Technical review/);
   assert.match(footer, /技术审核/);
   assert.match(page, /getTechnicalReviewPolicy/);
   assert.match(page, /setSeoMetadata/);
+  assert.match(page, /canonical = `\$\{host\}\/about\/technical-review`/);
   assert.match(page, /<Footer/);
 });
