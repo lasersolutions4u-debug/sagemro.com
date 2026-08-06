@@ -44,6 +44,31 @@ test('public pages define SEO metadata and structured data', async () => {
   assert.match(insights, /robots: isMissing \? 'noindex,nofollow,noarchive'/);
 });
 
+test('client navigation keeps route metadata in parity with prerendered pages', async () => {
+  const seo = await read('frontend/src/utils/seo.js');
+  const main = await read('frontend/src/main.jsx');
+
+  assert.match(seo, /function setMetaProperty\(property, content\)/);
+  assert.match(seo, /function setAlternates\(alternates\)/);
+  assert.match(seo, /link\[hreflang\]/);
+  assert.match(seo, /setMetaProperty\('og:title', title\)/);
+  assert.match(seo, /setMetaProperty\('og:type', 'website'\)/);
+  assert.match(seo, /setMetaProperty\('og:description', description\)/);
+  assert.match(seo, /setMetaProperty\('og:url', canonical\)/);
+  assert.match(seo, /setMetaProperty\('og:image', image\)/);
+  assert.match(seo, /setMeta\('twitter:title', title\)/);
+  assert.match(seo, /setMeta\('twitter:card', 'summary'\)/);
+  assert.match(seo, /setMeta\('twitter:description', description\)/);
+  assert.match(seo, /setMeta\('twitter:image', image\)/);
+  assert.match(seo, /JSON\.stringify\(structuredData\)/);
+  assert.match(seo, /tag\?\.remove\(\)/);
+  assert.match(main, /const rootElement = document\.getElementById\('root'\);/);
+  assert.match(main, /rootElement\.dataset\.prerendered === 'true'/);
+  assert.match(main, /rootElement\.replaceChildren\(\);/);
+  assert.match(main, /delete rootElement\.dataset\.prerendered;/);
+  assert.match(main, /createRoot\(rootElement\)\.render\(/);
+});
+
 test('admin portal is excluded from search indexing', async () => {
   const html = await read('admin/index.html');
   const robots = await read('admin/public/robots.txt');
