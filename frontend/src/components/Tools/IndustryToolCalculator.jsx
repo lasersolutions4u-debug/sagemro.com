@@ -105,7 +105,7 @@ function getFieldsForTool(toolId, values) {
   return [];
 }
 
-export function IndustryToolCalculator({ tool, values, onChange, onSendMessage, onAfterSend }) {
+export function IndustryToolCalculator({ tool, values, onChange, onSendMessage, onAfterSend, showReviewCta = true }) {
   const currentValues = values || defaultIndustryToolForms[tool.id];
   const result = useMemo(() => calculateIndustryToolResult(tool.id, currentValues), [tool.id, currentValues]);
   const fields = getFieldsForTool(tool.id, currentValues);
@@ -238,7 +238,7 @@ export function IndustryToolCalculator({ tool, values, onChange, onSendMessage, 
           <strong className="block font-semibold">Planning estimate</strong>
           <span>{result.note} Confirm before production or purchasing.</span>
         </div>
-        {onSendMessage && (
+        {showReviewCta && onSendMessage && (
           <button
             type="button"
             onClick={sendForReview}

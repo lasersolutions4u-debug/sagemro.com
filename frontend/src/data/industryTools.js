@@ -211,6 +211,7 @@ export const industryTools = [
       ['Is this a live steel quote?', 'It is a market reference for planning. Grade, shape, location, freight, tax, and supplier minimums decide the final cost.'],
       ['Can I estimate non-steel materials?', 'Yes. The material list includes stainless steel, aluminum, brass, copper, red copper, and titanium alloy.'],
     ],
+    seoEvidence: { indexable: false },
   },
   {
     id: 'laser-cost',
@@ -288,6 +289,7 @@ export const industryTools = [
       ['Is this a gas supplier bill estimate?', 'It is a planning reference. Verify with flowmeter data, gas supplier statements, or machine records before using it for purchasing.'],
       ['Why does nozzle size matter?', 'A larger nozzle opening can increase flow quickly, especially at higher pressures. Nozzle condition and standoff also affect actual use.'],
     ],
+    seoEvidence: { indexable: false },
   },
   {
     id: 'cutting-speed',
@@ -353,6 +355,7 @@ export const industryTools = [
       ['What should I include in in-house cost?', 'Include machine payment or depreciation, operator time, maintenance, utilities, gas, consumables, floor space, and programming time when available.'],
       ['Why include added revenue?', 'Some shops buy equipment not only to replace outsourcing, but also to win faster-turnaround or higher-margin work.'],
     ],
+    seoEvidence: { indexable: false },
   },
   {
     id: 'auxiliary-sizing',
@@ -387,10 +390,11 @@ export const industryTools = [
       ['Can this replace a production bend test?', 'No. Use it to prepare the bend plan and review assumptions; validate the setup with qualified personnel before production.'],
       ['What should I confirm before bending?', 'Confirm the material, tooling, bend order, machine capacity, part geometry, and safe operating conditions before production.'],
     ],
+    seoEvidence: { indexable: false },
   },
 ];
 
-export const publicIndustryTools = industryTools.filter((tool) => tool.id !== 'bend-simulator' && tool.seoEvidence?.indexable !== false);
+export const publicIndustryTools = industryTools.filter((tool) => tool.seoEvidence?.indexable === true);
 
 const industryToolCn = {
   'metal-weight': {
@@ -1108,6 +1112,7 @@ export function calculateIndustryToolResult(toolId, values, locale = 'en') {
 }
 
 export function getToolWorkedExample(tool, locale = 'en') {
+  if (!industryTools.some((industryTool) => industryTool.id === tool?.id)) return null;
   const workedExample = tool?.seoEvidence?.workedExample;
   if (!workedExample?.inputs) return null;
 
