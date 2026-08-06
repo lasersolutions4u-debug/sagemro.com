@@ -28,6 +28,37 @@ test('buildPublicPages writes crawlable public pages and crawl artifacts', async
   assert.equal(new Set(hubs).size, 4);
 });
 
+test('buildPublicPages writes direct noindex tool pages outside every public crawl artifact', async (t) => {
+  const distDir = await mkdtemp(join(tmpdir(), 'sagemro-noindex-tool-build-'));
+  const noindexSlugs = [
+    'steel-price-watch',
+    'laser-assist-gas-consumption-calculator',
+    'laser-cutting-speed-reference',
+    'laser-cutting-machine-roi-calculator',
+    'laser-chiller-dust-collector-sizing-checklist',
+  ];
+
+  t.after(() => rm(distDir, { force: true, recursive: true }));
+  await cp(new URL('../index.html', import.meta.url), join(distDir, 'index.html'));
+  await buildPublicPages({ distDir });
+
+  const read = (path) => readFile(join(distDir, path), 'utf8');
+  const sitemap = await read('sitemap.xml');
+  const llms = await read('llms.txt');
+
+  for (const slug of noindexSlugs) {
+    const html = await read(`tools/${slug}/index.html`);
+    assert.match(html, /name="robots" content="noindex,nofollow,noarchive"/);
+    assert.match(html, new RegExp(`rel="canonical" href="https://sagemro\\.com/tools/${slug}"`));
+    assert.match(html, /data-prerendered="true"/);
+    assert.doesNotMatch(sitemap, new RegExp(`/tools/${slug}`));
+    assert.doesNotMatch(llms, new RegExp(`/tools/${slug}`));
+  }
+
+  await assert.rejects(read('tools/bend-simulator/index.html'), /ENOENT/);
+  assert.doesNotMatch(await read('_redirects'), /\/tools\/\*/);
+});
+
 test('build generator can be imported without a script entry point', async () => {
   await execFile(process.execPath, ['--input-type=module', '--eval', "import './scripts/buildPublicPages.mjs'"], { cwd: new URL('..', import.meta.url) });
 });

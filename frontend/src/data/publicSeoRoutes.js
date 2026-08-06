@@ -1,4 +1,9 @@
-import { getLocalizedTool, getToolWorkedExample, publicIndustryTools } from './industryTools.js';
+import {
+  directAccessNoindexIndustryTools,
+  getLocalizedTool,
+  getToolWorkedExample,
+  publicIndustryTools,
+} from './industryTools.js';
 import { getLocalizedInsights } from './insights.js';
 import { welcomePageCopy } from './welcomePageCopy.js';
 
@@ -99,6 +104,32 @@ function toolEvidenceSections(tool, locale) {
   ];
 }
 
+function toolRoute(locale, tool, robots = 'index,follow') {
+  return route(locale, {
+    robots,
+    path: `/tools/${tool.slug}`,
+    type: 'tool',
+    title: tool.seoTitle,
+    description: tool.seoDescription,
+    modified: tool.updatedAt,
+    body: { h1: tool.seoTitle, paragraphs: [tool.description, tool.guideBody], guideTitle: tool.guideTitle, sections: toolEvidenceSections(tool, locale), faqs: tool.faqs },
+    structuredData: {
+      '@type': 'WebApplication', name: tool.label, description: tool.seoDescription,
+      applicationCategory: 'BusinessApplication', operatingSystem: 'Web',
+      offers: { '@type': 'Offer', price: '0', priceCurrency: locale === 'zh-CN' ? 'CNY' : 'USD' },
+    },
+  });
+}
+
+function withBreadcrumbs(routes) {
+  return routes.map((routeValue) => routeValue.path === '/' ? routeValue : {
+    ...routeValue,
+    structuredData: routeValue.structuredData['@graph']
+      ? routeValue.structuredData
+      : { '@graph': [routeValue.structuredData, breadcrumb(routeValue)] },
+  });
+}
+
 function buildRoutes(locale) {
   const copy = pages[locale] || pages.en;
   const welcome = welcomePageCopy[locale === 'zh-CN' ? 'zh' : 'en'];
@@ -123,19 +154,7 @@ function buildRoutes(locale) {
     body: { h1: welcome.headline, paragraphs: [welcome.intro], resources: welcome.resources },
     structuredData: { '@graph': [organization(locale), { '@type': 'WebSite', name: 'SAGEMRO', url: `${HOSTS[locale]}/` }] },
   });
-  const toolRoutes = tools.map((tool) => route(locale, {
-    path: `/tools/${tool.slug}`,
-    type: 'tool',
-    title: tool.seoTitle,
-    description: tool.seoDescription,
-    modified: tool.updatedAt,
-    body: { h1: tool.seoTitle, paragraphs: [tool.description, tool.guideBody], guideTitle: tool.guideTitle, sections: toolEvidenceSections(tool, locale), faqs: tool.faqs },
-    structuredData: {
-      '@type': 'WebApplication', name: tool.label, description: tool.seoDescription,
-      applicationCategory: 'BusinessApplication', operatingSystem: 'Web',
-      offers: { '@type': 'Offer', price: '0', priceCurrency: locale === 'zh-CN' ? 'CNY' : 'USD' },
-    },
-  }));
+  const toolRoutes = tools.map((tool) => toolRoute(locale, tool));
   const insightRoutes = insights.map((insight) => route(locale, {
     path: `/insights/${insight.slug}`,
     type: 'insight',
@@ -154,12 +173,7 @@ function buildRoutes(locale) {
   const insightsHub = collection('/insights', 'insights-hub', copy.insights, insightRoutes);
   const routes = [home, toolsHub, ...toolRoutes, insightsHub, ...insightRoutes];
 
-  return routes.map((routeValue) => routeValue.path === '/' ? routeValue : {
-    ...routeValue,
-    structuredData: routeValue.structuredData['@graph']
-      ? routeValue.structuredData
-      : { '@graph': [routeValue.structuredData, breadcrumb(routeValue)] },
-  });
+  return withBreadcrumbs(routes);
 }
 
 export function getPublicSeoRoutes(locale = 'en') {
@@ -169,4 +183,11 @@ export function getPublicSeoRoutes(locale = 'en') {
 export function getPublicSeoRoute(pathname, locale = 'en') {
   const path = pathname === '/' ? '/' : String(pathname || '').replace(/\/$/, '');
   return getPublicSeoRoutes(locale).find((routeValue) => routeValue.path === path) || null;
+}
+
+export function getDirectAccessNoindexToolRoutes(locale = 'en') {
+  const normalizedLocale = locale === 'zh-CN' ? 'zh-CN' : 'en';
+  const tools = directAccessNoindexIndustryTools.map((tool) => getLocalizedTool(tool, normalizedLocale));
+
+  return withBreadcrumbs(tools.map((tool) => toolRoute(normalizedLocale, tool, 'noindex,nofollow,noarchive')));
 }

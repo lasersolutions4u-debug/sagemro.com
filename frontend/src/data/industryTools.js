@@ -395,6 +395,7 @@ export const industryTools = [
 ];
 
 export const publicIndustryTools = industryTools.filter((tool) => tool.seoEvidence?.indexable === true);
+export const directAccessNoindexIndustryTools = industryTools.filter((tool) => tool.id !== 'bend-simulator' && tool.seoEvidence?.indexable === false);
 
 const industryToolCn = {
   'metal-weight': {
