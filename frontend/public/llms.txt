@@ -1,0 +1,12 @@
+# SAGEMRO
+
+SAGEMRO provides practical planning references for industrial equipment users. Tool results are planning references, not final engineering, safety, purchasing, or service decisions.
+
+## Current hubs
+
+- https://sagemro.com/
+- https://sagemro.com/tools
+- https://sagemro.com/insights
+- https://sagemro.cn/
+
+Contact: support@sagemro.com

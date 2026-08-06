@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
@@ -8,14 +8,17 @@ import { build } from 'vite';
 const root = path.resolve(import.meta.dirname, '../..');
 const read = (relativePath) => readFileSync(path.join(root, relativePath), 'utf8');
 
-test('CN public frontend routes render a localized 404 and keep static fallback rules', () => {
+test('CN public frontend routes render a localized real 404 after private SPA rewrites', () => {
   const app = read('frontend/src/App.jsx');
   const notFound = read('frontend/src/components/common/NotFoundPage.jsx');
   const redirects = read('frontend/public/_redirects');
 
   assert.match(app, /<NotFoundPage isCn=\{isCn\} \/>/);
   assert.match(notFound, /页面不存在/);
+  assert.equal(existsSync(path.join(root, 'frontend/public/404.html')), false);
+  assert.match(redirects, /\/work-orders\/\* \/index\.html 200/);
   assert.match(redirects, /\/\* \/404\.html 404/);
+  assert.doesNotMatch(redirects, /^\/\* \/index\.html 200$/m);
 });
 
 test('CN tool detail titles wrap on narrow screens and reject unknown slugs', () => {
