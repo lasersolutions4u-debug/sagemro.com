@@ -99,7 +99,7 @@ function buildRoutes(locale) {
     title: copy.home.title,
     description: copy.home.description,
     modified: RELEASE_DATE,
-    body: { h1: welcome.headline, paragraphs: [welcome.intro] },
+    body: { h1: welcome.headline, paragraphs: [welcome.intro], resources: welcome.resources },
     structuredData: { '@graph': [organization(locale), { '@type': 'WebSite', name: 'SAGEMRO', url: `${HOSTS[locale]}/` }] },
   });
   const toolRoutes = tools.map((tool) => route(locale, {

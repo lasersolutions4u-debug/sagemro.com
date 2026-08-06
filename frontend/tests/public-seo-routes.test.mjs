@@ -23,8 +23,10 @@ test('manifest body mirrors visible homepage and tool headings', () => {
 
   assert.equal(home.body.h1, welcomePageCopy.en.headline);
   assert.deepEqual(home.body.paragraphs, [welcomePageCopy.en.intro]);
+  assert.deepEqual(home.body.resources, welcomePageCopy.en.resources);
   assert.equal(homeCn.body.h1, welcomePageCopy.zh.headline);
   assert.deepEqual(homeCn.body.paragraphs, [welcomePageCopy.zh.intro]);
+  assert.deepEqual(homeCn.body.resources, welcomePageCopy.zh.resources);
 
   for (const locale of ['en', 'zh-CN']) {
     for (const tool of publicIndustryTools) {
