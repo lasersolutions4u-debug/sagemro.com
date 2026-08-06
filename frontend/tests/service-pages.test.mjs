@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
 import { getServicePage, getServicePages } from '../src/data/servicePages.js';
+import { getServicePageRoute } from '../src/utils/servicePageRoute.js';
 
 const expectedSlugs = [
   'laser-cutting-machine-repair',
@@ -115,7 +116,8 @@ test('service routes lazy-load the public pages and preserve the existing conver
   const app = await readFile(new URL('../src/App.jsx', import.meta.url), 'utf8');
 
   assert.match(app, /const ServicePages = lazy\(\(\) => import\('\.\/components\/Services\/ServicePages'\)/);
-  assert.match(app, /const isServicesPath = currentPath === '\/services' \|\| currentPath\.startsWith\('\/services\/'\)/);
+  assert.match(app, /const serviceRoute = getServicePageRoute\(currentPath\);/);
+  assert.match(app, /const isServicesPath = serviceRoute !== null;/);
   assert.match(app, /window\.history\.pushState\(\{\}, '', '\/'\);\s*setCurrentPath\('\/'\);/);
   assert.match(app, /const handleServiceRequest = useCallback\(\(\) => \{\s*setWorkOrderModalOpen\(true\);/);
   assert.match(app, /<ServicePages[\s\S]*onStartDiagnosis=\{handleServiceDiagnosis\}[\s\S]*onOpenServiceRequest=\{handleServiceRequest\}/);
@@ -128,7 +130,32 @@ test('service routes lazy-load the public pages and preserve the existing conver
   assert.match(pages, /getServicePages\(locale\)/);
   assert.match(pages, /getServicePage\(slug, locale\)/);
   assert.match(pages, /<PublicConversionPanel/);
-  assert.match(pages, /breadcrumb[\s\S]*answer-first[\s\S]*equipment[\s\S]*process[\s\S]*checklist[\s\S]*boundary[\s\S]*review[\s\S]*conversion[\s\S]*related/i);
+  const detail = pages.slice(pages.indexOf('function ServiceDetail'));
+  const detailOrder = [
+    'aria-label="breadcrumb"',
+    'page.summary',
+    '<InfoCard title={selectedCopy.equipment}',
+    'page.process.map',
+    'page.customerInputs.map',
+    'page.remoteBoundary',
+    'page.reviewedAt',
+    '<PublicConversionPanel',
+    'relatedPages.map',
+  ];
+  detailOrder.reduce((previousIndex, marker) => {
+    const index = detail.indexOf(marker);
+    assert.ok(index > previousIndex, `${marker} should follow the prior detail section`);
+    return index;
+  }, -1);
   assert.match(conversionPanel, /onStartDiagnosis/);
   assert.match(conversionPanel, /onOpenServiceRequest/);
+});
+
+test('service route parsing accepts only exact hub paths and rejects malformed paths', () => {
+  assert.deepEqual(getServicePageRoute('/services'), { type: 'hub', slug: '' });
+  assert.deepEqual(getServicePageRoute('/services/'), { type: 'hub', slug: '' });
+  assert.deepEqual(getServicePageRoute('/services//'), { type: 'not-found', slug: '' });
+  assert.deepEqual(getServicePageRoute('/services/unknown-service'), { type: 'detail', slug: 'unknown-service' });
+  assert.equal(getServicePage(getServicePageRoute('/services/unknown-service').slug, 'en'), null);
+  assert.deepEqual(getServicePageRoute('/services/laser-cutting-machine-repair//'), { type: 'not-found', slug: '' });
 });

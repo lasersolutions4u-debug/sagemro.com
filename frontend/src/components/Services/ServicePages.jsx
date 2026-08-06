@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { ArrowLeft, ClipboardList, Wrench } from 'lucide-react';
 import { getServicePage, getServicePages } from '../../data/servicePages';
 import { setSeoMetadata } from '../../utils/seo';
+import { getServicePageRoute } from '../../utils/servicePageRoute';
 import { BrandMark } from '../common/BrandMark';
 import { Footer } from '../common/Footer';
 import { NotFoundPage } from '../common/NotFoundPage';
@@ -54,9 +55,10 @@ const copy = {
 
 export function ServicePages({ pathname = '/services', locale = 'en', onStartDiagnosis, onOpenServiceRequest, onOpenLegal }) {
   const selectedCopy = copy[locale] ?? copy.en;
-  const slug = pathname.startsWith('/services/') ? pathname.slice('/services/'.length).replace(/\/$/, '') : '';
-  const page = slug ? getServicePage(slug, locale) : null;
-  const isMissing = Boolean(slug && !page);
+  const route = getServicePageRoute(pathname);
+  const slug = route?.slug ?? '';
+  const page = route?.type === 'detail' ? getServicePage(slug, locale) : null;
+  const isMissing = route?.type === 'not-found' || Boolean(route?.type === 'detail' && !page);
   const canonicalHost = locale === 'zh-CN' ? 'https://sagemro.cn' : 'https://sagemro.com';
 
   useEffect(() => {
