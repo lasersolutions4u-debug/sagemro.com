@@ -566,7 +566,15 @@ function App() {
     return (
       <ErrorBoundary>
         <Suspense fallback={null}>
-          <InsightsPage pathname={currentPath} onOpenLegal={openLegal} />
+          <InsightsPage
+            pathname={currentPath}
+            onOpenLegal={openLegal}
+            onStartDiagnosis={handleServiceDiagnosis}
+            onOpenServiceRequest={handleServiceRequest}
+          />
+          {workOrderModalOpen && (
+            <WorkOrderModal isOpen={workOrderModalOpen} onClose={() => setWorkOrderModalOpen(false)} onSubmit={handleSubmitWorkOrder} />
+          )}
           <LegalModal
             isOpen={legalModalOpen}
             onClose={() => setLegalModalOpen(false)}
