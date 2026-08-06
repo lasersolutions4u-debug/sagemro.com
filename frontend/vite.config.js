@@ -18,9 +18,15 @@ export default defineConfig({
     },
     rollupOptions: {
       output: {
-        manualChunks(id) {
-          if (id.includes('node_modules/react/') || id.includes('node_modules/react-dom/') || id.includes('node_modules/react-router/')) return 'vendor-react';
-          if (id.includes('node_modules/lucide-react')) return 'vendor-icons';
+        strictExecutionOrder: true,
+        codeSplitting: {
+          includeDependenciesRecursively: false,
+          groups: [
+            { name: 'vendor-react', test: /node_modules[\\/](react|react-dom|react-router)/, entriesAware: true },
+            { name: 'vendor-motion', test: /node_modules[\\/]framer-motion/, entriesAware: true },
+            { name: 'vendor-icons', test: /node_modules[\\/]lucide-react/, entriesAware: true },
+            { name: 'vendor-markdown', test: /node_modules[\\/](react-markdown|remark-|rehype-)/, entriesAware: true },
+          ],
         },
       },
     },

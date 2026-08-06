@@ -13,10 +13,26 @@
 1. RED: `npm run build && node --test tests/public-bundle-contract.test.mjs` failed because the manifest did not exist and public HTML still referenced the PNG favicon.
 2. GREEN: after enabling the manifest, lazy-loading ChatArea, and removing the dependency-merging manual vendor buckets, the bundle contract passed.
 
+## Follow-up review correction
+
+The original bundle assertion only looked for hashed output filename substrings, so it could pass after Markdown had been merged into the lazy ChatArea chunk. The corrected contract now follows manifest source-entry keys:
+
+- `index.html` lists `ChatArea`, `IndustryToolsPage`, and `InsightsPage` as dynamic imports and excludes all three from its transitive static-import closure.
+- Any manifest source entries matching the paused bend-simulator name are excluded from that closure.
+- `vendor-markdown` must exist, be unreachable from `index.html`, and be reachable only from `src/components/Chat/ChatArea.jsx`.
+
+The original manual `vendor-react`, `vendor-motion`, `vendor-icons`, and `vendor-markdown` boundaries are restored with Vite 8/Rolldown's `codeSplitting.groups`. The broad `vendor-misc` bucket remains removed. A first restore attempt used `includeDependenciesRecursively: false` alone and failed the corrected contract: `index.html` statically reached both `ChatArea` and `vendor-markdown` through shared vendor chunks. Adding `entriesAware: true` to each targeted group changed the manifest as follows:
+
+```text
+Before: index.html static closure included ChatArea and vendor-markdown.
+After:  index.html imports runtime, index-specific motion/icons/react groups, API,
+        feedback, and locale; ChatArea is dynamic and imports vendor-markdown~ChatArea.
+```
+
 ## Verification
 
 ```text
-npm test                         # 302 passed
+npm test                         # 303 passed
 npm run lint                     # passed
 npm run build                    # passed; public HTML generated
 node --test tests/public-bundle-contract.test.mjs  # 2 passed
