@@ -34,6 +34,7 @@ const NotificationModal = lazy(() => import('./components/Notification/Notificat
 const IndustryToolsModal = lazy(() => import('./components/Tools/IndustryToolsModal').then(m => ({ default: m.IndustryToolsModal })));
 const IndustryToolsPage = lazy(() => import('./components/Tools/IndustryToolsPage').then(m => ({ default: m.IndustryToolsPage })));
 const InsightsPage = lazy(() => import('./components/Insights/InsightsPage').then(m => ({ default: m.InsightsPage })));
+const ServicePages = lazy(() => import('./components/Services/ServicePages').then(m => ({ default: m.ServicePages })));
 const ChatArea = lazy(() => import('./components/Chat/ChatArea').then(m => ({ default: m.ChatArea })));
 
 function App() {
@@ -75,10 +76,14 @@ function App() {
     const isToolsOrInsights = currentPath === '/tools'
       || currentPath.startsWith('/tools/')
       || currentPath === '/insights'
-      || currentPath.startsWith('/insights/');
+      || currentPath.startsWith('/insights/')
+      || currentPath === '/services'
+      || currentPath.startsWith('/services/');
     if (isToolsOrInsights || (isEngineerHost && currentPath === '/' && !userType)) return;
 
     const isPublicPath = currentPath === '/'
+      || currentPath === '/services'
+      || currentPath.startsWith('/services/')
       || (isEngineerHost && currentPath === '/');
     const isPrivateApp = Boolean(userType) || !isPublicPath;
     const title = isCn ? 'SAGEMRO 智能服务系统' : 'SAGEMRO Service OS';
@@ -439,6 +444,15 @@ function App() {
     setCurrentPath('/');
   }, []);
 
+  const handleServiceDiagnosis = useCallback(() => {
+    window.history.pushState({}, '', '/');
+    setCurrentPath('/');
+  }, []);
+
+  const handleServiceRequest = useCallback(() => {
+    setWorkOrderModalOpen(true);
+  }, []);
+
   const showEngineerWorkspace = (isEngineerHost || currentPath === '/engineer') && userType === 'engineer';
 
   if ((isEngineerHost || currentPath === '/engineer') && currentPath !== '/activate' && !authReady) {
@@ -518,7 +532,8 @@ function App() {
 
   const isToolsPath = currentPath === '/tools' || currentPath.startsWith('/tools/');
   const isInsightsPath = currentPath === '/insights' || currentPath.startsWith('/insights/');
-  if (currentPath !== '/' && !isToolsPath && !isInsightsPath) {
+  const isServicesPath = currentPath === '/services' || currentPath.startsWith('/services/');
+  if (currentPath !== '/' && !isToolsPath && !isInsightsPath && !isServicesPath) {
     return <NotFoundPage isCn={isCn} />;
   }
 
@@ -553,6 +568,27 @@ function App() {
             onClose={() => setLegalModalOpen(false)}
             initialTab={legalInitialTab}
           />
+        </Suspense>
+        <FeedbackHost />
+      </ErrorBoundary>
+    );
+  }
+
+  if (isServicesPath) {
+    return (
+      <ErrorBoundary>
+        <Suspense fallback={null}>
+          <ServicePages
+            pathname={currentPath}
+            locale={isCn ? 'zh-CN' : 'en'}
+            onStartDiagnosis={handleServiceDiagnosis}
+            onOpenServiceRequest={handleServiceRequest}
+            onOpenLegal={openLegal}
+          />
+          {workOrderModalOpen && (
+            <WorkOrderModal isOpen={workOrderModalOpen} onClose={() => setWorkOrderModalOpen(false)} onSubmit={handleSubmitWorkOrder} />
+          )}
+          <LegalModal isOpen={legalModalOpen} onClose={() => setLegalModalOpen(false)} initialTab={legalInitialTab} />
         </Suspense>
         <FeedbackHost />
       </ErrorBoundary>

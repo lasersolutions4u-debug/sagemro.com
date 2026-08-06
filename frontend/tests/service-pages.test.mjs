@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
 import { getServicePage, getServicePages } from '../src/data/servicePages.js';
@@ -108,4 +109,26 @@ test('service content avoids unsupported claims and numeric service promises', (
       assert.doesNotMatch(publicCopy, /manufacturer fault code|named case/i);
     }
   }
+});
+
+test('service routes lazy-load the public pages and preserve the existing conversion semantics', async () => {
+  const app = await readFile(new URL('../src/App.jsx', import.meta.url), 'utf8');
+
+  assert.match(app, /const ServicePages = lazy\(\(\) => import\('\.\/components\/Services\/ServicePages'\)/);
+  assert.match(app, /const isServicesPath = currentPath === '\/services' \|\| currentPath\.startsWith\('\/services\/'\)/);
+  assert.match(app, /window\.history\.pushState\(\{\}, '', '\/'\);\s*setCurrentPath\('\/'\);/);
+  assert.match(app, /const handleServiceRequest = useCallback\(\(\) => \{\s*setWorkOrderModalOpen\(true\);/);
+  assert.match(app, /<ServicePages[\s\S]*onStartDiagnosis=\{handleServiceDiagnosis\}[\s\S]*onOpenServiceRequest=\{handleServiceRequest\}/);
+
+  const [pages, conversionPanel] = await Promise.all([
+    readFile(new URL('../src/components/Services/ServicePages.jsx', import.meta.url), 'utf8'),
+    readFile(new URL('../src/components/common/PublicConversionPanel.jsx', import.meta.url), 'utf8'),
+  ]);
+
+  assert.match(pages, /getServicePages\(locale\)/);
+  assert.match(pages, /getServicePage\(slug, locale\)/);
+  assert.match(pages, /<PublicConversionPanel/);
+  assert.match(pages, /breadcrumb[\s\S]*answer-first[\s\S]*equipment[\s\S]*process[\s\S]*checklist[\s\S]*boundary[\s\S]*review[\s\S]*conversion[\s\S]*related/i);
+  assert.match(conversionPanel, /onStartDiagnosis/);
+  assert.match(conversionPanel, /onOpenServiceRequest/);
 });
