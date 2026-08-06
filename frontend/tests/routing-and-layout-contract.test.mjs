@@ -24,7 +24,8 @@ test('tool and insight detail routes reject unknown slugs', () => {
   const tools = read('frontend/src/components/Tools/IndustryToolsPage.jsx');
   const insights = read('frontend/src/components/Insights/InsightsPage.jsx');
 
-  assert.match(tools, /slug && !selectedTool/);
+  assert.match(tools, /const isMissing = page === 'not-found'/);
+  assert.match(tools, /getIndustryToolsSeoMetadata/);
   assert.match(insights, /slug && !insight/);
 });
 

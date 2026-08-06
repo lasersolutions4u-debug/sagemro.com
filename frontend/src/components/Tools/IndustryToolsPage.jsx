@@ -26,10 +26,9 @@ import {
   getToolWorkedExample,
   publicIndustryTools,
 } from '../../data/industryTools';
-import { getIndustryToolsPageState } from '../../utils/industryToolsPage';
+import { getIndustryToolsPageState, getIndustryToolsSeoMetadata } from '../../utils/industryToolsPage';
 import { isCnLocale } from '../../utils/locale';
 import { setSeoMetadata } from '../../utils/seo';
-import { getRuntimeSeoRoute } from '../../data/publicSeoRoutes';
 
 const BendSimulatorPage = lazy(() => import('./BendSimulatorPage').then(m => ({ default: m.BendSimulatorPage })));
 
@@ -101,27 +100,26 @@ export function IndustryToolsPage({ pathname = '/tools', onOpenLegal, onSendMess
   const { canonical, page, selectedTool, slug } = route;
   const copy = toolsPageCopy[locale];
   const [forms, setForms] = useState(defaultIndustryToolForms);
-  const isMissing = Boolean(slug && !selectedTool);
-  const isPausedTool = selectedTool?.id === 'bend-simulator' || selectedTool?.seoEvidence?.indexable === false;
+  const isMissing = page === 'not-found';
   const pageTitle = selectedTool ? selectedTool.seoTitle : copy.hubTitle;
   const pageDescription = selectedTool
     ? selectedTool.seoDescription
     : copy.hubDescription;
 
   useEffect(() => {
-    const seoRoute = getRuntimeSeoRoute(selectedTool ? `/tools/${selectedTool.slug}` : '/tools', locale);
+    const seoMetadata = getIndustryToolsSeoMetadata({ canonical, page, selectedTool, slug }, locale);
     setSeoMetadata({
       title: `${pageTitle} | SAGEMRO`,
       description: pageDescription,
-      canonical: seoRoute?.canonical ?? canonical,
-      alternates: seoRoute?.alternates,
+      canonical: seoMetadata.canonical,
+      alternates: seoMetadata.alternates,
       lang: locale === 'zh-CN' ? 'zh-CN' : 'en',
-      robots: isMissing ? 'noindex,nofollow,noarchive' : seoRoute?.robots ?? (isPausedTool ? 'noindex,nofollow,noarchive' : 'index,follow'),
-      structuredData: seoRoute?.structuredData ?? null,
+      robots: seoMetadata.robots,
+      structuredData: seoMetadata.structuredData,
     });
-  }, [canonical, isMissing, isPausedTool, locale, pageDescription, pageTitle, selectedTool]);
+  }, [canonical, locale, page, pageDescription, pageTitle, selectedTool, slug]);
 
-  if (slug && !selectedTool) {
+  if (isMissing) {
     return <NotFoundPage isCn={locale === 'zh-CN'} />;
   }
 
