@@ -72,7 +72,8 @@ test('main chat input supports Deepgram voice transcription without image upload
 });
 
 test('main site first-impression copy keeps CN and COM market language separate', () => {
-  const welcome = read('frontend/src/components/Chat/WelcomePage.jsx');
+  const welcome = read('frontend/src/data/welcomePageCopy.js');
+  const welcomePage = read('frontend/src/components/Chat/WelcomePage.jsx');
   const chatArea = read('frontend/src/components/Chat/ChatArea.jsx');
   const about = read('frontend/src/components/common/AboutModal.jsx');
   const footer = read('frontend/src/components/common/Footer.jsx');
@@ -110,7 +111,7 @@ test('main site first-impression copy keeps CN and COM market language separate'
   assert.doesNotMatch(welcome, /内容由 AI 生成，仅供参考/);
   assert.doesNotMatch(welcome, /钣金设备故障，先用 AI 看看/);
   assert.doesNotMatch(welcome, /报了什么警、切割出了什么问题、折弯不对了/);
-  assert.match(welcome, /max-w-4xl/);
+  assert.match(welcomePage, /max-w-4xl/);
   assert.match(chatArea, /SAGEMRO AI 设备服务平台/);
   assert.match(chatArea, /专为激光和成型设备打造的智能服务助手/);
   assert.match(chatArea, /SAGEMRO AI Equipment Service/);
@@ -153,15 +154,15 @@ test('equipment category narrative uses laser and metal forming equipment consis
 
 test('AI service copy keeps service preparation neutral instead of sales routing', () => {
   const chatArea = read('frontend/src/components/Chat/ChatArea.jsx');
-  const welcomePage = read('frontend/src/components/Chat/WelcomePage.jsx');
+  const welcomeCopy = read('frontend/src/data/welcomePageCopy.js');
   const legal = read('frontend/src/components/common/LegalModal.jsx');
 
   assert.match(chatArea, /service process/i);
-  assert.match(welcomePage, /SAGEMRO Service OS|Useful shop-floor tools/i);
+  assert.match(welcomeCopy, /SAGEMRO Service OS|Useful shop-floor tools/i);
   assert.match(legal, /Service cost reference/);
   assert.match(legal, /服务费用参考/);
   assert.doesNotMatch(chatArea, /sales lead|Repair Estimate AI|Equipment Health Report AI|Health Report/);
-  assert.doesNotMatch(welcomePage, /sales lead|right conversion action|Lead type/);
+  assert.doesNotMatch(welcomeCopy, /sales lead|right conversion action|Lead type/);
   assert.doesNotMatch(legal, /Repair estimate|维修估算/);
 });
 
