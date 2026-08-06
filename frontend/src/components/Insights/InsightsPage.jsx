@@ -5,6 +5,7 @@ import { Footer } from '../common/Footer';
 import { NotFoundPage } from '../common/NotFoundPage';
 import { getLocalizedInsight, getLocalizedInsights } from '../../data/insights';
 import { getDiagnosticGuide } from '../../data/diagnosticGuides';
+import { getPublicSeoRoute } from '../../data/publicSeoRoutes';
 import { DiagnosticGuide } from './DiagnosticGuide';
 import { isCnLocale } from '../../utils/locale';
 import { setSeoMetadata } from '../../utils/seo';
@@ -56,6 +57,7 @@ export function InsightsPage({ pathname = '/insights', onOpenLegal, onStartDiagn
       ? content.description
       : copy.hubDescription;
     const isMissing = Boolean(slug && !content);
+    const publicRoute = getPublicSeoRoute(content ? `/insights/${content.slug}` : '/insights', locale);
     setSeoMetadata({
       title: isMissing
         ? locale === 'zh-CN' ? '洞察未找到 | SAGEMRO' : 'Insight Not Found | SAGEMRO'
@@ -66,14 +68,7 @@ export function InsightsPage({ pathname = '/insights', onOpenLegal, onStartDiagn
       canonical: `${canonicalHost}${content ? `/insights/${content.slug}` : slug ? `/insights/${slug}` : '/insights'}`,
       lang: locale,
       robots: isMissing ? 'noindex,nofollow,noarchive' : 'index,follow',
-      structuredData: content ? {
-        '@context': 'https://schema.org',
-        '@type': 'Article',
-        headline: content.title,
-        description: content.description,
-        url: `${canonicalHost}/insights/${content.slug}`,
-        publisher: { '@type': 'Organization', name: 'SAGEMRO' },
-      } : null,
+      structuredData: isMissing ? null : publicRoute?.structuredData,
     });
   }, [canonicalHost, copy, guide, insight, slug, locale]);
 

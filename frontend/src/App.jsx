@@ -37,6 +37,7 @@ const IndustryToolsModal = lazy(() => import('./components/Tools/IndustryToolsMo
 const IndustryToolsPage = lazy(() => import('./components/Tools/IndustryToolsPage').then(m => ({ default: m.IndustryToolsPage })));
 const InsightsPage = lazy(() => import('./components/Insights/InsightsPage').then(m => ({ default: m.InsightsPage })));
 const ServicePages = lazy(() => import('./components/Services/ServicePages').then(m => ({ default: m.ServicePages })));
+const TechnicalReviewPage = lazy(() => import('./components/About/TechnicalReviewPage').then(m => ({ default: m.TechnicalReviewPage })));
 const ChatArea = lazy(() => import('./components/Chat/ChatArea').then(m => ({ default: m.ChatArea })));
 
 function App() {
@@ -84,12 +85,14 @@ function App() {
       || currentPath === '/insights'
       || currentPath.startsWith('/insights/')
       || currentPath === '/services'
-      || currentPath.startsWith('/services/');
+      || currentPath.startsWith('/services/')
+      || currentPath === '/about/technical-review';
     if (isToolsOrInsights || (isEngineerHost && currentPath === '/' && !userType)) return;
 
     const isPublicPath = currentPath === '/'
       || currentPath === '/services'
       || currentPath.startsWith('/services/')
+      || currentPath === '/about/technical-review'
       || (isEngineerHost && currentPath === '/');
     const isPrivateApp = Boolean(userType) || !isPublicPath;
     const title = isCn ? 'SAGEMRO 智能服务系统' : 'SAGEMRO Service OS';
@@ -537,7 +540,8 @@ function App() {
   const isInsightsPath = currentPath === '/insights' || currentPath.startsWith('/insights/');
   const serviceRoute = getServicePageRoute(currentPath);
   const isServicesPath = serviceRoute !== null;
-  if (currentPath !== '/' && !isToolsPath && !isInsightsPath && !isServicesPath) {
+  const isTechnicalReviewPath = currentPath === '/about/technical-review';
+  if (currentPath !== '/' && !isToolsPath && !isInsightsPath && !isServicesPath && !isTechnicalReviewPath) {
     return <NotFoundPage isCn={isCn} />;
   }
 
@@ -600,6 +604,18 @@ function App() {
           {workOrderModalOpen && (
             <WorkOrderModal isOpen={workOrderModalOpen} onClose={() => setWorkOrderModalOpen(false)} onSubmit={handleSubmitWorkOrder} />
           )}
+          <LegalModal isOpen={legalModalOpen} onClose={() => setLegalModalOpen(false)} initialTab={legalInitialTab} />
+        </Suspense>
+        <FeedbackHost />
+      </ErrorBoundary>
+    );
+  }
+
+  if (isTechnicalReviewPath) {
+    return (
+      <ErrorBoundary>
+        <Suspense fallback={null}>
+          <TechnicalReviewPage locale={isCn ? 'zh-CN' : 'en'} onOpenLegal={openLegal} />
           <LegalModal isOpen={legalModalOpen} onClose={() => setLegalModalOpen(false)} initialTab={legalInitialTab} />
         </Suspense>
         <FeedbackHost />

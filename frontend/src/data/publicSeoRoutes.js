@@ -4,7 +4,11 @@ import {
   getToolWorkedExample,
   publicIndustryTools,
 } from './industryTools.js';
+import { getDiagnosticGuides, getRelatedDiagnosticGuidesForService } from './diagnosticGuides.js';
 import { getLocalizedInsights } from './insights.js';
+import { getServicePage, getServicePages } from './servicePages.js';
+import { getTechnicalAuthor } from './technicalAuthors.js';
+import { getTechnicalReviewPolicy } from './technicalReviewPolicy.js';
 import { welcomePageCopy } from './welcomePageCopy.js';
 
 const HOSTS = { en: 'https://sagemro.com', 'zh-CN': 'https://sagemro.cn' };
@@ -21,6 +25,12 @@ const pages = {
       description: 'Use free SAGEMRO calculators for metal weight, steel price planning, laser cutting cost, gas use, speed reference, bending, ROI, and auxiliary sizing.',
       h1: 'Free tools for sheet metal, laser cutting, bending, ROI, and auxiliary planning.',
       paragraphs: ['Start with numbers you can check: material weight, reference budget, cutting time, assist gas, bending assumptions, equipment ROI, and support equipment needs. Each tool keeps assumptions visible so you can review the next decision with better context.'],
+    },
+    services: {
+      title: 'Industrial Equipment Service Support',
+      description: 'Structured service support for laser cutting, press brakes, remote diagnostics, and preventive maintenance.',
+      h1: 'Structured equipment service support for a clear next action.',
+      paragraphs: ['Choose the service context that best matches the equipment and operating concern. Each page explains the information to prepare and the boundary between remote and onsite support.'],
     },
     insights: {
       title: 'SAGEMRO Insights for Laser and Metal Forming Equipment',
@@ -39,6 +49,12 @@ const pages = {
       description: '使用 SAGEMRO 行业工具估算材料重量、钢材预算、激光切割成本、辅助气体用量、切割速度、折弯、设备 ROI 和辅机选型参考。',
       h1: '钣金、切割、折弯与设备规划工具。',
       paragraphs: ['先从可检查的数据开始：材料重量、预算参考、切割时间、辅助气体、折弯假设、设备 ROI 和辅机需求。每个工具都会把假设列出来，方便你再做下一步判断。'],
+    },
+    services: {
+      title: '工业设备服务支持',
+      description: '查看激光切割、折弯机、远程诊断和预防性维护的结构化服务支持。',
+      h1: '用结构化设备服务支持，明确下一步行动。',
+      paragraphs: ['选择最符合设备和运行问题的服务场景。每个页面说明应准备的信息，以及远程与现场支持的边界。'],
     },
     insights: {
       title: 'SAGEMRO 激光与金属成型洞察',
@@ -67,7 +83,22 @@ function route(locale, value) {
 }
 
 function organization(locale) {
-  return { '@type': 'Organization', name: 'SAGEMRO', url: `${HOSTS[locale]}/`, email: 'support@sagemro.com' };
+  return { '@type': 'Organization', '@id': `${HOSTS[locale]}/#organization`, name: 'SAGEMRO', url: `${HOSTS[locale]}/`, email: 'support@sagemro.com' };
+}
+
+function organizationRef(locale) {
+  return { '@id': organization(locale)['@id'] };
+}
+
+function technicalTeamOrganization(locale) {
+  const author = getTechnicalAuthor('sagemro-technical-service-team', locale);
+  return {
+    '@type': 'Organization',
+    '@id': `${author.url}#technical-team`,
+    name: author.name,
+    description: author.bio,
+    url: author.url,
+  };
 }
 
 function breadcrumb(routeValue) {
@@ -117,16 +148,24 @@ function toolRoute(locale, tool, robots = 'index,follow') {
       '@type': 'WebApplication', name: tool.label, description: tool.seoDescription,
       applicationCategory: 'BusinessApplication', operatingSystem: 'Web',
       offers: { '@type': 'Offer', price: '0', priceCurrency: locale === 'zh-CN' ? 'CNY' : 'USD' },
+      publisher: organizationRef(locale),
     },
   });
 }
 
-function withBreadcrumbs(routes) {
-  return routes.map((routeValue) => routeValue.path === '/' ? routeValue : {
-    ...routeValue,
-    structuredData: routeValue.structuredData['@graph']
-      ? routeValue.structuredData
-      : { '@graph': [routeValue.structuredData, breadcrumb(routeValue)] },
+function withSchemaGraphs(routes, locale) {
+  return routes.map((routeValue) => {
+    const schemaOrganization = routeValue.schemaOrganization ?? organization(locale);
+    const { schemaOrganization: _schemaOrganization, ...publicRoute } = routeValue;
+    return {
+      ...publicRoute,
+      structuredData: {
+        '@context': 'https://schema.org',
+        '@graph': routeValue.path === '/'
+          ? [schemaOrganization, routeValue.structuredData]
+          : [routeValue.structuredData, breadcrumb(routeValue), schemaOrganization],
+      },
+    };
   });
 }
 
@@ -135,6 +174,9 @@ function buildRoutes(locale) {
   const welcome = welcomePageCopy[locale === 'zh-CN' ? 'zh' : 'en'];
   const tools = publicIndustryTools.map((tool) => getLocalizedTool(tool, locale));
   const insights = getLocalizedInsights(locale);
+  const services = getServicePages(locale);
+  const guides = getDiagnosticGuides(locale);
+  const reviewPolicy = getTechnicalReviewPolicy(locale);
   const collection = (path, type, content, children) => route(locale, {
     path,
     type,
@@ -143,7 +185,20 @@ function buildRoutes(locale) {
     modified: RELEASE_DATE,
     children,
     body: { h1: content.h1, paragraphs: content.paragraphs, list: children.map((child) => child.label || child.title) },
-    structuredData: { '@type': 'CollectionPage', name: content.title, description: content.description },
+    structuredData: {
+      '@type': 'CollectionPage',
+      name: content.title,
+      description: content.description,
+      url: `${HOSTS[locale]}${path}`,
+      mainEntity: {
+        '@type': 'ItemList',
+        itemListElement: children.map((child, index) => ({
+          '@type': 'ListItem',
+          position: index + 1,
+          url: child.canonical,
+        })),
+      },
+    },
   });
   const home = route(locale, {
     path: '/',
@@ -152,7 +207,7 @@ function buildRoutes(locale) {
     description: copy.home.description,
     modified: RELEASE_DATE,
     body: { h1: welcome.headline, paragraphs: [welcome.intro], resources: welcome.resources },
-    structuredData: { '@graph': [organization(locale), { '@type': 'WebSite', name: 'SAGEMRO', url: `${HOSTS[locale]}/` }] },
+    structuredData: { '@type': 'WebSite', name: 'SAGEMRO', url: `${HOSTS[locale]}/`, publisher: organizationRef(locale) },
   });
   const toolRoutes = tools.map((tool) => toolRoute(locale, tool));
   const insightRoutes = insights.map((insight) => route(locale, {
@@ -165,15 +220,110 @@ function buildRoutes(locale) {
     structuredData: {
       '@type': 'Article', headline: insight.title, description: insight.description,
       datePublished: insight.publishedAt, dateModified: insight.updatedAt,
-      author: organization(locale), publisher: organization(locale),
+      author: organizationRef(locale), publisher: organizationRef(locale),
       image: `${HOSTS[locale]}/sagemro-logo.png`, mainEntityOfPage: `${HOSTS[locale]}/insights/${insight.slug}`,
     },
   }));
+  const serviceRoutes = services.map((service) => {
+    const relatedGuides = getRelatedDiagnosticGuidesForService(service.slug, locale);
+    return route(locale, {
+      path: `/services/${service.slug}`,
+      type: 'service',
+      title: service.seoTitle.replace(/ \| SAGEMRO$/, ''),
+      description: service.description,
+      modified: service.reviewedAt,
+      body: {
+        h1: service.title,
+        paragraphs: [service.summary, service.equipment, service.remoteBoundary, service.onsiteBoundary, service.evidenceNotes],
+        sections: [
+          { heading: locale === 'zh-CN' ? '问题范围' : 'Issue scope', body: service.issues.join(' ') },
+          { heading: locale === 'zh-CN' ? '服务评估流程' : 'How the review works', body: service.process.join(' ') },
+          { heading: locale === 'zh-CN' ? '需准备的信息' : 'Information to prepare', body: service.customerInputs.join(' ') },
+        ],
+        links: relatedGuides.map((guide) => ({ kind: 'guide', href: `/insights/${guide.slug}`, label: guide.title })),
+        emptyState: relatedGuides.length ? '' : (locale === 'zh-CN' ? '更多指南将在证据完整并通过审核后发布。' : 'More reviewed guides will be added when their evidence is complete.'),
+      },
+      structuredData: {
+        '@type': 'Service',
+        name: service.title,
+        description: service.description,
+        url: `${HOSTS[locale]}/services/${service.slug}`,
+        provider: organizationRef(locale),
+      },
+    });
+  });
+  const guideRoutes = guides.map((guide) => {
+    const author = getTechnicalAuthor(guide.authorId, locale);
+    const reviewer = getTechnicalAuthor(guide.reviewedBy, locale);
+    const team = technicalTeamOrganization(locale);
+    const reviewerId = reviewer.id === author.id ? team['@id'] : reviewer.url;
+    const relatedService = getServicePage(guide.relatedServiceSlug, locale);
+    return route(locale, {
+      path: `/insights/${guide.slug}`,
+      type: 'insight',
+      title: guide.title,
+      description: guide.description,
+      modified: guide.reviewedAt,
+      schemaOrganization: team,
+      body: {
+        h1: guide.title,
+        paragraphs: [guide.description, guide.directAnswer, guide.safety],
+        sections: [
+          { heading: locale === 'zh-CN' ? '症状' : 'Symptoms', body: guide.symptoms.join(' ') },
+          { heading: locale === 'zh-CN' ? '检查与行动' : 'Checks and actions', body: guide.checks.map((check, index) => `${check} ${guide.actions[index]}`).join(' ') },
+          { heading: locale === 'zh-CN' ? '停止并升级' : 'Stop and escalate', body: guide.stopConditions.join(' ') },
+        ],
+        links: [
+          ...(relatedService ? [{ kind: 'service', href: `/services/${relatedService.slug}`, label: relatedService.title }] : []),
+          { kind: 'author', href: '/about/technical-review', label: `${locale === 'zh-CN' ? '作者' : 'Author'}: ${author.name}` },
+          { kind: 'reviewer', href: '/about/technical-review', label: `${locale === 'zh-CN' ? '技术审核' : 'Technical review'}: ${reviewer.name}` },
+        ],
+      },
+      structuredData: {
+        '@type': 'Article',
+        headline: guide.title,
+        description: guide.description,
+        url: `${HOSTS[locale]}/insights/${guide.slug}`,
+        mainEntityOfPage: `${HOSTS[locale]}/insights/${guide.slug}`,
+        datePublished: guide.publishedAt,
+        dateModified: guide.reviewedAt,
+        author: { '@id': team['@id'] },
+        reviewedBy: { '@id': reviewerId },
+        publisher: { '@id': team['@id'] },
+        image: `${HOSTS[locale]}/sagemro-logo.png`,
+      },
+    });
+  });
+  const technicalTeam = technicalTeamOrganization(locale);
+  const technicalReviewRoute = route(locale, {
+    path: '/about/technical-review',
+    type: 'technical-review',
+    title: reviewPolicy.seoTitle.replace(/ \| SAGEMRO$/, ''),
+    description: reviewPolicy.description,
+    modified: reviewPolicy.reviewedAt,
+    schemaOrganization: technicalTeam,
+    body: {
+      h1: reviewPolicy.title,
+      paragraphs: [reviewPolicy.intro, reviewPolicy.errorReporting],
+      sections: reviewPolicy.sections,
+    },
+    structuredData: {
+      '@type': 'AboutPage',
+      name: reviewPolicy.title,
+      description: reviewPolicy.description,
+      url: `${HOSTS[locale]}/about/technical-review`,
+      datePublished: reviewPolicy.publishedAt,
+      dateModified: reviewPolicy.reviewedAt,
+      author: { '@id': technicalTeam['@id'] },
+      publisher: { '@id': technicalTeam['@id'] },
+    },
+  });
   const toolsHub = collection('/tools', 'tools-hub', copy.tools, toolRoutes);
-  const insightsHub = collection('/insights', 'insights-hub', copy.insights, insightRoutes);
-  const routes = [home, toolsHub, ...toolRoutes, insightsHub, ...insightRoutes];
+  const servicesHub = collection('/services', 'services-hub', copy.services, serviceRoutes);
+  const insightsHub = collection('/insights', 'insights-hub', copy.insights, [...insightRoutes, ...guideRoutes]);
+  const routes = [home, servicesHub, ...serviceRoutes, toolsHub, ...toolRoutes, insightsHub, ...insightRoutes, ...guideRoutes, technicalReviewRoute];
 
-  return withBreadcrumbs(routes);
+  return withSchemaGraphs(routes, locale);
 }
 
 export function getPublicSeoRoutes(locale = 'en') {
@@ -189,5 +339,5 @@ export function getDirectAccessNoindexToolRoutes(locale = 'en') {
   const normalizedLocale = locale === 'zh-CN' ? 'zh-CN' : 'en';
   const tools = directAccessNoindexIndustryTools.map((tool) => getLocalizedTool(tool, normalizedLocale));
 
-  return withBreadcrumbs(tools.map((tool) => toolRoute(normalizedLocale, tool, 'noindex,nofollow,noarchive')));
+  return withSchemaGraphs(tools.map((tool) => toolRoute(normalizedLocale, tool, 'noindex,nofollow,noarchive')), normalizedLocale);
 }

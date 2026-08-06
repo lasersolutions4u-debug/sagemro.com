@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
 import { getServicePage, getServicePages } from '../src/data/servicePages.js';
+import { getDiagnosticGuides, getRelatedDiagnosticGuidesForService } from '../src/data/diagnosticGuides.js';
 import { getServicePageRoute } from '../src/utils/servicePageRoute.js';
 
 const expectedSlugs = [
@@ -158,4 +159,52 @@ test('service route parsing accepts only exact hub paths and rejects malformed p
   assert.deepEqual(getServicePageRoute('/services/unknown-service'), { type: 'detail', slug: 'unknown-service' });
   assert.equal(getServicePage(getServicePageRoute('/services/unknown-service').slug, 'en'), null);
   assert.deepEqual(getServicePageRoute('/services/laser-cutting-machine-repair//'), { type: 'not-found', slug: '' });
+});
+
+test('service pages link all and only relevant published diagnostic guides', async () => {
+  const expectedRelations = {
+    'laser-cutting-machine-repair': ['laser-protective-lens-burning', 'laser-cutting-machine-maintenance-checklist'],
+    'press-brake-repair': [],
+    'remote-diagnostics': [],
+    'preventive-maintenance': ['laser-protective-lens-burning', 'laser-cutting-machine-maintenance-checklist'],
+  };
+
+  for (const locale of ['en', 'zh-CN']) {
+    const publishedSlugs = new Set(getDiagnosticGuides(locale).map((guide) => guide.slug));
+    const draftSlugs = new Set(getDiagnosticGuides(locale, { publishedOnly: false })
+      .filter((guide) => guide.status === 'draft')
+      .map((guide) => guide.slug));
+
+    for (const page of getServicePages(locale)) {
+      const guides = getRelatedDiagnosticGuidesForService(page.slug, locale);
+      assert.deepEqual(guides.map((guide) => guide.slug), expectedRelations[page.slug]);
+      assert.ok(guides.every((guide) => publishedSlugs.has(guide.slug)));
+      assert.ok(guides.every((guide) => !draftSlugs.has(guide.slug)));
+    }
+  }
+
+  const pages = await readFile(new URL('../src/components/Services/ServicePages.jsx', import.meta.url), 'utf8');
+  assert.match(pages, /getRelatedDiagnosticGuidesForService\(page\.slug, locale\)/);
+  assert.match(pages, /relatedGuides\.map/);
+  assert.match(pages, /relatedGuides\.length/);
+  assert.match(pages, /More reviewed guides will be added when their evidence is complete/);
+  assert.match(pages, /更多指南将在证据完整并通过审核后发布/);
+});
+
+test('the public technical-review route and footer entry are bilingual runtime contracts', async () => {
+  const [app, footer, page] = await Promise.all([
+    readFile(new URL('../src/App.jsx', import.meta.url), 'utf8'),
+    readFile(new URL('../src/components/common/Footer.jsx', import.meta.url), 'utf8'),
+    readFile(new URL('../src/components/About/TechnicalReviewPage.jsx', import.meta.url), 'utf8'),
+  ]);
+
+  assert.match(app, /const TechnicalReviewPage = lazy/);
+  assert.match(app, /currentPath === '\/about\/technical-review'/);
+  assert.match(app, /<TechnicalReviewPage/);
+  assert.match(footer, /href="\/about\/technical-review"/);
+  assert.match(footer, /Technical review/);
+  assert.match(footer, /技术审核/);
+  assert.match(page, /getTechnicalReviewPolicy/);
+  assert.match(page, /setSeoMetadata/);
+  assert.match(page, /<Footer/);
 });

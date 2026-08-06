@@ -29,6 +29,7 @@ import {
 import { getIndustryToolsPageState } from '../../utils/industryToolsPage';
 import { isCnLocale } from '../../utils/locale';
 import { setSeoMetadata } from '../../utils/seo';
+import { getPublicSeoRoute } from '../../data/publicSeoRoutes';
 
 const BendSimulatorPage = lazy(() => import('./BendSimulatorPage').then(m => ({ default: m.BendSimulatorPage })));
 
@@ -116,12 +117,14 @@ export function IndustryToolsPage({ pathname = '/tools', onOpenLegal, onSendMess
     : copy.hubDescription;
 
   useEffect(() => {
+    const publicRoute = getPublicSeoRoute(selectedTool ? `/tools/${selectedTool.slug}` : '/tools', locale);
     setSeoMetadata({
       title: isMissing ? '工具未找到 | SAGEMRO' : `${pageTitle} | SAGEMRO`,
       description: pageDescription,
       canonical,
       lang: locale === 'zh-CN' ? 'zh-CN' : 'en',
       robots: isMissing || isPausedTool ? 'noindex,nofollow,noarchive' : 'index,follow',
+      structuredData: publicRoute?.structuredData ?? null,
     });
   }, [canonical, canonicalHost, isMissing, isPausedTool, locale, pageDescription, pageTitle, selectedTool]);
 

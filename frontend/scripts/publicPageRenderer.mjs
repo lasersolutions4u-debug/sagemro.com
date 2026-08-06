@@ -24,85 +24,29 @@ function renderBody(route) {
       const [question, answer] = Array.isArray(faq) ? faq : [faq.question, faq.answer];
       return `<p>${escapeHtml(question)} ${escapeHtml(answer)}</p>`;
     }),
+    ...(body.links || []).map((link) => `<p><a href="${escapeHtml(link.href)}">${escapeHtml(link.label)}</a></p>`),
+    ...(body.emptyState ? [`<p>${escapeHtml(body.emptyState)}</p>`] : []),
   ].join('');
 
   return `<div id="root" data-prerendered="true">\n  <main class="seo-static-shell">\n    <a href="/">SAGEMRO</a>\n    <h1>${escapeHtml(body.h1)}</h1>\n    <p>${escapeHtml(paragraphs[0])}</p>\n    <section>${detail}</section>\n  </main>\n</div>`;
 }
 
-function publisher(route, locale) {
-  return {
-    '@type': 'Organization',
-    name: 'SAGEMRO',
-    url: route.alternates[locale],
-    logo: `${HOSTS[locale]}/sagemro-logo.png`,
-  };
-}
-
-function breadcrumb(route) {
-  const parts = route.path.split('/').filter(Boolean);
-  const origin = new URL(route.canonical).origin;
-  return {
-    '@type': 'BreadcrumbList',
-    itemListElement: parts.map((part, index) => ({
-      '@type': 'ListItem',
-      position: index + 1,
-      name: part,
-      item: `${origin}/${parts.slice(0, index + 1).join('/')}`,
-    })),
-  };
-}
-
 function structuredData(route, locale) {
-  const commonPublisher = publisher(route, locale);
-  let primary;
+  if (route.structuredData) return route.structuredData;
+  return {
+    '@type': route.type === 'tool' ? 'WebApplication' : 'WebPage',
+    name: route.body?.h1 || route.title,
+    description: route.description,
+    url: route.canonical,
+    inLanguage: locale,
+  };
+}
 
-  if (route.type === 'home') {
-    return {
-      '@graph': [
-        commonPublisher,
-        { '@type': 'WebSite', name: 'SAGEMRO', url: route.canonical },
-      ],
-    };
-  }
-
-  if (route.type === 'tool') {
-    primary = {
-      '@type': 'WebApplication',
-      name: route.body?.h1 || route.title,
-      description: route.description,
-      applicationCategory: 'BusinessApplication',
-      operatingSystem: 'Web',
-      offers: { '@type': 'Offer', price: '0', priceCurrency: locale === 'zh-CN' ? 'CNY' : 'USD' },
-      publisher: commonPublisher,
-    };
-  } else if (route.type === 'insight') {
-    const source = route.structuredData?.['@graph']?.[0] || route.structuredData || {};
-    primary = {
-      '@type': 'Article',
-      headline: route.title,
-      description: route.description,
-      author: source.author || commonPublisher,
-      publisher: commonPublisher,
-      datePublished: source.datePublished || route.modified,
-      dateModified: source.dateModified || route.modified,
-      image: source.image || `${HOSTS[locale]}/sagemro-logo.png`,
-      mainEntityOfPage: source.mainEntityOfPage || route.canonical,
-    };
-  } else {
-    primary = {
-      '@type': 'CollectionPage',
-      name: route.title,
-      description: route.description,
-      mainEntity: {
-        '@type': 'ItemList',
-        itemListElement: (route.children || []).map((child, index) => ({
-          '@type': 'ListItem', position: index + 1, url: child.canonical,
-        })),
-      },
-    };
-  }
-
-  return { '@graph': [primary, breadcrumb(route)] };
+function containsSchemaType(value, type) {
+  if (Array.isArray(value)) return value.some((item) => containsSchemaType(item, type));
+  if (!value || typeof value !== 'object') return false;
+  if (value['@type'] === type) return true;
+  return Object.values(value).some((item) => containsSchemaType(item, type));
 }
 
 function headTags(route, locale) {
@@ -113,7 +57,7 @@ function headTags(route, locale) {
   return [
     `<link rel="canonical" href="${escapeHtml(route.canonical)}" />`,
     alternates,
-    `<meta property="og:type" content="${route.type === 'insight' ? 'article' : 'website'}" />`,
+    `<meta property="og:type" content="${containsSchemaType(route.structuredData, 'Article') ? 'article' : 'website'}" />`,
     `<meta property="og:title" content="${escapeHtml(route.title)}" />`,
     `<meta property="og:description" content="${escapeHtml(route.description)}" />`,
     `<meta property="og:url" content="${escapeHtml(route.canonical)}" />`,
