@@ -5,13 +5,13 @@
 - Enabled Vite's production manifest (`dist/.vite/manifest.json`).
 - Added a build-output contract that rejects eager Markdown or bend-simulator entry imports and requires the compact SVG favicon.
 - Kept the public tools and insights routes lazy; moved the chat surface behind its existing app-level lazy boundary so its Markdown renderer is not loaded by the bootstrap entry.
-- Removed broad and dependency-merging manual vendor buckets. With Vite 8/Rolldown, keeping those named buckets caused `react-markdown` to be promoted into the entry's preload graph.
+- Removed the broad `vendor-misc` bucket while retaining targeted Vite 8/Rolldown vendor boundaries with entry-aware grouping.
 - Switched customer header marks and the browser favicon to the existing 2,253-byte SVG. The PNG remains available for schema and social-preview metadata.
 
 ## TDD evidence
 
 1. RED: `npm run build && node --test tests/public-bundle-contract.test.mjs` failed because the manifest did not exist and public HTML still referenced the PNG favicon.
-2. GREEN: after enabling the manifest, lazy-loading ChatArea, and removing the dependency-merging manual vendor buckets, the bundle contract passed.
+2. GREEN: after enabling the manifest, lazy-loading ChatArea, and restoring targeted entry-aware vendor boundaries, the bundle contract passed.
 
 ## Follow-up review correction
 
@@ -29,17 +29,21 @@ After:  index.html imports runtime, index-specific motion/icons/react groups, AP
         feedback, and locale; ChatArea is dynamic and imports vendor-markdown~ChatArea.
 ```
 
+The final correction creates `BendSimulatorPage` as a dynamic source entry from `IndustryToolsPage`. The direct paused route still renders the same component and remains noindex; it is no longer bundled into the general tools-page chunk.
+
 ## Verification
 
 ```text
 npm test                         # 303 passed
 npm run lint                     # passed
 npm run build                    # passed; public HTML generated
-node --test tests/public-bundle-contract.test.mjs  # 2 passed
+node --test tests/public-bundle-contract.test.mjs  # 3 passed
 ```
+
+Final review evidence: the strengthened contract first failed because `BendSimulatorPage` was not a manifest dynamic entry. After making that route component lazy, the build emitted `BendSimulatorPage-D3qN0cCN.js`, all three bundle-contract checks passed, and the focused bend/tool routing tests passed before the full suite.
 
 ## Self-review
 
 - `git diff --check` passed.
-- The entry manifest imports only the runtime, icons, and React chunks; `IndustryToolsPage`, `InsightsPage`, and `ChatArea` remain dynamic imports.
+- The entry static closure contains the runtime, entry-specific motion/icons/react groups, API, feedback, and locale. It excludes `IndustryToolsPage`, `InsightsPage`, `ChatArea`, `BendSimulatorPage`, and every Markdown boundary.
 - No workflow, nginx, Worker, admin, dependency, or unrelated UI changes were made.
