@@ -166,7 +166,7 @@ function getFieldsForTool(toolId, values, profiles = shapeProfiles, locale = 'en
   return [];
 }
 
-export function IndustryToolCalculator({ tool, values, onChange, onSendMessage, onAfterSend }) {
+export function IndustryToolCalculator({ tool, values, onChange, onSendMessage, onAfterSend, showReviewCta = true }) {
   const locale = isCnLocale() ? 'zh-CN' : 'en';
   const visibleTool = getLocalizedTool(tool, locale);
   const currentValues = values || defaultIndustryToolForms[tool.id];
@@ -324,7 +324,7 @@ export function IndustryToolCalculator({ tool, values, onChange, onSendMessage, 
           <strong className="block font-semibold">{copy.estimateTitle}</strong>
           <span>{result.note} {copy.estimateSuffix}</span>
         </div>
-        {onSendMessage && (
+        {showReviewCta && onSendMessage && (
           <button
             type="button"
             onClick={sendForReview}

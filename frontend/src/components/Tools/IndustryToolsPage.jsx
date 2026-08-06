@@ -1,6 +1,7 @@
 import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
 import {
   ArrowLeft,
+  ArrowRight,
   Calculator,
   ChartNoAxesCombined,
   CircleDollarSign,
@@ -16,6 +17,8 @@ import { Footer } from '../common/Footer';
 import { NotFoundPage } from '../common/NotFoundPage';
 import { IndustryToolCalculator } from './IndustryToolCalculator';
 import {
+  buildIndustryToolReviewPrompt,
+  calculateIndustryToolResult,
   defaultIndustryToolForms,
   getLocalizedMaterialDensities,
   getLocalizedShapeProfiles,
@@ -289,6 +292,8 @@ function ToolDetail({ tool, copy, locale, values, onChange, onOpenLegal, onSendM
     onSendMessage?.(prompt);
     onNavigateHome?.();
   };
+  const currentResult = useMemo(() => calculateIndustryToolResult(tool.id, values, locale), [locale, tool.id, values]);
+  const handleEvidenceReview = () => handleSendToolReview(buildIndustryToolReviewPrompt(tool, currentResult));
 
   return (
     <ToolPageShell copy={copy} onOpenLegal={onOpenLegal}>
@@ -317,7 +322,7 @@ function ToolDetail({ tool, copy, locale, values, onChange, onOpenLegal, onSendM
 
         <section className="mt-6 grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
           <div className="min-w-0">
-            <IndustryToolCalculator tool={tool} values={values} onChange={onChange} onSendMessage={handleSendToolReview} />
+            <IndustryToolCalculator tool={tool} values={values} onChange={onChange} onSendMessage={handleSendToolReview} showReviewCta={!tool.seoEvidence?.formula} />
 
             <div className="mt-6 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-elevated)] p-4">
               <h2 className="text-lg font-semibold text-[var(--color-text-primary)]">{tool.guideTitle}</h2>
@@ -356,19 +361,19 @@ function ToolDetail({ tool, copy, locale, values, onChange, onOpenLegal, onSendM
           </aside>
         </section>
         <section className="mt-6">
-          <ToolEvidence tool={tool} locale={locale} />
+          <ToolEvidence tool={tool} locale={locale} onReview={handleEvidenceReview} />
         </section>
       </main>
     </ToolPageShell>
   );
 }
 
-function ToolEvidence({ tool, locale }) {
+function ToolEvidence({ tool, locale, onReview }) {
   const evidence = tool.seoEvidence;
   const isCn = locale === 'zh-CN';
   const copy = isCn
-    ? { formula: '公式', example: '示例结果', assumptions: '假设', limitations: '局限', safety: '安全边界', review: '工程师复核', references: '参考依据', useReview: '请使用上方“请 SAGEMRO AI 复核此结果”按钮，把当前计算结果交给工程师复核。' }
-    : { formula: 'Formula', example: 'Worked example', assumptions: 'Assumptions', limitations: 'Limitations', safety: 'Safety boundary', review: 'Engineer review', references: 'References', useReview: 'Use the “Ask SAGEMRO AI to review this result” control above to send the current calculator result for engineer review.' };
+    ? { formula: '公式', example: '示例结果', assumptions: '假设', limitations: '局限', safety: '安全边界', review: '工程师复核', references: '参考依据', reviewAction: '请 SAGEMRO AI 复核此结果' }
+    : { formula: 'Formula', example: 'Worked example', assumptions: 'Assumptions', limitations: 'Limitations', safety: 'Safety boundary', review: 'Engineer review', references: 'References', reviewAction: 'Ask SAGEMRO AI to review this result' };
   const example = useMemo(() => getToolWorkedExample(tool, locale), [locale, tool]);
 
   if (!evidence?.formula || !example) return null;
@@ -395,7 +400,13 @@ function ToolEvidence({ tool, locale }) {
       <EvidenceBlock title={copy.assumptions}><EvidenceList items={evidence.assumptions} /></EvidenceBlock>
       <EvidenceBlock title={copy.limitations}><EvidenceList items={evidence.limitations} /></EvidenceBlock>
       <EvidenceBlock title={copy.safety}><p>{evidence.safetyBoundary}</p></EvidenceBlock>
-      <EvidenceBlock title={copy.review}><p>{evidence.reviewPrompt}</p><p className="mt-2">{copy.useReview}</p></EvidenceBlock>
+      <EvidenceBlock title={copy.review}>
+        <p>{evidence.reviewPrompt}</p>
+        <button type="button" onClick={onReview} className="mt-3 inline-flex items-center gap-2 rounded-xl bg-[var(--color-primary)] px-4 py-2.5 text-sm font-medium text-white transition hover:bg-[var(--color-primary-hover)]">
+          {copy.reviewAction}
+          <ArrowRight size={16} />
+        </button>
+      </EvidenceBlock>
     </div>
   );
 }

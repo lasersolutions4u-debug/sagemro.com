@@ -25,11 +25,23 @@ const TEMPLATE = `<!doctype html>
 </html>`;
 
 test('manifest lists only indexable customer routes in both locales', () => {
+  const publicSlugs = [
+    'metal-weight-calculator',
+    'laser-cutting-cost-calculator',
+    'press-brake-tonnage-calculator',
+    'press-brake-v-die-bend-allowance-helper',
+  ];
+
+  assert.deepEqual(publicIndustryTools.map((tool) => tool.slug), publicSlugs);
+
   for (const locale of ['en', 'zh-CN']) {
     const routes = getPublicSeoRoutes(locale);
     assert.equal(routes.some((route) => route.path === '/tools/bend-simulator'), false);
     assert.equal(routes.some((route) => route.path === '/tools/laser-cutting-speed-reference'), false);
     assert.equal(routes.some((route) => route.path === '/tools/laser-chiller-dust-collector-sizing-checklist'), false);
+    assert.equal(routes.some((route) => route.path === '/tools/steel-price-watch'), false);
+    assert.equal(routes.some((route) => route.path === '/tools/laser-assist-gas-consumption-calculator'), false);
+    assert.equal(routes.some((route) => route.path === '/tools/laser-cutting-machine-roi-calculator'), false);
     assert.equal(routes.some((route) => route.path === '/engineer'), false);
     assert.equal(new Set(routes.map((route) => route.path)).size, routes.length);
     assert.equal(routes.every((route) => route.robots === 'index,follow'), true);
@@ -38,14 +50,16 @@ test('manifest lists only indexable customer routes in both locales', () => {
   }
 });
 
-test('indexable tool routes include calculator-derived evidence in the static SEO body', () => {
-  const route = getPublicSeoRoute('/tools/metal-weight-calculator', 'en');
+test('all four public tools include calculator-derived evidence in both static locales', () => {
+  for (const locale of ['en', 'zh-CN']) {
+    for (const tool of publicIndustryTools) {
+      const route = getPublicSeoRoute(`/tools/${tool.slug}`, locale);
 
-  assert.match(route.body.sections[0].body, /Metal weight = cross-section area × length × density × quantity/);
-  assert.match(route.body.sections[1].body, /kg/);
-  assert.match(route.body.sections[2].body, /selected material density/i);
-  assert.match(route.body.sections[3].body, /not fully/i);
-  assert.match(route.body.sections[4].body, /production|purchasing/i);
+      assert.equal(route.body.sections.length, 6);
+      assert.ok(route.body.sections.every((section) => section.body.length > 0));
+      assert.match(route.body.sections[1].body, /kg|USD|tons|mm/);
+    }
+  }
 });
 
 test('manifest body mirrors visible homepage and tool headings', () => {
