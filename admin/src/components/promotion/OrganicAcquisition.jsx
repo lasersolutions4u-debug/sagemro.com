@@ -66,6 +66,6 @@ function DataQuality({ dataQuality, isCn }) {
 export function OrganicAcquisition({ data, isCn }) {
   const sources = data?.sources || [];
   const pages = data?.pages || [];
-  if (!sources.length && !pages.length) return <section className="border border-dashed border-[var(--color-border)] bg-[var(--color-surface)] p-6 text-sm text-[var(--color-text-secondary)]"><h2 className="font-semibold text-[var(--color-text)]">{isCn ? '暂无自然搜索与 AI 引荐数据' : 'No acquisition data'}</h2></section>;
+  if (!sources.length && !pages.length) return <div className="space-y-4" aria-live="polite"><section className="border border-dashed border-[var(--color-border)] bg-[var(--color-surface)] p-6 text-sm text-[var(--color-text-secondary)]"><h2 className="font-semibold text-[var(--color-text)]">{isCn ? '暂无自然搜索与 AI 引荐数据' : 'No acquisition data'}</h2></section><DataQuality dataQuality={data?.dataQuality} isCn={isCn} /></div>;
   return <div className="space-y-4" aria-live="polite"><MetricStrip summary={data?.summary} isCn={isCn} /><SourceTable rows={sources} isCn={isCn} /><PageTable rows={pages} isCn={isCn} /><DataQuality dataQuality={data?.dataQuality} isCn={isCn} /></div>;
 }

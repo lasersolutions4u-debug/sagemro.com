@@ -31,19 +31,16 @@ function renderSitemapWithDates(routes) {
   return sitemap;
 }
 
-function renderRedirects(locale, routes) {
-  const host = hosts[locale];
+function renderRedirects(routes) {
   const publicRedirects = routes
     .filter((route) => route.path !== '/')
     .map((route) => `${route.path}/ ${route.path} 301`);
 
   return [
-    `https://www.${new URL(host).hostname}/* ${host}/:splat 301`,
     ...publicRedirects,
-    '/activate /index.html 200',
-    '/engineer /index.html 200',
-    '/work-orders/* /index.html 200',
-    '/* /404.html 404',
+    '/activate / 200',
+    '/engineer / 200',
+    '/work-orders/* / 200',
     '',
   ].join('\n');
 }
@@ -66,7 +63,7 @@ function renderRobots(locale) {
 
 function renderLlms(locale) {
   const host = hosts[locale];
-  return `# SAGEMRO\n\nSAGEMRO provides practical planning references for industrial equipment users. Tool results are planning references, not final engineering, safety, purchasing, or service decisions.\n\n## Current hubs\n\n- ${host}/\n- ${host}/tools\n- ${host}/insights\n- https://sagemro.${locale === 'zh-CN' ? 'com' : 'cn'}/\n\nContact: support@sagemro.com\n`;
+  return `# SAGEMRO\n\nSAGEMRO provides practical planning references for industrial equipment users. Tool results are planning references, not final engineering, safety, purchasing, or service decisions.\n\n## Current hubs\n\n- ${host}/\n- ${host}/services\n- ${host}/tools\n- ${host}/insights\n\nContact: support@sagemro.com\n`;
 }
 
 async function writeRoute(distDir, route, template, locale) {
@@ -87,7 +84,7 @@ export async function buildPublicPages({ distDir }) {
     writeFile(join(distDir, '404.html'), renderNotFoundDocument(template, locale)),
     writeFile(join(distDir, 'sitemap.xml'), renderSitemapWithDates(routes)),
     writeFile(join(distDir, 'robots.txt'), renderRobots(locale)),
-    writeFile(join(distDir, '_redirects'), renderRedirects(locale, routes)),
+    writeFile(join(distDir, '_redirects'), renderRedirects(routes)),
     writeFile(join(distDir, 'llms.txt'), renderLlms(locale)),
   ]);
 

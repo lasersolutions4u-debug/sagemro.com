@@ -22,13 +22,23 @@ test('buildPublicPages writes crawlable public pages and crawl artifacts', async
   assert.match(await read('insights/press-brake-tonnage-risk-check/index.html'), /Article/);
   assert.match(await read('sitemap.xml'), /<lastmod>2026-08-06<\/lastmod>/);
   assert.doesNotMatch(await read('sitemap.xml'), /bend-simulator/);
-  assert.match(await read('_redirects'), /\/work-orders\/\* \/index\.html 200/);
-  assert.doesNotMatch(await read('_redirects'), /\/tools\/\*/);
+  const redirects = await read('_redirects');
+  assert.match(redirects, /\/activate \/ 200/);
+  assert.match(redirects, /\/engineer \/ 200/);
+  assert.match(redirects, /\/work-orders\/\* \/ 200/);
+  assert.doesNotMatch(redirects, /^https?:\/\//m);
+  assert.doesNotMatch(redirects, /\/404\.html 404/);
+  assert.doesNotMatch(redirects, /\/tools\/\*/);
   assert.match(await read('404.html'), /name="robots" content="noindex,nofollow,noarchive"/);
   assert.match(await read('404.html'), /<h1>404 — This page doesn&#39;t exist<\/h1>/);
   assert.doesNotMatch(await read('404.html'), /application\/ld\+json/);
   const hubs = (await read('llms.txt')).match(/^\- https:\/\/[^\n]+$/gm);
-  assert.equal(new Set(hubs).size, 4);
+  assert.deepEqual(hubs, [
+    '- https://sagemro.com/',
+    '- https://sagemro.com/services',
+    '- https://sagemro.com/tools',
+    '- https://sagemro.com/insights',
+  ]);
 });
 
 test('buildPublicPages writes direct noindex tool pages outside every public crawl artifact', async (t) => {

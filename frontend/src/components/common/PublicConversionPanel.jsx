@@ -1,8 +1,13 @@
+import { useMemo } from 'react';
 import { createAcquisitionEventActions, createTrackedConversionClick } from '../../hooks/useAcquisitionTracking';
 
 export function PublicConversionPanel({ context, acquisitionContext, primaryLabel, secondaryLabel, onStartDiagnosis, onOpenServiceRequest }) {
   const safeAcquisitionContext = acquisitionContext || {};
-  const { onConversionClick } = createAcquisitionEventActions(safeAcquisitionContext);
+  const { contentType, contentSlug, indexable } = safeAcquisitionContext;
+  const { onConversionClick } = useMemo(
+    () => createAcquisitionEventActions({ contentType, contentSlug, indexable }),
+    [contentSlug, contentType, indexable],
+  );
   const startDiagnosis = createTrackedConversionClick(onConversionClick, {
     contentType: safeAcquisitionContext.contentType,
     contentSlug: safeAcquisitionContext.contentSlug,

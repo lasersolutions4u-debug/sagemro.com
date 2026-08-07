@@ -20262,6 +20262,35 @@ function sanitizeFunnelProperties(properties) {
   return out;
 }
 
+function sanitizeFunnelIdentifier(value) {
+  const text = piiSafeFunnelText(value, 120);
+  return text && /^[A-Za-z0-9_-]+$/.test(text) && !/^\d{7,}$/.test(text) ? text : '';
+}
+
+function sanitizeFunnelDimension(value, max = 160) {
+  const text = piiSafeFunnelText(value, max);
+  return text && /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(text) ? text : '';
+}
+
+function sanitizeFunnelPagePath(value) {
+  if (typeof value !== 'string' || !value.startsWith('/') || value.startsWith('//')) return '';
+  const pathname = value.split(/[?#]/, 1)[0];
+  return pathname.length <= 240 && /^\/(?:[A-Za-z0-9-]+\/)*[A-Za-z0-9-]*$/.test(pathname)
+    ? pathname
+    : '';
+}
+
+function sanitizeFunnelReferrer(value) {
+  if (typeof value !== 'string' || !value) return '';
+  try {
+    const url = new URL(value);
+    if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) return '';
+    return url.origin.slice(0, 200);
+  } catch {
+    return '';
+  }
+}
+
 async function handleFunnelEvent(request, env) {
   try {
     const body = await request.json().catch(() => ({}));
@@ -20294,15 +20323,15 @@ async function handleFunnelEvent(request, env) {
       generateId(),
       eventName,
       getRequestMarket(request),
-      cleanFunnelValue(body.anonymous_id, 120),
-      cleanFunnelValue(body.session_id, 120),
-      auth?.userType || cleanFunnelValue(body.user_type, 40) || 'guest',
+      sanitizeFunnelIdentifier(body.anonymous_id),
+      sanitizeFunnelIdentifier(body.session_id),
+      auth?.userType || (FUNNEL_ENUM_PROPERTIES.user_type.has(body.user_type) ? body.user_type : 'guest'),
       auth?.userId || null,
-      cleanFunnelValue(body.source, 120),
-      cleanFunnelValue(body.medium, 120),
-      cleanFunnelValue(body.campaign, 160),
-      cleanFunnelValue(body.page_path, 240),
-      cleanFunnelValue(body.referrer, 300),
+      sanitizeFunnelDimension(body.source, 120),
+      sanitizeFunnelDimension(body.medium, 120),
+      sanitizeFunnelDimension(body.campaign, 160),
+      sanitizeFunnelPagePath(body.page_path),
+      sanitizeFunnelReferrer(body.referrer),
       JSON.stringify(properties),
       ipHash,
       userAgent,
