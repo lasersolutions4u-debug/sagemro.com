@@ -14,7 +14,6 @@ const privateRouteContract = String.raw`error_page 404 /404.html;
   location = /activate { try_files /index.html =404; }
   location = /engineer { try_files /index.html =404; }
   location ~ ^/work-orders/[^/]+$ { try_files /index.html =404; }
-  location ~ ^(.+)/$ { return 301 https://$host$1; }
   location / { try_files $uri $uri/ =404; }`;
 
 test('configures real public 404s while preserving customer and engineer SPA deep links', { skip: !python }, () => {
@@ -55,10 +54,42 @@ server {
   assert.match(customer, /if \(\$host = www\.sagemro\.cn\) \{ return 301 https:\/\/sagemro\.cn\$request_uri; \}/);
   assert.match(customer, new RegExp(privateRouteContract.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   assert.match(engineer, new RegExp(privateRouteContract.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  assert.doesNotMatch(updated, /location\s+~\s+\^\(\.\+\)\/\$/);
   assert.doesNotMatch(updated, /try_files[^;]*\/404\.html/);
   assert.doesNotMatch(engineer, /www\.sagemro\.cn|https:\/\/sagemro\.cn\$request_uri/);
   assert.match(admin, /location \/ \{ try_files \$uri \/index\.html; \}/);
   assert.doesNotMatch(admin, /\/404\.html|work-orders/);
+
+  const secondRun = spawnSync(python, [script, config], { encoding: 'utf8' });
+  assert.equal(secondRun.status, 0, secondRun.stderr);
+  assert.equal(readFileSync(config, 'utf8'), updated);
+});
+
+test('removes the previously generated reverse trailing-slash redirect without disturbing public routes', { skip: !python }, () => {
+  const directory = mkdtempSync(path.join(tmpdir(), 'sagemro-public-routes-'));
+  const config = path.join(directory, 'sites.conf');
+  const initial = `server {
+  listen 443 ssl;
+  server_name sagemro.cn www.sagemro.cn;
+  if ($host = www.sagemro.cn) { return 301 https://sagemro.cn$request_uri; }
+  error_page 404 /404.html;
+  location = /404.html { internal; }
+  location = /activate { try_files /index.html =404; }
+  location = /engineer { try_files /index.html =404; }
+  location ~ ^/work-orders/[^/]+$ { try_files /index.html =404; }
+  location ~ ^(.+)/$ { return 301 https://$host$1; }
+  location / { try_files $uri $uri/ =404; }
+}
+`;
+  writeFileSync(config, initial);
+
+  const firstRun = spawnSync(python, [script, config], { encoding: 'utf8' });
+  assert.equal(firstRun.status, 0, firstRun.stderr);
+
+  const updated = readFileSync(config, 'utf8');
+  assert.doesNotMatch(updated, /location\s+~\s+\^\(\.\+\)\/\$/);
+  assert.match(updated, /location = \/activate \{ try_files \/index\.html =404; \}/);
+  assert.match(updated, /location \/ \{ try_files \$uri \$uri\/ =404; \}/);
 
   const secondRun = spawnSync(python, [script, config], { encoding: 'utf8' });
   assert.equal(secondRun.status, 0, secondRun.stderr);

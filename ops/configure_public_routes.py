@@ -15,6 +15,9 @@ LEGACY_FALLBACK_RE = re.compile(
 PUBLIC_FALLBACK_RE = re.compile(
     r'(?m)^(?P<indent>[ \t]*)location\s+/\s*\{\s*try_files\s+\$uri\s+\$uri/\s+=404\s*;\s*\}'
 )
+LEGACY_TRAILING_REDIRECT_RE = re.compile(
+    r'(?m)^[ \t]*location\s+~\s+\^\(\.\+\)/\$\s*\{\s*return\s+301\s+https://\$host\$1\s*;\s*\}[ \t]*(?:\n|$)'
+)
 CANONICAL_REDIRECT = 'if ($host = www.sagemro.cn) { return 301 https://sagemro.cn$request_uri; }'
 ROUTE_LINES = (
     'error_page 404 /404.html;',
@@ -22,7 +25,6 @@ ROUTE_LINES = (
     'location = /activate { try_files /index.html =404; }',
     'location = /engineer { try_files /index.html =404; }',
     'location ~ ^/work-orders/[^/]+$ { try_files /index.html =404; }',
-    'location ~ ^(.+)/$ { return 301 https://$host$1; }',
     'location / { try_files $uri $uri/ =404; }',
 )
 
@@ -240,8 +242,15 @@ def transform_block(block_text, kind):
         return block_text[:match.start()] + '\n'.join(replacement_lines) + block_text[match.end():]
 
     if not legacy_matches and transformed_fallback(block_text):
-        if kind != 'customer' or has_canonical_redirect(block_text):
-            return block_text
+        if kind == 'customer' and not has_canonical_redirect(block_text):
+            raise ValueError('customer server is missing the canonical www redirect')
+        reverse_redirects = list(LEGACY_TRAILING_REDIRECT_RE.finditer(code))
+        if len(reverse_redirects) > 1:
+            raise ValueError(f'{kind} server contains duplicate generated trailing-slash redirects')
+        if reverse_redirects:
+            match = reverse_redirects[0]
+            return block_text[:match.start()] + block_text[match.end():]
+        return block_text
 
     raise ValueError(f'{kind} server does not contain exactly one recognized location / fallback')
 

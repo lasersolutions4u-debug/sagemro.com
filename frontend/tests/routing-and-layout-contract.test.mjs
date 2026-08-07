@@ -22,6 +22,7 @@ test('CN public frontend routes render a localized real 404 after private SPA re
   assert.doesNotMatch(redirects, /^https?:\/\//m);
   assert.doesNotMatch(redirects, /\/404\.html 404/);
   assert.doesNotMatch(redirects, /^\/\* \/index\.html 200$/m);
+  assert.doesNotMatch(redirects, /\s30[18]$/m);
 });
 
 test('CN tool detail titles wrap on narrow screens and reject unknown slugs', () => {
@@ -93,4 +94,18 @@ test('Aliyun deploy enforces HTTP/2, compression, caching, security headers, and
   assert.match(workflow, /HTML is missing security header/);
   assert.match(workflow, /test -L "\$link_path" \|\| \$SUDO test -e "\$link_path"/);
   assert.match(workflow, /previous_target" = "__MISSING__"/);
+});
+
+test('public runtime links use the canonical trailing-slash policy', () => {
+  const sources = [
+    'frontend/src/components/About/TechnicalReviewPage.jsx',
+    'frontend/src/components/Insights/DiagnosticGuide.jsx',
+    'frontend/src/components/Insights/InsightsPage.jsx',
+    'frontend/src/components/Services/ServicePages.jsx',
+    'frontend/src/components/Tools/IndustryToolsPage.jsx',
+    'frontend/src/components/common/Footer.jsx',
+  ].map(read).join('\n');
+
+  assert.doesNotMatch(sources, /href="\/(?:tools|services|insights|about\/technical-review)"/);
+  assert.doesNotMatch(sources, /href=\{`\/(?:tools|services|insights)\/\$\{[^}]+\}`\}/);
 });

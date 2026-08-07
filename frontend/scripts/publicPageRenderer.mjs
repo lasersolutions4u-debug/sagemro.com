@@ -109,10 +109,8 @@ export function renderSitemap(routes) {
 }
 
 export function renderRedirects(routes) {
-  return routes
-    .filter((route) => route.path !== '/')
-    .map((route) => `${route.path}/  ${route.path}  301`)
-    .join('\n') + '\n';
+  void routes;
+  return '';
 }
 
 export function renderRobots(locale = 'en') {

@@ -65,7 +65,7 @@ export function InsightsPage({ pathname = '/insights', acquisitionContext, onOpe
       description: isMissing
         ? locale === 'zh-CN' ? '找不到请求的 SAGEMRO 洞察文章。' : 'The requested SAGEMRO insight could not be found.'
         : description,
-      canonical: `${canonicalHost}${content ? `/insights/${content.slug}` : slug ? `/insights/${slug}` : '/insights'}`,
+      canonical: isMissing ? `${canonicalHost}/insights/${slug}` : publicRoute?.canonical,
       lang: locale,
       robots: isMissing ? 'noindex,nofollow,noarchive' : 'index,follow',
       structuredData: isMissing ? null : publicRoute?.structuredData,
@@ -126,7 +126,7 @@ function InsightDetail({ copy, insight, onOpenLegal }) {
   return (
     <InsightShell copy={copy} onOpenLegal={onOpenLegal}>
       <main className="mx-auto max-w-4xl px-4 py-8 sm:px-6 lg:py-10">
-        <a href="/insights" className="mb-6 inline-flex items-center gap-2 text-sm text-[var(--color-text-secondary)] hover:text-[var(--color-primary)]">
+        <a href="/insights/" className="mb-6 inline-flex items-center gap-2 text-sm text-[var(--color-text-secondary)] hover:text-[var(--color-primary)]">
           <ArrowLeft size={16} />
           {copy.allInsights}
         </a>
@@ -147,7 +147,7 @@ function InsightDetail({ copy, insight, onOpenLegal }) {
               <Calculator size={18} className="mt-0.5 shrink-0 text-[var(--color-primary)]" />
               <div>
                 <div className="text-sm font-semibold text-[var(--color-text-primary)]">{copy.relatedCalculator}</div>
-                <a href={`/tools/${insight.toolSlug}`} className="mt-1 inline-flex text-sm text-[var(--color-primary)] hover:underline">
+                <a href={`/tools/${insight.toolSlug}/`} className="mt-1 inline-flex text-sm text-[var(--color-primary)] hover:underline">
                   {insight.toolLabel}
                 </a>
               </div>
@@ -170,7 +170,7 @@ function InsightDetail({ copy, insight, onOpenLegal }) {
 
 function InsightCard({ item }) {
   return (
-    <a href={`/insights/${item.slug}`} className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-elevated)] p-4 transition hover:border-[var(--color-primary)] hover:shadow-sm">
+    <a href={`/insights/${item.slug}/`} className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-elevated)] p-4 transition hover:border-[var(--color-primary)] hover:shadow-sm">
       <div className="flex items-start gap-3">
         <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[var(--color-primary)]/10 text-[var(--color-primary)]">
           <BookOpen size={18} />
@@ -195,8 +195,8 @@ function InsightShell({ children, copy, onOpenLegal }) {
             SAGEMRO
           </a>
           <nav className="flex items-center gap-3 text-sm text-[var(--color-text-secondary)]">
-            <a href="/tools" className="hover:text-[var(--color-primary)]">{copy.navTools}</a>
-            <a href="/insights" className="hover:text-[var(--color-primary)]">{copy.navInsights}</a>
+            <a href="/tools/" className="hover:text-[var(--color-primary)]">{copy.navTools}</a>
+            <a href="/insights/" className="hover:text-[var(--color-primary)]">{copy.navInsights}</a>
             <a href="/" className="hover:text-[var(--color-primary)]">{copy.navChat}</a>
           </nav>
         </div>
