@@ -269,3 +269,54 @@ test('acquisition events retain only approved, valid, and bounded properties', a
     result_state: 'valid',
   });
 });
+
+test('acquisition events drop each invalid enum while retaining valid properties', async () => {
+  const invalidProperties = {
+    content_type: 'article',
+    cta_type: 'contact_sales',
+    engagement_bucket: '60s',
+    result_state: 'complete',
+  };
+  const validProperties = {
+    content_type: 'service',
+    content_slug: 'laser-cutting-machine-repair',
+    cta_type: 'ai_diagnosis',
+    engagement_bucket: '30s',
+    result_state: 'valid',
+  };
+
+  for (const [invalidKey, invalidValue] of Object.entries(invalidProperties)) {
+    const { response, env } = await postFunnel({
+      event_name: 'conversion_cta_clicked',
+      properties: {
+        ...validProperties,
+        [invalidKey]: invalidValue,
+        prompt: 'My laser alarm is E012',
+        email: 'buyer@example.com',
+        phone: '+15551234567',
+        serial_number: 'SN-12345678',
+        file_name: 'laser-photo.jpg',
+        device_info: 'Fiber laser 6kW',
+        arbitrary_property: 'discard',
+      },
+    });
+
+    assert.equal(response.status, 202);
+    const properties = JSON.parse(env.__rows[0].properties_json);
+    assert.equal(properties[invalidKey], undefined);
+    assert.deepEqual(properties, Object.fromEntries(
+      Object.entries(validProperties).filter(([key]) => key !== invalidKey),
+    ));
+  }
+});
+
+test('acquisition events truncate overlength content slugs to 120 characters', async () => {
+  const content_slug = `laser-${'repair-'.repeat(30)}`;
+  const { response, env } = await postFunnel({
+    event_name: 'seo_landing_viewed',
+    properties: { content_type: 'service', content_slug },
+  });
+
+  assert.equal(response.status, 202);
+  assert.equal(JSON.parse(env.__rows[0].properties_json).content_slug, content_slug.slice(0, 120));
+});

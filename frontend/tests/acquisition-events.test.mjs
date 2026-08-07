@@ -48,9 +48,12 @@ function readAllowlist(source, declaration) {
   return match?.[1].match(/'([^']+)'/g)?.map((value) => value.slice(1, -1));
 }
 
-test('client and Worker funnel allowlists remain identical', () => {
+test('client adds only the approved acquisition properties', () => {
   const client = readFileSync(path.join(root, 'src/services/api.js'), 'utf8');
   const worker = readFileSync(path.join(root, '..', 'worker/src/index.js'), 'utf8');
+  const acquisitionProperties = [
+    'content_type', 'content_slug', 'cta_type', 'engagement_bucket', 'result_state',
+  ];
 
   assert.deepEqual(
     readAllowlist(client, /const FUNNEL_EVENT_NAMES = \[([\s\S]*?)\];/),
@@ -58,7 +61,16 @@ test('client and Worker funnel allowlists remain identical', () => {
   );
   assert.deepEqual(
     readAllowlist(client, /const FUNNEL_PROPERTY_ALLOWLIST = \[([\s\S]*?)\];/),
-    readAllowlist(worker, /const FUNNEL_PROPERTY_ALLOWLIST = new Set\(\[([\s\S]*?)\]\);/),
+    [
+      'entry', 'market', 'locale', 'user_type', 'authenticated', 'conversation_id', 'has_images',
+      'response_status', 'device_type', 'service_type', 'urgency', 'tool_id', 'request_id',
+      'analytics_version', ...acquisitionProperties,
+    ],
+  );
+  assert.deepEqual(
+    readAllowlist(worker, /const FUNNEL_PROPERTY_ALLOWLIST = new Set\(\[([\s\S]*?)\]\);/)
+      .filter((property) => acquisitionProperties.includes(property)),
+    acquisitionProperties,
   );
 });
 
