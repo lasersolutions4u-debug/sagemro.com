@@ -133,7 +133,7 @@ export function IndustryToolsPage({ pathname = '/tools', acquisitionContext, onO
       robots: seoMetadata.robots,
       structuredData: seoMetadata.structuredData,
     });
-  }, [canonical, locale, page, pageDescription, pageTitle, selectedTool, slug]);
+  }, [canonical, isMissing, locale, page, pageDescription, pageTitle, selectedTool, slug]);
 
   if (isMissing) {
     return <NotFoundPage isCn={locale === 'zh-CN'} />;

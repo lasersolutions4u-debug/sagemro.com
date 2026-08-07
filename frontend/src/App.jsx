@@ -108,10 +108,6 @@ function App() {
       || isTechnicalReviewPath
       || (isEngineerHost && currentPath === '/');
     const isPrivateApp = Boolean(userType) || !isPublicPath;
-    const title = isCn ? 'SAGEMRO 智能服务系统' : 'SAGEMRO Service OS';
-    const description = isCn
-      ? 'SAGEMRO 面向激光切割与金属成型设备，帮助客户整理问题、连接合格工程师并沉淀服务记录。'
-      : 'SAGEMRO helps industrial equipment users organize service needs, connect with qualified field engineers, and keep service records clear.';
     const canonicalHost = isCn ? 'https://sagemro.cn' : 'https://sagemro.com';
     const publicHost = isEngineerHost ? canonicalHost.replace('://', '://engineer.') : canonicalHost;
     setSeoMetadata({
