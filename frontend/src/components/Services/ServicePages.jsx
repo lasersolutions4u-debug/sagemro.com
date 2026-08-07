@@ -59,7 +59,7 @@ const copy = {
   },
 };
 
-export function ServicePages({ pathname = '/services', locale = 'en', onStartDiagnosis, onOpenServiceRequest, onOpenLegal }) {
+export function ServicePages({ pathname = '/services', locale = 'en', acquisitionContext, onStartDiagnosis, onOpenServiceRequest, onOpenLegal }) {
   const selectedCopy = copy[locale] ?? copy.en;
   const route = getServicePageRoute(pathname);
   const slug = route?.slug ?? '';
@@ -80,7 +80,7 @@ export function ServicePages({ pathname = '/services', locale = 'en', onStartDia
   return (
     <ServiceShell copy={selectedCopy} onOpenLegal={onOpenLegal}>
       {page ? (
-        <ServiceDetail page={page} copy={selectedCopy} locale={locale} onStartDiagnosis={onStartDiagnosis} onOpenServiceRequest={onOpenServiceRequest} />
+        <ServiceDetail page={page} copy={selectedCopy} locale={locale} acquisitionContext={acquisitionContext} onStartDiagnosis={onStartDiagnosis} onOpenServiceRequest={onOpenServiceRequest} />
       ) : (
         <ServicesHub copy={selectedCopy} locale={locale} />
       )}
@@ -110,7 +110,7 @@ function ServicesHub({ copy: selectedCopy, locale }) {
   );
 }
 
-function ServiceDetail({ page, copy: selectedCopy, locale, onStartDiagnosis, onOpenServiceRequest }) {
+function ServiceDetail({ page, copy: selectedCopy, locale, acquisitionContext, onStartDiagnosis, onOpenServiceRequest }) {
   const relatedPages = getServicePages(locale).filter((candidate) => candidate.slug !== page.slug);
   const relatedGuides = getRelatedDiagnosticGuidesForService(page.slug, locale);
 
@@ -132,7 +132,7 @@ function ServiceDetail({ page, copy: selectedCopy, locale, onStartDiagnosis, onO
       <section className="mt-8 grid gap-4 md:grid-cols-2"><InfoCard title={selectedCopy.remote} body={page.remoteBoundary} /><InfoCard title={selectedCopy.onsite} body={page.onsiteBoundary} /></section>
       <section className="mt-8 border-t border-[var(--color-border)] pt-5 text-sm leading-6 text-[var(--color-text-secondary)]"><div className="font-medium text-[var(--color-text-primary)]">{selectedCopy.review}</div><div>{page.reviewedAt}</div><p className="mt-2">{page.evidenceNotes}</p></section>
       <section className="mt-8"><SectionTitle title={selectedCopy.relatedGuides} />{relatedGuides.length ? <div className="mt-3 grid gap-3 sm:grid-cols-2">{relatedGuides.map((guide) => <a key={guide.slug} href={`/insights/${guide.slug}`} className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-3 text-sm font-medium hover:border-[var(--color-primary)]">{guide.title}</a>)}</div> : <p className="mt-3 text-sm leading-6 text-[var(--color-text-secondary)]">{selectedCopy.guideEmpty}</p>}</section>
-      <div className="mt-8"><PublicConversionPanel context={page.title} primaryLabel={page.primaryCta} secondaryLabel={page.secondaryCta} onStartDiagnosis={onStartDiagnosis} onOpenServiceRequest={onOpenServiceRequest} /></div>
+      <div className="mt-8"><PublicConversionPanel context={page.title} acquisitionContext={acquisitionContext} primaryLabel={page.primaryCta} secondaryLabel={page.secondaryCta} onStartDiagnosis={onStartDiagnosis} onOpenServiceRequest={onOpenServiceRequest} /></div>
       <section className="mt-8"><SectionTitle title={selectedCopy.relatedServices} /><div className="mt-3 grid gap-3 sm:grid-cols-2">{relatedPages.map((related) => <a key={related.slug} href={`/services/${related.slug}`} className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-3 text-sm font-medium hover:border-[var(--color-primary)]">{related.title}</a>)}</div></section>
     </main>
   );

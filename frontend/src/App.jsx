@@ -14,8 +14,7 @@ import { generateId } from './utils/helpers';
 import { isCnLocale } from './utils/locale';
 import { setSeoMetadata } from './utils/seo';
 import { getServicePageRoute } from './utils/servicePageRoute';
-import { getPublicSeoRoute } from './data/publicSeoRoutes';
-import { getAcquisitionContentType, getPublicContentSlug, useAcquisitionTracking } from './hooks/useAcquisitionTracking';
+import { getPublicAcquisitionContext, useAcquisitionTracking } from './hooks/useAcquisitionTracking';
 import { submitWorkOrder as submitWorkOrderApi, getConversation as getConversationApi, getUnreadNotificationCount, trackFunnelEvent, restoreSession, logout as logoutSession } from './services/api';
 import { createAnalyticsRequestId } from './services/funnelAnalytics';
 
@@ -79,16 +78,14 @@ function App() {
   const engineerWorkOrderMatch = currentPath.match(/^\/work-orders\/([^/]+)$/);
   const engineerWorkOrderId = engineerWorkOrderMatch ? decodeURIComponent(engineerWorkOrderMatch[1]) : '';
   const publicRoutePath = currentPath === '/' ? '/' : currentPath.replace(/\/$/, '');
-  const publicRoute = getPublicSeoRoute(publicRoutePath, isCn ? 'zh-CN' : 'en');
-  useAcquisitionTracking({
-    path: publicRoutePath,
-    contentType: getAcquisitionContentType(publicRoute, isCn ? 'zh-CN' : 'en'),
-    contentSlug: getPublicContentSlug(publicRoute),
-    indexable: sessionRestoreComplete
-      && !isEngineerHost
-      && !userType
-      && publicRoute?.robots === 'index,follow',
+  const acquisitionContext = getPublicAcquisitionContext({
+    pathname: publicRoutePath,
+    locale: isCn ? 'zh-CN' : 'en',
+    sessionRestoreComplete,
+    isEngineerHost,
+    userType,
   });
+  useAcquisitionTracking(acquisitionContext);
 
   useEffect(() => {
     const isToolsOrInsights = currentPath === '/tools'
@@ -258,7 +255,7 @@ function App() {
     clearMessages();
     setSidebarOpen(false);
     setHistoryModalOpen(false);
-  }, [clearMessages]);
+  }, [clearMessages, setHistoryModalOpen, setSidebarOpen]);
 
   // 选择对话
   const handleSelectConversation = useCallback(async (conv) => {
@@ -286,7 +283,7 @@ function App() {
     }
     setSidebarOpen(false);
     setHistoryModalOpen(false);
-  }, [conversationId, currentUser, clearMessages, loadMessages]);
+  }, [conversationId, currentUser, clearMessages, loadMessages, setHistoryModalOpen, setSidebarOpen]);
 
   // 发送消息
   const handleSendMessage = useCallback(async (content, images) => {
@@ -405,13 +402,13 @@ function App() {
         .then((data) => loadMessages(data.messages || [], conversationId))
         .catch(() => clearMessages());
     }
-  }, [conversationId, loadMessages, clearMessages]);
+  }, [conversationId, loadMessages, clearMessages, setCurrentUser, setLoginModalOpen, setUserType]);
 
   const handleActivationLoginSuccess = useCallback((userData) => {
     handleLoginSuccess(userData);
     window.history.replaceState({}, '', '/');
     setCurrentPath('/');
-  }, [handleLoginSuccess]);
+  }, [handleLoginSuccess, setCurrentPath]);
 
   // 登出
   const handleLogout = useCallback(() => {
@@ -430,7 +427,7 @@ function App() {
       window.history.replaceState({}, '', '/');
       setCurrentPath('/');
     }
-  }, [currentPath, isEngineerHost]);
+  }, [currentPath, isEngineerHost, setCurrentPath, setCurrentUser, setUserType]);
 
   // 监听 401 自动登出事件（由 services/api.js 的 fetch 拦截器触发）
   // token 过期 / 被踢下线时，清掉本地状态并弹出登录框，避免后续操作继续命中 401
@@ -454,27 +451,27 @@ function App() {
   const handleOpenWorkOrderDetail = useCallback((workOrderId) => {
     // 打开我的工单列表（目前没有单独详情页入口，通过列表查看）
     setMyWorkOrdersModalOpen(true);
-  }, []);
+  }, [setMyWorkOrdersModalOpen]);
 
   // 打开法律文档
   const openLegal = useCallback((tab = 'agreement') => {
     setLegalInitialTab(tab);
     setLegalModalOpen(true);
-  }, []);
+  }, [setLegalInitialTab, setLegalModalOpen]);
 
   const navigateHome = useCallback(() => {
     window.history.pushState({}, '', '/');
     setCurrentPath('/');
-  }, []);
+  }, [setCurrentPath]);
 
   const handleServiceDiagnosis = useCallback(() => {
     window.history.pushState({}, '', '/');
     setCurrentPath('/');
-  }, []);
+  }, [setCurrentPath]);
 
   const handleServiceRequest = useCallback(() => {
     setWorkOrderModalOpen(true);
-  }, []);
+  }, [setWorkOrderModalOpen]);
 
   const showEngineerWorkspace = (isEngineerHost || currentPath === '/engineer') && userType === 'engineer';
 
@@ -567,6 +564,7 @@ function App() {
         <Suspense fallback={null}>
           <IndustryToolsPage
             pathname={currentPath}
+            acquisitionContext={acquisitionContext}
             onOpenLegal={openLegal}
             onSendMessage={handleSendMessage}
             onNavigateHome={navigateHome}
@@ -588,6 +586,7 @@ function App() {
         <Suspense fallback={null}>
           <InsightsPage
             pathname={currentPath}
+            acquisitionContext={acquisitionContext}
             onOpenLegal={openLegal}
             onStartDiagnosis={handleServiceDiagnosis}
             onOpenServiceRequest={handleServiceRequest}
@@ -613,6 +612,7 @@ function App() {
           <ServicePages
             pathname={currentPath}
             locale={isCn ? 'zh-CN' : 'en'}
+            acquisitionContext={acquisitionContext}
             onStartDiagnosis={handleServiceDiagnosis}
             onOpenServiceRequest={handleServiceRequest}
             onOpenLegal={openLegal}

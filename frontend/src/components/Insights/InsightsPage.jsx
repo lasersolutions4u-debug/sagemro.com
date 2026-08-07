@@ -10,7 +10,7 @@ import { DiagnosticGuide } from './DiagnosticGuide';
 import { isCnLocale } from '../../utils/locale';
 import { setSeoMetadata } from '../../utils/seo';
 
-export function InsightsPage({ pathname = '/insights', onOpenLegal, onStartDiagnosis, onOpenServiceRequest }) {
+export function InsightsPage({ pathname = '/insights', acquisitionContext, onOpenLegal, onStartDiagnosis, onOpenServiceRequest }) {
   const slug = pathname.split('/insights/')[1]?.replace(/\/$/, '') || '';
   const locale = isCnLocale() ? 'zh-CN' : 'en';
   const guide = getDiagnosticGuide(slug, locale);
@@ -39,7 +39,7 @@ export function InsightsPage({ pathname = '/insights', onOpenLegal, onStartDiagn
     return <NotFoundPage isCn={locale === 'zh-CN'} />;
   }
 
-  if (guide) return <InsightShell onOpenLegal={onOpenLegal}><DiagnosticGuide guide={guide} locale={locale} onStartDiagnosis={onStartDiagnosis} onOpenServiceRequest={onOpenServiceRequest} /></InsightShell>;
+  if (guide) return <InsightShell onOpenLegal={onOpenLegal}><DiagnosticGuide guide={guide} locale={locale} acquisitionContext={acquisitionContext} onStartDiagnosis={onStartDiagnosis} onOpenServiceRequest={onOpenServiceRequest} /></InsightShell>;
 
   if (insight) {
     return <InsightDetail insight={insight} onOpenLegal={onOpenLegal} />;

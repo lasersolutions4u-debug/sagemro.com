@@ -95,7 +95,7 @@ const toolsPageCopy = {
   },
 };
 
-export function IndustryToolsPage({ pathname = '/tools', onOpenLegal, onSendMessage, onNavigateHome }) {
+export function IndustryToolsPage({ pathname = '/tools', acquisitionContext, onOpenLegal, onSendMessage, onNavigateHome }) {
   const locale = isCnLocale() ? 'zh-CN' : 'en';
   const route = getIndustryToolsPageState(pathname, locale);
   const { canonical, page, selectedTool, slug } = route;
@@ -109,8 +109,10 @@ export function IndustryToolsPage({ pathname = '/tools', onOpenLegal, onSendMess
   const { onToolStarted, onToolCompleted } = useMemo(() => createAcquisitionEventActions({
     contentType: 'tool',
     contentSlug: selectedTool?.slug || '',
-    indexable: page === 'tool-detail' && selectedTool?.seoEvidence?.indexable === true,
-  }), [page, selectedTool?.seoEvidence?.indexable, selectedTool?.slug]);
+    indexable: acquisitionContext?.indexable
+      && page === 'tool-detail'
+      && selectedTool?.seoEvidence?.indexable === true,
+  }), [acquisitionContext?.indexable, page, selectedTool?.seoEvidence?.indexable, selectedTool?.slug]);
 
   useEffect(() => {
     const seoMetadata = getIndustryToolsSeoMetadata({ canonical, page, selectedTool, slug }, locale);
