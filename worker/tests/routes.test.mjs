@@ -54,7 +54,11 @@ test('operations read gateway allows only the exact receipt evidence GET route',
 });
 
 test('operations read gateway allows only exact GET promotion analytics routes', () => {
-  for (const path of ['/api/admin/analytics/overview', '/api/admin/analytics/channels']) {
+  for (const path of [
+    '/api/admin/analytics/overview',
+    '/api/admin/analytics/channels',
+    '/api/admin/analytics/organic-acquisition',
+  ]) {
     assert.equal(isOperationsReadRoute(path, 'GET'), true);
     assert.equal(isOperationsReadRoute(path, 'POST'), false);
     assert.equal(isOperationsReadRoute(`${path}/extra`, 'GET'), false);

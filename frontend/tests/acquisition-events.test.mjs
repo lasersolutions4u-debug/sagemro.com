@@ -241,6 +241,27 @@ test('conversion tracking runs before its existing callback', async () => {
   ]);
 });
 
+test('conversion actions emit each CTA type only once per mounted public context', async () => {
+  const events = [];
+  const { createAcquisitionEventActions } = await loadAcquisitionTracking(() => {});
+  const actions = createAcquisitionEventActions({
+    contentType: 'service',
+    contentSlug: 'laser-cutting-machine-repair',
+    indexable: true,
+    track: (name, properties) => events.push({ name, properties }),
+  });
+
+  actions.onConversionClick({ ctaType: 'ai_diagnosis' });
+  actions.onConversionClick({ ctaType: 'ai_diagnosis' });
+  actions.onConversionClick({ ctaType: 'service_request' });
+  actions.onConversionClick({ ctaType: 'service_request' });
+
+  assert.deepEqual(events.map((event) => event.properties.cta_type), [
+    'ai_diagnosis',
+    'service_request',
+  ]);
+});
+
 test('public CTA callbacks run without analytics until an anonymous public session is ready', async () => {
   const events = [];
   const callbacks = [];
@@ -326,6 +347,7 @@ test('App routes the shared acquisition context into public CTA and tool consume
   assert.match(app, /<InsightsPage[\s\S]*acquisitionContext=\{acquisitionContext\}/);
   assert.match(app, /<ServicePages[\s\S]*acquisitionContext=\{acquisitionContext\}/);
   assert.match(panel, /safeAcquisitionContext/);
+  assert.match(panel, /useMemo\s*\(/);
   assert.doesNotMatch(panel, /getPublicAcquisitionContext|sessionRestoreComplete:\s*true/);
   assert.match(toolsPage, /acquisitionContext\?\.indexable/);
 });

@@ -721,7 +721,8 @@ test('client shell moves conversation history into a modal and exposes industry 
   assert.match(insightsPage, /href=\{`\/tools\/\$\{insight\.toolSlug\}`\}/);
   assert.match(insights, /laser-cutting-cost-drivers/);
   assert.match(insights, /metal-weight-for-structural-profiles/);
-  assert.match(redirects, /\/\* \/index\.html 200/);
+  assert.match(redirects, /\/work-orders\/\* \/ 200/);
+  assert.doesNotMatch(redirects, /^\/\* \/index\.html 200$/m);
 });
 
 test('public industry tool detail prioritizes calculator before related tools and exposes AI review CTA', () => {

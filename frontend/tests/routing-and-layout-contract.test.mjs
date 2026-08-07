@@ -16,8 +16,11 @@ test('CN public frontend routes render a localized real 404 after private SPA re
   assert.match(app, /<NotFoundPage isCn=\{isCn\} \/>/);
   assert.match(notFound, /页面不存在/);
   assert.equal(existsSync(path.join(root, 'frontend/public/404.html')), false);
-  assert.match(redirects, /\/work-orders\/\* \/index\.html 200/);
-  assert.match(redirects, /\/\* \/404\.html 404/);
+  assert.match(redirects, /\/activate \/ 200/);
+  assert.match(redirects, /\/engineer \/ 200/);
+  assert.match(redirects, /\/work-orders\/\* \/ 200/);
+  assert.doesNotMatch(redirects, /^https?:\/\//m);
+  assert.doesNotMatch(redirects, /\/404\.html 404/);
   assert.doesNotMatch(redirects, /^\/\* \/index\.html 200$/m);
 });
 

@@ -71,6 +71,7 @@ export function createAcquisitionEventActions({
   const enabled = Boolean(indexable && isSafeContentContext(contentType, contentSlug));
   const startedTools = new Set();
   const completedTools = new Set();
+  const clickedCtas = new Set();
 
   return {
     onToolStarted(toolId) {
@@ -90,6 +91,9 @@ export function createAcquisitionEventActions({
     },
     onConversionClick({ contentType: clickedContentType = contentType, contentSlug: clickedContentSlug = contentSlug, ctaType } = {}) {
       if (!enabled || !isSafeContentContext(clickedContentType, clickedContentSlug) || typeof ctaType !== 'string' || !ctaType) return;
+      const key = `${clickedContentType}:${clickedContentSlug}:${ctaType}`;
+      if (clickedCtas.has(key)) return;
+      clickedCtas.add(key);
       track('conversion_cta_clicked', {
         content_type: clickedContentType,
         content_slug: clickedContentSlug,

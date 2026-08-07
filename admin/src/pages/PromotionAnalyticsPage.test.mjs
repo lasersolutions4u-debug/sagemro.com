@@ -768,7 +768,10 @@ test('acquisition state provides retry, empty, bilingual, and neutral insufficie
   assert.match(textContent(renderer.toJSON()), /Acquisition query unavailable/);
   await act(async () => findButton(renderer.root, 'Retry').props.onClick());
   assert.equal(attempts, 2);
-  assert.match(textContent(renderer.toJSON()), /No acquisition data/);
+  const emptyContent = textContent(renderer.toJSON());
+  assert.match(emptyContent, /No acquisition data/);
+  assert.match(emptyContent, /Data quality/);
+  assert.match(emptyContent, /direct traffic is excluded/);
   assert.equal(renderer.root.findAllByType('table').length, 0);
   await act(async () => renderer.unmount());
 });

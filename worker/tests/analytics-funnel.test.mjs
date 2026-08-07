@@ -130,6 +130,54 @@ test('funnel sanitizer retains the v2 request fields but rejects invalid analyti
   });
 });
 
+test('funnel endpoint strips PII and free text from top-level acquisition fields', async () => {
+  const { response, env } = await postFunnel({
+    event_name: 'traffic_source_captured',
+    anonymous_id: 'buyer@example.com',
+    session_id: 'diagnosis says laser overheats',
+    user_type: 'buyer@example.com',
+    source: 'buyer@example.com',
+    medium: '+1 555 123 4567',
+    campaign: 'laser alarm E012 needs help',
+    page_path: '/services/laser-cutting-machine-repair?email=buyer@example.com#contact',
+    referrer: 'https://www.google.com/search?q=buyer%40example.com#results',
+  });
+
+  assert.equal(response.status, 202);
+  assert.equal(env.__rows[0].anonymous_id, '');
+  assert.equal(env.__rows[0].session_id, '');
+  assert.equal(env.__rows[0].user_type, 'guest');
+  assert.equal(env.__rows[0].source, '');
+  assert.equal(env.__rows[0].medium, '');
+  assert.equal(env.__rows[0].campaign, '');
+  assert.equal(env.__rows[0].page_path, '/services/laser-cutting-machine-repair');
+  assert.equal(env.__rows[0].referrer, 'https://www.google.com');
+});
+
+test('funnel endpoint accepts bounded identifier-like acquisition dimensions', async () => {
+  const { response, env } = await postFunnel({
+    event_name: 'traffic_source_captured',
+    anonymous_id: 'anon_safe-id_123',
+    session_id: 'session_safe-id_123',
+    user_type: 'guest',
+    source: 'chatgpt_referral',
+    medium: 'ai_referral',
+    campaign: 'technical-service-2026',
+    page_path: '/services/laser-cutting-machine-repair',
+    referrer: 'https://chatgpt.com/c/secret-conversation?prompt=private',
+  });
+
+  assert.equal(response.status, 202);
+  assert.equal(env.__rows[0].anonymous_id, 'anon_safe-id_123');
+  assert.equal(env.__rows[0].session_id, 'session_safe-id_123');
+  assert.equal(env.__rows[0].user_type, 'guest');
+  assert.equal(env.__rows[0].source, 'chatgpt_referral');
+  assert.equal(env.__rows[0].medium, 'ai_referral');
+  assert.equal(env.__rows[0].campaign, 'technical-service-2026');
+  assert.equal(env.__rows[0].page_path, '/services/laser-cutting-machine-repair');
+  assert.equal(env.__rows[0].referrer, 'https://chatgpt.com');
+});
+
 test('public funnel endpoint rejects unknown event names', async () => {
   const { response, json, env } = await postFunnel({
     event_name: 'freeform_clicked',
