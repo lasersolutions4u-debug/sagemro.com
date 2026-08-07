@@ -129,6 +129,14 @@ test('createAnalyticsRequestId uses the request prefix with an injected factory'
 test('classifyReferrer maps approved organic and AI-search hostnames', () => {
   const cases = [
     ['https://www.google.com/search?q=press+brake', 'google_organic', 'organic'],
+    ['https://news.google.com/', 'google_organic', 'organic'],
+    ['https://google.com.hk/', 'google_organic', 'organic'],
+    ['https://google.co.uk/', 'google_organic', 'organic'],
+    ['https://google.de/', 'google_organic', 'organic'],
+    ['https://google.fr/', 'google_organic', 'organic'],
+    ['https://google.ca/', 'google_organic', 'organic'],
+    ['https://google.com.au/', 'google_organic', 'organic'],
+    ['https://google.co.in/', 'google_organic', 'organic'],
     ['https://www.baidu.com/s?wd=激光切割机维修', 'baidu_organic', 'organic'],
     ['https://www.bing.com/search?q=fiber+laser+repair', 'bing_organic', 'organic'],
     ['https://chatgpt.com/', 'chatgpt_referral', 'ai_referral'],
@@ -149,6 +157,9 @@ test('classifyReferrer rejects internal, malformed, and lookalike hosts', () => 
     'https://engineer.sagemro.cn/',
     'https://google.example.com/search',
     'https://google.evil.com/search',
+    'https://google.evil/search',
+    'https://google.com.evil/search',
+    'https://notgoogle.com/search',
     'https://baidu.com.example.org/',
     'https://example.com/?source=google.com',
     'not a URL',
@@ -191,4 +202,18 @@ test('resolveTrafficAttribution reuses stored non-direct attribution only withou
   }), {
     source: '', medium: '', campaign: '', content: '', term: '',
   });
+});
+
+test('resolveTrafficAttribution does not reuse direct stored attribution', () => {
+  for (const stored of [
+    { source: 'direct', medium: '', campaign: 'legacy', content: '', term: '' },
+    { source: '', medium: 'none', campaign: 'legacy', content: '', term: '' },
+    { source: 'direct', medium: 'none', campaign: 'legacy', content: '', term: '' },
+  ]) {
+    assert.deepEqual(resolveTrafficAttribution({
+      search: '', referrer: '', siteHostname: 'sagemro.com', stored,
+    }), {
+      source: '', medium: '', campaign: '', content: '', term: '',
+    });
+  }
 });

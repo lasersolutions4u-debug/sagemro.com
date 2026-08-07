@@ -11,7 +11,16 @@ const REFERRER_RULES = [
 ];
 
 const ATTRIBUTION_FIELDS = ['source', 'medium', 'campaign', 'content', 'term'];
-const RESERVED_HOSTNAME_LABELS = new Set(['example', 'invalid', 'localhost', 'test']);
+const GOOGLE_SEARCH_HOSTS = new Set([
+  'google.com',
+  'google.com.hk',
+  'google.co.uk',
+  'google.de',
+  'google.fr',
+  'google.ca',
+  'google.com.au',
+  'google.co.in',
+]);
 
 function normalizeHostname(hostname) {
   return typeof hostname === 'string'
@@ -26,18 +35,8 @@ function isSagemroHostname(hostname) {
     || hostname.endsWith('.sagemro.cn');
 }
 
-function hasReservedHostnameLabel(hostname) {
-  return hostname.split('.').some((label) => RESERVED_HOSTNAME_LABELS.has(label));
-}
-
-function hasGooglePublicSuffix(hostname) {
-  const labels = hostname.split('.');
-  const googleIndex = labels.lastIndexOf('google');
-  const suffix = labels.slice(googleIndex + 1);
-  if (suffix.length === 1) return true;
-  return suffix.length === 2
-    && ['ac', 'co', 'com', 'edu', 'gov', 'net', 'org'].includes(suffix[0])
-    && /^[a-z]{2}$/.test(suffix[1]);
+function isApprovedGoogleHost(hostname) {
+  return [...GOOGLE_SEARCH_HOSTS].some((host) => hostname === host || hostname.endsWith(`.${host}`));
 }
 
 function normalizeAttribution(attribution) {
@@ -51,6 +50,12 @@ function hasAttribution(attribution) {
   return Object.values(attribution).some(Boolean);
 }
 
+function isReusableStoredAttribution(attribution) {
+  const source = attribution.source.trim().toLowerCase();
+  const medium = attribution.medium.trim().toLowerCase();
+  return hasAttribution(attribution) && source !== 'direct' && Boolean(medium) && medium !== 'none';
+}
+
 export function classifyReferrer(referrer, siteHostname) {
   try {
     const hostname = normalizeHostname(new URL(referrer).hostname);
@@ -58,11 +63,10 @@ export function classifyReferrer(referrer, siteHostname) {
       !hostname
       || hostname === normalizeHostname(siteHostname)
       || isSagemroHostname(hostname)
-      || hasReservedHostnameLabel(hostname)
     ) return null;
 
     for (const [pattern, source, medium] of REFERRER_RULES) {
-      if (pattern.test(hostname) && (source !== 'google_organic' || hasGooglePublicSuffix(hostname))) {
+      if (pattern.test(hostname) && (source !== 'google_organic' || isApprovedGoogleHost(hostname))) {
         return { source, medium };
       }
     }
@@ -87,7 +91,7 @@ export function resolveTrafficAttribution({ search, referrer, siteHostname, stor
   if (classified) return normalizeAttribution(classified);
 
   const fromStored = normalizeAttribution(stored);
-  return hasAttribution(fromStored) ? fromStored : normalizeAttribution();
+  return isReusableStoredAttribution(fromStored) ? fromStored : normalizeAttribution();
 }
 
 export function createAnalyticsId(prefix) {
