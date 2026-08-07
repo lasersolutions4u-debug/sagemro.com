@@ -383,32 +383,39 @@ function normalizeAcquisitionSummary(row = {}) {
   return Object.fromEntries(ACQUISITION_COUNT_FIELDS.map((field) => [field, count(row[field])]));
 }
 
-function safeAcquisitionText(value, max) {
+function isRealIsoDate(value) {
+  const [year, month, day] = value.split('-').map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return date.getUTCFullYear() === year
+    && date.getUTCMonth() === month - 1
+    && date.getUTCDate() === day;
+}
+
+function stripSafeAcquisitionTokens(value) {
+  return value
+    .replace(/\d{4}-\d{2}-\d{2}/g, (token) => (isRealIsoDate(token) ? 'SAFE_DATE' : token))
+    .replace(/v\d+(?:\.\d+)+/gi, 'SAFE_VERSION');
+}
+
+export function sanitizeAcquisitionDimension(dimension, value) {
+  const max = dimension === 'page' ? 240 : 120;
   const text = String(value || '').trim();
-  return text && text.length <= max && !hasSensitiveText(text) ? text : '';
-}
-
-function safeAcquisitionPagePath(value) {
-  const pagePath = safeAcquisitionText(value, 240);
-  return /^\/[A-Za-z0-9/_-]{0,239}$/.test(pagePath) ? pagePath : 'unknown';
-}
-
-function safeAcquisitionAttributionValue(value) {
-  const attribution = safeAcquisitionText(value, 120);
-  return /^[A-Za-z0-9_-]{1,120}$/.test(attribution) ? attribution : 'unknown';
+  if (!text || text.length > max || hasSensitiveText(stripSafeAcquisitionTokens(text))) return 'unknown';
+  if (dimension === 'page') return /^\/[A-Za-z0-9/_.-]{0,239}$/.test(text) ? text : 'unknown';
+  return /^[A-Za-z0-9_.-]{1,120}$/.test(text) ? text : 'unknown';
 }
 
 function normalizeAcquisitionPageRow(row = {}) {
   return {
-    pagePath: safeAcquisitionPagePath(row.pagePath),
+    pagePath: sanitizeAcquisitionDimension('page', row.pagePath),
     ...normalizeAcquisitionSummary(row),
   };
 }
 
 function normalizeAcquisitionSourceRow(row = {}) {
   return {
-    source: safeAcquisitionAttributionValue(row.source),
-    medium: safeAcquisitionAttributionValue(row.medium),
+    source: sanitizeAcquisitionDimension('source', row.source),
+    medium: sanitizeAcquisitionDimension('medium', row.medium),
     ...normalizeAcquisitionSummary(row),
   };
 }
