@@ -1,3 +1,5 @@
+import { hasSensitiveText } from './redact.js';
+
 const REPORT_TIMEZONE_OFFSET_MS = 8 * 60 * 60 * 1000;
 const LIVE_DATA_DELAY_MS = 5 * 60 * 1000;
 const MAX_REPORT_DAYS = 90;
@@ -381,13 +383,18 @@ function normalizeAcquisitionSummary(row = {}) {
   return Object.fromEntries(ACQUISITION_COUNT_FIELDS.map((field) => [field, count(row[field])]));
 }
 
+function safeAcquisitionText(value, max) {
+  const text = String(value || '').trim();
+  return text && text.length <= max && !hasSensitiveText(text) ? text : '';
+}
+
 function safeAcquisitionPagePath(value) {
-  const pagePath = String(value || '');
+  const pagePath = safeAcquisitionText(value, 240);
   return /^\/[A-Za-z0-9/_-]{0,239}$/.test(pagePath) ? pagePath : 'unknown';
 }
 
 function safeAcquisitionAttributionValue(value) {
-  const attribution = String(value || '');
+  const attribution = safeAcquisitionText(value, 120);
   return /^[A-Za-z0-9_-]{1,120}$/.test(attribution) ? attribution : 'unknown';
 }
 

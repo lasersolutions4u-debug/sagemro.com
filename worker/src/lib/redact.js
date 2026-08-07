@@ -55,6 +55,7 @@ const RE_LICENSE_PLATE =
 // URL 里嵌入 basic auth 凭据：https://user:pass@host/... —— 真见过有人粘整行
 // 不脱普通 URL（设备厂商文档链接在 RAG 里有价值）
 const RE_URL_WITH_CREDS = /https?:\/\/[^\s/@]+:[^\s/@]+@[^\s]+/g;
+const RE_CONTACT_LIKE_IDENTIFIER = /(?:\+?\d[\d\s().-]{6,}\d)/;
 
 const DEFAULT_CATEGORIES = [
   'phone_cn',
@@ -109,6 +110,11 @@ export function redactPII(text, opts = {}) {
   }
 
   return out;
+}
+
+export function hasSensitiveText(text) {
+  return typeof text === 'string'
+    && (redactPII(text) !== text || RE_CONTACT_LIKE_IDENTIFIER.test(text));
 }
 
 /**
