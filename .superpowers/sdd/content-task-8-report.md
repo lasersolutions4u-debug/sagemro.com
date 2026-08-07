@@ -88,13 +88,59 @@ Required routes:
 /about/technical-review
 ```
 
-The batch was executed through the real-browser CLI as:
+The exact executable matrix and its machine-readable output are preserved under the ignored acceptance directory:
 
 ```bash
-.pwcli/node_modules/.bin/playwright-cli -s=t8 run-code "async (page) => { /* route the two local hosts and API stubs; visit the 22 required locale/viewport cases plus 3 reverse-viewport cases; assert status, html lang, robots, schema type, NotFound state, overflow, console/page errors, and responsive guide presentation */ }"
+.superpowers/sdd/acceptance/.pwcli/node_modules/.bin/playwright install chromium
+node .superpowers/sdd/acceptance/static-server.mjs
+node .superpowers/sdd/acceptance/task8-browser-matrix.mjs
 ```
 
-Results:
+Artifacts:
+
+- `.superpowers/sdd/acceptance/task8-browser-matrix.mjs`
+- `.superpowers/sdd/acceptance/task8-browser-matrix-output.json`
+
+Command output:
+
+```text
+{"passed":25,"failed":0,"total":25}
+/Users/joe/Projects/sagemro.com/.worktrees/seo-technical-main/.superpowers/sdd/acceptance/task8-browser-matrix-output.json
+```
+
+The script asserts actual status, `html[lang]`, robots, primary schema type (or no schema for draft), viewport overflow, unexpected console errors, and page errors for every row. Exact per-case results:
+
+| # | Locale | Viewport | Path | HTTP | Lang | Robots | Required schema | Overflow | Console raw/unexpected/page | Result |
+| ---: | --- | --- | --- | ---: | --- | --- | --- | ---: | --- | --- |
+| 1 | en | 1440x900 | `/services` | 200 | en | index,follow | CollectionPage | 0 | 0/0/0 | PASS |
+| 2 | en | 1440x900 | `/services/laser-cutting-machine-repair` | 200 | en | index,follow | Service | 0 | 0/0/0 | PASS |
+| 3 | en | 1440x900 | `/services/press-brake-repair` | 200 | en | index,follow | Service | 0 | 0/0/0 | PASS |
+| 4 | en | 1440x900 | `/services/remote-diagnostics` | 200 | en | index,follow | Service | 0 | 0/0/0 | PASS |
+| 5 | en | 1440x900 | `/services/preventive-maintenance` | 200 | en | index,follow | Service | 0 | 0/0/0 | PASS |
+| 6 | en | 1440x900 | `/insights/laser-protective-lens-burning` | 200 | en | index,follow | Article | 0 | 0/0/0 | PASS |
+| 7 | en | 1440x900 | `/insights/laser-cutting-machine-maintenance-checklist` | 200 | en | index,follow | Article | 0 | 0/0/0 | PASS |
+| 8 | en | 1440x900 | `/insights/press-brake-angle-inaccuracy` | 404 | en | noindex,nofollow,noarchive | none | 0 | 1/0/0 | PASS |
+| 9 | en | 1440x900 | `/tools/metal-weight-calculator` | 200 | en | index,follow | WebApplication | 0 | 0/0/0 | PASS |
+| 10 | en | 1440x900 | `/tools/laser-cutting-speed-reference` | 200 | en | noindex,nofollow,noarchive | WebApplication | 0 | 0/0/0 | PASS |
+| 11 | en | 1440x900 | `/about/technical-review` | 200 | en | index,follow | AboutPage | 0 | 0/0/0 | PASS |
+| 12 | zh-CN | 390x844 | `/services` | 200 | zh-CN | index,follow | CollectionPage | 0 | 0/0/0 | PASS |
+| 13 | zh-CN | 390x844 | `/services/laser-cutting-machine-repair` | 200 | zh-CN | index,follow | Service | 0 | 0/0/0 | PASS |
+| 14 | zh-CN | 390x844 | `/services/press-brake-repair` | 200 | zh-CN | index,follow | Service | 0 | 0/0/0 | PASS |
+| 15 | zh-CN | 390x844 | `/services/remote-diagnostics` | 200 | zh-CN | index,follow | Service | 0 | 0/0/0 | PASS |
+| 16 | zh-CN | 390x844 | `/services/preventive-maintenance` | 200 | zh-CN | index,follow | Service | 0 | 0/0/0 | PASS |
+| 17 | zh-CN | 390x844 | `/insights/laser-protective-lens-burning` | 200 | zh-CN | index,follow | Article | 0 | 0/0/0 | PASS |
+| 18 | zh-CN | 390x844 | `/insights/laser-cutting-machine-maintenance-checklist` | 200 | zh-CN | index,follow | Article | 0 | 0/0/0 | PASS |
+| 19 | zh-CN | 390x844 | `/insights/press-brake-angle-inaccuracy` | 404 | zh-CN | noindex,nofollow,noarchive | none | 0 | 1/0/0 | PASS |
+| 20 | zh-CN | 390x844 | `/tools/metal-weight-calculator` | 200 | zh-CN | index,follow | WebApplication | 0 | 0/0/0 | PASS |
+| 21 | zh-CN | 390x844 | `/tools/laser-cutting-speed-reference` | 200 | zh-CN | noindex,nofollow,noarchive | WebApplication | 0 | 0/0/0 | PASS |
+| 22 | zh-CN | 390x844 | `/about/technical-review` | 200 | zh-CN | index,follow | AboutPage | 0 | 0/0/0 | PASS |
+| 23 | en | 390x844 | `/services/press-brake-repair` | 200 | en | index,follow | Service | 0 | 0/0/0 | PASS |
+| 24 | en | 390x844 | `/insights/laser-protective-lens-burning` | 200 | en | index,follow | Article | 0 | 0/0/0 | PASS |
+| 25 | zh-CN | 1440x900 | `/tools/metal-weight-calculator` | 200 | zh-CN | index,follow | WebApplication | 0 | 0/0/0 | PASS |
+
+Rows 8 and 19 contain exactly one raw console message: `Failed to load resource: the server responded with a status of 404 (Not Found)`. The script permits that expected main-document 404 only for the deliberate draft URL; unexpected console errors and page errors are zero. Full schema type arrays, H1 values, expected values, and individual assertion booleans remain in the JSON artifact.
+
+Additional interaction results:
 
 - All published routes returned 200; the draft returned 404 in EN and zh-CN.
 - `html[lang]`, H1 language, robots, and hydrated schema matched each locale/page type.
@@ -129,7 +175,62 @@ Screenshots (ignored; not tracked):
 
 ## Raw/static HTML and schema
 
-Commands:
+The exact executable assertions and output are preserved as:
+
+```bash
+node .superpowers/sdd/acceptance/static-server.mjs
+node .superpowers/sdd/acceptance/task8-raw-source-check.mjs
+```
+
+Artifacts:
+
+- `.superpowers/sdd/acceptance/task8-raw-source-check.mjs`
+- `.superpowers/sdd/acceptance/task8-raw-source-output.json`
+
+Machine output:
+
+```json
+{
+  "output": {
+    "publishedGuideHttpStatus": 200,
+    "draftHttpStatus": 404,
+    "guideDirectAnswer": "Repeated protective-lens damage is an observation, not yet a diagnosis.",
+    "guideSchemaTypes": ["Article", "BreadcrumbList", "ListItem", "ListItem", "Organization"],
+    "serviceSchemaTypes": ["Service", "BreadcrumbList", "ListItem", "ListItem", "Organization"],
+    "indexableToolSchemaTypes": ["WebApplication", "Offer", "BreadcrumbList", "ListItem", "ListItem", "Organization"],
+    "noindexToolSchemaTypes": ["WebApplication", "Offer", "BreadcrumbList", "ListItem", "ListItem", "Organization"],
+    "downgradedToolSchemaTypes": ["WebApplication", "Offer", "BreadcrumbList", "ListItem", "ListItem", "Organization"],
+    "noindexToolRobots": "noindex,nofollow,noarchive",
+    "downgradedToolRobots": "noindex,nofollow,noarchive",
+    "draftFileAbsent": true,
+    "draftRawRobots": "noindex,nofollow,noarchive",
+    "draftRawContainsJsonLd": false
+  },
+  "assertions": {
+    "publishedGuideStatus200": true,
+    "publishedGuideDirectAnswerInRawHtml": true,
+    "publishedGuideJsonLdInRawHtml": true,
+    "publishedGuidePrerenderedBeforeClientExecution": true,
+    "serviceSchema": true,
+    "articleSchema": true,
+    "indexableToolSchema": true,
+    "noindexToolRobots": true,
+    "noindexToolSchema": true,
+    "downgradedTonnageRobots": true,
+    "downgradedTonnageSchema": true,
+    "draftRouteFileAbsent": true,
+    "draftStatus404": true,
+    "draftRawSourceNoindex": true,
+    "draftRawSourceNotFound": true,
+    "draftRawSourceSchemaFree": true,
+    "static404Noindex": true,
+    "static404SchemaFree": true
+  },
+  "summary": {"passed": 18, "failed": 0, "total": 18}
+}
+```
+
+The direct shell probes and exact output were:
 
 ```bash
 curl -sS -o /dev/null -w 'published-guide status=%{http_code}\n' \
@@ -140,7 +241,26 @@ curl -sS http://localhost:4179/insights/press-brake-angle-inaccuracy \
   | rg -o 'noindex,nofollow,noarchive|404 — This page doesn&#39;t exist' | sort -u
 ```
 
-Results:
+```text
+published-guide status=200
+draft-guide status=404
+404 — This page doesn&#39;t exist
+noindex,nofollow,noarchive
+```
+
+The raw script reads and asserts the following exact files before making the HTTP probes:
+
+```text
+frontend/dist/services/press-brake-repair/index.html
+frontend/dist/insights/laser-protective-lens-burning/index.html
+frontend/dist/tools/metal-weight-calculator/index.html
+frontend/dist/tools/laser-cutting-speed-reference/index.html
+frontend/dist/tools/press-brake-tonnage-calculator/index.html
+frontend/dist/404.html
+frontend/dist/insights/press-brake-angle-inaccuracy/index.html (must be absent)
+```
+
+Interpretation of the assertions:
 
 - Published guide: HTTP 200; raw HTML contains the direct answer, prerendered body, client entry, and JSON-LD before client execution.
 - Schema primaries are correct: `Service` for service detail, `Article` for published guide, `WebApplication` for indexable and direct noindex tools.
@@ -160,6 +280,12 @@ node --test tests/public-build-output.test.mjs
 node --test tests/industry-tools-calculations.test.mjs tests/public-seo-routes.test.mjs tests/public-build-output.test.mjs tests/diagnostic-guides.test.mjs tests/service-pages.test.mjs
 ```
 
+The follow-up regression closes the static-build coverage gap by adding `press-brake-tonnage-calculator` to the existing direct-noindex slug loop in `tests/public-build-output.test.mjs`. To prove that assertion detects the regression, the page was temporarily restored to its old indexable state and the focused test failed on its required `noindex,nofollow,noarchive` match. Restoring the accepted noindex state made the same focused command pass 3/3; the temporary production edit was then confirmed absent from the diff.
+
+```bash
+node --test tests/public-build-output.test.mjs
+```
+
 Final fresh verification:
 
 ```bash
@@ -169,7 +295,7 @@ npm run build
 git diff --check
 ```
 
-Results: 335/335 frontend tests passed; ESLint passed with no output; production build completed; `git diff --check` passed.
+Results: focused build-output tests passed 3/3; the full frontend suite passed 335/335; ESLint passed with no output; the production build completed; the post-build raw-source gate passed 18/18; `git diff --check` passed.
 
 ## Defects, fixes, and remaining concerns
 

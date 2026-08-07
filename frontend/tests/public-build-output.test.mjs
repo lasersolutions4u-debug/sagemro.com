@@ -35,6 +35,7 @@ test('buildPublicPages writes direct noindex tool pages outside every public cra
   const distDir = await mkdtemp(join(tmpdir(), 'sagemro-noindex-tool-build-'));
   const noindexSlugs = [
     'steel-price-watch',
+    'press-brake-tonnage-calculator',
     'laser-assist-gas-consumption-calculator',
     'laser-cutting-speed-reference',
     'laser-cutting-machine-roi-calculator',
