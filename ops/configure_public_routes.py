@@ -10,7 +10,7 @@ import tempfile
 SERVER_START_RE = re.compile(r'^\s*server\s*\{')
 TLS_LISTEN_RE = re.compile(r'^\s*listen\s+(?:(?:\[[^\]]+\]|[0-9.]+):)?443\b[^;]*\bssl\b[^;]*;', re.MULTILINE)
 LEGACY_FALLBACK_RE = re.compile(
-    r'(?m)^(?P<indent>[ \t]*)location\s+/\s*\{\s*try_files\s+\$uri\s+/index\.html\s*;\s*\}'
+    r'(?m)^(?P<indent>[ \t]*)location\s+/\s*\{\s*try_files\s+\$uri(?:\s+\$uri/)?\s+/index\.html\s*;\s*\}'
 )
 PUBLIC_FALLBACK_RE = re.compile(
     r'(?m)^(?P<indent>[ \t]*)location\s+/\s*\{\s*try_files\s+\$uri\s+\$uri/\s+=404\s*;\s*\}'

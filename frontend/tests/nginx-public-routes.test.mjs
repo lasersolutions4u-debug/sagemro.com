@@ -33,7 +33,7 @@ server {
   server_name engineer.sagemro.cn;
   root /var/www/sagemro-cn/current/engineer;
   location / {
-    try_files $uri /index.html;
+    try_files $uri $uri/ /index.html;
   }
 }
 
