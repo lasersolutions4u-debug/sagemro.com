@@ -120,6 +120,7 @@ import { isKnownProtectedRoute, isTestRoute } from './lib/routes.js';
 import { handlePublicRoute } from './lib/publicRoutes.js';
 import {
   PromotionAnalyticsInputError,
+  loadOrganicAcquisition,
   loadPromotionChannels,
   loadPromotionOverview,
   parsePromotionFilters,
@@ -11981,6 +11982,7 @@ export function isOperationsReadRoute(path, method) {
     || path === '/api/admin/materials'
     || path === '/api/admin/analytics/overview'
     || path === '/api/admin/analytics/channels'
+    || path === '/api/admin/analytics/organic-acquisition'
     || path === '/api/notifications'
     || path === '/api/notifications/unread-count'
     || /^\/api\/workorders\/[^/]+$/.test(path)
@@ -12038,7 +12040,14 @@ async function handlePromotionAnalytics(request, env, endpoint) {
     }
     const loaded = endpoint === 'overview'
       ? await loadPromotionOverview(databases, filters)
-      : await loadPromotionChannels(databases, filters);
+      : endpoint === 'channels'
+        ? await loadPromotionChannels(databases, filters)
+        : await loadOrganicAcquisition(databases, filters);
+    if (endpoint === 'organic-acquisition') {
+      const response = jsonResponse(loaded);
+      response.headers.set('Cache-Control', 'private, no-store');
+      return response;
+    }
     const { dataQuality, ...payload } = loaded;
     delete payload.recentAi;
     const response = jsonResponse({
@@ -20445,6 +20454,9 @@ async function routeRequest(request, env, ctx) {
       }
       if (path === '/api/admin/analytics/channels' && request.method === 'GET') {
         return handlePromotionAnalytics(request, env, 'channels');
+      }
+      if (path === '/api/admin/analytics/organic-acquisition' && request.method === 'GET') {
+        return handlePromotionAnalytics(request, env, 'organic-acquisition');
       }
       if (path === '/api/admin/staff' && request.method === 'GET') {
         return handleAdminStaffList(request, env);

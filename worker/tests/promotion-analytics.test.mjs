@@ -9,6 +9,7 @@ import {
   PromotionAnalyticsInputError,
   buildEventWhere,
   evaluatePromotionHealth,
+  loadOrganicAcquisition,
   loadPromotionChannels,
   loadPromotionOverview,
   mergeChannelRows,
@@ -73,17 +74,18 @@ function seedEvent(db, {
   source = 'google',
   medium = 'cpc',
   campaign = 'summer',
+  pagePath = '/',
   properties = { analytics_version: '2' },
   createdAt = '2026-08-01 00:05:00',
 }) {
   const statement = db.prepare(`
     INSERT INTO funnel_events (
-      id, event_name, market, anonymous_id, session_id, source, medium, campaign,
+      id, event_name, market, anonymous_id, session_id, source, medium, campaign, page_path,
       properties_json, created_at
-    ) VALUES (?, ?, 'com', ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, 'com', ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   return statement.bind(
-    id, eventName, anonymousId, sessionId, source, medium, campaign,
+    id, eventName, anonymousId, sessionId, source, medium, campaign, pagePath,
     JSON.stringify(properties), createdAt,
   ).all();
 }
@@ -113,6 +115,98 @@ function queryFilters(overrides = {}) {
     ...overrides,
   };
 }
+
+async function seedOrganicAcquisitionEvents(db) {
+  const repairPage = '/services/laser-cutting-machine-repair';
+  await seedEvent(db, { id: 'organic-google-landing', eventName: 'seo_landing_viewed', anonymousId: 'google-anon', sessionId: 'google-session', source: 'google_organic', medium: 'organic', pagePath: repairPage });
+  await seedEvent(db, { id: 'organic-google-landing-duplicate', eventName: 'seo_landing_viewed', anonymousId: 'google-anon', sessionId: 'google-session', source: 'google_organic', medium: 'organic', pagePath: repairPage, createdAt: '2026-08-01 00:06:00' });
+  await seedEvent(db, { id: 'organic-baidu-landing', eventName: 'seo_landing_viewed', anonymousId: 'baidu-anon', sessionId: 'baidu-session', source: 'baidu_organic', medium: 'organic', pagePath: '/services/press-brake-repair' });
+  await seedEvent(db, { id: 'organic-chatgpt-landing', eventName: 'seo_landing_viewed', anonymousId: 'chatgpt-anon', sessionId: 'chatgpt-session', source: 'chatgpt_referral', medium: 'ai_referral', pagePath: '/insights/laser-repair' });
+  await seedEvent(db, { id: 'organic-duplicate-landing', eventName: 'seo_landing_viewed', anonymousId: 'duplicate-anon', sessionId: 'duplicate-session', source: 'google_organic', medium: 'organic', pagePath: '/tools/metal-weight-calculator' });
+  await seedEvent(db, { id: 'organic-duplicate-landing-repeat', eventName: 'seo_landing_viewed', anonymousId: 'duplicate-anon', sessionId: 'duplicate-session', source: 'google_organic', medium: 'organic', pagePath: '/tools/metal-weight-calculator', createdAt: '2026-08-01 00:06:00' });
+  await seedEvent(db, { id: 'direct-landing', eventName: 'seo_landing_viewed', anonymousId: 'direct-anon', sessionId: 'direct-session', source: '', medium: 'direct', pagePath: repairPage });
+  await seedEvent(db, { id: 'direct-landing-disguised', eventName: 'seo_landing_viewed', anonymousId: 'direct-disguised-anon', sessionId: 'direct-disguised-session', source: '', medium: 'organic', pagePath: repairPage });
+  await seedEvent(db, { id: 'google-engaged', eventName: 'content_engaged', anonymousId: 'google-anon', sessionId: 'google-session', source: 'google_organic', medium: 'organic', pagePath: repairPage });
+  await seedEvent(db, { id: 'chatgpt-engaged', eventName: 'content_engaged', anonymousId: 'chatgpt-anon', sessionId: 'chatgpt-session', source: 'chatgpt_referral', medium: 'ai_referral', pagePath: '/insights/laser-repair' });
+  await seedEvent(db, { id: 'baidu-tool', eventName: 'tool_completed', anonymousId: 'baidu-anon', sessionId: 'baidu-session', source: 'baidu_organic', medium: 'organic', pagePath: '/tools/metal-weight-calculator' });
+  await seedEvent(db, { id: 'google-cta-one', eventName: 'conversion_cta_clicked', anonymousId: 'google-anon', sessionId: 'google-session', source: 'google_organic', medium: 'organic', pagePath: repairPage });
+  await seedEvent(db, { id: 'google-cta-two', eventName: 'conversion_cta_clicked', anonymousId: 'google-anon', sessionId: 'google-session', source: 'google_organic', medium: 'organic', pagePath: repairPage, createdAt: '2026-08-01 00:07:00' });
+  await seedEvent(db, { id: 'google-ai', eventName: 'ai_conversation_started', anonymousId: 'google-anon', sessionId: 'google-session', source: 'google_organic', medium: 'organic', pagePath: repairPage, properties: { analytics_version: '2', request_id: 'organic-request' } });
+  await seedEvent(db, { id: 'chatgpt-service', eventName: 'service_request_created', anonymousId: 'chatgpt-anon', sessionId: 'chatgpt-session', source: 'chatgpt_referral', medium: 'ai_referral', pagePath: '/insights/laser-repair' });
+}
+
+test('loadOrganicAcquisition aggregates only organic and AI-referral acquisition without identifiers', async (t) => {
+  const db = createD1Database();
+  t.after(() => db.close());
+  await seedOrganicAcquisitionEvents(db);
+
+  const result = await loadOrganicAcquisition({ com: db }, filters({
+    from: '2026-08-01', to: '2026-08-01', market: 'com',
+  }));
+
+  assert.deepEqual(result.summary, {
+    landingSessions: 4,
+    engagedSessions: 2,
+    toolCompletions: 1,
+    ctaClicks: 2,
+    aiRequests: 1,
+    serviceRequests: 1,
+  });
+  assert.equal(result.pages[0].pagePath, '/services/laser-cutting-machine-repair');
+  assert.equal(result.sources.some((row) => row.source === 'chatgpt_referral'), true);
+  assert.equal(result.sources.some((row) => row.source === '' || row.source === 'direct'), false);
+  assert.equal(result.reportingTimezone, 'Asia/Shanghai');
+  assert.equal(/anonymous_id|session_id|user_id|properties_json|request_id|ip_hash|user_agent/i.test(JSON.stringify(result)), false);
+});
+
+test('loadOrganicAcquisition retains capped source and page totals in explicit other rows', async (t) => {
+  const db = createD1Database();
+  t.after(() => db.close());
+  for (let index = 0; index < 101; index += 1) {
+    await seedEvent(db, {
+      id: `organic-cap-${index}`,
+      eventName: 'seo_landing_viewed',
+      anonymousId: `cap-anon-${index}`,
+      sessionId: `cap-session-${index}`,
+      source: `source-${String(index).padStart(3, '0')}`,
+      medium: 'organic',
+      pagePath: `/insights/cap-${String(index).padStart(3, '0')}`,
+    });
+  }
+
+  const result = await loadOrganicAcquisition({ com: db }, filters({
+    from: '2026-08-01', to: '2026-08-01', market: 'com',
+  }));
+
+  assert.equal(result.pages.length, 100);
+  assert.equal(result.sources.length, 100);
+  assert.equal(result.pages.at(-1).pagePath, 'other');
+  assert.equal(result.sources.at(-1).source, 'other');
+  assert.equal(result.pages.reduce((total, row) => total + row.landingSessions, 0), 101);
+  assert.equal(result.sources.reduce((total, row) => total + row.landingSessions, 0), 101);
+});
+
+test('loadOrganicAcquisition never exposes unsafe page or attribution dimension values', async (t) => {
+  const db = createD1Database();
+  t.after(() => db.close());
+  await seedEvent(db, {
+    id: 'unsafe-acquisition-dimensions',
+    eventName: 'seo_landing_viewed',
+    anonymousId: 'safe-anon',
+    sessionId: 'safe-session',
+    source: 'buyer@example.com',
+    medium: 'organic',
+    pagePath: '/services/buyer@example.com',
+  });
+
+  const result = await loadOrganicAcquisition({ com: db }, filters({
+    from: '2026-08-01', to: '2026-08-01', market: 'com',
+  }));
+
+  assert.equal(result.pages[0].pagePath, 'unknown');
+  assert.equal(result.sources[0].source, 'unknown');
+  assert.equal(JSON.stringify(result).includes('buyer@example.com'), false);
+});
 
 test('parsePromotionFilters uses inclusive Shanghai report days and a five-minute live cutoff', () => {
   assert.deepEqual(filters({
@@ -776,6 +870,7 @@ test('promotion analytics endpoints enforce real worker authentication, roles, e
   const engineer = await promotionApi(env, endpoint, { auth: { userId: 'engineer-1', userType: 'engineer', market: 'com' } });
   const anonymous = await promotionApi(env, endpoint);
   const channels = await promotionApi(env, endpoint.replace('/overview', '/channels'), { auth: staffAuth('staff-operations', 'operations') });
+  const acquisition = await promotionApi(env, endpoint.replace('/overview', '/organic-acquisition'), { auth: staffAuth('staff-operations', 'operations') });
   const post = await promotionApi(env, endpoint, { method: 'POST', auth: staffAuth('staff-operations', 'operations') });
 
   assert.equal(bootstrap.response.status, 200);
@@ -789,6 +884,8 @@ test('promotion analytics endpoints enforce real worker authentication, roles, e
   assert.equal(anonymous.response.status, 401);
   assert.equal(channels.response.status, 200);
   assert.equal(channels.response.headers.get('Cache-Control'), 'private, no-store');
+  assert.equal(acquisition.response.status, 200);
+  assert.equal(acquisition.response.headers.get('Cache-Control'), 'private, no-store');
   assert.equal(post.response.status, 403);
   assert.equal(bootstrap.json.reporting_timezone, 'Asia/Shanghai');
   assert.deepEqual(bootstrap.json.allowed_markets, ['com', 'cn']);
@@ -796,7 +893,9 @@ test('promotion analytics endpoints enforce real worker authentication, roles, e
     from: '2026-08-01', to: '2026-08-01', markets: ['com'], source: '', medium: '', campaign: '',
   });
   assert.ok(bootstrap.json.data_quality);
-  assert.equal(/anonymous_id|session_id|request_id|user_id|createdAt|created_at|user_agent|ip_hash/i.test(JSON.stringify({ overview: bootstrap.json, channels: channels.json })), false);
+  assert.deepEqual(Object.keys(acquisition.json).sort(), ['dataQuality', 'pages', 'reportingTimezone', 'sources', 'summary']);
+  assert.equal(acquisition.json.reportingTimezone, 'Asia/Shanghai');
+  assert.equal(/anonymous_id|session_id|request_id|user_id|createdAt|created_at|user_agent|ip_hash|properties_json/i.test(JSON.stringify({ overview: bootstrap.json, channels: channels.json, acquisition: acquisition.json })), false);
 });
 
 test('promotion analytics preserves COM and CN bindings, merges all-market reads, and refuses unauthorized all-market requests', async (t) => {
@@ -820,14 +919,20 @@ test('promotion analytics preserves COM and CN bindings, merges all-market reads
   const cnOnly = await promotionApi(env, '/api/admin/analytics/channels?from=2026-08-01&to=2026-08-01&market=cn', {
     host: 'api.sagemro.cn', auth: staffAuth('all-operations', 'operations', 'cn'),
   });
+  const deniedAcquisitionCn = await promotionApi(env, '/api/admin/analytics/organic-acquisition?from=2026-08-01&to=2026-08-01&market=cn', { auth: comOnly });
+  const allAcquisition = await promotionApi(env, '/api/admin/analytics/organic-acquisition?from=2026-08-01&to=2026-08-01&market=all', {
+    host: 'api.sagemro.cn', auth: staffAuth('all-operations', 'operations', 'cn'),
+  });
 
   assert.equal(deniedCn.response.status, 403);
   assert.equal(deniedAll.response.status, 403);
+  assert.equal(deniedAcquisitionCn.response.status, 403);
   assert.equal(allMarket.response.status, 200);
   assert.deepEqual(allMarket.json.filters.markets, ['com', 'cn']);
   assert.equal(allMarket.json.current.sessions, 4);
   assert.equal(cnOnly.response.status, 200);
   assert.equal(cnOnly.json.rows[0].sessions, 1);
+  assert.equal(allAcquisition.response.status, 200);
 });
 
 test('promotion analytics maps invalid filters to 400 and reports unexpected query failures without raw query metadata', async (t) => {
