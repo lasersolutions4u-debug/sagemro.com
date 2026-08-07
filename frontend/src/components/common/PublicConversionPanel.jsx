@@ -1,20 +1,13 @@
-import { useMemo } from 'react';
-import { getPublicSeoRoute } from '../../data/publicSeoRoutes';
-import { createTrackedConversionClick, getAcquisitionContentType, getPublicContentSlug, useAcquisitionTracking } from '../../hooks/useAcquisitionTracking';
+import { createAcquisitionEventActions, createTrackedConversionClick, getPublicAcquisitionContext } from '../../hooks/useAcquisitionTracking';
 import { isCnLocale } from '../../utils/locale';
 
 export function PublicConversionPanel({ context, primaryLabel, secondaryLabel, onStartDiagnosis, onOpenServiceRequest }) {
-  const acquisitionContext = useMemo(() => {
-    const path = typeof window === 'undefined' ? '' : window.location.pathname;
-    const route = getPublicSeoRoute(path, isCnLocale() ? 'zh-CN' : 'en');
-    return {
-      path,
-      contentType: getAcquisitionContentType(route, isCnLocale() ? 'zh-CN' : 'en'),
-      contentSlug: getPublicContentSlug(route),
-      indexable: route?.robots === 'index,follow',
-    };
-  }, []);
-  const { onConversionClick } = useAcquisitionTracking({ ...acquisitionContext, trackLanding: false });
+  const acquisitionContext = getPublicAcquisitionContext({
+    pathname: typeof window === 'undefined' ? '' : window.location.pathname,
+    locale: isCnLocale() ? 'zh-CN' : 'en',
+    sessionRestoreComplete: true,
+  });
+  const { onConversionClick } = createAcquisitionEventActions(acquisitionContext);
   const startDiagnosis = createTrackedConversionClick(onConversionClick, {
     contentType: acquisitionContext.contentType,
     contentSlug: acquisitionContext.contentSlug,

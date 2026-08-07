@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo } from 'react';
 import { getDiagnosticGuide } from '../data/diagnosticGuides';
+import { getPublicSeoRoute } from '../data/publicSeoRoutes';
 import { trackFunnelEvent } from '../services/api';
 
 const PUBLIC_CONTENT_TYPES = new Set([
@@ -27,10 +28,74 @@ export function getAcquisitionContentType(route, locale = 'en') {
     : '';
 }
 
+export function getPublicAcquisitionContext({
+  pathname,
+  locale = 'en',
+  sessionRestoreComplete = false,
+  isEngineerHost = false,
+  userType = null,
+  route,
+}) {
+  const path = pathname === '/' ? '/' : String(pathname || '').replace(/\/$/, '');
+  const publicRoute = route ?? getPublicSeoRoute(path, locale);
+  const contentType = getAcquisitionContentType(publicRoute, locale);
+  const contentSlug = getPublicContentSlug(publicRoute);
+
+  return {
+    path,
+    contentType,
+    contentSlug,
+    indexable: Boolean(
+      sessionRestoreComplete
+      && !isEngineerHost
+      && !userType
+      && publicRoute?.robots === 'index,follow'
+      && isSafeContentContext(contentType, contentSlug),
+    ),
+  };
+}
+
 export function createTrackedConversionClick(onConversionClick, context, callback) {
   return () => {
     onConversionClick(context);
     callback?.();
+  };
+}
+
+export function createAcquisitionEventActions({
+  contentType,
+  contentSlug,
+  indexable,
+  track = trackFunnelEvent,
+}) {
+  const enabled = Boolean(indexable && isSafeContentContext(contentType, contentSlug));
+  const startedTools = new Set();
+  const completedTools = new Set();
+
+  return {
+    onToolStarted(toolId) {
+      if (!enabled || typeof toolId !== 'string' || !toolId || startedTools.has(toolId)) return;
+      startedTools.add(toolId);
+      track('tool_started', { content_type: contentType, content_slug: contentSlug, tool_id: toolId });
+    },
+    onToolCompleted(toolId, hasValidResult) {
+      if (!enabled || !hasValidResult || typeof toolId !== 'string' || !toolId || !startedTools.has(toolId) || completedTools.has(toolId)) return;
+      completedTools.add(toolId);
+      track('tool_completed', {
+        content_type: contentType,
+        content_slug: contentSlug,
+        tool_id: toolId,
+        result_state: 'valid',
+      });
+    },
+    onConversionClick({ contentType: clickedContentType = contentType, contentSlug: clickedContentSlug = contentSlug, ctaType } = {}) {
+      if (!enabled || !isSafeContentContext(clickedContentType, clickedContentSlug) || typeof ctaType !== 'string' || !ctaType) return;
+      track('conversion_cta_clicked', {
+        content_type: clickedContentType,
+        content_slug: clickedContentSlug,
+        cta_type: ctaType,
+      });
+    },
   };
 }
 
@@ -53,8 +118,7 @@ export function createAcquisitionTrackingController({
   let remaining = 30_000;
   let visibleSince = null;
   let timer = null;
-  const startedTools = new Set();
-  const completedTools = new Set();
+  let landingTimer = null;
 
   const fireEngaged = () => {
     if (!mounted || engagedSent || !enabled) return;
@@ -95,51 +159,33 @@ export function createAcquisitionTrackingController({
       if (!enabled || mounted) return;
       mounted = true;
       if (trackLanding && !landingSent) {
-        landingSent = true;
-        track('seo_landing_viewed', { content_type: contentType, content_slug: contentSlug });
+        landingTimer = setTimer(() => {
+          if (!mounted || landingSent) return;
+          landingTimer = null;
+          landingSent = true;
+          track('seo_landing_viewed', { content_type: contentType, content_slug: contentSlug });
+        }, 0);
       }
       onVisibilityChange();
     },
     unmount() {
       if (!mounted) return;
+      if (landingTimer !== null) clearTimer(landingTimer);
+      landingTimer = null;
       pause();
       mounted = false;
     },
     onVisibilityChange,
-    onToolStarted(toolId) {
-      if (!enabled || typeof toolId !== 'string' || !toolId || startedTools.has(toolId)) return;
-      startedTools.add(toolId);
-      track('tool_started', { content_type: contentType, content_slug: contentSlug, tool_id: toolId });
-    },
-    onToolCompleted(toolId, hasValidResult) {
-      if (!enabled || !hasValidResult || typeof toolId !== 'string' || !toolId || !startedTools.has(toolId) || completedTools.has(toolId)) return;
-      completedTools.add(toolId);
-      track('tool_completed', {
-        content_type: contentType,
-        content_slug: contentSlug,
-        tool_id: toolId,
-        result_state: 'valid',
-      });
-    },
-    onConversionClick({ contentType: clickedContentType = contentType, contentSlug: clickedContentSlug = contentSlug, ctaType } = {}) {
-      if (!enabled || !isSafeContentContext(clickedContentType, clickedContentSlug) || typeof ctaType !== 'string' || !ctaType) return;
-      track('conversion_cta_clicked', {
-        content_type: clickedContentType,
-        content_slug: clickedContentSlug,
-        cta_type: ctaType,
-      });
-    },
   };
 }
 
-export function useAcquisitionTracking({ path, contentType, contentSlug, indexable, trackLanding = true }) {
+export function useAcquisitionTracking({ path, contentType, contentSlug, indexable }) {
   const controller = useMemo(() => createAcquisitionTrackingController({
     path,
     contentType,
     contentSlug,
     indexable,
-    trackLanding,
-  }), [contentSlug, contentType, indexable, path, trackLanding]);
+  }), [contentSlug, contentType, indexable, path]);
 
   useEffect(() => {
     controller.mount();
@@ -150,9 +196,13 @@ export function useAcquisitionTracking({ path, contentType, contentSlug, indexab
     };
   }, [controller]);
 
+  const actions = useMemo(
+    () => createAcquisitionEventActions({ contentType, contentSlug, indexable }),
+    [contentSlug, contentType, indexable],
+  );
   return {
-    onToolStarted: useCallback((toolId) => controller.onToolStarted(toolId), [controller]),
-    onToolCompleted: useCallback((toolId, hasValidResult) => controller.onToolCompleted(toolId, hasValidResult), [controller]),
-    onConversionClick: useCallback((context) => controller.onConversionClick(context), [controller]),
+    onToolStarted: useCallback((toolId) => actions.onToolStarted(toolId), [actions]),
+    onToolCompleted: useCallback((toolId, hasValidResult) => actions.onToolCompleted(toolId, hasValidResult), [actions]),
+    onConversionClick: useCallback((context) => actions.onConversionClick(context), [actions]),
   };
 }

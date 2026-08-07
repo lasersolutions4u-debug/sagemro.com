@@ -29,7 +29,7 @@ import {
 import { getIndustryToolsPageState, getIndustryToolsSeoMetadata } from '../../utils/industryToolsPage';
 import { isCnLocale } from '../../utils/locale';
 import { setSeoMetadata } from '../../utils/seo';
-import { useAcquisitionTracking } from '../../hooks/useAcquisitionTracking';
+import { createAcquisitionEventActions } from '../../hooks/useAcquisitionTracking';
 
 const BendSimulatorPage = lazy(() => import('./BendSimulatorPage').then(m => ({ default: m.BendSimulatorPage })));
 
@@ -106,12 +106,11 @@ export function IndustryToolsPage({ pathname = '/tools', onOpenLegal, onSendMess
   const pageDescription = selectedTool
     ? selectedTool.seoDescription
     : copy.hubDescription;
-  const { onToolStarted, onToolCompleted } = useAcquisitionTracking({
-    path: pathname,
+  const { onToolStarted, onToolCompleted } = useMemo(() => createAcquisitionEventActions({
     contentType: 'tool',
     contentSlug: selectedTool?.slug || '',
     indexable: page === 'tool-detail' && selectedTool?.seoEvidence?.indexable === true,
-  });
+  }), [page, selectedTool?.seoEvidence?.indexable, selectedTool?.slug]);
 
   useEffect(() => {
     const seoMetadata = getIndustryToolsSeoMetadata({ canonical, page, selectedTool, slug }, locale);

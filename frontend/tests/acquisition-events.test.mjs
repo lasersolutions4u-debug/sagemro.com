@@ -4,6 +4,7 @@ import path from 'node:path';
 import test from 'node:test';
 import { pathToFileURL } from 'node:url';
 import { transformWithOxc } from 'vite';
+import { getPublicSeoRoutes } from '../src/data/publicSeoRoutes.js';
 
 const root = path.resolve(import.meta.dirname, '..');
 const funnelAnalyticsModule = pathToFileURL(path.join(root, 'src/services/funnelAnalytics.js')).href;
@@ -51,10 +52,12 @@ function readAllowlist(source, declaration) {
 async function loadAcquisitionTracking(track) {
   const reactModule = pathToFileURL((await import('node:module')).createRequire(import.meta.url).resolve('react')).href;
   const diagnosticGuidesModule = pathToFileURL(path.join(root, 'src/data/diagnosticGuides.js')).href;
+  const publicSeoRoutesModule = pathToFileURL(path.join(root, 'src/data/publicSeoRoutes.js')).href;
   const apiModule = asDataUrl(`export const trackFunnelEvent = ${track.toString()};`);
   const source = readFileSync(path.join(root, 'src/hooks/useAcquisitionTracking.js'), 'utf8')
     .replace("from 'react'", `from '${reactModule}'`)
     .replace("from '../data/diagnosticGuides'", `from '${diagnosticGuidesModule}'`)
+    .replace("from '../data/publicSeoRoutes'", `from '${publicSeoRoutesModule}'`)
     .replace("from '../services/api'", `from '${apiModule}'`);
   const transformed = await transformWithOxc(source, 'useAcquisitionTracking.js', { lang: 'js', format: 'esm' });
   return import(asDataUrl(transformed.code));
@@ -104,6 +107,8 @@ test('acquisition controller emits landing once and engages only after 30 visibl
   });
 
   controller.mount();
+  assert.deepEqual(events, []);
+  clock.tick(0);
   clock.tick(29_999);
   assert.deepEqual(events.map((event) => event.name), ['seo_landing_viewed']);
   clock.tick(1);
@@ -125,6 +130,7 @@ test('acquisition controller pauses hidden time and never engages after unmount'
   });
 
   controller.mount();
+  clock.tick(0);
   clock.tick(12_000);
   visibility = 'hidden';
   controller.onVisibilityChange();
@@ -146,19 +152,19 @@ test('acquisition controller pauses hidden time and never engages after unmount'
   assert.equal(events.filter((event) => event === 'content_engaged').length, 1);
 });
 
-test('tool lifecycle tracks the first input and first valid result only', async () => {
+test('tool actions track the first input and first valid result only', async () => {
   const events = [];
-  const { createAcquisitionTrackingController } = await loadAcquisitionTracking(() => {});
-  const controller = createAcquisitionTrackingController({
+  const { createAcquisitionEventActions } = await loadAcquisitionTracking(() => {});
+  const actions = createAcquisitionEventActions({
     path: '/tools/metal-weight-calculator', contentType: 'tool', contentSlug: 'metal-weight-calculator', indexable: true,
     track: (name, properties) => events.push({ name, properties }),
   });
 
-  controller.onToolStarted('metal-weight');
-  controller.onToolStarted('metal-weight');
-  controller.onToolCompleted('metal-weight', false);
-  controller.onToolCompleted('metal-weight', true);
-  controller.onToolCompleted('metal-weight', true);
+  actions.onToolStarted('metal-weight');
+  actions.onToolStarted('metal-weight');
+  actions.onToolCompleted('metal-weight', false);
+  actions.onToolCompleted('metal-weight', true);
+  actions.onToolCompleted('metal-weight', true);
 
   assert.deepEqual(events, [
     { name: 'tool_started', properties: { content_type: 'tool', content_slug: 'metal-weight-calculator', tool_id: 'metal-weight' } },
@@ -168,28 +174,55 @@ test('tool lifecycle tracks the first input and first valid result only', async 
 
 test('noindex or unknown contexts do not emit acquisition events', async () => {
   const events = [];
-  const { createAcquisitionTrackingController } = await loadAcquisitionTracking(() => {});
-  const controller = createAcquisitionTrackingController({
+  const { createAcquisitionEventActions } = await loadAcquisitionTracking(() => {});
+  const actions = createAcquisitionEventActions({
     path: '/tools/steel-price-watch', contentType: 'tool', contentSlug: 'steel-price-watch', indexable: false,
     track: (name) => events.push(name), visibilityState: () => 'visible',
   });
 
-  controller.mount();
-  controller.onToolStarted('steel-price');
-  controller.onToolCompleted('steel-price', true);
-  controller.onConversionClick({ ctaType: 'ai_diagnosis' });
+  actions.onToolStarted('steel-price');
+  actions.onToolCompleted('steel-price', true);
+  actions.onConversionClick({ ctaType: 'ai_diagnosis' });
   assert.deepEqual(events, []);
 });
 
-test('public route families use only analytics-v2 content types', async () => {
-  const { getAcquisitionContentType } = await loadAcquisitionTracking(() => {});
+test('central public route context covers every manifest route and excludes pending or private sessions', async () => {
+  const { getPublicAcquisitionContext } = await loadAcquisitionTracking(() => {});
+  const base = { locale: 'en', sessionRestoreComplete: true, isEngineerHost: false, userType: null };
 
-  assert.equal(getAcquisitionContentType({ type: 'services-hub', path: '/services' }), 'service');
-  assert.equal(getAcquisitionContentType({ type: 'tools-hub', path: '/tools' }), 'tool');
-  assert.equal(getAcquisitionContentType({ type: 'insights-hub', path: '/insights' }), 'insight');
-  assert.equal(getAcquisitionContentType({ type: 'insight', path: '/insights/laser-protective-lens-burning' }), 'diagnostic_guide');
-  assert.equal(getAcquisitionContentType({ type: 'technical-review', path: '/about/technical-review' }), 'insight');
-  assert.equal(getAcquisitionContentType({ type: 'unknown', path: '/private' }), '');
+  for (const route of getPublicSeoRoutes('en')) {
+    const context = getPublicAcquisitionContext({ ...base, pathname: route.path, route });
+    assert.equal(context.indexable, true, route.path);
+    assert.match(context.contentType, /^(service|diagnostic_guide|insight|tool)$/);
+    assert.match(context.contentSlug, /^[a-z0-9-]+$/i);
+  }
+  assert.deepEqual(getPublicAcquisitionContext({ ...base, pathname: '/tools' }), {
+    path: '/tools', contentType: 'tool', contentSlug: 'tools', indexable: true,
+  });
+  assert.equal(getPublicAcquisitionContext({ ...base, pathname: '/tools', sessionRestoreComplete: false }).indexable, false);
+  assert.equal(getPublicAcquisitionContext({ ...base, pathname: '/tools', userType: 'customer' }).indexable, false);
+  assert.equal(getPublicAcquisitionContext({ ...base, pathname: '/private' }).indexable, false);
+  assert.equal(getPublicAcquisitionContext({ ...base, pathname: '/tools/steel-price-watch' }).indexable, false);
+});
+
+test('StrictMode probe cleanup leaves one landing and engagement event for the real mount', async () => {
+  const events = [];
+  const clock = createClock();
+  const { createAcquisitionTrackingController } = await loadAcquisitionTracking(() => {});
+  const controller = createAcquisitionTrackingController({
+    path: '/tools', contentType: 'tool', contentSlug: 'tools', indexable: true,
+    track: (name) => events.push(name), visibilityState: () => 'visible',
+    now: clock.now, setTimer: clock.setTimeout, clearTimer: clock.clearTimeout,
+  });
+
+  controller.mount();
+  controller.unmount();
+  clock.tick(0);
+  controller.mount();
+  clock.tick(0);
+  clock.tick(30_000);
+  clock.tick(30_000);
+  assert.deepEqual(events, ['seo_landing_viewed', 'content_engaged']);
 });
 
 test('conversion tracking runs before its existing callback', async () => {
