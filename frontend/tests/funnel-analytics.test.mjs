@@ -137,6 +137,9 @@ test('classifyReferrer maps approved organic and AI-search hostnames', () => {
     ['https://google.ca/', 'google_organic', 'organic'],
     ['https://google.com.au/', 'google_organic', 'organic'],
     ['https://google.co.in/', 'google_organic', 'organic'],
+    ['https://google.co.jp/', 'google_organic', 'organic'],
+    ['https://google.com.br/', 'google_organic', 'organic'],
+    ['https://google.es/', 'google_organic', 'organic'],
     ['https://www.baidu.com/s?wd=激光切割机维修', 'baidu_organic', 'organic'],
     ['https://www.bing.com/search?q=fiber+laser+repair', 'bing_organic', 'organic'],
     ['https://chatgpt.com/', 'chatgpt_referral', 'ai_referral'],
@@ -209,6 +212,10 @@ test('resolveTrafficAttribution does not reuse direct stored attribution', () =>
     { source: 'direct', medium: '', campaign: 'legacy', content: '', term: '' },
     { source: '', medium: 'none', campaign: 'legacy', content: '', term: '' },
     { source: 'direct', medium: 'none', campaign: 'legacy', content: '', term: '' },
+    { source: '', medium: 'referral', campaign: 'legacy', content: '', term: '' },
+    { source: '   ', medium: 'referral', campaign: 'legacy', content: '', term: '' },
+    { source: 'partner', medium: '', campaign: 'legacy', content: '', term: '' },
+    { source: 'partner', medium: 'direct', campaign: 'legacy', content: '', term: '' },
   ]) {
     assert.deepEqual(resolveTrafficAttribution({
       search: '', referrer: '', siteHostname: 'sagemro.com', stored,
