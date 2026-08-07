@@ -70,8 +70,8 @@ export function ServicePages({ pathname = '/services', locale = 'en', acquisitio
   useEffect(() => {
     const title = page ? page.seoTitle : selectedCopy.hubTitle;
     const description = page ? page.description : selectedCopy.hubDescription;
-    const canonical = `${canonicalHost}${page ? `/services/${page.slug}` : slug ? `/services/${slug}` : '/services'}`;
     const publicRoute = getPublicSeoRoute(page ? `/services/${page.slug}` : '/services', locale);
+    const canonical = isMissing ? `${canonicalHost}/services/${slug}` : publicRoute?.canonical;
     setSeoMetadata({ title, description, canonical, lang: locale, robots: isMissing ? 'noindex,nofollow,noarchive' : 'index,follow', structuredData: isMissing ? null : publicRoute?.structuredData });
   }, [canonicalHost, isMissing, locale, page, selectedCopy, slug]);
 
@@ -99,7 +99,7 @@ function ServicesHub({ copy: selectedCopy, locale }) {
       </div>
       <div className="mt-8 grid gap-4 md:grid-cols-2">
         {getServicePages(locale).map((page) => (
-          <a key={page.slug} href={`/services/${page.slug}`} className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-elevated)] p-5 transition hover:border-[var(--color-primary)] hover:shadow-sm">
+          <a key={page.slug} href={`/services/${page.slug}/`} className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-elevated)] p-5 transition hover:border-[var(--color-primary)] hover:shadow-sm">
             <Wrench size={19} className="text-[var(--color-primary)]" />
             <h2 className="mt-4 text-lg font-semibold">{page.title}</h2>
             <p className="mt-2 text-sm leading-6 text-[var(--color-text-secondary)]">{page.description}</p>
@@ -117,7 +117,7 @@ function ServiceDetail({ page, copy: selectedCopy, locale, acquisitionContext, o
   return (
     <main className="mx-auto max-w-4xl px-4 py-7 sm:px-6 lg:py-10">
       {/* breadcrumb → answer-first → equipment → process → checklist → boundary → review → conversion → related */}
-      <nav aria-label="breadcrumb" className="text-sm text-[var(--color-text-secondary)]"><a href="/services" className="hover:text-[var(--color-primary)]">{selectedCopy.breadcrumb}</a><span className="px-2">/</span><span>{page.title}</span></nav>
+      <nav aria-label="breadcrumb" className="text-sm text-[var(--color-text-secondary)]"><a href="/services/" className="hover:text-[var(--color-primary)]">{selectedCopy.breadcrumb}</a><span className="px-2">/</span><span>{page.title}</span></nav>
       <section className="mt-7">
         <div className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--color-primary)]">{selectedCopy.eyebrow}</div>
         <h1 className="mt-3 text-3xl font-semibold leading-tight sm:text-4xl">{page.title}</h1>
@@ -131,9 +131,9 @@ function ServiceDetail({ page, copy: selectedCopy, locale, acquisitionContext, o
       <section className="mt-8"><SectionTitle title={selectedCopy.checklist} /><ul className="mt-3 grid gap-2 sm:grid-cols-2">{page.customerInputs.map((item) => <li key={item} className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm">{item}</li>)}</ul></section>
       <section className="mt-8 grid gap-4 md:grid-cols-2"><InfoCard title={selectedCopy.remote} body={page.remoteBoundary} /><InfoCard title={selectedCopy.onsite} body={page.onsiteBoundary} /></section>
       <section className="mt-8 border-t border-[var(--color-border)] pt-5 text-sm leading-6 text-[var(--color-text-secondary)]"><div className="font-medium text-[var(--color-text-primary)]">{selectedCopy.review}</div><div>{page.reviewedAt}</div><p className="mt-2">{page.evidenceNotes}</p></section>
-      <section className="mt-8"><SectionTitle title={selectedCopy.relatedGuides} />{relatedGuides.length ? <div className="mt-3 grid gap-3 sm:grid-cols-2">{relatedGuides.map((guide) => <a key={guide.slug} href={`/insights/${guide.slug}`} className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-3 text-sm font-medium hover:border-[var(--color-primary)]">{guide.title}</a>)}</div> : <p className="mt-3 text-sm leading-6 text-[var(--color-text-secondary)]">{selectedCopy.guideEmpty}</p>}</section>
+      <section className="mt-8"><SectionTitle title={selectedCopy.relatedGuides} />{relatedGuides.length ? <div className="mt-3 grid gap-3 sm:grid-cols-2">{relatedGuides.map((guide) => <a key={guide.slug} href={`/insights/${guide.slug}/`} className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-3 text-sm font-medium hover:border-[var(--color-primary)]">{guide.title}</a>)}</div> : <p className="mt-3 text-sm leading-6 text-[var(--color-text-secondary)]">{selectedCopy.guideEmpty}</p>}</section>
       <div className="mt-8"><PublicConversionPanel context={page.title} acquisitionContext={acquisitionContext} primaryLabel={page.primaryCta} secondaryLabel={page.secondaryCta} onStartDiagnosis={onStartDiagnosis} onOpenServiceRequest={onOpenServiceRequest} /></div>
-      <section className="mt-8"><SectionTitle title={selectedCopy.relatedServices} /><div className="mt-3 grid gap-3 sm:grid-cols-2">{relatedPages.map((related) => <a key={related.slug} href={`/services/${related.slug}`} className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-3 text-sm font-medium hover:border-[var(--color-primary)]">{related.title}</a>)}</div></section>
+      <section className="mt-8"><SectionTitle title={selectedCopy.relatedServices} /><div className="mt-3 grid gap-3 sm:grid-cols-2">{relatedPages.map((related) => <a key={related.slug} href={`/services/${related.slug}/`} className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-3 text-sm font-medium hover:border-[var(--color-primary)]">{related.title}</a>)}</div></section>
     </main>
   );
 }
@@ -147,5 +147,5 @@ function SectionTitle({ icon: Icon, title }) {
 }
 
 function ServiceShell({ children, copy: selectedCopy, onOpenLegal }) {
-  return <div className="flex min-h-[100dvh] flex-col bg-[var(--color-bg)] text-[var(--color-text-primary)]"><header className="border-b border-[var(--color-border)] bg-[var(--color-surface)]"><div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-3 sm:px-6"><a href="/" className="flex items-center gap-2 text-sm font-semibold"><BrandMark variant="logo" className="h-8 w-8 object-contain" />SAGEMRO</a><nav className="flex items-center gap-3 text-sm text-[var(--color-text-secondary)]"><a href="/services" className="hover:text-[var(--color-primary)]">{selectedCopy.services}</a><a href="/tools" className="hover:text-[var(--color-primary)]">{selectedCopy.tools}</a><a href="/insights" className="hover:text-[var(--color-primary)]">{selectedCopy.insights}</a><a href="/" className="hover:text-[var(--color-primary)]">{selectedCopy.chat}</a></nav></div></header><div className="flex-1">{children}</div><Footer onOpenLegal={onOpenLegal} /></div>;
+  return <div className="flex min-h-[100dvh] flex-col bg-[var(--color-bg)] text-[var(--color-text-primary)]"><header className="border-b border-[var(--color-border)] bg-[var(--color-surface)]"><div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-3 sm:px-6"><a href="/" className="flex items-center gap-2 text-sm font-semibold"><BrandMark variant="logo" className="h-8 w-8 object-contain" />SAGEMRO</a><nav className="flex items-center gap-3 text-sm text-[var(--color-text-secondary)]"><a href="/services/" className="hover:text-[var(--color-primary)]">{selectedCopy.services}</a><a href="/tools/" className="hover:text-[var(--color-primary)]">{selectedCopy.tools}</a><a href="/insights/" className="hover:text-[var(--color-primary)]">{selectedCopy.insights}</a><a href="/" className="hover:text-[var(--color-primary)]">{selectedCopy.chat}</a></nav></div></header><div className="flex-1">{children}</div><Footer onOpenLegal={onOpenLegal} /></div>;
 }

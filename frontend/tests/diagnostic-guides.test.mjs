@@ -52,7 +52,7 @@ test('technical content resolves to a real public team identity', () => {
     assert.ok(team.bio.length >= 80);
     assert.equal(
       team.url,
-      `${locale === 'zh-CN' ? 'https://sagemro.cn' : 'https://sagemro.com'}/about/technical-review`,
+      `${locale === 'zh-CN' ? 'https://sagemro.cn' : 'https://sagemro.com'}/about/technical-review/`,
     );
   }
 });
@@ -187,8 +187,8 @@ test('published diagnostic guides have answer-first bilingual rendering contract
   assert.match(guide, /author\.url/);
   assert.match(guide, /href=\{author\.url\}/);
   assert.match(guide, /href=\{reviewer\.url\}/);
-  assert.match(guide, /href=\{`\/services\/\$\{relatedService\.slug\}`\}/);
-  assert.match(guide, /href=\{`\/tools\/\$\{relatedTool\.slug\}`\}/);
+  assert.match(guide, /href=\{`\/services\/\$\{relatedService\.slug\}\/`\}/);
+  assert.match(guide, /href=\{`\/tools\/\$\{relatedTool\.slug\}\/`\}/);
   assert.match(guide, /label=\{relatedTool\.label\}/);
   assert.match(insightsPage, /getDiagnosticGuide\(slug, locale\)/);
   assert.match(insightsPage, /getLocalizedInsight/);

@@ -61,14 +61,14 @@ export function IndustryToolsModal({ isOpen, onClose }) {
           </div>
           <div className="flex gap-2">
             <a
-              href="/tools"
+              href="/tools/"
               className="inline-flex items-center gap-1 rounded-lg border border-[var(--color-border)] px-3 py-2 text-xs font-medium text-[var(--color-text-secondary)] hover:border-[var(--color-primary)] hover:text-[var(--color-primary)]"
             >
               {copy.allTools}
               <ExternalLink size={13} />
             </a>
             <a
-              href="/insights"
+              href="/insights/"
               className="inline-flex items-center gap-1 rounded-lg border border-[var(--color-border)] px-3 py-2 text-xs font-medium text-[var(--color-text-secondary)] hover:border-[var(--color-primary)] hover:text-[var(--color-primary)]"
             >
               {copy.insights}
@@ -83,7 +83,7 @@ export function IndustryToolsModal({ isOpen, onClose }) {
             return (
               <a
                 key={tool.id}
-                href={`/tools/${tool.slug}`}
+                href={`/tools/${tool.slug}/`}
                 className="group rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-elevated)] p-3 transition hover:-translate-y-0.5 hover:border-[var(--color-primary)] hover:shadow-sm"
               >
                 <div className="flex items-start gap-3">

@@ -202,7 +202,7 @@ function ToolsHub({ copy, locale, onOpenLegal }) {
     setSeoMetadata({
       title: `${copy.hubTitle} | SAGEMRO`,
       description: copy.hubDescription,
-      canonical: `${canonicalHost}/tools`,
+      canonical: `${canonicalHost}/tools/`,
       lang: locale,
     });
   }, [canonicalHost, copy, locale]);
@@ -270,7 +270,7 @@ function ToolsHub({ copy, locale, onOpenLegal }) {
               {copy.insightBody}
             </p>
           </div>
-          <a href="/insights" className="mt-4 inline-flex rounded-lg border border-[var(--color-border)] px-3 py-2 text-sm text-[var(--color-text-secondary)] hover:border-[var(--color-primary)] hover:text-[var(--color-primary)] sm:mt-0">
+          <a href="/insights/" className="mt-4 inline-flex rounded-lg border border-[var(--color-border)] px-3 py-2 text-sm text-[var(--color-text-secondary)] hover:border-[var(--color-primary)] hover:text-[var(--color-primary)] sm:mt-0">
             {copy.readInsights}
           </a>
         </div>
@@ -311,7 +311,7 @@ function ToolDetail({ tool, copy, locale, values, onChange, onOpenLegal, onSendM
     <ToolPageShell copy={copy} onOpenLegal={onOpenLegal}>
       <main className="mx-auto max-w-6xl px-4 py-8 sm:px-6 lg:py-10">
         <div className="mb-6 flex flex-col items-start gap-4">
-          <a href="/tools" className="inline-flex items-center gap-2 text-sm text-[var(--color-text-secondary)] hover:text-[var(--color-primary)]">
+          <a href="/tools/" className="inline-flex items-center gap-2 text-sm text-[var(--color-text-secondary)] hover:text-[var(--color-primary)]">
             <ArrowLeft size={16} />
             {copy.allTools}
           </a>
@@ -339,7 +339,6 @@ function ToolDetail({ tool, copy, locale, values, onChange, onOpenLegal, onSendM
             <div className="mt-6">
               <ToolEvidence tool={tool} locale={locale} onReview={handleEvidenceReview} />
             </div>
-
             <div className="mt-6 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-elevated)] p-4">
               <h2 className="text-lg font-semibold text-[var(--color-text-primary)]">{tool.guideTitle}</h2>
               <p className="mt-2 text-sm leading-7 text-[var(--color-text-secondary)]">{tool.guideBody}</p>
@@ -356,7 +355,7 @@ function ToolDetail({ tool, copy, locale, values, onChange, onOpenLegal, onSendM
               </div>
               <div className="mt-3 grid gap-2">
                 {relatedTools.slice(0, 6).map((item) => (
-                  <a key={item.id} href={`/tools/${item.slug}`} className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text-primary)] hover:border-[var(--color-primary)]">
+                  <a key={item.id} href={`/tools/${item.slug}/`} className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text-primary)] hover:border-[var(--color-primary)]">
                     {item.shortLabel || item.label}
                   </a>
                 ))}
@@ -436,7 +435,7 @@ function ToolLinkCard({ tool }) {
   const Icon = toolIcons[tool.id] || Calculator;
 
   return (
-    <a href={`/tools/${tool.slug}`} className="h-full overflow-hidden rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4 transition hover:border-[var(--color-primary)] hover:shadow-sm">
+    <a href={`/tools/${tool.slug}/`} className="h-full overflow-hidden rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4 transition hover:border-[var(--color-primary)] hover:shadow-sm">
       <div className="flex items-start gap-3">
         <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[var(--color-primary)]/10 text-[var(--color-primary)]">
           <Icon size={18} />
@@ -460,7 +459,7 @@ function ToolPageShell({ children, copy, onOpenLegal }) {
             SAGEMRO
           </a>
           <nav className="flex items-center gap-3 text-sm text-[var(--color-text-secondary)]">
-            <a href="/tools" className="hover:text-[var(--color-primary)]">{copy.navTools}</a>
+            <a href="/tools/" className="hover:text-[var(--color-primary)]">{copy.navTools}</a>
             <a href="/" className="hover:text-[var(--color-primary)]">{copy.navChat}</a>
           </nav>
         </div>

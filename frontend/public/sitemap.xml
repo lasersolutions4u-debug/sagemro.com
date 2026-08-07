@@ -2,98 +2,121 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:xhtml="http://www.w3.org/1999/xhtml">
   <url>
     <loc>https://sagemro.cn/</loc>
+    <lastmod>2026-08-06</lastmod>
     <xhtml:link rel="alternate" hreflang="en" href="https://sagemro.com/" />
     <xhtml:link rel="alternate" hreflang="zh-CN" href="https://sagemro.cn/" />
     <xhtml:link rel="alternate" hreflang="x-default" href="https://sagemro.com/" />
   </url>
   <url>
-    <loc>https://engineer.sagemro.cn/</loc>
-    <xhtml:link rel="alternate" hreflang="en" href="https://engineer.sagemro.com/" />
-    <xhtml:link rel="alternate" hreflang="zh-CN" href="https://engineer.sagemro.cn/" />
-    <xhtml:link rel="alternate" hreflang="x-default" href="https://engineer.sagemro.com/" />
+    <loc>https://sagemro.cn/services/</loc>
+    <lastmod>2026-08-06</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://sagemro.com/services/" />
+    <xhtml:link rel="alternate" hreflang="zh-CN" href="https://sagemro.cn/services/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://sagemro.com/services/" />
   </url>
   <url>
-    <loc>https://sagemro.cn/tools</loc>
-    <xhtml:link rel="alternate" hreflang="en" href="https://sagemro.com/tools" />
-    <xhtml:link rel="alternate" hreflang="zh-CN" href="https://sagemro.cn/tools" />
-    <xhtml:link rel="alternate" hreflang="x-default" href="https://sagemro.com/tools" />
+    <loc>https://sagemro.cn/services/laser-cutting-machine-repair/</loc>
+    <lastmod>2026-08-06</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://sagemro.com/services/laser-cutting-machine-repair/" />
+    <xhtml:link rel="alternate" hreflang="zh-CN" href="https://sagemro.cn/services/laser-cutting-machine-repair/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://sagemro.com/services/laser-cutting-machine-repair/" />
   </url>
   <url>
-    <loc>https://sagemro.cn/insights</loc>
-    <xhtml:link rel="alternate" hreflang="en" href="https://sagemro.com/insights" />
-    <xhtml:link rel="alternate" hreflang="zh-CN" href="https://sagemro.cn/insights" />
-    <xhtml:link rel="alternate" hreflang="x-default" href="https://sagemro.com/insights" />
+    <loc>https://sagemro.cn/services/press-brake-repair/</loc>
+    <lastmod>2026-08-06</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://sagemro.com/services/press-brake-repair/" />
+    <xhtml:link rel="alternate" hreflang="zh-CN" href="https://sagemro.cn/services/press-brake-repair/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://sagemro.com/services/press-brake-repair/" />
   </url>
   <url>
-    <loc>https://sagemro.cn/tools/metal-weight-calculator</loc>
-    <xhtml:link rel="alternate" hreflang="en" href="https://sagemro.com/tools/metal-weight-calculator" />
-    <xhtml:link rel="alternate" hreflang="zh-CN" href="https://sagemro.cn/tools/metal-weight-calculator" />
-    <xhtml:link rel="alternate" hreflang="x-default" href="https://sagemro.com/tools/metal-weight-calculator" />
+    <loc>https://sagemro.cn/services/remote-diagnostics/</loc>
+    <lastmod>2026-08-06</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://sagemro.com/services/remote-diagnostics/" />
+    <xhtml:link rel="alternate" hreflang="zh-CN" href="https://sagemro.cn/services/remote-diagnostics/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://sagemro.com/services/remote-diagnostics/" />
   </url>
   <url>
-    <loc>https://sagemro.cn/tools/steel-price-watch</loc>
-    <xhtml:link rel="alternate" hreflang="en" href="https://sagemro.com/tools/steel-price-watch" />
-    <xhtml:link rel="alternate" hreflang="zh-CN" href="https://sagemro.cn/tools/steel-price-watch" />
-    <xhtml:link rel="alternate" hreflang="x-default" href="https://sagemro.com/tools/steel-price-watch" />
+    <loc>https://sagemro.cn/services/preventive-maintenance/</loc>
+    <lastmod>2026-08-06</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://sagemro.com/services/preventive-maintenance/" />
+    <xhtml:link rel="alternate" hreflang="zh-CN" href="https://sagemro.cn/services/preventive-maintenance/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://sagemro.com/services/preventive-maintenance/" />
   </url>
   <url>
-    <loc>https://sagemro.cn/tools/laser-cutting-cost-calculator</loc>
-    <xhtml:link rel="alternate" hreflang="en" href="https://sagemro.com/tools/laser-cutting-cost-calculator" />
-    <xhtml:link rel="alternate" hreflang="zh-CN" href="https://sagemro.cn/tools/laser-cutting-cost-calculator" />
-    <xhtml:link rel="alternate" hreflang="x-default" href="https://sagemro.com/tools/laser-cutting-cost-calculator" />
+    <loc>https://sagemro.cn/tools/</loc>
+    <lastmod>2026-08-06</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://sagemro.com/tools/" />
+    <xhtml:link rel="alternate" hreflang="zh-CN" href="https://sagemro.cn/tools/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://sagemro.com/tools/" />
   </url>
   <url>
-    <loc>https://sagemro.cn/tools/press-brake-tonnage-calculator</loc>
-    <xhtml:link rel="alternate" hreflang="en" href="https://sagemro.com/tools/press-brake-tonnage-calculator" />
-    <xhtml:link rel="alternate" hreflang="zh-CN" href="https://sagemro.cn/tools/press-brake-tonnage-calculator" />
-    <xhtml:link rel="alternate" hreflang="x-default" href="https://sagemro.com/tools/press-brake-tonnage-calculator" />
+    <loc>https://sagemro.cn/tools/metal-weight-calculator/</loc>
+    <lastmod>2026-08-06</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://sagemro.com/tools/metal-weight-calculator/" />
+    <xhtml:link rel="alternate" hreflang="zh-CN" href="https://sagemro.cn/tools/metal-weight-calculator/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://sagemro.com/tools/metal-weight-calculator/" />
   </url>
   <url>
-    <loc>https://sagemro.cn/tools/laser-assist-gas-consumption-calculator</loc>
-    <xhtml:link rel="alternate" hreflang="en" href="https://sagemro.com/tools/laser-assist-gas-consumption-calculator" />
-    <xhtml:link rel="alternate" hreflang="zh-CN" href="https://sagemro.cn/tools/laser-assist-gas-consumption-calculator" />
-    <xhtml:link rel="alternate" hreflang="x-default" href="https://sagemro.com/tools/laser-assist-gas-consumption-calculator" />
+    <loc>https://sagemro.cn/tools/laser-cutting-cost-calculator/</loc>
+    <lastmod>2026-08-06</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://sagemro.com/tools/laser-cutting-cost-calculator/" />
+    <xhtml:link rel="alternate" hreflang="zh-CN" href="https://sagemro.cn/tools/laser-cutting-cost-calculator/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://sagemro.com/tools/laser-cutting-cost-calculator/" />
   </url>
   <url>
-    <loc>https://sagemro.cn/tools/laser-cutting-speed-reference</loc>
-    <xhtml:link rel="alternate" hreflang="en" href="https://sagemro.com/tools/laser-cutting-speed-reference" />
-    <xhtml:link rel="alternate" hreflang="zh-CN" href="https://sagemro.cn/tools/laser-cutting-speed-reference" />
-    <xhtml:link rel="alternate" hreflang="x-default" href="https://sagemro.com/tools/laser-cutting-speed-reference" />
+    <loc>https://sagemro.cn/tools/press-brake-v-die-bend-allowance-helper/</loc>
+    <lastmod>2026-08-06</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://sagemro.com/tools/press-brake-v-die-bend-allowance-helper/" />
+    <xhtml:link rel="alternate" hreflang="zh-CN" href="https://sagemro.cn/tools/press-brake-v-die-bend-allowance-helper/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://sagemro.com/tools/press-brake-v-die-bend-allowance-helper/" />
   </url>
   <url>
-    <loc>https://sagemro.cn/tools/press-brake-v-die-bend-allowance-helper</loc>
-    <xhtml:link rel="alternate" hreflang="en" href="https://sagemro.com/tools/press-brake-v-die-bend-allowance-helper" />
-    <xhtml:link rel="alternate" hreflang="zh-CN" href="https://sagemro.cn/tools/press-brake-v-die-bend-allowance-helper" />
-    <xhtml:link rel="alternate" hreflang="x-default" href="https://sagemro.com/tools/press-brake-v-die-bend-allowance-helper" />
+    <loc>https://sagemro.cn/insights/</loc>
+    <lastmod>2026-08-06</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://sagemro.com/insights/" />
+    <xhtml:link rel="alternate" hreflang="zh-CN" href="https://sagemro.cn/insights/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://sagemro.com/insights/" />
   </url>
   <url>
-    <loc>https://sagemro.cn/tools/laser-cutting-machine-roi-calculator</loc>
-    <xhtml:link rel="alternate" hreflang="en" href="https://sagemro.com/tools/laser-cutting-machine-roi-calculator" />
-    <xhtml:link rel="alternate" hreflang="zh-CN" href="https://sagemro.cn/tools/laser-cutting-machine-roi-calculator" />
-    <xhtml:link rel="alternate" hreflang="x-default" href="https://sagemro.com/tools/laser-cutting-machine-roi-calculator" />
+    <loc>https://sagemro.cn/insights/laser-cutting-cost-drivers/</loc>
+    <lastmod>2026-08-06</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://sagemro.com/insights/laser-cutting-cost-drivers/" />
+    <xhtml:link rel="alternate" hreflang="zh-CN" href="https://sagemro.cn/insights/laser-cutting-cost-drivers/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://sagemro.com/insights/laser-cutting-cost-drivers/" />
   </url>
   <url>
-    <loc>https://sagemro.cn/tools/laser-chiller-dust-collector-sizing-checklist</loc>
-    <xhtml:link rel="alternate" hreflang="en" href="https://sagemro.com/tools/laser-chiller-dust-collector-sizing-checklist" />
-    <xhtml:link rel="alternate" hreflang="zh-CN" href="https://sagemro.cn/tools/laser-chiller-dust-collector-sizing-checklist" />
-    <xhtml:link rel="alternate" hreflang="x-default" href="https://sagemro.com/tools/laser-chiller-dust-collector-sizing-checklist" />
+    <loc>https://sagemro.cn/insights/metal-weight-for-structural-profiles/</loc>
+    <lastmod>2026-08-06</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://sagemro.com/insights/metal-weight-for-structural-profiles/" />
+    <xhtml:link rel="alternate" hreflang="zh-CN" href="https://sagemro.cn/insights/metal-weight-for-structural-profiles/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://sagemro.com/insights/metal-weight-for-structural-profiles/" />
   </url>
   <url>
-    <loc>https://sagemro.cn/insights/laser-cutting-cost-drivers</loc>
-    <xhtml:link rel="alternate" hreflang="en" href="https://sagemro.com/insights/laser-cutting-cost-drivers" />
-    <xhtml:link rel="alternate" hreflang="zh-CN" href="https://sagemro.cn/insights/laser-cutting-cost-drivers" />
-    <xhtml:link rel="alternate" hreflang="x-default" href="https://sagemro.com/insights/laser-cutting-cost-drivers" />
+    <loc>https://sagemro.cn/insights/press-brake-tonnage-risk-check/</loc>
+    <lastmod>2026-08-06</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://sagemro.com/insights/press-brake-tonnage-risk-check/" />
+    <xhtml:link rel="alternate" hreflang="zh-CN" href="https://sagemro.cn/insights/press-brake-tonnage-risk-check/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://sagemro.com/insights/press-brake-tonnage-risk-check/" />
   </url>
   <url>
-    <loc>https://sagemro.cn/insights/metal-weight-for-structural-profiles</loc>
-    <xhtml:link rel="alternate" hreflang="en" href="https://sagemro.com/insights/metal-weight-for-structural-profiles" />
-    <xhtml:link rel="alternate" hreflang="zh-CN" href="https://sagemro.cn/insights/metal-weight-for-structural-profiles" />
-    <xhtml:link rel="alternate" hreflang="x-default" href="https://sagemro.com/insights/metal-weight-for-structural-profiles" />
+    <loc>https://sagemro.cn/insights/laser-protective-lens-burning/</loc>
+    <lastmod>2026-08-06</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://sagemro.com/insights/laser-protective-lens-burning/" />
+    <xhtml:link rel="alternate" hreflang="zh-CN" href="https://sagemro.cn/insights/laser-protective-lens-burning/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://sagemro.com/insights/laser-protective-lens-burning/" />
   </url>
   <url>
-    <loc>https://sagemro.cn/insights/press-brake-tonnage-risk-check</loc>
-    <xhtml:link rel="alternate" hreflang="en" href="https://sagemro.com/insights/press-brake-tonnage-risk-check" />
-    <xhtml:link rel="alternate" hreflang="zh-CN" href="https://sagemro.cn/insights/press-brake-tonnage-risk-check" />
-    <xhtml:link rel="alternate" hreflang="x-default" href="https://sagemro.com/insights/press-brake-tonnage-risk-check" />
+    <loc>https://sagemro.cn/insights/laser-cutting-machine-maintenance-checklist/</loc>
+    <lastmod>2026-08-06</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://sagemro.com/insights/laser-cutting-machine-maintenance-checklist/" />
+    <xhtml:link rel="alternate" hreflang="zh-CN" href="https://sagemro.cn/insights/laser-cutting-machine-maintenance-checklist/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://sagemro.com/insights/laser-cutting-machine-maintenance-checklist/" />
+  </url>
+  <url>
+    <loc>https://sagemro.cn/about/technical-review/</loc>
+    <lastmod>2026-08-06</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://sagemro.com/about/technical-review/" />
+    <xhtml:link rel="alternate" hreflang="zh-CN" href="https://sagemro.cn/about/technical-review/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://sagemro.com/about/technical-review/" />
   </url>
 </urlset>
