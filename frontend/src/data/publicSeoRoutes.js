@@ -14,6 +14,10 @@ import { welcomePageCopy } from './welcomePageCopy.js';
 const HOSTS = { en: 'https://sagemro.com', 'zh-CN': 'https://sagemro.cn' };
 const RELEASE_DATE = '2026-08-06';
 
+function publicUrl(host, path) {
+  return `${host}${path === '/' ? '/' : `${path.replace(/\/+$/, '')}/`}`;
+}
+
 const pages = {
   en: {
     home: {
@@ -67,9 +71,9 @@ const pages = {
 
 function alternates(path) {
   return {
-    en: `${HOSTS.en}${path === '/' ? '/' : path}`,
-    'zh-CN': `${HOSTS['zh-CN']}${path === '/' ? '/' : path}`,
-    'x-default': `${HOSTS.en}${path === '/' ? '/' : path}`,
+    en: publicUrl(HOSTS.en, path),
+    'zh-CN': publicUrl(HOSTS['zh-CN'], path),
+    'x-default': publicUrl(HOSTS.en, path),
   };
 }
 
@@ -77,7 +81,7 @@ function route(locale, value) {
   return {
     robots: 'index,follow',
     ...value,
-    canonical: `${HOSTS[locale]}${value.path === '/' ? '/' : value.path}`,
+    canonical: publicUrl(HOSTS[locale], value.path),
     alternates: alternates(value.path),
   };
 }
@@ -110,7 +114,7 @@ function breadcrumb(routeValue) {
       '@type': 'ListItem',
       position: index + 1,
       name: part,
-      item: `${origin}/${parts.slice(0, index + 1).join('/')}`,
+      item: `${origin}/${parts.slice(0, index + 1).join('/')}/`,
     })),
   };
 }
@@ -189,7 +193,7 @@ function buildRoutes(locale) {
       '@type': 'CollectionPage',
       name: content.title,
       description: content.description,
-      url: `${HOSTS[locale]}${path}`,
+      url: publicUrl(HOSTS[locale], path),
       mainEntity: {
         '@type': 'ItemList',
         itemListElement: children.map((child, index) => ({
@@ -221,7 +225,7 @@ function buildRoutes(locale) {
       '@type': 'Article', headline: insight.title, description: insight.description,
       datePublished: insight.publishedAt, dateModified: insight.updatedAt,
       author: organizationRef(locale), publisher: organizationRef(locale),
-      image: `${HOSTS[locale]}/sagemro-logo.png`, mainEntityOfPage: `${HOSTS[locale]}/insights/${insight.slug}`,
+      image: `${HOSTS[locale]}/sagemro-logo.png`, mainEntityOfPage: publicUrl(HOSTS[locale], `/insights/${insight.slug}`),
     },
   }));
   const serviceRoutes = services.map((service) => {
@@ -240,14 +244,14 @@ function buildRoutes(locale) {
           { heading: locale === 'zh-CN' ? '服务评估流程' : 'How the review works', body: service.process.join(' ') },
           { heading: locale === 'zh-CN' ? '需准备的信息' : 'Information to prepare', body: service.customerInputs.join(' ') },
         ],
-        links: relatedGuides.map((guide) => ({ kind: 'guide', href: `/insights/${guide.slug}`, label: guide.title })),
+        links: relatedGuides.map((guide) => ({ kind: 'guide', href: `/insights/${guide.slug}/`, label: guide.title })),
         emptyState: relatedGuides.length ? '' : (locale === 'zh-CN' ? '更多指南将在证据完整并通过审核后发布。' : 'More reviewed guides will be added when their evidence is complete.'),
       },
       structuredData: {
         '@type': 'Service',
         name: service.title,
         description: service.description,
-        url: `${HOSTS[locale]}/services/${service.slug}`,
+        url: publicUrl(HOSTS[locale], `/services/${service.slug}`),
         provider: organizationRef(locale),
       },
     });
@@ -274,17 +278,17 @@ function buildRoutes(locale) {
           { heading: locale === 'zh-CN' ? '停止并升级' : 'Stop and escalate', body: guide.stopConditions.join(' ') },
         ],
         links: [
-          ...(relatedService ? [{ kind: 'service', href: `/services/${relatedService.slug}`, label: relatedService.title }] : []),
-          { kind: 'author', href: '/about/technical-review', label: `${locale === 'zh-CN' ? '作者' : 'Author'}: ${author.name}` },
-          { kind: 'reviewer', href: '/about/technical-review', label: `${locale === 'zh-CN' ? '技术审核' : 'Technical review'}: ${reviewer.name}` },
+          ...(relatedService ? [{ kind: 'service', href: `/services/${relatedService.slug}/`, label: relatedService.title }] : []),
+          { kind: 'author', href: '/about/technical-review/', label: `${locale === 'zh-CN' ? '作者' : 'Author'}: ${author.name}` },
+          { kind: 'reviewer', href: '/about/technical-review/', label: `${locale === 'zh-CN' ? '技术审核' : 'Technical review'}: ${reviewer.name}` },
         ],
       },
       structuredData: {
         '@type': 'Article',
         headline: guide.title,
         description: guide.description,
-        url: `${HOSTS[locale]}/insights/${guide.slug}`,
-        mainEntityOfPage: `${HOSTS[locale]}/insights/${guide.slug}`,
+        url: publicUrl(HOSTS[locale], `/insights/${guide.slug}`),
+        mainEntityOfPage: publicUrl(HOSTS[locale], `/insights/${guide.slug}`),
         datePublished: guide.publishedAt,
         dateModified: guide.reviewedAt,
         author: { '@id': team['@id'] },
@@ -311,7 +315,7 @@ function buildRoutes(locale) {
       '@type': 'AboutPage',
       name: reviewPolicy.title,
       description: reviewPolicy.description,
-      url: `${HOSTS[locale]}/about/technical-review`,
+      url: publicUrl(HOSTS[locale], '/about/technical-review'),
       datePublished: reviewPolicy.publishedAt,
       dateModified: reviewPolicy.reviewedAt,
       author: { '@id': technicalTeam['@id'] },

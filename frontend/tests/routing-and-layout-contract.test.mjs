@@ -21,6 +21,7 @@ test('public frontend routes finish with a real 404 after private SPA rewrites',
   assert.doesNotMatch(redirects, /^https?:\/\//m);
   assert.doesNotMatch(redirects, /\/404\.html 404/);
   assert.doesNotMatch(redirects, /^\/\* \/index\.html 200$/m);
+  assert.doesNotMatch(redirects, /\s30[18]$/m);
 });
 
 test('tool and insight detail routes reject unknown slugs', () => {
@@ -37,4 +38,18 @@ test('frontend build keeps modulepreload dependencies enabled', () => {
 
   assert.match(viteConfig, /modulePreload:\s*\{[\s\S]*polyfill:\s*false/);
   assert.doesNotMatch(viteConfig, /resolveDependencies:\s*\(\)\s*=>\s*\[\]/);
+});
+
+test('public runtime links use the canonical trailing-slash policy', () => {
+  const sources = [
+    'frontend/src/components/About/TechnicalReviewPage.jsx',
+    'frontend/src/components/Insights/DiagnosticGuide.jsx',
+    'frontend/src/components/Insights/InsightsPage.jsx',
+    'frontend/src/components/Services/ServicePages.jsx',
+    'frontend/src/components/Tools/IndustryToolsPage.jsx',
+    'frontend/src/components/common/Footer.jsx',
+  ].map(read).join('\n');
+
+  assert.doesNotMatch(sources, /href="\/(?:tools|services|insights|about\/technical-review)"/);
+  assert.doesNotMatch(sources, /href=\{`\/(?:tools|services|insights)\/\$\{[^}]+\}`\}/);
 });

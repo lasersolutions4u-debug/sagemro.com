@@ -18,6 +18,7 @@ test('buildPublicPages writes crawlable public pages and crawl artifacts', async
   await buildPublicPages({ distDir });
 
   const read = (path) => readFile(join(distDir, path), 'utf8');
+  const checkedIn = (path) => readFile(new URL(`../public/${path}`, import.meta.url), 'utf8');
   assert.match(await read('tools/press-brake-tonnage-calculator/index.html'), /<h1>Press Brake Tonnage Calculator<\/h1>/);
   assert.match(await read('insights/press-brake-tonnage-risk-check/index.html'), /Article/);
   assert.match(await read('sitemap.xml'), /<lastmod>2026-08-06<\/lastmod>/);
@@ -29,16 +30,19 @@ test('buildPublicPages writes crawlable public pages and crawl artifacts', async
   assert.doesNotMatch(redirects, /^https?:\/\//m);
   assert.doesNotMatch(redirects, /\/404\.html 404/);
   assert.doesNotMatch(redirects, /\/tools\/\*/);
+  assert.doesNotMatch(redirects, /\s30[18]$/m);
   assert.match(await read('404.html'), /name="robots" content="noindex,nofollow,noarchive"/);
   assert.match(await read('404.html'), /<h1>404 — This page doesn&#39;t exist<\/h1>/);
   assert.doesNotMatch(await read('404.html'), /application\/ld\+json/);
   const hubs = (await read('llms.txt')).match(/^\- https:\/\/[^\n]+$/gm);
   assert.deepEqual(hubs, [
     '- https://sagemro.com/',
-    '- https://sagemro.com/services',
-    '- https://sagemro.com/tools',
-    '- https://sagemro.com/insights',
+    '- https://sagemro.com/services/',
+    '- https://sagemro.com/tools/',
+    '- https://sagemro.com/insights/',
   ]);
+  assert.equal(await read('sitemap.xml'), await checkedIn('sitemap.xml'));
+  assert.equal(await read('llms.txt'), await checkedIn('llms.txt'));
 });
 
 test('buildPublicPages writes direct noindex tool pages outside every public crawl artifact', async (t) => {
@@ -63,7 +67,7 @@ test('buildPublicPages writes direct noindex tool pages outside every public cra
   for (const slug of noindexSlugs) {
     const html = await read(`tools/${slug}/index.html`);
     assert.match(html, /name="robots" content="noindex,nofollow,noarchive"/);
-    assert.match(html, new RegExp(`rel="canonical" href="https://sagemro\\.com/tools/${slug}"`));
+    assert.match(html, new RegExp(`rel="canonical" href="https://sagemro\\.com/tools/${slug}/"`));
     assert.match(html, /data-prerendered="true"/);
     assert.doesNotMatch(sitemap, new RegExp(`/tools/${slug}`));
     assert.doesNotMatch(llms, new RegExp(`/tools/${slug}`));

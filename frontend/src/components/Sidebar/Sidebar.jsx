@@ -45,7 +45,7 @@ export function Sidebar({
     { icon: Plus, label: isCn ? '新对话' : 'New Chat', onClick: onNewChat, testid: 'new-chat-button', primary: true },
     { icon: History, label: isCn ? '历史' : 'History', onClick: onOpenHistory, testid: 'tool-history' },
     { icon: Wrench, label: isCn ? '工具' : 'Tools', onClick: onOpenIndustryTools, testid: 'tool-industry-tools' },
-    { icon: BookOpen, label: isCn ? '洞察' : 'Insights', href: '/insights', testid: 'tool-insights' },
+    { icon: BookOpen, label: isCn ? '洞察' : 'Insights', href: '/insights/', testid: 'tool-insights' },
   ];
   const customerTools = currentUser
     ? [
