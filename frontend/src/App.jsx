@@ -76,6 +76,7 @@ function App() {
   const [currentUser, setCurrentUser] = useState(null);
   const [userType, setUserType] = useState(null);
   const [authReady, setAuthReady] = useState(false);
+  const [sessionRestoreComplete, setSessionRestoreComplete] = useState(false);
   const [currentPath, setCurrentPath] = useState(() => window.location.pathname);
   const isTechnicalReviewPath = currentPath === '/about/technical-review'
     || currentPath === '/about/technical-review/';
@@ -88,10 +89,10 @@ function App() {
     path: publicRoutePath,
     contentType: getAcquisitionContentType(publicRoute, isCn ? 'zh-CN' : 'en'),
     contentSlug: getPublicContentSlug(publicRoute),
-    indexable: !isEngineerHost
+    indexable: sessionRestoreComplete
+      && !isEngineerHost
       && !userType
-      && publicRoute?.robots === 'index,follow'
-      && publicRoute?.type !== 'tool',
+      && publicRoute?.robots === 'index,follow',
   });
 
   useEffect(() => {
@@ -176,7 +177,10 @@ function App() {
         setCurrentUser(null);
         setUserType(null);
       })
-      .finally(() => setAuthReady(true));
+      .finally(() => {
+        setAuthReady(true);
+        setSessionRestoreComplete(true);
+      });
   }, []);
 
   useEffect(() => {
