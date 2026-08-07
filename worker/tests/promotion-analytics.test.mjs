@@ -18,6 +18,7 @@ import {
   queryPromotionChannelsDb,
   queryPromotionOverviewDb,
   ratio,
+  sanitizeAcquisitionDimension,
 } from '../src/lib/promotionAnalytics.js';
 
 const now = new Date('2026-08-05T06:00:00Z');
@@ -249,6 +250,28 @@ test('loadOrganicAcquisition redacts and merges PII-like page and attribution di
     assert.equal(serialized.includes(rawValue), false);
   }
   assert.equal(/anonymous_id|session_id|user_id|properties_json|request_id|ip_hash|user_agent/i.test(serialized), false);
+});
+
+test('acquisition dimension sanitizer preserves real date and v-prefixed version tokens without allowing phone-like values', () => {
+  const cases = [
+    ['page', '/insights/2026-08-07', '/insights/2026-08-07'],
+    ['source', 'google_2026-08-07', 'google_2026-08-07'],
+    ['medium', 'organic_2026-08-07', 'organic_2026-08-07'],
+    ['page', '/release/v2.10.3', '/release/v2.10.3'],
+    ['source', 'google_v2.10.3', 'google_v2.10.3'],
+    ['medium', 'organic_v2.10.3', 'organic_v2.10.3'],
+    ['page', '/insights/13800138000', 'unknown'],
+    ['source', '138-0013-8000', 'unknown'],
+    ['medium', '+86 138 0013 8000', 'unknown'],
+    ['page', '/insights/2026-08-07-13800138000', 'unknown'],
+    ['source', 'google_2026-08-07_138-0013-8000', 'unknown'],
+    ['medium', 'organic_v2.10.3+8613800138000', 'unknown'],
+    ['medium', 'v2.10.3@example.com', 'unknown'],
+  ];
+
+  for (const [dimension, value, expected] of cases) {
+    assert.equal(sanitizeAcquisitionDimension(dimension, value), expected, `${dimension}: ${value}`);
+  }
 });
 
 test('parsePromotionFilters uses inclusive Shanghai report days and a five-minute live cutoff', () => {
