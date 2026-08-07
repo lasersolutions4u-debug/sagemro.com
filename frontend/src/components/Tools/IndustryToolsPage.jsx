@@ -203,7 +203,7 @@ function ToolsHub({ copy, locale, onOpenLegal }) {
               {copy.eyebrow}
             </div>
           </div>
-          <h1 className="mt-5 max-w-2xl break-keep text-3xl font-semibold leading-[1.1] text-[var(--color-text-primary)] sm:text-[2.4rem]">
+          <h1 className="mt-5 max-w-2xl break-words text-3xl font-semibold leading-[1.1] text-[var(--color-text-primary)] sm:text-[2.4rem]">
             {copy.h1}
           </h1>
           <p className="mt-4 max-w-2xl text-sm leading-7 text-[var(--color-text-secondary)] sm:text-base">
@@ -290,7 +290,7 @@ function ToolDetail({ tool, copy, locale, values, onChange, onOpenLegal, onSendM
               <Calculator size={14} className="text-[var(--color-primary)]" />
               {copy.detailEyebrow}
             </div>
-            <h1 className="mt-4 break-keep text-3xl font-semibold leading-[1.08] text-[var(--color-text-primary)] sm:text-[2.75rem]">
+            <h1 className="mt-4 break-words text-3xl font-semibold leading-[1.08] text-[var(--color-text-primary)] sm:text-[2.75rem]">
               {tool.seoTitle}
             </h1>
             <p className="mt-4 max-w-3xl text-sm leading-7 text-[var(--color-text-secondary)] sm:text-base">

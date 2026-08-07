@@ -259,19 +259,7 @@ export const industryTools = [
       ['What V die opening should I use?', 'A common starting point is about 8 times material thickness for mild steel, then adjust for radius, tooling, and material.'],
       ['When should an engineer review the bend?', 'Ask for review when the estimate is close to machine capacity, material is high strength, or the bend requires special tooling.'],
     ],
-    seoEvidence: {
-      indexable: true,
-      formula: 'Air-bend tonnage = existing estimateAirBendTonnage inputs and material/safety factors.',
-      workedExample: {
-        intro: 'This example uses the calculator’s returned tonnage and V-opening values for an air bend.',
-        inputs: { materialFactor: '1', thicknessMm: '6', bendLengthMm: '3000', vDieMm: '48', safetyFactor: '1.2' },
-      },
-      assumptions: ['The bend is an air-bending operation.', 'Material and safety factors represent the selected material and required margin.', 'Entered thickness, bend length, and V-die opening match the proposed setup.'],
-      limitations: ['The estimate does not verify actual tensile strength, tooling condition, or machine deflection.', 'Special tooling, coining, hemming, and part geometry can require a different assessment.'],
-      safetyBoundary: 'Do not operate or select a press brake from this estimate alone; confirm safe tooling, loading, guarding, and machine capacity before production.',
-      reviewPrompt: 'Ask an engineer to review the material certificate, tool set, machine rating, and safety margin before production.',
-      references: ['Calculator inputs passed to estimateAirBendTonnage.', 'Calculator output: required and safety-margin tonnage returned by this tool.'],
-    },
+    seoEvidence: { indexable: false },
   },
   {
     id: 'gas-consumption',
@@ -473,16 +461,7 @@ const industryToolCn = {
       ['V 槽开口应该怎么选？', '低碳钢空气折弯常用板厚约 8 倍作为起点，再按半径、模具和材料调整。'],
       ['什么时候需要工程师复核？', '当估算值接近设备能力、材料强度较高，或需要特殊模具时，建议先复核。'],
     ],
-    seoEvidence: {
-      indexable: true,
-      formula: '空气折弯吨位 = 现有 estimateAirBendTonnage 的输入及材料/安全系数。',
-      workedExample: { intro: '此示例直接显示计算器对空气折弯返回的吨位和 V 槽开口。', inputs: { materialFactor: '1', thicknessMm: '6', bendLengthMm: '3000', vDieMm: '48', safetyFactor: '1.2' } },
-      assumptions: ['工艺为空气折弯。', '材料和安全系数代表所选材料及所需余量。', '输入的板厚、折弯长度和 V 槽开口与拟定设置一致。'],
-      limitations: ['估算不会验证实际抗拉强度、模具状态或设备挠度。', '特殊模具、压底、压平和零件几何可能需要不同评估。'],
-      safetyBoundary: '不得只按此估算操作或选择折弯机；生产前应确认模具、负载、防护和设备能力。',
-      reviewPrompt: '请工程师在生产前复核材质证明、模具组合、设备额定能力和安全余量。',
-      references: ['传入 estimateAirBendTonnage 的计算器输入。', '本工具返回的所需吨位和安全余量吨位。'],
-    },
+    seoEvidence: { indexable: false },
   },
   'gas-consumption': {
     label: '辅助气体用量计算器',

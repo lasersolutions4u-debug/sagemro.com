@@ -24,6 +24,9 @@ test('buildPublicPages writes crawlable public pages and crawl artifacts', async
   assert.doesNotMatch(await read('sitemap.xml'), /bend-simulator/);
   assert.match(await read('_redirects'), /\/work-orders\/\* \/index\.html 200/);
   assert.doesNotMatch(await read('_redirects'), /\/tools\/\*/);
+  assert.match(await read('404.html'), /name="robots" content="noindex,nofollow,noarchive"/);
+  assert.match(await read('404.html'), /<h1>404 — This page doesn&#39;t exist<\/h1>/);
+  assert.doesNotMatch(await read('404.html'), /application\/ld\+json/);
   const hubs = (await read('llms.txt')).match(/^\- https:\/\/[^\n]+$/gm);
   assert.equal(new Set(hubs).size, 4);
 });

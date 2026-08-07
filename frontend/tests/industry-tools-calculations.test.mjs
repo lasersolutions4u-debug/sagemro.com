@@ -46,7 +46,6 @@ test('defensible calculators disclose formula, calculator-generated example, ass
   const requiredTools = {
     'metal-weight': /Metal weight = cross-section area × length × density × quantity/,
     'laser-cost': /Laser cutting cost = total machine time × hourly rate \+ assist-gas cost/,
-    'press-brake-tonnage': /Air-bend tonnage = existing estimateAirBendTonnage inputs and material\/safety factors/,
     'bend-allowance': /Bend allowance per bend = angle in radians × \(inside radius \+ K-factor × thickness\)/,
   };
 
@@ -68,7 +67,7 @@ test('defensible calculators disclose formula, calculator-generated example, ass
 });
 
 test('only evidence-complete calculators are public while all other direct tools are noindex', () => {
-  const publicIds = ['metal-weight', 'laser-cost', 'press-brake-tonnage', 'bend-allowance'];
+  const publicIds = ['metal-weight', 'laser-cost', 'bend-allowance'];
 
   assert.deepEqual(publicIndustryTools.map((tool) => tool.id), publicIds);
 
@@ -77,6 +76,13 @@ test('only evidence-complete calculators are public while all other direct tools
     if (publicIds.includes(tool.id)) assert.equal(tool.seoEvidence?.indexable, true);
     else assert.equal(tool.seoEvidence?.indexable, false);
   }
+});
+
+test('implementation-only press brake tonnage evidence cannot pass the publication gate', () => {
+  const tool = industryTools.find((item) => item.id === 'press-brake-tonnage');
+
+  assert.equal(tool?.seoEvidence?.indexable, false);
+  assert.equal(publicIndustryTools.some((item) => item.id === tool?.id), false);
 });
 
 test('worked examples do not fall through to metal weight for unsupported tools', () => {
@@ -100,6 +106,13 @@ test('evidence review CTA follows safety boundary and calculator CTA is suppress
   assert.ok(safetyIndex < reviewIndex);
   assert.match(page, /Ask SAGEMRO AI to review this result/);
   assert.match(page, /请 SAGEMRO AI 复核此结果/);
+});
+
+test('tool page headings allow long Chinese titles to wrap on mobile', () => {
+  const page = readFileSync(new URL('../src/components/Tools/IndustryToolsPage.jsx', import.meta.url), 'utf8');
+
+  assert.doesNotMatch(page, /<h1 className="[^"]*break-keep/);
+  assert.equal((page.match(/<h1 className="[^"]*break-words/g) || []).length, 2);
 });
 
 test('heuristic reference tools remain directly available but not indexable', () => {
@@ -148,7 +161,7 @@ test('steel price calculator uses selected material and structural profile weigh
 
 test('industry tools keep the paused bend simulator registered but out of public discovery', () => {
   assert.equal(industryTools.length, 10);
-  assert.equal(publicIndustryTools.length, 4);
+  assert.equal(publicIndustryTools.length, 3);
   assert.equal(publicIndustryTools.some((tool) => tool.id === 'bend-simulator'), false);
   assert.equal(getToolBySlug('metal-weight-calculator').id, 'metal-weight');
   assert.equal(getToolBySlug('steel-price-watch').id, 'steel-price');
