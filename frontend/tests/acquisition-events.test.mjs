@@ -241,6 +241,95 @@ test('conversion tracking runs before its existing callback', async () => {
   ]);
 });
 
+test('public CTA callbacks run without analytics until an anonymous public session is ready', async () => {
+  const events = [];
+  const callbacks = [];
+  const { createAcquisitionEventActions, createTrackedConversionClick, getPublicAcquisitionContext } = await loadAcquisitionTracking(() => {});
+  const base = { pathname: '/services/laser-cutting-machine-repair', locale: 'en', isEngineerHost: false };
+
+  for (const context of [
+    getPublicAcquisitionContext({ ...base, sessionRestoreComplete: false, userType: null }),
+    getPublicAcquisitionContext({ ...base, sessionRestoreComplete: true, userType: 'customer' }),
+  ]) {
+    const actions = createAcquisitionEventActions({
+      ...context,
+      track: (name) => events.push(name),
+    });
+    createTrackedConversionClick(
+      actions.onConversionClick,
+      { ctaType: 'ai_diagnosis' },
+      () => callbacks.push('opened'),
+    )();
+  }
+
+  const anonymousActions = createAcquisitionEventActions({
+    ...getPublicAcquisitionContext({ ...base, sessionRestoreComplete: true, userType: null }),
+    track: (name, properties) => events.push({ name, properties }),
+  });
+  createTrackedConversionClick(
+    anonymousActions.onConversionClick,
+    { ctaType: 'service_request' },
+    () => callbacks.push('requested'),
+  )();
+
+  assert.deepEqual(events, [{
+    name: 'conversion_cta_clicked',
+    properties: {
+      content_type: 'service',
+      content_slug: 'laser-cutting-machine-repair',
+      cta_type: 'service_request',
+    },
+  }]);
+  assert.deepEqual(callbacks, ['opened', 'opened', 'requested']);
+});
+
+test('tool actions only emit once for an anonymous indexable tool route', async () => {
+  const events = [];
+  const { createAcquisitionEventActions, getPublicAcquisitionContext } = await loadAcquisitionTracking(() => {});
+  const base = { pathname: '/tools/metal-weight-calculator', locale: 'en', sessionRestoreComplete: true, isEngineerHost: false };
+
+  const authenticatedActions = createAcquisitionEventActions({
+    ...getPublicAcquisitionContext({ ...base, userType: 'customer' }),
+    track: (name) => events.push(name),
+  });
+  authenticatedActions.onToolStarted('metal-weight');
+  authenticatedActions.onToolCompleted('metal-weight', true);
+
+  const anonymousActions = createAcquisitionEventActions({
+    ...getPublicAcquisitionContext({ ...base, userType: null }),
+    track: (name, properties) => events.push({ name, properties }),
+  });
+  anonymousActions.onToolStarted('metal-weight');
+  anonymousActions.onToolStarted('metal-weight');
+  anonymousActions.onToolCompleted('metal-weight', true);
+  anonymousActions.onToolCompleted('metal-weight', true);
+
+  const noindexActions = createAcquisitionEventActions({
+    ...getPublicAcquisitionContext({ ...base, pathname: '/tools/steel-price-watch', userType: null }),
+    track: (name) => events.push(name),
+  });
+  noindexActions.onToolStarted('steel-price');
+  noindexActions.onToolCompleted('steel-price', true);
+
+  assert.deepEqual(events, [
+    { name: 'tool_started', properties: { content_type: 'tool', content_slug: 'metal-weight-calculator', tool_id: 'metal-weight' } },
+    { name: 'tool_completed', properties: { content_type: 'tool', content_slug: 'metal-weight-calculator', tool_id: 'metal-weight', result_state: 'valid' } },
+  ]);
+});
+
+test('App routes the shared acquisition context into public CTA and tool consumers', () => {
+  const app = readFileSync(path.join(root, 'src/App.jsx'), 'utf8');
+  const panel = readFileSync(path.join(root, 'src/components/common/PublicConversionPanel.jsx'), 'utf8');
+  const toolsPage = readFileSync(path.join(root, 'src/components/Tools/IndustryToolsPage.jsx'), 'utf8');
+  assert.match(app, /getPublicAcquisitionContext\s*\(/);
+  assert.match(app, /<IndustryToolsPage[\s\S]*acquisitionContext=\{acquisitionContext\}/);
+  assert.match(app, /<InsightsPage[\s\S]*acquisitionContext=\{acquisitionContext\}/);
+  assert.match(app, /<ServicePages[\s\S]*acquisitionContext=\{acquisitionContext\}/);
+  assert.match(panel, /safeAcquisitionContext/);
+  assert.doesNotMatch(panel, /getPublicAcquisitionContext|sessionRestoreComplete:\s*true/);
+  assert.match(toolsPage, /acquisitionContext\?\.indexable/);
+});
+
 test('client adds only the approved acquisition properties', () => {
   const client = readFileSync(path.join(root, 'src/services/api.js'), 'utf8');
   const worker = readFileSync(path.join(root, '..', 'worker/src/index.js'), 'utf8');

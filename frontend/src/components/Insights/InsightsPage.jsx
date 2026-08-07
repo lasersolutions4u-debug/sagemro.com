@@ -41,7 +41,7 @@ const insightsCopy = {
   },
 };
 
-export function InsightsPage({ pathname = '/insights', onOpenLegal, onStartDiagnosis, onOpenServiceRequest }) {
+export function InsightsPage({ pathname = '/insights', acquisitionContext, onOpenLegal, onStartDiagnosis, onOpenServiceRequest }) {
   const locale = isCnLocale() ? 'zh-CN' : 'en';
   const canonicalHost = locale === 'zh-CN' ? 'https://sagemro.cn' : 'https://sagemro.com';
   const copy = insightsCopy[locale];
@@ -76,7 +76,7 @@ export function InsightsPage({ pathname = '/insights', onOpenLegal, onStartDiagn
     return <NotFoundPage isCn={locale === 'zh-CN'} />;
   }
 
-  if (guide) return <InsightShell copy={copy} onOpenLegal={onOpenLegal}><DiagnosticGuide guide={guide} locale={locale} onStartDiagnosis={onStartDiagnosis} onOpenServiceRequest={onOpenServiceRequest} /></InsightShell>;
+  if (guide) return <InsightShell copy={copy} onOpenLegal={onOpenLegal}><DiagnosticGuide guide={guide} locale={locale} acquisitionContext={acquisitionContext} onStartDiagnosis={onStartDiagnosis} onOpenServiceRequest={onOpenServiceRequest} /></InsightShell>;
 
   if (insight) {
     return <InsightDetail copy={copy} insight={insight} onOpenLegal={onOpenLegal} />;

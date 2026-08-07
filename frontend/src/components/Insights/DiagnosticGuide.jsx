@@ -19,7 +19,7 @@ const copy = {
   },
 };
 
-export function DiagnosticGuide({ guide, locale = 'en', onStartDiagnosis, onOpenServiceRequest }) {
+export function DiagnosticGuide({ guide, locale = 'en', acquisitionContext, onStartDiagnosis, onOpenServiceRequest }) {
   const text = copy[locale] ?? copy.en;
   const author = getTechnicalAuthor(guide.authorId, locale);
   const reviewer = getTechnicalAuthor(guide.reviewedBy, locale);
@@ -49,7 +49,7 @@ export function DiagnosticGuide({ guide, locale = 'en', onStartDiagnosis, onOpen
         {(relatedService || relatedTool) && <section className="mt-8 grid gap-3 sm:grid-cols-2">{relatedService && <RelatedLink icon={Wrench} title={text.relatedService} href={`/services/${relatedService.slug}`} label={relatedService.title} />}{relatedTool && <RelatedLink icon={CheckCircle2} title={text.relatedTool} href={`/tools/${relatedTool.slug}`} label={relatedTool.label} />}</section>}
         <section className="mt-8 border-t border-[var(--color-border)] pt-5 text-sm leading-6"><div><span className="font-semibold">{text.author}: </span>{author && <a href={author.url} className="text-[var(--color-primary)] hover:underline">{author.name}</a>}</div><div className="mt-2"><span className="font-semibold">{text.technicalReview}: </span>{reviewer && <a href={reviewer.url} className="text-[var(--color-primary)] hover:underline">{reviewer.name}</a>}</div></section>
         <section className="mt-8" aria-labelledby="sources"><h2 id="sources" className="text-xl font-semibold">{text.sources}</h2><ul className="mt-3 space-y-3">{guide.references.map((source) => <li key={source.url} className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-3 text-sm"><a href={source.url} className="font-medium text-[var(--color-primary)] hover:underline">{source.title} <ExternalLink size={14} className="inline" /></a><div className="mt-1 text-[var(--color-text-secondary)]">{source.publisher} · {text.accessed}: {source.accessedAt}</div></li>)}</ul><p className="mt-4 text-sm"><a href={reviewer?.url} className="text-[var(--color-primary)] hover:underline">{text.corrections}</a></p></section>
-        <div className="mt-8"><PublicConversionPanel context={guide.title} primaryLabel={text.start} secondaryLabel={text.request} onStartDiagnosis={onStartDiagnosis} onOpenServiceRequest={onOpenServiceRequest} /></div>
+        <div className="mt-8"><PublicConversionPanel context={guide.title} acquisitionContext={acquisitionContext} primaryLabel={text.start} secondaryLabel={text.request} onStartDiagnosis={onStartDiagnosis} onOpenServiceRequest={onOpenServiceRequest} /></div>
       </article>
     </main>
   );

@@ -1,21 +1,16 @@
-import { createAcquisitionEventActions, createTrackedConversionClick, getPublicAcquisitionContext } from '../../hooks/useAcquisitionTracking';
-import { isCnLocale } from '../../utils/locale';
+import { createAcquisitionEventActions, createTrackedConversionClick } from '../../hooks/useAcquisitionTracking';
 
-export function PublicConversionPanel({ context, primaryLabel, secondaryLabel, onStartDiagnosis, onOpenServiceRequest }) {
-  const acquisitionContext = getPublicAcquisitionContext({
-    pathname: typeof window === 'undefined' ? '' : window.location.pathname,
-    locale: isCnLocale() ? 'zh-CN' : 'en',
-    sessionRestoreComplete: true,
-  });
-  const { onConversionClick } = createAcquisitionEventActions(acquisitionContext);
+export function PublicConversionPanel({ context, acquisitionContext, primaryLabel, secondaryLabel, onStartDiagnosis, onOpenServiceRequest }) {
+  const safeAcquisitionContext = acquisitionContext || {};
+  const { onConversionClick } = createAcquisitionEventActions(safeAcquisitionContext);
   const startDiagnosis = createTrackedConversionClick(onConversionClick, {
-    contentType: acquisitionContext.contentType,
-    contentSlug: acquisitionContext.contentSlug,
+    contentType: safeAcquisitionContext.contentType,
+    contentSlug: safeAcquisitionContext.contentSlug,
     ctaType: 'ai_diagnosis',
   }, onStartDiagnosis);
   const openServiceRequest = createTrackedConversionClick(onConversionClick, {
-    contentType: acquisitionContext.contentType,
-    contentSlug: acquisitionContext.contentSlug,
+    contentType: safeAcquisitionContext.contentType,
+    contentSlug: safeAcquisitionContext.contentSlug,
     ctaType: 'service_request',
   }, onOpenServiceRequest);
 
