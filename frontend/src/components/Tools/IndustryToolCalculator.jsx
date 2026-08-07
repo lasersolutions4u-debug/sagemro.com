@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { ArrowRight, Ruler } from 'lucide-react';
 import {
   buildIndustryToolReviewPrompt,
@@ -166,7 +166,13 @@ function getFieldsForTool(toolId, values, profiles = shapeProfiles, locale = 'en
   return [];
 }
 
-export function IndustryToolCalculator({ tool, values, onChange, onSendMessage, onAfterSend, showReviewCta = true }) {
+function hasValidResult(result) {
+  return Array.isArray(result?.rows)
+    && result.rows.length > 0
+    && result.rows.every(([label, value]) => Boolean(label) && value !== undefined && value !== null && String(value).trim() !== '');
+}
+
+export function IndustryToolCalculator({ tool, values, onChange, onSendMessage, onAfterSend, onToolStarted, onToolCompleted, showReviewCta = true }) {
   const locale = isCnLocale() ? 'zh-CN' : 'en';
   const visibleTool = getLocalizedTool(tool, locale);
   const currentValues = values || defaultIndustryToolForms[tool.id];
@@ -195,8 +201,25 @@ export function IndustryToolCalculator({ tool, values, onChange, onSendMessage, 
         reviewButton: 'Ask SAGEMRO AI to review this result',
       };
   const fields = getFieldsForTool(tool.id, currentValues, profiles, locale);
+  const startedToolRef = useRef(null);
+  const completedToolRef = useRef(null);
+
+  useEffect(() => {
+    startedToolRef.current = null;
+    completedToolRef.current = null;
+  }, [tool.id]);
+
+  useEffect(() => {
+    if (startedToolRef.current !== tool.id || completedToolRef.current === tool.id || !hasValidResult(result)) return;
+    completedToolRef.current = tool.id;
+    onToolCompleted?.(tool.id, true);
+  }, [onToolCompleted, result, tool.id]);
 
   const updateValue = (name, value) => {
+    if (startedToolRef.current !== tool.id) {
+      startedToolRef.current = tool.id;
+      onToolStarted?.(tool.id);
+    }
     onChange?.(name, value);
   };
 
