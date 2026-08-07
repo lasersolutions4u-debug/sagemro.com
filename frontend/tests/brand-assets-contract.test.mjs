@@ -270,7 +270,7 @@ test('public beta funnel events are tracked without collecting message or contac
   assert.match(api, /export function trackFunnelEvent/);
   assert.match(api, /\/api\/analytics\/funnel/);
   assert.match(api, /traffic_source_captured/);
-  assert.match(api, /utm_source/);
+  assert.match(api, /resolveTrafficAttribution/);
   assert.doesNotMatch(trackFunction, /message:/);
   assert.doesNotMatch(trackFunction, /phone:/);
   assert.doesNotMatch(trackFunction, /email:/);

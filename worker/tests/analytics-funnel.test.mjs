@@ -240,3 +240,32 @@ test('funnel property sanitization enforces enum, number, boolean, and PII-safe 
   assert.equal(response.status, 202);
   assert.deepEqual(JSON.parse(env.__rows[0].properties_json), {});
 });
+
+test('acquisition events retain only approved, valid, and bounded properties', async () => {
+  const longSlug = `laser-${'repair-'.repeat(30)}`;
+  const { response, env } = await postFunnel({
+    event_name: 'conversion_cta_clicked',
+    properties: {
+      content_type: 'service',
+      content_slug: longSlug,
+      cta_type: 'ai_diagnosis',
+      engagement_bucket: '30s',
+      result_state: 'valid',
+      prompt: 'My laser alarm is E012',
+      email: 'buyer@example.com',
+      phone: '+15551234567',
+      serial_number: 'SN-12345678',
+      file_name: 'laser-photo.jpg',
+      device_info: 'Fiber laser 6kW',
+    },
+  });
+
+  assert.equal(response.status, 202);
+  assert.deepEqual(JSON.parse(env.__rows[0].properties_json), {
+    content_type: 'service',
+    content_slug: longSlug.slice(0, 120),
+    cta_type: 'ai_diagnosis',
+    engagement_bucket: '30s',
+    result_state: 'valid',
+  });
+});
