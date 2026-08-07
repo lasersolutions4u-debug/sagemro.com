@@ -68,6 +68,10 @@ export function getPromotionChannels(filters, signal) {
   return request(promotionAnalyticsPath('/api/admin/analytics/channels', filters), { signal });
 }
 
+export function getOrganicAcquisition(filters, signal) {
+  return request(promotionAnalyticsPath('/api/admin/analytics/organic-acquisition', filters), { signal });
+}
+
 export async function adminLogin(phone, password) {
   const data = await request('/api/admin/login', {
     method: 'POST',
