@@ -258,6 +258,7 @@ test('acquisition dimension sanitizer preserves real date and v-prefixed version
     ['source', 'google_2026-08-07', 'google_2026-08-07'],
     ['medium', 'organic_2026-08-07', 'organic_2026-08-07'],
     ['page', '/release/v2.10.3', '/release/v2.10.3'],
+    ['page', '/release/v2026.08.07', '/release/v2026.08.07'],
     ['source', 'google_v2.10.3', 'google_v2.10.3'],
     ['medium', 'organic_v2.10.3', 'organic_v2.10.3'],
     ['page', '/insights/13800138000', 'unknown'],
@@ -267,6 +268,10 @@ test('acquisition dimension sanitizer preserves real date and v-prefixed version
     ['source', 'google_2026-08-07_138-0013-8000', 'unknown'],
     ['medium', 'organic_v2.10.3+8613800138000', 'unknown'],
     ['medium', 'v2.10.3@example.com', 'unknown'],
+    ['source', 'v13800138000.1', 'unknown'],
+    ['page', '/insights/v13800138000.1', 'unknown'],
+    ['medium', 'v1380.0138.0000', 'unknown'],
+    ['source', 'google_2026-08-07_v2.10.3_13800138000', 'unknown'],
   ];
 
   for (const [dimension, value, expected] of cases) {

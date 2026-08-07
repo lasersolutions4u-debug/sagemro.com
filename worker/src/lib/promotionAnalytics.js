@@ -391,10 +391,18 @@ function isRealIsoDate(value) {
     && date.getUTCDate() === day;
 }
 
+function isSafeExplicitVersion(value) {
+  const components = value.slice(1).split('.');
+  return components.length >= 2
+    && components.length <= 4
+    && components.every((component) => /^\d{1,4}$/.test(component))
+    && components.reduce((total, component) => total + component.length, 0) <= 8;
+}
+
 function stripSafeAcquisitionTokens(value) {
   return value
     .replace(/\d{4}-\d{2}-\d{2}/g, (token) => (isRealIsoDate(token) ? 'SAFE_DATE' : token))
-    .replace(/v\d+(?:\.\d+)+/gi, 'SAFE_VERSION');
+    .replace(/v\d+(?:\.\d+)+/gi, (token) => (isSafeExplicitVersion(token) ? 'SAFE_VERSION' : token));
 }
 
 export function sanitizeAcquisitionDimension(dimension, value) {
