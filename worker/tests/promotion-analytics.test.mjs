@@ -271,6 +271,12 @@ test('acquisition dimension sanitizer preserves real date and v-prefixed version
     ['source', 'v13800138000.1', 'unknown'],
     ['page', '/insights/v13800138000.1', 'unknown'],
     ['medium', 'v1380.0138.0000', 'unknown'],
+    ['source', 'v1380.0138', 'unknown'],
+    ['page', '/insights/v1380.0138', 'unknown'],
+    ['medium', 'v1380.0138', 'unknown'],
+    ['source', 'v2026.08.99', 'unknown'],
+    ['page', '/insights/v2026.08.99', 'unknown'],
+    ['medium', 'v2026.08.99', 'unknown'],
     ['source', 'google_2026-08-07_v2.10.3_13800138000', 'unknown'],
   ];
 

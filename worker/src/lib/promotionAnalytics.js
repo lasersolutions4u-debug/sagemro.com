@@ -393,10 +393,16 @@ function isRealIsoDate(value) {
 
 function isSafeExplicitVersion(value) {
   const components = value.slice(1).split('.');
-  return components.length >= 2
+  const boundedVersion = components.length >= 2
     && components.length <= 4
     && components.every((component) => /^\d{1,4}$/.test(component))
     && components.reduce((total, component) => total + component.length, 0) <= 8;
+  const calendarVersion = components.length === 3
+    && /^\d{4}$/.test(components[0])
+    && /^\d{2}$/.test(components[1])
+    && /^\d{2}$/.test(components[2])
+    && isRealIsoDate(components.join('-'));
+  return boundedVersion && (calendarVersion || !hasSensitiveText(value.slice(1)));
 }
 
 function stripSafeAcquisitionTokens(value) {
