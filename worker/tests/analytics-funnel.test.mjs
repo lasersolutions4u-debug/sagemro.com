@@ -130,6 +130,54 @@ test('funnel sanitizer retains the v2 request fields but rejects invalid analyti
   });
 });
 
+test('funnel endpoint strips PII and free text from top-level acquisition fields', async () => {
+  const { response, env } = await postFunnel({
+    event_name: 'traffic_source_captured',
+    anonymous_id: 'buyer@example.com',
+    session_id: 'diagnosis says laser overheats',
+    user_type: 'buyer@example.com',
+    source: 'buyer@example.com',
+    medium: '+1 555 123 4567',
+    campaign: 'laser alarm E012 needs help',
+    page_path: '/services/laser-cutting-machine-repair?email=buyer@example.com#contact',
+    referrer: 'https://www.google.com/search?q=buyer%40example.com#results',
+  });
+
+  assert.equal(response.status, 202);
+  assert.equal(env.__rows[0].anonymous_id, '');
+  assert.equal(env.__rows[0].session_id, '');
+  assert.equal(env.__rows[0].user_type, 'guest');
+  assert.equal(env.__rows[0].source, '');
+  assert.equal(env.__rows[0].medium, '');
+  assert.equal(env.__rows[0].campaign, '');
+  assert.equal(env.__rows[0].page_path, '/services/laser-cutting-machine-repair');
+  assert.equal(env.__rows[0].referrer, 'https://www.google.com');
+});
+
+test('funnel endpoint accepts bounded identifier-like acquisition dimensions', async () => {
+  const { response, env } = await postFunnel({
+    event_name: 'traffic_source_captured',
+    anonymous_id: 'anon_safe-id_123',
+    session_id: 'session_safe-id_123',
+    user_type: 'guest',
+    source: 'chatgpt_referral',
+    medium: 'ai_referral',
+    campaign: 'technical-service-2026',
+    page_path: '/services/laser-cutting-machine-repair',
+    referrer: 'https://chatgpt.com/c/secret-conversation?prompt=private',
+  });
+
+  assert.equal(response.status, 202);
+  assert.equal(env.__rows[0].anonymous_id, 'anon_safe-id_123');
+  assert.equal(env.__rows[0].session_id, 'session_safe-id_123');
+  assert.equal(env.__rows[0].user_type, 'guest');
+  assert.equal(env.__rows[0].source, 'chatgpt_referral');
+  assert.equal(env.__rows[0].medium, 'ai_referral');
+  assert.equal(env.__rows[0].campaign, 'technical-service-2026');
+  assert.equal(env.__rows[0].page_path, '/services/laser-cutting-machine-repair');
+  assert.equal(env.__rows[0].referrer, 'https://chatgpt.com');
+});
+
 test('public funnel endpoint rejects unknown event names', async () => {
   const { response, json, env } = await postFunnel({
     event_name: 'freeform_clicked',
@@ -239,4 +287,84 @@ test('funnel property sanitization enforces enum, number, boolean, and PII-safe 
 
   assert.equal(response.status, 202);
   assert.deepEqual(JSON.parse(env.__rows[0].properties_json), {});
+});
+
+test('acquisition events retain only approved, valid, and bounded properties', async () => {
+  const longSlug = `laser-${'repair-'.repeat(30)}`;
+  const { response, env } = await postFunnel({
+    event_name: 'conversion_cta_clicked',
+    properties: {
+      content_type: 'service',
+      content_slug: longSlug,
+      cta_type: 'ai_diagnosis',
+      engagement_bucket: '30s',
+      result_state: 'valid',
+      prompt: 'My laser alarm is E012',
+      email: 'buyer@example.com',
+      phone: '+15551234567',
+      serial_number: 'SN-12345678',
+      file_name: 'laser-photo.jpg',
+      device_info: 'Fiber laser 6kW',
+    },
+  });
+
+  assert.equal(response.status, 202);
+  assert.deepEqual(JSON.parse(env.__rows[0].properties_json), {
+    content_type: 'service',
+    content_slug: longSlug.slice(0, 120),
+    cta_type: 'ai_diagnosis',
+    engagement_bucket: '30s',
+    result_state: 'valid',
+  });
+});
+
+test('acquisition events drop each invalid enum while retaining valid properties', async () => {
+  const invalidProperties = {
+    content_type: 'article',
+    cta_type: 'contact_sales',
+    engagement_bucket: '60s',
+    result_state: 'complete',
+  };
+  const validProperties = {
+    content_type: 'service',
+    content_slug: 'laser-cutting-machine-repair',
+    cta_type: 'ai_diagnosis',
+    engagement_bucket: '30s',
+    result_state: 'valid',
+  };
+
+  for (const [invalidKey, invalidValue] of Object.entries(invalidProperties)) {
+    const { response, env } = await postFunnel({
+      event_name: 'conversion_cta_clicked',
+      properties: {
+        ...validProperties,
+        [invalidKey]: invalidValue,
+        prompt: 'My laser alarm is E012',
+        email: 'buyer@example.com',
+        phone: '+15551234567',
+        serial_number: 'SN-12345678',
+        file_name: 'laser-photo.jpg',
+        device_info: 'Fiber laser 6kW',
+        arbitrary_property: 'discard',
+      },
+    });
+
+    assert.equal(response.status, 202);
+    const properties = JSON.parse(env.__rows[0].properties_json);
+    assert.equal(properties[invalidKey], undefined);
+    assert.deepEqual(properties, Object.fromEntries(
+      Object.entries(validProperties).filter(([key]) => key !== invalidKey),
+    ));
+  }
+});
+
+test('acquisition events truncate overlength content slugs to 120 characters', async () => {
+  const content_slug = `laser-${'repair-'.repeat(30)}`;
+  const { response, env } = await postFunnel({
+    event_name: 'seo_landing_viewed',
+    properties: { content_type: 'service', content_slug },
+  });
+
+  assert.equal(response.status, 202);
+  assert.equal(JSON.parse(env.__rows[0].properties_json).content_slug, content_slug.slice(0, 120));
 });

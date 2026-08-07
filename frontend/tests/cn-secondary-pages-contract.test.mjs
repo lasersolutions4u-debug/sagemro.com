@@ -82,11 +82,11 @@ test('CN secondary page components choose localized copy by runtime locale', () 
   assert.match(insightsPage, /canonicalHost/);
 });
 
-test('CN tools hub keeps header controls stacked and Chinese text balanced', () => {
+test('CN tools hub keeps header controls stacked and long titles safely wrapped', () => {
   const toolsPage = read('frontend/src/components/Tools/IndustryToolsPage.jsx');
 
   assert.match(toolsPage, /flex flex-col items-start gap-4/);
-  assert.match(toolsPage, /break-keep/);
+  assert.match(toolsPage, /break-words/);
   assert.match(toolsPage, /grid gap-3 md:grid-cols-2/);
   assert.match(toolsPage, /className="min-w-0"/);
   assert.match(toolsPage, /ToolReferenceItem/);

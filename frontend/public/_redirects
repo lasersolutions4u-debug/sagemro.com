@@ -1,5 +1,5 @@
-/tools /index.html 200
-/tools/* /index.html 200
-/insights /index.html 200
-/insights/* /index.html 200
-/* /404.html 404
+/tools/ /tools 301
+/insights/ /insights 301
+/activate / 200
+/engineer / 200
+/work-orders/* / 200

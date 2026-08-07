@@ -26,7 +26,7 @@ function extractPlaceholderExpression(source) {
   return match[1];
 }
 
-test('customer, engineer, admin, and browser icons use the exact supplied SAGEMRO logo image', () => {
+test('customer and browser icons use the compact SAGEMRO SVG mark', () => {
   const expectedAssets = [
     'frontend/public/sagemro-logo.png',
     'admin/public/sagemro-logo.png',
@@ -36,12 +36,12 @@ test('customer, engineer, admin, and browser icons use the exact supplied SAGEMR
     assert.equal(existsSync(path.join(root, assetPath)), true, `${assetPath} should exist`);
   }
 
-  assert.match(read('frontend/src/components/common/BrandMark.jsx'), /sagemro-logo\.png/);
-  assert.doesNotMatch(read('frontend/src/components/common/BrandMark.jsx'), /sagemro-brand-mark\.svg/);
+  assert.match(read('frontend/src/components/common/BrandMark.jsx'), /sagemro-brand-mark\.svg/);
+  assert.doesNotMatch(read('frontend/src/components/common/BrandMark.jsx'), /sagemro-logo\.png/);
   assert.match(read('admin/src/components/BrandMark.jsx'), /sagemro-logo\.png/);
   assert.doesNotMatch(read('admin/src/components/BrandMark.jsx'), /sagemro-brand-mark\.svg/);
 
-  assert.match(read('frontend/index.html'), /href="\/sagemro-logo\.png"/);
+  assert.match(read('frontend/index.html'), /href="\/sagemro-brand-mark\.svg"/);
   assert.match(read('admin/index.html'), /href="\/sagemro-logo\.png"/);
 });
 
@@ -72,7 +72,8 @@ test('main chat input supports Deepgram voice transcription without image upload
 });
 
 test('main site first-impression copy keeps CN and COM market language separate', () => {
-  const welcome = read('frontend/src/components/Chat/WelcomePage.jsx');
+  const welcome = read('frontend/src/data/welcomePageCopy.js');
+  const welcomePage = read('frontend/src/components/Chat/WelcomePage.jsx');
   const chatArea = read('frontend/src/components/Chat/ChatArea.jsx');
   const about = read('frontend/src/components/common/AboutModal.jsx');
   const footer = read('frontend/src/components/common/Footer.jsx');
@@ -110,7 +111,7 @@ test('main site first-impression copy keeps CN and COM market language separate'
   assert.doesNotMatch(welcome, /内容由 AI 生成，仅供参考/);
   assert.doesNotMatch(welcome, /钣金设备故障，先用 AI 看看/);
   assert.doesNotMatch(welcome, /报了什么警、切割出了什么问题、折弯不对了/);
-  assert.match(welcome, /max-w-4xl/);
+  assert.match(welcomePage, /max-w-4xl/);
   assert.match(chatArea, /SAGEMRO AI 设备服务平台/);
   assert.match(chatArea, /专为激光和成型设备打造的智能服务助手/);
   assert.match(chatArea, /SAGEMRO AI Equipment Service/);
@@ -166,6 +167,20 @@ test('AI tool copy keeps service preparation neutral instead of sales routing', 
   assert.match(legal, /服务费用参考/);
   assert.doesNotMatch(aiTools, /sales lead|Repair Estimate AI|Equipment Health Report AI|Health Report/);
   assert.doesNotMatch(aiPanel, /right SAGEMRO conversion action|right conversion action|Lead type/);
+  assert.doesNotMatch(legal, /Repair estimate|维修估算/);
+});
+
+test('AI service copy keeps service preparation neutral instead of sales routing', () => {
+  const chatArea = read('frontend/src/components/Chat/ChatArea.jsx');
+  const welcomeCopy = read('frontend/src/data/welcomePageCopy.js');
+  const legal = read('frontend/src/components/common/LegalModal.jsx');
+
+  assert.match(chatArea, /service process/i);
+  assert.match(welcomeCopy, /SAGEMRO Service OS|Useful shop-floor tools/i);
+  assert.match(legal, /Service cost reference/);
+  assert.match(legal, /服务费用参考/);
+  assert.doesNotMatch(chatArea, /sales lead|Repair Estimate AI|Equipment Health Report AI|Health Report/);
+  assert.doesNotMatch(welcomeCopy, /sales lead|right conversion action|Lead type/);
   assert.doesNotMatch(legal, /Repair estimate|维修估算/);
 });
 
@@ -273,7 +288,7 @@ test('public beta funnel events are tracked without collecting message or contac
   assert.match(api, /export function trackFunnelEvent/);
   assert.match(api, /\/api\/analytics\/funnel/);
   assert.match(api, /traffic_source_captured/);
-  assert.match(api, /utm_source/);
+  assert.match(api, /resolveTrafficAttribution/);
   assert.doesNotMatch(trackFunction, /message:/);
   assert.doesNotMatch(trackFunction, /phone:/);
   assert.doesNotMatch(trackFunction, /email:/);
@@ -673,8 +688,8 @@ test('client shell moves conversation history into a modal and exposes industry 
   assert.match(industryToolsPage, /setSeoMetadata\(/);
   assert.match(industryToolsPage, /publicIndustryTools\.map/);
   assert.match(industryToolsPage, /publicIndustryTools\.filter/);
-  assert.match(industryToolsPage, /const isPausedTool = selectedTool\?\.id === 'bend-simulator'/);
-  assert.match(industryToolsPage, /isMissing \|\| isPausedTool \? 'noindex,nofollow,noarchive'/);
+  assert.match(industryToolsPage, /getIndustryToolsSeoMetadata/);
+  assert.match(industryToolsPage, /robots: seoMetadata\.robots/);
   assert.match(industryToolsPage, /referenceItems/);
   assert.match(industryToolsPage, /ToolReferenceItem/);
   assert.match(industryToolsPage, /Material range/);
@@ -706,7 +721,8 @@ test('client shell moves conversation history into a modal and exposes industry 
   assert.match(insightsPage, /href=\{`\/tools\/\$\{insight\.toolSlug\}`\}/);
   assert.match(insights, /laser-cutting-cost-drivers/);
   assert.match(insights, /metal-weight-for-structural-profiles/);
-  assert.match(redirects, /\/\* \/index\.html 200/);
+  assert.match(redirects, /\/work-orders\/\* \/ 200/);
+  assert.doesNotMatch(redirects, /^\/\* \/index\.html 200$/m);
 });
 
 test('public industry tool detail prioritizes calculator before related tools and exposes AI review CTA', () => {

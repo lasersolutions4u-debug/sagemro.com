@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
@@ -8,24 +8,31 @@ import { build } from 'vite';
 const root = path.resolve(import.meta.dirname, '../..');
 const read = (relativePath) => readFileSync(path.join(root, relativePath), 'utf8');
 
-test('CN public frontend routes render a localized 404 and keep static fallback rules', () => {
+test('CN public frontend routes render a localized real 404 after private SPA rewrites', () => {
   const app = read('frontend/src/App.jsx');
   const notFound = read('frontend/src/components/common/NotFoundPage.jsx');
   const redirects = read('frontend/public/_redirects');
 
   assert.match(app, /<NotFoundPage isCn=\{isCn\} \/>/);
   assert.match(notFound, /页面不存在/);
-  assert.match(redirects, /\/\* \/404\.html 404/);
+  assert.equal(existsSync(path.join(root, 'frontend/public/404.html')), true);
+  assert.match(redirects, /\/activate \/ 200/);
+  assert.match(redirects, /\/engineer \/ 200/);
+  assert.match(redirects, /\/work-orders\/\* \/ 200/);
+  assert.doesNotMatch(redirects, /^https?:\/\//m);
+  assert.doesNotMatch(redirects, /\/404\.html 404/);
+  assert.doesNotMatch(redirects, /^\/\* \/index\.html 200$/m);
 });
 
 test('CN tool detail titles wrap on narrow screens and reject unknown slugs', () => {
   const tools = read('frontend/src/components/Tools/IndustryToolsPage.jsx');
   const insights = read('frontend/src/components/Insights/InsightsPage.jsx');
 
-  assert.match(tools, /slug && !selectedTool/);
   assert.match(tools, /className="min-w-0"/);
   assert.match(tools, /break-words/);
   assert.doesNotMatch(tools, /<h1 className="mt-4 break-keep/);
+  assert.match(tools, /const isMissing = page === 'not-found'/);
+  assert.match(tools, /getIndustryToolsSeoMetadata/);
   assert.match(insights, /slug && !insight/);
 });
 
@@ -53,7 +60,7 @@ test('frontend build keeps modulepreload dependencies enabled', () => {
   assert.doesNotMatch(viteConfig, /resolveDependencies:\s*\(\)\s*=>\s*\[\]/);
 });
 
-test('production build emits modulepreload links for initial vendor chunks', async () => {
+test('production build emits modulepreload links for initial shared chunks and leaves Markdown lazy', async () => {
   const outDir = mkdtempSync(path.join(tmpdir(), 'sagemro-build-'));
   await build({
     root: path.join(root, 'frontend'),
@@ -62,9 +69,10 @@ test('production build emits modulepreload links for initial vendor chunks', asy
   });
 
   const html = readFileSync(path.join(outDir, 'index.html'), 'utf8');
-  for (const chunk of ['vendor-react', 'vendor-misc', 'vendor-markdown', 'vendor-motion', 'vendor-icons']) {
+  for (const chunk of ['vendor-react', 'vendor-motion', 'vendor-icons']) {
     assert.match(html, new RegExp(`rel="modulepreload"[^>]+${chunk}`));
   }
+  assert.doesNotMatch(html, /rel="modulepreload"[^>]+vendor-markdown/);
 });
 
 test('Aliyun deploy enforces HTTP/2, compression, caching, security headers, and rollback', () => {

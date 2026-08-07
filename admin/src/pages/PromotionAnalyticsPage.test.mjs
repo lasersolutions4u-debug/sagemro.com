@@ -7,7 +7,7 @@ import TestRenderer, { act } from 'react-test-renderer';
 import { createServer } from 'vite';
 
 const api = await readFile(new URL('../services/api.js', import.meta.url), 'utf8');
-const { getPromotionChannels, getPromotionOverview } = await import('../services/api.js');
+const { getOrganicAcquisition, getPromotionChannels, getPromotionOverview } = await import('../services/api.js');
 const {
   DIRECT_ATTRIBUTION_FILTER,
   buildLinePoints,
@@ -81,6 +81,30 @@ function channelsFixture({ rows = channelRows(), daily = null } = {}) {
   };
 }
 
+function organicAcquisitionFixture({ pages = acquisitionPages(), sources = acquisitionSources() } = {}) {
+  return {
+    reportingTimezone: 'Asia/Shanghai',
+    summary: { landingSessions: 40, engagedSessions: 24, toolCompletions: 9, ctaClicks: 6, serviceRequests: 3 },
+    pages,
+    sources,
+    dataQuality: { coverageStart: '2026-08-01 00:05:00', legacyEvents: 2, excludedDirectSessions: 5 },
+  };
+}
+
+function acquisitionSources() {
+  return [
+    { source: 'google', medium: 'organic', landingSessions: 24, engagedSessions: 16, toolCompletions: 6, ctaClicks: 4, serviceRequests: 2 },
+    { source: 'chatgpt', medium: 'ai_referral', landingSessions: 16, engagedSessions: 8, toolCompletions: 3, ctaClicks: 2, serviceRequests: 1 },
+  ];
+}
+
+function acquisitionPages() {
+  return [
+    { pagePath: '/insights/laser-alignment', landingSessions: 24, engagedSessions: 16, toolCompletions: 6, ctaClicks: 4, serviceRequests: 2 },
+    { pagePath: '/tools/power-calculator', landingSessions: 16, engagedSessions: 8, toolCompletions: 3, ctaClicks: 2, serviceRequests: 1 },
+  ];
+}
+
 function channelRows() {
   return [
     { source: 'google', medium: 'cpc', campaign: 'summer-launch', sessions: 40, aiRequests: 20, aiSuccesses: 19, registrations: 6, serviceRequests: 4 },
@@ -120,6 +144,9 @@ test('promotion analytics page shell supplies bilingual accessible copy', async 
   assert.match(page, /推广分析/);
   assert.match(page, /runtimeConfig\.locale/);
   assert.match(page, /<h1/);
+  assert.match(page, /Acquisition/);
+  assert.match(page, /自然搜索与 AI 引荐/);
+  assert.match(page, /getOrganicAcquisition/);
 });
 
 test('promotion analytics view helpers format empty metrics, ratios, changes, and safe SVG points', () => {
@@ -284,6 +311,7 @@ test('tabs expose linked panels, move focus with keys, and request only the acti
   const request = deferred();
   const calls = [];
   const channelCalls = [];
+  const acquisitionCalls = [];
   let focused = '';
   const loadOverview = (filters, signal) => {
     calls.push({ filters, signal });
@@ -293,6 +321,9 @@ test('tabs expose linked panels, move focus with keys, and request only the acti
   await act(async () => {
     renderer = TestRenderer.create(React.createElement(PromotionAnalyticsPage, { loadOverview, loadChannels: (filters, signal) => {
       channelCalls.push({ filters, signal });
+      return new Promise(() => {});
+    }, loadOrganicAcquisition: (filters, signal) => {
+      acquisitionCalls.push({ filters, signal });
       return new Promise(() => {});
     } }), {
       createNodeMock(element) {
@@ -305,6 +336,7 @@ test('tabs expose linked panels, move focus with keys, and request only the acti
   assert.deepEqual(tabs.map((tab) => [tab.props.id, tab.props['aria-controls'], tab.props.tabIndex]), [
     ['promotion-overview-tab', 'promotion-overview-panel', 0],
     ['promotion-channels-tab', 'promotion-channels-panel', -1],
+    ['promotion-acquisition-tab', 'promotion-acquisition-panel', -1],
   ]);
   let panel = renderer.root.findByProps({ role: 'tabpanel' });
   assert.equal(panel.props.id, 'promotion-overview-panel');
@@ -341,18 +373,20 @@ test('tabs expose linked panels, move focus with keys, and request only the acti
     tabs[0].props.onKeyDown({ key: 'End', preventDefault: () => { prevented += 1; } });
   });
   tabs = renderer.root.findAll((node) => node.props.role === 'tab');
+  assert.equal(focused, 'promotion-acquisition-tab');
+  assert.equal(tabs[2].props['aria-selected'], true);
+  assert.equal(calls.length, 2);
+  assert.equal(channelCalls.length, 1);
+  assert.equal(acquisitionCalls.length, 1);
+  await act(async () => {
+    tabs[2].props.onKeyDown({ key: 'ArrowLeft', preventDefault: () => { prevented += 1; } });
+  });
+  tabs = renderer.root.findAll((node) => node.props.role === 'tab');
   assert.equal(focused, 'promotion-channels-tab');
   assert.equal(tabs[1].props['aria-selected'], true);
   assert.equal(calls.length, 2);
+  assert.equal(acquisitionCalls[0].signal.aborted, true);
   assert.equal(channelCalls.length, 2);
-  await act(async () => {
-    tabs[1].props.onKeyDown({ key: 'ArrowLeft', preventDefault: () => { prevented += 1; } });
-  });
-  tabs = renderer.root.findAll((node) => node.props.role === 'tab');
-  assert.equal(focused, 'promotion-overview-tab');
-  assert.equal(tabs[0].props['aria-selected'], true);
-  assert.equal(calls.length, 3);
-  assert.equal(channelCalls[1].signal.aborted, true);
   assert.equal(prevented, 4);
   await act(async () => renderer.unmount());
 });
@@ -656,6 +690,92 @@ test('channel no-data response renders an explicit empty state', async () => {
   await act(async () => renderer.unmount());
 });
 
+test('acquisition tab fetches only when active, aborts stale work, and renders aggregate tables', async () => {
+  const first = deferred();
+  const second = deferred();
+  const filtered = deferred();
+  const requests = [];
+  let renderer;
+  await act(async () => {
+    renderer = TestRenderer.create(React.createElement(PromotionAnalyticsPage, {
+      loadOverview: () => Promise.resolve(overviewFixture()),
+      loadChannels: () => Promise.resolve(channelsFixture()),
+      loadOrganicAcquisition: (filters, signal) => {
+        requests.push({ filters, signal });
+        if (requests.length === 1) return first.promise;
+        if (requests.length === 2) return second.promise;
+        return filtered.promise;
+      },
+    }));
+  });
+  assert.equal(requests.length, 0);
+  await act(async () => findButton(renderer.root, 'Acquisition').props.onClick());
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0].filters.market, 'com');
+  assert.ok(renderer.root.findAll((node) => node.props['aria-label'] === 'Loading acquisition').length);
+  await act(async () => findButton(renderer.root, 'Overview').props.onClick());
+  assert.equal(requests[0].signal.aborted, true);
+  await act(async () => findButton(renderer.root, 'Acquisition').props.onClick());
+  assert.equal(requests.length, 2);
+  await act(async () => findField(renderer.root, 'Source').props.onChange({ target: { value: 'google' } }));
+  await act(async () => findButton(renderer.root, 'Apply filters').props.onClick());
+  assert.equal(requests.length, 3);
+  assert.equal(requests[1].signal.aborted, true);
+  assert.equal(requests[2].filters.source, 'google');
+  await act(async () => {
+    filtered.resolve(organicAcquisitionFixture());
+    await filtered.promise;
+  });
+  await act(async () => {
+    first.resolve(organicAcquisitionFixture({ sources: [{ source: 'stale-source', medium: 'organic', landingSessions: 99, engagedSessions: 99, toolCompletions: 99, ctaClicks: 99, serviceRequests: 99 }] }));
+    await first.promise;
+  });
+  const content = textContent(renderer.toJSON());
+  assert.match(content, /Landing sessions40/);
+  assert.match(content, /Source \/ medium/);
+  assert.match(content, /Content type/);
+  assert.match(content, /google \/ organic/);
+  assert.doesNotMatch(content, /stale-source/);
+  assert.equal(renderer.root.findAllByType('table').length, 2);
+  await act(async () => renderer.unmount());
+  assert.equal(requests[2].signal.aborted, true);
+});
+
+test('acquisition state provides retry, empty, bilingual, and neutral insufficient-data contracts', async () => {
+  const acquisition = await readFile(new URL('../components/promotion/OrganicAcquisition.jsx', import.meta.url), 'utf8');
+  assert.match(acquisition, /Insufficient data/);
+  assert.match(acquisition, /数据不足/);
+  assert.match(acquisition, /自然搜索与 AI 引荐/);
+  assert.match(acquisition, /Landing sessions/);
+  assert.match(acquisition, /着陆会话/);
+  assert.match(acquisition, /Data quality/);
+  assert.match(acquisition, /数据质量/);
+  assert.doesNotMatch(acquisition, /color-warning/);
+  assert.doesNotMatch(acquisition, /anonymous_id|session_id|request_id|ip_hash|user_agent|raw properties|visitor identity/i);
+
+  let attempts = 0;
+  let renderer;
+  await act(async () => {
+    renderer = TestRenderer.create(React.createElement(PromotionAnalyticsPage, {
+      loadOverview: () => Promise.resolve(overviewFixture()),
+      loadOrganicAcquisition: () => {
+        attempts += 1;
+        return attempts === 1 ? Promise.reject(new Error('Acquisition query unavailable')) : Promise.resolve(organicAcquisitionFixture({ pages: [], sources: [] }));
+      },
+    }));
+  });
+  await act(async () => findButton(renderer.root, 'Acquisition').props.onClick());
+  assert.match(textContent(renderer.toJSON()), /Acquisition query unavailable/);
+  await act(async () => findButton(renderer.root, 'Retry').props.onClick());
+  assert.equal(attempts, 2);
+  const emptyContent = textContent(renderer.toJSON());
+  assert.match(emptyContent, /No acquisition data/);
+  assert.match(emptyContent, /Data quality/);
+  assert.match(emptyContent, /direct traffic is excluded/);
+  assert.equal(renderer.root.findAllByType('table').length, 0);
+  await act(async () => renderer.unmount());
+});
+
 test('channel requests abort on tab changes, ignore stale responses, and retry only the channel query', async () => {
   const first = deferred();
   const second = deferred();
@@ -809,12 +929,13 @@ test('promotion analytics clients send only allowed encoded filters with request
     }, signal);
     await getPromotionChannels({ source: DIRECT_SENTINEL, medium: DIRECT_SENTINEL, campaign: DIRECT_SENTINEL }, signal);
     await getPromotionChannels({ source: 'google', medium: '', campaign: '' }, signal);
+    await getOrganicAcquisition({ from: '2026-08-01', market: 'cn', source: 'google', ignored: 'must-not-leak' }, signal);
   } finally {
     globalThis.fetch = originalFetch;
     globalThis.localStorage = originalLocalStorage;
   }
 
-  assert.equal(calls.length, 3);
+  assert.equal(calls.length, 4);
   const overview = new URL(calls[0].url);
   assert.equal(overview.pathname, '/api/admin/analytics/overview');
   assert.deepEqual(Object.fromEntries(overview.searchParams), {
@@ -835,5 +956,9 @@ test('promotion analytics clients send only allowed encoded filters with request
   });
   assert.equal(calls[1].options.signal, signal);
   assert.deepEqual(Object.fromEntries(new URL(calls[2].url).searchParams), { source: 'google' });
+  const acquisition = new URL(calls[3].url);
+  assert.equal(acquisition.pathname, '/api/admin/analytics/organic-acquisition');
+  assert.deepEqual(Object.fromEntries(acquisition.searchParams), { from: '2026-08-01', market: 'cn', source: 'google' });
+  assert.equal(calls[3].options.signal, signal);
   assert.match(api, /const PROMOTION_ANALYTICS_FILTER_KEYS = \['from', 'to', 'market', 'source', 'medium', 'campaign'\]/);
 });

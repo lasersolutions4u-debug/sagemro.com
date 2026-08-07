@@ -1,4 +1,9 @@
-import { ANALYTICS_VERSION, createAnalyticsId, resolveAnalyticsSession } from './funnelAnalytics';
+import {
+  ANALYTICS_VERSION,
+  createAnalyticsId,
+  resolveAnalyticsSession,
+  resolveTrafficAttribution,
+} from './funnelAnalytics';
 
 // API 服务层
 function resolveApiBase() {
@@ -31,6 +36,11 @@ const FUNNEL_EVENT_NAMES = [
   'bend_simulator_started',
   'bend_simulator_segment_adjusted',
   'bend_simulator_completed',
+  'seo_landing_viewed',
+  'content_engaged',
+  'tool_started',
+  'tool_completed',
+  'conversion_cta_clicked',
 ];
 const FUNNEL_PROPERTY_ALLOWLIST = [
   'entry',
@@ -47,6 +57,11 @@ const FUNNEL_PROPERTY_ALLOWLIST = [
   'tool_id',
   'request_id',
   'analytics_version',
+  'content_type',
+  'content_slug',
+  'cta_type',
+  'engagement_bucket',
+  'result_state',
 ];
 
 function getAnalyticsStorage() {
@@ -81,26 +96,24 @@ function getStoredAnalyticsValue(storage, key, fallback) {
 
 function currentAttribution(storage) {
   if (typeof window === 'undefined') return {};
-  const params = new URLSearchParams(window.location.search);
-  const fromUrl = {
-    source: params.get('utm_source') || '',
-    medium: params.get('utm_medium') || '',
-    campaign: params.get('utm_campaign') || '',
-    content: params.get('utm_content') || '',
-    term: params.get('utm_term') || '',
-  };
-  const hasUrlAttribution = Object.values(fromUrl).some(Boolean);
-  if (hasUrlAttribution) {
-    try {
-      storage?.setItem(FUNNEL_STORAGE_KEYS.source, JSON.stringify(fromUrl));
-    } catch { /* ignore */ }
-    return fromUrl;
-  }
+  let stored = {};
   try {
-    return JSON.parse(storage?.getItem(FUNNEL_STORAGE_KEYS.source) || '{}');
-  } catch {
-    return {};
+    stored = JSON.parse(storage?.getItem(FUNNEL_STORAGE_KEYS.source) || '{}');
+  } catch { /* ignore */ }
+  const attribution = resolveTrafficAttribution({
+    search: window.location.search,
+    referrer: document.referrer || '',
+    siteHostname: window.location.hostname,
+    stored,
+  });
+  const source = attribution.source.trim().toLowerCase();
+  const medium = attribution.medium.trim().toLowerCase();
+  if (source && source !== 'direct' && medium && medium !== 'direct' && medium !== 'none') {
+    try {
+      storage?.setItem(FUNNEL_STORAGE_KEYS.source, JSON.stringify(attribution));
+    } catch { /* ignore */ }
   }
+  return attribution;
 }
 
 function sanitizeFunnelProperties(properties) {

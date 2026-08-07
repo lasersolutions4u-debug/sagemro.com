@@ -1,9 +1,53 @@
+User-agent: Googlebot
+Allow: /
+Disallow: /api/
+Disallow: /admin/
+Disallow: /engineer/
+Disallow: /work-orders/
+Disallow: /activate
+
+User-agent: Bingbot
+Allow: /
+Disallow: /api/
+Disallow: /admin/
+Disallow: /engineer/
+Disallow: /work-orders/
+Disallow: /activate
+
+User-agent: Baiduspider
+Allow: /
+Disallow: /api/
+Disallow: /admin/
+Disallow: /engineer/
+Disallow: /work-orders/
+Disallow: /activate
+
+User-agent: OAI-SearchBot
+Allow: /
+Disallow: /api/
+Disallow: /admin/
+Disallow: /engineer/
+Disallow: /work-orders/
+Disallow: /activate
+
 User-agent: *
 Allow: /
-
-# Private application and account flows are not public search content.
-Disallow: /engineer
+Disallow: /api/
+Disallow: /admin/
+Disallow: /engineer/
+Disallow: /work-orders/
 Disallow: /activate
-Disallow: /login
+
+User-agent: GPTBot
+Disallow: /
+
+User-agent: Google-Extended
+Disallow: /
+
+User-agent: ClaudeBot
+Disallow: /
+
+User-agent: CCBot
+Disallow: /
 
 Sitemap: https://sagemro.cn/sitemap.xml

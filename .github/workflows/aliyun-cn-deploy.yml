@@ -82,11 +82,13 @@ jobs:
           mkdir -p release/frontend release/admin release/ops
           cp -a frontend/dist/. release/frontend/
           cp -a admin/dist/. release/admin/
+          cp ops/configure_public_routes.py release/ops/
           cp ops/enable_nginx_http2.py release/ops/
           tar -czf "$PACKAGE_NAME" -C release .
 
           test -f release/frontend/index.html
           test -f release/admin/index.html
+          test -f release/ops/configure_public_routes.py
           test -f release/ops/enable_nginx_http2.py
 
       - name: Setup Aliyun CLI
@@ -241,14 +243,17 @@ jobs:
             $SUDO touch "$performance_missing_marker"
           fi
 
-          nginx_config_files="$($SUDO grep -RIlE 'server_name[^;]*sagemro\.cn' /etc/nginx/sites-enabled /etc/nginx/conf.d 2>/dev/null \
-            | while IFS= read -r nginx_config_file; do readlink -f "$nginx_config_file"; done \
-            | sort -u || true)"
-          if [ -z "$nginx_config_files" ]; then
+          mapfile -t nginx_config_files < <(
+            $SUDO grep -RIlE 'server_name[^;]*sagemro\.cn' /etc/nginx/sites-enabled /etc/nginx/conf.d 2>/dev/null \
+              | while IFS= read -r nginx_config_file; do readlink -f "$nginx_config_file"; done \
+              | sort -u || true
+          )
+          if [ "${#nginx_config_files[@]}" -eq 0 ]; then
             echo "Unable to locate the active sagemro.cn Nginx server configuration." >&2
             exit 1
           fi
-          $SUDO tar -czf "$nginx_backup" $nginx_config_files
+          $SUDO tar -czf "$nginx_backup" "${nginx_config_files[@]}"
+          $SUDO python3 "$release/ops/configure_public_routes.py" "${nginx_config_files[@]}"
 
           $SUDO ln -sfnT "$release/frontend" "$current/frontend"
           $SUDO ln -sfnT "$release/frontend" "$current/engineer"
@@ -302,7 +307,7 @@ jobs:
           add_header Permissions-Policy $sagemro_permissions_policy always;
           NGINX
 
-          $SUDO python3 "$release/ops/enable_nginx_http2.py" $nginx_config_files
+          $SUDO python3 "$release/ops/enable_nginx_http2.py" "${nginx_config_files[@]}"
           $SUDO nginx -t
           $SUDO systemctl reload nginx
 
@@ -317,6 +322,26 @@ jobs:
           curl -fsS --retry 3 --retry-delay 2 https://admin.sagemro.cn/ >/dev/null
           curl -fsS --retry 3 --retry-delay 2 https://engineer.sagemro.cn/ >/dev/null
           curl -fsS --retry 3 --retry-delay 2 https://api.sagemro.cn/health >/dev/null
+          curl -fsS --retry 3 --retry-delay 2 https://sagemro.cn/activate >/dev/null
+          curl -fsS --retry 3 --retry-delay 2 https://engineer.sagemro.cn/work-orders/deploy-smoke >/dev/null
+
+          admin_smoke_url=https://admin.sagemro.cn/deploy-admin-smoke
+          admin_smoke_status="$(curl -sS --retry 3 --retry-delay 2 -o /dev/null -w '%{http_code}' "$admin_smoke_url")"
+          if [ "$admin_smoke_status" != "200" ]; then
+            echo "::error::${admin_smoke_url} expected HTTP 200 but returned ${admin_smoke_status}"
+            exit 1
+          fi
+
+          expect_404() {
+            smoke_url="$1"
+            smoke_status="$(curl -sS --retry 3 --retry-delay 2 -o /dev/null -w '%{http_code}' "$smoke_url")"
+            if [ "$smoke_status" != "404" ]; then
+              echo "::error::${smoke_url} expected HTTP 404 but returned ${smoke_status}"
+              exit 1
+            fi
+          }
+          expect_404 https://sagemro.cn/deploy-404-smoke
+          expect_404 https://engineer.sagemro.cn/deploy-404-smoke
 
           for site_host in sagemro.cn admin.sagemro.cn engineer.sagemro.cn; do
             site_url="https://${site_host}"
