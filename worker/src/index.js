@@ -143,7 +143,7 @@ import {
 import { logToolCall, measureAndLogToolCall, PermissionError } from './lib/trace.js';
 
 // PII 脱敏（Phase 0.5，Phase 1 摘要生成前也复用）
-import { redactPII } from './lib/redact.js';
+import { hasSensitiveText, redactPII } from './lib/redact.js';
 
 // SummaryProtocol v1 — 跨会话摘要管线（Phase 1.2 / 1.3）
 import {
@@ -20227,7 +20227,7 @@ function cleanFunnelValue(value, max = 160) {
 function piiSafeFunnelText(value, max = 120) {
   if (typeof value !== 'string') return null;
   const text = cleanFunnelValue(value, max);
-  if (!text || redactPII(text) !== text || /(?:\+?\d[\d\s().-]{6,}\d)/.test(text)) return null;
+  if (!text || hasSensitiveText(text)) return null;
   return text;
 }
 

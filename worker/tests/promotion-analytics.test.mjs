@@ -186,26 +186,69 @@ test('loadOrganicAcquisition retains capped source and page totals in explicit o
   assert.equal(result.sources.reduce((total, row) => total + row.landingSessions, 0), 101);
 });
 
-test('loadOrganicAcquisition never exposes unsafe page or attribution dimension values', async (t) => {
+test('loadOrganicAcquisition redacts and merges PII-like page and attribution dimensions', async (t) => {
   const db = createD1Database();
   t.after(() => db.close());
   await seedEvent(db, {
-    id: 'unsafe-acquisition-dimensions',
+    id: 'unsafe-source-email',
     eventName: 'seo_landing_viewed',
     anonymousId: 'safe-anon',
     sessionId: 'safe-session',
     source: 'buyer@example.com',
     medium: 'organic',
-    pagePath: '/services/buyer@example.com',
+    pagePath: '/services/laser-cutting-machine-repair',
+  });
+  await seedEvent(db, {
+    id: 'unsafe-source-phone',
+    eventName: 'seo_landing_viewed',
+    anonymousId: 'safe-anon-2',
+    sessionId: 'safe-session-2',
+    source: '4155550123',
+    medium: 'organic',
+    pagePath: '/services/laser-cutting-machine-repair',
+  });
+  await seedEvent(db, {
+    id: 'unsafe-page-phone',
+    eventName: 'seo_landing_viewed',
+    anonymousId: 'safe-anon-3',
+    sessionId: 'safe-session-3',
+    source: 'google_organic',
+    medium: 'organic',
+    pagePath: '/services/4155550123',
+  });
+  await seedEvent(db, {
+    id: 'unsafe-page-contact',
+    eventName: 'seo_landing_viewed',
+    anonymousId: 'safe-anon-4',
+    sessionId: 'safe-session-4',
+    source: 'google_organic',
+    medium: 'organic',
+    pagePath: '/services/contact-buyer@example.com',
+  });
+  await seedEvent(db, {
+    id: 'unsafe-medium-phone',
+    eventName: 'seo_landing_viewed',
+    anonymousId: 'safe-anon-5',
+    sessionId: 'safe-session-5',
+    source: 'google_organic',
+    medium: '4155550123',
+    pagePath: '/services/laser-cutting-machine-repair',
   });
 
   const result = await loadOrganicAcquisition({ com: db }, filters({
     from: '2026-08-01', to: '2026-08-01', market: 'com',
   }));
 
-  assert.equal(result.pages[0].pagePath, 'unknown');
-  assert.equal(result.sources[0].source, 'unknown');
-  assert.equal(JSON.stringify(result).includes('buyer@example.com'), false);
+  const unknownPage = result.pages.find((row) => row.pagePath === 'unknown');
+  const unknownSource = result.sources.find((row) => row.source === 'unknown' && row.medium === 'organic');
+  const serialized = JSON.stringify(result);
+  assert.equal(result.summary.landingSessions, 4);
+  assert.equal(unknownPage.landingSessions, 2);
+  assert.equal(unknownSource.landingSessions, 2);
+  for (const rawValue of ['buyer@example.com', '4155550123', 'contact-buyer']) {
+    assert.equal(serialized.includes(rawValue), false);
+  }
+  assert.equal(/anonymous_id|session_id|user_id|properties_json|request_id|ip_hash|user_agent/i.test(serialized), false);
 });
 
 test('parsePromotionFilters uses inclusive Shanghai report days and a five-minute live cutoff', () => {
