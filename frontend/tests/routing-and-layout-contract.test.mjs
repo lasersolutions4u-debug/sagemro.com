@@ -6,7 +6,7 @@ import test from 'node:test';
 const root = path.resolve(import.meta.dirname, '../..');
 const read = (relativePath) => readFileSync(path.join(root, relativePath), 'utf8');
 
-test('public frontend routes render a localized 404 after the SPA fallback loads React', () => {
+test('public frontend routes finish with a real 404 after private SPA rewrites', () => {
   const app = read('frontend/src/App.jsx');
   const notFound = read('frontend/src/components/common/NotFoundPage.jsx');
   const redirects = read('frontend/public/_redirects');
@@ -15,15 +15,20 @@ test('public frontend routes render a localized 404 after the SPA fallback loads
   assert.match(notFound, /This page doesn\\'t exist/);
   assert.match(notFound, /页面不存在/);
   assert.equal(existsSync(path.join(root, 'frontend/public/404.html')), false);
-  assert.equal(redirects.trim(), '/* /index.html 200');
-  assert.doesNotMatch(redirects, /\/\* \/404\.html 404/);
+  assert.match(redirects, /\/activate \/ 200/);
+  assert.match(redirects, /\/engineer \/ 200/);
+  assert.match(redirects, /\/work-orders\/\* \/ 200/);
+  assert.doesNotMatch(redirects, /^https?:\/\//m);
+  assert.doesNotMatch(redirects, /\/404\.html 404/);
+  assert.doesNotMatch(redirects, /^\/\* \/index\.html 200$/m);
 });
 
 test('tool and insight detail routes reject unknown slugs', () => {
   const tools = read('frontend/src/components/Tools/IndustryToolsPage.jsx');
   const insights = read('frontend/src/components/Insights/InsightsPage.jsx');
 
-  assert.match(tools, /slug && !selectedTool/);
+  assert.match(tools, /const isMissing = page === 'not-found'/);
+  assert.match(tools, /getIndustryToolsSeoMetadata/);
   assert.match(insights, /slug && !insight/);
 });
 

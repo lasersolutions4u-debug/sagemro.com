@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
 import {
   ArrowLeft,
+  ArrowRight,
   Calculator,
   ChartNoAxesCombined,
   CircleDollarSign,
@@ -14,18 +15,23 @@ import {
 import { BrandMark } from '../common/BrandMark';
 import { Footer } from '../common/Footer';
 import { NotFoundPage } from '../common/NotFoundPage';
-import { BendSimulatorPage } from './BendSimulatorPage';
 import { IndustryToolCalculator } from './IndustryToolCalculator';
 import {
+  buildIndustryToolReviewPrompt,
+  calculateIndustryToolResult,
   defaultIndustryToolForms,
   getLocalizedMaterialDensities,
   getLocalizedShapeProfiles,
   getLocalizedTool,
+  getToolWorkedExample,
   publicIndustryTools,
 } from '../../data/industryTools';
-import { getIndustryToolsPageState } from '../../utils/industryToolsPage';
+import { getIndustryToolsPageState, getIndustryToolsSeoMetadata } from '../../utils/industryToolsPage';
 import { isCnLocale } from '../../utils/locale';
 import { setSeoMetadata } from '../../utils/seo';
+import { createAcquisitionEventActions } from '../../hooks/useAcquisitionTracking';
+
+const BendSimulatorPage = lazy(() => import('./BendSimulatorPage').then(m => ({ default: m.BendSimulatorPage })));
 
 const toolIcons = {
   'metal-weight': Scale,
@@ -89,30 +95,39 @@ const toolsPageCopy = {
   },
 };
 
-export function IndustryToolsPage({ pathname = '/tools', onOpenLegal, onSendMessage, onNavigateHome }) {
+export function IndustryToolsPage({ pathname = '/tools', acquisitionContext, onOpenLegal, onSendMessage, onNavigateHome }) {
   const locale = isCnLocale() ? 'zh-CN' : 'en';
   const route = getIndustryToolsPageState(pathname, locale);
-  const { canonicalHost, canonical, page, selectedTool, slug } = route;
+  const { canonical, page, selectedTool, slug } = route;
   const copy = toolsPageCopy[locale];
   const [forms, setForms] = useState(defaultIndustryToolForms);
-  const isMissing = Boolean(slug && !selectedTool);
-  const isPausedTool = selectedTool?.id === 'bend-simulator';
+  const isMissing = page === 'not-found';
   const pageTitle = selectedTool ? selectedTool.seoTitle : copy.hubTitle;
   const pageDescription = selectedTool
     ? selectedTool.seoDescription
     : copy.hubDescription;
+  const { onToolStarted, onToolCompleted } = useMemo(() => createAcquisitionEventActions({
+    contentType: 'tool',
+    contentSlug: selectedTool?.slug || '',
+    indexable: acquisitionContext?.indexable
+      && page === 'tool-detail'
+      && selectedTool?.seoEvidence?.indexable === true,
+  }), [acquisitionContext?.indexable, page, selectedTool?.seoEvidence?.indexable, selectedTool?.slug]);
 
   useEffect(() => {
+    const seoMetadata = getIndustryToolsSeoMetadata({ canonical, page, selectedTool, slug }, locale);
     setSeoMetadata({
       title: `${pageTitle} | SAGEMRO`,
       description: pageDescription,
-      canonical,
+      canonical: seoMetadata.canonical,
+      alternates: seoMetadata.alternates,
       lang: locale === 'zh-CN' ? 'zh-CN' : 'en',
-      robots: isMissing || isPausedTool ? 'noindex,nofollow,noarchive' : 'index,follow',
+      robots: seoMetadata.robots,
+      structuredData: seoMetadata.structuredData,
     });
-  }, [canonical, canonicalHost, isMissing, isPausedTool, locale, pageDescription, pageTitle, selectedTool]);
+  }, [canonical, locale, page, pageDescription, pageTitle, selectedTool, slug]);
 
-  if (slug && !selectedTool) {
+  if (isMissing) {
     return <NotFoundPage isCn={locale === 'zh-CN'} />;
   }
 
@@ -121,7 +136,11 @@ export function IndustryToolsPage({ pathname = '/tools', onOpenLegal, onSendMess
   }
 
   if (page === 'bend-simulator') {
-    return <BendSimulatorPage tool={selectedTool} copy={copy} locale={locale} onOpenLegal={onOpenLegal} />;
+    return (
+      <Suspense fallback={null}>
+        <BendSimulatorPage tool={selectedTool} copy={copy} locale={locale} onOpenLegal={onOpenLegal} />
+      </Suspense>
+    );
   }
 
   return (
@@ -142,6 +161,8 @@ export function IndustryToolsPage({ pathname = '/tools', onOpenLegal, onSendMess
       onOpenLegal={onOpenLegal}
       onSendMessage={onSendMessage}
       onNavigateHome={onNavigateHome}
+      onToolStarted={onToolStarted}
+      onToolCompleted={onToolCompleted}
     />
   );
 }
@@ -192,7 +213,7 @@ function ToolsHub({ copy, locale, onOpenLegal }) {
               {copy.eyebrow}
             </div>
           </div>
-          <h1 className="mt-5 max-w-2xl break-keep text-3xl font-semibold leading-[1.1] text-[var(--color-text-primary)] sm:text-[2.4rem]">
+          <h1 className="mt-5 max-w-2xl break-words text-3xl font-semibold leading-[1.1] text-[var(--color-text-primary)] sm:text-[2.4rem]">
             {copy.h1}
           </h1>
           <p className="mt-4 max-w-2xl text-sm leading-7 text-[var(--color-text-secondary)] sm:text-base">
@@ -251,7 +272,7 @@ function ToolReferenceItem({ item, isFirst }) {
   );
 }
 
-function ToolDetail({ tool, copy, locale, values, onChange, onOpenLegal, onSendMessage, onNavigateHome }) {
+function ToolDetail({ tool, copy, locale, values, onChange, onOpenLegal, onSendMessage, onNavigateHome, onToolStarted, onToolCompleted }) {
   const relatedTools = useMemo(
     () => publicIndustryTools.filter((item) => item.id !== tool.id).map((item) => getLocalizedTool(item, locale)),
     [locale, tool.id],
@@ -260,6 +281,8 @@ function ToolDetail({ tool, copy, locale, values, onChange, onOpenLegal, onSendM
     onSendMessage?.(prompt);
     onNavigateHome?.();
   };
+  const currentResult = useMemo(() => calculateIndustryToolResult(tool.id, values), [tool.id, values]);
+  const handleEvidenceReview = () => handleSendToolReview(buildIndustryToolReviewPrompt(tool, currentResult));
 
   return (
     <ToolPageShell copy={copy} onOpenLegal={onOpenLegal}>
@@ -277,7 +300,7 @@ function ToolDetail({ tool, copy, locale, values, onChange, onOpenLegal, onSendM
               <Calculator size={14} className="text-[var(--color-primary)]" />
               {copy.detailEyebrow}
             </div>
-            <h1 className="mt-4 break-keep text-3xl font-semibold leading-[1.08] text-[var(--color-text-primary)] sm:text-[2.75rem]">
+            <h1 className="mt-4 break-words text-3xl font-semibold leading-[1.08] text-[var(--color-text-primary)] sm:text-[2.75rem]">
               {tool.seoTitle}
             </h1>
             <p className="mt-4 max-w-3xl text-sm leading-7 text-[var(--color-text-secondary)] sm:text-base">
@@ -289,7 +312,7 @@ function ToolDetail({ tool, copy, locale, values, onChange, onOpenLegal, onSendM
 
         <section className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
           <div className="min-w-0">
-            <IndustryToolCalculator tool={tool} values={values} onChange={onChange} onSendMessage={handleSendToolReview} />
+            <IndustryToolCalculator tool={tool} values={values} onChange={onChange} onSendMessage={handleSendToolReview} onToolStarted={onToolStarted} onToolCompleted={onToolCompleted} showReviewCta={!tool.seoEvidence?.formula} />
           </div>
           <aside aria-label="Related tools" className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-elevated)] p-4">
             <div className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--color-text-muted)]">
@@ -305,14 +328,8 @@ function ToolDetail({ tool, copy, locale, values, onChange, onOpenLegal, onSendM
           </aside>
         </section>
 
-        <section className="mt-6 grid gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
-          <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-elevated)] p-4">
-            <h2 className="text-lg font-semibold text-[var(--color-text-primary)]">{tool.guideTitle}</h2>
-            <p className="mt-2 text-sm leading-7 text-[var(--color-text-secondary)]">{tool.guideBody}</p>
-            <div className="mt-4 rounded-lg bg-[#111820] px-4 py-3 text-xs leading-relaxed text-white/85">
-              {copy.keepInputs}
-            </div>
-          </div>
+        <section className="mt-6 grid gap-4">
+          <ToolEvidence tool={tool} locale={locale} onReview={handleEvidenceReview} />
 
           <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-elevated)] p-4">
             <h2 className="text-lg font-semibold text-[var(--color-text-primary)]">{copy.faq}</h2>
@@ -325,10 +342,69 @@ function ToolDetail({ tool, copy, locale, values, onChange, onOpenLegal, onSendM
               ))}
             </div>
           </div>
+
+          <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-elevated)] p-4">
+            <h2 className="text-lg font-semibold text-[var(--color-text-primary)]">{tool.guideTitle}</h2>
+            <p className="mt-2 text-sm leading-7 text-[var(--color-text-secondary)]">{tool.guideBody}</p>
+            <div className="mt-4 rounded-lg bg-[#111820] px-4 py-3 text-xs leading-relaxed text-white/85">
+              {copy.keepInputs}
+            </div>
+          </div>
         </section>
       </main>
     </ToolPageShell>
   );
+}
+
+function ToolEvidence({ tool, locale, onReview }) {
+  const evidence = tool.seoEvidence;
+  const isCn = locale === 'zh-CN';
+  const copy = isCn
+    ? { formula: '公式', example: '示例结果', assumptions: '假设', limitations: '局限', safety: '安全边界', review: '工程师复核', references: '参考依据', reviewAction: '请 SAGEMRO AI 复核此结果' }
+    : { formula: 'Formula', example: 'Worked example', assumptions: 'Assumptions', limitations: 'Limitations', safety: 'Safety boundary', review: 'Engineer review', references: 'References', reviewAction: 'Ask SAGEMRO AI to review this result' };
+  const example = useMemo(() => getToolWorkedExample(tool, locale), [locale, tool]);
+
+  if (!evidence?.formula || !example) return null;
+
+  return (
+    <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-elevated)] p-4">
+      <EvidenceBlock title={copy.formula}>
+        <p>{evidence.formula}</p>
+        <h3 className="mt-3 text-sm font-semibold text-[var(--color-text-primary)]">{copy.references}</h3>
+        <ul className="mt-1 list-disc space-y-1 pl-5">
+          {evidence.references.map((reference) => <li key={reference}>{reference}</li>)}
+        </ul>
+      </EvidenceBlock>
+      <EvidenceBlock title={copy.example}>
+        <p>{example.intro}</p>
+        <div className="mt-3 space-y-2">
+          {example.result.rows.map(([label, value]) => (
+            <div key={label} className="flex items-start justify-between gap-4 rounded-lg bg-[var(--color-surface)] px-3 py-2 text-sm">
+              <span>{label}</span><strong className="text-right text-[var(--color-text-primary)]">{value}</strong>
+            </div>
+          ))}
+        </div>
+      </EvidenceBlock>
+      <EvidenceBlock title={copy.assumptions}><EvidenceList items={evidence.assumptions} /></EvidenceBlock>
+      <EvidenceBlock title={copy.limitations}><EvidenceList items={evidence.limitations} /></EvidenceBlock>
+      <EvidenceBlock title={copy.safety}><p>{evidence.safetyBoundary}</p></EvidenceBlock>
+      <EvidenceBlock title={copy.review}>
+        <p>{evidence.reviewPrompt}</p>
+        <button type="button" onClick={onReview} className="mt-3 inline-flex items-center gap-2 rounded-xl bg-[var(--color-primary)] px-4 py-2.5 text-sm font-medium text-white transition hover:bg-[var(--color-primary-hover)]">
+          {copy.reviewAction}
+          <ArrowRight size={16} />
+        </button>
+      </EvidenceBlock>
+    </div>
+  );
+}
+
+function EvidenceBlock({ title, children }) {
+  return <section className="border-t border-[var(--color-border)] py-4 first:border-t-0 first:pt-0 text-sm leading-6 text-[var(--color-text-secondary)]"><h2 className="text-lg font-semibold text-[var(--color-text-primary)]">{title}</h2><div className="mt-2">{children}</div></section>;
+}
+
+function EvidenceList({ items }) {
+  return <ul className="list-disc space-y-1 pl-5">{items.map((item) => <li key={item}>{item}</li>)}</ul>;
 }
 
 function ToolLinkCard({ tool }) {

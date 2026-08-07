@@ -3,48 +3,53 @@ import { ArrowLeft, BookOpen, Calculator, Newspaper } from 'lucide-react';
 import { BrandMark } from '../common/BrandMark';
 import { Footer } from '../common/Footer';
 import { NotFoundPage } from '../common/NotFoundPage';
-import { getInsightBySlug, insights } from '../../data/insights';
+import { getLocalizedInsights, insights } from '../../data/insights';
+import { getDiagnosticGuide } from '../../data/diagnosticGuides';
+import { getPublicSeoRoute } from '../../data/publicSeoRoutes';
+import { DiagnosticGuide } from './DiagnosticGuide';
 import { isCnLocale } from '../../utils/locale';
 import { setSeoMetadata } from '../../utils/seo';
 
-export function InsightsPage({ pathname = '/insights', onOpenLegal }) {
+export function InsightsPage({ pathname = '/insights', acquisitionContext, onOpenLegal, onStartDiagnosis, onOpenServiceRequest }) {
   const slug = pathname.split('/insights/')[1]?.replace(/\/$/, '') || '';
-  const insight = getInsightBySlug(slug);
+  const locale = isCnLocale() ? 'zh-CN' : 'en';
+  const guide = getDiagnosticGuide(slug, locale);
+  const insight = getLocalizedInsight(slug, locale);
 
   useEffect(() => {
-    const title = insight ? insight.title : 'SAGEMRO Insights for Laser and Metal Forming Equipment';
-    const description = insight
-      ? insight.description
+    const content = guide || insight;
+    const title = content ? content.title : 'SAGEMRO Insights for Laser and Metal Forming Equipment';
+    const description = content
+      ? content.description
       : 'Practical notes, calculators, and decision guides for laser and metal forming equipment.';
-    const locale = isCnLocale() ? 'zh-CN' : 'en';
     const canonicalHost = locale === 'zh-CN' ? 'https://sagemro.cn' : 'https://sagemro.com';
-    const isMissing = Boolean(slug && !insight);
+    const isMissing = Boolean(slug && !content);
+    const publicRoute = getPublicSeoRoute(content ? `/insights/${content.slug}` : '/insights', locale);
     setSeoMetadata({
       title: isMissing ? 'Insight Not Found | SAGEMRO' : `${title} | SAGEMRO`,
       description: isMissing ? 'The requested SAGEMRO insight could not be found.' : description,
-      canonical: `${canonicalHost}${insight ? `/insights/${insight.slug}` : slug ? `/insights/${slug}` : '/insights'}`,
+      canonical: `${canonicalHost}${content ? `/insights/${content.slug}` : slug ? `/insights/${slug}` : '/insights'}`,
       lang: locale,
       robots: isMissing ? 'noindex,nofollow,noarchive' : 'index,follow',
-      structuredData: insight ? {
-        '@context': 'https://schema.org',
-        '@type': 'Article',
-        headline: insight.title,
-        description: insight.description,
-        url: `${canonicalHost}/insights/${insight.slug}`,
-        publisher: { '@type': 'Organization', name: 'SAGEMRO' },
-      } : null,
+      structuredData: isMissing ? null : publicRoute?.structuredData,
     });
-  }, [insight, slug]);
+  }, [guide, insight, locale, slug]);
 
-  if (slug && !insight) {
-    return <NotFoundPage />;
+  if (slug && !insight && !guide) {
+    return <NotFoundPage isCn={locale === 'zh-CN'} />;
   }
+
+  if (guide) return <InsightShell onOpenLegal={onOpenLegal}><DiagnosticGuide guide={guide} locale={locale} acquisitionContext={acquisitionContext} onStartDiagnosis={onStartDiagnosis} onOpenServiceRequest={onOpenServiceRequest} /></InsightShell>;
 
   if (insight) {
     return <InsightDetail insight={insight} onOpenLegal={onOpenLegal} />;
   }
 
   return <InsightsHub onOpenLegal={onOpenLegal} />;
+}
+
+function getLocalizedInsight(slug, locale) {
+  return getLocalizedInsights(locale).find((item) => item.slug === slug) || null;
 }
 
 function InsightsHub({ onOpenLegal }) {

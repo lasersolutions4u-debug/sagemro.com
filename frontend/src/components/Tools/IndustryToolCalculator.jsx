@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { ArrowRight, Ruler } from 'lucide-react';
 import {
   assistGasOptions,
@@ -105,12 +105,35 @@ function getFieldsForTool(toolId, values) {
   return [];
 }
 
-export function IndustryToolCalculator({ tool, values, onChange, onSendMessage, onAfterSend }) {
+function hasValidResult(result) {
+  return Array.isArray(result?.rows)
+    && result.rows.length > 0
+    && result.rows.every(([label, value]) => Boolean(label) && value !== undefined && value !== null && String(value).trim() !== '');
+}
+
+export function IndustryToolCalculator({ tool, values, onChange, onSendMessage, onAfterSend, onToolStarted, onToolCompleted, showReviewCta = true }) {
   const currentValues = values || defaultIndustryToolForms[tool.id];
   const result = useMemo(() => calculateIndustryToolResult(tool.id, currentValues), [tool.id, currentValues]);
   const fields = getFieldsForTool(tool.id, currentValues);
+  const startedToolRef = useRef(null);
+  const completedToolRef = useRef(null);
+
+  useEffect(() => {
+    startedToolRef.current = null;
+    completedToolRef.current = null;
+  }, [tool.id]);
+
+  useEffect(() => {
+    if (startedToolRef.current !== tool.id || completedToolRef.current === tool.id || !hasValidResult(result)) return;
+    completedToolRef.current = tool.id;
+    onToolCompleted?.(tool.id, true);
+  }, [onToolCompleted, result, tool.id]);
 
   const updateValue = (name, value) => {
+    if (startedToolRef.current !== tool.id) {
+      startedToolRef.current = tool.id;
+      onToolStarted?.(tool.id);
+    }
     onChange?.(name, value);
   };
 
@@ -238,7 +261,7 @@ export function IndustryToolCalculator({ tool, values, onChange, onSendMessage, 
           <strong className="block font-semibold">Planning estimate</strong>
           <span>{result.note} Confirm before production or purchasing.</span>
         </div>
-        {onSendMessage && (
+        {showReviewCta && onSendMessage && (
           <button
             type="button"
             onClick={sendForReview}

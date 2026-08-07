@@ -4,7 +4,6 @@ import { Footer } from './components/common/Footer';
 import { NotFoundPage } from './components/common/NotFoundPage';
 import { Sidebar } from './components/Sidebar/Sidebar';
 import { ChatHistory } from './components/Sidebar/ChatHistory';
-import { ChatArea } from './components/Chat/ChatArea';
 import { Modal } from './components/common/Modal';
 import { FeedbackHost } from './components/common/FeedbackHost';
 import { PushNotificationBanner } from './components/PushNotification/PushNotificationBanner';
@@ -14,6 +13,8 @@ import { usePushNotification } from './hooks/usePushNotification';
 import { generateId } from './utils/helpers';
 import { isCnLocale } from './utils/locale';
 import { setSeoMetadata } from './utils/seo';
+import { getServicePageRoute } from './utils/servicePageRoute';
+import { getPublicAcquisitionContext, useAcquisitionTracking } from './hooks/useAcquisitionTracking';
 import { submitWorkOrder as submitWorkOrderApi, getConversation as getConversationApi, getUnreadNotificationCount, trackFunnelEvent, restoreSession, logout as logoutSession } from './services/api';
 import { createAnalyticsRequestId } from './services/funnelAnalytics';
 
@@ -35,6 +36,9 @@ const NotificationModal = lazy(() => import('./components/Notification/Notificat
 const IndustryToolsModal = lazy(() => import('./components/Tools/IndustryToolsModal').then(m => ({ default: m.IndustryToolsModal })));
 const IndustryToolsPage = lazy(() => import('./components/Tools/IndustryToolsPage').then(m => ({ default: m.IndustryToolsPage })));
 const InsightsPage = lazy(() => import('./components/Insights/InsightsPage').then(m => ({ default: m.InsightsPage })));
+const ServicePages = lazy(() => import('./components/Services/ServicePages').then(m => ({ default: m.ServicePages })));
+const TechnicalReviewPage = lazy(() => import('./components/About/TechnicalReviewPage').then(m => ({ default: m.TechnicalReviewPage })));
+const ChatArea = lazy(() => import('./components/Chat/ChatArea').then(m => ({ default: m.ChatArea })));
 
 function App() {
   const isEngineerHost = typeof window !== 'undefined'
@@ -66,19 +70,37 @@ function App() {
   const [currentUser, setCurrentUser] = useState(null);
   const [userType, setUserType] = useState(null);
   const [authReady, setAuthReady] = useState(false);
+  const [sessionRestoreComplete, setSessionRestoreComplete] = useState(false);
   const [currentPath, setCurrentPath] = useState(() => window.location.pathname);
+  const isTechnicalReviewPath = currentPath === '/about/technical-review'
+    || currentPath === '/about/technical-review/';
   const authVersionRef = useRef(0);
   const engineerWorkOrderMatch = currentPath.match(/^\/work-orders\/([^/]+)$/);
   const engineerWorkOrderId = engineerWorkOrderMatch ? decodeURIComponent(engineerWorkOrderMatch[1]) : '';
+  const publicRoutePath = currentPath === '/' ? '/' : currentPath.replace(/\/$/, '');
+  const acquisitionContext = getPublicAcquisitionContext({
+    pathname: publicRoutePath,
+    locale: isCn ? 'zh-CN' : 'en',
+    sessionRestoreComplete,
+    isEngineerHost,
+    userType,
+  });
+  useAcquisitionTracking(acquisitionContext);
 
   useEffect(() => {
     const isToolsOrInsights = currentPath === '/tools'
       || currentPath.startsWith('/tools/')
       || currentPath === '/insights'
-      || currentPath.startsWith('/insights/');
+      || currentPath.startsWith('/insights/')
+      || currentPath === '/services'
+      || currentPath.startsWith('/services/')
+      || isTechnicalReviewPath;
     if (isToolsOrInsights || (isEngineerHost && currentPath === '/' && !userType)) return;
 
     const isPublicPath = currentPath === '/'
+      || currentPath === '/services'
+      || currentPath.startsWith('/services/')
+      || isTechnicalReviewPath
       || (isEngineerHost && currentPath === '/');
     const isPrivateApp = Boolean(userType) || !isPublicPath;
     const title = isCn ? 'SAGEMRO 智能服务系统' : 'SAGEMRO Service OS';
@@ -101,7 +123,7 @@ function App() {
         email: 'support@sagemro.com',
       },
     });
-  }, [currentPath, isCn, isEngineerHost, userType]);
+  }, [currentPath, isCn, isEngineerHost, isTechnicalReviewPath, userType]);
 
   // 通知未读数
   const [unreadCount, setUnreadCount] = useState(0);
@@ -143,7 +165,10 @@ function App() {
         setCurrentUser(null);
         setUserType(null);
       })
-      .finally(() => setAuthReady(true));
+      .finally(() => {
+        setAuthReady(true);
+        setSessionRestoreComplete(true);
+      });
   }, []);
 
   useEffect(() => {
@@ -230,7 +255,7 @@ function App() {
     clearMessages();
     setSidebarOpen(false);
     setHistoryModalOpen(false);
-  }, [clearMessages]);
+  }, [clearMessages, setHistoryModalOpen, setSidebarOpen]);
 
   // 选择对话
   const handleSelectConversation = useCallback(async (conv) => {
@@ -258,7 +283,7 @@ function App() {
     }
     setSidebarOpen(false);
     setHistoryModalOpen(false);
-  }, [conversationId, currentUser, clearMessages, loadMessages]);
+  }, [conversationId, currentUser, clearMessages, loadMessages, setHistoryModalOpen, setSidebarOpen]);
 
   // 发送消息
   const handleSendMessage = useCallback(async (content, images) => {
@@ -377,13 +402,13 @@ function App() {
         .then((data) => loadMessages(data.messages || [], conversationId))
         .catch(() => clearMessages());
     }
-  }, [conversationId, loadMessages, clearMessages]);
+  }, [conversationId, loadMessages, clearMessages, setCurrentUser, setLoginModalOpen, setUserType]);
 
   const handleActivationLoginSuccess = useCallback((userData) => {
     handleLoginSuccess(userData);
     window.history.replaceState({}, '', '/');
     setCurrentPath('/');
-  }, [handleLoginSuccess]);
+  }, [handleLoginSuccess, setCurrentPath]);
 
   // 登出
   const handleLogout = useCallback(() => {
@@ -402,7 +427,7 @@ function App() {
       window.history.replaceState({}, '', '/');
       setCurrentPath('/');
     }
-  }, [currentPath, isEngineerHost]);
+  }, [currentPath, isEngineerHost, setCurrentPath, setCurrentUser, setUserType]);
 
   // 监听 401 自动登出事件（由 services/api.js 的 fetch 拦截器触发）
   // token 过期 / 被踢下线时，清掉本地状态并弹出登录框，避免后续操作继续命中 401
@@ -426,18 +451,27 @@ function App() {
   const handleOpenWorkOrderDetail = useCallback((workOrderId) => {
     // 打开我的工单列表（目前没有单独详情页入口，通过列表查看）
     setMyWorkOrdersModalOpen(true);
-  }, []);
+  }, [setMyWorkOrdersModalOpen]);
 
   // 打开法律文档
   const openLegal = useCallback((tab = 'agreement') => {
     setLegalInitialTab(tab);
     setLegalModalOpen(true);
-  }, []);
+  }, [setLegalInitialTab, setLegalModalOpen]);
 
   const navigateHome = useCallback(() => {
     window.history.pushState({}, '', '/');
     setCurrentPath('/');
-  }, []);
+  }, [setCurrentPath]);
+
+  const handleServiceDiagnosis = useCallback(() => {
+    window.history.pushState({}, '', '/');
+    setCurrentPath('/');
+  }, [setCurrentPath]);
+
+  const handleServiceRequest = useCallback(() => {
+    setWorkOrderModalOpen(true);
+  }, [setWorkOrderModalOpen]);
 
   const showEngineerWorkspace = (isEngineerHost || currentPath === '/engineer') && userType === 'engineer';
 
@@ -518,7 +552,9 @@ function App() {
 
   const isToolsPath = currentPath === '/tools' || currentPath.startsWith('/tools/');
   const isInsightsPath = currentPath === '/insights' || currentPath.startsWith('/insights/');
-  if (currentPath !== '/' && !isToolsPath && !isInsightsPath) {
+  const serviceRoute = getServicePageRoute(currentPath);
+  const isServicesPath = serviceRoute !== null;
+  if (currentPath !== '/' && !isToolsPath && !isInsightsPath && !isServicesPath && !isTechnicalReviewPath) {
     return <NotFoundPage isCn={isCn} />;
   }
 
@@ -528,6 +564,7 @@ function App() {
         <Suspense fallback={null}>
           <IndustryToolsPage
             pathname={currentPath}
+            acquisitionContext={acquisitionContext}
             onOpenLegal={openLegal}
             onSendMessage={handleSendMessage}
             onNavigateHome={navigateHome}
@@ -547,12 +584,55 @@ function App() {
     return (
       <ErrorBoundary>
         <Suspense fallback={null}>
-          <InsightsPage pathname={currentPath} onOpenLegal={openLegal} />
+          <InsightsPage
+            pathname={currentPath}
+            acquisitionContext={acquisitionContext}
+            onOpenLegal={openLegal}
+            onStartDiagnosis={handleServiceDiagnosis}
+            onOpenServiceRequest={handleServiceRequest}
+          />
+          {workOrderModalOpen && (
+            <WorkOrderModal isOpen={workOrderModalOpen} onClose={() => setWorkOrderModalOpen(false)} onSubmit={handleSubmitWorkOrder} />
+          )}
           <LegalModal
             isOpen={legalModalOpen}
             onClose={() => setLegalModalOpen(false)}
             initialTab={legalInitialTab}
           />
+        </Suspense>
+        <FeedbackHost />
+      </ErrorBoundary>
+    );
+  }
+
+  if (isServicesPath) {
+    return (
+      <ErrorBoundary>
+        <Suspense fallback={null}>
+          <ServicePages
+            pathname={currentPath}
+            locale={isCn ? 'zh-CN' : 'en'}
+            acquisitionContext={acquisitionContext}
+            onStartDiagnosis={handleServiceDiagnosis}
+            onOpenServiceRequest={handleServiceRequest}
+            onOpenLegal={openLegal}
+          />
+          {workOrderModalOpen && (
+            <WorkOrderModal isOpen={workOrderModalOpen} onClose={() => setWorkOrderModalOpen(false)} onSubmit={handleSubmitWorkOrder} />
+          )}
+          <LegalModal isOpen={legalModalOpen} onClose={() => setLegalModalOpen(false)} initialTab={legalInitialTab} />
+        </Suspense>
+        <FeedbackHost />
+      </ErrorBoundary>
+    );
+  }
+
+  if (isTechnicalReviewPath) {
+    return (
+      <ErrorBoundary>
+        <Suspense fallback={null}>
+          <TechnicalReviewPage locale={isCn ? 'zh-CN' : 'en'} onOpenLegal={openLegal} />
+          <LegalModal isOpen={legalModalOpen} onClose={() => setLegalModalOpen(false)} initialTab={legalInitialTab} />
         </Suspense>
         <FeedbackHost />
       </ErrorBoundary>
@@ -636,17 +716,19 @@ function App() {
 
       {/* 主聊天区域 */}
       <div className="flex-1 flex flex-col min-w-0 min-h-0">
-        <ChatArea
-          messages={messages}
-          isStreaming={isStreaming}
-          onSendMessage={handleSendMessage}
-          onStopGeneration={stopGeneration}
-          onNewChat={handleNewChat}
-          currentTitle={currentTitle}
-          onToggleSidebar={() => setSidebarOpen(true)}
-          onOpenLegal={openLegal}
-          onOpenAbout={() => setAboutModalOpen(true)}
-        />
+        <Suspense fallback={null}>
+          <ChatArea
+            messages={messages}
+            isStreaming={isStreaming}
+            onSendMessage={handleSendMessage}
+            onStopGeneration={stopGeneration}
+            onNewChat={handleNewChat}
+            currentTitle={currentTitle}
+            onToggleSidebar={() => setSidebarOpen(true)}
+            onOpenLegal={openLegal}
+            onOpenAbout={() => setAboutModalOpen(true)}
+          />
+        </Suspense>
       </div>
 
       {/* Modals — 重型组件使用 Suspense 懒加载 */}

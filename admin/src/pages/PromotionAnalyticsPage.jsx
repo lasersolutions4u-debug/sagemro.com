@@ -1,18 +1,20 @@
 import { useEffect, useRef, useState } from 'react';
 import { PromotionFilters, createPromotionFilters } from '../components/promotion/PromotionFilters.jsx';
 import { ChannelAnalysis, ChannelFilterAffordance } from '../components/promotion/ChannelAnalysis.jsx';
+import { OrganicAcquisition } from '../components/promotion/OrganicAcquisition.jsx';
 import { PromotionOverview } from '../components/promotion/PromotionOverview.jsx';
 import { runtimeConfig } from '../config/runtime';
-import { getPromotionChannels, getPromotionOverview } from '../services/api.js';
+import { getOrganicAcquisition, getPromotionChannels, getPromotionOverview } from '../services/api.js';
 import { DIRECT_ATTRIBUTION_FILTER } from './promotionAnalyticsView.js';
 
 const EMPTY_STATE = { status: 'loading', data: null, error: '' };
 const TAB_DEFINITIONS = [
   { key: 'overview', tabId: 'promotion-overview-tab', panelId: 'promotion-overview-panel' },
   { key: 'channels', tabId: 'promotion-channels-tab', panelId: 'promotion-channels-panel' },
+  { key: 'acquisition', tabId: 'promotion-acquisition-tab', panelId: 'promotion-acquisition-panel' },
 ];
 
-export function PromotionAnalyticsPage({ loadOverview = getPromotionOverview, loadChannels = getPromotionChannels }) {
+export function PromotionAnalyticsPage({ loadOverview = getPromotionOverview, loadChannels = getPromotionChannels, loadOrganicAcquisition = getOrganicAcquisition }) {
   const isCn = runtimeConfig.locale === 'zh-CN';
   const [activeTab, setActiveTab] = useState('overview');
   const [draftFilters, setDraftFilters] = useState(() => createPromotionFilters(runtimeConfig.market));
@@ -20,10 +22,13 @@ export function PromotionAnalyticsPage({ loadOverview = getPromotionOverview, lo
   const [allowedMarkets, setAllowedMarkets] = useState(() => [runtimeConfig.market]);
   const [overviewState, setOverviewState] = useState(EMPTY_STATE);
   const [channelState, setChannelState] = useState(EMPTY_STATE);
+  const [acquisitionState, setAcquisitionState] = useState(EMPTY_STATE);
   const [reloadKey, setReloadKey] = useState(0);
   const [channelReloadKey, setChannelReloadKey] = useState(0);
+  const [acquisitionReloadKey, setAcquisitionReloadKey] = useState(0);
   const sequence = useRef(0);
   const channelSequence = useRef(0);
+  const acquisitionSequence = useRef(0);
   const tabRefs = useRef([]);
 
   useEffect(() => {
@@ -76,12 +81,35 @@ export function PromotionAnalyticsPage({ loadOverview = getPromotionOverview, lo
     };
   }, [activeFilters, activeTab, channelReloadKey, isCn, loadChannels]);
 
-  const activeData = activeTab === 'overview' ? overviewState.data : channelState.data;
-  const reportingTimezone = activeData?.reporting_timezone || 'Asia/Shanghai';
+  useEffect(() => {
+    if (activeTab !== 'acquisition') return undefined;
+    const controller = new AbortController();
+    const requestNumber = ++acquisitionSequence.current;
+    let disposed = false;
+    setAcquisitionState({ status: 'loading', data: null, error: '' });
+    loadOrganicAcquisition(activeFilters, controller.signal)
+      .then((data) => {
+        if (!disposed && acquisitionSequence.current === requestNumber) {
+          setAcquisitionState({ status: 'ready', data, error: '' });
+        }
+      })
+      .catch((error) => {
+        if (!disposed && error?.name !== 'AbortError' && acquisitionSequence.current === requestNumber) {
+          setAcquisitionState({ status: 'error', data: null, error: error?.message || (isCn ? '自然搜索与 AI 引荐暂时不可用' : 'Organic acquisition is temporarily unavailable') });
+        }
+      });
+    return () => {
+      disposed = true;
+      controller.abort();
+    };
+  }, [activeFilters, activeTab, acquisitionReloadKey, isCn, loadOrganicAcquisition]);
+
+  const activeData = activeTab === 'overview' ? overviewState.data : activeTab === 'channels' ? channelState.data : acquisitionState.data;
+  const reportingTimezone = activeData?.reporting_timezone || activeData?.reportingTimezone || 'Asia/Shanghai';
   const coverageStart = activeData?.data_quality?.coverageStart || activeData?.dataQuality?.coverageStart;
   const tabCopy = isCn
-    ? { overview: '推广概览', channels: '渠道分析', loading: '正在读取推广概览', retry: '重试', error: '无法读取推广概览' }
-    : { overview: 'Overview', channels: 'Channel Analysis', loading: 'Loading promotion overview', retry: 'Retry', error: 'Unable to load promotion overview' };
+    ? { overview: '推广概览', channels: '渠道分析', acquisition: '自然搜索与 AI 引荐', loading: '正在读取推广概览', retry: '重试', error: '无法读取推广概览' }
+    : { overview: 'Overview', channels: 'Channel Analysis', acquisition: 'Acquisition', loading: 'Loading promotion overview', retry: 'Retry', error: 'Unable to load promotion overview' };
 
   const applyFilters = () => setActiveFilters({ ...draftFilters });
   const applyChannel = (row) => {
@@ -125,7 +153,7 @@ export function PromotionAnalyticsPage({ loadOverview = getPromotionOverview, lo
       </div>
       <PromotionFilters filters={draftFilters} allowedMarkets={allowedMarkets} onChange={setDraftFilters} onApply={applyFilters} isCn={isCn} reportingTimezone={reportingTimezone} coverageStart={coverageStart} />
       <ChannelFilterAffordance activeFilters={activeFilters} isCn={isCn} onClear={clearChannel} />
-      {activeTab === 'overview' ? <div id="promotion-overview-panel" className="mt-4" role="tabpanel" aria-labelledby="promotion-overview-tab" aria-busy={overviewState.status === 'loading'}><OverviewState state={overviewState} isCn={isCn} retry={() => setReloadKey((current) => current + 1)} copy={tabCopy} /></div> : <div id="promotion-channels-panel" className="mt-4" role="tabpanel" aria-labelledby="promotion-channels-tab" aria-busy={channelState.status === 'loading'}><ChannelState state={channelState} isCn={isCn} activeFilters={activeFilters} retry={() => setChannelReloadKey((current) => current + 1)} onSelect={applyChannel} /></div>}
+      {activeTab === 'overview' ? <div id="promotion-overview-panel" className="mt-4" role="tabpanel" aria-labelledby="promotion-overview-tab" aria-busy={overviewState.status === 'loading'}><OverviewState state={overviewState} isCn={isCn} retry={() => setReloadKey((current) => current + 1)} copy={tabCopy} /></div> : activeTab === 'channels' ? <div id="promotion-channels-panel" className="mt-4" role="tabpanel" aria-labelledby="promotion-channels-tab" aria-busy={channelState.status === 'loading'}><ChannelState state={channelState} isCn={isCn} activeFilters={activeFilters} retry={() => setChannelReloadKey((current) => current + 1)} onSelect={applyChannel} /></div> : <div id="promotion-acquisition-panel" className="mt-4" role="tabpanel" aria-labelledby="promotion-acquisition-tab" aria-busy={acquisitionState.status === 'loading'}><AcquisitionState state={acquisitionState} isCn={isCn} retry={() => setAcquisitionReloadKey((current) => current + 1)} /></div>}
     </section>
   );
 }
@@ -156,4 +184,13 @@ function OverviewState({ state, isCn, retry, copy }) {
     return <section className="border border-[var(--color-error)]/50 bg-[var(--color-error)]/10 p-4 text-[var(--color-text)]" role="alert"><h2 className="font-semibold">{copy.error}</h2><p className="mt-1 text-sm text-[var(--color-text-secondary)]">{state.error}</p><button type="button" onClick={retry} className="mt-4 rounded-md border border-[var(--color-error)]/60 px-3 py-2 text-sm text-[var(--color-text)] outline-none hover:bg-[var(--color-error)]/10 focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]">{copy.retry}</button></section>;
   }
   return <PromotionOverview data={state.data} isCn={isCn} />;
+}
+
+function AcquisitionState({ state, isCn, retry }) {
+  const copy = isCn
+    ? { loading: '正在读取自然搜索与 AI 引荐', error: '无法读取自然搜索与 AI 引荐', retry: '重试' }
+    : { loading: 'Loading acquisition', error: 'Unable to load acquisition', retry: 'Retry' };
+  if (state.status === 'loading') return <div className="space-y-4" aria-label={copy.loading}><div className="h-24 border border-[var(--color-border)] bg-[var(--color-surface-elevated)]" /><div className="h-64 border border-[var(--color-border)] bg-[var(--color-surface)]" /></div>;
+  if (state.status === 'error') return <section className="border border-[var(--color-error)]/50 bg-[var(--color-error)]/10 p-4 text-[var(--color-text)]" role="alert"><h2 className="font-semibold">{copy.error}</h2><p className="mt-1 text-sm text-[var(--color-text-secondary)]">{state.error}</p><button type="button" onClick={retry} className="mt-4 rounded-md border border-[var(--color-error)]/60 px-3 py-2 text-sm text-[var(--color-text)] outline-none hover:bg-[var(--color-error)]/10 focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]">{copy.retry}</button></section>;
+  return <OrganicAcquisition data={state.data} isCn={isCn} />;
 }

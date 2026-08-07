@@ -1,3 +1,5 @@
+import { hasSensitiveText } from './redact.js';
+
 const REPORT_TIMEZONE_OFFSET_MS = 8 * 60 * 60 * 1000;
 const LIVE_DATA_DELAY_MS = 5 * 60 * 1000;
 const MAX_REPORT_DAYS = 90;
@@ -297,7 +299,7 @@ export function buildEventWhere(filters) {
 
 const FILTERED_EVENTS = (where) => `
   WITH filtered AS (
-    SELECT event_name, session_id, anonymous_id, source, medium, campaign, created_at,
+    SELECT event_name, session_id, anonymous_id, source, medium, campaign, page_path, created_at,
            json_extract(properties_json, '$.analytics_version') AS analytics_version,
            json_extract(properties_json, '$.request_id') AS request_id
     FROM funnel_events
@@ -365,6 +367,141 @@ function normalizeChannelRow(row = {}) {
     aiSuccesses: count(row.aiSuccesses),
     registrations: count(row.registrations),
     serviceRequests: count(row.serviceRequests),
+  };
+}
+
+const ACQUISITION_COUNT_FIELDS = [
+  'landingSessions',
+  'engagedSessions',
+  'toolCompletions',
+  'ctaClicks',
+  'aiRequests',
+  'serviceRequests',
+];
+
+function normalizeAcquisitionSummary(row = {}) {
+  return Object.fromEntries(ACQUISITION_COUNT_FIELDS.map((field) => [field, count(row[field])]));
+}
+
+function isRealIsoDate(value) {
+  const [year, month, day] = value.split('-').map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return date.getUTCFullYear() === year
+    && date.getUTCMonth() === month - 1
+    && date.getUTCDate() === day;
+}
+
+function isSafeExplicitVersion(value) {
+  const components = value.slice(1).split('.');
+  const boundedVersion = components.length >= 2
+    && components.length <= 4
+    && components.every((component) => /^\d{1,4}$/.test(component))
+    && components.reduce((total, component) => total + component.length, 0) <= 8;
+  const calendarVersion = components.length === 3
+    && /^\d{4}$/.test(components[0])
+    && /^\d{2}$/.test(components[1])
+    && /^\d{2}$/.test(components[2])
+    && isRealIsoDate(components.join('-'));
+  return boundedVersion && (calendarVersion || !hasSensitiveText(value.slice(1)));
+}
+
+function stripSafeAcquisitionTokens(value) {
+  return value
+    .replace(/\d{4}-\d{2}-\d{2}/g, (token) => (isRealIsoDate(token) ? 'SAFE_DATE' : token))
+    .replace(/v\d+(?:\.\d+)+/gi, (token) => (isSafeExplicitVersion(token) ? 'SAFE_VERSION' : token));
+}
+
+export function sanitizeAcquisitionDimension(dimension, value) {
+  const max = dimension === 'page' ? 240 : 120;
+  const text = String(value || '').trim();
+  if (!text || text.length > max || hasSensitiveText(stripSafeAcquisitionTokens(text))) return 'unknown';
+  if (dimension === 'page') return /^\/[A-Za-z0-9/_.-]{0,239}$/.test(text) ? text : 'unknown';
+  return /^[A-Za-z0-9_.-]{1,120}$/.test(text) ? text : 'unknown';
+}
+
+function normalizeAcquisitionPageRow(row = {}) {
+  return {
+    pagePath: sanitizeAcquisitionDimension('page', row.pagePath),
+    ...normalizeAcquisitionSummary(row),
+  };
+}
+
+function normalizeAcquisitionSourceRow(row = {}) {
+  return {
+    source: sanitizeAcquisitionDimension('source', row.source),
+    medium: sanitizeAcquisitionDimension('medium', row.medium),
+    ...normalizeAcquisitionSummary(row),
+  };
+}
+
+function organicAcquisitionSql(where, groupBy = '') {
+  const selectDimension = groupBy === 'page'
+    ? "COALESCE(NULLIF(page_path, ''), 'unknown') AS pagePath,"
+    : groupBy === 'source'
+      ? "COALESCE(NULLIF(source, ''), 'unknown') AS source, COALESCE(NULLIF(medium, ''), 'unknown') AS medium,"
+      : '';
+  const group = groupBy === 'page'
+    ? "GROUP BY COALESCE(NULLIF(page_path, ''), 'unknown')"
+    : groupBy === 'source'
+      ? "GROUP BY COALESCE(NULLIF(source, ''), 'unknown'), COALESCE(NULLIF(medium, ''), 'unknown')"
+      : '';
+  return `${FILTERED_EVENTS(where)},
+    acquisition AS (
+      SELECT *
+      FROM filtered
+      WHERE analytics_version = '2'
+        AND COALESCE(source, '') != ''
+        AND LOWER(COALESCE(source, '')) != 'direct'
+        AND LOWER(COALESCE(medium, '')) IN ('organic', 'ai_referral')
+    )
+    SELECT
+      ${selectDimension}
+      COUNT(DISTINCT CASE WHEN event_name = 'seo_landing_viewed' AND COALESCE(session_id, '') != '' THEN session_id END) AS landingSessions,
+      COUNT(DISTINCT CASE WHEN event_name = 'content_engaged' AND COALESCE(session_id, '') != '' THEN session_id END) AS engagedSessions,
+      SUM(CASE WHEN event_name = 'tool_completed' THEN 1 ELSE 0 END) AS toolCompletions,
+      SUM(CASE WHEN event_name = 'conversion_cta_clicked' THEN 1 ELSE 0 END) AS ctaClicks,
+      COUNT(DISTINCT CASE WHEN event_name = 'ai_conversation_started' AND COALESCE(request_id, '') != '' THEN request_id END) AS aiRequests,
+      SUM(CASE WHEN event_name = 'service_request_created' THEN 1 ELSE 0 END) AS serviceRequests
+    FROM acquisition
+    ${group}`;
+}
+
+function organicAcquisitionQualitySql(where) {
+  return `${FILTERED_EVENTS(where)}
+    SELECT
+      MIN(CASE WHEN analytics_version = '2' THEN created_at END) AS coverageStart,
+      SUM(CASE WHEN analytics_version IS NULL OR analytics_version != '2' THEN 1 ELSE 0 END) AS legacyEvents,
+      COUNT(DISTINCT CASE
+        WHEN event_name = 'seo_landing_viewed'
+          AND COALESCE(session_id, '') != ''
+          AND (
+            COALESCE(source, '') = ''
+            OR LOWER(COALESCE(source, '')) = 'direct'
+            OR COALESCE(medium, '') = ''
+            OR LOWER(COALESCE(medium, '')) IN ('direct', 'none')
+          )
+        THEN session_id
+      END) AS excludedDirectSessions
+    FROM filtered`;
+}
+
+export async function queryOrganicAcquisitionDb(db, filters) {
+  const { sql: where, params } = buildEventWhere(filters);
+  const [summary, pages, sources, dataQuality] = await Promise.all([
+    dbFirst(db, organicAcquisitionSql(where), params),
+    dbRows(db, organicAcquisitionSql(where, 'page'), params),
+    dbRows(db, organicAcquisitionSql(where, 'source'), params),
+    dbFirst(db, organicAcquisitionQualitySql(where), params),
+  ]);
+  return {
+    summary: normalizeAcquisitionSummary(summary),
+    pages: pages.map(normalizeAcquisitionPageRow),
+    sources: sources.map(normalizeAcquisitionSourceRow),
+    dataQuality: {
+      coverageStart: dataQuality?.coverageStart || null,
+      legacyEvents: count(dataQuality?.legacyEvents),
+      excludedDirectSessions: count(dataQuality?.excludedDirectSessions),
+    },
   };
 }
 
@@ -558,5 +695,83 @@ export async function loadPromotionChannels(databases, filters) {
         mergedRows.reduce((total, row) => total + row.sessions, 0),
       ),
     },
+  };
+}
+
+function mergeAcquisitionSummary(summaries) {
+  const merged = Object.fromEntries(ACQUISITION_COUNT_FIELDS.map((field) => [field, 0]));
+  for (const summary of summaries || []) {
+    for (const field of ACQUISITION_COUNT_FIELDS) merged[field] += count(summary?.[field]);
+  }
+  return merged;
+}
+
+function mergeAcquisitionRows(rowsByMarket, dimension) {
+  const merged = new Map();
+  for (const rows of rowsByMarket || []) {
+    for (const row of rows || []) {
+      const key = dimension === 'page'
+        ? row.pagePath
+        : JSON.stringify([row.source, row.medium]);
+      const target = merged.get(key) || (dimension === 'page'
+        ? { pagePath: row.pagePath, ...normalizeAcquisitionSummary() }
+        : { source: row.source, medium: row.medium, ...normalizeAcquisitionSummary() });
+      for (const field of ACQUISITION_COUNT_FIELDS) target[field] += count(row[field]);
+      merged.set(key, target);
+    }
+  }
+  return [...merged.values()];
+}
+
+function acquisitionRowTotal(row) {
+  return ACQUISITION_COUNT_FIELDS.reduce((total, field) => total + count(row[field]), 0);
+}
+
+function sortAcquisitionRows(rows, dimension) {
+  return [...rows].sort((left, right) => (
+    acquisitionRowTotal(right) - acquisitionRowTotal(left)
+    || right.ctaClicks - left.ctaClicks
+    || right.serviceRequests - left.serviceRequests
+    || right.toolCompletions - left.toolCompletions
+    || right.engagedSessions - left.engagedSessions
+    || right.landingSessions - left.landingSessions
+    || (dimension === 'page'
+      ? left.pagePath.localeCompare(right.pagePath)
+      : left.source.localeCompare(right.source) || left.medium.localeCompare(right.medium))
+  ));
+}
+
+function capAcquisitionRows(rows, dimension) {
+  const sorted = sortAcquisitionRows(rows, dimension);
+  if (sorted.length <= 100) return sorted;
+  const visible = sorted.slice(0, 99);
+  const hidden = sorted.slice(99);
+  const other = dimension === 'page'
+    ? { pagePath: 'other', ...mergeAcquisitionSummary(hidden) }
+    : { source: 'other', medium: 'other', ...mergeAcquisitionSummary(hidden) };
+  return [...visible, other];
+}
+
+function mergeOrganicAcquisitionQuality(qualityByMarket) {
+  return {
+    coverageStart: qualityByMarket
+      .map((quality) => quality?.coverageStart)
+      .filter(Boolean)
+      .sort()[0] || null,
+    legacyEvents: qualityByMarket.reduce((total, quality) => total + count(quality?.legacyEvents), 0),
+    excludedDirectSessions: qualityByMarket.reduce((total, quality) => total + count(quality?.excludedDirectSessions), 0),
+  };
+}
+
+export async function loadOrganicAcquisition(databases, filters) {
+  const results = await Promise.all(filters.markets.map((market) => (
+    queryOrganicAcquisitionDb(databases[market], filters)
+  )));
+  return {
+    summary: mergeAcquisitionSummary(results.map((result) => result.summary)),
+    pages: capAcquisitionRows(mergeAcquisitionRows(results.map((result) => result.pages), 'page'), 'page'),
+    sources: capAcquisitionRows(mergeAcquisitionRows(results.map((result) => result.sources), 'source'), 'source'),
+    dataQuality: mergeOrganicAcquisitionQuality(results.map((result) => result.dataQuality)),
+    reportingTimezone: 'Asia/Shanghai',
   };
 }

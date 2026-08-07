@@ -120,6 +120,7 @@ import { isKnownProtectedRoute, isTestRoute } from './lib/routes.js';
 import { handlePublicRoute } from './lib/publicRoutes.js';
 import {
   PromotionAnalyticsInputError,
+  loadOrganicAcquisition,
   loadPromotionChannels,
   loadPromotionOverview,
   parsePromotionFilters,
@@ -142,7 +143,7 @@ import {
 import { logToolCall, measureAndLogToolCall, PermissionError } from './lib/trace.js';
 
 // PII 脱敏（Phase 0.5，Phase 1 摘要生成前也复用）
-import { redactPII } from './lib/redact.js';
+import { hasSensitiveText, redactPII } from './lib/redact.js';
 
 // SummaryProtocol v1 — 跨会话摘要管线（Phase 1.2 / 1.3）
 import {
@@ -175,6 +176,11 @@ const FUNNEL_EVENTS = new Set([
   'bend_simulator_started',
   'bend_simulator_segment_adjusted',
   'bend_simulator_completed',
+  'seo_landing_viewed',
+  'content_engaged',
+  'tool_started',
+  'tool_completed',
+  'conversion_cta_clicked',
 ]);
 const FUNNEL_PROPERTY_ALLOWLIST = new Set([
   'entry',
@@ -196,6 +202,11 @@ const FUNNEL_PROPERTY_ALLOWLIST = new Set([
   'previous_bend_count',
   'unit_system',
   'view_mode',
+  'content_type',
+  'content_slug',
+  'cta_type',
+  'engagement_bucket',
+  'result_state',
 ]);
 const FUNNEL_ENUM_PROPERTIES = {
   entry: new Set(['app_loaded', 'main_chat', 'registration', 'login_modal']),
@@ -208,11 +219,16 @@ const FUNNEL_ENUM_PROPERTIES = {
   material: new Set(['carbon_steel', 'stainless_steel', 'aluminum', 'brass', 'copper']),
   unit_system: new Set(['metric', 'imperial']),
   view_mode: new Set(['2d', '3d']),
+  content_type: new Set(['service', 'diagnostic_guide', 'insight', 'tool']),
+  cta_type: new Set(['ai_diagnosis', 'service_request', 'engineer_review']),
+  engagement_bucket: new Set(['30s']),
+  result_state: new Set(['valid']),
 };
 const FUNNEL_BOOLEAN_PROPERTIES = new Set(['authenticated', 'has_images']);
 const FUNNEL_COUNT_PROPERTIES = new Set(['bend_count', 'previous_bend_count']);
 const FUNNEL_IDENTIFIER_PROPERTIES = new Set(['conversation_id', 'tool_id', 'request_id']);
 const FUNNEL_CATEGORY_PROPERTIES = new Set(['device_type', 'service_type']);
+const FUNNEL_SLUG_PROPERTIES = new Set(['content_slug']);
 
 const CONTACT_EMAIL_PATTERN = /[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g;
 const CONTACT_PLUS_PHONE_PATTERN = /\+\d[\d\s().-]{6,}\d/g;
@@ -11966,6 +11982,7 @@ export function isOperationsReadRoute(path, method) {
     || path === '/api/admin/materials'
     || path === '/api/admin/analytics/overview'
     || path === '/api/admin/analytics/channels'
+    || path === '/api/admin/analytics/organic-acquisition'
     || path === '/api/notifications'
     || path === '/api/notifications/unread-count'
     || /^\/api\/workorders\/[^/]+$/.test(path)
@@ -12023,7 +12040,14 @@ async function handlePromotionAnalytics(request, env, endpoint) {
     }
     const loaded = endpoint === 'overview'
       ? await loadPromotionOverview(databases, filters)
-      : await loadPromotionChannels(databases, filters);
+      : endpoint === 'channels'
+        ? await loadPromotionChannels(databases, filters)
+        : await loadOrganicAcquisition(databases, filters);
+    if (endpoint === 'organic-acquisition') {
+      const response = jsonResponse(loaded);
+      response.headers.set('Cache-Control', 'private, no-store');
+      return response;
+    }
     const { dataQuality, ...payload } = loaded;
     delete payload.recentAi;
     const response = jsonResponse({
@@ -20203,7 +20227,7 @@ function cleanFunnelValue(value, max = 160) {
 function piiSafeFunnelText(value, max = 120) {
   if (typeof value !== 'string') return null;
   const text = cleanFunnelValue(value, max);
-  if (!text || redactPII(text) !== text || /(?:\+?\d[\d\s().-]{6,}\d)/.test(text)) return null;
+  if (!text || hasSensitiveText(text)) return null;
   return text;
 }
 
@@ -20222,6 +20246,7 @@ function sanitizeFunnelProperty(key, value) {
     const text = piiSafeFunnelText(value);
     return text && /^[\p{L}\p{N}_ -]+$/u.test(text) ? text : undefined;
   }
+  if (FUNNEL_SLUG_PROPERTIES.has(key)) return piiSafeFunnelText(value, 120) || undefined;
   return undefined;
 }
 
@@ -20235,6 +20260,35 @@ function sanitizeFunnelProperties(properties) {
     if (sanitized !== undefined) out[key] = sanitized;
   }
   return out;
+}
+
+function sanitizeFunnelIdentifier(value) {
+  const text = piiSafeFunnelText(value, 120);
+  return text && /^[A-Za-z0-9_-]+$/.test(text) && !/^\d{7,}$/.test(text) ? text : '';
+}
+
+function sanitizeFunnelDimension(value, max = 160) {
+  const text = piiSafeFunnelText(value, max);
+  return text && /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(text) ? text : '';
+}
+
+function sanitizeFunnelPagePath(value) {
+  if (typeof value !== 'string' || !value.startsWith('/') || value.startsWith('//')) return '';
+  const pathname = value.split(/[?#]/, 1)[0];
+  return pathname.length <= 240 && /^\/(?:[A-Za-z0-9-]+\/)*[A-Za-z0-9-]*$/.test(pathname)
+    ? pathname
+    : '';
+}
+
+function sanitizeFunnelReferrer(value) {
+  if (typeof value !== 'string' || !value) return '';
+  try {
+    const url = new URL(value);
+    if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) return '';
+    return url.origin.slice(0, 200);
+  } catch {
+    return '';
+  }
 }
 
 async function handleFunnelEvent(request, env) {
@@ -20269,15 +20323,15 @@ async function handleFunnelEvent(request, env) {
       generateId(),
       eventName,
       getRequestMarket(request),
-      cleanFunnelValue(body.anonymous_id, 120),
-      cleanFunnelValue(body.session_id, 120),
-      auth?.userType || cleanFunnelValue(body.user_type, 40) || 'guest',
+      sanitizeFunnelIdentifier(body.anonymous_id),
+      sanitizeFunnelIdentifier(body.session_id),
+      auth?.userType || (FUNNEL_ENUM_PROPERTIES.user_type.has(body.user_type) ? body.user_type : 'guest'),
       auth?.userId || null,
-      cleanFunnelValue(body.source, 120),
-      cleanFunnelValue(body.medium, 120),
-      cleanFunnelValue(body.campaign, 160),
-      cleanFunnelValue(body.page_path, 240),
-      cleanFunnelValue(body.referrer, 300),
+      sanitizeFunnelDimension(body.source, 120),
+      sanitizeFunnelDimension(body.medium, 120),
+      sanitizeFunnelDimension(body.campaign, 160),
+      sanitizeFunnelPagePath(body.page_path),
+      sanitizeFunnelReferrer(body.referrer),
       JSON.stringify(properties),
       ipHash,
       userAgent,
@@ -20429,6 +20483,9 @@ async function routeRequest(request, env, ctx) {
       }
       if (path === '/api/admin/analytics/channels' && request.method === 'GET') {
         return handlePromotionAnalytics(request, env, 'channels');
+      }
+      if (path === '/api/admin/analytics/organic-acquisition' && request.method === 'GET') {
+        return handlePromotionAnalytics(request, env, 'organic-acquisition');
       }
       if (path === '/api/admin/staff' && request.method === 'GET') {
         return handleAdminStaffList(request, env);

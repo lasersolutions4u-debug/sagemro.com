@@ -12,17 +12,21 @@ export default defineConfig({
   },
   build: {
     target: 'es2020',
+    manifest: true,
     modulePreload: {
       polyfill: false,
     },
     rollupOptions: {
       output: {
-        manualChunks(id) {
-          if (id.includes('node_modules/react/') || id.includes('node_modules/react-dom/') || id.includes('node_modules/react-router/')) return 'vendor-react';
-          if (id.includes('node_modules/framer-motion')) return 'vendor-motion';
-          if (id.includes('node_modules/lucide-react')) return 'vendor-icons';
-          if (id.includes('node_modules/react-markdown') || id.includes('node_modules/remark-') || id.includes('node_modules/rehype-')) return 'vendor-markdown';
-          if (id.includes('node_modules/')) return 'vendor-misc';
+        strictExecutionOrder: true,
+        codeSplitting: {
+          includeDependenciesRecursively: false,
+          groups: [
+            { name: 'vendor-react', test: /node_modules[\\/](react|react-dom|react-router)/, entriesAware: true },
+            { name: 'vendor-motion', test: /node_modules[\\/]framer-motion/, entriesAware: true },
+            { name: 'vendor-icons', test: /node_modules[\\/]lucide-react/, entriesAware: true },
+            { name: 'vendor-markdown', test: /node_modules[\\/](react-markdown|remark-|rehype-)/, entriesAware: true },
+          ],
         },
       },
     },

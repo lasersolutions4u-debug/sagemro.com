@@ -1,16 +1,18 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
 import {
   calculateIndustryToolResult,
   defaultIndustryToolForms,
   getToolBySlug,
+  getToolWorkedExample,
   industryTools,
   materialDensities,
   publicIndustryTools,
   shapeProfiles,
 } from '../src/data/industryTools.js';
-import { getIndustryToolsPageState } from '../src/utils/industryToolsPage.js';
+import { getIndustryToolsPageState, getIndustryToolsSeoMetadata } from '../src/utils/industryToolsPage.js';
 
 test('metal weight calculator covers common sheet and structural profiles', () => {
   const profileIds = Object.keys(shapeProfiles);
@@ -38,6 +40,88 @@ test('material references cover steel, stainless, aluminum, copper, red copper, 
   assert.match(materialDensities.copper.label, /Copper/);
   assert.match(materialDensities.red_copper.label, /Red copper/);
   assert.match(materialDensities.titanium_alloy.label, /Titanium alloy/);
+});
+
+test('defensible calculators disclose formula, calculator-generated example, assumptions, limits, safety, review, and references', () => {
+  const requiredTools = {
+    'metal-weight': /Metal weight = cross-section area × length × density × quantity/,
+    'laser-cost': /Laser cutting cost = total machine time × hourly rate \+ assist-gas cost/,
+    'bend-allowance': /Bend allowance per bend = angle in radians × \(inside radius \+ K-factor × thickness\)/,
+  };
+
+  for (const [id, formula] of Object.entries(requiredTools)) {
+    const tool = industryTools.find((item) => item.id === id);
+    const evidence = tool?.seoEvidence;
+    const example = getToolWorkedExample(tool);
+
+    assert.equal(evidence?.indexable, true);
+    assert.match(evidence?.formula || '', formula);
+    assert.ok(evidence?.assumptions?.length >= 3);
+    assert.ok(evidence?.limitations?.length >= 2);
+    assert.match(evidence?.safetyBoundary || '', /production|purchasing|operation/i);
+    assert.match(evidence?.reviewPrompt || '', /review/i);
+    assert.ok(evidence?.references?.length >= 1);
+    assert.deepEqual(example?.result, calculateIndustryToolResult(id, evidence.workedExample.inputs));
+    assert.ok(example.result.rows.some(([, value]) => /kg|USD|tons|mm/.test(value)));
+  }
+});
+
+test('only evidence-complete calculators are public while all other direct tools are noindex', () => {
+  const publicIds = ['metal-weight', 'laser-cost', 'bend-allowance'];
+
+  assert.deepEqual(publicIndustryTools.map((tool) => tool.id), publicIds);
+
+  for (const tool of industryTools) {
+    assert.equal(getToolBySlug(tool.slug)?.id, tool.id);
+    if (publicIds.includes(tool.id)) assert.equal(tool.seoEvidence?.indexable, true);
+    else assert.equal(tool.seoEvidence?.indexable, false);
+  }
+});
+
+test('implementation-only press brake tonnage evidence cannot pass the publication gate', () => {
+  const tool = industryTools.find((item) => item.id === 'press-brake-tonnage');
+
+  assert.equal(tool?.seoEvidence?.indexable, false);
+  assert.equal(publicIndustryTools.some((item) => item.id === tool?.id), false);
+});
+
+test('worked examples do not fall through to metal weight for unsupported tools', () => {
+  assert.equal(getToolWorkedExample(null), null);
+  assert.equal(getToolWorkedExample({ id: 'unsupported', seoEvidence: { workedExample: { inputs: {} } } }), null);
+});
+
+test('evidence review CTA follows safety boundary and calculator CTA is suppressed for evidence tools', () => {
+  const page = readFileSync(new URL('../src/components/Tools/IndustryToolsPage.jsx', import.meta.url), 'utf8');
+  const calculator = readFileSync(new URL('../src/components/Tools/IndustryToolCalculator.jsx', import.meta.url), 'utf8');
+  const evidenceStart = page.indexOf('function ToolEvidence');
+  const safetyIndex = page.indexOf('EvidenceBlock title={copy.safety}', evidenceStart);
+  const reviewIndex = page.indexOf('onClick={onReview}', evidenceStart);
+
+  assert.match(calculator, /showReviewCta = true/);
+  assert.match(calculator, /showReviewCta && onSendMessage/);
+  assert.match(page, /showReviewCta=\{!tool\.seoEvidence\?\.formula\}/);
+  assert.match(page, /getIndustryToolsSeoMetadata/);
+  assert.match(page, /robots: seoMetadata\.robots/);
+  assert.ok(page.indexOf('<ToolEvidence', 0) < page.indexOf('{copy.faq}'));
+  assert.ok(safetyIndex < reviewIndex);
+  assert.match(page, /Ask SAGEMRO AI to review this result/);
+  assert.match(page, /请 SAGEMRO AI 复核此结果/);
+});
+
+test('tool page headings allow long Chinese titles to wrap on mobile', () => {
+  const page = readFileSync(new URL('../src/components/Tools/IndustryToolsPage.jsx', import.meta.url), 'utf8');
+
+  assert.doesNotMatch(page, /<h1 className="[^"]*break-keep/);
+  assert.equal((page.match(/<h1 className="[^"]*break-words/g) || []).length, 2);
+});
+
+test('heuristic reference tools remain directly available but not indexable', () => {
+  for (const id of ['cutting-speed', 'auxiliary-sizing']) {
+    const tool = industryTools.find((item) => item.id === id);
+    assert.equal(tool?.seoEvidence?.indexable, false);
+    assert.equal(getToolBySlug(tool.slug)?.id, id);
+    assert.equal(publicIndustryTools.some((item) => item.id === id), false);
+  }
 });
 
 test('metal weight calculator computes angle steel from profile dimensions', () => {
@@ -77,7 +161,7 @@ test('steel price calculator uses selected material and structural profile weigh
 
 test('industry tools keep the paused bend simulator registered but out of public discovery', () => {
   assert.equal(industryTools.length, 10);
-  assert.equal(publicIndustryTools.length, 9);
+  assert.equal(publicIndustryTools.length, 3);
   assert.equal(publicIndustryTools.some((tool) => tool.id === 'bend-simulator'), false);
   assert.equal(getToolBySlug('metal-weight-calculator').id, 'metal-weight');
   assert.equal(getToolBySlug('steel-price-watch').id, 'steel-price');
@@ -113,6 +197,39 @@ test('industry tools resolve hub and bend simulator routes with localized canoni
   assert.equal(hub.page, 'hub');
   assert.equal(hub.selectedTool, null);
   assert.equal(hub.canonical, 'https://sagemro.com/tools');
+});
+
+test('unknown tool metadata keeps the requested path noindex without inheriting hub schema', () => {
+  for (const [locale, host] of [['en', 'https://sagemro.com'], ['zh-CN', 'https://sagemro.cn']]) {
+    for (const path of ['/tools/not-a-tool', '/tools/not-a-tool/extra', '/tools//', '/tools/metal-weight-calculator//']) {
+      const route = getIndustryToolsPageState(path, locale);
+      const metadata = getIndustryToolsSeoMetadata(route, locale);
+
+      assert.equal(route.page, 'not-found');
+      assert.equal(metadata.canonical, `${host}${path}`);
+      assert.deepEqual(metadata.alternates, {
+        en: `https://sagemro.com${path}`,
+        'zh-CN': `https://sagemro.cn${path}`,
+        'x-default': `https://sagemro.com${path}`,
+      });
+      assert.equal(metadata.robots, 'noindex,nofollow,noarchive');
+      assert.equal(metadata.structuredData, null);
+    }
+
+    const hub = getIndustryToolsSeoMetadata(getIndustryToolsPageState('/tools', locale), locale);
+    const publicTool = getIndustryToolsSeoMetadata(getIndustryToolsPageState('/tools/metal-weight-calculator', locale), locale);
+    const noindexTool = getIndustryToolsSeoMetadata(getIndustryToolsPageState('/tools/steel-price-watch', locale), locale);
+    const pausedTool = getIndustryToolsSeoMetadata(getIndustryToolsPageState('/tools/bend-simulator', locale), locale);
+
+    assert.equal(hub.structuredData['@graph'][0]['@type'], 'CollectionPage');
+    assert.equal(hub.robots, 'index,follow');
+    assert.equal(publicTool.structuredData['@graph'][0]['@type'], 'WebApplication');
+    assert.equal(publicTool.robots, 'index,follow');
+    assert.equal(noindexTool.structuredData['@graph'][0]['@type'], 'WebApplication');
+    assert.equal(noindexTool.robots, 'noindex,nofollow,noarchive');
+    assert.equal(pausedTool.structuredData, null);
+    assert.equal(pausedTool.robots, 'noindex,nofollow,noarchive');
+  }
 });
 
 test('gas consumption calculator estimates assist gas usage and cost', () => {

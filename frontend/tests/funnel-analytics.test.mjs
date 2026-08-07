@@ -3,7 +3,9 @@ import test from 'node:test';
 
 import {
   SESSION_IDLE_MS,
+  classifyReferrer,
   createAnalyticsRequestId,
+  resolveTrafficAttribution,
   resolveAnalyticsSession,
 } from '../src/services/funnelAnalytics.js';
 
@@ -122,4 +124,103 @@ test('createAnalyticsRequestId uses the request prefix with an injected factory'
 
   assert.equal(receivedPrefix, 'request');
   assert.equal(requestId, 'request_id_value');
+});
+
+test('classifyReferrer maps approved organic and AI-search hostnames', () => {
+  const cases = [
+    ['https://www.google.com/search?q=press+brake', 'google_organic', 'organic'],
+    ['https://news.google.com/', 'google_organic', 'organic'],
+    ['https://google.com.hk/', 'google_organic', 'organic'],
+    ['https://google.co.uk/', 'google_organic', 'organic'],
+    ['https://google.de/', 'google_organic', 'organic'],
+    ['https://google.fr/', 'google_organic', 'organic'],
+    ['https://google.ca/', 'google_organic', 'organic'],
+    ['https://google.com.au/', 'google_organic', 'organic'],
+    ['https://google.co.in/', 'google_organic', 'organic'],
+    ['https://google.co.jp/', 'google_organic', 'organic'],
+    ['https://google.com.br/', 'google_organic', 'organic'],
+    ['https://google.es/', 'google_organic', 'organic'],
+    ['https://www.baidu.com/s?wd=激光切割机维修', 'baidu_organic', 'organic'],
+    ['https://www.bing.com/search?q=fiber+laser+repair', 'bing_organic', 'organic'],
+    ['https://chatgpt.com/', 'chatgpt_referral', 'ai_referral'],
+    ['https://chat.openai.com/', 'chatgpt_referral', 'ai_referral'],
+    ['https://www.perplexity.ai/search/x', 'perplexity_referral', 'ai_referral'],
+    ['https://copilot.microsoft.com/', 'copilot_referral', 'ai_referral'],
+  ];
+
+  for (const [referrer, source, medium] of cases) {
+    assert.deepEqual(classifyReferrer(referrer, 'sagemro.com'), { source, medium });
+  }
+});
+
+test('classifyReferrer rejects internal, malformed, and lookalike hosts', () => {
+  for (const referrer of [
+    'https://sagemro.com/tools',
+    'https://admin.sagemro.com/',
+    'https://engineer.sagemro.cn/',
+    'https://google.example.com/search',
+    'https://google.evil.com/search',
+    'https://google.evil/search',
+    'https://google.com.evil/search',
+    'https://notgoogle.com/search',
+    'https://baidu.com.example.org/',
+    'https://example.com/?source=google.com',
+    'not a URL',
+    '',
+  ]) {
+    assert.equal(classifyReferrer(referrer, 'sagemro.com'), null);
+  }
+});
+
+test('resolveTrafficAttribution gives explicit UTM values precedence over a classified referrer', () => {
+  assert.deepEqual(resolveTrafficAttribution({
+    search: '?utm_source=newsletter&utm_campaign=august',
+    referrer: 'https://www.google.com/search?q=press+brake',
+    siteHostname: 'sagemro.com',
+    stored: { source: 'partner', medium: 'referral', campaign: 'spring', content: '', term: '' },
+  }), {
+    source: 'newsletter', medium: '', campaign: 'august', content: '', term: '',
+  });
+});
+
+test('resolveTrafficAttribution uses a classified referrer before stored attribution', () => {
+  assert.deepEqual(resolveTrafficAttribution({
+    search: '',
+    referrer: 'https://chatgpt.com/',
+    siteHostname: 'sagemro.com',
+    stored: { source: 'partner', medium: 'referral', campaign: 'spring', content: '', term: '' },
+  }), {
+    source: 'chatgpt_referral', medium: 'ai_referral', campaign: '', content: '', term: '',
+  });
+});
+
+test('resolveTrafficAttribution reuses stored non-direct attribution only without UTM or classified referrer', () => {
+  const stored = { source: 'partner', medium: 'referral', campaign: 'spring', content: 'banner', term: '' };
+
+  assert.deepEqual(resolveTrafficAttribution({
+    search: '', referrer: 'https://sagemro.com/tools', siteHostname: 'sagemro.com', stored,
+  }), stored);
+  assert.deepEqual(resolveTrafficAttribution({
+    search: '', referrer: '', siteHostname: 'sagemro.com', stored: {},
+  }), {
+    source: '', medium: '', campaign: '', content: '', term: '',
+  });
+});
+
+test('resolveTrafficAttribution does not reuse direct stored attribution', () => {
+  for (const stored of [
+    { source: 'direct', medium: '', campaign: 'legacy', content: '', term: '' },
+    { source: '', medium: 'none', campaign: 'legacy', content: '', term: '' },
+    { source: 'direct', medium: 'none', campaign: 'legacy', content: '', term: '' },
+    { source: '', medium: 'referral', campaign: 'legacy', content: '', term: '' },
+    { source: '   ', medium: 'referral', campaign: 'legacy', content: '', term: '' },
+    { source: 'partner', medium: '', campaign: 'legacy', content: '', term: '' },
+    { source: 'partner', medium: 'direct', campaign: 'legacy', content: '', term: '' },
+  ]) {
+    assert.deepEqual(resolveTrafficAttribution({
+      search: '', referrer: '', siteHostname: 'sagemro.com', stored,
+    }), {
+      source: '', medium: '', campaign: '', content: '', term: '',
+    });
+  }
 });
