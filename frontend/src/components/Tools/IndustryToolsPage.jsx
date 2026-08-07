@@ -336,6 +336,10 @@ function ToolDetail({ tool, copy, locale, values, onChange, onOpenLegal, onSendM
           <div className="min-w-0">
             <IndustryToolCalculator tool={tool} values={values} onChange={onChange} onSendMessage={handleSendToolReview} onToolStarted={onToolStarted} onToolCompleted={onToolCompleted} showReviewCta={!tool.seoEvidence?.formula} />
 
+            <div className="mt-6">
+              <ToolEvidence tool={tool} locale={locale} onReview={handleEvidenceReview} />
+            </div>
+
             <div className="mt-6 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-elevated)] p-4">
               <h2 className="text-lg font-semibold text-[var(--color-text-primary)]">{tool.guideTitle}</h2>
               <p className="mt-2 text-sm leading-7 text-[var(--color-text-secondary)]">{tool.guideBody}</p>
@@ -371,9 +375,6 @@ function ToolDetail({ tool, copy, locale, values, onChange, onOpenLegal, onSendM
               </div>
             </div>
           </aside>
-        </section>
-        <section className="mt-6">
-          <ToolEvidence tool={tool} locale={locale} onReview={handleEvidenceReview} />
         </section>
       </main>
     </ToolPageShell>

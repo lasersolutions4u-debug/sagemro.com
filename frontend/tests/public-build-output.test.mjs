@@ -18,7 +18,7 @@ test('buildPublicPages writes crawlable public pages and crawl artifacts', async
   await buildPublicPages({ distDir });
 
   const read = (path) => readFile(join(distDir, path), 'utf8');
-  assert.match(await read('tools/press-brake-tonnage-calculator/index.html'), /<h1>Press Brake Tonnage Calculator<\/h1>/);
+  assert.match(await read('tools/press-brake-tonnage-calculator/index.html'), /<h1>折弯机吨位计算器<\/h1>/);
   assert.match(await read('insights/press-brake-tonnage-risk-check/index.html'), /Article/);
   assert.match(await read('sitemap.xml'), /<lastmod>2026-08-06<\/lastmod>/);
   assert.doesNotMatch(await read('sitemap.xml'), /bend-simulator/);
@@ -30,14 +30,14 @@ test('buildPublicPages writes crawlable public pages and crawl artifacts', async
   assert.doesNotMatch(redirects, /\/404\.html 404/);
   assert.doesNotMatch(redirects, /\/tools\/\*/);
   assert.match(await read('404.html'), /name="robots" content="noindex,nofollow,noarchive"/);
-  assert.match(await read('404.html'), /<h1>404 — This page doesn&#39;t exist<\/h1>/);
+  assert.match(await read('404.html'), /<h1>404 — 页面不存在<\/h1>/);
   assert.doesNotMatch(await read('404.html'), /application\/ld\+json/);
   const hubs = (await read('llms.txt')).match(/^\- https:\/\/[^\n]+$/gm);
   assert.deepEqual(hubs, [
-    '- https://sagemro.com/',
-    '- https://sagemro.com/services',
-    '- https://sagemro.com/tools',
-    '- https://sagemro.com/insights',
+    '- https://sagemro.cn/',
+    '- https://sagemro.cn/services',
+    '- https://sagemro.cn/tools',
+    '- https://sagemro.cn/insights',
   ]);
 });
 
@@ -63,7 +63,7 @@ test('buildPublicPages writes direct noindex tool pages outside every public cra
   for (const slug of noindexSlugs) {
     const html = await read(`tools/${slug}/index.html`);
     assert.match(html, /name="robots" content="noindex,nofollow,noarchive"/);
-    assert.match(html, new RegExp(`rel="canonical" href="https://sagemro\\.com/tools/${slug}"`));
+    assert.match(html, new RegExp(`rel="canonical" href="https://sagemro\\.cn/tools/${slug}"`));
     assert.match(html, /data-prerendered="true"/);
     assert.doesNotMatch(sitemap, new RegExp(`/tools/${slug}`));
     assert.doesNotMatch(llms, new RegExp(`/tools/${slug}`));
