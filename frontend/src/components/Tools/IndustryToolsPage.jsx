@@ -29,6 +29,7 @@ import {
 import { getIndustryToolsPageState, getIndustryToolsSeoMetadata } from '../../utils/industryToolsPage';
 import { isCnLocale } from '../../utils/locale';
 import { setSeoMetadata } from '../../utils/seo';
+import { useAcquisitionTracking } from '../../hooks/useAcquisitionTracking';
 
 const BendSimulatorPage = lazy(() => import('./BendSimulatorPage').then(m => ({ default: m.BendSimulatorPage })));
 
@@ -105,6 +106,12 @@ export function IndustryToolsPage({ pathname = '/tools', onOpenLegal, onSendMess
   const pageDescription = selectedTool
     ? selectedTool.seoDescription
     : copy.hubDescription;
+  const { onToolStarted, onToolCompleted } = useAcquisitionTracking({
+    path: pathname,
+    contentType: 'tool',
+    contentSlug: selectedTool?.slug || '',
+    indexable: page === 'tool-detail' && selectedTool?.seoEvidence?.indexable === true,
+  });
 
   useEffect(() => {
     const seoMetadata = getIndustryToolsSeoMetadata({ canonical, page, selectedTool, slug }, locale);
@@ -153,6 +160,8 @@ export function IndustryToolsPage({ pathname = '/tools', onOpenLegal, onSendMess
       onOpenLegal={onOpenLegal}
       onSendMessage={onSendMessage}
       onNavigateHome={onNavigateHome}
+      onToolStarted={onToolStarted}
+      onToolCompleted={onToolCompleted}
     />
   );
 }
@@ -262,7 +271,7 @@ function ToolReferenceItem({ item, isFirst }) {
   );
 }
 
-function ToolDetail({ tool, copy, locale, values, onChange, onOpenLegal, onSendMessage, onNavigateHome }) {
+function ToolDetail({ tool, copy, locale, values, onChange, onOpenLegal, onSendMessage, onNavigateHome, onToolStarted, onToolCompleted }) {
   const relatedTools = useMemo(
     () => publicIndustryTools.filter((item) => item.id !== tool.id).map((item) => getLocalizedTool(item, locale)),
     [locale, tool.id],
@@ -302,7 +311,7 @@ function ToolDetail({ tool, copy, locale, values, onChange, onOpenLegal, onSendM
 
         <section className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
           <div className="min-w-0">
-            <IndustryToolCalculator tool={tool} values={values} onChange={onChange} onSendMessage={handleSendToolReview} showReviewCta={!tool.seoEvidence?.formula} />
+            <IndustryToolCalculator tool={tool} values={values} onChange={onChange} onSendMessage={handleSendToolReview} onToolStarted={onToolStarted} onToolCompleted={onToolCompleted} showReviewCta={!tool.seoEvidence?.formula} />
           </div>
           <aside aria-label="Related tools" className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-elevated)] p-4">
             <div className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--color-text-muted)]">

@@ -14,6 +14,8 @@ import { generateId } from './utils/helpers';
 import { isCnLocale } from './utils/locale';
 import { setSeoMetadata } from './utils/seo';
 import { getServicePageRoute } from './utils/servicePageRoute';
+import { getPublicSeoRoute } from './data/publicSeoRoutes';
+import { getAcquisitionContentType, getPublicContentSlug, useAcquisitionTracking } from './hooks/useAcquisitionTracking';
 import { submitWorkOrder as submitWorkOrderApi, getConversation as getConversationApi, getUnreadNotificationCount, trackFunnelEvent, restoreSession, logout as logoutSession } from './services/api';
 import { createAnalyticsRequestId } from './services/funnelAnalytics';
 
@@ -75,6 +77,17 @@ function App() {
   const authVersionRef = useRef(0);
   const engineerWorkOrderMatch = currentPath.match(/^\/work-orders\/([^/]+)$/);
   const engineerWorkOrderId = engineerWorkOrderMatch ? decodeURIComponent(engineerWorkOrderMatch[1]) : '';
+  const publicRoutePath = currentPath === '/' ? '/' : currentPath.replace(/\/$/, '');
+  const publicRoute = getPublicSeoRoute(publicRoutePath, isCn ? 'zh-CN' : 'en');
+  useAcquisitionTracking({
+    path: publicRoutePath,
+    contentType: getAcquisitionContentType(publicRoute, isCn ? 'zh-CN' : 'en'),
+    contentSlug: getPublicContentSlug(publicRoute),
+    indexable: !isEngineerHost
+      && !userType
+      && publicRoute?.robots === 'index,follow'
+      && publicRoute?.type !== 'tool',
+  });
 
   useEffect(() => {
     const isToolsOrInsights = currentPath === '/tools'
