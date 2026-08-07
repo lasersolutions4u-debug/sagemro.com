@@ -8,7 +8,7 @@
 
 ### 1.1 公开页面如何生成
 
-- `frontend/src/data/publicSeoRoutes.js` 是双语公开路由的唯一清单。它只读取已发布的服务页、诊断指南和可索引工具；公开工具当前为材料重量、激光切割成本、V 槽与折弯展开三个记录。
+- `frontend/src/data/publicSeoRoutes.js` 是双语公开路由的唯一清单。它包含：首页；`/tools`、`/insights`、`/services` 三个 hub；3 个可索引工具；4 个服务页；既有本地化短洞察；2 个已发布诊断指南；以及技术审核页面。直达但禁止索引的工具由独立列表生成，不在公开 manifest 或 sitemap 中；草稿指南和暂停的折弯仿真工具也不在其中。
 - `npm run build` 先执行 Vite，再执行 `frontend/scripts/buildPublicPages.mjs`。后者从同一清单写出每条公开路径的静态 `index.html`、`sitemap.xml`、`robots.txt`、`llms.txt`、尾斜杠重定向和 `404.html`。
 - 静态 HTML 在客户端 JavaScript 前提供标题、描述、canonical、`hreflang`、Open Graph、结构化数据及页面首要内容。服务页使用 `Service`，诊断指南使用 `Article`，工具使用 `WebApplication`，并配有面包屑与组织资料。
 - 未知路径由生成的 `_redirects` 返回真实 `404.html` 和 HTTP 404；私有应用路径继续使用受限 SPA 壳并保持不索引。非公开工具可直达时输出 `noindex,nofollow,noarchive`，不会进入站点地图。
