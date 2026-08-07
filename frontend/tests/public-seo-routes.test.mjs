@@ -125,6 +125,7 @@ test('manifest body mirrors visible homepage and tool headings', () => {
   assert.equal(homeCn.body.h1, welcomePageCopy.zh.headline);
   assert.deepEqual(homeCn.body.paragraphs, [welcomePageCopy.zh.intro]);
   assert.deepEqual(homeCn.body.resources, welcomePageCopy.zh.resources);
+  assert.ok([...home.body.resources, ...homeCn.body.resources].every((resource) => resource.href.endsWith('/')));
 
   for (const locale of ['en', 'zh-CN']) {
     for (const tool of publicIndustryTools) {
@@ -140,7 +141,7 @@ test('rendered tool HTML contains crawlable content and safe JSON-LD', () => {
 
   assert.match(html, /<html lang="en">/);
   assert.match(html, /<title>Metal Weight Calculator for Sheet, Tube, Angle, Channel, and Beam \| SAGEMRO<\/title>/);
-  assert.match(html, /rel="canonical" href="https:\/\/sagemro\.com\/tools\/metal-weight-calculator"/);
+  assert.match(html, /rel="canonical" href="https:\/\/sagemro\.com\/tools\/metal-weight-calculator\/"/);
   assert.match(html, /hreflang="zh-CN"/);
   assert.match(html, /<h1>Metal Weight Calculator for Sheet, Tube, Angle, Channel, and Beam<\/h1>/);
   assert.match(html, /application\/ld\+json/);
@@ -170,9 +171,9 @@ test('renderer serializes manifest routes as sitemap, redirects, and robots', ()
   const robots = renderRobots('en');
 
   assert.match(sitemap, /<urlset[^>]+xmlns:xhtml=/);
-  assert.match(sitemap, /<loc>https:\/\/sagemro\.com\/tools<\/loc>/);
-  assert.match(sitemap, /hreflang="zh-CN" href="https:\/\/sagemro\.cn\/tools"/);
-  assert.match(redirects, /^\/tools\/  \/tools  301$/m);
+  assert.match(sitemap, /<loc>https:\/\/sagemro\.com\/tools\/<\/loc>/);
+  assert.match(sitemap, /hreflang="zh-CN" href="https:\/\/sagemro\.cn\/tools\/"/);
+  assert.equal(redirects, '');
   assert.match(robots, /User-agent: \*/);
   assert.match(robots, /Sitemap: https:\/\/sagemro\.com\/sitemap\.xml/);
   assert.equal(escapeHtml(`<&>"'`), '&lt;&amp;&gt;&quot;&#39;');
@@ -232,9 +233,9 @@ test('manifest publishes services, evidence-approved guides, and technical revie
     for (const path of ['/services', ...servicePaths, ...guidePaths, '/about/technical-review']) {
       const route = routes.find((candidate) => candidate.path === path);
       assert.ok(route, `${locale} manifest should include ${path}`);
-      assert.equal(route.canonical, `${host}${path}`);
-      assert.equal(route.alternates.en, `https://sagemro.com${path}`);
-      assert.equal(route.alternates['zh-CN'], `https://sagemro.cn${path}`);
+      assert.equal(route.canonical, `${host}${path}/`);
+      assert.equal(route.alternates.en, `https://sagemro.com${path}/`);
+      assert.equal(route.alternates['zh-CN'], `https://sagemro.cn${path}/`);
       assert.ok(route.body.h1.length > 0);
     }
 
@@ -243,7 +244,7 @@ test('manifest publishes services, evidence-approved guides, and technical revie
     const reviewRoute = getRuntimeSeoRoute('/about/technical-review', locale);
     const reviewRouteWithSlash = getRuntimeSeoRoute('/about/technical-review/', locale);
     assert.deepEqual(reviewRouteWithSlash, reviewRoute);
-    assert.equal(reviewRouteWithSlash.canonical, `${host}/about/technical-review`);
+    assert.equal(reviewRouteWithSlash.canonical, `${host}/about/technical-review/`);
   }
 });
 
@@ -258,16 +259,16 @@ test('manifest internal links never expose draft or irrelevant diagnostic guides
   for (const locale of ['en', 'zh-CN']) {
     for (const service of getServicePages(locale)) {
       const route = getPublicSeoRoute(`/services/${service.slug}`, locale);
-      assert.deepEqual(route.body.links.map((link) => link.href), expectedRelations[service.slug].map((slug) => `/insights/${slug}`));
+      assert.deepEqual(route.body.links.map((link) => link.href), expectedRelations[service.slug].map((slug) => `/insights/${slug}/`));
       if (expectedRelations[service.slug].length === 0) assert.ok(route.body.emptyState.length > 0);
     }
 
     for (const guide of getDiagnosticGuides(locale)) {
       const route = getPublicSeoRoute(`/insights/${guide.slug}`, locale);
-      assert.deepEqual(route.body.links.filter((link) => link.kind === 'service').map((link) => link.href), [`/services/${guide.relatedServiceSlug}`]);
+      assert.deepEqual(route.body.links.filter((link) => link.kind === 'service').map((link) => link.href), [`/services/${guide.relatedServiceSlug}/`]);
       assert.deepEqual(route.body.links.filter((link) => ['author', 'reviewer'].includes(link.kind)).map((link) => link.href), [
-        '/about/technical-review',
-        '/about/technical-review',
+        '/about/technical-review/',
+        '/about/technical-review/',
       ]);
     }
   }
@@ -334,7 +335,7 @@ test('static documents render localized policy and safe internal anchors', () =>
 
   assert.match(reviewEn, /How SAGEMRO technical content is prepared and reviewed/);
   assert.match(reviewCn, /SAGEMRO 技术内容如何编写与审核/);
-  assert.match(service, /href="\/insights\/laser-protective-lens-burning"/);
-  assert.match(service, /href="\/insights\/laser-cutting-machine-maintenance-checklist"/);
-  assert.match(guide, /href="\/services\/laser-cutting-machine-repair"/);
+  assert.match(service, /href="\/insights\/laser-protective-lens-burning\/"/);
+  assert.match(service, /href="\/insights\/laser-cutting-machine-maintenance-checklist\/"/);
+  assert.match(guide, /href="\/services\/laser-cutting-machine-repair\/"/);
 });

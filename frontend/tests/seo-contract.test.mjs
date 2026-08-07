@@ -62,6 +62,7 @@ async function loadSeo(document) {
 test('public frontend exposes crawlable sitemap and robots policy', async () => {
   const robots = await read('frontend/public/robots.txt');
   const sitemap = await read('frontend/public/sitemap.xml');
+  const llms = await read('frontend/public/llms.txt');
 
   assert.match(robots, /User-agent: \*/);
   assert.match(robots, /Allow: \/\s/);
@@ -73,6 +74,8 @@ test('public frontend exposes crawlable sitemap and robots policy', async () => 
   assert.match(sitemap, /https:\/\/engineer\.sagemro\.cn\//);
   assert.match(sitemap, /<xhtml:link[^>]+hreflang="en"/);
   assert.match(sitemap, /<xhtml:link[^>]+hreflang="zh-CN"/);
+  const publicUrls = [...`${sitemap}\n${llms}`.matchAll(/https:\/\/(?:engineer\.)?sagemro\.(?:com|cn)(\/[^\s"<]*)/g)];
+  assert.ok(publicUrls.every(([, pathname]) => pathname === '/' || pathname.endsWith('/')));
 });
 
 test('public pages define SEO metadata and structured data', async () => {

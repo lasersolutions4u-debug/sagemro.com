@@ -94,14 +94,14 @@ export function BendSimulatorPage({ tool, copy, onOpenLegal, locale = 'en' }) {
             SAGEMRO
           </a>
           <nav className="flex items-center gap-3 text-sm text-[var(--color-text-secondary)]">
-            <a href="/tools" className="hover:text-[var(--color-primary)]">{copy.navTools}</a>
+            <a href="/tools/" className="hover:text-[var(--color-primary)]">{copy.navTools}</a>
             <a href="/" className="hover:text-[var(--color-primary)]">{copy.navChat}</a>
           </nav>
         </div>
       </header>
 
       <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:py-10">
-        <a href="/tools" className="inline-flex items-center gap-2 text-sm text-[var(--color-text-secondary)] hover:text-[var(--color-primary)]">
+        <a href="/tools/" className="inline-flex items-center gap-2 text-sm text-[var(--color-text-secondary)] hover:text-[var(--color-primary)]">
           <ArrowLeft size={16} />
           {copy.allTools}
         </a>

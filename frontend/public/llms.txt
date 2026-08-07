@@ -5,8 +5,8 @@ SAGEMRO provides practical planning references for industrial equipment users. T
 ## Current hubs
 
 - https://sagemro.com/
-- https://sagemro.com/tools
-- https://sagemro.com/insights
+- https://sagemro.com/tools/
+- https://sagemro.com/insights/
 - https://sagemro.cn/
 
 Contact: support@sagemro.com

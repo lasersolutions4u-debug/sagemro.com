@@ -10,7 +10,7 @@ export function TechnicalReviewPage({ locale = 'en', onOpenLegal }) {
   const policy = getTechnicalReviewPolicy(locale);
   const author = getTechnicalAuthor('sagemro-technical-service-team', locale);
   const host = locale === 'zh-CN' ? 'https://sagemro.cn' : 'https://sagemro.com';
-  const canonical = `${host}/about/technical-review`;
+  const canonical = `${host}/about/technical-review/`;
   const organizationId = `${canonical}#technical-team`;
 
   useEffect(() => {
@@ -36,7 +36,7 @@ export function TechnicalReviewPage({ locale = 'en', onOpenLegal }) {
           {
             '@type': 'BreadcrumbList',
             itemListElement: [
-              { '@type': 'ListItem', position: 1, name: 'about', item: `${host}/about` },
+              { '@type': 'ListItem', position: 1, name: 'about', item: `${host}/about/` },
               { '@type': 'ListItem', position: 2, name: 'technical-review', item: canonical },
             ],
           },
@@ -57,7 +57,7 @@ export function TechnicalReviewPage({ locale = 'en', onOpenLegal }) {
       <header className="border-b border-[var(--color-border)] bg-[var(--color-surface)]">
         <div className="mx-auto flex max-w-4xl items-center justify-between gap-4 px-4 py-3 sm:px-6">
           <a href="/" className="flex items-center gap-2 text-sm font-semibold"><BrandMark variant="logo" className="h-8 w-8 object-contain" />SAGEMRO</a>
-          <a href="/services" className="text-sm text-[var(--color-text-secondary)] hover:text-[var(--color-primary)]">{locale === 'zh-CN' ? '服务' : 'Services'}</a>
+          <a href="/services/" className="text-sm text-[var(--color-text-secondary)] hover:text-[var(--color-primary)]">{locale === 'zh-CN' ? '服务' : 'Services'}</a>
         </div>
       </header>
       <main className="mx-auto w-full max-w-4xl flex-1 px-4 py-8 sm:px-6 lg:py-12">
