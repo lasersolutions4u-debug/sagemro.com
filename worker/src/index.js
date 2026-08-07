@@ -169,6 +169,11 @@ const FUNNEL_EVENTS = new Set([
   'bend_simulator_started',
   'bend_simulator_segment_adjusted',
   'bend_simulator_completed',
+  'seo_landing_viewed',
+  'content_engaged',
+  'tool_started',
+  'tool_completed',
+  'conversion_cta_clicked',
 ]);
 const FUNNEL_PROPERTY_ALLOWLIST = new Set([
   'entry',
@@ -190,6 +195,11 @@ const FUNNEL_PROPERTY_ALLOWLIST = new Set([
   'previous_bend_count',
   'unit_system',
   'view_mode',
+  'content_type',
+  'content_slug',
+  'cta_type',
+  'engagement_bucket',
+  'result_state',
 ]);
 const FUNNEL_ENUM_PROPERTIES = {
   entry: new Set(['app_loaded', 'main_chat', 'registration', 'login_modal']),
@@ -202,11 +212,16 @@ const FUNNEL_ENUM_PROPERTIES = {
   material: new Set(['carbon_steel', 'stainless_steel', 'aluminum', 'brass', 'copper']),
   unit_system: new Set(['metric', 'imperial']),
   view_mode: new Set(['2d', '3d']),
+  content_type: new Set(['service', 'diagnostic_guide', 'insight', 'tool']),
+  cta_type: new Set(['ai_diagnosis', 'service_request', 'engineer_review']),
+  engagement_bucket: new Set(['30s']),
+  result_state: new Set(['valid']),
 };
 const FUNNEL_BOOLEAN_PROPERTIES = new Set(['authenticated', 'has_images']);
 const FUNNEL_COUNT_PROPERTIES = new Set(['bend_count', 'previous_bend_count']);
 const FUNNEL_IDENTIFIER_PROPERTIES = new Set(['conversation_id', 'tool_id', 'request_id']);
 const FUNNEL_CATEGORY_PROPERTIES = new Set(['device_type', 'service_type']);
+const FUNNEL_SLUG_PROPERTIES = new Set(['content_slug']);
 
 const CONTACT_EMAIL_PATTERN = /[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g;
 const CONTACT_PLUS_PHONE_PATTERN = /\+\d[\d\s().-]{6,}\d/g;
@@ -19569,6 +19584,7 @@ function sanitizeFunnelProperty(key, value) {
     const text = piiSafeFunnelText(value);
     return text && /^[\p{L}\p{N}_ -]+$/u.test(text) ? text : undefined;
   }
+  if (FUNNEL_SLUG_PROPERTIES.has(key)) return piiSafeFunnelText(value, 120) || undefined;
   return undefined;
 }
 
