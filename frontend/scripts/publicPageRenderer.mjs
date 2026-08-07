@@ -83,6 +83,21 @@ export function renderPublicDocument(template, route, locale = 'en') {
   return html.replace('</head>', `    ${headTags(route, normalizedLocale)}\n  </head>`);
 }
 
+export function renderNotFoundDocument(template, locale = 'en') {
+  const normalizedLocale = locale === 'zh-CN' ? 'zh-CN' : 'en';
+  const copy = normalizedLocale === 'zh-CN'
+    ? { title: '页面不存在', body: '你访问的页面不存在，或者链接已经失效。' }
+    : { title: "This page doesn't exist", body: 'The link may have expired, or the page may have moved.' };
+  const route = { body: { h1: `404 — ${copy.title}`, paragraphs: [copy.body] } };
+
+  return String(template)
+    .replace(/<html\s+lang=(['"]).*?\1>/i, `<html lang="${normalizedLocale}">`)
+    .replace(/<meta\s+name=(['"])description\1\s+content=(['"]).*?\2\s*\/?\s*>/i, `<meta name="description" content="${escapeHtml(copy.body)}" />`)
+    .replace(/<meta\s+name=(['"])robots\1\s+content=(['"]).*?\2\s*\/?\s*>/i, '<meta name="robots" content="noindex,nofollow,noarchive" />')
+    .replace(/<title>.*?<\/title>/is, `<title>${escapeHtml(copy.title)} | SAGEMRO</title>`)
+    .replace(/<div\s+id=(['"])root\1><\/div>/i, renderBody(route));
+}
+
 export function renderSitemap(routes) {
   const entries = routes.map((route) => {
     const alternates = Object.entries(route.alternates)
