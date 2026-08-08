@@ -43,3 +43,25 @@ test('service-standard refresh passes its current-operation guard to each parent
   assert.match(page, /async function refreshOpenDetail\(expectedWorkOrderId, isCurrent = \(\) => true\)/);
   assert.match(page, /await Promise\.all\([\s\S]*if \(!isCurrent\(\)\) return;[\s\S]*setDetail[\s\S]*if \(!isCurrent\(\)\) return;[\s\S]*setData/);
 });
+
+test('Admin service controls warn only for the gate relevant to the work-order status', async () => {
+  const panel = await readSource('./ServiceStandardAdminPanel.jsx');
+  assert.match(panel, /currentServiceGateForStatus\(workOrderStatus\)/);
+  assert.match(panel, /currentGate \? currentSnapshot\?\.gates\?\.\[currentGate\]\?\.blocking_items/);
+  assert.doesNotMatch(panel, /GATE_KEYS\.flatMap/);
+  assert.match(panel, /onBlockerStateChange/);
+});
+
+test('gate overrides are limited to the writable blocked current gate', async () => {
+  const panel = await readSource('./ServiceStandardAdminPanel.jsx');
+  assert.match(panel, /!readOnly && currentGate && blockers\.length > 0/);
+  assert.match(panel, /overrideAdminWorkOrderServiceStandardGate\(workOrderId, currentGate, trimmedReason\)/);
+  assert.doesNotMatch(panel, /<select value=\{gate\}/);
+});
+
+test('historical states and future stages use neutral audit presentation', async () => {
+  const panel = await readSource('./ServiceStandardAdminPanel.jsx');
+  assert.match(panel, /legacy_not_recorded/);
+  assert.match(panel, /historicalHint/);
+  assert.match(panel, /<details/);
+});

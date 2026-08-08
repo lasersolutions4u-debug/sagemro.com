@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { AlertTriangle, CheckCircle2, LockKeyhole, RefreshCw } from 'lucide-react';
 import { runtimeConfig } from '../config/runtime';
+import { currentServiceGateForStatus } from '../pages/workOrderDetailView';
 import {
   getAdminWorkOrderServiceStandard,
   overrideAdminWorkOrderServiceStandardGate,
@@ -16,6 +17,10 @@ const TEXT = {
     actionFailed: 'Action failed',
     savedRefreshFailed: 'Override saved, but refresh failed. Reopen the service order to view the latest controls.',
     noItems: 'No service-standard items are available.',
+    progressSummary: (recorded, total) => `${recorded}/${total} controls recorded`,
+    noCurrentGate: 'No service gate is active at this stage.',
+    historicalHint: 'Historical record — not required by the current gate.',
+    showAudit: 'Review controls',
     stages: ['Task alignment', 'Risk control', 'One-visit readiness', 'Evidence & execution', 'Recovery verification', 'Transparent handover'],
     state: 'State',
     owner: 'Owner',
@@ -51,6 +56,10 @@ const TEXT = {
     actionFailed: '操作失败',
     savedRefreshFailed: '放行已保存，但刷新失败。请重新打开工单查看最新控制项。',
     noItems: '暂无服务标准项目。',
+    progressSummary: (recorded, total) => `已记录 ${recorded}/${total} 项控制`,
+    noCurrentGate: '当前阶段没有生效中的服务关卡。',
+    historicalHint: '历史记录——不属于当前关卡要求。',
+    showAudit: '查看控制项',
     stages: ['任务对齐', '风险控制', '一次到位准备', '证据与执行', '恢复验证', '透明交接'],
     state: '状态',
     owner: '责任方',
@@ -79,8 +88,6 @@ const TEXT = {
   },
 };
 
-const GATE_KEYS = ['start', 'resolve', 'handover'];
-
 function itemLabel(key) {
   return String(key || '').split('.').map((part) => part.replace(/_/g, ' ')).join(' · ');
 }
@@ -91,13 +98,19 @@ function stateTone(state) {
   return 'border-amber-500/30 bg-amber-500/10 text-amber-700';
 }
 
-export function ServiceStandardAdminPanel({ workOrderId, readOnly = false, onRefresh }) {
+export function ServiceStandardAdminPanel({
+  workOrderId,
+  workOrderStatus,
+  readOnly = false,
+  onRefresh,
+  onBlockerStateChange,
+}) {
   const t = TEXT[runtimeConfig.locale] || TEXT.en;
+  const currentGate = currentServiceGateForStatus(workOrderStatus);
   const [snapshot, setSnapshot] = useState(null);
   const [snapshotWorkOrderId, setSnapshotWorkOrderId] = useState(workOrderId);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState('');
-  const [gate, setGate] = useState('start');
   const [reason, setReason] = useState('');
   const [saving, setSaving] = useState(false);
   const operationEpoch = useRef(0);
@@ -131,15 +144,25 @@ export function ServiceStandardAdminPanel({ workOrderId, readOnly = false, onRef
   }, [workOrderId, t.loadFailed]);
 
   const currentSnapshot = snapshotWorkOrderId === workOrderId ? snapshot : null;
-  const blockers = useMemo(() => GATE_KEYS.flatMap((gateKey) => (
-    (currentSnapshot?.gates?.[gateKey]?.blocking_items || []).map((item) => ({ gate: gateKey, item }))
-  )), [currentSnapshot]);
+  const blockers = useMemo(
+    () => currentGate ? currentSnapshot?.gates?.[currentGate]?.blocking_items || [] : [],
+    [currentGate, currentSnapshot],
+  );
   const steps = Array.isArray(currentSnapshot?.steps) ? currentSnapshot.steps : [];
   const overrides = Array.isArray(currentSnapshot?.overrides) ? currentSnapshot.overrides : [];
+  const totalControls = steps.reduce((total, step) => total + (step.items || []).length, 0);
+  const recordedControls = steps.reduce(
+    (total, step) => total + (step.items || []).filter((item) => item.state !== 'pending').length,
+    0,
+  );
+
+  useEffect(() => {
+    onBlockerStateChange?.({ gate: currentGate, count: blockers.length });
+  }, [blockers.length, currentGate, onBlockerStateChange]);
 
   async function submitOverride(event) {
     event.preventDefault();
-    if (readOnly || saving) return;
+    if (readOnly || saving || !currentGate) return;
     const trimmedReason = reason.trim();
     if (!trimmedReason || trimmedReason.length > 500) {
       setMessage(t.reasonRequired);
@@ -150,7 +173,7 @@ export function ServiceStandardAdminPanel({ workOrderId, readOnly = false, onRef
     setSaving(true);
     setMessage('');
     try {
-      await overrideAdminWorkOrderServiceStandardGate(workOrderId, gate, trimmedReason);
+      await overrideAdminWorkOrderServiceStandardGate(workOrderId, currentGate, trimmedReason);
     } catch (error) {
       if (!isCurrent()) return;
       setMessage(error.message || t.actionFailed);
@@ -188,26 +211,50 @@ export function ServiceStandardAdminPanel({ workOrderId, readOnly = false, onRef
         <>
           <div className="border-b border-[var(--color-border)] p-4">
             <h5 className="text-sm font-medium text-[var(--color-text)]">{t.blocking}</h5>
-            {blockers.length === 0 ? <p className="mt-2 text-sm text-[var(--color-text-muted)]">{t.noBlockers}</p> : (
+            {!currentGate ? <p className="mt-2 text-sm text-[var(--color-text-muted)]">{t.noCurrentGate}</p> : blockers.length === 0 ? <p className="mt-2 text-sm text-[var(--color-text-muted)]">{t.noBlockers}</p> : (
               <ul className="mt-3 space-y-2">
-                {blockers.map(({ gate: blockerGate, item }) => <li key={`${blockerGate}:${item}`} className="flex items-start gap-2 rounded-lg bg-amber-500/10 px-3 py-2 text-sm text-amber-800"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" /><span><span className="font-medium">{t.gates[blockerGate]}:</span> {itemLabel(item)}</span></li>)}
+                {blockers.map((item) => <li key={item} className="flex items-start gap-2 rounded-lg bg-amber-500/10 px-3 py-2 text-sm text-amber-800"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" /><span><span className="font-medium">{t.gates[currentGate]}:</span> {itemLabel(item)}</span></li>)}
               </ul>
             )}
           </div>
 
+          <div className="border-b border-[var(--color-border)] p-4">
+            <div className="grid grid-cols-6 gap-1" aria-label={t.progressSummary(recordedControls, totalControls)}>
+              {steps.map((step) => {
+                const items = step.items || [];
+                const recordedCount = items.filter((item) => item.state !== 'pending').length;
+                const stageState = items.some((item) => item.state === 'legacy_not_recorded')
+                  ? 'legacy_not_recorded'
+                  : recordedCount === items.length ? 'confirmed' : 'pending';
+                return <div key={step.key} className={`h-2 rounded-full border ${stateTone(stageState)}`} title={`${t.stages[step.index] || itemLabel(step.key)}: ${recordedCount}/${items.length}`} />;
+              })}
+            </div>
+            <p className="mt-2 text-xs text-[var(--color-text-muted)]">{t.progressSummary(recordedControls, totalControls)}</p>
+          </div>
+
           <div className="divide-y divide-[var(--color-border)]">
-            {steps.length === 0 ? <p className="p-4 text-sm text-[var(--color-text-muted)]">{t.noItems}</p> : steps.map((step, index) => (
-              <div key={step.key} className="p-4">
-                <h5 className="font-medium text-[var(--color-text)]">{index + 1}. {t.stages[index] || itemLabel(step.key)}</h5>
-                <div className="mt-3 space-y-2">
-                  {(step.items || []).map((item) => <div key={item.key} className="grid gap-2 rounded-lg border border-[var(--color-border)] p-3 text-sm sm:grid-cols-[minmax(0,1fr)_auto_auto] sm:items-center">
-                    <div className="min-w-0"><div className="font-medium capitalize text-[var(--color-text)]">{itemLabel(item.key)}</div>{item.notApplicableReason && <p className="mt-1 text-xs text-[var(--color-text-muted)]">{item.notApplicableReason}</p>}</div>
-                    <span className="text-xs text-[var(--color-text-secondary)]">{t.owner}: {t.owners[item.owner] || item.owner}</span>
-                    <span className={`inline-flex w-fit rounded-full border px-2 py-1 text-xs ${stateTone(item.state)}`}>{t.states[item.state] || item.state} · {item.required ? t.required : t.optional}</span>
-                  </div>)}
-                </div>
-              </div>
-            ))}
+            {steps.length === 0 ? <p className="p-4 text-sm text-[var(--color-text-muted)]">{t.noItems}</p> : steps.map((step, index) => {
+              const items = step.items || [];
+              const recordedCount = items.filter((item) => item.state !== 'pending').length;
+              const isCurrentStep = step.index === currentSnapshot?.currentStepIndex;
+              const isHistoricalStep = step.index < currentSnapshot?.currentStepIndex;
+              return (
+                <details key={step.key} open={step.index === currentSnapshot?.currentStepIndex}>
+                  <summary aria-label={`${t.showAudit}: ${t.stages[index] || itemLabel(step.key)}`} className="flex min-h-11 cursor-pointer items-center justify-between gap-3 px-4 py-3">
+                    <span>{index + 1}. {t.stages[index] || itemLabel(step.key)}</span>
+                    <span className="text-xs text-[var(--color-text-muted)]">{recordedCount}/{step.items.length}</span>
+                  </summary>
+                  <div className="space-y-2 border-t border-[var(--color-border)] p-4">
+                    {isHistoricalStep && <p className="text-xs text-[var(--color-text-muted)]">{t.historicalHint}</p>}
+                    {items.map((item) => <div key={item.key} className="grid gap-2 rounded-lg border border-[var(--color-border)] p-3 text-sm sm:grid-cols-[minmax(0,1fr)_auto_auto] sm:items-center">
+                      <div className="min-w-0"><div className="font-medium capitalize text-[var(--color-text)]">{itemLabel(item.key)}</div>{item.notApplicableReason && <p className="mt-1 text-xs text-[var(--color-text-muted)]">{item.notApplicableReason}</p>}</div>
+                      <span className="text-xs text-[var(--color-text-secondary)]">{t.owner}: {t.owners[item.owner] || item.owner}</span>
+                      <span className={`inline-flex w-fit rounded-full border px-2 py-1 text-xs ${isCurrentStep ? stateTone(item.state) : 'border-[var(--color-border)] bg-[var(--color-surface-elevated)] text-[var(--color-text-secondary)]'}`}>{t.states[item.state] || item.state} · {item.required ? t.required : t.optional}</span>
+                    </div>)}
+                  </div>
+                </details>
+              );
+            })}
           </div>
 
           <div className="border-t border-[var(--color-border)] p-4">
@@ -215,21 +262,19 @@ export function ServiceStandardAdminPanel({ workOrderId, readOnly = false, onRef
             {overrides.length === 0 ? <p className="mt-2 text-sm text-[var(--color-text-muted)]">{t.noOverrides}</p> : <ul className="mt-3 space-y-2">{overrides.map((override) => <li key={override.id || override.gate_key} className="rounded-lg bg-[var(--color-surface-elevated)] px-3 py-2 text-sm text-[var(--color-text-secondary)]"><span className="font-medium text-[var(--color-text)]">{t.gates[override.gate_key] || override.gate_key}</span>: {override.reason}</li>)}</ul>}
           </div>
 
-          {!readOnly && <form onSubmit={submitOverride} className="border-t border-[var(--color-border)] p-4">
+          {!readOnly && currentGate && blockers.length > 0 && (
+          <form onSubmit={submitOverride} className="border-t border-[var(--color-border)] p-4">
             <h5 className="text-sm font-medium text-[var(--color-text)]">{t.override}</h5>
             <p className="mt-1 text-sm text-[var(--color-text-secondary)]">{t.overrideHint}</p>
-            <div className="mt-3 grid gap-3 sm:grid-cols-[12rem_minmax(0,1fr)_auto] sm:items-end">
-              <label className="block text-sm text-[var(--color-text-secondary)]">{t.gate}
-                <select value={gate} onChange={(event) => setGate(event.target.value)} className="mt-1 min-h-10 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 text-sm text-[var(--color-text)]">
-                  {GATE_KEYS.map((gateKey) => <option key={gateKey} value={gateKey}>{t.gates[gateKey]}</option>)}
-                </select>
-              </label>
+            <p className="mt-3 text-sm text-[var(--color-text-secondary)]">{t.gate}: {t.gates[currentGate]}</p>
+            <div className="mt-3 grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
               <label className="block text-sm text-[var(--color-text-secondary)]">{t.reason}
                 <textarea value={reason} onChange={(event) => setReason(event.target.value)} maxLength={500} rows={2} required className="mt-1 w-full resize-none rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)]" placeholder={t.reasonHint} />
               </label>
               <button type="submit" disabled={saving || reason.trim().length < 1 || reason.trim().length > 500} className="inline-flex min-h-10 items-center justify-center gap-1.5 rounded-lg bg-[var(--color-primary)] px-3 text-sm font-medium text-white disabled:opacity-50"><RefreshCw className="h-4 w-4" />{saving ? t.saving : t.submitOverride}</button>
             </div>
-          </form>}
+          </form>
+          )}
         </>
       )}
     </section>
