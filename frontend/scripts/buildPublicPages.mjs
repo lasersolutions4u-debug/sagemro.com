@@ -42,13 +42,17 @@ function renderRedirects() {
 
 function renderRobots(locale) {
   const host = hosts[locale];
-  const publicSearchAgents = ['Googlebot', 'Bingbot', 'Baiduspider', 'OAI-SearchBot'];
+  const publicSearchAgents = ['Googlebot', 'Bingbot', 'OAI-SearchBot'];
   const trainingOnlyAgents = ['GPTBot', 'Google-Extended', 'ClaudeBot', 'CCBot'];
   const privatePaths = ['/api/', '/admin/', '/engineer/', '/work-orders/', '/activate'];
   const searchPolicy = (agent) => [`User-agent: ${agent}`, 'Allow: /', ...privatePaths.map((path) => `Disallow: ${path}`)].join('\n');
+  const baiduPolicy = locale === 'zh-CN'
+    ? searchPolicy('Baiduspider')
+    : 'User-agent: Baiduspider\nDisallow: /';
 
   return [
     ...publicSearchAgents.map(searchPolicy),
+    baiduPolicy,
     searchPolicy('*'),
     ...trainingOnlyAgents.map((agent) => `User-agent: ${agent}\nDisallow: /`),
     `Sitemap: ${host}/sitemap.xml`,

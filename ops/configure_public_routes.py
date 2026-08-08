@@ -27,6 +27,12 @@ ROUTE_LINES = (
     'location ~ ^/work-orders/[^/]+$ { try_files /index.html =404; }',
     'location / { try_files $uri $uri/ =404; }',
 )
+HOST_PATTERNS = {
+    'customer': r'sagemro\.cn|www\.sagemro\.cn',
+    'engineer': r'engineer\.sagemro\.cn',
+    'admin': r'admin\.sagemro\.cn',
+    'api': r'api\.sagemro\.cn',
+}
 
 
 def nginx_code(text):
@@ -176,7 +182,23 @@ def server_kind(block_text):
         return 'customer'
     if 'engineer.sagemro.cn' in names:
         return 'engineer'
+    if 'admin.sagemro.cn' in names:
+        return 'admin'
+    if 'api.sagemro.cn' in names:
+        return 'api'
     return None
+
+
+def ensure_host_guard(block_text, kind):
+    guard = f'if ($host !~ ^(?:{HOST_PATTERNS[kind]})$) {{ return 444; }}'
+    if guard in nginx_code(block_text):
+        return block_text
+
+    opening = re.match(r'(?P<prefix>[ \t]*server[ \t]*\{[ \t]*\n)', block_text)
+    if opening is None:
+        raise ValueError(f'{kind} server must open on its own line')
+    indent = re.match(r'[ \t]*', block_text).group(0) + '  '
+    return block_text[:opening.end()] + f'{indent}{guard}\n' + block_text[opening.end():]
 
 
 def has_canonical_redirect(block_text):
@@ -227,7 +249,7 @@ def transformed_fallback(block_text):
     return all(line in code for line in required)
 
 
-def transform_block(block_text, kind):
+def transform_public_routes(block_text, kind):
     code = nginx_code(block_text)
     legacy_matches = list(LEGACY_FALLBACK_RE.finditer(code))
     if len(legacy_matches) == 1:
@@ -255,6 +277,11 @@ def transform_block(block_text, kind):
     raise ValueError(f'{kind} server does not contain exactly one recognized location / fallback')
 
 
+def transform_block(block_text, kind):
+    updated = transform_public_routes(block_text, kind) if kind in ('customer', 'engineer') else block_text
+    return ensure_host_guard(updated, kind)
+
+
 def transform_config(text):
     lines = text.splitlines(keepends=True)
     blocks = list(server_blocks(lines))
@@ -265,7 +292,8 @@ def transform_config(text):
         kind = server_kind(block_text)
         if kind is None:
             continue
-        matched += 1
+        if kind in ('customer', 'engineer'):
+            matched += 1
         lines[start:end] = transform_block(block_text, kind).splitlines(keepends=True)
 
     return ''.join(lines), matched

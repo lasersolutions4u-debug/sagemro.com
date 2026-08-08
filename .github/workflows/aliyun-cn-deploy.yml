@@ -297,6 +297,11 @@ jobs:
             ~^((www\.)?sagemro\.cn|admin\.sagemro\.cn|engineer\.sagemro\.cn)$ "camera=(self), microphone=(self), geolocation=(self)";
           }
 
+          map $host $sagemro_robots_tag {
+            default "";
+            ~^admin\.sagemro\.cn$ "noindex, nofollow, noarchive, nosnippet, noimageindex";
+          }
+
           gzip_types text/plain text/css application/javascript application/json application/xml image/svg+xml font/woff2;
           add_header Cache-Control $sagemro_asset_cache_control always;
           add_header Content-Security-Policy $sagemro_content_security_policy always;
@@ -305,6 +310,7 @@ jobs:
           add_header X-Frame-Options $sagemro_frame_options always;
           add_header Referrer-Policy $sagemro_referrer_policy always;
           add_header Permissions-Policy $sagemro_permissions_policy always;
+          add_header X-Robots-Tag $sagemro_robots_tag always;
           NGINX
 
           $SUDO python3 "$release/ops/enable_nginx_http2.py" "${nginx_config_files[@]}"
@@ -342,6 +348,23 @@ jobs:
           }
           expect_404 https://sagemro.cn/deploy-404-smoke
           expect_404 https://engineer.sagemro.cn/deploy-404-smoke
+
+          china_frontend_ip="$(getent ahostsv4 sagemro.cn | awk 'NR == 1 { print $1 }')"
+          if [ -z "$china_frontend_ip" ]; then
+            echo "::error::Unable to resolve the China frontend IPv4 address"
+            exit 1
+          fi
+          set +e
+          unknown_host_status="$(curl --insecure --silent --show-error --connect-timeout 10 --max-time 20 \
+            --resolve "unexpected.invalid:443:${china_frontend_ip}" \
+            --output /dev/null --write-out '%{http_code}' \
+            https://unexpected.invalid/)"
+          unknown_host_exit=$?
+          set -e
+          if [ "$unknown_host_exit" -eq 0 ] || [ "$unknown_host_status" != "000" ]; then
+            echo "::error::China unknown host expected to be rejected; curl exit=${unknown_host_exit}, status=${unknown_host_status}"
+            exit 1
+          fi
 
           for site_host in sagemro.cn admin.sagemro.cn engineer.sagemro.cn; do
             site_url="https://${site_host}"

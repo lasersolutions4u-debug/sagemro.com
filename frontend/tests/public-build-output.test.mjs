@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFile as execFileCallback } from 'node:child_process';
-import { cp, mkdtemp, readFile, rm } from 'node:fs/promises';
+import { cp, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
@@ -43,6 +43,25 @@ test('buildPublicPages writes crawlable public pages and crawl artifacts', async
   ]);
   assert.equal(await read('sitemap.xml'), await checkedIn('sitemap.xml'));
   assert.equal(await read('llms.txt'), await checkedIn('llms.txt'));
+  assert.match(await read('robots.txt'), /User-agent: Baiduspider\nAllow: \//);
+});
+
+test('English production robots excludes Baiduspider without blocking international search engines', async (t) => {
+  const distDir = await mkdtemp(join(tmpdir(), 'sagemro-public-build-en-'));
+  t.after(() => rm(distDir, { force: true, recursive: true }));
+  const chineseTemplate = await readFile(new URL('../index.html', import.meta.url), 'utf8');
+  await cp(new URL('../index.html', import.meta.url), join(distDir, 'index.html'));
+  await writeFile(
+    join(distDir, 'index.html'),
+    chineseTemplate.replace('<html lang="zh-CN">', '<html lang="en">'),
+  );
+
+  await buildPublicPages({ distDir });
+
+  const robots = await readFile(join(distDir, 'robots.txt'), 'utf8');
+  assert.match(robots, /User-agent: Baiduspider\nDisallow: \/(?:\n|$)/);
+  assert.match(robots, /User-agent: Googlebot\nAllow: \//);
+  assert.match(robots, /Sitemap: https:\/\/sagemro\.com\/sitemap\.xml/);
 });
 
 test('buildPublicPages writes direct noindex tool pages outside every public crawl artifact', async (t) => {

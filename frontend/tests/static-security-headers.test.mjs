@@ -26,6 +26,9 @@ for (const site of ['frontend', 'admin']) {
     );
     assert.match(headers, /frame-ancestors 'none'/);
     assert.match(headers, /object-src 'none'/);
+    if (site === 'admin') {
+      assert.match(headers, /X-Robots-Tag: noindex, nofollow, noarchive, nosnippet, noimageindex/);
+    }
   });
 }
 
@@ -45,4 +48,7 @@ test('China ECS Nginx release applies the same headers only to SAGEMRO hosts', (
     assert.match(workflow, new RegExp(`add_header ${header}`));
   }
   assert.match(workflow, /camera=\(self\), microphone=\(self\), geolocation=\(self\)/);
+  assert.match(workflow, /map \$host \$sagemro_robots_tag/);
+  assert.match(workflow, /admin\\\.sagemro\\\.cn\$ "noindex, nofollow, noarchive, nosnippet, noimageindex"/);
+  assert.match(workflow, /add_header X-Robots-Tag \$sagemro_robots_tag always;/);
 });
