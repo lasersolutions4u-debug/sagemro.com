@@ -65,3 +65,24 @@ test('historical states and future stages use neutral audit presentation', async
   assert.match(panel, /historicalHint/);
   assert.match(panel, /<details/);
 });
+
+test('service-standard stage presentation uses the API current_step_index response field', async () => {
+  const panel = await readSource('./ServiceStandardAdminPanel.jsx');
+  const response = {
+    current_step_index: 2,
+    steps: [{ key: 'one_visit_readiness', index: 2, items: [] }],
+  };
+
+  assert.equal(response.current_step_index, 2);
+  assert.match(panel, /const currentStepIndex = currentSnapshot\?\.current_step_index/);
+  assert.match(panel, /open=\{step\.index === currentStepIndex\}/);
+  assert.match(panel, /const isHistoricalStep = step\.index < currentStepIndex/);
+});
+
+test('incomplete non-current progress segments remain neutral audit indicators', async () => {
+  const panel = await readSource('./ServiceStandardAdminPanel.jsx');
+
+  assert.match(panel, /const isCurrentStep = step\.index === currentStepIndex/);
+  assert.match(panel, /isCurrentStep \? stateTone\(stageState\) : 'border-\[var\(--color-border\)\] bg-\[var\(--color-surface-elevated\)\] text-\[var\(--color-text-secondary\)\]'/);
+  assert.doesNotMatch(panel, /\$\{stateTone\(stageState\)\}/);
+});
