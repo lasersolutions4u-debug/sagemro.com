@@ -11,6 +11,7 @@ import { getTechnicalReviewPolicy } from '../src/data/technicalReviewPolicy.js';
 import { welcomePageCopy } from '../src/data/welcomePageCopy.js';
 import {
   escapeHtml,
+  renderNotFoundDocument,
   renderPublicDocument,
   renderRedirects,
   renderRobots,
@@ -146,6 +147,41 @@ test('rendered tool HTML contains crawlable content and safe JSON-LD', () => {
   assert.match(html, /<h1>Metal Weight Calculator for Sheet, Tube, Angle, Channel, and Beam<\/h1>/);
   assert.match(html, /application\/ld\+json/);
   assert.doesNotMatch(html, /<script[^>]*>.*<\/script><\/script>/s);
+});
+
+test('prerendered public content has a visible branded first-paint contract', () => {
+  for (const locale of ['en', 'zh-CN']) {
+    const html = renderPublicDocument(TEMPLATE, getPublicSeoRoute('/', locale), locale);
+    const criticalStyleIndex = html.indexOf('<style data-seo-shell-critical>');
+    const shellIndex = html.indexOf('<main class="seo-static-shell">');
+
+    assert.ok(criticalStyleIndex >= 0, `${locale} should include critical shell styles`);
+    assert.ok(criticalStyleIndex < shellIndex, `${locale} critical styles should precede the shell`);
+    assert.match(html, /class="seo-static-shell__brand"/);
+    assert.match(html, /class="seo-static-shell__content"/);
+    assert.match(html, /class="seo-static-shell__details"/);
+    assert.match(html, /<img src="\/sagemro-logo\.png" alt=""/);
+    assert.doesNotMatch(html, /seo-static-shell__eyebrow/);
+    assert.match(html, /min-height:\s*100vh/);
+    assert.match(html, /@media \(max-width:\s*720px\)/);
+    assert.doesNotMatch(html, /\.seo-static-shell[^{}]*\{[^}]*(?:display:\s*none|visibility:\s*hidden|opacity:\s*0)/s);
+  }
+});
+
+test('localized 404 documents reuse the visible branded shell without adding page copy', () => {
+  const expectedHeadings = {
+    en: '404 — This page doesn&#39;t exist',
+    'zh-CN': '404 — 页面不存在',
+  };
+
+  for (const locale of ['en', 'zh-CN']) {
+    const html = renderNotFoundDocument(TEMPLATE, locale);
+
+    assert.match(html, /<style data-seo-shell-critical>/);
+    assert.match(html, /class="seo-static-shell__brand"/);
+    assert.match(html, new RegExp(`<h1>${expectedHeadings[locale]}</h1>`));
+    assert.doesNotMatch(html, /seo-static-shell__eyebrow|SAGEMRO Service OS/);
+  }
 });
 
 test('renderer escapes page content and protects JSON-LD script boundaries', () => {
