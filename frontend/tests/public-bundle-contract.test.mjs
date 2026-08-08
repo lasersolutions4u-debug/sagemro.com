@@ -64,12 +64,12 @@ test('Markdown stays behind a lazy vendor boundary reachable only from ChatArea'
   assert.deepEqual(markdownConsumers, ['src/components/Chat/ChatArea.jsx']);
 });
 
-test('rendered branding uses the compact SVG mark', async () => {
-  const [html, svg] = await Promise.all([
+test('rendered branding uses the approved full robot PNG logo', async () => {
+  const [html, logo] = await Promise.all([
     readFile(resolve(distRoot, 'index.html'), 'utf8'),
-    stat(resolve(distRoot, 'sagemro-brand-mark.svg')),
+    stat(resolve(distRoot, 'sagemro-logo.png')),
   ]);
 
-  assert.match(html, /href="\/sagemro-brand-mark\.svg"/);
-  assert.ok(svg.size < 80 * 1024, `SVG mark must stay below 80 KB (received ${svg.size} bytes)`);
+  assert.match(html, /type="image\/png" href="\/sagemro-logo\.png"/);
+  assert.ok(logo.size < 160 * 1024, `PNG logo must stay below 160 KB (received ${logo.size} bytes)`);
 });
