@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
@@ -26,22 +27,28 @@ function extractPlaceholderExpression(source) {
   return match[1];
 }
 
-test('customer and browser icons use the compact SAGEMRO SVG mark', () => {
+test('customer, engineer, admin, and browser use the approved full SAGEMRO logo', () => {
   const expectedAssets = [
     'frontend/public/sagemro-logo.png',
     'admin/public/sagemro-logo.png',
   ];
+  const approvedLogoSha256 = '8dd41506fb801bf6cad52751905a104423dd5e69e40c18b9043b8cab25c3893e';
 
   for (const assetPath of expectedAssets) {
     assert.equal(existsSync(path.join(root, assetPath)), true, `${assetPath} should exist`);
+    const digest = createHash('sha256')
+      .update(readFileSync(path.join(root, assetPath)))
+      .digest('hex');
+    assert.equal(digest, approvedLogoSha256, `${assetPath} should contain the approved artwork`);
   }
 
-  assert.match(read('frontend/src/components/common/BrandMark.jsx'), /sagemro-brand-mark\.svg/);
-  assert.doesNotMatch(read('frontend/src/components/common/BrandMark.jsx'), /sagemro-logo\.png/);
+  assert.match(read('frontend/src/components/common/BrandMark.jsx'), /sagemro-logo\.png/);
+  assert.doesNotMatch(read('frontend/src/components/common/BrandMark.jsx'), /sagemro-brand-mark\.svg/);
   assert.match(read('admin/src/components/BrandMark.jsx'), /sagemro-logo\.png/);
   assert.doesNotMatch(read('admin/src/components/BrandMark.jsx'), /sagemro-brand-mark\.svg/);
 
-  assert.match(read('frontend/index.html'), /href="\/sagemro-brand-mark\.svg"/);
+  assert.match(read('frontend/index.html'), /href="\/sagemro-logo\.png"/);
+  assert.doesNotMatch(read('frontend/index.html'), /href="\/sagemro-brand-mark\.svg"/);
   assert.match(read('admin/index.html'), /href="\/sagemro-logo\.png"/);
 });
 
