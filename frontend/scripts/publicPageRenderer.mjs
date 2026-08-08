@@ -1,5 +1,88 @@
 const HOSTS = { en: 'https://sagemro.com', 'zh-CN': 'https://sagemro.cn' };
 
+const CRITICAL_SHELL_STYLES = `<style data-seo-shell-critical>
+  .seo-static-shell, .seo-static-shell * { box-sizing: border-box; }
+  .seo-static-shell {
+    min-height: 100vh;
+    display: grid;
+    grid-template-columns: 16rem minmax(0, 1fr);
+    margin: 0;
+    background: #ffffff;
+    color: #171721;
+    font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  }
+  .seo-static-shell__brand {
+    padding: 2rem 1.5rem;
+    background: #171717;
+    border-right: 1px solid #2c2c2c;
+  }
+  .seo-static-shell__brand a {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.85rem;
+    color: #ffffff;
+    font-size: 1rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-decoration: none;
+  }
+  .seo-static-shell__brand img {
+    width: 3.75rem;
+    height: 3.75rem;
+    border-radius: 50%;
+    object-fit: cover;
+  }
+  .seo-static-shell__content {
+    display: flex;
+    align-items: center;
+    min-width: 0;
+    padding: clamp(3rem, 7vw, 6.5rem);
+  }
+  .seo-static-shell__frame { width: min(100%, 74rem); margin: 0 auto; }
+  .seo-static-shell h1 {
+    max-width: 62rem;
+    margin: 0;
+    font-size: clamp(2.4rem, 5vw, 4.6rem);
+    line-height: 1.04;
+    letter-spacing: -0.045em;
+  }
+  .seo-static-shell__intro {
+    max-width: 58rem;
+    margin: 1.5rem 0 0;
+    color: #66616f;
+    font-size: clamp(1rem, 1.8vw, 1.25rem);
+    line-height: 1.7;
+  }
+  .seo-static-shell__details {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 0.875rem;
+    margin-top: 2.5rem;
+  }
+  .seo-static-shell__details > * {
+    min-width: 0;
+    margin: 0;
+    padding: 1rem;
+    border: 1px solid #e8e5eb;
+    border-radius: 1rem;
+    background: #faf9fb;
+    color: #35313b;
+    line-height: 1.45;
+  }
+  .seo-static-shell__details a { color: inherit; text-decoration: none; }
+  @media (max-width: 980px) {
+    .seo-static-shell__details { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
+  @media (max-width: 720px) {
+    .seo-static-shell { display: block; }
+    .seo-static-shell__brand { padding: 0.875rem 1.25rem; border-right: 0; }
+    .seo-static-shell__brand img { width: 2.75rem; height: 2.75rem; }
+    .seo-static-shell__content { align-items: flex-start; padding: 2.5rem 1.25rem 3rem; }
+    .seo-static-shell h1 { font-size: clamp(2rem, 10vw, 3rem); }
+    .seo-static-shell__details { grid-template-columns: 1fr; margin-top: 2rem; }
+  }
+</style>`;
+
 export function escapeHtml(value = '') {
   return String(value).replace(/[&<>"']/g, (char) => ({
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
@@ -28,7 +111,20 @@ function renderBody(route) {
     ...(body.emptyState ? [`<p>${escapeHtml(body.emptyState)}</p>`] : []),
   ].join('');
 
-  return `<div id="root" data-prerendered="true">\n  <main class="seo-static-shell">\n    <a href="/">SAGEMRO</a>\n    <h1>${escapeHtml(body.h1)}</h1>\n    <p>${escapeHtml(paragraphs[0])}</p>\n    <section>${detail}</section>\n  </main>\n</div>`;
+  return `<div id="root" data-prerendered="true">
+  <main class="seo-static-shell">
+    <aside class="seo-static-shell__brand">
+      <a href="/"><img src="/sagemro-logo.png" alt="" width="60" height="60" /><span>SAGEMRO</span></a>
+    </aside>
+    <div class="seo-static-shell__content">
+      <div class="seo-static-shell__frame">
+        <h1>${escapeHtml(body.h1)}</h1>
+        <p class="seo-static-shell__intro">${escapeHtml(paragraphs[0])}</p>
+        <section class="seo-static-shell__details">${detail}</section>
+      </div>
+    </div>
+  </main>
+</div>`;
 }
 
 function structuredData(route, locale) {
@@ -80,7 +176,7 @@ export function renderPublicDocument(template, route, locale = 'en') {
     .replace(/<title>.*?<\/title>/is, `<title>${escapeHtml(title)}</title>`)
     .replace(/<div\s+id=(['"])root\1><\/div>/i, renderBody(route));
 
-  return html.replace('</head>', `    ${headTags(route, normalizedLocale)}\n  </head>`);
+  return html.replace('</head>', `    ${CRITICAL_SHELL_STYLES}\n    ${headTags(route, normalizedLocale)}\n  </head>`);
 }
 
 export function renderNotFoundDocument(template, locale = 'en') {
@@ -95,6 +191,7 @@ export function renderNotFoundDocument(template, locale = 'en') {
     .replace(/<meta\s+name=(['"])description\1\s+content=(['"]).*?\2\s*\/?\s*>/i, `<meta name="description" content="${escapeHtml(copy.body)}" />`)
     .replace(/<meta\s+name=(['"])robots\1\s+content=(['"]).*?\2\s*\/?\s*>/i, '<meta name="robots" content="noindex,nofollow,noarchive" />')
     .replace(/<title>.*?<\/title>/is, `<title>${escapeHtml(copy.title)} | SAGEMRO</title>`)
+    .replace('</head>', `    ${CRITICAL_SHELL_STYLES}\n  </head>`)
     .replace(/<div\s+id=(['"])root\1><\/div>/i, renderBody(route));
 }
 
