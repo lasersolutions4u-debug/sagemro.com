@@ -27,6 +27,12 @@ ROUTE_LINES = (
     'location ~ ^/work-orders/[^/]+$ { try_files /index.html =404; }',
     'location / { try_files $uri $uri/ =404; }',
 )
+HOST_PATTERNS = {
+    'customer': r'sagemro\.cn|www\.sagemro\.cn',
+    'engineer': r'engineer\.sagemro\.cn',
+    'admin': r'admin\.sagemro\.cn',
+    'api': r'api\.sagemro\.cn',
+}
 
 
 def nginx_code(text):
@@ -168,15 +174,47 @@ def server_kind(block_text):
         return None
 
     names = server_names(block_text)
-    if 'admin.sagemro.cn' in names and (
-        'sagemro.cn' in names or 'engineer.sagemro.cn' in names
-    ):
-        raise ValueError('admin.sagemro.cn cannot share a server block with customer or engineer hosts')
-    if 'sagemro.cn' in names:
-        return 'customer'
+    kinds = []
+    if names.intersection(('sagemro.cn', 'www.sagemro.cn')):
+        kinds.append('customer')
     if 'engineer.sagemro.cn' in names:
-        return 'engineer'
-    return None
+        kinds.append('engineer')
+    if 'admin.sagemro.cn' in names:
+        kinds.append('admin')
+    if 'api.sagemro.cn' in names:
+        kinds.append('api')
+
+    if 'admin' in kinds and ('customer' in kinds or 'engineer' in kinds):
+        raise ValueError('admin.sagemro.cn cannot share a server block with customer or engineer hosts')
+    if len(kinds) > 1:
+        raise ValueError('Official host kinds cannot share a server block')
+    return kinds[0] if kinds else None
+
+
+def ensure_default_tls_server(block_text):
+    code = nginx_code(block_text)
+    matches = list(TLS_LISTEN_RE.finditer(code))
+    updated = block_text
+    for match in reversed(matches):
+        directive = block_text[match.start():match.end()]
+        if 'default_server' in nginx_tokens(directive):
+            continue
+        semicolon = directive.rfind(';')
+        replacement = directive[:semicolon].rstrip() + ' default_server' + directive[semicolon:]
+        updated = updated[:match.start()] + replacement + updated[match.end():]
+    return updated
+
+
+def ensure_host_guard(block_text, kind):
+    guard = f'if ($host !~ ^(?:{HOST_PATTERNS[kind]})$) {{ return 444; }}'
+    if guard in nginx_code(block_text):
+        return block_text
+
+    opening = re.match(r'(?P<prefix>[ \t]*server[ \t]*\{[ \t]*\n)', block_text)
+    if opening is None:
+        raise ValueError(f'{kind} server must open on its own line')
+    indent = re.match(r'[ \t]*', block_text).group(0) + '  '
+    return block_text[:opening.end()] + f'{indent}{guard}\n' + block_text[opening.end():]
 
 
 def has_canonical_redirect(block_text):
@@ -227,7 +265,7 @@ def transformed_fallback(block_text):
     return all(line in code for line in required)
 
 
-def transform_block(block_text, kind):
+def transform_public_routes(block_text, kind):
     code = nginx_code(block_text)
     legacy_matches = list(LEGACY_FALLBACK_RE.finditer(code))
     if len(legacy_matches) == 1:
@@ -255,20 +293,31 @@ def transform_block(block_text, kind):
     raise ValueError(f'{kind} server does not contain exactly one recognized location / fallback')
 
 
+def transform_block(block_text, kind):
+    updated = transform_public_routes(block_text, kind) if kind in ('customer', 'engineer') else block_text
+    if kind == 'customer':
+        updated = ensure_default_tls_server(updated)
+    return ensure_host_guard(updated, kind)
+
+
 def transform_config(text):
     lines = text.splitlines(keepends=True)
     blocks = list(server_blocks(lines))
     matched = 0
+    customer_matched = 0
 
     for start, end in reversed(blocks):
         block_text = ''.join(lines[start:end])
         kind = server_kind(block_text)
         if kind is None:
             continue
-        matched += 1
+        if kind in ('customer', 'engineer'):
+            matched += 1
+        if kind == 'customer':
+            customer_matched += 1
         lines[start:end] = transform_block(block_text, kind).splitlines(keepends=True)
 
-    return ''.join(lines), matched
+    return ''.join(lines), matched, customer_matched
 
 
 def write_atomic(path, content, stat):
@@ -299,18 +348,22 @@ def update_configs(paths):
     updated = {}
     stats = {}
     total_matched = 0
+    customer_matched = 0
 
     for path in paths:
         original = path.read_bytes()
         text = original.decode('utf-8')
-        transformed, matched = transform_config(text)
+        transformed, matched, customers = transform_config(text)
         originals[path] = original
         updated[path] = transformed.encode('utf-8')
         stats[path] = path.stat()
         total_matched += matched
+        customer_matched += customers
 
     if total_matched == 0:
         raise ValueError('No sagemro.cn customer or engineer server block was found')
+    if customer_matched != 1:
+        raise ValueError('Expected exactly one customer TLS server block')
 
     written = []
     try:

@@ -41,3 +41,9 @@ test('China health checks cover private SPA routes and real public 404s', () => 
   assert.match(workflow, /https:\/\/engineer\.sagemro\.cn\/deploy-404-smoke/);
   assert.match(workflow, /expected HTTP 404/);
 });
+
+test('China health checks reject an unknown HTTPS host on the production address', () => {
+  assert.match(workflow, /unexpected\.invalid/);
+  assert.match(workflow, /--resolve/);
+  assert.match(workflow, /unknown host expected to be rejected/i);
+});
