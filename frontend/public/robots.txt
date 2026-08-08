@@ -14,14 +14,6 @@ Disallow: /engineer/
 Disallow: /work-orders/
 Disallow: /activate
 
-User-agent: Baiduspider
-Allow: /
-Disallow: /api/
-Disallow: /admin/
-Disallow: /engineer/
-Disallow: /work-orders/
-Disallow: /activate
-
 User-agent: OAI-SearchBot
 Allow: /
 Disallow: /api/
@@ -29,6 +21,9 @@ Disallow: /admin/
 Disallow: /engineer/
 Disallow: /work-orders/
 Disallow: /activate
+
+User-agent: Baiduspider
+Disallow: /
 
 User-agent: *
 Allow: /
