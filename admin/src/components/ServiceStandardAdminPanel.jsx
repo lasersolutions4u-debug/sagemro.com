@@ -149,6 +149,7 @@ export function ServiceStandardAdminPanel({
     [currentGate, currentSnapshot],
   );
   const steps = Array.isArray(currentSnapshot?.steps) ? currentSnapshot.steps : [];
+  const currentStepIndex = currentSnapshot?.current_step_index;
   const overrides = Array.isArray(currentSnapshot?.overrides) ? currentSnapshot.overrides : [];
   const totalControls = steps.reduce((total, step) => total + (step.items || []).length, 0);
   const recordedControls = steps.reduce(
@@ -226,7 +227,8 @@ export function ServiceStandardAdminPanel({
                 const stageState = items.some((item) => item.state === 'legacy_not_recorded')
                   ? 'legacy_not_recorded'
                   : recordedCount === items.length ? 'confirmed' : 'pending';
-                return <div key={step.key} className={`h-2 rounded-full border ${stateTone(stageState)}`} title={`${t.stages[step.index] || itemLabel(step.key)}: ${recordedCount}/${items.length}`} />;
+                const isCurrentStep = step.index === currentStepIndex;
+                return <div key={step.key} className={`h-2 rounded-full border ${isCurrentStep ? stateTone(stageState) : 'border-[var(--color-border)] bg-[var(--color-surface-elevated)] text-[var(--color-text-secondary)]'}`} title={`${t.stages[step.index] || itemLabel(step.key)}: ${recordedCount}/${items.length}`} />;
               })}
             </div>
             <p className="mt-2 text-xs text-[var(--color-text-muted)]">{t.progressSummary(recordedControls, totalControls)}</p>
@@ -236,10 +238,10 @@ export function ServiceStandardAdminPanel({
             {steps.length === 0 ? <p className="p-4 text-sm text-[var(--color-text-muted)]">{t.noItems}</p> : steps.map((step, index) => {
               const items = step.items || [];
               const recordedCount = items.filter((item) => item.state !== 'pending').length;
-              const isCurrentStep = step.index === currentSnapshot?.currentStepIndex;
-              const isHistoricalStep = step.index < currentSnapshot?.currentStepIndex;
+              const isCurrentStep = step.index === currentStepIndex;
+              const isHistoricalStep = step.index < currentStepIndex;
               return (
-                <details key={step.key} open={step.index === currentSnapshot?.currentStepIndex}>
+                <details key={step.key} open={step.index === currentStepIndex}>
                   <summary aria-label={`${t.showAudit}: ${t.stages[index] || itemLabel(step.key)}`} className="flex min-h-11 cursor-pointer items-center justify-between gap-3 px-4 py-3">
                     <span>{index + 1}. {t.stages[index] || itemLabel(step.key)}</span>
                     <span className="text-xs text-[var(--color-text-muted)]">{recordedCount}/{step.items.length}</span>
