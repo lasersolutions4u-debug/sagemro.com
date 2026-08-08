@@ -26,5 +26,8 @@ for (const site of ['frontend', 'admin']) {
     );
     assert.match(headers, /frame-ancestors 'none'/);
     assert.match(headers, /object-src 'none'/);
+    if (site === 'admin') {
+      assert.match(headers, /X-Robots-Tag: noindex, nofollow, noarchive, nosnippet, noimageindex/);
+    }
   });
 }

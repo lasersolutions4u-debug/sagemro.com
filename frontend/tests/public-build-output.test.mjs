@@ -43,6 +43,10 @@ test('buildPublicPages writes crawlable public pages and crawl artifacts', async
   ]);
   assert.equal(await read('sitemap.xml'), await checkedIn('sitemap.xml'));
   assert.equal(await read('llms.txt'), await checkedIn('llms.txt'));
+  const robots = await read('robots.txt');
+  assert.equal(robots.trimEnd(), (await checkedIn('robots.txt')).trimEnd());
+  assert.match(robots, /User-agent: Baiduspider\nDisallow: \/(?:\n|$)/);
+  assert.match(robots, /User-agent: Googlebot\nAllow: \//);
 });
 
 test('buildPublicPages writes direct noindex tool pages outside every public crawl artifact', async (t) => {
