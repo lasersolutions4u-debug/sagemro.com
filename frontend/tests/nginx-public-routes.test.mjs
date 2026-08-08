@@ -57,6 +57,7 @@ server {
   const updated = readFileSync(config, 'utf8');
   const [customer, engineer, admin, api] = updated.match(/server\s*\{[\s\S]*?\n\}/g);
 
+  assert.match(customer, /listen 443 ssl http2 default_server;/);
   assert.match(customer, /if \(\$host !~ \^\(\?:sagemro\\\.cn\|www\\\.sagemro\\\.cn\)\$\) \{ return 444; \}/);
   assert.match(customer, /if \(\$host = www\.sagemro\.cn\) \{ return 301 https:\/\/sagemro\.cn\$request_uri; \}/);
   assert.match(customer, new RegExp(privateRouteContract.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
@@ -149,6 +150,23 @@ test('refuses a configuration set with no customer or engineer server', { skip: 
   assert.equal(readFileSync(config, 'utf8'), initial);
 });
 
+test('refuses an engineer-only configuration without creating a TLS default server', { skip: !python }, () => {
+  const directory = mkdtempSync(path.join(tmpdir(), 'sagemro-public-routes-'));
+  const config = path.join(directory, 'engineer.conf');
+  const initial = `server {
+  listen 443 ssl;
+  server_name engineer.sagemro.cn;
+  location / { try_files $uri /index.html; }
+}\n`;
+  writeFileSync(config, initial);
+
+  const result = spawnSync(python, [script, config], { encoding: 'utf8' });
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /exactly one customer TLS server block/i);
+  assert.equal(readFileSync(config, 'utf8'), initial);
+});
+
 test('refuses to alter an admin host that shares a public server block', { skip: !python }, () => {
   const directory = mkdtempSync(path.join(tmpdir(), 'sagemro-public-routes-'));
   for (const publicHost of ['sagemro.cn', 'engineer.sagemro.cn']) {
@@ -183,6 +201,42 @@ test('preserves quoted server_name arguments when detecting mixed admin hosts', 
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /admin\.sagemro\.cn cannot share a server block/i);
   assert.equal(readFileSync(config, 'utf8'), initial);
+});
+
+test('refuses any server block that mixes API with another official host kind', { skip: !python }, () => {
+  const directory = mkdtempSync(path.join(tmpdir(), 'sagemro-public-routes-'));
+  for (const otherHost of ['sagemro.cn', 'engineer.sagemro.cn', 'admin.sagemro.cn']) {
+    const config = path.join(directory, `${otherHost}.conf`);
+    const initial = `server {
+  listen 443 ssl;
+  server_name ${otherHost} api.sagemro.cn;
+  location / { try_files $uri /index.html; }
+}\n`;
+    writeFileSync(config, initial);
+
+    const result = spawnSync(python, [script, config], { encoding: 'utf8' });
+
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /official host kinds cannot share a server block/i);
+    assert.equal(readFileSync(config, 'utf8'), initial);
+  }
+});
+
+test('refuses multiple customer TLS blocks instead of creating duplicate defaults', { skip: !python }, () => {
+  const directory = mkdtempSync(path.join(tmpdir(), 'sagemro-public-routes-'));
+  const configs = ['first.conf', 'second.conf'].map((name) => path.join(directory, name));
+  const initial = `server {
+  listen 443 ssl;
+  server_name sagemro.cn www.sagemro.cn;
+  location / { try_files $uri /index.html; }
+}\n`;
+  for (const config of configs) writeFileSync(config, initial);
+
+  const result = spawnSync(python, [script, ...configs], { encoding: 'utf8' });
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /exactly one customer TLS server block/i);
+  for (const config of configs) assert.equal(readFileSync(config, 'utf8'), initial);
 });
 
 test('ignores target hostnames and canonical directives inside comments', { skip: !python }, () => {
@@ -249,7 +303,7 @@ test('tracks quoted strings across lines when matching server block braces', { s
   writeFileSync(config, `${unrelatedBlock}
 server {
   listen 443 ssl;
-  server_name engineer.sagemro.cn;
+  server_name sagemro.cn;
   location / { try_files $uri /index.html; }
 }\n`);
 
@@ -258,7 +312,7 @@ server {
   assert.equal(result.status, 0, result.stderr);
   const updated = readFileSync(config, 'utf8');
   assert.match(updated, new RegExp(unrelatedBlock.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
-  assert.match(updated, /server_name engineer\.sagemro\.cn;[\s\S]*error_page 404 \/404\.html;/);
+  assert.match(updated, /server_name sagemro\.cn;[\s\S]*error_page 404 \/404\.html;/);
 });
 
 test('refuses route directives that would conflict with generated public routing', { skip: !python }, () => {
@@ -335,13 +389,13 @@ test('refuses hard-linked configs without changing either directory entry', { sk
 
 test('attempts every rollback and reports both write and restore failures', { skip: !python }, () => {
   const directory = mkdtempSync(path.join(tmpdir(), 'sagemro-public-routes-'));
-  const initial = `server {
+  for (const [index, name] of ['first.conf', 'second.conf', 'third.conf'].entries()) {
+    const host = index === 0 ? 'sagemro.cn' : 'engineer.sagemro.cn';
+    writeFileSync(path.join(directory, name), `server {
   listen 443 ssl;
-  server_name sagemro.cn;
+  server_name ${host};
   location / { try_files $uri /index.html; }
-}\n`;
-  for (const name of ['first.conf', 'second.conf', 'third.conf']) {
-    writeFileSync(path.join(directory, name), initial);
+}\n`);
   }
 
   const harness = String.raw`

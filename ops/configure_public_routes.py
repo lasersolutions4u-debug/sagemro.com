@@ -174,19 +174,35 @@ def server_kind(block_text):
         return None
 
     names = server_names(block_text)
-    if 'admin.sagemro.cn' in names and (
-        'sagemro.cn' in names or 'engineer.sagemro.cn' in names
-    ):
-        raise ValueError('admin.sagemro.cn cannot share a server block with customer or engineer hosts')
-    if 'sagemro.cn' in names:
-        return 'customer'
+    kinds = []
+    if names.intersection(('sagemro.cn', 'www.sagemro.cn')):
+        kinds.append('customer')
     if 'engineer.sagemro.cn' in names:
-        return 'engineer'
+        kinds.append('engineer')
     if 'admin.sagemro.cn' in names:
-        return 'admin'
+        kinds.append('admin')
     if 'api.sagemro.cn' in names:
-        return 'api'
-    return None
+        kinds.append('api')
+
+    if 'admin' in kinds and ('customer' in kinds or 'engineer' in kinds):
+        raise ValueError('admin.sagemro.cn cannot share a server block with customer or engineer hosts')
+    if len(kinds) > 1:
+        raise ValueError('Official host kinds cannot share a server block')
+    return kinds[0] if kinds else None
+
+
+def ensure_default_tls_server(block_text):
+    code = nginx_code(block_text)
+    matches = list(TLS_LISTEN_RE.finditer(code))
+    updated = block_text
+    for match in reversed(matches):
+        directive = block_text[match.start():match.end()]
+        if 'default_server' in nginx_tokens(directive):
+            continue
+        semicolon = directive.rfind(';')
+        replacement = directive[:semicolon].rstrip() + ' default_server' + directive[semicolon:]
+        updated = updated[:match.start()] + replacement + updated[match.end():]
+    return updated
 
 
 def ensure_host_guard(block_text, kind):
@@ -279,6 +295,8 @@ def transform_public_routes(block_text, kind):
 
 def transform_block(block_text, kind):
     updated = transform_public_routes(block_text, kind) if kind in ('customer', 'engineer') else block_text
+    if kind == 'customer':
+        updated = ensure_default_tls_server(updated)
     return ensure_host_guard(updated, kind)
 
 
@@ -286,6 +304,7 @@ def transform_config(text):
     lines = text.splitlines(keepends=True)
     blocks = list(server_blocks(lines))
     matched = 0
+    customer_matched = 0
 
     for start, end in reversed(blocks):
         block_text = ''.join(lines[start:end])
@@ -294,9 +313,11 @@ def transform_config(text):
             continue
         if kind in ('customer', 'engineer'):
             matched += 1
+        if kind == 'customer':
+            customer_matched += 1
         lines[start:end] = transform_block(block_text, kind).splitlines(keepends=True)
 
-    return ''.join(lines), matched
+    return ''.join(lines), matched, customer_matched
 
 
 def write_atomic(path, content, stat):
@@ -327,18 +348,22 @@ def update_configs(paths):
     updated = {}
     stats = {}
     total_matched = 0
+    customer_matched = 0
 
     for path in paths:
         original = path.read_bytes()
         text = original.decode('utf-8')
-        transformed, matched = transform_config(text)
+        transformed, matched, customers = transform_config(text)
         originals[path] = original
         updated[path] = transformed.encode('utf-8')
         stats[path] = path.stat()
         total_matched += matched
+        customer_matched += customers
 
     if total_matched == 0:
         raise ValueError('No sagemro.cn customer or engineer server block was found')
+    if customer_matched != 1:
+        raise ValueError('Expected exactly one customer TLS server block')
 
     written = []
     try:
