@@ -344,3 +344,19 @@ test('generic and historical drawer badges do not use the primary action color',
   assert.doesNotMatch(completedPayout, /color-primary/);
   assert.match(completedPayout, /color-success/);
 });
+
+test('historical internal notes are neutral while retaining the explicit privacy label', async () => {
+  const source = await readFile(new URL('./WorkOrdersPage.jsx', import.meta.url), 'utf8');
+  const internalNoteRow = source.slice(
+    source.indexOf("item.is_internal_note ?"),
+    source.indexOf("' : 'bg-[var(--color-surface-elevated)]", source.indexOf("item.is_internal_note ?")),
+  );
+
+  assert.doesNotMatch(internalNoteRow, /amber|color-primary/);
+  assert.match(internalNoteRow, /border-\[var\(--color-border\)\]/);
+  assert.match(internalNoteRow, /bg-\[var\(--color-surface-elevated\)\]/);
+  assert.match(internalNoteRow, /text-\[var\(--color-text-secondary\)\]/);
+  assert.match(source, /internalNote: 'Internal note'/);
+  assert.match(source, /internalNote: '内部备注'/);
+  assert.match(source, /item\.is_internal_note \? ` · \$\{t\.internalNote\}` : ''/);
+});

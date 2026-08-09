@@ -2705,7 +2705,7 @@ export function WorkOrdersPage({ readOnly = false }) {
                     ) : detailMessages.map((item) => (
                       <div
                         key={item.id}
-                        className={`rounded-lg p-3 text-sm ${item.is_internal_note ? 'bg-amber-500/10 text-amber-700' : 'bg-[var(--color-surface-elevated)] text-[var(--color-text-secondary)]'}`}
+                        className={`rounded-lg p-3 text-sm ${item.is_internal_note ? 'border border-[var(--color-border)] bg-[var(--color-surface-elevated)] text-[var(--color-text-secondary)]' : 'bg-[var(--color-surface-elevated)] text-[var(--color-text-secondary)]'}`}
                       >
                         <div className="mb-1 flex items-center justify-between gap-2 text-xs">
                           <span>{item.sender_name || item.sender_type}{item.is_internal_note ? ` · ${t.internalNote}` : ''}</span>
