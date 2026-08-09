@@ -90,7 +90,7 @@ function ScoreRow({ label, value }) {
   return (
     <div className="flex items-center justify-between gap-3 rounded-lg bg-[var(--color-surface-elevated)] px-3 py-2">
       <span>{label}</span>
-      <span className="font-semibold text-[var(--color-primary)]">{formatScore(value)}</span>
+      <span className="font-semibold text-[var(--color-text)]">{formatScore(value)}</span>
     </div>
   );
 }
@@ -99,7 +99,7 @@ function MoneyRow({ label, value }) {
   return (
     <div className="flex items-center justify-between gap-3 rounded-lg bg-[var(--color-surface-elevated)] px-3 py-2">
       <span>{label}</span>
-      <span className="font-semibold text-[var(--color-primary)]">{money(value)} USD</span>
+      <span className="font-semibold text-[var(--color-text)]">{money(value)} USD</span>
     </div>
   );
 }
@@ -210,6 +210,10 @@ const TEXT = {
     paymentReviewHint: 'Engineer has followed up payment. Confirm receipt before allowing service execution.',
     balancePaymentTitle: 'Service balance confirmation required',
     balancePaymentHint: 'The customer has requested the remaining service balance payment. Confirm receipt to settle the payment record.',
+    balancePaymentStatuses: {
+      instructions_requested: 'Payment instructions requested',
+      pending_admin_confirmation: 'Pending Admin confirmation',
+    },
     approveBalancePayment: 'Confirm balance received',
     balancePaymentApproved: (orderNo) => `Service balance confirmed: ${orderNo}`,
     balancePaymentApproveFailed: 'Failed to confirm service balance',
@@ -515,6 +519,10 @@ const TEXT = {
     approvePaymentStart: '确认收款并开工',
     balancePaymentTitle: '需要确认服务尾款',
     balancePaymentHint: '客户已申请支付剩余服务尾款。请确认到账并结清付款记录。',
+    balancePaymentStatuses: {
+      instructions_requested: '已申请付款说明',
+      pending_admin_confirmation: '待管理员确认',
+    },
     approveBalancePayment: '确认尾款到账',
     regionalLeadOption: '选择区域负责人',
     assigning: '分配中',
@@ -1781,7 +1789,7 @@ export function WorkOrdersPage({ readOnly = false }) {
           <div role="dialog" aria-modal="true" aria-label={t.drawerTitle} className="relative flex h-full w-full max-w-4xl flex-col overflow-hidden bg-[var(--color-surface)] shadow-2xl">
             <div className="sticky top-0 z-10 flex shrink-0 items-start justify-between gap-3 border-b border-[var(--color-border)] bg-[var(--color-surface)] p-3 sm:p-5">
               <div className="min-w-0 flex-1">
-                <div className="text-xs uppercase tracking-[0.18em] text-[var(--color-primary)]">{t.serviceRecord}</div>
+                <div className="text-xs uppercase tracking-[0.18em] text-[var(--color-text-muted)]">{t.serviceRecord}</div>
                 {!readOnly && detail && titleEditor.open ? (
                   <div className="mt-1">
                     <input
@@ -1801,7 +1809,7 @@ export function WorkOrdersPage({ readOnly = false }) {
                   <div className="mt-1 space-y-1">
                     <div className="flex flex-wrap items-center gap-2 text-sm text-[var(--color-text-muted)]">
                       <span className="font-mono">{detail.order_no}</span>
-                      <span className="rounded-full bg-[var(--color-primary)]/10 px-2 py-0.5 text-xs text-[var(--color-primary)]">{t.statuses[detail.status] || detail.status}</span>
+                      <span className="rounded-full border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-2 py-0.5 text-xs text-[var(--color-text-secondary)]">{t.statuses[detail.status] || detail.status}</span>
                     </div>
                     <p className="text-sm text-[var(--color-text-secondary)]">{detail.description}</p>
                   </div>
@@ -2038,7 +2046,7 @@ export function WorkOrdersPage({ readOnly = false }) {
                         <h4 className="font-medium text-[var(--color-text)]">{t.balancePaymentTitle}</h4>
                         <p className="mt-1 text-sm text-[var(--color-text-secondary)]">{t.balancePaymentHint}</p>
                         <p className="mt-2 text-xs text-[var(--color-text-muted)]">
-                          {t.amountLabel}: {detail.balance_payment.amount || detail.payment_policy?.balance_amount || 0} USD · {t.statusLabel}: {detail.balance_payment.status}
+                          {t.amountLabel}: {detail.balance_payment.amount || detail.payment_policy?.balance_amount || 0} USD · {t.statusLabel}: {t.balancePaymentStatuses[detail.balance_payment.status] || t.sectionEmpty}
                         </p>
                       </div>
                       <button
@@ -2055,7 +2063,7 @@ export function WorkOrdersPage({ readOnly = false }) {
                   <div className="mb-3 flex items-center justify-between gap-3">
                     <h4 className="font-medium">{t.quoteDetailTitle}</h4>
                     {detail.pricing?.status && (
-                      <span className="rounded-full bg-[var(--color-primary)]/10 px-2 py-1 text-xs text-[var(--color-primary)]">
+                      <span className="rounded-full border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-2 py-1 text-xs text-[var(--color-text-secondary)]">
                         {t.pricing[detail.pricing.status] || detail.pricing.status}
                       </span>
                     )}
@@ -2105,7 +2113,7 @@ export function WorkOrdersPage({ readOnly = false }) {
                         <div className="rounded-lg bg-[var(--color-surface-elevated)] p-3">
                           <div className="flex justify-between">
                             <span>{t.quoteSubtotalPrice}</span>
-                            <span className="font-semibold text-[var(--color-primary)]">{money(subtotal)} USD</span>
+                            <span className="font-semibold text-[var(--color-text)]">{money(subtotal)} USD</span>
                           </div>
                         </div>
                         {aiCheck && (
@@ -2124,7 +2132,7 @@ export function WorkOrdersPage({ readOnly = false }) {
                   )}
                 </section>}
                 {detail.status === 'completed' && (
-                  <section className="rounded-xl border border-[var(--color-primary)]/30 bg-[var(--color-primary)]/5 p-4">
+                  <section className="rounded-xl border border-[var(--color-success)]/30 bg-[var(--color-success)]/5 p-4">
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                       <div>
                         <h4 className="font-medium text-[var(--color-text)]">{t.engineerPayoutTitle}</h4>
@@ -2369,7 +2377,7 @@ export function WorkOrdersPage({ readOnly = false }) {
                   <div className="mb-3 flex items-center justify-between gap-3">
                     <h4 className="font-medium">{t.customerReviewTitle}</h4>
                     {detail.rating && (
-                      <span className="rounded-full bg-[var(--color-primary)]/10 px-2 py-1 text-xs font-semibold text-[var(--color-primary)]">
+                      <span className="rounded-full border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-2 py-1 text-xs font-semibold text-[var(--color-text-secondary)]">
                         {t.average} {formatScore(averageScore([
                           detail.rating.rating_timeliness,
                           detail.rating.rating_technical,
@@ -2401,7 +2409,7 @@ export function WorkOrdersPage({ readOnly = false }) {
                   <div className="mb-3 flex items-center justify-between gap-3">
                     <h4 className="font-medium">{t.engineerReviewTitle}</h4>
                     {detail.engineer_review && (
-                      <span className="rounded-full bg-[var(--color-primary)]/10 px-2 py-1 text-xs font-semibold text-[var(--color-primary)]">
+                      <span className="rounded-full border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-2 py-1 text-xs font-semibold text-[var(--color-text-secondary)]">
                         {t.average} {formatScore(averageScore([
                           detail.engineer_review.rating_cooperation,
                           detail.engineer_review.rating_communication,

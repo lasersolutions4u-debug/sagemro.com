@@ -235,3 +235,29 @@ test('service controls receive work-order status and report current blockers to 
   assert.match(source, /onBlockerStateChange/);
   assert.match(source, /count > 0[\s\S]*'service-controls'/);
 });
+
+test('balance payment statuses use bilingual labels instead of stored enum values', async () => {
+  const source = await readFile(new URL('./WorkOrdersPage.jsx', import.meta.url), 'utf8');
+
+  assert.match(source, /balancePaymentStatuses: \{[\s\S]*instructions_requested: 'Payment instructions requested'[\s\S]*pending_admin_confirmation: 'Pending Admin confirmation'/);
+  assert.match(source, /balancePaymentStatuses: \{[\s\S]*instructions_requested: '已申请付款说明'[\s\S]*pending_admin_confirmation: '待管理员确认'/);
+  assert.match(source, /t\.balancePaymentStatuses\[detail\.balance_payment\.status\] \|\| t\.sectionEmpty/);
+  assert.doesNotMatch(source, /\{t\.statusLabel\}: \{detail\.balance_payment\.status\}/);
+});
+
+test('generic and historical drawer badges do not use the primary action color', async () => {
+  const source = await readFile(new URL('./WorkOrdersPage.jsx', import.meta.url), 'utf8');
+  const drawer = source.slice(source.indexOf('{detailOpen &&'), source.indexOf('{operationDialog &&'));
+  const headerStatus = drawer.slice(drawer.indexOf('{detail.order_no}'), drawer.indexOf('{detail.description}'));
+  const pricingStatus = drawer.slice(drawer.indexOf('{detail.pricing?.status && ('), drawer.indexOf('</span>', drawer.indexOf('{detail.pricing?.status && (')) + 7);
+  const completedPayout = drawer.slice(drawer.indexOf("{detail.status === 'completed'"), drawer.indexOf('<div className="flex flex-col', drawer.indexOf("{detail.status === 'completed'")));
+  const customerAverage = drawer.slice(drawer.indexOf('{detail.rating && ('), drawer.indexOf('</span>', drawer.indexOf('{detail.rating && (')) + 7);
+  const engineerAverage = drawer.slice(drawer.indexOf('{detail.engineer_review && ('), drawer.indexOf('</span>', drawer.indexOf('{detail.engineer_review && (')) + 7);
+
+  for (const historicalBadge of [headerStatus, pricingStatus, customerAverage, engineerAverage]) {
+    assert.doesNotMatch(historicalBadge, /color-primary/);
+    assert.match(historicalBadge, /color-(?:surface-elevated|text-secondary|border)/);
+  }
+  assert.doesNotMatch(completedPayout, /color-primary/);
+  assert.match(completedPayout, /color-success/);
+});
