@@ -344,7 +344,7 @@ test('visible detail labels are localized instead of hard-coded English', async 
   assert.doesNotMatch(source, />Engineer service payment</);
   assert.doesNotMatch(source, /label="Labor Fee"/);
   assert.match(source, /engineerPayoutTitle: 'Engineer service payment'/);
-  assert.match(source, /engineerPayoutTitle: '工程师服务结算'/);
+  assert.match(source, /engineerPayoutTitle: '工程师服务费结算'/);
   assert.match(source, /laborFee: 'Labor fee'/);
   assert.match(source, /laborFee: '人工费'/);
 });

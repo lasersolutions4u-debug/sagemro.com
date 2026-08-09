@@ -646,7 +646,7 @@ const TEXT = {
     noQuoteDetail: '暂无报价详情',
     riskControlLabel: '风控状态',
     clearRisk: '正常',
-    engineerPayoutTitle: '工程师服务结算',
+    engineerPayoutTitle: '工程师服务费结算',
     engineerPayoutHint: '工程师服务费结算完成后，该工单才算正式完结。',
     payoutFields: {
       status: '状态',
