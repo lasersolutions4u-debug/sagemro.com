@@ -26,6 +26,24 @@ export function currentWorkOrderActionKey(detail = {}) {
   return ACTION_BY_STATUS[detail.status] || 'none';
 }
 
+export function currentActionTone(actionKey) {
+  if (actionKey === 'complete') return 'complete';
+  if (actionKey === 'none') return 'neutral';
+  return 'current';
+}
+
+export function serviceStandardItemTone(item, currentBlockingItemKeys) {
+  if (item?.state === 'confirmed') return 'complete';
+  if (currentBlockingItemKeys.has(item?.key)) return 'current';
+  return 'neutral';
+}
+
+export function serviceStandardStageTone(items, currentBlockingItemKeys) {
+  if (items.some((item) => currentBlockingItemKeys.has(item.key))) return 'current';
+  if (items.length > 0 && items.every((item) => ['confirmed', 'not_applicable'].includes(item.state))) return 'complete';
+  return 'neutral';
+}
+
 export function defaultOpenWorkOrderSections(detail = {}, { hasCurrentGateBlockers = false } = {}) {
   const open = ['overview'];
   if (['pending', 'pending_dispatch', 'assigned'].includes(detail.status)) open.push('dispatch');

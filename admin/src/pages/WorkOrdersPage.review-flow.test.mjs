@@ -220,13 +220,32 @@ test('loaded detail opens the section containing its current operator control', 
 
 test('legacy parts quote uses a horizontally scrollable readable-width table', async () => {
   const source = await readFile(new URL('./WorkOrdersPage.jsx', import.meta.url), 'utf8');
-  const legacyQuote = source.slice(
-    source.indexOf("{!detail.pricing?.quote_version && <section"),
-    source.indexOf("{detail.pricing?.ai_check", source.indexOf("{!detail.pricing?.quote_version && <section")),
-  );
+  const legacyQuoteStart = source.indexOf("{!detail.pricing?.quote_version && <section");
+  const legacyQuoteEnd = source.indexOf("{detail.status === 'completed' && (", legacyQuoteStart);
+  assert.ok(legacyQuoteStart >= 0);
+  assert.ok(legacyQuoteEnd >= 0);
+  assert.ok(legacyQuoteEnd > legacyQuoteStart);
+  const legacyQuote = source.slice(legacyQuoteStart, legacyQuoteEnd);
   assert.match(legacyQuote, /overflow-x-auto/);
   assert.match(legacyQuote, /<table className="min-w-/);
   assert.doesNotMatch(legacyQuote, /overflow-hidden rounded-lg border/);
+});
+
+test('overview current-action card uses current, completed, and neutral semantic tones', async () => {
+  const source = await readFile(new URL('./WorkOrdersPage.jsx', import.meta.url), 'utf8');
+
+  assert.match(source, /const actionTone = currentActionTone\(actionKey\)/);
+  assert.match(source, /actionTone === 'current'/);
+  assert.match(source, /actionTone === 'complete'/);
+  assert.match(source, /color-success/);
+  assert.match(source, /color-surface-elevated/);
+});
+
+test('work-order headers localize pending review in both markets', async () => {
+  const source = await readFile(new URL('./WorkOrdersPage.jsx', import.meta.url), 'utf8');
+
+  assert.match(source, /statuses: \{[\s\S]*pending_review: 'Pending review'/);
+  assert.match(source, /statuses: \{[\s\S]*pending_review: '待审核'/);
 });
 
 test('reviews and messages render once and messages do not create nested vertical scrolling', async () => {
