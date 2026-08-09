@@ -26,6 +26,24 @@ test('default sections expose the current operator task without expanding the en
   assert.deepEqual(defaultOpenWorkOrderSections({ status: 'completed' }), ['overview']);
 });
 
+test('completed work orders expose pending engineer payout controls', () => {
+  assert.deepEqual(
+    defaultOpenWorkOrderSections({ status: 'completed', payout_status: 'pending' }),
+    ['overview', 'quote'],
+  );
+  assert.deepEqual(
+    defaultOpenWorkOrderSections({ status: 'completed', payout_status: 'completed' }),
+    ['overview'],
+  );
+});
+
+test('in-service work orders expose active field operations', () => {
+  assert.deepEqual(
+    defaultOpenWorkOrderSections({ status: 'in_service', field_plan: { expected_service_days: 4 } }),
+    ['overview', 'files-report'],
+  );
+});
+
 test('current action keys are locale-independent', () => {
   assert.equal(currentWorkOrderActionKey({ status: 'pending_dispatch' }), 'dispatch');
   assert.equal(currentWorkOrderActionKey({ status: 'payment_review' }), 'approvePaymentStart');

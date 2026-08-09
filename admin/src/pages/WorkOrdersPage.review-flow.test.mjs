@@ -210,6 +210,14 @@ test('shortcut navigation expands and scrolls to a detail section', async () => 
   assert.match(source, /scrollIntoView\(\{ behavior: 'smooth', block: 'start' \}\)/);
 });
 
+test('loaded detail opens the section containing its current operator control', async () => {
+  const source = await readFile(new URL('./WorkOrdersPage.jsx', import.meta.url), 'utf8');
+  assert.match(
+    source,
+    /setDetail\(detailData\);\s*setOpenDetailSections\(new Set\(defaultOpenWorkOrderSections\(detailData\)\)\);/,
+  );
+});
+
 test('reviews and messages render once and messages do not create nested vertical scrolling', async () => {
   const source = await readFile(new URL('./WorkOrdersPage.jsx', import.meta.url), 'utf8');
   assert.equal(source.match(/\{t\.customerReviewTitle\}/g)?.length, 1);
