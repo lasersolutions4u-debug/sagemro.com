@@ -19,3 +19,10 @@ test('detail sections expose disclosure semantics and a 44px control', async () 
   assert.match(component, /min-h-11/);
   assert.match(component, /hidden=\{!open\}/);
 });
+
+test('detail section summaries do not wrap disclosure labels on narrow screens', async () => {
+  const component = await source();
+  assert.match(component, /hidden[^\"]*sm:inline/);
+  assert.match(component, /min-w-0 truncate whitespace-nowrap/);
+  assert.doesNotMatch(component, /hidden text-xs/);
+});

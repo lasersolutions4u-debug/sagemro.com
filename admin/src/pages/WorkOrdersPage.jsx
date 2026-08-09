@@ -1424,6 +1424,7 @@ export function WorkOrdersPage({ readOnly = false }) {
         getAdminWorkOrderMessages(wo.id),
       ]);
       setDetail(detailData);
+      setOpenDetailSections(new Set(defaultOpenWorkOrderSections(detailData)));
       setDetailMessages(messagesData.list || []);
       setAdminSiteLocation({
         service_address: detailData.service_address || '',

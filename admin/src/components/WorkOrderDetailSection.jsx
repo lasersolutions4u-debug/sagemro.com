@@ -19,8 +19,8 @@ export function WorkOrderDetailSection({ sectionKey, title, summary, open, onTog
   return (
     <section id={sectionId} className="scroll-mt-28 rounded-xl border border-[var(--color-border)]">
       <button type="button" aria-expanded={open} aria-controls={contentId} onClick={() => onToggle(sectionKey)} className="flex min-h-11 w-full items-center justify-between gap-3 px-4 py-3 text-left">
-        <span><span className="font-medium">{title}</span>{summary && <span className="ml-2 text-xs text-[var(--color-text-muted)]">{summary}</span>}</span>
-        <ChevronDown className={`h-4 w-4 transition-transform ${open ? 'rotate-180' : ''}`} />
+        <span className="min-w-0 truncate whitespace-nowrap"><span className="font-medium">{title}</span>{summary && <span className="ml-2 hidden text-[var(--color-text-muted)] sm:inline">{summary}</span>}</span>
+        <ChevronDown className={`h-4 w-4 shrink-0 transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
       <div id={contentId} hidden={!open} className="border-t border-[var(--color-border)] p-4">{children}</div>
     </section>

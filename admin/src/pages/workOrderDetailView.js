@@ -30,6 +30,8 @@ export function defaultOpenWorkOrderSections(detail = {}, { hasCurrentGateBlocke
   const open = ['overview'];
   if (['pending', 'pending_dispatch', 'assigned'].includes(detail.status)) open.push('dispatch');
   if (detail.pricing?.status === 'pending_review' || ['pricing', 'pending_payment', 'payment_review'].includes(detail.status)) open.push('quote');
+  if (detail.status === 'completed' && detail.payout_status && detail.payout_status !== 'completed') open.push('quote');
+  if (detail.status === 'in_service' && detail.field_plan) open.push('files-report');
   if (hasCurrentGateBlockers) open.push('service-controls');
   return [...new Set(open)];
 }
