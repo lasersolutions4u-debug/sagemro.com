@@ -1,7 +1,11 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { AlertTriangle, CheckCircle2, LockKeyhole, RefreshCw } from 'lucide-react';
 import { runtimeConfig } from '../config/runtime';
-import { currentServiceGateForStatus } from '../pages/workOrderDetailView';
+import {
+  currentServiceGateForStatus,
+  serviceStandardItemTone,
+  serviceStandardStageTone,
+} from '../pages/workOrderDetailView';
 import {
   getAdminWorkOrderServiceStandard,
   overrideAdminWorkOrderServiceStandardGate,
@@ -22,6 +26,26 @@ const TEXT = {
     historicalHint: 'Historical record — not required by the current gate.',
     showAudit: 'Review controls',
     stages: ['Task alignment', 'Risk control', 'One-visit readiness', 'Evidence & execution', 'Recovery verification', 'Transparent handover'],
+    itemLabels: {
+      'task.device_identity': 'Device identity',
+      'task.problem_and_goal': 'Problem and service goal',
+      'task.contact_and_window': 'Contact and service window',
+      'risk.hazards_reviewed': 'Hazards reviewed',
+      'risk.isolation_permission': 'Isolation permission',
+      'risk.ppe_and_access': 'PPE and site access',
+      'ready.tools_and_documents': 'Tools and documents',
+      'ready.parts_and_consumables': 'Parts and consumables',
+      'ready.start_conditions': 'Service start conditions',
+      'execute.baseline_evidence': 'Baseline evidence',
+      'execute.actions_recorded': 'Service actions recorded',
+      'execute.scope_authorized': 'Work scope authorized',
+      'verify.functional_test': 'Functional test',
+      'verify.safety_restored': 'Safety restored',
+      'verify.residual_risk': 'Residual risk',
+      'handover.service_report': 'Service report',
+      'handover.customer_confirmation': 'Customer confirmation',
+      'handover.follow_up': 'Follow-up plan',
+    },
     state: 'State',
     owner: 'Owner',
     required: 'Required',
@@ -61,6 +85,26 @@ const TEXT = {
     historicalHint: '历史记录——不属于当前关卡要求。',
     showAudit: '查看控制项',
     stages: ['任务对齐', '风险控制', '一次到位准备', '证据与执行', '恢复验证', '透明交接'],
+    itemLabels: {
+      'task.device_identity': '设备身份信息',
+      'task.problem_and_goal': '问题与服务目标',
+      'task.contact_and_window': '联系人与服务时间',
+      'risk.hazards_reviewed': '已核对危险因素',
+      'risk.isolation_permission': '隔离许可',
+      'risk.ppe_and_access': '个人防护与现场准入',
+      'ready.tools_and_documents': '工具与资料',
+      'ready.parts_and_consumables': '配件与耗材',
+      'ready.start_conditions': '开工条件',
+      'execute.baseline_evidence': '基准证据',
+      'execute.actions_recorded': '服务操作记录',
+      'execute.scope_authorized': '工作范围授权',
+      'verify.functional_test': '功能测试',
+      'verify.safety_restored': '安全状态恢复',
+      'verify.residual_risk': '剩余风险',
+      'handover.service_report': '服务报告',
+      'handover.customer_confirmation': '客户确认',
+      'handover.follow_up': '后续跟进计划',
+    },
     state: '状态',
     owner: '责任方',
     required: '必做',
@@ -92,10 +136,10 @@ function itemLabel(key) {
   return String(key || '').split('.').map((part) => part.replace(/_/g, ' ')).join(' · ');
 }
 
-function stateTone(state) {
-  if (state === 'confirmed') return 'border-green-500/30 bg-green-500/10 text-green-700';
-  if (state === 'not_applicable' || state === 'legacy_not_recorded') return 'border-[var(--color-border)] bg-[var(--color-surface-elevated)] text-[var(--color-text-secondary)]';
-  return 'border-amber-500/30 bg-amber-500/10 text-amber-700';
+function toneClasses(tone) {
+  if (tone === 'complete') return 'border-green-500/30 bg-green-500/10 text-green-700';
+  if (tone === 'current') return 'border-amber-500/30 bg-amber-500/10 text-amber-700';
+  return 'border-[var(--color-border)] bg-[var(--color-surface-elevated)] text-[var(--color-text-secondary)]';
 }
 
 export function ServiceStandardAdminPanel({
@@ -148,6 +192,7 @@ export function ServiceStandardAdminPanel({
     () => currentGate ? currentSnapshot?.gates?.[currentGate]?.blocking_items || [] : [],
     [currentGate, currentSnapshot],
   );
+  const currentBlockingItemKeys = useMemo(() => new Set(blockers), [blockers]);
   const steps = Array.isArray(currentSnapshot?.steps) ? currentSnapshot.steps : [];
   const currentStepIndex = currentSnapshot?.current_step_index;
   const overrides = Array.isArray(currentSnapshot?.overrides) ? currentSnapshot.overrides : [];
@@ -214,7 +259,7 @@ export function ServiceStandardAdminPanel({
             <h5 className="text-sm font-medium text-[var(--color-text)]">{t.blocking}</h5>
             {!currentGate ? <p className="mt-2 text-sm text-[var(--color-text-muted)]">{t.noCurrentGate}</p> : blockers.length === 0 ? <p className="mt-2 text-sm text-[var(--color-text-muted)]">{t.noBlockers}</p> : (
               <ul className="mt-3 space-y-2">
-                {blockers.map((item) => <li key={item} className="flex items-start gap-2 rounded-lg bg-amber-500/10 px-3 py-2 text-sm text-amber-800"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" /><span><span className="font-medium">{t.gates[currentGate]}:</span> {itemLabel(item)}</span></li>)}
+                {blockers.map((item) => <li key={item} className="flex items-start gap-2 rounded-lg bg-amber-500/10 px-3 py-2 text-sm text-amber-800"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" /><span><span className="font-medium">{t.gates[currentGate]}:</span> {t.itemLabels[item] || itemLabel(item)}</span></li>)}
               </ul>
             )}
           </div>
@@ -224,11 +269,8 @@ export function ServiceStandardAdminPanel({
               {steps.map((step) => {
                 const items = step.items || [];
                 const recordedCount = items.filter((item) => item.state !== 'pending').length;
-                const stageState = items.some((item) => item.state === 'legacy_not_recorded')
-                  ? 'legacy_not_recorded'
-                  : recordedCount === items.length ? 'confirmed' : 'pending';
-                const isCurrentStep = step.index === currentStepIndex;
-                return <div key={step.key} className={`h-2 rounded-full border ${isCurrentStep ? stateTone(stageState) : 'border-[var(--color-border)] bg-[var(--color-surface-elevated)] text-[var(--color-text-secondary)]'}`} title={`${t.stages[step.index] || itemLabel(step.key)}: ${recordedCount}/${items.length}`} />;
+                const stageTone = serviceStandardStageTone(items, currentBlockingItemKeys);
+                return <div key={step.key} className={`h-2 rounded-full border ${toneClasses(stageTone)}`} title={`${t.stages[step.index] || itemLabel(step.key)}: ${recordedCount}/${items.length}`} />;
               })}
             </div>
             <p className="mt-2 text-xs text-[var(--color-text-muted)]">{t.progressSummary(recordedControls, totalControls)}</p>
@@ -238,7 +280,6 @@ export function ServiceStandardAdminPanel({
             {steps.length === 0 ? <p className="p-4 text-sm text-[var(--color-text-muted)]">{t.noItems}</p> : steps.map((step, index) => {
               const items = step.items || [];
               const recordedCount = items.filter((item) => item.state !== 'pending').length;
-              const isCurrentStep = step.index === currentStepIndex;
               const isHistoricalStep = step.index < currentStepIndex;
               return (
                 <details key={step.key} open={step.index === currentStepIndex}>
@@ -249,9 +290,9 @@ export function ServiceStandardAdminPanel({
                   <div className="space-y-2 border-t border-[var(--color-border)] p-4">
                     {isHistoricalStep && <p className="text-xs text-[var(--color-text-muted)]">{t.historicalHint}</p>}
                     {items.map((item) => <div key={item.key} className="grid gap-2 rounded-lg border border-[var(--color-border)] p-3 text-sm sm:grid-cols-[minmax(0,1fr)_auto_auto] sm:items-center">
-                      <div className="min-w-0"><div className="font-medium capitalize text-[var(--color-text)]">{itemLabel(item.key)}</div>{item.notApplicableReason && <p className="mt-1 text-xs text-[var(--color-text-muted)]">{item.notApplicableReason}</p>}</div>
+                      <div className="min-w-0"><div className="font-medium text-[var(--color-text)]">{t.itemLabels[item.key] || itemLabel(item.key)}</div>{item.notApplicableReason && <p className="mt-1 text-xs text-[var(--color-text-muted)]">{item.notApplicableReason}</p>}</div>
                       <span className="text-xs text-[var(--color-text-secondary)]">{t.owner}: {t.owners[item.owner] || item.owner}</span>
-                      <span className={`inline-flex w-fit rounded-full border px-2 py-1 text-xs ${isCurrentStep ? stateTone(item.state) : 'border-[var(--color-border)] bg-[var(--color-surface-elevated)] text-[var(--color-text-secondary)]'}`}>{t.states[item.state] || item.state} · {item.required ? t.required : t.optional}</span>
+                      <span className={`inline-flex w-fit rounded-full border px-2 py-1 text-xs ${toneClasses(serviceStandardItemTone(item, currentBlockingItemKeys))}`}>{t.states[item.state] || item.state} · {item.required ? t.required : t.optional}</span>
                     </div>)}
                   </div>
                 </details>

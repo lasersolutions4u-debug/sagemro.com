@@ -82,7 +82,38 @@ test('service-standard stage presentation uses the API current_step_index respon
 test('incomplete non-current progress segments remain neutral audit indicators', async () => {
   const panel = await readSource('./ServiceStandardAdminPanel.jsx');
 
-  assert.match(panel, /const isCurrentStep = step\.index === currentStepIndex/);
-  assert.match(panel, /isCurrentStep \? stateTone\(stageState\) : 'border-\[var\(--color-border\)\] bg-\[var\(--color-surface-elevated\)\] text-\[var\(--color-text-secondary\)\]'/);
-  assert.doesNotMatch(panel, /\$\{stateTone\(stageState\)\}/);
+  assert.match(panel, /const currentBlockingItemKeys = useMemo\(\(\) => new Set\(blockers\), \[blockers\]\)/);
+  assert.match(panel, /serviceStandardStageTone\(items, currentBlockingItemKeys\)/);
+  assert.match(panel, /serviceStandardItemTone\(item, currentBlockingItemKeys\)/);
+  assert.doesNotMatch(panel, /isCurrentStep \? stateTone\(item\.state\)/);
+});
+
+test('service-standard control labels are complete in English and Simplified Chinese', async () => {
+  const panel = await readSource('./ServiceStandardAdminPanel.jsx');
+  const itemKeys = [
+    'task.device_identity',
+    'task.problem_and_goal',
+    'task.contact_and_window',
+    'risk.hazards_reviewed',
+    'risk.isolation_permission',
+    'risk.ppe_and_access',
+    'ready.tools_and_documents',
+    'ready.parts_and_consumables',
+    'ready.start_conditions',
+    'execute.baseline_evidence',
+    'execute.actions_recorded',
+    'execute.scope_authorized',
+    'verify.functional_test',
+    'verify.safety_restored',
+    'verify.residual_risk',
+    'handover.service_report',
+    'handover.customer_confirmation',
+    'handover.follow_up',
+  ];
+
+  for (const itemKey of itemKeys) {
+    assert.equal(panel.split(`'${itemKey}'`).length - 1, 2, itemKey);
+  }
+  assert.match(panel, /itemLabels\[item\.key\] \|\| itemLabel\(item\.key\)/);
+  assert.match(panel, /itemLabels\[item\] \|\| itemLabel\(item\)/);
 });

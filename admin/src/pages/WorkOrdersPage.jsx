@@ -64,7 +64,7 @@ import {
   createLatestWorkOrderTitleSaveRunner,
   issueWorkOrderInvoice,
 } from './workOrderMutations';
-import { currentWorkOrderActionKey, defaultOpenWorkOrderSections } from './workOrderDetailView';
+import { currentActionTone, currentWorkOrderActionKey, defaultOpenWorkOrderSections } from './workOrderDetailView';
 
 const STATUS_MAP = {
   pending: { color: 'var(--color-info)' },
@@ -169,6 +169,7 @@ const TEXT = {
       payment_review: 'Payment review',
       in_service: 'In service',
       resolved: 'Resolved',
+      pending_review: 'Pending review',
       completed: 'Completed',
       rejected: 'Rejected',
       cancelled: 'Cancelled',
@@ -506,6 +507,7 @@ const TEXT = {
       payment_review: '付款审核',
       in_service: '服务中',
       resolved: '已解决',
+      pending_review: '待审核',
       completed: '已完成',
       rejected: '已驳回',
       cancelled: '已取消',
@@ -889,6 +891,17 @@ function WorkOrderDetailSummary({ detail, t }) {
   const quoteCurrency = detail.pricing?.currency || paymentCurrency(detail) || 'USD';
   const paymentState = detail.payment_state || detail.quote_execution?.payment_state;
   const actionKey = currentWorkOrderActionKey(detail);
+  const actionTone = currentActionTone(actionKey);
+  const actionToneClasses = actionTone === 'current'
+    ? 'border-[var(--color-primary)]/30 bg-[var(--color-primary)]/5'
+    : actionTone === 'complete'
+      ? 'border-[var(--color-success)]/30 bg-[var(--color-success)]/5'
+      : 'border-[var(--color-border)] bg-[var(--color-surface-elevated)]';
+  const actionLabelClasses = actionTone === 'current'
+    ? 'text-[var(--color-primary)]'
+    : actionTone === 'complete'
+      ? 'text-[var(--color-success)]'
+      : 'text-[var(--color-text-secondary)]';
   const facts = [
     [t.summaryLabels.customer, detail.customer_name],
     [t.summaryLabels.engineer, detail.engineer_name],
@@ -909,8 +922,8 @@ function WorkOrderDetailSummary({ detail, t }) {
         ))}
       </div>
       <PaymentIndicators workOrder={detail} t={t} />
-      <div className="rounded-lg border border-[var(--color-primary)]/30 bg-[var(--color-primary)]/5 px-3 py-3 text-sm text-[var(--color-text-secondary)]">
-        <span className="font-medium text-[var(--color-primary)]">{t.currentAction}:</span>{' '}
+      <div className={`rounded-lg border px-3 py-3 text-sm text-[var(--color-text-secondary)] ${actionToneClasses}`}>
+        <span className={`font-medium ${actionLabelClasses}`}>{t.currentAction}:</span>{' '}
         {t.currentActions[actionKey]}
       </div>
     </div>
