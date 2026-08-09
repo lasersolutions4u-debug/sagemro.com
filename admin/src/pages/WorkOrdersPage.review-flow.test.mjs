@@ -143,8 +143,8 @@ test('service-order actions use one controlled operation dialog for payment, pay
 test('engineer payout controls are limited to completed work orders', async () => {
   const source = await readFile(new URL('./WorkOrdersPage.jsx', import.meta.url), 'utf8');
 
-  assert.match(source, /detail\.status === 'completed'[\s\S]*Engineer service payment/);
-  assert.match(source, /detail\.payout_status !== 'completed'[\s\S]*Mark payout processing/);
+  assert.match(source, /detail\.status === 'completed'[\s\S]*t\.engineerPayoutTitle/);
+  assert.match(source, /detail\.payout_status !== 'completed'[\s\S]*t\.markPayoutProcessing/);
 });
 
 test('operations staff receive a read-only service-order view', async () => {
@@ -189,4 +189,129 @@ test('arrival audit treats unavailable location as allowed evidence instead of a
   assert.match(source, /className=\{arrivalOutcome\.tone\}/);
   assert.match(source, /formatApiDateTime\(check\.created_at/);
   assert.match(source, /min-w-0[^"]*\[overflow-wrap:anywhere\]/);
+});
+
+test('detail drawer is summary-first with bilingual shortcut navigation', async () => {
+  const source = await readFile(new URL('./WorkOrdersPage.jsx', import.meta.url), 'utf8');
+  const drawer = source.slice(source.indexOf('{detailOpen &&'));
+  assert.match(drawer, /<WorkOrderDetailNav/);
+  assert.match(drawer, /<WorkOrderDetailSummary/);
+  assert.ok(drawer.indexOf('<WorkOrderDetailSummary') < drawer.indexOf('<ServiceStandardAdminPanel'));
+  for (const key of ['overview', 'quote', 'dispatch', 'serviceControls', 'filesReport', 'reviewsMessages']) {
+    assert.match(source, new RegExp(`${key}:`));
+  }
+});
+
+test('shortcut navigation expands and scrolls to a detail section', async () => {
+  const source = await readFile(new URL('./WorkOrdersPage.jsx', import.meta.url), 'utf8');
+  assert.match(source, /function navigateToDetailSection\(sectionKey\)/);
+  assert.match(source, /setOpenDetailSections/);
+  assert.match(source, /requestAnimationFrame/);
+  assert.match(source, /scrollIntoView\(\{ behavior: 'smooth', block: 'start' \}\)/);
+});
+
+test('loaded detail opens the section containing its current operator control', async () => {
+  const source = await readFile(new URL('./WorkOrdersPage.jsx', import.meta.url), 'utf8');
+  assert.match(
+    source,
+    /setDetail\(detailData\);\s*setOpenDetailSections\(new Set\(defaultOpenWorkOrderSections\(detailData\)\)\);/,
+  );
+});
+
+test('legacy parts quote uses a horizontally scrollable readable-width table', async () => {
+  const source = await readFile(new URL('./WorkOrdersPage.jsx', import.meta.url), 'utf8');
+  const legacyQuoteStart = source.indexOf("{!detail.pricing?.quote_version && <section");
+  const legacyQuoteEnd = source.indexOf("{detail.status === 'completed' && (", legacyQuoteStart);
+  assert.ok(legacyQuoteStart >= 0);
+  assert.ok(legacyQuoteEnd >= 0);
+  assert.ok(legacyQuoteEnd > legacyQuoteStart);
+  const legacyQuote = source.slice(legacyQuoteStart, legacyQuoteEnd);
+  assert.match(legacyQuote, /overflow-x-auto/);
+  assert.match(legacyQuote, /<table className="min-w-/);
+  assert.doesNotMatch(legacyQuote, /overflow-hidden rounded-lg border/);
+});
+
+test('overview current-action card uses current, completed, and neutral semantic tones', async () => {
+  const source = await readFile(new URL('./WorkOrdersPage.jsx', import.meta.url), 'utf8');
+
+  assert.match(source, /const actionTone = currentActionTone\(actionKey\)/);
+  assert.match(source, /actionTone === 'current'/);
+  assert.match(source, /actionTone === 'complete'/);
+  assert.match(source, /color-success/);
+  assert.match(source, /color-surface-elevated/);
+});
+
+test('work-order headers localize pending review in both markets', async () => {
+  const source = await readFile(new URL('./WorkOrdersPage.jsx', import.meta.url), 'utf8');
+
+  assert.match(source, /statuses: \{[\s\S]*pending_review: 'Pending review'/);
+  assert.match(source, /statuses: \{[\s\S]*pending_review: '待审核'/);
+});
+
+test('reviews and messages render once and messages do not create nested vertical scrolling', async () => {
+  const source = await readFile(new URL('./WorkOrdersPage.jsx', import.meta.url), 'utf8');
+  assert.equal(source.match(/\{t\.customerReviewTitle\}/g)?.length, 1);
+  assert.equal(source.match(/\{t\.engineerReviewTitle\}/g)?.length, 1);
+  assert.equal(source.match(/\{t\.messagesTitle\}/g)?.length, 1);
+  assert.doesNotMatch(source, /max-h-72 space-y-2 overflow-y-auto/);
+});
+
+test('visible detail labels are localized instead of hard-coded English', async () => {
+  const source = await readFile(new URL('./WorkOrdersPage.jsx', import.meta.url), 'utf8');
+  assert.doesNotMatch(source, />Engineer service payment</);
+  assert.doesNotMatch(source, /label="Labor Fee"/);
+  assert.match(source, /engineerPayoutTitle: 'Engineer service payment'/);
+  assert.match(source, /engineerPayoutTitle: '工程师服务结算'/);
+  assert.match(source, /laborFee: 'Labor fee'/);
+  assert.match(source, /laborFee: '人工费'/);
+});
+
+test('service controls receive work-order status and report current blockers to the drawer', async () => {
+  const source = await readFile(new URL('./WorkOrdersPage.jsx', import.meta.url), 'utf8');
+
+  assert.match(source, /workOrderStatus=\{detail\.status\}/);
+  assert.match(source, /onBlockerStateChange/);
+  assert.match(source, /count > 0[\s\S]*'service-controls'/);
+});
+
+test('balance payment statuses use bilingual labels instead of stored enum values', async () => {
+  const source = await readFile(new URL('./WorkOrdersPage.jsx', import.meta.url), 'utf8');
+
+  assert.match(source, /balancePaymentStatuses: \{[\s\S]*instructions_requested: 'Payment instructions requested'[\s\S]*pending_admin_confirmation: 'Pending Admin confirmation'/);
+  assert.match(source, /balancePaymentStatuses: \{[\s\S]*instructions_requested: '已申请付款说明'[\s\S]*pending_admin_confirmation: '待管理员确认'/);
+  assert.match(source, /t\.balancePaymentStatuses\[detail\.balance_payment\.status\] \|\| t\.sectionEmpty/);
+  assert.doesNotMatch(source, /\{t\.statusLabel\}: \{detail\.balance_payment\.status\}/);
+});
+
+test('generic and historical drawer badges do not use the primary action color', async () => {
+  const source = await readFile(new URL('./WorkOrdersPage.jsx', import.meta.url), 'utf8');
+  const drawer = source.slice(source.indexOf('{detailOpen &&'), source.indexOf('{operationDialog &&'));
+  const headerStatus = drawer.slice(drawer.indexOf('{detail.order_no}'), drawer.indexOf('{detail.description}'));
+  const pricingStatus = drawer.slice(drawer.indexOf('{detail.pricing?.status && ('), drawer.indexOf('</span>', drawer.indexOf('{detail.pricing?.status && (')) + 7);
+  const completedPayout = drawer.slice(drawer.indexOf("{detail.status === 'completed'"), drawer.indexOf('<div className="flex flex-col', drawer.indexOf("{detail.status === 'completed'")));
+  const customerAverage = drawer.slice(drawer.indexOf('{detail.rating && ('), drawer.indexOf('</span>', drawer.indexOf('{detail.rating && (')) + 7);
+  const engineerAverage = drawer.slice(drawer.indexOf('{detail.engineer_review && ('), drawer.indexOf('</span>', drawer.indexOf('{detail.engineer_review && (')) + 7);
+
+  for (const historicalBadge of [headerStatus, pricingStatus, customerAverage, engineerAverage]) {
+    assert.doesNotMatch(historicalBadge, /color-primary/);
+    assert.match(historicalBadge, /color-(?:surface-elevated|text-secondary|border)/);
+  }
+  assert.doesNotMatch(completedPayout, /color-primary/);
+  assert.match(completedPayout, /color-success/);
+});
+
+test('historical internal notes are neutral while retaining the explicit privacy label', async () => {
+  const source = await readFile(new URL('./WorkOrdersPage.jsx', import.meta.url), 'utf8');
+  const internalNoteRow = source.slice(
+    source.indexOf("item.is_internal_note ?"),
+    source.indexOf("' : 'bg-[var(--color-surface-elevated)]", source.indexOf("item.is_internal_note ?")),
+  );
+
+  assert.doesNotMatch(internalNoteRow, /amber|color-primary/);
+  assert.match(internalNoteRow, /border-\[var\(--color-border\)\]/);
+  assert.match(internalNoteRow, /bg-\[var\(--color-surface-elevated\)\]/);
+  assert.match(internalNoteRow, /text-\[var\(--color-text-secondary\)\]/);
+  assert.match(source, /internalNote: 'Internal note'/);
+  assert.match(source, /internalNote: '内部备注'/);
+  assert.match(source, /item\.is_internal_note \? ` · \$\{t\.internalNote\}` : ''/);
 });

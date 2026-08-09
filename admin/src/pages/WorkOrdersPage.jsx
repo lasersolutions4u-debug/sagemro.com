@@ -10,11 +10,12 @@ class DetailErrorBoundary extends Component {
   }
   render() {
     if (this.state.error) {
+      const t = this.props.t;
       return (
         <div className="rounded-xl border border-red-500/40 bg-red-500/5 p-4">
-          <h4 className="font-medium text-red-600">Render Error</h4>
-          <pre className="mt-2 whitespace-pre-wrap text-xs text-red-500">{this.state.error?.message || 'Unknown error'}</pre>
-          <p className="mt-2 text-xs text-[var(--color-text-muted)]">Stack: {this.state.error?.stack || 'N/A'}</p>
+          <h4 className="font-medium text-red-600">{t.renderError}</h4>
+          <pre className="mt-2 whitespace-pre-wrap text-xs text-red-500">{this.state.error?.message || t.unknownError}</pre>
+          <p className="mt-2 text-xs text-[var(--color-text-muted)]">{t.stackLabel}: {this.state.error?.stack || t.sectionEmpty}</p>
         </div>
       );
     }
@@ -46,6 +47,7 @@ import { runtimeConfig } from '../config/runtime';
 import { FieldWorkAdminPanel } from '../components/FieldWorkAdminPanel';
 import { QuoteExecutionAdminPanel } from '../components/QuoteExecutionAdminPanel';
 import { ServiceStandardAdminPanel } from '../components/ServiceStandardAdminPanel';
+import { WorkOrderDetailNav, WorkOrderDetailSection } from '../components/WorkOrderDetailSection';
 import { formatApiDateTime } from '../utils/dateTime';
 import {
   formatAiSummary,
@@ -56,6 +58,7 @@ import {
   parseJsonValue,
 } from './workOrderDisplay';
 import { createOperationKey } from './materialRequisitionOperations';
+import { currentActionTone, currentWorkOrderActionKey, defaultOpenWorkOrderSections } from './workOrderDetailView';
 
 const STATUS_MAP = {
   pending: { color: 'var(--color-info)' },
@@ -87,7 +90,7 @@ function ScoreRow({ label, value }) {
   return (
     <div className="flex items-center justify-between gap-3 rounded-lg bg-[var(--color-surface-elevated)] px-3 py-2">
       <span>{label}</span>
-      <span className="font-semibold text-[var(--color-primary)]">{formatScore(value)}</span>
+      <span className="font-semibold text-[var(--color-text)]">{formatScore(value)}</span>
     </div>
   );
 }
@@ -96,20 +99,13 @@ function MoneyRow({ label, value }) {
   return (
     <div className="flex items-center justify-between gap-3 rounded-lg bg-[var(--color-surface-elevated)] px-3 py-2">
       <span>{label}</span>
-      <span className="font-semibold text-[var(--color-primary)]">{money(value)} USD</span>
+      <span className="font-semibold text-[var(--color-text)]">{money(value)} USD</span>
     </div>
   );
 }
 
-function payoutLabel(status) {
-  const labels = {
-    not_ready: 'Not ready',
-    pending: 'Payout pending',
-    processing: 'Processing',
-    completed: 'Completed',
-    exception: 'Exception',
-  };
-  return labels[status] || status || 'Not ready';
+function payoutLabel(status, t) {
+  return t.payoutStatuses[status] || status || t.payoutStatuses.not_ready;
 }
 
 function isImageAttachment(attachment) {
@@ -160,6 +156,7 @@ const TEXT = {
       payment_review: 'Payment review',
       in_service: 'In service',
       resolved: 'Resolved',
+      pending_review: 'Pending review',
       completed: 'Completed',
       rejected: 'Rejected',
       cancelled: 'Cancelled',
@@ -214,6 +211,10 @@ const TEXT = {
     paymentReviewHint: 'Engineer has followed up payment. Confirm receipt before allowing service execution.',
     balancePaymentTitle: 'Service balance confirmation required',
     balancePaymentHint: 'The customer has requested the remaining service balance payment. Confirm receipt to settle the payment record.',
+    balancePaymentStatuses: {
+      instructions_requested: 'Payment instructions requested',
+      pending_admin_confirmation: 'Pending Admin confirmation',
+    },
     approveBalancePayment: 'Confirm balance received',
     balancePaymentApproved: (orderNo) => `Service balance confirmed: ${orderNo}`,
     balancePaymentApproveFailed: 'Failed to confirm service balance',
@@ -267,6 +268,28 @@ const TEXT = {
     drawerSubtitle: 'Review customer communication, internal notes, AI summary, service report, and two-way reviews.',
     serviceRecord: 'Service Record',
     close: 'Close',
+    detailNav: {
+      ariaLabel: 'Work-order detail sections',
+      overview: 'Overview',
+      quote: 'Quote',
+      dispatch: 'Dispatch',
+      serviceControls: 'Service controls',
+      filesReport: 'Files & report',
+      reviewsMessages: 'Reviews & messages',
+    },
+    summaryLabels: { customer: 'Customer', engineer: 'Engineer', quote: 'Quote', payment: 'Payment' },
+    currentActions: {
+      dispatch: 'Assign the regional lead or engineer.',
+      quoteReview: 'Review the quote before it is sent.',
+      paymentFollowup: 'Follow up the confirmed payment method.',
+      approvePaymentStart: 'Confirm receipt before service starts.',
+      monitorService: 'Service is in progress.',
+      handover: 'Review service handover and customer acceptance.',
+      complete: 'Service and customer acceptance are complete.',
+      none: 'No Admin action is required now.',
+    },
+    currentAction: 'Current action',
+    sectionEmpty: 'Not available',
     customerLabel: 'Customer',
     engineerLabel: 'Engineer',
     quoteReviewLabel: 'Quote review',
@@ -313,6 +336,65 @@ const TEXT = {
     notePlaceholder: 'Add an internal note. Visible only to Admin / regional lead / engineer, not to the customer.',
     saveNote: 'Save internal note',
     noDetail: 'No service order detail loaded',
+    renderError: 'Render error',
+    unknownError: 'Unknown error',
+    stackLabel: 'Stack',
+    engineerPayoutTitle: 'Engineer service payment',
+    engineerPayoutHint: "Internal closure is not complete until this work order's engineer payout is completed.",
+    laborFee: 'Labor fee',
+    partsFee: 'Parts fee',
+    travelFee: 'Travel fee',
+    otherFees: 'Other fees',
+    pieces: 'pcs',
+    amountLabel: 'Amount',
+    statusLabel: 'Status',
+    methodLabel: 'Method',
+    referenceLabel: 'Reference',
+    paidAtLabel: 'Paid at',
+    noteLabel: 'Note',
+    bankSwift: 'Bank transfer / SWIFT',
+    paypalAccount: 'PayPal account',
+    payoutStatuses: {
+      not_ready: 'Not ready',
+      pending: 'Payout pending',
+      processing: 'Processing',
+      completed: 'Completed',
+      exception: 'Exception',
+    },
+    payoutUpdated: (status) => `Engineer service payment updated: ${status}`,
+    payoutUpdateFailed: 'Failed to update engineer service payment',
+    markPayoutProcessing: 'Mark payout processing',
+    markPayoutCompleted: 'Mark payout completed',
+    markPayoutException: 'Mark payout exception',
+    onsiteConversionTitle: 'On-site conversion awaiting location confirmation',
+    onsiteConversionHint: 'Admin may confirm on behalf of the customer only after independently verifying the address and map point. The reason is written to the audit log.',
+    engineerRequestLabel: 'Engineer request',
+    siteAddressPlaceholder: 'Exact customer site address',
+    searching: 'Searching...',
+    searchMap: 'Search map',
+    latitude: 'Latitude',
+    longitude: 'Longitude',
+    locationNotePlaceholder: 'Location confirmation note or arrival instructions',
+    locationReasonPlaceholder: 'Required: why Admin is confirming instead of the customer',
+    confirmLocation: 'Confirm location on behalf of customer',
+    siteAddressRequired: 'Enter the customer site address before searching.',
+    siteSearchFailed: 'Failed to search the service address.',
+    siteLocationRequired: 'A complete site address and valid map coordinates are required.',
+    siteConfirmationReasonRequired: 'Explain why Admin is confirming the location on behalf of the customer.',
+    siteLocationConfirmed: (orderNo) => `On-site service location confirmed: ${orderNo}`,
+    siteLocationConfirmFailed: 'Failed to confirm the on-site service location.',
+    arrivalAuditTitle: 'Arrival verification audit',
+    siteLabel: 'Site',
+    locationNotConfirmed: 'Location not confirmed',
+    verified: 'Verified',
+    waitingForCheckIn: 'Waiting for engineer check-in',
+    adminOverrideLabel: 'Admin override',
+    manualArrivalApproval: 'Manual arrival approval',
+    distanceLabel: 'Distance',
+    allowedRadiusLabel: 'Allowed radius',
+    noArrivalAttempts: 'No engineer arrival attempts have been recorded.',
+    arrivalApproved: (orderNo) => `Engineer arrival manually approved: ${orderNo}`,
+    arrivalApproveFailed: 'Failed to approve the engineer arrival.',
     arrivalLocationUnavailable: 'Location unavailable · photo evidence accepted',
     arrivalPassed: 'Passed',
     arrivalOutsideGeofence: 'Outside geofence',
@@ -363,9 +445,195 @@ const TEXT = {
     saving: 'Saving...',
   },
   'zh-CN': {
+    statuses: {
+      pending: '待处理',
+      pending_dispatch: '待区域派单',
+      assigned: '已派单',
+      in_progress: '处理中',
+      pricing: '待确认报价',
+      pending_payment: '待跟进付款',
+      payment_review: '待审核收款',
+      in_service: '服务中',
+      resolved: '已解决',
+      pending_review: '待审核',
+      completed: '已完成',
+      rejected: '已驳回',
+      cancelled: '已取消',
+    },
+    pricing: {
+      pending_review: '待运营审核',
+      submitted: '已发送客户',
+      confirmed: '客户已确认',
+      draft: '已退回修改',
+    },
+    headers: {
+      orderNo: '服务单号',
+      customer: '客户',
+      regionalLead: '区域负责人',
+      engineer: '内部工程师',
+      type: '类型',
+      urgency: '紧急程度',
+      status: '状态',
+      quoteArchive: '报价 / 归档',
+      createdAt: '创建时间',
+      dispatch: '派单',
+      detail: '详情',
+    },
+    loading: '加载中...',
     loadFailed: '服务工单加载失败。',
     engineerLoadFailed: '可派工程师和区域负责人加载失败。',
     retry: '重试',
+    detailLoadFailed: '服务工单详情加载失败',
+    noteSaveFailed: '内部备注保存失败',
+    drawerTitle: '服务管控视图',
+    drawerSubtitle: '查看客户沟通、内部备注、AI 摘要、服务报告及双向评价。',
+    close: '关闭',
+    detailNav: {
+      ariaLabel: '工单详情分区',
+      overview: '概览',
+      quote: '报价清单',
+      dispatch: '派单',
+      serviceControls: '服务标准',
+      filesReport: '附件与报告',
+      reviewsMessages: '评价与沟通',
+    },
+    summaryLabels: { customer: '客户', engineer: '工程师', quote: '报价', payment: '付款' },
+    currentActions: {
+      dispatch: '请分配区域负责人或工程师。',
+      quoteReview: '请审核报价后再发送给客户。',
+      paymentFollowup: '请跟进客户已确认的付款方式。',
+      approvePaymentStart: '请确认收款后批准开工。',
+      monitorService: '服务正在进行中。',
+      handover: '请核对服务交接和客户验收。',
+      complete: '服务及客户验收已完成。',
+      none: '当前无需管理员处理。',
+    },
+    currentAction: '当前操作',
+    sectionEmpty: '暂无',
+    fullOrderReviewTitle: '需审核完整工单',
+    fullOrderReviewHint: '批准前请核对客户问题、AI 摘要、附件、报价明细、配件、报价小计和内部备注。',
+    return: '退回',
+    returnQuote: '退回报价',
+    approve: '批准',
+    approveFullOrder: '批准完整工单',
+    paymentReviewTitle: '需要确认收款',
+    paymentReviewHint: '工程师已跟进付款。确认到账后才能允许开始服务。',
+    approvePaymentStart: '确认收款并开工',
+    balancePaymentTitle: '需要确认服务尾款',
+    balancePaymentHint: '客户已申请支付剩余服务尾款。请确认到账并结清付款记录。',
+    balancePaymentStatuses: {
+      instructions_requested: '已申请付款说明',
+      pending_admin_confirmation: '待管理员确认',
+    },
+    approveBalancePayment: '确认尾款到账',
+    regionalLeadOption: '选择区域负责人',
+    assigning: '分配中',
+    assignRegion: '分配区域',
+    engineerOption: '选择工程师',
+    dispatching: '派单中',
+    directDispatch: '直接派单',
+    quoteDetailTitle: '报价明细',
+    quoteSubtotalPrice: '报价小计',
+    otherFeeNote: '其他费用说明',
+    partsList: '配件清单',
+    aiPriceCheck: 'AI 价格检查',
+    noQuoteDetail: '暂无报价明细',
+    noQuote: '暂无报价',
+    aiSummaryTitle: '服务需求摘要',
+    noAiSummary: '暂无 AI 摘要',
+    attachmentsTitle: '诊断图片与附件',
+    attachmentCount: (count) => `${count} 个附件`,
+    openAttachment: '打开附件',
+    noAttachments: '暂无诊断图片或附件',
+    reportTitle: '服务报告',
+    reportFields: {
+      symptom: '故障现象',
+      diagnosis: '诊断',
+      solution: '解决方案',
+      laborHours: '工时',
+    },
+    noReport: '暂无服务报告',
+    customerReviewTitle: '客户服务评价',
+    average: '平均分',
+    scoreRows: {
+      timeliness: '及时性',
+      technical: '技术能力',
+      communication: '沟通',
+      professional: '专业度',
+      cooperation: '配合度',
+      payment: '付款配合',
+      environment: '现场条件',
+    },
+    noCustomerReview: '客户尚未评价本次服务',
+    engineerReviewTitle: '工程师对客户的内部评价',
+    internalRiskNote: '仅供内部风险管控，用于派单决策、服务准备和质量复核，客户不可见。',
+    noEngineerReview: '工程师尚未提交客户配合度评价',
+    messagesTitle: '服务沟通与内部备注',
+    messageCount: (count) => `${count} 条消息`,
+    noMessages: '暂无消息',
+    internalNote: '内部备注',
+    notePlaceholder: '添加内部备注。仅管理员、区域负责人和工程师可见，客户不可见。',
+    saveNote: '保存内部备注',
+    noDetail: '未加载服务工单详情',
+    renderError: '渲染错误',
+    unknownError: '未知错误',
+    stackLabel: '堆栈',
+    engineerPayoutTitle: '工程师服务结算',
+    engineerPayoutHint: '工程师服务款结算完成后，本工单的内部结案流程才算完成。',
+    laborFee: '人工费',
+    partsFee: '配件费',
+    travelFee: '差旅费',
+    otherFees: '其他费用',
+    pieces: '件',
+    amountLabel: '金额',
+    statusLabel: '状态',
+    methodLabel: '方式',
+    referenceLabel: '流水号',
+    paidAtLabel: '付款时间',
+    noteLabel: '备注',
+    bankSwift: '银行转账 / SWIFT',
+    paypalAccount: 'PayPal 账户',
+    payoutStatuses: {
+      not_ready: '未就绪',
+      pending: '待结算',
+      processing: '处理中',
+      completed: '已完成',
+      exception: '异常',
+    },
+    payoutUpdated: (status) => `工程师服务款已更新：${status}`,
+    payoutUpdateFailed: '工程师服务款更新失败',
+    markPayoutProcessing: '标记为结算中',
+    markPayoutCompleted: '标记为已完成',
+    markPayoutException: '标记为异常',
+    onsiteConversionTitle: '上门服务转换待确认位置',
+    onsiteConversionHint: '管理员仅可在独立核实地址和地图点位后代客户确认，原因会写入审计日志。',
+    engineerRequestLabel: '工程师申请',
+    siteAddressPlaceholder: '客户现场准确地址',
+    searching: '搜索中...',
+    searchMap: '搜索地图',
+    latitude: '纬度',
+    longitude: '经度',
+    locationNotePlaceholder: '位置确认备注或到场说明',
+    locationReasonPlaceholder: '必填：管理员代替客户确认的原因',
+    confirmLocation: '代客户确认位置',
+    siteAddressRequired: '请先填写客户现场地址。',
+    siteSearchFailed: '服务地址搜索失败。',
+    siteLocationRequired: '请填写完整现场地址和有效地图坐标。',
+    siteConfirmationReasonRequired: '请说明管理员代客户确认位置的原因。',
+    siteLocationConfirmed: (orderNo) => `上门服务位置已确认：${orderNo}`,
+    siteLocationConfirmFailed: '上门服务位置确认失败。',
+    arrivalAuditTitle: '到场验证审计',
+    siteLabel: '现场',
+    locationNotConfirmed: '位置尚未确认',
+    verified: '已验证',
+    waitingForCheckIn: '等待工程师签到',
+    adminOverrideLabel: '管理员人工确认',
+    manualArrivalApproval: '人工确认到场',
+    distanceLabel: '距离',
+    allowedRadiusLabel: '允许半径',
+    noArrivalAttempts: '尚无工程师到场尝试记录。',
+    arrivalApproved: (orderNo) => `已人工确认工程师到场：${orderNo}`,
+    arrivalApproveFailed: '工程师到场确认失败。',
     arrivalLocationUnavailable: '无法定位 · 已接受照片证据',
     arrivalPassed: '已通过',
     arrivalOutsideGeofence: '位于围栏外',
@@ -476,6 +744,52 @@ function PaymentIndicators({ workOrder, t }) {
   );
 }
 
+function WorkOrderDetailSummary({ detail, t }) {
+  const quoteTotal = detail.pricing
+    ? detail.pricing.subtotal ?? detail.pricing.total_amount ?? detail.pricing_total_amount
+    : detail.pricing_total_amount;
+  const quoteCurrency = detail.pricing?.currency || paymentCurrency(detail) || 'USD';
+  const paymentState = detail.payment_state || detail.quote_execution?.payment_state;
+  const actionKey = currentWorkOrderActionKey(detail);
+  const actionTone = currentActionTone(actionKey);
+  const actionToneClasses = actionTone === 'current'
+    ? 'border-[var(--color-primary)]/30 bg-[var(--color-primary)]/5'
+    : actionTone === 'complete'
+      ? 'border-[var(--color-success)]/30 bg-[var(--color-success)]/5'
+      : 'border-[var(--color-border)] bg-[var(--color-surface-elevated)]';
+  const actionLabelClasses = actionTone === 'current'
+    ? 'text-[var(--color-primary)]'
+    : actionTone === 'complete'
+      ? 'text-[var(--color-success)]'
+      : 'text-[var(--color-text-secondary)]';
+  const facts = [
+    [t.summaryLabels.customer, detail.customer_name],
+    [t.summaryLabels.engineer, detail.engineer_name],
+    [t.summaryLabels.quote, quoteTotal == null ? null : `${money(quoteTotal)} ${quoteCurrency}`],
+    [t.summaryLabels.payment, paymentState ? t.paymentStates[paymentState] || paymentState : null],
+  ];
+
+  return (
+    <div className="space-y-3">
+      <div className="grid grid-cols-1 gap-2 min-[360px]:grid-cols-2 lg:grid-cols-4">
+        {facts.map(([label, value]) => (
+          <div key={label} className="min-w-0 rounded-lg bg-[var(--color-surface-elevated)] px-3 py-3">
+            <div className="text-xs text-[var(--color-text-muted)]">{label}</div>
+            <div className="mt-1 truncate text-sm font-medium text-[var(--color-text)]" title={value || t.sectionEmpty}>
+              {value || t.sectionEmpty}
+            </div>
+          </div>
+        ))}
+      </div>
+      <PaymentIndicators workOrder={detail} t={t} />
+      <div className={`rounded-lg border px-3 py-3 text-sm text-[var(--color-text-secondary)] ${actionToneClasses}`}>
+        <span className={`font-medium ${actionLabelClasses}`}>{t.currentAction}:</span>{' '}
+        {t.currentActions[actionKey]}
+      </div>
+    </div>
+  );
+}
+
 export function WorkOrdersPage({ readOnly = false }) {
   const t = { ...TEXT.en, ...(TEXT[runtimeConfig.locale] || {}) };
   const [status, setStatus] = useState('all');
@@ -490,6 +804,9 @@ export function WorkOrdersPage({ readOnly = false }) {
   const [detailLoading, setDetailLoading] = useState(false);
   const [detail, setDetail] = useState(null);
   const [detailMessages, setDetailMessages] = useState([]);
+  const [openDetailSections, setOpenDetailSections] = useState(() => new Set(['overview']));
+  const detailSectionRefs = useRef(new Map());
+  const [serviceBlockerState, setServiceBlockerState] = useState({ gate: null, count: 0 });
   const [titleEditor, setTitleEditor] = useState({
     open: false,
     workOrderId: null,
@@ -526,6 +843,14 @@ export function WorkOrdersPage({ readOnly = false }) {
   useEffect(() => {
     setPage(1);
   }, [status]);
+
+  useEffect(() => {
+    if (!detailOpen || !detail?.id || !(serviceBlockerState.count > 0)) return;
+    setOpenDetailSections((current) => {
+      if (current.has('service-controls')) return current;
+      return new Set([...current, 'service-controls']);
+    });
+  }, [detail?.id, detailOpen, serviceBlockerState.count, serviceBlockerState.gate]);
 
   useEffect(() => {
     setLoading(true);
@@ -904,10 +1229,10 @@ export function WorkOrdersPage({ readOnly = false }) {
           ? { ...prev, payout: response.payout, payout_status: response.payout_status }
           : prev
       ));
-      setMessage(`Engineer service payment updated: ${payoutLabel(response.payout_status)}`);
+      setMessage(t.payoutUpdated(payoutLabel(response.payout_status, t)));
       return true;
     } catch (err) {
-      setMessage(err.message || 'Failed to update engineer service payment');
+      setMessage(err.message || t.payoutUpdateFailed);
       return false;
     } finally {
       setAssigningId('');
@@ -919,6 +1244,9 @@ export function WorkOrdersPage({ readOnly = false }) {
     setDetailLoading(true);
     setDetail(null);
     setDetailMessages([]);
+    setOpenDetailSections(new Set(defaultOpenWorkOrderSections(wo)));
+    setServiceBlockerState({ gate: null, count: 0 });
+    detailSectionRefs.current.clear();
     setTitleEditor((current) => ({
       open: false,
       workOrderId: null,
@@ -936,6 +1264,7 @@ export function WorkOrdersPage({ readOnly = false }) {
         getAdminWorkOrderMessages(wo.id),
       ]);
       setDetail(detailData);
+      setOpenDetailSections(new Set(defaultOpenWorkOrderSections(detailData)));
       setDetailMessages(messagesData.list || []);
       setAdminSiteLocation({
         service_address: detailData.service_address || '',
@@ -1050,7 +1379,7 @@ export function WorkOrdersPage({ readOnly = false }) {
   async function searchAdminLocation() {
     const query = adminSiteLocation.service_address.trim();
     if (query.length < 2) {
-      setMessage('Enter the customer site address before searching.');
+      setMessage(t.siteAddressRequired);
       return;
     }
     setAdminLocationSearching(true);
@@ -1059,7 +1388,7 @@ export function WorkOrdersPage({ readOnly = false }) {
       setAdminLocationResults(result.results || []);
     } catch (err) {
       setAdminLocationResults([]);
-      setMessage(err.message || 'Failed to search the service address.');
+      setMessage(err.message || t.siteSearchFailed);
     } finally {
       setAdminLocationSearching(false);
     }
@@ -1084,11 +1413,11 @@ export function WorkOrdersPage({ readOnly = false }) {
     const longitude = Number(adminSiteLocation.service_longitude);
     const missingCoordinates = adminSiteLocation.service_latitude === '' || adminSiteLocation.service_longitude === '';
     if (missingCoordinates || !adminSiteLocation.service_address.trim() || !Number.isFinite(latitude) || !Number.isFinite(longitude)) {
-      setMessage('A complete site address and valid map coordinates are required.');
+      setMessage(t.siteLocationRequired);
       return;
     }
     if (!adminSiteLocation.reason.trim()) {
-      setMessage('Explain why Admin is confirming the location on behalf of the customer.');
+      setMessage(t.siteConfirmationReasonRequired);
       return;
     }
 
@@ -1103,10 +1432,10 @@ export function WorkOrdersPage({ readOnly = false }) {
           ? null
           : Number(adminSiteLocation.service_accuracy_m),
       });
-      setMessage(`On-site service location confirmed: ${wo.order_no}`);
+      setMessage(t.siteLocationConfirmed(wo.order_no));
       await openDetail(wo);
     } catch (err) {
-      setMessage(err.message || 'Failed to confirm the on-site service location.');
+      setMessage(err.message || t.siteLocationConfirmFailed);
     } finally {
       setAssigningId('');
     }
@@ -1118,11 +1447,11 @@ export function WorkOrdersPage({ readOnly = false }) {
     setMessage('');
     try {
       await overrideAdminArrival(wo.id, reason.trim());
-      setMessage(`Engineer arrival manually approved: ${wo.order_no}`);
+      setMessage(t.arrivalApproved(wo.order_no));
       await openDetail(wo);
       return true;
     } catch (err) {
-      setMessage(err.message || 'Failed to approve the engineer arrival.');
+      setMessage(err.message || t.arrivalApproveFailed);
       return false;
     } finally {
       setAssigningId('');
@@ -1171,6 +1500,25 @@ export function WorkOrdersPage({ readOnly = false }) {
     if (type === 'arrival-override') succeeded = await handleAdminArrivalOverride(workOrder, values.reason.trim());
     setOperationSubmitting(false);
     if (succeeded) setOperationDialog(null);
+  }
+
+  function toggleDetailSection(sectionKey) {
+    if (sectionKey === 'overview') return;
+    setOpenDetailSections((current) => {
+      const next = new Set(current);
+      if (next.has(sectionKey)) next.delete(sectionKey);
+      else next.add(sectionKey);
+      return next;
+    });
+  }
+
+  function navigateToDetailSection(sectionKey) {
+    setOpenDetailSections((current) => new Set([...current, sectionKey]));
+    requestAnimationFrame(() => {
+      const section = document.getElementById(`work-order-section-${sectionKey}`);
+      detailSectionRefs.current.set(sectionKey, section);
+      section?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
   }
 
   return (
@@ -1455,7 +1803,7 @@ export function WorkOrdersPage({ readOnly = false }) {
           <div role="dialog" aria-modal="true" aria-label={t.drawerTitle} className="relative flex h-full w-full max-w-4xl flex-col overflow-hidden bg-[var(--color-surface)] shadow-2xl">
             <div className="sticky top-0 z-10 flex shrink-0 items-start justify-between gap-3 border-b border-[var(--color-border)] bg-[var(--color-surface)] p-3 sm:p-5">
               <div className="min-w-0 flex-1">
-                <div className="text-xs uppercase tracking-[0.18em] text-[var(--color-primary)]">{t.serviceRecord}</div>
+                <div className="text-xs uppercase tracking-[0.18em] text-[var(--color-text-muted)]">{t.serviceRecord}</div>
                 {!readOnly && detail && titleEditor.open ? (
                   <div className="mt-1">
                     <input
@@ -1475,7 +1823,7 @@ export function WorkOrdersPage({ readOnly = false }) {
                   <div className="mt-1 space-y-1">
                     <div className="flex flex-wrap items-center gap-2 text-sm text-[var(--color-text-muted)]">
                       <span className="font-mono">{detail.order_no}</span>
-                      <span className="rounded-full bg-[var(--color-primary)]/10 px-2 py-0.5 text-xs text-[var(--color-primary)]">{t.statuses[detail.status] || detail.status}</span>
+                      <span className="rounded-full border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-2 py-0.5 text-xs text-[var(--color-text-secondary)]">{t.statuses[detail.status] || detail.status}</span>
                     </div>
                     <p className="text-sm text-[var(--color-text-secondary)]">{detail.description}</p>
                   </div>
@@ -1519,18 +1867,141 @@ export function WorkOrdersPage({ readOnly = false }) {
                 {t.close}
               </button>
             </div>
+            {detail && (
+              <WorkOrderDetailNav
+                items={{
+                  ariaLabel: t.detailNav.ariaLabel,
+                  links: [
+                    ['overview', t.detailNav.overview],
+                    ['quote', t.detailNav.quote],
+                    ['dispatch', t.detailNav.dispatch],
+                    ['service-controls', t.detailNav.serviceControls],
+                    ['files-report', t.detailNav.filesReport],
+                    ['reviews-messages', t.detailNav.reviewsMessages],
+                  ].map(([key, label]) => ({ key, label })),
+                }}
+                onNavigate={navigateToDetailSection}
+              />
+            )}
             <div className="min-h-0 flex-1 overflow-y-auto p-3 sm:p-5">
 
             {detailLoading ? (
               <div className="py-12 text-center text-sm text-[var(--color-text-muted)]">{t.loading}</div>
             ) : detail ? (
-              <DetailErrorBoundary>
-              <div className="space-y-4">
-                <ServiceStandardAdminPanel
-                  workOrderId={detail.id}
-                  readOnly={readOnly}
-                  onRefresh={refreshOpenDetail}
-                />
+              <DetailErrorBoundary t={t}>
+                <div className="space-y-4">
+                  <WorkOrderDetailSection
+                    sectionKey="overview"
+                    title={t.detailNav.overview}
+                    open
+                    onToggle={toggleDetailSection}
+                  >
+                    <div className="space-y-4">
+                      <WorkOrderDetailSummary detail={detail} t={t} />
+                {!readOnly && detail.onsite_conversion_status === 'requested' && (
+                  <section className="rounded-xl border border-amber-500/40 bg-amber-500/5 p-4">
+                    <div>
+                      <h4 className="font-medium text-[var(--color-text)]">{t.onsiteConversionTitle}</h4>
+                      <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
+                        {t.onsiteConversionHint}
+                      </p>
+                      {detail.onsite_conversion_request_note && (
+                        <p className="mt-2 rounded-lg bg-[var(--color-surface-elevated)] px-3 py-2 text-xs text-[var(--color-text)]">
+                          {t.engineerRequestLabel}: {detail.onsite_conversion_request_note}
+                        </p>
+                      )}
+                    </div>
+                    <div className="mt-4 space-y-3">
+                      <div className="flex flex-col gap-2 sm:flex-row">
+                        <input
+                          value={adminSiteLocation.service_address}
+                          onChange={(event) => setAdminSiteLocation((current) => ({ ...current, service_address: event.target.value }))}
+                          placeholder={t.siteAddressPlaceholder}
+                          className="min-w-0 flex-1 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)]"
+                        />
+                        <button
+                          type="button"
+                          onClick={searchAdminLocation}
+                          disabled={adminLocationSearching}
+                          className="rounded-lg border border-[var(--color-border)] px-3 py-2 text-sm text-[var(--color-text-secondary)] disabled:opacity-50"
+                        >
+                          {adminLocationSearching ? t.searching : t.searchMap}
+                        </button>
+                      </div>
+                      {adminLocationResults.length > 0 && (
+                        <div className="space-y-1 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-2">
+                          {adminLocationResults.map((result) => (
+                            <button
+                              type="button"
+                              key={result.id}
+                              onClick={() => selectAdminLocation(result)}
+                              className="block w-full rounded-md px-2 py-2 text-left text-sm text-[var(--color-text)] hover:bg-[var(--color-primary)]/10"
+                            >
+                              {result.label}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                      <div className="grid gap-2 sm:grid-cols-3">
+                        <input
+                          inputMode="decimal"
+                          value={adminSiteLocation.service_latitude}
+                          onChange={(event) => setAdminSiteLocation((current) => ({ ...current, service_latitude: event.target.value }))}
+                          placeholder={t.latitude}
+                          className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)]"
+                        />
+                        <input
+                          inputMode="decimal"
+                          value={adminSiteLocation.service_longitude}
+                          onChange={(event) => setAdminSiteLocation((current) => ({ ...current, service_longitude: event.target.value }))}
+                          placeholder={t.longitude}
+                          className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)]"
+                        />
+                        <select
+                          value={adminSiteLocation.service_coordinate_system}
+                          onChange={(event) => setAdminSiteLocation((current) => ({ ...current, service_coordinate_system: event.target.value }))}
+                          className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)]"
+                        >
+                          <option value="wgs84">WGS84</option>
+                          <option value="gcj02">GCJ-02</option>
+                        </select>
+                      </div>
+                      <textarea
+                        value={adminSiteLocation.note}
+                        onChange={(event) => setAdminSiteLocation((current) => ({ ...current, note: event.target.value }))}
+                        rows={2}
+                        placeholder={t.locationNotePlaceholder}
+                        className="w-full resize-none rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)]"
+                      />
+                      <textarea
+                        value={adminSiteLocation.reason}
+                        onChange={(event) => setAdminSiteLocation((current) => ({ ...current, reason: event.target.value }))}
+                        rows={2}
+                        placeholder={t.locationReasonPlaceholder}
+                        className="w-full resize-none rounded-lg border border-amber-500/40 bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)]"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => handleAdminOnsiteConfirmation(detail)}
+                        disabled={assigningId === `${detail.id}:onsite-confirm`}
+                        className="w-full rounded-lg bg-amber-500 px-3 py-2.5 text-sm font-medium text-white hover:bg-amber-600 disabled:opacity-50"
+                      >
+                        {t.confirmLocation}
+                      </button>
+                    </div>
+                  </section>
+                )}
+                    </div>
+                  </WorkOrderDetailSection>
+
+                  <WorkOrderDetailSection
+                    sectionKey="quote"
+                    title={t.detailNav.quote}
+                    summary={detail.pricing?.status ? t.pricing[detail.pricing.status] || detail.pricing.status : t.sectionEmpty}
+                    open={openDetailSections.has('quote')}
+                    onToggle={toggleDetailSection}
+                  >
+                    <div className="space-y-4">
                 {!readOnly && detail.pricing?.status === 'pending_review' && !detail.pricing?.quote_version && (
                   <section className="rounded-xl border border-[var(--color-primary)]/40 bg-[var(--color-primary)]/5 p-4">
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -1589,7 +2060,7 @@ export function WorkOrdersPage({ readOnly = false }) {
                         <h4 className="font-medium text-[var(--color-text)]">{t.balancePaymentTitle}</h4>
                         <p className="mt-1 text-sm text-[var(--color-text-secondary)]">{t.balancePaymentHint}</p>
                         <p className="mt-2 text-xs text-[var(--color-text-muted)]">
-                          Amount: {detail.balance_payment.amount || detail.payment_policy?.balance_amount || 0} USD · Status: {detail.balance_payment.status}
+                          {t.amountLabel}: {detail.balance_payment.amount || detail.payment_policy?.balance_amount || 0} USD · {t.statusLabel}: {t.balancePaymentStatuses[detail.balance_payment.status] || t.sectionEmpty}
                         </p>
                       </div>
                       <button
@@ -1602,160 +2073,134 @@ export function WorkOrdersPage({ readOnly = false }) {
                     </div>
                   </section>
                 )}
-                {!readOnly && detail.onsite_conversion_status === 'requested' && (
-                  <section className="rounded-xl border border-amber-500/40 bg-amber-500/5 p-4">
-                    <div>
-                      <h4 className="font-medium text-[var(--color-text)]">On-site conversion awaiting location confirmation</h4>
-                      <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
-                        Admin may confirm on behalf of the customer only after independently verifying the address and map point. The reason is written to the audit log.
-                      </p>
-                      {detail.onsite_conversion_request_note && (
-                        <p className="mt-2 rounded-lg bg-[var(--color-surface-elevated)] px-3 py-2 text-xs text-[var(--color-text)]">
-                          Engineer request: {detail.onsite_conversion_request_note}
-                        </p>
-                      )}
-                    </div>
-                    <div className="mt-4 space-y-3">
-                      <div className="flex flex-col gap-2 sm:flex-row">
-                        <input
-                          value={adminSiteLocation.service_address}
-                          onChange={(event) => setAdminSiteLocation((current) => ({ ...current, service_address: event.target.value }))}
-                          placeholder="Exact customer site address"
-                          className="min-w-0 flex-1 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)]"
-                        />
-                        <button
-                          type="button"
-                          onClick={searchAdminLocation}
-                          disabled={adminLocationSearching}
-                          className="rounded-lg border border-[var(--color-border)] px-3 py-2 text-sm text-[var(--color-text-secondary)] disabled:opacity-50"
-                        >
-                          {adminLocationSearching ? 'Searching...' : 'Search map'}
-                        </button>
-                      </div>
-                      {adminLocationResults.length > 0 && (
-                        <div className="space-y-1 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-2">
-                          {adminLocationResults.map((result) => (
-                            <button
-                              type="button"
-                              key={result.id}
-                              onClick={() => selectAdminLocation(result)}
-                              className="block w-full rounded-md px-2 py-2 text-left text-sm text-[var(--color-text)] hover:bg-[var(--color-primary)]/10"
-                            >
-                              {result.label}
-                            </button>
-                          ))}
+                {!detail.pricing?.quote_version && <section className="rounded-xl border border-[var(--color-border)] p-4">
+                  <div className="mb-3 flex items-center justify-between gap-3">
+                    <h4 className="font-medium">{t.quoteDetailTitle}</h4>
+                    {detail.pricing?.status && (
+                      <span className="rounded-full border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-2 py-1 text-xs text-[var(--color-text-secondary)]">
+                        {t.pricing[detail.pricing.status] || detail.pricing.status}
+                      </span>
+                    )}
+                  </div>
+                  {detail.pricing ? (() => {
+                    const pricing = detail.pricing;
+                    const parts = quoteParts(detail);
+                    const subtotal = pricing.subtotal || pricing.total_amount || 0;
+                    const note = formatQuoteNote(pricing.parts_detail);
+                    const aiCheck = quoteAiCheck(pricing);
+                    return (
+                      <div className="space-y-3 text-sm text-[var(--color-text-secondary)]">
+                        <div className="grid gap-2 sm:grid-cols-2">
+                          <MoneyRow label={t.laborFee} value={pricing.labor_fee || 0} />
+                          <MoneyRow label={t.partsFee} value={pricing.parts_fee || 0} />
+                          <MoneyRow label={t.travelFee} value={pricing.travel_fee || 0} />
+                          <MoneyRow label={t.otherFees} value={pricing.other_fee || 0} />
                         </div>
-                      )}
-                      <div className="grid gap-2 sm:grid-cols-3">
-                        <input
-                          inputMode="decimal"
-                          value={adminSiteLocation.service_latitude}
-                          onChange={(event) => setAdminSiteLocation((current) => ({ ...current, service_latitude: event.target.value }))}
-                          placeholder="Latitude"
-                          className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)]"
-                        />
-                        <input
-                          inputMode="decimal"
-                          value={adminSiteLocation.service_longitude}
-                          onChange={(event) => setAdminSiteLocation((current) => ({ ...current, service_longitude: event.target.value }))}
-                          placeholder="Longitude"
-                          className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)]"
-                        />
-                        <select
-                          value={adminSiteLocation.service_coordinate_system}
-                          onChange={(event) => setAdminSiteLocation((current) => ({ ...current, service_coordinate_system: event.target.value }))}
-                          className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)]"
-                        >
-                          <option value="wgs84">WGS84</option>
-                          <option value="gcj02">GCJ-02</option>
-                        </select>
+                        {note && (
+                          <div className="rounded-lg bg-[var(--color-surface-elevated)] p-3">
+                            <div className="mb-1 text-xs font-medium text-[var(--color-text-muted)]">{t.otherFeeNote}</div>
+                            <div>{note}</div>
+                          </div>
+                        )}
+                        {parts.length > 0 && (
+                          <div className="overflow-x-auto rounded-lg border border-[var(--color-border)]">
+                            <div className="bg-[var(--color-surface-elevated)] px-3 py-2 text-xs font-medium text-[var(--color-text-muted)]">
+                              {t.partsList}
+                            </div>
+                            <table className="min-w-[36rem] w-full text-xs">
+                              <tbody>
+                                {parts.map((part, index) => (
+                                  <tr key={part.id || `${part.material_code || part.name}-${index}`} className="border-t border-[var(--color-border)]">
+                                    <td className="px-3 py-2">
+                                      <div className="text-[var(--color-text)]">{part.name_en || part.name || '-'}</div>
+                                      <div className="text-[var(--color-text-muted)]">{[part.material_code, part.spec, part.brand].filter(Boolean).join(' · ') || '-'}</div>
+                                    </td>
+                                    <td className="px-3 py-2 text-right">{part.quantity || 1} {part.unit || t.pieces}</td>
+                                    <td className="px-3 py-2 text-right">{money(part.unit_price)} USD</td>
+                                    <td className="px-3 py-2 text-right">{money(part.line_total || Number(part.quantity || 0) * Number(part.unit_price || 0))} USD</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        )}
+                        <div className="rounded-lg bg-[var(--color-surface-elevated)] p-3">
+                          <div className="flex justify-between">
+                            <span>{t.quoteSubtotalPrice}</span>
+                            <span className="font-semibold text-[var(--color-text)]">{money(subtotal)} USD</span>
+                          </div>
+                        </div>
+                        {aiCheck && (
+                          <div className="rounded-lg border border-[var(--color-border)] p-3">
+                            <div className="mb-1 text-xs font-medium text-[var(--color-text-muted)]">{t.aiPriceCheck}</div>
+                            <div className="font-medium text-[var(--color-text)]">{aiCheck.status || '-'}</div>
+                            {(aiCheck.reason || aiCheck.ai_note) && (
+                              <div className="mt-1 text-xs whitespace-pre-wrap">{aiCheck.reason || aiCheck.ai_note}</div>
+                            )}
+                          </div>
+                        )}
                       </div>
-                      <textarea
-                        value={adminSiteLocation.note}
-                        onChange={(event) => setAdminSiteLocation((current) => ({ ...current, note: event.target.value }))}
-                        rows={2}
-                        placeholder="Location confirmation note or arrival instructions"
-                        className="w-full resize-none rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)]"
-                      />
-                      <textarea
-                        value={adminSiteLocation.reason}
-                        onChange={(event) => setAdminSiteLocation((current) => ({ ...current, reason: event.target.value }))}
-                        rows={2}
-                        placeholder="Required: why Admin is confirming instead of the customer"
-                        className="w-full resize-none rounded-lg border border-amber-500/40 bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)]"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => handleAdminOnsiteConfirmation(detail)}
-                        disabled={assigningId === `${detail.id}:onsite-confirm`}
-                        className="w-full rounded-lg bg-amber-500 px-3 py-2.5 text-sm font-medium text-white hover:bg-amber-600 disabled:opacity-50"
-                      >
-                        Confirm location on behalf of customer
-                      </button>
-                    </div>
-                  </section>
-                )}
-                {(detail.arrival_verification_required || detail.arrival_checks?.length > 0) && (
-                  <section className="rounded-xl border border-[var(--color-border)] p-4">
+                    );
+                  })() : (
+                    <div className="text-sm text-[var(--color-text-muted)]">{t.noQuoteDetail}</div>
+                  )}
+                </section>}
+                {detail.status === 'completed' && (
+                  <section className="rounded-xl border border-[var(--color-success)]/30 bg-[var(--color-success)]/5 p-4">
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                       <div>
-                        <h4 className="font-medium text-[var(--color-text)]">Arrival verification audit</h4>
+                        <h4 className="font-medium text-[var(--color-text)]">{t.engineerPayoutTitle}</h4>
                         <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
-                          Site: {detail.service_address || 'Location not confirmed'}
+                          {t.engineerPayoutHint}
                         </p>
-                        <p className="mt-1 text-xs text-[var(--color-text-muted)]">
-                          Status: {detail.arrival_verified_at ? 'Verified' : 'Waiting for engineer check-in'}
-                          {detail.arrival_override_reason ? ` · Admin override: ${detail.arrival_override_reason}` : ''}
-                        </p>
+                        <div className="mt-3 grid gap-2 text-xs text-[var(--color-text-muted)] sm:grid-cols-2">
+                          <div>{t.statusLabel}: {payoutLabel(detail.payout_status, t)}</div>
+                          <div>{t.methodLabel}: {detail.payout?.method === 'bank_swift' ? t.bankSwift : t.paypalAccount}</div>
+                          <div>{t.amountLabel}: {detail.payout?.amount ? `${money(detail.payout.amount)} ${detail.payout.currency || 'USD'}` : '-'}</div>
+                          <div>{t.referenceLabel}: {detail.payout?.transaction_reference || '-'}</div>
+                          <div>{t.paidAtLabel}: {detail.payout?.paid_at ? new Date(detail.payout.paid_at).toLocaleString(runtimeConfig.locale === 'zh-CN' ? 'zh-CN' : 'en-US') : '-'}</div>
+                          <div>{t.noteLabel}: {detail.payout?.internal_note || '-'}</div>
+                        </div>
                       </div>
-                      {!readOnly && detail.arrival_verification_required && !detail.arrival_verified_at && (
-                        <button
-                          type="button"
-                          onClick={() => openOperationDialog('arrival-override', detail)}
-                          disabled={assigningId === `${detail.id}:arrival-override`}
-                          className="shrink-0 rounded-lg border border-red-500/40 px-3 py-2 text-sm font-medium text-red-600 disabled:opacity-50"
-                        >
-                          Manual arrival approval
-                        </button>
-                      )}
-                    </div>
-                    <div className="mt-4 space-y-2">
-                      {detail.arrival_checks?.length > 0 ? detail.arrival_checks.map((check) => {
-                        const arrivalOutcome = arrivalCheckOutcome(check, t);
-                        return <div key={check.id} className="grid min-w-0 gap-1 rounded-lg bg-[var(--color-surface-elevated)] px-3 py-2 text-xs text-[var(--color-text-secondary)] [overflow-wrap:anywhere] sm:grid-cols-4">
-                          <span>{formatApiDateTime(check.created_at, runtimeConfig.locale)}</span>
-                          <span>Distance: {check.distance_m ?? '-'} m</span>
-                          <span>Allowed radius: {check.radius_m ?? '-'} m</span>
-                          <span className={arrivalOutcome.tone}>{arrivalOutcome.label}</span>
-                        </div>;
-                      }) : (
-                        <p className="text-xs text-[var(--color-text-muted)]">No engineer arrival attempts have been recorded.</p>
+                      {!readOnly && detail.payout_status !== 'completed' && (
+                        <div className="flex flex-wrap gap-2">
+                          <button
+                            onClick={() => openOperationDialog('payout', detail, { status: 'processing' })}
+                            disabled={assigningId === `${detail.id}:payout:processing`}
+                            className="rounded-lg border border-[var(--color-border)] px-3 py-2 text-sm text-[var(--color-text-secondary)] disabled:opacity-50"
+                          >
+                            {t.markPayoutProcessing}
+                          </button>
+                          <button
+                            onClick={() => openOperationDialog('payout', detail, { status: 'completed' })}
+                            disabled={assigningId === `${detail.id}:payout:completed`}
+                            className="rounded-lg bg-[var(--color-primary)] px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
+                          >
+                            {t.markPayoutCompleted}
+                          </button>
+                          <button
+                            onClick={() => openOperationDialog('payout', detail, { status: 'exception' })}
+                            disabled={assigningId === `${detail.id}:payout:exception`}
+                            className="rounded-lg border border-red-500/40 px-3 py-2 text-sm text-red-500 disabled:opacity-50"
+                          >
+                            {t.markPayoutException}
+                          </button>
+                        </div>
                       )}
                     </div>
                   </section>
                 )}
-                {(detail.arrival_verification_required || detail.onsite_conversion_status === 'confirmed' || detail.field_plan?.site_timezone || detail.field_days?.length > 0) && (
-                  <FieldWorkAdminPanel
-                    workOrder={detail}
-                    readOnly={readOnly}
-                    onRefresh={refreshOpenDetail}
-                  />
-                )}
-                <section className="rounded-xl bg-[var(--color-surface-elevated)] p-4">
-                  <div className="mb-2 flex items-center justify-between gap-3">
-                    <div className="font-mono text-[var(--color-primary)]">{detail.order_no}</div>
-                    <span className="rounded-full bg-[var(--color-primary)]/10 px-2 py-1 text-xs text-[var(--color-primary)]">{detail.status}</span>
-                  </div>
-                  <div className="text-sm text-[var(--color-text-secondary)]">{detail.description}</div>
-                  <div className="mt-3 grid gap-2 text-xs text-[var(--color-text-muted)] sm:grid-cols-2">
-                    <div>{t.customerLabel}: {detail.customer_name || '-'}</div>
-                    <div>{t.engineerLabel}: {detail.engineer_name || '-'}</div>
-                    <div>{t.quoteReviewLabel}: {detail.quote_review_status || '-'}</div>
-                    <div>{t.riskControlLabel}: {detail.conflict_status || 'clear'}</div>
-                  </div>
-                  <PaymentIndicators workOrder={detail} t={t} />
-                </section>
+                    </div>
+                  </WorkOrderDetailSection>
 
+                  <WorkOrderDetailSection
+                    sectionKey="dispatch"
+                    title={t.detailNav.dispatch}
+                    summary={detail.engineer_name || detail.regional_lead_name || t.sectionEmpty}
+                    open={openDetailSections.has('dispatch')}
+                    onToggle={toggleDetailSection}
+                  >
+                    {readOnly && <p className="text-sm text-[var(--color-text-muted)]">{t.sectionEmpty}</p>}
                 {!readOnly && (
                 <section className="rounded-xl border border-[var(--color-border)] p-4">
                   <h4 className="mb-3 font-medium text-[var(--color-text)]">{t.headers.dispatch}</h4>
@@ -1803,133 +2248,83 @@ export function WorkOrdersPage({ readOnly = false }) {
                   </div>
                 </section>
                 )}
+                  </WorkOrderDetailSection>
 
-                {detail.status === 'completed' && (
-                  <section className="rounded-xl border border-[var(--color-primary)]/30 bg-[var(--color-primary)]/5 p-4">
-                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                      <div>
-                        <h4 className="font-medium text-[var(--color-text)]">Engineer service payment</h4>
-                        <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
-                          Internal closure is not complete until this work order's engineer payout is completed.
-                        </p>
-                        <div className="mt-3 grid gap-2 text-xs text-[var(--color-text-muted)] sm:grid-cols-2">
-                          <div>Status: {payoutLabel(detail.payout_status)}</div>
-                          <div>Method: {detail.payout?.method === 'bank_swift' ? 'Bank transfer / SWIFT' : 'PayPal account'}</div>
-                          <div>Amount: {detail.payout?.amount ? `${money(detail.payout.amount)} ${detail.payout.currency || 'USD'}` : '-'}</div>
-                          <div>Reference: {detail.payout?.transaction_reference || '-'}</div>
-                          <div>Paid at: {detail.payout?.paid_at ? new Date(detail.payout.paid_at).toLocaleString('en-US') : '-'}</div>
-                          <div>Note: {detail.payout?.internal_note || '-'}</div>
-                        </div>
-                      </div>
-                      {!readOnly && detail.payout_status !== 'completed' && (
-                        <div className="flex flex-wrap gap-2">
-                          <button
-                            onClick={() => openOperationDialog('payout', detail, { status: 'processing' })}
-                            disabled={assigningId === `${detail.id}:payout:processing`}
-                            className="rounded-lg border border-[var(--color-border)] px-3 py-2 text-sm text-[var(--color-text-secondary)] disabled:opacity-50"
-                          >
-                            Mark payout processing
-                          </button>
-                          <button
-                            onClick={() => openOperationDialog('payout', detail, { status: 'completed' })}
-                            disabled={assigningId === `${detail.id}:payout:completed`}
-                            className="rounded-lg bg-[var(--color-primary)] px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
-                          >
-                            Mark payout completed
-                          </button>
-                          <button
-                            onClick={() => openOperationDialog('payout', detail, { status: 'exception' })}
-                            disabled={assigningId === `${detail.id}:payout:exception`}
-                            className="rounded-lg border border-red-500/40 px-3 py-2 text-sm text-red-500 disabled:opacity-50"
-                          >
-                            Mark payout exception
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  </section>
-                )}
+                  <WorkOrderDetailSection
+                    sectionKey="service-controls"
+                    title={t.detailNav.serviceControls}
+                    open={openDetailSections.has('service-controls')}
+                    onToggle={toggleDetailSection}
+                  >
+                <ServiceStandardAdminPanel
+                  workOrderId={detail.id}
+                  workOrderStatus={detail.status}
+                  readOnly={readOnly}
+                  onRefresh={refreshOpenDetail}
+                  onBlockerStateChange={setServiceBlockerState}
+                />
+                  </WorkOrderDetailSection>
 
+                  <WorkOrderDetailSection
+                    sectionKey="files-report"
+                    title={t.detailNav.filesReport}
+                    summary={t.attachmentCount(detail.attachments?.length || 0)}
+                    open={openDetailSections.has('files-report')}
+                    onToggle={toggleDetailSection}
+                  >
+                    <div className="space-y-4">
                 <section className="rounded-xl border border-[var(--color-border)] p-4">
                   <h4 className="mb-2 font-medium">{t.aiSummaryTitle}</h4>
                   <div className="whitespace-pre-wrap rounded-lg bg-[var(--color-surface-elevated)] p-3 text-xs text-[var(--color-text-secondary)]">
                     {formatAiSummary(detail.ai_summary) || t.noAiSummary}
                   </div>
                 </section>
-
-                {!detail.pricing?.quote_version && <section className="rounded-xl border border-[var(--color-border)] p-4">
-                  <div className="mb-3 flex items-center justify-between gap-3">
-                    <h4 className="font-medium">{t.quoteDetailTitle || 'Quote Details'}</h4>
-                    {detail.pricing?.status && (
-                      <span className="rounded-full bg-[var(--color-primary)]/10 px-2 py-1 text-xs text-[var(--color-primary)]">
-                        {t.pricing[detail.pricing.status] || detail.pricing.status}
-                      </span>
-                    )}
-                  </div>
-                  {detail.pricing ? (() => {
-                    const pricing = detail.pricing;
-                    const parts = quoteParts(detail);
-                    const subtotal = pricing.subtotal || pricing.total_amount || 0;
-                    const note = formatQuoteNote(pricing.parts_detail);
-                    const aiCheck = quoteAiCheck(pricing);
-                    return (
-                      <div className="space-y-3 text-sm text-[var(--color-text-secondary)]">
-                        <div className="grid gap-2 sm:grid-cols-2">
-                          <MoneyRow label="Labor Fee" value={pricing.labor_fee || 0} />
-                          <MoneyRow label="Parts Fee" value={pricing.parts_fee || 0} />
-                          <MoneyRow label="Travel Fee" value={pricing.travel_fee || 0} />
-                          <MoneyRow label="Other Fees" value={pricing.other_fee || 0} />
-                        </div>
-                        {note && (
-                          <div className="rounded-lg bg-[var(--color-surface-elevated)] p-3">
-                            <div className="mb-1 text-xs font-medium text-[var(--color-text-muted)]">{t.otherFeeNote || 'Other fee note'}</div>
-                            <div>{note}</div>
-                          </div>
-                        )}
-                        {parts.length > 0 && (
-                          <div className="overflow-hidden rounded-lg border border-[var(--color-border)]">
-                            <div className="bg-[var(--color-surface-elevated)] px-3 py-2 text-xs font-medium text-[var(--color-text-muted)]">
-                              {t.partsList || 'Parts list'}
-                            </div>
-                            <table className="w-full text-xs">
-                              <tbody>
-                                {parts.map((part, index) => (
-                                  <tr key={part.id || `${part.material_code || part.name}-${index}`} className="border-t border-[var(--color-border)]">
-                                    <td className="px-3 py-2">
-                                      <div className="text-[var(--color-text)]">{part.name_en || part.name || '-'}</div>
-                                      <div className="text-[var(--color-text-muted)]">{[part.material_code, part.spec, part.brand].filter(Boolean).join(' · ') || '-'}</div>
-                                    </td>
-                                    <td className="px-3 py-2 text-right">{part.quantity || 1} {part.unit || 'pcs'}</td>
-                                    <td className="px-3 py-2 text-right">{money(part.unit_price)} USD</td>
-                                    <td className="px-3 py-2 text-right">{money(part.line_total || Number(part.quantity || 0) * Number(part.unit_price || 0))} USD</td>
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
-                          </div>
-                        )}
-                        <div className="rounded-lg bg-[var(--color-surface-elevated)] p-3">
-                          <div className="flex justify-between">
-                            <span>{t.quoteSubtotalPrice || 'Quote subtotal price'}</span>
-                            <span className="font-semibold text-[var(--color-primary)]">{money(subtotal)} USD</span>
-                          </div>
-                        </div>
-                        {aiCheck && (
-                          <div className="rounded-lg border border-[var(--color-border)] p-3">
-                            <div className="mb-1 text-xs font-medium text-[var(--color-text-muted)]">{t.aiPriceCheck || 'AI price check'}</div>
-                            <div className="font-medium text-[var(--color-text)]">{aiCheck.status || '-'}</div>
-                            {(aiCheck.reason || aiCheck.ai_note) && (
-                              <div className="mt-1 text-xs whitespace-pre-wrap">{aiCheck.reason || aiCheck.ai_note}</div>
-                            )}
-                          </div>
-                        )}
+                {(detail.arrival_verification_required || detail.arrival_checks?.length > 0) && (
+                  <section className="rounded-xl border border-[var(--color-border)] p-4">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                      <div>
+                        <h4 className="font-medium text-[var(--color-text)]">{t.arrivalAuditTitle}</h4>
+                        <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
+                          {t.siteLabel}: {detail.service_address || t.locationNotConfirmed}
+                        </p>
+                        <p className="mt-1 text-xs text-[var(--color-text-muted)]">
+                          {t.statusLabel}: {detail.arrival_verified_at ? t.verified : t.waitingForCheckIn}
+                          {detail.arrival_override_reason ? ` · ${t.adminOverrideLabel}: ${detail.arrival_override_reason}` : ''}
+                        </p>
                       </div>
-                    );
-                  })() : (
-                    <div className="text-sm text-[var(--color-text-muted)]">{t.noQuoteDetail || t.noQuote}</div>
-                  )}
-                </section>}
-
+                      {!readOnly && detail.arrival_verification_required && !detail.arrival_verified_at && (
+                        <button
+                          type="button"
+                          onClick={() => openOperationDialog('arrival-override', detail)}
+                          disabled={assigningId === `${detail.id}:arrival-override`}
+                          className="shrink-0 rounded-lg border border-red-500/40 px-3 py-2 text-sm font-medium text-red-600 disabled:opacity-50"
+                        >
+                          {t.manualArrivalApproval}
+                        </button>
+                      )}
+                    </div>
+                    <div className="mt-4 space-y-2">
+                      {detail.arrival_checks?.length > 0 ? detail.arrival_checks.map((check) => {
+                        const arrivalOutcome = arrivalCheckOutcome(check, t);
+                        return <div key={check.id} className="grid min-w-0 gap-1 rounded-lg bg-[var(--color-surface-elevated)] px-3 py-2 text-xs text-[var(--color-text-secondary)] [overflow-wrap:anywhere] sm:grid-cols-4">
+                          <span>{formatApiDateTime(check.created_at, runtimeConfig.locale)}</span>
+                          <span>{t.distanceLabel}: {check.distance_m ?? '-'} m</span>
+                          <span>{t.allowedRadiusLabel}: {check.radius_m ?? '-'} m</span>
+                          <span className={arrivalOutcome.tone}>{arrivalOutcome.label}</span>
+                        </div>;
+                      }) : (
+                        <p className="text-xs text-[var(--color-text-muted)]">{t.noArrivalAttempts}</p>
+                      )}
+                    </div>
+                  </section>
+                )}
+                {(detail.arrival_verification_required || detail.onsite_conversion_status === 'confirmed' || detail.field_plan?.site_timezone || detail.field_days?.length > 0) && (
+                  <FieldWorkAdminPanel
+                    workOrder={detail}
+                    readOnly={readOnly}
+                    onRefresh={refreshOpenDetail}
+                  />
+                )}
                 <section className="rounded-xl border border-[var(--color-border)] p-4">
                   <div className="mb-3 flex items-center justify-between gap-3">
                     <h4 className="font-medium">{t.attachmentsTitle}</h4>
@@ -1968,7 +2363,6 @@ export function WorkOrdersPage({ readOnly = false }) {
                     <div className="text-sm text-[var(--color-text-muted)]">{t.noAttachments}</div>
                   )}
                 </section>
-
                 <section className="rounded-xl border border-[var(--color-border)] p-4">
                   <h4 className="mb-2 font-medium">{t.reportTitle}</h4>
                   {detail.repair_record ? (
@@ -1982,12 +2376,22 @@ export function WorkOrdersPage({ readOnly = false }) {
                     <div className="text-sm text-[var(--color-text-muted)]">{t.noReport}</div>
                   )}
                 </section>
+                    </div>
+                  </WorkOrderDetailSection>
 
+                  <WorkOrderDetailSection
+                    sectionKey="reviews-messages"
+                    title={t.detailNav.reviewsMessages}
+                    summary={t.messageCount(detailMessages.length)}
+                    open={openDetailSections.has('reviews-messages')}
+                    onToggle={toggleDetailSection}
+                  >
+                    <div className="space-y-4">
                 <section className="rounded-xl border border-[var(--color-border)] p-4">
                   <div className="mb-3 flex items-center justify-between gap-3">
                     <h4 className="font-medium">{t.customerReviewTitle}</h4>
                     {detail.rating && (
-                      <span className="rounded-full bg-[var(--color-primary)]/10 px-2 py-1 text-xs font-semibold text-[var(--color-primary)]">
+                      <span className="rounded-full border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-2 py-1 text-xs font-semibold text-[var(--color-text-secondary)]">
                         {t.average} {formatScore(averageScore([
                           detail.rating.rating_timeliness,
                           detail.rating.rating_technical,
@@ -2015,12 +2419,11 @@ export function WorkOrdersPage({ readOnly = false }) {
                     <div className="text-sm text-[var(--color-text-muted)]">{t.noCustomerReview}</div>
                   )}
                 </section>
-
                 <section className="rounded-xl border border-[var(--color-border)] p-4">
                   <div className="mb-3 flex items-center justify-between gap-3">
                     <h4 className="font-medium">{t.engineerReviewTitle}</h4>
                     {detail.engineer_review && (
-                      <span className="rounded-full bg-[var(--color-primary)]/10 px-2 py-1 text-xs font-semibold text-[var(--color-primary)]">
+                      <span className="rounded-full border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-2 py-1 text-xs font-semibold text-[var(--color-text-secondary)]">
                         {t.average} {formatScore(averageScore([
                           detail.engineer_review.rating_cooperation,
                           detail.engineer_review.rating_communication,
@@ -2051,19 +2454,18 @@ export function WorkOrdersPage({ readOnly = false }) {
                     <div className="text-sm text-[var(--color-text-muted)]">{t.noEngineerReview}</div>
                   )}
                 </section>
-
                 <section className="rounded-xl border border-[var(--color-border)] p-4">
                   <div className="mb-3 flex items-center justify-between">
                     <h4 className="font-medium">{t.messagesTitle}</h4>
                     <span className="text-xs text-[var(--color-text-muted)]">{t.messageCount(detailMessages.length)}</span>
                   </div>
-                  <div className="max-h-72 space-y-2 overflow-y-auto">
+                  <div className="space-y-2">
                     {detailMessages.length === 0 ? (
                       <div className="py-6 text-center text-sm text-[var(--color-text-muted)]">{t.noMessages}</div>
                     ) : detailMessages.map((item) => (
                       <div
                         key={item.id}
-                        className={`rounded-lg p-3 text-sm ${item.is_internal_note ? 'bg-amber-500/10 text-amber-700' : 'bg-[var(--color-surface-elevated)] text-[var(--color-text-secondary)]'}`}
+                        className={`rounded-lg p-3 text-sm ${item.is_internal_note ? 'border border-[var(--color-border)] bg-[var(--color-surface-elevated)] text-[var(--color-text-secondary)]' : 'bg-[var(--color-surface-elevated)] text-[var(--color-text-secondary)]'}`}
                       >
                         <div className="mb-1 flex items-center justify-between gap-2 text-xs">
                           <span>{item.sender_name || item.sender_type}{item.is_internal_note ? ` · ${t.internalNote}` : ''}</span>
@@ -2092,7 +2494,9 @@ export function WorkOrdersPage({ readOnly = false }) {
                   </div>
                   )}
                 </section>
-              </div>
+                    </div>
+                  </WorkOrderDetailSection>
+                </div>
               </DetailErrorBoundary>
             ) : (
               <div className="py-12 text-center text-sm text-[var(--color-text-muted)]">{t.noDetail}</div>
