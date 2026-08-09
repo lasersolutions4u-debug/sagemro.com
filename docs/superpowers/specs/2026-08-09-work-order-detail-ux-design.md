@@ -1,6 +1,6 @@
 # Work Order Detail UX Repair Design
 
-Date: 2026-08-09  
+Date: 2026-08-09
 Status: Approved direction (Option A: summary-first with collapsible details)
 
 ## 1. Scope

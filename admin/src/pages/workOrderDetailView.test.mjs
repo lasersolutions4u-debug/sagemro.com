@@ -37,9 +37,25 @@ test('completed work orders expose pending engineer payout controls', () => {
   );
 });
 
-test('in-service work orders expose active field operations', () => {
+test('in-service work orders do not expose an empty field-plan snapshot', () => {
   assert.deepEqual(
-    defaultOpenWorkOrderSections({ status: 'in_service', field_plan: { expected_service_days: 4 } }),
+    defaultOpenWorkOrderSections({
+      status: 'in_service',
+      field_plan: {
+        site_timezone: null,
+        expected_service_days: null,
+        expected_completion_date: null,
+        planned_daily_start_time: null,
+        planned_daily_end_time: null,
+      },
+    }),
+    ['overview'],
+  );
+});
+
+test('in-service work orders expose an active field plan', () => {
+  assert.deepEqual(
+    defaultOpenWorkOrderSections({ status: 'in_service', field_plan: { site_timezone: 'Asia/Shanghai' } }),
     ['overview', 'files-report'],
   );
 });

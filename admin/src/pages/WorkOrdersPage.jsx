@@ -2090,11 +2090,11 @@ export function WorkOrdersPage({ readOnly = false }) {
                           </div>
                         )}
                         {parts.length > 0 && (
-                          <div className="overflow-hidden rounded-lg border border-[var(--color-border)]">
+                          <div className="overflow-x-auto rounded-lg border border-[var(--color-border)]">
                             <div className="bg-[var(--color-surface-elevated)] px-3 py-2 text-xs font-medium text-[var(--color-text-muted)]">
                               {t.partsList}
                             </div>
-                            <table className="w-full text-xs">
+                            <table className="min-w-[36rem] w-full text-xs">
                               <tbody>
                                 {parts.map((part, index) => (
                                   <tr key={part.id || `${part.material_code || part.name}-${index}`} className="border-t border-[var(--color-border)]">

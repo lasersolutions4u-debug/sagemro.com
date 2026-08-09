@@ -87,7 +87,7 @@ test('current action keys are locale-independent', () => {
 
 - [ ] **Step 2: Run the new test and observe RED**
 
-Run: `cd admin && node --test src/pages/workOrderDetailView.test.mjs`  
+Run: `cd admin && node --test src/pages/workOrderDetailView.test.mjs`
 Expected: FAIL because `workOrderDetailView.js` does not exist.
 
 - [ ] **Step 3: Implement the pure helpers**
@@ -188,7 +188,7 @@ test('historical states and future stages use neutral audit presentation', async
 
 - [ ] **Step 2: Run the panel test and observe RED**
 
-Run: `cd admin && node --test src/components/ServiceStandardAdminPanel.test.mjs`  
+Run: `cd admin && node --test src/components/ServiceStandardAdminPanel.test.mjs`
 Expected: the new current-gate and contextual-override assertions fail.
 
 - [ ] **Step 3: Replace all-gate flattening with current-gate derivation**
@@ -322,7 +322,7 @@ test('detail sections expose disclosure semantics and a 44px control', async () 
 
 - [ ] **Step 2: Run the test and observe RED**
 
-Run: `cd admin && node --test src/components/WorkOrderDetailSection.test.mjs`  
+Run: `cd admin && node --test src/components/WorkOrderDetailSection.test.mjs`
 Expected: FAIL because the component file does not exist.
 
 - [ ] **Step 3: Implement the two primitives**
@@ -430,7 +430,7 @@ test('visible detail labels are localized instead of hard-coded English', async 
 
 - [ ] **Step 2: Run the drawer test and observe RED**
 
-Run: `cd admin && node --test src/pages/WorkOrdersPage.review-flow.test.mjs`  
+Run: `cd admin && node --test src/pages/WorkOrdersPage.review-flow.test.mjs`
 Expected: new summary/navigation/localization contracts fail.
 
 - [ ] **Step 3: Add localized navigation, summary, action, and touched detail copy**
