@@ -143,8 +143,8 @@ test('service-order actions use one controlled operation dialog for payment, pay
 test('engineer payout controls are limited to completed work orders', async () => {
   const source = await readFile(new URL('./WorkOrdersPage.jsx', import.meta.url), 'utf8');
 
-  assert.match(source, /detail\.status === 'completed'[\s\S]*Engineer service payment/);
-  assert.match(source, /detail\.payout_status !== 'completed'[\s\S]*Mark payout processing/);
+  assert.match(source, /detail\.status === 'completed'[\s\S]*t\.engineerPayoutTitle/);
+  assert.match(source, /detail\.payout_status !== 'completed'[\s\S]*t\.markPayoutProcessing/);
 });
 
 test('operations staff receive a read-only service-order view', async () => {
@@ -189,4 +189,49 @@ test('arrival audit treats unavailable location as allowed evidence instead of a
   assert.match(source, /className=\{arrivalOutcome\.tone\}/);
   assert.match(source, /formatApiDateTime\(check\.created_at/);
   assert.match(source, /min-w-0[^"]*\[overflow-wrap:anywhere\]/);
+});
+
+test('detail drawer is summary-first with bilingual shortcut navigation', async () => {
+  const source = await readFile(new URL('./WorkOrdersPage.jsx', import.meta.url), 'utf8');
+  const drawer = source.slice(source.indexOf('{detailOpen &&'));
+  assert.match(drawer, /<WorkOrderDetailNav/);
+  assert.match(drawer, /<WorkOrderDetailSummary/);
+  assert.ok(drawer.indexOf('<WorkOrderDetailSummary') < drawer.indexOf('<ServiceStandardAdminPanel'));
+  for (const key of ['overview', 'quote', 'dispatch', 'serviceControls', 'filesReport', 'reviewsMessages']) {
+    assert.match(source, new RegExp(`${key}:`));
+  }
+});
+
+test('shortcut navigation expands and scrolls to a detail section', async () => {
+  const source = await readFile(new URL('./WorkOrdersPage.jsx', import.meta.url), 'utf8');
+  assert.match(source, /function navigateToDetailSection\(sectionKey\)/);
+  assert.match(source, /setOpenDetailSections/);
+  assert.match(source, /requestAnimationFrame/);
+  assert.match(source, /scrollIntoView\(\{ behavior: 'smooth', block: 'start' \}\)/);
+});
+
+test('reviews and messages render once and messages do not create nested vertical scrolling', async () => {
+  const source = await readFile(new URL('./WorkOrdersPage.jsx', import.meta.url), 'utf8');
+  assert.equal(source.match(/\{t\.customerReviewTitle\}/g)?.length, 1);
+  assert.equal(source.match(/\{t\.engineerReviewTitle\}/g)?.length, 1);
+  assert.equal(source.match(/\{t\.messagesTitle\}/g)?.length, 1);
+  assert.doesNotMatch(source, /max-h-72 space-y-2 overflow-y-auto/);
+});
+
+test('visible detail labels are localized instead of hard-coded English', async () => {
+  const source = await readFile(new URL('./WorkOrdersPage.jsx', import.meta.url), 'utf8');
+  assert.doesNotMatch(source, />Engineer service payment</);
+  assert.doesNotMatch(source, /label="Labor Fee"/);
+  assert.match(source, /engineerPayoutTitle: 'Engineer service payment'/);
+  assert.match(source, /engineerPayoutTitle: '工程师服务结算'/);
+  assert.match(source, /laborFee: 'Labor fee'/);
+  assert.match(source, /laborFee: '人工费'/);
+});
+
+test('service controls receive work-order status and report current blockers to the drawer', async () => {
+  const source = await readFile(new URL('./WorkOrdersPage.jsx', import.meta.url), 'utf8');
+
+  assert.match(source, /workOrderStatus=\{detail\.status\}/);
+  assert.match(source, /onBlockerStateChange/);
+  assert.match(source, /count > 0[\s\S]*'service-controls'/);
 });
