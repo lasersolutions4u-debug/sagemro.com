@@ -96,7 +96,7 @@ function ScoreRow({ label, value }) {
   return (
     <div className="flex items-center justify-between gap-3 rounded-lg bg-[var(--color-surface-elevated)] px-3 py-2">
       <span>{label}</span>
-      <span className="font-semibold text-[var(--color-primary)]">{formatScore(value)}</span>
+      <span className="font-semibold text-[var(--color-text)]">{formatScore(value)}</span>
     </div>
   );
 }
@@ -223,6 +223,10 @@ const TEXT = {
     paymentReviewHint: 'Engineer has followed up payment. Confirm receipt before allowing service execution.',
     balancePaymentTitle: 'Service balance confirmation required',
     balancePaymentHint: 'The customer has arranged the remaining service balance. Confirm receipt to settle the payment record.',
+    balancePaymentStatuses: {
+      instructions_requested: 'Payment instructions requested',
+      pending_admin_confirmation: 'Pending Admin confirmation',
+    },
     approveBalancePayment: 'Confirm balance received',
     balancePaymentPrompt: 'Balance payment confirmation note (optional):',
     balancePaymentApproved: (orderNo) => `Service balance confirmed: ${orderNo}`,
@@ -556,6 +560,10 @@ const TEXT = {
     paymentReviewHint: '工程师已跟进付款。确认到账后再安排工程师现场服务。',
     balancePaymentTitle: '服务尾款待确认',
     balancePaymentHint: '客户已安排支付剩余服务尾款。确认公司账户到账后，再结清该付款记录。',
+    balancePaymentStatuses: {
+      instructions_requested: '已申请付款说明',
+      pending_admin_confirmation: '待管理员确认',
+    },
     approveBalancePayment: '确认尾款到账',
     balancePaymentPrompt: '尾款到账确认备注（可选）：',
     balancePaymentApproved: (orderNo) => `服务尾款已确认：${orderNo}`,
@@ -2015,7 +2023,7 @@ export function WorkOrdersPage({ readOnly = false }) {
                   <div className="mt-1 space-y-1">
                     <div className="flex flex-wrap items-center gap-2 text-sm text-[var(--color-text-muted)]">
                       <span className="font-mono">{detail.order_no}</span>
-                      <span className="rounded-full bg-[var(--color-primary)]/10 px-2 py-0.5 text-xs text-[var(--color-primary)]">{t.statuses[detail.status] || detail.status}</span>
+                      <span className="rounded-full border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-2 py-0.5 text-xs text-[var(--color-text-secondary)]">{t.statuses[detail.status] || detail.status}</span>
                     </div>
                     <p className="text-sm text-[var(--color-text-secondary)]">{detail.description}</p>
                   </div>
@@ -2259,7 +2267,7 @@ export function WorkOrdersPage({ readOnly = false }) {
                         <h4 className="font-medium text-[var(--color-text)]">{t.balancePaymentTitle}</h4>
                         <p className="mt-1 text-sm text-[var(--color-text-secondary)]">{t.balancePaymentHint}</p>
                         <p className="mt-2 text-xs text-[var(--color-text-muted)]">
-                          {t.amountLabel}: {money(detail.balance_payment.amount || detail.payment_policy?.balance_amount || 0)} {CURRENCY} · {t.statusLabel}: {detail.balance_payment.status}
+                          {t.amountLabel}: {money(detail.balance_payment.amount || detail.payment_policy?.balance_amount || 0)} {CURRENCY} · {t.statusLabel}: {t.balancePaymentStatuses[detail.balance_payment.status] || t.sectionEmpty}
                         </p>
                       </div>
                       <button
@@ -2276,7 +2284,7 @@ export function WorkOrdersPage({ readOnly = false }) {
                   <div className="mb-3 flex items-center justify-between gap-3">
                     <h4 className="font-medium">{t.quoteDetailTitle}</h4>
                     {detail.pricing?.status && (
-                      <span className="rounded-full bg-[var(--color-primary)]/10 px-2 py-1 text-xs text-[var(--color-primary)]">
+                      <span className="rounded-full border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-2 py-1 text-xs text-[var(--color-text-secondary)]">
                         {t.pricing[detail.pricing.status] || detail.pricing.status}
                       </span>
                     )}
@@ -2345,7 +2353,7 @@ export function WorkOrdersPage({ readOnly = false }) {
                   )}
                 </section>}
                 {detail.status === 'completed' && (
-                  <section className="rounded-xl border border-[var(--color-primary)]/30 bg-[var(--color-primary)]/5 p-4">
+                  <section className="rounded-xl border border-[var(--color-success)]/30 bg-[var(--color-success)]/5 p-4">
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                       <div>
                         <h4 className="font-medium text-[var(--color-text)]">{t.engineerPayoutTitle}</h4>
@@ -2623,7 +2631,7 @@ export function WorkOrdersPage({ readOnly = false }) {
                   <div className="mb-3 flex items-center justify-between gap-3">
                     <h4 className="font-medium">{t.customerReviewTitle}</h4>
                     {detail.rating && (
-                      <span className="rounded-full bg-[var(--color-primary)]/10 px-2 py-1 text-xs font-semibold text-[var(--color-primary)]">
+                      <span className="rounded-full border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-2 py-1 text-xs font-semibold text-[var(--color-text-secondary)]">
                         {t.average} {formatScore(averageScore([
                           detail.rating.rating_timeliness,
                           detail.rating.rating_technical,
@@ -2655,7 +2663,7 @@ export function WorkOrdersPage({ readOnly = false }) {
                   <div className="mb-3 flex items-center justify-between gap-3">
                     <h4 className="font-medium">{t.engineerReviewTitle}</h4>
                     {detail.engineer_review && (
-                      <span className="rounded-full bg-[var(--color-primary)]/10 px-2 py-1 text-xs font-semibold text-[var(--color-primary)]">
+                      <span className="rounded-full border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-2 py-1 text-xs font-semibold text-[var(--color-text-secondary)]">
                         {t.average} {formatScore(averageScore([
                           detail.engineer_review.rating_cooperation,
                           detail.engineer_review.rating_communication,
