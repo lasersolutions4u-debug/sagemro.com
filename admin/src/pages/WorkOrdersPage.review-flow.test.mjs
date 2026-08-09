@@ -349,6 +349,13 @@ test('visible detail labels are localized instead of hard-coded English', async 
   assert.match(source, /laborFee: '人工费'/);
 });
 
+test('detail summary falls back to the active market currency', async () => {
+  const source = await readFile(new URL('./WorkOrdersPage.jsx', import.meta.url), 'utf8');
+  assert.match(source, /function WorkOrderDetailSummary\(\{ detail, t, defaultCurrency = 'USD' \}\)/);
+  assert.match(source, /paymentCurrency\(detail\) \|\| defaultCurrency/);
+  assert.match(source, /<WorkOrderDetailSummary detail=\{detail\} t=\{t\} defaultCurrency=\{CURRENCY\} \/>/);
+});
+
 test('service controls receive work-order status and report current blockers to the drawer', async () => {
   const source = await readFile(new URL('./WorkOrdersPage.jsx', import.meta.url), 'utf8');
 

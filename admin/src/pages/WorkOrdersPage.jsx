@@ -884,11 +884,11 @@ function PaymentIndicators({ workOrder, t }) {
   );
 }
 
-function WorkOrderDetailSummary({ detail, t }) {
+function WorkOrderDetailSummary({ detail, t, defaultCurrency = 'USD' }) {
   const quoteTotal = detail.pricing
     ? detail.pricing.subtotal ?? detail.pricing.total_amount ?? detail.pricing_total_amount
     : detail.pricing_total_amount;
-  const quoteCurrency = detail.pricing?.currency || paymentCurrency(detail) || 'USD';
+  const quoteCurrency = detail.pricing?.currency || paymentCurrency(detail) || defaultCurrency;
   const paymentState = detail.payment_state || detail.quote_execution?.payment_state;
   const actionKey = currentWorkOrderActionKey(detail);
   const actionTone = currentActionTone(actionKey);
@@ -2111,7 +2111,7 @@ export function WorkOrdersPage({ readOnly = false }) {
                     onToggle={toggleDetailSection}
                   >
                     <div className="space-y-4">
-                      <WorkOrderDetailSummary detail={detail} t={t} />
+                      <WorkOrderDetailSummary detail={detail} t={t} defaultCurrency={CURRENCY} />
                 {!readOnly && detail.onsite_conversion_status === 'requested' && (
                   <section className="rounded-xl border border-amber-500/40 bg-amber-500/5 p-4">
                     <div>
