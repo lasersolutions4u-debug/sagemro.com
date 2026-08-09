@@ -301,6 +301,17 @@ test('loaded detail opens the section containing its current operator control', 
   );
 });
 
+test('legacy parts quote uses a horizontally scrollable readable-width table', async () => {
+  const source = await readFile(new URL('./WorkOrdersPage.jsx', import.meta.url), 'utf8');
+  const legacyQuote = source.slice(
+    source.indexOf("{!detail.pricing?.quote_version && <section"),
+    source.indexOf("{detail.pricing?.ai_check", source.indexOf("{!detail.pricing?.quote_version && <section")),
+  );
+  assert.match(legacyQuote, /overflow-x-auto/);
+  assert.match(legacyQuote, /<table className="min-w-/);
+  assert.doesNotMatch(legacyQuote, /overflow-hidden rounded-lg border/);
+});
+
 test('reviews and messages render once and messages do not create nested vertical scrolling', async () => {
   const source = await readFile(new URL('./WorkOrdersPage.jsx', import.meta.url), 'utf8');
   assert.equal(source.match(/\{t\.customerReviewTitle\}/g)?.length, 1);
