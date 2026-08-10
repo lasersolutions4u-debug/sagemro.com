@@ -12,7 +12,7 @@ This change covers only the existing scheduled D1 backup workflow and removal of
 
 The workflow will continue to export COM and CN independently, but it will encrypt each SQL export with `age` before any artifact upload. Encryption uses a public recipient embedded in the workflow; the corresponding private identity never enters GitHub, repository secrets, workflow logs, or the repository.
 
-The `age` executable will be installed from a fixed upstream release and verified against a fixed SHA-256 checksum. The workflow will:
+Encryption will use the official `age-encryption` Node package from the age maintainer, pinned through `worker/package-lock.json`. This avoids downloading an executable during the production workflow while producing standard interoperable age files. The workflow will:
 
 1. Export each database to a runner-local temporary directory.
 2. Validate that each plaintext export is non-empty.
