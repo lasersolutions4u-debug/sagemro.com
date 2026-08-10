@@ -14,7 +14,7 @@ test('China release packages and validates the public route configurator', () =>
 test('China activation configures public routes after backup and before HTTP\/2 validation', () => {
   const backup = workflow.indexOf('$SUDO tar -czf "$nginx_backup" "${nginx_config_files[@]}"');
   const publicRoutes = workflow.indexOf(
-    '$SUDO python3 "$release/ops/configure_public_routes.py" "${nginx_config_files[@]}"',
+    '$SUDO python3 "$release/ops/configure_public_routes.py" --require-api-proxy "${nginx_config_files[@]}"',
   );
   const http2 = workflow.indexOf(
     '$SUDO python3 "$release/ops/enable_nginx_http2.py" "${nginx_config_files[@]}"',
