@@ -312,9 +312,10 @@ jobs:
             ~^((www\.)?sagemro\.cn|admin\.sagemro\.cn|engineer\.sagemro\.cn)$ "camera=(self), microphone=(self), geolocation=(self)";
           }
 
-          map $host $sagemro_robots_tag {
+          map "$host:$uri" $sagemro_robots_tag {
             default "";
-            ~^admin\.sagemro\.cn$ "noindex, nofollow, noarchive, nosnippet, noimageindex";
+            ~^admin\.sagemro\.cn: "noindex, nofollow, noarchive, nosnippet, noimageindex";
+            ~^((www\.)?sagemro\.cn|engineer\.sagemro\.cn):/(work-orders|activate|engineer)(/|$) "noindex, nofollow, noarchive, nosnippet, noimageindex";
           }
 
           gzip_types text/plain text/css application/javascript application/json application/xml image/svg+xml font/woff2;
@@ -348,6 +349,27 @@ jobs:
           curl -fsS --retry 3 --retry-delay 2 https://api.sagemro.cn/health >/dev/null
           curl -fsS --retry 3 --retry-delay 2 https://sagemro.cn/activate >/dev/null
           curl -fsS --retry 3 --retry-delay 2 https://engineer.sagemro.cn/work-orders/deploy-smoke >/dev/null
+
+          expected_robots_tag='noindex, nofollow, noarchive, nosnippet, noimageindex'
+          expect_robots_tag() {
+            smoke_url="$1"
+            if ! curl -fsSI --retry 3 --retry-delay 2 "$smoke_url" | tr -d '\r' | grep -Fqi "X-Robots-Tag: $expected_robots_tag"; then
+              echo "::error::${smoke_url} is missing the required private-route X-Robots-Tag"
+              exit 1
+            fi
+          }
+          expect_no_robots_tag() {
+            smoke_url="$1"
+            if curl -fsSI --retry 3 --retry-delay 2 "$smoke_url" | tr -d '\r' | grep -Eqi '^X-Robots-Tag:.*noindex'; then
+              echo "::error::${smoke_url} unexpectedly returns a noindex X-Robots-Tag"
+              exit 1
+            fi
+          }
+
+          expect_robots_tag https://admin.sagemro.cn/deploy-admin-smoke
+          expect_robots_tag https://sagemro.cn/activate
+          expect_robots_tag https://engineer.sagemro.cn/work-orders/deploy-smoke
+          expect_no_robots_tag https://engineer.sagemro.cn/
 
           admin_smoke_url=https://admin.sagemro.cn/deploy-admin-smoke
           admin_smoke_status="$(curl -sS --retry 3 --retry-delay 2 -o /dev/null -w '%{http_code}' "$admin_smoke_url")"

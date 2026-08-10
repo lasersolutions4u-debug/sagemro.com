@@ -44,7 +44,7 @@ function renderRobots(locale) {
   const host = hosts[locale];
   const publicSearchAgents = ['Googlebot', 'Bingbot', 'OAI-SearchBot'];
   const trainingOnlyAgents = ['GPTBot', 'Google-Extended', 'ClaudeBot', 'CCBot'];
-  const privatePaths = ['/api/', '/admin/', '/engineer/', '/work-orders/', '/activate'];
+  const privatePaths = ['/api/', '/admin/'];
   const searchPolicy = (agent) => [`User-agent: ${agent}`, 'Allow: /', ...privatePaths.map((path) => `Disallow: ${path}`)].join('\n');
   const baiduPolicy = locale === 'zh-CN'
     ? searchPolicy('Baiduspider')
