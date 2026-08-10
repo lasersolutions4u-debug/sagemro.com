@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
 const app = await readFile(new URL('./App.jsx', import.meta.url), 'utf8');
+const main = await readFile(new URL('./main.jsx', import.meta.url), 'utf8');
 
 test('authenticated admin pages are lazy loaded behind one suspense boundary', () => {
   const lazyPages = [
@@ -31,6 +32,12 @@ test('authenticated admin pages are lazy loaded behind one suspense boundary', (
   assert.match(app, /loadingPage: 'Loading page'/);
   assert.match(app, /loadingPage: '页面加载中'/);
   assert.match(app, /aria-label=\{t\.loadingPage\}/);
+});
+
+test('a stale lazy chunk after deployment triggers one clean page reload', () => {
+  assert.match(main, /addEventListener\('vite:preloadError'/);
+  assert.match(main, /event\.preventDefault\(\)/);
+  assert.match(main, /window\.location\.reload\(\)/);
 });
 
 test('promotion analytics remains one bilingual, role-scoped navigation entry', () => {
