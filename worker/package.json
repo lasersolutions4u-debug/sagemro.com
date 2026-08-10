@@ -22,6 +22,7 @@
     "node": ">=20"
   },
   "devDependencies": {
+    "age-encryption": "0.3.0",
     "wrangler": "^4.84.1",
     "yaml": "2.9.0"
   }
