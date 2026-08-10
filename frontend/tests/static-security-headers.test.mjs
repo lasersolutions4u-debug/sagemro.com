@@ -60,9 +60,9 @@ test('China ECS Nginx release applies the same headers only to SAGEMRO hosts', (
     assert.match(workflow, new RegExp(`add_header ${header}`));
   }
   assert.match(workflow, /camera=\(self\), microphone=\(self\), geolocation=\(self\)/);
-  assert.match(workflow, /map "\$host:\$uri" \$sagemro_robots_tag/);
+  assert.match(workflow, /map "\$host:\$request_uri" \$sagemro_robots_tag/);
   assert.match(workflow, /admin\\\.sagemro\\\.cn: "noindex, nofollow, noarchive, nosnippet, noimageindex"/);
-  assert.match(workflow, /\(work-orders\|activate\|engineer\)\(\/\|\$\) "noindex, nofollow, noarchive, nosnippet, noimageindex"/);
+  assert.match(workflow, /\(work-orders\|activate\|engineer\)\(\/\|\\\?\|\$\) "noindex, nofollow, noarchive, nosnippet, noimageindex"/);
   assert.match(workflow, /add_header X-Robots-Tag \$sagemro_robots_tag always;/);
   assert.match(workflow, /expect_robots_tag https:\/\/admin\.sagemro\.cn\/deploy-admin-smoke/);
   assert.match(workflow, /expect_robots_tag https:\/\/sagemro\.cn\/activate/);
