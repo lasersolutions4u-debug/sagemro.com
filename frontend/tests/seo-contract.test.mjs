@@ -66,6 +66,11 @@ test('China public frontend exposes crawlable sitemap and robots policy', async 
 
   assert.match(robots, /User-agent: \*/);
   assert.match(robots, /Allow: \/\s/);
+  assert.match(robots, /Disallow: \/api\//);
+  assert.match(robots, /Disallow: \/admin\//);
+  for (const privatePath of ['/engineer/', '/work-orders/', '/activate']) {
+    assert.doesNotMatch(robots, new RegExp(`Disallow: ${privatePath.replaceAll('/', '\\/')}`));
+  }
   assert.match(robots, /Sitemap: https:\/\/sagemro\.cn\/sitemap\.xml/);
   assert.match(sitemap, /<urlset[^>]+xmlns:xhtml=/);
   assert.match(sitemap, /https:\/\/sagemro\.com\//);
