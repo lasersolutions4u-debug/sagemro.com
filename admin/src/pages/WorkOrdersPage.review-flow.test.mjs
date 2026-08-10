@@ -285,6 +285,18 @@ test('detail drawer is summary-first with bilingual shortcut navigation', async 
   }
 });
 
+test('work execution content is named service operations in both markets', async () => {
+  const source = await readFile(new URL('./WorkOrdersPage.jsx', import.meta.url), 'utf8');
+  assert.match(source, /filesReport: 'Service Operations'/);
+  assert.match(source, /filesReport: '作业管理'/);
+  assert.doesNotMatch(source, /filesReport: 'Files & report'/);
+  assert.doesNotMatch(source, /filesReport: '附件与报告'/);
+  assert.match(source, /attachmentsTitle: 'Diagnostic Images & Attachments'/);
+  assert.match(source, /attachmentsTitle: '诊断图片与附件'/);
+  assert.match(source, /reportTitle: 'Service Report'/);
+  assert.match(source, /reportTitle: '服务报告'/);
+});
+
 test('shortcut navigation expands and scrolls to a detail section', async () => {
   const source = await readFile(new URL('./WorkOrdersPage.jsx', import.meta.url), 'utf8');
   assert.match(source, /function navigateToDetailSection\(sectionKey\)/);
