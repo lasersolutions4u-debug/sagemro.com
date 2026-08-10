@@ -59,6 +59,12 @@ test('Cloudflare test job runs Admin and full E2E gates before deploy jobs', () 
   );
 });
 
+test('Cloudflare test workflow covers pull requests to both protected branches', () => {
+  const workflow = read('.github/workflows/deploy.yml');
+
+  assert.match(workflow, /pull_request:\s+branches: \[main, china-edition\]/);
+});
+
 test('Cloudflare deploy jobs remain push-only with the existing branch guards', () => {
   const workflow = read('.github/workflows/deploy.yml');
 
@@ -74,8 +80,16 @@ test('Worker deployment blocks on migrations for both production D1 databases', 
 
   assert.match(workerJob, /wrangler d1 execute sagemro-db --env production --remote/);
   assert.match(workerJob, /wrangler d1 execute sagemro-db-cn --env production --remote/);
-  assert.match(workerJob, /038_material_requisitions_and_staff/);
-  assert.match(workerJob, /039_field_workdays/);
-  assert.match(workerJob, /040_field_evidence_cleanup_queue/);
+  for (const version of [
+    '038_material_requisitions_and_staff',
+    '039_field_workdays',
+    '040_field_evidence_cleanup_queue',
+    '041_quote_execution_baseline',
+    '043_engineer_service_readiness',
+    '044_service_standard_progress',
+    '045_service_guidance_cache',
+  ]) {
+    assert.match(workerJob, new RegExp(version));
+  }
   assert.match(workerJob, /CN_MISSING/);
 });
