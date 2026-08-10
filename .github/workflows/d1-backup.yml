@@ -40,6 +40,8 @@ jobs:
           echo "BACKUP_DIR=${BACKUP_DIR}" >> "$GITHUB_ENV"
           echo "COM_BACKUP=${BACKUP_DIR}/sagemro-db-${TIMESTAMP}.sql" >> "$GITHUB_ENV"
           echo "CN_BACKUP=${BACKUP_DIR}/sagemro-db-cn-${TIMESTAMP}.sql" >> "$GITHUB_ENV"
+          echo "COM_ENCRYPTED=${BACKUP_DIR}/sagemro-db-${TIMESTAMP}.sql.age" >> "$GITHUB_ENV"
+          echo "CN_ENCRYPTED=${BACKUP_DIR}/sagemro-db-cn-${TIMESTAMP}.sql.age" >> "$GITHUB_ENV"
           echo "COM_MANIFEST=${BACKUP_DIR}/com-sha256-manifest.txt" >> "$GITHUB_ENV"
           echo "CN_MANIFEST=${BACKUP_DIR}/cn-sha256-manifest.txt" >> "$GITHUB_ENV"
           echo "COM_METADATA=${BACKUP_DIR}/com-metadata.txt" >> "$GITHUB_ENV"
@@ -55,25 +57,45 @@ jobs:
           node scripts/d1-operations.mjs backup --market com --mode remote --confirm-production --output "$COM_BACKUP"
           node scripts/d1-operations.mjs backup --market cn --mode remote --confirm-production --output "$CN_BACKUP"
 
-      - name: Validate backups and write manifests
+      - name: Encrypt backups and remove plaintext
+        working-directory: worker
+        env:
+          AGE_RECIPIENT: age1dwngtpwx82g5nwnhexrve2wp4fhaqrpdn2dwl4m494pcfreztd8qh0z0xk
         run: |
           set -euo pipefail
-          test "$(find "$COM_BACKUP" -type f -size +100c -print -quit)" = "$COM_BACKUP"
-          test "$(find "$CN_BACKUP" -type f -size +100c -print -quit)" = "$CN_BACKUP"
+          node scripts/age-backup-crypto.mjs encrypt --recipient "$AGE_RECIPIENT" --input "$COM_BACKUP" --output "$COM_ENCRYPTED"
+          node scripts/age-backup-crypto.mjs encrypt --recipient "$AGE_RECIPIENT" --input "$CN_BACKUP" --output "$CN_ENCRYPTED"
+          shred -u -- "$COM_BACKUP" "$CN_BACKUP"
+          test ! -e "$COM_BACKUP"
+          test ! -e "$CN_BACKUP"
+
+      - name: Validate backups and write manifests
+        env:
+          AGE_RECIPIENT: age1dwngtpwx82g5nwnhexrve2wp4fhaqrpdn2dwl4m494pcfreztd8qh0z0xk
+        run: |
+          set -euo pipefail
+          test "$(find "$COM_ENCRYPTED" -type f -size +100c -print -quit)" = "$COM_ENCRYPTED"
+          test "$(find "$CN_ENCRYPTED" -type f -size +100c -print -quit)" = "$CN_ENCRYPTED"
+          test ! -e "$COM_BACKUP"
+          test ! -e "$CN_BACKUP"
           (
             cd "$BACKUP_DIR"
-            sha256sum "$(basename "$COM_BACKUP")" > "$(basename "$COM_MANIFEST")"
-            sha256sum "$(basename "$CN_BACKUP")" > "$(basename "$CN_MANIFEST")"
+            sha256sum "$(basename "$COM_ENCRYPTED")" > "$(basename "$COM_MANIFEST")"
+            sha256sum "$(basename "$CN_ENCRYPTED")" > "$(basename "$CN_MANIFEST")"
           )
           {
             echo "generated_at_utc=$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
             echo "database=sagemro-db"
             echo "git_sha=${GITHUB_SHA}"
+            echo "encryption=age"
+            echo "recipient=$AGE_RECIPIENT"
           } > "$COM_METADATA"
           {
             echo "generated_at_utc=$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
             echo "database=sagemro-db-cn"
             echo "git_sha=${GITHUB_SHA}"
+            echo "encryption=age"
+            echo "recipient=$AGE_RECIPIENT"
           } > "$CN_METADATA"
 
       - name: Upload COM backup
@@ -81,7 +103,7 @@ jobs:
         with:
           name: sagemro-d1-com-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
-            ${{ env.COM_BACKUP }}
+            ${{ env.COM_ENCRYPTED }}
             ${{ env.COM_MANIFEST }}
             ${{ env.COM_METADATA }}
           retention-days: 30
@@ -92,7 +114,7 @@ jobs:
         with:
           name: sagemro-d1-cn-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
-            ${{ env.CN_BACKUP }}
+            ${{ env.CN_ENCRYPTED }}
             ${{ env.CN_MANIFEST }}
             ${{ env.CN_METADATA }}
           retention-days: 30

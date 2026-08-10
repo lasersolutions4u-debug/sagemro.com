@@ -245,20 +245,31 @@ CF 自动签发 SSL 证书。
 
 国际版 `sagemro-db` 和中国版 `sagemro-db-cn` 必须分别备份。建议至少保留每日备份 30 天、每周备份 12 周，并存放在受限的加密存储中；备份可能包含客户联系方式、服务记录和审计数据，绝不能提交 Git。
 
-生产库由 GitHub Actions workflow `Production D1 Backup - COM and CN`（`.github/workflows/d1-backup.yml`）每天 `18:17 UTC`（北京时间次日 `02:17`）自动导出，也可以在 Actions 页面选择该 workflow 后点击 **Run workflow** 手动执行。任一数据库导出失败、文件缺失、文件不超过 100 bytes、校验清单生成失败或 artifact 上传失败，整个 Action 都会失败；到该次 run 的 `Export production D1 databases` job 中查看第一个失败 step 和 Wrangler 输出，不要在日志中打印 SQL 内容。
+生产库由 GitHub Actions workflow `Production D1 Backup - COM and CN`（`.github/workflows/d1-backup.yml`）每天 `18:17 UTC`（北京时间次日 `02:17`）自动导出，也可以在 Actions 页面选择该 workflow 后点击 **Run workflow** 手动执行。Workflow 使用公开 recipient `age1dwngtpwx82g5nwnhexrve2wp4fhaqrpdn2dwl4m494pcfreztd8qh0z0xk` 在 runner 内加密导出，并在上传前删除明文 SQL。任一数据库导出、加密、明文删除、密文校验、manifest 生成或 artifact 上传失败，整个 Action 都会失败；到该次 run 的 `Export production D1 databases` job 中查看第一个失败 step 和 Wrangler 输出，不要在日志中打印 SQL 或私钥内容。
 
-成功运行会在该次 GitHub Actions run 的 **Artifacts** 区域生成两个独立 artifact：`sagemro-d1-com-<run_id>-<run_attempt>` 和 `sagemro-d1-cn-<run_id>-<run_attempt>`。每个 artifact 保留 30 天，并且可独立验证：COM 包含时间戳 SQL、`com-sha256-manifest.txt`、`com-metadata.txt`；CN 包含时间戳 SQL、`cn-sha256-manifest.txt`、`cn-metadata.txt`。每份 metadata 只记录该市场的生成时间、数据库名和 Git SHA，不包含客户数据。下载并解压任一 artifact 后，在该 artifact 目录验证：
+成功运行会在该次 GitHub Actions run 的 **Artifacts** 区域生成两个独立 artifact：`sagemro-d1-com-<run_id>-<run_attempt>` 和 `sagemro-d1-cn-<run_id>-<run_attempt>`。每个 artifact 保留 30 天，并且可独立验证：COM 只包含时间戳 `.sql.age` 密文、`com-sha256-manifest.txt`、`com-metadata.txt`；CN 只包含时间戳 `.sql.age` 密文、`cn-sha256-manifest.txt`、`cn-metadata.txt`。每份 metadata 只记录该市场的生成时间、数据库名、Git SHA、加密格式和公开 recipient，不包含客户数据。下载并解压任一 artifact 后，在该 artifact 目录验证：
 
 ```bash
 sha256sum --check com-sha256-manifest.txt
 # 或中国库 artifact：sha256sum --check cn-sha256-manifest.txt
 ```
 
-macOS 可使用 `shasum -a 256 -c com-sha256-manifest.txt` 或对应的 CN manifest。该 artifact 内的 SQL 必须显示 `OK`；校验失败的文件不得用于恢复。
+macOS 可使用 `shasum -a 256 -c com-sha256-manifest.txt` 或对应的 CN manifest。该 artifact 内的 `.sql.age` 必须显示 `OK`；校验失败的文件不得解密或用于恢复。
 
-GitHub Actions artifacts 在静态存储中加密并受仓库访问权限控制，但它们不是独立的灾难恢复存储。生产范围扩大前，应把已校验备份复制到与 GitHub/Cloudflare 故障域分离、不可变且加密的外部存储，并对复制和过期策略做监控。备份包含个人和商业数据，下载、外部复制、恢复权限必须严格限制并审计。
+恢复私钥绝不能进入 Git、GitHub secrets、Actions 日志或工单。当前本机恢复身份保存在忽略目录 `.Codex/memory/backup-recovery/sagemro-d1-backup-age-identity.txt`；必须另行复制到密码管理器或离线加密存储。丢失该身份会导致所有 `.sql.age` 无法恢复。下载并验证密文后，使用：
 
-至少按季度进行恢复演练：下载 COM/CN artifacts，先验证 SHA-256；创建只声明同名临时数据库的隔离 Wrangler config，然后分别导入对应 SQL，例如 `npx wrangler d1 execute sagemro-db --local --config /path/to/drill-com.toml --file /path/to/sagemro-db-<timestamp>.sql`，中国库使用声明 `sagemro-db-cn` 的另一个临时 config；执行 schema 探针和关键表计数/抽样业务检查；记录 artifact 名、校验结果、恢复耗时和检查结果；演练后删除本地 D1 state、临时 config 和下载的生产数据。也可以使用访问受限的专用非生产 D1，但不得复用生产 database ID。禁止直接把定时备份导入生产。真正生产恢复前仍需再次导出当前库、安排停写窗口，并先在隔离 D1 验证目标备份。
+```bash
+cd worker
+SAGEMRO_BACKUP_IDENTITY=/secure/offline/sagemro-d1-backup-age-identity.txt
+node scripts/age-backup-crypto.mjs decrypt \
+  --identity "$SAGEMRO_BACKUP_IDENTITY" \
+  --input /secure/temporary/sagemro-db-<timestamp>.sql.age \
+  --output /secure/temporary/sagemro-db-<timestamp>.sql
+```
+
+解密后的 SQL 只允许存放在权限受限的临时目录，恢复或演练结束后使用 `shred -u` 删除。公开仓库的 artifact 下载者可以取得密文和非敏感 metadata，但没有离线身份就不能解密；这些 artifacts 仍不是独立的灾难恢复存储。生产范围扩大前，应把已校验密文复制到与 GitHub/Cloudflare 故障域分离、不可变且加密的外部存储，并对复制和过期策略做监控。
+
+至少按季度进行恢复演练：下载 COM/CN artifacts，先验证密文 SHA-256，再使用离线身份解密；创建只声明同名临时数据库的隔离 Wrangler config，然后分别导入对应 SQL，例如 `npx wrangler d1 execute sagemro-db --local --config /path/to/drill-com.toml --file /path/to/sagemro-db-<timestamp>.sql`，中国库使用声明 `sagemro-db-cn` 的另一个临时 config；执行 schema 探针和关键表计数/抽样业务检查；记录 artifact 名、校验结果、恢复耗时和检查结果；演练后安全删除解密 SQL、本地 D1 state、临时 config 和下载的生产数据。也可以使用访问受限的专用非生产 D1，但不得复用生产 database ID。禁止直接把定时备份导入生产。真正生产恢复前仍需再次导出当前库、安排停写窗口，并先在隔离 D1 验证目标备份。
 
 以下本地备份、留存检查和恢复演练命令继续适用于人工操作：
 
