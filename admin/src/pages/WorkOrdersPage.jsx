@@ -288,8 +288,9 @@ const TEXT = {
       quote: 'Quote',
       dispatch: 'Dispatch',
       serviceControls: 'Service controls',
-      filesReport: 'Files & report',
-      reviewsMessages: 'Reviews & messages',
+      filesReport: 'Service Operations',
+      messages: 'Messages',
+      reviews: 'Reviews',
     },
     summaryLabels: { customer: 'Customer', engineer: 'Engineer', quote: 'Quote', payment: 'Payment' },
     currentActions: {
@@ -607,8 +608,9 @@ const TEXT = {
       quote: '报价清单',
       dispatch: '派工',
       serviceControls: '服务标准',
-      filesReport: '附件与报告',
-      reviewsMessages: '评价与沟通',
+      filesReport: '作业管理',
+      messages: '沟通记录',
+      reviews: '服务评价',
     },
     summaryLabels: { customer: '客户', engineer: '工程师', quote: '报价', payment: '付款' },
     currentActions: {
@@ -2087,11 +2089,12 @@ export function WorkOrdersPage({ readOnly = false }) {
                   ariaLabel: t.detailNav.ariaLabel,
                   links: [
                     ['overview', t.detailNav.overview],
-                    ['quote', t.detailNav.quote],
+                    ['messages', t.detailNav.messages],
                     ['dispatch', t.detailNav.dispatch],
+                    ['quote', t.detailNav.quote],
                     ['service-controls', t.detailNav.serviceControls],
-                    ['files-report', t.detailNav.filesReport],
-                    ['reviews-messages', t.detailNav.reviewsMessages],
+                    ['service-operations', t.detailNav.filesReport],
+                    ['reviews', t.detailNav.reviews],
                   ].map(([key, label]) => ({ key, label })),
                 }}
                 onNavigate={navigateToDetailSection}
@@ -2213,6 +2216,112 @@ export function WorkOrdersPage({ readOnly = false }) {
                   </section>
                 )}
                     </div>
+                  </WorkOrderDetailSection>
+
+                  <WorkOrderDetailSection
+                    sectionKey="messages"
+                    title={t.detailNav.messages}
+                    summary={t.messageCount(detailMessages.length)}
+                    open={openDetailSections.has('messages')}
+                    onToggle={toggleDetailSection}
+                  >
+                <section className="rounded-xl border border-[var(--color-border)] p-4">
+                  <div className="mb-3 flex items-center justify-between">
+                    <h4 className="font-medium">{t.messagesTitle}</h4>
+                    <span className="text-xs text-[var(--color-text-muted)]">{t.messageCount(detailMessages.length)}</span>
+                  </div>
+                  <div className="space-y-2">
+                    {detailMessages.length === 0 ? (
+                      <div className="py-6 text-center text-sm text-[var(--color-text-muted)]">{t.noMessages}</div>
+                    ) : detailMessages.map((item) => (
+                      <div
+                        key={item.id}
+                        className={`rounded-lg p-3 text-sm ${item.is_internal_note ? 'border border-[var(--color-border)] bg-[var(--color-surface-elevated)] text-[var(--color-text-secondary)]' : 'bg-[var(--color-surface-elevated)] text-[var(--color-text-secondary)]'}`}
+                      >
+                        <div className="mb-1 flex items-center justify-between gap-2 text-xs">
+                          <span>{item.sender_name || item.sender_type}{item.is_internal_note ? ` · ${t.internalNote}` : ''}</span>
+                          <span className="text-[var(--color-text-muted)]">{item.created_at?.slice(0, 16)?.replace('T', ' ')}</span>
+                        </div>
+                        <div>{item.content}</div>
+                      </div>
+                    ))}
+                  </div>
+                  {!readOnly && (
+                  <div className="mt-3 space-y-2">
+                    <textarea
+                      value={internalNote}
+                      onChange={(event) => setInternalNote(event.target.value)}
+                      placeholder={t.notePlaceholder}
+                      rows={3}
+                      className="w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-3 py-2 text-sm focus:outline-none"
+                    />
+                    <button
+                      onClick={submitInternalNote}
+                      disabled={!internalNote.trim()}
+                      className="rounded-lg bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+                    >
+                      {t.saveNote}
+                    </button>
+                  </div>
+                  )}
+                </section>
+                  </WorkOrderDetailSection>
+
+                  <WorkOrderDetailSection
+                    sectionKey="dispatch"
+                    title={t.detailNav.dispatch}
+                    summary={detail.engineer_name || detail.regional_lead_name || t.sectionEmpty}
+                    open={openDetailSections.has('dispatch')}
+                    onToggle={toggleDetailSection}
+                  >
+                    {readOnly && <p className="text-sm text-[var(--color-text-muted)]">{t.sectionEmpty}</p>}
+                {!readOnly && (
+                <section className="rounded-xl border border-[var(--color-border)] p-4">
+                  <h4 className="mb-3 font-medium text-[var(--color-text)]">{t.headers.dispatch}</h4>
+                  <div className="flex flex-col gap-3">
+                    <div className="flex items-center gap-2">
+                      <select
+                        aria-label={t.regionalLeadOption}
+                        value={selectedRegionalLeads[detail.id] || detail.assigned_regional_lead_id || ''}
+                        onChange={(event) => setSelectedRegionalLeads((prev) => ({ ...prev, [detail.id]: event.target.value }))}
+                        className="min-w-0 flex-1 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-2 py-1.5 text-xs text-[var(--color-text)]"
+                      >
+                        <option value="">{t.regionalLeadOption}</option>
+                        {regionalLeads.map((lead) => (
+                          <option key={lead.id} value={lead.id}>{formatEngineerOption(lead)}</option>
+                        ))}
+                      </select>
+                      <button
+                        onClick={() => handleAssignRegionalLead(detail)}
+                        disabled={assigningId === `${detail.id}:lead`}
+                        className="whitespace-nowrap rounded-lg bg-[var(--color-primary)] px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50"
+                      >
+                        {assigningId === `${detail.id}:lead` ? t.assigning : t.assignRegion}
+                      </button>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <select
+                        aria-label={t.engineerOption}
+                        value={selectedEngineers[detail.id] || detail.engineer_id || ''}
+                        onChange={(event) => setSelectedEngineers((prev) => ({ ...prev, [detail.id]: event.target.value }))}
+                        className="min-w-0 flex-1 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-2 py-1.5 text-xs text-[var(--color-text)]"
+                      >
+                        <option value="">{t.engineerOption}</option>
+                        {engineers.map((engineer) => (
+                          <option key={engineer.id} value={engineer.id}>{formatEngineerOption(engineer)}</option>
+                        ))}
+                      </select>
+                      <button
+                        onClick={() => handleAssign(detail)}
+                        disabled={assigningId === `${detail.id}:engineer`}
+                        className="whitespace-nowrap rounded-lg bg-[var(--color-primary)] px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50"
+                      >
+                        {assigningId === `${detail.id}:engineer` ? t.dispatching : t.directDispatch}
+                      </button>
+                    </div>
+                  </div>
+                </section>
+                )}
                   </WorkOrderDetailSection>
 
                   <WorkOrderDetailSection
@@ -2415,61 +2524,6 @@ export function WorkOrdersPage({ readOnly = false }) {
                   </WorkOrderDetailSection>
 
                   <WorkOrderDetailSection
-                    sectionKey="dispatch"
-                    title={t.detailNav.dispatch}
-                    summary={detail.engineer_name || detail.regional_lead_name || t.sectionEmpty}
-                    open={openDetailSections.has('dispatch')}
-                    onToggle={toggleDetailSection}
-                  >
-                    {readOnly && <p className="text-sm text-[var(--color-text-muted)]">{t.sectionEmpty}</p>}
-                {!readOnly && (
-                <section className="rounded-xl border border-[var(--color-border)] p-4">
-                  <h4 className="mb-3 font-medium text-[var(--color-text)]">{t.headers.dispatch}</h4>
-                  <div className="flex flex-col gap-3">
-                    <div className="flex items-center gap-2">
-                      <select
-                        value={selectedRegionalLeads[detail.id] || detail.assigned_regional_lead_id || ''}
-                        onChange={(event) => setSelectedRegionalLeads((prev) => ({ ...prev, [detail.id]: event.target.value }))}
-                        className="min-w-0 flex-1 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-2 py-1.5 text-xs text-[var(--color-text)]"
-                      >
-                        <option value="">{t.regionalLeadOption}</option>
-                        {regionalLeads.map((lead) => (
-                          <option key={lead.id} value={lead.id}>{formatEngineerOption(lead)}</option>
-                        ))}
-                      </select>
-                      <button
-                        onClick={() => handleAssignRegionalLead(detail)}
-                        disabled={assigningId === `${detail.id}:lead`}
-                        className="whitespace-nowrap rounded-lg bg-[var(--color-primary)] px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50"
-                      >
-                        {assigningId === `${detail.id}:lead` ? t.assigning : t.assignRegion}
-                      </button>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <select
-                        value={selectedEngineers[detail.id] || detail.engineer_id || ''}
-                        onChange={(event) => setSelectedEngineers((prev) => ({ ...prev, [detail.id]: event.target.value }))}
-                        className="min-w-0 flex-1 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-2 py-1.5 text-xs text-[var(--color-text)]"
-                      >
-                        <option value="">{t.engineerOption}</option>
-                        {engineers.map((engineer) => (
-                          <option key={engineer.id} value={engineer.id}>{formatEngineerOption(engineer)}</option>
-                        ))}
-                      </select>
-                      <button
-                        onClick={() => handleAssign(detail)}
-                        disabled={assigningId === `${detail.id}:engineer`}
-                        className="whitespace-nowrap rounded-lg bg-[var(--color-primary)] px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50"
-                      >
-                        {assigningId === `${detail.id}:engineer` ? t.dispatching : t.directDispatch}
-                      </button>
-                    </div>
-                  </div>
-                </section>
-                )}
-                  </WorkOrderDetailSection>
-
-                  <WorkOrderDetailSection
                     sectionKey="service-controls"
                     title={t.detailNav.serviceControls}
                     open={openDetailSections.has('service-controls')}
@@ -2485,10 +2539,10 @@ export function WorkOrdersPage({ readOnly = false }) {
                   </WorkOrderDetailSection>
 
                   <WorkOrderDetailSection
-                    sectionKey="files-report"
+                    sectionKey="service-operations"
                     title={t.detailNav.filesReport}
                     summary={t.attachmentCount(detail.attachments?.length || 0)}
-                    open={openDetailSections.has('files-report')}
+                    open={openDetailSections.has('service-operations')}
                     onToggle={toggleDetailSection}
                   >
                     <div className="space-y-4">
@@ -2634,10 +2688,9 @@ export function WorkOrdersPage({ readOnly = false }) {
                   </WorkOrderDetailSection>
 
                   <WorkOrderDetailSection
-                    sectionKey="reviews-messages"
-                    title={t.detailNav.reviewsMessages}
-                    summary={t.messageCount(detailMessages.length)}
-                    open={openDetailSections.has('reviews-messages')}
+                    sectionKey="reviews"
+                    title={t.detailNav.reviews}
+                    open={openDetailSections.has('reviews')}
                     onToggle={toggleDetailSection}
                   >
                     <div className="space-y-4">
@@ -2706,46 +2759,6 @@ export function WorkOrdersPage({ readOnly = false }) {
                     </div>
                   ) : (
                     <div className="text-sm text-[var(--color-text-muted)]">{t.noEngineerReview}</div>
-                  )}
-                </section>
-                <section className="rounded-xl border border-[var(--color-border)] p-4">
-                  <div className="mb-3 flex items-center justify-between">
-                    <h4 className="font-medium">{t.messagesTitle}</h4>
-                    <span className="text-xs text-[var(--color-text-muted)]">{t.messageCount(detailMessages.length)}</span>
-                  </div>
-                  <div className="space-y-2">
-                    {detailMessages.length === 0 ? (
-                      <div className="py-6 text-center text-sm text-[var(--color-text-muted)]">{t.noMessages}</div>
-                    ) : detailMessages.map((item) => (
-                      <div
-                        key={item.id}
-                        className={`rounded-lg p-3 text-sm ${item.is_internal_note ? 'border border-[var(--color-border)] bg-[var(--color-surface-elevated)] text-[var(--color-text-secondary)]' : 'bg-[var(--color-surface-elevated)] text-[var(--color-text-secondary)]'}`}
-                      >
-                        <div className="mb-1 flex items-center justify-between gap-2 text-xs">
-                          <span>{item.sender_name || item.sender_type}{item.is_internal_note ? ` · ${t.internalNote}` : ''}</span>
-                          <span className="text-[var(--color-text-muted)]">{item.created_at?.slice(0, 16)?.replace('T', ' ')}</span>
-                        </div>
-                        <div>{item.content}</div>
-                      </div>
-                    ))}
-                  </div>
-                  {!readOnly && (
-                  <div className="mt-3 space-y-2">
-                    <textarea
-                      value={internalNote}
-                      onChange={(event) => setInternalNote(event.target.value)}
-                      placeholder={t.notePlaceholder}
-                      rows={3}
-                      className="w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-3 py-2 text-sm focus:outline-none"
-                    />
-                    <button
-                      onClick={submitInternalNote}
-                      disabled={!internalNote.trim()}
-                      className="rounded-lg bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
-                    >
-                      {t.saveNote}
-                    </button>
-                  </div>
                   )}
                 </section>
                     </div>
