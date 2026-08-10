@@ -59,7 +59,7 @@ test('in-service work orders do not expose an empty field-plan snapshot', () => 
 test('in-service work orders expose an active field plan', () => {
   assert.deepEqual(
     defaultOpenWorkOrderSections({ status: 'in_service', field_plan: { site_timezone: 'Asia/Shanghai' } }),
-    ['overview', 'files-report'],
+    ['overview', 'service-operations'],
   );
 });
 
