@@ -38,6 +38,11 @@ test('production credentials are scoped only to the D1 export step', async () =>
   const workflow = parse(await readFile(workflowPath, 'utf8'));
   const job = workflow.jobs.backup;
   const exportStep = stepByName(job, 'Export COM and CN databases');
+  const encryptionStep = stepByName(job, 'Encrypt backups and remove plaintext');
+  const validationStep = stepByName(job, 'Validate backups and write manifests');
+  const publicRecipientEnvironment = {
+    AGE_RECIPIENT: 'age1dwngtpwx82g5nwnhexrve2wp4fhaqrpdn2dwl4m494pcfreztd8qh0z0xk',
+  };
 
   assert.equal(job.env, undefined);
   assert.deepEqual(exportStep.env, {
@@ -46,6 +51,10 @@ test('production credentials are scoped only to the D1 export step', async () =>
   });
   for (const step of job.steps) {
     if (step === exportStep) continue;
+    if (step === encryptionStep || step === validationStep) {
+      assert.deepEqual(step.env, publicRecipientEnvironment);
+      continue;
+    }
     assert.equal(step.env, undefined, `${step.name} must not receive Cloudflare credentials`);
   }
 });
@@ -68,6 +77,7 @@ test('each market exports and uploads an independently verifiable artifact', asy
   const job = workflow.jobs.backup;
   const prepare = stepByName(job, 'Prepare backup paths').run;
   const exportRun = stepByName(job, 'Export COM and CN databases').run;
+  const encryptRun = stepByName(job, 'Encrypt backups and remove plaintext').run;
   const validate = stepByName(job, 'Validate backups and write manifests').run;
   const comUpload = stepByName(job, 'Upload COM backup').with;
   const cnUpload = stepByName(job, 'Upload CN backup').with;
@@ -76,17 +86,30 @@ test('each market exports and uploads an independently verifiable artifact', asy
   assert.match(prepare, /CN_MANIFEST=.*cn-sha256-manifest\.txt/);
   assert.match(prepare, /COM_METADATA=.*com-metadata\.txt/);
   assert.match(prepare, /CN_METADATA=.*cn-metadata\.txt/);
+  assert.match(prepare, /COM_ENCRYPTED=.*sagemro-db-.*\.sql\.age/);
+  assert.match(prepare, /CN_ENCRYPTED=.*sagemro-db-cn-.*\.sql\.age/);
   assert.match(exportRun, /backup --market com --mode remote --confirm-production --output "\$COM_BACKUP"/);
   assert.match(exportRun, /backup --market cn --mode remote --confirm-production --output "\$CN_BACKUP"/);
-  assert.match(validate, /find "\$COM_BACKUP" -type f -size \+100c/);
-  assert.match(validate, /find "\$CN_BACKUP" -type f -size \+100c/);
-  assert.match(validate, /sha256sum "\$\(basename "\$COM_BACKUP"\)" > "\$\(basename "\$COM_MANIFEST"\)"/);
-  assert.match(validate, /sha256sum "\$\(basename "\$CN_BACKUP"\)" > "\$\(basename "\$CN_MANIFEST"\)"/);
-  assert.match(validate, /echo "database=sagemro-db"\n\s+echo "git_sha=\$\{GITHUB_SHA\}"\n\} > "\$COM_METADATA"/);
-  assert.match(validate, /echo "database=sagemro-db-cn"\n\s+echo "git_sha=\$\{GITHUB_SHA\}"\n\} > "\$CN_METADATA"/);
+  assert.match(encryptRun, /age-backup-crypto\.mjs encrypt --recipient "\$AGE_RECIPIENT" --input "\$COM_BACKUP" --output "\$COM_ENCRYPTED"/);
+  assert.match(encryptRun, /age-backup-crypto\.mjs encrypt --recipient "\$AGE_RECIPIENT" --input "\$CN_BACKUP" --output "\$CN_ENCRYPTED"/);
+  assert.match(encryptRun, /shred -u -- "\$COM_BACKUP" "\$CN_BACKUP"/);
+  assert.match(encryptRun, /test ! -e "\$COM_BACKUP"/);
+  assert.match(encryptRun, /test ! -e "\$CN_BACKUP"/);
+  assert.match(validate, /find "\$COM_ENCRYPTED" -type f -size \+100c/);
+  assert.match(validate, /find "\$CN_ENCRYPTED" -type f -size \+100c/);
+  assert.match(validate, /sha256sum "\$\(basename "\$COM_ENCRYPTED"\)" > "\$\(basename "\$COM_MANIFEST"\)"/);
+  assert.match(validate, /sha256sum "\$\(basename "\$CN_ENCRYPTED"\)" > "\$\(basename "\$CN_MANIFEST"\)"/);
+  assert.match(validate, /echo "database=sagemro-db"/);
+  assert.match(validate, /echo "database=sagemro-db-cn"/);
+  assert.equal(validate.match(/echo "git_sha=\$\{GITHUB_SHA\}"/g)?.length, 2);
+  assert.match(validate, /\} > "\$COM_METADATA"/);
+  assert.match(validate, /\} > "\$CN_METADATA"/);
+  assert.match(validate, /echo "encryption=age"/);
+  assert.match(validate, /echo "recipient=\$AGE_RECIPIENT"/);
 
   assert.match(comUpload.name, /^sagemro-d1-com-/);
-  assert.match(comUpload.path, /env\.COM_BACKUP/);
+  assert.match(comUpload.path, /env\.COM_ENCRYPTED/);
+  assert.doesNotMatch(comUpload.path, /env\.COM_BACKUP/);
   assert.match(comUpload.path, /env\.COM_MANIFEST/);
   assert.match(comUpload.path, /env\.COM_METADATA/);
   assert.doesNotMatch(comUpload.path, /env\.CN_/);
@@ -94,7 +117,8 @@ test('each market exports and uploads an independently verifiable artifact', asy
   assert.equal(comUpload['if-no-files-found'], 'error');
 
   assert.match(cnUpload.name, /^sagemro-d1-cn-/);
-  assert.match(cnUpload.path, /env\.CN_BACKUP/);
+  assert.match(cnUpload.path, /env\.CN_ENCRYPTED/);
+  assert.doesNotMatch(cnUpload.path, /env\.CN_BACKUP/);
   assert.match(cnUpload.path, /env\.CN_MANIFEST/);
   assert.match(cnUpload.path, /env\.CN_METADATA/);
   assert.doesNotMatch(cnUpload.path, /env\.COM_/);
