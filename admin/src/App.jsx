@@ -24,6 +24,7 @@ const TEXT = {
     mobileTitle: 'SAGEMRO Operations Console',
     adminInitial: 'A',
     logout: 'Sign out',
+    loadingPage: 'Loading page',
     nav: {
       dashboard: 'Operations Dashboard',
       promotionAnalytics: 'Promotion Analytics',
@@ -44,6 +45,7 @@ const TEXT = {
     mobileTitle: 'SAGEMRO 运营中枢',
     adminInitial: '管',
     logout: '退出登录',
+    loadingPage: '页面加载中',
     nav: {
       dashboard: '运营驾驶舱',
       promotionAnalytics: '推广分析',
@@ -94,7 +96,7 @@ function normalizeAdminUser(user) {
 
 function AdminPageLoading() {
   return (
-    <div className="space-y-4" aria-busy="true" aria-label="Loading page">
+    <div className="space-y-4" aria-busy="true" aria-label={t.loadingPage}>
       <div className="h-8 w-52 animate-pulse rounded bg-[var(--color-surface-elevated)]" />
       <div className="h-48 animate-pulse rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]" />
     </div>

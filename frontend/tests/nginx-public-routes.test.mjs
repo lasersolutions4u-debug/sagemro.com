@@ -106,6 +106,36 @@ server {
   assert.equal(readFileSync(config, 'utf8'), initial);
 });
 
+test('refuses behavior-changing directives and additional locations in the API proxy', { skip: !python }, () => {
+  const directory = mkdtempSync(path.join(tmpdir(), 'sagemro-public-routes-'));
+  for (const [name, apiLocations] of [
+    ['return', 'location / { proxy_pass https://api.sagemro.com; return 204; }'],
+    ['rewrite', 'location / { rewrite ^ /health break; proxy_pass https://api.sagemro.com; }'],
+    ['proxy-method', 'location / { proxy_method POST; proxy_pass https://api.sagemro.com; }'],
+    ['additional-location', `location / { proxy_pass https://api.sagemro.com; }
+  location /shadow { proxy_pass https://unknown.example.com; }`],
+  ]) {
+    const config = path.join(directory, `${name}.conf`);
+    const initial = `server {
+  listen 443 ssl;
+  server_name sagemro.cn;
+  location / { try_files $uri /index.html; }
+}
+server {
+  listen 443 ssl;
+  server_name api.sagemro.cn;
+  ${apiLocations}
+}\n`;
+    writeFileSync(config, initial);
+
+    const result = spawnSync(python, [script, '--require-api-proxy', config], { encoding: 'utf8' });
+
+    assert.notEqual(result.status, 0, name);
+    assert.match(result.stderr, /recognized API location/i, name);
+    assert.equal(readFileSync(config, 'utf8'), initial, name);
+  }
+});
+
 test('required API optimization fails closed when no API server is present', { skip: !python }, () => {
   const directory = mkdtempSync(path.join(tmpdir(), 'sagemro-public-routes-'));
   const config = path.join(directory, 'customer.conf');

@@ -28,6 +28,9 @@ test('authenticated admin pages are lazy loaded behind one suspense boundary', (
   }
 
   assert.match(app, /import \{ LoginPage \} from '\.\/pages\/LoginPage';/);
+  assert.match(app, /loadingPage: 'Loading page'/);
+  assert.match(app, /loadingPage: '页面加载中'/);
+  assert.match(app, /aria-label=\{t\.loadingPage\}/);
 });
 
 test('promotion analytics remains one bilingual, role-scoped navigation entry', () => {
