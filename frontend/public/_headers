@@ -5,3 +5,15 @@
   X-Frame-Options: DENY
   Referrer-Policy: strict-origin-when-cross-origin
   Permissions-Policy: camera=(self), microphone=(self), geolocation=(self)
+
+/work-orders/*
+  X-Robots-Tag: noindex, nofollow, noarchive, nosnippet, noimageindex
+
+/activate
+  X-Robots-Tag: noindex, nofollow, noarchive, nosnippet, noimageindex
+
+/activate/*
+  X-Robots-Tag: noindex, nofollow, noarchive, nosnippet, noimageindex
+
+/engineer/*
+  X-Robots-Tag: noindex, nofollow, noarchive, nosnippet, noimageindex
