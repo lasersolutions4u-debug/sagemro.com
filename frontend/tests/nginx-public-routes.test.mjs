@@ -136,6 +136,32 @@ server {
   }
 });
 
+test('reports only safe directive names when an API proxy shape is rejected', { skip: !python }, () => {
+  const directory = mkdtempSync(path.join(tmpdir(), 'sagemro-public-routes-'));
+  const config = path.join(directory, 'api-headers.conf');
+  writeFileSync(config, `server {
+  listen 443 ssl;
+  server_name sagemro.cn;
+  location / { try_files $uri /index.html; }
+}
+server {
+  listen 443 ssl;
+  server_name api.sagemro.cn;
+  location / {
+    proxy_pass https://api.sagemro.com;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header Authorization "Bearer super-secret";
+  }
+}\n`);
+
+  const result = spawnSync(python, [script, '--require-api-proxy', config], { encoding: 'utf8' });
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /proxy_set_header X-Forwarded-For/);
+  assert.match(result.stderr, /proxy_set_header Authorization/);
+  assert.doesNotMatch(result.stderr, /proxy_add_x_forwarded_for|super-secret/);
+});
+
 test('required API optimization fails closed when no API server is present', { skip: !python }, () => {
   const directory = mkdtempSync(path.join(tmpdir(), 'sagemro-public-routes-'));
   const config = path.join(directory, 'customer.conf');

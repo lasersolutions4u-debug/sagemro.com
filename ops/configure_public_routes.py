@@ -359,14 +359,21 @@ def transform_api_proxy(block_text):
         'proxy_ssl_server_name',
         'proxy_ssl_name',
     }
+    unrecognized = []
     for directive in directives:
         if directive[0] not in allowed_directive_names:
-            raise ValueError('api server contains unrecognized API location directives')
-        if (
+            unrecognized.append(directive[0])
+        elif (
             directive[0] == 'proxy_set_header'
             and (len(directive) < 2 or directive[1] not in allowed_proxy_headers)
         ):
-            raise ValueError('api server contains unrecognized API location directives')
+            header_name = directive[1] if len(directive) >= 2 else '<missing>'
+            unrecognized.append(f'proxy_set_header {header_name}')
+    if unrecognized:
+        safe_names = ', '.join(dict.fromkeys(unrecognized))
+        raise ValueError(
+            f'api server contains unrecognized API location directives: {safe_names}'
+        )
 
     missing = []
     for expected in API_PROXY_DIRECTIVES:
