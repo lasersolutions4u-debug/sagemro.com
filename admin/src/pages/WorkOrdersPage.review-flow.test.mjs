@@ -197,7 +197,7 @@ test('detail drawer is summary-first with bilingual shortcut navigation', async 
   assert.match(drawer, /<WorkOrderDetailNav/);
   assert.match(drawer, /<WorkOrderDetailSummary/);
   assert.ok(drawer.indexOf('<WorkOrderDetailSummary') < drawer.indexOf('<ServiceStandardAdminPanel'));
-  for (const key of ['overview', 'quote', 'dispatch', 'serviceControls', 'filesReport', 'reviewsMessages']) {
+  for (const key of ['overview', 'messages', 'dispatch', 'quote', 'serviceControls', 'filesReport', 'reviews']) {
     assert.match(source, new RegExp(`${key}:`));
   }
 });
@@ -220,6 +220,42 @@ test('shortcut navigation expands and scrolls to a detail section', async () => 
   assert.match(source, /setOpenDetailSections/);
   assert.match(source, /requestAnimationFrame/);
   assert.match(source, /scrollIntoView\(\{ behavior: 'smooth', block: 'start' \}\)/);
+});
+
+test('detail navigation separates messages and reviews in service workflow order', async () => {
+  const source = await readFile(new URL('./WorkOrdersPage.jsx', import.meta.url), 'utf8');
+  const navStart = source.indexOf('<WorkOrderDetailNav');
+  const navEnd = source.indexOf('onNavigate={navigateToDetailSection}', navStart);
+  const drawerEnd = source.indexOf('{operationDialog &&', navStart);
+  assert.ok(navStart >= 0);
+  assert.ok(navEnd > navStart);
+  assert.ok(drawerEnd > navEnd);
+
+  const nav = source.slice(navStart, navEnd);
+  const drawer = source.slice(navStart, drawerEnd);
+  const expectedKeys = [
+    'overview',
+    'messages',
+    'dispatch',
+    'quote',
+    'service-controls',
+    'service-operations',
+    'reviews',
+  ];
+
+  assert.deepEqual(
+    [...nav.matchAll(/\['([^']+)', t\.detailNav\.[A-Za-z]+\]/g)].map((match) => match[1]),
+    expectedKeys,
+  );
+  assert.deepEqual(
+    [...drawer.matchAll(/sectionKey="([^"]+)"/g)].map((match) => match[1]),
+    expectedKeys,
+  );
+  assert.match(source, /messages: 'Messages'/);
+  assert.match(source, /messages: '沟通记录'/);
+  assert.match(source, /reviews: 'Reviews'/);
+  assert.match(source, /reviews: '服务评价'/);
+  assert.doesNotMatch(source, /reviewsMessages|reviews-messages/);
 });
 
 test('loaded detail opens the section containing its current operator control', async () => {
