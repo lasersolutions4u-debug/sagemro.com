@@ -14,22 +14,42 @@ test('China release packages and validates the public route configurator', () =>
 test('China activation configures public routes after backup and before HTTP\/2 validation', () => {
   const backup = workflow.indexOf('$SUDO tar -czf "$nginx_backup" "${nginx_config_files[@]}"');
   const publicRoutes = workflow.indexOf(
-    '$SUDO python3 "$release/ops/configure_public_routes.py" "${nginx_config_files[@]}"',
+    '$SUDO python3 "$release/ops/configure_public_routes.py" --require-api-proxy "${nginx_config_files[@]}"',
   );
+  const stagedApiUpstream = workflow.indexOf('$SUDO mv "$api_upstream_staged" "$api_upstream_conf"');
   const http2 = workflow.indexOf(
     '$SUDO python3 "$release/ops/enable_nginx_http2.py" "${nginx_config_files[@]}"',
   );
   const nginxValidation = workflow.indexOf('$SUDO nginx -t', http2);
+  const frontendActivation = workflow.indexOf('$SUDO ln -sfnT "$release/frontend" "$current/frontend"');
 
   assert.notEqual(backup, -1);
   assert.notEqual(publicRoutes, -1);
+  assert.notEqual(stagedApiUpstream, -1);
   assert.notEqual(http2, -1);
   assert.notEqual(nginxValidation, -1);
+  assert.notEqual(frontendActivation, -1);
   assert.ok(backup < publicRoutes);
+  assert.ok(backup < stagedApiUpstream);
+  assert.ok(stagedApiUpstream < publicRoutes);
+  assert.match(workflow, /api_upstream_staged="\/etc\/nginx\/conf\.d\/\.sagemro-cn-api-upstream-\$\{RELEASE_ID\}\.tmp"/);
+  assert.doesNotMatch(workflow, /api_upstream_staged="\/tmp\/sagemro-cn-api-upstream/);
   assert.ok(publicRoutes < http2);
   assert.ok(http2 < nginxValidation);
+  assert.ok(nginxValidation < frontendActivation);
   assert.match(workflow, /mapfile -t nginx_config_files/);
   assert.doesNotMatch(workflow, /python3 "\$release\/ops\/(?:configure_public_routes|enable_nginx_http2)\.py" \$nginx_config_files/);
+});
+
+test('China deployment attempts rollback for failed or cancelled activation and health checks', () => {
+  assert.match(
+    workflow,
+    /steps\.activate\.outcome == 'cancelled'/,
+  );
+  assert.match(
+    workflow,
+    /steps\.health\.outcome == 'cancelled'/,
+  );
 });
 
 test('China health checks cover private SPA routes and real public 404s', () => {

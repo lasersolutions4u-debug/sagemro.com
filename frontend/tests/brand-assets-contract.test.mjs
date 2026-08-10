@@ -500,7 +500,7 @@ test('admin dispatch stays simple while Engineers owns search and profiles', () 
   const engineersPage = read('admin/src/pages/EngineersPage.jsx');
   const api = read('admin/src/services/api.js');
 
-  assert.match(app, /import \{ EngineersPage \} from '\.\/pages\/EngineersPage'/);
+  assert.match(app, /const EngineersPage = lazy\(\(\) => import\('\.\/pages\/EngineersPage\.jsx'\)/);
   assert.match(app, /engineers: 'Engineers'/);
   assert.match(app, /users: 'Customers'/);
   assert.match(app, /const \[selectedEngineerId, setSelectedEngineerId\] = useState\(''\)/);

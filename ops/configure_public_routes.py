@@ -33,6 +33,15 @@ HOST_PATTERNS = {
     'admin': r'admin\.sagemro\.cn',
     'api': r'api\.sagemro\.cn',
 }
+API_DIRECT_TARGET = 'https://api.sagemro.com'
+API_KEEPALIVE_TARGET = 'https://sagemro_api_worker'
+API_PROXY_DIRECTIVES = (
+    ('proxy_http_version', '1.1', 'proxy_http_version 1.1;'),
+    ('proxy_set_header', 'Connection', '""', 'proxy_set_header Connection "";'),
+    ('proxy_set_header', 'Host', 'api.sagemro.com', 'proxy_set_header Host api.sagemro.com;'),
+    ('proxy_ssl_server_name', 'on', 'proxy_ssl_server_name on;'),
+    ('proxy_ssl_name', 'api.sagemro.com', 'proxy_ssl_name api.sagemro.com;'),
+)
 
 
 def nginx_code(text):
@@ -157,6 +166,24 @@ def server_blocks(lines):
 
     if start is not None:
         raise ValueError('Unclosed Nginx server block')
+
+
+def root_location_blocks(text):
+    code = nginx_code(text)
+    start_re = re.compile(r'(?m)^[ \t]*location[ \t]+/[ \t]*\{')
+    for match in start_re.finditer(code):
+        opening = code.find('{', match.start(), match.end())
+        depth = 0
+        for index in range(opening, len(code)):
+            if code[index] == '{':
+                depth += 1
+            elif code[index] == '}':
+                depth -= 1
+                if depth == 0:
+                    yield match.start(), index + 1, opening + 1, index
+                    break
+        else:
+            raise ValueError('Unclosed Nginx location / block')
 
 
 def server_names(block_text):
@@ -293,8 +320,108 @@ def transform_public_routes(block_text, kind):
     raise ValueError(f'{kind} server does not contain exactly one recognized location / fallback')
 
 
+def transform_api_proxy(block_text):
+    location_directives = [
+        directive for directive in nginx_directives(block_text)
+        if directive[0] == 'location'
+    ]
+    if location_directives != [('location', '/')]:
+        raise ValueError('api server does not contain exactly one recognized API location')
+
+    locations = list(root_location_blocks(block_text))
+    if len(locations) != 1:
+        raise ValueError('api server does not contain exactly one recognized location / block')
+
+    _, _, body_start, body_end = locations[0]
+    body = block_text[body_start:body_end]
+    code = nginx_code(body)
+    proxy_matches = list(re.finditer(r'(?<!\S)proxy_pass\s+(?P<target>[^;\s]+)\s*;', code))
+    if len(proxy_matches) != 1:
+        raise ValueError('api server does not contain exactly one recognized API proxy_pass')
+
+    proxy_match = proxy_matches[0]
+    target = proxy_match.group('target')
+    if target not in (API_DIRECT_TARGET, API_KEEPALIVE_TARGET):
+        raise ValueError('api server does not contain a recognized API proxy_pass target')
+
+    updated_body = (
+        body[:proxy_match.start('target')]
+        + API_KEEPALIVE_TARGET
+        + body[proxy_match.end('target'):]
+    )
+
+    directives = list(nginx_directives(updated_body))
+    allowed_proxy_headers = {'Connection', 'Host'}
+    allowed_directive_names = {
+        'proxy_pass',
+        'proxy_http_version',
+        'proxy_set_header',
+        'proxy_ssl_server_name',
+        'proxy_ssl_name',
+    }
+    for directive in directives:
+        if directive[0] not in allowed_directive_names:
+            raise ValueError('api server contains unrecognized API location directives')
+        if (
+            directive[0] == 'proxy_set_header'
+            and (len(directive) < 2 or directive[1] not in allowed_proxy_headers)
+        ):
+            raise ValueError('api server contains unrecognized API location directives')
+
+    missing = []
+    for expected in API_PROXY_DIRECTIVES:
+        expected_tokens = expected[:-1]
+        expected_line = expected[-1]
+        name = expected_tokens[0]
+        if name == 'proxy_set_header':
+            candidates = [
+                directive for directive in directives
+                if len(directive) >= 2
+                and directive[0] == name
+                and directive[1] == expected_tokens[1]
+            ]
+        else:
+            candidates = [directive for directive in directives if directive[0] == name]
+
+        if len(candidates) > 1:
+            raise ValueError(f'api server contains duplicate {expected_line.split(";")[0]} directives')
+        if candidates:
+            if expected_tokens[:2] == ('proxy_set_header', 'Connection'):
+                connection_is_empty = (
+                    candidates[0] == ('proxy_set_header', 'Connection')
+                    and re.search(r'proxy_set_header\s+Connection\s+""\s*;', updated_body)
+                )
+                if not connection_is_empty:
+                    raise ValueError(
+                        f'api server contains a conflicting {expected_line.split(";")[0]} directive'
+                    )
+            elif candidates[0] != expected_tokens:
+                raise ValueError(
+                    f'api server contains a conflicting {expected_line.split(";")[0]} directive'
+                )
+        if not candidates:
+            missing.append(expected_line)
+
+    if not missing:
+        return block_text[:body_start] + updated_body + block_text[body_end:]
+
+    location_line_start = block_text.rfind('\n', 0, body_start) + 1
+    location_indent = re.match(r'[ \t]*', block_text[location_line_start:body_start]).group(0)
+    directive_indent = location_indent + '  '
+    insertion = '\n' + ''.join(f'{directive_indent}{line}\n' for line in missing)
+    if updated_body.startswith(('\n', '\r')):
+        insertion = insertion.rstrip('\n')
+    updated_body = insertion + updated_body
+    return block_text[:body_start] + updated_body + block_text[body_end:]
+
+
 def transform_block(block_text, kind):
-    updated = transform_public_routes(block_text, kind) if kind in ('customer', 'engineer') else block_text
+    if kind in ('customer', 'engineer'):
+        updated = transform_public_routes(block_text, kind)
+    elif kind == 'api':
+        updated = transform_api_proxy(block_text)
+    else:
+        updated = block_text
     if kind == 'customer':
         updated = ensure_default_tls_server(updated)
     return ensure_host_guard(updated, kind)
@@ -305,6 +432,7 @@ def transform_config(text):
     blocks = list(server_blocks(lines))
     matched = 0
     customer_matched = 0
+    api_matched = 0
 
     for start, end in reversed(blocks):
         block_text = ''.join(lines[start:end])
@@ -315,9 +443,11 @@ def transform_config(text):
             matched += 1
         if kind == 'customer':
             customer_matched += 1
+        if kind == 'api':
+            api_matched += 1
         lines[start:end] = transform_block(block_text, kind).splitlines(keepends=True)
 
-    return ''.join(lines), matched, customer_matched
+    return ''.join(lines), matched, customer_matched, api_matched
 
 
 def write_atomic(path, content, stat):
@@ -343,27 +473,31 @@ def write_atomic(path, content, stat):
         raise
 
 
-def update_configs(paths):
+def update_configs(paths, require_api_proxy=False):
     originals = {}
     updated = {}
     stats = {}
     total_matched = 0
     customer_matched = 0
+    api_matched = 0
 
     for path in paths:
         original = path.read_bytes()
         text = original.decode('utf-8')
-        transformed, matched, customers = transform_config(text)
+        transformed, matched, customers, api_servers = transform_config(text)
         originals[path] = original
         updated[path] = transformed.encode('utf-8')
         stats[path] = path.stat()
         total_matched += matched
         customer_matched += customers
+        api_matched += api_servers
 
     if total_matched == 0:
         raise ValueError('No sagemro.cn customer or engineer server block was found')
     if customer_matched != 1:
         raise ValueError('Expected exactly one customer TLS server block')
+    if require_api_proxy and api_matched != 1:
+        raise ValueError('Expected exactly one api.sagemro.cn TLS server block')
 
     written = []
     try:
@@ -384,11 +518,12 @@ def update_configs(paths):
             raise OSError(f'{write_error}; rollback failures: {details}') from write_error
         raise
 
-    return total_matched, len(written)
+    return total_matched, api_matched, len(written)
 
 
 def main():
     parser = argparse.ArgumentParser()
+    parser.add_argument('--require-api-proxy', action='store_true')
     parser.add_argument('configs', nargs='+', type=Path)
     args = parser.parse_args()
 
@@ -405,12 +540,15 @@ def main():
                 raise ValueError(f'Refusing duplicate Nginx config inode: {resolved}')
             seen.add(identity)
             configs.append(resolved)
-        matched, changed = update_configs(configs)
+        matched, api_matched, changed = update_configs(configs, args.require_api_proxy)
     except (OSError, UnicodeError, ValueError) as error:
         print(f'Error: {error}', file=sys.stderr)
         return 1
 
-    print(f'sagemro.cn public server blocks: {matched}; files updated: {changed}')
+    print(
+        f'sagemro.cn public server blocks: {matched}; '
+        f'API server blocks: {api_matched}; files updated: {changed}'
+    )
     return 0
 
 

@@ -220,6 +220,10 @@ jobs:
           performance_conf="/etc/nginx/conf.d/sagemro-cn-performance.conf"
           performance_backup="$backup_root/${RELEASE_ID}.performance.conf"
           performance_missing_marker="$backup_root/${RELEASE_ID}.performance.missing"
+          api_upstream_conf="/etc/nginx/conf.d/sagemro-cn-api-upstream.conf"
+          api_upstream_backup="$backup_root/${RELEASE_ID}.api-upstream.conf"
+          api_upstream_missing_marker="$backup_root/${RELEASE_ID}.api-upstream.missing"
+          api_upstream_staged="/etc/nginx/conf.d/.sagemro-cn-api-upstream-${RELEASE_ID}.tmp"
 
           $SUDO mkdir -p "$backup_root"
           capture_previous_target() {
@@ -242,6 +246,12 @@ jobs:
           else
             $SUDO touch "$performance_missing_marker"
           fi
+          if $SUDO test -e "$api_upstream_conf"; then
+            $SUDO cp -a "$api_upstream_conf" "$api_upstream_backup"
+            $SUDO rm -f "$api_upstream_missing_marker"
+          else
+            $SUDO touch "$api_upstream_missing_marker"
+          fi
 
           mapfile -t nginx_config_files < <(
             $SUDO grep -RIlE 'server_name[^;]*sagemro\.cn' /etc/nginx/sites-enabled /etc/nginx/conf.d 2>/dev/null \
@@ -253,11 +263,16 @@ jobs:
             exit 1
           fi
           $SUDO tar -czf "$nginx_backup" "${nginx_config_files[@]}"
-          $SUDO python3 "$release/ops/configure_public_routes.py" "${nginx_config_files[@]}"
-
-          $SUDO ln -sfnT "$release/frontend" "$current/frontend"
-          $SUDO ln -sfnT "$release/frontend" "$current/engineer"
-          $SUDO ln -sfnT "$release/admin" "$current/admin"
+          $SUDO rm -f "$api_upstream_staged"
+          $SUDO tee "$api_upstream_staged" > /dev/null <<'NGINX'
+          upstream sagemro_api_worker {
+            server api.sagemro.com:443;
+            keepalive 32;
+          }
+          NGINX
+          $SUDO chmod 0644 "$api_upstream_staged"
+          $SUDO mv "$api_upstream_staged" "$api_upstream_conf"
+          $SUDO python3 "$release/ops/configure_public_routes.py" --require-api-proxy "${nginx_config_files[@]}"
 
           $SUDO tee "$performance_conf" > /dev/null <<'NGINX'
           map "$host:$request_uri" $sagemro_asset_cache_control {
@@ -315,6 +330,9 @@ jobs:
 
           $SUDO python3 "$release/ops/enable_nginx_http2.py" "${nginx_config_files[@]}"
           $SUDO nginx -t
+          $SUDO ln -sfnT "$release/frontend" "$current/frontend"
+          $SUDO ln -sfnT "$release/frontend" "$current/engineer"
+          $SUDO ln -sfnT "$release/admin" "$current/admin"
           $SUDO systemctl reload nginx
 
           echo "Activated release: $release"
@@ -421,7 +439,7 @@ jobs:
           done
 
       - name: Roll back failed China release
-        if: ${{ always() && (steps.activate.outcome == 'failure' || steps.health.outcome == 'failure') }}
+        if: ${{ always() && (steps.activate.outcome == 'failure' || steps.activate.outcome == 'cancelled' || steps.health.outcome == 'failure' || steps.health.outcome == 'cancelled') }}
         env:
           ALIYUN_ECS_HOST: ${{ secrets.ALIYUN_ECS_HOST }}
           ALIYUN_ECS_PORT: ${{ secrets.ALIYUN_ECS_PORT }}
@@ -441,6 +459,10 @@ jobs:
           performance_conf="/etc/nginx/conf.d/sagemro-cn-performance.conf"
           performance_backup="$backup_root/${RELEASE_ID}.performance.conf"
           performance_missing_marker="$backup_root/${RELEASE_ID}.performance.missing"
+          api_upstream_conf="/etc/nginx/conf.d/sagemro-cn-api-upstream.conf"
+          api_upstream_backup="$backup_root/${RELEASE_ID}.api-upstream.conf"
+          api_upstream_missing_marker="$backup_root/${RELEASE_ID}.api-upstream.missing"
+          api_upstream_staged="/etc/nginx/conf.d/.sagemro-cn-api-upstream-${RELEASE_ID}.tmp"
 
           SUDO=""
           if [ "$(id -u)" -ne 0 ]; then
@@ -466,6 +488,12 @@ jobs:
           elif $SUDO test -f "$performance_missing_marker"; then
             $SUDO rm -f "$performance_conf"
           fi
+          if $SUDO test -f "$api_upstream_backup"; then
+            $SUDO cp -a "$api_upstream_backup" "$api_upstream_conf"
+          elif $SUDO test -f "$api_upstream_missing_marker"; then
+            $SUDO rm -f "$api_upstream_conf"
+          fi
+          $SUDO rm -f "$api_upstream_staged"
 
           restore_link() {
             previous_target="$1"

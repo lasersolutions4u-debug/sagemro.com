@@ -7,6 +7,7 @@ import test from 'node:test';
 
 const root = path.resolve(import.meta.dirname, '../..');
 const script = path.join(root, 'ops/configure_public_routes.py');
+const deployWorkflow = readFileSync(path.join(root, '.github/workflows/aliyun-cn-deploy.yml'), 'utf8');
 const python = ['python3', 'python'].find((command) => spawnSync(command, ['--version']).status === 0);
 
 const privateRouteContract = String.raw`error_page 404 /404.html;
@@ -51,7 +52,7 @@ server {
 `;
   writeFileSync(config, initial);
 
-  const firstRun = spawnSync(python, [script, config], { encoding: 'utf8' });
+  const firstRun = spawnSync(python, [script, '--require-api-proxy', config], { encoding: 'utf8' });
   assert.equal(firstRun.status, 0, firstRun.stderr);
 
   const updated = readFileSync(config, 'utf8');
@@ -70,11 +71,86 @@ server {
   assert.match(admin, /if \(\$host !~ \^\(\?:admin\\\.sagemro\\\.cn\)\$\) \{ return 444; \}/);
   assert.doesNotMatch(admin, /\/404\.html|work-orders/);
   assert.match(api, /if \(\$host !~ \^\(\?:api\\\.sagemro\\\.cn\)\$\) \{ return 444; \}/);
-  assert.match(api, /proxy_pass https:\/\/api\.sagemro\.com/);
+  assert.match(api, /proxy_pass https:\/\/sagemro_api_worker/);
+  assert.match(api, /proxy_http_version 1\.1;/);
+  assert.match(api, /proxy_set_header Connection "";/);
+  assert.match(api, /proxy_set_header Host api\.sagemro\.com;/);
+  assert.match(api, /proxy_ssl_server_name on;/);
+  assert.match(api, /proxy_ssl_name api\.sagemro\.com;/);
+  assert.match(deployWorkflow, /upstream sagemro_api_worker \{[\s\S]*server api\.sagemro\.com:443;[\s\S]*keepalive 32;[\s\S]*\}/);
 
-  const secondRun = spawnSync(python, [script, config], { encoding: 'utf8' });
+  const secondRun = spawnSync(python, [script, '--require-api-proxy', config], { encoding: 'utf8' });
   assert.equal(secondRun.status, 0, secondRun.stderr);
   assert.equal(readFileSync(config, 'utf8'), updated);
+});
+
+test('refuses an unknown API proxy shape without modifying any input file', { skip: !python }, () => {
+  const directory = mkdtempSync(path.join(tmpdir(), 'sagemro-public-routes-'));
+  const config = path.join(directory, 'sites.conf');
+  const initial = `server {
+  listen 443 ssl;
+  server_name sagemro.cn;
+  location / { try_files $uri /index.html; }
+}
+server {
+  listen 443 ssl;
+  server_name api.sagemro.cn;
+  location / { proxy_pass https://unknown.example.com; }
+}\n`;
+  writeFileSync(config, initial);
+
+  const result = spawnSync(python, [script, '--require-api-proxy', config], { encoding: 'utf8' });
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /recognized API proxy_pass/i);
+  assert.equal(readFileSync(config, 'utf8'), initial);
+});
+
+test('refuses behavior-changing directives and additional locations in the API proxy', { skip: !python }, () => {
+  const directory = mkdtempSync(path.join(tmpdir(), 'sagemro-public-routes-'));
+  for (const [name, apiLocations] of [
+    ['return', 'location / { proxy_pass https://api.sagemro.com; return 204; }'],
+    ['rewrite', 'location / { rewrite ^ /health break; proxy_pass https://api.sagemro.com; }'],
+    ['proxy-method', 'location / { proxy_method POST; proxy_pass https://api.sagemro.com; }'],
+    ['additional-location', `location / { proxy_pass https://api.sagemro.com; }
+  location /shadow { proxy_pass https://unknown.example.com; }`],
+  ]) {
+    const config = path.join(directory, `${name}.conf`);
+    const initial = `server {
+  listen 443 ssl;
+  server_name sagemro.cn;
+  location / { try_files $uri /index.html; }
+}
+server {
+  listen 443 ssl;
+  server_name api.sagemro.cn;
+  ${apiLocations}
+}\n`;
+    writeFileSync(config, initial);
+
+    const result = spawnSync(python, [script, '--require-api-proxy', config], { encoding: 'utf8' });
+
+    assert.notEqual(result.status, 0, name);
+    assert.match(result.stderr, /recognized API location/i, name);
+    assert.equal(readFileSync(config, 'utf8'), initial, name);
+  }
+});
+
+test('required API optimization fails closed when no API server is present', { skip: !python }, () => {
+  const directory = mkdtempSync(path.join(tmpdir(), 'sagemro-public-routes-'));
+  const config = path.join(directory, 'customer.conf');
+  const initial = `server {
+  listen 443 ssl;
+  server_name sagemro.cn;
+  location / { try_files $uri /index.html; }
+}\n`;
+  writeFileSync(config, initial);
+
+  const result = spawnSync(python, [script, '--require-api-proxy', config], { encoding: 'utf8' });
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /exactly one api\.sagemro\.cn TLS server block/i);
+  assert.equal(readFileSync(config, 'utf8'), initial);
 });
 
 test('removes the previously generated reverse trailing-slash redirect without disturbing public routes', { skip: !python }, () => {
