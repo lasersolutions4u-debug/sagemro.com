@@ -76,6 +76,15 @@ test('public frontend exposes crawlable sitemap and robots policy', async () => 
   assert.ok(publicUrls.every(([, pathname]) => pathname === '/' || pathname.endsWith('/')));
 });
 
+test('crawlable private shells expose noindex instead of hiding it behind robots exclusion', async () => {
+  const robots = await read('frontend/public/robots.txt');
+
+  for (const pathname of ['/work-orders/', '/activate', '/engineer/']) {
+    const escapedPathname = pathname.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    assert.doesNotMatch(robots, new RegExp(`Disallow: ${escapedPathname}(?:\\s|$)`));
+  }
+});
+
 test('public pages define SEO metadata and structured data', async () => {
   const app = await read('frontend/src/App.jsx');
   const seo = await read('frontend/src/utils/seo.js');

@@ -31,3 +31,14 @@ for (const site of ['frontend', 'admin']) {
     }
   });
 }
+
+test('frontend private route families return a complete noindex header', () => {
+  const headers = read('frontend/public/_headers');
+  for (const route of ['/work-orders/*', '/activate', '/activate/*', '/engineer/*']) {
+    const escapedRoute = route.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    assert.match(
+      headers,
+      new RegExp(`^${escapedRoute}\\n  X-Robots-Tag: noindex, nofollow, noarchive, nosnippet, noimageindex$`, 'm'),
+    );
+  }
+});
