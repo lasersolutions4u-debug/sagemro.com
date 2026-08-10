@@ -149,7 +149,7 @@ server {
   server_name api.sagemro.cn;
   location / {
     proxy_pass https://api.sagemro.com;
-    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Unrecognized $proxy_add_x_forwarded_for;
     proxy_set_header Authorization "Bearer super-secret";
   }
 }\n`);
@@ -157,9 +157,47 @@ server {
   const result = spawnSync(python, [script, '--require-api-proxy', config], { encoding: 'utf8' });
 
   assert.notEqual(result.status, 0);
-  assert.match(result.stderr, /proxy_set_header X-Forwarded-For/);
+  assert.match(result.stderr, /proxy_set_header X-Unrecognized/);
   assert.match(result.stderr, /proxy_set_header Authorization/);
   assert.doesNotMatch(result.stderr, /proxy_add_x_forwarded_for|super-secret/);
+});
+
+test('preserves the recognized production API proxy controls while enabling keepalive', { skip: !python }, () => {
+  const directory = mkdtempSync(path.join(tmpdir(), 'sagemro-public-routes-'));
+  const config = path.join(directory, 'api-production-controls.conf');
+  const controls = `proxy_set_header Origin $http_origin;
+    proxy_set_header X-Forwarded-Host $host;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_buffering off;
+    proxy_cache off;
+    proxy_read_timeout 300s;
+    proxy_send_timeout 300s;`;
+  writeFileSync(config, `server {
+  listen 443 ssl;
+  server_name sagemro.cn;
+  location / { try_files $uri /index.html; }
+}
+server {
+  listen 443 ssl;
+  server_name api.sagemro.cn;
+  location / {
+    proxy_pass https://api.sagemro.com;
+    ${controls}
+  }
+}\n`);
+
+  const result = spawnSync(python, [script, '--require-api-proxy', config], { encoding: 'utf8' });
+  assert.equal(result.status, 0, result.stderr);
+
+  const updated = readFileSync(config, 'utf8');
+  for (const line of controls.split('\n')) {
+    assert.match(updated, new RegExp(line.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  }
+  assert.match(updated, /proxy_pass https:\/\/sagemro_api_worker;/);
+  assert.match(updated, /proxy_http_version 1\.1;/);
+  assert.match(updated, /proxy_set_header Connection "";/);
 });
 
 test('required API optimization fails closed when no API server is present', { skip: !python }, () => {

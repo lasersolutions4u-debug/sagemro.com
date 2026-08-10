@@ -351,13 +351,25 @@ def transform_api_proxy(block_text):
     )
 
     directives = list(nginx_directives(updated_body))
-    allowed_proxy_headers = {'Connection', 'Host'}
+    allowed_proxy_headers = {
+        'Connection',
+        'Host',
+        'Origin',
+        'X-Forwarded-Host',
+        'X-Forwarded-Proto',
+        'X-Real-IP',
+        'X-Forwarded-For',
+    }
     allowed_directive_names = {
         'proxy_pass',
         'proxy_http_version',
         'proxy_set_header',
         'proxy_ssl_server_name',
         'proxy_ssl_name',
+        'proxy_buffering',
+        'proxy_cache',
+        'proxy_read_timeout',
+        'proxy_send_timeout',
     }
     unrecognized = []
     for directive in directives:
