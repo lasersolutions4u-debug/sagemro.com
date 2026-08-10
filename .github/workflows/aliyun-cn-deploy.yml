@@ -312,10 +312,10 @@ jobs:
             ~^((www\.)?sagemro\.cn|admin\.sagemro\.cn|engineer\.sagemro\.cn)$ "camera=(self), microphone=(self), geolocation=(self)";
           }
 
-          map "$host:$uri" $sagemro_robots_tag {
+          map "$host:$request_uri" $sagemro_robots_tag {
             default "";
             ~^admin\.sagemro\.cn: "noindex, nofollow, noarchive, nosnippet, noimageindex";
-            ~^((www\.)?sagemro\.cn|engineer\.sagemro\.cn):/(work-orders|activate|engineer)(/|$) "noindex, nofollow, noarchive, nosnippet, noimageindex";
+            ~^((www\.)?sagemro\.cn|engineer\.sagemro\.cn):/(work-orders|activate|engineer)(/|\?|$) "noindex, nofollow, noarchive, nosnippet, noimageindex";
           }
 
           gzip_types text/plain text/css application/javascript application/json application/xml image/svg+xml font/woff2;
