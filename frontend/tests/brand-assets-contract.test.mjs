@@ -458,6 +458,17 @@ test('engineer final service report can be submitted to customer review from rep
   assert.match(detailModal, /setTab\('info'\)/);
 });
 
+test('service completion shortcut opens the report instead of bypassing report validation', () => {
+  const detailModal = read('frontend/src/components/WorkOrder/WorkOrderDetailModal.jsx');
+  const shortcut = detailModal.match(/<button[\s\S]*?data-testid="mark-service-complete-button"[\s\S]*?<\/button>/)?.[0] || '';
+
+  assert.match(shortcut, /onClick=\{\(\) => setTab\('repairRecord'\)\}/);
+  assert.doesNotMatch(shortcut, /handleSubmitFinalReport/);
+  assert.match(detailModal, /onConfirmComplete=\{handleConfirmFinalReport\}/);
+  assert.match(detailModal, /onSubmitComplete=\{handleSubmitFinalReport\}/);
+  assert.doesNotMatch(detailModal, /const handleSubmitFinalReport = async \(\) => \{\s*if \(!\(await confirmDialog/);
+});
+
 test('service report edit action is a compact top action instead of a bottom block button', () => {
   const repairRecord = read('frontend/src/components/WorkOrder/RepairRecordPanel.jsx');
 

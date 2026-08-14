@@ -1101,6 +1101,9 @@ test('provider failures do not roll back public messages, repair records, or fie
     'SELECT generation_state FROM work_order_service_readiness WHERE work_order_id = ?',
   ).get('wo-guidance-feedback').generation_state, 'failed');
 
+  env.DB.__sqlite.prepare(
+    "UPDATE work_orders SET status = 'in_service' WHERE id = ?",
+  ).run('wo-guidance-feedback');
   const repair = await guidanceApi(
     env,
     '/api/workorders/wo-guidance-feedback/repair-record',
@@ -1108,8 +1111,12 @@ test('provider failures do not roll back public messages, repair records, or fie
       method: 'POST',
       body: {
         symptom: 'Unstable laser output',
+        inspection_process: 'Inspected the protective lens, optical alignment, and output stability.',
         diagnosis: 'Contaminated protective lens',
         solution: 'Replaced and aligned the lens',
+        verification_result: 'Repeated test cuts completed with stable laser output.',
+        follow_up_advice: 'Inspect the protective lens before the next production shift.',
+        parts_used: [],
         labor_hours: 1.25,
       },
     },

@@ -63,6 +63,7 @@ const TEXT = {
     imported: (name) => `Imported ${name} as a draft. Review before saving or publishing.`,
     importFailed: 'Import failed. Please use a UTF-8 text, Markdown, or CSV file.',
     failed: 'Operation failed: ',
+    candidateManaged: 'This candidate-derived article is managed by workflow. Please return to the Knowledge Candidates review desk; publishing is not available in the current phase.',
     categoryLabels: {
       fault: 'Equipment fault',
       cutting_parameters: 'Cutting parameters',
@@ -138,6 +139,7 @@ const TEXT = {
     imported: (name) => `已将 ${name} 导入为草稿，请审核后再保存或发布。`,
     importFailed: '导入失败。请使用 UTF-8 编码的文本、Markdown 或 CSV 文件。',
     failed: '操作失败：',
+    candidateManaged: '该候选文章由工作流管理。请返回知识候选工作台处理，当前阶段不能发布。',
     categoryLabels: {
       fault: '设备故障',
       cutting_parameters: '切割参数',
@@ -280,7 +282,7 @@ export function KnowledgePage() {
       setMessage(t.saved);
       load();
     } catch (error) {
-      setMessage(t.failed + error.message);
+      setMessage(error.message === 'candidate_article_managed_by_workflow' ? t.candidateManaged : t.failed + error.message);
     } finally {
       setSaving(false);
     }
