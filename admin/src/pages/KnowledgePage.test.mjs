@@ -12,4 +12,7 @@ test('knowledge page exposes usage rules and makes new article action visible', 
   assert.match(source, /FileReader/);
   assert.match(source, /New draft ready/);
   assert.match(source, /titleInputRef\.current\?\.focus/);
+  assert.match(source, /candidate_article_managed_by_workflow/);
+  assert.match(source, /return to the Knowledge Candidates review desk/i);
+  assert.match(source, /请返回知识候选工作台处理/);
 });

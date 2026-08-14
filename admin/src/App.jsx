@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Boxes, ClipboardList, LayoutDashboard, Users, UserCog, FileText, Star, LogOut, Target, BookOpenText } from 'lucide-react';
+import { Boxes, ClipboardCheck, ClipboardList, LayoutDashboard, Users, UserCog, FileText, Star, LogOut, Target, BookOpenText } from 'lucide-react';
 import { LoginPage } from './pages/LoginPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { UsersPage } from './pages/UsersPage';
@@ -10,6 +10,7 @@ import { LeadsPage } from './pages/LeadsPage';
 import { EngineerApplicationsPage } from './pages/EngineerApplicationsPage';
 import { MaterialsPage } from './pages/MaterialsPage';
 import { KnowledgePage } from './pages/KnowledgePage';
+import { KnowledgeCandidatesPage } from './pages/KnowledgeCandidatesPage';
 import { runtimeConfig } from './config/runtime';
 import { BrandMark } from './components/BrandMark';
 
@@ -26,6 +27,7 @@ const TEXT = {
       engineerApplications: 'Engineer Applications',
       materials: 'Material Master',
       knowledge: 'Knowledge Base',
+      knowledgeCandidates: 'Knowledge Candidates',
       engineers: 'Engineers',
       users: 'Customers',
       ratings: 'Service Reviews',
@@ -43,6 +45,7 @@ const TEXT = {
       engineerApplications: '工程师申请审核',
       materials: '物料管理',
       knowledge: '知识库',
+      knowledgeCandidates: '知识候选',
       engineers: '工程师',
       users: '客户与工程师',
       ratings: '评价管理',
@@ -56,6 +59,7 @@ const NAV_ITEMS = [
   { key: 'dashboard', label: t.nav.dashboard, icon: LayoutDashboard },
   { key: 'leads', label: t.nav.leads, icon: Target },
   { key: 'knowledge', label: t.nav.knowledge, icon: BookOpenText },
+  { key: 'knowledgeCandidates', label: t.nav.knowledgeCandidates, icon: ClipboardCheck },
   { key: 'workorders', label: t.nav.workorders, icon: FileText },
   { key: 'materials', label: t.nav.materials, icon: Boxes },
   { key: 'engineerApplications', label: t.nav.engineerApplications, icon: ClipboardList },
@@ -90,6 +94,7 @@ export default function App() {
       case 'workorders': return <WorkOrdersPage />;
       case 'materials': return <MaterialsPage />;
       case 'knowledge': return <KnowledgePage />;
+      case 'knowledgeCandidates': return <KnowledgeCandidatesPage />;
       case 'engineerApplications': return <EngineerApplicationsPage />;
       case 'ratings': return <RatingsPage />;
       case 'leads': return <LeadsPage />;

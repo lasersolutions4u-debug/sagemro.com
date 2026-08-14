@@ -744,7 +744,13 @@ export async function resolveWorkOrder(workOrderId, engineerId) {
     headers: authHeaders(),
     body: JSON.stringify({ engineer_id: engineerId }),
   });
-  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  if (!response.ok) {
+    const d = await response.json().catch(() => ({}));
+    const error = new Error(d.error || `HTTP ${response.status}`);
+    error.code = d.error;
+    error.fields = Array.isArray(d.fields) ? d.fields : [];
+    throw error;
+  }
   return response.json();
 }
 
@@ -1125,8 +1131,11 @@ export async function saveRepairRecord(workOrderId, data) {
     body: JSON.stringify(data),
   });
   if (!response.ok) {
-    const d = await response.json();
-    throw new Error(d.error || `HTTP ${response.status}`);
+    const d = await response.json().catch(() => ({}));
+    const error = new Error(d.error || `HTTP ${response.status}`);
+    error.code = d.error;
+    error.fields = Array.isArray(d.fields) ? d.fields : [];
+    throw error;
   }
   return response.json();
 }

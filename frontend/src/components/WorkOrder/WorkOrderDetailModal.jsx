@@ -36,20 +36,6 @@ import { isCnLocale } from '../../utils/locale';
 
 const CURRENCY = isCnLocale() ? 'CNY' : 'USD';
 
-function hasServiceReportContent(record) {
-  if (!record) return false;
-  const hasText = Boolean(record.symptom || record.diagnosis || record.solution);
-  const hasLabor = Number(record.labor_hours || 0) > 0;
-  let hasParts = false;
-  try {
-    const parts = JSON.parse(record.parts_used || '[]');
-    hasParts = Array.isArray(parts) && parts.some((part) => part?.name);
-  } catch {
-    hasParts = false;
-  }
-  return hasText || hasLabor || hasParts;
-}
-
 function payoutLabel(status) {
   const labels = {
     not_ready: 'Payout not ready',
@@ -371,22 +357,14 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
     }
   };
 
+  const handleConfirmFinalReport = () => confirmDialog(copy.submitFinalConfirm);
+
   const handleSubmitFinalReport = async () => {
-    if (!hasServiceReportContent(detail?.repair_record)) {
-      setTab('repairRecord');
-      toastWarning(copy.saveReportFirst);
-      return;
-    }
-    if (!(await confirmDialog(copy.submitFinalConfirm))) return;
-    try {
-      await resolveWorkOrder(workOrder.id, userId);
-      toastSuccess(copy.finalReportSent);
-      setTab('info');
-      loadDetail();
-      onConfirmed?.();
-    } catch (e) {
-      toastError(copy.operationFailed + e.message);
-    }
+    await resolveWorkOrder(workOrder.id, userId);
+    toastSuccess(copy.finalReportSent);
+    setTab('info');
+    loadDetail();
+    onConfirmed?.();
   };
 
   const updateEquipmentNeed = (index, field, value) => {
@@ -618,7 +596,7 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
       {isEngineer && (effectiveStatus === 'in_service' || effectiveStatus === 'pricing') && (
         <button
           data-testid="mark-service-complete-button"
-          onClick={handleSubmitFinalReport}
+          onClick={() => setTab('repairRecord')}
           className="w-full py-3 bg-green-500 hover:bg-green-600 text-white rounded-xl font-medium"
         >
           {copy.submitFinalReport}
@@ -1028,6 +1006,7 @@ export function WorkOrderDetailModal({ isOpen, onClose, workOrder, onRateSuccess
                 userType={userType}
                 repairRecord={detail?.repair_record || null}
                 onSaved={() => loadDetail()}
+                onConfirmComplete={handleConfirmFinalReport}
                 onSubmitComplete={handleSubmitFinalReport}
                 canSubmitComplete={isEngineer && (effectiveStatus === 'in_service' || effectiveStatus === 'pricing')}
               />

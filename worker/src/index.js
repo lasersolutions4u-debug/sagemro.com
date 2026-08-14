@@ -64,6 +64,22 @@ import {
   shouldTriggerSummary,
   generateSummaryForConversation,
 } from './lib/summary.js';
+import { parseLaborHours, validateServiceReportForCompletion } from './lib/service-report-quality.js';
+import {
+  candidateEventId,
+  parseRatingScore,
+  prepareWorkOrderCandidate,
+} from './lib/knowledge-candidates.js';
+import {
+  CURRENT_ADMIN_CANDIDATE_CAPABILITIES,
+  sanitizeCandidateRawContent,
+  detectCandidateSensitiveFields,
+  KNOWLEDGE_CATEGORIES,
+  parseCandidatePagination,
+  readEditorialCandidate,
+  transitionCandidate,
+  validateCandidateForReview,
+} from './lib/knowledge-candidate-workflow.js';
 
 // ============ 配置 ============
 // API_KEY 和 API_ENDPOINT 通过 Cloudflare Worker Secrets 注入
@@ -726,11 +742,6 @@ const TOOLS_SCHEMAS = [
       parameters: {
         type: 'object',
         properties: {
-          market: {
-            type: 'string',
-            description: 'Market: cn for sagemro.cn, com for sagemro.com',
-            enum: ['cn', 'com']
-          },
           locale: {
             type: 'string',
             description: 'Preferred language locale, such as zh-CN or en'
@@ -950,7 +961,7 @@ async function toolSearchKnowledgeBase({ args = {}, env, market = 'com' }) {
   if (!search) {
     return { count: 0, articles: [] };
   }
-  const requestedMarket = cleanText(args.market, 20) || market || 'com';
+  const requestedMarket = market === 'cn' ? 'cn' : 'com';
   const requestedLocale = cleanText(args.locale, 20);
   const category = cleanText(args.category, 80);
   const limit = Math.min(8, Math.max(1, parseInt(args.limit || '5', 10) || 5));
@@ -4748,12 +4759,23 @@ async function handleSaveRepairRecord(request, env) {
     if (wo.engineer_id !== engineer_id) {
       return errorResponse('您无权操作该工单', 403);
     }
+    if (!['in_service', 'pricing'].includes(wo.status)) {
+      return errorResponse(
+        market === 'cn'
+          ? '当前工单状态不允许编辑服务报告'
+          : 'This work order cannot be edited in its current status',
+        400,
+      );
+    }
 
     const body = await request.json();
     assertFieldLimits(body, {
       symptom: LIMITS.symptom,
+      inspection_process: LIMITS.solution,
       diagnosis: LIMITS.diagnosis,
       solution: LIMITS.solution,
+      verification_result: LIMITS.solution,
+      follow_up_advice: LIMITS.solution,
     });
 
     let partsUsed = '[]';
@@ -4771,27 +4793,63 @@ async function handleSaveRepairRecord(request, env) {
       partsUsed = serialized;
     }
 
-    const laborHours = typeof body.labor_hours === 'number' ? body.labor_hours : 0;
+    const laborHoursInput = body.labor_hours === undefined ? 0 : body.labor_hours;
+    const laborHours = parseLaborHours(laborHoursInput);
+    if (laborHours === null) {
+      return errorResponse('labor_hours must be a finite non-negative number', 400);
+    }
 
     const recordId = generateId();
-    await env.DB.prepare(`
-      INSERT INTO work_order_repair_records (id, work_order_id, symptom, diagnosis, solution, parts_used, labor_hours, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
+    const saveResult = await env.DB.prepare(`
+      INSERT INTO work_order_repair_records (
+        id, work_order_id, symptom, inspection_process, diagnosis, solution,
+        verification_result, follow_up_advice, parts_used, labor_hours,
+        report_quality_status, submitted_at, updated_at
+      )
+      SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', NULL, datetime('now')
+      WHERE EXISTS (
+        SELECT 1 FROM work_orders
+        WHERE id = ? AND engineer_id = ? AND status IN ('in_service', 'pricing')
+      )
       ON CONFLICT(work_order_id) DO UPDATE SET
         symptom = excluded.symptom,
+        inspection_process = excluded.inspection_process,
         diagnosis = excluded.diagnosis,
         solution = excluded.solution,
+        verification_result = excluded.verification_result,
+        follow_up_advice = excluded.follow_up_advice,
         parts_used = excluded.parts_used,
         labor_hours = excluded.labor_hours,
+        report_quality_status = 'draft',
+        submitted_at = NULL,
         updated_at = datetime('now')
+      WHERE EXISTS (
+        SELECT 1 FROM work_orders
+        WHERE id = ? AND engineer_id = ? AND status IN ('in_service', 'pricing')
+      )
     `).bind(
       recordId, workOrderId,
       body.symptom || null,
+      body.inspection_process || null,
       body.diagnosis || null,
       body.solution || null,
+      body.verification_result || null,
+      body.follow_up_advice || null,
       partsUsed,
       laborHours,
+      workOrderId,
+      engineer_id,
+      workOrderId,
+      engineer_id,
     ).run();
+    if (Number(saveResult?.meta?.changes || 0) !== 1) {
+      return errorResponse(
+        market === 'cn'
+          ? '当前工单状态不允许编辑服务报告'
+          : 'This work order cannot be edited in its current status',
+        400,
+      );
+    }
 
     await env.DB.prepare(`
       INSERT INTO work_order_logs (id, work_order_id, action, actor_type, actor_id, content)
@@ -5087,112 +5145,322 @@ async function ensureWorkOrderPayout(env, workOrderId, engineerId, status = 'pen
   return env.DB.prepare('SELECT * FROM work_order_payouts WHERE id = ?').bind(payout.id).first();
 }
 
-async function handleSubmitRating(request, env) {
-  try {
-    const market = getRequestMarket(request);
-    const body = await request.json();
-    const { work_order_id, rating_timeliness, rating_technical, rating_communication, rating_professional, comment } = body;
-
-    try {
-      assertMaxLength(comment, 'comment', LIMITS.comment);
-    } catch (e) {
-      const resp = validationErrorToResponse(e, errorResponse);
-      if (resp) return resp;
-      throw e;
-    }
-
-    // 认证：必须由登录客户发起，engineer_id 从工单查而非客户端传
-    const auth = request._auth;
-    if (!auth || auth.userType !== 'customer') {
-      return errorResponse('仅客户可提交评价', 403);
-    }
-    const customer_id = auth.userId;
-
-    if (!work_order_id) {
-      return errorResponse('缺少必填字段');
-    }
-
-    // 验证工单归属 + 查出真正的 engineer_id
-    const wo = await env.DB.prepare(
-      'SELECT id, engineer_id, customer_id, status FROM work_orders WHERE id = ?'
-    ).bind(work_order_id).first();
-
-    if (!wo) return errorResponse('工单不存在', 404);
-    if (wo.customer_id !== customer_id) {
-      return errorResponse('您无权评价该工单', 403);
-    }
-    if (!wo.engineer_id) {
-      return errorResponse('工单尚未分配工程师', 400);
-    }
-    const engineer_id = wo.engineer_id;
-
-    // 检查是否已评价
-    const existing = await env.DB.prepare(
-      'SELECT id FROM ratings WHERE work_order_id = ?'
-    ).bind(work_order_id).first();
-
-    if (existing) {
-      return errorResponse('该工单已评价');
-    }
-
-    // 创建评价
-    const id = generateId();
-    await env.DB.prepare(`
-      INSERT INTO ratings (id, work_order_id, engineer_id, customer_id, rating_timeliness, rating_technical, rating_communication, rating_professional, comment)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).bind(id, work_order_id, engineer_id, customer_id, rating_timeliness, rating_technical, rating_communication, rating_professional, comment || '').run();
-
-    // 更新工程师评分
-    const ratings = await env.DB.prepare(
-      'SELECT * FROM ratings WHERE engineer_id = ?'
-    ).bind(engineer_id).all();
-
-    const count = ratings.results.length;
-    const avgTimeliness = ratings.results.reduce((sum, r) => sum + r.rating_timeliness, 0) / count;
-    const avgTechnical = ratings.results.reduce((sum, r) => sum + r.rating_technical, 0) / count;
-    const avgCommunication = ratings.results.reduce((sum, r) => sum + r.rating_communication, 0) / count;
-    const avgProfessional = ratings.results.reduce((sum, r) => sum + r.rating_professional, 0) / count;
-
-    await env.DB.prepare(`
-      UPDATE engineers SET rating_timeliness = ?, rating_technical = ?, rating_communication = ?, rating_professional = ?, rating_count = ?
-      WHERE id = ?
-    `).bind(avgTimeliness, avgTechnical, avgCommunication, avgProfessional, count, engineer_id).run();
-
-    // 更新工单状态
-    await env.DB.prepare(
-      'UPDATE work_orders SET status = ?, completed_at = datetime("now") WHERE id = ?'
-    ).bind('completed', work_order_id).run();
-
-    // 钱包结算：按工程师提成率将确认后的报价入账
-    const settlement = await settleEngineerWallet(env, work_order_id, engineer_id);
-    const payout = await ensureWorkOrderPayout(env, work_order_id, engineer_id, 'pending');
-
-    // 通知工程师：收到新评价
-    const avgAll = ((rating_timeliness + rating_technical + rating_communication + rating_professional) / 4).toFixed(1);
-    const woRating = await env.DB.prepare('SELECT order_no FROM work_orders WHERE id = ?').bind(work_order_id).first();
-    await createNotification(env, {
-      user_id: engineer_id,
-      user_type: 'engineer',
-      type: 'rating_received',
-      title: market === 'cn' ? '收到新评价' : 'New customer review received',
-      body: market === 'cn'
-        ? `工单 ${woRating?.order_no || ''} 的客户给您评分 ${avgAll} 分${comment ? '："' + comment.slice(0, 30) + '"' : ''}`
-        : `The customer rated Work Order ${woRating?.order_no || ''} ${avgAll}/5${comment ? ': "' + comment.slice(0, 30) + '"' : ''}`,
-      data: { work_order_id },
-    });
-
-    // SERVICE_OS_LEGACY: settlement is kept for historical accounting compatibility,
-    // but Service OS no longer exposes wallet/commission notifications to engineers.
-
-    return jsonResponse({ success: true, settlement, payout });
-  } catch (error) {
-    return errorResponse(error.message, 500);
-  }
-}
-
 // ============ 工程师评价客户 ============
 
 // 提交工程师对客户的评价
+async function handleSubmitRating(request, env) {
+  try {
+    const requestMarket = getRequestMarket(request);
+    const body = await request.json();
+    const {
+      work_order_id,
+      rating_timeliness,
+      rating_technical,
+      rating_communication,
+      rating_professional,
+      comment,
+    } = body;
+
+    try {
+      assertMaxLength(comment, 'comment', LIMITS.comment);
+    } catch (error) {
+      const response = validationErrorToResponse(error, errorResponse);
+      if (response) return response;
+      throw error;
+    }
+
+    const auth = request._auth;
+    if (!auth || auth.userType !== 'customer') {
+      return errorResponse('Only customers can submit ratings', 403);
+    }
+    if (!work_order_id) return errorResponse('Missing work_order_id', 400);
+    const scores = [
+      rating_timeliness,
+      rating_technical,
+      rating_communication,
+      rating_professional,
+    ].map(parseRatingScore);
+    if (scores.some((score) => score === null)) {
+      return errorResponse('invalid_rating_scores', 400);
+    }
+    const [timeliness, technical, communication, professional] = scores;
+
+    const workOrder = await env.DB.prepare(`
+      SELECT wo.id, wo.order_no, wo.engineer_id, wo.customer_id, wo.status,
+             r.id AS repair_record_id, r.symptom, r.inspection_process,
+             r.diagnosis, r.solution, r.verification_result, r.follow_up_advice,
+             r.report_quality_status, r.customer_confirmed_at
+      FROM work_orders wo
+      JOIN work_order_repair_records r ON r.work_order_id = wo.id
+      WHERE wo.id = ?
+    `).bind(work_order_id).first();
+    if (!workOrder) return errorResponse('Work order not found', 404);
+    if (workOrder.customer_id !== auth.userId) {
+      return errorResponse('You do not have permission to rate this work order', 403);
+    }
+    if (!workOrder.engineer_id) return errorResponse('Work order has no assigned engineer', 400);
+
+    const existingRating = await env.DB.prepare(
+      'SELECT id FROM ratings WHERE work_order_id = ?'
+    ).bind(work_order_id).first();
+    if (workOrder.report_quality_status !== 'submitted') {
+      return errorResponse('service_report_not_submitted', 409);
+    }
+    if (workOrder.status !== 'resolved' && !(workOrder.status === 'completed' && existingRating)) {
+      return errorResponse('work_order_not_ready_for_confirmation', 409);
+    }
+
+    const report = { ...workOrder, id: workOrder.repair_record_id };
+    const candidate = prepareWorkOrderCandidate({
+      report,
+      workOrder,
+      requestMarket,
+    });
+    const ratingId = existingRating?.id || generateId();
+    const statements = [
+      env.DB.prepare(`
+        INSERT INTO ratings (
+          id, work_order_id, engineer_id, customer_id, rating_timeliness,
+          rating_technical, rating_communication, rating_professional, comment
+        )
+        SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?
+        WHERE EXISTS (
+          SELECT 1 FROM work_orders wo
+          JOIN work_order_repair_records r ON r.work_order_id = wo.id
+          WHERE wo.id = ? AND wo.customer_id = ? AND wo.engineer_id = ?
+            AND wo.status = ?
+            AND r.id = ? AND r.report_quality_status = 'submitted'
+        )
+        ON CONFLICT(work_order_id) DO NOTHING
+      `).bind(
+        ratingId,
+        work_order_id,
+        workOrder.engineer_id,
+        auth.userId,
+        timeliness,
+        technical,
+        communication,
+        professional,
+        comment || '',
+        work_order_id,
+        auth.userId,
+        workOrder.engineer_id,
+        workOrder.status,
+        workOrder.repair_record_id,
+      ),
+      env.DB.prepare(`
+        UPDATE work_order_repair_records
+        SET customer_confirmed_at = COALESCE(customer_confirmed_at, datetime('now')),
+            updated_at = datetime('now')
+        WHERE id = ? AND work_order_id = ? AND report_quality_status = 'submitted'
+          AND EXISTS (
+            SELECT 1 FROM work_orders
+            WHERE id = ? AND customer_id = ? AND engineer_id = ?
+              AND status = ?
+          )
+          AND EXISTS (SELECT 1 FROM ratings WHERE work_order_id = ?)
+      `).bind(
+        workOrder.repair_record_id,
+        work_order_id,
+        work_order_id,
+        auth.userId,
+        workOrder.engineer_id,
+        workOrder.status,
+        work_order_id,
+      ),
+      env.DB.prepare(`
+        INSERT INTO knowledge_candidates (
+          id, market, source_type, source_work_order_id, source_repair_record_id,
+          contributor_engineer_id, status, raw_content, internal_use_allowed,
+          evidence_notes, public_use_allowed
+        )
+        SELECT ?, ?, 'work_order', ?, ?, ?, 'awaiting_operations', ?, ?, ?, 0
+        WHERE EXISTS (
+          SELECT 1 FROM work_orders wo
+          JOIN work_order_repair_records r ON r.work_order_id = wo.id
+          WHERE wo.id = ? AND wo.customer_id = ? AND wo.engineer_id = ?
+            AND wo.status = ?
+            AND r.id = ? AND r.report_quality_status = 'submitted'
+            AND r.customer_confirmed_at IS NOT NULL
+            AND EXISTS (SELECT 1 FROM ratings WHERE work_order_id = wo.id)
+        )
+        ON CONFLICT(source_repair_record_id) DO NOTHING
+      `).bind(
+        candidate.id,
+        candidate.market,
+        candidate.source_work_order_id,
+        candidate.source_repair_record_id,
+        candidate.contributor_engineer_id,
+        candidate.raw_content,
+        candidate.internal_use_allowed,
+        candidate.evidence_notes,
+        work_order_id,
+        auth.userId,
+        workOrder.engineer_id,
+        workOrder.status,
+        workOrder.repair_record_id,
+      ),
+    ];
+    statements.push(env.DB.prepare(`
+      INSERT OR IGNORE INTO knowledge_candidate_events (
+        id, candidate_id, actor_type, actor_user_id, action, from_status, to_status, notes
+      )
+      SELECT ?, kc.id, 'customer', ?, 'customer_confirmed_candidate', NULL, NULL, ?
+      FROM knowledge_candidates kc
+      WHERE kc.source_repair_record_id = ?
+        AND EXISTS (
+          SELECT 1 FROM work_orders wo
+          JOIN work_order_repair_records r ON r.work_order_id = wo.id
+          WHERE wo.id = ? AND wo.customer_id = ? AND wo.engineer_id = ?
+            AND wo.status = ?
+            AND r.id = ? AND r.report_quality_status = 'submitted'
+            AND r.customer_confirmed_at IS NOT NULL
+            AND EXISTS (SELECT 1 FROM ratings WHERE work_order_id = wo.id)
+        )
+    `).bind(
+      candidateEventId(workOrder.repair_record_id, 'customer_confirmed_candidate', 'customer', auth.userId),
+      auth.userId,
+      'Customer confirmed service completion via rating.',
+      workOrder.repair_record_id,
+      work_order_id,
+      auth.userId,
+      workOrder.engineer_id,
+      workOrder.status,
+      workOrder.repair_record_id,
+    ));
+    statements.push(env.DB.prepare(`
+      UPDATE engineers
+      SET rating_timeliness = (SELECT AVG(rating_timeliness) FROM ratings WHERE engineer_id = ?),
+          rating_technical = (SELECT AVG(rating_technical) FROM ratings WHERE engineer_id = ?),
+          rating_communication = (SELECT AVG(rating_communication) FROM ratings WHERE engineer_id = ?),
+          rating_professional = (SELECT AVG(rating_professional) FROM ratings WHERE engineer_id = ?),
+          rating_count = (SELECT COUNT(*) FROM ratings WHERE engineer_id = ?)
+      WHERE id = ?
+        AND EXISTS (
+          SELECT 1
+          FROM work_orders wo
+          JOIN work_order_repair_records r ON r.work_order_id = wo.id
+          JOIN ratings rt ON rt.work_order_id = wo.id
+          JOIN knowledge_candidates kc ON kc.source_repair_record_id = r.id
+          WHERE wo.id = ? AND wo.customer_id = ? AND wo.engineer_id = ?
+            AND wo.status = ?
+            AND r.id = ? AND r.work_order_id = ?
+            AND r.report_quality_status = 'submitted'
+            AND r.customer_confirmed_at IS NOT NULL
+            AND rt.work_order_id = ? AND rt.customer_id = ? AND rt.engineer_id = ?
+            AND kc.source_work_order_id = ?
+            AND kc.source_repair_record_id = ?
+            AND kc.contributor_engineer_id = ?
+        )
+    `).bind(
+      workOrder.engineer_id,
+      workOrder.engineer_id,
+      workOrder.engineer_id,
+      workOrder.engineer_id,
+      workOrder.engineer_id,
+      workOrder.engineer_id,
+      work_order_id,
+      auth.userId,
+      workOrder.engineer_id,
+      workOrder.status,
+      workOrder.repair_record_id,
+      work_order_id,
+      work_order_id,
+      auth.userId,
+      workOrder.engineer_id,
+      work_order_id,
+      workOrder.repair_record_id,
+      workOrder.engineer_id,
+    ));
+    statements.push(env.DB.prepare(`
+      UPDATE work_orders
+      SET status = 'completed', completed_at = COALESCE(completed_at, datetime('now'))
+      WHERE id = ? AND customer_id = ? AND engineer_id = ? AND status = ?
+        AND EXISTS (SELECT 1 FROM ratings WHERE work_order_id = ?)
+        AND EXISTS (
+          SELECT 1 FROM work_order_repair_records
+          WHERE id = ? AND work_order_id = ? AND report_quality_status = 'submitted'
+            AND customer_confirmed_at IS NOT NULL
+        )
+        AND EXISTS (SELECT 1 FROM knowledge_candidates WHERE source_repair_record_id = ?)
+    `).bind(
+      work_order_id,
+      auth.userId,
+      workOrder.engineer_id,
+      workOrder.status,
+      work_order_id,
+      workOrder.repair_record_id,
+      work_order_id,
+      workOrder.repair_record_id,
+    ));
+
+    const batchResults = await env.DB.batch(statements);
+    const ratingCreated = Number(batchResults[0]?.meta?.changes || 0) > 0;
+    const candidateCreated = Number(batchResults[2]?.meta?.changes || 0) > 0;
+    const finalWorkOrder = await env.DB.prepare(
+      'SELECT status, customer_id, engineer_id FROM work_orders WHERE id = ?'
+    ).bind(work_order_id).first();
+    const finalReport = await env.DB.prepare(`
+      SELECT work_order_id, customer_confirmed_at, report_quality_status
+      FROM work_order_repair_records WHERE id = ?
+    `).bind(workOrder.repair_record_id).first();
+    const finalCandidate = await env.DB.prepare(`
+      SELECT id, status, source_work_order_id, contributor_engineer_id
+      FROM knowledge_candidates WHERE source_repair_record_id = ?
+    `).bind(workOrder.repair_record_id).first();
+    if (
+      finalWorkOrder?.status !== 'completed'
+      || finalWorkOrder?.customer_id !== auth.userId
+      || finalWorkOrder?.engineer_id !== workOrder.engineer_id
+      || finalReport?.work_order_id !== work_order_id
+      || finalReport?.report_quality_status !== 'submitted'
+      || !finalReport?.customer_confirmed_at
+      || !finalCandidate
+      || finalCandidate.source_work_order_id !== work_order_id
+      || finalCandidate.contributor_engineer_id !== workOrder.engineer_id
+    ) {
+      return errorResponse('rating_confirmation_conflict', 409);
+    }
+
+    const settlement = ratingCreated
+      ? await settleEngineerWallet(env, work_order_id, workOrder.engineer_id)
+      : { settled: false, reason: 'rating_already_exists' };
+    const payout = ratingCreated
+      ? await ensureWorkOrderPayout(env, work_order_id, workOrder.engineer_id, 'pending')
+      : null;
+    if (ratingCreated) {
+      const average = ((
+        timeliness + technical + communication + professional
+      ) / 4).toFixed(1);
+      await createNotification(env, {
+        user_id: workOrder.engineer_id,
+        user_type: 'engineer',
+        type: 'rating_received',
+        title: requestMarket === 'cn' ? '收到新评价' : 'New customer review received',
+        body: requestMarket === 'cn'
+          ? `工单 ${workOrder.order_no || ''} 的客户评分为 ${average}`
+          : `The customer rated Work Order ${workOrder.order_no || ''} ${average}/5`,
+        data: { work_order_id },
+      });
+    }
+
+    return jsonResponse({
+      success: true,
+      rating_status: ratingCreated ? 'created' : 'existing',
+      candidate: {
+        id: finalCandidate.id,
+        status: candidateCreated ? 'created' : 'existing',
+        workflow_status: finalCandidate.status,
+      },
+      settlement,
+      payout,
+    });
+  } catch (error) {
+    console.error('[rating-confirmation] failed:', error?.message || 'unknown_error');
+    return errorResponse('Unable to confirm rating', 500);
+  }
+}
+
 async function handleSubmitEngineerReview(request, env) {
   try {
     const workOrderId = new URL(request.url).pathname.split('/')[3];
@@ -6325,17 +6593,6 @@ const UPSELL_BUDGET_SIGNALS = new Set(['has_budget', 'comparing_quotes', 'unknow
 const UPSELL_QUOTE_STATUSES = new Set(['not_started', 'in_progress', 'quoted']);
 const UPSELL_DEAL_RESULTS = new Set(['undecided', 'won', 'lost']);
 const KNOWLEDGE_STATUSES = new Set(['draft', 'published', 'archived']);
-const KNOWLEDGE_CATEGORIES = new Set([
-  'fault',
-  'cutting_parameters',
-  'parts',
-  'maintenance',
-  'machine_selection',
-  'health',
-  'safety',
-  'other',
-]);
-
 function cleanText(value, maxLength = 300) {
   if (value === undefined || value === null) return '';
   return String(value).trim().slice(0, maxLength);
@@ -6920,6 +7177,10 @@ async function handleAdminUpdateKnowledge(request, env) {
 
     const existing = await env.DB.prepare('SELECT * FROM knowledge_articles WHERE id = ?').bind(articleId).first();
     if (!existing) return errorResponse('知识条目不存在', 404);
+
+    if (typeof existing.source === 'string' && existing.source.startsWith('work_order_candidate:')) {
+      return errorResponse('candidate_article_managed_by_workflow', 409);
+    }
 
     const body = await request.json().catch(() => ({}));
     const payload = readKnowledgePayload(body, { existing });
@@ -9022,6 +9283,619 @@ async function handleAdminArchiveWorkOrder(request, env) {
 // ============ 评价管理 ============
 
 // 工单评价列表（管理员）
+function knowledgeCandidateMarket(request) {
+  return getRequestMarket(request) === 'cn' ? 'cn' : 'global';
+}
+
+const KNOWLEDGE_CANDIDATE_STATUSES = new Set([
+  'awaiting_operations',
+  'operations_editing',
+  'awaiting_technical_review',
+  'changes_requested',
+  'approved',
+  'retrieval_testing',
+  'ai_active',
+  'rejected',
+  'archived',
+]);
+
+async function handleAdminListKnowledgeCandidates(request, env) {
+  try {
+    const url = new URL(request.url);
+    const pagination = parseCandidatePagination(url.searchParams.get('page'), url.searchParams.get('pageSize'));
+    if (!pagination.ok) return errorResponse(pagination.error, 400);
+    const { page, pageSize, offset } = pagination;
+    const status = cleanText(url.searchParams.get('status'), 40);
+    if (status && status !== 'all' && !KNOWLEDGE_CANDIDATE_STATUSES.has(status)) {
+      return errorResponse('invalid_status', 400);
+    }
+    const binds = [knowledgeCandidateMarket(request)];
+    let where = 'WHERE market = ?';
+    if (status && status !== 'all') {
+      where += ' AND status = ?';
+      binds.push(status);
+    }
+    const total = await env.DB.prepare(
+      `SELECT COUNT(*) AS count FROM knowledge_candidates ${where}`
+    ).bind(...binds).first();
+    const list = await env.DB.prepare(`
+      SELECT id, market, source_type, source_work_order_id, contributor_engineer_id,
+             status, title, category, equipment_type, brand, model, risk_level,
+             operations_owner_type, operations_owner_id, updated_at, created_at
+      FROM knowledge_candidates ${where}
+      ORDER BY updated_at DESC, created_at DESC
+      LIMIT ? OFFSET ?
+    `).bind(...binds, pageSize, offset).all();
+    return jsonResponse({
+      total: Number(total?.count || 0),
+      list: list.results || [],
+      page,
+      pageSize,
+    });
+  } catch (error) {
+    console.error('[admin-knowledge-candidates-list] failed:', error?.message || 'unknown_error');
+    return errorResponse('unable_to_list_knowledge_candidates', 500);
+  }
+}
+
+function knowledgeCandidateId(request) {
+  return decodeURIComponent(new URL(request.url).pathname.split('/')[4] || '');
+}
+
+function knowledgeCandidateActor(request) {
+  return {
+    type: 'admin',
+    id: request._auth.userId,
+    // Phase 1 compatibility: all current admins temporarily hold both workflow capabilities.
+    // Production role separation requires an admin role/permission source before launch.
+    capabilities: CURRENT_ADMIN_CANDIDATE_CAPABILITIES,
+  };
+}
+
+function knowledgeCandidateSnapshot(candidate) {
+  return {
+    id: candidate.id,
+    status: candidate.status,
+    title: candidate.title,
+    category: candidate.category,
+    sanitized_content: candidate.sanitized_content,
+    equipment_type: candidate.equipment_type,
+    brand: candidate.brand,
+    model: candidate.model,
+    alarm_codes_json: candidate.alarm_codes_json,
+    risk_level: candidate.risk_level,
+    evidence_notes: candidate.evidence_notes,
+    operations_owner_type: candidate.operations_owner_type,
+    operations_owner_id: candidate.operations_owner_id,
+    technical_reviewer_type: candidate.technical_reviewer_type,
+    technical_reviewer_id: candidate.technical_reviewer_id,
+    review_notes: candidate.review_notes,
+    knowledge_article_id: candidate.knowledge_article_id,
+    internal_use_allowed: candidate.internal_use_allowed,
+    public_use_allowed: candidate.public_use_allowed,
+  };
+}
+
+const KNOWLEDGE_CANDIDATE_EDITABLE_SNAPSHOT_FIELDS = [
+  'title',
+  'category',
+  'sanitized_content',
+  'equipment_type',
+  'brand',
+  'model',
+  'alarm_codes_json',
+  'risk_level',
+  'evidence_notes',
+  'operations_owner_type',
+  'operations_owner_id',
+  'internal_use_allowed',
+  'public_use_allowed',
+  'updated_at',
+];
+
+function knowledgeCandidateSnapshotPredicate(candidate, alias = '') {
+  const prefix = alias ? `${alias}.` : '';
+  return {
+    sql: KNOWLEDGE_CANDIDATE_EDITABLE_SNAPSHOT_FIELDS.map((field) => `${prefix}${field} IS ?`).join(' AND '),
+    values: KNOWLEDGE_CANDIDATE_EDITABLE_SNAPSHOT_FIELDS.map((field) => candidate[field]),
+  };
+}
+
+function workflowEventStatement(env, {
+  candidate,
+  actor,
+  action,
+  nextStatus,
+  notes = null,
+  after,
+  snapshotGuard = false,
+}) {
+  const guard = snapshotGuard ? knowledgeCandidateSnapshotPredicate(candidate) : { sql: '1 = 1', values: [] };
+  return env.DB.prepare(`
+    INSERT INTO knowledge_candidate_events /* knowledge_candidate_event */ (
+      id, candidate_id, actor_type, actor_user_id, action, from_status, to_status, notes, snapshot_json
+    )
+    SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?
+    WHERE EXISTS (
+      SELECT 1 FROM knowledge_candidates
+      WHERE id = ? AND market = ? AND status = ? AND ${guard.sql}
+    )
+  `).bind(
+    generateId(),
+    candidate.id,
+    actor.type,
+    actor.id,
+    action,
+    candidate.status,
+    nextStatus,
+    notes,
+    JSON.stringify({ before: knowledgeCandidateSnapshot(candidate), after: knowledgeCandidateSnapshot(after) }),
+    candidate.id,
+    candidate.market,
+    candidate.status,
+    ...guard.values,
+  );
+}
+
+async function getKnowledgeCandidate(env, id, market) {
+  return env.DB.prepare(`
+    SELECT * FROM knowledge_candidates WHERE id = ? AND market = ?
+  `).bind(id, market).first();
+}
+
+function knowledgeCandidateResponseDto(candidate) {
+  if (!candidate) return candidate;
+  const { raw_content: rawContent, ...candidateDto } = candidate;
+  return {
+    ...candidateDto,
+    safe_raw_content: sanitizeCandidateRawContent(rawContent),
+    raw_content_redacted: true,
+    raw_content_policy: 'display_sanitized',
+    raw_content_redaction_policy: 'fail_closed_sensitive_lines_v1',
+    raw_content_redaction_warning: 'automated_redaction_requires_human_review',
+  };
+}
+
+const KNOWLEDGE_CANDIDATE_EVENT_ACTIONS = new Set([
+  'candidate_created',
+  'customer_confirmed_candidate',
+  'admin_created_candidate',
+  'editorial',
+  'submit_review',
+  'request_changes',
+  'approve',
+  'reject',
+]);
+
+function knowledgeCandidateError(error) {
+  console.error('[admin-knowledge-candidate-workflow] failed:', error?.message || 'unknown_error');
+  return errorResponse('knowledge_candidate_operation_failed', 500);
+}
+
+async function handleAdminKnowledgeCandidateDetail(request, env) {
+  try {
+    const id = knowledgeCandidateId(request);
+    const candidate = await getKnowledgeCandidate(env, id, knowledgeCandidateMarket(request));
+    if (!candidate) return errorResponse('knowledge_candidate_not_found', 404);
+    const events = await env.DB.prepare(`
+      SELECT id, candidate_id, actor_type, actor_user_id, action, from_status, to_status, notes, created_at
+      FROM knowledge_candidate_events
+      WHERE candidate_id = ? ORDER BY created_at ASC, id ASC
+    `).bind(id).all();
+    return jsonResponse({
+      candidate: knowledgeCandidateResponseDto(candidate),
+      events: (events.results || []).map((event) => ({
+        id: event.id,
+        candidate_id: event.candidate_id,
+        actor_type: event.actor_type,
+        actor_user_id: event.actor_type === 'admin' || event.actor_type === 'engineer'
+          ? event.actor_user_id
+          : null,
+        action: KNOWLEDGE_CANDIDATE_EVENT_ACTIONS.has(event.action) ? event.action : 'unknown',
+        from_status: event.from_status,
+        to_status: event.to_status,
+        notes: sanitizeCandidateRawContent(event.notes),
+        created_at: event.created_at,
+      })),
+    });
+  } catch (error) {
+    return knowledgeCandidateError(error);
+  }
+}
+
+async function handleAdminKnowledgeCandidateEditorial(request, env) {
+  try {
+    const id = knowledgeCandidateId(request);
+    const market = knowledgeCandidateMarket(request);
+    const candidate = await getKnowledgeCandidate(env, id, market);
+    if (!candidate) return errorResponse('knowledge_candidate_not_found', 404);
+    const actor = knowledgeCandidateActor(request);
+    const transition = transitionCandidate({ currentStatus: candidate.status, action: 'editorial', actor, candidate });
+    if (!transition.ok) return errorResponse(transition.error, transition.error === 'forbidden' ? 403 : 409);
+    const body = await request.json().catch(() => null);
+    const payload = readEditorialCandidate(body);
+    if (!payload.ok) return jsonResponse({ error: payload.error, field: payload.field }, 400);
+    if (!Object.keys(payload.values).length) return errorResponse('no_editorial_fields', 400);
+
+    const fields = Object.keys(payload.values);
+    const values = fields.map((field) => payload.values[field]);
+    const after = {
+      ...candidate,
+      ...payload.values,
+      operations_owner_type: 'admin',
+      operations_owner_id: actor.id,
+      status: transition.nextStatus,
+    };
+    const snapshot = knowledgeCandidateSnapshotPredicate(candidate);
+    const update = env.DB.prepare(`
+      UPDATE knowledge_candidates /* knowledge_candidate_editorial */
+      SET ${fields.map((field) => `${field} = ?`).join(', ')},
+          operations_owner_type = 'admin', operations_owner_id = ?, status = ?, updated_at = datetime('now')
+      WHERE id = ? AND market = ? AND status = ? AND ${snapshot.sql}
+    `).bind(
+      ...values,
+      actor.id,
+      transition.nextStatus,
+      id,
+      market,
+      candidate.status,
+      ...snapshot.values,
+    );
+    const event = workflowEventStatement(env, {
+      candidate, actor, action: 'editorial', nextStatus: transition.nextStatus, after, snapshotGuard: true,
+    });
+    const [, result] = await env.DB.batch([event, update]);
+    if (Number(result?.meta?.changes || 0) !== 1) return errorResponse('candidate_changed', 409);
+    const saved = await getKnowledgeCandidate(env, id, market);
+    return jsonResponse({ success: true, candidate: knowledgeCandidateResponseDto(saved || after) });
+  } catch (error) {
+    return knowledgeCandidateError(error);
+  }
+}
+
+function readReviewNotes(body, required = true) {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return { ok: !required, value: null };
+  if (body.notes !== undefined && typeof body.notes !== 'string') return { ok: false, error: 'invalid_notes' };
+  const notes = typeof body.notes === 'string' ? body.notes.trim() : '';
+  if (required && !notes) return { ok: false, error: 'notes_required' };
+  if (notes.length > 4000) return { ok: false, error: 'notes_too_long' };
+  return { ok: true, value: notes || null };
+}
+
+async function handleAdminKnowledgeCandidateTransition(request, env, action) {
+  try {
+    const id = knowledgeCandidateId(request);
+    const market = knowledgeCandidateMarket(request);
+    const candidate = await getKnowledgeCandidate(env, id, market);
+    if (!candidate) return errorResponse('knowledge_candidate_not_found', 404);
+    const actor = knowledgeCandidateActor(request);
+    const transition = transitionCandidate({ currentStatus: candidate.status, action, actor, candidate });
+    if (!transition.ok) {
+      const status = transition.error === 'forbidden' || transition.error === 'self_review_forbidden' ? 403 : 409;
+      return errorResponse(transition.error, status);
+    }
+
+    const body = await request.json().catch(() => ({}));
+    const notesResult = readReviewNotes(body, ['request_changes', 'reject'].includes(action));
+    if (!notesResult.ok) return errorResponse(notesResult.error, 400);
+    if (action === 'submit_review') {
+      const validation = validateCandidateForReview(candidate);
+      if (!validation.ok) return jsonResponse({ error: validation.error, field: validation.field }, 400);
+    }
+
+    const writesReviewer = ['request_changes', 'reject'].includes(action);
+    const snapshot = knowledgeCandidateSnapshotPredicate(candidate);
+    const after = {
+      ...candidate,
+      status: transition.nextStatus,
+      ...(writesReviewer ? {
+        technical_reviewer_type: actor.type,
+        technical_reviewer_id: actor.id,
+      } : {}),
+      ...(notesResult.value !== null ? { review_notes: notesResult.value } : {}),
+    };
+    const update = env.DB.prepare(`
+      UPDATE knowledge_candidates /* knowledge_candidate_transition */
+      SET status = ?, technical_reviewer_type = ?, technical_reviewer_id = ?, review_notes = ?,
+          updated_at = datetime('now')
+      WHERE id = ? AND market = ? AND status = ? AND ${snapshot.sql}
+    `).bind(
+      transition.nextStatus,
+      writesReviewer ? actor.type : candidate.technical_reviewer_type,
+      writesReviewer ? actor.id : candidate.technical_reviewer_id,
+      notesResult.value !== null ? notesResult.value : candidate.review_notes,
+      id,
+      market,
+      candidate.status,
+      ...snapshot.values,
+    );
+    const event = workflowEventStatement(env, {
+      candidate,
+      actor,
+      action,
+      nextStatus: transition.nextStatus,
+      notes: notesResult.value,
+      after,
+      snapshotGuard: true,
+    });
+    const [, result] = await env.DB.batch([event, update]);
+    if (Number(result?.meta?.changes || 0) !== 1) return errorResponse('candidate_changed', 409);
+    const saved = await getKnowledgeCandidate(env, id, market);
+    return jsonResponse({ success: true, candidate: knowledgeCandidateResponseDto(saved || after) });
+  } catch (error) {
+    return knowledgeCandidateError(error);
+  }
+}
+
+function knowledgeArticleId(candidate) {
+  return candidate.knowledge_article_id || `knowledge-candidate-${candidate.id}`;
+}
+
+async function handleAdminKnowledgeCandidateApprove(request, env) {
+  try {
+    const id = knowledgeCandidateId(request);
+    const market = knowledgeCandidateMarket(request);
+    const candidate = await getKnowledgeCandidate(env, id, market);
+    if (!candidate) return errorResponse('knowledge_candidate_not_found', 404);
+    if (candidate.status === 'approved' && candidate.knowledge_article_id) {
+      const approvedArticle = await env.DB.prepare(
+        'SELECT id, source FROM knowledge_articles WHERE id = ?'
+      ).bind(candidate.knowledge_article_id).first();
+      if (approvedArticle?.source === `work_order_candidate:${candidate.id}`) {
+        return jsonResponse({ success: true, candidate: knowledgeCandidateResponseDto(candidate) });
+      }
+      return errorResponse('knowledge_article_source_conflict', 409);
+    }
+    const actor = knowledgeCandidateActor(request);
+    const transition = transitionCandidate({ currentStatus: candidate.status, action: 'approve', actor, candidate });
+    if (!transition.ok) return errorResponse(transition.error, transition.error === 'invalid_transition' ? 409 : 403);
+    const validation = validateCandidateForReview(candidate);
+    if (!validation.ok) return jsonResponse({ error: validation.error, field: validation.field }, 400);
+    const sensitive = detectCandidateSensitiveFields(candidate);
+    if (!sensitive.ok) {
+      return jsonResponse({ error: sensitive.error, fields: sensitive.fields }, 400);
+    }
+    const notesResult = readReviewNotes(await request.json().catch(() => ({})), true);
+    if (!notesResult.ok) return errorResponse(notesResult.error, 400);
+
+    const articleId = knowledgeArticleId(candidate);
+    const source = `work_order_candidate:${candidate.id}`;
+    const articleMarket = market === 'cn' ? 'cn' : 'com';
+    const existingArticle = await env.DB.prepare(
+      'SELECT id, source FROM knowledge_articles WHERE id = ?'
+    ).bind(articleId).first();
+    if (existingArticle && existingArticle.source !== source) {
+      return errorResponse('knowledge_article_source_conflict', 409);
+    }
+    const after = {
+      ...candidate,
+      status: 'approved',
+      knowledge_article_id: articleId,
+      technical_reviewer_type: actor.type,
+      technical_reviewer_id: actor.id,
+      review_notes: notesResult.value,
+    };
+    const approvalSnapshot = knowledgeCandidateSnapshotPredicate(candidate);
+    const article = env.DB.prepare(`
+      INSERT INTO knowledge_articles /* knowledge_candidate_approve_article */ (
+        id, market, locale, category, title, content, source, applicable_equipment,
+        applicable_brand, applicable_model, risk_level, status, reviewed_by, reviewed_at
+      )
+      SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', ?, datetime('now')
+      WHERE EXISTS (
+        SELECT 1 FROM knowledge_candidates
+        WHERE id = ? AND market = ? AND status = ? AND ${approvalSnapshot.sql}
+      )
+      ON CONFLICT(id) DO UPDATE SET
+        market = excluded.market, locale = excluded.locale, category = excluded.category,
+        title = excluded.title, content = excluded.content,
+        applicable_equipment = excluded.applicable_equipment,
+        applicable_brand = excluded.applicable_brand,
+        applicable_model = excluded.applicable_model, risk_level = excluded.risk_level,
+        status = 'draft', reviewed_by = excluded.reviewed_by, reviewed_at = excluded.reviewed_at,
+        version = CASE
+          WHEN knowledge_articles.source = excluded.source THEN knowledge_articles.version + 1
+          ELSE NULL
+        END,
+        updated_at = datetime('now')
+    `).bind(
+      articleId,
+      articleMarket,
+      market === 'cn' ? 'zh-CN' : 'en',
+      candidate.category,
+      candidate.title,
+      candidate.sanitized_content,
+      source,
+      candidate.equipment_type,
+      candidate.brand,
+      candidate.model,
+      candidate.risk_level,
+      actor.id,
+      candidate.id,
+      market,
+      candidate.status,
+      ...approvalSnapshot.values,
+    );
+    const update = env.DB.prepare(`
+      UPDATE knowledge_candidates /* knowledge_candidate_approve_candidate */
+      SET knowledge_article_id = ?, status = 'approved', technical_reviewer_type = ?,
+          technical_reviewer_id = ?, review_notes = ?, updated_at = datetime('now')
+      WHERE id = ? AND market = ? AND status = ? AND ${approvalSnapshot.sql}
+        AND EXISTS (SELECT 1 FROM knowledge_articles WHERE id = ? AND source = ?)
+    `).bind(
+      articleId,
+      actor.type,
+      actor.id,
+      notesResult.value,
+      id,
+      market,
+      candidate.status,
+      ...approvalSnapshot.values,
+      articleId,
+      source,
+    );
+    const event = workflowEventStatement(env, {
+      candidate,
+      actor,
+      action: 'approve',
+      nextStatus: 'approved',
+      notes: notesResult.value,
+      after,
+      snapshotGuard: true,
+    });
+    const results = await env.DB.batch([event, article, update]);
+    if (Number(results[2]?.meta?.changes || 0) !== 1) return errorResponse('candidate_changed', 409);
+    const saved = await getKnowledgeCandidate(env, id, market);
+    return jsonResponse({ success: true, candidate: knowledgeCandidateResponseDto(saved || after) });
+  } catch (error) {
+    return knowledgeCandidateError(error);
+  }
+}
+
+async function handleAdminCreateKnowledgeCandidate(request, env) {
+  try {
+    const requestMarket = getRequestMarket(request);
+    const workOrderId = new URL(request.url).pathname.split('/')[4];
+    const body = await request.json().catch(() => ({}));
+    const reason = typeof body.reason === 'string' ? body.reason.trim() : '';
+    if (!reason) return errorResponse('reason_required', 400);
+    try {
+      assertMaxLength(reason, 'reason', LIMITS.comment);
+    } catch (error) {
+      const response = validationErrorToResponse(error, errorResponse);
+      if (response) return response;
+      throw error;
+    }
+
+    const workOrder = await env.DB.prepare(`
+      SELECT wo.id, wo.order_no, wo.engineer_id, wo.customer_id, wo.status,
+             r.id AS repair_record_id, r.symptom, r.inspection_process,
+             r.diagnosis, r.solution, r.verification_result, r.follow_up_advice,
+             r.report_quality_status, r.customer_confirmed_at
+      FROM work_orders wo
+      JOIN work_order_repair_records r ON r.work_order_id = wo.id
+      WHERE wo.id = ?
+    `).bind(workOrderId).first();
+    if (!workOrder) return errorResponse('Work order not found', 404);
+    if (!workOrder.engineer_id) return errorResponse('Work order has no assigned engineer', 400);
+    if (workOrder.report_quality_status !== 'submitted') {
+      return errorResponse('service_report_not_submitted', 409);
+    }
+
+    const candidate = prepareWorkOrderCandidate({
+      report: { ...workOrder, id: workOrder.repair_record_id },
+      workOrder,
+      requestMarket,
+      evidenceNotes: `Admin verified: ${reason}`,
+    });
+    const existing = await env.DB.prepare(
+      'SELECT id FROM knowledge_candidates WHERE source_repair_record_id = ?'
+    ).bind(workOrder.repair_record_id).first();
+    if (existing) {
+      const savedCandidate = await env.DB.prepare(`
+        SELECT id, status FROM knowledge_candidates WHERE source_repair_record_id = ?
+      `).bind(workOrder.repair_record_id).first();
+      return jsonResponse({
+        success: true,
+        candidate: {
+          id: savedCandidate.id,
+          status: 'existing',
+          workflow_status: savedCandidate.status,
+        },
+      });
+    }
+
+    const candidateStatement = env.DB.prepare(`
+      INSERT INTO knowledge_candidates (
+        id, market, source_type, source_work_order_id, source_repair_record_id,
+        contributor_engineer_id, status, raw_content, internal_use_allowed,
+        evidence_notes, public_use_allowed
+      )
+      SELECT ?, ?, 'work_order', ?, ?, ?, 'awaiting_operations', ?, ?, ?, 0
+      WHERE EXISTS (
+        SELECT 1
+        FROM work_orders wo
+        JOIN work_order_repair_records r ON r.work_order_id = wo.id
+        WHERE wo.id = ? AND wo.engineer_id = ? AND wo.status = ?
+          AND r.id = ? AND r.work_order_id = ?
+          AND r.report_quality_status = 'submitted'
+      )
+      ON CONFLICT(source_repair_record_id) DO NOTHING
+    `).bind(
+      candidate.id,
+      candidate.market,
+      candidate.source_work_order_id,
+      candidate.source_repair_record_id,
+      candidate.contributor_engineer_id,
+      candidate.raw_content,
+      candidate.internal_use_allowed,
+      candidate.evidence_notes,
+      workOrderId,
+      workOrder.engineer_id,
+      workOrder.status,
+      workOrder.repair_record_id,
+      workOrderId,
+    );
+    const eventStatement = env.DB.prepare(`
+        INSERT OR IGNORE INTO knowledge_candidate_events (
+          id, candidate_id, actor_type, actor_user_id, action, from_status, to_status, notes
+        )
+        SELECT ?, kc.id, 'admin', ?, 'admin_created_candidate', NULL, 'awaiting_operations', ?
+        FROM knowledge_candidates kc
+        WHERE kc.id = ?
+          AND kc.source_work_order_id = ?
+          AND kc.source_repair_record_id = ?
+          AND kc.contributor_engineer_id = ?
+          AND EXISTS (
+            SELECT 1
+            FROM work_orders wo
+            JOIN work_order_repair_records r ON r.work_order_id = wo.id
+            WHERE wo.id = ? AND wo.engineer_id = ? AND wo.status = ?
+              AND r.id = ? AND r.work_order_id = ?
+              AND r.report_quality_status = 'submitted'
+          )
+      `).bind(
+        candidateEventId(workOrder.repair_record_id, 'admin_created_candidate', 'admin', request._auth.userId),
+        request._auth.userId,
+        candidate.evidence_notes,
+        candidate.id,
+        workOrderId,
+        workOrder.repair_record_id,
+        workOrder.engineer_id,
+        workOrderId,
+        workOrder.engineer_id,
+        workOrder.status,
+        workOrder.repair_record_id,
+        workOrderId,
+      );
+    const [candidateResult] = await env.DB.batch([candidateStatement, eventStatement]);
+    const created = Number(candidateResult?.meta?.changes || 0) > 0;
+    const savedCandidate = await env.DB.prepare(`
+      SELECT id, status, source_work_order_id, contributor_engineer_id
+      FROM knowledge_candidates WHERE source_repair_record_id = ?
+    `).bind(workOrder.repair_record_id).first();
+    if (
+      !savedCandidate
+      || savedCandidate.source_work_order_id !== workOrderId
+      || savedCandidate.contributor_engineer_id !== workOrder.engineer_id
+    ) {
+      return errorResponse('knowledge_candidate_creation_conflict', 409);
+    }
+
+    return jsonResponse({
+      success: true,
+      candidate: {
+        id: savedCandidate.id,
+        status: created ? 'created' : 'existing',
+        workflow_status: savedCandidate.status,
+      },
+    }, created ? 201 : 200);
+  } catch (error) {
+    console.error('[admin-knowledge-candidate] failed:', error?.message || 'unknown_error');
+    return errorResponse('Unable to create knowledge candidate', 500);
+  }
+}
+
 async function handleAdminRatings(request, env) {
   try {
     const url = new URL(request.url);
@@ -9709,70 +10583,112 @@ async function handleResolveWorkOrder(request, env) {
     if (wo.engineer_id !== engineer_id) {
       return errorResponse(market === 'cn' ? '您无权操作该工单' : 'You do not have permission for this work order', 403);
     }
-
-    const repairRecord = await env.DB.prepare(
-      'SELECT symptom, diagnosis, solution, parts_used, labor_hours FROM work_order_repair_records WHERE work_order_id = ?'
-    ).bind(workOrderId).first();
-    let hasParts = false;
-    if (repairRecord?.parts_used) {
-      try {
-        const parts = JSON.parse(repairRecord.parts_used);
-        hasParts = Array.isArray(parts) && parts.some((part) => part?.name);
-      } catch {
-        hasParts = false;
-      }
-    }
-    const hasServiceReport = Boolean(
-      repairRecord?.symptom ||
-      repairRecord?.diagnosis ||
-      repairRecord?.solution ||
-      Number(repairRecord?.labor_hours || 0) > 0 ||
-      hasParts
-    );
-    if (!hasServiceReport) {
-      return errorResponse(market === 'cn' ? '请先填写服务报告，再标记服务完成' : 'Please complete the service report before marking service complete', 400);
+    if (!['in_service', 'pricing'].includes(wo.status)) {
+      return errorResponse(
+        market === 'cn'
+          ? '当前工单状态不允许标记服务完成'
+          : 'This work order cannot be marked complete in its current status',
+        400,
+      );
     }
 
-    // 仅允许 in_service 或 pricing 状态时标记完成
-    if (['in_service', 'pricing'].includes(wo.status)) {
-      await env.DB.prepare(
-        "UPDATE work_orders SET status = 'resolved', resolved_at = datetime('now') WHERE id = ?"
-      ).bind(workOrderId).run();
+    const repairRecord = await env.DB.prepare(`
+      SELECT symptom, inspection_process, diagnosis, solution,
+             verification_result, follow_up_advice, parts_used, labor_hours,
+             report_quality_status
+      FROM work_order_repair_records
+      WHERE work_order_id = ?
+    `).bind(workOrderId).first();
+    const quality = validateServiceReportForCompletion(repairRecord, { highRisk: false });
+    if (!quality.ok) {
+      return jsonResponse({
+        error: 'service_report_incomplete',
+        fields: quality.errors,
+      }, 400);
+    }
 
-      await env.DB.prepare(`
-        INSERT INTO work_order_logs (id, work_order_id, action, actor_type, actor_id, content)
-        VALUES (?, ?, 'resolved', 'engineer', ?, ?)
+    const finalizationStatements = [
+      env.DB.prepare(`
+        UPDATE work_order_repair_records
+        SET report_quality_status = 'submitted', submitted_at = datetime('now'), updated_at = datetime('now')
+        WHERE work_order_id = ?
+          AND EXISTS (
+            SELECT 1 FROM work_orders
+            WHERE id = ? AND engineer_id = ? AND status IN ('in_service', 'pricing')
+          )
+          AND symptom IS ?
+          AND inspection_process IS ?
+          AND diagnosis IS ?
+          AND solution IS ?
+          AND verification_result IS ?
+          AND follow_up_advice IS ?
+          AND parts_used IS ?
+          AND labor_hours IS ?
+          AND report_quality_status IS ?
       `).bind(
-        generateId(),
         workOrderId,
-        engineer_id || '',
-        market === 'cn' ? '工程师标记服务完成，等待客户确认。' : 'Engineer marked service complete; awaiting customer confirmation.'
-      ).run();
-
-      await env.DB.prepare(`
-        INSERT INTO work_order_messages (id, work_order_id, sender_type, sender_id, sender_name, content, message_type)
-        VALUES (?, ?, 'system', '', ?, ?, 'system')
-      `).bind(
-        generateId(),
         workOrderId,
-        systemSenderName(market),
-        market === 'cn' ? '服务已完成，请客户确认并评价。' : 'Service is complete. Please confirm the result and leave a review.'
-      ).run();
+        engineer_id,
+        repairRecord.symptom,
+        repairRecord.inspection_process,
+        repairRecord.diagnosis,
+        repairRecord.solution,
+        repairRecord.verification_result,
+        repairRecord.follow_up_advice,
+        repairRecord.parts_used,
+        repairRecord.labor_hours,
+        repairRecord.report_quality_status,
+      ),
+      env.DB.prepare(`
+        UPDATE work_orders
+        SET status = 'resolved', resolved_at = datetime('now')
+        WHERE id = ? AND engineer_id = ? AND status IN ('in_service', 'pricing')
+          AND EXISTS (
+            SELECT 1 FROM work_order_repair_records
+            WHERE work_order_id = ? AND report_quality_status = 'submitted'
+          )
+      `).bind(workOrderId, engineer_id, workOrderId),
+    ];
+    const finalizationResults = await env.DB.batch(finalizationStatements);
+    const reportChanges = Number(finalizationResults?.[0]?.meta?.changes || 0);
+    const workOrderChanges = Number(finalizationResults?.[1]?.meta?.changes || 0);
+    if (reportChanges !== 1 || workOrderChanges !== 1) {
+      throw new Error('service_report_finalization_failed');
+    }
 
-      // 通知客户：服务已完成
-      const woResolve = await env.DB.prepare('SELECT customer_id, order_no FROM work_orders WHERE id = ?').bind(workOrderId).first();
-      if (woResolve?.customer_id) {
-        await createNotification(env, {
-          user_id: woResolve.customer_id,
-          user_type: 'customer',
-          type: 'ticket_resolved',
-          title: market === 'cn' ? '服务已完成' : 'Service completed',
-          body: market === 'cn'
-            ? `工单 ${woResolve.order_no} 的服务已完成，请确认并评价。`
-            : `Service for Work Order ${woResolve.order_no} is complete. Please confirm and leave a review.`,
-          data: { work_order_id: workOrderId },
-        });
-      }
+    await env.DB.prepare(`
+      INSERT INTO work_order_logs (id, work_order_id, action, actor_type, actor_id, content)
+      VALUES (?, ?, 'resolved', 'engineer', ?, ?)
+    `).bind(
+      generateId(),
+      workOrderId,
+      engineer_id || '',
+      market === 'cn' ? '工程师标记服务完成，等待客户确认。' : 'Engineer marked service complete; awaiting customer confirmation.'
+    ).run();
+
+    await env.DB.prepare(`
+      INSERT INTO work_order_messages (id, work_order_id, sender_type, sender_id, sender_name, content, message_type)
+      VALUES (?, ?, 'system', '', ?, ?, 'system')
+    `).bind(
+      generateId(),
+      workOrderId,
+      systemSenderName(market),
+      market === 'cn' ? '服务已完成，请客户确认并评价。' : 'Service is complete. Please confirm the result and leave a review.'
+    ).run();
+
+    // 通知客户：服务已完成
+    const woResolve = await env.DB.prepare('SELECT customer_id, order_no FROM work_orders WHERE id = ?').bind(workOrderId).first();
+    if (woResolve?.customer_id) {
+      await createNotification(env, {
+        user_id: woResolve.customer_id,
+        user_type: 'customer',
+        type: 'ticket_resolved',
+        title: market === 'cn' ? '服务已完成' : 'Service completed',
+        body: market === 'cn'
+          ? `工单 ${woResolve.order_no} 的服务已完成，请确认并评价。`
+          : `Service for Work Order ${woResolve.order_no} is complete. Please confirm and leave a review.`,
+        data: { work_order_id: workOrderId },
+      });
     }
 
     return jsonResponse({ success: true });
@@ -11393,6 +12309,27 @@ async function routeRequest(request, env, ctx) {
       if (path === '/api/admin/knowledge' && request.method === 'POST') {
         return handleAdminCreateKnowledge(request, env);
       }
+      if (path === '/api/admin/knowledge-candidates' && request.method === 'GET') {
+        return handleAdminListKnowledgeCandidates(request, env);
+      }
+      if (path.match(/^\/api\/admin\/knowledge-candidates\/[^/]+$/) && request.method === 'GET') {
+        return handleAdminKnowledgeCandidateDetail(request, env);
+      }
+      if (path.match(/^\/api\/admin\/knowledge-candidates\/[^/]+\/editorial$/) && request.method === 'PATCH') {
+        return handleAdminKnowledgeCandidateEditorial(request, env);
+      }
+      if (path.match(/^\/api\/admin\/knowledge-candidates\/[^/]+\/submit-review$/) && request.method === 'POST') {
+        return handleAdminKnowledgeCandidateTransition(request, env, 'submit_review');
+      }
+      if (path.match(/^\/api\/admin\/knowledge-candidates\/[^/]+\/request-changes$/) && request.method === 'POST') {
+        return handleAdminKnowledgeCandidateTransition(request, env, 'request_changes');
+      }
+      if (path.match(/^\/api\/admin\/knowledge-candidates\/[^/]+\/approve$/) && request.method === 'POST') {
+        return handleAdminKnowledgeCandidateApprove(request, env);
+      }
+      if (path.match(/^\/api\/admin\/knowledge-candidates\/[^/]+\/reject$/) && request.method === 'POST') {
+        return handleAdminKnowledgeCandidateTransition(request, env, 'reject');
+      }
       if (path.match(/^\/api\/admin\/knowledge\/[^/]+$/) && request.method === 'PATCH') {
         return handleAdminUpdateKnowledge(request, env);
       }
@@ -11434,6 +12371,9 @@ async function routeRequest(request, env, ctx) {
       }
       if (path.startsWith('/api/admin/workorders/') && path.endsWith('/archive') && request.method === 'PATCH') {
         return handleAdminArchiveWorkOrder(request, env);
+      }
+      if (path.match(/^\/api\/admin\/workorders\/[^/]+\/knowledge-candidate$/) && request.method === 'POST') {
+        return handleAdminCreateKnowledgeCandidate(request, env);
       }
       if (path === '/api/admin/ratings' && request.method === 'GET') {
         return handleAdminRatings(request, env);

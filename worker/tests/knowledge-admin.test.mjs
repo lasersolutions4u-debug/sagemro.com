@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import worker from '../src/index.js';
+import worker, { executeTool } from '../src/index.js';
 import { signJwt } from '../src/lib/auth.js';
 
 function createStatement(env, sql) {
@@ -24,7 +24,10 @@ function createStatement(env, sql) {
     async all() {
       const normalized = sql.replace(/\s+/g, ' ');
       if (/FROM knowledge_articles/i.test(normalized)) {
-        return { results: [...env.__knowledge] };
+        const rows = /status = 'published'/i.test(normalized)
+          ? env.__knowledge.filter((article) => article.status === 'published' && article.market === this.args[0])
+          : env.__knowledge;
+        return { results: [...rows] };
       }
       return { results: [] };
     },
@@ -194,6 +197,44 @@ test('admin can publish a knowledge article with reviewer metadata', async () =>
   assert.equal(updated.json.article.status, 'published');
   assert.equal(updated.json.article.reviewed_by, 'admin-1');
   assert.equal(updated.json.article.version, 2);
+});
+
+test('candidate-derived knowledge article is fully workflow-managed while manual article remains editable', async () => {
+  const env = createEnv();
+  for (const publicUseAllowed of [0, 1]) {
+    const id = `candidate-article-${publicUseAllowed}`;
+    env.__knowledge.push({
+      id, market: publicUseAllowed === 0 ? 'com' : 'cn', locale: publicUseAllowed === 0 ? 'en' : 'zh-CN', category: 'fault', title: 'Candidate article',
+      content: 'Verified content', source: `work_order_candidate:cand-${publicUseAllowed}`,
+      risk_level: 'medium', status: 'draft', version: 1, public_use_allowed: publicUseAllowed,
+    });
+    const locked = await api(env, `/api/admin/knowledge/${id}`, {
+      method: 'PATCH', body: { status: 'published', title: 'Bypassed title', content: 'Bypassed content' },
+    });
+    assert.equal(locked.response.status, 409);
+    assert.equal(locked.json.error, 'candidate_article_managed_by_workflow');
+    const unchanged = env.__knowledge.find((article) => article.id === id);
+    assert.equal(unchanged.status, 'draft');
+    assert.equal(unchanged.title, 'Candidate article');
+    assert.equal(unchanged.content, 'Verified content');
+  }
+
+  const search = await executeTool({
+    toolName: 'search_knowledge_base', args: { market: 'cn', query: 'Candidate article' },
+    env, userRole: 'guest', market: 'com', conversationId: 'candidate-publish-gate', iteration: 0,
+    ctx: { waitUntil() {} },
+  });
+  assert.equal(search.count, 0, 'workflow draft must remain absent from real COM knowledge search');
+
+  env.__knowledge.push({
+    id: 'manual-article', market: 'cn', locale: 'zh-CN', category: 'fault', title: 'Manual article',
+    content: 'Manual content', source: 'manual:old', risk_level: 'low', status: 'draft', version: 1,
+  });
+  const editable = await api(env, '/api/admin/knowledge/manual-article', {
+    method: 'PATCH', body: { source: 'manual:new' },
+  });
+  assert.equal(editable.response.status, 200);
+  assert.equal(env.__knowledge.at(-1).source, 'manual:new');
 });
 
 test('engineer cannot access admin knowledge management', async () => {
