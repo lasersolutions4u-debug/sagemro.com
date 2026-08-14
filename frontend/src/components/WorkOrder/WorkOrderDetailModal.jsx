@@ -36,20 +36,6 @@ import {
 } from '../../utils/workOrderRequestIdentity';
 import { Loader2, LocateFixed, MapPin, Search } from 'lucide-react';
 
-function hasServiceReportContent(record) {
-  if (!record) return false;
-  const hasText = Boolean(record.symptom || record.diagnosis || record.solution);
-  const hasLabor = Number(record.labor_hours || 0) > 0;
-  let hasParts = false;
-  try {
-    const parts = JSON.parse(record.parts_used || '[]');
-    hasParts = Array.isArray(parts) && parts.some((part) => part?.name);
-  } catch {
-    hasParts = false;
-  }
-  return hasText || hasLabor || hasParts;
-}
-
 function payoutLabel(status) {
   const labels = {
     not_ready: 'Payout not ready',
@@ -350,45 +336,16 @@ export function WorkOrderDetailContent({
     }
   };
 
+  const handleConfirmFinalReport = () => confirmDialog(
+    isCnLocale() ? '确认将最终服务报告提交给客户审核？' : 'Submit the final service report to the customer for review?',
+  );
+
   const handleSubmitFinalReport = async () => {
-    const hasCompleteFieldPlan = Boolean(
-      detail?.service_mode === 'onsite'
-      && detail?.field_plan?.site_timezone
-      && detail?.field_plan?.expected_service_days
-      && detail?.field_plan?.expected_completion_date
-    );
-    const fieldDays = detail?.field_days || [];
-    const fieldWorkIncomplete = hasCompleteFieldPlan && (
-      fieldDays.length === 0
-      || fieldDays.some((day) => ['checked_in', 'report_overdue'].includes(day.status))
-      || (detail?.pending_extension_requests || []).length > 0
-    );
-    if (fieldWorkIncomplete) {
-      setTab('fieldWork');
-      toastWarning(isCnLocale()
-        ? '提交最终服务报告前，请先完成所有现场日报。'
-        : 'Complete every field-day report before submitting the final service report.');
-      return;
-    }
-    if (detail?.arrival_verification_required && !detail?.arrival_verified_at) {
-      toastWarning('Please check in at the customer site before submitting the final service report.');
-      return;
-    }
-    if (!hasServiceReportContent(detail?.repair_record)) {
-      setTab('repairRecord');
-      toastWarning('Please save the service report before submitting the final report.');
-      return;
-    }
-    if (!(await confirmDialog('Submit the final service report to the customer for confirmation and review?'))) return;
-    try {
-      await resolveWorkOrder(workOrder.id, userId);
-      toastSuccess('Final service report sent to the customer for confirmation.');
-      setTab('info');
-      loadDetail();
-      onConfirmed?.();
-    } catch (e) {
-      toastError('Operation failed: ' + e.message);
-    }
+    await resolveWorkOrder(workOrder.id, userId);
+    toastSuccess(isCnLocale() ? '最终服务报告已提交给客户审核。' : 'Final service report sent for customer review.');
+    setTab('info');
+    loadDetail();
+    onConfirmed?.();
   };
 
   const handleRequestOnsite = async () => {
@@ -960,7 +917,7 @@ export function WorkOrderDetailContent({
       {isEngineer && (effectiveStatus === 'in_service' || effectiveStatus === 'pricing') && (
         <button
           data-testid="mark-service-complete-button"
-          onClick={handleSubmitFinalReport}
+          onClick={() => setTab('repairRecord')}
           className="w-full py-3 bg-green-500 hover:bg-green-600 text-white rounded-xl font-medium"
         >
           Submit Final Report to Customer
@@ -1378,6 +1335,7 @@ export function WorkOrderDetailContent({
                 userType={userType}
                 repairRecord={detail?.repair_record || null}
                 onSaved={() => loadDetail()}
+                onConfirmComplete={handleConfirmFinalReport}
                 onSubmitComplete={handleSubmitFinalReport}
                 canSubmitComplete={isEngineer && (effectiveStatus === 'in_service' || effectiveStatus === 'pricing')}
                 readOnly={managementReadOnly}

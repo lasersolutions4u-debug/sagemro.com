@@ -63,6 +63,22 @@ const TEXT = {
     imported: (name) => `Imported ${name} as a draft. Review before saving or publishing.`,
     importFailed: 'Import failed. Please use a UTF-8 text, Markdown, or CSV file.',
     failed: 'Operation failed: ',
+    candidateManaged: 'This candidate-derived article is managed by workflow. Please return to the Knowledge Candidates review desk; publishing is not available in the current phase.',
+    categoryLabels: {
+      fault: 'Equipment fault',
+      cutting_parameters: 'Cutting parameters',
+      parts: 'Parts & accessories',
+      maintenance: 'Maintenance',
+      machine_selection: 'Machine selection',
+      health: 'Equipment health',
+      safety: 'Safety',
+      other: 'Other',
+    },
+    statusLabels: {
+      draft: 'Draft',
+      published: 'Published',
+      archived: 'Archived',
+    },
     usage: {
       title: 'Knowledge Base usage and rules',
       intro: 'Only reviewed and published material is available in service conversations. Use this library for manuals, repair notes, parameter sheets, and verified service references.',
@@ -123,6 +139,22 @@ const TEXT = {
     imported: (name) => `已将 ${name} 导入为草稿，请审核后再保存或发布。`,
     importFailed: '导入失败。请使用 UTF-8 编码的文本、Markdown 或 CSV 文件。',
     failed: '操作失败：',
+    candidateManaged: '该候选文章由工作流管理。请返回知识候选工作台处理，当前阶段不能发布。',
+    categoryLabels: {
+      fault: '设备故障',
+      cutting_parameters: '切割参数',
+      parts: '配件',
+      maintenance: '维护保养',
+      machine_selection: '选型',
+      health: '设备健康',
+      safety: '安全',
+      other: '其他',
+    },
+    statusLabels: {
+      draft: '草稿',
+      published: '已发布',
+      archived: '已归档',
+    },
     usage: {
       title: '知识库使用方法和发布规则',
       intro: '只有经过人工审核并发布的知识，AI 才能调用。这里用于沉淀说明书、维修经验、参数表、规格表和售后处理规则。',
@@ -250,7 +282,7 @@ export function KnowledgePage() {
       setMessage(t.saved);
       load();
     } catch (error) {
-      setMessage(t.failed + error.message);
+      setMessage(error.message === 'candidate_article_managed_by_workflow' ? t.candidateManaged : t.failed + error.message);
     } finally {
       setSaving(false);
     }
