@@ -59,7 +59,7 @@ const COPY = {
     laborPlaceholder: 'e.g. 2.5',
     cancel: 'Cancel',
     saving: 'Saving...',
-    saveReport: 'Save Service Report',
+    save: 'Save Service Report',
     finalSubmitting: 'Submitting...',
     incompleteError: 'Complete the required fields before final submission.',
     submitFailed: 'Final submission failed: ',
