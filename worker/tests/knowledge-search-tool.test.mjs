@@ -86,7 +86,7 @@ function makeEnv() {
   return { env: { DB }, traceRows, sqlCalls };
 }
 
-test('guest can search published knowledge articles only', async () => {
+test('guest search binds trusted COM context even when tool args request CN', async () => {
   const { env, traceRows, sqlCalls } = makeEnv();
   const { ctx, flush } = makeCtx();
 
@@ -101,6 +101,7 @@ test('guest can search published knowledge articles only', async () => {
     env,
     ctx,
     userRole: 'guest',
+    market: 'com',
     conversationId: 'conv-kb-1',
     iteration: 0,
   });
@@ -111,7 +112,31 @@ test('guest can search published knowledge articles only', async () => {
   assert.equal(result.count, 1);
   assert.equal(result.articles[0].status, 'published');
   assert.equal(result.articles[0].title, 'BM111 protective lens contamination');
-  assert.match(sqlCalls.find((call) => /FROM knowledge_articles/i.test(call.sql)).sql, /status = 'published'/i);
+  const searchCall = sqlCalls.find((call) => /FROM knowledge_articles/i.test(call.sql));
+  assert.match(searchCall.sql, /status = 'published'/i);
+  assert.equal(searchCall.args[0], 'com');
   assert.equal(traceRows.at(-1).tool_name, 'search_knowledge_base');
   assert.equal(traceRows.at(-1).result_status, 'ok');
+});
+
+test('guest search binds trusted CN context even when tool args request COM', async () => {
+  const { env, sqlCalls } = makeEnv();
+  const { ctx, flush } = makeCtx();
+  await executeTool({
+    toolName: 'search_knowledge_base',
+    args: { market: 'com', query: 'BM111' },
+    env, ctx, userRole: 'guest', market: 'cn', conversationId: 'conv-kb-cn', iteration: 0,
+  });
+  await flush();
+  const searchCall = sqlCalls.find((call) => /FROM knowledge_articles/i.test(call.sql));
+  assert.equal(searchCall.args[0], 'cn');
+});
+
+test('knowledge search schema does not expose an untrusted market argument', async () => {
+  const source = await import('node:fs/promises').then(({ readFile }) => readFile(new URL('../src/index.js', import.meta.url), 'utf8'));
+  const schemaStart = source.indexOf("name: 'search_knowledge_base'");
+  const schemaEnd = source.indexOf("name: 'get_engineer_profile'");
+  assert.notEqual(schemaStart, -1);
+  assert.notEqual(schemaEnd, -1);
+  assert.doesNotMatch(source.slice(schemaStart, schemaEnd), /\bmarket\s*:/);
 });

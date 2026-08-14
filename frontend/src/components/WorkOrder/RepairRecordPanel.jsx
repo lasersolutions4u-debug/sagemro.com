@@ -4,6 +4,7 @@ import { saveRepairRecord } from '../../services/api';
 import { toastSuccess, toastError } from '../../utils/feedback';
 import { isCnLocale } from '../../utils/locale';
 import { MaterialPicker } from './MaterialPicker';
+import { mapServiceReportErrors, submitFinalServiceReport } from './repairRecordValidation';
 
 const emptyPart = { name: '', qty: 1, unit: 'pcs', specs: '' };
 
@@ -16,6 +17,7 @@ const COPY = {
     editAria: 'Edit service report',
     edit: 'Edit',
     symptom: 'Customer Symptom',
+    inspectionProcess: 'Inspection Process',
     diagnosis: 'Root Cause / Diagnosis',
     solution: 'Service Actions / Next Advice',
     materialItems: 'Material Items',
@@ -26,6 +28,9 @@ const COPY = {
     specs: 'Specs',
     laborHours: 'Labor hours',
     hours: 'hrs',
+    labor: 'Labor Hours',
+    verificationResult: 'Verification Result',
+    followUpAdvice: 'Follow-up Advice (Optional)',
     reportUpdated: 'Report updated',
     submitFinal: 'Submit Final Report to Customer',
     sopTitle: 'SAGEMRO Service Report SOP',
@@ -36,8 +41,11 @@ const COPY = {
       '4. Save this report before marking the service complete.',
     ],
     symptomPlaceholder: 'Describe the specific issue, e.g. Laser power dropped, severe dross on 3mm stainless steel cut...',
+    inspectionProcessPlaceholder: 'Record the checks performed, measurements taken, and parameters observed...',
     diagnosisPlaceholder: 'Issues found during inspection, e.g. Contaminated protective lens, thermal lensing on focus lens, low assist gas pressure...',
     solutionPlaceholder: 'Actions taken, e.g. Replaced protective lens and focus lens, cleaned optical path, adjusted gas pressure to 1.2MPa...',
+    verificationResultPlaceholder: 'Record the acceptance test and result after service...',
+    followUpAdvicePlaceholder: 'Optional maintenance, monitoring, or return-visit advice...',
     partsManual: 'Parts Used (manual entry)',
     partsManualHelper: 'Use this only for parts actually consumed or replaced on site. If you already selected the same item in Material lines, do not enter it again here.',
     partNameShort: 'Part name',
@@ -52,8 +60,21 @@ const COPY = {
     cancel: 'Cancel',
     saving: 'Saving...',
     saveReport: 'Save Service Report',
+    finalSubmitting: 'Submitting...',
+    incompleteError: 'Complete the required fields before final submission.',
+    submitFailed: 'Final submission failed: ',
   },
   cn: {
+    inspectionProcess: '检查过程',
+    labor: '工时',
+    verificationResult: '验证结果',
+    followUpAdvice: '后续建议（选填）',
+    inspectionProcessPlaceholder: '记录已执行的检查、测量结果和观察到的参数...',
+    verificationResultPlaceholder: '记录服务后的验收测试方法和结果...',
+    followUpAdvicePlaceholder: '可选填写维护、监测或回访建议...',
+    finalSubmitting: '提交中...',
+    incompleteError: '请先完成必填项，再提交最终报告。',
+    submitFailed: '最终提交失败：',
     noReport: '暂无服务报告',
     noReportHelper: '请先填写并保存服务报告，再提交给客户确认。',
     createReport: '创建服务报告',
@@ -110,7 +131,14 @@ function parseParts(partsUsed) {
 
 function hasRepairRecordContent(record) {
   if (!record) return false;
-  const hasText = Boolean(record.symptom || record.diagnosis || record.solution);
+  const hasText = Boolean(
+    record.symptom
+    || record.inspection_process
+    || record.diagnosis
+    || record.solution
+    || record.verification_result
+    || record.follow_up_advice
+  );
   const hasLabor = Number(record.labor_hours || 0) > 0;
   const parts = parseParts(record.parts_used);
   const hasParts = parts.some((part) => part?.name);
@@ -118,25 +146,39 @@ function hasRepairRecordContent(record) {
   return hasText || hasLabor || hasParts || hasMaterialItems;
 }
 
-export function RepairRecordPanel({ workOrderId, userType, repairRecord, onSaved, onSubmitComplete, canSubmitComplete = false, readOnly = false }) {
+function FieldError({ id, message }) {
+  if (!message) return null;
+  return <p id={id} role="alert" className="mt-1 text-xs text-red-500">{message}</p>;
+}
+
+export function RepairRecordPanel({ workOrderId, userType, repairRecord, onSaved, onConfirmComplete, onSubmitComplete, canSubmitComplete = false, readOnly = false }) {
   const isCn = isCnLocale();
   const copy = isCn ? COPY.cn : COPY.en;
   const isEngineer = userType === 'engineer' && !readOnly;
   const [isEditing, setIsEditing] = useState(false);
 
   const [symptom, setSymptom] = useState('');
+  const [inspectionProcess, setInspectionProcess] = useState('');
   const [diagnosis, setDiagnosis] = useState('');
   const [solution, setSolution] = useState('');
+  const [verificationResult, setVerificationResult] = useState('');
+  const [followUpAdvice, setFollowUpAdvice] = useState('');
   const [partsUsed, setPartsUsed] = useState([{ ...emptyPart, unit: isCn ? '件' : 'pcs' }]);
   const [materialItems, setMaterialItems] = useState([]);
   const [laborHours, setLaborHours] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [fieldErrors, setFieldErrors] = useState({});
+  const fieldId = (field) => `service-report-${workOrderId}-${field}`;
+  const errorId = (field) => `${fieldId(field)}-error`;
 
   useEffect(() => {
     if (repairRecord) {
       setSymptom(repairRecord.symptom || '');
+      setInspectionProcess(repairRecord.inspection_process || '');
       setDiagnosis(repairRecord.diagnosis || '');
       setSolution(repairRecord.solution || '');
+      setVerificationResult(repairRecord.verification_result || '');
+      setFollowUpAdvice(repairRecord.follow_up_advice || '');
       setLaborHours(repairRecord.labor_hours ? String(repairRecord.labor_hours) : '');
       const parts = parseParts(repairRecord.parts_used);
       setPartsUsed(parts.length > 0 ? parts : [{ ...emptyPart, unit: isCn ? '件' : 'pcs' }]);
@@ -147,18 +189,35 @@ export function RepairRecordPanel({ workOrderId, userType, repairRecord, onSaved
     }
   }, [isCn, repairRecord, isEngineer]);
 
+  const clearFieldError = (field) => {
+    setFieldErrors((current) => {
+      if (!current[field]) return current;
+      const next = { ...current };
+      delete next[field];
+      return next;
+    });
+  };
+
+  const buildPayload = () => {
+    const activeParts = partsUsed.filter((part) => part.name.trim());
+    return {
+      symptom: symptom.trim() || null,
+      inspection_process: inspectionProcess.trim() || null,
+      diagnosis: diagnosis.trim() || null,
+      solution: solution.trim() || null,
+      parts_used: activeParts.length > 0 ? activeParts : [],
+      material_items: materialItems,
+      labor_hours: laborHours === '' ? 0 : Number(laborHours),
+      verification_result: verificationResult.trim() || null,
+      follow_up_advice: followUpAdvice.trim() || null,
+    };
+  };
+
   const handleSave = async () => {
     setSubmitting(true);
     try {
-      const activeParts = partsUsed.filter(p => p.name.trim());
-      await saveRepairRecord(workOrderId, {
-        symptom: symptom.trim() || null,
-        diagnosis: diagnosis.trim() || null,
-        solution: solution.trim() || null,
-        parts_used: activeParts.length > 0 ? activeParts : [],
-        material_items: materialItems,
-        labor_hours: laborHours ? parseFloat(laborHours) : 0,
-      });
+      await saveRepairRecord(workOrderId, buildPayload());
+      setFieldErrors({});
       toastSuccess(isCn ? '服务报告已保存' : 'Service report saved');
       setIsEditing(false);
       onSaved?.();
@@ -169,10 +228,41 @@ export function RepairRecordPanel({ workOrderId, userType, repairRecord, onSaved
     }
   };
 
+  const handleSubmitFinal = async () => {
+    const payload = buildPayload();
+    setFieldErrors({});
+    setSubmitting(true);
+    try {
+      const result = await submitFinalServiceReport({
+        report: payload,
+        confirm: () => onConfirmComplete?.() ?? false,
+        save: (report) => saveRepairRecord(workOrderId, report),
+        refresh: () => onSaved?.(),
+        complete: () => onSubmitComplete?.(),
+      });
+      if (result.status === 'invalid') {
+        setFieldErrors(mapServiceReportErrors(result.errors, isCn));
+        setIsEditing(true);
+        toastError(copy.incompleteError);
+      }
+    } catch (e) {
+      if (e?.code === 'service_report_incomplete') {
+        setFieldErrors(mapServiceReportErrors(e.fields, isCn));
+        setIsEditing(true);
+        toastError(copy.incompleteError);
+      } else {
+        toastError(copy.submitFailed + e.message);
+      }
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   const updatePart = (i, field, value) => {
     const next = [...partsUsed];
     next[i] = { ...next[i], [field]: field === 'qty' ? parseInt(value) || 1 : value };
     setPartsUsed(next);
+    clearFieldError('parts_used');
   };
 
   const addPart = () => setPartsUsed([...partsUsed, { ...emptyPart, unit: isCn ? '件' : 'pcs' }]);
@@ -237,6 +327,12 @@ export function RepairRecordPanel({ workOrderId, userType, repairRecord, onSaved
             <div className="p-3 bg-[var(--color-surface-elevated)] rounded-xl text-sm text-[var(--color-text-primary)]">{symptom}</div>
           </div>
         )}
+        {inspectionProcess && (
+          <div>
+            <h3 className="text-xs font-medium text-[var(--color-text-secondary)] mb-1">{copy.inspectionProcess}</h3>
+            <div className="p-3 bg-[var(--color-surface-elevated)] rounded-xl text-sm text-[var(--color-text-primary)]">{inspectionProcess}</div>
+          </div>
+        )}
         {diagnosis && (
           <div>
             <h3 className="text-xs font-medium text-[var(--color-text-secondary)] mb-1">{copy.diagnosis}</h3>
@@ -282,10 +378,22 @@ export function RepairRecordPanel({ workOrderId, userType, repairRecord, onSaved
             </div>
           </div>
         )}
-        {repairRecord?.labor_hours > 0 && (
+        {repairRecord?.labor_hours !== null && repairRecord?.labor_hours !== undefined && (
           <div className="flex items-center gap-2 text-sm text-[var(--color-text-secondary)]">
-            <span>{copy.laborHours}:</span>
+            <span>{copy.labor}:</span>
             <span className="text-[var(--color-text-primary)] font-medium">{repairRecord.labor_hours} {copy.hours}</span>
+          </div>
+        )}
+        {verificationResult && (
+          <div>
+            <h3 className="text-xs font-medium text-[var(--color-text-secondary)] mb-1">{copy.verificationResult}</h3>
+            <div className="p-3 bg-[var(--color-surface-elevated)] rounded-xl text-sm text-[var(--color-text-primary)]">{verificationResult}</div>
+          </div>
+        )}
+        {followUpAdvice && (
+          <div>
+            <h3 className="text-xs font-medium text-[var(--color-text-secondary)] mb-1">{copy.followUpAdvice}</h3>
+            <div className="p-3 bg-[var(--color-surface-elevated)] rounded-xl text-sm text-[var(--color-text-primary)]">{followUpAdvice}</div>
           </div>
         )}
         {repairRecord?.updated_at && repairRecord.symptom && (
@@ -297,10 +405,11 @@ export function RepairRecordPanel({ workOrderId, userType, repairRecord, onSaved
         {isEngineer && canSubmitComplete && (
           <div>
             <button
-              onClick={onSubmitComplete}
+              onClick={handleSubmitFinal}
+              disabled={submitting}
               className="w-full py-2.5 text-sm bg-green-500 hover:bg-green-600 text-white rounded-xl"
             >
-              {copy.submitFinal}
+              {submitting ? copy.finalSubmitting : copy.submitFinal}
             </button>
           </div>
         )}
@@ -317,42 +426,78 @@ export function RepairRecordPanel({ workOrderId, userType, repairRecord, onSaved
       </div>
 
       <div>
-        <label className="block text-xs text-[var(--color-text-secondary)] mb-1">{copy.symptom}</label>
+        <label htmlFor={fieldId('symptom')} className="block text-xs text-[var(--color-text-secondary)] mb-1">{copy.symptom}</label>
         <textarea
+          id={fieldId('symptom')}
           value={symptom}
-          onChange={(e) => setSymptom(e.target.value)}
+          onChange={(e) => { setSymptom(e.target.value); clearFieldError('symptom'); }}
           placeholder={copy.symptomPlaceholder}
           rows={2}
+          aria-invalid={Boolean(fieldErrors.symptom)}
+          aria-describedby={fieldErrors.symptom ? errorId('symptom') : undefined}
           className={inputClass + ' resize-none'}
         />
+        <FieldError id={errorId('symptom')} message={fieldErrors.symptom} />
       </div>
 
       <div>
-        <label className="block text-xs text-[var(--color-text-secondary)] mb-1">{copy.diagnosis}</label>
+        <label htmlFor={fieldId('inspection_process')} className="block text-xs text-[var(--color-text-secondary)] mb-1">{copy.inspectionProcess}</label>
         <textarea
+          id={fieldId('inspection_process')}
+          value={inspectionProcess}
+          onChange={(e) => { setInspectionProcess(e.target.value); clearFieldError('inspection_process'); }}
+          placeholder={copy.inspectionProcessPlaceholder}
+          rows={3}
+          aria-invalid={Boolean(fieldErrors.inspection_process)}
+          aria-describedby={fieldErrors.inspection_process ? errorId('inspection_process') : undefined}
+          className={inputClass + ' resize-none'}
+        />
+        <FieldError id={errorId('inspection_process')} message={fieldErrors.inspection_process} />
+      </div>
+
+      <div>
+        <label htmlFor={fieldId('diagnosis')} className="block text-xs text-[var(--color-text-secondary)] mb-1">{copy.diagnosis}</label>
+        <textarea
+          id={fieldId('diagnosis')}
           value={diagnosis}
-          onChange={(e) => setDiagnosis(e.target.value)}
+          onChange={(e) => { setDiagnosis(e.target.value); clearFieldError('diagnosis'); }}
           placeholder={copy.diagnosisPlaceholder}
           rows={2}
+          aria-invalid={Boolean(fieldErrors.diagnosis)}
+          aria-describedby={fieldErrors.diagnosis ? errorId('diagnosis') : undefined}
           className={inputClass + ' resize-none'}
         />
+        <FieldError id={errorId('diagnosis')} message={fieldErrors.diagnosis} />
       </div>
 
       <div>
-        <label className="block text-xs text-[var(--color-text-secondary)] mb-1">{copy.solution}</label>
+        <label htmlFor={fieldId('solution')} className="block text-xs text-[var(--color-text-secondary)] mb-1">{copy.solution}</label>
         <textarea
+          id={fieldId('solution')}
           value={solution}
-          onChange={(e) => setSolution(e.target.value)}
+          onChange={(e) => { setSolution(e.target.value); clearFieldError('solution'); }}
           placeholder={copy.solutionPlaceholder}
           rows={3}
+          aria-invalid={Boolean(fieldErrors.solution)}
+          aria-describedby={fieldErrors.solution ? errorId('solution') : undefined}
           className={inputClass + ' resize-none'}
         />
+        <FieldError id={errorId('solution')} message={fieldErrors.solution} />
+      </div>
+
+      <div>
+        <label className="mb-2 block text-xs font-medium text-[var(--color-text-primary)]">{copy.materialItems}</label>
+        <MaterialPicker purpose="service_report" workOrderId={workOrderId} items={materialItems} onChange={setMaterialItems} />
       </div>
 
       {/* 配件清单 */}
-      <div>
+      <div
+        role="group"
+        aria-invalid={Boolean(fieldErrors.parts_used)}
+        aria-describedby={fieldErrors.parts_used ? errorId('parts_used') : undefined}
+      >
         <div className="mb-2">
-          <label className="block text-xs font-medium text-[var(--color-text-primary)]">{copy.partsManual}</label>
+          <label className="block text-xs font-medium text-[var(--color-text-primary)]">{copy.partsUsed} — {copy.partsManual}</label>
           <p className="mt-1 text-xs leading-relaxed text-[var(--color-text-muted)]">
             {copy.partsManualHelper}
           </p>
@@ -416,21 +561,54 @@ export function RepairRecordPanel({ workOrderId, userType, repairRecord, onSaved
           <Plus size={14} />
           {copy.addPart}
         </button>
+        <FieldError id={errorId('parts_used')} message={fieldErrors.parts_used} />
       </div>
 
-      <MaterialPicker purpose="service_report" workOrderId={workOrderId} items={materialItems} onChange={setMaterialItems} />
-
       <div>
-        <label className="block text-xs text-[var(--color-text-secondary)] mb-1">{copy.laborLabel}</label>
+        <label htmlFor={fieldId('labor_hours')} className="block text-xs text-[var(--color-text-secondary)] mb-1">{copy.labor}</label>
         <input
+          id={fieldId('labor_hours')}
           type="number"
           value={laborHours}
-          onChange={(e) => setLaborHours(e.target.value)}
+          onChange={(e) => { setLaborHours(e.target.value); clearFieldError('labor_hours'); }}
           placeholder={copy.laborPlaceholder}
           min="0"
           step="0.5"
+          aria-invalid={Boolean(fieldErrors.labor_hours)}
+          aria-describedby={fieldErrors.labor_hours ? errorId('labor_hours') : undefined}
           className={inputClass + ' w-32'}
         />
+        <FieldError id={errorId('labor_hours')} message={fieldErrors.labor_hours} />
+      </div>
+
+      <div>
+        <label htmlFor={fieldId('verification_result')} className="block text-xs text-[var(--color-text-secondary)] mb-1">{copy.verificationResult}</label>
+        <textarea
+          id={fieldId('verification_result')}
+          value={verificationResult}
+          onChange={(e) => { setVerificationResult(e.target.value); clearFieldError('verification_result'); }}
+          placeholder={copy.verificationResultPlaceholder}
+          rows={3}
+          aria-invalid={Boolean(fieldErrors.verification_result)}
+          aria-describedby={fieldErrors.verification_result ? errorId('verification_result') : undefined}
+          className={inputClass + ' resize-none'}
+        />
+        <FieldError id={errorId('verification_result')} message={fieldErrors.verification_result} />
+      </div>
+
+      <div>
+        <label htmlFor={fieldId('follow_up_advice')} className="block text-xs text-[var(--color-text-secondary)] mb-1">{copy.followUpAdvice}</label>
+        <textarea
+          id={fieldId('follow_up_advice')}
+          value={followUpAdvice}
+          onChange={(e) => { setFollowUpAdvice(e.target.value); clearFieldError('follow_up_advice'); }}
+          placeholder={copy.followUpAdvicePlaceholder}
+          rows={3}
+          aria-invalid={Boolean(fieldErrors.follow_up_advice)}
+          aria-describedby={fieldErrors.follow_up_advice ? errorId('follow_up_advice') : undefined}
+          className={inputClass + ' resize-none'}
+        />
+        <FieldError id={errorId('follow_up_advice')} message={fieldErrors.follow_up_advice} />
       </div>
 
       <div className="flex gap-2">
@@ -441,13 +619,22 @@ export function RepairRecordPanel({ workOrderId, userType, repairRecord, onSaved
           {copy.cancel}
         </button>
         <button
-          onClick={handleSave}
+          onClick={() => handleSave()}
           disabled={submitting}
           className="flex-1 py-2.5 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] disabled:opacity-50 text-white rounded-xl font-medium text-sm"
         >
           {submitting ? copy.saving : copy.saveReport}
         </button>
       </div>
+      {canSubmitComplete && (
+        <button
+          onClick={handleSubmitFinal}
+          disabled={submitting}
+          className="w-full py-2.5 text-sm bg-green-500 hover:bg-green-600 disabled:opacity-50 text-white rounded-xl"
+        >
+          {submitting ? copy.finalSubmitting : copy.submitFinal}
+        </button>
+      )}
     </div>
   );
 }
