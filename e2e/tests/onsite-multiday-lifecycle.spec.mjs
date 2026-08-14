@@ -361,8 +361,12 @@ test('multi-day onsite work preserves protected evidence and closes only after d
       method: 'POST',
       body: JSON.stringify({
         symptom: 'Laser output dropped during continuous production.',
+        inspection_process: 'Inspected the protective lens, optical alignment, and output stability.',
         diagnosis: 'Protective lens contamination reduced delivered power.',
         solution: 'Replaced the lens and validated stable production output.',
+        verification_result: 'Completed repeated production cuts with stable output and acceptable edge quality.',
+        follow_up_advice: 'Inspect the protective lens before the next production shift.',
+        parts_used: [],
         labor_hours: 13.5,
       }),
     });
