@@ -336,9 +336,36 @@ export function WorkOrderDetailContent({
     }
   };
 
-  const handleConfirmFinalReport = () => confirmDialog(
-    isCnLocale() ? '确认将最终服务报告提交给客户审核？' : 'Submit the final service report to the customer for review?',
-  );
+  const handleConfirmFinalReport = async () => {
+    const hasCompleteFieldPlan = Boolean(
+      detail?.service_mode === 'onsite'
+      && detail?.field_plan?.site_timezone
+      && detail?.field_plan?.expected_service_days
+      && detail?.field_plan?.expected_completion_date
+    );
+    const fieldDays = detail?.field_days || [];
+    const fieldWorkIncomplete = hasCompleteFieldPlan && (
+      fieldDays.length === 0
+      || fieldDays.some((day) => ['checked_in', 'report_overdue'].includes(day.status))
+      || (detail?.pending_extension_requests || []).length > 0
+    );
+    if (fieldWorkIncomplete) {
+      setTab('fieldWork');
+      toastWarning(isCnLocale()
+        ? '提交最终服务报告前，请先完成所有现场日报。'
+        : 'Complete every field-day report before submitting the final service report.');
+      return false;
+    }
+    if (detail?.arrival_verification_required && !detail?.arrival_verified_at) {
+      toastWarning(isCnLocale()
+        ? '提交最终服务报告前，请先完成现场签到。'
+        : 'Please check in at the customer site before submitting the final service report.');
+      return false;
+    }
+    return confirmDialog(
+      isCnLocale() ? '确认将最终服务报告提交给客户审核？' : 'Submit the final service report to the customer for review?',
+    );
+  };
 
   const handleSubmitFinalReport = async () => {
     await resolveWorkOrder(workOrder.id, userId);
