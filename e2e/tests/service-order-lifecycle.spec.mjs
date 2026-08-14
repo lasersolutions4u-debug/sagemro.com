@@ -421,8 +421,10 @@ test('customer, Admin, and engineer complete a service order lifecycle', async (
 
   await engineerPage.getByRole('tab', { name: 'Service report', exact: true }).click();
   await engineerPage.getByLabel('Customer Symptom').fill('Laser power dropped during continuous cutting.');
+  await engineerPage.getByLabel('Inspection Process').fill('Inspected the protective lens, optical alignment, and output stability.');
   await engineerPage.getByLabel('Root Cause / Diagnosis').fill('Protective lens contamination reduced delivered power.');
   await engineerPage.getByLabel('Service Actions / Next Advice').fill('Cleaned optical path and replaced the protective lens.');
+  await engineerPage.getByLabel('Verification Result').fill('Completed repeated test cuts with stable output and acceptable edge quality.');
   await engineerPage.getByRole('button', { name: 'Save Service Report', exact: true }).click();
   await expect(engineerPage.getByRole('button', { name: 'Edit service report', exact: true })).toBeVisible();
   await engineerPage.getByRole('button', { name: 'Submit Final Report to Customer', exact: true }).click();

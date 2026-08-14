@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
-import { Boxes, ChartNoAxesCombined, ClipboardList, LayoutDashboard, Users, UserCog, FileText, Star, LogOut, Target, BookOpenText, Menu, PackageSearch, ShieldCheck } from 'lucide-react';
+import { Boxes, ChartNoAxesCombined, ClipboardCheck, ClipboardList, LayoutDashboard, Users, UserCog, FileText, Star, LogOut, Target, BookOpenText, Menu, PackageSearch, ShieldCheck } from 'lucide-react';
 import { LoginPage } from './pages/LoginPage';
 import { runtimeConfig } from './config/runtime';
 import { BrandMark } from './components/BrandMark';
@@ -14,6 +14,7 @@ const LeadsPage = lazy(() => import('./pages/LeadsPage.jsx').then(({ LeadsPage }
 const EngineerApplicationsPage = lazy(() => import('./pages/EngineerApplicationsPage.jsx').then(({ EngineerApplicationsPage }) => ({ default: EngineerApplicationsPage })));
 const MaterialsPage = lazy(() => import('./pages/MaterialsPage.jsx').then(({ MaterialsPage }) => ({ default: MaterialsPage })));
 const KnowledgePage = lazy(() => import('./pages/KnowledgePage.jsx').then(({ KnowledgePage }) => ({ default: KnowledgePage })));
+const KnowledgeCandidatesPage = lazy(() => import('./pages/KnowledgeCandidatesPage.jsx').then(({ KnowledgeCandidatesPage }) => ({ default: KnowledgeCandidatesPage })));
 const MaterialRequisitionsPage = lazy(() => import('./pages/MaterialRequisitionsPage.jsx').then(({ MaterialRequisitionsPage }) => ({ default: MaterialRequisitionsPage })));
 const StaffAccountsPage = lazy(() => import('./pages/StaffAccountsPage.jsx').then(({ StaffAccountsPage }) => ({ default: StaffAccountsPage })));
 const PromotionAnalyticsPage = lazy(() => import('./pages/PromotionAnalyticsPage.jsx').then(({ PromotionAnalyticsPage }) => ({ default: PromotionAnalyticsPage })));
@@ -33,6 +34,8 @@ const TEXT = {
       materials: 'Material Master',
       materialRequisitions: 'Material Requisitions',
       staffAccounts: 'Internal Staff',
+      knowledge: 'Knowledge Base',
+      knowledgeCandidates: 'Knowledge Candidates',
       engineers: 'Engineers',
       users: 'Customers',
       ratings: 'Service Reviews',
@@ -53,6 +56,8 @@ const TEXT = {
       materialRequisitions: '物料领用申请',
       staffAccounts: '内部员工账号',
       users: '客户',
+      knowledge: '知识库',
+      knowledgeCandidates: '知识候选',
       ratings: '评价管理',
     },
   },
@@ -64,7 +69,8 @@ const NAV_ITEMS = [
   { key: 'dashboard', label: t.nav.dashboard, icon: LayoutDashboard },
   { key: 'promotionAnalytics', label: t.nav.promotionAnalytics, icon: ChartNoAxesCombined },
   { key: 'leads', label: t.nav.leads, icon: Target },
-  { key: 'knowledge', label: t.nav.knowledge || 'Knowledge Base', icon: BookOpenText },
+  { key: 'knowledge', label: t.nav.knowledge, icon: BookOpenText },
+  { key: 'knowledgeCandidates', label: t.nav.knowledgeCandidates, icon: ClipboardCheck },
   { key: 'workorders', label: t.nav.workorders, icon: FileText },
   { key: 'materials', label: t.nav.materials, icon: Boxes },
   { key: 'materialRequisitions', label: t.nav.materialRequisitions, icon: PackageSearch },
@@ -250,6 +256,7 @@ export default function App() {
       case 'materialRequisitions': return <MaterialRequisitionsPage staffRole={user.staffRole} />;
       case 'staffAccounts': return isBootstrapAdmin ? <StaffAccountsPage /> : <DashboardPage staffRole={user.staffRole} staffId={user.staffId} />;
       case 'knowledge': return <KnowledgePage />;
+      case 'knowledgeCandidates': return <KnowledgeCandidatesPage />;
       case 'engineerApplications': return <EngineerApplicationsPage onOpenEngineer={(engineerId) => { setSelectedEngineerId(engineerId); setActivePage('engineers'); }} />;
       case 'ratings': return <RatingsPage />;
       case 'leads': return <LeadsPage />;

@@ -39,6 +39,8 @@ async function request(path, options = {}) {
   if (!res.ok) {
     const error = new Error(data.error || `请求失败 (${res.status})`);
     error.status = res.status;
+    if (data.field !== undefined) error.field = data.field;
+    if (data.fields !== undefined) error.fields = data.fields;
     throw error;
   }
   return data;
@@ -511,6 +513,50 @@ export async function updateAdminKnowledge(articleId, article) {
   return request(`/api/admin/knowledge/${articleId}`, {
     method: 'PATCH',
     body: JSON.stringify(article),
+  });
+}
+
+export async function getAdminKnowledgeCandidates(page = 1, pageSize = 20, status = 'all', options = {}) {
+  const params = new URLSearchParams({ page, pageSize, status });
+  return request(`/api/admin/knowledge-candidates?${params}`, { signal: options.signal });
+}
+
+export async function getAdminKnowledgeCandidate(candidateId, options = {}) {
+  return request(`/api/admin/knowledge-candidates/${candidateId}`, { signal: options.signal });
+}
+
+export async function updateAdminKnowledgeCandidateEditorial(candidateId, payload) {
+  return request(`/api/admin/knowledge-candidates/${candidateId}/editorial`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function submitAdminKnowledgeCandidateReview(candidateId, payload = {}) {
+  return request(`/api/admin/knowledge-candidates/${candidateId}/submit-review`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function requestAdminKnowledgeCandidateChanges(candidateId, notes) {
+  return request(`/api/admin/knowledge-candidates/${candidateId}/request-changes`, {
+    method: 'POST',
+    body: JSON.stringify({ notes }),
+  });
+}
+
+export async function approveAdminKnowledgeCandidate(candidateId, notes) {
+  return request(`/api/admin/knowledge-candidates/${candidateId}/approve`, {
+    method: 'POST',
+    body: JSON.stringify({ notes }),
+  });
+}
+
+export async function rejectAdminKnowledgeCandidate(candidateId, notes) {
+  return request(`/api/admin/knowledge-candidates/${candidateId}/reject`, {
+    method: 'POST',
+    body: JSON.stringify({ notes }),
   });
 }
 
