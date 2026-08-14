@@ -26,6 +26,24 @@ function seedLegacyServiceStandard(db, workOrderId, serviceMode) {
   }
 }
 
+function seedSubmittedRepairRecord(db, id = 'repair-rating-1') {
+  db.prepare(`
+    INSERT INTO work_order_repair_records (
+      id, work_order_id, symptom, inspection_process, diagnosis, solution,
+      verification_result, follow_up_advice, parts_used, labor_hours,
+      report_quality_status, submitted_at
+    ) VALUES (
+      ?, 'wo-quote-1', 'Low laser output during the acceptance test',
+      'Inspected the protective lens, optical alignment, and output stability.',
+      'Protective lens contamination caused unstable laser output during operation.',
+      'Replaced the protective lens and realigned the optical path for stable output.',
+      'Completed repeated test cuts with stable output and acceptable edge quality.',
+      'Inspect the protective lens before the next production shift.', '[]', 2,
+      'submitted', datetime('now')
+    )
+  `).run(id);
+}
+
 function createD1Database(db, hooks) {
   function statement(sql) {
     hooks.queries.push(normalizeSql(sql));
@@ -2858,8 +2876,16 @@ test('versioned service completion allows a later unpaid installment but archive
   ctx.db.exec(`
     UPDATE work_orders SET status = 'in_service' WHERE id = 'wo-quote-1';
     INSERT INTO work_order_repair_records (
-      id, work_order_id, symptom, diagnosis, solution, parts_used, labor_hours
-    ) VALUES ('repair-quote-1', 'wo-quote-1', 'Low output', 'Dirty lens', 'Cleaned lens', '[]', 2);
+      id, work_order_id, symptom, inspection_process, diagnosis, solution,
+      verification_result, follow_up_advice, parts_used, labor_hours
+    ) VALUES (
+      'repair-quote-1', 'wo-quote-1', 'Low laser output during the acceptance test',
+      'Inspected the protective lens, optical alignment, and output stability.',
+      'Protective lens contamination caused unstable laser output during operation.',
+      'Replaced the protective lens and realigned the optical path for stable output.',
+      'Completed repeated test cuts with stable output and acceptable edge quality.',
+      'Inspect the protective lens before the next production shift.', '[]', 2
+    );
   `);
 
   const resolved = await api(ctx, '/api/workorders/wo-quote-1/resolve', { body: {} });
@@ -2897,10 +2923,8 @@ test('customer acceptance does not financially archive a versioned order with un
         confirmed_at = NULL, evidence_type = NULL, evidence_id = NULL
     WHERE work_order_id = 'wo-quote-1'
       AND item_key = 'handover.customer_confirmation';
-    INSERT INTO work_order_repair_records (
-      id, work_order_id, symptom, diagnosis, solution, parts_used, labor_hours
-    ) VALUES ('repair-rating-1', 'wo-quote-1', 'Low output', 'Dirty lens', 'Cleaned lens', '[]', 2);
   `);
+  seedSubmittedRepairRecord(ctx.db);
 
   const rated = await api(ctx, '/api/workorders/rating', {
     userType: 'customer',
@@ -2983,6 +3007,7 @@ for (const race of [
         AND item_key = 'handover.customer_confirmation';
       ${race.seed ? `${race.seed};` : ''}
     `);
+    seedSubmittedRepairRecord(ctx.db, `repair-rating-${race.name.replaceAll(' ', '-')}`);
     ctx.beforeNextBatch(() => {
       ctx.db.exec(race.mutate);
     });
