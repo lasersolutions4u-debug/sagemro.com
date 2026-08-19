@@ -47,37 +47,17 @@ test('engineer overview video ships nonempty localized media assets', () => {
   }
 });
 
-test('engineer recruiting page adds the overview after the hero without replacing detailed content', () => {
+test('engineer recruiting page keeps the approved concise partnership story', () => {
   const source = read('frontend/src/components/Engineer/EngineerRecruitingPage.jsx');
 
-  assert.match(source, /import \{ EngineerOverviewVideo \} from '\.\/EngineerOverviewVideo';/);
-  assert.match(source, /overviewLabel: '20 秒了解协作模式'/);
-  assert.match(source, /overviewLabel: 'The model in 20 seconds'/);
-  assert.match(source, /<EngineerOverviewVideo locale=\{locale\} \/>/);
-  assert.ok(source.indexOf('<EngineerOverviewVideo locale={locale} />') < source.indexOf('copy.audienceTitle'));
-  assert.match(source, /copy\.workflowTitle/);
-  assert.match(source, /copy\.faqTitle/);
-  assert.match(source, /title: '设备维保最佳方案：AI知识飞轮\+工程师技能实践'/);
-  assert.match(source, /title: 'Make Your Expertise Count'/);
-  assert.match(source, /Spend less time chasing incomplete details and making avoidable visits/);
-  assert.match(source, /scaleTitle: '把个人经验，变成团队可以复用的服务能力'/);
-  assert.match(source, /finalTitle: '让工程师把时间用在真正需要技术的地方'/);
-  assert.match(source, /problemTitle: 'The hidden cost in field service is fragmented engineer time'/);
-  assert.match(source, /scaleTitle: 'Turn individual expertise into a service capability the team can reuse'/);
-  assert.match(source, /finalTitle: 'Put engineer time where technical skill is truly needed'/);
-  assert.match(source, /咨询接待，任务整理/);
-  assert.match(source, /确认方案，解决问题/);
-  assert.match(source, /协调流程，沉淀记录/);
-  assert.match(source, /一个越来越懂客户的AI，让技术服务更高效/);
-  assert.match(source, /专注于技术服务/);
-  assert.match(source, /减少反复沟通，避免无效上门/);
-  assert.match(source, /知识技能持续进化，服务能力无限增长/);
-  assert.match(source, /从单打独斗，到共享规模化能力/);
-  assert.match(source, /共享更有竞争力的供应链/);
-  assert.match(source, /共享品牌和市场获客能力/);
-  assert.match(source, /共享持续进阶的工程师培训/);
-  assert.match(source, /逐步建立可信的工程师能力标准/);
-  assert.match(source, /Shared supply chain capability/);
-  assert.match(source, /Shared brand and customer acquisition/);
-  assert.match(source, /Progressive engineer training/);
+  assert.doesNotMatch(source, /<EngineerOverviewVideo/);
+  assert.match(source, /让专业工程师价值最大化/);
+  assert.match(source, /Maximize the Value of Professional Engineers/);
+  assert.match(source, /工程师最关心的三个问题/);
+  assert.match(source, /少处理琐事，多专注有价值的现场服务/);
+  assert.match(source, /全国共享客服中心/);
+  assert.match(source, /配件集采与供应链/);
+  assert.match(source, /新媒体营销与获客/);
+  assert.match(source, /AI 与知识库运营/);
+  assert.match(source, /合作原则/);
 });

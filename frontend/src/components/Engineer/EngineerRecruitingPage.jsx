@@ -19,6 +19,8 @@ export const ENGINEER_RECRUITING_COPY = {
     primary: '提交服务意向',
     applyNow: '提交服务意向',
     signIn: '工程师登录',
+    returnToCustomer: '返回客户首页',
+    customerHomeHref: 'https://sagemro.cn',
     navLinks: ['工程师合作', 'AI 与知识库', '合作原则'],
     introVisualTitle: '工业现场服务协作网络',
     introVisualRows: [
@@ -99,29 +101,34 @@ export const ENGINEER_RECRUITING_COPY = {
       country: '国家',
       city: '常驻城市',
       regions: '可服务区域',
-      skills: '擅长设备 / 技能',
+      equipment: '熟悉设备',
+      skills: '服务项目',
       experience: '现场服务经验',
     },
     placeholders: {
       name: '请输入姓名',
       phone: '便于运营团队联系',
-      email: '可选',
+      email: '请输入常用邮箱',
       whatsapp: '可选',
       country: '中国 / 马来西亚 / 美国...',
       city: '例如：苏州 / Chicago',
       regions: '例如：江苏、浙江、上海',
-      skills: '例如：激光器、切割头、总线报警、保养',
+      equipment: '例如：激光切割机、折弯机、激光器',
+      skills: '例如：数控报警排查、伺服驱动维修、设备保养',
       experience: '请简单说明服务年限、熟悉品牌、典型案例或希望加入的原因',
     },
     checks: ['愿意跨城服务', '可周末服务', '可夜间紧急支持', '自备基础工具'],
+    required: '必填',
     submit: '提交申请',
     submitting: '正在提交...',
     success: '申请已收到。SAGEMRO 运营团队会审核资料，并在匹配合适区域后联系你。',
+    failure: '提交失败，请稍后重试。',
     note: '提交申请不会自动创建登录账号。审核通过后，服务代表会收到 SAGEMRO 发出的账号激活链接。',
     removeTag: '移除',
     closeApplication: '关闭申请表',
     regionSuggestions: ['华东', '华南', '华北', '长三角', '珠三角', '江苏', '浙江', '上海', '广东'],
-    skillSuggestions: ['激光切割机', '折弯机', '激光器', '切割头', 'CNC 报警', '伺服驱动', '维护保养', '现场故障排查'],
+    equipmentSuggestions: ['激光切割机', '折弯机', '激光器', '切割头'],
+    skillSuggestions: ['数控报警排查', '伺服驱动维修', '设备保养', '现场排查'],
   },
   en: {
     badge: 'SAGEMRO Engineer Partner Network',
@@ -132,6 +139,8 @@ export const ENGINEER_RECRUITING_COPY = {
     applyNow: 'Submit Service Interest',
     howItWorks: 'How It Works',
     signIn: 'I already have an engineer account',
+    returnToCustomer: 'Back to Customer Home',
+    customerHomeHref: 'https://sagemro.com',
     navLinks: ['Engineer Partnership', 'AI & Knowledge', 'Principles'],
     introVisualTitle: 'Industrial field-service collaboration network',
     introVisualRows: [
@@ -212,25 +221,30 @@ export const ENGINEER_RECRUITING_COPY = {
       country: 'Country',
       city: 'Base city',
       regions: 'Service regions',
-      skills: 'Equipment / skills',
+      equipment: 'Equipment specialties',
+      skills: 'Service items',
       experience: 'Field service experience',
     },
     placeholders: {
       name: 'Your full name',
       phone: 'Best number for operations follow-up',
-      email: 'Optional',
+      email: 'Enter your primary email address',
       whatsapp: 'Optional',
       country: 'US / Mexico / Malaysia...',
       city: 'Chicago / Kuala Lumpur...',
       regions: 'Illinois, Indiana, Wisconsin...',
-      skills: 'Laser source, cutting head, alarms, maintenance...',
+      equipment: 'Laser cutting machine, press brake, laser source...',
+      skills: 'CNC alarm diagnosis, servo repair, maintenance...',
       experience: 'Briefly share your service years, familiar brands, typical cases, or why you want to join',
     },
     checks: ['Can travel', 'Weekend support', 'Night emergency support', 'Own basic tools'],
+    required: 'Required',
     submit: 'Submit Application',
     submitting: 'Submitting...',
     success: 'Application received. The SAGEMRO operations team will review your information and contact you when there is a suitable regional match.',
+    failure: 'Submission failed. Please try again.',
     note: 'Submitting an application does not create a login account. Approved representatives receive an account activation link from SAGEMRO after review.',
+    equipmentSuggestions: ['Laser cutting machine', 'Press brake', 'Laser source', 'Cutting head'],
   },
 };
 
@@ -241,8 +255,8 @@ export function buildEngineerRecruitingSeo(locale) {
     ? '认证服务代表网络 | SAGEMRO'
     : 'Industrial Service Engineer Network | SAGEMRO';
   const description = isCn
-    ? '加入 SAGEMRO 认证服务代表网络，为激光切割机、折弯机和钣金设备提供清晰、可记录的现场服务协作。'
-    : 'Join SAGEMRO\'s industrial service engineer network for laser cutting, press brake, and sheet metal field service.';
+    ? '加入 SAGEMRO 工程师合作网络，为激光切割机、折弯机和金属成形设备提供清晰、可记录的现场服务协作。'
+    : 'Join SAGEMRO\'s industrial service engineer network for laser cutting and metal forming equipment field service.';
 
   return {
     title,
@@ -388,9 +402,14 @@ function ApplicationForm({ copy, form, submitting, message, error, updateField, 
       <div className="grid gap-3 sm:grid-cols-2">
         {['name', 'phone', 'email', 'whatsapp', 'country', 'city'].map((field) => (
           <label key={field} className="block text-[13px] font-semibold text-[#183b32]">
-            {copy.fields[field]}
+            <span className="flex items-center gap-1">
+              {copy.fields[field]}
+              {(field === 'name' || field === 'phone' || field === 'email') && (
+                <span className="text-xs font-medium text-[#a6421d]">{copy.required}</span>
+              )}
+            </span>
             <input
-              type={field === 'email' ? 'email' : (field === 'phone' || field === 'whatsapp' ? 'tel' : 'text')}
+              type={field === 'email' ? 'email' : 'text'}
               inputMode={field === 'phone' || field === 'whatsapp' ? 'tel' : undefined}
               autoComplete={{
                 name: 'name',
@@ -404,7 +423,7 @@ function ApplicationForm({ copy, form, submitting, message, error, updateField, 
               onChange={(event) => updateField(field, event.target.value)}
               placeholder={copy.placeholders[field]}
               className="mt-1.5 w-full border border-[#d8d1c3] bg-[#faf7ef] px-3 py-2.5 text-sm text-[#17332c] outline-none transition placeholder:text-[#6b645b] focus:border-[#d85f2d] focus:bg-white focus:shadow-[0_0_0_3px_rgba(216,95,45,0.12)]"
-              required={field === 'name' || field === 'phone'}
+              required={field === 'name' || field === 'phone' || field === 'email'}
             />
           </label>
         ))}
@@ -416,6 +435,14 @@ function ApplicationForm({ copy, form, submitting, message, error, updateField, 
         placeholder={copy.placeholders.regions}
         removeLabel={copy.removeTag || 'Remove'}
         onChange={(tags) => updateField('service_regions', tags)}
+      />
+      <TagInput
+        label={copy.fields.equipment}
+        value={form.equipment_types}
+        suggestions={copy.equipmentSuggestions || SKILL_SUGGESTIONS}
+        placeholder={copy.placeholders.equipment}
+        removeLabel={copy.removeTag || 'Remove'}
+        onChange={(tags) => updateField('equipment_types', tags)}
       />
       <TagInput
         label={copy.fields.skills}
@@ -503,6 +530,7 @@ export function EngineerRecruitingPage({ onOpenLogin }) {
     country: '',
     city: '',
     service_regions: [],
+    equipment_types: [],
     skill_tags: [],
     experience_summary: '',
     can_travel: false,
@@ -572,6 +600,7 @@ export function EngineerRecruitingPage({ onOpenLogin }) {
       await submitEngineerApplication({
         ...form,
         service_regions: splitTagList(form.service_regions),
+        equipment_types: splitTagList(form.equipment_types),
         skill_tags: splitTagList(form.skill_tags),
       });
       setMessage(copy.success);
@@ -584,6 +613,7 @@ export function EngineerRecruitingPage({ onOpenLogin }) {
         country: '',
         city: '',
         service_regions: [],
+        equipment_types: [],
         skill_tags: [],
         experience_summary: '',
         can_travel: false,
@@ -592,7 +622,7 @@ export function EngineerRecruitingPage({ onOpenLogin }) {
         has_tools: false,
       }));
     } catch (err) {
-      setError(err.message || 'Submit failed');
+      setError(copy.failure || err.message || 'Submit failed');
     } finally {
       setSubmitting(false);
     }
@@ -611,7 +641,7 @@ export function EngineerRecruitingPage({ onOpenLogin }) {
     <div className="min-h-[100dvh] bg-[#dfe5e1] px-1.5 py-1.5 text-[#153e3c] [font-family:'IBM_Plex_Sans','Noto_Sans_SC','Segoe_UI',sans-serif] sm:px-5 sm:py-5">
       <div className="mx-auto max-w-[1280px] overflow-hidden border border-[#cbd5d0] bg-[#fbfaf5] shadow-[0_30px_90px_rgba(20,58,52,0.16)]">
         <header className="flex h-[72px] items-center justify-between border-b border-[#dde1d9] px-5 sm:px-[42px]">
-          <div className="font-mono text-[15px] font-bold tracking-[0.19em]">SAGEMRO</div>
+          <a href={copy.customerHomeHref} aria-label={copy.returnToCustomer} className="font-mono text-[15px] font-bold tracking-[0.19em]">SAGEMRO</a>
           <div className="flex items-center gap-4 sm:gap-7">
             <nav className="hidden items-center gap-7 lg:flex" aria-label={copy.networkLabel}>
               <a href="#focus" className="text-xs text-[#566d69] hover:text-[#153e3c]">{copy.navLinks[0]}</a>

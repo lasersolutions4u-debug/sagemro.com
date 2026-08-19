@@ -373,9 +373,9 @@ test('public engineer recruiting SEO retains canonical and Service schema semant
   const { name, cn, en } = exportedSeoBuilder();
 
   assert.equal(cn.title, '认证服务代表网络 | SAGEMRO');
-  assert.equal(cn.description, '加入 SAGEMRO 认证服务代表网络，为激光切割机、折弯机和钣金设备提供清晰、可记录的现场服务协作。');
+  assert.equal(cn.description, '加入 SAGEMRO 工程师合作网络，为激光切割机、折弯机和金属成形设备提供清晰、可记录的现场服务协作。');
   assert.equal(en.title, 'Industrial Service Engineer Network | SAGEMRO');
-  assert.equal(en.description, "Join SAGEMRO's industrial service engineer network for laser cutting, press brake, and sheet metal field service.");
+  assert.equal(en.description, "Join SAGEMRO's industrial service engineer network for laser cutting and metal forming equipment field service.");
   assert.deepEqual(
     {
       cn: {
