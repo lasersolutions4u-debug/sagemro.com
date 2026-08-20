@@ -29,7 +29,7 @@ export async function onboardEngineer({ browser, runtime = e2eRuntime() }) {
   const context = await browser.newContext();
   const page = await context.newPage();
   await page.goto(runtime.engineerBase);
-  await page.getByRole('button', { name: 'Apply to Join', exact: true }).first().click();
+  await page.getByRole('button', { name: 'Submit Service Interest', exact: true }).first().click();
   await page.getByLabel('Name').fill(engineer.name);
   await page.getByLabel('Phone').fill(engineer.phone);
   await page.getByLabel('Email').fill(engineer.email);
