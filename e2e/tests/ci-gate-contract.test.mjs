@@ -70,6 +70,10 @@ test('engineer onboarding journey follows the current recruitment CTA', () => {
     journeys,
     /getByLabel\('Equipment specialties'\)\.locator\('xpath=\.\.\/\.\.\/\.\.'\)\.getByRole\('button', \{ name: 'Laser cutting machine', exact: true \}\)/,
   );
+  assert.match(
+    journeys,
+    /getByLabel\('Service items'\)\.locator\('xpath=\.\.\/\.\.\/\.\.'\)\.getByRole\('button', \{ name: 'Maintenance', exact: true \}\)/,
+  );
 });
 
 test('Cloudflare test workflow covers pull requests to both protected branches', () => {

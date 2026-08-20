@@ -37,7 +37,7 @@ export async function onboardEngineer({ browser, runtime = e2eRuntime() }) {
   await page.getByLabel('Base city').fill('Chicago');
   await page.getByRole('button', { name: 'North America', exact: true }).click();
   await page.getByLabel('Equipment specialties').locator('xpath=../../..').getByRole('button', { name: 'Laser cutting machine', exact: true }).click();
-  await page.getByRole('button', { name: 'Maintenance', exact: true }).click();
+  await page.getByLabel('Service items').locator('xpath=../../..').getByRole('button', { name: 'Maintenance', exact: true }).click();
   await page.getByLabel('Individual / team capability').fill('E2E field service and maintenance experience.');
   await page.getByRole('button', { name: 'Submit Application', exact: true }).click();
   await expect(page.getByText('Application received.', { exact: false })).toBeVisible();
