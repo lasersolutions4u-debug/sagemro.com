@@ -22,7 +22,14 @@ const retiredRootFiles = [
 ];
 
 const retiredFrontendFiles = [
+  'frontend/public/media/engineer-service-flywheel-cn-poster.webp',
+  'frontend/public/media/engineer-service-flywheel-cn.mp4',
+  'frontend/public/media/engineer-service-flywheel-cn.webm',
+  'frontend/public/media/engineer-service-flywheel-en-poster.webp',
+  'frontend/public/media/engineer-service-flywheel-en.mp4',
+  'frontend/public/media/engineer-service-flywheel-en.webm',
   'frontend/src/components/AI/AIToolsPanel.jsx',
+  'frontend/src/components/Engineer/EngineerOverviewVideo.jsx',
   'frontend/src/components/Settings/SettingsModal.jsx',
   'frontend/src/components/Sidebar/ToolBar.jsx',
   'frontend/src/components/WorkOrder/EngineerReviewModal.jsx',
@@ -31,6 +38,11 @@ const retiredFrontendFiles = [
   'frontend/src/data/aiServiceTools.js',
   'frontend/src/data/loginPresets.js',
   'frontend/src/styles/tokens.css',
+  'frontend/tests/engineer-overview-video-contract.test.mjs',
+  'tools/engineer-video/engineer-service-animation.js',
+  'tools/engineer-video/index.html',
+  'tools/engineer-video/render.mjs',
+  'tools/engineer-video/styles.css',
 ];
 
 const retiredFrontendApiFunctions = [
