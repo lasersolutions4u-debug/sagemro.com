@@ -45,8 +45,12 @@ worker/.eval-runs/
 
 # Claude memory backup (synced via 坚果云, not for git)
 /memory/
+.claude/memory/
 .claude/cache/
 .Codex/memory/
+
+# Machine-local editor state
+.obsidian/workspace.json
 
 # Python
 __pycache__/

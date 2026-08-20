@@ -1,9 +1,13 @@
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 
 const root = path.resolve(import.meta.dirname, '../..');
+const trackedFiles = new Set(execFileSync('git', ['ls-files'], { cwd: root, encoding: 'utf8' })
+  .split(/\r?\n/)
+  .filter(Boolean));
 
 const retiredRootFiles = [
   'accept-and-price.js',
@@ -50,6 +54,20 @@ function collectFiles(directory) {
 test('retired one-off tooling and unreachable frontend modules stay out of the repository', () => {
   for (const relativePath of [...retiredRootFiles, ...retiredFrontendFiles]) {
     assert.equal(existsSync(path.join(root, relativePath)), false, relativePath);
+  }
+});
+
+test('production credential probes and machine-local state stay out of Git', () => {
+  assert.equal(existsSync(path.join(root, 'worker/test-roles.sh')), false, 'worker/test-roles.sh');
+  assert.doesNotMatch(readFileSync(path.join(root, 'worker/tests/smoke.mjs'), 'utf8'), /test-roles\.sh/);
+
+  const gitignore = readFileSync(path.join(root, '.gitignore'), 'utf8');
+  assert.match(gitignore, /^\.claude\/memory\/$/m);
+  assert.match(gitignore, /^\.obsidian\/workspace\.json$/m);
+
+  for (const trackedPath of trackedFiles) {
+    assert.equal(trackedPath.startsWith('.claude/memory/'), false, trackedPath);
+    assert.notEqual(trackedPath, '.obsidian/workspace.json');
   }
 });
 

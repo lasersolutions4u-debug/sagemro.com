@@ -21,7 +21,7 @@ npm test
 
 ## 冒烟测试（端到端，需要网络）
 
-面向已部署的 Worker API，覆盖 `test-roles.sh` 之外的安全硬化项：CORS、认证强制、输入校验、限流、IDOR 防护。
+面向已部署的 Worker API，覆盖 CORS、认证强制、输入校验、限流、IDOR 防护。
 
 ```bash
 API_BASE=https://sagemro-api.lasersolutions4u.workers.dev node tests/smoke.mjs
@@ -38,10 +38,9 @@ API_BASE=... SMOKE_CUST_TOKEN=... SMOKE_OTHER_ORDER_ID=... node tests/smoke.mjs
 6. 验证码发送 60 秒内重复请求触发 429
 7. (可选) 客户不能越权访问/评价他人工单
 
-## 与 test-roles.sh 的分工
+## 测试分工
 
 | 脚本 | 目标 | 场景 |
 |------|------|------|
 | `tests/auth.test.mjs` | 单元，离线 | 纯函数正确性、回归防护 |
 | `tests/smoke.mjs` | 集成，在线 | 安全硬化验证（CORS/认证/限流/IDOR） |
-| `test-roles.sh` | 集成，在线 | AI 对话分层 role prompt、业务流（需要管理员 token） |
