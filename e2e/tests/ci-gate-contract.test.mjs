@@ -59,6 +59,25 @@ test('Cloudflare test job runs Admin and full E2E gates before deploy jobs', () 
   );
 });
 
+test('engineer onboarding journey follows the current recruitment CTA', () => {
+  const recruitingPage = read('frontend/src/components/Engineer/EngineerRecruitingPage.jsx');
+  const journeys = read('e2e/support/journeys.mjs');
+
+  assert.match(recruitingPage, /applyNow: 'Submit Service Interest'/);
+  assert.match(journeys, /name: 'Submit Service Interest'/);
+  assert.doesNotMatch(journeys, /name: 'Apply to Join'/);
+  assert.match(
+    journeys,
+    /getByLabel\('Equipment specialties'\)\.locator\('xpath=\.\.\/\.\.\/\.\.'\)\.getByRole\('button', \{ name: 'Laser cutting machine', exact: true \}\)/,
+  );
+  assert.match(
+    journeys,
+    /getByLabel\('Service items'\)\.locator\('xpath=\.\.\/\.\.\/\.\.'\)\.getByRole\('button', \{ name: 'Maintenance', exact: true \}\)/,
+  );
+  assert.match(journeys, /getByLabel\('Field service experience'\)/);
+  assert.doesNotMatch(journeys, /getByLabel\('Individual \/ team capability'\)/);
+});
+
 test('Cloudflare test workflow covers pull requests to both protected branches', () => {
   const workflow = read('.github/workflows/deploy.yml');
 
