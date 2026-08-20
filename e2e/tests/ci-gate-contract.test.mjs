@@ -66,6 +66,10 @@ test('engineer onboarding journey follows the current recruitment CTA', () => {
   assert.match(recruitingPage, /applyNow: 'Submit Service Interest'/);
   assert.match(journeys, /name: 'Submit Service Interest'/);
   assert.doesNotMatch(journeys, /name: 'Apply to Join'/);
+  assert.match(
+    journeys,
+    /getByLabel\('Equipment specialties'\)\.locator\('xpath=\.\.\/\.\.\/\.\.'\)\.getByRole\('button', \{ name: 'Laser cutting machine', exact: true \}\)/,
+  );
 });
 
 test('Cloudflare test workflow covers pull requests to both protected branches', () => {
