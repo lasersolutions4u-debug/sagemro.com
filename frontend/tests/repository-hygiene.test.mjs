@@ -30,6 +30,7 @@ const retiredFrontendFiles = [
   'frontend/public/media/engineer-service-flywheel-en.webm',
   'frontend/src/components/AI/AIToolsPanel.jsx',
   'frontend/src/components/Engineer/EngineerOverviewVideo.jsx',
+  'frontend/src/components/Engineer/EngineerServiceReadinessCard.jsx',
   'frontend/src/components/Settings/SettingsModal.jsx',
   'frontend/src/components/Sidebar/ToolBar.jsx',
   'frontend/src/components/WorkOrder/EngineerReviewModal.jsx',
@@ -39,6 +40,7 @@ const retiredFrontendFiles = [
   'frontend/src/data/loginPresets.js',
   'frontend/src/styles/tokens.css',
   'frontend/tests/engineer-overview-video-contract.test.mjs',
+  'frontend/tests/engineer-service-readiness-contract.test.mjs',
   'tools/engineer-video/engineer-service-animation.js',
   'tools/engineer-video/index.html',
   'tools/engineer-video/render.mjs',
@@ -52,6 +54,9 @@ const retiredFrontendApiFunctions = [
   'getEngineerWallet',
   'getRecommendedEngineers',
   'getRepairRecord',
+  'getWorkOrderPayout',
+  'getWorkOrderServiceReadiness',
+  'refreshWorkOrderServiceReadiness',
   'uploadChatImage',
 ];
 
