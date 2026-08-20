@@ -74,6 +74,8 @@ test('engineer onboarding journey follows the current recruitment CTA', () => {
     journeys,
     /getByLabel\('Service items'\)\.locator\('xpath=\.\.\/\.\.\/\.\.'\)\.getByRole\('button', \{ name: 'Maintenance', exact: true \}\)/,
   );
+  assert.match(journeys, /getByLabel\('Field service experience'\)/);
+  assert.doesNotMatch(journeys, /getByLabel\('Individual \/ team capability'\)/);
 });
 
 test('Cloudflare test workflow covers pull requests to both protected branches', () => {
