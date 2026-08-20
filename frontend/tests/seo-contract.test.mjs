@@ -91,7 +91,8 @@ test('China public pages define localized SEO metadata and structured data', asy
   assert.match(seo, /application\/ld\+json/);
   assert.match(app, /setSeoMetadata\(/);
   assert.match(app, /noindex,nofollow,noarchive/);
-  assert.match(recruiting, /SAGEMRO 工程师服务协作网络/);
+  assert.match(recruiting, /SAGEMRO 工程师合作网络/);
+  assert.match(recruiting, /让专业工程师价值最大化/);
   assert.match(recruiting, /setSeoMetadata\(/);
   assert.match(tools, /https:\/\/sagemro\.cn/);
   assert.match(tools, /setSeoMetadata\(/);
