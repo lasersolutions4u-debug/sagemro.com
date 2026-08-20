@@ -4,7 +4,7 @@
  *
  * 用途：
  *   - 上线前对 production API 做一轮端到端健康检查
- *   - 覆盖 test-roles.sh 没覆盖的安全硬化项：限流、未授权访问、无效 token、CORS
+ *   - 覆盖安全硬化项：限流、未授权访问、无效 token、CORS
  *
  * 用法：
  *   API_BASE=https://sagemro-api.lasersolutions4u.workers.dev node tests/smoke.mjs

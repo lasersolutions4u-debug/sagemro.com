@@ -359,15 +359,6 @@ test('work-order system messages show their full content without an original-mes
   assert.doesNotMatch(systemMessage, /<details|<summary|viewSystemOriginal|systemOriginal|localizeWorkOrderSystemMessage/);
 });
 
-test('service readiness card ships English and Chinese labels', () => {
-  const card = read('frontend/src/components/Engineer/EngineerServiceReadinessCard.jsx');
-
-  assert.match(card, /AI Service Readiness Review/);
-  assert.match(card, /AI 服务前核查/);
-  assert.match(card, /Insert into message/);
-  assert.match(card, /带入消息/);
-});
-
 test('work-order messages preserve manual history scrolling during polling', () => {
   const messages = read('frontend/src/components/WorkOrder/MessagePanel.jsx');
 

@@ -609,26 +609,6 @@ export async function getWorkOrder(id) {
   return response.json();
 }
 
-export async function getWorkOrderServiceReadiness(workOrderId) {
-  const response = await fetch(`${API_BASE}/api/workorders/${workOrderId}/service-readiness`, {
-    headers: authHeaders(),
-  });
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
-  return data;
-}
-
-export async function refreshWorkOrderServiceReadiness(workOrderId, { force = false } = {}) {
-  const response = await fetch(`${API_BASE}/api/workorders/${workOrderId}/service-readiness/refresh`, {
-    method: 'POST',
-    headers: authHeaders(),
-    body: JSON.stringify({ force }),
-  });
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
-  return data;
-}
-
 export async function getWorkOrderServiceStandard(workOrderId) {
   const response = await fetch(
     `${API_BASE}/api/workorders/${encodeURIComponent(workOrderId)}/service-standard`,
@@ -1299,15 +1279,6 @@ export async function getWorkOrderPayment(workOrderId, paymentStage = 'advance')
   });
   if (!response.ok) throw new Error(`HTTP ${response.status}`);
   return response.json();
-}
-
-export async function getWorkOrderPayout(workOrderId) {
-  const response = await fetch(`${API_BASE}/api/workorders/${workOrderId}`, {
-    headers: authHeaders(),
-  });
-  if (!response.ok) throw new Error(`HTTP ${response.status}`);
-  const data = await response.json();
-  return { payout: data.payout || null, payout_status: data.payout_status || 'not_ready' };
 }
 
 // 保存推送订阅（OneSignal Player ID）

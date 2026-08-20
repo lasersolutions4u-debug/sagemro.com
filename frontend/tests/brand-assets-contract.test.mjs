@@ -738,14 +738,12 @@ test('engineer profile supports PayPal and SWIFT payout methods only', () => {
 });
 
 test('work orders expose engineer payout as internal closure after service completion', () => {
-  const frontendApi = read('frontend/src/services/api.js');
   const adminApi = read('admin/src/services/api.js');
   const detailModal = read('frontend/src/components/WorkOrder/WorkOrderDetailModal.jsx');
   const workOrdersPage = read('admin/src/pages/WorkOrdersPage.jsx');
   const worker = read('worker/src/index.js');
   const migration = read('worker/migrations/031_engineer_payouts.sql');
 
-  assert.match(frontendApi, /getWorkOrderPayout/);
   assert.match(adminApi, /updateAdminWorkOrderPayout/);
   assert.match(detailModal, /Engineer service payment/);
   assert.match(detailModal, /Payout pending/);
