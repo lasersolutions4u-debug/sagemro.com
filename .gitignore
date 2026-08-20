@@ -69,3 +69,7 @@ e2e/playwright-report/
 
 # Generated acceptance screenshots
 reports/**/screenshots/*.png
+
+# Local historical execution reports
+/reports/
+/.superpowers/sdd/
