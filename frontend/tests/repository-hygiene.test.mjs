@@ -19,6 +19,7 @@ const retiredRootFiles = [
   'capture-wallet.js',
   'debug-chat.js',
   'netlify.toml.deprecated',
+  'wrangler.toml',
 ];
 
 const retiredFrontendFiles = [
