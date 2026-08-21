@@ -374,10 +374,8 @@ test('handleChat marks a second-round stream failure after first-round content a
     const sseText = await response.text();
 
     assert.equal(llmRequestCount, 2);
-    assert.match(sseText, /First-round context\./);
-    assert.ok(sseText.includes(
-      `data: ${JSON.stringify({ conversation_id: conversationId, response_status: 'failed' })}\n`,
-    ));
+    assert.doesNotMatch(sseText, /First-round context\./);
+    assertFallbackSse(sseText, { conversationId, canaries: [] });
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -534,8 +532,188 @@ test('handleChat prompt keeps simple questions useful without pushing a work ord
   });
 
   assert.match(prompt, /Do not push a work order or service request after a simple question is already answered clearly/);
-  assert.match(prompt, /Add a short SAGEMRO service follow-up offer only when manual confirmation, quotation, parts, service scheduling, safety handling, or reviewed parameter verification is clearly useful/);
-  assert.match(prompt, /If the user did not explicitly request a detailed plan, table, report, or full checklist, write exactly 5 compact lines/);
+  assert.match(prompt, /Routine maintenance and answer-only questions must end after the answer/);
+  assert.match(prompt, /Use at most one short SAGEMRO next step/);
+});
+
+test('handleChat uses low-variance generation for repeatable technical guidance', async () => {
+  const { env } = makeEnv();
+  const originalFetch = globalThis.fetch;
+  let capturedBody = null;
+
+  globalThis.fetch = async (_url, init) => {
+    capturedBody = JSON.parse(init.body);
+    return makeSseResponse();
+  };
+
+  try {
+    const response = await handleChat(makeRequest({
+      conversation_id: 'low-variance-guidance-1',
+      message: 'What should I inspect first?',
+    }), env);
+    await response.text();
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+
+  assert.equal(capturedBody.temperature, 0.2);
+});
+
+test('handleChat hides tool-round narration and emits only the final customer answer', async () => {
+  const conversationId = 'tool-round-narration-hidden';
+  const { env } = makeEnv();
+  const originalFetch = globalThis.fetch;
+  let llmRequestCount = 0;
+
+  globalThis.fetch = async (url) => {
+    if (url !== env.OPENAI_API_ENDPOINT) throw new Error(`Unexpected fetch URL: ${url}`);
+    llmRequestCount++;
+    if (llmRequestCount === 1) {
+      return new Response([
+        `data: ${JSON.stringify({ choices: [{ delta: { content: 'Let me search the knowledge base first.' } }] })}`,
+        `data: ${JSON.stringify({ choices: [{ delta: { tool_calls: [{
+          index: 0,
+          id: 'call_search_hidden',
+          type: 'function',
+          function: { name: 'search_knowledge_base', arguments: '{"query":"alarm"}' },
+        }] } }] })}`,
+        'data: [DONE]',
+        '',
+      ].join('\n'), {
+        status: 200,
+        headers: { 'Content-Type': 'text/event-stream' },
+      });
+    }
+    return makeSseResponse('Final customer answer.');
+  };
+
+  try {
+    const response = await handleChat(makeRequest({
+      conversation_id: conversationId,
+      message: 'Search for this alarm.',
+    }), env);
+    const sseText = await response.text();
+
+    assert.equal(llmRequestCount, 2);
+    assert.doesNotMatch(sseText, /Let me search/);
+    assert.match(sseText, /Final customer answer\./);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('handleChat prompt keeps the first answer compact without an exact line-count trap', async () => {
+  const prompt = await captureChatPrompt({
+    request: makeRequest({
+      conversation_id: 'compact-first-answer-1',
+      message: 'What should I inspect when cut quality suddenly drops?',
+    }),
+  });
+
+  assert.match(prompt, /Chinese: 100-180 characters/);
+  assert.match(prompt, /English: 80-140 words/);
+  assert.match(prompt, /one conclusion, up to three checks, and at most one necessary question/);
+  assert.doesNotMatch(prompt, /write exactly 5 compact lines/);
+});
+
+test('handleChat prompt does not invent machine-specific numeric ranges without evidence', async () => {
+  const prompt = await captureChatPrompt({
+    request: makeRequest({
+      conversation_id: 'parameter-evidence-boundary-1',
+      message: 'What pressure and focus should I use?',
+    }),
+  });
+
+  assert.match(prompt, /Do not provide a machine-specific numeric range unless/);
+  assert.match(prompt, /the user supplied the required machine facts or published SAGEMRO knowledge supports it/);
+  assert.match(prompt, /ask for the missing facts instead of filling them with general model knowledge/);
+  assert.doesNotMatch(prompt, /给出具体参数数值范围而非笼统描述/);
+  assert.doesNotMatch(prompt, /涉及具体参数时，尽量给出数值范围/);
+});
+
+test('handleChat prompt makes high-risk boundaries the first instruction', async () => {
+  const prompt = await captureChatPrompt({
+    request: makeRequest({
+      conversation_id: 'safety-boundary-1',
+      message: 'Can I bypass the door interlock and test the live circuit?',
+    }),
+  });
+
+  assert.match(prompt, /Start the first line with a clear stop-work or do-not-bypass instruction/);
+  assert.match(prompt, /Do not provide steps for live electrical measurement, bypassing an interlock, or disassembling a high-risk component/);
+  assert.match(prompt, /qualified personnel/);
+});
+
+test('handleChat prompt applies safety and evidence gates before technical advice', async () => {
+  const prompt = await captureChatPrompt({
+    request: makeRequest({
+      conversation_id: 'priority-gates-1',
+      message: 'The cutting head keeps alarming and the cabinet smells burnt. What should I adjust?',
+    }),
+  });
+
+  const gatesIndex = prompt.indexOf('## Non-negotiable response gates');
+  const adviceIndex = prompt.indexOf('### 回答技术问题时');
+  assert.ok(gatesIndex >= 0 && gatesIndex < adviceIndex);
+  assert.match(prompt, /The first sentence must tell the user to stop work, isolate hazardous energy, or not bypass the protection/);
+  assert.match(prompt, /Never suggest energized inspection, thermal imaging under load, live electrical measurement, opening a hazardous cabinet, or touching or re-torquing electrical terminals/);
+  assert.match(prompt, /When an electrical cabinet smells burnt, do not ask the user to power it, run it under load, or observe whether the smell changes during operation/);
+  assert.match(prompt, /Non-invasive means no opening covers, cabinet doors, or cutting-head lens holders/);
+  assert.match(prompt, /Never suggest changing guard muting, blanking, or safety-mode settings/);
+  assert.match(prompt, /Do not instruct an operator to open a cutting-head lens holder or clean, remove, or reinstall a focusing or collimating lens/);
+  assert.match(prompt, /Never recommend an empty laser emission, test firing, or exposing the beam as a routine inspection step/);
+});
+
+test('handleChat prompt blocks guessed operating numbers and percentage adjustments', async () => {
+  const prompt = await captureChatPrompt({
+    request: makeRequest({
+      conversation_id: 'numeric-detail-boundary-2',
+      message: 'The cut is rough. Give me a pressure, focus, speed, and cleaning interval.',
+    }),
+  });
+
+  assert.match(prompt, /Do not output a guessed number or numeric range for operating parameters, maintenance intervals, percentage adjustments, pressure, speed, power, focus offset, tolerance, temperature, time, price, or service duration/);
+  assert.match(prompt, /Example numbers are still guessed numbers and must not be supplied/);
+  assert.match(prompt, /Describe an adjustment direction only when it is invariant across the relevant machine conventions/);
+  assert.match(prompt, /change only one variable at a time in small steps and record each result/);
+  assert.match(prompt, /End with no more than one question sentence. Do not present numbered questions/);
+  assert.match(prompt, /The entire answer may contain at most one question mark/);
+  assert.match(prompt, /Write checks as statements or imperative instructions, never as separate questions/);
+  assert.match(prompt, /When the same symptom can require opposite adjustment directions on different setups, do not choose a direction without the missing machine facts/);
+  assert.match(prompt, /For focus-position questions, never infer high, low, positive, negative, up, or down until the machine's focus convention is known/);
+  assert.match(prompt, /For machine selection, do not invent example tonnage, power, bed size, working area, thickness, percentage coverage, controller brand, or price range/);
+});
+
+test('handleChat prompt limits service follow-up to one eligible next step', async () => {
+  const prompt = await captureChatPrompt({
+    request: makeRequest({
+      conversation_id: 'service-follow-up-boundary-1',
+      message: 'How often should I inspect the nozzle?',
+    }),
+  });
+
+  assert.match(prompt, /Use at most one short SAGEMRO next step/);
+  assert.match(prompt, /Routine maintenance and answer-only questions must end after the answer/);
+  assert.match(prompt, /For routine maintenance frequency questions, do not ask a follow-up question when safe condition-based guidance is already actionable/);
+  assert.match(prompt, /do not ask, invite, or suggest that the user provide more machine facts when condition-based guidance is sufficient/);
+  assert.match(prompt, /Use one compact paragraph with no heading or bullet list for routine maintenance frequency questions/);
+  assert.match(prompt, /Distinguish inspection cadence from cleaning or replacement/);
+  assert.match(prompt, /Do not invent a calendar or elapsed-hour cleaning or replacement interval when the manufacturer interval is unavailable/);
+  assert.match(prompt, /Routine checklists and preventive-maintenance plans are answer-only unless the user explicitly requests service/);
+  assert.match(prompt, /Never append a SAGEMRO summary, checklist offer, service-ready follow-up, or "if you'd like" sentence to an answer-only or routine response/);
+  assert.match(prompt, /Never recommend a steel needle, reamer, drill bit, wire, abrasive, or other hard tool inside a nozzle orifice/);
+  assert.match(prompt, /downtime, safety risk, formal quotation, parts confirmation, or an explicit remote or on-site service request/);
+  const marketContextIndex = prompt.indexOf('## 当前请求上下文');
+  const finalContractIndex = prompt.lastIndexOf('## Final response contract');
+  assert.ok(finalContractIndex > marketContextIndex);
+  assert.match(prompt, /Output only the final customer-facing answer. Never narrate a tool call, search, retrieval, or internal reasoning/);
+  assert.match(prompt, /Role-specific conversion examples do not broaden the eligible service conversion triggers/);
+  assert.match(prompt, /For routine maintenance or an answer-only response, never append a summary, checklist offer, service-ready offer, registration prompt, or follow-up invitation/);
+  assert.match(prompt, /When a parameter direction depends on a manufacturer convention, do not state even a likely direction before that convention is known/);
+  assert.match(prompt, /Never create service eligibility by adding a hypothetical condition such as "if this is causing downtime"/);
+  assert.match(prompt, /Machine-selection advice is answer-only unless the user explicitly requests a formal quote or remote or on-site service/);
+  assert.match(prompt, /A routine checklist must end after the checklist and must not ask for the machine model/);
+  assert.match(prompt, /For routine maintenance and answer-only responses, do not mention SAGEMRO/);
 });
 
 test('handleChatTranscribe requires Deepgram configuration', async () => {
