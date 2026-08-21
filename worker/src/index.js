@@ -339,6 +339,56 @@ function getAiFallbackMessage(env, error) {
   return 'SAGEMRO AI is temporarily unavailable. Please try again shortly, or leave the equipment details and SAGEMRO will follow up through the service process.';
 }
 
+function getChatTimeoutFallback(isCnMarket) {
+  return isCnMarket
+    ? 'AI 响应时间过长，本次已停止。请稍后重试。'
+    : 'The AI response took too long and was stopped. Please try again.';
+}
+
+class ChatProviderTimeoutError extends Error {
+  constructor(stage) {
+    super('AI provider response timed out');
+    this.name = 'ChatProviderTimeoutError';
+    this.code = 'chat_provider_timeout';
+    this.stage = stage;
+  }
+}
+
+const CHAT_PROVIDER_FIRST_BYTE_TIMEOUT_MS = 12000;
+const CHAT_PROVIDER_IDLE_TIMEOUT_MS = 15000;
+const CHAT_PROVIDER_TOTAL_TIMEOUT_MS = 45000;
+
+function chatProviderTimeoutMs(value, fallback) {
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) && parsed >= 10 && parsed <= 120000 ? parsed : fallback;
+}
+
+function abortChatProvider(abortController, stage) {
+  const error = new ChatProviderTimeoutError(stage);
+  if (!abortController.signal.aborted) abortController.abort(error);
+  return abortController.signal.reason instanceof Error ? abortController.signal.reason : error;
+}
+
+async function waitForChatProvider(operation, { abortController, timeoutMs, stage }) {
+  if (abortController.signal.aborted) throw abortController.signal.reason;
+  let timeoutId;
+  try {
+    return await Promise.race([
+      Promise.resolve(operation),
+      new Promise((_resolve, reject) => {
+        timeoutId = setTimeout(() => reject(abortChatProvider(abortController, stage)), timeoutMs);
+      }),
+    ]);
+  } catch (error) {
+    if (abortController.signal.aborted && abortController.signal.reason instanceof Error) {
+      throw abortController.signal.reason;
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
 class TransientD1Error extends Error {
   constructor(message, cause) {
     super(message);
@@ -3821,71 +3871,114 @@ function sanitizeCustomerVisibleAiContent(text) {
  *
  * @returns {Promise<{content: string, toolCalls: Array}>}
  */
-export async function consumeLlmStream({ response, controller, encoder, convId, decoder, deferContent = false }) {
+export async function consumeLlmStream({
+  response,
+  controller,
+  encoder,
+  convId,
+  decoder,
+  deferContent = false,
+  providerControl = null,
+}) {
   const reader = response.body.getReader();
   let buffer = '';
   let content = '';
   let reasoningContent = '';
+  let receivedFirstChunk = false;
   // 按 index 累积：OpenAI 流式规范 tool_calls[i] 的 id/name 首包到达，arguments 可分多包
   const toolCallsByIndex = new Map();
 
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split('\n');
-    buffer = lines.pop() || '';
-
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (!trimmed) continue;
-      if (trimmed === 'data: [DONE]') continue; // 外层统一发 DONE
-      if (!trimmed.startsWith('data: ')) continue;
-
-      let data;
-      try {
-        data = JSON.parse(trimmed.slice(6));
-      } catch {
-        continue;
-      }
-
-      const delta = data.choices?.[0]?.delta;
-      if (!delta) continue;
-
-      if (delta.content) {
-        const customerContent = sanitizeCustomerVisibleAiContent(delta.content);
-        content += customerContent;
-        if (!customerContent) continue;
-        if (!deferContent) {
-          controller.enqueue(
-            encoder.encode(
-              `data: ${JSON.stringify({ content: customerContent, conversation_id: convId })}\n`,
-            ),
-          );
+  try {
+    while (true) {
+      let readResult;
+      if (providerControl) {
+        const remainingMs = providerControl.deadlineAt - Date.now();
+        if (remainingMs <= 0) throw abortChatProvider(providerControl.abortController, 'total');
+        const stageTimeoutMs = receivedFirstChunk
+          ? providerControl.idleTimeoutMs
+          : providerControl.firstByteDeadlineAt - Date.now();
+        if (stageTimeoutMs <= 0) {
+          throw abortChatProvider(providerControl.abortController, 'first_byte');
         }
+        const stage = remainingMs <= stageTimeoutMs
+          ? 'total'
+          : receivedFirstChunk ? 'idle' : 'first_byte';
+        readResult = await waitForChatProvider(reader.read(), {
+          abortController: providerControl.abortController,
+          timeoutMs: Math.min(stageTimeoutMs, remainingMs),
+          stage,
+        });
+      } else {
+        readResult = await reader.read();
+      }
+      const { done, value } = readResult;
+      if (done) break;
+      if (!receivedFirstChunk) {
+        receivedFirstChunk = true;
+        providerControl?.onFirstByte?.();
       }
 
-      // DeepSeek V4 Pro thinking 模式：reasoning_content 必须在下一轮原样传回
-      if (delta.reasoning_content) {
-        reasoningContent += delta.reasoning_content;
-      }
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
 
-      if (Array.isArray(delta.tool_calls)) {
-        for (const tc of delta.tool_calls) {
-          const idx = tc.index ?? 0;
-          let acc = toolCallsByIndex.get(idx);
-          if (!acc) {
-            acc = { id: '', type: 'function', function: { name: '', arguments: '' } };
-            toolCallsByIndex.set(idx, acc);
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        if (trimmed === 'data: [DONE]') continue; // 外层统一发 DONE
+        if (!trimmed.startsWith('data: ')) continue;
+
+        let data;
+        try {
+          data = JSON.parse(trimmed.slice(6));
+        } catch {
+          continue;
+        }
+
+        const delta = data.choices?.[0]?.delta;
+        if (!delta) continue;
+
+        if (delta.content) {
+          const customerContent = sanitizeCustomerVisibleAiContent(delta.content);
+          content += customerContent;
+          if (!customerContent) continue;
+          if (!deferContent) {
+            controller.enqueue(
+              encoder.encode(
+                `data: ${JSON.stringify({ content: customerContent, conversation_id: convId })}\n`,
+              ),
+            );
           }
-          if (tc.id) acc.id = tc.id;
-          if (tc.type) acc.type = tc.type;
-          if (tc.function?.name) acc.function.name = tc.function.name;
-          if (tc.function?.arguments) acc.function.arguments += tc.function.arguments;
+        }
+
+        // DeepSeek V4 Pro thinking 模式：reasoning_content 必须在下一轮原样传回
+        if (delta.reasoning_content) {
+          reasoningContent += delta.reasoning_content;
+        }
+
+        if (Array.isArray(delta.tool_calls)) {
+          for (const tc of delta.tool_calls) {
+            const idx = tc.index ?? 0;
+            let acc = toolCallsByIndex.get(idx);
+            if (!acc) {
+              acc = { id: '', type: 'function', function: { name: '', arguments: '' } };
+              toolCallsByIndex.set(idx, acc);
+            }
+            if (tc.id) acc.id = tc.id;
+            if (tc.type) acc.type = tc.type;
+            if (tc.function?.name) acc.function.name = tc.function.name;
+            if (tc.function?.arguments) acc.function.arguments += tc.function.arguments;
+          }
         }
       }
     }
+  } catch (error) {
+    if (providerControl?.abortController.signal.aborted) {
+      await reader.cancel(providerControl.abortController.signal.reason).catch(() => {});
+    }
+    throw error;
+  } finally {
+    reader.releaseLock?.();
   }
 
   // 按 index 排序，过滤不完整的（没有 id 或 name 的不能发回 OpenAI）
@@ -4374,6 +4467,30 @@ ${turnLanguageRule}
           }
         }
 
+        const providerStartedAt = Date.now();
+        let providerFirstByteAt = null;
+        let providerTimingStatus = 'completed';
+        const providerAbortController = new AbortController();
+        const providerControl = {
+          abortController: providerAbortController,
+          deadlineAt: providerStartedAt + chatProviderTimeoutMs(
+            env.OPENAI_CHAT_TOTAL_TIMEOUT_MS,
+            CHAT_PROVIDER_TOTAL_TIMEOUT_MS,
+          ),
+          firstByteTimeoutMs: chatProviderTimeoutMs(
+            env.OPENAI_CHAT_FIRST_BYTE_TIMEOUT_MS,
+            CHAT_PROVIDER_FIRST_BYTE_TIMEOUT_MS,
+          ),
+          firstByteDeadlineAt: 0,
+          idleTimeoutMs: chatProviderTimeoutMs(
+            env.OPENAI_CHAT_IDLE_TIMEOUT_MS,
+            CHAT_PROVIDER_IDLE_TIMEOUT_MS,
+          ),
+          onFirstByte() {
+            if (providerFirstByteAt === null) providerFirstByteAt = Date.now();
+          },
+        };
+
         try {
           while (true) {
             const canCallTools = iteration < MAX_TOOL_ITERATIONS;
@@ -4390,23 +4507,34 @@ ${turnLanguageRule}
               requestBody.tool_choice = 'auto';
             }
 
-            const apiResponse = await fetch(env.OPENAI_API_ENDPOINT, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${env.OPENAI_API_KEY}`,
+            const remainingTotalMs = providerControl.deadlineAt - Date.now();
+            if (remainingTotalMs <= 0) throw abortChatProvider(providerAbortController, 'total');
+            providerControl.firstByteDeadlineAt = Date.now() + providerControl.firstByteTimeoutMs;
+            const fetchStage = remainingTotalMs <= providerControl.firstByteTimeoutMs
+              ? 'total'
+              : 'first_byte';
+            const apiResponse = await waitForChatProvider(
+              fetch(env.OPENAI_API_ENDPOINT, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'Authorization': `Bearer ${env.OPENAI_API_KEY}`,
+                },
+                body: JSON.stringify(requestBody),
+                signal: providerAbortController.signal,
+              }),
+              {
+                abortController: providerAbortController,
+                timeoutMs: Math.min(providerControl.firstByteTimeoutMs, remainingTotalMs),
+                stage: fetchStage,
               },
-              body: JSON.stringify(requestBody),
-            });
+            );
 
             if (!apiResponse.ok) {
               // 上游失败：发系统兜底文本，Sentry 上报，退出循环
-              const errText = await apiResponse.text().catch(() => 'upstream error');
-              console.error(
-                '[chat] LLM upstream failed:',
-                apiResponse.status,
-                redactPII(errText).slice(0, 800),
-              );
+              providerTimingStatus = 'failed';
+              await apiResponse.body?.cancel().catch(() => {});
+              console.error('[chat] LLM upstream failed:', apiResponse.status);
               const fallback = getAiFallbackMessage(env);
               fullContent += fallback;
               controller.enqueue(
@@ -4447,6 +4575,7 @@ ${turnLanguageRule}
               convId,
               decoder,
               deferContent: true,
+              providerControl,
             });
 
             // 本轮无 tool_calls（或已达上限）→ 这就是最终答复，退出
@@ -4514,8 +4643,12 @@ ${turnLanguageRule}
             iteration++;
           }
         } catch (e) {
+          const isProviderTimeout = e instanceof ChatProviderTimeoutError || e?.code === 'chat_provider_timeout';
+          providerTimingStatus = isProviderTimeout ? 'timeout' : 'failed';
           console.error('[chat] LLM stream failed:', e?.message || e);
-          const fallback = getAiFallbackMessage(env, e);
+          const fallback = isProviderTimeout
+            ? getChatTimeoutFallback(isCnMarket)
+            : getAiFallbackMessage(env, e);
           if (!fullContent) {
             fullContent += fallback;
             controller.enqueue(
@@ -4536,7 +4669,7 @@ ${turnLanguageRule}
               ctx: request._ctx,
               extra: {
                 feature: 'ai_chat',
-                stage: 'stream',
+                stage: isProviderTimeout ? `timeout_${e.stage || 'provider'}` : 'stream',
                 market: getRequestMarket(request),
               },
             });
@@ -4544,6 +4677,13 @@ ${turnLanguageRule}
             /* 吃掉 */
           }
         } finally {
+          console.info('[chat] LLM timing', {
+            market: getRequestMarket(request),
+            status: providerTimingStatus,
+            first_byte_ms: providerFirstByteAt === null ? null : providerFirstByteAt - providerStartedAt,
+            total_ms: Date.now() - providerStartedAt,
+            iterations: iteration + 1,
+          });
           if (pendingDeviceSuggestion) {
             controller.enqueue(
               encoder.encode(

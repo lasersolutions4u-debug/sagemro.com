@@ -536,6 +536,212 @@ test('handleChat prompt keeps simple questions useful without pushing a work ord
   assert.match(prompt, /Use at most one short SAGEMRO next step/);
 });
 
+test('handleChat aborts an upstream request that produces no response headers', async () => {
+  const conversationId = 'chat-first-byte-timeout';
+  const { env } = makeEnv();
+  env.OPENAI_CHAT_FIRST_BYTE_TIMEOUT_MS = '15';
+  env.OPENAI_CHAT_IDLE_TIMEOUT_MS = '100';
+  env.OPENAI_CHAT_TOTAL_TIMEOUT_MS = '200';
+  const originalFetch = globalThis.fetch;
+  let providerSignal;
+
+  globalThis.fetch = async (url, init) => {
+    if (url !== env.OPENAI_API_ENDPOINT) throw new Error(`Unexpected fetch URL: ${url}`);
+    providerSignal = init.signal;
+    return new Promise((_resolve, reject) => {
+      providerSignal?.addEventListener('abort', () => reject(providerSignal.reason), { once: true });
+    });
+  };
+
+  try {
+    const response = await handleChat(makeRequest({
+      conversation_id: conversationId,
+      message: 'The machine is not cutting well.',
+    }), env);
+    const sseText = await Promise.race([
+      response.text(),
+      new Promise((_resolve, reject) => setTimeout(() => reject(new Error('chat first-byte timeout was not enforced')), 250)),
+    ]);
+
+    assert.ok(providerSignal, 'expected provider AbortSignal');
+    assert.equal(providerSignal.aborted, true);
+    assert.match(sseText, /The AI response took too long and was stopped\. Please try again\./);
+    assert.match(sseText, /"response_status":"failed"/);
+    assert.match(sseText, /data: \[DONE\]/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('handleChat aborts a stream that becomes idle after its first chunk', async () => {
+  const conversationId = 'chat-idle-timeout';
+  const { env } = makeEnv();
+  env.OPENAI_CHAT_FIRST_BYTE_TIMEOUT_MS = '100';
+  env.OPENAI_CHAT_IDLE_TIMEOUT_MS = '15';
+  env.OPENAI_CHAT_TOTAL_TIMEOUT_MS = '200';
+  const originalFetch = globalThis.fetch;
+  let providerSignal;
+
+  globalThis.fetch = async (url, init) => {
+    if (url !== env.OPENAI_API_ENDPOINT) throw new Error(`Unexpected fetch URL: ${url}`);
+    providerSignal = init.signal;
+    return new Response(new ReadableStream({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode(
+          `data: ${JSON.stringify({ choices: [{ delta: { reasoning_content: 'working' } }] })}\n\n`,
+        ));
+        providerSignal?.addEventListener('abort', () => controller.error(providerSignal.reason), { once: true });
+      },
+    }), {
+      status: 200,
+      headers: { 'Content-Type': 'text/event-stream' },
+    });
+  };
+
+  try {
+    const response = await handleChat(makeRequest({
+      conversation_id: conversationId,
+      message: 'The machine is not cutting well.',
+    }), env);
+    const sseText = await Promise.race([
+      response.text(),
+      new Promise((_resolve, reject) => setTimeout(() => reject(new Error('chat idle timeout was not enforced')), 250)),
+    ]);
+
+    assert.ok(providerSignal, 'expected provider AbortSignal');
+    assert.equal(providerSignal.aborted, true);
+    assert.match(sseText, /The AI response took too long and was stopped\. Please try again\./);
+    assert.match(sseText, /"response_status":"failed"/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('handleChat enforces a total provider deadline even while chunks keep arriving', async () => {
+  const conversationId = 'chat-total-timeout';
+  const { env } = makeEnv();
+  env.OPENAI_CHAT_FIRST_BYTE_TIMEOUT_MS = '100';
+  env.OPENAI_CHAT_IDLE_TIMEOUT_MS = '100';
+  env.OPENAI_CHAT_TOTAL_TIMEOUT_MS = '30';
+  const originalFetch = globalThis.fetch;
+  let providerSignal;
+  let heartbeat;
+
+  globalThis.fetch = async (url, init) => {
+    if (url !== env.OPENAI_API_ENDPOINT) throw new Error(`Unexpected fetch URL: ${url}`);
+    providerSignal = init.signal;
+    return new Response(new ReadableStream({
+      start(controller) {
+        heartbeat = setInterval(() => {
+          controller.enqueue(new TextEncoder().encode(
+            `data: ${JSON.stringify({ choices: [{ delta: { reasoning_content: 'working' } }] })}\n\n`,
+          ));
+        }, 5);
+        providerSignal?.addEventListener('abort', () => {
+          clearInterval(heartbeat);
+          controller.error(providerSignal.reason);
+        }, { once: true });
+      },
+      cancel() {
+        clearInterval(heartbeat);
+      },
+    }), {
+      status: 200,
+      headers: { 'Content-Type': 'text/event-stream' },
+    });
+  };
+
+  try {
+    const response = await handleChat(makeRequest({
+      conversation_id: conversationId,
+      message: 'The machine is not cutting well.',
+    }), env);
+    const sseText = await Promise.race([
+      response.text(),
+      new Promise((_resolve, reject) => setTimeout(() => reject(new Error('chat total timeout was not enforced')), 250)),
+    ]);
+
+    assert.ok(providerSignal, 'expected provider AbortSignal');
+    assert.equal(providerSignal.aborted, true);
+    assert.match(sseText, /The AI response took too long and was stopped\. Please try again\./);
+    assert.match(sseText, /"response_status":"failed"/);
+  } finally {
+    clearInterval(heartbeat);
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('handleChat records bounded provider timing without customer content', async () => {
+  const conversationId = 'chat-timing-metrics';
+  const customerMessage = 'Private machine symptom must not be logged.';
+  const { env } = makeEnv();
+  const originalFetch = globalThis.fetch;
+  const originalInfo = console.info;
+  const timingEntries = [];
+
+  globalThis.fetch = async (url) => {
+    if (url !== env.OPENAI_API_ENDPOINT) throw new Error(`Unexpected fetch URL: ${url}`);
+    return makeSseResponse('Measured response.');
+  };
+  console.info = (label, details) => {
+    if (label === '[chat] LLM timing') timingEntries.push(details);
+  };
+
+  try {
+    const response = await handleChat(makeRequest({
+      conversation_id: conversationId,
+      message: customerMessage,
+    }), env);
+    await response.text();
+  } finally {
+    console.info = originalInfo;
+    globalThis.fetch = originalFetch;
+  }
+
+  assert.equal(timingEntries.length, 1);
+  assert.equal(timingEntries[0].market, 'com');
+  assert.equal(timingEntries[0].status, 'completed');
+  assert.equal(timingEntries[0].iterations, 1);
+  assert.ok(Number.isSafeInteger(timingEntries[0].first_byte_ms));
+  assert.ok(timingEntries[0].first_byte_ms >= 0);
+  assert.ok(Number.isSafeInteger(timingEntries[0].total_ms));
+  assert.ok(timingEntries[0].total_ms >= timingEntries[0].first_byte_ms);
+  assert.doesNotMatch(JSON.stringify(timingEntries[0]), new RegExp(`${conversationId}|${customerMessage}`));
+});
+
+test('handleChat does not wait for an unbounded upstream error body', async () => {
+  const conversationId = 'chat-upstream-error-body';
+  const { env } = makeEnv();
+  const originalFetch = globalThis.fetch;
+  let bodyCancelled = false;
+
+  globalThis.fetch = async (url) => {
+    if (url !== env.OPENAI_API_ENDPOINT) throw new Error(`Unexpected fetch URL: ${url}`);
+    return new Response(new ReadableStream({
+      cancel() {
+        bodyCancelled = true;
+      },
+    }), { status: 502 });
+  };
+
+  try {
+    const response = await handleChat(makeRequest({
+      conversation_id: conversationId,
+      message: 'The machine is not cutting well.',
+    }), env);
+    const sseText = await Promise.race([
+      response.text(),
+      new Promise((_resolve, reject) => setTimeout(() => reject(new Error('upstream error body blocked the chat response')), 250)),
+    ]);
+
+    assert.equal(bodyCancelled, true);
+    assert.match(sseText, new RegExp(AI_TEMPORARY_FALLBACK.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+    assert.match(sseText, /"response_status":"failed"/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test('handleChat uses low-variance generation for repeatable technical guidance', async () => {
   const { env } = makeEnv();
   const originalFetch = globalThis.fetch;
