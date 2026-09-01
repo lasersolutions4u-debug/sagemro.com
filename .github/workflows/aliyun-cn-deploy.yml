@@ -227,7 +227,7 @@ jobs:
 
           command -v nginx >/dev/null
           command -v certbot >/dev/null
-          $SUDO certbot show_account --non-interactive >/dev/null
+          $SUDO certbot certificates --non-interactive >/dev/null
           $SUDO test -f /etc/letsencrypt/options-ssl-nginx.conf
           if $SUDO test -L /etc/nginx/conf.d/sagemro-cn-ai.conf; then
             echo "AI Nginx configuration must not be a symbolic link." >&2
