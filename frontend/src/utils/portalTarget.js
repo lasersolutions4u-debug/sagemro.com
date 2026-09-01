@@ -8,7 +8,8 @@ const SERVICE_REQUEST_PRESET_KEYS = ['mode', 'service', 'brand', 'source'];
 export function resolvePortalTarget({ buildTarget = 'public', hostname = '' } = {}) {
   const host = String(hostname).toLowerCase().replace(/\.$/, '');
   if (ENGINEER_HOSTS.has(host) || LOCAL_ENGINEER_HOSTS.has(host)) return 'engineer';
-  if (buildTarget === 'portal' && (CUSTOMER_HOSTS.has(host) || LOCAL_CUSTOMER_HOSTS.has(host))) return 'customer';
+  if (LOCAL_CUSTOMER_HOSTS.has(host)) return 'customer';
+  if (buildTarget === 'portal' && CUSTOMER_HOSTS.has(host)) return 'customer';
   if (buildTarget === 'public' && PUBLIC_HOSTS.has(host)) return 'public';
   if (host === 'localhost' || host === '127.0.0.1' || host === '') return buildTarget === 'portal' ? 'customer' : 'public';
   return 'blocked';

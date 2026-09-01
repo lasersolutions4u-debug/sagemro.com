@@ -56,7 +56,7 @@ test('portal artifact blocks unknown production hosts while keeping local previe
   assert.equal(resolvePortalTarget({ buildTarget: 'portal', hostname: 'preview.example.com' }), 'blocked');
   assert.equal(resolvePortalTarget({ buildTarget: 'portal', hostname: 'localhost' }), 'customer');
   assert.equal(resolvePortalTarget({ buildTarget: 'portal', hostname: '127.0.0.1' }), 'customer');
-  assert.equal(resolvePortalTarget({ buildTarget: 'portal', hostname: 'customer.127.0.0.1.nip.io' }), 'customer');
+  assert.equal(resolvePortalTarget({ buildTarget: 'public', hostname: 'customer.127.0.0.1.nip.io' }), 'customer');
   assert.equal(resolvePortalTarget({ buildTarget: 'public', hostname: 'engineer.127.0.0.1.nip.io' }), 'engineer');
 });
 
