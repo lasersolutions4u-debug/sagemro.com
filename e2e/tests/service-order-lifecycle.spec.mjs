@@ -245,7 +245,7 @@ test('customer, Admin, and engineer complete a service order lifecycle', async (
   await closeCustomerWorkOrder(customerPage);
 
   await engineerPage.getByRole('tab', { name: 'Messages', exact: true }).click();
-  const manualMessage = `E2E manual update ${customer.runId}`;
+  const manualMessage = `E2E manual update ${customer.runId.slice(-6)}`;
   const messageCountBefore = localD1Rows(`SELECT COUNT(*) AS count FROM work_order_messages WHERE work_order_id = ${sqlText(workOrderId)}`)[0].count;
   await engineerPage.getByPlaceholder('Type a message...').fill(manualMessage);
   await engineerPage.getByPlaceholder('Type a message...').press('Enter');

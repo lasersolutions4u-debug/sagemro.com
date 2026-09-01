@@ -112,6 +112,17 @@ test('customer work-order journeys use the unified four-step service request flo
   assert.match(lifecycle, /submitCustomerServiceRequest/);
 });
 
+test('AI-home E2E starts the portal target and avoids phone-like message fixtures', () => {
+  const playwrightConfig = read('e2e/playwright.config.mjs');
+  const visual = read('e2e/tests/quote-execution-visual.spec.mjs');
+  const lifecycle = read('e2e/tests/service-order-lifecycle.spec.mjs');
+
+  assert.match(playwrightConfig, /SAGEMRO_BUILD_TARGET=portal VITE_API_BASE=/);
+  assert.match(visual, /url: 'http:\/\/ai\.sagemro\.cn:4273'/);
+  assert.match(lifecycle, /customer\.runId\.slice\(-6\)/);
+  assert.doesNotMatch(lifecycle, /manualMessage = `E2E manual update \$\{customer\.runId\}`/);
+});
+
 test('Cloudflare test workflow covers pull requests to both protected branches', () => {
   const workflow = read('.github/workflows/deploy.yml');
 

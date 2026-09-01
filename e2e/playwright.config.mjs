@@ -34,7 +34,7 @@ export default defineConfig({
       timeout: 120_000,
     },
     {
-      command: `VITE_API_BASE=${runtime.apiBase} npm run dev -- --host 0.0.0.0 --port 4273`,
+      command: `SAGEMRO_BUILD_TARGET=portal VITE_API_BASE=${runtime.apiBase} npm run dev -- --host 0.0.0.0 --port 4273`,
       cwd: '../frontend',
       url: runtime.customerBase,
       reuseExistingServer: false,

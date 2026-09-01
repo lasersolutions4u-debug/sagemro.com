@@ -27,7 +27,7 @@ const HOME_COPY = {
     about: 'About SAGEMRO',
   },
   zh: {
-    url: 'http://sagemro.cn:4273',
+    url: 'http://ai.sagemro.cn:4273',
     heading: '机器的问题，难不倒有心的人',
     input: '描述设备问题，或直接开始说...',
     tools: ['激光切割速度参考', '材料重量计算器', '激光切割成本估算', '钢材价格预算'],
@@ -36,7 +36,7 @@ const HOME_COPY = {
 };
 
 async function installChineseHostProxy(page) {
-  await page.route('http://sagemro.cn:4273/**', async (route) => {
+  await page.route('http://ai.sagemro.cn:4273/**', async (route) => {
     const localUrl = new URL(route.request().url());
     const localOrigin = new URL(runtime.customerBase);
     localUrl.protocol = localOrigin.protocol;
