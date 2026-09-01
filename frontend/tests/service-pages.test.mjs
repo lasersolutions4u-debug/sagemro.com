@@ -11,6 +11,10 @@ const expectedSlugs = [
   'press-brake-repair',
   'remote-diagnostics',
   'preventive-maintenance',
+  'equipment-system-retrofit',
+  'machine-relocation-installation',
+  'used-equipment-evaluation',
+  'spare-parts-consumables',
 ];
 
 const expectedTitles = {
@@ -19,12 +23,20 @@ const expectedTitles = {
     'Press Brake Repair & Accuracy Support',
     'Industrial Equipment Remote Diagnostics',
     'Preventive Maintenance for Laser and Forming Equipment',
+    'Equipment System Retrofit & Upgrade Support',
+    'Machine Relocation, Installation & Commissioning',
+    'Used Equipment Evaluation & Disposal Planning',
+    'Spare Parts & Consumables Support',
   ],
   'zh-CN': [
     '激光切割机维修与故障诊断',
     '折弯机维修与精度支持',
     '工业设备远程诊断与工程师支持',
     '激光与金属成形设备预防性维护',
+    '设备系统升级改造支持',
+    '设备拆机、移位、安装与调试',
+    '二手设备评估与处置建议',
+    '备件与耗材供应支持',
   ],
 };
 
@@ -35,7 +47,7 @@ const remoteExclusions = [
   /OEM-only procedures/i,
 ];
 
-test('service hub exposes the four approved bilingual service records', () => {
+test('service hub exposes the eight approved bilingual service records', () => {
   for (const locale of ['en', 'zh-CN']) {
     const pages = getServicePages(locale);
 
@@ -64,6 +76,21 @@ test('service hub exposes the four approved bilingual service records', () => {
   }
 
   assert.equal(getServicePage('not-a-service', 'en'), null);
+});
+
+test('used equipment service is an evaluation and disposal advisory service without an acquisition promise', () => {
+  const englishPage = getServicePage('used-equipment-evaluation', 'en');
+  const chinesePage = getServicePage('used-equipment-evaluation', 'zh-CN');
+
+  const englishCopy = Object.values(englishPage).flat().join(' ');
+  const chineseCopy = Object.values(chinesePage).flat().join(' ');
+
+  assert.match(englishCopy, /evaluation/i);
+  assert.match(englishCopy, /disposal/i);
+  assert.match(englishCopy, /does not constitute.*purchase|no purchase commitment/i);
+  assert.match(chineseCopy, /评估/);
+  assert.match(chineseCopy, /处置/);
+  assert.match(chineseCopy, /不构成.*收购承诺|不承诺收购/);
 });
 
 test('service records keep the approved operational and safety boundaries', () => {
@@ -117,10 +144,10 @@ test('service routes lazy-load the public pages and preserve the existing conver
   const app = await readFile(new URL('../src/App.jsx', import.meta.url), 'utf8');
 
   assert.match(app, /const ServicePages = lazy\(\(\) => import\('\.\/components\/Services\/ServicePages'\)/);
-  assert.match(app, /const serviceRoute = getServicePageRoute\(currentPath\);/);
+  assert.match(app, /const serviceRoute = portalTarget === 'public' \? getServicePageRoute\(currentPath\) : null;/);
   assert.match(app, /const isServicesPath = serviceRoute !== null;/);
   assert.match(app, /window\.history\.pushState\(\{\}, '', '\/'\);\s*setCurrentPath\('\/'\);/);
-  assert.match(app, /const handleServiceRequest = useCallback\(\(\) => \{\s*setWorkOrderModalOpen\(true\);/);
+  assert.match(app, /const handleServiceRequest = useCallback\(\(\) => \{\s*window\.history\.pushState\(\{\}, '', '\/service-request'\);\s*setCurrentPath\('\/service-request'\);/);
   assert.match(app, /<ServicePages[\s\S]*onStartDiagnosis=\{handleServiceDiagnosis\}[\s\S]*onOpenServiceRequest=\{handleServiceRequest\}/);
 
   const [pages, conversionPanel] = await Promise.all([
@@ -150,6 +177,7 @@ test('service routes lazy-load the public pages and preserve the existing conver
   }, -1);
   assert.match(conversionPanel, /onStartDiagnosis/);
   assert.match(conversionPanel, /onOpenServiceRequest/);
+  assert.match(conversionPanel, /href=\{serviceRequestHref\}/);
 });
 
 test('service route parsing accepts only exact hub paths and rejects malformed paths', () => {
@@ -167,6 +195,10 @@ test('service pages link all and only relevant published diagnostic guides', asy
     'press-brake-repair': [],
     'remote-diagnostics': [],
     'preventive-maintenance': ['laser-protective-lens-burning', 'laser-cutting-machine-maintenance-checklist'],
+    'equipment-system-retrofit': [],
+    'machine-relocation-installation': [],
+    'used-equipment-evaluation': [],
+    'spare-parts-consumables': [],
   };
 
   for (const locale of ['en', 'zh-CN']) {
@@ -208,5 +240,6 @@ test('the public technical-review route and footer entry are bilingual runtime c
   assert.match(page, /getTechnicalReviewPolicy/);
   assert.match(page, /setSeoMetadata/);
   assert.match(page, /canonical = `\$\{host\}\/about\/technical-review\/`/);
-  assert.match(page, /<Footer/);
+  assert.match(page, /import \{ PublicSiteShell \}/);
+  assert.match(page, /<PublicSiteShell isCn=\{locale === 'zh-CN'\} onOpenLegal=\{onOpenLegal\}>/);
 });

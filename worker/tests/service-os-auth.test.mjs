@@ -167,6 +167,22 @@ function createTestEnv(overrides = {}) {
               const [identity_type, normalized_value, owner_type, owner_id] = this.args;
               dbState.identities.push({ identity_type, normalized_value, owner_type, owner_id });
             }
+            if (/UPDATE customers SET password_hash = \?, salt = \? WHERE (?:lower\(email\)|phone) = \?/i.test(sql)) {
+              const [password_hash, salt, target] = this.args;
+              const matchEmail = /lower\(email\)/i.test(sql);
+              for (const customer of dbState.customers) {
+                const value = matchEmail ? customer.email?.toLowerCase() : customer.phone;
+                if (value === target) Object.assign(customer, { password_hash, salt });
+              }
+            }
+            if (/UPDATE engineers SET password_hash = \?, salt = \? WHERE (?:lower\(email\)|phone) = \?/i.test(sql)) {
+              const [password_hash, salt, target] = this.args;
+              const matchEmail = /lower\(email\)/i.test(sql);
+              for (const engineer of dbState.engineers) {
+                const value = matchEmail ? engineer.email?.toLowerCase() : engineer.phone;
+                if (value === target) Object.assign(engineer, { password_hash, salt });
+              }
+            }
             if (/UPDATE engineer_applications SET converted_user_id = NULL/i.test(sql)) {
               for (const application of dbState.engineerApplications) {
                 if (application.converted_user_id === this.args[0]) application.converted_user_id = null;
@@ -360,10 +376,10 @@ test('COM auth validation errors are returned in English', async () => {
   assert.equal(login.json.error, 'Phone number and password are required.');
 
   const sendCode = await postJson('https://api.sagemro.com/api/auth/send-code', {
-    phone: 'not-a-phone',
+    email: 'not-an-email',
   });
   assert.equal(sendCode.response.status, 400);
-  assert.equal(sendCode.json.error, 'Please enter a valid phone number.');
+  assert.equal(sendCode.json.error, 'Please enter a valid email address.');
 });
 
 test('COM protected route auth errors are returned in English', async () => {
@@ -399,7 +415,7 @@ test('registration verification code can be sent to an email address', async () 
   assert.equal(response.status, 200);
   assert.equal(json.success, true);
   assert.match(json.message, /验证码已发送/);
-  assert.match(json.code, /^\d{4}$/);
+  assert.match(json.code, /^\d{6}$/);
   assert.equal(env.__kv.get('verify_code_email_joe@example.com'), json.code);
   assert.equal(env.__kv.get('verify_code_rate_email_joe@example.com'), '1');
 });
@@ -508,7 +524,7 @@ test('CN registration verification code is sent through Aliyun SMS for a phone n
     assert.equal(params.get('SignName'), '济南钰峭机械');
     assert.equal(params.get('TemplateCode'), 'SMS_508990106');
     const templateParam = JSON.parse(params.get('TemplateParam'));
-    assert.match(templateParam.code, /^\d{4}$/);
+    assert.match(templateParam.code, /^\d{6}$/);
     assert.equal(env.__kv.get('verify_code_13800000001'), templateParam.code);
   } finally {
     globalThis.fetch = originalFetch;
@@ -598,7 +614,7 @@ test('production CN verification ignores DEV_BYPASS_CODE and sends the random SM
     assert.equal(response.status, 200);
     assert.equal(json.success, true);
     assert.equal(json.code, undefined);
-    assert.match(templateParam.code, /^\d{4}$/);
+    assert.match(templateParam.code, /^\d{6}$/);
     assert.notEqual(templateParam.code, '2468');
     assert.equal(env.__kv.get('verify_code_13800000004'), templateParam.code);
     assert.equal(env.__kv.get('verify_code_13800000004_bypass'), undefined);
@@ -653,6 +669,160 @@ test('COM customer registration stores email and allows email login', async () =
   assert.equal(loginResult.response.status, 200);
   assert.equal(loginResult.json.user.phone, '+66961135966');
   assert.equal(loginResult.json.user.email, 'joe@example.com');
+});
+
+test('registration verification code is invalidated after five failed guesses', async () => {
+  const env = createTestEnv();
+  await env.KV.put('verify_code_email_rate-limit@example.com', '654321');
+  const body = {
+    name: 'Rate Limit Test',
+    email: 'rate-limit@example.com',
+    password: 'secret12345',
+    company: 'Example Co',
+    identity: 'customer',
+  };
+
+  for (let attempt = 1; attempt <= 4; attempt += 1) {
+    const result = await postJson('https://api.sagemro.com/api/auth/register/customer', {
+      ...body,
+      code: `00000${attempt}`,
+    }, env);
+    assert.equal(result.response.status, 400);
+  }
+
+  const locked = await postJson('https://api.sagemro.com/api/auth/register/customer', {
+    ...body,
+    code: '000005',
+  }, env);
+  assert.equal(locked.response.status, 429);
+  assert.equal(await env.KV.get('verify_code_email_rate-limit@example.com'), null);
+});
+
+test('COM customer registration accepts verified email with blank optional phone', async () => {
+  const env = createTestEnv();
+  await env.KV.put('verify_code_email_optional-phone@example.com', '1357');
+
+  const { response, json } = await postJson('https://api.sagemro.com/api/auth/register/customer', {
+    name: 'Optional Phone',
+    phone: '   ',
+    email: 'Optional-Phone@Example.com',
+    password: 'secret12345',
+    code: '1357',
+    company: 'Test Co',
+    identity: 'customer',
+  }, env);
+
+  assert.equal(response.status, 200);
+  assert.equal(json.customer.phone, null);
+  assert.equal(env.__dbState.customers[0].phone, null);
+  assert.equal(env.__dbState.identities.some((row) => row.identity_type === 'phone'), false);
+  assert.equal(env.__dbState.identities.some((row) => (
+    row.identity_type === 'email' && row.normalized_value === 'optional-phone@example.com'
+  )), true);
+});
+
+test('COM customer registration requires a valid email and email verification code', async () => {
+  const env = createTestEnv();
+
+  const missingEmail = await postJson('https://api.sagemro.com/api/auth/register/customer', {
+    name: 'Missing Email',
+    phone: '',
+    password: 'secret12345',
+    code: '1357',
+    company: 'Test Co',
+    identity: 'customer',
+  }, env);
+  assert.equal(missingEmail.response.status, 400);
+  assert.match(missingEmail.json.error, /email/i);
+
+  const invalidEmail = await postJson('https://api.sagemro.com/api/auth/register/customer', {
+    name: 'Invalid Email',
+    phone: '',
+    email: 'invalid-email',
+    password: 'secret12345',
+    code: '1357',
+    company: 'Test Co',
+    identity: 'customer',
+  }, env);
+  assert.equal(invalidEmail.response.status, 400);
+  assert.match(invalidEmail.json.error, /email/i);
+
+  const missingCode = await postJson('https://api.sagemro.com/api/auth/register/customer', {
+    name: 'Missing Code',
+    phone: '',
+    email: 'missing-code@example.com',
+    password: 'secret12345',
+    company: 'Test Co',
+    identity: 'customer',
+  }, env);
+  assert.equal(missingCode.response.status, 400);
+  assert.match(missingCode.json.error, /verification code/i);
+});
+
+test('CN customer registration requires phone and verifies the SMS target even when email is present', async () => {
+  const env = createTestEnv();
+  await env.KV.put('verify_code_email_cn-only@example.com', '1357');
+
+  const { response, json } = await postJson('https://api.sagemro.cn/api/auth/register/customer', {
+    name: 'CN Customer',
+    email: 'cn-only@example.com',
+    password: 'secret12345',
+    code: '1357',
+    company: 'Test Co',
+    identity: 'customer',
+  }, env);
+
+  assert.equal(response.status, 400);
+  assert.match(json.error, /手机号|phone/i);
+  assert.equal(env.__dbState.customers.length, 0);
+});
+
+test('COM password reset sends and consumes a code by normalized email', async () => {
+  const env = createTestEnv({ ENVIRONMENT: 'development' });
+  env.__dbState.customers.push({
+    id: 'cust-email-reset',
+    user_no: 'U000090',
+    name: 'Email Reset',
+    phone: null,
+    email: 'reset@example.com',
+    password_hash: 'old-hash',
+    salt: 'old-salt',
+  });
+
+  const sent = await postJson('https://api.sagemro.com/api/auth/send-reset-code', {
+    email: ' RESET@Example.com ',
+  }, env);
+  assert.equal(sent.response.status, 200);
+  const code = await env.KV.get('reset_code_email_reset@example.com');
+  assert.match(code, /^\d{4}$/);
+
+  const reset = await postJson('https://api.sagemro.com/api/auth/reset-password', {
+    email: 'RESET@example.com',
+    code,
+    newPassword: 'new-secret-12345',
+  }, env);
+  assert.equal(reset.response.status, 200);
+  assert.notEqual(env.__dbState.customers[0].password_hash, 'old-hash');
+  assert.equal(await env.KV.get('reset_code_email_reset@example.com'), null);
+});
+
+test('CN password reset continues to use the phone target', async () => {
+  const env = createTestEnv({ ENVIRONMENT: 'development' });
+  env.__dbState.customers.push({
+    id: 'cust-phone-reset',
+    user_no: 'U000091',
+    name: 'Phone Reset',
+    phone: '13800000091',
+    email: null,
+    password_hash: 'old-hash',
+    salt: 'old-salt',
+  });
+
+  const sent = await postJson('https://api.sagemro.cn/api/auth/send-reset-code', {
+    phone: '13800000091',
+  }, env);
+  assert.equal(sent.response.status, 200);
+  assert.match(await env.KV.get('reset_code_13800000091'), /^\d{4}$/);
 });
 
 test('customer registration rejects an email owned by an engineer identity', async () => {
@@ -1271,6 +1441,98 @@ test('CN customer registration still verifies the phone code when optional email
   assert.equal(json.success, true);
   assert.equal(json.customer.phone, '13800000004');
   assert.equal(await env.KV.get('verify_code_13800000004'), null);
+});
+
+test('AI portal origins receive and restore the isolated customer session cookie', async () => {
+  for (const [origin, customerId, email] of [
+    ['https://ai.sagemro.com', 'cust-ai-com', 'ai-com@example.com'],
+    ['https://ai.sagemro.cn', 'cust-ai-cn', 'ai-cn@example.com'],
+  ]) {
+    const env = createTestEnv();
+    const salt = `session-${customerId}`;
+    const password = 'secret12345';
+    env.__dbState.customers.push({
+      id: customerId,
+      user_no: customerId === 'cust-ai-com' ? 'U000092' : 'U000093',
+      name: 'AI Portal Customer',
+      phone: customerId === 'cust-ai-com' ? null : '13800000093',
+      email,
+      password_hash: await hashPasswordNew(password, salt),
+      salt,
+      company: 'AI Portal Co',
+      auth_status: 'authenticated',
+    });
+
+    const loginResult = await postJson('https://api.sagemro.com/api/auth/login', {
+      email,
+      password,
+    }, env, origin);
+    assert.equal(loginResult.response.status, 200, origin);
+    assert.equal(loginResult.json.token, undefined, origin);
+    assert.match(
+      loginResult.response.headers.get('set-cookie') || '',
+      /^__Host-sagemro_customer_session=/,
+      origin,
+    );
+
+    const cookie = (loginResult.response.headers.get('set-cookie') || '').split(';')[0];
+    const sessionResponse = await worker.fetch(new Request('https://api.sagemro.com/api/auth/session', {
+      headers: { Origin: origin, Cookie: cookie },
+    }), env, { waitUntil() {} });
+    const sessionJson = await sessionResponse.json();
+
+    assert.equal(sessionResponse.status, 200, origin);
+    assert.equal(sessionJson.authenticated, true, origin);
+    assert.equal(sessionJson.userType, 'customer', origin);
+    assert.equal(sessionJson.user.id, customerId, origin);
+  }
+});
+
+test('CN customer registration rejects a malformed optional email', async () => {
+  const env = createTestEnv();
+  await env.KV.put('verify_code_13800000006', '8642');
+
+  const { response, json } = await postJson('https://api.sagemro.cn/api/auth/register/customer', {
+    name: 'Joe',
+    phone: '13800000006',
+    email: 'not-an-email',
+    password: 'secret12345',
+    code: '8642',
+    company: '济南钰峭机械有限公司',
+    identity: 'customer',
+  }, env);
+
+  assert.equal(response.status, 400);
+  assert.equal(json.error, '邮箱格式不正确');
+  assert.equal(env.__dbState.customers.length, 0);
+});
+
+test('shared COM API chooses registration and reset channel only from trusted portal origins', async () => {
+  const cnEnv = createTestEnv({ ENVIRONMENT: 'development' });
+  const cnSend = await postJson('https://api.sagemro.com/api/auth/send-code', {
+    phone: '13800000007',
+  }, cnEnv, 'https://ai.sagemro.cn');
+  assert.equal(cnSend.response.status, 200);
+  assert.match(await cnEnv.KV.get('verify_code_13800000007'), /^\d{6}$/);
+
+  const comEnv = createTestEnv({ ENVIRONMENT: 'development' });
+  const forgedSend = await postJson('https://api.sagemro.com/api/auth/send-code', {
+    email: 'forged-origin@example.com',
+  }, comEnv, 'https://evil.cn');
+  assert.equal(forgedSend.response.status, 200);
+  assert.match(await comEnv.KV.get('verify_code_email_forged-origin@example.com'), /^\d{6}$/);
+
+  const cnReset = await postJson('https://api.sagemro.com/api/auth/send-reset-code', {
+    phone: '13800000008',
+  }, createTestEnv({ ENVIRONMENT: 'development' }), 'https://sagemro.cn');
+  assert.equal(cnReset.response.status, 200);
+
+  const forgedResetEnv = createTestEnv({ ENVIRONMENT: 'development' });
+  const forgedReset = await postJson('https://api.sagemro.com/api/auth/send-reset-code', {
+    email: 'reset-forged@example.com',
+  }, forgedResetEnv, 'https://sagemro.cn.evil.com');
+  assert.equal(forgedReset.response.status, 200);
+  assert.match(await forgedResetEnv.KV.get('reset_code_email_reset-forged@example.com'), /^\d{4}$/);
 });
 
 test('customer registration rejects public passwords shorter than 10 characters', async () => {

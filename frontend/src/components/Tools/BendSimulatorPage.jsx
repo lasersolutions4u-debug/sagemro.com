@@ -1,7 +1,5 @@
 import { ArrowLeft, Calculator } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { BrandMark } from '../common/BrandMark';
-import { Footer } from '../common/Footer';
 import { Modal } from '../common/Modal';
 import { BendProfileEditor } from './BendProfileEditor';
 import { BendResultPanel } from './BendResultPanel';
@@ -26,7 +24,7 @@ function isChinese(locale) {
   return locale === 'zh' || locale === 'zh-CN';
 }
 
-export function BendSimulatorPage({ tool, copy, onOpenLegal, locale = 'en' }) {
+export function BendSimulatorPage({ tool, copy, locale = 'en' }) {
   const isCn = isChinese(locale);
   const reviewCopy = isCn ? REVIEW_COPY.zh : REVIEW_COPY.en;
   const [input, setInput] = useState(() => toBendSimulatorEditorInput(INITIAL_INPUT));
@@ -87,20 +85,7 @@ export function BendSimulatorPage({ tool, copy, onOpenLegal, locale = 'en' }) {
 
   return (
     <div className="min-h-[100dvh] bg-[var(--color-bg)] text-[var(--color-text-primary)]">
-      <header className="border-b border-[var(--color-border)] bg-[var(--color-surface)]">
-        <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-3 sm:px-6">
-          <a href="/" className="flex items-center gap-2 text-sm font-semibold text-[var(--color-text-primary)]">
-            <BrandMark variant="logo" className="h-8 w-8 object-contain" />
-            SAGEMRO
-          </a>
-          <nav className="flex items-center gap-3 text-sm text-[var(--color-text-secondary)]">
-            <a href="/tools/" className="hover:text-[var(--color-primary)]">{copy.navTools}</a>
-            <a href="/" className="hover:text-[var(--color-primary)]">{copy.navChat}</a>
-          </nav>
-        </div>
-      </header>
-
-      <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:py-10">
+      <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:py-10">
         <a href="/tools/" className="inline-flex items-center gap-2 text-sm text-[var(--color-text-secondary)] hover:text-[var(--color-primary)]">
           <ArrowLeft size={16} />
           {copy.allTools}
@@ -119,9 +104,8 @@ export function BendSimulatorPage({ tool, copy, onOpenLegal, locale = 'en' }) {
           <div className="order-2 space-y-5"><BendSimulationViewport {...workspace.viewport} onViewModeChange={setViewMode} locale={locale} /><BendSimulationTimeline {...workspace.timeline} locale={locale} onFrameChange={setActiveFrame} onTogglePlay={setPlaying} onStep={(direction) => setActiveFrame((frame) => Math.max(0, Math.min(result.frames.length - 1, frame + direction)))} /></div>
           <div className="order-3"><BendResultPanel {...workspace.resultPanel} locale={locale} onRequestReview={() => setReviewOpen(true)} /></div>
         </div>
-      </main>
+      </div>
 
-      <Footer onOpenLegal={onOpenLegal} />
       <Modal isOpen={reviewOpen} onClose={() => setReviewOpen(false)} title={reviewCopy.title}>
         <form className="space-y-4" onSubmit={handleReviewSubmit}>
           <p className="text-sm leading-6 text-[var(--color-text-secondary)]">{reviewCopy.intro}</p>

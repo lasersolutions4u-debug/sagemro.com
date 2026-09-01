@@ -1,6 +1,12 @@
 import { expect, test } from '@playwright/test';
 
-import { adminApi, loginAdmin, onboardEngineer, uniqueIdentity } from '../support/journeys.mjs';
+import {
+  adminApi,
+  loginAdmin,
+  onboardEngineer,
+  submitCustomerServiceRequest,
+  uniqueIdentity,
+} from '../support/journeys.mjs';
 import { e2eRuntime } from '../support/runtime.mjs';
 import { captureBothViewports, localD1Rows, sqlText } from '../support/visual.mjs';
 
@@ -184,18 +190,11 @@ test('customer, Admin, and engineer complete a service order lifecycle', async (
   await customerPage.getByPlaceholder('Enter verification code').fill('246810');
   await customerPage.getByRole('checkbox').check();
   await customerPage.getByRole('button', { name: 'Create account', exact: true }).click();
-  const requestServiceButton = customerPage.getByRole('button', { name: 'Request Service', exact: true });
-  await expect(requestServiceButton).toBeVisible();
-
-  await requestServiceButton.click();
-  await customerPage.getByLabel('Request Type').selectOption('fault');
-  await customerPage.getByLabel('Equipment Model / Part No.').fill('E2E-LASER-3015');
-  await customerPage.getByLabel('Request Details').fill(`E2E lifecycle ${customer.runId}: laser power drops during production.`);
-  await customerPage.getByLabel('Contact Method').fill(customer.email);
-  await customerPage.getByTestId('submit-work-order-button').click();
-  const serviceNo = customerPage.getByText(/^Service No\.:/);
-  await expect(serviceNo).toBeVisible();
-  const orderNo = (await serviceNo.textContent()).replace('Service No.:', '').trim();
+  const orderNo = await submitCustomerServiceRequest({
+    page: customerPage,
+    customer,
+    description: `E2E lifecycle ${customer.runId}: laser power drops during production.`,
+  });
   const workOrderId = await customerPage.evaluate(async ({ apiBase, targetOrderNo }) => {
     const token = localStorage.getItem('sagemro_token');
     const response = await fetch(`${apiBase}/api/workorders`, {
@@ -206,7 +205,6 @@ test('customer, Admin, and engineer complete a service order lifecycle', async (
     return data.work_orders.find((workOrder) => workOrder.order_no === targetOrderNo)?.id || '';
   }, { apiBase: runtime.apiBase, targetOrderNo: orderNo });
   expect(workOrderId).not.toBe('');
-  await customerPage.getByRole('button', { name: 'Got it', exact: true }).click();
 
   const adminContext = await browser.newContext();
   const adminPage = await adminContext.newPage();
@@ -247,7 +245,7 @@ test('customer, Admin, and engineer complete a service order lifecycle', async (
   await closeCustomerWorkOrder(customerPage);
 
   await engineerPage.getByRole('tab', { name: 'Messages', exact: true }).click();
-  const manualMessage = `E2E manual update ${customer.runId}`;
+  const manualMessage = `E2E manual update ${customer.runId.slice(-6)}`;
   const messageCountBefore = localD1Rows(`SELECT COUNT(*) AS count FROM work_order_messages WHERE work_order_id = ${sqlText(workOrderId)}`)[0].count;
   await engineerPage.getByPlaceholder('Type a message...').fill(manualMessage);
   await engineerPage.getByPlaceholder('Type a message...').press('Enter');

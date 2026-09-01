@@ -73,6 +73,40 @@ export async function onboardEngineer({ browser, runtime = e2eRuntime() }) {
   return { engineer, context, page };
 }
 
+export async function submitCustomerServiceRequest({ page, customer, description }) {
+  const requestServiceButton = page.getByRole('button', { name: 'Request Service', exact: true });
+  await expect(requestServiceButton).toBeVisible();
+  await requestServiceButton.click();
+
+  await page.getByText('Repair & diagnostics', { exact: true }).click();
+  await page.getByRole('button', { name: 'Continue', exact: true }).click();
+
+  const equipmentType = page.getByPlaceholder('Select or enter the equipment type…');
+  await equipmentType.fill('Laser cutting machine');
+  await equipmentType.press('Enter');
+  await page.getByPlaceholder('e.g. C3015 3000W, TruLaser 3030, BM111').fill('E2E-LASER-3015');
+  await page.getByLabel('Problem or service request · Required').fill(
+    description || `E2E lifecycle ${customer.runId}: replacement parts required.`,
+  );
+  await page.getByRole('button', { name: 'Continue', exact: true }).click();
+
+  const region = page.getByPlaceholder('Enter country, state / province or city, then press Enter…');
+  await region.fill('United States');
+  await region.press('Enter');
+  await page.getByRole('button', { name: 'Continue', exact: true }).click();
+
+  await page.getByLabel('Contact name · Required').fill(customer.name);
+  await page.getByLabel('Email · Optional').fill(customer.email);
+  await page.getByRole('checkbox').check();
+  await page.getByRole('button', { name: 'Send service request', exact: true }).click();
+
+  const serviceNo = page.getByText(/^Service No\.:/);
+  await expect(serviceNo).toBeVisible();
+  const orderNo = (await serviceNo.textContent()).replace('Service No.:', '').trim();
+  await page.getByRole('button', { name: 'Done', exact: true }).click();
+  return orderNo;
+}
+
 export async function createCustomerWorkOrder({ browser, runtime = e2eRuntime(), description }) {
   const customer = {
     ...uniqueIdentity('Customer'),
@@ -93,19 +127,7 @@ export async function createCustomerWorkOrder({ browser, runtime = e2eRuntime(),
   await page.getByRole('checkbox').check();
   await page.getByRole('button', { name: 'Create account', exact: true }).click();
 
-  const requestServiceButton = page.getByRole('button', { name: 'Request Service', exact: true });
-  await expect(requestServiceButton).toBeVisible();
-  await requestServiceButton.click();
-  await page.getByLabel('Request Type').selectOption('fault');
-  await page.getByLabel('Equipment Model / Part No.').fill('E2E-LASER-3015');
-  await page.getByLabel('Request Details').fill(description || `E2E lifecycle ${customer.runId}: replacement parts required.`);
-  await page.getByLabel('Contact Method').fill(customer.email);
-  await page.getByTestId('submit-work-order-button').click();
-
-  const serviceNo = page.getByText(/^Service No\.:/);
-  await expect(serviceNo).toBeVisible();
-  const orderNo = (await serviceNo.textContent()).replace('Service No.:', '').trim();
-  await page.getByRole('button', { name: 'Got it', exact: true }).click();
+  const orderNo = await submitCustomerServiceRequest({ page, customer, description });
   return { customer, context, page, orderNo };
 }
 

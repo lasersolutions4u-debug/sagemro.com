@@ -38,7 +38,7 @@ test('frontend private route families return a complete noindex header', () => {
     const escapedRoute = route.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     assert.match(
       headers,
-      new RegExp(`^${escapedRoute}\\n  X-Robots-Tag: noindex, nofollow, noarchive, nosnippet, noimageindex$`, 'm'),
+      new RegExp(`^${escapedRoute}\\r?\\n  X-Robots-Tag: noindex, nofollow, noarchive, nosnippet, noimageindex\\r?$`, 'm'),
     );
   }
 });

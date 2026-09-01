@@ -2,6 +2,11 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
+function getCnCopy(source) {
+  const cnStart = source.indexOf('  cn: {');
+  return source.slice(cnStart, source.indexOf('\n};', cnStart));
+}
+
 test('pricing panels use market quote currencies and do not expose offline settlement split', async () => {
   const source = await readFile(new URL('../src/components/WorkOrder/PricingPanels.jsx', import.meta.url), 'utf8');
 
@@ -38,7 +43,7 @@ test('customer confirms one complete quote version with all commercial terms vis
 
 test('CN pricing copy does not fall back to visible English runtime messages', async () => {
   const source = await readFile(new URL('../src/components/WorkOrder/PricingPanels.jsx', import.meta.url), 'utf8');
-  const cnCopy = source.match(/cn: \{([\s\S]*?)\n  \},\n\};/)?.[1] || '';
+  const cnCopy = getCnCopy(source);
 
   for (const english of [
     'Submission failed',
@@ -58,7 +63,7 @@ test('CN pricing copy does not fall back to visible English runtime messages', a
 
 test('counteroffer validation copy is localized for both markets', async () => {
   const source = await readFile(new URL('../src/components/WorkOrder/PricingPanels.jsx', import.meta.url), 'utf8');
-  const cnCopy = source.match(/cn: \{([\s\S]*?)\n  \},\n\};/)?.[1] || '';
+  const cnCopy = getCnCopy(source);
 
   assert.match(source, /Enter a whole-number counteroffer without spaces, signs, or decimals\./);
   assert.match(cnCopy, /期望价格须为不含空格、正负号或小数点的整数。/);

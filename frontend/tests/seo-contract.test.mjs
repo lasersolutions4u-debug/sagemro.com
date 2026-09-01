@@ -125,7 +125,7 @@ test('client navigation keeps route metadata in parity with prerendered pages', 
   assert.match(seo, /tag\?\.remove\(\)/);
   assert.match(main, /const rootElement = document\.getElementById\('root'\);/);
   assert.match(main, /rootElement\.dataset\.prerendered === 'true'/);
-  assert.match(main, /rootElement\.replaceChildren\(\);/);
+  assert.doesNotMatch(main, /rootElement\.replaceChildren\(\);/);
   assert.match(main, /delete rootElement\.dataset\.prerendered;/);
   assert.match(main, /createRoot\(rootElement\)\.render\(/);
 });

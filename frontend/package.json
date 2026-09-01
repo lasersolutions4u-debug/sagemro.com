@@ -5,7 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build && node scripts/buildPublicPages.mjs",
+    "build": "npm run build:public",
+    "build:public": "node scripts/runBuild.mjs public",
+    "build:portal": "node scripts/runBuild.mjs portal",
     "pretest": "npm run build",
     "test": "node --test tests/*.test.mjs",
     "lint": "eslint .",

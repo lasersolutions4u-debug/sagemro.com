@@ -104,8 +104,8 @@ test('evidence review CTA follows safety boundary and calculator CTA is suppress
   assert.match(page, /robots: seoMetadata\.robots/);
   assert.ok(page.indexOf('<ToolEvidence', 0) < page.indexOf('{copy.faq}'));
   assert.ok(safetyIndex < reviewIndex);
-  assert.match(page, /Ask SAGEMRO AI to review this result/);
-  assert.match(page, /请 SAGEMRO AI 复核此结果/);
+  assert.match(page, /Copy result and open SAGEMRO AI/);
+  assert.match(page, /复制结果并打开 SAGEMRO AI/);
 });
 
 test('tool page headings allow long Chinese titles to wrap on mobile', () => {

@@ -17,7 +17,7 @@ test('frontend API scopes lists and sends idempotency headers for draft creation
   );
   const receiptApi = api.slice(
     api.indexOf('export async function confirmMaterialRequisitionReceipt'),
-    api.indexOf('/**\n * 提交评价'),
+    api.search(/\/\*\*\r?\n \* 提交评价/),
   );
 
   assert.match(api, /export async function getMaterialRequisitions\(workOrderId\)/);

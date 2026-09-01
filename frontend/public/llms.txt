@@ -6,6 +6,7 @@ SAGEMRO provides practical planning references for industrial equipment users. T
 
 - https://sagemro.com/
 - https://sagemro.com/services/
+- https://sagemro.com/brands/
 - https://sagemro.com/tools/
 - https://sagemro.com/insights/
 

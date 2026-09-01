@@ -15,7 +15,6 @@ export function ChatArea({
   currentTitle,
   onToggleSidebar,
   onOpenLegal,
-  onOpenAbout,
 }) {
   const messagesEndRef = useRef(null);
   const messagesContainerRef = useRef(null);
@@ -36,7 +35,6 @@ export function ChatArea({
   const subtitle = isCn
     ? '专为激光和成型设备打造的智能服务助手'
     : 'AI assistant specialized for laser and metal forming equipment.';
-  const aboutLabel = isCn ? '关于 SAGEMRO' : 'About SAGEMRO';
   const homeLabel = isCn ? '返回首页' : 'Back to start';
   const aiNotice = isCn
     ? '内容由 AI 生成，仅供参考。最终诊断、报价和现场安全需经 SAGEMRO 服务流程确认。'
@@ -63,15 +61,6 @@ export function ChatArea({
             </p>
           )}
         </div>
-        {onOpenAbout && (
-          <button
-            onClick={onOpenAbout}
-            className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-[var(--color-border)] text-[11px] text-[var(--color-text-secondary)] hover:text-[var(--color-primary)] hover:border-[var(--color-primary)] transition-colors"
-          >
-            <Info size={13} />
-            {aboutLabel}
-          </button>
-        )}
         {hasMessages && (
           <button
             onClick={onNewChat}

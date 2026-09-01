@@ -25,40 +25,18 @@ const HOME_COPY = {
     input: 'Describe the problem — or just start talking',
     tools: ['Laser Cutting Speed', 'Material Weight', 'Laser Cutting Cost', 'Steel Price Budget'],
     about: 'About SAGEMRO',
-    aboutTitle: 'About SAGEMRO Equipment Service',
-    loopTitle: 'SAGEMRO Precision Service Loop',
-    promise: 'Every service is prepared, evidence-based, verified, and clearly delivered.',
-    steps: [
-      'Task Alignment',
-      'Risk Control',
-      'One-Visit Readiness',
-      'Evidence-Based Execution',
-      'Recovery Verification',
-      'Transparent Handover',
-    ],
   },
   zh: {
-    url: 'http://sagemro.cn:4273',
+    url: 'http://ai.sagemro.cn:4273',
     heading: '机器的问题，难不倒有心的人',
     input: '描述设备问题，或直接开始说...',
     tools: ['激光切割速度参考', '材料重量计算器', '激光切割成本估算', '钢材价格预算'],
     about: '关于 SAGEMRO',
-    aboutTitle: '关于 SAGEMRO 设备服务平台',
-    loopTitle: 'SAGEMRO 精准服务闭环',
-    promise: '每一次服务，都有准备、有依据、有验证、有交付。',
-    steps: [
-      '任务对齐',
-      '风险锁定',
-      '一次备齐',
-      '循证执行',
-      '恢复验证',
-      '透明交付',
-    ],
   },
 };
 
 async function installChineseHostProxy(page) {
-  await page.route('http://sagemro.cn:4273/**', async (route) => {
+  await page.route('http://ai.sagemro.cn:4273/**', async (route) => {
     const localUrl = new URL(route.request().url());
     const localOrigin = new URL(runtime.customerBase);
     localUrl.protocol = localOrigin.protocol;
@@ -107,35 +85,7 @@ async function captureHomeEvidence(page, { homeHeading, input, resources }) {
   if (original) await page.setViewportSize(original);
 }
 
-async function captureAboutEvidence(page, serviceLoop, firstStep, lastStep) {
-  const original = page.viewportSize();
-  for (const viewport of [
-    { suffix: 'desktop', width: 1440, height: 900 },
-    { suffix: 'mobile', width: 390, height: 844 },
-  ]) {
-    await page.setViewportSize(viewport);
-    await serviceLoop.scrollIntoViewIfNeeded();
-    const loopHeading = serviceLoop.getByRole('heading').first();
-    const promise = serviceLoop.locator('p').filter({ hasText: /Every service is prepared/ }).first();
-    await expectFullyInViewport(page, loopHeading);
-    await expectFullyInViewport(page, promise);
-    await expectFullyInViewport(page, firstStep);
-    await captureVisual(page, `customer-about-service-loop-overview-${viewport.suffix}`, {
-      scope: serviceLoop,
-      fullPage: false,
-    });
-
-    await lastStep.scrollIntoViewIfNeeded();
-    await expectFullyInViewport(page, lastStep);
-    await captureVisual(page, `customer-about-service-loop-final-steps-${viewport.suffix}`, {
-      scope: lastStep,
-      fullPage: false,
-    });
-  }
-  if (original) await page.setViewportSize(original);
-}
-
-async function assertAiFirstHomeAndAbout(page, locale) {
+async function assertAiFirstHomeWithoutAbout(page, locale) {
   const copy = HOME_COPY[locale];
   if (locale === 'zh') await installChineseHostProxy(page);
   await page.goto(copy.url, { waitUntil: 'domcontentloaded' });
@@ -159,32 +109,16 @@ async function assertAiFirstHomeAndAbout(page, locale) {
   if (locale === 'en') {
     await captureHomeEvidence(page, { homeHeading, input, resources });
   }
-
-  await page.getByRole('button', { name: copy.about, exact: true }).click();
-  const aboutTitle = page.getByRole('heading', { name: copy.aboutTitle, exact: true });
-  await expect(aboutTitle).toBeVisible();
-  const aboutModal = aboutTitle.locator('xpath=ancestor::div[contains(@class, "fixed")][1]');
-  const serviceLoop = aboutModal.getByRole('heading', { name: copy.loopTitle, exact: true })
-    .locator('xpath=ancestor::section[1]');
-  await expect(serviceLoop).toBeAttached();
-  await expect(serviceLoop.getByText(copy.promise, { exact: true })).toBeVisible();
-  const firstStep = serviceLoop.getByRole('heading', { name: copy.steps[0], exact: true });
-  const lastStep = serviceLoop.getByRole('heading', { name: copy.steps.at(-1), exact: true });
-  for (const step of copy.steps) {
-    await expect(serviceLoop.getByRole('heading', { name: step, exact: true })).toBeVisible();
-  }
-  if (locale === 'en') {
-    await captureAboutEvidence(page, serviceLoop, firstStep, lastStep);
-  }
+  await expect(page.getByRole('button', { name: copy.about, exact: true })).toHaveCount(0);
 }
 
-test('English and Chinese home stay AI-first and explain the service loop through About', async ({ browser }) => {
+test('English and Chinese AI homes stay AI-first without the retired About entry', async ({ browser }) => {
   test.setTimeout(120_000);
   for (const locale of ['en', 'zh']) {
     const context = await browser.newContext();
     const page = await context.newPage();
     try {
-      await assertAiFirstHomeAndAbout(page, locale);
+      await assertAiFirstHomeWithoutAbout(page, locale);
     } finally {
       await context.close();
     }

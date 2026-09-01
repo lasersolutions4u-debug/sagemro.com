@@ -78,6 +78,51 @@ test('engineer onboarding journey follows the current recruitment CTA', () => {
   assert.doesNotMatch(journeys, /getByLabel\('Individual \/ team capability'\)/);
 });
 
+test('customer work-order journeys use the unified four-step service request flow', () => {
+  const serviceRequestFlow = read('frontend/src/components/ServiceRequest/ServiceRequestFlow.jsx');
+  const journeys = read('e2e/support/journeys.mjs');
+  const lifecycle = read('e2e/tests/service-order-lifecycle.spec.mjs');
+
+  assert.match(serviceRequestFlow, /serviceTitle: 'What do you need help with\?'/);
+  assert.match(serviceRequestFlow, /submit: 'Send service request'/);
+  assert.match(journeys, /export async function submitCustomerServiceRequest/);
+  for (const currentControl of [
+    "getByText('Repair & diagnostics', { exact: true }).click()",
+    "getByPlaceholder('Select or enter the equipment type…')",
+    "getByLabel('Problem or service request · Required')",
+    "getByPlaceholder('Enter country, state / province or city, then press Enter…')",
+    "getByLabel('Contact name · Required')",
+    "name: 'Send service request'",
+    "name: 'Done'",
+  ]) {
+    assert.match(journeys, new RegExp(currentControl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  }
+  assert.doesNotMatch(journeys, /getByRole\('radio',[\s\S]*Repair & diagnostics[\s\S]*\)\.check\(\)/);
+  for (const retiredControl of [
+    'Request Type',
+    'Equipment Model / Part No.',
+    'Request Details',
+    'Contact Method',
+    'submit-work-order-button',
+    'Got it',
+  ]) {
+    assert.doesNotMatch(journeys, new RegExp(retiredControl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+    assert.doesNotMatch(lifecycle, new RegExp(retiredControl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  }
+  assert.match(lifecycle, /submitCustomerServiceRequest/);
+});
+
+test('AI-home E2E starts the portal target and avoids phone-like message fixtures', () => {
+  const playwrightConfig = read('e2e/playwright.config.mjs');
+  const visual = read('e2e/tests/quote-execution-visual.spec.mjs');
+  const lifecycle = read('e2e/tests/service-order-lifecycle.spec.mjs');
+
+  assert.match(playwrightConfig, /SAGEMRO_BUILD_TARGET=portal VITE_API_BASE=/);
+  assert.match(visual, /url: 'http:\/\/ai\.sagemro\.cn:4273'/);
+  assert.match(lifecycle, /customer\.runId\.slice\(-6\)/);
+  assert.doesNotMatch(lifecycle, /manualMessage = `E2E manual update \$\{customer\.runId\}`/);
+});
+
 test('Cloudflare test workflow covers pull requests to both protected branches', () => {
   const workflow = read('.github/workflows/deploy.yml');
 
@@ -88,9 +133,11 @@ test('Cloudflare deploy jobs remain push-only with the existing branch guards', 
   const workflow = read('.github/workflows/deploy.yml');
 
   assert.match(workflow, /deploy-frontend:[\s\S]*?if: github\.event_name == 'push' && \(github\.ref == 'refs\/heads\/main' \|\| github\.ref == 'refs\/heads\/china-edition'\)/);
+  assert.match(workflow, /deploy-ai-frontend:[\s\S]*?if: github\.event_name == 'push' && github\.ref == 'refs\/heads\/main'/);
   assert.match(workflow, /deploy-worker:[\s\S]*?if: github\.event_name == 'push' && github\.ref == 'refs\/heads\/main'/);
   assert.match(workflow, /deploy-admin:[\s\S]*?if: github\.event_name == 'push' && \(github\.ref == 'refs\/heads\/main' \|\| github\.ref == 'refs\/heads\/china-edition'\)/);
-  assert.equal((workflow.match(/if: github\.event_name == 'push'/g) || []).length, 3);
+  assert.equal((workflow.match(/if: github\.event_name == 'push'/g) || []).length, 4);
+  assert.match(workflow, /deploy-ai-frontend:\s+[\s\S]*?needs: deploy-worker/);
 });
 
 test('Worker deployment blocks on migrations for both production D1 databases', () => {

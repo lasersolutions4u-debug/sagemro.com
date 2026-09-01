@@ -12,9 +12,8 @@ import {
   Scale,
   Snowflake,
 } from 'lucide-react';
-import { BrandMark } from '../common/BrandMark';
-import { Footer } from '../common/Footer';
 import { NotFoundPage } from '../common/NotFoundPage';
+import { PublicSiteShell } from '../Public/PublicSiteShell';
 import { IndustryToolCalculator } from './IndustryToolCalculator';
 import {
   buildIndustryToolReviewPrompt,
@@ -28,6 +27,7 @@ import {
 } from '../../data/industryTools';
 import { getIndustryToolsPageState, getIndustryToolsSeoMetadata } from '../../utils/industryToolsPage';
 import { isCnLocale } from '../../utils/locale';
+import { buildCustomerPortalUrl } from '../../utils/portalTarget';
 import { setSeoMetadata } from '../../utils/seo';
 import { createAcquisitionEventActions } from '../../hooks/useAcquisitionTracking';
 
@@ -69,6 +69,7 @@ const toolsPageCopy = {
     faq: 'FAQ',
     navTools: 'Tools',
     navChat: 'AI chat',
+    reviewAction: 'Copy result and open SAGEMRO AI',
   },
   'zh-CN': {
     hubTitle: '钣金、激光切割和折弯行业工具',
@@ -92,6 +93,7 @@ const toolsPageCopy = {
     faq: '常见问题',
     navTools: '工具',
     navChat: 'AI 对话',
+    reviewAction: '复制结果并打开 SAGEMRO AI',
   },
 };
 
@@ -131,20 +133,15 @@ export function IndustryToolsPage({ pathname = '/tools', acquisitionContext, onO
     return <NotFoundPage isCn={locale === 'zh-CN'} />;
   }
 
-  if (!selectedTool) {
-    return <ToolsHub copy={copy} locale={locale} onOpenLegal={onOpenLegal} />;
-  }
-
-  if (page === 'bend-simulator') {
-    return (
+  const content = !selectedTool
+    ? <ToolsHub copy={copy} locale={locale} />
+    : page === 'bend-simulator'
+      ? (
       <Suspense fallback={null}>
-        <BendSimulatorPage tool={selectedTool} copy={copy} locale={locale} onOpenLegal={onOpenLegal} />
+        <BendSimulatorPage tool={selectedTool} copy={copy} locale={locale} />
       </Suspense>
-    );
-  }
-
-  return (
-    <ToolDetail
+        )
+      : <ToolDetail
       tool={selectedTool}
       copy={copy}
       locale={locale}
@@ -158,16 +155,16 @@ export function IndustryToolsPage({ pathname = '/tools', acquisitionContext, onO
           },
         }));
       }}
-      onOpenLegal={onOpenLegal}
       onSendMessage={onSendMessage}
       onNavigateHome={onNavigateHome}
       onToolStarted={onToolStarted}
       onToolCompleted={onToolCompleted}
-    />
-  );
+    />;
+
+  return <PublicSiteShell isCn={locale === 'zh-CN'} onOpenLegal={onOpenLegal}>{content}</PublicSiteShell>;
 }
 
-function ToolsHub({ copy, locale, onOpenLegal }) {
+function ToolsHub({ copy, locale }) {
   const canonicalHost = locale === 'zh-CN' ? 'https://sagemro.cn' : 'https://sagemro.com';
   const materials = getLocalizedMaterialDensities(locale);
   const profiles = getLocalizedShapeProfiles(locale);
@@ -200,7 +197,7 @@ function ToolsHub({ copy, locale, onOpenLegal }) {
   }, [canonicalHost, copy, locale]);
 
   return (
-    <ToolPageShell copy={copy} onOpenLegal={onOpenLegal}>
+    <>
       <section className="mx-auto grid max-w-7xl gap-8 px-4 py-8 sm:px-6 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)] lg:py-12">
         <div>
           <div className="flex flex-col items-start gap-4">
@@ -252,7 +249,7 @@ function ToolsHub({ copy, locale, onOpenLegal }) {
           </a>
         </div>
       </section>
-    </ToolPageShell>
+    </>
   );
 }
 
@@ -272,21 +269,46 @@ function ToolReferenceItem({ item, isFirst }) {
   );
 }
 
-function ToolDetail({ tool, copy, locale, values, onChange, onOpenLegal, onSendMessage, onNavigateHome, onToolStarted, onToolCompleted }) {
+function ToolDetail({ tool, copy, locale, values, onChange, onSendMessage, onNavigateHome, onToolStarted, onToolCompleted }) {
   const relatedTools = useMemo(
     () => publicIndustryTools.filter((item) => item.id !== tool.id).map((item) => getLocalizedTool(item, locale)),
     [locale, tool.id],
   );
-  const handleSendToolReview = (prompt) => {
-    onSendMessage?.(prompt);
-    onNavigateHome?.();
+  const handleSendToolReview = async (prompt) => {
+    const hostname = typeof window === 'undefined' ? '' : window.location.hostname;
+    const portalUrl = buildCustomerPortalUrl({
+      path: '/service-request',
+      hostname,
+      presets: { mode: 'assist', source: 'industry-tool' },
+    });
+    const isCustomerPortal = typeof window !== 'undefined' && window.location.origin === new URL(portalUrl).origin;
+
+    if (isCustomerPortal) {
+      onSendMessage?.(prompt);
+      onNavigateHome?.();
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(prompt);
+    } catch {
+      const input = document.createElement('textarea');
+      input.value = prompt;
+      input.setAttribute('readonly', '');
+      input.style.position = 'fixed';
+      input.style.opacity = '0';
+      document.body.appendChild(input);
+      input.select();
+      document.execCommand('copy');
+      input.remove();
+    }
+    window.location.assign(portalUrl);
   };
   const currentResult = useMemo(() => calculateIndustryToolResult(tool.id, values), [tool.id, values]);
   const handleEvidenceReview = () => handleSendToolReview(buildIndustryToolReviewPrompt(tool, currentResult));
 
   return (
-    <ToolPageShell copy={copy} onOpenLegal={onOpenLegal}>
-      <main className="mx-auto max-w-6xl px-4 py-8 sm:px-6 lg:py-10">
+      <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6 lg:py-10">
         <div className="mb-6 flex flex-col items-start gap-4">
           <a href="/tools/" className="inline-flex items-center gap-2 text-sm text-[var(--color-text-secondary)] hover:text-[var(--color-primary)]">
             <ArrowLeft size={16} />
@@ -312,7 +334,7 @@ function ToolDetail({ tool, copy, locale, values, onChange, onOpenLegal, onSendM
 
         <section className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
           <div className="min-w-0">
-            <IndustryToolCalculator tool={tool} values={values} onChange={onChange} onSendMessage={handleSendToolReview} onToolStarted={onToolStarted} onToolCompleted={onToolCompleted} showReviewCta={!tool.seoEvidence?.formula} />
+            <IndustryToolCalculator tool={tool} values={values} onChange={onChange} onSendMessage={handleSendToolReview} reviewActionLabel={copy.reviewAction} onToolStarted={onToolStarted} onToolCompleted={onToolCompleted} showReviewCta={!tool.seoEvidence?.formula} />
           </div>
           <aside aria-label="Related tools" className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-elevated)] p-4">
             <div className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--color-text-muted)]">
@@ -351,8 +373,7 @@ function ToolDetail({ tool, copy, locale, values, onChange, onOpenLegal, onSendM
             </div>
           </div>
         </section>
-      </main>
-    </ToolPageShell>
+      </div>
   );
 }
 
@@ -360,8 +381,8 @@ function ToolEvidence({ tool, locale, onReview }) {
   const evidence = tool.seoEvidence;
   const isCn = locale === 'zh-CN';
   const copy = isCn
-    ? { formula: '公式', example: '示例结果', assumptions: '假设', limitations: '局限', safety: '安全边界', review: '工程师复核', references: '参考依据', reviewAction: '请 SAGEMRO AI 复核此结果' }
-    : { formula: 'Formula', example: 'Worked example', assumptions: 'Assumptions', limitations: 'Limitations', safety: 'Safety boundary', review: 'Engineer review', references: 'References', reviewAction: 'Ask SAGEMRO AI to review this result' };
+    ? { formula: '公式', example: '示例结果', assumptions: '假设', limitations: '局限', safety: '安全边界', review: '工程师复核', references: '参考依据', reviewAction: '复制结果并打开 SAGEMRO AI' }
+    : { formula: 'Formula', example: 'Worked example', assumptions: 'Assumptions', limitations: 'Limitations', safety: 'Safety boundary', review: 'Engineer review', references: 'References', reviewAction: 'Copy result and open SAGEMRO AI' };
   const example = useMemo(() => getToolWorkedExample(tool, locale), [locale, tool]);
 
   if (!evidence?.formula || !example) return null;
@@ -422,26 +443,5 @@ function ToolLinkCard({ tool }) {
         </div>
       </div>
     </a>
-  );
-}
-
-function ToolPageShell({ children, copy, onOpenLegal }) {
-  return (
-    <div className="min-h-[100dvh] bg-[var(--color-bg)] text-[var(--color-text-primary)]">
-      <header className="border-b border-[var(--color-border)] bg-[var(--color-surface)]">
-        <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-3 sm:px-6">
-          <a href="/" className="flex items-center gap-2 text-sm font-semibold text-[var(--color-text-primary)]">
-            <BrandMark variant="logo" className="h-8 w-8 object-contain" />
-            SAGEMRO
-          </a>
-          <nav className="flex items-center gap-3 text-sm text-[var(--color-text-secondary)]">
-            <a href="/tools/" className="hover:text-[var(--color-primary)]">{copy.navTools}</a>
-            <a href="/" className="hover:text-[var(--color-primary)]">{copy.navChat}</a>
-          </nav>
-        </div>
-      </header>
-      {children}
-      <Footer onOpenLegal={onOpenLegal} />
-    </div>
   );
 }

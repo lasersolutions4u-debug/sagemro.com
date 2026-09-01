@@ -49,9 +49,13 @@ jobs:
         working-directory: frontend
         run: npm test
 
-      - name: Frontend build
+      - name: Frontend public build
         working-directory: frontend
-        run: npm run build
+        run: npm run build:public
+
+      - name: Frontend AI portal build
+        working-directory: frontend
+        run: npm run build:portal
 
       # Admin build（编译失败直接挂）
       - name: Admin install
@@ -103,13 +107,43 @@ jobs:
 
       - name: Build
         working-directory: frontend
-        run: npm run build
+        run: npm run build:public
 
       - name: Deploy to Cloudflare Pages
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: npx wrangler pages deploy frontend/dist --project-name=${{ github.ref == 'refs/heads/main' && 'sagemro-com' || 'sagemro-cn' }} --branch=${{ github.ref_name }}
+
+  # ============ 部署国际版 AI 客户门户 ============
+  deploy-ai-frontend:
+    name: Deploy AI Portal to Cloudflare Pages
+    needs: deploy-worker
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm install --no-audit --no-fund
+
+      - name: Build AI portal
+        working-directory: frontend
+        run: npm run build:portal
+
+      - name: Deploy AI portal to Cloudflare Pages
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: npx wrangler pages deploy frontend/dist-portal --project-name=sagemro-ai --branch=${{ github.ref_name }}
 
   # ============ 部署 Worker ============
   deploy-worker:
@@ -161,7 +195,7 @@ jobs:
             fi
           done
 
-          CN_REQUIRED="038_material_requisitions_and_staff 039_field_workdays 040_field_evidence_cleanup_queue 041_quote_execution_baseline 043_engineer_service_readiness 044_service_standard_progress 045_service_guidance_cache"
+          CN_REQUIRED="038_material_requisitions_and_staff 039_field_workdays 040_field_evidence_cleanup_queue 041_quote_execution_baseline 043_engineer_service_readiness 044_service_standard_progress 045_service_guidance_cache 047_structured_service_request_intake 048_service_request_assist_quota"
           CN_MISSING=""
           for ver in $CN_REQUIRED; do
             if ! echo "$APPLIED_CN" | grep -q "^${ver}$"; then

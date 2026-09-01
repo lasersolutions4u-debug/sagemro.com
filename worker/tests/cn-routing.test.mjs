@@ -17,6 +17,67 @@ test('uses CN database for admin.sagemro.cn origin through shared API host', () 
   assert.equal(shouldUseCnDatabase(request), true);
 });
 
+test('uses CN routing only for exact trusted CN API and portal hosts', () => {
+  assert.equal(shouldUseCnDatabase(new Request('https://api.sagemro.cn/health')), true);
+  assert.equal(shouldUseCnDatabase(new Request('https://api.sagemro.com/health', {
+    headers: { Origin: 'https://sagemro.cn' },
+  })), true);
+  assert.equal(shouldUseCnDatabase(new Request('https://api.sagemro.com/health', {
+    headers: { Origin: 'https://ai.sagemro.cn' },
+  })), true);
+  assert.equal(shouldUseCnDatabase(new Request('https://api.sagemro.com/health', {
+    headers: { Referer: 'https://engineer.sagemro.cn/work-orders/1' },
+  })), true);
+
+  for (const request of [
+    new Request('https://evil.cn/health'),
+    new Request('https://api.sagemro.com/health'),
+    new Request('https://api.sagemro.com/health', { headers: { Origin: 'https://evil.cn' } }),
+    new Request('https://api.sagemro.com/health', { headers: { Origin: 'https://sagemro.cn.evil.com' } }),
+    new Request('https://api.sagemro.com/health', { headers: { Referer: 'https://admin.sagemro.cn.evil.com/' } }),
+    new Request('https://api.sagemro.com/health', {
+      headers: { Origin: 'https://evil.cn', Referer: 'https://sagemro.cn/' },
+    }),
+  ]) {
+    assert.equal(shouldUseCnDatabase(request), false);
+  }
+});
+
+test('shared API routes trusted CN origin to CN DB and forged CN-looking origin to COM DB', async () => {
+  const createDb = () => ({
+    calls: [],
+    prepare(sql) {
+      this.calls.push(sql);
+      return { bind() { return this; }, async first() { return null; } };
+    },
+  });
+  const comDb = createDb();
+  const cnDb = createDb();
+  const env = {
+    DB: comDb,
+    DB_CN: cnDb,
+    KV: { async get() { return null; }, async put() {}, async delete() {} },
+    JWT_SECRET: 'test-secret-at-least-16-chars',
+  };
+  const body = JSON.stringify({ phone: '13900000000', password: 'wrong-password' });
+
+  await worker.fetch(new Request('https://api.sagemro.com/api/auth/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Origin: 'https://ai.sagemro.cn' },
+    body,
+  }), env, { waitUntil() {} });
+  assert.equal(cnDb.calls.length, 2);
+  assert.equal(comDb.calls.length, 0);
+
+  await worker.fetch(new Request('https://api.sagemro.com/api/auth/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Origin: 'https://sagemro.cn.evil.com' },
+    body,
+  }), env, { waitUntil() {} });
+  assert.equal(comDb.calls.length, 2);
+  assert.equal(cnDb.calls.length, 2);
+});
+
 test('keeps COM database for sagemro.com requests', () => {
   const request = new Request('https://api.sagemro.com/health', {
     headers: { Origin: 'https://sagemro.com' },
