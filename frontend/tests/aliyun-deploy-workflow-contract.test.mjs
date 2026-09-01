@@ -53,7 +53,7 @@ test('Aliyun deployment provisions the AI DNS, certificate, and Nginx host safel
   assert.match(workflow, /aliyun alidns AddDomainRecord/);
   assert.match(workflow, /aliyun alidns UpdateDomainRecord/);
   assert.match(workflow, /Refusing to change ambiguous ai\.sagemro\.cn DNS records/);
-  assert.match(workflow, /certbot show_account --non-interactive/);
+  assert.match(workflow, /certbot certificates --non-interactive/);
   assert.match(workflow, /certbot certonly[\s\S]*--webroot[\s\S]*--cert-name ai\.sagemro\.cn/);
   assert.match(workflow, /\/etc\/nginx\/conf\.d\/sagemro-cn-ai\.conf/);
   assert.match(workflow, /root \/var\/www\/sagemro-cn\/current\/ai;/);
