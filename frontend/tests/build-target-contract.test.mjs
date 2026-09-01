@@ -45,7 +45,7 @@ test('portal post-build helper removes public crawl artifacts and writes noindex
   assert.match(portalIndex, /name="robots" content="noindex,nofollow,noarchive"/);
   assert.doesNotMatch(portalIndex, /rel="canonical" href="https:\/\/sagemro\.(?:com|cn)\//);
   assert.equal(portalRobots, 'User-agent: *\nDisallow: /\n');
-  assert.match(redirects, /^\/service-request \/index\.html 200$/m);
+  assert.doesNotMatch(redirects, /^\/service-request(?:\s|$)/m);
   assert.match(redirects, /^\/work-orders\/\* \/index\.html 200$/m);
   assert.match(redirects, /^\/activate \/index\.html 200$/m);
   assert.match(redirects, /^\/engineer \/index\.html 200$/m);

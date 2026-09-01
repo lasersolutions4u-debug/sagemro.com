@@ -23,7 +23,6 @@ function renderPortalIndex(template) {
 
 function renderRedirects() {
   return [
-    '/service-request /index.html 200',
     '/work-orders/* /index.html 200',
     '/activate /index.html 200',
     '/engineer /index.html 200',
