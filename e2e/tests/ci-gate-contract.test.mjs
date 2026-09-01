@@ -78,6 +78,39 @@ test('engineer onboarding journey follows the current recruitment CTA', () => {
   assert.doesNotMatch(journeys, /getByLabel\('Individual \/ team capability'\)/);
 });
 
+test('customer work-order journeys use the unified four-step service request flow', () => {
+  const serviceRequestFlow = read('frontend/src/components/ServiceRequest/ServiceRequestFlow.jsx');
+  const journeys = read('e2e/support/journeys.mjs');
+  const lifecycle = read('e2e/tests/service-order-lifecycle.spec.mjs');
+
+  assert.match(serviceRequestFlow, /serviceTitle: 'What do you need help with\?'/);
+  assert.match(serviceRequestFlow, /submit: 'Send service request'/);
+  assert.match(journeys, /export async function submitCustomerServiceRequest/);
+  for (const currentControl of [
+    "name: 'Repair & diagnostics'",
+    "getByPlaceholder('Select or enter the equipment type…')",
+    "getByLabel('Problem or service request · Required')",
+    "getByPlaceholder('Enter country, state / province or city, then press Enter…')",
+    "getByLabel('Contact name · Required')",
+    "name: 'Send service request'",
+    "name: 'Done'",
+  ]) {
+    assert.match(journeys, new RegExp(currentControl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  }
+  for (const retiredControl of [
+    'Request Type',
+    'Equipment Model / Part No.',
+    'Request Details',
+    'Contact Method',
+    'submit-work-order-button',
+    'Got it',
+  ]) {
+    assert.doesNotMatch(journeys, new RegExp(retiredControl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+    assert.doesNotMatch(lifecycle, new RegExp(retiredControl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  }
+  assert.match(lifecycle, /submitCustomerServiceRequest/);
+});
+
 test('Cloudflare test workflow covers pull requests to both protected branches', () => {
   const workflow = read('.github/workflows/deploy.yml');
 
