@@ -33,6 +33,37 @@ jobs:
         with:
           node-version: "24"
 
+      - name: Check CN API and D1 readiness
+        working-directory: worker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          npm ci --no-audit --no-fund
+          npx wrangler d1 execute sagemro-db-cn --env production --remote \
+            --command "SELECT version FROM _migrations ORDER BY version;" \
+            > /tmp/sagemro-d1-migrations-cn.txt
+
+          APPLIED_CN=$(grep -Eo '[0-9]{3}[a-z]?_[A-Za-z0-9_]+' /tmp/sagemro-d1-migrations-cn.txt | sort -u || true)
+          CN_REQUIRED="047_structured_service_request_intake 048_service_request_assist_quota"
+          for ver in $CN_REQUIRED; do
+            if ! echo "$APPLIED_CN" | grep -q "^${ver}$"; then
+              echo "::error::CN production D1 migration is missing: ${ver}"
+              exit 1
+            fi
+          done
+
+          assist_status=$(curl -sS -o /tmp/service-request-assist-readiness.json -w '%{http_code}' \
+            -X POST https://api.sagemro.cn/api/service-request-assist \
+            -H 'Content-Type: application/json' \
+            -H 'Origin: https://ai.sagemro.cn' \
+            --data '{}')
+          if [ "$assist_status" != "400" ]; then
+            echo "::error::CN API does not expose the expected service-request assist contract (HTTP ${assist_status})."
+            exit 1
+          fi
+
       - name: Validate Aliyun deploy secrets
         env:
           ALIYUN_ECS_HOST: ${{ secrets.ALIYUN_ECS_HOST }}
@@ -60,7 +91,8 @@ jobs:
           set -euo pipefail
           npm ci --no-audit --no-fund
           npm test --if-present
-          npm run build
+          npm run build:public
+          npm run build:portal
 
       - name: Build admin
         working-directory: admin
@@ -79,14 +111,16 @@ jobs:
           echo "RELEASE_ID=${RELEASE_ID}" >> "$GITHUB_ENV"
           echo "PACKAGE_NAME=${PACKAGE_NAME}" >> "$GITHUB_ENV"
 
-          mkdir -p release/frontend release/admin release/ops
+          mkdir -p release/frontend release/ai release/admin release/ops
           cp -a frontend/dist/. release/frontend/
+          cp -a frontend/dist-portal/. release/ai/
           cp -a admin/dist/. release/admin/
           cp ops/configure_public_routes.py release/ops/
           cp ops/enable_nginx_http2.py release/ops/
           tar -czf "$PACKAGE_NAME" -C release .
 
           test -f release/frontend/index.html
+          test -f release/ai/index.html
           test -f release/admin/index.html
           test -f release/ops/configure_public_routes.py
           test -f release/ops/enable_nginx_http2.py
@@ -212,6 +246,7 @@ jobs:
           $SUDO tar -xzf "$package" -C "$release"
 
           test -f "$release/frontend/index.html"
+          test -f "$release/ai/index.html"
           test -f "$release/admin/index.html"
 
           backup_root="/var/backups/sagemro-nginx"
@@ -237,8 +272,9 @@ jobs:
 
           previous_frontend="$(capture_previous_target "$current/frontend")"
           previous_engineer="$(capture_previous_target "$current/engineer")"
+          previous_ai="$(capture_previous_target "$current/ai")"
           previous_admin="$(capture_previous_target "$current/admin")"
-          printf '%s\n' "$previous_frontend" "$previous_engineer" "$previous_admin" | $SUDO tee "$release_state" > /dev/null
+          printf '%s\n' "$previous_frontend" "$previous_engineer" "$previous_ai" "$previous_admin" | $SUDO tee "$release_state" > /dev/null
 
           if $SUDO test -e "$performance_conf"; then
             $SUDO cp -a "$performance_conf" "$performance_backup"
@@ -277,43 +313,44 @@ jobs:
           $SUDO tee "$performance_conf" > /dev/null <<'NGINX'
           map "$host:$request_uri" $sagemro_asset_cache_control {
             default "";
-            ~^((www\.)?sagemro\.cn|admin\.sagemro\.cn|engineer\.sagemro\.cn):/assets/ "public, max-age=31536000, immutable";
-            ~^((www\.)?sagemro\.cn|admin\.sagemro\.cn|engineer\.sagemro\.cn):/sagemro-logo\.png$ "public, max-age=86400";
-            ~^((www\.)?sagemro\.cn|admin\.sagemro\.cn|engineer\.sagemro\.cn):/ "no-cache";
+            ~^((www\.)?sagemro\.cn|ai\.sagemro\.cn|admin\.sagemro\.cn|engineer\.sagemro\.cn):/assets/ "public, max-age=31536000, immutable";
+            ~^((www\.)?sagemro\.cn|ai\.sagemro\.cn|admin\.sagemro\.cn|engineer\.sagemro\.cn):/sagemro-logo\.png$ "public, max-age=86400";
+            ~^((www\.)?sagemro\.cn|ai\.sagemro\.cn|admin\.sagemro\.cn|engineer\.sagemro\.cn):/ "no-cache";
           }
 
           map $host $sagemro_content_security_policy {
             default "";
-            ~^((www\.)?sagemro\.cn|admin\.sagemro\.cn|engineer\.sagemro\.cn)$ "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self' https://cdn.onesignal.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; media-src 'self' blob: https:; connect-src 'self' https://api.sagemro.com https://api.sagemro.cn https://*.sentry.io https://*.ingest.sentry.io https://onesignal.com https://*.onesignal.com wss://*.onesignal.com; worker-src 'self' blob:; frame-src 'self' https://*.onesignal.com; manifest-src 'self'; upgrade-insecure-requests";
+            ~^((www\.)?sagemro\.cn|ai\.sagemro\.cn|admin\.sagemro\.cn|engineer\.sagemro\.cn)$ "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self' https://cdn.onesignal.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; media-src 'self' blob: https:; connect-src 'self' https://api.sagemro.com https://api.sagemro.cn https://*.sentry.io https://*.ingest.sentry.io https://onesignal.com https://*.onesignal.com wss://*.onesignal.com; worker-src 'self' blob:; frame-src 'self' https://*.onesignal.com; manifest-src 'self'; upgrade-insecure-requests";
           }
 
           map $host $sagemro_hsts {
             default "";
-            ~^((www\.)?sagemro\.cn|admin\.sagemro\.cn|engineer\.sagemro\.cn)$ "max-age=31536000; includeSubDomains";
+            ~^((www\.)?sagemro\.cn|ai\.sagemro\.cn|admin\.sagemro\.cn|engineer\.sagemro\.cn)$ "max-age=31536000; includeSubDomains";
           }
 
           map $host $sagemro_nosniff {
             default "";
-            ~^((www\.)?sagemro\.cn|admin\.sagemro\.cn|engineer\.sagemro\.cn)$ "nosniff";
+            ~^((www\.)?sagemro\.cn|ai\.sagemro\.cn|admin\.sagemro\.cn|engineer\.sagemro\.cn)$ "nosniff";
           }
 
           map $host $sagemro_frame_options {
             default "";
-            ~^((www\.)?sagemro\.cn|admin\.sagemro\.cn|engineer\.sagemro\.cn)$ "DENY";
+            ~^((www\.)?sagemro\.cn|ai\.sagemro\.cn|admin\.sagemro\.cn|engineer\.sagemro\.cn)$ "DENY";
           }
 
           map $host $sagemro_referrer_policy {
             default "";
-            ~^((www\.)?sagemro\.cn|admin\.sagemro\.cn|engineer\.sagemro\.cn)$ "strict-origin-when-cross-origin";
+            ~^((www\.)?sagemro\.cn|ai\.sagemro\.cn|admin\.sagemro\.cn|engineer\.sagemro\.cn)$ "strict-origin-when-cross-origin";
           }
 
           map $host $sagemro_permissions_policy {
             default "";
-            ~^((www\.)?sagemro\.cn|admin\.sagemro\.cn|engineer\.sagemro\.cn)$ "camera=(self), microphone=(self), geolocation=(self)";
+            ~^((www\.)?sagemro\.cn|ai\.sagemro\.cn|admin\.sagemro\.cn|engineer\.sagemro\.cn)$ "camera=(self), microphone=(self), geolocation=(self)";
           }
 
           map "$host:$request_uri" $sagemro_robots_tag {
             default "";
+            ~^ai\.sagemro\.cn: "noindex, nofollow, noarchive, nosnippet, noimageindex";
             ~^admin\.sagemro\.cn: "noindex, nofollow, noarchive, nosnippet, noimageindex";
             ~^((www\.)?sagemro\.cn|engineer\.sagemro\.cn):/(work-orders|activate|engineer)(/|\?|$) "noindex, nofollow, noarchive, nosnippet, noimageindex";
           }
@@ -333,6 +370,7 @@ jobs:
           $SUDO nginx -t
           $SUDO ln -sfnT "$release/frontend" "$current/frontend"
           $SUDO ln -sfnT "$release/frontend" "$current/engineer"
+          $SUDO ln -sfnT "$release/ai" "$current/ai"
           $SUDO ln -sfnT "$release/admin" "$current/admin"
           $SUDO systemctl reload nginx
 
@@ -344,6 +382,8 @@ jobs:
         run: |
           set -euo pipefail
           curl -fsS --retry 3 --retry-delay 2 https://sagemro.cn/ >/dev/null
+          portal_html=$(curl -fsS --retry 3 --retry-delay 2 'https://ai.sagemro.cn/service-request?mode=manual')
+          echo "$portal_html" | grep -qi 'noindex,nofollow,noarchive'
           curl -fsS --retry 3 --retry-delay 2 https://admin.sagemro.cn/ >/dev/null
           curl -fsS --retry 3 --retry-delay 2 https://engineer.sagemro.cn/ >/dev/null
           curl -fsS --retry 3 --retry-delay 2 https://api.sagemro.cn/health >/dev/null
@@ -367,6 +407,7 @@ jobs:
           }
 
           expect_robots_tag https://admin.sagemro.cn/deploy-admin-smoke
+          expect_robots_tag https://ai.sagemro.cn/
           expect_robots_tag https://sagemro.cn/activate
           expect_robots_tag https://engineer.sagemro.cn/work-orders/deploy-smoke
           expect_no_robots_tag https://engineer.sagemro.cn/
@@ -406,7 +447,7 @@ jobs:
             exit 1
           fi
 
-          for site_host in sagemro.cn admin.sagemro.cn engineer.sagemro.cn; do
+          for site_host in sagemro.cn ai.sagemro.cn admin.sagemro.cn engineer.sagemro.cn; do
             site_url="https://${site_host}"
             http_version="$(curl -fsS --http2 -o /dev/null -w '%{http_version}' "$site_url/")"
             if [ "$http_version" != "2" ]; then
@@ -497,7 +538,7 @@ jobs:
           fi
 
           mapfile -t previous_releases < <($SUDO cat "$release_state")
-          if [ "${#previous_releases[@]}" -lt 3 ]; then
+          if [ "${#previous_releases[@]}" -lt 4 ]; then
             echo "Activation state is incomplete; refusing an unsafe rollback." >&2
             exit 1
           fi
@@ -529,7 +570,8 @@ jobs:
 
           restore_link "${previous_releases[0]}" "$current/frontend"
           restore_link "${previous_releases[1]}" "$current/engineer"
-          restore_link "${previous_releases[2]}" "$current/admin"
+          restore_link "${previous_releases[2]}" "$current/ai"
+          restore_link "${previous_releases[3]}" "$current/admin"
 
           $SUDO nginx -t
           $SUDO systemctl reload nginx
@@ -573,6 +615,7 @@ jobs:
             echo ""
             echo "- Release: \`$RELEASE_ID\`"
             echo "- Frontend: https://sagemro.cn/"
+            echo "- AI: https://ai.sagemro.cn/"
             echo "- Admin: https://admin.sagemro.cn/"
             echo "- Engineer: https://engineer.sagemro.cn/"
             echo "- API health: https://api.sagemro.cn/health"

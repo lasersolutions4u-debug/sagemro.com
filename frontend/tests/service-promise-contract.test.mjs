@@ -66,20 +66,16 @@ test('service promise calls return isolated values and steps', async () => {
   assert.equal(fresh.steps[0].title, '任务对齐');
 });
 
-test('About explains the approved service loop without exposing internal workflow fields', () => {
-  const about = readFileSync(
-    new URL('../src/components/common/AboutModal.jsx', import.meta.url),
+test('shared service promise keeps the approved public loop without internal workflow fields', () => {
+  const servicePromise = readFileSync(
+    new URL('../src/data/servicePromise.js', import.meta.url),
     'utf8',
   );
 
-  assert.match(about, /getServicePromiseCopy/);
-  assert.match(about, /servicePromise\.steps\.map/);
-  assert.match(about, /SAGEMRO Precision Service Loop/);
-  assert.match(about, /AI helps organize information and flag risk; actual confirmations by engineers, Admin, and customers form the service record\./);
-  assert.match(about, /AI 帮助整理信息和提示风险；工程师、Admin 与客户的实际确认构成服务记录。/);
-  assert.ok(about.indexOf('t.moments.map') < about.indexOf('servicePromise.steps.map'));
-  assert.ok(about.indexOf('servicePromise.steps.map') < about.indexOf('t.capabilities.map'));
-  assert.doesNotMatch(about, /engineer_role|blocking_items|override_reason/);
+  assert.match(servicePromise, /export function getServicePromiseCopy/);
+  assert.match(servicePromise, /Every service is prepared, evidence-based, verified, and clearly delivered\./);
+  assert.match(servicePromise, /每一次服务，都有准备、有依据、有验证、有交付。/);
+  assert.doesNotMatch(servicePromise, /engineer_role|blocking_items|override_reason/);
 });
 
 test('customer work-order detail renders only the public milestone projection before its tabs', () => {

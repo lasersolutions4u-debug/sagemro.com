@@ -32,7 +32,7 @@ const selectedInput = {
 };
 
 async function renderBendSimulatorPage() {
-  const page = readFileSync(path.join(root, 'src/components/Tools/BendSimulatorPage.jsx'), 'utf8').replace(/^import .*;\n/gm, '');
+  const page = readFileSync(path.join(root, 'src/components/Tools/BendSimulatorPage.jsx'), 'utf8').replace(/^import[\s\S]*?;\r?\n/gm, '');
   const source = `
     import { createElement, useEffect, useMemo, useRef, useState } from '${reactModule}';
     import { applyBendSimulatorEditorChange, buildBendSimulatorWorkspaceState, toBendSimulatorEditorInput } from '${pageStateModule}';

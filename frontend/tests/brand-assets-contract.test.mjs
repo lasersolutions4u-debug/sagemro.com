@@ -82,7 +82,6 @@ test('main site first-impression copy keeps CN and COM market language separate'
   const welcome = read('frontend/src/data/welcomePageCopy.js');
   const welcomePage = read('frontend/src/components/Chat/WelcomePage.jsx');
   const chatArea = read('frontend/src/components/Chat/ChatArea.jsx');
-  const about = read('frontend/src/components/common/AboutModal.jsx');
   const footer = read('frontend/src/components/common/Footer.jsx');
   const engineerRecruiting = read('frontend/src/components/Engineer/EngineerRecruitingPage.jsx');
 
@@ -126,14 +125,6 @@ test('main site first-impression copy keeps CN and COM market language separate'
   assert.match(chatArea, /内容由 AI 生成，仅供参考。最终诊断、报价和现场安全需经 SAGEMRO 服务流程确认。/);
   assert.match(chatArea, /AI-generated content is for reference only\. Final diagnosis, pricing, and safety decisions follow the SAGEMRO service process\./);
   assert.ok(chatArea.indexOf('{aiNotice}') < chatArea.indexOf('{/* 消息区域 */}'));
-  assert.match(about, /service workspace for recording machine symptoms/i);
-  assert.match(about, /What SAGEMRO AI Can Help Clarify/);
-  assert.doesNotMatch(about, /One Chat, Six Service Outcomes/);
-  assert.doesNotMatch(about, /sales request/i);
-  assert.doesNotMatch(about, /Machine selection|new-machine projects/);
-  assert.match(about, /帮助客户与工程师整理设备现象、风险和可选下一步/);
-  assert.doesNotMatch(about, /operatorLine|Operated by Jinan Euchio Machinery/);
-  assert.doesNotMatch(about, /field photos|现场照片/);
   assert.match(footer, /© 2026 SAGEMRO/);
   assert.doesNotMatch(footer, /operated by Jinan Euchio Machinery|由济南钰峭机械有限公司运营/);
   assert.match(footer, /鲁ICP备2026032904号-1/);
@@ -194,16 +185,16 @@ test('AI service copy keeps service preparation neutral instead of sales routing
 });
 
 test('COM inquiry path asks for service-ready international request details', () => {
-  const workOrderModal = read('frontend/src/components/Sidebar/WorkOrderModal.jsx');
+  const serviceRequestFlow = read('frontend/src/components/ServiceRequest/ServiceRequestFlow.jsx');
 
-  assert.match(workOrderModal, /Request Details/);
-  assert.match(workOrderModal, /Country \/ Region/);
-  assert.match(workOrderModal, /Equipment Model \/ Part No\./);
-  assert.match(workOrderModal, /alarm code, part number, photos\/nameplate availability, country, and production impact/);
-  assert.match(workOrderModal, /Email, WhatsApp, or phone/);
-  assert.match(workOrderModal, /Spare Parts \/ Consumables/);
-  assert.match(workOrderModal, /Retrofit \/ Peripheral Equipment/);
-  assert.doesNotMatch(workOrderModal, /Parts Purchase/);
+  assert.match(serviceRequestFlow, /Equipment location/);
+  assert.match(serviceRequestFlow, /Model \/ specification/);
+  assert.match(serviceRequestFlow, /Alarm code/);
+  assert.match(serviceRequestFlow, /Production impact/);
+  assert.match(serviceRequestFlow, /Provide at least one of email, phone or WhatsApp/);
+  assert.match(serviceRequestFlow, /Parts, consumables & commissioning/);
+  assert.match(serviceRequestFlow, /System retrofit/);
+  assert.doesNotMatch(serviceRequestFlow, /Parts Purchase/);
 });
 
 test('registration copy hides CN email input and routes verification through phone SMS', () => {
@@ -380,8 +371,12 @@ test('Cloudflare deploy gate runs frontend tests before production deploy jobs',
     'frontend tests should run after lint in the test gate'
   );
   assert.ok(
-    workflow.indexOf('name: Frontend tests') < workflow.indexOf('name: Frontend build'),
+    workflow.indexOf('name: Frontend tests') < workflow.indexOf('name: Frontend public build'),
     'frontend tests should run before frontend build and deploy'
+  );
+  assert.ok(
+    workflow.indexOf('name: Frontend public build') < workflow.indexOf('name: Frontend AI portal build'),
+    'both deterministic frontend artifacts should be verified before deploy'
   );
 });
 
@@ -650,7 +645,7 @@ test('client shell moves conversation history into a modal and exposes industry 
   assert.match(industryToolsModal, /href="\/insights\/"/);
   assert.match(industryToolsModal, /publicIndustryTools\.map/);
   assert.doesNotMatch(industryToolsModal, /industryTools\.map/);
-  assert.match(industryToolCalculator, /Ask SAGEMRO AI to review this result/);
+  assert.match(industryToolCalculator, /reviewActionLabel/);
   assert.match(industryToolsPage, /href=\{`\/tools\/\$\{tool\.slug\}\/`\}/);
   assert.match(industryToolsPage, /max-w-7xl/);
   assert.match(industryToolsPage, /md:grid-cols-2/);
@@ -711,8 +706,10 @@ test('public industry tool detail prioritizes calculator before related tools an
   );
   assert.match(industryToolsPage, /handleSendToolReview/);
   assert.match(industryToolsPage, /<IndustryToolCalculator tool=\{tool\} values=\{values\} onChange=\{onChange\} onSendMessage=\{handleSendToolReview\}/);
-  assert.match(industryToolsPage, /onNavigateHome\?\.\(\)/);
-  assert.match(industryToolCalculator, /Ask SAGEMRO AI to review this result/);
+  assert.match(industryToolsPage, /buildCustomerPortalUrl/);
+  assert.match(industryToolsPage, /navigator\.clipboard\.writeText\(prompt\)/);
+  assert.match(industryToolsPage, /window\.location\.assign\(portalUrl\)/);
+  assert.match(industryToolCalculator, /reviewActionLabel/);
 });
 
 test('industry calculator result card makes estimate limits visible', () => {

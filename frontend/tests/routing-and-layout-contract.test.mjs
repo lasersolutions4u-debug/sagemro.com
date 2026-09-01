@@ -46,12 +46,12 @@ test('work order modal uses one full-height scroll surface without trailing blan
 });
 
 test('customer site location distinguishes current position from map selection', () => {
-  const workOrderModal = read('frontend/src/components/Sidebar/WorkOrderModal.jsx');
+  const serviceRequestFlow = read('frontend/src/components/ServiceRequest/ServiceRequestFlow.jsx');
 
-  assert.match(workOrderModal, /locateSite: '确认现场定位'/);
-  assert.match(workOrderModal, /locationCaptured: '现场定位已获取'/);
-  assert.match(workOrderModal, /form\.service_mode === 'onsite'/);
-  assert.match(workOrderModal, /service_accuracy_m \|\| 0/);
+  assert.match(serviceRequestFlow, /captureLocation: '确认现场定位'/);
+  assert.match(serviceRequestFlow, /locationCaptured: '现场定位已获取'/);
+  assert.match(serviceRequestFlow, /draft\.service_mode === 'onsite'/);
+  assert.match(serviceRequestFlow, /draft\.service_location\.accuracy_m/);
 });
 
 test('frontend build keeps modulepreload dependencies enabled', () => {
@@ -84,7 +84,7 @@ test('Aliyun deploy enforces HTTP/2, compression, caching, security headers, and
   assert.match(workflow, /python3 "\$release\/ops\/enable_nginx_http2\.py"/);
   assert.match(workflow, /Roll back failed China release/);
   assert.match(workflow, /always\(\) && \(steps\.activate\.outcome == 'failure'/);
-  assert.match(workflow, /for site_host in sagemro\.cn admin\.sagemro\.cn engineer\.sagemro\.cn/);
+  assert.match(workflow, /for site_host in sagemro\.cn ai\.sagemro\.cn admin\.sagemro\.cn engineer\.sagemro\.cn/);
   assert.match(workflow, /content-encoding: gzip/);
   assert.match(workflow, /max-age=31536000, immutable/);
   assert.match(workflow, /Content-Security-Policy/);

@@ -49,9 +49,13 @@ jobs:
         working-directory: frontend
         run: npm test
 
-      - name: Frontend build
+      - name: Frontend public build
         working-directory: frontend
-        run: npm run build
+        run: npm run build:public
+
+      - name: Frontend AI portal build
+        working-directory: frontend
+        run: npm run build:portal
 
       # Admin build（编译失败直接挂）
       - name: Admin install
@@ -87,7 +91,7 @@ jobs:
 
       - name: Build
         working-directory: frontend
-        run: npm run build
+        run: npm run build:public
 
       - name: Deploy to Cloudflare Pages
         env:

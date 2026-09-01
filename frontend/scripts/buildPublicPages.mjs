@@ -62,7 +62,7 @@ function renderRobots(locale) {
 
 function renderLlms(locale) {
   const host = hosts[locale];
-  return `# SAGEMRO\n\nSAGEMRO provides practical planning references for industrial equipment users. Tool results are planning references, not final engineering, safety, purchasing, or service decisions.\n\n## Current hubs\n\n- ${host}/\n- ${host}/services/\n- ${host}/tools/\n- ${host}/insights/\n\nContact: support@sagemro.com\n`;
+  return `# SAGEMRO\n\nSAGEMRO provides practical planning references for industrial equipment users. Tool results are planning references, not final engineering, safety, purchasing, or service decisions.\n\n## Current hubs\n\n- ${host}/\n- ${host}/services/\n- ${host}/brands/\n- ${host}/tools/\n- ${host}/insights/\n\nContact: support@sagemro.com\n`;
 }
 
 async function writeRoute(distDir, route, template, locale) {

@@ -9,7 +9,8 @@ import { getLocalizedInsights } from './insights.js';
 import { getServicePage, getServicePages } from './servicePages.js';
 import { getTechnicalAuthor } from './technicalAuthors.js';
 import { getTechnicalReviewPolicy } from './technicalReviewPolicy.js';
-import { welcomePageCopy } from './welcomePageCopy.js';
+import { getBrandServicePages } from './brandServicePages.js';
+import { getPublicHomeContent } from './publicHomeContent.js';
 
 const HOSTS = { en: 'https://sagemro.com', 'zh-CN': 'https://sagemro.cn' };
 const RELEASE_DATE = '2026-08-06';
@@ -21,8 +22,8 @@ function publicUrl(host, path) {
 const pages = {
   en: {
     home: {
-      title: 'SAGEMRO Service OS',
-      description: 'SAGEMRO helps industrial equipment users organize service needs, connect with qualified field engineers, and keep service records clear.',
+      title: 'Industrial Equipment Repair, Retrofit, Relocation, and Parts Support',
+      description: 'SAGEMRO supports industrial equipment fault assessment, repair coordination, retrofit, relocation, maintenance, used-equipment evaluation, and parts matching.',
     },
     tools: {
       title: 'Free Sheet Metal and Laser Cutting Calculators',
@@ -36,6 +37,12 @@ const pages = {
       h1: 'Structured equipment service support for a clear next action.',
       paragraphs: ['Choose the service context that best matches the equipment and operating concern. Each page explains the information to prepare and the boundary between remote and onsite support.'],
     },
+    brands: {
+      title: 'Multi-brand Industrial Equipment Service Support',
+      description: 'Find independent service support by installed machine, laser source, control system, and cutting-head brand.',
+      h1: 'Service support organized around the equipment already installed at your site.',
+      paragraphs: ['Choose a brand to see the relevant evidence, common service needs, and independent service boundary before submitting one structured service request.'],
+    },
     insights: {
       title: 'SAGEMRO Insights for Laser and Metal Forming Equipment',
       description: 'Practical notes, calculators, and decision guides for laser and metal forming equipment.',
@@ -45,8 +52,8 @@ const pages = {
   },
   'zh-CN': {
     home: {
-      title: 'SAGEMRO 智能服务系统',
-      description: 'SAGEMRO 面向激光切割与金属成型设备，帮助客户整理问题、连接合格工程师并沉淀服务记录。',
+      title: '工业设备维修、改造、移位安装与备件支持',
+      description: 'SAGEMRO 提供工业设备故障判断、维修协调、系统改造、移位安装、维护保养、旧设备评估和备件匹配支持。',
     },
     tools: {
       title: '钣金、激光切割和折弯行业工具',
@@ -59,6 +66,12 @@ const pages = {
       description: '查看激光切割、折弯机、远程诊断和预防性维护的结构化服务支持。',
       h1: '用结构化设备服务支持，明确下一步行动。',
       paragraphs: ['选择最符合设备和运行问题的服务场景。每个页面说明应准备的信息，以及远程与现场支持的边界。'],
+    },
+    brands: {
+      title: '多品牌工业设备服务支持',
+      description: '按现场使用的整机、激光器、控制系统和切割头品牌查找独立服务支持。',
+      h1: '围绕现场已经安装的设备与部件品牌匹配服务支持。',
+      paragraphs: ['选择品牌，查看常见服务需求、需要准备的资料和独立服务边界，再通过统一入口提交服务请求。'],
     },
     insights: {
       title: 'SAGEMRO 激光与金属成型洞察',
@@ -175,10 +188,11 @@ function withSchemaGraphs(routes, locale) {
 
 function buildRoutes(locale) {
   const copy = pages[locale] || pages.en;
-  const welcome = welcomePageCopy[locale === 'zh-CN' ? 'zh' : 'en'];
+  const publicHome = getPublicHomeContent(locale === 'zh-CN');
   const tools = publicIndustryTools.map((tool) => getLocalizedTool(tool, locale));
   const insights = getLocalizedInsights(locale);
   const services = getServicePages(locale);
+  const brands = getBrandServicePages(locale);
   const guides = getDiagnosticGuides(locale);
   const reviewPolicy = getTechnicalReviewPolicy(locale);
   const collection = (path, type, content, children) => route(locale, {
@@ -210,7 +224,42 @@ function buildRoutes(locale) {
     title: copy.home.title,
     description: copy.home.description,
     modified: RELEASE_DATE,
-    body: { h1: welcome.headline, paragraphs: [welcome.intro], resources: welcome.resources },
+    body: {
+      h1: publicHome.hero.title,
+      paragraphs: [publicHome.hero.description],
+      sections: [
+        {
+          heading: locale === 'zh-CN' ? '我们能解决的设备问题' : 'Equipment problems and service needs we handle',
+          body: publicHome.services.items.map((item) => item.title).join(' · '),
+        },
+        {
+          heading: locale === 'zh-CN' ? '为什么选择 SAGEMRO' : 'Why customers choose SAGEMRO',
+          body: publicHome.reasons.items.map((item) => `${item.title}: ${item.detail}`).join(' '),
+        },
+        {
+          heading: locale === 'zh-CN' ? '服务流程' : 'Service process',
+          body: `${publicHome.process.steps.map((step, index) => `${index + 1}. ${step.title}`).join(' ')} ${publicHome.process.boundary}`,
+        },
+        {
+          heading: locale === 'zh-CN' ? '工具、技术洞察与品牌支持' : 'Tools, technical insights, and brand support',
+          body: [
+            ...publicHome.tools.items.map((item) => item.title),
+            ...publicHome.insights.items.map((item) => item.title),
+            ...publicHome.brands.groups.flatMap((group) => group.items),
+          ].join(' · '),
+        },
+      ],
+      faqs: publicHome.faqs.items,
+      links: [
+        { href: '/services/', label: locale === 'zh-CN' ? '服务项目' : 'Services' },
+        { href: '/brands/', label: locale === 'zh-CN' ? '支持品牌' : 'Brands' },
+        { href: '/tools/', label: locale === 'zh-CN' ? '实用工具' : 'Tools' },
+        { href: '/insights/', label: locale === 'zh-CN' ? '技术洞察' : 'Insights' },
+        ...(locale === 'zh-CN' ? [] : [{ href: 'https://www.dhgate.com/store/sagemro', label: 'Store' }]),
+        { href: publicHome.requestCtas.assist.href, label: publicHome.requestCtas.assist.label },
+        { href: publicHome.requestCtas.manual.href, label: publicHome.requestCtas.manual.label },
+      ],
+    },
     structuredData: { '@type': 'WebSite', name: 'SAGEMRO', url: `${HOSTS[locale]}/`, publisher: organizationRef(locale) },
   });
   const toolRoutes = tools.map((tool) => toolRoute(locale, tool));
@@ -256,6 +305,35 @@ function buildRoutes(locale) {
       },
     });
   });
+  const brandRoutes = brands.map((brand) => route(locale, {
+    path: `/brands/${brand.slug}`,
+    type: 'brand',
+    title: brand.seoTitle,
+    description: brand.description,
+    modified: brand.reviewedAt,
+    label: brand.brandName,
+    body: {
+      h1: brand.title,
+      paragraphs: [brand.summary, brand.serviceBoundary, brand.independenceNotice],
+      sections: [
+        { heading: locale === 'zh-CN' ? '支持范围' : 'Support scope', body: brand.supportScope.join(' ') },
+        { heading: locale === 'zh-CN' ? '常见服务需求' : 'Common service needs', body: brand.commonNeeds.join(' ') },
+        { heading: locale === 'zh-CN' ? '需准备的信息' : 'Information to prepare', body: brand.customerInputs.join(' ') },
+      ],
+      links: brand.relatedServiceSlugs.map((slug) => {
+        const service = getServicePage(slug, locale);
+        return service ? { href: `/services/${service.slug}/`, label: service.title } : null;
+      }).filter(Boolean),
+    },
+    structuredData: {
+      '@type': 'Service',
+      name: brand.title,
+      description: brand.description,
+      url: publicUrl(HOSTS[locale], `/brands/${brand.slug}`),
+      provider: organizationRef(locale),
+      ...(locale === 'zh-CN' ? { areaServed: 'CN' } : {}),
+    },
+  }));
   const guideRoutes = guides.map((guide) => {
     const author = getTechnicalAuthor(guide.authorId, locale);
     const reviewer = getTechnicalAuthor(guide.reviewedBy, locale);
@@ -324,8 +402,9 @@ function buildRoutes(locale) {
   });
   const toolsHub = collection('/tools', 'tools-hub', copy.tools, toolRoutes);
   const servicesHub = collection('/services', 'services-hub', copy.services, serviceRoutes);
+  const brandsHub = collection('/brands', 'brands-hub', copy.brands, brandRoutes);
   const insightsHub = collection('/insights', 'insights-hub', copy.insights, [...insightRoutes, ...guideRoutes]);
-  const routes = [home, servicesHub, ...serviceRoutes, toolsHub, ...toolRoutes, insightsHub, ...insightRoutes, ...guideRoutes, technicalReviewRoute];
+  const routes = [home, servicesHub, ...serviceRoutes, brandsHub, ...brandRoutes, toolsHub, ...toolRoutes, insightsHub, ...insightRoutes, ...guideRoutes, technicalReviewRoute];
 
   return withSchemaGraphs(routes, locale);
 }

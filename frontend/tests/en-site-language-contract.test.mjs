@@ -55,13 +55,14 @@ test('COM display helpers translate legacy Chinese service text to professional 
 
 test('COM region input does not expose China administrative division suggestions', () => {
   const regionInput = read('frontend/src/components/common/RegionInput.jsx');
-  const workOrderModal = read('frontend/src/components/Sidebar/WorkOrderModal.jsx');
+  const serviceRequestFlow = read('frontend/src/components/ServiceRequest/ServiceRequestFlow.jsx');
 
   assert.match(regionInput, /isCnLocale/);
   assert.match(regionInput, /const allowDivisionSearch = isCnLocale\(\)/);
   assert.match(regionInput, /if \(allowDivisionSearch && val\.length >= 1\)/);
   assert.match(regionInput, /handleFreeformRegion/);
-  assert.match(workOrderModal, /Country \/ Region/);
+  assert.match(serviceRequestFlow, /region: 'Equipment location'/);
+  assert.match(serviceRequestFlow, /internationalRegionPlaceholder: 'Enter country, state \/ province or city/);
   assert.doesNotMatch(regionInput, /setSuggestions\(searchDivisions\(val\)\);\n\s*setShowDropdown\(true\);/);
 });
 

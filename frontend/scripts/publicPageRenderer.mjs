@@ -105,7 +105,7 @@ function renderBody(route) {
     ...(body.list || []).map((item) => `<p>${escapeHtml(item)}</p>`),
     ...(body.faqs || []).map((faq) => {
       const [question, answer] = Array.isArray(faq) ? faq : [faq.question, faq.answer];
-      return `<p>${escapeHtml(question)} ${escapeHtml(answer)}</p>`;
+      return `<h2>${escapeHtml(question)}</h2><p>${escapeHtml(answer)}</p>`;
     }),
     ...(body.links || []).map((link) => `<p><a href="${escapeHtml(link.href)}">${escapeHtml(link.label)}</a></p>`),
     ...(body.emptyState ? [`<p>${escapeHtml(body.emptyState)}</p>`] : []),

@@ -9,6 +9,7 @@ import test from 'node:test';
 import { buildPublicPages } from '../scripts/buildPublicPages.mjs';
 
 const execFile = promisify(execFileCallback);
+const normalizeLineEndings = (value) => value.replace(/\r\n/g, '\n');
 
 test('buildPublicPages writes crawlable public pages and crawl artifacts', async (t) => {
   const distDir = await mkdtemp(join(tmpdir(), 'sagemro-public-build-'));
@@ -38,12 +39,15 @@ test('buildPublicPages writes crawlable public pages and crawl artifacts', async
   assert.deepEqual(hubs, [
     '- https://sagemro.cn/',
     '- https://sagemro.cn/services/',
+    '- https://sagemro.cn/brands/',
     '- https://sagemro.cn/tools/',
     '- https://sagemro.cn/insights/',
   ]);
   assert.equal(await read('sitemap.xml'), await checkedIn('sitemap.xml'));
   assert.equal(await read('llms.txt'), await checkedIn('llms.txt'));
-  assert.match(await read('robots.txt'), /User-agent: Baiduspider\nAllow: \//);
+  const robots = normalizeLineEndings(await read('robots.txt'));
+  assert.equal(robots.trimEnd(), normalizeLineEndings(await checkedIn('robots.txt')).trimEnd());
+  assert.match(robots, /User-agent: Baiduspider\nAllow: \//);
 });
 
 test('English production robots excludes Baiduspider without blocking international search engines', async (t) => {
@@ -58,7 +62,7 @@ test('English production robots excludes Baiduspider without blocking internatio
 
   await buildPublicPages({ distDir });
 
-  const robots = await readFile(join(distDir, 'robots.txt'), 'utf8');
+  const robots = normalizeLineEndings(await readFile(join(distDir, 'robots.txt'), 'utf8'));
   assert.match(robots, /User-agent: Baiduspider\nDisallow: \/(?:\n|$)/);
   assert.match(robots, /User-agent: Googlebot\nAllow: \//);
   assert.match(robots, /Sitemap: https:\/\/sagemro\.com\/sitemap\.xml/);

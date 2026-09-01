@@ -1,7 +1,5 @@
 import { useEffect } from 'react';
 import { ArrowLeft, BookOpen, Calculator, Newspaper } from 'lucide-react';
-import { BrandMark } from '../common/BrandMark';
-import { Footer } from '../common/Footer';
 import { NotFoundPage } from '../common/NotFoundPage';
 import { getLocalizedInsight, getLocalizedInsights } from '../../data/insights';
 import { getDiagnosticGuide } from '../../data/diagnosticGuides';
@@ -9,6 +7,7 @@ import { getPublicSeoRoute } from '../../data/publicSeoRoutes';
 import { DiagnosticGuide } from './DiagnosticGuide';
 import { isCnLocale } from '../../utils/locale';
 import { setSeoMetadata } from '../../utils/seo';
+import { PublicSiteShell } from '../Public/PublicSiteShell';
 
 const insightsCopy = {
   en: {
@@ -76,19 +75,18 @@ export function InsightsPage({ pathname = '/insights', acquisitionContext, onOpe
     return <NotFoundPage isCn={locale === 'zh-CN'} />;
   }
 
-  if (guide) return <InsightShell copy={copy} onOpenLegal={onOpenLegal}><DiagnosticGuide guide={guide} locale={locale} acquisitionContext={acquisitionContext} onStartDiagnosis={onStartDiagnosis} onOpenServiceRequest={onOpenServiceRequest} /></InsightShell>;
+  const content = guide
+    ? <DiagnosticGuide guide={guide} locale={locale} acquisitionContext={acquisitionContext} onStartDiagnosis={onStartDiagnosis} onOpenServiceRequest={onOpenServiceRequest} />
+    : insight
+      ? <InsightDetail copy={copy} insight={insight} />
+      : <InsightsHub copy={copy} insights={localizedInsights} />;
 
-  if (insight) {
-    return <InsightDetail copy={copy} insight={insight} onOpenLegal={onOpenLegal} />;
-  }
-
-  return <InsightsHub copy={copy} insights={localizedInsights} onOpenLegal={onOpenLegal} />;
+  return <PublicSiteShell isCn={locale === 'zh-CN'} onOpenLegal={onOpenLegal}>{content}</PublicSiteShell>;
 }
 
-function InsightsHub({ copy, insights, onOpenLegal }) {
+function InsightsHub({ copy, insights }) {
   return (
-    <InsightShell copy={copy} onOpenLegal={onOpenLegal}>
-      <main className="mx-auto max-w-6xl px-4 py-8 sm:px-6 lg:py-12">
+    <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6 lg:py-12">
         <a href="/" className="mb-6 inline-flex items-center gap-2 text-sm text-[var(--color-text-secondary)] hover:text-[var(--color-primary)]">
           <ArrowLeft size={16} />
           {copy.back}
@@ -117,15 +115,13 @@ function InsightsHub({ copy, insights, onOpenLegal }) {
             ))}
           </div>
         </section>
-      </main>
-    </InsightShell>
+      </div>
   );
 }
 
-function InsightDetail({ copy, insight, onOpenLegal }) {
+function InsightDetail({ copy, insight }) {
   return (
-    <InsightShell copy={copy} onOpenLegal={onOpenLegal}>
-      <main className="mx-auto max-w-4xl px-4 py-8 sm:px-6 lg:py-10">
+    <div className="mx-auto max-w-4xl px-4 py-8 sm:px-6 lg:py-10">
         <a href="/insights/" className="mb-6 inline-flex items-center gap-2 text-sm text-[var(--color-text-secondary)] hover:text-[var(--color-primary)]">
           <ArrowLeft size={16} />
           {copy.allInsights}
@@ -163,8 +159,7 @@ function InsightDetail({ copy, insight, onOpenLegal }) {
             ))}
           </div>
         </article>
-      </main>
-    </InsightShell>
+      </div>
   );
 }
 
@@ -182,27 +177,5 @@ function InsightCard({ item }) {
         </div>
       </div>
     </a>
-  );
-}
-
-function InsightShell({ children, copy, onOpenLegal }) {
-  return (
-    <div className="flex min-h-[100dvh] flex-col bg-[var(--color-bg)] text-[var(--color-text-primary)]">
-      <header className="border-b border-[var(--color-border)] bg-[var(--color-surface)]">
-        <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-3 sm:px-6">
-          <a href="/" className="flex items-center gap-2 text-sm font-semibold text-[var(--color-text-primary)]">
-            <BrandMark variant="logo" className="h-8 w-8 object-contain" />
-            SAGEMRO
-          </a>
-          <nav className="flex items-center gap-3 text-sm text-[var(--color-text-secondary)]">
-            <a href="/tools/" className="hover:text-[var(--color-primary)]">{copy.navTools}</a>
-            <a href="/insights/" className="hover:text-[var(--color-primary)]">{copy.navInsights}</a>
-            <a href="/" className="hover:text-[var(--color-primary)]">{copy.navChat}</a>
-          </nav>
-        </div>
-      </header>
-      <div className="flex-1">{children}</div>
-      <Footer onOpenLegal={onOpenLegal} />
-    </div>
   );
 }
