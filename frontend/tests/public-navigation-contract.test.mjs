@@ -40,6 +40,18 @@ test('shared public navigation exposes every public hub and the market portal', 
   assert.match(shell, /aria-disabled="true"/);
 });
 
+test('public site uses the service workspace brand mark and warm visual system', () => {
+  const shell = read('src/components/Public/PublicSiteShell.jsx');
+  const home = read('src/components/Public/PublicHomePage.jsx');
+
+  assert.match(shell, /import \{ BrandMark \}/);
+  assert.match(shell, /<BrandMark className="h-11 w-11/);
+  assert.match(`${shell}\n${home}`, /#f59e0b/);
+  assert.match(`${shell}\n${home}`, /#1a1a1a/);
+  assert.match(`${shell}\n${home}`, /#f7f3ed/);
+  assert.doesNotMatch(`${shell}\n${home}`, /#176b4b|#2675a9/);
+});
+
 test('shared shell owns the only public main and footer landmarks', () => {
   const shell = read('src/components/Public/PublicSiteShell.jsx');
   assert.match(shell, /<main>\{children\}<\/main>/);
