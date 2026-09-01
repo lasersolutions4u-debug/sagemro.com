@@ -48,6 +48,20 @@ test('Aliyun deployment keeps its production safety controls', () => {
   assert.match(workflow, /- name: Revoke GitHub runner SSH\s+if: always\(\)/);
 });
 
+test('Aliyun deployment provisions the AI DNS, certificate, and Nginx host safely', () => {
+  assert.match(workflow, /aliyun alidns DescribeDomainRecords/);
+  assert.match(workflow, /aliyun alidns AddDomainRecord/);
+  assert.match(workflow, /aliyun alidns UpdateDomainRecord/);
+  assert.match(workflow, /Refusing to change ambiguous ai\.sagemro\.cn DNS records/);
+  assert.match(workflow, /certbot show_account --non-interactive/);
+  assert.match(workflow, /certbot certonly[\s\S]*--webroot[\s\S]*--cert-name ai\.sagemro\.cn/);
+  assert.match(workflow, /\/etc\/nginx\/conf\.d\/sagemro-cn-ai\.conf/);
+  assert.match(workflow, /root \/var\/www\/sagemro-cn\/current\/ai;/);
+  assert.match(workflow, /server_name ai\.sagemro\.cn;/);
+  assert.match(workflow, /trap rollback_ai_edge ERR/);
+  assert.match(workflow, /nginx -t[\s\S]*systemctl reload nginx/);
+});
+
 test('Aliyun health checks and summary include the AI portal without dropping existing hosts', () => {
   const urls = [
     'https://sagemro.cn/',
