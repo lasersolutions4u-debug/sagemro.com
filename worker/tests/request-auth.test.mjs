@@ -11,6 +11,12 @@ const JWT_SECRET = 'request-auth-test-secret-32-characters';
 
 test('request portal role uses exact Origin and Referer hosts', () => {
   assert.equal(requestPortalRole(new Request('https://api.sagemro.com/api/auth/session', {
+    headers: { Origin: 'https://ai.sagemro.com' },
+  })), 'customer');
+  assert.equal(requestPortalRole(new Request('https://api.sagemro.com/api/auth/session', {
+    headers: { Origin: 'https://ai.sagemro.cn' },
+  })), 'customer');
+  assert.equal(requestPortalRole(new Request('https://api.sagemro.com/api/auth/session', {
     headers: { Origin: 'https://engineer.sagemro.com' },
   })), 'engineer');
   assert.equal(requestPortalRole(new Request('https://api.sagemro.com/api/auth/session', {
@@ -18,6 +24,9 @@ test('request portal role uses exact Origin and Referer hosts', () => {
   })), 'admin');
   assert.equal(requestPortalRole(new Request('https://api.sagemro.com/api/auth/session', {
     headers: { Origin: 'https://admin.attacker.example' },
+  })), null);
+  assert.equal(requestPortalRole(new Request('https://api.sagemro.com/api/auth/session', {
+    headers: { Origin: 'https://ai.sagemro.com.evil.example' },
   })), null);
 });
 

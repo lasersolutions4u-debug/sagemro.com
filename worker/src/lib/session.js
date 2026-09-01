@@ -19,8 +19,10 @@ export function expectedPortalRole(origin) {
       if (port === '4274' || port === '5174') return 'admin';
       return 'customer';
     }
-    if (hostname === 'sagemro.com' || hostname === 'www.sagemro.com') return 'customer';
-    if (hostname === 'sagemro.cn' || hostname === 'www.sagemro.cn') return 'customer';
+    if (hostname === 'sagemro.com' || hostname === 'www.sagemro.com'
+      || hostname === 'ai.sagemro.com') return 'customer';
+    if (hostname === 'sagemro.cn' || hostname === 'www.sagemro.cn'
+      || hostname === 'ai.sagemro.cn') return 'customer';
     return null;
   } catch {
     return null;

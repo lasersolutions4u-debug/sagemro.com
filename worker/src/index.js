@@ -35,6 +35,14 @@ import {
 } from './lib/location.js';
 import { normalizeServiceMode, requiresArrivalVerification } from './lib/service-mode.js';
 import {
+  SERVICE_KIND_TO_WORK_ORDER_TYPE,
+  SERVICE_REQUEST_VERSION,
+  buildServiceRequestAssistPrompt,
+  normalizeServiceRequestIntake,
+  parseServiceRequestAssistOutput,
+  serializeServiceRequestIntake,
+} from './lib/serviceRequestIntake.js';
+import {
   buildWorkOrderShortTitle,
   normalizeWorkOrderShortTitle,
   resolveWorkOrderShortTitle,
@@ -249,6 +257,7 @@ const FUNNEL_SLUG_PROPERTIES = new Set(['content_slug']);
 const CONTACT_EMAIL_PATTERN = /[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g;
 const CONTACT_PLUS_PHONE_PATTERN = /\+\d[\d\s().-]{6,}\d/g;
 const CONTACT_CN_PHONE_PATTERN = /(?<!\d)1[3-9]\d{9}(?!\d)/g;
+const CONTACT_INTERNATIONAL_PHONE_PATTERN = /(?<![\dA-Za-z])\+?\(?\d[\d\s().-]{6,}\d(?![\dA-Za-z])/g;
 
 function passwordTooShortResponse(request) {
   const market = request ? getRequestMarket(request) : 'com';
@@ -271,11 +280,74 @@ function redactContactInfoForWorkOrder(text) {
     .replace(CONTACT_PLUS_PHONE_PATTERN, (match) => (
       String(match).replace(/\D/g, '').length >= 8 ? 'XXX' : match
     ))
-    .replace(CONTACT_CN_PHONE_PATTERN, 'XXX');
+    .replace(CONTACT_CN_PHONE_PATTERN, 'XXX')
+    .replace(CONTACT_INTERNATIONAL_PHONE_PATTERN, (match) => {
+      const digitCount = String(match).replace(/\D/g, '').length;
+      return digitCount >= 9 && digitCount <= 15 ? 'XXX' : match;
+    });
 }
 
 function canEngineerViewCustomerContact(status) {
   return ['in_service', 'resolved', 'pending_review', 'completed'].includes(status);
+}
+
+const SERVICE_REQUEST_STORAGE_FIELDS = [
+  'service_request_version',
+  'service_request_kind',
+  'device_types_json',
+  'device_brands_json',
+  'device_model',
+  'region_json',
+  'alarm_code',
+  'production_impact',
+  'contact_name',
+  'contact_email',
+  'contact_phone',
+  'contact_whatsapp',
+  'contact_preference',
+];
+
+function parseStoredStringArray(value) {
+  if (typeof value !== 'string' || !value) return [];
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed.filter((item) => typeof item === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
+function storedServiceRequest(workOrder, { includeContact = false } = {}) {
+  if (!workOrder?.service_request_kind) return null;
+  return {
+    service_request_kind: workOrder.service_request_kind,
+    device_types: parseStoredStringArray(workOrder.device_types_json),
+    device_brands: parseStoredStringArray(workOrder.device_brands_json),
+    device_model: workOrder.device_model ?? '',
+    region: parseStoredStringArray(workOrder.region_json),
+    alarm_code: workOrder.alarm_code || '',
+    production_impact: workOrder.production_impact || '',
+    contact: includeContact ? {
+      name: workOrder.contact_name || '',
+      email: workOrder.contact_email || '',
+      phone: workOrder.contact_phone || '',
+      whatsapp: workOrder.contact_whatsapp || '',
+      preference: workOrder.contact_preference || '',
+    } : {
+      name: '',
+      email: '',
+      phone: '',
+      whatsapp: '',
+      preference: '',
+    },
+  };
+}
+
+function withoutServiceRequestStorageFields(workOrder) {
+  const visible = { ...workOrder };
+  for (const field of SERVICE_REQUEST_STORAGE_FIELDS) delete visible[field];
+  delete visible.registered_device_model;
+  return visible;
 }
 
 function parseServiceLocation(input = {}) {
@@ -2217,13 +2289,19 @@ async function authenticateAdmin(request, env) {
 const ALLOWED_ORIGINS_PRODUCTION = [
   'https://sagemro.com',
   'https://www.sagemro.com',
+  'https://ai.sagemro.com',
   'https://engineer.sagemro.com',
   'https://admin.sagemro.com',
   'https://sagemro.cn',
   'https://www.sagemro.cn',
+  'https://ai.sagemro.cn',
   'https://engineer.sagemro.cn',
   'https://admin.sagemro.cn',
 ];
+const API_MARKET_BY_HOST = new Map([
+  ['api.sagemro.com', 'com'],
+  ['api.sagemro.cn', 'cn'],
+]);
 const ALLOWED_ORIGINS_DEV = [
   ...ALLOWED_ORIGINS_PRODUCTION,
   'http://localhost:5173',
@@ -2326,6 +2404,22 @@ const ERROR_MESSAGES = {
   name_phone_company_password_required: {
     com: 'Name, phone number, email, company name, and password are required.',
     cn: '姓名、手机号、公司名称、密码不能为空',
+  },
+  customer_registration_required: {
+    com: 'Name, email, company name, and password are required.',
+    cn: '姓名、手机号、公司名称、密码不能为空',
+  },
+  verification_code_required: {
+    com: 'Verification code is required.',
+    cn: '验证码不能为空',
+  },
+  verification_code_invalid: {
+    com: 'Verification code is incorrect or expired.',
+    cn: '验证码错误或已过期',
+  },
+  too_many_verification_attempts: {
+    com: 'Too many verification attempts. Request a new code and try again.',
+    cn: '验证码尝试次数过多，请重新获取验证码',
   },
   phone_password_required: {
     com: 'Phone number and password are required.',
@@ -2628,34 +2722,25 @@ function isCnPhoneNumber(phone) {
   return /^1\d{10}$/.test(String(phone || ''));
 }
 
-function getVerificationTarget({ phone, email }) {
-  const normalizedEmail = normalizeEmail(email);
-  if (normalizedEmail) {
-    return {
-      type: 'email',
-      value: normalizedEmail,
-      key: `email_${normalizedEmail}`,
-    };
-  }
-  if (phone) {
-    return {
-      type: 'phone',
-      value: phone,
-      key: phone,
-    };
-  }
-  return null;
+function isInternationalPhoneNumber(phone) {
+  return /^\+?[0-9\s().-]{6,24}$/.test(String(phone || '').trim());
 }
 
 function getRegistrationVerificationTarget({ phone, email }, request) {
-  if (getRequestMarket(request) === 'cn' && phone) {
+  if (getRequestMarket(request) === 'cn') {
+    if (!phone) return null;
     return {
       type: 'phone',
       value: phone,
       key: phone,
     };
   }
-  return getVerificationTarget({ phone, email });
+  const normalizedEmail = normalizeEmail(email);
+  return normalizedEmail ? {
+    type: 'email',
+    value: normalizedEmail,
+    key: `email_${normalizedEmail}`,
+  } : null;
 }
 
 async function sendVerificationEmail(env, email, code, request) {
@@ -2962,21 +3047,69 @@ async function sendAliyunSmsVerification(env, phone, code) {
   return { sent: true };
 }
 
-async function isVerificationCodeValid(env, { phone, email, code }) {
-  const target = getVerificationTarget({ phone, email });
-  if (!target) return false;
-  const storedCode = await env.KV.get(`verify_code_${target.key}`);
-  const legacyStoredCode = target.type === 'email' && phone
-    ? await env.KV.get(`verify_code_${phone}`)
-    : null;
-  const devBypass = env.ENVIRONMENT === 'development' ? env.DEV_BYPASS_CODE : null;
-  return (storedCode && storedCode === code)
-    || (legacyStoredCode && legacyStoredCode === code)
-    || (devBypass && devBypass === code);
+const REGISTRATION_CODE_MAX_TARGET_FAILURES = 5;
+const REGISTRATION_CODE_MAX_IP_FAILURES = 20;
+const REGISTRATION_CODE_ATTEMPT_TTL_SECONDS = 300;
+
+function generateVerificationCode() {
+  const range = 900000;
+  const ceiling = Math.floor(0x100000000 / range) * range;
+  const values = new Uint32Array(1);
+  do {
+    crypto.getRandomValues(values);
+  } while (values[0] >= ceiling);
+  return String(100000 + (values[0] % range));
 }
 
-async function deleteVerificationCode(env, { phone, email }) {
-  const target = getVerificationTarget({ phone, email });
+async function isVerificationCodeValid(env, { phone, email, code }, request) {
+  const target = getRegistrationVerificationTarget({ phone, email }, request);
+  if (!target) return { valid: false, limited: false };
+  const targetFailureKey = `verify_code_fail_${target.key}`;
+  const ipFailureKey = `verify_code_check_ip_${getRequestIp(request) || 'unknown'}`;
+  const [storedCode, legacyStoredCode, targetFailureValue, ipFailureValue] = await Promise.all([
+    env.KV.get(`verify_code_${target.key}`),
+    target.type === 'email' && phone ? env.KV.get(`verify_code_${phone}`) : null,
+    env.KV.get(targetFailureKey),
+    env.KV.get(ipFailureKey),
+  ]);
+  const targetFailures = Number.parseInt(targetFailureValue || '0', 10) || 0;
+  const ipFailures = Number.parseInt(ipFailureValue || '0', 10) || 0;
+  if (
+    targetFailures >= REGISTRATION_CODE_MAX_TARGET_FAILURES
+    || ipFailures >= REGISTRATION_CODE_MAX_IP_FAILURES
+  ) {
+    return { valid: false, limited: true };
+  }
+  const devBypass = env.ENVIRONMENT === 'development' ? env.DEV_BYPASS_CODE : null;
+  const valid = (storedCode && storedCode === code)
+    || (legacyStoredCode && legacyStoredCode === code)
+    || (devBypass && devBypass === code);
+  if (valid) {
+    await Promise.all([
+      env.KV.delete(targetFailureKey),
+      env.KV.delete(ipFailureKey),
+    ]);
+    return { valid: true, limited: false };
+  }
+
+  const nextTargetFailures = targetFailures + 1;
+  const nextIpFailures = ipFailures + 1;
+  await Promise.all([
+    env.KV.put(targetFailureKey, String(nextTargetFailures), {
+      expirationTtl: REGISTRATION_CODE_ATTEMPT_TTL_SECONDS,
+    }),
+    env.KV.put(ipFailureKey, String(nextIpFailures), {
+      expirationTtl: REGISTRATION_CODE_ATTEMPT_TTL_SECONDS,
+    }),
+  ]);
+  const limited = nextTargetFailures >= REGISTRATION_CODE_MAX_TARGET_FAILURES
+    || nextIpFailures >= REGISTRATION_CODE_MAX_IP_FAILURES;
+  if (limited) await deleteVerificationCode(env, { phone, email }, request);
+  return { valid: false, limited };
+}
+
+async function deleteVerificationCode(env, { phone, email }, request) {
+  const target = getRegistrationVerificationTarget({ phone, email }, request);
   if (target) {
     await env.KV.delete(`verify_code_${target.key}`);
   }
@@ -2985,14 +3118,15 @@ async function deleteVerificationCode(env, { phone, email }) {
   }
 }
 
-// 发送验证码：注册优先使用邮箱，兼容旧手机号验证码。
+// 发送注册验证码：CN 仅手机号，COM 仅邮箱。
 async function handleSendCode(request, env) {
   try {
     const { phone, email } = await request.json();
     const target = getRegistrationVerificationTarget({ phone, email }, request);
     if (!target) {
-      if (email !== undefined) return localizedErrorResponse('email_required', request);
-      return localizedErrorResponse('phone_required', request);
+      return getRequestMarket(request) === 'cn'
+        ? localizedErrorResponse('phone_required', request)
+        : localizedErrorResponse('email_required', request);
     }
 
     if (target.type === 'email' && !isValidEmail(target.value)) {
@@ -3018,11 +3152,12 @@ async function handleSendCode(request, env) {
       return errorResponse('请求次数过多，请稍后再试', 429);
     }
 
-    // 生成 4 位验证码
-    const code = String(Math.floor(1000 + Math.random() * 9000));
+    // 使用密码安全随机源生成 6 位验证码
+    const code = generateVerificationCode();
 
     // 存储验证码（有效期5分钟）
     await env.KV.put(`verify_code_${target.key}`, code, { expirationTtl: 300 });
+    await env.KV.delete(`verify_code_fail_${target.key}`);
     // 记录频控标记
     await env.KV.put(rateKey, '1', { expirationTtl: 60 });
     await env.KV.put(ipKey, String(ipCount + 1), { expirationTtl: 60 });
@@ -3047,13 +3182,13 @@ async function handleSendCode(request, env) {
     if (target.type === 'email') {
       const emailResult = await sendVerificationEmail(env, target.value, env.ENVIRONMENT === 'development' && devBypass ? devBypass : code, request);
       if (emailResult.error) {
-        await deleteVerificationCode(env, { email: target.value });
+        await deleteVerificationCode(env, { email: target.value }, request);
         return errorResponse(emailResult.error, 503);
       }
     } else if (getRequestMarket(request) === 'cn') {
       const smsResult = await sendAliyunSmsVerification(env, target.value, env.ENVIRONMENT === 'development' && devBypass ? devBypass : code);
       if (smsResult.error) {
-        await deleteVerificationCode(env, { phone: target.value });
+        await deleteVerificationCode(env, { phone: target.value }, request);
         return errorResponse(smsResult.error, 503);
       }
     }
@@ -3070,31 +3205,53 @@ async function handleRegisterCustomer(request, env) {
     const market = getRequestMarket(request);
     const normalizedEmail = normalizeIdentityEmail(email);
     const normalizedPhone = normalizeIdentityPhone(phone);
+    const storedPhone = normalizedPhone ? String(phone).trim() : null;
 
-    if (!name || !phone || !password || !company || (market !== 'cn' && !normalizedEmail)) {
-      return localizedErrorResponse('name_phone_company_password_required', request);
+    if (!name || !password || !company || (market === 'cn' ? !normalizedPhone : !normalizedEmail)) {
+      return localizedErrorResponse('customer_registration_required', request);
+    }
+    if (!code) {
+      return localizedErrorResponse('verification_code_required', request);
+    }
+    if (market === 'cn' && !isCnPhoneNumber(normalizedPhone)) {
+      return localizedErrorResponse('invalid_phone', request);
+    }
+    if (market === 'cn' && normalizedEmail && !isValidEmail(normalizedEmail)) {
+      return localizedErrorResponse('invalid_email', request);
+    }
+    if (market === 'com' && !isValidEmail(normalizedEmail)) {
+      return localizedErrorResponse('invalid_email', request);
+    }
+    if (market === 'com' && storedPhone && !isInternationalPhoneNumber(storedPhone)) {
+      return localizedErrorResponse('invalid_phone', request);
     }
     if (isPasswordTooShort(password)) {
       return passwordTooShortResponse(request);
     }
 
     // 验证验证码（开发环境支持 bypass 码 "888888" + DEV_BYPASS_CODE 用于自动化测试）
-    const isValid = await isVerificationCodeValid(env, { phone, email, code });
-    if (!isValid) {
-      return errorResponse('验证码错误或已过期');
+    const verification = await isVerificationCodeValid(
+      env,
+      { phone: storedPhone, email: normalizedEmail, code },
+      request,
+    );
+    if (!verification.valid) {
+      return verification.limited
+        ? localizedErrorResponse('too_many_verification_attempts', request, 429)
+        : localizedErrorResponse('verification_code_invalid', request);
     }
 
     // 检查手机号是否已在任意角色注册（跨表去重）
     const [identityConflict, existingCustomer, existingEngineer, existingEmailCustomer, existingEmailEngineer] = await Promise.all([
       findAccountIdentityConflict(env, normalizedEmail, normalizedPhone),
-      env.DB.prepare(`
+      normalizedPhone ? env.DB.prepare(`
         SELECT id FROM customers
         WHERE replace(replace(replace(replace(replace(replace(replace(replace(trim(phone), char(9), ''), char(10), ''), char(13), ''), ' ', ''), '-', ''), '(', ''), ')', ''), '.', '') = ?
-      `).bind(normalizedPhone).first(),
-      env.DB.prepare(`
+      `).bind(normalizedPhone).first() : Promise.resolve(null),
+      normalizedPhone ? env.DB.prepare(`
         SELECT id FROM engineers
         WHERE replace(replace(replace(replace(replace(replace(replace(replace(trim(phone), char(9), ''), char(10), ''), char(13), ''), ' ', ''), '-', ''), '(', ''), ')', ''), '.', '') = ?
-      `).bind(normalizedPhone).first(),
+      `).bind(normalizedPhone).first() : Promise.resolve(null),
       normalizedEmail
         ? env.DB.prepare('SELECT id FROM customers WHERE lower(email) = ?').bind(normalizedEmail).first()
         : Promise.resolve(null),
@@ -3127,7 +3284,7 @@ async function handleRegisterCustomer(request, env) {
 
     const customerInsert = env.DB.prepare(
       'INSERT INTO customers (id, user_no, name, phone, email, password_hash, salt, company, auth_status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
-    ).bind(id, userNo, name, phone, normalizedEmail || null, passwordHash, salt, company, authStatus);
+    ).bind(id, userNo, name, storedPhone, normalizedEmail || null, passwordHash, salt, company, authStatus);
     try {
       await env.DB.batch([
         customerInsert,
@@ -3135,7 +3292,7 @@ async function handleRegisterCustomer(request, env) {
           ownerType: 'customer',
           ownerId: id,
           email: normalizedEmail,
-          phone,
+          phone: storedPhone,
         }),
       ]);
     } catch (error) {
@@ -3154,12 +3311,12 @@ async function handleRegisterCustomer(request, env) {
     }
 
     // 删除已使用的验证码
-    await deleteVerificationCode(env, { phone, email });
+    await deleteVerificationCode(env, { phone: storedPhone, email: normalizedEmail }, request);
     await incrementApiCounter(env, "register_customer");
 
     return jsonResponse({
       success: true,
-      customer: { id, user_no: userNo, name, phone, email: normalizedEmail || '' }
+      customer: { id, user_no: userNo, name, phone: storedPhone, email: normalizedEmail || '' }
     });
   } catch (error) {
     return errorResponse(error.message, 500);
@@ -3496,18 +3653,23 @@ async function handleEngineerActivation(request, env) {
 // 发送重置密码验证码
 async function handleSendResetCode(request, env) {
   try {
-    const { phone } = await request.json();
+    const { phone, email } = await request.json();
+    const target = getRegistrationVerificationTarget({ phone, email }, request);
 
-    if (!phone) {
-      return errorResponse('手机号不能为空');
+    if (!target) {
+      return getRequestMarket(request) === 'cn'
+        ? localizedErrorResponse('phone_required', request)
+        : localizedErrorResponse('email_required', request);
+    }
+    if (target.type === 'phone' && !isCnPhoneNumber(target.value)) {
+      return localizedErrorResponse('invalid_phone', request);
+    }
+    if (target.type === 'email' && !isValidEmail(target.value)) {
+      return localizedErrorResponse('invalid_email', request);
     }
 
-    if (!/^1\d{10}$/.test(phone)) {
-      return errorResponse('手机号格式不正确');
-    }
-
-    // 频控：同一手机号 60 秒内只能请求一次
-    const rateKey = `reset_code_rate_${phone}`;
+    // 频控：同一验证目标 60 秒内只能请求一次
+    const rateKey = `reset_code_rate_${target.key}`;
     const recent = await env.KV.get(rateKey);
     if (recent) {
       return errorResponse('发送过于频繁，请 60 秒后再试', 429);
@@ -3522,24 +3684,11 @@ async function handleSendResetCode(request, env) {
       return errorResponse('请求次数过多，请稍后再试', 429);
     }
 
-    // 检查手机号是否已注册（客户或工程师）
-    const customer = await env.DB.prepare(
-      'SELECT id FROM customers WHERE phone = ?'
-    ).bind(phone).first();
-
-    const engineer = await env.DB.prepare(
-      'SELECT id FROM engineers WHERE phone = ?'
-    ).bind(phone).first();
-
-    if (!customer && !engineer) {
-      return errorResponse('该手机号未注册');
-    }
-
     // 生成验证码
     const code = String(Math.floor(1000 + Math.random() * 9000));
 
     // 存储验证码（有效期5分钟）
-    await env.KV.put(`reset_code_${phone}`, code, { expirationTtl: 300 });
+    await env.KV.put(`reset_code_${target.key}`, code, { expirationTtl: 300 });
     await env.KV.put(rateKey, '1', { expirationTtl: 60 });
     await env.KV.put(ipKey, String(ipCount + 1), { expirationTtl: 60 });
 
@@ -3556,6 +3705,29 @@ async function handleSendResetCode(request, env) {
         response.code = code;
       }
     }
+
+    if (target.type === 'email') {
+      const emailResult = await sendVerificationEmail(
+        env,
+        target.value,
+        env.ENVIRONMENT === 'development' && devBypass ? devBypass : code,
+        request,
+      );
+      if (emailResult.error) {
+        await env.KV.delete(`reset_code_${target.key}`);
+        return errorResponse(emailResult.error, 503);
+      }
+    } else {
+      const smsResult = await sendAliyunSmsVerification(
+        env,
+        target.value,
+        env.ENVIRONMENT === 'development' && devBypass ? devBypass : code,
+      );
+      if (smsResult.error) {
+        await env.KV.delete(`reset_code_${target.key}`);
+        return errorResponse(smsResult.error, 503);
+      }
+    }
     return jsonResponse(response);
   } catch (error) {
     return errorResponse(error.message, 500);
@@ -3565,10 +3737,21 @@ async function handleSendResetCode(request, env) {
 // 重置密码
 async function handleResetPassword(request, env) {
   try {
-    const { phone, code, newPassword } = await request.json();
+    const { phone, email, code, newPassword } = await request.json();
+    const target = getRegistrationVerificationTarget({ phone, email }, request);
 
-    if (!phone || !code || !newPassword) {
-      return errorResponse('手机号、验证码、新密码不能为空');
+    if (!target || !code || !newPassword) {
+      return errorResponse(
+        getRequestMarket(request) === 'cn'
+          ? '手机号、验证码、新密码不能为空'
+          : 'Email, verification code, and new password are required.',
+      );
+    }
+    if (target.type === 'phone' && !isCnPhoneNumber(target.value)) {
+      return localizedErrorResponse('invalid_phone', request);
+    }
+    if (target.type === 'email' && !isValidEmail(target.value)) {
+      return localizedErrorResponse('invalid_email', request);
     }
 
     if (isPasswordTooShort(newPassword)) {
@@ -3576,7 +3759,7 @@ async function handleResetPassword(request, env) {
     }
 
     // 验证验证码（开发环境支持 bypass 码 "888888" + DEV_BYPASS_CODE 用于自动化测试）
-    const storedCode = await env.KV.get(`reset_code_${phone}`);
+    const storedCode = await env.KV.get(`reset_code_${target.key}`);
     const devBypass = env.ENVIRONMENT === 'development' ? env.DEV_BYPASS_CODE : null;
     const isValid = (storedCode && storedCode === code)
       || (devBypass && devBypass === code);
@@ -3588,22 +3771,18 @@ async function handleResetPassword(request, env) {
     const salt = generateSalt();
     const passwordHash = await hashPasswordNew(newPassword, salt);
 
-    // 更新客户密码
-    const customerUpdated = await env.DB.prepare(
-      'UPDATE customers SET password_hash = ?, salt = ? WHERE phone = ?'
-    ).bind(passwordHash, salt, phone).run();
-
-    // 更新工程师密码
-    const engineerUpdated = await env.DB.prepare(
-      'UPDATE engineers SET password_hash = ?, salt = ? WHERE phone = ?'
-    ).bind(passwordHash, salt, phone).run();
-
-    if (!customerUpdated.success && !engineerUpdated.success) {
-      return errorResponse('密码更新失败');
-    }
+    const targetColumn = target.type === 'email' ? 'lower(email)' : 'phone';
+    await Promise.all([
+      env.DB.prepare(
+        `UPDATE customers SET password_hash = ?, salt = ? WHERE ${targetColumn} = ?`
+      ).bind(passwordHash, salt, target.value).run(),
+      env.DB.prepare(
+        `UPDATE engineers SET password_hash = ?, salt = ? WHERE ${targetColumn} = ?`
+      ).bind(passwordHash, salt, target.value).run(),
+    ]);
 
     // 删除已使用的验证码
-    await env.KV.delete(`reset_code_${phone}`);
+    await env.KV.delete(`reset_code_${target.key}`);
 
     return jsonResponse({ success: true, message: '密码重置成功' });
   } catch (error) {
@@ -4283,7 +4462,7 @@ export async function handleChat(request, env) {
     // 顺序：Base → Role → Context
     const requestHost = new URL(request.url).hostname;
     const originHost = request.headers.get('Origin') || '';
-    const isCnMarket = requestHost.endsWith('.cn') || originHost.includes('sagemro.cn');
+    const isCnMarket = getRequestMarket(request) === 'cn';
     const marketLabel = isCnMarket ? 'China edition / sagemro.cn' : 'International edition / sagemro.com';
     const turnLanguageRule = isCnMarket
       ? `You MUST answer this turn in Simplified Chinese.
@@ -5030,6 +5209,7 @@ async function handleCreateWorkOrder(request, env) {
       return localizedErrorResponse('sign_in_required', request, 401);
     }
     const trustedCustomerId = auth.userId;
+    const body = await request.json();
     const {
       customer_id,
       type,
@@ -5046,10 +5226,36 @@ async function handleCreateWorkOrder(request, env) {
       service_accuracy_m,
       service_coordinate_system,
       service_location_source,
-    } = await request.json();
+      intake,
+      idempotency_key,
+    } = body;
 
     if (!type || !description) {
       return localizedErrorResponse('missing_required_fields', request);
+    }
+
+    let normalizedIntake = null;
+    let serializedIntake = null;
+    if (intake !== undefined) {
+      try {
+        normalizedIntake = normalizeServiceRequestIntake(intake);
+        serializedIntake = serializeServiceRequestIntake(normalizedIntake);
+      } catch (error) {
+        const response = validationErrorToResponse(error, errorResponse);
+        if (response) return response;
+        throw error;
+      }
+      if (SERVICE_KIND_TO_WORK_ORDER_TYPE[normalizedIntake.service_request_kind] !== type) {
+        return errorResponse('service_request_kind does not match type', 400);
+      }
+      const requestedServiceMode = String(service_mode || '').trim().toLowerCase();
+      if (service_mode && !['remote', 'onsite', 'hybrid'].includes(requestedServiceMode)) {
+        return errorResponse('service_mode must be remote, onsite, or hybrid', 400);
+      }
+    }
+    const idempotencyKey = typeof idempotency_key === 'string' ? idempotency_key.trim() : '';
+    if (normalizedIntake && !/^[A-Za-z0-9_-]{16,100}$/.test(idempotencyKey)) {
+      return errorResponse('idempotency_key is required for structured service requests', 400);
     }
 
     // 输入长度上限：防止客户端粘贴巨型文本打爆 D1 / AI 请求
@@ -5085,9 +5291,9 @@ async function handleCreateWorkOrder(request, env) {
       return errorResponse(serviceLocationErrorMessage('service_location_required', market), 400);
     }
 
-    // PII 脱敏（Phase 0.5）：手机号/邮箱/身份证/银行卡/车牌等在入库前替换为占位符
-    // 注：device_id / type / urgency 是枚举/引用，不脱敏。只洗用户自由输入的 description
-    const safeDescription = redactPII(description);
+    // 结构化入口保留客户原始问题叙述；旧入口继续沿用入库前脱敏。
+    // 发送给外部 AI 的摘要输入仍统一脱敏，联系方式只使用受权限控制的结构化列。
+    const safeDescription = normalizedIntake ? description : redactPII(description);
     const titleDevice = await getWorkOrderTitleDevice(env, device_id, trustedCustomerId);
     const shortTitle = buildWorkOrderShortTitle({
       type,
@@ -5098,40 +5304,119 @@ async function handleCreateWorkOrder(request, env) {
       device_model: titleDevice?.model,
     }, market);
 
-    const id = generateId();
+    const id = normalizedIntake
+      ? `wo_${(await sha256Hex(`service-request:${trustedCustomerId}:${idempotencyKey}`)).slice(0, 40)}`
+      : generateId();
+    if (normalizedIntake) {
+      const replay = await env.DB.prepare(
+        'SELECT * FROM work_orders WHERE id = ? AND customer_id = ?',
+      ).bind(id, trustedCustomerId).first();
+      if (replay) {
+        return jsonResponse({
+          success: true,
+          idempotent: true,
+          work_order: {
+            id: replay.id,
+            order_no: replay.order_no,
+            status: replay.status,
+            short_title: replay.short_title,
+            display_title: replay.short_title,
+            ai_summary: replay.ai_summary || null,
+            ai_summary_pending: !replay.ai_summary,
+            service_request: storedServiceRequest(replay, { includeContact: true }),
+          },
+          attached_images_count: 0,
+        });
+      }
+    }
     const order_no = generateOrderNo();
 
     const slaDeadline = computeSlaDeadline(urgency || 'normal');
 
-    await env.DB.prepare(`
-      INSERT INTO work_orders (
-        id, order_no, customer_id, type, description, short_title, urgency, device_id, status,
-        sla_deadline, category_l1, category_l2, service_mode, arrival_verification_required,
-        service_address, service_latitude, service_longitude, service_accuracy_m,
-        service_coordinate_system, service_location_source, service_location_confirmed_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).bind(
-      id,
-      order_no,
-      trustedCustomerId,
-      type,
-      safeDescription,
-      shortTitle,
-      urgency || 'normal',
-      titleDevice?.id || null,
-      slaDeadline,
-      catL1,
-      category_l2 || 'other',
-      serviceMode,
-      requiresArrivalVerification(serviceMode) ? 1 : 0,
-      serviceLocation.address || null,
-      serviceLocation.latitude,
-      serviceLocation.longitude,
-      serviceLocation.accuracyMeters,
-      serviceLocation.coordinateSystem,
-      serviceLocation.source,
-      serviceLocation.hasCoordinates ? new Date().toISOString() : null,
-    ).run();
+    const intakeColumns = serializedIntake ? `,
+        service_request_version, service_request_kind, device_types_json, device_brands_json,
+        device_model, region_json, alarm_code, production_impact,
+        contact_name, contact_email, contact_phone, contact_whatsapp, contact_preference` : '';
+    const intakePlaceholders = serializedIntake ? ', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?' : '';
+    const intakeValues = serializedIntake ? [
+      SERVICE_REQUEST_VERSION,
+      serializedIntake.service_request_kind,
+      serializedIntake.device_types_json,
+      serializedIntake.device_brands_json,
+      serializedIntake.device_model,
+      serializedIntake.region_json,
+      serializedIntake.alarm_code,
+      serializedIntake.production_impact,
+      serializedIntake.contact_name,
+      serializedIntake.contact_email,
+      serializedIntake.contact_phone,
+      serializedIntake.contact_whatsapp,
+      serializedIntake.contact_preference,
+    ] : [];
+
+    try {
+      await env.DB.prepare(`
+        INSERT INTO work_orders (
+          id, order_no, customer_id, type, description, short_title, urgency, device_id, status,
+          sla_deadline, category_l1, category_l2, service_mode, arrival_verification_required,
+          service_address, service_latitude, service_longitude, service_accuracy_m,
+          service_coordinate_system, service_location_source, service_location_confirmed_at${intakeColumns}
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?${intakePlaceholders})
+      `).bind(
+        id,
+        order_no,
+        trustedCustomerId,
+        type,
+        safeDescription,
+        shortTitle,
+        urgency || 'normal',
+        titleDevice?.id || null,
+        slaDeadline,
+        catL1,
+        category_l2 || 'other',
+        serviceMode,
+        requiresArrivalVerification(serviceMode) ? 1 : 0,
+        serviceLocation.address || null,
+        serviceLocation.latitude,
+        serviceLocation.longitude,
+        serviceLocation.accuracyMeters,
+        serviceLocation.coordinateSystem,
+        serviceLocation.source,
+        serviceLocation.hasCoordinates ? new Date().toISOString() : null,
+        ...intakeValues,
+      ).run();
+    } catch (error) {
+      if (!serializedIntake) throw error;
+      if (/UNIQUE constraint failed|SQLITE_CONSTRAINT/i.test(String(error?.message || error))) {
+        const replay = await env.DB.prepare(
+          'SELECT * FROM work_orders WHERE id = ? AND customer_id = ?',
+        ).bind(id, trustedCustomerId).first();
+        if (replay) {
+          return jsonResponse({
+            success: true,
+            idempotent: true,
+            work_order: {
+              id: replay.id,
+              order_no: replay.order_no,
+              status: replay.status,
+              short_title: replay.short_title,
+              display_title: replay.short_title,
+              ai_summary: replay.ai_summary || null,
+              ai_summary_pending: !replay.ai_summary,
+              service_request: storedServiceRequest(replay, { includeContact: true }),
+            },
+            attached_images_count: 0,
+          });
+        }
+      }
+      console.error('[handleCreateWorkOrder] service request persistence failed');
+      return errorResponse(
+        market === 'cn'
+          ? '暂时无法创建服务请求，请稍后重试。'
+          : 'Unable to create service request. Please try again later.',
+        500,
+      );
+    }
     // 记录日志
     await env.DB.prepare(`
       INSERT INTO work_order_logs (id, work_order_id, action, actor_type, actor_id, content)
@@ -5153,7 +5438,8 @@ async function handleCreateWorkOrder(request, env) {
     // AI 摘要异步生成：不阻塞响应，生成完成后回写 ai_summary
     // 使用 ctx.waitUntil 保证 Worker 在返回响应后仍会完成该任务
     const ctx = request._ctx;
-    const aiSummaryPromise = generateWorkOrderSummary(type, safeDescription, urgency, env, { market })
+    const aiSummaryDescription = redactPII(description);
+    const aiSummaryPromise = generateWorkOrderSummary(type, aiSummaryDescription, urgency, env, { market })
       .then(async (summary) => {
         if (summary) {
           await env.DB.prepare('UPDATE work_orders SET ai_summary = ? WHERE id = ?')
@@ -5168,14 +5454,19 @@ async function handleCreateWorkOrder(request, env) {
 
     // 工程师匹配与推送先基于 type/description/urgency 规则侧，不等待 AI 摘要。
     // （AI 摘要完成后，后续轮派单/工程师自主接单时已能读到。）
+    const matchingDescription = normalizedIntake?.device_types.length
+      ? `${description}\nDevice types: ${normalizedIntake.device_types.join(', ')}`
+      : safeDescription;
     const workOrderData = {
       id,
       order_no,
       type,
-      description,
+      description: matchingDescription,
       urgency,
       ai_summary: null,
       customer_id: trustedCustomerId,
+      category_l1: catL1,
+      category_l2: category_l2 || 'other',
     };
 
     // 查找匹配的工程师并发送推送通知
@@ -5220,10 +5511,13 @@ async function handleCreateWorkOrder(request, env) {
         display_title: shortTitle,
         ai_summary: null,
         ai_summary_pending: true,
+        ...(normalizedIntake ? { service_request: normalizedIntake } : {}),
       },
       attached_images_count: attachedImages,
     });
   } catch (error) {
+    const validation = validationErrorToResponse(error, errorResponse);
+    if (validation) return validation;
     return errorResponse(error.message, 500);
   }
 }
@@ -5796,7 +6090,7 @@ async function handleGetWorkOrders(request, env) {
 
     const paymentProjections = await listWorkOrderPaymentProjections(env, results);
     const workOrders = results.map((wo) => withPaymentProjection({
-        ...wo,
+        ...withoutServiceRequestStorageFields(wo),
         display_title: resolveWorkOrderShortTitle(wo, market),
         description: redactContactInfoForWorkOrder(wo.description),
         customer_phone: '',
@@ -7195,7 +7489,7 @@ async function handleGetWorkOrder(request, env) {
         c.phone as customer_phone,
         c.region as customer_region,
         d.brand as device_brand,
-        d.model as device_model
+        d.model as registered_device_model
       FROM work_orders w
       LEFT JOIN engineers e ON w.engineer_id = e.id
       LEFT JOIN customers c ON w.customer_id = c.id
@@ -7386,11 +7680,17 @@ async function handleGetWorkOrder(request, env) {
     const materialItems = await listWorkOrderMaterialItems(env, id);
     const quoteMaterialItems = materialItems.filter((item) => item.purpose === 'quote');
     const isEngineerDetailView = request._auth?.userType === 'engineer';
+    const canViewIntakeContact = request._auth?.userType === 'admin'
+      || request._auth?.userType === 'customer'
+      || (isEngineerDetailView && canEngineerViewCustomerContact(workOrder.status));
+    const serviceRequest = storedServiceRequest(workOrder, { includeContact: canViewIntakeContact });
     let safeWorkOrder = {
-      ...workOrder,
+      ...withoutServiceRequestStorageFields(workOrder),
+      device_model: workOrder.registered_device_model ?? null,
       display_title: resolveWorkOrderShortTitle(workOrder, market),
       description: isEngineerDetailView ? redactContactInfoForWorkOrder(workOrder.description) : workOrder.description,
       customer_phone: isEngineerDetailView && !canEngineerViewCustomerContact(workOrder.status) ? '' : workOrder.customer_phone,
+      ...(serviceRequest ? { service_request: serviceRequest } : {}),
     };
     if (regionalManagementView) safeWorkOrder = sanitizeRegionalManagementWorkOrder(safeWorkOrder);
     if (customerFieldView || noFieldWorkView) safeWorkOrder = withoutPrivateFieldLocation(safeWorkOrder);
@@ -10119,8 +10419,10 @@ async function handleGetEngineerTickets(request, env) {
     } else {
       const paymentProjections = await listWorkOrderPaymentProjections(env, results);
       workOrders = results.map((wo) => withPaymentProjection({
-          ...wo,
+          ...withoutServiceRequestStorageFields(wo),
           display_title: resolveWorkOrderShortTitle(wo, market),
+          description: redactContactInfoForWorkOrder(wo.description),
+          customer_phone: canEngineerViewCustomerContact(wo.status) ? wo.customer_phone : '',
           ownership_relation: 'personal',
           sla_status: getSlaStatus(wo.sla_deadline, wo.urgency),
         }, paymentProjections.get(wo.id)));
@@ -21477,6 +21779,283 @@ async function handleFunnelEvent(request, env) {
   }
 }
 
+const SERVICE_REQUEST_ASSIST_BODY_LIMIT = 64 * 1024;
+const SERVICE_REQUEST_ASSIST_PROVIDER_LIMIT = 128 * 1024;
+const SERVICE_REQUEST_ASSIST_QUOTA_SQL = `
+  INSERT INTO service_request_assist_quotas (market, scope, bucket, count, expires_at)
+  VALUES (?, ?, ?, 1, ?)
+  ON CONFLICT (market, scope, bucket) DO UPDATE SET
+    count = service_request_assist_quotas.count + 1,
+    expires_at = excluded.expires_at
+  WHERE service_request_assist_quotas.count < ?
+  RETURNING count
+`;
+
+function isPlainJsonObject(value) {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return false;
+  const prototype = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
+}
+
+function invalidServiceRequestAssistInput() {
+  return errorResponse('Invalid service request assist input', 400);
+}
+
+function serviceRequestAssistUnavailable() {
+  return errorResponse('Service request AI is temporarily unavailable', 503);
+}
+
+function emptyServiceRequestAssistResult() {
+  return { patch: {}, missing_fields: [], next_question: '', safety_notice: '' };
+}
+
+function boundedServiceRequestAssistLimit(value, fallback, maximum) {
+  const parsed = Number.parseInt(value || '', 10);
+  return Number.isSafeInteger(parsed) && parsed > 0 ? Math.min(parsed, maximum) : fallback;
+}
+
+async function claimServiceRequestAssistQuota(env, { market, ipHash }) {
+  const now = new Date();
+  const iso = now.toISOString();
+  const hourlyBucket = iso.slice(0, 13);
+  const dailyBucket = iso.slice(0, 10);
+  const hourlyExpiry = new Date(now.getTime() + 2 * 3600 * 1000).toISOString();
+  const dailyExpiry = new Date(now.getTime() + 26 * 3600 * 1000).toISOString();
+  const quotas = [
+    {
+      scope: `hourly_ip:${ipHash}`,
+      bucket: hourlyBucket,
+      expiresAt: hourlyExpiry,
+      limit: boundedServiceRequestAssistLimit(env.SERVICE_REQUEST_ASSIST_HOURLY_LIMIT, 20, 100),
+    },
+    {
+      scope: `daily_guest:${ipHash}`,
+      bucket: dailyBucket,
+      expiresAt: dailyExpiry,
+      limit: boundedServiceRequestAssistLimit(env.SERVICE_REQUEST_ASSIST_DAILY_IP_LIMIT, 30, 500),
+    },
+    {
+      scope: 'daily_market',
+      bucket: dailyBucket,
+      expiresAt: dailyExpiry,
+      limit: boundedServiceRequestAssistLimit(env.SERVICE_REQUEST_ASSIST_DAILY_MARKET_LIMIT, 1000, 10000),
+    },
+  ];
+
+  for (const quota of quotas) {
+    const claimed = await env.DB.prepare(SERVICE_REQUEST_ASSIST_QUOTA_SQL).bind(
+      market,
+      quota.scope,
+      quota.bucket,
+      quota.expiresAt,
+      quota.limit,
+    ).first();
+    if (!claimed) throw new BudgetError('Service request AI rate limit exceeded', 429);
+  }
+}
+
+async function readServiceRequestAssistProviderBody(response, { abortController, deadlineAt }) {
+  if (!response.body) return '';
+  const reader = response.body.getReader();
+  const chunks = [];
+  let totalBytes = 0;
+  try {
+    while (true) {
+      const remainingMs = deadlineAt - Date.now();
+      if (remainingMs <= 0) throw abortChatProvider(abortController, 'service_request_assist_body');
+      const { done, value } = await waitForChatProvider(reader.read(), {
+        abortController,
+        timeoutMs: remainingMs,
+        stage: 'service_request_assist_body',
+      });
+      if (done) break;
+      totalBytes += value.byteLength;
+      if (totalBytes > SERVICE_REQUEST_ASSIST_PROVIDER_LIMIT) {
+        if (!abortController.signal.aborted) abortController.abort(new Error('service_request_assist_response_too_large'));
+        reader.cancel().catch(() => {});
+        return null;
+      }
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+
+  const bytes = new Uint8Array(totalBytes);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return new TextDecoder().decode(bytes);
+}
+
+function normalizeServiceRequestAssistDraft(value) {
+  if (!isPlainJsonObject(value) || value.version !== SERVICE_REQUEST_VERSION) return null;
+  if (!Array.isArray(value.device_types) || !Array.isArray(value.device_brands) || !Array.isArray(value.region)) return null;
+  if (value.contact !== undefined && !isPlainJsonObject(value.contact)) return null;
+  if (value.service_location !== undefined && !isPlainJsonObject(value.service_location)) return null;
+
+  return {
+    service_request_kind: value.service_kind,
+    device_types: value.device_types,
+    device_brands: value.device_brands,
+    device_model: value.device_model,
+    alarm_code: value.alarm_code,
+    description: value.description,
+    production_impact: value.production_impact,
+    service_mode: value.service_mode,
+    region: value.region.length ? [value.region[0]] : [],
+    urgency: value.urgency,
+  };
+}
+
+function containsUnsafeServiceRequestAssistText(value) {
+  if (typeof value !== 'string') return false;
+  return /(?:final\s+diagnosis|diagnos(?:is|ed|e)\s+(?:confirmed|is)|engineer\s+(?:is\s+)?assigned|dispatch(?:ed)?|arriv(?:e|al|ing)\s+(?:today|tomorrow|within|at|by)|safe\s+to\s+(?:restart|operate|use)|warranty\s+(?:is|will|guaranteed)|(?:USD|EUR|CNY|RMB|\$|€|¥)\s*\d|最终诊断|确诊|已(?:安排|指派)工程师|派工|今天到场|明天到场|安全(?:重启|操作|使用)|质保(?:承诺|保证|两年|一年)|报价(?:为|是)|价格(?:为|是))/iu.test(value);
+}
+
+function valueAppearsInSource(value, source) {
+  if (typeof value !== 'string' || !value.trim()) return false;
+  return source.toLocaleLowerCase().includes(value.trim().toLocaleLowerCase());
+}
+
+function constrainServiceRequestAssistPatch(parsed, { message, promptDraft }) {
+  const patch = {};
+  const source = JSON.stringify({ message, draft: promptDraft });
+  const enumFields = new Set(['service_request_kind', 'service_mode', 'urgency']);
+  const arrayFields = new Set(['device_types', 'device_brands', 'region']);
+
+  for (const [key, value] of Object.entries(parsed.patch || {})) {
+    if (key === 'contact') {
+      const contact = {};
+      for (const [contactKey, contactValue] of Object.entries(value || {})) {
+        if (contactKey === 'preference' || valueAppearsInSource(contactValue, message)) {
+          contact[contactKey] = contactValue;
+        }
+      }
+      if (Object.keys(contact).length) patch.contact = contact;
+      continue;
+    }
+    if (typeof value === 'string' && containsUnsafeServiceRequestAssistText(value)) continue;
+    if (enumFields.has(key)) {
+      patch[key] = value;
+      continue;
+    }
+    if (arrayFields.has(key)) {
+      const retained = value.filter((item) => valueAppearsInSource(item, source));
+      if (retained.length) patch[key] = retained;
+      continue;
+    }
+    if (valueAppearsInSource(value, source)) patch[key] = value;
+  }
+
+  if (Object.hasOwn(patch, 'service_request_kind')) {
+    patch.service_kind = patch.service_request_kind;
+    delete patch.service_request_kind;
+  }
+  return patch;
+}
+
+export async function handleServiceRequestAssist(request, env) {
+  const contentLength = Number(request.headers.get('content-length') || 0);
+  if (contentLength > SERVICE_REQUEST_ASSIST_BODY_LIMIT) return invalidServiceRequestAssistInput();
+
+  let rawBody;
+  let body;
+  try {
+    rawBody = await request.text();
+    if (!rawBody || rawBody.length > SERVICE_REQUEST_ASSIST_BODY_LIMIT) return invalidServiceRequestAssistInput();
+    body = JSON.parse(rawBody);
+  } catch {
+    return invalidServiceRequestAssistInput();
+  }
+  if (!isPlainJsonObject(body) || typeof body.message !== 'string') return invalidServiceRequestAssistInput();
+  const message = body.message.trim();
+  if (!message || message.length > LIMITS.content) return invalidServiceRequestAssistInput();
+  const promptDraft = normalizeServiceRequestAssistDraft(body.draft);
+  if (!promptDraft) return invalidServiceRequestAssistInput();
+
+  const market = getRequestMarket(request);
+  let assistPrompt;
+  try {
+    assistPrompt = buildServiceRequestAssistPrompt({ market, message, draft: promptDraft });
+  } catch (error) {
+    if (error instanceof ValidationError) return invalidServiceRequestAssistInput();
+    throw error;
+  }
+  const clientIp = (getRequestIp(request).split(',')[0] || 'unknown').trim().slice(0, 100);
+  const ipHash = await sha256Hex(`service-request-assist:${clientIp}`);
+  try {
+    await claimServiceRequestAssistQuota(env, { market, ipHash });
+  } catch (error) {
+    if (error instanceof BudgetError) {
+      return errorResponse('Service request AI rate limit exceeded', 429);
+    }
+    return serviceRequestAssistUnavailable();
+  }
+  try {
+    await enforceOpenAIBudget(env, { userKey: `service-request-guest:${market}:${ipHash}`, tag: 'service_request_assist' });
+  } catch (error) {
+    if (error instanceof BudgetError) {
+      return errorResponse('Service request AI rate limit exceeded', 429);
+    }
+  }
+
+  if (!env.OPENAI_API_ENDPOINT || !env.OPENAI_API_KEY) return serviceRequestAssistUnavailable();
+  const { systemPrompt, userPrompt } = assistPrompt;
+  const abortController = new AbortController();
+  const timeoutMs = chatProviderTimeoutMs(env.SERVICE_REQUEST_ASSIST_TIMEOUT_MS, 8000);
+  const deadlineAt = Date.now() + timeoutMs;
+
+  try {
+    const providerResponse = await waitForChatProvider(fetch(env.OPENAI_API_ENDPOINT, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${env.OPENAI_API_KEY}`,
+      },
+      body: JSON.stringify({
+        model: getJsonModel(env),
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt },
+        ],
+        response_format: { type: 'json_object' },
+        stream: false,
+        temperature: 0,
+        max_tokens: 300,
+      }),
+      signal: abortController.signal,
+    }), { abortController, timeoutMs, stage: 'service_request_assist' });
+
+    if (!providerResponse.ok) return serviceRequestAssistUnavailable();
+    const providerText = await readServiceRequestAssistProviderBody(providerResponse, {
+      abortController,
+      deadlineAt,
+    });
+    if (providerText === null) {
+      return jsonResponse(emptyServiceRequestAssistResult());
+    }
+    let providerData;
+    try {
+      providerData = JSON.parse(providerText);
+    } catch {
+      return jsonResponse(emptyServiceRequestAssistResult());
+    }
+    const content = providerData?.choices?.[0]?.message?.content;
+    const parsed = parseServiceRequestAssistOutput(content);
+    return jsonResponse({
+      patch: constrainServiceRequestAssistPatch(parsed, { message, promptDraft }),
+      missing_fields: parsed.missing_fields,
+      next_question: parsed.next_question,
+      safety_notice: '',
+    });
+  } catch {
+    return serviceRequestAssistUnavailable();
+  }
+}
+
 // ============ 主处理函数 ============
 // 将路由分发抽成独立函数，由 fetch 包装以统一注入动态 CORS 头
 async function routeRequest(request, env, ctx) {
@@ -21484,6 +22063,10 @@ async function routeRequest(request, env, ctx) {
     const path = url.pathname;
     // 暂存 ctx 供需要 waitUntil 的处理函数使用（如 AI 摘要异步生成）
     request._ctx = ctx;
+
+    if (path === '/api/service-request-assist' && request.method === 'POST') {
+      return handleServiceRequestAssist(request, env);
+    }
 
     const publicResponse = await handlePublicRoute(request, env, ctx, {
       handleOptions,
@@ -22200,24 +22783,29 @@ function withCorsHeaders(response, request, env) {
 
 export function shouldUseCnDatabase(request) {
   const url = new URL(request.url);
-  if (url.hostname.endsWith('.cn')) return true;
+  const apiMarket = API_MARKET_BY_HOST.get(url.hostname.toLowerCase());
+  if (apiMarket === 'cn') return true;
+  if (apiMarket !== 'com') return false;
+
+  const trustedPortalMarket = (value) => {
+    if (!value) return null;
+    try {
+      const portalUrl = new URL(value);
+      if (!ALLOWED_ORIGINS_PRODUCTION.includes(portalUrl.origin)) return null;
+      return portalUrl.hostname.endsWith('.cn') ? 'cn' : 'com';
+    } catch {
+      return null;
+    }
+  };
 
   const origin = request.headers.get('Origin');
   if (origin) {
-    try {
-      return new URL(origin).hostname.endsWith('.cn');
-    } catch {
-      return false;
-    }
+    return trustedPortalMarket(origin) === 'cn';
   }
 
   const referer = request.headers.get('Referer');
   if (referer) {
-    try {
-      return new URL(referer).hostname.endsWith('.cn');
-    } catch {
-      return false;
-    }
+    return trustedPortalMarket(referer) === 'cn';
   }
 
   return false;

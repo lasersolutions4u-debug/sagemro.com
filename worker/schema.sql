@@ -68,7 +68,7 @@ CREATE TABLE IF NOT EXISTS customers (
     id TEXT PRIMARY KEY,
     user_no TEXT UNIQUE NOT NULL,              -- U + 6位数字
     name TEXT NOT NULL,
-    phone TEXT NOT NULL UNIQUE,
+    phone TEXT UNIQUE,
     email TEXT,                                -- 030: international customer login email
     password_hash TEXT NOT NULL,
     salt TEXT NOT NULL DEFAULT '',
@@ -263,6 +263,21 @@ CREATE TABLE IF NOT EXISTS work_orders (
     quote_expected_service_days INTEGER,
     approved_extension_days INTEGER NOT NULL DEFAULT 0,
     active_quote_version INTEGER,
+
+    -- 047 结构化服务请求入口
+    service_request_version INTEGER NOT NULL DEFAULT 1,
+    service_request_kind TEXT,
+    device_types_json TEXT NOT NULL DEFAULT '[]',
+    device_brands_json TEXT NOT NULL DEFAULT '[]',
+    device_model TEXT,
+    region_json TEXT NOT NULL DEFAULT '[]',
+    alarm_code TEXT,
+    production_impact TEXT,
+    contact_name TEXT,
+    contact_email TEXT,
+    contact_phone TEXT,
+    contact_whatsapp TEXT,
+    contact_preference TEXT,
 
     FOREIGN KEY (customer_id) REFERENCES customers(id),
     FOREIGN KEY (engineer_id) REFERENCES engineers(id),
@@ -1729,6 +1744,18 @@ CREATE INDEX IF NOT EXISTS idx_engineer_calendar_engineer ON engineer_calendar_e
 CREATE INDEX IF NOT EXISTS idx_engineer_calendar_range ON engineer_calendar_events(start_at, end_at);
 CREATE INDEX IF NOT EXISTS idx_engineer_calendar_type ON engineer_calendar_events(event_type);
 
+-- 公共服务请求 AI 助手原子限流（048）
+CREATE TABLE IF NOT EXISTS service_request_assist_quotas (
+    market TEXT NOT NULL CHECK (market IN ('com', 'cn')),
+    scope TEXT NOT NULL,
+    bucket TEXT NOT NULL,
+    count INTEGER NOT NULL DEFAULT 0 CHECK (count >= 0),
+    expires_at TEXT NOT NULL,
+    PRIMARY KEY (market, scope, bucket)
+);
+CREATE INDEX IF NOT EXISTS idx_service_request_assist_quotas_expiry
+  ON service_request_assist_quotas(expires_at);
+
 -- 审计日志（023）
 CREATE TABLE IF NOT EXISTS audit_logs (
     id TEXT PRIMARY KEY,
@@ -1796,4 +1823,7 @@ INSERT OR IGNORE INTO _migrations (version, note) VALUES
     ('044_service_standard_progress',   'Persisted SAGEMRO six-step service standard progress and audited gate overrides'),
     ('045_service_guidance_cache',      'Full lifecycle engineer service guidance cache with v1 readiness compatibility'),
     ('034_unified_operations_inbox',    'Unified operations inbox tables'),
-    ('046_knowledge_candidate_pipeline', 'Reviewed service report knowledge candidate pipeline');
+    ('046_knowledge_candidate_pipeline', 'Reviewed service report knowledge candidate pipeline'),
+    ('047_structured_service_request_intake', 'Structured service-request intake fields for work orders'),
+    ('048_service_request_assist_quota', 'Atomic public service-request AI assistant quotas'),
+    ('049_nullable_international_customer_phone', 'Allow verified international customer accounts without a phone number');

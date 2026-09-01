@@ -206,6 +206,8 @@ test('verifyJwt 在 secret 缺失或太短时直接返回 null（不走验证流
 test('portal origins map to isolated customer, engineer, and admin roles', () => {
   assert.equal(expectedPortalRole('https://sagemro.com'), 'customer');
   assert.equal(expectedPortalRole('https://www.sagemro.cn'), 'customer');
+  assert.equal(expectedPortalRole('https://ai.sagemro.com'), 'customer');
+  assert.equal(expectedPortalRole('https://ai.sagemro.cn'), 'customer');
   assert.equal(expectedPortalRole('https://engineer.sagemro.com'), 'engineer');
   assert.equal(expectedPortalRole('https://admin.sagemro.cn'), 'admin');
   assert.equal(expectedPortalRole('http://engineer.localhost:4273'), 'engineer');
@@ -216,6 +218,8 @@ test('portal origins map to isolated customer, engineer, and admin roles', () =>
   assert.equal(expectedPortalRole('http://admin.127.0.0.1.nip.io:4274'), 'admin');
   assert.equal(expectedPortalRole('https://engineer.attacker.example'), null);
   assert.equal(expectedPortalRole('https://admin.attacker.example'), null);
+  assert.equal(expectedPortalRole('https://ai.sagemro.cn.evil.com'), null);
+  assert.equal(expectedPortalRole('https://ai.evil.example'), null);
 });
 
 test('session cookie names isolate roles and use __Host prefix in production', () => {
