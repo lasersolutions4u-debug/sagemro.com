@@ -207,6 +207,240 @@ jobs:
             fi
           fi
 
+      - name: Preflight AI edge host
+        env:
+          ALIYUN_ECS_HOST: ${{ secrets.ALIYUN_ECS_HOST }}
+          ALIYUN_ECS_PORT: ${{ secrets.ALIYUN_ECS_PORT }}
+          ALIYUN_ECS_USER: ${{ secrets.ALIYUN_ECS_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i ~/.ssh/aliyun_ecs -p "$ALIYUN_ECS_PORT" \
+            -o StrictHostKeyChecking=yes \
+            "$ALIYUN_ECS_USER@$ALIYUN_ECS_HOST" \
+            "bash -s" <<'REMOTE_SCRIPT'
+          set -euo pipefail
+
+          SUDO=""
+          if [ "$(id -u)" -ne 0 ]; then
+            SUDO="sudo"
+          fi
+
+          command -v nginx >/dev/null
+          command -v certbot >/dev/null
+          $SUDO certbot show_account --non-interactive >/dev/null
+          $SUDO test -f /etc/letsencrypt/options-ssl-nginx.conf
+          if $SUDO test -L /etc/nginx/conf.d/sagemro-cn-ai.conf; then
+            echo "AI Nginx configuration must not be a symbolic link." >&2
+            exit 1
+          fi
+          $SUDO nginx -t
+          REMOTE_SCRIPT
+
+      - name: Ensure AI DNS record
+        env:
+          ALIYUN_ACCESS_KEY_ID: ${{ secrets.ALIYUN_ACCESS_KEY_ID }}
+          ALIYUN_ACCESS_KEY_SECRET: ${{ secrets.ALIYUN_ACCESS_KEY_SECRET }}
+          ALIYUN_REGION_ID: ${{ secrets.ALIYUN_REGION_ID }}
+        run: |
+          set -euo pipefail
+          aliyun configure set \
+            --profile sagemro-ci \
+            --mode AK \
+            --region "$ALIYUN_REGION_ID" \
+            --access-key-id "$ALIYUN_ACCESS_KEY_ID" \
+            --access-key-secret "$ALIYUN_ACCESS_KEY_SECRET"
+
+          mapfile -t target_ips < <(getent ahostsv4 sagemro.cn | awk '{ print $1 }' | sort -u)
+          if [ "${#target_ips[@]}" -ne 1 ] || ! [[ "${target_ips[0]}" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Unable to identify one authoritative IPv4 target from sagemro.cn."
+            exit 1
+          fi
+          target_ip="${target_ips[0]}"
+          echo "::add-mask::${target_ip}"
+
+          records_json="$(aliyun alidns DescribeDomainRecords \
+            --profile sagemro-ci \
+            --DomainName sagemro.cn \
+            --RRKeyWord ai \
+            --PageSize 100)"
+          exact_count="$(jq '[.DomainRecords.Record[]? | select(.RR == "ai")] | length' <<< "$records_json")"
+          if [ "$exact_count" -gt 1 ]; then
+            echo "::error::Refusing to change ambiguous ai.sagemro.cn DNS records."
+            exit 1
+          fi
+
+          if [ "$exact_count" -eq 0 ]; then
+            aliyun alidns AddDomainRecord \
+              --profile sagemro-ci \
+              --DomainName sagemro.cn \
+              --RR ai \
+              --Type A \
+              --Value "$target_ip" \
+              --TTL 600 >/dev/null
+          else
+            record_id="$(jq -r '.DomainRecords.Record[] | select(.RR == "ai") | .RecordId' <<< "$records_json")"
+            record_type="$(jq -r '.DomainRecords.Record[] | select(.RR == "ai") | .Type' <<< "$records_json")"
+            record_line="$(jq -r '.DomainRecords.Record[] | select(.RR == "ai") | .Line' <<< "$records_json")"
+            record_value="$(jq -r '.DomainRecords.Record[] | select(.RR == "ai") | .Value' <<< "$records_json")"
+            record_ttl="$(jq -r '.DomainRecords.Record[] | select(.RR == "ai") | .TTL' <<< "$records_json")"
+            record_status="$(jq -r '.DomainRecords.Record[] | select(.RR == "ai") | .Status' <<< "$records_json")"
+
+            if [ "$record_type" != "A" ] || [ "$record_line" != "default" ]; then
+              echo "::error::Refusing to change ambiguous ai.sagemro.cn DNS records."
+              exit 1
+            fi
+            if [ "$record_value" != "$target_ip" ] || [ "$record_ttl" != "600" ]; then
+              aliyun alidns UpdateDomainRecord \
+                --profile sagemro-ci \
+                --RecordId "$record_id" \
+                --RR ai \
+                --Type A \
+                --Value "$target_ip" \
+                --TTL 600 >/dev/null
+            fi
+            if [ "$record_status" != "Enable" ]; then
+              aliyun alidns SetDomainRecordStatus \
+                --profile sagemro-ci \
+                --RecordId "$record_id" \
+                --Status Enable >/dev/null
+            fi
+          fi
+
+          echo "AI_EDGE_IP=${target_ip}" >> "$GITHUB_ENV"
+
+      - name: Wait for AI DNS propagation
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 60); do
+            if getent ahostsv4 ai.sagemro.cn | awk '{ print $1 }' | grep -Fxq "$AI_EDGE_IP"; then
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "::error::ai.sagemro.cn did not resolve to the expected server within 10 minutes."
+          exit 1
+
+      - name: Provision AI certificate and Nginx host
+        env:
+          ALIYUN_ECS_HOST: ${{ secrets.ALIYUN_ECS_HOST }}
+          ALIYUN_ECS_PORT: ${{ secrets.ALIYUN_ECS_PORT }}
+          ALIYUN_ECS_USER: ${{ secrets.ALIYUN_ECS_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i ~/.ssh/aliyun_ecs -p "$ALIYUN_ECS_PORT" \
+            -o StrictHostKeyChecking=yes \
+            "$ALIYUN_ECS_USER@$ALIYUN_ECS_HOST" \
+            "EDGE_CHANGE_ID='${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}' bash -s" <<'REMOTE_SCRIPT'
+          set -euo pipefail
+
+          SUDO=""
+          if [ "$(id -u)" -ne 0 ]; then
+            SUDO="sudo"
+          fi
+
+          ai_conf="/etc/nginx/conf.d/sagemro-cn-ai.conf"
+          acme_root="/var/www/certbot"
+          backup_root="/var/backups/sagemro-nginx"
+          backup_conf="$backup_root/${EDGE_CHANGE_ID}.ai.conf"
+          missing_marker="$backup_root/${EDGE_CHANGE_ID}.ai.missing"
+          staged_conf="$(mktemp)"
+
+          $SUDO mkdir -p "$acme_root/.well-known/acme-challenge" "$backup_root"
+          if $SUDO test -e "$ai_conf"; then
+            $SUDO cp -a "$ai_conf" "$backup_conf"
+            $SUDO rm -f "$missing_marker"
+          else
+            $SUDO touch "$missing_marker"
+          fi
+
+          rollback_ai_edge() {
+            status=$?
+            set +e
+            if $SUDO test -f "$backup_conf"; then
+              $SUDO cp -a "$backup_conf" "$ai_conf"
+            elif $SUDO test -f "$missing_marker"; then
+              $SUDO rm -f "$ai_conf"
+            fi
+            $SUDO nginx -t && $SUDO systemctl reload nginx
+            rm -f "$staged_conf"
+            exit "$status"
+          }
+          trap rollback_ai_edge ERR
+
+          cat > "$staged_conf" <<'NGINX'
+          server {
+            listen 80;
+            server_name ai.sagemro.cn;
+
+            location ^~ /.well-known/acme-challenge/ {
+              root /var/www/certbot;
+              default_type text/plain;
+              try_files $uri =404;
+            }
+
+            location / {
+              return 301 https://ai.sagemro.cn$request_uri;
+            }
+          }
+          NGINX
+          $SUDO install -m 0644 "$staged_conf" "$ai_conf"
+          $SUDO nginx -t
+          $SUDO systemctl reload nginx
+
+          $SUDO certbot certonly \
+            --webroot \
+            --webroot-path "$acme_root" \
+            --cert-name ai.sagemro.cn \
+            -d ai.sagemro.cn \
+            --non-interactive \
+            --agree-tos \
+            --no-eff-email \
+            --keep-until-expiring \
+            --deploy-hook "systemctl reload nginx"
+          $SUDO test -f /etc/letsencrypt/live/ai.sagemro.cn/fullchain.pem
+          $SUDO test -f /etc/letsencrypt/live/ai.sagemro.cn/privkey.pem
+
+          cat > "$staged_conf" <<'NGINX'
+          server {
+            listen 80;
+            server_name ai.sagemro.cn;
+
+            location ^~ /.well-known/acme-challenge/ {
+              root /var/www/certbot;
+              default_type text/plain;
+              try_files $uri =404;
+            }
+
+            location / {
+              return 301 https://ai.sagemro.cn$request_uri;
+            }
+          }
+
+          server {
+            listen 443 ssl http2;
+            server_name ai.sagemro.cn;
+            if ($host != ai.sagemro.cn) { return 444; }
+
+            ssl_certificate /etc/letsencrypt/live/ai.sagemro.cn/fullchain.pem;
+            ssl_certificate_key /etc/letsencrypt/live/ai.sagemro.cn/privkey.pem;
+            include /etc/letsencrypt/options-ssl-nginx.conf;
+
+            root /var/www/sagemro-cn/current/ai;
+            index index.html;
+
+            location / {
+              try_files $uri $uri/ /index.html;
+            }
+          }
+          NGINX
+          $SUDO install -m 0644 "$staged_conf" "$ai_conf"
+          $SUDO nginx -t
+          $SUDO systemctl reload nginx
+
+          trap - ERR
+          rm -f "$staged_conf"
+          REMOTE_SCRIPT
+
       - name: Upload release
         env:
           ALIYUN_ECS_HOST: ${{ secrets.ALIYUN_ECS_HOST }}
