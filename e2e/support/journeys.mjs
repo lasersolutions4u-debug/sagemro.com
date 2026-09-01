@@ -78,7 +78,7 @@ export async function submitCustomerServiceRequest({ page, customer, description
   await expect(requestServiceButton).toBeVisible();
   await requestServiceButton.click();
 
-  await page.getByRole('radio', { name: 'Repair & diagnostics', exact: false }).check();
+  await page.getByText('Repair & diagnostics', { exact: true }).click();
   await page.getByRole('button', { name: 'Continue', exact: true }).click();
 
   const equipmentType = page.getByPlaceholder('Select or enter the equipment type…');

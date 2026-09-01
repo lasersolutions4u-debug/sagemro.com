@@ -87,7 +87,7 @@ test('customer work-order journeys use the unified four-step service request flo
   assert.match(serviceRequestFlow, /submit: 'Send service request'/);
   assert.match(journeys, /export async function submitCustomerServiceRequest/);
   for (const currentControl of [
-    "name: 'Repair & diagnostics'",
+    "getByText('Repair & diagnostics', { exact: true }).click()",
     "getByPlaceholder('Select or enter the equipment type…')",
     "getByLabel('Problem or service request · Required')",
     "getByPlaceholder('Enter country, state / province or city, then press Enter…')",
@@ -97,6 +97,7 @@ test('customer work-order journeys use the unified four-step service request flo
   ]) {
     assert.match(journeys, new RegExp(currentControl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   }
+  assert.doesNotMatch(journeys, /getByRole\('radio',[\s\S]*Repair & diagnostics[\s\S]*\)\.check\(\)/);
   for (const retiredControl of [
     'Request Type',
     'Equipment Model / Part No.',
