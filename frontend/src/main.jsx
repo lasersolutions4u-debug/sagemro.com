@@ -26,7 +26,6 @@ if (SENTRY_DSN) {
 
 const rootElement = document.getElementById('root');
 if (rootElement.dataset.prerendered === 'true') {
-  rootElement.replaceChildren();
   delete rootElement.dataset.prerendered;
 }
 

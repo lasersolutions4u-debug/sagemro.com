@@ -21,6 +21,7 @@ export function getPublicContentSlug(route) {
 export function getAcquisitionContentType(route, locale = 'en') {
   if (!route) return '';
   if (route.type === 'service' || route.type === 'services-hub') return 'service';
+  if (route.type === 'brand' || route.type === 'brands-hub') return 'service';
   if (route.type === 'tool' || route.type === 'tools-hub') return 'tool';
   if (route.type === 'insight' && getDiagnosticGuide(getPublicContentSlug(route), locale)) return 'diagnostic_guide';
   return route.type === 'home' || route.type === 'insight' || route.type === 'insights-hub' || route.type === 'technical-review'

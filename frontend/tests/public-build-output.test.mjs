@@ -9,6 +9,7 @@ import test from 'node:test';
 import { buildPublicPages } from '../scripts/buildPublicPages.mjs';
 
 const execFile = promisify(execFileCallback);
+const normalizeLineEndings = (value) => value.replace(/\r\n/g, '\n');
 
 test('buildPublicPages writes crawlable public pages and crawl artifacts', async (t) => {
   const distDir = await mkdtemp(join(tmpdir(), 'sagemro-public-build-'));
@@ -38,13 +39,14 @@ test('buildPublicPages writes crawlable public pages and crawl artifacts', async
   assert.deepEqual(hubs, [
     '- https://sagemro.com/',
     '- https://sagemro.com/services/',
+    '- https://sagemro.com/brands/',
     '- https://sagemro.com/tools/',
     '- https://sagemro.com/insights/',
   ]);
   assert.equal(await read('sitemap.xml'), await checkedIn('sitemap.xml'));
   assert.equal(await read('llms.txt'), await checkedIn('llms.txt'));
   const robots = await read('robots.txt');
-  assert.equal(robots.trimEnd(), (await checkedIn('robots.txt')).trimEnd());
+  assert.equal(normalizeLineEndings(robots).trimEnd(), normalizeLineEndings(await checkedIn('robots.txt')).trimEnd());
   assert.match(robots, /User-agent: Baiduspider\nDisallow: \/(?:\n|$)/);
   assert.match(robots, /User-agent: Googlebot\nAllow: \//);
 });

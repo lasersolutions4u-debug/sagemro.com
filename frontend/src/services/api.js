@@ -402,11 +402,11 @@ export async function activateEngineerAccount({ token, password }) {
 /**
  * 发送重置密码验证码
  */
-export async function sendResetCode(phone) {
+export async function sendResetCode({ phone, email }) {
   const response = await fetch(`${API_BASE}/api/auth/send-reset-code`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ phone }),
+    body: JSON.stringify(email ? { email } : { phone }),
   });
   if (!response.ok) {
     const data = await response.json();
@@ -418,11 +418,11 @@ export async function sendResetCode(phone) {
 /**
  * 重置密码
  */
-export async function resetPassword({ phone, code, newPassword }) {
+export async function resetPassword({ phone, email, code, newPassword }) {
   const response = await fetch(`${API_BASE}/api/auth/reset-password`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ phone, code, newPassword }),
+    body: JSON.stringify({ ...(email ? { email } : { phone }), code, newPassword }),
   });
   if (!response.ok) {
     const data = await response.json();
@@ -567,6 +567,19 @@ export async function renameConversation(id, title) {
 }
 
 // ============ 工单相关 ============
+
+export async function assistServiceRequestDraft({ message, draft, signal } = {}) {
+  const market = typeof window !== 'undefined' && window.location.hostname.endsWith('.cn') ? 'cn' : 'com';
+  const response = await fetch(`${API_BASE}/api/service-request-assist`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({ market, message, draft }),
+    signal,
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+  return data;
+}
 
 /**
  * 提交工单

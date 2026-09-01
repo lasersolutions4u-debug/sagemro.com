@@ -352,7 +352,7 @@ test('work-order messages localize system copy and label foreign customer origin
 
 test('work-order system messages show their full content without an original-message toggle', () => {
   const messages = read('frontend/src/components/WorkOrder/MessagePanel.jsx');
-  const systemMessage = messages.match(/function SystemMessage[\s\S]*?\n}\n\nfunction isNearMessageBottom/)?.[0] || '';
+  const systemMessage = messages.match(/function SystemMessage[\s\S]*?\r?\n}\r?\n\r?\nfunction isNearMessageBottom/)?.[0] || '';
 
   assert.match(systemMessage, /redactContactInfo\(message\.content \|\| ''\)/);
   assert.match(systemMessage, /whitespace-pre-wrap/);

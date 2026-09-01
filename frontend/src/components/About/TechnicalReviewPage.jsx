@@ -3,8 +3,7 @@ import { ArrowLeft } from 'lucide-react';
 import { getTechnicalAuthor } from '../../data/technicalAuthors';
 import { getTechnicalReviewPolicy } from '../../data/technicalReviewPolicy';
 import { setSeoMetadata } from '../../utils/seo';
-import { BrandMark } from '../common/BrandMark';
-import { Footer } from '../common/Footer';
+import { PublicSiteShell } from '../Public/PublicSiteShell';
 
 export function TechnicalReviewPage({ locale = 'en', onOpenLegal }) {
   const policy = getTechnicalReviewPolicy(locale);
@@ -53,14 +52,8 @@ export function TechnicalReviewPage({ locale = 'en', onOpenLegal }) {
   }, [author, canonical, host, locale, organizationId, policy]);
 
   return (
-    <div className="flex min-h-[100dvh] flex-col bg-[var(--color-bg)] text-[var(--color-text-primary)]">
-      <header className="border-b border-[var(--color-border)] bg-[var(--color-surface)]">
-        <div className="mx-auto flex max-w-4xl items-center justify-between gap-4 px-4 py-3 sm:px-6">
-          <a href="/" className="flex items-center gap-2 text-sm font-semibold"><BrandMark variant="logo" className="h-8 w-8 object-contain" />SAGEMRO</a>
-          <a href="/services/" className="text-sm text-[var(--color-text-secondary)] hover:text-[var(--color-primary)]">{locale === 'zh-CN' ? '服务' : 'Services'}</a>
-        </div>
-      </header>
-      <main className="mx-auto w-full max-w-4xl flex-1 px-4 py-8 sm:px-6 lg:py-12">
+    <PublicSiteShell isCn={locale === 'zh-CN'} onOpenLegal={onOpenLegal}>
+      <div className="mx-auto w-full max-w-4xl flex-1 px-4 py-8 sm:px-6 lg:py-12">
         <a href="/" className="inline-flex items-center gap-2 text-sm text-[var(--color-text-secondary)] hover:text-[var(--color-primary)]"><ArrowLeft size={16} />{locale === 'zh-CN' ? '返回 SAGEMRO' : 'Back to SAGEMRO'}</a>
         <article className="mt-7">
           <h1 className="text-3xl font-semibold leading-tight sm:text-4xl">{policy.title}</h1>
@@ -80,8 +73,7 @@ export function TechnicalReviewPage({ locale = 'en', onOpenLegal }) {
             <a href="mailto:support@sagemro.com" className="mt-3 inline-flex text-sm font-medium text-[var(--color-primary)] hover:underline">support@sagemro.com</a>
           </section>
         </article>
-      </main>
-      <Footer onOpenLegal={onOpenLegal} />
-    </div>
+      </div>
+    </PublicSiteShell>
   );
 }
