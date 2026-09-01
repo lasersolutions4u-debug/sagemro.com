@@ -103,8 +103,8 @@ const labels = {
 function SectionHeading({ eyebrow, title }) {
   return (
     <div className="max-w-3xl">
-      <p className="text-xs font-bold uppercase tracking-[0.2em] text-[#176b4b]">{eyebrow}</p>
-      <h2 className="mt-3 text-3xl font-semibold tracking-[-0.025em] text-[#18241f] md:text-4xl">{title}</h2>
+      <p className="text-xs font-bold uppercase tracking-[0.2em] text-[#d97706]">{eyebrow}</p>
+      <h2 className="mt-3 text-3xl font-semibold tracking-[-0.025em] text-[#21160c] md:text-4xl">{title}</h2>
     </div>
   );
 }
@@ -120,111 +120,111 @@ export function PublicHomePage({ isCn, onOpenLegal }) {
 
   return (
     <PublicSiteShell isCn={isCn} onOpenLegal={onOpenLegal}>
-      <section data-home-section="hero" className="relative overflow-hidden border-b border-[#dfe6e1] bg-[#f6f8f5] px-5 py-16 md:py-24">
-        <div className="pointer-events-none absolute inset-0 opacity-40" style={{ backgroundImage: 'linear-gradient(#dfe6e1 1px, transparent 1px), linear-gradient(90deg, #dfe6e1 1px, transparent 1px)', backgroundSize: '48px 48px' }} />
+      <section data-home-section="hero" className="relative overflow-hidden border-b border-[#e6dccf] bg-[#f7f3ed] px-5 py-16 md:py-24">
+        <div className="pointer-events-none absolute inset-0 opacity-45" style={{ backgroundImage: 'linear-gradient(#e8ded2 1px, transparent 1px), linear-gradient(90deg, #e8ded2 1px, transparent 1px)', backgroundSize: '48px 48px' }} />
         <div className="relative mx-auto grid max-w-[1240px] gap-10 lg:grid-cols-[1.35fr_0.65fr] lg:px-3">
           <div>
-            <p className="text-xs font-bold uppercase tracking-[0.22em] text-[#176b4b]">{content.hero.eyebrow}</p>
-            <h1 className="mt-5 max-w-4xl text-4xl font-semibold leading-[1.12] tracking-[-0.04em] text-[#14201a] md:text-6xl">{content.hero.title}</h1>
-            <p className="mt-6 max-w-3xl text-base leading-8 text-[#526159] md:text-lg">{content.hero.description}</p>
+            <p className="text-xs font-bold uppercase tracking-[0.22em] text-[#d97706]">{content.hero.eyebrow}</p>
+            <h1 className="mt-5 max-w-4xl text-4xl font-semibold leading-[1.12] tracking-[-0.04em] text-[#21160c] md:text-6xl">{content.hero.title}</h1>
+            <p className="mt-6 max-w-3xl text-base leading-8 text-[#6b5a48] md:text-lg">{content.hero.description}</p>
             <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-              <a href={content.requestCtas.assist.href} className="flex min-h-12 items-center justify-center rounded-sm bg-[#176b4b] px-6 text-sm font-semibold text-white hover:bg-[#11573c]">
+              <a href={content.requestCtas.assist.href} className="flex min-h-12 items-center justify-center rounded-lg bg-[#f59e0b] px-6 text-sm font-semibold text-[#21160c] shadow-sm transition-colors hover:bg-[#fbbf24]">
                 {content.requestCtas.assist.label}
               </a>
-              <a href={content.requestCtas.manual.href} className="flex min-h-12 items-center justify-center rounded-sm border border-[#9eaaa4] bg-white px-6 text-sm font-semibold text-[#25332c] hover:border-[#176b4b]">
+              <a href={content.requestCtas.manual.href} className="flex min-h-12 items-center justify-center rounded-lg border border-[#c9b9a5] bg-[#fffdf8] px-6 text-sm font-semibold text-[#2d2116] transition-colors hover:border-[#d97706] hover:bg-white">
                 {content.requestCtas.manual.label}
               </a>
             </div>
           </div>
-          <aside className="self-end border-l-4 border-[#2675a9] bg-white p-6 shadow-[0_18px_50px_rgba(20,32,26,0.08)]">
-            <p className="font-mono text-xs font-bold uppercase tracking-[0.18em] text-[#2675a9]">{isCn ? '提交前准备' : 'Before submitting'}</p>
-            <ul className="mt-5 space-y-4 text-sm leading-6 text-[#526159]">
+          <aside className="self-end border-l-4 border-[#ea580c] bg-[#fffdf8] p-6 shadow-[0_18px_50px_rgba(45,33,22,0.10)]">
+            <p className="font-mono text-xs font-bold uppercase tracking-[0.18em] text-[#c2410c]">{isCn ? '提交前准备' : 'Before submitting'}</p>
+            <ul className="mt-5 space-y-4 text-sm leading-6 text-[#6b5a48]">
               {(isCn
                 ? ['设备品牌与型号', '完整报警代码与故障现象', '现场地区、停机影响与联系方式']
                 : ['Equipment brand and model', 'Complete alarm code and symptom', 'Site region, production impact, and contact details']
               ).map((item, index) => (
-                <li key={item} className="flex gap-3"><span className="font-mono font-bold text-[#176b4b]">0{index + 1}</span><span>{item}</span></li>
+                <li key={item} className="flex gap-3"><span className="font-mono font-bold text-[#d97706]">0{index + 1}</span><span>{item}</span></li>
               ))}
             </ul>
           </aside>
         </div>
       </section>
 
-      <section data-home-section="problems" className="border-b border-[#dfe6e1] bg-white px-5 py-14 md:py-20">
+      <section data-home-section="problems" className="border-b border-[#e6dccf] bg-[#fffdf8] px-5 py-14 md:py-20">
         <div className="mx-auto max-w-[1240px] lg:px-3">
           <SectionHeading eyebrow={copy.problemEyebrow} title={copy.problemTitle} />
-          <div className="mt-8 grid gap-px overflow-hidden border border-[#dfe6e1] bg-[#dfe6e1] sm:grid-cols-2 lg:grid-cols-3">
+          <div className="mt-8 grid gap-px overflow-hidden border border-[#e6dccf] bg-[#e6dccf] sm:grid-cols-2 lg:grid-cols-3">
             {content.problemLinks.items.map((item, index) => (
-              <a key={item.key} href={problemRoutes[item.key]} className="group flex min-h-24 items-center justify-between gap-4 bg-white p-5 hover:bg-[#f0f6f2]">
+              <a key={item.key} href={problemRoutes[item.key]} className="group flex min-h-24 items-center justify-between gap-4 bg-white p-5 transition-colors hover:bg-[#fff5df]">
                 <span className="text-base font-semibold">{item.label}</span>
-                <span className="font-mono text-xs text-[#708078] group-hover:text-[#176b4b]">0{index + 1} / →</span>
+                <span className="font-mono text-xs text-[#8a7864] group-hover:text-[#d97706]">0{index + 1} / →</span>
               </a>
             ))}
           </div>
         </div>
       </section>
 
-      <section data-home-section="services" className="bg-[#eef2ef] px-5 py-16 md:py-24">
+      <section data-home-section="services" className="bg-[#f4ede3] px-5 py-16 md:py-24">
         <div className="mx-auto max-w-[1240px] lg:px-3">
           <SectionHeading eyebrow={copy.servicesEyebrow} title={copy.servicesTitle} />
           <div className="mt-10 grid gap-5 md:grid-cols-2 lg:grid-cols-3">
             {content.services.items.map((item, index) => (
-              <article key={item.key} data-service-card={item.key} className="flex min-h-72 flex-col border border-[#d7dfda] bg-white p-6 shadow-[0_8px_30px_rgba(20,32,26,0.04)]">
-                <span className="font-mono text-xs font-bold tracking-[0.14em] text-[#2675a9]">SVC / 0{index + 1}</span>
+              <article key={item.key} data-service-card={item.key} className="flex min-h-72 flex-col border border-[#e3d6c7] bg-[#fffdf8] p-6 shadow-[0_8px_30px_rgba(45,33,22,0.05)]">
+                <span className="font-mono text-xs font-bold tracking-[0.14em] text-[#c2410c]">SVC / 0{index + 1}</span>
                 <h3 className="mt-8 text-xl font-semibold leading-8">{item.title}</h3>
-                <p className="mt-4 text-sm leading-7 text-[#63716a]">{serviceDescriptions[market][item.key]}</p>
-                <a href={serviceRoutes[item.key]} className="mt-auto flex min-h-11 items-end pt-5 text-sm font-semibold text-[#176b4b] underline decoration-[#a5c2b3] underline-offset-4">{copy.learnMore}</a>
+                <p className="mt-4 text-sm leading-7 text-[#756552]">{serviceDescriptions[market][item.key]}</p>
+                <a href={serviceRoutes[item.key]} className="mt-auto flex min-h-11 items-end pt-5 text-sm font-semibold text-[#b45309] underline decoration-[#e7b65b] underline-offset-4">{copy.learnMore}</a>
               </article>
             ))}
           </div>
         </div>
       </section>
 
-      <section data-home-section="reasons" className="bg-[#15231d] px-5 py-16 text-white md:py-24">
+      <section data-home-section="reasons" className="bg-[#1a1a1a] px-5 py-16 text-white md:py-24">
         <div className="mx-auto max-w-[1240px] lg:px-3">
           <div className="max-w-4xl">
-            <p className="text-xs font-bold uppercase tracking-[0.2em] text-[#7ed2a5]">{copy.reasonsEyebrow}</p>
+            <p className="text-xs font-bold uppercase tracking-[0.2em] text-[#fbbf24]">{copy.reasonsEyebrow}</p>
             <h2 className="mt-3 text-3xl font-semibold tracking-[-0.025em] md:text-4xl">{copy.reasonsTitle}</h2>
           </div>
-          <div className="mt-10 grid gap-px bg-[#415049] sm:grid-cols-2 lg:grid-cols-4">
+          <div className="mt-10 grid gap-px bg-[#43382d] sm:grid-cols-2 lg:grid-cols-4">
             {content.reasons.items.map((item, index) => (
-              <article key={item.key} className="min-h-56 bg-[#1b2b24] p-6">
-                <span className="font-mono text-xs text-[#7ed2a5]">0{index + 1}</span>
+              <article key={item.key} className="min-h-56 bg-[#252525] p-6">
+                <span className="font-mono text-xs text-[#fbbf24]">0{index + 1}</span>
                 <h3 className="mt-8 text-lg font-semibold">{item.title}</h3>
-                <p className="mt-3 text-sm leading-7 text-[#bac7c0]">{item.detail}</p>
+                <p className="mt-3 text-sm leading-7 text-[#d8cec0]">{item.detail}</p>
               </article>
             ))}
           </div>
         </div>
       </section>
 
-      <section data-home-section="process" className="bg-white px-5 py-16 md:py-24">
+      <section data-home-section="process" className="bg-[#fffdf8] px-5 py-16 md:py-24">
         <div className="mx-auto max-w-[1240px] lg:px-3">
           <SectionHeading eyebrow={copy.processEyebrow} title={copy.processTitle} />
           <ol className="mt-10 grid gap-6 lg:grid-cols-4">
             {content.process.steps.map((step, index) => (
-              <li key={step.key} className="relative border-t-2 border-[#176b4b] pt-5">
-                <span className="font-mono text-xs font-bold text-[#2675a9]">STEP 0{index + 1}</span>
+              <li key={step.key} className="relative border-t-2 border-[#f59e0b] pt-5">
+                <span className="font-mono text-xs font-bold text-[#c2410c]">STEP 0{index + 1}</span>
                 <h3 className="mt-3 text-lg font-semibold">{step.title}</h3>
               </li>
             ))}
           </ol>
-          <p className="mt-10 border-l-4 border-[#d3a228] bg-[#fff9e7] p-5 text-sm leading-7 text-[#625735]">{content.process.boundary}</p>
+          <p className="mt-10 border-l-4 border-[#f59e0b] bg-[#fff5d9] p-5 text-sm leading-7 text-[#62513e]">{content.process.boundary}</p>
         </div>
       </section>
 
-      <section data-home-section="brands" className="border-y border-[#dfe6e1] bg-[#eef2ef] px-5 py-16 md:py-24">
+      <section data-home-section="brands" className="border-y border-[#e6dccf] bg-[#f4ede3] px-5 py-16 md:py-24">
         <div className="mx-auto grid max-w-[1240px] gap-10 lg:grid-cols-[0.8fr_1.2fr] lg:px-3">
           <div>
             <SectionHeading eyebrow={copy.brandsEyebrow} title={copy.brandsTitle} />
-            <p className="mt-5 text-sm leading-7 text-[#63716a]">{copy.brandsBody}</p>
-            <a href="/brands/" className="mt-6 inline-flex min-h-11 items-center font-semibold text-[#176b4b] underline decoration-[#a5c2b3] underline-offset-4">{copy.viewBrands}</a>
+            <p className="mt-5 text-sm leading-7 text-[#756552]">{copy.brandsBody}</p>
+            <a href="/brands/" className="mt-6 inline-flex min-h-11 items-center font-semibold text-[#b45309] underline decoration-[#e7b65b] underline-offset-4">{copy.viewBrands}</a>
           </div>
           <div className="grid gap-4 sm:grid-cols-3">
             {content.brands.groups.map((group) => (
-              <a key={group.key} href="/brands/" className="border border-[#d7dfda] bg-white p-5 hover:border-[#176b4b]">
+              <a key={group.key} href="/brands/" className="border border-[#e3d6c7] bg-[#fffdf8] p-5 transition-colors hover:border-[#d97706]">
                 <h3 className="font-semibold">{group.title}</h3>
-                <ul className="mt-4 space-y-2 text-sm text-[#63716a]">
+                <ul className="mt-4 space-y-2 text-sm text-[#756552]">
                   {group.items.map((item) => <li key={item}>{item}</li>)}
                 </ul>
               </a>
@@ -233,28 +233,28 @@ export function PublicHomePage({ isCn, onOpenLegal }) {
         </div>
       </section>
 
-      <section data-home-section="tools" className="bg-white px-5 py-16 md:py-24">
+      <section data-home-section="tools" className="bg-[#fffdf8] px-5 py-16 md:py-24">
         <div className="mx-auto max-w-[1240px] lg:px-3">
           <SectionHeading eyebrow={copy.toolsEyebrow} title={copy.toolsTitle} />
           <div className="mt-9 grid gap-4 md:grid-cols-3">
             {featuredTools.map((tool) => (
-              <a key={tool.id} href={`/tools/${tool.slug}/`} className="group border-b-2 border-[#dfe6e1] bg-[#f6f8f5] p-6 hover:border-[#2675a9]">
+              <a key={tool.id} href={`/tools/${tool.slug}/`} className="group border-b-2 border-[#e6dccf] bg-[#f7f3ed] p-6 transition-colors hover:border-[#ea580c]">
                 <h3 className="text-lg font-semibold">{tool.label}</h3>
-                <p className="mt-3 text-sm leading-6 text-[#52606b]">{tool.description}</p>
-                <span className="mt-8 block text-sm font-semibold text-[#2675a9]">{copy.viewResource} →</span>
+                <p className="mt-3 text-sm leading-6 text-[#6b5a48]">{tool.description}</p>
+                <span className="mt-8 block text-sm font-semibold text-[#c2410c]">{copy.viewResource} →</span>
               </a>
             ))}
           </div>
         </div>
       </section>
 
-      <section data-home-section="insights" className="bg-[#eef2ef] px-5 py-16 md:py-24">
+      <section data-home-section="insights" className="bg-[#f4ede3] px-5 py-16 md:py-24">
         <div className="mx-auto max-w-[1240px] lg:px-3">
           <SectionHeading eyebrow={copy.insightsEyebrow} title={copy.insightsTitle} />
-          <div className="mt-9 grid gap-px bg-[#d7dfda] md:grid-cols-3">
+          <div className="mt-9 grid gap-px bg-[#e3d6c7] md:grid-cols-3">
             {content.insights.items.map((item, index) => (
-              <a key={item.key} href={insightRoutes[item.key]} className="min-h-44 bg-white p-6 hover:bg-[#f8faf8]">
-                <span className="font-mono text-xs text-[#63716a]">NOTE / 0{index + 1}</span>
+              <a key={item.key} href={insightRoutes[item.key]} className="min-h-44 bg-[#fffdf8] p-6 transition-colors hover:bg-[#fff5df]">
+                <span className="font-mono text-xs text-[#756552]">NOTE / 0{index + 1}</span>
                 <h3 className="mt-8 text-lg font-semibold">{item.title}</h3>
               </a>
             ))}
@@ -262,32 +262,32 @@ export function PublicHomePage({ isCn, onOpenLegal }) {
         </div>
       </section>
 
-      <section data-home-section="faqs" className="bg-white px-5 py-16 md:py-24">
+      <section data-home-section="faqs" className="bg-[#fffdf8] px-5 py-16 md:py-24">
         <div className="mx-auto max-w-[980px]">
           <SectionHeading eyebrow={copy.faqEyebrow} title={copy.faqTitle} />
-          <div className="mt-9 divide-y divide-[#dfe6e1] border-y border-[#dfe6e1]">
+          <div className="mt-9 divide-y divide-[#e6dccf] border-y border-[#e6dccf]">
             {content.faqs.items.map((item) => (
               <details key={item.key} className="group py-1">
                 <summary className="flex min-h-16 cursor-pointer list-none items-center justify-between gap-4 py-3 text-base font-semibold marker:content-none">
-                  {item.question}<span className="font-mono text-[#176b4b] group-open:rotate-45">＋</span>
+                  {item.question}<span className="font-mono text-[#d97706] group-open:rotate-45">＋</span>
                 </summary>
-                <p className="max-w-3xl pb-6 pr-10 text-sm leading-7 text-[#63716a]">{item.answer}</p>
+                <p className="max-w-3xl pb-6 pr-10 text-sm leading-7 text-[#756552]">{item.answer}</p>
               </details>
             ))}
           </div>
         </div>
       </section>
 
-      <section data-home-section="final-cta" className="bg-[#2675a9] px-5 py-16 text-white md:py-20">
+      <section data-home-section="final-cta" className="bg-[#1a1a1a] px-5 py-16 text-white md:py-20">
         <div className="mx-auto grid max-w-[1240px] gap-8 lg:grid-cols-[1fr_auto] lg:items-end lg:px-3">
           <div>
-            <p className="text-xs font-bold uppercase tracking-[0.2em] text-[#c8e6f6]">{copy.ctaEyebrow}</p>
+            <p className="text-xs font-bold uppercase tracking-[0.2em] text-[#fbbf24]">{copy.ctaEyebrow}</p>
             <h2 className="mt-3 max-w-3xl text-3xl font-semibold tracking-[-0.025em] md:text-4xl">{copy.ctaTitle}</h2>
-            <p className="mt-5 max-w-3xl text-sm leading-7 text-[#e1eff7]">{copy.ctaBody}</p>
+            <p className="mt-5 max-w-3xl text-sm leading-7 text-[#d8cec0]">{copy.ctaBody}</p>
           </div>
           <div className="flex flex-col gap-3 sm:flex-row">
-            <a href={content.requestCtas.assist.href} className="flex min-h-12 items-center justify-center rounded-sm bg-white px-6 text-sm font-semibold text-[#18567e]">{content.requestCtas.assist.label}</a>
-            <a href={content.requestCtas.manual.href} className="flex min-h-12 items-center justify-center rounded-sm border border-[#a9d2e8] px-6 text-sm font-semibold text-white">{content.requestCtas.manual.label}</a>
+            <a href={content.requestCtas.assist.href} className="flex min-h-12 items-center justify-center rounded-lg bg-[#f59e0b] px-6 text-sm font-semibold text-[#21160c] transition-colors hover:bg-[#fbbf24]">{content.requestCtas.assist.label}</a>
+            <a href={content.requestCtas.manual.href} className="flex min-h-12 items-center justify-center rounded-lg border border-[#8a7864] px-6 text-sm font-semibold text-white transition-colors hover:border-[#fbbf24] hover:text-[#fbbf24]">{content.requestCtas.manual.label}</a>
           </div>
         </div>
       </section>
