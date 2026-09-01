@@ -12,40 +12,62 @@
 
 | 组件       | 域名                | CF 项目 / 资源              | 工作目录              |
 | ---------- | ------------------- | --------------------------- | --------------------- |
-| 国际版前端 | `sagemro.com`       | Pages: `sagemro-com`        | `frontend/`           |
-| 中国版前端 | `sagemro.cn`        | 阿里云 ECS + nginx（真实生产） | `frontend/`（同源码） |
+| 国际版公开站 | `sagemro.com`       | Pages: `sagemro-com`        | `frontend/dist/`           |
+| 国际版客户工作台 | `ai.sagemro.com` | Pages: `sagemro-ai`         | `frontend/dist-portal/`    |
+| 中国版公开站 | `sagemro.cn`        | 阿里云 ECS + nginx（真实生产） | `current/frontend` |
+| 中国版客户工作台 | `ai.sagemro.cn` | 阿里云 ECS + nginx（真实生产） | `current/ai` |
 | 国际版后台 | `admin.sagemro.com` | Pages: `sagemro-admin`      | `admin/`              |
 | 中国版后台 | `admin.sagemro.cn`  | 阿里云 ECS + nginx（真实生产） | `admin/`（同源码）    |
-| 中国版工程师端 | `engineer.sagemro.cn` | 阿里云 ECS + nginx | `frontend/`（同构建） |
+| 国际版工程师端 | `engineer.sagemro.com` | Pages 公共前端制品 | `frontend/dist/` |
+| 中国版工程师端 | `engineer.sagemro.cn` | 阿里云 ECS + nginx | `current/engineer` |
 | 国际版 API | `api.sagemro.com`   | Workers: env=`production`   | `worker/`             |
 | 中国版 API | `api.sagemro.cn`    | Workers: env=`production`   | `worker/`（同 Worker）|
 | 国际版数据库 | —                 | D1: `sagemro-db`            | `worker/migrations/`  |
 | 中国版数据库 | —                 | D1: `sagemro-db-cn`         | `worker/migrations/`  |
 | 缓存       | —                   | KV namespace（绑定名 `KV`） | —                     |
 
-中国版前台/后台/工程师端在 `.cn` 域名下会自动调用 `https://api.sagemro.cn`。`.cn` 真实生产流量由阿里云 ECS + nginx 承载；Cloudflare Pages 的 `sagemro-cn` / `sagemro-admin-cn` 只作为辅助部署目标。Worker 会按 API 域名或请求来源域名识别中国版流量，并路由到 `DB_CN`（`sagemro-db-cn`）。
+公开主域只承载可索引的品牌、服务、工具和洞察页面；`ai.sagemro.com` 与 `ai.sagemro.cn` 只承载客户工作台，并生成 `noindex,nofollow,noarchive` 与全站禁止抓取的 `robots.txt`。中国版前台、客户工作台、后台和工程师端调用 `https://api.sagemro.cn`。`.cn` 真实生产流量由阿里云 ECS + nginx 承载，Worker 按可信 API 或来源域名路由到 `DB_CN`（`sagemro-db-cn`）。
 
 > **历史说明**：前端曾同时配过 Netlify（`netlify.toml`）和 Cloudflare Pages，造成双重部署和流量分裂。现已统一到 Cloudflare Pages。原 `netlify.toml` 备份为 `netlify.toml.deprecated`，确认 Pages 稳定运行一段时间后可删除。
 
 ### 1.2 多分支部署矩阵
 
 **关键事实**：
-- `main` 分支部署国际版前台、国际版后台和 Worker
+- `main` 分支部署国际版公开站、客户工作台、后台和 Worker
 - `china-edition` 分支部署中国版前台和中国版后台，不部署 Worker
-- `sagemro.com/admin.sagemro.com` 调用 `api.sagemro.com`，使用 D1 `sagemro-db`
+- `ai.sagemro.com/admin.sagemro.com/engineer.sagemro.com` 调用 `api.sagemro.com`，使用 D1 `sagemro-db`
 - `sagemro.cn/admin.sagemro.cn` 调用 `api.sagemro.cn`，使用 D1 `sagemro-db-cn`
 - API 字段变更必须：先 PR 到 main → main 部署 Worker → 再 PR 到 china-edition；反向操作会让中国版 5xx
 - PR 永远只跑测试，不部署（jobs 层用 `if: github.event_name == 'push'` 兜底）
 
 ### 1.3 触发与门禁
 
-| 事件 | test | deploy-frontend | deploy-worker | deploy-admin |
-|------|:----:|:---------------:|:-------------:|:------------:|
-| PR → main | ✅ | ❌ | ❌ | ❌ |
-| push → main | ✅ | ✅ (sagemro-com) | ✅ | ✅ (sagemro-admin) |
-| push → china-edition | ✅ | ✅ (sagemro-cn) | ❌ | ✅ (sagemro-admin-cn) |
+| 事件 | test | deploy-frontend | deploy-ai | deploy-worker | deploy-admin |
+|------|:----:|:---------------:|:---------:|:-------------:|:------------:|
+| PR → main | ✅ | ❌ | ❌ | ❌ | ❌ |
+| push → main | ✅ | ✅ (sagemro-com) | ✅ (sagemro-ai) | ✅ | ✅ (sagemro-admin) |
+| push → china-edition | ✅ | ✅ (sagemro-cn 辅助目标) | ❌ | ❌ | ✅ (sagemro-admin-cn) |
 
 所有 deploy job 都声明了 `environment: production`。可在 GitHub repo → Settings → Environments → `production` 里加 required reviewers，作为人工审批门禁。
+
+### 1.4 AI 子域名发布顺序与回滚门禁
+
+首次切换及包含结构化服务请求的发布必须按以下顺序执行：
+
+1. 分别导出并验证 COM、CN 两套 D1 加密备份及清单。
+2. 在 `sagemro-db` 应用并验证 047、048、049；049 只用于国际版邮箱验证客户手机号可空。
+3. 在 `sagemro-db-cn` 应用并验证 047、048；不要应用 049，继续保留中国版客户手机号的数据库约束。
+4. 两套数据库均确认后，才部署 `main` 的共享 Worker。
+5. 部署 COM 公开制品 `dist` 与客户工作台制品 `dist-portal`。
+6. 完成 COM 公开站、AI 客户工作台、登录、会话恢复和服务请求烟测。
+7. 将已审核的客户端改动同步到 `china-edition`。
+8. 运行阿里云中国版 workflow，分别激活 `current/frontend` 与 `current/ai`。
+9. 完成 CN 公开站、AI 客户工作台及 API 烟测。
+10. 公开页面稳定后，仅提交主域名 sitemap；AI 子域名不得进入 sitemap。
+
+任一门禁失败都停止后续步骤。回滚应用和部署版本时保留已经增加的 D1 列与表，不做破坏性降级；Cloudflare Pages 恢复上一部署，阿里云将 `current/frontend`、`current/ai`、`current/engineer` 指回上一 release。DNS 回滚只恢复或移除 `ai.*` 记录，不把客户工作台私有路径重定向到公开主站。
+
+049 会重建 `customers` 表。执行前必须创建并验证 COM D1 备份，然后使用 `wrangler d1 execute sagemro-db --env production --remote --file migrations/049_nullable_international_customer_phone.sql`。不要在 SQL 文件内添加 `BEGIN/COMMIT`：D1 的远程文件执行由平台原子处理，失败时恢复原状态；命令结束后仍须复核 `customers` 行数、手机号唯一索引、标准化邮箱唯一索引和 `_migrations` 记录。参见 [Cloudflare D1 execute 文档](https://developers.cloudflare.com/d1/wrangler-commands/#d1-execute)及[导入说明](https://developers.cloudflare.com/d1/best-practices/import-export-data/)。
 
 ---
 
@@ -230,6 +252,7 @@ node scripts/d1-operations.mjs restore-drill --market cn
 | 项目                   | 自定义域名                                                   |
 | ---------------------- | ------------------------------------------------------------ |
 | Pages: `sagemro-com`   | `sagemro.com`、`www.sagemro.com`                             |
+| Pages: `sagemro-ai`    | `ai.sagemro.com`                                             |
 | Pages: `sagemro-cn`    | `sagemro.cn`、`www.sagemro.cn`                               |
 | Pages: `sagemro-admin` | `admin.sagemro.com`                                          |
 | Pages: `sagemro-admin-cn` | `admin.sagemro.cn`                                       |
@@ -712,6 +735,8 @@ npx wrangler pages deploy admin/dist --project-name=sagemro-admin-cn --branch=ch
 | ----------- | --------------------------------------------------------- | ------------- |
 | 国际版首页  | `https://sagemro.com`                                     | 200，正常加载 |
 | 中国版首页  | `https://sagemro.cn`                                      | 200，正常加载 |
+| 国际版客户工作台 | `https://ai.sagemro.com`                             | 200，`noindex` |
+| 中国版客户工作台 | `https://ai.sagemro.cn`                              | 200，`noindex` |
 | 国际版后台  | `https://admin.sagemro.com`                               | 登录页        |
 | 中国版后台  | `https://admin.sagemro.cn`                                | 登录页        |
 | 国际版 Worker 健康 | `https://api.sagemro.com/health`                   | 200 OK        |
@@ -726,6 +751,7 @@ npx wrangler pages deploy admin/dist --project-name=sagemro-admin-cn --branch=ch
 | 目标                    | 方式                                                         |
 | ----------------------- | ------------------------------------------------------------ |
 | 前端（任一 Pages 项目） | CF Dashboard → 该项目 → Deployments → 选历史版本 → **Rollback** |
+| 中国版前台/AI/工程师端 | 将 `/var/www/sagemro-cn/current/{frontend,ai,engineer}` 原子链接分别指回上一 release，执行 `nginx -t` 后 reload |
 | Admin                   | 同上                                                         |
 | Worker                  | CF Dashboard → Workers → `sagemro-api` → Deployments → 选历史版本 → Rollback；或 `git revert` 后 push（推荐，状态可追溯） |
 | D1 schema               | **没有自动回滚**。Migration 一旦应用就只能写反向 migration 修复。重要 schema 变更前先 `wrangler d1 export` 备份 |

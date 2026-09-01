@@ -12,8 +12,8 @@
 ```
 GitHub 仓库（代码托管）
     ↓ push / merge
-Cloudflare Pages（国际版官网与后台，以及中国版辅助目标）
-阿里云 ECS + nginx（中国版前台、后台、工程师端真实生产）
+Cloudflare Pages（国际版公开站、AI 客户工作台与后台，以及中国版辅助目标）
+阿里云 ECS + nginx（中国版公开站、AI 客户工作台、后台、工程师端真实生产）
 Cloudflare Workers（AI API 代理 + 工单后端）
     ↓
 Cloudflare D1（国际版 / 中国版独立数据库）
@@ -23,12 +23,12 @@ OpenAI-compatible LLM API（DeepSeek / OpenAI / compatible provider）
 
 生产环境按域名分为两套业务入口：
 
-| 版本 | 前台 | 后台 | API | 数据库 |
-|------|------|------|-----|--------|
-| 国际版 | `sagemro.com` | `admin.sagemro.com` | `api.sagemro.com` | D1 `sagemro-db` |
-| 中国版 | `sagemro.cn` | `admin.sagemro.cn` | `api.sagemro.cn` | D1 `sagemro-db-cn` |
+| 版本 | 公开站（可索引） | 客户工作台（noindex） | 工程师端 | 后台 | API | 数据库 |
+|------|----------------|----------------------|----------|------|-----|--------|
+| 国际版 | `sagemro.com` | `ai.sagemro.com` | `engineer.sagemro.com` | `admin.sagemro.com` | `api.sagemro.com` | D1 `sagemro-db` |
+| 中国版 | `sagemro.cn` | `ai.sagemro.cn` | `engineer.sagemro.cn` | `admin.sagemro.cn` | `api.sagemro.cn` | D1 `sagemro-db-cn` |
 
-客户/工程师前端与 Admin 是两个独立 React 项目：`frontend/` 同时构建客户主站和按 engineer host 切换的工程师入口，`admin/` 构建管理后台。两套项目分别复用于 `.com` 和 `.cn` 市场，并在 `.cn` 域名下调用 `https://api.sagemro.cn`。Worker 使用同一套代码部署，按 API 域名或请求来源域名把中国版请求路由到 `DB_CN`，避免中英文版本数据混用。
+客户/工程师前端与 Admin 是两个独立 React 项目。`frontend/` 从同一源码确定性生成两套制品：`public` 输出 `dist/`，包含公开预渲染页面、canonical、sitemap；`portal` 输出 `dist-portal/`，承载客户工作台并强制 noindex、无 sitemap 和主域 canonical。工程师入口继续由精确的 `engineer.*` host 选择，`admin/` 独立构建管理后台。`.cn` 客户端调用 `https://api.sagemro.cn`，共享 Worker 仅按可信 API 或来源域名路由到 `DB_CN`，避免市场数据混用。
 
 ### 1.1 技术栈
 
@@ -52,6 +52,8 @@ OpenAI-compatible LLM API（DeepSeek / OpenAI / compatible provider）
 - **AI 助手名**：SAGEMRO AI（历史代码中仍可能出现“小智”作为内部旧名，需逐步清理）
 - **国际版域名**：`sagemro.com`
 - **中国版域名**：`sagemro.cn`
+- **国际版客户工作台**：`ai.sagemro.com`
+- **中国版客户工作台**：`ai.sagemro.cn`
 - **国际版后台**：`admin.sagemro.com`
 - **中国版后台**：`admin.sagemro.cn`
 - **国际版工程师端**：`engineer.sagemro.com`

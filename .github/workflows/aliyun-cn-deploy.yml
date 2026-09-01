@@ -33,6 +33,37 @@ jobs:
         with:
           node-version: "24"
 
+      - name: Check CN API and D1 readiness
+        working-directory: worker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          npm ci --no-audit --no-fund
+          npx wrangler d1 execute sagemro-db-cn --env production --remote \
+            --command "SELECT version FROM _migrations ORDER BY version;" \
+            > /tmp/sagemro-d1-migrations-cn.txt
+
+          APPLIED_CN=$(grep -Eo '[0-9]{3}[a-z]?_[A-Za-z0-9_]+' /tmp/sagemro-d1-migrations-cn.txt | sort -u || true)
+          CN_REQUIRED="047_structured_service_request_intake 048_service_request_assist_quota"
+          for ver in $CN_REQUIRED; do
+            if ! echo "$APPLIED_CN" | grep -q "^${ver}$"; then
+              echo "::error::CN production D1 migration is missing: ${ver}"
+              exit 1
+            fi
+          done
+
+          assist_status=$(curl -sS -o /tmp/service-request-assist-readiness.json -w '%{http_code}' \
+            -X POST https://api.sagemro.cn/api/service-request-assist \
+            -H 'Content-Type: application/json' \
+            -H 'Origin: https://ai.sagemro.cn' \
+            --data '{}')
+          if [ "$assist_status" != "400" ]; then
+            echo "::error::CN API does not expose the expected service-request assist contract (HTTP ${assist_status})."
+            exit 1
+          fi
+
       - name: Validate Aliyun deploy secrets
         env:
           ALIYUN_ECS_HOST: ${{ secrets.ALIYUN_ECS_HOST }}
@@ -60,7 +91,8 @@ jobs:
           set -euo pipefail
           npm ci --no-audit --no-fund
           npm test --if-present
-          npm run build
+          npm run build:public
+          npm run build:portal
 
       - name: Build admin
         working-directory: admin
@@ -79,12 +111,14 @@ jobs:
           echo "RELEASE_ID=${RELEASE_ID}" >> "$GITHUB_ENV"
           echo "PACKAGE_NAME=${PACKAGE_NAME}" >> "$GITHUB_ENV"
 
-          mkdir -p release/frontend release/admin
+          mkdir -p release/frontend release/ai release/admin
           cp -a frontend/dist/. release/frontend/
+          cp -a frontend/dist-portal/. release/ai/
           cp -a admin/dist/. release/admin/
           tar -czf "$PACKAGE_NAME" -C release .
 
           test -f release/frontend/index.html
+          test -f release/ai/index.html
           test -f release/admin/index.html
 
       - name: Setup Aliyun CLI
@@ -207,10 +241,12 @@ jobs:
           $SUDO tar -xzf "$package" -C "$release"
 
           test -f "$release/frontend/index.html"
+          test -f "$release/ai/index.html"
           test -f "$release/admin/index.html"
 
           $SUDO ln -sfnT "$release/frontend" "$current/frontend"
           $SUDO ln -sfnT "$release/frontend" "$current/engineer"
+          $SUDO ln -sfnT "$release/ai" "$current/ai"
           $SUDO ln -sfnT "$release/admin" "$current/admin"
 
           $SUDO nginx -t
@@ -223,6 +259,8 @@ jobs:
         run: |
           set -euo pipefail
           curl -fsS --retry 3 --retry-delay 2 https://sagemro.cn/ >/dev/null
+          portal_html=$(curl -fsS --retry 3 --retry-delay 2 'https://ai.sagemro.cn/service-request?mode=manual')
+          echo "$portal_html" | grep -qi 'noindex,nofollow,noarchive'
           curl -fsS --retry 3 --retry-delay 2 https://admin.sagemro.cn/ >/dev/null
           curl -fsS --retry 3 --retry-delay 2 https://engineer.sagemro.cn/ >/dev/null
           curl -fsS --retry 3 --retry-delay 2 https://api.sagemro.cn/health >/dev/null
@@ -264,6 +302,7 @@ jobs:
             echo ""
             echo "- Release: \`$RELEASE_ID\`"
             echo "- Frontend: https://sagemro.cn/"
+            echo "- AI: https://ai.sagemro.cn/"
             echo "- Admin: https://admin.sagemro.cn/"
             echo "- Engineer: https://engineer.sagemro.cn/"
             echo "- API health: https://api.sagemro.cn/health"
