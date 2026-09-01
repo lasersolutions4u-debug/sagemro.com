@@ -8,12 +8,12 @@ Allow: /
 Disallow: /api/
 Disallow: /admin/
 
-User-agent: Baiduspider
+User-agent: OAI-SearchBot
 Allow: /
 Disallow: /api/
 Disallow: /admin/
 
-User-agent: OAI-SearchBot
+User-agent: Baiduspider
 Allow: /
 Disallow: /api/
 Disallow: /admin/

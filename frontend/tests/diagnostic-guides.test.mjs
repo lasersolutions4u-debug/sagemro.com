@@ -196,12 +196,12 @@ test('published diagnostic guides have answer-first bilingual rendering contract
   assert.match(insightsPage, /robots: isMissing \? 'noindex,nofollow,noarchive' : 'index,follow'/);
 });
 
-test('insight guide conversion reuses the established service callbacks and request modal', async () => {
+test('insight guide conversion reuses the established service callbacks and request route', async () => {
   const app = await readFile(new URL('../src/App.jsx', import.meta.url), 'utf8');
   const insightBranch = app.slice(app.indexOf('if (isInsightsPath)'), app.indexOf('if (isServicesPath)'));
 
   assert.match(app, /const handleServiceDiagnosis = useCallback\(\(\) => \{\s*window\.history\.pushState\(\{\}, '', '\/'\);\s*setCurrentPath\('\/'\);/);
-  assert.match(app, /const handleServiceRequest = useCallback\(\(\) => \{\s*setWorkOrderModalOpen\(true\);/);
+  assert.match(app, /const handleServiceRequest = useCallback\(\(\) => \{\s*window\.history\.pushState\(\{\}, '', '\/service-request'\);\s*setCurrentPath\('\/service-request'\);/);
   assert.match(insightBranch, /<InsightsPage[\s\S]*onStartDiagnosis=\{handleServiceDiagnosis\}[\s\S]*onOpenServiceRequest=\{handleServiceRequest\}/);
-  assert.match(insightBranch, /\{workOrderModalOpen && \([\s\S]*<WorkOrderModal isOpen=\{workOrderModalOpen\} onClose=\{\(\) => setWorkOrderModalOpen\(false\)\} onSubmit=\{handleSubmitWorkOrder\} \/>/);
+  assert.doesNotMatch(insightBranch, /WorkOrderModal|workOrderModalOpen/);
 });

@@ -36,19 +36,19 @@ test('China frontend private route families return a complete noindex header', (
   const headers = read('frontend/public/_headers');
 
   for (const route of ['/work-orders/*', '/activate', '/activate/*', '/engineer/*']) {
-    assert.match(headers, new RegExp(`^${route.replaceAll('/', '\\/').replace('*', '\\*')}$`, 'm'));
+    const escapedRoute = route.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    assert.match(
+      headers,
+      new RegExp(`^${escapedRoute}\\r?\\n  X-Robots-Tag: noindex, nofollow, noarchive, nosnippet, noimageindex\\r?$`, 'm'),
+    );
   }
-  assert.equal(
-    [...headers.matchAll(/X-Robots-Tag: noindex, nofollow, noarchive, nosnippet, noimageindex/g)].length,
-    4,
-  );
 });
 
 test('China ECS Nginx release applies the same headers only to SAGEMRO hosts', () => {
   const workflow = read('.github/workflows/aliyun-cn-deploy.yml');
 
   assert.match(workflow, /map \$host \$sagemro_content_security_policy/);
-  assert.match(workflow, /~\^\(\(www\\\.\)\?sagemro\\\.cn\|admin\\\.sagemro\\\.cn\|engineer\\\.sagemro\\\.cn\)\$/);
+  assert.match(workflow, /~\^\(\(www\\\.\)\?sagemro\\\.cn\|ai\\\.sagemro\\\.cn\|admin\\\.sagemro\\\.cn\|engineer\\\.sagemro\\\.cn\)\$/);
   for (const header of [
     'Content-Security-Policy',
     'Strict-Transport-Security',

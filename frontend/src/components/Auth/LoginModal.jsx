@@ -96,11 +96,14 @@ const LOGIN_COPY = {
     confirmPassword: 'Confirm password *',
     confirmPasswordPlaceholder: 'Re-enter your password',
     phoneNumber: 'Phone number *',
+    phoneNumberOptional: 'Phone number (optional)',
     phoneNumberLabel: 'Phone number',
     phonePlaceholder: 'Enter your phone number',
     registeredPhonePlaceholder: 'Enter your registered phone number',
     emailAddress: 'Email *',
+    emailAddressLabel: 'Email',
     emailPlaceholder: 'Enter your email address',
+    registeredEmailPlaceholder: 'Enter your registered email address',
     verificationCode: 'Verification code',
     emailVerificationCode: 'Email verification code',
     codePlaceholder: 'Enter verification code',
@@ -123,7 +126,7 @@ const LOGIN_COPY = {
     or: ' or ',
     forgotPassword: 'Forgot password',
     backToSignIn: '← Back to sign in',
-    forgotIntro: "Enter your phone number and we'll send a verification code to reset your password",
+    forgotIntro: "Enter your email address and we'll send a verification code to reset your password",
     newPassword: 'Set new password',
     newPasswordPlaceholder: 'Set new password (min. 10 characters)',
     processing: 'Processing...',
@@ -153,7 +156,7 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
   const [codeCooldown, setCodeCooldown] = useState(0);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
-  const [forgotStep, setForgotStep] = useState('phone');
+  const [forgotStep, setForgotStep] = useState('target');
 
   // 公司名（必填）
   const [companyName, setCompanyName] = useState('');
@@ -197,7 +200,7 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
 
   // 客户注册（含公司名）
   const handleRegisterCustomer = async () => {
-    if (!name || !phone || !password || !confirmPassword || !companyName || (!isCn && !email)) {
+    if (!name || !password || !confirmPassword || !companyName || (isCn && !phone) || (!isCn && !email)) {
       setError(copy.requiredFields); return;
     }
     if (password !== confirmPassword) { setError(copy.passwordMismatch); return; }
@@ -245,6 +248,7 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
     setError('');
     setCompanyName('');
     setAgreedToTerms(false);
+    setForgotStep('target');
     setStep('login');
     onClose();
   };
@@ -256,14 +260,14 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
     setError('');
   };
   const goToLogin = () => { setStep('login'); setError(''); };
-  const goToForgotPassword = () => { setStep('forgot-password'); setError(''); };
+  const goToForgotPassword = () => { setForgotStep('target'); setStep('forgot-password'); setError(''); };
 
   // 第1步：公司名 + 基本信息
   const handleCompanySubmit = () => {
     if (!companyName.trim()) { setError(copy.companyRequired); return; }
     if (isCn) {
       if (!/^1\d{10}$/.test(normalizePhone(phone))) { setError(copy.phoneInvalid); return; }
-    } else if (!isInternationalPhone(phone)) {
+    } else if (phone && !isInternationalPhone(phone)) {
       setError(copy.phoneInvalid); return;
     }
     if (!isCn && (!email || !isEmailAddress(email))) { setError(copy.emailInvalid); return; }
@@ -344,7 +348,7 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
 
             {/* 手机号 */}
             <div>
-              <label className="block text-sm font-medium mb-1">{copy.phoneNumber}</label>
+              <label className="block text-sm font-medium mb-1">{isCn ? copy.phoneNumber : copy.phoneNumberOptional}</label>
               <input
                 type="tel" value={phone} onChange={(e) => setPhone(e.target.value)}
                 placeholder={copy.phonePlaceholder} maxLength={24}
@@ -508,10 +512,13 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
             )}
 
             <div>
-              <label className="block text-sm font-medium mb-1">{copy.phoneNumberLabel}</label>
+              <label className="block text-sm font-medium mb-1">{isCn ? copy.phoneNumberLabel : copy.emailAddressLabel}</label>
               <input
-                type="tel" value={phone} onChange={(e) => setPhone(e.target.value)}
-                placeholder={copy.registeredPhonePlaceholder} maxLength={24}
+                type={isCn ? 'tel' : 'email'}
+                value={isCn ? phone : email}
+                onChange={(e) => (isCn ? setPhone(e.target.value) : setEmail(e.target.value))}
+                placeholder={isCn ? copy.registeredPhonePlaceholder : copy.registeredEmailPlaceholder}
+                maxLength={isCn ? 24 : 254}
                 className="w-full px-3 py-2 border border-[var(--color-input-border)] rounded-xl bg-[var(--color-input-bg)] text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
               />
             </div>
@@ -540,10 +547,12 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
 
             <button
               onClick={async () => {
-                if (forgotStep === 'phone') {
-                  if (!phone) { setError(copy.phoneRequired); return; }
+                const resetTarget = isCn ? phone : email;
+                if (forgotStep === 'target') {
+                  if (!resetTarget) { setError(isCn ? copy.phoneRequired : copy.emailRequired); return; }
+                  if (!isCn && !isEmailAddress(resetTarget)) { setError(copy.emailInvalid); return; }
                   try {
-                    await sendResetCode(phone);
+                    await sendResetCode(isCn ? { phone } : { email });
                     setForgotStep('code-sent');
                     setError('');
                   } catch (e) {
@@ -554,9 +563,9 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, onOpenLegal }) {
                   if (!code) { setError(copy.codeRequired); return; }
                   setSubmitting(true);
                   try {
-                    await resetPassword({ phone, code, newPassword: password });
+                    await resetPassword({ ...(isCn ? { phone } : { email }), code, newPassword: password });
                     toastSuccess(copy.resetSuccess);
-                    setForgotStep('phone');
+                    setForgotStep('target');
                     setStep('login');
                     setError('');
                   } catch (e) {

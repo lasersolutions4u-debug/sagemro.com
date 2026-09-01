@@ -8,7 +8,8 @@ import { getDirectAccessNoindexToolRoutes, getPublicSeoRoute, getPublicSeoRoutes
 import { getServicePages } from '../src/data/servicePages.js';
 import { getTechnicalAuthor } from '../src/data/technicalAuthors.js';
 import { getTechnicalReviewPolicy } from '../src/data/technicalReviewPolicy.js';
-import { welcomePageCopy } from '../src/data/welcomePageCopy.js';
+import { getBrandServicePages } from '../src/data/brandServicePages.js';
+import { getPublicHomeContent } from '../src/data/publicHomeContent.js';
 import {
   escapeHtml,
   renderNotFoundDocument,
@@ -29,6 +30,17 @@ const TEMPLATE = `<!doctype html>
     <div id="root"></div>
   </body>
 </html>`;
+
+test('international homepage exposes the prepared store while CN publishes no placeholder URL', () => {
+  const internationalLinks = getPublicSeoRoute('/', 'en').body.links;
+  const cnLinks = getPublicSeoRoute('/', 'zh-CN').body.links;
+
+  assert.deepEqual(
+    internationalLinks.find((link) => link.label === 'Store'),
+    { href: 'https://www.dhgate.com/store/sagemro', label: 'Store' },
+  );
+  assert.equal(cnLinks.some((link) => /dhgate\.com|商城/.test(`${link.href} ${link.label}`)), false);
+});
 
 test('manifest lists only indexable customer routes in both locales', () => {
   const publicSlugs = [
@@ -119,20 +131,41 @@ test('all public tools include calculator-derived evidence in both static locale
 test('manifest body mirrors visible homepage and tool headings', () => {
   const home = getPublicSeoRoute('/', 'en');
   const homeCn = getPublicSeoRoute('/', 'zh-CN');
+  const visibleHome = getPublicHomeContent(false);
+  const visibleHomeCn = getPublicHomeContent(true);
 
-  assert.equal(home.body.h1, welcomePageCopy.en.headline);
-  assert.deepEqual(home.body.paragraphs, [welcomePageCopy.en.intro]);
-  assert.deepEqual(home.body.resources, welcomePageCopy.en.resources);
-  assert.equal(homeCn.body.h1, welcomePageCopy.zh.headline);
-  assert.deepEqual(homeCn.body.paragraphs, [welcomePageCopy.zh.intro]);
-  assert.deepEqual(homeCn.body.resources, welcomePageCopy.zh.resources);
-  assert.ok([...home.body.resources, ...homeCn.body.resources].every((resource) => resource.href.endsWith('/')));
+  assert.equal(home.body.h1, visibleHome.hero.title);
+  assert.deepEqual(home.body.paragraphs, [visibleHome.hero.description]);
+  assert.equal(homeCn.body.h1, visibleHomeCn.hero.title);
+  assert.deepEqual(homeCn.body.paragraphs, [visibleHomeCn.hero.description]);
+  assert.equal(home.body.sections.length, 4);
+  assert.equal(homeCn.body.sections.length, 4);
+  assert.deepEqual(home.body.faqs, visibleHome.faqs.items);
+  assert.deepEqual(homeCn.body.faqs, visibleHomeCn.faqs.items);
+  for (const href of ['/services/', '/brands/', '/tools/', '/insights/']) {
+    assert.ok(home.body.links.some((link) => link.href === href));
+    assert.ok(homeCn.body.links.some((link) => link.href === href));
+  }
 
   for (const locale of ['en', 'zh-CN']) {
     for (const tool of publicIndustryTools) {
       const route = getPublicSeoRoute(`/tools/${tool.slug}`, locale);
       assert.equal(route.body.h1, getLocalizedTool(tool, locale).seoTitle);
     }
+  }
+});
+
+test('manifest publishes the brand hub and all brand service pages on public hosts only', () => {
+  for (const locale of ['en', 'zh-CN']) {
+    const routes = getPublicSeoRoutes(locale);
+    assert.ok(routes.some((route) => route.path === '/brands' && route.type === 'brands-hub'));
+    for (const brand of getBrandServicePages(locale)) {
+      const route = routes.find((candidate) => candidate.path === `/brands/${brand.slug}`);
+      assert.equal(route?.type, 'brand');
+      assert.match(JSON.stringify(route.structuredData), /"Service"/);
+    }
+    assert.equal(routes.some((route) => route.path.startsWith('/service-request')), false);
+    assert.equal(routes.some((route) => /ai\.sagemro\./.test(route.canonical)), false);
   }
 });
 
@@ -160,12 +193,23 @@ test('prerendered public content has a visible branded first-paint contract', ()
     assert.match(html, /class="seo-static-shell__brand"/);
     assert.match(html, /class="seo-static-shell__content"/);
     assert.match(html, /class="seo-static-shell__details"/);
+    assert.match(html, /<h2>Service process<\/h2>|<h2>\u670d\u52a1\u6d41\u7a0b<\/h2>/);
+    assert.match(html, /How are inspection and service charges determined\?|\u4e0a\u95e8\u68c0\u6d4b\u548c\u670d\u52a1\u600e\u4e48\u6536\u8d39\uff1f/);
     assert.match(html, /<img src="\/sagemro-logo\.png" alt=""/);
     assert.doesNotMatch(html, /seo-static-shell__eyebrow/);
     assert.match(html, /min-height:\s*100vh/);
     assert.match(html, /@media \(max-width:\s*720px\)/);
     assert.doesNotMatch(html, /\.seo-static-shell[^{}]*\{[^}]*(?:display:\s*none|visibility:\s*hidden|opacity:\s*0)/s);
   }
+});
+
+test('international brand structured data does not overpromise worldwide field coverage', () => {
+  const internationalBrand = getPublicSeoRoute('/brands/trumpf', 'en');
+  const cnBrand = getPublicSeoRoute('/brands/trumpf', 'zh-CN');
+  const internationalService = internationalBrand.structuredData['@graph'].find((item) => item['@type'] === 'Service');
+  const cnService = cnBrand.structuredData['@graph'].find((item) => item['@type'] === 'Service');
+  assert.equal(Object.hasOwn(internationalService, 'areaServed'), false);
+  assert.equal(cnService.areaServed, 'CN');
 });
 
 test('localized 404 documents reuse the visible branded shell without adding page copy', () => {
@@ -290,6 +334,10 @@ test('manifest internal links never expose draft or irrelevant diagnostic guides
     'press-brake-repair': [],
     'remote-diagnostics': [],
     'preventive-maintenance': ['laser-protective-lens-burning', 'laser-cutting-machine-maintenance-checklist'],
+    'equipment-system-retrofit': [],
+    'machine-relocation-installation': [],
+    'used-equipment-evaluation': [],
+    'spare-parts-consumables': [],
   };
 
   for (const locale of ['en', 'zh-CN']) {

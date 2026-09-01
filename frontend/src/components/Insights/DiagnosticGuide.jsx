@@ -28,7 +28,7 @@ export function DiagnosticGuide({ guide, locale = 'en', acquisitionContext, onSt
   const relatedTool = rawTool ? getLocalizedTool(rawTool, locale) : null;
 
   return (
-    <main className="mx-auto max-w-4xl px-4 py-7 sm:px-6 lg:py-10">
+    <div className="mx-auto max-w-4xl px-4 py-7 sm:px-6 lg:py-10">
       <nav aria-label="breadcrumb" className="text-sm text-[var(--color-text-secondary)]"><a href="/insights/" className="hover:text-[var(--color-primary)]">{text.breadcrumb}</a><span className="px-2">/</span><span>{guide.category}</span></nav>
       <article className="mt-6">
         <header>
@@ -51,7 +51,7 @@ export function DiagnosticGuide({ guide, locale = 'en', acquisitionContext, onSt
         <section className="mt-8" aria-labelledby="sources"><h2 id="sources" className="text-xl font-semibold">{text.sources}</h2><ul className="mt-3 space-y-3">{guide.references.map((source) => <li key={source.url} className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-3 text-sm"><a href={source.url} className="font-medium text-[var(--color-primary)] hover:underline">{source.title} <ExternalLink size={14} className="inline" /></a><div className="mt-1 text-[var(--color-text-secondary)]">{source.publisher} · {text.accessed}: {source.accessedAt}</div></li>)}</ul><p className="mt-4 text-sm"><a href={reviewer?.url} className="text-[var(--color-primary)] hover:underline">{text.corrections}</a></p></section>
         <div className="mt-8"><PublicConversionPanel context={guide.title} acquisitionContext={acquisitionContext} primaryLabel={text.start} secondaryLabel={text.request} onStartDiagnosis={onStartDiagnosis} onOpenServiceRequest={onOpenServiceRequest} /></div>
       </article>
-    </main>
+    </div>
   );
 }
 

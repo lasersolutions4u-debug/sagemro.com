@@ -11,26 +11,29 @@ function read(relativePath) {
 
 test('customer service requests capture the site address and browser coordinates', () => {
   const modal = read('frontend/src/components/Sidebar/WorkOrderModal.jsx');
+  const flow = read('frontend/src/components/ServiceRequest/ServiceRequestFlow.jsx');
+  const draft = read('frontend/src/components/ServiceRequest/serviceRequestDraft.js');
   const detail = read('frontend/src/components/WorkOrder/WorkOrderDetailModal.jsx');
   const geolocation = read('frontend/src/utils/browserGeolocation.js');
   const admin = read('admin/src/pages/WorkOrdersPage.jsx');
-  const app = read('frontend/src/App.jsx');
   const api = read('frontend/src/services/api.js');
 
-  assert.match(modal, /service_address/);
+  assert.match(flow, /service_location\.address/);
   assert.match(geolocation, /geolocation\.getCurrentPosition/);
-  assert.match(modal, /getBrowserLocation/);
+  assert.match(flow, /getBrowserLocation\(\)/);
   assert.match(detail, /getBrowserLocation/);
   assert.match(detail, /formatGeolocationError/);
   assert.match(detail, /isBrowserGeolocationError/);
   assert.ok((detail.match(/getBrowserLocation\(\)/g) || []).length >= 1);
   assert.doesNotMatch(detail, /error\?\.code \? formatGeolocationError/);
-  assert.match(modal, /service_mode/);
-  assert.match(modal, /serviceModeOptions/);
-  assert.match(app, /service_latitude: data\.service_latitude/);
-  assert.match(app, /service_location_source: data\.service_location_source/);
-  assert.match(modal, /const allowAddressSearch = !isCn/);
-  assert.match(modal, /\{allowAddressSearch && \(/);
+  assert.match(flow, /service_mode/);
+  assert.match(flow, /serviceModeOptions/);
+  assert.match(draft, /service_latitude: normalized\.service_location\.latitude/);
+  assert.match(draft, /service_location_source: normalized\.service_location\.source/);
+  assert.match(flow, /searchServiceLocations\(query\)/);
+  assert.match(modal, /<ServiceRequestFlow/);
+  assert.doesNotMatch(modal, /getBrowserLocation|searchServiceLocations/);
+  assert.doesNotMatch(modal, /useState\(|setLocating|setLocationResults/);
   assert.match(detail, /const allowAddressSearch = !isCn/);
   assert.match(detail, /\{allowAddressSearch && \(/);
   assert.match(admin, /const isCn = runtimeConfig\.locale === 'zh-CN'/);

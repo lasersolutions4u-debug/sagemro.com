@@ -12,17 +12,19 @@ import { useConversations } from './hooks/useConversations';
 import { usePushNotification } from './hooks/usePushNotification';
 import { generateId } from './utils/helpers';
 import { isCnLocale } from './utils/locale';
-import { buildWorkOrderDescription } from './utils/workOrderDisplay';
 import { setSeoMetadata } from './utils/seo';
 import { getServicePageRoute } from './utils/servicePageRoute';
 import { getPublicAcquisitionContext, useAcquisitionTracking } from './hooks/useAcquisitionTracking';
-import { submitWorkOrder as submitWorkOrderApi, getConversation as getConversationApi, getUnreadNotificationCount, trackFunnelEvent, restoreSession, logout as logoutSession } from './services/api';
+import { parseServiceRequestEntry, resolvePortalTarget } from './utils/portalTarget';
+import { submitWorkOrder as submitWorkOrderApi, uploadWorkOrderAttachment, getConversation as getConversationApi, getUnreadNotificationCount, trackFunnelEvent, restoreSession, logout as logoutSession } from './services/api';
 import { createAnalyticsRequestId } from './services/funnelAnalytics';
+import { PublicHomePage } from './components/Public/PublicHomePage';
+import { getBrandServicePage } from './data/brandServicePages';
 
 // 重型 Modal 懒加载，减少首屏 bundle 体积
 // LoginModal 直接导入 — 关键的登录/注册入口，懒加载会导致 React #306（重复 React 实例）
 import { LoginModal } from './components/Auth/LoginModal';
-const WorkOrderModal = lazy(() => import('./components/Sidebar/WorkOrderModal').then(m => ({ default: m.WorkOrderModal })));
+const BUILD_TARGET = typeof __SAGEMRO_BUILD_TARGET__ === 'string' ? __SAGEMRO_BUILD_TARGET__ : 'public';
 const MyWorkOrdersModal = lazy(() => import('./components/Sidebar/MyWorkOrdersModal').then(m => ({ default: m.MyWorkOrdersModal })));
 const EngineerDashboard = lazy(() => import('./components/Engineer/EngineerDashboard').then(m => ({ default: m.EngineerDashboard })));
 const EngineerWorkspace = lazy(() => import('./components/Engineer/EngineerWorkspace').then(m => ({ default: m.EngineerWorkspace })));
@@ -30,7 +32,6 @@ const EngineerRecruitingPage = lazy(() => import('./components/Engineer/Engineer
 const EngineerActivationPage = lazy(() => import('./components/Engineer/EngineerActivationPage').then(m => ({ default: m.EngineerActivationPage })));
 const EngineerProfileModal = lazy(() => import('./components/Engineer/EngineerProfileModal').then(m => ({ default: m.EngineerProfileModal })));
 const CustomerHomeModal = lazy(() => import('./components/Settings/CustomerHomeModal').then(m => ({ default: m.CustomerHomeModal })));
-const AboutModal = lazy(() => import('./components/common/AboutModal').then(m => ({ default: m.AboutModal })));
 const LegalModal = lazy(() => import('./components/common/LegalModal').then(m => ({ default: m.LegalModal })));
 const MyDevicesModal = lazy(() => import('./components/Device/MyDevicesModal').then(m => ({ default: m.MyDevicesModal })));
 const NotificationModal = lazy(() => import('./components/Notification/NotificationModal').then(m => ({ default: m.NotificationModal })));
@@ -38,12 +39,15 @@ const IndustryToolsModal = lazy(() => import('./components/Tools/IndustryToolsMo
 const IndustryToolsPage = lazy(() => import('./components/Tools/IndustryToolsPage').then(m => ({ default: m.IndustryToolsPage })));
 const InsightsPage = lazy(() => import('./components/Insights/InsightsPage').then(m => ({ default: m.InsightsPage })));
 const ServicePages = lazy(() => import('./components/Services/ServicePages').then(m => ({ default: m.ServicePages })));
+const BrandServicePages = lazy(() => import('./components/Brands/BrandServicePages').then(m => ({ default: m.BrandServicePages })));
 const TechnicalReviewPage = lazy(() => import('./components/About/TechnicalReviewPage').then(m => ({ default: m.TechnicalReviewPage })));
+const ServiceRequestPage = lazy(() => import('./components/ServiceRequest/ServiceRequestPage').then(m => ({ default: m.ServiceRequestPage })));
 const ChatArea = lazy(() => import('./components/Chat/ChatArea').then(m => ({ default: m.ChatArea })));
 
 function App() {
-  const isEngineerHost = typeof window !== 'undefined'
-    && window.location.hostname.startsWith('engineer.');
+  const hostname = typeof window !== 'undefined' ? window.location.hostname : '';
+  const portalTarget = resolvePortalTarget({ buildTarget: BUILD_TARGET, hostname });
+  const isEngineerHost = portalTarget === 'engineer';
   const isCn = isCnLocale();
   const engineerPortalUrl = isCn ? 'https://engineer.sagemro.cn' : 'https://engineer.sagemro.com';
 
@@ -59,12 +63,10 @@ function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   // Modal 状态
-  const [workOrderModalOpen, setWorkOrderModalOpen] = useState(false);
   const [historyModalOpen, setHistoryModalOpen] = useState(false);
   const [industryToolsOpen, setIndustryToolsOpen] = useState(false);
   const [myWorkOrdersModalOpen, setMyWorkOrdersModalOpen] = useState(false);
   const [customerHomeModalOpen, setCustomerHomeModalOpen] = useState(false);
-  const [aboutModalOpen, setAboutModalOpen] = useState(false);
   const [loginModalOpen, setLoginModalOpen] = useState(false);
   const [engineerDashboardOpen, setEngineerDashboardOpen] = useState(false);
   const [engineerProfileOpen, setEngineerProfileOpen] = useState(false);
@@ -79,7 +81,13 @@ function App() {
   const [currentPath, setCurrentPath] = useState(() => window.location.pathname);
   const isTechnicalReviewPath = currentPath === '/about/technical-review'
     || currentPath === '/about/technical-review/';
+  const isServiceRequestPath = portalTarget === 'customer'
+    && (currentPath === '/service-request' || currentPath === '/service-request/');
+  const serviceRequestEntry = parseServiceRequestEntry(window.location.search, {
+    resolveBrand: (slug) => getBrandServicePage(slug, isCn ? 'zh-CN' : 'en')?.brandName || '',
+  });
   const authVersionRef = useRef(0);
+  const serviceRequestSubmissionRef = useRef(null);
   const engineerWorkOrderMatch = currentPath.match(/^\/work-orders\/([^/]+)$/);
   const engineerWorkOrderId = engineerWorkOrderMatch ? decodeURIComponent(engineerWorkOrderMatch[1]) : '';
   const publicRoutePath = currentPath === '/' ? '/' : currentPath.replace(/\/$/, '');
@@ -93,31 +101,34 @@ function App() {
   useAcquisitionTracking(acquisitionContext);
 
   useEffect(() => {
-    const isToolsOrInsights = currentPath === '/tools'
+    const isToolsOrInsights = portalTarget === 'public' && (currentPath === '/tools'
       || currentPath.startsWith('/tools/')
       || currentPath === '/insights'
       || currentPath.startsWith('/insights/')
       || currentPath === '/services'
       || currentPath.startsWith('/services/')
-      || isTechnicalReviewPath;
+      || currentPath === '/brands'
+      || currentPath.startsWith('/brands/')
+      || isTechnicalReviewPath);
     if (isToolsOrInsights || (isEngineerHost && currentPath === '/' && !userType)) return;
 
-    const isPublicPath = currentPath === '/'
+    const isPublicPath = portalTarget === 'public' && ((currentPath === '/')
       || currentPath === '/services'
       || currentPath.startsWith('/services/')
-      || isTechnicalReviewPath
-      || (isEngineerHost && currentPath === '/');
-    const isPrivateApp = Boolean(userType) || !isPublicPath;
+      || currentPath === '/brands'
+      || currentPath.startsWith('/brands/')
+      || isTechnicalReviewPath);
+    const isPrivateApp = !isPublicPath;
+    const title = isCn ? 'SAGEMRO 智能服务系统' : 'SAGEMRO Service OS';
+    const description = isCn
+      ? 'SAGEMRO 面向激光切割与金属成型设备，帮助客户整理问题、连接合格工程师并沉淀服务记录。'
+      : 'SAGEMRO helps industrial equipment users organize service needs, connect with qualified field engineers, and keep service records clear.';
     const canonicalHost = isCn ? 'https://sagemro.cn' : 'https://sagemro.com';
     const publicHost = isEngineerHost ? canonicalHost.replace('://', '://engineer.') : canonicalHost;
     setSeoMetadata({
-      title: isPrivateApp ? 'SAGEMRO Service Workspace' : isCn ? 'SAGEMRO 智能服务系统' : 'SAGEMRO Service OS',
-      description: isPrivateApp
-        ? 'Private SAGEMRO service workspace.'
-        : isCn
-          ? 'SAGEMRO 面向激光切割与金属成型设备，帮助客户整理问题、连接合格工程师并沉淀服务记录。'
-          : 'SAGEMRO helps industrial equipment users organize service needs, connect with qualified field engineers, and keep service records clear.',
-      canonical: `${publicHost}/`,
+      title: isPrivateApp ? 'SAGEMRO Service Workspace' : title,
+      description: isPrivateApp ? 'Private SAGEMRO service workspace.' : description,
+      canonical: isPrivateApp ? null : `${publicHost}/`,
       lang: isCn ? 'zh-CN' : 'en',
       robots: isPrivateApp ? 'noindex,nofollow,noarchive' : 'index,follow',
       structuredData: isPrivateApp ? null : {
@@ -128,7 +139,7 @@ function App() {
         email: 'support@sagemro.com',
       },
     });
-  }, [currentPath, isCn, isEngineerHost, isTechnicalReviewPath, userType]);
+  }, [currentPath, isCn, isEngineerHost, isTechnicalReviewPath, portalTarget, userType]);
 
   // 通知未读数
   const [unreadCount, setUnreadCount] = useState(0);
@@ -333,42 +344,41 @@ function App() {
   }, [conversationId, createConversation, currentUser, refreshConversations, sendMessage, updateConversation]);
 
   // 提交工单
-  const handleSubmitWorkOrder = useCallback(async (data) => {
-    const customer_id = localStorage.getItem('sagemro_customer_id');
-
-    // 检查是否登录
-    if (!customer_id) {
-      throw new Error(isCn ? '请先登录后再提交工单' : 'Please sign in before submitting a service request');
+  const handleServiceRequestSubmit = useCallback(async (payload, files = []) => {
+    const customer_id = currentUser?.id || localStorage.getItem('sagemro_customer_id');
+    if (!customer_id || userType !== 'customer') {
+      throw new Error(isCn ? '请先使用客户账号登录后再提交服务请求' : 'Sign in with a customer account before submitting');
     }
 
-    const fullDescription = buildWorkOrderDescription(data, isCn ? 'zh-CN' : 'en');
+    const fingerprint = JSON.stringify(payload);
+    let submission = serviceRequestSubmissionRef.current;
+    if (!submission || submission.fingerprint !== fingerprint) {
+      const requestPayload = { ...payload, customer_id };
+      const result = await submitWorkOrderApi(requestPayload);
+      submission = {
+        fingerprint,
+        workOrder: result.work_order,
+        uploadedFiles: new Set(),
+      };
+      serviceRequestSubmissionRef.current = submission;
+    }
 
-    const result = await submitWorkOrderApi({
-      customer_id,
-      type: data.type,
-      description: fullDescription,
-      urgency: data.urgency,
-      device_id: data.device_id,
-      category_l1: data.category_l1 || 'other',
-      category_l2: data.category_l2 || 'other',
-      conversation_id: conversationId || undefined,
-      service_mode: data.service_mode,
-      service_address: data.service_address,
-      service_latitude: data.service_latitude,
-      service_longitude: data.service_longitude,
-      service_accuracy_m: data.service_accuracy_m,
-      service_coordinate_system: data.service_coordinate_system,
-      service_location_source: data.service_location_source,
-    });
+    const { workOrder } = submission;
+    for (const file of files) {
+      const fileKey = `${file.name}:${file.size}:${file.lastModified}`;
+      if (submission.uploadedFiles.has(fileKey)) continue;
+      await uploadWorkOrderAttachment(workOrder.id, file);
+      submission.uploadedFiles.add(fileKey);
+    }
 
+    serviceRequestSubmissionRef.current = null;
     trackFunnelEvent('service_request_created', {
-      service_type: data.type,
-      urgency: data.urgency,
+      service_type: payload.intake?.service_request_kind || payload.type,
+      urgency: payload.urgency,
       authenticated: true,
     });
-
-    return result.work_order;
-  }, [conversationId, isCn]);
+    return workOrder;
+  }, [currentUser, isCn, userType]);
 
   // 删除对话
   const handleDeleteConversation = useCallback(async (id) => {
@@ -467,8 +477,13 @@ function App() {
   }, [setCurrentPath]);
 
   const handleServiceRequest = useCallback(() => {
-    setWorkOrderModalOpen(true);
-  }, [setWorkOrderModalOpen]);
+    window.history.pushState({}, '', '/service-request');
+    setCurrentPath('/service-request');
+  }, [setCurrentPath]);
+
+  const handleRequireServiceRequestAuth = useCallback(() => {
+    setLoginModalOpen(true);
+  }, [setLoginModalOpen]);
 
   const showEngineerWorkspace = (isEngineerHost || currentPath === '/engineer') && userType === 'engineer';
 
@@ -548,11 +563,15 @@ function App() {
     );
   }
 
-  const isToolsPath = currentPath === '/tools' || currentPath.startsWith('/tools/');
-  const isInsightsPath = currentPath === '/insights' || currentPath.startsWith('/insights/');
-  const serviceRoute = getServicePageRoute(currentPath);
+  const isToolsPath = portalTarget === 'public' && (currentPath === '/tools' || currentPath.startsWith('/tools/'));
+  const isInsightsPath = portalTarget === 'public' && (currentPath === '/insights' || currentPath.startsWith('/insights/'));
+  const isBrandsPath = portalTarget === 'public' && (currentPath === '/brands' || currentPath.startsWith('/brands/'));
+  const serviceRoute = portalTarget === 'public' ? getServicePageRoute(currentPath) : null;
   const isServicesPath = serviceRoute !== null;
-  if (currentPath !== '/' && !isToolsPath && !isInsightsPath && !isServicesPath && !isTechnicalReviewPath) {
+  if (portalTarget === 'blocked') {
+    return <NotFoundPage isCn={isCn} />;
+  }
+  if (currentPath !== '/' && !isToolsPath && !isInsightsPath && !isBrandsPath && !isServicesPath && !isTechnicalReviewPath && !isServiceRequestPath) {
     return <NotFoundPage isCn={isCn} />;
   }
 
@@ -589,9 +608,6 @@ function App() {
             onStartDiagnosis={handleServiceDiagnosis}
             onOpenServiceRequest={handleServiceRequest}
           />
-          {workOrderModalOpen && (
-            <WorkOrderModal isOpen={workOrderModalOpen} onClose={() => setWorkOrderModalOpen(false)} onSubmit={handleSubmitWorkOrder} />
-          )}
           <LegalModal
             isOpen={legalModalOpen}
             onClose={() => setLegalModalOpen(false)}
@@ -615,9 +631,6 @@ function App() {
             onOpenServiceRequest={handleServiceRequest}
             onOpenLegal={openLegal}
           />
-          {workOrderModalOpen && (
-            <WorkOrderModal isOpen={workOrderModalOpen} onClose={() => setWorkOrderModalOpen(false)} onSubmit={handleSubmitWorkOrder} />
-          )}
           <LegalModal isOpen={legalModalOpen} onClose={() => setLegalModalOpen(false)} initialTab={legalInitialTab} />
         </Suspense>
         <FeedbackHost />
@@ -630,6 +643,34 @@ function App() {
       <ErrorBoundary>
         <Suspense fallback={null}>
           <TechnicalReviewPage locale={isCn ? 'zh-CN' : 'en'} onOpenLegal={openLegal} />
+          <LegalModal isOpen={legalModalOpen} onClose={() => setLegalModalOpen(false)} initialTab={legalInitialTab} />
+        </Suspense>
+        <FeedbackHost />
+      </ErrorBoundary>
+    );
+  }
+
+  if (isBrandsPath) {
+    return (
+      <ErrorBoundary>
+        <Suspense fallback={null}>
+          <BrandServicePages
+            pathname={currentPath}
+            locale={isCn ? 'zh-CN' : 'en'}
+            onOpenLegal={openLegal}
+          />
+          <LegalModal isOpen={legalModalOpen} onClose={() => setLegalModalOpen(false)} initialTab={legalInitialTab} />
+        </Suspense>
+        <FeedbackHost />
+      </ErrorBoundary>
+    );
+  }
+
+  if (currentPath === '/' && portalTarget === 'public') {
+    return (
+      <ErrorBoundary>
+        <PublicHomePage isCn={isCn} onOpenLegal={openLegal} />
+        <Suspense fallback={null}>
           <LegalModal isOpen={legalModalOpen} onClose={() => setLegalModalOpen(false)} initialTab={legalInitialTab} />
         </Suspense>
         <FeedbackHost />
@@ -679,6 +720,39 @@ function App() {
     );
   }
 
+  if (isServiceRequestPath) {
+    return (
+      <ErrorBoundary>
+        <Suspense fallback={null}>
+          <ServiceRequestPage
+            onSubmit={handleServiceRequestSubmit}
+            initialDraft={serviceRequestEntry.presets}
+            mode={serviceRequestEntry.mode}
+            isAuthenticated={Boolean(currentUser) && userType === 'customer'}
+            onRequireAuth={handleRequireServiceRequestAuth}
+            market={isCn ? 'cn' : 'com'}
+            conversationId={conversationId}
+            onBack={navigateHome}
+          />
+          {loginModalOpen && (
+            <LoginModal
+              isOpen={loginModalOpen}
+              onClose={() => setLoginModalOpen(false)}
+              onLoginSuccess={handleLoginSuccess}
+              onOpenLegal={openLegal}
+            />
+          )}
+          <LegalModal
+            isOpen={legalModalOpen}
+            onClose={() => setLegalModalOpen(false)}
+            initialTab={legalInitialTab}
+          />
+        </Suspense>
+        <FeedbackHost />
+      </ErrorBoundary>
+    );
+  }
+
   return (
     <div className="flex h-[100dvh] overflow-hidden">
       {/* 侧边栏 */}
@@ -691,7 +765,7 @@ function App() {
         onRenameConversation={handleRenameConversation}
         onOpenHistory={() => setHistoryModalOpen(true)}
         onOpenIndustryTools={() => setIndustryToolsOpen(true)}
-        onOpenWorkOrder={() => setWorkOrderModalOpen(true)}
+        onOpenWorkOrder={handleServiceRequest}
         onOpenMyWorkOrders={() => setMyWorkOrdersModalOpen(true)}
         onOpenSettings={() => {
           if (userType === 'engineer') {
@@ -725,7 +799,6 @@ function App() {
             currentTitle={currentTitle}
             onToggleSidebar={() => setSidebarOpen(true)}
             onOpenLegal={openLegal}
-            onOpenAbout={() => setAboutModalOpen(true)}
           />
         </Suspense>
       </div>
@@ -754,13 +827,6 @@ function App() {
               onSendMessage={handleSendMessage}
             />
           )}
-          {workOrderModalOpen && (
-            <WorkOrderModal
-              isOpen={workOrderModalOpen}
-              onClose={() => setWorkOrderModalOpen(false)}
-              onSubmit={handleSubmitWorkOrder}
-            />
-          )}
         </Suspense>
       </ErrorBoundary>
       <ErrorBoundary>
@@ -781,12 +847,6 @@ function App() {
               onClose={() => setCustomerHomeModalOpen(false)}
               currentUser={currentUser}
               userType={userType}
-            />
-          )}
-          {aboutModalOpen && (
-            <AboutModal
-              isOpen={aboutModalOpen}
-              onClose={() => setAboutModalOpen(false)}
             />
           )}
           {myDevicesOpen && (

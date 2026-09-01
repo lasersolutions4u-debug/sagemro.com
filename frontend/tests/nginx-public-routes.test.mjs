@@ -486,7 +486,7 @@ test('refuses route directives that would conflict with generated public routing
   }
 });
 
-test('resolves configs and refuses duplicate input inodes without replacing symlinks', { skip: !python }, () => {
+test('resolves configs and refuses duplicate input inodes without replacing symlinks', { skip: !python || process.platform === 'win32' }, () => {
   const directory = mkdtempSync(path.join(tmpdir(), 'sagemro-public-routes-'));
   const config = path.join(directory, 'customer.conf');
   const symlink = path.join(directory, 'active-customer.conf');
