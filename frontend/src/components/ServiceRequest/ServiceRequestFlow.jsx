@@ -11,7 +11,7 @@ import {
   clearServiceRequestDraft,
   createEmptyServiceRequestDraft,
   loadServiceRequestDraft,
-  mergeServiceRequestEntryPresets,
+  getServiceRequestDraftChoices,
   normalizeServiceRequestDraft,
   saveServiceRequestDraft,
   toWorkOrderPayload,
@@ -49,7 +49,7 @@ const COPY = {
     stepNames: ['服务类型', '设备与问题', '服务安排', '联系与确认'],
     required: '必填', optional: '选填', next: '下一步', back: '上一步', cancel: '返回工作台',
     submit: '提交服务请求', submitting: '正在提交…',
-    manualMode: '手动填写', aiMode: 'AI 协助填写',
+    manualMode: '手动填写', aiMode: 'AI 整理补充说明',
     aiDisclosure: 'AI 只帮整理信息，不替代工程师诊断或报价。所有内容仍由您核对、修改并确认提交。',
     aiPlaceholder: '用一句话描述设备、品牌型号、报警、故障现象和生产影响…',
     aiOrganize: '整理到表单', aiOrganizing: '正在整理…',
@@ -115,7 +115,7 @@ const COPY = {
     stepNames: ['Service', 'Equipment & issue', 'Service setup', 'Contact & review'],
     required: 'Required', optional: 'Optional', next: 'Continue', back: 'Back', cancel: 'Back to workspace',
     submit: 'Send service request', submitting: 'Sending…',
-    manualMode: 'Fill manually', aiMode: 'AI-assisted',
+    manualMode: 'Fill manually', aiMode: 'Organize additional notes',
     aiDisclosure: "AI organizes your information only; it does not replace an engineer's diagnosis or quotation. You still review, edit and confirm everything before submission.",
     aiPlaceholder: 'Describe the equipment, brand/model, alarm, symptoms and production impact…',
     aiOrganize: 'Organize into form', aiOrganizing: 'Organizing…',
@@ -201,10 +201,13 @@ export function ServiceRequestFlow({
   const copy = isCn ? COPY.cn : COPY.en;
   const resolvedMarket = market || (isCn ? 'cn' : 'com');
   const storage = typeof window === 'undefined' ? null : window.localStorage;
-  const [draft, setDraft] = useState(() => mergeServiceRequestEntryPresets(
+  const [entryChoices] = useState(() => getServiceRequestDraftChoices(
     storage ? loadServiceRequestDraft(storage, resolvedMarket) : createEmptyServiceRequestDraft({ mode }),
     { mode, presets: initialDraft },
   ));
+  const [choosingDraft, setChoosingDraft] = useState(entryChoices.needsChoice);
+  const [draft, setDraft] = useState(entryChoices.fresh);
+  const [useEntryConversation, setUseEntryConversation] = useState(true);
   const [files, setFiles] = useState([]);
   const [errors, setErrors] = useState({});
   const [fileError, setFileError] = useState('');
@@ -228,8 +231,8 @@ export function ServiceRequestFlow({
   const currentStep = draft.step;
 
   useEffect(() => {
-    if (storage && !submitted) saveServiceRequestDraft(storage, resolvedMarket, draft);
-  }, [draft, resolvedMarket, storage, submitted]);
+    if (storage && !submitted && !choosingDraft) saveServiceRequestDraft(storage, resolvedMarket, draft);
+  }, [draft, resolvedMarket, storage, submitted, choosingDraft]);
 
   useEffect(() => {
     draftRevisionRef.current += 1;
@@ -428,7 +431,7 @@ export function ServiceRequestFlow({
       if (authConfirmationRequired) setAuthConfirmationRequired(false);
       setSubmitting(true);
       setErrors({});
-      const payload = toWorkOrderPayload(draft, conversationId);
+      const payload = toWorkOrderPayload(draft, useEntryConversation ? conversationId : undefined);
       const result = await onSubmit(payload, files);
       if (storage) clearServiceRequestDraft(storage, resolvedMarket);
       setFiles([]);
@@ -442,6 +445,18 @@ export function ServiceRequestFlow({
       setSubmitting(false);
     }
   };
+
+  if (choosingDraft) {
+    return <section className="space-y-4" aria-label={isCn ? '选择服务请求草稿' : 'Choose a service request draft'}>
+      <h1 className="text-xl font-semibold">{isCn ? '您有一份未完成的服务请求' : 'You have an unfinished service request'}</h1>
+      <p className="text-sm text-[var(--color-text-secondary)]">{isCn ? '继续原请求不会合入本次聊天或入口信息。新建请求将替换本机保存的旧草稿，请先确认旧内容不再需要。' : 'Continuing keeps the previous request without merging this chat or entry. Starting a new request replaces the saved draft on this device; make sure you no longer need the old draft.'}</p>
+      <div className="flex flex-wrap gap-3">
+        <button type="button" className="min-h-11 rounded-lg border border-[var(--color-border)] px-4" onClick={() => { setDraft(entryChoices.saved); setUseEntryConversation(false); setChoosingDraft(false); }}>{isCn ? '继续原请求' : 'Continue saved request'}</button>
+        <button type="button" className="min-h-11 rounded-lg bg-[var(--color-primary)] px-4 text-white" onClick={() => { setDraft(entryChoices.fresh); setChoosingDraft(false); }}>{isCn ? '新建本次请求' : 'Start this new request'}</button>
+        <button type="button" className="min-h-11 px-4" onClick={onCancel}>{isCn ? '返回' : 'Back'}</button>
+      </div>
+    </section>;
+  }
 
   if (submitted) {
     return (

@@ -85,9 +85,9 @@ jobs:
   # ============ 部署 Frontend ============
   deploy-frontend:
     name: Deploy Frontend to Cloudflare Pages
-    needs: test
-    # 仅 main / china-edition 分支 push 触发前端部署
-    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/china-edition')
+    needs: [test, deploy-ai-frontend]
+    # 国际版等待 AI 门户成功；中国版允许国际版任务跳过，但测试仍须通过。
+    if: github.event_name == 'push' && !cancelled() && needs.test.result == 'success' && ((github.ref == 'refs/heads/main' && needs['deploy-ai-frontend'].result == 'success') || (github.ref == 'refs/heads/china-edition' && needs['deploy-ai-frontend'].result == 'skipped'))
     runs-on: ubuntu-latest
     # GitHub Environment 门禁：在仓库 Settings → Environments → production
     # 里配置 required reviewers，进一步防误部署

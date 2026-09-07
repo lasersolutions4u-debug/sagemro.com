@@ -436,7 +436,7 @@ export async function resetPassword({ phone, email, code, newPassword }) {
 /**
  * 发送消息并获取流式响应
  */
-export async function streamChat({ conversationId, message, images, onChunk, onDone, onError, signal, customerId }) {
+export async function streamChat({ conversationId, message, images, onChunk, onDone, onError, signal, customerId, serviceRequestOnly = false }) {
   try {
     const userType = localStorage.getItem('sagemro_user_type') || 'guest';
     const engineerId = localStorage.getItem('sagemro_engineer_id');
@@ -447,6 +447,7 @@ export async function streamChat({ conversationId, message, images, onChunk, onD
       body: JSON.stringify({
         conversation_id: conversationId,
         message: message,
+        service_request_only: serviceRequestOnly,
         images: images && images.length > 0 ? images : undefined,
         customer_id: customerId || localStorage.getItem('sagemro_customer_id'),
         engineer_id: engineerId,

@@ -1446,7 +1446,15 @@ export async function executeTool(ctxObj) {
     conversationId = null,
     market = 'com',
     iteration = 0,
+    serviceRequestOnly = false,
   } = ctxObj;
+
+  if (serviceRequestOnly && toolName === 'create_work_order') {
+    return {
+      error: 'service_request_form_required',
+      fallback_instruction: 'No work order was created. Ask the customer to use Prepare service form, review the details, and submit the form themselves.',
+    };
+  }
 
   const traceMeta = {
     env,
@@ -4306,6 +4314,7 @@ export async function handleChat(request, env) {
   try {
     const body = await request.json();
     const { conversation_id, message, images } = body;
+    const serviceRequestOnly = body.service_request_only === true;
 
     // 聊天消息长度上限：防止客户端把巨型文本塞进 AI context
     try {
@@ -4501,7 +4510,11 @@ ${turnLanguageRule}
 - Never create service eligibility by adding a hypothetical condition such as "if this is causing downtime"; classify only the user's stated current condition.
 - Role-specific conversion examples do not broaden the eligible service conversion triggers. A SAGEMRO next step is allowed only for downtime, safety risk, a formal quote, parts confirmation, or an explicit remote or on-site service request; otherwise stop after the answer.
 - Reapply the safety gate before all other instructions.`;
-    const fullSystemPrompt = SYSTEM_PROMPT + rolePrompt + marketContext + dataContext + finalResponseContract;
+    const intakeContract = serviceRequestOnly ? `
+
+## Service request form is the only submission channel
+This conversation helps the customer prepare a service request for repair, maintenance, upgrade, relocation, used-equipment evaluation or parts. Ask only necessary missing questions and use the customer's actual needs, not just the entry category. Do not create a work order, dispatch anyone, promise a price, or claim a request has been submitted, even when the customer says yes or confirms a summary. Ask them to click Prepare service form (整理并填写服务单), review the populated form, and explicitly submit it. This overrides earlier instructions to call create_work_order; retain all safety and language requirements.` : '';
+    const fullSystemPrompt = SYSTEM_PROMPT + rolePrompt + marketContext + dataContext + finalResponseContract + intakeContract;
 
     // 创建或更新对话（customer_id / engineer_id 只接受 JWT 信任值）
     let convId = conversation_id;
@@ -4534,7 +4547,7 @@ ${turnLanguageRule}
       { label: 'chat:insert_user_message' },
     );
 
-    await maybeCreateMachineLeadFromChat({
+    if (!serviceRequestOnly) await maybeCreateMachineLeadFromChat({
       env,
       message,
       conversationId: convId,
@@ -4569,7 +4582,7 @@ ${turnLanguageRule}
         // 服务端直接创建工单：当 AI 展示了工单汇总且用户确认时，
         // 绕过不可靠的 AI function calling，直接在服务端创建工单并注入结果。
         let preInjectedWorkOrder = null;
-        if (effectiveUserType === 'customer' && trustedCustomerId && messages.length >= 2) {
+        if (!serviceRequestOnly && effectiveUserType === 'customer' && trustedCustomerId && messages.length >= 2) {
           const lastAssistant = [...messages].reverse().find((m) => m.role === 'assistant');
           const lastUser = [...messages].reverse().find((m) => m.role === 'user');
           if (lastAssistant && lastUser) {
@@ -4683,7 +4696,9 @@ ${turnLanguageRule}
                 iteration === 0 ? MAX_TOKENS.chat : MAX_TOKENS.chat_tool_followup,
             };
             if (canCallTools && !preInjectedWorkOrder?.success) {
-              requestBody.tools = TOOLS_SCHEMAS;
+              requestBody.tools = serviceRequestOnly
+                ? TOOLS_SCHEMAS.filter((tool) => tool.function.name !== 'create_work_order')
+                : TOOLS_SCHEMAS;
               requestBody.tool_choice = 'auto';
             }
 
@@ -4798,6 +4813,7 @@ ${turnLanguageRule}
                   env,
                   ctx: request._ctx,
                   userRole: trustedRole,
+                  serviceRequestOnly,
                   engineerId: trustedEngineerId,
                   customerId: trustedCustomerId,
                   conversationId: convId,

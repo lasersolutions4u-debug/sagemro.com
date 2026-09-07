@@ -20,6 +20,17 @@ import { readFile } from 'node:fs/promises';
 
 import { executeTool, consumeLlmStream } from '../src/index.js';
 
+test('form-only service chat blocks order creation before any database access', async () => {
+  const result = await executeTool({
+    toolName: 'create_work_order', userRole: 'customer', customerId: 'example-customer',
+    serviceRequestOnly: true,
+    env: { DB: { prepare() { throw new Error('must not access the database'); } } },
+    args: { type: 'fault', description: 'Example request' },
+  });
+  assert.equal(result.error, 'service_request_form_required');
+  assert.match(result.fallback_instruction, /form/i);
+});
+
 // ============ Mock DB ============
 
 /**

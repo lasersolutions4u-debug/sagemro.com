@@ -21,8 +21,9 @@ export function getCustomerPortalOrigin({ market, hostname = '' } = {}) {
   return useCn ? 'https://ai.sagemro.cn' : 'https://ai.sagemro.com';
 }
 
-export function buildCustomerPortalUrl({ path = '/service-request', market, hostname, presets = {} } = {}) {
-  const url = new URL(path, getCustomerPortalOrigin({ market, hostname }));
+export function buildCustomerPortalUrl({ path, market, hostname, presets = {} } = {}) {
+  const entryPath = path || (['assist', 'ai'].includes(presets.mode) ? '/' : '/service-request');
+  const url = new URL(entryPath, getCustomerPortalOrigin({ market, hostname }));
   for (const key of SERVICE_REQUEST_PRESET_KEYS) {
     const value = presets?.[key];
     if (typeof value !== 'string') continue;

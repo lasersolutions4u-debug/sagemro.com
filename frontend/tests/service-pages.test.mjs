@@ -67,9 +67,9 @@ test('service hub exposes the eight approved bilingual service records', () => {
       assert.ok(page.onsiteBoundary.length > 0);
       assert.ok(page.primaryCta.length > 0);
       assert.ok(page.secondaryCta.length > 0);
-      assert.equal(page.reviewedBy, 'sagemro-technical-service-team');
-      assert.ok(page.publishedAt.length > 0);
-      assert.ok(page.reviewedAt.length > 0);
+      assert.equal(page.reviewedBy, undefined);
+      assert.equal(page.reviewedAt, undefined);
+      assert.ok(page.serviceKind);
       assert.ok(page.evidenceNotes.length > 0);
       assert.equal(getServicePage(page.slug, locale).slug, page.slug);
     }
@@ -147,7 +147,7 @@ test('service routes lazy-load the public pages and preserve the existing conver
   assert.match(app, /const serviceRoute = portalTarget === 'public' \? getServicePageRoute\(currentPath\) : null;/);
   assert.match(app, /const isServicesPath = serviceRoute !== null;/);
   assert.match(app, /window\.history\.pushState\(\{\}, '', '\/'\);\s*setCurrentPath\('\/'\);/);
-  assert.match(app, /const handleServiceRequest = useCallback\(\(\) => \{\s*window\.history\.pushState\(\{\}, '', '\/service-request'\);\s*setCurrentPath\('\/service-request'\);/);
+  assert.match(app, /window\.history\.pushState\(\{\}, '', '\/service-request\?mode=manual'\)/);
   assert.match(app, /<ServicePages[\s\S]*onStartDiagnosis=\{handleServiceDiagnosis\}[\s\S]*onOpenServiceRequest=\{handleServiceRequest\}/);
 
   const [pages, conversionPanel] = await Promise.all([
@@ -166,7 +166,7 @@ test('service routes lazy-load the public pages and preserve the existing conver
     'page.process.map',
     'page.customerInputs.map',
     'page.remoteBoundary',
-    'page.reviewedAt',
+    'page.evidenceNotes',
     '<PublicConversionPanel',
     'relatedPages.map',
   ];
@@ -175,8 +175,8 @@ test('service routes lazy-load the public pages and preserve the existing conver
     assert.ok(index > previousIndex, `${marker} should follow the prior detail section`);
     return index;
   }, -1);
-  assert.match(conversionPanel, /onStartDiagnosis/);
-  assert.match(conversionPanel, /onOpenServiceRequest/);
+  assert.doesNotMatch(conversionPanel, /onStartDiagnosis/);
+  assert.doesNotMatch(conversionPanel, /onOpenServiceRequest/);
   assert.match(conversionPanel, /href=\{serviceRequestHref\}/);
 });
 
@@ -219,8 +219,9 @@ test('service pages link all and only relevant published diagnostic guides', asy
   assert.match(pages, /getRelatedDiagnosticGuidesForService\(page\.slug, locale\)/);
   assert.match(pages, /relatedGuides\.map/);
   assert.match(pages, /relatedGuides\.length/);
-  assert.match(pages, /More reviewed guides will be added when their evidence is complete/);
-  assert.match(pages, /更多指南将在证据完整并通过审核后发布/);
+  assert.doesNotMatch(pages, /More reviewed guides will be added when their evidence is complete/);
+  assert.doesNotMatch(pages, /更多指南将在证据完整并通过审核后发布/);
+  assert.match(pages, /relatedGuides\.length > 0 &&/);
 });
 
 test('the public technical-review route and footer entry are bilingual runtime contracts', async () => {

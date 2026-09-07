@@ -289,8 +289,8 @@ test('AI funnel events share a request ID and do not count failed fallback conte
   assert.match(app, /import \{ createAnalyticsRequestId \} from '\.\/services\/funnelAnalytics';/);
   assert.match(app, /const requestId = createAnalyticsRequestId\(\);/);
   assert.match(app, /ai_conversation_started', \{[\s\S]*request_id: requestId,/);
-  assert.match(app, /sendMessage\(content, images, convId, requestId\)/);
-  assert.match(useChat, /async \(content, images, targetConversationId, requestId\)/);
+  assert.match(app, /sendMessage\(content, images, convId, requestId, requestContent\)/);
+  assert.match(useChat, /async \(content, images, targetConversationId, requestId, requestContent = content\)/);
   assert.match(useChat, /let responseFailed = false;/);
   assert.match(useChat, /if \(data\.response_status === 'failed'\) \{\s*responseFailed = true;/);
   assert.match(useChat, /if \(completed && !responseFailed && aiContent && requestId\)/);

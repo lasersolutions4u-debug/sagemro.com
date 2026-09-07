@@ -19,7 +19,7 @@ function makeRequest(body, token, url = 'https://api.sagemro.com/api/chat', orig
   });
 }
 
-function makeEnv({ conversation = null, conversationInsertFailures = 0, commitConversationBeforeFailure = false } = {}) {
+function makeEnv({ conversation = null, conversationInsertFailures = 0, commitConversationBeforeFailure = false, history = [] } = {}) {
   const insertedConversations = [];
   let conversationInsertAttempts = 0;
   let loadedConversation = conversation;
@@ -36,7 +36,7 @@ function makeEnv({ conversation = null, conversationInsertFailures = 0, commitCo
           return null;
         },
         async all() {
-          return { results: [] };
+          return { results: /FROM messages/.test(sql) ? history : [] };
         },
         async run() {
           if (/INSERT INTO conversations/.test(sql)) {
@@ -103,6 +103,37 @@ function makeSseResponse(text = 'Captured.') {
     headers: { 'Content-Type': 'text/event-stream' },
   });
 }
+
+test('form-only chat does not auto-create an order when a customer confirms a historical summary', async () => {
+  const { env } = makeEnv({
+    conversation: { customer_id: 'example-customer', engineer_id: null },
+    history: [{ role: 'user', content: 'Example equipment fault.' }, { role: 'assistant', content: '工单信息汇总，请确认无误后提交工单。' }],
+  });
+  const token = await signJwt({ userId: 'example-customer', userType: 'customer', exp: Math.floor(Date.now() / 1000) + 3600 }, JWT_SECRET);
+  const originalPrepare = env.DB.prepare;
+  const writes = [];
+  env.DB.prepare = (sql) => {
+    if (/INSERT INTO work_orders|INSERT INTO machine_leads/.test(sql)) writes.push(sql);
+    return originalPrepare(sql);
+  };
+  const originalFetch = globalThis.fetch;
+  const providerRequests = [];
+  globalThis.fetch = async (_url, init) => {
+    providerRequests.push(JSON.parse(init.body));
+    return makeSseResponse('Please review and submit the service form.');
+  };
+  try {
+    const response = await handleChat(makeRequest({ conversation_id: 'example-conversation', message: '确认', service_request_only: true }, token), env);
+    assert.equal(response.status, 200);
+    await response.text();
+    assert.deepEqual(writes, []);
+    assert.equal(providerRequests.length, 1);
+    assert.ok(providerRequests[0].tools.every((tool) => tool.function.name !== 'create_work_order'));
+    assert.match(providerRequests[0].messages[0].content, /Service request form is the only submission channel/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
 
 function parseSentryEnvelope(body) {
   return JSON.parse(body.split('\n')[2]);

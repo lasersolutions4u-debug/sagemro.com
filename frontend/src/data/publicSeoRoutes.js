@@ -284,7 +284,6 @@ function buildRoutes(locale) {
       type: 'service',
       title: service.seoTitle.replace(/ \| SAGEMRO$/, ''),
       description: service.description,
-      modified: service.reviewedAt,
       body: {
         h1: service.title,
         paragraphs: [service.summary, service.equipment, service.remoteBoundary, service.onsiteBoundary, service.evidenceNotes],
@@ -294,7 +293,7 @@ function buildRoutes(locale) {
           { heading: locale === 'zh-CN' ? '需准备的信息' : 'Information to prepare', body: service.customerInputs.join(' ') },
         ],
         links: relatedGuides.map((guide) => ({ kind: 'guide', href: `/insights/${guide.slug}/`, label: guide.title })),
-        emptyState: relatedGuides.length ? '' : (locale === 'zh-CN' ? '更多指南将在证据完整并通过审核后发布。' : 'More reviewed guides will be added when their evidence is complete.'),
+        emptyState: '',
       },
       structuredData: {
         '@type': 'Service',

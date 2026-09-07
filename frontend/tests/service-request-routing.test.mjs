@@ -14,8 +14,8 @@ test('the application owns one service-request page route and no runtime work-or
   assert.match(app, /const ServiceRequestPage = lazy/);
   assert.match(app, /const isServiceRequestPath = portalTarget === 'customer'[\s\S]{0,120}currentPath === '\/service-request'/);
   assert.match(app, /<ServiceRequestPage[\s\S]*onSubmit=\{handleServiceRequestSubmit\}[\s\S]*isAuthenticated=\{Boolean\(currentUser\) && userType === 'customer'\}[\s\S]*onRequireAuth=\{handleRequireServiceRequestAuth\}/);
-  assert.match(app, /const handleServiceRequest = useCallback\(\(\) => \{\s*window\.history\.pushState\(\{\}, '', '\/service-request'\);\s*setCurrentPath\('\/service-request'\);/);
-  assert.match(app, /onOpenWorkOrder=\{handleServiceRequest\}/);
+  assert.match(app, /window\.history\.pushState\(\{\}, '', '\/service-request\?mode=manual'\)/);
+  assert.match(app, /onOpenWorkOrder=\{[^\n]*handlePrepareServiceRequest : handleServiceRequest\}/);
   assert.doesNotMatch(app, /setWorkOrderModalOpen\(true\)/);
   assert.doesNotMatch(app, /<WorkOrderModal/);
   assert.doesNotMatch(app, /components\/Sidebar\/WorkOrderModal/);

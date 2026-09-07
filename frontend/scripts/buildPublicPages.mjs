@@ -26,6 +26,7 @@ function validateRoutes(routes) {
 function renderSitemapWithDates(routes) {
   let sitemap = renderSitemap(routes);
   for (const route of routes) {
+    if (!route.modified) continue;
     sitemap = sitemap.replace(`<loc>${route.canonical}</loc>`, `<loc>${route.canonical}</loc>\n    <lastmod>${route.modified}</lastmod>`);
   }
   return sitemap;

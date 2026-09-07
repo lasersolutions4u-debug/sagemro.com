@@ -78,8 +78,8 @@ const zhContent = {
   },
   requestCtas: {
     assist: {
-      label: '协助填写服务请求',
-      href: 'https://ai.sagemro.cn/service-request?mode=assist',
+      label: 'AI 协助填写',
+      href: 'https://ai.sagemro.cn/?mode=assist',
     },
     manual: {
       label: '手动填写服务请求',
@@ -170,7 +170,7 @@ const enContent = {
   requestCtas: {
     assist: {
       label: 'Get help preparing a service request',
-      href: 'https://ai.sagemro.com/service-request?mode=assist',
+      href: 'https://ai.sagemro.com/?mode=assist',
     },
     manual: {
       label: 'Complete the service request manually',

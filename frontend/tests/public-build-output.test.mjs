@@ -43,8 +43,12 @@ test('buildPublicPages writes crawlable public pages and crawl artifacts', async
     '- https://sagemro.com/tools/',
     '- https://sagemro.com/insights/',
   ]);
-  assert.equal(await read('sitemap.xml'), await checkedIn('sitemap.xml'));
-  assert.equal(await read('llms.txt'), await checkedIn('llms.txt'));
+  assert.equal(normalizeLineEndings(await read('sitemap.xml')), normalizeLineEndings(await checkedIn('sitemap.xml')));
+  assert.equal(normalizeLineEndings(await read('llms.txt')), normalizeLineEndings(await checkedIn('llms.txt')));
+  const sitemap = await read('sitemap.xml');
+  for (const serviceEntry of sitemap.matchAll(/<url>\s*<loc>https:\/\/sagemro\.com\/services\/[^<]+<\/loc>[\s\S]*?<\/url>/g)) {
+    assert.doesNotMatch(serviceEntry[0], /<lastmod>/);
+  }
   const robots = await read('robots.txt');
   assert.equal(normalizeLineEndings(robots).trimEnd(), normalizeLineEndings(await checkedIn('robots.txt')).trimEnd());
   assert.match(robots, /User-agent: Baiduspider\nDisallow: \/(?:\n|$)/);

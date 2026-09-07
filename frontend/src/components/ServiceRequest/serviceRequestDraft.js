@@ -269,6 +269,15 @@ export function normalizeServiceRequestDraft(value) {
   };
 }
 
+export function getServiceRequestDraftChoices(draft, entry = {}) {
+  const saved = normalizeServiceRequestDraft(draft);
+  const needsChoice = Boolean(saved.service_kind || saved.description.trim()
+    || saved.device_types.length || saved.device_brands.length || saved.device_model
+    || saved.region.length || saved.contact.name || saved.contact.email
+    || saved.contact.phone || saved.contact.whatsapp || saved.step > 1);
+  return { saved, fresh: createEmptyServiceRequestDraft(entry), needsChoice };
+}
+
 export function validateServiceRequestStep(draft, step) {
   const source = isPlainObject(draft) ? draft : {};
   const normalized = normalizeServiceRequestDraft(source);

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
+import { runInNewContext } from 'node:vm';
 
 const workflowUrl = new URL('../../.github/workflows/deploy.yml', import.meta.url);
 
@@ -26,11 +27,42 @@ test('public frontend deployment keeps existing branch targets and deploys only 
   const workflow = await readFile(workflowUrl, 'utf8');
   const deployment = jobBlock(workflow, 'deploy-frontend');
 
-  assert.match(deployment, /needs: test/);
-  assert.match(deployment, /if: github\.event_name == 'push' && \(github\.ref == 'refs\/heads\/main' \|\| github\.ref == 'refs\/heads\/china-edition'\)/);
+  assert.match(deployment, /needs: \[test, deploy-ai-frontend\]/);
+  assert.match(deployment, /if: github\.event_name == 'push'/);
   assert.match(deployment, /run: npm run build:public/);
   assert.match(deployment, /wrangler pages deploy frontend\/dist --project-name=\$\{\{ github\.ref == 'refs\/heads\/main' && 'sagemro-com' \|\| 'sagemro-cn' \}\}/);
   assert.doesNotMatch(deployment, /dist-portal|sagemro-ai/);
+});
+
+test('public deployment waits for the international portal while preserving CN and failure gates', async () => {
+  const workflow = await readFile(workflowUrl, 'utf8');
+  const deployment = jobBlock(workflow, 'deploy-frontend');
+  const condition = deployment.match(/^\s+if: (.+)$/m)?.[1];
+  assert.ok(condition, 'deployment condition must exist');
+  assert.match(condition, /!cancelled\(\)/, 'explicit status check must allow the intentionally skipped CN dependency');
+  assert.match(jobBlock(workflow, 'deploy-worker'), /needs: test/);
+  assert.match(jobBlock(workflow, 'deploy-ai-frontend'), /needs: deploy-worker/);
+  assert.match(deployment, /environment: production/);
+
+  for (const event of ['push', 'pull_request']) {
+    for (const branch of ['main', 'china-edition', 'codex/test']) {
+      for (const testResult of ['success', 'failure', 'cancelled', 'skipped']) {
+        for (const portalResult of ['success', 'failure', 'cancelled', 'skipped']) {
+          for (const isCancelled of [false, true]) {
+            const actual = runInNewContext(condition, {
+              github: { event_name: event, ref: `refs/heads/${branch}` },
+              needs: { test: { result: testResult }, 'deploy-ai-frontend': { result: portalResult } },
+              cancelled: () => isCancelled,
+            }, { timeout: 100 });
+            const expected = event === 'push' && !isCancelled && testResult === 'success'
+              && ((branch === 'main' && portalResult === 'success')
+                || (branch === 'china-edition' && portalResult === 'skipped'));
+            assert.equal(actual, expected, JSON.stringify({ event, branch, testResult, portalResult, isCancelled }));
+          }
+        }
+      }
+    }
+  }
 });
 
 test('AI frontend deployment is a production-gated main push job for sagemro-ai', async () => {

@@ -201,7 +201,7 @@ test('insight guide conversion reuses the established service callbacks and requ
   const insightBranch = app.slice(app.indexOf('if (isInsightsPath)'), app.indexOf('if (isServicesPath)'));
 
   assert.match(app, /const handleServiceDiagnosis = useCallback\(\(\) => \{\s*window\.history\.pushState\(\{\}, '', '\/'\);\s*setCurrentPath\('\/'\);/);
-  assert.match(app, /const handleServiceRequest = useCallback\(\(\) => \{\s*window\.history\.pushState\(\{\}, '', '\/service-request'\);\s*setCurrentPath\('\/service-request'\);/);
+  assert.match(app, /window\.history\.pushState\(\{\}, '', '\/service-request\?mode=manual'\)/);
   assert.match(insightBranch, /<InsightsPage[\s\S]*onStartDiagnosis=\{handleServiceDiagnosis\}[\s\S]*onOpenServiceRequest=\{handleServiceRequest\}/);
   assert.doesNotMatch(insightBranch, /WorkOrderModal|workOrderModalOpen/);
 });
