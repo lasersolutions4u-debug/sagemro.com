@@ -127,6 +127,8 @@ import {
 import { captureException } from './lib/sentry.js';
 import { isKnownProtectedRoute, isTestRoute } from './lib/routes.js';
 import { handlePublicRoute } from './lib/publicRoutes.js';
+import { isBusinessRole, resolveStaffIdentity } from './lib/businessIdentity.js';
+import { handleBusinessWorkspace, assertBusinessIdentity, prepareBusinessProfile, businessProfileStatements, businessEpoch, businessScopeVersion, businessEpochGuard, BusinessError } from './lib/businessWorkspace.js';
 import {
   PromotionAnalyticsInputError,
   loadOrganicAcquisition,
@@ -2288,7 +2290,7 @@ function clearPortalSession(response, request, env) {
 async function authenticateAdmin(request, env) {
   try {
     const payload = await authenticateRequest(request, env);
-    return payload?.userType === 'admin' ? payload : null;
+    return payload?.userType === 'admin' && !isBusinessRole(payload.staffRole) && (!payload.staffId || payload.staffRole === 'admin') ? payload : null;
   } catch {
     return null;
   }
@@ -3485,7 +3487,7 @@ async function handleAuthSession(request, env) {
 
   if (sessionAuth.userType === 'admin') {
     if (sessionAuth.staffId) {
-      const staff = await env.DB.prepare('SELECT * FROM admin_staff_accounts WHERE id = ?').bind(sessionAuth.staffId).first();
+      const staff = await resolveStaffIdentity(env, sessionAuth.staffId, sessionAuth.market);
       const requestMarket = getRequestMarket(request);
       const marketAllowed = sessionAuth.market === requestMarket
         && (staff?.market_scope === 'all' || staff?.market_scope === requestMarket);
@@ -3503,6 +3505,9 @@ async function handleAuthSession(request, env) {
           type: 'admin',
           market: sessionAuth.market || getRequestMarket(request),
           staffRole: staff.role,
+          businessGrade: staff.businessGrade,
+          supervisorStaffId: staff.supervisorStaffId,
+          businessProfileRequired: staff.businessProfileRequired,
           staffId: staff.id,
           mustChangePassword: Boolean(staff.must_change_password),
         },
@@ -8262,7 +8267,7 @@ async function claimOverdueFieldDay(env, fieldDay, now, market) {
   const recipients = [{ userId: fieldDay.engineer_id, userType: 'engineer' }];
   const staffRecords = await env.DB.prepare(`
     SELECT id FROM admin_staff_accounts
-    WHERE is_active = 1 AND role IN ('admin', 'operations') AND market_scope IN ('all', ?)
+    WHERE is_active = 1 AND role IN ('admin', 'operations') AND business_profile_required = 0 AND market_scope IN ('all', ?)
   `).bind(market).all();
   for (const staff of staffRecords.results || []) recipients.push({ userId: staff.id, userType: 'admin' });
 
@@ -8498,7 +8503,7 @@ async function notifyFieldExtensionRequested(env, request, workOrder, extensionI
     const market = getRequestMarket(request);
     const staffRecords = await env.DB.prepare(`
       SELECT id FROM admin_staff_accounts
-      WHERE is_active = 1 AND role IN ('admin', 'operations') AND market_scope IN ('all', ?)
+      WHERE is_active = 1 AND role IN ('admin', 'operations') AND business_profile_required = 0 AND market_scope IN ('all', ?)
     `).bind(market).all();
     await Promise.all((staffRecords.results || []).map((staff) => notifyFieldWorkBestEffort(env, {
       user_id: staff.id,
@@ -12865,9 +12870,17 @@ async function handleAdminStaffList(request, env) {
   if (!isBootstrapAdmin(request._auth)) return errorResponse('仅超级管理员可管理员工账号', 403);
   const { results } = await env.DB.prepare(`
     SELECT id, normalized_login, normalized_phone, role, is_active, display_name,
-           market_scope, must_change_password, created_by, created_at, updated_at
+           market_scope, must_change_password, created_by, created_at, updated_at, business_profile_required
     FROM admin_staff_accounts ORDER BY created_at DESC
   `).all();
+  for (const staff of results || []) {
+    if (!staff.business_profile_required) continue;
+    const profile = await env.DB.prepare('SELECT role,grade,supervisor_staff_id,revision FROM business_staff_profiles WHERE staff_id=?').bind(staff.id).first();
+    const grants = await env.DB.prepare('SELECT territory_id FROM business_director_territories WHERE staff_id=? ORDER BY territory_id').bind(staff.id).all();
+    Object.assign(staff, { role: profile?.role || 'invalid_staff', grade: profile?.grade ?? null,
+      supervisor_staff_id: profile?.supervisor_staff_id ?? null, revision: profile?.revision ?? 0,
+      territory_ids: (grants.results || []).map(row => row.territory_id) });
+  }
   return jsonResponse({ staff: results || [] });
 }
 
@@ -12878,9 +12891,16 @@ async function handleAdminStaffCreate(request, env) {
     const normalizedLogin = normalizeIdentityEmail(body.login);
     const normalizedPhone = normalizeIdentityPhone(body.phone);
     const role = cleanText(body.role, 30);
+    const business = isBusinessRole(role);
+    if (business) {
+      assertBusinessIdentity(request._auth, body.expected_staff_id);
+      if (typeof body.scope_version !== 'string' || !/^[a-f0-9]{64}$/.test(body.scope_version)) {
+        throw new BusinessError('A valid business scope version is required');
+      }
+    }
     const displayName = cleanText(body.display_name, 100);
     const marketScope = cleanText(body.market_scope, 10) || 'all';
-    if (!normalizedLogin || !displayName || !STAFF_ROLES.has(role) || !STAFF_MARKETS.has(marketScope)) {
+    if (!normalizedLogin || !displayName || (!STAFF_ROLES.has(role) && !business) || !STAFF_MARKETS.has(marketScope)) {
       return errorResponse('员工账号信息不完整或无效', 400);
     }
 
@@ -12894,6 +12914,11 @@ async function handleAdminStaffCreate(request, env) {
     if (existing) return errorResponse('员工登录名或手机号已存在', 409);
 
     const id = generateId();
+    const businessVersion = business ? await businessEpoch(env) : null;
+    if (business && body.scope_version !== await businessScopeVersion(request._auth, getRequestMarket(request), businessVersion)) {
+      throw new BusinessError('Business scope changed; reload the organization', 409, 'business_scope_changed');
+    }
+    const businessProfile = business ? await prepareBusinessProfile(env, { id, market_scope: marketScope }, body) : null;
     const temporaryPassword = generateTemporaryPassword();
     const salt = generateSalt();
     const passwordHash = await hashPasswordNew(temporaryPassword, salt);
@@ -12902,6 +12927,7 @@ async function handleAdminStaffCreate(request, env) {
       normalized_login: normalizedLogin,
       normalized_phone: normalizedPhone || null,
       role,
+      ...(business ? { business_profile_required: true, ...businessProfile, revision: 0 } : {}),
       is_active: 1,
       display_name: displayName,
       market_scope: marketScope,
@@ -12917,12 +12943,22 @@ async function handleAdminStaffCreate(request, env) {
       id, normalizedLogin, normalizedPhone || null, passwordHash, salt, role,
       displayName, marketScope, request._auth.userId,
     );
-    await runAuditedWorkflowBatch(env, request, [insert], {
+    const businessInsert = business ? env.DB.prepare(`
+      INSERT INTO admin_staff_accounts (
+        id, normalized_login, normalized_phone, password_hash, salt, role,
+        display_name, market_scope, created_by, business_profile_required
+      ) VALUES (?, ?, ?, ?, ?, 'operations', ?, ?, ?, 1)
+    `).bind(id, normalizedLogin, normalizedPhone || null, passwordHash, salt, displayName, marketScope, request._auth.userId) : null;
+    await runAuditedWorkflowBatch(env, request, business
+      ? [businessEpochGuard(env, businessVersion), businessInsert, ...businessProfileStatements(env, id, businessProfile)]
+      : [insert], {
       targetType: 'admin_staff_account', targetId: id, action: 'staff_created',
       beforeState: null, afterState: publicStaffAccount(staff),
     });
     return jsonResponse({ staff: publicStaffAccount(staff), temporary_password: temporaryPassword }, 201);
   } catch (error) {
+    if (error instanceof BusinessError) return jsonResponse({ error: error.message, code: error.code }, error.status);
+    if (/malformed json/i.test(String(error?.message || ''))) return jsonResponse({ error: 'Business scope changed; reload the organization', code: 'business_scope_changed' }, 409);
     if (/UNIQUE/i.test(String(error?.message || ''))) return errorResponse('员工登录名或手机号已存在', 409);
     return errorResponse(error.message, 500);
   }
@@ -12975,8 +13011,7 @@ async function handleAdminStaffResetPassword(request, env) {
 
 async function requireActiveStaff(env, auth) {
   if (!auth?.staffId) return isBootstrapAdmin(auth) ? { role: 'admin' } : null;
-  const staff = await env.DB.prepare('SELECT * FROM admin_staff_accounts WHERE id = ?').bind(auth.staffId).first();
-  return staff?.is_active ? staff : null;
+  return resolveStaffIdentity(env, auth.staffId, auth.market);
 }
 
 async function getRequisitionWithItems(env, requisitionId) {
@@ -15070,6 +15105,7 @@ async function handleAdminLogin(request, env) {
         : false;
       const marketAllowed = staff?.market_scope === 'all' || staff?.market_scope === adminCredentials.market;
       if (!staffPasswordValid || !marketAllowed) staff = null;
+      if (staff) staff = await resolveStaffIdentity(env, staff, adminCredentials.market);
     }
 
     if (!bootstrapMatch && !staff) {
@@ -15094,6 +15130,9 @@ async function handleAdminLogin(request, env) {
     const staffClaims = staff ? {
       staffId: staff.id,
       staffRole: staff.role,
+      businessGrade: staff.businessGrade,
+      supervisorStaffId: staff.supervisorStaffId,
+      businessProfileRequired: staff.businessProfileRequired,
       mustChangePassword: Boolean(staff.must_change_password),
     } : {};
     const token = await signJwt({
@@ -15117,6 +15156,9 @@ async function handleAdminLogin(request, env) {
         market: adminCredentials.market,
         staffRole: staff.role,
         staffId: staff.id,
+        businessGrade: staff.businessGrade,
+        supervisorStaffId: staff.supervisorStaffId,
+        businessProfileRequired: staff.businessProfileRequired,
         mustChangePassword: Boolean(staff.must_change_password),
       } : {
         id: 'admin', name: '超级管理员', phone: adminPhone, type: 'admin', market: adminCredentials.market,
@@ -20140,7 +20182,7 @@ async function handleSubmitReceiptClaim(request, env) {
     const notificationData = { work_order_id: workOrderId, installment_id: installmentId, claim_id: claimId };
     const staffRecords = await env.DB.prepare(`
       SELECT id FROM admin_staff_accounts
-      WHERE is_active = 1 AND role IN ('admin', 'operations') AND market_scope IN ('all', ?)
+      WHERE is_active = 1 AND role IN ('admin', 'operations') AND business_profile_required = 0 AND market_scope IN ('all', ?)
     `).bind(market).all();
     const notifications = [{
       id: `receipt-claim:${claimId}:submitted:customer:${installment.customer_id}`,
@@ -22081,6 +22123,13 @@ async function routeRequest(request, env, ctx) {
     // 暂存 ctx 供需要 waitUntil 的处理函数使用（如 AI 摘要异步生成）
     request._ctx = ctx;
 
+    if (request.method !== 'OPTIONS' && !path.startsWith('/api/admin/business/') && ![
+      '/api/auth/session', '/api/auth/logout', '/api/auth/change-password', '/api/admin/login',
+    ].includes(path)) {
+      const earlyAuth = await authenticateRequest(request, env);
+      if (isBusinessRole(earlyAuth?.staffRole) || earlyAuth?.invalidStaff) return errorResponse('当前商务角色无权使用此接口', 403);
+    }
+
     if (path === '/api/service-request-assist' && request.method === 'POST') {
       return handleServiceRequestAssist(request, env);
     }
@@ -22202,7 +22251,8 @@ async function routeRequest(request, env, ctx) {
         || path.startsWith('/api/material-requisitions/')
         || path === '/api/auth/change-password'
         || (staff.role === 'operations' && isOperationsReadRoute(path, request.method));
-      if (staff.role !== 'admin' && !operationalRoute) {
+      const businessRoute = path.startsWith('/api/admin/business/') || path === '/api/auth/change-password';
+      if (isBusinessRole(staff.role) ? !businessRoute : staff.role !== 'admin' && !operationalRoute) {
         return errorResponse('当前员工角色无权访问该管理接口', 403);
       }
     }
@@ -22212,6 +22262,7 @@ async function routeRequest(request, env, ctx) {
       if (auth.userType !== 'admin') {
         return errorResponse('需要管理员权限', 403);
       }
+      if (path.startsWith('/api/admin/business/')) return handleBusinessWorkspace(request, env, getRequestMarket(request));
       if (path === '/api/admin/analytics/overview' && request.method === 'GET') {
         return handlePromotionAnalytics(request, env, 'overview');
       }
