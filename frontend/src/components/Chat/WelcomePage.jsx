@@ -1,5 +1,4 @@
 import {
-  Calculator,
   ShieldCheck,
 } from 'lucide-react';
 import { BrandMark } from '../common/BrandMark';
@@ -27,22 +26,6 @@ export function WelcomePage() {
           </p>
         </div>
 
-        <div className="mx-auto mt-7 max-w-4xl rounded-3xl border border-[var(--color-border)] bg-[var(--color-surface-elevated)] p-4 shadow-sm sm:p-5">
-          <div className="mb-2 text-center text-[11px] font-medium uppercase tracking-[0.16em] text-[var(--color-text-muted)]">
-            {t.resourceTitle}
-          </div>
-          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-            {t.resources.map(({ label, desc, href }) => (
-              <a key={label} href={href} className="flex items-start gap-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-chat-bg)] px-3 py-2.5 text-left transition hover:border-[var(--color-primary)]">
-                <Calculator size={16} className="mt-0.5 shrink-0 text-[var(--color-primary)]" />
-                <span>
-                  <span className="block text-xs font-semibold text-[var(--color-text-primary)]">{label}</span>
-                  <span className="mt-0.5 block text-xs leading-relaxed text-[var(--color-text-secondary)]">{desc}</span>
-                </span>
-              </a>
-            ))}
-          </div>
-        </div>
       </div>
     </div>
   );
