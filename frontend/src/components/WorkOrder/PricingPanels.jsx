@@ -323,8 +323,9 @@ export function EngineerPricingPanel({ workOrderId, engineerId, pricing, service
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
+    if (pricing?.quote_source === 'business') return;
     writeEngineerPricingDraft(workOrderId, { form, materialItems });
-  }, [form, materialItems, workOrderId]);
+  }, [form, materialItems, workOrderId, pricing?.quote_source]);
 
   useEffect(() => {
     setForm((current) => normalizePricingFormForServiceMode(current, serviceMode));
@@ -353,6 +354,7 @@ export function EngineerPricingPanel({ workOrderId, engineerId, pricing, service
   });
 
   const handleSubmit = async () => {
+    if (pricing?.quote_source === 'business') return;
     const payload = buildPricingPayload({
       form,
       partsFee,
@@ -374,6 +376,10 @@ export function EngineerPricingPanel({ workOrderId, engineerId, pricing, service
       setSubmitting(false);
     }
   };
+
+  if (pricing?.quote_source === 'business') return <p className="text-sm text-[var(--color-text-secondary)]">{isCnLocale()
+    ? '报价由商务团队负责。工程师仅提供服务能力和成本参考，不直接修改客户报价。'
+    : 'Quotation is handled by the business team. Engineers provide service capability and cost information, not customer quotations.'}</p>;
 
   const field = (key, label, placeholder) => (
     <div>
@@ -516,7 +522,8 @@ export function CustomerPricingPanel({ workOrderId, customerId, serviceMode = 'r
         workOrderId,
         customerId,
         rejectReason,
-        normalizedCounterOffer
+        normalizedCounterOffer,
+        pricing.quote_version
       );
       toastSuccess(t.customer.negotiationToast);
       onConfirmed?.();

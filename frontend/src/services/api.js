@@ -896,8 +896,8 @@ export async function confirmWorkOrderPricing(workOrderId, customerId, quoteVers
 /**
  * 客户拒绝/议价
  */
-export async function rejectWorkOrderPricing(workOrderId, customerId, reason, counterOffer = null) {
-  const body = { customer_id: customerId, reason };
+export async function rejectWorkOrderPricing(workOrderId, customerId, reason, counterOffer = null, quoteVersion) {
+  const body = { customer_id: customerId, reason, quote_version: quoteVersion };
   if (counterOffer) body.counter_offer = counterOffer;
   const response = await fetch(`${API_BASE}/api/workorders/${workOrderId}/pricing/reject`, {
     method: 'POST',

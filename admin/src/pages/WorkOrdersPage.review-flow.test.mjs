@@ -78,7 +78,8 @@ test('versioned quote and receipt decisions use the controlled operation dialog 
   assert.match(source, /'receipt-confirm-full'/);
   assert.match(source, /'receipt-confirm-partial'/);
   assert.match(source, /'receipt-reject'/);
-  assert.match(source, /reviewWorkOrderQuote\(wo\.id, action, quoteVersion, note\)/);
+  assert.match(source, /reviewWorkOrderQuote\(wo\.id, action, quoteVersion, note, businessContext\)/);
+  assert.match(source, /businessContext: values\.businessContext/);
   assert.match(source, /confirmed_amount/);
   assert.match(source, /idempotency_key/);
   assert.match(source, /createOperationKey\(\)/);

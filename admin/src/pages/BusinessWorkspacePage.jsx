@@ -3,6 +3,10 @@ import { Download, RefreshCw, X } from 'lucide-react';
 import { runtimeConfig } from '../config/runtime';
 import { assignBusinessRecord, getBusinessOrganization, getBusinessRecord, getBusinessRecords } from '../services/api';
 import { businessRecordsCsv, collectBusinessRecords } from './businessWorkspaceExport';
+import { BusinessQuotePanel } from '../components/BusinessQuotePanel';
+import { BusinessPaymentPanel } from '../components/BusinessPaymentPanel';
+import { BusinessExecutionPanel } from '../components/BusinessExecutionPanel';
+import { BusinessServicePanel } from '../components/BusinessServicePanel';
 
 const TEXT = {
   en: {
@@ -207,6 +211,10 @@ export function BusinessWorkspacePage({ user }) {
         <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5">
           <div className="flex items-center justify-between"><h2 id="business-record-title" className="font-semibold">{t.detail}</h2><button autoFocus aria-label={t.close} onClick={() => setDetail(null)} className={buttonClass}><X size={16} /></button></div>
           <dl className="my-5 grid gap-3 sm:grid-cols-2">{FIELDS[kind].map(key => <div key={key} className="min-w-0"><dt className="text-xs text-[var(--color-text-muted)]">{t[key] || key}</dt><dd className="mt-1 whitespace-pre-wrap break-words text-sm">{detail[key] || '—'}</dd></div>)}</dl>
+          {kind === 'work_order' && <BusinessQuotePanel key={`${detail.id}:${data.scope_version}`} workOrderId={detail.id} expectedStaffId={expectedStaffId} scopeVersion={data.scope_version} isCurrent={isCurrent} onAccessError={fail} />}
+          {kind === 'work_order' && <BusinessPaymentPanel key={`payments:${detail.id}:${data.scope_version}`} workOrderId={detail.id} expectedStaffId={expectedStaffId} scopeVersion={data.scope_version} isCurrent={isCurrent} onAccessError={fail} />}
+          {kind === 'work_order' && <BusinessExecutionPanel key={`execution:${detail.id}:${data.scope_version}`} workOrderId={detail.id} readOnly expectedStaffId={expectedStaffId} scopeVersion={data.scope_version} isCurrent={isCurrent} onAccessError={fail} />}
+          {kind === 'work_order' && <BusinessServicePanel collapsed key={`service:${detail.id}:${data.scope_version}`} workOrderId={detail.id} expectedStaffId={expectedStaffId} scopeVersion={data.scope_version} isCurrent={isCurrent} onAccessError={fail} />}
           {organization?.can_assign && <form onSubmit={saveAssignment} className="space-y-3 border-t border-[var(--color-border)] pt-4"><h3 className="text-sm font-medium">{t.assign}</h3>
             <label className="block text-sm">{t.territory}<select required aria-label={t.territory} className={selectClass} value={assignment.territory_id} onChange={event => setAssignment({ territory_id: event.target.value, owner_staff_id: '' })}><option value="">{t.choose}</option>{organization.territories.filter(territory => territory.market === organization.market).map(territory => <option key={territory.id} value={territory.id}>{territory.name}</option>)}</select></label>
             <label className="block text-sm">{t.owner}<select required aria-label={t.owner} className={selectClass} value={assignment.owner_staff_id} onChange={event => setAssignment({ ...assignment, owner_staff_id: event.target.value })}><option value="">{t.choose}</option>{organization.staff.filter(staff => staff.is_active && staff.effective_territory_ids?.includes(assignment.territory_id)).map(staff => <option key={staff.id} value={staff.id}>{staff.display_name} · {t[staff.role] || staff.role}</option>)}</select></label>

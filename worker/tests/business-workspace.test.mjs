@@ -4,6 +4,7 @@ import { test } from 'node:test';
 import { DatabaseSync } from 'node:sqlite';
 import worker from '../src/index.js';
 import { signJwt } from '../src/lib/auth.js';
+import './business-quote-api.test.mjs';
 
 const secret = 'business-workspace-fictional-test-secret';
 function fixture(t) {

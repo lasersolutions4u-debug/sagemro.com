@@ -366,7 +366,8 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_service_gate_active_override
 CREATE TABLE IF NOT EXISTS work_order_arrival_checks (
     id TEXT PRIMARY KEY,
     work_order_id TEXT NOT NULL,
-    engineer_id TEXT NOT NULL,
+    engineer_id TEXT,
+  staff_id TEXT,
     latitude REAL,
     longitude REAL,
     accuracy_m REAL,
@@ -378,7 +379,9 @@ CREATE TABLE IF NOT EXISTS work_order_arrival_checks (
     failure_reason TEXT,
     created_at TEXT DEFAULT (datetime('now')),
     FOREIGN KEY (work_order_id) REFERENCES work_orders(id),
-    FOREIGN KEY (engineer_id) REFERENCES engineers(id)
+    FOREIGN KEY (engineer_id) REFERENCES engineers(id),
+  FOREIGN KEY (staff_id) REFERENCES admin_staff_accounts(id),
+  CHECK ((engineer_id IS NOT NULL) <> (staff_id IS NOT NULL))
 );
 CREATE INDEX IF NOT EXISTS idx_arrival_checks_work_order ON work_order_arrival_checks(work_order_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_arrival_checks_engineer ON work_order_arrival_checks(engineer_id, created_at);
@@ -387,7 +390,8 @@ CREATE INDEX IF NOT EXISTS idx_arrival_checks_engineer ON work_order_arrival_che
 CREATE TABLE IF NOT EXISTS work_order_field_days (
   id TEXT PRIMARY KEY,
   work_order_id TEXT NOT NULL,
-  engineer_id TEXT NOT NULL,
+  engineer_id TEXT,
+  staff_id TEXT,
   site_local_date TEXT NOT NULL,
   site_timezone TEXT NOT NULL,
   status TEXT NOT NULL DEFAULT 'checked_in',
@@ -419,7 +423,9 @@ CREATE TABLE IF NOT EXISTS work_order_field_days (
   UNIQUE(id, work_order_id),
   UNIQUE(work_order_id, engineer_id, site_local_date),
   FOREIGN KEY (work_order_id) REFERENCES work_orders(id),
-  FOREIGN KEY (engineer_id) REFERENCES engineers(id)
+  FOREIGN KEY (engineer_id) REFERENCES engineers(id),
+  FOREIGN KEY (staff_id) REFERENCES admin_staff_accounts(id),
+  CHECK ((engineer_id IS NOT NULL) <> (staff_id IS NOT NULL))
 );
 CREATE INDEX IF NOT EXISTS idx_field_days_work_order_date ON work_order_field_days(work_order_id, site_local_date DESC);
 CREATE INDEX IF NOT EXISTS idx_field_days_status ON work_order_field_days(status, expected_check_out_at);
@@ -454,7 +460,8 @@ CREATE TABLE IF NOT EXISTS work_order_extension_requests (
   id TEXT PRIMARY KEY,
   work_order_id TEXT NOT NULL,
   field_day_id TEXT,
-  engineer_id TEXT NOT NULL,
+  engineer_id TEXT,
+  staff_id TEXT,
   reason TEXT NOT NULL,
   customer_explanation TEXT NOT NULL,
   internal_note TEXT,
@@ -470,7 +477,9 @@ CREATE TABLE IF NOT EXISTS work_order_extension_requests (
   updated_at TEXT DEFAULT (datetime('now')),
   FOREIGN KEY (work_order_id) REFERENCES work_orders(id),
   FOREIGN KEY (field_day_id, work_order_id) REFERENCES work_order_field_days(id, work_order_id),
-  FOREIGN KEY (engineer_id) REFERENCES engineers(id)
+  FOREIGN KEY (engineer_id) REFERENCES engineers(id),
+  FOREIGN KEY (staff_id) REFERENCES admin_staff_accounts(id),
+  CHECK ((engineer_id IS NOT NULL) <> (staff_id IS NOT NULL))
 );
 CREATE INDEX IF NOT EXISTS idx_extension_requests_work_order ON work_order_extension_requests(work_order_id, created_at DESC);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_extension_requests_one_pending ON work_order_extension_requests(work_order_id) WHERE status = 'pending';
@@ -602,6 +611,7 @@ CREATE INDEX IF NOT EXISTS idx_customer_ratings_engineer ON customer_ratings(eng
 -- 工单核价表（002/008）
 CREATE TABLE IF NOT EXISTS work_order_pricing (
     id TEXT PRIMARY KEY,
+    quote_source TEXT NOT NULL DEFAULT 'engineer' CHECK (quote_source IN ('engineer','business')),
     work_order_id TEXT NOT NULL UNIQUE,
     engineer_id TEXT,
     labor_fee INTEGER DEFAULT 0,
@@ -648,6 +658,7 @@ CREATE INDEX IF NOT EXISTS idx_work_order_messages_visibility ON work_order_mess
 -- 工单报价历史（008）
 CREATE TABLE IF NOT EXISTS work_order_pricing_history (
     id TEXT PRIMARY KEY,
+    quote_source TEXT NOT NULL DEFAULT 'engineer' CHECK (quote_source IN ('engineer','business')),
     pricing_id TEXT NOT NULL,
     labor_fee INTEGER DEFAULT 0,
     parts_fee INTEGER DEFAULT 0,
@@ -824,7 +835,8 @@ CREATE TABLE IF NOT EXISTS work_order_receipt_claims (
   id TEXT PRIMARY KEY,
   installment_id TEXT NOT NULL,
   work_order_id TEXT NOT NULL,
-  engineer_id TEXT NOT NULL,
+  engineer_id TEXT,
+  submitted_by_staff_id TEXT,
   claimed_amount INTEGER NOT NULL CHECK (claimed_amount > 0 AND typeof(claimed_amount) = 'integer'),
   transaction_reference TEXT,
   engineer_note TEXT NOT NULL DEFAULT '',
@@ -839,6 +851,7 @@ CREATE TABLE IF NOT EXISTS work_order_receipt_claims (
   idempotency_key TEXT NOT NULL UNIQUE,
   decision_idempotency_key TEXT UNIQUE,
   created_at TEXT DEFAULT (datetime('now')),
+  CHECK ((engineer_id IS NOT NULL) + (submitted_by_staff_id IS NOT NULL) = 1),
   UNIQUE (id, work_order_id),
   FOREIGN KEY (installment_id, work_order_id)
     REFERENCES work_order_installments(id, work_order_id),
@@ -848,6 +861,9 @@ CREATE INDEX IF NOT EXISTS idx_receipt_claims_installment_status
   ON work_order_receipt_claims(installment_id, status, created_at);
 CREATE INDEX IF NOT EXISTS idx_receipt_claims_order_status
   ON work_order_receipt_claims(work_order_id, status, created_at);
+CREATE TRIGGER receipt_claim_actor_immutable BEFORE UPDATE OF engineer_id, submitted_by_staff_id ON work_order_receipt_claims
+WHEN NEW.engineer_id IS NOT OLD.engineer_id OR NEW.submitted_by_staff_id IS NOT OLD.submitted_by_staff_id
+BEGIN SELECT RAISE(ABORT, 'receipt actor snapshot is immutable'); END;
 
 CREATE TABLE IF NOT EXISTS work_order_receipt_evidence (
   id TEXT PRIMARY KEY,
@@ -1219,6 +1235,36 @@ CREATE TRIGGER IF NOT EXISTS business_record_assignments_scope_insert AFTER INSE
 CREATE TRIGGER IF NOT EXISTS business_record_assignments_scope_update AFTER UPDATE ON business_record_assignments BEGIN UPDATE business_scope_version SET revision = revision + 1 WHERE id = 1; END;
 CREATE TRIGGER IF NOT EXISTS business_record_assignments_scope_delete AFTER DELETE ON business_record_assignments BEGIN UPDATE business_scope_version SET revision = revision + 1 WHERE id = 1; END;
 INSERT OR IGNORE INTO _migrations(version,note) VALUES ('051_business_scope','Business staff identity and record scope');
+CREATE TABLE IF NOT EXISTS business_quote_drafts (
+  work_order_id TEXT PRIMARY KEY REFERENCES work_orders(id),
+  revision INTEGER NOT NULL CHECK (typeof(revision) = 'integer' AND revision >= 1),
+  submitted_revision INTEGER,
+  author_staff_id TEXT NOT NULL,
+  currency TEXT NOT NULL CHECK (currency IN ('CNY','USD')),
+  draft_json TEXT NOT NULL CHECK (json_valid(draft_json)),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS business_quote_cost_snapshots (
+  work_order_id TEXT NOT NULL REFERENCES work_orders(id),
+  quote_version INTEGER NOT NULL CHECK (typeof(quote_version) = 'integer' AND quote_version >= 1),
+  author_staff_id TEXT NOT NULL,
+  draft_revision INTEGER NOT NULL CHECK (typeof(draft_revision) = 'integer' AND draft_revision >= 1),
+  currency TEXT NOT NULL CHECK (currency IN ('CNY','USD')),
+  quoted_amount INTEGER NOT NULL CHECK (typeof(quoted_amount) = 'integer' AND quoted_amount BETWEEN 1 AND 9007199254740991),
+  parts_cost INTEGER NOT NULL CHECK (typeof(parts_cost) = 'integer' AND parts_cost BETWEEN 0 AND 9007199254740991),
+  engineer_cost INTEGER NOT NULL CHECK (typeof(engineer_cost) = 'integer' AND engineer_cost BETWEEN 0 AND 9007199254740991),
+  travel_cost INTEGER NOT NULL CHECK (typeof(travel_cost) = 'integer' AND travel_cost BETWEEN 0 AND 9007199254740991),
+  other_cost INTEGER NOT NULL CHECK (typeof(other_cost) = 'integer' AND other_cost BETWEEN 0 AND 9007199254740991),
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (work_order_id, quote_version),
+  UNIQUE (work_order_id, draft_revision)
+);
+CREATE TRIGGER IF NOT EXISTS business_quote_costs_no_update BEFORE UPDATE ON business_quote_cost_snapshots
+BEGIN SELECT RAISE(ABORT, 'business quote costs immutable'); END;
+CREATE TRIGGER IF NOT EXISTS business_quote_costs_no_delete BEFORE DELETE ON business_quote_cost_snapshots
+BEGIN SELECT RAISE(ABORT, 'business quote costs immutable'); END;
+INSERT OR IGNORE INTO _migrations(version,note) VALUES ('052_business_quote_costs','Private business quote drafts and immutable direct cost snapshots');
+INSERT OR IGNORE INTO _migrations(version,note) VALUES ('053_business_receipt_actors','Business receipt submitter audit snapshots');
 
 CREATE TABLE IF NOT EXISTS material_requisitions (
     id TEXT PRIMARY KEY,
@@ -1879,6 +1925,84 @@ INSERT OR IGNORE INTO _migrations (version, note) VALUES
     ('048_service_request_assist_quota', 'Atomic public service-request AI assistant quotas'),
     ('049_nullable_international_customer_phone', 'Allow verified international customer accounts without a phone number'),
     ('050_engineer_service_profiles', 'Private self-reported engineer service costs and capabilities');
+
+CREATE TABLE IF NOT EXISTS business_execution_assignments (
+  id TEXT PRIMARY KEY NOT NULL,
+  work_order_id TEXT NOT NULL UNIQUE REFERENCES work_orders(id),
+  staff_id TEXT NOT NULL REFERENCES admin_staff_accounts(id),
+  staff_name TEXT NOT NULL,
+  assigned_by TEXT NOT NULL,
+  assigned_at TEXT NOT NULL DEFAULT (datetime('now')),
+  reason TEXT NOT NULL CHECK (length(trim(reason)) BETWEEN 1 AND 2000),
+  revision INTEGER NOT NULL CHECK (revision = 1),
+  quote_version INTEGER NOT NULL CHECK (quote_version > 0),
+  market TEXT NOT NULL CHECK (market IN ('com','cn')),
+  idempotency_key TEXT NOT NULL UNIQUE,
+  request_fingerprint TEXT NOT NULL,
+  scope_snapshot TEXT NOT NULL CHECK (json_valid(scope_snapshot)),
+  status TEXT NOT NULL DEFAULT 'assigned' CHECK (status = 'assigned')
+);
+CREATE TRIGGER IF NOT EXISTS business_execution_insert_guard
+BEFORE INSERT ON business_execution_assignments
+BEGIN
+  SELECT CASE WHEN EXISTS (
+    SELECT 1 FROM work_orders WHERE id = NEW.work_order_id AND status = 'pending_payment'
+      AND engineer_id IS NULL AND assigned_regional_lead_id IS NULL
+      AND started_at IS NULL AND resolved_at IS NULL AND completed_at IS NULL
+  ) THEN 1 ELSE RAISE(ABORT, 'business execution state changed') END;
+END;
+CREATE TRIGGER IF NOT EXISTS business_execution_work_order_guard
+BEFORE UPDATE ON work_orders
+WHEN EXISTS (SELECT 1 FROM business_execution_assignments WHERE work_order_id = OLD.id)
+  AND (NEW.engineer_id IS NOT NULL OR NEW.assigned_regional_lead_id IS NOT NULL
+    OR NEW.started_at IS NOT NULL OR NEW.resolved_at IS NOT NULL OR NEW.completed_at IS NOT NULL
+    OR NEW.status IN ('in_progress','in_service','resolved','pending_review','completed'))
+BEGIN
+  SELECT RAISE(ABORT, 'business execution is assigned; service execution is not enabled');
+END;
+INSERT OR IGNORE INTO _migrations(version,note)
+VALUES ('054_business_execution_assignments','Internal business execution identity and Admin assignment');
+
+CREATE TABLE IF NOT EXISTS business_service_execution (
+  work_order_id TEXT PRIMARY KEY REFERENCES work_orders(id),
+  staff_id TEXT NOT NULL REFERENCES admin_staff_accounts(id),
+  revision INTEGER NOT NULL DEFAULT 0 CHECK (revision >= 0),
+  requested_at TEXT,
+  requested_by TEXT REFERENCES admin_staff_accounts(id),
+  approved_at TEXT,
+  approved_by TEXT,
+  approved_quote_version INTEGER,
+  CHECK ((approved_at IS NULL) = (approved_by IS NULL))
+);
+CREATE TABLE IF NOT EXISTS business_service_actions (
+  id TEXT PRIMARY KEY,
+  work_order_id TEXT NOT NULL REFERENCES work_orders(id),
+  staff_id TEXT NOT NULL,
+  fingerprint TEXT NOT NULL,
+  response_json TEXT NOT NULL CHECK (json_valid(response_json)),
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_field_days_staff_date
+  ON work_order_field_days(work_order_id,staff_id,site_local_date) WHERE staff_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_arrival_checks_staff ON work_order_arrival_checks(staff_id,created_at);
+DROP TRIGGER IF EXISTS business_execution_work_order_guard;
+CREATE TRIGGER business_execution_work_order_guard
+BEFORE UPDATE ON work_orders
+WHEN EXISTS (SELECT 1 FROM business_execution_assignments WHERE work_order_id=OLD.id)
+  AND (NEW.engineer_id IS NOT NULL OR NEW.assigned_regional_lead_id IS NOT NULL
+    OR ((NEW.started_at IS NOT NULL OR NEW.resolved_at IS NOT NULL OR NEW.completed_at IS NOT NULL
+      OR NEW.status IN ('in_progress','in_service','resolved','pending_review','completed'))
+      AND NOT EXISTS (SELECT 1 FROM business_service_execution service
+        JOIN business_execution_assignments assignment ON assignment.work_order_id=service.work_order_id
+        WHERE service.work_order_id=OLD.id AND service.staff_id=assignment.staff_id
+          AND service.approved_at IS NOT NULL AND service.approved_by IS NOT NULL)))
+BEGIN
+  SELECT RAISE(ABORT, 'business execution requires Admin service approval and exclusive assignment');
+END;
+INSERT OR IGNORE INTO _migrations(version,note)
+VALUES ('055_business_service_execution','Business service approval and real staff field-work actors');
+INSERT OR IGNORE INTO _migrations(version,note)
+VALUES ('054_business_execution_assignments','Internal business execution identity and Admin assignment');
 
 CREATE TABLE IF NOT EXISTS engineer_service_profiles (
     engineer_id TEXT PRIMARY KEY NOT NULL REFERENCES engineers(id) ON DELETE CASCADE,

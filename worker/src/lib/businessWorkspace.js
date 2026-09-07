@@ -61,7 +61,7 @@ export function businessProfileStatements(env, staffId, profile) {
   ];
 }
 
-async function scope(env, auth, market) {
+export async function scope(env, auth, market) {
   if (auth?.userType !== 'admin') fail('Business workspace access denied', 403);
   const epoch = await businessEpoch(env);
   const isRoot = bootstrap(auth);
@@ -121,13 +121,13 @@ function recordQuery(kind, s, market) {
     from: ` FROM ${type.table} r LEFT JOIN business_record_assignments a ON a.kind = ? AND a.record_id = r.id LEFT JOIN business_territories t ON t.id=a.territory_id WHERE ${p.sql}`,
     args: [kind, ...p.args] };
 }
-async function detail(env, kind, id, s, market) {
+export async function detail(env, kind, id, s, market) {
   const q = recordQuery(kind, s, market);
   const record = await env.DB.prepare(q.select + q.from + ' AND r.id = ?').bind(...q.args, id).first();
   if (!record) fail('Record not found', 404, 'business_record_not_found');
   return record;
 }
-async function ensureEpoch(env, s) {
+export async function ensureEpoch(env, s) {
   if (await businessEpoch(env) !== s.epoch) fail('Business scope changed; reload the workspace', 409, 'business_scope_changed');
 }
 

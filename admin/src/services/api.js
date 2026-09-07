@@ -14,6 +14,7 @@ function authHeaders() {
 
 async function request(path, options = {}) {
   const headers = { ...authHeaders(), ...options.headers };
+  if (options.body instanceof FormData) delete headers['Content-Type'];
   const method = (options.method || 'GET').toUpperCase();
   const csrfToken = localStorage.getItem('admin_csrf_token');
   if (csrfToken && !['GET', 'HEAD', 'OPTIONS'].includes(method)) {
@@ -163,6 +164,92 @@ export function getBusinessRecord(kind, id, expectedStaffId, scopeVersion, signa
 
 export function assignBusinessRecord(kind, id, payload, signal) {
   return request(`/api/admin/business/records/${encodeURIComponent(kind)}/${encodeURIComponent(id)}/assignment`, { method: 'PUT', body: JSON.stringify(payload), signal });
+}
+
+export function getBusinessQuote(id, expectedStaffId, scopeVersion, signal) {
+  const params = new URLSearchParams({ expected_staff_id: expectedStaffId, scope_version: scopeVersion });
+  return request(`/api/admin/business/work-orders/${encodeURIComponent(id)}/quote?${params}`, { signal });
+}
+
+export function getBusinessPayments(id, expectedStaffId, scopeVersion, signal) {
+  const params = new URLSearchParams({ expected_staff_id: expectedStaffId, scope_version: scopeVersion });
+  return request(`/api/admin/business/work-orders/${encodeURIComponent(id)}/payments?${params}`, { signal });
+}
+
+export function getBusinessExecution(id, expectedStaffId, scopeVersion, signal) {
+  const query = new URLSearchParams({ expected_staff_id: expectedStaffId, scope_version: scopeVersion });
+  return request(`/api/admin/business/work-orders/${encodeURIComponent(id)}/execution?${query}`, { signal });
+}
+
+function businessServicePath(id, suffix = '') {
+  return `/api/admin/business/work-orders/${encodeURIComponent(id)}/service${suffix}`;
+}
+
+export function getBusinessService(id, expectedStaffId, scopeVersion, signal) {
+  const query = new URLSearchParams({ expected_staff_id: expectedStaffId, scope_version: scopeVersion });
+  return request(`${businessServicePath(id)}?${query}`, { signal });
+}
+
+export async function mutateBusinessService(id, action, payload, signal, context) {
+  if (!/^(request-start|approve-start|complete|report|extensions|messages|material-requests|field-days\/check-in|field-days\/[^/]+\/report|standard\/items\/[^/]+\/confirm)$/.test(action)) {
+    throw new Error('Unsupported business service action');
+  }
+  const multipart = payload instanceof FormData;
+  if (multipart) {
+    for (const key of ['expected_staff_id', 'scope_version', 'quote_version', 'revision', 'idempotency_key']) payload.set(key, String(context[key]));
+  }
+  return request(businessServicePath(id, `/${action}`), {
+    method: action === 'report' ? 'PUT' : 'POST', signal,
+    headers: { 'Idempotency-Key': multipart ? context.idempotency_key : payload.idempotency_key },
+    body: multipart ? payload : JSON.stringify(payload),
+  });
+}
+
+export function searchBusinessServiceMaterials(id, search, expectedStaffId, scopeVersion, signal) {
+  const query = new URLSearchParams({ search, pageSize: 8, expected_staff_id: expectedStaffId, scope_version: scopeVersion });
+  return request(`${businessServicePath(id, '/materials')}?${query}`, { signal });
+}
+
+export async function getBusinessServiceMedia(id, mediaId, expectedStaffId, scopeVersion, signal) {
+  const query = new URLSearchParams({ expected_staff_id: expectedStaffId, scope_version: scopeVersion });
+  const response = await fetch(`${API_BASE}${businessServicePath(id, `/field-media/${encodeURIComponent(mediaId)}`)}?${query}`, {
+    credentials: 'include', headers: authHeaders(), signal,
+  });
+  if (!response.ok) throw Object.assign(new Error(`Media unavailable (${response.status})`), { status: response.status });
+  return response.blob();
+}
+
+export function assignBusinessExecution(id, payload, signal) {
+  const { expected_staff_id, scope_version, quote_version, revision, executor_staff_id, reason, idempotency_key } = payload;
+  return request(`/api/admin/business/work-orders/${encodeURIComponent(id)}/execution/assign`, {
+    method: 'POST', signal,
+    body: JSON.stringify({ expected_staff_id, scope_version, quote_version, revision, executor_staff_id, reason, idempotency_key }),
+  });
+}
+
+export function startBusinessCollection(id, installmentId, payload, signal) {
+  return request(`/api/admin/business/work-orders/${encodeURIComponent(id)}/installments/${encodeURIComponent(installmentId)}/collection/start`, {
+    method: 'POST', body: JSON.stringify(payload), signal,
+  });
+}
+
+export function submitBusinessReceipt(id, installmentId, form, signal) {
+  return request(`/api/admin/business/work-orders/${encodeURIComponent(id)}/installments/${encodeURIComponent(installmentId)}/receipt-claims`, {
+    method: 'POST', body: form, signal,
+  });
+}
+
+export function saveBusinessQuote(id, payload, signal) {
+  return request(`/api/admin/business/work-orders/${encodeURIComponent(id)}/quote`, { method: 'PUT', body: JSON.stringify(payload), signal });
+}
+
+export function submitBusinessQuote(id, payload, signal) {
+  return request(`/api/admin/business/work-orders/${encodeURIComponent(id)}/quote/submit`, { method: 'POST', body: JSON.stringify(payload), signal });
+}
+
+export function getBusinessQuoteCosts(id, quoteVersion, expectedStaffId, scopeVersion, signal) {
+  const params = new URLSearchParams({ quote_version: quoteVersion, expected_staff_id: expectedStaffId, scope_version: scopeVersion });
+  return request(`/api/admin/business/work-orders/${encodeURIComponent(id)}/quote/costs?${params}`, { signal });
 }
 
 export function createBusinessTerritory(payload, signal) {
@@ -406,10 +493,13 @@ export async function rejectAdminWorkOrderPricing(workOrderId, note = '') {
   });
 }
 
-export async function reviewWorkOrderQuote(workOrderId, action, quoteVersion, note = '') {
+export async function reviewWorkOrderQuote(workOrderId, action, quoteVersion, note = '', businessContext) {
   return request(`/api/admin/workorders/${workOrderId}/pricing/${action}`, {
     method: 'PATCH',
-    body: JSON.stringify({ quote_version: quoteVersion, note }),
+    body: JSON.stringify({ quote_version: quoteVersion, note, ...(businessContext ? {
+      expected_staff_id: businessContext.expected_staff_id,
+      scope_version: businessContext.scope_version,
+    } : {}) }),
   });
 }
 
