@@ -132,7 +132,8 @@ test('Cloudflare test workflow covers pull requests to both protected branches',
 test('Cloudflare deploy jobs remain push-only with the existing branch guards', () => {
   const workflow = read('.github/workflows/deploy.yml');
 
-  assert.match(workflow, /deploy-frontend:[\s\S]*?if: github\.event_name == 'push' && \(github\.ref == 'refs\/heads\/main' \|\| github\.ref == 'refs\/heads\/china-edition'\)/);
+  assert.match(workflow, /deploy-frontend:[\s\S]*?needs: \[test, deploy-ai-frontend\]/);
+  assert.match(workflow, /deploy-frontend:[\s\S]*?if: github\.event_name == 'push' && !cancelled\(\) && needs\.test\.result == 'success'/);
   assert.match(workflow, /deploy-ai-frontend:[\s\S]*?if: github\.event_name == 'push' && github\.ref == 'refs\/heads\/main'/);
   assert.match(workflow, /deploy-worker:[\s\S]*?if: github\.event_name == 'push' && github\.ref == 'refs\/heads\/main'/);
   assert.match(workflow, /deploy-admin:[\s\S]*?if: github\.event_name == 'push' && \(github\.ref == 'refs\/heads\/main' \|\| github\.ref == 'refs\/heads\/china-edition'\)/);
