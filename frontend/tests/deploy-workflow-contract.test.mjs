@@ -34,6 +34,15 @@ test('public frontend deployment keeps existing branch targets and deploys only 
   assert.doesNotMatch(deployment, /dist-portal|sagemro-ai/);
 });
 
+test('standalone Admin deployment installs shared frontend dependencies before building', async () => {
+  const workflow = await readFile(workflowUrl, 'utf8');
+  const adminJob = jobBlock(workflow, 'deploy-admin');
+  const install = adminJob.match(/- name: Install shared frontend dependencies\s+working-directory: frontend\s+run: npm ci --no-audit --no-fund/);
+  assert.ok(install, 'Admin needs the locked dependencies of its imported frontend components');
+  const build = adminJob.indexOf('- name: Build');
+  assert.ok(build > install.index, 'shared dependencies must be installed before the Admin build');
+});
+
 test('AI frontend deployment stays in the production-gated Aliyun China workflow', async () => {
   const workflow = await readFile(workflowUrl, 'utf8');
   const aliyunWorkflow = await readFile(aliyunWorkflowUrl, 'utf8');
