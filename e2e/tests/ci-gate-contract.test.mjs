@@ -78,6 +78,13 @@ test('engineer onboarding journey follows the current recruitment CTA', () => {
   assert.doesNotMatch(journeys, /getByLabel\('Individual \/ team capability'\)/);
 });
 
+test('engineer approval waits for the saved status badge instead of a select option', () => {
+  const journeys = read('e2e/support/journeys.mjs');
+
+  assert.ok(journeys.includes("await expect(dialog.locator('span').filter({ hasText: /^Approved$/ })).toBeVisible();"));
+  assert.doesNotMatch(journeys, /getByText\('Approved', \{ exact: true \}\)\.first\(\)/);
+});
+
 test('customer work-order journeys use the unified four-step service request flow', () => {
   const serviceRequestFlow = read('frontend/src/components/ServiceRequest/ServiceRequestFlow.jsx');
   const journeys = read('e2e/support/journeys.mjs');
