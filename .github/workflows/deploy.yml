@@ -234,8 +234,8 @@ jobs:
   # ============ 部署 Admin ============
   deploy-admin:
     name: Deploy Admin Panel to Cloudflare Pages
-    needs: test
-    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/china-edition')
+    needs: [test, deploy-worker]
+    if: github.event_name == 'push' && !cancelled() && needs.test.result == 'success' && ((github.ref == 'refs/heads/main' && needs['deploy-worker'].result == 'success') || (github.ref == 'refs/heads/china-edition' && needs['deploy-worker'].result == 'skipped'))
     runs-on: ubuntu-latest
     environment: production
     steps:

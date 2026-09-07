@@ -143,9 +143,25 @@ test('Cloudflare deploy jobs remain push-only with the existing branch guards', 
   assert.match(workflow, /deploy-frontend:[\s\S]*?if: github\.event_name == 'push' && !cancelled\(\) && needs\.test\.result == 'success'/);
   assert.match(workflow, /deploy-ai-frontend:[\s\S]*?if: github\.event_name == 'push' && github\.ref == 'refs\/heads\/main'/);
   assert.match(workflow, /deploy-worker:[\s\S]*?if: github\.event_name == 'push' && github\.ref == 'refs\/heads\/main'/);
-  assert.match(workflow, /deploy-admin:[\s\S]*?if: github\.event_name == 'push' && \(github\.ref == 'refs\/heads\/main' \|\| github\.ref == 'refs\/heads\/china-edition'\)/);
+  assert.match(workflow, /deploy-admin:[\s\S]*?if: github\.event_name == 'push'/);
   assert.equal((workflow.match(/if: github\.event_name == 'push'/g) || []).length, 4);
   assert.match(workflow, /deploy-ai-frontend:\s+[\s\S]*?needs: deploy-worker/);
+});
+
+test('Admin deployment waits for Worker and retains the production approval gate', () => {
+  const workflow = read('.github/workflows/deploy.yml');
+  const adminJob = workflow.split(/^  deploy-admin:\s*$/m)[1]?.split(/^  [\w-]+:\s*$/m)[0];
+  assert.ok(adminJob, 'Admin deployment job must exist');
+  assert.match(adminJob, /^    needs: \[test, deploy-worker\]$/m);
+  assert.match(adminJob, /^    environment: production$/m);
+});
+
+test('Admin deployment requires Worker success on main or a skipped Worker on CN, never a cancelled run', () => {
+  const workflow = read('.github/workflows/deploy.yml');
+  const adminJob = workflow.split(/^  deploy-admin:\s*$/m)[1]?.split(/^  [\w-]+:\s*$/m)[0];
+  assert.ok(adminJob, 'Admin deployment job must exist');
+  const expected = "github.event_name == 'push' && !cancelled() && needs.test.result == 'success' && ((github.ref == 'refs/heads/main' && needs['deploy-worker'].result == 'success') || (github.ref == 'refs/heads/china-edition' && needs['deploy-worker'].result == 'skipped'))";
+  assert.equal(adminJob.match(/^    if: (.+)$/m)?.[1], expected);
 });
 
 test('Worker deployment blocks on migrations for both production D1 databases', () => {
