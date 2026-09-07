@@ -34,6 +34,7 @@ import {
   normalizeCoordinate,
 } from './lib/location.js';
 import { normalizeServiceMode, requiresArrivalVerification } from './lib/service-mode.js';
+import { handleEngineerServiceProfile } from './lib/engineerServiceProfile.js';
 import {
   SERVICE_KIND_TO_WORK_ORDER_TYPE,
   SERVICE_REQUEST_VERSION,
@@ -22725,6 +22726,9 @@ async function routeRequest(request, env, ctx) {
     }
     if (path === '/api/engineers/recommend' && request.method === 'GET') {
       return handleRecommendEngineers(request, env);
+    }
+    if (path === '/api/engineers/service-profile' && ['GET', 'PUT'].includes(request.method)) {
+      return handleEngineerServiceProfile(request, env, { jsonResponse, isCn: getRequestMarket(request) === 'cn' });
     }
     if (path === '/api/engineers/profile' && request.method === 'GET') {
       return handleGetEngineerProfile(request, env);

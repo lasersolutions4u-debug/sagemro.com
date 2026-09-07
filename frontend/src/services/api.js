@@ -1063,6 +1063,34 @@ export async function getEngineerProfile(engineerId) {
   return response.json();
 }
 
+export async function getEngineerServiceProfile(engineerId) {
+  const response = await fetch(`${API_BASE}/api/engineers/service-profile?expected_engineer_id=${encodeURIComponent(engineerId)}`, { headers: authHeaders() });
+  const data = await response.json();
+  if (!response.ok) {
+    const error = new Error(data.error || `HTTP ${response.status}`);
+    error.status = response.status;
+    error.code = data.code;
+    throw error;
+  }
+  return data;
+}
+
+export async function saveEngineerServiceProfile({ revision, profile }, engineerId) {
+  const response = await fetch(`${API_BASE}/api/engineers/service-profile`, {
+    method: 'PUT',
+    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ revision, profile, expected_engineer_id: engineerId }),
+  });
+  const data = await response.json();
+  if (!response.ok) {
+    const error = new Error(data.error || `HTTP ${response.status}`);
+    error.status = response.status;
+    error.code = data.code;
+    throw error;
+  }
+  return data;
+}
+
 /**
  * 工程师标记服务完成
  */

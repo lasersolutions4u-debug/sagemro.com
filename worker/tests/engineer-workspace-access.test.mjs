@@ -10,6 +10,129 @@ const JWT_SECRET = 'engineer-workspace-access-test-secret';
 const schemaSql = readFileSync(new URL('../schema.sql', import.meta.url), 'utf8');
 const workerSource = readFileSync(new URL('../src/index.js', import.meta.url), 'utf8');
 
+test('service profile expected identity rejects switched cookie reads and writes even at the same revision', async (t) => {
+  const env = createEnv(t);
+  const token = await signJwt({ userId: 'eng-2', userType: 'engineer', csrf: 'fixture-csrf', market: 'com', exp: Math.floor(Date.now() / 1000) + 3600 }, JWT_SECRET);
+  const url = 'https://api.sagemro.com/api/engineers/service-profile';
+  const headers = { Cookie: `__Host-sagemro_engineer_session=${token}`, Origin: 'https://engineer.sagemro.com', 'X-CSRF-Token': 'fixture-csrf', 'Content-Type': 'application/json' };
+  const switchedRead = await worker.fetch(new Request(url + '?expected_engineer_id=eng-1', { headers }), env, {});
+  assert.equal(switchedRead.status, 403);
+  assert.equal((await switchedRead.json()).code, 'engineer_identity_changed');
+  const switchedWrite = await worker.fetch(new Request(url, { method: 'PUT', headers, body: JSON.stringify({ expected_engineer_id: 'eng-1', revision: 0, profile: { version: 1, hourly_rate: '125.50' } }) }), env, {});
+  assert.equal(switchedWrite.status, 403);
+  assert.equal((await switchedWrite.json()).code, 'engineer_identity_changed');
+  assert.equal(env.DB.__sqlite.prepare('SELECT COUNT(*) AS n FROM engineer_service_profiles').get().n, 0);
+  for (const expected of [undefined, '', null, 42, ' ', 'x'.repeat(129)]) {
+    const write = await worker.fetch(new Request(url, { method: 'PUT', headers, body: JSON.stringify({ expected_engineer_id: expected, revision: 0, profile: { version: 1 } }) }), env, {});
+    assert.equal(write.status, 400);
+    assert.equal((await write.json()).code, 'invalid_service_profile');
+  }
+  for (const query of ['', '?expected_engineer_id=', '?expected_engineer_id=%20', '?expected_engineer_id=eng-2&expected_engineer_id=eng-1']) {
+    assert.equal((await worker.fetch(new Request(url + query, { headers }), env, {})).status, 400);
+  }
+});
+
+test('admin deletion still removes an otherwise unlinked engineer with a private service profile', async (t) => {
+  const env = createEnv(t);
+  insertEngineer(env.DB.__sqlite, { id: 'deletable-fixture', userNo: 'E000005', name: 'Deletion Fixture', phone: '+15550000015' });
+  for (const userId of ['deletable-fixture', 'eng-2']) {
+    const saved = await api(env, '/api/engineers/service-profile', { method: 'PUT', userId, body: { revision: 0, profile: { version: 1, hourly_rate: null } } });
+    assert.equal(saved.response.status, 200);
+  }
+  const token = await signJwt({ userId: 'admin-fixture', userType: 'admin', market: 'com', exp: Math.floor(Date.now() / 1000) + 3600 }, JWT_SECRET);
+  const response = await worker.fetch(new Request('https://api.sagemro.com/api/admin/users/deletable-fixture?type=engineer', { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } }), env, {});
+  assert.equal(response.status, 200);
+  assert.equal(env.DB.__sqlite.prepare("SELECT id FROM engineers WHERE id = 'deletable-fixture'").get(), undefined);
+  assert.deepEqual(env.DB.__sqlite.prepare('SELECT engineer_id FROM engineer_service_profiles').all().map(row => row.engineer_id), ['eng-2']);
+});
+
+test('service profile persists private self-reported drafts with optimistic revisions and read-only GET', async (t) => {
+  const env = createEnv(t);
+  const path = '/api/engineers/service-profile';
+  const initial = await api(env, path);
+  assert.equal(initial.response.status, 200);
+  assert.deepEqual(initial.json, { profile: null, revision: 0, updated_at: null, verification_status: 'self_reported' });
+  assert.equal(env.DB.__sqlite.prepare('SELECT COUNT(*) AS n FROM engineer_service_profiles').get().n, 0);
+  const profile = { version: 1, currency: 'USD', hourly_rate: '125.50', day_rate: null, hours_per_day: '8', minimum_hours: null, overtime_rate: null, valid_until: '2028-02-29', base_location: 'Sample city', coverage_regions: 'Sample region', travel_transport_standard: 'Train', hotel_standard: null, travel_time_rate: null, cross_border_available: null, equipment_experience: 'Sample machine / brand / model / controller', laser_source: ['diagnosis', 'replacement'], cutting_head: ['none'], tools: 'Owned: multimeter, working. Borrowed: scope. Rental: lifting equipment.', workshop: null, availability: null, languages: 'English', assistant_support: null, remote_support: null, qualifications_evidence: null, limitations: 'No internal laser repairs' };
+  const saved = await api(env, path + '?engineer_id=eng-2', { method: 'PUT', body: { revision: 0, profile } });
+  assert.equal(saved.response.status, 200);
+  assert.deepEqual(saved.json.profile, profile);
+  assert.equal(saved.json.revision, 1);
+  assert.equal(saved.json.verification_status, 'self_reported');
+  assert.ok(saved.json.updated_at);
+  const other = await api(env, path + '?engineer_id=lead-1', { userId: 'eng-2' });
+  assert.equal(other.json.profile, null);
+  const read = await api(env, path);
+  assert.deepEqual(read.json, saved.json);
+  const stale = await api(env, path, { method: 'PUT', body: { revision: 0, profile: { version: 1 } } });
+  assert.equal(stale.response.status, 409);
+  const updated = await api(env, path, { method: 'PUT', body: { revision: 1, profile: { ...profile, hourly_rate: null } } });
+  assert.equal(updated.json.revision, 2);
+  assert.equal(updated.json.profile.hourly_rate, null);
+  for (const endpoint of ['/api/engineers/profile', '/api/engineers/team', '/api/engineers/recommend']) {
+    const result = await api(env, endpoint);
+    assert.equal(JSON.stringify(result.json).includes('hourly_rate'), false);
+    assert.equal(JSON.stringify(result.json).includes('No internal laser repairs'), false);
+  }
+  assert.equal(env.DB.__sqlite.prepare('PRAGMA table_info(engineers)').all().some(row => row.name === 'profile_json'), false);
+});
+
+test('service profile rejects impersonation, non-engineer identities and invalid bounded input', async (t) => {
+  const env = createEnv(t);
+  const path = '/api/engineers/service-profile';
+  for (const userType of ['customer', 'admin']) {
+    const token = await signJwt({ userId: 'lead-1', userType, market: 'com', exp: Math.floor(Date.now() / 1000) + 3600 }, JWT_SECRET);
+    for (const method of ['GET', 'PUT']) {
+      const response = await worker.fetch(new Request(`https://api.sagemro.com${path}`, { method, headers: { Authorization: `Bearer ${token}` } }), env, {});
+      assert.equal(response.status, 403);
+    }
+  }
+  const anonymous = await worker.fetch(new Request(`https://api.sagemro.com${path}`), env, {});
+  assert.equal(anonymous.status, 401);
+  assert.equal((await api(env, path, { userId: 'missing-engineer' })).response.status, 403);
+  const invalidBodies = [
+    null, [], {}, { revision: -1, profile: { version: 1 } },
+    { revision: 0, engineer_id: 'eng-2', profile: { version: 1 } },
+    ...[{ verified: true }, { verification_status: 'verified' }, { engineer_id: 'eng-2' }, { hourly_rate: 0 }, { hourly_rate: '-1' }, { hourly_rate: '1.234' }, { hourly_rate: 'NaN' }, { hourly_rate: 'Infinity' }, { hourly_rate: '100000000000000' }, { currency: 'usd' }, { valid_until: '2026-02-30' }, { valid_until: '2026-1-1' }, { hours_per_day: '25' }, { minimum_hours: '-1' }, { cross_border_available: 'yes' }, { laser_source: ['certified'] }, { cutting_head: ['unknown', 'diagnosis'] }, { tools: 'x'.repeat(2001) }, { version: 2 }].map(profile => ({ revision: 0, profile: { version: 1, ...profile } })),
+  ];
+  for (const body of invalidBodies) {
+    const result = await api(env, path, { method: 'PUT', body });
+    assert.equal(result.response.status, 400, JSON.stringify(body).slice(0, 150));
+    assert.equal(result.json.code, 'invalid_service_profile');
+  }
+  assert.equal(env.DB.__sqlite.prepare('SELECT COUNT(*) AS n FROM engineer_service_profiles').get().n, 0);
+});
+
+test('service profile enforces cookie CSRF and rejects malformed or oversized request streams in both markets', async (t) => {
+  const env = createEnv(t);
+  const token = await signJwt({ userId: 'eng-1', userType: 'engineer', market: 'com', csrf: 'fixture-csrf', exp: Math.floor(Date.now() / 1000) + 3600 }, JWT_SECRET);
+  const url = 'https://api.sagemro.com/api/engineers/service-profile';
+  const headers = { Cookie: `__Host-sagemro_engineer_session=${token}`, Origin: 'https://engineer.sagemro.com', 'Content-Type': 'application/json' };
+  const body = JSON.stringify({ expected_engineer_id: 'eng-1', revision: 0, profile: { version: 1, hourly_rate: null } });
+  const blocked = await worker.fetch(new Request(url, { method: 'PUT', headers, body }), env, {});
+  assert.equal(blocked.status, 403);
+  assert.equal(env.DB.__sqlite.prepare('SELECT COUNT(*) AS n FROM engineer_service_profiles').get().n, 0);
+  const allowed = await worker.fetch(new Request(url, { method: 'PUT', headers: { ...headers, 'X-CSRF-Token': 'fixture-csrf' }, body }), env, {});
+  assert.equal(allowed.status, 200);
+  for (const market of ['com', 'cn']) {
+    for (const raw of ['{broken', '{"revision":0,"profile":{"version":1,"hourly_rate":1e999}}', JSON.stringify({ revision: 0, profile: { version: 1, tools: 'x'.repeat(33000) } })]) {
+      const response = await worker.fetch(new Request(url, { method: 'PUT', headers: { Authorization: `Bearer ${token}`, Origin: `https://engineer.sagemro.${market}`, 'Content-Type': 'application/json' }, body: raw }), { ...env, DB_CN: env.DB }, {});
+      assert.equal(response.status, 400);
+      const data = await response.json();
+      assert.equal(data.code, 'invalid_service_profile');
+      if (market === 'cn') assert.match(data.error, /资料格式无效/);
+      else assert.match(data.error, /^Invalid profile/);
+    }
+  }
+  const customer = await signJwt({ userId: 'customer-1', userType: 'customer', market: 'com', exp: Math.floor(Date.now() / 1000) + 3600 }, JWT_SECRET);
+  for (const path of ['/api/engineers/recommend', '/api/engineers/profile?engineer_id=eng-1', '/api/workorders/wo-member']) {
+    const response = await worker.fetch(new Request(`https://api.sagemro.com${path}`, { headers: { Authorization: `Bearer ${customer}` } }), env, {});
+    const output = await response.text();
+    assert.equal(output.includes('hourly_rate'), false);
+    assert.equal(output.includes('profile_json'), false);
+  }
+});
+
 function createD1Database(t) {
   const sqlite = new DatabaseSync(':memory:');
   sqlite.exec('PRAGMA foreign_keys = ON;');
@@ -124,6 +247,10 @@ async function tokenFor(userId) {
 }
 
 async function api(env, path, { method = 'GET', body, userId = 'lead-1', idempotencyKey } = {}) {
+  if (path.startsWith('/api/engineers/service-profile')) {
+    if (method === 'GET') path += `${path.includes('?') ? '&' : '?'}expected_engineer_id=${encodeURIComponent(userId)}`;
+    if (method === 'PUT' && body && !Array.isArray(body)) body = { expected_engineer_id: userId, ...body };
+  }
   const token = await tokenFor(userId);
   const headers = {
     Authorization: `Bearer ${token}`,

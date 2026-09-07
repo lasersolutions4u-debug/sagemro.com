@@ -1826,4 +1826,12 @@ INSERT OR IGNORE INTO _migrations (version, note) VALUES
     ('046_knowledge_candidate_pipeline', 'Reviewed service report knowledge candidate pipeline'),
     ('047_structured_service_request_intake', 'Structured service-request intake fields for work orders'),
     ('048_service_request_assist_quota', 'Atomic public service-request AI assistant quotas'),
-    ('049_nullable_international_customer_phone', 'Allow verified international customer accounts without a phone number');
+    ('049_nullable_international_customer_phone', 'Allow verified international customer accounts without a phone number'),
+    ('050_engineer_service_profiles', 'Private self-reported engineer service costs and capabilities');
+
+CREATE TABLE IF NOT EXISTS engineer_service_profiles (
+    engineer_id TEXT PRIMARY KEY NOT NULL REFERENCES engineers(id) ON DELETE CASCADE,
+    profile_json TEXT NOT NULL CHECK (json_valid(profile_json)),
+    revision INTEGER NOT NULL CHECK (typeof(revision) = 'integer' AND revision > 0),
+    updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+);
