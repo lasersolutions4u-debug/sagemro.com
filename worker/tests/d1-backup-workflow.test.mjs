@@ -41,7 +41,7 @@ test('production credentials are scoped only to the D1 export step', async () =>
   const encryptionStep = stepByName(job, 'Encrypt backups and remove plaintext');
   const validationStep = stepByName(job, 'Validate backups and write manifests');
   const publicRecipientEnvironment = {
-    AGE_RECIPIENT: 'age1dwngtpwx82g5nwnhexrve2wp4fhaqrpdn2dwl4m494pcfreztd8qh0z0xk',
+    AGE_RECIPIENT: 'age1napv2rt7lm400g8rcz8gg2rjh04cekjs3x5qw920scqg2v2ga4csu50p7l',
   };
 
   assert.equal(job.env, undefined);
@@ -70,6 +70,19 @@ test('third-party actions are pinned to reviewed commit SHAs', async () => {
   for (const step of job.steps.filter((candidate) => candidate.uses)) {
     assert.match(step.uses, /@[0-9a-f]{40}$/);
   }
+});
+
+test('backup recovery documentation matches the rotated public recipient and credential custody', async () => {
+  const workflow = parse(await readFile(workflowPath, 'utf8'));
+  const recipient = stepByName(workflow.jobs.backup, 'Encrypt backups and remove plaintext').env.AGE_RECIPIENT;
+  const documentation = await readFile(resolve(import.meta.dirname, '../../DEPLOY.md'), 'utf8');
+
+  assert.ok(documentation.includes(recipient));
+  assert.ok(documentation.includes('Windows 凭据管理器'));
+  assert.ok(documentation.includes('SAGEMRO/D1/Recovery/fb70c2cc-af00-4ea9-b681-165acd3ef63d'));
+  assert.ok(documentation.includes('异机'));
+  assert.doesNotMatch(documentation, /当前本机恢复身份保存在忽略目录/);
+  assert.doesNotMatch(await readFile(workflowPath, 'utf8'), /AGE-SECRET-KEY-/);
 });
 
 test('each market exports and uploads an independently verifiable artifact', async () => {
