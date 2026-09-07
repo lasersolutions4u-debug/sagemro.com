@@ -148,6 +148,16 @@ test('Cloudflare deploy jobs remain push-only with the existing branch guards', 
   assert.match(workflow, /deploy-ai-frontend:\s+[\s\S]*?needs: deploy-worker/);
 });
 
+test('standalone Admin deployment installs shared frontend dependencies before building', () => {
+  const workflow = read('.github/workflows/deploy.yml');
+  const adminJob = workflow.split(/^  deploy-admin:\s*$/m)[1]?.split(/^  [\w-]+:\s*$/m)[0];
+  assert.ok(adminJob, 'Admin deployment job must exist');
+  const install = adminJob.match(/- name: Install shared frontend dependencies\s+working-directory: frontend\s+run: npm ci --no-audit --no-fund/);
+  assert.ok(install, 'Admin needs the locked dependencies of its imported frontend components');
+  const build = adminJob.indexOf('- name: Build');
+  assert.ok(build > install.index, 'shared dependencies must be installed before the Admin build');
+});
+
 test('Admin deployment waits for Worker and retains the production approval gate', () => {
   const workflow = read('.github/workflows/deploy.yml');
   const adminJob = workflow.split(/^  deploy-admin:\s*$/m)[1]?.split(/^  [\w-]+:\s*$/m)[0];
