@@ -39,6 +39,7 @@ async function request(path, options = {}) {
   if (!res.ok) {
     const error = new Error(data.error || `请求失败 (${res.status})`);
     error.status = res.status;
+    if (data.code !== undefined) error.code = data.code;
     if (data.field !== undefined) error.field = data.field;
     if (data.fields !== undefined) error.fields = data.fields;
     throw error;
@@ -142,6 +143,34 @@ export async function changeAdminPassword(oldPassword, newPassword) {
 
 export async function getAdminStaffAccounts() {
   return request('/api/admin/staff');
+}
+
+export function getBusinessOrganization(expectedStaffId, signal) {
+  return request(`/api/admin/business/organization?expected_staff_id=${encodeURIComponent(expectedStaffId)}`, { signal });
+}
+
+export function getBusinessRecords(kind, filters, signal) {
+  const params = new URLSearchParams({ kind });
+  for (const key of ['expected_staff_id', 'limit', 'cursor', 'scope_version', 'export']) {
+    if (filters[key] !== undefined && filters[key] !== null) params.set(key, String(filters[key]));
+  }
+  return request(`/api/admin/business/records?${params}`, { signal });
+}
+
+export function getBusinessRecord(kind, id, expectedStaffId, scopeVersion, signal) {
+  return request(`/api/admin/business/records/${encodeURIComponent(kind)}/${encodeURIComponent(id)}?expected_staff_id=${encodeURIComponent(expectedStaffId)}&scope_version=${encodeURIComponent(scopeVersion)}`, { signal });
+}
+
+export function assignBusinessRecord(kind, id, payload, signal) {
+  return request(`/api/admin/business/records/${encodeURIComponent(kind)}/${encodeURIComponent(id)}/assignment`, { method: 'PUT', body: JSON.stringify(payload), signal });
+}
+
+export function createBusinessTerritory(payload, signal) {
+  return request('/api/admin/business/territories', { method: 'POST', body: JSON.stringify(payload), signal });
+}
+
+export function updateBusinessStaff(id, payload, signal) {
+  return request(`/api/admin/business/staff/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(payload), signal });
 }
 
 export async function createAdminStaffAccount(staff) {

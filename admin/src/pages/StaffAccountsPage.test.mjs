@@ -1,10 +1,21 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
+import './businessWorkspaceExport.test.mjs';
+import './BusinessWorkspacePage.test.mjs';
 
 const page = await readFile(new URL('./StaffAccountsPage.jsx', import.meta.url), 'utf8');
 const app = await readFile(new URL('../App.jsx', import.meta.url), 'utf8');
 const api = await readFile(new URL('../services/api.js', import.meta.url), 'utf8');
+
+test('staff management offers the nine business grades and explicit hierarchy configuration', () => {
+  assert.match(page, /business_director/);
+  assert.match(page, /business_manager/);
+  assert.match(page, /business_specialist/);
+  assert.match(page, /BusinessStaffFields/);
+  assert.match(page, /BusinessOrganizationPanel/);
+  assert.match(page, /expected_staff_id/);
+});
 
 test('internal staff navigation and page are bootstrap-admin only', () => {
   assert.match(app, /StaffAccountsPage/);

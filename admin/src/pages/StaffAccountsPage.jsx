@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react';
 import { Copy, KeyRound, RefreshCw, UserMinus, UserPlus, X } from 'lucide-react';
 import { runtimeConfig } from '../config/runtime';
+import { BusinessOrganizationPanel, BusinessStaffFields, BUSINESS_ROLES } from '../components/BusinessOrganizationPanel';
 import {
   createAdminStaffAccount,
   deactivateAdminStaffAccount,
   getAdminStaffAccounts,
+  getBusinessOrganization,
   resetAdminStaffPassword,
 } from '../services/api';
 
@@ -16,7 +18,7 @@ const TEXT = {
     active: 'Active', inactive: 'Inactive', forceChange: 'Password change required', reset: 'Reset temporary password', deactivate: 'Deactivate',
     temporaryTitle: 'Temporary password', temporaryBody: 'Share this password through a secure channel. It is shown only in this notice and must be changed at first sign-in.',
     copy: 'Copy password', copied: 'Copied', close: 'Close', failed: 'Operation failed: ', confirmDeactivate: 'Deactivate this staff account?',
-    roles: { admin: 'Admin', operations: 'Operations', warehouse: 'Warehouse', procurement: 'Procurement' },
+    roles: { admin: 'Admin', operations: 'Operations', warehouse: 'Warehouse', procurement: 'Procurement', business_director: 'Business director', business_manager: 'Business manager', business_specialist: 'Business specialist' },
     markets: { all: 'All markets', com: 'International', cn: 'China' },
   },
   'zh-CN': {
@@ -26,7 +28,7 @@ const TEXT = {
     active: '启用', inactive: '已停用', forceChange: '需修改密码', reset: '重置临时密码', deactivate: '停用账号',
     temporaryTitle: '临时密码', temporaryBody: '请通过安全渠道发送。该密码仅在本提示中显示一次，员工首次登录后必须修改。',
     copy: '复制密码', copied: '已复制', close: '关闭', failed: '操作失败：', confirmDeactivate: '确定停用该员工账号？',
-    roles: { admin: '管理员', operations: '运营', warehouse: '仓库', procurement: '采购' },
+    roles: { admin: '管理员', operations: '运营', warehouse: '仓库', procurement: '采购', business_director: '商务总监', business_manager: '商务经理', business_specialist: '商务专员' },
     markets: { all: '全部市场', com: '国际版', cn: '中国版' },
   },
 };
@@ -36,6 +38,7 @@ const EMPTY_FORM = { display_name: '', login: '', phone: '', role: 'operations',
 export function StaffAccountsPage() {
   const t = TEXT[runtimeConfig.locale] || TEXT.en;
   const [staff, setStaff] = useState([]);
+  const [organization, setOrganization] = useState(null);
   const [form, setForm] = useState(EMPTY_FORM);
   const [loading, setLoading] = useState(true);
   const [pending, setPending] = useState('');
@@ -49,6 +52,7 @@ export function StaffAccountsPage() {
     try {
       const data = await getAdminStaffAccounts();
       setStaff(data.staff || []);
+      setOrganization(await getBusinessOrganization('admin'));
     } catch (err) {
       setError(`${t.failed}${err.message}`);
     } finally {
@@ -64,10 +68,11 @@ export function StaffAccountsPage() {
     setPending('create');
     setError('');
     try {
-      const data = await createAdminStaffAccount(form);
+      const data = await createAdminStaffAccount(BUSINESS_ROLES.includes(form.role) ? { ...form, grade: form.grade || 1, expected_staff_id: 'admin', scope_version: organization?.scope_version, supervisor_staff_id: form.role === 'business_director' ? null : form.supervisor_staff_id, territory_ids: form.role === 'business_director' ? form.territory_ids || [] : [] } : form);
       setStaff((current) => [data.staff, ...current]);
       setTemporaryPassword(data.temporary_password);
       setForm(EMPTY_FORM);
+      await load();
     } catch (err) {
       setError(`${t.failed}${err.message}`);
     } finally {
@@ -122,14 +127,17 @@ export function StaffAccountsPage() {
         <div><label htmlFor="staff-display-name" className="mb-1 block text-xs text-[var(--color-text-muted)]">{t.name}</label><input id="staff-display-name" required value={form.display_name} onChange={(event) => setForm({ ...form, display_name: event.target.value })} className="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-3 py-2 text-sm" /></div>
         <div><label htmlFor="staff-login" className="mb-1 block text-xs text-[var(--color-text-muted)]">{t.login}</label><input id="staff-login" required value={form.login} onChange={(event) => setForm({ ...form, login: event.target.value })} className="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-3 py-2 text-sm" /></div>
         <div><label htmlFor="staff-phone" className="mb-1 block text-xs text-[var(--color-text-muted)]">{t.phone}</label><input id="staff-phone" value={form.phone} onChange={(event) => setForm({ ...form, phone: event.target.value })} className="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-3 py-2 text-sm" /></div>
-        <div><label htmlFor="staff-role" className="mb-1 block text-xs text-[var(--color-text-muted)]">{t.role}</label><select id="staff-role" value={form.role} onChange={(event) => setForm({ ...form, role: event.target.value })} className="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-3 py-2 text-sm">
+        <div><label htmlFor="staff-role" className="mb-1 block text-xs text-[var(--color-text-muted)]">{t.role}</label><select id="staff-role" value={form.role} onChange={(event) => setForm({ ...form, role: event.target.value, grade: 1, supervisor_staff_id: null, territory_ids: [] })} className="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-3 py-2 text-sm">
           {Object.entries(t.roles).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
         </select></div>
-        <div><label htmlFor="staff-market" className="mb-1 block text-xs text-[var(--color-text-muted)]">{t.market}</label><select id="staff-market" value={form.market_scope} onChange={(event) => setForm({ ...form, market_scope: event.target.value })} className="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-3 py-2 text-sm">
+        <div><label htmlFor="staff-market" className="mb-1 block text-xs text-[var(--color-text-muted)]">{t.market}</label><select id="staff-market" value={form.market_scope} onChange={(event) => setForm({ ...form, market_scope: event.target.value, supervisor_staff_id: null, territory_ids: [] })} className="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-3 py-2 text-sm">
           {Object.entries(t.markets).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
         </select></div>
         <button type="submit" disabled={pending === 'create'} className="inline-flex items-center justify-center gap-2 self-end whitespace-nowrap rounded-lg bg-[var(--color-primary)] px-3 py-2 text-sm font-medium text-white disabled:opacity-50"><UserPlus size={16} />{pending === 'create' ? t.creating : t.create}</button>
+        <BusinessStaffFields value={form} onChange={setForm} organization={organization} disabled={Boolean(pending) || !organization} />
       </form>
+
+      <BusinessOrganizationPanel key={organization?.scope_version || 'loading'} organization={organization} onSaved={load} />
 
       <div className="overflow-x-auto border-y border-[var(--color-border)] bg-[var(--color-surface)]">
         <table className="w-full min-w-[820px] text-sm">

@@ -43,9 +43,10 @@ test('admin navigation resets and guards privileged pages across identity change
   assert.match(app, /const handleLogout = \(\) => \{[\s\S]*setActivePage\('dashboard'\)[\s\S]*setUser\(null\)/);
   assert.match(app, /const handleLogin = \(nextUser\) => \{[\s\S]*setActivePage\('dashboard'\)[\s\S]*setUser\(normalizedUser\)/);
   assert.match(app, /visibleNavItems\.some\(\(item\) => item\.key === activePage\)/);
-  assert.match(app, /const currentPage = visibleNavItems\.some\(\(item\) => item\.key === activePage\) \? activePage : 'dashboard'/);
+  assert.match(app, /const currentPage = visibleNavItems\.some\(\(item\) => item\.key === activePage\) \? activePage : visibleNavItems\[0\]\?\.key \|\| 'dashboard'/);
+  assert.match(app, /if \(isBusinessStaff\) return item\.key === 'businessWorkspace'/);
   assert.match(app, /switch \(currentPage\)/);
-  assert.match(app, /useEffect\(\(\) => \{[\s\S]*setActivePage\('dashboard'\)[\s\S]*\}, \[activePage, user, visibleNavItems\]\)/);
+  assert.match(app, /useEffect\(\(\) => \{[\s\S]*setActivePage\(visibleNavItems\[0\]\?\.key \|\| 'dashboard'\)[\s\S]*\}, \[activePage, user, visibleNavItems\]\)/);
 });
 
 test('admin session restore falls back to the legacy JWT during staggered deploys', () => {
