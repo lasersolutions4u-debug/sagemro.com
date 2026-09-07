@@ -496,20 +496,20 @@ export function WorkOrderDetailContent({
   }, [showInfoTab]);
 
   const handleSubmitRating = async () => {
-    if (!detail?.engineer_id || !detail?.customer_id) { toastWarning(copy.incomplete); return; }
+    const businessService = detail?.service_execution?.type === 'business';
+    if ((!detail?.engineer_id && !businessService) || !detail?.customer_id) { toastWarning(copy.incomplete); return; }
     setSubmitting(true);
     try {
       await submitRating({
         work_order_id: detail.id,
-        engineer_id: detail.engineer_id,
         customer_id: detail.customer_id,
-        rating_timeliness: ratings.timeliness,
-        rating_technical: ratings.technical,
-        rating_communication: ratings.communication,
-        rating_professional: ratings.professional,
-        comment,
+        ...(!businessService ? { engineer_id: detail.engineer_id,
+          rating_timeliness: ratings.timeliness,
+          rating_technical: ratings.technical,
+          rating_communication: ratings.communication,
+          rating_professional: ratings.professional, comment } : {}),
       });
-      toastSuccess(copy.ratingSaved);
+      toastSuccess(businessService ? (isCnLocale() ? '服务报告已验收，尾款另行确认。' : 'Service report accepted. Final payment is tracked separately.') : copy.ratingSaved);
       onRateSuccess?.();
       loadDetail();
     } catch (e) {
@@ -723,6 +723,8 @@ export function WorkOrderDetailContent({
   const urgency = urgencySet[workOrder.urgency] || urgencySet.normal;
   const isEngineer = userType === 'engineer';
   const isCustomer = userType === 'customer';
+  const isBusinessService = detail?.service_execution?.type === 'business';
+  const businessAccepted = isBusinessService && Boolean(detail?.repair_record?.customer_confirmed_at);
   const assignedEngineerId = detail?.id === workOrder.id
     ? detail.engineer_id
     : workOrder.engineer_id;
@@ -755,10 +757,10 @@ export function WorkOrderDetailContent({
   }
 
   // 评价Tab：客户对服务进行评价（resolved/pending_review 可评价，completed 查看已有评价）
-  const canRate = effectiveStatus === 'resolved' || effectiveStatus === 'pending_review';
+  const canRate = !businessAccepted && (effectiveStatus === 'resolved' || effectiveStatus === 'pending_review');
   const hasRating = detail?.rating;
-  if (isCustomer && (canRate || (effectiveStatus === 'completed' && hasRating))) {
-    tabs.push({ key: 'rating', label: copy.tabs.review });
+  if (isCustomer && (canRate || businessAccepted || (effectiveStatus === 'completed' && hasRating))) {
+    tabs.push({ key: 'rating', label: isBusinessService ? (isCnLocale() ? '服务验收' : 'Service acceptance') : copy.tabs.review });
   }
 
   // 维修记录Tab：工程师在服务中及之后可见，客户在有记录时可见
@@ -1183,7 +1185,7 @@ export function WorkOrderDetailContent({
           onClick={() => setTab('rating')}
           className="w-full py-3 bg-yellow-500 hover:bg-yellow-600 text-white rounded-xl font-medium"
         >
-          {copy.confirmReview}
+          {isBusinessService ? (isCnLocale() ? '验收服务报告' : 'Accept service report') : copy.confirmReview}
         </button>
       )}
       {isCustomer && hasRating && (
@@ -1280,7 +1282,16 @@ export function WorkOrderDetailContent({
 
   const renderRatingTab = () => (
     <div className="space-y-4">
-      {hasRating ? (
+      {isBusinessService ? <div className="space-y-3 rounded-xl bg-[var(--color-surface-elevated)] p-4">
+        <h3 className="text-sm font-medium">{isCnLocale() ? '服务报告验收' : 'Service report acceptance'}</h3>
+        <p className="text-sm text-[var(--color-text-secondary)]">{businessAccepted
+          ? (isCnLocale() ? '服务报告已验收，尾款另行确认。' : 'Service report accepted. Final payment is tracked separately.')
+          : (isCnLocale() ? '请核对服务报告及验证结果。确认验收不会代替付款或确认尾款到账。' : 'Review the service report and verification results. Acceptance does not make a payment or confirm final payment receipt.')}</p>
+        {!businessAccepted && <button type="button" className="text-sm text-[var(--color-primary)] underline" onClick={() => setTab('repairRecord')}>{isCnLocale() ? '查看服务报告' : 'View service report'}</button>}
+        {canRate && <>
+          <button type="button" data-testid="submit-rating-button" disabled={submitting || !detail?.repair_record?.submitted_at} onClick={handleSubmitRating} className="w-full rounded-xl bg-[var(--color-primary)] px-4 py-3 font-medium text-white disabled:opacity-50">{submitting ? (isCnLocale() ? '提交中…' : 'Submitting…') : (isCnLocale() ? '验收服务报告' : 'Accept service report')}</button>
+        </>}
+      </div> : hasRating ? (
         <div>
           <h3 className="text-sm font-medium text-[var(--color-text-primary)] mb-3">{copy.yourReview}</h3>
           <div className="p-4 bg-[var(--color-surface-elevated)] rounded-xl space-y-2">

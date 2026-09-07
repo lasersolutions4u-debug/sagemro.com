@@ -521,7 +521,7 @@ function App() {
             <EngineerProfileModal
               isOpen={engineerProfileOpen}
               onClose={() => setEngineerProfileOpen(false)}
-              engineerId={localStorage.getItem('sagemro_engineer_id')}
+              engineerId={currentUser?.id || localStorage.getItem('sagemro_engineer_id')}
             />
           )}
           {userType === 'engineer' && (
@@ -896,7 +896,7 @@ function App() {
             <EngineerProfileModal
               isOpen={engineerProfileOpen}
               onClose={() => setEngineerProfileOpen(false)}
-              engineerId={localStorage.getItem('sagemro_engineer_id')}
+              engineerId={currentUser?.id || localStorage.getItem('sagemro_engineer_id')}
             />
           )}
         </Suspense>

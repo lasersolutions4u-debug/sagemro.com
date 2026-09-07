@@ -27,6 +27,10 @@ test('Aliyun China portal waits for the shared API and D1 contract', () => {
   assert.match(workflow, /wrangler d1 execute sagemro-db-cn --env production --remote/);
   assert.match(workflow, /047_structured_service_request_intake/);
   assert.match(workflow, /048_service_request_assist_quota/);
+  const required = workflow.match(/CN_REQUIRED="([^"]+)"/)?.[1] || '';
+  for (const version of ['050_engineer_service_profiles', '051_business_scope', '052_business_quote_costs', '053_business_receipt_actors', '054_business_execution_assignments', '055_business_service_execution']) {
+    assert.ok(required.split(' ').includes(version), `CN must require ${version}`);
+  }
   assert.match(workflow, /POST https:\/\/api\.sagemro\.cn\/api\/service-request-assist/);
   assert.match(workflow, /assist_status.*400/s);
 });
