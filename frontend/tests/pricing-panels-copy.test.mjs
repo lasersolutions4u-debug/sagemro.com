@@ -7,6 +7,21 @@ function getCnCopy(source) {
   return source.slice(cnStart, source.indexOf('\n};', cnStart));
 }
 
+test('customer negotiation sends the exact displayed quote version', async () => {
+  const source = await readFile(new URL('../src/components/WorkOrder/PricingPanels.jsx', import.meta.url), 'utf8');
+  const api = await readFile(new URL('../src/services/api.js', import.meta.url), 'utf8');
+  assert.match(source, /rejectWorkOrderPricing\([\s\S]*normalizedCounterOffer,\s*pricing\.quote_version/);
+  assert.match(api, /rejectWorkOrderPricing\(workOrderId, customerId, reason, counterOffer = null, quoteVersion\)/);
+  assert.match(api, /const body = \{ customer_id: customerId, reason, quote_version: quoteVersion \}/);
+});
+
+test('business-managed quotes show an engineer notice instead of the quotation editor', async () => {
+  const source = await readFile(new URL('../src/components/WorkOrder/PricingPanels.jsx', import.meta.url), 'utf8');
+  assert.match(source, /if \(pricing\?\.quote_source === 'business'\) return/);
+  assert.match(source, /Quotation is handled by the business team/);
+  assert.match(source, /报价由商务团队负责/);
+});
+
 test('pricing panels use market quote currencies and do not expose offline settlement split', async () => {
   const source = await readFile(new URL('../src/components/WorkOrder/PricingPanels.jsx', import.meta.url), 'utf8');
 

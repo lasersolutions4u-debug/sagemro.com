@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import './business-quote-estimate.test.mjs';
 
 import {
   PAYMENT_TRIGGER_TYPES,

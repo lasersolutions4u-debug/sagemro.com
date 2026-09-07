@@ -6,6 +6,54 @@ import { DatabaseSync } from 'node:sqlite';
 const migrationUrl = new URL('../migrations/041_quote_execution_baseline.sql', import.meta.url);
 const migrationSql = existsSync(migrationUrl) ? readFileSync(migrationUrl, 'utf8') : '';
 const schemaSql = readFileSync(new URL('../schema.sql', import.meta.url), 'utf8');
+const receiptMigrationUrl = new URL('../migrations/053_business_receipt_actors.sql', import.meta.url);
+const receiptMigrationSql = existsSync(receiptMigrationUrl) ? readFileSync(receiptMigrationUrl, 'utf8') : '';
+
+test('business receipt migration preserves legacy claims and evidence with foreign keys enabled', () => {
+  assert.notEqual(receiptMigrationSql, '', 'receipt migration must exist');
+  const db = preMigrationDatabase();
+  db.exec(migrationSql);
+  seedExecutionGraph(db);
+  const claim = db.prepare('SELECT * FROM work_order_receipt_claims').get();
+  const evidence = db.prepare('SELECT * FROM work_order_receipt_evidence').all();
+  db.exec('BEGIN');
+  db.exec(receiptMigrationSql);
+  db.exec('COMMIT');
+  assert.equal(db.prepare('PRAGMA foreign_keys').get().foreign_keys, 1);
+  assert.deepEqual(db.prepare('PRAGMA foreign_key_check').all(), []);
+  assert.deepEqual({ ...db.prepare('SELECT * FROM work_order_receipt_claims').get() }, { ...claim, submitted_by_staff_id: null });
+  assert.deepEqual(db.prepare('SELECT * FROM work_order_receipt_evidence').all(), evidence);
+  db.exec("INSERT INTO work_order_receipt_claims(id,installment_id,work_order_id,submitted_by_staff_id,claimed_amount,idempotency_key) VALUES ('business','installment-1','wo-1','staff-snapshot',1,'business-key')");
+  assertConstraint(db, "UPDATE work_order_receipt_claims SET engineer_id='eng-1' WHERE id='business'", /immutable/);
+  assertConstraint(db, "UPDATE work_order_receipt_claims SET submitted_by_staff_id='other' WHERE id='business'", /immutable/);
+  assertConstraint(db, "UPDATE work_order_receipt_claims SET engineer_id='other' WHERE id='claim-1'", /immutable/);
+  assertConstraint(db, "DELETE FROM work_order_receipt_claims WHERE id='claim-1'", /foreign key/i);
+  const snapshot = schemaDatabase();
+  for (const table of ['work_order_receipt_claims', 'work_order_receipt_evidence']) {
+    assert.deepEqual(normalizeTableInfo(db, table), normalizeTableInfo(snapshot, table));
+    assert.deepEqual(normalizeForeignKeys(db, table), normalizeForeignKeys(snapshot, table));
+    assert.deepEqual(normalizeIndexes(db, table), normalizeIndexes(snapshot, table));
+  }
+  db.close(); snapshot.close();
+});
+for (const boundary of ['DROP TABLE work_order_receipt_evidence;', 'DROP TABLE work_order_receipt_claims;', 'ALTER TABLE work_order_receipt_claims_new', 'INSERT INTO work_order_receipt_evidence', 'DROP TABLE receipt_evidence_migration_copy;', 'CREATE TRIGGER receipt_claim_actor_immutable']) {
+  test(`business receipt migration rolls back every record and schema at ${boundary}`, () => {
+    const db = preMigrationDatabase(); db.exec(migrationSql); seedExecutionGraph(db);
+    const before = db.prepare("SELECT type,name,tbl_name,sql FROM sqlite_master ORDER BY type,name").all();
+    const claims = db.prepare('SELECT * FROM work_order_receipt_claims').all();
+    const evidence = db.prepare('SELECT * FROM work_order_receipt_evidence').all();
+    const cut = receiptMigrationSql.indexOf(boundary); assert.ok(cut >= 0);
+    db.exec('BEGIN'); db.exec(receiptMigrationSql.slice(0, cut));
+    assert.throws(() => db.exec('INSERT INTO missing_migration_test_table VALUES(1)'));
+    db.exec('ROLLBACK');
+    assert.deepEqual(db.prepare("SELECT type,name,tbl_name,sql FROM sqlite_master ORDER BY type,name").all(), before);
+    assert.deepEqual(db.prepare('SELECT * FROM work_order_receipt_claims').all(), claims);
+    assert.deepEqual(db.prepare('SELECT * FROM work_order_receipt_evidence').all(), evidence);
+    assert.deepEqual(db.prepare('PRAGMA foreign_key_check').all(), []);
+    assert.equal(db.prepare('PRAGMA foreign_keys').get().foreign_keys, 1);
+    db.close();
+  });
+}
 
 const triggerTypes = [
   'before_start',
@@ -309,6 +357,7 @@ const databaseFactories = [
 test('migration 041 and schema snapshot keep quote execution metadata in parity', () => {
   const migrationDb = preMigrationDatabase();
   migrationDb.exec(migrationSql);
+  migrationDb.exec(receiptMigrationSql);
   const snapshotDb = schemaDatabase();
   const newTables = [
     'work_order_payment_schedule',

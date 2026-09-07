@@ -3,6 +3,7 @@ import { Modal } from '../common/Modal';
 import { Star, MapPin, Phone, Briefcase, Wrench, Award, Bell, BellOff, CreditCard } from 'lucide-react';
 import { getEngineerProfile, updateEngineerProfile } from '../../services/api';
 import { usePushNotification } from '../../hooks/usePushNotification';
+import { EngineerServiceProfileForm } from './EngineerServiceProfileForm';
 
 export function EngineerProfileModal({ isOpen, onClose, engineerId }) {
   const [profile, setProfile] = useState(null);
@@ -93,6 +94,9 @@ export function EngineerProfileModal({ isOpen, onClose, engineerId }) {
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="SAGEMRO Engineer Profile" size="md">
       <div className="space-y-5">
+        {isOpen && engineerId && (
+          <EngineerServiceProfileForm key={engineerId} engineerId={engineerId} />
+        )}
         {loading && (
           <div className="text-center py-8 text-[var(--color-text-secondary)]">Loading...</div>
         )}

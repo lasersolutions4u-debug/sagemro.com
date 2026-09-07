@@ -78,6 +78,13 @@ test('engineer onboarding journey follows the current recruitment CTA', () => {
   assert.doesNotMatch(journeys, /getByLabel\('Individual \/ team capability'\)/);
 });
 
+test('engineer approval waits for the saved status badge instead of a select option', () => {
+  const journeys = read('e2e/support/journeys.mjs');
+
+  assert.ok(journeys.includes("await expect(dialog.locator('span').filter({ hasText: /^Approved$/ })).toBeVisible();"));
+  assert.doesNotMatch(journeys, /getByText\('Approved', \{ exact: true \}\)\.first\(\)/);
+});
+
 test('customer work-order journeys use the unified four-step service request flow', () => {
   const serviceRequestFlow = read('frontend/src/components/ServiceRequest/ServiceRequestFlow.jsx');
   const journeys = read('e2e/support/journeys.mjs');
@@ -136,9 +143,25 @@ test('Cloudflare deploy jobs remain push-only with the existing branch guards', 
   assert.match(workflow, /deploy-frontend:[\s\S]*?if: github\.event_name == 'push' && !cancelled\(\) && needs\.test\.result == 'success'/);
   assert.match(workflow, /deploy-ai-frontend:[\s\S]*?if: github\.event_name == 'push' && github\.ref == 'refs\/heads\/main'/);
   assert.match(workflow, /deploy-worker:[\s\S]*?if: github\.event_name == 'push' && github\.ref == 'refs\/heads\/main'/);
-  assert.match(workflow, /deploy-admin:[\s\S]*?if: github\.event_name == 'push' && \(github\.ref == 'refs\/heads\/main' \|\| github\.ref == 'refs\/heads\/china-edition'\)/);
+  assert.match(workflow, /deploy-admin:[\s\S]*?if: github\.event_name == 'push'/);
   assert.equal((workflow.match(/if: github\.event_name == 'push'/g) || []).length, 4);
   assert.match(workflow, /deploy-ai-frontend:\s+[\s\S]*?needs: deploy-worker/);
+});
+
+test('Admin deployment waits for Worker and retains the production approval gate', () => {
+  const workflow = read('.github/workflows/deploy.yml');
+  const adminJob = workflow.split(/^  deploy-admin:\s*$/m)[1]?.split(/^  [\w-]+:\s*$/m)[0];
+  assert.ok(adminJob, 'Admin deployment job must exist');
+  assert.match(adminJob, /^    needs: \[test, deploy-worker\]$/m);
+  assert.match(adminJob, /^    environment: production$/m);
+});
+
+test('Admin deployment requires Worker success on main or a skipped Worker on CN, never a cancelled run', () => {
+  const workflow = read('.github/workflows/deploy.yml');
+  const adminJob = workflow.split(/^  deploy-admin:\s*$/m)[1]?.split(/^  [\w-]+:\s*$/m)[0];
+  assert.ok(adminJob, 'Admin deployment job must exist');
+  const expected = "github.event_name == 'push' && !cancelled() && needs.test.result == 'success' && ((github.ref == 'refs/heads/main' && needs['deploy-worker'].result == 'success') || (github.ref == 'refs/heads/china-edition' && needs['deploy-worker'].result == 'skipped'))";
+  assert.equal(adminJob.match(/^    if: (.+)$/m)?.[1], expected);
 });
 
 test('maintenance is manual, main-only, SHA-confirmed and production-approved after full tests', () => {
@@ -189,3 +212,56 @@ test('Worker deployment blocks on migrations for both production D1 databases', 
   }
   assert.match(workerJob, /CN_MISSING/);
 });
+
+for (const workflowPath of ['.github/workflows/deploy.yml', '.github/workflows/aliyun-cn-deploy.yml']) {
+  test(`${workflowPath} requires the business migrations before CN deployment`, () => {
+    const workflow = read(workflowPath);
+    const declaration = workflow.match(/^\s*CN_REQUIRED="([^"]+)"/m);
+    assert.ok(declaration, 'CN migration requirements must be explicit');
+    const required = declaration[1].trim().split(/\s+/);
+    for (const version of [
+      '047_structured_service_request_intake',
+      '048_service_request_assist_quota',
+      '050_engineer_service_profiles',
+      '051_business_scope',
+      '052_business_quote_costs',
+      '053_business_receipt_actors',
+      '054_business_execution_assignments',
+      '055_business_service_execution',
+    ]) {
+      assert.ok(required.includes(version), `${workflowPath} must require ${version}`);
+      assert.ok(existsSync(path.join(root, 'worker/migrations', `${version}.sql`)));
+    }
+    const guard = workflow.slice(declaration.index);
+    assert.match(guard, /for ver in \$CN_REQUIRED; do/);
+    assert.match(guard, /if ! echo "\$APPLIED_CN" \| grep -q "\^\$\{ver\}\$"; then/);
+    const failure = guard.indexOf('exit 1');
+    const deploy = guard.search(/wrangler deploy --env production|name: Build frontend/);
+    assert.ok(failure >= 0 && deploy > failure, 'missing migrations must stop before deployment');
+  });
+}
+
+test('the regular E2E command runs all business and engineer profile browser suites serially', () => {
+  const { scripts } = JSON.parse(read('e2e/package.json'));
+  assert.match(scripts.test, /npm run test:contracts && npm run test:business-browser &&/);
+  const args = scripts['test:business-browser'].split(/\s+/);
+  assert.deepEqual(args.slice(0, 3), ['node', '--test', '--test-concurrency=1']);
+  const expected = [
+    'tests/business-execution-browser.test.mjs',
+    'tests/business-payments-browser.test.mjs',
+    'tests/business-quote-browser.test.mjs',
+    'tests/business-service-browser.test.mjs',
+    'tests/business-workspace-browser.test.mjs',
+    'tests/engineer-service-profile-browser.test.mjs',
+  ];
+  assert.deepEqual(args.slice(3).sort(), expected.sort());
+  for (const file of expected) assert.ok(existsSync(path.join(root, 'e2e', file)));
+});
+
+for (const suite of ['business-workspace', 'engineer-service-profile']) {
+  test(`${suite} browser suite uses the browser installed on each test platform`, () => {
+    const source = read(`e2e/tests/${suite}-browser.test.mjs`);
+    assert.match(source, /channel: process\.platform === 'win32' \? 'chrome' : 'chromium'/);
+    assert.match(source, /headless: true/);
+  });
+}

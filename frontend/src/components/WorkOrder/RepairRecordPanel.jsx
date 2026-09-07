@@ -133,10 +133,10 @@ function FieldError({ id, message }) {
   return <p id={id} role="alert" className="mt-1 text-xs text-red-500">{message}</p>;
 }
 
-export function RepairRecordPanel({ workOrderId, userType, repairRecord, onSaved, onConfirmComplete, onSubmitComplete, canSubmitComplete = false, readOnly = false }) {
-  const isCn = isCnLocale();
+export function RepairRecordPanel({ workOrderId, userType, repairRecord, onSaved, onConfirmComplete, onSubmitComplete, canSubmitComplete = false, readOnly = false, serviceApi, locale, canEdit = false }) {
+  const isCn = locale ? locale === 'zh-CN' : isCnLocale();
   const copy = isCn ? COPY.cn : COPY.en;
-  const isEngineer = userType === 'engineer' && !readOnly;
+  const isEngineer = (userType === 'engineer' || (userType === 'admin' && serviceApi && canEdit)) && !readOnly;
   const [isEditing, setIsEditing] = useState(false);
 
   const [symptom, setSymptom] = useState('');
@@ -198,13 +198,13 @@ export function RepairRecordPanel({ workOrderId, userType, repairRecord, onSaved
   const handleSave = async () => {
     setSubmitting(true);
     try {
-      await saveRepairRecord(workOrderId, buildPayload());
+      await (serviceApi?.saveRepairRecord || saveRepairRecord)(workOrderId, buildPayload());
       setFieldErrors({});
       toastSuccess(isCn ? '服务报告已保存' : 'Service report saved');
       setIsEditing(false);
-      onSaved?.();
+      await onSaved?.();
     } catch (e) {
-      toastError((isCn ? '保存失败：' : 'Save failed: ') + e.message);
+      if (e.name !== 'AbortError') toastError((isCn ? '保存失败：' : 'Save failed: ') + e.message);
     } finally {
       setSubmitting(false);
     }
@@ -218,7 +218,7 @@ export function RepairRecordPanel({ workOrderId, userType, repairRecord, onSaved
       const result = await submitFinalServiceReport({
         report: payload,
         confirm: () => onConfirmComplete?.() ?? false,
-        save: (report) => saveRepairRecord(workOrderId, report),
+        save: (report) => (serviceApi?.saveRepairRecord || saveRepairRecord)(workOrderId, report),
         refresh: () => onSaved?.(),
         complete: () => onSubmitComplete?.(),
       });
@@ -327,7 +327,7 @@ export function RepairRecordPanel({ workOrderId, userType, repairRecord, onSaved
         {structuredParts.length > 0 && (
           <div>
             <h3 className="text-xs font-medium text-[var(--color-text-secondary)] mb-1">{copy.materialItems}</h3>
-            <MaterialPicker items={structuredParts} readonly />
+            <MaterialPicker items={structuredParts} readonly locale={locale} serviceApi={serviceApi} />
           </div>
         )}
         {parts.length > 0 && parts[0]?.name && (
@@ -468,7 +468,7 @@ export function RepairRecordPanel({ workOrderId, userType, repairRecord, onSaved
 
       <div>
         <label className="mb-2 block text-xs font-medium text-[var(--color-text-primary)]">{copy.materialItems}</label>
-        <MaterialPicker purpose="service_report" workOrderId={workOrderId} items={materialItems} onChange={setMaterialItems} />
+        <MaterialPicker purpose="service_report" workOrderId={workOrderId} items={materialItems} onChange={setMaterialItems} locale={locale} serviceApi={serviceApi} />
       </div>
 
       {/* 配件清单 */}

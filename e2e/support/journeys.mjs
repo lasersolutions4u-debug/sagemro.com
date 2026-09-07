@@ -52,7 +52,7 @@ export async function onboardEngineer({ browser, runtime = e2eRuntime() }) {
   const dialog = adminPage.getByRole('dialog', { name: engineer.name });
   await dialog.locator('select').first().selectOption('qualified');
   await dialog.getByRole('button', { name: 'Save review', exact: true }).click();
-  await expect(dialog.getByText('Approved', { exact: true }).first()).toBeVisible();
+  await expect(dialog.locator('span').filter({ hasText: /^Approved$/ })).toBeVisible();
   await dialog.getByRole('button', { name: 'Open engineer account', exact: true }).click();
   await dialog.getByRole('button', { name: 'Confirm and send activation email', exact: true }).click();
   await expect(dialog.getByText('Awaiting activation', { exact: true }).first()).toBeVisible();

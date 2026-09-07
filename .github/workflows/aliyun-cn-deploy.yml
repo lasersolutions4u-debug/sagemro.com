@@ -46,7 +46,7 @@ jobs:
             > /tmp/sagemro-d1-migrations-cn.txt
 
           APPLIED_CN=$(grep -Eo '[0-9]{3}[a-z]?_[A-Za-z0-9_]+' /tmp/sagemro-d1-migrations-cn.txt | sort -u || true)
-          CN_REQUIRED="047_structured_service_request_intake 048_service_request_assist_quota"
+          CN_REQUIRED="047_structured_service_request_intake 048_service_request_assist_quota 050_engineer_service_profiles 051_business_scope 052_business_quote_costs 053_business_receipt_actors 054_business_execution_assignments 055_business_service_execution"
           for ver in $CN_REQUIRED; do
             if ! echo "$APPLIED_CN" | grep -q "^${ver}$"; then
               echo "::error::CN production D1 migration is missing: ${ver}"

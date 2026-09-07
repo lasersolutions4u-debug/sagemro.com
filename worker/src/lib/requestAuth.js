@@ -1,4 +1,5 @@
 import { verifyJwt } from './auth.js';
+import { hydrateStaffAuth } from './businessIdentity.js';
 import {
   expectedPortalRole,
   parseCookies,
@@ -19,7 +20,7 @@ export async function authenticateRequest(request, env) {
   const authHeader = request.headers.get('Authorization');
   if (authHeader?.startsWith('Bearer ')) {
     const payload = await verifyJwt(authHeader.slice(7), env.JWT_SECRET);
-    return payload ? { ...payload, authMethod: 'bearer' } : null;
+    return hydrateStaffAuth(payload ? { ...payload, authMethod: 'bearer' } : null, env);
   }
 
   const role = requestPortalRole(request);
@@ -29,7 +30,7 @@ export async function authenticateRequest(request, env) {
   if (!token) return null;
   const payload = await verifyJwt(token, env.JWT_SECRET);
   if (!payload || payload.userType !== role) return null;
-  return { ...payload, authMethod: 'cookie' };
+  return hydrateStaffAuth({ ...payload, authMethod: 'cookie' }, env);
 }
 
 export function hasValidCsrf(request, auth) {

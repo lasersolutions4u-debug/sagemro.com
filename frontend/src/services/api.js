@@ -896,8 +896,8 @@ export async function confirmWorkOrderPricing(workOrderId, customerId, quoteVers
 /**
  * 客户拒绝/议价
  */
-export async function rejectWorkOrderPricing(workOrderId, customerId, reason, counterOffer = null) {
-  const body = { customer_id: customerId, reason };
+export async function rejectWorkOrderPricing(workOrderId, customerId, reason, counterOffer = null, quoteVersion) {
+  const body = { customer_id: customerId, reason, quote_version: quoteVersion };
   if (counterOffer) body.counter_offer = counterOffer;
   const response = await fetch(`${API_BASE}/api/workorders/${workOrderId}/pricing/reject`, {
     method: 'POST',
@@ -1061,6 +1061,34 @@ export async function getEngineerProfile(engineerId) {
   });
   if (!response.ok) throw new Error(`HTTP ${response.status}`);
   return response.json();
+}
+
+export async function getEngineerServiceProfile(engineerId) {
+  const response = await fetch(`${API_BASE}/api/engineers/service-profile?expected_engineer_id=${encodeURIComponent(engineerId)}`, { headers: authHeaders() });
+  const data = await response.json();
+  if (!response.ok) {
+    const error = new Error(data.error || `HTTP ${response.status}`);
+    error.status = response.status;
+    error.code = data.code;
+    throw error;
+  }
+  return data;
+}
+
+export async function saveEngineerServiceProfile({ revision, profile }, engineerId) {
+  const response = await fetch(`${API_BASE}/api/engineers/service-profile`, {
+    method: 'PUT',
+    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ revision, profile, expected_engineer_id: engineerId }),
+  });
+  const data = await response.json();
+  if (!response.ok) {
+    const error = new Error(data.error || `HTTP ${response.status}`);
+    error.status = response.status;
+    error.code = data.code;
+    throw error;
+  }
+  return data;
 }
 
 /**

@@ -57,8 +57,12 @@ function createEnv() {
     __staff: [],
     __fieldWorkAudits: [],
     __repairRecords: [{
-      work_order_id: 'wo-onsite-1', symptom: 'Low output', diagnosis: 'Dirty lens',
-      solution: 'Replaced lens', parts_used: '[]', labor_hours: 2,
+      work_order_id: 'wo-onsite-1', symptom: 'Low output during the test cut.',
+      inspection_process: 'Inspected the protective lens and compared output before and after replacement.',
+      diagnosis: 'Contamination on the protective lens reduced the delivered output.',
+      solution: 'Replaced the contaminated protective lens and checked the optical path.',
+      verification_result: 'Completed the test cut with stable output and no recurring alarm.',
+      follow_up_advice: '', report_quality_status: 'draft', parts_used: '[]', labor_hours: 2,
     }],
     __objects: new Map(),
     __cleanupQueue: [],
@@ -1564,7 +1568,8 @@ test('historical engineers only read their own field days and protected media af
 
   const oldDetail = await api(env, '/api/workorders/wo-onsite-1', { userType: 'engineer', userId: 'engineer-1' });
   assert.equal(oldDetail.response.status, 200);
-  assert.deepEqual(Object.keys(oldDetail.json).sort(), ['field_days', 'field_work_summary', 'id', 'order_no', 'service_mode', 'status']);
+  assert.deepEqual(Object.keys(oldDetail.json).sort(), ['display_title', 'field_days', 'field_work_summary', 'id', 'order_no', 'service_mode', 'status']);
+  assert.equal(oldDetail.json.display_title, 'Service task');
   assert.deepEqual(oldDetail.json.field_days.map((item) => item.id), ['old-day']);
   assert.equal(oldDetail.json.field_days[0].internal_note, 'Old engineer note');
   assert.equal(oldDetail.json.field_days[0].location_status, 'outside_geofence');
@@ -2202,6 +2207,31 @@ test('final service completion applies the resolve gate after field-work validat
     'legacy_not_recorded',
   );
 });
+
+for (const [field, value, code] of [
+  ['inspection_process', '', 'required'],
+  ['verification_result', '', 'required'],
+  ['diagnosis', 'Dirty lens', 'too_short'],
+  ['solution', 'Replaced lens', 'too_short'],
+]) {
+  test(`final service completion rejects an incomplete repair report: ${field}`, async () => {
+    const env = createEnv();
+    env.__workOrders[0].arrival_verified_at = '2026-07-24T00:00:00Z';
+    seedFieldDay(env, { status: 'report_submitted' });
+    env.__repairRecords[0][field] = value;
+
+    const result = await api(env, '/api/workorders/wo-onsite-1/resolve', {
+      userType: 'engineer', userId: 'engineer-1', method: 'POST', body: {},
+    });
+
+    assert.equal(result.response.status, 400);
+    assert.equal(result.json.error, 'service_report_incomplete');
+    assert.deepEqual(result.json.fields, [{ field, code }]);
+    assert.equal(env.__workOrders[0].status, 'in_service');
+    assert.equal(env.__writes.length, 0);
+    assert.equal(env.__notifications.length, 0);
+  });
+}
 
 test('final service completion allows submitted and late-submitted field reports', async () => {
   const env = createEnv();

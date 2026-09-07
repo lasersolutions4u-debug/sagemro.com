@@ -34,6 +34,7 @@ import {
   normalizeCoordinate,
 } from './lib/location.js';
 import { normalizeServiceMode, requiresArrivalVerification } from './lib/service-mode.js';
+import { handleEngineerServiceProfile } from './lib/engineerServiceProfile.js';
 import {
   SERVICE_KIND_TO_WORK_ORDER_TYPE,
   SERVICE_REQUEST_VERSION,
@@ -126,6 +127,9 @@ import {
 import { captureException } from './lib/sentry.js';
 import { isKnownProtectedRoute, isTestRoute } from './lib/routes.js';
 import { handlePublicRoute } from './lib/publicRoutes.js';
+import { isBusinessRole, resolveStaffIdentity } from './lib/businessIdentity.js';
+import { handleBusinessWorkspace, assertBusinessIdentity, prepareBusinessProfile, businessProfileStatements, businessEpoch, businessScopeVersion, businessEpochGuard, BusinessError, scope as businessScope, detail as businessDetail, ensureEpoch as ensureBusinessEpoch } from './lib/businessWorkspace.js';
+import { handleBusinessQuote, businessQuoteCostSnapshot, businessQuoteCostGuard, businessQuoteReviewScope, businessQuotePendingLifecycleGuard } from './lib/businessQuote.js';
 import {
   PromotionAnalyticsInputError,
   loadOrganicAcquisition,
@@ -2287,7 +2291,7 @@ function clearPortalSession(response, request, env) {
 async function authenticateAdmin(request, env) {
   try {
     const payload = await authenticateRequest(request, env);
-    return payload?.userType === 'admin' ? payload : null;
+    return payload?.userType === 'admin' && !isBusinessRole(payload.staffRole) && (!payload.staffId || payload.staffRole === 'admin') ? payload : null;
   } catch {
     return null;
   }
@@ -3484,7 +3488,7 @@ async function handleAuthSession(request, env) {
 
   if (sessionAuth.userType === 'admin') {
     if (sessionAuth.staffId) {
-      const staff = await env.DB.prepare('SELECT * FROM admin_staff_accounts WHERE id = ?').bind(sessionAuth.staffId).first();
+      const staff = await resolveStaffIdentity(env, sessionAuth.staffId, sessionAuth.market);
       const requestMarket = getRequestMarket(request);
       const marketAllowed = sessionAuth.market === requestMarket
         && (staff?.market_scope === 'all' || staff?.market_scope === requestMarket);
@@ -3502,6 +3506,9 @@ async function handleAuthSession(request, env) {
           type: 'admin',
           market: sessionAuth.market || getRequestMarket(request),
           staffRole: staff.role,
+          businessGrade: staff.businessGrade,
+          supervisorStaffId: staff.supervisorStaffId,
+          businessProfileRequired: staff.businessProfileRequired,
           staffId: staff.id,
           mustChangePassword: Boolean(staff.must_change_password),
         },
@@ -6649,6 +6656,7 @@ async function refreshServiceGuidanceIfChanged(env, {
 }
 
 function scheduleServiceGuidanceRefresh(request, env, workOrderId, triggerReason) {
+  if (serviceActor(request)) return;
   const task = refreshServiceGuidanceIfChanged(env, {
     workOrderId,
     triggerReason,
@@ -6714,6 +6722,7 @@ async function loadServiceStandardSnapshotReadOnly(
     serviceMode: workOrder.service_mode,
     arrivalVerificationRequired: Boolean(workOrder.arrival_verification_required),
   }),
+  source = null,
 ) {
   const [progress, overrides] = await Promise.all([
     env.DB.prepare(`
@@ -6726,6 +6735,10 @@ async function loadServiceStandardSnapshotReadOnly(
       WHERE work_order_id = ? AND revoked_at IS NULL
     `).bind(workOrder.id).all(),
   ]);
+  if (source) {
+    source.progressRows = progress.results || [];
+    source.overrideRows = overrides.results || [];
+  }
   return deriveServiceStandardSnapshot({
     definition,
     progressRows: progress.results || [],
@@ -6943,7 +6956,7 @@ async function handleConfirmWorkOrderServiceStandardItem(request, env) {
         403,
       );
     }
-    if (auth.userType === 'admin' && !canMutateFieldWorkAdmin(auth)) {
+    if (auth.userType === 'admin' && !serviceActor(request) && !canMutateFieldWorkAdmin(auth)) {
       return errorResponse(
         market === 'cn' ? '当前员工角色无权确认服务标准项目' : 'Your staff role cannot confirm service-standard items',
         403,
@@ -6983,14 +6996,14 @@ async function handleConfirmWorkOrderServiceStandardItem(request, env) {
         404,
       );
     }
-    if (requestedItem.owner === 'admin' && auth.userType !== 'admin') {
+    if (requestedItem.owner === 'admin' && (auth.userType !== 'admin' || (serviceActor(request) && auth.staffId && auth.staffRole !== 'admin'))) {
       return errorResponse(
         market === 'cn' ? '此项目仅限管理员确认' : 'Only an Admin can confirm this item',
         403,
       );
     }
     if (requestedItem.owner === 'engineer'
-      && (auth.userType !== 'engineer' || workOrder.engineer_id !== auth.userId)) {
+      && (!serviceActor(request) ? (auth.userType !== 'engineer' || workOrder.engineer_id !== auth.userId) : (auth.staffRole === 'admin' || !auth.staffId || !serviceExecutorMatches(request, workOrder)))) {
       return errorResponse(
         market === 'cn' ? '仅工单指派工程师可以确认此项目' : 'Only the assigned engineer can confirm this item',
         403,
@@ -7004,10 +7017,11 @@ async function handleConfirmWorkOrderServiceStandardItem(request, env) {
     }
 
     const definition = await ensureServiceStandardRows(env, workOrder);
-    const item = await env.DB.prepare(`
+    let item = await env.DB.prepare(`
       SELECT * FROM work_order_service_standard_progress
       WHERE work_order_id = ? AND standard_version = ? AND item_key = ?
     `).bind(workOrderId, definition.version, itemKey).first();
+    if (!item && serviceActor(request)) item = { state: 'pending', is_required: requestedItem.required };
     if (!item) {
       return errorResponse(
         market === 'cn' ? '服务标准项目不存在' : 'Service-standard item not found',
@@ -7715,7 +7729,12 @@ async function handleGetWorkOrder(request, env) {
       ? buildPublicServiceMilestones(await loadServiceStandardSnapshotReadOnly(env, workOrder))
       : null;
 
+    const businessService = !workOrder.engineer_id ? await env.DB.prepare(`SELECT service.approved_at, record.customer_confirmed_at
+      FROM business_service_execution service JOIN business_execution_assignments assignment ON assignment.work_order_id=service.work_order_id AND assignment.staff_id=service.staff_id
+      LEFT JOIN work_order_repair_records record ON record.work_order_id=service.work_order_id
+      WHERE service.work_order_id=? AND service.approved_at IS NOT NULL`).bind(id).first() : null;
     const detail = {
+      ...(businessService ? { service_execution: { type: 'business', status: businessService.customer_confirmed_at ? 'accepted' : workOrder.status } } : {}),
       ...safeWorkOrder,
       ...(isCustomerDetail ? { public_service_milestones: publicServiceMilestones } : {}),
       ownership_relation: engineerReadRelation,
@@ -7810,7 +7829,7 @@ async function handleSaveRepairRecord(request, env) {
   try {
     const market = getRequestMarket(request);
     const auth = request._auth;
-    if (!auth || auth.userType !== 'engineer') {
+    if ((!auth || auth.userType !== 'engineer') && !serviceActor(request)) {
       return errorResponse('仅工程师可填写维修记录', 403);
     }
     const engineer_id = auth.userId;
@@ -7820,7 +7839,7 @@ async function handleSaveRepairRecord(request, env) {
       'SELECT status, engineer_id FROM work_orders WHERE id = ?'
     ).bind(workOrderId).first();
     if (!wo) return errorResponse('工单不存在', 404);
-    if (wo.engineer_id !== engineer_id) {
+    if (!serviceExecutorMatches(request, wo)) {
       return errorResponse('您无权操作该工单', 403);
     }
     if (!['in_service', 'pricing'].includes(wo.status)) {
@@ -7873,7 +7892,7 @@ async function handleSaveRepairRecord(request, env) {
       SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', NULL, datetime('now')
       WHERE EXISTS (
         SELECT 1 FROM work_orders
-        WHERE id = ? AND engineer_id = ? AND status IN ('in_service', 'pricing')
+        WHERE id = ? AND ${serviceExecutorSql(request)} = ? AND status IN ('in_service', 'pricing')
       )
       ON CONFLICT(work_order_id) DO UPDATE SET
         symptom = excluded.symptom,
@@ -7889,7 +7908,7 @@ async function handleSaveRepairRecord(request, env) {
         updated_at = datetime('now')
       WHERE EXISTS (
         SELECT 1 FROM work_orders
-        WHERE id = ? AND engineer_id = ? AND status IN ('in_service', 'pricing')
+        WHERE id = ? AND ${serviceExecutorSql(request)} = ? AND status IN ('in_service', 'pricing')
       )
     `).bind(
       recordId, workOrderId,
@@ -7917,7 +7936,7 @@ async function handleSaveRepairRecord(request, env) {
 
     await env.DB.prepare(`
       INSERT INTO work_order_logs (id, work_order_id, action, actor_type, actor_id, content)
-      VALUES (?, ?, 'repair_record_saved', 'engineer', ?, '工程师填写了维修记录。')
+      VALUES (?, ?, 'repair_record_saved', '${serviceActor(request) ? 'admin' : 'engineer'}', ?, '工程师填写了维修记录。')
     `).bind(generateId(), workOrderId, engineer_id).run();
 
     if (Array.isArray(body.material_items)) {
@@ -8130,18 +8149,18 @@ function validateExtensionRequest(input = {}, currentCompletionDate = null) {
   };
 }
 
-function extensionRequestStatement(env, { id, workOrder, engineerId, fieldDayId = null, value }) {
+function extensionRequestStatement(env, { id, workOrder, engineerId, fieldDayId = null, value, request }) {
   return env.DB.prepare(`
     INSERT INTO work_order_extension_requests (
-      id, work_order_id, field_day_id, engineer_id, reason, customer_explanation,
+      id, work_order_id, field_day_id, engineer_id, ${request && serviceActor(request) ? 'staff_id,' : ''} reason, customer_explanation,
       internal_note, requested_additional_days, proposed_completion_date, original_plan
-    ) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+    ) SELECT ?, ?, ?, ?, ${request && serviceActor(request) ? '?,' : ''} ?, ?, ?, ?, ?, ?
     WHERE EXISTS (
       SELECT 1 FROM work_orders
-      WHERE id = ? AND engineer_id = ? AND service_mode = 'onsite' AND status = 'in_service'
+      WHERE id = ? AND ${request ? serviceExecutorSql(request) : 'engineer_id'} = ? AND service_mode = 'onsite' AND status = 'in_service'
     )
   `).bind(
-    id, workOrder.id, fieldDayId, engineerId, value.reason, value.customer_explanation,
+    id, workOrder.id, fieldDayId, request && serviceActor(request) ? null : engineerId, ...(request && serviceActor(request) ? [serviceActor(request).staffId] : []), value.reason, value.customer_explanation,
     value.internal_note, value.requested_additional_days, value.proposed_completion_date,
     JSON.stringify(fieldPlanSnapshot(workOrder)), workOrder.id, engineerId,
   );
@@ -8231,8 +8250,8 @@ async function claimCheckoutReminder(env, fieldDay, now, market) {
   const copy = schedulerCopy(market);
   const notification = {
     id: `field-checkout-reminder:${fieldDay.id}`,
-    userId: fieldDay.engineer_id,
-    userType: 'engineer',
+    userId: fieldDay.staff_id || fieldDay.engineer_id,
+    userType: fieldDay.staff_id ? 'admin' : 'engineer',
     type: 'field_checkout_reminder',
     title: copy.reminderTitle,
     body: copy.reminderBody(fieldDay.order_no || fieldDay.work_order_id),
@@ -8258,10 +8277,10 @@ async function claimOverdueFieldDay(env, fieldDay, now, market) {
   if (currentLocalDate <= fieldDay.site_local_date) return;
 
   const copy = schedulerCopy(market);
-  const recipients = [{ userId: fieldDay.engineer_id, userType: 'engineer' }];
+  const recipients = [{ userId: fieldDay.staff_id || fieldDay.engineer_id, userType: fieldDay.staff_id ? 'admin' : 'engineer' }];
   const staffRecords = await env.DB.prepare(`
     SELECT id FROM admin_staff_accounts
-    WHERE is_active = 1 AND role IN ('admin', 'operations') AND market_scope IN ('all', ?)
+    WHERE is_active = 1 AND role IN ('admin', 'operations') AND business_profile_required = 0 AND market_scope IN ('all', ?)
   `).bind(market).all();
   for (const staff of staffRecords.results || []) recipients.push({ userId: staff.id, userType: 'admin' });
 
@@ -8497,7 +8516,7 @@ async function notifyFieldExtensionRequested(env, request, workOrder, extensionI
     const market = getRequestMarket(request);
     const staffRecords = await env.DB.prepare(`
       SELECT id FROM admin_staff_accounts
-      WHERE is_active = 1 AND role IN ('admin', 'operations') AND market_scope IN ('all', ?)
+      WHERE is_active = 1 AND role IN ('admin', 'operations') AND business_profile_required = 0 AND market_scope IN ('all', ?)
     `).bind(market).all();
     await Promise.all((staffRecords.results || []).map((staff) => notifyFieldWorkBestEffort(env, {
       user_id: staff.id,
@@ -8598,13 +8617,13 @@ async function handleFieldDayCheckIn(request, env) {
   try {
     const auth = request._auth;
     const market = getRequestMarket(request);
-    if (auth?.userType !== 'engineer') return errorResponse('仅工程师可以拍照签到', 403);
+    if (auth?.userType !== 'engineer' && !serviceActor(request)) return errorResponse('仅工程师可以拍照签到', 403);
     if (!env.FIELD_EVIDENCE) return errorResponse('现场证据服务未配置', 503);
 
     const workOrderId = new URL(request.url).pathname.split('/')[3];
     const workOrder = await getFieldWorkOrder(env, workOrderId);
     if (!workOrder) return errorResponse('工单不存在', 404);
-    if (workOrder.engineer_id !== auth.userId) return errorResponse('您未被指派到此工单', 403);
+    if (!serviceExecutorMatches(request, workOrder)) return errorResponse('您未被指派到此工单', 403);
     if (workOrder.service_mode !== 'onsite' || workOrder.status !== 'in_service') {
       return errorResponse('仅服务中的现场工单可以签到', 409);
     }
@@ -8617,7 +8636,7 @@ async function handleFieldDayCheckIn(request, env) {
         SELECT * FROM work_order_field_days WHERE check_in_idempotency_key = ?
       `).bind(idempotencyKey).first();
       if (existingByKey) {
-        if (existingByKey.work_order_id !== workOrderId || existingByKey.engineer_id !== auth.userId) {
+        if (existingByKey.work_order_id !== workOrderId || existingByKey[serviceFieldActorSql(request)] !== auth.userId) {
           return errorResponse('Idempotency-Key 已用于其他签到', 409);
         }
         const media = await env.DB.prepare(`
@@ -8629,7 +8648,7 @@ async function handleFieldDayCheckIn(request, env) {
 
     const existingFieldDay = await env.DB.prepare(`
       SELECT * FROM work_order_field_days
-      WHERE work_order_id = ? AND engineer_id = ? AND site_local_date = ?
+      WHERE work_order_id = ? AND ${serviceFieldActorSql(request)} = ? AND site_local_date = ?
     `).bind(workOrderId, auth.userId, siteLocalDate).first();
     if (existingFieldDay) {
       const media = await env.DB.prepare(`
@@ -8687,7 +8706,7 @@ async function handleFieldDayCheckIn(request, env) {
     await env.FIELD_EVIDENCE.put(objectKey, photoBytes, { httpMetadata: { contentType: photo.type } });
 
     const fieldDay = {
-      id: fieldDayId, work_order_id: workOrderId, engineer_id: auth.userId, site_local_date: siteLocalDate,
+      id: fieldDayId, work_order_id: workOrderId, engineer_id: serviceActor(request) ? null : auth.userId, staff_id: serviceActor(request)?.staffId || null, site_local_date: siteLocalDate,
       site_timezone: workOrder.site_timezone, status: 'checked_in', expected_check_out_at: expectedCheckoutAt,
       location_status: location.location_status, latitude: location.latitude ?? null, longitude: location.longitude ?? null,
       accuracy_m: location.accuracy ?? null, coordinate_system: location.coordinateSystem ?? null,
@@ -8697,7 +8716,7 @@ async function handleFieldDayCheckIn(request, env) {
     };
     const media = {
       id: mediaId, work_order_id: workOrderId, field_day_id: fieldDayId, purpose: 'check_in', object_key: objectKey,
-      mime_type: photo.type, file_size: photo.size, uploader_type: 'engineer', uploader_id: auth.userId,
+      mime_type: photo.type, file_size: photo.size, uploader_type: serviceActor(request) ? 'admin' : 'engineer', uploader_id: auth.userId,
       customer_visible: 1, capture_source: 'check_in',
     };
     if (typeof env.DB.batch !== 'function') {
@@ -8708,20 +8727,20 @@ async function handleFieldDayCheckIn(request, env) {
     const persistenceStatements = [
       env.DB.prepare(`
         INSERT INTO work_order_field_days (
-          id, work_order_id, engineer_id, site_local_date, site_timezone, expected_check_out_at,
+          id, work_order_id, engineer_id, ${serviceActor(request) ? 'staff_id,' : ''} site_local_date, site_timezone, expected_check_out_at,
           location_status, latitude, longitude, accuracy_m, coordinate_system, location_source,
           distance_m, radius_m, within_geofence, check_in_idempotency_key
-        ) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+        ) SELECT ?, ?, ?, ${serviceActor(request) ? '?,' : ''} ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
         WHERE EXISTS (
           SELECT 1 FROM work_orders
-          WHERE id = ? AND engineer_id = ? AND service_mode = 'onsite' AND status = 'in_service'
+          WHERE id = ? AND ${serviceExecutorSql(request)} = ? AND service_mode = 'onsite' AND status = 'in_service'
             AND (
               COALESCE(active_quote_version, 0) < 1
               OR NOT (${quoteDrivenFieldDayAllowanceSql()})
             )
         )
       `).bind(
-        fieldDay.id, fieldDay.work_order_id, fieldDay.engineer_id, fieldDay.site_local_date, fieldDay.site_timezone,
+        fieldDay.id, fieldDay.work_order_id, fieldDay.engineer_id, ...(serviceActor(request) ? [fieldDay.staff_id] : []), fieldDay.site_local_date, fieldDay.site_timezone,
         fieldDay.expected_check_out_at, fieldDay.location_status, fieldDay.latitude, fieldDay.longitude,
         fieldDay.accuracy_m, fieldDay.coordinate_system, fieldDay.location_source, fieldDay.distance_m,
         fieldDay.radius_m, fieldDay.within_geofence, fieldDay.check_in_idempotency_key,
@@ -8732,7 +8751,7 @@ async function handleFieldDayCheckIn(request, env) {
           WHEN changes() = 1 THEN 1
           WHEN EXISTS (
             SELECT 1 FROM work_orders
-            WHERE id = ? AND engineer_id = ? AND service_mode = 'onsite' AND status = 'in_service'
+            WHERE id = ? AND ${serviceExecutorSql(request)} = ? AND service_mode = 'onsite' AND status = 'in_service'
               AND (${quoteDrivenFieldDayAllowanceSql()})
           ) THEN json('workday allowance exhausted')
           ELSE json('field check-in concurrent update')
@@ -8750,11 +8769,11 @@ async function handleFieldDayCheckIn(request, env) {
     ];
     persistenceStatements.push(env.DB.prepare(`
       INSERT INTO work_order_arrival_checks (
-        id, work_order_id, engineer_id, latitude, longitude, accuracy_m, coordinate_system,
+        id, work_order_id, engineer_id, ${serviceActor(request) ? 'staff_id,' : ''} latitude, longitude, accuracy_m, coordinate_system,
         location_source, distance_m, radius_m, within_geofence, failure_reason
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ${serviceActor(request) ? '?,' : ''} ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).bind(
-      generateId(), workOrderId, auth.userId, fieldDay.latitude, fieldDay.longitude,
+      generateId(), workOrderId, serviceActor(request) ? null : auth.userId, ...(serviceActor(request) ? [serviceActor(request).staffId] : []), fieldDay.latitude, fieldDay.longitude,
       fieldDay.accuracy_m, fieldDay.coordinate_system, fieldDay.location_source || 'field_day_check_in',
       fieldDay.distance_m, fieldDay.radius_m, fieldDay.within_geofence,
       fieldDay.location_status === 'outside_geofence' ? 'outside_geofence' : fieldDay.location_status === 'unavailable' ? 'unavailable' : null,
@@ -8820,12 +8839,12 @@ async function handleSubmitFieldDayReport(request, env) {
   let persistenceCommitted = false;
   try {
     const auth = request._auth;
-    if (auth?.userType !== 'engineer') return errorResponse('仅工程师可以提交现场日报', 403);
+    if (auth?.userType !== 'engineer' && !serviceActor(request)) return errorResponse('仅工程师可以提交现场日报', 403);
     if (!env.FIELD_EVIDENCE) return errorResponse('现场证据服务未配置', 503);
     const [, , , workOrderId, , fieldDayId] = new URL(request.url).pathname.split('/');
     const workOrder = await getFieldWorkOrder(env, workOrderId);
     if (!workOrder) return errorResponse('工单不存在', 404);
-    if (workOrder.engineer_id !== auth.userId) return errorResponse('您未被指派到此工单', 403);
+    if (!serviceExecutorMatches(request, workOrder)) return errorResponse('您未被指派到此工单', 403);
     if (workOrder.service_mode !== 'onsite' || workOrder.status !== 'in_service') {
       return errorResponse('仅服务中的现场工单可以提交日报', 409);
     }
@@ -8833,7 +8852,7 @@ async function handleSubmitFieldDayReport(request, env) {
       SELECT * FROM work_order_field_days WHERE id = ? AND work_order_id = ?
     `).bind(fieldDayId, workOrderId).first();
     if (!fieldDay) return errorResponse('现场工作日不存在', 404);
-    if (fieldDay.engineer_id !== auth.userId) return errorResponse('您无权提交此现场日报', 403);
+    if (fieldDay[serviceFieldActorSql(request)] !== auth.userId) return errorResponse('您无权提交此现场日报', 403);
 
     const idempotencyKey = String(request.headers.get('Idempotency-Key') || '').trim().slice(0, 200) || null;
     if (idempotencyKey) {
@@ -8841,7 +8860,7 @@ async function handleSubmitFieldDayReport(request, env) {
         SELECT * FROM work_order_field_days WHERE report_idempotency_key = ?
       `).bind(idempotencyKey).first();
       if (existing) {
-        if (existing.id !== fieldDayId || existing.work_order_id !== workOrderId || existing.engineer_id !== auth.userId) {
+        if (existing.id !== fieldDayId || existing.work_order_id !== workOrderId || existing[serviceFieldActorSql(request)] !== auth.userId) {
           return errorResponse('Idempotency-Key 已用于其他日报', 409);
         }
         return reportResponse(existing, await getFieldDayReportMedia(env, existing.id));
@@ -8913,7 +8932,7 @@ async function handleSubmitFieldDayReport(request, env) {
       uploadedKeys.push(objectKey);
       mediaRows.push({
         id: mediaId, work_order_id: workOrderId, field_day_id: fieldDayId, purpose: upload.purpose,
-        object_key: objectKey, mime_type: file.type, file_size: file.size, uploader_type: 'engineer',
+        object_key: objectKey, mime_type: file.type, file_size: file.size, uploader_type: serviceActor(request) ? 'admin' : 'engineer',
         uploader_id: auth.userId, customer_visible: upload.customerVisible, capture_source: 'daily_report',
       });
     }
@@ -8947,14 +8966,14 @@ async function handleSubmitFieldDayReport(request, env) {
     if (extensionValue) {
       extensionId = generateId();
       statements.push(extensionRequestStatement(env, {
-        id: extensionId, workOrder, engineerId: auth.userId, fieldDayId, value: extensionValue,
+        id: extensionId, workOrder, engineerId: auth.userId, fieldDayId, value: extensionValue, request,
       }));
       statements.push(env.DB.prepare(`
         SELECT CASE WHEN changes() = 1 THEN 1 ELSE json('field extension concurrent update') END
       `));
       statements.push(env.DB.prepare(`
         INSERT INTO work_order_logs (id, work_order_id, action, actor_type, actor_id, content)
-        VALUES (?, ?, 'extension_requested', 'engineer', ?, ?)
+        VALUES (?, ?, 'extension_requested', '${serviceActor(request) ? 'admin' : 'engineer'}', ?, ?)
       `).bind(generateId(), workOrderId, auth.userId, extensionValue.customer_explanation));
     }
     statements.push(buildAuditLogStatement(env, request, {
@@ -9005,11 +9024,11 @@ async function handleSubmitFieldDayReport(request, env) {
 async function handleCreateExtensionRequest(request, env) {
   try {
     const auth = request._auth;
-    if (auth?.userType !== 'engineer') return errorResponse('仅工程师可以申请延期', 403);
+    if (auth?.userType !== 'engineer' && !serviceActor(request)) return errorResponse('仅工程师可以申请延期', 403);
     const workOrderId = new URL(request.url).pathname.split('/')[3];
     const workOrder = await getFieldWorkOrder(env, workOrderId);
     if (!workOrder) return errorResponse('工单不存在', 404);
-    if (workOrder.engineer_id !== auth.userId) return errorResponse('您未被指派到此工单', 403);
+    if (!serviceExecutorMatches(request, workOrder)) return errorResponse('您未被指派到此工单', 403);
     if (workOrder.service_mode !== 'onsite' || workOrder.status !== 'in_service') return errorResponse('当前工单不能申请延期', 409);
     const validation = validateExtensionRequest(await request.json().catch(() => ({})), workOrder.expected_completion_date);
     if (validation.error) return fieldWorkError(validation.error);
@@ -9021,11 +9040,11 @@ async function handleCreateExtensionRequest(request, env) {
     const value = validation.value;
     try {
       await env.DB.batch([
-        extensionRequestStatement(env, { id: extensionId, workOrder, engineerId: auth.userId, value }),
+        extensionRequestStatement(env, { id: extensionId, workOrder, engineerId: auth.userId, value, request }),
         env.DB.prepare(`SELECT CASE WHEN changes() = 1 THEN 1 ELSE json('field extension concurrent update') END`),
         env.DB.prepare(`
           INSERT INTO work_order_logs (id, work_order_id, action, actor_type, actor_id, content)
-          VALUES (?, ?, 'extension_requested', 'engineer', ?, ?)
+          VALUES (?, ?, 'extension_requested', '${serviceActor(request) ? 'admin' : 'engineer'}', ?, ?)
         `).bind(generateId(), workOrderId, auth.userId, value.customer_explanation),
         buildAuditLogStatement(env, request, {
           targetType: 'work_order_extension_request', targetId: extensionId, action: 'field_extension_requested',
@@ -9040,7 +9059,7 @@ async function handleCreateExtensionRequest(request, env) {
       throw error;
     }
     await notifyFieldExtensionRequested(env, request, workOrder, extensionId, value);
-    return jsonResponse({ extension_request: { id: extensionId, work_order_id: workOrderId, engineer_id: auth.userId, status: 'pending', ...value } }, 201);
+    return jsonResponse({ extension_request: { id: extensionId, work_order_id: workOrderId, engineer_id: serviceActor(request) ? null : auth.userId, staff_id: serviceActor(request)?.staffId || null, status: 'pending', ...value } }, 201);
   } catch (error) {
     return errorResponse(error.message, 500);
   }
@@ -9473,9 +9492,6 @@ async function handleSubmitRating(request, env) {
       rating_communication,
       rating_professional,
     ].map(parseRatingScore);
-    if (scores.some((score) => score === null)) {
-      return errorResponse('invalid_rating_scores', 400);
-    }
     const [timeliness, technical, communication, professional] = scores;
 
     const workOrder = await env.DB.prepare(`
@@ -9492,7 +9508,8 @@ async function handleSubmitRating(request, env) {
     if (workOrder.customer_id !== auth.userId) {
       return errorResponse('You do not have permission to rate this work order', 403);
     }
-    if (!workOrder.engineer_id) return errorResponse('Work order has no assigned engineer', 400);
+    if (!workOrder.engineer_id) return handleAcceptBusinessService(request, env, workOrder);
+    if (scores.some((score) => score === null)) return errorResponse('invalid_rating_scores', 400);
 
     const existingRating = await env.DB.prepare(
       'SELECT id FROM ratings WHERE work_order_id = ?'
@@ -10490,6 +10507,98 @@ async function handleGetEngineerTeam(request, env) {
   }
 }
 
+function businessManagedDispatchSql() {
+  return `(
+    EXISTS (SELECT 1 FROM business_record_assignments WHERE kind = 'work_order' AND record_id = work_orders.id)
+    OR EXISTS (SELECT 1 FROM business_quote_drafts WHERE work_order_id = work_orders.id)
+    OR EXISTS (SELECT 1 FROM work_order_pricing WHERE work_order_id = work_orders.id AND quote_source = 'business')
+    OR EXISTS (SELECT 1 FROM work_order_pricing_history history JOIN work_order_pricing pricing ON pricing.id = history.pricing_id
+      WHERE pricing.work_order_id = work_orders.id AND history.quote_source = 'business')
+  )`;
+}
+
+function businessDispatchError(request) {
+  return jsonResponse({
+    error: getRequestMarket(request) === 'cn'
+      ? '派工前须由客户确认当前报价，并由 Admin 确认全部开工前款项足额到账；工单或付款状态变化后请刷新。'
+      : 'Dispatch requires the customer-confirmed quote and Admin-confirmed receipts covering every pre-start installment. Refresh if the work order or payment state changed.',
+    code: 'business_dispatch_not_ready',
+  }, 409);
+}
+
+async function prepareBusinessDispatchGuard(env, workOrderId, request, { acceptingEngineerId, businessExecution = false, financialArchive = false } = {}) {
+  const executionGuard = businessExecution ? '' : 'AND NOT EXISTS (SELECT 1 FROM business_execution_assignments WHERE work_order_id = work_orders.id)';
+  if (!businessExecution && await env.DB.prepare('SELECT id FROM business_execution_assignments WHERE work_order_id=?').bind(workOrderId).first()) return null;
+  const managed = businessManagedDispatchSql();
+  const workOrder = await env.DB.prepare(`SELECT * FROM work_orders WHERE id = ? AND ${managed}`).bind(workOrderId).first();
+  if (!workOrder) return { sql: `AND NOT ${managed} ${executionGuard}`, bindings: [] };
+  if ((!financialArchive && ['resolved', 'pending_review', 'completed'].includes(workOrder.status))
+    || ['cancelled', 'rejected', 'closed', 'archived'].includes(workOrder.status)
+    || (acceptingEngineerId && workOrder.engineer_id !== acceptingEngineerId)) return null;
+
+  const moneyFields = 'labor_fee,parts_fee,travel_fee,other_fee,subtotal,total_amount,platform_fee,deposit_withhold,expected_service_days,payment_plan_mode';
+  const scheduleFields = 'id,work_order_id,quote_version,sequence,amount,currency,trigger_type,due_date,description,required_before_start';
+  const snapshots = [
+    ['work_order_pricing', `id,quote_source,quote_version,status,${moneyFields}`, 'work_order_id = work_orders.id'],
+    ['work_order_pricing_history', `id,pricing_id,quote_source,version,status,quote_kind,parent_quote_version,confirmed_at,${moneyFields}`, 'pricing_id IN (SELECT id FROM work_order_pricing WHERE work_order_id = work_orders.id)'],
+    ['work_order_payment_schedule', `${scheduleFields},pricing_id`, 'work_order_id = work_orders.id'],
+    ['work_order_installments', `${scheduleFields},schedule_id,status,received_amount`, 'work_order_id = work_orders.id'],
+    ['work_order_receipt_claims', 'id,installment_id,work_order_id,engineer_id,submitted_by_staff_id,status,claimed_amount,confirmed_amount,decided_by,decided_at', 'work_order_id = work_orders.id'],
+  ];
+  if (businessExecution) snapshots.push(['audit_logs', 'id,actor_type,actor_id,target_type,target_id,action,after_state',
+    "target_type = 'work_order_receipt_claim' AND action = 'installment_receipt_confirmed' AND target_id IN (SELECT id FROM work_order_receipt_claims WHERE work_order_id = work_orders.id)"]);
+  const rows = [], predicates = [], bindings = [];
+  for (const [table, fields, scope] of snapshots) {
+    const columns = fields.split(',');
+    const query = `SELECT ${fields} FROM ${table} WHERE ${scope} ORDER BY id`;
+    const result = await env.DB.prepare(query.replaceAll('work_orders.id', '?')).bind(workOrderId).all();
+    const records = result.results || [];
+    rows.push(records);
+    predicates.push(`AND (SELECT json_group_array(json_object(${columns.map(column => `'${column}', ${column}`).join(', ')})) FROM (${query})) = ?`);
+    bindings.push(JSON.stringify(records.map(record => Object.fromEntries(columns.map(column => [column, record[column]])))));
+  }
+  const [pricings, histories, schedules, installments, claims, receiptAudits = []] = rows;
+  const pricing = pricings[0];
+  if (pricings.length !== 1 || pricing.quote_source !== 'business' || pricing.status !== 'confirmed') return null;
+  const execution = buildCanonicalVersionedQuoteExecution({ workOrder, pricing, histories, schedules, installments });
+  if (!execution.valid || !execution.start_ready
+    || !execution.activeVersions.includes(Number(pricing.quote_version))
+    || execution.activeRows.some(row => row.quote_source !== 'business' || !row.confirmed_at)) return null;
+  const currency = getRequestMarket(request) === 'cn' ? 'CNY' : 'USD';
+  for (const history of execution.activeRows) {
+    const schedule = execution.paymentSchedule.filter(row => row.quote_version === history.version).sort((a, b) => a.sequence - b.sequence);
+    const checked = validateQuoteExecution({ ...history, service_mode: workOrder.service_mode, currency, payment_schedule: schedule });
+    if (checked.code || schedule.length !== checked.value.payment_schedule.length
+      || schedule.some((row, index) => ['sequence', 'amount', 'currency', 'trigger_type', 'due_date', 'description', 'required_before_start']
+        .some(field => String(row[field] ?? '') !== String(field === 'required_before_start' ? Number(checked.value.payment_schedule[index][field]) : (checked.value.payment_schedule[index][field] ?? ''))))) return null;
+  }
+  for (const installment of execution.installments) {
+    const confirmed = claims.filter(claim => claim.installment_id === installment.id && claim.status === 'confirmed');
+    if (confirmed.some(claim => !claim.decided_by || !claim.decided_at || !Number.isSafeInteger(claim.confirmed_amount)
+      || claim.confirmed_amount <= 0 || claim.confirmed_amount > claim.claimed_amount)) return null;
+    if (businessExecution) {
+      for (const claim of confirmed) {
+        const verified = receiptAudits.some(audit => {
+          if (audit.target_id !== claim.id || audit.actor_type !== 'admin' || audit.actor_id !== claim.decided_by) return false;
+          try {
+            const after = JSON.parse(audit.after_state);
+            return after?.claim_status === 'confirmed' && after.confirmed_amount === claim.confirmed_amount;
+          } catch { return false; }
+        });
+        if (!verified) return null;
+      }
+    }
+    const received = confirmed.reduce((total, claim) => total + claim.confirmed_amount, 0);
+    if (!Number.isSafeInteger(received) || received !== installment.received_amount
+      || (installment.required_before_start && received < installment.amount)) return null;
+  }
+  return {
+    businessManaged: true,
+    sql: `AND status = ? AND active_quote_version IS ? AND engineer_id IS ? AND assigned_regional_lead_id IS ? AND service_mode IS ? AND customer_id IS ? ${predicates.join('\n')} ${executionGuard}`,
+    bindings: [workOrder.status, workOrder.active_quote_version, workOrder.engineer_id, workOrder.assigned_regional_lead_id, workOrder.service_mode, workOrder.customer_id, ...bindings],
+  };
+}
+
 async function handleRegionalLeadAssignEngineer(request, env) {
   try {
     const auth = request._auth;
@@ -10519,7 +10628,7 @@ async function handleRegionalLeadAssignEngineer(request, env) {
     if (!isRegionalQueue && !currentSourceMember) {
       return errorResponse(engineerWorkspaceMessage(request, 'assignment_source_forbidden'), 403);
     }
-    if (!['pending', 'pending_dispatch', 'assigned'].includes(wo.status)) {
+    if (!['pending', 'pending_dispatch', 'assigned', 'pending_payment'].includes(wo.status)) {
       return errorResponse(engineerWorkspaceMessage(request, 'assignment_status_invalid'), 409);
     }
 
@@ -10532,20 +10641,27 @@ async function handleRegionalLeadAssignEngineer(request, env) {
       return errorResponse(engineerWorkspaceMessage(request, 'assignment_target_forbidden'), 403);
     }
 
+    const dispatchGuard = await prepareBusinessDispatchGuard(env, work_order_id, request);
+    if (!dispatchGuard) return businessDispatchError(request);
+    if (wo.status === 'pending_payment' && !dispatchGuard.businessManaged) {
+      return errorResponse(engineerWorkspaceMessage(request, 'assignment_status_invalid'), 409);
+    }
     const conflict = await evaluateDispatchConflict(env, work_order_id, engineer_id);
     if (conflict.status === 'blocked') {
       const conflictUpdate = await env.DB.prepare(`
         UPDATE work_orders SET conflict_status = 'blocked', conflict_reason = ? WHERE id = ?
           AND status = ?
-          AND status IN ('pending', 'pending_dispatch', 'assigned')
+          AND status IN ('pending', 'pending_dispatch', 'assigned', 'pending_payment')
           AND engineer_id IS ?
           AND assigned_regional_lead_id IS ?
+          ${dispatchGuard.sql}
       `).bind(
         conflict.reason,
         work_order_id,
         wo.status,
         wo.engineer_id,
         wo.assigned_regional_lead_id,
+        ...dispatchGuard.bindings,
       ).run();
       if (Number(conflictUpdate.meta?.changes || 0) === 0) {
         return errorResponse(engineerWorkspaceMessage(request, 'assignment_changed'), 409);
@@ -10572,9 +10688,10 @@ async function handleRegionalLeadAssignEngineer(request, env) {
           conflict_status = 'clear', conflict_reason = NULL
       WHERE id = ?
         AND status = ?
-        AND status IN ('pending', 'pending_dispatch', 'assigned')
+        AND status IN ('pending', 'pending_dispatch', 'assigned', 'pending_payment')
         AND engineer_id IS ?
         AND assigned_regional_lead_id IS ?
+        ${dispatchGuard.sql}
     `).bind(
       engineer_id,
       auth.userId,
@@ -10583,6 +10700,7 @@ async function handleRegionalLeadAssignEngineer(request, env) {
       wo.status,
       wo.engineer_id,
       wo.assigned_regional_lead_id,
+      ...dispatchGuard.bindings,
     ).run();
     if (Number(assignmentUpdate.meta?.changes || 0) === 0) {
       return errorResponse(engineerWorkspaceMessage(request, 'assignment_changed'), 409);
@@ -10689,10 +10807,14 @@ async function handleAcceptTicket(request, env) {
       return errorResponse('服务任务状态不允许确认', 409);
     }
 
-    await env.DB.prepare(`
+    const dispatchGuard = await prepareBusinessDispatchGuard(env, work_order_id, request, { acceptingEngineerId: engineer_id });
+    if (!dispatchGuard) return businessDispatchError(request);
+    const assignmentUpdate = await env.DB.prepare(`
       UPDATE work_orders SET status = 'in_progress', engineer_id = COALESCE(engineer_id, ?), started_at = datetime("now")
       WHERE id = ? AND status IN ('pending', 'assigned') AND (engineer_id IS NULL OR engineer_id = ?)
-    `).bind(engineer_id, work_order_id, engineer_id).run();
+        ${dispatchGuard.sql}
+    `).bind(engineer_id, work_order_id, engineer_id, ...dispatchGuard.bindings).run();
+    if (Number(assignmentUpdate.meta?.changes || 0) === 0) return businessDispatchError(request);
 
     await env.DB.prepare(`
       INSERT INTO work_order_logs (id, work_order_id, action, actor_type, actor_id, content)
@@ -12864,9 +12986,17 @@ async function handleAdminStaffList(request, env) {
   if (!isBootstrapAdmin(request._auth)) return errorResponse('仅超级管理员可管理员工账号', 403);
   const { results } = await env.DB.prepare(`
     SELECT id, normalized_login, normalized_phone, role, is_active, display_name,
-           market_scope, must_change_password, created_by, created_at, updated_at
+           market_scope, must_change_password, created_by, created_at, updated_at, business_profile_required
     FROM admin_staff_accounts ORDER BY created_at DESC
   `).all();
+  for (const staff of results || []) {
+    if (!staff.business_profile_required) continue;
+    const profile = await env.DB.prepare('SELECT role,grade,supervisor_staff_id,revision FROM business_staff_profiles WHERE staff_id=?').bind(staff.id).first();
+    const grants = await env.DB.prepare('SELECT territory_id FROM business_director_territories WHERE staff_id=? ORDER BY territory_id').bind(staff.id).all();
+    Object.assign(staff, { role: profile?.role || 'invalid_staff', grade: profile?.grade ?? null,
+      supervisor_staff_id: profile?.supervisor_staff_id ?? null, revision: profile?.revision ?? 0,
+      territory_ids: (grants.results || []).map(row => row.territory_id) });
+  }
   return jsonResponse({ staff: results || [] });
 }
 
@@ -12877,9 +13007,16 @@ async function handleAdminStaffCreate(request, env) {
     const normalizedLogin = normalizeIdentityEmail(body.login);
     const normalizedPhone = normalizeIdentityPhone(body.phone);
     const role = cleanText(body.role, 30);
+    const business = isBusinessRole(role);
+    if (business) {
+      assertBusinessIdentity(request._auth, body.expected_staff_id);
+      if (typeof body.scope_version !== 'string' || !/^[a-f0-9]{64}$/.test(body.scope_version)) {
+        throw new BusinessError('A valid business scope version is required');
+      }
+    }
     const displayName = cleanText(body.display_name, 100);
     const marketScope = cleanText(body.market_scope, 10) || 'all';
-    if (!normalizedLogin || !displayName || !STAFF_ROLES.has(role) || !STAFF_MARKETS.has(marketScope)) {
+    if (!normalizedLogin || !displayName || (!STAFF_ROLES.has(role) && !business) || !STAFF_MARKETS.has(marketScope)) {
       return errorResponse('员工账号信息不完整或无效', 400);
     }
 
@@ -12893,6 +13030,11 @@ async function handleAdminStaffCreate(request, env) {
     if (existing) return errorResponse('员工登录名或手机号已存在', 409);
 
     const id = generateId();
+    const businessVersion = business ? await businessEpoch(env) : null;
+    if (business && body.scope_version !== await businessScopeVersion(request._auth, getRequestMarket(request), businessVersion)) {
+      throw new BusinessError('Business scope changed; reload the organization', 409, 'business_scope_changed');
+    }
+    const businessProfile = business ? await prepareBusinessProfile(env, { id, market_scope: marketScope }, body) : null;
     const temporaryPassword = generateTemporaryPassword();
     const salt = generateSalt();
     const passwordHash = await hashPasswordNew(temporaryPassword, salt);
@@ -12901,6 +13043,7 @@ async function handleAdminStaffCreate(request, env) {
       normalized_login: normalizedLogin,
       normalized_phone: normalizedPhone || null,
       role,
+      ...(business ? { business_profile_required: true, ...businessProfile, revision: 0 } : {}),
       is_active: 1,
       display_name: displayName,
       market_scope: marketScope,
@@ -12916,12 +13059,22 @@ async function handleAdminStaffCreate(request, env) {
       id, normalizedLogin, normalizedPhone || null, passwordHash, salt, role,
       displayName, marketScope, request._auth.userId,
     );
-    await runAuditedWorkflowBatch(env, request, [insert], {
+    const businessInsert = business ? env.DB.prepare(`
+      INSERT INTO admin_staff_accounts (
+        id, normalized_login, normalized_phone, password_hash, salt, role,
+        display_name, market_scope, created_by, business_profile_required
+      ) VALUES (?, ?, ?, ?, ?, 'operations', ?, ?, ?, 1)
+    `).bind(id, normalizedLogin, normalizedPhone || null, passwordHash, salt, displayName, marketScope, request._auth.userId) : null;
+    await runAuditedWorkflowBatch(env, request, business
+      ? [businessEpochGuard(env, businessVersion), businessInsert, ...businessProfileStatements(env, id, businessProfile)]
+      : [insert], {
       targetType: 'admin_staff_account', targetId: id, action: 'staff_created',
       beforeState: null, afterState: publicStaffAccount(staff),
     });
     return jsonResponse({ staff: publicStaffAccount(staff), temporary_password: temporaryPassword }, 201);
   } catch (error) {
+    if (error instanceof BusinessError) return jsonResponse({ error: error.message, code: error.code }, error.status);
+    if (/malformed json/i.test(String(error?.message || ''))) return jsonResponse({ error: 'Business scope changed; reload the organization', code: 'business_scope_changed' }, 409);
     if (/UNIQUE/i.test(String(error?.message || ''))) return errorResponse('员工登录名或手机号已存在', 409);
     return errorResponse(error.message, 500);
   }
@@ -12974,8 +13127,7 @@ async function handleAdminStaffResetPassword(request, env) {
 
 async function requireActiveStaff(env, auth) {
   if (!auth?.staffId) return isBootstrapAdmin(auth) ? { role: 'admin' } : null;
-  const staff = await env.DB.prepare('SELECT * FROM admin_staff_accounts WHERE id = ?').bind(auth.staffId).first();
-  return staff?.is_active ? staff : null;
+  return resolveStaffIdentity(env, auth.staffId, auth.market);
 }
 
 async function getRequisitionWithItems(env, requisitionId) {
@@ -15069,6 +15221,7 @@ async function handleAdminLogin(request, env) {
         : false;
       const marketAllowed = staff?.market_scope === 'all' || staff?.market_scope === adminCredentials.market;
       if (!staffPasswordValid || !marketAllowed) staff = null;
+      if (staff) staff = await resolveStaffIdentity(env, staff, adminCredentials.market);
     }
 
     if (!bootstrapMatch && !staff) {
@@ -15093,6 +15246,9 @@ async function handleAdminLogin(request, env) {
     const staffClaims = staff ? {
       staffId: staff.id,
       staffRole: staff.role,
+      businessGrade: staff.businessGrade,
+      supervisorStaffId: staff.supervisorStaffId,
+      businessProfileRequired: staff.businessProfileRequired,
       mustChangePassword: Boolean(staff.must_change_password),
     } : {};
     const token = await signJwt({
@@ -15116,6 +15272,9 @@ async function handleAdminLogin(request, env) {
         market: adminCredentials.market,
         staffRole: staff.role,
         staffId: staff.id,
+        businessGrade: staff.businessGrade,
+        supervisorStaffId: staff.supervisorStaffId,
+        businessProfileRequired: staff.businessProfileRequired,
         mustChangePassword: Boolean(staff.must_change_password),
       } : {
         id: 'admin', name: '超级管理员', phone: adminPhone, type: 'admin', market: adminCredentials.market,
@@ -15900,7 +16059,7 @@ async function handleAdminExtensionDecision(request, env) {
       throw error;
     }
     await notifyFieldWorkBestEffort(env, {
-      user_id: extension.engineer_id, user_type: 'engineer', type: `field_extension_${decision}`,
+      user_id: extension.staff_id || extension.engineer_id, user_type: extension.staff_id ? 'admin' : 'engineer', type: `field_extension_${decision}`,
       title: decision === 'approved' ? 'Extension approved' : 'Extension rejected', body: decisionReason,
       data: { work_order_id: workOrderId, extension_request_id: requestId },
     });
@@ -16138,11 +16297,15 @@ async function handleAdminAssignRegionalLead(request, env) {
     }
 
     const nextStatus = wo.status === 'pending' ? 'pending_dispatch' : wo.status;
-    await env.DB.prepare(`
+    const dispatchGuard = await prepareBusinessDispatchGuard(env, workOrderId, request);
+    if (!dispatchGuard) return businessDispatchError(request);
+    const assignmentUpdate = await env.DB.prepare(`
       UPDATE work_orders
       SET assigned_regional_lead_id = ?, status = ?, assigned_at = datetime('now')
-      WHERE id = ?
-    `).bind(regional_lead_id, nextStatus, workOrderId).run();
+      WHERE id = ? AND status = ? AND status NOT IN ('completed', 'cancelled', 'rejected', 'closed', 'archived')
+        ${dispatchGuard.sql}
+    `).bind(regional_lead_id, nextStatus, workOrderId, wo.status, ...dispatchGuard.bindings).run();
+    if (Number(assignmentUpdate.meta?.changes || 0) === 0) return businessDispatchError(request);
 
     await env.DB.prepare(`
       INSERT INTO work_order_logs (id, work_order_id, action, actor_type, actor_id, content)
@@ -16217,11 +16380,16 @@ async function handleAdminAssignWorkOrder(request, env) {
     ).bind(engineer_id).first();
     if (!engineer) return errorResponse('工程师不存在', 404);
 
+    const dispatchGuard = await prepareBusinessDispatchGuard(env, workOrderId, request);
+    if (!dispatchGuard) return businessDispatchError(request);
     const conflict = await evaluateDispatchConflict(env, workOrderId, engineer_id);
     if (conflict.status === 'blocked') {
-      await env.DB.prepare(
-        "UPDATE work_orders SET conflict_status = 'blocked', conflict_reason = ? WHERE id = ?"
-      ).bind(conflict.reason, workOrderId).run();
+      const conflictUpdate = await env.DB.prepare(`
+        UPDATE work_orders SET conflict_status = 'blocked', conflict_reason = ?
+        WHERE id = ? AND status = ? AND status NOT IN ('completed', 'cancelled', 'rejected', 'closed', 'archived')
+          ${dispatchGuard.sql}
+      `).bind(conflict.reason, workOrderId, wo.status, ...dispatchGuard.bindings).run();
+      if (Number(conflictUpdate.meta?.changes || 0) === 0) return businessDispatchError(request);
       await writeAuditLog(env, request, {
         targetType: 'work_order',
         targetId: workOrderId,
@@ -16234,11 +16402,13 @@ async function handleAdminAssignWorkOrder(request, env) {
 
     const nextStatus = wo.status === 'pending' ? 'assigned' : wo.status;
 
-    await env.DB.prepare(`
+    const assignmentUpdate = await env.DB.prepare(`
       UPDATE work_orders
       SET engineer_id = ?, status = ?, assigned_at = datetime('now'), conflict_status = 'clear', conflict_reason = NULL
-      WHERE id = ?
-    `).bind(engineer_id, nextStatus, workOrderId).run();
+      WHERE id = ? AND status = ? AND status NOT IN ('completed', 'cancelled', 'rejected', 'closed', 'archived')
+        ${dispatchGuard.sql}
+    `).bind(engineer_id, nextStatus, workOrderId, wo.status, ...dispatchGuard.bindings).run();
+    if (Number(assignmentUpdate.meta?.changes || 0) === 0) return businessDispatchError(request);
 
     await env.DB.prepare(`
       INSERT INTO work_order_logs (id, work_order_id, action, actor_type, actor_id, content)
@@ -16341,12 +16511,19 @@ async function handleAdminReviewWorkOrderPricing(request, env) {
     if (!history || history.status !== 'pending_review' || pricing.status !== 'pending_review') {
       return errorResponse(copy.staleVersion, 409);
     }
+    const businessSnapshot = pricing.quote_source === 'business'
+      ? await businessQuoteCostSnapshot(env, workOrderId, quoteVersion) : null;
+    const businessReviewScope = pricing.quote_source === 'business'
+      ? await businessQuoteReviewScope(request, env, market, body, workOrderId) : null;
+    if (pricing.quote_source === 'business' && (!businessSnapshot || businessSnapshot.quoted_amount !== history.total_amount)) {
+      return errorResponse(copy.staleVersion, 409);
+    }
     const beforeQuote = await quoteVersionSnapshot(env, workOrderId, history);
     const nextHistoryStatus = action === 'approve' ? 'approved' : 'rejected';
     const nextPricingStatus = action === 'approve' ? 'submitted' : 'draft';
     const nextReviewStatus = action === 'approve' ? 'approved' : 'rejected';
     const supplemental = history.quote_kind === 'supplemental';
-    const nextWorkOrderStatus = action === 'approve' ? 'pricing' : 'in_progress';
+    const nextWorkOrderStatus = action === 'approve' || businessSnapshot ? 'pricing' : 'in_progress';
     const afterQuote = {
       ...beforeQuote,
       status: nextHistoryStatus,
@@ -16365,7 +16542,9 @@ async function handleAdminReviewWorkOrderPricing(request, env) {
       ...afterQuote,
       quote: afterQuote,
     };
-    const message = action === 'approve' ? copy.approvedMessage : copy.rejectedMessage(reviewNote);
+    const message = action === 'approve' ? copy.approvedMessage : businessSnapshot
+      ? (market === 'cn' ? `报价已退回商务负责人修改：${reviewNote}` : `Quote returned to its business owner for correction: ${reviewNote}`)
+      : copy.rejectedMessage(reviewNote);
     const statements = [env.DB.prepare(`
       UPDATE work_order_pricing_history
       SET status = ?, approved_at = CASE WHEN ? = 'approved' THEN datetime('now') ELSE approved_at END
@@ -16389,7 +16568,7 @@ async function handleAdminReviewWorkOrderPricing(request, env) {
         message_type, is_internal_note, is_customer_visible
       ) VALUES (?, ?, 'system', '', ?, ?, ?, ?, ?)
     `).bind(
-      generateId(), workOrderId, systemSenderName(market), message,
+      businessSnapshot && action === 'reject' ? `business-quote-feedback:${workOrderId}:${quoteVersion}` : generateId(), workOrderId, systemSenderName(market), message,
       action === 'approve' ? 'pricing_update' : 'system',
       action === 'approve' ? 0 : 1,
       action === 'approve' ? 1 : 0,
@@ -16401,6 +16580,7 @@ async function handleAdminReviewWorkOrderPricing(request, env) {
       afterState: reviewAfterState,
     })];
 
+    if (businessSnapshot) statements.unshift(businessEpochGuard(env, businessReviewScope.epoch), businessQuotePendingLifecycleGuard(env, workOrderId), businessQuoteCostGuard(env, workOrderId, quoteVersion, history.total_amount, market === 'cn' ? 'CNY' : 'USD'));
     if (typeof env.DB.batch !== 'function') throw new Error('Transactional D1 batch is required');
     await env.DB.batch(statements);
 
@@ -16414,10 +16594,10 @@ async function handleAdminReviewWorkOrderPricing(request, env) {
         data: { work_order_id: workOrderId, quote_version: quoteVersion },
       });
     }
-    if (action === 'reject' && wo.engineer_id) {
+    if (action === 'reject' && (businessSnapshot || wo.engineer_id)) {
       await createNotification(env, {
-        user_id: wo.engineer_id,
-        user_type: 'engineer',
+        user_id: businessSnapshot ? businessSnapshot.author_staff_id : wo.engineer_id,
+        user_type: businessSnapshot ? 'admin' : 'engineer',
         type: 'quote_review_rejected',
         title: copy.rejectedTitle,
         body: copy.rejectedBody(wo.order_no),
@@ -16428,11 +16608,12 @@ async function handleAdminReviewWorkOrderPricing(request, env) {
     return jsonResponse({
       success: true,
       status: nextHistoryStatus,
-      message: action === 'approve' ? copy.approvedResponse : copy.rejectedResponse,
+      message: action === 'approve' ? copy.approvedResponse : businessSnapshot ? (market === 'cn' ? '报价已退回商务人员修改。' : 'Quote returned to its business author for correction.') : copy.rejectedResponse,
       ...afterQuote,
       quote: afterQuote,
     });
   } catch (error) {
+    if (error instanceof BusinessError) return jsonResponse({ error: error.message, code: error.code }, error.status);
     if (/quote review concurrent update|malformed json/i.test(String(error?.message || error))) {
       return errorResponse(quoteReviewCopy(getRequestMarket(request)).staleVersion, 409);
     }
@@ -16452,6 +16633,17 @@ async function handleAdminArchiveWorkOrder(request, env) {
     if (!wo) return errorResponse('服务申请不存在', 404);
     if (!['resolved', 'pending_review', 'completed'].includes(wo.status)) {
       return errorResponse('当前服务申请尚不适合归档', 409);
+    }
+    const businessAssignment = await env.DB.prepare('SELECT id FROM business_execution_assignments WHERE work_order_id=?').bind(workOrderId).first();
+    let businessArchiveGuard = null;
+    if (businessAssignment) {
+      const accepted = await env.DB.prepare('SELECT id FROM work_order_repair_records WHERE work_order_id=? AND customer_confirmed_at IS NOT NULL').bind(workOrderId).first();
+      if (!accepted) return errorResponse('客户验收后才能完成商务服务财务归档', 409);
+      const dispatch = await prepareBusinessDispatchGuard(env, workOrderId, request, { businessExecution: true, financialArchive: true });
+      if (!dispatch?.businessManaged) return errorResponse('商务服务收款审核状态已变化', 409);
+      businessArchiveGuard = env.DB.prepare(`SELECT CASE WHEN EXISTS (SELECT 1 FROM work_orders WHERE id=? ${dispatch.sql}
+        AND EXISTS (SELECT 1 FROM work_order_repair_records WHERE work_order_id=work_orders.id AND customer_confirmed_at IS NOT NULL))
+        THEN 1 ELSE json('business service archive changed') END`).bind(workOrderId, ...dispatch.bindings);
     }
     const pricing = await env.DB.prepare(
       'SELECT * FROM work_order_pricing WHERE work_order_id = ?'
@@ -16477,6 +16669,7 @@ async function handleAdminArchiveWorkOrder(request, env) {
         : 'SAGEMRO completed the service and financial archive.';
       try {
         await env.DB.batch([
+          ...(businessArchiveGuard ? [businessArchiveGuard] : []),
           env.DB.prepare(`
             UPDATE work_orders
             SET status = 'completed', completed_at = COALESCE(completed_at, datetime('now'))
@@ -17801,7 +17994,7 @@ async function handleResolveWorkOrder(request, env) {
     const market = getRequestMarket(request);
     // 认证：engineer_id 从 token 取
     const auth = request._auth;
-    if (!auth || auth.userType !== 'engineer') {
+    if ((!auth || auth.userType !== 'engineer') && !serviceActor(request)) {
       return errorResponse(market === 'cn' ? '仅工程师可标记完成' : 'Only engineers can complete service', 403);
     }
     const engineer_id = auth.userId;
@@ -17813,7 +18006,7 @@ async function handleResolveWorkOrder(request, env) {
       FROM work_orders WHERE id = ?`
     ).bind(workOrderId).first();
     if (!wo) return errorResponse(market === 'cn' ? '工单不存在' : 'Work order not found', 404);
-    if (wo.engineer_id !== engineer_id) {
+    if (!serviceExecutorMatches(request, wo)) {
       return errorResponse(market === 'cn' ? '您无权操作该工单' : 'You do not have permission to update this work order', 403);
     }
     if (wo.arrival_verification_required && !wo.arrival_verified_at) {
@@ -17901,7 +18094,7 @@ async function handleResolveWorkOrder(request, env) {
         WHERE work_order_id = ?
           AND EXISTS (
             SELECT 1 FROM work_orders
-            WHERE id = ? AND engineer_id = ? AND status IN ('in_service', 'pricing')
+            WHERE id = ? AND ${serviceExecutorSql(request)} = ? AND status IN ('in_service', 'pricing')
           )
           AND symptom IS ?
           AND inspection_process IS ?
@@ -17929,7 +18122,7 @@ async function handleResolveWorkOrder(request, env) {
       env.DB.prepare(`
         UPDATE work_orders
         SET status = 'resolved', resolved_at = datetime('now')
-        WHERE id = ? AND engineer_id = ? AND status IN ('in_service', 'pricing')
+        WHERE id = ? AND ${serviceExecutorSql(request)} = ? AND status IN ('in_service', 'pricing')
           AND (
             service_mode <> 'onsite'
             OR site_timezone IS NULL
@@ -17970,7 +18163,7 @@ async function handleResolveWorkOrder(request, env) {
       ),
       env.DB.prepare(`
         INSERT INTO work_order_logs (id, work_order_id, action, actor_type, actor_id, content)
-        VALUES (?, ?, 'resolved', 'engineer', ?, ?)
+        VALUES (?, ?, 'resolved', '${serviceActor(request) ? 'admin' : 'engineer'}', ?, ?)
       `).bind(
         generateId(),
         workOrderId,
@@ -18033,7 +18226,7 @@ async function handleResolveWorkOrder(request, env) {
       );
     }
 
-    await ensureBalancePayment(env, workOrderId, wo.customer_id);
+    if (!serviceActor(request)) await ensureBalancePayment(env, workOrderId, wo.customer_id);
     scheduleServiceGuidanceRefresh(request, env, workOrderId, 'status_change');
 
     // 通知客户：服务已完成
@@ -18082,14 +18275,20 @@ async function handleCancelWorkOrder(request, env) {
     }
 
     const now = new Date().toISOString();
-    await env.DB.prepare(
-      "UPDATE work_orders SET status = 'cancelled', completed_at = ? WHERE id = ?"
-    ).bind(now, workOrderId).run();
-
-    await env.DB.prepare(`
+    await env.DB.batch([
+      env.DB.prepare(`UPDATE work_orders SET status = 'cancelled', completed_at = ?
+        WHERE id = ? AND customer_id IS ? AND status = ?
+          AND (NOT ${businessManagedDispatchSql()} OR (
+            NOT EXISTS (SELECT 1 FROM work_order_receipt_claims WHERE work_order_id=work_orders.id AND status IN ('pending','confirmed'))
+            AND NOT EXISTS (SELECT 1 FROM work_order_installments WHERE work_order_id=work_orders.id AND received_amount>0)
+          ))
+      `).bind(now, workOrderId, wo.customer_id, wo.status),
+      env.DB.prepare("SELECT CASE WHEN changes()=1 THEN 1 ELSE json('work order cancellation conflict') END"),
+      env.DB.prepare(`
       INSERT INTO work_order_logs (id, work_order_id, action, actor_type, actor_id, content)
       VALUES (?, ?, 'cancelled', ?, ?, '客户取消工单')
-    `).bind(generateId(), workOrderId, auth.userType, userId).run();
+      `).bind(generateId(), workOrderId, auth.userType, userId),
+    ]);
 
     // 通知工程师（如已分配）
     if (wo.engineer_id) {
@@ -18105,6 +18304,7 @@ async function handleCancelWorkOrder(request, env) {
 
     return jsonResponse({ success: true });
   } catch (error) {
+    if (/work order cancellation conflict|malformed json/i.test(String(error?.message || error))) return errorResponse('工单状态或收款状态已变化，请刷新后处理', 409);
     return errorResponse(error.message, 500);
   }
 }
@@ -18271,7 +18471,7 @@ async function handlePostWorkOrderMessage(request, env) {
     } else if (auth.userType === 'admin') {
       sender_type = 'admin';
       sender_id = auth.userId;
-      sender_name = '管理员';
+      sender_name = serviceActor(request)?.staffName || '管理员';
     } else {
       return errorResponse('不支持的发送人类型', 403);
     }
@@ -18302,7 +18502,14 @@ async function handlePostWorkOrderMessage(request, env) {
     if (!internalNote && sender_type !== 'system') {
       const market = getRequestMarket(request);
       const preview = (content || '').slice(0, 100);
-      if (sender_type === 'customer' && wo.engineer_id) {
+      if (sender_type === 'customer' && !wo.engineer_id) {
+        const executor = await activeBusinessServiceRecipient(env, workOrderId, market);
+        if (executor) await createNotification(env, {
+          user_id: executor.staff_id, user_type: 'admin', type: 'work_order_message',
+          title: market === 'cn' ? '工单新消息' : 'New Work Order Message',
+          body: safeContent.slice(0, 100), data: { work_order_id: workOrderId, message_id: id },
+        });
+      } else if (sender_type === 'customer' && wo.engineer_id) {
         createNotification(env, {
           user_id: wo.engineer_id,
           user_type: 'engineer',
@@ -18313,8 +18520,8 @@ async function handlePostWorkOrderMessage(request, env) {
             : `Customer replied on ${wo.order_no}: ${preview}`,
           data: { work_order_id: workOrderId, message_id: id },
         });
-      } else if (sender_type === 'engineer' && wo.customer_id) {
-        createNotification(env, {
+      } else if ((sender_type === 'engineer' || serviceActor(request)) && wo.customer_id) {
+        await createNotification(env, {
           user_id: wo.customer_id,
           user_type: 'customer',
           type: 'work_order_message',
@@ -18623,6 +18830,8 @@ async function handleSubmitWorkOrderPricing(request, env) {
     if (wo.engineer_id !== targetEngineerId) {
       return errorResponse(market === 'cn' ? '您无权对该工单报价' : 'You cannot quote this work order', 403);
     }
+    const businessDraft = await env.DB.prepare('SELECT work_order_id FROM business_quote_drafts WHERE work_order_id=?').bind(workOrderId).first();
+    if (businessDraft) return errorResponse(market === 'cn' ? '该工单报价由商务工作台管理' : 'This quote is managed by the business workspace', 409);
 
     // 读取工程师佣金比例（按等级：Junior 80% / Senior 85% / Expert 88%）
     const engineerRow = await env.DB.prepare(
@@ -18721,7 +18930,9 @@ async function handleSubmitWorkOrderPricing(request, env) {
       : 0;
     const nextVersion = latestVersion + 1;
     const historyId = generateId();
-    const statements = [];
+    const statements = [env.DB.prepare(`SELECT CASE WHEN NOT EXISTS (
+      SELECT 1 FROM business_quote_drafts WHERE work_order_id=?
+    ) THEN 1 ELSE json('quote version concurrent update') END`).bind(workOrderId)];
 
     if (quoteKind === 'baseline') {
       statements.push(env.DB.prepare(`
@@ -18970,6 +19181,7 @@ async function handleConfirmWorkOrderPricing(request, env) {
       SELECT CASE WHEN changes() = 1 THEN 1 ELSE json('quote activation concurrent update') END
     `)];
 
+    if (pricing.quote_source === 'business') statements.unshift(businessQuotePendingLifecycleGuard(env, workOrderId));
     if (!supplemental && Number(wo.active_quote_version || 0) >= 1) {
       statements.unshift(env.DB.prepare(`
         SELECT CASE WHEN NOT EXISTS (
@@ -19369,7 +19581,7 @@ function visibleReceiptClaim(row, auth, workOrder = null) {
     decided_at: row.decided_at,
     created_at: row.created_at,
   };
-  if (canViewReceiptEvidence(auth, workOrder)) {
+  if (canViewReceiptEvidence(auth, workOrder) && !(row.submitted_by_staff_id && auth?.userType === 'engineer')) {
     visible.evidence = row.evidence_id ? {
       id: row.evidence_id,
       file_name: row.evidence_file_name,
@@ -19379,12 +19591,17 @@ function visibleReceiptClaim(row, auth, workOrder = null) {
       url: `/api/workorders/${row.work_order_id}/receipt-evidence/${row.evidence_id}`,
     } : null;
   }
-  if (auth?.userType !== 'customer') {
+  if (auth?.userType !== 'customer' && (!row.submitted_by_staff_id || auth?.userType === 'admin')) {
     visible.transaction_reference = row.transaction_reference;
     visible.engineer_note = row.engineer_note;
     visible.decision_reason = row.decision_reason;
   }
-  if (auth?.userType === 'admin') visible.decided_by = row.decided_by;
+  if (auth?.userType === 'admin') {
+    visible.decided_by = row.decided_by;
+    visible.submitter_type = row.submitted_by_staff_id ? 'business' : 'engineer';
+    visible.submitter_id = row.submitted_by_staff_id || row.engineer_id;
+    visible.submitter_note = row.engineer_note;
+  }
   return visible;
 }
 
@@ -19414,7 +19631,10 @@ async function getWorkOrderQuoteExecution(env, workOrder, pricing, auth, market 
         ORDER BY installment.quote_version, installment.sequence
       `).bind(workOrder.id).all(),
       listConsumedFieldDayDates(env, workOrder.id),
-      env.DB.prepare('SELECT id FROM ratings WHERE work_order_id = ? LIMIT 1').bind(workOrder.id).first(),
+      env.DB.prepare(`SELECT id FROM work_orders WHERE id=? AND (
+        EXISTS (SELECT 1 FROM ratings WHERE work_order_id=work_orders.id)
+        OR EXISTS (SELECT 1 FROM work_order_repair_records record JOIN business_service_execution service ON service.work_order_id=record.work_order_id
+          WHERE record.work_order_id=work_orders.id AND record.customer_confirmed_at IS NOT NULL AND service.approved_at IS NOT NULL))`).bind(workOrder.id).first(),
     ]);
     const canonical = buildCanonicalVersionedQuoteExecution({
       workOrder,
@@ -19735,13 +19955,13 @@ function installmentCollectionCopy(market = 'com') {
 
 async function getActiveInstallment(env, workOrderId, installmentId) {
   return env.DB.prepare(`
-    SELECT installment.*, work_order.customer_id, work_order.engineer_id, work_order.order_no,
+    SELECT installment.*, work_order.customer_id, work_order.engineer_id, work_order.order_no, pricing.quote_source,
       work_order.status AS work_order_status,
       work_order.arrival_verified_at,
       work_order.site_timezone,
-      EXISTS (
-        SELECT 1 FROM ratings rating WHERE rating.work_order_id = work_order.id
-      ) AS customer_acceptance_recorded
+      (EXISTS (SELECT 1 FROM ratings rating WHERE rating.work_order_id = work_order.id)
+        OR EXISTS (SELECT 1 FROM work_order_repair_records record JOIN business_service_execution service ON service.work_order_id=record.work_order_id
+          WHERE record.work_order_id=work_order.id AND record.customer_confirmed_at IS NOT NULL AND service.approved_at IS NOT NULL)) AS customer_acceptance_recorded
     FROM work_order_installments installment
     JOIN work_orders work_order ON work_order.id = installment.work_order_id
     JOIN work_order_pricing pricing ON pricing.work_order_id = work_order.id
@@ -19796,7 +20016,7 @@ function installmentCollectionStartReady(
 function publicInstallment(installment, now = new Date()) {
   if (!installment) return installment;
   const {
-    customer_id, engineer_id, order_no, work_order_status,
+    customer_id, engineer_id, order_no, work_order_status, quote_source,
     arrival_verified_at, site_timezone, customer_acceptance_recorded, ...visible
   } = installment;
   return {
@@ -19894,6 +20114,7 @@ function isExactReceiptClaimRetry(claim, requestValue) {
   if (claim.work_order_id !== requestValue.workOrderId
     || claim.installment_id !== requestValue.installmentId
     || claim.engineer_id !== requestValue.engineerId
+    || (claim.submitted_by_staff_id || null) !== (requestValue.staffId || null)
     || Number(claim.claimed_amount) !== requestValue.claimedAmount
     || (claim.transaction_reference || null) !== requestValue.transactionReference
     || (claim.engineer_note || '') !== requestValue.engineerNote) return false;
@@ -19938,16 +20159,618 @@ async function notifyQuoteExecutionBestEffort(env, payload) {
   }
 }
 
-async function handleStartInstallmentCollection(request, env) {
+async function prepareBusinessPaymentContext(request, env, workOrderId, values, { mutation = false, adminOnly = false } = {}) {
+  assertBusinessIdentity(request._auth, values.expected_staff_id);
+  const market = getRequestMarket(request);
+  const s = await businessScope(env, request._auth, market);
+  if (adminOnly && s.role !== 'admin') throw new BusinessError('Admin receipt review required', 403);
+  if (values.scope_version !== s.version) throw new BusinessError('Business scope changed', 409, 'business_scope_changed');
+  await businessDetail(env, 'work_order', workOrderId, s, market);
+  const workOrder = await env.DB.prepare('SELECT * FROM work_orders WHERE id=?').bind(workOrderId).first();
+  const pricing = await env.DB.prepare('SELECT * FROM work_order_pricing WHERE work_order_id=?').bind(workOrderId).first();
+  const execution = pricing?.quote_source === 'business' && pricing.status === 'confirmed'
+    ? await getWorkOrderQuoteExecution(env, workOrder, pricing, request._auth, market) : null;
+  const available = Boolean(execution?.installments?.length && execution.valid !== false);
+  const terminal = ['cancelled', 'rejected', 'closed', 'archived'].includes(workOrder.status);
+  if (mutation && (!available || terminal || Number(values.quote_version) !== Number(pricing.quote_version))) {
+    throw new BusinessError('Business payment state changed', 409, 'business_payment_state_changed');
+  }
+  const guards = [businessEpochGuard(env, s.epoch)];
+  const finalGuards = [businessEpochGuard(env, s.epoch)];
+  if (mutation) {
+    for (const [table, where, args, fields = '*', original = null] of [
+      ['work_orders', 'id=?', [workOrderId], 'id,customer_id,engineer_id,status,service_mode,active_quote_version,arrival_verified_at,site_timezone,quote_expected_service_days,approved_extension_days', workOrder],
+      ['work_order_pricing', 'work_order_id=?', [workOrderId], 'id,quote_source,quote_version,status,labor_fee,parts_fee,travel_fee,other_fee,subtotal,total_amount,platform_fee,deposit_withhold,expected_service_days,payment_plan_mode', pricing],
+      ['work_order_pricing_history', 'pricing_id=?', [pricing.id]],
+      ['work_order_payment_schedule', 'work_order_id=?', [workOrderId]],
+      ['work_order_installments', 'work_order_id=?', [workOrderId]],
+      ['work_order_receipt_claims', 'work_order_id=?', [workOrderId]],
+    ]) {
+      const rows = original ? [Object.fromEntries(fields.split(',').map(field => [field, original[field]]))]
+        : (await env.DB.prepare(`SELECT ${fields} FROM ${table} WHERE ${where} ORDER BY id`).bind(...args).all()).results || [];
+      const columns = rows.length ? Object.keys(rows[0]) : ['id'];
+      const snapshot = JSON.stringify(rows);
+      const guard = env.DB.prepare(`SELECT CASE WHEN (SELECT json_group_array(json_object(${columns.map(c => `'${c}',${c}`).join(',')})) FROM (SELECT * FROM ${table} WHERE ${where} ORDER BY id)) = ? THEN 1 ELSE json('business payment state changed') END`).bind(...args, snapshot);
+      guards.push(guard);
+      if (!['work_order_installments', 'work_order_receipt_claims'].includes(table)) finalGuards.push(guard);
+    }
+  }
+  await ensureBusinessEpoch(env, s);
+  return { workOrderId, s, pricing, execution, available, terminal, guards, finalGuards, staffId: request._auth.staffId || request._auth.userId };
+}
+
+async function businessCollectionRecipient(env, workOrderId, market) {
+  const assignment = await env.DB.prepare("SELECT owner_staff_id FROM business_record_assignments WHERE kind='work_order' AND record_id=?").bind(workOrderId).first();
+  if (!assignment?.owner_staff_id) return null;
+  const auth = { userType: 'admin', staffId: assignment.owner_staff_id, userId: assignment.owner_staff_id, market };
+  try {
+    const s = await businessScope(env, auth, market);
+    await businessDetail(env, 'work_order', workOrderId, s, market);
+    return { user_id: assignment.owner_staff_id, user_type: 'admin' };
+  } catch (error) { if (error instanceof BusinessError) return null; throw error; }
+}
+
+async function readBusinessPaymentBody(request, multipart) {
+  const auth = request._auth;
+  if (auth?.userType !== 'admin' || (auth.staffId
+    ? auth.staffRole !== 'admin' && !isBusinessRole(auth.staffRole) : auth.userId !== 'admin')) {
+    throw new BusinessError('Business workspace access denied', 403);
+  }
+  const limit = (multipart ? FIELD_EVIDENCE_MAX_BYTES : 0) + 64 * 1024;
+  const contentType = request.headers.get('Content-Type') || '';
+  const declaredLength = request.headers.get('Content-Length');
+  if (declaredLength && /^\d+$/.test(declaredLength) && Number(declaredLength) > limit) {
+    await request.body?.cancel().catch(() => {});
+    throw new BusinessError('Business payment request body too large', 413, 'business_payment_body_too_large');
+  }
+  if (!(multipart ? /^multipart\/form-data(?:;|$)/i : /^application\/json(?:;|$)/i).test(contentType)) {
+    throw new BusinessError('Invalid business payment content type', 400);
+  }
+  const reader = request.body?.getReader();
+  if (!reader) throw new BusinessError('Business payment request body required', 400);
+  const chunks = [];
+  let length = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      length += value.byteLength;
+      if (length > limit) {
+        await reader.cancel().catch(() => {});
+        throw new BusinessError('Business payment request body too large', 413, 'business_payment_body_too_large');
+      }
+      chunks.push(value);
+    }
+  } catch (error) {
+    if (error instanceof BusinessError) throw error;
+    throw new BusinessError('Invalid business payment request body', 400);
+  } finally {
+    reader.releaseLock();
+  }
+  try {
+    const body = new Response(new Blob(chunks), { headers: { 'Content-Type': contentType } });
+    if (multipart) return await body.formData();
+    const value = await body.json();
+    if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Expected JSON object');
+    return value;
+  } catch {
+    throw new BusinessError('Invalid business payment request body', 400);
+  }
+}
+
+
+async function activeBusinessServiceRecipient(env, workOrderId, market) {
+  const assignment = await env.DB.prepare('SELECT staff_id FROM business_execution_assignments WHERE work_order_id=?').bind(workOrderId).first();
+  if (!assignment) return null;
+  try {
+    const scope = await businessScope(env, { userType: 'admin', userId: assignment.staff_id, staffId: assignment.staff_id, market }, market);
+    await businessDetail(env, 'work_order', workOrderId, scope, market);
+    return isBusinessRole(scope.role) ? assignment : null;
+  } catch (error) { if (error instanceof BusinessError) return null; throw error; }
+}
+
+const businessServiceContexts = new WeakMap();
+
+function serviceActor(request) {
+  return businessServiceContexts.get(request) || null;
+}
+
+function serviceExecutorMatches(request, workOrder) {
+  const actor = serviceActor(request);
+  return actor ? actor.workOrderId === (workOrder.id || actor.workOrderId) && !workOrder.engineer_id
+    : workOrder.engineer_id === request._auth?.userId;
+}
+
+function serviceExecutorSql(request) {
+  return serviceActor(request)
+    ? '(SELECT staff_id FROM business_execution_assignments WHERE work_order_id = work_orders.id)'
+    : 'engineer_id';
+}
+
+function serviceFieldActorSql(request) {
+  return serviceActor(request) ? 'staff_id' : 'engineer_id';
+}
+
+function serviceDelegatedRequest(request, path, body = null, query = {}) {
+  const url = new URL(request.url); url.pathname = path;
+  for (const [key, value] of Object.entries(query)) url.searchParams.set(key, value);
+  const headers = new Headers(request.headers);
+  let encoded;
+  if (body instanceof FormData) { headers.delete('Content-Type'); headers.delete('Content-Length'); encoded = body; }
+  else if (body) { headers.set('Content-Type', 'application/json'); headers.delete('Content-Length'); encoded = JSON.stringify(body); }
+  const child = new Request(url, { method: request.method, headers, ...(encoded ? { body: encoded } : {}), signal: request.signal });
+  child._auth = request._auth;
+  child._market = request._market;
+  return child;
+}
+
+async function businessServiceView(request, env, workOrderId, scope) {
+  await businessDetail(env, 'work_order', workOrderId, scope, getRequestMarket(request));
+  const workOrder = await env.DB.prepare('SELECT * FROM work_orders WHERE id=?').bind(workOrderId).first();
+  const assignment = await env.DB.prepare('SELECT * FROM business_execution_assignments WHERE work_order_id=?').bind(workOrderId).first();
+  const lifecycle = await env.DB.prepare('SELECT * FROM business_service_execution WHERE work_order_id=?').bind(workOrderId).first();
+  const pricing = await env.DB.prepare('SELECT * FROM work_order_pricing WHERE work_order_id=?').bind(workOrderId).first();
+  let executorActive = false;
+  let executorName = assignment?.staff_name;
+  if (assignment) {
+    try {
+      const executorScope = await businessScope(env, { userType: 'admin', userId: assignment.staff_id, staffId: assignment.staff_id, market: getRequestMarket(request) }, getRequestMarket(request));
+      await businessDetail(env, 'work_order', workOrderId, executorScope, getRequestMarket(request));
+      executorActive = isBusinessRole(executorScope.role);
+      executorName = executorScope.actor.display_name;
+    } catch (error) { if (!(error instanceof BusinessError)) throw error; }
+  }
+  const actualExecutor = executorActive && isBusinessRole(scope.role) && assignment?.staff_id === (request._auth.staffId || request._auth.userId);
+  const live = assignment && !['resolved','pending_review','completed','cancelled','closed','rejected','archived'].includes(workOrder.status);
+  const standardSource = {};
+  const standard = await loadServiceStandardSnapshotReadOnly(env, workOrder, undefined, standardSource);
+  const dispatch = live ? await prepareBusinessDispatchGuard(env, workOrderId, request, { businessExecution: true }) : null;
+  const paid = Boolean(dispatch?.businessManaged);
+  const startReady = paid && !getBlockingItems(standard, 'start').length;
+  const started = Boolean(lifecycle?.approved_at && lifecycle.staff_id === assignment?.staff_id);
+  const editable = actualExecutor && started && ['in_service','pricing'].includes(workOrder.status);
+  const repairRecord = await env.DB.prepare('SELECT * FROM work_order_repair_records WHERE work_order_id=?').bind(workOrderId).first();
+  const materialItems = await listWorkOrderMaterialItems(env, workOrderId, { purpose: 'service_report' });
+  const fields = await (await handleGetFieldDays(serviceDelegatedRequest(request, '/api/workorders/' + workOrderId + '/field-days'), env)).json();
+  const extensionRows = (await env.DB.prepare('SELECT * FROM work_order_extension_requests WHERE work_order_id=? ORDER BY created_at DESC').bind(workOrderId).all()).results || [];
+  const messages = (await env.DB.prepare('SELECT * FROM work_order_messages WHERE work_order_id=? ORDER BY created_at ASC').bind(workOrderId).all()).results || [];
+  const quoteExecution = await getWorkOrderQuoteExecution(env, workOrder, pricing, request._auth, getRequestMarket(request));
+  const view = {
+    scope_version: scope.version, quote_version: pricing?.quote_version || 0, revision: lifecycle?.revision || 0,
+    work_order_status: workOrder.status,
+    execution: assignment ? { type: 'business', staff_id: assignment.staff_id, staff_name: executorName,
+      assigned_at: assignment.assigned_at, requested_at: lifecycle?.requested_at || null, approved_at: lifecycle?.approved_at || null,
+      approved_by: lifecycle?.approved_by || null, executor_active: executorActive } : null,
+    work_order: { ...withoutPrivateFieldLocation(workOrder), field_plan: fieldPlanSnapshot(workOrder, getRequestMarket(request)),
+      quote_execution: quoteExecution, pending_extension_requests: extensionRows.filter(row => row.status === 'pending') },
+    service_standard: serviceStandardResponse(standard), field_days: fields, extensions: extensionRows,
+    repair_record: repairRecord ? { ...repairRecord, material_items: materialItems } : null, material_items: materialItems,
+    messages: messages.map(normalizeWorkOrderMessage),
+    capabilities: {
+      can_request_start: Boolean(actualExecutor && workOrder.status === 'pending_payment' && !started && startReady),
+      can_approve_start: Boolean(scope.role === 'admin' && executorActive && workOrder.status === 'payment_review' && lifecycle?.requested_at && !started && startReady),
+      can_edit: Boolean(editable), can_complete: Boolean(editable),
+      can_message: Boolean(actualExecutor && live),
+      can_confirm_execution_items: Boolean(actualExecutor && live),
+      can_confirm_admin_items: Boolean(scope.role === 'admin' && live),
+    },
+    blocked_reason: !assignment ? 'not_assigned' : !executorActive ? 'executor_inactive' : !paid && live ? 'payment_required'
+      : !startReady && !started ? 'service_standard_required' : null,
+  };
+  await ensureBusinessEpoch(env, scope);
+  return { data: view, assignment, lifecycle, workOrder, dispatch, standard, actualExecutor, snapshots: {
+    work_orders: [workOrder], business_execution_assignments: assignment ? [assignment] : [],
+    business_service_execution: lifecycle ? [lifecycle] : [], work_order_pricing: pricing ? [pricing] : [],
+    work_order_repair_records: repairRecord ? [repairRecord] : [],
+    work_order_service_standard_progress: standardSource.progressRows,
+    work_order_service_gate_overrides: standardSource.overrideRows,
+    work_order_extension_requests: extensionRows,
+  } };
+}
+
+
+async function businessServiceSnapshotGuards(env, view, scope) {
+  const statements = [businessEpochGuard(env, scope.epoch)];
+  for (const [table, where, args] of [
+    ['work_orders','id=?',[view.workOrder.id]], ['business_execution_assignments','work_order_id=?',[view.workOrder.id]],
+    ['business_service_execution','work_order_id=?',[view.workOrder.id]], ['work_order_pricing','work_order_id=?',[view.workOrder.id]],
+    ['work_order_service_standard_progress','work_order_id=? AND standard_version=?',[view.workOrder.id, buildServiceStandardDefinition().version]],
+    ['work_order_service_gate_overrides','work_order_id=? AND revoked_at IS NULL',[view.workOrder.id]],
+    ['work_order_repair_records','work_order_id=?',[view.workOrder.id]], ['work_order_field_days','work_order_id=?',[view.workOrder.id]],
+    ['work_order_extension_requests','work_order_id=?',[view.workOrder.id]],
+  ]) {
+    const rows = view.snapshots?.[table] ?? (await env.DB.prepare('SELECT * FROM ' + table + ' WHERE ' + where).bind(...args).all()).results ?? [];
+    statements.push(env.DB.prepare('SELECT CASE WHEN (SELECT COUNT(*) FROM ' + table + ' WHERE ' + where + ') = ? THEN 1 ELSE json(\'business service state changed\') END').bind(...args, rows.length));
+    for (const row of rows) {
+      const columns = Object.keys(row);
+      statements.push(env.DB.prepare('SELECT CASE WHEN EXISTS (SELECT 1 FROM ' + table + ' WHERE ' + where + ' AND ' + columns.map(column => column + ' IS ?').join(' AND ') + ') THEN 1 ELSE json(\'business service state changed\') END').bind(...args, ...columns.map(column => row[column])));
+    }
+  }
+  return statements;
+}
+
+function deferredBusinessServiceEnvironment(env) {
+  const pending = [], originals = new WeakMap(), uploadedKeys = [], notifications = [];
+  const DB = {
+    prepare(sql) {
+      let original = env.DB.prepare(sql), boundValues = [];
+      const wrapped = {
+        bind(...values) { boundValues = values; original = original.bind(...values); originals.set(wrapped, original); return wrapped; },
+        first(...values) { return /SELECT onesignal_player_id FROM/.test(sql) ? Promise.resolve(null) : original.first(...values); },
+        all(...values) { return original.all(...values); },
+        async run() {
+          pending.push(original);
+          if (/INSERT INTO notifications\s*\(/.test(sql)) notifications.push(boundValues);
+          return { meta: { changes: 1 } };
+        },
+      };
+      originals.set(wrapped, original); return wrapped;
+    },
+    async batch(statements) {
+      pending.push(...statements.map(statement => originals.get(statement) || statement));
+      return statements.map(() => ({ meta: { changes: 1 } }));
+    },
+  };
+  const result = { ...env, DB };
+  if (env.FIELD_EVIDENCE) result.FIELD_EVIDENCE = {
+    get: (...args) => env.FIELD_EVIDENCE.get(...args),
+    delete: (...args) => env.FIELD_EVIDENCE.delete(...args),
+    async put(key, ...args) { uploadedKeys.push(key); return env.FIELD_EVIDENCE.put(key, ...args); },
+  };
+  return { env: result, pending, uploadedKeys, notifications };
+}
+
+
+async function handleAcceptBusinessService(request, env, workOrder) {
+  const service = await env.DB.prepare(`SELECT service.* FROM business_service_execution service
+    JOIN business_execution_assignments assignment ON assignment.work_order_id=service.work_order_id AND assignment.staff_id=service.staff_id
+    WHERE service.work_order_id=? AND service.approved_at IS NOT NULL`).bind(workOrder.id).first();
+  if (!service || !['resolved','completed'].includes(workOrder.status) || workOrder.report_quality_status !== 'submitted') {
+    return errorResponse('Business service is not ready for customer confirmation', 409);
+  }
+  if (workOrder.customer_confirmed_at) return jsonResponse({ success: true, accepted: true });
+  const standardSource = {};
+  const standard = await loadServiceStandardSnapshotReadOnly(env, workOrder, undefined, standardSource);
+  const blocking = getBlockingItems(standard, 'handover', ['handover.customer_confirmation']);
+  if (blocking.length) return serviceStandardGateBlockedResponse({ gate: 'handover', blocking_items: blocking.map(item => item.key) }, getRequestMarket(request));
+  const originalWorkOrder = Object.fromEntries(['id','customer_id','engineer_id','status','active_quote_version','service_mode','arrival_verification_required'].map(key => [key, workOrder[key]]));
+  const originalReport = Object.fromEntries(['symptom','inspection_process','diagnosis','solution','verification_result','follow_up_advice','report_quality_status','customer_confirmed_at'].map(key => [key, workOrder[key]]));
+  const guards = await businessServiceSnapshotGuards(env, { workOrder, snapshots: {
+    work_orders: [originalWorkOrder], work_order_repair_records: [{ id: workOrder.repair_record_id, ...originalReport }],
+    business_service_execution: [service], work_order_service_standard_progress: standardSource.progressRows,
+    work_order_service_gate_overrides: standardSource.overrideRows,
+  } }, { epoch: await businessEpoch(env) });
+  guards.push(env.DB.prepare("SELECT CASE WHEN EXISTS (SELECT 1 FROM business_execution_assignments WHERE work_order_id=? AND staff_id=?) THEN 1 ELSE json('business service executor changed') END").bind(workOrder.id, service.staff_id));
+  try {
+    await env.DB.batch([
+      ...guards,
+      env.DB.prepare(`UPDATE work_order_repair_records SET customer_confirmed_at=datetime('now'),updated_at=datetime('now')
+        WHERE work_order_id=? AND report_quality_status='submitted' AND customer_confirmed_at IS NULL
+          AND EXISTS (SELECT 1 FROM work_orders WHERE id=? AND customer_id=? AND engineer_id IS NULL AND status='resolved')`).bind(workOrder.id, workOrder.id, request._auth.userId),
+      env.DB.prepare("SELECT CASE WHEN changes()=1 THEN 1 ELSE json('business service acceptance changed') END"),
+      buildServiceStandardEventEnsureStatement(env, workOrder.id, 'handover.customer_confirmation'),
+      buildServiceStandardEventConfirmationAuditStatement(env, request, { workOrderId: workOrder.id, itemKey: 'handover.customer_confirmation',
+        actorType: 'customer', actorId: request._auth.userId, evidenceType: 'service_acceptance', evidenceId: workOrder.repair_record_id }),
+      buildServiceStandardEventConfirmationStatement(env, workOrder.id, 'handover.customer_confirmation', 'customer', request._auth.userId, 'service_acceptance', workOrder.repair_record_id),
+      buildAuditLogStatement(env, request, { targetType: 'work_order', targetId: workOrder.id, action: 'business_service_customer_accepted', afterState: { report_id: workOrder.repair_record_id } }),
+      scheduledNotificationStatement(env, { id: 'business-accepted:' + workOrder.id, userId: service.staff_id, userType: 'admin',
+        type: 'business_service_accepted', title: getRequestMarket(request) === 'cn' ? '客户已验收服务' : 'Customer accepted the service',
+        body: getRequestMarket(request) === 'cn' ? '客户已确认服务报告，请继续跟进财务结清。' : 'The customer accepted the service report. Follow up on financial settlement.',
+        data: { work_order_id: workOrder.id } }),
+    ]);
+  } catch (error) {
+    if (/malformed json|constraint/i.test(String(error.message))) return errorResponse('Service acceptance state changed', 409);
+    throw error;
+  }
+  return jsonResponse({ success: true, accepted: true, settlement: { settled: false, reason: 'internal_staff_no_partner_payout' } });
+}
+
+async function handleBusinessService(request, env) {
+  try {
+    const url = new URL(request.url), segments = url.pathname.split('/');
+    const workOrderId = segments[5], action = segments.slice(7).join('/');
+    const read = request.method === 'GET';
+    const scope = await businessScope(env, request._auth, getRequestMarket(request));
+    const multipart = /multipart\/form-data/i.test(request.headers.get('Content-Type') || '');
+    const body = read ? Object.fromEntries(url.searchParams) : await readBusinessPaymentBody(request, multipart);
+    const values = body instanceof FormData ? Object.fromEntries(body) : body;
+    assertBusinessIdentity(request._auth, values.expected_staff_id);
+    if (values.scope_version !== scope.version) throw new BusinessError('Business scope changed', 409, 'business_scope_changed');
+    const view = await businessServiceView(request, env, workOrderId, scope);
+
+    if (read && !action) return jsonResponse(view.data);
+    if (read) {
+      let response;
+      if (action === 'materials') response = await handleSearchMaterials(serviceDelegatedRequest(request, '/api/materials', null, { market: getRequestMarket(request) }), env);
+      else if (/^field-media\/[^/]+$/.test(action)) response = await handleGetFieldMedia(serviceDelegatedRequest(request, '/api/workorders/' + workOrderId + '/' + action), env);
+      else throw new BusinessError('Service resource not found', 404);
+      await ensureBusinessEpoch(env, scope);
+      return response;
+    }
+    if (request.method !== (action === 'report' ? 'PUT' : 'POST')) throw new BusinessError('Method not allowed', 405);
+    const standardMatch = /^standard\/items\/([^/]+)\/confirm$/.exec(action);
+    const adminAction = action === 'approve-start' || (standardMatch && view.standard.items.find(item => item.key === decodeURIComponent(standardMatch[1]))?.owner === 'admin');
+    if (adminAction ? scope.role !== 'admin' : !view.actualExecutor) throw new BusinessError('Only the authorized service actor may perform this action', 403);
+    if (!view.assignment || !view.data.execution.executor_active) throw new BusinessError('Service executor unavailable', 409);
+    const revision = Number(values.revision), quoteVersion = Number(values.quote_version);
+    if (!Number.isSafeInteger(revision) || revision < 0 || !Number.isSafeInteger(quoteVersion) || quoteVersion < 1
+      || typeof values.idempotency_key !== 'string' || !values.idempotency_key.trim() || values.idempotency_key.length > 128) {
+      throw new BusinessError('Revision, quote version and idempotency key required', 400);
+    }
+    const fingerprintValues = [];
+    if (body instanceof FormData) {
+      for (const [key, value] of body) fingerprintValues.push([key, typeof value === 'string' ? value
+        : { name: value.name, type: value.type, digest: Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', await value.arrayBuffer()))).join(',') }]);
+    } else fingerprintValues.push(values);
+    const fingerprint = JSON.stringify([workOrderId, action, request._auth.staffId || request._auth.userId, fingerprintValues]);
+    const actionId = 'business-service:' + values.idempotency_key;
+    const prior = await env.DB.prepare('SELECT * FROM business_service_actions WHERE id=?').bind(actionId).first();
+    if (prior) {
+      if (prior.fingerprint !== fingerprint) throw new BusinessError('Idempotency key already used', 409, 'idempotency_conflict');
+      return jsonResponse({ ...view.data, result: JSON.parse(prior.response_json) });
+    }
+    if (revision !== view.data.revision || quoteVersion !== view.data.quote_version) throw new BusinessError('Service revision or quote changed', 409, 'business_service_state_changed');
+    if (request.signal.aborted) throw new BusinessError('Request aborted', 409);
+    const guards = await businessServiceSnapshotGuards(env, view, scope);
+    if (action === 'report' && Array.isArray(values.material_items)) {
+      if (values.material_items.length > 50) throw new BusinessError('Too many report materials', 400);
+      for (const id of new Set(values.material_items.map(item => item?.material_id).filter(Boolean))) {
+        if (typeof id !== 'string' || id.length > 128) throw new BusinessError('Invalid material identity', 400);
+        const material = await env.DB.prepare('SELECT id,market,status FROM materials WHERE id=?').bind(id).first();
+        if (!material || material.market !== getRequestMarket(request)) throw new BusinessError('Material is outside this service market', 403);
+        guards.push(env.DB.prepare("SELECT CASE WHEN EXISTS (SELECT 1 FROM materials WHERE id=? AND market=? AND status IS ?) THEN 1 ELSE json('business service material changed') END").bind(id, material.market, material.status));
+      }
+    }
+    const deferred = deferredBusinessServiceEnvironment(env);
+    const ctx = { workOrderId, staffId: view.assignment.staff_id, staffName: view.data.execution.staff_name };
+    let response;
+    let committed = false;
+    let commitAttempted = false;
+    try {
+      if (action === 'request-start' || action === 'approve-start') {
+        const can = action === 'request-start' ? view.data.capabilities.can_request_start : view.data.capabilities.can_approve_start;
+        if (!can) throw new BusinessError('Payment, service standard or approval state does not permit start', 409);
+        guards.push(env.DB.prepare('SELECT CASE WHEN EXISTS (SELECT 1 FROM work_orders WHERE id=? ' + view.dispatch.sql + ') THEN 1 ELSE json(\'business service payment changed\') END').bind(workOrderId, ...view.dispatch.bindings));
+        if (action === 'request-start') {
+          deferred.pending.push(env.DB.prepare("INSERT INTO business_service_execution(work_order_id,staff_id,requested_at,requested_by) VALUES (?,?,datetime('now'),?) ON CONFLICT(work_order_id) DO UPDATE SET requested_at=datetime('now'),requested_by=excluded.requested_by").bind(workOrderId, ctx.staffId, ctx.staffId));
+          deferred.pending.push(env.DB.prepare("UPDATE work_orders SET status='payment_review' WHERE id=?").bind(workOrderId));
+        } else {
+          deferred.pending.push(env.DB.prepare("UPDATE business_service_execution SET approved_at=datetime('now'),approved_by=?,approved_quote_version=? WHERE work_order_id=?").bind(request._auth.staffId || request._auth.userId, quoteVersion, workOrderId));
+          deferred.pending.push(env.DB.prepare("UPDATE work_orders SET status='in_service',started_at=datetime('now') WHERE id=?").bind(workOrderId));
+        }
+        response = jsonResponse({ success: true });
+      } else {
+        const editable = view.data.capabilities.can_edit;
+        if (standardMatch ? !(adminAction ? view.data.capabilities.can_confirm_admin_items : view.data.capabilities.can_confirm_execution_items)
+          : action === 'messages' ? !view.data.capabilities.can_message : !editable) throw new BusinessError('Service cannot be edited in its current state', 409);
+        let handler, target;
+        if (standardMatch) { handler = handleConfirmWorkOrderServiceStandardItem; target = 'service-standard/items/' + standardMatch[1] + '/confirm'; }
+        else if (action === 'report') { handler = handleSaveRepairRecord; target = 'repair-record'; }
+        else if (action === 'complete') { handler = handleResolveWorkOrder; target = 'resolve'; }
+        else if (action === 'field-days/check-in') { handler = handleFieldDayCheckIn; target = action; }
+        else if (/^field-days\/[^/]+\/report$/.test(action)) { handler = handleSubmitFieldDayReport; target = action; }
+        else if (action === 'extensions') { handler = handleCreateExtensionRequest; target = 'extensions'; }
+        else if (action === 'messages') { handler = handlePostWorkOrderMessage; target = 'messages'; }
+        else if (action === 'material-requests') { handler = handleCreateMaterialRequest; target = action; }
+        else throw new BusinessError('Service action not found', 404);
+        if (action === 'material-requests') { body.work_order_id = workOrderId; body.market = getRequestMarket(request); }
+        const child = serviceDelegatedRequest(request, '/api/workorders/' + workOrderId + '/' + target, body);
+        child.headers.set('Idempotency-Key', actionId);
+        businessServiceContexts.set(child, ctx);
+        response = await handler(child, deferred.env);
+      }
+      const result = await response.json();
+      if (!response.ok) { await cleanupFieldEvidenceObjects(env, deferred.uploadedKeys, 'business_service_rejected'); return jsonResponse(result, response.status); }
+      if (request.signal.aborted) throw new BusinessError('Request aborted', 409);
+      const actorId = request._auth.staffId || request._auth.userId;
+      const statements = [...guards, ...deferred.pending,
+        env.DB.prepare('INSERT INTO business_service_execution(work_order_id,staff_id,revision) VALUES (?,?,1) ON CONFLICT(work_order_id) DO UPDATE SET revision=business_service_execution.revision+1').bind(workOrderId, ctx.staffId),
+        buildAuditLogStatement(env, request, { targetType: 'work_order', targetId: workOrderId, action: 'business_service_' + action.replaceAll('/', '_'),
+          beforeState: { revision }, afterState: { revision: revision + 1, staff_id: ctx.staffId } }),
+        env.DB.prepare('INSERT INTO business_service_actions(id,work_order_id,staff_id,fingerprint,response_json) VALUES (?,?,?,?,?)').bind(actionId, workOrderId, actorId, fingerprint, JSON.stringify(result)),
+        businessEpochGuard(env, scope.epoch),
+      ];
+      if (['request-start','approve-start'].includes(action)) statements.push(scheduledNotificationStatement(env, {
+        id: actionId, userId: action === 'request-start' ? 'admin' : ctx.staffId, userType: 'admin',
+        type: 'business_service_start', title: getRequestMarket(request) === 'cn' ? '服务开工审批' : 'Service start approval',
+        body: action === 'request-start' ? (getRequestMarket(request) === 'cn' ? '商务执行人员已提交开工申请。' : 'The assigned staff member requested service start.')
+          : (getRequestMarket(request) === 'cn' ? '管理员已批准开工。' : 'Admin approved service start.'), data: { work_order_id: workOrderId },
+      }));
+      commitAttempted = true;
+      await env.DB.batch(statements);
+      committed = true;
+      await Promise.all(deferred.notifications.filter(([, , type]) => type !== 'admin').map(([, userId, userType, notificationType, title, message, data]) =>
+        sendPushToUser(userId, userType, env, { title, message, data: { ...(data ? JSON.parse(data) : {}), notification_type: notificationType } })));
+      const latest = await businessServiceView(request, env, workOrderId, scope);
+      return jsonResponse({ ...latest.data, result }, response.status);
+    } catch (error) {
+      let commitUncertain = false;
+      if (commitAttempted && !committed) {
+        try {
+          const storedAction = await env.DB.prepare('SELECT fingerprint FROM business_service_actions WHERE id=?').bind(actionId).first();
+          committed = storedAction?.fingerprint === fingerprint;
+        } catch { commitUncertain = true; }
+      }
+      if (!committed && !commitUncertain) await cleanupFieldEvidenceObjects(env, deferred.uploadedKeys, 'business_service_transaction_failed');
+      if (/malformed json|constraint|business service|business scope/i.test(String(error.message)) && !(error instanceof BusinessError)) {
+        throw new BusinessError('Service state or scope changed; reload before retrying', 409, 'business_service_state_changed');
+      }
+      throw error;
+    }
+  } catch (error) {
+    if (error instanceof BusinessError) return jsonResponse({ error: error.message, code: error.code }, error.status);
+    throw error;
+  }
+}
+
+async function businessExecutionView(request, env, workOrderId, s) {
+  const market = getRequestMarket(request);
+  const record = await businessDetail(env, 'work_order', workOrderId, s, market);
+  const workOrder = await env.DB.prepare('SELECT * FROM work_orders WHERE id=?').bind(workOrderId).first();
+  const pricing = await env.DB.prepare('SELECT * FROM work_order_pricing WHERE work_order_id=?').bind(workOrderId).first();
+  const assignment = await env.DB.prepare('SELECT * FROM business_execution_assignments WHERE work_order_id=?').bind(workOrderId).first();
+  const candidates = [];
+  if (s.role === 'admin') {
+    const validIds = new Set(s.owners);
+    const profiles = new Map(s.organization.staff.filter(staff => validIds.has(staff.id)).map(staff => [staff.id, staff]));
+    const ancestorIds = new Set();
+    for (let profile = profiles.get(record.owner_staff_id); profile && ancestorIds.size < 3 && !ancestorIds.has(profile.id);
+      profile = profiles.get(profile.supervisor_staff_id)) ancestorIds.add(profile.id);
+    for (const id of s.owners.filter(id => ancestorIds.has(id))) {
+      try {
+        const candidateScope = await businessScope(env, { userType: 'admin', userId: id, staffId: id, market }, market);
+        if (!isBusinessRole(candidateScope.role)) continue;
+        await businessDetail(env, 'work_order', workOrderId, candidateScope, market);
+        candidates.push({ id, display_name: candidateScope.actor.display_name, role: candidateScope.role });
+      } catch (error) { if (!(error instanceof BusinessError)) throw error; }
+    }
+  }
+  let blocked = assignment ? 'already_assigned' : s.role !== 'admin' ? 'admin_required'
+    : workOrder.engineer_id || workOrder.assigned_regional_lead_id ? 'engineer_assigned'
+    : workOrder.started_at || workOrder.resolved_at || workOrder.completed_at
+      || !['pending','pending_payment'].includes(workOrder.status) ? 'work_order_state_invalid'
+    : pricing?.quote_source !== 'business' || pricing.status !== 'confirmed' ? 'customer_confirmation_required'
+    : workOrder.status !== 'pending_payment' ? 'work_order_state_invalid' : null;
+  let guard = null;
+  if (!blocked) {
+    guard = await prepareBusinessDispatchGuard(env, workOrderId, request, { businessExecution: true });
+    if (!guard?.businessManaged) blocked = 'payment_required';
+    else if (!candidates.length) blocked = 'no_eligible_staff';
+  }
+  await ensureBusinessEpoch(env, s);
+  return { workOrder, pricing, assignment, guard, data: {
+    scope_version: s.version, quote_version: pricing?.quote_version ?? 0, revision: assignment?.revision ?? 0,
+    can_assign: !blocked, blocked_reason: blocked,
+    execution: assignment ? { type: 'business', staff_id: assignment.staff_id, staff_name: assignment.staff_name,
+      reason: assignment.reason, assigned_at: assignment.assigned_at, assigned_by: assignment.assigned_by, status: 'assigned' } : null,
+    candidates,
+  } };
+}
+
+async function handleBusinessExecution(request, env) {
+  const reply = (value, status = 200) => new Response(JSON.stringify(value), { status,
+    headers: { 'Content-Type': 'application/json', 'Cache-Control': 'private, no-store' } });
+  try {
+    const url = new URL(request.url), assigning = url.pathname.endsWith('/assign');
+    if (request.method !== (assigning ? 'POST' : 'GET')) return reply({ error: 'Method not allowed' }, 405);
+    const s = await businessScope(env, request._auth, getRequestMarket(request));
+    if (assigning && s.role !== 'admin') throw new BusinessError('Only Admin can assign business execution', 403, 'admin_required');
+    const values = assigning ? await readBusinessPaymentBody(request, false) : Object.fromEntries(url.searchParams);
+    assertBusinessIdentity(request._auth, values.expected_staff_id);
+    if (values.scope_version !== s.version) throw new BusinessError('Business scope changed', 409, 'business_scope_changed');
+    const workOrderId = url.pathname.split('/')[5];
+    const view = await businessExecutionView(request, env, workOrderId, s);
+    if (!assigning) return reply(view.data);
+    if (typeof values.executor_staff_id !== 'string' || !values.executor_staff_id.trim() || values.executor_staff_id.length > 128
+      || typeof values.reason !== 'string' || !values.reason.trim() || values.reason.length > 2000
+      || typeof values.idempotency_key !== 'string' || !values.idempotency_key.trim() || values.idempotency_key.length > 128
+      || !Number.isSafeInteger(values.revision) || values.revision < 0 || !Number.isSafeInteger(values.quote_version) || values.quote_version < 1) {
+      throw new BusinessError('Executor, local engineer availability reason, quote version, revision and idempotency key are required', 400);
+    }
+    const fingerprint = JSON.stringify([workOrderId, request._auth.staffId || request._auth.userId, getRequestMarket(request),
+      values.expected_staff_id, values.scope_version, values.quote_version, values.revision, values.executor_staff_id, values.reason]);
+    const key = 'business-execution:' + values.idempotency_key;
+    const replay = async () => {
+      const existing = await env.DB.prepare('SELECT * FROM business_execution_assignments WHERE idempotency_key=?').bind(key).first();
+      if (!existing) return null;
+      if (existing.request_fingerprint !== fingerprint) throw new BusinessError('Idempotency key already used with a different request', 409, 'idempotency_conflict');
+      const latest = await businessExecutionView(request, env, workOrderId, s);
+      return reply(latest.data, 200);
+    };
+    const previous = await replay();
+    if (previous) return previous;
+    if (view.data.blocked_reason) throw new BusinessError('Business execution assignment is unavailable: ' + view.data.blocked_reason, 409, view.data.blocked_reason);
+    if (values.revision !== 0 || values.quote_version !== view.data.quote_version) throw new BusinessError('Execution or quote version changed', 409, 'execution_state_changed');
+    const candidate = view.data.candidates.find(row => row.id === values.executor_staff_id);
+    if (!candidate) throw new BusinessError('Executor is outside this work order scope', 403, 'no_eligible_staff');
+    const assignedBy = request._auth.staffId || request._auth.userId, assignmentId = generateId();
+    const guard = env.DB.prepare(`SELECT CASE WHEN EXISTS (SELECT 1 FROM work_orders WHERE id=?
+      AND started_at IS NULL AND resolved_at IS NULL AND completed_at IS NULL ${view.guard.sql})
+      THEN 1 ELSE json('business execution state changed') END`).bind(workOrderId, ...view.guard.bindings);
+    try {
+      await env.DB.batch([
+        businessEpochGuard(env, s.epoch), guard,
+        env.DB.prepare(`INSERT INTO business_execution_assignments
+          (id,work_order_id,staff_id,staff_name,assigned_by,reason,revision,quote_version,market,idempotency_key,request_fingerprint,scope_snapshot)
+          VALUES (?,?,?,?,?,?,1,?,?,?,?,?)`).bind(assignmentId, workOrderId, candidate.id, candidate.display_name, assignedBy,
+          values.reason.trim(), values.quote_version, getRequestMarket(request), key, fingerprint,
+          JSON.stringify({ scope_version: s.version, epoch: s.epoch, role: candidate.role, actor_staff_id: assignedBy })),
+        buildAuditLogStatement(env, request, { targetType: 'work_order', targetId: workOrderId,
+          action: 'business_execution_assigned', beforeState: { execution: null, revision: 0 },
+          afterState: { type: 'business', staff_id: candidate.id, staff_name: candidate.display_name,
+            assigned_by: assignedBy, reason: values.reason.trim(), revision: 1, quote_version: values.quote_version,
+            status: 'assigned', service_execution_enabled: true } }),
+        scheduledNotificationStatement(env, { id: 'business-execution:' + assignmentId, userId: candidate.id, userType: 'admin',
+          type: 'business_execution_assigned', title: getRequestMarket(request) === 'cn' ? '商务执行指派' : 'Business execution assignment',
+          body: getRequestMarket(request) === 'cn'
+            ? '你已被指派为该工单的商务执行人员。请完成服务标准后申请管理员批准开工。'
+            : 'You have been assigned as the business executor for this work order. Complete the service standard and request Admin approval to start.',
+          data: { work_order_id: workOrderId, execution_status: 'assigned', service_execution_enabled: true } }),
+        businessEpochGuard(env, s.epoch), guard,
+      ]);
+    } catch (error) {
+      const recovered = await replay();
+      if (recovered) return recovered;
+      if (/malformed json|constraint|business execution|business scope/i.test(String(error.message))) {
+        throw new BusinessError('Execution state or scope changed; reload before assigning', 409, 'execution_state_changed');
+      }
+      throw error;
+    }
+    return reply((await businessExecutionView(request, env, workOrderId, s)).data, 201);
+  } catch (error) {
+    if (error instanceof BusinessError) return reply({ error: error.message, code: error.code }, error.status);
+    throw error;
+  }
+}
+
+async function handleBusinessPayments(request, env) {
+  try {
+    const url = new URL(request.url);
+    const [, , , , , workOrderId, section, installmentId] = url.pathname.split('/');
+    const payload = request.method === 'GET' ? null : await readBusinessPaymentBody(request, url.pathname.endsWith('/receipt-claims'));
+    const values = request.method === 'GET' ? Object.fromEntries(url.searchParams)
+      : payload instanceof FormData ? Object.fromEntries(payload) : payload;
+    const context = await prepareBusinessPaymentContext(request, env, workOrderId, values, { mutation: request.method !== 'GET' });
+    if (section === 'payments' && request.method === 'GET') {
+      const execution = context.available ? { ...context.execution, installments: context.execution.installments.map(row => ({
+        ...row, can_start_collection: !context.terminal && row.collection_start_ready,
+        can_submit_receipt: !context.terminal && ['collecting','partially_received','overdue'].includes(row.status) && row.received_amount < row.amount,
+      })), receipt_claims: context.execution.receipt_claims.map(claim => ({ ...claim, evidence: claim.evidence ? {
+        ...claim.evidence, url: `/api/admin/business/work-orders/${workOrderId}/receipt-evidence/${claim.evidence.id}`,
+      } : null })) } : null;
+      return jsonResponse({ scope_version: context.s.version, currency: getRequestMarket(request) === 'cn' ? 'CNY' : 'USD', quote_version: context.pricing?.quote_version ?? null,
+        available: context.available, ...(context.available ? {} : { unavailable_reason: 'customer_confirmation_required' }), quote_execution: execution });
+    }
+    if (section === 'receipt-evidence' && request.method === 'GET') return handleGetReceiptEvidence(request, env, { ...context, evidenceId: installmentId });
+    if (section === 'installments' && request.method === 'POST') {
+      const scoped = { ...context, installmentId, payload };
+      if (url.pathname.endsWith('/collection/start')) return handleStartInstallmentCollection(request, env, scoped);
+      if (url.pathname.endsWith('/receipt-claims')) return handleSubmitReceiptClaim(request, env, scoped);
+    }
+    return errorResponse('Not found', 404);
+  } catch (error) {
+    if (error instanceof BusinessError) return jsonResponse({ error: error.message, code: error.code }, error.status);
+    if (/malformed json|business (?:scope|payment state) changed/.test(error.message)) return errorResponse('Business payment state changed', 409);
+    return errorResponse('Business payment request failed', 500);
+  }
+}
+
+async function handleStartInstallmentCollection(request, env, businessContext = null) {
   const market = getRequestMarket(request);
   const copy = installmentCollectionCopy(market);
   try {
-    const [, , , workOrderId, , installmentId] = new URL(request.url).pathname.split('/');
+    const [, , , routeWorkOrderId, , routeInstallmentId] = new URL(request.url).pathname.split('/');
+    const workOrderId = businessContext?.workOrderId || routeWorkOrderId;
+    const installmentId = businessContext?.installmentId || routeInstallmentId;
     const auth = request._auth;
-    if (auth?.userType !== 'engineer') return errorResponse(copy.engineerOnly, 403);
+    if (!businessContext && auth?.userType !== 'engineer') return errorResponse(copy.engineerOnly, 403);
     const installment = await getActiveInstallment(env, workOrderId, installmentId);
     if (!installment) return errorResponse(copy.workOrderNotFound, 404);
-    if (installment.engineer_id !== auth.userId) return errorResponse(copy.engineerOnly, 403);
+    if (!businessContext && (installment.quote_source === 'business' || installment.engineer_id !== auth.userId)) return errorResponse(copy.engineerOnly, 403);
+    if (businessContext && Number(installment.quote_version) !== Number(businessContext.pricing.quote_version)) return errorResponse(copy.notCollectible, 409);
+    if (businessContext && installment.collection_started_at && ['collecting', 'partially_received'].includes(installment.status)) {
+      return jsonResponse({ installment: publicInstallment(installment, quoteExecutionNow(env)) });
+    }
     if (!installmentCollectionStartReady(
       installment,
       {
@@ -19960,18 +20783,20 @@ async function handleStartInstallmentCollection(request, env) {
     )) {
       return errorResponse(copy.notCollectible, 409);
     }
-    const body = await request.json().catch(() => ({}));
+    const body = businessContext?.payload || await request.json().catch(() => ({}));
     const milestoneConfirmation = cleanText(body.milestone_confirmation, 500);
     if (installment.trigger_type === 'milestone' && !milestoneConfirmation) {
       return errorResponse(copy.milestoneConfirmationRequired, 400);
     }
     const nextStatus = installment.status === 'partially_received' ? 'partially_received' : 'collecting';
     await env.DB.batch([
+      ...(businessContext?.guards || []),
       env.DB.prepare(`
         UPDATE work_order_installments
         SET status = ?, collection_started_at = COALESCE(collection_started_at, datetime('now')),
           updated_at = datetime('now')
         WHERE id = ? AND work_order_id = ? AND status = ?
+          ${businessContext ? 'AND received_amount = ? AND quote_version = ?' : ''}
           AND EXISTS (
             SELECT 1
             FROM work_orders active_order
@@ -19981,7 +20806,7 @@ async function handleStartInstallmentCollection(request, env) {
               ON active_history.pricing_id = active_pricing.id
              AND active_history.version = work_order_installments.quote_version
             WHERE active_order.id = work_order_installments.work_order_id
-              AND active_order.engineer_id = ?
+              AND ${businessContext ? "active_pricing.quote_source = 'business'" : 'active_order.engineer_id = ?'}
               AND active_history.status = 'confirmed'
               AND (
                 (active_history.version = active_order.active_quote_version AND active_history.quote_kind = 'baseline')
@@ -19991,7 +20816,7 @@ async function handleStartInstallmentCollection(request, env) {
                 )
               )
           )
-      `).bind(nextStatus, installmentId, workOrderId, installment.status, auth.userId),
+      `).bind(nextStatus, installmentId, workOrderId, installment.status, ...(businessContext ? [installment.received_amount, installment.quote_version] : [auth.userId])),
       env.DB.prepare(`SELECT CASE WHEN changes() = 1 THEN 1 ELSE json('installment collection conflict') END`),
       buildAuditLogStatement(env, request, {
         targetType: 'work_order_installment', targetId: installmentId, action: 'installment_collection_started',
@@ -20002,9 +20827,15 @@ async function handleStartInstallmentCollection(request, env) {
           milestone_confirmation: milestoneConfirmation || null,
         },
       }),
+      ...(businessContext ? [quoteExecutionNotificationStatement(env, {
+        id: `collection:${installmentId}:customer:${installment.customer_id}`,
+        user_id: installment.customer_id, user_type: 'customer', type: 'installment_collection_started',
+        title: copy.collectionTitle, body: copy.collectionBody(installment.order_no),
+        data: { work_order_id: workOrderId, installment_id: installmentId },
+      }), ...businessContext.finalGuards] : []),
     ]);
     const saved = await getActiveInstallment(env, workOrderId, installmentId);
-    await notifyQuoteExecutionBestEffort(env, {
+    if (!businessContext) await notifyQuoteExecutionBestEffort(env, {
       user_id: installment.customer_id, user_type: 'customer', type: 'installment_collection_started',
       title: copy.collectionTitle, body: copy.collectionBody(installment.order_no),
       data: { work_order_id: workOrderId, installment_id: installmentId },
@@ -20034,7 +20865,19 @@ async function handleSelectInstallmentPaymentMethod(request, env) {
       || Number(installment.received_amount) >= Number(installment.amount)) {
       return errorResponse(copy.paymentMethodClosed, 409);
     }
+    const business = installment.quote_source === 'business';
+    const epoch = business ? await businessEpoch(env) : null;
+    const recipient = business ? await businessCollectionRecipient(env, workOrderId, market) : null;
+    if (business && ['cancelled', 'rejected', 'closed', 'archived'].includes(installment.work_order_status)) return errorResponse(copy.paymentMethodClosed, 409);
+    if (business && installment.payment_method === paymentMethod) return jsonResponse({ installment: publicInstallment(installment) });
+    const lifecycleGuard = business ? env.DB.prepare(`SELECT CASE WHEN EXISTS (
+      SELECT 1 FROM work_orders w JOIN work_order_pricing p ON p.work_order_id=w.id
+      JOIN work_order_pricing_history h ON h.pricing_id=p.id AND h.version=w.active_quote_version
+      WHERE w.id=? AND w.customer_id=? AND w.status=? AND w.active_quote_version=?
+        AND p.quote_source='business' AND p.status='confirmed' AND h.status='confirmed'
+    ) THEN 1 ELSE json('installment payment method conflict') END`).bind(workOrderId, auth.userId, installment.work_order_status, installment.quote_version) : null;
     await env.DB.batch([
+      ...(business ? [businessEpochGuard(env, epoch), lifecycleGuard] : []),
       env.DB.prepare(`
         UPDATE work_order_installments SET payment_method = ?, updated_at = datetime('now')
         WHERE id = ? AND work_order_id = ? AND received_amount < amount
@@ -20047,9 +20890,15 @@ async function handleSelectInstallmentPaymentMethod(request, env) {
         beforeState: { payment_method: installment.payment_method || null },
         afterState: { payment_method: paymentMethod },
       }),
+      ...(business && recipient ? [quoteExecutionNotificationStatement(env, {
+        id: `method:${installmentId}:${paymentMethod}:admin:${recipient.user_id}`, ...recipient,
+        type: 'installment_payment_method_selected', title: copy.methodTitle, body: copy.methodBody(installment.order_no),
+        data: { work_order_id: workOrderId, installment_id: installmentId },
+      })] : []),
+      ...(business ? [businessEpochGuard(env, epoch), lifecycleGuard] : []),
     ]);
     const saved = await getActiveInstallment(env, workOrderId, installmentId);
-    await notifyQuoteExecutionBestEffort(env, {
+    if (!business) await notifyQuoteExecutionBestEffort(env, {
       user_id: installment.engineer_id, user_type: 'engineer', type: 'installment_payment_method_selected',
       title: copy.methodTitle, body: copy.methodBody(installment.order_no),
       data: { work_order_id: workOrderId, installment_id: installmentId },
@@ -20063,18 +20912,21 @@ async function handleSelectInstallmentPaymentMethod(request, env) {
   }
 }
 
-async function handleSubmitReceiptClaim(request, env) {
+async function handleSubmitReceiptClaim(request, env, businessContext = null) {
   const market = getRequestMarket(request);
   const copy = installmentCollectionCopy(market);
   const uploadedKeys = [];
   try {
-    const [, , , workOrderId, , installmentId] = new URL(request.url).pathname.split('/');
+    const [, , , routeWorkOrderId, , routeInstallmentId] = new URL(request.url).pathname.split('/');
+    const workOrderId = businessContext?.workOrderId || routeWorkOrderId;
+    const installmentId = businessContext?.installmentId || routeInstallmentId;
     const auth = request._auth;
-    if (auth?.userType !== 'engineer') return errorResponse(copy.engineerOnly, 403);
+    if (!businessContext && auth?.userType !== 'engineer') return errorResponse(copy.engineerOnly, 403);
     const installment = await getActiveInstallment(env, workOrderId, installmentId);
     if (!installment) return errorResponse(copy.workOrderNotFound, 404);
-    if (installment.engineer_id !== auth.userId) return errorResponse(copy.engineerOnly, 403);
-    const formData = await request.formData();
+    if (!businessContext && (installment.quote_source === 'business' || installment.engineer_id !== auth.userId)) return errorResponse(copy.engineerOnly, 403);
+    if (businessContext && Number(installment.quote_version) !== Number(businessContext.pricing.quote_version)) return errorResponse(copy.claimNotAllowed, 409);
+    const formData = businessContext?.payload || await request.formData();
     const claimedAmount = Number(formData.get('claimed_amount'));
     const idempotencyKey = cleanText(formData.get('idempotency_key'), 200);
     if (!Number.isSafeInteger(claimedAmount) || claimedAmount <= 0) return errorResponse(copy.claimAmountInvalid, 400);
@@ -20101,7 +20953,8 @@ async function handleSubmitReceiptClaim(request, env) {
     const requestValue = {
       workOrderId,
       installmentId,
-      engineerId: auth.userId,
+      engineerId: businessContext ? null : auth.userId,
+      staffId: businessContext?.staffId || null,
       claimedAmount,
       transactionReference,
       engineerNote,
@@ -20115,6 +20968,9 @@ async function handleSubmitReceiptClaim(request, env) {
         evidence: publicReceiptEvidence(evidenceFromJoinedReceiptClaim(existing)),
         installment: publicInstallment(installment),
       });
+    }
+    if (businessContext && claimedAmount > Number(installment.amount) - Number(installment.received_amount)) {
+      return errorResponse(copy.overConfirmation, 409);
     }
     if (!['collecting', 'partially_received', 'overdue'].includes(installment.status)) {
       return errorResponse(copy.claimNotAllowed, 409);
@@ -20132,15 +20988,16 @@ async function handleSubmitReceiptClaim(request, env) {
         id: evidenceId, claim_id: claimId, work_order_id: workOrderId, object_key: objectKey,
         file_name: sanitizeFilename(evidenceFile.name || `receipt.${extension}`),
         mime_type: evidenceDescriptor.mimeType, file_size: evidenceDescriptor.size,
-        uploader_type: 'engineer', uploader_id: auth.userId,
+        uploader_type: businessContext ? 'admin' : 'engineer', uploader_id: businessContext?.staffId || auth.userId,
       };
     }
 
     const notificationData = { work_order_id: workOrderId, installment_id: installmentId, claim_id: claimId };
     const staffRecords = await env.DB.prepare(`
       SELECT id FROM admin_staff_accounts
-      WHERE is_active = 1 AND role IN ('admin', 'operations') AND market_scope IN ('all', ?)
-    `).bind(market).all();
+      WHERE is_active = 1 AND role IN ('admin', 'operations') AND business_profile_required = 0 AND market_scope IN ('all', ?)
+        AND (? = 0 OR role = 'admin')
+    `).bind(market, businessContext ? 1 : 0).all();
     const notifications = [{
       id: `receipt-claim:${claimId}:submitted:customer:${installment.customer_id}`,
       user_id: installment.customer_id,
@@ -20159,6 +21016,7 @@ async function handleSubmitReceiptClaim(request, env) {
       data: notificationData,
     }))];
     const statements = [
+      ...(businessContext?.guards || []),
       env.DB.prepare(`
         SELECT CASE WHEN EXISTS (
           SELECT 1
@@ -20173,7 +21031,7 @@ async function handleSubmitReceiptClaim(request, env) {
           WHERE active_installment.id = ?
             AND active_installment.work_order_id = ?
             AND active_installment.status IN ('collecting', 'partially_received', 'overdue')
-            AND active_order.engineer_id = ?
+            AND ${businessContext ? "active_pricing.quote_source = 'business'" : 'active_order.engineer_id = ?'}
             AND active_history.status = 'confirmed'
             AND (
               (active_history.version = active_order.active_quote_version AND active_history.quote_kind = 'baseline')
@@ -20183,14 +21041,14 @@ async function handleSubmitReceiptClaim(request, env) {
               )
             )
         ) THEN 1 ELSE json('receipt claim active installment conflict') END
-      `).bind(installmentId, workOrderId, auth.userId),
+      `).bind(installmentId, workOrderId, ...(businessContext ? [] : [auth.userId])),
       env.DB.prepare(`
         INSERT INTO work_order_receipt_claims (
-          id, installment_id, work_order_id, engineer_id, claimed_amount,
+          id, installment_id, work_order_id, engineer_id, submitted_by_staff_id, claimed_amount,
           transaction_reference, engineer_note, status, idempotency_key
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)
       `).bind(
-        claimId, installmentId, workOrderId, auth.userId, claimedAmount,
+        claimId, installmentId, workOrderId, businessContext ? null : auth.userId, businessContext?.staffId || null, claimedAmount,
         transactionReference, engineerNote, idempotencyKey,
       ),
     ];
@@ -20210,8 +21068,9 @@ async function handleSubmitReceiptClaim(request, env) {
       env.DB.prepare(`
         UPDATE work_order_installments SET status = 'pending_confirmation', updated_at = datetime('now')
         WHERE id = ? AND work_order_id = ? AND status IN ('collecting', 'partially_received', 'overdue')
-          AND EXISTS (SELECT 1 FROM work_orders WHERE id = ? AND engineer_id = ?)
-      `).bind(installmentId, workOrderId, workOrderId, auth.userId),
+          ${businessContext ? 'AND received_amount = ? AND quote_version = ?' : ''}
+          AND EXISTS (SELECT 1 FROM work_orders WHERE id = ? ${businessContext ? '' : 'AND engineer_id = ?'})
+      `).bind(installmentId, workOrderId, ...(businessContext ? [installment.received_amount, installment.quote_version] : []), workOrderId, ...(businessContext ? [] : [auth.userId])),
       env.DB.prepare(`SELECT CASE WHEN changes() = 1 THEN 1 ELSE json('receipt claim conflict') END`),
       buildAuditLogStatement(env, request, {
         targetType: 'work_order_receipt_claim', targetId: claimId, action: 'installment_receipt_claim_submitted',
@@ -20219,6 +21078,7 @@ async function handleSubmitReceiptClaim(request, env) {
         afterState: { status: 'pending', claimed_amount: claimedAmount, evidence_id: evidence?.id || null },
       }),
       ...notifications.map((notification) => quoteExecutionNotificationStatement(env, notification)),
+      ...(businessContext?.finalGuards || []),
     );
     try {
       await env.DB.batch(statements);
@@ -20256,24 +21116,32 @@ async function handleSubmitReceiptClaim(request, env) {
   }
 }
 
-async function handleGetReceiptEvidence(request, env) {
+async function handleGetReceiptEvidence(request, env, businessContext = null) {
   const market = getRequestMarket(request);
   const copy = installmentCollectionCopy(market);
   try {
-    const [, , , workOrderId, , evidenceId] = new URL(request.url).pathname.split('/');
+    const [, , , routeWorkOrderId, , routeEvidenceId] = new URL(request.url).pathname.split('/');
+    const workOrderId = businessContext?.workOrderId || routeWorkOrderId;
+    const evidenceId = businessContext?.evidenceId || routeEvidenceId;
     const evidence = await env.DB.prepare(`
-      SELECT evidence.*, work_order.customer_id, work_order.engineer_id
+      SELECT evidence.*, work_order.customer_id, work_order.engineer_id, claim.submitted_by_staff_id
       FROM work_order_receipt_evidence evidence
       JOIN work_orders work_order ON work_order.id = evidence.work_order_id
+      JOIN work_order_receipt_claims claim ON claim.id = evidence.claim_id AND claim.work_order_id = evidence.work_order_id
       WHERE evidence.id = ? AND evidence.work_order_id = ?
     `).bind(evidenceId, workOrderId).first();
     if (!evidence) return errorResponse(copy.evidenceNotFound, 404);
     const auth = request._auth;
-    const allowed = canViewReceiptEvidence(auth, evidence);
+    const allowed = businessContext || (canViewReceiptEvidence(auth, evidence)
+      && !(evidence.submitted_by_staff_id && auth?.userType === 'engineer'));
     if (!allowed) return errorResponse(copy.evidenceDenied, 403);
+    const evidenceScope = businessContext?.s || (evidence.submitted_by_staff_id && auth?.userType === 'admin'
+      ? await businessScope(env, auth, market) : null);
+    if (evidenceScope) await businessDetail(env, 'work_order', workOrderId, evidenceScope, market);
     if (!env.FIELD_EVIDENCE) return errorResponse(copy.evidenceUnavailable, 503);
     const object = await env.FIELD_EVIDENCE.get(evidence.object_key);
     if (!object) return errorResponse(copy.evidenceNotFound, 404);
+    if (evidenceScope) await ensureBusinessEpoch(env, evidenceScope);
     return new Response(object.body, {
       headers: {
         'Content-Type': evidence.mime_type,
@@ -20283,6 +21151,7 @@ async function handleGetReceiptEvidence(request, env) {
       },
     });
   } catch (error) {
+    if (error instanceof BusinessError) return jsonResponse({ error: error.message, code: error.code }, error.status);
     return errorResponse(copy.serverError, 500);
   }
 }
@@ -20306,6 +21175,8 @@ async function handleAdminDecideReceiptClaim(request, env) {
       WHERE id = ? AND installment_id = ? AND work_order_id = ?
     `).bind(claimId, installmentId, workOrderId).first();
     if (!claim) return errorResponse(copy.workOrderNotFound, 404);
+    const businessContext = installment.quote_source === 'business'
+      ? await prepareBusinessPaymentContext(request, env, workOrderId, body, { mutation: true, adminOnly: true }) : null;
     const normalizedConfirmedAmount = decision === 'confirmed' ? Number(body.confirmed_amount) : null;
     const normalizedReason = reason || null;
     if (claim.decision_idempotency_key === idempotencyKey) {
@@ -20317,7 +21188,7 @@ async function handleAdminDecideReceiptClaim(request, env) {
     }
     if (claim.status !== 'pending') return errorResponse(copy.decisionConflict, 409);
 
-    const statements = [];
+    const statements = [...(businessContext?.guards || [])];
     let confirmedAmount = null;
     let nextInstallmentStatus;
     if (decision === 'confirmed') {
@@ -20353,7 +21224,8 @@ async function handleAdminDecideReceiptClaim(request, env) {
             completed_at = CASE WHEN received_amount + ? = amount THEN datetime('now') ELSE NULL END,
             updated_at = datetime('now')
           WHERE id = ? AND work_order_id = ? AND received_amount + ? <= amount
-        `).bind(confirmedAmount, confirmedAmount, confirmedAmount, installmentId, workOrderId, confirmedAmount),
+            ${businessContext ? 'AND received_amount = ? AND status = ? AND quote_version = ?' : ''}
+        `).bind(confirmedAmount, confirmedAmount, confirmedAmount, installmentId, workOrderId, confirmedAmount, ...(businessContext ? [installment.received_amount, installment.status, installment.quote_version] : [])),
         env.DB.prepare(`SELECT CASE WHEN changes() = 1 THEN 1 ELSE json('receipt over confirmation') END`),
       );
     } else {
@@ -20390,6 +21262,7 @@ async function handleAdminDecideReceiptClaim(request, env) {
       ? copy.confirmedBody(installment.order_no, confirmedAmount)
       : copy.rejectedBody(installment.order_no);
     const notificationData = { work_order_id: workOrderId, installment_id: installmentId, claim_id: claimId };
+    const businessRecipient = businessContext ? await businessCollectionRecipient(env, workOrderId, market) : null;
     const notifications = [
       {
         id: `receipt-decision:${claimId}:${decision}:customer:${installment.customer_id}`,
@@ -20401,15 +21274,15 @@ async function handleAdminDecideReceiptClaim(request, env) {
         data: notificationData,
       },
       {
-        id: `receipt-decision:${claimId}:${decision}:engineer:${installment.engineer_id}`,
-        user_id: installment.engineer_id,
-        user_type: 'engineer',
+        id: `receipt-decision:${claimId}:${decision}:${businessContext ? 'admin' : 'engineer'}:${businessContext ? businessRecipient?.user_id : installment.engineer_id}`,
+        user_id: businessContext ? businessRecipient?.user_id : installment.engineer_id,
+        user_type: businessContext ? 'admin' : 'engineer',
         type: notificationType,
         title,
         body: bodyText,
         data: notificationData,
       },
-    ];
+    ].filter(notification => notification.user_id);
     statements.push(buildAuditLogStatement(env, request, {
       targetType: 'work_order_receipt_claim', targetId: claimId,
       action: decision === 'confirmed' ? 'installment_receipt_confirmed' : 'installment_receipt_rejected',
@@ -20419,7 +21292,7 @@ async function handleAdminDecideReceiptClaim(request, env) {
         installment_status: nextInstallmentStatus,
         received_amount: Number(installment.received_amount) + (confirmedAmount || 0),
       },
-    }), ...notifications.map((notification) => quoteExecutionNotificationStatement(env, notification)));
+    }), ...notifications.map((notification) => quoteExecutionNotificationStatement(env, notification)), ...(businessContext?.finalGuards || []));
     try {
       await env.DB.batch(statements);
     } catch (error) {
@@ -20444,6 +21317,7 @@ async function handleAdminDecideReceiptClaim(request, env) {
     const savedInstallment = await getActiveInstallment(env, workOrderId, installmentId);
     return jsonResponse({ claim: visibleReceiptClaim(savedClaim, request._auth), installment: publicInstallment(savedInstallment) });
   } catch (error) {
+    if (error instanceof BusinessError) return jsonResponse({ error: error.message, code: error.code }, error.status);
     return errorResponse(copy.serverError, 500);
   }
 }
@@ -20864,6 +21738,9 @@ async function handleEngineerRequestPaymentStart(request, env) {
 async function handleAdminApprovePaymentStart(request, env) {
   try {
     const workOrderId = new URL(request.url).pathname.split('/')[4];
+    if (await env.DB.prepare('SELECT id FROM business_execution_assignments WHERE work_order_id=?').bind(workOrderId).first()) {
+      return errorResponse('Business execution requires the scoped service approval route', 409);
+    }
     const market = getRequestMarket(request);
     const body = await request.json().catch(() => ({}));
     const note = String(body.note || '').trim();
@@ -21327,8 +22204,9 @@ async function handleGetWorkOrderPayment(request, env) {
 // 客户拒绝/议价
 async function handleRejectWorkOrderPricing(request, env) {
   try {
+    const market = getRequestMarket(request);
     const workOrderId = new URL(request.url).pathname.split('/')[3];
-    const { reason, counter_offer } = await request.json();
+    const { reason, counter_offer, quote_version } = await request.json();
 
     // 认证：仅客户可拒绝报价；customer_id 从 token 取
     const auth = request._auth;
@@ -21344,6 +22222,35 @@ async function handleRejectWorkOrderPricing(request, env) {
     if (!wo) return errorResponse('工单不存在', 404);
     if (wo.customer_id !== customer_id) {
       return errorResponse('您无权操作该工单', 403);
+    }
+
+    const pricing = await env.DB.prepare('SELECT id,quote_source,quote_version,status FROM work_order_pricing WHERE work_order_id=?').bind(workOrderId).first();
+    if (pricing?.quote_source === 'business') {
+      const changedMessage = market === 'cn' ? '报价版本已更新，请刷新后重试' : 'Quote version changed. Refresh and try again.';
+      if (!Number.isSafeInteger(quote_version) || quote_version !== pricing.quote_version || pricing.status !== 'submitted') return errorResponse(changedMessage, 409);
+      const snapshot = await businessQuoteCostSnapshot(env, workOrderId, quote_version);
+      if (!snapshot) return errorResponse(changedMessage, 409);
+      if (typeof reason !== 'string' || !reason.trim() || reason.length > 2000) return errorResponse(market === 'cn' ? '请填写有效的退回原因' : 'A valid rejection reason is required', 400);
+      const hasCounterOffer = counter_offer !== null && counter_offer !== undefined;
+      if (hasCounterOffer && (!Number.isSafeInteger(counter_offer) || counter_offer <= 0)) return errorResponse(market === 'cn' ? '期望报价必须为正整数金额' : 'Counter offer must be a positive whole-unit amount', 400);
+      const messageContent = redactContactInfoForWorkOrder(reason.trim()) + (hasCounterOffer
+        ? market === 'cn' ? `（期望报价：${snapshot.currency} ${counter_offer}）` : ` (Requested price: ${snapshot.currency} ${counter_offer})`
+        : '');
+      await env.DB.batch([
+        businessQuotePendingLifecycleGuard(env, workOrderId),
+        env.DB.prepare(`UPDATE work_order_pricing SET status='draft' WHERE id=? AND quote_version=? AND status='submitted'
+          AND EXISTS (SELECT 1 FROM work_orders WHERE id=? AND customer_id=? AND COALESCE(active_quote_version,0)=0)`)
+          .bind(pricing.id, quote_version, workOrderId, customer_id),
+        env.DB.prepare("SELECT CASE WHEN changes()=1 THEN 1 ELSE json('business quote rejection conflict') END"),
+        env.DB.prepare("UPDATE work_order_pricing_history SET status='rejected' WHERE pricing_id=? AND version=? AND status='approved'").bind(pricing.id, quote_version),
+        env.DB.prepare("SELECT CASE WHEN changes()=1 THEN 1 ELSE json('business quote rejection conflict') END"),
+        env.DB.prepare("UPDATE work_orders SET status='pricing',quote_review_status='rejected' WHERE id=?").bind(workOrderId),
+        env.DB.prepare("INSERT INTO work_order_messages(id,work_order_id,sender_type,sender_id,sender_name,content,message_type) VALUES (?,?,'customer',?,'Customer',?,'text')")
+          .bind(`business-quote-feedback:${workOrderId}:${quote_version}`, workOrderId, customer_id, messageContent),
+        buildAuditLogStatement(env, request, { targetType: 'work_order', targetId: workOrderId, action: 'business_quote_customer_rejected', afterState: { quote_version } }),
+      ]);
+      await createNotification(env, { user_id: snapshot.author_staff_id, user_type: 'admin', type: 'quote_review_rejected', title: market === 'cn' ? '报价已退回' : 'Quote returned', body: market === 'cn' ? '客户请求修改报价，请查看工单协商消息。' : 'Customer requested a quotation revision. Review the work order messages.', data: { work_order_id: workOrderId, quote_version } });
+      return jsonResponse({ success: true, quote_version });
     }
 
     await env.DB.prepare(
@@ -21366,6 +22273,7 @@ async function handleRejectWorkOrderPricing(request, env) {
 
     return jsonResponse({ success: true });
   } catch (error) {
+    if (/business quote rejection conflict|malformed json/i.test(String(error?.message || error))) return errorResponse(getRequestMarket(request) === 'cn' ? '报价版本已更新，请刷新后重试' : 'Quote version changed. Refresh and try again.', 409);
     return errorResponse(error.message, 500);
   }
 }
@@ -22080,6 +22988,13 @@ async function routeRequest(request, env, ctx) {
     // 暂存 ctx 供需要 waitUntil 的处理函数使用（如 AI 摘要异步生成）
     request._ctx = ctx;
 
+    if (request.method !== 'OPTIONS' && !path.startsWith('/api/admin/business/') && ![
+      '/api/auth/session', '/api/auth/logout', '/api/auth/change-password', '/api/admin/login',
+    ].includes(path)) {
+      const earlyAuth = await authenticateRequest(request, env);
+      if (isBusinessRole(earlyAuth?.staffRole) || earlyAuth?.invalidStaff) return errorResponse('当前商务角色无权使用此接口', 403);
+    }
+
     if (path === '/api/service-request-assist' && request.method === 'POST') {
       return handleServiceRequestAssist(request, env);
     }
@@ -22201,7 +23116,8 @@ async function routeRequest(request, env, ctx) {
         || path.startsWith('/api/material-requisitions/')
         || path === '/api/auth/change-password'
         || (staff.role === 'operations' && isOperationsReadRoute(path, request.method));
-      if (staff.role !== 'admin' && !operationalRoute) {
+      const businessRoute = path.startsWith('/api/admin/business/') || path === '/api/auth/change-password';
+      if (isBusinessRole(staff.role) ? !businessRoute : staff.role !== 'admin' && !operationalRoute) {
         return errorResponse('当前员工角色无权访问该管理接口', 403);
       }
     }
@@ -22211,6 +23127,15 @@ async function routeRequest(request, env, ctx) {
       if (auth.userType !== 'admin') {
         return errorResponse('需要管理员权限', 403);
       }
+      if (/^\/api\/admin\/business\/work-orders\/[^/]+\/quote(?:\/submit|\/costs)?$/.test(path)) return handleBusinessQuote(request, env, getRequestMarket(request));
+      if (/^\/api\/admin\/business\/work-orders\/[^/]+\/(?:payments|installments\/[^/]+\/(?:collection\/start|receipt-claims)|receipt-evidence\/[^/]+)$/.test(path)) return handleBusinessPayments(request, env);
+      if (/^\/api\/admin\/business\/work-orders\/[^/]+\/execution(?:\/assign)?$/.test(path)) return handleBusinessExecution(request, env);
+      if (/^\/api\/admin\/business\/work-orders\/[^/]+\/service(?:\/.*)?$/.test(path)) {
+        const response = await handleBusinessService(request, env);
+        response.headers.set('Cache-Control', 'private, no-store');
+        return response;
+      }
+      if (path.startsWith('/api/admin/business/')) return handleBusinessWorkspace(request, env, getRequestMarket(request));
       if (path === '/api/admin/analytics/overview' && request.method === 'GET') {
         return handlePromotionAnalytics(request, env, 'overview');
       }
@@ -22725,6 +23650,9 @@ async function routeRequest(request, env, ctx) {
     }
     if (path === '/api/engineers/recommend' && request.method === 'GET') {
       return handleRecommendEngineers(request, env);
+    }
+    if (path === '/api/engineers/service-profile' && ['GET', 'PUT'].includes(request.method)) {
+      return handleEngineerServiceProfile(request, env, { jsonResponse, isCn: getRequestMarket(request) === 'cn' });
     }
     if (path === '/api/engineers/profile' && request.method === 'GET') {
       return handleGetEngineerProfile(request, env);

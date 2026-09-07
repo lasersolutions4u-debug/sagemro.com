@@ -216,11 +216,52 @@ function createQuoteExecutionEnv({
     evidenceKeys() {
       return [...evidenceObjects.keys()];
     },
-    close() {
+    async close() {
+      const failures = [];
+      let settled = 0;
+      while (settled < hooks.waitUntil.length) {
+        const pending = hooks.waitUntil.slice(settled);
+        settled += pending.length;
+        const results = await Promise.allSettled(pending);
+        failures.push(...results.filter((result) => result.status === 'rejected').map((result) => result.reason));
+      }
       db.close();
+      if (failures.length) throw new AggregateError(failures, 'Quote test background tasks failed');
     },
   };
 }
+
+test('quote test cleanup waits for background database writes and follow-up tasks', async () => {
+  const ctx = createQuoteExecutionEnv();
+  let completed = 0;
+  ctx.captureWaitUntil(Promise.resolve().then(async () => {
+    await Promise.resolve();
+    ctx.db.prepare('SELECT 1').get();
+    completed += 1;
+    ctx.captureWaitUntil(Promise.resolve().then(async () => {
+      await new Promise((resolve) => setImmediate(resolve));
+      ctx.db.prepare('SELECT 1').get();
+      completed += 1;
+    }));
+  }));
+
+  await ctx.close();
+  const results = await Promise.allSettled(ctx.waitUntilPromises());
+  assert.equal(completed, 2);
+  assert.ok(results.every((result) => result.status === 'fulfilled'));
+  assert.equal(ctx.db.isOpen, false);
+});
+
+test('quote test cleanup surfaces rejected tasks while still closing the database', async () => {
+  const ctx = createQuoteExecutionEnv();
+  const failure = new Error('background test task failed');
+  ctx.captureWaitUntil(Promise.reject(failure));
+  const closing = Promise.resolve(ctx.close());
+  const results = await Promise.allSettled(ctx.waitUntilPromises());
+  assert.equal(results[0].reason, failure);
+  await assert.rejects(closing, (error) => error instanceof AggregateError && error.errors.includes(failure));
+  assert.equal(ctx.db.isOpen, false);
+});
 
 function createBatchBarrier(expected) {
   let arrived = 0;
@@ -1614,9 +1655,15 @@ test('receipt claim idempotency matches the full canonical payload across shared
       assert.deepEqual(second.evidenceKeys(), [objectKey]);
     }
   } finally {
-    first.close();
-    second.close();
-    rmSync(directory, { recursive: true, force: true });
+    try {
+      await first.close();
+    } finally {
+      try {
+        await second.close();
+      } finally {
+        rmSync(directory, { recursive: true, force: true });
+      }
+    }
   }
 });
 
@@ -2422,9 +2469,15 @@ test('first-quote race maps SQLite uniqueness to 409 and rolls back the losing b
     assert.equal(first.db.prepare('SELECT COUNT(*) AS count FROM work_order_pricing_history').get().count, 1);
     assert.equal(first.db.prepare('SELECT COUNT(*) AS count FROM work_order_payment_schedule').get().count, 2);
   } finally {
-    first.close();
-    second.close();
-    rmSync(directory, { recursive: true, force: true });
+    try {
+      await first.close();
+    } finally {
+      try {
+        await second.close();
+      } finally {
+        rmSync(directory, { recursive: true, force: true });
+      }
+    }
   }
 });
 
@@ -2646,7 +2699,7 @@ test('active quote gates fail closed when the authoritative execution graph is i
         gate === 'archive' ? 'resolved' : 'pending_payment',
         `${label} ${gate}`,
       );
-      ctx.close();
+      await ctx.close();
     }
   }
 });
@@ -2717,7 +2770,7 @@ test('versioned start and archive transitions roll back when any mandatory lifec
         SELECT COUNT(*) AS count FROM audit_logs
         WHERE target_id = 'wo-quote-1' AND action = ?
       `).get(transition.action).count, 0, `${transition.name} ${table}`);
-      ctx.close();
+      await ctx.close();
     }
   }
 });
@@ -2797,9 +2850,15 @@ test('concurrent versioned lifecycle transitions persist mandatory writes exactl
         WHERE target_id = 'wo-quote-1' AND action = ?
       `).get(transition.auditAction).count, 1, transition.name);
     } finally {
-      first.close();
-      second.close();
-      rmSync(directory, { recursive: true, force: true });
+      try {
+        await first.close();
+      } finally {
+        try {
+          await second.close();
+        } finally {
+          rmSync(directory, { recursive: true, force: true });
+        }
+      }
     }
   }
 });
@@ -2859,9 +2918,15 @@ test('concurrent quote-driven check-ins reserve the final workday allowance atom
     assert.equal(first.db.prepare("SELECT COUNT(*) AS count FROM work_order_field_day_media WHERE purpose = 'check_in'").get().count, 1);
     assert.equal(sharedEvidenceObjects.size, 1);
   } finally {
-    first.close();
-    second.close();
-    rmSync(directory, { recursive: true, force: true });
+    try {
+      await first.close();
+    } finally {
+      try {
+        await second.close();
+      } finally {
+        rmSync(directory, { recursive: true, force: true });
+      }
+    }
   }
 });
 

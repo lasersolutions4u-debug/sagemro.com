@@ -894,7 +894,10 @@ test('customer service views translate machine fields to English', () => {
   assert.match(myServices, /WorkOrderStatus\.RESOLVED/);
   assert.match(myServices, /WorkOrderStatus\.PENDING_REVIEW/);
   assert.match(myServices, /data-testid="go-rate-button"/);
-  assert.match(detailModal, /const canRate = effectiveStatus === 'resolved' \|\| effectiveStatus === 'pending_review'/);
+  assert.match(detailModal, /const isBusinessService = detail\?\.service_execution\?\.type === 'business'/);
+  assert.match(detailModal, /const businessAccepted = isBusinessService && Boolean\(detail\?\.repair_record\?\.customer_confirmed_at\)/);
+  assert.match(detailModal, /const canRate = !businessAccepted && \(effectiveStatus === 'resolved' \|\| effectiveStatus === 'pending_review'\)/);
+  assert.match(detailModal, /label: isBusinessService \? \(isCnLocale\(\) \? '服务验收' : 'Service acceptance'\) : 'Review'/);
   assert.match(detailModal, /tabs\.push\(\{ key: 'repairRecord', label: 'Service Report' \}\)/);
   assert.match(myServices, /formatCustomerDeviceLine\(order\)/);
   assert.match(detailModal, /Machine: <span/);

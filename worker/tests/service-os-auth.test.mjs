@@ -1,4 +1,5 @@
 import { test } from 'node:test';
+import './business-workspace.test.mjs';
 import assert from 'node:assert/strict';
 
 import { hashPasswordNew, signJwt } from '../src/lib/auth.js';

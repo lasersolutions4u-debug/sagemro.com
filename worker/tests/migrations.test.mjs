@@ -18,6 +18,35 @@ const nullableInternationalCustomerPhoneMigrationUrl = new URL(
 );
 const schemaUrl = new URL('../schema.sql', import.meta.url);
 
+test('050 adds private engineer service profiles idempotently without changing existing records', async () => {
+  const schema = await readFile(schemaUrl, 'utf8');
+  const migrationPath = new URL('../migrations/050_engineer_service_profiles.sql', import.meta.url);
+  const migration = await readFile(migrationPath, 'utf8').catch(() => '');
+  assert.match(migration, /CREATE TABLE IF NOT EXISTS engineer_service_profiles/);
+  const legacy = new DatabaseSync(':memory:');
+  const fresh = new DatabaseSync(':memory:');
+  try {
+    legacy.exec("PRAGMA foreign_keys = ON; CREATE TABLE engineers (id TEXT PRIMARY KEY, name TEXT); CREATE TABLE _migrations (version TEXT PRIMARY KEY, note TEXT); INSERT INTO engineers VALUES ('fixture-engineer', 'Fixture');");
+    const before = legacy.prepare('SELECT * FROM engineers').all();
+    legacy.exec(migration);
+    legacy.prepare("INSERT INTO engineer_service_profiles (engineer_id, profile_json, revision) VALUES (?, ?, 1)").run('fixture-engineer', '{"version":1,"hourly_rate":null}');
+    const saved = legacy.prepare('SELECT * FROM engineer_service_profiles').all();
+    legacy.exec(migration);
+    assert.deepEqual(legacy.prepare('SELECT * FROM engineers').all(), before);
+    assert.deepEqual(legacy.prepare('SELECT * FROM engineer_service_profiles').all(), saved);
+    fresh.exec(schema);
+    for (const pragma of ['table_info', 'foreign_key_list']) {
+      assert.deepEqual(legacy.prepare(`PRAGMA ${pragma}(engineer_service_profiles)`).all(), fresh.prepare(`PRAGMA ${pragma}(engineer_service_profiles)`).all());
+    }
+    assert.throws(() => legacy.exec("UPDATE engineer_service_profiles SET revision = 0"));
+    assert.throws(() => legacy.exec("INSERT INTO engineer_service_profiles (engineer_id, profile_json, revision) VALUES ('absent', '{}', 1)"));
+    assert.equal(legacy.prepare("SELECT COUNT(*) AS n FROM _migrations WHERE version = '050_engineer_service_profiles'").get().n, 1);
+    legacy.exec("INSERT INTO engineers VALUES ('other-engineer', 'Other'); INSERT INTO engineer_service_profiles (engineer_id, profile_json, revision) VALUES ('other-engineer', '{\"version\":1}', 1)");
+    legacy.exec("DELETE FROM engineers WHERE id = 'fixture-engineer'");
+    assert.deepEqual(legacy.prepare('SELECT engineer_id FROM engineer_service_profiles').all().map(row => row.engineer_id), ['other-engineer']);
+  } finally { legacy.close(); fresh.close(); }
+});
+
 const structuredServiceRequestColumns = [
   'service_request_version',
   'service_request_kind',
