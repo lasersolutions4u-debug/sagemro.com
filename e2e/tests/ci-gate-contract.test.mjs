@@ -141,6 +141,35 @@ test('Cloudflare deploy jobs remain push-only with the existing branch guards', 
   assert.match(workflow, /deploy-ai-frontend:\s+[\s\S]*?needs: deploy-worker/);
 });
 
+test('maintenance is manual, main-only, SHA-confirmed and production-approved after full tests', () => {
+  const workflow = read('.github/workflows/deploy.yml');
+  assert.match(workflow, /workflow_dispatch:\s+inputs:\s+confirmation:/);
+  const job = workflow.split(/^  deploy-maintenance:\s*$/m)[1];
+  assert.ok(job, 'maintenance deployment job must exist');
+  assert.match(job, /^    needs: test$/m);
+  assert.match(job, /^    environment: production$/m);
+  assert.equal(job.match(/^    if: (.+)$/m)?.[1], "github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.confirmation == 'PAUSE_COM_CN' && inputs.expected_sha == github.sha");
+  assert.match(job, /run: npm ci --no-audit --no-fund/);
+  assert.match(job, /npx --no-install wrangler deploy src\/maintenance\.js --env production --keep-vars/);
+  assert.ok(job.indexOf('wrangler deployments list') < job.indexOf('wrangler deploy src/maintenance.js'));
+  assert.doesNotMatch(job, /wrangler (?:d1|rollback)|pages deploy|--force/);
+  assert.match(job, /api\.sagemro\.com/);
+  assert.match(job, /api\.sagemro\.cn/);
+  assert.match(job, /response\.status, 503/);
+  assert.match(job, /body\.code, 'MAINTENANCE'/);
+  const testJob = workflow.slice(workflow.indexOf('  test:'), workflow.indexOf('  deploy-frontend:'));
+  assert.match(testJob, /name: Maintenance entry tests\s+working-directory: worker\s+run: node --test tests\/maintenance\.test\.mjs/);
+});
+
+test('maintenance and normal Worker deployment share a non-cancelling concurrency gate', () => {
+  const workflow = read('.github/workflows/deploy.yml');
+  for (const name of ['deploy-worker', 'deploy-maintenance']) {
+    const job = workflow.split(new RegExp(`^  ${name}:\\s*$`, 'm'))[1]?.split(/^  [\w-]+:\s*$/m)[0];
+    assert.ok(job);
+    assert.match(job, /concurrency:\s+group: sagemro-shared-worker-production\s+cancel-in-progress: false/);
+  }
+});
+
 test('Worker deployment blocks on migrations for both production D1 databases', () => {
   const workflow = read('.github/workflows/deploy.yml');
   const workerJob = workflow.slice(workflow.indexOf('  deploy-worker:'), workflow.indexOf('  deploy-admin:'));
