@@ -254,11 +254,30 @@ test('customer, Admin, and engineer complete a service order lifecycle', async (
   await engineerPage.getByRole('tab', { name: 'Quote', exact: true }).click();
   await engineerPage.getByLabel('Labor Fee').fill('800');
   await engineerPage.getByLabel('Travel Fee').fill('100');
+  const pricingResponsePromise = engineerPage.waitForResponse(response => (
+    response.request().method() === 'POST'
+    && new URL(response.url()).pathname === `/api/workorders/${workOrderId}/pricing`
+  ));
   await engineerPage.getByTestId('submit-pricing-button').click();
+  const pricingResponse = await pricingResponsePromise;
+  const submittedPricing = await pricingResponse.json();
+  expect(pricingResponse.status(), JSON.stringify(submittedPricing)).toBe(200);
+  expect(submittedPricing).toMatchObject({ success: true, status: 'pending_review', quote_version: 1 });
 
   await adminPage.reload();
+  const listResponsePromise = adminPage.waitForResponse(response => (
+    response.request().method() === 'GET'
+    && new URL(response.url()).pathname === '/api/admin/workorders'
+  ));
   await adminPage.getByRole('button', { name: 'Service Orders', exact: true }).click();
+  const listResponse = await listResponsePromise;
+  const orderList = await listResponse.json();
+  expect(listResponse.status(), JSON.stringify(orderList)).toBe(200);
+  expect(orderList.list).toEqual(expect.arrayContaining([
+    expect.objectContaining({ id: workOrderId, pricing_status: 'pending_review' }),
+  ]));
   const quoteRow = adminPage.locator('tr').filter({ hasText: orderNo });
+  await expect(quoteRow, await adminPage.locator('body').innerText()).toBeVisible();
   await quoteRow.getByRole('button', { name: 'View', exact: true }).click();
   const approval = await adminApi(adminPage, runtime, `/api/admin/workorders/${workOrderId}/pricing/approve`, {
     method: 'PATCH',

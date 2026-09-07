@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   CheckCircle2,
   ChevronRight,
@@ -214,12 +214,15 @@ export function EngineerApplicationsPage({ onOpenEngineer }) {
   const [setupApplication, setSetupApplication] = useState(null);
   const [setupError, setSetupError] = useState('');
   const [regionalLeads, setRegionalLeads] = useState([]);
+  const loadSequence = useRef(0);
   const pageSize = 20;
 
   const load = () => {
+    const sequence = ++loadSequence.current;
     setLoading(true);
     return getAdminEngineerApplications(page, pageSize, statusFilter, marketFilter)
       .then((nextData) => {
+        if (sequence !== loadSequence.current) return;
         setData(nextData);
         setDrafts(Object.fromEntries((nextData.list || []).map((item) => [item.id, {
           status: reviewStatus(item.status),
@@ -227,12 +230,13 @@ export function EngineerApplicationsPage({ onOpenEngineer }) {
         }])));
         setSelectedApplication((current) => current ? (nextData.list || []).find((item) => item.id === current.id) || null : null);
       })
-      .catch((error) => setMessage(error.message))
-      .finally(() => setLoading(false));
+      .catch((error) => { if (sequence === loadSequence.current) setMessage(error.message); })
+      .finally(() => { if (sequence === loadSequence.current) setLoading(false); });
   };
 
   useEffect(() => {
     load();
+    return () => { loadSequence.current += 1; };
   }, [page, statusFilter, marketFilter]);
 
   const updateDraft = (id, field, value) => {

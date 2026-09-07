@@ -7,6 +7,53 @@ import { createServer } from '../../admin/node_modules/vite/dist/node/index.js';
 const require = createRequire(import.meta.url);
 const { chromium } = require('playwright');
 
+test('late engineer application responses cannot overwrite a review draft', { timeout: 60_000 }, async t => {
+  const server = await createServer({ root: fileURLToPath(new URL('../../admin', import.meta.url)), logLevel: 'error',
+    define: { 'import.meta.env.VITE_API_BASE': 'window.location.origin' }, server: { host: '127.0.0.1', port: 0, hmr: false } });
+  await server.listen();
+  t.after(() => server.close());
+  const browser = await chromium.launch({ channel: process.platform === 'win32' ? 'chrome' : 'chromium', headless: true });
+  t.after(() => browser.close());
+  const context = await browser.newContext({ serviceWorkers: 'block' });
+  const page = await context.newPage();
+  page.setDefaultTimeout(10_000);
+  const application = { id: 'review-fixture', name: 'Example Engineer', email: 'engineer@example.invalid', status: 'submitted' };
+  let initialRequests = 0;
+  let staleRoute;
+  let savedReview;
+  await context.route('**/*', async route => {
+    const request = route.request();
+    const url = new URL(request.url());
+    if (url.hostname !== 'admin.sagemro.com') return route.abort();
+    if (url.pathname === '/api/auth/session') return route.fulfill({ json: { authenticated: true, userType: 'admin', user: { id: 'admin', name: 'Example Administrator', staffRole: 'admin' }, csrfToken: 'local-fixture-csrf' } });
+    if (url.pathname === '/api/admin/engineer-applications') {
+      if (++initialRequests === 1) { staleRoute = route; return; }
+      return route.fulfill({ json: { total: 1, list: [application] } });
+    }
+    if (url.pathname === '/api/admin/engineer-applications/review-fixture') {
+      savedReview = request.postDataJSON();
+      Object.assign(application, savedReview);
+      return route.fulfill({ json: { success: true } });
+    }
+    if (url.pathname.startsWith('/api/')) return route.fulfill({ json: { stats: {}, items: [], data: [], total: 0 } });
+    return route.fulfill({ response: await route.fetch({ url: `http://127.0.0.1:${server.httpServer.address().port}${url.pathname}${url.search}` }) });
+  });
+  await page.goto('https://admin.sagemro.com/');
+  await page.getByRole('button', { name: 'Engineer Applications', exact: true }).click();
+  await page.getByTestId('application-row').filter({ hasText: application.email }).click();
+  const dialog = page.getByRole('dialog', { name: application.name });
+  await dialog.locator('select').first().selectOption('qualified');
+  assert.ok(staleRoute);
+  const staleFinished = page.waitForEvent('requestfinished', request => request === staleRoute.request());
+  await staleRoute.fulfill({ json: { total: 1, list: [{ ...application, status: 'submitted' }] } });
+  await staleFinished;
+  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  assert.equal(await dialog.locator('select').first().inputValue(), 'qualified');
+  await dialog.getByRole('button', { name: 'Save review', exact: true }).click();
+  await dialog.locator('span').filter({ hasText: /^Approved$/ }).waitFor();
+  assert.equal(savedReview.status, 'qualified');
+});
+
 test('business workspace and staff organization browser journeys use only local synthetic fixtures', { timeout: 120_000 }, async t => {
   const server = await createServer({ root: fileURLToPath(new URL('../../admin', import.meta.url)), logLevel: 'error',
     define: { 'import.meta.env.VITE_API_BASE': 'window.location.origin' }, server: { host: '127.0.0.1', port: 0, hmr: false } });
