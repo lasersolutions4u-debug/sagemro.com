@@ -15,7 +15,7 @@ export function useChat() {
   const abortControllerRef = useRef(null);
 
   // 发送消息
-  const sendMessage = useCallback(async (content, images, targetConversationId, requestId) => {
+  const sendMessage = useCallback(async (content, images, targetConversationId, requestId, requestContent = content) => {
     // 创建用户消息
     const userMessage = {
       id: generateId(),
@@ -51,7 +51,8 @@ export function useChat() {
     await new Promise((resolve) => {
       streamChat({
         conversationId: targetConversationId || conversationId,
-        message: content,
+        message: requestContent,
+        serviceRequestOnly: true,
         images,
         onChunk: (data) => {
           if (data.response_status === 'failed') {

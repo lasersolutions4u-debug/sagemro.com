@@ -27,9 +27,7 @@ const copy = {
     checklist: 'Information to prepare',
     remote: 'Remote support boundary',
     onsite: 'Onsite support boundary',
-    review: 'Reviewed by SAGEMRO Technical Service Team',
     relatedGuides: 'Related reviewed guides',
-    guideEmpty: 'More reviewed guides will be added when their evidence is complete.',
     relatedServices: 'Related services',
     breadcrumb: 'Services',
   },
@@ -50,9 +48,7 @@ const copy = {
     checklist: '需准备的信息',
     remote: '远程支持边界',
     onsite: '现场支持边界',
-    review: '由 SAGEMRO 技术服务团队审核',
     relatedGuides: '相关已审核指南',
-    guideEmpty: '更多指南将在证据完整并通过审核后发布。',
     relatedServices: '相关服务',
     breadcrumb: '服务',
   },
@@ -109,7 +105,7 @@ function ServicesHub({ copy: selectedCopy, locale }) {
   );
 }
 
-function ServiceDetail({ page, copy: selectedCopy, locale, acquisitionContext, onStartDiagnosis, onOpenServiceRequest }) {
+function ServiceDetail({ page, copy: selectedCopy, locale, acquisitionContext }) {
   const relatedPages = getServicePages(locale).filter((candidate) => candidate.slug !== page.slug);
   const relatedGuides = getRelatedDiagnosticGuidesForService(page.slug, locale);
 
@@ -129,9 +125,9 @@ function ServiceDetail({ page, copy: selectedCopy, locale, acquisitionContext, o
       <section className="mt-8"><SectionTitle icon={ClipboardList} title={selectedCopy.process} /><ol className="mt-3 space-y-3">{page.process.map((step, index) => <li key={step} className="flex gap-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-3 text-sm leading-6"><span className="font-semibold text-[var(--color-primary)]">{index + 1}</span><span>{step}</span></li>)}</ol></section>
       <section className="mt-8"><SectionTitle title={selectedCopy.checklist} /><ul className="mt-3 grid gap-2 sm:grid-cols-2">{page.customerInputs.map((item) => <li key={item} className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm">{item}</li>)}</ul></section>
       <section className="mt-8 grid gap-4 md:grid-cols-2"><InfoCard title={selectedCopy.remote} body={page.remoteBoundary} /><InfoCard title={selectedCopy.onsite} body={page.onsiteBoundary} /></section>
-      <section className="mt-8 border-t border-[var(--color-border)] pt-5 text-sm leading-6 text-[var(--color-text-secondary)]"><div className="font-medium text-[var(--color-text-primary)]">{selectedCopy.review}</div><div>{page.reviewedAt}</div><p className="mt-2">{page.evidenceNotes}</p></section>
-      <section className="mt-8"><SectionTitle title={selectedCopy.relatedGuides} />{relatedGuides.length ? <div className="mt-3 grid gap-3 sm:grid-cols-2">{relatedGuides.map((guide) => <a key={guide.slug} href={`/insights/${guide.slug}/`} className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-3 text-sm font-medium hover:border-[var(--color-primary)]">{guide.title}</a>)}</div> : <p className="mt-3 text-sm leading-6 text-[var(--color-text-secondary)]">{selectedCopy.guideEmpty}</p>}</section>
-      <div className="mt-8"><PublicConversionPanel context={page.title} acquisitionContext={acquisitionContext} primaryLabel={page.primaryCta} secondaryLabel={page.secondaryCta} onStartDiagnosis={onStartDiagnosis} onOpenServiceRequest={onOpenServiceRequest} /></div>
+      <section className="mt-8 border-t border-[var(--color-border)] pt-5 text-sm leading-6 text-[var(--color-text-secondary)]"><p>{page.evidenceNotes}</p></section>
+      {relatedGuides.length > 0 && <section className="mt-8"><SectionTitle title={selectedCopy.relatedGuides} /><div className="mt-3 grid gap-3 sm:grid-cols-2">{relatedGuides.map((guide) => <a key={guide.slug} href={`/insights/${guide.slug}/`} className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-3 text-sm font-medium hover:border-[var(--color-primary)]">{guide.title}</a>)}</div></section>}
+      <div className="mt-8"><PublicConversionPanel context={page.title} acquisitionContext={acquisitionContext} serviceRequestPreset={{ service: page.serviceKind }} /></div>
       <section className="mt-8"><SectionTitle title={selectedCopy.relatedServices} /><div className="mt-3 grid gap-3 sm:grid-cols-2">{relatedPages.map((related) => <a key={related.slug} href={`/services/${related.slug}/`} className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-3 text-sm font-medium hover:border-[var(--color-primary)]">{related.title}</a>)}</div></section>
     </div>
   );

@@ -1,5 +1,13 @@
-const REVIEWED_BY = 'sagemro-technical-service-team';
-const PUBLISHED_AT = '2026-08-06';
+const SERVICE_KINDS = {
+  'laser-cutting-machine-repair': 'repair',
+  'press-brake-repair': 'repair',
+  'remote-diagnostics': 'repair',
+  'preventive-maintenance': 'maintenance',
+  'equipment-system-retrofit': 'retrofit',
+  'machine-relocation-installation': 'relocation',
+  'used-equipment-evaluation': 'used_equipment',
+  'spare-parts-consumables': 'parts',
+};
 
 const EN_PROCESS = [
   'Describe the symptom and operating context',
@@ -35,11 +43,6 @@ const SERVICE_PAGES = {
       customerInputs: ['Equipment model', 'Alarm information', 'Photos of the equipment or result', 'Recent operating or setup changes'],
       remoteBoundary: EN_REMOTE_BOUNDARY,
       onsiteBoundary: EN_ONSITE_BOUNDARY,
-      primaryCta: 'Request service review',
-      secondaryCta: 'Prepare service information',
-      reviewedBy: REVIEWED_BY,
-      publishedAt: PUBLISHED_AT,
-      reviewedAt: PUBLISHED_AT,
       evidenceNotes: 'Recommendations are based on the information shared and are recorded with the agreed next action.',
     },
     {
@@ -55,11 +58,6 @@ const SERVICE_PAGES = {
       customerInputs: ['Equipment model', 'Alarm information', 'Photos of the setup or formed result', 'Recent tooling, material, or setup changes'],
       remoteBoundary: EN_REMOTE_BOUNDARY,
       onsiteBoundary: EN_ONSITE_BOUNDARY,
-      primaryCta: 'Request service review',
-      secondaryCta: 'Prepare service information',
-      reviewedBy: REVIEWED_BY,
-      publishedAt: PUBLISHED_AT,
-      reviewedAt: PUBLISHED_AT,
       evidenceNotes: 'Recommendations are based on the information shared and are recorded with the agreed next action.',
     },
     {
@@ -75,11 +73,6 @@ const SERVICE_PAGES = {
       customerInputs: ['Equipment model', 'Alarm information', 'Photos or relevant records', 'Recent operating, setup, or maintenance changes'],
       remoteBoundary: EN_REMOTE_BOUNDARY,
       onsiteBoundary: EN_ONSITE_BOUNDARY,
-      primaryCta: 'Start a remote review',
-      secondaryCta: 'Prepare diagnostic information',
-      reviewedBy: REVIEWED_BY,
-      publishedAt: PUBLISHED_AT,
-      reviewedAt: PUBLISHED_AT,
       evidenceNotes: 'Remote guidance is limited to the evidence available and is recorded with the agreed next action.',
     },
     {
@@ -95,11 +88,6 @@ const SERVICE_PAGES = {
       customerInputs: ['Equipment model', 'Current observations or alarms', 'Photos of relevant equipment areas', 'Recent maintenance and operating changes'],
       remoteBoundary: EN_REMOTE_BOUNDARY,
       onsiteBoundary: EN_ONSITE_BOUNDARY,
-      primaryCta: 'Plan a maintenance review',
-      secondaryCta: 'Prepare maintenance information',
-      reviewedBy: REVIEWED_BY,
-      publishedAt: PUBLISHED_AT,
-      reviewedAt: PUBLISHED_AT,
       evidenceNotes: 'Maintenance guidance is based on the information shared and is recorded with the agreed next action.',
     },
     {
@@ -115,11 +103,6 @@ const SERVICE_PAGES = {
       customerInputs: ['Equipment model and configuration', 'Control, drive, and software information', 'Photos of cabinets, labels, and interfaces', 'Required outcome and available shutdown window'],
       remoteBoundary: EN_REMOTE_BOUNDARY,
       onsiteBoundary: EN_ONSITE_BOUNDARY,
-      primaryCta: 'Request a retrofit review',
-      secondaryCta: 'Prepare system information',
-      reviewedBy: REVIEWED_BY,
-      publishedAt: PUBLISHED_AT,
-      reviewedAt: PUBLISHED_AT,
       evidenceNotes: 'Compatibility, implementation scope, and commissioning requirements are confirmed for the specific equipment before work begins.',
     },
     {
@@ -135,11 +118,6 @@ const SERVICE_PAGES = {
       customerInputs: ['Equipment model and current location', 'Origin and destination site information', 'Layout, access, lifting, and utility conditions', 'Required shutdown and restart schedule'],
       remoteBoundary: EN_REMOTE_BOUNDARY,
       onsiteBoundary: EN_ONSITE_BOUNDARY,
-      primaryCta: 'Request a relocation review',
-      secondaryCta: 'Prepare site information',
-      reviewedBy: REVIEWED_BY,
-      publishedAt: PUBLISHED_AT,
-      reviewedAt: PUBLISHED_AT,
       evidenceNotes: 'The final work scope depends on site conditions, equipment condition, transport boundaries, and the agreed commissioning criteria.',
     },
     {
@@ -155,11 +133,6 @@ const SERVICE_PAGES = {
       customerInputs: ['Equipment model, serial information, and year if available', 'Current operating condition and known faults', 'Photos, videos, and available service records', 'Equipment location and preferred disposal timeline'],
       remoteBoundary: EN_REMOTE_BOUNDARY,
       onsiteBoundary: EN_ONSITE_BOUNDARY,
-      primaryCta: 'Request an equipment evaluation',
-      secondaryCta: 'Prepare equipment records',
-      reviewedBy: REVIEWED_BY,
-      publishedAt: PUBLISHED_AT,
-      reviewedAt: PUBLISHED_AT,
       evidenceNotes: 'This service provides an evaluation and disposal recommendation; it does not constitute a purchase offer or purchase commitment.',
     },
     {
@@ -175,11 +148,6 @@ const SERVICE_PAGES = {
       customerInputs: ['Equipment model and configuration', 'Part number, label, or drawing if available', 'Photos of the part and installation position', 'Failure symptom, required quantity, and delivery location'],
       remoteBoundary: EN_REMOTE_BOUNDARY,
       onsiteBoundary: EN_ONSITE_BOUNDARY,
-      primaryCta: 'Request a parts review',
-      secondaryCta: 'Prepare part information',
-      reviewedBy: REVIEWED_BY,
-      publishedAt: PUBLISHED_AT,
-      reviewedAt: PUBLISHED_AT,
       evidenceNotes: 'Compatibility, availability, price, and replacement scope are confirmed for each request before supply or onsite work.',
     },
   ],
@@ -197,11 +165,6 @@ const SERVICE_PAGES = {
       customerInputs: ['设备型号', '报警信息', '设备或加工结果照片', '近期运行或设置变更'],
       remoteBoundary: ZH_REMOTE_BOUNDARY,
       onsiteBoundary: ZH_ONSITE_BOUNDARY,
-      primaryCta: '提交服务评估',
-      secondaryCta: '准备服务信息',
-      reviewedBy: REVIEWED_BY,
-      publishedAt: PUBLISHED_AT,
-      reviewedAt: PUBLISHED_AT,
       evidenceNotes: '建议以已提供的信息为依据，并与确认后的下一步行动一并记录。',
     },
     {
@@ -217,11 +180,6 @@ const SERVICE_PAGES = {
       customerInputs: ['设备型号', '报警信息', '工装或折弯结果照片', '近期模具、材料或设置变更'],
       remoteBoundary: ZH_REMOTE_BOUNDARY,
       onsiteBoundary: ZH_ONSITE_BOUNDARY,
-      primaryCta: '提交服务评估',
-      secondaryCta: '准备服务信息',
-      reviewedBy: REVIEWED_BY,
-      publishedAt: PUBLISHED_AT,
-      reviewedAt: PUBLISHED_AT,
       evidenceNotes: '建议以已提供的信息为依据，并与确认后的下一步行动一并记录。',
     },
     {
@@ -237,11 +195,6 @@ const SERVICE_PAGES = {
       customerInputs: ['设备型号', '报警信息', '照片或相关记录', '近期运行、设置或维护变更'],
       remoteBoundary: ZH_REMOTE_BOUNDARY,
       onsiteBoundary: ZH_ONSITE_BOUNDARY,
-      primaryCta: '发起远程评估',
-      secondaryCta: '准备诊断信息',
-      reviewedBy: REVIEWED_BY,
-      publishedAt: PUBLISHED_AT,
-      reviewedAt: PUBLISHED_AT,
       evidenceNotes: '远程指导以可获得的证据为限，并与确认后的下一步行动一并记录。',
     },
     {
@@ -257,11 +210,6 @@ const SERVICE_PAGES = {
       customerInputs: ['设备型号', '当前观察情况或报警信息', '相关设备区域照片', '近期维护和运行变更'],
       remoteBoundary: ZH_REMOTE_BOUNDARY,
       onsiteBoundary: ZH_ONSITE_BOUNDARY,
-      primaryCta: '规划维护评估',
-      secondaryCta: '准备维护信息',
-      reviewedBy: REVIEWED_BY,
-      publishedAt: PUBLISHED_AT,
-      reviewedAt: PUBLISHED_AT,
       evidenceNotes: '维护建议以已提供的信息为依据，并与确认后的下一步行动一并记录。',
     },
     {
@@ -277,11 +225,6 @@ const SERVICE_PAGES = {
       customerInputs: ['设备型号和当前配置', '控制系统、驱动与软件信息', '电柜、铭牌和接口照片', '期望结果和可安排的停机时间'],
       remoteBoundary: ZH_REMOTE_BOUNDARY,
       onsiteBoundary: ZH_ONSITE_BOUNDARY,
-      primaryCta: '提交改造评估',
-      secondaryCta: '准备系统信息',
-      reviewedBy: REVIEWED_BY,
-      publishedAt: PUBLISHED_AT,
-      reviewedAt: PUBLISHED_AT,
       evidenceNotes: '施工前将根据具体设备确认兼容性、实施范围和调试要求。',
     },
     {
@@ -297,11 +240,6 @@ const SERVICE_PAGES = {
       customerInputs: ['设备型号和当前位置', '起运地与目的地现场信息', '布局、通道、吊装和公用工程条件', '期望的停机与恢复生产时间'],
       remoteBoundary: ZH_REMOTE_BOUNDARY,
       onsiteBoundary: ZH_ONSITE_BOUNDARY,
-      primaryCta: '提交搬迁评估',
-      secondaryCta: '准备现场信息',
-      reviewedBy: REVIEWED_BY,
-      publishedAt: PUBLISHED_AT,
-      reviewedAt: PUBLISHED_AT,
       evidenceNotes: '最终作业范围取决于现场条件、设备状态、运输边界和双方确认的调试验收要求。',
     },
     {
@@ -317,11 +255,6 @@ const SERVICE_PAGES = {
       customerInputs: ['设备型号、序列信息和可获得的出厂年份', '当前运行状态和已知故障', '设备照片、视频和现有维修记录', '设备所在地和期望的处置时间'],
       remoteBoundary: ZH_REMOTE_BOUNDARY,
       onsiteBoundary: ZH_ONSITE_BOUNDARY,
-      primaryCta: '提交设备评估',
-      secondaryCta: '准备设备资料',
-      reviewedBy: REVIEWED_BY,
-      publishedAt: PUBLISHED_AT,
-      reviewedAt: PUBLISHED_AT,
       evidenceNotes: '本服务仅提供设备评估与处置建议，不构成报价或收购承诺。',
     },
     {
@@ -337,19 +270,17 @@ const SERVICE_PAGES = {
       customerInputs: ['设备型号和当前配置', '可获得的零件号、铭牌或图纸', '零件和安装位置照片', '故障现象、所需数量和收货地区'],
       remoteBoundary: ZH_REMOTE_BOUNDARY,
       onsiteBoundary: ZH_ONSITE_BOUNDARY,
-      primaryCta: '提交备件评估',
-      secondaryCta: '准备零件信息',
-      reviewedBy: REVIEWED_BY,
-      publishedAt: PUBLISHED_AT,
-      reviewedAt: PUBLISHED_AT,
       evidenceNotes: '每项需求的兼容性、供应情况、价格和更换范围将在供货或现场作业前单独确认。',
     },
   ],
 };
 
-function clonePage(page) {
+function clonePage(page, locale) {
   return {
     ...page,
+    serviceKind: SERVICE_KINDS[page.slug],
+    primaryCta: locale === 'zh-CN' ? '填写服务需求' : 'Request service',
+    secondaryCta: locale === 'zh-CN' ? 'AI 协助填写' : 'Get help filling the form',
     issues: [...page.issues],
     process: [...page.process],
     customerInputs: [...page.customerInputs],
@@ -358,11 +289,11 @@ function clonePage(page) {
 
 export function getServicePages(locale) {
   const pages = SERVICE_PAGES[locale] ?? SERVICE_PAGES.en;
-  return pages.map(clonePage);
+  return pages.map((page) => clonePage(page, locale));
 }
 
 export function getServicePage(slug, locale) {
   const page = SERVICE_PAGES[locale]?.find((servicePage) => servicePage.slug === slug)
     ?? SERVICE_PAGES.en.find((servicePage) => servicePage.slug === slug);
-  return page ? clonePage(page) : null;
+  return page ? clonePage(page, locale) : null;
 }

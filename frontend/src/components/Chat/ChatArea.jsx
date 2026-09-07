@@ -15,6 +15,11 @@ export function ChatArea({
   currentTitle,
   onToggleSidebar,
   onOpenLegal,
+  serviceRequestContext,
+  onPrepareServiceRequest,
+  onOpenServiceRequest,
+  preparingRequest = false,
+  prepareRequestError,
 }) {
   const messagesEndRef = useRef(null);
   const messagesContainerRef = useRef(null);
@@ -106,10 +111,22 @@ export function ChatArea({
         )}
       </div>
 
+      {onPrepareServiceRequest && (hasMessages || serviceRequestContext) && (
+        <section className="border-t border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3" aria-label={isCn ? '整理服务请求' : 'Prepare a service request'}>
+          {serviceRequestContext && <p className="mb-2 text-sm font-medium">{isCn ? '当前需求：' : 'Request context: '}{serviceRequestContext}</p>}
+          <p className="mb-3 text-xs text-[var(--color-text-secondary)]">{isCn ? '先描述设备和需求，AI 会协助梳理。点击下方按钮后整理您在聊天中提供的信息，再核对现有服务表单并提交。聊天图片请在表单中重新上传。' : 'Describe your equipment and needs. AI helps clarify the request. Use the button below to organize your chat details, then review and submit the existing service form. Please attach chat images again in the form.'}</p>
+          <div className="flex flex-wrap gap-3">
+            <button type="button" onClick={onPrepareServiceRequest} disabled={preparingRequest || isStreaming || !messages.some((message) => message.role === 'user' && message.content?.trim())} className="min-h-11 rounded-lg bg-[var(--color-primary)] px-4 text-sm font-semibold text-white disabled:opacity-50">{preparingRequest ? (isCn ? '正在整理…' : 'Preparing…') : (isCn ? '整理并填写服务单' : 'Prepare service form')}</button>
+            <button type="button" onClick={onOpenServiceRequest} disabled={preparingRequest} className="min-h-11 rounded-lg border border-[var(--color-border)] px-4 text-sm">{isCn ? '直接手动填写' : 'Fill manually instead'}</button>
+          </div>
+          {prepareRequestError && <p role="alert" className="mt-2 text-sm text-red-600">{prepareRequestError}</p>}
+        </section>
+      )}
+
       <InputArea
         onSend={onSendMessage}
         onStop={onStopGeneration}
-        disabled={false}
+        disabled={preparingRequest}
         isStreaming={isStreaming}
       />
       <div className="hidden sm:block border-t border-[var(--color-border)] bg-white/80 px-4 py-2">

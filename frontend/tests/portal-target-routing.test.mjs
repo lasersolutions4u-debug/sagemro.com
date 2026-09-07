@@ -30,7 +30,7 @@ test('public conversion URLs always enter the market-specific customer portal', 
       hostname: 'sagemro.cn',
       presets: { mode: 'assist', brand: 'trumpf', description: 'discard' },
     }),
-    'https://ai.sagemro.cn/service-request?mode=assist&brand=trumpf',
+    'https://ai.sagemro.cn/?mode=assist&brand=trumpf',
   );
   assert.equal(
     buildCustomerPortalUrl({ hostname: 'sagemro.com', presets: { mode: 'manual' } }),

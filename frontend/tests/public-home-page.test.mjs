@@ -55,7 +55,7 @@ test('public home renders the approved service-first section order and real navi
   for (const href of ['/services/', '/brands/', '/tools/', '/insights/']) {
     assert.match(html, new RegExp(`href="${href}"`));
   }
-  assert.match(html, /href="https:\/\/ai\.sagemro\.cn\/service-request\?mode=assist"/);
+  assert.match(html, /href="https:\/\/ai\.sagemro\.cn\/\?mode=assist"/);
   assert.match(html, /href="https:\/\/ai\.sagemro\.cn\/service-request\?mode=manual"/);
   assert.match(html, /href="mailto:support@sagemro\.com"/);
   for (const [title, href] of [
@@ -74,7 +74,7 @@ test('public home exposes six service links, ten direct FAQs, and no competing i
   assert.equal((html.match(/<details\b/g) || []).length, 10);
   assert.doesNotMatch(html, /<form\b|role="dialog"|WorkOrderModal|type="tel"|wa\.me|WhatsApp/i);
   assert.match(html, /AI only helps organize submitted information/);
-  assert.match(html, /href="https:\/\/ai\.sagemro\.com\/service-request\?mode=assist"/);
+  assert.match(html, /href="https:\/\/ai\.sagemro\.com\/\?mode=assist"/);
 });
 
 test('App routes only the resolved public build target to the public home', async () => {

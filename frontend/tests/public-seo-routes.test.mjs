@@ -344,7 +344,7 @@ test('manifest internal links never expose draft or irrelevant diagnostic guides
     for (const service of getServicePages(locale)) {
       const route = getPublicSeoRoute(`/services/${service.slug}`, locale);
       assert.deepEqual(route.body.links.map((link) => link.href), expectedRelations[service.slug].map((slug) => `/insights/${slug}/`));
-      if (expectedRelations[service.slug].length === 0) assert.ok(route.body.emptyState.length > 0);
+      if (expectedRelations[service.slug].length === 0) assert.equal(route.body.emptyState, '');
     }
 
     for (const guide of getDiagnosticGuides(locale)) {

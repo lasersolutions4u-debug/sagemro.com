@@ -16,7 +16,8 @@ import { setSeoMetadata } from './utils/seo';
 import { getServicePageRoute } from './utils/servicePageRoute';
 import { getPublicAcquisitionContext, useAcquisitionTracking } from './hooks/useAcquisitionTracking';
 import { parseServiceRequestEntry, resolvePortalTarget } from './utils/portalTarget';
-import { submitWorkOrder as submitWorkOrderApi, uploadWorkOrderAttachment, getConversation as getConversationApi, getUnreadNotificationCount, trackFunnelEvent, restoreSession, logout as logoutSession } from './services/api';
+import { assistServiceRequestDraft, submitWorkOrder as submitWorkOrderApi, uploadWorkOrderAttachment, getConversation as getConversationApi, getUnreadNotificationCount, trackFunnelEvent, restoreSession, logout as logoutSession } from './services/api';
+import { composeServiceChatMessage, getServiceChatLabel, prepareServiceRequestFromChat } from './components/ServiceRequest/serviceRequestChat';
 import { createAnalyticsRequestId } from './services/funnelAnalytics';
 import { PublicHomePage } from './components/Public/PublicHomePage';
 import { getBrandServicePage } from './data/brandServicePages';
@@ -77,11 +78,37 @@ function App() {
   const [currentPath, setCurrentPath] = useState(() => window.location.pathname);
   const isTechnicalReviewPath = currentPath === '/about/technical-review'
     || currentPath === '/about/technical-review/';
-  const isServiceRequestPath = portalTarget === 'customer'
-    && (currentPath === '/service-request' || currentPath === '/service-request/');
   const serviceRequestEntry = parseServiceRequestEntry(window.location.search, {
     resolveBrand: (slug) => getBrandServicePage(slug, isCn ? 'zh-CN' : 'en')?.brandName || '',
   });
+  const isLegacyAssistEntry = portalTarget === 'customer' && serviceRequestEntry.mode === 'ai'
+    && (currentPath === '/service-request' || currentPath === '/service-request/');
+  const isServiceRequestPath = portalTarget === 'customer' && !isLegacyAssistEntry
+    && (currentPath === '/service-request' || currentPath === '/service-request/');
+  const [serviceChatEntry, setServiceChatEntry] = useState(() => (
+    portalTarget === 'customer' && serviceRequestEntry.mode === 'ai' ? serviceRequestEntry.presets : null
+  ));
+  const [preparedRequest, setPreparedRequest] = useState(null);
+  const [preparingRequest, setPreparingRequest] = useState(false);
+  const [prepareRequestError, setPrepareRequestError] = useState('');
+  const handoffVersionRef = useRef(0);
+  const handoffPendingRef = useRef(false);
+  const cancelHandoff = useCallback(() => {
+    handoffVersionRef.current += 1;
+    handoffPendingRef.current = false;
+    setPreparingRequest(false);
+    setPrepareRequestError('');
+    setPreparedRequest(null);
+  }, []);
+
+  useEffect(() => {
+    if (!isLegacyAssistEntry) return;
+    window.history.replaceState({}, '', '/' + window.location.search);
+    setCurrentPath('/');
+  }, [isLegacyAssistEntry]);
+
+  useEffect(() => () => { handoffVersionRef.current += 1; }, []);
+
   const authVersionRef = useRef(0);
   const serviceRequestSubmissionRef = useRef(null);
   const engineerWorkOrderMatch = currentPath.match(/^\/work-orders\/([^/]+)$/);
@@ -184,7 +211,12 @@ function App() {
   }, []);
 
   useEffect(() => {
-    const handlePopState = () => setCurrentPath(window.location.pathname);
+    const handlePopState = () => {
+      handoffVersionRef.current += 1;
+      handoffPendingRef.current = false;
+      setPreparingRequest(false);
+      setCurrentPath(window.location.pathname);
+    };
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
   }, []);
@@ -264,10 +296,12 @@ function App() {
 
   // 新建对话
   const handleNewChat = useCallback(() => {
+    cancelHandoff();
+    setServiceChatEntry(null);
     clearMessages();
     setSidebarOpen(false);
     setHistoryModalOpen(false);
-  }, [clearMessages, setHistoryModalOpen, setSidebarOpen]);
+  }, [cancelHandoff, clearMessages, setHistoryModalOpen, setSidebarOpen]);
 
   // 选择对话
   const handleSelectConversation = useCallback(async (conv) => {
@@ -276,6 +310,8 @@ function App() {
       setHistoryModalOpen(false);
       return;
     }
+    cancelHandoff();
+    setServiceChatEntry(null);
     if (currentUser) {
       try {
         const data = await getConversationApi(conv.id);
@@ -295,10 +331,15 @@ function App() {
     }
     setSidebarOpen(false);
     setHistoryModalOpen(false);
-  }, [conversationId, currentUser, clearMessages, loadMessages, setHistoryModalOpen, setSidebarOpen]);
+  }, [cancelHandoff, conversationId, currentUser, clearMessages, loadMessages, setHistoryModalOpen, setSidebarOpen]);
 
   // 发送消息
   const handleSendMessage = useCallback(async (content, images) => {
+    if (handoffPendingRef.current) return;
+    handoffVersionRef.current += 1;
+    setPrepareRequestError('');
+    const requestContent = serviceChatEntry && !conversationId
+      ? composeServiceChatMessage(content, serviceChatEntry, isCn) : content;
     let convId = conversationId;
     if (!convId) {
       const newConv = createConversation();
@@ -317,7 +358,7 @@ function App() {
       request_id: requestId,
     });
 
-    await sendMessage(content, images, convId, requestId);
+    await sendMessage(content, images, convId, requestId, requestContent);
 
     if (!currentUser) setTimeout(() => {
       const updatedMessages = [...currentMessages, {
@@ -335,7 +376,7 @@ function App() {
       });
     }, 0);
     else refreshConversations();
-  }, [conversationId, createConversation, currentUser, refreshConversations, sendMessage, updateConversation]);
+  }, [conversationId, createConversation, currentUser, isCn, refreshConversations, sendMessage, serviceChatEntry, updateConversation]);
 
   // 提交工单
   const handleServiceRequestSubmit = useCallback(async (payload, files = []) => {
@@ -413,6 +454,8 @@ function App() {
 
   // 登出
   const handleLogout = useCallback(() => {
+    cancelHandoff();
+    setServiceChatEntry(null);
     authVersionRef.current += 1;
     logoutSession().catch(() => {});
     localStorage.removeItem('sagemro_token');
@@ -428,7 +471,7 @@ function App() {
       window.history.replaceState({}, '', '/');
       setCurrentPath('/');
     }
-  }, [currentPath, isEngineerHost, setCurrentPath, setCurrentUser, setUserType]);
+  }, [cancelHandoff, currentPath, isEngineerHost, setCurrentPath, setCurrentUser, setUserType]);
 
   // 监听 401 自动登出事件（由 services/api.js 的 fetch 拦截器触发）
   // token 过期 / 被踢下线时，清掉本地状态并弹出登录框，避免后续操作继续命中 401
@@ -471,9 +514,38 @@ function App() {
   }, [setCurrentPath]);
 
   const handleServiceRequest = useCallback(() => {
-    window.history.pushState({}, '', '/service-request');
+    cancelHandoff();
+    setPreparedRequest({ draft: serviceChatEntry || {}, conversationId: undefined });
+    window.history.pushState({}, '', '/service-request?mode=manual');
     setCurrentPath('/service-request');
-  }, [setCurrentPath]);
+  }, [cancelHandoff, serviceChatEntry]);
+
+  const handlePrepareServiceRequest = useCallback(async () => {
+    if (isStreaming || handoffPendingRef.current) return;
+    handoffPendingRef.current = true;
+    setPreparingRequest(true);
+    setPrepareRequestError('');
+    const version = ++handoffVersionRef.current;
+    try {
+      const draft = await prepareServiceRequestFromChat({
+        messages, presets: serviceChatEntry || {}, assist: assistServiceRequestDraft,
+      });
+      if (version !== handoffVersionRef.current) return;
+      setPreparedRequest({ draft, conversationId });
+      window.history.pushState({}, '', '/service-request?mode=manual');
+      setCurrentPath('/service-request');
+    } catch (error) {
+      if (version !== handoffVersionRef.current) return;
+      setPrepareRequestError(error.message === 'chat_too_long'
+        ? (isCn ? '对话资料较长，无法一次整理。聊天已保留，请手动填写服务单。' : 'This conversation is too long to organize in one request. Your chat is retained; please fill the form manually.')
+        : (isCn ? '暂时无法整理，聊天已保留。请重试或手动填写服务单。' : 'Unable to organize the request right now. Your chat is retained. Retry or fill the form manually.'));
+    } finally {
+      if (version === handoffVersionRef.current) {
+        handoffPendingRef.current = false;
+        setPreparingRequest(false);
+      }
+    }
+  }, [conversationId, isCn, isStreaming, messages, serviceChatEntry]);
 
   const handleRequireServiceRequestAuth = useCallback(() => {
     setLoginModalOpen(true);
@@ -564,7 +636,7 @@ function App() {
   if (portalTarget === 'blocked') {
     return <NotFoundPage isCn={isCn} />;
   }
-  if (currentPath !== '/' && !isToolsPath && !isInsightsPath && !isBrandsPath && !isServicesPath && !isTechnicalReviewPath && !isServiceRequestPath) {
+  if (currentPath !== '/' && !isLegacyAssistEntry && !isToolsPath && !isInsightsPath && !isBrandsPath && !isServicesPath && !isTechnicalReviewPath && !isServiceRequestPath) {
     return <NotFoundPage isCn={isCn} />;
   }
 
@@ -719,12 +791,12 @@ function App() {
         <Suspense fallback={null}>
           <ServiceRequestPage
             onSubmit={handleServiceRequestSubmit}
-            initialDraft={serviceRequestEntry.presets}
+            initialDraft={preparedRequest?.draft || serviceRequestEntry.presets}
             mode={serviceRequestEntry.mode}
             isAuthenticated={Boolean(currentUser) && userType === 'customer'}
             onRequireAuth={handleRequireServiceRequestAuth}
             market={isCn ? 'cn' : 'com'}
-            conversationId={conversationId}
+            conversationId={preparedRequest?.conversationId}
             onBack={navigateHome}
           />
           {loginModalOpen && (
@@ -758,7 +830,7 @@ function App() {
         onRenameConversation={handleRenameConversation}
         onOpenHistory={() => setHistoryModalOpen(true)}
         onOpenIndustryTools={() => setIndustryToolsOpen(true)}
-        onOpenWorkOrder={handleServiceRequest}
+        onOpenWorkOrder={messages.some((message) => message.role === 'user') ? handlePrepareServiceRequest : handleServiceRequest}
         onOpenMyWorkOrders={() => setMyWorkOrdersModalOpen(true)}
         onOpenSettings={() => {
           if (userType === 'engineer') {
@@ -789,6 +861,11 @@ function App() {
             onStopGeneration={stopGeneration}
             onNewChat={handleNewChat}
             currentTitle={currentTitle}
+            serviceRequestContext={serviceChatEntry ? getServiceChatLabel(serviceChatEntry, isCn) : ''}
+            onPrepareServiceRequest={handlePrepareServiceRequest}
+            onOpenServiceRequest={handleServiceRequest}
+            preparingRequest={preparingRequest}
+            prepareRequestError={prepareRequestError}
             onToggleSidebar={() => setSidebarOpen(true)}
             onOpenLegal={openLegal}
           />
