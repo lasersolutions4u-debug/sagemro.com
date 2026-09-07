@@ -79,21 +79,22 @@ test('production build emits modulepreload links for initial shared chunks and l
 test('Aliyun deploy enforces HTTP/2, compression, caching, security headers, and rollback', () => {
   const workflow = read('.github/workflows/aliyun-cn-deploy.yml');
 
-  assert.match(workflow, /nginx_backup="\$backup_root\/\$\{RELEASE_ID\}\.tgz"/);
-  assert.match(workflow, /readlink -f "\$nginx_config_file"/);
-  assert.match(workflow, /python3 "\$release\/ops\/enable_nginx_http2\.py"/);
+  assert.match(workflow, /nginx -T/);
+  assert.match(workflow, /sha256sum/);
+  assert.doesNotMatch(workflow, /enable_nginx_http2\.py/);
   assert.match(workflow, /Roll back failed China release/);
   assert.match(workflow, /always\(\) && \(steps\.activate\.outcome == 'failure'/);
   assert.match(workflow, /for site_host in sagemro\.cn ai\.sagemro\.cn admin\.sagemro\.cn engineer\.sagemro\.cn/);
   assert.match(workflow, /content-encoding: gzip/);
-  assert.match(workflow, /max-age=31536000, immutable/);
-  assert.match(workflow, /Content-Security-Policy/);
-  assert.match(workflow, /X-Content-Type-Options/);
-  assert.match(workflow, /Strict-Transport-Security/);
+  assert.match(workflow, /max-age=31536000/);
+  assert.match(workflow, /immutable_found/);
+  assert.match(workflow, /content-security-policy/);
+  assert.match(workflow, /x-content-type-options/);
+  assert.match(workflow, /strict-transport-security/);
   assert.match(workflow, /HTML is missing the no-cache policy/);
   assert.match(workflow, /HTML is missing security header/);
-  assert.match(workflow, /test -L "\$link_path" \|\| \$SUDO test -e "\$link_path"/);
-  assert.match(workflow, /previous_target" = "__MISSING__"/);
+  assert.match(workflow, /test -L "\$link_path"/);
+  assert.match(workflow, /Existing release link is missing or not a symlink/);
 });
 
 test('public runtime links use the canonical trailing-slash policy', () => {

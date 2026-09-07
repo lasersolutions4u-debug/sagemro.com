@@ -44,11 +44,11 @@ test('China frontend private route families return a complete noindex header', (
   }
 });
 
-test('China ECS Nginx release applies the same headers only to SAGEMRO hosts', () => {
+test('China pages-only release verifies existing security headers without rewriting them', () => {
   const workflow = read('.github/workflows/aliyun-cn-deploy.yml');
 
-  assert.match(workflow, /map \$host \$sagemro_content_security_policy/);
-  assert.match(workflow, /~\^\(\(www\\\.\)\?sagemro\\\.cn\|ai\\\.sagemro\\\.cn\|admin\\\.sagemro\\\.cn\|engineer\\\.sagemro\\\.cn\)\$/);
+  assert.doesNotMatch(workflow, /add_header |map \$host/);
+  assert.match(workflow, /for site_host in sagemro\.cn ai\.sagemro\.cn admin\.sagemro\.cn engineer\.sagemro\.cn/);
   for (const header of [
     'Content-Security-Policy',
     'Strict-Transport-Security',
@@ -57,13 +57,9 @@ test('China ECS Nginx release applies the same headers only to SAGEMRO hosts', (
     'Referrer-Policy',
     'Permissions-Policy',
   ]) {
-    assert.match(workflow, new RegExp(`add_header ${header}`));
+    assert.match(workflow, new RegExp(header.toLowerCase()));
   }
-  assert.match(workflow, /camera=\(self\), microphone=\(self\), geolocation=\(self\)/);
-  assert.match(workflow, /map "\$host:\$request_uri" \$sagemro_robots_tag/);
-  assert.match(workflow, /admin\\\.sagemro\\\.cn: "noindex, nofollow, noarchive, nosnippet, noimageindex"/);
-  assert.match(workflow, /\(work-orders\|activate\|engineer\)\(\/\|\\\?\|\$\) "noindex, nofollow, noarchive, nosnippet, noimageindex"/);
-  assert.match(workflow, /add_header X-Robots-Tag \$sagemro_robots_tag always;/);
+  assert.match(workflow, /HTML is missing security header/);
   assert.match(workflow, /expect_robots_tag https:\/\/admin\.sagemro\.cn\/deploy-admin-smoke/);
   assert.match(workflow, /expect_robots_tag https:\/\/sagemro\.cn\/activate/);
   assert.match(workflow, /expect_robots_tag https:\/\/engineer\.sagemro\.cn\/work-orders\/deploy-smoke/);
