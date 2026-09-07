@@ -48,18 +48,27 @@ test('Aliyun deployment keeps its production safety controls', () => {
   assert.match(workflow, /- name: Revoke GitHub runner SSH\s+if: always\(\)/);
 });
 
-test('Aliyun deployment provisions the AI DNS, certificate, and Nginx host safely', () => {
-  assert.match(workflow, /aliyun alidns DescribeDomainRecords/);
-  assert.match(workflow, /aliyun alidns AddDomainRecord/);
-  assert.match(workflow, /aliyun alidns UpdateDomainRecord/);
-  assert.match(workflow, /Refusing to change ambiguous ai\.sagemro\.cn DNS records/);
-  assert.match(workflow, /certbot certificates --non-interactive/);
-  assert.match(workflow, /certbot certonly[\s\S]*--webroot[\s\S]*--cert-name ai\.sagemro\.cn/);
-  assert.match(workflow, /\/etc\/nginx\/conf\.d\/sagemro-cn-ai\.conf/);
-  assert.match(workflow, /root \/var\/www\/sagemro-cn\/current\/ai;/);
-  assert.match(workflow, /server_name ai\.sagemro\.cn;/);
-  assert.match(workflow, /trap rollback_ai_edge ERR/);
-  assert.match(workflow, /nginx -t[\s\S]*systemctl reload nginx/);
+test('Aliyun pages-only release never provisions DNS, certificates or Nginx configuration', () => {
+  assert.doesNotMatch(workflow, /aliyun alidns|certbot|configure_public_routes\.py|enable_nginx_http2\.py/);
+  assert.doesNotMatch(workflow, /nginx_backup|performance_conf|api_upstream_staged|install -m 0644|add_header /);
+  assert.match(workflow, /name: Inspect current release and unchanged Nginx/);
+  assert.match(workflow, /nginx -T/);
+  assert.match(workflow, /sha256sum/);
+});
+
+test('Aliyun preflight is SHA-pinned and cannot activate or upload a release', () => {
+  assert.match(workflow, /expected_sha:[\s\S]*required: true/);
+  assert.match(workflow, /preflight_only:[\s\S]*type: boolean[\s\S]*default: true/);
+  assert.match(workflow, /EXPECTED_SHA: \$\{\{ inputs.expected_sha \}\}/);
+  assert.match(workflow, /"\$EXPECTED_SHA" != "\$GITHUB_SHA"/);
+  for (const name of ['Check CN API and D1 readiness', 'Build frontend', 'Build admin', 'Package release', 'Upload release', 'Activate release']) {
+    const block = workflow.split(`      - name: ${name}\n`)[1]?.split('      - name: ')[0];
+    assert.ok(block, name);
+    assert.match(block, /if: \$\{\{ !inputs.preflight_only \}\}/, name);
+  }
+  assert.match(workflow, /previous_frontend=.*capture_previous_target/);
+  assert.match(workflow, /Previous frontend:/);
+  assert.match(workflow, /Refusing to replace an existing release/);
 });
 
 test('Aliyun health checks and summary include the AI portal without dropping existing hosts', () => {

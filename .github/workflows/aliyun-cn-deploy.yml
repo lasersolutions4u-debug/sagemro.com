@@ -2,6 +2,16 @@ name: Deploy China Edition to Aliyun ECS
 
 on:
   workflow_dispatch:
+    inputs:
+      expected_sha:
+        description: Exact reviewed china-edition commit
+        required: true
+        type: string
+      preflight_only:
+        description: Inspect current release without uploading or activating pages
+        required: true
+        type: boolean
+        default: true
 
 permissions:
   contents: read
@@ -18,9 +28,11 @@ jobs:
 
     steps:
       - name: Validate deployment ref
+        env:
+          EXPECTED_SHA: ${{ inputs.expected_sha }}
         run: |
           set -euo pipefail
-          if [ "${GITHUB_REF_NAME}" != "china-edition" ]; then
+          if [ "${GITHUB_REF_NAME}" != "china-edition" ] || [ "$EXPECTED_SHA" != "$GITHUB_SHA" ]; then
             echo "::error::Aliyun China production deploy must run from china-edition. Current ref: ${GITHUB_REF_NAME}"
             exit 1
           fi
@@ -34,6 +46,7 @@ jobs:
           node-version: "24"
 
       - name: Check CN API and D1 readiness
+        if: ${{ !inputs.preflight_only }}
         working-directory: worker
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -86,6 +99,7 @@ jobs:
           exit "$missing"
 
       - name: Build frontend
+        if: ${{ !inputs.preflight_only }}
         working-directory: frontend
         run: |
           set -euo pipefail
@@ -95,6 +109,7 @@ jobs:
           npm run build:portal
 
       - name: Build admin
+        if: ${{ !inputs.preflight_only }}
         working-directory: admin
         run: |
           set -euo pipefail
@@ -103,6 +118,7 @@ jobs:
           npm run build
 
       - name: Package release
+        if: ${{ !inputs.preflight_only }}
         run: |
           set -euo pipefail
           RELEASE_ID="${GITHUB_SHA:0:12}-${GITHUB_RUN_NUMBER}"
@@ -111,19 +127,15 @@ jobs:
           echo "RELEASE_ID=${RELEASE_ID}" >> "$GITHUB_ENV"
           echo "PACKAGE_NAME=${PACKAGE_NAME}" >> "$GITHUB_ENV"
 
-          mkdir -p release/frontend release/ai release/admin release/ops
+          mkdir -p release/frontend release/ai release/admin
           cp -a frontend/dist/. release/frontend/
           cp -a frontend/dist-portal/. release/ai/
           cp -a admin/dist/. release/admin/
-          cp ops/configure_public_routes.py release/ops/
-          cp ops/enable_nginx_http2.py release/ops/
           tar -czf "$PACKAGE_NAME" -C release .
 
           test -f release/frontend/index.html
           test -f release/ai/index.html
           test -f release/admin/index.html
-          test -f release/ops/configure_public_routes.py
-          test -f release/ops/enable_nginx_http2.py
 
       - name: Setup Aliyun CLI
         uses: aliyun/setup-aliyun-cli-action@v1
@@ -207,241 +219,49 @@ jobs:
             fi
           fi
 
-      - name: Preflight AI edge host
+      - name: Inspect current release and unchanged Nginx
         env:
           ALIYUN_ECS_HOST: ${{ secrets.ALIYUN_ECS_HOST }}
           ALIYUN_ECS_PORT: ${{ secrets.ALIYUN_ECS_PORT }}
           ALIYUN_ECS_USER: ${{ secrets.ALIYUN_ECS_USER }}
         run: |
           set -euo pipefail
-          ssh -i ~/.ssh/aliyun_ecs -p "$ALIYUN_ECS_PORT" \
+          current_state=$(ssh -i ~/.ssh/aliyun_ecs -p "$ALIYUN_ECS_PORT" \
             -o StrictHostKeyChecking=yes \
-            "$ALIYUN_ECS_USER@$ALIYUN_ECS_HOST" \
-            "bash -s" <<'REMOTE_SCRIPT'
+            "$ALIYUN_ECS_USER@$ALIYUN_ECS_HOST" "bash -s" <<'REMOTE_SCRIPT'
           set -euo pipefail
-
           SUDO=""
-          if [ "$(id -u)" -ne 0 ]; then
-            SUDO="sudo"
-          fi
-
-          command -v nginx >/dev/null
-          command -v certbot >/dev/null
-          $SUDO certbot certificates --non-interactive >/dev/null
-          $SUDO test -f /etc/letsencrypt/options-ssl-nginx.conf
-          if $SUDO test -L /etc/nginx/conf.d/sagemro-cn-ai.conf; then
-            echo "AI Nginx configuration must not be a symbolic link." >&2
-            exit 1
-          fi
+          if [ "$(id -u)" -ne 0 ]; then SUDO="sudo"; fi
           $SUDO nginx -t
-          REMOTE_SCRIPT
-
-      - name: Ensure AI DNS record
-        env:
-          ALIYUN_ACCESS_KEY_ID: ${{ secrets.ALIYUN_ACCESS_KEY_ID }}
-          ALIYUN_ACCESS_KEY_SECRET: ${{ secrets.ALIYUN_ACCESS_KEY_SECRET }}
-          ALIYUN_REGION_ID: ${{ secrets.ALIYUN_REGION_ID }}
-        run: |
-          set -euo pipefail
-          aliyun configure set \
-            --profile sagemro-ci \
-            --mode AK \
-            --region "$ALIYUN_REGION_ID" \
-            --access-key-id "$ALIYUN_ACCESS_KEY_ID" \
-            --access-key-secret "$ALIYUN_ACCESS_KEY_SECRET"
-
-          mapfile -t target_ips < <(getent ahostsv4 sagemro.cn | awk '{ print $1 }' | sort -u)
-          if [ "${#target_ips[@]}" -ne 1 ] || ! [[ "${target_ips[0]}" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "::error::Unable to identify one authoritative IPv4 target from sagemro.cn."
-            exit 1
-          fi
-          target_ip="${target_ips[0]}"
-          echo "::add-mask::${target_ip}"
-
-          records_json="$(aliyun alidns DescribeDomainRecords \
-            --profile sagemro-ci \
-            --DomainName sagemro.cn \
-            --RRKeyWord ai \
-            --PageSize 100)"
-          exact_count="$(jq '[.DomainRecords.Record[]? | select(.RR == "ai")] | length' <<< "$records_json")"
-          if [ "$exact_count" -gt 1 ]; then
-            echo "::error::Refusing to change ambiguous ai.sagemro.cn DNS records."
-            exit 1
-          fi
-
-          if [ "$exact_count" -eq 0 ]; then
-            aliyun alidns AddDomainRecord \
-              --profile sagemro-ci \
-              --DomainName sagemro.cn \
-              --RR ai \
-              --Type A \
-              --Value "$target_ip" \
-              --TTL 600 >/dev/null
-          else
-            record_id="$(jq -r '.DomainRecords.Record[] | select(.RR == "ai") | .RecordId' <<< "$records_json")"
-            record_type="$(jq -r '.DomainRecords.Record[] | select(.RR == "ai") | .Type' <<< "$records_json")"
-            record_line="$(jq -r '.DomainRecords.Record[] | select(.RR == "ai") | .Line' <<< "$records_json")"
-            record_value="$(jq -r '.DomainRecords.Record[] | select(.RR == "ai") | .Value' <<< "$records_json")"
-            record_ttl="$(jq -r '.DomainRecords.Record[] | select(.RR == "ai") | .TTL' <<< "$records_json")"
-            record_status="$(jq -r '.DomainRecords.Record[] | select(.RR == "ai") | .Status' <<< "$records_json")"
-
-            if [ "$record_type" != "A" ] || [ "$record_line" != "default" ]; then
-              echo "::error::Refusing to change ambiguous ai.sagemro.cn DNS records."
+          nginx_config="$($SUDO nginx -T 2>/dev/null)"
+          expected_upstream=$(cat <<'NGINX'
+          upstream sagemro_api_worker {
+            server api.sagemro.com:443;
+            keepalive 32;
+          }
+          NGINX
+          )
+          normalized_upstream="$(printf '%s' "$expected_upstream" | tr -s '[:space:]' ' ')"
+          printf '%s' "$nginx_config" | tr -s '[:space:]' ' ' | grep -F "$normalized_upstream" >/dev/null
+          printf 'CURRENT_NGINX_SHA=%s\n' "$(printf '%s' "$nginx_config" | sha256sum | cut -d' ' -f1)"
+          for site in frontend engineer ai admin; do
+            link_path="/var/www/sagemro-cn/current/$site"
+            if ! $SUDO test -L "$link_path"; then
+              echo "Existing release link is missing or not a symlink: $site" >&2
               exit 1
             fi
-            if [ "$record_value" != "$target_ip" ] || [ "$record_ttl" != "600" ]; then
-              aliyun alidns UpdateDomainRecord \
-                --profile sagemro-ci \
-                --RecordId "$record_id" \
-                --RR ai \
-                --Type A \
-                --Value "$target_ip" \
-                --TTL 600 >/dev/null
-            fi
-            if [ "$record_status" != "Enable" ]; then
-              aliyun alidns SetDomainRecordStatus \
-                --profile sagemro-ci \
-                --RecordId "$record_id" \
-                --Status Enable >/dev/null
-            fi
-          fi
-
-          echo "AI_EDGE_IP=${target_ip}" >> "$GITHUB_ENV"
-
-      - name: Wait for AI DNS propagation
-        run: |
-          set -euo pipefail
-          for attempt in $(seq 1 60); do
-            if getent ahostsv4 ai.sagemro.cn | awk '{ print $1 }' | grep -Fxq "$AI_EDGE_IP"; then
-              exit 0
-            fi
-            sleep 10
+            target="$(readlink -f "$link_path")"
+            case "$target" in /var/www/sagemro-cn/releases/*) ;; *) exit 1 ;; esac
+            $SUDO test -f "$target/index.html"
+            printf 'PREVIOUS_%s=%s\n' "$site" "$target"
           done
-          echo "::error::ai.sagemro.cn did not resolve to the expected server within 10 minutes."
-          exit 1
-
-      - name: Provision AI certificate and Nginx host
-        env:
-          ALIYUN_ECS_HOST: ${{ secrets.ALIYUN_ECS_HOST }}
-          ALIYUN_ECS_PORT: ${{ secrets.ALIYUN_ECS_PORT }}
-          ALIYUN_ECS_USER: ${{ secrets.ALIYUN_ECS_USER }}
-        run: |
-          set -euo pipefail
-          ssh -i ~/.ssh/aliyun_ecs -p "$ALIYUN_ECS_PORT" \
-            -o StrictHostKeyChecking=yes \
-            "$ALIYUN_ECS_USER@$ALIYUN_ECS_HOST" \
-            "EDGE_CHANGE_ID='${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}' bash -s" <<'REMOTE_SCRIPT'
-          set -euo pipefail
-
-          SUDO=""
-          if [ "$(id -u)" -ne 0 ]; then
-            SUDO="sudo"
-          fi
-
-          ai_conf="/etc/nginx/conf.d/sagemro-cn-ai.conf"
-          acme_root="/var/www/certbot"
-          backup_root="/var/backups/sagemro-nginx"
-          backup_conf="$backup_root/${EDGE_CHANGE_ID}.ai.conf"
-          missing_marker="$backup_root/${EDGE_CHANGE_ID}.ai.missing"
-          staged_conf="$(mktemp)"
-
-          $SUDO mkdir -p "$acme_root/.well-known/acme-challenge" "$backup_root"
-          if $SUDO test -e "$ai_conf"; then
-            $SUDO cp -a "$ai_conf" "$backup_conf"
-            $SUDO rm -f "$missing_marker"
-          else
-            $SUDO touch "$missing_marker"
-          fi
-
-          rollback_ai_edge() {
-            status=$?
-            set +e
-            if $SUDO test -f "$backup_conf"; then
-              $SUDO cp -a "$backup_conf" "$ai_conf"
-            elif $SUDO test -f "$missing_marker"; then
-              $SUDO rm -f "$ai_conf"
-            fi
-            $SUDO nginx -t && $SUDO systemctl reload nginx
-            rm -f "$staged_conf"
-            exit "$status"
-          }
-          trap rollback_ai_edge ERR
-
-          cat > "$staged_conf" <<'NGINX'
-          server {
-            listen 80;
-            server_name ai.sagemro.cn;
-
-            location ^~ /.well-known/acme-challenge/ {
-              root /var/www/certbot;
-              default_type text/plain;
-              try_files $uri =404;
-            }
-
-            location / {
-              return 301 https://ai.sagemro.cn$request_uri;
-            }
-          }
-          NGINX
-          $SUDO install -m 0644 "$staged_conf" "$ai_conf"
-          $SUDO nginx -t
-          $SUDO systemctl reload nginx
-
-          $SUDO certbot certonly \
-            --webroot \
-            --webroot-path "$acme_root" \
-            --cert-name ai.sagemro.cn \
-            -d ai.sagemro.cn \
-            --non-interactive \
-            --agree-tos \
-            --no-eff-email \
-            --keep-until-expiring \
-            --deploy-hook "systemctl reload nginx"
-          $SUDO test -f /etc/letsencrypt/live/ai.sagemro.cn/fullchain.pem
-          $SUDO test -f /etc/letsencrypt/live/ai.sagemro.cn/privkey.pem
-
-          cat > "$staged_conf" <<'NGINX'
-          server {
-            listen 80;
-            server_name ai.sagemro.cn;
-
-            location ^~ /.well-known/acme-challenge/ {
-              root /var/www/certbot;
-              default_type text/plain;
-              try_files $uri =404;
-            }
-
-            location / {
-              return 301 https://ai.sagemro.cn$request_uri;
-            }
-          }
-
-          server {
-            listen 443 ssl http2;
-            server_name ai.sagemro.cn;
-            if ($host != ai.sagemro.cn) { return 444; }
-
-            ssl_certificate /etc/letsencrypt/live/ai.sagemro.cn/fullchain.pem;
-            ssl_certificate_key /etc/letsencrypt/live/ai.sagemro.cn/privkey.pem;
-            include /etc/letsencrypt/options-ssl-nginx.conf;
-
-            root /var/www/sagemro-cn/current/ai;
-            index index.html;
-
-            location / {
-              try_files $uri $uri/ /index.html;
-            }
-          }
-          NGINX
-          $SUDO install -m 0644 "$staged_conf" "$ai_conf"
-          $SUDO nginx -t
-          $SUDO systemctl reload nginx
-
-          trap - ERR
-          rm -f "$staged_conf"
           REMOTE_SCRIPT
+          )
+          printf '%s\n' "$current_state" >> "$GITHUB_ENV"
+          printf '%s\n' "$current_state"
 
       - name: Upload release
+        if: ${{ !inputs.preflight_only }}
         env:
           ALIYUN_ECS_HOST: ${{ secrets.ALIYUN_ECS_HOST }}
           ALIYUN_ECS_PORT: ${{ secrets.ALIYUN_ECS_PORT }}
@@ -454,6 +274,7 @@ jobs:
             "$ALIYUN_ECS_USER@$ALIYUN_ECS_HOST:/tmp/$PACKAGE_NAME"
 
       - name: Activate release
+        if: ${{ !inputs.preflight_only }}
         id: activate
         env:
           ALIYUN_ECS_HOST: ${{ secrets.ALIYUN_ECS_HOST }}
@@ -464,7 +285,7 @@ jobs:
           ssh -i ~/.ssh/aliyun_ecs -p "$ALIYUN_ECS_PORT" \
             -o StrictHostKeyChecking=yes \
             "$ALIYUN_ECS_USER@$ALIYUN_ECS_HOST" \
-            "RELEASE_ID='$RELEASE_ID' PACKAGE_NAME='$PACKAGE_NAME' bash -s" <<'REMOTE_SCRIPT'
+            "RELEASE_ID='$RELEASE_ID' PACKAGE_NAME='$PACKAGE_NAME' EXPECTED_NGINX_SHA='$CURRENT_NGINX_SHA' bash -s" <<'REMOTE_SCRIPT'
           set -euo pipefail
 
           package="/tmp/${PACKAGE_NAME}"
@@ -476,132 +297,44 @@ jobs:
             SUDO="sudo"
           fi
 
-          $SUDO mkdir -p "$release" "$current"
+          if $SUDO test -e "$release"; then
+            echo "Refusing to replace an existing release." >&2
+            exit 1
+          fi
+          $SUDO mkdir -p "$release"
           $SUDO tar -xzf "$package" -C "$release"
 
           test -f "$release/frontend/index.html"
           test -f "$release/ai/index.html"
           test -f "$release/admin/index.html"
 
-          backup_root="/var/backups/sagemro-nginx"
+          backup_root="/var/backups/sagemro-pages"
           release_state="$backup_root/${RELEASE_ID}.release"
-          nginx_backup="$backup_root/${RELEASE_ID}.tgz"
-          performance_conf="/etc/nginx/conf.d/sagemro-cn-performance.conf"
-          performance_backup="$backup_root/${RELEASE_ID}.performance.conf"
-          performance_missing_marker="$backup_root/${RELEASE_ID}.performance.missing"
-          api_upstream_conf="/etc/nginx/conf.d/sagemro-cn-api-upstream.conf"
-          api_upstream_backup="$backup_root/${RELEASE_ID}.api-upstream.conf"
-          api_upstream_missing_marker="$backup_root/${RELEASE_ID}.api-upstream.missing"
-          api_upstream_staged="/etc/nginx/conf.d/.sagemro-cn-api-upstream-${RELEASE_ID}.tmp"
-
           $SUDO mkdir -p "$backup_root"
           capture_previous_target() {
             link_path="$1"
-            if $SUDO test -L "$link_path" || $SUDO test -e "$link_path"; then
-              readlink -f "$link_path"
-            else
-              printf '__MISSING__'
+            if ! $SUDO test -L "$link_path"; then
+              echo "Existing release link is missing or not a symlink." >&2
+              exit 1
             fi
+            target="$(readlink -f "$link_path")"
+            case "$target" in /var/www/sagemro-cn/releases/*) ;; *) exit 1 ;; esac
+            $SUDO test -f "$target/index.html"
+            printf '%s' "$target"
           }
-
           previous_frontend="$(capture_previous_target "$current/frontend")"
           previous_engineer="$(capture_previous_target "$current/engineer")"
           previous_ai="$(capture_previous_target "$current/ai")"
           previous_admin="$(capture_previous_target "$current/admin")"
-          printf '%s\n' "$previous_frontend" "$previous_engineer" "$previous_ai" "$previous_admin" | $SUDO tee "$release_state" > /dev/null
-
-          if $SUDO test -e "$performance_conf"; then
-            $SUDO cp -a "$performance_conf" "$performance_backup"
-            $SUDO rm -f "$performance_missing_marker"
-          else
-            $SUDO touch "$performance_missing_marker"
-          fi
-          if $SUDO test -e "$api_upstream_conf"; then
-            $SUDO cp -a "$api_upstream_conf" "$api_upstream_backup"
-            $SUDO rm -f "$api_upstream_missing_marker"
-          else
-            $SUDO touch "$api_upstream_missing_marker"
-          fi
-
-          mapfile -t nginx_config_files < <(
-            $SUDO grep -RIlE 'server_name[^;]*sagemro\.cn' /etc/nginx/sites-enabled /etc/nginx/conf.d 2>/dev/null \
-              | while IFS= read -r nginx_config_file; do readlink -f "$nginx_config_file"; done \
-              | sort -u || true
-          )
-          if [ "${#nginx_config_files[@]}" -eq 0 ]; then
-            echo "Unable to locate the active sagemro.cn Nginx server configuration." >&2
+          printf '%s\n' "$previous_frontend" "$previous_engineer" "$previous_ai" "$previous_admin" | $SUDO tee "$release_state" >/dev/null
+          printf 'Previous frontend: %s\nPrevious engineer: %s\nPrevious AI: %s\nPrevious admin: %s\n' "$previous_frontend" "$previous_engineer" "$previous_ai" "$previous_admin"
+          $SUDO nginx -t
+          actual_nginx_config="$($SUDO nginx -T 2>/dev/null)"
+          actual_nginx_sha="$(printf '%s' "$actual_nginx_config" | sha256sum | cut -d' ' -f1)"
+          if [ "$actual_nginx_sha" != "$EXPECTED_NGINX_SHA" ]; then
+            echo "Nginx configuration changed during the pages-only release." >&2
             exit 1
           fi
-          $SUDO tar -czf "$nginx_backup" "${nginx_config_files[@]}"
-          $SUDO rm -f "$api_upstream_staged"
-          $SUDO tee "$api_upstream_staged" > /dev/null <<'NGINX'
-          upstream sagemro_api_worker {
-            server api.sagemro.com:443;
-            keepalive 32;
-          }
-          NGINX
-          $SUDO chmod 0644 "$api_upstream_staged"
-          $SUDO mv "$api_upstream_staged" "$api_upstream_conf"
-          $SUDO python3 "$release/ops/configure_public_routes.py" --require-api-proxy "${nginx_config_files[@]}"
-
-          $SUDO tee "$performance_conf" > /dev/null <<'NGINX'
-          map "$host:$request_uri" $sagemro_asset_cache_control {
-            default "";
-            ~^((www\.)?sagemro\.cn|ai\.sagemro\.cn|admin\.sagemro\.cn|engineer\.sagemro\.cn):/assets/ "public, max-age=31536000, immutable";
-            ~^((www\.)?sagemro\.cn|ai\.sagemro\.cn|admin\.sagemro\.cn|engineer\.sagemro\.cn):/sagemro-logo\.png$ "public, max-age=86400";
-            ~^((www\.)?sagemro\.cn|ai\.sagemro\.cn|admin\.sagemro\.cn|engineer\.sagemro\.cn):/ "no-cache";
-          }
-
-          map $host $sagemro_content_security_policy {
-            default "";
-            ~^((www\.)?sagemro\.cn|ai\.sagemro\.cn|admin\.sagemro\.cn|engineer\.sagemro\.cn)$ "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self' https://cdn.onesignal.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; media-src 'self' blob: https:; connect-src 'self' https://api.sagemro.com https://api.sagemro.cn https://*.sentry.io https://*.ingest.sentry.io https://onesignal.com https://*.onesignal.com wss://*.onesignal.com; worker-src 'self' blob:; frame-src 'self' https://*.onesignal.com; manifest-src 'self'; upgrade-insecure-requests";
-          }
-
-          map $host $sagemro_hsts {
-            default "";
-            ~^((www\.)?sagemro\.cn|ai\.sagemro\.cn|admin\.sagemro\.cn|engineer\.sagemro\.cn)$ "max-age=31536000; includeSubDomains";
-          }
-
-          map $host $sagemro_nosniff {
-            default "";
-            ~^((www\.)?sagemro\.cn|ai\.sagemro\.cn|admin\.sagemro\.cn|engineer\.sagemro\.cn)$ "nosniff";
-          }
-
-          map $host $sagemro_frame_options {
-            default "";
-            ~^((www\.)?sagemro\.cn|ai\.sagemro\.cn|admin\.sagemro\.cn|engineer\.sagemro\.cn)$ "DENY";
-          }
-
-          map $host $sagemro_referrer_policy {
-            default "";
-            ~^((www\.)?sagemro\.cn|ai\.sagemro\.cn|admin\.sagemro\.cn|engineer\.sagemro\.cn)$ "strict-origin-when-cross-origin";
-          }
-
-          map $host $sagemro_permissions_policy {
-            default "";
-            ~^((www\.)?sagemro\.cn|ai\.sagemro\.cn|admin\.sagemro\.cn|engineer\.sagemro\.cn)$ "camera=(self), microphone=(self), geolocation=(self)";
-          }
-
-          map "$host:$request_uri" $sagemro_robots_tag {
-            default "";
-            ~^ai\.sagemro\.cn: "noindex, nofollow, noarchive, nosnippet, noimageindex";
-            ~^admin\.sagemro\.cn: "noindex, nofollow, noarchive, nosnippet, noimageindex";
-            ~^((www\.)?sagemro\.cn|engineer\.sagemro\.cn):/(work-orders|activate|engineer)(/|\?|$) "noindex, nofollow, noarchive, nosnippet, noimageindex";
-          }
-
-          gzip_types text/plain text/css application/javascript application/json application/xml image/svg+xml font/woff2;
-          add_header Cache-Control $sagemro_asset_cache_control always;
-          add_header Content-Security-Policy $sagemro_content_security_policy always;
-          add_header Strict-Transport-Security $sagemro_hsts always;
-          add_header X-Content-Type-Options $sagemro_nosniff always;
-          add_header X-Frame-Options $sagemro_frame_options always;
-          add_header Referrer-Policy $sagemro_referrer_policy always;
-          add_header Permissions-Policy $sagemro_permissions_policy always;
-          add_header X-Robots-Tag $sagemro_robots_tag always;
-          NGINX
-
-          $SUDO python3 "$release/ops/enable_nginx_http2.py" "${nginx_config_files[@]}"
-          $SUDO nginx -t
           $SUDO ln -sfnT "$release/frontend" "$current/frontend"
           $SUDO ln -sfnT "$release/frontend" "$current/engineer"
           $SUDO ln -sfnT "$release/ai" "$current/ai"
@@ -750,62 +483,24 @@ jobs:
           set -euo pipefail
 
           current="/var/www/sagemro-cn/current"
-          backup_root="/var/backups/sagemro-nginx"
+          backup_root="/var/backups/sagemro-pages"
           release_state="$backup_root/${RELEASE_ID}.release"
-          nginx_backup="$backup_root/${RELEASE_ID}.tgz"
-          performance_conf="/etc/nginx/conf.d/sagemro-cn-performance.conf"
-          performance_backup="$backup_root/${RELEASE_ID}.performance.conf"
-          performance_missing_marker="$backup_root/${RELEASE_ID}.performance.missing"
-          api_upstream_conf="/etc/nginx/conf.d/sagemro-cn-api-upstream.conf"
-          api_upstream_backup="$backup_root/${RELEASE_ID}.api-upstream.conf"
-          api_upstream_missing_marker="$backup_root/${RELEASE_ID}.api-upstream.missing"
-          api_upstream_staged="/etc/nginx/conf.d/.sagemro-cn-api-upstream-${RELEASE_ID}.tmp"
-
           SUDO=""
-          if [ "$(id -u)" -ne 0 ]; then
-            SUDO="sudo"
-          fi
-
+          if [ "$(id -u)" -ne 0 ]; then SUDO="sudo"; fi
           if ! $SUDO test -f "$release_state"; then
             echo "No activation state found; nothing to roll back."
             exit 0
           fi
-
           mapfile -t previous_releases < <($SUDO cat "$release_state")
-          if [ "${#previous_releases[@]}" -lt 4 ]; then
-            echo "Activation state is incomplete; refusing an unsafe rollback." >&2
-            exit 1
-          fi
-
-          if $SUDO test -f "$nginx_backup"; then
-            $SUDO tar -xzf "$nginx_backup" -C /
-          fi
-          if $SUDO test -f "$performance_backup"; then
-            $SUDO cp -a "$performance_backup" "$performance_conf"
-          elif $SUDO test -f "$performance_missing_marker"; then
-            $SUDO rm -f "$performance_conf"
-          fi
-          if $SUDO test -f "$api_upstream_backup"; then
-            $SUDO cp -a "$api_upstream_backup" "$api_upstream_conf"
-          elif $SUDO test -f "$api_upstream_missing_marker"; then
-            $SUDO rm -f "$api_upstream_conf"
-          fi
-          $SUDO rm -f "$api_upstream_staged"
-
-          restore_link() {
-            previous_target="$1"
-            link_path="$2"
-            if [ "$previous_target" = "__MISSING__" ]; then
-              $SUDO rm -f "$link_path"
-            else
-              $SUDO ln -sfnT "$previous_target" "$link_path"
-            fi
-          }
-
-          restore_link "${previous_releases[0]}" "$current/frontend"
-          restore_link "${previous_releases[1]}" "$current/engineer"
-          restore_link "${previous_releases[2]}" "$current/ai"
-          restore_link "${previous_releases[3]}" "$current/admin"
+          if [ "${#previous_releases[@]}" -ne 4 ]; then exit 1; fi
+          for target in "${previous_releases[@]}"; do
+            case "$target" in /var/www/sagemro-cn/releases/*) ;; *) exit 1 ;; esac
+            $SUDO test -f "$target/index.html"
+          done
+          $SUDO ln -sfnT "${previous_releases[0]}" "$current/frontend"
+          $SUDO ln -sfnT "${previous_releases[1]}" "$current/engineer"
+          $SUDO ln -sfnT "${previous_releases[2]}" "$current/ai"
+          $SUDO ln -sfnT "${previous_releases[3]}" "$current/admin"
 
           $SUDO nginx -t
           $SUDO systemctl reload nginx
@@ -843,6 +538,7 @@ jobs:
             --SourceCidrIp "$RUNNER_CIDR"
 
       - name: Deployment summary
+        if: ${{ !inputs.preflight_only }}
         run: |
           {
             echo "### Aliyun China deploy"
