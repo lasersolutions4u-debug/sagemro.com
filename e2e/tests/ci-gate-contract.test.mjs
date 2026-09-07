@@ -167,3 +167,56 @@ test('Worker deployment blocks on migrations for both production D1 databases', 
   }
   assert.match(workerJob, /CN_MISSING/);
 });
+
+for (const workflowPath of ['.github/workflows/deploy.yml', '.github/workflows/aliyun-cn-deploy.yml']) {
+  test(`${workflowPath} requires the business migrations before CN deployment`, () => {
+    const workflow = read(workflowPath);
+    const declaration = workflow.match(/^\s*CN_REQUIRED="([^"]+)"/m);
+    assert.ok(declaration, 'CN migration requirements must be explicit');
+    const required = declaration[1].trim().split(/\s+/);
+    for (const version of [
+      '047_structured_service_request_intake',
+      '048_service_request_assist_quota',
+      '050_engineer_service_profiles',
+      '051_business_scope',
+      '052_business_quote_costs',
+      '053_business_receipt_actors',
+      '054_business_execution_assignments',
+      '055_business_service_execution',
+    ]) {
+      assert.ok(required.includes(version), `${workflowPath} must require ${version}`);
+      assert.ok(existsSync(path.join(root, 'worker/migrations', `${version}.sql`)));
+    }
+    const guard = workflow.slice(declaration.index);
+    assert.match(guard, /for ver in \$CN_REQUIRED; do/);
+    assert.match(guard, /if ! echo "\$APPLIED_CN" \| grep -q "\^\$\{ver\}\$"; then/);
+    const failure = guard.indexOf('exit 1');
+    const deploy = guard.search(/wrangler deploy --env production|name: Build frontend/);
+    assert.ok(failure >= 0 && deploy > failure, 'missing migrations must stop before deployment');
+  });
+}
+
+test('the regular E2E command runs all business and engineer profile browser suites serially', () => {
+  const { scripts } = JSON.parse(read('e2e/package.json'));
+  assert.match(scripts.test, /npm run test:contracts && npm run test:business-browser &&/);
+  const args = scripts['test:business-browser'].split(/\s+/);
+  assert.deepEqual(args.slice(0, 3), ['node', '--test', '--test-concurrency=1']);
+  const expected = [
+    'tests/business-execution-browser.test.mjs',
+    'tests/business-payments-browser.test.mjs',
+    'tests/business-quote-browser.test.mjs',
+    'tests/business-service-browser.test.mjs',
+    'tests/business-workspace-browser.test.mjs',
+    'tests/engineer-service-profile-browser.test.mjs',
+  ];
+  assert.deepEqual(args.slice(3).sort(), expected.sort());
+  for (const file of expected) assert.ok(existsSync(path.join(root, 'e2e', file)));
+});
+
+for (const suite of ['business-workspace', 'engineer-service-profile']) {
+  test(`${suite} browser suite uses the browser installed on each test platform`, () => {
+    const source = read(`e2e/tests/${suite}-browser.test.mjs`);
+    assert.match(source, /channel: process\.platform === 'win32' \? 'chrome' : 'chromium'/);
+    assert.match(source, /headless: true/);
+  });
+}

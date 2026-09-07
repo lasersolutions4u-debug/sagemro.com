@@ -12,7 +12,7 @@ test('business workspace and staff organization browser journeys use only local 
     define: { 'import.meta.env.VITE_API_BASE': 'window.location.origin' }, server: { host: '127.0.0.1', port: 0, hmr: false } });
   await server.listen();
   t.after(() => server.close());
-  const browser = await chromium.launch({ channel: 'chrome', headless: true });
+  const browser = await chromium.launch({ channel: process.platform === 'win32' ? 'chrome' : 'chromium', headless: true });
   t.after(() => browser.close());
   const port = server.httpServer.address().port;
   for (const market of ['com', 'cn']) {

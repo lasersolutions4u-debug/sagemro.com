@@ -268,7 +268,7 @@ CF 自动签发 SSL 证书。
 
 国际版 `sagemro-db` 和中国版 `sagemro-db-cn` 必须分别备份。建议至少保留每日备份 30 天、每周备份 12 周，并存放在受限的加密存储中；备份可能包含客户联系方式、服务记录和审计数据，绝不能提交 Git。
 
-生产库由 GitHub Actions workflow `Production D1 Backup - COM and CN`（`.github/workflows/d1-backup.yml`）每天 `18:17 UTC`（北京时间次日 `02:17`）自动导出，也可以在 Actions 页面选择该 workflow 后点击 **Run workflow** 手动执行。Workflow 使用公开 recipient `age1dwngtpwx82g5nwnhexrve2wp4fhaqrpdn2dwl4m494pcfreztd8qh0z0xk` 在 runner 内加密导出，并在上传前删除明文 SQL。任一数据库导出、加密、明文删除、密文校验、manifest 生成或 artifact 上传失败，整个 Action 都会失败；到该次 run 的 `Export production D1 databases` job 中查看第一个失败 step 和 Wrangler 输出，不要在日志中打印 SQL 或私钥内容。
+生产库由 GitHub Actions workflow `Production D1 Backup - COM and CN`（`.github/workflows/d1-backup.yml`）每天 `18:17 UTC`（北京时间次日 `02:17`）计划导出，也可以在 Actions 页面选择该 workflow 后点击 **Run workflow** 手动执行。任务受 `production` 审批门禁约束，排队或等待审批不等于已完成备份；备份新鲜度以实际导出完成时间和 artifact 生成时间为准。本配置使用公开 recipient `age1napv2rt7lm400g8rcz8gg2rjh04cekjs3x5qw920scqg2v2ga4csu50p7l` 在 runner 内加密导出，并在上传前删除明文 SQL。公钥变更合入默认分支并成功运行后，才对新的自动备份生效。任一数据库导出、加密、明文删除、密文校验、manifest 生成或 artifact 上传失败，整个 Action 都会失败；到该次 run 的 `Export production D1 databases` job 中查看第一个失败 step 和 Wrangler 输出，不要在日志中打印 SQL 或私钥内容。
 
 成功运行会在该次 GitHub Actions run 的 **Artifacts** 区域生成两个独立 artifact：`sagemro-d1-com-<run_id>-<run_attempt>` 和 `sagemro-d1-cn-<run_id>-<run_attempt>`。每个 artifact 保留 30 天，并且可独立验证：COM 只包含时间戳 `.sql.age` 密文、`com-sha256-manifest.txt`、`com-metadata.txt`；CN 只包含时间戳 `.sql.age` 密文、`cn-sha256-manifest.txt`、`cn-metadata.txt`。每份 metadata 只记录该市场的生成时间、数据库名、Git SHA、加密格式和公开 recipient，不包含客户数据。下载并解压任一 artifact 后，在该 artifact 目录验证：
 
@@ -279,16 +279,9 @@ sha256sum --check com-sha256-manifest.txt
 
 macOS 可使用 `shasum -a 256 -c com-sha256-manifest.txt` 或对应的 CN manifest。该 artifact 内的 `.sql.age` 必须显示 `OK`；校验失败的文件不得解密或用于恢复。
 
-恢复私钥绝不能进入 Git、GitHub secrets、Actions 日志或工单。当前本机恢复身份保存在忽略目录 `.Codex/memory/backup-recovery/sagemro-d1-backup-age-identity.txt`；必须另行复制到密码管理器或离线加密存储。丢失该身份会导致所有 `.sql.age` 无法恢复。下载并验证密文后，使用：
+恢复私钥绝不能进入 Git、明文文件、GitHub secrets、Actions 日志或工单。2026-09-07 新恢复身份已存入当前 Windows 用户的 **Windows 凭据管理器 → Windows 凭据 → 普通凭据**，目标名为 `SAGEMRO/D1/Recovery/fb70c2cc-af00-4ea9-b681-165acd3ef63d`；已读回身份并完成 COM/CN 新备份的本地内存 SQLite 恢复、完整性及外键检查。对应加密备份和非密钥校验记录位于主仓库忽略目录 `.Codex/backups/recovery-20260907-fb70c2cc-af00-4ea9-b681-165acd3ef63d/`。目录不是密钥存储，复制仓库或备份文件不会复制 Windows 凭据。旧文档登记的明文身份文件已确认不存在，不能再把该路径当作恢复前提。
 
-```bash
-cd worker
-SAGEMRO_BACKUP_IDENTITY=/secure/offline/sagemro-d1-backup-age-identity.txt
-node scripts/age-backup-crypto.mjs decrypt \
-  --identity "$SAGEMRO_BACKUP_IDENTITY" \
-  --input /secure/temporary/sagemro-db-<timestamp>.sql.age \
-  --output /secure/temporary/sagemro-db-<timestamp>.sql
-```
+Windows 凭据是本机保管方式，不等于独立灾备。必须由保管人另行确认密码管理器或离线加密介质中的**异机**副本，并从该副本验证公开 recipient 一致及密文可解密，才可视为异机恢复准备完成。换电脑、重装系统或删除 Windows 用户前必须完成该交接；不得为交接将私钥打印到聊天或命令日志。恢复程序应通过受控的凭据读取接口在内存中取得身份，先比对备份 metadata 中的 recipient，再解密校验通过的密文；不要直接运行可能把凭据输出到终端的读取命令。新身份不能解密轮换前使用旧 recipient 的备份，旧备份应保留，待找回原身份后单独验证。
 
 解密后的 SQL 只允许存放在权限受限的临时目录，恢复或演练结束后使用 `shred -u` 删除。公开仓库的 artifact 下载者可以取得密文和非敏感 metadata，但没有离线身份就不能解密；这些 artifacts 仍不是独立的灾难恢复存储。生产范围扩大前，应把已校验密文复制到与 GitHub/Cloudflare 故障域分离、不可变且加密的外部存储，并对复制和过期策略做监控。
 

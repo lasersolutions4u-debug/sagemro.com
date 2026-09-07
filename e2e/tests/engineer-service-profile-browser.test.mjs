@@ -16,7 +16,7 @@ test('engineer service survey works in the existing portal with isolated local f
   });
   await server.listen();
   t.after(() => server.close());
-  const browser = await chromium.launch({ channel: 'chrome', headless: true });
+  const browser = await chromium.launch({ channel: process.platform === 'win32' ? 'chrome' : 'chromium', headless: true });
   t.after(() => browser.close());
   const port = server.httpServer.address().port;
 
