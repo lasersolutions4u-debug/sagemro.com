@@ -231,7 +231,7 @@ test('registration creates customer accounts without a public role selection ste
   assert.doesNotMatch(loginModal, /I'm just browsing \(Guest\)/);
 });
 
-test('customer shell exposes low-priority engineer entry and consolidated legal footer', () => {
+test('customer shell omits engineer recruiting entry and retains consolidated legal footer', () => {
   const footer = read('frontend/src/components/common/Footer.jsx');
   const sidebar = read('frontend/src/components/Sidebar/Sidebar.jsx');
   const engineerRecruiting = read('frontend/src/components/Engineer/EngineerRecruitingPage.jsx');
@@ -241,11 +241,9 @@ test('customer shell exposes low-priority engineer entry and consolidated legal 
   assert.match(footer, /onOpenLegal\?\.\('agreement'\)/);
   assert.doesNotMatch(footer, /Terms of Service|Privacy Policy|AI Service Notice|用户协议|隐私政策|AI 服务说明/);
 
-  assert.match(sidebar, /label: isCn \? '工程师入口 \/ 合作' : 'Engineer Portal \/ Partner Program'/);
-  assert.match(sidebar, /href: isCn \? 'https:\/\/engineer\.sagemro\.cn' : 'https:\/\/engineer\.sagemro\.com'/);
-  assert.match(sidebar, /testid: 'sidebar-engineer-link'/);
-  assert.match(sidebar, /data-testid=\{engineerEntry\.testid\}/);
-  assert.match(sidebar, /href=\{engineerEntry\.href\}/);
+  assert.doesNotMatch(sidebar, /engineerEntry|sidebar-engineer-link|Engineer Portal|工程师入口/);
+  assert.match(sidebar, /sidebar-login-button/);
+  assert.match(sidebar, /tool-create-work-order/);
 
   assert.match(engineerRecruiting, /returnToCustomer: '返回客户首页'/);
   assert.match(engineerRecruiting, /returnToCustomer: 'Back to Customer Home'/);
@@ -586,7 +584,7 @@ test('engineer recruiting page presents the approved partnership story and appli
   assert.match(recruiting, /fixed inset-0 z-50/);
 });
 
-test('client shell moves conversation history into a modal and exposes industry tools', () => {
+test('client shell keeps history and service actions while public tools and insights remain on the website', () => {
   const sidebar = read('frontend/src/components/Sidebar/Sidebar.jsx');
   const app = read('frontend/src/App.jsx');
   const chatHistory = read('frontend/src/components/Sidebar/ChatHistory.jsx');
@@ -599,22 +597,21 @@ test('client shell moves conversation history into a modal and exposes industry 
   const redirects = read('frontend/public/_redirects');
 
   assert.match(sidebar, /onOpenHistory/);
-  assert.match(sidebar, /onOpenIndustryTools/);
+  assert.doesNotMatch(sidebar, /onOpenIndustryTools|tool-industry-tools|tool-insights/);
   assert.match(sidebar, /History/);
-  assert.match(sidebar, /Tools/);
-  assert.match(sidebar, /Insights/);
-  assert.match(sidebar, /href: '\/insights\/'/);
-  assert.match(sidebar, /tool-insights/);
+  assert.doesNotMatch(sidebar, /label:.*(?:'Tools'|'Insights')/);
+  const welcome = read('frontend/src/components/Chat/WelcomePage.jsx');
+  assert.doesNotMatch(welcome, /t\.resources|t\.resourceTitle|Calculator/);
+  assert.match(welcome, /t\.headline/);
   assert.match(sidebar, /w-\[184px\]/);
   assert.doesNotMatch(sidebar, /<ChatHistory/);
   assert.match(app, /historyModalOpen/);
-  assert.match(app, /industryToolsOpen/);
+  assert.doesNotMatch(app, /industryToolsOpen|onOpenIndustryTools|IndustryToolsModal/);
   assert.match(app, /currentPath === '\/tools'/);
   assert.match(app, /currentPath\.startsWith\('\/tools\/'\)/);
   assert.match(app, /currentPath === '\/insights'/);
   assert.match(app, /currentPath\.startsWith\('\/insights\/'\)/);
   assert.match(app, /<ChatHistory/);
-  assert.match(app, /<IndustryToolsModal/);
   assert.match(app, /<IndustryToolsPage/);
   assert.match(app, /<InsightsPage/);
   assert.match(chatHistory, /Conversation History/);
