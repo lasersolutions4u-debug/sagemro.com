@@ -13,12 +13,12 @@ import {
   X,
 } from 'lucide-react';
 import {
-  checkInFieldDay,
+  checkInFieldDay as defaultCheckInFieldDay,
   checkInWorkOrder,
   fieldMediaUrl,
   getFieldDays,
-  requestFieldExtension,
-  submitFieldDayReport,
+  requestFieldExtension as defaultRequestFieldExtension,
+  submitFieldDayReport as defaultSubmitFieldDayReport,
 } from '../../services/api';
 import { getBrowserLocation } from '../../utils/browserGeolocation';
 import { isCnLocale } from '../../utils/locale';
@@ -340,10 +340,21 @@ async function bestEffortRefresh(refresh, warning) {
   }
 }
 
-function FieldMedia({ workOrderId, media, label }) {
+function FieldMedia({ workOrderId, media, label, serviceApi }) {
+  const [privateUrl, setPrivateUrl] = useState('');
+  useEffect(() => {
+    if (!serviceApi) return;
+    const controller = new AbortController();
+    let url;
+    setPrivateUrl('');
+    serviceApi.getFieldMedia(workOrderId, media.id, controller.signal).then(blob => {
+      if (!controller.signal.aborted) { url = URL.createObjectURL(blob); setPrivateUrl(url); }
+    }).catch(error => { if (error.name !== 'AbortError') toastError(error.message); });
+    return () => { controller.abort(); if (url) URL.revokeObjectURL(url); };
+  }, [serviceApi, workOrderId, media.id]);
   return (
     <img
-      src={fieldMediaUrl(workOrderId, media.id)}
+      src={serviceApi ? privateUrl || undefined : fieldMediaUrl(workOrderId, media.id)}
       alt={label}
       loading="lazy"
       className="aspect-[4/3] w-full rounded-lg border border-[var(--color-border)] object-cover"
@@ -351,7 +362,8 @@ function FieldMedia({ workOrderId, media, label }) {
   );
 }
 
-function ReportForm({ workOrderId, fieldDay, isCn, extensionAvailable = true, extensionPending, onSaved, onBusyChange }) {
+function ReportForm({ workOrderId, fieldDay, isCn, extensionAvailable = true, extensionPending, onSaved, onBusyChange, serviceApi }) {
+  const submitFieldDayReport = serviceApi?.submitFieldDayReport || defaultSubmitFieldDayReport;
   const t = isCn ? COPY.cn : COPY.en;
   const fieldDayId = fieldDay.id;
   const draftKey = `sagemro_field_report_${fieldDayId}`;
@@ -362,20 +374,22 @@ function ReportForm({ workOrderId, fieldDay, isCn, extensionAvailable = true, ex
   const retryRef = useRef(null);
 
   useEffect(() => {
+    if (serviceApi) { setReport(REPORT_INITIAL); return; }
     try {
       const saved = JSON.parse(localStorage.getItem(draftKey) || '{}');
       setReport({ ...REPORT_INITIAL, ...saved });
     } catch {
       setReport(REPORT_INITIAL);
     }
-  }, [draftKey]);
+  }, [draftKey, serviceApi]);
 
   useEffect(() => {
+    if (serviceApi) return;
     const timeout = setTimeout(() => {
       try { localStorage.setItem(draftKey, JSON.stringify(report)); } catch { /* storage unavailable */ }
     }, 250);
     return () => clearTimeout(timeout);
-  }, [draftKey, report]);
+  }, [draftKey, report, serviceApi]);
 
   useEffect(() => {
     onBusyChange?.(submitting);
@@ -446,7 +460,7 @@ function ReportForm({ workOrderId, fieldDay, isCn, extensionAvailable = true, ex
     } finally {
       setSubmitting(false);
     }
-    try { localStorage.removeItem(draftKey); } catch { /* storage unavailable */ }
+    if (!serviceApi) { try { localStorage.removeItem(draftKey); } catch { /* storage unavailable */ } }
     retryRef.current = null;
     toastSuccess(t.reportSuccess);
     await bestEffortRefresh(onSaved, t.savedRefreshFailed);
@@ -537,7 +551,8 @@ function ReportForm({ workOrderId, fieldDay, isCn, extensionAvailable = true, ex
   );
 }
 
-function ExtensionForm({ workOrderId, isCn, pending, onSaved, onBusyChange }) {
+function ExtensionForm({ workOrderId, isCn, pending, onSaved, onBusyChange, serviceApi }) {
+  const requestFieldExtension = serviceApi?.requestFieldExtension || defaultRequestFieldExtension;
   const t = isCn ? COPY.cn : COPY.en;
   const [open, setOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -607,12 +622,14 @@ function ExtensionForm({ workOrderId, isCn, pending, onSaved, onBusyChange }) {
   );
 }
 
-export function FieldWorkPanel({ workOrderId, detail, userType, userId, onChanged, onBusyChange }) {
-  const isCn = isCnLocale();
+export function FieldWorkPanel({ workOrderId, detail, userType, userId, onChanged, onBusyChange, serviceApi, locale, canEdit = false }) {
+  const checkInFieldDay = serviceApi?.checkInFieldDay || defaultCheckInFieldDay;
+  const isCn = locale ? locale === 'zh-CN' : isCnLocale();
   const t = isCn ? COPY.cn : COPY.en;
   const isEngineer = userType === 'engineer';
   const isCustomer = userType === 'customer';
-  const isAssignedEngineer = isEngineer && String(detail?.engineer_id || '') === String(userId || '');
+  const isBusinessExecutor = userType === 'admin' && serviceApi && canEdit;
+  const isAssignedEngineer = isBusinessExecutor || (isEngineer && String(detail?.engineer_id || '') === String(userId || ''));
   const [fieldDays, setFieldDays] = useState(() => normalizeFieldDays(detail?.field_days || []));
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -682,7 +699,7 @@ export function FieldWorkPanel({ workOrderId, detail, userType, userId, onChange
     setLoading(true);
     setError('');
     try {
-      const data = await getFieldDays(workOrderId);
+      const data = await (serviceApi?.getFieldDays || getFieldDays)(workOrderId);
       setFieldDays(normalizeFieldDays(data.field_days || [], data.media || []));
     } catch (loadError) {
       setError(loadError.message || t.loadFailed);
@@ -690,7 +707,7 @@ export function FieldWorkPanel({ workOrderId, detail, userType, userId, onChange
     } finally {
       setLoading(false);
     }
-  }, [t.loadFailed, workOrderId]);
+  }, [t.loadFailed, workOrderId, serviceApi]);
 
   useEffect(() => {
     setFieldDays(normalizeFieldDays(detail?.field_days || []));
@@ -704,8 +721,8 @@ export function FieldWorkPanel({ workOrderId, detail, userType, userId, onChange
 
   const today = siteToday(fieldPlan.site_timezone);
   const todayFieldDay = fieldDays.find((day) => day.site_local_date === today
-    && String(day.engineer_id) === String(userId));
-  const openDays = fieldDays.filter((day) => String(day.engineer_id) === String(userId)
+    && String(serviceApi ? day.staff_id : day.engineer_id) === String(userId));
+  const openDays = fieldDays.filter((day) => String(serviceApi ? day.staff_id : day.engineer_id) === String(userId)
     && ['checked_in', 'report_overdue'].includes(day.status));
   const todayReportDay = todayFieldDay?.status === 'checked_in' ? todayFieldDay : null;
   const overdueDays = openDays.filter((day) => day.status === 'report_overdue');
@@ -815,7 +832,7 @@ export function FieldWorkPanel({ workOrderId, detail, userType, userId, onChange
     setLegacyArrivalSubmitting(true);
     try {
       const { coords } = await getBrowserLocation();
-      await checkInWorkOrder(workOrderId, {
+      await (serviceApi?.checkInWorkOrder || checkInWorkOrder)(workOrderId, {
         latitude: coords.latitude,
         longitude: coords.longitude,
         accuracy_m: coords.accuracy,
@@ -936,6 +953,7 @@ export function FieldWorkPanel({ workOrderId, detail, userType, userId, onChange
           extensionPending={pendingExtension}
           onSaved={refresh}
           onBusyChange={handleTodayReportBusy}
+          serviceApi={serviceApi}
         />
       )}
 
@@ -951,12 +969,12 @@ export function FieldWorkPanel({ workOrderId, detail, userType, userId, onChange
               ))}
             </div>
           )}
-          {selectedOverdueDay && <ReportForm workOrderId={workOrderId} fieldDay={selectedOverdueDay} isCn={isCn} extensionAvailable={!quoteDriven || quoteExecutionAvailable} extensionPending={pendingExtension} onSaved={refresh} onBusyChange={handleOverdueReportBusy} />}
+          {selectedOverdueDay && <ReportForm workOrderId={workOrderId} fieldDay={selectedOverdueDay} isCn={isCn} extensionAvailable={!quoteDriven || quoteExecutionAvailable} extensionPending={pendingExtension} onSaved={refresh} onBusyChange={handleOverdueReportBusy} serviceApi={serviceApi} />}
         </section>
       )}
 
       {isAssignedEngineer && detail?.status === 'in_service' && hasExecutionBaseline && (
-        <ExtensionForm workOrderId={workOrderId} isCn={isCn} pending={pendingExtension} onSaved={refresh} onBusyChange={handleStandaloneExtensionBusy} />
+        <ExtensionForm workOrderId={workOrderId} isCn={isCn} pending={pendingExtension} onSaved={refresh} onBusyChange={handleStandaloneExtensionBusy} serviceApi={serviceApi} />
       )}
 
       {(isCustomer || isAssignedEngineer) && (detail?.field_extension_requests || []).length > 0 && (
@@ -1015,7 +1033,7 @@ export function FieldWorkPanel({ workOrderId, detail, userType, userId, onChange
                   <div className="mt-3">
                     <p className="mb-2 text-xs text-[var(--color-text-muted)]">{t.protectedMedia}</p>
                     <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-                      {visibleMedia.map((media) => <FieldMedia key={media.id} workOrderId={workOrderId} media={media} label={`${day.site_local_date} ${media.purpose}`} />)}
+                      {visibleMedia.map((media) => <FieldMedia key={media.id} workOrderId={workOrderId} media={media} label={`${day.site_local_date} ${media.purpose}`} serviceApi={serviceApi} />)}
                     </div>
                   </div>
                 )}
@@ -1025,7 +1043,7 @@ export function FieldWorkPanel({ workOrderId, detail, userType, userId, onChange
         </div>
       </section>
 
-      {isEngineer && <p className="rounded-lg bg-[var(--color-surface-elevated)] p-3 text-xs leading-5 text-[var(--color-text-secondary)]">{t.finalHint}</p>}
+      {(isEngineer || isBusinessExecutor) && <p className="rounded-lg bg-[var(--color-surface-elevated)] p-3 text-xs leading-5 text-[var(--color-text-secondary)]">{t.finalHint}</p>}
     </div>
   );
 }

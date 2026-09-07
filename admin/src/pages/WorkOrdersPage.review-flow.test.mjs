@@ -6,6 +6,14 @@ import {
   issueWorkOrderInvoice,
 } from './workOrderMutations.js';
 
+test('quote return copy has one definition per locale and targets the quotation owner', async () => {
+  const source = await readFile(new URL('./WorkOrdersPage.jsx', import.meta.url), 'utf8');
+  assert.equal((source.match(/quoteReturnTitle:/g) || []).length, 2);
+  assert.equal((source.match(/quoteReturnReason:/g) || []).length, 2);
+  assert.match(source, /退回原因（必填，内部通知报价负责人）/);
+  assert.doesNotMatch(source, /退回原因（必填，工程师可见的内部备注）/);
+});
+
 function createDeferred() {
   let resolve;
   let reject;
@@ -149,7 +157,8 @@ test('versioned quote and receipt decisions use the controlled operation dialog 
   assert.match(source, /'receipt-confirm-full'/);
   assert.match(source, /'receipt-confirm-partial'/);
   assert.match(source, /'receipt-reject'/);
-  assert.match(source, /reviewWorkOrderQuote\(wo\.id, action, quoteVersion, note\)/);
+  assert.match(source, /reviewWorkOrderQuote\(wo\.id, action, quoteVersion, note, businessContext\)/);
+  assert.match(source, /businessContext: values\.businessContext/);
   assert.match(source, /confirmed_amount/);
   assert.match(source, /idempotency_key/);
   assert.match(source, /createOperationKey\(\)/);

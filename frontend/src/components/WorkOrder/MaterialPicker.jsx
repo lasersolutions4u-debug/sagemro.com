@@ -7,7 +7,6 @@ import { isCnLocale } from '../../utils/locale';
 function money(value) {
   return Number(value || 0).toLocaleString(undefined, { maximumFractionDigits: 2 });
 }
-const CURRENCY = isCnLocale() ? 'CNY' : 'USD';
 
 function itemKey(item, index) {
   return item.id || item.material_id || `${item.material_code || item.name}-${index}`;
@@ -37,8 +36,9 @@ const EMPTY_REQUEST = {
   urgency: 'normal',
 };
 
-export function MaterialPicker({ purpose = 'quote', workOrderId = '', items = [], onChange, readonly = false }) {
-  const isCn = isCnLocale();
+export function MaterialPicker({ purpose = 'quote', workOrderId = '', items = [], onChange, readonly = false, serviceApi, locale }) {
+  const isCn = locale ? locale === 'zh-CN' : isCnLocale();
+  const currency = serviceApi?.currency || (isCn ? 'CNY' : 'USD');
   const [query, setQuery] = useState('');
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -59,7 +59,7 @@ export function MaterialPicker({ purpose = 'quote', workOrderId = '', items = []
     let cancelled = false;
     setLoading(true);
     const timer = setTimeout(() => {
-      searchMaterials({ search: query.trim(), pageSize: 8 })
+      (serviceApi?.searchMaterials || searchMaterials)({ search: query.trim(), pageSize: 8 })
         .then((data) => {
           if (!cancelled) setResults(data.list || []);
         })
@@ -75,7 +75,7 @@ export function MaterialPicker({ purpose = 'quote', workOrderId = '', items = []
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [isCn, query, readonly]);
+  }, [isCn, query, readonly, serviceApi]);
 
   const updateItem = (index, patch) => {
     const next = items.map((item, i) => {
@@ -135,7 +135,7 @@ export function MaterialPicker({ purpose = 'quote', workOrderId = '', items = []
     }
     setSubmittingRequest(true);
     try {
-      await createMaterialRequest({
+      await (serviceApi?.createMaterialRequest || createMaterialRequest)({
         ...requestForm,
         work_order_id: workOrderId || undefined,
         expected_quantity: Number(requestForm.expected_quantity || 1),
@@ -173,8 +173,8 @@ export function MaterialPicker({ purpose = 'quote', workOrderId = '', items = []
                   </div>
                 </td>
                 <td className="px-3 py-2 text-center text-[var(--color-text-primary)]">{item.quantity || 1} {item.unit || 'pcs'}</td>
-                <td className="px-3 py-2 text-right text-[var(--color-text-primary)]">{money(item.unit_price)} {CURRENCY}</td>
-                <td className="px-3 py-2 text-right text-[var(--color-text-primary)]">{money(item.line_total || Number(item.quantity || 0) * Number(item.unit_price || 0))} {CURRENCY}</td>
+                <td className="px-3 py-2 text-right text-[var(--color-text-primary)]">{money(item.unit_price)} {currency}</td>
+                <td className="px-3 py-2 text-right text-[var(--color-text-primary)]">{money(item.line_total || Number(item.quantity || 0) * Number(item.unit_price || 0))} {currency}</td>
               </tr>
             ))}
           </tbody>
@@ -192,7 +192,7 @@ export function MaterialPicker({ purpose = 'quote', workOrderId = '', items = []
             {isCn ? '从物料库选择配件，报价和服务报告会保留清晰明细。' : 'Select parts from the material master for cleaner quotes and reports.'}
           </div>
         </div>
-        <div className="text-sm font-semibold text-[var(--color-primary)]">{money(total)} {CURRENCY}</div>
+        <div className="text-sm font-semibold text-[var(--color-primary)]">{money(total)} {currency}</div>
       </div>
 
       <div className="relative">

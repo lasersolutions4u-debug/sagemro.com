@@ -4,10 +4,65 @@ import { test } from 'node:test';
 
 const readSource = (path) => readFile(new URL(path, import.meta.url), 'utf8');
 
+test('Admin receipt review identifies staff submitters without labelling their notes as engineer notes', async () => {
+  const source = await readSource('./QuoteExecutionAdminPanel.jsx');
+  assert.match(source, /submitter_type/);
+  assert.match(source, /submitter_id/);
+  assert.match(source, /submitter_note/);
+  assert.match(source, /Submitter note/);
+  assert.match(source, /提交人备注/);
+});
+
+test('business receipt upload preserves multipart boundary, scoped identity and CSRF', async () => {
+  const previousFetch = globalThis.fetch, previousStorage = globalThis.localStorage;
+  const sent = [];
+  globalThis.localStorage = { getItem: key => key === 'admin_csrf_token' ? 'fictional-csrf' : null };
+  globalThis.fetch = async (url, options) => { sent.push({ url, ...options }); return Response.json({ success: true }); };
+  try {
+    const api = await import('../services/api.js');
+    const scope = { expected_staff_id: 'fictional-staff', scope_version: 'fictional-scope', quote_version: 2 };
+    await api.getBusinessPayments('order/fictional', scope.expected_staff_id, scope.scope_version);
+    assert.match(sent[0].url, /order%2Ffictional\/payments\?expected_staff_id=fictional-staff&scope_version=fictional-scope$/);
+    await api.startBusinessCollection('order/fictional', 'installment/1', scope);
+    assert.deepEqual(JSON.parse(sent[1].body), scope);
+    assert.equal(sent[1].method, 'POST');
+    const form = new FormData();
+    for (const [key, value] of Object.entries(scope)) form.set(key, value);
+    form.set('claimed_amount', '900');
+    form.set('idempotency_key', 'fictional-receipt');
+    form.set('evidence', new Blob(['%PDF-fictional'], { type: 'application/pdf' }), 'fixture.pdf');
+    await api.submitBusinessReceipt('order/fictional', 'installment/1', form);
+    assert.match(sent[2].url, /installments\/installment%2F1\/receipt-claims$/);
+    assert.equal(sent[2].headers['Content-Type'], undefined);
+    assert.equal(sent[2].headers['X-CSRF-Token'], 'fictional-csrf');
+    assert.equal(sent[2].credentials, 'include');
+    assert.equal(sent[2].body.get('expected_staff_id'), 'fictional-staff');
+    assert.equal(sent[2].body.get('evidence').name, 'fixture.pdf');
+  } finally { globalThis.fetch = previousFetch; globalThis.localStorage = previousStorage; }
+});
+
+test('business review API pins identity and scope without allowing context to replace quote data', async () => {
+  const previousFetch = globalThis.fetch, previousStorage = globalThis.localStorage;
+  let sent;
+  globalThis.localStorage = { getItem: () => null };
+  globalThis.fetch = async (url, options) => { sent = { url, ...options, body: JSON.parse(options.body) }; return Response.json({ success: true }); };
+  try {
+    const { reviewWorkOrderQuote } = await import('../services/api.js');
+    await reviewWorkOrderQuote('order-fixture', 'approve', 7, 'Example note', {
+      expected_staff_id: 'admin', scope_version: 'scope-fixture', quote_version: 999, note: 'Not permitted', parts_cost: 500,
+    });
+    assert.equal(sent.method, 'PATCH');
+    assert.equal(sent.credentials, 'include');
+    assert.deepEqual(sent.body, { quote_version: 7, note: 'Example note', expected_staff_id: 'admin', scope_version: 'scope-fixture' });
+  } finally { globalThis.fetch = previousFetch; globalThis.localStorage = previousStorage; }
+});
+
 test('quote execution Admin APIs send an exact quote version and receipt decision payload', async () => {
   const api = await readSource('../services/api.js');
 
-  assert.match(api, /export async function reviewWorkOrderQuote\(workOrderId, action, quoteVersion, note = ''\)[\s\S]*pricing\/\$\{action\}[\s\S]*method: 'PATCH'[\s\S]*quote_version: quoteVersion, note/);
+  assert.match(api, /export async function reviewWorkOrderQuote\(workOrderId, action, quoteVersion, note = '', businessContext\)[\s\S]*pricing\/\$\{action\}[\s\S]*method: 'PATCH'[\s\S]*quote_version: quoteVersion, note/);
+  assert.match(api, /expected_staff_id: businessContext\.expected_staff_id/);
+  assert.match(api, /scope_version: businessContext\.scope_version/);
   assert.match(api, /export async function decideInstallmentReceipt\(workOrderId, installmentId, claimId, payload\)[\s\S]*receipt-claims\/\$\{claimId\}\/decision[\s\S]*method: 'POST'[\s\S]*body: JSON\.stringify\(payload\)/);
   assert.match(api, /export async function getAuthenticatedReceiptEvidenceUrl\(workOrderId, evidenceId\)[\s\S]*receipt-evidence\/\$\{evidenceId\}[\s\S]*credentials: 'include'[\s\S]*headers: authHeaders\(\)[\s\S]*URL\.createObjectURL/);
 });

@@ -18,6 +18,7 @@ const KnowledgeCandidatesPage = lazy(() => import('./pages/KnowledgeCandidatesPa
 const MaterialRequisitionsPage = lazy(() => import('./pages/MaterialRequisitionsPage.jsx').then(({ MaterialRequisitionsPage }) => ({ default: MaterialRequisitionsPage })));
 const StaffAccountsPage = lazy(() => import('./pages/StaffAccountsPage.jsx').then(({ StaffAccountsPage }) => ({ default: StaffAccountsPage })));
 const PromotionAnalyticsPage = lazy(() => import('./pages/PromotionAnalyticsPage.jsx').then(({ PromotionAnalyticsPage }) => ({ default: PromotionAnalyticsPage })));
+const BusinessWorkspacePage = lazy(() => import('./pages/BusinessWorkspacePage.jsx').then(({ BusinessWorkspacePage }) => ({ default: BusinessWorkspacePage })));
 
 const TEXT = {
   en: {
@@ -28,6 +29,7 @@ const TEXT = {
     loadingPage: 'Loading page',
     nav: {
       dashboard: 'Operations Dashboard',
+      businessWorkspace: 'Business workspace',
       promotionAnalytics: 'Promotion Analytics',
       leads: 'Machine Leads',
       workorders: 'Service Orders',
@@ -50,6 +52,7 @@ const TEXT = {
     loadingPage: '页面加载中',
     nav: {
       dashboard: '运营驾驶舱',
+      businessWorkspace: '商务工作台',
       promotionAnalytics: '推广分析',
       leads: '整机线索',
       workorders: '服务工单',
@@ -70,6 +73,7 @@ const t = TEXT[runtimeConfig.locale] || TEXT.en;
 
 const NAV_ITEMS = [
   { key: 'dashboard', label: t.nav.dashboard, icon: LayoutDashboard },
+  { key: 'businessWorkspace', label: t.nav.businessWorkspace, icon: Users },
   { key: 'promotionAnalytics', label: t.nav.promotionAnalytics, icon: ChartNoAxesCombined },
   { key: 'leads', label: t.nav.leads, icon: Target },
   { key: 'knowledge', label: t.nav.knowledge, icon: BookOpenText },
@@ -161,7 +165,10 @@ export default function App() {
     if (!user) return [];
     const isBootstrapAdmin = user.staffRole === 'admin' && user.staffId == null;
     const isOperationalStaff = user.staffId != null && user.staffRole !== 'admin';
+    const isBusinessStaff = ['business_director', 'business_manager', 'business_specialist'].includes(user.staffRole);
     return NAV_ITEMS.filter((item) => {
+      if (isBusinessStaff) return item.key === 'businessWorkspace';
+      if (item.key === 'businessWorkspace') return user.staffRole === 'admin';
       if (item.key === 'staffAccounts') return isBootstrapAdmin;
       if (item.key === 'materialRequisitions') return REQUISITION_ROLES.includes(user.staffRole);
       if (isOperationalStaff) {
@@ -197,9 +204,23 @@ export default function App() {
 
   useEffect(() => {
     if (user && !visibleNavItems.some((item) => item.key === activePage)) {
-      setActivePage('dashboard');
+      setActivePage(visibleNavItems[0]?.key || 'dashboard');
     }
   }, [activePage, user, visibleNavItems]);
+
+  useEffect(() => {
+    const clearSwitchedSession = (event) => {
+      if (event.key !== 'admin_user' || !user) return;
+      try {
+        const next = JSON.parse(event.newValue);
+        if (next?.id === user.id && next?.staffId === user.staffId && next?.staffRole === user.staffRole) return;
+      } catch { /* Invalid cached identity cannot retain the console. */ }
+      setUser(null);
+      setActivePage('dashboard');
+    };
+    window.addEventListener('storage', clearSwitchedSession);
+    return () => window.removeEventListener('storage', clearSwitchedSession);
+  }, [user]);
 
   if (window.location.pathname !== '/') {
     const isCn = runtimeConfig.locale === 'zh-CN';
@@ -248,10 +269,11 @@ export default function App() {
   }
 
   const isBootstrapAdmin = user.staffRole === 'admin' && user.staffId == null;
-  const currentPage = visibleNavItems.some((item) => item.key === activePage) ? activePage : 'dashboard';
+  const currentPage = visibleNavItems.some((item) => item.key === activePage) ? activePage : visibleNavItems[0]?.key || 'dashboard';
 
   const renderPage = () => {
     switch (currentPage) {
+      case 'businessWorkspace': return <BusinessWorkspacePage key={`${user.staffId}:${user.staffRole}`} user={user} />;
       case 'dashboard': return <DashboardPage staffRole={user.staffRole} staffId={user.staffId} />;
       case 'promotionAnalytics': return <PromotionAnalyticsPage />;
       case 'users': return <UsersPage />;

@@ -48,6 +48,8 @@ import {
 import { runtimeConfig } from '../config/runtime';
 import { FieldWorkAdminPanel } from '../components/FieldWorkAdminPanel';
 import { QuoteExecutionAdminPanel } from '../components/QuoteExecutionAdminPanel';
+import { BusinessExecutionPanel } from '../components/BusinessExecutionPanel';
+import { BusinessServicePanel } from '../components/BusinessServicePanel';
 import { ServiceStandardAdminPanel } from '../components/ServiceStandardAdminPanel';
 import { WorkOrderDetailNav, WorkOrderDetailSection } from '../components/WorkOrderDetailSection';
 import { formatApiDateTime } from '../utils/dateTime';
@@ -214,7 +216,7 @@ const TEXT = {
     quoteSent: (orderNo) => `Reviewed quote sent to customer: ${orderNo}`,
     quoteReviewFailed: 'Quote review failed',
     quoteReturnTitle: 'Return quote for revision',
-    quoteReturnReason: 'Reason for return (required, visible to engineer as an internal note)',
+    quoteReturnReason: 'Reason for return (required, sent to the quotation owner internally)',
     quoteReturned: (orderNo) => `Quote returned for revision: ${orderNo}`,
     quoteReturnFailed: 'Failed to return quote',
     paymentStartApproved: (orderNo) => `Payment confirmed. Service can start: ${orderNo}`,
@@ -553,7 +555,7 @@ const TEXT = {
     quoteSent: (orderNo) => `审核后的报价已发送给客户：${orderNo}`,
     quoteReviewFailed: '报价审核失败',
     quoteReturnTitle: '退回报价修改',
-    quoteReturnReason: '退回原因（必填，工程师可见的内部备注）',
+    quoteReturnReason: '退回原因（必填，内部通知报价负责人）',
     quoteReturned: (orderNo) => `报价已退回修改：${orderNo}`,
     quoteReturnFailed: '报价退回失败',
     paymentStartApproved: (orderNo) => `付款已确认，可以开始服务：${orderNo}`,
@@ -793,6 +795,7 @@ const TEXT = {
     workOrderTitlePlaceholder: '简短任务标题',
     workOrderTitleUpdated: '工单标题已更新。',
     workOrderTitleUpdateFailed: '工单标题更新失败',
+    serviceRecord: '服务记录',
     quoteApproveTitle: '批准报价版本',
     quoteApproveNote: '审核备注（选填）',
     receiptFullTitle: '确认全额到账',
@@ -1158,15 +1161,16 @@ export function WorkOrdersPage({ readOnly = false }) {
     const configs = {
       'quote-approve': {
         title: t.quoteApproveTitle,
-        values: { quoteVersion: values.quoteVersion, note: values.note || '' },
+        values: { quoteVersion: values.quoteVersion, note: values.note || '', businessContext: values.businessContext },
       },
       'quote-return': {
         title: t.quoteReturnTitle,
-        values: { quoteVersion: values.quoteVersion, reason: values.reason || '' },
+        values: { quoteVersion: values.quoteVersion, reason: values.reason || '', businessContext: values.businessContext },
       },
       'receipt-confirm-full': {
         title: t.receiptFullTitle,
         values: {
+          businessContext: values.businessContext,
           claim: values.claim,
           installment: values.installment,
           confirmed_amount: values.fullAmount,
@@ -1177,6 +1181,7 @@ export function WorkOrdersPage({ readOnly = false }) {
       'receipt-confirm-partial': {
         title: t.receiptPartialTitle,
         values: {
+          businessContext: values.businessContext,
           claim: values.claim,
           installment: values.installment,
           confirmed_amount: '',
@@ -1187,6 +1192,7 @@ export function WorkOrdersPage({ readOnly = false }) {
       'receipt-reject': {
         title: t.receiptRejectTitle,
         values: {
+          businessContext: values.businessContext,
           claim: values.claim,
           installment: values.installment,
           reason: values.reason || '',
@@ -1230,12 +1236,12 @@ export function WorkOrdersPage({ readOnly = false }) {
     }));
   }
 
-  async function handleReviewQuote(wo, action, quoteVersion, note) {
+  async function handleReviewQuote(wo, action, quoteVersion, note, businessContext) {
     if (readOnly) return;
     setAssigningId(`${wo.id}:${action}`);
     setMessage('');
     try {
-      await reviewWorkOrderQuote(wo.id, action, quoteVersion, note);
+      await reviewWorkOrderQuote(wo.id, action, quoteVersion, note, businessContext);
       await refreshOpenDetail(wo.id);
       setMessage(action === 'approve' ? t.quoteVersionReviewed(wo.order_no) : t.quoteReturned(wo.order_no));
       return true;
@@ -1290,6 +1296,11 @@ export function WorkOrdersPage({ readOnly = false }) {
       decision,
       reason: values.reason.trim(),
       idempotency_key: values.idempotency_key,
+      ...(values.businessContext ? {
+        expected_staff_id: values.businessContext.expected_staff_id,
+        scope_version: values.businessContext.scope_version,
+        quote_version: values.businessContext.quote_version,
+      } : {}),
     };
     if (decision === 'confirmed') payload.confirmed_amount = Number(values.confirmed_amount);
     setAssigningId(`${wo.id}:${type}:${values.claim.id}`);
@@ -1700,10 +1711,10 @@ export function WorkOrdersPage({ readOnly = false }) {
 
     setOperationSubmitting(true);
     let succeeded = false;
-    if (type === 'quote-approve') succeeded = await handleReviewQuote(workOrder, 'approve', values.quoteVersion, values.note.trim());
+    if (type === 'quote-approve') succeeded = await handleReviewQuote(workOrder, 'approve', values.quoteVersion, values.note.trim(), values.businessContext);
     if (type === 'quote-return') {
       succeeded = values.quoteVersion
-        ? await handleReviewQuote(workOrder, 'reject', values.quoteVersion, values.reason.trim())
+        ? await handleReviewQuote(workOrder, 'reject', values.quoteVersion, values.reason.trim(), values.businessContext)
         : await handleRejectPricing(workOrder, values.reason.trim());
     }
     if (['receipt-confirm-full', 'receipt-confirm-partial', 'receipt-reject'].includes(type)) {
@@ -2366,6 +2377,8 @@ export function WorkOrdersPage({ readOnly = false }) {
                     onOpenDialog={openOperationDialog}
                   />
                 )}
+                {detail.pricing?.quote_source === 'business' && <BusinessExecutionPanel key={`execution:${detail.id}`} workOrderId={detail.id} readOnly={readOnly} />}
+                {detail.pricing?.quote_source === 'business' && <BusinessServicePanel collapsed key={`service:${detail.id}`} workOrderId={detail.id} readOnly={readOnly} />}
                 {!readOnly && detail.status === 'payment_review' && (
                   <section className="rounded-xl border border-[var(--color-primary)]/40 bg-[var(--color-primary)]/5 p-4">
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">

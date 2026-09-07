@@ -1,8 +1,8 @@
 import { Check, ExternalLink, LockKeyhole, ReceiptText, RotateCcw, Split, X } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { runtimeConfig } from '../config/runtime';
 import { money } from '../pages/workOrderDisplay';
-import { getAuthenticatedReceiptEvidenceUrl } from '../services/api';
+import { getAuthenticatedReceiptEvidenceUrl, getBusinessOrganization, getBusinessQuoteCosts } from '../services/api';
 
 const TEXT = {
   en: {
@@ -37,7 +37,7 @@ const TEXT = {
     evidenceLoadFailed: 'Could not load evidence',
     noEvidence: 'No evidence file',
     reference: 'Transaction reference',
-    engineerNote: 'Engineer note',
+    engineerNote: 'Submitter note', submitter: 'Submitted by', internalStaff: 'Internal staff', engineer: 'Engineer',
     confirmFull: 'Confirm full receipt',
     confirmPartial: 'Confirm partial amount',
     rejectClaim: 'Reject receipt claim',
@@ -97,7 +97,7 @@ const TEXT = {
     evidenceLoadFailed: '凭证加载失败',
     noEvidence: '未上传凭证',
     reference: '交易流水号',
-    engineerNote: '工程师备注',
+    engineerNote: '提交人备注', submitter: '提交人', internalStaff: '内部人员', engineer: '工程师',
     confirmFull: '确认全额到账',
     confirmPartial: '确认部分到账',
     rejectClaim: '驳回到账申请',
@@ -145,9 +145,61 @@ function SummaryItem({ label, value }) {
   );
 }
 
+function BusinessCostSnapshot({ workOrderId, quoteVersion, amount, currency, onReady, onContext }) {
+  const zh = runtimeConfig.locale === 'zh-CN';
+  const [snapshot, setSnapshot] = useState(null);
+  const [failed, setFailed] = useState(false);
+  const key = `${workOrderId}:${quoteVersion}:${amount}:${currency}`;
+  useEffect(() => {
+    const abort = new AbortController();
+    let active = true;
+    setSnapshot(null); setFailed(false); onReady(null); onContext(null);
+    const identity = () => {
+      try { const user = JSON.parse(localStorage.getItem('admin_user')); return user?.staffRole === 'admin' ? user.staffId || 'admin' : null; }
+      catch { return null; }
+    };
+    const expected = identity();
+    const clear = () => { active = false; abort.abort(); setSnapshot(null); setFailed(true); onReady(null); };
+    const check = () => { if (!expected || identity() !== expected) { onContext(null); clear(); } };
+    window.addEventListener('storage', check); window.addEventListener('focus', check);
+    (async () => {
+      try {
+        if (!expected) throw new Error('Identity unavailable');
+        const organization = await getBusinessOrganization(expected, abort.signal);
+        if (!active || identity() !== expected) { onContext(null); return clear(); }
+        onContext({ key, expected_staff_id: expected, scope_version: organization.scope_version });
+        const result = await getBusinessQuoteCosts(workOrderId, quoteVersion, expected, organization.scope_version, abort.signal);
+        if (!active || identity() !== expected) { onContext(null); return clear(); }
+        if (result.quote_version !== quoteVersion || result.source !== 'business' || result.scope_version !== organization.scope_version
+          || !result.estimate?.complete || result.estimate.quoted_amount !== amount || result.estimate.currency !== currency) throw new Error('Snapshot mismatch');
+        setSnapshot({ key, ...result }); onReady(key);
+      } catch (error) { if (active && error.name !== 'AbortError') clear(); }
+    })();
+    return () => { active = false; abort.abort(); window.removeEventListener('storage', check); window.removeEventListener('focus', check); };
+  }, [workOrderId, quoteVersion, amount, currency, key, onReady, onContext]);
+  const estimate = snapshot?.key === key ? snapshot.estimate : null;
+  return <div className="border-b border-[var(--color-border)] bg-[var(--color-primary)]/5 p-4">
+    <h5 className="text-sm font-medium">{zh ? '内部成本快照' : 'Internal cost snapshot'} · V{quoteVersion}</h5>
+    {failed ? <p role="alert" className="mt-2 text-sm text-amber-500">{zh ? '成本快照不可用或与当前报价不匹配。' : 'Cost snapshot is unavailable or does not match this quote.'}</p>
+      : !estimate ? <p role="status" className="mt-2 text-sm">{zh ? '正在核对成本版本…' : 'Checking cost version…'}</p>
+        : <><dl className="mt-3 grid gap-3 sm:grid-cols-2">{[
+          [zh ? '备件采购成本' : 'Parts procurement cost', estimate.costs.parts_cost],
+          [zh ? '工程师人工成本' : 'Engineer labor cost', estimate.costs.engineer_cost],
+          [zh ? '差旅成本' : 'Travel cost', estimate.costs.travel_cost],
+          [zh ? '其他直接成本' : 'Other direct cost', estimate.costs.other_cost],
+          [zh ? '直接成本合计' : 'Total direct costs', estimate.total_cost],
+          [zh ? '预计毛利润' : 'Estimated gross profit', estimate.estimated_gross_profit],
+        ].map(([label, value]) => <SummaryItem key={label} label={label} value={formatAmount(value, currency)} />)}
+          <SummaryItem label={zh ? '毛利率' : 'Gross margin'} value={`${(estimate.estimated_gross_margin_bps / 100).toFixed(2)}%`} />
+        </dl><p className="mt-3 text-xs text-[var(--color-text-muted)]">{zh ? '仅内部可见，固定对应此报价版本；预计毛利润不等于结算利润或薪酬分红。' : 'Internal only and bound to this quote version. Estimated gross profit is not settled profit or compensation.'}</p></>}
+  </div>;
+}
+
 export function QuoteExecutionAdminPanel({ detail, readOnly = false, onRefresh, onOpenDialog }) {
   const t = { ...TEXT.en, ...(TEXT[runtimeConfig.locale] || {}) };
   const [evidenceState, setEvidenceState] = useState({ loadingId: '', errorId: '' });
+  const [costReady, setCostReady] = useState(null);
+  const [costContext, setCostContext] = useState(null);
   const pricing = detail?.pricing;
   const execution = detail?.quote_execution;
   const quoteVersion = Number(pricing?.quote_version || 0);
@@ -158,6 +210,12 @@ export function QuoteExecutionAdminPanel({ detail, readOnly = false, onRefresh, 
   const pendingClaims = claims.filter((claim) => claim.status === 'pending');
   const installmentById = new Map(installments.map((installment) => [installment.id, installment]));
   const currency = reviewSchedule[0]?.currency || installments[0]?.currency || pricing?.currency || '';
+  const costKey = `${detail?.id}:${quoteVersion}:${pricing?.total_amount ?? pricing?.subtotal}:${currency}`;
+  const canApprove = pricing?.quote_source !== 'business' || costReady === costKey;
+  const canReview = pricing?.quote_source !== 'business' || costContext?.key === costKey;
+  const reviewValues = pricing?.quote_source === 'business' ? { quoteVersion, businessContext: {
+    expected_staff_id: costContext?.expected_staff_id, scope_version: costContext?.scope_version,
+  } } : { quoteVersion };
   const paymentStateLabels = t.paymentStateLabels;
   const triggerLabels = t.triggerLabels;
 
@@ -165,11 +223,13 @@ export function QuoteExecutionAdminPanel({ detail, readOnly = false, onRefresh, 
 
   function openReceiptDialog(type, claim) {
     if (readOnly) return;
+    if (!canReview) return;
     const installment = installmentById.get(claim.installment_id);
     if (!installment) return;
     const remainingAmount = Math.max(0, Number(installment.amount || 0) - Number(installment.received_amount || 0));
     const fullAmount = Math.min(Number(claim.claimed_amount || 0), remainingAmount);
-    onOpenDialog?.(type, detail, { claim, installment, remainingAmount, fullAmount, onRefresh });
+    onOpenDialog?.(type, detail, { claim, installment, remainingAmount, fullAmount, onRefresh,
+      businessContext: pricing.quote_source === 'business' ? { ...reviewValues.businessContext, quote_version: quoteVersion } : undefined });
   }
 
   async function openEvidence(claim) {
@@ -253,10 +313,12 @@ export function QuoteExecutionAdminPanel({ detail, readOnly = false, onRefresh, 
         )}
       </div>
 
+      {!readOnly && pricing.quote_source === 'business' && <BusinessCostSnapshot workOrderId={detail.id} quoteVersion={quoteVersion} amount={pricing.total_amount ?? pricing.subtotal} currency={currency} onReady={setCostReady} onContext={setCostContext} />}
+
       {!readOnly && pricing.status === 'pending_review' && (
         <div className="flex flex-col gap-2 border-b border-[var(--color-border)] p-4 sm:flex-row sm:justify-end">
-          <button type="button" onClick={() => onOpenDialog?.('quote-return', detail, { quoteVersion })} className="inline-flex min-h-10 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg border border-[var(--color-border)] px-3 text-sm text-[var(--color-text-secondary)]"><RotateCcw className="h-4 w-4" />{t.returnQuote}</button>
-          <button type="button" onClick={() => onOpenDialog?.('quote-approve', detail, { quoteVersion })} className="inline-flex min-h-10 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg bg-[var(--color-primary)] px-3 text-sm font-medium text-white"><Check className="h-4 w-4" />{t.approveQuote}</button>
+          <button type="button" disabled={!canReview} onClick={() => { if (canReview) onOpenDialog?.('quote-return', detail, reviewValues); }} className="inline-flex min-h-10 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg border border-[var(--color-border)] px-3 text-sm text-[var(--color-text-secondary)] disabled:opacity-40"><RotateCcw className="h-4 w-4" />{t.returnQuote}</button>
+          <button type="button" disabled={!canApprove || !canReview} onClick={() => { if (canApprove && canReview) onOpenDialog?.('quote-approve', detail, reviewValues); }} className="inline-flex min-h-10 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg bg-[var(--color-primary)] px-3 text-sm font-medium text-white disabled:opacity-40"><Check className="h-4 w-4" />{t.approveQuote}</button>
         </div>
       )}
 
@@ -293,10 +355,10 @@ export function QuoteExecutionAdminPanel({ detail, readOnly = false, onRefresh, 
                     </div>
                     {!readOnly && pendingClaims.length > 0 && (
                       <div className="flex flex-col gap-2 sm:items-end">
-                        <button type="button" onClick={() => openReceiptDialog('receipt-confirm-full', claim)} className="inline-flex min-h-10 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg bg-[var(--color-success)] px-3 text-sm font-medium text-white"><Check className="h-4 w-4" />{t.confirmFull}</button>
+                        <button type="button" disabled={!canReview} onClick={() => openReceiptDialog('receipt-confirm-full', claim)} className="inline-flex min-h-10 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg bg-[var(--color-success)] px-3 text-sm font-medium text-white disabled:opacity-40"><Check className="h-4 w-4" />{t.confirmFull}</button>
                         <div className="flex flex-col gap-2 sm:flex-row">
-                          <button type="button" onClick={() => openReceiptDialog('receipt-confirm-partial', claim)} className="inline-flex min-h-10 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg border border-[var(--color-warning)]/50 px-3 text-sm text-[var(--color-warning)]"><Split className="h-4 w-4" />{t.confirmPartial}</button>
-                          <button type="button" onClick={() => openReceiptDialog('receipt-reject', claim)} className="inline-flex min-h-10 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg border border-[var(--color-error)]/50 px-3 text-sm text-[var(--color-error)]"><X className="h-4 w-4" />{t.rejectClaim}</button>
+                          <button type="button" disabled={!canReview} onClick={() => openReceiptDialog('receipt-confirm-partial', claim)} className="inline-flex min-h-10 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg border border-[var(--color-warning)]/50 px-3 text-sm text-[var(--color-warning)] disabled:opacity-40"><Split className="h-4 w-4" />{t.confirmPartial}</button>
+                          <button type="button" disabled={!canReview} onClick={() => openReceiptDialog('receipt-reject', claim)} className="inline-flex min-h-10 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg border border-[var(--color-error)]/50 px-3 text-sm text-[var(--color-error)] disabled:opacity-40"><X className="h-4 w-4" />{t.rejectClaim}</button>
                         </div>
                       </div>
                     )}
@@ -304,7 +366,8 @@ export function QuoteExecutionAdminPanel({ detail, readOnly = false, onRefresh, 
                   <dl className="mt-3 grid gap-2 text-xs text-[var(--color-text-secondary)] sm:grid-cols-3">
                     <div><dt className="text-[var(--color-text-muted)]">{t.evidence}</dt><dd className="mt-1">{claim.evidence?.url ? <><button type="button" onClick={() => openEvidence(claim)} disabled={evidenceState.loadingId === claim.evidence.id} className="inline-flex items-center gap-1 text-[var(--color-primary)] hover:underline disabled:opacity-60"><ExternalLink className="h-3.5 w-3.5" />{evidenceState.loadingId === claim.evidence.id ? t.evidenceLoading : claim.evidence.file_name || t.openEvidence}</button>{evidenceState.errorId === claim.evidence.id && <span className="ml-2 text-[var(--color-error)]">{t.evidenceLoadFailed}</span>}</> : t.noEvidence}</dd></div>
                     <div><dt className="text-[var(--color-text-muted)]">{t.reference}</dt><dd className="mt-1">{claim.transaction_reference || '-'}</dd></div>
-                    <div><dt className="text-[var(--color-text-muted)]">{t.engineerNote}</dt><dd className="mt-1">{claim.engineer_note || '-'}</dd></div>
+                    <div><dt className="text-[var(--color-text-muted)]">{t.submitter}</dt><dd className="mt-1 break-all">{['business', 'admin'].includes(claim.submitter_type) ? t.internalStaff : t.engineer} · {claim.submitter_id || claim.engineer_id || '-'}</dd></div>
+                    <div><dt className="text-[var(--color-text-muted)]">{t.engineerNote}</dt><dd className="mt-1 whitespace-pre-wrap break-words">{claim.submitter_note || claim.engineer_note || '-'}</dd></div>
                   </dl>
                 </div>
               );

@@ -1,4 +1,7 @@
 @import "tailwindcss";
+@source "../../frontend/src/components/WorkOrder/RepairRecordPanel.jsx";
+@source "../../frontend/src/components/WorkOrder/MaterialPicker.jsx";
+@source "../../frontend/src/components/WorkOrder/FieldWorkPanel.jsx";
 
 :root {
   --color-primary: #f59e0b;
