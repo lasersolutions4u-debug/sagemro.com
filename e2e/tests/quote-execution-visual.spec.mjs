@@ -78,7 +78,7 @@ async function expectFullyInViewport(page, locator) {
   expect(box.y + box.height).toBeLessThanOrEqual(viewport.height);
 }
 
-async function captureHomeEvidence(page, { homeHeading, input, resources }) {
+async function captureHomeEvidence(page, { homeHeading, input }) {
   const original = page.viewportSize();
   for (const viewport of [
     { suffix: 'desktop', width: 1440, height: 900 },
@@ -93,16 +93,7 @@ async function captureHomeEvidence(page, { homeHeading, input, resources }) {
       fullPage: false,
     });
 
-    await resources.scrollIntoViewIfNeeded();
-    const resourceLinks = resources.getByRole('link');
-    await expect(resourceLinks).toHaveCount(4);
-    for (let index = 0; index < 4; index += 1) {
-      await expectFullyInViewport(page, resourceLinks.nth(index));
-    }
-    await captureVisual(page, `customer-home-shop-floor-tools-${viewport.suffix}`, {
-      scope: resources,
-      fullPage: false,
-    });
+    await expect(page.locator('[data-testid="tool-industry-tools"], [data-testid="tool-insights"], [data-testid="sidebar-engineer-link"]')).toHaveCount(0);
   }
   if (original) await page.setViewportSize(original);
 }
@@ -147,17 +138,18 @@ async function assertAiFirstHomeAndAbout(page, locale) {
   const input = page.getByPlaceholder(copy.input, { exact: true });
   const toolResources = copy.tools.map((label) => welcome.getByRole('link', { name: new RegExp(`^${label}`) }));
   await expect(input).toBeVisible();
-  for (const toolResource of toolResources) await expect(toolResource).toBeVisible();
-  const resources = toolResources[0].locator('xpath=ancestor::div[contains(@class, "rounded-3xl")][1]');
-  await expect(resources.getByRole('link')).toHaveCount(4);
+  for (const toolResource of toolResources) await expect(toolResource).toHaveCount(0);
   await expect(welcome.getByRole('link', { name: /Insights|行业观察/ })).toHaveCount(0);
-  await expect(page.locator('[data-testid="tool-industry-tools"]:visible')).toBeVisible();
+  await expect(page.locator('[data-testid="tool-industry-tools"], [data-testid="tool-insights"], [data-testid="sidebar-engineer-link"]')).toHaveCount(0);
+  await expect(page.locator('[data-testid="new-chat-button"]:visible')).toBeVisible();
+  await expect(page.locator('[data-testid="tool-history"]:visible')).toBeVisible();
+  await expect(page.locator('[data-testid="sidebar-login-button"]:visible')).toBeVisible();
   await expect(page.getByText('Why choose SAGEMRO', { exact: false })).toHaveCount(0);
   await expect(page.getByText('为什么选择 SAGEMRO', { exact: false })).toHaveCount(0);
   await expect(page.locator('[data-testid="ServicePromiseSection"], ServicePromiseSection')).toHaveCount(0);
 
   if (locale === 'en') {
-    await captureHomeEvidence(page, { homeHeading, input, resources });
+    await captureHomeEvidence(page, { homeHeading, input });
   }
 
   await page.getByRole('button', { name: copy.about, exact: true }).click();
@@ -178,7 +170,7 @@ async function assertAiFirstHomeAndAbout(page, locale) {
   }
 }
 
-test('English and Chinese home stay AI-first and explain the service loop through About', async ({ browser }) => {
+test('English and Chinese AI homes omit tools, insights and engineer entry while retaining chat and About', async ({ browser }) => {
   test.setTimeout(120_000);
   for (const locale of ['en', 'zh']) {
     const context = await browser.newContext();
