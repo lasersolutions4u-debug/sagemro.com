@@ -35,7 +35,6 @@ const CustomerHomeModal = lazy(() => import('./components/Settings/CustomerHomeM
 const LegalModal = lazy(() => import('./components/common/LegalModal').then(m => ({ default: m.LegalModal })));
 const MyDevicesModal = lazy(() => import('./components/Device/MyDevicesModal').then(m => ({ default: m.MyDevicesModal })));
 const NotificationModal = lazy(() => import('./components/Notification/NotificationModal').then(m => ({ default: m.NotificationModal })));
-const IndustryToolsModal = lazy(() => import('./components/Tools/IndustryToolsModal').then(m => ({ default: m.IndustryToolsModal })));
 const IndustryToolsPage = lazy(() => import('./components/Tools/IndustryToolsPage').then(m => ({ default: m.IndustryToolsPage })));
 const InsightsPage = lazy(() => import('./components/Insights/InsightsPage').then(m => ({ default: m.InsightsPage })));
 const ServicePages = lazy(() => import('./components/Services/ServicePages').then(m => ({ default: m.ServicePages })));
@@ -64,7 +63,6 @@ function App() {
 
   // Modal 状态
   const [historyModalOpen, setHistoryModalOpen] = useState(false);
-  const [industryToolsOpen, setIndustryToolsOpen] = useState(false);
   const [myWorkOrdersModalOpen, setMyWorkOrdersModalOpen] = useState(false);
   const [customerHomeModalOpen, setCustomerHomeModalOpen] = useState(false);
   const [loginModalOpen, setLoginModalOpen] = useState(false);
@@ -764,7 +762,6 @@ function App() {
         onDeleteConversation={handleDeleteConversation}
         onRenameConversation={handleRenameConversation}
         onOpenHistory={() => setHistoryModalOpen(true)}
-        onOpenIndustryTools={() => setIndustryToolsOpen(true)}
         onOpenWorkOrder={handleServiceRequest}
         onOpenMyWorkOrders={() => setMyWorkOrdersModalOpen(true)}
         onOpenSettings={() => {
@@ -820,13 +817,6 @@ function App() {
               onRename={handleRenameConversation}
             />
           </Modal>
-          {industryToolsOpen && (
-            <IndustryToolsModal
-              isOpen={industryToolsOpen}
-              onClose={() => setIndustryToolsOpen(false)}
-              onSendMessage={handleSendMessage}
-            />
-          )}
         </Suspense>
       </ErrorBoundary>
       <ErrorBoundary>
