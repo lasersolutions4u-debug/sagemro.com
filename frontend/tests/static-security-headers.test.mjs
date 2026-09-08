@@ -15,6 +15,22 @@ const REQUIRED_HEADERS = [
 ];
 
 for (const site of ['frontend', 'admin']) {
+  test(`${site} permits the automatic Cloudflare beacon without broadening script or connection access`, () => {
+    const policy = read(`${site}/public/_headers`).match(/Content-Security-Policy: ([^\r\n]+)/)[1];
+    const directives = Object.fromEntries(policy.split(';').map(part => part.trim().split(/\s+/)).filter(([name]) => name).map(([name, ...values]) => [name, values]));
+    assert.deepEqual(directives['script-src'], site === 'frontend'
+      ? ["'self'", 'https://cdn.onesignal.com', 'https://static.cloudflareinsights.com']
+      : ["'self'", 'https://static.cloudflareinsights.com']);
+    assert.deepEqual(directives['connect-src'], [
+      "'self'", 'https://api.sagemro.com', 'https://api.sagemro.cn',
+      'https://*.sentry.io', 'https://*.ingest.sentry.io',
+      ...(site === 'frontend' ? ['https://onesignal.com', 'https://*.onesignal.com', 'wss://*.onesignal.com'] : []),
+    ]);
+    assert.deepEqual(directives['default-src'], ["'self'"]);
+    assert.deepEqual(directives['object-src'], ["'none'"]);
+    assert.deepEqual(directives['frame-ancestors'], ["'none'"]);
+  });
+
   test(`${site} static responses declare baseline security headers`, () => {
     const headers = read(`${site}/public/_headers`);
 
