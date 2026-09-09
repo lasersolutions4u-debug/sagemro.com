@@ -250,7 +250,10 @@ export function EngineerWorkOrderDetail({
     ? serviceStandard.steps?.[serviceStandard.current_step_index] || null
     : null;
   const isCurrentTeamWork = detail.ownership_relation === 'current_team_member' || detail.ownership_relation === 'regional_queue';
-  const canReassignTeamWork = isRegionalLead && isCurrentTeamWork && ['pending', 'pending_dispatch', 'assigned'].includes(detail.status);
+  const canReassignTeamWork = isRegionalLead && isCurrentTeamWork && (
+    ['pending', 'pending_dispatch', 'assigned'].includes(detail.status)
+    || (detail.status === 'pending_payment' && detail.pricing?.quote_source === 'business' && detail.pricing.status === 'confirmed')
+  );
   const scheduledTime = getEngineerScheduleLabel(detail, isCn ? 'zh-CN' : 'en-US') || copy.schedulePending;
   const tabs = Object.entries(copy.tabs);
   const tabMap = { messages: 'messages', quote: 'pricing', material: 'materialRequisition', field: 'fieldWork', report: 'repairRecord' };

@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-import { onboardEngineer } from '../support/journeys.mjs';
+import { onboardEngineer, createCustomerWorkOrder, loginAdmin, preparePaidBusinessOrder, dispatchWorkOrder } from '../support/journeys.mjs';
 import { e2eRuntime } from '../support/runtime.mjs';
 import { localD1, localD1Rows, sqlText } from '../support/visual.mjs';
 
@@ -15,28 +15,19 @@ test('regional lead switches team scope, reviews subordinate work, and reassigns
   const [lead] = localD1Rows(`SELECT id, name FROM engineers WHERE lower(email) = lower(${sqlText(leadJourney.engineer.email)}) LIMIT 1`);
   const [firstMember] = localD1Rows(`SELECT id, name FROM engineers WHERE lower(email) = lower(${sqlText(firstMemberJourney.engineer.email)}) LIMIT 1`);
   const [secondMember] = localD1Rows(`SELECT id, name FROM engineers WHERE lower(email) = lower(${sqlText(secondMemberJourney.engineer.email)}) LIMIT 1`);
-  const customerId = `e2e-regional-customer-${leadJourney.engineer.runId}`;
-  const workOrderId = `e2e-regional-${leadJourney.engineer.runId}`;
-  const orderNo = `WO-RL-${leadJourney.engineer.runId}`.slice(0, 42);
+  const customerJourney = await createCustomerWorkOrder({ browser, runtime,
+    description: 'Fictional regional preventive maintenance service.' });
+  const { orderNo } = customerJourney;
+  const adminContext = await browser.newContext();
+  const adminPage = await adminContext.newPage();
+  await loginAdmin(adminPage, runtime);
+  const workOrderId = await preparePaidBusinessOrder({ browser, adminPage, customerPage: customerJourney.page, orderNo, runtime });
 
   localD1(`
     UPDATE engineers SET engineer_role = 'regional_lead' WHERE id = ${sqlText(lead.id)};
     UPDATE engineers SET regional_lead_id = ${sqlText(lead.id)} WHERE id IN (${sqlText(firstMember.id)}, ${sqlText(secondMember.id)});
-    INSERT INTO customers (id, user_no, name, phone, email, password_hash)
-    VALUES (
-      ${sqlText(customerId)}, ${sqlText(`U-RL-${leadJourney.engineer.runId}`)}, 'Regional E2E Customer',
-      ${sqlText(`+1777${leadJourney.engineer.runId.replace(/\D/g, '').slice(-7).padStart(7, '0')}`)},
-      ${sqlText(`regional-customer-${leadJourney.engineer.runId}@example.test`)}, 'local-e2e-hash'
-    );
-    INSERT INTO work_orders (
-      id, order_no, customer_id, engineer_id, type, description, status,
-      category_l1, category_l2, created_at
-    ) VALUES (
-      ${sqlText(workOrderId)}, ${sqlText(orderNo)}, ${sqlText(customerId)}, ${sqlText(firstMember.id)},
-      'maintenance', 'Laser cutting machine preventive maintenance.', 'assigned',
-      'laser_cutting', 'maintenance', datetime('now')
-    );
   `);
+  await dispatchWorkOrder({ page: adminPage, orderNo, engineer: firstMember });
 
   await leadJourney.page.reload();
   await expect(leadJourney.page.getByText('Regional Lead Workspace', { exact: true })).toBeVisible();
@@ -75,4 +66,6 @@ test('regional lead switches team scope, reviews subordinate work, and reassigns
   await leadJourney.context.close();
   await firstMemberJourney.context.close();
   await secondMemberJourney.context.close();
+  await customerJourney.context.close();
+  await adminContext.close();
 });

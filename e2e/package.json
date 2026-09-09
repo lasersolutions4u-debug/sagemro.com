@@ -3,12 +3,12 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test:business-browser": "node --test --test-concurrency=1 tests/business-execution-browser.test.mjs tests/business-payments-browser.test.mjs tests/business-quote-browser.test.mjs tests/business-service-browser.test.mjs tests/business-workspace-browser.test.mjs tests/engineer-service-profile-browser.test.mjs",
+    "test:business-browser": "node --test --test-concurrency=1 tests/business-execution-browser.test.mjs tests/business-payments-browser.test.mjs tests/business-quote-browser.test.mjs tests/business-service-browser.test.mjs tests/business-workspace-browser.test.mjs tests/engineer-service-profile-browser.test.mjs tests/engineer-pricing-boundary-browser.test.mjs",
     "test:contracts": "node --test tests/*-contract.test.mjs",
-    "prepare:local": "node scripts/prepare-local-env.mjs",
-    "test": "npm run test:contracts && npm run test:business-browser && npm run prepare:local && E2E_TEST_SECRET=local-e2e-secret-32-characters playwright test",
-    "test:onboarding": "npm run prepare:local && E2E_TEST_SECRET=local-e2e-secret-32-characters playwright test tests/engineer-onboarding.spec.mjs",
-    "test:lifecycle": "npm run prepare:local && E2E_TEST_SECRET=local-e2e-secret-32-characters playwright test tests/service-order-lifecycle.spec.mjs"
+    "prepare:local": "node scripts/run-local-e2e.mjs prepare",
+    "test": "npm run test:contracts && npm run test:business-browser && node scripts/run-local-e2e.mjs test",
+    "test:onboarding": "node scripts/run-local-e2e.mjs test tests/engineer-onboarding.spec.mjs",
+    "test:lifecycle": "node scripts/run-local-e2e.mjs test tests/service-order-lifecycle.spec.mjs"
   },
   "devDependencies": {
     "@playwright/test": "^1.54.2"

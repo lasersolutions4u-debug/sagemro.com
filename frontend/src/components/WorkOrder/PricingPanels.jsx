@@ -314,7 +314,16 @@ export function AIPriceCheck({ check }) {
 }
 
 // ========== 閺嶉晲鐜崠鐚寸礄瀹搞儳鈻肩敮鍫濓綖閸愭瑱绱?==========
-export function EngineerPricingPanel({ workOrderId, engineerId, pricing, serviceMode = 'remote', onSubmitted }) {
+export function EngineerPricingPanel(props) {
+  const { pricing } = props;
+  if (!isCnLocale() || pricing?.quote_source === 'business') return <p className="text-sm text-[var(--color-text-secondary)]">{isCnLocale()
+    ? '报价由商务团队负责。工程师仅提供服务能力和成本参考，不直接修改客户报价。'
+    : 'Quotation is handled by the business team. Engineers provide service capability and cost information, not customer quotations.'}</p>;
+
+  return <EngineerPricingEditor {...props} />;
+}
+
+function EngineerPricingEditor({ workOrderId, engineerId, pricing, serviceMode = 'remote', onSubmitted }) {
   const t = getPricingCopy();
   const currency = isCnLocale() ? 'CNY' : 'USD';
   const initialDraft = readEngineerPricingDraft(workOrderId, pricing);
@@ -376,10 +385,6 @@ export function EngineerPricingPanel({ workOrderId, engineerId, pricing, service
       setSubmitting(false);
     }
   };
-
-  if (pricing?.quote_source === 'business') return <p className="text-sm text-[var(--color-text-secondary)]">{isCnLocale()
-    ? '报价由商务团队负责。工程师仅提供服务能力和成本参考，不直接修改客户报价。'
-    : 'Quotation is handled by the business team. Engineers provide service capability and cost information, not customer quotations.'}</p>;
 
   const field = (key, label, placeholder) => (
     <div>

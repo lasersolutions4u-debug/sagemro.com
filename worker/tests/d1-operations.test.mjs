@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { join, resolve } from 'node:path';
 
 import {
   D1_TARGETS,
@@ -35,7 +36,7 @@ test('remote D1 operations require explicit production confirmation', () => {
 
 test('local restore plans use separate source and restore state directories', () => {
   const plan = buildRestoreDrillPlan({ market: 'cn', workDir: '/tmp/sagemro-restore-test' });
-  assert.equal(plan.backupFile, '/tmp/sagemro-restore-test/sagemro-db-cn-restore-drill.sql');
+  assert.equal(plan.backupFile, join('/tmp/sagemro-restore-test', 'sagemro-db-cn-restore-drill.sql'));
   assert.notEqual(plan.sourceState, plan.restoreState);
   assert.notEqual(plan.sourceConfig, plan.restoreConfig);
 });
@@ -67,7 +68,7 @@ test('CLI parser resolves a production China backup without executing it', () =>
     operation: 'backup',
     market: 'cn',
     mode: 'remote',
-    output: '/tmp/cn.sql',
+    output: resolve('/tmp/cn.sql'),
     confirmProduction: true,
   });
 });
@@ -106,8 +107,8 @@ test('schema comparison reports missing and changed objects deterministically', 
 });
 
 test('schema snapshot paths separate COM and CN artifacts', () => {
-  assert.equal(buildSchemaSnapshotPath({ market: 'com', directory: '/tmp/schema' }), '/tmp/schema/sagemro-db-schema.json');
-  assert.equal(buildSchemaSnapshotPath({ market: 'cn', directory: '/tmp/schema' }), '/tmp/schema/sagemro-db-cn-schema.json');
+  assert.equal(buildSchemaSnapshotPath({ market: 'com', directory: '/tmp/schema' }), join('/tmp/schema', 'sagemro-db-schema.json'));
+  assert.equal(buildSchemaSnapshotPath({ market: 'cn', directory: '/tmp/schema' }), join('/tmp/schema', 'sagemro-db-cn-schema.json'));
 });
 
 test('backup retention keeps recent daily files and older weekly representatives', () => {
@@ -138,7 +139,7 @@ test('CLI parser requires an explicit flag before retention deletes files', () =
     market: 'com',
     mode: 'local',
     confirmProduction: false,
-    directory: '/secure-backups',
+    directory: resolve('/secure-backups'),
     applyRetention: false,
   });
   assert.deepEqual(parseCliArgs(['retention-check', '--directory', '/secure-backups', '--apply-retention']), {
@@ -146,7 +147,7 @@ test('CLI parser requires an explicit flag before retention deletes files', () =
     market: 'com',
     mode: 'local',
     confirmProduction: false,
-    directory: '/secure-backups',
+    directory: resolve('/secure-backups'),
     applyRetention: true,
   });
 });
@@ -161,7 +162,7 @@ test('CLI parser accepts an isolated Wrangler config for local CN operations', (
     market: 'cn',
     mode: 'local',
     confirmProduction: false,
-    config: '/tmp/cn-wrangler.toml',
+    config: resolve('/tmp/cn-wrangler.toml'),
   });
 });
 

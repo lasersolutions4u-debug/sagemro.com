@@ -108,6 +108,7 @@ export function WorkOrderDetailContent({
   // 工程师评价客户
   const [showEngineerReview, setShowEngineerReview] = useState(false);
   const [engineerReview, setEngineerReview] = useState(null);
+  const [engineerReviewLoading, setEngineerReviewLoading] = useState(false);
   const [engReviewRatings, setEngReviewRatings] = useState({ cooperation: 5, communication: 5, payment: 5, environment: 5 });
   const [engReviewComment, setEngReviewComment] = useState('');
   const [engReviewSubmitting, setEngReviewSubmitting] = useState(false);
@@ -210,6 +211,7 @@ export function WorkOrderDetailContent({
     );
     const isCurrentRequest = () => isCurrentWorkOrderRequest(identity, getCurrentIdentity());
     setLoading(true);
+    setEngineerReviewLoading(userType === 'engineer' && !managementReadOnly);
     if (userType === 'engineer') setEngineerReview(null);
     const requestSummary = incomingSummaryRef.current;
     try {
@@ -217,7 +219,7 @@ export function WorkOrderDetailContent({
         identity,
         getCurrentIdentity,
         load: () => getWorkOrder(workOrderId),
-        onSuccess: async (data) => {
+        onSuccess: (data) => {
           if (!isCurrentRequest()) return;
           const summaryChanges = getChangedIncomingSummary(requestSummary, incomingSummaryRef.current);
           if (!isCurrentRequest()) return;
@@ -233,15 +235,13 @@ export function WorkOrderDetailContent({
             note: '',
           });
           if (userType === 'engineer' && !managementReadOnly) {
-            try {
-              if (!isCurrentRequest()) return;
-              const revData = await getEngineerReview(workOrderId);
-              if (!isCurrentRequest()) return;
-              setEngineerReview(revData.review);
-            } catch {
-              if (!isCurrentRequest()) return;
+            void getEngineerReview(workOrderId).then((revData) => {
+              if (isCurrentRequest()) setEngineerReview(revData.review);
+            }).catch(() => {
               // No prior engineer review is fine; keep the review section empty.
-            }
+            }).finally(() => {
+              if (isCurrentRequest()) setEngineerReviewLoading(false);
+            });
           }
         },
         onError: (error) => console.error('加载工单详情失败:', error),
@@ -1036,7 +1036,7 @@ export function WorkOrderDetailContent({
         </div>
       )}
 
-      {isEngineer && (effectiveStatus === 'resolved' || effectiveStatus === 'completed' || effectiveStatus === 'pending_review') && !engineerReview && !showEngineerReview && (
+      {isEngineer && (effectiveStatus === 'resolved' || effectiveStatus === 'completed' || effectiveStatus === 'pending_review') && !engineerReviewLoading && !engineerReview && !showEngineerReview && (
         <button onClick={() => setShowEngineerReview(true)} className="w-full py-3 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white rounded-xl font-medium">
           Review Customer
         </button>

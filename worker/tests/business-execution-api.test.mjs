@@ -36,7 +36,9 @@ async function api(env, route = path, { id = 'a', method = 'GET', body, userType
   if (id === 'admin' && /\/pricing\/(approve|reject)$/.test(route) && !omitReviewScope) body = { ...await context(env, id), ...body };
   const market = env.testMarket || 'com';
   const token = await signJwt({ userId: id, userType, market, ...(userType === 'admin' && id !== 'admin' ? { staffId: id, staffRole: 'admin' } : {}), exp: Math.floor(Date.now() / 1000) + 3600 }, secret);
-  const response = await worker.fetch(new Request(`https://api.sagemro.com${route}`, { method, headers: { Origin: `https://admin.sagemro.${market}`, Authorization: `Bearer ${token}`, ...(body instanceof FormData ? {} : { 'Content-Type': 'application/json' }) }, ...(body ? { body: body instanceof FormData ? body : JSON.stringify(body) } : {}) }), env, {});
+  const pending = [];
+  const response = await worker.fetch(new Request(`https://api.sagemro.com${route}`, { method, headers: { Origin: `https://admin.sagemro.${market}`, Authorization: `Bearer ${token}`, ...(body instanceof FormData ? {} : { 'Content-Type': 'application/json' }) }, ...(body ? { body: body instanceof FormData ? body : JSON.stringify(body) } : {}) }), env, { waitUntil(task) { pending.push(task); } });
+  await Promise.all(pending);
   return { status: response.status, data: response.headers.get('Content-Type')?.includes('application/json') ? await response.json() : await response.text(), headers: response.headers };
 }
 async function context(env, id = 'a') {
@@ -111,6 +113,67 @@ function confirmDispatchReceipts(env, amount = 900) {
       .run(`audit-claim-${row.id}`, `claim-${row.id}`, JSON.stringify({ claim_status: 'confirmed', confirmed_amount: paid }));
   }
 }
+
+for (const route of dispatchRoutes) test('overseas unowned order cannot bypass paid business dispatch: ' + route, async t => {
+  const env = dispatchFixture(t, route);
+  env.DB.sqlite.exec("DELETE FROM business_record_assignments WHERE record_id='order-a'");
+  const before = state(env);
+  const result = await dispatch(env, route);
+  assert.equal(result.status, 409, JSON.stringify(result.data));
+  assert.deepEqual(state(env), before);
+});
+
+test('overseas engineer quote is forbidden without a business draft', async t => {
+  const env = dispatchFixture(t, 'accept');
+  env.DB.sqlite.exec("DELETE FROM business_record_assignments WHERE record_id='order-a'");
+  const before = state(env);
+  const result = await api(env, '/api/workorders/order-a/pricing', {
+    id: 'technician', userType: 'engineer', method: 'POST', body: draft(),
+  });
+  assert.equal(result.status, 403, JSON.stringify(result.data));
+  assert.equal(env.DB.sqlite.prepare('SELECT COUNT(*) n FROM work_order_pricing').get().n, 0);
+  assert.deepEqual(state(env), before);
+});
+
+for (const admin of [false, true]) test('overseas legacy start requires confirmed business payment: ' + admin, async t => {
+  const env = dispatchFixture(t, 'accept');
+  env.DB.sqlite.exec("DELETE FROM business_record_assignments WHERE record_id='order-a'; UPDATE work_orders SET status='payment_review' WHERE id='order-a'; INSERT INTO work_order_payments(id,work_order_id,amount,status,payment_stage) VALUES ('legacy-payment','order-a',1500,'instructions_requested','advance')");
+  const before = state(env);
+  const result = await api(env, admin ? '/api/admin/workorders/order-a/payment/approve-start' : '/api/workorders/order-a/payment/start-request', {
+    id: admin ? 'admin' : 'technician', userType: admin ? 'admin' : 'engineer', method: 'POST', body: {},
+  });
+  assert.equal(result.status, 409, JSON.stringify(result.data));
+  assert.equal(result.data.code, 'business_dispatch_not_ready');
+  assert.deepEqual(state(env), before);
+});
+
+for (const admin of [false, true]) test('overseas start rejects a stale unversioned order snapshot: ' + admin, async t => {
+  const env = dispatchFixture(t, 'accept');
+  await confirmedDispatchQuote(env, 'accept');
+  confirmDispatchReceipts(env);
+  env.DB.sqlite.exec("UPDATE work_orders SET status='payment_review' WHERE id='order-a'; INSERT INTO work_order_payments(id,work_order_id,amount,status,payment_stage) VALUES ('legacy-payment','order-a',1500,'instructions_requested','advance')");
+  const before = state(env), prepare = env.DB.prepare.bind(env.DB);
+  let injected = false;
+  env.DB.prepare = sql => {
+    const statement = prepare(sql), first = statement.first.bind(statement);
+    statement.first = async () => {
+      const row = await first();
+      if (!injected && /SELECT id, engineer_id, status, order_no, customer_id, service_mode,\s+active_quote_version/.test(sql)) {
+        injected = true;
+        return { ...row, active_quote_version: null };
+      }
+      return row;
+    };
+    return statement;
+  };
+  const result = await api(env, admin ? '/api/admin/workorders/order-a/payment/approve-start' : '/api/workorders/order-a/payment/start-request', {
+    id: admin ? 'admin' : 'technician', userType: admin ? 'admin' : 'engineer', method: 'POST', body: {},
+  });
+  assert.equal(injected, true);
+  assert.equal(result.status, 409, JSON.stringify(result.data));
+  assert.equal(result.data.code, 'business_dispatch_not_ready');
+  assert.deepEqual(state(env), before);
+});
 
 for (const change of ["role='operations'", "is_active=0"]) test('historical Admin receipt confirmation remains valid after reviewer changes: ' + change, async t => {
   const env = dispatchFixture(t, 'assign');

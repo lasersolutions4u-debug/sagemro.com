@@ -231,8 +231,8 @@ test('activation preflight and migration normalize historical phone whitespace c
 });
 
 test('schema snapshot includes migration 036 before activation migration 037', () => {
-  const funnelMigrationSql = readFileSync(funnelMigrationPath, 'utf8').trim();
-  const schemaSql = readFileSync(schemaPath, 'utf8');
+  const funnelMigrationSql = readFileSync(funnelMigrationPath, 'utf8').replace(/\r\n/g, '\n').trim();
+  const schemaSql = readFileSync(schemaPath, 'utf8').replace(/\r\n/g, '\n');
   const funnelSchemaSql = funnelMigrationSql.split('INSERT OR IGNORE INTO _migrations')[0].trim();
 
   assert.ok(schemaSql.includes(funnelSchemaSql));

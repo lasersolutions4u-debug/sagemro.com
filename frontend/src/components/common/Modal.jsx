@@ -8,6 +8,7 @@ const sizeClasses = {
   lg: 'max-w-lg',
   xl: 'max-w-xl',
   '2xl': 'max-w-2xl',
+  profile: 'max-w-[960px]',
   full: 'max-w-full mx-4',
 };
 

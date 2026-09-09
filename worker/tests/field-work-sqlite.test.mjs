@@ -1,10 +1,7 @@
 import assert from 'node:assert/strict';
-import { execFileSync, spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
-import { mkdtemp, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import { test } from 'node:test';
+import { DatabaseSync } from 'node:sqlite';
 
 const migrationSql = readFileSync(new URL('../migrations/039_field_workdays.sql', import.meta.url), 'utf8');
 const cleanupMigrationSql = readFileSync(new URL('../migrations/040_field_evidence_cleanup_queue.sql', import.meta.url), 'utf8');
@@ -77,27 +74,24 @@ const fieldPlanUpdateSql = `
     expected_completion_date = '2026-07-26', planned_daily_start_time = '08:30',
     planned_daily_end_time = '17:30', updated_at = datetime('now')
   WHERE id = 'wo-1';
-  SELECT site_timezone, expected_service_days, expected_completion_date,
-    planned_daily_start_time, planned_daily_end_time, length(updated_at) > 0
-  FROM work_orders WHERE id = 'wo-1';
 `;
 
-function runSql(databasePath, sql) {
-  return spawnSync('sqlite3', ['-batch', databasePath], {
-    encoding: 'utf8',
-    input: `.bail on\nPRAGMA foreign_keys = ON;\n${sql}`,
-  });
+function runSql(database, sql, query) {
+  try {
+    database.exec(sql);
+    const rows = query ? database.prepare(query).all().map(row => Object.values(row)) : [];
+    return { status: 0, rows, stderr: '' };
+  } catch (error) {
+    return { status: 1, rows: [], stderr: error.message };
+  }
 }
 
 async function createDatabase(t, setupSql, seedSql) {
-  const directory = await mkdtemp(join(tmpdir(), 'sagemro-field-work-'));
-  t.after(() => rm(directory, { recursive: true, force: true }));
-  const databasePath = join(directory, 'test.sqlite');
-  execFileSync('sqlite3', ['-batch', databasePath], {
-    encoding: 'utf8',
-    input: `.bail on\nPRAGMA foreign_keys = ON;\n${setupSql}\n${seedSql}`,
-  });
-  return databasePath;
+  const database = new DatabaseSync(':memory:');
+  t.after(() => database.close());
+  database.exec(`PRAGMA foreign_keys = ON;\n${setupSql}\n${seedSql}`);
+  assert.equal(database.prepare('PRAGMA foreign_keys').get().foreign_keys, 1);
+  return database;
 }
 
 function assertForeignKeyFailure(result) {
@@ -139,14 +133,18 @@ for (const [label, setupSql, seedSql] of [
   ['schema snapshot', schemaSql, `${principalsSql}\n${fieldDaySql}`],
 ]) {
   test(`${label} keeps field-day evidence on the same work order`, async (t) => {
-    const databasePath = await createDatabase(t, setupSql, seedSql);
+    const database = await createDatabase(t, setupSql, seedSql);
 
-    const fieldPlanUpdate = runSql(databasePath, fieldPlanUpdateSql);
+    const fieldPlanUpdate = runSql(database, fieldPlanUpdateSql, `
+      SELECT site_timezone, expected_service_days, expected_completion_date,
+        planned_daily_start_time, planned_daily_end_time, length(updated_at) > 0
+      FROM work_orders WHERE id = 'wo-1';
+    `);
     assert.equal(fieldPlanUpdate.status, 0, fieldPlanUpdate.stderr);
-    assert.equal(fieldPlanUpdate.stdout.trim(), 'Asia/Shanghai|3|2026-07-26|08:30|17:30|1');
+    assert.deepEqual(fieldPlanUpdate.rows, [['Asia/Shanghai', 3, '2026-07-26', '08:30', '17:30', 1]]);
 
     if (label === 'migration 039') {
-      const arrival = runSql(databasePath, `
+      const arrival = runSql(database, '', `
         SELECT id, work_order_id, engineer_id, latitude, longitude, accuracy_m,
           coordinate_system, location_source, distance_m, radius_m,
           within_geofence, ifnull(failure_reason, ''), created_at
@@ -154,13 +152,13 @@ for (const [label, setupSql, seedSql] of [
         WHERE id = 'arrival-legacy';
       `);
       assert.equal(arrival.status, 0, arrival.stderr);
-      assert.equal(
-        arrival.stdout.trim(),
-        'arrival-legacy|wo-1|eng-1|31.2304|121.4737|15.0|wgs84|browser|12.0|100.0|1||2026-07-23 08:00:00',
+      assert.deepEqual(
+        arrival.rows,
+        [['arrival-legacy', 'wo-1', 'eng-1', 31.2304, 121.4737, 15, 'wgs84', 'browser', 12, 100, 1, '', '2026-07-23 08:00:00']],
       );
     }
 
-    const sameOrder = runSql(databasePath, `
+    const sameOrder = runSql(database, `
       INSERT INTO work_order_field_day_media (
         id, work_order_id, field_day_id, purpose, object_key, mime_type,
         file_size, uploader_type, uploader_id, capture_source
@@ -191,15 +189,15 @@ for (const [label, setupSql, seedSql] of [
     `);
     assert.equal(sameOrder.status, 0, sameOrder.stderr);
 
-    const retentionColumns = runSql(databasePath, `
+    const retentionColumns = runSql(database, '', `
       SELECT group_concat(name, '|')
       FROM pragma_table_info('work_order_field_day_media')
       WHERE name IN ('retention_claim_token', 'retention_claimed_at');
     `);
     assert.equal(retentionColumns.status, 0, retentionColumns.stderr);
-    assert.equal(retentionColumns.stdout.trim(), 'retention_claim_token|retention_claimed_at');
+    assert.deepEqual(retentionColumns.rows, [['retention_claim_token|retention_claimed_at']]);
 
-    const invalidHoldCategory = runSql(databasePath, `
+    const invalidHoldCategory = runSql(database, `
       INSERT INTO work_order_field_evidence_holds (
         id, work_order_id, reason_category, reason, opened_by
       ) VALUES ('hold-invalid', 'wo-1', 'other', 'Unsupported category', 'eng-1');
@@ -209,15 +207,15 @@ for (const [label, setupSql, seedSql] of [
 
     for (const [childTable, sql] of crossOrderWrites) {
       await t.test(`rejects cross-order ${childTable} links`, () => {
-        assertForeignKeyFailure(runSql(databasePath, sql));
+        assertForeignKeyFailure(runSql(database, sql));
       });
     }
   });
 }
 
 test('retention claims and evidence holds are mutually exclusive in SQLite', async (t) => {
-  const databasePath = await createDatabase(t, schemaSql, `${principalsSql}\n${fieldDaySql}`);
-  const seed = runSql(databasePath, `
+  const database = await createDatabase(t, schemaSql, `${principalsSql}\n${fieldDaySql}`);
+  const seed = runSql(database, `
     INSERT INTO work_order_field_day_media (
       id, work_order_id, field_day_id, purpose, object_key, mime_type,
       file_size, uploader_type, uploader_id, capture_source
@@ -225,7 +223,7 @@ test('retention claims and evidence holds are mutually exclusive in SQLite', asy
   `);
   assert.equal(seed.status, 0, seed.stderr);
 
-  const claimFirst = runSql(databasePath, `
+  const claimFirst = runSql(database, `
     UPDATE work_order_field_day_media
     SET retention_claim_token = 'claim-1', retention_claimed_at = '2026-07-24T00:00:00Z'
     WHERE id = 'media-1' AND retention_claim_token IS NULL
@@ -239,12 +237,11 @@ test('retention claims and evidence holds are mutually exclusive in SQLite', asy
       SELECT 1 FROM work_order_field_day_media
       WHERE work_order_id = 'wo-1' AND deleted_at IS NULL AND retention_claim_token IS NOT NULL
     );
-    SELECT changes();
-  `);
+  `, 'SELECT changes()');
   assert.equal(claimFirst.status, 0, claimFirst.stderr);
-  assert.equal(claimFirst.stdout.trim(), '0');
+  assert.deepEqual(claimFirst.rows, [[0]]);
 
-  const holdFirst = runSql(databasePath, `
+  const holdFirst = runSql(database, `
     UPDATE work_order_field_day_media SET retention_claim_token = NULL, retention_claimed_at = NULL WHERE id = 'media-1';
     INSERT INTO work_order_field_evidence_holds (id, work_order_id, reason_category, reason, opened_by)
     VALUES ('hold-1', 'wo-1', 'legal_hold', 'Legal review', 'admin-1');
@@ -255,20 +252,21 @@ test('retention claims and evidence holds are mutually exclusive in SQLite', asy
         SELECT 1 FROM work_order_field_evidence_holds h
         WHERE h.work_order_id = work_order_field_day_media.work_order_id AND h.status = 'open'
       );
-    SELECT changes();
-  `);
+  `, 'SELECT changes()');
   assert.equal(holdFirst.status, 0, holdFirst.stderr);
-  assert.equal(holdFirst.stdout.trim(), '0');
+  assert.deepEqual(holdFirst.rows, [[0]]);
 });
 
 test('migration 040 adds a durable cleanup queue for failed R2 rollbacks', async (t) => {
-  const databasePath = await createDatabase(t, `${preMigrationSql}\n${principalsSql}\n${legacyArrivalSql}\n${migrationSql}\n${cleanupMigrationSql}`, '');
-  const result = runSql(databasePath, `
+  const database = await createDatabase(t, `${preMigrationSql}\n${principalsSql}\n${legacyArrivalSql}\n${migrationSql}\n${cleanupMigrationSql}`, '');
+  const result = runSql(database, `
     INSERT INTO field_evidence_cleanup_queue (object_key, failure_reason)
     VALUES ('field-evidence/com/wo-1/orphan.jpg', 'check_in_persistence_failed');
-    SELECT object_key, failure_reason FROM field_evidence_cleanup_queue;
-    SELECT COUNT(*) FROM _migrations WHERE version = '040_field_evidence_cleanup_queue';
+  `, `
+    SELECT object_key, failure_reason,
+      (SELECT COUNT(*) FROM _migrations WHERE version = '040_field_evidence_cleanup_queue') AS migration_count
+    FROM field_evidence_cleanup_queue;
   `);
   assert.equal(result.status, 0, result.stderr);
-  assert.equal(result.stdout.trim(), 'field-evidence/com/wo-1/orphan.jpg|check_in_persistence_failed\n1');
+  assert.deepEqual(result.rows, [['field-evidence/com/wo-1/orphan.jpg', 'check_in_persistence_failed', 1]]);
 });

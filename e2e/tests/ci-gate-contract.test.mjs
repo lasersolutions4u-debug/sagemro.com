@@ -124,7 +124,10 @@ test('AI-home E2E starts the portal target and avoids phone-like message fixture
   const visual = read('e2e/tests/quote-execution-visual.spec.mjs');
   const lifecycle = read('e2e/tests/service-order-lifecycle.spec.mjs');
 
-  assert.match(playwrightConfig, /SAGEMRO_BUILD_TARGET=portal VITE_API_BASE=/);
+  const runner = read('e2e/scripts/run-local-e2e.mjs');
+  assert.match(runner, /SAGEMRO_BUILD_TARGET = 'portal'/);
+  assert.match(runner, /VITE_API_BASE = runtime.apiBase/);
+  assert.match(playwrightConfig, /run-local-e2e\.mjs server frontend/);
   assert.match(visual, /url: 'http:\/\/ai\.sagemro\.cn:4273'/);
   assert.match(lifecycle, /customer\.runId\.slice\(-6\)/);
   assert.doesNotMatch(lifecycle, /manualMessage = `E2E manual update \$\{customer\.runId\}`/);
@@ -262,6 +265,7 @@ test('the regular E2E command runs all business and engineer profile browser sui
     'tests/business-quote-browser.test.mjs',
     'tests/business-service-browser.test.mjs',
     'tests/business-workspace-browser.test.mjs',
+    'tests/engineer-pricing-boundary-browser.test.mjs',
     'tests/engineer-service-profile-browser.test.mjs',
   ];
   assert.deepEqual(args.slice(3).sort(), expected.sort());

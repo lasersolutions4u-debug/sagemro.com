@@ -2345,7 +2345,7 @@ function getCorsHeaders(request, env) {
   return {
     'Access-Control-Allow-Origin': getAllowedOrigin(origin, env),
     'Vary': 'Origin',
-    'Access-Control-Allow-Methods': 'GET, POST, PATCH, DELETE, OPTIONS',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-CSRF-Token, Idempotency-Key',
     'Access-Control-Allow-Credentials': 'true',
   };
@@ -2371,7 +2371,7 @@ function getSecurityHeaders(request, env) {
 const corsHeaders = {
   'Access-Control-Allow-Origin': ALLOWED_ORIGINS_PRODUCTION[0],
   'Vary': 'Origin',
-  'Access-Control-Allow-Methods': 'GET, POST, PATCH, DELETE, OPTIONS',
+  'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-CSRF-Token, Idempotency-Key',
 };
 
@@ -10527,11 +10527,12 @@ function businessDispatchError(request) {
 }
 
 async function prepareBusinessDispatchGuard(env, workOrderId, request, { acceptingEngineerId, businessExecution = false, financialArchive = false } = {}) {
+  const businessOnly = getRequestMarket(request) === 'com';
   const executionGuard = businessExecution ? '' : 'AND NOT EXISTS (SELECT 1 FROM business_execution_assignments WHERE work_order_id = work_orders.id)';
   if (!businessExecution && await env.DB.prepare('SELECT id FROM business_execution_assignments WHERE work_order_id=?').bind(workOrderId).first()) return null;
   const managed = businessManagedDispatchSql();
-  const workOrder = await env.DB.prepare(`SELECT * FROM work_orders WHERE id = ? AND ${managed}`).bind(workOrderId).first();
-  if (!workOrder) return { sql: `AND NOT ${managed} ${executionGuard}`, bindings: [] };
+  const workOrder = await env.DB.prepare(`SELECT * FROM work_orders WHERE id = ? AND ${businessOnly ? '1=1' : managed}`).bind(workOrderId).first();
+  if (!workOrder) return businessOnly ? null : { sql: `AND NOT ${managed} ${executionGuard}`, bindings: [] };
   if ((!financialArchive && ['resolved', 'pending_review', 'completed'].includes(workOrder.status))
     || ['cancelled', 'rejected', 'closed', 'archived'].includes(workOrder.status)
     || (acceptingEngineerId && workOrder.engineer_id !== acceptingEngineerId)) return null;
@@ -10545,7 +10546,7 @@ async function prepareBusinessDispatchGuard(env, workOrderId, request, { accepti
     ['work_order_installments', `${scheduleFields},schedule_id,status,received_amount`, 'work_order_id = work_orders.id'],
     ['work_order_receipt_claims', 'id,installment_id,work_order_id,engineer_id,submitted_by_staff_id,status,claimed_amount,confirmed_amount,decided_by,decided_at', 'work_order_id = work_orders.id'],
   ];
-  if (businessExecution) snapshots.push(['audit_logs', 'id,actor_type,actor_id,target_type,target_id,action,after_state',
+  if (businessExecution || businessOnly) snapshots.push(['audit_logs', 'id,actor_type,actor_id,target_type,target_id,action,after_state',
     "target_type = 'work_order_receipt_claim' AND action = 'installment_receipt_confirmed' AND target_id IN (SELECT id FROM work_order_receipt_claims WHERE work_order_id = work_orders.id)"]);
   const rows = [], predicates = [], bindings = [];
   for (const [table, fields, scope] of snapshots) {
@@ -10576,7 +10577,7 @@ async function prepareBusinessDispatchGuard(env, workOrderId, request, { accepti
     const confirmed = claims.filter(claim => claim.installment_id === installment.id && claim.status === 'confirmed');
     if (confirmed.some(claim => !claim.decided_by || !claim.decided_at || !Number.isSafeInteger(claim.confirmed_amount)
       || claim.confirmed_amount <= 0 || claim.confirmed_amount > claim.claimed_amount)) return null;
-    if (businessExecution) {
+    if (businessExecution || businessOnly) {
       for (const claim of confirmed) {
         const verified = receiptAudits.some(audit => {
           if (audit.target_id !== claim.id || audit.actor_type !== 'admin' || audit.actor_id !== claim.decided_by) return false;
@@ -18784,6 +18785,7 @@ async function generatePricingAINote(ctx, env) {
 async function handleSubmitWorkOrderPricing(request, env) {
   try {
     const market = getRequestMarket(request);
+    if (market === 'com') return errorResponse('Customer quotations are managed by the business team.', 403);
     const copy = serviceCopy(market);
     const workOrderId = new URL(request.url).pathname.split('/')[3];
     const body = await request.json();
@@ -21636,6 +21638,9 @@ async function handleEngineerRequestPaymentStart(request, env) {
       return errorResponse(market === 'cn' ? '工单当前状态不允许申请开工' : 'Work order is not waiting for payment follow-up', 400);
     }
 
+    const dispatchGuard = market === 'com' ? await prepareBusinessDispatchGuard(env, workOrderId, request, { acceptingEngineerId: auth.userId }) : null;
+    if (market === 'com' && (Number(wo.active_quote_version || 0) < 1 || !dispatchGuard?.businessManaged)) return businessDispatchError(request);
+
     const pricing = await env.DB.prepare(
       'SELECT * FROM work_order_pricing WHERE work_order_id = ?'
     ).bind(workOrderId).first();
@@ -21662,9 +21667,11 @@ async function handleEngineerRequestPaymentStart(request, env) {
             UPDATE work_orders SET status = 'payment_review'
             WHERE id = ? AND status = 'pending_payment' AND active_quote_version = ?
               ${versionedExecutionSqlGuard("installment.required_before_start = 1 AND installment.received_amount < installment.amount")}
+              ${dispatchGuard?.sql || ''}
           `).bind(
             workOrderId, Number(wo.active_quote_version),
             ...versionedExecutionGuardBindings(pricing),
+            ...(dispatchGuard?.bindings || []),
           ),
           env.DB.prepare(`SELECT CASE WHEN changes() = 1 THEN 1 ELSE json('quote lifecycle concurrent update') END`),
           env.DB.prepare(
@@ -21755,6 +21762,9 @@ async function handleAdminApprovePaymentStart(request, env) {
       return errorResponse(market === 'cn' ? '工单当前状态不允许管理员确认付款' : 'Work order is not waiting for payment approval', 400);
     }
 
+    const dispatchGuard = market === 'com' ? await prepareBusinessDispatchGuard(env, workOrderId, request) : null;
+    if (market === 'com' && (Number(wo.active_quote_version || 0) < 1 || !wo.engineer_id || !dispatchGuard?.businessManaged)) return businessDispatchError(request);
+
     const pricing = await env.DB.prepare(
       'SELECT * FROM work_order_pricing WHERE work_order_id = ?'
     ).bind(workOrderId).first();
@@ -21797,9 +21807,11 @@ async function handleAdminApprovePaymentStart(request, env) {
             UPDATE work_orders SET status = 'in_service'
             WHERE id = ? AND status = 'payment_review' AND active_quote_version = ?
               ${versionedExecutionSqlGuard("installment.required_before_start = 1 AND installment.received_amount < installment.amount")}
+              ${dispatchGuard?.sql || ''}
           `).bind(
             workOrderId, Number(wo.active_quote_version),
             ...versionedExecutionGuardBindings(pricing),
+            ...(dispatchGuard?.bindings || []),
           ),
           env.DB.prepare(`SELECT CASE WHEN changes() = 1 THEN 1 ELSE json('quote lifecycle concurrent update') END`),
           buildServiceStandardEventEnsureStatement(

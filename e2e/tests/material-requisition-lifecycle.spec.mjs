@@ -6,6 +6,7 @@ import {
   dispatchWorkOrder,
   loginAdmin,
   onboardEngineer,
+  preparePaidBusinessOrder,
 } from '../support/journeys.mjs';
 import { e2eRuntime } from '../support/runtime.mjs';
 
@@ -47,7 +48,7 @@ async function clickRequisitionAction(page, button, pathSuffix) {
 test('engineer and Admin complete the material requisition lifecycle', async ({ browser }) => {
   test.setTimeout(240_000);
   const { engineer, context: engineerContext, page: engineerPage } = await onboardEngineer({ browser, runtime });
-  const { context: customerContext, orderNo } = await createCustomerWorkOrder({
+  const { context: customerContext, page: customerPage, orderNo } = await createCustomerWorkOrder({
     browser,
     runtime,
     description: 'E2E material requisition lifecycle: stocked nozzle and manual seal kit required.',
@@ -56,6 +57,7 @@ test('engineer and Admin complete the material requisition lifecycle', async ({ 
   const adminContext = await browser.newContext();
   const adminPage = await adminContext.newPage();
   await loginAdmin(adminPage, runtime);
+  await preparePaidBusinessOrder({ browser, adminPage, customerPage, orderNo, runtime });
   await dispatchWorkOrder({ page: adminPage, orderNo, engineer });
 
   const workOrders = await adminApi(adminPage, runtime, '/api/admin/workorders?pageSize=50');
@@ -76,7 +78,7 @@ test('engineer and Admin complete the material requisition lifecycle', async ({ 
   await expect(task).toBeVisible();
   await task.click();
   await expect(engineerPage).toHaveURL(new RegExp(`/work-orders/${workOrder.id}$`));
-  await engineerPage.getByRole('button', { name: 'Confirm Assignment', exact: true }).click();
+  await expect(engineerPage.getByRole('button', { name: 'Request Start Approval', exact: true })).toBeVisible();
   await engineerPage.reload();
   await expect(engineerPage.getByText(`Work order · ${orderNo}`, { exact: true })).toBeVisible();
   await engineerPage.getByRole('tab', { name: 'Material request', exact: true }).click();

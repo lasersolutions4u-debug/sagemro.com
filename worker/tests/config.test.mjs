@@ -81,6 +81,31 @@ test('CORS preflight allows material requisition idempotency keys', async () => 
   assert.match(response.headers.get('Access-Control-Allow-Headers') || '', /\bIdempotency-Key\b/i);
 });
 
+test('business PUT preflight allows approved Admin origins without granting other origins', async () => {
+  for (const [environment, origin] of [
+    ['development', 'http://admin.127.0.0.1.nip.io:4274'],
+    ['production', 'https://admin.sagemro.com'],
+  ]) {
+    for (const endpoint of ['records/work_order/fictional-order/assignment', 'work-orders/fictional-order/quote']) {
+      const response = await worker.fetch(new Request(`https://api.sagemro.com/api/admin/business/${endpoint}`, {
+        method: 'OPTIONS', headers: { Origin: origin, 'Access-Control-Request-Method': 'PUT',
+          'Access-Control-Request-Headers': 'content-type,x-csrf-token' },
+      }), { ENVIRONMENT: environment }, {});
+      assert.equal(response.status, 204);
+      assert.equal(response.headers.get('Access-Control-Allow-Origin'), origin);
+      assert.equal(response.headers.get('Access-Control-Allow-Credentials'), 'true');
+      assert.ok(response.headers.get('Access-Control-Allow-Methods').split(/,\s*/).includes('PUT'));
+      assert.match(response.headers.get('Access-Control-Allow-Headers'), /X-CSRF-Token/i);
+    }
+  }
+  const origin = 'https://untrusted.example';
+  const response = await worker.fetch(new Request('https://api.sagemro.com/api/admin/business/work-orders/fictional-order/quote', {
+    method: 'OPTIONS', headers: { Origin: origin, 'Access-Control-Request-Method': 'PUT' },
+  }), { ENVIRONMENT: 'production' }, {});
+  assert.notEqual(response.headers.get('Access-Control-Allow-Origin'), origin);
+  assert.notEqual(response.headers.get('Access-Control-Allow-Origin'), '*');
+});
+
 test('allows same-site nip.io E2E portal origins during development', async () => {
   for (const origin of [
     'http://customer.127.0.0.1.nip.io:4273',
